@@ -17,14 +17,12 @@ use oso::ToPolar;
 #[cfg(feature = "multi-user")]
 use std::fmt::Display;
 
+use crate::commons::error::{ApiAuthError, Error};
+use crate::daemon::auth::policy::AuthPolicy;
+use crate::{commons::KrillResult, constants::ACTOR_DEF_ANON, daemon::auth::Auth};
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Debug;
-
-#[cfg(feature = "multi-user")]
-use crate::commons::error::Error;
-use crate::daemon::auth::policy::AuthPolicy;
-use crate::{commons::KrillResult, constants::ACTOR_DEF_ANON, daemon::auth::Auth};
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub enum ActorName {
@@ -68,7 +66,7 @@ pub struct ActorDef {
     pub is_user: bool,
     pub attributes: Attributes,
     pub new_auth: Option<Auth>,
-    pub auth_error: Option<String>,
+    pub auth_error: Option<ApiAuthError>,
 }
 
 impl ActorDef {
@@ -102,9 +100,9 @@ impl ActorDef {
         }
     }
 
-    // store an error string instead of an Error because Error cannot be cloned.
-    pub fn with_auth_error(mut self, error_msg: String) -> Self {
-        self.auth_error = Some(error_msg);
+    // Takes either a ApiAuthError or a commons::error::Error
+    pub fn with_auth_error(mut self, api_error: Error) -> Self {
+        self.auth_error = Some(api_error.into());
         self
     }
 }
@@ -116,7 +114,7 @@ pub struct Actor {
     attributes: Attributes,
     new_auth: Option<Auth>,
     policy: Option<AuthPolicy>,
-    auth_error: Option<String>,
+    auth_error: Option<ApiAuthError>,
 }
 
 impl PartialEq for Actor {
@@ -207,15 +205,15 @@ impl Actor {
         A: ToPolar + Display + Clone,
         R: ToPolar + Display + Clone,
     {
-        if let Some(error_msg) = &self.auth_error {
+        if let Some(api_error) = &self.auth_error {
             trace!(
-                "Unable to check access: actor={}, action={}, resource={}: {}",
+                "Authentication denied: actor={}, action={}, resource={}: {}",
                 self.name(),
                 &action,
                 &resource,
-                &error_msg
+                &api_error
             );
-            return Err(Error::ApiInvalidCredentials(error_msg.clone()));
+            return Err(Error::from(api_error.clone()));
         }
 
         match &self.policy {
@@ -242,7 +240,7 @@ impl Actor {
                 }
                 Err(err) => {
                     error!(
-                        "Unable to check access: actor={}, action={}, resource={}: {}",
+                        "Access denied: actor={}, action={}, resource={}: {}",
                         self.name(),
                         &action,
                         &resource,

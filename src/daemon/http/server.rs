@@ -766,9 +766,12 @@ macro_rules! aa {
                 // which causes the error message to nest, e.g.
                 //   "Invalid credentials: Invalid credentials: Session expired"
                 match err {
-                    Error::ApiInvalidCredentials(_) | Error::ApiInsufficientRights(_) => {
-                        Ok(HttpResponse::response_from_error(err).with_benign($benign))
-                    }
+                    Error::ApiInvalidCredentials(_)
+                    | Error::ApiInsufficientRights(_)
+                    | Error::ApiAuthPermanentError(_)
+                    | Error::ApiAuthTransientError(_)
+                    | Error::ApiAuthSessionExpired(_)
+                    | Error::ApiLoginError(_) => Ok(HttpResponse::response_from_error(err).with_benign($benign)),
                     _ => Ok(HttpResponse::forbidden(format!("{}", err)).with_benign($benign)),
                 }
             }

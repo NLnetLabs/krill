@@ -12,7 +12,7 @@ use krill::test::*;
 pub async fn run_krill_ui_test(test_name: &str, _with_openid_server: bool, testbed_enabled: bool) {
     #[cfg(feature = "multi-user")]
     let mock_server_join_handle = if _with_openid_server {
-        openid_connect_mock::start().await
+        openid_connect_mock::start(1).await
     } else {
         None
     };
@@ -51,15 +51,12 @@ async fn do_run_krill_ui_test(test_name: &str, testbed_enabled: bool) {
             .arg(format!("{}:/e2e", env::current_dir().unwrap().display()))
             .arg("-w")
             .arg("/e2e")
-
             // Uncomment the next line to enable LOTS of Cypress logging.
             // .arg("-e").arg("DEBUG=cypress:*")
-
             // Uncomment the next line to enable a subset of Cypress logging
             // that is useful for investigating .get() and .intercept()
             // behaviour.
             // .arg("-e").arg("DEBUG=cypress:proxy:http:*")
-
             .arg("cypress/included:6.2.0")
             .arg("--browser")
             .arg("chrome")

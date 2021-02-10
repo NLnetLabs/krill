@@ -137,7 +137,10 @@ impl Authorizer {
             Ok(None) => self.actor_from_def(ACTOR_DEF_ANON),
 
             // error during authentication
-            Err(err) => self.actor_from_def(ACTOR_DEF_ANON.with_auth_error(err.to_string())),
+            Err(err) => {
+                // reveives a commons::error::Error, but we need an ApiAuthError
+                self.actor_from_def(ACTOR_DEF_ANON.with_auth_error(err))
+            }
         };
 
         trace!("Actor determination result: {:?}", &actor);

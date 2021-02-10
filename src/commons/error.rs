@@ -111,6 +111,49 @@ impl fmt::Display for RoaDeltaError {
     }
 }
 
+// ApiAuthError is *also* implemented as a separate enum,
+// so that we don't have to implement the Clone trait for
+// all of the Error enum.
+// Also it makes kind of sense to keep these errors separate
+// container, since they all originate in interactions
+// with the Auth provider (or lack thereof).
+#[derive(Debug, Clone)]
+pub enum ApiAuthError {
+    ApiInvalidCredentials(String),
+    ApiLoginError(String),
+    ApiAuthPermanentError(String),
+    ApiAuthTransientError(String),
+    ApiAuthSessionExpired(String),
+    ApiInsufficientRights(String),
+}
+
+impl Display for ApiAuthError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ApiAuthError::ApiInvalidCredentials(err)
+            | ApiAuthError::ApiLoginError(err)
+            | ApiAuthError::ApiAuthPermanentError(err)
+            | ApiAuthError::ApiAuthTransientError(err)
+            | ApiAuthError::ApiAuthSessionExpired(err)
+            | ApiAuthError::ApiInsufficientRights(err) => write!(f, "{}", &err),
+        }
+    }
+}
+
+impl From<Error> for ApiAuthError {
+    fn from(e: Error) -> Self {
+        match e {
+            Error::ApiAuthPermanentError(e) => ApiAuthError::ApiAuthPermanentError(e),
+            Error::ApiLoginError(e) => ApiAuthError::ApiLoginError(e),
+            Error::ApiInsufficientRights(e) => ApiAuthError::ApiInsufficientRights(e),
+            Error::ApiAuthTransientError(e) => ApiAuthError::ApiAuthTransientError(e),
+            Error::ApiAuthSessionExpired(e) => ApiAuthError::ApiAuthSessionExpired(e),
+            Error::ApiInvalidCredentials(e) => ApiAuthError::ApiInvalidCredentials(e),
+            _ => ApiAuthError::ApiAuthPermanentError(e.to_string()),
+        }
+    }
+}
+
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum Error {
@@ -124,7 +167,6 @@ pub enum Error {
     HttpsSetup(String),
     HttpClientError(httpclient::Error),
     ConfigError(String),
-
     //-----------------------------------------------------------------
     // General API Client Issues
     //-----------------------------------------------------------------
@@ -138,7 +180,10 @@ pub enum Error {
     PostTooBig,
     PostCannotRead,
     ApiInvalidCredentials(String),
-    ApiAuthError(String),
+    ApiLoginError(String),
+    ApiAuthPermanentError(String),
+    ApiAuthTransientError(String),
+    ApiAuthSessionExpired(String),
     ApiInsufficientRights(String),
 
     //-----------------------------------------------------------------
@@ -281,9 +326,11 @@ impl fmt::Display for Error {
             Error::PostTooBig => write!(f, "POST body exceeds configured limit"),
             Error::PostCannotRead => write!(f, "POST body cannot be read"),
             Error::ApiInvalidCredentials(e) => write!(f, "Invalid credentials: {}", e),
-            Error::ApiAuthError(e) => write!(f, "Authentication error: {}", e),
+            Error::ApiLoginError(e) => write!(f, "Login error: {}", e),
+            Error::ApiAuthPermanentError(e) => write!(f, "Authentication error: {}", e),
+            Error::ApiAuthTransientError(e) => write!(f, "Transient authentication error: {}", e),
+            Error::ApiAuthSessionExpired(e) => write!(f, "Session expired: {}", e),
             Error::ApiInsufficientRights(e) => write!(f, "Insufficient rights: {}", e),
-
 
             //-----------------------------------------------------------------
             // Repository Issues
@@ -458,6 +505,19 @@ impl From<crate::commons::crypto::Error> for Error {
     }
 }
 
+impl From<ApiAuthError> for Error {
+    fn from(e: ApiAuthError) -> Self {
+        match e {
+            ApiAuthError::ApiAuthPermanentError(e) => Error::ApiAuthPermanentError(e),
+            ApiAuthError::ApiLoginError(e) => Error::ApiLoginError(e),
+            ApiAuthError::ApiInsufficientRights(e) => Error::ApiInsufficientRights(e),
+            ApiAuthError::ApiAuthTransientError(e) => Error::ApiAuthTransientError(e),
+            ApiAuthError::ApiAuthSessionExpired(e) => Error::ApiAuthSessionExpired(e),
+            ApiAuthError::ApiInvalidCredentials(e) => Error::ApiInvalidCredentials(e),
+        }
+    }
+}
+
 impl Error {
     pub fn signer(e: impl Display) -> Self {
         Error::SignerError(e.to_string())
@@ -492,8 +552,11 @@ impl Error {
             | Error::CaParentUnknown(_, _)
             | Error::ApiUnknownResource => StatusCode::NOT_FOUND,
 
-            Error::ApiInvalidCredentials(_) | Error::ApiAuthError(_) => StatusCode::UNAUTHORIZED,
-
+            Error::ApiInvalidCredentials(_)
+            | Error::ApiAuthPermanentError(_)
+            | Error::ApiAuthTransientError(_)
+            | Error::ApiAuthSessionExpired(_)
+            | Error::ApiLoginError(_) => StatusCode::UNAUTHORIZED,
             Error::ApiInsufficientRights(_) => StatusCode::FORBIDDEN,
 
             _ => StatusCode::BAD_REQUEST,
@@ -551,7 +614,13 @@ impl Error {
 
             Error::ApiInvalidCredentials(e) => ErrorResponse::new("api-invalid-credentials", &self).with_cause(e),
 
-            Error::ApiAuthError(e) => ErrorResponse::new("api-auth-error", &self).with_cause(e),
+            Error::ApiLoginError(e) => ErrorResponse::new("api-login-error", &self).with_cause(e),
+
+            Error::ApiAuthPermanentError(e) => ErrorResponse::new("api-auth-permanent-error", &self).with_cause(e),
+
+            Error::ApiAuthTransientError(e) => ErrorResponse::new("api-auth-transient-error", &self).with_cause(e),
+
+            Error::ApiAuthSessionExpired(e) => ErrorResponse::new("api-auth-session-expired", &self).with_cause(e),
 
             Error::ApiInsufficientRights(e) => ErrorResponse::new("api-insufficient-rights", &self).with_cause(e),
 
