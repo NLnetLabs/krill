@@ -1,7 +1,6 @@
 pub mod authorizer;
 pub mod providers;
 
-#[cfg(feature = "multi-user")]
 pub mod common;
 
 #[cfg(feature = "multi-user")]

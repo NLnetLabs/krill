@@ -16,14 +16,14 @@
 
 # Verify that the given actor has the required role to perform the requested
 # action on the given relative API request path.
-allow(actor: Actor, action, resource: RequestPath) if
+allow(actor: Actor, action: Permission, resource: RequestPath) if
     actor_has_role(actor, role) and
     role_allow(role, action, resource);
 
 ### TEST: [
 # Sanity check: verify that the built-in master-token test actor can login.
 # Exercises the rules above.
-?= allow(Actor.builtin("master-token"), "LOGIN", new RequestPath("/"));
+?= allow(Actor.builtin("master-token"), new Permission("LOGIN"), new RequestPath("/"));
 ### ]
 
 
@@ -42,13 +42,13 @@ actor_has_role(actor: Actor, role) if role in actor.attr("role");
 # default access isn't restricted per CA handle, or because the user is neither
 # explicitly or implicitly denied access to the CA or is explicitly granted
 # access to the CA.
-allow(actor: Actor, action, ca: Handle) if
+allow(actor: Actor, action: Permission, ca: Handle) if
     actor_has_role(actor, role) and
     role_allow(role, action, ca) and
     actor_can_access_ca(actor, ca);
 
 ### TEST: [
-?= allow(Actor.builtin("master-token"), "CA_READ", new RequestPath("/"));
+?= allow(Actor.builtin("master-token"), new Permission("CA_READ"), new RequestPath("/"));
 ### ]
 
 
