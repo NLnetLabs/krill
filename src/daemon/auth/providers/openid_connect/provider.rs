@@ -1,3 +1,25 @@
+//! Stateless implementation of an OAuth 2.0 "confidential" client and OpenID Connect 1.0 "relying party".
+//!
+//! Acts as an OAuth 2.0 "confidential" client on behalf of the Krill Lagosta web UI (as opposed to the UI itself acting
+//! as an OAuth 2.0 "public" client). Intended to be compliant with the following OAuth 2.0 and OpenID Connect 1.0
+//! specifications:
+//!
+//!   - [The OAuth 2.0 Authorization Framework RFC 6749][rfc6749]
+//!   - [OAuth 2.0 Token Revocation][rfc7009]
+//!   - [OpenID Connect Core 1.0 incorporating errata set 1][openid-connect-core-1_0]
+//!   - [OpenID Connect Discovery 1.0 incorporating errata set 1][openid-connect-discovery-1_0]
+//!   - [OpenID Connect RP-Initiated Logout 1.0 - draft 01][openid-connect-rpinitiated-1_0]
+//!
+//! Compliant OpenID Connect 1.0 providers (OPs) MUST support:
+//!   - [OpenID Connect Discovery 1.0][openid-connect-discovery-1_0]
+//!   - Either [OpenID Connect RP-Initiated Logout 1.0][openid-connect-rpinitiated-1_0] or [OAuth 2.0 Token Revocation][rfc7009]
+//!
+//! [rfc6749]: https://tools.ietf.org/html/rfc6749
+//! [rfc7009]: https://tools.ietf.org/html/rfc7009
+//! [openid-connect-core-1_0]: https://openid.net/specs/openid-connect-core-1_0.html
+//! [openid-connect-discovery-1_0]: https://openid.net/specs/openid-connect-discovery-1_0.html
+//! [openid-connect-rpinitiated-1_0]: https://openid.net/specs/openid-connect-rpinitiated-1_0.html
+
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::{
@@ -14,7 +36,8 @@ use jmespatch as jmespath;
 use jmespath::ToJmespath;
 
 use openidconnect::core::{
-    CoreAuthPrompt, CoreIdTokenVerifier, CoreJwsSigningAlgorithm, CoreResponseMode, CoreResponseType,
+    CoreAuthPrompt, CoreErrorResponseType, CoreIdTokenVerifier, CoreJwsSigningAlgorithm, CoreResponseMode,
+    CoreResponseType,
 };
 use openidconnect::reqwest::http_client as oidc_http_client;
 use openidconnect::RequestTokenError;
@@ -281,6 +304,14 @@ impl OpenIDConnectAuthProvider {
     fn build_logout_url(&self, meta: &WantedMeta) -> KrillResult<String> {
         let service_uri = self.config.service_uri();
         let logout_url = if let Some(url) = &meta.additional_metadata().end_session_endpoint {
+            // TODO: Should we also use any of other parameters defined in the RP Initiated Logout 1.0 spec?
+            //   See: https://openid.net/specs/openid-connect-rpinitiated-1_0.html#RPLogout
+            //        https://openid.net/specs/openid-connect-rpinitiated-1_0.html#RedirectionAfterLogout
+            // E.g. id_token_hint, state or ui_locales? Apparently we MSUT use id_token_hint because the spec states:
+            //   "An id_token_hint carring an ID Token for the RP is also REQUIRED when requesting post-logout
+            //    redirection"
+            // TODO: Require HTTPS as per the spec: "This URL MUST use the https scheme"
+            //   See: https://openid.net/specs/openid-connect-rpinitiated-1_0.html#OPMetadata
             format!("{}?post_logout_redirect_uri={}", url, service_uri.as_str())
         } else if meta.additional_metadata().revocation_endpoint.is_some() {
             service_uri.to_string()
@@ -296,80 +327,102 @@ impl OpenIDConnectAuthProvider {
         Ok(logout_url)
     }
 
-    fn try_refresh_token(&self, session: &ClientSession) -> Option<Auth> {
-        match &session.secrets.get(0) {
-            Some(refresh_token) => {
-                debug!("OpenID Connect: Refreshing token for user: \"{}\"", &session.id);
-                trace!("OpenID Connect: Submitting RFC-6749 section 6 Access Token Refresh request");
-                match self.conn.read() {
-                    Ok(conn_guard) => {
-                        match &*conn_guard {
-                            Some(conn) => {
-                                let token_response = conn
-                                    .client
-                                    .exchange_refresh_token(&RefreshToken::new(refresh_token.to_string()))
-                                    .request(logging_http_client!());
-                                match token_response {
-                                    Ok(token_response) => {
-                                        let secrets = if let Some(new_refresh_token) = token_response.refresh_token() {
-                                            vec![new_refresh_token.secret().clone()]
-                                        } else {
-                                            vec![]
-                                        };
+    /// Try refreshing the token once with the OIDC Provider and return either the new token,
+    /// or the Error received from the OpenID Connect Provider. This Error is
+    /// FOR INTERNAL CONSUMPTION only.
+    /// The caller of this function is responsible for creating end-user error messages, logging and
+    /// (optionally) retrying.
+    fn try_refresh_token(&self, session: &ClientSession) -> Result<Auth, CoreErrorResponseType> {
+        let refresh_token = &session.secrets.get(0).unwrap();
 
-                                        let new_token_res = self.session_cache.encode(
-                                            &session.id,
-                                            &session.attributes,
-                                            &secrets,
-                                            &self.session_key,
-                                            token_response.expires_in(),
-                                        );
+        debug!("OpenID Connect: Refreshing token for user: \"{}\"", &session.id);
+        trace!("OpenID Connect: Submitting RFC-6749 section 6 Access Token Refresh request");
+        match self.conn.read() {
+            Ok(conn_guard) => {
+                match &*conn_guard {
+                    Some(conn) => {
+                        let token_response = conn
+                            .client
+                            .exchange_refresh_token(&RefreshToken::new(refresh_token.to_string()))
+                            .request(logging_http_client!());
+                        match token_response {
+                            Ok(token_response) => {
+                                let secrets = if let Some(new_refresh_token) = token_response.refresh_token() {
+                                    vec![new_refresh_token.secret().clone()]
+                                } else {
+                                    vec![]
+                                };
 
-                                        match new_token_res {
-                                            Ok(new_token) => {
-                                                return Some(Auth::Bearer(new_token));
-                                            }
-                                            Err(err) => {
-                                                warn!(
-                                                    "OpenID Connect: Could not extend login session for user '{}': {}",
-                                                    &session.id, err
-                                                );
-                                            }
-                                        }
+                                let new_token_res = self.session_cache.encode(
+                                    &session.id,
+                                    &session.attributes,
+                                    &secrets,
+                                    &self.session_key,
+                                    token_response.expires_in(),
+                                );
+
+                                match new_token_res {
+                                    Ok(new_token) => {
+                                        // The new token was successfully acquired from the OpenID Connect Provider,
+                                        // and early returned.
+                                        Ok(Auth::Bearer(new_token))
                                     }
-                                    Err(err) => {
-                                        warn!(
-                                            "OpenID Connect: Could not extend login session for user '{}': {}",
-                                            &session.id, err
-                                        );
-                                    }
+                                    Err(err) => Err(CoreErrorResponseType::Extension(format!(
+                                        "Internal error: Error while encoding the refreshed token {}",
+                                        err
+                                    ))),
                                 }
                             }
-                            None => {
-                                // should be unreachable
-                                warn!(
-                                    "OpenID Connect: Could not extend login session for user '{}': {}",
-                                    &session.id, "Connection to OpenID Connect provider not yet established"
-                                );
+                            Err(err) => {
+                                match &err {
+                                    // this is where the RFC-6749 5.2 Error Response is received and
+                                    // return to the caller. It's the responsibility of the caller
+                                    // to decide whether to retry or report back to the user.
+                                    //
+                                    // Note that [Errata for RFC 6749](https://www.rfc-editor.org/errata/eid4745)
+                                    // defines two additional error responses, `server_error` and
+                                    // `temporarily_unavailable`, that don't have variant counterparts
+                                    // in the openid-connect crate. These two error messages will
+                                    // therefore **not** end up in the `ServerReponse` variant.
+                                    openidconnect::RequestTokenError::ServerResponse(r) => Err(r.error().clone()),
+                                    openidconnect::RequestTokenError::Request(r) => {
+                                        Err(CoreErrorResponseType::Extension(format!(
+                                            "Network failure while refreshing token: {}",
+                                            r.to_string()
+                                        )))
+                                    }
+                                    openidconnect::RequestTokenError::Parse(r, _) => {
+                                        Err(CoreErrorResponseType::Extension(format!(
+                                            "Error while parsing refreshed token: {}",
+                                            r.to_string()
+                                        )))
+                                    }
+                                    openidconnect::RequestTokenError::Other(err_string) => match err_string.as_str() {
+                                        "temporarily_unavailable" | "server_error" => {
+                                            Err(CoreErrorResponseType::Extension(err_string.to_string()))
+                                        }
+                                        _ => Err(CoreErrorResponseType::Extension(format!(
+                                            "Unknown error while refreshing token: {}",
+                                            err_string
+                                        ))),
+                                    },
+                                }
                             }
                         }
                     }
-                    Err(err) => {
-                        warn!(
-                            "OpenID Connect: Could not extend login session for user '{}': {}",
-                            &session.id, err
-                        );
+                    None => {
+                        // should be unreachable
+                        Err(CoreErrorResponseType::Extension(
+                            "Internal error: Connection to OpenID Connect provider not yet established".to_string(),
+                        ))
                     }
                 }
             }
-            None => {
-                debug!(
-                    "OpenID Connect: Could not extend login session for user '{}': no refresh token available",
-                    &session.id
-                );
-            }
+            Err(err) => Err(CoreErrorResponseType::Extension(format!(
+                "Internal error: Unable to acquire internal lock: {}",
+                err
+            ))),
         }
-        None
     }
 
     fn extract_claim(
@@ -542,7 +595,7 @@ impl OpenIDConnectAuthProvider {
             Some(additional_info) => warn!("{} [additional info: {}]", msg, additional_info.into()),
             None => warn!("{}", msg),
         };
-        Error::ApiAuthError(msg)
+        Error::ApiLoginError(msg)
     }
 
     fn get_auth(&self, request: &hyper::Request<hyper::Body>) -> Option<Auth> {
@@ -567,13 +620,16 @@ impl OpenIDConnectAuthProvider {
 }
 
 impl AuthProvider for OpenIDConnectAuthProvider {
-    // TODO: handle error responses from the provider as per RFC 6749 and OpenID
     // Connect Core 1.0 section 3.1.26 Authentication Error Response
+    // OAuth 2.0 RFC-674 4.1.2.1 (Authorization Request Errors) & 5.2 (Access Token Request Errors)
 
+    /// Validate the current login session, extending it with the OIDC provider if needed.
+    /// Returns either the session attributes and (if available) the refreshed token, or
+    /// an error to report back to the user (one of the ApiAuth* Error types).
+    /// Make sure to not leak any OIDC implementation details into the Error result!
+    /// This function is also responsible for all logging around refreshing the token / extending the session.
     fn authenticate(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
-        if log_enabled!(log::Level::Trace) {
-            trace!("Attempting to authenticate the request..");
-        }
+        trace!("Attempting to authenticate the request..");
 
         self.initialize_connection_if_needed().map_err(|err| {
             self.internal_error(
@@ -587,20 +643,82 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 // see if we can decode, decrypt and deserialize the users token
                 // into a login session structure
                 let session = self.session_cache.decode(token, &self.session_key)?;
-
                 let status = session.status();
 
-                let mut new_auth = None;
-                if status != SessionStatus::Active {
-                    new_auth = self.try_refresh_token(&session);
-                    if new_auth.is_none() && status == SessionStatus::Expired {
-                        return Err(Error::ApiInvalidCredentials(
-                            "Session expired, please login again".to_string(),
-                        ));
-                    }
+                // Token found in cache and active; all good, do an early return
+                if status == SessionStatus::Active {
+                    return Ok(Some(ActorDef::user(session.id, session.attributes, None)));
                 }
 
-                Ok(Some(ActorDef::user(session.id, session.attributes, new_auth)))
+                // There are no current secrets, nothing to try to refresh. Return
+                // early with an error that indicates the user needs to login again.
+                if session.secrets.is_empty() {
+                    return Err(Error::ApiAuthSessionExpired("No token to be refreshed".to_string()));
+                }
+
+                let new_auth = match self.try_refresh_token(&session) {
+                    Ok(auth) => {
+                        trace!(
+                            "OpenID Connect: Succesfully refreshed token for user \"{}\"",
+                            &session.id
+                        );
+                        auth
+                    }
+                    Err(err) => {
+                        trace!("OpenID Connect: RFC 6749 5.2 Error response returned...");
+                        debug!(
+                            "OpenID Connect: Refreshing the token for user '{}' failed: {}",
+                            &session.id, &err
+                        );
+                        match err {
+                            // This is the Error returned by the OpenID Connect Provider if the session was terminated
+                            // by them. The user should be able to create a new session by logging in again.
+                            CoreErrorResponseType::InvalidGrant => {
+                                warn!("OpenID Connect: invalid_grant {:?}", err);
+                                return Err(Error::ApiInvalidCredentials("Unable to extend login session: your session has been terminated.".to_string()));
+                            }
+                            CoreErrorResponseType::InvalidRequest | CoreErrorResponseType::InvalidClient => {
+                                warn!("OpenID Connect: RFC 6749 5.2 {:?}", err);
+                                return Err(Error::ApiAuthPermanentError(
+                                    "Unable to extend login session: the provider rejected the request.".to_string(),
+                                ));
+                            }
+                            // If changes are made to the roles of the user, the client or
+                            // the scope on the side of the OpenID Connect Provider,
+                            // the token refresh may get one of these errors.
+                            CoreErrorResponseType::UnauthorizedClient
+                            | CoreErrorResponseType::UnsupportedGrantType
+                            | CoreErrorResponseType::InvalidScope => {
+                                warn!("OpenID Connect: RFC 6749 5.2 {:?}", err);
+                                return Err(Error::ApiInsufficientRights(
+                                    "Unable to extend login session: the authorization was revoked for this user, client or action.".to_string(),
+                                ));
+                            }
+                            // The Extension Type Errors are used by the try_refresh_token
+                            // method to signal generic problems with either the current
+                            // token, or the freshly received one. Additionally the two
+                            // error responses from [Errata for RFC 6749]
+                            // (https://www.rfc-editor.org/errata/eid4745),
+                            // "temporarily_unavailable" and "server_error", end up here.
+                            CoreErrorResponseType::Extension(err) => match err.as_str() {
+                                "temporarily_unavailable" | "server_error" => {
+                                    warn!("OpenID Connect: RFC 6749 5.2 {:?}", err);
+                                    return Err(Error::ApiAuthTransientError(
+                                        "Unable to extend login session: could not contact the provider".to_string(),
+                                    ));
+                                }
+                                _ => {
+                                    warn!("OpenID Connect: RFC 6749 5.2 unknown error {:?}", err);
+                                    return Err(Error::ApiAuthTransientError(
+                                        "Unable to extend login session: unknown error".to_string(),
+                                    ));
+                                }
+                            },
+                        }
+                    }
+                };
+
+                Ok(Some(ActorDef::user(session.id, session.attributes, Some(new_auth))))
             }
             _ => Ok(None),
         };
@@ -744,7 +862,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
             // See: https://tools.ietf.org/html/rfc6749#section-4.1
             //      https://openid.net/specs/openid-connect-core-1_0.html#CodeFlowSteps
             // TODO: use _state.
-            Some(Auth::AuthorizationCode(code, _state, nonce)) => {
+            Some(Auth::AuthorizationCode { code, state: _, nonce }) => {
                 // ==========================================================================================
                 // Step 1: exchange the temporary (e.g. valid for 10 minutes or
                 // something like that) OAuth2 authorization code for an OAuth2

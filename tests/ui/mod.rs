@@ -12,7 +12,7 @@ use krill::test::*;
 pub async fn run_krill_ui_test(test_name: &str, _with_openid_server: bool, testbed_enabled: bool) {
     #[cfg(feature = "multi-user")]
     let mock_server_join_handle = if _with_openid_server {
-        openid_connect_mock::start().await
+        openid_connect_mock::start(1).await
     } else {
         None
     };
