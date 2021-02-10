@@ -862,7 +862,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
             // See: https://tools.ietf.org/html/rfc6749#section-4.1
             //      https://openid.net/specs/openid-connect-core-1_0.html#CodeFlowSteps
             // TODO: use _state.
-            Some(Auth::AuthorizationCode(code, _state, nonce)) => {
+            Some(Auth::AuthorizationCode { code, state: _, nonce }) => {
                 // ==========================================================================================
                 // Step 1: exchange the temporary (e.g. valid for 10 minutes or
                 // something like that) OAuth2 authorization code for an OAuth2
