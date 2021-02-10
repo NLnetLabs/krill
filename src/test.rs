@@ -73,7 +73,7 @@ pub async fn server_ready(uri: &str) -> bool {
     false
 }
 
-fn test_config(dir: &PathBuf) -> Config {
+pub fn test_config(dir: &PathBuf) -> Config {
     crate::constants::enable_test_mode();
     crate::constants::enable_test_announcements();
     Config::test(dir)

@@ -25,16 +25,19 @@
 # are able to authenticate but for whom no role mapping exists, will not be
 # permitted to login to the UI or to use the REST API.
 #
-role_allow(some_role, "LOGIN", _) if
-    not some_role = nil;
+
+# TODO: Oso maps to Option::<T>::None in Rust, but role_allow is only ever called
+# with an instance of Actor, not with an Option, so this won't match?
+role_allow(some_role, action: Permission, _) if
+    not some_role = nil and action = new Permission("LOGIN");
 
 ### TEST: [
 # Actors with a role can login.
-?= role_allow("some role", "LOGIN", _);
+?= role_allow("some role", new Permission("LOGIN"), _);
 # Conversely, actors without a role cannot do anything.
-?= not role_allow(nil, "LOGIN", _);
+?= not role_allow(nil, new Permission("LOGIN"), _);
 ?= not role_allow(nil, nil, nil);
-?= not role_allow(nil, _, _);
+# ?= not role_allow(nil, _, _);
 ### ]
 
 
@@ -43,58 +46,56 @@ role_allow(some_role, "LOGIN", _) if
 role_allow("admin", _action, _resource);
 
 ### TEST: [
-?= role_allow("admin", _, _);
+# ?= role_allow("admin", _, _);
 ?= role_allow("admin", "take over", "the world");
 ?= not role_allow("other", "take over", "the world");
-?= role_allow("admin", "CA_CREATE", "/api/v1/cas");
+?= role_allow("admin", new Permission("CA_CREATE"), "/api/v1/cas");
 ### ]
 
 
 # The readonly role has the following rights:
 # -------------------------------------------
-role_allow("readonly", action, _resource) if
+role_allow("readonly", action: Permission, _resource) if
     action in [
-        "CA_LIST",
-        "CA_READ",
-        "PUB_LIST",
-        "PUB_READ",
-        "ROUTES_READ",
-        "ROUTES_ANALYSIS"
+        new Permission("CA_LIST"),
+        new Permission("CA_READ"),
+        new Permission("PUB_LIST"),
+        new Permission("PUB_READ"),
+        new Permission("ROUTES_READ"),
+        new Permission("ROUTES_ANALYSIS")
     ];
 
 ### TEST: [
-?= role_allow("readonly", "CA_LIST", _);
-?= role_allow("readonly", "CA_READ", "some resource");
-?= not role_allow("readonly", "CA_CREATE", _);
-?= not role_allow("readonly", "CA_CREATE", "some resource");
+?= role_allow("readonly", new Permission("CA_LIST"), _);
+?= role_allow("readonly", new Permission("CA_READ"), "some resource");
+?= not role_allow("readonly", new Permission("CA_CREATE"), _);
+?= not role_allow("readonly", new Permission("CA_CREATE"), "some resource");
 # etc
 ### ]
 
 
 # The readwrite role has the following rights:
 # --------------------------------------------
-role_allow("readwrite", action, _resource) if
+role_allow("readwrite", action: Permission, _resource) if
     action in [
-        "CA_LIST",
-        "CA_READ",
-        "CA_CREATE",
-        "CA_UPDATE",
-        "PUB_LIST",
-        "PUB_READ",
-        "PUB_CREATE",
-        "PUB_UPDATE",
-        "PUB_DELETE",
-        "ROUTES_READ",
-        "ROUTES_ANALYSIS",
-        "ROUTES_UPDATE",
-        "ROUTES_TRY_UPDATE"
+        new Permission("CA_LIST"),
+        new Permission("CA_READ"),
+        new Permission("CA_CREATE"),
+        new Permission("CA_UPDATE"),
+        new Permission("PUB_LIST"),
+        new Permission("PUB_READ"),
+        new Permission("PUB_CREATE"),
+        new Permission("PUB_DELETE"),
+        new Permission("ROUTES_READ"),
+        new Permission("ROUTES_ANALYSIS"),
+        new Permission("ROUTES_UPDATE")
     ];
 
 ### TEST: [
-?= role_allow("readwrite", "CA_LIST", _);
-?= role_allow("readwrite", "CA_READ", "some resource");
-?= role_allow("readwrite", "CA_CREATE", _);
-?= role_allow("readwrite", "CA_CREATE", "some resource");
+?= role_allow("readwrite", new Permission("CA_LIST"), _);
+?= role_allow("readwrite", new Permission("CA_READ"), "some resource");
+?= role_allow("readwrite", new Permission("CA_CREATE"), _);
+?= role_allow("readwrite", new Permission("CA_CREATE"), "some resource");
 # etc
 ### ]
 
@@ -104,20 +105,20 @@ role_allow("readwrite", action, _resource) if
 # Note: The testbed role is a special case which is automatically assigned
 # temporarily to anonymous users accessing the testbed UI/API. It should not be
 # used outside of this file.
-role_allow("testbed", action, _resource) if
+role_allow("testbed", action: Permission, _resource) if
     action in [
-        "CA_READ",
-        "CA_UPDATE",
-        "PUB_READ",
-        "PUB_CREATE",
-        "PUB_DELETE",
-        "PUB_ADMIN"
+        new Permission("CA_READ"),
+        new Permission("CA_UPDATE"),
+        new Permission("PUB_READ"),
+        new Permission("PUB_CREATE"),
+        new Permission("PUB_DELETE"),
+        new Permission("PUB_ADMIN")
     ];
 
 ### TEST: [
-?= role_allow("testbed", "CA_READ", _);
-?= role_allow("testbed", "CA_UPDATE", "some resource");
-?= role_allow("testbed", "PUB_ADMIN", _);
-?= not role_allow("testbed", "ROUTES_UPDATE", _);
+?= role_allow("testbed", new Permission("CA_READ"), _);
+?= role_allow("testbed", new Permission("CA_UPDATE"), "some resource");
+?= role_allow("testbed", new Permission("PUB_ADMIN"), _);
+?= not role_allow("testbed", new Permission("ROUTES_UPDATE"), _);
 # etc
 ### ]

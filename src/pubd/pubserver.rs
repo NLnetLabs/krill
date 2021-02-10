@@ -51,14 +51,40 @@ impl PubServer {
     ) -> Result<Option<Self>, Error> {
         let mut pub_server_dir = config.data_dir.clone();
         pub_server_dir.push(PUBSERVER_DIR);
-        if pub_server_dir.exists() {
-            let server = PubServer::build(config, signer, actor)?;
-            if server.publishers()?.is_empty() {
-                let _result = fs::remove_dir_all(pub_server_dir);
-                Ok(None)
-            } else {
-                Ok(Some(server))
-            }
+
+        let mut repo_instance_dir = pub_server_dir.clone();
+        repo_instance_dir.push(PUBSERVER_DFLT);
+
+        let mut backup_pub_server_dir = config.data_dir.clone();
+        backup_pub_server_dir.push(PUBSERVER_BACKUP_DIR);
+        
+        let mut corrupt_error_msg = "Could not start pre-existing repository server. This points at a corrupted data directory from an old installation.\n".to_string();
+        corrupt_error_msg.push_str("However, It looks like your configuration does not require that your run your own repository server.\n");
+        corrupt_error_msg.push_str(&format!("Krill will now make a backup of this directory at {}\n", backup_pub_server_dir.to_string_lossy()));
+        corrupt_error_msg.push_str("If you do not need to run your own repository you may delete this directory and just start Krill again.\n");
+        corrupt_error_msg.push_str("If do need to run your own repository then please use your previous installation and contact us at 'rpki-team@nlnetlabs.nl'.\n");
+
+        if repo_instance_dir.exists() {            
+            if let Ok(server) = PubServer::build(config, signer, actor) {
+                if server.publishers()?.is_empty() {
+                    info!("Removing unused repository server directory. Use 'krillpubd' if you need to run a repository.");
+                    let _result = fs::remove_dir_all(pub_server_dir);
+                    Ok(None)
+                } else {
+                    warn!("Using pre-existing repository server. Note this will be DEPRECATED. You should use 'krillpubd' in future. See Changelog.md");
+                    Ok(Some(server))
+                }
+             } else {
+                 if let Err(e) = fs::rename(pub_server_dir, backup_pub_server_dir) {
+                    corrupt_error_msg.push_str(&format!("Oops, COULD NOT MAKE BACKUP: {}", e));
+                 }
+
+                 Err(Error::Custom(corrupt_error_msg))                
+             }
+        } else if pub_server_dir.exists() {
+            info!("Removing unused repository server directory. Use 'krillpubd' if you need to run a repository.");
+            let _result = fs::remove_dir_all(pub_server_dir);
+            Ok(None)
         } else {
             Ok(None)
         }

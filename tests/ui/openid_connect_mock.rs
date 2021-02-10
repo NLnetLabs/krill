@@ -12,10 +12,12 @@
 //! [openid-connect-discovery-1_0]: https://openid.net/specs/openid-connect-discovery-1_0.html
 //! [openid-connect-rpinitiated-1_0]: https://openid.net/specs/openid-connect-rpinitiated-1_0.html
 
+use log::{error, info, trace, warn};
 use openidconnect::core::*;
 use openidconnect::PrivateSigningKey;
 use openidconnect::*;
 use openssl::rsa::Rsa;
+use serde::ser::{Serialize as SerdeSerialize, SerializeStruct, Serializer as SerdeSerializer};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -93,6 +95,57 @@ type CustomIdTokenFields = IdTokenFields<
 type CustomTokenResponse = StandardTokenResponse<CustomIdTokenFields, CoreTokenType>;
 // end cascade
 
+// This failure mode can be invoked for a user at user creation time.
+// The failure mode will be activated on a 'refresh_token' request
+// from Krill to the OIDC Provider
+#[derive(Clone, Debug)]
+enum RefreshTokenFailureMode {
+    // These are the RFC 6749 5.2 Errors
+    InvalidRequestErrorResponse,
+    InvalidClientErrorResponse,
+    InvalidGrantErrorResponse,
+    InvalidScopeErrorResponse,
+    UnauthorizedClientErrorResponse,
+    UnsupportedGrantTypeErrorResponse,
+    // These are various generic failure modes,
+    // without OAUTH/OpenID Connect specific errors
+    NoResponse,
+    SlowResponse(Duration),
+    Error500Response,
+    Error503Response,
+}
+
+impl SerdeSerialize for RefreshTokenFailureMode {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: SerdeSerializer,
+    {
+        let mut state = serializer.serialize_struct("Error", 0)?;
+        match self {
+            RefreshTokenFailureMode::InvalidRequestErrorResponse => {
+                state.serialize_field("error", "invalid_request")?
+            }
+            RefreshTokenFailureMode::InvalidClientErrorResponse => state.serialize_field("error", "invalid_client")?,
+            RefreshTokenFailureMode::InvalidGrantErrorResponse => state.serialize_field("error", "invalid_grant")?,
+            RefreshTokenFailureMode::UnauthorizedClientErrorResponse => {
+                state.serialize_field("error", "unauthorized_client")?
+            }
+            RefreshTokenFailureMode::InvalidScopeErrorResponse => state.serialize_field("error", "invalid_scope")?,
+            RefreshTokenFailureMode::UnsupportedGrantTypeErrorResponse => {
+                state.serialize_field("error", "unsupported_grant_type")?
+            }
+            _ => state.serialize_field("error", "unknown_error")?,
+        }
+        state.end()
+    }
+}
+
+impl Default for RefreshTokenFailureMode {
+    fn default() -> Self {
+        RefreshTokenFailureMode::InvalidRequestErrorResponse
+    }
+}
+
 #[derive(Clone, Default)]
 struct KnownUser {
     role: Option<&'static str>,
@@ -100,6 +153,7 @@ struct KnownUser {
     exc_cas: Option<&'static str>,
     token_secs: Option<u32>,
     refresh: bool,
+    on_refresh_token_failure: Option<RefreshTokenFailureMode>,
 }
 
 struct TempAuthzCodeDetails {
@@ -125,7 +179,27 @@ type KnownUsers = HashMap<KnownUserId, KnownUser>;
 const DEFAULT_TOKEN_DURATION_SECS: u32 = 3600;
 static MOCK_OPENID_CONNECT_SERVER_RUNNING_FLAG: AtomicBool = AtomicBool::new(false);
 
-pub async fn start(config: OpenIDConnectMockMode) -> task::JoinHandle<()> {
+#[tokio::main]
+pub async fn main() {
+    // Log to stdout.
+    let _logger = fern::Dispatch::new()
+        .format(move |out, message, record| {
+            out.finish(format_args!(
+                "{} [{}] {}",
+                chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+                record.level(),
+                message
+            ))
+        })
+        .level(log::LevelFilter::Trace)
+        .chain(std::io::stdout())
+        .apply()
+        .map_err(|e| format!("Failed to init stderr logging: {}", e));
+
+    start(OpenIDConnectMockMode::OIDCProviderWithRPInitiatedLogout, 2500).await;
+}
+
+pub async fn start(config: OpenIDConnectMockMode, delay_secs: u64) -> task::JoinHandle<()> {
     let join_handle = task::spawn_blocking(move || {
         run_mock_openid_connect_server(config);
     });
@@ -133,8 +207,8 @@ pub async fn start(config: OpenIDConnectMockMode) -> task::JoinHandle<()> {
     // wait for the mock OpenID Connect server to be up before continuing
     // otherwise Krill might fail to query its discovery endpoint
     while !MOCK_OPENID_CONNECT_SERVER_RUNNING_FLAG.load(Ordering::Relaxed) {
-        println!("Waiting for mock OpenID Connect server to start");
-        delay_for(Duration::from_secs(1)).await;
+        info!("Waiting for mock OpenID Connect server to start");
+        delay_for(Duration::from_secs(delay_secs)).await;
     }
 
     join_handle
@@ -207,6 +281,116 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
             KnownUser {
                 role: None,
                 exc_cas: Some("ta,testbed"),
+                ..Default::default()
+            },
+        );
+        known_users.insert(
+            "user-with-invalid-request-on-refresh",
+            KnownUser {
+                role: Some("readonly"),
+                exc_cas: Some("ta,testbed"),
+                token_secs: Some(5),
+                refresh: true,
+                on_refresh_token_failure: Some(RefreshTokenFailureMode::InvalidRequestErrorResponse),
+                ..Default::default()
+            },
+        );
+        known_users.insert(
+            "user-with-invalid-client-on-refresh",
+            KnownUser {
+                role: Some("readonly"),
+                exc_cas: Some("ta,testbed"),
+                token_secs: Some(5),
+                refresh: true,
+                on_refresh_token_failure: Some(RefreshTokenFailureMode::InvalidClientErrorResponse),
+                ..Default::default()
+            },
+        );
+        known_users.insert(
+            "user-with-invalid-grant-on-refresh",
+            KnownUser {
+                role: Some("readonly"),
+                exc_cas: Some("ta,testbed"),
+                token_secs: Some(5),
+                refresh: true,
+                on_refresh_token_failure: Some(RefreshTokenFailureMode::InvalidGrantErrorResponse),
+                ..Default::default()
+            },
+        );
+        known_users.insert(
+            "user-with-invalid-scope-on-refresh",
+            KnownUser {
+                role: Some("readonly"),
+                exc_cas: Some("ta,testbed"),
+                token_secs: Some(5),
+                refresh: true,
+                on_refresh_token_failure: Some(RefreshTokenFailureMode::InvalidScopeErrorResponse),
+                ..Default::default()
+            },
+        );
+        known_users.insert(
+            "user-with-unauthorized-client-on-refresh",
+            KnownUser {
+                role: Some("readonly"),
+                exc_cas: Some("ta,testbed"),
+                token_secs: Some(5),
+                refresh: true,
+                on_refresh_token_failure: Some(RefreshTokenFailureMode::UnauthorizedClientErrorResponse),
+                ..Default::default()
+            },
+        );
+        known_users.insert(
+            "user-with-unsupported-grant-type-on-refresh",
+            KnownUser {
+                role: Some("readonly"),
+                exc_cas: Some("ta,testbed"),
+                token_secs: Some(5),
+                refresh: true,
+                on_refresh_token_failure: Some(RefreshTokenFailureMode::UnsupportedGrantTypeErrorResponse),
+                ..Default::default()
+            },
+        );
+        known_users.insert(
+            "user-with-no-response-on-refresh",
+            KnownUser {
+                role: Some("readonly"),
+                exc_cas: Some("ta,testbed"),
+                token_secs: Some(5),
+                refresh: true,
+                on_refresh_token_failure: Some(RefreshTokenFailureMode::NoResponse),
+                ..Default::default()
+            },
+        );
+        known_users.insert(
+            "user-with-slow-response-on-refresh",
+            KnownUser {
+                role: Some("readonly"),
+                exc_cas: Some("ta,testbed"),
+                token_secs: Some(5),
+                refresh: true,
+                on_refresh_token_failure: Some(RefreshTokenFailureMode::SlowResponse(Duration::from_secs(25))),
+                ..Default::default()
+            },
+        );
+        known_users.insert(
+            "user-with-500-on-refresh",
+            KnownUser {
+                role: Some("readonly"),
+                exc_cas: Some("ta,testbed"),
+                token_secs: Some(5),
+                refresh: true,
+                on_refresh_token_failure: Some(RefreshTokenFailureMode::Error500Response),
+                ..Default::default()
+            },
+        );
+        known_users.insert(
+            "user-with-503-on-refresh",
+            KnownUser {
+                role: Some("readonly"),
+                exc_cas: Some("ta,testbed"),
+                token_secs: Some(5),
+                refresh: true,
+                on_refresh_token_failure: Some(RefreshTokenFailureMode::Error503Response),
                 ..Default::default()
             },
         );
@@ -297,10 +481,10 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
             let token_duration = user.token_secs.unwrap_or(DEFAULT_TOKEN_DURATION_SECS);
 
             if token_duration != DEFAULT_TOKEN_DURATION_SECS {
-                log_warning(&format!(
+                info!(
                     "Issuing token with non-default expiration time of {} seconds",
                     &token_duration
-                ));
+                );
             }
 
             Ok(token_duration)
@@ -676,11 +860,15 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
 
             // we skip over verifying the Authorization HTTP header but perhaps
             // we should make sure the client is sending that correctly?
+            trace!("grant: {:?}", &query_params.get("grant_type"));
+
             let r = match query_params.get("grant_type") {
                 Some(grant_type) if &grant_type[0] == "authorization_code" => {
                     if let Some(code) = query_params.get("code") {
                         let code = &code[0];
                         if let Some(authz_code) = authz_codes.remove(code) {
+                            trace!("client_id: {:?}", &authz_code.client_id);
+                            trace!("username: {:?}", &authz_code.username);
                             // find static user id
                             let session = LoginSession {
                                 id: known_users
@@ -742,10 +930,53 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
                 Some(grant_type) if &grant_type[0] == "refresh_token" => {
                     // we skip over verifying the Authorization HTTP header but perhaps
                     // we should make sure the client is sending that correctly?
+                    info!("client_id refreshing: {:?}", query_params);
                     if let Some(refresh_token) = query_params.get("refresh_token") {
                         let refresh_token = &refresh_token[0];
                         if let Some(session) = login_sessions.get(refresh_token) {
                             let user = get_user_for_session(&session, known_users)?;
+                            trace!("session: {:?}", &session.id);
+                            // Check the intentional failure responses we might want to
+                            // impose on users and return the apprioriate HTTP response.
+                            match user.on_refresh_token_failure {
+                                None => {}
+                                Some(RefreshTokenFailureMode::NoResponse) => {
+                                    trace!("Not responding to request");
+                                    thread::park();
+                                }
+                                Some(RefreshTokenFailureMode::SlowResponse(dur)) => {
+                                    trace!("Responding slowly after {} seconds", &dur.as_secs());
+                                    thread::sleep(dur);
+                                }
+                                Some(RefreshTokenFailureMode::Error500Response) => {
+                                    trace!("Responding with a 500");
+                                    return request
+                                        .respond(Response::empty(StatusCode(500)))
+                                        .map_err(|err| err.into());
+                                }
+                                Some(RefreshTokenFailureMode::Error503Response) => {
+                                    trace!("Responding with a 503");
+                                    return request
+                                        .respond(Response::empty(StatusCode(503)))
+                                        .map_err(|err| err.into());
+                                }
+                                Some(err_mode) => {
+                                    trace!(
+                                        "(Intentionally) returning error '{}' for user '{}'",
+                                        json!(err_mode),
+                                        &session.id
+                                    );
+                                    return request
+                                        .respond(
+                                            Response::empty(StatusCode(400))
+                                                .with_header(
+                                                    Header::from_str("Content-Type: application/json").unwrap(),
+                                                )
+                                                .with_data(json!(err_mode).to_string().as_bytes(), None),
+                                        )
+                                        .map_err(|err| err.into());
+                                }
+                            }
                             if user.refresh {
                                 let token_duration = get_token_duration_for_user(&user)?;
                                 let access_token = make_access_token()?;
@@ -776,17 +1007,50 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
                                     )
                                     .map_err(|err| err.into())
                             } else {
+                                trace!("Internal error for user '{:?}'", &user.role);
                                 Err(Error::custom(format!("Internal error: cowardly refusing to generate a new token for user '{}' that should not get refresh tokens", session.id)))
                             }
                         } else {
-                            Err(Error::custom(format!("Invalid refresh token '{}'", refresh_token)))
+                            warn!("Invalid refresh token: Responding with 'invalid_grant'");
+                            request
+                                .respond(
+                                    Response::empty(StatusCode(400))
+                                        .with_header(Header::from_str("Content-Type: application/json").unwrap())
+                                        .with_data(json!({"error":"invalid_grant"}).to_string().as_bytes(), None),
+                                )
+                                .map_err(|err| err.into())
                         }
                     } else {
-                        Err(Error::custom("Missing query parameter 'refresh_token'"))
+                        warn!("Missing query parameter 'refresh_token': Responding with 'invalid_request'");
+                        request
+                            .respond(
+                                Response::empty(StatusCode(400))
+                                    .with_header(Header::from_str("Content-Type: application/json").unwrap())
+                                    .with_data(json!({"error":"invalid_request"}).to_string().as_bytes(), None),
+                            )
+                            .map_err(|err| err.into())
                     }
                 }
-                Some(grant_type) => Err(Error::custom(format!("Unknown grant_type '{}'", &grant_type[0]))),
-                None => Err(Error::custom("Missing query parameter 'grant_type'")),
+                Some(grant_type) => {
+                    warn!("Unsupported grant type: {:?}", grant_type);
+                    request
+                        .respond(
+                            Response::empty(StatusCode(400))
+                                .with_header(Header::from_str("Content-Type: application/json").unwrap())
+                                .with_data(json!({"error":"unsupported_grant_type"}).to_string().as_bytes(), None),
+                        )
+                        .map_err(|err| err.into())
+                }
+                None => {
+                    warn!("Missing query parameter 'grant_type': Responding with 'invalid_request'");
+                    request
+                        .respond(
+                            Response::empty(StatusCode(400))
+                                .with_header(Header::from_str("Content-Type: application/json").unwrap())
+                                .with_data(json!({"error":"invalid_request"}).to_string().as_bytes(), None),
+                        )
+                        .map_err(|err| err.into())
+                }
             };
 
             // do this out here to avoid having both a mutable and immutable reference to login_sessions at the same
@@ -829,6 +1093,14 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
             known_users: &mut KnownUsers,
         ) -> Result<(), Error> {
             let url = urlparse(request.url());
+
+            trace!(
+                "request received: {:?} {:?} {:?}",
+                &request.method(),
+                &url.path,
+                &url.query
+            );
+
             // TODO: add some sort of mock server control interface for use by test scripts to control the test
             // conditions
             // TODO: add an endpoint for forcibly logging a session out by login id, so that the test client (which
@@ -883,16 +1155,8 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
             eprintln!("[MOCK OPENID CONNECT SERVER] ERROR: {}", err);
         }
 
-        fn log_warning(warning: &str) {
-            eprintln!("[MOCK OPENID CONNECT SERVER] WARNING: {}", warning);
-        }
-
-        fn log_info(msg: &str) {
-            println!("[MOCK OPENID CONNECT SERVER] {}", msg);
-        }
-
         let address = "127.0.0.1:1818";
-        log_info(&format!("Starting on {}", address));
+        info!("Mock OpenID Connect server: starting on {}", address);
 
         let server = Server::http(address).unwrap();
         MOCK_OPENID_CONNECT_SERVER_RUNNING_FLAG.store(true, Ordering::Relaxed);
@@ -912,15 +1176,15 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
                         &mut login_sessions,
                         &mut known_users,
                     ) {
-                        log_error(err);
+                        error!("{}", err);
                     }
                 }
                 Err(err) => {
-                    log_error(err.into());
+                    error!("{}", err);
                 }
             };
         }
 
-        log_info(&format!("Stopped"));
+        info!("Mock OpenID Connect: stopped");
     });
 }

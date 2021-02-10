@@ -27,7 +27,7 @@ pub async fn run_krill_ui_test(
     #[cfg(feature = "multi-user")]
     let op_handle = match openid_connect_mock_mode {
         OIDCProviderWillNotBeStarted => None,
-        _ => Some(openid_connect_mock::start(openid_connect_mock_mode).await),
+        _ => Some(openid_connect_mock::start(openid_connect_mock_mode, 1).await),
     };
 
     do_run_krill_ui_test(test_name, testbed_enabled).await;
