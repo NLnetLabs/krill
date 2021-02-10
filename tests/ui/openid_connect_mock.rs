@@ -778,16 +778,16 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
             } else {
                 match login_sessions.remove(&token) {
                     Some(removed_session) => {
-                        log_info(&format!("Token '{}' has been revoked", &token));
+                        info!("Token '{}' has been revoked", &token);
                         match known_users.remove(&removed_session.id) {
                             Some(_) => {
-                                log_info(&format!("User '{}' has been forgotten", &removed_session.id));
+                                info!("User '{}' has been forgotten", &removed_session.id);
                                 request
                                     .respond(Response::empty(StatusCode(200)))
                                     .map_err(|err| err.into())
                             }
                             None => {
-                                log_warning(&format!("User '{}' could NOT be forgotten", &token));
+                                warn!("User '{}' could NOT be forgotten", &token);
                                 request
                                     .respond(Response::empty(StatusCode(400)))
                                     .map_err(|err| err.into())
@@ -795,7 +795,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
                         }
                     }
                     None => {
-                        log_warning(&format!("Token '{}' could NOT be revoked: token is NOT known", &token));
+                        warn!("Token '{}' could NOT be revoked: token is NOT known", &token);
                         // From https://tools.ietf.org/html/rfc7009#section-2.2:
                         //   Note: invalid tokens do not cause an error response since the client
                         //   cannot handle such an error in a reasonable way.  Moreover, the
@@ -821,13 +821,13 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
 
             match known_users.get(username.as_str()) {
                 Some(_user) => {
-                    log_info(&format!("User '{}' is known", &username));
+                    info!("User '{}' is known", &username);
                     request
                         .respond(Response::empty(StatusCode(200)))
                         .map_err(|err| err.into())
                 }
                 None => {
-                    log_info(&format!("User '{}' is NOT known", &username));
+                    info!("User '{}' is NOT known", &username);
                     // See: https://tools.ietf.org/html/rfc6749#section-5.2
                     let err_body = json!({
                         "error": "invalid_grant"
@@ -1151,10 +1151,6 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
             return Err(Error::custom(format!("Unknown request: {:?}", request)));
         }
 
-        fn log_error(err: Error) {
-            eprintln!("[MOCK OPENID CONNECT SERVER] ERROR: {}", err);
-        }
-
         let address = "127.0.0.1:1818";
         info!("Mock OpenID Connect server: starting on {}", address);
 
@@ -1164,7 +1160,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
             match server.recv_timeout(Duration::new(1, 0)) {
                 Ok(None) => { /* no request received within the timeout */ }
                 Ok(Some(request)) => {
-                    log_info(&format!("Received {:?}", &request));
+                    info!("Received {:?}", &request);
                     if let Err(err) = handle_request(
                         &config,
                         request,
