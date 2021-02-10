@@ -14,8 +14,7 @@ RUN apk add rust cargo openssl-dev
 WORKDIR /tmp/krill
 COPY . .
 
-RUN cargo build --target x86_64-alpine-linux-musl --release --features multi-user
-
+RUN cargo build --target x86_64-alpine-linux-musl --release
 #
 # -- stage 2: create an image containing just the binaries, configs &
 #             scripts needed to run Krill, and not the things needed to build
