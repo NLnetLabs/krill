@@ -42,31 +42,30 @@ use crate::{
 //------------ Rfc8183Id ---------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[deprecated]
 pub struct Rfc8183Id {
-    key: KeyIdentifier, // convenient (and efficient) access
     cert: IdCert,
 }
 
 impl Rfc8183Id {
-    pub fn new(
-        key: KeyIdentifier, // convenient (and efficient) access
-        cert: IdCert,
-    ) -> Self {
-        Rfc8183Id { key, cert }
+    pub fn new(cert: IdCert) -> Self {
+        Rfc8183Id { cert }
     }
 
     pub fn generate(signer: &KrillSigner) -> KrillResult<Self> {
         let key = signer.create_key()?;
         let cert =
             IdCertBuilder::new_ta_id_cert(&key, signer.deref()).map_err(|e| Error::SignerError(e.to_string()))?;
-        Ok(Rfc8183Id { key, cert })
+        Ok(Rfc8183Id { cert })
     }
 }
 
 impl Rfc8183Id {
     pub fn key_hash(&self) -> String {
         self.cert.ski_hex()
+    }
+
+    pub fn key_id(&self) -> KeyIdentifier {
+        self.cert.subject_public_key_info().key_identifier()
     }
 }
 
@@ -410,8 +409,8 @@ impl CertAuth {
     pub fn id_cert(&self) -> &IdCert {
         &self.id.cert
     }
-    pub fn id_key(&self) -> &KeyIdentifier {
-        &self.id.key
+    pub fn id_key(&self) -> KeyIdentifier {
+        self.id.cert.subject_public_key_info().key_identifier()
     }
     pub fn handle(&self) -> &Handle {
         &self.handle
@@ -520,7 +519,7 @@ impl CertAuth {
     }
 
     pub fn sign_rfc6492_response(&self, msg: rfc6492::Message, signer: &KrillSigner) -> KrillResult<Bytes> {
-        let key = &self.id.key;
+        let key = &self.id.key_id();
         Ok(ProtocolCmsBuilder::create(key, signer, msg.into_bytes())
             .map_err(Error::signer)?
             .as_bytes())

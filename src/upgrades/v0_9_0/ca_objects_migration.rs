@@ -473,7 +473,7 @@ pub struct Rfc8183Id {
 
 impl From<Rfc8183Id> for ca::Rfc8183Id {
     fn from(old: Rfc8183Id) -> Self {
-        ca::Rfc8183Id::new(old.key, old.cert)
+        ca::Rfc8183Id::new(old.cert)
     }
 }
 

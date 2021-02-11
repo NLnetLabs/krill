@@ -831,7 +831,7 @@ impl CaServer {
                 let next_run_seconds = self.config.ca_refresh as i64;
 
                 match self
-                    .send_revoke_requests_rfc6492(revoke_requests, child.id_key(), parent_res)
+                    .send_revoke_requests_rfc6492(revoke_requests, &child.id_key(), parent_res)
                     .await
                 {
                     Err(e) => {
@@ -946,7 +946,7 @@ impl CaServer {
             ParentCaContact::Rfc6492(parent_res) => {
                 let uri = parent_res.service_uri().to_string();
                 match self
-                    .send_cert_requests_rfc6492(cert_requests, child.id_key(), &parent_res)
+                    .send_cert_requests_rfc6492(cert_requests, &child.id_key(), &parent_res)
                     .await
                 {
                     Err(e) => {
@@ -1134,7 +1134,7 @@ impl CaServer {
         let list = rfc6492::Message::list(sender, recipient);
 
         let response = self
-            .send_rfc6492_and_validate_response(child.id_key(), parent_res, list.into_bytes(), None)
+            .send_rfc6492_and_validate_response(&child.id_key(), parent_res, list.into_bytes(), None)
             .await?;
 
         match response {
@@ -1225,7 +1225,7 @@ impl CaServer {
 
         let response = self
             .send_procotol_msg_and_validate(
-                ca.id_key(),
+                &ca.id_key(),
                 repository.service_uri(),
                 repository.id_cert(),
                 rfc8181::CONTENT_TYPE,
