@@ -334,9 +334,3 @@ impl CurrentObject {
         &self.content
     }
 }
-
-impl From<CurrentObject> for crate::commons::api::CurrentObject {
-    fn from(old: CurrentObject) -> Self {
-        crate::commons::api::CurrentObject::new(old.content, old.serial, old.expires)
-    }
-}

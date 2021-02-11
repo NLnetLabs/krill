@@ -6,7 +6,7 @@ use std::convert::TryFrom;
 use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::{fmt, ops, str};
+use std::{fmt, str};
 
 use bytes::Bytes;
 use chrono::{Duration, TimeZone, Utc};
@@ -15,18 +15,17 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use rpki::cert::Cert;
 use rpki::crl::{Crl, CrlEntry};
 use rpki::crypto::KeyIdentifier;
-use rpki::manifest::{FileAndHash, Manifest};
+use rpki::manifest::Manifest;
 use rpki::resources::{AsBlocks, AsResources, IpBlocks, IpBlocksForFamily, IpResources};
 use rpki::roa::{Roa, RoaIpAddress};
 use rpki::uri;
 use rpki::x509::{Serial, Time};
 
-use crate::commons::api::publication::Publish;
-use crate::commons::api::{publication, EntitlementClass, Entitlements, RoaAggregateKey, SigningCert};
 use crate::commons::api::{
     Base64, ChildHandle, ErrorResponse, Handle, HexEncodedHash, IssuanceRequest, ParentCaContact, ParentHandle,
     RepositoryContact, RequestResourceLimit, RoaDefinition,
 };
+use crate::commons::api::{EntitlementClass, Entitlements, RoaAggregateKey, SigningCert};
 use crate::commons::crypto::IdCert;
 use crate::commons::util::ext_serde;
 use crate::daemon::ca::RouteAuthorization;
@@ -221,14 +220,6 @@ impl From<&Roa> for ReplacedObject {
     fn from(roa: &Roa) -> Self {
         let revocation = Revocation::from(roa.cert());
         let hash = HexEncodedHash::from_content(roa.to_captured().as_slice());
-        ReplacedObject { revocation, hash }
-    }
-}
-
-impl From<&CurrentObject> for ReplacedObject {
-    fn from(current: &CurrentObject) -> Self {
-        let revocation = Revocation::from(current);
-        let hash = current.to_hex_hash();
         ReplacedObject { revocation, hash }
     }
 }
@@ -565,96 +556,6 @@ impl CertifiedKeyInfo {
     }
 }
 
-//------------ CurrentObject -------------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[deprecated]
-pub struct CurrentObject {
-    content: Base64,
-    serial: Serial,
-    expires: Time,
-}
-
-impl CurrentObject {
-    pub fn new(content: Base64, serial: Serial, expires: Time) -> Self {
-        CurrentObject {
-            content,
-            serial,
-            expires,
-        }
-    }
-
-    pub fn content(&self) -> &Base64 {
-        &self.content
-    }
-    pub fn serial(&self) -> Serial {
-        self.serial
-    }
-    pub fn expires(&self) -> Time {
-        self.expires
-    }
-
-    pub fn to_hex_hash(&self) -> HexEncodedHash {
-        let bytes = self.content.to_bytes();
-        HexEncodedHash::from_content(bytes.as_ref())
-    }
-}
-
-impl From<&Cert> for CurrentObject {
-    fn from(cert: &Cert) -> Self {
-        let content = Base64::from(cert);
-        let serial = cert.serial_number();
-        let expires = cert.validity().not_after();
-        CurrentObject {
-            content,
-            serial,
-            expires,
-        }
-    }
-}
-
-impl From<&Crl> for CurrentObject {
-    fn from(crl: &Crl) -> Self {
-        let content = Base64::from(crl);
-        let serial = crl.crl_number(); // never revoked
-        let expires = crl.next_update();
-
-        CurrentObject {
-            content,
-            serial,
-            expires,
-        }
-    }
-}
-
-impl From<&Manifest> for CurrentObject {
-    fn from(mft: &Manifest) -> Self {
-        let content = Base64::from(mft);
-        let serial = mft.cert().serial_number();
-        let expires = mft.content().next_update();
-
-        CurrentObject {
-            content,
-            serial,
-            expires,
-        }
-    }
-}
-
-impl From<&Roa> for CurrentObject {
-    fn from(roa: &Roa) -> Self {
-        let content = Base64::from(roa);
-        let serial = roa.cert().serial_number();
-        let expires = roa.cert().validity().not_after();
-
-        CurrentObject {
-            content,
-            serial,
-            expires,
-        }
-    }
-}
-
 //------------ ObjectName ----------------------------------------------------
 
 /// This type is used to represent the (deterministic) file names for
@@ -739,95 +640,6 @@ impl Deref for ObjectName {
     }
 }
 
-//------------ CurrentObjects ------------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct CurrentObjects(HashMap<ObjectName, CurrentObject>);
-
-impl Default for CurrentObjects {
-    fn default() -> Self {
-        CurrentObjects(HashMap::new())
-    }
-}
-
-impl CurrentObjects {
-    pub fn insert(&mut self, name: ObjectName, object: CurrentObject) -> Option<CurrentObject> {
-        self.0.insert(name, object)
-    }
-
-    pub fn apply_delta(&mut self, delta: ObjectsDelta) {
-        for add in delta.added.into_iter() {
-            self.0.insert(add.name, add.object);
-        }
-        for upd in delta.updated.into_iter() {
-            self.0.insert(upd.name, upd.object);
-        }
-        for wdr in delta.withdrawn.into_iter() {
-            self.0.remove(&wdr.name);
-        }
-    }
-
-    pub fn deactivate(&mut self) {
-        self.0
-            .retain(|name, _| name.ends_with(".mft") || name.ends_with(".crl"))
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    pub fn names(&self) -> impl Iterator<Item = &ObjectName> {
-        self.0.keys()
-    }
-
-    pub fn object_for(&self, name: &ObjectName) -> Option<&CurrentObject> {
-        self.0.get(name)
-    }
-
-    /// Returns withdraws for all the objects in this set. E.g. when the resource
-    /// class containing this set is removed, or the key is destroyed.
-    pub fn withdraw(&self) -> Vec<WithdrawnObject> {
-        self.0
-            .iter()
-            .map(|(name, object)| WithdrawnObject::for_current(name.clone(), object))
-            .collect()
-    }
-
-    /// Returns publish's for all objects in this set.
-    pub fn publish(&self, base_uri: &RepoInfo, name_space: &str) -> Vec<Publish> {
-        let ca_repo = base_uri.ca_repository(name_space);
-        self.0
-            .iter()
-            .map(|(name, object)| Publish::new(None, ca_repo.join(name.as_bytes()), object.content.clone()))
-            .collect()
-    }
-
-    /// Returns Manifest Entries, i.e. excluding the manifest itself
-    pub fn mft_entries(&self) -> Vec<FileAndHash<Bytes, Bytes>> {
-        self.0
-            .keys()
-            .filter(|k| !k.as_ref().ends_with("mft"))
-            .map(|k| {
-                let name_bytes = k.clone().into();
-                let hash_bytes = self.0[k].content.to_encoded_hash().as_bytes();
-                FileAndHash::new(name_bytes, hash_bytes)
-            })
-            .collect()
-    }
-}
-
-impl ops::Add for CurrentObjects {
-    type Output = CurrentObjects;
-
-    fn add(self, other: CurrentObjects) -> CurrentObjects {
-        let mut map = self.0;
-        for (name, object) in other.0.into_iter() {
-            map.insert(name, object);
-        }
-        CurrentObjects(map)
-    }
-}
-
 //------------ Revocation ----------------------------------------------------
 
 /// A Crl Revocation. Note that this type differs from CrlEntry in
@@ -836,15 +648,6 @@ impl ops::Add for CurrentObjects {
 pub struct Revocation {
     serial: Serial,
     expires: Time,
-}
-
-impl From<&CurrentObject> for Revocation {
-    fn from(co: &CurrentObject) -> Self {
-        Revocation {
-            serial: co.serial(),
-            expires: co.expires(),
-        }
-    }
 }
 
 impl From<&Cert> for Revocation {
@@ -926,274 +729,6 @@ impl RevocationsDelta {
     }
     pub fn drop(&mut self, revocation: Revocation) {
         self.dropped.push(revocation);
-    }
-}
-
-//------------ CurrentObjectSet ----------------------------------------------
-
-/// This type describes the complete current set of objects for CA key.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct CurrentObjectSetInfo {
-    this_update: Time,
-    next_update: Time,
-    number: u64,
-    revocations: Revocations,
-    objects: CurrentObjects,
-}
-
-impl Default for CurrentObjectSetInfo {
-    fn default() -> Self {
-        CurrentObjectSetInfo {
-            this_update: Time::now(),
-            next_update: Time::tomorrow(),
-            number: 1,
-            revocations: Revocations::default(),
-            objects: CurrentObjects::default(),
-        }
-    }
-}
-
-impl CurrentObjectSetInfo {
-    pub fn number(&self) -> u64 {
-        self.number
-    }
-    pub fn revocations(&self) -> &Revocations {
-        &self.revocations
-    }
-    pub fn objects(&self) -> &CurrentObjects {
-        &self.objects
-    }
-}
-
-//------------ PublicationDelta ----------------------------------------------
-
-/// This type describes a set up of objects published for a CA key.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct PublicationDeltaInfo {
-    this_update: Time,
-    next_update: Time,
-    number: u64,
-    revocations: RevocationsDelta,
-    objects: ObjectsDelta,
-}
-
-impl PublicationDeltaInfo {
-    pub fn new(
-        this_update: Time,
-        next_update: Time,
-        number: u64,
-        revocations: RevocationsDelta,
-        objects: ObjectsDelta,
-    ) -> Self {
-        PublicationDeltaInfo {
-            this_update,
-            next_update,
-            number,
-            revocations,
-            objects,
-        }
-    }
-
-    pub fn unpack(self) -> (Time, Time, u64, RevocationsDelta, ObjectsDelta) {
-        (
-            self.this_update,
-            self.next_update,
-            self.number,
-            self.revocations,
-            self.objects,
-        )
-    }
-
-    pub fn objects(&self) -> &ObjectsDelta {
-        &self.objects
-    }
-}
-
-impl Into<publication::PublishDelta> for PublicationDeltaInfo {
-    fn into(self) -> publication::PublishDelta {
-        self.objects.into()
-    }
-}
-
-//------------ ObjectsDelta --------------------------------------------------
-
-/// This type defines the changes to be published under a resource class,
-/// so it includes the base 'ca_repo' and all objects that are added,
-/// updated, or withdrawn.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[deprecated] // CaObjects
-pub struct ObjectsDelta {
-    ca_repo: uri::Rsync,
-    added: Vec<AddedObject>,
-    updated: Vec<UpdatedObject>,
-    withdrawn: Vec<WithdrawnObject>,
-}
-
-impl ObjectsDelta {
-    /// Creates an empty ObjectsDelta for a key. Requires the ca_repo uri
-    /// for this key.
-    pub fn new(ca_repo: uri::Rsync) -> Self {
-        ObjectsDelta {
-            ca_repo,
-            added: vec![],
-            updated: vec![],
-            withdrawn: vec![],
-        }
-    }
-
-    pub fn add(&mut self, added: AddedObject) {
-        self.added.push(added);
-    }
-
-    pub fn added(&self) -> &Vec<AddedObject> {
-        &self.added
-    }
-
-    pub fn update(&mut self, updated: UpdatedObject) {
-        self.updated.push(updated);
-    }
-
-    pub fn updated(&self) -> &Vec<UpdatedObject> {
-        &self.updated
-    }
-
-    pub fn withdraw(&mut self, withdrawn: WithdrawnObject) {
-        self.withdrawn.push(withdrawn);
-    }
-
-    pub fn withdrawn(&self) -> &Vec<WithdrawnObject> {
-        &self.withdrawn
-    }
-
-    pub fn len(&self) -> usize {
-        self.added.len() + self.updated.len() + self.withdrawn.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.added.is_empty() && self.updated.is_empty() && self.withdrawn.is_empty()
-    }
-}
-
-impl Into<publication::PublishDelta> for ObjectsDelta {
-    fn into(self) -> publication::PublishDelta {
-        let mut builder = publication::PublishDeltaBuilder::new();
-
-        for a in self.added.into_iter() {
-            let publish = publication::Publish::new(None, self.ca_repo.join(a.name.as_bytes()), a.object.content);
-            builder.add_publish(publish);
-        }
-        for u in self.updated.into_iter() {
-            let update = publication::Update::new(None, self.ca_repo.join(u.name.as_bytes()), u.object.content, u.old);
-            builder.add_update(update);
-        }
-        for w in self.withdrawn.into_iter() {
-            let withdraw = publication::Withdraw::new(None, self.ca_repo.join(w.name.as_bytes()), w.hash);
-            builder.add_withdraw(withdraw);
-        }
-        builder.finish()
-    }
-}
-
-//------------ AddedObject ---------------------------------------------------
-
-/// An object that is newly added to the repository.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct AddedObject {
-    name: ObjectName,
-    object: CurrentObject,
-}
-
-impl AddedObject {
-    pub fn new(name: ObjectName, object: CurrentObject) -> Self {
-        AddedObject { name, object }
-    }
-
-    pub fn name(&self) -> &ObjectName {
-        &self.name
-    }
-
-    pub fn object(&self) -> &CurrentObject {
-        &self.object
-    }
-}
-
-impl From<&Cert> for AddedObject {
-    fn from(cert: &Cert) -> Self {
-        let name = ObjectName::from(cert);
-        let object = CurrentObject::from(cert);
-        AddedObject { name, object }
-    }
-}
-
-//------------ UpdatedObject -------------------------------------------------
-
-/// A new object that replaces an earlier version by this name.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct UpdatedObject {
-    name: ObjectName,
-    object: CurrentObject,
-    old: HexEncodedHash,
-}
-
-impl UpdatedObject {
-    pub fn new(name: ObjectName, object: CurrentObject, old: HexEncodedHash) -> Self {
-        UpdatedObject { name, object, old }
-    }
-
-    pub fn for_cert(new: &Cert, old: HexEncodedHash) -> Self {
-        let name = ObjectName::from(new);
-        let object = CurrentObject::from(new);
-        UpdatedObject { name, object, old }
-    }
-
-    pub fn name(&self) -> &ObjectName {
-        &self.name
-    }
-
-    pub fn object(&self) -> &CurrentObject {
-        &self.object
-    }
-
-    pub fn old(&self) -> &HexEncodedHash {
-        &self.old
-    }
-}
-
-//------------ WithdrawnObject -----------------------------------------------
-
-/// An object that is to be withdrawn from the repository.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct WithdrawnObject {
-    name: ObjectName,
-    hash: HexEncodedHash,
-}
-
-impl WithdrawnObject {
-    pub fn new(name: ObjectName, hash: HexEncodedHash) -> Self {
-        WithdrawnObject { name, hash }
-    }
-
-    pub fn for_current(name: ObjectName, current: &CurrentObject) -> Self {
-        WithdrawnObject {
-            name,
-            hash: current.to_hex_hash(),
-        }
-    }
-
-    pub fn name(&self) -> &ObjectName {
-        &self.name
-    }
-
-    pub fn hash(&self) -> &HexEncodedHash {
-        &self.hash
-    }
-}
-
-impl From<&Cert> for WithdrawnObject {
-    fn from(c: &Cert) -> Self {
-        let name = ObjectName::from(c);
-        let hash = HexEncodedHash::from_content(c.to_captured().as_slice());
-        WithdrawnObject { name, hash }
     }
 }
 

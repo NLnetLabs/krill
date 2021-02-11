@@ -24,8 +24,8 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            rrdp::PublishElement, AddedObject, Base64, CurrentObject, Handle, HexEncodedHash, IssuedCert, ObjectName,
-            RcvdCert, ResourceClassName, Revocation, Revocations, RevocationsDelta, UpdatedObject, WithdrawnObject,
+            rrdp::PublishElement, Base64, Handle, IssuedCert, ObjectName, RcvdCert, ResourceClassName, Revocation,
+            Revocations,
         },
         crypto::KrillSigner,
         error::Error,
@@ -905,14 +905,6 @@ impl BasicKeyObjectSet {
             .build_new_mft(&self.signing_cert, self.next(), timing, signer)
             .map(|m| m.into())
     }
-}
-
-//------------ AddedOrUpdated ----------------------------------------------
-
-#[deprecated]
-pub enum AddedOrUpdated {
-    Added(AddedObject),
-    Updated(UpdatedObject),
 }
 
 //------------ PublishedCert -----------------------------------------------
