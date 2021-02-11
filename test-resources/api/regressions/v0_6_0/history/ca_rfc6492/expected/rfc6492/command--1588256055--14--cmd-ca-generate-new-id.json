@@ -3,12 +3,12 @@
     "actor": "krill",
     "time": "2020-04-30T14:14:15.843668Z",
     "handle": "rfc6492",
-    "version": 18,
+    "version": 16,
     "sequence": 14,
     "details": "generate_new_id_key",
     "effect": {
       "events": [
-        18
+        16
       ]
     }
   },
@@ -16,7 +16,7 @@
     "Events": [
       {
         "id": "rfc6492",
-        "version": 18,
+        "version": 16,
         "details": {
           "id_updated": {
             "key": "DC396CC6EB42E00941FFAE11327AB7C659CF18D0",

@@ -87,7 +87,7 @@ pub async fn start_krill_daemon(config: Arc<Config>, mode: KrillMode) -> Result<
     test_data_dir(&config)?;
 
     // Call upgrade, this will only do actual work if needed.
-    pre_start_upgrade(&config.data_dir).map_err(|e| Error::Custom(format!("Could not upgrade Krill: {}", e)))?;
+    pre_start_upgrade(config.clone()).map_err(|e| Error::Custom(format!("Could not upgrade Krill: {}", e)))?;
 
     // Create the server, this will create the necessary data sub-directories if needed
     let krill = KrillServer::build(config.clone(), mode).await?;

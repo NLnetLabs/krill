@@ -1,25 +1,24 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use rpki::{crypto::KeyIdentifier, roa::Roa};
+use rpki::crypto::KeyIdentifier;
 
-use crate::commons::crypto::{IdCert, KrillSigner};
-use crate::commons::eventsourcing::StoredEvent;
-use crate::commons::KrillResult;
-use crate::commons::{
-    api::{
-        AddedObject, ChildHandle, Handle, IssuanceRequest, IssuedCert, ObjectName, ObjectsDelta, ParentCaContact,
-        ParentHandle, RcvdCert, RepoInfo, RepositoryContact, ResourceClassName, ResourceSet, Revocation,
-        RevocationRequest, RevokedObject, RoaAggregateKey, RtaName, TaCertDetails, UpdatedObject, WithdrawnObject,
+use crate::{
+    commons::{
+        api::{
+            ChildHandle, Handle, IssuanceRequest, IssuedCert, ObjectName, ParentCaContact, ParentHandle,
+            ParentResourceClassName, RcvdCert, RepoInfo, RepositoryContact, ResourceClassName, ResourceSet,
+            RevocationRequest, RevokedObject, RoaAggregateKey, RtaName, TaCertDetails,
+        },
+        crypto::{IdCert, KrillSigner},
+        eventsourcing::StoredEvent,
+        KrillResult,
     },
-    error::Error,
+    daemon::ca::{
+        AggregateRoaInfo, CertifiedKey, ChildDetails, PreparedRta, PublishedRoa, Rfc8183Id, RoaInfo,
+        RouteAuthorization, SignedRta,
+    },
 };
-use crate::daemon::ca::{
-    AggregateRoaInfo, CertifiedKey, ChildDetails, CurrentObjectSetDelta, PreparedRta, ResourceClass, Rfc8183Id,
-    RoaInfo, RouteAuthorization, SignedRta,
-};
-
-use super::PublishedRoa;
 
 //------------ Ini -----------------------------------------------------------
 
@@ -131,20 +130,16 @@ impl RoaUpdates {
     pub fn added_roas(&self) -> KrillResult<HashMap<ObjectName, PublishedRoa>> {
         let mut res = HashMap::new();
 
-        for simple in self.updated.values() {
-            let roa = Roa::decode(simple.object().content().to_bytes(), true)
-                .map_err(|e| Error::Custom(format!("Could not decode ROA in event, error: {}", e)))?;
-
-            let name = simple.name().clone();
+        for (auth, simple) in &self.updated {
+            let roa = simple.roa().clone();
+            let name = ObjectName::from(auth);
 
             res.insert(name, PublishedRoa::new(roa));
         }
 
-        for agg in self.aggregate_updated.values() {
-            let roa = Roa::decode(agg.roa().object().content().to_bytes(), true)
-                .map_err(|e| Error::Custom(format!("Could not decode ROA in event, error: {}", e)))?;
-
-            let name = agg.roa().name().clone();
+        for (agg_key, agg_info) in &self.aggregate_updated {
+            let roa = agg_info.roa_info().roa().clone();
+            let name = ObjectName::from(agg_key);
 
             res.insert(name, PublishedRoa::new(roa));
         }
@@ -161,85 +156,6 @@ impl RoaUpdates {
 
         for agg in self.aggregate_removed.keys() {
             res.push(ObjectName::from(agg))
-        }
-
-        res
-    }
-
-    pub fn added(&self) -> Vec<AddedObject> {
-        let mut res = vec![];
-        for (_auth, info) in self.updated.iter() {
-            if info.replaces().is_none() {
-                let object = info.object().clone();
-                let name = info.name().clone();
-                res.push(AddedObject::new(name, object));
-            }
-        }
-        for (_, info) in self.aggregate_updated.iter() {
-            if info.roa().replaces().is_none() {
-                let object = info.roa().object().clone();
-                let name = info.roa().name().clone();
-                res.push(AddedObject::new(name, object));
-            }
-        }
-
-        res
-    }
-
-    pub fn updated(&self) -> Vec<UpdatedObject> {
-        let mut res = vec![];
-        for (_auth, info) in self.updated.iter() {
-            if let Some(replaced) = info.replaces() {
-                let object = info.object().clone();
-                let name = info.name().clone();
-                res.push(UpdatedObject::new(name, object, replaced.hash().clone()));
-            }
-        }
-        for (_, info) in self.aggregate_updated.iter() {
-            if let Some(replaced) = info.roa().replaces() {
-                let object = info.roa().object().clone();
-                let name = info.roa().name().clone();
-                res.push(UpdatedObject::new(name, object, replaced.hash().clone()));
-            }
-        }
-        res
-    }
-
-    pub fn withdrawn(&self) -> Vec<WithdrawnObject> {
-        let mut res = vec![];
-        for (auth, revoked) in self.removed.iter() {
-            let name = ObjectName::from(auth);
-            let hash = revoked.hash().clone();
-            res.push(WithdrawnObject::new(name, hash));
-        }
-        for (key, revoked) in self.aggregate_removed.iter() {
-            let name = ObjectName::from(key);
-            let hash = revoked.hash().clone();
-            res.push(WithdrawnObject::new(name, hash));
-        }
-        res
-    }
-
-    pub fn revocations(&self) -> Vec<Revocation> {
-        let mut res = vec![];
-        for info in self.updated.values() {
-            if let Some(old) = info.replaces() {
-                res.push(old.revocation());
-            }
-        }
-
-        for agg in self.aggregate_updated.values() {
-            if let Some(old) = agg.roa().replaces() {
-                res.push(old.revocation());
-            }
-        }
-
-        for revoked in self.removed.values() {
-            res.push(revoked.revocation())
-        }
-
-        for revoked in self.aggregate_removed.values() {
-            res.push(revoked.revocation());
         }
 
         res
@@ -273,6 +189,10 @@ pub struct ChildCertificateUpdates {
 }
 
 impl ChildCertificateUpdates {
+    pub fn new(issued: Vec<IssuedCert>, removed: Vec<KeyIdentifier>) -> Self {
+        ChildCertificateUpdates { issued, removed }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.issued.is_empty() && self.removed.is_empty()
     }
@@ -320,19 +240,19 @@ pub enum CaEvtDet {
     IdUpdated(Rfc8183Id),
     ParentAdded(ParentHandle, ParentCaContact),
     ParentUpdated(ParentHandle, ParentCaContact),
-    ParentRemoved(ParentHandle, Vec<ObjectsDelta>),
+    ParentRemoved(ParentHandle),
 
-    ResourceClassAdded(ResourceClassName, ResourceClass),
-    ResourceClassRemoved(ResourceClassName, ObjectsDelta, ParentHandle, Vec<RevocationRequest>),
+    ResourceClassAdded(ResourceClassName, ParentHandle, ParentResourceClassName, KeyIdentifier),
+    ResourceClassRemoved(ResourceClassName, ParentHandle, Vec<RevocationRequest>),
     CertificateRequested(ResourceClassName, IssuanceRequest, KeyIdentifier),
     CertificateReceived(ResourceClassName, KeyIdentifier, RcvdCert),
 
     // Key life cycle
     KeyRollPendingKeyAdded(ResourceClassName, KeyIdentifier),
-    KeyPendingToNew(ResourceClassName, CertifiedKey, ObjectsDelta),
-    KeyPendingToActive(ResourceClassName, CertifiedKey, ObjectsDelta),
+    KeyPendingToNew(ResourceClassName, CertifiedKey),
+    KeyPendingToActive(ResourceClassName, CertifiedKey),
     KeyRollActivated(ResourceClassName, RevocationRequest),
-    KeyRollFinished(ResourceClassName, ObjectsDelta),
+    KeyRollFinished(ResourceClassName),
     UnexpectedKeyFound(ResourceClassName, RevocationRequest),
 
     // Route Authorizations
@@ -341,7 +261,6 @@ pub enum CaEvtDet {
     RoasUpdated(ResourceClassName, RoaUpdates),
 
     // Publishing
-    ObjectSetUpdated(ResourceClassName, HashMap<KeyIdentifier, CurrentObjectSetDelta>),
     RepoUpdated(RepositoryContact),
     RepoCleaned(RepositoryContact),
 
@@ -377,13 +296,8 @@ impl CaEvtDet {
     }
 
     /// This marks a parent as removed
-    pub(super) fn parent_removed(
-        handle: &Handle,
-        version: u64,
-        parent_handle: ParentHandle,
-        withdraws: Vec<ObjectsDelta>,
-    ) -> CaEvt {
-        StoredEvent::new(handle, version, CaEvtDet::ParentRemoved(parent_handle, withdraws))
+    pub(super) fn parent_removed(handle: &Handle, version: u64, parent_handle: ParentHandle) -> CaEvt {
+        StoredEvent::new(handle, version, CaEvtDet::ParentRemoved(parent_handle))
     }
 
     /// This marks a resource class as added under a parent for the CA.
@@ -391,12 +305,14 @@ impl CaEvtDet {
         handle: &Handle,
         version: u64,
         class_name: ResourceClassName,
-        resource_class: ResourceClass,
+        parent: ParentHandle,
+        parent_class_name: ParentResourceClassName,
+        pending_key: KeyIdentifier,
     ) -> CaEvt {
         StoredEvent::new(
             handle,
             version,
-            CaEvtDet::ResourceClassAdded(class_name, resource_class),
+            CaEvtDet::ResourceClassAdded(class_name, parent, parent_class_name, pending_key),
         )
     }
 
@@ -405,14 +321,13 @@ impl CaEvtDet {
         handle: &Handle,
         version: u64,
         class_name: ResourceClassName,
-        delta: ObjectsDelta,
         parent: ParentHandle,
         revocations: Vec<RevocationRequest>,
     ) -> CaEvt {
         StoredEvent::new(
             handle,
             version,
-            CaEvtDet::ResourceClassRemoved(class_name, delta, parent, revocations),
+            CaEvtDet::ResourceClassRemoved(class_name, parent, revocations),
         )
     }
 
@@ -464,15 +379,6 @@ impl CaEvtDet {
 
     pub(super) fn child_removed(handle: &Handle, version: u64, child: ChildHandle) -> CaEvt {
         StoredEvent::new(handle, version, CaEvtDet::ChildRemoved(child))
-    }
-
-    pub(super) fn current_set_updated(
-        handle: &Handle,
-        version: u64,
-        rcn: ResourceClassName,
-        deltas: HashMap<KeyIdentifier, CurrentObjectSetDelta>,
-    ) -> CaEvt {
-        StoredEvent::new(handle, version, CaEvtDet::ObjectSetUpdated(rcn, deltas))
     }
 }
 
@@ -548,10 +454,10 @@ impl fmt::Display for CaEvtDet {
                 };
                 write!(f, "updated parent '{}' contact to '{}' ", parent, contact_str)
             }
-            CaEvtDet::ParentRemoved(parent, _deltas) => write!(f, "removed parent '{}'", parent),
+            CaEvtDet::ParentRemoved(parent) => write!(f, "removed parent '{}'", parent),
 
-            CaEvtDet::ResourceClassAdded(rcn, _) => write!(f, "added resource class with name '{}'", rcn),
-            CaEvtDet::ResourceClassRemoved(rcn, _, parent, _) => write!(
+            CaEvtDet::ResourceClassAdded(rcn, _, _, _) => write!(f, "added resource class with name '{}'", rcn),
+            CaEvtDet::ResourceClassRemoved(rcn, parent, _) => write!(
                 f,
                 "removed resource class with name '{}' under parent '{}'",
                 rcn, parent
@@ -571,13 +477,13 @@ impl fmt::Display for CaEvtDet {
             CaEvtDet::KeyRollPendingKeyAdded(rcn, ki) => {
                 write!(f, "key roll: added pending key '{}' under resource class '{}'", ki, rcn)
             }
-            CaEvtDet::KeyPendingToNew(rcn, key, _) => write!(
+            CaEvtDet::KeyPendingToNew(rcn, key) => write!(
                 f,
                 "key roll: moving pending key '{}' to new state under resource class '{}'",
                 key.key_id(),
                 rcn
             ),
-            CaEvtDet::KeyPendingToActive(rcn, key, _) => write!(
+            CaEvtDet::KeyPendingToActive(rcn, key) => write!(
                 f,
                 "activating pending key '{}' under resource class '{}'",
                 key.key_id(),
@@ -589,7 +495,7 @@ impl fmt::Display for CaEvtDet {
                 revoke.key(),
                 rcn
             ),
-            CaEvtDet::KeyRollFinished(rcn, _) => write!(f, "key roll: finished for resource class '{}'", rcn),
+            CaEvtDet::KeyRollFinished(rcn) => write!(f, "key roll: finished for resource class '{}'", rcn),
             CaEvtDet::UnexpectedKeyFound(rcn, revoke) => write!(
                 f,
                 "Found unexpected key in resource class '{}', will try to revoke key id: '{}'",
@@ -618,29 +524,6 @@ impl fmt::Display for CaEvtDet {
             }
 
             // Publishing
-            CaEvtDet::ObjectSetUpdated(rcn, key_objects_map) => {
-                write!(f, "updated objects under resource class '{}'", rcn)?;
-
-                for (key, delta) in key_objects_map.iter() {
-                    if !delta.objects().is_empty() {
-                        write!(f, " key: '{}'", key)?;
-                        write!(f, " added: ")?;
-                        for add in delta.objects().added() {
-                            write!(f, "{} ", add.name())?;
-                        }
-                        write!(f, " updated: ")?;
-                        for upd in delta.objects().updated() {
-                            write!(f, "{} ", upd.name())?;
-                        }
-                        write!(f, " withdrawn: ")?;
-                        for upd in delta.objects().withdrawn() {
-                            write!(f, "{} ", upd.name())?;
-                        }
-                    }
-                }
-
-                Ok(())
-            }
             CaEvtDet::RepoUpdated(updated) => match updated {
                 RepositoryContact::Embedded(_) => write!(f, "updated repository to embedded server"),
                 RepositoryContact::Rfc8181(res) => {

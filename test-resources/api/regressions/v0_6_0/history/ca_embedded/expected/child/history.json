@@ -93,10 +93,10 @@
         "msg": "Update received cert in RC '0', with resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
         "label": "cmd-ca-rcn-receive",
         "args": {
-          "ipv4_blocks": "1",
-          "class_name": "0",
-          "ipv6_blocks": "0",
           "asn_blocks": "0",
+          "class_name": "0",
+          "ipv4_blocks": "1",
+          "ipv6_blocks": "0",
           "resources": "asn: , v4: 10.0.0.0/16, v6: "
         }
       },
@@ -137,17 +137,16 @@
         "msg": "Update received cert in RC '0', with resources 'asn: 1 blocks, v4: 1 blocks, v6: 0 blocks'",
         "label": "cmd-ca-rcn-receive",
         "args": {
+          "asn_blocks": "1",
           "class_name": "0",
           "ipv4_blocks": "1",
           "ipv6_blocks": "0",
-          "asn_blocks": "1",
           "resources": "asn: AS65000, v4: 10.0.0.0/16, v6: "
         }
       },
       "effect": {
         "events": [
-          8,
-          9
+          8
         ]
       }
     },
@@ -156,7 +155,7 @@
       "actor": "krill",
       "timestamp": 1588257295668,
       "handle": "child",
-      "version": 10,
+      "version": 9,
       "sequence": 8,
       "summary": {
         "msg": "Update entitlements under parent 'ta': 0 => asn: 0 blocks, v4: 1 blocks, v6: 0 blocks ",
@@ -167,7 +166,7 @@
       },
       "effect": {
         "events": [
-          10
+          9
         ]
       }
     },
@@ -176,23 +175,22 @@
       "actor": "krill",
       "timestamp": 1588257296239,
       "handle": "child",
-      "version": 11,
+      "version": 10,
       "sequence": 9,
       "summary": {
         "msg": "Update received cert in RC '0', with resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
         "label": "cmd-ca-rcn-receive",
         "args": {
-          "ipv6_blocks": "0",
-          "class_name": "0",
           "asn_blocks": "0",
-          "resources": "asn: , v4: 10.0.0.0/24, v6: ",
-          "ipv4_blocks": "1"
+          "class_name": "0",
+          "ipv4_blocks": "1",
+          "ipv6_blocks": "0",
+          "resources": "asn: , v4: 10.0.0.0/24, v6: "
         }
       },
       "effect": {
         "events": [
-          11,
-          12
+          10
         ]
       }
     },
@@ -201,7 +199,7 @@
       "actor": "krill",
       "timestamp": 1588257296756,
       "handle": "child",
-      "version": 13,
+      "version": 11,
       "sequence": 10,
       "summary": {
         "msg": "Update entitlements under parent 'ta': ",
@@ -212,7 +210,7 @@
       },
       "effect": {
         "events": [
-          13
+          11
         ]
       }
     }

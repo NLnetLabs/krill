@@ -31,8 +31,8 @@
         "msg": "Add parent 'ta' as 'Embedded parent'",
         "label": "cmd-ca-parent-add",
         "args": {
-          "parent_contact": "Embedded parent",
-          "parent": "ta"
+          "parent": "ta",
+          "parent_contact": "Embedded parent"
         }
       },
       "effect": {
@@ -94,10 +94,10 @@
         "label": "cmd-ca-rcn-receive",
         "args": {
           "asn_blocks": "0",
-          "ipv6_blocks": "0",
           "class_name": "0",
-          "resources": "asn: , v4: 10.0.0.0/16, v6: ",
-          "ipv4_blocks": "1"
+          "ipv4_blocks": "1",
+          "ipv6_blocks": "0",
+          "resources": "asn: , v4: 10.0.0.0/16, v6: "
         }
       },
       "effect": {
@@ -125,8 +125,7 @@
         "events": [
           7,
           8,
-          9,
-          10
+          9
         ]
       }
     },
@@ -135,7 +134,7 @@
       "actor": "krill",
       "timestamp": 1588257442708,
       "handle": "child",
-      "version": 11,
+      "version": 10,
       "sequence": 7,
       "summary": {
         "msg": "Update repo to server at: https://localhost:3001/rfc8181/child",
@@ -146,10 +145,9 @@
       },
       "effect": {
         "events": [
+          10,
           11,
-          12,
-          13,
-          14
+          12
         ]
       }
     },
@@ -158,22 +156,22 @@
       "actor": "krill",
       "timestamp": 1588257444143,
       "handle": "child",
-      "version": 15,
+      "version": 13,
       "sequence": 8,
       "summary": {
         "msg": "Update received cert in RC '0', with resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
         "label": "cmd-ca-rcn-receive",
         "args": {
           "asn_blocks": "0",
-          "ipv6_blocks": "0",
-          "resources": "asn: , v4: 10.0.0.0/16, v6: ",
+          "class_name": "0",
           "ipv4_blocks": "1",
-          "class_name": "0"
+          "ipv6_blocks": "0",
+          "resources": "asn: , v4: 10.0.0.0/16, v6: "
         }
       },
       "effect": {
         "events": [
-          15
+          13
         ]
       }
     },
@@ -182,7 +180,7 @@
       "actor": "krill",
       "timestamp": 1588257444169,
       "handle": "child",
-      "version": 16,
+      "version": 14,
       "sequence": 9,
       "summary": {
         "msg": "Clean up old repository",
@@ -191,7 +189,7 @@
       },
       "effect": {
         "events": [
-          16
+          14
         ]
       }
     },
@@ -200,7 +198,7 @@
       "actor": "krill",
       "timestamp": 1588257444541,
       "handle": "child",
-      "version": 17,
+      "version": 15,
       "sequence": 10,
       "summary": {
         "msg": "Update repo to server at: https://localhost:3000/rfc8181/child",
@@ -211,10 +209,9 @@
       },
       "effect": {
         "events": [
-          17,
-          18,
-          19,
-          20
+          15,
+          16,
+          17
         ]
       }
     },
@@ -223,22 +220,22 @@
       "actor": "krill",
       "timestamp": 1588257445837,
       "handle": "child",
-      "version": 21,
+      "version": 18,
       "sequence": 11,
       "summary": {
         "msg": "Update received cert in RC '0', with resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
         "label": "cmd-ca-rcn-receive",
         "args": {
-          "resources": "asn: , v4: 10.0.0.0/16, v6: ",
-          "ipv4_blocks": "1",
-          "class_name": "0",
           "asn_blocks": "0",
-          "ipv6_blocks": "0"
+          "class_name": "0",
+          "ipv4_blocks": "1",
+          "ipv6_blocks": "0",
+          "resources": "asn: , v4: 10.0.0.0/16, v6: "
         }
       },
       "effect": {
         "events": [
-          21
+          18
         ]
       }
     },
@@ -247,7 +244,7 @@
       "actor": "krill",
       "timestamp": 1588257446682,
       "handle": "child",
-      "version": 22,
+      "version": 19,
       "sequence": 12,
       "summary": {
         "msg": "Clean up old repository",
@@ -256,7 +253,7 @@
       },
       "effect": {
         "events": [
-          22
+          19
         ]
       }
     }

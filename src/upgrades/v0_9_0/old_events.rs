@@ -1,23 +1,44 @@
-use std::{collections::HashMap, fmt};
+use std::{
+    collections::HashMap,
+    convert::{TryFrom, TryInto},
+    fmt,
+};
 
-use rpki::{crypto::KeyIdentifier, uri, x509::Time};
+use rpki::{
+    crypto::KeyIdentifier,
+    roa::Roa,
+    uri,
+    x509::{Serial, Time},
+};
 
 use crate::{
     commons::{
         api::{
-            ChildHandle, CurrentObject, HexEncodedHash, IssuanceRequest, IssuedCert, ObjectName, ParentCaContact,
-            ParentHandle, RcvdCert, ResourceClassName, ResourceSet, RevocationRequest, RevocationsDelta, RevokedObject,
-            RoaAggregateKey, RtaName, TaCertDetails,
+            Base64, ChildHandle, HexEncodedHash, IssuanceRequest, IssuedCert, ObjectName, ParentCaContact,
+            ParentHandle, RcvdCert, RepoInfo, ResourceClassName, ResourceSet, RevocationRequest, RevocationsDelta,
+            RevokedObject, RoaAggregateKey, RtaName, TaCertDetails,
         },
         crypto::IdCert,
         eventsourcing::StoredEvent,
     },
-    daemon::ca::{PreparedRta, RouteAuthorization, SignedRta},
+    daemon::ca::{self, CaEvt, CaEvtDet, PreparedRta, RouteAuthorization, SignedRta},
+    upgrades::UpgradeError,
 };
 
 use super::*;
 
 pub type OldEvt = StoredEvent<OldEvtDet>;
+
+impl OldEvt {
+    pub fn into_stored_ca_event(self, version: u64) -> Result<CaEvt, UpgradeError> {
+        let (id, _, details) = self.unpack();
+        Ok(CaEvt::new(&id, version, details.try_into()?))
+    }
+
+    pub fn needs_migration(&self) -> bool {
+        !matches!(self.details(), OldEvtDet::ObjectSetUpdated(_, _))
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
@@ -69,6 +90,59 @@ pub enum OldEvtDet {
     RtaSigned(RtaName, SignedRta),
 }
 
+impl TryFrom<OldEvtDet> for CaEvtDet {
+    type Error = UpgradeError;
+
+    fn try_from(old: OldEvtDet) -> Result<Self, Self::Error> {
+        let evt = match old {
+            OldEvtDet::TrustAnchorMade(ta_details) => CaEvtDet::TrustAnchorMade(ta_details),
+            OldEvtDet::ChildAdded(child, details) => {
+                CaEvtDet::ChildAdded(child, ca::ChildDetails::new(details.id_cert, details.resources))
+            }
+            OldEvtDet::ChildCertificateIssued(child, rcn, ki) => CaEvtDet::ChildCertificateIssued(child, rcn, ki),
+            OldEvtDet::ChildKeyRevoked(child, rcn, ki) => CaEvtDet::ChildKeyRevoked(child, rcn, ki),
+            OldEvtDet::ChildCertificatesUpdated(rcn, cert_updates) => {
+                CaEvtDet::ChildCertificatesUpdated(rcn, cert_updates.into())
+            }
+            OldEvtDet::ChildUpdatedIdCert(child, id_cert) => CaEvtDet::ChildUpdatedIdCert(child, id_cert),
+            OldEvtDet::ChildUpdatedResources(child, resources) => CaEvtDet::ChildUpdatedResources(child, resources),
+            OldEvtDet::ChildRemoved(child) => CaEvtDet::ChildRemoved(child),
+
+            OldEvtDet::IdUpdated(id) => CaEvtDet::IdUpdated(id.into()),
+            OldEvtDet::ParentAdded(parent, contact) => CaEvtDet::ParentAdded(parent, contact),
+            OldEvtDet::ParentUpdated(parent, contact) => CaEvtDet::ParentUpdated(parent, contact),
+            OldEvtDet::ParentRemoved(parent, _delta) => CaEvtDet::ParentRemoved(parent),
+
+            OldEvtDet::ResourceClassAdded(_rcn, rc) => rc.into_added_event()?,
+            OldEvtDet::ResourceClassRemoved(rcn, _delta, parent, revoke_reqs) => {
+                CaEvtDet::ResourceClassRemoved(rcn, parent, revoke_reqs)
+            }
+            OldEvtDet::CertificateRequested(rcn, req, ki) => CaEvtDet::CertificateRequested(rcn, req, ki),
+            OldEvtDet::CertificateReceived(rcn, ki, cert) => CaEvtDet::CertificateReceived(rcn, ki, cert),
+
+            OldEvtDet::KeyRollPendingKeyAdded(rcn, ki) => CaEvtDet::KeyRollPendingKeyAdded(rcn, ki),
+            OldEvtDet::KeyPendingToNew(rcn, key, _delta) => CaEvtDet::KeyPendingToNew(rcn, key.into()),
+            OldEvtDet::KeyPendingToActive(rcn, key, _delta) => CaEvtDet::KeyPendingToActive(rcn, key.into()),
+            OldEvtDet::KeyRollActivated(rcn, revoke_req) => CaEvtDet::KeyRollActivated(rcn, revoke_req),
+            OldEvtDet::KeyRollFinished(rcn, _delta) => CaEvtDet::KeyRollFinished(rcn),
+            OldEvtDet::UnexpectedKeyFound(rcn, revoke_req) => CaEvtDet::UnexpectedKeyFound(rcn, revoke_req),
+
+            OldEvtDet::RouteAuthorizationAdded(auth) => CaEvtDet::RouteAuthorizationAdded(auth),
+            OldEvtDet::RouteAuthorizationRemoved(auth) => CaEvtDet::RouteAuthorizationRemoved(auth),
+            OldEvtDet::RoasUpdated(rcn, roa_updates) => CaEvtDet::RoasUpdated(rcn, roa_updates.try_into()?),
+
+            OldEvtDet::ObjectSetUpdated(_, _) => unimplemented!("This event must not be migrated"),
+
+            OldEvtDet::RepoUpdated(contact) => CaEvtDet::RepoUpdated(contact.into()),
+            OldEvtDet::RepoCleaned(contact) => CaEvtDet::RepoCleaned(contact.into()),
+
+            OldEvtDet::RtaPrepared(name, prepared) => CaEvtDet::RtaPrepared(name, prepared),
+            OldEvtDet::RtaSigned(name, signed) => CaEvtDet::RtaSigned(name, signed),
+        };
+        Ok(evt)
+    }
+}
+
 impl fmt::Display for OldEvtDet {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "pre 0.9.0 event")
@@ -80,6 +154,12 @@ impl fmt::Display for OldEvtDet {
 pub struct ChildCertificateUpdates {
     issued: Vec<IssuedCert>,
     removed: Vec<KeyIdentifier>,
+}
+
+impl From<ChildCertificateUpdates> for ca::ChildCertificateUpdates {
+    fn from(old: ChildCertificateUpdates) -> Self {
+        ca::ChildCertificateUpdates::new(old.issued, old.removed)
+    }
 }
 
 impl ChildCertificateUpdates {
@@ -140,6 +220,37 @@ pub struct RoaUpdates {
     aggregate_removed: HashMap<RoaAggregateKey, RevokedObject>,
 }
 
+impl TryFrom<RoaUpdates> for ca::RoaUpdates {
+    type Error = UpgradeError;
+
+    fn try_from(old: RoaUpdates) -> Result<Self, UpgradeError> {
+        let mut updates = ca::RoaUpdates::default();
+        for (auth, info) in old.updated {
+            let roa = info.roa()?;
+            let roa_info = ca::RoaInfo::new(roa, info.since);
+            updates.update(auth, roa_info);
+        }
+
+        for (auth, revoke) in old.removed {
+            updates.remove(auth, revoke)
+        }
+
+        for (agg_key, agg_info) in old.aggregate_updated {
+            let roa = agg_info.roa.roa()?;
+            let roa_info = ca::RoaInfo::new(roa, agg_info.roa.since);
+            let authorizations = agg_info.authorizations;
+            let agg = ca::AggregateRoaInfo::new(authorizations, roa_info);
+            updates.update_aggregate(agg_key, agg);
+        }
+
+        for (agg_key, revoke) in old.aggregate_removed {
+            updates.remove_aggregate(agg_key, revoke);
+        }
+
+        Ok(updates)
+    }
+}
+
 impl RoaUpdates {
     #[allow(clippy::type_complexity)]
     pub fn unpack(
@@ -165,6 +276,12 @@ pub struct RoaInfo {
     name: ObjectName,                 // Name for object in repo
     since: Time,                      // first ROA in RC created
     replaces: Option<ReplacedObject>, // for revoking when re-newing
+}
+
+impl RoaInfo {
+    pub fn roa(&self) -> Result<Roa, UpgradeError> {
+        Roa::decode(self.object.content.to_bytes(), true).map_err(|_| UpgradeError::custom("Cannot parse existing ROA"))
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -202,5 +319,24 @@ impl OldIniDet {
 impl fmt::Display for OldIniDet {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Pre 0.9.0 CA init")
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CurrentObject {
+    content: Base64,
+    serial: Serial,
+    expires: Time,
+}
+
+impl CurrentObject {
+    pub fn content(&self) -> &Base64 {
+        &self.content
+    }
+}
+
+impl From<CurrentObject> for crate::commons::api::CurrentObject {
+    fn from(old: CurrentObject) -> Self {
+        crate::commons::api::CurrentObject::new(old.content, old.serial, old.expires)
     }
 }

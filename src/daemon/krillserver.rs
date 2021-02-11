@@ -237,9 +237,6 @@ impl KrillServer {
 
                     pubserver.create_publisher(req, &system_actor)?;
 
-                    // Force initial publication
-                    caserver.republish(&ta_handle, &system_actor).await?;
-
                     let testbed_ca_handle = testbed_ca_handle();
                     if !caserver.has_ca(&testbed_ca_handle)? {
                         info!("Creating embedded Testbed CA");
@@ -262,7 +259,6 @@ impl KrillServer {
                         caserver
                             .update_repo(testbed_ca_handle.clone(), repo_contact, &system_actor)
                             .await?;
-                        caserver.republish(&testbed_ca_handle, &system_actor).await?;
 
                         // Establish the TA (parent) <-> testbed CA (child) relationship
                         let testbed_ca_resources = ResourceSet::all_resources();

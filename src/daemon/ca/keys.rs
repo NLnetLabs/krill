@@ -1,6 +1,5 @@
 use std::ops::{Deref, DerefMut};
 
-use chrono::Duration;
 use serde::{Deserialize, Serialize};
 
 use rpki::crypto::KeyIdentifier;
@@ -14,8 +13,7 @@ use crate::commons::api::{
 use crate::commons::crypto::KrillSigner;
 use crate::commons::error::Error;
 use crate::commons::KrillResult;
-use crate::daemon::ca::{CaEvtDet, CurrentObjectSet, CurrentObjectSetDelta};
-use crate::daemon::config::IssuanceTimingConfig;
+use crate::daemon::ca::CaEvtDet;
 
 //------------ CertifiedKey --------------------------------------------------
 
@@ -25,25 +23,25 @@ use crate::daemon::config::IssuanceTimingConfig;
 pub struct CertifiedKey {
     key_id: KeyIdentifier,
     incoming_cert: RcvdCert,
-    current_set: CurrentObjectSet,
     request: Option<IssuanceRequest>,
 }
 
 impl CertifiedKey {
-    pub fn create(
-        incoming_cert: RcvdCert,
-        issuance_timing: &IssuanceTimingConfig,
-        signer: &KrillSigner,
-    ) -> KrillResult<Self> {
-        let key_id = incoming_cert.cert().subject_key_identifier();
-        let current_set = CurrentObjectSet::create(&incoming_cert, issuance_timing, signer)?;
-
-        Ok(CertifiedKey {
+    pub fn new(key_id: KeyIdentifier, incoming_cert: RcvdCert, request: Option<IssuanceRequest>) -> Self {
+        CertifiedKey {
             key_id,
             incoming_cert,
-            current_set,
+            request,
+        }
+    }
+
+    pub fn create(incoming_cert: RcvdCert) -> Self {
+        let key_id = incoming_cert.subject_key_identifier();
+        CertifiedKey {
+            key_id,
+            incoming_cert,
             request: None,
-        })
+        }
     }
 
     pub fn as_info(&self) -> CertifiedKeyInfo {
@@ -59,10 +57,6 @@ impl CertifiedKey {
     pub fn set_incoming_cert(&mut self, incoming_cert: RcvdCert) {
         self.request = None;
         self.incoming_cert = incoming_cert;
-    }
-
-    pub fn current_set(&self) -> &CurrentObjectSet {
-        &self.current_set
     }
 
     pub fn request(&self) -> Option<&IssuanceRequest> {
@@ -117,19 +111,6 @@ impl CertifiedKey {
             debug!("New not after time less than 10% after current time for for certificate for key '{}', not requesting a new certificate.", self.key_id);
             false
         }
-    }
-
-    pub fn close_to_next_update(&self, hours: i64) -> bool {
-        self.current_set.next_update() < Time::now() + Duration::hours(hours)
-    }
-
-    pub fn with_new_cert(mut self, cert: RcvdCert) -> Self {
-        self.incoming_cert = cert;
-        self
-    }
-
-    pub fn apply_delta(&mut self, delta: CurrentObjectSetDelta) {
-        self.current_set.apply_delta(delta)
     }
 }
 
@@ -286,28 +267,6 @@ impl KeyState {
         let ki = signer.get_key_info(key_id).map_err(Error::signer)?.key_identifier();
 
         Ok(RevocationRequest::new(class_name, ki))
-    }
-
-    pub fn apply_delta(&mut self, delta: CurrentObjectSetDelta, key_id: KeyIdentifier) {
-        match self {
-            KeyState::Pending(_pending) => panic!("Should never have delta for pending"),
-            KeyState::Active(current) => current.apply_delta(delta),
-            KeyState::RollPending(_pending, current) => current.apply_delta(delta),
-            KeyState::RollNew(new, current) => {
-                if new.key_id() == &key_id {
-                    new.apply_delta(delta)
-                } else {
-                    current.apply_delta(delta)
-                }
-            }
-            KeyState::RollOld(current, old) => {
-                if current.key_id() == &key_id {
-                    current.apply_delta(delta)
-                } else {
-                    old.apply_delta(delta)
-                }
-            }
-        }
     }
 
     pub fn make_entitlement_events(

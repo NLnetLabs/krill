@@ -164,19 +164,19 @@ impl eventsourcing::EventListener<CertAuth> for MessageQueue {
         let handle = event.handle();
 
         match event.details() {
-            CaEvtDet::ObjectSetUpdated(_, _)
-            | CaEvtDet::KeyPendingToNew(_, _, _)
-            | CaEvtDet::KeyPendingToActive(_, _, _)
-            | CaEvtDet::KeyRollFinished(_, _) => {
-                self.push_sync_repo(handle.clone());
-            }
+            CaEvtDet::RoasUpdated(_, _)
+            | CaEvtDet::ChildCertificatesUpdated(_, _)
+            | CaEvtDet::KeyPendingToNew(_, _)
+            | CaEvtDet::KeyPendingToActive(_, _)
+            | CaEvtDet::KeyRollActivated(_, _)
+            | CaEvtDet::KeyRollFinished(_) => self.push_sync_repo(handle.clone()),
 
-            CaEvtDet::ParentRemoved(parent, _) => {
+            CaEvtDet::ParentRemoved(parent) => {
                 self.drop_sync_parent(&handle, parent);
                 self.push_sync_repo(handle.clone());
             }
 
-            CaEvtDet::ResourceClassRemoved(class_name, _delta, parent, revocations) => {
+            CaEvtDet::ResourceClassRemoved(class_name, parent, revocations) => {
                 self.push_sync_repo(handle.clone());
 
                 let mut revocations_map = HashMap::new();

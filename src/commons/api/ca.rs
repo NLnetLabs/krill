@@ -22,7 +22,6 @@ use rpki::uri;
 use rpki::x509::{Serial, Time};
 
 use crate::commons::api::publication::Publish;
-use crate::commons::api::rrdp::PublishElement;
 use crate::commons::api::{publication, EntitlementClass, Entitlements, RoaAggregateKey, SigningCert};
 use crate::commons::api::{
     Base64, ChildHandle, ErrorResponse, Handle, HexEncodedHash, IssuanceRequest, ParentCaContact, ParentHandle,
@@ -41,6 +40,8 @@ use crate::daemon::ca::RouteAuthorization;
 pub struct ResourceClassName {
     name: Arc<str>,
 }
+
+pub type ParentResourceClassName = ResourceClassName;
 
 impl Default for ResourceClassName {
     fn default() -> ResourceClassName {
@@ -213,6 +214,14 @@ impl From<&Cert> for ReplacedObject {
 impl From<&IssuedCert> for ReplacedObject {
     fn from(issued: &IssuedCert) -> Self {
         Self::from(issued.cert())
+    }
+}
+
+impl From<&Roa> for ReplacedObject {
+    fn from(roa: &Roa) -> Self {
+        let revocation = Revocation::from(roa.cert());
+        let hash = HexEncodedHash::from_content(roa.to_captured().as_slice());
+        ReplacedObject { revocation, hash }
     }
 }
 
@@ -559,6 +568,7 @@ impl CertifiedKeyInfo {
 //------------ CurrentObject -------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[deprecated]
 pub struct CurrentObject {
     content: Base64,
     serial: Serial,
@@ -566,6 +576,14 @@ pub struct CurrentObject {
 }
 
 impl CurrentObject {
+    pub fn new(content: Base64, serial: Serial, expires: Time) -> Self {
+        CurrentObject {
+            content,
+            serial,
+            expires,
+        }
+    }
+
     pub fn content(&self) -> &Base64 {
         &self.content
     }
@@ -1003,6 +1021,7 @@ impl Into<publication::PublishDelta> for PublicationDeltaInfo {
 /// so it includes the base 'ca_repo' and all objects that are added,
 /// updated, or withdrawn.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[deprecated] // CaObjects
 pub struct ObjectsDelta {
     ca_repo: uri::Rsync,
     added: Vec<AddedObject>,
@@ -1779,7 +1798,6 @@ impl Default for ParentStatus {
 pub struct RepoStatus {
     last_exchange: Option<ParentExchange>,
     next_exchange_before: i64,
-    published: Vec<PublishElement>,
 }
 
 impl Default for RepoStatus {
@@ -1787,7 +1805,6 @@ impl Default for RepoStatus {
         RepoStatus {
             last_exchange: None,
             next_exchange_before: Self::now_plus_hours(1),
-            published: vec![],
         }
     }
 }
@@ -1799,10 +1816,6 @@ impl RepoStatus {
 
     pub fn last_exchange(&self) -> Option<&ParentExchange> {
         self.last_exchange.as_ref()
-    }
-
-    pub fn published(&self) -> &Vec<PublishElement> {
-        &self.published
     }
 
     pub fn into_failure_opt(self) -> Option<ErrorResponse> {
@@ -1824,13 +1837,12 @@ impl RepoStatus {
         self.next_exchange_before = (Time::now() + Duration::minutes(5)).timestamp();
     }
 
-    pub fn set_success(&mut self, uri: String, published: Vec<PublishElement>, next_hours: i64) {
+    pub fn set_success(&mut self, uri: String, next_hours: i64) {
         self.last_exchange = Some(ParentExchange {
             timestamp: Time::now().timestamp(),
             uri,
             result: ParentExchangeResult::Success,
         });
-        self.published = published;
         self.next_exchange_before = Self::now_plus_hours(next_hours);
     }
 
@@ -1857,22 +1869,6 @@ impl fmt::Display for RepoStatus {
                     "Next contact on or before: {}",
                     self.next_exchange_before().to_rfc3339()
                 )?;
-
-                if exchange.was_success() {
-                    write!(f, "Published Objects:")?;
-                } else {
-                    write!(f, "LAST KNOWN Published Objects:")?;
-                }
-
-                if self.published.is_empty() {
-                    writeln!(f, " None")?;
-                } else {
-                    writeln!(f)?;
-                }
-
-                for object in &self.published {
-                    writeln!(f, "  {} {}", object.base64().to_encoded_hash(), object.uri())?;
-                }
             }
         }
         Ok(())
@@ -2003,19 +1999,6 @@ impl CertAuthInfo {
     pub fn children(&self) -> &Vec<ChildHandle> {
         &self.children
     }
-
-    pub fn published_objects(&self) -> Vec<Publish> {
-        let mut res = vec![];
-
-        if let Some(repo_info) = &self.repo_info {
-            for (_rc_name, rc) in self.resource_classes.iter() {
-                let name_space = rc.name_space();
-                res.append(&mut rc.current_objects().publish(repo_info, name_space));
-            }
-        }
-
-        res
-    }
 }
 
 impl fmt::Display for CertAuthInfo {
@@ -2062,12 +2045,6 @@ impl fmt::Display for CertAuthInfo {
             writeln!(f, "Resource Class: {}", name,)?;
             writeln!(f, "Parent: {}", rc.parent_handle())?;
             writeln!(f, "{}", rc.keys())?;
-
-            writeln!(f, "Current objects:")?;
-            for object in rc.current_objects().names() {
-                writeln!(f, "  {}", object)?;
-            }
-            writeln!(f)?;
         }
 
         writeln!(f, "Children:")?;
@@ -2090,21 +2067,14 @@ pub struct ResourceClassInfo {
     name_space: String,
     parent_handle: ParentHandle,
     keys: ResourceClassKeysInfo,
-    current_objects: CurrentObjects,
 }
 
 impl ResourceClassInfo {
-    pub fn new(
-        name_space: String,
-        parent_handle: ParentHandle,
-        keys: ResourceClassKeysInfo,
-        current_objects: CurrentObjects,
-    ) -> Self {
+    pub fn new(name_space: String, parent_handle: ParentHandle, keys: ResourceClassKeysInfo) -> Self {
         ResourceClassInfo {
             name_space,
             parent_handle,
             keys,
-            current_objects,
         }
     }
 
@@ -2124,10 +2094,6 @@ impl ResourceClassInfo {
 
     pub fn current_resources(&self) -> Option<&ResourceSet> {
         self.current_key().map(|k| k.incoming_cert().resources())
-    }
-
-    pub fn current_objects(&self) -> &CurrentObjects {
-        &self.current_objects
     }
 }
 

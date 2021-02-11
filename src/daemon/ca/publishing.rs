@@ -25,8 +25,7 @@ use crate::{
     commons::{
         api::{
             rrdp::PublishElement, AddedObject, Base64, CurrentObject, Handle, HexEncodedHash, IssuedCert, ObjectName,
-            ObjectsDelta, RcvdCert, ResourceClassName, Revocation, Revocations, RevocationsDelta, UpdatedObject,
-            WithdrawnObject,
+            RcvdCert, ResourceClassName, Revocation, Revocations, RevocationsDelta, UpdatedObject, WithdrawnObject,
         },
         crypto::KrillSigner,
         error::Error,
@@ -35,7 +34,7 @@ use crate::{
     },
     constants::CA_OBJECTS_DIR,
     daemon::{
-        ca::{CaEvt, CertAuth, RoaInfo, RouteAuthorization},
+        ca::{CaEvt, CertAuth},
         config::{Config, IssuanceTimingConfig},
     },
 };
@@ -90,16 +89,16 @@ impl SyncEventListener<CertAuth> for CaObjectsStore {
                     super::CaEvtDet::ChildCertificatesUpdated(rcn, cert_updates) => {
                         objects.update_certs(rcn, cert_updates, timing, signer)?;
                     }
-                    super::CaEvtDet::KeyPendingToActive(rcn, key, _) => {
+                    super::CaEvtDet::KeyPendingToActive(rcn, key) => {
                         objects.add_class(rcn, key, timing, signer)?;
                     }
-                    super::CaEvtDet::KeyPendingToNew(rcn, key, _) => {
+                    super::CaEvtDet::KeyPendingToNew(rcn, key) => {
                         objects.keyroll_stage(rcn, key, timing, signer)?;
                     }
                     super::CaEvtDet::KeyRollActivated(rcn, _) => {
                         objects.keyroll_activate(rcn, timing, signer)?;
                     }
-                    super::CaEvtDet::KeyRollFinished(rcn, _) => {
+                    super::CaEvtDet::KeyRollFinished(rcn) => {
                         objects.keyroll_finish(rcn)?;
                     }
                     super::CaEvtDet::CertificateReceived(rcn, _ki, cert) => {
@@ -107,7 +106,7 @@ impl SyncEventListener<CertAuth> for CaObjectsStore {
                         objects.update_received_cert(rcn, cert)?;
                         objects.re_issue_if_required(&self.config.issuance_timing, &self.signer)?;
                     }
-                    super::CaEvtDet::ResourceClassRemoved(rcn, _, _, _) => {
+                    super::CaEvtDet::ResourceClassRemoved(rcn, _, _) => {
                         objects.remove_class(rcn);
                     }
                     _ => {}
@@ -1183,117 +1182,118 @@ impl CrlInfo {
     }
 }
 
-//------------ PublicationDelta ----------------------------------------------
+// //------------ PublicationDelta ----------------------------------------------
 
-/// This type describes a set up of objects published for a CA key.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct CurrentObjectSetDelta {
-    number: u64,
-    revocations_delta: RevocationsDelta,
-    manifest_info: ManifestInfo,
-    crl_info: CrlInfo,
-    objects_delta: ObjectsDelta,
-}
+// /// This type describes a set up of objects published for a CA key.
+// #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+// pub struct CurrentObjectSetDelta {
+//     number: u64,
+//     revocations_delta: RevocationsDelta,
+//     manifest_info: ManifestInfo,
+//     crl_info: CrlInfo,
+//     objects_delta: ObjectsDelta,
+// }
 
-impl CurrentObjectSetDelta {
-    pub fn new(
-        number: u64,
-        revocations_delta: RevocationsDelta,
-        manifest_info: ManifestInfo,
-        crl_info: CrlInfo,
-        objects_delta: ObjectsDelta,
-    ) -> Self {
-        CurrentObjectSetDelta {
-            number,
-            revocations_delta,
-            manifest_info,
-            crl_info,
-            objects_delta,
-        }
-    }
+// impl CurrentObjectSetDelta {
+//     pub fn new(
+//         number: u64,
+//         revocations_delta: RevocationsDelta,
+//         manifest_info: ManifestInfo,
+//         crl_info: CrlInfo,
+//         objects_delta: ObjectsDelta,
+//     ) -> Self {
+//         CurrentObjectSetDelta {
+//             number,
+//             revocations_delta,
+//             manifest_info,
+//             crl_info,
+//             objects_delta,
+//         }
+//     }
 
-    pub fn objects(&self) -> &ObjectsDelta {
-        &self.objects_delta
-    }
-}
+//     pub fn objects(&self) -> &ObjectsDelta {
+//         &self.objects_delta
+//     }
+// }
 
-//------------ CurrentObjectSet ----------------------------------------------
+// //------------ CurrentObjectSet ----------------------------------------------
 
-/// This type describes the complete current set of objects for CA key.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct CurrentObjectSet {
-    number: u64,
-    revocations: Revocations,
-    manifest_info: ManifestInfo,
-    crl_info: CrlInfo,
-}
+// /// This type describes the complete current set of objects for CA key.
+// #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+// #[deprecated]
+// pub struct CurrentObjectSet {
+//     number: u64,
+//     revocations: Revocations,
+//     manifest_info: ManifestInfo,
+//     crl_info: CrlInfo,
+// }
 
-impl CurrentObjectSet {
-    pub fn create(
-        signing_cert: &RcvdCert,
-        issuance_timing: &IssuanceTimingConfig,
-        signer: &KrillSigner,
-    ) -> KrillResult<Self> {
-        let number = 1;
-        let revocations = Revocations::default();
-        let (crl_info, _) = CrlBuilder::build_deprecated(
-            revocations.clone(),
-            vec![],
-            number,
-            None,
-            signing_cert,
-            issuance_timing.timing_publish_next_hours,
-            signer,
-        )?;
+// impl CurrentObjectSet {
+//     pub fn create(
+//         signing_cert: &RcvdCert,
+//         issuance_timing: &IssuanceTimingConfig,
+//         signer: &KrillSigner,
+//     ) -> KrillResult<Self> {
+//         let number = 1;
+//         let revocations = Revocations::default();
+//         let (crl_info, _) = CrlBuilder::build_deprecated(
+//             revocations.clone(),
+//             vec![],
+//             number,
+//             None,
+//             signing_cert,
+//             issuance_timing.timing_publish_next_hours,
+//             signer,
+//         )?;
 
-        let crl = Crl::decode(crl_info.current().content().to_bytes()).unwrap().into();
-        let roas = HashMap::new();
-        let certs = HashMap::new();
+//         let crl = Crl::decode(crl_info.current().content().to_bytes()).unwrap().into();
+//         let roas = HashMap::new();
+//         let certs = HashMap::new();
 
-        let manifest_info = ManifestBuilder::with_objects(&crl, &roas, &certs).build(
-            signing_cert,
-            number,
-            None,
-            issuance_timing,
-            signer,
-        )?;
+//         let manifest_info = ManifestBuilder::with_objects(&crl, &roas, &certs).build(
+//             signing_cert,
+//             number,
+//             None,
+//             issuance_timing,
+//             signer,
+//         )?;
 
-        Ok(CurrentObjectSet {
-            number,
-            revocations,
-            manifest_info,
-            crl_info,
-        })
-    }
-}
+//         Ok(CurrentObjectSet {
+//             number,
+//             revocations,
+//             manifest_info,
+//             crl_info,
+//         })
+//     }
+// }
 
-impl CurrentObjectSet {
-    pub fn number(&self) -> u64 {
-        self.number
-    }
-    pub fn revocations(&self) -> &Revocations {
-        &self.revocations
-    }
+// impl CurrentObjectSet {
+//     pub fn number(&self) -> u64 {
+//         self.number
+//     }
+//     pub fn revocations(&self) -> &Revocations {
+//         &self.revocations
+//     }
 
-    pub fn manifest_info(&self) -> &ManifestInfo {
-        &self.manifest_info
-    }
+//     pub fn manifest_info(&self) -> &ManifestInfo {
+//         &self.manifest_info
+//     }
 
-    pub fn crl_info(&self) -> &CrlInfo {
-        &self.crl_info
-    }
+//     pub fn crl_info(&self) -> &CrlInfo {
+//         &self.crl_info
+//     }
 
-    pub fn next_update(&self) -> Time {
-        self.manifest_info().next_update()
-    }
+//     pub fn next_update(&self) -> Time {
+//         self.manifest_info().next_update()
+//     }
 
-    pub fn apply_delta(&mut self, delta: CurrentObjectSetDelta) {
-        self.number = delta.number;
-        self.revocations.apply_delta(delta.revocations_delta);
-        self.manifest_info = delta.manifest_info;
-        self.crl_info = delta.crl_info;
-    }
-}
+//     pub fn apply_delta(&mut self, delta: CurrentObjectSetDelta) {
+//         self.number = delta.number;
+//         self.revocations.apply_delta(delta.revocations_delta);
+//         self.manifest_info = delta.manifest_info;
+//         self.crl_info = delta.crl_info;
+//     }
+// }
 
 //------------ CrlBuilder --------------------------------------------------
 
@@ -1412,66 +1412,6 @@ impl ManifestBuilder {
     pub fn with_crl_only(crl: &PublishedCrl) -> Self {
         let mut entries: HashMap<Bytes, Bytes> = HashMap::new();
         entries.insert(crl.name().into(), crl.mft_hash());
-        ManifestBuilder { entries }
-    }
-
-    #[deprecated]
-    pub fn new<'a>(
-        crl_info: &CrlInfo,
-        issued: impl Iterator<Item = &'a IssuedCert>,
-        roas: impl Iterator<Item = (&'a RouteAuthorization, &'a RoaInfo)>,
-        delta: &ObjectsDelta,
-    ) -> Self {
-        #[allow(clippy::mutable_key_type)]
-        let mut entries: HashMap<Bytes, Bytes> = HashMap::new();
-
-        // Add the *new* CRL
-        entries.insert(
-            crl_info.name.clone().into(),
-            mft_hash(&crl_info.current().content().to_bytes()),
-        );
-
-        // Add all *current* issued certs
-        for issued in issued {
-            let cert = issued.cert();
-            let name = ObjectName::from(cert);
-            let hash = mft_hash(cert.to_captured().as_slice());
-
-            entries.insert(name.into(), hash);
-        }
-
-        // Add all *current* ROAs
-        for (_auth, roa_info) in roas {
-            let name = roa_info.name().clone();
-            let hash = mft_hash(&roa_info.object().content().to_bytes());
-
-            entries.insert(name.into(), hash);
-        }
-
-        // Add all *new* objects
-        for added in delta.added() {
-            let name = added.name().clone();
-            let hash = mft_hash(added.object().content().to_bytes().as_ref());
-
-            entries.insert(name.into(), hash);
-        }
-
-        // Add all *updated* objects, note that this may (should) update any ROAs that
-        // existed under the same name, but that are now updated (issued under a new key,
-        // or validation time).
-        for updated in delta.updated() {
-            let name = updated.name().clone();
-            let hash = mft_hash(updated.object().content().to_bytes().as_ref());
-
-            entries.insert(name.into(), hash);
-        }
-
-        // Remove any *withdrawn* objects if present; i.e. removed certs or ROAs.
-        for withdraw in delta.withdrawn() {
-            let name: Bytes = withdraw.name().clone().into();
-            entries.remove(&name);
-        }
-
         ManifestBuilder { entries }
     }
 

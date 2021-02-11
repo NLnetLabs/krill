@@ -3,7 +3,7 @@
     "actor": "krill",
     "time": "2020-04-28T13:28:02.359959Z",
     "handle": "child",
-    "version": 14,
+    "version": 12,
     "sequence": 9,
     "details": {
       "update_resource_classes": [
@@ -19,7 +19,7 @@
     },
     "effect": {
       "events": [
-        14
+        12
       ]
     }
   },
@@ -27,7 +27,7 @@
     "Events": [
       {
         "id": "child",
-        "version": 14,
+        "version": 12,
         "details": {
           "certificate_requested": [
             "0",

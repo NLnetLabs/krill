@@ -3,7 +3,7 @@
     "actor": "krill",
     "time": "2020-04-30T14:14:15.942233Z",
     "handle": "ta",
-    "version": 25,
+    "version": 20,
     "sequence": 15,
     "details": {
       "child_update_id": [
@@ -13,7 +13,7 @@
     },
     "effect": {
       "events": [
-        25
+        20
       ]
     }
   },
@@ -21,7 +21,7 @@
     "Events": [
       {
         "id": "ta",
-        "version": 25,
+        "version": 20,
         "details": {
           "child_updated_id_cert": [
             "rfc6492",

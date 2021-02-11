@@ -31,8 +31,8 @@
         "msg": "Add parent 'ta' as 'RFC 6492 Parent'",
         "label": "cmd-ca-parent-add",
         "args": {
-          "parent_contact": "RFC 6492 Parent",
-          "parent": "ta"
+          "parent": "ta",
+          "parent_contact": "RFC 6492 Parent"
         }
       },
       "effect": {
@@ -93,11 +93,11 @@
         "msg": "Update received cert in RC '0', with resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
         "label": "cmd-ca-rcn-receive",
         "args": {
-          "ipv4_blocks": "1",
-          "resources": "asn: , v4: 10.0.0.0/16, v6: ",
-          "ipv6_blocks": "0",
+          "asn_blocks": "0",
           "class_name": "0",
-          "asn_blocks": "0"
+          "ipv4_blocks": "1",
+          "ipv6_blocks": "0",
+          "resources": "asn: , v4: 10.0.0.0/16, v6: "
         }
       },
       "effect": {
@@ -139,10 +139,10 @@
         "label": "cmd-ca-rcn-receive",
         "args": {
           "asn_blocks": "0",
-          "resources": "asn: , v4: 10.0.0.0/16, v6: ",
           "class_name": "0",
           "ipv4_blocks": "1",
-          "ipv6_blocks": "0"
+          "ipv6_blocks": "0",
+          "resources": "asn: , v4: 10.0.0.0/16, v6: "
         }
       },
       "effect": {
@@ -167,8 +167,7 @@
       },
       "effect": {
         "events": [
-          10,
-          11
+          10
         ]
       }
     },
@@ -177,7 +176,7 @@
       "actor": "krill",
       "timestamp": 1588256330538,
       "handle": "rfc6492",
-      "version": 12,
+      "version": 11,
       "sequence": 9,
       "summary": {
         "msg": "Retire old revoked key in RC '0'",
@@ -188,7 +187,7 @@
       },
       "effect": {
         "events": [
-          12
+          11
         ]
       }
     }

@@ -39,25 +39,9 @@
         "details": {
           "resource_class_added": [
             "0",
-            {
-              "name": "0",
-              "name_space": "0",
-              "parent_handle": "CA3",
-              "parent_rc_name": "0",
-              "roas": {
-                "inner": {}
-              },
-              "certificates": {
-                "inner": {}
-              },
-              "last_key_change": "2020-04-30T14:22:29.751728Z",
-              "key_state": {
-                "pending": {
-                  "key_id": "AB90119164402C965DC5544B54E30B6A7014CDB6",
-                  "request": null
-                }
-              }
-            }
+            "CA3",
+            "0",
+            "AB90119164402C965DC5544B54E30B6A7014CDB6"
           ]
         }
       },
@@ -86,25 +70,9 @@
         "details": {
           "resource_class_added": [
             "1",
-            {
-              "name": "1",
-              "name_space": "1",
-              "parent_handle": "CA3",
-              "parent_rc_name": "1",
-              "roas": {
-                "inner": {}
-              },
-              "certificates": {
-                "inner": {}
-              },
-              "last_key_change": "2020-04-30T14:22:29.850156Z",
-              "key_state": {
-                "pending": {
-                  "key_id": "33EF547F08298CEE8D3C6C41B24550496C5E3ED6",
-                  "request": null
-                }
-              }
-            }
+            "CA3",
+            "1",
+            "33EF547F08298CEE8D3C6C41B24550496C5E3ED6"
           ]
         }
       },

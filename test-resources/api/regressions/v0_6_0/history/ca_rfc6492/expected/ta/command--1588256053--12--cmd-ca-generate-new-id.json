@@ -3,12 +3,12 @@
     "actor": "krill",
     "time": "2020-04-30T14:14:13.261078Z",
     "handle": "ta",
-    "version": 20,
+    "version": 16,
     "sequence": 12,
     "details": "generate_new_id_key",
     "effect": {
       "events": [
-        20
+        16
       ]
     }
   },
@@ -16,7 +16,7 @@
     "Events": [
       {
         "id": "ta",
-        "version": 20,
+        "version": 16,
         "details": {
           "id_updated": {
             "key": "0B99AAC3997B6936943CD46598029A45615B2344",

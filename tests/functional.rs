@@ -97,7 +97,7 @@ async fn expected_issued_cer(ca: &Handle, rcn: &ResourceClassName) -> String {
     ObjectName::from(rc_key.incoming_cert().cert()).to_string()
 }
 
-async fn will_publish(publisher: &PublisherHandle, files: &[String]) -> bool {
+async fn will_publish(test_msg: &str, publisher: &PublisherHandle, files: &[String]) -> bool {
     let objects: Vec<_> = files.iter().map(|s| s.as_str()).collect();
     for _ in 0..300 {
         let details = publisher_details(publisher).await;
@@ -122,7 +122,10 @@ async fn will_publish(publisher: &PublisherHandle, files: &[String]) -> bool {
 
     let details = publisher_details(publisher).await;
 
-    eprintln!("Did not find match for: {}", publisher);
+    eprintln!(
+        "Did not find match for test: {}, for publisher: {}",
+        test_msg, publisher
+    );
     eprintln!("Found:");
     for file in details.current_files() {
         eprintln!("  {}", file.uri());
@@ -246,7 +249,14 @@ async fn functional() {
     {
         let mut expected_files = expected_mft_and_crl(&ta, &rcn_0).await;
         expected_files.push(expected_issued_cer(&testbed, &rcn_0).await);
-        assert!(will_publish(&ta, &expected_files).await);
+        assert!(
+            will_publish(
+                "TA should have manifest, crl and cert for testbed",
+                &ta,
+                &expected_files
+            )
+            .await
+        );
     }
 
     // Set up CA1 under testbed
@@ -266,7 +276,14 @@ async fn functional() {
         let mut expected_files = expected_mft_and_crl(&testbed, &rcn_0).await;
         expected_files.push(expected_issued_cer(&ca1, &rcn_0).await);
         expected_files.push(expected_issued_cer(&ca2, &rcn_0).await);
-        assert!(will_publish(&testbed, &expected_files).await);
+        assert!(
+            will_publish(
+                "testbed CA should have mft, crl and certs for CA1 and CA2",
+                &testbed,
+                &expected_files
+            )
+            .await
+        );
     }
 
     // Set up CA3 under CA1 first
@@ -279,7 +296,7 @@ async fn functional() {
     {
         let mut expected_files = expected_mft_and_crl(&ca1, &rcn_0).await;
         expected_files.push(expected_issued_cer(&ca3, &rcn_0).await);
-        assert!(will_publish(&ca1, &expected_files).await);
+        assert!(will_publish("CA1 should publish the certificate for CA3", &ca1, &expected_files).await);
     }
 
     // Set up CA3 under CA2 second (will get another resource class)
@@ -292,7 +309,7 @@ async fn functional() {
         let mut expected_files = expected_mft_and_crl(&ca2, &rcn_0).await;
         // CA3 will have the certificate from CA2 under its resource class '1' rather than '0'
         expected_files.push(expected_issued_cer(&ca3, &rcn_1).await);
-        assert!(will_publish(&ca2, &expected_files).await);
+        assert!(will_publish("CA2 should have mft, crl and a cert for CA3", &ca2, &expected_files).await);
     }
 
     // Set up CA4 under CA3 with resources from both parent classes
@@ -307,14 +324,28 @@ async fn functional() {
         expected_files.push(expected_issued_cer(&ca4, &rcn_0).await);
         expected_files.append(&mut expected_mft_and_crl(&ca3, &rcn_1).await);
         expected_files.push(expected_issued_cer(&ca4, &rcn_1).await);
-        assert!(will_publish(&ca3, &expected_files).await);
+        assert!(
+            will_publish(
+                "CA3 should have two resource classes and a cert for CA4 in each",
+                &ca3,
+                &expected_files
+            )
+            .await
+        );
     }
 
     // Expect that CA4 publishes two resource classes, with only crls and mfts
     {
         let mut expected_files = expected_mft_and_crl(&ca4, &rcn_0).await;
         expected_files.append(&mut expected_mft_and_crl(&ca4, &rcn_1).await);
-        assert!(will_publish(&ca4, &expected_files).await);
+        assert!(
+            will_publish(
+                "CA4 should now have two resource classes, each with a mft and crl",
+                &ca4,
+                &expected_files
+            )
+            .await
+        );
     }
 
     //------------------------------------------------------------------------------------------
@@ -337,7 +368,7 @@ async fn functional() {
     let route_rc1_1 = RoaDefinition::from_str("10.1.0.0/24-24 => 64496").unwrap();
 
     // short hand to expect ROAs under CA4
-    async fn expect_roas_for_ca4(roas: &[RoaDefinition]) {
+    async fn expect_roas_for_ca4(test_msg: &str, roas: &[RoaDefinition]) {
         let ca4 = handle_for("CA4");
         let rcn_0 = ResourceClassName::from(0);
         let rcn_1 = ResourceClassName::from(1);
@@ -347,7 +378,7 @@ async fn functional() {
         for roa in roas {
             expected_files.push(ObjectName::from(roa).to_string());
         }
-        assert!(will_publish(&ca4, &expected_files).await);
+        assert!(will_publish(test_msg, &ca4, &expected_files).await);
     }
 
     // Add ROAs, expect that they will be published
@@ -357,7 +388,11 @@ async fn functional() {
         updates.add(route_rc0_2);
         updates.add(route_rc1_1);
         ca_route_authorizations_update(&ca4, updates).await;
-        expect_roas_for_ca4(&[route_rc0_1, route_rc0_2, route_rc1_1]).await;
+        expect_roas_for_ca4(
+            "CA4 should now have 2 roas in rc0 and 1 in rc1",
+            &[route_rc0_1, route_rc0_2, route_rc1_1],
+        )
+        .await;
     }
 
     // Add ROAs beyond the aggregation threshold for RC0, we now expect ROAs under
@@ -379,7 +414,7 @@ async fn functional() {
         // and the roa for rc1
         expected_files.push(ObjectName::from(&route_rc1_1).to_string());
 
-        assert!(will_publish(&ca4, &expected_files).await);
+        assert!(will_publish("CA4 should now aggregate ROAs", &ca4, &expected_files).await);
     }
 
     // Remove ROAs below the deaggregation threshold and we get
@@ -391,7 +426,7 @@ async fn functional() {
         updates.remove(route_rc0_4);
         ca_route_authorizations_update(&ca4, updates).await;
 
-        expect_roas_for_ca4(&[route_rc0_1, route_rc1_1]).await;
+        expect_roas_for_ca4("CA4 should now de-aggregate ROAS", &[route_rc0_1, route_rc1_1]).await;
     }
 
     //------------------------------------------------------------------------------------------
@@ -408,7 +443,11 @@ async fn functional() {
         ca_equals_resources(&ca4, &ca4_res_reduced).await;
         refresh_all().await; // if we skip this, then CA4 will not find out that it's resources were reduced
 
-        expect_roas_for_ca4(&[route_rc1_1]).await;
+        expect_roas_for_ca4(
+            "CA4 resources are schrunk and we expect only one remaining roa",
+            &[route_rc1_1],
+        )
+        .await;
     }
 
     // When resources are added back higher in the tree, then they will also
@@ -422,7 +461,11 @@ async fn functional() {
         refresh_all().await;
 
         // Expect that the ROA is re-added now that resources are back.
-        expect_roas_for_ca4(&[route_rc0_1, route_rc1_1]).await;
+        expect_roas_for_ca4(
+            "CA4 resources have been extended again, and we expect two roas",
+            &[route_rc0_1, route_rc1_1],
+        )
+        .await;
     }
 
     //---------------------------------------------------------------------------------------
@@ -488,12 +531,19 @@ async fn functional() {
         {
             let mut expected_files = expected_mft_and_crl(&ca3, &rcn_0).await;
             expected_files.append(&mut expected_mft_and_crl(&ca3, &rcn_1).await);
-            assert!(will_publish(&ca3, &expected_files).await);
+            assert!(
+                will_publish(
+                    "CA3 should no longer publish the cert for CA4 after CA4 has been deleted",
+                    &ca3,
+                    &expected_files
+                )
+                .await
+            );
         }
 
         // Expect that CA4 withdraws all
         {
-            assert!(will_publish(&ca4, &[]).await);
+            assert!(will_publish("CA4 should withdraw all objects when it's deleted", &ca4, &[]).await);
         }
     }
 

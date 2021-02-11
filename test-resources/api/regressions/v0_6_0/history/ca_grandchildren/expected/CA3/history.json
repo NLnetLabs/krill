@@ -216,8 +216,7 @@
       "effect": {
         "events": [
           12,
-          13,
-          14
+          13
         ]
       }
     },
@@ -226,7 +225,7 @@
       "actor": "krill",
       "timestamp": 1588256550525,
       "handle": "CA3",
-      "version": 15,
+      "version": 14,
       "sequence": 11,
       "summary": {
         "msg": "Issue certificate to child 'CA4' for key '33EF547F08298CEE8D3C6C41B24550496C5E3ED6'",
@@ -239,9 +238,8 @@
       },
       "effect": {
         "events": [
-          15,
-          16,
-          17
+          14,
+          15
         ]
       }
     }

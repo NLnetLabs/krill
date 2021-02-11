@@ -51,9 +51,9 @@
         "args": {
           "asn_blocks": "1",
           "class_name": "0",
-          "resources": "asn: AS0-AS4294967295, v4: 0.0.0.0/0, v6: ::/0",
           "ipv4_blocks": "1",
-          "ipv6_blocks": "1"
+          "ipv6_blocks": "1",
+          "resources": "asn: AS0-AS4294967295, v4: 0.0.0.0/0, v6: ::/0"
         }
       },
       "effect": {
@@ -74,11 +74,11 @@
         "label": "cmd-ca-child-add",
         "args": {
           "asn_blocks": "0",
-          "ipv4_blocks": "1",
+          "child": "rfc6492",
           "id_key": "c7c157d25bf984745691af261fa8d149aa7f6ca7",
-          "resources": "asn: , v4: 10.0.0.0/16, v6: ",
+          "ipv4_blocks": "1",
           "ipv6_blocks": "0",
-          "child": "rfc6492"
+          "resources": "asn: , v4: 10.0.0.0/16, v6: "
         }
       },
       "effect": {
@@ -98,16 +98,15 @@
         "msg": "Issue certificate to child 'rfc6492' for key '17143836B8F6D11DCB53CD49B5D40C61B8E9B813'",
         "label": "cmd-ca-child-certify",
         "args": {
+          "child": "rfc6492",
           "class_name": "0",
-          "key": "17143836B8F6D11DCB53CD49B5D40C61B8E9B813",
-          "child": "rfc6492"
+          "key": "17143836B8F6D11DCB53CD49B5D40C61B8E9B813"
         }
       },
       "effect": {
         "events": [
           5,
-          6,
-          7
+          6
         ]
       }
     },
@@ -116,22 +115,22 @@
       "actor": "krill",
       "timestamp": 1588256048983,
       "handle": "ta",
-      "version": 8,
+      "version": 7,
       "sequence": 6,
       "summary": {
         "msg": "Update resources for child 'rfc6492' to: asn: 1 blocks, v4: 1 blocks, v6: 0 blocks",
         "label": "cmd-ca-child-update-res",
         "args": {
-          "resources": "asn: AS65000, v4: 10.0.0.0/16, v6: ",
-          "ipv6_blocks": "0",
           "asn_blocks": "1",
           "child": "rfc6492",
-          "ipv4_blocks": "1"
+          "ipv4_blocks": "1",
+          "ipv6_blocks": "0",
+          "resources": "asn: AS65000, v4: 10.0.0.0/16, v6: "
         }
       },
       "effect": {
         "events": [
-          8
+          7
         ]
       }
     },
@@ -140,7 +139,7 @@
       "actor": "krill",
       "timestamp": 1588256049647,
       "handle": "ta",
-      "version": 9,
+      "version": 8,
       "sequence": 7,
       "summary": {
         "msg": "Issue certificate to child 'rfc6492' for key '17143836B8F6D11DCB53CD49B5D40C61B8E9B813'",
@@ -153,9 +152,8 @@
       },
       "effect": {
         "events": [
-          9,
-          10,
-          11
+          8,
+          9
         ]
       }
     },
@@ -164,14 +162,14 @@
       "actor": "krill",
       "timestamp": 1588256050249,
       "handle": "ta",
-      "version": 12,
+      "version": 10,
       "sequence": 8,
       "summary": {
         "msg": "Update resources for child 'rfc6492' to: asn: 0 blocks, v4: 1 blocks, v6: 0 blocks",
         "label": "cmd-ca-child-update-res",
         "args": {
-          "child": "rfc6492",
           "asn_blocks": "0",
+          "child": "rfc6492",
           "ipv4_blocks": "1",
           "ipv6_blocks": "0",
           "resources": "asn: , v4: 10.0.0.0/24, v6: "
@@ -179,7 +177,7 @@
       },
       "effect": {
         "events": [
-          12
+          10
         ]
       }
     },
@@ -188,22 +186,21 @@
       "actor": "krill",
       "timestamp": 1588256050661,
       "handle": "ta",
-      "version": 13,
+      "version": 11,
       "sequence": 9,
       "summary": {
         "msg": "Issue certificate to child 'rfc6492' for key '17143836B8F6D11DCB53CD49B5D40C61B8E9B813'",
         "label": "cmd-ca-child-certify",
         "args": {
-          "key": "17143836B8F6D11DCB53CD49B5D40C61B8E9B813",
           "child": "rfc6492",
-          "class_name": "0"
+          "class_name": "0",
+          "key": "17143836B8F6D11DCB53CD49B5D40C61B8E9B813"
         }
       },
       "effect": {
         "events": [
-          13,
-          14,
-          15
+          11,
+          12
         ]
       }
     },
@@ -212,22 +209,22 @@
       "actor": "krill",
       "timestamp": 1588256051487,
       "handle": "ta",
-      "version": 16,
+      "version": 13,
       "sequence": 10,
       "summary": {
         "msg": "Update resources for child 'rfc6492' to: asn: 0 blocks, v4: 0 blocks, v6: 0 blocks",
         "label": "cmd-ca-child-update-res",
         "args": {
-          "child": "rfc6492",
           "asn_blocks": "0",
+          "child": "rfc6492",
+          "ipv4_blocks": "0",
           "ipv6_blocks": "0",
-          "resources": "asn: , v4: , v6: ",
-          "ipv4_blocks": "0"
+          "resources": "asn: , v4: , v6: "
         }
       },
       "effect": {
         "events": [
-          16
+          13
         ]
       }
     },
@@ -236,22 +233,21 @@
       "actor": "krill",
       "timestamp": 1588256052723,
       "handle": "ta",
-      "version": 17,
+      "version": 14,
       "sequence": 11,
       "summary": {
         "msg": "Revoke certificates for child 'rfc6492' for key '17143836B8F6D11DCB53CD49B5D40C61B8E9B813' in RC 0",
         "label": "cmd-ca-child-revoke",
         "args": {
-          "key": "17143836B8F6D11DCB53CD49B5D40C61B8E9B813",
           "child": "rfc6492",
-          "class_name": "0"
+          "class_name": "0",
+          "key": "17143836B8F6D11DCB53CD49B5D40C61B8E9B813"
         }
       },
       "effect": {
         "events": [
-          17,
-          18,
-          19
+          14,
+          15
         ]
       }
     },
@@ -260,7 +256,7 @@
       "actor": "krill",
       "timestamp": 1588256053261,
       "handle": "ta",
-      "version": 20,
+      "version": 16,
       "sequence": 12,
       "summary": {
         "msg": "Generate a new RFC8183 ID.",
@@ -269,7 +265,7 @@
       },
       "effect": {
         "events": [
-          20
+          16
         ]
       }
     },
@@ -278,7 +274,7 @@
       "actor": "krill",
       "timestamp": 1588256053535,
       "handle": "ta",
-      "version": 21,
+      "version": 17,
       "sequence": 13,
       "summary": {
         "msg": "Update resources for child 'rfc6492' to: asn: 0 blocks, v4: 1 blocks, v6: 0 blocks",
@@ -286,14 +282,14 @@
         "args": {
           "asn_blocks": "0",
           "child": "rfc6492",
-          "resources": "asn: , v4: 10.0.0.0/24, v6: ",
           "ipv4_blocks": "1",
-          "ipv6_blocks": "0"
+          "ipv6_blocks": "0",
+          "resources": "asn: , v4: 10.0.0.0/24, v6: "
         }
       },
       "effect": {
         "events": [
-          21
+          17
         ]
       }
     },
@@ -302,22 +298,21 @@
       "actor": "krill",
       "timestamp": 1588256054830,
       "handle": "ta",
-      "version": 22,
+      "version": 18,
       "sequence": 14,
       "summary": {
         "msg": "Issue certificate to child 'rfc6492' for key '9F29B373BC1B3D173E815841AE492E3E64CC6325'",
         "label": "cmd-ca-child-certify",
         "args": {
           "child": "rfc6492",
-          "key": "9F29B373BC1B3D173E815841AE492E3E64CC6325",
-          "class_name": "0"
+          "class_name": "0",
+          "key": "9F29B373BC1B3D173E815841AE492E3E64CC6325"
         }
       },
       "effect": {
         "events": [
-          22,
-          23,
-          24
+          18,
+          19
         ]
       }
     },
@@ -326,7 +321,7 @@
       "actor": "krill",
       "timestamp": 1588256055942,
       "handle": "ta",
-      "version": 25,
+      "version": 20,
       "sequence": 15,
       "summary": {
         "msg": "Update child 'rfc6492' RFC 8183 key 'dc396cc6eb42e00941ffae11327ab7c659cf18d0'",
@@ -338,7 +333,7 @@
       },
       "effect": {
         "events": [
-          25
+          20
         ]
       }
     },
@@ -347,22 +342,22 @@
       "actor": "krill",
       "timestamp": 1588256056120,
       "handle": "ta",
-      "version": 26,
+      "version": 21,
       "sequence": 16,
       "summary": {
         "msg": "Update resources for child 'rfc6492' to: asn: 1 blocks, v4: 1 blocks, v6: 0 blocks",
         "label": "cmd-ca-child-update-res",
         "args": {
-          "child": "rfc6492",
-          "resources": "asn: AS65000, v4: 10.0.0.0/16, v6: ",
           "asn_blocks": "1",
+          "child": "rfc6492",
           "ipv4_blocks": "1",
-          "ipv6_blocks": "0"
+          "ipv6_blocks": "0",
+          "resources": "asn: AS65000, v4: 10.0.0.0/16, v6: "
         }
       },
       "effect": {
         "events": [
-          26
+          21
         ]
       }
     },
@@ -371,7 +366,7 @@
       "actor": "krill",
       "timestamp": 1588256056890,
       "handle": "ta",
-      "version": 27,
+      "version": 22,
       "sequence": 17,
       "summary": {
         "msg": "Issue certificate to child 'rfc6492' for key '9F29B373BC1B3D173E815841AE492E3E64CC6325'",
@@ -384,9 +379,8 @@
       },
       "effect": {
         "events": [
-          27,
-          28,
-          29
+          22,
+          23
         ]
       }
     },
@@ -395,7 +389,7 @@
       "actor": "krill",
       "timestamp": 1588256057925,
       "handle": "ta",
-      "version": 30,
+      "version": 24,
       "sequence": 18,
       "summary": {
         "msg": "Remove child 'rfc6492' and revoke&remove its certs",
@@ -406,9 +400,8 @@
       },
       "effect": {
         "events": [
-          30,
-          31,
-          32
+          24,
+          25
         ]
       }
     },
@@ -417,23 +410,23 @@
       "actor": "krill",
       "timestamp": 1588256058078,
       "handle": "ta",
-      "version": 33,
+      "version": 26,
       "sequence": 19,
       "summary": {
         "msg": "Add child 'rfc6492' with RFC8183 key 'dc396cc6eb42e00941ffae11327ab7c659cf18d0' and resources 'asn: 1 blocks, v4: 1 blocks, v6: 0 blocks'",
         "label": "cmd-ca-child-add",
         "args": {
-          "child": "rfc6492",
-          "ipv4_blocks": "1",
           "asn_blocks": "1",
+          "child": "rfc6492",
           "id_key": "dc396cc6eb42e00941ffae11327ab7c659cf18d0",
+          "ipv4_blocks": "1",
           "ipv6_blocks": "0",
           "resources": "asn: AS65000, v4: 10.0.0.0/16, v6: "
         }
       },
       "effect": {
         "events": [
-          33
+          26
         ]
       }
     },
@@ -442,22 +435,21 @@
       "actor": "krill",
       "timestamp": 1588256059103,
       "handle": "ta",
-      "version": 34,
+      "version": 27,
       "sequence": 20,
       "summary": {
         "msg": "Issue certificate to child 'rfc6492' for key '43FB0F512A266C18A271E7B72FEA4E45C2A7CFFD'",
         "label": "cmd-ca-child-certify",
         "args": {
-          "class_name": "0",
           "child": "rfc6492",
+          "class_name": "0",
           "key": "43FB0F512A266C18A271E7B72FEA4E45C2A7CFFD"
         }
       },
       "effect": {
         "events": [
-          34,
-          35,
-          36
+          27,
+          28
         ]
       }
     }

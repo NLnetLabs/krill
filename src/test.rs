@@ -21,7 +21,7 @@ use crate::cli::report::{ApiResponse, ReportFormat};
 use crate::cli::{Error, KrillClient, KrillPubdClient};
 use crate::commons::api::{
     AddChildRequest, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ChildAuthRequest, ChildHandle, Handle,
-    ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublicationServerUris, Publish, PublisherDetails,
+    ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublicationServerUris, PublisherDetails,
     PublisherHandle, PublisherList, RepositoryUpdate, ResourceClassName, ResourceSet, RoaDefinition,
     RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, Token, TypedPrefix, UpdateChildRequest,
 };
@@ -435,17 +435,6 @@ pub async fn rc_is_removed(handle: &Handle) -> bool {
     false
 }
 
-pub async fn ta_will_have_issued_n_certs(number: usize) -> bool {
-    for _ in 0..300 {
-        let ta = ca_details(&ta_handle()).await;
-        if ta.published_objects().len() - 2 == number {
-            return true;
-        }
-        delay_for(Duration::from_millis(100)).await
-    }
-    false
-}
-
 pub async fn ca_current_resources(handle: &Handle) -> ResourceSet {
     let ca = ca_details(handle).await;
 
@@ -458,11 +447,6 @@ pub async fn ca_current_resources(handle: &Handle) -> ResourceSet {
     }
 
     res
-}
-
-pub async fn ca_current_objects(handle: &Handle) -> Vec<Publish> {
-    let ca = ca_details(handle).await;
-    ca.published_objects()
 }
 
 pub async fn list_publishers() -> PublisherList {

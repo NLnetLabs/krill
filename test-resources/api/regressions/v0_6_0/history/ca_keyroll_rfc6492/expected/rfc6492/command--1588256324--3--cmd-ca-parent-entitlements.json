@@ -32,25 +32,9 @@
         "details": {
           "resource_class_added": [
             "0",
-            {
-              "name": "0",
-              "name_space": "0",
-              "parent_handle": "ta",
-              "parent_rc_name": "0",
-              "roas": {
-                "inner": {}
-              },
-              "certificates": {
-                "inner": {}
-              },
-              "last_key_change": "2020-04-30T14:18:44.553382Z",
-              "key_state": {
-                "pending": {
-                  "key_id": "5D3CDDC79F0F00FD59E1312472F996057878CF76",
-                  "request": null
-                }
-              }
-            }
+            "ta",
+            "0",
+            "5D3CDDC79F0F00FD59E1312472F996057878CF76"
           ]
         }
       },

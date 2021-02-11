@@ -58,11 +58,12 @@ pub enum KeyStoreVersion {
     V0_8,
     V0_8_1_RC1,
     V0_8_1,
+    V0_9_0_RC1,
 }
 
 impl KeyStoreVersion {
     pub fn current() -> Self {
-        KeyStoreVersion::V0_8_1_RC1
+        KeyStoreVersion::V0_9_0_RC1
     }
 }
 
@@ -377,6 +378,8 @@ where
     /// no-op: do not save anything, return aggregate
     /// error: save command and error, return error
     pub fn command(&self, cmd: A::Command) -> Result<Arc<A>, A::Error> {
+        debug!("Processing command {}", cmd);
+
         let _lock = self.outer_lock.write().unwrap();
 
         // Get the latest arc.
@@ -443,8 +446,15 @@ where
 
                     for i in 0..nr_events {
                         let event = &events[i as usize];
-                        if event.version() != version_before + i || event.handle() != &handle {
-                            return Err(A::Error::from(AggregateStoreError::WrongEventForAggregate));
+                        let expected_version = version_before + i;
+                        if event.version() != expected_version || event.handle() != &handle {
+                            error!("Unexpected event: {}", event);
+                            return Err(A::Error::from(AggregateStoreError::WrongEventForAggregate(
+                                handle,
+                                event.handle().clone(),
+                                expected_version,
+                                event.version(),
+                            )));
                         }
                     }
 
@@ -1034,7 +1044,7 @@ pub enum AggregateStoreError {
     ReplayError(Handle, u64, u64),
     InfoMissing(Handle),
     InfoCorrupt(Handle),
-    WrongEventForAggregate,
+    WrongEventForAggregate(Handle, Handle, u64, u64),
     ConcurrentModification(Handle),
     UnknownCommand(Handle, u64),
     CommandOffsetTooLarge(u64, u64),
@@ -1063,8 +1073,12 @@ impl fmt::Display for AggregateStoreError {
             ),
             AggregateStoreError::InfoMissing(handle) => write!(f, "Missing stored value info for '{}'", handle),
             AggregateStoreError::InfoCorrupt(handle) => write!(f, "Corrupt stored value info for '{}'", handle),
-            AggregateStoreError::WrongEventForAggregate => {
-                write!(f, "event not applicable to entity, id or version is off")
+            AggregateStoreError::WrongEventForAggregate(expected, found, expected_v, found_v) => {
+                write!(
+                    f,
+                    "event not applicable to entity. Expected: {} {}, found: {} {}",
+                    expected, expected_v, found, found_v
+                )
             }
             AggregateStoreError::ConcurrentModification(handle) => {
                 write!(f, "concurrent modification attempt for entity: '{}'", handle)

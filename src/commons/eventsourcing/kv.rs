@@ -148,6 +148,11 @@ impl KeyValueStore {
         self.move_key(key, &key.archived())
     }
 
+    /// Archive a key to an arbitrary scope
+    pub fn archive_to(&self, key: &KeyStoreKey, scope: &str) -> Result<(), KeyValueError> {
+        self.move_key(key, &key.sub_scope(scope))
+    }
+
     /// Archive a key as corrupt
     pub fn archive_corrupt(&self, key: &KeyStoreKey) -> Result<(), KeyValueError> {
         self.move_key(key, &key.corrupt())

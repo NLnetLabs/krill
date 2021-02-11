@@ -6,44 +6,56 @@ use std::sync::Arc;
 use bytes::Bytes;
 use chrono::Duration;
 
-use rpki::cert::{Cert, KeyUsage, Overclaim, TbsCert};
-use rpki::crypto::{KeyIdentifier, PublicKey};
-use rpki::rta::RtaBuilder;
-use rpki::uri;
-use rpki::x509::{Serial, Time, Validity};
+use rpki::{
+    cert::{Cert, KeyUsage, Overclaim, TbsCert},
+    crypto::{KeyIdentifier, PublicKey},
+    rta::RtaBuilder,
+    uri,
+    x509::{Serial, Time, Validity},
+};
 
-use crate::commons::api::{
-    self, CertAuthInfo, ChildHandle, EntitlementClass, Entitlements, Handle, IdCertPem, IssuanceRequest, IssuedCert,
-    ObjectsDelta, ParentCaContact, ParentHandle, RcvdCert, RepositoryContact, RequestResourceLimit, ResourceClassName,
-    ResourceSet, Revocation, RevocationRequest, RevocationResponse, RoaDefinition, RtaList, RtaName, RtaPrepResponse,
-    SigningCert, StorableCaCommand, TaCertDetails, TrustAnchorLocator,
+use crate::{
+    commons::{
+        api::{
+            self, CertAuthInfo, ChildHandle, EntitlementClass, Entitlements, Handle, IdCertPem, IssuanceRequest,
+            IssuedCert, ParentCaContact, ParentHandle, RcvdCert, RepoInfo, RepositoryContact, RequestResourceLimit,
+            ResourceClassName, ResourceSet, Revocation, RevocationRequest, RevocationResponse, RoaDefinition, RtaList,
+            RtaName, RtaPrepResponse, SigningCert, StorableCaCommand, TaCertDetails, TrustAnchorLocator,
+        },
+        crypto::{CsrInfo, IdCert, IdCertBuilder, KrillSigner, ProtocolCms, ProtocolCmsBuilder},
+        error::{Error, RoaDeltaError},
+        eventsourcing::{Aggregate, StoredEvent},
+        remote::{rfc6492, rfc8183},
+        KrillResult,
+    },
+    constants::test_mode_enabled,
+    daemon::{
+        ca::{
+            events::ChildCertificateUpdates, ta_handle, CaEvt, CaEvtDet, ChildDetails, Cmd, CmdDet, Ini, PreparedRta,
+            ResourceClass, ResourceTaggedAttestation, RouteAuthorization, RouteAuthorizationUpdates, Routes,
+            RtaContentRequest, RtaPrepareRequest, Rtas, SignedRta,
+        },
+        config::{Config, IssuanceTimingConfig},
+    },
 };
-use crate::commons::api::{rrdp::PublishElement, RepoInfo};
-use crate::commons::crypto::{CsrInfo, IdCert, IdCertBuilder, KrillSigner, ProtocolCms, ProtocolCmsBuilder};
-use crate::commons::error::{Error, RoaDeltaError};
-use crate::commons::eventsourcing::{Aggregate, StoredEvent};
-use crate::commons::remote::rfc6492;
-use crate::commons::remote::rfc8183;
-use crate::commons::KrillResult;
-use crate::constants::test_mode_enabled;
-use crate::daemon::ca::events::ChildCertificateUpdates;
-use crate::daemon::ca::rc::PublishMode;
-use crate::daemon::ca::{
-    ta_handle, CaEvt, CaEvtDet, ChildDetails, Cmd, CmdDet, CurrentObjectSetDelta, Ini, PreparedRta, ResourceClass,
-    ResourceTaggedAttestation, RouteAuthorization, RouteAuthorizationUpdates, Routes, RtaContentRequest,
-    RtaPrepareRequest, Rtas, SignedRta,
-};
-use crate::daemon::config::{Config, IssuanceTimingConfig};
 
 //------------ Rfc8183Id ---------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[deprecated]
 pub struct Rfc8183Id {
     key: KeyIdentifier, // convenient (and efficient) access
     cert: IdCert,
 }
 
 impl Rfc8183Id {
+    pub fn new(
+        key: KeyIdentifier, // convenient (and efficient) access
+        cert: IdCert,
+    ) -> Self {
+        Rfc8183Id { key, cert }
+    }
+
     pub fn generate(signer: &KrillSigner) -> KrillResult<Self> {
         let key = signer.create_key()?;
         let cert =
@@ -229,16 +241,18 @@ impl Aggregate for CertAuth {
             CaEvtDet::ParentUpdated(handle, info) => {
                 self.parents.insert(handle, info);
             }
-            CaEvtDet::ParentRemoved(handle, _deltas) => {
+            CaEvtDet::ParentRemoved(handle) => {
                 self.parents.remove(&handle);
                 self.resources.retain(|_, rc| rc.parent_handle() != &handle);
             }
 
-            CaEvtDet::ResourceClassAdded(name, rc) => {
+            CaEvtDet::ResourceClassAdded(name, parent, parent_rcn, pending_key) => {
                 self.next_class_name += 1;
+                let ns = name.to_string();
+                let rc = ResourceClass::create(name.clone(), ns, parent, parent_rcn, pending_key);
                 self.resources.insert(name, rc);
             }
-            CaEvtDet::ResourceClassRemoved(name, _delta, _parent, _revocations) => {
+            CaEvtDet::ResourceClassRemoved(name, _parent, _revocations) => {
                 self.resources.remove(&name);
             }
             CaEvtDet::CertificateRequested(name, req, status) => {
@@ -254,10 +268,10 @@ impl Aggregate for CertAuth {
             CaEvtDet::KeyRollPendingKeyAdded(class_name, key_id) => {
                 self.resources.get_mut(&class_name).unwrap().pending_key_added(key_id);
             }
-            CaEvtDet::KeyPendingToNew(rcn, key, _delta) => {
+            CaEvtDet::KeyPendingToNew(rcn, key) => {
                 self.resources.get_mut(&rcn).unwrap().pending_key_to_new(key);
             }
-            CaEvtDet::KeyPendingToActive(rcn, key, _delta) => {
+            CaEvtDet::KeyPendingToActive(rcn, key) => {
                 self.resources.get_mut(&rcn).unwrap().pending_key_to_active(key);
             }
             CaEvtDet::KeyRollActivated(class_name, revoke_req) => {
@@ -266,7 +280,7 @@ impl Aggregate for CertAuth {
                     .unwrap()
                     .new_key_activated(revoke_req);
             }
-            CaEvtDet::KeyRollFinished(class_name, _delta) => {
+            CaEvtDet::KeyRollFinished(class_name) => {
                 self.resources.get_mut(&class_name).unwrap().old_key_removed();
             }
             CaEvtDet::UnexpectedKeyFound(_, _) => {
@@ -285,12 +299,6 @@ impl Aggregate for CertAuth {
             //-----------------------------------------------------------------------
             // Publication
             //-----------------------------------------------------------------------
-            CaEvtDet::ObjectSetUpdated(class_name, delta_map) => {
-                let rc = self.resources.get_mut(&class_name).unwrap();
-                for (key_id, delta) in delta_map.into_iter() {
-                    rc.apply_delta(delta, key_id);
-                }
-            }
             CaEvtDet::RepoUpdated(contact) => {
                 if let Some(current) = &self.repository {
                     self.repository_pending_withdraw = Some(current.clone())
@@ -328,10 +336,8 @@ impl Aggregate for CertAuth {
             CmdDet::ChildUpdateResources(child, res) => self.child_update_resources(&child, res),
             CmdDet::ChildUpdateId(child, id) => self.child_update_id(&child, id),
             CmdDet::ChildCertify(child, request, config, signer) => self.child_certify(child, request, &config, signer),
-            CmdDet::ChildRevokeKey(child, request, config, signer) => {
-                self.child_revoke_key(child, request, &config.issuance_timing, signer)
-            }
-            CmdDet::ChildRemove(child, config, signer) => self.child_remove(&child, &config.issuance_timing, signer),
+            CmdDet::ChildRevokeKey(child, request) => self.child_revoke_key(child, request),
+            CmdDet::ChildRemove(child) => self.child_remove(&child),
 
             // being a child
             CmdDet::GenerateNewIdKey(signer) => self.generate_new_id_key(signer),
@@ -339,8 +345,8 @@ impl Aggregate for CertAuth {
             CmdDet::UpdateParentContact(parent, info) => self.update_parent(parent, info),
             CmdDet::RemoveParent(parent) => self.remove_parent(parent),
 
-            CmdDet::UpdateResourceClasses(parent, entitlements, signer) => {
-                self.update_resource_classes(parent, entitlements, signer)
+            CmdDet::UpdateEntitlements(parent, entitlements, signer) => {
+                self.update_entitlements(parent, entitlements, signer)
             }
             CmdDet::UpdateRcvdCert(class_name, rcvd_cert, config, signer) => {
                 self.update_received_cert(class_name, rcvd_cert, &config, signer)
@@ -348,7 +354,7 @@ impl Aggregate for CertAuth {
 
             // Key rolls
             CmdDet::KeyRollInitiate(duration, signer) => self.keyroll_initiate(duration, signer),
-            CmdDet::KeyRollActivate(duration, config, signer) => self.keyroll_activate(duration, &config, signer),
+            CmdDet::KeyRollActivate(duration, signer) => self.keyroll_activate(duration, signer),
             CmdDet::KeyRollFinish(rcn, response) => self.keyroll_finish(rcn, response),
 
             // Route Authorizations
@@ -357,7 +363,6 @@ impl Aggregate for CertAuth {
             }
 
             // Republish
-            CmdDet::Republish(config, signer) => self.republish(&config, &signer),
             CmdDet::RepoUpdate(contact, config, signer) => self.update_repo(contact, &config, &signer),
             CmdDet::RepoRemoveOld(_signer) => self.clean_repo(),
 
@@ -426,17 +431,6 @@ impl CertAuth {
 /// # Publishing
 ///
 impl CertAuth {
-    #[deprecated]
-    pub fn all_objects(&self) -> Vec<PublishElement> {
-        let mut res = vec![];
-        if let Some(repo_info) = self.repository.as_ref().map(|r| r.repo_info()) {
-            for rc in self.resources.values() {
-                res.append(&mut rc.all_objects(repo_info));
-            }
-        }
-        res
-    }
-
     pub fn repository_contact(&self) -> KrillResult<&RepositoryContact> {
         self.repository.as_ref().ok_or(Error::RepoNotSet)
     }
@@ -696,8 +690,6 @@ impl CertAuth {
         let issued =
             self.issue_child_certificate(&child, rcn.clone(), csr_info, limit, &config.issuance_timing, &signer)?;
 
-        let set_deltas = self.republish_certs(&rcn, &[&issued], &[], &config.issuance_timing, &signer)?;
-
         let issued_event = CaEvtDet::child_certificate_issued(
             &self.handle,
             self.version,
@@ -709,11 +701,9 @@ impl CertAuth {
         let mut cert_updates = ChildCertificateUpdates::default();
         cert_updates.issue(issued);
         let child_certs_updated =
-            CaEvtDet::child_certificates_updated(&self.handle, self.version + 1, rcn.clone(), cert_updates);
+            CaEvtDet::child_certificates_updated(&self.handle, self.version + 1, rcn, cert_updates);
 
-        let set_updated_event = CaEvtDet::current_set_updated(&self.handle, self.version + 2, rcn, set_deltas);
-
-        Ok(vec![issued_event, child_certs_updated, set_updated_event])
+        Ok(vec![issued_event, child_certs_updated])
     }
 
     /// Issue a new child certificate.
@@ -732,24 +722,6 @@ impl CertAuth {
         child.resources().apply_limit(&limit)?;
 
         my_rc.issue_cert(csr_info, child.resources(), limit, issuance_timing, signer)
-    }
-
-    /// Create a publish event details including the revocations, update, withdrawals needed
-    /// for updating child certificates.
-    fn republish_certs(
-        &self,
-        rcn: &ResourceClassName,
-        issued_certs: &[&IssuedCert],
-        removed_certs: &[&Cert],
-        issuance_timing: &IssuanceTimingConfig,
-        signer: &KrillSigner,
-    ) -> KrillResult<HashMap<KeyIdentifier, CurrentObjectSetDelta>> {
-        let repo = self.repository_contact()?;
-
-        self.resources
-            .get(&rcn)
-            .ok_or_else(|| Error::ResourceClassUnknown(rcn.clone()))?
-            .republish_certs(issued_certs, removed_certs, repo.repo_info(), issuance_timing, signer)
     }
 
     /// Updates child Resource entitlements.
@@ -793,13 +765,7 @@ impl CertAuth {
 
     /// Revokes a key for a child. So, add the last cert for the key to the CRL, and withdraw
     /// the .cer file for it.
-    fn child_revoke_key(
-        &self,
-        child_handle: ChildHandle,
-        request: RevocationRequest,
-        issuance_timing: &IssuanceTimingConfig,
-        signer: Arc<KrillSigner>,
-    ) -> KrillResult<Vec<CaEvt>> {
+    fn child_revoke_key(&self, child_handle: ChildHandle, request: RevocationRequest) -> KrillResult<Vec<CaEvt>> {
         let (rcn, key) = request.unpack();
 
         let child = self.get_child(&child_handle)?;
@@ -808,30 +774,19 @@ impl CertAuth {
             return Err(Error::KeyUseNoIssuedCert);
         }
 
-        let my_rc = self.resources.get(&rcn).ok_or(Error::KeyUseNoIssuedCert)?;
-        let removed = my_rc.issued(&key).ok_or(Error::KeyUseNoIssuedCert)?.cert();
-
         let handle = &self.handle;
         let version = self.version;
-
-        let set_deltas = self.republish_certs(&rcn, &[], &[removed], issuance_timing, &signer)?;
 
         let mut child_certificate_updates = ChildCertificateUpdates::default();
         child_certificate_updates.remove(key);
 
         let rev = CaEvtDet::child_revoke_key(handle, version, child_handle, rcn.clone(), key);
-        let wdr = CaEvtDet::current_set_updated(handle, version + 1, rcn.clone(), set_deltas);
-        let upd = CaEvtDet::child_certificates_updated(handle, version + 2, rcn, child_certificate_updates);
+        let upd = CaEvtDet::child_certificates_updated(handle, version + 1, rcn, child_certificate_updates);
 
-        Ok(vec![rev, wdr, upd])
+        Ok(vec![rev, upd])
     }
 
-    fn child_remove(
-        &self,
-        child_handle: &ChildHandle,
-        issuance_timing: &IssuanceTimingConfig,
-        signer: Arc<KrillSigner>,
-    ) -> KrillResult<Vec<CaEvt>> {
+    fn child_remove(&self, child_handle: &ChildHandle) -> KrillResult<Vec<CaEvt>> {
         let child = self.get_child(&child_handle)?;
 
         let mut version = self.version;
@@ -853,11 +808,6 @@ impl CertAuth {
                     issued_certs.push(issued);
                 }
             }
-
-            let removed: Vec<&Cert> = issued_certs.iter().map(|c| c.cert()).collect();
-            let set_deltas = self.republish_certs(&rcn, &[], &removed, issuance_timing, &signer)?;
-            res.push(CaEvtDet::current_set_updated(handle, version, rcn.clone(), set_deltas));
-            version += 1;
 
             let mut cert_updates = ChildCertificateUpdates::default();
             for issued in issued_certs {
@@ -956,21 +906,7 @@ impl CertAuth {
 
     /// Removes a parent. Returns an error if it doesn't exist.
     fn remove_parent(&self, parent: Handle) -> KrillResult<Vec<CaEvt>> {
-        let _parent = self.parent(&parent)?;
-        let repo = self.repository_contact()?;
-
-        // remove the parent, the RCs and un-publish everything.
-        let mut deltas = vec![];
-        for rc in self.resources.values().filter(|rc| rc.parent_handle() == &parent) {
-            deltas.push(rc.withdraw(repo.repo_info()));
-        }
-
-        Ok(vec![CaEvtDet::parent_removed(
-            &self.handle,
-            self.version,
-            parent,
-            deltas,
-        )])
+        Ok(vec![CaEvtDet::parent_removed(&self.handle, self.version, parent)])
     }
 
     /// Updates an existing parent's contact. This will return an error if
@@ -1012,25 +948,12 @@ impl CertAuth {
 
     fn make_request_events(
         &self,
-        version: &mut u64,
         entitlement: &EntitlementClass,
         rc: &ResourceClass,
         signer: &KrillSigner,
-    ) -> KrillResult<Vec<CaEvt>> {
+    ) -> KrillResult<Vec<CaEvtDet>> {
         let repo = self.repository_contact()?;
-        let parent_class_name = entitlement.class_name().clone();
-        let req_details_list = rc.make_entitlement_events(entitlement, repo.repo_info(), signer)?;
-
-        let mut res = vec![];
-        for details in req_details_list.into_iter() {
-            debug!(
-                "Updating Entitlements for CA: {}, Request for RC: {}",
-                &self.handle, &parent_class_name
-            );
-            res.push(StoredEvent::new(&self.handle, *version, details));
-            *version += 1;
-        }
-        Ok(res)
+        rc.make_entitlement_events(entitlement, repo.repo_info(), signer)
     }
 
     /// Returns the open revocation requests for the given parent.
@@ -1074,16 +997,15 @@ impl CertAuth {
     ///
     /// Note that when we receive the updated certificate, we will republish
     /// and shrink/revoke child certificates and ROAs as needed.
-    fn update_resource_classes(
+    fn update_entitlements(
         &self,
         parent_handle: Handle,
         entitlements: Entitlements,
         signer: Arc<KrillSigner>,
     ) -> KrillResult<Vec<CaEvt>> {
-        let mut res = vec![];
+        let mut event_details: Vec<CaEvtDet> = vec![];
 
         // Check if there is a resource class for each entitlement
-        let mut version = self.version;
 
         // Check if there are any current resource classes, now removed
         // from the entitlements. In which case we will have to clean them
@@ -1097,21 +1019,15 @@ impl CertAuth {
             // in the entitlements now received.
             class.parent_handle() == &parent_handle && !entitled_classes.contains(&class.parent_rc_name())
         }) {
-            let repo = self.repository_contact()?;
-            let delta = rc.withdraw(repo.repo_info());
             let revocations = rc.revoke(signer.deref())?;
 
             debug!("Updating Entitlements for CA: {}, Removing RC: {}", &self.handle, &name);
 
-            res.push(CaEvtDet::resource_class_removed(
-                &self.handle,
-                version,
+            event_details.push(CaEvtDet::ResourceClassRemoved(
                 name.clone(),
-                delta,
                 parent_handle.clone(),
                 revocations,
             ));
-            version += 1;
         }
 
         // Now check all the entitlements and either create an RC for them, or update.
@@ -1123,7 +1039,7 @@ impl CertAuth {
             match self.find_parent_rc(&parent_handle, &parent_rc_name) {
                 Some(rc) => {
                     // We have a matching RC, make requests (note this may be a no-op).
-                    res.append(&mut self.make_request_events(&mut version, ent, rc, signer.deref())?);
+                    event_details.append(&mut self.make_request_events(ent, rc, signer.deref())?);
                 }
                 None => {
                     // Create a resource class with a pending key
@@ -1136,20 +1052,26 @@ impl CertAuth {
 
                     let rc =
                         ResourceClass::create(rcn.clone(), ns, parent_handle.clone(), parent_rc_name.clone(), key_id);
-                    let rc_add_version = version;
-                    version += 1;
-                    debug!("Updating Entitlements for CA: {}, adding RC: {}", &self.handle, &rcn);
 
-                    let mut request_events = self.make_request_events(&mut version, ent, &rc, signer.deref())?;
+                    let added =
+                        CaEvtDet::ResourceClassAdded(rcn, parent_handle.clone(), parent_rc_name.clone(), key_id);
+                    let mut request_events = self.make_request_events(ent, &rc, signer.deref())?;
 
-                    let added = CaEvtDet::resource_class_added(&self.handle, rc_add_version, rcn, rc);
-
-                    res.push(added);
-                    res.append(&mut request_events);
+                    event_details.push(added);
+                    event_details.append(&mut request_events);
                 }
             }
         }
-        Ok(res)
+
+        let mut events = vec![];
+        let mut version = self.version;
+
+        for detail in event_details {
+            events.push(StoredEvent::new(&self.handle, version, detail));
+            version += 1;
+        }
+
+        Ok(events)
     }
 
     /// This method updates the received certificate for the given parent
@@ -1160,10 +1082,9 @@ impl CertAuth {
     /// the pending key appropriately, finally it will also return a
     /// publication event for the matching key if publication is needed.
     ///
-    /// In future, when ROAs and delegating certificates are supported, this
-    /// should be updated to also generate appropriate events for changes
-    /// affecting these objects if needed - e.g. because resources were lost
-    /// and ROAs/Certs would be become invalid.
+    /// This will also generate appropriate events for changes affecting
+    /// issued ROAs and delegated certificates - if because resources were
+    //  lost and ROAs/Certs would be become invalid.
     fn update_received_cert(
         &self,
         rcn: ResourceClassName,
@@ -1175,9 +1096,7 @@ impl CertAuth {
 
         let rc = self.resources.get(&rcn).ok_or(Error::ResourceClassUnknown(rcn))?;
 
-        let repo = self.repository_contact()?;
-
-        let evt_details = rc.update_received_cert(rcvd_cert, &self.routes, repo.repo_info(), config, signer.deref())?;
+        let evt_details = rc.update_received_cert(rcvd_cert, &self.routes, config, signer.deref())?;
 
         let mut res = vec![];
         let mut version = self.version;
@@ -1219,12 +1138,7 @@ impl CertAuth {
         Ok(res)
     }
 
-    fn keyroll_activate(
-        &self,
-        staging: Duration,
-        config: &Config,
-        signer: Arc<KrillSigner>,
-    ) -> KrillResult<Vec<CaEvt>> {
+    fn keyroll_activate(&self, staging_time: Duration, signer: Arc<KrillSigner>) -> KrillResult<Vec<CaEvt>> {
         if self.is_ta() {
             return Ok(vec![]);
         }
@@ -1235,12 +1149,7 @@ impl CertAuth {
         for (rcn, rc) in self.resources.iter() {
             let mut activated = false;
 
-            let repo = self.repository_contact()?;
-
-            for details in rc
-                .keyroll_activate(repo.repo_info(), staging, config, signer.deref())?
-                .into_iter()
-            {
+            for details in rc.keyroll_activate(staging_time, signer.deref())?.into_iter() {
                 activated = true;
                 res.push(StoredEvent::new(self.handle(), version, details));
                 version += 1;
@@ -1263,9 +1172,7 @@ impl CertAuth {
             .get(&rcn)
             .ok_or_else(|| Error::ResourceClassUnknown(rcn.clone()))?;
 
-        let repo = self.repository_contact()?;
-
-        let finish_details = my_rc.keyroll_finish(repo.repo_info())?;
+        let finish_details = my_rc.keyroll_finish()?;
 
         info!("Finished key roll for ca: {}, rc: {}", &self.handle, rcn);
 
@@ -1277,40 +1184,40 @@ impl CertAuth {
 ///
 impl CertAuth {
     /// Republish objects for this CA
-    pub fn republish(&self, config: &Config, signer: &KrillSigner) -> KrillResult<Vec<CaEvt>> {
-        let mut version = self.version;
-        let mut res = vec![];
+    // pub fn republish(&self, config: &Config, signer: &KrillSigner) -> KrillResult<Vec<CaEvt>> {
+    //     let mut version = self.version;
+    //     let mut res = vec![];
 
-        for evt_det in self.republish_resource_classes(&PublishMode::Normal, config, signer)? {
-            res.push(StoredEvent::new(&self.handle, version, evt_det));
-            version += 1;
-        }
+    //     for evt_det in self.republish_resource_classes(&PublishMode::Normal, config, signer)? {
+    //         res.push(StoredEvent::new(&self.handle, version, evt_det));
+    //         version += 1;
+    //     }
 
-        Ok(res)
-    }
+    //     Ok(res)
+    // }
 
-    fn republish_resource_classes(
-        &self,
-        mode: &PublishMode,
-        config: &Config,
-        signer: &KrillSigner,
-    ) -> KrillResult<Vec<CaEvtDet>> {
-        let mut res = vec![];
+    // fn republish_resource_classes(
+    //     &self,
+    //     mode: &PublishMode,
+    //     config: &Config,
+    //     signer: &KrillSigner,
+    // ) -> KrillResult<Vec<CaEvtDet>> {
+    //     let mut res = vec![];
 
-        for rc in self.resources.values() {
-            if rc.current_key().is_some() {
-                let repo_info = if let PublishMode::NewRepo(info) = mode {
-                    info
-                } else {
-                    self.repository_contact()?.repo_info()
-                };
+    //     for rc in self.resources.values() {
+    //         if rc.current_key().is_some() {
+    //             let repo_info = if let PublishMode::NewRepo(info) = mode {
+    //                 info
+    //             } else {
+    //                 self.repository_contact()?.repo_info()
+    //             };
 
-                res.append(&mut rc.republish(repo_info, mode, config, signer)?);
-            }
-        }
+    //             res.append(&mut rc.republish(repo_info, mode, config, signer)?);
+    //         }
+    //     }
 
-        Ok(res)
-    }
+    //     Ok(res)
+    // }
 
     /// Update repository:
     /// - check that it is indeed different
@@ -1320,6 +1227,7 @@ impl CertAuth {
     /// Note that this will then trigger (asynchronous):
     /// - updated objects synchronised with repository
     /// - CSRs submitted to parent(s)
+    #[deprecated]
     pub fn update_repo(
         &self,
         new_contact: RepositoryContact,
@@ -1339,9 +1247,6 @@ impl CertAuth {
 
         // register updated repo
         evt_dts.push(CaEvtDet::RepoUpdated(new_contact));
-
-        // issue new things => will trigger publication at the new location
-        evt_dts.append(&mut self.republish_resource_classes(&PublishMode::NewRepo(info.clone()), config, signer)?);
 
         // request new certs => when received will trigger unpublishing at old location
         for rc in self.resources.values() {
@@ -1389,43 +1294,12 @@ impl CertAuth {
 
         let (routes, mut evts) = self.update_authorizations(&route_auth_updates)?;
 
-        let repo = self.repository_contact()?;
-        let mut deltas = HashMap::new();
-
         // for rc in self.resources
         for (rcn, rc) in self.resources.iter() {
             let updates = rc.update_roas(&routes, None, config, signer.deref())?;
             if updates.contains_changes() {
-                let mut delta = ObjectsDelta::new(repo.repo_info().ca_repository(rc.name_space()));
-
-                for added in updates.added().into_iter() {
-                    delta.add(added);
-                }
-                for update in updates.updated().into_iter() {
-                    delta.update(update);
-                }
-                for withdraw in updates.withdrawn().into_iter() {
-                    delta.withdraw(withdraw);
-                }
-
-                let revocations = updates.revocations();
-                deltas.insert(rcn, (delta, revocations));
-
                 evts.push(CaEvtDet::RoasUpdated(rcn.clone(), updates));
             }
-        }
-
-        // Create publication delta with all additions/updates/withdraws as a single delta
-        for (rcn, (delta, revocations)) in deltas.into_iter() {
-            let rc = self.resources.get(&rcn).unwrap();
-            evts.push(rc.publish_objects(
-                repo.repo_info(),
-                delta,
-                revocations,
-                &PublishMode::Normal,
-                &config.issuance_timing,
-                &signer,
-            )?);
         }
 
         let mut res = vec![];

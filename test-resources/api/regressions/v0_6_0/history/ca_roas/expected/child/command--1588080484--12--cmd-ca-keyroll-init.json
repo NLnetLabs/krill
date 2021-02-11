@@ -3,15 +3,15 @@
     "actor": "krill",
     "time": "2020-04-28T13:28:04.446362Z",
     "handle": "child",
-    "version": 21,
+    "version": 17,
     "sequence": 12,
     "details": {
       "key_roll_initiate": 0
     },
     "effect": {
       "events": [
-        21,
-        22
+        17,
+        18
       ]
     }
   },
@@ -19,7 +19,7 @@
     "Events": [
       {
         "id": "child",
-        "version": 21,
+        "version": 17,
         "details": {
           "key_roll_pending_key_added": [
             "0",
@@ -29,7 +29,7 @@
       },
       {
         "id": "child",
-        "version": 22,
+        "version": 18,
         "details": {
           "certificate_requested": [
             "0",

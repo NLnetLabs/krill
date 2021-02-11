@@ -106,8 +106,7 @@
       "effect": {
         "events": [
           5,
-          6,
-          7
+          6
         ]
       }
     },
@@ -116,7 +115,7 @@
       "actor": "krill",
       "timestamp": 1588256542157,
       "handle": "ta",
-      "version": 8,
+      "version": 7,
       "sequence": 6,
       "summary": {
         "msg": "Add child 'CA2' with RFC8183 key '84bf5291fe7abb0be139537cba90cf92fe8560ee' and resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
@@ -132,7 +131,7 @@
       },
       "effect": {
         "events": [
-          8
+          7
         ]
       }
     },
@@ -141,7 +140,7 @@
       "actor": "krill",
       "timestamp": 1588256543760,
       "handle": "ta",
-      "version": 9,
+      "version": 8,
       "sequence": 7,
       "summary": {
         "msg": "Issue certificate to child 'CA2' for key 'FE7805B8F0C16A0BF93B6CC8E53D57D39D856018'",
@@ -154,9 +153,8 @@
       },
       "effect": {
         "events": [
-          9,
-          10,
-          11
+          8,
+          9
         ]
       }
     }

@@ -93,11 +93,11 @@
         "msg": "Update received cert in RC '0', with resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
         "label": "cmd-ca-rcn-receive",
         "args": {
-          "resources": "asn: , v4: 10.0.0.0/16, v6: ",
-          "ipv4_blocks": "1",
           "asn_blocks": "0",
           "class_name": "0",
-          "ipv6_blocks": "0"
+          "ipv4_blocks": "1",
+          "ipv6_blocks": "0",
+          "resources": "asn: , v4: 10.0.0.0/16, v6: "
         }
       },
       "effect": {
@@ -137,17 +137,16 @@
         "msg": "Update received cert in RC '0', with resources 'asn: 1 blocks, v4: 1 blocks, v6: 0 blocks'",
         "label": "cmd-ca-rcn-receive",
         "args": {
+          "asn_blocks": "1",
           "class_name": "0",
           "ipv4_blocks": "1",
-          "resources": "asn: AS65000, v4: 10.0.0.0/16, v6: ",
           "ipv6_blocks": "0",
-          "asn_blocks": "1"
+          "resources": "asn: AS65000, v4: 10.0.0.0/16, v6: "
         }
       },
       "effect": {
         "events": [
-          8,
-          9
+          8
         ]
       }
     },
@@ -156,7 +155,7 @@
       "actor": "krill",
       "timestamp": 1588256050416,
       "handle": "rfc6492",
-      "version": 10,
+      "version": 9,
       "sequence": 8,
       "summary": {
         "msg": "Update entitlements under parent 'ta': 0 => asn: 0 blocks, v4: 1 blocks, v6: 0 blocks ",
@@ -167,7 +166,7 @@
       },
       "effect": {
         "events": [
-          10
+          9
         ]
       }
     },
@@ -176,23 +175,22 @@
       "actor": "krill",
       "timestamp": 1588256050829,
       "handle": "rfc6492",
-      "version": 11,
+      "version": 10,
       "sequence": 9,
       "summary": {
         "msg": "Update received cert in RC '0', with resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
         "label": "cmd-ca-rcn-receive",
         "args": {
-          "ipv4_blocks": "1",
-          "class_name": "0",
           "asn_blocks": "0",
+          "class_name": "0",
+          "ipv4_blocks": "1",
           "ipv6_blocks": "0",
           "resources": "asn: , v4: 10.0.0.0/24, v6: "
         }
       },
       "effect": {
         "events": [
-          11,
-          12
+          10
         ]
       }
     },
@@ -201,7 +199,7 @@
       "actor": "krill",
       "timestamp": 1588256051665,
       "handle": "rfc6492",
-      "version": 13,
+      "version": 11,
       "sequence": 10,
       "summary": {
         "msg": "Update entitlements under parent 'ta': ",
@@ -212,7 +210,7 @@
       },
       "effect": {
         "events": [
-          13
+          11
         ]
       }
     },
@@ -221,7 +219,7 @@
       "actor": "krill",
       "timestamp": 1588256053522,
       "handle": "rfc6492",
-      "version": 14,
+      "version": 12,
       "sequence": 11,
       "summary": {
         "msg": "Update contact for parent 'ta' to 'RFC 6492 Parent'",
@@ -233,7 +231,7 @@
       },
       "effect": {
         "events": [
-          14
+          12
         ]
       }
     },
@@ -242,7 +240,7 @@
       "actor": "krill",
       "timestamp": 1588256053668,
       "handle": "rfc6492",
-      "version": 15,
+      "version": 13,
       "sequence": 12,
       "summary": {
         "msg": "Update entitlements under parent 'ta': 0 => asn: 0 blocks, v4: 1 blocks, v6: 0 blocks ",
@@ -253,8 +251,8 @@
       },
       "effect": {
         "events": [
-          15,
-          16
+          13,
+          14
         ]
       }
     },
@@ -263,17 +261,55 @@
       "actor": "krill",
       "timestamp": 1588256055119,
       "handle": "rfc6492",
-      "version": 17,
+      "version": 15,
       "sequence": 13,
       "summary": {
         "msg": "Update received cert in RC '1', with resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
         "label": "cmd-ca-rcn-receive",
         "args": {
-          "resources": "asn: , v4: 10.0.0.0/24, v6: ",
-          "ipv4_blocks": "1",
+          "asn_blocks": "0",
           "class_name": "1",
+          "ipv4_blocks": "1",
           "ipv6_blocks": "0",
-          "asn_blocks": "0"
+          "resources": "asn: , v4: 10.0.0.0/24, v6: "
+        }
+      },
+      "effect": {
+        "events": [
+          15
+        ]
+      }
+    },
+    {
+      "key": "command--1588256055--14--cmd-ca-generate-new-id",
+      "actor": "krill",
+      "timestamp": 1588256055843,
+      "handle": "rfc6492",
+      "version": 16,
+      "sequence": 14,
+      "summary": {
+        "msg": "Generate a new RFC8183 ID.",
+        "label": "cmd-ca-generate-new-id",
+        "args": {}
+      },
+      "effect": {
+        "events": [
+          16
+        ]
+      }
+    },
+    {
+      "key": "command--1588256056--15--cmd-ca-parent-entitlements",
+      "actor": "krill",
+      "timestamp": 1588256056350,
+      "handle": "rfc6492",
+      "version": 17,
+      "sequence": 15,
+      "summary": {
+        "msg": "Update entitlements under parent 'ta': 0 => asn: 1 blocks, v4: 1 blocks, v6: 0 blocks ",
+        "label": "cmd-ca-parent-entitlements",
+        "args": {
+          "parent": "ta"
         }
       },
       "effect": {
@@ -283,16 +319,22 @@
       }
     },
     {
-      "key": "command--1588256055--14--cmd-ca-generate-new-id",
+      "key": "command--1588256057--16--cmd-ca-rcn-receive",
       "actor": "krill",
-      "timestamp": 1588256055843,
+      "timestamp": 1588256057144,
       "handle": "rfc6492",
       "version": 18,
-      "sequence": 14,
+      "sequence": 16,
       "summary": {
-        "msg": "Generate a new RFC8183 ID.",
-        "label": "cmd-ca-generate-new-id",
-        "args": {}
+        "msg": "Update received cert in RC '1', with resources 'asn: 1 blocks, v4: 1 blocks, v6: 0 blocks'",
+        "label": "cmd-ca-rcn-receive",
+        "args": {
+          "asn_blocks": "1",
+          "class_name": "1",
+          "ipv4_blocks": "1",
+          "ipv6_blocks": "0",
+          "resources": "asn: AS65000, v4: 10.0.0.0/16, v6: "
+        }
       },
       "effect": {
         "events": [
@@ -301,15 +343,15 @@
       }
     },
     {
-      "key": "command--1588256056--15--cmd-ca-parent-entitlements",
+      "key": "command--1588256057--17--cmd-ca-parent-remove",
       "actor": "krill",
-      "timestamp": 1588256056350,
+      "timestamp": 1588256057417,
       "handle": "rfc6492",
       "version": 19,
-      "sequence": 15,
+      "sequence": 17,
       "summary": {
-        "msg": "Update entitlements under parent 'ta': 0 => asn: 1 blocks, v4: 1 blocks, v6: 0 blocks ",
-        "label": "cmd-ca-parent-entitlements",
+        "msg": "Remove parent 'ta'",
+        "label": "cmd-ca-parent-remove",
         "args": {
           "parent": "ta"
         }
@@ -321,56 +363,11 @@
       }
     },
     {
-      "key": "command--1588256057--16--cmd-ca-rcn-receive",
-      "actor": "krill",
-      "timestamp": 1588256057144,
-      "handle": "rfc6492",
-      "version": 20,
-      "sequence": 16,
-      "summary": {
-        "msg": "Update received cert in RC '1', with resources 'asn: 1 blocks, v4: 1 blocks, v6: 0 blocks'",
-        "label": "cmd-ca-rcn-receive",
-        "args": {
-          "resources": "asn: AS65000, v4: 10.0.0.0/16, v6: ",
-          "ipv4_blocks": "1",
-          "ipv6_blocks": "0",
-          "class_name": "1",
-          "asn_blocks": "1"
-        }
-      },
-      "effect": {
-        "events": [
-          20,
-          21
-        ]
-      }
-    },
-    {
-      "key": "command--1588256057--17--cmd-ca-parent-remove",
-      "actor": "krill",
-      "timestamp": 1588256057417,
-      "handle": "rfc6492",
-      "version": 22,
-      "sequence": 17,
-      "summary": {
-        "msg": "Remove parent 'ta'",
-        "label": "cmd-ca-parent-remove",
-        "args": {
-          "parent": "ta"
-        }
-      },
-      "effect": {
-        "events": [
-          22
-        ]
-      }
-    },
-    {
       "key": "command--1588256058--18--cmd-ca-parent-add",
       "actor": "krill",
       "timestamp": 1588256058249,
       "handle": "rfc6492",
-      "version": 23,
+      "version": 20,
       "sequence": 18,
       "summary": {
         "msg": "Add parent 'ta' as 'RFC 6492 Parent'",
@@ -382,7 +379,7 @@
       },
       "effect": {
         "events": [
-          23
+          20
         ]
       }
     },
@@ -391,7 +388,7 @@
       "actor": "krill",
       "timestamp": 1588256058947,
       "handle": "rfc6492",
-      "version": 24,
+      "version": 21,
       "sequence": 19,
       "summary": {
         "msg": "Update entitlements under parent 'ta': 0 => asn: 1 blocks, v4: 1 blocks, v6: 0 blocks ",
@@ -402,8 +399,8 @@
       },
       "effect": {
         "events": [
-          24,
-          25
+          21,
+          22
         ]
       }
     },
@@ -412,22 +409,22 @@
       "actor": "krill",
       "timestamp": 1588256059250,
       "handle": "rfc6492",
-      "version": 26,
+      "version": 23,
       "sequence": 20,
       "summary": {
         "msg": "Update received cert in RC '2', with resources 'asn: 1 blocks, v4: 1 blocks, v6: 0 blocks'",
         "label": "cmd-ca-rcn-receive",
         "args": {
-          "ipv4_blocks": "1",
           "asn_blocks": "1",
           "class_name": "2",
-          "resources": "asn: AS65000, v4: 10.0.0.0/16, v6: ",
-          "ipv6_blocks": "0"
+          "ipv4_blocks": "1",
+          "ipv6_blocks": "0",
+          "resources": "asn: AS65000, v4: 10.0.0.0/16, v6: "
         }
       },
       "effect": {
         "events": [
-          26
+          23
         ]
       }
     }

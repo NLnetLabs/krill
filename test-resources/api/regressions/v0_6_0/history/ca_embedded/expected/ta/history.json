@@ -49,11 +49,11 @@
         "msg": "Update received cert in RC '0', with resources 'asn: 1 blocks, v4: 1 blocks, v6: 1 blocks'",
         "label": "cmd-ca-rcn-receive",
         "args": {
-          "ipv6_blocks": "1",
           "asn_blocks": "1",
+          "class_name": "0",
           "ipv4_blocks": "1",
-          "resources": "asn: AS0-AS4294967295, v4: 0.0.0.0/0, v6: ::/0",
-          "class_name": "0"
+          "ipv6_blocks": "1",
+          "resources": "asn: AS0-AS4294967295, v4: 0.0.0.0/0, v6: ::/0"
         }
       },
       "effect": {
@@ -74,11 +74,11 @@
         "label": "cmd-ca-child-add",
         "args": {
           "asn_blocks": "0",
-          "resources": "asn: , v4: 10.0.0.0/16, v6: ",
+          "child": "child",
+          "id_key": "<none>",
           "ipv4_blocks": "1",
           "ipv6_blocks": "0",
-          "child": "child",
-          "id_key": "<none>"
+          "resources": "asn: , v4: 10.0.0.0/16, v6: "
         }
       },
       "effect": {
@@ -98,16 +98,15 @@
         "msg": "Issue certificate to child 'child' for key 'C4CF00E42E046EBE5275589D3462F1B1F43FBA85'",
         "label": "cmd-ca-child-certify",
         "args": {
-          "key": "C4CF00E42E046EBE5275589D3462F1B1F43FBA85",
+          "child": "child",
           "class_name": "0",
-          "child": "child"
+          "key": "C4CF00E42E046EBE5275589D3462F1B1F43FBA85"
         }
       },
       "effect": {
         "events": [
           5,
-          6,
-          7
+          6
         ]
       }
     },
@@ -116,22 +115,22 @@
       "actor": "krill",
       "timestamp": 1588257294541,
       "handle": "ta",
-      "version": 8,
+      "version": 7,
       "sequence": 6,
       "summary": {
         "msg": "Update resources for child 'child' to: asn: 1 blocks, v4: 1 blocks, v6: 0 blocks",
         "label": "cmd-ca-child-update-res",
         "args": {
-          "ipv4_blocks": "1",
           "asn_blocks": "1",
-          "ipv6_blocks": "0",
           "child": "child",
+          "ipv4_blocks": "1",
+          "ipv6_blocks": "0",
           "resources": "asn: AS65000, v4: 10.0.0.0/16, v6: "
         }
       },
       "effect": {
         "events": [
-          8
+          7
         ]
       }
     },
@@ -140,22 +139,21 @@
       "actor": "krill",
       "timestamp": 1588257295045,
       "handle": "ta",
-      "version": 9,
+      "version": 8,
       "sequence": 7,
       "summary": {
         "msg": "Issue certificate to child 'child' for key 'C4CF00E42E046EBE5275589D3462F1B1F43FBA85'",
         "label": "cmd-ca-child-certify",
         "args": {
-          "key": "C4CF00E42E046EBE5275589D3462F1B1F43FBA85",
           "child": "child",
-          "class_name": "0"
+          "class_name": "0",
+          "key": "C4CF00E42E046EBE5275589D3462F1B1F43FBA85"
         }
       },
       "effect": {
         "events": [
-          9,
-          10,
-          11
+          8,
+          9
         ]
       }
     },
@@ -164,7 +162,7 @@
       "actor": "krill",
       "timestamp": 1588257295654,
       "handle": "ta",
-      "version": 12,
+      "version": 10,
       "sequence": 8,
       "summary": {
         "msg": "Update resources for child 'child' to: asn: 0 blocks, v4: 1 blocks, v6: 0 blocks",
@@ -172,14 +170,14 @@
         "args": {
           "asn_blocks": "0",
           "child": "child",
-          "resources": "asn: , v4: 10.0.0.0/24, v6: ",
           "ipv4_blocks": "1",
-          "ipv6_blocks": "0"
+          "ipv6_blocks": "0",
+          "resources": "asn: , v4: 10.0.0.0/24, v6: "
         }
       },
       "effect": {
         "events": [
-          12
+          10
         ]
       }
     },
@@ -188,22 +186,21 @@
       "actor": "krill",
       "timestamp": 1588257296109,
       "handle": "ta",
-      "version": 13,
+      "version": 11,
       "sequence": 9,
       "summary": {
         "msg": "Issue certificate to child 'child' for key 'C4CF00E42E046EBE5275589D3462F1B1F43FBA85'",
         "label": "cmd-ca-child-certify",
         "args": {
-          "key": "C4CF00E42E046EBE5275589D3462F1B1F43FBA85",
+          "child": "child",
           "class_name": "0",
-          "child": "child"
+          "key": "C4CF00E42E046EBE5275589D3462F1B1F43FBA85"
         }
       },
       "effect": {
         "events": [
-          13,
-          14,
-          15
+          11,
+          12
         ]
       }
     },
@@ -212,22 +209,22 @@
       "actor": "krill",
       "timestamp": 1588257296743,
       "handle": "ta",
-      "version": 16,
+      "version": 13,
       "sequence": 10,
       "summary": {
         "msg": "Update resources for child 'child' to: asn: 0 blocks, v4: 0 blocks, v6: 0 blocks",
         "label": "cmd-ca-child-update-res",
         "args": {
           "asn_blocks": "0",
-          "resources": "asn: , v4: , v6: ",
+          "child": "child",
           "ipv4_blocks": "0",
           "ipv6_blocks": "0",
-          "child": "child"
+          "resources": "asn: , v4: , v6: "
         }
       },
       "effect": {
         "events": [
-          16
+          13
         ]
       }
     },
@@ -236,22 +233,21 @@
       "actor": "krill",
       "timestamp": 1588257297207,
       "handle": "ta",
-      "version": 17,
+      "version": 14,
       "sequence": 11,
       "summary": {
         "msg": "Revoke certificates for child 'child' for key 'C4CF00E42E046EBE5275589D3462F1B1F43FBA85' in RC 0",
         "label": "cmd-ca-child-revoke",
         "args": {
-          "class_name": "0",
           "child": "child",
+          "class_name": "0",
           "key": "C4CF00E42E046EBE5275589D3462F1B1F43FBA85"
         }
       },
       "effect": {
         "events": [
-          17,
-          18,
-          19
+          14,
+          15
         ]
       }
     }

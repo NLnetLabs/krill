@@ -250,12 +250,12 @@ impl CaServer {
     }
 
     /// Republish a CA, this is a no-op when there is nothing to publish.
-    #[deprecated]
-    pub async fn republish(&self, handle: &Handle, actor: &Actor) -> KrillResult<()> {
-        let cmd = CmdDet::publish(handle, self.config.clone(), self.signer.clone(), actor);
-        self.send_command(cmd).await?;
-        Ok(())
-    }
+    // #[deprecated]
+    // pub async fn republish(&self, handle: &Handle, actor: &Actor) -> KrillResult<()> {
+    //     let cmd = CmdDet::publish(handle, self.config.clone(), self.signer.clone(), actor);
+    //     self.send_command(cmd).await?;
+    //     Ok(())
+    // }
 
     /// Update repository where a CA publishes.
     pub async fn update_repo(&self, handle: Handle, new_contact: RepositoryContact, actor: &Actor) -> KrillResult<()> {
@@ -433,14 +433,7 @@ impl CaServer {
 
     /// Update a child under this CA.
     pub async fn ca_child_remove(&self, handle: &Handle, child: ChildHandle, actor: &Actor) -> KrillResult<()> {
-        self.send_command(CmdDet::child_remove(
-            handle,
-            child,
-            self.config.clone(),
-            self.signer.clone(),
-            actor,
-        ))
-        .await?;
+        self.send_command(CmdDet::child_remove(handle, child, actor)).await?;
         Ok(())
     }
 }
@@ -622,14 +615,7 @@ impl CaServer {
     ) -> KrillResult<RevocationResponse> {
         let res = (&revoke_request).into(); // response provided that no errors are returned earlier
 
-        let cmd = CmdDet::child_revoke_key(
-            ca_handle,
-            child,
-            revoke_request,
-            self.config.clone(),
-            self.signer.clone(),
-            actor,
-        );
+        let cmd = CmdDet::child_revoke_key(ca_handle, child, revoke_request, actor);
         self.send_command(cmd).await?;
 
         Ok(res)
@@ -733,7 +719,7 @@ impl CaServer {
     /// a staging period of 24 hours, but we may use a shorter period for testing and/or emergency
     /// manual key rolls.
     pub async fn ca_keyroll_activate(&self, handle: Handle, staging: Duration, actor: &Actor) -> KrillResult<()> {
-        let activate_cmd = CmdDet::key_roll_activate(&handle, staging, self.config.clone(), self.signer.clone(), actor);
+        let activate_cmd = CmdDet::key_roll_activate(&handle, staging, self.signer.clone(), actor);
         self.send_command(activate_cmd).await?;
         Ok(())
     }
@@ -771,7 +757,7 @@ impl CaServer {
                                 .set_parent_entitlements(handle, parent, uri, &entitlements, next_run_seconds)
                                 .await?;
                             if !self
-                                .update_resource_classes(handle, parent.clone(), entitlements, actor)
+                                .update_entitlements(handle, parent.clone(), entitlements, actor)
                                 .await?
                             {
                                 return Ok(()); // Nothing to do
@@ -898,15 +884,8 @@ impl CaServer {
             for req in revoke_requests.into_iter() {
                 revocations.push((&req).into());
 
-                self.send_command(CmdDet::child_revoke_key(
-                    parent_h,
-                    handle.clone(),
-                    req,
-                    self.config.clone(),
-                    self.signer.clone(),
-                    actor,
-                ))
-                .await?;
+                self.send_command(CmdDet::child_revoke_key(parent_h, handle.clone(), req, actor))
+                    .await?;
             }
             revoke_map.insert(rcn, revocations);
         }
@@ -1091,7 +1070,7 @@ impl CaServer {
     /// what the CA currently has under this parent. Returns [`Ok(true)`] in
     /// case there were any updates, implying that there will be open requests
     /// for the parent CA.
-    async fn update_resource_classes(
+    async fn update_entitlements(
         &self,
         handle: &Handle,
         parent: ParentHandle,
@@ -1101,7 +1080,7 @@ impl CaServer {
         let current_version = self.get_ca(handle).await?.version();
 
         let update_entitlements_command =
-            CmdDet::upd_resource_classes(handle, parent, entitlements, self.signer.clone(), actor);
+            CmdDet::update_entitlements(handle, parent, entitlements, self.signer.clone(), actor);
 
         let new_version = self.send_command(update_entitlements_command).await?.version();
 
@@ -1350,11 +1329,10 @@ impl CaServer {
         match reply {
             rfc8181::ReplyMessage::SuccessReply => {
                 if !cleanup {
-                    let ca = self.get_ca(ca_handle).await?;
                     self.status_store
                         .lock()
                         .await
-                        .set_status_repo_elements(ca_handle, uri, ca.all_objects(), self.config.republish_hours())
+                        .set_status_repo_elements(ca_handle, uri, self.config.republish_hours())
                         .await?;
                 }
                 Ok(())

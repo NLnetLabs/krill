@@ -3,7 +3,7 @@
     "actor": "krill",
     "time": "2020-04-30T14:14:16.350692Z",
     "handle": "rfc6492",
-    "version": 19,
+    "version": 17,
     "sequence": 15,
     "details": {
       "update_resource_classes": [
@@ -19,7 +19,7 @@
     },
     "effect": {
       "events": [
-        19
+        17
       ]
     }
   },
@@ -27,7 +27,7 @@
     "Events": [
       {
         "id": "rfc6492",
-        "version": 19,
+        "version": 17,
         "details": {
           "certificate_requested": [
             "1",

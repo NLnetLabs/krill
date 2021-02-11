@@ -93,11 +93,11 @@
         "msg": "Update received cert in RC '0', with resources 'asn: 0 blocks, v4: 1 blocks, v6: 1 blocks'",
         "label": "cmd-ca-rcn-receive",
         "args": {
-          "class_name": "0",
-          "resources": "asn: , v4: 10.0.0.0/16, v6: 2001:db8::/32",
           "asn_blocks": "0",
+          "class_name": "0",
+          "ipv4_blocks": "1",
           "ipv6_blocks": "1",
-          "ipv4_blocks": "1"
+          "resources": "asn: , v4: 10.0.0.0/16, v6: 2001:db8::/32"
         }
       },
       "effect": {
@@ -117,16 +117,15 @@
         "msg": "Update ROAs add: 2 remove: '0'",
         "label": "cmd-ca-roas-updated",
         "args": {
-          "removed": "0",
-          "added": "2"
+          "added": "2",
+          "removed": "0"
         }
       },
       "effect": {
         "events": [
           7,
           8,
-          9,
-          10
+          9
         ]
       }
     },
@@ -135,7 +134,7 @@
       "actor": "krill",
       "timestamp": 1588080481257,
       "handle": "child",
-      "version": 11,
+      "version": 10,
       "sequence": 7,
       "summary": {
         "msg": "Update ROAs add: 0 remove: '1'",
@@ -147,9 +146,8 @@
       },
       "effect": {
         "events": [
-          11,
-          12,
-          13
+          10,
+          11
         ]
       }
     },
@@ -177,7 +175,7 @@
       "actor": "krill",
       "timestamp": 1588080482359,
       "handle": "child",
-      "version": 14,
+      "version": 12,
       "sequence": 9,
       "summary": {
         "msg": "Update entitlements under parent 'ta': 0 => asn: 0 blocks, v4: 1 blocks, v6: 0 blocks ",
@@ -188,7 +186,7 @@
       },
       "effect": {
         "events": [
-          14
+          12
         ]
       }
     },
@@ -197,24 +195,23 @@
       "actor": "krill",
       "timestamp": 1588080483364,
       "handle": "child",
-      "version": 15,
+      "version": 13,
       "sequence": 10,
       "summary": {
         "msg": "Update received cert in RC '0', with resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
         "label": "cmd-ca-rcn-receive",
         "args": {
-          "resources": "asn: , v4: 192.168.0.0/16, v6: ",
-          "ipv6_blocks": "0",
-          "class_name": "0",
           "asn_blocks": "0",
-          "ipv4_blocks": "1"
+          "class_name": "0",
+          "ipv4_blocks": "1",
+          "ipv6_blocks": "0",
+          "resources": "asn: , v4: 192.168.0.0/16, v6: "
         }
       },
       "effect": {
         "events": [
-          15,
-          16,
-          17
+          13,
+          14
         ]
       }
     },
@@ -223,7 +220,7 @@
       "actor": "krill",
       "timestamp": 1588080483528,
       "handle": "child",
-      "version": 18,
+      "version": 15,
       "sequence": 11,
       "summary": {
         "msg": "Update ROAs add: 1 remove: '0'",
@@ -235,9 +232,8 @@
       },
       "effect": {
         "events": [
-          18,
-          19,
-          20
+          15,
+          16
         ]
       }
     },
@@ -246,7 +242,7 @@
       "actor": "krill",
       "timestamp": 1588080484446,
       "handle": "child",
-      "version": 21,
+      "version": 17,
       "sequence": 12,
       "summary": {
         "msg": "Initiate key roll for keys older than '0' seconds",
@@ -257,8 +253,8 @@
       },
       "effect": {
         "events": [
-          21,
-          22
+          17,
+          18
         ]
       }
     },
@@ -267,22 +263,22 @@
       "actor": "krill",
       "timestamp": 1588080485488,
       "handle": "child",
-      "version": 23,
+      "version": 19,
       "sequence": 13,
       "summary": {
         "msg": "Update received cert in RC '0', with resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
         "label": "cmd-ca-rcn-receive",
         "args": {
-          "resources": "asn: , v4: 192.168.0.0/16, v6: ",
+          "asn_blocks": "0",
           "class_name": "0",
           "ipv4_blocks": "1",
           "ipv6_blocks": "0",
-          "asn_blocks": "0"
+          "resources": "asn: , v4: 192.168.0.0/16, v6: "
         }
       },
       "effect": {
         "events": [
-          23
+          19
         ]
       }
     },
@@ -291,7 +287,7 @@
       "actor": "krill",
       "timestamp": 1588080485667,
       "handle": "child",
-      "version": 24,
+      "version": 20,
       "sequence": 14,
       "summary": {
         "msg": "Activate new keys staging longer than '0' seconds",
@@ -302,9 +298,8 @@
       },
       "effect": {
         "events": [
-          24,
-          25,
-          26
+          20,
+          21
         ]
       }
     },
@@ -313,7 +308,7 @@
       "actor": "krill",
       "timestamp": 1588080486697,
       "handle": "child",
-      "version": 27,
+      "version": 22,
       "sequence": 15,
       "summary": {
         "msg": "Retire old revoked key in RC '0'",
@@ -324,7 +319,7 @@
       },
       "effect": {
         "events": [
-          27
+          22
         ]
       }
     },
@@ -339,8 +334,8 @@
         "msg": "Update ROAs add: 1 remove: '0'",
         "label": "cmd-ca-roas-updated",
         "args": {
-          "removed": "0",
-          "added": "1"
+          "added": "1",
+          "removed": "0"
         }
       },
       "effect": {

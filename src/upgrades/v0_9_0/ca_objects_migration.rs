@@ -1,41 +1,60 @@
-use std::{collections::HashMap, fmt, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, str::FromStr, sync::Arc};
 
-use rpki::{crl::Crl, crypto::KeyIdentifier, manifest::Manifest, roa::Roa, uri, x509::Time};
+use rpki::{crl::Crl, crypto::KeyIdentifier, manifest::Manifest, x509::Time};
 
 use crate::{
     commons::{
         api::{
-            ChildHandle, CurrentObject, Handle, HexEncodedHash, IssuanceRequest, IssuedCert, ObjectName,
-            ParentCaContact, ParentHandle, RcvdCert, ResourceClassName, ResourceSet, Revocation, RevocationRequest,
-            Revocations, RoaAggregateKey, StorableCaCommand,
+            self, ChildHandle, Handle, HexEncodedHash, IssuanceRequest, IssuedCert, ObjectName, ParentCaContact,
+            ParentHandle, RcvdCert, RepoInfo, ResourceClassName, ResourceSet, Revocation, RevocationRequest,
+            Revocations, RoaAggregateKey,
         },
         crypto::{IdCert, KrillSigner},
-        error::Error,
-        eventsourcing::{Aggregate, AggregateStore, AggregateStoreError, KeyValueError},
+        eventsourcing::{
+            Aggregate, AggregateStore, CommandKey, KeyStoreKey, KeyStoreVersion, KeyValueStore, StoredValueInfo,
+        },
         remote::rfc8183,
     },
     constants::CASERVER_DIR,
     daemon::{
         ca::{
-            ta_handle, BasicKeyObjectSet, CaObjects, CaObjectsStore, CurrentKeyObjectSet, PublishedCert, PublishedRoa,
-            ResourceClassKeyState, ResourceClassObjects, RouteAuthorization,
+            self, ta_handle, BasicKeyObjectSet, CaEvtDet, CaObjects, CaObjectsStore, CurrentKeyObjectSet,
+            PublishedCert, PublishedRoa, ResourceClassKeyState, ResourceClassObjects, RouteAuthorization,
         },
         config::Config,
     },
+    upgrades::{UpgradeError, UpgradeResult, UpgradeStore},
 };
 
 use super::{old_commands::*, old_events::*};
+
+const MIGRATION_SCOPE: &str = "migration-0.9";
 
 /// Migrate the current objects for each CA into the CaObjectStore
 pub struct CaObjectsMigration;
 
 impl CaObjectsMigration {
-    pub fn migrate(work_dir: &PathBuf, config: Arc<Config>, signer: Arc<KrillSigner>) -> Result<(), MigrationError> {
-        // Check the current CAS dir, if it is pre-0.9.0 we need to migrate
+    pub fn migrate(config: Arc<Config>) -> UpgradeResult<()> {
+        let store = KeyValueStore::disk(&config.data_dir, CASERVER_DIR)?;
+        let ca_store = AggregateStore::<ca::CertAuth>::new(&config.data_dir, CASERVER_DIR)?;
 
+        let signer = Arc::new(KrillSigner::build(&config.data_dir)?);
+
+        let cas_store_migration = CasStoreMigration { store, ca_store };
+        if cas_store_migration.needs_migrate()? {
+            info!("Krill version is older than 0.9.0-RC1, will now upgrade data structures.");
+            Self::populate_ca_objects_store(config, signer)?;
+            cas_store_migration.migrate()
+        } else {
+            Ok(())
+        }
+    }
+
+    fn populate_ca_objects_store(config: Arc<Config>, signer: Arc<KrillSigner>) -> UpgradeResult<()> {
         // Read all CAS based on snapshots and events, using the pre-0_9_0 data structs
         // which are preserved here.
-        let store = AggregateStore::<CertAuth>::new(work_dir, CASERVER_DIR)?;
+        info!("Krill will now populate the CA Objects Store");
+        let store = AggregateStore::<CertAuth>::new(&config.data_dir, CASERVER_DIR)?;
         store.warm()?;
 
         let ca_objects_store = CaObjectsStore::disk(config, signer)?;
@@ -51,32 +70,149 @@ impl CaObjectsMigration {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct MigrationError(String);
+/// Migrate pre 0.9 commands and events for CAs
+struct CasStoreMigration {
+    store: KeyValueStore,
+    ca_store: AggregateStore<ca::CertAuth>,
+}
 
-impl From<KeyValueError> for MigrationError {
-    fn from(s: KeyValueError) -> Self {
-        MigrationError(s.to_string())
+impl CasStoreMigration {
+    fn archive_migrated(&self, key: &KeyStoreKey) -> Result<(), UpgradeError> {
+        self.store
+            .archive_to(&key, MIGRATION_SCOPE)
+            .map_err(UpgradeError::KeyStoreError)
+    }
+
+    fn drop_ca_migration_scope(&self, ca_scope: String) -> Result<(), UpgradeError> {
+        let scope = format!("{}/{}", ca_scope, MIGRATION_SCOPE);
+        self.store.drop_scope(&scope).map_err(UpgradeError::KeyStoreError)
     }
 }
 
-impl From<AggregateStoreError> for MigrationError {
-    fn from(s: AggregateStoreError) -> Self {
-        MigrationError(s.to_string())
+impl UpgradeStore for CasStoreMigration {
+    fn needs_migrate(&self) -> Result<bool, UpgradeError> {
+        if Self::version_same_or_before(&self.store, KeyStoreVersion::Pre0_6)? {
+            Err(UpgradeError::custom("Cannot upgrade Krill installations from before version 0.6.0. Please upgrade to any version ranging from 0.6.0 to 0.8.1 first, and then upgrade to this version."))
+        } else {
+            Self::version_same_or_before(&self.store, KeyStoreVersion::V0_9_0_RC1)
+        }
     }
-}
 
-impl From<Error> for MigrationError {
-    fn from(e: Error) -> Self {
-        MigrationError(e.to_string())
-    }
-}
+    fn migrate(&self) -> Result<(), UpgradeError> {
+        info!("Krill will now reformat existing command and event data, and remove unnecessary data");
 
-impl std::error::Error for MigrationError {}
+        // For each CA:
+        //   - build a new
+        for scope in self.store.scopes()? {
+            let info_key = KeyStoreKey::scoped(scope.clone(), "info.json".to_string());
+            let mut info: StoredValueInfo = match self.store.get(&info_key) {
+                Ok(Some(info)) => info,
+                _ => StoredValueInfo::default(),
+            };
 
-impl fmt::Display for MigrationError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Could not migrate to v0.9.0 CA Object Store: {}", self.0)
+            // reset last event and command, we will find the new (higher) versions.
+            info.last_event = 0;
+            info.last_command = 1;
+
+            // Find all command keys and sort them by sequence.
+            // Then turn them back into key store keys for further processing.
+            let keys = self.store.keys(Some(scope.clone()), "command--")?;
+            let mut cmd_keys: Vec<CommandKey> = vec![];
+            for key in keys {
+                let cmd_key = CommandKey::from_str(key.name()).map_err(|_| {
+                    UpgradeError::Custom(format!("Found invalid command key: {} for ca: {}", key.name(), scope))
+                })?;
+                cmd_keys.push(cmd_key);
+            }
+            cmd_keys.sort_by_key(|k| k.sequence);
+            let cmd_keys = cmd_keys
+                .into_iter()
+                .map(|ck| KeyStoreKey::scoped(scope.clone(), format!("{}.json", ck)));
+
+            for cmd_key in cmd_keys {
+                info!("  command: {}", cmd_key);
+                let mut old_cmd: OldStoredCaCommand = self
+                    .store
+                    .get(&cmd_key)?
+                    .ok_or_else(|| UpgradeError::Custom(format!("Cannot parse old command: {}", cmd_key)))?;
+
+                self.archive_migrated(&cmd_key)?;
+
+                if let Some(evt_versions) = old_cmd.effect().events() {
+                    let command_affects_version = info.last_event + 1;
+
+                    let mut events = vec![];
+                    for v in evt_versions {
+                        let event_key = KeyStoreKey::scoped(scope.clone(), format!("delta-{}.json", v));
+                        info!("  +- event: {}", event_key);
+                        let old_evt: OldEvt = self
+                            .store
+                            .get(&event_key)?
+                            .ok_or_else(|| UpgradeError::Custom(format!("Cannot parse old event: {}", event_key)))?;
+
+                        self.archive_migrated(&event_key)?;
+
+                        if old_evt.needs_migration() {
+                            info.last_event += 1;
+
+                            events.push(info.last_event);
+                            let migrated_event = old_evt.into_stored_ca_event(info.last_event)?;
+                            let key = KeyStoreKey::scoped(scope.clone(), format!("delta-{}.json", info.last_event));
+                            self.store.store(&key, &migrated_event)?;
+                        }
+                    }
+
+                    if events.is_empty() {
+                        continue; // This command has no relevant events in 0.9, so don't save it.
+                    }
+
+                    old_cmd.set_events(events);
+                    old_cmd.set_command_version(command_affects_version);
+                }
+
+                info.last_command += 1;
+                info.last_update = old_cmd.time();
+
+                let migrated_cmd = old_cmd.into_ca_command();
+                let cmd_key = CommandKey::for_stored(&migrated_cmd);
+                let key = KeyStoreKey::scoped(scope.clone(), format!("{}.json", cmd_key));
+
+                self.store.store(&key, &migrated_cmd)?;
+            }
+
+            let snapshot_key = KeyStoreKey::scoped(scope.clone(), "snapshot.json".to_string());
+            let snapshot_bk_key = KeyStoreKey::scoped(scope.clone(), "snapshot-bk.json".to_string());
+
+            if self.store.has(&snapshot_key)? {
+                self.archive_migrated(&snapshot_key)?;
+            }
+
+            if self.store.has(&snapshot_bk_key)? {
+                self.archive_migrated(&snapshot_bk_key)?;
+            }
+
+            info.snapshot_version = 0;
+            info.last_command -= 1;
+
+            self.store.store(&info_key, &info)?;
+        }
+
+        // ** Only if all CAs were migrated **
+        //    --> clean up the archived commands and events
+        //    --> restore to previous version of Krill is not supported
+        for scope in self.store.scopes()? {
+            info!("Check state of '{}' before cleanup.", scope);
+            let ca =
+                Handle::from_str(&scope).map_err(|e| UpgradeError::Custom(format!("Found invalid ca name: {}", e)))?;
+
+            self.ca_store.get_latest(&ca).map_err(|e| {
+                UpgradeError::Custom(format!("Could not rebuild CA '{}' after migration: {}", scope, e))
+            })?;
+
+            self.drop_ca_migration_scope(scope)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -101,10 +237,10 @@ struct CertAuth {
 
 impl Aggregate for CertAuth {
     type Command = OldStoredCaCommand;
-    type StorableCommandDetails = StorableCaCommand;
+    type StorableCommandDetails = OldStorableCaCommand;
     type Event = OldEvt;
     type InitEvent = OldIni;
-    type Error = MigrationError;
+    type Error = UpgradeError;
 
     fn init(event: Self::InitEvent) -> Result<Self, Self::Error> {
         let (handle, _version, details) = event.unpack();
@@ -335,6 +471,12 @@ pub struct Rfc8183Id {
     cert: IdCert,
 }
 
+impl From<Rfc8183Id> for ca::Rfc8183Id {
+    fn from(old: Rfc8183Id) -> Self {
+        ca::Rfc8183Id::new(old.key, old.cert)
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
@@ -343,16 +485,19 @@ pub enum RepositoryContact {
     Rfc8181(rfc8183::RepositoryResponse),
 }
 
+impl From<RepositoryContact> for api::RepositoryContact {
+    fn from(old: RepositoryContact) -> Self {
+        match old {
+            RepositoryContact::Embedded(info) => api::RepositoryContact::embedded(info),
+            RepositoryContact::Rfc8181(response) => api::RepositoryContact::rfc8183(response),
+        }
+    }
+}
+
 impl RepositoryContact {
     fn embedded(info: RepoInfo) -> Self {
         RepositoryContact::Embedded(info)
     }
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RepoInfo {
-    base_uri: uri::Rsync,
-    rpki_notify: uri::Https,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -409,6 +554,24 @@ impl ResourceClass {
                 Self::object_set_for_certified_key(&old.key),
             )),
         }
+    }
+
+    pub fn into_added_event(self) -> Result<CaEvtDet, UpgradeError> {
+        let pending_key = match self.key_state {
+            KeyState::Pending(pending) => Some(pending),
+            _ => None,
+        }
+        .ok_or_else(|| UpgradeError::custom("Added a resource class which is not in state pending."))?
+        .key_id;
+
+        let (class_name, parent, parent_class_name) = (self.name, self.parent_handle, self.parent_rc_name);
+
+        Ok(CaEvtDet::ResourceClassAdded(
+            class_name,
+            parent,
+            parent_class_name,
+            pending_key,
+        ))
     }
 
     fn object_set_for_current(
@@ -595,17 +758,17 @@ impl Roas {
     pub fn roa_objects(&self) -> HashMap<ObjectName, PublishedRoa> {
         let mut res = HashMap::new();
 
-        for (key, roa) in &self.simple {
+        for (key, roa_info) in &self.simple {
             let name = ObjectName::from(key);
-            let roa = Roa::decode(roa.object.content().to_bytes().as_ref(), true).unwrap();
+            let roa = roa_info.roa().unwrap();
 
             res.insert(name, PublishedRoa::new(roa));
         }
 
         for (key, agg) in &self.aggregate {
             let name = ObjectName::from(key);
-            let roa = &agg.roa;
-            let roa = Roa::decode(roa.object.content().to_bytes().as_ref(), true).unwrap();
+            let roa_info = &agg.roa;
+            let roa = roa_info.roa().unwrap();
 
             res.insert(name, PublishedRoa::new(roa));
         }
@@ -637,8 +800,8 @@ impl ChildCertificates {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildDetails {
-    id_cert: Option<IdCert>,
-    resources: ResourceSet,
+    pub id_cert: Option<IdCert>,
+    pub resources: ResourceSet,
     used_keys: HashMap<KeyIdentifier, LastResponse>,
 }
 
@@ -811,6 +974,12 @@ pub struct CertifiedKey {
     request: Option<IssuanceRequest>,
 }
 
+impl From<CertifiedKey> for ca::CertifiedKey {
+    fn from(old: CertifiedKey) -> Self {
+        ca::CertifiedKey::new(old.key_id, old.incoming_cert, old.request)
+    }
+}
+
 impl CertifiedKey {
     pub fn set_incoming_cert(&mut self, incoming_cert: RcvdCert) {
         self.request = None;
@@ -853,7 +1022,7 @@ pub struct ManifestInfo {
 
 impl From<ManifestInfo> for crate::daemon::ca::ManifestInfo {
     fn from(info: ManifestInfo) -> Self {
-        crate::daemon::ca::ManifestInfo::new(info.name, info.current, info.next_update, info.old)
+        crate::daemon::ca::ManifestInfo::new(info.name, info.current.into(), info.next_update, info.old)
     }
 }
 
@@ -866,39 +1035,6 @@ pub struct CrlInfo {
 
 impl From<CrlInfo> for crate::daemon::ca::CrlInfo {
     fn from(info: CrlInfo) -> Self {
-        crate::daemon::ca::CrlInfo::new(info.name, info.current, info.old)
-    }
-}
-
-//------------ Tests ---------------------------------------------------------
-
-#[cfg(test)]
-mod tests {
-
-    use std::fs;
-
-    use crate::commons::util::file;
-    use crate::test::tmp_dir;
-
-    use super::*;
-
-    #[test]
-    fn ca_objects_for_existing_ca() {
-        let d = tmp_dir();
-        let source = PathBuf::from("test-resources/migrations/v0_9_0/cas/");
-
-        let mut work_dir_cas = d.clone();
-        work_dir_cas.push("cas");
-
-        let config = Arc::new(Config::test(&d));
-
-        let signer = KrillSigner::build(&d).unwrap();
-        let signer = Arc::new(signer);
-
-        file::backup_dir(&source, &work_dir_cas).unwrap();
-
-        CaObjectsMigration::migrate(&d, config, signer).unwrap();
-
-        let _ = fs::remove_dir_all(d);
+        crate::daemon::ca::CrlInfo::new(info.name, info.current.into(), info.old)
     }
 }

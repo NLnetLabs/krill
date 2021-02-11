@@ -3,12 +3,12 @@
     "actor": "krill",
     "time": "2020-04-30T14:37:26.682278Z",
     "handle": "child",
-    "version": 22,
+    "version": 19,
     "sequence": 12,
     "details": "repo_remove_old",
     "effect": {
       "events": [
-        22
+        19
       ]
     }
   },
@@ -16,7 +16,7 @@
     "Events": [
       {
         "id": "child",
-        "version": 22,
+        "version": 19,
         "details": {
           "repo_cleaned": {
             "rfc8181": {

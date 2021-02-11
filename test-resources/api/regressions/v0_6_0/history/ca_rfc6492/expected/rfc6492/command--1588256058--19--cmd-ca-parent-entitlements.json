@@ -3,7 +3,7 @@
     "actor": "krill",
     "time": "2020-04-30T14:14:18.947747Z",
     "handle": "rfc6492",
-    "version": 24,
+    "version": 21,
     "sequence": 19,
     "details": {
       "update_resource_classes": [
@@ -19,8 +19,8 @@
     },
     "effect": {
       "events": [
-        24,
-        25
+        21,
+        22
       ]
     }
   },
@@ -28,35 +28,19 @@
     "Events": [
       {
         "id": "rfc6492",
-        "version": 24,
+        "version": 21,
         "details": {
           "resource_class_added": [
             "2",
-            {
-              "name": "2",
-              "name_space": "2",
-              "parent_handle": "ta",
-              "parent_rc_name": "0",
-              "roas": {
-                "inner": {}
-              },
-              "certificates": {
-                "inner": {}
-              },
-              "last_key_change": "2020-04-30T14:14:19.013353Z",
-              "key_state": {
-                "pending": {
-                  "key_id": "43FB0F512A266C18A271E7B72FEA4E45C2A7CFFD",
-                  "request": null
-                }
-              }
-            }
+            "ta",
+            "0",
+            "43FB0F512A266C18A271E7B72FEA4E45C2A7CFFD"
           ]
         }
       },
       {
         "id": "rfc6492",
-        "version": 25,
+        "version": 22,
         "details": {
           "certificate_requested": [
             "2",
