@@ -1078,50 +1078,6 @@ impl Deref for PublishedCrl {
     }
 }
 
-//------------ CrlInfo -----------------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[deprecated]
-pub struct CrlInfo {
-    name: ObjectName, // can be derived from CRL, but keeping in mem saves cpu
-    current: CurrentObject,
-    old: Option<HexEncodedHash>,
-}
-
-impl CrlInfo {
-    pub fn new(name: ObjectName, current: CurrentObject, old: Option<HexEncodedHash>) -> Self {
-        CrlInfo { name, current, old }
-    }
-    pub fn for_crl(crl: &Crl, old: Option<HexEncodedHash>) -> Self {
-        let name = ObjectName::from(crl);
-        let current = CurrentObject::from(crl);
-        CrlInfo { name, current, old }
-    }
-
-    pub fn name(&self) -> &ObjectName {
-        &self.name
-    }
-
-    pub fn current(&self) -> &CurrentObject {
-        &self.current
-    }
-
-    pub fn added_or_updated(&self) -> AddedOrUpdated {
-        let name = self.name.clone();
-        let object = self.current.clone();
-        match self.old.clone() {
-            None => AddedOrUpdated::Added(AddedObject::new(name, object)),
-            Some(old) => AddedOrUpdated::Updated(UpdatedObject::new(name, object, old)),
-        }
-    }
-
-    pub fn withdraw(&self) -> WithdrawnObject {
-        let name = self.name.clone();
-        let hash = self.current.to_hex_hash();
-        WithdrawnObject::new(name, hash)
-    }
-}
-
 //------------ CrlBuilder --------------------------------------------------
 
 pub struct CrlBuilder {}
@@ -1154,52 +1110,6 @@ impl CrlBuilder {
         let crl = signer.sign_crl(crl, &aki)?;
 
         Ok(crl.into())
-    }
-
-    #[deprecated]
-    pub fn build_deprecated(
-        mut revocations: Revocations,
-        new_revocations: Vec<Revocation>,
-        number: u64,
-        old: Option<HexEncodedHash>,
-        signing_cert: &RcvdCert,
-        next_hours: i64,
-        signer: &KrillSigner,
-    ) -> KrillResult<(CrlInfo, RevocationsDelta)> {
-        let signing_key = signing_cert.cert().subject_public_key_info();
-
-        let aki = KeyIdentifier::from_public_key(signing_key);
-
-        let mut revocations_delta = RevocationsDelta::default();
-        for revocation in new_revocations.into_iter() {
-            revocations.add(revocation);
-            revocations_delta.add(revocation);
-        }
-
-        for expired in revocations.purge() {
-            revocations_delta.drop(expired);
-        }
-
-        let this_update = Time::five_minutes_ago();
-        let next_update = Time::now() + Duration::hours(next_hours);
-        let serial_number = Serial::from(number);
-
-        let mut crl = TbsCertList::new(
-            Default::default(),
-            signing_key.to_subject_name(),
-            this_update,
-            next_update,
-            revocations.to_crl_entries(),
-            aki,
-            serial_number,
-        );
-        crl.set_issuer(signing_cert.cert().subject().clone());
-
-        let crl = signer.sign_crl(crl, &aki)?;
-
-        let crl_info = CrlInfo::for_crl(&crl, old);
-
-        Ok((crl_info, revocations_delta))
     }
 }
 

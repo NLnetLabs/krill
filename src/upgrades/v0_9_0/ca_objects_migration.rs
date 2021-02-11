@@ -1026,9 +1026,3 @@ pub struct CrlInfo {
     current: CurrentObject,
     old: Option<HexEncodedHash>,
 }
-
-impl From<CrlInfo> for crate::daemon::ca::CrlInfo {
-    fn from(info: CrlInfo) -> Self {
-        crate::daemon::ca::CrlInfo::new(info.name, info.current.into(), info.old)
-    }
-}
