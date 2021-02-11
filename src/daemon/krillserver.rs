@@ -255,7 +255,7 @@ impl KrillServer {
                         let rfc8181_uri =
                             uri::Https::from_string(format!("{}rfc8181/{}", service_uri, testbed_ca_handle)).unwrap();
                         let repo_response = pubserver.repository_response(rfc8181_uri, &testbed_ca_handle)?;
-                        let repo_contact = RepositoryContact::Rfc8181(repo_response);
+                        let repo_contact = RepositoryContact::rfc8181(repo_response);
                         caserver
                             .update_repo(testbed_ca_handle.clone(), repo_contact, &system_actor)
                             .await?;
@@ -787,7 +787,7 @@ impl KrillServer {
                     return Err(Error::CaRepoIssue(handle, error.to_error_response().msg().to_string()));
                 }
 
-                RepositoryContact::Rfc8181(response)
+                RepositoryContact::rfc8181(response)
             }
         };
 

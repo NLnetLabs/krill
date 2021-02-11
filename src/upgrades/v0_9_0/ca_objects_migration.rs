@@ -489,7 +489,7 @@ impl From<RepositoryContact> for api::RepositoryContact {
     fn from(old: RepositoryContact) -> Self {
         match old {
             RepositoryContact::Embedded(info) => api::RepositoryContact::embedded(info),
-            RepositoryContact::Rfc8181(response) => api::RepositoryContact::rfc8183(response),
+            RepositoryContact::Rfc8181(response) => api::RepositoryContact::rfc8181(response),
         }
     }
 }
@@ -1018,12 +1018,6 @@ pub struct ManifestInfo {
     current: CurrentObject,
     next_update: Time,
     old: Option<HexEncodedHash>,
-}
-
-impl From<ManifestInfo> for crate::daemon::ca::ManifestInfo {
-    fn from(info: ManifestInfo) -> Self {
-        crate::daemon::ca::ManifestInfo::new(info.name, info.current.into(), info.next_update, info.old)
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

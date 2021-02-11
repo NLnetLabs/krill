@@ -21,7 +21,8 @@
         "version": 1,
         "details": {
           "repo_updated": {
-            "embedded": {
+            "type": "embedded",
+            "info": {
               "base_uri": "rsync://localhost/repo/rfc6492/",
               "rpki_notify": "https://localhost:3000/test-rrdp/notification.xml"
             }

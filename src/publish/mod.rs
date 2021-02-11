@@ -34,8 +34,12 @@ impl CaPublisher {
         // Since this is called by the scheduler, this acts as a no-op for new CAs which do not yet have any repository configured.
         for (repo_contact, ca_elements) in self.caserver.ca_repo_elements(ca_handle).await? {
             let list_reply = match &repo_contact {
-                RepositoryContact::Embedded(_) => self.get_embedded()?.list(ca_handle)?,
-                RepositoryContact::Rfc8181(repo) => self.caserver.send_rfc8181_list(ca_handle, repo, false).await?,
+                RepositoryContact::Embedded { .. } => self.get_embedded()?.list(ca_handle)?,
+                RepositoryContact::Rfc8181 { server_response } => {
+                    self.caserver
+                        .send_rfc8181_list(ca_handle, server_response, false)
+                        .await?
+                }
             };
 
             #[allow(clippy::mutable_key_type)]
@@ -65,9 +69,11 @@ impl CaPublisher {
             };
 
             match &repo_contact {
-                RepositoryContact::Embedded(_) => self.get_embedded()?.publish(ca_handle.clone(), delta, actor)?,
-                RepositoryContact::Rfc8181(repo) => {
-                    self.caserver.send_rfc8181_delta(ca_handle, repo, delta, false).await?
+                RepositoryContact::Embedded { .. } => self.get_embedded()?.publish(ca_handle.clone(), delta, actor)?,
+                RepositoryContact::Rfc8181 { server_response } => {
+                    self.caserver
+                        .send_rfc8181_delta(ca_handle, server_response, delta, false)
+                        .await?
                 }
             };
         }
@@ -101,15 +107,23 @@ impl CaPublisher {
         info!("Will perform best effort clean up of repository: {}", repo);
 
         let list_reply = match repo {
-            RepositoryContact::Embedded(_) => self.get_embedded()?.list(ca_handle)?,
-            RepositoryContact::Rfc8181(repo) => self.caserver.send_rfc8181_list(ca_handle, repo, true).await?,
+            RepositoryContact::Embedded { info } => self.get_embedded()?.list(ca_handle)?,
+            RepositoryContact::Rfc8181 { server_response } => {
+                self.caserver
+                    .send_rfc8181_list(ca_handle, server_response, true)
+                    .await?
+            }
         };
 
         let delta = list_reply.into_withdraw_delta();
 
         match repo {
-            RepositoryContact::Embedded(_) => self.get_embedded()?.publish(ca_handle.clone(), delta, actor)?,
-            RepositoryContact::Rfc8181(res) => self.caserver.send_rfc8181_delta(ca_handle, res, delta, true).await?,
+            RepositoryContact::Embedded { info } => self.get_embedded()?.publish(ca_handle.clone(), delta, actor)?,
+            RepositoryContact::Rfc8181 { server_response } => {
+                self.caserver
+                    .send_rfc8181_delta(ca_handle, server_response, delta, true)
+                    .await?
+            }
         }
 
         Ok(())

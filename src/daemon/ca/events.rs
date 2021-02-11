@@ -525,15 +525,23 @@ impl fmt::Display for CaEvtDet {
 
             // Publishing
             CaEvtDet::RepoUpdated(updated) => match updated {
-                RepositoryContact::Embedded(_) => write!(f, "updated repository to embedded server"),
-                RepositoryContact::Rfc8181(res) => {
-                    write!(f, "updated repository to remote server: {}", res.service_uri())
+                RepositoryContact::Embedded { info } => write!(f, "updated repository to embedded server"),
+                RepositoryContact::Rfc8181 { server_response } => {
+                    write!(
+                        f,
+                        "updated repository to remote server: {}",
+                        server_response.service_uri()
+                    )
                 }
             },
             CaEvtDet::RepoCleaned(old) => match old {
-                RepositoryContact::Embedded(_) => write!(f, "cleaned old embedded repository"),
-                RepositoryContact::Rfc8181(res) => {
-                    write!(f, "cleaned repository at remote server: {}", res.service_uri())
+                RepositoryContact::Embedded { info } => write!(f, "cleaned old embedded repository"),
+                RepositoryContact::Rfc8181 { server_response } => {
+                    write!(
+                        f,
+                        "cleaned repository at remote server: {}",
+                        server_response.service_uri()
+                    )
                 }
             },
 

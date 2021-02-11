@@ -19,7 +19,8 @@
         "version": 14,
         "details": {
           "repo_cleaned": {
-            "embedded": {
+            "type": "embedded",
+            "info": {
               "base_uri": "rsync://localhost/repo/child/",
               "rpki_notify": "https://localhost:3000/test-rrdp/notification.xml"
             }

@@ -1078,66 +1078,6 @@ impl Deref for PublishedCrl {
     }
 }
 
-//------------ ManifestInfo ------------------------------------------------
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[deprecated]
-pub struct ManifestInfo {
-    name: ObjectName,
-    current: CurrentObject,
-    next_update: Time,
-    old: Option<HexEncodedHash>,
-}
-
-impl ManifestInfo {
-    pub fn new(name: ObjectName, current: CurrentObject, next_update: Time, old: Option<HexEncodedHash>) -> Self {
-        ManifestInfo {
-            name,
-            current,
-            next_update,
-            old,
-        }
-    }
-
-    fn for_manifest(mft: &Manifest, old: Option<HexEncodedHash>) -> Self {
-        let name = ObjectName::from(mft);
-        let current = CurrentObject::from(mft);
-        let next_update = mft.next_update();
-        ManifestInfo {
-            name,
-            current,
-            next_update,
-            old,
-        }
-    }
-
-    pub fn name(&self) -> &ObjectName {
-        &self.name
-    }
-
-    pub fn current(&self) -> &CurrentObject {
-        &self.current
-    }
-
-    pub fn next_update(&self) -> Time {
-        self.next_update
-    }
-
-    pub fn added_or_updated(&self) -> AddedOrUpdated {
-        let name = self.name.clone();
-        let object = self.current.clone();
-        match self.old.clone() {
-            None => AddedOrUpdated::Added(AddedObject::new(name, object)),
-            Some(old) => AddedOrUpdated::Updated(UpdatedObject::new(name, object, old)),
-        }
-    }
-
-    pub fn withdraw(&self) -> WithdrawnObject {
-        let name = self.name.clone();
-        let hash = self.current.to_hex_hash();
-        WithdrawnObject::new(name, hash)
-    }
-}
-
 //------------ CrlInfo -----------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1181,119 +1121,6 @@ impl CrlInfo {
         WithdrawnObject::new(name, hash)
     }
 }
-
-// //------------ PublicationDelta ----------------------------------------------
-
-// /// This type describes a set up of objects published for a CA key.
-// #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-// pub struct CurrentObjectSetDelta {
-//     number: u64,
-//     revocations_delta: RevocationsDelta,
-//     manifest_info: ManifestInfo,
-//     crl_info: CrlInfo,
-//     objects_delta: ObjectsDelta,
-// }
-
-// impl CurrentObjectSetDelta {
-//     pub fn new(
-//         number: u64,
-//         revocations_delta: RevocationsDelta,
-//         manifest_info: ManifestInfo,
-//         crl_info: CrlInfo,
-//         objects_delta: ObjectsDelta,
-//     ) -> Self {
-//         CurrentObjectSetDelta {
-//             number,
-//             revocations_delta,
-//             manifest_info,
-//             crl_info,
-//             objects_delta,
-//         }
-//     }
-
-//     pub fn objects(&self) -> &ObjectsDelta {
-//         &self.objects_delta
-//     }
-// }
-
-// //------------ CurrentObjectSet ----------------------------------------------
-
-// /// This type describes the complete current set of objects for CA key.
-// #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-// #[deprecated]
-// pub struct CurrentObjectSet {
-//     number: u64,
-//     revocations: Revocations,
-//     manifest_info: ManifestInfo,
-//     crl_info: CrlInfo,
-// }
-
-// impl CurrentObjectSet {
-//     pub fn create(
-//         signing_cert: &RcvdCert,
-//         issuance_timing: &IssuanceTimingConfig,
-//         signer: &KrillSigner,
-//     ) -> KrillResult<Self> {
-//         let number = 1;
-//         let revocations = Revocations::default();
-//         let (crl_info, _) = CrlBuilder::build_deprecated(
-//             revocations.clone(),
-//             vec![],
-//             number,
-//             None,
-//             signing_cert,
-//             issuance_timing.timing_publish_next_hours,
-//             signer,
-//         )?;
-
-//         let crl = Crl::decode(crl_info.current().content().to_bytes()).unwrap().into();
-//         let roas = HashMap::new();
-//         let certs = HashMap::new();
-
-//         let manifest_info = ManifestBuilder::with_objects(&crl, &roas, &certs).build(
-//             signing_cert,
-//             number,
-//             None,
-//             issuance_timing,
-//             signer,
-//         )?;
-
-//         Ok(CurrentObjectSet {
-//             number,
-//             revocations,
-//             manifest_info,
-//             crl_info,
-//         })
-//     }
-// }
-
-// impl CurrentObjectSet {
-//     pub fn number(&self) -> u64 {
-//         self.number
-//     }
-//     pub fn revocations(&self) -> &Revocations {
-//         &self.revocations
-//     }
-
-//     pub fn manifest_info(&self) -> &ManifestInfo {
-//         &self.manifest_info
-//     }
-
-//     pub fn crl_info(&self) -> &CrlInfo {
-//         &self.crl_info
-//     }
-
-//     pub fn next_update(&self) -> Time {
-//         self.manifest_info().next_update()
-//     }
-
-//     pub fn apply_delta(&mut self, delta: CurrentObjectSetDelta) {
-//         self.number = delta.number;
-//         self.revocations.apply_delta(delta.revocations_delta);
-//         self.manifest_info = delta.manifest_info;
-//         self.crl_info = delta.crl_info;
-//     }
-// }
 
 //------------ CrlBuilder --------------------------------------------------
 
@@ -1413,19 +1240,6 @@ impl ManifestBuilder {
         let mut entries: HashMap<Bytes, Bytes> = HashMap::new();
         entries.insert(crl.name().into(), crl.mft_hash());
         ManifestBuilder { entries }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub fn build(
-        self,
-        signing_cert: &RcvdCert,
-        number: u64,
-        old: Option<HexEncodedHash>,
-        issuance_timing: &IssuanceTimingConfig,
-        signer: &KrillSigner,
-    ) -> KrillResult<ManifestInfo> {
-        let manifest = self.build_new_mft(signing_cert, number, issuance_timing, signer)?;
-        Ok(ManifestInfo::for_manifest(&manifest, old))
     }
 
     fn build_new_mft(

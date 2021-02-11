@@ -7,6 +7,7 @@ use std::str::{from_utf8_unchecked, FromStr};
 use std::sync::Arc;
 
 use chrono::{DateTime, NaiveDateTime, Utc};
+use rfc8183::ServiceUri;
 use serde::de;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -303,7 +304,7 @@ pub struct PublisherClientRequest {
 
 impl PublisherClientRequest {
     pub fn rfc8183(handle: Handle, response: rfc8183::RepositoryResponse) -> Self {
-        let server_info = RepositoryContact::rfc8183(response);
+        let server_info = RepositoryContact::rfc8181(response);
         PublisherClientRequest { handle, server_info }
     }
 
@@ -348,30 +349,34 @@ impl RepositoryUpdate {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
-#[deprecated] // Fix the json mapping - include 'type'
+#[serde(tag = "type")]
 pub enum RepositoryContact {
-    Embedded(RepoInfo),
-    Rfc8181(rfc8183::RepositoryResponse),
+    Embedded {
+        info: RepoInfo,
+    },
+    Rfc8181 {
+        server_response: rfc8183::RepositoryResponse,
+    },
 }
 
 impl RepositoryContact {
     pub fn uri(&self) -> String {
         match self {
-            RepositoryContact::Embedded(_) => "embedded".to_string(),
-            RepositoryContact::Rfc8181(res) => res.service_uri().to_string(),
+            RepositoryContact::Embedded { .. } => "embedded".to_string(),
+            RepositoryContact::Rfc8181 { server_response } => server_response.service_uri().to_string(),
         }
     }
 
     pub fn embedded(info: RepoInfo) -> Self {
-        RepositoryContact::Embedded(info)
+        RepositoryContact::Embedded { info }
     }
 
     pub fn is_embedded(&self) -> bool {
-        matches!(self, RepositoryContact::Embedded(_))
+        matches!(self, RepositoryContact::Embedded { .. })
     }
 
-    pub fn rfc8183(response: rfc8183::RepositoryResponse) -> Self {
-        RepositoryContact::Rfc8181(response)
+    pub fn rfc8181(server_response: rfc8183::RepositoryResponse) -> Self {
+        RepositoryContact::Rfc8181 { server_response }
     }
 
     pub fn is_rfc8183(&self) -> bool {
@@ -380,15 +385,22 @@ impl RepositoryContact {
 
     pub fn as_reponse_opt(&self) -> Option<&rfc8183::RepositoryResponse> {
         match self {
-            RepositoryContact::Embedded(_) => None,
-            RepositoryContact::Rfc8181(res) => Some(res),
+            RepositoryContact::Embedded { .. } => None,
+            RepositoryContact::Rfc8181 { server_response } => Some(server_response),
         }
     }
 
     pub fn repo_info(&self) -> &RepoInfo {
         match self {
-            RepositoryContact::Embedded(info) => info,
-            RepositoryContact::Rfc8181(response) => response.repo_info(),
+            RepositoryContact::Embedded { info } => info,
+            RepositoryContact::Rfc8181 { server_response } => server_response.repo_info(),
+        }
+    }
+
+    pub fn service_uri_opt(&self) -> Option<&ServiceUri> {
+        match self {
+            RepositoryContact::Embedded { .. } => None,
+            RepositoryContact::Rfc8181 { server_response } => Some(server_response.service_uri()),
         }
     }
 }
@@ -396,8 +408,10 @@ impl RepositoryContact {
 impl fmt::Display for RepositoryContact {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let msg = match self {
-            RepositoryContact::Embedded(_) => "embedded publication server".to_string(),
-            RepositoryContact::Rfc8181(res) => format!("remote publication server at {}", res.service_uri()),
+            RepositoryContact::Embedded { .. } => "embedded publication server".to_string(),
+            RepositoryContact::Rfc8181 { server_response } => {
+                format!("remote publication server at {}", server_response.service_uri())
+            }
         };
         write!(f, "{}", msg)
     }

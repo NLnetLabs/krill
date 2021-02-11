@@ -17,7 +17,6 @@ use crate::commons::remote::rfc8183::ServiceUri;
 use crate::daemon::ca;
 
 //------------ CaCommandDetails ----------------------------------------------
-
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CaCommandDetails {
     command: StoredCommand<StorableCaCommand>,
@@ -401,6 +400,7 @@ impl Default for CommandHistoryCriteria {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
+#[deprecated] // fix enum type - us named fields
 pub enum StorableCaCommand {
     MakeTrustAnchor,
     ChildAdd(ChildHandle, Option<String>, ResourceSet),

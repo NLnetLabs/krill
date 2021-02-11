@@ -208,13 +208,7 @@ impl From<CmdDet> for StorableCaCommand {
             // ------------------------------------------------------------
             // Publishing
             // ------------------------------------------------------------
-            CmdDet::RepoUpdate(update, _, _) => {
-                let service_uri_opt = match update {
-                    RepositoryContact::Embedded(_) => None,
-                    RepositoryContact::Rfc8181(res) => Some(res.service_uri().clone()),
-                };
-                StorableCaCommand::RepoUpdate(service_uri_opt)
-            }
+            CmdDet::RepoUpdate(contact, _, _) => StorableCaCommand::RepoUpdate(contact.service_uri_opt().cloned()),
             CmdDet::RepoRemoveOld(_) => StorableCaCommand::RepoRemoveOld,
 
             // ------------------------------------------------------------

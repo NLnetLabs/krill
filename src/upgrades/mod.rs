@@ -2,7 +2,7 @@
 //! - Updating the format of commands or events
 //! - Export / Import data
 
-use std::{fmt, fs, io};
+use std::{fmt, io};
 use std::{path::PathBuf, sync::Arc};
 
 use crate::commons::eventsourcing::{

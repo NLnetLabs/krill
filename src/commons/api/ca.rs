@@ -2206,15 +2206,15 @@ impl fmt::Display for CaRepoDetails {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "Repository Details:")?;
         match self.contact() {
-            RepositoryContact::Embedded(repo_info) => {
+            RepositoryContact::Embedded { info } => {
                 writeln!(f, "  type:        embedded")?;
-                writeln!(f, "  base_uri:    {}", repo_info.base_uri())?;
-                writeln!(f, "  rpki_notify: {}", repo_info.rpki_notify())?;
+                writeln!(f, "  base_uri:    {}", info.base_uri())?;
+                writeln!(f, "  rpki_notify: {}", info.rpki_notify())?;
             }
-            RepositoryContact::Rfc8181(response) => {
+            RepositoryContact::Rfc8181 { server_response } => {
                 writeln!(f, "  type:        remote")?;
-                writeln!(f, "  service uri: {}", response.service_uri())?;
-                let repo_info = response.repo_info();
+                writeln!(f, "  service uri: {}", server_response.service_uri())?;
+                let repo_info = server_response.repo_info();
                 writeln!(f, "  base_uri:    {}", repo_info.base_uri())?;
                 writeln!(f, "  rpki_notify: {}", repo_info.rpki_notify())?;
             }
