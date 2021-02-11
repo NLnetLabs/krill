@@ -6,14 +6,13 @@
     "version": 18,
     "sequence": 16,
     "details": {
-      "update_rcvd_cert": [
-        "1",
-        {
-          "asn": "AS65000",
-          "v4": "10.0.0.0/16",
-          "v6": ""
-        }
-      ]
+      "type": "update_rcvd_cert",
+      "resource_class_name": "1",
+      "resources": {
+        "asn": "AS65000",
+        "v4": "10.0.0.0/16",
+        "v6": ""
+      }
     },
     "effect": {
       "events": [

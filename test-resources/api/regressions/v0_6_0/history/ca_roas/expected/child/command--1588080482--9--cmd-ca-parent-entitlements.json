@@ -6,10 +6,12 @@
     "version": 12,
     "sequence": 9,
     "details": {
-      "update_resource_classes": [
-        "ta",
+      "type": "update_resource_entitlements",
+      "parent": "ta",
+      "entitlements": [
         {
-          "0": {
+          "resource_class_name": "0",
+          "resources": {
             "asn": "",
             "v4": "192.168.0.0/16",
             "v6": ""

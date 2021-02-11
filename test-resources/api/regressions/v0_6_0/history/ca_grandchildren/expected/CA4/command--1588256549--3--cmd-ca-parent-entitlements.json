@@ -6,15 +6,20 @@
     "version": 3,
     "sequence": 3,
     "details": {
-      "update_resource_classes": [
-        "CA3",
+      "type": "update_resource_entitlements",
+      "parent": "CA3",
+      "entitlements": [
         {
-          "0": {
+          "resource_class_name": "0",
+          "resources": {
             "asn": "",
             "v4": "10.0.0.0/16",
             "v6": ""
-          },
-          "1": {
+          }
+        },
+        {
+          "resource_class_name": "1",
+          "resources": {
             "asn": "",
             "v4": "10.1.0.0/24",
             "v6": ""

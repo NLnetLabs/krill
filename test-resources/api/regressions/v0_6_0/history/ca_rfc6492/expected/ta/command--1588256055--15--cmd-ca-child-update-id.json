@@ -6,10 +6,9 @@
     "version": 20,
     "sequence": 15,
     "details": {
-      "child_update_id": [
-        "rfc6492",
-        "dc396cc6eb42e00941ffae11327ab7c659cf18d0"
-      ]
+      "type": "child_update_id",
+      "child": "rfc6492",
+      "ski": "dc396cc6eb42e00941ffae11327ab7c659cf18d0"
     },
     "effect": {
       "events": [

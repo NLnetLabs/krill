@@ -6,14 +6,13 @@
     "version": 10,
     "sequence": 6,
     "details": {
-      "update_rcvd_cert": [
-        "0",
-        {
-          "asn": "",
-          "v4": "10.0.0.0/16",
-          "v6": ""
-        }
-      ]
+      "type": "update_rcvd_cert",
+      "resource_class_name": "0",
+      "resources": {
+        "asn": "",
+        "v4": "10.0.0.0/16",
+        "v6": ""
+      }
     },
     "effect": {
       "events": [

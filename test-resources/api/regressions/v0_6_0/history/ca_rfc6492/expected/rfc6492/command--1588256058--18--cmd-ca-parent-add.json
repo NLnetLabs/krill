@@ -6,10 +6,9 @@
     "version": 20,
     "sequence": 18,
     "details": {
-      "add_parent": [
-        "ta",
-        "rfc6492"
-      ]
+      "type": "add_parent",
+      "parent": "ta",
+      "contact": "rfc6492"
     },
     "effect": {
       "events": [

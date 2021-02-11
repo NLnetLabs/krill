@@ -6,15 +6,14 @@
     "version": 4,
     "sequence": 4,
     "details": {
-      "child_add": [
-        "child",
-        null,
-        {
-          "asn": "",
-          "v4": "10.0.0.0/16",
-          "v6": ""
-        }
-      ]
+      "type": "child_add",
+      "child": "child",
+      "ski": null,
+      "resources": {
+        "asn": "",
+        "v4": "10.0.0.0/16",
+        "v6": ""
+      }
     },
     "effect": {
       "events": [

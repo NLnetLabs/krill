@@ -6,13 +6,12 @@
     "version": 14,
     "sequence": 11,
     "details": {
-      "child_revoke_key": [
-        "rfc6492",
-        {
-          "class_name": "0",
-          "key": "17143836B8F6D11DCB53CD49B5D40C61B8E9B813"
-        }
-      ]
+      "type": "child_revoke_key",
+      "child": "rfc6492",
+      "revoke_req": {
+        "class_name": "0",
+        "key": "17143836B8F6D11DCB53CD49B5D40C61B8E9B813"
+      }
     },
     "effect": {
       "events": [

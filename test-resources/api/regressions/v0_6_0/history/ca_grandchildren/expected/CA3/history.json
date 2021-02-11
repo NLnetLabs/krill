@@ -49,7 +49,7 @@
       "version": 3,
       "sequence": 3,
       "summary": {
-        "msg": "Update entitlements under parent 'CA1': 0 => asn: 0 blocks, v4: 1 blocks, v6: 0 blocks ",
+        "msg": "Update entitlements under parent 'CA1': 0 => asn: , v4: 10.0.0.0/16, v6:  ",
         "label": "cmd-ca-parent-entitlements",
         "args": {
           "parent": "CA1"
@@ -70,7 +70,7 @@
       "version": 5,
       "sequence": 4,
       "summary": {
-        "msg": "Update entitlements under parent 'CA1': 0 => asn: 0 blocks, v4: 1 blocks, v6: 0 blocks ",
+        "msg": "Update entitlements under parent 'CA1': 0 => asn: , v4: 10.0.0.0/16, v6:  ",
         "label": "cmd-ca-parent-entitlements",
         "args": {
           "parent": "CA1"
@@ -135,7 +135,7 @@
       "version": 8,
       "sequence": 7,
       "summary": {
-        "msg": "Update entitlements under parent 'CA2': 0 => asn: 0 blocks, v4: 1 blocks, v6: 0 blocks ",
+        "msg": "Update entitlements under parent 'CA2': 0 => asn: , v4: 10.1.0.0/24, v6:  ",
         "label": "cmd-ca-parent-entitlements",
         "args": {
           "parent": "CA2"

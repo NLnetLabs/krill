@@ -6,7 +6,8 @@
     "version": 1,
     "sequence": 1,
     "details": {
-      "repo_update": null
+      "type": "repo_update",
+      "service_uri": null
     },
     "effect": {
       "events": [

@@ -6,14 +6,13 @@
     "version": 10,
     "sequence": 8,
     "details": {
-      "child_update_resources": [
-        "child",
-        {
-          "asn": "",
-          "v4": "10.0.0.0/24",
-          "v6": ""
-        }
-      ]
+      "type": "child_update_resources",
+      "child": "child",
+      "resources": {
+        "asn": "",
+        "v4": "10.0.0.0/24",
+        "v6": ""
+      }
     },
     "effect": {
       "events": [

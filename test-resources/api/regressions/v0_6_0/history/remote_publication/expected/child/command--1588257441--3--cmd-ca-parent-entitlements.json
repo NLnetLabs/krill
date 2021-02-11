@@ -6,10 +6,12 @@
     "version": 3,
     "sequence": 3,
     "details": {
-      "update_resource_classes": [
-        "ta",
+      "type": "update_resource_entitlements",
+      "parent": "ta",
+      "entitlements": [
         {
-          "0": {
+          "resource_class_name": "0",
+          "resources": {
             "asn": "",
             "v4": "10.0.0.0/16",
             "v6": ""

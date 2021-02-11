@@ -300,37 +300,6 @@ impl CaEvtDet {
         StoredEvent::new(handle, version, CaEvtDet::ParentRemoved(parent_handle))
     }
 
-    /// This marks a resource class as added under a parent for the CA.
-    pub(super) fn resource_class_added(
-        handle: &Handle,
-        version: u64,
-        class_name: ResourceClassName,
-        parent: ParentHandle,
-        parent_class_name: ParentResourceClassName,
-        pending_key: KeyIdentifier,
-    ) -> CaEvt {
-        StoredEvent::new(
-            handle,
-            version,
-            CaEvtDet::ResourceClassAdded(class_name, parent, parent_class_name, pending_key),
-        )
-    }
-
-    /// This marks a resource class as removed, and all its (possible) objects as withdrawn
-    pub(super) fn resource_class_removed(
-        handle: &Handle,
-        version: u64,
-        class_name: ResourceClassName,
-        parent: ParentHandle,
-        revocations: Vec<RevocationRequest>,
-    ) -> CaEvt {
-        StoredEvent::new(
-            handle,
-            version,
-            CaEvtDet::ResourceClassRemoved(class_name, parent, revocations),
-        )
-    }
-
     pub(super) fn child_added(handle: &Handle, version: u64, child: ChildHandle, details: ChildDetails) -> CaEvt {
         StoredEvent::new(handle, version, CaEvtDet::ChildAdded(child, details))
     }
@@ -525,7 +494,7 @@ impl fmt::Display for CaEvtDet {
 
             // Publishing
             CaEvtDet::RepoUpdated(updated) => match updated {
-                RepositoryContact::Embedded { info } => write!(f, "updated repository to embedded server"),
+                RepositoryContact::Embedded { .. } => write!(f, "updated repository to embedded server"),
                 RepositoryContact::Rfc8181 { server_response } => {
                     write!(
                         f,
@@ -535,7 +504,7 @@ impl fmt::Display for CaEvtDet {
                 }
             },
             CaEvtDet::RepoCleaned(old) => match old {
-                RepositoryContact::Embedded { info } => write!(f, "cleaned old embedded repository"),
+                RepositoryContact::Embedded { .. } => write!(f, "cleaned old embedded repository"),
                 RepositoryContact::Rfc8181 { server_response } => {
                     write!(
                         f,

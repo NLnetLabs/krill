@@ -6,7 +6,8 @@
     "version": 24,
     "sequence": 18,
     "details": {
-      "child_remove": "rfc6492"
+      "type": "child_remove",
+      "child": "rfc6492"
     },
     "effect": {
       "events": [

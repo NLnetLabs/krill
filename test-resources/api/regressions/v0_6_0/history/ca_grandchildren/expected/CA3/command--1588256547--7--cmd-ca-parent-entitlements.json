@@ -6,10 +6,12 @@
     "version": 8,
     "sequence": 7,
     "details": {
-      "update_resource_classes": [
-        "CA2",
+      "type": "update_resource_entitlements",
+      "parent": "CA2",
+      "entitlements": [
         {
-          "0": {
+          "resource_class_name": "0",
+          "resources": {
             "asn": "",
             "v4": "10.1.0.0/24",
             "v6": ""

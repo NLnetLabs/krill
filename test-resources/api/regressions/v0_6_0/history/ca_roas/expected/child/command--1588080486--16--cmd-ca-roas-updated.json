@@ -6,7 +6,8 @@
     "version": 28,
     "sequence": 16,
     "details": {
-      "roa_definition_updates": {
+      "type": "roa_definition_updates",
+      "updates": {
         "added": [
           {
             "asn": 64496,

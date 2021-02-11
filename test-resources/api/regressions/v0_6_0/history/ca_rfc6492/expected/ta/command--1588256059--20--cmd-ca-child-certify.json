@@ -6,16 +6,15 @@
     "version": 27,
     "sequence": 20,
     "details": {
-      "child_certify": [
-        "rfc6492",
-        "0",
-        {
-          "asn": "none",
-          "v4": "none",
-          "v6": "none"
-        },
-        "43FB0F512A266C18A271E7B72FEA4E45C2A7CFFD"
-      ]
+      "type": "child_certify",
+      "child": "rfc6492",
+      "resource_class_name": "0",
+      "limit": {
+        "asn": "none",
+        "v4": "none",
+        "v6": "none"
+      },
+      "ki": "43FB0F512A266C18A271E7B72FEA4E45C2A7CFFD"
     },
     "effect": {
       "events": [

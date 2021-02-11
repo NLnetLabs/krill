@@ -168,8 +168,14 @@ impl eventsourcing::EventListener<CertAuth> for MessageQueue {
             | CaEvtDet::ChildCertificatesUpdated(_, _)
             | CaEvtDet::KeyPendingToNew(_, _)
             | CaEvtDet::KeyPendingToActive(_, _)
-            | CaEvtDet::KeyRollActivated(_, _)
             | CaEvtDet::KeyRollFinished(_) => self.push_sync_repo(handle.clone()),
+
+            CaEvtDet::KeyRollActivated(rcn, _) => {
+                if let Ok(parent) = ca.parent_for_rc(rcn) {
+                    self.push_sync_parent(handle.clone(), parent.clone());
+                }
+                self.push_sync_repo(handle.clone());
+            }
 
             CaEvtDet::ParentRemoved(parent) => {
                 self.drop_sync_parent(&handle, parent);
@@ -203,7 +209,7 @@ impl eventsourcing::EventListener<CertAuth> for MessageQueue {
                     self.push_sync_parent(handle.clone(), parent.clone());
                 }
             }
-            CaEvtDet::CertificateRequested(rcn, _, _) | CaEvtDet::KeyRollActivated(rcn, _) => {
+            CaEvtDet::CertificateRequested(rcn, _, _) => {
                 if let Ok(parent) = ca.parent_for_rc(rcn) {
                     self.push_sync_parent(handle.clone(), parent.clone());
                 }

@@ -6,10 +6,9 @@
     "version": 11,
     "sequence": 10,
     "details": {
-      "update_resource_classes": [
-        "ta",
-        {}
-      ]
+      "type": "update_resource_entitlements",
+      "parent": "ta",
+      "entitlements": []
     },
     "effect": {
       "events": [

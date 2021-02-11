@@ -107,7 +107,7 @@ impl CaPublisher {
         info!("Will perform best effort clean up of repository: {}", repo);
 
         let list_reply = match repo {
-            RepositoryContact::Embedded { info } => self.get_embedded()?.list(ca_handle)?,
+            RepositoryContact::Embedded { .. } => self.get_embedded()?.list(ca_handle)?,
             RepositoryContact::Rfc8181 { server_response } => {
                 self.caserver
                     .send_rfc8181_list(ca_handle, server_response, true)
@@ -118,7 +118,7 @@ impl CaPublisher {
         let delta = list_reply.into_withdraw_delta();
 
         match repo {
-            RepositoryContact::Embedded { info } => self.get_embedded()?.publish(ca_handle.clone(), delta, actor)?,
+            RepositoryContact::Embedded { .. } => self.get_embedded()?.publish(ca_handle.clone(), delta, actor)?,
             RepositoryContact::Rfc8181 { server_response } => {
                 self.caserver
                     .send_rfc8181_delta(ca_handle, server_response, delta, true)

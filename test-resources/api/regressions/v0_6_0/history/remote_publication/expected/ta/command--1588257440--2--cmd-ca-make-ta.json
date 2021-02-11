@@ -5,7 +5,9 @@
     "handle": "ta",
     "version": 2,
     "sequence": 2,
-    "details": "make_trust_anchor",
+    "details": {
+      "type": "make_trust_anchor"
+    },
     "effect": {
       "events": [
         2

@@ -6,7 +6,8 @@
     "version": 19,
     "sequence": 17,
     "details": {
-      "remove_parent": "ta"
+      "type": "remove_parent",
+      "parent": "ta"
     },
     "effect": {
       "events": [

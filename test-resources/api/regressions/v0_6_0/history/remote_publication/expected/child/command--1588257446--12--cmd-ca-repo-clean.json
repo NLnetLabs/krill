@@ -5,7 +5,9 @@
     "handle": "child",
     "version": 19,
     "sequence": 12,
-    "details": "repo_remove_old",
+    "details": {
+      "type": "repo_remove_old"
+    },
     "effect": {
       "events": [
         19

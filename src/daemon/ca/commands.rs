@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
 
@@ -11,6 +10,7 @@ use crate::commons::{
     api::{
         ChildHandle, Entitlements, Handle, IssuanceRequest, ParentCaContact, ParentHandle, RcvdCert, RepositoryContact,
         ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse, RtaName, StorableCaCommand,
+        StorableRcEntitlement,
     },
     crypto::{IdCert, KrillSigner},
     eventsourcing::{self, StoredCommand},
@@ -159,64 +159,92 @@ impl From<CmdDet> for StorableCaCommand {
             // ------------------------------------------------------------
             // Being a parent
             // ------------------------------------------------------------
-            CmdDet::ChildAdd(child, id_cert_opt, res) => {
-                StorableCaCommand::ChildAdd(child, id_cert_opt.map(|c| c.ski_hex()), res)
+            CmdDet::ChildAdd(child, id_cert_opt, resources) => StorableCaCommand::ChildAdd {
+                child,
+                ski: id_cert_opt.map(|c| c.ski_hex()),
+                resources,
+            },
+            CmdDet::ChildUpdateResources(child, resources) => {
+                StorableCaCommand::ChildUpdateResources { child, resources }
             }
-            CmdDet::ChildUpdateResources(child, res) => StorableCaCommand::ChildUpdateResources(child, res),
-            CmdDet::ChildUpdateId(child, id) => StorableCaCommand::ChildUpdateId(child, id.ski_hex()),
+            CmdDet::ChildUpdateId(child, id) => StorableCaCommand::ChildUpdateId {
+                child,
+                ski: id.ski_hex(),
+            },
             CmdDet::ChildCertify(child, req, _, _) => {
-                let (rcn, limit, csr) = req.unpack();
+                let (resource_class_name, limit, csr) = req.unpack();
                 let ki = csr.public_key().key_identifier();
-                StorableCaCommand::ChildCertify(child, rcn, limit, ki)
+                StorableCaCommand::ChildCertify {
+                    child,
+                    resource_class_name,
+                    limit,
+                    ki,
+                }
             }
-            CmdDet::ChildRevokeKey(child, req) => StorableCaCommand::ChildRevokeKey(child, req),
-            CmdDet::ChildRemove(child) => StorableCaCommand::ChildRemove(child),
+            CmdDet::ChildRevokeKey(child, revoke_req) => StorableCaCommand::ChildRevokeKey { child, revoke_req },
+            CmdDet::ChildRemove(child) => StorableCaCommand::ChildRemove { child },
 
             // ------------------------------------------------------------
             // Being a child
             // ------------------------------------------------------------
             CmdDet::GenerateNewIdKey(_) => StorableCaCommand::GenerateNewIdKey,
-            CmdDet::AddParent(parent, contact) => StorableCaCommand::AddParent(parent, contact.into()),
-            CmdDet::UpdateParentContact(parent, contact) => {
-                StorableCaCommand::UpdateParentContact(parent, contact.into())
-            }
-            CmdDet::RemoveParent(parent) => StorableCaCommand::RemoveParent(parent),
-            CmdDet::UpdateEntitlements(parent, entitlements, _) => {
-                let mut classes = BTreeMap::new();
-                for entitlement in entitlements.classes() {
-                    classes.insert(entitlement.class_name().clone(), entitlement.resource_set().clone());
+            CmdDet::AddParent(parent, contact) => StorableCaCommand::AddParent {
+                parent,
+                contact: contact.into(),
+            },
+            CmdDet::UpdateParentContact(parent, contact) => StorableCaCommand::UpdateParentContact {
+                parent,
+                contact: contact.into(),
+            },
+            CmdDet::RemoveParent(parent) => StorableCaCommand::RemoveParent { parent },
+            CmdDet::UpdateEntitlements(parent, cmd_entitlements, _) => {
+                let mut entitlements = vec![];
+                for entitlement in cmd_entitlements.classes() {
+                    entitlements.push(StorableRcEntitlement {
+                        resource_class_name: entitlement.class_name().clone(),
+                        resources: entitlement.resource_set().clone(),
+                    });
                 }
 
-                StorableCaCommand::UpdateResourceClasses(parent, classes)
+                StorableCaCommand::UpdateResourceEntitlements { parent, entitlements }
             }
-            CmdDet::UpdateRcvdCert(rcn, rcvd_cert, _, _) => {
-                StorableCaCommand::UpdateRcvdCert(rcn, rcvd_cert.resources().clone())
-            }
+            CmdDet::UpdateRcvdCert(resource_class_name, rcvd_cert, _, _) => StorableCaCommand::UpdateRcvdCert {
+                resource_class_name,
+                resources: rcvd_cert.resources().clone(),
+            },
 
             // ------------------------------------------------------------
             // Key rolls
             // ------------------------------------------------------------
-            CmdDet::KeyRollInitiate(duration, _) => StorableCaCommand::KeyRollInitiate(duration.num_seconds()),
-            CmdDet::KeyRollActivate(duration, _) => StorableCaCommand::KeyRollActivate(duration.num_seconds()),
-            CmdDet::KeyRollFinish(rcn, _) => StorableCaCommand::KeyRollFinish(rcn),
+            CmdDet::KeyRollInitiate(older_than, _) => StorableCaCommand::KeyRollInitiate {
+                older_than_seconds: older_than.num_seconds(),
+            },
+            CmdDet::KeyRollActivate(staged_for, _) => StorableCaCommand::KeyRollActivate {
+                staged_for_seconds: staged_for.num_seconds(),
+            },
+            CmdDet::KeyRollFinish(resource_class_name, _) => StorableCaCommand::KeyRollFinish { resource_class_name },
 
             // ------------------------------------------------------------
             // ROA Support
             // ------------------------------------------------------------
-            CmdDet::RouteAuthorizationsUpdate(updates, _, _) => StorableCaCommand::RoaDefinitionUpdates(updates.into()),
+            CmdDet::RouteAuthorizationsUpdate(updates, _, _) => StorableCaCommand::RoaDefinitionUpdates {
+                updates: updates.into(),
+            },
 
             // ------------------------------------------------------------
             // Publishing
             // ------------------------------------------------------------
-            CmdDet::RepoUpdate(contact, _, _) => StorableCaCommand::RepoUpdate(contact.service_uri_opt().cloned()),
+            CmdDet::RepoUpdate(contact, _, _) => StorableCaCommand::RepoUpdate {
+                service_uri: contact.service_uri_opt().cloned(),
+            },
             CmdDet::RepoRemoveOld(_) => StorableCaCommand::RepoRemoveOld,
 
             // ------------------------------------------------------------
             // Resource Tagged Attestations
             // ------------------------------------------------------------
-            CmdDet::RtaMultiPrepare(name, _, _) => StorableCaCommand::RtaPrepare(name),
-            CmdDet::RtaSign(name, _, _) => StorableCaCommand::RtaSign(name),
-            CmdDet::RtaCoSign(name, _, _) => StorableCaCommand::RtaCoSign(name),
+            CmdDet::RtaMultiPrepare(name, _, _) => StorableCaCommand::RtaPrepare { name },
+            CmdDet::RtaSign(name, _, _) => StorableCaCommand::RtaSign { name },
+            CmdDet::RtaCoSign(name, _, _) => StorableCaCommand::RtaCoSign { name },
         }
     }
 }

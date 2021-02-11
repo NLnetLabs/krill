@@ -6,15 +6,14 @@
     "version": 4,
     "sequence": 4,
     "details": {
-      "child_add": [
-        "rfc6492",
-        "c7c157d25bf984745691af261fa8d149aa7f6ca7",
-        {
-          "asn": "",
-          "v4": "10.0.0.0/16",
-          "v6": ""
-        }
-      ]
+      "type": "child_add",
+      "child": "rfc6492",
+      "ski": "c7c157d25bf984745691af261fa8d149aa7f6ca7",
+      "resources": {
+        "asn": "",
+        "v4": "10.0.0.0/16",
+        "v6": ""
+      }
     },
     "effect": {
       "events": [

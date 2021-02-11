@@ -6,7 +6,8 @@
     "version": 11,
     "sequence": 9,
     "details": {
-      "key_roll_finish": "0"
+      "type": "key_roll_finish",
+      "resource_class_name": "0"
     },
     "effect": {
       "events": [

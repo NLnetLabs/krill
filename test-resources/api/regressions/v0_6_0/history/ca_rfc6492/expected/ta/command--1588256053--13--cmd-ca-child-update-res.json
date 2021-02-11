@@ -6,14 +6,13 @@
     "version": 17,
     "sequence": 13,
     "details": {
-      "child_update_resources": [
-        "rfc6492",
-        {
-          "asn": "",
-          "v4": "10.0.0.0/24",
-          "v6": ""
-        }
-      ]
+      "type": "child_update_resources",
+      "child": "rfc6492",
+      "resources": {
+        "asn": "",
+        "v4": "10.0.0.0/24",
+        "v6": ""
+      }
     },
     "effect": {
       "events": [

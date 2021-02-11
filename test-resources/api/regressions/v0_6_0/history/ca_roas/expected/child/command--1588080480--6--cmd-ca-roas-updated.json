@@ -6,16 +6,17 @@
     "version": 7,
     "sequence": 6,
     "details": {
-      "roa_definition_updates": {
+      "type": "roa_definition_updates",
+      "updates": {
         "added": [
+          {
+            "asn": 64496,
+            "prefix": "10.0.0.0/24"
+          },
           {
             "asn": 64496,
             "prefix": "2001:db8::/32",
             "max_length": 48
-          },
-          {
-            "asn": 64496,
-            "prefix": "10.0.0.0/24"
           }
         ],
         "removed": []

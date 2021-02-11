@@ -6,10 +6,9 @@
     "version": 7,
     "sequence": 6,
     "details": {
-      "add_parent": [
-        "CA2",
-        "rfc6492"
-      ]
+      "type": "add_parent",
+      "parent": "CA2",
+      "contact": "rfc6492"
     },
     "effect": {
       "events": [

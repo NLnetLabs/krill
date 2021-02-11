@@ -49,7 +49,7 @@
       "version": 3,
       "sequence": 3,
       "summary": {
-        "msg": "Update entitlements under parent 'ta': 0 => asn: 0 blocks, v4: 1 blocks, v6: 0 blocks ",
+        "msg": "Update entitlements under parent 'ta': 0 => asn: , v4: 10.0.0.0/16, v6:  ",
         "label": "cmd-ca-parent-entitlements",
         "args": {
           "parent": "ta"
@@ -70,7 +70,7 @@
       "version": 5,
       "sequence": 4,
       "summary": {
-        "msg": "Update entitlements under parent 'ta': 0 => asn: 0 blocks, v4: 1 blocks, v6: 0 blocks ",
+        "msg": "Update entitlements under parent 'ta': 0 => asn: , v4: 10.0.0.0/16, v6:  ",
         "label": "cmd-ca-parent-entitlements",
         "args": {
           "parent": "ta"
@@ -114,7 +114,7 @@
       "version": 7,
       "sequence": 6,
       "summary": {
-        "msg": "Update entitlements under parent 'ta': 0 => asn: 1 blocks, v4: 1 blocks, v6: 0 blocks ",
+        "msg": "Update entitlements under parent 'ta': 0 => asn: AS65000, v4: 10.0.0.0/16, v6:  ",
         "label": "cmd-ca-parent-entitlements",
         "args": {
           "parent": "ta"
@@ -158,7 +158,7 @@
       "version": 9,
       "sequence": 8,
       "summary": {
-        "msg": "Update entitlements under parent 'ta': 0 => asn: 0 blocks, v4: 1 blocks, v6: 0 blocks ",
+        "msg": "Update entitlements under parent 'ta': 0 => asn: , v4: 10.0.0.0/24, v6:  ",
         "label": "cmd-ca-parent-entitlements",
         "args": {
           "parent": "ta"
@@ -243,7 +243,7 @@
       "version": 13,
       "sequence": 12,
       "summary": {
-        "msg": "Update entitlements under parent 'ta': 0 => asn: 0 blocks, v4: 1 blocks, v6: 0 blocks ",
+        "msg": "Update entitlements under parent 'ta': 0 => asn: , v4: 10.0.0.0/24, v6:  ",
         "label": "cmd-ca-parent-entitlements",
         "args": {
           "parent": "ta"
@@ -306,7 +306,7 @@
       "version": 17,
       "sequence": 15,
       "summary": {
-        "msg": "Update entitlements under parent 'ta': 0 => asn: 1 blocks, v4: 1 blocks, v6: 0 blocks ",
+        "msg": "Update entitlements under parent 'ta': 0 => asn: AS65000, v4: 10.0.0.0/16, v6:  ",
         "label": "cmd-ca-parent-entitlements",
         "args": {
           "parent": "ta"
@@ -391,7 +391,7 @@
       "version": 21,
       "sequence": 19,
       "summary": {
-        "msg": "Update entitlements under parent 'ta': 0 => asn: 1 blocks, v4: 1 blocks, v6: 0 blocks ",
+        "msg": "Update entitlements under parent 'ta': 0 => asn: AS65000, v4: 10.0.0.0/16, v6:  ",
         "label": "cmd-ca-parent-entitlements",
         "args": {
           "parent": "ta"

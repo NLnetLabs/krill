@@ -6,7 +6,8 @@
     "version": 10,
     "sequence": 7,
     "details": {
-      "roa_definition_updates": {
+      "type": "roa_definition_updates",
+      "updates": {
         "added": [],
         "removed": [
           {

@@ -6,7 +6,8 @@
     "version": 20,
     "sequence": 14,
     "details": {
-      "key_roll_activate": 0
+      "type": "key_roll_activate",
+      "staged_for_seconds": 0
     },
     "effect": {
       "events": [

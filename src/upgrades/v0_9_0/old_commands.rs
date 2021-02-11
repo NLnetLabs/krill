@@ -6,7 +6,8 @@ use crate::{
     commons::{
         api::{
             ChildHandle, Handle, ParentHandle, RequestResourceLimit, ResourceClassName, ResourceSet, RevocationRequest,
-            RoaDefinitionUpdates, RtaName, StorableCaCommand, StorableParentContact, StoredEffect,
+            RoaDefinitionUpdates, RtaName, StorableCaCommand, StorableParentContact, StorableRcEntitlement,
+            StoredEffect,
         },
         eventsourcing::{Command, WithStorableDetails},
         remote::rfc8183::ServiceUri,
@@ -153,46 +154,65 @@ impl From<OldStorableCaCommand> for StorableCaCommand {
     fn from(old: OldStorableCaCommand) -> Self {
         match old {
             OldStorableCaCommand::MakeTrustAnchor => StorableCaCommand::MakeTrustAnchor,
-            OldStorableCaCommand::ChildAdd(child, id_ski, resources) => {
-                StorableCaCommand::ChildAdd(child, id_ski, resources)
+            OldStorableCaCommand::ChildAdd(child, ski, resources) => {
+                StorableCaCommand::ChildAdd { child, ski, resources }
             }
             OldStorableCaCommand::ChildUpdateResources(child, resources) => {
-                StorableCaCommand::ChildUpdateResources(child, resources)
+                StorableCaCommand::ChildUpdateResources { child, resources }
             }
-            OldStorableCaCommand::ChildUpdateId(child, ski) => StorableCaCommand::ChildUpdateId(child, ski),
-            OldStorableCaCommand::ChildCertify(child, rcn, limit, ki) => {
-                StorableCaCommand::ChildCertify(child, rcn, limit, ki)
+            OldStorableCaCommand::ChildUpdateId(child, ski) => StorableCaCommand::ChildUpdateId { child, ski },
+            OldStorableCaCommand::ChildCertify(child, resource_class_name, limit, ki) => {
+                StorableCaCommand::ChildCertify {
+                    child,
+                    resource_class_name,
+                    limit,
+                    ki,
+                }
             }
             OldStorableCaCommand::ChildRevokeKey(child, revoke_req) => {
-                StorableCaCommand::ChildRevokeKey(child, revoke_req)
+                StorableCaCommand::ChildRevokeKey { child, revoke_req }
             }
-            OldStorableCaCommand::ChildRemove(child) => StorableCaCommand::ChildRemove(child),
+            OldStorableCaCommand::ChildRemove(child) => StorableCaCommand::ChildRemove { child },
 
             OldStorableCaCommand::GenerateNewIdKey => StorableCaCommand::GenerateNewIdKey,
 
-            OldStorableCaCommand::AddParent(parent, contact) => StorableCaCommand::AddParent(parent, contact),
+            OldStorableCaCommand::AddParent(parent, contact) => StorableCaCommand::AddParent { parent, contact },
             OldStorableCaCommand::UpdateParentContact(parent, contact) => {
-                StorableCaCommand::UpdateParentContact(parent, contact)
+                StorableCaCommand::UpdateParentContact { parent, contact }
             }
-            OldStorableCaCommand::RemoveParent(parent) => StorableCaCommand::RemoveParent(parent),
+            OldStorableCaCommand::RemoveParent(parent) => StorableCaCommand::RemoveParent { parent },
 
             OldStorableCaCommand::UpdateResourceClasses(parent, map) => {
-                StorableCaCommand::UpdateResourceClasses(parent, map)
+                let entitlements = map
+                    .into_iter()
+                    .map(|(resource_class_name, resources)| StorableRcEntitlement {
+                        resource_class_name,
+                        resources,
+                    })
+                    .collect();
+                StorableCaCommand::UpdateResourceEntitlements { parent, entitlements }
             }
-            OldStorableCaCommand::UpdateRcvdCert(rcn, resources) => StorableCaCommand::UpdateRcvdCert(rcn, resources),
+            OldStorableCaCommand::UpdateRcvdCert(resource_class_name, resources) => StorableCaCommand::UpdateRcvdCert {
+                resource_class_name,
+                resources,
+            },
 
-            OldStorableCaCommand::KeyRollInitiate(seconds) => StorableCaCommand::KeyRollInitiate(seconds),
-            OldStorableCaCommand::KeyRollActivate(seconds) => StorableCaCommand::KeyRollActivate(seconds),
-            OldStorableCaCommand::KeyRollFinish(rcn) => StorableCaCommand::KeyRollFinish(rcn),
-            OldStorableCaCommand::RoaDefinitionUpdates(roa_updates) => {
-                StorableCaCommand::RoaDefinitionUpdates(roa_updates)
+            OldStorableCaCommand::KeyRollInitiate(older_than_seconds) => {
+                StorableCaCommand::KeyRollInitiate { older_than_seconds }
             }
+            OldStorableCaCommand::KeyRollActivate(staged_for_seconds) => {
+                StorableCaCommand::KeyRollActivate { staged_for_seconds }
+            }
+            OldStorableCaCommand::KeyRollFinish(resource_class_name) => {
+                StorableCaCommand::KeyRollFinish { resource_class_name }
+            }
+            OldStorableCaCommand::RoaDefinitionUpdates(updates) => StorableCaCommand::RoaDefinitionUpdates { updates },
             OldStorableCaCommand::Republish => StorableCaCommand::Republish,
-            OldStorableCaCommand::RepoUpdate(service_uri) => StorableCaCommand::RepoUpdate(service_uri),
+            OldStorableCaCommand::RepoUpdate(service_uri) => StorableCaCommand::RepoUpdate { service_uri },
             OldStorableCaCommand::RepoRemoveOld => StorableCaCommand::RepoRemoveOld,
-            OldStorableCaCommand::RtaPrepare(rta_name) => StorableCaCommand::RtaPrepare(rta_name),
-            OldStorableCaCommand::RtaSign(rta_name) => StorableCaCommand::RtaSign(rta_name),
-            OldStorableCaCommand::RtaCoSign(rta_name) => StorableCaCommand::RtaCoSign(rta_name),
+            OldStorableCaCommand::RtaPrepare(name) => StorableCaCommand::RtaPrepare { name },
+            OldStorableCaCommand::RtaSign(name) => StorableCaCommand::RtaSign { name },
+            OldStorableCaCommand::RtaCoSign(name) => StorableCaCommand::RtaCoSign { name },
             OldStorableCaCommand::Deactivate => StorableCaCommand::Deactivate,
         }
     }

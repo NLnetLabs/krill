@@ -6,15 +6,14 @@
     "version": 7,
     "sequence": 6,
     "details": {
-      "child_add": [
-        "CA2",
-        "84bf5291fe7abb0be139537cba90cf92fe8560ee",
-        {
-          "asn": "",
-          "v4": "10.1.0.0/16",
-          "v6": ""
-        }
-      ]
+      "type": "child_add",
+      "child": "CA2",
+      "ski": "84bf5291fe7abb0be139537cba90cf92fe8560ee",
+      "resources": {
+        "asn": "",
+        "v4": "10.1.0.0/16",
+        "v6": ""
+      }
     },
     "effect": {
       "events": [
