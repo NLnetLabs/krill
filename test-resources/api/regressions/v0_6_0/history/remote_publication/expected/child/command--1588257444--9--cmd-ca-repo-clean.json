@@ -20,7 +20,8 @@
         "id": "child",
         "version": 14,
         "details": {
-          "repo_cleaned": {
+          "type": "repo_cleaned",
+          "contact": {
             "type": "embedded",
             "info": {
               "base_uri": "rsync://localhost/repo/child/",

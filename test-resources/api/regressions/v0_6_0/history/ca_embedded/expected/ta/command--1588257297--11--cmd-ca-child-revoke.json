@@ -26,26 +26,24 @@
         "id": "ta",
         "version": 14,
         "details": {
-          "child_key_revoked": [
-            "child",
-            "0",
-            "C4CF00E42E046EBE5275589D3462F1B1F43FBA85"
-          ]
+          "type": "child_key_revoked",
+          "child": "child",
+          "resource_class_name": "0",
+          "ki": "C4CF00E42E046EBE5275589D3462F1B1F43FBA85"
         }
       },
       {
         "id": "ta",
         "version": 15,
         "details": {
-          "child_certificates_updated": [
-            "0",
-            {
-              "issued": [],
-              "removed": [
-                "C4CF00E42E046EBE5275589D3462F1B1F43FBA85"
-              ]
-            }
-          ]
+          "type": "child_certificates_updated",
+          "resource_class_name": "0",
+          "updates": {
+            "issued": [],
+            "removed": [
+              "C4CF00E42E046EBE5275589D3462F1B1F43FBA85"
+            ]
+          }
         }
       }
     ]

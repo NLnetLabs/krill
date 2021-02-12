@@ -317,13 +317,20 @@ impl KeyState {
             let req =
                 self.create_issuance_req(base_repo, name_space, entitlement.class_name().clone(), key_id, signer)?;
 
-            res.push(CaEvtDet::CertificateRequested(rcn.clone(), req, *key_id));
+            res.push(CaEvtDet::CertificateRequested {
+                resource_class_name: rcn.clone(),
+                req,
+                ki: *key_id,
+            });
         }
 
         for key in entitlement.issued().iter().map(|c| c.subject_key_identifier()) {
             if !self.knows_key(key) {
-                let revocation = RevocationRequest::new(entitlement.class_name().clone(), key);
-                res.push(CaEvtDet::UnexpectedKeyFound(rcn.clone(), revocation));
+                let revoke_req = RevocationRequest::new(entitlement.class_name().clone(), key);
+                res.push(CaEvtDet::UnexpectedKeyFound {
+                    resource_class_name: rcn.clone(),
+                    revoke_req,
+                });
             }
         }
 
@@ -349,7 +356,11 @@ impl KeyState {
 
         for ki in keys {
             let req = self.create_issuance_req(base_repo, name_space, rcn.clone(), ki, signer)?;
-            res.push(CaEvtDet::CertificateRequested(rcn.clone(), req, *ki));
+            res.push(CaEvtDet::CertificateRequested {
+                resource_class_name: rcn.clone(),
+                req,
+                ki: *ki,
+            });
         }
 
         Ok(res)
@@ -449,7 +460,7 @@ impl KeyState {
     /// for a newly create pending key and requested certificate for it.
     pub fn keyroll_initiate(
         &self,
-        class_name: ResourceClassName,
+        resource_class_name: ResourceClassName,
         parent_class_name: ResourceClassName,
         base_repo: &RepoInfo,
         name_space: &str,
@@ -457,14 +468,20 @@ impl KeyState {
     ) -> KrillResult<Vec<CaEvtDet>> {
         match self {
             KeyState::Active(_current) => {
-                let key_id = signer.create_key()?;
+                let pending_key = signer.create_key()?;
 
-                let issuance_req =
-                    self.create_issuance_req(base_repo, name_space, parent_class_name, &key_id, signer)?;
+                let req = self.create_issuance_req(base_repo, name_space, parent_class_name, &pending_key, signer)?;
 
                 Ok(vec![
-                    CaEvtDet::KeyRollPendingKeyAdded(class_name.clone(), key_id),
-                    CaEvtDet::CertificateRequested(class_name, issuance_req, key_id),
+                    CaEvtDet::KeyRollPendingKeyAdded {
+                        resource_class_name: resource_class_name.clone(),
+                        pending_key,
+                    },
+                    CaEvtDet::CertificateRequested {
+                        resource_class_name,
+                        req,
+                        ki: pending_key,
+                    },
                 ])
             }
             _ => Ok(vec![]),
@@ -475,14 +492,17 @@ impl KeyState {
     /// the old key.
     pub fn keyroll_activate(
         &self,
-        class_name: ResourceClassName,
+        resource_class_name: ResourceClassName,
         parent_class_name: ResourceClassName,
         signer: &KrillSigner,
     ) -> KrillResult<CaEvtDet> {
         match self {
             KeyState::RollNew(_new, current) => {
                 let revoke_req = Self::revoke_key(parent_class_name, current.key_id(), signer)?;
-                Ok(CaEvtDet::KeyRollActivated(class_name, revoke_req))
+                Ok(CaEvtDet::KeyRollActivated {
+                    resource_class_name,
+                    revoke_req,
+                })
             }
             _ => Err(Error::KeyUseNoNewKey),
         }

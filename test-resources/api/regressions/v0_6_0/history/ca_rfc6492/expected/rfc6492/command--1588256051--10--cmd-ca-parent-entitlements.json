@@ -22,15 +22,14 @@
         "id": "rfc6492",
         "version": 11,
         "details": {
-          "resource_class_removed": [
-            "0",
-            "ta",
-            [
-              {
-                "class_name": "0",
-                "key": "17143836B8F6D11DCB53CD49B5D40C61B8E9B813"
-              }
-            ]
+          "type": "resource_class_removed",
+          "resource_class_name": "0",
+          "parent": "ta",
+          "revoke_reqs": [
+            {
+              "class_name": "0",
+              "key": "17143836B8F6D11DCB53CD49B5D40C61B8E9B813"
+            }
           ]
         }
       }

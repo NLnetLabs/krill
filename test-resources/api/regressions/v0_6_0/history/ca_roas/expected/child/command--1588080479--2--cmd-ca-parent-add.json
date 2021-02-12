@@ -22,10 +22,11 @@
         "id": "child",
         "version": 2,
         "details": {
-          "parent_added": [
-            "ta",
-            "embedded"
-          ]
+          "type": "parent_added",
+          "parent": "ta",
+          "contact": {
+            "type": "embedded"
+          }
         }
       }
     ]

@@ -494,6 +494,7 @@ impl Eq for TaCertDetails {}
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
+#[serde(tag = "type")]
 pub enum ParentCaContact {
     Ta(TaCertDetails),
     Embedded,
@@ -503,6 +504,14 @@ pub enum ParentCaContact {
 impl ParentCaContact {
     pub fn for_rfc6492(response: rfc8183::ParentResponse) -> Self {
         ParentCaContact::Rfc6492(response)
+    }
+
+    pub fn embedded() -> Self {
+        ParentCaContact::Embedded
+    }
+
+    pub fn for_ta(ta_cert_details: TaCertDetails) -> Self {
+        ParentCaContact::Ta(ta_cert_details)
     }
 
     pub fn to_ta_cert(&self) -> &Cert {

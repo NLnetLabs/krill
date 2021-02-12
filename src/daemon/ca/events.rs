@@ -15,8 +15,7 @@ use crate::{
         KrillResult,
     },
     daemon::ca::{
-        AggregateRoaInfo, CertifiedKey, ChildDetails, PreparedRta, PublishedRoa, Rfc8183Id, RoaInfo,
-        RouteAuthorization, SignedRta,
+        AggregateRoaInfo, CertifiedKey, PreparedRta, PublishedRoa, Rfc8183Id, RoaInfo, RouteAuthorization, SignedRta,
     },
 };
 
@@ -223,89 +222,221 @@ pub type CaEvt = StoredEvent<CaEvtDet>;
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
+#[serde(tag = "type")]
 pub enum CaEvtDet {
     // Being a Trust Anchor
-    TrustAnchorMade(TaCertDetails),
+    TrustAnchorMade {
+        ta_cert_details: TaCertDetails,
+    },
 
     // Being a parent Events
-    ChildAdded(ChildHandle, ChildDetails),
-    ChildCertificateIssued(ChildHandle, ResourceClassName, KeyIdentifier),
-    ChildKeyRevoked(ChildHandle, ResourceClassName, KeyIdentifier),
-    ChildCertificatesUpdated(ResourceClassName, ChildCertificateUpdates),
-    ChildUpdatedIdCert(ChildHandle, IdCert),
-    ChildUpdatedResources(ChildHandle, ResourceSet),
-    ChildRemoved(ChildHandle),
+    ChildAdded {
+        child: ChildHandle,
+        id_cert: Option<IdCert>,
+        resources: ResourceSet,
+    },
+    ChildCertificateIssued {
+        child: ChildHandle,
+        resource_class_name: ResourceClassName,
+        ki: KeyIdentifier,
+    },
+    ChildKeyRevoked {
+        child: ChildHandle,
+        resource_class_name: ResourceClassName,
+        ki: KeyIdentifier,
+    },
+    ChildCertificatesUpdated {
+        resource_class_name: ResourceClassName,
+        updates: ChildCertificateUpdates,
+    },
+    ChildUpdatedIdCert {
+        child: ChildHandle,
+        id_cert: IdCert,
+    },
+    ChildUpdatedResources {
+        child: ChildHandle,
+        resources: ResourceSet,
+    },
+    ChildRemoved {
+        child: ChildHandle,
+    },
 
     // Being a child Events
-    IdUpdated(Rfc8183Id),
-    ParentAdded(ParentHandle, ParentCaContact),
-    ParentUpdated(ParentHandle, ParentCaContact),
-    ParentRemoved(ParentHandle),
-
-    ResourceClassAdded(ResourceClassName, ParentHandle, ParentResourceClassName, KeyIdentifier),
-    ResourceClassRemoved(ResourceClassName, ParentHandle, Vec<RevocationRequest>),
-    CertificateRequested(ResourceClassName, IssuanceRequest, KeyIdentifier),
-    CertificateReceived(ResourceClassName, KeyIdentifier, RcvdCert),
+    IdUpdated {
+        id: Rfc8183Id,
+    },
+    ParentAdded {
+        parent: ParentHandle,
+        contact: ParentCaContact,
+    },
+    ParentUpdated {
+        parent: ParentHandle,
+        contact: ParentCaContact,
+    },
+    ParentRemoved {
+        parent: ParentHandle,
+    },
+    ResourceClassAdded {
+        resource_class_name: ResourceClassName,
+        parent: ParentHandle,
+        parent_resource_class_name: ParentResourceClassName,
+        pending_key: KeyIdentifier,
+    },
+    ResourceClassRemoved {
+        resource_class_name: ResourceClassName,
+        parent: ParentHandle,
+        revoke_reqs: Vec<RevocationRequest>,
+    },
+    CertificateRequested {
+        resource_class_name: ResourceClassName,
+        req: IssuanceRequest,
+        ki: KeyIdentifier, // Also contained in request. Drop?
+    },
+    CertificateReceived {
+        resource_class_name: ResourceClassName,
+        rcvd_cert: RcvdCert,
+        ki: KeyIdentifier, // Also in received cert. Drop?
+    },
 
     // Key life cycle
-    KeyRollPendingKeyAdded(ResourceClassName, KeyIdentifier),
-    KeyPendingToNew(ResourceClassName, CertifiedKey),
-    KeyPendingToActive(ResourceClassName, CertifiedKey),
-    KeyRollActivated(ResourceClassName, RevocationRequest),
-    KeyRollFinished(ResourceClassName),
-    UnexpectedKeyFound(ResourceClassName, RevocationRequest),
+    KeyRollPendingKeyAdded {
+        // A pending key is added to an existing resource class in order to initiate
+        // a key roll. Note that there will be a separate 'CertifcateRequested' event for
+        // this key.
+        resource_class_name: ResourceClassName,
+        pending_key: KeyIdentifier,
+    },
+    KeyPendingToNew {
+        // A pending key is marked as 'new' when it has received its (first) certificate.
+        // This means that the key is staged and a mft and crl will be published. According
+        // to RFC 6489 this key should be staged for 24 hours before it is promoted to
+        // become the active key. However, in practice this time can be shortened.
+        resource_class_name: ResourceClassName,
+        new_key: CertifiedKey, // pending key which received a certificate becomes 'new', i.e. it is staged.
+    },
+    KeyPendingToActive {
+        // When a new resource class is created it will have a single pending key only which
+        // is promoted to become the active (current) key for the resource class immediately
+        // after receiving its first certificate. Technically this is not a roll, but a simple
+        // first activation.
+        resource_class_name: ResourceClassName,
+        current_key: CertifiedKey, // there was no current key, pending becomes active without staging when cert is received.
+    },
+    KeyRollActivated {
+        // When a 'new' key is activated (becomes current), the previous current key will be
+        // marked as old and we will request its revocation. Note that any current ROAs and/or
+        // delegated certificates will also be re-issued under the new 'current' key. These changes
+        // are tracked in seperate `RoasUpdated` and `ChildCertificatesUpdated` events.
+        resource_class_name: ResourceClassName,
+        revoke_req: RevocationRequest,
+    },
+    KeyRollFinished {
+        // The key roll is finished when the parent confirms that the old key is revoked.
+        // We can remove it and stop publishing its mft and crl.
+        resource_class_name: ResourceClassName,
+    },
+    UnexpectedKeyFound {
+        // This event is generated in case our parent reports keys to us that we do not
+        // believe we have. This should not happen in practice, but this is tracked so that
+        // we can recover from this situation. We can request revocation for all these keys
+        // and create new keys in the RC as needed.
+        resource_class_name: ResourceClassName,
+        revoke_req: RevocationRequest,
+    },
 
     // Route Authorizations
-    RouteAuthorizationAdded(RouteAuthorization),
-    RouteAuthorizationRemoved(RouteAuthorization),
-    RoasUpdated(ResourceClassName, RoaUpdates),
+    RouteAuthorizationAdded {
+        // Tracks a single authorization (VRP) which is added. Note that (1) a command to
+        // update ROAs can contain multiple changes in which case multiple events will
+        // result, and (2) we do not have a 'modify' event. Modifications of e.g. the
+        // max length are expressed as a 'removed' and 'added' event in a single transaction.
+        auth: RouteAuthorization,
+    },
+    RouteAuthorizationRemoved {
+        // Tracks a single authorization (VRP) which is removed. See remark above.
+        auth: RouteAuthorization,
+    },
+    RoasUpdated {
+        // Tracks ROA *objects* which are (re-)issued in a resource class.
+        resource_class_name: ResourceClassName,
+        updates: RoaUpdates,
+    },
 
     // Publishing
-    RepoUpdated(RepositoryContact),
-    RepoCleaned(RepositoryContact),
+    RepoUpdated {
+        // Adds the repository contact for this CA so that publication can commence,
+        // and certificates can be requested from parents. Note: the CA can only start
+        // requesting certificates when it knows which URIs it can use.
+        contact: RepositoryContact,
+    },
+    RepoCleaned {
+        // Mark an old repository as cleaned, so that it can be removed.
+        contact: RepositoryContact,
+    },
 
     // Rta
-    RtaPrepared(RtaName, PreparedRta),
-    RtaSigned(RtaName, SignedRta),
+    //
+    // NOTE RTA support is still experimental and incomplete.
+    RtaSigned {
+        // Adds a signed RTA. The RTA can be single signed, or it can
+        // be a multi-signed RTA based on an existing 'PreparedRta'.
+        name: RtaName,
+        rta: SignedRta,
+    },
+    RtaPrepared {
+        // Adds a 'prepared' RTA. I.e. the context of keys which need to be included
+        // in a multi-signed RTA.
+        name: RtaName,
+        prepared: PreparedRta,
+    },
 }
 
 impl CaEvtDet {
     /// This marks the RFC8183Id as updated
     pub(super) fn id_updated(handle: &Handle, version: u64, id: Rfc8183Id) -> CaEvt {
-        StoredEvent::new(handle, version, CaEvtDet::IdUpdated(id))
+        StoredEvent::new(handle, version, CaEvtDet::IdUpdated { id })
     }
 
     /// This marks a parent as added to the CA.
-    pub(super) fn parent_added(
-        handle: &Handle,
-        version: u64,
-        parent_handle: ParentHandle,
-        info: ParentCaContact,
-    ) -> CaEvt {
-        StoredEvent::new(handle, version, CaEvtDet::ParentAdded(parent_handle, info))
+    pub(super) fn parent_added(handle: &Handle, version: u64, parent: ParentHandle, contact: ParentCaContact) -> CaEvt {
+        StoredEvent::new(handle, version, CaEvtDet::ParentAdded { parent, contact })
     }
 
     /// This marks a parent contact as updated
     pub(super) fn parent_updated(
         handle: &Handle,
         version: u64,
-        parent_handle: ParentHandle,
-        info: ParentCaContact,
+        parent: ParentHandle,
+        contact: ParentCaContact,
     ) -> CaEvt {
-        StoredEvent::new(handle, version, CaEvtDet::ParentUpdated(parent_handle, info))
+        StoredEvent::new(handle, version, CaEvtDet::ParentUpdated { parent, contact })
     }
 
     /// This marks a parent as removed
-    pub(super) fn parent_removed(handle: &Handle, version: u64, parent_handle: ParentHandle) -> CaEvt {
-        StoredEvent::new(handle, version, CaEvtDet::ParentRemoved(parent_handle))
+    pub(super) fn parent_removed(handle: &Handle, version: u64, parent: ParentHandle) -> CaEvt {
+        StoredEvent::new(handle, version, CaEvtDet::ParentRemoved { parent })
     }
 
-    pub(super) fn child_added(handle: &Handle, version: u64, child: ChildHandle, details: ChildDetails) -> CaEvt {
-        StoredEvent::new(handle, version, CaEvtDet::ChildAdded(child, details))
+    pub(super) fn child_added(
+        handle: &Handle,
+        version: u64,
+        child: ChildHandle,
+        id_cert: Option<IdCert>,
+        resources: ResourceSet,
+    ) -> CaEvt {
+        StoredEvent::new(
+            handle,
+            version,
+            CaEvtDet::ChildAdded {
+                child,
+                id_cert,
+                resources,
+            },
+        )
     }
 
     pub(super) fn child_updated_cert(handle: &Handle, version: u64, child: ChildHandle, id_cert: IdCert) -> CaEvt {
-        StoredEvent::new(handle, version, CaEvtDet::ChildUpdatedIdCert(child, id_cert))
+        StoredEvent::new(handle, version, CaEvtDet::ChildUpdatedIdCert { child, id_cert })
     }
 
     pub(super) fn child_updated_resources(
@@ -314,40 +445,63 @@ impl CaEvtDet {
         child: ChildHandle,
         resources: ResourceSet,
     ) -> CaEvt {
-        StoredEvent::new(handle, version, CaEvtDet::ChildUpdatedResources(child, resources))
+        StoredEvent::new(handle, version, CaEvtDet::ChildUpdatedResources { child, resources })
     }
 
     pub(super) fn child_certificate_issued(
         handle: &Handle,
         version: u64,
         child: ChildHandle,
-        rcn: ResourceClassName,
+        resource_class_name: ResourceClassName,
         ki: KeyIdentifier,
     ) -> CaEvt {
-        StoredEvent::new(handle, version, CaEvtDet::ChildCertificateIssued(child, rcn, ki))
+        StoredEvent::new(
+            handle,
+            version,
+            CaEvtDet::ChildCertificateIssued {
+                child,
+                resource_class_name,
+                ki,
+            },
+        )
     }
 
     pub(super) fn child_revoke_key(
         handle: &Handle,
         version: u64,
         child: ChildHandle,
-        rcn: ResourceClassName,
+        resource_class_name: ResourceClassName,
         ki: KeyIdentifier,
     ) -> CaEvt {
-        StoredEvent::new(handle, version, CaEvtDet::ChildKeyRevoked(child, rcn, ki))
+        StoredEvent::new(
+            handle,
+            version,
+            CaEvtDet::ChildKeyRevoked {
+                child,
+                resource_class_name,
+                ki,
+            },
+        )
     }
 
     pub(super) fn child_certificates_updated(
         handle: &Handle,
         version: u64,
-        rcn: ResourceClassName,
+        resource_class_name: ResourceClassName,
         updates: ChildCertificateUpdates,
     ) -> CaEvt {
-        StoredEvent::new(handle, version, CaEvtDet::ChildCertificatesUpdated(rcn, updates))
+        StoredEvent::new(
+            handle,
+            version,
+            CaEvtDet::ChildCertificatesUpdated {
+                resource_class_name,
+                updates,
+            },
+        )
     }
 
     pub(super) fn child_removed(handle: &Handle, version: u64, child: ChildHandle) -> CaEvt {
-        StoredEvent::new(handle, version, CaEvtDet::ChildRemoved(child))
+        StoredEvent::new(handle, version, CaEvtDet::ChildRemoved { child })
     }
 }
 
@@ -355,27 +509,42 @@ impl fmt::Display for CaEvtDet {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             // Being a Trust Anchor
-            CaEvtDet::TrustAnchorMade(details) => write!(
+            CaEvtDet::TrustAnchorMade { ta_cert_details } => write!(
                 f,
                 "turn into TA with key (hash) {}",
-                details.cert().subject_key_identifier()
+                ta_cert_details.cert().subject_key_identifier()
             ),
 
             // Being a parent Events
-            CaEvtDet::ChildAdded(child, details) => {
-                write!(f, "added child '{}' with resources '{}", child, details.resources())?;
-                if let Some(cert) = details.id_cert() {
+            CaEvtDet::ChildAdded {
+                child,
+                id_cert,
+                resources,
+            } => {
+                write!(f, "added child '{}' with resources '{}", child, resources)?;
+                if let Some(cert) = id_cert {
                     write!(f, ", id (hash): {}", cert.ski_hex())?;
                 }
                 Ok(())
             }
-            CaEvtDet::ChildCertificateIssued(child, rcn, ki) => write!(
+            CaEvtDet::ChildCertificateIssued {
+                child,
+                resource_class_name,
+                ki,
+            } => write!(
                 f,
                 "issued certificate to child '{}' for class '{}' and pub key '{}'",
-                child, rcn, ki
+                child, resource_class_name, ki
             ),
-            CaEvtDet::ChildCertificatesUpdated(rcn, updates) => {
-                write!(f, "updated child certificates in resource class {}", rcn)?;
+            CaEvtDet::ChildCertificatesUpdated {
+                resource_class_name,
+                updates,
+            } => {
+                write!(
+                    f,
+                    "updated child certificates in resource class {}",
+                    resource_class_name
+                )?;
                 let issued = updates.issued();
                 if !issued.is_empty() {
                     write!(f, " (re-)issued keys: ")?;
@@ -392,22 +561,26 @@ impl fmt::Display for CaEvtDet {
                 }
                 Ok(())
             }
-            CaEvtDet::ChildKeyRevoked(child, rcn, ki) => write!(
+            CaEvtDet::ChildKeyRevoked {
+                child,
+                resource_class_name,
+                ki,
+            } => write!(
                 f,
                 "revoked certificate for child '{}' in resource class '{}' with key(hash) '{}'",
-                child, rcn, ki
+                child, resource_class_name, ki
             ),
-            CaEvtDet::ChildUpdatedIdCert(child, id_crt) => {
-                write!(f, "updated child '{}' id (hash) '{}'", child, id_crt.ski_hex())
+            CaEvtDet::ChildUpdatedIdCert { child, id_cert } => {
+                write!(f, "updated child '{}' id (hash) '{}'", child, id_cert.ski_hex())
             }
-            CaEvtDet::ChildUpdatedResources(child, resources) => {
+            CaEvtDet::ChildUpdatedResources { child, resources } => {
                 write!(f, "updated child '{}' resources to '{}'", child, resources)
             }
-            CaEvtDet::ChildRemoved(child) => write!(f, "removed child '{}'", child),
+            CaEvtDet::ChildRemoved { child } => write!(f, "removed child '{}'", child),
 
             // Being a child Events
-            CaEvtDet::IdUpdated(id) => write!(f, "updated RFC8183 id to key '{}'", id.key_hash()),
-            CaEvtDet::ParentAdded(parent, contact) => {
+            CaEvtDet::IdUpdated { id } => write!(f, "updated RFC8183 id to key '{}'", id.key_hash()),
+            CaEvtDet::ParentAdded { parent, contact } => {
                 let contact_str = match contact {
                     ParentCaContact::Embedded => "embedded",
                     ParentCaContact::Ta(_) => "TA proxy",
@@ -415,7 +588,7 @@ impl fmt::Display for CaEvtDet {
                 };
                 write!(f, "added {} parent '{}' ", contact_str, parent)
             }
-            CaEvtDet::ParentUpdated(parent, contact) => {
+            CaEvtDet::ParentUpdated { parent, contact } => {
                 let contact_str = match contact {
                     ParentCaContact::Embedded => "embedded",
                     ParentCaContact::Ta(_) => "TA proxy",
@@ -423,69 +596,107 @@ impl fmt::Display for CaEvtDet {
                 };
                 write!(f, "updated parent '{}' contact to '{}' ", parent, contact_str)
             }
-            CaEvtDet::ParentRemoved(parent) => write!(f, "removed parent '{}'", parent),
+            CaEvtDet::ParentRemoved { parent } => write!(f, "removed parent '{}'", parent),
 
-            CaEvtDet::ResourceClassAdded(rcn, _, _, _) => write!(f, "added resource class with name '{}'", rcn),
-            CaEvtDet::ResourceClassRemoved(rcn, parent, _) => write!(
+            CaEvtDet::ResourceClassAdded {
+                resource_class_name, ..
+            } => write!(f, "added resource class with name '{}'", resource_class_name),
+            CaEvtDet::ResourceClassRemoved {
+                resource_class_name,
+                parent,
+                ..
+            } => write!(
                 f,
                 "removed resource class with name '{}' under parent '{}'",
-                rcn, parent
+                resource_class_name, parent
             ),
-            CaEvtDet::CertificateRequested(rcn, _, ki) => write!(
+            CaEvtDet::CertificateRequested {
+                resource_class_name,
+                ki,
+                ..
+            } => write!(
                 f,
                 "requested certificate for key (hash) '{}' under resource class '{}'",
-                ki, rcn
+                ki, resource_class_name
             ),
-            CaEvtDet::CertificateReceived(rcn, ki, _) => write!(
+            CaEvtDet::CertificateReceived {
+                resource_class_name,
+                ki,
+                ..
+            } => write!(
                 f,
                 "received certificate for key (hash) '{}' under resource class '{}'",
-                ki, rcn
+                ki, resource_class_name
             ),
 
             // Key life cycle
-            CaEvtDet::KeyRollPendingKeyAdded(rcn, ki) => {
-                write!(f, "key roll: added pending key '{}' under resource class '{}'", ki, rcn)
+            CaEvtDet::KeyRollPendingKeyAdded {
+                resource_class_name,
+                pending_key,
+            } => {
+                write!(
+                    f,
+                    "key roll: added pending key '{}' under resource class '{}'",
+                    pending_key, resource_class_name
+                )
             }
-            CaEvtDet::KeyPendingToNew(rcn, key) => write!(
+            CaEvtDet::KeyPendingToNew {
+                resource_class_name,
+                new_key,
+            } => write!(
                 f,
                 "key roll: moving pending key '{}' to new state under resource class '{}'",
-                key.key_id(),
-                rcn
+                new_key.key_id(),
+                resource_class_name
             ),
-            CaEvtDet::KeyPendingToActive(rcn, key) => write!(
+            CaEvtDet::KeyPendingToActive {
+                resource_class_name,
+                current_key,
+            } => write!(
                 f,
                 "activating pending key '{}' under resource class '{}'",
-                key.key_id(),
-                rcn
+                current_key.key_id(),
+                resource_class_name
             ),
-            CaEvtDet::KeyRollActivated(rcn, revoke) => write!(
+            CaEvtDet::KeyRollActivated {
+                resource_class_name,
+                revoke_req,
+            } => write!(
                 f,
                 "key roll: activated new key, requested revocation of '{}' under resource class '{}'",
-                revoke.key(),
-                rcn
+                revoke_req.key(),
+                resource_class_name
             ),
-            CaEvtDet::KeyRollFinished(rcn) => write!(f, "key roll: finished for resource class '{}'", rcn),
-            CaEvtDet::UnexpectedKeyFound(rcn, revoke) => write!(
+            CaEvtDet::KeyRollFinished { resource_class_name } => {
+                write!(f, "key roll: finished for resource class '{}'", resource_class_name)
+            }
+            CaEvtDet::UnexpectedKeyFound {
+                resource_class_name,
+                revoke_req,
+            } => write!(
                 f,
                 "Found unexpected key in resource class '{}', will try to revoke key id: '{}'",
-                rcn,
-                revoke.key()
+                resource_class_name,
+                revoke_req.key()
             ),
 
             // Route Authorizations
-            CaEvtDet::RouteAuthorizationAdded(route) => write!(f, "added ROA: '{}'", route),
-            CaEvtDet::RouteAuthorizationRemoved(route) => write!(f, "removed ROA: '{}'", route),
-            CaEvtDet::RoasUpdated(rcn, roa_updates) => {
-                write!(f, "updated ROAs under resource class '{}'", rcn)?;
-                if !roa_updates.updated.is_empty() {
+            CaEvtDet::RouteAuthorizationAdded { auth } => write!(f, "added ROA: '{}'", auth),
+            CaEvtDet::RouteAuthorizationRemoved { auth } => write!(f, "removed ROA: '{}'", auth),
+            CaEvtDet::RoasUpdated {
+                resource_class_name,
+                updates,
+            } => {
+                write!(f, "updated ROAs under resource class '{}'", resource_class_name)?;
+                if !updates.updated.is_empty() {
                     write!(f, " added: ")?;
-                    for auth in roa_updates.updated.keys() {
+                    for auth in updates.updated.keys() {
                         write!(f, "{} ", auth)?;
                     }
                 }
-                if !roa_updates.removed.is_empty() {
+                if !updates.removed.is_empty() {
                     write!(f, " removed: ")?;
-                    for auth in roa_updates.removed.keys() {
+                    for auth in updates.removed.keys() {
                         write!(f, "{} ", auth)?;
                     }
                 }
@@ -493,7 +704,7 @@ impl fmt::Display for CaEvtDet {
             }
 
             // Publishing
-            CaEvtDet::RepoUpdated(updated) => match updated {
+            CaEvtDet::RepoUpdated { contact } => match contact {
                 RepositoryContact::Embedded { .. } => write!(f, "updated repository to embedded server"),
                 RepositoryContact::Rfc8181 { server_response } => {
                     write!(
@@ -503,7 +714,7 @@ impl fmt::Display for CaEvtDet {
                     )
                 }
             },
-            CaEvtDet::RepoCleaned(old) => match old {
+            CaEvtDet::RepoCleaned { contact } => match contact {
                 RepositoryContact::Embedded { .. } => write!(f, "cleaned old embedded repository"),
                 RepositoryContact::Rfc8181 { server_response } => {
                     write!(
@@ -515,11 +726,11 @@ impl fmt::Display for CaEvtDet {
             },
 
             // Rta
-            CaEvtDet::RtaPrepared(name, prepared) => {
+            CaEvtDet::RtaPrepared { name, prepared } => {
                 write!(f, "Prepared RTA '{}' for resources: {}", name, prepared.resources())
             }
-            CaEvtDet::RtaSigned(name, signed) => {
-                write!(f, "Signed RTA '{}' for resources: {}", name, signed.resources())
+            CaEvtDet::RtaSigned { name, rta } => {
+                write!(f, "Signed RTA '{}' for resources: {}", name, rta.resources())
             }
         }
     }

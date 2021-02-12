@@ -26,14 +26,13 @@
         "id": "ta",
         "version": 7,
         "details": {
-          "child_updated_resources": [
-            "child",
-            {
-              "asn": "",
-              "v4": "192.168.0.0/16",
-              "v6": ""
-            }
-          ]
+          "type": "child_updated_resources",
+          "child": "child",
+          "resources": {
+            "asn": "",
+            "v4": "192.168.0.0/16",
+            "v6": ""
+          }
         }
       }
     ]

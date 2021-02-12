@@ -14,9 +14,9 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            Base64, ChildHandle, HexEncodedHash, IssuanceRequest, IssuedCert, ObjectName, ParentCaContact,
-            ParentHandle, RcvdCert, RepoInfo, ResourceClassName, ResourceSet, RevocationRequest, RevocationsDelta,
-            RevokedObject, RoaAggregateKey, RtaName, TaCertDetails,
+            Base64, ChildHandle, HexEncodedHash, IssuanceRequest, IssuedCert, ObjectName, ParentHandle, RcvdCert,
+            RepoInfo, ResourceClassName, ResourceSet, RevocationRequest, RevocationsDelta, RevokedObject,
+            RoaAggregateKey, RtaName, TaCertDetails,
         },
         crypto::IdCert,
         eventsourcing::StoredEvent,
@@ -95,49 +95,104 @@ impl TryFrom<OldEvtDet> for CaEvtDet {
 
     fn try_from(old: OldEvtDet) -> Result<Self, Self::Error> {
         let evt = match old {
-            OldEvtDet::TrustAnchorMade(ta_details) => CaEvtDet::TrustAnchorMade(ta_details),
-            OldEvtDet::ChildAdded(child, details) => {
-                CaEvtDet::ChildAdded(child, ca::ChildDetails::new(details.id_cert, details.resources))
+            OldEvtDet::TrustAnchorMade(ta_cert_details) => CaEvtDet::TrustAnchorMade { ta_cert_details },
+            OldEvtDet::ChildAdded(child, details) => CaEvtDet::ChildAdded {
+                child,
+                id_cert: details.id_cert,
+                resources: details.resources,
+            },
+            OldEvtDet::ChildCertificateIssued(child, resource_class_name, ki) => CaEvtDet::ChildCertificateIssued {
+                child,
+                resource_class_name,
+                ki,
+            },
+            OldEvtDet::ChildKeyRevoked(child, resource_class_name, ki) => CaEvtDet::ChildKeyRevoked {
+                child,
+                resource_class_name,
+                ki,
+            },
+            OldEvtDet::ChildCertificatesUpdated(resource_class_name, cert_updates) => {
+                CaEvtDet::ChildCertificatesUpdated {
+                    resource_class_name,
+                    updates: cert_updates.into(),
+                }
             }
-            OldEvtDet::ChildCertificateIssued(child, rcn, ki) => CaEvtDet::ChildCertificateIssued(child, rcn, ki),
-            OldEvtDet::ChildKeyRevoked(child, rcn, ki) => CaEvtDet::ChildKeyRevoked(child, rcn, ki),
-            OldEvtDet::ChildCertificatesUpdated(rcn, cert_updates) => {
-                CaEvtDet::ChildCertificatesUpdated(rcn, cert_updates.into())
-            }
-            OldEvtDet::ChildUpdatedIdCert(child, id_cert) => CaEvtDet::ChildUpdatedIdCert(child, id_cert),
-            OldEvtDet::ChildUpdatedResources(child, resources) => CaEvtDet::ChildUpdatedResources(child, resources),
-            OldEvtDet::ChildRemoved(child) => CaEvtDet::ChildRemoved(child),
+            OldEvtDet::ChildUpdatedIdCert(child, id_cert) => CaEvtDet::ChildUpdatedIdCert { child, id_cert },
+            OldEvtDet::ChildUpdatedResources(child, resources) => CaEvtDet::ChildUpdatedResources { child, resources },
+            OldEvtDet::ChildRemoved(child) => CaEvtDet::ChildRemoved { child },
 
-            OldEvtDet::IdUpdated(id) => CaEvtDet::IdUpdated(id.into()),
-            OldEvtDet::ParentAdded(parent, contact) => CaEvtDet::ParentAdded(parent, contact),
-            OldEvtDet::ParentUpdated(parent, contact) => CaEvtDet::ParentUpdated(parent, contact),
-            OldEvtDet::ParentRemoved(parent, _delta) => CaEvtDet::ParentRemoved(parent),
+            OldEvtDet::IdUpdated(id) => CaEvtDet::IdUpdated { id: id.into() },
+            OldEvtDet::ParentAdded(parent, contact) => CaEvtDet::ParentAdded {
+                parent,
+                contact: contact.into(),
+            },
+            OldEvtDet::ParentUpdated(parent, contact) => CaEvtDet::ParentUpdated {
+                parent,
+                contact: contact.into(),
+            },
+            OldEvtDet::ParentRemoved(parent, _delta) => CaEvtDet::ParentRemoved { parent },
 
             OldEvtDet::ResourceClassAdded(_rcn, rc) => rc.into_added_event()?,
-            OldEvtDet::ResourceClassRemoved(rcn, _delta, parent, revoke_reqs) => {
-                CaEvtDet::ResourceClassRemoved(rcn, parent, revoke_reqs)
+            OldEvtDet::ResourceClassRemoved(resource_class_name, _delta, parent, revoke_reqs) => {
+                CaEvtDet::ResourceClassRemoved {
+                    resource_class_name,
+                    parent,
+                    revoke_reqs,
+                }
             }
-            OldEvtDet::CertificateRequested(rcn, req, ki) => CaEvtDet::CertificateRequested(rcn, req, ki),
-            OldEvtDet::CertificateReceived(rcn, ki, cert) => CaEvtDet::CertificateReceived(rcn, ki, cert),
+            OldEvtDet::CertificateRequested(resource_class_name, req, ki) => CaEvtDet::CertificateRequested {
+                resource_class_name,
+                req,
+                ki,
+            },
+            OldEvtDet::CertificateReceived(resource_class_name, ki, rcvd_cert) => CaEvtDet::CertificateReceived {
+                resource_class_name,
+                ki,
+                rcvd_cert,
+            },
 
-            OldEvtDet::KeyRollPendingKeyAdded(rcn, ki) => CaEvtDet::KeyRollPendingKeyAdded(rcn, ki),
-            OldEvtDet::KeyPendingToNew(rcn, key, _delta) => CaEvtDet::KeyPendingToNew(rcn, key.into()),
-            OldEvtDet::KeyPendingToActive(rcn, key, _delta) => CaEvtDet::KeyPendingToActive(rcn, key.into()),
-            OldEvtDet::KeyRollActivated(rcn, revoke_req) => CaEvtDet::KeyRollActivated(rcn, revoke_req),
-            OldEvtDet::KeyRollFinished(rcn, _delta) => CaEvtDet::KeyRollFinished(rcn),
-            OldEvtDet::UnexpectedKeyFound(rcn, revoke_req) => CaEvtDet::UnexpectedKeyFound(rcn, revoke_req),
+            OldEvtDet::KeyRollPendingKeyAdded(resource_class_name, pending_key) => CaEvtDet::KeyRollPendingKeyAdded {
+                resource_class_name,
+                pending_key,
+            },
+            OldEvtDet::KeyPendingToNew(resource_class_name, new_key, _delta) => CaEvtDet::KeyPendingToNew {
+                resource_class_name,
+                new_key: new_key.into(),
+            },
+            OldEvtDet::KeyPendingToActive(resource_class_name, current_key, _delta) => CaEvtDet::KeyPendingToActive {
+                resource_class_name,
+                current_key: current_key.into(),
+            },
+            OldEvtDet::KeyRollActivated(resource_class_name, revoke_req) => CaEvtDet::KeyRollActivated {
+                resource_class_name,
+                revoke_req,
+            },
+            OldEvtDet::KeyRollFinished(resource_class_name, _delta) => {
+                CaEvtDet::KeyRollFinished { resource_class_name }
+            }
+            OldEvtDet::UnexpectedKeyFound(resource_class_name, revoke_req) => CaEvtDet::UnexpectedKeyFound {
+                resource_class_name,
+                revoke_req,
+            },
 
-            OldEvtDet::RouteAuthorizationAdded(auth) => CaEvtDet::RouteAuthorizationAdded(auth),
-            OldEvtDet::RouteAuthorizationRemoved(auth) => CaEvtDet::RouteAuthorizationRemoved(auth),
-            OldEvtDet::RoasUpdated(rcn, roa_updates) => CaEvtDet::RoasUpdated(rcn, roa_updates.try_into()?),
+            OldEvtDet::RouteAuthorizationAdded(auth) => CaEvtDet::RouteAuthorizationAdded { auth },
+            OldEvtDet::RouteAuthorizationRemoved(auth) => CaEvtDet::RouteAuthorizationRemoved { auth },
+            OldEvtDet::RoasUpdated(resource_class_name, updates) => CaEvtDet::RoasUpdated {
+                resource_class_name,
+                updates: updates.try_into()?,
+            },
 
             OldEvtDet::ObjectSetUpdated(_, _) => unimplemented!("This event must not be migrated"),
 
-            OldEvtDet::RepoUpdated(contact) => CaEvtDet::RepoUpdated(contact.into()),
-            OldEvtDet::RepoCleaned(contact) => CaEvtDet::RepoCleaned(contact.into()),
+            OldEvtDet::RepoUpdated(contact) => CaEvtDet::RepoUpdated {
+                contact: contact.into(),
+            },
+            OldEvtDet::RepoCleaned(contact) => CaEvtDet::RepoCleaned {
+                contact: contact.into(),
+            },
 
-            OldEvtDet::RtaPrepared(name, prepared) => CaEvtDet::RtaPrepared(name, prepared),
-            OldEvtDet::RtaSigned(name, signed) => CaEvtDet::RtaSigned(name, signed),
+            OldEvtDet::RtaPrepared(name, prepared) => CaEvtDet::RtaPrepared { name, prepared },
+            OldEvtDet::RtaSigned(name, rta) => CaEvtDet::RtaSigned { name, rta },
         };
         Ok(evt)
     }

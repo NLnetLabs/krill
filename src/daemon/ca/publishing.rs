@@ -83,31 +83,51 @@ impl SyncEventListener<CertAuth> for CaObjectsStore {
         self.with_ca_objects(ca.handle(), |objects| {
             for event in events {
                 match event.details() {
-                    super::CaEvtDet::RoasUpdated(rcn, roa_updates) => {
-                        objects.update_roas(rcn, roa_updates, timing, signer)?;
+                    super::CaEvtDet::RoasUpdated {
+                        resource_class_name,
+                        updates,
+                    } => {
+                        objects.update_roas(resource_class_name, updates, timing, signer)?;
                     }
-                    super::CaEvtDet::ChildCertificatesUpdated(rcn, cert_updates) => {
-                        objects.update_certs(rcn, cert_updates, timing, signer)?;
+                    super::CaEvtDet::ChildCertificatesUpdated {
+                        resource_class_name,
+                        updates,
+                    } => {
+                        objects.update_certs(resource_class_name, updates, timing, signer)?;
                     }
-                    super::CaEvtDet::KeyPendingToActive(rcn, key) => {
-                        objects.add_class(rcn, key, timing, signer)?;
+                    super::CaEvtDet::KeyPendingToActive {
+                        resource_class_name,
+                        current_key,
+                    } => {
+                        objects.add_class(resource_class_name, current_key, timing, signer)?;
                     }
-                    super::CaEvtDet::KeyPendingToNew(rcn, key) => {
-                        objects.keyroll_stage(rcn, key, timing, signer)?;
+                    super::CaEvtDet::KeyPendingToNew {
+                        resource_class_name,
+                        new_key,
+                    } => {
+                        objects.keyroll_stage(resource_class_name, new_key, timing, signer)?;
                     }
-                    super::CaEvtDet::KeyRollActivated(rcn, _) => {
-                        objects.keyroll_activate(rcn, timing, signer)?;
+                    super::CaEvtDet::KeyRollActivated {
+                        resource_class_name, ..
+                    } => {
+                        objects.keyroll_activate(resource_class_name, timing, signer)?;
                     }
-                    super::CaEvtDet::KeyRollFinished(rcn) => {
-                        objects.keyroll_finish(rcn)?;
+                    super::CaEvtDet::KeyRollFinished { resource_class_name } => {
+                        objects.keyroll_finish(resource_class_name)?;
                     }
-                    super::CaEvtDet::CertificateReceived(rcn, _ki, cert) => {
+                    super::CaEvtDet::CertificateReceived {
+                        resource_class_name,
+                        rcvd_cert,
+                        ..
+                    } => {
                         // Update the received certificate if needed. If the URIs changed we may need to re-issue things
-                        objects.update_received_cert(rcn, cert)?;
+                        objects.update_received_cert(resource_class_name, rcvd_cert)?;
                         objects.re_issue_if_required(&self.config.issuance_timing, &self.signer)?;
                     }
-                    super::CaEvtDet::ResourceClassRemoved(rcn, _, _) => {
-                        objects.remove_class(rcn);
+                    super::CaEvtDet::ResourceClassRemoved {
+                        resource_class_name, ..
+                    } => {
+                        objects.remove_class(resource_class_name);
                     }
                     _ => {}
                 }

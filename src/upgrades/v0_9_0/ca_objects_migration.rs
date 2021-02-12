@@ -5,9 +5,9 @@ use rpki::{crl::Crl, crypto::KeyIdentifier, manifest::Manifest, x509::Time};
 use crate::{
     commons::{
         api::{
-            self, ChildHandle, Handle, HexEncodedHash, IssuanceRequest, IssuedCert, ObjectName, ParentCaContact,
-            ParentHandle, RcvdCert, RepoInfo, ResourceClassName, ResourceSet, Revocation, RevocationRequest,
-            Revocations, RoaAggregateKey,
+            self, ChildHandle, Handle, HexEncodedHash, IssuanceRequest, IssuedCert, ObjectName, ParentHandle, RcvdCert,
+            RepoInfo, ResourceClassName, ResourceSet, Revocation, RevocationRequest, Revocations, RoaAggregateKey,
+            TaCertDetails,
         },
         crypto::{IdCert, KrillSigner},
         eventsourcing::{
@@ -499,6 +499,24 @@ impl RepositoryContact {
         RepositoryContact::Embedded(info)
     }
 }
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[allow(clippy::large_enum_variant)]
+#[serde(rename_all = "snake_case")]
+pub enum ParentCaContact {
+    Ta(TaCertDetails),
+    Embedded,
+    Rfc6492(rfc8183::ParentResponse),
+}
+
+impl From<ParentCaContact> for api::ParentCaContact {
+    fn from(old: ParentCaContact) -> Self {
+        match old {
+            ParentCaContact::Ta(ta_cert_details) => api::ParentCaContact::for_ta(ta_cert_details),
+            ParentCaContact::Embedded => api::ParentCaContact::embedded(),
+            ParentCaContact::Rfc6492(response) => api::ParentCaContact::for_rfc6492(response),
+        }
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ResourceClass {
@@ -564,14 +582,15 @@ impl ResourceClass {
         .ok_or_else(|| UpgradeError::custom("Added a resource class which is not in state pending."))?
         .key_id;
 
-        let (class_name, parent, parent_class_name) = (self.name, self.parent_handle, self.parent_rc_name);
+        let (resource_class_name, parent, parent_resource_class_name) =
+            (self.name, self.parent_handle, self.parent_rc_name);
 
-        Ok(CaEvtDet::ResourceClassAdded(
-            class_name,
+        Ok(CaEvtDet::ResourceClassAdded {
+            resource_class_name,
             parent,
-            parent_class_name,
+            parent_resource_class_name,
             pending_key,
-        ))
+        })
     }
 
     fn object_set_for_current(

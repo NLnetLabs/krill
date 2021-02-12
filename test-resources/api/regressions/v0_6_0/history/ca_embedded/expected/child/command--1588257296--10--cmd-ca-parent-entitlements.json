@@ -22,15 +22,14 @@
         "id": "child",
         "version": 11,
         "details": {
-          "resource_class_removed": [
-            "0",
-            "ta",
-            [
-              {
-                "class_name": "0",
-                "key": "C4CF00E42E046EBE5275589D3462F1B1F43FBA85"
-              }
-            ]
+          "type": "resource_class_removed",
+          "resource_class_name": "0",
+          "parent": "ta",
+          "revoke_reqs": [
+            {
+              "class_name": "0",
+              "key": "C4CF00E42E046EBE5275589D3462F1B1F43FBA85"
+            }
           ]
         }
       }

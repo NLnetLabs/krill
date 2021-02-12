@@ -20,7 +20,8 @@
         "id": "child",
         "version": 19,
         "details": {
-          "repo_cleaned": {
+          "type": "repo_cleaned",
+          "contact": {
             "type": "rfc8181",
             "server_response": {
               "tag": null,

@@ -30,27 +30,27 @@
         "id": "child",
         "version": 10,
         "details": {
-          "route_authorization_removed": "10.0.0.0/24 => 64496"
+          "type": "route_authorization_removed",
+          "auth": "10.0.0.0/24 => 64496"
         }
       },
       {
         "id": "child",
         "version": 11,
         "details": {
-          "roas_updated": [
-            "0",
-            {
-              "removed": {
-                "10.0.0.0/24 => 64496": {
-                  "revocation": {
-                    "serial": "58619451376100949143308034647119937940200221208",
-                    "expires": "2021-04-28T13:28:00Z"
-                  },
-                  "hash": "f239de4d330d23d186c7f29e9683c9f0cc8311e884e07ee63e32574768a4dff9"
-                }
+          "type": "roas_updated",
+          "resource_class_name": "0",
+          "updates": {
+            "removed": {
+              "10.0.0.0/24 => 64496": {
+                "revocation": {
+                  "serial": "58619451376100949143308034647119937940200221208",
+                  "expires": "2021-04-28T13:28:00Z"
+                },
+                "hash": "f239de4d330d23d186c7f29e9683c9f0cc8311e884e07ee63e32574768a4dff9"
               }
             }
-          ]
+          }
         }
       }
     ]

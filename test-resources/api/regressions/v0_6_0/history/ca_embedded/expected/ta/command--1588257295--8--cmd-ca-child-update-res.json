@@ -26,14 +26,13 @@
         "id": "ta",
         "version": 10,
         "details": {
-          "child_updated_resources": [
-            "child",
-            {
-              "asn": "",
-              "v4": "10.0.0.0/24",
-              "v6": ""
-            }
-          ]
+          "type": "child_updated_resources",
+          "child": "child",
+          "resources": {
+            "asn": "",
+            "v4": "10.0.0.0/24",
+            "v6": ""
+          }
         }
       }
     ]

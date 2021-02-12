@@ -26,14 +26,13 @@
         "id": "ta",
         "version": 7,
         "details": {
-          "child_updated_resources": [
-            "rfc6492",
-            {
-              "asn": "AS65000",
-              "v4": "10.0.0.0/16",
-              "v6": ""
-            }
-          ]
+          "type": "child_updated_resources",
+          "child": "rfc6492",
+          "resources": {
+            "asn": "AS65000",
+            "v4": "10.0.0.0/16",
+            "v6": ""
+          }
         }
       }
     ]

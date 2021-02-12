@@ -164,29 +164,36 @@ impl eventsourcing::EventListener<CertAuth> for MessageQueue {
         let handle = event.handle();
 
         match event.details() {
-            CaEvtDet::RoasUpdated(_, _)
-            | CaEvtDet::ChildCertificatesUpdated(_, _)
-            | CaEvtDet::KeyPendingToNew(_, _)
-            | CaEvtDet::KeyPendingToActive(_, _)
-            | CaEvtDet::KeyRollFinished(_) => self.push_sync_repo(handle.clone()),
+            CaEvtDet::RoasUpdated { .. }
+            | CaEvtDet::ChildCertificatesUpdated { .. }
+            | CaEvtDet::ChildKeyRevoked { .. }
+            | CaEvtDet::KeyPendingToNew { .. }
+            | CaEvtDet::KeyPendingToActive { .. }
+            | CaEvtDet::KeyRollFinished { .. } => self.push_sync_repo(handle.clone()),
 
-            CaEvtDet::KeyRollActivated(rcn, _) => {
-                if let Ok(parent) = ca.parent_for_rc(rcn) {
+            CaEvtDet::KeyRollActivated {
+                resource_class_name, ..
+            } => {
+                if let Ok(parent) = ca.parent_for_rc(resource_class_name) {
                     self.push_sync_parent(handle.clone(), parent.clone());
                 }
                 self.push_sync_repo(handle.clone());
             }
 
-            CaEvtDet::ParentRemoved(parent) => {
+            CaEvtDet::ParentRemoved { parent } => {
                 self.drop_sync_parent(&handle, parent);
                 self.push_sync_repo(handle.clone());
             }
 
-            CaEvtDet::ResourceClassRemoved(class_name, parent, revocations) => {
+            CaEvtDet::ResourceClassRemoved {
+                resource_class_name,
+                parent,
+                revoke_reqs,
+            } => {
                 self.push_sync_repo(handle.clone());
 
                 let mut revocations_map = HashMap::new();
-                revocations_map.insert(class_name.clone(), revocations.clone());
+                revocations_map.insert(resource_class_name.clone(), revoke_reqs.clone());
 
                 self.push_back(QueueEvent::ResourceClassRemoved(
                     handle.clone(),
@@ -195,27 +202,32 @@ impl eventsourcing::EventListener<CertAuth> for MessageQueue {
                 ))
             }
 
-            CaEvtDet::UnexpectedKeyFound(rcn, revocation) => self.push_back(QueueEvent::UnexpectedKey(
+            CaEvtDet::UnexpectedKeyFound {
+                resource_class_name,
+                revoke_req,
+            } => self.push_back(QueueEvent::UnexpectedKey(
                 handle.clone(),
-                rcn.clone(),
-                revocation.clone(),
+                resource_class_name.clone(),
+                revoke_req.clone(),
             )),
 
-            CaEvtDet::ParentAdded(parent, _contact) => {
+            CaEvtDet::ParentAdded { parent, .. } => {
                 self.push_sync_parent(handle.clone(), parent.clone());
             }
-            CaEvtDet::RepoUpdated(_) => {
+            CaEvtDet::RepoUpdated { .. } => {
                 for parent in ca.parents() {
                     self.push_sync_parent(handle.clone(), parent.clone());
                 }
             }
-            CaEvtDet::CertificateRequested(rcn, _, _) => {
-                if let Ok(parent) = ca.parent_for_rc(rcn) {
+            CaEvtDet::CertificateRequested {
+                resource_class_name, ..
+            } => {
+                if let Ok(parent) = ca.parent_for_rc(resource_class_name) {
                     self.push_sync_parent(handle.clone(), parent.clone());
                 }
             }
 
-            CaEvtDet::CertificateReceived(_, _, _) => {
+            CaEvtDet::CertificateReceived { .. } => {
                 if ca.old_repository_contact().is_some() {
                     let evt = QueueEvent::CleanOldRepo(handle.clone());
                     self.push_back(evt);

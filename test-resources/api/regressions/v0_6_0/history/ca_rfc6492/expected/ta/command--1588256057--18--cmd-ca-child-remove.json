@@ -22,22 +22,22 @@
         "id": "ta",
         "version": 24,
         "details": {
-          "child_certificates_updated": [
-            "0",
-            {
-              "issued": [],
-              "removed": [
-                "9F29B373BC1B3D173E815841AE492E3E64CC6325"
-              ]
-            }
-          ]
+          "type": "child_certificates_updated",
+          "resource_class_name": "0",
+          "updates": {
+            "issued": [],
+            "removed": [
+              "9F29B373BC1B3D173E815841AE492E3E64CC6325"
+            ]
+          }
         }
       },
       {
         "id": "ta",
         "version": 25,
         "details": {
-          "child_removed": "rfc6492"
+          "type": "child_removed",
+          "child": "rfc6492"
         }
       }
     ]

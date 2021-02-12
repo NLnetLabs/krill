@@ -178,26 +178,32 @@ impl ResourceClass {
                 if rcvd_cert_ki != pending.key_id() {
                     Err(Error::KeyUseNoMatch(rcvd_cert_ki))
                 } else {
-                    let certified_key = CertifiedKey::create(rcvd_cert);
-                    Ok(vec![CaEvtDet::KeyPendingToActive(self.name.clone(), certified_key)])
+                    let current_key = CertifiedKey::create(rcvd_cert);
+                    Ok(vec![CaEvtDet::KeyPendingToActive {
+                        resource_class_name: self.name.clone(),
+                        current_key,
+                    }])
                 }
             }
             KeyState::Active(current) => self.update_rcvd_cert_current(current, rcvd_cert, routes, config, signer),
             KeyState::RollPending(pending, current) => {
                 if rcvd_cert_ki == pending.key_id() {
-                    let certified_key = CertifiedKey::create(rcvd_cert);
-                    Ok(vec![CaEvtDet::KeyPendingToNew(self.name.clone(), certified_key)])
+                    let new_key = CertifiedKey::create(rcvd_cert);
+                    Ok(vec![CaEvtDet::KeyPendingToNew {
+                        resource_class_name: self.name.clone(),
+                        new_key,
+                    }])
                 } else {
                     self.update_rcvd_cert_current(current, rcvd_cert, routes, config, signer)
                 }
             }
             KeyState::RollNew(new, current) => {
                 if rcvd_cert_ki == new.key_id() {
-                    Ok(vec![CaEvtDet::CertificateReceived(
-                        self.name.clone(),
-                        rcvd_cert_ki,
+                    Ok(vec![CaEvtDet::CertificateReceived {
+                        resource_class_name: self.name.clone(),
+                        ki: rcvd_cert_ki,
                         rcvd_cert,
-                    )])
+                    }])
                 } else {
                     self.update_rcvd_cert_current(current, rcvd_cert, routes, config, signer)
                 }
@@ -217,19 +223,19 @@ impl ResourceClass {
         config: &Config,
         signer: &KrillSigner,
     ) -> KrillResult<Vec<CaEvtDet>> {
-        let rcvd_cert_ki = rcvd_cert.cert().subject_key_identifier();
-        if rcvd_cert_ki != current_key.key_id() {
-            return Err(ca::Error::KeyUseNoMatch(rcvd_cert_ki));
+        let ki = rcvd_cert.cert().subject_key_identifier();
+        if ki != current_key.key_id() {
+            return Err(ca::Error::KeyUseNoMatch(ki));
         }
 
         let rcvd_resources = rcvd_cert.resources();
 
         let mut res = vec![];
-        res.push(CaEvtDet::CertificateReceived(
-            self.name.clone(),
-            rcvd_cert_ki,
-            rcvd_cert.clone(),
-        ));
+        res.push(CaEvtDet::CertificateReceived {
+            resource_class_name: self.name.clone(),
+            ki,
+            rcvd_cert: rcvd_cert.clone(),
+        });
 
         if rcvd_resources != current_key.incoming_cert().resources() {
             debug!("Received a new certificate for resource class: {}, with resources: {}, will now re-issue certs and ROAs if needed.", self.name, rcvd_resources);
@@ -259,14 +265,20 @@ impl ResourceClass {
                 }
             }
             if !updates.is_empty() {
-                res.push(CaEvtDet::ChildCertificatesUpdated(self.name.clone(), updates));
+                res.push(CaEvtDet::ChildCertificatesUpdated {
+                    resource_class_name: self.name.clone(),
+                    updates,
+                });
             }
 
             // Check whether ROAs need to be re-issued.
             let updated_key = CertifiedKey::create(rcvd_cert);
-            let roa_updates = self.roas.update(routes, &updated_key, config, signer)?;
-            if !roa_updates.is_empty() {
-                res.push(CaEvtDet::RoasUpdated(self.name.clone(), roa_updates));
+            let updates = self.roas.update(routes, &updated_key, config, signer)?;
+            if !updates.is_empty() {
+                res.push(CaEvtDet::RoasUpdated {
+                    resource_class_name: self.name.clone(),
+                    updates,
+                });
             }
         }
 
@@ -442,7 +454,9 @@ impl ResourceClass {
     /// Finish a key roll, withdraw the old key
     pub fn keyroll_finish(&self) -> KrillResult<CaEvtDet> {
         match &self.key_state {
-            KeyState::RollOld(_current, _old) => Ok(CaEvtDet::KeyRollFinished(self.name.clone())),
+            KeyState::RollOld(_current, _old) => Ok(CaEvtDet::KeyRollFinished {
+                resource_class_name: self.name.clone(),
+            }),
             _ => Err(Error::KeyUseNoOldKey),
         }
     }

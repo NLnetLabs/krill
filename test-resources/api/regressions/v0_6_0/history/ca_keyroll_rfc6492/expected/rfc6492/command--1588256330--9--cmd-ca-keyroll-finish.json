@@ -21,7 +21,8 @@
         "id": "rfc6492",
         "version": 11,
         "details": {
-          "key_roll_finished": "0"
+          "type": "key_roll_finished",
+          "resource_class_name": "0"
         }
       }
     ]

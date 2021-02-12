@@ -21,7 +21,8 @@
         "id": "rfc6492",
         "version": 19,
         "details": {
-          "parent_removed": "ta"
+          "type": "parent_removed",
+          "parent": "ta"
         }
       }
     ]
