@@ -80,5 +80,8 @@ pub const ACTOR_DEF_ANON: ActorDef = ActorDef::anonymous();
 pub const ACTOR_DEF_MASTER_TOKEN: ActorDef = ActorDef::system("master-token", "admin");
 pub const ACTOR_DEF_TESTBED: ActorDef = ActorDef::system("testbed", "testbed");
 
+pub const SCHEDULER_INTERVAL_SECONDS_REPUBLISH: u32 = 600;
+pub const SCHEDULER_INTERVAL_SECONDS_ROA_RENEW: u32 = 3600;
+
 #[cfg(test)]
 pub const ACTOR_DEF_TEST: ActorDef = ActorDef::system("test", "admin");

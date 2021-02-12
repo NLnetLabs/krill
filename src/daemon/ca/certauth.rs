@@ -1,7 +1,7 @@
-use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::ops::Deref;
 use std::sync::Arc;
+use std::{collections::HashMap, vec};
 
 use bytes::Bytes;
 use chrono::Duration;
@@ -437,6 +437,7 @@ impl Aggregate for CertAuth {
             CmdDet::RouteAuthorizationsUpdate(updates, config, signer) => {
                 self.route_authorizations_update(updates, &config, signer)
             }
+            CmdDet::RouteAuthorizationsRenew(config, signer) => self.route_authorizations_renew(&config, &signer),
 
             // Republish
             CmdDet::RepoUpdate(contact, config, signer) => self.update_repo(contact, &config, &signer),
@@ -447,6 +448,22 @@ impl Aggregate for CertAuth {
             CmdDet::RtaCoSign(name, rta, signer) => self.rta_cosign(name, rta, signer.deref()),
             CmdDet::RtaSign(name, request, signer) => self.rta_sign(name, request, signer.deref()),
         }
+    }
+}
+
+/// # Data presentation
+///
+impl CertAuth {
+    // For many commands with multiple resulting events, it's easier to build a list of event *details*
+    // and worry about numbering the versions here.
+    fn evts_from_details(&self, evt_dets: Vec<CaEvtDet>) -> Vec<CaEvt> {
+        let mut res = vec![];
+        let mut version = self.version;
+        for det in evt_dets {
+            res.push(StoredEvent::new(&self.handle, version, det));
+            version += 1;
+        }
+        res
     }
 }
 
@@ -1340,26 +1357,37 @@ impl CertAuth {
     ) -> KrillResult<Vec<CaEvt>> {
         let route_auth_updates = route_auth_updates.into_explicit();
 
-        let (routes, mut evts) = self.update_authorizations(&route_auth_updates)?;
+        let (routes, mut evt_dets) = self.update_authorizations(&route_auth_updates)?;
 
         // for rc in self.resources
         for (rcn, rc) in self.resources.iter() {
             let updates = rc.update_roas(&routes, None, config, signer.deref())?;
             if updates.contains_changes() {
-                evts.push(CaEvtDet::RoasUpdated {
+                evt_dets.push(CaEvtDet::RoasUpdated {
                     resource_class_name: rcn.clone(),
                     updates,
                 });
             }
         }
 
-        let mut res = vec![];
-        let mut version = self.version;
-        for e in evts {
-            res.push(StoredEvent::new(&self.handle, version, e));
-            version += 1;
+        Ok(self.evts_from_details(evt_dets))
+    }
+
+    /// Renew existing ROA objects if needed.
+    pub fn route_authorizations_renew(&self, config: &Config, signer: &KrillSigner) -> KrillResult<Vec<CaEvt>> {
+        let mut evt_dets = vec![];
+
+        for (rcn, rc) in self.resources.iter() {
+            let updates = rc.renew_roas(&config.issuance_timing, signer)?;
+            if updates.contains_changes() {
+                evt_dets.push(CaEvtDet::RoasUpdated {
+                    resource_class_name: rcn.clone(),
+                    updates,
+                });
+            }
         }
-        Ok(res)
+
+        Ok(self.evts_from_details(evt_dets))
     }
 
     /// Verifies that the updates are correct, i.e.:

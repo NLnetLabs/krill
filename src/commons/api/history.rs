@@ -461,6 +461,7 @@ pub enum StorableCaCommand {
     RoaDefinitionUpdates {
         updates: RoaDefinitionUpdates,
     },
+    AutomaticRoaRenewal,
     Republish,
     RepoUpdate {
         service_uri: Option<ServiceUri>,
@@ -551,6 +552,7 @@ impl WithStorableDetails for StorableCaCommand {
             StorableCaCommand::RoaDefinitionUpdates { updates } => CommandSummary::new("cmd-ca-roas-updated", &self)
                 .with_added(updates.added().len())
                 .with_removed(updates.removed().len()),
+            StorableCaCommand::AutomaticRoaRenewal => CommandSummary::new("cmd-ca-roas-renewed", &self),
             StorableCaCommand::Republish => CommandSummary::new("cmd-ca-publish", &self),
             StorableCaCommand::RepoUpdate { service_uri } => {
                 CommandSummary::new("cmd-ca-repo-update", &self).with_service_uri_opt(service_uri.as_ref())
@@ -683,6 +685,9 @@ impl fmt::Display for StorableCaCommand {
                     }
                 }
                 Ok(())
+            }
+            StorableCaCommand::AutomaticRoaRenewal => {
+                write!(f, "Automatically re-issue ROAs before they would expire")
             }
 
             // ------------------------------------------------------------

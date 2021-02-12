@@ -231,6 +231,20 @@ impl CaServer {
         self.ca_objects_store.reissue_all()
     }
 
+    /// Re-issue about to expire ROAs
+    pub async fn renew_roas_all(&self, actor: &Actor) -> KrillResult<()> {
+        for ca in self.ca_store.list()? {
+            let cmd = Cmd::new(
+                &ca,
+                None,
+                CmdDet::RouteAuthorizationsRenew(self.config.clone(), self.signer.clone()),
+                actor,
+            );
+            self.send_command(cmd).await?;
+        }
+        Ok(())
+    }
+
     /// Get the current objects for a CA for each repository that it's using.
     /// Note: typically a CA will use only one repository, but during migrations there may be multiple.
     pub async fn ca_repo_elements(

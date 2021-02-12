@@ -9,17 +9,27 @@ use tokio::runtime::Runtime;
 
 use rpki::x509::Time;
 
-use crate::commons::actor::Actor;
-use crate::commons::api::{Handle, ParentHandle};
-use crate::commons::bgp::BgpAnalyser;
-use crate::constants::{test_mode_enabled, REQUEUE_DELAY_SECONDS};
+use crate::{
+    commons::{
+        actor::Actor,
+        api::{Handle, ParentHandle},
+        bgp::BgpAnalyser,
+    },
+    constants::{
+        test_mode_enabled, REQUEUE_DELAY_SECONDS, SCHEDULER_INTERVAL_SECONDS_REPUBLISH,
+        SCHEDULER_INTERVAL_SECONDS_ROA_RENEW,
+    },
+    daemon::{
+        ca::CaServer,
+        config::Config,
+        mq::{MessageQueue, QueueEvent},
+    },
+    pubd::PubServer,
+    publish::CaPublisher,
+};
+
 #[cfg(feature = "multi-user")]
 use crate::daemon::auth::common::session::LoginSessionCache;
-use crate::daemon::ca::CaServer;
-use crate::daemon::config::Config;
-use crate::daemon::mq::{MessageQueue, QueueEvent};
-use crate::pubd::PubServer;
-use crate::publish::CaPublisher;
 
 pub struct Scheduler {
     /// Responsible for listening to events and executing triggered processes, such
@@ -30,6 +40,10 @@ pub struct Scheduler {
     /// Responsible for periodically republishing so that MFTs and CRLs do not go stale.
     #[allow(dead_code)] // just need to keep this in scope
     cas_republish: Option<ScheduleHandle>,
+
+    /// Responsible for periodically reissuing ROAs before they would expire.
+    #[allow(dead_code)] // just need to keep this in scope
+    cas_roas_renew: Option<ScheduleHandle>,
 
     /// Responsible for letting CA check with their parents whether their resource
     /// entitlements have changed *and* for the shrinking of issued certificates, if
@@ -63,6 +77,7 @@ impl Scheduler {
     ) -> Self {
         let mut cas_event_triggers = None;
         let mut cas_republish = None;
+        let mut cas_roas_renew = None;
         let mut cas_refresh = None;
 
         if let Some(caserver) = caserver.as_ref() {
@@ -74,12 +89,14 @@ impl Scheduler {
             ));
 
             cas_republish = Some(make_cas_republish(caserver.clone(), event_queue));
+            cas_roas_renew = Some(make_cas_roa_renew(caserver.clone(), actor.clone()));
             cas_refresh = Some(make_cas_refresh(caserver.clone(), config.ca_refresh, actor.clone()));
         }
 
         let announcements_refresh = make_announcements_refresh(bgp_analyser);
         let archive_old_commands =
             make_archive_old_commands(caserver, pubserver, config.archive_threshold_days, actor.clone());
+
         #[cfg(feature = "multi-user")]
         let login_cache_sweeper_sh = make_login_cache_sweeper_sh(login_session_cache);
 
@@ -87,6 +104,7 @@ impl Scheduler {
             cas_event_triggers,
             cas_republish,
             cas_refresh,
+            cas_roas_renew,
             announcements_refresh,
             archive_old_commands,
             #[cfg(feature = "multi-user")]
@@ -232,17 +250,36 @@ async fn try_sync_parent(
 }
 
 fn make_cas_republish(caserver: Arc<CaServer>, event_queue: Arc<MessageQueue>) -> ScheduleHandle {
-    SkippingScheduler::run(120, "CA certificate republish", move || {
-        let mut rt = Runtime::new().unwrap();
-        rt.block_on(async {
-            info!("Triggering background republication for all CAs");
-            match caserver.republish_all().await {
-                Err(e) => error!("Background republishing failed: {}", e),
-                Ok(cas) => {
-                    for ca in cas {
-                        event_queue.push_sync_repo(ca);
+    SkippingScheduler::run(
+        SCHEDULER_INTERVAL_SECONDS_REPUBLISH,
+        "CA certificate republish",
+        move || {
+            let mut rt = Runtime::new().unwrap();
+            rt.block_on(async {
+                debug!("Triggering background republication for all CAs, note this may be a no-op");
+                match caserver.republish_all().await {
+                    Err(e) => error!("Background republishing of MFT and CRLs failed: {}", e),
+                    Ok(cas) => {
+                        for ca in cas {
+                            info!("Re-issued MFT and CRL for CA: {}", ca);
+                            event_queue.push_sync_repo(ca);
+                        }
                     }
                 }
+            })
+        },
+    )
+}
+
+fn make_cas_roa_renew(caserver: Arc<CaServer>, actor: Actor) -> ScheduleHandle {
+    SkippingScheduler::run(SCHEDULER_INTERVAL_SECONDS_ROA_RENEW, "CA ROA renewal", move || {
+        let mut rt = Runtime::new().unwrap();
+        rt.block_on(async {
+            debug!(
+                "Triggering background renewal for about to expire ROAs issued by all CAs, note this may be a no-op"
+            );
+            if let Err(e) = caserver.renew_roas_all(&actor).await {
+                error!("Background re-issuing of about to expire ROAs failed: {}", e);
             }
         })
     })

@@ -44,14 +44,20 @@ pub enum CmdDet {
 
     // Add a new child under this parent CA
     ChildAdd(ChildHandle, Option<IdCert>, ResourceSet),
-    // Update some details for an existing child, e.g. resources.
+
+    // Update the resource entitlements for an existing child.
     ChildUpdateResources(ChildHandle, ResourceSet),
-    // Update some details for an existing child, e.g. resources.
+
+    // Update the IdCert used by the child for the RFC 6492 RPKI
+    // provisioning protocol.
     ChildUpdateId(ChildHandle, IdCert),
-    // Process an issuance request by an existing child.
+
+    // Process an issuance request sent by an existing child.
     ChildCertify(ChildHandle, IssuanceRequest, Arc<Config>, Arc<KrillSigner>),
+
     // Process a revoke request by an existing child.
     ChildRevokeKey(ChildHandle, RevocationRequest),
+
     // Remove child (also revokes, and removes issued certs, and republishes)
     ChildRemove(ChildHandle),
 
@@ -78,6 +84,7 @@ pub enum CmdDet {
     // ResourceClasses and certificate requests or key revocation requests
     // as needed.
     UpdateEntitlements(ParentHandle, Entitlements, Arc<KrillSigner>),
+
     // Process a new certificate received from a parent.
     UpdateRcvdCert(ResourceClassName, RcvdCert, Arc<Config>, Arc<KrillSigner>),
 
@@ -108,7 +115,17 @@ pub enum CmdDet {
     // ------------------------------------------------------------
     // ROA Support
     // ------------------------------------------------------------
+
+    // Update the authorizations for a CA.
+    // Note: ROA *objects* will be created by the CA itself. The command just
+    // contains the intent for which announcements should be authorized.
     RouteAuthorizationsUpdate(RouteAuthorizationUpdates, Arc<Config>, Arc<KrillSigner>),
+
+    // Re-issue any and all ROA objects which would otherwise expire in
+    // some time (default 4 weeks, configurable). Note that this command
+    // is intended to be sent by the scheduler - once a day is fine - and
+    // will only be stored if there any updates to be done.
+    RouteAuthorizationsRenew(Arc<Config>, Arc<KrillSigner>),
 
     // ------------------------------------------------------------
     // Publishing
@@ -230,6 +247,7 @@ impl From<CmdDet> for StorableCaCommand {
             CmdDet::RouteAuthorizationsUpdate(updates, _, _) => StorableCaCommand::RoaDefinitionUpdates {
                 updates: updates.into(),
             },
+            CmdDet::RouteAuthorizationsRenew(_, _) => StorableCaCommand::AutomaticRoaRenewal,
 
             // ------------------------------------------------------------
             // Publishing
