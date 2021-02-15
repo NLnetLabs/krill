@@ -68,8 +68,8 @@ use super::util::{
     FlexibleClient, FlexibleIdTokenClaims, FlexibleTokenResponse, FlexibleUserInfoClaims, LogOrFail, WantedMeta,
 };
 
-const NONCE_COOKIE_NAME: &str = "krill_login_nonce";
-const CSRF_COOKIE_NAME: &str = "krill_login_csrf_hash";
+const NONCE_COOKIE_NAME: &str = "__Host-krill_login_nonce";
+const CSRF_COOKIE_NAME: &str = "__Host-krill_login_csrf_hash";
 const LOGIN_SESSION_STATE_KEY_PATH: &str = "login_session_state.key"; // TODO: decide on proper location
 
 pub struct ProviderConnectionProperties {
@@ -568,6 +568,7 @@ impl OpenIDConnectAuthProvider {
                 //   definition of 'token' used for cookie names)
                 match Cookie::parse(cookie_hdr_val_str) {
                     Ok(parsed_cookies) => {
+                        trace!("OpenID Connect: parsed cookies={:?}", &parsed_cookies);
                         // Even with the helper crate we have to do some work...
                         // Why doesn't it return a map???
                         if let Some(found_cookie) =
@@ -895,11 +896,8 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 let res_body = authorize_url.as_str().as_bytes().to_vec();
                 let mut res = HttpResponse::text_no_cache(res_body).response();
 
-                // Note: Cookies without an Expires attribute expire when the user agent "session" ends, i.e. when the
-                // browser is closed. Note that the nonce value is already base64 encoded. As we don't expect the login
-                // process take a long time perhaps we should set an expiration time in the near future instead?
                 fn make_secure_cookie_value(cookie_name: &str, cookie_value: &str) -> KrillResult<HeaderValue> {
-                    let cookie_str = format!("{}={}; Secure; HttpOnly", cookie_name, cookie_value);
+                    let cookie_str = format!("{}={}; Secure; HttpOnly; SameSite=Lax; Max-Age=300; Path=/", cookie_name, cookie_value);
                     HeaderValue::from_str(&cookie_str).map_err(|err| {
                         OpenIDConnectAuthProvider::internal_error(
                             format!(
@@ -942,18 +940,23 @@ impl AuthProvider for OpenIDConnectAuthProvider {
             // OpenID Connect Authorization Code Flow
             // See: https://tools.ietf.org/html/rfc6749#section-4.1
             //      https://openid.net/specs/openid-connect-core-1_0.html#CodeFlowSteps
-            // TODO: use _state.
             Some(Auth::AuthorizationCode { code, state, nonce, csrf_token_hash }) => {
                 // verify the CSRF "state" value by hashing it and comparing it to the value in the CSRF cookie
                 // TODO: use constant time comparison, e.g. as provided by the ring crate?
-                let request_crsf_hash = sha256(state.as_bytes());
+                let request_csrf_hash = sha256(state.as_bytes());
                 match base64::decode_config(csrf_token_hash, base64::URL_SAFE_NO_PAD) {
-                    Ok(cookie_csrf_hash) if request_crsf_hash == cookie_csrf_hash => Ok(()),
-                    Ok(_) => Err(Self::internal_error("OpenID Connect: CSRF token mismatch", None)),
-                    Err(err) => Err(Self::internal_error(
-                        "OpenID Connect: Invalid CSRF token",
-                        Some(&err.to_string()),
-                    )),
+                    Ok(cookie_csrf_hash) if request_csrf_hash == cookie_csrf_hash => {
+                        Ok(())
+                    }
+                    Ok(cookie_csrf_hash) => {
+                        Err(Self::internal_error("OpenID Connect: CSRF token mismatch",
+                            Some(&format!("cookie CSRF hash={:?}, request CSRF hash={:?}",
+                            &cookie_csrf_hash, request_csrf_hash.to_vec()))))
+                    }
+                    Err(err) => {
+                        Err(Self::internal_error("OpenID Connect: Invalid CSRF token",
+                            Some(&err.to_string())))
+                    }
                 }?;
 
                 // ==========================================================================================
