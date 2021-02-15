@@ -41,15 +41,18 @@
           "type": "roas_updated",
           "resource_class_name": "0",
           "updates": {
-            "removed": {
-              "10.0.0.0/24 => 64496": {
-                "revocation": {
-                  "serial": "58619451376100949143308034647119937940200221208",
-                  "expires": "2021-04-28T13:28:00Z"
-                },
-                "hash": "f239de4d330d23d186c7f29e9683c9f0cc8311e884e07ee63e32574768a4dff9"
+            "removed": [
+              {
+                "auth": "10.0.0.0/24 => 64496",
+                "removed": {
+                  "revocation": {
+                    "serial": "58619451376100949143308034647119937940200221208",
+                    "expires": "2021-04-28T13:28:00Z"
+                  },
+                  "hash": "f239de4d330d23d186c7f29e9683c9f0cc8311e884e07ee63e32574768a4dff9"
+                }
               }
-            }
+            ]
           }
         }
       }

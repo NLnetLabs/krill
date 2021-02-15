@@ -1,7 +1,6 @@
 #[cfg(feature = "multi-user")]
 use std::collections::HashMap;
 
-use std::collections::HashSet;
 use std::convert::TryFrom;
 use std::io;
 use std::path::PathBuf;
@@ -1418,20 +1417,20 @@ impl Options {
             let updates_str = unsafe { from_utf8_unchecked(&bytes) };
             RoaDefinitionUpdates::from_str(updates_str)?
         } else {
-            let mut added = HashSet::new();
-            let mut removed = HashSet::new();
+            let mut added = vec![];
+            let mut removed = vec![];
 
             if let Some(add) = matches.values_of("add") {
                 for roa_str in add {
                     let roa: RoaDefinition = RoaDefinition::from_str(roa_str)?;
-                    added.insert(roa);
+                    added.push(roa);
                 }
             }
 
             if let Some(remove) = matches.values_of("remove") {
                 for roa_str in remove {
                     let roa: RoaDefinition = RoaDefinition::from_str(roa_str)?;
-                    removed.insert(roa);
+                    removed.push(roa);
                 }
             }
 

@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt;
 use std::ops::Deref;
 use std::str::FromStr;
@@ -117,15 +117,15 @@ impl From<RouteAuthorization> for RoaDefinition {
 ///
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RouteAuthorizationUpdates {
-    added: HashSet<RouteAuthorization>,
-    removed: HashSet<RouteAuthorization>,
+    added: Vec<RouteAuthorization>,
+    removed: Vec<RouteAuthorization>,
 }
 
 impl Default for RouteAuthorizationUpdates {
     fn default() -> Self {
         RouteAuthorizationUpdates {
-            added: HashSet::new(),
-            removed: HashSet::new(),
+            added: vec![],
+            removed: vec![],
         }
     }
 }
@@ -134,49 +134,41 @@ impl RouteAuthorizationUpdates {
     /// Use this when receiving updates through the API, until the v0.7 ROA clean up can be deprecated,
     /// which would imply that pre-0.7 versions can not longer be directly updated.
     pub fn into_explicit(self) -> Self {
-        let mut added = HashSet::new();
-        for add in self.added.into_iter() {
-            added.insert(add.explicit_length());
-        }
-
-        let mut removed = HashSet::new();
-        for rem in self.removed.into_iter() {
-            removed.insert(rem.explicit_length());
-        }
-
+        let added = self.added.into_iter().map(|a| a.explicit_length()).collect();
+        let removed = self.removed.into_iter().map(|r| r.explicit_length()).collect();
         RouteAuthorizationUpdates { added, removed }
     }
 
-    pub fn new(added: HashSet<RouteAuthorization>, removed: HashSet<RouteAuthorization>) -> Self {
+    pub fn new(added: Vec<RouteAuthorization>, removed: Vec<RouteAuthorization>) -> Self {
         RouteAuthorizationUpdates { added, removed }
     }
 
-    pub fn added(&self) -> &HashSet<RouteAuthorization> {
+    pub fn added(&self) -> &Vec<RouteAuthorization> {
         &self.added
     }
 
-    pub fn removed(&self) -> &HashSet<RouteAuthorization> {
+    pub fn removed(&self) -> &Vec<RouteAuthorization> {
         &self.removed
     }
 
-    pub fn unpack(self) -> (HashSet<RouteAuthorization>, HashSet<RouteAuthorization>) {
+    pub fn unpack(self) -> (Vec<RouteAuthorization>, Vec<RouteAuthorization>) {
         (self.added, self.removed)
     }
 
     pub fn filter(&self, resources: &ResourceSet) -> Self {
-        let mut added = HashSet::new();
-        for auth in &self.added {
-            if resources.contains_roa_address(&auth.as_roa_ip_address()) {
-                added.insert(*auth);
-            }
-        }
+        let added = self
+            .added()
+            .iter()
+            .filter(|auth| resources.contains_roa_address(&auth.as_roa_ip_address()))
+            .cloned()
+            .collect();
 
-        let mut removed = HashSet::new();
-        for auth in &self.removed {
-            if resources.contains_roa_address(&auth.as_roa_ip_address()) {
-                removed.insert(*auth);
-            }
-        }
+        let removed = self
+            .removed()
+            .iter()
+            .filter(|auth| resources.contains_roa_address(&auth.as_roa_ip_address()))
+            .cloned()
+            .collect();
 
         RouteAuthorizationUpdates { added, removed }
     }
