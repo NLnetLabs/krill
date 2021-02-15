@@ -68,7 +68,8 @@ use super::util::{
     FlexibleClient, FlexibleIdTokenClaims, FlexibleTokenResponse, FlexibleUserInfoClaims, LogOrFail, WantedMeta,
 };
 
-const NONCE_COOKIE_NAME: &str = "nonce_hash";
+const NONCE_COOKIE_NAME: &str = "krill_login_nonce";
+const CSRF_COOKIE_NAME: &str = "krill_login_csrf_hash";
 const LOGIN_SESSION_STATE_KEY_PATH: &str = "login_session_state.key"; // TODO: decide on proper location
 
 pub struct ProviderConnectionProperties {
@@ -119,7 +120,7 @@ impl OpenIDConnectAuthProvider {
                 }
             }
             Err(err) => {
-                return Err(self.internal_error(
+                return Err(OpenIDConnectAuthProvider::internal_error(
                     "Unable to initialize provider connection: Unable to acquire internal lock",
                     Some(&err.to_string()),
                 ));
@@ -448,7 +449,9 @@ impl OpenIDConnectAuthProvider {
         let jmespath_string = claim_conf
             .jmespath
             .as_ref()
-            .ok_or_else(|| self.internal_error("Missing JMESPath configuration value for claim", None))?
+            .ok_or_else(|| {
+                OpenIDConnectAuthProvider::internal_error("Missing JMESPath configuration value for claim", None)
+            })?
             .to_string();
 
         // Create a new JMESPath Runtime. TODO: Somehow make this a single
@@ -466,7 +469,7 @@ impl OpenIDConnectAuthProvider {
         // to us) so this doesn't have to be fast. Note to self: perhaps the
         // lifetime issue could be worked around using a Box?
         let expr = &runtime.compile(&jmespath_string).map_err(|e| {
-            self.internal_error(
+            OpenIDConnectAuthProvider::internal_error(
                 format!(
                     "OpenID Connect: Unable to compile JMESPath expression '{}'",
                     &jmespath_string
@@ -502,7 +505,7 @@ impl OpenIDConnectAuthProvider {
 
         for (source, claims) in claims_to_search.clone() {
             let claims = claims.map_err(|e| {
-                self.internal_error(
+                OpenIDConnectAuthProvider::internal_error(
                     "OpenID Connect: Unable to prepare claims for parsing",
                     Some(&e.to_string()),
                 )
@@ -548,7 +551,7 @@ impl OpenIDConnectAuthProvider {
         }
     }
 
-    fn extract_nonce(&self, request: &hyper::Request<hyper::Body>) -> Option<String> {
+    fn extract_cookie(&self, request: &hyper::Request<hyper::Body>, cookie_name: &str) -> Option<String> {
         if let Some(cookie_hdr_val) = request.headers().get(hyper::http::header::COOKIE) {
             if let Ok(cookie_hdr_val_str) = cookie_hdr_val.to_str() {
                 // Use a helper crate to parse the cookie string as it's
@@ -567,11 +570,10 @@ impl OpenIDConnectAuthProvider {
                     Ok(parsed_cookies) => {
                         // Even with the helper crate we have to do some work...
                         // Why doesn't it return a map???
-                        if let Some(nonce_cookie) = parsed_cookies
-                            .iter()
-                            .find(|cookie| cookie.get_name() == NONCE_COOKIE_NAME)
+                        if let Some(found_cookie) =
+                            parsed_cookies.iter().find(|cookie| cookie.get_name() == cookie_name)
                         {
-                            return Some(nonce_cookie.get_value().to_string());
+                            return Some(found_cookie.get_value().to_string());
                         }
                     }
                     Err(err) => {
@@ -586,7 +588,7 @@ impl OpenIDConnectAuthProvider {
         None
     }
 
-    fn internal_error<S>(&self, msg: S, additional_info: Option<S>) -> Error
+    fn internal_error<S>(msg: S, additional_info: Option<S>) -> Error
     where
         S: Into<String>,
     {
@@ -603,11 +605,20 @@ impl OpenIDConnectAuthProvider {
             if let Some(code) = query.get_first_from_str("code") {
                 trace!("OpenID Connect: Processing potential RFC-6749 section 4.1.2 redirected Authorization Response");
                 if let Some(state) = query.get_first_from_str("state") {
-                    if let Some(nonce) = self.extract_nonce(request) {
-                        trace!("OpenID Connect: Detected RFC-6749 section 4.1.2 redirected Authorization Response");
-                        return Some(Auth::authorization_code(Token::from(code), state, nonce));
+                    if let Some(nonce) = self.extract_cookie(request, NONCE_COOKIE_NAME) {
+                        if let Some(csrf_token_hash) = self.extract_cookie(request, CSRF_COOKIE_NAME) {
+                            trace!("OpenID Connect: Detected RFC-6749 section 4.1.2 redirected Authorization Response");
+                            return Some(Auth::authorization_code(
+                                Token::from(code),
+                                state,
+                                nonce,
+                                csrf_token_hash,
+                            ));
+                        } else {
+                            debug!("OpenID Connect: Ignoring potential RFC-6749 section 4.1.2 redirected Authorization Response due to missing CSRF token hash cookie.");
+                        }
                     } else {
-                        debug!("OpenID Connect: Ignoring potential RFC-6749 section 4.1.2 redirected Authorization Response due to missing nonce hash cookie.");
+                        debug!("OpenID Connect: Ignoring potential RFC-6749 section 4.1.2 redirected Authorization Response due to missing nonce cookie.");
                     }
                 } else {
                     debug!("OpenID Connect: Ignoring potential RFC-6749 section 4.1.2 redirected Authorization Response due to missing 'state' query parameter.");
@@ -632,7 +643,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         trace!("Attempting to authenticate the request..");
 
         self.initialize_connection_if_needed().map_err(|err| {
-            self.internal_error(
+            OpenIDConnectAuthProvider::internal_error(
                 "OpenID Connect: Cannot authenticate request: Failed to connect to provider",
                 Some(&err.to_string()),
             )
@@ -755,7 +766,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         //    parties"
 
         self.initialize_connection_if_needed().map_err(|err| {
-            self.internal_error(
+            OpenIDConnectAuthProvider::internal_error(
                 "OpenID Connect: Cannot get login URL: Failed to connect to provider",
                 Some(&err.to_string()),
             )
@@ -769,16 +780,71 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         let nonce_hash = sha256(nonce_b64_str.as_bytes());
 
         match &*self.conn.read().map_err(|err| {
-            self.internal_error(
+            OpenIDConnectAuthProvider::internal_error(
                 "Unable to login: Unable to acquire internal lock",
                 Some(&err.to_string()),
             )
         })? {
             Some(conn) => {
+                // At the time of writing the underlying oauth2 crate CsrfToken::new_random() function is used to
+                // generate a "base64-encoded 128-bit" URL safe value that we use as the "state" parameter in the login
+                // URL that the client is redirected to. Each attempt by the client to login should re-request the
+                // login URL and thereby use a CSRF value unique to that login attempt.
+                //
+                // When the end user submits the 3rd party login form the state value should be included in the redirect
+                // response that directs the user agent back to Krill. In order to verify the CSRF token we need to
+                // either store it somewhere so that the separate request into the Krill HTTP server to complete the
+                // login process can retrieve it (and we should be able to be sure we are retrieving the CSRF token that
+                // was issued here by us to the user logging in) and compare it to the state value contained in the HTTP
+                // HTTP back to Krill.
+                //
+                // https://openid.net/specs/openid-connect-core-1_0.html#AuthRequest says the state parameter should be
+                // an "opaque value" - it is.
+                //
+                // https://tools.ietf.org/html/rfc6819#section-4.4.1.12 says a ""state" parameter created with secure
+                // random codes should be deployed on the client side" - assuming that the random generator is secure
+                // then yes we are using a secure random code.
+                //
+                // https://tools.ietf.org/html/rfc6749#section-4.2.2.1 says the state parameter "SHOULD NOT include
+                // sensitive client or reseource owner information in plain text" - it does not.
+                //
+                // https://tools.ietf.org/html/rfc6749#section-10.12 says the state parameter "MUST contain a
+                // non-guessable value" - it does.
+                //
+                // https://tools.ietf.org/html/rfc6749#section-10.14 says that the "client MUST sanitize (and validate
+                // when possible) any value received -- in particular, the value of the "state" and "redirect_uri"
+                // parameters" - we can check that it is correctly base64 encoded and is of the expected length, but the
+                // random value has no meaning or inherent structure that we can verify.
+                //
+                // https://openid.net/specs/openid-connect-core-1_0.html#AuthRequest,
+                // https://tools.ietf.org/html/rfc6749#section-10.12, https://tools.ietf.org/html/rfc6819#section-3.6
+                // and https://tools.ietf.org/html/rfc6819#section-5.3.5 all refer to using a value that "binds" the
+                // request to the user agent's state and refer to cryptographic binding and use of hashing and cookies
+                // to achieve such binding.
+                //
+                // We need a way to verify that the state value that we have received back is one that we issued to the
+                // client to use in the login process. Hashing it and issuing the hash to the client browser as a cookie
+                // could be used to verifiably relate the state value to a value that we can issue at the start of the
+                // login process and get back on redirect from the 3rd party back to Krill, and that won't be sent to
+                // the 3rd party (i.e. the cookie, which will be restricted to our domain and thus shouldn't be sent by
+                // the browser to the 3rd party domain). By using a cookie we automatically incorporate a mechanism for
+                // delivering the hash back to us (as the user agent will follow the 3rd party redirect back to us
+                // without giving client-side javascript a chance to inspect or modify it).
+                //
+                // This is actually exactly the same mechanism used pass a nonce value to the 3rd party authorization
+                // server and check it afterwards, the only difference being that the state parameter is passed back to
+                // us as a request parameter on the authorisation code redirect response from the 3rd party, and the
+                // nonce is a value embedded in the ID token that is issued at the very end of the login process (after
+                // the authorisation code is exchanged for access and id tokens), except the hash and hashed value are
+                // in reversed positions.
+                let csrf_token = CsrfToken::new_random();
+                let csrf_token_hash = sha256(csrf_token.secret().as_bytes());
+                let csrf_token_hash_b64_str = base64::encode_config(csrf_token_hash, base64::URL_SAFE_NO_PAD);
+
                 let mut request = conn.client.authorize_url(
                     AuthenticationFlow::<CoreResponseType>::AuthorizationCode,
-                    CsrfToken::new_random,
-                    || Nonce::new(base64::encode(nonce_hash)),
+                    || csrf_token,
+                    || Nonce::new(base64::encode_config(nonce_hash, base64::URL_SAFE_NO_PAD)),
                 );
 
                 // From https://openid.net/specs/openid-connect-core-1_0.html#AuthRequest:
@@ -826,32 +892,47 @@ impl AuthProvider for OpenIDConnectAuthProvider {
 
                 debug!("OpenID Connect: Login URL will be {:?}", &authorize_url);
 
-                // Note: Cookies without an Expires attribute expire when the user agent
-                // "session" ends, i.e. when the browser is closed. Note that the nonce
-                // value is already base64 encoded.
-                let cookie_str = format!("{}={}; Secure; HttpOnly", NONCE_COOKIE_NAME, nonce_b64_str);
-                let cookie_hdr_val = HeaderValue::from_str(&cookie_str).map_err(|err| {
-                    self.internal_error(
-                        format!("Unable to construct HTTP cookie from nonce value '{}'", nonce_b64_str),
-                        Some(err.to_string()),
-                    )
-                })?;
-
                 let res_body = authorize_url.as_str().as_bytes().to_vec();
                 let mut res = HttpResponse::text_no_cache(res_body).response();
-                res.headers_mut().insert(SET_COOKIE, cookie_hdr_val);
+
+                // Note: Cookies without an Expires attribute expire when the user agent "session" ends, i.e. when the
+                // browser is closed. Note that the nonce value is already base64 encoded. As we don't expect the login
+                // process take a long time perhaps we should set an expiration time in the near future instead?
+                fn make_secure_cookie_value(cookie_name: &str, cookie_value: &str) -> KrillResult<HeaderValue> {
+                    let cookie_str = format!("{}={}; Secure; HttpOnly", cookie_name, cookie_value);
+                    HeaderValue::from_str(&cookie_str).map_err(|err| {
+                        OpenIDConnectAuthProvider::internal_error(
+                            format!(
+                                "Unable to construct HTTP cookie '{}' with value '{}'",
+                                cookie_name, cookie_value
+                            ),
+                            Some(err.to_string()),
+                        )
+                    })
+                }
+
+                res.headers_mut()
+                    .insert(SET_COOKIE, make_secure_cookie_value(NONCE_COOKIE_NAME, nonce_b64_str)?);
+                res.headers_mut().append(
+                    SET_COOKIE,
+                    make_secure_cookie_value(CSRF_COOKIE_NAME, &csrf_token_hash_b64_str)?,
+                );
+
                 Ok(HttpResponse::new(res))
             }
             None => {
                 // should be unreachable
-                Err(self.internal_error("Cannot get login URL: Connection to provider not yet established", None))
+                Err(OpenIDConnectAuthProvider::internal_error(
+                    "Cannot get login URL: Connection to provider not yet established",
+                    None,
+                ))
             }
         }
     }
 
     fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
         self.initialize_connection_if_needed().map_err(|err| {
-            self.internal_error(
+            OpenIDConnectAuthProvider::internal_error(
                 "OpenID Connect: Cannot login user: Failed to connect to provider",
                 Some(&err.to_string()),
             )
@@ -862,7 +943,19 @@ impl AuthProvider for OpenIDConnectAuthProvider {
             // See: https://tools.ietf.org/html/rfc6749#section-4.1
             //      https://openid.net/specs/openid-connect-core-1_0.html#CodeFlowSteps
             // TODO: use _state.
-            Some(Auth::AuthorizationCode { code, state: _, nonce }) => {
+            Some(Auth::AuthorizationCode { code, state, nonce, csrf_token_hash }) => {
+                // verify the CSRF "state" value by hashing it and comparing it to the value in the CSRF cookie
+                // TODO: use constant time comparison, e.g. as provided by the ring crate?
+                let request_crsf_hash = sha256(state.as_bytes());
+                match base64::decode_config(csrf_token_hash, base64::URL_SAFE_NO_PAD) {
+                    Ok(cookie_csrf_hash) if request_crsf_hash == cookie_csrf_hash => Ok(()),
+                    Ok(_) => Err(Self::internal_error("OpenID Connect: CSRF token mismatch", None)),
+                    Err(err) => Err(Self::internal_error(
+                        "OpenID Connect: Invalid CSRF token",
+                        Some(&err.to_string()),
+                    )),
+                }?;
+
                 // ==========================================================================================
                 // Step 1: exchange the temporary (e.g. valid for 10 minutes or
                 // something like that) OAuth2 authorization code for an OAuth2
@@ -873,7 +966,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 // ==========================================================================================
                 trace!("OpenID Connect: Submitting RFC-6749 section 4.1.3 Access Token Request");
                 match &*self.conn.read().map_err(|err| {
-                    self.internal_error(
+                    OpenIDConnectAuthProvider::internal_error(
                         "Unable to login: Unable to acquire internal lock",
                         Some(&err.to_string()),
                     )
@@ -898,7 +991,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                                     }
                                     RequestTokenError::Other(msg) => (msg, None),
                                 };
-                                self.internal_error(
+                                OpenIDConnectAuthProvider::internal_error(
                                     format!("OpenID Connect: Code exchange failed: {}", msg),
                                     additional_info,
                                 )
@@ -954,7 +1047,8 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                         // claim is actually the hash of the original nonce, as per
                         // the advice in the OpenID Core 1.0 spec. See:
                         // https://openid.net/specs/openid-connect-core-1_0.html#NonceNotes
-                        let nonce_hash = Nonce::new(base64::encode(sha256(nonce.as_bytes())));
+                        let nonce_hash =
+                            Nonce::new(base64::encode_config(sha256(nonce.as_bytes()), base64::URL_SAFE_NO_PAD));
 
                         let mut id_token_verifier: CoreIdTokenVerifier = conn.client.id_token_verifier();
 
@@ -970,14 +1064,14 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                             .extra_fields()
                             .id_token()
                             .ok_or_else(|| {
-                                self.internal_error(
+                                OpenIDConnectAuthProvider::internal_error(
                                     "OpenID Connect: ID token is missing, does the provider support OpenID Connect?",
                                     None,
                                 )
                             })? // happens if the server only supports OAuth2
                             .claims(&id_token_verifier, &nonce_hash)
                             .map_err(|e| {
-                                self.internal_error(
+                                OpenIDConnectAuthProvider::internal_error(
                                     format!("OpenID Connect: ID token verification failed: {}", e.to_string()),
                                     None,
                                 )
@@ -1007,7 +1101,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                                 conn.client
                                     .user_info(token_response.access_token().clone(), None)
                                     .map_err(|e| {
-                                        self.internal_error(
+                                        OpenIDConnectAuthProvider::internal_error(
                                             "OpenID Connect: Provider has no user info endpoint",
                                             Some(&e.to_string()),
                                         )
@@ -1017,7 +1111,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                                     .require_signed_response(false)
                                     .request(logging_http_client!())
                                     .map_err(|e| {
-                                        self.internal_error(
+                                        OpenIDConnectAuthProvider::internal_error(
                                             "OpenID Connect: User info request failed",
                                             Some(&e.to_string()),
                                         )
@@ -1048,13 +1142,15 @@ impl AuthProvider for OpenIDConnectAuthProvider {
 
                         let claims_conf = with_default_claims(&self.oidc_conf()?.claims);
 
-                        let id_claim_conf = claims_conf
-                            .get("id")
-                            .ok_or_else(|| self.internal_error("Missing 'id' claim configuration", None))?;
+                        let id_claim_conf = claims_conf.get("id").ok_or_else(|| {
+                            OpenIDConnectAuthProvider::internal_error("Missing 'id' claim configuration", None)
+                        })?;
 
                         let id = self
                             .extract_claim(&id_claim_conf, &id_token_claims, user_info_claims.as_ref())?
-                            .ok_or_else(|| self.internal_error("No value found for 'id' claim", None))?;
+                            .ok_or_else(|| {
+                                OpenIDConnectAuthProvider::internal_error("No value found for 'id' claim", None)
+                            })?;
 
                         // Lookup the a user in the config file authentication provider
                         // configuration by the id value that we just obtained, if
@@ -1168,7 +1264,10 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                     }
                     None => {
                         // should be unreachable
-                        Err(self.internal_error("Cannot login user: Connection to provider not yet established", None))
+                        Err(OpenIDConnectAuthProvider::internal_error(
+                            "Cannot login user: Connection to provider not yet established",
+                            None,
+                        ))
                     }
                 }
             }
@@ -1192,7 +1291,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         }
 
         self.initialize_connection_if_needed().map_err(|err| {
-            self.internal_error(
+            OpenIDConnectAuthProvider::internal_error(
                 "OpenID Connect: Cannot logout with provider: Failed to connect to provider",
                 Some(&err.to_string()),
             )
@@ -1205,7 +1304,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         // to a post logout page. For the moment we just direct the browser in
         // this case to the Krill start page as if logout were completed.
         match &*self.conn.read().map_err(|err| {
-            self.internal_error(
+            OpenIDConnectAuthProvider::internal_error(
                 "Unable to login: Unable to acquire internal lock",
                 Some(&err.to_string()),
             )
@@ -1213,7 +1312,10 @@ impl AuthProvider for OpenIDConnectAuthProvider {
             Some(conn) => Ok(HttpResponse::text_no_cache(conn.logout_url.clone().into())),
             None => {
                 // should be unreachable
-                Err(self.internal_error("Cannot get login URL: Connection to provider not yet established", None))
+                Err(OpenIDConnectAuthProvider::internal_error(
+                    "Cannot get login URL: Connection to provider not yet established",
+                    None,
+                ))
             }
         }
     }

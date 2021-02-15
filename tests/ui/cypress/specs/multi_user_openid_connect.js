@@ -84,9 +84,6 @@ describe('OpenID Connect users', () => {
           cy.get('#userinfo').click()
           cy.get('#userinfo_table').contains(ts.u)
           cy.get('#userinfo_table').contains('role')
-        } else if (ts.d == 'empty') {
-          cy.contains('The supplied login credentials were incorrect')
-          cy.contains('return to the login page')
         } else if (ts.d == 'badidtoken') {
           cy.contains('OpenID Connect: Code exchange failed: Failed to parse server response')
           cy.contains('return to the login page')
@@ -96,9 +93,10 @@ describe('OpenID Connect users', () => {
           )
           cy.contains('return to the login page')
         } else if (ts.d == 'wrongcsrfstate') {
-          cy.contains('TODO I DONT KNOW WHAT THIS ERROR MESSAGE SHOULD BE YET')
+          cy.contains('CSRF token mismatch')
         } else {
-          throw new Error("No handling has been defined for this test case!")
+          cy.contains('The supplied login credentials were incorrect')
+          cy.contains('return to the login page')
         }
       }
     )
