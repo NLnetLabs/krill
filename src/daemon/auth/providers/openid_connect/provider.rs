@@ -552,7 +552,7 @@ impl OpenIDConnectAuthProvider {
     }
 
     fn extract_cookie(&self, request: &hyper::Request<hyper::Body>, cookie_name: &str) -> Option<String> {
-        if let Some(cookie_hdr_val) = request.headers().get(hyper::http::header::COOKIE) {
+        for cookie_hdr_val in request.headers().get_all(hyper::http::header::COOKIE) {
             if let Ok(cookie_hdr_val_str) = cookie_hdr_val.to_str() {
                 // Use a helper crate to parse the cookie string as it's
                 // actually a bit of a pain as the string is semi-colon-with-
