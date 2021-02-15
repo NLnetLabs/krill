@@ -43,9 +43,7 @@ impl ConfigDefaults {
     fn data_dir() -> PathBuf {
         PathBuf::from("./data")
     }
-    fn archive_threshold_days() -> Option<i64> {
-        None
-    }
+
     fn always_recover_data() -> bool {
         env::var(KRILL_ENV_FORCE_RECOVER).is_ok()
     }
@@ -197,9 +195,6 @@ pub struct Config {
 
     #[serde(default = "ConfigDefaults::data_dir")]
     pub data_dir: PathBuf,
-
-    #[serde(default = "ConfigDefaults::archive_threshold_days")]
-    pub archive_threshold_days: Option<i64>,
 
     #[serde(default = "ConfigDefaults::always_recover_data")]
     pub always_recover_data: bool,
@@ -359,7 +354,6 @@ impl Config {
         let pid_file = None;
         let https_mode = HttpsMode::Generate;
         let data_dir = data_dir.clone();
-        let archive_threshold_days = Some(0);
         let always_recover_data = false;
         let service_uri = ConfigDefaults::service_uri();
 
@@ -427,7 +421,6 @@ impl Config {
             pid_file,
             https_mode,
             data_dir,
-            archive_threshold_days,
             always_recover_data,
             service_uri,
             log_level,

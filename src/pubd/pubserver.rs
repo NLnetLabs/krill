@@ -292,16 +292,6 @@ impl PubServer {
     }
 }
 
-/// # Manage history
-///
-impl PubServer {
-    /// Archive old commands
-    pub fn archive_old_commands(&self, days: i64) -> KrillResult<()> {
-        let handle = Self::repository_handle();
-        self.store.archive_old_commands(&handle, days)?;
-        Ok(())
-    }
-}
 //------------ Tests ---------------------------------------------------------
 
 #[cfg(test)]

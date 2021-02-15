@@ -55,10 +55,6 @@ pub struct Scheduler {
     #[allow(dead_code)] // just need to keep this in scope
     announcements_refresh: ScheduleHandle,
 
-    /// Responsible for archiving old commands
-    #[allow(dead_code)] // just need to keep this in scope
-    archive_old_commands: ScheduleHandle,
-
     #[cfg(feature = "multi-user")]
     /// Responsible for purging expired cached login tokens
     #[allow(dead_code)] // just need to keep this in scope
@@ -84,7 +80,7 @@ impl Scheduler {
             cas_event_triggers = Some(make_cas_event_triggers(
                 event_queue.clone(),
                 caserver.clone(),
-                pubserver.clone(),
+                pubserver,
                 actor.clone(),
             ));
 
@@ -94,8 +90,6 @@ impl Scheduler {
         }
 
         let announcements_refresh = make_announcements_refresh(bgp_analyser);
-        let archive_old_commands =
-            make_archive_old_commands(caserver, pubserver, config.archive_threshold_days, actor.clone());
 
         #[cfg(feature = "multi-user")]
         let login_cache_sweeper_sh = make_login_cache_sweeper_sh(login_session_cache);
@@ -106,7 +100,6 @@ impl Scheduler {
             cas_refresh,
             cas_roas_renew,
             announcements_refresh,
-            archive_old_commands,
             #[cfg(feature = "multi-user")]
             login_cache_sweeper_sh,
         }
@@ -301,32 +294,6 @@ fn make_announcements_refresh(bgp_analyser: Arc<BgpAnalyser>) -> ScheduleHandle 
         rt.block_on(async {
             if let Err(e) = bgp_analyser.update().await {
                 error!("Failed to update BGP announcements: {}", e)
-            }
-        })
-    })
-}
-
-fn make_archive_old_commands(
-    caserver: Option<Arc<CaServer>>,
-    pubserver: Option<Arc<PubServer>>,
-    archive_threshold_days: Option<i64>,
-    actor: Actor,
-) -> ScheduleHandle {
-    SkippingScheduler::run(3600, "archive old commands", move || {
-        let mut rt = Runtime::new().unwrap();
-        rt.block_on(async {
-            if let Some(days) = archive_threshold_days {
-                if let Some(caserver) = caserver.as_ref() {
-                    if let Err(e) = caserver.archive_old_commands(days, &actor).await {
-                        error!("Failed to archive old CA commands: {}", e)
-                    }
-                }
-
-                if let Some(pubserver) = pubserver.as_ref() {
-                    if let Err(e) = pubserver.archive_old_commands(days) {
-                        error!("Failed to archive old Publication Server commands: {}", e)
-                    }
-                }
             }
         })
     })

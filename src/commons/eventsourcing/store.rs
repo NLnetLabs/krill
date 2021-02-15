@@ -9,8 +9,6 @@ use std::sync::{Arc, RwLock};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-use chrono::Duration;
-
 use rpki::x509::Time;
 
 use crate::commons::api::{CommandHistory, CommandHistoryCriteria, CommandHistoryRecord, Handle, Label};
@@ -565,48 +563,6 @@ where
         Ok(CommandHistory::new(offset, total, commands))
     }
 
-    /// Archive old commands if they are:
-    /// - older than the backup snapshot
-    /// - AND older then the threshold days
-    /// - AND they are eligible for archiving
-    pub fn archive_old_commands(&self, handle: &Handle, days: i64) -> StoreResult<()> {
-        let mut crit = CommandHistoryCriteria::default();
-        let before = (Time::now() - Duration::days(days)).timestamp();
-        crit.set_before(before);
-        crit.set_includes(&["cmd-ca-publish", "pubd-publish"]);
-        crit.set_unlimited_rows();
-
-        let info = self
-            .get_info(handle)
-            .map_err(|e| AggregateStoreError::CouldNotArchive(handle.clone(), e.to_string()))?;
-
-        let archivable = self.command_history(handle, crit)?;
-
-        let commands = archivable.commands();
-
-        for command in commands {
-            let key = command
-                .command_key()
-                .map_err(|e| AggregateStoreError::CouldNotArchive(handle.clone(), e.to_string()))?;
-
-            if command.resulting_version() < info.snapshot_version {
-                info!("Archiving command {} for {}", command.key, handle);
-
-                self.archive_command(handle, &key)
-                    .map_err(|e| AggregateStoreError::CouldNotArchive(handle.clone(), e.to_string()))?;
-
-                if let Some(evt_versions) = command.effect.events() {
-                    for version in evt_versions {
-                        info!("Archiving event {} for {}", version, handle);
-                        self.archive_event(handle, *version)
-                            .map_err(|e| AggregateStoreError::CouldNotArchive(handle.clone(), e.to_string()))?;
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
-
     /// Get the command for this key, if it exists
     pub fn get_command<D: WithStorableDetails>(
         &self,
@@ -804,18 +760,6 @@ where
             }
         }
         Ok(())
-    }
-
-    /// Archive an event
-    fn archive_event(&self, id: &Handle, version: u64) -> Result<(), AggregateStoreError> {
-        let key = Self::key_for_event(id, version);
-        self.kv.archive(&key).map_err(AggregateStoreError::KeyStoreError)
-    }
-
-    /// Archive a command
-    fn archive_command(&self, id: &Handle, command: &CommandKey) -> Result<(), AggregateStoreError> {
-        let key = Self::key_for_command(id, command);
-        self.kv.archive(&key).map_err(AggregateStoreError::KeyStoreError)
     }
 
     /// Archive a surplus value for a key

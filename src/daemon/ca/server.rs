@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::Arc;
 
-use ca::CaObjectsStore;
 use futures::future::join_all;
 use tokio::sync::Mutex;
 
@@ -12,33 +11,35 @@ use chrono::Duration;
 use rpki::crypto::KeyIdentifier;
 use rpki::uri;
 
-use crate::commons::error::Error;
-use crate::commons::eventsourcing::{Aggregate, AggregateStore, Command, CommandKey};
-use crate::commons::remote::cmslogger::CmsLogger;
-use crate::commons::remote::{rfc6492, rfc8181, rfc8183};
-use crate::commons::util::httpclient;
-use crate::commons::{
-    actor::Actor,
-    api::{
-        self, AddChildRequest, Base64, CaCommandDetails, CaCommandResult, CertAuthList, CertAuthSummary,
-        ChildAuthRequest, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Entitlements, Handle,
-        IssuanceRequest, IssuanceResponse, IssuedCert, ListReply, ParentCaContact, ParentCaReq, ParentHandle,
-        ParentStatuses, PublishDelta, RcvdCert, RepoInfo, RepoStatus, RepositoryContact, ResourceClassName,
-        ResourceSet, RevocationRequest, RevocationResponse, RtaName, StoredEffect, UpdateChildRequest,
+use crate::{
+    commons::{
+        actor::Actor,
+        api::rrdp::PublishElement,
+        api::{
+            self, AddChildRequest, Base64, CaCommandDetails, CaCommandResult, CertAuthList, CertAuthSummary,
+            ChildAuthRequest, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Entitlements, Handle,
+            IssuanceRequest, IssuanceResponse, IssuedCert, ListReply, ParentCaContact, ParentCaReq, ParentHandle,
+            ParentStatuses, PublishDelta, RcvdCert, RepoInfo, RepoStatus, RepositoryContact, ResourceClassName,
+            ResourceSet, RevocationRequest, RevocationResponse, RtaName, StoredEffect, UpdateChildRequest,
+        },
+        crypto::{IdCert, KrillSigner, ProtocolCms, ProtocolCmsBuilder},
+        error::Error,
+        eventsourcing::{Aggregate, AggregateStore, Command, CommandKey},
+        remote::cmslogger::CmsLogger,
+        remote::{rfc6492, rfc8181, rfc8183},
+        util::httpclient,
+        KrillResult,
+    },
+    constants::{CASERVER_DIR, REQUEUE_DELAY_SECONDS, STATUS_DIR},
+    daemon::{
+        ca::{
+            self, ta_handle, CaObjectsStore, CertAuth, Cmd, CmdDet, IniDet, ResourceTaggedAttestation,
+            RouteAuthorizationUpdates, RtaContentRequest, RtaPrepareRequest, StatusStore,
+        },
+        config::Config,
+        mq::MessageQueue,
     },
 };
-use crate::commons::{
-    api::rrdp::PublishElement,
-    crypto::{IdCert, KrillSigner, ProtocolCms, ProtocolCmsBuilder},
-};
-use crate::commons::{KrillEmptyResult, KrillResult};
-use crate::constants::{CASERVER_DIR, REQUEUE_DELAY_SECONDS, STATUS_DIR};
-use crate::daemon::ca::{
-    self, ta_handle, CertAuth, Cmd, CmdDet, IniDet, ResourceTaggedAttestation, RouteAuthorizationUpdates,
-    RtaContentRequest, RtaPrepareRequest, StatusStore,
-};
-use crate::daemon::config::Config;
-use crate::daemon::mq::MessageQueue;
 
 //------------ CaServer ------------------------------------------------------
 
@@ -480,16 +481,6 @@ impl CaServer {
         self.ca_store
             .command_history(handle, crit)
             .map_err(|_| Error::CaUnknown(handle.clone()))
-    }
-
-    /// Archive old (eligible) commands for CA
-    pub async fn archive_old_commands(&self, days: i64, actor: &Actor) -> KrillEmptyResult {
-        for ca in self.ca_list(actor)?.cas() {
-            let lock = self.locks.ca(ca.handle()).await;
-            let _ = lock.write().await;
-            self.ca_store.archive_old_commands(ca.handle(), days)?;
-        }
-        Ok(())
     }
 
     /// Shows the details for a CA command
