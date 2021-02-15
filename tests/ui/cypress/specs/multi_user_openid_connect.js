@@ -8,6 +8,7 @@ let badidtoken = { u: 'non-spec-compliant-idtoken-payload' }
 let badrole = { u: 'user-with-unknown-role' }
 let refreshinvalidrequest = { u: 'user-with-invalid-request-on-refresh' }
 let refreshinvalidclient = { u: 'user-with-invalid-client-on-refresh' }
+let wrongcsrfstate = { u: 'user-with-wrong-csrf-state-value' }
 let ca_name = 'dummy-ca-name'
 
 let login_test_settings = [
@@ -18,6 +19,7 @@ let login_test_settings = [
   { d: 'readwrite', u: readwrite.u, o: true },
   { d: 'badidtoken', u: badidtoken.u, o: false },
   { d: 'badrole', u: badrole.u, o: false },
+  { d: 'wrongcsrfstate', u: wrongcsrfstate.u, o: false },
 ]
 
 const create_ca_settings_401 = [
@@ -93,6 +95,10 @@ describe('OpenID Connect users', () => {
             'Your user does not have sufficient rights to perform this action. Please contact your administrator.'
           )
           cy.contains('return to the login page')
+        } else if (ts.d == 'wrongcsrfstate') {
+          cy.contains('TODO I DONT KNOW WHAT THIS ERROR MESSAGE SHOULD BE YET')
+        } else {
+          throw new Error("No handling has been defined for this test case!")
         }
       }
     )
