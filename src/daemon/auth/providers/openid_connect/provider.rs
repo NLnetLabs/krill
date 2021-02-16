@@ -68,6 +68,10 @@ use super::util::{
     FlexibleClient, FlexibleIdTokenClaims, FlexibleTokenResponse, FlexibleUserInfoClaims, LogOrFail, WantedMeta,
 };
 
+// On modern browsers (Chrome >= 51, Edge >= 16, Firefox >= 60 & Safari >= 12) the "__Host" prefix is a defence-in-depth
+// measure that causes the browser to further restrict access to the cookie, permitting access only if the cookie was
+// set with the "secure" attribute from a secure (HTTPS) origin with path "/" and WITHOUT a "domain" attribute.
+// See: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie#cookie_prefixes
 const NONCE_COOKIE_NAME: &str = "__Host-krill_login_nonce";
 const CSRF_COOKIE_NAME: &str = "__Host-krill_login_csrf_hash";
 const LOGIN_SESSION_STATE_KEY_PATH: &str = "login_session_state.key"; // TODO: decide on proper location
@@ -896,6 +900,26 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 let res_body = authorize_url.as_str().as_bytes().to_vec();
                 let mut res = HttpResponse::text_no_cache(res_body).response();
 
+                // Create a cookie with the following attributes to attempt to protect them as much as possible:
+                //   Secure       - Cookie is only sent to the server when a request is made with the https: scheme
+                //                  (except on localhost), and therefore is more resistent to man-in-the-middle attacks.
+                //   HttpOnly     - Forbids JavaScript from accessing the cookie, for example, through the
+                //                  Document.cookie property. Note that a cookie that has been created with HttpOnly
+                //                  will still be sent with JavaScript-initiated requests, e.g. when calling
+                //                  XMLHttpRequest.send() or fetch(). This mitigates attacks against cross-site
+                //                  scripting (XSS).
+                //   SameSite=Lax - Note: This is now the default on modern browsers. Controls whether a cookie is sent
+                //                  with cross-origin requests, providing some protection against cross-site request
+                //                  forgery attacks (CSRF). Lax: The cookie is not sent on cross-site requests, such as
+                //                  calls to load images or frames, but is sent when a user is navigating to the origin
+                //                  site from an external site (e.g. if following a link). Lax mode is needed to ensure
+                //                  that we receive the cookie when the OpenID Connect provider redirects the user agent
+                //                  after login to our /auth/callback endpoint.
+                //   Max-Age=300  - The user agent will delete the cookie after 5 minutes. As these cookies are only
+                //                  used while logging in this should be sufficient while ensuring that these cookies
+                //                  are kept no longer than necessary.
+                //   Path=/       - Required for cookie names that are prefixed with __Host.
+                // From: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie#attributes
                 fn make_secure_cookie_value(cookie_name: &str, cookie_value: &str) -> KrillResult<HeaderValue> {
                     let cookie_str = format!("{}={}; Secure; HttpOnly; SameSite=Lax; Max-Age=300; Path=/", cookie_name, cookie_value);
                     HeaderValue::from_str(&cookie_str).map_err(|err| {
