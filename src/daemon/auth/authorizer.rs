@@ -4,6 +4,7 @@ use std::any::Any;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use crate::{commons::api::Token, daemon::auth::common::permissions::Permission};
 use crate::commons::error::Error;
 use crate::commons::KrillResult;
 use crate::constants::ACTOR_DEF_ANON;
@@ -15,7 +16,6 @@ use crate::{
     commons::actor::{Actor, ActorDef},
     daemon::http::RequestPath,
 };
-use crate::{commons::api::Token, daemon::auth::common::permissions::Permission};
 
 //------------ Authorizer ----------------------------------------------------
 
