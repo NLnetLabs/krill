@@ -193,8 +193,7 @@ impl CaServer {
 
             // add embedded repo
             let embedded = RepositoryContact::embedded(info);
-            let upd_repo_cmd =
-                CmdDet::update_repo(&ta_handle, embedded, self.config.clone(), self.signer.clone(), actor);
+            let upd_repo_cmd = CmdDet::update_repo(&ta_handle, embedded, self.signer.clone(), actor);
             self.ca_store.command(upd_repo_cmd)?;
 
             // make trust anchor
@@ -248,46 +247,27 @@ impl CaServer {
 
     /// Get the current objects for a CA for each repository that it's using.
     /// Note: typically a CA will use only one repository, but during migrations there may be multiple.
-    pub async fn ca_repo_elements(
-        &self,
-        handle: &Handle,
-    ) -> KrillResult<Vec<(RepositoryContact, Vec<PublishElement>)>> {
+    pub async fn ca_repo_elements(&self, ca: &Handle) -> KrillResult<HashMap<RepositoryContact, Vec<PublishElement>>> {
+        Ok(self.ca_objects_store.ca_objects(ca)?.elements())
+    }
+
+    /// Get all old repos for best effort clean-up. They may not be reachable after all.
+    /// Clears the list of old repos for the given CA.
+    pub fn ca_take_deprecated_repos(&self, ca: &Handle) -> KrillResult<Vec<RepositoryContact>> {
         let mut res = vec![];
 
-        let ca = self.get_ca(handle).await?;
-        // TODO: Support repo migrations and multiple repository contacts.
-        if let Ok(repo) = ca.repository_contact() {
-            let ca_objects = self.ca_objects_store.ca_objects(ca.handle())?;
-            res.push((repo.clone(), ca_objects.elements()));
-        }
+        self.ca_objects_store.with_ca_objects(ca, |objects| {
+            res = objects.ca_take_deprecated_repos();
+            Ok(())
+        })?;
 
         Ok(res)
     }
 
-    /// Republish a CA, this is a no-op when there is nothing to publish.
-    // #[deprecated]
-    // pub async fn republish(&self, handle: &Handle, actor: &Actor) -> KrillResult<()> {
-    //     let cmd = CmdDet::publish(handle, self.config.clone(), self.signer.clone(), actor);
-    //     self.send_command(cmd).await?;
-    //     Ok(())
-    // }
-
     /// Update repository where a CA publishes.
     pub async fn update_repo(&self, handle: Handle, new_contact: RepositoryContact, actor: &Actor) -> KrillResult<()> {
-        let cmd = CmdDet::update_repo(&handle, new_contact, self.config.clone(), self.signer.clone(), actor);
+        let cmd = CmdDet::update_repo(&handle, new_contact, self.signer.clone(), actor);
         self.send_command(cmd).await?;
-        Ok(())
-    }
-
-    /// Clean up old repo, if present.
-    pub async fn remove_old_repo(&self, handle: &Handle, actor: &Actor) -> KrillResult<()> {
-        let ca = self.get_ca(handle).await?;
-
-        if ca.has_old_repo() {
-            info!("Removing old repository after receiving updated certificate");
-            let cmd = CmdDet::remove_old_repo(handle, self.signer.clone(), actor);
-            self.send_command(cmd).await?;
-        }
         Ok(())
     }
 

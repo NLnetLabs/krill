@@ -24,6 +24,8 @@ pub struct CertifiedKey {
     key_id: KeyIdentifier,
     incoming_cert: RcvdCert,
     request: Option<IssuanceRequest>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    old_repo: Option<RepoInfo>,
 }
 
 impl CertifiedKey {
@@ -32,6 +34,7 @@ impl CertifiedKey {
             key_id,
             incoming_cert,
             request,
+            old_repo: None,
         }
     }
 
@@ -41,6 +44,7 @@ impl CertifiedKey {
             key_id,
             incoming_cert,
             request: None,
+            old_repo: None,
         }
     }
 
@@ -64,6 +68,10 @@ impl CertifiedKey {
     }
     pub fn add_request(&mut self, req: IssuanceRequest) {
         self.request = Some(req)
+    }
+
+    pub fn set_old_repo(&mut self, repo: &RepoInfo) {
+        self.old_repo = Some(repo.clone())
     }
 
     pub fn wants_update(&self, new_resources: &ResourceSet, new_not_after: Time) -> bool {
@@ -280,40 +288,46 @@ impl KeyState {
         let mut keys_for_requests = vec![];
         match self {
             KeyState::Pending(pending) => {
-                keys_for_requests.push(pending.key_id());
+                keys_for_requests.push((base_repo, pending.key_id()));
             }
             KeyState::Active(current) => {
                 if current.wants_update(entitlement.resource_set(), entitlement.not_after()) {
-                    keys_for_requests.push(current.key_id());
+                    let repo = current.old_repo.as_ref().unwrap_or(base_repo);
+                    keys_for_requests.push((repo, current.key_id()));
                 }
             }
             KeyState::RollPending(pending, current) => {
-                keys_for_requests.push(pending.key_id());
+                keys_for_requests.push((base_repo, pending.key_id()));
                 if current.wants_update(entitlement.resource_set(), entitlement.not_after()) {
-                    keys_for_requests.push(current.key_id());
+                    let repo = current.old_repo.as_ref().unwrap_or(base_repo);
+                    keys_for_requests.push((repo, current.key_id()));
                 }
             }
             KeyState::RollNew(new, current) => {
                 if new.wants_update(entitlement.resource_set(), entitlement.not_after()) {
-                    keys_for_requests.push(new.key_id());
+                    let repo = new.old_repo.as_ref().unwrap_or(base_repo);
+                    keys_for_requests.push((repo, new.key_id()));
                 }
                 if current.wants_update(entitlement.resource_set(), entitlement.not_after()) {
-                    keys_for_requests.push(current.key_id());
+                    let repo = current.old_repo.as_ref().unwrap_or(base_repo);
+                    keys_for_requests.push((repo, current.key_id()));
                 }
             }
             KeyState::RollOld(current, old) => {
                 if current.wants_update(entitlement.resource_set(), entitlement.not_after()) {
-                    keys_for_requests.push(current.key_id());
+                    let repo = current.old_repo.as_ref().unwrap_or(base_repo);
+                    keys_for_requests.push((repo, current.key_id()));
                 }
                 if old.wants_update(entitlement.resource_set(), entitlement.not_after()) {
-                    keys_for_requests.push(old.key_id());
+                    let repo = old.old_repo.as_ref().unwrap_or(base_repo);
+                    keys_for_requests.push((repo, current.key_id()));
                 }
             }
         }
 
         let mut res = vec![];
 
-        for key_id in keys_for_requests.into_iter() {
+        for (base_repo, key_id) in keys_for_requests.into_iter() {
             let req =
                 self.create_issuance_req(base_repo, name_space, entitlement.class_name().clone(), key_id, signer)?;
 
@@ -520,6 +534,18 @@ impl KeyState {
             KeyState::RollPending(pending, current) => pending.key_id == key_id || current.key_id == key_id,
             KeyState::RollNew(new, current) => new.key_id == key_id || current.key_id == key_id,
             KeyState::RollOld(current, old) => current.key_id == key_id || old.key_id == key_id,
+        }
+    }
+}
+
+/// # Migrate repositories
+///
+impl KeyState {
+    /// Mark an old_repo for the current key, so that a new repo can be introduced in a pending
+    /// key and a keyroll can be done.
+    pub fn set_old_repo_if_in_active_state(&mut self, repo: &RepoInfo) {
+        if let KeyState::Active(current) = self {
+            current.set_old_repo(repo);
         }
     }
 }

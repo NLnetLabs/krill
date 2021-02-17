@@ -24,8 +24,8 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            rrdp::PublishElement, Base64, Handle, IssuedCert, ObjectName, RcvdCert, ResourceClassName, Revocation,
-            Revocations,
+            rrdp::PublishElement, Base64, Handle, IssuedCert, ObjectName, RcvdCert, RepositoryContact,
+            ResourceClassName, Revocation, Revocations,
         },
         crypto::KrillSigner,
         error::Error,
@@ -129,6 +129,9 @@ impl SyncEventListener<CertAuth> for CaObjectsStore {
                     } => {
                         objects.remove_class(resource_class_name);
                     }
+                    super::CaEvtDet::RepoUpdated { contact } => {
+                        objects.update_repo(contact);
+                    }
                     _ => {}
                 }
             }
@@ -160,14 +163,14 @@ impl CaObjectsStore {
 
         match self.store.read().unwrap().get(&key).map_err(Error::KeyValueError)? {
             None => {
-                let objects = CaObjects::new(ca.clone(), HashMap::new());
+                let objects = CaObjects::new(ca.clone(), None, HashMap::new());
                 Ok(objects)
             }
             Some(objects) => Ok(objects),
         }
     }
 
-    fn with_ca_objects<F>(&self, ca: &Handle, op: F) -> KrillResult<()>
+    pub fn with_ca_objects<F>(&self, ca: &Handle, op: F) -> KrillResult<()>
     where
         F: FnOnce(&mut CaObjects) -> KrillResult<()>,
     {
@@ -204,8 +207,13 @@ impl CaObjectsStore {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CaObjects {
     ca: Handle,
+    repo: Option<RepositoryContact>,
+
     #[serde(with = "ca_objects_classes_serde")]
     classes: HashMap<ResourceClassName, ResourceClassObjects>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    deprecated_repos: Vec<RepositoryContact>,
 }
 
 mod ca_objects_classes_serde {
@@ -252,16 +260,37 @@ mod ca_objects_classes_serde {
 }
 
 impl CaObjects {
-    pub fn new(ca: Handle, classes: HashMap<ResourceClassName, ResourceClassObjects>) -> Self {
-        CaObjects { ca, classes }
+    pub fn new(
+        ca: Handle,
+        repo: Option<RepositoryContact>,
+        classes: HashMap<ResourceClassName, ResourceClassObjects>,
+    ) -> Self {
+        CaObjects {
+            ca,
+            repo,
+            classes,
+            deprecated_repos: vec![],
+        }
     }
 
-    pub fn elements(&self) -> Vec<PublishElement> {
-        let mut res = vec![];
-        for rco in self.classes.values() {
-            res.append(&mut rco.elements())
+    #[allow(clippy::clippy::mutable_key_type)]
+    pub fn elements(&self) -> HashMap<RepositoryContact, Vec<PublishElement>> {
+        let mut res = HashMap::new();
+
+        if let Some(repo) = &self.repo {
+            res.insert(repo.clone(), vec![]);
+
+            for rco in self.classes.values() {
+                rco.add_elements(&mut res, repo);
+            }
         }
 
+        res
+    }
+
+    pub fn ca_take_deprecated_repos(&mut self) -> Vec<RepositoryContact> {
+        let mut res = vec![];
+        std::mem::swap(&mut res, &mut self.deprecated_repos);
         res
     }
 
@@ -283,7 +312,18 @@ impl CaObjects {
     }
 
     fn remove_class(&mut self, class_name: &ResourceClassName) {
+        let old_repo_opt = self
+            .classes
+            .get(class_name)
+            .map(|rco| rco.old_repo())
+            .flatten()
+            .cloned();
+
         self.classes.remove(class_name);
+
+        if let Some(old_repo) = old_repo_opt {
+            self.deprecate_repo(old_repo);
+        }
     }
 
     fn get_class_mut(&mut self, rcn: &ResourceClassName) -> KrillResult<&mut ResourceClassObjects> {
@@ -320,7 +360,11 @@ impl CaObjects {
     // Finish a keyroll
     fn keyroll_finish(&mut self, rcn: &ResourceClassName) -> KrillResult<()> {
         let rco = self.get_class_mut(rcn)?;
-        rco.keyroll_finish()
+        if let Some(old_repo) = rco.keyroll_finish()? {
+            self.deprecate_repo(old_repo);
+        }
+
+        Ok(())
     }
 
     // Update the ROAs in the current set
@@ -369,6 +413,26 @@ impl CaObjects {
 
         Ok(required)
     }
+
+    // Update the repository on this, but save the old values if they existed.
+    fn update_repo(&mut self, repo: &RepositoryContact) {
+        if let Some(old) = &self.repo {
+            for rco in self.classes.values_mut() {
+                rco.set_old_repo(old);
+            }
+        }
+        self.repo = Some(repo.clone());
+    }
+
+    fn has_old_repo(&self, old_repo: &RepositoryContact) -> bool {
+        self.classes.values().any(|rco| rco.has_old_repo(old_repo))
+    }
+
+    fn deprecate_repo(&mut self, old_repo: RepositoryContact) {
+        if !self.has_old_repo(&old_repo) {
+            self.deprecated_repos.push(old_repo);
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -381,18 +445,17 @@ impl ResourceClassObjects {
         ResourceClassObjects { keys }
     }
 
-    fn elements(&self) -> Vec<PublishElement> {
+    #[allow(clippy::clippy::mutable_key_type)]
+    fn add_elements(&self, map: &mut HashMap<RepositoryContact, Vec<PublishElement>>, dflt_repo: &RepositoryContact) {
         match &self.keys {
-            ResourceClassKeyState::Current(state) => state.current_set.elements(),
+            ResourceClassKeyState::Current(state) => state.current_set.add_elements(map, dflt_repo),
             ResourceClassKeyState::Staging(state) => {
-                let mut elements = state.current_set.elements();
-                elements.append(&mut state.staging_set.elements());
-                elements
+                state.current_set.add_elements(map, dflt_repo);
+                state.staging_set.add_elements(map, dflt_repo);
             }
             ResourceClassKeyState::Old(state) => {
-                let mut elements = state.current_set.elements();
-                elements.append(&mut state.old_set.elements());
-                elements
+                state.current_set.add_elements(map, dflt_repo);
+                state.old_set.add_elements(map, dflt_repo);
             }
         }
     }
@@ -439,16 +502,15 @@ impl ResourceClassObjects {
         Ok(())
     }
 
-    fn keyroll_finish(&mut self) -> KrillResult<()> {
-        self.keys = match &self.keys {
+    fn keyroll_finish(&mut self) -> KrillResult<Option<RepositoryContact>> {
+        match self.keys.clone() {
             ResourceClassKeyState::Old(old) => {
-                let current_set = old.current_set.clone();
-                ResourceClassKeyState::current(current_set)
+                let current_set = old.current_set;
+                self.keys = ResourceClassKeyState::current(current_set);
+                Ok(old.old_set.old_repo)
             }
-            _ => return Err(Error::publishing("published resource class in the wrong key state")),
-        };
-
-        Ok(())
+            _ => Err(Error::publishing("published resource class in the wrong key state")),
+        }
     }
 
     fn update_received_cert(&mut self, updated_cert: &RcvdCert) -> KrillResult<()> {
@@ -504,6 +566,49 @@ impl ResourceClassObjects {
                 state.old_set.reissue(timing, signer)?;
                 state.current_set.reissue(timing, signer)
             }
+        }
+    }
+
+    fn set_old_repo(&mut self, repo: &RepositoryContact) {
+        match self.keys.borrow_mut() {
+            ResourceClassKeyState::Current(state) => state.current_set.set_old_repo(repo),
+            ResourceClassKeyState::Staging(state) => {
+                state.staging_set.set_old_repo(repo);
+                state.current_set.set_old_repo(repo);
+            }
+            ResourceClassKeyState::Old(state) => {
+                state.old_set.set_old_repo(repo);
+                state.current_set.set_old_repo(repo);
+            }
+        }
+    }
+
+    fn has_old_repo(&self, repo: &RepositoryContact) -> bool {
+        match &self.keys {
+            ResourceClassKeyState::Current(state) => state.current_set.old_repo() == Some(repo),
+            ResourceClassKeyState::Staging(state) => {
+                state.staging_set.old_repo() == Some(repo) || state.current_set.old_repo() == Some(repo)
+            }
+            ResourceClassKeyState::Old(state) => {
+                state.old_set.old_repo() == Some(repo) || state.current_set.old_repo() == Some(repo)
+            }
+        }
+    }
+
+    fn old_repo(&self) -> Option<&RepositoryContact> {
+        // Note: we can only have 1 old repo, because new repositories can only be introduced
+        // when there is no key roll in progress. So, it's not possible to introduce a second
+        // repo until the previous old_repo is rolled out completely.
+        match &self.keys {
+            ResourceClassKeyState::Current(state) => state.current_set.old_repo(),
+            ResourceClassKeyState::Staging(state) => match state.staging_set.old_repo() {
+                Some(repo) => Some(repo),
+                None => state.current_set.old_repo(),
+            },
+            ResourceClassKeyState::Old(state) => match state.old_set.old_repo() {
+                Some(repo) => Some(repo),
+                None => state.current_set.old_repo(),
+            },
         }
     }
 }
@@ -596,30 +701,36 @@ impl CurrentKeyObjectSet {
             revocations,
             manifest,
             crl,
+            old_repo: None,
         };
         CurrentKeyObjectSet { basic, roas, certs }
     }
 
-    fn elements(&self) -> Vec<PublishElement> {
-        let mut res = self.basic.elements();
+    #[allow(clippy::mutable_key_type)]
+    fn add_elements(&self, map: &mut HashMap<RepositoryContact, Vec<PublishElement>>, dflt_repo: &RepositoryContact) {
+        let repo = self.old_repo.as_ref().unwrap_or(dflt_repo);
 
         let base_uri = self.signing_cert.ca_repository();
+        let mft_uri = base_uri.join(self.manifest.name().as_bytes());
+        let crl_uri = base_uri.join(self.crl.name().as_bytes());
+
+        let elements = map.entry(repo.clone()).or_insert(vec![]);
+        elements.push(PublishElement::new(Base64::from(&self.manifest.0), mft_uri));
+        elements.push(PublishElement::new(Base64::from(&self.crl.0), crl_uri));
 
         for (name, roa) in &self.roas {
-            res.push(PublishElement::new(
+            elements.push(PublishElement::new(
                 Base64::from(&roa.0),
                 base_uri.join(name.as_bytes()),
             ));
         }
 
         for (name, cert) in &self.certs {
-            res.push(PublishElement::new(
+            elements.push(PublishElement::new(
                 Base64::from(cert.as_ref()),
                 base_uri.join(name.as_bytes()),
             ));
         }
-
-        res
     }
 
     fn update_roas(
@@ -696,6 +807,7 @@ impl CurrentKeyObjectSet {
             revocations,
             manifest,
             crl,
+            old_repo: self.old_repo.clone(),
         })
     }
 
@@ -814,6 +926,8 @@ pub struct BasicKeyObjectSet {
     revocations: Revocations,
     manifest: PublishedManifest,
     crl: PublishedCrl,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    old_repo: Option<RepositoryContact>,
 }
 
 impl BasicKeyObjectSet {
@@ -830,21 +944,21 @@ impl BasicKeyObjectSet {
             revocations,
             manifest,
             crl,
+            old_repo: None,
         }
     }
 
-    fn elements(&self) -> Vec<PublishElement> {
-        let mut res = vec![];
+    #[allow(clippy::mutable_key_type)]
+    fn add_elements(&self, map: &mut HashMap<RepositoryContact, Vec<PublishElement>>, dflt_repo: &RepositoryContact) {
+        let repo = self.old_repo.as_ref().unwrap_or(dflt_repo);
 
         let base_uri = self.signing_cert.ca_repository();
-
         let mft_uri = base_uri.join(self.manifest.name().as_bytes());
         let crl_uri = base_uri.join(self.crl.name().as_bytes());
 
-        res.push(PublishElement::new(Base64::from(&self.manifest.0), mft_uri));
-        res.push(PublishElement::new(Base64::from(&self.crl.0), crl_uri));
-
-        res
+        let elements = map.entry(repo.clone()).or_insert(vec![]);
+        elements.push(PublishElement::new(Base64::from(&self.manifest.0), mft_uri));
+        elements.push(PublishElement::new(Base64::from(&self.crl.0), crl_uri));
     }
 
     fn create(key: &CertifiedKey, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<Self> {
@@ -897,6 +1011,7 @@ impl BasicKeyObjectSet {
             revocations,
             manifest,
             crl,
+            old_repo: self.old_repo.clone(),
         })
     }
 
@@ -924,6 +1039,14 @@ impl BasicKeyObjectSet {
         ManifestBuilder::with_crl_only(new_crl)
             .build_new_mft(&self.signing_cert, self.next(), timing, signer)
             .map(|m| m.into())
+    }
+
+    fn set_old_repo(&mut self, repo: &RepositoryContact) {
+        self.old_repo = Some(repo.clone())
+    }
+
+    fn old_repo(&self) -> Option<&RepositoryContact> {
+        self.old_repo.as_ref()
     }
 }
 

@@ -94,8 +94,6 @@ pub struct CertAuth {
     id: Rfc8183Id, // Used for RFC 6492 (up-down) and RFC 8181 (publication)
 
     repository: Option<RepositoryContact>,
-    repository_pending_withdraw: Option<RepositoryContact>,
-
     parents: HashMap<ParentHandle, ParentCaContact>,
 
     next_class_name: u32,
@@ -148,8 +146,6 @@ impl Aggregate for CertAuth {
             id,
 
             repository,
-            repository_pending_withdraw: None,
-
             parents,
 
             next_class_name,
@@ -377,13 +373,13 @@ impl Aggregate for CertAuth {
             //-----------------------------------------------------------------------
             CaEvtDet::RepoUpdated { contact } => {
                 if let Some(current) = &self.repository {
-                    self.repository_pending_withdraw = Some(current.clone())
+                    for rc in self.resources.values_mut() {
+                        rc.set_old_repo(current.repo_info());
+                    }
                 }
                 self.repository = Some(contact);
             }
-            CaEvtDet::RepoCleaned { .. } => {
-                self.repository_pending_withdraw = None;
-            }
+            CaEvtDet::RepoCleaned { .. } => {} // historic event, no effect in current code
 
             //-----------------------------------------------------------------------
             // Resource Tagged Attestations
@@ -440,8 +436,10 @@ impl Aggregate for CertAuth {
             CmdDet::RouteAuthorizationsRenew(config, signer) => self.route_authorizations_renew(&config, &signer),
 
             // Republish
-            CmdDet::RepoUpdate(contact, config, signer) => self.update_repo(contact, &config, &signer),
-            CmdDet::RepoRemoveOld(_signer) => self.clean_repo(),
+            CmdDet::RepoUpdate(contact, signer) => self.update_repo(contact, &signer),
+            CmdDet::RepoRemoveOld(_signer) => {
+                unimplemented!("historic command")
+            }
 
             // Resource Tagged Attestations
             CmdDet::RtaMultiPrepare(name, request, signer) => self.rta_multi_prep(name, request, signer.deref()),
@@ -530,10 +528,6 @@ impl CertAuth {
 
     pub fn repository_info(&self) -> KrillResult<&RepoInfo> {
         self.repository_contact().map(|contact| contact.repo_info())
-    }
-
-    pub fn old_repository_contact(&self) -> Option<&RepositoryContact> {
-        self.repository_pending_withdraw.as_ref()
     }
 }
 
@@ -1285,61 +1279,41 @@ impl CertAuth {
 ///
 impl CertAuth {
     /// Update repository:
-    /// - check that it is indeed different
-    /// - regenerate all objects under the new URI (CRL URIs updated)
-    /// - request new certs for all keys
+    ///    - check that it is indeed different if one was already configured
+    ///    - check that key roll is allowed (none in progress)
+    ///    - initiate a roll to a new key using the new repo
     ///
-    /// Note that this will then trigger (asynchronous):
-    /// - updated objects synchronised with repository
-    /// - CSRs submitted to parent(s)
-    #[deprecated]
-    pub fn update_repo(
-        &self,
-        contact: RepositoryContact,
-        config: &Config,
-        signer: &KrillSigner,
-    ) -> KrillResult<Vec<CaEvt>> {
+    pub fn update_repo(&self, contact: RepositoryContact, signer: &KrillSigner) -> KrillResult<Vec<CaEvt>> {
         // check that it is indeed different
         if let Some(existing_contact) = &self.repository {
+            // If this is the same repo as before, then reject this update.
+            // We could make it idempotent, but then again, probably..
+            // the principle of least astonishment would be to reject this,
+            // the user is explicitly trying something that is not needed.
             if existing_contact == &contact {
                 return Err(Error::CaRepoInUse(self.handle.clone()));
             }
         }
 
-        let info = contact.repo_info().clone();
-
-        let mut evt_dts = vec![];
-
         // register updated repo
-        evt_dts.push(CaEvtDet::RepoUpdated { contact });
+        let mut evt_dets = vec![];
+        let info = contact.repo_info().clone();
+        evt_dets.push(CaEvtDet::RepoUpdated { contact });
 
-        // request new certs => when received will trigger unpublishing at old location
+        // Initiate rolls in all RCs so we can use the new repo in the new key.
         for rc in self.resources.values() {
-            evt_dts.append(&mut rc.make_request_events_new_repo(&info, &signer)?);
+            // If we are in any keyroll, reject.. because we will need to
+            // introduce the change as a key roll (new key, new repo, etc),
+            // and we can only do one roll at a time.
+            if !rc.key_roll_possible() {
+                // If we can't roll... well then we have to bail out.
+                // Note: none of these events are committed in that case.
+                return Err(Error::KeyRollNotAllowed);
+            }
+            evt_dets.append(&mut rc.keyroll_initiate(&info, Duration::seconds(0), &signer)?);
         }
 
-        let mut version = self.version;
-        let mut res = vec![];
-        for dt in evt_dts.into_iter() {
-            res.push(StoredEvent::new(&self.handle, version, dt));
-            version += 1;
-        }
-        Ok(res)
-    }
-
-    fn clean_repo(&self) -> KrillResult<Vec<CaEvt>> {
-        match self.repository_pending_withdraw.clone() {
-            None => Ok(vec![]),
-            Some(contact) => Ok(vec![StoredEvent::new(
-                &self.handle,
-                self.version,
-                CaEvtDet::RepoCleaned { contact },
-            )]),
-        }
-    }
-
-    pub fn has_old_repo(&self) -> bool {
-        self.repository_pending_withdraw.is_some()
+        Ok(self.evts_from_details(evt_dets))
     }
 }
 

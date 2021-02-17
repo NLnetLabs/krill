@@ -691,7 +691,7 @@ impl KrillServer {
         }
 
         let publisher = CaPublisher::new(self.get_caserver()?.clone(), self.pubserver.clone());
-        if let Err(e) = publisher.clean_current_repo(&ca_handle, &actor).await {
+        if let Err(e) = publisher.clean_all_repos(&ca_handle, &actor).await {
             warn!(
                 "Could not withdraw objects for deactivated CA '{}'. Error was: {}",
                 ca_handle, e

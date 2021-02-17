@@ -1627,6 +1627,10 @@ impl ResourceClassInfo {
         self.keys.current_key()
     }
 
+    pub fn new_key(&self) -> Option<&CertifiedKeyInfo> {
+        self.keys.new_key()
+    }
+
     pub fn current_resources(&self) -> Option<&ResourceSet> {
         self.current_key().map(|k| k.incoming_cert().resources())
     }
@@ -1690,6 +1694,14 @@ impl ResourceClassKeysInfo {
             ResourceClassKeysInfo::RollNew(new) => Some(&new._active_key),
             ResourceClassKeysInfo::RollOld(old) => Some(&old._active_key),
             _ => None,
+        }
+    }
+
+    pub fn new_key(&self) -> Option<&CertifiedKeyInfo> {
+        if let ResourceClassKeysInfo::RollNew(new) = self {
+            Some(&new._new_key)
+        } else {
+            None
         }
     }
 }

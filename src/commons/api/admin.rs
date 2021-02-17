@@ -346,7 +346,7 @@ impl RepositoryUpdate {
 
 //------------ PubServerContact ----------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
@@ -416,6 +416,20 @@ impl fmt::Display for RepositoryContact {
         write!(f, "{}", msg)
     }
 }
+
+impl std::hash::Hash for RepositoryContact {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.as_reponse_opt().map(|r| r.to_string()).hash(state)
+    }
+}
+
+impl PartialEq for RepositoryContact {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_reponse_opt().map(|r| r.to_string()) == other.as_reponse_opt().map(|r| r.to_string())
+    }
+}
+
+impl Eq for RepositoryContact {}
 
 //------------ ParentCaReq ---------------------------------------------------
 

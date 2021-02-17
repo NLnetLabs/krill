@@ -116,7 +116,7 @@ fn make_cas_event_triggers(
     SkippingScheduler::run(1, "scan for queued triggers", move || {
         let mut rt = Runtime::new().unwrap();
 
-        rt.block_on( async {
+        rt.block_on(async {
             for evt in event_queue.pop_all() {
                 match evt {
                     QueueEvent::ServerStarted => {
@@ -128,7 +128,10 @@ fn make_cas_event_triggers(
                             Ok(list) => {
                                 for ca in list.cas() {
                                     if publisher.publish(ca.handle(), &actor).await.is_err() {
-                                        error!("Unable to synchronise CA '{}' with its repository after startup", ca.handle());
+                                        error!(
+                                            "Unable to synchronise CA '{}' with its repository after startup",
+                                            ca.handle()
+                                        );
                                     } else {
                                         info!("CA '{}' is in sync with its repository", ca.handle());
                                     }
@@ -158,41 +161,36 @@ fn make_cas_event_triggers(
                         }
                     }
 
-
                     QueueEvent::ResourceClassRemoved(handle, parent, revocations) => {
-                        info!("Trigger send revoke requests for removed RC for '{}' under '{}'",handle,parent);
+                        info!(
+                            "Trigger send revoke requests for removed RC for '{}' under '{}'",
+                            handle, parent
+                        );
 
-                        if caserver.send_revoke_requests(&handle, &parent, revocations, &actor).await.is_err() {
-                            warn!("Could not revoke key for removed resource class. This is not \
+                        if caserver
+                            .send_revoke_requests(&handle, &parent, revocations, &actor)
+                            .await
+                            .is_err()
+                        {
+                            warn!(
+                                "Could not revoke key for removed resource class. This is not \
                             an issue, because typically the parent will revoke our keys pro-actively, \
-                            just before removing the resource class entitlements.");
+                            just before removing the resource class entitlements."
+                            );
                         }
                     }
                     QueueEvent::UnexpectedKey(handle, rcn, revocation) => {
-                            info!(
-                                "Trigger sending revocation requests for unexpected key with id '{}' in RC '{}'",
-                                revocation.key(),
-                                rcn
-                            );
-                            if let Err(e) = caserver
-                                .send_revoke_unexpected_key(&handle, rcn, revocation, &actor).await {
-                                error!("Could not revoke unexpected surplus key at parent: {}", e);
-                            }
-                    }
-                    QueueEvent::CleanOldRepo(handle) => {
-                            let publisher = CaPublisher::new(caserver.clone(), pubserver.clone());
-                            if let Err(e) = publisher.clean_old_repo(&handle, &actor).await {
-                                info!(
-                                    "Could not clean up old repo for '{}', it may be that it's no longer available. Got error '{}'",
-                                    &handle, e
-                                );
-                            }
-                            if let Err(e) = caserver.remove_old_repo(&handle, &actor).await {
-                                error!(
-                                    "Failed to remove old repo from ca '{}', error '{}'",
-                                    &handle, e
-                                );
-                            }
+                        info!(
+                            "Trigger sending revocation requests for unexpected key with id '{}' in RC '{}'",
+                            revocation.key(),
+                            rcn
+                        );
+                        if let Err(e) = caserver
+                            .send_revoke_unexpected_key(&handle, rcn, revocation, &actor)
+                            .await
+                        {
+                            error!("Could not revoke unexpected surplus key at parent: {}", e);
+                        }
                     }
                 }
             }

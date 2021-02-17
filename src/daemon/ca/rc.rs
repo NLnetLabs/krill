@@ -138,6 +138,10 @@ impl ResourceClass {
         self.current_key().ok_or(Error::KeyUseNoCurrentKey)
     }
 
+    pub fn key_roll_possible(&self) -> bool {
+        matches!(&self.key_state, KeyState::Active(_))
+    }
+
     /// Gets the new key for a key roll, or returns an error if there is none.
     pub fn get_new_key(&self) -> KrillResult<&NewKey> {
         if let KeyState::RollNew(new_key, _) = &self.key_state {
@@ -155,6 +159,14 @@ impl ResourceClass {
             self.parent_handle.clone(),
             self.key_state.as_info(),
         )
+    }
+}
+
+/// # Support repository migrations
+///
+impl ResourceClass {
+    pub fn set_old_repo(&mut self, repo: &RepoInfo) {
+        self.key_state.set_old_repo_if_in_active_state(repo);
     }
 }
 

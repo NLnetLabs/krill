@@ -30,7 +30,6 @@ pub enum QueueEvent {
 
     ResourceClassRemoved(Handle, ParentHandle, HashMap<ResourceClassName, Vec<RevocationRequest>>),
     UnexpectedKey(Handle, ResourceClassName, RevocationRequest),
-    CleanOldRepo(Handle),
 }
 
 impl fmt::Display for QueueEvent {
@@ -57,9 +56,6 @@ impl fmt::Display for QueueEvent {
             }
             QueueEvent::UnexpectedKey(ca, rcn, _) => {
                 write!(f, "unexpected key found for '{}' resource class: '{}'", ca, rcn)
-            }
-            QueueEvent::CleanOldRepo(ca) => {
-                write!(f, "clean up old repo *if it exists* for '{}'", ca)
             }
         }
     }
@@ -227,12 +223,6 @@ impl eventsourcing::EventListener<CertAuth> for MessageQueue {
                 }
             }
 
-            CaEvtDet::CertificateReceived { .. } => {
-                if ca.old_repository_contact().is_some() {
-                    let evt = QueueEvent::CleanOldRepo(handle.clone());
-                    self.push_back(evt);
-                }
-            }
             _ => {}
         }
     }

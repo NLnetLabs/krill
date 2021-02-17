@@ -461,7 +461,7 @@ impl CertAuth {
             })
             .collect();
 
-        CaObjects::new(self.handle.clone(), objects)
+        CaObjects::new(self.handle.clone(), self.repository.clone().map(|r| r.into()), objects)
     }
 }
 
