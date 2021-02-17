@@ -4,7 +4,7 @@ use std::any::Any;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::commons::api::Token;
+use crate::{commons::api::Token, daemon::auth::common::permissions::Permission};
 use crate::commons::error::Error;
 use crate::commons::KrillResult;
 use crate::constants::ACTOR_DEF_ANON;
@@ -137,7 +137,10 @@ impl Authorizer {
             Ok(None) => self.actor_from_def(ACTOR_DEF_ANON),
 
             // error during authentication
-            Err(err) => self.actor_from_def(ACTOR_DEF_ANON.with_auth_error(err.to_string())),
+            Err(err) => {
+                // reveives a commons::error::Error, but we need an ApiAuthError
+                self.actor_from_def(ACTOR_DEF_ANON.with_auth_error(err))
+            }
         };
 
         trace!("Actor determination result: {:?}", &actor);
@@ -165,7 +168,7 @@ impl Authorizer {
         // which cannot be done by the AuthProvider. Check that now.
         let actor_def = ActorDef::user(user.id.clone(), user.attributes.clone(), None);
         let actor = self.actor_from_def(actor_def);
-        if !actor.is_allowed("LOGIN", RequestPath::from_request(&request))? {
+        if !actor.is_allowed(Permission::LOGIN, RequestPath::from_request(&request))? {
             let reason = format!("Login denied for user '{}': User is not permitted to 'LOGIN'", user.id);
             warn!("{}", reason);
             return Err(Error::ApiInsufficientRights(reason));
@@ -212,8 +215,8 @@ pub struct LoggedInUser {
 #[derive(Clone, Debug)]
 pub enum Auth {
     Bearer(Token),
-    AuthorizationCode(Token, String, String),
-    IdAndPasswordHash(String, Token),
+    AuthorizationCode { code: Token, state: String, nonce: String },
+    IdAndPasswordHash { id: String, password_hash: Token },
 }
 
 impl Auth {
@@ -221,10 +224,10 @@ impl Auth {
         Auth::Bearer(token)
     }
     pub fn authorization_code(code: Token, state: String, nonce: String) -> Self {
-        Auth::AuthorizationCode(code, state, nonce)
+        Auth::AuthorizationCode { code, state, nonce }
     }
 
     pub fn id_and_password_hash(id: String, password_hash: Token) -> Self {
-        Auth::IdAndPasswordHash(id, password_hash)
+        Auth::IdAndPasswordHash { id, password_hash }
     }
 }

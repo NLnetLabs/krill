@@ -44,6 +44,7 @@ pub const CA_OBJECTS_DIR: &str = "objects";
 
 pub const PUBSERVER_DFLT: &str = "0";
 pub const PUBSERVER_DIR: &str = "pubd";
+pub const PUBSERVER_BACKUP_DIR: &str = "pubd-bk";
 
 pub const REPOSITORY_DIR: &str = "repo";
 pub const REPOSITORY_RRDP_DIR: &str = "rrdp";

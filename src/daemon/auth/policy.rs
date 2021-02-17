@@ -6,11 +6,7 @@ use std::{
 
 use oso::{Oso, PolarClass, ToPolar};
 
-use crate::{
-    commons::{actor::Actor, api::Handle, error::Error, KrillResult},
-    constants::{ACTOR_DEF_ANON, ACTOR_DEF_KRILL, ACTOR_DEF_MASTER_TOKEN, ACTOR_DEF_TESTBED},
-    daemon::{config::Config, http::RequestPath},
-};
+use crate::{commons::{actor::Actor, api::Handle, error::Error, KrillResult}, constants::{ACTOR_DEF_ANON, ACTOR_DEF_KRILL, ACTOR_DEF_MASTER_TOKEN, ACTOR_DEF_TESTBED}, daemon::{auth::common::permissions::Permission, config::Config, http::RequestPath}};
 
 /// Access to Oso is protected by a shareable mutex lock, as demonstrated in the
 /// Oso Rust [getting started example](https://github.com/osohq/oso-rust-quickstart/blob/d469f7594b1d07e2203f5dc6e88d0435fef35468/src/server.rs#L50).
@@ -32,13 +28,14 @@ impl AuthPolicy {
         let mut oso = Oso::new();
         oso.register_class(Actor::get_polar_class()).unwrap();
         oso.register_class(Handle::get_polar_class()).unwrap();
+        oso.register_class(Permission::get_polar_class()).unwrap();
         oso.register_class(RequestPath::get_polar_class()).unwrap();
 
-        Self::load_polar_file(&mut oso, include_bytes!("../../../defaults/roles.polar"), "roles")?;
-        Self::load_polar_file(&mut oso, include_bytes!("../../../defaults/rules.polar"), "rules")?;
-        Self::load_polar_file(&mut oso, include_bytes!("../../../defaults/aliases.polar"), "aliases")?;
-        Self::load_polar_file(&mut oso, include_bytes!("../../../defaults/rbac.polar"), "rbac")?;
-        Self::load_polar_file(&mut oso, include_bytes!("../../../defaults/abac.polar"), "abac")?;
+        Self::load_internal_policy(&mut oso, include_bytes!("../../../defaults/roles.polar"), "roles")?;
+        Self::load_internal_policy(&mut oso, include_bytes!("../../../defaults/rules.polar"), "rules")?;
+        Self::load_internal_policy(&mut oso, include_bytes!("../../../defaults/aliases.polar"), "aliases")?;
+        Self::load_internal_policy(&mut oso, include_bytes!("../../../defaults/rbac.polar"), "rbac")?;
+        Self::load_internal_policy(&mut oso, include_bytes!("../../../defaults/abac.polar"), "abac")?;
 
         Self::load_user_policy(config, &mut oso)?;
 
@@ -91,12 +88,13 @@ impl AuthPolicy {
         }
     }
 
-    fn load_polar_file(oso: &mut Oso, bytes: &[u8], fname: &str) -> KrillResult<()> {
+    fn load_internal_policy(oso: &mut Oso, bytes: &[u8], fname: &str) -> KrillResult<()> {
+        trace!("Loading internal Polar policy '{}'", fname);
         oso.load_str(
             std::str::from_utf8(bytes)
-                .map_err(|err| Error::custom(format!("The {} file is not valid UTF-8: {}", fname, err)))?,
+                .map_err(|err| Error::custom(format!("Internal Polar policy '{}' is not valid UTF-8: {}", fname, err)))?,
         )
-        .map_err(|err| Error::custom(format!("The {} file is not valid Polar syntax: {}", fname, err)))
+        .map_err(|err| Error::custom(format!("Internal Polar policy '{}' is not valid Polar syntax: {}", fname, err)))
     }
 
     fn exec_query(oso: &mut Oso, query: &str) -> KrillResult<()> {
@@ -114,7 +112,7 @@ impl AuthPolicy {
             let fname = config.auth_policy.file_name().unwrap().to_str().unwrap();
             let mut buffer = Vec::new();
             std::fs::File::open(config.auth_policy.as_path())?.read_to_end(&mut buffer)?;
-            AuthPolicy::load_polar_file(oso, &buffer, fname)?;
+            AuthPolicy::load_internal_policy(oso, &buffer, fname)?;
         }
 
         Ok(())
@@ -172,6 +170,21 @@ impl PolarClass for RequestPath {
             .set_constructor(|path: String| -> RequestPath {
                 RequestPath::from_request(&hyper::Request::builder().method("GET").uri(path).body(()).unwrap())
             })
+            .build()
+    }
+
+    fn get_polar_class_builder() -> oso::ClassBuilder<Self> {
+        oso::Class::builder()
+    }
+}
+
+impl PolarClass for Permission {
+    fn get_polar_class() -> oso::Class {
+        Self::get_polar_class_builder()
+            .set_constructor(|perm_name: String| -> Permission {
+                Permission::from_str(&perm_name).unwrap()
+            })
+            .set_equality_check(|left: &Permission, right: &Permission| *left == *right)
             .build()
     }
 

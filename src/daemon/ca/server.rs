@@ -32,6 +32,7 @@ use crate::{
     },
     constants::{CASERVER_DIR, REQUEUE_DELAY_SECONDS, STATUS_DIR},
     daemon::{
+        auth::common::permissions::Permission,
         ca::{
             self, ta_handle, CaObjectsStore, CertAuth, Cmd, CmdDet, IniDet, ResourceTaggedAttestation,
             RouteAuthorizationUpdates, RtaContentRequest, RtaPrepareRequest, StatusStore,
@@ -612,7 +613,7 @@ impl CaServer {
             self.ca_store
                 .list()?
                 .into_iter()
-                .filter(|handle| matches!(actor.is_allowed("CA_READ", handle.clone()), Ok(true)))
+                .filter(|handle| matches!(actor.is_allowed(Permission::CA_READ, handle.clone()), Ok(true)))
                 .map(CertAuthSummary::new)
                 .collect(),
         ))

@@ -75,7 +75,7 @@ impl ConfigFileAuthProvider {
         if let Some(password_hash) = self.get_bearer_token(request) {
             if let Some(query) = urlparse(request.uri().to_string()).get_parsed_query() {
                 if let Some(id) = query.get_first_from_str("id") {
-                    return Some(Auth::IdAndPasswordHash(id, password_hash));
+                    return Some(Auth::IdAndPasswordHash { id, password_hash });
                 }
             }
         }
@@ -115,7 +115,7 @@ impl AuthProvider for ConfigFileAuthProvider {
     }
 
     fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
-        if let Some(Auth::IdAndPasswordHash(id, password_hash)) = self.get_auth(request) {
+        if let Some(Auth::IdAndPasswordHash { id, password_hash }) = self.get_auth(request) {
             if let Some(user) = self.users.get(&id) {
                 if user.password_hash == password_hash {
                     let api_token = self.session_cache.encode(&id, &user.attributes, &[], &self.key, None)?;

@@ -1,4 +1,5 @@
 name: CI
+
 on:
   push:
     paths-ignore:
@@ -13,6 +14,7 @@ on:
       - 'LICENSE'
       - 'README.md'
       - 'tests/e2e/**'
+
   # Hmm, annoying, do we really have to duplicate this?
   pull_request:
     paths-ignore:
@@ -27,6 +29,7 @@ on:
       - 'LICENSE'
       - 'README.md'
       - 'tests/e2e/**'
+
 jobs:
   build:
     name: build
@@ -35,6 +38,7 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         rust: [stable, 1.45.0, beta]
+        args: ["--features functional-tests,ui-tests", "--all-features"] 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v1
@@ -42,21 +46,11 @@ jobs:
       uses: hecrj/setup-rust-action@v1
       with:
         rust-version: ${{ matrix.rust }}
-    - run: cargo build --verbose
-    - run: cargo test --verbose 2>&1
-  allfeatures:
-    name: allfeatures
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest]
-        rust: [stable, 1.45.0, beta]
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v1
-    - name: Install Rust
-      uses: hecrj/setup-rust-action@v1
+    - run: cargo build --verbose ${{ matrix.args }}
+    - run: cargo test --verbose ${{ matrix.args }} 2>&1
+    - name: Archive Cypress UI test image & video captures
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v2
       with:
-        rust-version: ${{ matrix.rust }}
-    - run: cargo build --verbose --all-features
-    - run: cargo test --verbose --all-features 2>&1
+        name: cypress-ui-test-captures ${{ matrix.os }} ${{ matrix.rust }}
+        path: target/ui/

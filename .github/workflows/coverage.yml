@@ -1,0 +1,40 @@
+name: Coverage
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
+
+jobs:
+  coverage:
+    name: coverage
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        rust: [stable]
+        args: ["", "--all-features"] 
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v1
+      with:
+        # at the time of writing workflow_run.head_commit.id appears to be
+        # the commit that triggered the CI workflow which then triggered us.
+        ref: ${{ github.event.workflow_run.head_commit.id }}
+    - name: Install Rust
+      uses: hecrj/setup-rust-action@v1
+      with:
+        rust-version: ${{ matrix.rust }}
+    - run: cargo install cargo-tarpaulin
+    # use a long timeout with tarpaulin as UI tests have to docker pull the
+    # cypress.io image which can cause a test timeout with the default tarpaulin
+    # timeout of 1 minute.
+    - run: cargo tarpaulin --verbose --out Html --timeout 600 ${{ matrix.args }}
+    - name: Archive code coverage results
+      uses: actions/upload-artifact@v2
+      with:
+        name: code-coverage-report ${{ matrix.os }} ${{ matrix.rust }} ${{ matrix.args }}
+        path: tarpaulin-report.html
+
