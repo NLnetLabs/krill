@@ -152,7 +152,15 @@ impl CaObjectsStore {
             .unwrap()
             .keys(None, ".json")?
             .iter()
-            .map(|k| Handle::from_str(k.name()).unwrap()) // These are always supposed to be safe
+            .flat_map(|k| {
+                let mut res = None;
+                if let Some(name) = k.name().strip_suffix(".json") {
+                    if let Ok(handle) = Handle::from_str(name) {
+                        res = Some(handle)
+                    }
+                }
+                res
+            })
             .collect();
         Ok(cas)
     }
