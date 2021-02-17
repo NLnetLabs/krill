@@ -9,19 +9,31 @@ use std::process::Command;
 use krill::daemon::config::Config;
 use krill::test::*;
 
-pub async fn run_krill_ui_test(test_name: &str, _with_openid_server: bool, testbed_enabled: bool) {
+#[allow(dead_code)]
+pub enum OpenIDConnectMockMode {
+    OIDCProviderWillNotBeStarted,
+    OIDCProviderWithRPInitiatedLogout,
+    OIDCProviderWithNoLogoutEndpoints,
+}
+
+pub async fn run_krill_ui_test(
+    test_name: &str,
+    openid_connect_mock_mode: OpenIDConnectMockMode,
+    testbed_enabled: bool,
+) {
+    use OpenIDConnectMockMode::*;
+
     #[cfg(feature = "multi-user")]
-    let mock_server_join_handle = if _with_openid_server {
-        openid_connect_mock::start(1).await
-    } else {
-        None
+    let op_handle = match openid_connect_mock_mode {
+        OIDCProviderWillNotBeStarted => None,
+        _ => Some(openid_connect_mock::start(openid_connect_mock_mode, 1).await),
     };
 
     do_run_krill_ui_test(test_name, testbed_enabled).await;
 
     #[cfg(feature = "multi-user")]
-    if _with_openid_server {
-        openid_connect_mock::stop(mock_server_join_handle).await;
+    if let Some(handle) = op_handle {
+        openid_connect_mock::stop(handle).await;
     }
 }
 
