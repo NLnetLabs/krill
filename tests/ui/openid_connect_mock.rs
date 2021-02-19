@@ -393,7 +393,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
 
         let logout_metadata = match config {
             OpenIDConnectMockMode::OIDCProviderWithRPInitiatedLogout => CustomAdditionalMetadata {
-                end_session_endpoint: Some(String::from("http://localhost:1818/logout")),
+                end_session_endpoint: Some(String::from("https://localhost:1818/logout")),
             },
             OpenIDConnectMockMode::OIDCProviderWithNoLogoutEndpoints => CustomAdditionalMetadata {
                 end_session_endpoint: None,
@@ -404,17 +404,17 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
         };
 
         let provider_metadata: CustomProviderMetadata = ProviderMetadata::new(
-            IssuerUrl::new("http://localhost:1818".to_string()).unwrap(),
-            AuthUrl::new("http://localhost:1818/authorize".to_string()).unwrap(),
-            JsonWebKeySetUrl::new("http://localhost:1818/jwk".to_string()).unwrap(),
+            IssuerUrl::new("https://localhost:1818".to_string()).unwrap(),
+            AuthUrl::new("https://localhost:1818/authorize".to_string()).unwrap(),
+            JsonWebKeySetUrl::new("https://localhost:1818/jwk".to_string()).unwrap(),
             vec![ResponseTypes::new(vec![CoreResponseType::Code])],
             vec![CoreSubjectIdentifierType::Pairwise],
             vec![CoreJwsSigningAlgorithm::RsaSsaPssSha256],
             logout_metadata,
         )
-        .set_token_endpoint(Some(TokenUrl::new("http://localhost:1818/token".to_string()).unwrap()))
+        .set_token_endpoint(Some(TokenUrl::new("https://localhost:1818/token".to_string()).unwrap()))
         .set_userinfo_endpoint(Some(
-            UserInfoUrl::new("http://localhost:1818/userinfo".to_string()).unwrap(),
+            UserInfoUrl::new("https://localhost:1818/userinfo".to_string()).unwrap(),
         ))
         .set_scopes_supported(Some(vec![
             Scope::new("openid".to_string()),
@@ -493,7 +493,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
             let id_token = CustomIdToken::new(
                 CustomIdTokenClaims::new(
                     // Specify the issuer URL for the OpenID Connect Provider.
-                    IssuerUrl::new("http://localhost:1818".to_string()).unwrap(),
+                    IssuerUrl::new("https://localhost:1818".to_string()).unwrap(),
                     // The audience is usually a single entry with the client ID of the client for whom
                     // the ID token is intended. This is a required claim.
                     vec![Audience::new(authz.client_id.clone())],
@@ -1063,7 +1063,16 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
         let address = "127.0.0.1:1818";
         info!("Mock OpenID Connect server: starting on {}", address);
 
-        let server = Server::http(address).unwrap();
+        let server = Server::https(
+            address,
+            tiny_http::SslConfig {
+                certificate: SELF_SIGNED_CERT_PEM.to_vec(),
+                private_key: SELF_SIGNED_KEY_PEM.to_vec(),
+            })
+            .unwrap();
+
+        info!("Mock OpenID Connect server: started");
+
         MOCK_OPENID_CONNECT_SERVER_RUNNING_FLAG.store(true, Ordering::Relaxed);
         while MOCK_OPENID_CONNECT_SERVER_RUNNING_FLAG.load(Ordering::Relaxed) {
             match server.recv_timeout(Duration::new(1, 0)) {
@@ -1093,3 +1102,40 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
         info!("Mock OpenID Connect: stopped");
     });
 }
+
+static SELF_SIGNED_CERT_PEM: &[u8; 1160] = br#"
+-----BEGIN CERTIFICATE-----
+MIIDNjCCAh6gAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEygyMDBBRTIzM0Y4RUE2NkEwMTIyNTJDQThFRTA3OEE5NDM4NEEyQ0JBMCAXDTIxMDIwNTEzMTMxOFoYDzMwMTcwOTEyMTMxMzE4WjAzMTEwLwYDVQQDEygyMDBBRTIzM0Y4RUE2NkEwMTIyNTJDQThFRTA3OEE5NDM4NEEyQ0JBMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsb/U46pChhSpznNzX5+XETV+cmSs8AhqVP4Dka7W7RxJnc1H/S5aZRFZsRuQJ7HNW6S9C49WhaY2Pq7s0MQBNjb58WP7XoKjtMrjO6yxOfTv/KwRDbJBahA0H28PpjbKGVHFCN00J8ftV5Cq5K6nLdUslJrNNLx7Rdr3JymHEksJTeK1MQuRtt9EO/1uy1/6a9vIljLUxy2QkbkgVh46GNSu23FAzp21c6c6A99V0FWYhDFSywROpQlhpjuijJKGUR2mulDkp3uaOhcmyUFCOoZ5iZfemI92J8QBLoR2mpQ1d6Kj53P4BgnaiWDSe5JifzDKEFyXhNXkegwI1f+XhwIDAQABo1MwUTAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBQgCuIz+OpmoBIlLKjuB4qUOEosujAfBgNVHSMEGDAWgBQgCuIz+OpmoBIlLKjuB4qUOEosujANBgkqhkiG9w0BAQsFAAOCAQEABAPbMHpra5BFLRtqX/UG/x8yOpjEepIKdSH7sP8QbYcJXa1f7rAe8ZksgmkrLRegwAqo1hcCxJrEaVHTuW+jd4gy9K7HMp+wLaz6W0ToiKZdCVdTH8xIRxH/nVwWFI//Q4F7Qkm+ceHAeHs5qDDMLBuuZz15VcXcw4HaOkDcxeaqdo+8LXx6jvg0Pz5qzjFvdFIxdd8U/q2v2bUSN4g7CZ4Ae6ate0VPCozflIRauNCQ3BBvUMAwxMg9mkNDtpcbJ8rmqMwSjMTP1g9YIDZ2w9BGUagV0xDSHiE56vONQBX209/AWyzQxrvV6jw/222FX2rJL9UNDR+M3jH1QJzS7g==
+-----END CERTIFICATE-----
+"#;
+
+static SELF_SIGNED_KEY_PEM: &[u8; 1705] = br#"
+-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCxv9TjqkKGFKnO
+c3Nfn5cRNX5yZKzwCGpU/gORrtbtHEmdzUf9LlplEVmxG5Ansc1bpL0Lj1aFpjY+
+ruzQxAE2NvnxY/tegqO0yuM7rLE59O/8rBENskFqEDQfbw+mNsoZUcUI3TQnx+1X
+kKrkrqct1SyUms00vHtF2vcnKYcSSwlN4rUxC5G230Q7/W7LX/pr28iWMtTHLZCR
+uSBWHjoY1K7bcUDOnbVzpzoD31XQVZiEMVLLBE6lCWGmO6KMkoZRHaa6UOSne5o6
+FybJQUI6hnmJl96Yj3YnxAEuhHaalDV3oqPnc/gGCdqJYNJ7kmJ/MMoQXJeE1eR6
+DAjV/5eHAgMBAAECggEABADSBp6bCPIGMQQgoRKzEEwoIONrkaxe2LMv2WQaqxRs
+BAXPjUAyAPy3DGoWgQ5cFahMKap8xF3N8vN1me4QKOxsDKe3zZUbosK/A2UMSMXf
+cc1eRPSyzHS498xEifXJ73AMA/sXZZ33FnXHo4bbdQjMDDzASmPEUvpvfo5M4HiO
+hWMd1+vL/zbTvOJblPax7pPG4wL5+U88MezhcYZQ5bCE1Ggixuvnm3UIZaEyBz8+
+Jb93RK1f+dXMTnT1PmKaBMWuALzM1wgkES6KLn9ZR6J0x+5r+FVe3lAzUPnsNN0W
+fDFVZ+A+padHmrUR+fYIcZRvjJU0wspsOppezM8rwQKBgQDnG80QQ9NwQESL14bS
+rXeruqnUngWEOBO8axvF+WR/ImhZAbagDl+F3ERDw+r7b3HkXrmgnVnc9GbuFP27
+8jsZsx7aWiejcFkvSW21msDmKEm7ZzBvkcfuWsRUjQk+adLzZcv+0fhJAA/Z3qak
+uBctntaiQJI/xAoxI2Mbo1s2SQKBgQDE5MrZ0eC69RLseZtMc4oligw8VNGRB5tN
+W9kgXMRpGN2tGsaQQ5fv4B7/gDLZ9HD9g4pAYDMAvjPFYzvfFdvdHbNj5C85nPK0
+P/4xLNkzULja28cwzahzCufNuj32fjt5WVPwfqZCd2uP7pl0AIf4lfdx3jp//f0g
+xplrmw8fTwKBgBaLTrisdR65FjayApPgmhDld5WnCJC6S6qQpDfuuQ/x0k4EbcU1
+Qbo0H3Cg1vZKC8kkOGVjlBWKvdOxtoK0AXHjWDoim0VFO13ygsI5Y2HQQkkGquHn
+TaKBti8tRt6QwiQ+JOUppFeyqtks8AKXdqNboEJZnCqePARJGGzkxYwJAoGAEHIT
+x3HSVYtW002s/QvBhDUtpHRpNLXv8Nw1HJDjDuw2x9iusSoULMMJk8m/dZkHPwWX
+rJzcZbl9VYVeYNnQjX2HmFZc43EKjKezsaPPWIvrhMxKrPbglQtaJULjHg2ZJh+h
+9Tp+5JpY76K8SoYo1UihbG9lb39lfzFXazd+Yd0CgYEAuP8OcGYA9Flg4VITsmsR
+quZMVrwtPtNEhgfUiJ4v1fCr1OK/QYAufz12GwcK92Q0GMhSkTxjuwvx5EvMIQn2
+oGnjilZ7SOyWqZYYqnOSAa1QyS1jKwVeGr0VbZTUsxAa1j6e3IDfjulXVcAsY3Py
+oku+A8ZldXbm+E5p9xuOE7w=
+-----END PRIVATE KEY-----
+"#;

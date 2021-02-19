@@ -72,7 +72,7 @@ panic = "abort"
 
 [dev-dependencies]
 # for user management
-tiny_http = "^0.7"
+tiny_http = { version = "^0.8", features = ["ssl"] }
 
 # ------------------------------------------------------------------------------
 # START DEBIAN PACKAGING
