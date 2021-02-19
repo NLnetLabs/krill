@@ -205,6 +205,13 @@ impl KeyValueStoreDiskImpl {
         path
     }
 
+    /// creates a file path, prefixing the name with '.' much like vi
+    fn swap_file_path(&self, key: &KeyStoreKey) -> PathBuf {
+        let mut path = self.scope_path(key.scope.as_ref());
+        path.push(format!(".{}", key.name()));
+        path
+    }
+
     fn scope_path(&self, scope: Option<&String>) -> PathBuf {
         let mut path = self.base.clone();
         if let Some(scope) = scope {
@@ -214,9 +221,14 @@ impl KeyValueStoreDiskImpl {
     }
 
     fn store<V: Any + Serialize>(&self, key: &KeyStoreKey, value: &V) -> Result<(), KeyValueError> {
-        let mut f = file::create_file_with_path(&self.file_path(key))?;
+        let swap_file_path = self.swap_file_path(key);
+        let file_path = self.file_path(key);
+        let mut swap_file = file::create_file_with_path(&swap_file_path)?;
         let json = serde_json::to_string_pretty(value)?;
-        f.write_all(json.as_ref())?;
+        swap_file.write_all(json.as_ref())?;
+
+        fs::rename(swap_file_path, file_path)?;
+
         Ok(())
     }
 
