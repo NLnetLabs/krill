@@ -39,7 +39,6 @@ use openidconnect::core::{
     CoreAuthPrompt, CoreErrorResponseType, CoreIdTokenVerifier, CoreJwsSigningAlgorithm, CoreResponseMode,
     CoreResponseType,
 };
-use openidconnect::reqwest::http_client as oidc_http_client;
 use openidconnect::RequestTokenError;
 use openidconnect::{
     AuthenticationFlow, AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce, OAuth2TokenResponse,
@@ -154,7 +153,7 @@ impl OpenIDConnectAuthProvider {
 
         // Contact the OpenID Connect: identity provider discovery endpoint to
         // learn about and configure ourselves to talk to it.
-        let meta = WantedMeta::discover(&issuer, logging_http_client!()).map_err(|e| {
+        let meta = WantedMeta::discover(&issuer, logging_http_client).map_err(|e| {
             Error::Custom(format!(
                 "OpenID Connect: Discovery failed with issuer {}: {}",
                 issuer.to_string(),
@@ -242,17 +241,30 @@ impl OpenIDConnectAuthProvider {
         // end_session_endpoint is not required to exist by the OpenID Connect discovery spec, nor is the operator
         // required to configure a custom logout URL, but we want some way to log the user out so if one of these is not
         // set, fallback to a local Krill only logout with post-logout-redirect to the Krill UI index page.
-        let logout_url = if let Some(url) = &self.oidc_conf()?.logout_url {
-            Some(ProviderLogoutURL::OperatorProvidedLogoutURL(url.clone()))
-        } else if let Some(url) = &meta.additional_metadata().end_session_endpoint {
-            Some(ProviderLogoutURL::RPInitiatedLogoutURL(url.clone()))
+        let mut logout_url = None;
+
+        if let Some(url) = &self.oidc_conf()?.logout_url {
+            logout_url = Some(ProviderLogoutURL::OperatorProvidedLogoutURL(url.clone()))
         } else {
+            if let Some(url) = &meta.additional_metadata().end_session_endpoint {
+                // From: https://openid.net/specs/openid-connect-rpinitiated-1_0.html#OPMetadata
+                //   end_session_endpoint
+                //     REQUIRED. URL at the OP to which an RP can perform a redirect to request that the End-User be
+                //     logged out at the OP. This URL MUST use the https scheme and MAY contain port, path, and query
+                //     parameter components.
+                if urlparse(url).scheme == "https" {
+                    logout_url = Some(ProviderLogoutURL::RPInitiatedLogoutURL(url.clone()));
+                } else {
+                    warn!("OpenID Connect: ignoring insecure end_session_endpoint '{}'", url);
+                }
+            }
+        }
+
+        if logout_url.is_none() {
             warn!(
                 "OpenID Connect: Neither OpenID Connect 'end_session_endpoint' was discovered \
-                   nor is the 'logout_url' config file option set. Logout will occur *only* in Krill, not in the \
-                   OpenID Connect provider."
+                   nor is the 'logout_url' config file option set. Logout will occur *only* in Krill."
             );
-            None
         };
 
         match ok {
@@ -320,7 +332,7 @@ impl OpenIDConnectAuthProvider {
                         let token_response = conn
                             .client
                             .exchange_refresh_token(&RefreshToken::new(refresh_token.to_string()))
-                            .request(logging_http_client!());
+                            .request(logging_http_client);
                         match token_response {
                             Ok(token_response) => {
                                 let secrets = if let Some(new_refresh_token) = token_response.refresh_token() {
@@ -858,7 +870,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                         let token_response: FlexibleTokenResponse = conn
                             .client
                             .exchange_code(AuthorizationCode::new(code.to_string()))
-                            .request(logging_http_client!())
+                            .request(logging_http_client)
                             .map_err(|e| {
                                 let (msg, additional_info) = match e {
                                     RequestTokenError::ServerResponse(provider_err) => {
@@ -991,7 +1003,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                                     // don't require the response to be signed as the spec says
                                     // signing it is optional: See: https://openid.net/specs/openid-connect-core-1_0.html#UserInfoResponse
                                     .require_signed_response(false)
-                                    .request(logging_http_client!())
+                                    .request(logging_http_client)
                                     .map_err(|e| {
                                         self.internal_error(
                                             "OpenID Connect: User info request failed",
@@ -1218,12 +1230,11 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                         // TODO: Should we also use any of other parameters defined in the RP Initiated Logout 1.0 spec?
                         // See: https://openid.net/specs/openid-connect-rpinitiated-1_0.html#RPLogout
                         //      https://openid.net/specs/openid-connect-rpinitiated-1_0.html#RedirectionAfterLogout
-                        // E.g. id_token_hint, state or ui_locales? Apparently we MSUT use id_token_hint because the
-                        // spec states:
+                        // E.g. state or ui_locales?
+                        
+                        // According to the spec we MUST supply the id_token_hint query parameter:
                         //   "An id_token_hint carring an ID Token for the RP is also REQUIRED when requesting
                         //    post-logout redirection"
-                        // TODO: Require HTTPS as per the spec: "This URL MUST use the https scheme"
-                        // See: https://openid.net/specs/openid-connect-rpinitiated-1_0.html#OPMetadata
                         format!("{}?post_logout_redirect_uri={}", url, service_uri.as_str())
                     }
                     Some(ProviderLogoutURL::OperatorProvidedLogoutURL(ref url)) => {
@@ -1276,4 +1287,115 @@ fn with_default_claims(claims: &Option<ConfigAuthOpenIDConnectClaims>) -> Config
     });
 
     claims
+}
+
+// This is basically a copy of oauth2::reqwest::blocking::http_client() with the addition of permitting insecure
+// TLS server certificates if the server host is "localhost", to enable testing with a local OpenID Connect provider
+// with a self-signed certificate, e.g. our mock provider.
+//
+// NOTE: Why does this use a second aliased reqwest dependency as reqwestblocking?
+// This is due to the reqwest 0.10.x blocking implementation actually using a futures runtime and that you can't use a
+// futures runtime inside another futures runtime otherwise you get error:
+//   "panicked at 'Cannot drop a runtime in a context where blocking is not allowed. This happens when a runtime is
+//    dropped from within an asynchronous context.' reqwest blocking"
+// And we can't move to using async reqwest because async Rust doesn't work with traits and AuthProvider is a trait.
+// Unless we use the async_traits crate...
+//
+// NOTE: We don't return reqwest::Error as the oauth2-rs implementation of `fn http_client()` does because that is a
+// type in the oauth2-rs crate and all of the constructors for that type are private to the crate and so we cannot use
+// map_err(reqwest::Error).
+fn http_client(request: openidconnect::HttpRequest) -> Result<openidconnect::HttpResponse, Error> {
+    let mut client_builder = reqwestblocking::Client::builder()
+        // Following redirects opens the client up to SSRF vulnerabilities.
+        .redirect(reqwestblocking::RedirectPolicy::none());
+
+    if request.url.host_str() == Some("localhost") && request.url.scheme() == "https" {
+        client_builder = client_builder.danger_accept_invalid_certs(true);
+    }
+
+    let client = client_builder.build().map_err(Error::custom)?;
+
+    let mut request_builder = client
+        .request(
+            reqwestblocking::Method::from_bytes(request.method.as_str().as_ref())
+                .expect("failed to convert Method from http 0.2 to 0.1"),
+            request.url.as_str(),
+        )
+        .body(request.body);
+
+    for (name, value) in &request.headers {
+        request_builder = request_builder.header(name.as_str(), value.as_bytes());
+    }
+
+    let request = request_builder.build().map_err(Error::custom)?;
+
+    let mut response = client.execute(request).map_err(Error::custom)?;
+
+    let mut body = Vec::new();
+    {
+        use std::io::Read;
+        response.read_to_end(&mut body).map_err(Error::custom)?;
+    }
+
+    let headers = response
+        .headers()
+        .iter()
+        .map(|(name, value)| {
+            (
+                openidconnect::http::header::HeaderName::from_bytes(name.as_str().as_ref())
+                    .expect("failed to convert HeaderName from http 0.2 to 0.1"),
+                openidconnect::http::header::HeaderValue::from_bytes(value.as_bytes())
+                    .expect("failed to convert HeaderValue from http 0.2 to 0.1"),
+            )
+        })
+        .collect::<openidconnect::http::HeaderMap>();
+
+    Ok(openidconnect::HttpResponse {
+        status_code: openidconnect::http::StatusCode::from_u16(response.status().as_u16())
+            .expect("failed to convert StatusCode from http 0.2 to 0.1"),
+        headers,
+        body,
+    })
+}
+
+fn logging_http_client(req: openidconnect::HttpRequest) -> Result<openidconnect::HttpResponse, Error> {
+    if log_enabled!(log::Level::Trace) {
+        // Don't {:?} log the openidconnect::HTTPRequest req object
+        // because that renders the body as an unreadable integer byte
+        // array, instead try and decode it as UTF-8.
+        let body = match std::str::from_utf8(&req.body) {
+            Ok(text) => text.to_string(),
+            Err(_) => format!("{:?}", &req.body),
+        };
+        debug!(
+            "OpenID Connect request: url: {:?}, method: {:?}, headers: {:?}, body: {}",
+            req.url, req.method, req.headers, body
+        );
+    }
+
+    let res = http_client(req);
+
+    if log_enabled!(log::Level::Trace) {
+        match &res {
+            Ok(res) => {
+                // Don't {:?} log the openidconnect::HTTPResponse res
+                // object because that renders the body as an unreadable
+                // integer byte array, instead try and decode it as
+                // UTF-8.
+                let body = match std::str::from_utf8(&res.body) {
+                    Ok(text) => text.to_string(),
+                    Err(_) => format!("{:?}", &res.body),
+                };
+                debug!(
+                    "OpenID Connect response: status_code: {:?}, headers: {:?}, body: {}",
+                    res.status_code, res.headers, body
+                );
+            }
+            Err(err) => {
+                debug!("OpenID Connect response: {:?}", err)
+            }
+        }
+    }
+
+    res
 }
