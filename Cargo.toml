@@ -73,6 +73,7 @@ panic = "abort"
 [dev-dependencies]
 # for user management
 tiny_http = "^0.7"
+ctrlc = "^3.1"
 
 # ------------------------------------------------------------------------------
 # START DEBIAN PACKAGING
