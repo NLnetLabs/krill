@@ -7,6 +7,8 @@
 
 # Krill
 
+<img align="right" src="https://www.nlnetlabs.nl/static/logos/Krill/Krill_Icon_Red.svg" height="100">
+
 Krill is a Resource Public Key Infrastructure (RPKI) daemon, featuring a
 Certificate Authority (CA) and publication server, written in Rust.  If you have
 any feedback, we would love to hear from you. Don’t hesitate to [create an issue
@@ -18,7 +20,6 @@ can lean more about Krill and RPKI technology by reading our documentation on
 ## Quick Start with Pre-built Packages
 
 ### Disclaimer
-> These packages are provided on a best effort basis as a convenience for our community until such time as equivalent official operating system repository provided packages become available.
 
 Assuming you have a machine running a recent Debian or Ubuntu distribution, you 
 can install Krill from our [software package repository](https://packages.nlnetlabs.nl).
@@ -263,9 +264,8 @@ There are three ways to interact with Krill: a user interface (UI), a command
 line interface (CLI) and and application programming interface (API). For most
 scenarios, the UI will be the most convenient way to interact with Krill. 
 
-![Krill Welcome page](https://rpki.readthedocs.io/en/latest/_images/krill-ui-welome.png)
+![Krill ROA Management](https://nlnetlabs.nl/static/images/krill/krill-roa-management.png)
 
-Please
-refer to the
+Please refer to the
 [documentation](https://rpki.readthedocs.io/en/latest/krill/index.html) to
 determine what is best for you.
