@@ -3,7 +3,7 @@
     "actor": "krill",
     "time": "2020-04-28T13:28:06.697038Z",
     "handle": "child",
-    "version": 22,
+    "version": 23,
     "sequence": 15,
     "details": {
       "type": "key_roll_finish",

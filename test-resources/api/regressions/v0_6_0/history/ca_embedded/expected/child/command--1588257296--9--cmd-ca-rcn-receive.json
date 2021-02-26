@@ -3,7 +3,7 @@
     "actor": "krill",
     "time": "2020-04-30T14:34:56.239809Z",
     "handle": "child",
-    "version": 10,
+    "version": 11,
     "sequence": 9,
     "details": {
       "type": "update_rcvd_cert",

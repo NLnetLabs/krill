@@ -274,6 +274,9 @@ pub struct Config {
 
     #[serde(flatten)]
     pub issuance_timing: IssuanceTimingConfig,
+
+    #[serde(flatten)]
+    pub repository_retention: RepositoryRetentionConfig,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -292,6 +295,52 @@ pub struct IssuanceTimingConfig {
     pub timing_roa_valid_weeks: i64,
     #[serde(default = "ConfigDefaults::timing_roa_reissue_weeks_before")]
     pub timing_roa_reissue_weeks_before: i64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct RepositoryRetentionConfig {
+    #[serde(default = "RepositoryRetentionConfig::dflt_retention_old_notification_files_seconds")]
+    pub retention_old_notification_files_seconds: i64,
+    #[serde(default = "RepositoryRetentionConfig::dflt_retention_delta_files_seconds")]
+    pub retention_delta_files_seconds: i64,
+    #[serde(default = "RepositoryRetentionConfig::dflt_retention_delta_files_min_nr")]
+    pub retention_delta_files_min_nr: usize,
+    #[serde(default = "RepositoryRetentionConfig::dflt_retention_archive")]
+    pub retention_archive: bool,
+}
+
+impl RepositoryRetentionConfig {
+    // Time to keep any files still referenced by notification
+    // files updated up to X minutes ago. Default: 10 min
+    fn dflt_retention_old_notification_files_seconds() -> i64 {
+        600
+    }
+
+    // Time to keep deltas. Defaults to two hours meaning that
+    // almost all RPs are expected to have retrieved the deltas
+    // by then. Typically RPs fetch every 1-10 minutes, some
+    // implementations use 1 hour intervals.
+    //
+    // We could keep all deltas up to the size of the snapshot,
+    // but if we leave some deltas out we may succeed in keeping
+    // the notification file relatively small
+    fn dflt_retention_delta_files_seconds() -> i64 {
+        7200 // 2 hours
+    }
+
+    // Keep at least X (default 5) delta files in the notification
+    // file. They may be old, but their impact on the notification
+    // file size is not too bad.
+    fn dflt_retention_delta_files_min_nr() -> usize {
+        5
+    }
+
+    // If set to true, we will archive - rather than delete - old
+    // snapshot and delta files. The can then be backed up and/deleted
+    // at the repository operator's discretion.
+    fn dflt_retention_archive() -> bool {
+        false
+    }
 }
 
 /// # Accessors
@@ -415,6 +464,13 @@ impl Config {
             timing_roa_reissue_weeks_before,
         };
 
+        let repository_retention = RepositoryRetentionConfig {
+            retention_old_notification_files_seconds: 1,
+            retention_delta_files_seconds: 1,
+            retention_delta_files_min_nr: 5,
+            retention_archive: false,
+        };
+
         Config {
             ip,
             port,
@@ -449,6 +505,7 @@ impl Config {
             roa_aggregate_threshold,
             roa_deaggregate_threshold,
             issuance_timing,
+            repository_retention,
         }
     }
 

@@ -180,9 +180,9 @@ impl KrillServer {
 
         let pubserver = {
             if mode.pubd_enabled() {
-                Some(PubServer::build(config.clone(), signer.clone(), &system_actor)?)
+                Some(PubServer::build(config.clone(), signer.clone())?)
             } else {
-                PubServer::remove_if_empty(config.clone(), signer.clone(), &system_actor)?
+                PubServer::remove_if_empty(config.clone(), signer.clone())?
             }
         };
 
@@ -428,8 +428,8 @@ impl KrillServer {
         self.get_pubserver()?.repository_response(rfc8181_uri, publisher)
     }
 
-    pub fn rfc8181(&self, publisher: PublisherHandle, msg_bytes: Bytes, actor: &Actor) -> KrillResult<Bytes> {
-        self.get_pubserver()?.rfc8181(publisher, msg_bytes, actor)
+    pub fn rfc8181(&self, publisher: PublisherHandle, msg_bytes: Bytes) -> KrillResult<Bytes> {
+        self.get_pubserver()?.rfc8181(publisher, msg_bytes)
     }
 }
 
@@ -646,7 +646,7 @@ impl KrillServer {
         let publisher = CaPublisher::new(self.get_caserver()?.clone(), self.pubserver.clone());
 
         for ca in self.ca_list(actor)?.cas() {
-            if let Err(e) = publisher.publish(ca.handle(), actor).await {
+            if let Err(e) = publisher.publish(ca.handle()).await {
                 error!("Failed to sync ca: {}. Got error: {}", ca.handle(), e)
             }
         }
@@ -691,7 +691,7 @@ impl KrillServer {
         }
 
         let publisher = CaPublisher::new(self.get_caserver()?.clone(), self.pubserver.clone());
-        if let Err(e) = publisher.clean_all_repos(&ca_handle, &actor).await {
+        if let Err(e) = publisher.clean_all_repos(&ca_handle).await {
             warn!(
                 "Could not withdraw objects for deactivated CA '{}'. Error was: {}",
                 ca_handle, e
@@ -878,8 +878,8 @@ impl KrillServer {
 impl KrillServer {
     /// Handles a publish delta request sent to the API, or.. through
     /// the CmsProxy.
-    pub fn handle_delta(&self, publisher: PublisherHandle, delta: PublishDelta, actor: &Actor) -> KrillEmptyResult {
-        self.get_pubserver()?.publish(publisher, delta, actor)
+    pub fn handle_delta(&self, publisher: PublisherHandle, delta: PublishDelta) -> KrillEmptyResult {
+        self.get_pubserver()?.publish(publisher, delta)
     }
 
     /// Handles a list request sent to the API, or.. through the CmsProxy.

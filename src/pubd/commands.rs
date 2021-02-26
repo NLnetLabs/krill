@@ -1,13 +1,16 @@
 use std::fmt;
 
-use crate::commons::eventsourcing::CommandDetails;
-use crate::commons::eventsourcing::SentCommand;
-use crate::commons::remote::rfc8183;
-use crate::commons::{
-    actor::Actor,
-    api::{PublishDelta, PublisherHandle, RepositoryHandle, StorableRepositoryCommand},
+use rpki::uri;
+
+use crate::{
+    commons::{
+        actor::Actor,
+        api::{PublisherHandle, RepositoryHandle, StorableRepositoryCommand},
+        eventsourcing::{CommandDetails, SentCommand},
+        remote::rfc8183,
+    },
+    pubd::PubdEvt,
 };
-use crate::pubd::Evt;
 
 //------------ Cmd ---------------------------------------------------------
 pub type Cmd = SentCommand<CmdDet>;
@@ -15,16 +18,19 @@ pub type Cmd = SentCommand<CmdDet>;
 //------------ CmdDet ------------------------------------------------------
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", tag = "type")]
 pub enum CmdDet {
-    AddPublisher(rfc8183::PublisherRequest),
-    RemovePublisher(PublisherHandle),
-    Publish(PublisherHandle, PublishDelta),
-    SessionReset,
+    AddPublisher {
+        request: rfc8183::PublisherRequest,
+        base_uri: uri::Rsync,
+    },
+    RemovePublisher {
+        name: PublisherHandle,
+    },
 }
 
 impl CommandDetails for CmdDet {
-    type Event = Evt;
+    type Event = PubdEvt;
     type StorableDetails = StorableRepositoryCommand;
 
     fn store(&self) -> Self::StorableDetails {
@@ -33,20 +39,17 @@ impl CommandDetails for CmdDet {
 }
 
 impl CmdDet {
-    pub fn add_publisher(handle: &RepositoryHandle, request: rfc8183::PublisherRequest, actor: &Actor) -> Cmd {
-        SentCommand::new(handle, None, CmdDet::AddPublisher(request), actor)
+    pub fn add_publisher(
+        handle: &RepositoryHandle,
+        request: rfc8183::PublisherRequest,
+        base_uri: uri::Rsync,
+        actor: &Actor,
+    ) -> Cmd {
+        SentCommand::new(handle, None, CmdDet::AddPublisher { request, base_uri }, actor)
     }
 
-    pub fn remove_publisher(handle: &RepositoryHandle, publisher: PublisherHandle, actor: &Actor) -> Cmd {
-        SentCommand::new(handle, None, CmdDet::RemovePublisher(publisher), actor)
-    }
-
-    pub fn publish(handle: &RepositoryHandle, publisher: PublisherHandle, delta: PublishDelta, actor: &Actor) -> Cmd {
-        SentCommand::new(handle, None, CmdDet::Publish(publisher, delta), actor)
-    }
-
-    pub fn session_reset(handle: &RepositoryHandle, actor: &Actor) -> Cmd {
-        SentCommand::new(handle, None, CmdDet::SessionReset, actor)
+    pub fn remove_publisher(handle: &RepositoryHandle, name: PublisherHandle, actor: &Actor) -> Cmd {
+        SentCommand::new(handle, None, CmdDet::RemovePublisher { name }, actor)
     }
 }
 
@@ -59,18 +62,11 @@ impl fmt::Display for CmdDet {
 impl From<CmdDet> for StorableRepositoryCommand {
     fn from(d: CmdDet) -> Self {
         match d {
-            CmdDet::AddPublisher(req) => {
-                let (_, pbl, id) = req.unpack();
-                StorableRepositoryCommand::AddPublisher(pbl, id.ski_hex())
+            CmdDet::AddPublisher { request, .. } => {
+                let (_, name, _) = request.unpack();
+                StorableRepositoryCommand::AddPublisher { name }
             }
-            CmdDet::RemovePublisher(pbl) => StorableRepositoryCommand::RemovePublisher(pbl),
-            CmdDet::Publish(pbl, delta) => StorableRepositoryCommand::Publish(
-                pbl,
-                delta.publishes().len(),
-                delta.updates().len(),
-                delta.withdraws().len(),
-            ),
-            CmdDet::SessionReset => StorableRepositoryCommand::SessionReset,
+            CmdDet::RemovePublisher { name } => StorableRepositoryCommand::RemovePublisher { name },
         }
     }
 }

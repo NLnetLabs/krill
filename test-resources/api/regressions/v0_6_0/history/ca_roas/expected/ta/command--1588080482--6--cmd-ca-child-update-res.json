@@ -3,7 +3,7 @@
     "actor": "krill",
     "time": "2020-04-28T13:28:02.346519Z",
     "handle": "ta",
-    "version": 7,
+    "version": 8,
     "sequence": 6,
     "details": {
       "type": "child_update_resources",

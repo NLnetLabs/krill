@@ -18,6 +18,10 @@ pub struct KeyStoreKey {
 }
 
 impl KeyStoreKey {
+    pub fn new(scope: Option<String>, name: String) -> Self {
+        KeyStoreKey { scope, name }
+    }
+
     pub fn simple(name: String) -> Self {
         KeyStoreKey { scope: None, name }
     }
@@ -123,9 +127,9 @@ impl KeyValueStore {
     }
 
     /// Delete a key-value pair
-    pub fn drop(&self, key: &KeyStoreKey) -> Result<(), KeyValueError> {
+    pub fn drop_key(&self, key: &KeyStoreKey) -> Result<(), KeyValueError> {
         match self {
-            KeyValueStore::Disk(disk_store) => disk_store.drop(key),
+            KeyValueStore::Disk(disk_store) => disk_store.drop_key(key),
         }
     }
 
@@ -263,7 +267,7 @@ impl KeyValueStoreDiskImpl {
         path.exists()
     }
 
-    pub fn drop(&self, key: &KeyStoreKey) -> Result<(), KeyValueError> {
+    pub fn drop_key(&self, key: &KeyStoreKey) -> Result<(), KeyValueError> {
         let path = self.file_path(key);
         if path.exists() {
             fs::remove_file(path)?;

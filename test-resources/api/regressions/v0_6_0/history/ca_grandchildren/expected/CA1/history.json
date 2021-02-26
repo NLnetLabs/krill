@@ -7,7 +7,7 @@
       "actor": "krill",
       "timestamp": 1588256540074,
       "handle": "CA1",
-      "version": 1,
+      "version": 2,
       "sequence": 1,
       "summary": {
         "msg": "Update repo to embedded server",
@@ -25,7 +25,7 @@
       "actor": "krill",
       "timestamp": 1588256540516,
       "handle": "CA1",
-      "version": 2,
+      "version": 3,
       "sequence": 2,
       "summary": {
         "msg": "Add parent 'ta' as 'RFC 6492 Parent'",
@@ -46,7 +46,7 @@
       "actor": "krill",
       "timestamp": 1588256541086,
       "handle": "CA1",
-      "version": 3,
+      "version": 5,
       "sequence": 3,
       "summary": {
         "msg": "Update entitlements under parent 'ta': 0 => asn: , v4: 10.0.0.0/16, v6:  ",
@@ -67,7 +67,7 @@
       "actor": "krill",
       "timestamp": 1588256541306,
       "handle": "CA1",
-      "version": 5,
+      "version": 6,
       "sequence": 4,
       "summary": {
         "msg": "Update entitlements under parent 'ta': 0 => asn: , v4: 10.0.0.0/16, v6:  ",
@@ -87,7 +87,7 @@
       "actor": "krill",
       "timestamp": 1588256541735,
       "handle": "CA1",
-      "version": 6,
+      "version": 7,
       "sequence": 5,
       "summary": {
         "msg": "Update received cert in RC '0', with resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
@@ -111,7 +111,7 @@
       "actor": "krill",
       "timestamp": 1588256544660,
       "handle": "CA1",
-      "version": 7,
+      "version": 8,
       "sequence": 6,
       "summary": {
         "msg": "Add child 'CA3' with RFC8183 key 'ea0f8ee6add9a1666082e35d65633d6c4d02882b' and resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
@@ -136,7 +136,7 @@
       "actor": "krill",
       "timestamp": 1588256545806,
       "handle": "CA1",
-      "version": 8,
+      "version": 10,
       "sequence": 7,
       "summary": {
         "msg": "Issue certificate to child 'CA3' for key '96BE452BC9A7092E4156D96DB8CFC7C89094FE5A'",

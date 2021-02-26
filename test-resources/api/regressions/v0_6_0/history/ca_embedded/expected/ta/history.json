@@ -7,7 +7,7 @@
       "actor": "krill",
       "timestamp": 1588257292773,
       "handle": "ta",
-      "version": 1,
+      "version": 2,
       "sequence": 1,
       "summary": {
         "msg": "Update repo to embedded server",
@@ -25,7 +25,7 @@
       "actor": "krill",
       "timestamp": 1588257292774,
       "handle": "ta",
-      "version": 2,
+      "version": 3,
       "sequence": 2,
       "summary": {
         "msg": "Turn into Trust Anchor",
@@ -43,7 +43,7 @@
       "actor": "krill",
       "timestamp": 1588257292963,
       "handle": "ta",
-      "version": 3,
+      "version": 4,
       "sequence": 3,
       "summary": {
         "msg": "Update received cert in RC '0', with resources 'asn: 1 blocks, v4: 1 blocks, v6: 1 blocks'",
@@ -67,7 +67,7 @@
       "actor": "krill",
       "timestamp": 1588257293265,
       "handle": "ta",
-      "version": 4,
+      "version": 5,
       "sequence": 4,
       "summary": {
         "msg": "Add child 'child' with RFC8183 key '<none>' and resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
@@ -92,7 +92,7 @@
       "actor": "krill",
       "timestamp": 1588257294195,
       "handle": "ta",
-      "version": 5,
+      "version": 7,
       "sequence": 5,
       "summary": {
         "msg": "Issue certificate to child 'child' for key 'C4CF00E42E046EBE5275589D3462F1B1F43FBA85'",
@@ -115,7 +115,7 @@
       "actor": "krill",
       "timestamp": 1588257294541,
       "handle": "ta",
-      "version": 7,
+      "version": 8,
       "sequence": 6,
       "summary": {
         "msg": "Update resources for child 'child' to: asn: 1 blocks, v4: 1 blocks, v6: 0 blocks",
@@ -139,7 +139,7 @@
       "actor": "krill",
       "timestamp": 1588257295045,
       "handle": "ta",
-      "version": 8,
+      "version": 10,
       "sequence": 7,
       "summary": {
         "msg": "Issue certificate to child 'child' for key 'C4CF00E42E046EBE5275589D3462F1B1F43FBA85'",
@@ -162,7 +162,7 @@
       "actor": "krill",
       "timestamp": 1588257295654,
       "handle": "ta",
-      "version": 10,
+      "version": 11,
       "sequence": 8,
       "summary": {
         "msg": "Update resources for child 'child' to: asn: 0 blocks, v4: 1 blocks, v6: 0 blocks",
@@ -186,7 +186,7 @@
       "actor": "krill",
       "timestamp": 1588257296109,
       "handle": "ta",
-      "version": 11,
+      "version": 13,
       "sequence": 9,
       "summary": {
         "msg": "Issue certificate to child 'child' for key 'C4CF00E42E046EBE5275589D3462F1B1F43FBA85'",
@@ -209,7 +209,7 @@
       "actor": "krill",
       "timestamp": 1588257296743,
       "handle": "ta",
-      "version": 13,
+      "version": 14,
       "sequence": 10,
       "summary": {
         "msg": "Update resources for child 'child' to: asn: 0 blocks, v4: 0 blocks, v6: 0 blocks",
@@ -233,7 +233,7 @@
       "actor": "krill",
       "timestamp": 1588257297207,
       "handle": "ta",
-      "version": 14,
+      "version": 16,
       "sequence": 11,
       "summary": {
         "msg": "Revoke certificates for child 'child' for key 'C4CF00E42E046EBE5275589D3462F1B1F43FBA85' in RC 0",

@@ -7,7 +7,7 @@
       "actor": "krill",
       "timestamp": 1588257293252,
       "handle": "child",
-      "version": 1,
+      "version": 2,
       "sequence": 1,
       "summary": {
         "msg": "Update repo to embedded server",
@@ -25,7 +25,7 @@
       "actor": "krill",
       "timestamp": 1588257293279,
       "handle": "child",
-      "version": 2,
+      "version": 3,
       "sequence": 2,
       "summary": {
         "msg": "Add parent 'ta' as 'Embedded parent'",
@@ -46,7 +46,7 @@
       "actor": "krill",
       "timestamp": 1588257294040,
       "handle": "child",
-      "version": 3,
+      "version": 5,
       "sequence": 3,
       "summary": {
         "msg": "Update entitlements under parent 'ta': 0 => asn: , v4: 10.0.0.0/16, v6:  ",
@@ -67,7 +67,7 @@
       "actor": "krill",
       "timestamp": 1588257294186,
       "handle": "child",
-      "version": 5,
+      "version": 6,
       "sequence": 4,
       "summary": {
         "msg": "Update entitlements under parent 'ta': 0 => asn: , v4: 10.0.0.0/16, v6:  ",
@@ -87,7 +87,7 @@
       "actor": "krill",
       "timestamp": 1588257294246,
       "handle": "child",
-      "version": 6,
+      "version": 7,
       "sequence": 5,
       "summary": {
         "msg": "Update received cert in RC '0', with resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
@@ -111,7 +111,7 @@
       "actor": "krill",
       "timestamp": 1588257294554,
       "handle": "child",
-      "version": 7,
+      "version": 8,
       "sequence": 6,
       "summary": {
         "msg": "Update entitlements under parent 'ta': 0 => asn: AS65000, v4: 10.0.0.0/16, v6:  ",
@@ -131,7 +131,7 @@
       "actor": "krill",
       "timestamp": 1588257295093,
       "handle": "child",
-      "version": 8,
+      "version": 9,
       "sequence": 7,
       "summary": {
         "msg": "Update received cert in RC '0', with resources 'asn: 1 blocks, v4: 1 blocks, v6: 0 blocks'",
@@ -155,7 +155,7 @@
       "actor": "krill",
       "timestamp": 1588257295668,
       "handle": "child",
-      "version": 9,
+      "version": 10,
       "sequence": 8,
       "summary": {
         "msg": "Update entitlements under parent 'ta': 0 => asn: , v4: 10.0.0.0/24, v6:  ",
@@ -175,7 +175,7 @@
       "actor": "krill",
       "timestamp": 1588257296239,
       "handle": "child",
-      "version": 10,
+      "version": 11,
       "sequence": 9,
       "summary": {
         "msg": "Update received cert in RC '0', with resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
@@ -199,7 +199,7 @@
       "actor": "krill",
       "timestamp": 1588257296756,
       "handle": "child",
-      "version": 11,
+      "version": 12,
       "sequence": 10,
       "summary": {
         "msg": "Update entitlements under parent 'ta': ",

@@ -2,11 +2,15 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::commons::api::{rrdp::PublishElement, Publish, PublishDelta, RepositoryContact, Update, Withdraw};
-use crate::commons::error::Error;
-use crate::commons::{actor::Actor, api::Handle};
-use crate::daemon::ca::CaServer;
-use crate::pubd::PubServer;
+use crate::{
+    commons::{
+        api::rrdp::PublishElement,
+        api::{Handle, Publish, PublishDelta, RepositoryContact, Update, Withdraw},
+        error::Error,
+    },
+    daemon::ca::CaServer,
+    pubd::PubServer,
+};
 
 //------------ CaPublisher ---------------------------------------------------
 
@@ -30,10 +34,10 @@ impl CaPublisher {
         self.pubserver.as_ref().ok_or(Error::RepositoryServerNotEnabled)
     }
 
-    pub async fn publish(&self, ca_handle: &Handle, actor: &Actor) -> Result<(), Error> {
+    pub async fn publish(&self, ca_handle: &Handle) -> Result<(), Error> {
         // Since this is called by the scheduler, this acts as a no-op for new CAs which do not yet have any repository configured.
         for (contact, elements) in self.caserver.ca_repo_elements(ca_handle).await? {
-            self.sync_repo(ca_handle, contact, elements, actor).await?;
+            self.sync_repo(ca_handle, contact, elements).await?;
         }
 
         // Best effort clean-up of old repos
@@ -42,7 +46,7 @@ impl CaPublisher {
                 "Will try to clean up deprecated repository '{}' for CA '{}'",
                 deprecated, ca_handle
             );
-            if self.sync_repo(ca_handle, deprecated, vec![], actor).await.is_err() {
+            if self.sync_repo(ca_handle, deprecated, vec![]).await.is_err() {
                 info!(
                     "Could not clean up deprecated repository. This is fine - objects there are no longer referenced."
                 );
@@ -57,7 +61,6 @@ impl CaPublisher {
         ca_handle: &Handle,
         repo_contact: RepositoryContact,
         ca_elements: Vec<PublishElement>,
-        actor: &Actor,
     ) -> Result<(), Error> {
         let list_reply = match &repo_contact {
             RepositoryContact::Embedded { .. } => self.get_embedded()?.list(ca_handle)?,
@@ -95,7 +98,7 @@ impl CaPublisher {
         };
 
         match &repo_contact {
-            RepositoryContact::Embedded { .. } => self.get_embedded()?.publish(ca_handle.clone(), delta, actor)?,
+            RepositoryContact::Embedded { .. } => self.get_embedded()?.publish(ca_handle.clone(), delta)?,
             RepositoryContact::Rfc8181 { server_response } => {
                 self.caserver
                     .send_rfc8181_delta(ca_handle, server_response, delta, false)
@@ -106,7 +109,7 @@ impl CaPublisher {
         Ok(())
     }
 
-    pub async fn clean_all_repos(&self, ca_handle: &Handle, actor: &Actor) -> Result<(), Error> {
+    pub async fn clean_all_repos(&self, ca_handle: &Handle) -> Result<(), Error> {
         let mut repos: Vec<RepositoryContact> = self
             .caserver
             .ca_repo_elements(ca_handle)
@@ -121,7 +124,7 @@ impl CaPublisher {
             ca_handle
         );
         for repo in repos {
-            if self.sync_repo(ca_handle, repo, vec![], actor).await.is_err() {
+            if self.sync_repo(ca_handle, repo, vec![]).await.is_err() {
                 info!(
                     "Could not clean up deprecated repository. This is fine - objects there are no longer referenced."
                 );

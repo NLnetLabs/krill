@@ -3,7 +3,7 @@
     "actor": "krill",
     "time": "2020-04-30T14:37:22.337220Z",
     "handle": "child",
-    "version": 7,
+    "version": 10,
     "sequence": 6,
     "details": {
       "type": "roa_definition_updates",

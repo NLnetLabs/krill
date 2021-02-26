@@ -28,15 +28,13 @@ use crate::{
 
 use super::{old_commands::*, old_events::*};
 
-const MIGRATION_SCOPE: &str = "migration-0.9";
-
 /// Migrate the current objects for each CA into the CaObjectStore
 pub struct CaObjectsMigration;
 
 impl CaObjectsMigration {
     pub fn migrate(config: Arc<Config>) -> UpgradeResult<()> {
         let store = KeyValueStore::disk(&config.data_dir, CASERVER_DIR)?;
-        let ca_store = AggregateStore::<ca::CertAuth>::new(&config.data_dir, CASERVER_DIR)?;
+        let ca_store = AggregateStore::<ca::CertAuth>::disk(&config.data_dir, CASERVER_DIR)?;
 
         let signer = Arc::new(KrillSigner::build(&config.data_dir)?);
 
@@ -54,7 +52,7 @@ impl CaObjectsMigration {
         // Read all CAS based on snapshots and events, using the pre-0_9_0 data structs
         // which are preserved here.
         info!("Krill will now populate the CA Objects Store");
-        let store = AggregateStore::<CertAuth>::new(&config.data_dir, CASERVER_DIR)?;
+        let store = AggregateStore::<CertAuth>::disk(&config.data_dir, CASERVER_DIR)?;
         store.warm()?;
 
         let ca_objects_store = CaObjectsStore::disk(config, signer)?;
@@ -74,19 +72,6 @@ impl CaObjectsMigration {
 struct CasStoreMigration {
     store: KeyValueStore,
     ca_store: AggregateStore<ca::CertAuth>,
-}
-
-impl CasStoreMigration {
-    fn archive_migrated(&self, key: &KeyStoreKey) -> Result<(), UpgradeError> {
-        self.store
-            .archive_to(&key, MIGRATION_SCOPE)
-            .map_err(UpgradeError::KeyStoreError)
-    }
-
-    fn drop_ca_migration_scope(&self, ca_scope: String) -> Result<(), UpgradeError> {
-        let scope = format!("{}/{}", ca_scope, MIGRATION_SCOPE);
-        self.store.drop_scope(&scope).map_err(UpgradeError::KeyStoreError)
-    }
 }
 
 impl UpgradeStore for CasStoreMigration {
@@ -116,36 +101,20 @@ impl UpgradeStore for CasStoreMigration {
 
             // Find all command keys and sort them by sequence.
             // Then turn them back into key store keys for further processing.
-            let keys = self.store.keys(Some(scope.clone()), "command--")?;
-            let mut cmd_keys: Vec<CommandKey> = vec![];
-            for key in keys {
-                let cmd_key = CommandKey::from_str(key.name()).map_err(|_| {
-                    UpgradeError::Custom(format!("Found invalid command key: {} for ca: {}", key.name(), scope))
-                })?;
-                cmd_keys.push(cmd_key);
-            }
-            cmd_keys.sort_by_key(|k| k.sequence);
-            let cmd_keys = cmd_keys
-                .into_iter()
-                .map(|ck| KeyStoreKey::scoped(scope.clone(), format!("{}.json", ck)));
+            let cmd_keys = self.command_keys(&scope)?;
 
             for cmd_key in cmd_keys {
-                info!("  command: {}", cmd_key);
-                let mut old_cmd: OldStoredCaCommand = self
-                    .store
-                    .get(&cmd_key)?
-                    .ok_or_else(|| UpgradeError::Custom(format!("Cannot parse old command: {}", cmd_key)))?;
+                debug!("  command: {}", cmd_key);
+                let mut old_cmd: OldStoredCaCommand = self.get(&cmd_key)?;
 
                 self.archive_migrated(&cmd_key)?;
 
-                if let Some(evt_versions) = old_cmd.effect().events() {
-                    let command_affects_version = info.last_event + 1;
-
+                if let Some(evt_versions) = old_cmd.effect.events() {
                     let mut events = vec![];
                     for v in evt_versions {
-                        let event_key = KeyStoreKey::scoped(scope.clone(), format!("delta-{}.json", v));
-                        info!("  +- event: {}", event_key);
-                        let old_evt: OldEvt = self
+                        let event_key = Self::event_key(&scope, *v);
+                        debug!("  +- event: {}", event_key);
+                        let old_evt: OldCaEvt = self
                             .store
                             .get(&event_key)?
                             .ok_or_else(|| UpgradeError::Custom(format!("Cannot parse old event: {}", event_key)))?;
@@ -167,11 +136,13 @@ impl UpgradeStore for CasStoreMigration {
                     }
 
                     old_cmd.set_events(events);
-                    old_cmd.set_command_version(command_affects_version);
                 }
 
+                old_cmd.version = info.last_event + 1;
+                old_cmd.sequence = info.last_command;
+
                 info.last_command += 1;
-                info.last_update = old_cmd.time();
+                info.last_update = old_cmd.time;
 
                 let migrated_cmd = old_cmd.into_ca_command();
                 let cmd_key = CommandKey::for_stored(&migrated_cmd);
@@ -180,16 +151,7 @@ impl UpgradeStore for CasStoreMigration {
                 self.store.store(&key, &migrated_cmd)?;
             }
 
-            let snapshot_key = KeyStoreKey::scoped(scope.clone(), "snapshot.json".to_string());
-            let snapshot_bk_key = KeyStoreKey::scoped(scope.clone(), "snapshot-bk.json".to_string());
-
-            if self.store.has(&snapshot_key)? {
-                self.archive_migrated(&snapshot_key)?;
-            }
-
-            if self.store.has(&snapshot_bk_key)? {
-                self.archive_migrated(&snapshot_bk_key)?;
-            }
+            self.archive_snapshots(&scope)?;
 
             info.snapshot_version = 0;
             info.last_command -= 1;
@@ -209,10 +171,14 @@ impl UpgradeStore for CasStoreMigration {
                 UpgradeError::Custom(format!("Could not rebuild CA '{}' after migration: {}", scope, e))
             })?;
 
-            self.drop_ca_migration_scope(scope)?;
+            self.drop_migration_scope(&scope)?;
         }
 
         Ok(())
+    }
+
+    fn store(&self) -> &KeyValueStore {
+        &self.store
     }
 }
 
@@ -238,8 +204,8 @@ struct CertAuth {
 impl Aggregate for CertAuth {
     type Command = OldStoredCaCommand;
     type StorableCommandDetails = OldStorableCaCommand;
-    type Event = OldEvt;
-    type InitEvent = OldIni;
+    type Event = OldCaEvt;
+    type InitEvent = OldCaIni;
     type Error = UpgradeError;
 
     fn init(event: Self::InitEvent) -> Result<Self, Self::Error> {
@@ -294,7 +260,7 @@ impl Aggregate for CertAuth {
             //-----------------------------------------------------------------------
             // Being a trust anchor
             //-----------------------------------------------------------------------
-            OldEvtDet::TrustAnchorMade(details) => {
+            OldCaEvtDet::TrustAnchorMade(details) => {
                 let key_id = details.cert().subject_key_identifier();
                 self.parents.insert(ta_handle(), ParentCaContact::Ta(details));
                 let rcn = ResourceClassName::from(self.next_class_name);
@@ -305,20 +271,20 @@ impl Aggregate for CertAuth {
             //-----------------------------------------------------------------------
             // Being a parent
             //-----------------------------------------------------------------------
-            OldEvtDet::ChildAdded(child, details) => {
+            OldCaEvtDet::ChildAdded(child, details) => {
                 self.children.insert(child, details);
             }
-            OldEvtDet::ChildCertificateIssued(child, rcn, ki) => {
+            OldCaEvtDet::ChildCertificateIssued(child, rcn, ki) => {
                 self.children.get_mut(&child).unwrap().add_issue_response(rcn, ki);
             }
 
-            OldEvtDet::ChildKeyRevoked(child, rcn, ki) => {
+            OldCaEvtDet::ChildKeyRevoked(child, rcn, ki) => {
                 self.resources.get_mut(&rcn).unwrap().key_revoked(&ki);
 
                 self.children.get_mut(&child).unwrap().add_revoke_response(ki);
             }
 
-            OldEvtDet::ChildCertificatesUpdated(rcn, updates) => {
+            OldCaEvtDet::ChildCertificatesUpdated(rcn, updates) => {
                 let rc = self.resources.get_mut(&rcn).unwrap();
                 let (issued, removed) = updates.unpack();
                 for iss in issued {
@@ -339,107 +305,107 @@ impl Aggregate for CertAuth {
                 }
             }
 
-            OldEvtDet::ChildUpdatedIdCert(child, cert) => self.children.get_mut(&child).unwrap().set_id_cert(cert),
+            OldCaEvtDet::ChildUpdatedIdCert(child, cert) => self.children.get_mut(&child).unwrap().set_id_cert(cert),
 
-            OldEvtDet::ChildUpdatedResources(child, resources) => {
+            OldCaEvtDet::ChildUpdatedResources(child, resources) => {
                 self.children.get_mut(&child).unwrap().set_resources(resources)
             }
 
-            OldEvtDet::ChildRemoved(child) => {
+            OldCaEvtDet::ChildRemoved(child) => {
                 self.children.remove(&child);
             }
 
             //-----------------------------------------------------------------------
             // Being a child
             //-----------------------------------------------------------------------
-            OldEvtDet::IdUpdated(id) => {
+            OldCaEvtDet::IdUpdated(id) => {
                 self.id = id;
             }
-            OldEvtDet::ParentAdded(handle, info) => {
+            OldCaEvtDet::ParentAdded(handle, info) => {
                 self.parents.insert(handle, info);
             }
-            OldEvtDet::ParentUpdated(handle, info) => {
+            OldCaEvtDet::ParentUpdated(handle, info) => {
                 self.parents.insert(handle, info);
             }
-            OldEvtDet::ParentRemoved(handle, _deltas) => {
+            OldCaEvtDet::ParentRemoved(handle, _deltas) => {
                 self.parents.remove(&handle);
                 self.resources.retain(|_, rc| rc.parent_handle != handle);
             }
 
-            OldEvtDet::ResourceClassAdded(name, rc) => {
+            OldCaEvtDet::ResourceClassAdded(name, rc) => {
                 self.next_class_name += 1;
                 self.resources.insert(name, rc);
             }
-            OldEvtDet::ResourceClassRemoved(name, _delta, _parent, _revocations) => {
+            OldCaEvtDet::ResourceClassRemoved(name, _delta, _parent, _revocations) => {
                 self.resources.remove(&name);
             }
-            OldEvtDet::CertificateRequested(name, req, status) => {
+            OldCaEvtDet::CertificateRequested(name, req, status) => {
                 self.resources.get_mut(&name).unwrap().add_request(status, req);
             }
-            OldEvtDet::CertificateReceived(class_name, key_id, cert) => {
+            OldCaEvtDet::CertificateReceived(class_name, key_id, cert) => {
                 self.resources.get_mut(&class_name).unwrap().received_cert(key_id, cert);
             }
 
             //-----------------------------------------------------------------------
             // Key Life Cycle
             //-----------------------------------------------------------------------
-            OldEvtDet::KeyRollPendingKeyAdded(class_name, key_id) => {
+            OldCaEvtDet::KeyRollPendingKeyAdded(class_name, key_id) => {
                 self.resources.get_mut(&class_name).unwrap().pending_key_added(key_id);
             }
-            OldEvtDet::KeyPendingToNew(rcn, key, _delta) => {
+            OldCaEvtDet::KeyPendingToNew(rcn, key, _delta) => {
                 self.resources.get_mut(&rcn).unwrap().pending_key_to_new(key);
             }
-            OldEvtDet::KeyPendingToActive(rcn, key, _delta) => {
+            OldCaEvtDet::KeyPendingToActive(rcn, key, _delta) => {
                 self.resources.get_mut(&rcn).unwrap().pending_key_to_active(key);
             }
-            OldEvtDet::KeyRollActivated(class_name, revoke_req) => {
+            OldCaEvtDet::KeyRollActivated(class_name, revoke_req) => {
                 self.resources
                     .get_mut(&class_name)
                     .unwrap()
                     .new_key_activated(revoke_req);
             }
-            OldEvtDet::KeyRollFinished(class_name, _delta) => {
+            OldCaEvtDet::KeyRollFinished(class_name, _delta) => {
                 self.resources.get_mut(&class_name).unwrap().old_key_removed();
             }
-            OldEvtDet::UnexpectedKeyFound(_, _) => {
+            OldCaEvtDet::UnexpectedKeyFound(_, _) => {
                 // no action needed, this is marked to flag that a key may be removed
             }
 
             //-----------------------------------------------------------------------
             // Route Authorizations
             //-----------------------------------------------------------------------
-            OldEvtDet::RouteAuthorizationAdded(update) => self.routes.add(update),
-            OldEvtDet::RouteAuthorizationRemoved(removal) => {
+            OldCaEvtDet::RouteAuthorizationAdded(update) => self.routes.add(update),
+            OldCaEvtDet::RouteAuthorizationRemoved(removal) => {
                 self.routes.remove(&removal);
             }
-            OldEvtDet::RoasUpdated(rcn, updates) => self.resources.get_mut(&rcn).unwrap().roas_updated(updates),
+            OldCaEvtDet::RoasUpdated(rcn, updates) => self.resources.get_mut(&rcn).unwrap().roas_updated(updates),
 
             //-----------------------------------------------------------------------
             // Publication
             //-----------------------------------------------------------------------
-            OldEvtDet::ObjectSetUpdated(class_name, delta_map) => {
+            OldCaEvtDet::ObjectSetUpdated(class_name, delta_map) => {
                 let rc = self.resources.get_mut(&class_name).unwrap();
                 for (key_id, delta) in delta_map.into_iter() {
                     rc.apply_delta(delta, key_id);
                 }
             }
-            OldEvtDet::RepoUpdated(contact) => {
+            OldCaEvtDet::RepoUpdated(contact) => {
                 if let Some(current) = &self.repository {
                     self.repository_pending_withdraw = Some(current.clone())
                 }
                 self.repository = Some(contact);
             }
-            OldEvtDet::RepoCleaned(_) => {
+            OldCaEvtDet::RepoCleaned(_) => {
                 self.repository_pending_withdraw = None;
             }
 
             //-----------------------------------------------------------------------
             // Resource Tagged Attestations
             //-----------------------------------------------------------------------
-            OldEvtDet::RtaPrepared(_name, _prepared) => {
+            OldCaEvtDet::RtaPrepared(_name, _prepared) => {
                 // no-op
             }
-            OldEvtDet::RtaSigned(_name, _signed) => {
+            OldCaEvtDet::RtaSigned(_name, _signed) => {
                 // no-op
             }
         }

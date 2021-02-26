@@ -3,7 +3,7 @@
     "actor": "krill",
     "time": "2020-04-28T13:28:06.494456Z",
     "handle": "ta",
-    "version": 12,
+    "version": 14,
     "sequence": 9,
     "details": {
       "type": "child_revoke_key",

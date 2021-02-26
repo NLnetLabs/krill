@@ -127,7 +127,7 @@ fn make_cas_event_triggers(
                             Err(e) => error!("Unable to obtain CA list: {}", e),
                             Ok(list) => {
                                 for ca in list.cas() {
-                                    if publisher.publish(ca.handle(), &actor).await.is_err() {
+                                    if publisher.publish(ca.handle()).await.is_err() {
                                         error!(
                                             "Unable to synchronise CA '{}' with its repository after startup",
                                             ca.handle()
@@ -141,11 +141,11 @@ fn make_cas_event_triggers(
                     }
 
                     QueueEvent::SyncRepo(handle) => {
-                        try_publish(&event_queue, caserver.clone(), pubserver.clone(), handle, &actor).await
+                        try_publish(&event_queue, caserver.clone(), pubserver.clone(), handle).await
                     }
                     QueueEvent::RescheduleSyncRepo(handle, time) => {
                         if time > Time::now() {
-                            try_publish(&event_queue, caserver.clone(), pubserver.clone(), handle, &actor).await
+                            try_publish(&event_queue, caserver.clone(), pubserver.clone(), handle).await
                         } else {
                             event_queue.push_back(QueueEvent::RescheduleSyncRepo(handle, time));
                         }
@@ -207,12 +207,11 @@ async fn try_publish(
     caserver: Arc<CaServer>,
     pubserver: Option<Arc<PubServer>>,
     ca: Handle,
-    actor: &Actor,
 ) {
     info!("Try to publish for '{}'", ca);
     let publisher = CaPublisher::new(caserver.clone(), pubserver);
 
-    if let Err(e) = publisher.publish(&ca, actor).await {
+    if let Err(e) = publisher.publish(&ca).await {
         if test_mode_enabled() {
             error!("Failed to publish for '{}', error: {}", ca, e);
         } else {

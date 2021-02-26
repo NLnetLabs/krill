@@ -158,7 +158,7 @@ impl<A: Aggregate> AggregateStore<A>
 where
     A::Error: From<AggregateStoreError>,
 {
-    pub fn new(work_dir: &PathBuf, name_space: &str) -> StoreResult<Self> {
+    pub fn disk(work_dir: &PathBuf, name_space: &str) -> StoreResult<Self> {
         let mut path = work_dir.clone();
         path.push(name_space);
         let existed = path.exists();
@@ -943,7 +943,7 @@ where
         self.kv.store(&snapshot_new, aggregate)?;
 
         if self.kv.has(&snapshot_backup)? {
-            self.kv.drop(&snapshot_backup)?;
+            self.kv.drop_key(&snapshot_backup)?;
         }
         if self.kv.has(&snapshot_current)? {
             self.kv.move_key(&snapshot_current, &snapshot_backup)?;

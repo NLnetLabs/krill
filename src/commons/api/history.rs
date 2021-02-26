@@ -2,19 +2,21 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::str::FromStr;
 
-use chrono::{DateTime, NaiveDateTime};
-use chrono::{SecondsFormat, Utc};
+use chrono::{DateTime, NaiveDateTime, SecondsFormat, Utc};
 
-use rpki::crypto::KeyIdentifier;
-use rpki::x509::Time;
+use rpki::{crypto::KeyIdentifier, x509::Time};
 
-use crate::commons::api::{
-    ArgKey, ArgVal, ChildHandle, Handle, Label, Message, ParentHandle, PublisherHandle, RequestResourceLimit,
-    ResourceClassName, ResourceSet, RevocationRequest, RoaDefinitionUpdates, RtaName, StorableParentContact,
+use crate::{
+    commons::{
+        api::{
+            ArgKey, ArgVal, ChildHandle, Handle, Label, Message, ParentHandle, PublisherHandle, RequestResourceLimit,
+            ResourceClassName, ResourceSet, RevocationRequest, RoaDefinitionUpdates, RtaName, StorableParentContact,
+        },
+        eventsourcing::{CommandKey, CommandKeyError, StoredCommand, WithStorableDetails},
+        remote::rfc8183::ServiceUri,
+    },
+    daemon::ca,
 };
-use crate::commons::eventsourcing::{CommandKey, CommandKeyError, StoredCommand, WithStorableDetails};
-use crate::commons::remote::rfc8183::ServiceUri;
-use crate::daemon::ca;
 
 //------------ CaCommandDetails ----------------------------------------------
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -719,31 +721,21 @@ impl fmt::Display for StorableCaCommand {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", tag = "type")]
 pub enum StorableRepositoryCommand {
-    AddPublisher(PublisherHandle, String),
-    RemovePublisher(PublisherHandle),
-    Publish(PublisherHandle, usize, usize, usize),
-    SessionReset,
+    AddPublisher { name: PublisherHandle },
+    RemovePublisher { name: PublisherHandle },
 }
 
 impl WithStorableDetails for StorableRepositoryCommand {
     fn summary(&self) -> CommandSummary {
         match self {
-            StorableRepositoryCommand::AddPublisher(publisher, ski) => CommandSummary::new("pubd-publisher-add", &self)
-                .with_publisher(publisher)
-                .with_id_ski(Some(ski)),
-            StorableRepositoryCommand::RemovePublisher(publisher) => {
-                CommandSummary::new("pubd-publisher-remove", &self).with_publisher(publisher)
+            StorableRepositoryCommand::AddPublisher { name } => {
+                CommandSummary::new("pubd-publisher-add", &self).with_publisher(name)
             }
-            StorableRepositoryCommand::Publish(publisher, published, updated, withdrawn) => {
-                CommandSummary::new("pubd-publish", &self)
-                    .with_publisher(publisher)
-                    .with_arg("published", published)
-                    .with_arg("updated", updated)
-                    .with_arg("withdrawn", withdrawn)
+            StorableRepositoryCommand::RemovePublisher { name } => {
+                CommandSummary::new("pubd-publisher-remove", &self).with_publisher(name)
             }
-            StorableRepositoryCommand::SessionReset => CommandSummary::new("pubd-session-reset", &self),
         }
     }
 }
@@ -751,16 +743,10 @@ impl WithStorableDetails for StorableRepositoryCommand {
 impl fmt::Display for StorableRepositoryCommand {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            StorableRepositoryCommand::AddPublisher(pbl, ski) => {
-                write!(f, "Added publisher '{}' with RFC8183 key '{}'", pbl, ski)
+            StorableRepositoryCommand::AddPublisher { name } => {
+                write!(f, "Added publisher '{}'", name)
             }
-            StorableRepositoryCommand::RemovePublisher(pbl) => write!(f, "Removed publisher '{}'", pbl),
-            StorableRepositoryCommand::Publish(pbl, published, updated, withdrawn) => write!(
-                f,
-                "Published for '{}': {} published, {} updated, {} withdrawn",
-                pbl, published, updated, withdrawn
-            ),
-            StorableRepositoryCommand::SessionReset => write!(f, "Publication server session reset"),
+            StorableRepositoryCommand::RemovePublisher { name } => write!(f, "Removed publisher '{}'", name),
         }
     }
 }

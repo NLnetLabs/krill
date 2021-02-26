@@ -7,7 +7,7 @@
       "actor": "krill",
       "timestamp": 1588257441234,
       "handle": "child",
-      "version": 1,
+      "version": 2,
       "sequence": 1,
       "summary": {
         "msg": "Update repo to embedded server",
@@ -25,7 +25,7 @@
       "actor": "krill",
       "timestamp": 1588257441262,
       "handle": "child",
-      "version": 2,
+      "version": 3,
       "sequence": 2,
       "summary": {
         "msg": "Add parent 'ta' as 'Embedded parent'",
@@ -46,7 +46,7 @@
       "actor": "krill",
       "timestamp": 1588257441942,
       "handle": "child",
-      "version": 3,
+      "version": 5,
       "sequence": 3,
       "summary": {
         "msg": "Update entitlements under parent 'ta': 0 => asn: , v4: 10.0.0.0/16, v6:  ",
@@ -67,7 +67,7 @@
       "actor": "krill",
       "timestamp": 1588257441983,
       "handle": "child",
-      "version": 5,
+      "version": 6,
       "sequence": 4,
       "summary": {
         "msg": "Update entitlements under parent 'ta': 0 => asn: , v4: 10.0.0.0/16, v6:  ",
@@ -87,7 +87,7 @@
       "actor": "krill",
       "timestamp": 1588257442106,
       "handle": "child",
-      "version": 6,
+      "version": 7,
       "sequence": 5,
       "summary": {
         "msg": "Update received cert in RC '0', with resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
@@ -111,7 +111,7 @@
       "actor": "krill",
       "timestamp": 1588257442337,
       "handle": "child",
-      "version": 7,
+      "version": 10,
       "sequence": 6,
       "summary": {
         "msg": "Update ROAs  ADD: 10.0.2.0/23 => 64496 10.0.0.0/24 => 64496",
@@ -134,7 +134,7 @@
       "actor": "krill",
       "timestamp": 1588257442708,
       "handle": "child",
-      "version": 10,
+      "version": 13,
       "sequence": 7,
       "summary": {
         "msg": "Update repo to server at: https://localhost:3001/rfc8181/child",
@@ -156,7 +156,7 @@
       "actor": "krill",
       "timestamp": 1588257444143,
       "handle": "child",
-      "version": 13,
+      "version": 14,
       "sequence": 8,
       "summary": {
         "msg": "Update received cert in RC '0', with resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
@@ -180,7 +180,7 @@
       "actor": "krill",
       "timestamp": 1588257444169,
       "handle": "child",
-      "version": 14,
+      "version": 15,
       "sequence": 9,
       "summary": {
         "msg": "Clean up old repository",
@@ -198,7 +198,7 @@
       "actor": "krill",
       "timestamp": 1588257444541,
       "handle": "child",
-      "version": 15,
+      "version": 18,
       "sequence": 10,
       "summary": {
         "msg": "Update repo to server at: https://localhost:3000/rfc8181/child",
@@ -220,7 +220,7 @@
       "actor": "krill",
       "timestamp": 1588257445837,
       "handle": "child",
-      "version": 18,
+      "version": 19,
       "sequence": 11,
       "summary": {
         "msg": "Update received cert in RC '0', with resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
@@ -244,7 +244,7 @@
       "actor": "krill",
       "timestamp": 1588257446682,
       "handle": "child",
-      "version": 19,
+      "version": 20,
       "sequence": 12,
       "summary": {
         "msg": "Clean up old repository",

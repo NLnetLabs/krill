@@ -3,7 +3,7 @@
     "actor": "krill",
     "time": "2020-04-28T13:27:58.634807Z",
     "handle": "ta",
-    "version": 2,
+    "version": 3,
     "sequence": 2,
     "details": {
       "type": "make_trust_anchor"

@@ -7,6 +7,7 @@ use std::io;
 use std::path::PathBuf;
 
 use bytes::Bytes;
+use chrono::Duration;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
 
@@ -33,7 +34,7 @@ impl Default for RrdpSession {
 }
 
 impl RrdpSession {
-    pub fn new() -> Self {
+    pub fn random() -> Self {
         Self::default()
     }
 }
@@ -219,11 +220,22 @@ impl Notification {
         self.time
     }
 
+    #[deprecated] // use 'older_than_seconds'
     pub fn replaced_after(&self, timestamp: i64) -> bool {
         if let Some(replaced) = self.replaced {
             replaced.timestamp() > timestamp
         } else {
             false
+        }
+    }
+
+    pub fn older_than_seconds(&self, seconds: i64) -> bool {
+        match self.replaced {
+            Some(time) => {
+                let then = Time::now() - Duration::seconds(seconds);
+                time < then
+            }
+            None => false,
         }
     }
 
@@ -447,6 +459,10 @@ impl Default for CurrentObjects {
 }
 
 impl CurrentObjects {
+    pub fn new(map: HashMap<HexEncodedHash, PublishElement>) -> Self {
+        CurrentObjects(map)
+    }
+
     pub fn elements(&self) -> Vec<&PublishElement> {
         let mut res = vec![];
         for el in self.0.values() {
@@ -454,9 +470,105 @@ impl CurrentObjects {
         }
         res
     }
+
+    pub fn into_elements(self) -> Vec<PublishElement> {
+        self.0.into_iter().map(|(_, e)| e).collect()
+    }
+
+    fn has_match(&self, hash: &HexEncodedHash, uri: &uri::Rsync) -> bool {
+        match self.0.get(hash) {
+            Some(el) => el.uri() == uri,
+            None => false,
+        }
+    }
+
+    fn verify_delta(&self, delta: &DeltaElements, jail: &uri::Rsync) -> Result<(), PublicationDeltaError> {
+        for p in delta.publishes() {
+            if !jail.is_parent_of(p.uri()) {
+                return Err(PublicationDeltaError::outside(jail, p.uri()));
+            }
+            let hash = p.base64().to_encoded_hash();
+            if self.0.contains_key(&hash) {
+                return Err(PublicationDeltaError::present(p.uri()));
+            }
+        }
+
+        for u in delta.updates() {
+            if !jail.is_parent_of(u.uri()) {
+                return Err(PublicationDeltaError::outside(jail, u.uri()));
+            }
+            if !self.has_match(u.hash(), u.uri()) {
+                return Err(PublicationDeltaError::no_match(u.uri()));
+            }
+        }
+
+        for w in delta.withdraws() {
+            if !jail.is_parent_of(w.uri()) {
+                return Err(PublicationDeltaError::outside(jail, w.uri()));
+            }
+            if !self.has_match(w.hash(), w.uri()) {
+                return Err(PublicationDeltaError::no_match(w.uri()));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Applies a delta to CurrentObjects. This will verify that the
+    /// delta is legal with regards to exising objects, and the jail
+    /// spefied for the publisher.
+    pub fn apply_delta(&mut self, delta: DeltaElements, jail: &uri::Rsync) -> Result<(), PublicationDeltaError> {
+        self.verify_delta(&delta, jail)?;
+
+        let (publishes, updates, withdraws) = delta.unpack();
+
+        for p in publishes {
+            let hash = p.base64().to_encoded_hash();
+            self.0.insert(hash, p);
+        }
+
+        for u in updates {
+            self.0.remove(u.hash());
+            let p: PublishElement = u.into();
+            let hash = p.base64().to_encoded_hash();
+            self.0.insert(hash, p);
+        }
+
+        for w in withdraws {
+            self.0.remove(w.hash());
+        }
+
+        Ok(())
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn size(&self) -> usize {
+        self.0.values().fold(0, |tot, el| tot + el.size())
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn to_list_reply(&self) -> publication::ListReply {
+        let elements = self
+            .0
+            .iter()
+            .map(|el| {
+                let hash = el.0.clone();
+                let uri = el.1.uri().clone();
+                publication::ListElement::new(uri, hash)
+            })
+            .collect();
+
+        publication::ListReply::new(elements)
+    }
 }
 
-//------------ VerificationError ---------------------------------------------
+//------------ PublicationDeltaError ---------------------------------------------
 
 /// Issues with relation to verifying deltas.
 #[derive(Clone, Debug)]
@@ -495,90 +607,6 @@ impl PublicationDeltaError {
         PublicationDeltaError::NoObjectForHashAndOrUri(uri.clone())
     }
 }
-
-impl CurrentObjects {
-    fn has_match(&self, hash: &HexEncodedHash, uri: &uri::Rsync) -> bool {
-        match self.0.get(hash) {
-            Some(el) => el.uri() == uri,
-            None => false,
-        }
-    }
-
-    pub fn verify_delta(&self, delta: &DeltaElements, jail: &uri::Rsync) -> Result<(), PublicationDeltaError> {
-        for p in delta.publishes() {
-            if !jail.is_parent_of(p.uri()) {
-                return Err(PublicationDeltaError::outside(jail, p.uri()));
-            }
-            let hash = p.base64().to_encoded_hash();
-            if self.0.contains_key(&hash) {
-                return Err(PublicationDeltaError::present(p.uri()));
-            }
-        }
-
-        for u in delta.updates() {
-            if !self.has_match(u.hash(), u.uri()) {
-                return Err(PublicationDeltaError::no_match(u.uri()));
-            }
-        }
-
-        for w in delta.withdraws() {
-            if !self.has_match(w.hash(), w.uri()) {
-                return Err(PublicationDeltaError::no_match(w.uri()));
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Applies a delta to CurrentObjects. This will asume that the delta
-    /// contains only valid updates for this delta.
-    pub fn apply_delta(&mut self, delta: DeltaElements) {
-        let (publishes, updates, withdraws) = delta.unwrap();
-
-        for p in publishes {
-            let hash = p.base64().to_encoded_hash();
-            self.0.insert(hash, p);
-        }
-
-        for u in updates {
-            self.0.remove(u.hash());
-            let p: PublishElement = u.into();
-            let hash = p.base64().to_encoded_hash();
-            self.0.insert(hash, p);
-        }
-
-        for w in withdraws {
-            self.0.remove(w.hash());
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn size(&self) -> usize {
-        self.0.values().fold(0, |tot, el| tot + el.size())
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    pub fn to_list_reply(&self) -> publication::ListReply {
-        let elements = self
-            .0
-            .iter()
-            .map(|el| {
-                let hash = el.0.clone();
-                let uri = el.1.uri().clone();
-                publication::ListElement::new(uri, hash)
-            })
-            .collect();
-
-        publication::ListReply::new(elements)
-    }
-}
-
 //------------ Snapshot ------------------------------------------------------
 
 /// A structure to contain the RRDP snapshot data.
@@ -590,7 +618,19 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
-    pub fn new(session: RrdpSession) -> Self {
+    pub fn new(session: RrdpSession, serial: u64, current_objects: CurrentObjects) -> Self {
+        Snapshot {
+            session,
+            serial,
+            current_objects,
+        }
+    }
+
+    pub fn unpack(self) -> (RrdpSession, u64, CurrentObjects) {
+        (self.session, self.serial, self.current_objects)
+    }
+
+    pub fn create(session: RrdpSession) -> Self {
         let current_objects = CurrentObjects::default();
         Snapshot {
             session,
@@ -615,11 +655,9 @@ impl Snapshot {
         self.serial
     }
 
-    pub fn apply_delta(&mut self, delta: Delta) {
-        let (session, serial, elements) = delta.unwrap();
-        self.session = session;
-        self.serial = serial;
-        self.current_objects.apply_delta(elements)
+    pub fn apply_delta(&mut self, elements: DeltaElements, jail: &uri::Rsync) -> Result<(), PublicationDeltaError> {
+        self.serial += 1;
+        self.current_objects.apply_delta(elements, jail)
     }
 
     pub fn size(&self) -> usize {
@@ -677,7 +715,7 @@ impl DeltaElements {
         }
     }
 
-    pub fn unwrap(self) -> (Vec<PublishElement>, Vec<UpdateElement>, Vec<WithdrawElement>) {
+    pub fn unpack(self) -> (Vec<PublishElement>, Vec<UpdateElement>, Vec<WithdrawElement>) {
         (self.publishes, self.updates, self.withdraws)
     }
 
@@ -755,6 +793,12 @@ impl Delta {
     pub fn time(&self) -> &Time {
         &self.time
     }
+
+    pub fn older_than_seconds(&self, seconds: i64) -> bool {
+        let then = Time::now() - Duration::seconds(seconds);
+        self.time < then
+    }
+
     pub fn elements(&self) -> &DeltaElements {
         &self.elements
     }

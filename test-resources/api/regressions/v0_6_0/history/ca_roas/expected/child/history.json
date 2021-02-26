@@ -7,7 +7,7 @@
       "actor": "krill",
       "timestamp": 1588080479330,
       "handle": "child",
-      "version": 1,
+      "version": 2,
       "sequence": 1,
       "summary": {
         "msg": "Update repo to embedded server",
@@ -25,7 +25,7 @@
       "actor": "krill",
       "timestamp": 1588080479358,
       "handle": "child",
-      "version": 2,
+      "version": 3,
       "sequence": 2,
       "summary": {
         "msg": "Add parent 'ta' as 'Embedded parent'",
@@ -46,7 +46,7 @@
       "actor": "krill",
       "timestamp": 1588080480125,
       "handle": "child",
-      "version": 3,
+      "version": 5,
       "sequence": 3,
       "summary": {
         "msg": "Update entitlements under parent 'ta': 0 => asn: , v4: 10.0.0.0/16, v6: 2001:db8::/32 ",
@@ -67,7 +67,7 @@
       "actor": "krill",
       "timestamp": 1588080480213,
       "handle": "child",
-      "version": 5,
+      "version": 6,
       "sequence": 4,
       "summary": {
         "msg": "Update entitlements under parent 'ta': 0 => asn: , v4: 10.0.0.0/16, v6: 2001:db8::/32 ",
@@ -87,7 +87,7 @@
       "actor": "krill",
       "timestamp": 1588080480316,
       "handle": "child",
-      "version": 6,
+      "version": 7,
       "sequence": 5,
       "summary": {
         "msg": "Update received cert in RC '0', with resources 'asn: 0 blocks, v4: 1 blocks, v6: 1 blocks'",
@@ -111,7 +111,7 @@
       "actor": "krill",
       "timestamp": 1588080480459,
       "handle": "child",
-      "version": 7,
+      "version": 10,
       "sequence": 6,
       "summary": {
         "msg": "Update ROAs  ADD: 2001:db8::/32-48 => 64496 10.0.0.0/24 => 64496",
@@ -134,7 +134,7 @@
       "actor": "krill",
       "timestamp": 1588080481257,
       "handle": "child",
-      "version": 10,
+      "version": 12,
       "sequence": 7,
       "summary": {
         "msg": "Update ROAs  REMOVE: 10.0.0.0/24 => 64496",
@@ -156,7 +156,7 @@
       "actor": "krill",
       "timestamp": 1588080482333,
       "handle": "child",
-      "version": 14,
+      "version": 12,
       "sequence": 8,
       "summary": {
         "msg": "Update ROAs  ADD: 192.168.0.0/24 => 64496",
@@ -175,7 +175,7 @@
       "actor": "krill",
       "timestamp": 1588080482359,
       "handle": "child",
-      "version": 12,
+      "version": 13,
       "sequence": 9,
       "summary": {
         "msg": "Update entitlements under parent 'ta': 0 => asn: , v4: 192.168.0.0/16, v6:  ",
@@ -195,7 +195,7 @@
       "actor": "krill",
       "timestamp": 1588080483364,
       "handle": "child",
-      "version": 13,
+      "version": 15,
       "sequence": 10,
       "summary": {
         "msg": "Update received cert in RC '0', with resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
@@ -220,7 +220,7 @@
       "actor": "krill",
       "timestamp": 1588080483528,
       "handle": "child",
-      "version": 15,
+      "version": 17,
       "sequence": 11,
       "summary": {
         "msg": "Update ROAs  ADD: 192.168.0.0/24 => 64496",
@@ -242,7 +242,7 @@
       "actor": "krill",
       "timestamp": 1588080484446,
       "handle": "child",
-      "version": 17,
+      "version": 19,
       "sequence": 12,
       "summary": {
         "msg": "Initiate key roll for keys older than '0' seconds",
@@ -263,7 +263,7 @@
       "actor": "krill",
       "timestamp": 1588080485488,
       "handle": "child",
-      "version": 19,
+      "version": 20,
       "sequence": 13,
       "summary": {
         "msg": "Update received cert in RC '0', with resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
@@ -287,7 +287,7 @@
       "actor": "krill",
       "timestamp": 1588080485667,
       "handle": "child",
-      "version": 20,
+      "version": 22,
       "sequence": 14,
       "summary": {
         "msg": "Activate new keys staging longer than '0' seconds",
@@ -308,7 +308,7 @@
       "actor": "krill",
       "timestamp": 1588080486697,
       "handle": "child",
-      "version": 22,
+      "version": 23,
       "sequence": 15,
       "summary": {
         "msg": "Retire old revoked key in RC '0'",
@@ -328,7 +328,7 @@
       "actor": "krill",
       "timestamp": 1588080486881,
       "handle": "child",
-      "version": 28,
+      "version": 23,
       "sequence": 16,
       "summary": {
         "msg": "Update ROAs  ADD: 10.0.0.0/24-33 => 64496",

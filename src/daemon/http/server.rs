@@ -584,7 +584,6 @@ pub async fn rfc8181(req: Request) -> RoutingResult {
             None => return render_error(Error::ApiInvalidHandle),
         };
 
-        let actor = req.actor();
         let state = req.state().clone();
 
         let bytes = match req.rfc8181_bytes().await {
@@ -593,7 +592,7 @@ pub async fn rfc8181(req: Request) -> RoutingResult {
         };
 
         let read = state.read().await;
-        match read.rfc8181(publisher, bytes, &actor) {
+        match read.rfc8181(publisher, bytes) {
             Ok(bytes) => Ok(HttpResponse::rfc8181(bytes.to_vec())),
             Err(e) => render_error(e),
         }

@@ -41,6 +41,16 @@ use crate::daemon::krillserver::KrillMode;
 pub const KRILL_SERVER_URI: &str = "https://localhost:3000/";
 pub const KRILL_PUBD_SERVER_URI: &str = "https://localhost:3001/";
 
+pub fn init_logging() {
+    // Just creates a test config so we can initialise logging, then forgets about it
+    let d = PathBuf::from(".");
+    let _ = Config::test(&d).init_logging();
+}
+
+pub fn info(msg: impl std::fmt::Display) {
+    info!("{}", msg); // we can change this to using the logger crate later
+}
+
 pub async fn krill_server_ready() -> bool {
     server_ready(KRILL_SERVER_URI).await
 }

@@ -5,27 +5,27 @@ use std::{collections::BTreeMap, fmt};
 use crate::{
     commons::{
         api::{
-            ChildHandle, Handle, ParentHandle, RequestResourceLimit, ResourceClassName, ResourceSet, RevocationRequest,
-            RoaDefinitionUpdates, RtaName, StorableCaCommand, StorableParentContact, StorableRcEntitlement,
-            StoredEffect,
+            ChildHandle, Handle, ParentHandle, PublisherHandle, RequestResourceLimit, ResourceClassName, ResourceSet,
+            RevocationRequest, RoaDefinitionUpdates, RtaName, StorableCaCommand, StorableParentContact,
+            StorableRcEntitlement, StorableRepositoryCommand, StoredEffect,
         },
-        eventsourcing::{Command, WithStorableDetails},
+        eventsourcing::{Command, StoredCommand, WithStorableDetails},
         remote::rfc8183::ServiceUri,
     },
     daemon::ca::StoredCaCommand,
 };
 
-use super::old_events::OldEvt;
+use super::old_events::{OldCaEvt, OldPubdEvt};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldStoredCaCommand {
-    actor: String,
-    time: Time,
-    handle: Handle,
-    version: u64,  // version of aggregate this was applied to (successful or not)
-    sequence: u64, // command sequence (i.e. also incremented for failed commands)
-    details: OldStorableCaCommand,
-    effect: OldStoredEffect,
+    pub actor: String,
+    pub time: Time,
+    pub handle: Handle,
+    pub version: u64,  // version of aggregate this was applied to (successful or not)
+    pub sequence: u64, // command sequence (i.e. also incremented for failed commands)
+    pub details: OldStorableCaCommand,
+    pub effect: OldStoredEffect,
 }
 
 impl OldStoredCaCommand {
@@ -46,18 +46,6 @@ impl OldStoredCaCommand {
     pub fn set_events(&mut self, events: Vec<u64>) {
         self.effect = OldStoredEffect::Events(events);
     }
-
-    pub fn set_command_version(&mut self, affected_version: u64) {
-        self.version = affected_version;
-    }
-
-    pub fn effect(&self) -> &OldStoredEffect {
-        &self.effect
-    }
-
-    pub fn time(&self) -> Time {
-        self.time
-    }
 }
 
 impl fmt::Display for OldStoredCaCommand {
@@ -67,7 +55,7 @@ impl fmt::Display for OldStoredCaCommand {
 }
 
 impl Command for OldStoredCaCommand {
-    type Event = OldEvt;
+    type Event = OldCaEvt;
     type StorableDetails = OldStorableCaCommand;
 
     fn handle(&self) -> &Handle {
@@ -214,6 +202,84 @@ impl From<OldStorableCaCommand> for StorableCaCommand {
             OldStorableCaCommand::RtaSign(name) => StorableCaCommand::RtaSign { name },
             OldStorableCaCommand::RtaCoSign(name) => StorableCaCommand::RtaCoSign { name },
             OldStorableCaCommand::Deactivate => StorableCaCommand::Deactivate,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OldStoredRepositoryCommand {
+    pub actor: String,
+    pub time: Time,
+    pub handle: Handle,
+    pub version: u64,  // version of aggregate this was applied to (successful or not)
+    pub sequence: u64, // command sequence (i.e. also incremented for failed commands)
+    pub details: OldStorableRepositoryCommand,
+    pub effect: OldStoredEffect,
+}
+
+impl OldStoredRepositoryCommand {
+    pub fn into_pubd_command(self) -> StoredCommand<StorableRepositoryCommand> {
+        StoredCommand::new(
+            self.actor,
+            self.time,
+            self.handle,
+            self.version,
+            self.sequence,
+            self.details.into(),
+            self.effect.into(),
+        )
+    }
+}
+
+impl fmt::Display for OldStoredRepositoryCommand {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Pre 0.9.0 CA command")
+    }
+}
+
+impl Command for OldStoredRepositoryCommand {
+    type Event = OldPubdEvt;
+    type StorableDetails = OldStorableRepositoryCommand;
+
+    fn handle(&self) -> &Handle {
+        &self.handle
+    }
+
+    fn version(&self) -> Option<u64> {
+        Some(self.version)
+    }
+
+    fn actor(&self) -> &str {
+        &self.actor
+    }
+
+    fn store(&self) -> Self::StorableDetails {
+        self.details.clone()
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[allow(clippy::large_enum_variant)]
+#[serde(rename_all = "snake_case")]
+pub enum OldStorableRepositoryCommand {
+    AddPublisher(PublisherHandle, String),
+    RemovePublisher(PublisherHandle),
+    Publish(PublisherHandle, usize, usize, usize),
+    SessionReset,
+}
+
+impl WithStorableDetails for OldStorableRepositoryCommand {
+    fn summary(&self) -> crate::commons::api::CommandSummary {
+        unimplemented!("not needed for migration")
+    }
+}
+
+impl From<OldStorableRepositoryCommand> for StorableRepositoryCommand {
+    fn from(old: OldStorableRepositoryCommand) -> Self {
+        match old {
+            OldStorableRepositoryCommand::AddPublisher(name, _) => StorableRepositoryCommand::AddPublisher { name },
+            OldStorableRepositoryCommand::RemovePublisher(name) => StorableRepositoryCommand::RemovePublisher { name },
+            _ => unimplemented!("no need to migrate"),
         }
     }
 }

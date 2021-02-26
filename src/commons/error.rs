@@ -522,6 +522,12 @@ impl From<ApiAuthError> for Error {
     }
 }
 
+impl From<PublicationDeltaError> for Error {
+    fn from(e: PublicationDeltaError) -> Self {
+        Error::Rfc8181Delta(e)
+    }
+}
+
 impl Error {
     pub fn signer(e: impl Display) -> Self {
         Error::SignerError(e.to_string())

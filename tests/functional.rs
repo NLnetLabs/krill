@@ -226,34 +226,56 @@ async fn refresh_all() {
 
 #[tokio::test]
 async fn functional() {
-    // We will use a fairly complicated CA structure so that we can
-    // also test corner cases where a CA has multiple children (here: TA),
-    // or multiple parents (here CA3), or a single parent with multiple
-    // resource classes (here CA4):
-    //
-    //                     TA
-    //                    /
-    //                 testbed
-    //                 /    \
-    //               CA1    CA2
-    //                 \   /
-    //                  CA3 (two resource classes)
-    //                  | |
-    //                  CA4 (two resource classes)
-    //
+    init_logging();
 
-    // We will verify that:
-    //  * CAs can be set up as parent child using RFC6492
-    //  * CAs can publish using RFC8181
-    //  * CAs can create ROAs
-    //  * CA resources can change:
-    //     - ROAs are cleaned up/created accordingly
-    //  * CAs can perform key rolls:
-    //     - Content (ROAs) should be unaffected
-    //
-    //  * RTAs can be created and co-signed under multiple CAs
+    info("##################################################################");
+    info("#                                                                #");
+    info("# --= The Big Functional parent/child/repo interaction Test =--  #");
+    info("#                                                                #");
+    info("# We will use a fairly complicated CA structure so that we can   #");
+    info("# also test corner cases where a CA has multiple children, or    #");
+    info("# or multiple parents, or a single parent with multiple resource #");
+    info("# classes:                                                       #");
+    info("#                                                                #");
+    info("#                  TA                                            #");
+    info("#                   |                                            #");
+    info("#                testbed (two children)                          #");
+    info("#                 |   |                                          #");
+    info("#               CA1   CA2                                        #");
+    info("#                 |   |                                          #");
+    info("#                  CA3 (two parents, two resource classes)       #");
+    info("#                  | |                                           #");
+    info("#                  CA4 (two resource classes)                    #");
+    info("#                                                                #");
+    info("#                                                                #");
+    info("# We will verify that:                                           #");
+    info("#  * CAs can be set up as parent child using RFC6492             #");
+    info("#  * CAs can publish using RFC8181                               #");
+    info("#  * CAs can create ROAs                                         #");
+    info("#  * CA resources can change:                                    #");
+    info("#     - ROAs are cleaned up/created accordingly                  #");
+    info("#  * CAs can perform key rolls:                                  #");
+    info("#     - Content (ROAs) should be unaffected                      #");
+    info("#  * CAs can migrate to a new Publication Server (uses keyroll)  #");
+    info("#                                                                #");
+    info("#  * RTAs can be created and co-signed under multiple CAs        #");
+    info("#                                                                #");
+    info("##################################################################");
 
+    info("##################################################################");
+    info("#                                                                #");
+    info("#                      Start Krill                               #");
+    info("#                                                                #");
+    info("##################################################################");
+    info("");
     let krill_dir = start_krill(None, true).await;
+
+    info("##################################################################");
+    info("#                                                                #");
+    info("#               Start Secondary Publication Server               #");
+    info("#                                                                #");
+    info("##################################################################");
+    info("");
     let pubd_dir = start_krill_pubd().await;
 
     let ta = ta_handle();
@@ -279,9 +301,14 @@ async fn functional() {
     let rcn_0 = ResourceClassName::from(0);
     let rcn_1 = ResourceClassName::from(1);
 
-    // Wait for the "testbed" CA to get its certificate, this means that all CAs
-    // which are set up as part of krill_start under testbed config have been
-    // set up.
+    info("##################################################################");
+    info("#                                                                #");
+    info("# Wait for the *testbed* CA to get its certificate, this means   #");
+    info("# that all CAs which are set up as part of krill_start under the #");
+    info("# testbed config have been set up.                               #");
+    info("#                                                                #");
+    info("##################################################################");
+    info("");
     assert!(ca_contains_resources(&testbed, &ResourceSet::all_resources()).await);
 
     // Verify that the TA published expected objects
@@ -298,20 +325,35 @@ async fn functional() {
         );
     }
 
-    // Set up CA1 under testbed
     {
+        info("##################################################################");
+        info("#                                                                #");
+        info("#                      Set up CA1 under testbed                  #");
+        info("#                                                                #");
+        info("##################################################################");
+        info("");
         set_up_ca_with_repo(&ca1).await;
         set_up_ca_under_parent_with_resources(&ca1, &testbed, &ca1_res).await;
     }
 
-    // Set up CA2 under testbed
     {
+        info("##################################################################");
+        info("#                                                                #");
+        info("#                      Set up CA2 under testbed                  #");
+        info("#                                                                #");
+        info("##################################################################");
+        info("");
         set_up_ca_with_repo(&ca2).await;
         set_up_ca_under_parent_with_resources(&ca2, &testbed, &ca2_res).await;
     }
 
-    // Verify that the testbed published the expected objects
     {
+        info("##################################################################");
+        info("#                                                                #");
+        info("#    Verify that the testbed published the expected objects      #");
+        info("#                                                                #");
+        info("##################################################################");
+        info("");
         let mut expected_files = expected_mft_and_crl(&testbed, &rcn_0).await;
         expected_files.push(expected_issued_cer(&ca1, &rcn_0).await);
         expected_files.push(expected_issued_cer(&ca2, &rcn_0).await);
@@ -325,40 +367,71 @@ async fn functional() {
         );
     }
 
-    // Set up CA3 under CA1 first
     {
+        info("##################################################################");
+        info("#                                                                #");
+        info("#                      Set up CA3 under CA1                      #");
+        info("#                                                                #");
+        info("##################################################################");
+        info("");
         set_up_ca_with_repo(&ca3).await;
         set_up_ca_under_parent_with_resources(&ca3, &ca1, &ca3_res_under_ca_1).await;
     }
 
-    // Expect that CA1 publishes the certificate for CA3
     {
+        info("##################################################################");
+        info("#                                                                #");
+        info("#       Expect that CA1 publishes the certificate for CA3        #");
+        info("#                                                                #");
+        info("##################################################################");
+        info("");
         let mut expected_files = expected_mft_and_crl(&ca1, &rcn_0).await;
         expected_files.push(expected_issued_cer(&ca3, &rcn_0).await);
         assert!(will_publish_embedded("CA1 should publish the certificate for CA3", &ca1, &expected_files).await);
     }
 
-    // Set up CA3 under CA2 second (will get another resource class)
     {
+        info("##################################################################");
+        info("#                                                                #");
+        info("#                      Set up CA3 under CA2                      #");
+        info("#                                                                #");
+        info("##################################################################");
+        info("");
         set_up_ca_under_parent_with_resources(&ca3, &ca2, &ca3_res_under_ca_2).await;
     }
 
-    // Expect that CA2 publishes the certificate for CA3
     {
+        info("##################################################################");
+        info("#                                                                #");
+        info("#       Expect that CA2 publishes the certificate for CA3        #");
+        info("#                                                                #");
+        info("##################################################################");
+        info("");
         let mut expected_files = expected_mft_and_crl(&ca2, &rcn_0).await;
         // CA3 will have the certificate from CA2 under its resource class '1' rather than '0'
         expected_files.push(expected_issued_cer(&ca3, &rcn_1).await);
         assert!(will_publish_embedded("CA2 should have mft, crl and a cert for CA3", &ca2, &expected_files).await);
     }
 
-    // Set up CA4 under CA3 with resources from both parent classes
     {
+        info("##################################################################");
+        info("#                                                                #");
+        info("#     Set up CA4 under CA3 with resources from both parents      #");
+        info("#                                                                #");
+        info("##################################################################");
+        info("");
         set_up_ca_with_repo(&ca4).await;
         set_up_ca_under_parent_with_resources(&ca4, &ca3, &ca4_res_under_ca_3).await;
     }
 
-    // Expect that CA3 publishes two certificates for two resource classes
+    //
     {
+        info("##################################################################");
+        info("#                                                                #");
+        info("#       Expect that CA3 publishes two certificates for CA4       #");
+        info("#                                                                #");
+        info("##################################################################");
+        info("");
         let mut expected_files = expected_mft_and_crl(&ca3, &rcn_0).await;
         expected_files.push(expected_issued_cer(&ca4, &rcn_0).await);
         expected_files.append(&mut expected_mft_and_crl(&ca3, &rcn_1).await);
@@ -373,8 +446,14 @@ async fn functional() {
         );
     }
 
-    // Expect that CA4 publishes two resource classes, with only crls and mfts
     {
+        info("##################################################################");
+        info("#                                                                #");
+        info("# Expect that CA4 publishes two resource classes, with only crls #");
+        info("# and manifests                                                  #");
+        info("#                                                                #");
+        info("##################################################################");
+        info("");
         let mut expected_files = expected_mft_and_crl(&ca4, &rcn_0).await;
         expected_files.append(&mut expected_mft_and_crl(&ca4, &rcn_1).await);
         assert!(
@@ -387,10 +466,13 @@ async fn functional() {
         );
     }
 
-    //------------------------------------------------------------------------------------------
-    // Test a key roll
-    //------------------------------------------------------------------------------------------
     {
+        info("##################################################################");
+        info("#                                                                #");
+        info("#                      Let CA1 do a Key Roll                     #");
+        info("#                                                                #");
+        info("##################################################################");
+        info("");
         ca_roll_init(&ca1).await;
         assert!(state_becomes_new_key(&ca1).await);
         ca_roll_activate(&ca1).await;
@@ -420,8 +502,13 @@ async fn functional() {
         assert!(will_publish_embedded(test_msg, &ca4, &expected_files).await);
     }
 
-    // Add ROAs, expect that they will be published
     {
+        info("##################################################################");
+        info("#                                                                #");
+        info("#                      Add ROAs to CA4                           #");
+        info("#                                                                #");
+        info("##################################################################");
+        info("");
         let mut updates = RoaDefinitionUpdates::empty();
         updates.add(route_rc0_1);
         updates.add(route_rc0_2);
@@ -434,9 +521,14 @@ async fn functional() {
         .await;
     }
 
-    // Add ROAs beyond the aggregation threshold for RC0, we now expect ROAs under
-    // RC0 to be aggregated by ASN
     {
+        info("##################################################################");
+        info("#                                                                #");
+        info("# Add ROAs beyond the aggregation threshold for RC0, we now      #");
+        info("# expect ROAs under RC0 to be aggregated by ASN                  #");
+        info("#                                                                #");
+        info("##################################################################");
+        info("");
         let mut updates = RoaDefinitionUpdates::empty();
         updates.add(route_rc0_3);
         updates.add(route_rc0_4);
@@ -456,9 +548,14 @@ async fn functional() {
         assert!(will_publish_embedded("CA4 should now aggregate ROAs", &ca4, &expected_files).await);
     }
 
-    // Remove ROAs below the deaggregation threshold and we get
-    // individual files again
     {
+        info("##################################################################");
+        info("#                                                                #");
+        info("# Remove ROAs below the deaggregation threshold and we get       #");
+        info("# separate files again                                           #");
+        info("#                                                                #");
+        info("##################################################################");
+        info("");
         let mut updates = RoaDefinitionUpdates::empty();
         updates.remove(route_rc0_2);
         updates.remove(route_rc0_3);
@@ -472,10 +569,16 @@ async fn functional() {
     // Test shrinking / growing resources
     //------------------------------------------------------------------------------------------
 
-    // When resources are removed higher up in the tree, then resources to child
-    // CAs should also be reduced. When resources for ROAs are lost, the ROAs should
-    // be removed, but the authorization (config) is kept.
     {
+        info("##################################################################");
+        info("#                                                                #");
+        info("# When resources are removed higher up in the tree, then any of  #");
+        info("# resources delegated to child CAs should also be reduced. When  #");
+        info("# resources for ROAs are lost, the ROAs should be removed, but   #");
+        info("# the authorization (config) is kept.                            #");
+        info("#                                                                #");
+        info("##################################################################");
+        info("");
         update_child(&testbed, &ca1, &ca1_res_reduced).await;
         ca_equals_resources(&ca1, &ca1_res_reduced).await;
         ca_equals_resources(&ca3, &ca3_res_reduced).await;
@@ -489,10 +592,16 @@ async fn functional() {
         .await;
     }
 
-    // When resources are added back higher in the tree, then they will also
-    // be added to the delegated children again. When resources for existing
-    // authorizations are re-gained, ROAs will be created again.
     {
+        info("##################################################################");
+        info("#                                                                #");
+        info("# When resources are added back higher in the tree, then they    #");
+        info("# will also be added to the delegated children again. When       #");
+        info("# resources for existing authorizations are re-gained, ROAs      #");
+        info("# will be created again.                                         #");
+        info("#                                                                #");
+        info("##################################################################");
+        info("");
         update_child(&testbed, &ca1, &ca1_res).await;
         ca_equals_resources(&ca1, &ca1_res).await;
         ca_equals_resources(&ca3, &ca3_res_combined).await;
@@ -507,13 +616,16 @@ async fn functional() {
         .await;
     }
 
-    //---------------------------------------------------------------------------------------
-    // Single Signed RTA
-    //---------------------------------------------------------------------------------------
     let rta_content = include_bytes!("../test-resources/test.tal");
     let rta_content = Bytes::copy_from_slice(rta_content);
 
     {
+        info("##################################################################");
+        info("#                                                                #");
+        info("# Create a Single Signed RTA                                     #");
+        info("#                                                                #");
+        info("##################################################################");
+        info("");
         let rta_single = "rta_single".to_string();
 
         rta_sign_sign(
@@ -531,11 +643,13 @@ async fn functional() {
         let _single_rta = rta_show(ca1.clone(), rta_single).await;
     }
 
-    //---------------------------------------------------------------------------------------
-    // Multi Signed RTA
-    //---------------------------------------------------------------------------------------
-
     {
+        info("##################################################################");
+        info("#                                                                #");
+        info("# Create a Multi Signed RTA                                      #");
+        info("#                                                                #");
+        info("##################################################################");
+        info("");
         // combined resources of CA1 and CA2
         let multi_resources = resources("10.0.0.0/16, 10.1.0.0/16");
         let multi_rta_name = "multi_rta".to_string();
@@ -560,9 +674,13 @@ async fn functional() {
         let _multi_signed = rta_show(ca1, multi_rta_name).await;
     }
 
-    //---------------------------------------------------------------------------------------
-    // Remove a CA
-    //---------------------------------------------------------------------------------------
+    info("##################################################################");
+    info("#                                                                #");
+    info("# Remove CA4, we expect that its objects are also removed since  #");
+    info("# we are doing this all gracefully.                              #");
+    info("#                                                                #");
+    info("##################################################################");
+    info("");
     {
         delete_ca(&ca4).await;
 
@@ -586,27 +704,26 @@ async fn functional() {
         }
     }
 
-    //---------------------------------------------------------------------------------------
-    // Migrate a Repository using a keyroll for CA3 (note CA4 is now gone):
-    //
-    //                     TA
-    //                    /
-    //                 testbed
-    //                 /    \
-    //               CA1    CA2
-    //                 \   /
-    //                  CA3 (two resource classes)
-    //---------------------------------------------------------------------------------------
     {
-        // CA3 currently uses the embedded publication server. In order to migrate it, we will
-        // need to do the following:
-        //
-        // - get the RFC 8183 publisher request from CA3
-        // - add CA3 as a publisher under the dedicated (separate) pubd, and get the response
-        // - update the repo config for CA3 using the 8183 response
-        //    -- this should initiate a key roll where the new key publishes in the new repo
-        // - complete the key roll
-        //    -- the old key should be cleaned up, nothing published for CA3 in the embedded repo
+        info("##################################################################");
+        info("#                                                                #");
+        info("# Migrate a Repository for CA3 (using a keyroll)                 #");
+        info("#                                                                #");
+        info("# CA3 currently uses the embedded publication server. In order   #");
+        info("# to migrate it, we will need to do the following:               #");
+        info("#                                                                #");
+        info("# - get the RFC 8183 publisher request from CA3                  #");
+        info("# - add CA3 as a publisher under the dedicated (separate) pubd,  #");
+        info("# - get the response                                             #");
+        info("# - update the repo config for CA3 using the 8183 response       #");
+        info("#    -- this should initiate a key roll                          #");
+        info("#    -- the new key publishes in the new repo                    #");
+        info("# - complete the key roll                                        #");
+        info("#    -- the old key should be cleaned up,                        #");
+        info("#    -- nothing published for CA3 in the embedded repo           #");
+        info("#                                                                #");
+        info("##################################################################");
+        info("");
 
         // Add CA3 to dedicated repo
         let publisher_request = publisher_request(&ca3).await;

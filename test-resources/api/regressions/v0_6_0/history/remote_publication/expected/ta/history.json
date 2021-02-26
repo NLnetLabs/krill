@@ -7,7 +7,7 @@
       "actor": "krill",
       "timestamp": 1588257440769,
       "handle": "ta",
-      "version": 1,
+      "version": 2,
       "sequence": 1,
       "summary": {
         "msg": "Update repo to embedded server",
@@ -25,7 +25,7 @@
       "actor": "krill",
       "timestamp": 1588257440770,
       "handle": "ta",
-      "version": 2,
+      "version": 3,
       "sequence": 2,
       "summary": {
         "msg": "Turn into Trust Anchor",
@@ -43,7 +43,7 @@
       "actor": "krill",
       "timestamp": 1588257440821,
       "handle": "ta",
-      "version": 3,
+      "version": 4,
       "sequence": 3,
       "summary": {
         "msg": "Update received cert in RC '0', with resources 'asn: 1 blocks, v4: 1 blocks, v6: 1 blocks'",
@@ -67,7 +67,7 @@
       "actor": "krill",
       "timestamp": 1588257441248,
       "handle": "ta",
-      "version": 4,
+      "version": 5,
       "sequence": 4,
       "summary": {
         "msg": "Add child 'child' with RFC8183 key '<none>' and resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
@@ -92,7 +92,7 @@
       "actor": "krill",
       "timestamp": 1588257441992,
       "handle": "ta",
-      "version": 5,
+      "version": 7,
       "sequence": 5,
       "summary": {
         "msg": "Issue certificate to child 'child' for key 'A2C397B77EC1FABAF612E2DB5790E17BA1D8E7F0'",
@@ -115,7 +115,7 @@
       "actor": "krill",
       "timestamp": 1588257444000,
       "handle": "ta",
-      "version": 7,
+      "version": 9,
       "sequence": 6,
       "summary": {
         "msg": "Issue certificate to child 'child' for key 'A2C397B77EC1FABAF612E2DB5790E17BA1D8E7F0'",
@@ -138,7 +138,7 @@
       "actor": "krill",
       "timestamp": 1588257445691,
       "handle": "ta",
-      "version": 9,
+      "version": 11,
       "sequence": 7,
       "summary": {
         "msg": "Issue certificate to child 'child' for key 'A2C397B77EC1FABAF612E2DB5790E17BA1D8E7F0'",

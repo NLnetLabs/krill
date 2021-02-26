@@ -2,6 +2,7 @@ use std::{
     collections::HashMap,
     convert::{TryFrom, TryInto},
     fmt,
+    path::PathBuf,
 };
 
 use rpki::{
@@ -14,36 +15,85 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            Base64, ChildHandle, HexEncodedHash, IssuanceRequest, IssuedCert, ObjectName, ParentHandle, RcvdCert,
-            RepoInfo, ResourceClassName, ResourceSet, RevocationRequest, RevocationsDelta, RevokedObject,
-            RoaAggregateKey, RtaName, TaCertDetails,
+            rrdp::{CurrentObjects, DeltaElements, PublishElement, RrdpSession},
+            Base64, ChildHandle, HexEncodedHash, IssuanceRequest, IssuedCert, ObjectName, ParentHandle,
+            PublisherHandle, RcvdCert, RepoInfo, ResourceClassName, ResourceSet, RevocationRequest, RevocationsDelta,
+            RevokedObject, RoaAggregateKey, RtaName, TaCertDetails,
         },
         crypto::IdCert,
         eventsourcing::StoredEvent,
     },
     daemon::ca::{self, CaEvt, CaEvtDet, PreparedRta, RouteAuthorization, SignedRta},
+    pubd::{PubdEvt, PubdEvtDet, PubdIniDet, Publisher, RrdpSessionReset, RrdpUpdate},
     upgrades::UpgradeError,
 };
 
 use super::*;
 
-pub type OldEvt = StoredEvent<OldEvtDet>;
+pub type OldPubdEvt = StoredEvent<OldPubdEvtDet>;
+pub type OldPubdInit = StoredEvent<OldPubdIniDet>;
+pub type OldCaEvt = StoredEvent<OldCaEvtDet>;
 
-impl OldEvt {
+impl OldPubdEvt {
+    pub fn into_stored_pubd_event(self, version: u64) -> Result<PubdEvt, UpgradeError> {
+        let (id, _, details) = self.unpack();
+        Ok(PubdEvt::new(&id, version, details.into()))
+    }
+
+    pub fn needs_migration(&self) -> bool {
+        matches!(self.details(), OldPubdEvtDet::PublisherAdded(_, _))
+            || matches!(self.details(), OldPubdEvtDet::PublisherRemoved(_, _))
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OldPubdIniDet {
+    id_cert: IdCert,
+    session: RrdpSession,
+    rrdp_base_uri: uri::Https,
+    rsync_jail: uri::Rsync,
+    repo_base_dir: PathBuf,
+}
+
+impl OldPubdIniDet {
+    pub fn unpack(self) -> (IdCert, RrdpSession, uri::Https, uri::Rsync, PathBuf) {
+        (
+            self.id_cert,
+            self.session,
+            self.rrdp_base_uri,
+            self.rsync_jail,
+            self.repo_base_dir,
+        )
+    }
+}
+
+impl fmt::Display for OldPubdIniDet {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "old init")
+    }
+}
+
+impl From<OldPubdIniDet> for PubdIniDet {
+    fn from(old: OldPubdIniDet) -> Self {
+        PubdIniDet::new(old.id_cert, old.rrdp_base_uri, old.rsync_jail)
+    }
+}
+
+impl OldCaEvt {
     pub fn into_stored_ca_event(self, version: u64) -> Result<CaEvt, UpgradeError> {
         let (id, _, details) = self.unpack();
         Ok(CaEvt::new(&id, version, details.try_into()?))
     }
 
     pub fn needs_migration(&self) -> bool {
-        !matches!(self.details(), OldEvtDet::ObjectSetUpdated(_, _))
+        !matches!(self.details(), OldCaEvtDet::ObjectSetUpdated(_, _))
     }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
-pub enum OldEvtDet {
+pub enum OldCaEvtDet {
     // Being a Trust Anchor
     TrustAnchorMade(TaCertDetails),
 
@@ -90,115 +140,117 @@ pub enum OldEvtDet {
     RtaSigned(RtaName, SignedRta),
 }
 
-impl TryFrom<OldEvtDet> for CaEvtDet {
+impl TryFrom<OldCaEvtDet> for CaEvtDet {
     type Error = UpgradeError;
 
-    fn try_from(old: OldEvtDet) -> Result<Self, Self::Error> {
+    fn try_from(old: OldCaEvtDet) -> Result<Self, Self::Error> {
         let evt = match old {
-            OldEvtDet::TrustAnchorMade(ta_cert_details) => CaEvtDet::TrustAnchorMade { ta_cert_details },
-            OldEvtDet::ChildAdded(child, details) => CaEvtDet::ChildAdded {
+            OldCaEvtDet::TrustAnchorMade(ta_cert_details) => CaEvtDet::TrustAnchorMade { ta_cert_details },
+            OldCaEvtDet::ChildAdded(child, details) => CaEvtDet::ChildAdded {
                 child,
                 id_cert: details.id_cert,
                 resources: details.resources,
             },
-            OldEvtDet::ChildCertificateIssued(child, resource_class_name, ki) => CaEvtDet::ChildCertificateIssued {
+            OldCaEvtDet::ChildCertificateIssued(child, resource_class_name, ki) => CaEvtDet::ChildCertificateIssued {
                 child,
                 resource_class_name,
                 ki,
             },
-            OldEvtDet::ChildKeyRevoked(child, resource_class_name, ki) => CaEvtDet::ChildKeyRevoked {
+            OldCaEvtDet::ChildKeyRevoked(child, resource_class_name, ki) => CaEvtDet::ChildKeyRevoked {
                 child,
                 resource_class_name,
                 ki,
             },
-            OldEvtDet::ChildCertificatesUpdated(resource_class_name, cert_updates) => {
+            OldCaEvtDet::ChildCertificatesUpdated(resource_class_name, cert_updates) => {
                 CaEvtDet::ChildCertificatesUpdated {
                     resource_class_name,
                     updates: cert_updates.into(),
                 }
             }
-            OldEvtDet::ChildUpdatedIdCert(child, id_cert) => CaEvtDet::ChildUpdatedIdCert { child, id_cert },
-            OldEvtDet::ChildUpdatedResources(child, resources) => CaEvtDet::ChildUpdatedResources { child, resources },
-            OldEvtDet::ChildRemoved(child) => CaEvtDet::ChildRemoved { child },
+            OldCaEvtDet::ChildUpdatedIdCert(child, id_cert) => CaEvtDet::ChildUpdatedIdCert { child, id_cert },
+            OldCaEvtDet::ChildUpdatedResources(child, resources) => {
+                CaEvtDet::ChildUpdatedResources { child, resources }
+            }
+            OldCaEvtDet::ChildRemoved(child) => CaEvtDet::ChildRemoved { child },
 
-            OldEvtDet::IdUpdated(id) => CaEvtDet::IdUpdated { id: id.into() },
-            OldEvtDet::ParentAdded(parent, contact) => CaEvtDet::ParentAdded {
+            OldCaEvtDet::IdUpdated(id) => CaEvtDet::IdUpdated { id: id.into() },
+            OldCaEvtDet::ParentAdded(parent, contact) => CaEvtDet::ParentAdded {
                 parent,
                 contact: contact.into(),
             },
-            OldEvtDet::ParentUpdated(parent, contact) => CaEvtDet::ParentUpdated {
+            OldCaEvtDet::ParentUpdated(parent, contact) => CaEvtDet::ParentUpdated {
                 parent,
                 contact: contact.into(),
             },
-            OldEvtDet::ParentRemoved(parent, _delta) => CaEvtDet::ParentRemoved { parent },
+            OldCaEvtDet::ParentRemoved(parent, _delta) => CaEvtDet::ParentRemoved { parent },
 
-            OldEvtDet::ResourceClassAdded(_rcn, rc) => rc.into_added_event()?,
-            OldEvtDet::ResourceClassRemoved(resource_class_name, _delta, parent, revoke_reqs) => {
+            OldCaEvtDet::ResourceClassAdded(_rcn, rc) => rc.into_added_event()?,
+            OldCaEvtDet::ResourceClassRemoved(resource_class_name, _delta, parent, revoke_reqs) => {
                 CaEvtDet::ResourceClassRemoved {
                     resource_class_name,
                     parent,
                     revoke_reqs,
                 }
             }
-            OldEvtDet::CertificateRequested(resource_class_name, req, ki) => CaEvtDet::CertificateRequested {
+            OldCaEvtDet::CertificateRequested(resource_class_name, req, ki) => CaEvtDet::CertificateRequested {
                 resource_class_name,
                 req,
                 ki,
             },
-            OldEvtDet::CertificateReceived(resource_class_name, ki, rcvd_cert) => CaEvtDet::CertificateReceived {
+            OldCaEvtDet::CertificateReceived(resource_class_name, ki, rcvd_cert) => CaEvtDet::CertificateReceived {
                 resource_class_name,
                 ki,
                 rcvd_cert,
             },
 
-            OldEvtDet::KeyRollPendingKeyAdded(resource_class_name, pending_key) => CaEvtDet::KeyRollPendingKeyAdded {
+            OldCaEvtDet::KeyRollPendingKeyAdded(resource_class_name, pending_key) => CaEvtDet::KeyRollPendingKeyAdded {
                 resource_class_name,
                 pending_key,
             },
-            OldEvtDet::KeyPendingToNew(resource_class_name, new_key, _delta) => CaEvtDet::KeyPendingToNew {
+            OldCaEvtDet::KeyPendingToNew(resource_class_name, new_key, _delta) => CaEvtDet::KeyPendingToNew {
                 resource_class_name,
                 new_key: new_key.into(),
             },
-            OldEvtDet::KeyPendingToActive(resource_class_name, current_key, _delta) => CaEvtDet::KeyPendingToActive {
+            OldCaEvtDet::KeyPendingToActive(resource_class_name, current_key, _delta) => CaEvtDet::KeyPendingToActive {
                 resource_class_name,
                 current_key: current_key.into(),
             },
-            OldEvtDet::KeyRollActivated(resource_class_name, revoke_req) => CaEvtDet::KeyRollActivated {
+            OldCaEvtDet::KeyRollActivated(resource_class_name, revoke_req) => CaEvtDet::KeyRollActivated {
                 resource_class_name,
                 revoke_req,
             },
-            OldEvtDet::KeyRollFinished(resource_class_name, _delta) => {
+            OldCaEvtDet::KeyRollFinished(resource_class_name, _delta) => {
                 CaEvtDet::KeyRollFinished { resource_class_name }
             }
-            OldEvtDet::UnexpectedKeyFound(resource_class_name, revoke_req) => CaEvtDet::UnexpectedKeyFound {
+            OldCaEvtDet::UnexpectedKeyFound(resource_class_name, revoke_req) => CaEvtDet::UnexpectedKeyFound {
                 resource_class_name,
                 revoke_req,
             },
 
-            OldEvtDet::RouteAuthorizationAdded(auth) => CaEvtDet::RouteAuthorizationAdded { auth },
-            OldEvtDet::RouteAuthorizationRemoved(auth) => CaEvtDet::RouteAuthorizationRemoved { auth },
-            OldEvtDet::RoasUpdated(resource_class_name, updates) => CaEvtDet::RoasUpdated {
+            OldCaEvtDet::RouteAuthorizationAdded(auth) => CaEvtDet::RouteAuthorizationAdded { auth },
+            OldCaEvtDet::RouteAuthorizationRemoved(auth) => CaEvtDet::RouteAuthorizationRemoved { auth },
+            OldCaEvtDet::RoasUpdated(resource_class_name, updates) => CaEvtDet::RoasUpdated {
                 resource_class_name,
                 updates: updates.try_into()?,
             },
 
-            OldEvtDet::ObjectSetUpdated(_, _) => unimplemented!("This event must not be migrated"),
+            OldCaEvtDet::ObjectSetUpdated(_, _) => unimplemented!("This event must not be migrated"),
 
-            OldEvtDet::RepoUpdated(contact) => CaEvtDet::RepoUpdated {
+            OldCaEvtDet::RepoUpdated(contact) => CaEvtDet::RepoUpdated {
                 contact: contact.into(),
             },
-            OldEvtDet::RepoCleaned(contact) => CaEvtDet::RepoCleaned {
+            OldCaEvtDet::RepoCleaned(contact) => CaEvtDet::RepoCleaned {
                 contact: contact.into(),
             },
 
-            OldEvtDet::RtaPrepared(name, prepared) => CaEvtDet::RtaPrepared { name, prepared },
-            OldEvtDet::RtaSigned(name, rta) => CaEvtDet::RtaSigned { name, rta },
+            OldCaEvtDet::RtaPrepared(name, prepared) => CaEvtDet::RtaPrepared { name, prepared },
+            OldCaEvtDet::RtaSigned(name, rta) => CaEvtDet::RtaSigned { name, rta },
         };
         Ok(evt)
     }
 }
 
-impl fmt::Display for OldEvtDet {
+impl fmt::Display for OldCaEvtDet {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "pre 0.9.0 event")
     }
@@ -347,10 +399,10 @@ pub struct AggregateRoaInfo {
     pub roa: RoaInfo,
 }
 
-pub type OldIni = StoredEvent<OldIniDet>;
+pub type OldCaIni = StoredEvent<OldCaIniDet>;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct OldIniDet {
+pub struct OldCaIniDet {
     id: Rfc8183Id,
 
     // The following two fields need to be kept to maintain data compatibility
@@ -365,13 +417,13 @@ pub struct OldIniDet {
     ta_details: Option<TaCertDetails>,
 }
 
-impl OldIniDet {
+impl OldCaIniDet {
     pub fn unpack(self) -> (Rfc8183Id, Option<RepoInfo>, Option<TaCertDetails>) {
         (self.id, self.info, self.ta_details)
     }
 }
 
-impl fmt::Display for OldIniDet {
+impl fmt::Display for OldCaIniDet {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Pre 0.9.0 CA init")
     }
@@ -387,5 +439,94 @@ pub struct CurrentObject {
 impl CurrentObject {
     pub fn content(&self) -> &Base64 {
         &self.content
+    }
+}
+
+//================ Pubd
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[allow(clippy::large_enum_variant)]
+#[serde(rename_all = "snake_case")]
+pub enum OldPubdEvtDet {
+    PublisherAdded(PublisherHandle, OldPublisher),
+    PublisherRemoved(PublisherHandle, RrdpUpdate),
+    Published(PublisherHandle, RrdpUpdate),
+    RrdpSessionReset(RrdpSessionReset),
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OldPublisher {
+    /// Used by remote RFC8181 publishers
+    pub id_cert: IdCert,
+
+    /// Publication jail for this publisher
+    pub base_uri: uri::Rsync,
+
+    /// All objects currently published by this publisher, by hash
+    pub current_objects: OldCurrentObjects,
+}
+
+impl OldPublisher {
+    pub fn apply_delta(&mut self, delta: DeltaElements) {
+        self.current_objects.apply_delta(delta);
+    }
+}
+
+impl fmt::Display for OldPubdEvtDet {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "pre 0.9.0 event")
+    }
+}
+
+impl From<OldPublisher> for Publisher {
+    fn from(old: OldPublisher) -> Self {
+        Publisher::new(old.id_cert, old.base_uri)
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OldCurrentObjects(HashMap<HexEncodedHash, PublishElement>);
+
+impl OldCurrentObjects {
+    pub fn new(map: HashMap<HexEncodedHash, PublishElement>) -> Self {
+        OldCurrentObjects(map)
+    }
+    pub fn apply_delta(&mut self, delta: DeltaElements) {
+        let (publishes, updates, withdraws) = delta.unpack();
+
+        for p in publishes {
+            let hash = p.base64().to_encoded_hash();
+            self.0.insert(hash, p);
+        }
+
+        for u in updates {
+            self.0.remove(u.hash());
+            let p: PublishElement = u.into();
+            let hash = p.base64().to_encoded_hash();
+            self.0.insert(hash, p);
+        }
+
+        for w in withdraws {
+            self.0.remove(w.hash());
+        }
+    }
+}
+
+impl From<OldCurrentObjects> for CurrentObjects {
+    fn from(old: OldCurrentObjects) -> Self {
+        CurrentObjects::new(old.0)
+    }
+}
+
+impl From<OldPubdEvtDet> for PubdEvtDet {
+    fn from(old: OldPubdEvtDet) -> Self {
+        match old {
+            OldPubdEvtDet::PublisherAdded(name, publisher) => PubdEvtDet::PublisherAdded {
+                name,
+                publisher: publisher.into(),
+            },
+            OldPubdEvtDet::PublisherRemoved(name, _) => PubdEvtDet::PublisherRemoved { name },
+            _ => unimplemented!("no need to migrate these"),
+        }
     }
 }

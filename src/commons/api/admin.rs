@@ -259,11 +259,11 @@ pub struct PublisherDetails {
 }
 
 impl PublisherDetails {
-    pub fn new(handle: &Handle, id_cert: IdCert, base_uri: &uri::Rsync, current_files: Vec<PublishElement>) -> Self {
+    pub fn new(handle: &Handle, id_cert: IdCert, base_uri: uri::Rsync, current_files: Vec<PublishElement>) -> Self {
         PublisherDetails {
             handle: handle.clone(),
             id_cert,
-            base_uri: base_uri.clone(),
+            base_uri,
             current_files,
         }
     }
@@ -287,6 +287,10 @@ impl fmt::Display for PublisherDetails {
         writeln!(f, "handle: {}", self.handle())?;
         writeln!(f, "id: {}", self.id_cert().ski_hex())?;
         writeln!(f, "base uri: {}", self.base_uri().to_string())?;
+        writeln!(f, "objects:")?;
+        for e in &self.current_files {
+            writeln!(f, "  {}", e.uri())?;
+        }
 
         Ok(())
     }

@@ -2,23 +2,26 @@
 //! - Updating the format of commands or events
 //! - Export / Import data
 
-use std::{fmt, io};
+use std::{fmt, io, str::FromStr};
 use std::{path::PathBuf, sync::Arc};
 
+use serde::de::DeserializeOwned;
+
 use crate::commons::eventsourcing::{
-    AggregateStore, AggregateStoreError, KeyStoreKey, KeyStoreVersion, KeyValueError, KeyValueStore,
+    AggregateStore, AggregateStoreError, CommandKey, KeyStoreKey, KeyStoreVersion, KeyValueError, KeyValueStore,
 };
 use crate::commons::util::file;
 use crate::constants::KRILL_VERSION;
 use crate::daemon::ca::CertAuth;
-use crate::pubd::Repository;
+use crate::pubd::RepositoryAccess;
 use crate::{commons::api::Handle, daemon::config::Config};
 
-use self::v0_9_0::CaObjectsMigration;
+use self::v0_9_0::{CaObjectsMigration, PubdObjectsMigration};
 
 pub mod v0_9_0;
 
 pub type UpgradeResult<T> = Result<T, UpgradeError>;
+const MIGRATION_SCOPE: &str = "migration-0.9";
 
 //------------ UpgradeError --------------------------------------------------
 
@@ -103,6 +106,65 @@ pub trait UpgradeStore {
             Ok(Some(current_version)) => Ok(current_version <= up_to),
         }
     }
+
+    fn store(&self) -> &KeyValueStore;
+
+    // Find all command keys and sort them by sequence.
+    // Then turn them back into key store keys for further processing.
+    fn command_keys(&self, scope: &str) -> Result<Vec<KeyStoreKey>, UpgradeError> {
+        let store = self.store();
+        let keys = store.keys(Some(scope.to_string()), "command--")?;
+        let mut cmd_keys: Vec<CommandKey> = vec![];
+        for key in keys {
+            let cmd_key = CommandKey::from_str(key.name()).map_err(|_| {
+                UpgradeError::Custom(format!("Found invalid command key: {} for ca: {}", key.name(), scope))
+            })?;
+            cmd_keys.push(cmd_key);
+        }
+        cmd_keys.sort_by_key(|k| k.sequence);
+        let cmd_keys = cmd_keys
+            .into_iter()
+            .map(|ck| KeyStoreKey::scoped(scope.to_string(), format!("{}.json", ck)))
+            .collect();
+
+        Ok(cmd_keys)
+    }
+
+    fn get<V: DeserializeOwned>(&self, key: &KeyStoreKey) -> Result<V, UpgradeError> {
+        self.store()
+            .get(key)?
+            .ok_or_else(|| UpgradeError::Custom(format!("Cannot read key: {}", key)))
+    }
+
+    fn event_key(scope: &str, nr: u64) -> KeyStoreKey {
+        KeyStoreKey::scoped(scope.to_string(), format!("delta-{}.json", nr))
+    }
+
+    fn archive_snapshots(&self, scope: &str) -> Result<(), UpgradeError> {
+        let snapshot_key = KeyStoreKey::scoped(scope.to_string(), "snapshot.json".to_string());
+        let snapshot_bk_key = KeyStoreKey::scoped(scope.to_string(), "snapshot-bk.json".to_string());
+
+        if self.store().has(&snapshot_key)? {
+            self.archive_migrated(&snapshot_key)?;
+        }
+
+        if self.store().has(&snapshot_bk_key)? {
+            self.archive_migrated(&snapshot_bk_key)?;
+        }
+
+        Ok(())
+    }
+
+    fn archive_migrated(&self, key: &KeyStoreKey) -> Result<(), UpgradeError> {
+        self.store()
+            .archive_to(&key, MIGRATION_SCOPE)
+            .map_err(UpgradeError::KeyStoreError)
+    }
+
+    fn drop_migration_scope(&self, scope: &str) -> Result<(), UpgradeError> {
+        let scope = format!("{}/{}", scope, MIGRATION_SCOPE);
+        self.store().drop_scope(&scope).map_err(UpgradeError::KeyStoreError)
+    }
 }
 
 /// Should be called when Krill starts, before the KrillServer is initiated
@@ -116,7 +178,7 @@ pub async fn update_storage_version(work_dir: &PathBuf) -> Result<(), UpgradeErr
     let mut ca_dir = work_dir.clone();
     ca_dir.push("cas");
     if ca_dir.exists() {
-        let ca_store: AggregateStore<CertAuth> = AggregateStore::new(work_dir, "cas")?;
+        let ca_store: AggregateStore<CertAuth> = AggregateStore::disk(work_dir, "cas")?;
         if ca_store.get_version()? != current {
             ca_store.set_version(&current)?;
         }
@@ -125,7 +187,7 @@ pub async fn update_storage_version(work_dir: &PathBuf) -> Result<(), UpgradeErr
     let mut pubd_dir = work_dir.clone();
     pubd_dir.push("pubd");
     if pubd_dir.exists() {
-        let pubd_store: AggregateStore<Repository> = AggregateStore::new(work_dir, "pubd")?;
+        let pubd_store: AggregateStore<RepositoryAccess> = AggregateStore::disk(work_dir, "pubd")?;
         if pubd_store.get_version()? != current {
             pubd_store.set_version(&current)?;
         }
@@ -139,10 +201,14 @@ fn upgrade_0_9_0(config: Arc<Config>) -> Result<(), UpgradeError> {
     let mut cas_dir = config.data_dir.clone();
     cas_dir.push("cas");
     if cas_dir.exists() {
-        CaObjectsMigration::migrate(config)
-    } else {
-        Ok(())
+        CaObjectsMigration::migrate(config.clone())?;
     }
+    let mut pubd_dir = config.data_dir.clone();
+    pubd_dir.push("pubd");
+    if pubd_dir.exists() {
+        PubdObjectsMigration::migrate(config)?;
+    }
+    Ok(())
 }
 
 //------------ Tests ---------------------------------------------------------
@@ -158,19 +224,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ca_objects_for_existing_ca() {
-        let d = tmp_dir();
-        let source = PathBuf::from("test-resources/migrations/v0_9_0/cas/");
+    fn test_upgrade_0_9_0() {
+        let work_dir = tmp_dir();
+        let source = PathBuf::from("test-resources/migrations/v0_9_0/");
+        file::backup_dir(&source, &work_dir).unwrap();
 
-        let mut work_dir_cas = d.clone();
-        work_dir_cas.push("cas");
-
-        let config = Arc::new(Config::test(&d));
-
-        file::backup_dir(&source, &work_dir_cas).unwrap();
+        let config = Arc::new(Config::test(&work_dir));
 
         upgrade_0_9_0(config).unwrap();
 
-        let _ = fs::remove_dir_all(d);
+        let _ = fs::remove_dir_all(work_dir);
     }
 }

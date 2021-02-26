@@ -135,7 +135,7 @@ impl CaServer {
     /// Builds a new CaServer. Will return an error if the TA store cannot be
     /// initialised.
     pub async fn build(config: Arc<Config>, mq: Arc<MessageQueue>, signer: Arc<KrillSigner>) -> KrillResult<Self> {
-        let mut ca_store = AggregateStore::<CertAuth>::new(&config.data_dir, CASERVER_DIR)?;
+        let mut ca_store = AggregateStore::<CertAuth>::disk(&config.data_dir, CASERVER_DIR)?;
 
         let ca_objects_store = Arc::new(CaObjectsStore::disk(config.clone(), signer.clone())?);
 

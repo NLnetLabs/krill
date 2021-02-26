@@ -3,7 +3,7 @@
     "actor": "krill",
     "time": "2020-04-30T14:37:21.234506Z",
     "handle": "child",
-    "version": 1,
+    "version": 2,
     "sequence": 1,
     "details": {
       "type": "repo_update",
