@@ -19,7 +19,7 @@ pub struct ClientSession {
     pub expires_in: Option<Duration>,
     pub id: String,
     pub attributes: HashMap<String, String>,
-    pub secrets: Vec<String>,
+    pub secrets: HashMap<String, String>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -65,6 +65,10 @@ impl ClientSession {
         }
 
         SessionStatus::Active
+    }
+    
+    pub fn get_secret(&self, key: &str) -> Option<&String> {
+        self.secrets.get(&key.to_string())
     }
 }
 
@@ -170,7 +174,7 @@ impl LoginSessionCache {
         &self,
         id: &str,
         attributes: &HashMap<String, String>,
-        secrets: &[String],
+        secrets: HashMap<String, String>,
         key: &[u8],
         expires_in: Option<Duration>,
     ) -> KrillResult<Token> {
@@ -179,7 +183,7 @@ impl LoginSessionCache {
             expires_in,
             id: id.to_string(),
             attributes: attributes.clone(),
-            secrets: secrets.to_vec(),
+            secrets,
         };
 
         debug!("Creating token for session: {:?}", &session);
@@ -198,7 +202,7 @@ impl LoginSessionCache {
         Ok(token)
     }
 
-    pub fn decode(&self, token: Token, key: &[u8]) -> KrillResult<ClientSession> {
+    pub fn decode(&self, token: Token, key: &[u8], add_to_cache: bool) -> KrillResult<ClientSession> {
         if let Some(session) = self.lookup_session(&token) {
             trace!("Session cache hit for session id {}", &session.id);
             return Ok(session);
@@ -224,7 +228,9 @@ impl LoginSessionCache {
 
         trace!("Session cache miss, deserialized session id {}", &session.id);
 
-        self.cache_session(&token, &session);
+        if add_to_cache {
+            self.cache_session(&token, &session);
+        }
 
         Ok(session)
     }
@@ -279,6 +285,12 @@ mod tests {
 
         const KEY: &[u8] = "unused".as_bytes();
 
+        fn one_attr_map(k: &str, v: &str) -> HashMap<String, String> {
+            let mut m: HashMap<String, String> = HashMap::new();
+            m.insert(k.into(), v.into());
+            m
+        }
+
         // Create a new cache whose items are elligible for eviction after one
         // second and which does no actual encryption or decryption.
         let cache = LoginSessionCache::new()
@@ -287,14 +299,14 @@ mod tests {
             .with_decrypter(|_, v, _| Ok(v.to_vec()));
 
         // Add an item to the cache and verify that the cache now has 1 item
-        let item1_token = cache.encode("some id", &HashMap::new(), &[], KEY, None).unwrap();
+        let item1_token = cache.encode("some id", &HashMap::new(), HashMap::new(), KEY, None).unwrap();
         assert_eq!(cache.size(), 1);
 
-        let item1 = cache.decode(item1_token, KEY).unwrap();
+        let item1 = cache.decode(item1_token, KEY, true).unwrap();
         assert_eq!(item1.id, "some id");
         assert_eq!(item1.attributes, HashMap::new());
         assert_eq!(item1.expires_in, None);
-        assert_eq!(item1.secrets, Vec::<String>::new());
+        assert_eq!(item1.secrets, HashMap::new());
 
         // Wait until after the cached item should have expired but as the cache
         // has not yet been swept the item should still be in the cache
@@ -302,13 +314,13 @@ mod tests {
         assert_eq!(cache.size(), 1);
 
         // Add another item to the cache
-        let mut some_attrs = HashMap::new();
-        some_attrs.insert(String::from("some attr key"), String::from("some attr val"));
+        let some_attrs = one_attr_map("some attr key", "some attr val");
+        let some_secrets = one_attr_map("some secret key", "some secret val");
         let item2_token = cache
             .encode(
                 "other id",
                 &some_attrs,
-                &[String::from("some secret")],
+                some_secrets,
                 KEY,
                 Some(Duration::from_secs(10)),
             )
@@ -325,13 +337,11 @@ mod tests {
         std::thread::sleep(Duration::from_secs(2));
         assert_eq!(cache.size(), 1);
 
-        let item2 = cache.decode(item2_token, KEY).unwrap();
-        let mut again_some_attrs = HashMap::new();
-        again_some_attrs.insert(String::from("some attr key"), String::from("some attr val"));
+        let item2 = cache.decode(item2_token, KEY, true).unwrap();
         assert_eq!(item2.id, "other id");
-        assert_eq!(item2.attributes, again_some_attrs);
+        assert_eq!(item2.attributes, one_attr_map("some attr key", "some attr val"));
         assert_eq!(item2.expires_in, Some(Duration::from_secs(10)));
-        assert_eq!(item2.secrets, [String::from("some secret")]);
+        assert_eq!(item2.secrets, one_attr_map("some secret key", "some secret val"));
 
         // Sweep the cache and confirm that cache is now empty.
         cache.sweep().unwrap();

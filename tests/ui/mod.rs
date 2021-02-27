@@ -13,6 +13,7 @@ use krill::test::*;
 pub enum OpenIDConnectMockMode {
     OIDCProviderWillNotBeStarted,
     OIDCProviderWithRPInitiatedLogout,
+    OIDCProviderWithOAuth2Revocation,
     OIDCProviderWithNoLogoutEndpoints,
 }
 

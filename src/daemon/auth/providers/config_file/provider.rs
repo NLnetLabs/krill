@@ -93,7 +93,7 @@ impl AuthProvider for ConfigFileAuthProvider {
             Some(token) => {
                 // see if we can decode, decrypt and deserialize the users token
                 // into a login session structure
-                let session = self.session_cache.decode(token, &self.key)?;
+                let session = self.session_cache.decode(token, &self.key, true)?;
 
                 trace!("id={}, attributes={:?}", &session.id, &session.attributes);
 
@@ -118,7 +118,9 @@ impl AuthProvider for ConfigFileAuthProvider {
         if let Some(Auth::IdAndPasswordHash { id, password_hash }) = self.get_auth(request) {
             if let Some(user) = self.users.get(&id) {
                 if user.password_hash == password_hash {
-                    let api_token = self.session_cache.encode(&id, &user.attributes, &[], &self.key, None)?;
+                    let api_token =
+                        self.session_cache
+                            .encode(&id, &user.attributes, HashMap::new(), &self.key, None)?;
 
                     Ok(LoggedInUser {
                         token: api_token,

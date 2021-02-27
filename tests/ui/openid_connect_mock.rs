@@ -1,6 +1,7 @@
 //! A mock implementation of an OpenID Connect 1.0 provider (OP) with support for the following specifications:
 //!
 //!   - [The OAuth 2.0 Authorization Framework RFC 6749][rfc6749]
+//!   - [OAuth 2.0 Token Revocation RFC 7009][rfc7009]
 //!   - [OpenID Connect Core 1.0 incorporating errata set 1][openid-connect-core-1_0]
 //!   - [OpenID Connect Discovery 1.0 incorporating errata set 1][openid-connect-discovery-1_0]
 //!   - [OpenID Connect RP-Initiated Logout 1.0 - draft 01][openid-connect-rpinitiated-1_0]
@@ -37,6 +38,7 @@ use crate::ui::OpenIDConnectMockMode;
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct CustomAdditionalMetadata {
     end_session_endpoint: Option<String>,
+    revocation_endpoint: Option<String>,
 }
 impl AdditionalProviderMetadata for CustomAdditionalMetadata {}
 
@@ -394,9 +396,15 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
         let logout_metadata = match config {
             OpenIDConnectMockMode::OIDCProviderWithRPInitiatedLogout => CustomAdditionalMetadata {
                 end_session_endpoint: Some(String::from("https://localhost:1818/logout")),
+                revocation_endpoint: None,
+            },
+            OpenIDConnectMockMode::OIDCProviderWithOAuth2Revocation => CustomAdditionalMetadata {
+                end_session_endpoint: None,
+                revocation_endpoint: Some(String::from("https://localhost:1818/revoke")),
             },
             OpenIDConnectMockMode::OIDCProviderWithNoLogoutEndpoints => CustomAdditionalMetadata {
                 end_session_endpoint: None,
+                revocation_endpoint: None,
             },
             OpenIDConnectMockMode::OIDCProviderWillNotBeStarted => {
                 unreachable!()
@@ -731,6 +739,74 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
             request.respond(response).map_err(|err| err.into())
         }
 
+        /// Implement [OAuth 2.0 Token Revocation][rfc7009]
+        ///
+        /// [rfc7009]: https://tools.ietf.org/html/rfc7009
+        fn handle_oauth2_revocation_request(
+            mut request: Request,
+            login_sessions: &mut LoginSessions,
+            known_users: &mut KnownUsers,
+        ) -> Result<(), Error> {
+            // TODO: handle both access and refresh tokens
+            let mut body = String::new();
+            request.as_reader().read_to_string(&mut body)?;
+
+            let query_params = parse_qs(body);
+            let token = require_query_param(&query_params, "token")?;
+            let token_type_hint = query_params.get_first_from_str("token_type_hint");
+
+            // https://tools.ietf.org/html/rfc7009#section-2.2.1:
+            //   unsupported_token_type:  The authorization server does not support
+            //   the revocation of the presented token type.  That is, the
+            //   client tried to revoke an access token on a server not
+            //   supporting this feature.
+            if matches!(token_type_hint, Some(hint_str) if hint_str == "access_token") {
+                let err_body = json!({
+                    "error": "unsupported_token_type",
+                    "error_description": "This mock OpenID Connect server only supports revocation of refresh tokens, not access tokens"
+                })
+                .to_string();
+                request
+                    .respond(
+                        Response::empty(StatusCode(400))
+                            .with_header(Header::from_str("Content-Type: application/json").unwrap())
+                            .with_data(err_body.as_bytes(), None),
+                    )
+                    .map_err(|err| err.into())
+            } else {
+                match login_sessions.remove(&token) {
+                    Some(removed_session) => {
+                        info!("Token '{}' has been revoked", &token);
+                        match known_users.remove(&removed_session.id) {
+                            Some(_) => {
+                                info!("User '{}' has been forgotten", &removed_session.id);
+                                request
+                                    .respond(Response::empty(StatusCode(200)))
+                                    .map_err(|err| err.into())
+                            }
+                            None => {
+                                warn!("User '{}' could NOT be forgotten", &token);
+                                request
+                                    .respond(Response::empty(StatusCode(400)))
+                                    .map_err(|err| err.into())
+                            }
+                        }
+                    }
+                    None => {
+                        warn!("Token '{}' could NOT be revoked: token is NOT known", &token);
+                        // From https://tools.ietf.org/html/rfc7009#section-2.2:
+                        //   Note: invalid tokens do not cause an error response since the client
+                        //   cannot handle such an error in a reasonable way.  Moreover, the
+                        //   purpose of the revocation request, invalidating the particular token,
+                        //   is already achieved.
+                        request
+                            .respond(Response::empty(StatusCode(200)))
+                            .map_err(|err| err.into())
+                    }
+                }
+            }
+        }
+
         fn handle_control_is_user_logged_in_request(
             request: Request,
             url: Url,
@@ -975,9 +1051,9 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
                 }
             };
 
-            // do this out here to avoid having both a mutable and immutable
-            // reference to login_sessions at the same time, which isn't
-            // permitted by the Rust borrow checker.
+            // do this out here to avoid having both a mutable and immutable reference to login_sessions at the same
+            // time, which isn't permitted by the Rust borrow checker. The key could be either an access token or a
+            // refresh token, we don't distinguish between the two.
             if let Some(key) = new_key {
                 if let Some(session) = new_session {
                     login_sessions.insert(key, session);
@@ -1012,15 +1088,17 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
             signing_key: &CoreRsaPrivateSigningKey,
             authz_codes: &mut TempAuthzCodes,
             login_sessions: &mut LoginSessions,
-            known_users: &KnownUsers,
+            known_users: &mut KnownUsers,
         ) -> Result<(), Error> {
             let url = urlparse(request.url());
+
             trace!(
                 "request received: {:?} {:?} {:?}",
                 &request.method(),
                 &url.path,
                 &url.query
             );
+
             match (request.method(), url.path.as_str()) {
                 // OpenID Connect 1.0. Discovery support
                 (Method::Get, "/.well-known/openid-configuration") => {
@@ -1049,6 +1127,12 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
                 }
                 (Method::Post, "/token") => {
                     return handle_token_request(request, signing_key, authz_codes, login_sessions, known_users);
+                }
+                // OAuth 2.0 Token Revocation support
+                (Method::Post, "/revoke") => {
+                    if matches!(config, OpenIDConnectMockMode::OIDCProviderWithOAuth2Revocation) {
+                        return handle_oauth2_revocation_request(request, login_sessions, known_users);
+                    }
                 }
                 // Test control APIs
                 (Method::Get, "/test/is_user_logged_in") => {
@@ -1088,7 +1172,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
                         &signing_key,
                         &mut authz_codes,
                         &mut login_sessions,
-                        &known_users,
+                        &mut known_users,
                     ) {
                         error!("{}", err);
                     }

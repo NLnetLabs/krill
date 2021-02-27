@@ -12,7 +12,7 @@
 //!
 //! Compliant OpenID Connect 1.0 providers (OPs) MUST support:
 //!   - [OpenID Connect Discovery 1.0][openid-connect-discovery-1_0]
-//!   - [OpenID Connect RP-Initiated Logout 1.0][openid-connect-rpinitiated-1_0]
+//!   - Either [OpenID Connect RP-Initiated Logout 1.0][openid-connect-rpinitiated-1_0] or [OAuth 2.0 Token Revocation][rfc7009]
 //!
 //! [rfc6749]: https://tools.ietf.org/html/rfc6749
 //! [rfc7009]: https://tools.ietf.org/html/rfc7009
@@ -35,11 +35,14 @@ use hyper::header::{HeaderValue, SET_COOKIE};
 use jmespatch as jmespath;
 use jmespath::ToJmespath;
 
-use openidconnect::core::{
-    CoreAuthPrompt, CoreErrorResponseType, CoreIdTokenVerifier, CoreJwsSigningAlgorithm, CoreResponseMode,
-    CoreResponseType,
+use openidconnect::{AccessToken, RequestTokenError, RevocationErrorResponseType, core::CoreRevocableToken};
+use openidconnect::{
+    core::{
+        CoreAuthPrompt, CoreErrorResponseType, CoreIdTokenVerifier, CoreJwsSigningAlgorithm, CoreResponseMode,
+        CoreResponseType,
+    },
+    RevocationUrl,
 };
-use openidconnect::RequestTokenError;
 use openidconnect::{
     AuthenticationFlow, AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce, OAuth2TokenResponse,
     RedirectUrl, RefreshToken, Scope,
@@ -69,9 +72,12 @@ use super::util::{
 
 const NONCE_COOKIE_NAME: &str = "nonce_hash";
 const LOGIN_SESSION_STATE_KEY_PATH: &str = "login_session_state.key"; // TODO: decide on proper location
+const ACCESS_TOKEN_KIND: &str = "access_token";
+const REFRESH_TOKEN_KIND: &str = "refresh_token";
 
 enum ProviderLogoutURL {
     RPInitiatedLogoutURL(String),
+    OAuth2TokenRevocationURL(String),
     OperatorProvidedLogoutURL(String),
 }
 
@@ -111,7 +117,7 @@ impl OpenIDConnectAuthProvider {
                     let meta = self.discover()?;
                     let (email_scope_supported, userinfo_endpoint_supported, logout_url) =
                         self.check_provider_capabilities(&meta)?;
-                    let client = self.build_client(meta)?;
+                    let client = self.build_client(meta, &logout_url)?;
 
                     *conn_guard = Some(ProviderConnectionProperties {
                         client,
@@ -139,11 +145,11 @@ impl OpenIDConnectAuthProvider {
     /// Via which we can discover both endpoint URIs and capability flags.
     fn discover(&self) -> KrillResult<WantedMeta> {
         // Read from config the OpenID Connect identity provider discovery URL.
-        // Strip off /.well-known/openid_configuration because the openid-connect
+        // Strip off /.well-known/openid-configuration because the openid-connect
         // crate wants to add this itself and will fail if it is already present
         // in the URL.
         let issuer = self.oidc_conf()?.issuer_url.clone();
-        let issuer = issuer.trim_end_matches("/.well-known/openid_configuration");
+        let issuer = issuer.trim_end_matches("/.well-known/openid-configuration");
         let issuer = IssuerUrl::new(issuer.to_string())?;
 
         info!(
@@ -258,12 +264,29 @@ impl OpenIDConnectAuthProvider {
                     warn!("OpenID Connect: ignoring insecure end_session_endpoint '{}'", url);
                 }
             }
+
+            if logout_url.is_none() {
+                if let Some(url) = &meta.additional_metadata().revocation_endpoint {
+                    // From: https://tools.ietf.org/html/rfc7009#section-2
+                    //   2. Token Revocation
+                    //     The client requests the revocation of a particular token by making an
+                    //     HTTP POST request to the token revocation endpoint URL.  This URL
+                    //     MUST conform to the rules given in [RFC6749], Section 3.1.  Clients
+                    //     MUST verify that the URL is an HTTPS URL.
+                    if urlparse(url).scheme == "https" {
+                        logout_url = Some(ProviderLogoutURL::OAuth2TokenRevocationURL(url.clone()));
+                    } else {
+                        warn!("OpenID Connect: ignoring insecure revocation_endpoint '{}'", url);
+                    }
+                }
+            }
         }
 
         if logout_url.is_none() {
             warn!(
-                "OpenID Connect: Neither OpenID Connect 'end_session_endpoint' was discovered \
-                   nor is the 'logout_url' config file option set. Logout will occur *only* in Krill."
+                "OpenID Connect: Neither OpenID Connect 'end_session_endpoint' or 'revocation_endpoint' was discovered \
+                   nor is the 'logout_url' config file option set. Logout will occur *only* in Krill, not in the \
+                   OpenID Connect provider."
             );
         };
 
@@ -275,7 +298,7 @@ impl OpenIDConnectAuthProvider {
         }
     }
 
-    fn build_client(&self, meta: WantedMeta) -> KrillResult<FlexibleClient> {
+    fn build_client(&self, meta: WantedMeta, logout_url: &Option<ProviderLogoutURL>) -> KrillResult<FlexibleClient> {
         // Read from config the credentials we should use to authenticate
         // ourselves with the identity provider. These details should have been
         // obtained by the Krill operator when they created a registration for
@@ -310,18 +333,102 @@ impl OpenIDConnectAuthProvider {
         // that configured at the provider.
         debug!("OpenID Connect: Redirect URI set to {}", redirect_uri.to_string());
 
-        let client = client.set_redirect_uri(redirect_uri);
+        let mut client = client.set_redirect_uri(redirect_uri);
+
+        if let Some(ProviderLogoutURL::OAuth2TokenRevocationURL(url)) = logout_url {
+            client = client.set_revocation_uri(RevocationUrl::new(url.to_owned())?);
+        }
 
         Ok(client)
     }
 
-    /// Try refreshing the token once with the OIDC Provider and return either the new token,
-    /// or the Error received from the OpenID Connect Provider. This Error is
-    /// FOR INTERNAL CONSUMPTION only.
-    /// The caller of this function is responsible for creating end-user error messages, logging and
-    /// (optionally) retrying.
+    fn try_revoke_token(&self, session: &ClientSession) -> Result<(), RevocationErrorResponseType> {
+        // Connect to the OpenID Connect provider OAuth 2.0 token revocation endpoint to terminate the
+        // provider session
+        // From: https://tools.ietf.org/html/rfc7009#section-2
+        //   "Implementations MUST support the revocation of refresh tokens and SHOULD support the
+        //    revocation of access tokens (see Implementation Note)."
+        let token_to_revoke = if let Some(token) = session.get_secret(REFRESH_TOKEN_KIND) {
+            CoreRevocableToken::from(RefreshToken::new(token.clone()))
+        } else if let Some(token) = session.get_secret(ACCESS_TOKEN_KIND) {
+            CoreRevocableToken::from(AccessToken::new(token.clone()))
+        } else {
+            return Err(RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension("Internal error: Token revocation attempted without a token".to_string())))
+        };
+
+        trace!("OpenID Connect: Revoking token for user: \"{}\"", &session.id);
+        trace!("OpenID Connect: Submitting RFC-7009 section 2 Token Revocation request");
+        match self.conn.read() {
+            Ok(conn_guard) => {
+                match &*conn_guard {
+                    Some(conn) => {
+                        match conn
+                            .client
+                            .revoke_token(token_to_revoke)
+                            .map_err(|err| RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension(format!(
+                                "Unexpected error while preparing to revoke token: {}",
+                                err.to_string()
+                            ))))?
+                            .request(logging_http_client)
+                        {
+                            Ok(_) => Ok(()),
+                            Err(err) => match &err {
+                                // this is where the RFC-7009 2.2.1 Error Response is received and return to the caller.
+                                // It's the responsibility of the caller to decide whether to retry or report back to
+                                // the user.
+                                //
+                                // Note that [Errata for RFC 6749](https://www.rfc-editor.org/errata/eid4745)
+                                // defines two additional error responses, `server_error` and
+                                // `temporarily_unavailable`, that don't have variant counterparts
+                                // in the openid-connect crate. These two error messages will
+                                // therefore **not** end up in the `ServerReponse` variant.
+                                openidconnect::RequestTokenError::ServerResponse(r) => Err(r.error().clone()),
+                                openidconnect::RequestTokenError::Request(r) => {
+                                    Err(RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension(format!(
+                                        "Network failure while revoking token: {}",
+                                        r.to_string()
+                                    ))))
+                                }
+                                openidconnect::RequestTokenError::Parse(r, _) => {
+                                    Err(RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension(format!(
+                                        "Error while parsing token revocation response: {}",
+                                        r.to_string()
+                                    ))))
+                                }
+                                openidconnect::RequestTokenError::Other(err_string) => match err_string.as_str() {
+                                    "temporarily_unavailable" | "server_error" => {
+                                        Err(RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension(err_string.to_string())))
+                                    }
+                                    _ => Err(RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension(format!(
+                                        "Unknown error while revoking token: {}",
+                                        err_string
+                                    )))),
+                                },
+                            }
+                        }
+                    }
+                    None => {
+                        // should be unreachable
+                        Err(RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension(
+                            "Internal error: Connection to OpenID Connect provider not yet established".to_string(),
+                        )))
+                    }
+                }
+            }
+            Err(err) => Err(RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension(format!(
+                "Internal error: Unable to acquire internal lock: {}",
+                err
+            )))),
+        }
+    }
+
+    /// Try refreshing the token once with the OIDC Provider and return either the new token, or the Error received from
+    /// the OpenID Connect Provider. This Error is FOR INTERNAL CONSUMPTION only. The caller of this function is
+    /// responsible for creating end-user error messages, logging and (optionally) retrying.
     fn try_refresh_token(&self, session: &ClientSession) -> Result<Auth, CoreErrorResponseType> {
-        let refresh_token = &session.secrets.get(0).unwrap();
+        let refresh_token = &session.secrets.get(REFRESH_TOKEN_KIND).ok_or(
+            CoreErrorResponseType::Extension(
+                "Internal error: Token refresh attempted without a refresh token".to_string()))?;
 
         debug!("OpenID Connect: Refreshing token for user: \"{}\"", &session.id);
         trace!("OpenID Connect: Submitting RFC-6749 section 6 Access Token Refresh request");
@@ -335,16 +442,10 @@ impl OpenIDConnectAuthProvider {
                             .request(logging_http_client);
                         match token_response {
                             Ok(token_response) => {
-                                let secrets = if let Some(new_refresh_token) = token_response.refresh_token() {
-                                    vec![new_refresh_token.secret().clone()]
-                                } else {
-                                    vec![]
-                                };
-
                                 let new_token_res = self.session_cache.encode(
                                     &session.id,
                                     &session.attributes,
-                                    &secrets,
+                                    secrets_from_token_response(&token_response),
                                     &self.session_key,
                                     token_response.expires_in(),
                                 );
@@ -630,20 +731,24 @@ impl AuthProvider for OpenIDConnectAuthProvider {
             Some(token) => {
                 // see if we can decode, decrypt and deserialize the users token
                 // into a login session structure
-                let session = self.session_cache.decode(token, &self.session_key)?;
+                let session = self.session_cache.decode(token, &self.session_key, true)?;
                 let status = session.status();
 
                 // Token found in cache and active; all good, do an early return
-                if status == SessionStatus::Active {
-                    return Ok(Some(ActorDef::user(session.id, session.attributes, None)));
+                match status {
+                    SessionStatus::Active => {
+                        return Ok(Some(ActorDef::user(session.id, session.attributes, None)));
+                    }
+                    SessionStatus::NeedsRefresh|SessionStatus::Expired => {
+                        // We can only try to extend the session if we have a refresh token. Otherwise, return early
+                        // with an error that indicates the user needs to login again.
+                        if !session.secrets.contains_key(REFRESH_TOKEN_KIND) {
+                            return Err(Error::ApiAuthSessionExpired("No token to be refreshed".to_string()));
+                        }
+                    }
                 }
 
-                // There are no current secrets, nothing to try to refresh. Return
-                // early with an error that indicates the user needs to login again.
-                if session.secrets.is_empty() {
-                    return Err(Error::ApiAuthSessionExpired("No token to be refreshed".to_string()));
-                }
-
+                // Token needs refresh and we have a refresh token, try to refresh
                 let new_auth = match self.try_refresh_token(&session) {
                     Ok(auth) => {
                         trace!(
@@ -663,7 +768,9 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                             // by them. The user should be able to create a new session by logging in again.
                             CoreErrorResponseType::InvalidGrant => {
                                 warn!("OpenID Connect: invalid_grant {:?}", err);
-                                return Err(Error::ApiInvalidCredentials("Unable to extend login session: your session has been terminated.".to_string()));
+                                return Err(Error::ApiInvalidCredentials(
+                                    "Unable to extend login session: your session has been terminated.".to_string(),
+                                ));
                             }
                             CoreErrorResponseType::InvalidRequest | CoreErrorResponseType::InvalidClient => {
                                 warn!("OpenID Connect: RFC 6749 5.2 {:?}", err);
@@ -1134,16 +1241,10 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                         // time of 1800 seconds or 30 minutes, so attempting to refresh
                         // an access token after that much time would also fail.
                         // ==========================================================================================
-                        let secrets = if let Some(new_refresh_token) = token_response.refresh_token() {
-                            vec![new_refresh_token.secret().clone()]
-                        } else {
-                            vec![]
-                        };
-
                         let api_token = self.session_cache.encode(
                             &id,
                             &attributes,
-                            &secrets,
+                            secrets_from_token_response(&token_response),
                             &self.session_key,
                             token_response.expires_in(),
                         )?;
@@ -1191,9 +1292,9 @@ impl AuthProvider for OpenIDConnectAuthProvider {
             Error::ApiInvalidCredentials("Invalid session token".to_string())
         })?;
 
-        // fetch the decoded session from the cache or decode it otherwise
-        // if we cannot decode it that's an unexpected problem so bail out
-        let session = self.session_cache.decode(token.clone(), &self.session_key)?;
+        // fetch the decoded session from the cache or decode it otherwise if we cannot decode it that's an unexpected
+        // problem so bail out
+        let session = self.session_cache.decode(token.clone(), &self.session_key, false)?;
 
         // announce that the user requested to be logged out
         info!("User logged out: {}", session.id);
@@ -1231,11 +1332,22 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                         // See: https://openid.net/specs/openid-connect-rpinitiated-1_0.html#RPLogout
                         //      https://openid.net/specs/openid-connect-rpinitiated-1_0.html#RedirectionAfterLogout
                         // E.g. state or ui_locales?
-                        
+
                         // According to the spec we MUST supply the id_token_hint query parameter:
                         //   "An id_token_hint carring an ID Token for the RP is also REQUIRED when requesting
                         //    post-logout redirection"
                         format!("{}?post_logout_redirect_uri={}", url, service_uri.as_str())
+                    }
+                    Some(ProviderLogoutURL::OAuth2TokenRevocationURL(_)) => {
+                        if let Err(err) = self.try_revoke_token(&session) {
+                            self.internal_error(
+                                format!("Error while revoking token for user '{}'", session.id),
+                                Some(err.to_string()),
+                            );
+                        }
+
+                        // Then ask Lagosta to direct the user to the Krill UI landing page.
+                        service_uri.as_str().to_string()
                     }
                     Some(ProviderLogoutURL::OperatorProvidedLogoutURL(ref url)) => {
                         trace!(
@@ -1266,6 +1378,18 @@ impl AuthProvider for OpenIDConnectAuthProvider {
             }
         }
     }
+}
+
+fn secrets_from_token_response(token_response: &FlexibleTokenResponse) -> HashMap<String, String> {
+    let mut secrets = HashMap::new();
+    secrets.insert(
+        ACCESS_TOKEN_KIND.to_string(),
+        token_response.access_token().secret().clone(),
+    );
+    if let Some(refresh_token) = token_response.refresh_token() {
+        secrets.insert(REFRESH_TOKEN_KIND.to_string(), refresh_token.secret().clone());
+    };
+    secrets
 }
 
 fn with_default_claims(claims: &Option<ConfigAuthOpenIDConnectClaims>) -> ConfigAuthOpenIDConnectClaims {

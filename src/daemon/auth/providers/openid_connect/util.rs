@@ -2,7 +2,8 @@ use openidconnect::core::{
     CoreAuthDisplay, CoreAuthPrompt, CoreClaimName, CoreClaimType, CoreClientAuthMethod, CoreErrorResponseType,
     CoreGenderClaim, CoreGrantType, CoreJsonWebKey, CoreJsonWebKeyType, CoreJsonWebKeyUse,
     CoreJweContentEncryptionAlgorithm, CoreJweKeyManagementAlgorithm, CoreJwsSigningAlgorithm, CoreResponseMode,
-    CoreResponseType, CoreSubjectIdentifierType, CoreTokenType,
+    CoreResponseType, CoreRevocableToken, CoreRevocationErrorResponse, CoreSubjectIdentifierType,
+    CoreTokenIntrospectionResponse, CoreTokenType,
 };
 use openidconnect::{
     AdditionalClaims, AdditionalProviderMetadata, Client, ExtraTokenFields, IdTokenClaims, IdTokenFields,
@@ -62,6 +63,9 @@ pub type FlexibleClient = Client<
     StandardErrorResponse<CoreErrorResponseType>,
     FlexibleTokenResponse,
     CoreTokenType,
+    CoreTokenIntrospectionResponse,
+    CoreRevocableToken,
+    CoreRevocationErrorResponse,
 >;
 pub type FlexibleIdTokenClaims = IdTokenClaims<CustomerDefinedAdditionalClaims, CoreGenderClaim>;
 pub type FlexibleUserInfoClaims = UserInfoClaims<CustomerDefinedAdditionalClaims, CoreGenderClaim>;
