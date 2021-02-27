@@ -33,7 +33,7 @@ fn make_recap_fn() -> Box<CustomFunction> {
 
         if let jmespath::Variable::String(str) = &*args[0] {
             if let jmespath::Variable::String(re_str) = &*args[1] {
-                let re = Regex::new(&re_str).unwrap();
+                let re = Regex::new(&re_str).expect(&format!("Invalid regular expression for '{}' for recap() JMESPath function", &re_str));
                 let caps = re.captures_iter(&str).next().unwrap();
                 res = caps[1].to_string();
             }
@@ -65,7 +65,7 @@ fn make_resub_fn() -> Box<CustomFunction> {
         if let jmespath::Variable::String(str) = &*args[0] {
             if let jmespath::Variable::String(re_str) = &*args[1] {
                 if let jmespath::Variable::String(newval) = &*args[2] {
-                    let re = Regex::new(&re_str).unwrap();
+                    let re = Regex::new(&re_str).expect(&format!("Invalid regular expression for '{}' for resub() JMESPath function", &re_str));
                     res = re.replace(str.as_str(), newval.as_str()).to_string();
                 }
             }
