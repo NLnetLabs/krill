@@ -50,7 +50,7 @@ fn make_recap_fn() -> Box<CustomFunction> {
 /// that returns the result of replacing the first text in the haystack that
 /// matches the needle regex with the given replacement value.
 ///
-/// Returns an empty string if no match is found.
+/// Returns the given string unchanged if no match is found to replace.
 fn make_resub_fn() -> Box<CustomFunction> {
     let fn_signature = Signature::new(
         vec![ArgumentType::String, ArgumentType::String, ArgumentType::String],
