@@ -510,15 +510,24 @@ impl OpenIDConnectAuthProvider {
 
             debug!("Searching {:?} for \"{}\"..", source, &jmespath_string);
 
-            if let Ok(result) = expr.search(&claims) {
-                if matches!(*result, jmespath::Variable::Null) {
-                    continue;
-                }
-                debug!("Search result in {:?}: {:?}", source, &result);
+            let result = expr.search(&claims).map_err(|e| {
+                self.internal_error(
+                    "OpenID Connect: Error while searching claims",
+                    Some(&e.to_string()),
+                )
+            })?;
+            debug!("Search result in {:?}: '{:?}'", source, &result);
 
-                // return Some(String) if there is match, None otherwise (e.g. an array
-                // instead of a string)
-                return Ok(result.as_string().cloned());
+            // Did the JMESPath search find a match?
+            if !matches!(*result, jmespath::Variable::Null) {
+                // Yes. Is it a JMESPath String type?
+                if let Some(result_str) = result.as_string() {
+                    // Yes. Is it non-empty after trimming leading and trailing whitespace?
+                    if !result_str.trim().is_empty() {
+                        // Yes
+                        return Ok(Some(result_str.clone()));
+                    }
+                }
             }
         }
 
