@@ -90,10 +90,10 @@ struct PubdStoreMigration {
 
 impl UpgradeStore for PubdStoreMigration {
     fn needs_migrate(&self) -> Result<bool, UpgradeError> {
-        if Self::version_same_or_before(&self.store, KeyStoreVersion::Pre0_6)? {
+        if Self::version_before(&self.store, KeyStoreVersion::V0_6)? {
             Err(UpgradeError::custom("Cannot upgrade Krill installations from before version 0.6.0. Please upgrade to any version ranging from 0.6.0 to 0.8.1 first, and then upgrade to this version."))
         } else {
-            Self::version_same_or_before(&self.store, KeyStoreVersion::V0_9_0_RC1)
+            Self::version_before(&self.store, KeyStoreVersion::V0_9_0_RC1)
         }
     }
 
@@ -198,12 +198,12 @@ impl UpgradeStore for PubdStoreMigration {
         &self.store
     }
 
-    fn version_same_or_before(kv: &KeyValueStore, up_to: KeyStoreVersion) -> Result<bool, UpgradeError> {
+    fn version_before(kv: &KeyValueStore, before: KeyStoreVersion) -> Result<bool, UpgradeError> {
         let key = KeyStoreKey::simple("version".to_string());
         match kv.get::<KeyStoreVersion>(&key) {
             Err(e) => Err(UpgradeError::KeyStoreError(e)),
             Ok(None) => Ok(true),
-            Ok(Some(current_version)) => Ok(current_version <= up_to),
+            Ok(Some(current_version)) => Ok(current_version < before),
         }
     }
 }
