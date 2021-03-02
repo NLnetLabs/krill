@@ -673,33 +673,16 @@ impl Config {
 
     /// Creates and returns a fern logger with log level tweaks
     fn fern_logger(&self) -> fern::Dispatch {
-        let framework_level = match self.log_level {
-            LevelFilter::Off => LevelFilter::Off,
-            LevelFilter::Error => LevelFilter::Error,
-            _ => LevelFilter::Warn, // more becomes too noisy
-        };
-
-        let krill_framework_level = match self.log_level {
-            LevelFilter::Off => LevelFilter::Off,
-            LevelFilter::Error => LevelFilter::Error,
-            LevelFilter::Warn => LevelFilter::Warn,
-            _ => LevelFilter::Debug, // more becomes too noisy
-        };
+        // suppress overly noisy logging
+        let framework_level = self.log_level.min(LevelFilter::Warn);
+        let krill_framework_level = self.log_level.min(LevelFilter::Debug);
 
         // disable Oso logging unless the Oso specific POLAR_LOG environment
         // variable is set, it's too noisy otherwise
         let oso_framework_level = if env::var("POLAR_LOG").is_ok() {
-            match self.log_level {
-                LevelFilter::Trace => LevelFilter::Trace,
-                _ => LevelFilter::Debug, // at least debug
-            }
+            self.log_level.min(LevelFilter::Trace)
         } else {
-            match self.log_level {
-                LevelFilter::Off => LevelFilter::Off,
-                LevelFilter::Error => LevelFilter::Error,
-                LevelFilter::Warn => LevelFilter::Warn,
-                _ => LevelFilter::Info, // more becomes too noisy
-            }
+            self.log_level.min(LevelFilter::Info)
         };
 
         let show_target = self.log_level == LevelFilter::Trace || self.log_level == LevelFilter::Debug;
@@ -878,16 +861,142 @@ impl<'de> Deserialize<'de> for AuthType {
 mod tests {
 
     use super::*;
+    use std::env;
 
     #[test]
     fn should_parse_default_config_file() {
         // Config for auth token is required! If there is nothing in the conf
         // file, then an environment variable must be set.
-        use std::env;
         env::set_var(KRILL_ENV_AUTH_TOKEN, "secret");
 
         let c = Config::read_config("./defaults/krill.conf").unwrap();
         let expected_socket_addr: SocketAddr = ([127, 0, 0, 1], 3000).into();
         assert_eq!(c.socket_addr(), expected_socket_addr);
+    }
+
+    #[test]
+    fn should_set_correct_log_levels() {
+        use log::Level as LL;
+
+        fn void_logger_from_krill_config(config_bytes: &[u8]) -> Box<dyn log::Log> {
+            let c: Config = toml::from_slice(config_bytes).unwrap();
+            let void_output = fern::Output::writer(Box::new(io::sink()), "");
+            let (_, void_logger) = c.fern_logger().chain(void_output).into_log();
+            void_logger
+        }
+
+        fn for_target_at_level(target: &str, level: LL) -> log::Metadata {
+            log::Metadata::builder().target(target).level(level).build()
+        }
+
+        fn should_logging_be_enabled_at_this_krill_config_log_level(log_level: &LL, config_level: &str) -> bool {
+            let log_level_from_krill_config_level = LL::from_str(config_level).unwrap();
+            log_level <= &log_level_from_krill_config_level
+        }
+
+        // Krill requires an auth token to be defined, give it one in the environment
+        env::set_var(KRILL_ENV_AUTH_TOKEN, "secret");
+
+        const ALL_LOG_LEVELS: &[LL; 5] = &[LL::Error, LL::Warn, LL::Info, LL::Debug, LL::Trace];
+        const KEY_COMPONENTS: &[&str; 4] = &["krill", "hyper", "reqwest", "oso"];
+        const MAJOR_KRILL_COMPONENTS: &[&str; 2] = &["krill", "oso"];
+
+        //
+        // Test that important log levels are enabled for all key components
+        //
+
+        // for each Krill config log level we want to test
+        for config_level in &["error", "warn"] {
+            // build a logger for that config
+            let log = void_logger_from_krill_config(format!(r#"log_level = "{}""#, config_level).as_bytes());
+
+            // for each level of interest that messages could be logged at
+            for log_msg_level in ALL_LOG_LEVELS {
+                // determine if logging should be enabled or not
+                let should_be_enabled =
+                    should_logging_be_enabled_at_this_krill_config_log_level(log_msg_level, config_level);
+
+                // for each Krill component we want to pretend to log as
+                for component in KEY_COMPONENTS {
+                    // verify that logging is enabled or not as expected
+                    assert_eq!(
+                        should_be_enabled,
+                        log.enabled(&for_target_at_level(component, *log_msg_level)),
+                        // output an easy to understand test failure description
+                        "Logging at level {} should be {} for component {}",
+                        log_msg_level,
+                        if should_be_enabled { "enabled" } else { "disabled" },
+                        component
+                    );
+                }
+            }
+        }
+
+        //
+        // Test that info level is only enabled for major Krill components
+        //
+        let config_level = "info";
+        let log = void_logger_from_krill_config(format!(r#"log_level = "{}""#, config_level).as_bytes());
+        let log_msg_level = &LL::Info;
+
+        // for each Krill component we want to pretend to log as
+        for component in KEY_COMPONENTS {
+            // determine if logging should be enabled or not
+            let should_be_enabled =
+                should_logging_be_enabled_at_this_krill_config_log_level(log_msg_level, config_level)
+                    && MAJOR_KRILL_COMPONENTS.contains(component);
+
+            // verify that logging is enabled or not as expected
+            assert_eq!(
+                should_be_enabled,
+                log.enabled(&for_target_at_level(component, *log_msg_level)),
+                // output an easy to understand test failure description
+                "Logging at level {} should be {} for component {}",
+                log_msg_level,
+                if should_be_enabled { "enabled" } else { "disabled" },
+                component
+            );
+        }
+
+        //
+        // Test that Oso logging at levels below Info is only enabled if the Oso POLAR_LOG=1
+        // environment variable is set
+        //
+        let component = "oso";
+        for set_polar_log_env_var in &[true, false] {
+            // setup env vars
+            if *set_polar_log_env_var {
+                env::set_var("POLAR_LOG", "1");
+            } else {
+                env::remove_var("POLAR_LOG");
+            }
+
+            // for each Krill config log level we want to test
+            for config_level in &["debug", "trace"] {
+                // build a logger for that config
+                let log = void_logger_from_krill_config(format!(r#"log_level = "{}""#, config_level).as_bytes());
+
+                // for each level of interest that messages could be logged at
+                for log_msg_level in &[LL::Debug, LL::Trace] {
+                    // determine if logging should be enabled or not
+                    let should_be_enabled =
+                        should_logging_be_enabled_at_this_krill_config_log_level(log_msg_level, config_level)
+                            && *set_polar_log_env_var;
+
+                    // verify that logging is enabled or not as expected
+                    assert_eq!(
+                        should_be_enabled,
+                        log.enabled(&for_target_at_level(component, *log_msg_level)),
+                        // output an easy to understand test failure description
+                        r#"Logging at level {} should be {} for component {} when log_level = "{}" and env var POLAR_LOG is {}"#,
+                        log_msg_level,
+                        if should_be_enabled { "enabled" } else { "disabled" },
+                        component,
+                        config_level,
+                        if *set_polar_log_env_var { "set" } else { "not set" }
+                    );
+                }
+            }
+        }
     }
 }
