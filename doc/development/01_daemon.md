@@ -1,6 +1,8 @@
-# Krill Daemon Setup
+Krill Daemon Setup
+==================
 
-## Overview
+Overview
+--------
 
 Here we will explain how the Krill daemon is layered and handles requests. This layering works the
 same way whether the daemon is running as a Certification Authority, Publication Server, or both. The
@@ -18,8 +20,8 @@ where their data is stored). Theoretically those components could also be wrappe
 future, e.g. to support serverless setups using lambda functions, provided of course that authorization,
 configuration, and concurrency are handled.
 
-## Binaries
-
+Binaries
+--------
 
 The project includes two binaries which can be used to start a Krill daemon. These binaries are fairly
 thin executables which are responsible for parsing a configuration file, setting the operation mode, and
@@ -30,7 +32,8 @@ is used to start it as a dedicated Publication Server. That said, mixed operatio
 will explain below.
 
 
-## HTTPS Server
+HTTPS Server
+------------
 
 Krill uses [hyper](https://hyper.rs/) as an HTTPS server. The set up for this is done in the `start_krill_daemon`
 function in `src/daemon/http/server.rs`. This function performs the following steps:
@@ -54,7 +57,8 @@ be cloned cheaply whenever a request ir processed. So, we use hyper for the foll
 > for an example.
 
 
-## KrillServer
+KrillServer
+-----------
 
 This is the main daemon component that runs Krill. It won't do actual processing, but it is responsible for running and
 mapping calls to the following components (we will describe each component in more detail later):
@@ -68,7 +72,8 @@ mapping calls to the following components (we will describe each component in mo
 | `BgpAnalyser`   | src/commons/bgp/analyser.rs      | Compare authorizations to BGP, download RIS whois dumps.               |
 
 
-### KrillMode
+KrillMode
+---------
 
 The `KrillServer` elements are initialised based on which ```KrillMode``` is selected. The following modes are possible:
 
