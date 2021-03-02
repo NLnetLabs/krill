@@ -18,7 +18,8 @@
       }
     },
     "effect": {
-      "error": "Prefix in ROA '192.168.0.0/24 => 64496' not held by CA 'child'."
+      "result": "error",
+      "msg": "Prefix in ROA '192.168.0.0/24 => 64496' not held by CA 'child'."
     }
   },
   "result": {

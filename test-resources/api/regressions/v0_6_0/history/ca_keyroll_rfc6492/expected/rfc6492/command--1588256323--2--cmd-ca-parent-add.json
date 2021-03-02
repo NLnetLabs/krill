@@ -11,6 +11,7 @@
       "contact": "rfc6492"
     },
     "effect": {
+      "result": "success",
       "events": [
         2
       ]

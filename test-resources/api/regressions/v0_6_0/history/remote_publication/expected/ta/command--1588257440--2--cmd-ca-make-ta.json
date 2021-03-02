@@ -9,6 +9,7 @@
       "type": "make_trust_anchor"
     },
     "effect": {
+      "result": "success",
       "events": [
         2
       ]

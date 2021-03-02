@@ -15,6 +15,7 @@
         "args": {}
       },
       "effect": {
+        "result": "success",
         "events": [
           1
         ]
@@ -36,6 +37,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           2
         ]
@@ -56,6 +58,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           3,
           4
@@ -77,6 +80,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           5
         ]
@@ -101,6 +105,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           6
         ]
@@ -121,6 +126,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           7
         ]
@@ -145,6 +151,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           8
         ]
@@ -165,6 +172,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           9
         ]
@@ -189,6 +197,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           10
         ]
@@ -209,6 +218,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           11
         ]

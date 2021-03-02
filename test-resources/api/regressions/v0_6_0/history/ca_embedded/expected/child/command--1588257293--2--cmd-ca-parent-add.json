@@ -11,6 +11,7 @@
       "contact": "embedded"
     },
     "effect": {
+      "result": "success",
       "events": [
         2
       ]

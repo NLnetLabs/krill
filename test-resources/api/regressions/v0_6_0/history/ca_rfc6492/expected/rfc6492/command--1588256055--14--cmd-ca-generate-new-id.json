@@ -9,6 +9,7 @@
       "type": "generate_new_id_key"
     },
     "effect": {
+      "result": "success",
       "events": [
         16
       ]

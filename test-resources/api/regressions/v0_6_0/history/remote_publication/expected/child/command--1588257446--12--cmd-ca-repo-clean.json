@@ -9,6 +9,7 @@
       "type": "repo_remove_old"
     },
     "effect": {
+      "result": "success",
       "events": [
         19
       ]

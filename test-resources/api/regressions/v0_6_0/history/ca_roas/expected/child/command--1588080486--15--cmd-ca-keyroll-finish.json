@@ -10,6 +10,7 @@
       "resource_class_name": "0"
     },
     "effect": {
+      "result": "success",
       "events": [
         22
       ]

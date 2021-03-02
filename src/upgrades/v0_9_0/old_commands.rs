@@ -82,7 +82,7 @@ pub enum OldStoredEffect {
 impl OldStoredEffect {
     pub fn events(&self) -> Option<&Vec<u64>> {
         match self {
-            OldStoredEffect::Events(evts) => Some(evts),
+            OldStoredEffect::Events(events) => Some(events),
             OldStoredEffect::Error(_) => None,
         }
     }
@@ -91,8 +91,8 @@ impl OldStoredEffect {
 impl From<OldStoredEffect> for StoredEffect {
     fn from(old: OldStoredEffect) -> Self {
         match old {
-            OldStoredEffect::Error(msg) => StoredEffect::Error(msg),
-            OldStoredEffect::Events(evts) => StoredEffect::Events(evts),
+            OldStoredEffect::Error(msg) => StoredEffect::Error { msg },
+            OldStoredEffect::Events(events) => StoredEffect::Success { events },
         }
     }
 }

@@ -15,6 +15,7 @@
         "args": {}
       },
       "effect": {
+        "result": "success",
         "events": [
           1
         ]
@@ -36,6 +37,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           2
         ]
@@ -56,6 +58,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           3,
           4
@@ -77,6 +80,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           5
         ]
@@ -101,6 +105,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           6
         ]
@@ -122,6 +127,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           7,
           8,
@@ -145,6 +151,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           10,
           11
@@ -167,7 +174,8 @@
         }
       },
       "effect": {
-        "error": "Prefix in ROA '192.168.0.0/24 => 64496' not held by CA 'child'."
+        "result": "error",
+        "msg": "Prefix in ROA '192.168.0.0/24 => 64496' not held by CA 'child'."
       }
     },
     {
@@ -185,6 +193,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           12
         ]
@@ -209,6 +218,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           13,
           14
@@ -231,6 +241,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           15,
           16
@@ -252,6 +263,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           17,
           18
@@ -277,6 +289,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           19
         ]
@@ -297,6 +310,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           20,
           21
@@ -318,6 +332,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           22
         ]
@@ -339,7 +354,8 @@
         }
       },
       "effect": {
-        "error": "Invalid max length in ROA: '10.0.0.0/24-33 => 64496' for CA 'child"
+        "result": "error",
+        "msg": "Invalid max length in ROA: '10.0.0.0/24-33 => 64496' for CA 'child"
       }
     }
   ]

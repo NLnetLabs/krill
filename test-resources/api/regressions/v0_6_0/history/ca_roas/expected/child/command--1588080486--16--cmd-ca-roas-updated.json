@@ -19,7 +19,8 @@
       }
     },
     "effect": {
-      "error": "Invalid max length in ROA: '10.0.0.0/24-33 => 64496' for CA 'child"
+      "result": "error",
+      "msg": "Invalid max length in ROA: '10.0.0.0/24-33 => 64496' for CA 'child"
     }
   },
   "result": {

@@ -16,6 +16,7 @@
       }
     },
     "effect": {
+      "result": "success",
       "events": [
         7
       ]

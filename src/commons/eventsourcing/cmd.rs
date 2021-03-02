@@ -249,12 +249,12 @@ impl<C: Command> StoredCommandBuilder<C> {
 
     pub fn finish_with_events<E: Event>(self, events: &[E]) -> StoredCommand<C::StorableDetails> {
         let events = events.iter().map(|e| e.version()).collect();
-        let effect = StoredEffect::Events(events);
+        let effect = StoredEffect::Success { events };
         self.finish(effect)
     }
 
     pub fn finish_with_error<E: fmt::Display>(self, err: &E) -> StoredCommand<C::StorableDetails> {
-        let effect = StoredEffect::Error(err.to_string());
+        let effect = StoredEffect::Error { msg: err.to_string() };
         self.finish(effect)
     }
 }

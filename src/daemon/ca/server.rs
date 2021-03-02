@@ -470,10 +470,10 @@ impl CaServer {
 
         let effect = command.effect().clone();
         match effect {
-            StoredEffect::Error(msg) => Ok(CaCommandDetails::new(command, CaCommandResult::error(msg))),
-            StoredEffect::Events(versions) => {
+            StoredEffect::Error { msg } => Ok(CaCommandDetails::new(command, CaCommandResult::error(msg))),
+            StoredEffect::Success { events } => {
                 let mut stored_events = vec![];
-                for version in versions {
+                for version in events {
                     let evt = self.ca_store.get_event(handle, version)?.ok_or_else(|| {
                         Error::Custom(format!("Cannot find evt: {} in history for CA: {}", version, handle))
                     })?;

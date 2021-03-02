@@ -10,6 +10,7 @@
       "older_than_seconds": 0
     },
     "effect": {
+      "result": "success",
       "events": [
         17,
         18

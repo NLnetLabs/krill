@@ -18,6 +18,7 @@
       }
     },
     "effect": {
+      "result": "success",
       "events": [
         15,
         16

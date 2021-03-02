@@ -10,6 +10,7 @@
       "staged_for_seconds": 0
     },
     "effect": {
+      "result": "success",
       "events": [
         20,
         21

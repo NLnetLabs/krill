@@ -115,8 +115,8 @@ impl fmt::Display for CommandHistory {
 
         for command in self.commands() {
             let success_string = match &command.effect {
-                StoredEffect::Error(msg) => format!("ERROR -> {}", msg),
-                StoredEffect::Events(_) => "OK".to_string(),
+                StoredEffect::Error { msg } => format!("ERROR -> {}", msg),
+                StoredEffect::Success { .. } => "OK".to_string(),
             };
             writeln!(
                 f,
@@ -176,24 +176,24 @@ impl CommandHistoryRecord {
 //------------ StoredEffect --------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", tag = "result")]
 pub enum StoredEffect {
-    Error(String),
-    Events(Vec<u64>),
+    Error { msg: String },
+    Success { events: Vec<u64> },
 }
 
 impl StoredEffect {
     pub fn successful(&self) -> bool {
         match self {
-            StoredEffect::Error(_) => false,
-            StoredEffect::Events(_) => true,
+            StoredEffect::Error { .. } => false,
+            StoredEffect::Success { .. } => true,
         }
     }
 
     pub fn events(&self) -> Option<&Vec<u64>> {
         match self {
-            StoredEffect::Error(_) => None,
-            StoredEffect::Events(vec) => Some(vec),
+            StoredEffect::Error { .. } => None,
+            StoredEffect::Success { events } => Some(events),
         }
     }
 }

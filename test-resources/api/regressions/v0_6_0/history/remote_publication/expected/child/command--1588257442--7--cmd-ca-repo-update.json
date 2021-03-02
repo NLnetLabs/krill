@@ -10,6 +10,7 @@
       "service_uri": "https://localhost:3001/rfc8181/child"
     },
     "effect": {
+      "result": "success",
       "events": [
         10,
         11,

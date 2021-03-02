@@ -15,6 +15,7 @@
         "args": {}
       },
       "effect": {
+        "result": "success",
         "events": [
           1
         ]
@@ -36,6 +37,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           2
         ]
@@ -56,6 +58,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           3,
           4
@@ -77,6 +80,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           5
         ]
@@ -101,6 +105,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           6
         ]
@@ -122,6 +127,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           7,
           8,
@@ -144,6 +150,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           10,
           11,
@@ -170,6 +177,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           13
         ]
@@ -188,6 +196,7 @@
         "args": {}
       },
       "effect": {
+        "result": "success",
         "events": [
           14
         ]
@@ -208,6 +217,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           15,
           16,
@@ -234,6 +244,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           18
         ]
@@ -252,6 +263,7 @@
         "args": {}
       },
       "effect": {
+        "result": "success",
         "events": [
           19
         ]

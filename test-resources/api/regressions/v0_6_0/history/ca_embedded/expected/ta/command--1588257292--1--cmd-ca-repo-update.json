@@ -10,6 +10,7 @@
       "service_uri": null
     },
     "effect": {
+      "result": "success",
       "events": [
         1
       ]

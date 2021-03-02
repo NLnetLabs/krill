@@ -28,6 +28,7 @@
       ]
     },
     "effect": {
+      "result": "success",
       "events": [
         3,
         4,

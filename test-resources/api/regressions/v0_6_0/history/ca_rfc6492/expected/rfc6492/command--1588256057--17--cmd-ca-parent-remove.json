@@ -10,6 +10,7 @@
       "parent": "ta"
     },
     "effect": {
+      "result": "success",
       "events": [
         19
       ]
