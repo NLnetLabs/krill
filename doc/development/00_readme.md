@@ -14,4 +14,5 @@ components and/or concepts in Krill:
 
 1. [Krill Daemon Code](./01_daemon.md)
 2. [Krill CLI Code](./02_cli.md)
+3. [Event Sourcing General Overview](./03_es_concepts.md)
 
