@@ -897,34 +897,46 @@ mod tests {
         // Krill requires an auth token to be defined, give it one in the environment
         env::set_var(KRILL_ENV_AUTH_TOKEN, "secret");
 
-        const ALL_LOG_LEVELS: &[LL; 5] = &[LL::Error, LL::Warn, LL::Info, LL::Debug, LL::Trace];
-        const KEY_COMPONENTS: &[&str; 4] = &["krill", "hyper", "reqwest", "oso"];
-        const MAJOR_KRILL_COMPONENTS: &[&str; 2] = &["krill", "oso"];
+        // Define sets of log targets aka components of Krill that we want to test log settings for, based on the
+        // rules & exceptions that the actual code under test is supposed to configure the logger with
+        let krill_components = vec!["krill"];
+        let krill_framework_components = vec!["krill::commons::eventsourcing", "krill::commons::util::file"];
+        let other_key_components = vec!["hyper", "reqwest", "oso"];
+
+        let krill_key_components = vec![krill_components, krill_framework_components.clone()]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        let all_key_components = vec![krill_key_components.clone(), other_key_components]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
 
         //
         // Test that important log levels are enabled for all key components
         //
 
-        // for each Krill config log level we want to test
+        // for each important Krill config log level
         for config_level in &["error", "warn"] {
             // build a logger for that config
             let log = void_logger_from_krill_config(format!(r#"log_level = "{}""#, config_level).as_bytes());
 
-            // for each level of interest that messages could be logged at
-            for log_msg_level in ALL_LOG_LEVELS {
+            // for all log levels
+            for log_msg_level in &[LL::Error, LL::Warn, LL::Info, LL::Debug, LL::Trace] {
                 // determine if logging should be enabled or not
                 let should_be_enabled =
                     should_logging_be_enabled_at_this_krill_config_log_level(log_msg_level, config_level);
 
                 // for each Krill component we want to pretend to log as
-                for component in KEY_COMPONENTS {
+                for component in &all_key_components {
                     // verify that logging is enabled or not as expected
                     assert_eq!(
                         should_be_enabled,
                         log.enabled(&for_target_at_level(component, *log_msg_level)),
                         // output an easy to understand test failure description
-                        "Logging at level {} should be {} for component {}",
+                        "Logging at level {} with log_level={} should be {} for component {}",
                         log_msg_level,
+                        config_level,
                         if should_be_enabled { "enabled" } else { "disabled" },
                         component
                     );
@@ -933,29 +945,39 @@ mod tests {
         }
 
         //
-        // Test that info level is only enabled for major Krill components
+        // Test that info level and below are only enabled for Krill at the right log levels
         //
-        let config_level = "info";
-        let log = void_logger_from_krill_config(format!(r#"log_level = "{}""#, config_level).as_bytes());
-        let log_msg_level = &LL::Info;
 
-        // for each Krill component we want to pretend to log as
-        for component in KEY_COMPONENTS {
-            // determine if logging should be enabled or not
-            let should_be_enabled =
-                should_logging_be_enabled_at_this_krill_config_log_level(log_msg_level, config_level)
-                    && MAJOR_KRILL_COMPONENTS.contains(component);
+        // for each Krill config log level we want to test
+        for config_level in &["info", "debug", "trace"] {
+            // build a logger for that config
+            let log = void_logger_from_krill_config(format!(r#"log_level = "{}""#, config_level).as_bytes());
 
-            // verify that logging is enabled or not as expected
-            assert_eq!(
-                should_be_enabled,
-                log.enabled(&for_target_at_level(component, *log_msg_level)),
-                // output an easy to understand test failure description
-                "Logging at level {} should be {} for component {}",
-                log_msg_level,
-                if should_be_enabled { "enabled" } else { "disabled" },
-                component
-            );
+            // for each level of interest that messages could be logged at
+            for log_msg_level in &[LL::Info, LL::Debug, LL::Trace] {
+                // determine if logging should be enabled or not
+                let should_be_enabled =
+                    should_logging_be_enabled_at_this_krill_config_log_level(log_msg_level, config_level);
+
+                // for each Krill component we want to pretend to log as
+                for component in &krill_key_components {
+                    // framework components shouldn't log at Trace level
+                    let should_be_enabled = should_be_enabled
+                        && (*log_msg_level < LL::Trace || !krill_framework_components.contains(&component));
+
+                    // verify that logging is enabled or not as expected
+                    assert_eq!(
+                        should_be_enabled,
+                        log.enabled(&for_target_at_level(component, *log_msg_level)),
+                        // output an easy to understand test failure description
+                        "Logging at level {} with log_level={} should be {} for component {}",
+                        log_msg_level,
+                        config_level,
+                        if should_be_enabled { "enabled" } else { "disabled" },
+                        component
+                    );
+                }
+            }
         }
 
         //
@@ -988,11 +1010,11 @@ mod tests {
                         should_be_enabled,
                         log.enabled(&for_target_at_level(component, *log_msg_level)),
                         // output an easy to understand test failure description
-                        r#"Logging at level {} should be {} for component {} when log_level = "{}" and env var POLAR_LOG is {}"#,
+                        r#"Logging at level {} with log_level={} should be {} for component {} and env var POLAR_LOG is {}"#,
                         log_msg_level,
+                        config_level,
                         if should_be_enabled { "enabled" } else { "disabled" },
                         component,
-                        config_level,
                         if *set_polar_log_env_var { "set" } else { "not set" }
                     );
                 }
