@@ -3,7 +3,7 @@ use crate::commons::eventsourcing::WithStorableDetails;
 
 //------------ Aggregate -----------------------------------------------------
 
-/// This trait defines an Aggregate for use with the event sourcing framwork.
+/// This trait defines an Aggregate for use with the event sourcing framework.
 ///
 /// An aggregate is term coming from DDD (Domain Driven Design) and is used to
 /// describe an abstraction where a cluster of structs (the aggregate) provides
@@ -19,7 +19,7 @@ use crate::commons::eventsourcing::WithStorableDetails;
 /// 'events' are returned that contain state changes to the aggregate. These events
 /// still need to be applied to become persisted.
 pub trait Aggregate: Storable + Send + Sync + 'static {
-    type Command: Command<Event = Self::Event, StorableDetails = Self::StorableCommandDetails>;
+    type Command: Command<StorableDetails = Self::StorableCommandDetails>;
     type StorableCommandDetails: WithStorableDetails;
     type Event: Event;
     type InitEvent: Event;

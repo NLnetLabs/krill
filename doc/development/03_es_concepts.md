@@ -52,17 +52,9 @@ In its purest form (hint: we don't do this), these messages can then be used to 
 one or more data representations that users can *query*. E.g. you could populate data tables
 in a SQL database if that floats your boat.
 
-More.. Libraries?
------------------
+Credits / Read More..
+---------------------
 
 This combination of techniques has been championed by various people, most notably Greg Young
 and Martin Fowler. You can do your own internet search find out much more about how this can
 work, and how it is done in other projects.
-
-If you search for it you will find that there are many blog posts about how people made this
-work for their project. There are also many libraries, for many languages, that provide ES-CQRS
-frameworks. Some of these libraries will have you believe that their implementation is the
-**right** way of doing this... but we believe that there is more than one way to happiness. So,
-in Krill we have chosen to use our own local implementation. This lets us use the concepts,
-but it allows us the flexibility to adapt it to our specific needs, and avoids the complication
-from concepts that we do not need.

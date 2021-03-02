@@ -15,8 +15,6 @@ use crate::{
     daemon::ca::StoredCaCommand,
 };
 
-use super::old_events::{OldCaEvt, OldPubdEvt};
-
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldStoredCaCommand {
     pub actor: String,
@@ -55,7 +53,6 @@ impl fmt::Display for OldStoredCaCommand {
 }
 
 impl Command for OldStoredCaCommand {
-    type Event = OldCaEvt;
     type StorableDetails = OldStorableCaCommand;
 
     fn handle(&self) -> &Handle {
@@ -238,7 +235,6 @@ impl fmt::Display for OldStoredRepositoryCommand {
 }
 
 impl Command for OldStoredRepositoryCommand {
-    type Event = OldPubdEvt;
     type StorableDetails = OldStorableRepositoryCommand;
 
     fn handle(&self) -> &Handle {
