@@ -13,7 +13,7 @@ mod store;
 pub use self::store::*;
 
 mod listener;
-pub use self::listener::{EventCounter, EventListener, SyncEventListener};
+pub use self::listener::{EventCounter, PostSaveEventListener, PreSaveEventListener};
 
 mod kv;
 pub use self::kv::*;
@@ -292,7 +292,7 @@ mod tests {
 
         let counter = Arc::new(EventCounter::default());
         let mut manager = AggregateStore::<Person>::disk(&d, "person").unwrap();
-        manager.add_listener(counter.clone());
+        manager.add_post_save_listener(counter.clone());
 
         let id_alice = Handle::from_str("alice").unwrap();
         let alice_init = InitPersonEvent::init(&id_alice, "alice smith");

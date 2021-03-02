@@ -148,8 +148,8 @@ impl CaServer {
             );
             ca_store.recover()?;
         }
-        ca_store.add_listener(mq.clone());
-        ca_store.add_sync_listener(ca_objects_store.clone());
+        ca_store.add_post_save_listener(mq.clone());
+        ca_store.add_pre_save_listener(ca_objects_store.clone());
 
         let status_store = StatusStore::new(&config.data_dir, STATUS_DIR)?;
 

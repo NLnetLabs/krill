@@ -14,10 +14,11 @@ use rpki::x509::Time;
 use crate::commons::api::{CommandHistory, CommandHistoryCriteria, CommandHistoryRecord, Handle, Label};
 use crate::commons::eventsourcing::cmd::{Command, StoredCommandBuilder};
 use crate::commons::eventsourcing::{
-    Aggregate, Event, EventListener, KeyStoreKey, KeyValueError, KeyValueStore, StoredCommand, WithStorableDetails,
+    Aggregate, Event, KeyStoreKey, KeyValueError, KeyValueStore, PostSaveEventListener, StoredCommand,
+    WithStorableDetails,
 };
 
-use super::SyncEventListener;
+use super::PreSaveEventListener;
 
 pub type StoreResult<T> = Result<T, AggregateStoreError>;
 
@@ -147,8 +148,8 @@ impl fmt::Display for CommandKeyError {
 pub struct AggregateStore<A: Aggregate> {
     kv: KeyValueStore,
     cache: RwLock<HashMap<Handle, Arc<A>>>,
-    listeners: Vec<Arc<dyn EventListener<A>>>,
-    sync_listeners: Vec<Arc<dyn SyncEventListener<A>>>,
+    pre_save_listeners: Vec<Arc<dyn PreSaveEventListener<A>>>,
+    post_save_listeners: Vec<Arc<dyn PostSaveEventListener<A>>>,
     outer_lock: RwLock<()>,
 }
 
@@ -158,6 +159,7 @@ impl<A: Aggregate> AggregateStore<A>
 where
     A::Error: From<AggregateStoreError>,
 {
+    /// Creates an AggregateStore using a disk based KeyValueStore
     pub fn disk(work_dir: &PathBuf, name_space: &str) -> StoreResult<Self> {
         let mut path = work_dir.clone();
         path.push(name_space);
@@ -165,15 +167,15 @@ where
 
         let kv = KeyValueStore::disk(work_dir, name_space)?;
         let cache = RwLock::new(HashMap::new());
-        let listeners = vec![];
-        let sync_listeners = vec![];
+        let pre_save_listeners = vec![];
+        let post_save_listeners = vec![];
         let outer_lock = RwLock::new(());
 
         let store = AggregateStore {
             kv,
             cache,
-            listeners,
-            sync_listeners,
+            post_save_listeners,
+            pre_save_listeners,
             outer_lock,
         };
 
@@ -325,15 +327,14 @@ where
         Ok(())
     }
 
-    /// Adds a listener that will receive a reference to all events after they
-    /// are stored.
-    pub fn add_listener<L: EventListener<A>>(&mut self, listener: Arc<L>) {
-        self.listeners.push(listener);
+    /// Adds a listener that will receive all events before they are stored.
+    pub fn add_pre_save_listener<L: PreSaveEventListener<A>>(&mut self, sync_listener: Arc<L>) {
+        self.pre_save_listeners.push(sync_listener);
     }
 
-    /// Adds a listener that will receive all events before they are stored.
-    pub fn add_sync_listener<L: SyncEventListener<A>>(&mut self, sync_listener: Arc<L>) {
-        self.sync_listeners.push(sync_listener);
+    /// Adds a listener that will receive a reference to all events after they are stored.
+    pub fn add_post_save_listener<L: PostSaveEventListener<A>>(&mut self, listener: Arc<L>) {
+        self.post_save_listeners.push(listener);
     }
 }
 
@@ -371,10 +372,17 @@ where
         Ok(arc)
     }
 
-    /// Sends a command to the appropriate aggregate, and on
-    /// success: save command and events, return aggregate
-    /// no-op: do not save anything, return aggregate
-    /// error: save command and error, return error
+    /// Retrieve the latest aggregate for this command.
+    /// Call the A::process_command function
+    /// on success:
+    ///   - call pre-save listeners with events
+    ///   - save command and events
+    ///   - call post-save listeners with events
+    ///   - return aggregate
+    /// on no-op (empty event list):
+    ///   - do not save anything, return aggregate
+    /// on error:
+    ///   - save command and error, return error
     pub fn command(&self, cmd: A::Command) -> Result<Arc<A>, A::Error> {
         debug!("Processing command {}", cmd);
 
@@ -475,7 +483,7 @@ where
                     }
 
                     // Apply events to sync listeners which may still return errors
-                    for sync_listener in &self.sync_listeners {
+                    for sync_listener in &self.pre_save_listeners {
                         sync_listener.as_ref().listen(agg, events.as_slice())?;
                     }
 
@@ -490,7 +498,7 @@ where
 
                     // Now send the events to the 'post-save' listeners.
                     for event in events {
-                        for listener in &self.listeners {
+                        for listener in &self.post_save_listeners {
                             listener.as_ref().listen(agg, &event);
                         }
                     }

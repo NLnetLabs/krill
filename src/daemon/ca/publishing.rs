@@ -29,7 +29,7 @@ use crate::{
         },
         crypto::KrillSigner,
         error::Error,
-        eventsourcing::{KeyStoreKey, KeyValueStore, SyncEventListener},
+        eventsourcing::{KeyStoreKey, KeyValueStore, PreSaveEventListener},
         KrillResult,
     },
     constants::CA_OBJECTS_DIR,
@@ -72,7 +72,7 @@ impl CaObjectsStore {
 }
 
 /// # Process new objects as they are being produced
-impl SyncEventListener<CertAuth> for CaObjectsStore {
+impl PreSaveEventListener<CertAuth> for CaObjectsStore {
     fn listen(&self, ca: &CertAuth, events: &[CaEvt]) -> KrillResult<()> {
         // Note that the `CertAuth` which is passed in has already been
         // updated with the state changes contained in the event.
