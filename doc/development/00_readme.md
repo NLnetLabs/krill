@@ -12,4 +12,5 @@ components and/or concepts in Krill:
 
 
 1. [Krill Daemon Code](./01_daemon.md)
+2. [Krill CLI Code](./02_cli.md)
 
