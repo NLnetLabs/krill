@@ -380,11 +380,11 @@ pub async fn metrics(req: Request) -> RoutingResult {
         res.push_str("# HELP krill_version_patch krill server patch version number\n");
         res.push_str("# TYPE krill_version_patch gauge\n");
         res.push_str(&format!("krill_version_patch {}\n", KRILL_VERSION_PATCH));
-        res.push('\n');
 
         if let Ok(stats) = server.repo_stats() {
             let publishers = stats.get_publishers();
 
+            res.push('\n');
             res.push_str("# HELP krill_repo_publisher number of publishers in repository\n");
             res.push_str("# TYPE krill_repo_publisher gauge\n");
             res.push_str(&format!("krill_repo_publisher {}\n", publishers.len()));
