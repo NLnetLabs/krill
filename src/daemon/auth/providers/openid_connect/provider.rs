@@ -100,17 +100,28 @@ impl From<TokenKind> for &'static str {
     }
 }
 
-enum ProviderLogoutURL {
-    RPInitiatedLogoutURL(String),
-    OAuth2TokenRevocationURL(String),
-    OperatorProvidedLogoutURL(String),
+enum LogoutMode {
+    OAuth2TokenRevocation {
+        revocation_url: String,
+        post_revocation_redirect_url: String,
+    },
+    OperatorProvidedLogout {
+        operator_provided_logout_url: String,
+    },
+    ReturnToUI {
+        url: String,
+    },
+    RPInitiatedLogout {
+        provider_url: String,
+        post_logout_redirect_url: String,
+    },
 }
 
 pub struct ProviderConnectionProperties {
     client: FlexibleClient,
     email_scope_supported: bool,
     userinfo_endpoint_supported: bool,
-    logout_url: Option<ProviderLogoutURL>,
+    logout_mode: LogoutMode,
 }
 
 pub struct OpenIDConnectAuthProvider {
@@ -140,7 +151,7 @@ impl OpenIDConnectAuthProvider {
                 if conn_guard.is_none() {
                     trace!("OpenID Connect: Initializing provider connection...");
                     let meta = self.discover()?;
-                    let (email_scope_supported, userinfo_endpoint_supported, logout_url) =
+                    let (email_scope_supported, userinfo_endpoint_supported, logout_mode) =
                         self.check_provider_capabilities(&meta)?;
                     let client = self.build_client(meta, &logout_url)?;
 
@@ -148,7 +159,7 @@ impl OpenIDConnectAuthProvider {
                         client,
                         email_scope_supported,
                         userinfo_endpoint_supported,
-                        logout_url,
+                        logout_mode,
                     });
                 }
             }
@@ -197,7 +208,7 @@ impl OpenIDConnectAuthProvider {
 
     /// Verify that the OpenID Connect: discovery metadata indicates that the
     /// provider has support for the features that we require.
-    fn check_provider_capabilities(&self, meta: &WantedMeta) -> KrillResult<(bool, bool, Option<ProviderLogoutURL>)> {
+    fn check_provider_capabilities(&self, meta: &WantedMeta) -> KrillResult<(bool, bool, LogoutMode)> {
         // TODO: verify token_endpoint_auth_methods_supported?
         // TODO: verify response_types_supported?
         let mut ok = true;
@@ -272,58 +283,91 @@ impl OpenIDConnectAuthProvider {
         // end_session_endpoint is not required to exist by the OpenID Connect discovery spec, nor is the operator
         // required to configure a custom logout URL, but we want some way to log the user out so if one of these is not
         // set, fallback to a local Krill only logout with post-logout-redirect to the Krill UI index page.
-        let mut logout_url = None;
+        //
+        // The following logic should be used:
+        //
+        //   -------------------|-------------------|------------------|---------------------------------------------
+        //   Config File logout | RP-Initiated      | Token Revocation | Action taken
+        //   URL specified?	    | Logout supported?	| supported?       | by Krill
+        //   -------------------|-------------------|------------------|---------------------------------------------
+        //   no	                | no                | no               | Direct the user to the Krill login page
+        //   no	                | no                | yes              | Revoke the token then direct the user to the
+        //                      |                   |                  | Krill login page.
+        //   no	                | yes               | no               | Direct the user to the customer logout portal
+        //                      |                   |                  | If redirected back to Krill, direct the user
+        //                      |                   |                  | to the login page.
+        //   no	                | yes               | yes              | Behave as if only RP-Initiated Logout is
+        //                      |                   |                  | supported
+        //   yes                | no                | no               | Direct the user to the configured logout URL
+        //   yes                | no                | yes              | Revoke the token then direct the user to the
+        //                      |                   |                  | configured logout URL
+        //   yes                | yes               | no               | Behave as if only RP-Initiated Logout is NOT
+        //                      |                   |                  | supported
+        //   yes                | yes               | yes              | Behave as if only RP-Initiated Logout is NOT
+        //                      |                   |                  | supported
+        //   -------------------|-------------------|------------------|---------------------------------------------
 
-        if let Some(url) = &self.oidc_conf()?.logout_url {
-            logout_url = Some(ProviderLogoutURL::OperatorProvidedLogoutURL(url.clone()))
-        } else {
-            if let Some(url) = &meta.additional_metadata().end_session_endpoint {
-                // From: https://openid.net/specs/openid-connect-rpinitiated-1_0.html#OPMetadata
-                //   end_session_endpoint
-                //     REQUIRED. URL at the OP to which an RP can perform a redirect to request that the End-User be
-                //     logged out at the OP. This URL MUST use the https scheme and MAY contain port, path, and query
-                //     parameter components.
-                if urlparse(url).scheme == "https" {
-                    logout_url = Some(ProviderLogoutURL::RPInitiatedLogoutURL(url.clone()));
-                } else {
-                    warn!("OpenID Connect: ignoring insecure end_session_endpoint '{}'", url);
-                }
-            }
+        let config_file_url = self.oidc_conf()?.logout_url.as_ref();
+        let mut rp_initiated_logout_url = meta.additional_metadata().end_session_endpoint.as_ref();
+        let mut revocation_url = meta.additional_metadata().revocation_endpoint.as_ref();
+        let service_uri = self.config.service_uri().as_str().to_string();
 
-            if logout_url.is_none() {
-                if let Some(url) = &meta.additional_metadata().revocation_endpoint {
-                    // From: https://tools.ietf.org/html/rfc7009#section-2
-                    //   2. Token Revocation
-                    //     The client requests the revocation of a particular token by making an
-                    //     HTTP POST request to the token revocation endpoint URL.  This URL
-                    //     MUST conform to the rules given in [RFC6749], Section 3.1.  Clients
-                    //     MUST verify that the URL is an HTTPS URL.
-                    if urlparse(url).scheme == "https" {
-                        logout_url = Some(ProviderLogoutURL::OAuth2TokenRevocationURL(url.clone()));
-                    } else {
-                        warn!("OpenID Connect: ignoring insecure revocation_endpoint '{}'", url);
-                    }
-                }
+        if let Some(rev_url) = revocation_url {
+            // From: https://tools.ietf.org/html/rfc7009#section-2
+            //   2. Token Revocation
+            //     The client requests the revocation of a particular token by making an
+            //     HTTP POST request to the token revocation endpoint URL.  This URL
+            //     MUST conform to the rules given in [RFC6749], Section 3.1.  Clients
+            //     MUST verify that the URL is an HTTPS URL.
+            if urlparse(rev_url).scheme != "https" {
+                warn!("OpenID Connect: Ignoring insecure revocation_endpoint '{}'", rev_url);
+                revocation_url = None;
             }
         }
 
-        if logout_url.is_none() {
-            warn!(
-                "OpenID Connect: Neither OpenID Connect 'end_session_endpoint' or 'revocation_endpoint' was discovered \
-                   nor is the 'logout_url' config file option set. Logout will occur *only* in Krill, not in the \
-                   OpenID Connect provider."
-            );
+        if let Some(rpinit_url) = &meta.additional_metadata().end_session_endpoint {
+            // From: https://openid.net/specs/openid-connect-rpinitiated-1_0.html#OPMetadata
+            //   end_session_endpoint
+            //     REQUIRED. URL at the OP to which an RP can perform a redirect to request that the End-User be
+            //     logged out at the OP. This URL MUST use the https scheme and MAY contain port, path, and query
+            //     parameter components.
+            if urlparse(rpinit_url).scheme != "https" {
+                warn!(
+                    "OpenID Connect: Ignoring insecure end_session_endpoint '{}'",
+                    rpinit_url
+                );
+                rp_initiated_logout_url = None;
+            }
+        }
+
+        let logout_mode = match (config_file_url, rp_initiated_logout_url, revocation_url) {
+            (None, None, None) => LogoutMode::ReturnToUI { url: service_uri },
+            (None, None, Some(rev_url)) => LogoutMode::OAuth2TokenRevocation {
+                revocation_url: rev_url.clone(),
+                post_revocation_redirect_url: service_uri,
+            },
+            (None, Some(rpinit_url), _) => LogoutMode::RPInitiatedLogout {
+                provider_url: rpinit_url.clone(),
+                post_logout_redirect_url: service_uri,
+            },
+            (Some(config_url), _, None) => LogoutMode::OperatorProvidedLogout {
+                operator_provided_logout_url: config_url.clone(),
+            },
+            (Some(config_url), _, Some(rev_url)) => LogoutMode::OAuth2TokenRevocation {
+                revocation_url: rev_url.clone(),
+                post_revocation_redirect_url: config_url.clone(),
+            },
         };
 
         match ok {
-            true => Ok((email_scope_supported, userinfo_endpoint_supported, logout_url)),
+            true => Ok((email_scope_supported, userinfo_endpoint_supported, logout_mode)),
             false => Err(Error::Custom(
                 "OpenID Connect: The provider lacks support for one or more required capabilities.".to_string(),
             )),
         }
     }
 
-    fn build_client(&self, meta: WantedMeta, logout_url: &Option<ProviderLogoutURL>) -> KrillResult<FlexibleClient> {
+    fn build_client(&self, meta: WantedMeta, logout_mode: &LogoutMode) -> KrillResult<FlexibleClient> {
         // Read from config the credentials we should use to authenticate
         // ourselves with the identity provider. These details should have been
         // obtained by the Krill operator when they created a registration for
@@ -360,11 +404,36 @@ impl OpenIDConnectAuthProvider {
 
         let mut client = client.set_redirect_uri(redirect_uri);
 
-        if let Some(ProviderLogoutURL::OAuth2TokenRevocationURL(url)) = logout_url {
-            client = client.set_revocation_uri(RevocationUrl::new(url.to_owned())?);
+        if let LogoutMode::OAuth2TokenRevocation { revocation_url, .. } = logout_mode {
+            client = client.set_revocation_uri(RevocationUrl::new(revocation_url.to_owned())?);
         }
 
         Ok(client)
+    }
+
+    fn build_rpinitiated_logout_url(
+        &self,
+        provider_url: &str,
+        post_logout_redirect_url: &str,
+        id_token: Option<&String>,
+    ) -> KrillResult<String> {
+        // Ask Lagosta to direct the user first the to OpenID Connect provider logout page, and ask it
+        // to then redirect post-logout back to the Krill UI landing page.
+        // TODO: Should we also use any of other parameters defined in the RP Initiated Logout 1.0 spec?
+        // See: https://openid.net/specs/openid-connect-rpinitiated-1_0.html#RPLogout
+        //      https://openid.net/specs/openid-connect-rpinitiated-1_0.html#RedirectionAfterLogout
+        // E.g. state or ui_locales?
+
+        // From https://openid.net/specs/openid-connect-rpinitiated-1_0.html#RedirectionAfterLogout:
+        //   "An id_token_hint carring an ID Token for the RP is also REQUIRED when requesting
+        //    post-logout redirection"
+        let id_token = id_token.ok_or(Error::custom("Missing id token"))?;
+        Ok(format!(
+            "{}?post_logout_redirect_uri={}&id_token_hint={}",
+            provider_url,
+            url_encode(post_logout_redirect_url)?,
+            url_encode(id_token)?
+        ))
     }
 
     fn try_revoke_token(&self, session: &ClientSession) -> Result<(), RevocationErrorResponseType> {
@@ -1370,68 +1439,48 @@ impl AuthProvider for OpenIDConnectAuthProvider {
             )
         })? {
             Some(conn) => {
-                let service_uri = self.config.service_uri().as_str().to_string();
-                let go_to_url = match conn.logout_url {
-                    Some(ProviderLogoutURL::RPInitiatedLogoutURL(ref url)) => {
-                        trace!("OpenID Connect: directing user to RP-Initiated Logout 1.0 compliant logout endpoint");
-                        // Ask Lagosta to direct the user first the to OpenID Connect provider logout page, and ask it
-                        // to then redirect post-logout back to the Krill UI landing page.
-                        // TODO: Should we also use any of other parameters defined in the RP Initiated Logout 1.0 spec?
-                        // See: https://openid.net/specs/openid-connect-rpinitiated-1_0.html#RPLogout
-                        //      https://openid.net/specs/openid-connect-rpinitiated-1_0.html#RedirectionAfterLogout
-                        // E.g. state or ui_locales?
-
-                        // From https://openid.net/specs/openid-connect-rpinitiated-1_0.html#RedirectionAfterLogout:
-                        //   "An id_token_hint carring an ID Token for the RP is also REQUIRED when requesting
-                        //    post-logout redirection"
-                        let build_rpinitiated_logout_url = || -> KrillResult<String> {
-                            let id_token = session
-                                .secrets
-                                .get(TokenKind::IdToken.into())
-                                .ok_or(Error::custom("Missing id token"))?;
-                            Ok(format!(
-                                "{}?post_logout_redirect_uri={}&id_token_hint={}",
-                                url,
-                                url_encode(service_uri.as_str())?,
-                                url_encode(id_token)?
-                            ))
-                        };
-
-                        build_rpinitiated_logout_url().unwrap_or_else(|err| {
-                            self.internal_error(
-                                format!(
-                                    "Error while building OpenID Connect RP-Initiated Logout URL for user '{}'",
-                                    session.id
-                                ),
-                                Some(err.to_string()),
-                            );
-                            service_uri
-                        })
-                    }
-                    Some(ProviderLogoutURL::OAuth2TokenRevocationURL(_)) => {
+                let go_to_url = match &conn.logout_mode {
+                    LogoutMode::OAuth2TokenRevocation {
+                        post_revocation_redirect_url,
+                        ..
+                    } => {
                         if let Err(err) = self.try_revoke_token(&session) {
                             self.internal_error(
                                 format!("Error while revoking token for user '{}'", session.id),
                                 Some(err.to_string()),
                             );
                         }
+                        post_revocation_redirect_url.clone()
+                    }
+                    LogoutMode::OperatorProvidedLogout {
+                        operator_provided_logout_url,
+                    } => {
+                        trace!("OpenID Connect: Directing user to Krill config file defined logout URL");
+                        operator_provided_logout_url.clone()
+                    }
+                    LogoutMode::ReturnToUI { url } => {
+                        trace!("OpenID Connect: Directing user to Krill UI URL");
+                        url.clone()
+                    }
+                    LogoutMode::RPInitiatedLogout {
+                        provider_url,
+                        post_logout_redirect_url,
+                    } => {
+                        trace!("OpenID Connect: Directing user to RP-Initiated Logout 1.0 compliant logout endpoint");
 
-                        // Then ask Lagosta to direct the user to the Krill UI landing page.
-                        service_uri
-                    }
-                    Some(ProviderLogoutURL::OperatorProvidedLogoutURL(ref url)) => {
-                        trace!(
-                            "OpenID Connect: directing user to Krill config file defined logout URL '{}'",
-                            url
-                        );
-                        url.to_string()
-                    }
-                    None => {
-                        trace!(
-                            "OpenID Connect: no logout URL defined, directing user to Krill UI index URL '{}'",
-                            service_uri
-                        );
-                        service_uri
+                        let id_token = session.secrets.get(TokenKind::IdToken.into());
+
+                        self.build_rpinitiated_logout_url(provider_url, post_logout_redirect_url, id_token)
+                            .unwrap_or_else(|err| {
+                                self.internal_error(
+                                    format!(
+                                        "Error while building OpenID Connect RP-Initiated Logout URL for user '{}'",
+                                        session.id
+                                    ),
+                                    Some(err.to_string()),
+                                );
+                                post_logout_redirect_url.clone()
+                            })
                     }
                 };
 
