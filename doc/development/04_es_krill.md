@@ -33,8 +33,8 @@ a `KeyStoreKey` and save or retrieve values. The key supports 'scopes' which can
 for categorizing values according to their 'aggregate'. Scopes can also use `/` characters
 to present sub-scopes, or sub-dirs in the the disk based implementation:
 
-```
-#[derive(Debug, Clone)]
+```rust
+#[derive(Clone, Debug)]
 pub struct KeyStoreKey {
     scope: Option<String>,
     name: String,
@@ -58,7 +58,7 @@ Krill just calls it 'Aggregate' instead. There is trait defined for this that is
 `CertAuth` and `RepositoryAccess` (more on these later).
 
 See `src/commons/eventsourcing/agg.rs` for the following code:
-```
+```rust
 /// This trait defines an Aggregate for use with the event sourcing framework.
 ///
 /// An aggregate is term coming from DDD (Domain Driven Design) and is used to
@@ -99,9 +99,10 @@ pub trait Aggregate: Storable + Send + Sync + 'static {
     /// doing additional allocations where we can.
     fn apply(&mut self, event: Self::Event);
 
-    /// Applies all events. Assumes that the list ordered, starting with the
-    /// oldest event, applicable, self.version matches the oldest event, and
-    /// contiguous, i.e. there are no missing events.
+    /// Applies all events. Assumes that:
+    /// - the list is contiguous (nothing missing) and ordered from old to new
+    /// - the events are all applicable to this aggregate
+    /// - the version of the aggregate matches that of the first (oldest) event
     fn apply_all(&mut self, events: Vec<Self::Event>) {
         for event in events {
             self.apply(event);
@@ -135,7 +136,7 @@ As can be seen in the trait above, Krill expects that an `Aggregate` defines a
 type that it will use for commands. The command MUST implement the `Command` trait
 which is defined in `src/commons/eventsourcing/cmd.rs`:
 
-```
+```rust
 //// Commands are used to send an intent to change an aggregate.
 ///
 /// Think of this as the data container for your update API, plus some
@@ -171,7 +172,8 @@ the actual command may contain a secret - or more likely an ephemeral thing that
 cannot and should not be saved - such as a `KrillSigner` which an Aggregate can
 use as part of the executing the command.
 
-```/// Must be implemented for all 'StorableDetails' used in Commands.
+```rust
+/// Must be implemented for all 'StorableDetails' used in Commands.
 ///
 /// In addition to implementing Storable so that the details can be stored
 /// *and* retrieved, the details also need to be able to present a generic
@@ -184,7 +186,7 @@ pub trait WithStorableDetails: Storable + Send + Sync {
 Skipping some details now (it's in the code), this is ultimately used when we
 store a command using the following struct:
 
-```
+```rust
 /// A description of a command that was processed, and the events / or error
 /// that followed. Commands that turn out to be no-ops (no events, no errors)
 /// should not be stored.
@@ -203,7 +205,7 @@ pub struct StoredCommand<S: WithStorableDetails> {
 
 Finally `StoredEffect` here tells us whether the command was successful, or not:
 
-```
+```rust
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case", tag = "result")]
 pub enum StoredEffect {
@@ -219,7 +221,7 @@ Events
 As mentioned above an `Aggregate` must specify which type of event it uses. Events
 MUST implement the `Event` trait (`src/commons/eventsourcing/evt.rs`):
 
-```
+```rust
 pub trait Event: fmt::Display + Eq + PartialEq + Send + Sync + Storable + 'static {
     /// Identifies the aggregate, useful when storing and retrieving the event.
     fn handle(&self) -> &Handle;
@@ -232,7 +234,7 @@ pub trait Event: fmt::Display + Eq + PartialEq + Send + Sync + Storable + 'stati
 ```
 
 Events are stored using the `StoredEvent` struct:
-```
+```rust
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct StoredEvent<E: fmt::Display + Eq + PartialEq + Storable + 'static> {
     id: Handle,
@@ -245,7 +247,7 @@ pub struct StoredEvent<E: fmt::Display + Eq + PartialEq + Storable + 'static> {
 So, note that `StoredEvent` is not generic over `Event`. But, in practice the defined
 `Event` for our two main aggregates are of a type of `StoredEvent`:
 
-```
+```rust
 pub type CaEvt = StoredEvent<CaEvtDet>;
 ```
 
@@ -296,7 +298,7 @@ by the `AggregateStore` (see below) when an Aggregate is successfully updated. T
 called before updates are saved, and it can fail, the second is called after all changes have
 been applied, and cannot fail:
 
-```
+```rust
 /// This trait defines a listener for events which is designed to receive
 /// the events *before* the Aggregate is saved. Thus, they are allowed
 /// to return an error in case of issues, which will then roll back the
@@ -306,7 +308,7 @@ pub trait PreSaveEventListener<A: Aggregate>: Send + Sync + 'static {
 }
 ```
 
-```
+```rust
 /// This trait defines a listener for events which is designed to receive
 /// them *after* the updated Aggregate is saved. Because the updates already
 /// happened EventListeners of this type are not allowed to fail.
@@ -330,7 +332,7 @@ deal with storage concerns.
 
 The most important function signatures (implementation omitted):
 
-```
+```rust
 impl<A: Aggregate> AggregateStore<A>
 where
     A::Error: From<AggregateStoreError>,

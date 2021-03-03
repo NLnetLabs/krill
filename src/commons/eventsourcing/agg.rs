@@ -43,9 +43,10 @@ pub trait Aggregate: Storable + Send + Sync + 'static {
     /// doing additional allocations where we can.
     fn apply(&mut self, event: Self::Event);
 
-    /// Applies all events. Assumes that the list ordered, starting with the
-    /// oldest event, applicable, self.version matches the oldest event, and
-    /// contiguous, i.e. there are no missing events.
+    /// Applies all events. Assumes that:
+    /// - the list is contiguous (nothing missing) and ordered from old to new
+    /// - the events are all applicable to this aggregate
+    /// - the version of the aggregate matches that of the first (oldest) event
     fn apply_all(&mut self, events: Vec<Self::Event>) {
         for event in events {
             self.apply(event);

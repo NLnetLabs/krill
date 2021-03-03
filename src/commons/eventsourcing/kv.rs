@@ -11,7 +11,7 @@ use crate::commons::util::file;
 
 //------------ KeyStoreKey ---------------------------------------------------
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct KeyStoreKey {
     scope: Option<String>,
     name: String,
