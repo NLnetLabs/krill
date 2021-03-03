@@ -15,6 +15,40 @@ here, and include code (snippets). But, obviously, the real code is leading - so
 and fix this documentation if the two should disagree!
 
 
+KeyValueStore and JSON
+----------------------
+
+Before we delve in to the Krill eventsourcing code, we should talk a bit about storage.
+Krill stores all values in a `KeyValueStore`, which is currently implemented as an
+enum using a diskbased back-end as the only current implementation. The idea is that
+this will be extended in future with other implementations, perhaps [sled](https://docs.rs/sled/0.34.6/sled/),
+[tikv](https://github.com/tikv/tikv) or some redis based store.
+
+It may be good to use an enum, because if we have all possible implementations in our
+own code then we don't need generics - which have a way of trickling up and causing long
+compilation times.
+
+In any case, the `KeyValueStore` (`src/commons/eventsourcing/kv.rs`) expects that we present
+a `KeyStoreKey` and save or retrieve values. The key supports 'scopes' which can be useful
+for categorizing values according to their 'aggregate'. Scopes can also use `/` characters
+to present sub-scopes, or sub-dirs in the the disk based implementation:
+
+```
+#[derive(Debug, Clone)]
+pub struct KeyStoreKey {
+    scope: Option<String>,
+    name: String,
+}
+```
+
+We use serde json (de-)serialization for all types that need to be stored. The following
+trait is used as a convenient shorthand:
+
+```
+pub trait Storable: Clone + Serialize + DeserializeOwned + Sized + 'static {}
+impl<T: Clone + Serialize + DeserializeOwned + Sized + 'static> Storable for T {}
+```
+
 Aggregate
 ---------
 
