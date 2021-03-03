@@ -1,50 +1,39 @@
 use std::fs;
-use std::ops::Deref;
-use std::str::FromStr;
 use std::sync::Arc;
 
 use bytes::Bytes;
 use rpki::uri;
 
 use crate::commons::api::PublicationServerUris;
-use crate::commons::crypto::{KrillSigner, ProtocolCms, ProtocolCmsBuilder};
+use crate::commons::crypto::KrillSigner;
 use crate::commons::error::Error;
-use crate::commons::eventsourcing::{AggregateStore, AggregateStoreError};
 use crate::commons::remote::cmslogger::CmsLogger;
 use crate::commons::remote::rfc8181;
 use crate::commons::remote::rfc8183;
 use crate::commons::KrillResult;
 use crate::commons::{
     actor::Actor,
-    api::{Handle, ListReply, PublishDelta, PublisherDetails, PublisherHandle, RepoInfo, RepositoryHandle},
+    api::{ListReply, PublishDelta, PublisherDetails, PublisherHandle, RepoInfo},
 };
 use crate::constants::*;
 use crate::daemon::config::Config;
-use crate::pubd::{self, CmdDet, RepoStats, RepositoryAccess, RepositoryContentStore};
+use crate::pubd::{RepoStats, RepositoryAccessProxy, RepositoryContentProxy};
 
-//------------ PubServer -----------------------------------------------------
+//------------ RepositoryManager -----------------------------------------------------
 
-/// The Publication Server.
-///
-/// This component is responsible for:
-/// * managing allowed publishers
-/// * verifying requests from remote RFC8183 publishers
-/// * verifying requests from local (embedded) publishers
-/// * updating the RRDP server with any deltas
-/// * updating the contents on disk for Rsync
-/// * responding to publishers
-/// * wrapping responses in RFC8183 for remote publishers
-///
-pub struct PubServer {
+/// RepositoryManager is responsible for:
+/// * verifying that a publisher is allowed to publish
+/// * publish content to RRDP and rsync
+pub struct RepositoryManager {
     config: Arc<Config>,
-    store: Arc<AggregateStore<RepositoryAccess>>,
-    content: Arc<RepositoryContentStore>,
+    access: Arc<RepositoryAccessProxy>,
+    content: Arc<RepositoryContentProxy>,
     signer: Arc<KrillSigner>,
 }
 
 /// # Constructing
 ///
-impl PubServer {
+impl RepositoryManager {
     pub fn remove_if_empty(config: Arc<Config>, signer: Arc<KrillSigner>) -> Result<Option<Self>, Error> {
         let mut pub_server_dir = config.data_dir.clone();
         pub_server_dir.push(PUBSERVER_DIR);
@@ -69,7 +58,7 @@ impl PubServer {
         corrupt_error_msg.push_str("If do need to run your own repository then please use your previous installation and contact us at 'rpki-team@nlnetlabs.nl'.\n");
 
         if repo_instance_dir.exists() {
-            if let Ok(server) = PubServer::build(config, signer) {
+            if let Ok(server) = RepositoryManager::build(config, signer) {
                 if server.publishers()?.is_empty() {
                     info!(
                         "Removing unused repository server directory. Use 'krillpubd' if you need to run a repository."
@@ -97,122 +86,59 @@ impl PubServer {
     }
 
     pub fn build(config: Arc<Config>, signer: Arc<KrillSigner>) -> Result<Self, Error> {
-        let store = Arc::new(AggregateStore::<RepositoryAccess>::disk(
-            &config.data_dir,
-            PUBSERVER_DIR,
-        )?);
+        let content_proxy = Arc::new(RepositoryContentProxy::disk(&config)?);
+        let access_proxy = Arc::new(RepositoryAccessProxy::create(&config)?);
 
-        let mut force_session_reset = false;
-
-        let default = Self::repository_handle();
-        if store.has(&default)? {
-            if config.always_recover_data {
-                store.recover()?;
-                force_session_reset = true;
-            } else if let Err(e) = store.warm() {
-                error!(
-                    "Could not warm up cache, storage seems corrupt, will try to recover!! Error was: {}",
-                    e
-                );
-                store.recover()?;
-                force_session_reset = true;
-            }
-        }
-
-        let content_store = Arc::new(RepositoryContentStore::disk(&config)?);
-
-        let server = PubServer {
+        Ok(RepositoryManager {
             config,
-            store,
-            content: content_store,
+            access: access_proxy,
+            content: content_proxy,
             signer,
-        };
-
-        if force_session_reset {
-            server.rrdp_session_reset()?;
-        }
-
-        Ok(server)
+        })
     }
 }
 /// # Repository Server Management
 ///
-impl PubServer {
-    pub fn repository_handle() -> RepositoryHandle {
-        Handle::from_str(PUBSERVER_DFLT).unwrap()
-    }
+impl RepositoryManager {
+    // pub fn repository_handle() -> RepositoryHandle {
+    //     Handle::from_str(PUBSERVER_DFLT).unwrap()
+    // }
 
-    fn repository_access(&self) -> KrillResult<Arc<RepositoryAccess>> {
-        let handle = Self::repository_handle();
-
-        match self.store.get_latest(&handle) {
-            Ok(repo) => Ok(repo),
-            Err(e) => match e {
-                AggregateStoreError::UnknownAggregate(_) => Err(Error::RepositoryServerNotEnabled),
-                _ => Err(Error::AggregateStoreError(e)),
-            },
-        }
-    }
-
-    pub fn repository_initialised(&self) -> KrillResult<bool> {
-        self.store
-            .has(&Self::repository_handle())
-            .map_err(Error::AggregateStoreError)
+    pub fn initialized(&self) -> KrillResult<bool> {
+        self.access.initialized()
     }
 
     /// Create the publication server, will fail if it was already created.
-    pub fn repository_init(&self, uris: PublicationServerUris) -> KrillResult<()> {
-        if self.repository_access().is_ok() {
-            Err(Error::RepositoryServerAlreadyInitialised)
-        } else {
-            info!("Creating default repository");
+    pub fn init(&self, uris: PublicationServerUris) -> KrillResult<()> {
+        info!("Initializing repository");
+        self.access.init(uris.clone(), &self.signer)?;
+        self.content.init(&self.config.data_dir, uris)?;
+        self.content.write_repository(&self.config.repository_retention)?;
 
-            let (rrdp_base_uri, rsync_jail) = uris.unpack();
-
-            let ini = pubd::PubdIniDet::init(
-                &Self::repository_handle(),
-                rsync_jail.clone(),
-                rrdp_base_uri.clone(),
-                self.signer.deref(),
-            )?;
-
-            self.store.add(ini)?;
-
-            self.content.init(&self.config.data_dir, rrdp_base_uri, rsync_jail)?;
-            self.content.write_repository(&self.config.repository_retention)?;
-
-            Ok(())
-        }
+        Ok(())
     }
 
     /// Clear the publication server. Will fail if it still
     /// has publishers. Or if it does not exist
     pub fn repository_clear(&self) -> KrillResult<()> {
-        let handle = Self::repository_handle();
-        if !self.store.has(&handle)? {
-            Err(Error::RepositoryServerNotInitialised)
-        } else if !self.publishers()?.is_empty() {
-            Err(Error::RepositoryServerHasPublishers)
-        } else {
-            self.store.drop_aggregate(&handle)?;
-            self.content.clear()
-        }
+        self.access.clear()?;
+        self.content.clear()
+    }
+
+    /// List all current publishers
+    pub fn publishers(&self) -> KrillResult<Vec<PublisherHandle>> {
+        self.access.publishers()
     }
 }
 
 /// # Publication Protocol support
 ///
-impl PubServer {
+impl RepositoryManager {
     /// Handle an RFC8181 request and sign the response
     pub fn rfc8181(&self, publisher_handle: PublisherHandle, msg_bytes: Bytes) -> KrillResult<Bytes> {
-        let repository = self.repository_access()?;
-        let publisher = repository.get_publisher(&publisher_handle)?;
-
-        let msg = ProtocolCms::decode(msg_bytes.clone(), false).map_err(|e| Error::Rfc8181Decode(e.to_string()))?;
         let cms_logger = CmsLogger::for_rfc8181_rcvd(self.config.rfc8181_log_dir.as_ref(), &publisher_handle);
 
-        msg.validate(publisher.id_cert()).map_err(Error::Rfc8181Validation)?;
-
+        let msg = self.access.validate(&publisher_handle, msg_bytes.clone())?;
         let content = rfc8181::Message::from_signed_message(&msg)?;
         let query = content.into_query()?;
 
@@ -233,11 +159,8 @@ impl PubServer {
             },
         };
 
-        let response_builder =
-            ProtocolCmsBuilder::create(&repository.key_id(), self.signer.deref(), response.into_bytes())
-                .map_err(Error::signer)?;
+        let response_bytes = self.access.respond(response.into_bytes(), &self.signer)?;
 
-        let response_bytes = response_builder.as_bytes();
         if should_log_cms {
             cms_logger.received(&msg_bytes)?;
             cms_logger.reply(&response_bytes)?;
@@ -253,21 +176,14 @@ impl PubServer {
 
     /// Let a known publisher publish in a repository.
     pub fn publish(&self, name: PublisherHandle, delta: PublishDelta) -> KrillResult<()> {
-        let access = self.repository_access()?;
-        let publisher = access.get_publisher(&name)?;
-        let jail = publisher.base_uri();
+        let publisher = self.access.get_publisher(&name)?;
 
         self.content
-            .publish(&name, delta, jail, &self.config.repository_retention)
+            .publish(&name, delta, publisher.base_uri(), &self.config.repository_retention)
     }
 
     pub fn repo_stats(&self) -> KrillResult<RepoStats> {
         self.content.stats()
-    }
-
-    pub fn publishers(&self) -> KrillResult<Vec<PublisherHandle>> {
-        let repository = self.repository_access()?;
-        Ok(repository.publishers())
     }
 
     /// Returns a list reply for a known publisher in a repository
@@ -278,15 +194,13 @@ impl PubServer {
 
 /// # Manage publishers
 ///
-impl PubServer {
+impl RepositoryManager {
     pub fn repo_info_for(&self, name: &PublisherHandle) -> KrillResult<RepoInfo> {
-        let repository = self.repository_access()?;
-        repository.repo_info_for(name)
+        self.access.repo_info_for(name)
     }
 
     pub fn get_publisher_details(&self, name: &PublisherHandle) -> KrillResult<PublisherDetails> {
-        let access = self.repository_access()?;
-        let publisher = access.get_publisher(name)?;
+        let publisher = self.access.get_publisher(name)?;
         let id_cert = publisher.id_cert().clone();
         let base_uri = publisher.base_uri().clone();
 
@@ -301,23 +215,16 @@ impl PubServer {
         rfc8181_uri: uri::Https,
         publisher: &PublisherHandle,
     ) -> KrillResult<rfc8183::RepositoryResponse> {
-        let repository = self.repository_access()?;
-        repository.repository_response(rfc8181_uri, publisher)
+        self.access.repository_response(rfc8181_uri, publisher)
     }
 
     /// Adds a publisher. Will complain if a publisher already exists for this
     /// handle. Will also verify that the base_uri is allowed.
     pub fn create_publisher(&self, req: rfc8183::PublisherRequest, actor: &Actor) -> KrillResult<()> {
         let name = req.publisher_handle().clone();
-        let base_uri = { self.repository_access()?.base_uri_for(&name)? };
 
-        let repository_handle = Self::repository_handle();
-        let cmd = CmdDet::add_publisher(&repository_handle, req, base_uri, actor);
-        self.store.command(cmd)?;
-
-        self.content.add_publisher(name)?;
-
-        Ok(())
+        self.access.add_publisher(req, actor)?;
+        self.content.add_publisher(name)
     }
 
     /// Deactivates a publisher. For now this is irreversible, but we may add
@@ -325,24 +232,19 @@ impl PubServer {
     /// of the old publisher, and if handles are re-used by different
     /// entities that would get confusing.
     pub fn remove_publisher(&self, name: PublisherHandle, actor: &Actor) -> KrillResult<()> {
-        let access = self.repository_access()?;
-        let publisher = access.get_publisher(&name)?;
+        let publisher = self.access.get_publisher(&name)?;
         let base_uri = publisher.base_uri();
 
         self.content
             .remove_publisher(&name, base_uri, &self.config.repository_retention)?;
 
-        let repository_handle = Self::repository_handle();
-        let cmd = CmdDet::remove_publisher(&repository_handle, name, actor);
-        self.store.command(cmd)?;
-
-        Ok(())
+        self.access.remove_publisher(name, actor)
     }
 }
 
 /// # Publishing RRDP and rsync
 ///
-impl PubServer {
+impl RepositoryManager {
     /// Update the RRDP files and rsync content on disk.
     pub fn write_repository(&self) -> KrillResult<()> {
         self.content.write_repository(&self.config.repository_retention)
@@ -365,7 +267,7 @@ mod tests {
     use crate::{
         commons::{
             api::rrdp::{PublicationDeltaError, RrdpSession},
-            api::{ListElement, PublishDeltaBuilder},
+            api::{Handle, ListElement, PublishDeltaBuilder},
             crypto::{IdCert, IdCertBuilder},
             util::file::{self, CurrentFile},
         },
@@ -389,7 +291,7 @@ mod tests {
         rfc8183::PublisherRequest::new(None, handle, id_cert.clone())
     }
 
-    fn make_server(work_dir: &PathBuf) -> PubServer {
+    fn make_server(work_dir: &PathBuf) -> RepositoryManager {
         enable_test_mode();
         let config = Arc::new(Config::test(work_dir));
         init_config(&config);
@@ -397,14 +299,14 @@ mod tests {
         let signer = KrillSigner::build(work_dir).unwrap();
         let signer = Arc::new(signer);
 
-        let pubserver = PubServer::build(config, signer).unwrap();
+        let pubserver = RepositoryManager::build(config, signer).unwrap();
 
         let rsync_base = rsync("rsync://localhost/repo/");
         let rrdp_base = https("https://localhost/repo/rrdp/");
 
         let uris = PublicationServerUris::new(rrdp_base, rsync_base);
 
-        pubserver.repository_init(uris).unwrap();
+        pubserver.init(uris).unwrap();
 
         pubserver
     }

@@ -6,55 +6,67 @@ use std::path::PathBuf;
 use std::str::{from_utf8_unchecked, FromStr};
 use std::sync::{Arc, RwLock};
 
+use bytes::Bytes;
 use rpki::crypto::KeyIdentifier;
 use rpki::uri;
 use rpki::x509::Time;
 
 use crate::{
     commons::{
+        actor::Actor,
         api::rrdp::{
             CurrentObjects, Delta, DeltaElements, DeltaRef, FileRef, Notification, RrdpSession, Snapshot, SnapshotRef,
         },
-        api::{Handle, HexEncodedHash, ListReply, PublishDelta, PublisherHandle, RepoInfo, StorableRepositoryCommand},
-        crypto::IdCert,
+        api::{
+            Handle, HexEncodedHash, ListReply, PublicationServerUris, PublishDelta, PublisherHandle, RepoInfo,
+            StorableRepositoryCommand,
+        },
+        crypto::{IdCert, KrillSigner, ProtocolCms, ProtocolCmsBuilder},
         error::Error,
-        eventsourcing::{Aggregate, KeyStoreKey, KeyValueStore},
+        eventsourcing::{Aggregate, AggregateStore, AggregateStoreError, KeyStoreKey, KeyValueStore},
         remote::rfc8183,
         util::file,
         KrillResult,
     },
     constants::{
-        PUBSERVER_CONTENT_DIR, PUBSERVER_DFLT, REPOSITORY_DIR, REPOSITORY_RRDP_ARCHIVE_DIR, REPOSITORY_RRDP_DIR,
-        REPOSITORY_RSYNC_DIR,
+        PUBSERVER_CONTENT_DIR, PUBSERVER_DFLT, PUBSERVER_DIR, REPOSITORY_DIR, REPOSITORY_RRDP_ARCHIVE_DIR,
+        REPOSITORY_RRDP_DIR, REPOSITORY_RSYNC_DIR,
     },
     daemon::config::{Config, RepositoryRetentionConfig},
     pubd::publishers::Publisher,
     pubd::{Cmd, CmdDet, PubdEvt, PubdEvtDet, PubdIni},
 };
 
-//------------ RepositoryContentStore --------------------------------------
+use super::PubdIniDet;
 
+//------------ RepositoryContentProxy ----------------------------------------
+
+/// We can only have one (1) RepositoryContent, but it is stored
+/// in a KeyValueStore. So this type provides a wrapper around this
+/// so that callers don't need to worry about storage details.
 #[derive(Debug)]
-pub struct RepositoryContentStore {
+pub struct RepositoryContentProxy {
     store: RwLock<KeyValueStore>,
-    dflt_key: KeyStoreKey,
+    key: KeyStoreKey,
 }
 
-impl RepositoryContentStore {
+impl RepositoryContentProxy {
     pub fn disk(config: &Config) -> KrillResult<Self> {
         let work_dir = &config.data_dir;
         let store = KeyValueStore::disk(work_dir, PUBSERVER_CONTENT_DIR)?;
         let store = RwLock::new(store);
 
         let dflt_key = KeyStoreKey::simple(PUBSERVER_DFLT.to_string());
-        Ok(RepositoryContentStore { store, dflt_key })
+        Ok(RepositoryContentProxy { store, key: dflt_key })
     }
 
     // Initialise
-    pub fn init(&self, work_dir: &PathBuf, rrdp_base_uri: uri::Https, rsync_jail: uri::Rsync) -> KrillResult<()> {
-        if self.store.read().unwrap().has(&self.dflt_key)? {
+    pub fn init(&self, work_dir: &PathBuf, uris: PublicationServerUris) -> KrillResult<()> {
+        if self.store.read().unwrap().has(&self.key)? {
             Err(Error::RepositoryServerAlreadyInitialised)
         } else {
+            let (rrdp_base_uri, rsync_jail) = uris.unpack();
+
             let publishers = HashMap::new();
 
             let session = RrdpSession::default();
@@ -69,7 +81,7 @@ impl RepositoryContentStore {
             let repo = RepositoryContent::new(publishers, rrdp, rsync, stats);
 
             let store = self.store.write().unwrap();
-            store.store(&self.dflt_key, &repo)?;
+            store.store(&self.key, &repo)?;
 
             Ok(())
         }
@@ -80,9 +92,9 @@ impl RepositoryContentStore {
     pub fn clear(&self) -> KrillResult<()> {
         let store = self.store.write().unwrap();
 
-        if let Ok(Some(content)) = store.get::<RepositoryContent>(&self.dflt_key) {
+        if let Ok(Some(content)) = store.get::<RepositoryContent>(&self.key) {
             content.clear();
-            store.drop_key(&self.dflt_key)?;
+            store.drop_key(&self.key)?;
         }
 
         Ok(())
@@ -138,13 +150,11 @@ impl RepositoryContentStore {
 
     fn write<F: FnOnce(&mut RepositoryContent) -> KrillResult<()>>(&self, op: F) -> KrillResult<()> {
         let store = self.store.write().unwrap();
-        let mut content: RepositoryContent = store
-            .get(&self.dflt_key)?
-            .ok_or(Error::RepositoryServerNotInitialised)?;
+        let mut content: RepositoryContent = store.get(&self.key)?.ok_or(Error::RepositoryServerNotInitialised)?;
 
         op(&mut content)?;
 
-        store.store(&self.dflt_key, &content)?;
+        store.store(&self.key, &content)?;
         Ok(())
     }
 
@@ -152,7 +162,7 @@ impl RepositoryContentStore {
         self.store
             .read()
             .unwrap()
-            .get(&self.dflt_key)?
+            .get(&self.key)?
             .ok_or(Error::RepositoryServerNotInitialised)
     }
 
@@ -779,6 +789,121 @@ impl RrdpServer {
         let mut path = self.rrdp_base_dir.clone();
         path.push(Self::delta_rel(&self.session, serial));
         path
+    }
+}
+
+/// We can only have one (1) RepositoryAccess, but it is an event-sourced
+/// typed which is stored in an AggregateStore which could theoretically
+/// serve multiple. So, we use RepositoryAccessProxy as a wrapper around
+/// this so that callers don't need to worry about storage details.
+pub struct RepositoryAccessProxy {
+    store: AggregateStore<RepositoryAccess>,
+    key: Handle,
+}
+
+impl RepositoryAccessProxy {
+    pub fn create(config: &Config) -> KrillResult<Self> {
+        let store = AggregateStore::<RepositoryAccess>::disk(&config.data_dir, PUBSERVER_DIR)?;
+        let key = Handle::from_str(PUBSERVER_DFLT).unwrap();
+
+        if store.has(&key)? {
+            if config.always_recover_data {
+                store.recover()?;
+            } else if let Err(e) = store.warm() {
+                error!(
+                    "Could not warm up cache, storage seems corrupt, will try to recover!! Error was: {}",
+                    e
+                );
+                store.recover()?;
+            }
+        }
+
+        Ok(RepositoryAccessProxy { store, key })
+    }
+
+    pub fn initialized(&self) -> KrillResult<bool> {
+        self.store.has(&self.key).map_err(Error::AggregateStoreError)
+    }
+
+    pub fn init(&self, uris: PublicationServerUris, signer: &KrillSigner) -> KrillResult<()> {
+        if self.initialized()? {
+            Err(Error::RepositoryServerAlreadyInitialised)
+        } else {
+            let (rrdp_base_uri, rsync_jail) = uris.unpack();
+
+            let ini = PubdIniDet::init(&self.key, rsync_jail, rrdp_base_uri, signer)?;
+
+            self.store.add(ini)?;
+
+            Ok(())
+        }
+    }
+
+    pub fn clear(&self) -> KrillResult<()> {
+        if !self.initialized()? {
+            Err(Error::RepositoryServerNotInitialised)
+        } else if !self.publishers()?.is_empty() {
+            Err(Error::RepositoryServerHasPublishers)
+        } else {
+            self.store.drop_aggregate(&self.key)?;
+            Ok(())
+        }
+    }
+
+    fn read(&self) -> KrillResult<Arc<RepositoryAccess>> {
+        match self.store.get_latest(&self.key) {
+            Ok(repo) => Ok(repo),
+            Err(e) => match e {
+                AggregateStoreError::UnknownAggregate(_) => Err(Error::RepositoryServerNotEnabled),
+                _ => Err(Error::AggregateStoreError(e)),
+            },
+        }
+    }
+
+    pub fn publishers(&self) -> KrillResult<Vec<PublisherHandle>> {
+        Ok(self.store.list()?)
+    }
+
+    pub fn get_publisher(&self, name: &PublisherHandle) -> KrillResult<Publisher> {
+        self.read()?.get_publisher(name).map(|p| p.clone())
+    }
+
+    pub fn add_publisher(&self, req: rfc8183::PublisherRequest, actor: &Actor) -> KrillResult<()> {
+        let base_uri = self.read()?.base_uri_for(req.publisher_handle())?;
+        let cmd = CmdDet::add_publisher(&self.key, req, base_uri, actor);
+        self.store.command(cmd)?;
+        Ok(())
+    }
+
+    pub fn remove_publisher(&self, name: PublisherHandle, actor: &Actor) -> KrillResult<()> {
+        let cmd = CmdDet::remove_publisher(&self.key, name, actor);
+        self.store.command(cmd)?;
+        Ok(())
+    }
+
+    pub fn repo_info_for(&self, name: &PublisherHandle) -> KrillResult<RepoInfo> {
+        self.read()?.repo_info_for(name)
+    }
+
+    pub fn repository_response(
+        &self,
+        rfc8181_uri: uri::Https,
+        publisher: &PublisherHandle,
+    ) -> KrillResult<rfc8183::RepositoryResponse> {
+        self.read()?.repository_response(rfc8181_uri, publisher)
+    }
+
+    pub fn validate(&self, publisher: &PublisherHandle, msg: Bytes) -> KrillResult<ProtocolCms> {
+        let publisher = self.get_publisher(&publisher)?;
+        let msg = ProtocolCms::decode(msg, false).map_err(|e| Error::Rfc8181Decode(e.to_string()))?;
+        msg.validate(publisher.id_cert()).map_err(Error::Rfc8181Validation)?;
+        Ok(msg)
+    }
+
+    pub fn respond(&self, message: Bytes, signer: &KrillSigner) -> KrillResult<Bytes> {
+        let key_id = self.read()?.key_id();
+        let response_builder = ProtocolCmsBuilder::create(&key_id, signer, message).map_err(Error::signer)?;
+        Ok(response_builder.as_bytes())
     }
 }
 

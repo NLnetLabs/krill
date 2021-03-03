@@ -9,7 +9,7 @@ use crate::{
         error::Error,
     },
     daemon::ca::CaServer,
-    pubd::PubServer,
+    pubd::RepositoryManager,
 };
 
 //------------ CaPublisher ---------------------------------------------------
@@ -18,19 +18,19 @@ use crate::{
 /// remote, repositories.
 pub struct CaPublisher {
     caserver: Arc<CaServer>,
-    pubserver: Option<Arc<PubServer>>,
+    pubserver: Option<Arc<RepositoryManager>>,
 }
 
 /// # Construct
 ///
 impl CaPublisher {
-    pub fn new(caserver: Arc<CaServer>, pubserver: Option<Arc<PubServer>>) -> Self {
+    pub fn new(caserver: Arc<CaServer>, pubserver: Option<Arc<RepositoryManager>>) -> Self {
         CaPublisher { caserver, pubserver }
     }
 }
 
 impl CaPublisher {
-    fn get_embedded(&self) -> Result<&Arc<PubServer>, Error> {
+    fn get_embedded(&self) -> Result<&Arc<RepositoryManager>, Error> {
         self.pubserver.as_ref().ok_or(Error::RepositoryServerNotEnabled)
     }
 

@@ -24,7 +24,7 @@ use crate::{
         config::Config,
         mq::{MessageQueue, QueueEvent},
     },
-    pubd::PubServer,
+    pubd::RepositoryManager,
     publish::CaPublisher,
 };
 
@@ -65,7 +65,7 @@ impl Scheduler {
     pub fn build(
         event_queue: Arc<MessageQueue>,
         caserver: Option<Arc<CaServer>>,
-        pubserver: Option<Arc<PubServer>>,
+        pubserver: Option<Arc<RepositoryManager>>,
         bgp_analyser: Arc<BgpAnalyser>,
         #[cfg(feature = "multi-user")] login_session_cache: Arc<LoginSessionCache>,
         config: &Config,
@@ -110,7 +110,7 @@ impl Scheduler {
 fn make_cas_event_triggers(
     event_queue: Arc<MessageQueue>,
     caserver: Arc<CaServer>,
-    pubserver: Option<Arc<PubServer>>,
+    pubserver: Option<Arc<RepositoryManager>>,
     actor: Actor,
 ) -> ScheduleHandle {
     SkippingScheduler::run(1, "scan for queued triggers", move || {
@@ -205,7 +205,7 @@ fn requeue_time() -> Time {
 async fn try_publish(
     event_queue: &Arc<MessageQueue>,
     caserver: Arc<CaServer>,
-    pubserver: Option<Arc<PubServer>>,
+    pubserver: Option<Arc<RepositoryManager>>,
     ca: Handle,
 ) {
     info!("Try to publish for '{}'", ca);
