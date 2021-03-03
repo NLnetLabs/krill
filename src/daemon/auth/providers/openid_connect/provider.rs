@@ -62,6 +62,7 @@ use crate::daemon::auth::{Auth, AuthProvider, LoggedInUser};
 use crate::daemon::config::Config;
 use crate::daemon::http::auth::AUTH_CALLBACK_ENDPOINT;
 use crate::daemon::http::HttpResponse;
+use crate::daemon::http::auth::url_encode;
 
 use super::config::{
     ConfigAuthOpenIDConnect, ConfigAuthOpenIDConnectClaim, ConfigAuthOpenIDConnectClaimSource as ClaimSource,
@@ -72,8 +73,32 @@ use super::util::{
 
 const NONCE_COOKIE_NAME: &str = "nonce_hash";
 const LOGIN_SESSION_STATE_KEY_PATH: &str = "login_session_state.key"; // TODO: decide on proper location
-const ACCESS_TOKEN_KIND: &str = "access_token";
-const REFRESH_TOKEN_KIND: &str = "refresh_token";
+
+enum TokenKind {
+    AccessToken,
+    RefreshToken,
+    IdToken,
+}
+
+impl From<TokenKind> for String {
+    fn from(token_kind: TokenKind) -> Self {
+        match token_kind {
+            TokenKind::AccessToken => String::from("access_token"),
+            TokenKind::RefreshToken => String::from("refresh_token"),
+            TokenKind::IdToken => String::from("id_token"),
+        }
+    }
+}
+
+impl From<TokenKind> for &'static str {
+    fn from(token_kind: TokenKind) -> Self {
+        match token_kind {
+            TokenKind::AccessToken => "access_token",
+            TokenKind::RefreshToken => "refresh_token",
+            TokenKind::IdToken => "id_token",
+        }
+    }
+}
 
 enum ProviderLogoutURL {
     RPInitiatedLogoutURL(String),
@@ -348,9 +373,9 @@ impl OpenIDConnectAuthProvider {
         // From: https://tools.ietf.org/html/rfc7009#section-2
         //   "Implementations MUST support the revocation of refresh tokens and SHOULD support the
         //    revocation of access tokens (see Implementation Note)."
-        let token_to_revoke = if let Some(token) = session.get_secret(REFRESH_TOKEN_KIND) {
+        let token_to_revoke = if let Some(token) = session.get_secret(TokenKind::RefreshToken.into()) {
             CoreRevocableToken::from(RefreshToken::new(token.clone()))
-        } else if let Some(token) = session.get_secret(ACCESS_TOKEN_KIND) {
+        } else if let Some(token) = session.get_secret(TokenKind::AccessToken.into()) {
             CoreRevocableToken::from(AccessToken::new(token.clone()))
         } else {
             return Err(RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension("Internal error: Token revocation attempted without a token".to_string())))
@@ -426,7 +451,7 @@ impl OpenIDConnectAuthProvider {
     /// the OpenID Connect Provider. This Error is FOR INTERNAL CONSUMPTION only. The caller of this function is
     /// responsible for creating end-user error messages, logging and (optionally) retrying.
     fn try_refresh_token(&self, session: &ClientSession) -> Result<Auth, CoreErrorResponseType> {
-        let refresh_token = &session.secrets.get(REFRESH_TOKEN_KIND).ok_or(
+        let refresh_token = &session.secrets.get(TokenKind::RefreshToken.into()).ok_or(
             CoreErrorResponseType::Extension(
                 "Internal error: Token refresh attempted without a refresh token".to_string()))?;
 
@@ -436,16 +461,25 @@ impl OpenIDConnectAuthProvider {
             Ok(conn_guard) => {
                 match &*conn_guard {
                     Some(conn) => {
+                        let mut captured_raw_id_token: Option<String> = None;
+
+                        let id_token_capturing_http_client = |req| {
+                            let res = logging_http_client(req);
+                            captured_raw_id_token = capture_raw_id_token_from_response(&res);
+                            res
+                        };
+
                         let token_response = conn
                             .client
                             .exchange_refresh_token(&RefreshToken::new(refresh_token.to_string()))
-                            .request(logging_http_client);
+                            .request(id_token_capturing_http_client);
+
                         match token_response {
                             Ok(token_response) => {
                                 let new_token_res = self.session_cache.encode(
                                     &session.id,
                                     &session.attributes,
-                                    secrets_from_token_response(&token_response),
+                                    secrets_from_token_response(&token_response, captured_raw_id_token),
                                     &self.session_key,
                                     token_response.expires_in(),
                                 );
@@ -742,7 +776,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                     SessionStatus::NeedsRefresh|SessionStatus::Expired => {
                         // We can only try to extend the session if we have a refresh token. Otherwise, return early
                         // with an error that indicates the user needs to login again.
-                        if !session.secrets.contains_key(REFRESH_TOKEN_KIND) {
+                        if !session.secrets.contains_key(TokenKind::RefreshToken.into()) {
                             return Err(Error::ApiAuthSessionExpired("No token to be refreshed".to_string()));
                         }
                     }
@@ -974,10 +1008,18 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                     )
                 })? {
                     Some(conn) => {
+                        let mut captured_raw_id_token: Option<String> = None;
+
+                        let id_token_capturing_http_client = |req| {
+                            let res = logging_http_client(req);
+                            captured_raw_id_token = capture_raw_id_token_from_response(&res);
+                            res
+                        };
+
                         let token_response: FlexibleTokenResponse = conn
                             .client
                             .exchange_code(AuthorizationCode::new(code.to_string()))
-                            .request(logging_http_client)
+                            .request(id_token_capturing_http_client)
                             .map_err(|e| {
                                 let (msg, additional_info) = match e {
                                     RequestTokenError::ServerResponse(provider_err) => {
@@ -1244,7 +1286,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                         let api_token = self.session_cache.encode(
                             &id,
                             &attributes,
-                            secrets_from_token_response(&token_response),
+                            secrets_from_token_response(&token_response, captured_raw_id_token),
                             &self.session_key,
                             token_response.expires_in(),
                         )?;
@@ -1322,7 +1364,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
             )
         })? {
             Some(conn) => {
-                let service_uri = self.config.service_uri();
+                let service_uri = self.config.service_uri().as_str().to_string();
                 let go_to_url = match conn.logout_url {
                     Some(ProviderLogoutURL::RPInitiatedLogoutURL(ref url)) => {
                         trace!("OpenID Connect: directing user to RP-Initiated Logout 1.0 compliant logout endpoint");
@@ -1333,10 +1375,22 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                         //      https://openid.net/specs/openid-connect-rpinitiated-1_0.html#RedirectionAfterLogout
                         // E.g. state or ui_locales?
 
-                        // According to the spec we MUST supply the id_token_hint query parameter:
+                        // From https://openid.net/specs/openid-connect-rpinitiated-1_0.html#RedirectionAfterLogout:
                         //   "An id_token_hint carring an ID Token for the RP is also REQUIRED when requesting
                         //    post-logout redirection"
-                        format!("{}?post_logout_redirect_uri={}", url, service_uri.as_str())
+                        let build_rpinitiated_logout_url = || -> KrillResult<String> {
+                            let id_token = session.secrets.get(TokenKind::IdToken.into()).ok_or(Error::custom("Missing id token"))?;
+                            Ok(format!("{}?post_logout_redirect_uri={}&id_token_hint={}",
+                                url, url_encode(service_uri.as_str())?, url_encode(id_token)?))
+                        };
+
+                        build_rpinitiated_logout_url().unwrap_or_else(|err| {
+                            self.internal_error(
+                                format!("Error while building OpenID Connect RP-Initiated Logout URL for user '{}'", session.id),
+                                Some(err.to_string()),
+                            );
+                            service_uri
+                        })
                     }
                     Some(ProviderLogoutURL::OAuth2TokenRevocationURL(_)) => {
                         if let Err(err) = self.try_revoke_token(&session) {
@@ -1347,7 +1401,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                         }
 
                         // Then ask Lagosta to direct the user to the Krill UI landing page.
-                        service_uri.as_str().to_string()
+                        service_uri
                     }
                     Some(ProviderLogoutURL::OperatorProvidedLogoutURL(ref url)) => {
                         trace!(
@@ -1357,12 +1411,11 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                         url.to_string()
                     }
                     None => {
-                        let ui_url = self.config.service_uri().as_str().to_string();
                         trace!(
                             "OpenID Connect: no logout URL defined, directing user to Krill UI index URL '{}'",
-                            &ui_url
+                            service_uri
                         );
-                        ui_url
+                        service_uri
                     }
                 };
 
@@ -1380,15 +1433,46 @@ impl AuthProvider for OpenIDConnectAuthProvider {
     }
 }
 
-fn secrets_from_token_response(token_response: &FlexibleTokenResponse) -> HashMap<String, String> {
-    let mut secrets = HashMap::new();
-    secrets.insert(
-        ACCESS_TOKEN_KIND.to_string(),
+/// For OpenID Connect RP-Initiated Logout 1.0 when wanting to redirect the user post-logout back to Krill we are
+/// REQUIRED by the spec to pass the raw ID Token to the provider, but we don't have it... The openidconnect-rs crate
+/// deserializes the OAuth 2.0 Token Response and hands us a Rust struct already containing the deserialized (and
+/// potentially even decrypted) ID Token, we never see the raw id_token value.
+///
+/// This helper function tries to parse a HTTP response body as JSON and see whether it contains an id_token field, and
+/// if so passes a copy of it back to the caller. Ideally we wouldn't have to do this as the openidconnect-rs crate
+/// also deserializes the response body so this is a bit wasteful.
+///
+/// See: https://github.com/ramosbugs/openidconnect-rs/issues/40
+fn capture_raw_id_token_from_response(res: &Result<openidconnect::HttpResponse, Error>) -> Option<String> {
+    if let Ok(ok_res) = res {
+        if let Ok(body) = std::str::from_utf8(&ok_res.body) {
+            let v: Result<serde_json::Value, serde_json::Error> = serde_json::from_str(&body);
+            if let Ok(serde_json::Value::Object(obj)) = v {
+                // might be a token response, is there an id_token String field in the object?
+                if let Some(id_token) = obj.get("id_token") {
+                    return Some(id_token.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+fn secrets_from_token_response(token_response: &FlexibleTokenResponse, raw_id_token: Option<String>) -> HashMap<String, String> {
+    let mut secrets: HashMap<String, String> = HashMap::new();
+
+    secrets.insert(TokenKind::AccessToken.into(),
         token_response.access_token().secret().clone(),
     );
+
     if let Some(refresh_token) = token_response.refresh_token() {
-        secrets.insert(REFRESH_TOKEN_KIND.to_string(), refresh_token.secret().clone());
+        secrets.insert(TokenKind::RefreshToken.into(), refresh_token.secret().clone());
     };
+
+    if let Some(raw_id_token) = raw_id_token {
+        secrets.insert(TokenKind::IdToken.into(), raw_id_token.clone());
+    }
+
     secrets
 }
 
