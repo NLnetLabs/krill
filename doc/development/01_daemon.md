@@ -66,7 +66,7 @@ mapping calls to the following components (we will describe each component in mo
 | Element             | Code Path                        | Responsibility                                                    |
 |---------------------|----------------------------------|-------------------------------------------------------------------|
 | `CaServer`          | src/daemon/ca/server.rs          | Manages Krill CAs.                                                |
-| `RepositoryManager` | src/pubd/pubserver.rs            | Publication Server.                                               |
+| `RepositoryManager` | src/pubd/pubserver.rs            | Manages access to and content of the repository.                  |
 | `Scheduler`         | src/daemon/scheduler.rs          | Schedules and executes background jobs.                           |
 | `Authorizer`        | src/daemon/auth/authorizer.rs    | Verifies authentication and authorization for API requests.       |
 | `BgpAnalyser`       | src/commons/bgp/analyser.rs      | Compare authorizations to BGP, download RIS whois dumps.          |
