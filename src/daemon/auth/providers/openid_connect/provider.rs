@@ -153,7 +153,7 @@ impl OpenIDConnectAuthProvider {
                     let meta = self.discover()?;
                     let (email_scope_supported, userinfo_endpoint_supported, logout_mode) =
                         self.check_provider_capabilities(&meta)?;
-                    let client = self.build_client(meta, &logout_url)?;
+                    let client = self.build_client(meta, &logout_mode)?;
 
                     *conn_guard = Some(ProviderConnectionProperties {
                         client,
