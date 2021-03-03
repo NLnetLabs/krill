@@ -35,7 +35,7 @@ use hyper::header::{HeaderValue, SET_COOKIE};
 use jmespatch as jmespath;
 use jmespath::ToJmespath;
 
-use openidconnect::{AccessToken, RequestTokenError, RevocationErrorResponseType, core::CoreRevocableToken};
+use openidconnect::{core::CoreRevocableToken, AccessToken, RequestTokenError, RevocationErrorResponseType};
 use openidconnect::{
     core::{
         CoreAuthPrompt, CoreErrorResponseType, CoreIdTokenVerifier, CoreJwsSigningAlgorithm, CoreResponseMode,
@@ -60,9 +60,9 @@ use crate::daemon::auth::providers::openid_connect::config::ConfigAuthOpenIDConn
 use crate::daemon::auth::providers::openid_connect::jmespathext;
 use crate::daemon::auth::{Auth, AuthProvider, LoggedInUser};
 use crate::daemon::config::Config;
+use crate::daemon::http::auth::url_encode;
 use crate::daemon::http::auth::AUTH_CALLBACK_ENDPOINT;
 use crate::daemon::http::HttpResponse;
-use crate::daemon::http::auth::url_encode;
 
 use super::config::{
     ConfigAuthOpenIDConnect, ConfigAuthOpenIDConnectClaim, ConfigAuthOpenIDConnectClaimSource as ClaimSource,
@@ -378,7 +378,9 @@ impl OpenIDConnectAuthProvider {
         } else if let Some(token) = session.get_secret(TokenKind::AccessToken.into()) {
             CoreRevocableToken::from(AccessToken::new(token.clone()))
         } else {
-            return Err(RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension("Internal error: Token revocation attempted without a token".to_string())))
+            return Err(RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension(
+                "Internal error: Token revocation attempted without a token".to_string(),
+            )));
         };
 
         trace!("OpenID Connect: Revoking token for user: \"{}\"", &session.id);
@@ -390,10 +392,12 @@ impl OpenIDConnectAuthProvider {
                         match conn
                             .client
                             .revoke_token(token_to_revoke)
-                            .map_err(|err| RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension(format!(
-                                "Unexpected error while preparing to revoke token: {}",
-                                err.to_string()
-                            ))))?
+                            .map_err(|err| {
+                                RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension(format!(
+                                    "Unexpected error while preparing to revoke token: {}",
+                                    err.to_string()
+                                )))
+                            })?
                             .request(logging_http_client)
                         {
                             Ok(_) => Ok(()),
@@ -409,27 +413,26 @@ impl OpenIDConnectAuthProvider {
                                 // therefore **not** end up in the `ServerReponse` variant.
                                 openidconnect::RequestTokenError::ServerResponse(r) => Err(r.error().clone()),
                                 openidconnect::RequestTokenError::Request(r) => {
-                                    Err(RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension(format!(
-                                        "Network failure while revoking token: {}",
-                                        r.to_string()
-                                    ))))
+                                    Err(RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension(
+                                        format!("Network failure while revoking token: {}", r.to_string()),
+                                    )))
                                 }
                                 openidconnect::RequestTokenError::Parse(r, _) => {
-                                    Err(RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension(format!(
-                                        "Error while parsing token revocation response: {}",
-                                        r.to_string()
-                                    ))))
+                                    Err(RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension(
+                                        format!("Error while parsing token revocation response: {}", r.to_string()),
+                                    )))
                                 }
                                 openidconnect::RequestTokenError::Other(err_string) => match err_string.as_str() {
                                     "temporarily_unavailable" | "server_error" => {
-                                        Err(RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension(err_string.to_string())))
+                                        Err(RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension(
+                                            err_string.to_string(),
+                                        )))
                                     }
-                                    _ => Err(RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension(format!(
-                                        "Unknown error while revoking token: {}",
-                                        err_string
-                                    )))),
+                                    _ => Err(RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension(
+                                        format!("Unknown error while revoking token: {}", err_string),
+                                    ))),
                                 },
-                            }
+                            },
                         }
                     }
                     None => {
@@ -440,10 +443,9 @@ impl OpenIDConnectAuthProvider {
                     }
                 }
             }
-            Err(err) => Err(RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension(format!(
-                "Internal error: Unable to acquire internal lock: {}",
-                err
-            )))),
+            Err(err) => Err(RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension(
+                format!("Internal error: Unable to acquire internal lock: {}", err),
+            ))),
         }
     }
 
@@ -451,9 +453,13 @@ impl OpenIDConnectAuthProvider {
     /// the OpenID Connect Provider. This Error is FOR INTERNAL CONSUMPTION only. The caller of this function is
     /// responsible for creating end-user error messages, logging and (optionally) retrying.
     fn try_refresh_token(&self, session: &ClientSession) -> Result<Auth, CoreErrorResponseType> {
-        let refresh_token = &session.secrets.get(TokenKind::RefreshToken.into()).ok_or(
-            CoreErrorResponseType::Extension(
-                "Internal error: Token refresh attempted without a refresh token".to_string()))?;
+        let refresh_token =
+            &session
+                .secrets
+                .get(TokenKind::RefreshToken.into())
+                .ok_or(CoreErrorResponseType::Extension(
+                    "Internal error: Token refresh attempted without a refresh token".to_string(),
+                ))?;
 
         debug!("OpenID Connect: Refreshing token for user: \"{}\"", &session.id);
         trace!("OpenID Connect: Submitting RFC-6749 section 6 Access Token Refresh request");
@@ -773,7 +779,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                     SessionStatus::Active => {
                         return Ok(Some(ActorDef::user(session.id, session.attributes, None)));
                     }
-                    SessionStatus::NeedsRefresh|SessionStatus::Expired => {
+                    SessionStatus::NeedsRefresh | SessionStatus::Expired => {
                         // We can only try to extend the session if we have a refresh token. Otherwise, return early
                         // with an error that indicates the user needs to login again.
                         if !session.secrets.contains_key(TokenKind::RefreshToken.into()) {
@@ -1379,14 +1385,24 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                         //   "An id_token_hint carring an ID Token for the RP is also REQUIRED when requesting
                         //    post-logout redirection"
                         let build_rpinitiated_logout_url = || -> KrillResult<String> {
-                            let id_token = session.secrets.get(TokenKind::IdToken.into()).ok_or(Error::custom("Missing id token"))?;
-                            Ok(format!("{}?post_logout_redirect_uri={}&id_token_hint={}",
-                                url, url_encode(service_uri.as_str())?, url_encode(id_token)?))
+                            let id_token = session
+                                .secrets
+                                .get(TokenKind::IdToken.into())
+                                .ok_or(Error::custom("Missing id token"))?;
+                            Ok(format!(
+                                "{}?post_logout_redirect_uri={}&id_token_hint={}",
+                                url,
+                                url_encode(service_uri.as_str())?,
+                                url_encode(id_token)?
+                            ))
                         };
 
                         build_rpinitiated_logout_url().unwrap_or_else(|err| {
                             self.internal_error(
-                                format!("Error while building OpenID Connect RP-Initiated Logout URL for user '{}'", session.id),
+                                format!(
+                                    "Error while building OpenID Connect RP-Initiated Logout URL for user '{}'",
+                                    session.id
+                                ),
                                 Some(err.to_string()),
                             );
                             service_uri
@@ -1458,10 +1474,14 @@ fn capture_raw_id_token_from_response(res: &Result<openidconnect::HttpResponse, 
     None
 }
 
-fn secrets_from_token_response(token_response: &FlexibleTokenResponse, raw_id_token: Option<String>) -> HashMap<String, String> {
+fn secrets_from_token_response(
+    token_response: &FlexibleTokenResponse,
+    raw_id_token: Option<String>,
+) -> HashMap<String, String> {
     let mut secrets: HashMap<String, String> = HashMap::new();
 
-    secrets.insert(TokenKind::AccessToken.into(),
+    secrets.insert(
+        TokenKind::AccessToken.into(),
         token_response.access_token().secret().clone(),
     );
 
