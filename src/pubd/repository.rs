@@ -846,7 +846,7 @@ impl RepositoryAccessProxy {
     }
 
     pub fn publishers(&self) -> KrillResult<Vec<PublisherHandle>> {
-        Ok(self.store.list()?)
+        Ok(self.read()?.publishers())
     }
 
     pub fn get_publisher(&self, name: &PublisherHandle) -> KrillResult<Publisher> {

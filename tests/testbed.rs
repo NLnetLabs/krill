@@ -3,7 +3,6 @@
 extern crate krill;
 
 #[tokio::test]
-#[cfg(feature = "functional-tests")]
 async fn add_and_remove_certificate_authority() {
     use std::fs;
     use std::matches;
