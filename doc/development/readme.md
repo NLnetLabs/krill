@@ -16,4 +16,5 @@ components and/or concepts in Krill:
 2. [Krill CLI Code](./02_cli.md)
 3. [Event Sourcing General Overview](./03_es_concepts.md)
 4. [Event Sourcing in Krill](./04_es_krill.md)
+5. [Repository Manager](./05_repo_manager.md)
 
