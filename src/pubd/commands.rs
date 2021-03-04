@@ -13,13 +13,13 @@ use crate::{
 };
 
 //------------ Cmd ---------------------------------------------------------
-pub type Cmd = SentCommand<CmdDet>;
+pub type RepoAccessCmd = SentCommand<RepoAccessCmdDet>;
 
 //------------ CmdDet ------------------------------------------------------
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case", tag = "type")]
-pub enum CmdDet {
+pub enum RepoAccessCmdDet {
     AddPublisher {
         request: rfc8183::PublisherRequest,
         base_uri: uri::Rsync,
@@ -29,7 +29,7 @@ pub enum CmdDet {
     },
 }
 
-impl CommandDetails for CmdDet {
+impl CommandDetails for RepoAccessCmdDet {
     type Event = PubdEvt;
     type StorableDetails = StorableRepositoryCommand;
 
@@ -38,35 +38,40 @@ impl CommandDetails for CmdDet {
     }
 }
 
-impl CmdDet {
+impl RepoAccessCmdDet {
     pub fn add_publisher(
         handle: &RepositoryHandle,
         request: rfc8183::PublisherRequest,
         base_uri: uri::Rsync,
         actor: &Actor,
-    ) -> Cmd {
-        SentCommand::new(handle, None, CmdDet::AddPublisher { request, base_uri }, actor)
+    ) -> RepoAccessCmd {
+        SentCommand::new(
+            handle,
+            None,
+            RepoAccessCmdDet::AddPublisher { request, base_uri },
+            actor,
+        )
     }
 
-    pub fn remove_publisher(handle: &RepositoryHandle, name: PublisherHandle, actor: &Actor) -> Cmd {
-        SentCommand::new(handle, None, CmdDet::RemovePublisher { name }, actor)
+    pub fn remove_publisher(handle: &RepositoryHandle, name: PublisherHandle, actor: &Actor) -> RepoAccessCmd {
+        SentCommand::new(handle, None, RepoAccessCmdDet::RemovePublisher { name }, actor)
     }
 }
 
-impl fmt::Display for CmdDet {
+impl fmt::Display for RepoAccessCmdDet {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         StorableRepositoryCommand::from(self.clone()).fmt(f)
     }
 }
 
-impl From<CmdDet> for StorableRepositoryCommand {
-    fn from(d: CmdDet) -> Self {
+impl From<RepoAccessCmdDet> for StorableRepositoryCommand {
+    fn from(d: RepoAccessCmdDet) -> Self {
         match d {
-            CmdDet::AddPublisher { request, .. } => {
+            RepoAccessCmdDet::AddPublisher { request, .. } => {
                 let (_, name, _) = request.unpack();
                 StorableRepositoryCommand::AddPublisher { name }
             }
-            CmdDet::RemovePublisher { name } => StorableRepositoryCommand::RemovePublisher { name },
+            RepoAccessCmdDet::RemovePublisher { name } => StorableRepositoryCommand::RemovePublisher { name },
         }
     }
 }

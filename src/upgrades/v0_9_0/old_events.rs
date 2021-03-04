@@ -24,7 +24,7 @@ use crate::{
         eventsourcing::StoredEvent,
     },
     daemon::ca::{self, CaEvt, CaEvtDet, PreparedRta, RouteAuthorization, SignedRta},
-    pubd::{PubdEvt, PubdEvtDet, PubdIniDet, Publisher, RrdpSessionReset, RrdpUpdate},
+    pubd::{PubdEvt, PubdIniDet, Publisher, RepoAccessEvtDet, RrdpSessionReset, RrdpUpdate},
     upgrades::UpgradeError,
 };
 
@@ -518,14 +518,14 @@ impl From<OldCurrentObjects> for CurrentObjects {
     }
 }
 
-impl From<OldPubdEvtDet> for PubdEvtDet {
+impl From<OldPubdEvtDet> for RepoAccessEvtDet {
     fn from(old: OldPubdEvtDet) -> Self {
         match old {
-            OldPubdEvtDet::PublisherAdded(name, publisher) => PubdEvtDet::PublisherAdded {
+            OldPubdEvtDet::PublisherAdded(name, publisher) => RepoAccessEvtDet::PublisherAdded {
                 name,
                 publisher: publisher.into(),
             },
-            OldPubdEvtDet::PublisherRemoved(name, _) => PubdEvtDet::PublisherRemoved { name },
+            OldPubdEvtDet::PublisherRemoved(name, _) => RepoAccessEvtDet::PublisherRemoved { name },
             _ => unimplemented!("no need to migrate these"),
         }
     }

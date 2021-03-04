@@ -449,6 +449,8 @@ impl fmt::Display for TrustAnchorLocator {
 
 //------------ RepoInfo ------------------------------------------------------
 
+/// Contains the rsync and RRDP base URIs for a repository,
+/// or publisher inside a repository.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RepoInfo {
     base_uri: uri::Rsync,

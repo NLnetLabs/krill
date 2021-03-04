@@ -125,12 +125,12 @@ impl RrdpSessionReset {
 
 //------------ EvtDet --------------------------------------------------------
 
-pub type PubdEvt = StoredEvent<PubdEvtDet>;
+pub type PubdEvt = StoredEvent<RepoAccessEvtDet>;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case", tag = "type")]
-pub enum PubdEvtDet {
+pub enum RepoAccessEvtDet {
     PublisherAdded {
         name: PublisherHandle,
         publisher: Publisher,
@@ -140,26 +140,26 @@ pub enum PubdEvtDet {
     },
 }
 
-impl fmt::Display for PubdEvtDet {
+impl fmt::Display for RepoAccessEvtDet {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            PubdEvtDet::PublisherAdded { name, .. } => write!(f, "Publisher '{}' added", name),
-            PubdEvtDet::PublisherRemoved { name } => write!(f, "Publisher '{}' removed", name),
+            RepoAccessEvtDet::PublisherAdded { name, .. } => write!(f, "Publisher '{}' added", name),
+            RepoAccessEvtDet::PublisherRemoved { name } => write!(f, "Publisher '{}' removed", name),
         }
     }
 }
 
-impl PubdEvtDet {
+impl RepoAccessEvtDet {
     pub(super) fn publisher_added(
         handle: &Handle,
         version: u64,
         name: PublisherHandle,
         publisher: Publisher,
     ) -> PubdEvt {
-        StoredEvent::new(handle, version, PubdEvtDet::PublisherAdded { name, publisher })
+        StoredEvent::new(handle, version, RepoAccessEvtDet::PublisherAdded { name, publisher })
     }
 
     pub(super) fn publisher_removed(handle: &Handle, version: u64, name: PublisherHandle) -> PubdEvt {
-        StoredEvent::new(handle, version, PubdEvtDet::PublisherRemoved { name })
+        StoredEvent::new(handle, version, RepoAccessEvtDet::PublisherRemoved { name })
     }
 }

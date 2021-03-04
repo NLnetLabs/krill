@@ -34,7 +34,7 @@ use crate::{
     },
     daemon::config::{Config, RepositoryRetentionConfig},
     pubd::publishers::Publisher,
-    pubd::{Cmd, CmdDet, PubdEvt, PubdEvtDet, PubdIni},
+    pubd::{PubdEvt, PubdIni, RepoAccessCmd, RepoAccessCmdDet, RepoAccessEvtDet},
 };
 
 use super::PubdIniDet;
@@ -314,21 +314,6 @@ impl RepositoryContent {
         self.stats.remove_publisher(name, self.rrdp.notification());
 
         self.write_repository(config)
-    }
-}
-
-/// # Stats
-///
-impl RepositoryContent {
-    pub fn regenerate_stats(&mut self) {
-        let mut stats = RepoStats::new(self.rrdp.session);
-        for (handle, current) in &self.publishers {
-            let publisher_stats: PublisherStats = current.into();
-            stats.publishers.insert(handle.clone(), publisher_stats);
-        }
-        stats.serial = self.rrdp.serial;
-
-        self.stats = stats;
     }
 }
 
@@ -802,7 +787,7 @@ pub struct RepositoryAccessProxy {
 }
 
 impl RepositoryAccessProxy {
-    pub fn create(config: &Config) -> KrillResult<Self> {
+    pub fn disk(config: &Config) -> KrillResult<Self> {
         let store = AggregateStore::<RepositoryAccess>::disk(&config.data_dir, PUBSERVER_DIR)?;
         let key = Handle::from_str(PUBSERVER_DFLT).unwrap();
 
@@ -870,21 +855,23 @@ impl RepositoryAccessProxy {
 
     pub fn add_publisher(&self, req: rfc8183::PublisherRequest, actor: &Actor) -> KrillResult<()> {
         let base_uri = self.read()?.base_uri_for(req.publisher_handle())?;
-        let cmd = CmdDet::add_publisher(&self.key, req, base_uri, actor);
+        let cmd = RepoAccessCmdDet::add_publisher(&self.key, req, base_uri, actor);
         self.store.command(cmd)?;
         Ok(())
     }
 
     pub fn remove_publisher(&self, name: PublisherHandle, actor: &Actor) -> KrillResult<()> {
-        let cmd = CmdDet::remove_publisher(&self.key, name, actor);
+        let cmd = RepoAccessCmdDet::remove_publisher(&self.key, name, actor);
         self.store.command(cmd)?;
         Ok(())
     }
 
+    /// Returns the repository URI information for a publisher.
     pub fn repo_info_for(&self, name: &PublisherHandle) -> KrillResult<RepoInfo> {
         self.read()?.repo_info_for(name)
     }
 
+    /// Returns the RFC8183 Repository Response for the publisher
     pub fn repository_response(
         &self,
         rfc8181_uri: uri::Https,
@@ -893,6 +880,7 @@ impl RepositoryAccessProxy {
         self.read()?.repository_response(rfc8181_uri, publisher)
     }
 
+    /// Parse submitted bytes by a Publisher as an RFC8181 ProtocolCms object, and validates it.
     pub fn validate(&self, publisher: &PublisherHandle, msg: Bytes) -> KrillResult<ProtocolCms> {
         let publisher = self.get_publisher(&publisher)?;
         let msg = ProtocolCms::decode(msg, false).map_err(|e| Error::Rfc8181Decode(e.to_string()))?;
@@ -900,6 +888,7 @@ impl RepositoryAccessProxy {
         Ok(msg)
     }
 
+    /// Creates and signs an RFC8181 CMS response.
     pub fn respond(&self, message: Bytes, signer: &KrillSigner) -> KrillResult<Bytes> {
         let key_id = self.read()?.key_id();
         let response_builder = ProtocolCmsBuilder::create(&key_id, signer, message).map_err(Error::signer)?;
@@ -933,7 +922,7 @@ impl RepositoryAccess {
 /// # Event Sourcing support
 ///
 impl Aggregate for RepositoryAccess {
-    type Command = Cmd;
+    type Command = RepoAccessCmd;
     type StorableCommandDetails = StorableRepositoryCommand;
     type Event = PubdEvt;
     type InitEvent = PubdIni;
@@ -960,10 +949,10 @@ impl Aggregate for RepositoryAccess {
     fn apply(&mut self, event: Self::Event) {
         self.version += 1;
         match event.into_details() {
-            PubdEvtDet::PublisherAdded { name, publisher } => {
+            RepoAccessEvtDet::PublisherAdded { name, publisher } => {
                 self.publishers.insert(name, publisher);
             }
-            PubdEvtDet::PublisherRemoved { name } => {
+            RepoAccessEvtDet::PublisherRemoved { name } => {
                 self.publishers.remove(&name);
             }
         }
@@ -976,8 +965,8 @@ impl Aggregate for RepositoryAccess {
         );
 
         match command.into_details() {
-            CmdDet::AddPublisher { request, base_uri } => self.add_publisher(request, base_uri),
-            CmdDet::RemovePublisher { name } => self.remove_publisher(name),
+            RepoAccessCmdDet::AddPublisher { request, base_uri } => self.add_publisher(request, base_uri),
+            RepoAccessCmdDet::RemovePublisher { name } => self.remove_publisher(name),
         }
     }
 }
@@ -998,7 +987,7 @@ impl RepositoryAccess {
         } else {
             let publisher = Publisher::new(id_cert, base_uri);
 
-            Ok(vec![PubdEvtDet::publisher_added(
+            Ok(vec![RepoAccessEvtDet::publisher_added(
                 &self.handle,
                 self.version,
                 name,
@@ -1012,7 +1001,7 @@ impl RepositoryAccess {
         if !self.has_publisher(&publisher_handle) {
             Err(Error::PublisherUnknown(publisher_handle))
         } else {
-            Ok(vec![PubdEvtDet::publisher_removed(
+            Ok(vec![RepoAccessEvtDet::publisher_removed(
                 &self.handle,
                 self.version,
                 publisher_handle,
@@ -1024,11 +1013,12 @@ impl RepositoryAccess {
         self.rrdp_base.join(b"notification.xml")
     }
 
-    pub fn base_uri_for(&self, name: &PublisherHandle) -> KrillResult<uri::Rsync> {
+    fn base_uri_for(&self, name: &PublisherHandle) -> KrillResult<uri::Rsync> {
         uri::Rsync::from_str(&format!("{}{}/", self.rsync_base, name))
             .map_err(|_| Error::Custom(format!("Cannot derive base uri for {}", name)))
     }
 
+    /// Returns the repository URI information for a publisher.
     pub fn repo_info_for(&self, name: &PublisherHandle) -> KrillResult<RepoInfo> {
         let rsync_base = self.base_uri_for(name)?;
         Ok(RepoInfo::new(rsync_base, self.notification_uri()))

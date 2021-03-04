@@ -85,9 +85,11 @@ impl RepositoryManager {
         }
     }
 
+    /// Builds a RepositoryManager. This will use a disk based KeyValueStore using the
+    /// the data directory specified in the supplied `Config`.
     pub fn build(config: Arc<Config>, signer: Arc<KrillSigner>) -> Result<Self, Error> {
         let content_proxy = Arc::new(RepositoryContentProxy::disk(&config)?);
-        let access_proxy = Arc::new(RepositoryAccessProxy::create(&config)?);
+        let access_proxy = Arc::new(RepositoryAccessProxy::disk(&config)?);
 
         Ok(RepositoryManager {
             config,
@@ -195,6 +197,7 @@ impl RepositoryManager {
 /// # Manage publishers
 ///
 impl RepositoryManager {
+    /// Returns the repository URI information for a publisher.
     pub fn repo_info_for(&self, name: &PublisherHandle) -> KrillResult<RepoInfo> {
         self.access.repo_info_for(name)
     }
@@ -218,8 +221,7 @@ impl RepositoryManager {
         self.access.repository_response(rfc8181_uri, publisher)
     }
 
-    /// Adds a publisher. Will complain if a publisher already exists for this
-    /// handle. Will also verify that the base_uri is allowed.
+    /// Adds a publisher. This will fail if a publisher already exists for the handle in the request.
     pub fn create_publisher(&self, req: rfc8183::PublisherRequest, actor: &Actor) -> KrillResult<()> {
         let name = req.publisher_handle().clone();
 
@@ -227,10 +229,7 @@ impl RepositoryManager {
         self.content.add_publisher(name)
     }
 
-    /// Deactivates a publisher. For now this is irreversible, but we may add
-    /// re-activation in future. Reason is that we never forget the history
-    /// of the old publisher, and if handles are re-used by different
-    /// entities that would get confusing.
+    /// Removes a publisher and all of its content.
     pub fn remove_publisher(&self, name: PublisherHandle, actor: &Actor) -> KrillResult<()> {
         let publisher = self.access.get_publisher(&name)?;
         let base_uri = publisher.base_uri();
