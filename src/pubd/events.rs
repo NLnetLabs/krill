@@ -11,22 +11,20 @@ use crate::commons::eventsourcing::StoredEvent;
 use crate::commons::KrillResult;
 use crate::pubd::Publisher;
 
-//------------ Ini -----------------------------------------------------------
+//------------ RepositoryAccessIni -------------------------------------------
 
-pub type PubdIni = StoredEvent<PubdIniDet>;
-
-//------------ IniDet --------------------------------------------------------
+pub type RepositoryAccessIni = StoredEvent<RepositoryAccessInitDetails>;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct PubdIniDet {
+pub struct RepositoryAccessInitDetails {
     id_cert: IdCert,
     rrdp_base_uri: uri::Https,
     rsync_jail: uri::Rsync,
 }
 
-impl PubdIniDet {
+impl RepositoryAccessInitDetails {
     pub fn new(id_cert: IdCert, rrdp_base_uri: uri::Https, rsync_jail: uri::Rsync) -> Self {
-        PubdIniDet {
+        RepositoryAccessInitDetails {
             id_cert,
             rrdp_base_uri,
             rsync_jail,
@@ -38,13 +36,13 @@ impl PubdIniDet {
     }
 }
 
-impl PubdIniDet {
+impl RepositoryAccessInitDetails {
     pub fn init(
         handle: &Handle,
         rsync_jail: uri::Rsync,
         rrdp_base_uri: uri::Https,
         signer: &KrillSigner,
-    ) -> KrillResult<PubdIni> {
+    ) -> KrillResult<RepositoryAccessIni> {
         let key = signer.create_key()?;
 
         let id_cert = IdCertBuilder::new_ta_id_cert(&key, signer).map_err(Error::signer)?;
@@ -52,7 +50,7 @@ impl PubdIniDet {
         Ok(StoredEvent::new(
             handle,
             0,
-            PubdIniDet {
+            RepositoryAccessInitDetails {
                 id_cert,
                 rrdp_base_uri,
                 rsync_jail,
@@ -61,7 +59,7 @@ impl PubdIniDet {
     }
 }
 
-impl fmt::Display for PubdIniDet {
+impl fmt::Display for RepositoryAccessInitDetails {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
@@ -123,14 +121,14 @@ impl RrdpSessionReset {
     }
 }
 
-//------------ EvtDet --------------------------------------------------------
+//------------ RepositoryAccessEvent -----------------------------------------
 
-pub type PubdEvt = StoredEvent<RepoAccessEvtDet>;
+pub type RepositoryAccessEvent = StoredEvent<RepositoryAccessEventDetails>;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case", tag = "type")]
-pub enum RepoAccessEvtDet {
+pub enum RepositoryAccessEventDetails {
     PublisherAdded {
         name: PublisherHandle,
         publisher: Publisher,
@@ -140,26 +138,30 @@ pub enum RepoAccessEvtDet {
     },
 }
 
-impl fmt::Display for RepoAccessEvtDet {
+impl fmt::Display for RepositoryAccessEventDetails {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            RepoAccessEvtDet::PublisherAdded { name, .. } => write!(f, "Publisher '{}' added", name),
-            RepoAccessEvtDet::PublisherRemoved { name } => write!(f, "Publisher '{}' removed", name),
+            RepositoryAccessEventDetails::PublisherAdded { name, .. } => write!(f, "Publisher '{}' added", name),
+            RepositoryAccessEventDetails::PublisherRemoved { name } => write!(f, "Publisher '{}' removed", name),
         }
     }
 }
 
-impl RepoAccessEvtDet {
+impl RepositoryAccessEventDetails {
     pub(super) fn publisher_added(
         handle: &Handle,
         version: u64,
         name: PublisherHandle,
         publisher: Publisher,
-    ) -> PubdEvt {
-        StoredEvent::new(handle, version, RepoAccessEvtDet::PublisherAdded { name, publisher })
+    ) -> RepositoryAccessEvent {
+        StoredEvent::new(
+            handle,
+            version,
+            RepositoryAccessEventDetails::PublisherAdded { name, publisher },
+        )
     }
 
-    pub(super) fn publisher_removed(handle: &Handle, version: u64, name: PublisherHandle) -> PubdEvt {
-        StoredEvent::new(handle, version, RepoAccessEvtDet::PublisherRemoved { name })
+    pub(super) fn publisher_removed(handle: &Handle, version: u64, name: PublisherHandle) -> RepositoryAccessEvent {
+        StoredEvent::new(handle, version, RepositoryAccessEventDetails::PublisherRemoved { name })
     }
 }

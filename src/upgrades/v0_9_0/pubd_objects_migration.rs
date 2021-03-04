@@ -23,8 +23,8 @@ use crate::{
     constants::{PUBSERVER_CONTENT_DIR, PUBSERVER_DFLT, PUBSERVER_DIR, REPOSITORY_RRDP_DIR},
     daemon::config::Config,
     pubd::{
-        PubdIniDet, PublisherStats, RepoStats, RepositoryAccess, RepositoryContent, RrdpServer, RrdpSessionReset,
-        RrdpUpdate, RsyncdStore,
+        PublisherStats, RepoStats, RepositoryAccess, RepositoryAccessInitDetails, RepositoryContent, RrdpServer,
+        RrdpSessionReset, RrdpUpdate, RsyncdStore,
     },
     upgrades::{UpgradeError, UpgradeResult, UpgradeStore},
 };
@@ -120,7 +120,7 @@ impl UpgradeStore for PubdStoreMigration {
             .ok_or_else(|| UpgradeError::custom("Cannot read pubd init event"))?;
 
         let (_, _, old_init) = old_init.unpack();
-        let init: PubdIniDet = old_init.into();
+        let init: RepositoryAccessInitDetails = old_init.into();
         let init = StoredEvent::new(&handle, 0, init);
         self.store.store(&init_key, &init)?;
 

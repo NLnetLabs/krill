@@ -9,7 +9,7 @@ use crate::{
         eventsourcing::{CommandDetails, SentCommand},
         remote::rfc8183,
     },
-    pubd::PubdEvt,
+    pubd::RepositoryAccessEvent,
 };
 
 //------------ Cmd ---------------------------------------------------------
@@ -30,7 +30,7 @@ pub enum RepoAccessCmdDet {
 }
 
 impl CommandDetails for RepoAccessCmdDet {
-    type Event = PubdEvt;
+    type Event = RepositoryAccessEvent;
     type StorableDetails = StorableRepositoryCommand;
 
     fn store(&self) -> Self::StorableDetails {

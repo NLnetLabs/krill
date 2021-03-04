@@ -34,10 +34,10 @@ use crate::{
     },
     daemon::config::{Config, RepositoryRetentionConfig},
     pubd::publishers::Publisher,
-    pubd::{PubdEvt, PubdIni, RepoAccessCmd, RepoAccessCmdDet, RepoAccessEvtDet},
+    pubd::{RepoAccessCmd, RepoAccessCmdDet, RepositoryAccessEvent, RepositoryAccessEventDetails, RepositoryAccessIni},
 };
 
-use super::PubdIniDet;
+use super::RepositoryAccessInitDetails;
 
 //------------ RepositoryContentProxy ----------------------------------------
 
@@ -816,7 +816,7 @@ impl RepositoryAccessProxy {
         } else {
             let (rrdp_base_uri, rsync_jail) = uris.unpack();
 
-            let ini = PubdIniDet::init(&self.key, rsync_jail, rrdp_base_uri, signer)?;
+            let ini = RepositoryAccessInitDetails::init(&self.key, rsync_jail, rrdp_base_uri, signer)?;
 
             self.store.add(ini)?;
 
@@ -924,8 +924,8 @@ impl RepositoryAccess {
 impl Aggregate for RepositoryAccess {
     type Command = RepoAccessCmd;
     type StorableCommandDetails = StorableRepositoryCommand;
-    type Event = PubdEvt;
-    type InitEvent = PubdIni;
+    type Event = RepositoryAccessEvent;
+    type InitEvent = RepositoryAccessIni;
     type Error = Error;
 
     fn init(event: Self::InitEvent) -> Result<Self, Self::Error> {
@@ -949,10 +949,10 @@ impl Aggregate for RepositoryAccess {
     fn apply(&mut self, event: Self::Event) {
         self.version += 1;
         match event.into_details() {
-            RepoAccessEvtDet::PublisherAdded { name, publisher } => {
+            RepositoryAccessEventDetails::PublisherAdded { name, publisher } => {
                 self.publishers.insert(name, publisher);
             }
-            RepoAccessEvtDet::PublisherRemoved { name } => {
+            RepositoryAccessEventDetails::PublisherRemoved { name } => {
                 self.publishers.remove(&name);
             }
         }
@@ -979,7 +979,7 @@ impl RepositoryAccess {
         &self,
         publisher_request: rfc8183::PublisherRequest,
         base_uri: uri::Rsync,
-    ) -> Result<Vec<PubdEvt>, Error> {
+    ) -> Result<Vec<RepositoryAccessEvent>, Error> {
         let (_tag, name, id_cert) = publisher_request.unpack();
 
         if self.publishers.contains_key(&name) {
@@ -987,7 +987,7 @@ impl RepositoryAccess {
         } else {
             let publisher = Publisher::new(id_cert, base_uri);
 
-            Ok(vec![RepoAccessEvtDet::publisher_added(
+            Ok(vec![RepositoryAccessEventDetails::publisher_added(
                 &self.handle,
                 self.version,
                 name,
@@ -997,11 +997,11 @@ impl RepositoryAccess {
     }
 
     /// Removes a publisher and all its content
-    fn remove_publisher(&self, publisher_handle: PublisherHandle) -> Result<Vec<PubdEvt>, Error> {
+    fn remove_publisher(&self, publisher_handle: PublisherHandle) -> Result<Vec<RepositoryAccessEvent>, Error> {
         if !self.has_publisher(&publisher_handle) {
             Err(Error::PublisherUnknown(publisher_handle))
         } else {
-            Ok(vec![RepoAccessEvtDet::publisher_removed(
+            Ok(vec![RepositoryAccessEventDetails::publisher_removed(
                 &self.handle,
                 self.version,
                 publisher_handle,

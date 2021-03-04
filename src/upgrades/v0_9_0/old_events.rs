@@ -24,7 +24,10 @@ use crate::{
         eventsourcing::StoredEvent,
     },
     daemon::ca::{self, CaEvt, CaEvtDet, PreparedRta, RouteAuthorization, SignedRta},
-    pubd::{PubdEvt, PubdIniDet, Publisher, RepoAccessEvtDet, RrdpSessionReset, RrdpUpdate},
+    pubd::{
+        Publisher, RepositoryAccessEvent, RepositoryAccessEventDetails, RepositoryAccessInitDetails, RrdpSessionReset,
+        RrdpUpdate,
+    },
     upgrades::UpgradeError,
 };
 
@@ -35,9 +38,9 @@ pub type OldPubdInit = StoredEvent<OldPubdIniDet>;
 pub type OldCaEvt = StoredEvent<OldCaEvtDet>;
 
 impl OldPubdEvt {
-    pub fn into_stored_pubd_event(self, version: u64) -> Result<PubdEvt, UpgradeError> {
+    pub fn into_stored_pubd_event(self, version: u64) -> Result<RepositoryAccessEvent, UpgradeError> {
         let (id, _, details) = self.unpack();
-        Ok(PubdEvt::new(&id, version, details.into()))
+        Ok(RepositoryAccessEvent::new(&id, version, details.into()))
     }
 
     pub fn needs_migration(&self) -> bool {
@@ -73,9 +76,9 @@ impl fmt::Display for OldPubdIniDet {
     }
 }
 
-impl From<OldPubdIniDet> for PubdIniDet {
+impl From<OldPubdIniDet> for RepositoryAccessInitDetails {
     fn from(old: OldPubdIniDet) -> Self {
-        PubdIniDet::new(old.id_cert, old.rrdp_base_uri, old.rsync_jail)
+        RepositoryAccessInitDetails::new(old.id_cert, old.rrdp_base_uri, old.rsync_jail)
     }
 }
 
@@ -518,14 +521,14 @@ impl From<OldCurrentObjects> for CurrentObjects {
     }
 }
 
-impl From<OldPubdEvtDet> for RepoAccessEvtDet {
+impl From<OldPubdEvtDet> for RepositoryAccessEventDetails {
     fn from(old: OldPubdEvtDet) -> Self {
         match old {
-            OldPubdEvtDet::PublisherAdded(name, publisher) => RepoAccessEvtDet::PublisherAdded {
+            OldPubdEvtDet::PublisherAdded(name, publisher) => RepositoryAccessEventDetails::PublisherAdded {
                 name,
                 publisher: publisher.into(),
             },
-            OldPubdEvtDet::PublisherRemoved(name, _) => RepoAccessEvtDet::PublisherRemoved { name },
+            OldPubdEvtDet::PublisherRemoved(name, _) => RepositoryAccessEventDetails::PublisherRemoved { name },
             _ => unimplemented!("no need to migrate these"),
         }
     }
