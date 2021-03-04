@@ -15,7 +15,7 @@ components described here are responsible for:
 * Background jobs
 
 Ultimately the actual requests coming from either the API or background jobs are dispatched to either
-the `CaServer` or `PubServer` which are set up using the provided config (e.g. instructing these components
+the `CaServer` or `RepositoryManager` which are set up using the provided config (e.g. instructing these components
 where their data is stored). Theoretically those components could also be wrapped in a different way in
 future, e.g. to support serverless setups using lambda functions, provided of course that authorization,
 configuration, and concurrency are handled.

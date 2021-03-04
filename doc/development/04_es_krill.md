@@ -9,10 +9,9 @@ in Krill we have chosen to use our own local implementation. This lets us use th
 need, but it allows us the flexibility to adapt it to our specific needs, and avoids the complication
 from concepts that we do not need.
 
-Krill uses its own event sourcing library code, which is used by both the `PubServer` and `CaServer`.
-The components can be found under `src/commons/eventsourcing`. We will describe the concepts and code
-here, and include code (snippets). But, obviously, the real code is leading - so be sure to check it
-and fix this documentation if the two should disagree!
+Krill uses its own event sourcing library code which can be found under `src/commons/eventsourcing`.
+We will describe the concepts and code here, and include code (snippets). But, obviously, the real
+code is leading - so be sure to check it and fix this documentation if the two should disagree!
 
 
 KeyValueStore and JSON
@@ -20,7 +19,7 @@ KeyValueStore and JSON
 
 Before we delve in to the Krill eventsourcing code, we should talk a bit about storage.
 Krill stores all values in a `KeyValueStore`, which is currently implemented as an
-enum using a diskbased back-end as the only current implementation. The idea is that
+enum using a disk based back-end as the only current implementation. The idea is that
 this will be extended in future with other implementations, perhaps [sled](https://docs.rs/sled/0.34.6/sled/),
 [tikv](https://github.com/tikv/tikv) or some redis based store.
 
@@ -284,10 +283,9 @@ the generation of Manifests and CRLs is offloaded to associated component `CaObj
 just keeps the latest Manifest and CRL. It can re-sign these because it has access to a
 `KrillSigner` and it can get the public key identifier needed for signing from the `CertAuth`.
 
-Similarly the Publication Server has now been updated to keep commands and events for semantically
-important changes: add or remove a publisher. But it no longer keeps the history of all deltas
-sent by publishers in its history, as this resulted in excessive history, disk usage and made
-data migrations very slow in cases where we needed to change the data format.
+This is relevant here, because under the hood we use a `PreSaveEventListener` to ensure
+that a new Manifest and CRL are written when there is a change in ROAs or issued certificates,
+observed in events.
 
 
 Event Listeners
