@@ -22,8 +22,8 @@ use rpki::uri;
 use rpki::x509::{Serial, Time};
 
 use crate::commons::api::{
-    Base64, ChildHandle, ErrorResponse, Handle, HexEncodedHash, IssuanceRequest, ParentCaContact, ParentHandle,
-    RepositoryContact, RequestResourceLimit, RoaDefinition,
+    rrdp::PublishElement, Base64, ChildHandle, ErrorResponse, Handle, HexEncodedHash, IssuanceRequest, ParentCaContact,
+    ParentHandle, RepositoryContact, RequestResourceLimit, RoaDefinition,
 };
 use crate::commons::api::{EntitlementClass, Entitlements, RoaAggregateKey, SigningCert};
 use crate::commons::crypto::IdCert;
@@ -1335,6 +1335,7 @@ impl Default for ParentStatus {
 pub struct RepoStatus {
     last_exchange: Option<ParentExchange>,
     next_exchange_before: i64,
+    published: Vec<PublishElement>,
 }
 
 impl Default for RepoStatus {
@@ -1342,6 +1343,7 @@ impl Default for RepoStatus {
         RepoStatus {
             last_exchange: None,
             next_exchange_before: Self::now_plus_hours(1),
+            published: vec![],
         }
     }
 }
@@ -1374,12 +1376,13 @@ impl RepoStatus {
         self.next_exchange_before = (Time::now() + Duration::minutes(5)).timestamp();
     }
 
-    pub fn set_success(&mut self, uri: String, next_hours: i64) {
+    pub fn set_published(&mut self, uri: String, published: Vec<PublishElement>, next_hours: i64) {
         self.last_exchange = Some(ParentExchange {
             timestamp: Time::now().timestamp(),
             uri,
             result: ParentExchangeResult::Success,
         });
+        self.published = published;
         self.next_exchange_before = Self::now_plus_hours(next_hours);
     }
 

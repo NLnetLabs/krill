@@ -1290,7 +1290,6 @@ impl CaServer {
         ca_handle: &Handle,
         repository: &rfc8183::RepositoryResponse,
         delta: PublishDelta,
-        cleanup: bool,
     ) -> KrillResult<()> {
         let message = rfc8181::Message::publish_delta_query(delta);
         let uri = repository.service_uri().to_string();
@@ -1301,48 +1300,49 @@ impl CaServer {
         {
             Ok(reply) => reply,
             Err(e) => {
-                if !cleanup {
-                    self.status_store
-                        .lock()
-                        .await
-                        .set_status_repo_failure(ca_handle, uri, &e)
-                        .await?;
-                }
+                self.status_store
+                    .lock()
+                    .await
+                    .set_status_repo_failure(ca_handle, uri, &e)
+                    .await?;
                 return Err(e);
             }
         };
 
         match reply {
             rfc8181::ReplyMessage::SuccessReply => {
-                if !cleanup {
-                    self.status_store
-                        .lock()
-                        .await
-                        .set_status_repo_elements(ca_handle, uri, self.config.republish_hours())
-                        .await?;
+                // Get all the currently published elements in ALL REPOS.
+                // TODO: reflect the status for each REPO in the API / UI?
+                // We probably should.. though it should be extremely rare and short-live to
+                // have more than one repository.
+                let mut published = vec![];
+                for (_, mut elements_for_repo) in self.ca_objects_store.ca_objects(ca_handle)?.elements().into_iter() {
+                    published.append(&mut elements_for_repo);
                 }
+
+                self.status_store
+                    .lock()
+                    .await
+                    .set_status_repo_published(ca_handle, uri, published, self.config.republish_hours())
+                    .await?;
                 Ok(())
             }
             rfc8181::ReplyMessage::ErrorReply(e) => {
                 let err = Error::Custom(format!("Got error reply: {}", e));
-                if !cleanup {
-                    self.status_store
-                        .lock()
-                        .await
-                        .set_status_repo_failure(ca_handle, uri, &err)
-                        .await?;
-                }
+                self.status_store
+                    .lock()
+                    .await
+                    .set_status_repo_failure(ca_handle, uri, &err)
+                    .await?;
                 Err(err)
             }
             rfc8181::ReplyMessage::ListReply(_) => {
                 let err = Error::custom("Got list reply to delta query?!");
-                if !cleanup {
-                    self.status_store
-                        .lock()
-                        .await
-                        .set_status_repo_failure(ca_handle, uri, &err)
-                        .await?;
-                }
+                self.status_store
+                    .lock()
+                    .await
+                    .set_status_repo_failure(ca_handle, uri, &err)
+                    .await?;
                 Err(err)
             }
         }

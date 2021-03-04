@@ -2,7 +2,9 @@ use std::path::PathBuf;
 
 use tokio::sync::RwLock;
 
-use crate::commons::api::{Entitlements, ErrorResponse, Handle, ParentHandle, ParentStatuses, RepoStatus};
+use crate::commons::api::{
+    rrdp::PublishElement, Entitlements, ErrorResponse, Handle, ParentHandle, ParentStatuses, RepoStatus,
+};
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::{KeyStoreKey, KeyValueStore};
 use crate::commons::util::httpclient;
@@ -131,10 +133,16 @@ impl StatusStore {
         self.set_ca_status(ca, &status)
     }
 
-    pub async fn set_status_repo_elements(&self, ca: &Handle, uri: String, next_hours: i64) -> KrillResult<()> {
+    pub async fn set_status_repo_published(
+        &self,
+        ca: &Handle,
+        uri: String,
+        published: Vec<PublishElement>,
+        next_hours: i64,
+    ) -> KrillResult<()> {
         let _lock = self.lock.write().await;
         let mut status = self.get_ca_status(ca)?;
-        status.repo.set_success(uri, next_hours);
+        status.repo.set_published(uri, published, next_hours);
         self.set_ca_status(ca, &status)
     }
 
