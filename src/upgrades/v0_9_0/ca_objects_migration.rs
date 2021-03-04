@@ -76,7 +76,9 @@ struct CasStoreMigration {
 
 impl UpgradeStore for CasStoreMigration {
     fn needs_migrate(&self) -> Result<bool, UpgradeError> {
-        if Self::version_before(&self.store, KeyStoreVersion::V0_6)? {
+        if self.store.scopes()?.is_empty() {
+            Ok(false)
+        } else if Self::version_before(&self.store, KeyStoreVersion::V0_6)? {
             Err(UpgradeError::custom("Cannot upgrade Krill installations from before version 0.6.0. Please upgrade to any version ranging from 0.6.0 to 0.8.1 first, and then upgrade to this version."))
         } else {
             Self::version_before(&self.store, KeyStoreVersion::V0_9_0_RC1)

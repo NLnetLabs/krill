@@ -44,6 +44,7 @@ impl PubdObjectsMigration {
     pub fn migrate(config: Arc<Config>) -> UpgradeResult<()> {
         let store = KeyValueStore::disk(&config.data_dir, PUBSERVER_DIR)?;
         let new_store = AggregateStore::disk(&config.data_dir, PUBSERVER_DIR)?;
+
         let store_migration = PubdStoreMigration { store, new_store };
 
         if store_migration.needs_migrate()? {
@@ -90,7 +91,9 @@ struct PubdStoreMigration {
 
 impl UpgradeStore for PubdStoreMigration {
     fn needs_migrate(&self) -> Result<bool, UpgradeError> {
-        if Self::version_before(&self.store, KeyStoreVersion::V0_6)? {
+        if !self.store.has_scope("0".to_string())? {
+            Ok(false)
+        } else if Self::version_before(&self.store, KeyStoreVersion::V0_6)? {
             Err(UpgradeError::custom("Cannot upgrade Krill installations from before version 0.6.0. Please upgrade to any version ranging from 0.6.0 to 0.8.1 first, and then upgrade to this version."))
         } else {
             Self::version_before(&self.store, KeyStoreVersion::V0_9_0_RC1)
