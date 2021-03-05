@@ -2,7 +2,7 @@ Krill Command Line Client Setup
 ===============================
 
 There are two CLI binaries included in Krill: `krillc` is intended to manage Certification
-Authorities, and `krillpubc` is used manage a Publication Server.
+Authorities, and `krillpubc` is used to manage a Publication Server.
 
 Essentially the CLIs are a small convenient way to access the Krill API and represent responses
 to the user. They parse command line arguments and/or files supplied by the user (where applicable),
