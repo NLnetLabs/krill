@@ -110,7 +110,7 @@ pub trait Aggregate: Storable + Send + Sync + 'static {
 
     /// Processes a command. I.e. validate the command, and return a list of
     /// events that will result in the desired new state, but do not apply
-    /// these event here.
+    /// these events here.
     ///
     /// The command is moved, because we want to enable moving its data
     /// without reallocating.
@@ -176,7 +176,7 @@ use as part of the executing the command.
 ///
 /// In addition to implementing Storable so that the details can be stored
 /// *and* retrieved, the details also need to be able to present a generic
-/// CommandSummer for use in history.
+/// CommandSummary for use in history.
 pub trait WithStorableDetails: Storable + Send + Sync {
     fn summary(&self) -> CommandSummary;
 }

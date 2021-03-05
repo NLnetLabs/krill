@@ -55,7 +55,7 @@ pub trait Aggregate: Storable + Send + Sync + 'static {
 
     /// Processes a command. I.e. validate the command, and return a list of
     /// events that will result in the desired new state, but do not apply
-    /// these event here.
+    /// these events here.
     ///
     /// The command is moved, because we want to enable moving its data
     /// without reallocating.
