@@ -47,7 +47,7 @@ function in `src/daemon/http/server.rs`. This function performs the following st
 * This server keeps running until the Krill binary is terminated.
 
 Note that the `hyper` server itself is stateless. For this it relies on an `Arc<KrillServer>` which can
-be cloned cheaply whenever a request ir processed. So, we use hyper for the following:
+be cloned cheaply whenever a request is processed. So, we use hyper for the following:
 * Get authentication/authorization information from the request (header/cookies dependent on config)
 * Serve static content for the Krill UI.
 * Map requests to API code in `KrillServer` and serve responses
