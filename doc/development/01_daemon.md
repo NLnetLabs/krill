@@ -17,7 +17,7 @@ components described here are responsible for:
 Ultimately the actual requests coming from either the API or background jobs are dispatched to either
 the `CaServer` or `RepositoryManager` which are set up using the provided config (e.g. instructing these components
 where their data is stored). Theoretically those components could also be wrapped in a different way in
-future, e.g. to support serverless setups using lambda functions, provided of course that authorization,
+the future, e.g. to support serverless setups using AWS Lambda functions, provided of course that authorization,
 configuration, and concurrency are handled.
 
 Binaries
@@ -40,9 +40,9 @@ function in `src/daemon/http/server.rs`. This function performs the following st
 
 * Creates the PID file.
 * Verifies that the configured data directory is usable.
-* Calls 'pre-start' upgrades before state is built. (e.g. migrate data structures)
+* Calls 'pre-start' upgrades before state is built. (e.g. migrate data structures).
 * Instantiates a `KrillServer`, which will guard all state.
-* Creates a self-signed TLS certificate, unless one was prepared earlier
+* Creates a self-signed TLS certificate, unless one was prepared earlier.
 * Builds a `hyper` server which then connects to the configured port and handles connections.
 * This server keeps running until the Krill binary is terminated.
 
@@ -63,13 +63,13 @@ KrillServer
 This is the main daemon component that runs Krill. It won't do actual processing, but it is responsible for running and
 mapping calls to the following components (we will describe each component in more detail later):
 
-| Element             | Code Path                        | Responsibility                                                    |
-|---------------------|----------------------------------|-------------------------------------------------------------------|
-| `CaServer`          | src/daemon/ca/server.rs          | Manages Krill CAs.                                                |
-| `RepositoryManager` | src/pubd/pubserver.rs            | Manages access to and content of the repository.                  |
-| `Scheduler`         | src/daemon/scheduler.rs          | Schedules and executes background jobs.                           |
-| `Authorizer`        | src/daemon/auth/authorizer.rs    | Verifies authentication and authorization for API requests.       |
-| `BgpAnalyser`       | src/commons/bgp/analyser.rs      | Compare authorizations to BGP, download RIS whois dumps.          |
+| Element             | Code Path                     | Responsibility                                              |
+| ------------------- | ----------------------------- | ----------------------------------------------------------- |
+| `CaServer`          | src/daemon/ca/server.rs       | Manages Krill CAs.                                          |
+| `RepositoryManager` | src/pubd/pubserver.rs         | Manages access to and content of the repository.            |
+| `Scheduler`         | src/daemon/scheduler.rs       | Schedules and executes background jobs.                     |
+| `Authorizer`        | src/daemon/auth/authorizer.rs | Verifies authentication and authorization for API requests. |
+| `BgpAnalyser`       | src/commons/bgp/analyser.rs   | Compares authorizations to BGP, downloads RIS whois dumps.  |
 
 
 KrillMode
