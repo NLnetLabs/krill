@@ -115,7 +115,7 @@ pub fn create_publisher(&self, req: rfc8183::PublisherRequest, actor: &Actor) ->
 }
 ```
 
-The publisher is going to need to get RF8183 Repository Response XML. We can get
+The publisher is going to need to get RFC8183 Repository Response XML. We can get
 an `rfc8183::RepositoryResponse` which can be printed (`fmt::Display`) as XML:
 
 ```rust
