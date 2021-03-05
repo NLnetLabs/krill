@@ -249,7 +249,7 @@ impl CaServer {
     /// Get the current objects for a CA for each repository that it's using.
     /// Note: typically a CA will use only one repository, but during migrations there may be multiple.
     pub async fn ca_repo_elements(&self, ca: &Handle) -> KrillResult<HashMap<RepositoryContact, Vec<PublishElement>>> {
-        Ok(self.ca_objects_store.ca_objects(ca)?.elements())
+        Ok(self.ca_objects_store.ca_objects(ca)?.repo_elements_map())
     }
 
     /// Get all old repos for best effort clean-up. They may not be reachable after all.
@@ -281,6 +281,20 @@ impl CaServer {
         } else {
             Err(Error::CaUnknown(ca.clone()))
         }
+    }
+
+    /// Update the RepoStatus for CAs using an embedded Publication Server
+    pub async fn ca_repo_status_set_elements(&self, ca: &Handle) -> KrillResult<()> {
+        let published = self.ca_objects_store.ca_objects(ca)?.all_publish_elements();
+        let next_hours = self.config.issuance_timing.timing_publish_next_hours;
+
+        self.status_store
+            .lock()
+            .await
+            .set_status_repo_published(ca, "embedded".to_string(), published, next_hours)
+            .await?;
+
+        Ok(())
     }
 
     /// Refresh all CAs:
@@ -1315,10 +1329,7 @@ impl CaServer {
                 // TODO: reflect the status for each REPO in the API / UI?
                 // We probably should.. though it should be extremely rare and short-live to
                 // have more than one repository.
-                let mut published = vec![];
-                for (_, mut elements_for_repo) in self.ca_objects_store.ca_objects(ca_handle)?.elements().into_iter() {
-                    published.append(&mut elements_for_repo);
-                }
+                let published = self.ca_objects_store.ca_objects(ca_handle)?.all_publish_elements();
 
                 self.status_store
                     .lock()

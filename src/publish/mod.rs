@@ -98,7 +98,10 @@ impl CaPublisher {
         };
 
         match &repo_contact {
-            RepositoryContact::Embedded { .. } => self.get_embedded()?.publish(ca_handle.clone(), delta)?,
+            RepositoryContact::Embedded { .. } => {
+                self.get_embedded()?.publish(ca_handle.clone(), delta)?;
+                self.caserver.ca_repo_status_set_elements(ca_handle).await?;
+            }
             RepositoryContact::Rfc8181 { server_response } => {
                 self.caserver
                     .send_rfc8181_delta(ca_handle, server_response, delta)

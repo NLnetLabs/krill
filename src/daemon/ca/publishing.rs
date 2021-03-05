@@ -282,7 +282,7 @@ impl CaObjects {
     }
 
     #[allow(clippy::clippy::mutable_key_type)]
-    pub fn elements(&self) -> HashMap<RepositoryContact, Vec<PublishElement>> {
+    pub fn repo_elements_map(&self) -> HashMap<RepositoryContact, Vec<PublishElement>> {
         let mut res = HashMap::new();
 
         if let Some(repo) = &self.repo {
@@ -294,6 +294,17 @@ impl CaObjects {
         }
 
         res
+    }
+
+    /// Returns all PublishElements in all repositories (if there is more than one)
+    pub fn all_publish_elements(&self) -> Vec<PublishElement> {
+        let mut all_elements = vec![];
+
+        for (_, mut elements) in self.repo_elements_map().into_iter() {
+            all_elements.append(&mut elements);
+        }
+
+        all_elements
     }
 
     pub fn ca_take_deprecated_repos(&mut self) -> Vec<RepositoryContact> {
