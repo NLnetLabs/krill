@@ -43,7 +43,7 @@ pub struct KeyStoreKey {
 We use serde json (de-)serialization for all types that need to be stored. The following
 trait is used as a convenient shorthand:
 
-```
+```rust
 pub trait Storable: Clone + Serialize + DeserializeOwned + Sized + 'static {}
 impl<T: Clone + Serialize + DeserializeOwned + Sized + 'static> Storable for T {}
 ```
