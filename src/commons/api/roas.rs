@@ -95,7 +95,10 @@ impl<'de> Deserialize<'de> for RoaAggregateKey {
     }
 }
 
-/// Ordering is based on the ordering implemented by RoaDefinition
+/// Ordering is based on ASN first, and group second if there
+/// there are multiple keys for the same ASN. Note: we don't
+/// currently use such groups. It's here in case we want to
+/// give users more options in future.
 impl Ord for RoaAggregateKey {
     fn cmp(&self, other: &Self) -> Ordering {
         match self.asn.cmp(&other.asn) {
