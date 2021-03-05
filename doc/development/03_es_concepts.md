@@ -32,7 +32,7 @@ Commands, Events and Data
 
 This separation means that the aggregate is a bit like a black box to the outside world,
 but in a positive sense. Users of the code just need to know what messages of intent (commands)
-they can send to the it. This interface, like an API, should be fairly stable.
+they can send to it. This interface, like an API, should be fairly stable.
 
 The first thing to do when a command is sent is that an aggregate is retrieved from storage,
 so that it can receive a command. The state of the aggregate is the result of all past
