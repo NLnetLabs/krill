@@ -425,7 +425,7 @@ impl fmt::Display for Error {
             Error::KeyUseNoOldKey => write!(f, "No old key in resource class"),
             Error::KeyUseNoIssuedCert => write!(f, "No issued cert matching pub key"),
             Error::KeyUseNoMatch(ki) => write!(f, "No key found matching key identifier: '{}'", ki),
-            Error::KeyRollNotAllowed => write!(f, "Key Roll in progress"),
+            Error::KeyRollNotAllowed => write!(f, "Key roll in progress"),
 
             //-----------------------------------------------------------------
             // Resource Issues
