@@ -278,7 +278,7 @@ trail that is hard to follow. It also has a serious impact on rebuilding state b
 events from scratch i.e. without using snapshots.
 
 Therefore we decided to implement a hybrid model in Krill. The Krill `CertAuth` is still in
-charge of *almost* all changes, an in particular all *semantic* changes that users made. But,
+charge of *almost* all changes, and in particular all *semantic* changes that users made. But,
 the generation of Manifests and CRLs is offloaded to associated component `CaObjects` that
 just keeps the latest Manifest and CRL. It can re-sign these because it has access to a
 `KrillSigner` and it can get the public key identifier needed for signing from the `CertAuth`.
