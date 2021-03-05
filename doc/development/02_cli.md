@@ -6,7 +6,7 @@ Authorities, and `krillpubc` is used to manage a Publication Server.
 
 Essentially the CLIs are a small convenient way to access the Krill API and represent responses
 to the user. They parse command line arguments and/or files supplied by the user (where applicable),
-and query or post (json) to the appropriate API end-point. Responses can be displayed as json, or
+and query or post (JSON) to the appropriate API end-point. Responses can be displayed as JSON, or
 plain text.
 
 From a development point of view it's important to know that the argument parsing by the CLIs
