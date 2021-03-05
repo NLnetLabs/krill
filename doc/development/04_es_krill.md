@@ -328,7 +328,7 @@ Using this let's you focus on pure business logic in your aggregates. Essentiall
 need to implement the `Aggregate`, `Command` and `Event` traits and then the framework will
 deal with storage concerns.
 
-The most important function signatures (implementation omitted):
+The most important pub function signatures (implementation omitted):
 
 ```rust
 impl<A: Aggregate> AggregateStore<A>
@@ -337,34 +337,40 @@ where
 
 {
     /// Creates an AggregateStore using a disk based KeyValueStore 
-    pub fn disk(work_dir: &PathBuf, name_space: &str) -> StoreResult<Self>;
+    pub fn disk(work_dir: &PathBuf, name_space: &str) -> StoreResult<Self> { ... }
 
-    /// Warms up the cache, to be used after startup. Will fail if any aggregates fail to load.
-    /// In that case the user may want to use the recover option to see what can be salvaged.
-    pub fn warm(&self) -> StoreResult<()>;
+    /// Warms up the cache, to be used after startup. Will fail if any aggregates fail to load,
+    /// or if any surplus commands or events not covered in their `StoredValueInfo` are found.
+    /// The latter indicates an incomplete write 'transaction' happened when saving an updated
+    /// version. Perhaps because a disk was full.
+    ///
+    /// In case this fails, the user may want to use the recover option to see what can be salvaged.
+    pub fn warm(&self) -> StoreResult<()> { ... }
 
-    /// Recovers the aggregates by verifying all commands, and the corresponding events.
-    /// Use this in case the state on disk is found to be inconsistent. I.e. the `warm`
-    /// function failed and Krill exited.
-    pub fn recover(&self) -> StoreResult<()>
+    /// Recovers aggregates to the latest consistent saved in the keystore by verifying
+    /// all commands, and the corresponding events. Use this in case the state on disk is
+    /// found to be inconsistent. I.e. the `warm` function failed and Krill exited.
+    ///
+    /// Note Krill has an option to *always* use this recover function when it starts,
+    /// but the default is that it just uses `warm` function instead. The reason for this
+    /// is that `recover` can take longer, and that it could lead silent recovery without
+    /// alerting to operators to underlying issues.
+    pub fn recover(&self) -> StoreResult<()> { .. }
 
     /// Adds a listener that will receive all events before they are stored.
-    pub fn add_pre_save_listener<L: PreSaveEventListener<A>>(&mut self, sync_listener: Arc<L>);
+    pub fn add_pre_save_listener<L: PreSaveEventListener<A>>(&mut self, sync_listener: Arc<L>) { ... }
 
     /// Adds a listener that will receive a reference to all events after they are stored.
-    pub fn add_post_save_listener<L: PostSaveEventListener<A>>(&mut self, listener: Arc<L>);
+    pub fn add_post_save_listener<L: PostSaveEventListener<A>>(&mut self, listener: Arc<L>) { ... }
 
     /// Adds a new aggregate instance based on the init event.
-    pub fn add(&self, init: A::InitEvent) -> StoreResult<Arc<A>>;
+    pub fn add(&self, init: A::InitEvent) -> StoreResult<Arc<A>> { ... }
 
-    /// Sends a command to the appropriate aggregate, and on
-    /// success: save command and events, return aggregate
-    /// no-op: do not save anything, return aggregate
-    /// error: save command and error, return error
-    pub fn command(&self, cmd: A::Command) -> Result<Arc<A>, A::Error>;
-
-    /// Retrieve the latest aggregate for this command.
-    /// Call the A::process_command function
+    /// Send a command to the latest aggregate referenced by the handle in the command.
+    ///
+    /// This will:
+    /// - Retrieve the latest aggregate for this command.
+    /// - Call the A::process_command function
     /// on success:
     ///   - call pre-save listeners with events
     ///   - save command and events
@@ -374,20 +380,87 @@ where
     ///   - do not save anything, return aggregate
     /// on error:
     ///   - save command and error, return error
-    pub fn command(&self, cmd: A::Command) -> Result<Arc<A>, A::Error>;
+    pub fn command(&self, cmd: A::Command) -> Result<Arc<A>, A::Error> { ... }
 
     /// Returns true if an instance exists for the id
-    pub fn has(&self, id: &Handle) -> Result<bool, AggregateStoreError>;
+    pub fn has(&self, id: &Handle) -> Result<bool, AggregateStoreError> { ... }
 
     // Lists all known ids.
-    pub fn list(&self) -> Result<Vec<Handle>, AggregateStoreError>;
-
+    pub fn list(&self) -> Result<Vec<Handle>, AggregateStoreError> { ... }
 }
-
 ```
 
+As said, users of `AggregateStore` do not need to worry about the actual storage,
+as this is done inside of it using private functions. Still, it's good to talk a bit
+more about how this works. And looking at how the struct if built up will help to
+explain its inner workings:
 
+```rust
+pub struct AggregateStore<A: Aggregate> {
+    kv: KeyValueStore,
+    cache: RwLock<HashMap<Handle, Arc<A>>>,
+    pre_save_listeners: Vec<Arc<dyn PreSaveEventListener<A>>>,
+    post_save_listeners: Vec<Arc<dyn PostSaveEventListener<A>>>,
+    outer_lock: RwLock<()>,
+}
+```
 
+- Locking transactions
 
+First of all, note the presence of `outer_lock`. This is used a transactional
+lock, across ALL aggregates. The `AggregateStore` will hold a write lock during
+any updates, i.e. when an `Aggregate` is added, or when a command is sent to it.
+And it will use a read lock for other operations.
 
+This is not the most efficient way of doing things, and it should be revised
+in future - especially when non-disk-based `KeyValueStore` options come into
+play.
 
+Locking across all `Aggregate` instances on updates could be optimized already.
+We could have separate locks for each instead, but we would need to manage these
+locks when new instances are added or removed, and it does not really matter
+in real terms of performance today. So, it is just a simple implementation for now.
+
+Another thing worth mentioning here is that we keep a key value pair for each
+`Aggregate` that describes its current version information. The structure is as
+follows:
+
+```rust
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct StoredValueInfo {
+    pub snapshot_version: u64,
+    pub last_event: u64,
+    pub last_command: u64,
+    pub last_update: Time,
+}
+```
+
+If command has no effect, i.e. there is no error and no change, then it is
+simply forgotten. But, if a command resulted in changes, or an error, then
+it is saved. In case of an error we simply save the command and a description
+of the error. In case of success we save the command and all events. Whenever
+a command is saved the `last_command` field is updated. If the command was
+successful then the `last_event` and `last_update` values are also updated.
+
+- Storing / Retrieving
+
+The `AggregateStore` uses a `KeyValueStore` to save/retrieve key value pairs.
+Commands and events are saved and retrieved this way. The `AggregateStore`
+uses a strategy for key naming - which is probably too detailed for this
+documentation. Values are saved/retrieved using JSON (`serde_json`). In
+addition to commands and events we also save a current, and backup snapshot
+for each `Aggregate`.
+
+When an `AggregateStore` needs to get an `Aggregate` it will first retrieve
+the latest `StoredValueInfo` from the `KeyValueStore`. Then it will try to
+get the `Aggregate` from its `self.cache`.
+
+If the `AggregateStore` cannot find an entry in the cache then it will try
+to rebuilt the `Aggregate` by retrieving and deserializing the current
+snapshot, and if that fails the backup snapshot, and if that also fails by
+instantiating it using the initialization event (delta-0.xml). 
+
+In either case (cache or no cache) it will now verify whether the version of
+the `Aggregate` matches the `latest_event` found in the `StoredValueInfo`.
+If the number is lower, then it will retrieve all missing events from the
+`KeyValueStore` and apply them.

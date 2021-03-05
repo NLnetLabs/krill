@@ -144,7 +144,7 @@ impl fmt::Display for CommandKeyError {
 
 //------------ AggregateStore ------------------------------------------------
 
-/// This type is responsible for persisting Aggregates.
+/// This type is responsible for managing aggregates.
 pub struct AggregateStore<A: Aggregate> {
     kv: KeyValueStore,
     cache: RwLock<HashMap<Handle, Arc<A>>>,
@@ -186,8 +186,12 @@ where
         Ok(store)
     }
 
-    /// Warms up the cache, to be used after startup. Will fail if any aggregates fail to load.
-    /// In that case the user may want to use the recover option to see what can be salvaged.
+    /// Warms up the cache, to be used after startup. Will fail if any aggregates fail to load,
+    /// or if any surplus commands or events not covered in their `StoredValueInfo` are found.
+    /// The latter indicates an incomplete write 'transaction' happened when saving an updated
+    /// version. Perhaps because a disk was full.
+    ///
+    /// In case this fails, the user may want to use the recover option to see what can be salvaged.
     pub fn warm(&self) -> StoreResult<()> {
         for handle in self.list()? {
             let _ = self
@@ -227,9 +231,14 @@ where
         Ok(())
     }
 
-    /// Recovers the aggregates by verifying all commands, and the corresponding events.
-    /// Use this in case the state on disk is found to be inconsistent. I.e. the `warm`
-    /// function failed and Krill exited.
+    /// Recovers aggregates to the latest consistent saved in the keystore by verifying
+    /// all commands, and the corresponding events. Use this in case the state on disk is
+    /// found to be inconsistent. I.e. the `warm` function failed and Krill exited.
+    ///
+    /// Note Krill has an option to *always* use this recover function when it starts,
+    /// but the default is that it just uses `warm` function instead. The reason for this
+    /// is that `recover` can take longer, and that it could lead silent recovery without
+    /// alerting to operators to underlying issues.
     pub fn recover(&self) -> StoreResult<()> {
         let criteria = CommandHistoryCriteria::default();
         for handle in self.list()? {
@@ -372,8 +381,11 @@ where
         Ok(arc)
     }
 
-    /// Retrieve the latest aggregate for this command.
-    /// Call the A::process_command function
+    /// Send a command to the latest aggregate referenced by the handle in the command.
+    ///
+    /// This will:
+    /// - Retrieve the latest aggregate for this command.
+    /// - Call the A::process_command function
     /// on success:
     ///   - call pre-save listeners with events
     ///   - save command and events
