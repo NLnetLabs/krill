@@ -41,7 +41,7 @@ If a snapshot does not include the latest events, then they are simply re-applie
 
 When an aggregate receives a command it can see if a change can be applied. It is fully
 in charge of its own consistency. If it isn't then the aggregate root is usually at the
-wrong level. The result of command can either be an error - the command is rejected - or
+wrong level. The result of the command can either be an error - the command is rejected - or
 a number of events which represent state changes are applied to the aggregate.
 
 When events are applied they are also saved, so that they can be replayed later. Furthermore,
