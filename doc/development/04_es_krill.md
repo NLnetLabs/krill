@@ -9,7 +9,7 @@ in Krill we have chosen to use our own local implementation. This lets us use th
 need, but it allows us the flexibility to adapt it to our specific needs, and avoids the complication
 from concepts that we do not need.
 
-Krill uses its own event sourcing library code which can be found under `src/commons/eventsourcing`.
+Krill uses its own event sourcing library code which can be found under [`src/commons/eventsourcing`](../src/commons/eventsourcing).
 We will describe the concepts and code here, and include code (snippets). But, obviously, the real
 code is leading - so be sure to check it and fix this documentation if the two should disagree!
 
@@ -435,7 +435,7 @@ pub struct StoredValueInfo {
 }
 ```
 
-If command has no effect, i.e. there is no error and no change, then it is
+If a command has no effect, i.e. there is no error and no change, then it is
 simply forgotten. But, if a command resulted in changes, or an error, then
 it is saved. In case of an error we simply save the command and a description
 of the error. In case of success we save the command and all events. Whenever
@@ -449,7 +449,7 @@ Commands and events are saved and retrieved this way. The `AggregateStore`
 uses a strategy for key naming - which is probably too detailed for this
 documentation. Values are saved/retrieved using JSON (`serde_json`). In
 addition to commands and events we also save a current, and backup snapshot
-for each `Aggregate`.
+for each `Aggregate`, and the `self.cache` is updated.
 
 When an `AggregateStore` needs to get an `Aggregate` it will first retrieve
 the latest `StoredValueInfo` from the `KeyValueStore`. Then it will try to
