@@ -87,7 +87,7 @@ The `KrillServer` elements are initialized based on which ```KrillMode``` is sel
 If Krill is started with the `krillpubd` binary, then the mode will always be ```KrillMode::Pubd```. If it is started with the
 `krill` binary, then the mode will *normally* be ```KrillMode::Ca```. However, for backward compatibility with existing deployments,
 the KrillServer will change this mode to ```KrillMode::Mixed``` if it finds that a data directory exists for an initialized
-Publication Server with at least one active `Publisher`. ```KrillMode::Testbed``` can be forced is the user sets the URIs for the test
+Publication Server with at least one active `Publisher`. ```KrillMode::Testbed``` can be forced if the user sets the URIs for the test
 Publication Server rsync and RRDP URI base, using the following two environment variables: `KRILL_TESTBED_RSYNC` and `KRILL_TESTBED_RRDP`.
 
 
