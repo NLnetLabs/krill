@@ -188,8 +188,14 @@ impl RouteAuthorizationUpdates {
 impl From<RoaDefinitionUpdates> for RouteAuthorizationUpdates {
     fn from(definitions: RoaDefinitionUpdates) -> Self {
         let (added, removed) = definitions.unpack();
-        let added = added.into_iter().map(RoaDefinition::into).collect();
-        let removed = removed.into_iter().map(RoaDefinition::into).collect();
+        let mut added: Vec<RouteAuthorization> = added.into_iter().map(RoaDefinition::into).collect();
+        added.sort();
+        added.dedup();
+
+        let mut removed: Vec<RouteAuthorization> = removed.into_iter().map(RoaDefinition::into).collect();
+        removed.sort();
+        removed.dedup();
+
         RouteAuthorizationUpdates { added, removed }
     }
 }
