@@ -9,7 +9,7 @@ in Krill we have chosen to use our own local implementation. This lets us use th
 need, but it allows us the flexibility to adapt it to our specific needs, and avoids the complication
 from concepts that we do not need.
 
-Krill uses its own event sourcing library code which can be found under [`src/commons/eventsourcing`](../src/commons/eventsourcing).
+Krill uses its own event sourcing library code which can be found under [`src/commons/eventsourcing`](../../src/commons/eventsourcing).
 We will describe the concepts and code here, and include code (snippets). But, obviously, the real
 code is leading - so be sure to check it and fix this documentation if the two should disagree!
 
