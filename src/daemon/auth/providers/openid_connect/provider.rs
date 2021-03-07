@@ -536,25 +536,17 @@ impl OpenIDConnectAuthProvider {
             Ok(conn_guard) => {
                 match &*conn_guard {
                     Some(conn) => {
-                        let mut captured_raw_id_token: Option<String> = None;
-
-                        let id_token_capturing_http_client = |req| {
-                            let res = logging_http_client(req);
-                            captured_raw_id_token = capture_raw_id_token_from_response(&res);
-                            res
-                        };
-
                         let token_response = conn
                             .client
                             .exchange_refresh_token(&RefreshToken::new(refresh_token.to_string()))
-                            .request(id_token_capturing_http_client);
+                            .request(logging_http_client);
 
                         match token_response {
                             Ok(token_response) => {
                                 let new_token_res = self.session_cache.encode(
                                     &session.id,
                                     &session.attributes,
-                                    secrets_from_token_response(&token_response, captured_raw_id_token),
+                                    secrets_from_token_response(&token_response),
                                     &self.session_key,
                                     token_response.expires_in(),
                                 );
@@ -1083,18 +1075,10 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                     )
                 })? {
                     Some(conn) => {
-                        let mut captured_raw_id_token: Option<String> = None;
-
-                        let id_token_capturing_http_client = |req| {
-                            let res = logging_http_client(req);
-                            captured_raw_id_token = capture_raw_id_token_from_response(&res);
-                            res
-                        };
-
                         let token_response: FlexibleTokenResponse = conn
                             .client
                             .exchange_code(AuthorizationCode::new(code.to_string()))
-                            .request(id_token_capturing_http_client)
+                            .request(logging_http_client)
                             .map_err(|e| {
                                 let (msg, additional_info) = match e {
                                     RequestTokenError::ServerResponse(provider_err) => {
@@ -1361,7 +1345,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                         let api_token = self.session_cache.encode(
                             &id,
                             &attributes,
-                            secrets_from_token_response(&token_response, captured_raw_id_token),
+                            secrets_from_token_response(&token_response),
                             &self.session_key,
                             token_response.expires_in(),
                         )?;
@@ -1498,35 +1482,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
     }
 }
 
-/// For OpenID Connect RP-Initiated Logout 1.0 when wanting to redirect the user post-logout back to Krill we are
-/// REQUIRED by the spec to pass the raw ID Token to the provider, but we don't have it... The openidconnect-rs crate
-/// deserializes the OAuth 2.0 Token Response and hands us a Rust struct already containing the deserialized (and
-/// potentially even decrypted) ID Token, we never see the raw id_token value.
-///
-/// This helper function tries to parse a HTTP response body as JSON and see whether it contains an id_token field, and
-/// if so passes a copy of it back to the caller. Ideally we wouldn't have to do this as the openidconnect-rs crate
-/// also deserializes the response body so this is a bit wasteful.
-///
-/// See: https://github.com/ramosbugs/openidconnect-rs/issues/40
-fn capture_raw_id_token_from_response(res: &Result<openidconnect::HttpResponse, Error>) -> Option<String> {
-    if let Ok(ok_res) = res {
-        if let Ok(body) = std::str::from_utf8(&ok_res.body) {
-            let v: Result<serde_json::Value, serde_json::Error> = serde_json::from_str(&body);
-            if let Ok(serde_json::Value::Object(obj)) = v {
-                // might be a token response, is there an id_token String field in the object?
-                if let Some(id_token) = obj.get("id_token") {
-                    return Some(id_token.to_string());
-                }
-            }
-        }
-    }
-    None
-}
-
-fn secrets_from_token_response(
-    token_response: &FlexibleTokenResponse,
-    raw_id_token: Option<String>,
-) -> HashMap<String, String> {
+fn secrets_from_token_response(token_response: &FlexibleTokenResponse) -> HashMap<String, String> {
     let mut secrets: HashMap<String, String> = HashMap::new();
 
     secrets.insert(
@@ -1538,8 +1494,8 @@ fn secrets_from_token_response(
         secrets.insert(TokenKind::RefreshToken.into(), refresh_token.secret().clone());
     };
 
-    if let Some(raw_id_token) = raw_id_token {
-        secrets.insert(TokenKind::IdToken.into(), raw_id_token.clone());
+    if let Some(id_token) = token_response.extra_fields().id_token() {
+        secrets.insert(TokenKind::IdToken.into(), id_token.to_string());
     }
 
     secrets
