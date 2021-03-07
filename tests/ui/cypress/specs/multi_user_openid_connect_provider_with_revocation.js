@@ -5,7 +5,7 @@ let login_test_settings = [
 
 describe('OpenID Connect provider with OAuth 2 revocation', () => {
   login_test_settings.forEach(function (ts) {
-    it('Logout when logged in as user ' + ts.u + ' behaves as expected', () => {
+    it('Logout when logged in as user ' + ts.u + ' should ' + (ts.o ? 'successfully' : 'fail to') + ' revoke the token', () => {
       cy.visit('/')
       cy.url().should('not.include', Cypress.config('baseUrl'))
       cy.contains('Mock OpenID Connect login form')
