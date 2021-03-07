@@ -112,10 +112,16 @@ describe('OpenID Connect provider with RP-Initiated logout', () => {
     cy.get('#userinfo').click()
     cy.get('#userinfo_table').contains(admin.u)
 
+    // verify that the mock provider thinks the user is logged in
+    cy.request({ url: 'https://127.0.0.1:1818/test/is_user_logged_in?username=' + admin.u, failOnStatusCode: false }).its('status').should('eq', 200)
+
     // logout
     cy.intercept('GET', /^https:\/\/localhost:1818\/logout.+/).as('oidcLogout')
     cy.get('.logout').click()
     cy.wait('@oidcLogout').its('response.statusCode').should('eq', 302)
+
+    // verify that the mock provider thinks the user is now logged out
+    cy.request({ url: 'https://127.0.0.1:1818/test/is_user_logged_in?username=' + admin.u, failOnStatusCode: false }).its('status').should('eq', 400)
 
     // verify that we are shown the OpenID Connect provider login page
     cy.url().should('not.include', Cypress.config('baseUrl'))
