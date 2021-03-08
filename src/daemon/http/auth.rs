@@ -13,12 +13,13 @@ pub const AUTH_LOGIN_ENDPOINT: &str = "/auth/login";
 pub const AUTH_LOGOUT_ENDPOINT: &str = "/auth/logout";
 
 #[cfg(feature = "multi-user")]
+pub fn url_encode<S: AsRef<str>>(s: S) -> Result<String, Error> {
+    quote(s, b"").map_err(|err| Error::custom(err.to_string()))
+}
+
+#[cfg(feature = "multi-user")]
 fn build_auth_redirect_location(user: LoggedInUser) -> Result<String, Error> {
     use std::collections::HashMap;
-
-    fn quote_with_mapped_error<S: AsRef<str>>(s: S) -> Result<String, Error> {
-        quote(s, b"").map_err(|err| Error::custom(err.to_string()))
-    }
 
     fn b64_encode_attributes_with_mapped_error(a: &HashMap<String, String>) -> Result<String, Error> {
         Ok(base64::encode(
@@ -30,9 +31,9 @@ fn build_auth_redirect_location(user: LoggedInUser) -> Result<String, Error> {
 
     Ok(format!(
         "/index.html#/login?token={}&id={}&attributes={}",
-        &quote_with_mapped_error(user.token)?,
-        &quote_with_mapped_error(user.id)?,
-        &quote_with_mapped_error(attributes)?
+        &url_encode(user.token)?,
+        &url_encode(user.id)?,
+        &url_encode(attributes)?
     ))
 }
 

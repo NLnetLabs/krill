@@ -42,11 +42,11 @@ const create_ca_settings_403 = [
   responseCode: 403,
 }))
 
-describe('OpenID Connect users', () => {
+describe('OpenID Connect provider with RP-Initiated logout', () => {
   it('The correct login form is shown', () => {
     cy.intercept('GET', '/api/v1/authorized').as('isAuthorized')
     cy.intercept('GET', '/auth/login').as('getLoginURL')
-    cy.intercept('GET', /^http:\/\/localhost:1818\/authorize.+/).as('oidcLoginForm')
+    cy.intercept('GET', /^https:\/\/localhost:1818\/authorize.+/).as('oidcLoginForm')
     cy.visit('/')
     cy.wait(['@isAuthorized', '@getLoginURL', '@oidcLoginForm'])
 
@@ -116,10 +116,16 @@ describe('OpenID Connect users', () => {
     cy.get('#userinfo').click()
     cy.get('#userinfo_table').contains(admin.u)
 
+    // verify that the mock provider thinks the user is logged in
+    cy.request({ url: 'https://127.0.0.1:1818/test/is_user_logged_in?username=' + admin.u, failOnStatusCode: false }).its('status').should('eq', 200)
+
     // logout
-    cy.intercept('GET', /^http:\/\/localhost:1818\/logout.+/).as('oidcLogout')
+    cy.intercept('GET', /^https:\/\/localhost:1818\/logout.+/).as('oidcLogout')
     cy.get('.logout').click()
     cy.wait('@oidcLogout').its('response.statusCode').should('eq', 302)
+
+    // verify that the mock provider thinks the user is now logged out
+    cy.request({ url: 'https://127.0.0.1:1818/test/is_user_logged_in?username=' + admin.u, failOnStatusCode: false }).its('status').should('eq', 400)
 
     // verify that we are shown the OpenID Connect provider login page
     cy.url().should('not.include', Cypress.config('baseUrl'))
@@ -159,7 +165,7 @@ describe('OpenID Connect users', () => {
     // verify that we are shown the OpenID Connect provider login page
     // cy.intercept('GET', '/api/v1/authorized').as('isAuthorized')
     cy.intercept('GET', '/auth/login').as('getLoginURL')
-    cy.intercept('GET', /^http:\/\/localhost:1818\/authorize.+/).as('oidcLoginForm')
+    cy.intercept('GET', /^https:\/\/localhost:1818\/authorize.+/).as('oidcLoginForm')
 
     cy.visit('/')
     // not sure why but even though the 401 response is sent and Cypress debug
