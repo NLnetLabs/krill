@@ -26,12 +26,10 @@ describe('OpenID Connect provider with OAuth 2 revocation', () => {
       // for users with both a refresh token and an access token first Krill will try to revoke the refresh token
       // then will retry if that fails with the access token
       cy.intercept('/auth/logout').as('getLogoutURL')
-      cy.intercept(':1818/authorize').as('getLoginForm')
       cy.get('.logout').click()
 
       // verify that we are shown the OpenID Connect provider login page
       cy.wait('@getLogoutURL').its('response.statusCode').should('eq', 200)
-      cy.wait('@getLoginForm').its('response.statusCode').should('eq', 200)
       cy.url().should('not.include', Cypress.config('baseUrl'))
       cy.contains('Mock OpenID Connect login form')
       cy.get('input[name="username"]')
