@@ -17,6 +17,16 @@ pub enum OpenIDConnectMockMode {
     OIDCProviderWithNoLogoutEndpoints,
 }
 
+#[cfg(not(feature = "multi-user"))]
+pub async fn run_krill_ui_test(
+    test_name: &str,
+    _: OpenIDConnectMockMode,
+    testbed_enabled: bool,
+) {
+    do_run_krill_ui_test(test_name, testbed_enabled).await;
+}
+
+#[cfg(feature = "multi-user")]
 pub async fn run_krill_ui_test(
     test_name: &str,
     openid_connect_mock_mode: OpenIDConnectMockMode,
@@ -24,7 +34,6 @@ pub async fn run_krill_ui_test(
 ) {
     use OpenIDConnectMockMode::*;
 
-    #[cfg(feature = "multi-user")]
     let op_handle = match openid_connect_mock_mode {
         OIDCProviderWillNotBeStarted => None,
         _ => Some(openid_connect_mock::start(openid_connect_mock_mode, 1).await),
@@ -32,7 +41,6 @@ pub async fn run_krill_ui_test(
 
     do_run_krill_ui_test(test_name, testbed_enabled).await;
 
-    #[cfg(feature = "multi-user")]
     if let Some(handle) = op_handle {
         openid_connect_mock::stop(handle).await;
     }

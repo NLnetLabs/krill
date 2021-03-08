@@ -1,4 +1,4 @@
-#[cfg(feature = "ui-tests")]
+#[cfg(all(feature = "ui-tests", feature = "multi-user"))]
 mod ui;
 
 #[tokio::test]
