@@ -827,16 +827,16 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 // request to the user agent's state and refer to cryptographic binding and use of hashing and cookies
                 // to achieve such binding.
                 //
-                // We need a way to verify that the state value that we have received back is one that we issued to the
-                // client to use in the login process. Hashing it and issuing the hash to the client browser as a cookie
-                // could be used to verifiably relate the state value to a value that we can issue at the start of the
-                // login process and get back on redirect from the 3rd party back to Krill, and that won't be sent to
-                // the 3rd party (i.e. the cookie, which will be restricted to our domain and thus shouldn't be sent by
-                // the browser to the 3rd party domain). By using a cookie we automatically incorporate a mechanism for
-                // delivering the hash back to us (as the user agent will follow the 3rd party redirect back to us
-                // without giving client-side javascript a chance to inspect or modify it).
+                // We need a way to verify that the state value that we have received back is the one that we issued to
+                // the client to use in the login process. Hashing it and issuing the hash to the client browser as a
+                // cookie could be used to verifiably relate the state value to a value that we can issue at the start
+                // of the login process and get back on redirect from the 3rd party back to Krill, and that won't be
+                // sent to the 3rd party (i.e. the cookie, which will be restricted to our domain and thus shouldn't be
+                // sent by the browser to the 3rd party domain). By using a cookie we automatically incorporate a
+                // mechanism for delivering the hash back to us (as the user agent will follow the 3rd party redirect
+                // back to us without giving client-side javascript a chance to inspect or modify it).
                 //
-                // This is actually exactly the same mechanism used pass a nonce value to the 3rd party authorization
+                // This is actually exactly the same mechanism used to pass a nonce value to the 3rd party authorization
                 // server and check it afterwards, the only difference being that the state parameter is passed back to
                 // us as a request parameter on the authorisation code redirect response from the 3rd party, and the
                 // nonce is a value embedded in the ID token that is issued at the very end of the login process (after
