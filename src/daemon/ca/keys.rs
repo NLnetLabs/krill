@@ -286,6 +286,7 @@ impl KeyState {
         signer: &KrillSigner,
     ) -> KrillResult<Vec<CaEvtDet>> {
         let mut keys_for_requests = vec![];
+
         match self {
             KeyState::Pending(pending) => {
                 keys_for_requests.push((base_repo, pending.key_id()));

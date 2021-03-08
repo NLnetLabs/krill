@@ -1158,15 +1158,7 @@ impl CertAuth {
             }
         }
 
-        let mut events = vec![];
-        let mut version = self.version;
-
-        for detail in event_details {
-            events.push(StoredEvent::new(&self.handle, version, detail));
-            version += 1;
-        }
-
-        Ok(events)
+        Ok(self.evts_from_details(event_details))
     }
 
     /// This method updates the received certificate for the given parent

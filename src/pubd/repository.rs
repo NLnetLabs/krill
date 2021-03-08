@@ -538,13 +538,12 @@ impl RrdpServer {
         if elements.is_empty() {
             Ok(())
         } else {
-            self.serial += 1;
-
             // Update the snapshot, this can fail if the delta is illegal.
             self.snapshot.apply_delta(elements.clone(), jail)?;
+            self.serial += 1;
 
             self.update_deltas(elements, config);
-            self.update_nofication_file(config);
+            self.update_notification(config);
 
             Ok(())
         }
@@ -565,7 +564,7 @@ impl RrdpServer {
 
         for delta in &self.deltas {
             size += delta.elements().size();
-            if size > snapshot_size || keep > minimum && delta.older_than_seconds(retain_secs) {
+            if size > snapshot_size || (keep > minimum && delta.older_than_seconds(retain_secs)) {
                 break;
             }
             keep += 1;
@@ -573,11 +572,11 @@ impl RrdpServer {
         self.deltas.truncate(keep);
     }
 
-    // Update the notification file to include the current snapshot and
-    // deltas. Remove old notification files exceeding the retention time,
+    // Update the notification to include the current snapshot and
+    // deltas. Remove old notifications exceeding the retention time,
     // so that we can delete old snapshots and deltas which are no longer
     // relevant.
-    fn update_nofication_file(&mut self, config: &RepositoryRetentionConfig) {
+    fn update_notification(&mut self, config: &RepositoryRetentionConfig) {
         let snapshot_ref = {
             let snapshot_uri = self.snapshot_uri();
             let snapshot_path = self.snapshot_path(self.serial);
@@ -974,7 +973,7 @@ impl Aggregate for RepositoryAccess {
 /// # Manage publishers
 ///
 impl RepositoryAccess {
-    // let base_uri = uri::Rsync::from_string(format!("{}{}/", self.rsync.base_uri, name)).unwrap();
+    /// Adds a publisher with access to the repository
     fn add_publisher(
         &self,
         publisher_request: rfc8183::PublisherRequest,

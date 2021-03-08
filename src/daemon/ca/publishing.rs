@@ -153,6 +153,7 @@ impl CaObjectsStore {
             .keys(None, ".json")?
             .iter()
             .flat_map(|k| {
+                // Only add entries that end with .json AND for which the first part can be parsed as a handle
                 let mut res = None;
                 if let Some(name) = k.name().strip_suffix(".json") {
                     if let Ok(handle) = Handle::from_str(name) {
@@ -620,14 +621,10 @@ impl ResourceClassObjects {
         // repo until the previous old_repo is rolled out completely.
         match &self.keys {
             ResourceClassKeyState::Current(state) => state.current_set.old_repo(),
-            ResourceClassKeyState::Staging(state) => match state.staging_set.old_repo() {
-                Some(repo) => Some(repo),
-                None => state.current_set.old_repo(),
-            },
-            ResourceClassKeyState::Old(state) => match state.old_set.old_repo() {
-                Some(repo) => Some(repo),
-                None => state.current_set.old_repo(),
-            },
+            ResourceClassKeyState::Staging(state) => {
+                state.staging_set.old_repo().or_else(|| state.current_set.old_repo())
+            }
+            ResourceClassKeyState::Old(state) => state.old_set.old_repo().or_else(|| state.current_set.old_repo()),
         }
     }
 }
@@ -1013,7 +1010,10 @@ impl BasicKeyObjectSet {
             self.signing_cert = cert.clone();
             Ok(())
         } else {
-            Err(Error::publishing("received new cert for unknown keyid"))
+            Err(Error::PublishingObjects(format!(
+                "received new cert for unknown keyid: {}",
+                cert.subject_key_identifier()
+            )))
         }
     }
 

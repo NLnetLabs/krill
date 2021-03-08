@@ -515,8 +515,8 @@ impl CurrentObjects {
     }
 
     /// Applies a delta to CurrentObjects. This will verify that the
-    /// delta is legal with regards to exising objects, and the jail
-    /// spefied for the publisher.
+    /// delta is legal with regards to existing objects, and the jail
+    /// specified for the publisher.
     pub fn apply_delta(&mut self, delta: DeltaElements, jail: &uri::Rsync) -> Result<(), PublicationDeltaError> {
         self.verify_delta(&delta, jail)?;
 

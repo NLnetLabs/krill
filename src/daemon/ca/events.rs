@@ -529,7 +529,7 @@ pub enum CaEvtDet {
         auth: RouteAuthorization,
     },
     RouteAuthorizationRemoved {
-        // Tracks a single authorization (VRP) which is removed. See remark above.
+        // Tracks a single authorization (VRP) which is removed. See remark for RouteAuthorizationAdded.
         auth: RouteAuthorization,
     },
     RoasUpdated {
