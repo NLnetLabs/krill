@@ -518,7 +518,7 @@ impl OpenIDConnectAuthProvider {
             debug!("Searching {:?} for \"{}\"..", source, &jmespath_string);
 
             let result = expr.search(&claims).map_err(|e| {
-                self.internal_error(
+                OpenIDConnectAuthProvider::internal_error(
                     "OpenID Connect: Error while searching claims",
                     Some(&e.to_string()),
                 )
