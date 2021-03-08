@@ -811,7 +811,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 // then yes we are using a secure random code.
                 //
                 // https://tools.ietf.org/html/rfc6749#section-4.2.2.1 says the state parameter "SHOULD NOT include
-                // sensitive client or reseource owner information in plain text" - it does not.
+                // sensitive client or resource owner information in plain text" - it does not.
                 //
                 // https://tools.ietf.org/html/rfc6749#section-10.12 says the state parameter "MUST contain a
                 // non-guessable value" - it does.
