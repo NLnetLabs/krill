@@ -33,9 +33,12 @@ fn make_recap_fn() -> Box<CustomFunction> {
 
         if let jmespath::Variable::String(str) = &*args[0] {
             if let jmespath::Variable::String(re_str) = &*args[1] {
-                let re = Regex::new(&re_str).unwrap();
-                let caps = re.captures_iter(&str).next().unwrap();
-                res = caps[1].to_string();
+                let re = Regex::new(&re_str).expect(&format!("Invalid regular expression for '{}' for recap() JMESPath function", &re_str));
+                if let Some(captures) = re.captures_iter(&str).next() {
+                    // captures[0] is the entire match
+                    // captures[1] is the value of the first capture group match
+                    res = captures[1].to_string();
+                }
             }
         }
 
@@ -50,7 +53,7 @@ fn make_recap_fn() -> Box<CustomFunction> {
 /// that returns the result of replacing the first text in the haystack that
 /// matches the needle regex with the given replacement value.
 ///
-/// Returns an empty string if no match is found.
+/// Returns the given string unchanged if no match is found to replace.
 fn make_resub_fn() -> Box<CustomFunction> {
     let fn_signature = Signature::new(
         vec![ArgumentType::String, ArgumentType::String, ArgumentType::String],
@@ -65,7 +68,7 @@ fn make_resub_fn() -> Box<CustomFunction> {
         if let jmespath::Variable::String(str) = &*args[0] {
             if let jmespath::Variable::String(re_str) = &*args[1] {
                 if let jmespath::Variable::String(newval) = &*args[2] {
-                    let re = Regex::new(&re_str).unwrap();
+                    let re = Regex::new(&re_str).expect(&format!("Invalid regular expression for '{}' for resub() JMESPath function", &re_str));
                     res = re.replace(str.as_str(), newval.as_str()).to_string();
                 }
             }

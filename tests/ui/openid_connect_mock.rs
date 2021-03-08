@@ -393,6 +393,14 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
                 ..Default::default()
             },
         );
+        known_users.insert(
+            "user-with-wrong-csrf-state-value",
+            KnownUser {
+                role: Some("admin"),
+                exc_cas: Some("ta,testbed"),
+                ..Default::default()
+            },
+        );
 
         let logout_metadata = match config {
             OpenIDConnectMockMode::OIDCProviderWithRPInitiatedLogout => CustomAdditionalMetadata {
@@ -660,13 +668,14 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
 
                 match known_users.get(username.as_str()) {
                     Some(_user) => {
-                        let client_id = require_query_param(&query, "client_id")?;
-                        let nonce = require_query_param(&query, "nonce")?;
-                        let state = require_query_param(&query, "state")?;
-
-                        let client_id = base64_decode(client_id)?;
-                        let nonce = base64_decode(nonce)?;
-                        let state = base64_decode(state)?;
+                        let client_id = base64_decode(require_query_param(&query, "client_id")?)?;
+                        let nonce = base64_decode(require_query_param(&query, "nonce")?)?;
+                        let state = if username == "user-with-wrong-csrf-state-value" {
+                            info!("Deliberately returning the wrong CSRF state value to the client");
+                            "some-wrong-csrf-value".to_string()
+                        } else {
+                            base64_decode(require_query_param(&query, "state")?)?
+                        };
 
                         let mut code_bytes: [u8; 4] = [0; 4];
                         openssl::rand::rand_bytes(&mut code_bytes)

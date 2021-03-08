@@ -8,6 +8,7 @@ let badidtoken = { u: 'non-spec-compliant-idtoken-payload' }
 let badrole = { u: 'user-with-unknown-role' }
 let refreshinvalidrequest = { u: 'user-with-invalid-request-on-refresh' }
 let refreshinvalidclient = { u: 'user-with-invalid-client-on-refresh' }
+let wrongcsrfstate = { u: 'user-with-wrong-csrf-state-value' }
 let ca_name = 'dummy-ca-name'
 
 let login_test_settings = [
@@ -18,6 +19,7 @@ let login_test_settings = [
   { d: 'readwrite', u: readwrite.u, o: true },
   { d: 'badidtoken', u: badidtoken.u, o: false },
   { d: 'badrole', u: badrole.u, o: false },
+  { d: 'wrongcsrfstate', u: wrongcsrfstate.u, o: false },
 ]
 
 const create_ca_settings_401 = [
@@ -82,9 +84,6 @@ describe('OpenID Connect provider with RP-Initiated logout', () => {
           cy.get('#userinfo').click()
           cy.get('#userinfo_table').contains(ts.u)
           cy.get('#userinfo_table').contains('role')
-        } else if (ts.d == 'empty') {
-          cy.contains('The supplied login credentials were incorrect')
-          cy.contains('return to the login page')
         } else if (ts.d == 'badidtoken') {
           cy.contains('OpenID Connect: Code exchange failed: Failed to parse server response')
           cy.contains('return to the login page')
@@ -92,6 +91,11 @@ describe('OpenID Connect provider with RP-Initiated logout', () => {
           cy.contains(
             'Your user does not have sufficient rights to perform this action. Please contact your administrator.'
           )
+          cy.contains('return to the login page')
+        } else if (ts.d == 'wrongcsrfstate') {
+          cy.contains('CSRF token mismatch')
+        } else {
+          cy.contains('The supplied login credentials were incorrect')
           cy.contains('return to the login page')
         }
       }
