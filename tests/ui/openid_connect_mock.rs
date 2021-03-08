@@ -762,23 +762,10 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
                 true
             });
 
-            if found_user_id.is_none() {
-                return Err(Error::custom(format!("Error while logging out: no login session found")));
-            }
-
-            // remove all login sessions for the found user id, not just the one with the given token
-            // this helps in UI tests where previous tests logged a user in but didn't log them out and their token
-            // hasn't expired yet, and then the test calls /test/is_user_logged_in with a user id to see if they are
-            // logged in and finds they are, even if they had just been logged out using the id_token_hint...
-            login_sessions.retain(|_k, v| {
-                // return false if the user id matches the one we are looking for so that retain() will discard this
-                // login session
-                let r = Some(v.id) != found_user_id;
-                if !r {
-                    info!("Logout of id token '{}' terminates session for user '{}' with access/refresh token '{}'", id_token_hint, v.id, _k);
-                }
-                r
-            });
+            match found_user_id {
+                Some(user_id) => remove_related_login_sessions(login_sessions, user_id),
+                None => return Err(Error::custom(format!("Error while logging out: no login session found")))
+            };
 
             let response = Response::empty(StatusCode(302)).with_header(
                 Header::from_str(&format!("Location: {}", redirect_uri)).map_err(|err| {
@@ -787,6 +774,25 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
             );
 
             request.respond(response).map_err(|err| err.into())
+        }
+
+        fn remove_related_login_sessions(
+            login_sessions: &mut LoginSessions,
+            user_id: &str
+        ) {
+            // remove all login sessions for the found user id, not just the one with the given token
+            // this helps in UI tests where previous tests logged a user in but didn't log them out and their token
+            // hasn't expired yet, and then the test calls /test/is_user_logged_in with a user id to see if they are
+            // logged in and finds they are, even if they had just been logged out using the id_token_hint...
+            login_sessions.retain(|access_or_refresh_token, login_session| {
+                // return false if the user id matches the one we are looking for so that retain() will discard this
+                // login session
+                let r = login_session.id != user_id;
+                if !r {
+                    info!("Terminating login session for user '{}' with access/refresh token '{}'", login_session.id, access_or_refresh_token);
+                }
+                r
+            });
         }
 
         /// Implement [OAuth 2.0 Token Revocation][rfc7009]
@@ -824,15 +830,21 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
                     )
                     .map_err(|err| err.into())
             } else {
-                if login_sessions.remove(&token).is_none() {
-                    warn!("Token '{}' could NOT be revoked: token is NOT known", &token);
-                    // From https://tools.ietf.org/html/rfc7009#section-2.2:
-                    //   Note: invalid tokens do not cause an error response since the client
-                    //   cannot handle such an error in a reasonable way.  Moreover, the
-                    //   purpose of the revocation request, invalidating the particular token,
-                    //   is already achieved.
-                }
-
+                match login_sessions.remove(&token) {
+                    None => {
+                        warn!("Token '{}' could NOT be revoked: token is NOT known", &token);
+                        // From https://tools.ietf.org/html/rfc7009#section-2.2:
+                        //   Note: invalid tokens do not cause an error response since the client
+                        //   cannot handle such an error in a reasonable way.  Moreover, the
+                        //   purpose of the revocation request, invalidating the particular token,
+                        //   is already achieved.
+                    }
+                    Some(session) => {
+                        info!("Logout of refresh token '{}' terminates session for user '{}'", token, session.id);
+                        remove_related_login_sessions(login_sessions, session.id);
+                    }
+                };
+    
                 request
                     .respond(Response::empty(StatusCode(200)))
                     .map_err(|err| err.into())
@@ -858,17 +870,8 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
                 }
                 None => {
                     info!("No login session found for user '{}'", &username);
-                    // See: https://tools.ietf.org/html/rfc6749#section-5.2
-                    let err_body = json!({
-                        "error": "invalid_grant"
-                    })
-                    .to_string();
                     request
-                        .respond(
-                            Response::empty(StatusCode(400))
-                                .with_header(Header::from_str("Content-Type: application/json").unwrap())
-                                .with_data(err_body.as_bytes(), None),
-                        )
+                        .respond(Response::empty(StatusCode(400)))
                         .map_err(|err| err.into())
                 }
             }
@@ -1137,13 +1140,6 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
             known_users: &KnownUsers,
         ) -> Result<(), Error> {
             let url = urlparse(request.url());
-
-            trace!(
-                "request received: {:?} {:?} {:?}",
-                &request.method(),
-                &url.path,
-                &url.query
-            );
 
             match (request.method(), url.path.as_str()) {
                 // OpenID Connect 1.0. Discovery support
