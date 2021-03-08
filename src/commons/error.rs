@@ -557,7 +557,7 @@ impl Error {
     pub fn status(&self) -> StatusCode {
         match self {
             // Most is bad requests by users, so just mapping the things that are not
-            Error::IoError(_) | Error::SignerError(_) | Error::AggregateStoreError(_) => {
+            Error::IoError(_) | Error::SignerError(_) | Error::AggregateStoreError(_) | Error::PublishingObjects(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
             Error::PublisherUnknown(_)
