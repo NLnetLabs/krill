@@ -309,12 +309,12 @@ impl Aggregate for CertAuth {
             //-----------------------------------------------------------------------
             CaEvtDet::KeyRollPendingKeyAdded {
                 resource_class_name,
-                pending_key,
+                pending_key_id: pending_key,
             } => {
                 self.resources
                     .get_mut(&resource_class_name)
                     .unwrap()
-                    .pending_key_added(pending_key);
+                    .pending_key_id_added(pending_key);
             }
             CaEvtDet::KeyPendingToNew {
                 resource_class_name,

@@ -480,7 +480,7 @@ pub enum CaEvtDet {
         // a key roll. Note that there will be a separate 'CertifcateRequested' event for
         // this key.
         resource_class_name: ResourceClassName,
-        pending_key: KeyIdentifier,
+        pending_key_id: KeyIdentifier,
     },
     KeyPendingToNew {
         // A pending key is marked as 'new' when it has received its (first) certificate.
@@ -808,12 +808,12 @@ impl fmt::Display for CaEvtDet {
             // Key life cycle
             CaEvtDet::KeyRollPendingKeyAdded {
                 resource_class_name,
-                pending_key,
+                pending_key_id,
             } => {
                 write!(
                     f,
                     "key roll: added pending key '{}' under resource class '{}'",
-                    pending_key, resource_class_name
+                    pending_key_id, resource_class_name
                 )
             }
             CaEvtDet::KeyPendingToNew {

@@ -25,7 +25,7 @@
         "details": {
           "type": "key_roll_pending_key_added",
           "resource_class_name": "0",
-          "pending_key": "708ED06424A43B08DF47839D995474F864321970"
+          "pending_key_id": "708ED06424A43B08DF47839D995474F864321970"
         }
       },
       {

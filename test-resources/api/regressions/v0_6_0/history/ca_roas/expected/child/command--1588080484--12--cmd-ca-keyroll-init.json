@@ -25,7 +25,7 @@
         "details": {
           "type": "key_roll_pending_key_added",
           "resource_class_name": "0",
-          "pending_key": "4591FF2F94D01E45DA3A20F62579431DEED5B038"
+          "pending_key_id": "4591FF2F94D01E45DA3A20F62579431DEED5B038"
         }
       },
       {

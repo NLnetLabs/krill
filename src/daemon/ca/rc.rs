@@ -379,7 +379,7 @@ impl ResourceClass {
     }
 
     /// Adds a pending key.
-    pub fn pending_key_added(&mut self, key_id: KeyIdentifier) {
+    pub fn pending_key_id_added(&mut self, key_id: KeyIdentifier) {
         match &self.key_state {
             KeyState::Active(current) => {
                 let pending = PendingKey::new(key_id);

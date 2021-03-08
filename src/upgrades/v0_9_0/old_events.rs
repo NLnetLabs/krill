@@ -206,10 +206,12 @@ impl TryFrom<OldCaEvtDet> for CaEvtDet {
                 rcvd_cert,
             },
 
-            OldCaEvtDet::KeyRollPendingKeyAdded(resource_class_name, pending_key) => CaEvtDet::KeyRollPendingKeyAdded {
-                resource_class_name,
-                pending_key,
-            },
+            OldCaEvtDet::KeyRollPendingKeyAdded(resource_class_name, pending_key_id) => {
+                CaEvtDet::KeyRollPendingKeyAdded {
+                    resource_class_name,
+                    pending_key_id,
+                }
+            }
             OldCaEvtDet::KeyPendingToNew(resource_class_name, new_key, _delta) => CaEvtDet::KeyPendingToNew {
                 resource_class_name,
                 new_key: new_key.into(),

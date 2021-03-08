@@ -482,19 +482,20 @@ impl KeyState {
     ) -> KrillResult<Vec<CaEvtDet>> {
         match self {
             KeyState::Active(_current) => {
-                let pending_key = signer.create_key()?;
+                let pending_key_id = signer.create_key()?;
 
-                let req = self.create_issuance_req(base_repo, name_space, parent_class_name, &pending_key, signer)?;
+                let req =
+                    self.create_issuance_req(base_repo, name_space, parent_class_name, &pending_key_id, signer)?;
 
                 Ok(vec![
                     CaEvtDet::KeyRollPendingKeyAdded {
                         resource_class_name: resource_class_name.clone(),
-                        pending_key,
+                        pending_key_id,
                     },
                     CaEvtDet::CertificateRequested {
                         resource_class_name,
                         req,
-                        ki: pending_key,
+                        ki: pending_key_id,
                     },
                 ])
             }
