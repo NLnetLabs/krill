@@ -197,11 +197,23 @@ async fn ca_roll_activate(handle: &Handle) {
 async fn state_becomes_new_key(handle: &Handle) -> bool {
     for _ in 0..30_u8 {
         let ca = ca_details(handle).await;
-        if let Some(rc) = ca.resource_classes().get(&ResourceClassName::default()) {
+
+        // wait for ALL RCs to become state new key
+        let rc_map = ca.resource_classes();
+
+        let expected = rc_map.len();
+        let mut found = 0;
+
+        for rc in rc_map.values() {
             if let ResourceClassKeysInfo::RollNew(_) = rc.keys() {
-                return true;
+                found += 1;
             }
         }
+
+        if found == expected {
+            return true;
+        }
+
         delay_for(Duration::from_secs(1)).await
     }
     false
@@ -210,11 +222,23 @@ async fn state_becomes_new_key(handle: &Handle) -> bool {
 async fn state_becomes_active(handle: &Handle) -> bool {
     for _ in 0..300 {
         let ca = ca_details(handle).await;
-        if let Some(rc) = ca.resource_classes().get(&ResourceClassName::default()) {
+
+        // wait for ALL RCs to become state active key
+        let rc_map = ca.resource_classes();
+
+        let expected = rc_map.len();
+        let mut found = 0;
+
+        for rc in rc_map.values() {
             if let ResourceClassKeysInfo::Active(_) = rc.keys() {
-                return true;
+                found += 1;
             }
         }
+
+        if found == expected {
+            return true;
+        }
+
         delay_for(Duration::from_millis(100)).await
     }
     false
