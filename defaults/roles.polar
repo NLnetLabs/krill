@@ -26,16 +26,22 @@
 # permitted to login to the UI or to use the REST API.
 #
 
-# TODO: Oso maps to Option::<T>::None in Rust, but role_allow is only ever called
-# with an instance of Actor, not with an Option, so this won't match?
+# If called with Option::None then some_role will be the Oso value nil.
+# Otherwise some_role should be a string that we want to contain some value
+# other than whitespace, so we check that it is non-empty after trimming any
+# leading and/or trailing whitespace.
 role_allow(some_role, action: Permission, _) if
-    not some_role = nil and action = new Permission("LOGIN");
+    not some_role = nil and
+    not some_role.trim().is_empty() and
+    action = new Permission("LOGIN");
 
 ### TEST: [
 # Actors with a role can login.
 ?= role_allow("some role", new Permission("LOGIN"), _);
 # Conversely, actors without a role cannot do anything.
 ?= not role_allow(nil, new Permission("LOGIN"), _);
+?= not role_allow("", new Permission("LOGIN"), _);
+?= not role_allow("  ", new Permission("LOGIN"), _);
 ?= not role_allow(nil, nil, nil);
 # ?= not role_allow(nil, _, _);
 ### ]

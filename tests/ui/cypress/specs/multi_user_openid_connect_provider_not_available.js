@@ -1,5 +1,5 @@
-describe('OpenID Connect users', () => {
-  it('The correct login form is shown', () => {
+describe('OpenID Connect provider is not running', () => {
+  it('Login fails with the expected error', () => {
     cy.intercept('GET', '/api/v1/authorized').as('isAuthorized')
     cy.intercept('GET', '/auth/login').as('getLoginURL')
     cy.visit('/')

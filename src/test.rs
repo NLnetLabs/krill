@@ -96,6 +96,12 @@ pub fn init_config(config: &Config) {
     config.verify().unwrap();
 }
 
+async fn start_krill_with_error_trap(config: Arc<Config>, mode: KrillMode) {
+    if let Err(err) = server::start_krill_daemon(config, mode).await {
+        error!("Krill failed to start: {}", err);
+    }
+}
+
 /// Starts krill server for testing, with embedded TA and repo.
 /// Creates a random base directory in the 'work' folder, and returns
 /// it. Be sure to clean it up when the test is done.
@@ -121,7 +127,7 @@ pub async fn start_krill(config: Option<Config>, enable_testbed: bool) -> PathBu
         }
     };
 
-    tokio::spawn(server::start_krill_daemon(Arc::new(config), mode));
+    tokio::spawn(start_krill_with_error_trap(Arc::new(config), mode));
     assert!(krill_server_ready().await);
     dir
 }
@@ -136,7 +142,7 @@ pub async fn start_krill_pubd() -> PathBuf {
     config.port = 3001;
     config.service_uri = "https://localhost:3001/".to_string();
 
-    tokio::spawn(server::start_krill_daemon(Arc::new(config), KrillMode::Pubd));
+    tokio::spawn(start_krill_with_error_trap(Arc::new(config), KrillMode::Pubd));
     assert!(krill_pubd_ready().await);
 
     // Initialise the repository using separate URIs

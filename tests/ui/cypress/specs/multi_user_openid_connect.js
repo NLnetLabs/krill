@@ -8,6 +8,7 @@ let badidtoken = { u: 'non-spec-compliant-idtoken-payload' }
 let badrole = { u: 'user-with-unknown-role' }
 let refreshinvalidrequest = { u: 'user-with-invalid-request-on-refresh' }
 let refreshinvalidclient = { u: 'user-with-invalid-client-on-refresh' }
+let wrongcsrfstate = { u: 'user-with-wrong-csrf-state-value' }
 let ca_name = 'dummy-ca-name'
 
 let login_test_settings = [
@@ -18,6 +19,7 @@ let login_test_settings = [
   { d: 'readwrite', u: readwrite.u, o: true },
   { d: 'badidtoken', u: badidtoken.u, o: false },
   { d: 'badrole', u: badrole.u, o: false },
+  { d: 'wrongcsrfstate', u: wrongcsrfstate.u, o: false },
 ]
 
 const create_ca_settings_401 = [
@@ -40,11 +42,11 @@ const create_ca_settings_403 = [
   responseCode: 403,
 }))
 
-describe('OpenID Connect users', () => {
+describe('OpenID Connect provider with RP-Initiated logout', () => {
   it('The correct login form is shown', () => {
     cy.intercept('GET', '/api/v1/authorized').as('isAuthorized')
     cy.intercept('GET', '/auth/login').as('getLoginURL')
-    cy.intercept('GET', /^http:\/\/localhost:1818\/authorize.+/).as('oidcLoginForm')
+    cy.intercept('GET', /^https:\/\/localhost:1818\/authorize.+/).as('oidcLoginForm')
     cy.visit('/')
     cy.wait(['@isAuthorized', '@getLoginURL', '@oidcLoginForm'])
 
@@ -82,9 +84,6 @@ describe('OpenID Connect users', () => {
           cy.get('#userinfo').click()
           cy.get('#userinfo_table').contains(ts.u)
           cy.get('#userinfo_table').contains('role')
-        } else if (ts.d == 'empty') {
-          cy.contains('The supplied login credentials were incorrect')
-          cy.contains('return to the login page')
         } else if (ts.d == 'badidtoken') {
           cy.contains('OpenID Connect: Code exchange failed: Failed to parse server response')
           cy.contains('return to the login page')
@@ -92,6 +91,11 @@ describe('OpenID Connect users', () => {
           cy.contains(
             'Your user does not have sufficient rights to perform this action. Please contact your administrator.'
           )
+          cy.contains('return to the login page')
+        } else if (ts.d == 'wrongcsrfstate') {
+          cy.contains('CSRF token mismatch')
+        } else {
+          cy.contains('The supplied login credentials were incorrect')
           cy.contains('return to the login page')
         }
       }
@@ -112,10 +116,16 @@ describe('OpenID Connect users', () => {
     cy.get('#userinfo').click()
     cy.get('#userinfo_table').contains(admin.u)
 
+    // verify that the mock provider thinks the user is logged in
+    cy.request({ url: 'https://127.0.0.1:1818/test/is_user_logged_in?username=' + admin.u, failOnStatusCode: false }).its('status').should('eq', 200)
+
     // logout
-    cy.intercept('GET', /^http:\/\/localhost:1818\/logout.+/).as('oidcLogout')
+    cy.intercept('GET', /^https:\/\/localhost:1818\/logout.+/).as('oidcLogout')
     cy.get('.logout').click()
     cy.wait('@oidcLogout').its('response.statusCode').should('eq', 302)
+
+    // verify that the mock provider thinks the user is now logged out
+    cy.request({ url: 'https://127.0.0.1:1818/test/is_user_logged_in?username=' + admin.u, failOnStatusCode: false }).its('status').should('eq', 400)
 
     // verify that we are shown the OpenID Connect provider login page
     cy.url().should('not.include', Cypress.config('baseUrl'))
@@ -155,7 +165,7 @@ describe('OpenID Connect users', () => {
     // verify that we are shown the OpenID Connect provider login page
     // cy.intercept('GET', '/api/v1/authorized').as('isAuthorized')
     cy.intercept('GET', '/auth/login').as('getLoginURL')
-    cy.intercept('GET', /^http:\/\/localhost:1818\/authorize.+/).as('oidcLoginForm')
+    cy.intercept('GET', /^https:\/\/localhost:1818\/authorize.+/).as('oidcLoginForm')
 
     cy.visit('/')
     // not sure why but even though the 401 response is sent and Cypress debug
