@@ -42,7 +42,8 @@ jobs:
     name: deploy_and_test
     runs-on: ubuntu-18.04
     steps:
-hmarr/debug-action
+    - name: Temporary diagnostics
+      uses: hmarr/debug-action
 
     - name: Checkout Krill
       uses: actions/checkout@v2
