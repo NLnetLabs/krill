@@ -20,7 +20,7 @@ use crate::{
         SCHEDULER_INTERVAL_SECONDS_ROA_RENEW,
     },
     daemon::{
-        ca::CaServer,
+        ca::CaManager,
         config::Config,
         mq::{MessageQueue, QueueEvent},
     },
@@ -64,7 +64,7 @@ pub struct Scheduler {
 impl Scheduler {
     pub fn build(
         event_queue: Arc<MessageQueue>,
-        caserver: Option<Arc<CaServer>>,
+        caserver: Option<Arc<CaManager>>,
         pubserver: Option<Arc<RepositoryManager>>,
         bgp_analyser: Arc<BgpAnalyser>,
         #[cfg(feature = "multi-user")] login_session_cache: Arc<LoginSessionCache>,
@@ -109,7 +109,7 @@ impl Scheduler {
 #[allow(clippy::cognitive_complexity)]
 fn make_cas_event_triggers(
     event_queue: Arc<MessageQueue>,
-    caserver: Arc<CaServer>,
+    caserver: Arc<CaManager>,
     pubserver: Option<Arc<RepositoryManager>>,
     actor: Actor,
 ) -> ScheduleHandle {
@@ -204,7 +204,7 @@ fn requeue_time() -> Time {
 
 async fn try_publish(
     event_queue: &Arc<MessageQueue>,
-    caserver: Arc<CaServer>,
+    caserver: Arc<CaManager>,
     pubserver: Option<Arc<RepositoryManager>>,
     ca: Handle,
 ) {
@@ -224,7 +224,7 @@ async fn try_publish(
 /// Try to synchronize a CA with its parents, reschedule if this fails
 async fn try_sync_parent(
     event_queue: &Arc<MessageQueue>,
-    caserver: &CaServer,
+    caserver: &CaManager,
     ca: Handle,
     parent: ParentHandle,
     actor: &Actor,
@@ -239,7 +239,7 @@ async fn try_sync_parent(
     }
 }
 
-fn make_cas_republish(caserver: Arc<CaServer>, event_queue: Arc<MessageQueue>) -> ScheduleHandle {
+fn make_cas_republish(caserver: Arc<CaManager>, event_queue: Arc<MessageQueue>) -> ScheduleHandle {
     SkippingScheduler::run(
         SCHEDULER_INTERVAL_SECONDS_REPUBLISH,
         "CA certificate republish",
@@ -261,7 +261,7 @@ fn make_cas_republish(caserver: Arc<CaServer>, event_queue: Arc<MessageQueue>) -
     )
 }
 
-fn make_cas_roa_renew(caserver: Arc<CaServer>, actor: Actor) -> ScheduleHandle {
+fn make_cas_roa_renew(caserver: Arc<CaManager>, actor: Actor) -> ScheduleHandle {
     SkippingScheduler::run(SCHEDULER_INTERVAL_SECONDS_ROA_RENEW, "CA ROA renewal", move || {
         let mut rt = Runtime::new().unwrap();
         rt.block_on(async {
@@ -275,7 +275,7 @@ fn make_cas_roa_renew(caserver: Arc<CaServer>, actor: Actor) -> ScheduleHandle {
     })
 }
 
-fn make_cas_refresh(caserver: Arc<CaServer>, refresh_rate: u32, actor: Actor) -> ScheduleHandle {
+fn make_cas_refresh(caserver: Arc<CaManager>, refresh_rate: u32, actor: Actor) -> ScheduleHandle {
     SkippingScheduler::run(refresh_rate, "CA certificate refresh", move || {
         let mut rt = Runtime::new().unwrap();
         rt.block_on(async {

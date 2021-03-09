@@ -118,10 +118,10 @@ impl CaLocks {
     }
 }
 
-//------------ CaServer ------------------------------------------------------
+//------------ CaManager -----------------------------------------------------
 
 #[derive(Clone)]
-pub struct CaServer {
+pub struct CaManager {
     config: Arc<Config>,
     signer: Arc<KrillSigner>,
     ca_store: Arc<AggregateStore<CertAuth>>,
@@ -131,9 +131,8 @@ pub struct CaServer {
     mq: Arc<MessageQueue>,
 }
 
-impl CaServer {
-    /// Builds a new CaServer. Will return an error if the TA store cannot be
-    /// initialised.
+impl CaManager {
+    /// Builds a new CaServer. Will return an error if the TA store cannot be initialized.
     pub async fn build(config: Arc<Config>, mq: Arc<MessageQueue>, signer: Arc<KrillSigner>) -> KrillResult<Self> {
         let mut ca_store = AggregateStore::<CertAuth>::disk(&config.data_dir, CASERVER_DIR)?;
 
@@ -155,7 +154,7 @@ impl CaServer {
 
         let locks = Arc::new(CaLocks::default());
 
-        Ok(CaServer {
+        Ok(CaManager {
             config,
             signer,
             ca_store: Arc::new(ca_store),
@@ -174,7 +173,7 @@ impl CaServer {
         self.ca_store.get_latest(&ta_handle).map_err(Error::AggregateStoreError)
     }
 
-    /// Initialises an embedded trust anchor with all resources.
+    /// Initializes an embedded trust anchor with all resources.
     pub async fn init_ta(
         &self,
         info: RepoInfo,
@@ -450,7 +449,7 @@ impl CaServer {
 
 /// # CA support
 ///
-impl CaServer {
+impl CaManager {
     /// Gets a CA by the given handle, returns an `Err(ServerError::UnknownCA)` if it
     /// does not exist.
     pub async fn get_ca(&self, handle: &Handle) -> KrillResult<Arc<CertAuth>> {
@@ -1171,7 +1170,7 @@ impl CaServer {
 
 /// # Support sending publication messages, and verifying responses.
 ///
-impl CaServer {
+impl CaManager {
     async fn send_procotol_msg_and_validate(
         &self,
         signing_key: &KeyIdentifier,
@@ -1362,7 +1361,7 @@ impl CaServer {
 
 /// # Support Route Authorization functions
 ///
-impl CaServer {
+impl CaManager {
     /// Update the routes authorized by a CA
     pub async fn ca_routes_update(
         &self,
@@ -1384,7 +1383,7 @@ impl CaServer {
 
 /// # Support Resource Tagged Attestation functions
 ///
-impl CaServer {
+impl CaManager {
     /// Sign a one-off single-signed RTA
     pub async fn rta_sign(
         &self,

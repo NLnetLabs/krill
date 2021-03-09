@@ -8,7 +8,7 @@ use crate::{
         api::{Handle, Publish, PublishDelta, RepositoryContact, Update, Withdraw},
         error::Error,
     },
-    daemon::ca::CaServer,
+    daemon::ca::CaManager,
     pubd::RepositoryManager,
 };
 
@@ -17,14 +17,14 @@ use crate::{
 /// A helper which orchestrates publishing by CAs at either local, or
 /// remote, repositories.
 pub struct CaPublisher {
-    caserver: Arc<CaServer>,
+    caserver: Arc<CaManager>,
     pubserver: Option<Arc<RepositoryManager>>,
 }
 
 /// # Construct
 ///
 impl CaPublisher {
-    pub fn new(caserver: Arc<CaServer>, pubserver: Option<Arc<RepositoryManager>>) -> Self {
+    pub fn new(caserver: Arc<CaManager>, pubserver: Option<Arc<RepositoryManager>>) -> Self {
         CaPublisher { caserver, pubserver }
     }
 }

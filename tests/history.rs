@@ -22,7 +22,7 @@ async fn history() {
     use krill::commons::api::{CaCommandDetails, CommandHistoryCriteria, Handle};
     use krill::commons::crypto::KrillSigner;
     use krill::commons::util::file;
-    use krill::daemon::ca::CaServer;
+    use krill::daemon::ca::CaManager;
     use krill::daemon::config::Config;
     use krill::daemon::mq::MessageQueue;
     use krill::test::*;
@@ -50,7 +50,7 @@ async fn history() {
         let _ = fs::remove_dir_all(d);
     }
 
-    async fn make_server(work_dir: &PathBuf, scenario: &str) -> CaServer {
+    async fn make_server(work_dir: &PathBuf, scenario: &str) -> CaManager {
         let mut source = PathBuf::from("test-resources/api/regressions/v0_6_0/history/");
         source.push(scenario);
         source.push("cas");
@@ -68,10 +68,10 @@ async fn history() {
         let event_queue = Arc::new(MessageQueue::default());
         let signer = Arc::new(KrillSigner::build(&server_dir).unwrap());
 
-        CaServer::build(config, event_queue, signer).await.unwrap()
+        CaManager::build(config, event_queue, signer).await.unwrap()
     }
 
-    async fn assert_history(server: &CaServer, scenario: &str, ca: &Handle) {
+    async fn assert_history(server: &CaManager, scenario: &str, ca: &Handle) {
         let crit_dflt = CommandHistoryCriteria::default();
         let history = server.get_ca_history(ca, crit_dflt).await.unwrap();
 

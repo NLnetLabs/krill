@@ -28,8 +28,8 @@ pub use self::commands::*;
 mod events;
 pub use self::events::*;
 
-mod server;
-pub use self::server::CaServer;
+mod manager;
+pub use self::manager::CaManager;
 
 mod rta;
 pub use self::rta::*;

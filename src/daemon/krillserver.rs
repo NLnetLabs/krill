@@ -33,7 +33,7 @@ use crate::daemon::auth::providers::MasterTokenAuthProvider;
 use crate::daemon::auth::providers::{ConfigFileAuthProvider, OpenIDConnectAuthProvider};
 use crate::daemon::auth::{Authorizer, LoggedInUser};
 use crate::daemon::ca::{
-    self, ta_handle, testbed_ca_handle, CaServer, ResourceTaggedAttestation, RouteAuthorizationUpdates,
+    self, ta_handle, testbed_ca_handle, CaManager, ResourceTaggedAttestation, RouteAuthorizationUpdates,
     RtaContentRequest, RtaPrepareRequest,
 };
 use crate::daemon::config::{AuthType, Config};
@@ -90,7 +90,7 @@ pub struct KrillServer {
     repo_manager: Option<Arc<RepositoryManager>>,
 
     // Handles the internal TA and/or CAs
-    caserver: Option<Arc<ca::CaServer>>,
+    caserver: Option<Arc<ca::CaManager>>,
 
     // Handles the internal TA and/or CAs
     bgp_analyser: Arc<BgpAnalyser>,
@@ -206,7 +206,7 @@ impl KrillServer {
         let event_queue = Arc::new(MessageQueue::default());
 
         let caserver = if mode.cas_enabled() {
-            let caserver = Arc::new(ca::CaServer::build(config.clone(), event_queue.clone(), signer).await?);
+            let caserver = Arc::new(ca::CaManager::build(config.clone(), event_queue.clone(), signer).await?);
 
             if let KrillMode::Testbed(uris) = &mode {
                 let repo_manager = repo_manager.as_ref().ok_or(Error::RepositoryServerNotEnabled)?;
@@ -436,7 +436,7 @@ impl KrillServer {
 /// # Manage CAs
 ///
 impl KrillServer {
-    fn get_caserver(&self) -> KrillResult<&Arc<CaServer>> {
+    fn get_caserver(&self) -> KrillResult<&Arc<CaManager>> {
         self.caserver.as_ref().ok_or(Error::CaServerNotEnabled)
     }
 }
