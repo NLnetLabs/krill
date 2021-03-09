@@ -773,12 +773,7 @@ async fn functional() {
         // Expect that CA3 publishes nothing in the embedded repo
         {
             assert!(
-                will_publish_embedded(
-                    "CA3 should publish the MFT and CRL for both current keys in the embedded repo",
-                    &ca3,
-                    &[]
-                )
-                .await
+                will_publish_embedded("CA3 should no longer publish anything in the embedded repo", &ca3, &[]).await
             );
         }
 
@@ -788,7 +783,7 @@ async fn functional() {
             expected_files.append(&mut expected_mft_and_crl(&ca3, &rcn_1).await);
             assert!(
                 will_publish_dedicated(
-                    "CA3 should publish the MFT and CRL for both current keys in the embedded repo",
+                    "CA3 should publish the MFT and CRL for both current keys in the dedicated repo",
                     &ca3,
                     &expected_files
                 )
