@@ -52,11 +52,12 @@ jobs:
       id: pick_e2e_branch
       shell: bash
       run: |
+        echo "GITHUB_REF=${GITHUB_REF}"
         BRANCH=${GITHUB_REF#refs/heads/}
         if git ls-remote --exit-code --heads https://github.com/NLnetLabs/rpki-deploy ${BRANCH}; then
           echo "::set-output name=branch::${BRANCH}"
         else
-          echo "::set-output name=success::master"
+          echo "::set-output name=branch::master"
         fi
 
     - name: Checkout the E2E test framework
