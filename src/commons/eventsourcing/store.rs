@@ -58,11 +58,12 @@ pub enum KeyStoreVersion {
     V0_8,
     V0_8_1_RC1,
     V0_8_1,
+    V0_8_2,
 }
 
 impl KeyStoreVersion {
     pub fn current() -> Self {
-        KeyStoreVersion::V0_8_1_RC1
+        KeyStoreVersion::V0_8_2
     }
 }
 

@@ -1,7 +1,12 @@
 name: CI
 
 on:
+  # permit manual invocation of the workflow via the GitHub Actions web UI
+  workflow_dispatch: 
+
+  # run the tests for any direct push to master
   push:
+    branches: ['master']
     paths-ignore:
       - '.dockerignore'
       - '.github/workflow/e2e.yml'
@@ -15,7 +20,7 @@ on:
       - 'README.md'
       - 'tests/e2e/**'
 
-  # Hmm, annoying, do we really have to duplicate this?
+  # run the tests on creation or update of any pull request
   pull_request:
     paths-ignore:
       - '.dockerignore'
