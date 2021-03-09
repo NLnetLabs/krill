@@ -52,11 +52,16 @@ jobs:
       id: pick_e2e_branch
       shell: bash
       run: |
+        echo "GITHUB_REF=${GITHUB_REF}"
+        echo "GITHUB_HEAD_REF=${GITHUB_HEAD_REF}"
         BRANCH=${GITHUB_REF#refs/heads/}
+
         if git ls-remote --exit-code --heads https://github.com/NLnetLabs/rpki-deploy ${BRANCH}; then
           echo "::set-output name=branch::${BRANCH}"
+        elif git ls-remote --exit-code --heads https://github.com/NLnetLabs/rpki-deploy ${GITHUB_HEAD_REF}; then
+          echo "::set-output name=branch::${GITHUB_HEAD_REF}"
         else
-          echo "::set-output name=success::master"
+          echo "::set-output name=branch::master"
         fi
 
     - name: Checkout the E2E test framework
@@ -93,9 +98,9 @@ jobs:
         sudo ldconfig
 
     - name: Install Terraform
-      uses: marocchino/setup-terraform@v1
+      uses: hashicorp/setup-terraform@v1
       with:
-        version: "0.12.19"
+        terraform_version: "0.12.19"
 
     # Strictly speaking this is not required when testing locally, but currently
     # the test fails without it.
