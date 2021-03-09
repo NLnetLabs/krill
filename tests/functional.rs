@@ -132,7 +132,7 @@ enum PubServer {
 
 async fn will_publish(test_msg: &str, publisher: &PublisherHandle, files: &[String], server: PubServer) -> bool {
     let objects: Vec<_> = files.iter().map(|s| s.as_str()).collect();
-    for _ in 0..1200 {
+    for _ in 0..6000 {
         let details = {
             match &server {
                 PubServer::Dedicated => dedicated_repo_publisher_details(publisher).await,
