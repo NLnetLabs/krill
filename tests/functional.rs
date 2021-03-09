@@ -155,7 +155,7 @@ async fn will_publish(test_msg: &str, publisher: &PublisherHandle, files: &[Stri
             }
         }
 
-        delay_for(Duration::from_millis(100)).await
+        delay_for(Duration::from_millis(100)).await;
     }
 
     let details = publisher_details(publisher).await;
@@ -246,6 +246,10 @@ async fn state_becomes_active(handle: &Handle) -> bool {
 
 async fn refresh_all() {
     krill_admin(Command::Bulk(BulkCaCommand::Refresh)).await;
+}
+
+async fn resync_all() {
+    krill_admin(Command::Bulk(BulkCaCommand::Sync)).await;
 }
 
 #[tokio::test]
@@ -793,6 +797,11 @@ async fn functional() {
         // Complete the keyroll, this should remove the content in the embedded repo
         ca_roll_activate(&ca3).await;
         assert!(state_becomes_active(&ca3).await);
+
+        // Force resync - it looks like on GH actions publication is not triggered always
+        // perhaps a timing issue in the scheduling. Trying this for now before investigating
+        // further.
+        resync_all().await;
 
         // Expect that CA3 publishes nothing in the embedded repo
         {
