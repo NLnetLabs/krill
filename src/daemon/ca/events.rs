@@ -77,33 +77,33 @@ pub struct RoaUpdates {
     #[serde(
         skip_serializing_if = "HashMap::is_empty",
         default = "HashMap::new",
-        with = "updated_map"
+        with = "updated_sorted_map"
     )]
     updated: HashMap<RouteAuthorization, RoaInfo>,
 
     #[serde(
         skip_serializing_if = "HashMap::is_empty",
         default = "HashMap::new",
-        with = "removed_map"
+        with = "removed_sorted_map"
     )]
     removed: HashMap<RouteAuthorization, RevokedObject>,
 
     #[serde(
         skip_serializing_if = "HashMap::is_empty",
         default = "HashMap::new",
-        with = "aggregate_updated_map"
+        with = "aggregate_updated_sorted_map"
     )]
     aggregate_updated: HashMap<RoaAggregateKey, AggregateRoaInfo>,
 
     #[serde(
         skip_serializing_if = "HashMap::is_empty",
         default = "HashMap::new",
-        with = "aggregate_removed_map"
+        with = "aggregate_removed_sorted_map"
     )]
     aggregate_removed: HashMap<RoaAggregateKey, RevokedObject>,
 }
 
-mod updated_map {
+mod updated_sorted_map {
     use super::*;
 
     use serde::de::{Deserialize, Deserializer};
@@ -143,7 +143,7 @@ mod updated_map {
     }
 }
 
-mod aggregate_updated_map {
+mod aggregate_updated_sorted_map {
     use super::*;
 
     use serde::de::{Deserialize, Deserializer};
@@ -183,7 +183,7 @@ mod aggregate_updated_map {
     }
 }
 
-mod removed_map {
+mod removed_sorted_map {
     use super::*;
 
     use serde::de::{Deserialize, Deserializer};
@@ -223,7 +223,7 @@ mod removed_map {
     }
 }
 
-mod aggregate_removed_map {
+mod aggregate_removed_sorted_map {
     use super::*;
 
     use serde::de::{Deserialize, Deserializer};
