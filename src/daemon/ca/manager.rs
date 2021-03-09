@@ -122,17 +122,16 @@ impl CaLocks {
 
 #[derive(Clone)]
 pub struct CaManager {
-    config: Arc<Config>,
-    signer: Arc<KrillSigner>,
     ca_store: Arc<AggregateStore<CertAuth>>,
     ca_objects_store: Arc<CaObjectsStore>,
-    locks: Arc<CaLocks>,
     status_store: Arc<Mutex<StatusStore>>,
-    mq: Arc<MessageQueue>,
+    locks: Arc<CaLocks>,
+    config: Arc<Config>,
+    signer: Arc<KrillSigner>,
 }
 
 impl CaManager {
-    /// Builds a new CaServer. Will return an error if the TA store cannot be initialized.
+    /// Builds a new CaServer. Will return an error if the CA store cannot be initialized.
     pub async fn build(config: Arc<Config>, mq: Arc<MessageQueue>, signer: Arc<KrillSigner>) -> KrillResult<Self> {
         let mut ca_store = AggregateStore::<CertAuth>::disk(&config.data_dir, CASERVER_DIR)?;
 
@@ -147,21 +146,20 @@ impl CaManager {
             );
             ca_store.recover()?;
         }
-        ca_store.add_post_save_listener(mq.clone());
         ca_store.add_pre_save_listener(ca_objects_store.clone());
+        ca_store.add_post_save_listener(mq);
 
         let status_store = StatusStore::new(&config.data_dir, STATUS_DIR)?;
 
         let locks = Arc::new(CaLocks::default());
 
         Ok(CaManager {
-            config,
-            signer,
             ca_store: Arc::new(ca_store),
             ca_objects_store,
-            locks,
             status_store: Arc::new(Mutex::new(status_store)),
-            mq,
+            locks,
+            config,
+            signer,
         })
     }
 

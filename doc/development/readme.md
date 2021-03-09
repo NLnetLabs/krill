@@ -17,4 +17,5 @@ components and/or concepts in Krill:
 3. [Event Sourcing General Overview](./03_es_concepts.md)
 4. [Event Sourcing in Krill](./04_es_krill.md)
 5. [Repository Manager](./05_repo_manager.md)
+6. [Certificate Authority Manager](./06_ca_manager.md)
 

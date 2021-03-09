@@ -22,7 +22,7 @@ use crate::{
     daemon::{
         ca::CaManager,
         config::Config,
-        mq::{MessageQueue, QueueEvent},
+        mq::{MessageQueue, QueueTask},
     },
     pubd::RepositoryManager,
     publish::CaPublisher,
@@ -64,8 +64,8 @@ pub struct Scheduler {
 impl Scheduler {
     pub fn build(
         event_queue: Arc<MessageQueue>,
-        caserver: Option<Arc<CaManager>>,
-        pubserver: Option<Arc<RepositoryManager>>,
+        ca_manager: Option<Arc<CaManager>>,
+        repository_manager: Option<Arc<RepositoryManager>>,
         bgp_analyser: Arc<BgpAnalyser>,
         #[cfg(feature = "multi-user")] login_session_cache: Arc<LoginSessionCache>,
         config: &Config,
@@ -76,17 +76,17 @@ impl Scheduler {
         let mut cas_roas_renew = None;
         let mut cas_refresh = None;
 
-        if let Some(caserver) = caserver.as_ref() {
+        if let Some(ca_manager) = ca_manager.as_ref() {
             cas_event_triggers = Some(make_cas_event_triggers(
                 event_queue.clone(),
-                caserver.clone(),
-                pubserver,
+                ca_manager.clone(),
+                repository_manager,
                 actor.clone(),
             ));
 
-            cas_republish = Some(make_cas_republish(caserver.clone(), event_queue));
-            cas_roas_renew = Some(make_cas_roa_renew(caserver.clone(), actor.clone()));
-            cas_refresh = Some(make_cas_refresh(caserver.clone(), config.ca_refresh, actor.clone()));
+            cas_republish = Some(make_cas_republish(ca_manager.clone(), event_queue));
+            cas_roas_renew = Some(make_cas_roa_renew(ca_manager.clone(), actor.clone()));
+            cas_refresh = Some(make_cas_refresh(ca_manager.clone(), config.ca_refresh, actor.clone()));
         }
 
         let announcements_refresh = make_announcements_refresh(bgp_analyser);
@@ -109,8 +109,8 @@ impl Scheduler {
 #[allow(clippy::cognitive_complexity)]
 fn make_cas_event_triggers(
     event_queue: Arc<MessageQueue>,
-    caserver: Arc<CaManager>,
-    pubserver: Option<Arc<RepositoryManager>>,
+    ca_manager: Arc<CaManager>,
+    repository_manager: Option<Arc<RepositoryManager>>,
     actor: Actor,
 ) -> ScheduleHandle {
     SkippingScheduler::run(1, "scan for queued triggers", move || {
@@ -119,11 +119,11 @@ fn make_cas_event_triggers(
         rt.block_on(async {
             for evt in event_queue.pop_all() {
                 match evt {
-                    QueueEvent::ServerStarted => {
+                    QueueTask::ServerStarted => {
                         info!("Will re-sync all CAs with their parents and repository after startup");
-                        caserver.cas_refresh_all(&actor).await;
-                        let publisher = CaPublisher::new(caserver.clone(), pubserver.clone());
-                        match caserver.ca_list(&actor) {
+                        ca_manager.cas_refresh_all(&actor).await;
+                        let publisher = CaPublisher::new(ca_manager.clone(), repository_manager.clone());
+                        match ca_manager.ca_list(&actor) {
                             Err(e) => error!("Unable to obtain CA list: {}", e),
                             Ok(list) => {
                                 for ca in list.cas() {
@@ -140,34 +140,34 @@ fn make_cas_event_triggers(
                         }
                     }
 
-                    QueueEvent::SyncRepo(handle) => {
-                        try_publish(&event_queue, caserver.clone(), pubserver.clone(), handle).await
+                    QueueTask::SyncRepo(handle) => {
+                        try_publish(&event_queue, ca_manager.clone(), repository_manager.clone(), handle).await
                     }
-                    QueueEvent::RescheduleSyncRepo(handle, time) => {
+                    QueueTask::RescheduleSyncRepo(handle, time) => {
                         if time > Time::now() {
-                            try_publish(&event_queue, caserver.clone(), pubserver.clone(), handle).await
+                            try_publish(&event_queue, ca_manager.clone(), repository_manager.clone(), handle).await
                         } else {
-                            event_queue.push_back(QueueEvent::RescheduleSyncRepo(handle, time));
+                            event_queue.push_back(QueueTask::RescheduleSyncRepo(handle, time));
                         }
                     }
-                    QueueEvent::SyncParent(ca, parent) => {
-                        try_sync_parent(&event_queue, &caserver, ca, parent, &actor).await
+                    QueueTask::SyncParent(ca, parent) => {
+                        try_sync_parent(&event_queue, &ca_manager, ca, parent, &actor).await
                     }
-                    QueueEvent::RescheduleSyncParent(ca, parent, time) => {
+                    QueueTask::RescheduleSyncParent(ca, parent, time) => {
                         if time > Time::now() {
-                            try_sync_parent(&event_queue, &caserver, ca, parent, &actor).await
+                            try_sync_parent(&event_queue, &ca_manager, ca, parent, &actor).await
                         } else {
-                            event_queue.push_back(QueueEvent::RescheduleSyncParent(ca, parent, time))
+                            event_queue.push_back(QueueTask::RescheduleSyncParent(ca, parent, time))
                         }
                     }
 
-                    QueueEvent::ResourceClassRemoved(handle, parent, revocations) => {
+                    QueueTask::ResourceClassRemoved(handle, parent, revocations) => {
                         info!(
                             "Trigger send revoke requests for removed RC for '{}' under '{}'",
                             handle, parent
                         );
 
-                        if caserver
+                        if ca_manager
                             .send_revoke_requests(&handle, &parent, revocations, &actor)
                             .await
                             .is_err()
@@ -179,13 +179,13 @@ fn make_cas_event_triggers(
                             );
                         }
                     }
-                    QueueEvent::UnexpectedKey(handle, rcn, revocation) => {
+                    QueueTask::UnexpectedKey(handle, rcn, revocation) => {
                         info!(
                             "Trigger sending revocation requests for unexpected key with id '{}' in RC '{}'",
                             revocation.key(),
                             rcn
                         );
-                        if let Err(e) = caserver
+                        if let Err(e) = ca_manager
                             .send_revoke_unexpected_key(&handle, rcn, revocation, &actor)
                             .await
                         {
@@ -216,7 +216,7 @@ async fn try_publish(
             error!("Failed to publish for '{}', error: {}", ca, e);
         } else {
             error!("Failed to publish for '{}' will reschedule, error: {}", ca, e);
-            event_queue.push_back(QueueEvent::RescheduleSyncRepo(ca, requeue_time()));
+            event_queue.push_back(QueueTask::RescheduleSyncRepo(ca, requeue_time()));
         }
     }
 }
@@ -224,18 +224,18 @@ async fn try_publish(
 /// Try to synchronize a CA with its parents, reschedule if this fails
 async fn try_sync_parent(
     event_queue: &Arc<MessageQueue>,
-    caserver: &CaManager,
+    ca_manager: &CaManager,
     ca: Handle,
     parent: ParentHandle,
     actor: &Actor,
 ) {
     info!("Synchronize CA '{}' with its parent '{}'", ca, parent);
-    if let Err(e) = caserver.ca_sync_parent(&ca, &parent, actor).await {
+    if let Err(e) = ca_manager.ca_sync_parent(&ca, &parent, actor).await {
         error!(
             "Failed to synchronize CA '{}' with its parent '{}', error: {}",
             ca, parent, e
         );
-        event_queue.push_back(QueueEvent::RescheduleSyncParent(ca, parent, requeue_time()));
+        event_queue.push_back(QueueTask::RescheduleSyncParent(ca, parent, requeue_time()));
     }
 }
 
@@ -321,7 +321,7 @@ impl SkippingScheduler {
         scheduler.every(seconds.seconds()).run(move || {
             if lock.is_running() {
                 warn!(
-                    "Previous background job '{}' is still runing, will skip and try again in {} seconds",
+                    "Previous background job '{}' is still running, will skip and try again in {} seconds",
                     name, seconds
                 )
             } else {

@@ -13,13 +13,12 @@ use crate::commons::api::{Handle, ParentHandle, ResourceClassName, RevocationReq
 use crate::commons::eventsourcing::{self, Event};
 use crate::daemon::ca::{CaEvt, CaEvtDet, CertAuth};
 
-//------------ QueueEvent ----------------------------------------------------
+//------------ QueueTask ----------------------------------------------------
 
-/// This type contains all the events of interest for a KrillServer, with
-/// the details needed for triggered processing.
+/// This type contains tasks with the details needed for triggered processing.
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(clippy::large_enum_variant)]
-pub enum QueueEvent {
+pub enum QueueTask {
     ServerStarted,
 
     SyncRepo(Handle),
@@ -32,29 +31,29 @@ pub enum QueueEvent {
     UnexpectedKey(Handle, ResourceClassName, RevocationRequest),
 }
 
-impl fmt::Display for QueueEvent {
+impl fmt::Display for QueueTask {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            QueueEvent::ServerStarted => write!(f, "Server just started"),
-            QueueEvent::SyncRepo(ca) => write!(f, "synchronize repo for '{}'", ca),
-            QueueEvent::RescheduleSyncRepo(ca, time) => write!(
+            QueueTask::ServerStarted => write!(f, "Server just started"),
+            QueueTask::SyncRepo(ca) => write!(f, "synchronize repo for '{}'", ca),
+            QueueTask::RescheduleSyncRepo(ca, time) => write!(
                 f,
                 "reschedule failed synchronize repo for '{}' at: {}",
                 ca,
                 time.to_rfc3339()
             ),
-            QueueEvent::SyncParent(ca, parent) => write!(f, "synchronize CA '{}' with parent '{}'", ca, parent),
-            QueueEvent::RescheduleSyncParent(ca, parent, time) => write!(
+            QueueTask::SyncParent(ca, parent) => write!(f, "synchronize CA '{}' with parent '{}'", ca, parent),
+            QueueTask::RescheduleSyncParent(ca, parent, time) => write!(
                 f,
                 "reschedule failed synchronize CA '{}' with parent '{}' for {}",
                 ca,
                 parent,
                 time.to_rfc3339()
             ),
-            QueueEvent::ResourceClassRemoved(ca, _, _) => {
+            QueueTask::ResourceClassRemoved(ca, _, _) => {
                 write!(f, "resource class removed for '{}' ", ca)
             }
-            QueueEvent::UnexpectedKey(ca, rcn, _) => {
+            QueueTask::UnexpectedKey(ca, rcn, _) => {
                 write!(f, "unexpected key found for '{}' resource class: '{}'", ca, rcn)
             }
         }
@@ -63,19 +62,19 @@ impl fmt::Display for QueueEvent {
 
 #[derive(Debug)]
 pub struct MessageQueue {
-    q: RwLock<VecDeque<QueueEvent>>,
+    q: RwLock<VecDeque<QueueTask>>,
 }
 
 impl Default for MessageQueue {
     fn default() -> Self {
         let mut vec = VecDeque::new();
-        vec.push_back(QueueEvent::ServerStarted);
+        vec.push_back(QueueTask::ServerStarted);
         MessageQueue { q: RwLock::new(vec) }
     }
 }
 
 impl MessageQueue {
-    pub fn pop_all(&self) -> Vec<QueueEvent> {
+    pub fn pop_all(&self) -> Vec<QueueTask> {
         let mut res = vec![];
         let mut q = self.q.write().unwrap();
         while let Some(evt) = q.pop_front() {
@@ -86,14 +85,14 @@ impl MessageQueue {
 
     /// Add a queue event to the back of the queue UNLESS there is
     /// already an equivalent event scheduled.
-    pub fn push_back(&self, evt: QueueEvent) {
+    pub fn push_back(&self, evt: QueueTask) {
         let mut q = self.q.write().unwrap();
 
         match &evt {
-            QueueEvent::SyncRepo(ca) | QueueEvent::RescheduleSyncRepo(ca, _) => {
+            QueueTask::SyncRepo(ca) | QueueTask::RescheduleSyncRepo(ca, _) => {
                 for existing in q.iter() {
                     match existing {
-                        QueueEvent::SyncRepo(existing_ca) | QueueEvent::RescheduleSyncRepo(existing_ca, _) => {
+                        QueueTask::SyncRepo(existing_ca) | QueueTask::RescheduleSyncRepo(existing_ca, _) => {
                             if existing_ca == ca {
                                 debug!(
                                     "Not (re-)scheduling publication for '{}', because event exists on queue",
@@ -106,11 +105,11 @@ impl MessageQueue {
                     }
                 }
             }
-            QueueEvent::SyncParent(ca, parent) | QueueEvent::RescheduleSyncParent(ca, parent, _) => {
+            QueueTask::SyncParent(ca, parent) | QueueTask::RescheduleSyncParent(ca, parent, _) => {
                 for existing in q.iter() {
                     match existing {
-                        QueueEvent::SyncParent(existing_ca, existing_parent)
-                        | QueueEvent::RescheduleSyncParent(existing_ca, existing_parent, _) => {
+                        QueueTask::SyncParent(existing_ca, existing_parent)
+                        | QueueTask::RescheduleSyncParent(existing_ca, existing_parent, _) => {
                             if existing_ca == ca && existing_parent == parent {
                                 debug!(
                                     "Not (re-)scheduling sync for '{}' with parent '{}', because event exists on queue",
@@ -130,18 +129,18 @@ impl MessageQueue {
     }
 
     pub fn push_sync_repo(&self, ca: Handle) {
-        self.push_back(QueueEvent::SyncRepo(ca))
+        self.push_back(QueueTask::SyncRepo(ca))
     }
 
     pub fn push_sync_parent(&self, ca: Handle, parent: ParentHandle) {
-        self.push_back(QueueEvent::SyncParent(ca, parent))
+        self.push_back(QueueTask::SyncParent(ca, parent))
     }
 
     pub fn drop_sync_parent(&self, ca: &Handle, parent: &ParentHandle) {
         let mut q = self.q.write().unwrap();
 
         q.retain(|existing| match existing {
-            QueueEvent::SyncParent(ex_ca, ex_parent) | QueueEvent::RescheduleSyncParent(ex_ca, ex_parent, _) => {
+            QueueTask::SyncParent(ex_ca, ex_parent) | QueueTask::RescheduleSyncParent(ex_ca, ex_parent, _) => {
                 ca != ex_ca || parent != ex_parent
             }
             _ => true,
@@ -191,7 +190,7 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for MessageQueue {
                 let mut revocations_map = HashMap::new();
                 revocations_map.insert(resource_class_name.clone(), revoke_reqs.clone());
 
-                self.push_back(QueueEvent::ResourceClassRemoved(
+                self.push_back(QueueTask::ResourceClassRemoved(
                     handle.clone(),
                     parent.clone(),
                     revocations_map,
@@ -201,7 +200,7 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for MessageQueue {
             CaEvtDet::UnexpectedKeyFound {
                 resource_class_name,
                 revoke_req,
-            } => self.push_back(QueueEvent::UnexpectedKey(
+            } => self.push_back(QueueTask::UnexpectedKey(
                 handle.clone(),
                 resource_class_name.clone(),
                 revoke_req.clone(),
