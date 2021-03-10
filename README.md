@@ -19,8 +19,6 @@ can lean more about Krill and RPKI technology by reading our documentation on
 
 ## Quick Start with Pre-built Packages
 
-### Disclaimer
-
 Assuming you have a machine running a recent Debian or Ubuntu distribution, you 
 can install Krill from our [software package repository](https://packages.nlnetlabs.nl).
 To use this repository, add the line below that corresponds to your operating system to 
