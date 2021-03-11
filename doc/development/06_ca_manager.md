@@ -41,40 +41,81 @@ pub struct CaManager {
 }
 ```
 
+Initialisation
+--------------
 
-Triggered Actions - Event Listeners
------------------------------------
+The `CaManager` is instantiated when Krill starts. All its components ultimately
+rely on the `KeyValueStore` - which currently only supports a disk based back-end,
+but which can be modified to support other storage options in future.
 
-As mentioned when we [described](./04_es_krill.md) the event sourcing architecture,
-we can have so-called listeners which are notified of events either before (pre), or
-after (post) they are saved. The `CaManager` uses this to connect its `self.ca_store`
-to the `self.ca_objects_store` as well as to a `MessageQueue` that is passed in at
-construction time:
+Let's first have a look at the initialization code and the included comments, and
+then explain a bit more below.
 
 ```rust
 impl CaManager {
-    /// Builds a new CaServer. Will return an error if the TA store cannot be initialized.
+    /// Builds a new CaServer. Will return an error if the CA store cannot be initialized.
     pub async fn build(config: Arc<Config>, mq: Arc<MessageQueue>, signer: Arc<KrillSigner>) -> KrillResult<Self> {
+        // Create the AggregateStore for the event-sourced `CertAuth` structures that handle
+        // most CA functions.
         let mut ca_store = AggregateStore::<CertAuth>::disk(&config.data_dir, CASERVER_DIR)?;
+
+        if config.always_recover_data {
+            // If the user chose to 'always recover data' then do so.
+            // This is slow, but it will ensure that all commands and events are accounted for,
+            // and there are no incomplete changes where some but not all files for a change were
+            // written to disk.
+            ca_store.recover()?;
+        } else if let Err(e) = ca_store.warm() {
+            // Otherwise we just tried to 'warm' the cache. This serves two purposes:
+            // 1. this ensures that all `CertAuth` structs are available in memory
+            // 2. this ensures that there are no apparent data issues
+            //
+            // If there are issues, then complain and try to recover.
+            error!(
+                "Could not warm up cache, data seems corrupt. Will try to recover!! Error was: {}",
+                e
+            );
+            ca_store.recover()?;
+        }
+
+        // Create the `CaObjectStore` that is responsible for maintaining CA objects: the `CaObjects`
+        // for a CA gets copies of all ROAs and delegated certificates from the `CertAuth` and is responsible
+        // for manifests and CRL generation.
         let ca_objects_store = Arc::new(CaObjectsStore::disk(config.clone(), signer.clone())?);
 
-        .....
+        // Register the `CaObjectsStore` as a pre-save listener to the 'ca_store' so that it can update
+        // its ROAs and delegated certificates and/or generate manifests and CRLs when relevant changes
+        // occur in a `CertAuth`.
         ca_store.add_pre_save_listener(ca_objects_store.clone());
+
+        // Register the `MessageQueue` as a post-save listener to 'ca_store' so that relevant changes in
+        // a `CertAuth` can trigger follow up actions. Most importantly: synchronize with a parent CA or
+        // the RPKI repository.
         ca_store.add_post_save_listener(mq);
 
-        ....
+        // Create the status store which will maintain the last known connection status between each CA
+        // and their parent(s) and repository.
+        let status_store = StatusStore::new(&config.data_dir, STATUS_DIR)?;
+
+        // Create the per-CA lock structure so that we can guarantee safe access to each CA, while allowing
+        // multiple CAs in a single Krill instance to interact: e.g. a child can talk to its parent and they
+        // are locked individually.
+        let locks = Arc::new(CaLocks::default());
+
+        Ok(CaManager {
+            ca_store: Arc::new(ca_store),
+            ca_objects_store,
+            status_store: Arc::new(Mutex::new(status_store)),
+            locks,
+            config,
+            signer,
+        })
     }
 }
 ```
 
-This setup allows the `CaObjectsStore` to be notified of events for each CA, and
-this way it can keep track of any changes in resource classes held by the CA and
-ROAs and/or delegated certificates - and ensure that a new manifest and CRL are
-generated when needed. The `MessageQueue` is mainly used to listen for events in
-a `CertAuth` which warrant that a synchronization with a parent, or repository is
-triggered.
-
-For example, if a `CaEvtDet::RoasUpdated` event occurs, then this will trigger:
+To illustrate how the event listening is used here: If a `CaEvtDet::RoasUpdated` event occurs,
+then this will trigger:
 1. (pre-save) that the `CaObjectsStore` updates the ROAs held by the CA,
    and generates a new CRL and manifest; and
 2. (post-save) that the `MessageQueue` notices, and schedules a task to
@@ -95,7 +136,7 @@ RFC 8181 or RFC 6492 message. Furthermore, it also allows this background job to
 new triggered commands to a CA, e.g.: update a received certificate under a parent.
 
 This approach allows that changes to CAs can be made locally and promptly, without
-needed to wait for synchronisation with a remote system like a parent or repository.
+needed to wait for synchronization with a remote system like a parent or repository.
 Furthermore it allows that in case of any issues in connecting to a remote system,
 the task can be rescheduled.
 
@@ -116,12 +157,12 @@ pub enum QueueTask {
 }
 ```
 
-* ServerStarted
+### QueueTask::ServerStarted
 
 With this task Krill schedules that all Krill CAs perform a full synchronisation
 with their parents and repositories after every restart.
 
-* SyncRepo/RescheduleSyncRepo
+### QueueTask::SyncRepo/RescheduleSyncRepo
 
 These tasks are used to trigger that a CA synchronises with its repository. All
 objects that need to be published have already been created, so this is just about
@@ -131,7 +172,7 @@ be attempted again.
 
 Successes and failures will be tracked in the `StatusStore` held by the `CaManager`.
 
-* SyncParent/RescheduleSyncParent
+### QueueTask::SyncParent/RescheduleSyncParent
 
 These tasks are used to trigger that a CA synchronises with a specific parent.
 
@@ -166,7 +207,7 @@ But, if there are changes then it will result in appropriate new events, such
 as generation of new certificate request. That will then trigger that the
 parent synchronisation is scheduled again.
 
-* ResourceClassRemoved
+### QueueTask::ResourceClassRemoved
 
 This task is planned when a resource class is removed, and it triggers
 that any remaining keys are requested to be revoked by the parent. A resource
@@ -177,7 +218,7 @@ is treated as a non-critical issue.
 Note that if the CA actively removes a parent, it will pro-actively send
 revocation requests for all its keys first, and we do not trigger this task.
 
-* UnexpectedKey
+### QueueTask::UnexpectedKey
 
 > NOTE: This case has never been observed in the wild.
 

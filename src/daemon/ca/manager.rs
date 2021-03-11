@@ -133,24 +133,51 @@ pub struct CaManager {
 impl CaManager {
     /// Builds a new CaServer. Will return an error if the CA store cannot be initialized.
     pub async fn build(config: Arc<Config>, mq: Arc<MessageQueue>, signer: Arc<KrillSigner>) -> KrillResult<Self> {
+        // Create the AggregateStore for the event-sourced `CertAuth` structures that handle
+        // most CA functions.
         let mut ca_store = AggregateStore::<CertAuth>::disk(&config.data_dir, CASERVER_DIR)?;
 
-        let ca_objects_store = Arc::new(CaObjectsStore::disk(config.clone(), signer.clone())?);
-
         if config.always_recover_data {
+            // If the user chose to 'always recover data' then do so.
+            // This is slow, but it will ensure that all commands and events are accounted for,
+            // and there are no incomplete changes where some but not all files for a change were
+            // written to disk.
             ca_store.recover()?;
         } else if let Err(e) = ca_store.warm() {
+            // Otherwise we just tried to 'warm' the cache. This serves two purposes:
+            // 1. this ensures that all `CertAuth` structs are available in memory
+            // 2. this ensures that there are no apparent data issues
+            //
+            // If there are issues, then complain and try to recover.
             error!(
                 "Could not warm up cache, data seems corrupt. Will try to recover!! Error was: {}",
                 e
             );
             ca_store.recover()?;
         }
+
+        // Create the `CaObjectStore` that is responsible for maintaining CA objects: the `CaObjects`
+        // for a CA gets copies of all ROAs and delegated certificates from the `CertAuth` and is responsible
+        // for manifests and CRL generation.
+        let ca_objects_store = Arc::new(CaObjectsStore::disk(config.clone(), signer.clone())?);
+
+        // Register the `CaObjectsStore` as a pre-save listener to the 'ca_store' so that it can update
+        // its ROAs and delegated certificates and/or generate manifests and CRLs when relevant changes
+        // occur in a `CertAuth`.
         ca_store.add_pre_save_listener(ca_objects_store.clone());
+
+        // Register the `MessageQueue` as a post-save listener to 'ca_store' so that relevant changes in
+        // a `CertAuth` can trigger follow up actions. Most importantly: synchronize with a parent CA or
+        // the RPKI repository.
         ca_store.add_post_save_listener(mq);
 
+        // Create the status store which will maintain the last known connection status between each CA
+        // and their parent(s) and repository.
         let status_store = StatusStore::new(&config.data_dir, STATUS_DIR)?;
 
+        // Create the per-CA lock structure so that we can guarantee safe access to each CA, while allowing
+        // multiple CAs in a single Krill instance to interact: e.g. a child can talk to its parent and they
+        // are locked individually.
         let locks = Arc::new(CaLocks::default());
 
         Ok(CaManager {
