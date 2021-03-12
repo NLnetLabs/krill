@@ -63,16 +63,18 @@ if [ "$1" == "krill" ]; then
         # script via a "-e KRILL_FQDN=some.domain.name" argument to
         # "docker run".
         cat << EOF >> ${KRILL_CONF}
-rsync_base  = "rsync://${KRILL_FQDN}/repo/" ${MAGIC}
-service_uri = "https://${KRILL_FQDN}/" ${MAGIC}
 log_level   = "${KRILL_LOG_LEVEL}" ${MAGIC}
-use_ta      = ${KRILL_USE_TA} ${MAGIC}
 EOF
 
         log_info "Dumping ${KRILL_CONF} config file"
         cat ${KRILL_CONF}
         log_info "End of dump"
     fi
+fi
+
+if [ "${KRILL_USE_TA}" == "true" ]; then
+    export KRILL_TESTBED_RSYNC="rsync://${KRILL_FQDN}/repo/"
+    export KRILL_TESTBED_RRDP="https://${KRILL_FQDN}/rrdp/"
 fi
 
 # Launch the command supplied either by the default CMD (krill) in the
