@@ -80,6 +80,9 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
         res = f(ca)
         return set(res.asn) == set(asn) and set(res.v4) == set(v4) and set(res.v6) == set(v6)
 
+    #
+    # define some helper functions
+    #
     def add_ca(ca_handle):
         logging.info(f'-> Adding CA "{ca_handle}"')
         krill_ca_api.add_ca(krill_ca_api_lib.AddCARequest(ca_handle))
