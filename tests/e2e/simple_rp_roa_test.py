@@ -238,6 +238,10 @@ class TestKrillWithRelyingParties:
 
     @pytest.mark.parametrize("service", [Routinator, FortValidator, OctoRPKI, Rcynic, RPKIClient, RPKIValidator3])
     def test_rtr(self, docker_host_fqdn, docker_project, function_service_manager, service, metadata):
+        #
+        # Use Docker Compose to deploy the given Relying Party service and its dependendencies.
+        # On tear down the service container and its dependent containers will be killed and removed.
+        #
         function_service_manager.start_services_with_dependencies(docker_project, service.name)
 
         def retry_if_sync_timeout(exception):
