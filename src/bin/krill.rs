@@ -59,7 +59,7 @@ fn extract_testbed_uris() -> Result<PublicationServerUris, Error> {
     let rrdp_string = env::var(KRILL_ENV_TESTBED_RRDP).map_err(|_| {
         Error::Custom(format!(
             "TESTBED requested RRDP env variable missing, set uri in {}",
-            KRILL_ENV_TESTBED_RSYNC
+            KRILL_ENV_TESTBED_RRDP
         ))
     })?;
 
