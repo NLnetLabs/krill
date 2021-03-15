@@ -704,7 +704,9 @@ impl CaManager {
 /// # CAs as children
 ///
 impl CaManager {
-    /// Adds a parent to a CA
+    /// Adds a parent to a CA. This will trigger that the CA connects to this new parent
+    /// in order to learn its resource entitlements and set up the resource class(es) under
+    /// this parent, and request certificate(s).
     pub async fn ca_parent_add(&self, handle: Handle, parent: ParentCaReq, actor: &Actor) -> KrillResult<()> {
         let (parent_handle, parent_contact) = parent.unpack();
 
@@ -713,7 +715,8 @@ impl CaManager {
         Ok(())
     }
 
-    /// Updates a parent of a CA
+    /// Updates a parent of a CA, this can be used to update the service uri and/or
+    /// identity certificate for an existing parent.
     pub async fn ca_parent_update(
         &self,
         handle: Handle,
@@ -726,7 +729,9 @@ impl CaManager {
         Ok(())
     }
 
-    /// Removes a parent from a CA
+    /// Removes a parent from a CA, this will trigger that best effort revocations of existing
+    /// keys under this parent are requested. Any resource classes under the parent will be removed
+    /// and all relevant content will be withdrawn from the repository.
     pub async fn ca_parent_remove(&self, handle: Handle, parent: ParentHandle, actor: &Actor) -> KrillResult<()> {
         // best effort, request revocations for any remaining keys under this parent.
         if let Err(e) = self.ca_parent_revoke(&handle, &parent, actor).await {
@@ -741,7 +746,7 @@ impl CaManager {
         Ok(())
     }
 
-    /// Send revocation requests for a parent of a CA
+    /// Send revocation requests for a parent of a CA when the parent is removed.
     pub async fn ca_parent_revoke(&self, handle: &Handle, parent: &ParentHandle, actor: &Actor) -> KrillResult<()> {
         let ca = self.get_ca(&handle).await?;
         let revoke_requests = ca.revoke_under_parent(&parent, &self.signer)?;

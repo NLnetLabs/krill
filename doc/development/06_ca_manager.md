@@ -445,8 +445,50 @@ impl KrillServer {
 ```
 
 
+CA as Child Related Functions
+---------------------------
 
+The following functions are used to manage parents of CAs.
 
+```rust
+/// # CAs as children
+///
+impl CaManager {
+
+    /// Adds a parent to a CA. This will trigger that the CA connects to this new parent
+    /// in order to learn its resource entitlements and set up the resource class(es) under
+    /// this parent, and request certificate(s).
+    pub async fn ca_parent_add(
+        &self,
+        handle: Handle,
+        parent: ParentCaReq,
+        actor: &Actor
+    )-> KrillResult<()> { ... }
+
+    /// Removes a parent from a CA, this will trigger that best effort revocations of existing
+    /// keys under this parent are requested. Any resource classes under the parent will be removed
+    /// and all relevant content will be withdrawn from the repository.
+    pub async fn ca_parent_remove(
+        &self,
+        handle: Handle,
+        parent: ParentHandle,
+        actor: &Actor
+    ) -> KrillResult<()> { ... }
+
+    /// Updates a parent of a CA, this can be used to update the service uri and/or
+    /// identity certificate for an existing parent.
+    pub async fn ca_parent_update(
+        &self,
+        handle: Handle,
+        parent: ParentHandle,
+        contact: ParentCaContact,
+        actor: &Actor,
+    ) -> KrillResult<()> { ... }
+
+    /// Returns the parent statuses for this CA
+    pub async fn ca_parent_statuses(&self, ca: &Handle) -> KrillResult<ParentStatuses> { ... }
+}
+```
 
 
 
