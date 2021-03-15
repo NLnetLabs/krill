@@ -468,6 +468,9 @@ impl CertAuth {
 /// # Data presentation
 ///
 impl CertAuth {
+    /// Returns a `CertAuthInfo` for this, which includes a data representation
+    /// of the internal structure, in particular with regards to parent, children,
+    /// resource classes and keys.
     pub fn as_ca_info(&self) -> CertAuthInfo {
         let handle = self.handle.clone();
         let repo_info = self.repository.as_ref().map(|repo| repo.repo_info().clone());
@@ -486,14 +489,21 @@ impl CertAuth {
         CertAuthInfo::new(handle, id_cert_pem, repo_info, parents, resources, children)
     }
 
+    /// Returns the current RoaDefinitions for this, i.e. the intended authorized
+    /// prefixes. Provided that the resources are held by this `CertAuth` one can
+    /// expect that corresponding ROA **objects** are created by the system.
     pub fn roa_definitions(&self) -> Vec<RoaDefinition> {
         self.routes.authorizations().map(|a| a.as_ref()).cloned().collect()
     }
 
+    /// Returns an RFC 8183 Child Request - which can be represented as XML to a
+    /// parent of this `CertAuth`
     pub fn child_request(&self) -> rfc8183::ChildRequest {
         rfc8183::ChildRequest::new(self.handle.clone(), self.id.cert.clone())
     }
 
+    /// Returns an RFC 8183 Publisher Request - which can be represented as XML to a
+    /// repository for this `CertAuth`
     pub fn publisher_request(&self) -> rfc8183::PublisherRequest {
         rfc8183::PublisherRequest::new(None, self.handle.clone(), self.id_cert().clone())
     }
@@ -501,6 +511,7 @@ impl CertAuth {
     pub fn id_cert(&self) -> &IdCert {
         &self.id.cert
     }
+
     pub fn id_key(&self) -> KeyIdentifier {
         self.id.cert.subject_public_key_info().key_identifier()
     }
@@ -508,6 +519,8 @@ impl CertAuth {
         &self.handle
     }
 
+    /// Returns the complete set of all currently received resources, under all parents, for
+    /// this `CertAuth`
     pub fn all_resources(&self) -> ResourceSet {
         let mut resources = ResourceSet::default();
         for rc in self.resources.values() {

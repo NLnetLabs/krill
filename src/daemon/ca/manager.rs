@@ -271,7 +271,10 @@ impl CaManager {
     }
 
     /// Get the current objects for a CA for each repository that it's using.
-    /// Note: typically a CA will use only one repository, but during migrations there may be multiple.
+    ///
+    /// Notes:
+    /// - typically a CA will use only one repository, but during migrations there may be multiple.
+    /// - these object may not have been published (yet) - check `ca_repo_status`.
     pub async fn ca_repo_elements(&self, ca: &Handle) -> KrillResult<HashMap<RepositoryContact, Vec<PublishElement>>> {
         Ok(self.ca_objects_store.ca_objects(ca)?.repo_elements_map())
     }
@@ -296,7 +299,11 @@ impl CaManager {
         Ok(())
     }
 
-    /// Returns the RepoStatus for a CA
+    /// Returns the RepoStatus for a CA, this includes the last connection time and result, and the
+    /// objects currently known to be published.
+    ///
+    /// NOTE: This contains the status of the **CURRENT** repository only. It could be extended to
+    /// include the status of the old repository during a migration.
     pub async fn ca_repo_status(&self, ca: &Handle) -> KrillResult<RepoStatus> {
         let lock = self.locks.ca(ca).await;
         let _ = lock.read().await;
@@ -472,9 +479,49 @@ impl CaManager {
     }
 }
 
-/// # CA support
+/// # CA instances and identity
 ///
 impl CaManager {
+    /// Initializes a CA without a repo, no parents, no children, no nothing
+    pub fn init_ca(&self, handle: &Handle) -> KrillResult<()> {
+        if handle == &ta_handle() || handle.as_str() == "version" {
+            Err(Error::TaNameReserved)
+        } else if self.ca_store.has(handle)? {
+            Err(Error::CaDuplicate(handle.clone()))
+        } else {
+            // Initialize the CA in self.ca_store, but note that there is no need to create
+            // a new CA entry in self.ca_objects_store or self.status_store, because they will
+            // generate empty default entries if needed.
+            let init = IniDet::init(handle, self.signer.deref())?;
+            self.ca_store.add(init)?;
+            Ok(())
+        }
+    }
+
+    /// Updates the self-signed ID certificate for a CA. Use this with care as
+    /// RFC 8183 only talks about initial ID exchanges in the form of XML files.
+    /// It does not talk about updating identity certificates and keys. Krill supports
+    /// that a new ID key pair and certificate is generated, and has functions to update
+    /// this for a parent, a child, a repo and a publisher, but other implementations may
+    /// not support that identities are updated after initialization.
+    pub async fn ca_update_id(&self, handle: Handle, actor: &Actor) -> KrillResult<()> {
+        let cmd = CmdDet::update_id(&handle, self.signer.clone(), actor);
+        self.send_command(cmd).await?;
+        Ok(())
+    }
+
+    /// Get the current CAs
+    pub fn ca_list(&self, actor: &Actor) -> KrillResult<CertAuthList> {
+        Ok(CertAuthList::new(
+            self.ca_store
+                .list()?
+                .into_iter()
+                .filter(|handle| matches!(actor.is_allowed(Permission::CA_READ, handle.clone()), Ok(true)))
+                .map(CertAuthSummary::new)
+                .collect(),
+        ))
+    }
+
     /// Gets a CA by the given handle, returns an `Err(ServerError::UnknownCA)` if it
     /// does not exist.
     pub async fn get_ca(&self, handle: &Handle) -> KrillResult<Arc<CertAuth>> {
@@ -485,6 +532,11 @@ impl CaManager {
             .map_err(|_| Error::CaUnknown(handle.clone()))
     }
 
+    /// Checks whether a CA by the given handle exists.
+    pub fn has_ca(&self, handle: &Handle) -> KrillResult<bool> {
+        self.ca_store.has(handle).map_err(Error::AggregateStoreError)
+    }
+
     // Delete a CA after revocations and withdrawals
     pub async fn delete_ca(&self, handle: &Handle, actor: &Actor) -> KrillResult<()> {
         warn!("Deleting CA '{}' as requested by: {}", handle, actor);
@@ -492,7 +544,11 @@ impl CaManager {
         self.locks.drop_ca(handle).await;
         Ok(())
     }
+}
 
+/// # CA History
+///
+impl CaManager {
     /// Gets the history for a CA.
     pub async fn get_ca_history(&self, handle: &Handle, crit: CommandHistoryCriteria) -> KrillResult<CommandHistory> {
         let ca_lock = self.locks.ca(handle).await;
@@ -522,12 +578,11 @@ impl CaManager {
             }
         }
     }
+}
 
-    /// Checks whether a CA by the given handle exists.
-    pub fn has_ca(&self, handle: &Handle) -> KrillResult<bool> {
-        self.ca_store.has(handle).map_err(Error::AggregateStoreError)
-    }
-
+/// # CAs as parents
+///
+impl CaManager {
     /// Processes an RFC6492 sent to this CA.
     pub async fn rfc6492(&self, ca_handle: &Handle, msg_bytes: Bytes, actor: &Actor) -> KrillResult<Bytes> {
         let ca = self.get_ca(ca_handle).await?;
@@ -644,38 +699,11 @@ impl CaManager {
 
         Ok(res)
     }
+}
 
-    /// Get the current CAs
-    pub fn ca_list(&self, actor: &Actor) -> KrillResult<CertAuthList> {
-        Ok(CertAuthList::new(
-            self.ca_store
-                .list()?
-                .into_iter()
-                .filter(|handle| matches!(actor.is_allowed(Permission::CA_READ, handle.clone()), Ok(true)))
-                .map(CertAuthSummary::new)
-                .collect(),
-        ))
-    }
-
-    /// Initialises a CA without a repo, no parents, no children, no nothing
-    pub fn init_ca(&self, handle: &Handle) -> KrillResult<()> {
-        if handle == &ta_handle() || handle.as_str() == "version" {
-            Err(Error::TaNameReserved)
-        } else if self.ca_store.has(handle)? {
-            Err(Error::CaDuplicate(handle.clone()))
-        } else {
-            let init = IniDet::init(handle, self.signer.deref())?;
-            self.ca_store.add(init)?;
-            Ok(())
-        }
-    }
-
-    pub async fn ca_update_id(&self, handle: Handle, actor: &Actor) -> KrillResult<()> {
-        let cmd = CmdDet::update_id(&handle, self.signer.clone(), actor);
-        self.send_command(cmd).await?;
-        Ok(())
-    }
-
+/// # CAs as children
+///
+impl CaManager {
     /// Adds a parent to a CA
     pub async fn ca_parent_add(&self, handle: Handle, parent: ParentCaReq, actor: &Actor) -> KrillResult<()> {
         let (parent_handle, parent_contact) = parent.unpack();
@@ -731,30 +759,8 @@ impl CaManager {
         }
     }
 
-    /// Perform a key roll for all active keys in a CA older than the specified duration.
-    pub async fn ca_keyroll_init(&self, handle: Handle, max_age: Duration, actor: &Actor) -> KrillResult<()> {
-        let init_key_roll = CmdDet::key_roll_init(&handle, max_age, self.signer.clone(), actor);
-        self.send_command(init_key_roll).await?;
-        Ok(())
-    }
-
-    /// Activate a new key, as part of the key roll process (RFC6489). Only new keys that
-    /// have an age equal to or greater than the staging period are promoted. The RFC mandates
-    /// a staging period of 24 hours, but we may use a shorter period for testing and/or emergency
-    /// manual key rolls.
-    pub async fn ca_keyroll_activate(&self, handle: Handle, staging: Duration, actor: &Actor) -> KrillResult<()> {
-        let activate_cmd = CmdDet::key_roll_activate(&handle, staging, self.signer.clone(), actor);
-        self.send_command(activate_cmd).await?;
-        Ok(())
-    }
-
     /// Try to update a specific CA
-    pub async fn get_updates_from_parent(
-        &self,
-        handle: &Handle,
-        parent: &ParentHandle,
-        actor: &Actor,
-    ) -> KrillResult<()> {
+    async fn get_updates_from_parent(&self, handle: &Handle, parent: &ParentHandle, actor: &Actor) -> KrillResult<()> {
         if handle == &ta_handle() {
             Ok(()) // The (test) TA never needs updates.
         } else {
@@ -797,21 +803,10 @@ impl CaManager {
     }
 
     /// Sends requests to a specific parent for the CA matching handle.
-    pub async fn send_requests(&self, handle: &Handle, parent: &ParentHandle, actor: &Actor) -> KrillResult<()> {
+    async fn send_requests(&self, handle: &Handle, parent: &ParentHandle, actor: &Actor) -> KrillResult<()> {
         self.send_revoke_requests_handle_responses(handle, parent, actor)
             .await?;
         self.send_cert_requests_handle_responses(handle, parent, actor).await
-    }
-
-    /// Sends requests to all parents for the CA matching the handle.
-    pub async fn send_all_requests(&self, handle: &Handle, actor: &Actor) -> KrillResult<()> {
-        let ca = self.get_ca(handle).await?;
-
-        for parent in ca.parents() {
-            self.send_requests(handle, parent, actor).await?;
-        }
-
-        Ok(())
     }
 
     async fn send_revoke_requests_handle_responses(
@@ -1193,77 +1188,9 @@ impl CaManager {
     }
 }
 
-/// # Support sending publication messages, and verifying responses.
+/// # Publishing
 ///
 impl CaManager {
-    async fn send_procotol_msg_and_validate(
-        &self,
-        signing_key: &KeyIdentifier,
-        service_uri: &rfc8183::ServiceUri,
-        service_id: &IdCert,
-        content_type: &str,
-        msg: Bytes,
-        cms_logger: Option<CmsLogger>,
-    ) -> KrillResult<ProtocolCms> {
-        let signed_msg = ProtocolCmsBuilder::create(signing_key, self.signer.deref(), msg)
-            .map_err(Error::signer)?
-            .as_bytes();
-
-        let uri = service_uri.to_string();
-
-        let res = httpclient::post_binary(&uri, &signed_msg, content_type)
-            .await
-            .map_err(Error::HttpClientError)?;
-
-        if let Some(logger) = cms_logger {
-            logger.sent(&signed_msg)?;
-            logger.reply(&res)?;
-        }
-
-        // unpack and validate response
-        let msg = match ProtocolCms::decode(res.as_ref(), false).map_err(Error::custom) {
-            Ok(msg) => msg,
-            Err(e) => {
-                error!("Could not parse protocol response");
-                return Err(e);
-            }
-        };
-
-        if let Err(e) = msg.validate(service_id) {
-            error!("Could not validate protocol response: {}", base64::encode(res.as_ref()));
-            return Err(Error::custom(e));
-        }
-
-        Ok(msg)
-    }
-
-    async fn send_rfc8181_and_validate_response(
-        &self,
-        ca_handle: &Handle,
-        repository: &rfc8183::RepositoryResponse,
-        msg: Bytes,
-    ) -> KrillResult<rfc8181::ReplyMessage> {
-        let ca = self.get_ca(ca_handle).await?;
-
-        let cms_logger = CmsLogger::for_rfc8181_sent(self.config.rfc8181_log_dir.as_ref(), ca_handle);
-
-        let response = self
-            .send_procotol_msg_and_validate(
-                &ca.id_key(),
-                repository.service_uri(),
-                repository.id_cert(),
-                rfc8181::CONTENT_TYPE,
-                msg,
-                Some(cms_logger),
-            )
-            .await?;
-
-        rfc8181::Message::from_signed_message(&response)
-            .map_err(Error::custom)?
-            .into_reply()
-            .map_err(Error::custom)
-    }
-
     pub async fn send_rfc8181_list(
         &self,
         ca_handle: &Handle,
@@ -1382,9 +1309,81 @@ impl CaManager {
             }
         }
     }
+
+    async fn send_rfc8181_and_validate_response(
+        &self,
+        ca_handle: &Handle,
+        repository: &rfc8183::RepositoryResponse,
+        msg: Bytes,
+    ) -> KrillResult<rfc8181::ReplyMessage> {
+        let ca = self.get_ca(ca_handle).await?;
+
+        let cms_logger = CmsLogger::for_rfc8181_sent(self.config.rfc8181_log_dir.as_ref(), ca_handle);
+
+        let response = self
+            .send_procotol_msg_and_validate(
+                &ca.id_key(),
+                repository.service_uri(),
+                repository.id_cert(),
+                rfc8181::CONTENT_TYPE,
+                msg,
+                Some(cms_logger),
+            )
+            .await?;
+
+        rfc8181::Message::from_signed_message(&response)
+            .map_err(Error::custom)?
+            .into_reply()
+            .map_err(Error::custom)
+    }
 }
 
-/// # Support Route Authorization functions
+/// # Support sending RFC 6492 and 8181 'protocol' messages, and verifying responses.
+///
+impl CaManager {
+    async fn send_procotol_msg_and_validate(
+        &self,
+        signing_key: &KeyIdentifier,
+        service_uri: &rfc8183::ServiceUri,
+        service_id: &IdCert,
+        content_type: &str,
+        msg: Bytes,
+        cms_logger: Option<CmsLogger>,
+    ) -> KrillResult<ProtocolCms> {
+        let signed_msg = ProtocolCmsBuilder::create(signing_key, self.signer.deref(), msg)
+            .map_err(Error::signer)?
+            .as_bytes();
+
+        let uri = service_uri.to_string();
+
+        let res = httpclient::post_binary(&uri, &signed_msg, content_type)
+            .await
+            .map_err(Error::HttpClientError)?;
+
+        if let Some(logger) = cms_logger {
+            logger.sent(&signed_msg)?;
+            logger.reply(&res)?;
+        }
+
+        // unpack and validate response
+        let msg = match ProtocolCms::decode(res.as_ref(), false).map_err(Error::custom) {
+            Ok(msg) => msg,
+            Err(e) => {
+                error!("Could not parse protocol response");
+                return Err(e);
+            }
+        };
+
+        if let Err(e) = msg.validate(service_id) {
+            error!("Could not validate protocol response: {}", base64::encode(res.as_ref()));
+            return Err(Error::custom(e));
+        }
+
+        Ok(msg)
+    }
+}
+
+/// # Route Authorization functions
 ///
 impl CaManager {
     /// Update the routes authorized by a CA
@@ -1406,7 +1405,7 @@ impl CaManager {
     }
 }
 
-/// # Support Resource Tagged Attestation functions
+/// # Resource Tagged Attestation functions
 ///
 impl CaManager {
     /// Sign a one-off single-signed RTA
@@ -1445,6 +1444,27 @@ impl CaManager {
     ) -> KrillResult<()> {
         let cmd = CmdDet::rta_multi_sign(&ca, name, rta, self.signer.clone(), actor);
         self.send_command(cmd).await?;
+        Ok(())
+    }
+}
+
+/// CA Key Roll functions
+///
+impl CaManager {
+    /// Perform a key roll for all active keys in a CA older than the specified duration.
+    pub async fn ca_keyroll_init(&self, handle: Handle, max_age: Duration, actor: &Actor) -> KrillResult<()> {
+        let init_key_roll = CmdDet::key_roll_init(&handle, max_age, self.signer.clone(), actor);
+        self.send_command(init_key_roll).await?;
+        Ok(())
+    }
+
+    /// Activate a new key, as part of the key roll process (RFC6489). Only new keys that
+    /// have an age equal to or greater than the staging period are promoted. The RFC mandates
+    /// a staging period of 24 hours, but we may use a shorter period for testing and/or emergency
+    /// manual key rolls.
+    pub async fn ca_keyroll_activate(&self, handle: Handle, staging: Duration, actor: &Actor) -> KrillResult<()> {
+        let activate_cmd = CmdDet::key_roll_activate(&handle, staging, self.signer.clone(), actor);
+        self.send_command(activate_cmd).await?;
         Ok(())
     }
 }

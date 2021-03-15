@@ -64,7 +64,7 @@ impl IniDet {
 
 impl fmt::Display for IniDet {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Initialised with ID key hash: {}", self.id.key_hash())?;
+        write!(f, "Initialized with ID key hash: {}", self.id.key_hash())?;
         Ok(())
     }
 }

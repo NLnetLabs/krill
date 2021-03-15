@@ -41,7 +41,7 @@ pub struct CaManager {
 }
 ```
 
-Initialisation
+Initialization
 --------------
 
 The `CaManager` is instantiated when Krill starts. All its components ultimately
@@ -159,24 +159,24 @@ pub enum QueueTask {
 
 ### QueueTask::ServerStarted
 
-With this task Krill schedules that all Krill CAs perform a full synchronisation
+With this task Krill schedules that all Krill CAs perform a full synchronization
 with their parents and repositories after every restart.
 
 ### QueueTask::SyncRepo/RescheduleSyncRepo
 
-These tasks are used to trigger that a CA synchronises with its repository. All
+These tasks are used to trigger that a CA synchronizes with its repository. All
 objects that need to be published have already been created, so this is just about
-synchronising the content. If a `SyncRepo` task fails, then a `RescheduleSyncRepo`
-will be added. The latter keeps track of the time when a synchronisation should
+synchronizing the content. If a `SyncRepo` task fails, then a `RescheduleSyncRepo`
+will be added. The latter keeps track of the time when a synchronization should
 be attempted again.
 
 Successes and failures will be tracked in the `StatusStore` held by the `CaManager`.
 
 ### QueueTask::SyncParent/RescheduleSyncParent
 
-These tasks are used to trigger that a CA synchronises with a specific parent.
+These tasks are used to trigger that a CA synchronizes with a specific parent.
 
-There are three synchronisation scenarios between a CA and its parent:
+There are three synchronization scenarios between a CA and its parent:
 
 1) pending certificate request exists
 
@@ -205,7 +205,7 @@ will then be sent to the `CertAuth` in the form of a command to update its
 entitlements. This command will result in a no-op in case there are no changes.
 But, if there are changes then it will result in appropriate new events, such
 as generation of new certificate request. That will then trigger that the
-parent synchronisation is scheduled again.
+parent synchronization is scheduled again.
 
 ### QueueTask::ResourceClassRemoved
 
@@ -230,9 +230,220 @@ the CA will generate events that trigger that revocation of any surplus
 key is requested.
 
 We should remove and replace this logic.. what we probably should do
-in this case is that we do a full re-synchronisation in terms of keys
+in this case is that we do a full re-synchronization in terms of keys
 with the parent in question. Removing and then re-adding the parent is
 probably the easiest way to achieve this.
+
+
+
+CA Instances and Identity
+-------------------------
+
+> Note: this is about adding / removing a CA in Krill. This is not about
+> adding/removing parents - or children - to a CA. See below for those
+> actions!
+
+### Initialize a CA
+
+The following function initializes as new CA.
+
+```rust
+/// # CA instances and identity
+///
+impl CaManager {
+    /// Initializes a CA without a repo, no parents, no children, no nothing
+    pub fn init_ca(&self, handle: &Handle) -> KrillResult<()> { ... }
+}
+```
+
+This results in an initialization event to be sent to the `ca_store`, which contains
+the handle (name) and a newly generated ID certificate - the `KrillSigner` owned by
+the `CaManager` is used to generate the key pair and sign this ID certificate.
+
+
+### Get a `CertAuth`
+
+We can get an existing `CertAuth` using the following function.
+
+```rust
+impl CaManager {
+    /// Gets a CA by the given handle, returns an `Err(ServerError::UnknownCA)` if it
+    /// does not exist.
+    pub async fn get_ca(&self, handle: &Handle) -> KrillResult<Arc<CertAuth>> { ... }
+}
+```
+
+**NOTE:** We do not expose the `CertAuth` type to the public API. But we have functions
+for public types. The most interesting ones are probably:
+
+```rust
+/// # Data presentation
+///
+impl CertAuth {
+    /// Returns a `CertAuthInfo` for this, which includes a data representation
+    /// of the internal structure, in particular with regards to parent, children,
+    /// resource classes and keys.
+    pub fn as_ca_info(&self) -> CertAuthInfo { ... }
+
+    /// Returns the current RoaDefinitions for this, i.e. the intended authorized
+    /// prefixes. Provided that the resources are held by this `CertAuth` one can
+    /// expect that corresponding ROA **objects** are created by the system.
+    pub fn roa_definitions(&self) -> Vec<RoaDefinition> { ... }
+    
+    /// Returns the complete set of all currently received resources, under all parents, for
+    /// this `CertAuth`
+    pub fn all_resources(&self) -> ResourceSet { ... }
+
+    /// Returns an RFC 8183 Child Request - which can be represented as XML to a
+    /// parent of this `CertAuth`
+    pub fn child_request(&self) -> rfc8183::ChildRequest { ... }
+
+    /// Returns an RFC 8183 Publisher Request - which can be represented as XML to a
+    /// repository for this `CertAuth`
+    pub fn publisher_request(&self) -> rfc8183::PublisherRequest { ... }
+}
+```
+
+
+### Update ID Certificate
+
+```rust
+/// # CA instances and identity
+///
+impl CaManager {
+    /// Updates the self-signed ID certificate for a CA. Use this with care as
+    /// RFC 8183 only talks about initial ID exchanges in the form of XML files.
+    /// It does not talk about updating identity certificates and keys. Krill supports
+    /// that a new ID key pair and certificate is generated, and has functions to update
+    /// this for a parent, a child, a repo and a publisher, but other implementations may
+    /// not support that identities are updated after initialization.
+    pub async fn ca_update_id(&self, handle: Handle, actor: &Actor) -> KrillResult<()> {
+        let cmd = CmdDet::update_id(&handle, self.signer.clone(), actor);
+        self.send_command(cmd).await?;
+        Ok(())
+    }
+}
+```
+
+
+CA Repository Related Functions
+-------------------------------
+
+
+### CA Repository Configuration
+
+Before a CA can publish anything they need to have a repository configured. Currently
+Krill still has the concept of an 'embedded' - in this Krill instance - vs 'Rfc8181'
+remote repository. However, we plan to change this in the very short term. Even if
+a Repository Server on the same Krill Instance is used, it can do the full RFC 8181
+protocol - so having just one option will greatly simplify things.
+
+For now, get an RFC 8181 Repository Response from the Publication Server, which we
+would get in response to the `rfc8183::PublisherRequest` we get from `CertAuth::publisher_request()`,
+and create the following enum:
+
+```rust
+pub enum RepositoryContact {
+    Embedded {
+        info: RepoInfo,
+    },
+    Rfc8181 {
+        server_response: rfc8183::RepositoryResponse,
+    },
+}
+```
+
+Then submit it to the following function:
+
+```rust
+impl CaManager {
+    /// Update repository where a CA publishes.
+    pub async fn update_repo(
+        &self,
+        handle: Handle,
+        new_contact: RepositoryContact,
+        actor: &Actor
+    ) -> KrillResult<()> { ... }
+}
+```
+
+This will result in a `CmdDet::RepoUpdate` to be sent to the `CertAuth`. 
+
+If there was no repository defined, then this will result in a `CaEvtDet::RepoUpdated` event.
+This event will then be picked up by the `MessageQueue` as post-save event listener and
+trigger that the CA synchronizes with its parents, because now that it has somewhere
+to publish it can actually request certificates.
+
+If there **was** a repository defined, then Krill will also initiate key rolls for all
+existing resource classes. If any of these already had a key roll in progress, then an
+`Error::KeyRollNotAllowed` is returned and the repository update is refused. When key rolls
+are initiated we will see two additional events for each resource class: `CaEvtDet::KeyRollPendingKeyAdded`
+which contains the new key id, and `CaEvtDet::CertificateRequested` with a request for the
+new key, using the new repository URIs.
+
+When these events are applied the previous repository will be preserved for the existing keys
+first - so that they can continue to use the old URIs in subsequent certificate requests. Then
+the default repository is updated. And then the new keys and requests are added.
+
+To complete the migration to a new repository the key roll must be finished first by activating
+the new keys. This is not done automatically (yet), but requires that the operators sends the
+appropriate command. Officially one should wait for 24 hours before activating a new key so
+that RPs have ample time to discover it. However, if the old repository is unreachable and this
+triggered the migration, then it would be advisable to activate this new key asap.
+
+> **NOTE:** `CaManager` performs no validation whether a new repository can be reached,
+> but `KrillServer` **does** this, before calling the function above.
+
+
+### CA Repository Objects and Status
+
+To verify the current set of objects that a CA wants to publish, and the set of objects
+that a CA has published, we can use the following functions:
+
+```rust
+impl CaManager {
+
+    /// Get the current objects for a CA for each repository that it's using.
+    ///
+    /// Notes:
+    /// - typically a CA will use only one repository, but during migrations there may be multiple.
+    /// - these object may not have been published (yet) - check `ca_repo_status`.
+    pub async fn ca_repo_elements(&self, ca: &Handle) -> KrillResult<HashMap<RepositoryContact, Vec<PublishElement>>> { ... }
+
+    /// Returns the RepoStatus for a CA, this includes the last connection time and result, and the
+    /// objects currently known to be published.
+    ///
+    /// NOTE: This contains the status of the **CURRENT** repository only. It could be extended to
+    /// include the status of the old repository during a migration.
+    pub async fn ca_repo_status(&self, ca: &Handle) -> KrillResult<RepoStatus> { ... }
+}
+```
+
+### CA Repository Synchronization
+
+This will be improved, see issue #440.
+
+For now synchronization with a remote repository is handled by the `CaPublisher` type which can
+contain an option of an embedded repository. This is to support the two current models: RFC compliant
+remote - or even local - repository, and the embedded.
+
+When we remove the 'embedded' option this can all be simplified massively.
+
+So, not putting too much effort in documenting this right now.. suffice to say that synchronization
+with repositories is triggered by the `MessageQueue` listening for relevant events.
+
+In addition to this we have a function on `KrillServer` to trigger that all CAs synchronize with their
+repository:
+
+```rust
+/// # Bulk background operations CAS
+///
+impl KrillServer {
+    /// Re-sync all CAs with their repositories
+    pub async fn resync_all(&self, actor: &Actor) -> KrillEmptyResult { ... }
+}
+```
+
 
 
 
