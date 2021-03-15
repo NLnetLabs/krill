@@ -328,51 +328,6 @@ impl CaManager {
         Ok(())
     }
 
-    /// Refresh all CAs:
-    /// - send pending requests if present, or
-    /// - ask parent for updates and process if present
-    pub async fn cas_refresh_all(&self, actor: &Actor) {
-        if let Ok(cas) = self.ca_store.list() {
-            let mut ca_map: HashMap<Handle, Arc<CertAuth>> = HashMap::new();
-            for ca_handle in cas {
-                if let Ok(ca) = self.get_ca(&ca_handle).await {
-                    ca_map.insert(ca_handle, ca);
-                }
-            }
-            self.ca_refresh_all_map(&ca_map, actor).await;
-        }
-    }
-
-    async fn ca_refresh_all_map(&self, map: &HashMap<Handle, Arc<CertAuth>>, actor: &Actor) {
-        let mut updates = vec![];
-        for (ca_handle, ca) in map.iter() {
-            for parent in ca.parents() {
-                updates.push(self.ca_sync_parent_infallible(&ca_handle, parent, actor));
-            }
-        }
-
-        join_all(updates).await;
-    }
-
-    async fn ca_sync_parent_infallible(&self, handle: &Handle, parent: &ParentHandle, actor: &Actor) {
-        if let Err(e) = self.ca_sync_parent(handle, parent, actor).await {
-            error!(
-                "Failed to synchronise CA '{}' with parent '{}'. Will retry in {} seconds. Error was: {}",
-                handle, parent, REQUEUE_DELAY_SECONDS, e
-            );
-        }
-    }
-
-    pub async fn ca_sync_parent(&self, handle: &Handle, parent: &ParentHandle, actor: &Actor) -> KrillResult<()> {
-        let ca = self.get_ca(handle).await?;
-
-        if ca.has_pending_requests(parent) {
-            self.send_requests(&handle, parent, actor).await
-        } else {
-            self.get_updates_from_parent(&handle, &parent, actor).await
-        }
-    }
-
     /// Adds a child under an embedded CA
     pub async fn ca_add_child(
         &self,
@@ -761,6 +716,58 @@ impl CaManager {
             self.status_store.lock().await.get_parent_statuses(ca).await
         } else {
             Err(Error::CaUnknown(ca.clone()))
+        }
+    }
+
+    /// Refresh all CAs:
+    /// - process all CAs in parallel
+    /// - process all parents for CAs in parallel
+    ///    - send pending requests if present, or
+    ///    - ask parent for updates and process if present
+    ///
+    /// Note: this function can be called manually through the API, but is normally
+    ///       triggered in the background, every 10 mins by default, or as configured
+    ///       by 'ca_refresh' in the configuration.
+    pub async fn cas_refresh_all(&self, actor: &Actor) {
+        if let Ok(cas) = self.ca_store.list() {
+            let mut updates = vec![];
+
+            for ca_handle in cas {
+                if let Ok(ca) = self.get_ca(&ca_handle).await {
+                    for parent in ca.parents() {
+                        updates.push(self.ca_sync_parent_infallible(ca_handle.clone(), parent.clone(), actor.clone()));
+                    }
+                }
+            }
+
+            join_all(updates).await;
+        }
+    }
+
+    /// Synchronizes a CA with a parent, logging failures.
+    async fn ca_sync_parent_infallible(&self, ca: Handle, parent: ParentHandle, actor: Actor) {
+        if let Err(e) = self.ca_sync_parent(&ca, &parent, &actor).await {
+            error!(
+                "Failed to synchronize CA '{}' with parent '{}'. Error was: {}",
+                ca, parent, e
+            );
+        }
+    }
+
+    /// Synchronizes a CA with one of its parents:
+    ///   - send pending requests if present; otherwise
+    ///   - get and process updated entitlements
+    ///
+    /// Note: if new request events are generated as a result of processing updated entitlements
+    ///       then they will trigger that this synchronization is called again so that the pending
+    ///       requests can be sent.
+    pub async fn ca_sync_parent(&self, handle: &Handle, parent: &ParentHandle, actor: &Actor) -> KrillResult<()> {
+        let ca = self.get_ca(handle).await?;
+
+        if ca.has_pending_requests(parent) {
+            self.send_requests(&handle, parent, actor).await
+        } else {
+            self.get_updates_from_parent(&handle, &parent, actor).await
         }
     }
 

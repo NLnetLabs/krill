@@ -487,11 +487,24 @@ impl CaManager {
 
     /// Returns the parent statuses for this CA
     pub async fn ca_parent_statuses(&self, ca: &Handle) -> KrillResult<ParentStatuses> { ... }
+
+    /// Refresh all CAs:
+    /// - process all CAs in parallel
+    /// - process all parents for CAs in parallel
+    ///    - send pending requests if present, or
+    ///    - ask parent for updates and process if present
+    pub async fn cas_refresh_all(&self, actor: &Actor) { ... }
+
+    /// Synchronizes a CA with one of its parents:
+    ///   - send pending requests if present; otherwise
+    ///   - get and process updated entitlements
+    ///
+    /// Note: if new request events are generated as a result of processing updated entitlements
+    ///       then they will trigger that this synchronization is called again so that the pending
+    ///       requests can be sent.
+    pub async fn ca_sync_parent(&self, handle: &Handle, parent: &ParentHandle, actor: &Actor) -> KrillResult<()> { ... }
 }
 ```
-
-
-
 
 
 
