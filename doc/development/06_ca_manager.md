@@ -446,7 +446,7 @@ impl KrillServer {
 
 
 CA as Child Related Functions
----------------------------
+-----------------------------
 
 The following functions are used to manage parents of CAs.
 
@@ -507,5 +507,68 @@ impl CaManager {
 ```
 
 
+CA as Parent Related Functions
+------------------------------
+
+The following functions are used to manage children of CAs.
+
+```rust
+/// # CAs as children
+///
+impl CaManager {
+    /// Adds a child under a CA. The 'service_uri' is used here so that
+    /// the appropriate `ParentCaContact` can be returned. If the `AddChildRequest`
+    /// contains resources not held by this CA, then an `Error::CaChildExtraResources`
+    /// is returned.
+    pub async fn ca_add_child(
+        &self,
+        ca: &Handle,
+        req: AddChildRequest,
+        service_uri: &uri::Https,
+        actor: &Actor,
+    ) -> KrillResult<ParentCaContact> { ... }
+
+    /// Show details for a child under the TA.
+    pub async fn ca_show_child(
+        &self,
+        ca: &Handle,
+        child: &ChildHandle
+    ) -> KrillResult<ChildCaInfo> { ... }
+
+    /// Gets an RFC8183 Parent Response for the child.
+    pub async fn ca_parent_response(
+        &self,
+        ca: &Handle,
+        child_handle: ChildHandle,
+        tag: Option<String>,
+        service_uri: &uri::Https,
+    ) -> KrillResult<rfc8183::ParentResponse> { ... }
+
+    /// Update a child under this CA. The submitted `UpdateChildRequest` can contain a
+    /// new `IdCert`, or `ResourceSet`. If both are updated in a single update, then
+    /// an `Error::CaChildUpdateOneThing` is returned. When resource entitlements are updated,
+    /// the existing entitlements are replaced by the new value - i.e. this is not a delta
+    /// and it affects all INR types. Setting resource entitlements beyond the resources
+    /// held by the parent CA will return an `Error::CaChildExtraResources`.
+    pub async fn ca_child_update(
+        &self,
+        handle: &Handle,
+        child: ChildHandle,
+        req: UpdateChildRequest,
+        actor: &Actor,
+    ) -> KrillResult<()> { ... }
+
+    /// Removes a child from this CA. This will also ensure that certificates issued to the child
+    /// are revoked and withdrawn.
+    pub async fn ca_child_remove(&self, ca: &Handle, child: ChildHandle, actor: &Actor) -> KrillResult<()> { ... }
+
+    /// Processes an RFC6492 sent to this CA:
+    /// - parses the message bytes
+    /// - validates the request
+    /// - processes the child request
+    /// - signs a response and returns the bytes
+    pub async fn rfc6492(&self, ca_handle: &Handle, msg_bytes: Bytes, actor: &Actor) -> KrillResult<Bytes> { ... }
+}
+```
 
 

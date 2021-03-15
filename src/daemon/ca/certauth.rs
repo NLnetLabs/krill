@@ -828,20 +828,21 @@ impl CertAuth {
     /// This does not yet revoke / reissue / republish anything.
     /// Also, this is a no-op if the child already has these resources.
     fn child_update_resources(&self, child_handle: &Handle, resources: ResourceSet) -> KrillResult<Vec<CaEvt>> {
-        let mut res = vec![];
-
-        let child = self.get_child(child_handle)?;
-
-        if &resources != child.resources() {
-            res.push(CaEvtDet::child_updated_resources(
-                &self.handle,
-                self.version,
-                child_handle.clone(),
-                resources,
-            ));
+        if !self.all_resources().contains(&resources) {
+            Err(Error::CaChildExtraResources(self.handle.clone(), child_handle.clone()))
+        } else {
+            let child = self.get_child(child_handle)?;
+            if &resources != child.resources() {
+                Ok(vec![CaEvtDet::child_updated_resources(
+                    &self.handle,
+                    self.version,
+                    child_handle.clone(),
+                    resources,
+                )])
+            } else {
+                Ok(vec![])
+            }
         }
-
-        Ok(res)
     }
 
     /// Updates child IdCert

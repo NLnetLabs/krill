@@ -269,111 +269,6 @@ impl CaManager {
         }
         Ok(())
     }
-
-    /// Adds a child under an embedded CA
-    pub async fn ca_add_child(
-        &self,
-        parent: &ParentHandle,
-        req: AddChildRequest,
-        service_uri: &uri::Https,
-        actor: &Actor,
-    ) -> KrillResult<ParentCaContact> {
-        info!("CA '{}' process add child request: {}", &parent, &req);
-        let (child_handle, child_res, child_auth) = req.unwrap();
-
-        let id_cert = match &child_auth {
-            ChildAuthRequest::Embedded => None,
-            ChildAuthRequest::Rfc8183(req) => Some(req.id_cert().clone()),
-        };
-
-        let add_child = CmdDet::child_add(&parent, child_handle.clone(), id_cert, child_res, actor);
-        self.send_command(add_child).await?;
-
-        let tag = match child_auth {
-            ChildAuthRequest::Rfc8183(req) => req.tag().cloned(),
-            _ => None,
-        };
-
-        self.ca_parent_contact(parent, child_handle, tag, service_uri).await
-    }
-
-    /// Show a contact for a child. Shows "embedded" if the parent does not know any id cert for the child.
-    pub async fn ca_parent_contact(
-        &self,
-        parent: &ParentHandle,
-        child_handle: ChildHandle,
-        tag: Option<String>,
-        service_uri: &uri::Https,
-    ) -> KrillResult<ParentCaContact> {
-        let ca = self.get_ca(parent).await?;
-        let child = ca.get_child(&child_handle)?;
-        if child.id_cert().is_some() {
-            let response = self.ca_parent_response(parent, child_handle, tag, service_uri).await?;
-            Ok(ParentCaContact::for_rfc6492(response))
-        } else {
-            Ok(ParentCaContact::Embedded)
-        }
-    }
-
-    /// Gets an RFC8183 Parent Response for the child, regardless of whether the parent knows the ID certificate
-    /// for this child. Note: a child can be updated and an ID cert can be added at all times.
-    pub async fn ca_parent_response(
-        &self,
-        parent: &ParentHandle,
-        child_handle: ChildHandle,
-        tag: Option<String>,
-        service_uri: &uri::Https,
-    ) -> KrillResult<rfc8183::ParentResponse> {
-        let ca = self.get_ca(parent).await?;
-        let service_uri = format!("{}rfc6492/{}", service_uri.to_string(), ca.handle());
-        let service_uri = uri::Https::from_string(service_uri).unwrap();
-        let service_uri = rfc8183::ServiceUri::Https(service_uri);
-
-        Ok(rfc8183::ParentResponse::new(
-            tag,
-            ca.id_cert().clone(),
-            ca.handle().clone(),
-            child_handle,
-            service_uri,
-        ))
-    }
-
-    /// Show details for a child under the TA.
-    pub async fn ca_show_child(&self, parent: &ParentHandle, child: &ChildHandle) -> KrillResult<ChildCaInfo> {
-        trace!("Finding details for CA: {} under parent: {}", child, parent);
-        let ca = self.get_ca(parent).await?;
-        ca.get_child(child).map(|details| details.clone().into())
-    }
-
-    /// Update a child under this CA.
-    pub async fn ca_child_update(
-        &self,
-        handle: &Handle,
-        child: ChildHandle,
-        req: UpdateChildRequest,
-        actor: &Actor,
-    ) -> KrillResult<()> {
-        let (id_opt, resources_opt) = req.unpack();
-
-        if (id_opt.is_some() && resources_opt.is_some()) || (id_opt.is_none() && resources_opt.is_none()) {
-            Err(Error::CaChildUpdateOneThing(handle.clone(), child))
-        } else if let Some(id) = id_opt {
-            self.send_command(CmdDet::child_update_id(handle, child, id, actor))
-                .await?;
-            Ok(())
-        } else {
-            let resources = resources_opt.unwrap();
-            self.send_command(CmdDet::child_update_resources(handle, child, resources, actor))
-                .await?;
-            Ok(())
-        }
-    }
-
-    /// Update a child under this CA.
-    pub async fn ca_child_remove(&self, handle: &Handle, child: ChildHandle, actor: &Actor) -> KrillResult<()> {
-        self.send_command(CmdDet::child_remove(handle, child, actor)).await?;
-        Ok(())
-    }
 }
 
 /// # CA instances and identity
@@ -480,7 +375,125 @@ impl CaManager {
 /// # CAs as parents
 ///
 impl CaManager {
-    /// Processes an RFC6492 sent to this CA.
+    /// Adds a child under a CA. The 'service_uri' is used here so that
+    /// the appropriate `ParentCaContact` can be returned. If the `AddChildRequest`
+    /// contains resources not held by this CA, then an `Error::CaChildExtraResources`
+    /// is returned.
+    pub async fn ca_add_child(
+        &self,
+        ca: &Handle,
+        req: AddChildRequest,
+        service_uri: &uri::Https,
+        actor: &Actor,
+    ) -> KrillResult<ParentCaContact> {
+        info!("CA '{}' process add child request: {}", &ca, &req);
+        let (child_handle, child_res, child_auth) = req.unwrap();
+
+        let id_cert = match &child_auth {
+            ChildAuthRequest::Embedded => None,
+            ChildAuthRequest::Rfc8183(req) => Some(req.id_cert().clone()),
+        };
+
+        let add_child = CmdDet::child_add(&ca, child_handle.clone(), id_cert, child_res, actor);
+        self.send_command(add_child).await?;
+
+        let tag = match child_auth {
+            ChildAuthRequest::Rfc8183(req) => req.tag().cloned(),
+            _ => None,
+        };
+
+        self.ca_parent_contact(ca, child_handle, tag, service_uri).await
+    }
+
+    /// Show details for a child under the TA.
+    pub async fn ca_show_child(&self, ca: &Handle, child: &ChildHandle) -> KrillResult<ChildCaInfo> {
+        trace!("Finding details for CA: {} under parent: {}", child, ca);
+        let ca = self.get_ca(ca).await?;
+        ca.get_child(child).map(|details| details.clone().into())
+    }
+
+    /// Show a contact for a child. Shows "embedded" if the parent does not know any id cert for the child.
+    pub async fn ca_parent_contact(
+        &self,
+        ca_handle: &Handle,
+        child_handle: ChildHandle,
+        tag: Option<String>,
+        service_uri: &uri::Https,
+    ) -> KrillResult<ParentCaContact> {
+        let ca = self.get_ca(ca_handle).await?;
+        let child = ca.get_child(&child_handle)?;
+        if child.id_cert().is_some() {
+            let response = self
+                .ca_parent_response(ca_handle, child_handle, tag, service_uri)
+                .await?;
+            Ok(ParentCaContact::for_rfc6492(response))
+        } else {
+            Ok(ParentCaContact::Embedded)
+        }
+    }
+
+    /// Gets an RFC8183 Parent Response for the child.
+    pub async fn ca_parent_response(
+        &self,
+        ca: &Handle,
+        child_handle: ChildHandle,
+        tag: Option<String>,
+        service_uri: &uri::Https,
+    ) -> KrillResult<rfc8183::ParentResponse> {
+        let ca = self.get_ca(ca).await?;
+        let service_uri = format!("{}rfc6492/{}", service_uri.to_string(), ca.handle());
+        let service_uri = uri::Https::from_string(service_uri).unwrap();
+        let service_uri = rfc8183::ServiceUri::Https(service_uri);
+
+        Ok(rfc8183::ParentResponse::new(
+            tag,
+            ca.id_cert().clone(),
+            ca.handle().clone(),
+            child_handle,
+            service_uri,
+        ))
+    }
+
+    /// Update a child under this CA. The submitted `UpdateChildRequest` can contain a
+    /// new `IdCert`, or `ResourceSet`. If both are updated in a single update, then
+    /// an `Error::CaChildUpdateOneThing` is returned. When resource entitlements are updated,
+    /// the existing entitlements are replaced by the new value - i.e. this is not a delta
+    /// and it affects all INR types. Setting resource entitlements beyond the resources
+    /// held by the parent CA will return an `Error::CaChildExtraResources`.
+    pub async fn ca_child_update(
+        &self,
+        ca: &Handle,
+        child: ChildHandle,
+        req: UpdateChildRequest,
+        actor: &Actor,
+    ) -> KrillResult<()> {
+        let (id_opt, resources_opt) = req.unpack();
+
+        if (id_opt.is_some() && resources_opt.is_some()) || (id_opt.is_none() && resources_opt.is_none()) {
+            Err(Error::CaChildUpdateOneThing(ca.clone(), child))
+        } else if let Some(id) = id_opt {
+            self.send_command(CmdDet::child_update_id(ca, child, id, actor)).await?;
+            Ok(())
+        } else {
+            let resources = resources_opt.unwrap();
+            self.send_command(CmdDet::child_update_resources(ca, child, resources, actor))
+                .await?;
+            Ok(())
+        }
+    }
+
+    /// Removes a child from this CA. This will also ensure that certificates issued to the child
+    /// are revoked and withdrawn.
+    pub async fn ca_child_remove(&self, ca: &Handle, child: ChildHandle, actor: &Actor) -> KrillResult<()> {
+        self.send_command(CmdDet::child_remove(ca, child, actor)).await?;
+        Ok(())
+    }
+
+    /// Processes an RFC6492 sent to this CA:
+    /// - parses the message bytes
+    /// - validates the request
+    /// - processes the child request
+    /// - signs a response and returns the bytes
     pub async fn rfc6492(&self, ca_handle: &Handle, msg_bytes: Bytes, actor: &Actor) -> KrillResult<Bytes> {
         let ca = self.get_ca(ca_handle).await?;
 
@@ -546,17 +559,17 @@ impl CaManager {
     }
 
     /// List the entitlements for a child: 3.3.2 of RFC6492
-    pub async fn list(&self, parent: &Handle, child: &Handle) -> KrillResult<Entitlements> {
-        let ca = self.get_ca(parent).await?;
+    async fn list(&self, ca: &Handle, child: &Handle) -> KrillResult<Entitlements> {
+        let ca = self.get_ca(ca).await?;
         Ok(ca.list(child, &self.config.issuance_timing)?)
     }
 
     /// Issue a Certificate in response to a Certificate Issuance request
     ///
     /// See: https://tools.ietf.org/html/rfc6492#section3.4.1-2
-    pub async fn issue(
+    async fn issue(
         &self,
-        parent: &Handle,
+        ca: &Handle,
         child: &ChildHandle,
         issue_req: IssuanceRequest,
         actor: &Actor,
@@ -565,7 +578,7 @@ impl CaManager {
         let pub_key = issue_req.csr().public_key();
 
         let cmd = CmdDet::child_certify(
-            parent,
+            ca,
             child.clone(),
             issue_req.clone(),
             self.config.clone(),
@@ -582,7 +595,7 @@ impl CaManager {
     }
 
     /// See: https://tools.ietf.org/html/rfc6492#section3.5.1-2
-    pub async fn revoke(
+    async fn revoke(
         &self,
         ca_handle: &Handle,
         child: ChildHandle,
