@@ -116,9 +116,7 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
         logging.info(f'-> Adding CA "{parent_ca_handle}" as a parent of "{child_ca_handle}"')
         req = krill_ca_api_lib.AddParentCARequest(
             handle=parent_ca_handle,
-            contact={
-                'type': 'embedded'
-            })
+            contact=krill_ca_api_lib.Embedded())
         krill_ca_api.add_ca_parent(child_ca_handle, req)
         logging.info(f'-> Added CA "{parent_ca_handle}" as a parent of "{child_ca_handle}"')
 

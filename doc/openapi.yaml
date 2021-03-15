@@ -1204,6 +1204,15 @@ components:
           nullable: true
         id_cert:
           $ref: '#/components/schemas/IdCert'
+    Embedded:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum: [embedded]
+          default: embedded
     Rfc6492:
       type: object
       properties:
@@ -1420,8 +1429,9 @@ components:
             - $ref: '#/components/schemas/Handle'
             - description: The local handle by which your ca refers to this parent.
         contact:
-          $ref: '#/components/schemas/Rfc6492'
-
+          oneOf:
+            - $ref: '#/components/schemas/Embedded'
+            - $ref: '#/components/schemas/Rfc6492'
 
     # Error codes ordered ascending by error code
     CaRepoSameResponse:
@@ -2744,3 +2754,4 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Rfc8183'
+
