@@ -28,7 +28,7 @@ pub struct RepositoryManager {
 
 ```rust
 /// We can only have one (1) RepositoryAccess, but it is an event-sourced
-/// typed which is stored in an AggregateStore which could theoretically
+/// type which is stored in an AggregateStore which could theoretically
 /// serve multiple. So, we use RepositoryAccessProxy as a wrapper around
 /// this so that callers don't need to worry about storage details.
 pub struct RepositoryAccessProxy {
