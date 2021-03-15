@@ -270,64 +270,6 @@ impl CaManager {
         Ok(())
     }
 
-    /// Get the current objects for a CA for each repository that it's using.
-    ///
-    /// Notes:
-    /// - typically a CA will use only one repository, but during migrations there may be multiple.
-    /// - these object may not have been published (yet) - check `ca_repo_status`.
-    pub async fn ca_repo_elements(&self, ca: &Handle) -> KrillResult<HashMap<RepositoryContact, Vec<PublishElement>>> {
-        Ok(self.ca_objects_store.ca_objects(ca)?.repo_elements_map())
-    }
-
-    /// Get all old repos for best effort clean-up. They may not be reachable after all.
-    /// Clears the list of old repos for the given CA.
-    pub fn ca_take_deprecated_repos(&self, ca: &Handle) -> KrillResult<Vec<RepositoryContact>> {
-        let mut res = vec![];
-
-        self.ca_objects_store.with_ca_objects(ca, |objects| {
-            res = objects.ca_take_deprecated_repos();
-            Ok(())
-        })?;
-
-        Ok(res)
-    }
-
-    /// Update repository where a CA publishes.
-    pub async fn update_repo(&self, handle: Handle, new_contact: RepositoryContact, actor: &Actor) -> KrillResult<()> {
-        let cmd = CmdDet::update_repo(&handle, new_contact, self.signer.clone(), actor);
-        self.send_command(cmd).await?;
-        Ok(())
-    }
-
-    /// Returns the RepoStatus for a CA, this includes the last connection time and result, and the
-    /// objects currently known to be published.
-    ///
-    /// NOTE: This contains the status of the **CURRENT** repository only. It could be extended to
-    /// include the status of the old repository during a migration.
-    pub async fn ca_repo_status(&self, ca: &Handle) -> KrillResult<RepoStatus> {
-        let lock = self.locks.ca(ca).await;
-        let _ = lock.read().await;
-        if self.ca_store.has(ca)? {
-            self.status_store.lock().await.get_repo_status(ca).await
-        } else {
-            Err(Error::CaUnknown(ca.clone()))
-        }
-    }
-
-    /// Update the RepoStatus for CAs using an embedded Publication Server
-    pub async fn ca_repo_status_set_elements(&self, ca: &Handle) -> KrillResult<()> {
-        let published = self.ca_objects_store.ca_objects(ca)?.all_publish_elements();
-        let next_hours = self.config.issuance_timing.timing_publish_next_hours;
-
-        self.status_store
-            .lock()
-            .await
-            .set_status_repo_published(ca, "embedded".to_string(), published, next_hours)
-            .await?;
-
-        Ok(())
-    }
-
     /// Adds a child under an embedded CA
     pub async fn ca_add_child(
         &self,
@@ -1203,6 +1145,64 @@ impl CaManager {
 /// # Publishing
 ///
 impl CaManager {
+    /// Get the current objects for a CA for each repository that it's using.
+    ///
+    /// Notes:
+    /// - typically a CA will use only one repository, but during migrations there may be multiple.
+    /// - these object may not have been published (yet) - check `ca_repo_status`.
+    pub async fn ca_repo_elements(&self, ca: &Handle) -> KrillResult<HashMap<RepositoryContact, Vec<PublishElement>>> {
+        Ok(self.ca_objects_store.ca_objects(ca)?.repo_elements_map())
+    }
+
+    /// Get all old repos for best effort clean-up. They may not be reachable after all.
+    /// Clears the list of old repos for the given CA.
+    pub fn ca_take_deprecated_repos(&self, ca: &Handle) -> KrillResult<Vec<RepositoryContact>> {
+        let mut res = vec![];
+
+        self.ca_objects_store.with_ca_objects(ca, |objects| {
+            res = objects.ca_take_deprecated_repos();
+            Ok(())
+        })?;
+
+        Ok(res)
+    }
+
+    /// Update repository where a CA publishes.
+    pub async fn update_repo(&self, handle: Handle, new_contact: RepositoryContact, actor: &Actor) -> KrillResult<()> {
+        let cmd = CmdDet::update_repo(&handle, new_contact, self.signer.clone(), actor);
+        self.send_command(cmd).await?;
+        Ok(())
+    }
+
+    /// Returns the RepoStatus for a CA, this includes the last connection time and result, and the
+    /// objects currently known to be published.
+    ///
+    /// NOTE: This contains the status of the **CURRENT** repository only. It could be extended to
+    /// include the status of the old repository during a migration.
+    pub async fn ca_repo_status(&self, ca: &Handle) -> KrillResult<RepoStatus> {
+        let lock = self.locks.ca(ca).await;
+        let _ = lock.read().await;
+        if self.ca_store.has(ca)? {
+            self.status_store.lock().await.get_repo_status(ca).await
+        } else {
+            Err(Error::CaUnknown(ca.clone()))
+        }
+    }
+
+    /// Update the RepoStatus for CAs using an embedded Publication Server
+    pub async fn ca_repo_status_set_elements(&self, ca: &Handle) -> KrillResult<()> {
+        let published = self.ca_objects_store.ca_objects(ca)?.all_publish_elements();
+        let next_hours = self.config.issuance_timing.timing_publish_next_hours;
+
+        self.status_store
+            .lock()
+            .await
+            .set_status_repo_published(ca, "embedded".to_string(), published, next_hours)
+            .await?;
+
+        Ok(())
+    }
+
     pub async fn send_rfc8181_list(
         &self,
         ca_handle: &Handle,
