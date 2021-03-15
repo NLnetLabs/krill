@@ -239,14 +239,18 @@ class TestKrillWithRelyingParties:
         #
         function_service_manager.start_services_with_dependencies(docker_project, service.name)
 
-        def retry_if_sync_timeout(exception):
-            return isinstance(exception, rtrlib.exceptions.SyncTimeout)
+        class UpdateWasEmpty(Exception):
+            pass
+
+        def retry_if_incomplete_update(exception):
+            return isinstance(exception, rtrlib.exceptions.SyncTimeout) or \
+                   isinstance(exception, UpdateWasEmpty)
 
         @retry(
             stop_max_attempt_number=3,
             wait_exponential_multiplier=1000,
             wait_exponential_max=10000,
-            retry_on_exception=retry_if_sync_timeout,
+            retry_on_exception=retry_if_incomplete_update,
             wrap_exception=True)
         def fetch_from_rtr_server():
             try:
@@ -258,6 +262,10 @@ class TestKrillWithRelyingParties:
                 # r is now a list of PFXRecord
                 # see: https://python-rtrlib.readthedocs.io/en/latest/api.html#rtrlib.records.PFXRecord
                 logging.info(f'Received {len(received_roas)} ROAs via RTR from {service.name} in {rtr_elapsed_time} seconds')
+
+                if len(received_roas) == 0:
+                    # retry, maybe the ROAs are not available yet
+                    raise UpdateWasEmpty()
     
                 # are each of the TEST_ROAS items in r?
                 # i.e. is the intersection of the two sets equal to that of the TEST_ROAS set?
