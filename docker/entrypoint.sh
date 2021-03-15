@@ -72,11 +72,6 @@ EOF
     fi
 fi
 
-if [ "${KRILL_USE_TA}" == "true" ]; then
-    export KRILL_TESTBED_RSYNC="rsync://${KRILL_FQDN}/repo/"
-    export KRILL_TESTBED_RRDP="https://${KRILL_FQDN}/rrdp/"
-fi
-
 # Launch the command supplied either by the default CMD (krill) in the
 # Dockerfile or that given by the operator when invoking Docker run. Use exec
 # to ensure krill runs as PID 1 as required by Docker for proper signal
