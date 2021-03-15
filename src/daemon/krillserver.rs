@@ -221,7 +221,7 @@ impl KrillServer {
 
                     let repo_info: RepoInfo = repo_manager.repo_info_for(&ta_handle)?;
 
-                    let ta_uri = format!("{}ta/ta.cer", uris.rrdp_base_uri());
+                    let ta_uri = format!("{}ta/ta.cer", service_uri);
                     let ta_uri = uri::Https::from_string(ta_uri).unwrap();
 
                     let ta_aia = format!("{}ta/ta.cer", uris.rsync_jail().to_string());
