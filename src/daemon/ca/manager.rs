@@ -255,20 +255,6 @@ impl CaManager {
     pub async fn republish_all(&self) -> KrillResult<Vec<Handle>> {
         self.ca_objects_store.reissue_all()
     }
-
-    /// Re-issue about to expire ROAs
-    pub async fn renew_roas_all(&self, actor: &Actor) -> KrillResult<()> {
-        for ca in self.ca_store.list()? {
-            let cmd = Cmd::new(
-                &ca,
-                None,
-                CmdDet::RouteAuthorizationsRenew(self.config.clone(), self.signer.clone()),
-                actor,
-            );
-            self.send_command(cmd).await?;
-        }
-        Ok(())
-    }
 }
 
 /// # CA instances and identity
@@ -1411,21 +1397,45 @@ impl CaManager {
 /// # Route Authorization functions
 ///
 impl CaManager {
-    /// Update the routes authorized by a CA
+    /// Update the routes authorized by a CA. This will trigger that ROAs
+    /// are made in the resource classes that contain the prefixes. If the
+    /// update is rejected, e.g. because the CA does not have the necessary
+    /// prefixes then an `Error::RoaDeltaError` will be returned.
+    /// If the update is successful, new manifest(s) and CRL(s) will be created,
+    /// and resynchronization between the CA and its repository will be triggered.
+    /// Finally note that ROAs may be issues on a per prefix basis, or aggregated
+    /// by ASN based on the defaults or values configured.
     pub async fn ca_routes_update(
         &self,
-        handle: Handle,
+        ca: Handle,
         updates: RouteAuthorizationUpdates,
         actor: &Actor,
     ) -> KrillResult<()> {
         self.send_command(CmdDet::route_authorizations_update(
-            &handle,
+            &ca,
             updates,
             self.config.clone(),
             self.signer.clone(),
             actor,
         ))
         .await?;
+        Ok(())
+    }
+
+    /// Re-issue about to expire ROAs in all CAs. This is a no-op in case
+    /// ROAs do not need re-issuance. If new ROAs are created they will also
+    /// be published (event will trigger that MFT and CRL are also made, and
+    /// and the CA in question synchronizes with its repository).
+    pub async fn renew_roas_all(&self, actor: &Actor) -> KrillResult<()> {
+        for ca in self.ca_store.list()? {
+            let cmd = Cmd::new(
+                &ca,
+                None,
+                CmdDet::RouteAuthorizationsRenew(self.config.clone(), self.signer.clone()),
+                actor,
+            );
+            self.send_command(cmd).await?;
+        }
         Ok(())
     }
 }
