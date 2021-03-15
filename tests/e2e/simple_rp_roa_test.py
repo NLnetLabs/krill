@@ -87,8 +87,6 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
         logging.info(f'-> Adding CA "{ca_handle}"')
         krill_ca_api.add_ca(krill_ca_api_lib.AddCARequest(ca_handle))
 
-        # rfc8183_request = krill_ca_api.get_ca_publisher_request("ta", format="json")
-        # logging.info(f'XIMON: req={rfc8183_request}')
         krill_ca_api.update_ca_repository(
             ca_handle,
             rfc8183='embedded')
@@ -115,13 +113,11 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
     
     def link_parent_ca_above_child_ca(parent_ca_handle, child_ca_handle, resources):
         logging.info(f'-> Getting RFC 6492 parent contact for CA "{child_ca_handle}"')
-        # rfc6492_request = krill_ca_api.get_child_ca_parent_contact(child_handle=child_ca_handle, ca_handle=parent_ca_handle)
 
         logging.info(f'-> Adding CA "{parent_ca_handle}" as a parent of "{child_ca_handle}"')
         req = krill_ca_api_lib.AddParentCARequest(
             handle=parent_ca_handle,
             contact='embedded')
-            # contact=rfc6492_request)
         krill_ca_api.add_ca_parent(child_ca_handle, req)
         logging.info(f'-> Added CA "{parent_ca_handle}" as a parent of "{child_ca_handle}"')
 
