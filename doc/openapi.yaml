@@ -405,7 +405,7 @@ paths:
         - $ref: '#/components/parameters/child_handle'
       responses:
         '200':
-          $ref: '#/components/responses/Rfc8183O'
+          $ref: '#/components/responses/Rfc6492'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -636,7 +636,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Rfc8181'
+              $ref: '#/components/schemas/Rfc8183'
       responses:
         '200':
           $ref: '#/components/responses/Success'
@@ -670,7 +670,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/rfc8181Base'
+                $ref: '#/components/schemas/Rfc8181'
             application/xml:
               schema:
                 $ref: '#/components/schemas/RFC8183PublisherRequestXML'
@@ -1205,10 +1205,16 @@ components:
         id_cert:
           $ref: '#/components/schemas/IdCert'
     Rfc6492:
-      allOf:
-        - $ref: '#/components/schemas/rfcCommon'
-        - type: object
+      type: object
+      properties:
+        rfc6492:
+          type: object
           properties:
+            tag:
+              type: string
+              nullable: true
+            id_cert:
+              $ref: '#/components/schemas/IdCert'
             parent_handle:
               $ref: '#/components/schemas/Handle'
             child_handle:
@@ -1223,14 +1229,19 @@ components:
             publisher_handle:
               $ref: '#/components/schemas/Handle'
     Rfc8181:
-      allOf:
-        - $ref: '#/components/schemas/rfc8181Base'
-        - type: object
-          properties:
-            service_uri:
-              $ref: '#/components/schemas/ServiceUri'
-            repo_info:
-              $ref: '#/components/schemas/RepoInfo'
+      type: object
+      properties:
+        tag:
+          type: string
+          nullable: true
+        id_cert:
+          $ref: '#/components/schemas/IdCert'
+        publisher_handle:
+          $ref: '#/components/schemas/Handle'
+        service_uri:
+          $ref: '#/components/schemas/ServiceUri'
+        repo_info:
+          $ref: '#/components/schemas/RepoInfo'
     Rfc8183:
       allOf:
         - $ref: '#/components/schemas/rfcCommon'
