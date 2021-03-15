@@ -79,7 +79,7 @@ pub fn init(&self, uris: PublicationServerUris) -> KrillResult<()> {
 
 Note that it writes the empty repository as part of the initialization process.
 We do this, because that gives users an opportunity to verify that the repository
-content can be accessed. In particular: expect an RRDP notify.xml and a snapshot.xml
+content can be accessed. In particular: expect an RRDP notification.xml and a snapshot.xml
 containing 0 entries to be published.
 
 If it is found that the repository is not set up correctly, then it can be 'cleared'
