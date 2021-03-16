@@ -882,7 +882,7 @@ pub enum CaEvtDet {
     // Key life cycle
     KeyRollPendingKeyAdded {
         // A pending key is added to an existing resource class in order to initiate
-        // a key roll. Note that there will be a separate 'CertifcateRequested' event for
+        // a key roll. Note that there will be a separate 'CertificateRequested' event for
         // this key.
         resource_class_name: ResourceClassName,
         pending_key_id: KeyIdentifier,
