@@ -453,7 +453,6 @@ The following functions are used to manage parents of CAs.
 /// # CAs as children
 ///
 impl CaManager {
-
     /// Adds a parent to a CA. This will trigger that the CA connects to this new parent
     /// in order to learn its resource entitlements and set up the resource class(es) under
     /// this parent, and request certificate(s).
