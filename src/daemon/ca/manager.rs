@@ -1486,14 +1486,14 @@ impl CaManager {
 /// CA Key Roll functions
 ///
 impl CaManager {
-    /// Perform a key roll for all active keys in a CA older than the specified duration.
+    /// Initiate an RFC 6489 key roll for all active keys in a CA older than the specified duration.
     pub async fn ca_keyroll_init(&self, handle: Handle, max_age: Duration, actor: &Actor) -> KrillResult<()> {
         let init_key_roll = CmdDet::key_roll_init(&handle, max_age, self.signer.clone(), actor);
         self.send_command(init_key_roll).await?;
         Ok(())
     }
 
-    /// Activate a new key, as part of the key roll process (RFC6489). Only new keys that
+    /// Activate a new key, as part of the key roll process (RFC 6489). Only new keys that
     /// have an age equal to or greater than the staging period are promoted. The RFC mandates
     /// a staging period of 24 hours, but we may use a shorter period for testing and/or emergency
     /// manual key rolls.

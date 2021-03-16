@@ -606,3 +606,33 @@ impl CaManager {
 Note that Krill also support ROA analysis, dry-run and suggestions. These functions
 are implemented in the `BgpAnalyser` type, which keeps track of announcements that
 it has seen (RIS whois), and can take a CA's current ROA definitions as input.
+
+
+CA Key Rolls
+------------
+
+Krill supports key roll operations as defined in RFC 6489, except that the key roll
+is fully manual. I.e. it's up to the operator to observe the 24 hour staging period
+before activating new keys, and phasing out old keys.
+
+```rust
+/// CA Key Roll functions
+///
+impl CaManager {
+    /// Initiate an RFC 6489 key roll for all active keys in a CA older than the specified duration.
+    pub async fn ca_keyroll_init(&self, handle: Handle, max_age: Duration, actor: &Actor) -> KrillResult<()> { ... }
+
+    /// Activate a new key, as part of the key roll process (RFC6489). Only new keys that
+    /// have an age equal to or greater than the staging period are promoted. The RFC mandates
+    /// a staging period of 24 hours, but we may use a shorter period for testing and/or emergency
+    /// manual key rolls.
+    pub async fn ca_keyroll_activate(&self, handle: Handle, staging: Duration, actor: &Actor) -> KrillResult<()> { ... }
+}
+```
+
+Note that key rolls are also used in case a CA is migrated to a new repository. In such cases
+a key roll will be initiated and the new key will use the new repository, while the -still current-
+key continues to use the previous repository. The operator then needs to call `ca_keyroll_activate`
+to complete the keyroll and phase out the old repository. If this is a planned migration, then it
+is good to observe the 24 hours period. However, if the the old repository is no longer reachable 
+and this might have been the cause of the migration, then it is advised to activate the new key asap.
