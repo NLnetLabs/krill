@@ -136,7 +136,7 @@ RFC 8181 or RFC 6492 message. Furthermore, it also allows this background job to
 new triggered commands to a CA, e.g.: update a received certificate under a parent.
 
 This approach allows that changes to CAs can be made locally and promptly, without
-needed to wait for synchronization with a remote system like a parent or repository.
+needing to wait for synchronization with a remote system like a parent or repository.
 Furthermore it allows that in case of any issues in connecting to a remote system,
 the task can be rescheduled.
 
