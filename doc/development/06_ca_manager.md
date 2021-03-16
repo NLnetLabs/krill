@@ -21,7 +21,7 @@ its parent or repository are not very interesting in this regard.
 
 As a result the `CaManager` is fairly complex because it needs to handle
 these three components in parallel, together with a `CaLocks` structure
-which is used lock read and write access to individual CAs that is manages.
+which is used lock read and write access to individual CAs that it manages.
 
 And, for completeness, this component has access to a `KrillSigner` that
 can be used to sign things, and the central `Config` that contains runtime
