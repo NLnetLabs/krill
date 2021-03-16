@@ -406,7 +406,7 @@ impl CaManager {
     ///
     /// Notes:
     /// - typically a CA will use only one repository, but during migrations there may be multiple.
-    /// - these object may not have been published (yet) - check `ca_repo_status`.
+    /// - these objects may not have been published (yet) - check `ca_repo_status`.
     pub async fn ca_repo_elements(&self, ca: &Handle) -> KrillResult<HashMap<RepositoryContact, Vec<PublishElement>>> { ... }
 
     /// Returns the RepoStatus for a CA, this includes the last connection time and result, and the
