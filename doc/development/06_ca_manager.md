@@ -245,7 +245,7 @@ CA Instances and Identity
 
 ### Initialize a CA
 
-The following function initializes as new CA.
+The following function initializes a new CA.
 
 ```rust
 /// # CA instances and identity
