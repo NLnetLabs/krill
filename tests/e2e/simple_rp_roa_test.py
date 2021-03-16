@@ -248,8 +248,8 @@ class TestKrillWithRelyingParties:
 
         @retry(
             stop_max_attempt_number=3,
-            wait_exponential_multiplier=1000,
-            wait_exponential_max=10000,
+            wait_exponential_multiplier=5000,
+            wait_exponential_max=20000,
             retry_on_exception=retry_if_incomplete_update,
             wrap_exception=True)
         def fetch_from_rtr_server():
