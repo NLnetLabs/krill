@@ -132,7 +132,7 @@ tasks, added here because of events that occurred.
 
 A Krill instance only has a single (singleton) `CaManager` and `RepositoryManager`, which
 are kept as `Arc<CaManager>` and `Arc<RepositoryManager>` so that they (well the reference)
-can easily be shared and copied.
+can easily be shared and cloned.
 
 This background job has access these, allowing it for example to get the latest objects
 for a CA, or to get a CA to sign an RFC 8181 or RFC 6492 message. Furthermore, it also
