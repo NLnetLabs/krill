@@ -652,7 +652,7 @@ impl CaManager {
     /// Gets the history for a CA.
     pub async fn get_ca_history(&self, handle: &Handle, crit: CommandHistoryCriteria) -> KrillResult<CommandHistory> { ... }
 
-    /// Shows the details for a CA command
+    /// Shows the details for a CA command.
     pub fn get_ca_command_details(&self, handle: &Handle, command: CommandKey) -> KrillResult<CaCommandDetails> { ... }
 }
 ```
