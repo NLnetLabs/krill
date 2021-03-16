@@ -184,7 +184,7 @@ In this case the pending request is sent to the parent. If the certificate is
 signed by the parent this will trigger that a new command is sent to the `CertAuth`
 to update the received certificate under a parent. This in turn can trigger changes
 in the CA, such as issuing/removing ROAs because of changes in resource entitlements.
-In such change in content will trigger that the `CaObjects` structure is updated,
+Such content changes will trigger that the `CaObjects` structure is updated,
 generates a new manifest and CRL, and that a `SyncRepo` task as added.
 
 2) pending revocation request exists
