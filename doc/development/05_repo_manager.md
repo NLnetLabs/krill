@@ -48,7 +48,7 @@ pub struct RepositoryContentProxy {
 }
 ```
 
-Initialisation
+Initialization
 --------------
 
 The `RepositoryManager` is instantiated when Krill starts *if* the Publication
