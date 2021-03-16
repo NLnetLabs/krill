@@ -588,7 +588,7 @@ impl CaManager {
     /// prefixes then an `Error::RoaDeltaError` will be returned.
     /// If the update is successful, new manifest(s) and CRL(s) will be created,
     /// and resynchronization between the CA and its repository will be triggered.
-    /// Finally note that ROAs may be issues on a per prefix basis, or aggregated
+    /// Finally note that ROAs may be issued on a per prefix basis, or aggregated
     /// by ASN based on the defaults or values configured.
     pub async fn ca_routes_update(
         &self,
