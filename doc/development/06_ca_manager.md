@@ -402,7 +402,6 @@ that a CA has published, we can use the following functions:
 
 ```rust
 impl CaManager {
-
     /// Get the current objects for a CA for each repository that it's using.
     ///
     /// Notes:
