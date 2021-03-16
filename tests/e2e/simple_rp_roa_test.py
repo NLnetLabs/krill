@@ -231,7 +231,7 @@ class TestKrillWithRelyingParties:
         # includes the work and output of creating the fixtures.
         pass
 
-    @pytest.mark.parametrize("service", [Routinator, FortValidator, OctoRPKI, Rcynic, RPKIClient, RPKIValidator3])
+    @pytest.mark.parametrize("service", [Routinator, RoutinatorUnstable, FortValidator, OctoRPKI, Rcynic, RPKIClient, RPKIValidator3])
     def test_rtr(self, docker_host_fqdn, docker_project, function_service_manager, service, metadata):
         #
         # Use Docker Compose to deploy the given Relying Party service and its dependendencies.
