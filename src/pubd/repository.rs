@@ -299,21 +299,28 @@ impl RepositoryContent {
         Ok(())
     }
 
+    /// Removes the content for a publisher. This function will return
+    /// ok if there is no content to remove - it is idempotent in that
+    /// sense. However, if there are I/O errors removing the content then
+    /// this function will fail.
     pub fn remove_publisher(
         &mut self,
         name: &PublisherHandle,
         jail: &uri::Rsync,
         config: &RepositoryRetentionConfig,
     ) -> KrillResult<()> {
-        let objects = self.objects_for_publisher(name)?;
+        if let Ok(objects) = self.objects_for_publisher(name) {
+            let withdraws = objects.elements().iter().map(|e| e.as_withdraw()).collect();
+            let delta = DeltaElements::new(vec![], vec![], withdraws);
 
-        let withdraws = objects.elements().iter().map(|e| e.as_withdraw()).collect();
-        let delta = DeltaElements::new(vec![], vec![], withdraws);
+            self.rrdp.publish(delta, jail, config)?;
+            self.stats.remove_publisher(name, self.rrdp.notification());
 
-        self.rrdp.publish(delta, jail, config)?;
-        self.stats.remove_publisher(name, self.rrdp.notification());
-
-        self.write_repository(config)
+            self.write_repository(config)
+        } else {
+            // nothing to remove
+            Ok(())
+        }
     }
 }
 
