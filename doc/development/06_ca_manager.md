@@ -386,7 +386,7 @@ first - so that they can continue to use the old URIs in subsequent certificate 
 the default repository is updated. And then the new keys and requests are added.
 
 To complete the migration to a new repository the key roll must be finished first by activating
-the new keys. This is not done automatically (yet), but requires that the operators sends the
+the new keys. This is not done automatically (yet), but requires that the operator sends the
 appropriate command. Officially one should wait for 24 hours before activating a new key so
 that RPs have ample time to discover it. However, if the old repository is unreachable and this
 triggered the migration, then it would be advisable to activate this new key asap.
