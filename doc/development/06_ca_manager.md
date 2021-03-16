@@ -130,10 +130,14 @@ by `KrillServer`. The `Scheduler` uses the `clokwerk.rs` library to schedule sev
 background jobs in Krill. One of these jobs watches the `MessageQueue` for queued
 tasks, added here because of events that occurred.
 
-This background job has access to its own `Arc<CaManager>` and `Arc<RepositoryManager>`,
-allowing it for example to get the latest objects for a CA, or to get a CA to sign an
-RFC 8181 or RFC 6492 message. Furthermore, it also allows this background job to send
-new triggered commands to a CA, e.g.: update a received certificate under a parent.
+A Krill instance only has a single (singleton) `CaManager` and `RepositoryManager`, which
+are kept as `Arc<CaManager>` and `Arc<RepositoryManager>` so that they (well the reference)
+can easily be shared and copied.
+
+This background job has access these, allowing it for example to get the latest objects
+for a CA, or to get a CA to sign an RFC 8181 or RFC 6492 message. Furthermore, it also
+allows this background job to send new triggered commands to a CA, e.g.: update a received
+certificate under a parent.
 
 This approach allows that changes to CAs can be made locally and promptly, without
 needing to wait for synchronization with a remote system like a parent or repository.
