@@ -338,7 +338,7 @@ remote repository. However, we plan to change this in the very short term. Even 
 a Repository Server on the same Krill Instance is used, it can do the full RFC 8181
 protocol - so having just one option will greatly simplify things.
 
-For now, get an RFC 8181 Repository Response from the Publication Server, which we
+For now, get an RFC 8183 Repository Response from the Publication Server, which we
 would get in response to the `rfc8183::PublisherRequest` we get from `CertAuth::publisher_request()`,
 and create the following enum:
 
