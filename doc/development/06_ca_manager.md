@@ -636,3 +636,341 @@ key continues to use the previous repository. The operator then needs to call `c
 to complete the keyroll and phase out the old repository. If this is a planned migration, then it
 is good to observe the 24 hours period. However, if the the old repository is no longer reachable 
 and this might have been the cause of the migration, then it is advised to activate the new key asap.
+
+
+CA History
+----------
+
+CA History can be inspected with the following functions:
+
+```rust
+/// # CA History
+///
+impl CaManager {
+    /// Gets the history for a CA.
+    pub async fn get_ca_history(&self, handle: &Handle, crit: CommandHistoryCriteria) -> KrillResult<CommandHistory> { ... }
+
+    /// Shows the details for a CA command
+    pub fn get_ca_command_details(&self, handle: &Handle, command: CommandKey) -> KrillResult<CaCommandDetails> { ... }
+}
+```
+
+The `CommandHistoryCriteria` can be used for filtering and pagination. The returned `CommandHistory` looks like this:
+
+```rust
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CommandHistory {
+    offset: usize,
+    total: usize,
+    commands: Vec<CommandHistoryRecord>,
+}
+
+/// A description of a command that was processed, and the events / or error
+/// that followed. Does not include the full stored command details, but only
+/// the summary which is shown in the history response.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CommandHistoryRecord {
+    pub key: String,
+    pub actor: String,
+    pub timestamp: i64,
+    pub handle: Handle,
+    pub version: u64,
+    pub sequence: u64,
+    pub summary: CommandSummary,
+    pub effect: StoredEffect,
+}
+
+impl CommandHistoryRecord {
+    ...
+    pub fn command_key(&self) -> Result<CommandKey, CommandKeyError> {
+        CommandKey::from_str(&self.key)
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case", tag = "result")]
+pub enum StoredEffect {
+    Error { msg: String },
+    Success { events: Vec<u64> },
+}
+```
+
+So, we can get a list of commands and their effect. If they were successful, we just get the
+versions of the events.
+
+Use the `get_ca_command_details` function to look at a specific command in more detail:
+
+```rust
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CaCommandDetails {
+    command: StoredCommand<StorableCaCommand>,
+    result: CaCommandResult,
+}
+
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum CaCommandResult {
+    Error(String),
+    Events(Vec<ca::CaEvt>),
+}
+
+/------------ StorableCaCommand -------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[allow(clippy::large_enum_variant)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "type")]
+pub enum StorableCaCommand {
+    MakeTrustAnchor,
+    ChildAdd {
+        child: ChildHandle,
+        ski: Option<String>,
+        resources: ResourceSet,
+    },
+    ChildUpdateResources {
+        child: ChildHandle,
+        resources: ResourceSet,
+    },
+    ChildUpdateId {
+        child: ChildHandle,
+        ski: String,
+    },
+    ChildCertify {
+        child: ChildHandle,
+        resource_class_name: ResourceClassName,
+        limit: RequestResourceLimit,
+        ki: KeyIdentifier,
+    },
+    ChildRevokeKey {
+        child: ChildHandle,
+        revoke_req: RevocationRequest,
+    },
+    ChildRemove {
+        child: ChildHandle,
+    },
+    GenerateNewIdKey,
+    AddParent {
+        parent: ParentHandle,
+        contact: StorableParentContact,
+    },
+    UpdateParentContact {
+        parent: ParentHandle,
+        contact: StorableParentContact,
+    },
+    RemoveParent {
+        parent: ParentHandle,
+    },
+    UpdateResourceEntitlements {
+        parent: ParentHandle,
+        entitlements: Vec<StorableRcEntitlement>,
+    },
+    UpdateRcvdCert {
+        resource_class_name: ResourceClassName,
+        resources: ResourceSet,
+    },
+    KeyRollInitiate {
+        older_than_seconds: i64,
+    },
+    KeyRollActivate {
+        staged_for_seconds: i64,
+    },
+    KeyRollFinish {
+        resource_class_name: ResourceClassName,
+    },
+    RoaDefinitionUpdates {
+        updates: RoaDefinitionUpdates,
+    },
+    AutomaticRoaRenewal,
+    Republish,
+    RepoUpdate {
+        service_uri: Option<ServiceUri>,
+    },
+    RepoRemoveOld,
+    RtaPrepare {
+        name: RtaName,
+    },
+    RtaSign {
+        name: RtaName,
+    },
+    RtaCoSign {
+        name: RtaName,
+    },
+    Deactivate,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[allow(clippy::large_enum_variant)]
+#[serde(rename_all = "snake_case")]
+#[serde(tag = "type")]
+pub enum CaEvtDet {
+    // Being a Trust Anchor
+    TrustAnchorMade {
+        ta_cert_details: TaCertDetails,
+    },
+
+    // Being a parent Events
+    ChildAdded {
+        child: ChildHandle,
+        id_cert: Option<IdCert>,
+        resources: ResourceSet,
+    },
+    ChildCertificateIssued {
+        child: ChildHandle,
+        resource_class_name: ResourceClassName,
+        ki: KeyIdentifier,
+    },
+    ChildKeyRevoked {
+        child: ChildHandle,
+        resource_class_name: ResourceClassName,
+        ki: KeyIdentifier,
+    },
+    ChildCertificatesUpdated {
+        resource_class_name: ResourceClassName,
+        updates: ChildCertificateUpdates,
+    },
+    ChildUpdatedIdCert {
+        child: ChildHandle,
+        id_cert: IdCert,
+    },
+    ChildUpdatedResources {
+        child: ChildHandle,
+        resources: ResourceSet,
+    },
+    ChildRemoved {
+        child: ChildHandle,
+    },
+
+    // Being a child Events
+    IdUpdated {
+        id: Rfc8183Id,
+    },
+    ParentAdded {
+        parent: ParentHandle,
+        contact: ParentCaContact,
+    },
+    ParentUpdated {
+        parent: ParentHandle,
+        contact: ParentCaContact,
+    },
+    ParentRemoved {
+        parent: ParentHandle,
+    },
+    ResourceClassAdded {
+        resource_class_name: ResourceClassName,
+        parent: ParentHandle,
+        parent_resource_class_name: ParentResourceClassName,
+        pending_key: KeyIdentifier,
+    },
+    ResourceClassRemoved {
+        resource_class_name: ResourceClassName,
+        parent: ParentHandle,
+        revoke_reqs: Vec<RevocationRequest>,
+    },
+    CertificateRequested {
+        resource_class_name: ResourceClassName,
+        req: IssuanceRequest,
+        ki: KeyIdentifier, // Also contained in request. Drop?
+    },
+    CertificateReceived {
+        resource_class_name: ResourceClassName,
+        rcvd_cert: RcvdCert,
+        ki: KeyIdentifier, // Also in received cert. Drop?
+    },
+
+    // Key life cycle
+    KeyRollPendingKeyAdded {
+        // A pending key is added to an existing resource class in order to initiate
+        // a key roll. Note that there will be a separate 'CertifcateRequested' event for
+        // this key.
+        resource_class_name: ResourceClassName,
+        pending_key_id: KeyIdentifier,
+    },
+    KeyPendingToNew {
+        // A pending key is marked as 'new' when it has received its (first) certificate.
+        // This means that the key is staged and a mft and crl will be published. According
+        // to RFC 6489 this key should be staged for 24 hours before it is promoted to
+        // become the active key. However, in practice this time can be shortened.
+        resource_class_name: ResourceClassName,
+        new_key: CertifiedKey, // pending key which received a certificate becomes 'new', i.e. it is staged.
+    },
+    KeyPendingToActive {
+        // When a new resource class is created it will have a single pending key only which
+        // is promoted to become the active (current) key for the resource class immediately
+        // after receiving its first certificate. Technically this is not a roll, but a simple
+        // first activation.
+        resource_class_name: ResourceClassName,
+        current_key: CertifiedKey, // there was no current key, pending becomes active without staging when cert is received.
+    },
+    KeyRollActivated {
+        // When a 'new' key is activated (becomes current), the previous current key will be
+        // marked as old and we will request its revocation. Note that any current ROAs and/or
+        // delegated certificates will also be re-issued under the new 'current' key. These changes
+        // are tracked in seperate `RoasUpdated` and `ChildCertificatesUpdated` events.
+        resource_class_name: ResourceClassName,
+        revoke_req: RevocationRequest,
+    },
+    KeyRollFinished {
+        // The key roll is finished when the parent confirms that the old key is revoked.
+        // We can remove it and stop publishing its mft and crl.
+        resource_class_name: ResourceClassName,
+    },
+    UnexpectedKeyFound {
+        // This event is generated in case our parent reports keys to us that we do not
+        // believe we have. This should not happen in practice, but this is tracked so that
+        // we can recover from this situation. We can request revocation for all these keys
+        // and create new keys in the RC as needed.
+        resource_class_name: ResourceClassName,
+        revoke_req: RevocationRequest,
+    },
+
+    // Route Authorizations
+    RouteAuthorizationAdded {
+        // Tracks a single authorization (VRP) which is added. Note that (1) a command to
+        // update ROAs can contain multiple changes in which case multiple events will
+        // result, and (2) we do not have a 'modify' event. Modifications of e.g. the
+        // max length are expressed as a 'removed' and 'added' event in a single transaction.
+        auth: RouteAuthorization,
+    },
+    RouteAuthorizationRemoved {
+        // Tracks a single authorization (VRP) which is removed. See remark for RouteAuthorizationAdded.
+        auth: RouteAuthorization,
+    },
+    RoasUpdated {
+        // Tracks ROA *objects* which are (re-)issued in a resource class.
+        resource_class_name: ResourceClassName,
+        updates: RoaUpdates,
+    },
+
+    // Publishing
+    RepoUpdated {
+        // Adds the repository contact for this CA so that publication can commence,
+        // and certificates can be requested from parents. Note: the CA can only start
+        // requesting certificates when it knows which URIs it can use.
+        contact: RepositoryContact,
+    },
+    RepoCleaned {
+        // Mark an old repository as cleaned, so that it can be removed.
+        contact: RepositoryContact,
+    },
+
+    // Rta
+    //
+    // NOTE RTA support is still experimental and incomplete.
+    RtaSigned {
+        // Adds a signed RTA. The RTA can be single signed, or it can
+        // be a multi-signed RTA based on an existing 'PreparedRta'.
+        name: RtaName,
+        rta: SignedRta,
+    },
+    RtaPrepared {
+        // Adds a 'prepared' RTA. I.e. the context of keys which need to be included
+        // in a multi-signed RTA.
+        name: RtaName,
+        prepared: PreparedRta,
+    },
+}
+```
+
+
+
+
