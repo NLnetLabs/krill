@@ -185,7 +185,7 @@ signed by the parent this will trigger that a new command is sent to the `CertAu
 to update the received certificate under a parent. This in turn can trigger changes
 in the CA, such as issuing/removing ROAs because of changes in resource entitlements.
 Such content changes will trigger that the `CaObjects` structure is updated,
-generates a new manifest and CRL, and that a `SyncRepo` task as added.
+generates a new manifest and CRL, and that a `SyncRepo` task is added.
 
 2) pending revocation request exists
 
