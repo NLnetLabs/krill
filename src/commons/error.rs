@@ -254,7 +254,6 @@ pub enum Error {
     CaChildMustHaveResources(Handle, ChildHandle),
     CaChildExtraResources(Handle, ChildHandle),
     CaChildUnauthorized(Handle, ChildHandle),
-    CaChildUpdateOneThing(Handle, ChildHandle),
 
     //-----------------------------------------------------------------
     // RouteAuthorizations - ROAs
@@ -405,7 +404,6 @@ impl fmt::Display for Error {
             Error::CaChildMustHaveResources(ca, child) => write!(f, "Child '{}' for CA '{}' MUST have resources specified", child, ca),
             Error::CaChildExtraResources(ca, child) => write!(f, "Child '{}' cannot have resources not held by CA '{}'", child, ca),
             Error::CaChildUnauthorized(ca, child) => write!(f, "CA '{}' does not know id certificate for child '{}'", ca, child),
-            Error::CaChildUpdateOneThing(ca, child) => write!(f, "You can only update one aspect for child '{}' of CA '{}' at a time - i.e. either resources or ID cert", child, ca),
 
             //-----------------------------------------------------------------
             // RouteAuthorizations - ROAs
@@ -746,10 +744,6 @@ impl Error {
                 .with_ca(ca)
                 .with_child(child),
             Error::CaChildUnauthorized(ca, child) => ErrorResponse::new("ca-child-unauthorized", &self)
-                .with_ca(ca)
-                .with_child(child),
-
-            Error::CaChildUpdateOneThing(ca, child) => ErrorResponse::new("ca-child-update-one-thing", &self)
                 .with_ca(ca)
                 .with_child(child),
 

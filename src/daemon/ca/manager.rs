@@ -441,11 +441,11 @@ impl CaManager {
     }
 
     /// Update a child under this CA. The submitted `UpdateChildRequest` can contain a
-    /// new `IdCert`, or `ResourceSet`. If both are updated in a single update, then
-    /// an `Error::CaChildUpdateOneThing` is returned. When resource entitlements are updated,
-    /// the existing entitlements are replaced by the new value - i.e. this is not a delta
-    /// and it affects all INR types. Setting resource entitlements beyond the resources
-    /// held by the parent CA will return an `Error::CaChildExtraResources`.
+    /// new `IdCert`, or `ResourceSet`, or both. When resources are updated, the existing
+    /// resource entitlements are replaced by the new value - i.e. this is not a delta
+    /// and it affects all Internet Number Resource (INR) types (IPv4, IPV6, ASN). Setting
+    /// resource entitlements beyond the resources held by the parent CA will return
+    /// an `Error::CaChildExtraResources`.
     pub async fn ca_child_update(
         &self,
         ca: &Handle,
@@ -455,17 +455,15 @@ impl CaManager {
     ) -> KrillResult<()> {
         let (id_opt, resources_opt) = req.unpack();
 
-        if (id_opt.is_some() && resources_opt.is_some()) || (id_opt.is_none() && resources_opt.is_none()) {
-            Err(Error::CaChildUpdateOneThing(ca.clone(), child))
-        } else if let Some(id) = id_opt {
-            self.send_command(CmdDet::child_update_id(ca, child, id, actor)).await?;
-            Ok(())
-        } else {
-            let resources = resources_opt.unwrap();
+        if let Some(id) = id_opt {
+            self.send_command(CmdDet::child_update_id(ca, child.clone(), id, actor))
+                .await?;
+        }
+        if let Some(resources) = resources_opt {
             self.send_command(CmdDet::child_update_resources(ca, child, resources, actor))
                 .await?;
-            Ok(())
         }
+        Ok(())
     }
 
     /// Removes a child from this CA. This will also ensure that certificates issued to the child
