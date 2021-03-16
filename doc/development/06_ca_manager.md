@@ -420,7 +420,7 @@ impl CaManager {
 
 ### CA Repository Synchronization
 
-This will be improved, see issue #440.
+This will be improved, see issue [#440](https://github.com/NLnetLabs/krill/issues/440).
 
 For now synchronization with a remote repository is handled by the `CaPublisher` type which can
 contain an option of an embedded repository. This is to support the two current models: RFC compliant
