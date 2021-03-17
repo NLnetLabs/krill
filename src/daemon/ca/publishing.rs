@@ -283,6 +283,8 @@ impl CaObjects {
     }
 
     #[allow(clippy::clippy::mutable_key_type)]
+    /// Returns all PublishedElements mapped to each RepositoryContact.
+    /// There could be more than one repository - although usually there isn't.
     pub fn repo_elements_map(&self) -> HashMap<RepositoryContact, Vec<PublishElement>> {
         let mut res = HashMap::new();
 
@@ -301,8 +303,9 @@ impl CaObjects {
     pub fn all_publish_elements(&self) -> Vec<PublishElement> {
         let mut all_elements = vec![];
 
-        for (_, mut elements) in self.repo_elements_map().into_iter() {
-            all_elements.append(&mut elements);
+        // slightly inefficient since we drop the RepositoryContact keys again, but this leverages existing code.
+        for elements in self.repo_elements_map().values_mut() {
+            all_elements.append(elements);
         }
 
         all_elements
