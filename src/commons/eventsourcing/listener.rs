@@ -9,7 +9,7 @@ use super::Aggregate;
 /// to return an error in case of issues, which will then roll back the
 /// intended change to an aggregate.
 pub trait PreSaveEventListener<A: Aggregate>: Send + Sync + 'static {
-    fn listen(&self, agg: &A, event: &[A::Event]) -> Result<(), A::Error>;
+    fn listen(&self, agg: &A, events: &[A::Event]) -> Result<(), A::Error>;
 }
 
 //------------ PostSaveEventListener ------------------------------------------
@@ -18,7 +18,7 @@ pub trait PreSaveEventListener<A: Aggregate>: Send + Sync + 'static {
 /// them *after* the updated Aggregate is saved. Because the updates already
 /// happened EventListeners of this type are not allowed to fail.
 pub trait PostSaveEventListener<A: Aggregate>: Send + Sync + 'static {
-    fn listen(&self, agg: &A, event: &A::Event);
+    fn listen(&self, agg: &A, events: &[A::Event]);
 }
 
 //------------ EventCounter --------------------------------------------------
@@ -47,7 +47,7 @@ impl EventCounter {
 }
 
 impl<A: Aggregate> PostSaveEventListener<A> for EventCounter {
-    fn listen(&self, _agg: &A, _event: &A::Event) {
-        self.counter.write().unwrap().total += 1;
+    fn listen(&self, _agg: &A, events: &[A::Event]) {
+        self.counter.write().unwrap().total += events.len();
     }
 }

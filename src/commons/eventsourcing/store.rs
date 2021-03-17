@@ -494,9 +494,9 @@ where
                         agg.apply(event.clone());
                     }
 
-                    // Apply events to sync listeners which may still return errors
-                    for sync_listener in &self.pre_save_listeners {
-                        sync_listener.as_ref().listen(agg, events.as_slice())?;
+                    // Apply events to pre save listeners which may still return errors
+                    for pre_save_listener in &self.pre_save_listeners {
+                        pre_save_listener.as_ref().listen(agg, events.as_slice())?;
                     }
 
                     // Nothing broke, so it's safe to store the command, events and aggregate
@@ -509,10 +509,8 @@ where
                     cache.insert(handle.clone(), Arc::new(agg.clone()));
 
                     // Now send the events to the 'post-save' listeners.
-                    for event in events {
-                        for listener in &self.post_save_listeners {
-                            listener.as_ref().listen(agg, &event);
-                        }
+                    for listener in &self.post_save_listeners {
+                        listener.as_ref().listen(agg, events.as_slice());
                     }
 
                     Ok(latest)

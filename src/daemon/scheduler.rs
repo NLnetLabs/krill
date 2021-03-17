@@ -147,7 +147,7 @@ fn make_cas_event_triggers(
                         if time > Time::now() {
                             try_publish(&event_queue, ca_manager.clone(), repository_manager.clone(), handle).await
                         } else {
-                            event_queue.push_back(QueueTask::RescheduleSyncRepo(handle, time));
+                            event_queue.reschedule_sync_repo(handle, time);
                         }
                     }
                     QueueTask::SyncParent(ca, parent) => {
@@ -157,7 +157,7 @@ fn make_cas_event_triggers(
                         if time > Time::now() {
                             try_sync_parent(&event_queue, &ca_manager, ca, parent, &actor).await
                         } else {
-                            event_queue.push_back(QueueTask::RescheduleSyncParent(ca, parent, time))
+                            event_queue.reschedule_sync_parent(ca, parent, time);
                         }
                     }
 
@@ -216,7 +216,7 @@ async fn try_publish(
             error!("Failed to publish for '{}', error: {}", ca, e);
         } else {
             error!("Failed to publish for '{}' will reschedule, error: {}", ca, e);
-            event_queue.push_back(QueueTask::RescheduleSyncRepo(ca, requeue_time()));
+            event_queue.reschedule_sync_repo(ca, requeue_time());
         }
     }
 }
@@ -235,11 +235,11 @@ async fn try_sync_parent(
             "Failed to synchronize CA '{}' with its parent '{}', error: {}",
             ca, parent, e
         );
-        event_queue.push_back(QueueTask::RescheduleSyncParent(ca, parent, requeue_time()));
+        event_queue.reschedule_sync_parent(ca, parent, requeue_time());
     }
 }
 
-fn make_cas_republish(caserver: Arc<CaManager>, event_queue: Arc<MessageQueue>) -> ScheduleHandle {
+fn make_cas_republish(ca_server: Arc<CaManager>, event_queue: Arc<MessageQueue>) -> ScheduleHandle {
     SkippingScheduler::run(
         SCHEDULER_INTERVAL_SECONDS_REPUBLISH,
         "CA certificate republish",
@@ -247,12 +247,12 @@ fn make_cas_republish(caserver: Arc<CaManager>, event_queue: Arc<MessageQueue>) 
             let mut rt = Runtime::new().unwrap();
             rt.block_on(async {
                 debug!("Triggering background republication for all CAs, note this may be a no-op");
-                match caserver.republish_all().await {
+                match ca_server.republish_all().await {
                     Err(e) => error!("Background republishing of MFT and CRLs failed: {}", e),
                     Ok(cas) => {
                         for ca in cas {
                             info!("Re-issued MFT and CRL for CA: {}", ca);
-                            event_queue.push_sync_repo(ca);
+                            event_queue.schedule_sync_repo(ca);
                         }
                     }
                 }
@@ -261,26 +261,26 @@ fn make_cas_republish(caserver: Arc<CaManager>, event_queue: Arc<MessageQueue>) 
     )
 }
 
-fn make_cas_roa_renew(caserver: Arc<CaManager>, actor: Actor) -> ScheduleHandle {
+fn make_cas_roa_renew(ca_server: Arc<CaManager>, actor: Actor) -> ScheduleHandle {
     SkippingScheduler::run(SCHEDULER_INTERVAL_SECONDS_ROA_RENEW, "CA ROA renewal", move || {
         let mut rt = Runtime::new().unwrap();
         rt.block_on(async {
             debug!(
                 "Triggering background renewal for about to expire ROAs issued by all CAs, note this may be a no-op"
             );
-            if let Err(e) = caserver.renew_roas_all(&actor).await {
+            if let Err(e) = ca_server.renew_roas_all(&actor).await {
                 error!("Background re-issuing of about to expire ROAs failed: {}", e);
             }
         })
     })
 }
 
-fn make_cas_refresh(caserver: Arc<CaManager>, refresh_rate: u32, actor: Actor) -> ScheduleHandle {
+fn make_cas_refresh(ca_server: Arc<CaManager>, refresh_rate: u32, actor: Actor) -> ScheduleHandle {
     SkippingScheduler::run(refresh_rate, "CA certificate refresh", move || {
         let mut rt = Runtime::new().unwrap();
         rt.block_on(async {
             info!("Triggering background refresh for all CAs");
-            caserver.cas_refresh_all(&actor).await;
+            ca_server.cas_refresh_all(&actor).await;
         });
     })
 }
