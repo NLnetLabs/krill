@@ -3,10 +3,11 @@
     "actor": "krill",
     "time": "2020-04-28T13:28:01.257796Z",
     "handle": "child",
-    "version": 11,
+    "version": 12,
     "sequence": 7,
     "details": {
-      "roa_definition_updates": {
+      "type": "roa_definition_updates",
+      "updates": {
         "added": [],
         "removed": [
           {
@@ -17,10 +18,10 @@
       }
     },
     "effect": {
+      "result": "success",
       "events": [
-        11,
-        12,
-        13
+        10,
+        11
       ]
     }
   },
@@ -28,21 +29,23 @@
     "Events": [
       {
         "id": "child",
-        "version": 11,
+        "version": 10,
         "details": {
-          "route_authorization_removed": "10.0.0.0/24 => 64496"
+          "type": "route_authorization_removed",
+          "auth": "10.0.0.0/24 => 64496"
         }
       },
       {
         "id": "child",
-        "version": 12,
+        "version": 11,
         "details": {
-          "roas_updated": [
-            "0",
-            {
-              "updated": {},
-              "removed": {
-                "10.0.0.0/24 => 64496": {
+          "type": "roas_updated",
+          "resource_class_name": "0",
+          "updates": {
+            "removed": [
+              {
+                "auth": "10.0.0.0/24 => 64496",
+                "removed": {
                   "revocation": {
                     "serial": "58619451376100949143308034647119937940200221208",
                     "expires": "2021-04-28T13:28:00Z"
@@ -50,84 +53,8 @@
                   "hash": "f239de4d330d23d186c7f29e9683c9f0cc8311e884e07ee63e32574768a4dff9"
                 }
               }
-            }
-          ]
-        }
-      },
-      {
-        "id": "child",
-        "version": 13,
-        "details": {
-          "object_set_updated": [
-            "0",
-            {
-              "77AA69E9571D1DD092F7331CF7157D07B5E8997B": {
-                "number": 3,
-                "revocations_delta": {
-                  "added": [
-                    {
-                      "serial": "58619451376100949143308034647119937940200221208",
-                      "expires": "2021-04-28T13:28:00Z"
-                    },
-                    {
-                      "serial": "242300730324928377721617214844879332345953791165",
-                      "expires": "2020-04-29T13:28:00.642833Z"
-                    }
-                  ],
-                  "dropped": []
-                },
-                "manifest_info": {
-                  "name": "77AA69E9571D1DD092F7331CF7157D07B5E8997B.mft",
-                  "current": {
-                    "content": "MIIJogYJKoZIhvcNAQcCoIIJkzCCCY8CAQMxDzANBglghkgBZQMEAgEFADCB+QYLKoZIhvcNAQkQARqggekEgeYwgeMCAQMYDzIwMjAwNDI4MTMyMzAxWhgPMjAyMDA0MjkxMzI4MDFaBglghkgBZQMEAgEwgbAwURYsNzdBQTY5RTk1NzFEMUREMDkyRjczMzFDRjcxNTdEMDdCNUU4OTk3Qi5jcmwDIQBHJXEQYTtkTxLYBoSrR2ryOP8k8+StMWE/SJFxa9TPojBbFjYzMjMwMzAzMTNhNjQ2MjM4M2EzYTJmMzMzMjJkMzQzODIwM2QzZTIwMzYzNDM0MzkzNi5yb2EDIQDwmTW4UWmr138dE5nqLiuGcD6z5JSs5uAqrjOW/9NqMaCCBsswggbHMIIFr6ADAgECAhQQ4vhc0QzC5zV/uJEM2YW5UaCwVjANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyg3N0FBNjlFOTU3MUQxREQwOTJGNzMzMUNGNzE1N0QwN0I1RTg5OTdCMB4XDTIwMDQyODEzMjMwMVoXDTIwMDUwNTEzMjgwMVowggItMYICKTCCAiUGA1UEAxOCAhwzMDgyMDEwQTAyODIwMTAxMDBCOEFCNDEyMEZDMjQ1NDIwNEFCRUQyNDlBMzQ5QTVDNjQ0NzJFNTFEQzY1RTcyRkI4MkNBODYwMTE1RTI1REQwNEQ3MjJBRjM5RTZBQzc0MkZDRjIzQjExODU2RUMxRTY4NzYyQzY0NjQ1QUJBOEYxQUUzRDVGNDAyMzM0M0Q1MUQwNTBFRjAxMjk5NEFBODMxMDRDN0Y0RUVBOENBQzk0NDgxOTY0MkFCMUNENjIyOTg2RkE4RThGRDJCODc1OUE2NjEwODE3NTc4RkE0NDBGMzhGMjRBQTA3RDY1QTcwQjA3NTRERDMzMThBREM1OTdFNENBOUUzRkQwQ0QwRkEwODkyMUFFMkNGNzhENTgwMEM5OUUxMzAyQkEzRTFDQ0EwRjg1NkI4OUEyQzQyMDlDQkY1MThDMTRDRTk3MzQ5NTEzNTk2OTdERDdCQjE4QkI3MzE2N0ZBNEZFRTA2NzFGRkExQUFDNTcxRUU5MDIxMUZFMkJGQTcwRUNGN0Q0NjhBNEYzMDIyOEZDNkFEQTU0Q0ExNDk4NjlCM0FBMzdEMDAxMjJCRTkwQUNB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",
-                    "serial": "96405456178813098272299971010248005161268064342",
-                    "expires": "2020-04-29T13:28:01.262670Z"
-                  },
-                  "next_update": "2020-04-29T13:28:01.262670Z",
-                  "old": "65ca45e2fdf427f51052d29f2eb51416dd6b2789e6b69c24fe0acb5a5628d12c"
-                },
-                "crl_info": {
-                  "name": "77AA69E9571D1DD092F7331CF7157D07B5E8997B.crl",
-                  "current": {
-                    "content": "MIICJTCCAQ0CAQEwDQYJKoZIhvcNAQELBQAwMzExMC8GA1UEAxMoNzdBQTY5RTk1NzFEMUREMDkyRjczMzFDRjcxNTdEMDdCNUU4OTk3QhcNMjAwNDI4MTMyMzAxWhcNMjAwNDI5MTMyODAxWjB1MCUCFF6KnUdCe+tzp1idD2SbiMhmmivzFw0yMDA0MjkxMzI4MDBaMCUCFApElkzaLnAOS3kfUmrwM3H7teoYFw0yMTA0MjgxMzI4MDBaMCUCFCpxI/k+H5gfiqXcYN8nf4rAhiy9Fw0yMDA0MjkxMzI4MDBaoC8wLTAfBgNVHSMEGDAWgBR3qmnpVx0d0JL3Mxz3FX0HteiZezAKBgNVHRQEAwIBAzANBgkqhkiG9w0BAQsFAAOCAQEArXP5IpOWBrYo4wXQq1opDx4MebPTx4k7OwqNvtGJPq1aQztw7nVBPWRAtARTd7ML6Hs95WnjLihaPfCs1nOOpEcZ2+9z6EyZrTQupZPeAV7/bxhjCtX7aTnbNLMLyg8/64DV2wnnSj3k87mwIYE91j3Pjcs/boQ4BhhdSAsLmYW+Xw6UYRDurQvVNwVYb6GERRG3HM38vD9NZ2o79fYBPlgB7DWeS9jFteRiUw/VsqQdk5WxkFBIAmVHW7kfnJiltlz0Pys4KVp4DudSLFvaxsE4XXH2Kw8YB4uRKoGo2pRe12eTRABIrVtEqjuippAuQfCk6z+cNYD09nq2OoQq8A==",
-                    "serial": "3",
-                    "expires": "2020-04-29T13:28:01.258622Z"
-                  },
-                  "old": "f1593397ae26ca6ceac30768fde1b23b0eaabff7621076133f81d60635f0c794"
-                },
-                "objects_delta": {
-                  "ca_repo": "rsync://localhost/repo/child/0",
-                  "added": [],
-                  "updated": [
-                    {
-                      "name": "77AA69E9571D1DD092F7331CF7157D07B5E8997B.crl",
-                      "object": {
-                        "content": "MIICJTCCAQ0CAQEwDQYJKoZIhvcNAQELBQAwMzExMC8GA1UEAxMoNzdBQTY5RTk1NzFEMUREMDkyRjczMzFDRjcxNTdEMDdCNUU4OTk3QhcNMjAwNDI4MTMyMzAxWhcNMjAwNDI5MTMyODAxWjB1MCUCFF6KnUdCe+tzp1idD2SbiMhmmivzFw0yMDA0MjkxMzI4MDBaMCUCFApElkzaLnAOS3kfUmrwM3H7teoYFw0yMTA0MjgxMzI4MDBaMCUCFCpxI/k+H5gfiqXcYN8nf4rAhiy9Fw0yMDA0MjkxMzI4MDBaoC8wLTAfBgNVHSMEGDAWgBR3qmnpVx0d0JL3Mxz3FX0HteiZezAKBgNVHRQEAwIBAzANBgkqhkiG9w0BAQsFAAOCAQEArXP5IpOWBrYo4wXQq1opDx4MebPTx4k7OwqNvtGJPq1aQztw7nVBPWRAtARTd7ML6Hs95WnjLihaPfCs1nOOpEcZ2+9z6EyZrTQupZPeAV7/bxhjCtX7aTnbNLMLyg8/64DV2wnnSj3k87mwIYE91j3Pjcs/boQ4BhhdSAsLmYW+Xw6UYRDurQvVNwVYb6GERRG3HM38vD9NZ2o79fYBPlgB7DWeS9jFteRiUw/VsqQdk5WxkFBIAmVHW7kfnJiltlz0Pys4KVp4DudSLFvaxsE4XXH2Kw8YB4uRKoGo2pRe12eTRABIrVtEqjuippAuQfCk6z+cNYD09nq2OoQq8A==",
-                        "serial": "3",
-                        "expires": "2020-04-29T13:28:01.258622Z"
-                      },
-                      "old": "f1593397ae26ca6ceac30768fde1b23b0eaabff7621076133f81d60635f0c794"
-                    },
-                    {
-                      "name": "77AA69E9571D1DD092F7331CF7157D07B5E8997B.mft",
-                      "object": {
-                        "content": "MIIJogYJKoZIhvcNAQcCoIIJkzCCCY8CAQMxDzANBglghkgBZQMEAgEFADCB+QYLKoZIhvcNAQkQARqggekEgeYwgeMCAQMYDzIwMjAwNDI4MTMyMzAxWhgPMjAyMDA0MjkxMzI4MDFaBglghkgBZQMEAgEwgbAwURYsNzdBQTY5RTk1NzFEMUREMDkyRjczMzFDRjcxNTdEMDdCNUU4OTk3Qi5jcmwDIQBHJXEQYTtkTxLYBoSrR2ryOP8k8+StMWE/SJFxa9TPojBbFjYzMjMwMzAzMTNhNjQ2MjM4M2EzYTJmMzMzMjJkMzQzODIwM2QzZTIwMzYzNDM0MzkzNi5yb2EDIQDwmTW4UWmr138dE5nqLiuGcD6z5JSs5uAqrjOW/9NqMaCCBsswggbHMIIFr6ADAgECAhQQ4vhc0QzC5zV/uJEM2YW5UaCwVjANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyg3N0FBNjlFOTU3MUQxREQwOTJGNzMzMUNGNzE1N0QwN0I1RTg5OTdCMB4XDTIwMDQyODEzMjMwMVoXDTIwMDUwNTEzMjgwMVowggItMYICKTCCAiUGA1UEAxOCAhwzMDgyMDEwQTAyODIwMTAxMDBCOEFCNDEyMEZDMjQ1NDIwNEFCRUQyNDlBMzQ5QTVDNjQ0NzJFNTFEQzY1RTcyRkI4MkNBODYwMTE1RTI1REQwNEQ3MjJBRjM5RTZBQzc0MkZDRjIzQjExODU2RUMxRTY4NzYyQzY0NjQ1QUJBOEYxQUUzRDVGNDAyMzM0M0Q1MUQwNTBFRjAxMjk5NEFBODMxMDRDN0Y0RUVBOENBQzk0NDgxOTY0MkFCMUNENjIyOTg2RkE4RThGRDJCODc1OUE2NjEwODE3NTc4RkE0NDBGMzhGMjRBQTA3RDY1QTcwQjA3NTRERDMzMThBREM1OTdFNENBOUUzRkQwQ0QwRkEwODkyMUFFMkNGNzhENTgwMEM5OUUxMzAyQkEzRTFDQ0EwRjg1NkI4OUEyQzQyMDlDQkY1MThDMTRDRTk3MzQ5NTEzNTk2OTdERDdCQjE4QkI3MzE2N0ZBNEZFRTA2NzFGRkExQUFDNTcxRUU5MDIxMUZFMkJGQTcwRUNGN0Q0NjhBNEYzMDIyOEZDNkFEQTU0Q0ExNDk4NjlCM0FBMzdEMDAxMjJCRTkwQUNB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",
-                        "serial": "96405456178813098272299971010248005161268064342",
-                        "expires": "2020-04-29T13:28:01.262670Z"
-                      },
-                      "old": "65ca45e2fdf427f51052d29f2eb51416dd6b2789e6b69c24fe0acb5a5628d12c"
-                    }
-                  ],
-                  "withdrawn": [
-                    {
-                      "name": "31302e302e302e302f3234203d3e203634343936.roa",
-                      "hash": "f239de4d330d23d186c7f29e9683c9f0cc8311e884e07ee63e32574768a4dff9"
-                    }
-                  ]
-                }
-              }
-            }
-          ]
+            ]
+          }
         }
       }
     ]

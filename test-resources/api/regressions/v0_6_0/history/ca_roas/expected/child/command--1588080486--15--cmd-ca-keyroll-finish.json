@@ -3,14 +3,16 @@
     "actor": "krill",
     "time": "2020-04-28T13:28:06.697038Z",
     "handle": "child",
-    "version": 27,
+    "version": 23,
     "sequence": 15,
     "details": {
-      "key_roll_finish": "0"
+      "type": "key_roll_finish",
+      "resource_class_name": "0"
     },
     "effect": {
+      "result": "success",
       "events": [
-        27
+        22
       ]
     }
   },
@@ -18,26 +20,10 @@
     "Events": [
       {
         "id": "child",
-        "version": 27,
+        "version": 22,
         "details": {
-          "key_roll_finished": [
-            "0",
-            {
-              "ca_repo": "rsync://localhost/repo/child/0",
-              "added": [],
-              "updated": [],
-              "withdrawn": [
-                {
-                  "name": "77AA69E9571D1DD092F7331CF7157D07B5E8997B.crl",
-                  "hash": "12bf3fc6904bb85afc165210b26d2bd5158cdd3006a6e095b8ab671f18a55f37"
-                },
-                {
-                  "name": "77AA69E9571D1DD092F7331CF7157D07B5E8997B.mft",
-                  "hash": "44292ffa14a71aef8b9c8743b6754d91dc67b5dd811e0189cac633dc1ef0bf41"
-                }
-              ]
-            }
-          ]
+          "type": "key_roll_finished",
+          "resource_class_name": "0"
         }
       }
     ]

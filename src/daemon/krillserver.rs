@@ -33,14 +33,14 @@ use crate::daemon::auth::providers::MasterTokenAuthProvider;
 use crate::daemon::auth::providers::{ConfigFileAuthProvider, OpenIDConnectAuthProvider};
 use crate::daemon::auth::{Authorizer, LoggedInUser};
 use crate::daemon::ca::{
-    self, ta_handle, testbed_ca_handle, CaServer, ResourceTaggedAttestation, RouteAuthorizationUpdates,
+    self, ta_handle, testbed_ca_handle, CaManager, ResourceTaggedAttestation, RouteAuthorizationUpdates,
     RtaContentRequest, RtaPrepareRequest,
 };
 use crate::daemon::config::{AuthType, Config};
 use crate::daemon::http::HttpResponse;
 use crate::daemon::mq::MessageQueue;
 use crate::daemon::scheduler::Scheduler;
-use crate::pubd::{PubServer, RepoStats};
+use crate::pubd::{RepoStats, RepositoryManager};
 use crate::publish::CaPublisher;
 
 //------------ KrillMode ----------------------------------------------------
@@ -87,10 +87,10 @@ pub struct KrillServer {
     authorizer: Authorizer,
 
     // Publication server, with configured publishers
-    pubserver: Option<Arc<PubServer>>,
+    repo_manager: Option<Arc<RepositoryManager>>,
 
     // Handles the internal TA and/or CAs
-    caserver: Option<Arc<ca::CaServer>>,
+    caserver: Option<Arc<ca::CaManager>>,
 
     // Handles the internal TA and/or CAs
     bgp_analyser: Arc<BgpAnalyser>,
@@ -178,17 +178,17 @@ impl KrillServer {
         };
         let system_actor = authorizer.actor_from_def(ACTOR_DEF_KRILL);
 
-        let pubserver = {
+        let repo_manager = {
             if mode.pubd_enabled() {
-                Some(PubServer::build(config.clone(), signer.clone(), &system_actor)?)
+                Some(RepositoryManager::build(config.clone(), signer.clone())?)
             } else {
-                PubServer::remove_if_empty(config.clone(), signer.clone(), &system_actor)?
+                RepositoryManager::remove_if_empty(config.clone(), signer.clone())?
             }
         };
 
         // for now, support that existing embedded repositories are still supported.
         // this should be removed in release 1.1 after people have had a chance to separate.
-        if pubserver.is_some() && mode == KrillMode::Ca {
+        if repo_manager.is_some() && mode == KrillMode::Ca {
             mode = KrillMode::Mixed
         }
 
@@ -200,26 +200,26 @@ impl KrillServer {
             _ => {}
         }
 
-        let pubserver: Option<Arc<PubServer>> = pubserver.map(Arc::new);
+        let repo_manager: Option<Arc<RepositoryManager>> = repo_manager.map(Arc::new);
 
         // Used to have a shared queue for the caserver and the background job scheduler.
         let event_queue = Arc::new(MessageQueue::default());
 
         let caserver = if mode.cas_enabled() {
-            let caserver = Arc::new(ca::CaServer::build(config.clone(), event_queue.clone(), signer).await?);
+            let caserver = Arc::new(ca::CaManager::build(config.clone(), event_queue.clone(), signer).await?);
 
             if let KrillMode::Testbed(uris) = &mode {
-                let pubserver = pubserver.as_ref().ok_or(Error::RepositoryServerNotEnabled)?;
+                let repo_manager = repo_manager.as_ref().ok_or(Error::RepositoryServerNotEnabled)?;
 
-                if !pubserver.repository_initialised()? {
-                    pubserver.repository_init(uris.clone())?;
+                if !repo_manager.initialized()? {
+                    repo_manager.init(uris.clone())?;
                 }
 
                 let ta_handle = ta_handle();
                 if !caserver.has_ca(&ta_handle)? {
                     info!("Creating embedded Trust Anchor");
 
-                    let repo_info: RepoInfo = pubserver.repo_info_for(&ta_handle)?;
+                    let repo_info: RepoInfo = repo_manager.repo_info_for(&ta_handle)?;
 
                     let ta_uri = format!("{}ta/ta.cer", service_uri);
                     let ta_uri = uri::Https::from_string(ta_uri).unwrap();
@@ -235,10 +235,7 @@ impl KrillServer {
                     // Add publisher
                     let req = rfc8183::PublisherRequest::new(None, ta_handle.clone(), ta.id_cert().clone());
 
-                    pubserver.create_publisher(req, &system_actor)?;
-
-                    // Force initial publication
-                    caserver.republish(&ta_handle, &system_actor).await?;
+                    repo_manager.create_publisher(req, &system_actor)?;
 
                     let testbed_ca_handle = testbed_ca_handle();
                     if !caserver.has_ca(&testbed_ca_handle)? {
@@ -254,15 +251,14 @@ impl KrillServer {
                             testbed_ca_handle.clone(),
                             testbed_ca.id_cert().clone(),
                         );
-                        pubserver.create_publisher(pub_req, &system_actor)?;
+                        repo_manager.create_publisher(pub_req, &system_actor)?;
                         let rfc8181_uri =
                             uri::Https::from_string(format!("{}rfc8181/{}", service_uri, testbed_ca_handle)).unwrap();
-                        let repo_response = pubserver.repository_response(rfc8181_uri, &testbed_ca_handle)?;
-                        let repo_contact = RepositoryContact::Rfc8181(repo_response);
+                        let repo_response = repo_manager.repository_response(rfc8181_uri, &testbed_ca_handle)?;
+                        let repo_contact = RepositoryContact::rfc8181(repo_response);
                         caserver
                             .update_repo(testbed_ca_handle.clone(), repo_contact, &system_actor)
                             .await?;
-                        caserver.republish(&testbed_ca_handle, &system_actor).await?;
 
                         // Establish the TA (parent) <-> testbed CA (child) relationship
                         let testbed_ca_resources = ResourceSet::all_resources();
@@ -292,7 +288,7 @@ impl KrillServer {
         let scheduler = Scheduler::build(
             event_queue,
             caserver.clone(),
-            pubserver.clone(),
+            repo_manager.clone(),
             bgp_analyser.clone(),
             #[cfg(feature = "multi-user")]
             login_session_cache.clone(),
@@ -310,7 +306,7 @@ impl KrillServer {
             service_uri,
             work_dir: work_dir.clone(),
             authorizer,
-            pubserver,
+            repo_manager,
             caserver,
             bgp_analyser,
             scheduler,
@@ -382,18 +378,18 @@ impl KrillServer {
 
 /// # Configure publishers
 impl KrillServer {
-    fn get_pubserver(&self) -> KrillResult<&Arc<PubServer>> {
-        self.pubserver.as_ref().ok_or(Error::RepositoryServerNotEnabled)
+    fn get_repo_manager(&self) -> KrillResult<&Arc<RepositoryManager>> {
+        self.repo_manager.as_ref().ok_or(Error::RepositoryServerNotEnabled)
     }
 
     /// Returns the repository server stats
     pub fn repo_stats(&self) -> KrillResult<RepoStats> {
-        self.get_pubserver()?.repo_stats()
+        self.get_repo_manager()?.repo_stats()
     }
 
     /// Returns all currently CONFIGured publishers. (excludes deactivated)
     pub fn publishers(&self) -> KrillResult<Vec<Handle>> {
-        self.get_pubserver()?.publishers()
+        self.get_repo_manager()?.publishers()
     }
 
     /// Adds the publishers, blows up if it already existed.
@@ -403,18 +399,18 @@ impl KrillServer {
         actor: &Actor,
     ) -> KrillResult<rfc8183::RepositoryResponse> {
         let publisher_handle = req.publisher_handle().clone();
-        self.get_pubserver()?.create_publisher(req, actor)?;
+        self.get_repo_manager()?.create_publisher(req, actor)?;
         self.repository_response(&publisher_handle)
     }
 
     /// Removes a publisher, blows up if it didn't exist.
     pub fn remove_publisher(&mut self, publisher: PublisherHandle, actor: &Actor) -> KrillEmptyResult {
-        self.get_pubserver()?.remove_publisher(publisher, actor)
+        self.get_repo_manager()?.remove_publisher(publisher, actor)
     }
 
     /// Returns a publisher.
     pub fn get_publisher(&self, publisher: &PublisherHandle) -> KrillResult<PublisherDetails> {
-        self.get_pubserver()?.get_publisher_details(publisher)
+        self.get_repo_manager()?.get_publisher_details(publisher)
     }
 
     pub fn rrdp_base_path(&self) -> PathBuf {
@@ -429,18 +425,18 @@ impl KrillServer {
 impl KrillServer {
     pub fn repository_response(&self, publisher: &PublisherHandle) -> KrillResult<rfc8183::RepositoryResponse> {
         let rfc8181_uri = uri::Https::from_string(format!("{}rfc8181/{}", self.service_uri, publisher)).unwrap();
-        self.get_pubserver()?.repository_response(rfc8181_uri, publisher)
+        self.get_repo_manager()?.repository_response(rfc8181_uri, publisher)
     }
 
-    pub fn rfc8181(&self, publisher: PublisherHandle, msg_bytes: Bytes, actor: &Actor) -> KrillResult<Bytes> {
-        self.get_pubserver()?.rfc8181(publisher, msg_bytes, actor)
+    pub fn rfc8181(&self, publisher: PublisherHandle, msg_bytes: Bytes) -> KrillResult<Bytes> {
+        self.get_repo_manager()?.rfc8181(publisher, msg_bytes)
     }
 }
 
 /// # Manage CAs
 ///
 impl KrillServer {
-    fn get_caserver(&self) -> KrillResult<&Arc<CaServer>> {
+    fn get_caserver(&self) -> KrillResult<&Arc<CaManager>> {
         self.caserver.as_ref().ok_or(Error::CaServerNotEnabled)
     }
 }
@@ -640,17 +636,17 @@ impl KrillServer {
 ///
 impl KrillServer {
     /// Republish all CAs that need it.
-    pub async fn republish_all(&self, actor: &Actor) -> KrillEmptyResult {
-        self.get_caserver()?.republish_all(actor).await?;
+    pub async fn republish_all(&self) -> KrillEmptyResult {
+        self.get_caserver()?.republish_all().await?;
         Ok(())
     }
 
     /// Re-sync all CAs with their repositories
     pub async fn resync_all(&self, actor: &Actor) -> KrillEmptyResult {
-        let publisher = CaPublisher::new(self.get_caserver()?.clone(), self.pubserver.clone());
+        let publisher = CaPublisher::new(self.get_caserver()?.clone(), self.repo_manager.clone());
 
         for ca in self.ca_list(actor)?.cas() {
-            if let Err(e) = publisher.publish(ca.handle(), actor).await {
+            if let Err(e) = publisher.publish(ca.handle()).await {
                 error!("Failed to sync ca: {}. Got error: {}", ca.handle(), e)
             }
         }
@@ -661,15 +657,6 @@ impl KrillServer {
     /// Refresh all CAs: ask for updates and shrink as needed.
     pub async fn cas_refresh_all(&self, actor: &Actor) -> KrillEmptyResult {
         self.get_caserver()?.cas_refresh_all(actor).await;
-        Ok(())
-    }
-
-    /// Archive old commands
-    pub async fn archive_old_commands(&self, days: i64, actor: &Actor) -> KrillEmptyResult {
-        self.get_caserver()?.archive_old_commands(days, actor).await?;
-        if let Some(pubserver) = self.pubserver.as_ref() {
-            pubserver.archive_old_commands(days)?;
-        }
         Ok(())
     }
 }
@@ -703,8 +690,8 @@ impl KrillServer {
             }
         }
 
-        let publisher = CaPublisher::new(self.get_caserver()?.clone(), self.pubserver.clone());
-        if let Err(e) = publisher.clean_current_repo(&ca_handle, &actor).await {
+        let publisher = CaPublisher::new(self.get_caserver()?.clone(), self.repo_manager.clone());
+        if let Err(e) = publisher.clean_all_repos(&ca_handle).await {
             warn!(
                 "Could not withdraw objects for deactivated CA '{}'. Error was: {}",
                 ca_handle, e
@@ -772,7 +759,7 @@ impl KrillServer {
         let contact = match update {
             RepositoryUpdate::Embedded => {
                 // Add to embedded publication server if not present
-                if self.get_pubserver()?.get_publisher_details(&handle).is_err() {
+                if self.get_repo_manager()?.get_publisher_details(&handle).is_err() {
                     let id_cert = {
                         let ca = self.get_caserver()?.get_ca(&handle).await?;
                         ca.id_cert().clone()
@@ -783,7 +770,7 @@ impl KrillServer {
                     self.add_publisher(req, actor)?;
                 }
 
-                RepositoryContact::embedded(self.get_pubserver()?.repo_info_for(&handle)?)
+                RepositoryContact::embedded(self.get_repo_manager()?.repo_info_for(&handle)?)
             }
             RepositoryUpdate::Rfc8181(response) => {
                 // first check that the new repo can be contacted
@@ -791,7 +778,7 @@ impl KrillServer {
                     return Err(Error::CaRepoIssue(handle, error.to_error_response().msg().to_string()));
                 }
 
-                RepositoryContact::Rfc8181(response)
+                RepositoryContact::rfc8181(response)
             }
         };
 
@@ -891,13 +878,13 @@ impl KrillServer {
 impl KrillServer {
     /// Handles a publish delta request sent to the API, or.. through
     /// the CmsProxy.
-    pub fn handle_delta(&self, publisher: PublisherHandle, delta: PublishDelta, actor: &Actor) -> KrillEmptyResult {
-        self.get_pubserver()?.publish(publisher, delta, actor)
+    pub fn handle_delta(&self, publisher: PublisherHandle, delta: PublishDelta) -> KrillEmptyResult {
+        self.get_repo_manager()?.publish(publisher, delta)
     }
 
     /// Handles a list request sent to the API, or.. through the CmsProxy.
     pub fn handle_list(&self, publisher: &PublisherHandle) -> KrillResult<ListReply> {
-        self.get_pubserver()?.list(publisher)
+        self.get_repo_manager()?.list(publisher)
     }
 }
 
@@ -906,12 +893,12 @@ impl KrillServer {
 impl KrillServer {
     /// Create the publication server, will fail if it was already created.
     pub fn repository_init(&self, uris: PublicationServerUris) -> KrillResult<()> {
-        self.get_pubserver()?.repository_init(uris)
+        self.get_repo_manager()?.init(uris)
     }
 
     /// Clear the publication server. Will fail if it still has publishers. Or if it does not exist
     pub fn repository_clear(&self) -> KrillResult<()> {
-        self.get_pubserver()?.repository_clear()
+        self.get_repo_manager()?.repository_clear()
     }
 }
 

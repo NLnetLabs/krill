@@ -101,7 +101,6 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
             handle=child_ca_handle,
             resources=resources,
             auth='embedded')
-            # auth={'rfc8183': rfc8183_request})
         krill_ca_api.add_child_ca(parent_ca_handle, req)
         logging.info(f'-> Added CA "{child_ca_handle} as a child of "{parent_ca_handle}"')
 
@@ -117,7 +116,7 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
         logging.info(f'-> Adding CA "{parent_ca_handle}" as a parent of "{child_ca_handle}"')
         req = krill_ca_api_lib.AddParentCARequest(
             handle=parent_ca_handle,
-            contact='embedded')
+            contact=krill_ca_api_lib.Embedded())
         krill_ca_api.add_ca_parent(child_ca_handle, req)
         logging.info(f'-> Added CA "{parent_ca_handle}" as a parent of "{child_ca_handle}"')
 
@@ -232,7 +231,7 @@ class TestKrillWithRelyingParties:
         # includes the work and output of creating the fixtures.
         pass
 
-    @pytest.mark.parametrize("service", [Routinator, FortValidator, OctoRPKI, Rcynic, RPKIClient, RPKIValidator3])
+    @pytest.mark.parametrize("service", [Routinator, RoutinatorUnstable, FortValidator, OctoRPKI, Rcynic, RPKIClient, RPKIValidator3])
     def test_rtr(self, docker_host_fqdn, docker_project, function_service_manager, service, metadata):
         #
         # Use Docker Compose to deploy the given Relying Party service and its dependendencies.
@@ -240,14 +239,18 @@ class TestKrillWithRelyingParties:
         #
         function_service_manager.start_services_with_dependencies(docker_project, service.name)
 
-        def retry_if_sync_timeout(exception):
-            return isinstance(exception, rtrlib.exceptions.SyncTimeout)
+        class UpdateWasEmpty(Exception):
+            pass
+
+        def retry_if_incomplete_update(exception):
+            return isinstance(exception, rtrlib.exceptions.SyncTimeout) or \
+                   isinstance(exception, UpdateWasEmpty)
 
         @retry(
             stop_max_attempt_number=3,
-            wait_exponential_multiplier=1000,
-            wait_exponential_max=10000,
-            retry_on_exception=retry_if_sync_timeout,
+            wait_exponential_multiplier=5000,
+            wait_exponential_max=20000,
+            retry_on_exception=retry_if_incomplete_update,
             wrap_exception=True)
         def fetch_from_rtr_server():
             try:
@@ -259,6 +262,10 @@ class TestKrillWithRelyingParties:
                 # r is now a list of PFXRecord
                 # see: https://python-rtrlib.readthedocs.io/en/latest/api.html#rtrlib.records.PFXRecord
                 logging.info(f'Received {len(received_roas)} ROAs via RTR from {service.name} in {rtr_elapsed_time} seconds')
+
+                if len(received_roas) == 0:
+                    # retry, maybe the ROAs are not available yet
+                    raise UpdateWasEmpty()
     
                 # are each of the TEST_ROAS items in r?
                 # i.e. is the intersection of the two sets equal to that of the TEST_ROAS set?

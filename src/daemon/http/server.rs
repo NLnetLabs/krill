@@ -33,8 +33,8 @@ use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
 use crate::commons::{KrillEmptyResult, KrillResult};
 use crate::constants::{KRILL_ENV_UPGRADE_ONLY, KRILL_VERSION_MAJOR, KRILL_VERSION_MINOR, KRILL_VERSION_PATCH};
-use crate::daemon::auth::Auth;
 use crate::daemon::auth::common::permissions::Permission;
+use crate::daemon::auth::Auth;
 use crate::daemon::ca::RouteAuthorizationUpdates;
 use crate::daemon::config::Config;
 use crate::daemon::http::auth::auth;
@@ -88,7 +88,7 @@ pub async fn start_krill_daemon(config: Arc<Config>, mode: KrillMode) -> Result<
     test_data_dir(&config)?;
 
     // Call upgrade, this will only do actual work if needed.
-    pre_start_upgrade(&config.data_dir).map_err(|e| Error::Custom(format!("Could not upgrade Krill: {}", e)))?;
+    pre_start_upgrade(config.clone()).map_err(|e| Error::Custom(format!("Could not upgrade Krill: {}", e)))?;
 
     // Create the server, this will create the necessary data sub-directories if needed
     let krill = KrillServer::build(config.clone(), mode).await?;
@@ -380,11 +380,11 @@ pub async fn metrics(req: Request) -> RoutingResult {
         res.push_str("# HELP krill_version_patch krill server patch version number\n");
         res.push_str("# TYPE krill_version_patch gauge\n");
         res.push_str(&format!("krill_version_patch {}\n", KRILL_VERSION_PATCH));
-        res.push('\n');
 
         if let Ok(stats) = server.repo_stats() {
             let publishers = stats.get_publishers();
 
+            res.push('\n');
             res.push_str("# HELP krill_repo_publisher number of publishers in repository\n");
             res.push_str("# TYPE krill_repo_publisher gauge\n");
             res.push_str(&format!("krill_repo_publisher {}\n", publishers.len()));
@@ -584,7 +584,6 @@ pub async fn rfc8181(req: Request) -> RoutingResult {
             None => return render_error(Error::ApiInvalidHandle),
         };
 
-        let actor = req.actor();
         let state = req.state().clone();
 
         let bytes = match req.rfc8181_bytes().await {
@@ -593,7 +592,7 @@ pub async fn rfc8181(req: Request) -> RoutingResult {
         };
 
         let read = state.read().await;
-        match read.rfc8181(publisher, bytes, &actor) {
+        match read.rfc8181(publisher, bytes) {
             Ok(bytes) => Ok(HttpResponse::rfc8181(bytes.to_vec())),
             Err(e) => render_error(e),
         }
@@ -1629,8 +1628,7 @@ async fn api_ca_routes_analysis(req: Request, path: &mut RequestPath, handle: Ha
 async fn api_republish_all(req: Request) -> RoutingResult {
     match *req.method() {
         Method::POST => aa!(req, Permission::CA_UPDATE, {
-            let actor = req.actor();
-            render_empty_res(req.state().read().await.republish_all(&actor).await)
+            render_empty_res(req.state().read().await.republish_all().await)
         }),
         _ => render_unknown_method(),
     }

@@ -1,5 +1,5 @@
 use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt;
 
 use crate::commons::api::{BgpStats, RoaDefinition, RoaDefinitionUpdates};
@@ -112,34 +112,34 @@ impl From<BgpAnalysisSuggestion> for RoaDefinitionUpdates {
             suggestion.redundant,
         );
 
-        let mut added: HashSet<RoaDefinition> = HashSet::new();
-        let mut removed: HashSet<RoaDefinition> = HashSet::new();
+        let mut added: Vec<RoaDefinition> = vec![];
+        let mut removed: Vec<RoaDefinition> = vec![];
 
         for auth in not_found
             .into_iter()
             .chain(invalid_asn.into_iter())
             .chain(invalid_length.into_iter())
         {
-            added.insert(auth.into());
+            added.push(auth.into());
         }
 
         for auth in stale.into_iter() {
-            removed.insert(auth);
+            removed.push(auth);
         }
 
         for suggestion in too_permissive.into_iter() {
-            removed.insert(suggestion.current);
+            removed.push(suggestion.current);
             for auth in suggestion.new.into_iter() {
-                added.insert(auth);
+                added.push(auth);
             }
         }
 
         for auth in as0_redundant.into_iter() {
-            removed.insert(auth);
+            removed.push(auth);
         }
 
         for auth in redundant.into_iter() {
-            removed.insert(auth);
+            removed.push(auth);
         }
 
         RoaDefinitionUpdates::new(added, removed)

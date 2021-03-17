@@ -6,11 +6,13 @@
     "version": 12,
     "sequence": 9,
     "details": {
-      "key_roll_finish": "0"
+      "type": "key_roll_finish",
+      "resource_class_name": "0"
     },
     "effect": {
+      "result": "success",
       "events": [
-        12
+        11
       ]
     }
   },
@@ -18,26 +20,10 @@
     "Events": [
       {
         "id": "rfc6492",
-        "version": 12,
+        "version": 11,
         "details": {
-          "key_roll_finished": [
-            "0",
-            {
-              "ca_repo": "rsync://localhost/repo/rfc6492/0",
-              "added": [],
-              "updated": [],
-              "withdrawn": [
-                {
-                  "name": "5D3CDDC79F0F00FD59E1312472F996057878CF76.crl",
-                  "hash": "417fce400ef03e410f268f96e11d71fea513a489f5f282abfc67269515c92dc7"
-                },
-                {
-                  "name": "5D3CDDC79F0F00FD59E1312472F996057878CF76.mft",
-                  "hash": "6c2306367efa401bf2de956effec0a49f2928cb5d28a8a95d957b624684f01a0"
-                }
-              ]
-            }
-          ]
+          "type": "key_roll_finished",
+          "resource_class_name": "0"
         }
       }
     ]

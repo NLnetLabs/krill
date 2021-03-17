@@ -3,12 +3,15 @@
     "actor": "krill",
     "time": "2020-04-30T14:37:24.169869Z",
     "handle": "child",
-    "version": 16,
+    "version": 15,
     "sequence": 9,
-    "details": "repo_remove_old",
+    "details": {
+      "type": "repo_remove_old"
+    },
     "effect": {
+      "result": "success",
       "events": [
-        16
+        14
       ]
     }
   },
@@ -16,10 +19,12 @@
     "Events": [
       {
         "id": "child",
-        "version": 16,
+        "version": 14,
         "details": {
-          "repo_cleaned": {
-            "embedded": {
+          "type": "repo_cleaned",
+          "contact": {
+            "type": "embedded",
+            "info": {
               "base_uri": "rsync://localhost/repo/child/",
               "rpki_notify": "https://localhost:3000/test-rrdp/notification.xml"
             }

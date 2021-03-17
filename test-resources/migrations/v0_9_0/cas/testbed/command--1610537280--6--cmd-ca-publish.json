@@ -1,0 +1,13 @@
+{
+  "actor": "krill",
+  "time": "2021-01-13T11:28:00.819981Z",
+  "handle": "testbed",
+  "version": 7,
+  "sequence": 6,
+  "details": "republish",
+  "effect": {
+    "events": [
+      7
+    ]
+  }
+}

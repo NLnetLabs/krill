@@ -3,10 +3,11 @@
     "actor": "krill",
     "time": "2020-04-28T13:28:06.881068Z",
     "handle": "child",
-    "version": 28,
+    "version": 23,
     "sequence": 16,
     "details": {
-      "roa_definition_updates": {
+      "type": "roa_definition_updates",
+      "updates": {
         "added": [
           {
             "asn": 64496,
@@ -18,7 +19,8 @@
       }
     },
     "effect": {
-      "error": "Invalid max length in ROA: '10.0.0.0/24-33 => 64496' for CA 'child"
+      "result": "error",
+      "msg": "Invalid max length in ROA: '10.0.0.0/24-33 => 64496' for CA 'child"
     }
   },
   "result": {

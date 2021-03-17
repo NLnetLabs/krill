@@ -2,54 +2,80 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::commons::api::{Publish, PublishDelta, RepositoryContact, Update, Withdraw};
-use crate::commons::error::Error;
-use crate::commons::{actor::Actor, api::Handle};
-use crate::daemon::ca::CaServer;
-use crate::pubd::PubServer;
+use crate::{
+    commons::{
+        api::rrdp::PublishElement,
+        api::{Handle, Publish, PublishDelta, RepositoryContact, Update, Withdraw},
+        error::Error,
+    },
+    daemon::ca::CaManager,
+    pubd::RepositoryManager,
+};
 
 //------------ CaPublisher ---------------------------------------------------
 
 /// A helper which orchestrates publishing by CAs at either local, or
 /// remote, repositories.
 pub struct CaPublisher {
-    caserver: Arc<CaServer>,
-    pubserver: Option<Arc<PubServer>>,
+    caserver: Arc<CaManager>,
+    pubserver: Option<Arc<RepositoryManager>>,
 }
 
 /// # Construct
 ///
 impl CaPublisher {
-    pub fn new(caserver: Arc<CaServer>, pubserver: Option<Arc<PubServer>>) -> Self {
+    pub fn new(caserver: Arc<CaManager>, pubserver: Option<Arc<RepositoryManager>>) -> Self {
         CaPublisher { caserver, pubserver }
     }
 }
 
 impl CaPublisher {
-    fn get_embedded(&self) -> Result<&Arc<PubServer>, Error> {
+    fn get_embedded(&self) -> Result<&Arc<RepositoryManager>, Error> {
         self.pubserver.as_ref().ok_or(Error::RepositoryServerNotEnabled)
     }
 
-    pub async fn publish(&self, ca_handle: &Handle, actor: &Actor) -> Result<(), Error> {
-        let ca = self.caserver.get_ca(ca_handle).await?;
+    pub async fn publish(&self, ca_handle: &Handle) -> Result<(), Error> {
+        // Since this is called by the scheduler, this acts as a no-op for new CAs which do not yet have any repository configured.
+        for (contact, elements) in self.caserver.ca_repo_elements(ca_handle).await? {
+            self.sync_repo(ca_handle, contact, elements).await?;
+        }
 
-        // Since this is called by the scheduler, this should act as a no-op for
-        // new CAs which do not yet have any repository configured.
-        let repo_contact = match ca.repository_contact() {
-            Ok(repo) => repo,
-            Err(_) => return Ok(()),
-        };
+        // Best effort clean-up of old repos
+        for deprecated in self.caserver.ca_take_deprecated_repos(ca_handle)? {
+            info!(
+                "Will try to clean up deprecated repository '{}' for CA '{}'",
+                deprecated, ca_handle
+            );
+            if self.sync_repo(ca_handle, deprecated, vec![]).await.is_err() {
+                info!(
+                    "Could not clean up deprecated repository. This is fine - objects there are no longer referenced."
+                );
+            }
+        }
 
+        Ok(())
+    }
+
+    async fn sync_repo(
+        &self,
+        ca_handle: &Handle,
+        repo_contact: RepositoryContact,
+        ca_elements: Vec<PublishElement>,
+    ) -> Result<(), Error> {
         let list_reply = match &repo_contact {
-            RepositoryContact::Embedded(_) => self.get_embedded()?.list(ca_handle)?,
-            RepositoryContact::Rfc8181(repo) => self.caserver.send_rfc8181_list(ca_handle, repo, false).await?,
+            RepositoryContact::Embedded { .. } => self.get_embedded()?.list(ca_handle)?,
+            RepositoryContact::Rfc8181 { server_response } => {
+                self.caserver
+                    .send_rfc8181_list(ca_handle, server_response, false)
+                    .await?
+            }
         };
 
         #[allow(clippy::mutable_key_type)]
         let delta = {
             let elements: HashMap<_, _> = list_reply.into_elements().into_iter().map(|el| el.unpack()).collect();
 
-            let mut all_objects: HashMap<_, _> = ca.all_objects().into_iter().map(|el| el.unpack()).collect();
+            let mut all_objects: HashMap<_, _> = ca_elements.into_iter().map(|el| el.unpack()).collect();
 
             let mut withdraws = vec![];
             let mut updates = vec![];
@@ -72,48 +98,40 @@ impl CaPublisher {
         };
 
         match &repo_contact {
-            RepositoryContact::Embedded(_) => self.get_embedded()?.publish(ca_handle.clone(), delta, actor)?,
-            RepositoryContact::Rfc8181(repo) => self.caserver.send_rfc8181_delta(ca_handle, repo, delta, false).await?,
+            RepositoryContact::Embedded { .. } => {
+                self.get_embedded()?.publish(ca_handle.clone(), delta)?;
+                self.caserver.ca_repo_status_set_elements(ca_handle).await?;
+            }
+            RepositoryContact::Rfc8181 { server_response } => {
+                self.caserver
+                    .send_rfc8181_delta(ca_handle, server_response, delta)
+                    .await?
+            }
         };
 
         Ok(())
     }
 
-    pub async fn clean_old_repo(&self, ca_handle: &Handle, actor: &Actor) -> Result<(), Error> {
-        let ca = self.caserver.get_ca(ca_handle).await?;
+    pub async fn clean_all_repos(&self, ca_handle: &Handle) -> Result<(), Error> {
+        let mut repos: Vec<RepositoryContact> = self
+            .caserver
+            .ca_repo_elements(ca_handle)
+            .await?
+            .into_iter()
+            .map(|(contact, _)| contact)
+            .collect();
+        repos.append(&mut self.caserver.ca_take_deprecated_repos(ca_handle)?);
 
-        let repo = match ca.old_repository_contact() {
-            None => return Ok(()),
-            Some(contact) => contact,
-        };
-
-        self.clean_repo(ca_handle, repo, actor).await
-    }
-
-    pub async fn clean_current_repo(&self, ca_handle: &Handle, actor: &Actor) -> Result<(), Error> {
-        let ca = self.caserver.get_ca(ca_handle).await?;
-
-        let repo = match ca.repository_contact() {
-            Ok(contact) => contact,
-            Err(_) => return Ok(()),
-        };
-
-        self.clean_repo(ca_handle, repo, actor).await
-    }
-
-    async fn clean_repo(&self, ca_handle: &Handle, repo: &RepositoryContact, actor: &Actor) -> Result<(), Error> {
-        info!("Will perform best effort clean up of repository: {}", repo);
-
-        let list_reply = match repo {
-            RepositoryContact::Embedded(_) => self.get_embedded()?.list(ca_handle)?,
-            RepositoryContact::Rfc8181(repo) => self.caserver.send_rfc8181_list(ca_handle, repo, true).await?,
-        };
-
-        let delta = list_reply.into_withdraw_delta();
-
-        match repo {
-            RepositoryContact::Embedded(_) => self.get_embedded()?.publish(ca_handle.clone(), delta, actor)?,
-            RepositoryContact::Rfc8181(res) => self.caserver.send_rfc8181_delta(ca_handle, res, delta, true).await?,
+        info!(
+            "Will try to clean up all repositories for CA '{}' before removing it.",
+            ca_handle
+        );
+        for repo in repos {
+            if self.sync_repo(ca_handle, repo, vec![]).await.is_err() {
+                info!(
+                    "Could not clean up deprecated repository. This is fine - objects there are no longer referenced."
+                );
+            }
         }
 
         Ok(())

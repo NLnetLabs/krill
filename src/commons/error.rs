@@ -208,12 +208,13 @@ pub enum Error {
     RepositoryServerAlreadyInitialised,
 
     //-----------------------------------------------------------------
-    // RFC 8181 (publishing)
+    // Publishing
     //-----------------------------------------------------------------
     Rfc8181Validation(ValidationError),
     Rfc8181Decode(String),
     Rfc8181MessageError(rfc8181::MessageError),
     Rfc8181Delta(PublicationDeltaError),
+    PublishingObjects(String),
 
     //-----------------------------------------------------------------
     // CA Issues
@@ -253,7 +254,6 @@ pub enum Error {
     CaChildMustHaveResources(Handle, ChildHandle),
     CaChildExtraResources(Handle, ChildHandle),
     CaChildUnauthorized(Handle, ChildHandle),
-    CaChildUpdateOneThing(Handle, ChildHandle),
 
     //-----------------------------------------------------------------
     // RouteAuthorizations - ROAs
@@ -273,6 +273,7 @@ pub enum Error {
     KeyUseNoOldKey,
     KeyUseNoIssuedCert,
     KeyUseNoMatch(KeyIdentifier),
+    KeyRollNotAllowed,
 
     //-----------------------------------------------------------------
     // Resource Issues
@@ -361,6 +362,7 @@ impl fmt::Display for Error {
             Error::Rfc8181Decode(req) => write!(f, "Issue with decoding RFC8181 request: {}", req),
             Error::Rfc8181MessageError(e) => e.fmt(f),
             Error::Rfc8181Delta(e) => e.fmt(f),
+            Error::PublishingObjects(msg) => write!(f, "Issue generating repository objects: '{}'", msg),
 
 
             //-----------------------------------------------------------------
@@ -402,7 +404,6 @@ impl fmt::Display for Error {
             Error::CaChildMustHaveResources(ca, child) => write!(f, "Child '{}' for CA '{}' MUST have resources specified", child, ca),
             Error::CaChildExtraResources(ca, child) => write!(f, "Child '{}' cannot have resources not held by CA '{}'", child, ca),
             Error::CaChildUnauthorized(ca, child) => write!(f, "CA '{}' does not know id certificate for child '{}'", ca, child),
-            Error::CaChildUpdateOneThing(ca, child) => write!(f, "You can only update one aspect for child '{}' of CA '{}' at a time - i.e. either resources or ID cert", child, ca),
 
             //-----------------------------------------------------------------
             // RouteAuthorizations - ROAs
@@ -422,6 +423,7 @@ impl fmt::Display for Error {
             Error::KeyUseNoOldKey => write!(f, "No old key in resource class"),
             Error::KeyUseNoIssuedCert => write!(f, "No issued cert matching pub key"),
             Error::KeyUseNoMatch(ki) => write!(f, "No key found matching key identifier: '{}'", ki),
+            Error::KeyRollNotAllowed => write!(f, "Key roll in progress"),
 
             //-----------------------------------------------------------------
             // Resource Issues
@@ -518,6 +520,12 @@ impl From<ApiAuthError> for Error {
     }
 }
 
+impl From<PublicationDeltaError> for Error {
+    fn from(e: PublicationDeltaError) -> Self {
+        Error::Rfc8181Delta(e)
+    }
+}
+
 impl Error {
     pub fn signer(e: impl Display) -> Self {
         Error::SignerError(e.to_string())
@@ -529,6 +537,10 @@ impl Error {
 
     pub fn publishing_outside_jail(uri: &uri::Rsync, jail: &uri::Rsync) -> Self {
         Error::PublisherUriOutsideBase(uri.to_string(), jail.to_string())
+    }
+
+    pub fn publishing(msg: impl fmt::Display) -> Self {
+        Error::PublishingObjects(msg.to_string())
     }
 
     pub fn custom(msg: impl fmt::Display) -> Self {
@@ -543,7 +555,7 @@ impl Error {
     pub fn status(&self) -> StatusCode {
         match self {
             // Most is bad requests by users, so just mapping the things that are not
-            Error::IoError(_) | Error::SignerError(_) | Error::AggregateStoreError(_) => {
+            Error::IoError(_) | Error::SignerError(_) | Error::AggregateStoreError(_) | Error::PublishingObjects(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
             Error::PublisherUnknown(_)
@@ -653,12 +665,15 @@ impl Error {
             Error::RepositoryServerAlreadyInitialised => ErrorResponse::new("pub-repo-initialised", &self),
 
             //-----------------------------------------------------------------
-            // RFC 8181
+            // Publishing
             //-----------------------------------------------------------------
             Error::Rfc8181Validation(e) => ErrorResponse::new("rfc8181-validation", &self).with_cause(e),
             Error::Rfc8181Decode(e) => ErrorResponse::new("rfc8181-decode", &self).with_cause(e),
             Error::Rfc8181MessageError(e) => ErrorResponse::new("rfc8181-protocol-message", &self).with_cause(e),
             Error::Rfc8181Delta(e) => ErrorResponse::new("rfc8181-delta", &self).with_cause(e),
+            Error::PublishingObjects(msg) => {
+                ErrorResponse::new("publishing-generate-repository-objects", &self).with_cause(msg)
+            }
 
             //-----------------------------------------------------------------
             // CA Issues (label: ca-*)
@@ -732,10 +747,6 @@ impl Error {
                 .with_ca(ca)
                 .with_child(child),
 
-            Error::CaChildUpdateOneThing(ca, child) => ErrorResponse::new("ca-child-update-one-thing", &self)
-                .with_ca(ca)
-                .with_child(child),
-
             // RouteAuthorizations
             Error::CaAuthorizationUnknown(ca, auth) => {
                 ErrorResponse::new("ca-roa-unknown", &self).with_ca(ca).with_auth(auth)
@@ -767,7 +778,7 @@ impl Error {
             Error::KeyUseNoOldKey => ErrorResponse::new("key-no-old", &self),
             Error::KeyUseNoIssuedCert => ErrorResponse::new("key-no-cert", &self),
             Error::KeyUseNoMatch(ki) => ErrorResponse::new("key-no-match", &self).with_key_identifier(ki),
-
+            Error::KeyRollNotAllowed => ErrorResponse::new("key-roll-disallowed", &self),
             //-----------------------------------------------------------------
             // Resource Issues (label: rc-*)
             //-----------------------------------------------------------------

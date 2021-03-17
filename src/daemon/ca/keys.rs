@@ -1,6 +1,5 @@
 use std::ops::{Deref, DerefMut};
 
-use chrono::Duration;
 use serde::{Deserialize, Serialize};
 
 use rpki::crypto::KeyIdentifier;
@@ -14,8 +13,7 @@ use crate::commons::api::{
 use crate::commons::crypto::KrillSigner;
 use crate::commons::error::Error;
 use crate::commons::KrillResult;
-use crate::daemon::ca::{CurrentObjectSet, CurrentObjectSetDelta, EvtDet};
-use crate::daemon::config::IssuanceTimingConfig;
+use crate::daemon::ca::CaEvtDet;
 
 //------------ CertifiedKey --------------------------------------------------
 
@@ -25,27 +23,29 @@ use crate::daemon::config::IssuanceTimingConfig;
 pub struct CertifiedKey {
     key_id: KeyIdentifier,
     incoming_cert: RcvdCert,
-    current_set: CurrentObjectSet,
     request: Option<IssuanceRequest>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    old_repo: Option<RepoInfo>,
 }
 
 impl CertifiedKey {
-    pub fn create(
-        incoming_cert: RcvdCert,
-        repo_info: &RepoInfo,
-        name_space: &str,
-        issuance_timing: &IssuanceTimingConfig,
-        signer: &KrillSigner,
-    ) -> KrillResult<Self> {
-        let key_id = incoming_cert.cert().subject_key_identifier();
-        let current_set = CurrentObjectSet::create(&incoming_cert, repo_info, name_space, issuance_timing, signer)?;
-
-        Ok(CertifiedKey {
+    pub fn new(key_id: KeyIdentifier, incoming_cert: RcvdCert, request: Option<IssuanceRequest>) -> Self {
+        CertifiedKey {
             key_id,
             incoming_cert,
-            current_set,
+            request,
+            old_repo: None,
+        }
+    }
+
+    pub fn create(incoming_cert: RcvdCert) -> Self {
+        let key_id = incoming_cert.subject_key_identifier();
+        CertifiedKey {
+            key_id,
+            incoming_cert,
             request: None,
-        })
+            old_repo: None,
+        }
     }
 
     pub fn as_info(&self) -> CertifiedKeyInfo {
@@ -63,15 +63,15 @@ impl CertifiedKey {
         self.incoming_cert = incoming_cert;
     }
 
-    pub fn current_set(&self) -> &CurrentObjectSet {
-        &self.current_set
-    }
-
     pub fn request(&self) -> Option<&IssuanceRequest> {
         self.request.as_ref()
     }
     pub fn add_request(&mut self, req: IssuanceRequest) {
         self.request = Some(req)
+    }
+
+    pub fn set_old_repo(&mut self, repo: &RepoInfo) {
+        self.old_repo = Some(repo.clone())
     }
 
     pub fn wants_update(&self, new_resources: &ResourceSet, new_not_after: Time) -> bool {
@@ -119,19 +119,6 @@ impl CertifiedKey {
             debug!("New not after time less than 10% after current time for for certificate for key '{}', not requesting a new certificate.", self.key_id);
             false
         }
-    }
-
-    pub fn close_to_next_update(&self, hours: i64) -> bool {
-        self.current_set.next_update() < Time::now() + Duration::hours(hours)
-    }
-
-    pub fn with_new_cert(mut self, cert: RcvdCert) -> Self {
-        self.incoming_cert = cert;
-        self
-    }
-
-    pub fn apply_delta(&mut self, delta: CurrentObjectSetDelta) {
-        self.current_set.apply_delta(delta)
     }
 }
 
@@ -290,28 +277,6 @@ impl KeyState {
         Ok(RevocationRequest::new(class_name, ki))
     }
 
-    pub fn apply_delta(&mut self, delta: CurrentObjectSetDelta, key_id: KeyIdentifier) {
-        match self {
-            KeyState::Pending(_pending) => panic!("Should never have delta for pending"),
-            KeyState::Active(current) => current.apply_delta(delta),
-            KeyState::RollPending(_pending, current) => current.apply_delta(delta),
-            KeyState::RollNew(new, current) => {
-                if new.key_id() == &key_id {
-                    new.apply_delta(delta)
-                } else {
-                    current.apply_delta(delta)
-                }
-            }
-            KeyState::RollOld(current, old) => {
-                if current.key_id() == &key_id {
-                    current.apply_delta(delta)
-                } else {
-                    old.apply_delta(delta)
-                }
-            }
-        }
-    }
-
     pub fn make_entitlement_events(
         &self,
         rcn: ResourceClassName,
@@ -319,54 +284,68 @@ impl KeyState {
         base_repo: &RepoInfo,
         name_space: &str,
         signer: &KrillSigner,
-    ) -> KrillResult<Vec<EvtDet>> {
+    ) -> KrillResult<Vec<CaEvtDet>> {
         let mut keys_for_requests = vec![];
+
         match self {
             KeyState::Pending(pending) => {
-                keys_for_requests.push(pending.key_id());
+                keys_for_requests.push((base_repo, pending.key_id()));
             }
             KeyState::Active(current) => {
                 if current.wants_update(entitlement.resource_set(), entitlement.not_after()) {
-                    keys_for_requests.push(current.key_id());
+                    let repo = current.old_repo.as_ref().unwrap_or(base_repo);
+                    keys_for_requests.push((repo, current.key_id()));
                 }
             }
             KeyState::RollPending(pending, current) => {
-                keys_for_requests.push(pending.key_id());
+                keys_for_requests.push((base_repo, pending.key_id()));
                 if current.wants_update(entitlement.resource_set(), entitlement.not_after()) {
-                    keys_for_requests.push(current.key_id());
+                    let repo = current.old_repo.as_ref().unwrap_or(base_repo);
+                    keys_for_requests.push((repo, current.key_id()));
                 }
             }
             KeyState::RollNew(new, current) => {
                 if new.wants_update(entitlement.resource_set(), entitlement.not_after()) {
-                    keys_for_requests.push(new.key_id());
+                    let repo = new.old_repo.as_ref().unwrap_or(base_repo);
+                    keys_for_requests.push((repo, new.key_id()));
                 }
                 if current.wants_update(entitlement.resource_set(), entitlement.not_after()) {
-                    keys_for_requests.push(current.key_id());
+                    let repo = current.old_repo.as_ref().unwrap_or(base_repo);
+                    keys_for_requests.push((repo, current.key_id()));
                 }
             }
             KeyState::RollOld(current, old) => {
                 if current.wants_update(entitlement.resource_set(), entitlement.not_after()) {
-                    keys_for_requests.push(current.key_id());
+                    let repo = current.old_repo.as_ref().unwrap_or(base_repo);
+                    keys_for_requests.push((repo, current.key_id()));
                 }
                 if old.wants_update(entitlement.resource_set(), entitlement.not_after()) {
-                    keys_for_requests.push(old.key_id());
+                    let repo = old.old_repo.as_ref().unwrap_or(base_repo);
+                    keys_for_requests.push((repo, current.key_id()));
                 }
             }
         }
 
         let mut res = vec![];
 
-        for key_id in keys_for_requests.into_iter() {
+        for (base_repo, key_id) in keys_for_requests.into_iter() {
             let req =
                 self.create_issuance_req(base_repo, name_space, entitlement.class_name().clone(), key_id, signer)?;
 
-            res.push(EvtDet::CertificateRequested(rcn.clone(), req, *key_id));
+            res.push(CaEvtDet::CertificateRequested {
+                resource_class_name: rcn.clone(),
+                req,
+                ki: *key_id,
+            });
         }
 
         for key in entitlement.issued().iter().map(|c| c.subject_key_identifier()) {
             if !self.knows_key(key) {
-                let revocation = RevocationRequest::new(entitlement.class_name().clone(), key);
-                res.push(EvtDet::UnexpectedKeyFound(rcn.clone(), revocation));
+                let revoke_req = RevocationRequest::new(entitlement.class_name().clone(), key);
+                res.push(CaEvtDet::UnexpectedKeyFound {
+                    resource_class_name: rcn.clone(),
+                    revoke_req,
+                });
             }
         }
 
@@ -379,7 +358,7 @@ impl KeyState {
         base_repo: &RepoInfo,
         name_space: &str,
         signer: &KrillSigner,
-    ) -> KrillResult<Vec<EvtDet>> {
+    ) -> KrillResult<Vec<CaEvtDet>> {
         let mut res = vec![];
 
         let keys = match self {
@@ -392,7 +371,11 @@ impl KeyState {
 
         for ki in keys {
             let req = self.create_issuance_req(base_repo, name_space, rcn.clone(), ki, signer)?;
-            res.push(EvtDet::CertificateRequested(rcn.clone(), req, *ki));
+            res.push(CaEvtDet::CertificateRequested {
+                resource_class_name: rcn.clone(),
+                req,
+                ki: *ki,
+            });
         }
 
         Ok(res)
@@ -492,22 +475,29 @@ impl KeyState {
     /// for a newly create pending key and requested certificate for it.
     pub fn keyroll_initiate(
         &self,
-        class_name: ResourceClassName,
+        resource_class_name: ResourceClassName,
         parent_class_name: ResourceClassName,
         base_repo: &RepoInfo,
         name_space: &str,
         signer: &KrillSigner,
-    ) -> KrillResult<Vec<EvtDet>> {
+    ) -> KrillResult<Vec<CaEvtDet>> {
         match self {
             KeyState::Active(_current) => {
-                let key_id = signer.create_key()?;
+                let pending_key_id = signer.create_key()?;
 
-                let issuance_req =
-                    self.create_issuance_req(base_repo, name_space, parent_class_name, &key_id, signer)?;
+                let req =
+                    self.create_issuance_req(base_repo, name_space, parent_class_name, &pending_key_id, signer)?;
 
                 Ok(vec![
-                    EvtDet::KeyRollPendingKeyAdded(class_name.clone(), key_id),
-                    EvtDet::CertificateRequested(class_name, issuance_req, key_id),
+                    CaEvtDet::KeyRollPendingKeyAdded {
+                        resource_class_name: resource_class_name.clone(),
+                        pending_key_id,
+                    },
+                    CaEvtDet::CertificateRequested {
+                        resource_class_name,
+                        req,
+                        ki: pending_key_id,
+                    },
                 ])
             }
             _ => Ok(vec![]),
@@ -518,14 +508,17 @@ impl KeyState {
     /// the old key.
     pub fn keyroll_activate(
         &self,
-        class_name: ResourceClassName,
+        resource_class_name: ResourceClassName,
         parent_class_name: ResourceClassName,
         signer: &KrillSigner,
-    ) -> KrillResult<EvtDet> {
+    ) -> KrillResult<CaEvtDet> {
         match self {
             KeyState::RollNew(_new, current) => {
                 let revoke_req = Self::revoke_key(parent_class_name, current.key_id(), signer)?;
-                Ok(EvtDet::KeyRollActivated(class_name, revoke_req))
+                Ok(CaEvtDet::KeyRollActivated {
+                    resource_class_name,
+                    revoke_req,
+                })
             }
             _ => Err(Error::KeyUseNoNewKey),
         }
@@ -543,6 +536,18 @@ impl KeyState {
             KeyState::RollPending(pending, current) => pending.key_id == key_id || current.key_id == key_id,
             KeyState::RollNew(new, current) => new.key_id == key_id || current.key_id == key_id,
             KeyState::RollOld(current, old) => current.key_id == key_id || old.key_id == key_id,
+        }
+    }
+}
+
+/// # Migrate repositories
+///
+impl KeyState {
+    /// Mark an old_repo for the current key, so that a new repo can be introduced in a pending
+    /// key and a keyroll can be done.
+    pub fn set_old_repo_if_in_active_state(&mut self, repo: &RepoInfo) {
+        if let KeyState::Active(current) = self {
+            current.set_old_repo(repo);
         }
     }
 }

@@ -1,5 +1,4 @@
 use std::cmp::Ordering;
-use std::collections::HashSet;
 use std::fmt;
 use std::net::IpAddr;
 use std::ops::Deref;
@@ -93,6 +92,26 @@ impl<'de> Deserialize<'de> for RoaAggregateKey {
     {
         let string = String::deserialize(d)?;
         RoaAggregateKey::from_str(string.as_str()).map_err(de::Error::custom)
+    }
+}
+
+/// Ordering is based on ASN first, and group second if there are
+/// multiple keys for the same ASN. Note: we don't currently use
+/// such groups. It's here in case we want to give users more
+/// options in future.
+impl Ord for RoaAggregateKey {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match self.asn.cmp(&other.asn) {
+            Ordering::Equal => self.group.cmp(&other.group),
+            Ordering::Greater => Ordering::Greater,
+            Ordering::Less => Ordering::Less,
+        }
+    }
+}
+
+impl PartialOrd for RoaAggregateKey {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -300,8 +319,8 @@ impl fmt::Display for RoaDefinitions {
 /// avoid invalidating announcements.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RoaDefinitionUpdates {
-    added: HashSet<RoaDefinition>,
-    removed: HashSet<RoaDefinition>,
+    added: Vec<RoaDefinition>,
+    removed: Vec<RoaDefinition>,
 }
 
 impl RoaDefinitionUpdates {
@@ -309,13 +328,13 @@ impl RoaDefinitionUpdates {
         self.added.is_empty() && self.removed.is_empty()
     }
 
-    pub fn new(added: HashSet<RoaDefinition>, removed: HashSet<RoaDefinition>) -> Self {
+    pub fn new(added: Vec<RoaDefinition>, removed: Vec<RoaDefinition>) -> Self {
         RoaDefinitionUpdates { added, removed }
     }
 
     /// Unpack this and return all added (left), and all removed (right) route
     /// authorizations.
-    pub fn unpack(self) -> (HashSet<RoaDefinition>, HashSet<RoaDefinition>) {
+    pub fn unpack(self) -> (Vec<RoaDefinition>, Vec<RoaDefinition>) {
         (self.added, self.removed)
     }
 
@@ -324,27 +343,27 @@ impl RoaDefinitionUpdates {
     }
 
     pub fn add(&mut self, add: RoaDefinition) {
-        self.added.insert(add);
+        self.added.push(add);
     }
 
-    pub fn added(&self) -> &HashSet<RoaDefinition> {
+    pub fn added(&self) -> &Vec<RoaDefinition> {
         &self.added
     }
 
-    pub fn removed(&self) -> &HashSet<RoaDefinition> {
+    pub fn removed(&self) -> &Vec<RoaDefinition> {
         &self.removed
     }
 
     pub fn remove(&mut self, rem: RoaDefinition) {
-        self.removed.insert(rem);
+        self.removed.push(rem);
     }
 }
 
 impl Default for RoaDefinitionUpdates {
     fn default() -> Self {
         RoaDefinitionUpdates {
-            added: HashSet::new(),
-            removed: HashSet::new(),
+            added: vec![],
+            removed: vec![],
         }
     }
 }
@@ -365,8 +384,8 @@ impl FromStr for RoaDefinitionUpdates {
     type Err = AuthorizationFmtError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut added = HashSet::new();
-        let mut removed = HashSet::new();
+        let mut added = vec![];
+        let mut removed = vec![];
 
         for line in s.lines() {
             let line = match line.find('#') {
@@ -379,10 +398,10 @@ impl FromStr for RoaDefinitionUpdates {
                 continue;
             } else if let Some(stripped) = line.strip_prefix("A:") {
                 let auth = RoaDefinition::from_str(stripped.trim())?;
-                added.insert(auth);
+                added.push(auth);
             } else if let Some(stripped) = line.strip_prefix("R:") {
                 let auth = RoaDefinition::from_str(stripped.trim())?;
-                removed.insert(auth);
+                removed.push(auth);
             } else {
                 return Err(AuthorizationFmtError::delta(line));
             }
@@ -702,12 +721,12 @@ mod tests {
         );
 
         let expected = {
-            let mut added = HashSet::new();
-            added.insert(definition("192.168.0.0/16 => 64496"));
-            added.insert(definition("192.168.1.0/24 => 64496"));
+            let mut added = vec![];
+            added.push(definition("192.168.0.0/16 => 64496"));
+            added.push(definition("192.168.1.0/24 => 64496"));
 
-            let mut removed = HashSet::new();
-            removed.insert(definition("192.168.3.0/24 => 64496"));
+            let mut removed = vec![];
+            removed.push(definition("192.168.3.0/24 => 64496"));
             RoaDefinitionUpdates::new(added, removed)
         };
 
