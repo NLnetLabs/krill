@@ -1,4 +1,6 @@
-use std::collections::HashSet;
+#[cfg(feature = "multi-user")]
+use std::collections::HashMap;
+
 use std::convert::TryFrom;
 use std::io;
 use std::path::PathBuf;
@@ -15,8 +17,8 @@ use rpki::x509::Time;
 use crate::cli::report::{ReportError, ReportFormat};
 use crate::commons::api::{
     AddChildRequest, AuthorizationFmtError, CertAuthInit, ChildAuthRequest, ChildHandle, Handle, ParentCaContact,
-    ParentCaReq, ParentHandle, PublisherHandle, ResourceSet, ResourceSetError, RoaDefinitionUpdates, RtaName, Token,
-    UpdateChildRequest,
+    ParentCaReq, ParentHandle, PublicationServerUris, PublisherHandle, ResourceSet, ResourceSetError,
+    RoaDefinitionUpdates, RtaName, Token, UpdateChildRequest,
 };
 use crate::commons::api::{RepositoryUpdate, RoaDefinition};
 use crate::commons::crypto::{IdCert, SignSupport};
@@ -67,7 +69,7 @@ impl GeneralArgs {
                 format = Some(ReportFormat::from_str(fmt_str)?);
             }
 
-            format.unwrap_or_else(|| ReportFormat::Text)
+            format.unwrap_or(ReportFormat::Text)
         };
 
         let api = env::var(KRILL_CLI_API_ENV).is_ok() || matches.is_present(KRILL_CLI_API_ARG);
@@ -81,10 +83,19 @@ impl GeneralArgs {
     }
 }
 
+impl Default for GeneralArgs {
+    fn default() -> Self {
+        GeneralArgs {
+            server: uri::Https::from_str(KRILL_CLI_SERVER_DFLT).unwrap(),
+            token: Token::from(""),
+            format: ReportFormat::Text,
+            api: false,
+        }
+    }
+}
+
 /// This type holds all the necessary data to connect to a Krill daemon, and
-/// authenticate, and perform a specific action. Note that this is extracted
-/// from the bin/krillc.rs, so that we can use this in integration testing
-/// more easily.
+/// authenticate, and perform a specific action.
 pub struct Options {
     pub server: uri::Https,
     pub token: Token,
@@ -237,46 +248,49 @@ impl Options {
             )
         }
 
-        fn add_rsync_base_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        #[cfg(feature = "multi-user")]
+        fn add_id_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
             app.arg(
-                Arg::with_name("rsync")
-                    .long("rsync")
-                    .value_name("uri")
-                    .help("Specify the base rsync URI for your repository, must end with '/'.")
+                Arg::with_name("id")
+                    .long("id")
+                    .value_name("id")
+                    .help("Specify the id (e.g. username, email) to generate configuration for")
                     .required(true),
             )
         }
 
-        fn add_rrdp_service_uri_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        #[cfg(feature = "multi-user")]
+        fn add_attr_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
             app.arg(
-                Arg::with_name("rrdp")
-                    .long("rrdp")
-                    .value_name("uri")
-                    .help(
-                        "Specify the base https URI for your RRDP (excluding notification.xml), \
-                    must \
-                    end with '/'",
-                    )
-                    .required(true),
+                Arg::with_name("attr")
+                    .short("a")
+                    .long("attribute")
+                    .value_name("attr")
+                    .help("Specify key=value pair attributes to give the user in Krill")
+                    .required(false)
+                    .multiple(true),
             )
         }
 
-        let mut with_repo = SubCommand::with_name("repo").about("Use a self-hosted repository (not recommended)");
+        let mut simple = SubCommand::with_name("simple").about("Use a 3rd party repository for publishing");
 
-        with_repo = Self::add_general_args(with_repo);
-        with_repo = add_data_dir_arg(with_repo);
-        with_repo = add_log_file_arg(with_repo);
-        with_repo = add_rsync_base_arg(with_repo);
-        with_repo = add_rrdp_service_uri_arg(with_repo);
+        simple = Self::add_general_args(simple);
+        simple = add_data_dir_arg(simple);
+        simple = add_log_file_arg(simple);
 
-        let mut with_3rd = SubCommand::with_name("simple").about("Use a 3rd party repository for publishing");
+        config_sub = config_sub.subcommand(simple);
 
-        with_3rd = Self::add_general_args(with_3rd);
-        with_3rd = add_data_dir_arg(with_3rd);
-        with_3rd = add_log_file_arg(with_3rd);
+        #[cfg(feature = "multi-user")]
+        {
+            let mut with_user =
+                SubCommand::with_name("user").about("Generate a user authentication configuration file fragment");
 
-        config_sub = config_sub.subcommand(with_3rd);
-        config_sub = config_sub.subcommand(with_repo);
+            with_user = Self::add_general_args(with_user);
+            with_user = add_id_arg(with_user);
+            with_user = add_attr_arg(with_user);
+
+            config_sub = config_sub.subcommand(with_user);
+        }
 
         app.subcommand(config_sub)
     }
@@ -365,6 +379,16 @@ impl Options {
 
     fn make_cas_add_ca_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("add").about("Add a new CA.");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+
+        app.subcommand(sub)
+    }
+
+    fn make_cas_delete_ca_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("delete")
+            .about("Delete a CA and let it withdraw its objects and request revocation. WARNING: Irreversible!");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -723,8 +747,8 @@ impl Options {
                 .value_name("file")
                 .long("response")
                 .short("r")
-                .help("The location of the RFC8183 Publisher Response XML file. Defaults to reading from STDIN")
-                .required(false),
+                .help("The location of the RFC8183 Publisher Response XML file.")
+                .required(true),
         );
 
         app.subcommand(sub)
@@ -915,102 +939,6 @@ impl Options {
         app.subcommand(sub)
     }
 
-    fn make_publishers_list_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("list").about("List all publishers.");
-        sub = Self::add_general_args(sub);
-        app.subcommand(sub)
-    }
-
-    fn make_publishers_stale_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("stale").about("List all publishers which have not published in a while.");
-        sub = Self::add_general_args(sub);
-        sub = sub.arg(
-            Arg::with_name("seconds")
-                .value_name("seconds")
-                .long("seconds")
-                .help("The number of seconds since last publication.")
-                .required(true),
-        );
-        app.subcommand(sub)
-    }
-
-    fn make_publishers_stats_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("stats").about("Show publication server stats.");
-        sub = Self::add_general_args(sub);
-        app.subcommand(sub)
-    }
-
-    fn add_publisher_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        app.arg(
-            Arg::with_name("publisher")
-                .value_name("handle")
-                .short("p")
-                .long("publisher")
-                .help("The handle (name) of the publisher.")
-                .required(true),
-        )
-    }
-
-    fn make_publishers_add_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("add").about("Add a publisher.");
-        sub = Self::add_general_args(sub);
-
-        sub = sub
-            .arg(
-                Arg::with_name("request")
-                    .value_name("file")
-                    .long("request")
-                    .short("r")
-                    .help("The location of the RFC8183 Publisher Request XML file.")
-                    .required(true),
-            )
-            .arg(
-                Arg::with_name("publisher")
-                    .value_name("handle")
-                    .short("p")
-                    .long("publisher")
-                    .help("Override the publisher handle in the XML.")
-                    .required(false),
-            );
-
-        app.subcommand(sub)
-    }
-
-    fn make_publishers_remove_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("remove").about("Remove a publisher.");
-        sub = Self::add_general_args(sub);
-        sub = Self::add_publisher_arg(sub);
-        app.subcommand(sub)
-    }
-
-    fn make_publishers_show_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("show").about("Show details for a publisher.");
-        sub = Self::add_general_args(sub);
-        sub = Self::add_publisher_arg(sub);
-        app.subcommand(sub)
-    }
-
-    fn make_publishers_response_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("response").about("Show RFC8183 Repository Response XML.");
-        sub = Self::add_general_args(sub);
-        sub = Self::add_publisher_arg(sub);
-        app.subcommand(sub)
-    }
-
-    fn make_publishers_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("publishers").about("Manage publishers in Krill.");
-
-        sub = Self::make_publishers_list_sc(sub);
-        sub = Self::make_publishers_stale_sc(sub);
-        sub = Self::make_publishers_stats_sc(sub);
-        sub = Self::make_publishers_add_sc(sub);
-        sub = Self::make_publishers_remove_sc(sub);
-        sub = Self::make_publishers_show_sc(sub);
-        sub = Self::make_publishers_response_sc(sub);
-
-        app.subcommand(sub)
-    }
-
     fn make_bulk_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("bulk").about("Manually trigger refresh/republish/resync for all CAs.");
 
@@ -1051,6 +979,7 @@ impl Options {
         app = Self::make_cas_show_history_sc(app);
         app = Self::make_cas_show_action_sc(app);
         app = Self::make_cas_add_ca_sc(app);
+        app = Self::make_cas_delete_ca_sc(app);
         app = Self::make_cas_children_sc(app);
         app = Self::make_cas_parents_sc(app);
         app = Self::make_cas_keyroll_sc(app);
@@ -1062,8 +991,6 @@ impl Options {
         {
             app = Self::make_cas_rta_sc(app);
         }
-
-        app = Self::make_publishers_sc(app);
 
         app = Self::make_health_sc(app);
 
@@ -1105,9 +1032,9 @@ impl Options {
         let v6 = matches.value_of("ipv6");
 
         if asn.is_some() || v4.is_some() || v6.is_some() {
-            let asn = asn.unwrap_or_else(|| "");
-            let v4 = v4.unwrap_or_else(|| "");
-            let v6 = v6.unwrap_or_else(|| "");
+            let asn = asn.unwrap_or("");
+            let v4 = v4.unwrap_or("");
+            let v6 = v6.unwrap_or("");
 
             Ok(Some(ResourceSet::from_strs(asn, v4, v6)?))
         } else {
@@ -1115,23 +1042,14 @@ impl Options {
         }
     }
 
-    fn parse_matches_repo_config(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_simple_config(matches: &ArgMatches) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
-        let rrdp_base: uri::Https = matches.value_of("rrdp").map(uri::Https::from_str).unwrap()?;
 
-        if !rrdp_base.as_str().ends_with('/') {
-            return Err(Error::general("URI for --rrdp MUST end with a '/'"));
-        }
-
-        let rsync_base = matches.value_of("rsync").map(uri::Rsync::from_str).unwrap()?;
-
-        if !rsync_base.to_string().ends_with('/') {
-            return Err(Error::general("URI for --rsync MUST end with a '/'"));
-        }
-
+        #[cfg(not(feature = "multi-user"))]
         let mut details = KrillInitDetails::default();
-        details.with_rsync_base(rsync_base);
-        details.with_rrdp_service_uri(rrdp_base);
+
+        #[cfg(feature = "multi-user")]
+        let mut details = KrillInitDetails::multi_user_dflt();
 
         if let Some(data) = matches.value_of("data") {
             if !data.ends_with('/') {
@@ -1139,7 +1057,6 @@ impl Options {
             }
             details.with_data_dir(data);
         }
-
         if let Some(log_file) = matches.value_of("logfile") {
             details.with_log_file(log_file);
         }
@@ -1148,28 +1065,39 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_simple_config(matches: &ArgMatches) -> Result<Options, Error> {
-        let general_args = GeneralArgs::from_matches(matches)?;
-        let mut details = KrillInitDetails::default();
-        if let Some(data) = matches.value_of("data") {
-            if !data.ends_with('/') {
-                return Err(Error::general("Path for --data MUST end with a '/'"));
+    #[cfg(feature = "multi-user")]
+    fn parse_matches_user_config(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::default();
+        let mut details = KrillUserDetails::default();
+        if let Some(id) = matches.value_of("id") {
+            details.with_id(id.to_string());
+        }
+        if let Some(attr_iter) = matches.values_of("attr") {
+            for attr in attr_iter {
+                let mut iter = attr.split('=');
+                let k = iter
+                    .next()
+                    .ok_or_else(|| Error::general(&format!("attribute '{}' must be of the form key=value", attr)))?;
+                let v = iter
+                    .next()
+                    .ok_or_else(|| Error::general(&format!("attribute '{}' must be of the form key=value", attr)))?;
+                details.with_attr(k.to_string(), v.to_string());
             }
-            details.with_data_dir(data);
         }
-        if let Some(log_file) = matches.value_of("logfile") {
-            details.with_log_file(log_file);
-        }
-
-        let command = Command::Init(details);
+        let command = Command::User(details);
         Ok(Options::make(general_args, command))
+    }
+
+    #[cfg(not(feature = "multi-user"))]
+    fn parse_matches_user_config(_: &ArgMatches) -> Result<Options, Error> {
+        Err(Error::UnrecognisedSubCommand)
     }
 
     fn parse_matches_config(matches: &ArgMatches) -> Result<Options, Error> {
-        if let Some(m) = matches.subcommand_matches("repo") {
-            Self::parse_matches_repo_config(m)
-        } else if let Some(m) = matches.subcommand_matches("simple") {
+        if let Some(m) = matches.subcommand_matches("simple") {
             Self::parse_matches_simple_config(m)
+        } else if let Some(m) = matches.subcommand_matches("user") {
+            Self::parse_matches_user_config(m)
         } else {
             Err(Error::UnrecognisedSubCommand)
         }
@@ -1188,6 +1116,15 @@ impl Options {
         let init = CertAuthInit::new(my_ca);
 
         let command = Command::CertAuth(CaCommand::Init(init));
+
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_cas_delete(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+
+        let command = Command::CertAuth(CaCommand::Delete(my_ca));
 
         Ok(Options::make(general_args, command))
     }
@@ -1261,7 +1198,7 @@ impl Options {
         let child = matches.value_of("child").unwrap();
         let child = Handle::from_str(child).map_err(|_| Error::InvalidHandle)?;
 
-        let resources = Self::parse_resource_args(matches)?.ok_or_else(|| Error::MissingResources)?;
+        let resources = Self::parse_resource_args(matches)?.ok_or(Error::MissingResources)?;
 
         let child_request = AddChildRequest::new(child, resources, auth_request);
         let command = Command::CertAuth(CaCommand::ChildAdd(my_ca, child_request));
@@ -1480,20 +1417,20 @@ impl Options {
             let updates_str = unsafe { from_utf8_unchecked(&bytes) };
             RoaDefinitionUpdates::from_str(updates_str)?
         } else {
-            let mut added = HashSet::new();
-            let mut removed = HashSet::new();
+            let mut added = vec![];
+            let mut removed = vec![];
 
             if let Some(add) = matches.values_of("add") {
                 for roa_str in add {
                     let roa: RoaDefinition = RoaDefinition::from_str(roa_str)?;
-                    added.insert(roa);
+                    added.push(roa);
                 }
             }
 
             if let Some(remove) = matches.values_of("remove") {
                 for roa_str in remove {
                     let roa: RoaDefinition = RoaDefinition::from_str(roa_str)?;
-                    removed.insert(roa);
+                    removed.push(roa);
                 }
             }
 
@@ -1771,89 +1708,6 @@ impl Options {
         }
     }
 
-    fn parse_publisher_arg(matches: &ArgMatches) -> Result<PublisherHandle, Error> {
-        let publisher_str = matches.value_of("publisher").unwrap();
-        PublisherHandle::from_str(publisher_str).map_err(|_| Error::InvalidHandle)
-    }
-
-    fn parse_matches_publishers_list(matches: &ArgMatches) -> Result<Options, Error> {
-        let general_args = GeneralArgs::from_matches(matches)?;
-        let command = Command::Publishers(PublishersCommand::PublisherList);
-        Ok(Options::make(general_args, command))
-    }
-
-    fn parse_matches_publishers_stale(matches: &ArgMatches) -> Result<Options, Error> {
-        let general_args = GeneralArgs::from_matches(matches)?;
-        let seconds = i64::from_str(matches.value_of("seconds").unwrap()).map_err(|_| Error::InvalidSeconds)?;
-        let command = Command::Publishers(PublishersCommand::StalePublishers(seconds));
-        Ok(Options::make(general_args, command))
-    }
-
-    fn parse_matches_publishers_stats(matches: &ArgMatches) -> Result<Options, Error> {
-        let general_args = GeneralArgs::from_matches(matches)?;
-        let command = Command::Publishers(PublishersCommand::Stats);
-        Ok(Options::make(general_args, command))
-    }
-
-    fn parse_matches_publishers_add(matches: &ArgMatches) -> Result<Options, Error> {
-        let general_args = GeneralArgs::from_matches(matches)?;
-
-        let path = matches.value_of("request").unwrap();
-        let path = PathBuf::from(path);
-        let bytes = file::read(&path)?;
-        let mut req = rfc8183::PublisherRequest::validate(bytes.as_ref())?;
-
-        if let Some(publisher_str) = matches.value_of("publisher") {
-            let publisher = PublisherHandle::from_str(publisher_str).map_err(|_| Error::InvalidHandle)?;
-            let (tag, _, cert) = req.unpack();
-            req = rfc8183::PublisherRequest::new(tag, publisher, cert);
-        }
-
-        let command = Command::Publishers(PublishersCommand::AddPublisher(req));
-        Ok(Options::make(general_args, command))
-    }
-
-    fn parse_matches_publishers_remove(matches: &ArgMatches) -> Result<Options, Error> {
-        let general_args = GeneralArgs::from_matches(matches)?;
-        let publisher = Self::parse_publisher_arg(matches)?;
-        let command = Command::Publishers(PublishersCommand::RemovePublisher(publisher));
-        Ok(Options::make(general_args, command))
-    }
-
-    fn parse_matches_publishers_show(matches: &ArgMatches) -> Result<Options, Error> {
-        let general_args = GeneralArgs::from_matches(matches)?;
-        let publisher = Self::parse_publisher_arg(matches)?;
-        let command = Command::Publishers(PublishersCommand::ShowPublisher(publisher));
-        Ok(Options::make(general_args, command))
-    }
-
-    fn parse_matches_publishers_repo_response(matches: &ArgMatches) -> Result<Options, Error> {
-        let general_args = GeneralArgs::from_matches(matches)?;
-        let publisher = Self::parse_publisher_arg(matches)?;
-        let command = Command::Publishers(PublishersCommand::RepositoryResponse(publisher));
-        Ok(Options::make(general_args, command))
-    }
-
-    fn parse_matches_publishers(matches: &ArgMatches) -> Result<Options, Error> {
-        if let Some(m) = matches.subcommand_matches("list") {
-            Self::parse_matches_publishers_list(m)
-        } else if let Some(m) = matches.subcommand_matches("stale") {
-            Self::parse_matches_publishers_stale(m)
-        } else if let Some(m) = matches.subcommand_matches("stats") {
-            Self::parse_matches_publishers_stats(m)
-        } else if let Some(m) = matches.subcommand_matches("add") {
-            Self::parse_matches_publishers_add(m)
-        } else if let Some(m) = matches.subcommand_matches("remove") {
-            Self::parse_matches_publishers_remove(m)
-        } else if let Some(m) = matches.subcommand_matches("show") {
-            Self::parse_matches_publishers_show(m)
-        } else if let Some(m) = matches.subcommand_matches("response") {
-            Self::parse_matches_publishers_repo_response(m)
-        } else {
-            Err(Error::UnrecognisedSubCommand)
-        }
-    }
-
     fn parse_matches_bulk(matches: &ArgMatches) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("publish") {
             let general_args = GeneralArgs::from_matches(m)?;
@@ -1891,6 +1745,8 @@ impl Options {
             Self::parse_matches_cas_list(m)
         } else if let Some(m) = matches.subcommand_matches("add") {
             Self::parse_matches_cas_add(m)
+        } else if let Some(m) = matches.subcommand_matches("delete") {
+            Self::parse_matches_cas_delete(m)
         } else if let Some(m) = matches.subcommand_matches("show") {
             Self::parse_matches_cas_show(m)
         } else if let Some(m) = matches.subcommand_matches("history") {
@@ -1911,8 +1767,6 @@ impl Options {
             Self::parse_matches_cas_issues(m)
         } else if let Some(m) = matches.subcommand_matches("rta") {
             Self::parse_matches_cas_rta(m)
-        } else if let Some(m) = matches.subcommand_matches("publishers") {
-            Self::parse_matches_publishers(m)
         } else if let Some(m) = matches.subcommand_matches("bulk") {
             Self::parse_matches_bulk(m)
         } else if let Some(m) = matches.subcommand_matches("health") {
@@ -1930,147 +1784,386 @@ impl Options {
     }
 }
 
-#[derive(Clone, Debug, Display, Eq, PartialEq)]
-#[allow(clippy::large_enum_variant)]
-pub enum Command {
-    #[display(fmt = "not set")]
-    NotSet,
-
-    #[display(fmt = "health")]
-    Health,
-
-    #[display(fmt = "info")]
-    Info,
-
-    #[display(fmt = "bulk: {}", _0)]
-    Bulk(BulkCaCommand),
-
-    #[display(fmt = "ca: {}", _0)]
-    CertAuth(CaCommand),
-
-    #[display(fmt = "publishers: {}", _0)]
-    Publishers(PublishersCommand),
-
-    #[display(fmt = "init")]
-    Init(KrillInitDetails),
+/// This type holds all the necessary data to connect to a Krill daemon, and
+/// authenticate, and perform a specific action.
+pub struct KrillPubcOptions {
+    server: uri::Https,
+    token: Token,
+    pub format: ReportFormat,
+    api: bool,
+    command: PublishersCommand,
 }
 
-#[derive(Clone, Debug, Display, Eq, PartialEq)]
+impl KrillPubcOptions {
+    fn make(general: GeneralArgs, command: PublishersCommand) -> Self {
+        KrillPubcOptions {
+            server: general.server,
+            token: general.token,
+            format: general.format,
+            api: general.api,
+            command,
+        }
+    }
+
+    pub fn new(server: uri::Https, token: Token, format: ReportFormat, api: bool, command: PublishersCommand) -> Self {
+        KrillPubcOptions {
+            server,
+            token,
+            format,
+            api,
+            command,
+        }
+    }
+
+    pub fn unpack(self) -> (uri::Https, Token, ReportFormat, bool, PublishersCommand) {
+        (self.server, self.token, self.format, self.api, self.command)
+    }
+
+    pub fn from_args() -> Result<KrillPubcOptions, Error> {
+        let matches = Self::make_matches();
+        Self::parse_matches(matches)
+    }
+
+    fn make_publishers_list_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("list").about("List all publishers.");
+        sub = Options::add_general_args(sub);
+        app.subcommand(sub)
+    }
+
+    fn make_publishers_stale_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("stale").about("List all publishers which have not published in a while.");
+        sub = Options::add_general_args(sub);
+        sub = sub.arg(
+            Arg::with_name("seconds")
+                .value_name("seconds")
+                .long("seconds")
+                .help("The number of seconds since last publication.")
+                .required(true),
+        );
+        app.subcommand(sub)
+    }
+
+    fn add_publisher_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        app.arg(
+            Arg::with_name("publisher")
+                .value_name("handle")
+                .short("p")
+                .long("publisher")
+                .help("The handle (name) of the publisher.")
+                .required(true),
+        )
+    }
+
+    fn add_rsync_base_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        app.arg(
+            Arg::with_name("rsync")
+                .long("rsync")
+                .value_name("uri")
+                .help("Specify the base rsync URI for your repository, must end with '/'.")
+                .required(true),
+        )
+    }
+
+    fn add_rrdp_base_uri_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        app.arg(
+            Arg::with_name("rrdp")
+                .long("rrdp")
+                .value_name("uri")
+                .help(
+                    "Specify the base https URI for your RRDP (excluding notification.xml), \
+                    must \
+                    end with '/'",
+                )
+                .required(true),
+        )
+    }
+
+    fn make_publishers_add_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("add").about("Add a publisher.");
+        sub = Options::add_general_args(sub);
+
+        sub = sub
+            .arg(
+                Arg::with_name("request")
+                    .value_name("file")
+                    .long("request")
+                    .short("r")
+                    .help("The location of the RFC8183 Publisher Request XML file.")
+                    .required(true),
+            )
+            .arg(
+                Arg::with_name("publisher")
+                    .value_name("handle")
+                    .short("p")
+                    .long("publisher")
+                    .help("Override the publisher handle in the XML.")
+                    .required(false),
+            );
+
+        app.subcommand(sub)
+    }
+
+    fn make_publishers_remove_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("remove").about("Remove a publisher.");
+        sub = Options::add_general_args(sub);
+        sub = Self::add_publisher_arg(sub);
+        app.subcommand(sub)
+    }
+
+    fn make_publishers_show_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("show").about("Show details for a publisher.");
+        sub = Options::add_general_args(sub);
+        sub = Self::add_publisher_arg(sub);
+        app.subcommand(sub)
+    }
+
+    fn make_publishers_response_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("response").about("Show RFC8183 Repository Response XML.");
+        sub = Options::add_general_args(sub);
+        sub = Self::add_publisher_arg(sub);
+        app.subcommand(sub)
+    }
+
+    fn make_publication_server_stats_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("stats").about("Show publication server stats.");
+        sub = Options::add_general_args(sub);
+        app.subcommand(sub)
+    }
+
+    fn make_publication_server_init_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("init").about("Initialise publication server.");
+        sub = Options::add_general_args(sub);
+
+        sub = Self::add_rsync_base_arg(sub);
+        sub = Self::add_rrdp_base_uri_arg(sub);
+
+        app.subcommand(sub)
+    }
+
+    fn make_publication_server_clear_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("clear")
+            .about("Clear the publication server so it can re-initialised. (you must first remove all publishers)");
+        sub = Options::add_general_args(sub);
+        app.subcommand(sub)
+    }
+
+    fn make_publication_server_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("server").about("Manage your Publication Server (init/stats)");
+        sub = Self::make_publication_server_stats_sc(sub);
+        sub = Self::make_publication_server_init_sc(sub);
+        sub = Self::make_publication_server_clear_sc(sub);
+        app.subcommand(sub)
+    }
+
+    fn make_matches<'a>() -> ArgMatches<'a> {
+        let mut app = App::new(KRILL_PUBC_CLIENT_APP).version(KRILL_VERSION);
+
+        app = Self::make_publishers_list_sc(app);
+        app = Self::make_publishers_stale_sc(app);
+        app = Self::make_publishers_add_sc(app);
+        app = Self::make_publishers_remove_sc(app);
+        app = Self::make_publishers_show_sc(app);
+        app = Self::make_publishers_response_sc(app);
+        app = Self::make_publication_server_sc(app);
+
+        app.get_matches()
+    }
+
+    fn parse_publisher_arg(matches: &ArgMatches) -> Result<PublisherHandle, Error> {
+        let publisher_str = matches.value_of("publisher").unwrap();
+        PublisherHandle::from_str(publisher_str).map_err(|_| Error::InvalidHandle)
+    }
+
+    fn parse_matches_publishers_list(matches: &ArgMatches) -> Result<KrillPubcOptions, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let command = PublishersCommand::PublisherList;
+        Ok(KrillPubcOptions::make(general_args, command))
+    }
+
+    fn parse_matches_publishers_stale(matches: &ArgMatches) -> Result<KrillPubcOptions, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let seconds = i64::from_str(matches.value_of("seconds").unwrap()).map_err(|_| Error::InvalidSeconds)?;
+        let command = PublishersCommand::StalePublishers(seconds);
+        Ok(KrillPubcOptions::make(general_args, command))
+    }
+
+    fn parse_matches_publishers_add(matches: &ArgMatches) -> Result<KrillPubcOptions, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+
+        let path = matches.value_of("request").unwrap();
+        let path = PathBuf::from(path);
+        let bytes = file::read(&path)?;
+        let mut req = rfc8183::PublisherRequest::validate(bytes.as_ref())?;
+
+        if let Some(publisher_str) = matches.value_of("publisher") {
+            let publisher = PublisherHandle::from_str(publisher_str).map_err(|_| Error::InvalidHandle)?;
+            let (tag, _, cert) = req.unpack();
+            req = rfc8183::PublisherRequest::new(tag, publisher, cert);
+        }
+
+        let command = PublishersCommand::AddPublisher(req);
+        Ok(KrillPubcOptions::make(general_args, command))
+    }
+
+    fn parse_matches_publishers_remove(matches: &ArgMatches) -> Result<KrillPubcOptions, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let publisher = Self::parse_publisher_arg(matches)?;
+        let command = PublishersCommand::RemovePublisher(publisher);
+        Ok(KrillPubcOptions::make(general_args, command))
+    }
+
+    fn parse_matches_publishers_show(matches: &ArgMatches) -> Result<KrillPubcOptions, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let publisher = Self::parse_publisher_arg(matches)?;
+        let command = PublishersCommand::ShowPublisher(publisher);
+        Ok(KrillPubcOptions::make(general_args, command))
+    }
+
+    fn parse_matches_publishers_repo_response(matches: &ArgMatches) -> Result<KrillPubcOptions, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let publisher = Self::parse_publisher_arg(matches)?;
+        let command = PublishersCommand::RepositoryResponse(publisher);
+        Ok(KrillPubcOptions::make(general_args, command))
+    }
+
+    fn parse_matches_publication_server_stats(matches: &ArgMatches) -> Result<KrillPubcOptions, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let command = PublishersCommand::RepositoryStats;
+        Ok(KrillPubcOptions::make(general_args, command))
+    }
+
+    fn parse_matches_publication_server_init(matches: &ArgMatches) -> Result<KrillPubcOptions, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+
+        let rsync_str = matches.value_of("rsync").unwrap();
+        let rrdp_str = matches.value_of("rrdp").unwrap();
+
+        if !rsync_str.ends_with('/') {
+            return Err(Error::general("rsync base URI must end with '/'"));
+        }
+
+        if !rrdp_str.ends_with('/') {
+            return Err(Error::general("RRDP base URI must end with '/'"));
+        }
+
+        let rsync = uri::Rsync::from_str(rsync_str)
+            .map_err(|e| Error::GeneralArgumentError(format!("Invalid rsync URI: {}", e)))?;
+
+        let rrdp = uri::Https::from_str(rrdp_str)
+            .map_err(|e| Error::GeneralArgumentError(format!("Invalid RRDP URI: {}", e)))?;
+
+        let uris = PublicationServerUris::new(rrdp, rsync);
+
+        let command = PublishersCommand::RepositoryInit(uris);
+        Ok(KrillPubcOptions::make(general_args, command))
+    }
+
+    fn parse_matches_publication_server_clear(matches: &ArgMatches) -> Result<KrillPubcOptions, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let command = PublishersCommand::RepositoryClear;
+        Ok(KrillPubcOptions::make(general_args, command))
+    }
+
+    fn parse_matches_publication_server(matches: &ArgMatches) -> Result<KrillPubcOptions, Error> {
+        if let Some(m) = matches.subcommand_matches("stats") {
+            Self::parse_matches_publication_server_stats(m)
+        } else if let Some(m) = matches.subcommand_matches("init") {
+            Self::parse_matches_publication_server_init(m)
+        } else if let Some(m) = matches.subcommand_matches("clear") {
+            Self::parse_matches_publication_server_clear(m)
+        } else {
+            Err(Error::UnrecognisedSubCommand)
+        }
+    }
+
+    fn parse_matches(matches: ArgMatches) -> Result<KrillPubcOptions, Error> {
+        if let Some(m) = matches.subcommand_matches("list") {
+            Self::parse_matches_publishers_list(m)
+        } else if let Some(m) = matches.subcommand_matches("stale") {
+            Self::parse_matches_publishers_stale(m)
+        } else if let Some(m) = matches.subcommand_matches("add") {
+            Self::parse_matches_publishers_add(m)
+        } else if let Some(m) = matches.subcommand_matches("remove") {
+            Self::parse_matches_publishers_remove(m)
+        } else if let Some(m) = matches.subcommand_matches("show") {
+            Self::parse_matches_publishers_show(m)
+        } else if let Some(m) = matches.subcommand_matches("response") {
+            Self::parse_matches_publishers_repo_response(m)
+        } else if let Some(m) = matches.subcommand_matches("server") {
+            Self::parse_matches_publication_server(m)
+        } else {
+            Err(Error::UnrecognisedSubCommand)
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[allow(clippy::large_enum_variant)]
+pub enum Command {
+    NotSet,
+    Health,
+    Info,
+    Bulk(BulkCaCommand),
+    CertAuth(CaCommand),
+    Init(KrillInitDetails),
+    #[cfg(feature = "multi-user")]
+    User(KrillUserDetails),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(clippy::large_enum_variant)]
 pub enum CaCommand {
-    // Initialise a CA
-    #[display(fmt = "init ca: '{}'", _0)]
-    Init(CertAuthInit),
+    Init(CertAuthInit), // Initialise a CA
+    UpdateId(Handle),   // Update CA id
+    Delete(Handle),     // Delete the CA -> let it withdraw and request revocation as well
 
-    // Update CA id
-    #[display(fmt = "update id for ca: '{}'", _0)]
-    UpdateId(Handle),
-
-    // Get an RFC8183 parent response for a child
-    #[display(fmt = "parent response from ca: '{}' for child '{}'", _0, _1)]
-    ParentResponse(Handle, ChildHandle),
-
-    // Get the RFC8183 child request
-    #[display(fmt = "get child request for ca: '{}'", _0)]
-    ChildRequest(Handle),
-
-    // Get the RFC8183 publisher request
-    #[display(fmt = "get repo request for ca: '{}'", _0)]
-    RepoPublisherRequest(Handle),
-
-    #[display(fmt = "get repo details for ca: '{}'", _0)]
+    // Publishing
+    RepoPublisherRequest(Handle), // Get the RFC8183 publisher request
     RepoDetails(Handle),
-
-    #[display(fmt = "update repo details for ca: '{}'", _0)]
     RepoUpdate(Handle, RepositoryUpdate),
-
-    #[display(fmt = "get repo status for ca: '{}'", _0)]
     RepoStatus(Handle),
 
-    #[display(fmt = "add parent '{}' to ca: '{}'", _0, _1)]
+    // Parents (to this CA)
+    ChildRequest(Handle), // Get the RFC8183 child request
     AddParent(Handle, ParentCaReq),
-
-    #[display(fmt = "add parent to ca: '{}'", _0)]
     MyParentCaContact(Handle, ParentHandle),
-
-    #[display(fmt = "show parents status overview for ca: '{}'", _0)]
     ParentStatuses(Handle),
-
-    #[display(fmt = "update contact for parent {} of ca: '{}' to: {}", _1, _0, _2)]
     UpdateParentContact(Handle, ParentHandle, ParentCaContact),
-
-    #[display(fmt = "remove parent {} of ca: '{}'", _1, _0)]
     RemoveParent(Handle, ParentHandle),
 
     // Children
-    #[display(fmt = "show child {} of ca: '{}'", _1, _0)]
+    ParentResponse(Handle, ChildHandle), // Get an RFC8183 parent response for a child
     ChildInfo(Handle, ChildHandle),
-
-    #[display(fmt = "add child {} to ca: '{}'", _1, _0)]
     ChildAdd(Handle, AddChildRequest),
-
-    #[display(fmt = "update child {} of ca: '{}'", _1, _0)]
     ChildUpdate(Handle, ChildHandle, UpdateChildRequest),
-
-    #[display(fmt = "delete child {} of ca: '{}'", _1, _0)]
     ChildDelete(Handle, ChildHandle),
 
-    #[display(fmt = "initialise key roll for ca: '{}'", _0)]
+    // Key Management
     KeyRollInit(Handle),
-
-    #[display(fmt = "activate key roll for ca: '{}'", _0)]
     KeyRollActivate(Handle),
 
     // Authorizations
-    #[display(fmt = "list ROAS for ca: '{}'", _0)]
     RouteAuthorizationsList(Handle),
-
-    #[display(fmt = "Update ROAS for ca: '{}' -> {}", _0, _1)]
     RouteAuthorizationsUpdate(Handle, RoaDefinitionUpdates),
-
-    #[display(fmt = "Try to update ROAS for ca: '{}' -> {}", _0, _1)]
     RouteAuthorizationsTryUpdate(Handle, RoaDefinitionUpdates),
-
-    #[display(fmt = "Perform a dry-run update of ROAS for ca: '{}' -> {}", _0, _1)]
     RouteAuthorizationsDryRunUpdate(Handle, RoaDefinitionUpdates),
-
-    #[display(fmt = "Show detailed ROA vs BGP analysis for ca: '{}'", _0)]
     BgpAnalysisFull(Handle),
-
-    #[display(fmt = "Show ROA suggestions based on BGP analysis for ca: '{}'", _0)]
     BgpAnalysisSuggest(Handle, Option<ResourceSet>),
 
     // Show details for this CA
-    #[display(fmt = "Show details for ca: '{}'", _0)]
     Show(Handle),
-
-    #[display(fmt = "Show history for ca: '{}', mode: {}", _0, _1)]
     ShowHistory(Handle, HistoryOptions),
-
-    #[display(fmt = "Show action details for ca: '{}', action key: {}", _0, _1)]
     ShowAction(Handle, String),
-
-    #[display(fmt = "Show issues for ca: '{:?}'", _0)]
     Issues(Option<Handle>),
 
     // RTA
-    #[display(fmt = "List RTAs for CA: '{}'", _0)]
     RtaList(Handle),
-
-    #[display(fmt = "Show RTA '{}' for CA: '{}'", _0, _1)]
     RtaShow(Handle, RtaName, Option<PathBuf>),
-
-    #[display(fmt = "Sign RTA request for CA: '{}'", _0)]
     RtaSign(Handle, RtaName, RtaContentRequest),
-
-    #[display(fmt = "Prepare a multi-signed RTA for CA: '{}'", _0)]
     RtaMultiPrep(Handle, RtaName, RtaPrepareRequest),
-
-    #[display(fmt = "Cosign an RTA for CA: '{}'", _0)]
     RtaMultiCoSign(Handle, RtaName, ResourceTaggedAttestation),
 
     // List all CAs
-    #[display(fmt = "List all cas")]
     List,
 }
 
@@ -2120,58 +2213,27 @@ impl fmt::Display for HistoryOptions {
     }
 }
 
-#[derive(Clone, Debug, Display, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum BulkCaCommand {
-    #[display(fmt = "refresh")]
     Refresh,
-
-    #[display(fmt = "publish")]
     Publish,
-
-    #[display(fmt = "sync")]
     Sync,
-}
-
-#[derive(Clone, Debug, Display, Eq, PartialEq)]
-#[allow(clippy::large_enum_variant)]
-pub enum PublishersCommand {
-    #[display(fmt = "Add publisher")]
-    AddPublisher(rfc8183::PublisherRequest),
-
-    #[display(fmt = "Show publisher '{}", _0)]
-    ShowPublisher(PublisherHandle),
-
-    #[display(fmt = "Remove publisher '{}", _0)]
-    RemovePublisher(PublisherHandle),
-
-    #[display(fmt = "reposisitory response for publisher '{}'", _0)]
-    RepositoryResponse(PublisherHandle),
-
-    #[display(fmt = "Show publishers which last published longer than '{}' seconds ago", _0)]
-    StalePublishers(i64),
-
-    #[display(fmt = "Show server stats")]
-    Stats,
-
-    #[display(fmt = "Show publisher list")]
-    PublisherList,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct KrillInitDetails {
-    rsync_base: Option<uri::Rsync>,
-    rrdp_service_uri: Option<uri::Https>,
     data_dir: Option<String>,
     log_file: Option<String>,
+    multi_user: bool,
 }
 
 impl KrillInitDetails {
-    pub fn with_rsync_base(&mut self, rsync_base: uri::Rsync) {
-        self.rsync_base = Some(rsync_base);
-    }
-
-    pub fn with_rrdp_service_uri(&mut self, rrdp_service_uri: uri::Https) {
-        self.rrdp_service_uri = Some(rrdp_service_uri);
+    pub fn multi_user_dflt() -> Self {
+        KrillInitDetails {
+            data_dir: None,
+            log_file: None,
+            multi_user: true,
+        }
     }
 
     pub fn with_data_dir(&mut self, data_dir: &str) {
@@ -2182,14 +2244,6 @@ impl KrillInitDetails {
         self.log_file = Some(log_file.to_string())
     }
 
-    pub fn rsync_base(&self) -> Option<&uri::Rsync> {
-        self.rsync_base.as_ref()
-    }
-
-    pub fn rrdp_service_uri(&self) -> Option<&uri::Https> {
-        self.rrdp_service_uri.as_ref()
-    }
-
     pub fn data_dir(&self) -> Option<&String> {
         self.data_dir.as_ref()
     }
@@ -2197,61 +2251,114 @@ impl KrillInitDetails {
     pub fn log_file(&self) -> Option<&String> {
         self.log_file.as_ref()
     }
+
+    pub fn multi_user(&self) -> bool {
+        self.multi_user
+    }
 }
 
 impl Default for KrillInitDetails {
     fn default() -> Self {
         KrillInitDetails {
-            rsync_base: None,
-            rrdp_service_uri: None,
             data_dir: None,
             log_file: None,
+            multi_user: false,
         }
     }
 }
 
+#[cfg(feature = "multi-user")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct KrillUserDetails {
+    id: String,
+    attrs: HashMap<String, String>,
+}
+
+#[cfg(feature = "multi-user")]
+impl KrillUserDetails {
+    pub fn with_id(&mut self, id: String) {
+        self.id = id;
+    }
+    pub fn with_attr(&mut self, attr: String, value: String) {
+        self.attrs.insert(attr, value);
+    }
+    pub fn id(&self) -> &String {
+        &self.id
+    }
+
+    pub fn attrs(&self) -> HashMap<String, String> {
+        self.attrs.clone()
+    }
+}
+
+#[cfg(feature = "multi-user")]
+impl Default for KrillUserDetails {
+    fn default() -> Self {
+        KrillUserDetails {
+            id: String::new(),
+            attrs: HashMap::new(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+#[allow(clippy::large_enum_variant)]
+pub enum PublishersCommand {
+    AddPublisher(rfc8183::PublisherRequest),
+    ShowPublisher(PublisherHandle),
+    RemovePublisher(PublisherHandle),
+    RepositoryResponse(PublisherHandle),
+    StalePublishers(i64),
+    PublisherList,
+    RepositoryStats,
+    RepositoryInit(PublicationServerUris),
+    RepositoryClear,
+}
+
 //------------ Error ---------------------------------------------------------
 
-#[derive(Debug, Display)]
+#[derive(Debug)]
 pub enum Error {
-    #[display(fmt = "{}", _0)]
     UriError(uri::Error),
-
-    #[display(fmt = "{}", _0)]
     IoError(io::Error),
-
-    #[display(fmt = "{}", _0)]
     ReportError(ReportError),
-
-    #[display(fmt = "Invalid RFC8183 XML: {}", _0)]
     Rfc8183(rfc8183::Error),
-
-    #[display(fmt = "Invalid resources requested: {}", _0)]
     ResSetErr(ResourceSetError),
-
-    #[display(fmt = "{}", _0)]
     InvalidRouteDelta(AuthorizationFmtError),
-
-    #[display(fmt = "The publisher handle may only contain -_A-Za-z0-9, (\\ /) see issue #83")]
     InvalidHandle,
-
-    #[display(fmt = "Use a number of 0 or more seconds.")]
     InvalidSeconds,
-
-    #[display(fmt = "Missing argument: --{}, alternatively you may use env var: {}", _0, _1)]
     MissingArgWithEnv(String, String),
-
-    #[display(fmt = "You must specify resources when adding a CA (--asn, --ipv4, --ipv6)")]
     MissingResources,
-
-    #[display(fmt = "Invalid ID cert for child.")]
     InvalidChildIdCert,
-
-    #[display(fmt = "Unrecognised sub-command. Use 'help'.")]
     UnrecognisedSubCommand,
-
-    #[display(fmt = "{}", _0)]
     GeneralArgumentError(String),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Error::UriError(e) => e.fmt(f),
+            Error::IoError(e) => e.fmt(f),
+            Error::ReportError(e) => e.fmt(f),
+            Error::Rfc8183(e) => write!(f, "Invalid RFC8183 XML: {}", e),
+            Error::ResSetErr(e) => write!(f, "Invalid resources requested: {}", e),
+            Error::InvalidRouteDelta(e) => e.fmt(f),
+            Error::InvalidHandle => write!(
+                f,
+                "The publisher handle may only contain -_A-Za-z0-9, (\\ /) see issue #83"
+            ),
+            Error::InvalidSeconds => write!(f, "Use a number of 0 or more seconds."),
+            Error::MissingArgWithEnv(arg, var) => write!(
+                f,
+                "Missing argument: --{}, alternatively you may use env var: {}",
+                arg, var
+            ),
+            Error::MissingResources => write!(f, "You must specify resources when adding a CA (--asn, --ipv4, --ipv6)"),
+            Error::InvalidChildIdCert => write!(f, "Invalid ID cert for child."),
+            Error::UnrecognisedSubCommand => write!(f, "Unrecognised sub-command. Use 'help'."),
+            Error::GeneralArgumentError(s) => s.fmt(f),
+        }
+    }
 }
 
 impl Error {

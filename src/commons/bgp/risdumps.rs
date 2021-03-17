@@ -85,19 +85,23 @@ impl RisDumpLoader {
 
 //------------ Error --------------------------------------------------------
 
-#[derive(Debug, Display)]
+#[derive(Debug)]
 pub enum RisDumpError {
-    #[display(fmt = "Cannot get uri: {}", _0)]
     ReqwestError(reqwest::Error),
-
-    #[display(fmt = "Missing column in announcements input")]
     MissingColumn,
-
-    #[display(fmt = "Error parsing announcements: {}", _0)]
     ParseError(String),
-
-    #[display(fmt = "IO error: {}", _0)]
     IoError(io::Error),
+}
+
+impl fmt::Display for RisDumpError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            RisDumpError::ReqwestError(e) => write!(f, "Cannot get uri: {}", e),
+            RisDumpError::MissingColumn => write!(f, "Missing column in announcements input"),
+            RisDumpError::ParseError(s) => write!(f, "Error parsing announcements: {}", s),
+            RisDumpError::IoError(e) => write!(f, "IO error: {}", e),
+        }
+    }
 }
 
 impl RisDumpError {

@@ -1,0 +1,23 @@
+{
+  "actor": "master-token",
+  "time": "2021-01-13T11:31:11.336905Z",
+  "handle": "testbed",
+  "version": 8,
+  "sequence": 7,
+  "details": {
+    "child_add": [
+      "ca",
+      "99CF6F9993932080374EBAFE6CD67A819A12F45B",
+      {
+        "asn": "",
+        "v4": "192.168.0.0/16",
+        "v6": "2001:db8::/32"
+      }
+    ]
+  },
+  "effect": {
+    "events": [
+      8
+    ]
+  }
+}

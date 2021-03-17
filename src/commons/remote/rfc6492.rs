@@ -1,10 +1,9 @@
-use std::convert::TryFrom;
 use std::str::FromStr;
+use std::{convert::TryFrom, fmt::Display};
 use std::{fmt, io};
 
 use bytes::Bytes;
 use chrono::{DateTime, SecondsFormat, Utc};
-use serde::export::fmt::Display;
 
 use rpki::cert::Cert;
 use rpki::crypto::KeyIdentifier;
@@ -809,52 +808,45 @@ impl fmt::Display for NotPerformedResponse {
 
 //------------ Error ---------------------------------------------------------
 
-#[derive(Debug, Display)]
+#[derive(Debug)]
 pub enum Error {
-    #[display(fmt = "Unexpected XML Start Tag: {}", _0)]
     UnexpectedStart(String),
-
-    #[display(fmt = "Invalid XML file: {}", _0)]
     XmlReadError(XmlReaderErr),
-
-    #[display(fmt = "Invalid use of attributes in XML file: {}", _0)]
     XmlAttributesError(AttributesError),
-
-    #[display(fmt = "Unknown message type")]
     UnknownMessageType,
-
-    #[display(fmt = "Unexpected message type")]
     WrongMessageType,
-
-    #[display(fmt = "Invalid protocol version, MUST be 1")]
     InvalidVersion,
-
-    #[display(fmt = "Invalid URI: {}", _0)]
     UriError(uri::Error),
-
-    #[display(fmt = "{}", _0)]
     ResSetErr(ResourceSetError),
-
-    #[display(fmt = "Invalid date time syntax: {}", _0)]
     Time(chrono::ParseError),
-
-    #[display(fmt = "Could not parse encoded certificate.")]
     InvalidCert,
-
-    #[display(fmt = "Invalid handle.")]
     InvalidHandle,
-
-    #[display(fmt = "Could not parse encoded certificate request.")]
     InvalidCsr,
-
-    #[display(fmt = "Could not parse SKI in revoke request.")]
     InvalidSki,
-
-    #[display(fmt = "Invalid not-performed error code: {}.", _0)]
     InvalidErrorCode(String),
-
-    #[display(fmt = "{}", _0)]
     InrSyntax(String),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Error::UnexpectedStart(s) => write!(f, "Unexpected XML Start Tag: {}", s),
+            Error::XmlReadError(e) => write!(f, "Invalid XML file: {}", e),
+            Error::XmlAttributesError(e) => write!(f, "Invalid use of attributes in XML file: {}", e),
+            Error::UnknownMessageType => write!(f, "Unknown message type"),
+            Error::WrongMessageType => write!(f, "Unexpected message type"),
+            Error::InvalidVersion => write!(f, "Invalid protocol version, MUST be 1"),
+            Error::UriError(e) => write!(f, "Invalid URI: {}", e),
+            Error::ResSetErr(e) => e.fmt(f),
+            Error::Time(e) => write!(f, "Invalid date time syntax: {}", e),
+            Error::InvalidCert => write!(f, "Could not parse encoded certificate."),
+            Error::InvalidHandle => write!(f, "Invalid handle."),
+            Error::InvalidCsr => write!(f, "Could not parse encoded certificate request."),
+            Error::InvalidSki => write!(f, "Could not parse SKI in revoke request."),
+            Error::InvalidErrorCode(code) => write!(f, "Invalid not-performed error code: {}.", code),
+            Error::InrSyntax(e) => e.fmt(f),
+        }
+    }
 }
 
 impl Error {

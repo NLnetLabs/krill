@@ -1,4 +1,4 @@
-from krill_api.models.roa import ROA
+from krill_ca_api.models.roa import ROA
 
 
 TEST_ROAS = [

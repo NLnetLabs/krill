@@ -1,9 +1,9 @@
 use std::borrow::Cow;
-use std::fs;
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::{fmt, fs};
 
 use bytes::Bytes;
 use serde::de::DeserializeOwned;
@@ -311,28 +311,29 @@ impl PartialEq for CurrentFile {
 impl Eq for CurrentFile {}
 
 //------------ Error ---------------------------------------------------------
-#[derive(Debug, Display)]
+#[derive(Debug)]
 pub enum Error {
-    #[display(fmt = "Cannot read: {}", _0)]
     CannotRead(String),
-
-    #[display(fmt = "Unsupported characters: {}", _0)]
     UnsupportedFileName(String),
-
-    #[display(fmt = "Cannot use path outside of rsync jail")]
     PathOutsideBasePath,
-
-    #[display(fmt = "Do not ever use '/' as the source or target for backups")]
     BackupExcessive,
-
-    #[display(fmt = "Source for backup cannot be read: {}", _0)]
     BackupCannotReadSource(String),
-
-    #[display(fmt = "Target for backup already exists: {}", _0)]
     BackupTargetExists(String),
-
-    #[display(fmt = "{}", _0)]
     Io(io::Error),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Error::CannotRead(s) => write!(f, "Cannot read: {}", s),
+            Error::UnsupportedFileName(name) => write!(f, "Unsupported characters: {}", name),
+            Error::PathOutsideBasePath => write!(f, "Cannot use path outside of rsync jail"),
+            Error::BackupExcessive => write!(f, "Do not ever use '/' as the source or target for backups"),
+            Error::BackupCannotReadSource(e) => write!(f, "Source for backup cannot be read: {}", e),
+            Error::BackupTargetExists(e) => write!(f, "Target for backup already exists: {}", e),
+            Error::Io(e) => e.fmt(f),
+        }
+    }
 }
 
 impl Error {

@@ -2,8 +2,9 @@ use std::path::PathBuf;
 
 use tokio::sync::RwLock;
 
-use crate::commons::api::rrdp::PublishElement;
-use crate::commons::api::{Entitlements, ErrorResponse, Handle, ParentHandle, ParentStatuses, RepoStatus};
+use crate::commons::api::{
+    rrdp::PublishElement, Entitlements, ErrorResponse, Handle, ParentHandle, ParentStatuses, RepoStatus,
+};
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::{KeyStoreKey, KeyValueStore};
 use crate::commons::util::httpclient;
@@ -73,20 +74,29 @@ impl StatusStore {
         parent: &ParentHandle,
         uri: String,
         error: &Error,
+        next_run_seconds: i64,
     ) -> KrillResult<()> {
         let _lock = self.lock.write().await;
         let mut status = self.get_ca_status(ca)?;
 
         let error_response = Self::error_to_error_res(&error);
 
-        status.parents.set_failure(parent, uri, error_response);
+        status
+            .parents
+            .set_failure(parent, uri, error_response, next_run_seconds);
         self.set_ca_status(ca, &status)
     }
 
-    pub async fn set_parent_last_updated(&self, ca: &Handle, parent: &ParentHandle, uri: String) -> KrillResult<()> {
+    pub async fn set_parent_last_updated(
+        &self,
+        ca: &Handle,
+        parent: &ParentHandle,
+        uri: String,
+        next_run_seconds: i64,
+    ) -> KrillResult<()> {
         let _lock = self.lock.write().await;
         let mut status = self.get_ca_status(ca)?;
-        status.parents.set_last_updated(parent, uri);
+        status.parents.set_last_updated(parent, uri, next_run_seconds);
         self.set_ca_status(ca, &status)
     }
 
@@ -96,10 +106,13 @@ impl StatusStore {
         parent: &ParentHandle,
         uri: String,
         entitlements: &Entitlements,
+        next_run_seconds: i64,
     ) -> KrillResult<()> {
         let _lock = self.lock.write().await;
         let mut status = self.get_ca_status(ca)?;
-        status.parents.set_entitlements(parent, uri, entitlements);
+        status
+            .parents
+            .set_entitlements(parent, uri, entitlements, next_run_seconds);
         self.set_ca_status(ca, &status)
     }
 
@@ -113,22 +126,23 @@ impl StatusStore {
         self.set_ca_status(ca, &status)
     }
 
-    pub async fn set_status_repo_success(&self, ca: &Handle, uri: String) -> KrillResult<()> {
+    pub async fn set_status_repo_success(&self, ca: &Handle, uri: String, next_hours: i64) -> KrillResult<()> {
         let _lock = self.lock.write().await;
         let mut status = self.get_ca_status(ca)?;
-        status.repo.set_last_updated(uri);
+        status.repo.set_last_updated(uri, next_hours);
         self.set_ca_status(ca, &status)
     }
 
-    pub async fn set_status_repo_elements(
+    pub async fn set_status_repo_published(
         &self,
         ca: &Handle,
         uri: String,
-        objects: Vec<PublishElement>,
+        published: Vec<PublishElement>,
+        next_hours: i64,
     ) -> KrillResult<()> {
         let _lock = self.lock.write().await;
         let mut status = self.get_ca_status(ca)?;
-        status.repo.set_success(uri, objects);
+        status.repo.set_published(uri, published, next_hours);
         self.set_ca_status(ca, &status)
     }
 

@@ -13,7 +13,7 @@ mod store;
 pub use self::store::*;
 
 mod listener;
-pub use self::listener::{EventCounter, EventListener};
+pub use self::listener::{EventCounter, PostSaveEventListener, PreSaveEventListener};
 
 mod kv;
 pub use self::kv::*;
@@ -34,8 +34,14 @@ mod tests {
 
     use serde::Serialize;
 
-    use crate::commons::api::{CommandHistoryCriteria, CommandSummary, Handle};
     use crate::test;
+    use crate::{
+        commons::{
+            actor::Actor,
+            api::{CommandHistoryCriteria, CommandSummary, Handle},
+        },
+        constants::ACTOR_DEF_TEST,
+    };
 
     use super::*;
 
@@ -120,13 +126,19 @@ mod tests {
     /// implementation for this type alias providing some convenience methods.
     type PersonCommand = SentCommand<PersonCommandDetails>;
 
-    #[derive(Clone, Deserialize, Display, Eq, PartialEq, Serialize)]
+    #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
     enum PersonCommandDetails {
-        #[display(fmt = "Change name to {}", _0)]
         ChangeName(String),
-
-        #[display(fmt = "Go around the sun")]
         GoAroundTheSun,
+    }
+
+    impl fmt::Display for PersonCommandDetails {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            match self {
+                PersonCommandDetails::ChangeName(name) => write!(f, "Change name to {}", name),
+                PersonCommandDetails::GoAroundTheSun => write!(f, "Go around the sun"),
+            }
+        }
     }
 
     impl WithStorableDetails for PersonCommandDetails {
@@ -151,12 +163,14 @@ mod tests {
 
     impl PersonCommand {
         pub fn go_around_sun(id: &Handle, version: Option<u64>) -> Self {
-            Self::new(id, version, PersonCommandDetails::GoAroundTheSun)
+            let actor = Actor::test_from_def(ACTOR_DEF_TEST);
+            Self::new(id, version, PersonCommandDetails::GoAroundTheSun, &actor)
         }
 
         pub fn change_name(id: &Handle, version: Option<u64>, s: &str) -> Self {
             let details = PersonCommandDetails::ChangeName(s.to_string());
-            Self::new(id, version, details)
+            let actor = Actor::test_from_def(ACTOR_DEF_TEST);
+            Self::new(id, version, details, &actor)
         }
     }
 
@@ -164,13 +178,19 @@ mod tests {
 
     /// Errors specific to the Person aggregate, should only ever be returned when
     /// applying a command that does not validate.
-    #[derive(Clone, Debug, Display)]
+    #[derive(Clone, Debug)]
     enum PersonError {
-        #[display(fmt = "No person can live longer than 255 years")]
         TooOld,
-
-        #[display(fmt = "{}", _0)]
         Custom(String),
+    }
+
+    impl fmt::Display for PersonError {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            match self {
+                PersonError::TooOld => write!(f, "No person can live longer than 255 years"),
+                PersonError::Custom(s) => s.fmt(f),
+            }
+        }
     }
 
     impl From<AggregateStoreError> for PersonError {
@@ -271,8 +291,8 @@ mod tests {
         let d = test::tmp_dir();
 
         let counter = Arc::new(EventCounter::default());
-        let mut manager = AggregateStore::<Person>::new(&d, "person").unwrap();
-        manager.add_listener(counter.clone());
+        let mut manager = AggregateStore::<Person>::disk(&d, "person").unwrap();
+        manager.add_post_save_listener(counter.clone());
 
         let id_alice = Handle::from_str("alice").unwrap();
         let alice_init = InitPersonEvent::init(&id_alice, "alice smith");
@@ -303,7 +323,7 @@ mod tests {
         assert_eq!(21, alice.age());
 
         // Should read state from disk
-        let manager = AggregateStore::<Person>::new(&d, "person").unwrap();
+        let manager = AggregateStore::<Person>::disk(&d, "person").unwrap();
 
         let alice = manager.get_latest(&id_alice).unwrap();
         assert_eq!("alice smith-doe", alice.name());

@@ -42,7 +42,8 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        rust: [stable, beta]
+        rust: [stable, 1.45.0, beta]
+        args: ["--features functional-tests,ui-tests", "--all-features"] 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v1
@@ -50,5 +51,11 @@ jobs:
       uses: hecrj/setup-rust-action@v1
       with:
         rust-version: ${{ matrix.rust }}
-    - run: cargo build --verbose
-    - run: cargo test --verbose 2>&1
+    - run: cargo build --verbose ${{ matrix.args }}
+    - run: cargo test --verbose ${{ matrix.args }} 2>&1
+    - name: Archive Cypress UI test image & video captures
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v2
+      with:
+        name: cypress-ui-test-captures ${{ matrix.os }} ${{ matrix.rust }}
+        path: target/ui/

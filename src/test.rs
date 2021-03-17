@@ -1,11 +1,12 @@
 //! Helper functions for testing Krill.
 
+use std::fs;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Duration;
-use std::{env, fs};
 
 use bytes::Bytes;
 
@@ -14,73 +15,186 @@ use tokio::time::{delay_for, timeout};
 
 use rpki::crypto::KeyIdentifier;
 use rpki::uri;
-use rpki::uri::Rsync;
 
-use crate::cli::options::{BulkCaCommand, CaCommand, Command, Options, PublishersCommand};
+use crate::cli::options::{BulkCaCommand, CaCommand, Command, KrillPubcOptions, Options, PublishersCommand};
 use crate::cli::report::{ApiResponse, ReportFormat};
-use crate::cli::{Error, KrillClient};
+use crate::cli::{Error, KrillClient, KrillPubdClient};
 use crate::commons::api::{
     AddChildRequest, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ChildAuthRequest, ChildHandle, Handle,
-    ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, Publish, PublisherDetails, PublisherHandle,
-    PublisherList, RepositoryUpdate, ResourceClassKeysInfo, ResourceClassName, ResourceSet, RoaDefinition,
-    RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, TypedPrefix, UpdateChildRequest,
+    ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublicationServerUris, PublisherDetails,
+    PublisherHandle, PublisherList, RepositoryUpdate, ResourceClassName, ResourceSet, RoaDefinition,
+    RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, Token, TypedPrefix, UpdateChildRequest,
 };
 use crate::commons::bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion};
 use crate::commons::crypto::SignSupport;
 use crate::commons::remote::rfc8183;
 use crate::commons::remote::rfc8183::{ChildRequest, RepositoryResponse};
 use crate::commons::util::httpclient;
-use crate::constants::{KRILL_ENV_TEST, KRILL_ENV_TESTBED_ENABLED, KRILL_ENV_TEST_ANN, KRILL_ENV_TEST_UNIT_DATA};
 use crate::daemon::ca::{ta_handle, ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest};
 use crate::daemon::http::server;
 
-pub const SERVER_URI: &str = "https://localhost:3000/";
+#[cfg(test)]
+use crate::commons::crypto::IdCert;
+use crate::daemon::config::Config;
+use crate::daemon::krillserver::KrillMode;
 
-pub async fn server_ready() -> bool {
+pub const KRILL_SERVER_URI: &str = "https://localhost:3000/";
+pub const KRILL_PUBD_SERVER_URI: &str = "https://localhost:3001/";
+
+pub fn init_logging() {
+    // Just creates a test config so we can initialise logging, then forgets about it
+    let d = PathBuf::from(".");
+    let _ = Config::test(&d).init_logging();
+}
+
+pub fn info(msg: impl std::fmt::Display) {
+    info!("{}", msg); // we can change this to using the logger crate later
+}
+
+pub async fn krill_server_ready() -> bool {
+    server_ready(KRILL_SERVER_URI).await
+}
+
+pub async fn krill_pubd_ready() -> bool {
+    server_ready(KRILL_PUBD_SERVER_URI).await
+}
+
+pub async fn server_ready(uri: &str) -> bool {
+    let health = format!("{}health", uri);
+
     for _ in 0..300 {
-        match httpclient::client(SERVER_URI).await {
+        match httpclient::client(&health).await {
             Ok(client) => {
-                let res = timeout(Duration::from_millis(100), client.get(SERVER_URI).send()).await;
+                let res = timeout(Duration::from_millis(100), client.get(&health).send()).await;
+
                 if let Ok(Ok(res)) = res {
                     if res.status() == StatusCode::OK {
                         return true;
+                    } else {
+                        eprintln!("Got status: {}", res.status());
                     }
                 }
             }
             Err(_) => return false,
         }
+        delay_for(Duration::from_millis(100)).await;
     }
 
     false
 }
 
+pub fn test_config(dir: &PathBuf) -> Config {
+    crate::constants::enable_test_mode();
+    crate::constants::enable_test_announcements();
+    Config::test(dir)
+}
+
+pub fn init_config(config: &Config) {
+    if config.init_logging().is_err() {
+        trace!("Logging already initialised");
+    }
+    config.verify().unwrap();
+}
+
+async fn start_krill_with_error_trap(config: Arc<Config>, mode: KrillMode) {
+    if let Err(err) = server::start_krill_daemon(config, mode).await {
+        error!("Krill failed to start: {}", err);
+    }
+}
+
 /// Starts krill server for testing, with embedded TA and repo.
 /// Creates a random base directory in the 'work' folder, and returns
 /// it. Be sure to clean it up when the test is done.
-pub async fn start_krill() -> PathBuf {
+pub async fn start_krill(config: Option<Config>, enable_testbed: bool) -> PathBuf {
     let dir = tmp_dir();
+    let config = if let Some(mut config) = config {
+        config.set_data_dir(dir.clone());
+        config
+    } else {
+        test_config(&dir)
+    };
+    init_config(&config);
 
-    env::set_var(KRILL_ENV_TEST_UNIT_DATA, dir.to_string_lossy().to_string());
-    env::set_var(KRILL_ENV_TEST_ANN, "1");
-    env::set_var(KRILL_ENV_TEST, "1");
-    env::set_var(KRILL_ENV_TESTBED_ENABLED, "1");
+    let mode = match enable_testbed {
+        false => KrillMode::Ca,
+        true => {
+            let uris = {
+                let rsync_base = uri::Rsync::from_str("rsync://localhost/repo/").unwrap();
+                let rrdp_base_uri = uri::Https::from_str("https://localhost:3000/test-rrdp/").unwrap();
+                PublicationServerUris::new(rrdp_base_uri, rsync_base)
+            };
+            KrillMode::Testbed(uris)
+        }
+    };
 
-    tokio::spawn(server::start());
+    tokio::spawn(start_krill_with_error_trap(Arc::new(config), mode));
+    assert!(krill_server_ready().await);
+    dir
+}
 
-    assert!(server_ready().await);
+/// Starts a krill pubd for testing on its own port, and its
+/// own tempdir for storage.
+pub async fn start_krill_pubd() -> PathBuf {
+    let dir = tmp_dir();
+    let mut config = test_config(&dir);
+    init_config(&config);
+
+    config.port = 3001;
+    config.service_uri = "https://localhost:3001/".to_string();
+
+    tokio::spawn(start_krill_with_error_trap(Arc::new(config), KrillMode::Pubd));
+    assert!(krill_pubd_ready().await);
+
+    // Initialise the repository using separate URIs
+    let uris = {
+        let rsync_base = uri::Rsync::from_str("rsync://localhost/dedicated-repo/").unwrap();
+        let rrdp_base_uri = uri::Https::from_str("https://localhost:3001/test-rrdp/").unwrap();
+        PublicationServerUris::new(rrdp_base_uri, rsync_base)
+    };
+    let command = PublishersCommand::RepositoryInit(uris);
+    krill_dedicated_pubd_admin(command).await;
+
     dir
 }
 
 pub async fn krill_admin(command: Command) -> ApiResponse {
-    let krillc_opts = Options::new(https(SERVER_URI), "secret", ReportFormat::Json, command);
+    let krillc_opts = Options::new(https(KRILL_SERVER_URI), "secret", ReportFormat::Json, command);
     match KrillClient::process(krillc_opts).await {
         Ok(res) => res, // ok
         Err(e) => panic!("{}", e),
     }
 }
 
+pub async fn krill_embedded_pubd_admin(command: PublishersCommand) -> ApiResponse {
+    let options = KrillPubcOptions::new(
+        https(KRILL_SERVER_URI),
+        Token::from("secret"),
+        ReportFormat::Json,
+        false,
+        command,
+    );
+    match KrillPubdClient::process(options).await {
+        Ok(res) => res, // ok
+        Err(e) => panic!("{}", e),
+    }
+}
+
+pub async fn krill_dedicated_pubd_admin(command: PublishersCommand) -> ApiResponse {
+    let options = KrillPubcOptions::new(
+        https(KRILL_PUBD_SERVER_URI),
+        Token::from("secret"),
+        ReportFormat::Json,
+        false,
+        command,
+    );
+    match KrillPubdClient::process(options).await {
+        Ok(res) => res, // ok
+        Err(e) => panic!("{}", e),
+    }
+}
+
 pub async fn krill_admin_expect_error(command: Command) -> Error {
-    let krillc_opts = Options::new(https(SERVER_URI), "secret", ReportFormat::Json, command);
+    let krillc_opts = Options::new(https(KRILL_SERVER_URI), "secret", ReportFormat::Json, command);
     match KrillClient::process(krillc_opts).await {
         Ok(_res) => panic!("Expected error"),
         Err(e) => e,
@@ -91,12 +205,16 @@ async fn refresh_all() {
     krill_admin(Command::Bulk(BulkCaCommand::Refresh)).await;
 }
 
-pub async fn init_child(handle: &Handle) {
+pub async fn init_ca(handle: &Handle) {
     krill_admin(Command::CertAuth(CaCommand::Init(CertAuthInit::new(handle.clone())))).await;
 }
 
+pub async fn delete_ca(ca: &Handle) {
+    krill_admin(Command::CertAuth(CaCommand::Delete(ca.clone()))).await;
+}
+
 // We use embedded when not testing RFC 8181 - so that the CMS signing/verification overhead can be reduced.
-pub async fn init_child_with_embedded_repo(handle: &Handle) {
+pub async fn init_ca_with_embedded_repo(handle: &Handle) {
     krill_admin(Command::CertAuth(CaCommand::Init(CertAuthInit::new(handle.clone())))).await;
     krill_admin(Command::CertAuth(CaCommand::RepoUpdate(
         handle.clone(),
@@ -231,14 +349,6 @@ pub async fn delete_parent(ca: &Handle, parent: &ParentHandle) {
     krill_admin(Command::CertAuth(CaCommand::RemoveParent(ca.clone(), parent.clone()))).await;
 }
 
-pub async fn ca_roll_init(handle: &Handle) {
-    krill_admin(Command::CertAuth(CaCommand::KeyRollInit(handle.clone()))).await;
-}
-
-pub async fn ca_roll_activate(handle: &Handle) {
-    krill_admin(Command::CertAuth(CaCommand::KeyRollActivate(handle.clone()))).await;
-}
-
 pub async fn ca_route_authorizations_update(handle: &Handle, updates: RoaDefinitionUpdates) {
     krill_admin(Command::CertAuth(CaCommand::RouteAuthorizationsUpdate(
         handle.clone(),
@@ -334,7 +444,28 @@ pub async fn ca_key_for_rcn(handle: &Handle, rcn: &ResourceClassName) -> Certifi
         .clone()
 }
 
-pub async fn ca_gets_resources(handle: &Handle, resources: &ResourceSet) -> bool {
+pub async fn ca_new_key_for_rcn(handle: &Handle, rcn: &ResourceClassName) -> CertifiedKeyInfo {
+    ca_details(handle)
+        .await
+        .resource_classes()
+        .get(rcn)
+        .unwrap()
+        .new_key()
+        .unwrap()
+        .clone()
+}
+
+pub async fn ca_contains_resources(handle: &Handle, resources: &ResourceSet) -> bool {
+    for _ in 0..30_u8 {
+        if ca_current_resources(handle).await.contains(resources) {
+            return true;
+        }
+        delay_for(Duration::from_secs(1)).await
+    }
+    false
+}
+
+pub async fn ca_equals_resources(handle: &Handle, resources: &ResourceSet) -> bool {
     for _ in 0..30_u8 {
         if &ca_current_resources(handle).await == resources {
             return true;
@@ -344,47 +475,10 @@ pub async fn ca_gets_resources(handle: &Handle, resources: &ResourceSet) -> bool
     false
 }
 
-pub async fn rc_state_becomes_new_key(handle: &Handle) -> bool {
-    for _ in 0..30_u8 {
-        let ca = ca_details(handle).await;
-        if let Some(rc) = ca.resource_classes().get(&ResourceClassName::default()) {
-            if let ResourceClassKeysInfo::RollNew(_) = rc.keys() {
-                return true;
-            }
-        }
-        delay_for(Duration::from_secs(1)).await
-    }
-    false
-}
-
-pub async fn rc_state_becomes_active(handle: &Handle) -> bool {
-    for _ in 0..300 {
-        let ca = ca_details(handle).await;
-        if let Some(rc) = ca.resource_classes().get(&ResourceClassName::default()) {
-            if let ResourceClassKeysInfo::Active(_) = rc.keys() {
-                return true;
-            }
-        }
-        delay_for(Duration::from_millis(100)).await
-    }
-    false
-}
-
 pub async fn rc_is_removed(handle: &Handle) -> bool {
     for _ in 0..300 {
         let ca = ca_details(handle).await;
         if ca.resource_classes().get(&ResourceClassName::default()).is_none() {
-            return true;
-        }
-        delay_for(Duration::from_millis(100)).await
-    }
-    false
-}
-
-pub async fn ta_will_have_issued_n_certs(number: usize) -> bool {
-    for _ in 0..300 {
-        let ta = ca_details(&ta_handle()).await;
-        if ta.published_objects().len() - 2 == number {
             return true;
         }
         delay_for(Duration::from_millis(100)).await
@@ -406,20 +500,22 @@ pub async fn ca_current_resources(handle: &Handle) -> ResourceSet {
     res
 }
 
-pub async fn ca_current_objects(handle: &Handle) -> Vec<Publish> {
-    let ca = ca_details(handle).await;
-    ca.published_objects()
-}
-
 pub async fn list_publishers() -> PublisherList {
-    match krill_admin(Command::Publishers(PublishersCommand::PublisherList)).await {
+    match krill_embedded_pubd_admin(PublishersCommand::PublisherList).await {
         ApiResponse::PublisherList(pub_list) => pub_list,
         _ => panic!("Expected publisher list"),
     }
 }
 
 pub async fn publisher_details(publisher: &PublisherHandle) -> PublisherDetails {
-    match krill_admin(Command::Publishers(PublishersCommand::ShowPublisher(publisher.clone()))).await {
+    match krill_embedded_pubd_admin(PublishersCommand::ShowPublisher(publisher.clone())).await {
+        ApiResponse::PublisherDetails(pub_details) => pub_details,
+        _ => panic!("Expected publisher details"),
+    }
+}
+
+pub async fn dedicated_repo_publisher_details(publisher: &PublisherHandle) -> PublisherDetails {
+    match krill_dedicated_pubd_admin(PublishersCommand::ShowPublisher(publisher.clone())).await {
         ApiResponse::PublisherDetails(pub_details) => pub_details,
         _ => panic!("Expected publisher details"),
     }
@@ -430,43 +526,6 @@ pub async fn publisher_request(handle: &Handle) -> rfc8183::PublisherRequest {
         ApiResponse::Rfc8183PublisherRequest(req) => req,
         _ => panic!("Expected publisher request"),
     }
-}
-
-pub async fn will_publish_objects(publisher: &PublisherHandle, objects: &[&str]) -> bool {
-    for _ in 0..300 {
-        let details = publisher_details(publisher).await;
-
-        let current_files = details.current_files();
-
-        if current_files.len() == objects.len() {
-            let current_files: Vec<&Rsync> = current_files.iter().map(|p| p.uri()).collect();
-            let mut all_matched = true;
-            for o in objects {
-                if current_files.iter().find(|uri| uri.ends_with(o)).is_none() {
-                    all_matched = false;
-                }
-            }
-            if all_matched {
-                return true;
-            }
-        }
-
-        delay_for(Duration::from_millis(100)).await
-    }
-
-    let details = publisher_details(publisher).await;
-
-    eprintln!("Did not find match for: {}", publisher);
-    eprintln!("Found:");
-    for file in details.current_files() {
-        eprintln!("  {}", file.uri());
-    }
-    eprintln!("Expected:");
-    for file in objects {
-        eprintln!("  {}", file);
-    }
-
-    false
 }
 
 /// This method sets up a test directory with a random name (a number)
@@ -539,9 +598,6 @@ pub fn definition(s: &str) -> RoaDefinition {
 pub fn typed_prefix(s: &str) -> TypedPrefix {
     TypedPrefix::from_str(s).unwrap()
 }
-
-#[cfg(test)]
-use crate::commons::crypto::IdCert;
 
 #[cfg(test)]
 pub fn test_id_certificate() -> IdCert {

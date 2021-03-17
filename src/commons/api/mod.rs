@@ -141,13 +141,13 @@ impl<'de> Deserialize<'de> for Base64 {
 
 /// This type contains a hex encoded sha256 hash.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct HexEncodedHash(Arc<String>);
+pub struct HexEncodedHash(Arc<str>);
 
 impl HexEncodedHash {
     pub fn from_content(content: &[u8]) -> Self {
         let sha256 = sha256(content);
         let hex = hex::encode(sha256);
-        HexEncodedHash(Arc::new(hex))
+        HexEncodedHash(hex.into())
     }
 
     pub fn as_bytes(&self) -> Bytes {
@@ -157,7 +157,7 @@ impl HexEncodedHash {
 
 impl AsRef<str> for HexEncodedHash {
     fn as_ref(&self) -> &str {
-        self.0.as_str()
+        &self.0
     }
 }
 
@@ -187,7 +187,7 @@ impl From<&Cert> for HexEncodedHash {
 
 impl From<String> for HexEncodedHash {
     fn from(s: String) -> Self {
-        HexEncodedHash(Arc::new(s))
+        HexEncodedHash(s.into())
     }
 }
 
@@ -206,7 +206,7 @@ impl<'de> Deserialize<'de> for HexEncodedHash {
         D: Deserializer<'de>,
     {
         let string = String::deserialize(deserializer)?;
-        Ok(HexEncodedHash(Arc::new(string)))
+        Ok(HexEncodedHash(string.into()))
     }
 }
 
@@ -214,16 +214,6 @@ impl fmt::Display for HexEncodedHash {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
     }
-}
-
-//------------ Link ----------------------------------------------------------
-
-/// Defines a link element to include as part of a links array in a Json
-/// response.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct Link {
-    rel: String,
-    link: String,
 }
 
 //------------ ErrorResponse --------------------------------------------------

@@ -7,7 +7,7 @@
       "actor": "krill",
       "timestamp": 1588256323466,
       "handle": "rfc6492",
-      "version": 1,
+      "version": 2,
       "sequence": 1,
       "summary": {
         "msg": "Update repo to embedded server",
@@ -15,6 +15,7 @@
         "args": {}
       },
       "effect": {
+        "result": "success",
         "events": [
           1
         ]
@@ -25,17 +26,18 @@
       "actor": "krill",
       "timestamp": 1588256323795,
       "handle": "rfc6492",
-      "version": 2,
+      "version": 3,
       "sequence": 2,
       "summary": {
         "msg": "Add parent 'ta' as 'RFC 6492 Parent'",
         "label": "cmd-ca-parent-add",
         "args": {
-          "parent_contact": "RFC 6492 Parent",
-          "parent": "ta"
+          "parent": "ta",
+          "parent_contact": "RFC 6492 Parent"
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           2
         ]
@@ -46,16 +48,17 @@
       "actor": "krill",
       "timestamp": 1588256324477,
       "handle": "rfc6492",
-      "version": 3,
+      "version": 5,
       "sequence": 3,
       "summary": {
-        "msg": "Update entitlements under parent 'ta': 0 => asn: 0 blocks, v4: 1 blocks, v6: 0 blocks ",
+        "msg": "Update entitlements under parent 'ta': 0 => asn: , v4: 10.0.0.0/16, v6:  ",
         "label": "cmd-ca-parent-entitlements",
         "args": {
           "parent": "ta"
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           3,
           4
@@ -67,16 +70,17 @@
       "actor": "krill",
       "timestamp": 1588256324841,
       "handle": "rfc6492",
-      "version": 5,
+      "version": 6,
       "sequence": 4,
       "summary": {
-        "msg": "Update entitlements under parent 'ta': 0 => asn: 0 blocks, v4: 1 blocks, v6: 0 blocks ",
+        "msg": "Update entitlements under parent 'ta': 0 => asn: , v4: 10.0.0.0/16, v6:  ",
         "label": "cmd-ca-parent-entitlements",
         "args": {
           "parent": "ta"
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           5
         ]
@@ -87,20 +91,21 @@
       "actor": "krill",
       "timestamp": 1588256325239,
       "handle": "rfc6492",
-      "version": 6,
+      "version": 7,
       "sequence": 5,
       "summary": {
         "msg": "Update received cert in RC '0', with resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
         "label": "cmd-ca-rcn-receive",
         "args": {
-          "ipv4_blocks": "1",
-          "resources": "asn: , v4: 10.0.0.0/16, v6: ",
-          "ipv6_blocks": "0",
+          "asn_blocks": "0",
           "class_name": "0",
-          "asn_blocks": "0"
+          "ipv4_blocks": "1",
+          "ipv6_blocks": "0",
+          "resources": "asn: , v4: 10.0.0.0/16, v6: "
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           6
         ]
@@ -111,7 +116,7 @@
       "actor": "krill",
       "timestamp": 1588256325978,
       "handle": "rfc6492",
-      "version": 7,
+      "version": 9,
       "sequence": 6,
       "summary": {
         "msg": "Initiate key roll for keys older than '0' seconds",
@@ -121,6 +126,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           7,
           8
@@ -132,20 +138,21 @@
       "actor": "krill",
       "timestamp": 1588256327480,
       "handle": "rfc6492",
-      "version": 9,
+      "version": 10,
       "sequence": 7,
       "summary": {
         "msg": "Update received cert in RC '0', with resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
         "label": "cmd-ca-rcn-receive",
         "args": {
           "asn_blocks": "0",
-          "resources": "asn: , v4: 10.0.0.0/16, v6: ",
           "class_name": "0",
           "ipv4_blocks": "1",
-          "ipv6_blocks": "0"
+          "ipv6_blocks": "0",
+          "resources": "asn: , v4: 10.0.0.0/16, v6: "
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           9
         ]
@@ -156,7 +163,7 @@
       "actor": "krill",
       "timestamp": 1588256328610,
       "handle": "rfc6492",
-      "version": 10,
+      "version": 11,
       "sequence": 8,
       "summary": {
         "msg": "Activate new keys staging longer than '0' seconds",
@@ -166,9 +173,9 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
-          10,
-          11
+          10
         ]
       }
     },
@@ -187,8 +194,9 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
-          12
+          11
         ]
       }
     }

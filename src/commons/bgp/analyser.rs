@@ -1,8 +1,7 @@
-use std::env;
-
-use tokio::sync::RwLock;
+use std::fmt;
 
 use chrono::Duration;
+use tokio::sync::RwLock;
 
 use rpki::x509::Time;
 
@@ -12,7 +11,7 @@ use crate::commons::bgp::{
     BgpAnalysisEntry, BgpAnalysisReport, BgpAnalysisState, BgpAnalysisSuggestion, IpRange, RisDumpError, RisDumpLoader,
     ValidatedAnnouncement,
 };
-use crate::constants::{BGP_RIS_REFRESH_MINUTES, KRILL_ENV_TEST_ANN};
+use crate::constants::{test_announcements_enabled, BGP_RIS_REFRESH_MINUTES};
 
 //------------ BgpAnalyser -------------------------------------------------
 
@@ -24,7 +23,7 @@ pub struct BgpAnalyser {
 
 impl BgpAnalyser {
     pub fn new(ris_enabled: bool, ris_v4_uri: &str, ris_v6_uri: &str) -> Self {
-        if env::var(KRILL_ENV_TEST_ANN).is_ok() {
+        if test_announcements_enabled() {
             Self::with_test_announcements()
         } else {
             let dumploader = if ris_enabled {
@@ -290,10 +289,17 @@ impl BgpAnalyser {
 
 //------------ Error --------------------------------------------------------
 
-#[derive(Debug, Display)]
+#[derive(Debug)]
 pub enum BgpAnalyserError {
-    #[display(fmt = "BGP RIS update error: {}", _0)]
     RisDump(RisDumpError),
+}
+
+impl fmt::Display for BgpAnalyserError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            BgpAnalyserError::RisDump(e) => write!(f, "BGP RIS update error: {}", e),
+        }
+    }
 }
 
 impl From<RisDumpError> for BgpAnalyserError {

@@ -11,13 +11,17 @@ use crate::commons::util::file;
 
 //------------ KeyStoreKey ---------------------------------------------------
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct KeyStoreKey {
     scope: Option<String>,
     name: String,
 }
 
 impl KeyStoreKey {
+    pub fn new(scope: Option<String>, name: String) -> Self {
+        KeyStoreKey { scope, name }
+    }
+
     pub fn simple(name: String) -> Self {
         KeyStoreKey { scope: None, name }
     }
@@ -76,6 +80,7 @@ impl fmt::Display for KeyStoreKey {
 
 /// Using an enum here, because we expect to have more implementations in future.
 /// Not using generics because it's harder on the compiler.
+#[derive(Debug)]
 pub enum KeyValueStore {
     Disk(KeyValueStoreDiskImpl),
 }
@@ -122,9 +127,16 @@ impl KeyValueStore {
     }
 
     /// Delete a key-value pair
-    pub fn drop(&self, key: &KeyStoreKey) -> Result<(), KeyValueError> {
+    pub fn drop_key(&self, key: &KeyStoreKey) -> Result<(), KeyValueError> {
         match self {
-            KeyValueStore::Disk(disk_store) => disk_store.drop(key),
+            KeyValueStore::Disk(disk_store) => disk_store.drop_key(key),
+        }
+    }
+
+    /// Delete a scope
+    pub fn drop_scope(&self, scope: &str) -> Result<(), KeyValueError> {
+        match self {
+            KeyValueStore::Disk(disk_store) => disk_store.drop_scope(scope),
         }
     }
 
@@ -138,6 +150,11 @@ impl KeyValueStore {
     /// Archive a key
     pub fn archive(&self, key: &KeyStoreKey) -> Result<(), KeyValueError> {
         self.move_key(key, &key.archived())
+    }
+
+    /// Archive a key to an arbitrary scope
+    pub fn archive_to(&self, key: &KeyStoreKey, scope: &str) -> Result<(), KeyValueError> {
+        self.move_key(key, &key.sub_scope(scope))
     }
 
     /// Archive a key as corrupt
@@ -180,6 +197,7 @@ impl KeyValueStore {}
 
 /// This type can store and retrieve values to/from disk, using json
 /// serialization
+#[derive(Debug)]
 pub struct KeyValueStoreDiskImpl {
     base: PathBuf,
 }
@@ -188,6 +206,13 @@ impl KeyValueStoreDiskImpl {
     fn file_path(&self, key: &KeyStoreKey) -> PathBuf {
         let mut path = self.scope_path(key.scope.as_ref());
         path.push(key.name());
+        path
+    }
+
+    /// creates a file path, prefixing the name with '.' much like vi
+    fn swap_file_path(&self, key: &KeyStoreKey) -> PathBuf {
+        let mut path = self.scope_path(key.scope.as_ref());
+        path.push(format!(".{}", key.name()));
         path
     }
 
@@ -200,9 +225,14 @@ impl KeyValueStoreDiskImpl {
     }
 
     fn store<V: Any + Serialize>(&self, key: &KeyStoreKey, value: &V) -> Result<(), KeyValueError> {
-        let mut f = file::create_file_with_path(&self.file_path(key))?;
+        let swap_file_path = self.swap_file_path(key);
+        let file_path = self.file_path(key);
+        let mut swap_file = file::create_file_with_path(&swap_file_path)?;
         let json = serde_json::to_string_pretty(value)?;
-        f.write_all(json.as_ref())?;
+        swap_file.write_all(json.as_ref())?;
+
+        fs::rename(swap_file_path, file_path)?;
+
         Ok(())
     }
 
@@ -237,10 +267,18 @@ impl KeyValueStoreDiskImpl {
         path.exists()
     }
 
-    pub fn drop(&self, key: &KeyStoreKey) -> Result<(), KeyValueError> {
+    pub fn drop_key(&self, key: &KeyStoreKey) -> Result<(), KeyValueError> {
         let path = self.file_path(key);
         if path.exists() {
             fs::remove_file(path)?;
+        }
+        Ok(())
+    }
+
+    pub fn drop_scope(&self, scope: &str) -> Result<(), KeyValueError> {
+        let path = self.scope_path(Some(&scope.to_string()));
+        if path.exists() {
+            fs::remove_dir_all(path)?;
         }
         Ok(())
     }

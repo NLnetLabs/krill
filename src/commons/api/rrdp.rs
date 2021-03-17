@@ -7,6 +7,7 @@ use std::io;
 use std::path::PathBuf;
 
 use bytes::Bytes;
+use chrono::Duration;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
 
@@ -33,7 +34,7 @@ impl Default for RrdpSession {
 }
 
 impl RrdpSession {
-    pub fn new() -> Self {
+    pub fn random() -> Self {
         Self::default()
     }
 }
@@ -219,11 +220,22 @@ impl Notification {
         self.time
     }
 
+    #[deprecated] // use 'older_than_seconds'
     pub fn replaced_after(&self, timestamp: i64) -> bool {
         if let Some(replaced) = self.replaced {
             replaced.timestamp() > timestamp
         } else {
             false
+        }
+    }
+
+    pub fn older_than_seconds(&self, seconds: i64) -> bool {
+        match self.replaced {
+            Some(time) => {
+                let then = Time::now() - Duration::seconds(seconds);
+                time < then
+            }
+            None => false,
         }
     }
 
@@ -447,6 +459,10 @@ impl Default for CurrentObjects {
 }
 
 impl CurrentObjects {
+    pub fn new(map: HashMap<HexEncodedHash, PublishElement>) -> Self {
+        CurrentObjects(map)
+    }
+
     pub fn elements(&self) -> Vec<&PublishElement> {
         let mut res = vec![];
         for el in self.0.values() {
@@ -454,38 +470,11 @@ impl CurrentObjects {
         }
         res
     }
-}
 
-//------------ VerificationError ---------------------------------------------
-
-/// Issues with relation to verifying deltas.
-#[derive(Clone, Debug, Display)]
-pub enum PublicationDeltaError {
-    #[display(fmt = "Publishing ({}) outside of jail URI ({}) is not allowed.", _0, _1)]
-    UriOutsideJail(uri::Rsync, uri::Rsync),
-
-    #[display(fmt = "File already exists for uri (use update!): {}", _0)]
-    ObjectAlreadyPresent(uri::Rsync),
-
-    #[display(fmt = "File does not match hash at uri: {}", _0)]
-    NoObjectForHashAndOrUri(uri::Rsync),
-}
-
-impl PublicationDeltaError {
-    fn outside(jail: &uri::Rsync, uri: &uri::Rsync) -> Self {
-        PublicationDeltaError::UriOutsideJail(uri.clone(), jail.clone())
+    pub fn into_elements(self) -> Vec<PublishElement> {
+        self.0.into_iter().map(|(_, e)| e).collect()
     }
 
-    fn present(uri: &uri::Rsync) -> Self {
-        PublicationDeltaError::ObjectAlreadyPresent(uri.clone())
-    }
-
-    fn no_match(uri: &uri::Rsync) -> Self {
-        PublicationDeltaError::NoObjectForHashAndOrUri(uri.clone())
-    }
-}
-
-impl CurrentObjects {
     fn has_match(&self, hash: &HexEncodedHash, uri: &uri::Rsync) -> bool {
         match self.0.get(hash) {
             Some(el) => el.uri() == uri,
@@ -493,7 +482,7 @@ impl CurrentObjects {
         }
     }
 
-    pub fn verify_delta(&self, delta: &DeltaElements, jail: &uri::Rsync) -> Result<(), PublicationDeltaError> {
+    fn verify_delta(&self, delta: &DeltaElements, jail: &uri::Rsync) -> Result<(), PublicationDeltaError> {
         for p in delta.publishes() {
             if !jail.is_parent_of(p.uri()) {
                 return Err(PublicationDeltaError::outside(jail, p.uri()));
@@ -505,12 +494,18 @@ impl CurrentObjects {
         }
 
         for u in delta.updates() {
+            if !jail.is_parent_of(u.uri()) {
+                return Err(PublicationDeltaError::outside(jail, u.uri()));
+            }
             if !self.has_match(u.hash(), u.uri()) {
                 return Err(PublicationDeltaError::no_match(u.uri()));
             }
         }
 
         for w in delta.withdraws() {
+            if !jail.is_parent_of(w.uri()) {
+                return Err(PublicationDeltaError::outside(jail, w.uri()));
+            }
             if !self.has_match(w.hash(), w.uri()) {
                 return Err(PublicationDeltaError::no_match(w.uri()));
             }
@@ -519,10 +514,13 @@ impl CurrentObjects {
         Ok(())
     }
 
-    /// Applies a delta to CurrentObjects. This will asume that the delta
-    /// contains only valid updates for this delta.
-    pub fn apply_delta(&mut self, delta: DeltaElements) {
-        let (publishes, updates, withdraws) = delta.unwrap();
+    /// Applies a delta to CurrentObjects. This will verify that the
+    /// delta is legal with regards to existing objects, and the jail
+    /// specified for the publisher.
+    pub fn apply_delta(&mut self, delta: DeltaElements, jail: &uri::Rsync) -> Result<(), PublicationDeltaError> {
+        self.verify_delta(&delta, jail)?;
+
+        let (publishes, updates, withdraws) = delta.unpack();
 
         for p in publishes {
             let hash = p.base64().to_encoded_hash();
@@ -539,6 +537,8 @@ impl CurrentObjects {
         for w in withdraws {
             self.0.remove(w.hash());
         }
+
+        Ok(())
     }
 
     pub fn len(&self) -> usize {
@@ -568,6 +568,45 @@ impl CurrentObjects {
     }
 }
 
+//------------ PublicationDeltaError ---------------------------------------------
+
+/// Issues with relation to verifying deltas.
+#[derive(Clone, Debug)]
+pub enum PublicationDeltaError {
+    UriOutsideJail(uri::Rsync, uri::Rsync),
+    ObjectAlreadyPresent(uri::Rsync),
+    NoObjectForHashAndOrUri(uri::Rsync),
+}
+
+impl fmt::Display for PublicationDeltaError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            PublicationDeltaError::UriOutsideJail(uri, jail) => {
+                write!(f, "Publishing ({}) outside of jail URI ({}) is not allowed.", uri, jail)
+            }
+            PublicationDeltaError::ObjectAlreadyPresent(uri) => {
+                write!(f, "File already exists for uri (use update!): {}", uri)
+            }
+            PublicationDeltaError::NoObjectForHashAndOrUri(uri) => {
+                write!(f, "File does not match hash at uri: {}", uri)
+            }
+        }
+    }
+}
+
+impl PublicationDeltaError {
+    fn outside(jail: &uri::Rsync, uri: &uri::Rsync) -> Self {
+        PublicationDeltaError::UriOutsideJail(uri.clone(), jail.clone())
+    }
+
+    fn present(uri: &uri::Rsync) -> Self {
+        PublicationDeltaError::ObjectAlreadyPresent(uri.clone())
+    }
+
+    fn no_match(uri: &uri::Rsync) -> Self {
+        PublicationDeltaError::NoObjectForHashAndOrUri(uri.clone())
+    }
+}
 //------------ Snapshot ------------------------------------------------------
 
 /// A structure to contain the RRDP snapshot data.
@@ -579,7 +618,19 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
-    pub fn new(session: RrdpSession) -> Self {
+    pub fn new(session: RrdpSession, serial: u64, current_objects: CurrentObjects) -> Self {
+        Snapshot {
+            session,
+            serial,
+            current_objects,
+        }
+    }
+
+    pub fn unpack(self) -> (RrdpSession, u64, CurrentObjects) {
+        (self.session, self.serial, self.current_objects)
+    }
+
+    pub fn create(session: RrdpSession) -> Self {
         let current_objects = CurrentObjects::default();
         Snapshot {
             session,
@@ -604,11 +655,9 @@ impl Snapshot {
         self.serial
     }
 
-    pub fn apply_delta(&mut self, delta: Delta) {
-        let (session, serial, elements) = delta.unwrap();
-        self.session = session;
-        self.serial = serial;
-        self.current_objects.apply_delta(elements)
+    pub fn apply_delta(&mut self, elements: DeltaElements, jail: &uri::Rsync) -> Result<(), PublicationDeltaError> {
+        self.serial += 1;
+        self.current_objects.apply_delta(elements, jail)
     }
 
     pub fn size(&self) -> usize {
@@ -666,7 +715,7 @@ impl DeltaElements {
         }
     }
 
-    pub fn unwrap(self) -> (Vec<PublishElement>, Vec<UpdateElement>, Vec<WithdrawElement>) {
+    pub fn unpack(self) -> (Vec<PublishElement>, Vec<UpdateElement>, Vec<WithdrawElement>) {
         (self.publishes, self.updates, self.withdraws)
     }
 
@@ -744,6 +793,12 @@ impl Delta {
     pub fn time(&self) -> &Time {
         &self.time
     }
+
+    pub fn older_than_seconds(&self, seconds: i64) -> bool {
+        let then = Time::now() - Duration::seconds(seconds);
+        self.time < then
+    }
+
     pub fn elements(&self) -> &DeltaElements {
         &self.elements
     }

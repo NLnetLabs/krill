@@ -111,258 +111,346 @@ impl fmt::Display for RoaDeltaError {
     }
 }
 
-#[derive(Debug, Display)]
+// ApiAuthError is *also* implemented as a separate enum,
+// so that we don't have to implement the Clone trait for
+// all of the Error enum.
+// Also it makes kind of sense to keep these errors separate
+// container, since they all originate in interactions
+// with the Auth provider (or lack thereof).
+#[derive(Debug, Clone)]
+pub enum ApiAuthError {
+    ApiInvalidCredentials(String),
+    ApiLoginError(String),
+    ApiAuthPermanentError(String),
+    ApiAuthTransientError(String),
+    ApiAuthSessionExpired(String),
+    ApiInsufficientRights(String),
+}
+
+impl Display for ApiAuthError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ApiAuthError::ApiInvalidCredentials(err)
+            | ApiAuthError::ApiLoginError(err)
+            | ApiAuthError::ApiAuthPermanentError(err)
+            | ApiAuthError::ApiAuthTransientError(err)
+            | ApiAuthError::ApiAuthSessionExpired(err)
+            | ApiAuthError::ApiInsufficientRights(err) => write!(f, "{}", &err),
+        }
+    }
+}
+
+impl From<Error> for ApiAuthError {
+    fn from(e: Error) -> Self {
+        match e {
+            Error::ApiAuthPermanentError(e) => ApiAuthError::ApiAuthPermanentError(e),
+            Error::ApiLoginError(e) => ApiAuthError::ApiLoginError(e),
+            Error::ApiInsufficientRights(e) => ApiAuthError::ApiInsufficientRights(e),
+            Error::ApiAuthTransientError(e) => ApiAuthError::ApiAuthTransientError(e),
+            Error::ApiAuthSessionExpired(e) => ApiAuthError::ApiAuthSessionExpired(e),
+            Error::ApiInvalidCredentials(e) => ApiAuthError::ApiInvalidCredentials(e),
+            _ => ApiAuthError::ApiAuthPermanentError(e.to_string()),
+        }
+    }
+}
+
+#[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum Error {
     //-----------------------------------------------------------------
     // System Issues
     //-----------------------------------------------------------------
-    #[display(fmt = "I/O error: {}", _0)]
     IoError(io::Error),
-
-    #[display(fmt = "Key/Value error: {}", _0)]
     KeyValueError(KeyValueError),
-
-    #[display(fmt = "Persistence error: {}", _0)]
     AggregateStoreError(AggregateStoreError),
-
-    #[display(fmt = "Signing issue: {}", _0)]
     SignerError(String),
-
-    #[display(fmt = "Cannot set up HTTPS: {}", _0)]
     HttpsSetup(String),
-
-    #[display(fmt = "HTTP client error: {}", _0)]
     HttpClientError(httpclient::Error),
-
+    ConfigError(String),
     //-----------------------------------------------------------------
     // General API Client Issues
     //-----------------------------------------------------------------
-    #[display(fmt = "Invalid JSON: {}", _0)]
     JsonError(serde_json::Error),
-
-    #[display(fmt = "Unknown API method")]
+    NonAsciiCharsInput,
+    InvalidUtf8Input,
     ApiUnknownMethod,
-
-    #[display(fmt = "Unknown resource")]
     ApiUnknownResource,
-
-    #[display(fmt = "Invalid path argument for handle")]
     ApiInvalidHandle,
-
-    #[display(fmt = "Invalid path argument for seconds")]
     ApiInvalidSeconds,
-
-    #[display(fmt = "POST body exceeds configured limit")]
     PostTooBig,
-
-    #[display(fmt = "POST body cannot be read")]
     PostCannotRead,
+    ApiInvalidCredentials(String),
+    ApiLoginError(String),
+    ApiAuthPermanentError(String),
+    ApiAuthTransientError(String),
+    ApiAuthSessionExpired(String),
+    ApiInsufficientRights(String),
 
     //-----------------------------------------------------------------
     // Repository Issues
     //-----------------------------------------------------------------
-    #[display(fmt = "No repository configured for CA")]
     RepoNotSet,
 
     //-----------------------------------------------------------------
     // Publisher Issues
     //-----------------------------------------------------------------
-    #[display(fmt = "Unknown publisher '{}'", _0)]
     PublisherUnknown(PublisherHandle),
-
-    #[display(fmt = "Publishing uri '{}' outside repository uri '{}'", _0, _1)]
     PublisherUriOutsideBase(String, String),
-
-    #[display(fmt = "Publisher uri '{}' must have a trailing slash", _0)]
     PublisherBaseUriNoSlash(String),
-
-    #[display(fmt = "Duplicate publisher '{}'", _0)]
     PublisherDuplicate(PublisherHandle),
 
-    #[display(fmt = "No embedded repository configured")]
-    PublisherNoEmbeddedRepo,
+    //-----------------------------------------------------------------
+    // Repository Server Issues
+    //-----------------------------------------------------------------
+    RepositoryServerNotEnabled,
+    RepositoryServerNotInitialised,
+    RepositoryServerHasPublishers,
+    RepositoryServerAlreadyInitialised,
 
     //-----------------------------------------------------------------
-    // RFC 8181 (publishing)
+    // Publishing
     //-----------------------------------------------------------------
-    #[display(fmt = "Issue with RFC8181 request: {}", _0)]
     Rfc8181Validation(ValidationError),
-
-    #[display(fmt = "Issue with decoding RFC8181 request: {}", _0)]
     Rfc8181Decode(String),
-
-    #[display(fmt = "{}", _0)]
     Rfc8181MessageError(rfc8181::MessageError),
-
-    #[display(fmt = "{}", _0)]
     Rfc8181Delta(PublicationDeltaError),
+    PublishingObjects(String),
 
     //-----------------------------------------------------------------
     // CA Issues
     //-----------------------------------------------------------------
-    #[display(fmt = "CA '{}' was already initialised", _0)]
+    CaServerNotEnabled,
     CaDuplicate(Handle),
-    #[display(fmt = "CA '{}' is unknown", _0)]
     CaUnknown(Handle),
 
     // CA Repo Issues
-    #[display(fmt = "CA '{}' already uses this repository", _0)]
     CaRepoInUse(Handle),
-
-    #[display(
-        fmt = "CA '{}' cannot get response from repository '{}'. Is the 'service_uri' in the XML reachable? Note that when upgrading Krill you should re-use existing configuration and data. For a fresh re-install of Krill you will need to send XML to all other parties again: parent(s), children, and repository",
-        _0,
-        _1
-    )]
     CaRepoIssue(Handle, String),
-    #[display(fmt = "CA '{}' got invalid repository response xml: {}", _0, _1)]
     CaRepoResponseInvalidXml(Handle, String),
-    #[display(fmt = "CA '{}' got parent instead of repository response", _0)]
     CaRepoResponseWrongXml(Handle),
 
     // CA Parent Issues
-    #[display(fmt = "CA '{}' already has a parent named '{}'", _0, _1)]
     CaParentDuplicateName(Handle, ParentHandle),
-
-    #[display(fmt = "CA '{}' already has a parent named '{}' for this XML", _0, _1)]
     CaParentDuplicateInfo(Handle, ParentHandle),
-
-    #[display(fmt = "CA '{}' does not have a parent named '{}'", _0, _1)]
     CaParentUnknown(Handle, ParentHandle),
-
-    #[display(fmt = "CA '{}' got error from parent '{}': {}", _0, _1, _2)]
     CaParentIssue(Handle, ParentHandle, String),
-
-    #[display(fmt = "CA '{}' got invalid parent response xml: {}", _0, _1)]
     CaParentResponseInvalidXml(Handle, String),
-
-    #[display(fmt = "CA '{}' got repository response when adding parent", _0)]
     CaParentResponseWrongXml(Handle),
-
-    #[display(
-        fmt = "CA '{}' cannot get response from parent '{}'. Is the 'service_uri' in the XML reachable? Note that when upgrading Krill you should re-use existing configuration and data. For a fresh re-install of Krill you will need to send XML to all other parties again: parent(s), children, and repository",
-        _0,
-        _1
-    )]
     CaParentAddNotResponsive(Handle, ParentHandle),
 
     //-----------------------------------------------------------------
     // RFC6492 (requesting resources)
     //-----------------------------------------------------------------
-    #[display(fmt = "RFC 6492 Issue: {}", _0)]
     Rfc6492(rfc6492::Error),
-
-    #[display(fmt = "RFC 6492 Not Performed: {}", _0)]
     Rfc6492NotPerformed(NotPerformedResponse),
-
-    #[display(fmt = "Invalid CSR received: {}", _0)]
     Rfc6492InvalidCsrSent(String),
-
-    #[display(fmt = "Invalidly signed RFC 6492 CMS")]
     Rfc6492SignatureInvalid,
 
+    //-----------------------------------------------------------------
     // CA Child Issues
-    #[display(fmt = "CA '{}' already has a child named '{}'", _0, _1)]
+    //-----------------------------------------------------------------
     CaChildDuplicate(Handle, ChildHandle),
-
-    #[display(fmt = "CA '{}' does not have a child named '{}'", _0, _1)]
     CaChildUnknown(Handle, ChildHandle),
-
-    #[display(fmt = "Child '{}' for CA '{}' MUST have resources specified", _1, _0)]
     CaChildMustHaveResources(Handle, ChildHandle),
-
-    #[display(fmt = "Child '{}' cannot have resources not held by CA '{}'", _1, _0)]
     CaChildExtraResources(Handle, ChildHandle),
-
-    #[display(fmt = "CA '{}' does not know id certificate for child '{}'", _0, _1)]
     CaChildUnauthorized(Handle, ChildHandle),
 
-    #[display(
-        fmt = "You can only update one aspect for child '{}' of CA '{}' at a time - i.e. either resources or ID cert",
-        _1,
-        _0
-    )]
-    CaChildUpdateOneThing(Handle, ChildHandle),
-
+    //-----------------------------------------------------------------
     // RouteAuthorizations - ROAs
-    #[display(fmt = "Cannot remove unknown ROA '{}'", _1)]
+    //-----------------------------------------------------------------
     CaAuthorizationUnknown(Handle, RouteAuthorization),
-
-    #[display(fmt = "ROA '{}' already present", _1)]
     CaAuthorizationDuplicate(Handle, RouteAuthorization),
-
-    #[display(fmt = "ROA '{}' was not added because it is redundant", _1)]
-    CaAuthorizationRedundant(Handle, RouteAuthorization),
-
-    #[display(fmt = "ROA '{}' was not added because it would make existing ROAs redundant", _1)]
-    CaAuthorizationIncludes(Handle, RouteAuthorization),
-
-    #[display(fmt = "Invalid max length in ROA: '{}'", _1)]
     CaAuthorizationInvalidMaxlength(Handle, RouteAuthorization),
-
-    #[display(fmt = "Prefix in ROA '{}' not held by you", _1)]
     CaAuthorizationNotEntitled(Handle, RouteAuthorization),
-
-    #[display(fmt = "ROA delta rejected:\n\n'{}' ", _0)]
     RoaDeltaError(RoaDeltaError),
 
     //-----------------------------------------------------------------
     // Key Usage Issues
     //-----------------------------------------------------------------
-    #[display(fmt = "Attempt at re-using keys")]
     KeyUseAttemptReuse,
-
-    #[display(fmt = "No new key in resource class")]
     KeyUseNoNewKey,
-
-    #[display(fmt = "No current key in resource class")]
     KeyUseNoCurrentKey,
-
-    #[display(fmt = "No old key in resource class")]
     KeyUseNoOldKey,
-
-    #[display(fmt = "No issued cert matching pub key")]
     KeyUseNoIssuedCert,
-
-    #[display(fmt = "No key found matching key identifier: '{}'", _0)]
     KeyUseNoMatch(KeyIdentifier),
+    KeyRollNotAllowed,
 
     //-----------------------------------------------------------------
     // Resource Issues
     //-----------------------------------------------------------------
-    #[display(fmt = "Unknown resource class: '{}'", _0)]
     ResourceClassUnknown(ResourceClassName),
-
-    #[display(fmt = "{}", _0)]
     ResourceSetError(ResourceSetError),
-
-    #[display(fmt = "Requester is not entitled to all requested resources")]
     MissingResources,
 
     //-----------------------------------------------------------------
     // Embedded (test) TA issues
     //-----------------------------------------------------------------
-    #[display(fmt = "Functionality not supported for Trust Anchor")]
     TaNotAllowed,
-
-    #[display(fmt = "Name reserved for embedded Trust Anchor")]
     TaNameReserved,
-
-    #[display(fmt = "TrustAnchor was already initialised")]
     TaAlreadyInitialised,
 
     //-----------------------------------------------------------------
     // Resource Tagged Attestation issues
     //-----------------------------------------------------------------
-    #[display(fmt = "Your CA does not hold the requested resources")]
     RtaResourcesNotHeld,
 
     //-----------------------------------------------------------------
     // If we really don't know any more..
     //-----------------------------------------------------------------
-    #[display(fmt = "{}", _0)]
     Custom(String),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            //-----------------------------------------------------------------
+            // System Issues
+            //-----------------------------------------------------------------
+            Error::IoError(e) => write!(f, "I/O error: {}", e),
+            Error::KeyValueError(e) => write!(f, "Key/Value error: {}", e),
+            Error::AggregateStoreError(e) => write!(f, "Persistence error: {}", e),
+            Error::SignerError(e) => write!(f, "Signing issue: {}", e),
+            Error::HttpsSetup(e) => write!(f, "Cannot set up HTTPS: {}", e),
+            Error::HttpClientError(e) => write!(f, "HTTP client error: {}", e),
+            Error::ConfigError(e) => write!(f, "Configuration error: {}", e),
+
+            //-----------------------------------------------------------------
+            // General API Client Issues
+            //-----------------------------------------------------------------
+            Error::JsonError(e) => write!(f,"Invalid JSON: {}", e),
+            Error::NonAsciiCharsInput => write!(f, "Input contains non-ASCII chars (maybe whitespace?)"),
+            Error::InvalidUtf8Input => write!(f, "Submitted bytes are invalid UTF8"),
+            Error::ApiUnknownMethod => write!(f,"Unknown API method"),
+            Error::ApiUnknownResource => write!(f, "Unknown resource"),
+            Error::ApiInvalidHandle => write!(f, "Invalid path argument for handle"),
+            Error::ApiInvalidSeconds => write!(f, "Invalid path argument for seconds"),
+            Error::PostTooBig => write!(f, "POST body exceeds configured limit"),
+            Error::PostCannotRead => write!(f, "POST body cannot be read"),
+            Error::ApiInvalidCredentials(e) => write!(f, "Invalid credentials: {}", e),
+            Error::ApiLoginError(e) => write!(f, "Login error: {}", e),
+            Error::ApiAuthPermanentError(e) => write!(f, "Authentication error: {}", e),
+            Error::ApiAuthTransientError(e) => write!(f, "Transient authentication error: {}", e),
+            Error::ApiAuthSessionExpired(e) => write!(f, "Session expired: {}", e),
+            Error::ApiInsufficientRights(e) => write!(f, "Insufficient rights: {}", e),
+
+            //-----------------------------------------------------------------
+            // Repository Issues
+            //-----------------------------------------------------------------
+            Error::RepoNotSet => write!(f, "No repository configured for CA"),
+
+
+            //-----------------------------------------------------------------
+            // Publisher Issues
+            //-----------------------------------------------------------------
+            Error::PublisherUnknown(pbl) => write!(f, "Unknown publisher '{}'", pbl),
+            Error::PublisherUriOutsideBase(uri, jail) => write!(f, "Publishing uri '{}' outside repository uri '{}'", uri, jail),
+            Error::PublisherBaseUriNoSlash(uri) => write!(f, "Publisher uri '{}' must have a trailing slash", uri),
+            Error::PublisherDuplicate(pbl) => write!(f, "Duplicate publisher '{}'", pbl),
+
+            //-----------------------------------------------------------------
+            // Repository Server Issues
+            //-----------------------------------------------------------------
+            Error::RepositoryServerNotEnabled=> write!(f, "Publication Server not enabled"),
+            Error::RepositoryServerNotInitialised => write!(f, "Publication Server not initialised"),
+            Error::RepositoryServerHasPublishers => write!(f, "Publication Server cannot be removed, still has publishers"),
+            Error::RepositoryServerAlreadyInitialised => write!(f, "Publication Server already initialised"),
+
+            //-----------------------------------------------------------------
+            // RFC 8181 (publishing)
+            //-----------------------------------------------------------------
+            Error::Rfc8181Validation(req) => write!(f, "Issue with RFC8181 request: {}", req),
+            Error::Rfc8181Decode(req) => write!(f, "Issue with decoding RFC8181 request: {}", req),
+            Error::Rfc8181MessageError(e) => e.fmt(f),
+            Error::Rfc8181Delta(e) => e.fmt(f),
+            Error::PublishingObjects(msg) => write!(f, "Issue generating repository objects: '{}'", msg),
+
+
+            //-----------------------------------------------------------------
+            // CA Issues
+            //-----------------------------------------------------------------
+            Error::CaServerNotEnabled => write!(f, "CA Server not enabled on this Krill installation"),
+            Error::CaDuplicate(ca) => write!(f, "CA '{}' was already initialised", ca),
+            Error::CaUnknown(ca) => write!(f, "CA '{}' is unknown", ca),
+
+            // CA Repo Issues
+            Error::CaRepoInUse(ca) => write!(f, "CA '{}' already uses this repository", ca),
+            Error::CaRepoIssue(ca, e) => write!(f, "CA '{}' cannot get response from repository '{}'. Is the 'service_uri' in the XML reachable? Note that when upgrading Krill you should re-use existing configuration and data. For a fresh \
+            re-install of Krill you will need to send XML to all other parties again: parent(s), children, and repository", ca,        e),
+            Error::CaRepoResponseInvalidXml(ca, e) => write!(f, "CA '{}' got invalid repository response xml: {}", ca, e),
+            Error::CaRepoResponseWrongXml(ca) => write!(f, "CA '{}' got parent instead of repository response", ca),
+
+            // CA Parent Issues
+            Error::CaParentDuplicateName(ca, parent) => write!(f, "CA '{}' already has a parent named '{}'", ca, parent),
+            Error::CaParentDuplicateInfo(ca, parent) => write!(f, "CA '{}' already has a parent named '{}' for this XML", ca, parent),
+            Error::CaParentUnknown(ca, parent) => write!(f, "CA '{}' does not have a parent named '{}'", ca, parent),
+            Error::CaParentIssue(ca, parent, e) => write!(f, "CA '{}' got error from parent '{}': {}", ca, parent, e),
+            Error::CaParentResponseInvalidXml(ca, e) => write!(f, "CA '{}' got invalid parent response xml: {}", ca, e),
+            Error::CaParentResponseWrongXml(ca) => write!(f, "CA '{}' got repository response when adding parent", ca),
+            Error::CaParentAddNotResponsive(ca, parent) => write!(f, "CA '{}' cannot get response from parent '{}'. Is the 'service_uri' in the XML reachable? Note that when upgrading Krill you should re-use existing configuration and data. For a fresh re-install of Krill you will need to send XML to all other parties again: parent(s), children, and repository",        ca, parent),
+
+            //-----------------------------------------------------------------
+            // RFC6492 (requesting resources)
+            //-----------------------------------------------------------------
+            Error::Rfc6492(e) => write!(f, "RFC 6492 Issue: {}", e),
+            Error::Rfc6492NotPerformed(not) => write!(f, "RFC 6492 Not Performed: {}", not),
+            Error::Rfc6492InvalidCsrSent(e) => write!(f, "Invalid CSR received: {}", e),
+            Error::Rfc6492SignatureInvalid => write!(f, "Invalidly signed RFC 6492 CMS"),
+
+            //-----------------------------------------------------------------
+            // CA Child Issues
+            //-----------------------------------------------------------------
+            Error::CaChildDuplicate(ca, child) => write!(f, "CA '{}' already has a child named '{}'", ca, child),
+            Error::CaChildUnknown(ca, child) => write!(f, "CA '{}' does not have a child named '{}'", ca, child),
+            Error::CaChildMustHaveResources(ca, child) => write!(f, "Child '{}' for CA '{}' MUST have resources specified", child, ca),
+            Error::CaChildExtraResources(ca, child) => write!(f, "Child '{}' cannot have resources not held by CA '{}'", child, ca),
+            Error::CaChildUnauthorized(ca, child) => write!(f, "CA '{}' does not know id certificate for child '{}'", ca, child),
+
+            //-----------------------------------------------------------------
+            // RouteAuthorizations - ROAs
+            //-----------------------------------------------------------------
+            Error::CaAuthorizationUnknown(_ca, roa) => write!(f, "Cannot remove unknown ROA '{}'", roa),
+            Error::CaAuthorizationDuplicate(_ca, roa) => write!(f, "ROA '{}' already present", roa),
+            Error::CaAuthorizationInvalidMaxlength(_ca, roa) => write!(f, "Invalid max length in ROA: '{}'", roa),
+            Error::CaAuthorizationNotEntitled(_ca, roa) => write!(f, "Prefix in ROA '{}' not held by you", roa),
+            Error::RoaDeltaError(e) => write!(f, "ROA delta rejected:\n\n'{}' ", e),
+
+            //-----------------------------------------------------------------
+            // Key Usage Issues
+            //-----------------------------------------------------------------
+            Error::KeyUseAttemptReuse => write!(f, "Attempt at re-using keys"),
+            Error::KeyUseNoNewKey => write!(f, "No new key in resource class"),
+            Error::KeyUseNoCurrentKey => write!(f, "No current key in resource class"),
+            Error::KeyUseNoOldKey => write!(f, "No old key in resource class"),
+            Error::KeyUseNoIssuedCert => write!(f, "No issued cert matching pub key"),
+            Error::KeyUseNoMatch(ki) => write!(f, "No key found matching key identifier: '{}'", ki),
+            Error::KeyRollNotAllowed => write!(f, "Key roll in progress"),
+
+            //-----------------------------------------------------------------
+            // Resource Issues
+            //-----------------------------------------------------------------
+            Error::ResourceClassUnknown(rcn) => write!(f, "Unknown resource class: '{}'", rcn),
+            Error::ResourceSetError(e) => e.fmt(f),
+            Error::MissingResources => write!(f, "Requester is not entitled to all requested resources"),
+
+
+            //-----------------------------------------------------------------
+            // Embedded (test) TA issues
+            //-----------------------------------------------------------------
+            Error::TaNotAllowed => write!(f, "Functionality not supported for Trust Anchor"),
+            Error::TaNameReserved => write!(f, "Name reserved for embedded Trust Anchor"),
+            Error::TaAlreadyInitialised => write!(f, "TrustAnchor was already initialised"),
+
+            //-----------------------------------------------------------------
+            // Resource Tagged Attestation issues
+            //-----------------------------------------------------------------
+            Error::RtaResourcesNotHeld => write!(f, "Your CA does not hold the requested resources"),
+
+            //-----------------------------------------------------------------
+            // If we really don't know any more..
+            //-----------------------------------------------------------------
+            Error::Custom(s) => s.fmt(f)
+        }
+    }
 }
 
 impl From<io::Error> for Error {
@@ -419,6 +507,25 @@ impl From<crate::commons::crypto::Error> for Error {
     }
 }
 
+impl From<ApiAuthError> for Error {
+    fn from(e: ApiAuthError) -> Self {
+        match e {
+            ApiAuthError::ApiAuthPermanentError(e) => Error::ApiAuthPermanentError(e),
+            ApiAuthError::ApiLoginError(e) => Error::ApiLoginError(e),
+            ApiAuthError::ApiInsufficientRights(e) => Error::ApiInsufficientRights(e),
+            ApiAuthError::ApiAuthTransientError(e) => Error::ApiAuthTransientError(e),
+            ApiAuthError::ApiAuthSessionExpired(e) => Error::ApiAuthSessionExpired(e),
+            ApiAuthError::ApiInvalidCredentials(e) => Error::ApiInvalidCredentials(e),
+        }
+    }
+}
+
+impl From<PublicationDeltaError> for Error {
+    fn from(e: PublicationDeltaError) -> Self {
+        Error::Rfc8181Delta(e)
+    }
+}
+
 impl Error {
     pub fn signer(e: impl Display) -> Self {
         Error::SignerError(e.to_string())
@@ -430,6 +537,10 @@ impl Error {
 
     pub fn publishing_outside_jail(uri: &uri::Rsync, jail: &uri::Rsync) -> Self {
         Error::PublisherUriOutsideBase(uri.to_string(), jail.to_string())
+    }
+
+    pub fn publishing(msg: impl fmt::Display) -> Self {
+        Error::PublishingObjects(msg.to_string())
     }
 
     pub fn custom(msg: impl fmt::Display) -> Self {
@@ -444,7 +555,7 @@ impl Error {
     pub fn status(&self) -> StatusCode {
         match self {
             // Most is bad requests by users, so just mapping the things that are not
-            Error::IoError(_) | Error::SignerError(_) | Error::AggregateStoreError(_) => {
+            Error::IoError(_) | Error::SignerError(_) | Error::AggregateStoreError(_) | Error::PublishingObjects(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
             Error::PublisherUnknown(_)
@@ -452,6 +563,13 @@ impl Error {
             | Error::CaChildUnknown(_, _)
             | Error::CaParentUnknown(_, _)
             | Error::ApiUnknownResource => StatusCode::NOT_FOUND,
+
+            Error::ApiInvalidCredentials(_)
+            | Error::ApiAuthPermanentError(_)
+            | Error::ApiAuthTransientError(_)
+            | Error::ApiAuthSessionExpired(_)
+            | Error::ApiLoginError(_) => StatusCode::UNAUTHORIZED,
+            Error::ApiInsufficientRights(_) => StatusCode::FORBIDDEN,
 
             _ => StatusCode::BAD_REQUEST,
         }
@@ -481,10 +599,17 @@ impl Error {
             // internal server error
             Error::HttpClientError(e) => ErrorResponse::new("sys-http-client", &self).with_cause(e),
 
+            // internal configuration error
+            Error::ConfigError(e) => ErrorResponse::new("sys-config", &self).with_cause(e),
+
             //-----------------------------------------------------------------
             // General API Client Issues (label: api-*)
             //-----------------------------------------------------------------
             Error::JsonError(e) => ErrorResponse::new("api-json", &self).with_cause(e),
+
+            Error::NonAsciiCharsInput => ErrorResponse::new("api-non-ascii", &self),
+
+            Error::InvalidUtf8Input => ErrorResponse::new("api-invalid-utf8", &self),
 
             Error::ApiUnknownMethod => ErrorResponse::new("api-unknown-method", &self),
 
@@ -498,6 +623,18 @@ impl Error {
             Error::PostTooBig => ErrorResponse::new("api-post-body-exceeds-limit", &self),
 
             Error::PostCannotRead => ErrorResponse::new("api-post-body-cannot-read", &self),
+
+            Error::ApiInvalidCredentials(e) => ErrorResponse::new("api-invalid-credentials", &self).with_cause(e),
+
+            Error::ApiLoginError(e) => ErrorResponse::new("api-login-error", &self).with_cause(e),
+
+            Error::ApiAuthPermanentError(e) => ErrorResponse::new("api-auth-permanent-error", &self).with_cause(e),
+
+            Error::ApiAuthTransientError(e) => ErrorResponse::new("api-auth-transient-error", &self).with_cause(e),
+
+            Error::ApiAuthSessionExpired(e) => ErrorResponse::new("api-auth-session-expired", &self).with_cause(e),
+
+            Error::ApiInsufficientRights(e) => ErrorResponse::new("api-insufficient-rights", &self).with_cause(e),
 
             //-----------------------------------------------------------------
             // Repository Issues (label: repo-*)
@@ -519,19 +656,29 @@ impl Error {
 
             Error::PublisherBaseUriNoSlash(uri) => ErrorResponse::new("pub-uri-no-slash", &self).with_uri(uri),
 
-            Error::PublisherNoEmbeddedRepo => ErrorResponse::new("pub-no-embedded-repo", &self),
+            //-----------------------------------------------------------------
+            // Repository Server Issues
+            //-----------------------------------------------------------------
+            Error::RepositoryServerNotEnabled => ErrorResponse::new("pub-no-server", &self),
+            Error::RepositoryServerNotInitialised => ErrorResponse::new("pub-repo-not-initialised", &self),
+            Error::RepositoryServerHasPublishers => ErrorResponse::new("pub-repo-has-publishers", &self),
+            Error::RepositoryServerAlreadyInitialised => ErrorResponse::new("pub-repo-initialised", &self),
 
             //-----------------------------------------------------------------
-            // RFC 8181
+            // Publishing
             //-----------------------------------------------------------------
             Error::Rfc8181Validation(e) => ErrorResponse::new("rfc8181-validation", &self).with_cause(e),
             Error::Rfc8181Decode(e) => ErrorResponse::new("rfc8181-decode", &self).with_cause(e),
             Error::Rfc8181MessageError(e) => ErrorResponse::new("rfc8181-protocol-message", &self).with_cause(e),
             Error::Rfc8181Delta(e) => ErrorResponse::new("rfc8181-delta", &self).with_cause(e),
+            Error::PublishingObjects(msg) => {
+                ErrorResponse::new("publishing-generate-repository-objects", &self).with_cause(msg)
+            }
 
             //-----------------------------------------------------------------
             // CA Issues (label: ca-*)
             //-----------------------------------------------------------------
+            Error::CaServerNotEnabled => ErrorResponse::new("ca-server-disabled", &self),
             Error::CaDuplicate(ca) => ErrorResponse::new("ca-duplicate", &self).with_ca(ca),
 
             Error::CaUnknown(ca) => ErrorResponse::new("ca-unknown", &self).with_ca(ca),
@@ -600,10 +747,6 @@ impl Error {
                 .with_ca(ca)
                 .with_child(child),
 
-            Error::CaChildUpdateOneThing(ca, child) => ErrorResponse::new("ca-child-update-one-thing", &self)
-                .with_ca(ca)
-                .with_child(child),
-
             // RouteAuthorizations
             Error::CaAuthorizationUnknown(ca, auth) => {
                 ErrorResponse::new("ca-roa-unknown", &self).with_ca(ca).with_auth(auth)
@@ -612,14 +755,6 @@ impl Error {
             Error::CaAuthorizationDuplicate(ca, auth) => ErrorResponse::new("ca-roa-duplicate", &self)
                 .with_ca(ca)
                 .with_auth(auth),
-
-            Error::CaAuthorizationRedundant(ca, auth) => ErrorResponse::new("ca-roa-redundant", &self)
-                .with_ca(ca)
-                .with_auth(auth),
-
-            Error::CaAuthorizationIncludes(ca, auth) => {
-                ErrorResponse::new("ca-roa-includes", &self).with_ca(ca).with_auth(auth)
-            }
 
             Error::CaAuthorizationInvalidMaxlength(ca, auth) => ErrorResponse::new("ca-roa-invalid-max-length", &self)
                 .with_ca(ca)
@@ -643,7 +778,7 @@ impl Error {
             Error::KeyUseNoOldKey => ErrorResponse::new("key-no-old", &self),
             Error::KeyUseNoIssuedCert => ErrorResponse::new("key-no-cert", &self),
             Error::KeyUseNoMatch(ki) => ErrorResponse::new("key-no-match", &self).with_key_identifier(ki),
-
+            Error::KeyRollNotAllowed => ErrorResponse::new("key-roll-disallowed", &self),
             //-----------------------------------------------------------------
             // Resource Issues (label: rc-*)
             //-----------------------------------------------------------------
@@ -794,7 +929,7 @@ mod tests {
         );
         verify(
             include_str!("../../test-resources/api/regressions/errors/pub-no-embedded-repo.json"),
-            Error::PublisherNoEmbeddedRepo,
+            Error::RepositoryServerNotEnabled,
         );
 
         //-----------------------------------------------------------------
@@ -911,15 +1046,6 @@ mod tests {
             include_str!("../../test-resources/api/regressions/errors/ca-roa-duplicate.json"),
             Error::CaAuthorizationDuplicate(ca.clone(), auth),
         );
-        verify(
-            include_str!("../../test-resources/api/regressions/errors/ca-roa-redundant.json"),
-            Error::CaAuthorizationRedundant(ca.clone(), auth),
-        );
-        verify(
-            include_str!("../../test-resources/api/regressions/errors/ca-roa-includes.json"),
-            Error::CaAuthorizationIncludes(ca.clone(), auth),
-        );
-
         verify(
             include_str!("../../test-resources/api/regressions/errors/ca-roa-invalid-max-length.json"),
             Error::CaAuthorizationInvalidMaxlength(ca.clone(), auth),

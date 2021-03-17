@@ -3,20 +3,20 @@
     "actor": "krill",
     "time": "2020-04-28T13:27:59.343843Z",
     "handle": "ta",
-    "version": 4,
+    "version": 5,
     "sequence": 4,
     "details": {
-      "child_add": [
-        "child",
-        null,
-        {
-          "asn": "",
-          "v4": "10.0.0.0/16",
-          "v6": "2001:db8::/32"
-        }
-      ]
+      "type": "child_add",
+      "child": "child",
+      "ski": null,
+      "resources": {
+        "asn": "",
+        "v4": "10.0.0.0/16",
+        "v6": "2001:db8::/32"
+      }
     },
     "effect": {
+      "result": "success",
       "events": [
         4
       ]
@@ -28,18 +28,14 @@
         "id": "ta",
         "version": 4,
         "details": {
-          "child_added": [
-            "child",
-            {
-              "id_cert": null,
-              "resources": {
-                "asn": "",
-                "v4": "10.0.0.0/16",
-                "v6": "2001:db8::/32"
-              },
-              "used_keys": {}
-            }
-          ]
+          "type": "child_added",
+          "child": "child",
+          "id_cert": null,
+          "resources": {
+            "asn": "",
+            "v4": "10.0.0.0/16",
+            "v6": "2001:db8::/32"
+          }
         }
       }
     ]

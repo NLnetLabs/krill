@@ -7,7 +7,7 @@
       "actor": "krill",
       "timestamp": 1588257440769,
       "handle": "ta",
-      "version": 1,
+      "version": 2,
       "sequence": 1,
       "summary": {
         "msg": "Update repo to embedded server",
@@ -15,6 +15,7 @@
         "args": {}
       },
       "effect": {
+        "result": "success",
         "events": [
           1
         ]
@@ -25,7 +26,7 @@
       "actor": "krill",
       "timestamp": 1588257440770,
       "handle": "ta",
-      "version": 2,
+      "version": 3,
       "sequence": 2,
       "summary": {
         "msg": "Turn into Trust Anchor",
@@ -33,6 +34,7 @@
         "args": {}
       },
       "effect": {
+        "result": "success",
         "events": [
           2
         ]
@@ -43,20 +45,21 @@
       "actor": "krill",
       "timestamp": 1588257440821,
       "handle": "ta",
-      "version": 3,
+      "version": 4,
       "sequence": 3,
       "summary": {
         "msg": "Update received cert in RC '0', with resources 'asn: 1 blocks, v4: 1 blocks, v6: 1 blocks'",
         "label": "cmd-ca-rcn-receive",
         "args": {
-          "resources": "asn: AS0-AS4294967295, v4: 0.0.0.0/0, v6: ::/0",
           "asn_blocks": "1",
           "class_name": "0",
           "ipv4_blocks": "1",
-          "ipv6_blocks": "1"
+          "ipv6_blocks": "1",
+          "resources": "asn: AS0-AS4294967295, v4: 0.0.0.0/0, v6: ::/0"
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           3
         ]
@@ -67,21 +70,22 @@
       "actor": "krill",
       "timestamp": 1588257441248,
       "handle": "ta",
-      "version": 4,
+      "version": 5,
       "sequence": 4,
       "summary": {
         "msg": "Add child 'child' with RFC8183 key '<none>' and resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
         "label": "cmd-ca-child-add",
         "args": {
-          "resources": "asn: , v4: 10.0.0.0/16, v6: ",
-          "ipv6_blocks": "0",
+          "asn_blocks": "0",
           "child": "child",
-          "ipv4_blocks": "1",
           "id_key": "<none>",
-          "asn_blocks": "0"
+          "ipv4_blocks": "1",
+          "ipv6_blocks": "0",
+          "resources": "asn: , v4: 10.0.0.0/16, v6: "
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           4
         ]
@@ -92,7 +96,7 @@
       "actor": "krill",
       "timestamp": 1588257441992,
       "handle": "ta",
-      "version": 5,
+      "version": 7,
       "sequence": 5,
       "summary": {
         "msg": "Issue certificate to child 'child' for key 'A2C397B77EC1FABAF612E2DB5790E17BA1D8E7F0'",
@@ -104,10 +108,10 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           5,
-          6,
-          7
+          6
         ]
       }
     },
@@ -116,7 +120,7 @@
       "actor": "krill",
       "timestamp": 1588257444000,
       "handle": "ta",
-      "version": 8,
+      "version": 9,
       "sequence": 6,
       "summary": {
         "msg": "Issue certificate to child 'child' for key 'A2C397B77EC1FABAF612E2DB5790E17BA1D8E7F0'",
@@ -128,10 +132,10 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
-          8,
-          9,
-          10
+          7,
+          8
         ]
       }
     },
@@ -146,16 +150,16 @@
         "msg": "Issue certificate to child 'child' for key 'A2C397B77EC1FABAF612E2DB5790E17BA1D8E7F0'",
         "label": "cmd-ca-child-certify",
         "args": {
+          "child": "child",
           "class_name": "0",
-          "key": "A2C397B77EC1FABAF612E2DB5790E17BA1D8E7F0",
-          "child": "child"
+          "key": "A2C397B77EC1FABAF612E2DB5790E17BA1D8E7F0"
         }
       },
       "effect": {
+        "result": "success",
         "events": [
-          11,
-          12,
-          13
+          9,
+          10
         ]
       }
     }

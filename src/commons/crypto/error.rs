@@ -1,23 +1,27 @@
+use std::fmt;
 use std::fmt::Display;
 
 use bcder::decode;
 
-#[derive(Debug, Display)]
+#[derive(Debug)]
 pub enum Error {
-    #[display(fmt = "{}", _0)]
     KeyError(String),
-
-    #[display(fmt = "{}", _0)]
     SigningError(String),
-
-    #[display(fmt = "Could not find key")]
     KeyNotFound,
-
-    #[display(fmt = "{}", _0)]
     SignerError(String),
-
-    #[display(fmt = "{}", _0)]
     DecodeError(decode::Error),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Error::KeyError(e) => e.fmt(f),
+            Error::SignerError(e) => e.fmt(f),
+            Error::KeyNotFound => write!(f, "Could not find key"),
+            Error::SigningError(e) => e.fmt(f),
+            Error::DecodeError(e) => e.fmt(f),
+        }
+    }
 }
 
 impl Error {

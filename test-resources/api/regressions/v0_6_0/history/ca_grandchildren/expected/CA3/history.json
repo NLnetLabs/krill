@@ -7,7 +7,7 @@
       "actor": "krill",
       "timestamp": 1588256544635,
       "handle": "CA3",
-      "version": 1,
+      "version": 2,
       "sequence": 1,
       "summary": {
         "msg": "Update repo to embedded server",
@@ -15,6 +15,7 @@
         "args": {}
       },
       "effect": {
+        "result": "success",
         "events": [
           1
         ]
@@ -25,7 +26,7 @@
       "actor": "krill",
       "timestamp": 1588256544892,
       "handle": "CA3",
-      "version": 2,
+      "version": 3,
       "sequence": 2,
       "summary": {
         "msg": "Add parent 'CA1' as 'RFC 6492 Parent'",
@@ -36,6 +37,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           2
         ]
@@ -46,16 +48,17 @@
       "actor": "krill",
       "timestamp": 1588256545381,
       "handle": "CA3",
-      "version": 3,
+      "version": 5,
       "sequence": 3,
       "summary": {
-        "msg": "Update entitlements under parent 'CA1': 0 => asn: 0 blocks, v4: 1 blocks, v6: 0 blocks ",
+        "msg": "Update entitlements under parent 'CA1': 0 => asn: , v4: 10.0.0.0/16, v6:  ",
         "label": "cmd-ca-parent-entitlements",
         "args": {
           "parent": "CA1"
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           3,
           4
@@ -67,16 +70,17 @@
       "actor": "krill",
       "timestamp": 1588256545622,
       "handle": "CA3",
-      "version": 5,
+      "version": 6,
       "sequence": 4,
       "summary": {
-        "msg": "Update entitlements under parent 'CA1': 0 => asn: 0 blocks, v4: 1 blocks, v6: 0 blocks ",
+        "msg": "Update entitlements under parent 'CA1': 0 => asn: , v4: 10.0.0.0/16, v6:  ",
         "label": "cmd-ca-parent-entitlements",
         "args": {
           "parent": "CA1"
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           5
         ]
@@ -87,7 +91,7 @@
       "actor": "krill",
       "timestamp": 1588256546082,
       "handle": "CA3",
-      "version": 6,
+      "version": 7,
       "sequence": 5,
       "summary": {
         "msg": "Update received cert in RC '0', with resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
@@ -101,6 +105,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           6
         ]
@@ -111,7 +116,7 @@
       "actor": "krill",
       "timestamp": 1588256546431,
       "handle": "CA3",
-      "version": 7,
+      "version": 8,
       "sequence": 6,
       "summary": {
         "msg": "Add parent 'CA2' as 'RFC 6492 Parent'",
@@ -122,6 +127,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           7
         ]
@@ -132,16 +138,17 @@
       "actor": "krill",
       "timestamp": 1588256547447,
       "handle": "CA3",
-      "version": 8,
+      "version": 10,
       "sequence": 7,
       "summary": {
-        "msg": "Update entitlements under parent 'CA2': 0 => asn: 0 blocks, v4: 1 blocks, v6: 0 blocks ",
+        "msg": "Update entitlements under parent 'CA2': 0 => asn: , v4: 10.1.0.0/24, v6:  ",
         "label": "cmd-ca-parent-entitlements",
         "args": {
           "parent": "CA2"
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           8,
           9
@@ -153,7 +160,7 @@
       "actor": "krill",
       "timestamp": 1588256547697,
       "handle": "CA3",
-      "version": 10,
+      "version": 11,
       "sequence": 8,
       "summary": {
         "msg": "Update received cert in RC '1', with resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
@@ -167,6 +174,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           10
         ]
@@ -177,7 +185,7 @@
       "actor": "krill",
       "timestamp": 1588256548722,
       "handle": "CA3",
-      "version": 11,
+      "version": 12,
       "sequence": 9,
       "summary": {
         "msg": "Add child 'CA4' with RFC8183 key '73bb5e3510c1c4b1d8cb69c1c6f2008cd8170314' and resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
@@ -192,6 +200,7 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           11
         ]
@@ -202,7 +211,7 @@
       "actor": "krill",
       "timestamp": 1588256550040,
       "handle": "CA3",
-      "version": 12,
+      "version": 14,
       "sequence": 10,
       "summary": {
         "msg": "Issue certificate to child 'CA4' for key 'AB90119164402C965DC5544B54E30B6A7014CDB6'",
@@ -214,10 +223,10 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           12,
-          13,
-          14
+          13
         ]
       }
     },
@@ -226,7 +235,7 @@
       "actor": "krill",
       "timestamp": 1588256550525,
       "handle": "CA3",
-      "version": 15,
+      "version": 16,
       "sequence": 11,
       "summary": {
         "msg": "Issue certificate to child 'CA4' for key '33EF547F08298CEE8D3C6C41B24550496C5E3ED6'",
@@ -238,10 +247,10 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
-          15,
-          16,
-          17
+          14,
+          15
         ]
       }
     }

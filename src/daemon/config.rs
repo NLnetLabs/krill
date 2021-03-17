@@ -1,10 +1,10 @@
-use std::env;
 use std::fs::File;
 use std::io;
 use std::io::Read;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::{env, fmt};
 
 use clap::{App, Arg};
 use log::{error, LevelFilter};
@@ -16,21 +16,14 @@ use syslog::Facility;
 use rpki::uri;
 
 use crate::commons::api::Token;
-use crate::commons::util::{ext_serde, AllowedUri};
+use crate::commons::util::ext_serde;
 use crate::constants::*;
 use crate::daemon::http::tls_keys;
 
-lazy_static! {
-    pub static ref CONFIG: Config = {
-        match Config::create() {
-            Ok(config) => config,
-            Err(e) => {
-                eprintln!("{}", e);
-                ::std::process::exit(1);
-            }
-        }
-    };
-}
+#[cfg(feature = "multi-user")]
+use crate::daemon::auth::providers::config_file::config::ConfigAuthUsers;
+#[cfg(feature = "multi-user")]
+use crate::daemon::auth::providers::openid_connect::ConfigAuthOpenIDConnect;
 
 //------------ ConfigDefaults ------------------------------------------------
 
@@ -43,51 +36,22 @@ impl ConfigDefaults {
     fn port() -> u16 {
         3000
     }
-    fn test_mode() -> bool {
-        env::var(KRILL_ENV_TEST).is_ok()
-    }
-    fn repo_enabled() -> bool {
-        env::var(KRILL_ENV_REPO_ENABLED).is_ok()
-    }
-
-    fn repo_retain_old_seconds() -> i64 {
-        if env::var(KRILL_ENV_TEST).is_ok() {
-            1
-        } else {
-            600
-        }
-    }
-
-    fn use_ta() -> bool {
-        env::var(KRILL_ENV_USE_TA).is_ok()
-    }
 
     fn ta_aia() -> uri::Rsync {
         uri::Rsync::from_str("rsync://localhost/ta/ta.cer").unwrap()
     }
 
-    fn testbed_enabled() -> bool {
-        env::var(KRILL_ENV_TESTBED_ENABLED).is_ok()
-    }
     fn https_mode() -> HttpsMode {
         HttpsMode::Generate
     }
     fn data_dir() -> PathBuf {
         PathBuf::from("./data")
     }
-    fn archive_threshold_days() -> Option<i64> {
-        if Self::test_mode() {
-            Some(0)
-        } else {
-            None
-        }
-    }
+
     fn always_recover_data() -> bool {
         env::var(KRILL_ENV_FORCE_RECOVER).is_ok()
     }
-    fn rsync_base() -> uri::Rsync {
-        uri::Rsync::from_str("rsync://localhost/repo/").unwrap()
-    }
+
     fn service_uri() -> String {
         "https://localhost:3000/".to_string()
     }
@@ -112,7 +76,9 @@ impl ConfigDefaults {
     fn syslog_facility() -> String {
         "daemon".to_string()
     }
-
+    fn auth_type() -> AuthType {
+        AuthType::MasterToken
+    }
     fn auth_token() -> Token {
         match env::var(KRILL_ENV_AUTH_TOKEN) {
             Ok(token) => Token::from(token),
@@ -121,6 +87,14 @@ impl ConfigDefaults {
                 ::std::process::exit(1);
             }
         }
+    }
+    #[cfg(feature = "multi-user")]
+    fn auth_policy() -> PathBuf {
+        PathBuf::from("./policy.polar")
+    }
+    #[cfg(feature = "multi-user")]
+    fn auth_private_attributes() -> Vec<String> {
+        vec![]
     }
     fn ca_refresh() -> u32 {
         600
@@ -135,11 +109,7 @@ impl ConfigDefaults {
     }
 
     fn rfc8181_log_dir() -> Option<PathBuf> {
-        if Self::test_mode() {
-            Some(PathBuf::from("./data/rfc8181_msgs"))
-        } else {
-            None
-        }
+        None
     }
 
     fn post_limit_rfc6492() -> u64 {
@@ -147,11 +117,7 @@ impl ConfigDefaults {
     }
 
     fn rfc6492_log_dir() -> Option<PathBuf> {
-        if Self::test_mode() {
-            Some(PathBuf::from("./data/rfc6492_msgs"))
-        } else {
-            None
-        }
+        None
     }
 
     fn bgp_risdumps_enabled() -> bool {
@@ -220,31 +186,16 @@ impl ConfigDefaults {
 /// This will parse a default config file ('./defaults/krill.conf') unless
 /// another file is explicitly specified. Command line arguments may be used
 /// to override any of the settings in the config file.
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct Config {
     #[serde(default = "ConfigDefaults::ip")]
     ip: IpAddr,
 
     #[serde(default = "ConfigDefaults::port")]
-    port: u16,
-
-    #[serde(default = "ConfigDefaults::test_mode")]
-    pub test_mode: bool,
-
-    #[serde(default = "ConfigDefaults::use_ta")]
-    use_ta: bool,
+    pub port: u16,
 
     #[serde(default = "ConfigDefaults::ta_aia")]
     ta_aia: uri::Rsync,
-
-    #[serde(default = "ConfigDefaults::repo_enabled")]
-    pub repo_enabled: bool,
-
-    #[serde(default = "ConfigDefaults::repo_retain_old_seconds")]
-    pub repo_retain_old_seconds: i64,
-
-    #[serde(default = "ConfigDefaults::testbed_enabled")]
-    pub testbed_enabled: bool,
 
     #[serde(default = "ConfigDefaults::https_mode")]
     https_mode: HttpsMode,
@@ -252,21 +203,13 @@ pub struct Config {
     #[serde(default = "ConfigDefaults::data_dir")]
     pub data_dir: PathBuf,
 
-    #[serde(default = "ConfigDefaults::archive_threshold_days")]
-    pub archive_threshold_days: Option<i64>,
-
     #[serde(default = "ConfigDefaults::always_recover_data")]
     pub always_recover_data: bool,
 
     pub pid_file: Option<PathBuf>,
 
-    #[serde(default = "ConfigDefaults::rsync_base")]
-    pub rsync_base: uri::Rsync,
-
     #[serde(default = "ConfigDefaults::service_uri")]
-    service_uri: String,
-
-    rrdp_service_uri: Option<String>,
+    pub service_uri: String,
 
     #[serde(
         default = "ConfigDefaults::log_level",
@@ -285,6 +228,23 @@ pub struct Config {
 
     #[serde(default = "ConfigDefaults::auth_token")]
     pub auth_token: Token,
+
+    #[serde(default = "ConfigDefaults::auth_type")]
+    pub auth_type: AuthType,
+
+    #[cfg(feature = "multi-user")]
+    #[serde(default = "ConfigDefaults::auth_policy")]
+    pub auth_policy: PathBuf,
+
+    #[cfg(feature = "multi-user")]
+    #[serde(default = "ConfigDefaults::auth_private_attributes")]
+    pub auth_private_attributes: Vec<String>,
+
+    #[cfg(feature = "multi-user")]
+    pub auth_users: Option<ConfigAuthUsers>,
+
+    #[cfg(feature = "multi-user")]
+    pub auth_openidconnect: Option<ConfigAuthOpenIDConnect>,
 
     #[serde(default = "ConfigDefaults::ca_refresh")]
     pub ca_refresh: u32,
@@ -319,7 +279,15 @@ pub struct Config {
     #[serde(default = "ConfigDefaults::roa_deaggregate_threshold")]
     pub roa_deaggregate_threshold: usize,
 
-    // Timing settings for publication and certificate / ROA (re-)issuance
+    #[serde(flatten)]
+    pub issuance_timing: IssuanceTimingConfig,
+
+    #[serde(flatten)]
+    pub repository_retention: RepositoryRetentionConfig,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct IssuanceTimingConfig {
     #[serde(default = "ConfigDefaults::timing_publish_valid_days")]
     pub timing_publish_valid_days: i64,
     #[serde(default = "ConfigDefaults::timing_publish_next_hours")]
@@ -336,8 +304,58 @@ pub struct Config {
     pub timing_roa_reissue_weeks_before: i64,
 }
 
+#[derive(Clone, Debug, Deserialize)]
+pub struct RepositoryRetentionConfig {
+    #[serde(default = "RepositoryRetentionConfig::dflt_retention_old_notification_files_seconds")]
+    pub retention_old_notification_files_seconds: i64,
+    #[serde(default = "RepositoryRetentionConfig::dflt_retention_delta_files_seconds")]
+    pub retention_delta_files_seconds: i64,
+    #[serde(default = "RepositoryRetentionConfig::dflt_retention_delta_files_min_nr")]
+    pub retention_delta_files_min_nr: usize,
+    #[serde(default = "RepositoryRetentionConfig::dflt_retention_archive")]
+    pub retention_archive: bool,
+}
+
+impl RepositoryRetentionConfig {
+    // Time to keep any files still referenced by notification
+    // files updated up to X minutes ago. Default: 10 min
+    fn dflt_retention_old_notification_files_seconds() -> i64 {
+        600
+    }
+
+    // Time to keep deltas. Defaults to two hours meaning that
+    // almost all RPs are expected to have retrieved the deltas
+    // by then. Typically RPs fetch every 1-10 minutes, some
+    // implementations use 1 hour intervals.
+    //
+    // We could keep all deltas up to the size of the snapshot,
+    // but if we leave some deltas out we may succeed in keeping
+    // the notification file relatively small
+    fn dflt_retention_delta_files_seconds() -> i64 {
+        7200 // 2 hours
+    }
+
+    // Keep at least X (default 5) delta files in the notification
+    // file. They may be old, but their impact on the notification
+    // file size is not too bad.
+    fn dflt_retention_delta_files_min_nr() -> usize {
+        5
+    }
+
+    // If set to true, we will archive - rather than delete - old
+    // snapshot and delta files. The can then be backed up and/deleted
+    // at the repository operator's discretion.
+    fn dflt_retention_archive() -> bool {
+        false
+    }
+}
+
 /// # Accessors
 impl Config {
+    pub fn set_data_dir(&mut self, data_dir: PathBuf) {
+        self.data_dir = data_dir;
+    }
+
     pub fn socket_addr(&self) -> SocketAddr {
         SocketAddr::new(self.ip, self.port)
     }
@@ -364,23 +382,12 @@ impl Config {
         uri::Https::from_str(&self.service_uri).unwrap()
     }
 
-    pub fn rrdp_service_uri(&self) -> uri::Https {
-        match &self.rrdp_service_uri {
-            None => uri::Https::from_string(format!("{}rrdp/", &self.service_uri)).unwrap(),
-            Some(uri) => uri::Https::from_str(uri).unwrap(),
-        }
-    }
-
     pub fn ta_cert_uri(&self) -> uri::Https {
         uri::Https::from_string(format!("{}ta/ta.cer", &self.service_uri)).unwrap()
     }
 
     pub fn ta_aia(&self) -> uri::Rsync {
         self.ta_aia.clone()
-    }
-
-    pub fn use_ta(&self) -> bool {
-        self.use_ta
     }
 
     pub fn pid_file(&self) -> PathBuf {
@@ -395,8 +402,8 @@ impl Config {
     }
 
     pub fn republish_hours(&self) -> i64 {
-        if self.timing_publish_hours_before_next < self.timing_publish_next_hours {
-            self.timing_publish_next_hours - self.timing_publish_hours_before_next
+        if self.issuance_timing.timing_publish_hours_before_next < self.issuance_timing.timing_publish_next_hours {
+            self.issuance_timing.timing_publish_next_hours - self.issuance_timing.timing_publish_hours_before_next
         } else {
             0
         }
@@ -409,26 +416,30 @@ impl Config {
         let ip = ConfigDefaults::ip();
         let port = ConfigDefaults::port();
         let pid_file = None;
-        let test_mode = true;
-        let use_ta = true;
         let ta_aia = ConfigDefaults::ta_aia();
-        let repo_enabled = true;
-        let repo_retain_old_seconds = 1;
-        let testbed_enabled = true;
         let https_mode = HttpsMode::Generate;
         let data_dir = data_dir.clone();
-        let archive_threshold_days = Some(0);
         let always_recover_data = false;
-        let rsync_base = ConfigDefaults::rsync_base();
         let service_uri = ConfigDefaults::service_uri();
-        let rrdp_service_uri = Some("https://localhost:3000/test-rrdp/".to_string());
-        let log_level = LevelFilter::Trace;
+
+        let log_level = LevelFilter::Debug;
         let log_type = LogType::Stderr;
         let mut log_file = data_dir.clone();
         log_file.push("krill.log");
         let syslog_facility = ConfigDefaults::syslog_facility();
+        let auth_type = AuthType::MasterToken;
         let auth_token = Token::from("secret");
-        let ca_refresh = 3600;
+        #[cfg(feature = "multi-user")]
+        let mut auth_policy = data_dir.clone();
+        #[cfg(feature = "multi-user")]
+        auth_policy.push("policy.polar");
+        #[cfg(feature = "multi-user")]
+        let auth_private_attributes = vec![];
+        #[cfg(feature = "multi-user")]
+        let auth_users = None;
+        #[cfg(feature = "multi-user")]
+        let auth_openidconnect = None;
+        let ca_refresh = 1;
         let post_limit_api = ConfigDefaults::post_limit_api();
         let post_limit_rfc8181 = ConfigDefaults::post_limit_rfc8181();
         let rfc8181_log_dir = {
@@ -459,28 +470,46 @@ impl Config {
         let timing_roa_valid_weeks = ConfigDefaults::timing_roa_valid_weeks();
         let timing_roa_reissue_weeks_before = ConfigDefaults::timing_roa_reissue_weeks_before();
 
+        let issuance_timing = IssuanceTimingConfig {
+            timing_publish_valid_days,
+            timing_publish_next_hours,
+            timing_publish_hours_before_next,
+            timing_child_certificate_valid_weeks,
+            timing_child_certificate_reissue_weeks_before,
+            timing_roa_valid_weeks,
+            timing_roa_reissue_weeks_before,
+        };
+
+        let repository_retention = RepositoryRetentionConfig {
+            retention_old_notification_files_seconds: 1,
+            retention_delta_files_seconds: 1,
+            retention_delta_files_min_nr: 5,
+            retention_archive: false,
+        };
+
         Config {
             ip,
             port,
             pid_file,
-            test_mode,
-            use_ta,
             ta_aia,
-            repo_enabled,
-            repo_retain_old_seconds,
-            testbed_enabled,
             https_mode,
             data_dir,
-            archive_threshold_days,
             always_recover_data,
-            rsync_base,
             service_uri,
-            rrdp_service_uri,
             log_level,
             log_type,
             log_file,
             syslog_facility,
+            auth_type,
             auth_token,
+            #[cfg(feature = "multi-user")]
+            auth_policy,
+            #[cfg(feature = "multi-user")]
+            auth_private_attributes,
+            #[cfg(feature = "multi-user")]
+            auth_users,
+            #[cfg(feature = "multi-user")]
+            auth_openidconnect,
             ca_refresh,
             post_limit_api,
             post_limit_rfc8181,
@@ -492,29 +521,19 @@ impl Config {
             bgp_risdumps_v6_uri,
             roa_aggregate_threshold,
             roa_deaggregate_threshold,
-            timing_publish_valid_days,
-            timing_publish_next_hours,
-            timing_publish_hours_before_next,
-            timing_child_certificate_valid_weeks,
-            timing_child_certificate_reissue_weeks_before,
-            timing_roa_valid_weeks,
-            timing_roa_reissue_weeks_before,
+            issuance_timing,
+            repository_retention,
         }
     }
 
     pub fn test(data_dir: &PathBuf) -> Self {
-        let config = Self::test_config(data_dir);
-        config.init_logging().unwrap();
-        config.verify().unwrap();
-        config
+        Self::test_config(data_dir)
     }
 
     pub fn pubd_test(data_dir: &PathBuf) -> Self {
         let mut config = Self::test_config(data_dir);
         config.port = 3001;
-        config.use_ta = false;
         config.service_uri = "https://localhost:3001/".to_string();
-        config.rsync_base = uri::Rsync::from_str("rsync://remotehost/repo/").unwrap();
         config
     }
 
@@ -538,64 +557,36 @@ impl Config {
 
     /// Creates the config (at startup). Panics in case of issues.
     pub fn create() -> Result<Self, ConfigError> {
-        if let Ok(test_dir) = env::var(KRILL_ENV_TEST_UNIT_DATA) {
-            let data_dir = PathBuf::from(test_dir);
-            Ok(Config::test(&data_dir))
-        } else {
-            let config_file = Self::get_config_filename();
+        let config_file = Self::get_config_filename();
 
-            let config = match Self::read_config(&config_file) {
-                Err(e) => {
-                    if config_file == KRILL_DEFAULT_CONFIG_FILE {
-                        Err(ConfigError::other(
-                            "Cannot find config file. Please use --config to specify its location.",
-                        ))
-                    } else {
-                        Err(ConfigError::Other(format!(
-                            "Error parsing config file: {}, error: {}",
-                            config_file, e
-                        )))
-                    }
+        let config = match Self::read_config(&config_file) {
+            Err(e) => {
+                if config_file == KRILL_DEFAULT_CONFIG_FILE {
+                    Err(ConfigError::other(
+                        "Cannot find config file. Please use --config to specify its location.",
+                    ))
+                } else {
+                    Err(ConfigError::Other(format!(
+                        "Error parsing config file: {}, error: {}",
+                        config_file, e
+                    )))
                 }
-                Ok(config) => {
-                    config.init_logging()?;
-                    info!("{} uses configuration file: {}", KRILL_SERVER_APP, config_file);
-                    Ok(config)
-                }
-            }?;
-            config
-                .verify()
-                .map_err(|e| ConfigError::Other(format!("Error parsing config file: {}, error: {}", config_file, e)))?;
-            Ok(config)
-        }
+            }
+            Ok(config) => {
+                config.init_logging()?;
+                info!("{} uses configuration file: {}", KRILL_SERVER_APP, config_file);
+                Ok(config)
+            }
+        }?;
+        config
+            .verify()
+            .map_err(|e| ConfigError::Other(format!("Error parsing config file: {}, error: {}", config_file, e)))?;
+        Ok(config)
     }
 
     pub fn verify(&self) -> Result<(), ConfigError> {
         if self.port < 1024 {
             return Err(ConfigError::other("Port number must be >1024"));
-        }
-
-        if self.test_mode {
-            // Set KRILL_TEST env var so that it can easily be accessed without the need to pass
-            // this setting down all over the application. Used by CertAuth in particular to allow
-            // the use of 'localhost' in Certificate Sign Requests in test mode only.
-            env::set_var(KRILL_ENV_TEST, "1");
-        }
-
-        if self.repo_enabled && !self.rsync_base.allowed_uri(self.test_mode) {
-            return Err(ConfigError::other(
-                "Cannot use localhost in rsync base unless test mode is used (KRILL_TEST)",
-            ));
-        }
-
-        if self.repo_enabled && !self.rrdp_service_uri().allowed_uri(self.test_mode) {
-            return Err(ConfigError::other(
-                "Cannot use localhost in RRDP service URI unless test mode is used (KRILL_TEST)",
-            ));
-        }
-
-        if !self.rsync_base.to_string().ends_with('/') {
-            return Err(ConfigError::other("rsync base URI must end with '/'"));
         }
 
         if !self.service_uri.ends_with('/') {
@@ -611,64 +602,55 @@ impl Config {
             }
         }
 
-        if !self.rrdp_service_uri().to_string().ends_with('/') {
-            return Err(ConfigError::other("service URI must end with '/'"));
-        }
-
-        if self.use_ta && !self.repo_enabled {
-            return Err(ConfigError::other("Cannot use embedded TA without embedded repository"));
-        }
-
-        if self.testbed_enabled && !self.use_ta {
-            return Err(ConfigError::other("Cannot use testedbed without embedded TA"));
-        }
-
-        if self.timing_publish_next_hours < 2 {
+        if self.issuance_timing.timing_publish_next_hours < 2 {
             return Err(ConfigError::other("timing_publish_next_hours must be at least 2"));
         }
 
-        if self.timing_publish_hours_before_next < 1 {
+        if self.issuance_timing.timing_publish_hours_before_next < 1 {
             return Err(ConfigError::other(
                 "timing_publish_hours_before_next must be at least 1",
             ));
         }
 
-        if self.timing_publish_hours_before_next >= self.timing_publish_next_hours {
+        if self.issuance_timing.timing_publish_hours_before_next >= self.issuance_timing.timing_publish_next_hours {
             return Err(ConfigError::other(
                 "timing_publish_hours_before_next must be smaller than timing_publish_hours",
             ));
         }
 
-        if self.timing_publish_valid_days < 1 || self.timing_publish_valid_days < (self.timing_publish_next_hours / 24)
+        if self.issuance_timing.timing_publish_valid_days < 1
+            || self.issuance_timing.timing_publish_valid_days < (self.issuance_timing.timing_publish_next_hours / 24)
         {
             return Err(ConfigError::other("timing_publish_valid_days must be 1 or bigger, and must be at least as long as timing_publish_next_hours"));
         }
 
-        if self.timing_child_certificate_valid_weeks < 2 {
+        if self.issuance_timing.timing_child_certificate_valid_weeks < 2 {
             return Err(ConfigError::other(
                 "timing_child_certificate_valid_weeks must be at least 2",
             ));
         }
 
-        if self.timing_child_certificate_reissue_weeks_before < 1 {
+        if self.issuance_timing.timing_child_certificate_reissue_weeks_before < 1 {
             return Err(ConfigError::other(
                 "timing_child_certificate_reissue_weeks_before must be at least 1",
             ));
         }
 
-        if self.timing_child_certificate_reissue_weeks_before >= self.timing_child_certificate_valid_weeks {
+        if self.issuance_timing.timing_child_certificate_reissue_weeks_before
+            >= self.issuance_timing.timing_child_certificate_valid_weeks
+        {
             return Err(ConfigError::other("timing_child_certificate_reissue_weeks_before must be smaller than timing_child_certificate_valid_weeks"));
         }
 
-        if self.timing_roa_valid_weeks < 2 {
+        if self.issuance_timing.timing_roa_valid_weeks < 2 {
             return Err(ConfigError::other("timing_roa_valid_weeks must be at least 2"));
         }
 
-        if self.timing_roa_reissue_weeks_before < 1 {
+        if self.issuance_timing.timing_roa_reissue_weeks_before < 1 {
             return Err(ConfigError::other("timing_roa_reissue_weeks_before must be at least 1"));
         }
 
-        if self.timing_roa_reissue_weeks_before >= self.timing_roa_valid_weeks {
+        if self.issuance_timing.timing_roa_reissue_weeks_before >= self.issuance_timing.timing_roa_valid_weeks {
             return Err(ConfigError::other(
                 "timing_roa_reissue_weeks_before must be smaller than timing_roa_valid_week",
             ));
@@ -758,17 +740,16 @@ impl Config {
 
     /// Creates and returns a fern logger with log level tweaks
     fn fern_logger(&self) -> fern::Dispatch {
-        let framework_level = match self.log_level {
-            LevelFilter::Off => LevelFilter::Off,
-            LevelFilter::Error => LevelFilter::Error,
-            _ => LevelFilter::Warn, // more becomes too noisy
-        };
+        // suppress overly noisy logging
+        let framework_level = self.log_level.min(LevelFilter::Warn);
+        let krill_framework_level = self.log_level.min(LevelFilter::Debug);
 
-        let krill_framework_level = match self.log_level {
-            LevelFilter::Off => LevelFilter::Off,
-            LevelFilter::Error => LevelFilter::Error,
-            LevelFilter::Warn => LevelFilter::Warn,
-            _ => LevelFilter::Debug, // more becomes too noisy
+        // disable Oso logging unless the Oso specific POLAR_LOG environment
+        // variable is set, it's too noisy otherwise
+        let oso_framework_level = if env::var("POLAR_LOG").is_ok() {
+            self.log_level.min(LevelFilter::Trace)
+        } else {
+            self.log_level.min(LevelFilter::Info)
         };
 
         let show_target = self.log_level == LevelFilter::Trace || self.log_level == LevelFilter::Debug;
@@ -800,24 +781,29 @@ impl Config {
             .level_for("want", framework_level)
             .level_for("tracing::span", framework_level)
             .level_for("h2", framework_level)
+            .level_for("oso", oso_framework_level)
             .level_for("krill::commons::eventsourcing", krill_framework_level)
             .level_for("krill::commons::util::file", krill_framework_level)
     }
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug)]
 pub enum ConfigError {
-    #[display(fmt = "{}", _0)]
     IoError(io::Error),
-
-    #[display(fmt = "{}", _0)]
     TomlError(toml::de::Error),
-
-    #[display(fmt = "{}", _0)]
     RpkiUriError(uri::Error),
-
-    #[display(fmt = "{}", _0)]
     Other(String),
+}
+
+impl fmt::Display for ConfigError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ConfigError::IoError(e) => e.fmt(f),
+            ConfigError::TomlError(e) => e.fmt(f),
+            ConfigError::RpkiUriError(e) => e.fmt(f),
+            ConfigError::Other(s) => s.fmt(f),
+        }
+    }
 }
 
 impl ConfigError {
@@ -872,6 +858,8 @@ impl<'de> Deserialize<'de> for LogType {
     }
 }
 
+//------------ HttpsMode -----------------------------------------------------
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum HttpsMode {
     Existing,
@@ -896,20 +884,57 @@ impl<'de> Deserialize<'de> for HttpsMode {
     }
 }
 
+//------------ AuthType -----------------------------------------------------
+
+/// The target to log to.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AuthType {
+    MasterToken,
+    #[cfg(feature = "multi-user")]
+    ConfigFile,
+    #[cfg(feature = "multi-user")]
+    OpenIDConnect,
+}
+
+impl<'de> Deserialize<'de> for AuthType {
+    fn deserialize<D>(d: D) -> Result<AuthType, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let string = String::deserialize(d)?;
+        match string.as_str() {
+            "master-token" => Ok(AuthType::MasterToken),
+            #[cfg(feature = "multi-user")]
+            "config-file" => Ok(AuthType::ConfigFile),
+            #[cfg(feature = "multi-user")]
+            "openid-connect" => Ok(AuthType::OpenIDConnect),
+            _ => {
+                #[cfg(not(feature = "multi-user"))]
+                let msg = format!("expected \"master-token\", found: \"{}\"", string);
+                #[cfg(feature = "multi-user")]
+                let msg = format!(
+                    "expected \"config-file\", \"master-token\", or \"openid-connect\", found: \"{}\"",
+                    string
+                );
+                Err(de::Error::custom(msg))
+            }
+        }
+    }
+}
+
 //------------ Tests ---------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
 
     use super::*;
+    use std::env;
 
     #[test]
     fn should_parse_default_config_file() {
         // Config for auth token is required! If there is nothing in the conf
         // file, then an environment variable must be set.
-        use std::env;
         env::set_var(KRILL_ENV_AUTH_TOKEN, "secret");
-        env::set_var(KRILL_ENV_TEST, "1");
 
         let c = Config::read_config("./defaults/krill.conf").unwrap();
         let expected_socket_addr: SocketAddr = ([127, 0, 0, 1], 3000).into();
@@ -917,18 +942,150 @@ mod tests {
     }
 
     #[test]
-    fn testbed_enable_should_require_use_ta() {
-        use std::env;
+    fn should_set_correct_log_levels() {
+        use log::Level as LL;
+
+        fn void_logger_from_krill_config(config_bytes: &[u8]) -> Box<dyn log::Log> {
+            let c: Config = toml::from_slice(config_bytes).unwrap();
+            let void_output = fern::Output::writer(Box::new(io::sink()), "");
+            let (_, void_logger) = c.fern_logger().chain(void_output).into_log();
+            void_logger
+        }
+
+        fn for_target_at_level(target: &str, level: LL) -> log::Metadata {
+            log::Metadata::builder().target(target).level(level).build()
+        }
+
+        fn should_logging_be_enabled_at_this_krill_config_log_level(log_level: &LL, config_level: &str) -> bool {
+            let log_level_from_krill_config_level = LL::from_str(config_level).unwrap();
+            log_level <= &log_level_from_krill_config_level
+        }
+
+        // Krill requires an auth token to be defined, give it one in the environment
         env::set_var(KRILL_ENV_AUTH_TOKEN, "secret");
-        env::set_var(KRILL_ENV_REPO_ENABLED, "1");
-        env::set_var(KRILL_ENV_TESTBED_ENABLED, "1");
 
-        let c = Config::read_config("./defaults/krill.conf").unwrap();
-        assert!(c.verify().is_err());
+        // Define sets of log targets aka components of Krill that we want to test log settings for, based on the
+        // rules & exceptions that the actual code under test is supposed to configure the logger with
+        let krill_components = vec!["krill"];
+        let krill_framework_components = vec!["krill::commons::eventsourcing", "krill::commons::util::file"];
+        let other_key_components = vec!["hyper", "reqwest", "oso"];
 
-        env::set_var(KRILL_ENV_USE_TA, "1");
+        let krill_key_components = vec![krill_components, krill_framework_components.clone()]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        let all_key_components = vec![krill_key_components.clone(), other_key_components]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
 
-        let c = Config::read_config("./defaults/krill.conf").unwrap();
-        assert!(c.verify().is_ok());
+        //
+        // Test that important log levels are enabled for all key components
+        //
+
+        // for each important Krill config log level
+        for config_level in &["error", "warn"] {
+            // build a logger for that config
+            let log = void_logger_from_krill_config(format!(r#"log_level = "{}""#, config_level).as_bytes());
+
+            // for all log levels
+            for log_msg_level in &[LL::Error, LL::Warn, LL::Info, LL::Debug, LL::Trace] {
+                // determine if logging should be enabled or not
+                let should_be_enabled =
+                    should_logging_be_enabled_at_this_krill_config_log_level(log_msg_level, config_level);
+
+                // for each Krill component we want to pretend to log as
+                for component in &all_key_components {
+                    // verify that logging is enabled or not as expected
+                    assert_eq!(
+                        should_be_enabled,
+                        log.enabled(&for_target_at_level(component, *log_msg_level)),
+                        // output an easy to understand test failure description
+                        "Logging at level {} with log_level={} should be {} for component {}",
+                        log_msg_level,
+                        config_level,
+                        if should_be_enabled { "enabled" } else { "disabled" },
+                        component
+                    );
+                }
+            }
+        }
+
+        //
+        // Test that info level and below are only enabled for Krill at the right log levels
+        //
+
+        // for each Krill config log level we want to test
+        for config_level in &["info", "debug", "trace"] {
+            // build a logger for that config
+            let log = void_logger_from_krill_config(format!(r#"log_level = "{}""#, config_level).as_bytes());
+
+            // for each level of interest that messages could be logged at
+            for log_msg_level in &[LL::Info, LL::Debug, LL::Trace] {
+                // determine if logging should be enabled or not
+                let should_be_enabled =
+                    should_logging_be_enabled_at_this_krill_config_log_level(log_msg_level, config_level);
+
+                // for each Krill component we want to pretend to log as
+                for component in &krill_key_components {
+                    // framework components shouldn't log at Trace level
+                    let should_be_enabled = should_be_enabled
+                        && (*log_msg_level < LL::Trace || !krill_framework_components.contains(&component));
+
+                    // verify that logging is enabled or not as expected
+                    assert_eq!(
+                        should_be_enabled,
+                        log.enabled(&for_target_at_level(component, *log_msg_level)),
+                        // output an easy to understand test failure description
+                        "Logging at level {} with log_level={} should be {} for component {}",
+                        log_msg_level,
+                        config_level,
+                        if should_be_enabled { "enabled" } else { "disabled" },
+                        component
+                    );
+                }
+            }
+        }
+
+        //
+        // Test that Oso logging at levels below Info is only enabled if the Oso POLAR_LOG=1
+        // environment variable is set
+        //
+        let component = "oso";
+        for set_polar_log_env_var in &[true, false] {
+            // setup env vars
+            if *set_polar_log_env_var {
+                env::set_var("POLAR_LOG", "1");
+            } else {
+                env::remove_var("POLAR_LOG");
+            }
+
+            // for each Krill config log level we want to test
+            for config_level in &["debug", "trace"] {
+                // build a logger for that config
+                let log = void_logger_from_krill_config(format!(r#"log_level = "{}""#, config_level).as_bytes());
+
+                // for each level of interest that messages could be logged at
+                for log_msg_level in &[LL::Debug, LL::Trace] {
+                    // determine if logging should be enabled or not
+                    let should_be_enabled =
+                        should_logging_be_enabled_at_this_krill_config_log_level(log_msg_level, config_level)
+                            && *set_polar_log_env_var;
+
+                    // verify that logging is enabled or not as expected
+                    assert_eq!(
+                        should_be_enabled,
+                        log.enabled(&for_target_at_level(component, *log_msg_level)),
+                        // output an easy to understand test failure description
+                        r#"Logging at level {} with log_level={} should be {} for component {} and env var POLAR_LOG is {}"#,
+                        log_msg_level,
+                        config_level,
+                        if should_be_enabled { "enabled" } else { "disabled" },
+                        component,
+                        if *set_polar_log_env_var { "set" } else { "not set" }
+                    );
+                }
+            }
+        }
     }
 }
