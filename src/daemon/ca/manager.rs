@@ -288,7 +288,7 @@ impl CaManager {
         Ok(())
     }
 
-    /// Get the current CAs
+    /// Get the CAs that the given actor is permitted to see.
     pub fn ca_list(&self, actor: &Actor) -> KrillResult<CertAuthList> {
         Ok(CertAuthList::new(
             self.ca_store
@@ -315,7 +315,7 @@ impl CaManager {
         self.ca_store.has(handle).map_err(Error::AggregateStoreError)
     }
 
-    // Delete a CA after revocations and withdrawals
+    // Delete a CA after revocations and withdrawals.
     pub async fn delete_ca(&self, handle: &Handle, actor: &Actor) -> KrillResult<()> {
         warn!("Deleting CA '{}' as requested by: {}", handle, actor);
         self.ca_store.drop_aggregate(handle)?;
@@ -336,7 +336,7 @@ impl CaManager {
             .map_err(|_| Error::CaUnknown(handle.clone()))
     }
 
-    /// Shows the details for a CA command
+    /// Shows the details for a CA command.
     pub fn get_ca_command_details(&self, handle: &Handle, command: CommandKey) -> KrillResult<CaCommandDetails> {
         let command = self.ca_store.get_command(handle, &command)?;
 
@@ -391,7 +391,7 @@ impl CaManager {
         self.ca_parent_contact(ca, child_handle, tag, service_uri).await
     }
 
-    /// Show details for a child under the TA.
+    /// Show details for a child under the CA.
     pub async fn ca_show_child(&self, ca: &Handle, child: &ChildHandle) -> KrillResult<ChildCaInfo> {
         trace!("Finding details for CA: {} under parent: {}", child, ca);
         let ca = self.get_ca(ca).await?;
@@ -473,7 +473,7 @@ impl CaManager {
         Ok(())
     }
 
-    /// Processes an RFC6492 sent to this CA:
+    /// Processes an RFC 6492 request sent to this CA:
     /// - parses the message bytes
     /// - validates the request
     /// - processes the child request
@@ -542,13 +542,13 @@ impl CaManager {
             .sign_rfc6492_response(msg, self.signer.deref())
     }
 
-    /// List the entitlements for a child: 3.3.2 of RFC6492
+    /// List the entitlements for a child: 3.3.2 of RFC 6492.
     async fn list(&self, ca: &Handle, child: &Handle) -> KrillResult<Entitlements> {
         let ca = self.get_ca(ca).await?;
         Ok(ca.list(child, &self.config.issuance_timing)?)
     }
 
-    /// Issue a Certificate in response to a Certificate Issuance request
+    /// Issue a Certificate in response to an RFC 6492 Certificate Issuance request sent by a child.
     ///
     /// See: https://tools.ietf.org/html/rfc6492#section3.4.1-2
     async fn issue(
@@ -578,6 +578,7 @@ impl CaManager {
         Ok(response)
     }
 
+    /// Process an RFC 6492  revocation request sent by a child.
     /// See: https://tools.ietf.org/html/rfc6492#section3.5.1-2
     async fn revoke(
         &self,
@@ -649,7 +650,7 @@ impl CaManager {
         Ok(())
     }
 
-    /// Returns the parent statuses for this CA
+    /// Returns the parent statuses for this CA.
     pub async fn ca_parent_statuses(&self, ca: &Handle) -> KrillResult<ParentStatuses> {
         if self.ca_store.has(ca)? {
             self.status_store.lock().await.get_parent_statuses(ca).await
@@ -710,7 +711,7 @@ impl CaManager {
         }
     }
 
-    /// Try to update a specific CA
+    /// Try to get updates from a specific parent of a CA.
     async fn get_updates_from_parent(&self, handle: &Handle, parent: &ParentHandle, actor: &Actor) -> KrillResult<()> {
         if handle == &ta_handle() {
             Ok(()) // The (test) TA never needs updates.
@@ -1186,7 +1187,7 @@ impl CaManager {
         }
     }
 
-    /// Update the RepoStatus for CAs using an embedded Publication Server
+    /// Update the RepoStatus for a CA.
     pub async fn ca_repo_status_set_elements(&self, ca: &Handle) -> KrillResult<()> {
         let published = self.ca_objects_store.ca_objects(ca)?.all_publish_elements();
         let next_hours = self.config.issuance_timing.timing_publish_next_hours;
@@ -1287,7 +1288,7 @@ impl CaManager {
             rfc8181::ReplyMessage::SuccessReply => {
                 // Get all the currently published elements in ALL REPOS.
                 // TODO: reflect the status for each REPO in the API / UI?
-                // We probably should.. though it should be extremely rare and short-live to
+                // We probably should.. though it should be extremely rare and short-lived to
                 // have more than one repository.
                 let published = self.ca_objects_store.ca_objects(ca_handle)?.all_publish_elements();
 

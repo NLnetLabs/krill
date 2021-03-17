@@ -297,7 +297,7 @@ impl CaObjects {
         res
     }
 
-    /// Returns all PublishElements in all repositories (if there is more than one)
+    /// Returns all PublishElements in all repositories (if there is more than one).
     pub fn all_publish_elements(&self) -> Vec<PublishElement> {
         let mut all_elements = vec![];
 

@@ -102,10 +102,6 @@ impl RepositoryManager {
 /// # Repository Server Management
 ///
 impl RepositoryManager {
-    // pub fn repository_handle() -> RepositoryHandle {
-    //     Handle::from_str(PUBSERVER_DFLT).unwrap()
-    // }
-
     pub fn initialized(&self) -> KrillResult<bool> {
         self.access.initialized()
     }
@@ -121,7 +117,7 @@ impl RepositoryManager {
     }
 
     /// Clear the publication server. Will fail if it still
-    /// has publishers. Or if it does not exist
+    /// has publishers. Or if it does not exist.
     pub fn repository_clear(&self) -> KrillResult<()> {
         self.access.clear()?;
         self.content.clear()
@@ -136,7 +132,7 @@ impl RepositoryManager {
 /// # Publication Protocol support
 ///
 impl RepositoryManager {
-    /// Handle an RFC8181 request and sign the response
+    /// Handle an RFC8181 request and sign the response.
     pub fn rfc8181(&self, publisher_handle: PublisherHandle, msg_bytes: Bytes) -> KrillResult<Bytes> {
         let cms_logger = CmsLogger::for_rfc8181_rcvd(self.config.rfc8181_log_dir.as_ref(), &publisher_handle);
 
@@ -171,7 +167,7 @@ impl RepositoryManager {
         Ok(response_bytes)
     }
 
-    /// Do an RRDP session reset
+    /// Do an RRDP session reset.
     pub fn rrdp_session_reset(&self) -> KrillResult<()> {
         self.content.session_reset(&self.config.repository_retention)
     }
@@ -188,7 +184,7 @@ impl RepositoryManager {
         self.content.stats()
     }
 
-    /// Returns a list reply for a known publisher in a repository
+    /// Returns a list reply for a known publisher in a repository.
     pub fn list(&self, publisher: &PublisherHandle) -> KrillResult<ListReply> {
         self.content.list_reply(publisher)
     }
@@ -212,7 +208,7 @@ impl RepositoryManager {
         Ok(PublisherDetails::new(name, id_cert, base_uri, current))
     }
 
-    /// Returns the RFC8183 Repository Response for the publisher
+    /// Returns the RFC8183 Repository Response for the publisher.
     pub fn repository_response(
         &self,
         rfc8181_uri: uri::Https,
