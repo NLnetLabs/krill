@@ -211,8 +211,9 @@ impl UpgradeStore for PubdStoreMigration {
     }
 }
 
-/// Pre 0.9 Repository which combines the access (ID) functions,
-/// and content. This is split up 0.9 into two separate components.
+/// Pre 0.9 Repository which combines the access (ID) functions, and content. Starting with 0.9 these
+/// responsibilities will be handled by two separate components. For this migration we need to parse
+/// the old repository structure.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct OldRepository {
     // Event sourcing support
