@@ -1014,7 +1014,7 @@ impl BasicKeyObjectSet {
             Ok(())
         } else {
             Err(Error::PublishingObjects(format!(
-                "received new cert for unknown keyid: {}",
+                "received new cert for unknown key id: {}",
                 cert.subject_key_identifier()
             )))
         }

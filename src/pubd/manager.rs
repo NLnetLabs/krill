@@ -55,13 +55,13 @@ impl RepositoryManager {
         corrupt_error_msg.push_str(
             "If you do not need to run your own repository you may delete this directory and just start Krill again.\n",
         );
-        corrupt_error_msg.push_str("If do need to run your own repository then please use your previous installation and contact us at 'rpki-team@nlnetlabs.nl'.\n");
+        corrupt_error_msg.push_str("If you do need to run your own repository then please use your previous installation and contact us at 'rpki-team@nlnetlabs.nl'.\n");
 
         if repo_instance_dir.exists() {
             if let Ok(server) = RepositoryManager::build(config, signer) {
                 if server.publishers()?.is_empty() {
                     info!(
-                        "Removing unused repository server directory. Use 'krillpubd' if you need to run a repository."
+                        "Removing unused repository server directory. Use 'krillpubd' instead if you need to run a repository."
                     );
                     let _result = fs::remove_dir_all(pub_server_dir);
                     Ok(None)
@@ -70,8 +70,13 @@ impl RepositoryManager {
                     Ok(Some(server))
                 }
             } else {
-                if let Err(e) = fs::rename(pub_server_dir, backup_pub_server_dir) {
-                    corrupt_error_msg.push_str(&format!("Oops, COULD NOT MAKE BACKUP: {}", e));
+                if let Err(e) = fs::rename(&pub_server_dir, &backup_pub_server_dir) {
+                    corrupt_error_msg.push_str(&format!(
+                        "COULD NOT rename {} to {}. Error: {}",
+                        pub_server_dir.to_string_lossy(),
+                        backup_pub_server_dir.to_string_lossy(),
+                        e
+                    ));
                 }
 
                 Err(Error::Custom(corrupt_error_msg))
