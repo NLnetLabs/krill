@@ -15,7 +15,7 @@ async fn auth_check() {
     // bearer token sent by the test suite support functions not to match and thus be rejected which in turn should
     // cause a Rust panic.
     let dir = tmp_dir();
-    let mut config = test_config(&dir);
+    let mut config = test_config(&dir, false);
     config.auth_token = Token::from("wrong secret");
 
     // Start Krill with the customized config
@@ -26,5 +26,5 @@ async fn auth_check() {
     let ca_handle = Handle::from_str("dummy_ca").unwrap();
     init_ca(&ca_handle).await;
 
-    // A Rust panic should have occured. If not, this test will fail due to the use of the #[should_panic] attribute.
+    // A Rust panic should have occurred. If not, this test will fail due to the use of the #[should_panic] attribute.
 }

@@ -46,29 +46,24 @@ use crate::publish::CaPublisher;
 //------------ KrillMode ----------------------------------------------------
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 pub enum KrillMode {
-    Testbed(PublicationServerUris),
     Pubd,
     Ca,
-    Mixed, // will be removed in 1.1 - used to support existing deployments
+    Mixed, // will be removed in future - used to support existing deployments
 }
 
 impl KrillMode {
     pub fn cas_enabled(&self) -> bool {
         match self {
-            KrillMode::Testbed(_) | KrillMode::Ca | KrillMode::Mixed => true,
+            KrillMode::Ca | KrillMode::Mixed => true,
             KrillMode::Pubd => false,
         }
     }
 
     pub fn pubd_enabled(&self) -> bool {
         match self {
-            KrillMode::Testbed(_) | KrillMode::Pubd | KrillMode::Mixed => true,
+            KrillMode::Pubd | KrillMode::Mixed => true,
             KrillMode::Ca => false,
         }
-    }
-
-    pub fn testbed_enabled(&self) -> bool {
-        matches!(self, KrillMode::Testbed(_))
     }
 }
 
@@ -109,9 +104,6 @@ pub struct KrillServer {
     // Global login session cache
     login_session_cache: Arc<LoginSessionCache>,
 
-    // Server Mode
-    mode: KrillMode,
-
     // System actor
     system_actor: Actor,
 }
@@ -138,7 +130,7 @@ impl PostLimits {
     }
 }
 
-/// # Set up and initialisation
+/// # Set up and initialization
 impl KrillServer {
     /// Creates a new publication server. Note that state is preserved
     /// on disk in the work_dir provided.
@@ -148,6 +140,19 @@ impl KrillServer {
 
         info!("Starting {} v{}", KRILL_SERVER_APP, KRILL_VERSION);
         info!("{} uses service uri: {}", KRILL_SERVER_APP, service_uri);
+
+        if config.testbed().is_some() {
+            if mode == KrillMode::Ca {
+                // Enable embedded repo for testbed. In future the testbed
+                // will require separate components (krill-ta, krillpubd, krill)
+                info!("Enabling TESTBED mode - ONLY USE THIS FOR TESTING AND TRAINING!");
+                mode = KrillMode::Mixed
+            } else {
+                return Err(Error::custom(
+                    "Krill TESTBED can only be used with krill, not krillpubd",
+                ));
+            }
+        }
 
         let mut repo_dir = work_dir.clone();
         repo_dir.push("repo");
@@ -178,27 +183,15 @@ impl KrillServer {
         };
         let system_actor = authorizer.actor_from_def(ACTOR_DEF_KRILL);
 
+        // for now, support that existing embedded repositories are still supported.
+        // this should be removed in future after people have had a chance to separate.
         let repo_manager = {
             if mode.pubd_enabled() {
                 Some(RepositoryManager::build(config.clone(), signer.clone())?)
             } else {
-                RepositoryManager::remove_if_empty(config.clone(), signer.clone())?
+                RepositoryManager::keep_if_used(config.clone(), signer.clone())?
             }
         };
-
-        // for now, support that existing embedded repositories are still supported.
-        // this should be removed in release 1.1 after people have had a chance to separate.
-        if repo_manager.is_some() && mode == KrillMode::Ca {
-            mode = KrillMode::Mixed
-        }
-
-        match &mode {
-            KrillMode::Mixed => {
-                warn!("Enabling embedded publication server. This will be deprecated in future. See Changelog!")
-            }
-            KrillMode::Testbed(_) => info!("Krill uses testbed mode"),
-            _ => {}
-        }
 
         let repo_manager: Option<Arc<RepositoryManager>> = repo_manager.map(Arc::new);
 
@@ -208,8 +201,10 @@ impl KrillServer {
         let caserver = if mode.cas_enabled() {
             let caserver = Arc::new(ca::CaManager::build(config.clone(), event_queue.clone(), signer).await?);
 
-            if let KrillMode::Testbed(uris) = &mode {
+            if let Some(testbed) = config.testbed() {
                 let repo_manager = repo_manager.as_ref().ok_or(Error::RepositoryServerNotEnabled)?;
+
+                let uris = testbed.publication_server_uris();
 
                 if !repo_manager.initialized()? {
                     repo_manager.init(uris.clone())?;
@@ -221,10 +216,8 @@ impl KrillServer {
 
                     let repo_info: RepoInfo = repo_manager.repo_info_for(&ta_handle)?;
 
-                    let ta_uri = format!("{}ta/ta.cer", service_uri);
-                    let ta_uri = uri::Https::from_string(ta_uri).unwrap();
-
-                    let ta_aia = config.ta_aia();
+                    let ta_uri = testbed.ta_uri().clone();
+                    let ta_aia = testbed.ta_aia().clone();
 
                     // Add TA
                     caserver.init_ta(repo_info, ta_aia, vec![ta_uri], &system_actor).await?;
@@ -313,7 +306,6 @@ impl KrillServer {
             post_limits,
             #[cfg(feature = "multi-user")]
             login_session_cache,
-            mode,
             system_actor,
         })
     }
@@ -366,7 +358,10 @@ impl KrillServer {
     }
 
     pub fn testbed_enabled(&self) -> bool {
-        self.mode.testbed_enabled()
+        self.caserver
+            .as_ref()
+            .map(|ca_manager| ca_manager.testbed_enabled())
+            .unwrap_or_else(|| false)
     }
 
     #[cfg(feature = "multi-user")]

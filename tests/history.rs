@@ -57,7 +57,7 @@ async fn history() {
 
         let mut server_dir = work_dir.clone();
         server_dir.push(scenario);
-        let config = Arc::new(Config::test(&server_dir));
+        let config = Arc::new(Config::test(&server_dir, true));
 
         let mut server_cas_dir = server_dir.clone();
         server_cas_dir.push("cas");
