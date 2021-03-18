@@ -7,15 +7,12 @@ use std::sync::Arc;
 use crate::{commons::api::Token, daemon::auth::common::permissions::Permission};
 use crate::commons::error::Error;
 use crate::commons::KrillResult;
-use crate::constants::ACTOR_DEF_ANON;
+use crate::constants::{NO_RESOURCE, ACTOR_DEF_ANON};
 use crate::daemon::auth::policy::AuthPolicy;
 use crate::daemon::auth::providers::MasterTokenAuthProvider;
 use crate::daemon::config::Config;
 use crate::daemon::http::HttpResponse;
-use crate::{
-    commons::actor::{Actor, ActorDef},
-    daemon::http::RequestPath,
-};
+use crate::commons::actor::{Actor, ActorDef};
 
 //------------ Authorizer ----------------------------------------------------
 
@@ -168,7 +165,7 @@ impl Authorizer {
         // which cannot be done by the AuthProvider. Check that now.
         let actor_def = ActorDef::user(user.id.clone(), user.attributes.clone(), None);
         let actor = self.actor_from_def(actor_def);
-        if !actor.is_allowed(Permission::LOGIN, RequestPath::from_request(&request))? {
+        if !actor.is_allowed(Permission::LOGIN, NO_RESOURCE)? {
             let reason = format!("Login denied for user '{}': User is not permitted to 'LOGIN'", user.id);
             warn!("{}", reason);
             return Err(Error::ApiInsufficientRights(reason));

@@ -32,7 +32,7 @@ use crate::commons::eventsourcing::AggregateStoreError;
 use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
 use crate::commons::{KrillEmptyResult, KrillResult};
-use crate::constants::{KRILL_ENV_UPGRADE_ONLY, KRILL_VERSION_MAJOR, KRILL_VERSION_MINOR, KRILL_VERSION_PATCH};
+use crate::constants::{KRILL_ENV_UPGRADE_ONLY, KRILL_VERSION_MAJOR, KRILL_VERSION_MINOR, KRILL_VERSION_PATCH, NO_RESOURCE};
 use crate::daemon::auth::Auth;
 use crate::daemon::auth::common::permissions::Permission;
 use crate::daemon::ca::RouteAuthorizationUpdates;
@@ -739,16 +739,16 @@ fn add_new_auth_to_response(res: Result<HttpResponse, Error>, opt_auth: Option<A
 // similar to how this macro is used in each function.
 macro_rules! aa {
     (no_warn $req:ident, $perm:expr, $action:expr) => {{
-        aa!($req, $perm, $req.path().clone(), $action, true)
+        aa!($req, $perm, NO_RESOURCE, $action, true)
     }};
     ($req:ident, $perm:expr, $action:expr) => {{
-        aa!($req, $perm, $req.path().clone(), $action, false)
+        aa!($req, $perm, NO_RESOURCE, $action, false)
     }};
     (no_warn $req:ident, $perm:expr, $resource:expr, $action:expr) => {{
-        aa!($req, $perm, $req.path().clone(), $action, true)
+        aa!($req, $perm, $resource, $action, true)
     }};
     ($req:ident, $perm:expr, $resource:expr, $action:expr) => {{
-        aa!($req, $perm, $req.path().clone(), $action, false)
+        aa!($req, $perm, $resource, $action, false)
     }};
     ($req:ident, $perm:expr, $resource:expr, $action:expr, $benign:expr) => {{
         match $req.actor().is_allowed($perm, $resource) {
@@ -1052,7 +1052,7 @@ async fn repository_response(req: &Request, publisher: &Handle) -> Result<rfc818
 }
 
 pub async fn api_ca_add_child(req: Request, parent: ParentHandle) -> RoutingResult {
-    aa!(req, Permission::CA_UPDATE, {
+    aa!(req, Permission::CA_UPDATE, parent.clone(), {
         let actor = req.actor();
         let server = req.state().clone();
         match req.json().await {
@@ -1063,7 +1063,7 @@ pub async fn api_ca_add_child(req: Request, parent: ParentHandle) -> RoutingResu
 }
 
 async fn api_ca_child_update(req: Request, ca: Handle, child: ChildHandle) -> RoutingResult {
-    aa!(req, Permission::CA_UPDATE, {
+    aa!(req, Permission::CA_UPDATE, child.clone(), {
         let actor = req.actor();
         let server = req.state().clone();
         match req.json().await {
@@ -1074,7 +1074,7 @@ async fn api_ca_child_update(req: Request, ca: Handle, child: ChildHandle) -> Ro
 }
 
 pub async fn api_ca_child_remove(req: Request, ca: Handle, child: ChildHandle) -> RoutingResult {
-    aa!(req, Permission::CA_UPDATE, {
+    aa!(req, Permission::CA_UPDATE, ca.clone(), {
         let actor = req.actor();
         render_empty_res(req.state().read().await.ca_child_remove(&ca, child, &actor).await)
     })
@@ -1084,6 +1084,7 @@ async fn api_ca_child_show(req: Request, ca: Handle, child: ChildHandle) -> Rout
     aa!(
         req,
         Permission::CA_READ,
+        ca.clone(),
         render_json_res(req.state().read().await.ca_child_show(&ca, &child).await)
     )
 }
@@ -1092,6 +1093,7 @@ async fn api_ca_parent_contact(req: Request, ca: Handle, child: ChildHandle) -> 
     aa!(
         req,
         Permission::CA_READ,
+        ca.clone(),
         render_json_res(req.state().read().await.ca_parent_contact(&ca, child.clone()).await)
     )
 }
@@ -1100,12 +1102,13 @@ async fn api_ca_parent_res_json(req: Request, ca: Handle, child: ChildHandle) ->
     aa!(
         req,
         Permission::CA_READ,
+        ca.clone(),
         render_json_res(req.state().read().await.ca_parent_response(&ca, child.clone()).await)
     )
 }
 
 pub async fn api_ca_parent_res_xml(req: Request, ca: Handle, child: ChildHandle) -> RoutingResult {
-    aa!(req, Permission::CA_READ, {
+    aa!(req, Permission::CA_READ, ca.clone(), {
         match req.state().read().await.ca_parent_response(&ca, child.clone()).await {
             Ok(res) => Ok(HttpResponse::xml(res.encode_vec())),
             Err(e) => render_error(e),
@@ -1131,6 +1134,7 @@ async fn api_ca_issues(req: Request, ca: Handle) -> RoutingResult {
         Method::GET => aa!(
             req,
             Permission::CA_READ,
+            ca.clone(),
             render_json_res(req.state().read().await.ca_issues(&ca).await)
         ),
         _ => render_unknown_method(),
@@ -1157,7 +1161,7 @@ pub async fn api_ca_init(req: Request) -> RoutingResult {
 
 async fn api_ca_regenerate_id(req: Request, handle: Handle) -> RoutingResult {
     match *req.method() {
-        Method::POST => aa!(req, Permission::CA_UPDATE, {
+        Method::POST => aa!(req, Permission::CA_UPDATE, handle.clone(), {
             let actor = req.actor();
             render_empty_res(req.state().read().await.ca_update_id(handle, &actor).await)
         }),
@@ -1169,6 +1173,7 @@ async fn api_ca_info(req: Request, handle: Handle) -> RoutingResult {
     aa!(
         req,
         Permission::CA_READ,
+        handle.clone(),
         render_json_res(req.state().read().await.ca_info(&handle).await)
     )
 }
@@ -1177,7 +1182,7 @@ async fn api_ca_deactivate(req: Request, handle: Handle) -> RoutingResult {
     let actor = req.actor();
     aa!(
         req,
-        Permission::CA_READ,
+        Permission::CA_UPDATE, // TODO: should this be CA_DELETE or CA_ADMIN?
         render_json_res(req.state().read().await.ca_deactivate(&handle, &actor).await)
     )
 }
@@ -1186,6 +1191,7 @@ async fn api_ca_my_parent_contact(req: Request, ca: Handle, parent: ParentHandle
     aa!(
         req,
         Permission::CA_READ,
+        ca.clone(),
         render_json_res(req.state().read().await.ca_my_parent_contact(&ca, &parent).await)
     )
 }
@@ -1194,6 +1200,7 @@ async fn api_ca_my_parent_statuses(req: Request, ca: Handle) -> RoutingResult {
     aa!(
         req,
         Permission::CA_READ,
+        ca.clone(),
         render_json_res(req.state().read().await.ca_my_parent_statuses(&ca).await)
     )
 }
@@ -1226,7 +1233,7 @@ async fn api_ca_history(req: Request, path: &mut RequestPath, handle: Handle) ->
     };
 
     match *req.method() {
-        Method::GET => aa!(req, Permission::CA_READ, {
+        Method::GET => aa!(req, Permission::CA_READ, handle.clone(), {
             match req.state().read().await.ca_history(&handle, crit).await {
                 Ok(history) => render_json(history),
                 Err(e) => render_error(e),
@@ -1275,7 +1282,7 @@ async fn api_ca_command_details(req: Request, path: &mut RequestPath, handle: Ha
     // /api/v1/cas/{ca}/command/<command-key>
     match path.path_arg() {
         Some(key) => match *req.method() {
-            Method::GET => aa!(req, Permission::CA_READ, {
+            Method::GET => aa!(req, Permission::CA_READ, handle.clone(), {
                 match req.state().read().await.ca_command_details(&handle, key) {
                     Ok(details) => render_json(details),
                     Err(e) => match e {
@@ -1297,6 +1304,7 @@ async fn api_ca_child_req_xml(req: Request, handle: Handle) -> RoutingResult {
         Method::GET => aa!(
             req,
             Permission::CA_READ,
+            handle.clone(),
             match ca_child_req(&req, &handle).await {
                 Ok(req) => Ok(HttpResponse::xml(req.encode_vec())),
                 Err(e) => render_error(e),
@@ -1311,6 +1319,7 @@ async fn api_ca_child_req_json(req: Request, handle: Handle) -> RoutingResult {
         Method::GET => aa!(
             req,
             Permission::CA_READ,
+            handle.clone(),
             match ca_child_req(&req, &handle).await {
                 Ok(req) => render_json(req),
                 Err(e) => render_error(e),
@@ -1329,6 +1338,7 @@ async fn api_ca_publisher_req_json(req: Request, handle: Handle) -> RoutingResul
         Method::GET => aa!(
             req,
             Permission::CA_READ,
+            handle.clone(),
             render_json_res(req.state().read().await.ca_publisher_req(&handle).await)
         ),
         _ => render_unknown_method(),
@@ -1340,6 +1350,7 @@ async fn api_ca_publisher_req_xml(req: Request, handle: Handle) -> RoutingResult
         Method::GET => aa!(
             req,
             Permission::CA_READ,
+            handle.clone(),
             match req.state().read().await.ca_publisher_req(&handle).await {
                 Ok(res) => Ok(HttpResponse::xml(res.encode_vec())),
                 Err(e) => render_error(e),
@@ -1353,6 +1364,7 @@ async fn api_ca_repo_details(req: Request, handle: Handle) -> RoutingResult {
     aa!(
         req,
         Permission::CA_READ,
+        handle.clone(),
         render_json_res(req.state().read().await.ca_repo_details(&handle).await)
     )
 }
@@ -1362,6 +1374,7 @@ async fn api_ca_repo_status(req: Request, handle: Handle) -> RoutingResult {
         Method::GET => aa!(
             req,
             Permission::CA_READ,
+            handle.clone(),
             render_json_res(req.state().read().await.ca_repo_status(&handle).await)
         ),
         _ => render_unknown_method(),
@@ -1525,7 +1538,7 @@ async fn api_ca_kr_activate(req: Request, handle: Handle) -> RoutingResult {
 
 /// Update the route authorizations for this CA
 async fn api_ca_routes_update(req: Request, handle: Handle) -> RoutingResult {
-    aa!(req, Permission::ROUTES_UPDATE, {
+    aa!(req, Permission::ROUTES_UPDATE, handle.clone(), {
         let actor = req.actor();
         let state = req.state().clone();
 
@@ -1540,7 +1553,7 @@ async fn api_ca_routes_update(req: Request, handle: Handle) -> RoutingResult {
 /// for the resources in the update have no remaining invalids, apply it. Otherwise
 /// return the analysis and a suggestion.
 async fn api_ca_routes_try_update(req: Request, ca: Handle) -> RoutingResult {
-    aa!(req, Permission::ROUTES_UPDATE, {
+    aa!(req, Permission::ROUTES_UPDATE, ca.clone(), {
         let actor = req.actor();
         let state = req.state().clone();
 
@@ -1577,7 +1590,7 @@ async fn api_ca_routes_try_update(req: Request, ca: Handle) -> RoutingResult {
 
 /// show the route authorizations for this CA
 async fn api_ca_routes_show(req: Request, handle: Handle) -> RoutingResult {
-    aa!(req, Permission::ROUTES_READ, {
+    aa!(req, Permission::ROUTES_READ, handle.clone(), {
         match req.state().read().await.ca_routes_show(&handle).await {
             Ok(roas) => render_json(roas),
             Err(_) => render_unknown_resource(),

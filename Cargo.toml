@@ -36,7 +36,7 @@ log             = "^0.4"
 openidconnect   = { version = "^1.0", optional = true }
 #openidconnect = { git = "https://github.com/ximon18/openidconnect-rs.git", branch = "krill-hack", optional = true }
 openssl         = { version = "^0.10", features = ["v110"] }
-oso             = { version = "^0.8", optional = true }
+oso             = { version = "^0.11", optional = true }
 regex           = { version = "^1.4", optional = true }
 reqwest         = { version = "0.10.8", features = [ "json"] }
 rpki            = "^0.10.0"

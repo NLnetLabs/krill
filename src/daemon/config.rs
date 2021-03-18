@@ -728,6 +728,7 @@ impl Config {
             .level_for("mio", framework_level)
             .level_for("reqwest", framework_level)
             .level_for("tokio_reactor", framework_level)
+            .level_for("tokio_util::codec::framed_read", framework_level)
             .level_for("want", framework_level)
             .level_for("tracing::span", framework_level)
             .level_for("h2", framework_level)

@@ -1,15 +1,16 @@
 # test setup:
 #
-# 5 users: admin, t1ro, t1rw, t2ro, t2rw (where: r - readonly, w - readwrite)
+# users: (where: tN = team number, r = readonly, w = readwrite, roaw = readonly + roa write)
+#    admin
+#    t1ro, t1rw
+#    t2ro, t2rw
+#    t3ro, t3rw, t3roaw
 #
-# 2 teams: t1 (users: t1ro, t1rw), t2 (users: t2ro, t2rw)
-#
-# 3 CAs: ca1, ca2, ca3
-#        |     |    +--- only admin can see this
-#        |     |
-#        |     +-------- only t2 members and admin can see this
-#        |
-#        +-------------- only t1 members and admin can see this
+# teams:
+#   - t1 users: t1ro, t1rw - has role based access to ca1
+#   - t2 users: t2ro, t2rw - has role based access to ca2
+#   - t3 users: t3ro, t3rw - has role based access to ca1 and ca2
+#        users: t3roaw     - has readonly access to ca1 and ca2, PLUS write access to ca1 ROAs
 #
 # users have two important attributes:
 #   - team: which team they belong to
@@ -17,16 +18,32 @@
 
 
 ###
-### todo
-###
-# ?
-
-
-###
 ### team assignments (edit me)
 ###
-team_works_with_ca(team_name, ca: Handle) if team_name = "t1" and ca.name in ["ca1"];
-team_works_with_ca(team_name, ca: Handle) if team_name = "t2" and ca.name in ["ca2"];
+
+# An alternative way of doing this might be to act as if Krill has per CA metadata like which
+# teams are permitted to use which roles with the CA, and represent that as an Oso dictionary
+# "returned" by a rule, but for one off exceptions like the rule for t3 below that impact
+# multiple CAs that becomes quite unwieldy.
+
+
+# Team t1 can only work with CA ca1, they cannot see or do anything with other CAs
+is_team_member_role_permitted_on_ca(team_name, _role, ca: Handle) if
+    team_name = "t1" and ca.name in ["ca1"];
+
+# Team t2 can only work with CA ca2, they cannot see or do anything with other CAs
+is_team_member_role_permitted_on_ca(team_name, _role, ca: Handle) if
+    team_name = "t2" and ca.name in ["ca2"];
+
+# Team t3 can work with CA ca2 and CA ca1, but with ca1 the only write action permitted is
+# updating of ROAs. These two rules could be combined into a single rule but I find it more
+# readable as two rules.
+is_team_member_role_permitted_on_ca(team_name, role, ca: Handle) if
+    team_name = "t3" and ca.name in ["ca2"];
+
+is_team_member_role_permitted_on_ca(team_name, role, ca: Handle) if
+    team_name = "t3" and ca.name in ["ca1"] and role in ["roawrite", "readonly"];
+
 
 
 ################################################################################
@@ -35,163 +52,59 @@ team_works_with_ca(team_name, ca: Handle) if team_name = "t2" and ca.name in ["c
 
 
 ###
-### tests - evaluated when this file is loaded (Krill will exit on failure)
-###
-
-
-# sanity check
-?= actor_has_role(Actor.builtin("krill"), "admin");
-
-
-# verify admin can list CAs and read and write each CA
-?= actor_has_role(new Actor("admin", { role: "admin" }), "admin");
-?= allow(new Actor("admin", { role: "admin" }), new Permission("CA_LIST"), new RequestPath("/"));
-?= allow(new Actor("admin", { role: "admin" }), new Permission("CA_READ"), new Handle("ca1"));
-?= allow(new Actor("admin", { role: "admin" }), new Permission("CA_READ"), new Handle("ca2"));
-?= allow(new Actor("admin", { role: "admin" }), new Permission("CA_READ"), new Handle("ca3"));
-?= allow(new Actor("admin", { role: "admin" }), new Permission("CA_UPDATE"), new Handle("ca1"));
-?= allow(new Actor("admin", { role: "admin" }), new Permission("CA_UPDATE"), new Handle("ca2"));
-?= allow(new Actor("admin", { role: "admin" }), new Permission("CA_UPDATE"), new Handle("ca3"));
-
-
-# verify that an actor with a team attribute is considered to be in that team
-# and only that team.
-?= team_member_is_in_team(new Actor("t1ro", { team: "t1" }), "t1");
-?= not team_member_is_in_team(new Actor("t1ro", { team: "t1" }), "t2");
-?= not team_member_is_in_team(new Actor("t1ro", { team: "t1" }), nil);
-
-
-# verify that team members can login
-?= team_members_can_login(new Actor("t1ro", { team: "t1", teamrole: "readonly" }), new Permission("LOGIN"));
-?= team_members_can_login(new Actor("t1rw", { team: "t1", teamrole: "readwrite" }), new Permission("LOGIN"));
-
-?= team_members_can_login(new Actor("t2ro", { team: "t2", teamrole: "readonly" }), new Permission("LOGIN"));
-?= team_members_can_login(new Actor("t2rw", { team: "t2", teamrole: "readwrite" }), new Permission("LOGIN"));
-
-
-# verify that the teams work with the right CAs
-?= team_works_with_ca("t1", new Handle("ca1"));
-?= not team_works_with_ca("t1", new Handle("ca2"));
-?= not team_works_with_ca("t1", new Handle("ca3"));
-
-?= not team_works_with_ca("t2", new Handle("ca1"));
-?= team_works_with_ca("t2", new Handle("ca2"));
-?= not team_works_with_ca("t2", new Handle("ca3"));
-
-
-# verify that team members work with the right CAs
-?= team_member_works_with_ca(new Actor("t1ro", { team: "t1", teamrole: "readonly" }), new Handle("ca1"));
-?= not team_member_works_with_ca(new Actor("t1ro", { team: "t1", teamrole: "readonly" }), new Handle("ca2"));
-?= not team_member_works_with_ca(new Actor("t1ro", { team: "t1", teamrole: "readonly" }), new Handle("ca3"));
-
-?= not team_member_works_with_ca(new Actor("t2ro", { team: "t2", teamrole: "readonly" }), new Handle("ca1"));
-?= team_member_works_with_ca(new Actor("t2ro", { team: "t2", teamrole: "readonly" }), new Handle("ca2"));
-?= not team_member_works_with_ca(new Actor("t2ro", { team: "t2", teamrole: "readonly" }), new Handle("ca3"));
-
-
-# verify that team members can perform only the expected actions on the expected CAs
-# this cannot be tested here, it can only be tested using an Oso query from within Rust
-# after the policy files have been loaded. Or is this an Oso bug?
-?= team_member_can_perform_action_on_ca(new Actor("t1ro", { team: "t1", teamrole: "readonly" }), new Permission("CA_READ"), new Handle("ca1"));
-?= not team_member_can_perform_action_on_ca(new Actor("t1ro", { team: "t1", teamrole: "readonly" }), new Permission("CA_READ"), new Handle("ca2"));
-?= not team_member_can_perform_action_on_ca(new Actor("t1ro", { team: "t1", teamrole: "readonly" }), new Permission("CA_READ"), new Handle("ca3"));
-?= not team_member_can_perform_action_on_ca(new Actor("t1ro", { team: "t1", teamrole: "readonly" }), new Permission("CA_UPDATE"), new Handle("ca1"));
-?= not team_member_can_perform_action_on_ca(new Actor("t1ro", { team: "t1", teamrole: "readonly" }), new Permission("CA_UPDATE"), new Handle("ca2"));
-?= not team_member_can_perform_action_on_ca(new Actor("t1ro", { team: "t1", teamrole: "readonly" }), new Permission("CA_UPDATE"), new Handle("ca3"));
-
-?= team_member_can_perform_action_on_ca(new Actor("t1rw", { team: "t1", teamrole: "readwrite" }), new Permission("CA_READ"), new Handle("ca1"));
-?= not team_member_can_perform_action_on_ca(new Actor("t1rw", { team: "t1", teamrole: "readwrite" }), new Permission("CA_READ"), new Handle("ca2"));
-?= not team_member_can_perform_action_on_ca(new Actor("t1rw", { team: "t1", teamrole: "readwrite" }), new Permission("CA_READ"), new Handle("ca3"));
-?= team_member_can_perform_action_on_ca(new Actor("t1rw", { team: "t1", teamrole: "readwrite" }), new Permission("CA_UPDATE"), new Handle("ca1"));
-?= not team_member_can_perform_action_on_ca(new Actor("t1rw", { team: "t1", teamrole: "readwrite" }), new Permission("CA_UPDATE"), new Handle("ca2"));
-?= not team_member_can_perform_action_on_ca(new Actor("t1rw", { team: "t1", teamrole: "readwrite" }), new Permission("CA_UPDATE"), new Handle("ca3"));
-
-?= not team_member_can_perform_action_on_ca(new Actor("t2ro", { team: "t2", teamrole: "readonly" }), new Permission("CA_READ"), new Handle("ca1"));
-?= team_member_can_perform_action_on_ca(new Actor("t2ro", { team: "t2", teamrole: "readonly" }), new Permission("CA_READ"), new Handle("ca2"));
-?= not team_member_can_perform_action_on_ca(new Actor("t2ro", { team: "t2", teamrole: "readonly" }), new Permission("CA_READ"), new Handle("ca3"));
-?= not team_member_can_perform_action_on_ca(new Actor("t2ro", { team: "t2", teamrole: "readonly" }), new Permission("CA_UPDATE"), new Handle("ca1"));
-?= not team_member_can_perform_action_on_ca(new Actor("t2ro", { team: "t2", teamrole: "readonly" }), new Permission("CA_UPDATE"), new Handle("ca2"));
-?= not team_member_can_perform_action_on_ca(new Actor("t2ro", { team: "t2", teamrole: "readonly" }), new Permission("CA_UPDATE"), new Handle("ca3"));
-
-?= not team_member_can_perform_action_on_ca(new Actor("t2rw", { team: "t2", teamrole: "readwrite" }), new Permission("CA_READ"), new Handle("ca1"));
-?= team_member_can_perform_action_on_ca(new Actor("t2rw", { team: "t2", teamrole: "readwrite" }), new Permission("CA_READ"), new Handle("ca2"));
-?= not team_member_can_perform_action_on_ca(new Actor("t2rw", { team: "t2", teamrole: "readwrite" }), new Permission("CA_READ"), new Handle("ca3"));
-?= not team_member_can_perform_action_on_ca(new Actor("t2rw", { team: "t2", teamrole: "readwrite" }), new Permission("CA_UPDATE"), new Handle("ca1"));
-?= team_member_can_perform_action_on_ca(new Actor("t2rw", { team: "t2", teamrole: "readwrite" }), new Permission("CA_UPDATE"), new Handle("ca2"));
-?= not team_member_can_perform_action_on_ca(new Actor("t2rw", { team: "t2", teamrole: "readwrite" }), new Permission("CA_UPDATE"), new Handle("ca3"));
-
-
-# only team members should satisfy a team member specific rule
-?= not team_member_can_perform_action_on_ca(new Actor("admin", {}), new Permission("CA_READ"), new Handle("ca1"));
-
-
-# verify from where Oso begins evaluation, at matching allow() rules.
-?= allow(new Actor("t1ro", { team: "t1", teamrole: "readonly" }), new Permission("CA_READ"), new Handle("ca1"));
-?= not allow(new Actor("t1ro", { team: "t1", teamrole: "readonly" }), new Permission("CA_READ"), new Handle("ca2"));
-?= not allow(new Actor("t1ro", { team: "t1", teamrole: "readonly" }), new Permission("CA_READ"), new Handle("ca3"));
-?= not allow(new Actor("t1ro", { team: "t1", teamrole: "readonly" }), new Permission("CA_UPDATE"), new Handle("ca1"));
-?= not allow(new Actor("t1ro", { team: "t1", teamrole: "readonly" }), new Permission("CA_UPDATE"), new Handle("ca2"));
-?= not allow(new Actor("t1ro", { team: "t1", teamrole: "readonly" }), new Permission("CA_UPDATE"), new Handle("ca3"));
-
-?= allow(new Actor("t1rw", { team: "t1", teamrole: "readwrite" }), new Permission("CA_READ"), new Handle("ca1"));
-?= not allow(new Actor("t1rw", { team: "t1", teamrole: "readwrite" }), new Permission("CA_READ"), new Handle("ca2"));
-?= not allow(new Actor("t1rw", { team: "t1", teamrole: "readwrite" }), new Permission("CA_READ"), new Handle("ca3"));
-?= allow(new Actor("t1rw", { team: "t1", teamrole: "readwrite" }), new Permission("CA_UPDATE"), new Handle("ca1"));
-?= not allow(new Actor("t1rw", { team: "t1", teamrole: "readwrite" }), new Permission("CA_UPDATE"), new Handle("ca2"));
-?= not allow(new Actor("t1rw", { team: "t1", teamrole: "readwrite" }), new Permission("CA_UPDATE"), new Handle("ca3"));
-
-# verify user t2ur can read ca2 but not ca1 or ca3, and cannot write tonew Permission( them
-?= not allow(new Actor("t2ro", { team: "t2", teamrole: "readonly" }), new Permission("CA_READ"), new Handle("ca1"));
-?= allow(new Actor("t2ro", { team: "t2", teamrole: "readonly" }), new Permission("CA_READ"), new Handle("ca2"));
-?= not allow(new Actor("t2ro", { team: "t2", teamrole: "readonly" }), new Permission("CA_READ"), new Handle("ca3"));
-?= not allow(new Actor("t2ro", { team: "t2", teamrole: "readonly" }), new Permission("CA_UPDATE"), new Handle("ca1"));
-?= not allow(new Actor("t2ro", { team: "t2", teamrole: "readonly" }), new Permission("CA_UPDATE"), new Handle("ca2"));
-?= not allow(new Actor("t2ro", { team: "t2", teamrole: "readonly" }), new Permission("CA_UPDATE"), new Handle("ca3"));
-
-?= not allow(new Actor("t2rw", { team: "t2", teamrole: "readwrite" }), new Permission("CA_READ"), new Handle("ca1"));
-?= allow(new Actor("t2rw", { team: "t2", teamrole: "readwrite" }), new Permission("CA_READ"), new Handle("ca2"));
-?= not allow(new Actor("t2rw", { team: "t2", teamrole: "readwrite" }), new Permission("CA_READ"), new Handle("ca3"));
-?= not allow(new Actor("t2rw", { team: "t2", teamrole: "readwrite" }), new Permission("CA_UPDATE"), new Handle("ca1"));
-?= allow(new Actor("t2rw", { team: "t2", teamrole: "readwrite" }), new Permission("CA_UPDATE"), new Handle("ca2"));
-?= not allow(new Actor("t2rw", { team: "t2", teamrole: "readwrite" }), new Permission("CA_UPDATE"), new Handle("ca3"));
-
-
-###
 ### rules - evaluated at runtime (and also by the ?= tests above on load)
 ###
 
 
+# Create a role named 'roawrite' that gives users read-only access to Krill PLUS the right to update (create, delete)
+# route authorizations aka ROAs:
+does_role_have_permission("roawrite", action: Permission) if
+    does_role_have_permission("readonly", action) or
+    action = new Permission("ROUTES_UPDATE");
+
+# Create a role named "login_and list"
+does_role_have_permission("login_and_list", action: Permission) if
+    action in [
+        new Permission("LOGIN"),
+        new Permission("CA_LIST")
+    ];
+
+
 # rules for team members
+#
+# allow()
+# +--> can_team_member_perform_action_without_resource(actor, action, resource)
+# |    +--> lookup_team_role(actor, role) 
+# |    +--> does_role_have_permission(role, action, resource)
+# +--> can_team_member_perform_action_on_ca(actor, action, ca)
+#      +--> lookup_team_role(actor, role) 
+#      +--> does_role_have_permission(role, action, ca)
+#      +--> does_team_member_have_rights_on_ca(actor, ca)
+#      |    +--> is_team_member_role_permitted_on_ca(team, role, ca)
 
-team_member_is_in_team(actor: Actor, team_name) if
-    team_name in actor.attr("team");
-
-team_member_works_with_ca(actor: Actor, ca: Handle) if
-    team_name in actor.attr("team") and
-    team_works_with_ca(team_name, ca);
-
-team_member_has_role(actor: Actor, role) if
-    role in actor.attr("teamrole");
+can_team_member_perform_action_without_resource(actor: Actor, action: Permission, resource) if
+    not resource matches Handle and
+    lookup_team_role(actor, role) and
+    does_role_have_permission(role, action);
 
 # Note: This rule cannot be tested in this file because it relies on
-# role_allow() which is not defined in this file. This CAN be tested using an
+# does_role_have_permission() which is not defined in this file. This CAN be tested using an
 # Oso query from within Rust after the policy files have been loaded.
-team_member_can_perform_action_on_ca(actor: Actor, action: Permission, ca: Handle) if
-    team_member_works_with_ca(actor, ca) and
-    role in actor.attr("teamrole") and
-    role_allow(role, action, ca);
+can_team_member_perform_action_on_ca(actor: Actor, action: Permission, ca: Handle) if
+    lookup_team_role(actor, role) and
+    does_role_have_permission(role, action) and
+    does_team_member_have_rights_on_ca(actor, ca);
 
-team_member_can_perform_action_on_resource(actor: Actor, action: Permission, resource: RequestPath) if
-    team_members_can_login(actor, action) or
-    (
-        team_member_has_role(actor, role) and
-        role_allow(role, action, resource)
-    );
+is_actor_in_team(actor: Actor, team_name) if
+    team_name in actor.attr("team");
 
-team_members_can_login(actor: Actor, action: Permission) if
-    action = new Permission("LOGIN") and
-    _ in actor.attr("team") and
-    _ in actor.attr("teamrole");
+does_team_member_have_rights_on_ca(actor: Actor, ca: Handle) if
+    team_name in actor.attr("team") and
+    lookup_team_role(actor, role) and
+    is_team_member_role_permitted_on_ca(team_name, role, ca);
+
+lookup_team_role(actor: Actor, out_role) if
+    out_role in actor.attr("teamrole");
 
 
 
@@ -200,9 +113,21 @@ team_members_can_login(actor: Actor, action: Permission) if
 ###
 
 
-allow(actor: Actor, action: Permission, resource: RequestPath) if
-    team_member_can_perform_action_on_resource(actor, action, resource);
+allow(actor: Actor, action: Permission, resource) if
+    can_team_member_perform_action_without_resource(actor, action, resource);
 
 
 allow(actor: Actor, action: Permission, ca: Handle) if
-    team_member_can_perform_action_on_ca(actor, action, ca);
+    can_team_member_perform_action_on_ca(actor, action, ca);
+
+
+allow(actor: Actor, action: Permission, resource) if
+    not resource matches Handle and
+    role = actor.attr("role") and
+    does_role_have_permission(role, action);
+
+
+allow(actor: Actor, action: Permission, ca: Handle) if
+    role in actor.attr(ca.name) and
+    print("XIMON: ca name", ca.name, "role", role) and
+    does_role_have_permission(role, action);

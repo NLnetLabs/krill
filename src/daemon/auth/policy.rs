@@ -6,7 +6,14 @@ use std::{
 
 use oso::{Oso, PolarClass, ToPolar};
 
-use crate::{commons::{actor::Actor, api::Handle, error::Error, KrillResult}, constants::{ACTOR_DEF_ANON, ACTOR_DEF_KRILL, ACTOR_DEF_MASTER_TOKEN, ACTOR_DEF_TESTBED}, daemon::{auth::common::permissions::Permission, config::Config, http::RequestPath}};
+use crate::{
+    commons::{actor::Actor, api::Handle, error::Error, KrillResult},
+    constants::{NO_RESOURCE, ACTOR_DEF_ANON, ACTOR_DEF_KRILL, ACTOR_DEF_MASTER_TOKEN, ACTOR_DEF_TESTBED},
+    daemon::{
+        auth::common::{permissions::Permission, NoResourceType},
+        config::Config,
+    },
+};
 
 /// Access to Oso is protected by a shareable mutex lock, as demonstrated in the
 /// Oso Rust [getting started example](https://github.com/osohq/oso-rust-quickstart/blob/d469f7594b1d07e2203f5dc6e88d0435fef35468/src/server.rs#L50).
@@ -26,10 +33,10 @@ impl std::ops::Deref for AuthPolicy {
 impl AuthPolicy {
     pub fn new(config: Arc<Config>) -> KrillResult<Self> {
         let mut oso = Oso::new();
+        oso.register_constant(NO_RESOURCE, "NO_RESOURCE").unwrap();
         oso.register_class(Actor::get_polar_class()).unwrap();
         oso.register_class(Handle::get_polar_class()).unwrap();
         oso.register_class(Permission::get_polar_class()).unwrap();
-        oso.register_class(RequestPath::get_polar_class()).unwrap();
 
         Self::load_internal_policy(&mut oso, include_bytes!("../../../defaults/roles.polar"), "roles")?;
         Self::load_internal_policy(&mut oso, include_bytes!("../../../defaults/rules.polar"), "rules")?;
@@ -91,10 +98,16 @@ impl AuthPolicy {
     fn load_internal_policy(oso: &mut Oso, bytes: &[u8], fname: &str) -> KrillResult<()> {
         trace!("Loading internal Polar policy '{}'", fname);
         oso.load_str(
-            std::str::from_utf8(bytes)
-                .map_err(|err| Error::custom(format!("Internal Polar policy '{}' is not valid UTF-8: {}", fname, err)))?,
+            std::str::from_utf8(bytes).map_err(|err| {
+                Error::custom(format!("Internal Polar policy '{}' is not valid UTF-8: {}", fname, err))
+            })?,
         )
-        .map_err(|err| Error::custom(format!("Internal Polar policy '{}' is not valid Polar syntax: {}", fname, err)))
+        .map_err(|err| {
+            Error::custom(format!(
+                "Internal Polar policy '{}' is not valid Polar syntax: {}",
+                fname, err
+            ))
+        })
     }
 
     fn exec_query(oso: &mut Oso, query: &str) -> KrillResult<()> {
@@ -116,6 +129,18 @@ impl AuthPolicy {
         }
 
         Ok(())
+    }
+}
+
+impl PolarClass for NoResourceType {
+    fn get_polar_class() -> oso::Class {
+        Self::get_polar_class_builder()
+            .set_equality_check(|_left: &NoResourceType, _right: &NoResourceType| true)
+            .build()
+    }
+
+    fn get_polar_class_builder() -> oso::ClassBuilder<Self> {
+        oso::Class::builder()
     }
 }
 
@@ -163,27 +188,10 @@ impl PolarClass for Handle {
     }
 }
 
-impl PolarClass for RequestPath {
-    fn get_polar_class() -> oso::Class {
-        Self::get_polar_class_builder()
-            .add_attribute_getter("path", |instance| instance.full().to_string())
-            .set_constructor(|path: String| -> RequestPath {
-                RequestPath::from_request(&hyper::Request::builder().method("GET").uri(path).body(()).unwrap())
-            })
-            .build()
-    }
-
-    fn get_polar_class_builder() -> oso::ClassBuilder<Self> {
-        oso::Class::builder()
-    }
-}
-
 impl PolarClass for Permission {
     fn get_polar_class() -> oso::Class {
         Self::get_polar_class_builder()
-            .set_constructor(|perm_name: String| -> Permission {
-                Permission::from_str(&perm_name).unwrap()
-            })
+            .set_constructor(|perm_name: String| -> Permission { Permission::from_str(&perm_name).unwrap() })
             .set_equality_check(|left: &Permission, right: &Permission| *left == *right)
             .build()
     }
