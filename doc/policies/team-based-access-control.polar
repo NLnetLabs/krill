@@ -38,7 +38,7 @@ is_team_member_role_permitted_on_ca(team_name, _role, ca: Handle) if
 # Team t3 can work with CA ca2 and CA ca1, but with ca1 the only write action permitted is
 # updating of ROAs. These two rules could be combined into a single rule but I find it more
 # readable as two rules.
-is_team_member_role_permitted_on_ca(team_name, role, ca: Handle) if
+is_team_member_role_permitted_on_ca(team_name, _role, ca: Handle) if
     team_name = "t3" and ca.name in ["ca2"];
 
 is_team_member_role_permitted_on_ca(team_name, role, ca: Handle) if
@@ -62,8 +62,8 @@ does_role_have_permission("roawrite", action: Permission) if
     does_role_have_permission("readonly", action) or
     action = new Permission("ROUTES_UPDATE");
 
-# Create a role named "login_and list"
-does_role_have_permission("login_and_list", action: Permission) if
+# Create a role named "login_and_list_cas"
+does_role_have_permission("login_and_list_cas", action: Permission) if
     action in [
         new Permission("LOGIN"),
         new Permission("CA_LIST")
@@ -73,7 +73,7 @@ does_role_have_permission("login_and_list", action: Permission) if
 # rules for team members
 #
 # allow()
-# +--> can_team_member_perform_action_without_resource(actor, action, resource)
+# +--> can_team_member_perform_action_without_resource(actor, action)
 # |    +--> lookup_team_role(actor, role) 
 # |    +--> does_role_have_permission(role, action, resource)
 # +--> can_team_member_perform_action_on_ca(actor, action, ca)
@@ -82,8 +82,7 @@ does_role_have_permission("login_and_list", action: Permission) if
 #      +--> does_team_member_have_rights_on_ca(actor, ca)
 #      |    +--> is_team_member_role_permitted_on_ca(team, role, ca)
 
-can_team_member_perform_action_without_resource(actor: Actor, action: Permission, resource) if
-    not resource matches Handle and
+can_team_member_perform_action_without_resource(actor: Actor, action: Permission) if
     lookup_team_role(actor, role) and
     does_role_have_permission(role, action);
 
@@ -107,27 +106,142 @@ lookup_team_role(actor: Actor, out_role) if
     out_role in actor.attr("teamrole");
 
 
-
 ###
 ### rule activation - entrypoints used by Oso which make use of the rules above
 ###
 
 
-allow(actor: Actor, action: Permission, resource) if
-    can_team_member_perform_action_without_resource(actor, action, resource);
+# note: when https://github.com/osohq/oso/issues/788 is fixed we will be able to replace this:
+#   allow(actor: Actor, action: Permission, _resource: Option) if
+#       _resource = nil and
+# with this:
+#   allow(actor: Actor, action: Permission, nil) if
 
 
+# team member needing a permission that is NOT related to a resource
+allow(actor: Actor, action: Permission, _resource: Option) if
+    _resource = nil and
+    can_team_member_perform_action_without_resource(actor, action);
+
+
+# team member needing a permission on a specific CA
 allow(actor: Actor, action: Permission, ca: Handle) if
     can_team_member_perform_action_on_ca(actor, action, ca);
 
 
-allow(actor: Actor, action: Permission, resource) if
-    not resource matches Handle and
+# NON-team member needing a permission that is NOT related to a resource
+allow(actor: Actor, action: Permission, _resource: Option) if
+    _resource = nil and
     role = actor.attr("role") and
     does_role_have_permission(role, action);
 
 
+# NON-team member needing a permission on a specific CA
 allow(actor: Actor, action: Permission, ca: Handle) if
     role in actor.attr(ca.name) and
-    print("XIMON: ca name", ca.name, "role", role) and
     does_role_have_permission(role, action);
+
+
+###
+### tests
+###
+
+# test teamrole readonly
+?= not allow(new Actor("t1test", { team: "t1", teamrole: "readonly" }), new Permission("CA_READ"), new Handle("ca2"));
+?= not allow(new Actor("t1test", { team: "t1", teamrole: "readonly" }), new Permission("CA_READ"), new Handle("ca3"));
+?=     allow(new Actor("t1test", { team: "t1", teamrole: "readonly" }), new Permission("CA_READ"), new Handle("ca1"));
+?= not allow(new Actor("t2test", { team: "t2", teamrole: "readonly" }), new Permission("CA_READ"), new Handle("ca1"));
+?= not allow(new Actor("t2test", { team: "t2", teamrole: "readonly" }), new Permission("CA_READ"), new Handle("ca3"));
+?=     allow(new Actor("t2test", { team: "t2", teamrole: "readonly" }), new Permission("CA_READ"), new Handle("ca2"));
+?= not allow(new Actor("t1test", { team: "t1", teamrole: "readonly" }), new Permission("CA_UPDATE"), new Handle("ca2"));
+?= not allow(new Actor("t1test", { team: "t1", teamrole: "readonly" }), new Permission("CA_UPDATE"), new Handle("ca3"));
+?= not allow(new Actor("t1test", { team: "t1", teamrole: "readonly" }), new Permission("CA_UPDATE"), new Handle("ca1"));
+?= not allow(new Actor("t2test", { team: "t2", teamrole: "readonly" }), new Permission("CA_UPDATE"), new Handle("ca1"));
+?= not allow(new Actor("t2test", { team: "t2", teamrole: "readonly" }), new Permission("CA_UPDATE"), new Handle("ca3"));
+?= not allow(new Actor("t2test", { team: "t2", teamrole: "readonly" }), new Permission("CA_UPDATE"), new Handle("ca2"));
+?= not allow(new Actor("t1test", { team: "t1", teamrole: "readonly" }), new Permission("ROUTES_UPDATE"), new Handle("ca2"));
+?= not allow(new Actor("t1test", { team: "t1", teamrole: "readonly" }), new Permission("ROUTES_UPDATE"), new Handle("ca3"));
+?= not allow(new Actor("t1test", { team: "t1", teamrole: "readonly" }), new Permission("ROUTES_UPDATE"), new Handle("ca1"));
+?= not allow(new Actor("t2test", { team: "t2", teamrole: "readonly" }), new Permission("ROUTES_UPDATE"), new Handle("ca1"));
+?= not allow(new Actor("t2test", { team: "t2", teamrole: "readonly" }), new Permission("ROUTES_UPDATE"), new Handle("ca3"));
+?= not allow(new Actor("t2test", { team: "t2", teamrole: "readonly" }), new Permission("ROUTES_UPDATE"), new Handle("ca2"));
+?= not allow(new Actor("t1test", { team: "t1", teamrole: "readonly" }), new Permission("PUB_ADMIN"), new Handle("ca2"));
+?= not allow(new Actor("t1test", { team: "t1", teamrole: "readonly" }), new Permission("PUB_ADMIN"), new Handle("ca3"));
+?= not allow(new Actor("t1test", { team: "t1", teamrole: "readonly" }), new Permission("PUB_ADMIN"), new Handle("ca1"));
+?= not allow(new Actor("t2test", { team: "t2", teamrole: "readonly" }), new Permission("PUB_ADMIN"), new Handle("ca1"));
+?= not allow(new Actor("t2test", { team: "t2", teamrole: "readonly" }), new Permission("PUB_ADMIN"), new Handle("ca3"));
+?= not allow(new Actor("t2test", { team: "t2", teamrole: "readonly" }), new Permission("PUB_ADMIN"), new Handle("ca2"));
+
+# test teamrole readwrite
+?= not allow(new Actor("t1test", { team: "t1", teamrole: "readwrite" }), new Permission("CA_READ"), new Handle("ca2"));
+?= not allow(new Actor("t1test", { team: "t1", teamrole: "readwrite" }), new Permission("CA_READ"), new Handle("ca3"));
+?=     allow(new Actor("t1test", { team: "t1", teamrole: "readwrite" }), new Permission("CA_READ"), new Handle("ca1"));
+?= not allow(new Actor("t2test", { team: "t2", teamrole: "readwrite" }), new Permission("CA_READ"), new Handle("ca1"));
+?= not allow(new Actor("t2test", { team: "t2", teamrole: "readwrite" }), new Permission("CA_READ"), new Handle("ca3"));
+?=     allow(new Actor("t2test", { team: "t2", teamrole: "readwrite" }), new Permission("CA_READ"), new Handle("ca2"));
+?= not allow(new Actor("t1test", { team: "t1", teamrole: "readwrite" }), new Permission("CA_UPDATE"), new Handle("ca2"));
+?= not allow(new Actor("t1test", { team: "t1", teamrole: "readwrite" }), new Permission("CA_UPDATE"), new Handle("ca3"));
+?=     allow(new Actor("t1test", { team: "t1", teamrole: "readwrite" }), new Permission("CA_UPDATE"), new Handle("ca1"));
+?= not allow(new Actor("t2test", { team: "t2", teamrole: "readwrite" }), new Permission("CA_UPDATE"), new Handle("ca1"));
+?= not allow(new Actor("t2test", { team: "t2", teamrole: "readwrite" }), new Permission("CA_UPDATE"), new Handle("ca3"));
+?=     allow(new Actor("t2test", { team: "t2", teamrole: "readwrite" }), new Permission("CA_UPDATE"), new Handle("ca2"));
+?= not allow(new Actor("t1test", { team: "t1", teamrole: "readwrite" }), new Permission("ROUTES_UPDATE"), new Handle("ca2"));
+?= not allow(new Actor("t1test", { team: "t1", teamrole: "readwrite" }), new Permission("ROUTES_UPDATE"), new Handle("ca3"));
+?=     allow(new Actor("t1test", { team: "t1", teamrole: "readwrite" }), new Permission("ROUTES_UPDATE"), new Handle("ca1"));
+?= not allow(new Actor("t2test", { team: "t2", teamrole: "readwrite" }), new Permission("ROUTES_UPDATE"), new Handle("ca1"));
+?= not allow(new Actor("t2test", { team: "t2", teamrole: "readwrite" }), new Permission("ROUTES_UPDATE"), new Handle("ca3"));
+?=     allow(new Actor("t2test", { team: "t2", teamrole: "readwrite" }), new Permission("ROUTES_UPDATE"), new Handle("ca2"));
+?= not allow(new Actor("t1test", { team: "t1", teamrole: "readwrite" }), new Permission("PUB_ADMIN"), new Handle("ca2"));
+?= not allow(new Actor("t1test", { team: "t1", teamrole: "readwrite" }), new Permission("PUB_ADMIN"), new Handle("ca3"));
+?= not allow(new Actor("t1test", { team: "t1", teamrole: "readwrite" }), new Permission("PUB_ADMIN"), new Handle("ca1"));
+?= not allow(new Actor("t2test", { team: "t2", teamrole: "readwrite" }), new Permission("PUB_ADMIN"), new Handle("ca1"));
+?= not allow(new Actor("t2test", { team: "t2", teamrole: "readwrite" }), new Permission("PUB_ADMIN"), new Handle("ca3"));
+?= not allow(new Actor("t2test", { team: "t2", teamrole: "readwrite" }), new Permission("PUB_ADMIN"), new Handle("ca2"));
+
+# test teamrole admin
+?= not allow(new Actor("t1test", { team: "t1", teamrole: "admin" }), new Permission("CA_READ"), new Handle("ca2"));
+?= not allow(new Actor("t1test", { team: "t1", teamrole: "admin" }), new Permission("CA_READ"), new Handle("ca3"));
+?=     allow(new Actor("t1test", { team: "t1", teamrole: "admin" }), new Permission("CA_READ"), new Handle("ca1"));
+?= not allow(new Actor("t2test", { team: "t2", teamrole: "admin" }), new Permission("CA_READ"), new Handle("ca1"));
+?= not allow(new Actor("t2test", { team: "t2", teamrole: "admin" }), new Permission("CA_READ"), new Handle("ca3"));
+?=     allow(new Actor("t2test", { team: "t2", teamrole: "admin" }), new Permission("CA_READ"), new Handle("ca2"));
+?= not allow(new Actor("t1test", { team: "t1", teamrole: "admin" }), new Permission("CA_UPDATE"), new Handle("ca2"));
+?= not allow(new Actor("t1test", { team: "t1", teamrole: "admin" }), new Permission("CA_UPDATE"), new Handle("ca3"));
+?=     allow(new Actor("t1test", { team: "t1", teamrole: "admin" }), new Permission("CA_UPDATE"), new Handle("ca1"));
+?= not allow(new Actor("t2test", { team: "t2", teamrole: "admin" }), new Permission("CA_UPDATE"), new Handle("ca1"));
+?= not allow(new Actor("t2test", { team: "t2", teamrole: "admin" }), new Permission("CA_UPDATE"), new Handle("ca3"));
+?=     allow(new Actor("t2test", { team: "t2", teamrole: "admin" }), new Permission("CA_UPDATE"), new Handle("ca2"));
+?= not allow(new Actor("t1test", { team: "t1", teamrole: "admin" }), new Permission("ROUTES_UPDATE"), new Handle("ca2"));
+?= not allow(new Actor("t1test", { team: "t1", teamrole: "admin" }), new Permission("ROUTES_UPDATE"), new Handle("ca3"));
+?=     allow(new Actor("t1test", { team: "t1", teamrole: "admin" }), new Permission("ROUTES_UPDATE"), new Handle("ca1"));
+?= not allow(new Actor("t2test", { team: "t2", teamrole: "admin" }), new Permission("ROUTES_UPDATE"), new Handle("ca1"));
+?= not allow(new Actor("t2test", { team: "t2", teamrole: "admin" }), new Permission("ROUTES_UPDATE"), new Handle("ca3"));
+?=     allow(new Actor("t2test", { team: "t2", teamrole: "admin" }), new Permission("ROUTES_UPDATE"), new Handle("ca2"));
+?= not allow(new Actor("t1test", { team: "t1", teamrole: "admin" }), new Permission("PUB_ADMIN"), new Handle("ca2"));
+?= not allow(new Actor("t1test", { team: "t1", teamrole: "admin" }), new Permission("PUB_ADMIN"), new Handle("ca3"));
+?=     allow(new Actor("t1test", { team: "t1", teamrole: "admin" }), new Permission("PUB_ADMIN"), new Handle("ca1"));
+?= not allow(new Actor("t2test", { team: "t2", teamrole: "admin" }), new Permission("PUB_ADMIN"), new Handle("ca1"));
+?= not allow(new Actor("t2test", { team: "t2", teamrole: "admin" }), new Permission("PUB_ADMIN"), new Handle("ca3"));
+?=     allow(new Actor("t2test", { team: "t2", teamrole: "admin" }), new Permission("PUB_ADMIN"), new Handle("ca2"));
+
+# test non-team based access with different roles in different CAs
+# as the user should not have a role that grants access to resources via rules other than those defined in this policy
+# file the user won't have role="readonly" or role="readwrite" or such, but the user does need some role otherwise they
+# won't be granted the right to login or to list CAs, so we use a custom role for just those "global" rights.
+?= not allow(new Actor("test", {}), new Permission("LOGIN"), nil);
+?=     allow(new Actor("test", { role: "login_and_list_cas" }), new Permission("LOGIN"), nil);
+
+# note how unlike in the tests above where the team users either have full write access to a CA or they do not,
+# here the user has ROUTES_UPDATE write access on one CA but has the different CA_UPDATE write access on another CA.
+?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("CA_READ"), new Handle("ca3"));
+?=     allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("CA_READ"), new Handle("ca1"));
+?=     allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("CA_READ"), new Handle("ca2"));
+?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("CA_UPDATE"), new Handle("ca3"));
+?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("CA_UPDATE"), new Handle("ca1"));
+?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("CA_UPDATE"), new Handle("ca2"));
+?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("ROUTES_UPDATE"), new Handle("ca1"));
+?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("ROUTES_UPDATE"), new Handle("ca3"));
+?=     allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("ROUTES_UPDATE"), new Handle("ca2"));
+?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("PUB_ADMIN"), new Handle("ca3"));
+?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("PUB_ADMIN"), new Handle("ca1"));
+?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("PUB_ADMIN"), new Handle("ca2"));

@@ -13,8 +13,15 @@
 ################################################################################
 # The action belongs to a role and thus to have access the user must have the
 # required role that includes the requested action.
-allow(actor: Actor, action: Permission, resource) if
-    not resource matches Handle and
+
+# note: when https://github.com/osohq/oso/issues/788 is fixed we will be able to replace this:
+#   allow(actor: Actor, action: Permission, _resource: Option) if
+#       _resource = nil and
+# with this:
+#   allow(actor: Actor, action: Permission, nil) if
+
+allow(actor: Actor, action: Permission, _resource: Option) if
+    _resource = nil and
     actor_has_role(actor, role) and
     does_role_have_permission(role, action);
 

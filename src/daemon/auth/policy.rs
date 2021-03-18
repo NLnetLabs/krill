@@ -4,11 +4,11 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use oso::{Oso, PolarClass, ToPolar};
+use oso::{Oso, PolarClass, PolarValue, ToPolar};
 
 use crate::{
     commons::{actor::Actor, api::Handle, error::Error, KrillResult},
-    constants::{NO_RESOURCE, ACTOR_DEF_ANON, ACTOR_DEF_KRILL, ACTOR_DEF_MASTER_TOKEN, ACTOR_DEF_TESTBED},
+    constants::{ACTOR_DEF_ANON, ACTOR_DEF_KRILL, ACTOR_DEF_MASTER_TOKEN, ACTOR_DEF_TESTBED},
     daemon::{
         auth::common::{permissions::Permission, NoResourceType},
         config::Config,
@@ -33,7 +33,6 @@ impl std::ops::Deref for AuthPolicy {
 impl AuthPolicy {
     pub fn new(config: Arc<Config>) -> KrillResult<Self> {
         let mut oso = Oso::new();
-        oso.register_constant(NO_RESOURCE, "NO_RESOURCE").unwrap();
         oso.register_class(Actor::get_polar_class()).unwrap();
         oso.register_class(Handle::get_polar_class()).unwrap();
         oso.register_class(Permission::get_polar_class()).unwrap();
@@ -132,15 +131,13 @@ impl AuthPolicy {
     }
 }
 
-impl PolarClass for NoResourceType {
-    fn get_polar_class() -> oso::Class {
-        Self::get_polar_class_builder()
-            .set_equality_check(|_left: &NoResourceType, _right: &NoResourceType| true)
-            .build()
-    }
 
-    fn get_polar_class_builder() -> oso::ClassBuilder<Self> {
-        oso::Class::builder()
+// Allow our "no resource" type to match the "nil" in Oso policy rules by making it convertable to the Rust type Oso
+// uses when registering the nil constant. We can't use Option::<PolarValue>::None directly as it doesn't implement
+// the Display trait which we depend on in non-trace level logging in `fn Actor::is_allowed()`.
+impl ToPolar for NoResourceType {
+    fn to_polar(self) -> oso::PolarValue {
+        Option::<PolarValue>::None.to_polar()
     }
 }
 
@@ -166,6 +163,7 @@ impl PolarClass for Actor {
                 names.contains(&name)
             })
             .add_method("attr", Actor::attribute)
+            .add_method("attrs", Actor::attributes)
             .build()
     }
 
