@@ -13,7 +13,7 @@ mod store;
 pub use self::store::*;
 
 mod listener;
-pub use self::listener::{EventCounter, EventListener};
+pub use self::listener::{EventCounter, PostSaveEventListener, PreSaveEventListener};
 
 mod kv;
 pub use self::kv::*;
@@ -291,8 +291,8 @@ mod tests {
         let d = test::tmp_dir();
 
         let counter = Arc::new(EventCounter::default());
-        let mut manager = AggregateStore::<Person>::new(&d, "person").unwrap();
-        manager.add_listener(counter.clone());
+        let mut manager = AggregateStore::<Person>::disk(&d, "person").unwrap();
+        manager.add_post_save_listener(counter.clone());
 
         let id_alice = Handle::from_str("alice").unwrap();
         let alice_init = InitPersonEvent::init(&id_alice, "alice smith");
@@ -323,7 +323,7 @@ mod tests {
         assert_eq!(21, alice.age());
 
         // Should read state from disk
-        let manager = AggregateStore::<Person>::new(&d, "person").unwrap();
+        let manager = AggregateStore::<Person>::disk(&d, "person").unwrap();
 
         let alice = manager.get_latest(&id_alice).unwrap();
         assert_eq!("alice smith-doe", alice.name());

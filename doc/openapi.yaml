@@ -405,7 +405,7 @@ paths:
         - $ref: '#/components/parameters/child_handle'
       responses:
         '200':
-          $ref: '#/components/responses/Rfc8183O'
+          $ref: '#/components/responses/Rfc6492'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -636,7 +636,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Rfc8181'
+              $ref: '#/components/schemas/Rfc8183'
       responses:
         '200':
           $ref: '#/components/responses/Success'
@@ -670,7 +670,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/rfc8181Base'
+                $ref: '#/components/schemas/Rfc8181'
             application/xml:
               schema:
                 $ref: '#/components/schemas/RFC8183PublisherRequestXML'
@@ -878,7 +878,7 @@ paths:
       description: |
         Tries to updates the ROA configurations.
 
-        Returns an empty reponse if succesful, or an extended advice in case the
+        Returns an empty response if successful, or an extended advice in case the
         update would result in any invalid announcements for the prefixes in the
         change set.
       parameters:
@@ -1204,17 +1204,39 @@ components:
           nullable: true
         id_cert:
           $ref: '#/components/schemas/IdCert'
+    Embedded:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum: [embedded]
+          default: embedded
     Rfc6492:
-      allOf:
-        - $ref: '#/components/schemas/rfcCommon'
-        - type: object
+      type: object
+      properties:
+        rfc6492:
+          type: object
           properties:
+            tag:
+              type: string
+              nullable: true
+            id_cert:
+              $ref: '#/components/schemas/IdCert'
             parent_handle:
               $ref: '#/components/schemas/Handle'
             child_handle:
               $ref: '#/components/schemas/Handle'
             service_uri:
               $ref: '#/components/schemas/ServiceUri'
+      example:
+        - type: "rfc6492"
+        - tag: null
+        - id_cert: "MIIDNDCCAhygAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyg5NjczMEUwQTg2MkE0RDkyNjQ1NEY5RTgzNzYxMzMzQkI0Qjc0QTVDMB4XDTIxMDMwNDE2MTQwNFoXDTM2MDMwNDE2MTkwNFowMzExMC8GA1UEAxMoOTY3MzBFMEE4NjJBNEQ5MjY0NTRGOUU4Mzc2MTMzM0JCNEI3NEE1QzCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAOCNekDo59PLdJnfiPg9kUycEb3EF17TnnUEKJaCunheH/brWakMumqpBox3H2fn1XY7e2e1SFezp52yqcIggLUOj3K49SvTzdDCCwA2MGuzaDHK6IhOuLKH9D9BqA2FTWVr3PNk77g+Bn1TfKF+G+JMr3jvDMkJAW9+58vnl7UJ/g+H6/lWqWAW1JeA3go9B+qdxC9DA02h+7vXPGhsVeUw688LFBv1fDGlQFX02zx0uNrKQQHddL1aJIM01i5M+N3uWJ5u3wCJRvxAr/P9KNtCO1sTFxR2dE/8W0+rfJWkAnDcgzeDCjznICF1146Thjxir08dYlj5YAeR3c5r5L8CAwEAAaNTMFEwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUlnMOCoYqTZJkVPnoN2EzO7S3SlwwHwYDVR0jBBgwFoAUlnMOCoYqTZJkVPnoN2EzO7S3SlwwDQYJKoZIhvcNAQELBQADggEBAGUq4w7nv6Ez4kBdqfgyU0taKHgxIOTKJ6EwsDZj6eVGF6ThrutAonMVUeu1zs5ZW/uYaRWPffHzY8m1wdyrwYVw0HxRWY96vrhOOrVk32J6ip9V9bfFSjZLVnVcBz5V/odB++bJHhMoFNUaoqEGSNleiPotBtOHahlIL1EDEAt7bC5Kk7vEl0VmRJs7Hp1kpdZRJlVy7sLWL082hCJCulG57qL2UbsQ2wmFk+ImJ2RO3GSrNEI4//kHIw7GQFeeROfeb5HvyC/QOCzfBmMc/ipApuyzROSXHsE6CiaM2uWCjHs1NZBu+Za2EoFOhgYN1akeqqo50vRfO3Dd6Bm/rQY="
+        - parent_handle: "ta"
+        - child_handle: "testbed"
+        - service_uri: "https://localhost:3000/rfc6492/ta"
     rfc8181Base:
       allOf:
         - $ref: '#/components/schemas/rfcCommon'
@@ -1223,14 +1245,19 @@ components:
             publisher_handle:
               $ref: '#/components/schemas/Handle'
     Rfc8181:
-      allOf:
-        - $ref: '#/components/schemas/rfc8181Base'
-        - type: object
-          properties:
-            service_uri:
-              $ref: '#/components/schemas/ServiceUri'
-            repo_info:
-              $ref: '#/components/schemas/RepoInfo'
+      type: object
+      properties:
+        tag:
+          type: string
+          nullable: true
+        id_cert:
+          $ref: '#/components/schemas/IdCert'
+        publisher_handle:
+          $ref: '#/components/schemas/Handle'
+        service_uri:
+          $ref: '#/components/schemas/ServiceUri'
+        repo_info:
+          $ref: '#/components/schemas/RepoInfo'
     Rfc8183:
       allOf:
         - $ref: '#/components/schemas/rfcCommon'
@@ -1402,8 +1429,9 @@ components:
             - $ref: '#/components/schemas/Handle'
             - description: The local handle by which your ca refers to this parent.
         contact:
-          $ref: '#/components/schemas/Rfc6492'
-
+          oneOf:
+            - $ref: '#/components/schemas/Embedded'
+            - $ref: '#/components/schemas/Rfc6492'
 
     # Error codes ordered ascending by error code
     CaRepoSameResponse:
@@ -2726,3 +2754,4 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Rfc8183'
+

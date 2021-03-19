@@ -1,0 +1,20 @@
+{
+  "actor": "anonymous",
+  "time": "2021-02-17T11:15:40.784318Z",
+  "handle": "0",
+  "version": 34,
+  "sequence": 35,
+  "details": {
+    "publish": [
+      "ca",
+      0,
+      0,
+      0
+    ]
+  },
+  "effect": {
+    "events": [
+      34
+    ]
+  }
+}

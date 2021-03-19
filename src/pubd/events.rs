@@ -1,88 +1,70 @@
-use std::path::PathBuf;
-use std::{fmt, fs};
+use std::fmt;
 
 use rpki::uri;
 use rpki::x509::Time;
 
-use crate::commons::api::rrdp::{Delta, DeltaElements, Notification, RrdpSession, Snapshot};
-use crate::commons::api::{Handle, PublisherHandle, RepositoryHandle};
+use crate::commons::api::rrdp::{Delta, DeltaElements, Notification, Snapshot};
+use crate::commons::api::{Handle, PublisherHandle};
 use crate::commons::crypto::{IdCert, IdCertBuilder, KrillSigner};
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::StoredEvent;
 use crate::commons::KrillResult;
-use crate::constants::REPOSITORY_DIR;
 use crate::pubd::Publisher;
 
-//------------ Ini -----------------------------------------------------------
+//------------ RepositoryAccessIni -------------------------------------------
 
-pub type Ini = StoredEvent<IniDet>;
-
-//------------ IniDet --------------------------------------------------------
+pub type RepositoryAccessIni = StoredEvent<RepositoryAccessInitDetails>;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct IniDet {
+pub struct RepositoryAccessInitDetails {
     id_cert: IdCert,
-    session: RrdpSession,
     rrdp_base_uri: uri::Https,
     rsync_jail: uri::Rsync,
-    repo_base_dir: PathBuf,
 }
 
-impl IniDet {
-    pub fn unpack(self) -> (IdCert, RrdpSession, uri::Https, uri::Rsync, PathBuf) {
-        (
-            self.id_cert,
-            self.session,
-            self.rrdp_base_uri,
-            self.rsync_jail,
-            self.repo_base_dir,
-        )
+impl RepositoryAccessInitDetails {
+    pub fn new(id_cert: IdCert, rrdp_base_uri: uri::Https, rsync_jail: uri::Rsync) -> Self {
+        RepositoryAccessInitDetails {
+            id_cert,
+            rrdp_base_uri,
+            rsync_jail,
+        }
+    }
+
+    pub fn unpack(self) -> (IdCert, uri::Https, uri::Rsync) {
+        (self.id_cert, self.rrdp_base_uri, self.rsync_jail)
     }
 }
 
-impl IniDet {
+impl RepositoryAccessInitDetails {
     pub fn init(
         handle: &Handle,
         rsync_jail: uri::Rsync,
         rrdp_base_uri: uri::Https,
-        work_dir: &PathBuf,
         signer: &KrillSigner,
-    ) -> KrillResult<Ini> {
+    ) -> KrillResult<RepositoryAccessIni> {
         let key = signer.create_key()?;
 
         let id_cert = IdCertBuilder::new_ta_id_cert(&key, signer).map_err(Error::signer)?;
-        let session = RrdpSession::new();
-
-        let mut repo_base_dir = work_dir.clone();
-        repo_base_dir.push(REPOSITORY_DIR);
-
-        if !repo_base_dir.is_dir() {
-            fs::create_dir_all(&repo_base_dir)?;
-        }
 
         Ok(StoredEvent::new(
             handle,
             0,
-            IniDet {
+            RepositoryAccessInitDetails {
                 id_cert,
-                session,
                 rrdp_base_uri,
                 rsync_jail,
-                repo_base_dir,
             },
         ))
     }
 }
 
-impl fmt::Display for IniDet {
+impl fmt::Display for RepositoryAccessInitDetails {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Initialised publication server with cert(hash): {}, session: {}, RRDP base uri: {}, repo dir: {}",
-            self.id_cert.ski_hex(),
-            self.session,
-            self.rrdp_base_uri,
-            self.repo_base_dir.to_string_lossy().as_ref()
+            "Initialised publication server. RRDP base uri: {}, Rsync Jail: {}",
+            self.rrdp_base_uri, self.rsync_jail
         )
     }
 }
@@ -139,60 +121,47 @@ impl RrdpSessionReset {
     }
 }
 
-//------------ EvtDet --------------------------------------------------------
+//------------ RepositoryAccessEvent -----------------------------------------
 
-pub type Evt = StoredEvent<EvtDet>;
+pub type RepositoryAccessEvent = StoredEvent<RepositoryAccessEventDetails>;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
-#[serde(rename_all = "snake_case")]
-pub enum EvtDet {
-    PublisherAdded(PublisherHandle, Publisher),
-    PublisherRemoved(PublisherHandle, RrdpUpdate),
-    Published(PublisherHandle, RrdpUpdate),
-    RrdpSessionReset(RrdpSessionReset),
+#[serde(rename_all = "snake_case", tag = "type")]
+pub enum RepositoryAccessEventDetails {
+    PublisherAdded {
+        name: PublisherHandle,
+        publisher: Publisher,
+    },
+    PublisherRemoved {
+        name: PublisherHandle,
+    },
 }
 
-impl fmt::Display for EvtDet {
+impl fmt::Display for RepositoryAccessEventDetails {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            EvtDet::PublisherAdded(pbl, _) => write!(f, "Publisher with handle '{}' added", pbl),
-            EvtDet::PublisherRemoved(pbl, _) => write!(f, "Publisher with handle '{}', and its contents, removed", pbl),
-            EvtDet::Published(pbl, _) => write!(f, "Publisher with handle '{}' published", pbl),
-            EvtDet::RrdpSessionReset(_) => write!(f, "RRDP session reset"),
+            RepositoryAccessEventDetails::PublisherAdded { name, .. } => write!(f, "Publisher '{}' added", name),
+            RepositoryAccessEventDetails::PublisherRemoved { name } => write!(f, "Publisher '{}' removed", name),
         }
     }
 }
 
-impl EvtDet {
+impl RepositoryAccessEventDetails {
     pub(super) fn publisher_added(
         handle: &Handle,
         version: u64,
-        publisher_handle: PublisherHandle,
+        name: PublisherHandle,
         publisher: Publisher,
-    ) -> Evt {
-        StoredEvent::new(handle, version, EvtDet::PublisherAdded(publisher_handle, publisher))
+    ) -> RepositoryAccessEvent {
+        StoredEvent::new(
+            handle,
+            version,
+            RepositoryAccessEventDetails::PublisherAdded { name, publisher },
+        )
     }
 
-    pub(super) fn publisher_removed(
-        handle: &Handle,
-        version: u64,
-        publisher_handle: PublisherHandle,
-        update: RrdpUpdate,
-    ) -> Evt {
-        StoredEvent::new(handle, version, EvtDet::PublisherRemoved(publisher_handle, update))
-    }
-
-    pub(super) fn published(
-        repository: &RepositoryHandle,
-        version: u64,
-        publisher: PublisherHandle,
-        update: RrdpUpdate,
-    ) -> Evt {
-        StoredEvent::new(repository, version, EvtDet::Published(publisher, update))
-    }
-
-    pub(super) fn rrdp_session_reset(repository: &RepositoryHandle, version: u64, session: RrdpSessionReset) -> Evt {
-        StoredEvent::new(repository, version, EvtDet::RrdpSessionReset(session))
+    pub(super) fn publisher_removed(handle: &Handle, version: u64, name: PublisherHandle) -> RepositoryAccessEvent {
+        StoredEvent::new(handle, version, RepositoryAccessEventDetails::PublisherRemoved { name })
     }
 }

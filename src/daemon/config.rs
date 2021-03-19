@@ -43,9 +43,7 @@ impl ConfigDefaults {
     fn data_dir() -> PathBuf {
         PathBuf::from("./data")
     }
-    fn archive_threshold_days() -> Option<i64> {
-        None
-    }
+
     fn always_recover_data() -> bool {
         env::var(KRILL_ENV_FORCE_RECOVER).is_ok()
     }
@@ -198,9 +196,6 @@ pub struct Config {
     #[serde(default = "ConfigDefaults::data_dir")]
     pub data_dir: PathBuf,
 
-    #[serde(default = "ConfigDefaults::archive_threshold_days")]
-    pub archive_threshold_days: Option<i64>,
-
     #[serde(default = "ConfigDefaults::always_recover_data")]
     pub always_recover_data: bool,
 
@@ -279,6 +274,9 @@ pub struct Config {
 
     #[serde(flatten)]
     pub issuance_timing: IssuanceTimingConfig,
+
+    #[serde(flatten)]
+    pub repository_retention: RepositoryRetentionConfig,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -297,6 +295,52 @@ pub struct IssuanceTimingConfig {
     pub timing_roa_valid_weeks: i64,
     #[serde(default = "ConfigDefaults::timing_roa_reissue_weeks_before")]
     pub timing_roa_reissue_weeks_before: i64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct RepositoryRetentionConfig {
+    #[serde(default = "RepositoryRetentionConfig::dflt_retention_old_notification_files_seconds")]
+    pub retention_old_notification_files_seconds: i64,
+    #[serde(default = "RepositoryRetentionConfig::dflt_retention_delta_files_seconds")]
+    pub retention_delta_files_seconds: i64,
+    #[serde(default = "RepositoryRetentionConfig::dflt_retention_delta_files_min_nr")]
+    pub retention_delta_files_min_nr: usize,
+    #[serde(default = "RepositoryRetentionConfig::dflt_retention_archive")]
+    pub retention_archive: bool,
+}
+
+impl RepositoryRetentionConfig {
+    // Time to keep any files still referenced by notification
+    // files updated up to X minutes ago. Default: 10 min
+    fn dflt_retention_old_notification_files_seconds() -> i64 {
+        600
+    }
+
+    // Time to keep deltas. Defaults to two hours meaning that
+    // almost all RPs are expected to have retrieved the deltas
+    // by then. Typically RPs fetch every 1-10 minutes, some
+    // implementations use 1 hour intervals.
+    //
+    // We could keep all deltas up to the size of the snapshot,
+    // but if we leave some deltas out we may succeed in keeping
+    // the notification file relatively small
+    fn dflt_retention_delta_files_seconds() -> i64 {
+        7200 // 2 hours
+    }
+
+    // Keep at least X (default 5) delta files in the notification
+    // file. They may be old, but their impact on the notification
+    // file size is not too bad.
+    fn dflt_retention_delta_files_min_nr() -> usize {
+        5
+    }
+
+    // If set to true, we will archive - rather than delete - old
+    // snapshot and delta files. The can then be backed up and/deleted
+    // at the repository operator's discretion.
+    fn dflt_retention_archive() -> bool {
+        false
+    }
 }
 
 /// # Accessors
@@ -359,7 +403,6 @@ impl Config {
         let pid_file = None;
         let https_mode = HttpsMode::Generate;
         let data_dir = data_dir.clone();
-        let archive_threshold_days = Some(0);
         let always_recover_data = false;
         let service_uri = ConfigDefaults::service_uri();
 
@@ -419,13 +462,19 @@ impl Config {
             timing_roa_reissue_weeks_before,
         };
 
+        let repository_retention = RepositoryRetentionConfig {
+            retention_old_notification_files_seconds: 1,
+            retention_delta_files_seconds: 1,
+            retention_delta_files_min_nr: 5,
+            retention_archive: false,
+        };
+
         Config {
             ip,
             port,
             pid_file,
             https_mode,
             data_dir,
-            archive_threshold_days,
             always_recover_data,
             service_uri,
             log_level,
@@ -454,6 +503,7 @@ impl Config {
             roa_aggregate_threshold,
             roa_deaggregate_threshold,
             issuance_timing,
+            repository_retention,
         }
     }
 
@@ -671,33 +721,16 @@ impl Config {
 
     /// Creates and returns a fern logger with log level tweaks
     fn fern_logger(&self) -> fern::Dispatch {
-        let framework_level = match self.log_level {
-            LevelFilter::Off => LevelFilter::Off,
-            LevelFilter::Error => LevelFilter::Error,
-            _ => LevelFilter::Warn, // more becomes too noisy
-        };
-
-        let krill_framework_level = match self.log_level {
-            LevelFilter::Off => LevelFilter::Off,
-            LevelFilter::Error => LevelFilter::Error,
-            LevelFilter::Warn => LevelFilter::Warn,
-            _ => LevelFilter::Debug, // more becomes too noisy
-        };
+        // suppress overly noisy logging
+        let framework_level = self.log_level.min(LevelFilter::Warn);
+        let krill_framework_level = self.log_level.min(LevelFilter::Debug);
 
         // disable Oso logging unless the Oso specific POLAR_LOG environment
         // variable is set, it's too noisy otherwise
         let oso_framework_level = if env::var("POLAR_LOG").is_ok() {
-            match self.log_level {
-                LevelFilter::Trace => LevelFilter::Trace,
-                _ => LevelFilter::Debug, // at least debug
-            }
+            self.log_level.min(LevelFilter::Trace)
         } else {
-            match self.log_level {
-                LevelFilter::Off => LevelFilter::Off,
-                LevelFilter::Error => LevelFilter::Error,
-                LevelFilter::Warn => LevelFilter::Warn,
-                _ => LevelFilter::Info, // more becomes too noisy
-            }
+            self.log_level.min(LevelFilter::Info)
         };
 
         let show_target = self.log_level == LevelFilter::Trace || self.log_level == LevelFilter::Debug;
@@ -877,16 +910,164 @@ impl<'de> Deserialize<'de> for AuthType {
 mod tests {
 
     use super::*;
+    use std::env;
 
     #[test]
     fn should_parse_default_config_file() {
         // Config for auth token is required! If there is nothing in the conf
         // file, then an environment variable must be set.
-        use std::env;
         env::set_var(KRILL_ENV_AUTH_TOKEN, "secret");
 
         let c = Config::read_config("./defaults/krill.conf").unwrap();
         let expected_socket_addr: SocketAddr = ([127, 0, 0, 1], 3000).into();
         assert_eq!(c.socket_addr(), expected_socket_addr);
+    }
+
+    #[test]
+    fn should_set_correct_log_levels() {
+        use log::Level as LL;
+
+        fn void_logger_from_krill_config(config_bytes: &[u8]) -> Box<dyn log::Log> {
+            let c: Config = toml::from_slice(config_bytes).unwrap();
+            let void_output = fern::Output::writer(Box::new(io::sink()), "");
+            let (_, void_logger) = c.fern_logger().chain(void_output).into_log();
+            void_logger
+        }
+
+        fn for_target_at_level(target: &str, level: LL) -> log::Metadata {
+            log::Metadata::builder().target(target).level(level).build()
+        }
+
+        fn should_logging_be_enabled_at_this_krill_config_log_level(log_level: &LL, config_level: &str) -> bool {
+            let log_level_from_krill_config_level = LL::from_str(config_level).unwrap();
+            log_level <= &log_level_from_krill_config_level
+        }
+
+        // Krill requires an auth token to be defined, give it one in the environment
+        env::set_var(KRILL_ENV_AUTH_TOKEN, "secret");
+
+        // Define sets of log targets aka components of Krill that we want to test log settings for, based on the
+        // rules & exceptions that the actual code under test is supposed to configure the logger with
+        let krill_components = vec!["krill"];
+        let krill_framework_components = vec!["krill::commons::eventsourcing", "krill::commons::util::file"];
+        let other_key_components = vec!["hyper", "reqwest", "oso"];
+
+        let krill_key_components = vec![krill_components, krill_framework_components.clone()]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        let all_key_components = vec![krill_key_components.clone(), other_key_components]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+
+        //
+        // Test that important log levels are enabled for all key components
+        //
+
+        // for each important Krill config log level
+        for config_level in &["error", "warn"] {
+            // build a logger for that config
+            let log = void_logger_from_krill_config(format!(r#"log_level = "{}""#, config_level).as_bytes());
+
+            // for all log levels
+            for log_msg_level in &[LL::Error, LL::Warn, LL::Info, LL::Debug, LL::Trace] {
+                // determine if logging should be enabled or not
+                let should_be_enabled =
+                    should_logging_be_enabled_at_this_krill_config_log_level(log_msg_level, config_level);
+
+                // for each Krill component we want to pretend to log as
+                for component in &all_key_components {
+                    // verify that logging is enabled or not as expected
+                    assert_eq!(
+                        should_be_enabled,
+                        log.enabled(&for_target_at_level(component, *log_msg_level)),
+                        // output an easy to understand test failure description
+                        "Logging at level {} with log_level={} should be {} for component {}",
+                        log_msg_level,
+                        config_level,
+                        if should_be_enabled { "enabled" } else { "disabled" },
+                        component
+                    );
+                }
+            }
+        }
+
+        //
+        // Test that info level and below are only enabled for Krill at the right log levels
+        //
+
+        // for each Krill config log level we want to test
+        for config_level in &["info", "debug", "trace"] {
+            // build a logger for that config
+            let log = void_logger_from_krill_config(format!(r#"log_level = "{}""#, config_level).as_bytes());
+
+            // for each level of interest that messages could be logged at
+            for log_msg_level in &[LL::Info, LL::Debug, LL::Trace] {
+                // determine if logging should be enabled or not
+                let should_be_enabled =
+                    should_logging_be_enabled_at_this_krill_config_log_level(log_msg_level, config_level);
+
+                // for each Krill component we want to pretend to log as
+                for component in &krill_key_components {
+                    // framework components shouldn't log at Trace level
+                    let should_be_enabled = should_be_enabled
+                        && (*log_msg_level < LL::Trace || !krill_framework_components.contains(&component));
+
+                    // verify that logging is enabled or not as expected
+                    assert_eq!(
+                        should_be_enabled,
+                        log.enabled(&for_target_at_level(component, *log_msg_level)),
+                        // output an easy to understand test failure description
+                        "Logging at level {} with log_level={} should be {} for component {}",
+                        log_msg_level,
+                        config_level,
+                        if should_be_enabled { "enabled" } else { "disabled" },
+                        component
+                    );
+                }
+            }
+        }
+
+        //
+        // Test that Oso logging at levels below Info is only enabled if the Oso POLAR_LOG=1
+        // environment variable is set
+        //
+        let component = "oso";
+        for set_polar_log_env_var in &[true, false] {
+            // setup env vars
+            if *set_polar_log_env_var {
+                env::set_var("POLAR_LOG", "1");
+            } else {
+                env::remove_var("POLAR_LOG");
+            }
+
+            // for each Krill config log level we want to test
+            for config_level in &["debug", "trace"] {
+                // build a logger for that config
+                let log = void_logger_from_krill_config(format!(r#"log_level = "{}""#, config_level).as_bytes());
+
+                // for each level of interest that messages could be logged at
+                for log_msg_level in &[LL::Debug, LL::Trace] {
+                    // determine if logging should be enabled or not
+                    let should_be_enabled =
+                        should_logging_be_enabled_at_this_krill_config_log_level(log_msg_level, config_level)
+                            && *set_polar_log_env_var;
+
+                    // verify that logging is enabled or not as expected
+                    assert_eq!(
+                        should_be_enabled,
+                        log.enabled(&for_target_at_level(component, *log_msg_level)),
+                        // output an easy to understand test failure description
+                        r#"Logging at level {} with log_level={} should be {} for component {} and env var POLAR_LOG is {}"#,
+                        log_msg_level,
+                        config_level,
+                        if should_be_enabled { "enabled" } else { "disabled" },
+                        component,
+                        if *set_polar_log_env_var { "set" } else { "not set" }
+                    );
+                }
+            }
+        }
     }
 }

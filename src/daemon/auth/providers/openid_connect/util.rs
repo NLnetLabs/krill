@@ -2,7 +2,8 @@ use openidconnect::core::{
     CoreAuthDisplay, CoreAuthPrompt, CoreClaimName, CoreClaimType, CoreClientAuthMethod, CoreErrorResponseType,
     CoreGenderClaim, CoreGrantType, CoreJsonWebKey, CoreJsonWebKeyType, CoreJsonWebKeyUse,
     CoreJweContentEncryptionAlgorithm, CoreJweKeyManagementAlgorithm, CoreJwsSigningAlgorithm, CoreResponseMode,
-    CoreResponseType, CoreSubjectIdentifierType, CoreTokenType,
+    CoreResponseType, CoreRevocableToken, CoreRevocationErrorResponse, CoreSubjectIdentifierType,
+    CoreTokenIntrospectionResponse, CoreTokenType,
 };
 use openidconnect::{
     AdditionalClaims, AdditionalProviderMetadata, Client, ExtraTokenFields, IdTokenClaims, IdTokenFields,
@@ -62,6 +63,9 @@ pub type FlexibleClient = Client<
     StandardErrorResponse<CoreErrorResponseType>,
     FlexibleTokenResponse,
     CoreTokenType,
+    CoreTokenIntrospectionResponse,
+    CoreRevocableToken,
+    CoreRevocationErrorResponse,
 >;
 pub type FlexibleIdTokenClaims = IdTokenClaims<CustomerDefinedAdditionalClaims, CoreGenderClaim>;
 pub type FlexibleUserInfoClaims = UserInfoClaims<CustomerDefinedAdditionalClaims, CoreGenderClaim>;
@@ -170,57 +174,4 @@ impl<T> LogOrFail for Option<T> {
             }
         }
     }
-}
-
-// -----------------------------------------------------------------------------
-// A macro to intercept and log the openidconnect crate HTTP requests and
-// responses.
-// -----------------------------------------------------------------------------
-// TODO: Work out how to make this a normal fn. I was unable to do so because I
-// could not correctly specify the return type due to it being apparently
-// private inside the reqwest crate...
-macro_rules! logging_http_client {
-    () => {
-        |req| {
-            if log_enabled!(log::Level::Trace) {
-                // Don't {:?} log the openidconnect::HTTPRequest req object
-                // because that renders the body as an unreadable integer byte
-                // array, instead try and decode it as UTF-8.
-                let body = match std::str::from_utf8(&req.body) {
-                    Ok(text) => text.to_string(),
-                    Err(_) => format!("{:?}", &req.body),
-                };
-                debug!(
-                    "OpenID Connect request: url: {:?}, method: {:?}, headers: {:?}, body: {}",
-                    req.url, req.method, req.headers, body
-                );
-            }
-
-            let res = oidc_http_client(req);
-
-            if log_enabled!(log::Level::Trace) {
-                match &res {
-                    Ok(res) => {
-                        // Don't {:?} log the openidconnect::HTTPResponse res
-                        // object because that renders the body as an unreadable
-                        // integer byte array, instead try and decode it as
-                        // UTF-8.
-                        let body = match std::str::from_utf8(&res.body) {
-                            Ok(text) => text.to_string(),
-                            Err(_) => format!("{:?}", &res.body),
-                        };
-                        debug!(
-                            "OpenID Connect response: status_code: {:?}, headers: {:?}, body: {}",
-                            res.status_code, res.headers, body
-                        );
-                    }
-                    Err(err) => {
-                        debug!("OpenID Connect response: {:?}", err)
-                    }
-                }
-            }
-
-            res
-        }
-    };
 }

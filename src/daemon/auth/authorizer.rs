@@ -212,7 +212,7 @@ pub struct LoggedInUser {
 #[derive(Clone, Debug)]
 pub enum Auth {
     Bearer(Token),
-    AuthorizationCode { code: Token, state: String, nonce: String },
+    AuthorizationCode { code: Token, state: String, nonce: String, csrf_token_hash: String },
     IdAndPasswordHash { id: String, password_hash: Token },
 }
 
@@ -220,8 +220,8 @@ impl Auth {
     pub fn bearer(token: Token) -> Self {
         Auth::Bearer(token)
     }
-    pub fn authorization_code(code: Token, state: String, nonce: String) -> Self {
-        Auth::AuthorizationCode { code, state, nonce }
+    pub fn authorization_code(code: Token, state: String, nonce: String, csrf_token_hash: String) -> Self {
+        Auth::AuthorizationCode { code, state, nonce, csrf_token_hash }
     }
 
     pub fn id_and_password_hash(id: String, password_hash: Token) -> Self {

@@ -15,7 +15,7 @@ use crate::commons::{
 ///
 /// In addition to implementing Storable so that the details can be stored
 /// *and* retrieved, the details also need to be able to present a generic
-/// CommandSummer for use in history.
+/// CommandSummary for use in history.
 pub trait WithStorableDetails: Storable + Send + Sync {
     fn summary(&self) -> CommandSummary;
 }
@@ -28,11 +28,6 @@ pub trait WithStorableDetails: Storable + Send + Sync {
 /// meta-data to ensure that the command is sent to the right instance of an
 /// Aggregate, and that concurrency issues are handled.
 pub trait Command: fmt::Display + Send + Sync {
-    /// Identify the type of event returned by the aggregate that uses this
-    /// command. This is needed because we may need to check whether a
-    /// command conflicts with recent events.
-    type Event: Event;
-
     /// Identify the type of storable component for this command. Commands
     /// may contain short-lived things (e.g. an Arc<Signer>) or even secrets
     /// which should not be persisted.
@@ -51,19 +46,6 @@ pub trait Command: fmt::Display + Send + Sync {
     /// internal command by Krill itself.
     fn actor(&self) -> &str;
 
-    /// In case of concurrent processing of commands, the aggregate may be
-    /// outdated when a command is applied. In such cases this method expects
-    /// the list of events that happened since the ['affected_version'] and
-    /// will return whether there is a conflict. If there is no conflict that
-    /// the command may be applied again.
-    ///
-    /// Note that this defaults to true, which is the safe choice when in
-    /// doubt. If you choose to implement this, then you will also need to
-    /// implement the ['set_affected_version'] function.
-    fn conflicts(&self, _events: &[Self::Event]) -> bool {
-        true
-    }
-
     /// Get the storable information for this command
     fn store(&self) -> Self::StorableDetails;
 }
@@ -81,7 +63,6 @@ pub struct SentCommand<C: CommandDetails> {
 }
 
 impl<C: CommandDetails> Command for SentCommand<C> {
-    type Event = C::Event;
     type StorableDetails = C::StorableDetails;
 
     fn handle(&self) -> &Handle {
@@ -268,12 +249,12 @@ impl<C: Command> StoredCommandBuilder<C> {
 
     pub fn finish_with_events<E: Event>(self, events: &[E]) -> StoredCommand<C::StorableDetails> {
         let events = events.iter().map(|e| e.version()).collect();
-        let effect = StoredEffect::Events(events);
+        let effect = StoredEffect::Success { events };
         self.finish(effect)
     }
 
     pub fn finish_with_error<E: fmt::Display>(self, err: &E) -> StoredCommand<C::StorableDetails> {
-        let effect = StoredEffect::Error(err.to_string());
+        let effect = StoredEffect::Error { msg: err.to_string() };
         self.finish(effect)
     }
 }

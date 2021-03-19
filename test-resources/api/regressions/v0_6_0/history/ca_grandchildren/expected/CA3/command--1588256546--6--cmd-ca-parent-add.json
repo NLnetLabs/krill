@@ -3,15 +3,15 @@
     "actor": "krill",
     "time": "2020-04-30T14:22:26.431045Z",
     "handle": "CA3",
-    "version": 7,
+    "version": 8,
     "sequence": 6,
     "details": {
-      "add_parent": [
-        "CA2",
-        "rfc6492"
-      ]
+      "type": "add_parent",
+      "parent": "CA2",
+      "contact": "rfc6492"
     },
     "effect": {
+      "result": "success",
       "events": [
         7
       ]
@@ -23,18 +23,16 @@
         "id": "CA3",
         "version": 7,
         "details": {
-          "parent_added": [
-            "CA2",
-            {
-              "rfc6492": {
-                "tag": null,
-                "id_cert": "MIIDOjCCAiKgAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyg4NEJGNTI5MUZFN0FCQjBCRTEzOTUzN0NCQTkwQ0Y5MkZFODU2MEVFMB4XDTIwMDQzMDE0MTcyMloXDTM1MDQzMDE0MjIyMlowMzExMC8GA1UEAxMoODRCRjUyOTFGRTdBQkIwQkUxMzk1MzdDQkE5MENGOTJGRTg1NjBFRTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAMu5pJ6Y1tlyjF66PERa8ls7cEvmDQD+ym3of/pVomYtZKnUvcI9IDV+gce852mPi6WpuIbQNkTmsJApArNgCMdEgzV29ClMt8GFEsa8MKB1oky2mRTV4SCGC64Nd7Y3K/ctYm2muPGfNPxkCyC4Y31MZizzZeTNci5r0L3tVLjmFjcI4mfB+0VE/YEV5L6BpWnQtCj6UwULjiFLOtlYvY64HbvFvPIhOQnwR/8x++XCUGPeJi+AyYAjj+G0vK7Y3dr6R2hk8r626hCM92Fp1c3UyMkGb0t7HZosus72ncA+nVspktPVizvvfcitfJHi8GGD1SAq3IGhDP3LVOnxgjUCAwEAAaNZMFcwDwYDVR0TAQH/BAUwAwEB/zAgBgNVHQ4BAQAEFgQUhL9Skf56uwvhOVN8upDPkv6FYO4wIgYDVR0jAQEABBgwFoAUhL9Skf56uwvhOVN8upDPkv6FYO4wDQYJKoZIhvcNAQELBQADggEBAIPP0IZOmMC09T7Xer16M3o9Oe5lI5hgrBFa7Tyh/wav/49uKbDwS4IV8CESIXkg1DnsoZAPeiUYz5j75btfrHRIXcQBZBvLz051F6N/1GqEMP6kWRe9wB7vhwDo5vHDs9lrzj3uyJh8ML3RfKX3dVC2C98qJTf4qwFyVDxjM5GtOwoAv/IO7MLOomMJ0gn89spVFbRr6EsyBcBA14Mpg7i75C1P9KApABM46megzKOpkvkwLaeWgS4BCziM+bviYo4VbqDTdXM5gnWjPMZfKa/1c6ZDAo4mWf92/NN5Duc50xBi+hTPN5LtgythNol4bcdG5R4TiBaLDwPAfwQ3TOs=",
-                "parent_handle": "CA2",
-                "child_handle": "CA3",
-                "service_uri": "https://localhost:3000/rfc6492/CA2"
-              }
-            }
-          ]
+          "type": "parent_added",
+          "parent": "CA2",
+          "contact": {
+            "type": "rfc6492",
+            "tag": null,
+            "id_cert": "MIIDOjCCAiKgAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyg4NEJGNTI5MUZFN0FCQjBCRTEzOTUzN0NCQTkwQ0Y5MkZFODU2MEVFMB4XDTIwMDQzMDE0MTcyMloXDTM1MDQzMDE0MjIyMlowMzExMC8GA1UEAxMoODRCRjUyOTFGRTdBQkIwQkUxMzk1MzdDQkE5MENGOTJGRTg1NjBFRTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAMu5pJ6Y1tlyjF66PERa8ls7cEvmDQD+ym3of/pVomYtZKnUvcI9IDV+gce852mPi6WpuIbQNkTmsJApArNgCMdEgzV29ClMt8GFEsa8MKB1oky2mRTV4SCGC64Nd7Y3K/ctYm2muPGfNPxkCyC4Y31MZizzZeTNci5r0L3tVLjmFjcI4mfB+0VE/YEV5L6BpWnQtCj6UwULjiFLOtlYvY64HbvFvPIhOQnwR/8x++XCUGPeJi+AyYAjj+G0vK7Y3dr6R2hk8r626hCM92Fp1c3UyMkGb0t7HZosus72ncA+nVspktPVizvvfcitfJHi8GGD1SAq3IGhDP3LVOnxgjUCAwEAAaNZMFcwDwYDVR0TAQH/BAUwAwEB/zAgBgNVHQ4BAQAEFgQUhL9Skf56uwvhOVN8upDPkv6FYO4wIgYDVR0jAQEABBgwFoAUhL9Skf56uwvhOVN8upDPkv6FYO4wDQYJKoZIhvcNAQELBQADggEBAIPP0IZOmMC09T7Xer16M3o9Oe5lI5hgrBFa7Tyh/wav/49uKbDwS4IV8CESIXkg1DnsoZAPeiUYz5j75btfrHRIXcQBZBvLz051F6N/1GqEMP6kWRe9wB7vhwDo5vHDs9lrzj3uyJh8ML3RfKX3dVC2C98qJTf4qwFyVDxjM5GtOwoAv/IO7MLOomMJ0gn89spVFbRr6EsyBcBA14Mpg7i75C1P9KApABM46megzKOpkvkwLaeWgS4BCziM+bviYo4VbqDTdXM5gnWjPMZfKa/1c6ZDAo4mWf92/NN5Duc50xBi+hTPN5LtgythNol4bcdG5R4TiBaLDwPAfwQ3TOs=",
+            "parent_handle": "CA2",
+            "child_handle": "CA3",
+            "service_uri": "https://localhost:3000/rfc6492/CA2"
+          }
         }
       }
     ]

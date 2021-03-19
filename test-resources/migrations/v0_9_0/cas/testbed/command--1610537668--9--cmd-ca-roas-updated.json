@@ -1,0 +1,26 @@
+{
+  "actor": "master-token",
+  "time": "2021-01-13T11:34:28.137699Z",
+  "handle": "testbed",
+  "version": 12,
+  "sequence": 9,
+  "details": {
+    "roa_definition_updates": {
+      "added": [
+        {
+          "asn": 65000,
+          "prefix": "192.168.0.0/24",
+          "max_length": 24
+        }
+      ],
+      "removed": []
+    }
+  },
+  "effect": {
+    "events": [
+      12,
+      13,
+      14
+    ]
+  }
+}

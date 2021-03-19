@@ -1,3 +1,16 @@
+//! A mock implementation of an OpenID Connect 1.0 provider (OP) with support for the following specifications:
+//!
+//!   - [The OAuth 2.0 Authorization Framework RFC 6749][rfc6749]
+//!   - [OAuth 2.0 Token Revocation RFC 7009][rfc7009]
+//!   - [OpenID Connect Core 1.0 incorporating errata set 1][openid-connect-core-1_0]
+//!   - [OpenID Connect Discovery 1.0 incorporating errata set 1][openid-connect-discovery-1_0]
+//!   - [OpenID Connect RP-Initiated Logout 1.0 - draft 01][openid-connect-rpinitiated-1_0]
+//!
+//! [rfc6749]: https://tools.ietf.org/html/rfc6749
+//! [rfc7009]: https://tools.ietf.org/html/rfc7009
+//! [openid-connect-core-1_0]: https://openid.net/specs/openid-connect-core-1_0.html
+//! [openid-connect-discovery-1_0]: https://openid.net/specs/openid-connect-discovery-1_0.html
+//! [openid-connect-rpinitiated-1_0]: https://openid.net/specs/openid-connect-rpinitiated-1_0.html
 use log::{error, info, trace, warn};
 use openidconnect::core::*;
 use openidconnect::PrivateSigningKey;
@@ -20,9 +33,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
+use crate::ui::OpenIDConnectMockMode;
+
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct CustomAdditionalMetadata {
-    end_session_endpoint: String,
+    end_session_endpoint: Option<String>,
+    revocation_endpoint: Option<String>,
 }
 impl AdditionalProviderMetadata for CustomAdditionalMetadata {}
 
@@ -147,6 +163,7 @@ struct TempAuthzCodeDetails {
 #[derive(Clone, Debug)]
 struct LoginSession {
     id: KnownUserId,
+    id_token: Option<String>,
 }
 
 type TempAuthzCode = String;
@@ -178,11 +195,13 @@ pub async fn main() {
         .apply()
         .map_err(|e| format!("Failed to init stderr logging: {}", e));
 
-    start(2500).await;
+    start(OpenIDConnectMockMode::OIDCProviderWithRPInitiatedLogout, 2500).await;
 }
 
-pub async fn start(delay_secs: u64) -> Option<task::JoinHandle<()>> {
-    let join_handle = task::spawn_blocking(run_mock_openid_connect_server);
+pub async fn start(config: OpenIDConnectMockMode, delay_secs: u64) -> task::JoinHandle<()> {
+    let join_handle = task::spawn_blocking(move || {
+        run_mock_openid_connect_server(config);
+    });
 
     // wait for the mock OpenID Connect server to be up before continuing
     // otherwise Krill might fail to query its discovery endpoint
@@ -191,18 +210,16 @@ pub async fn start(delay_secs: u64) -> Option<task::JoinHandle<()>> {
         delay_for(Duration::from_secs(delay_secs)).await;
     }
 
-    Some(join_handle)
+    join_handle
 }
 
-pub async fn stop(join_handle: Option<task::JoinHandle<()>>) {
+pub async fn stop(join_handle: task::JoinHandle<()>) {
     MOCK_OPENID_CONNECT_SERVER_RUNNING_FLAG.store(false, Ordering::Relaxed);
-    if let Some(join_handle) = join_handle {
-        join_handle.await.unwrap();
-    }
+    join_handle.await.unwrap();
 }
 
-fn run_mock_openid_connect_server() {
-    thread::spawn(|| {
+fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
+    thread::spawn(move || {
         let mut authz_codes = TempAuthzCodes::new();
         let mut login_sessions = LoginSessions::new();
         let mut known_users = KnownUsers::new();
@@ -376,21 +393,45 @@ fn run_mock_openid_connect_server() {
                 ..Default::default()
             },
         );
+        known_users.insert(
+            "user-with-wrong-csrf-state-value",
+            KnownUser {
+                role: Some("admin"),
+                exc_cas: Some("ta,testbed"),
+                ..Default::default()
+            },
+        );
+
+        let logout_metadata = match config {
+            OpenIDConnectMockMode::OIDCProviderWithRPInitiatedLogout => CustomAdditionalMetadata {
+                end_session_endpoint: Some(String::from("https://localhost:1818/logout")),
+                revocation_endpoint: None,
+            },
+            OpenIDConnectMockMode::OIDCProviderWithOAuth2Revocation => CustomAdditionalMetadata {
+                end_session_endpoint: None,
+                revocation_endpoint: Some(String::from("https://localhost:1818/revoke")),
+            },
+            OpenIDConnectMockMode::OIDCProviderWithNoLogoutEndpoints => CustomAdditionalMetadata {
+                end_session_endpoint: None,
+                revocation_endpoint: None,
+            },
+            OpenIDConnectMockMode::OIDCProviderWillNotBeStarted => {
+                unreachable!()
+            }
+        };
 
         let provider_metadata: CustomProviderMetadata = ProviderMetadata::new(
-            IssuerUrl::new("http://localhost:1818".to_string()).unwrap(),
-            AuthUrl::new("http://localhost:1818/authorize".to_string()).unwrap(),
-            JsonWebKeySetUrl::new("http://localhost:1818/jwk".to_string()).unwrap(),
+            IssuerUrl::new("https://localhost:1818".to_string()).unwrap(),
+            AuthUrl::new("https://localhost:1818/authorize".to_string()).unwrap(),
+            JsonWebKeySetUrl::new("https://localhost:1818/jwk".to_string()).unwrap(),
             vec![ResponseTypes::new(vec![CoreResponseType::Code])],
             vec![CoreSubjectIdentifierType::Pairwise],
             vec![CoreJwsSigningAlgorithm::RsaSsaPssSha256],
-            CustomAdditionalMetadata {
-                end_session_endpoint: String::from("http://localhost:1818/logout"),
-            },
+            logout_metadata,
         )
-        .set_token_endpoint(Some(TokenUrl::new("http://localhost:1818/token".to_string()).unwrap()))
+        .set_token_endpoint(Some(TokenUrl::new("https://localhost:1818/token".to_string()).unwrap()))
         .set_userinfo_endpoint(Some(
-            UserInfoUrl::new("http://localhost:1818/userinfo".to_string()).unwrap(),
+            UserInfoUrl::new("https://localhost:1818/userinfo".to_string()).unwrap(),
         ))
         .set_scopes_supported(Some(vec![
             Scope::new("openid".to_string()),
@@ -458,7 +499,8 @@ fn run_mock_openid_connect_server() {
 
         fn make_id_token_response(
             signing_key: &CoreRsaPrivateSigningKey,
-            authz: &TempAuthzCodeDetails,
+            client_id: String,
+            nonce: String,
             session: &LoginSession,
             known_users: &KnownUsers,
         ) -> Result<CustomTokenResponse, Error> {
@@ -469,10 +511,10 @@ fn run_mock_openid_connect_server() {
             let id_token = CustomIdToken::new(
                 CustomIdTokenClaims::new(
                     // Specify the issuer URL for the OpenID Connect Provider.
-                    IssuerUrl::new("http://localhost:1818".to_string()).unwrap(),
+                    IssuerUrl::new("https://localhost:1818".to_string()).unwrap(),
                     // The audience is usually a single entry with the client ID of the client for whom
                     // the ID token is intended. This is a required claim.
-                    vec![Audience::new(authz.client_id.clone())],
+                    vec![Audience::new(client_id)],
                     // The ID token expiration is usually much shorter than that of the access or refresh
                     // tokens issued to clients. Our client only keeps the access/refresh token and the
                     // access token expiration time, so this isn't used.
@@ -500,7 +542,7 @@ fn run_mock_openid_connect_server() {
                 // implements the AdditionalClaims trait. This requires manually using the
                 // generic IdTokenClaims struct rather than the CoreIdTokenClaims type alias,
                 // however.
-                .set_nonce(Some(Nonce::new(authz.nonce.clone()))),
+                .set_nonce(Some(Nonce::new(nonce))),
                 // The private key used for signing the ID token. For confidential clients (those able
                 // to maintain a client secret), a CoreHmacKey can also be used, in conjunction
                 // with one of the CoreJwsSigningAlgorithm::HmacSha* signing algorithms. When using an
@@ -551,6 +593,8 @@ fn run_mock_openid_connect_server() {
         }
 
         fn require_query_param(query: &Query, param: &str) -> Result<String, Error> {
+            // TODO: ensure that such errors actually result in a https://tools.ietf.org/html/rfc6749#section-5.2
+            // compliant { "error": "invalid_request" } JSON error response.
             query
                 .get_first_from_str(param)
                 .ok_or(Error::custom(format!("Missing query parameter '{}'", param)))
@@ -624,13 +668,14 @@ fn run_mock_openid_connect_server() {
 
                 match known_users.get(username.as_str()) {
                     Some(_user) => {
-                        let client_id = require_query_param(&query, "client_id")?;
-                        let nonce = require_query_param(&query, "nonce")?;
-                        let state = require_query_param(&query, "state")?;
-
-                        let client_id = base64_decode(client_id)?;
-                        let nonce = base64_decode(nonce)?;
-                        let state = base64_decode(state)?;
+                        let client_id = base64_decode(require_query_param(&query, "client_id")?)?;
+                        let nonce = base64_decode(require_query_param(&query, "nonce")?)?;
+                        let state = if username == "user-with-wrong-csrf-state-value" {
+                            info!("Deliberately returning the wrong CSRF state value to the client");
+                            "some-wrong-csrf-value".to_string()
+                        } else {
+                            base64_decode(require_query_param(&query, "state")?)?
+                        };
 
                         let mut code_bytes: [u8; 4] = [0; 4];
                         openssl::rand::rand_bytes(&mut code_bytes)
@@ -684,11 +729,43 @@ fn run_mock_openid_connect_server() {
             request.respond(response).map_err(|err| err.into())
         }
 
-        fn handle_logout_request(request: Request, url: Url) -> Result<(), Error> {
+        /// Implement [OpenID Connect RP-Initiated Logout 1.0 - draft 01][openid-connect-rpinitiated-1_0]
+        ///
+        /// [openid-connect-rpinitiated-1_0]: https://openid.net/specs/openid-connect-rpinitiated-1_0.htmlc
+        fn handle_logout_request(
+            request: Request,
+            login_sessions: &mut LoginSessions,
+            url: Url) -> Result<(), Error>
+        {
             let query = url
                 .get_parsed_query()
                 .ok_or(Error::custom("Missing query parameters"))?;
             let redirect_uri = require_query_param(&query, "post_logout_redirect_uri")?;
+            let id_token_hint = require_query_param(&query, "id_token_hint")?;
+
+            let mut found_user_id: Option<&str> = None;
+            login_sessions.retain(|_k, v| {
+                // return false if the id token matches the one we are looking for so that retain() will discard this
+                // login session
+                if let Some(id_token) = &v.id_token {
+                    let r = *id_token != id_token_hint;
+                    if !r {
+                        info!("Logout of id token '{}' terminates session for user '{}' with access/refresh token '{}'", id_token_hint, v.id, _k);
+                        if found_user_id.is_none() {
+                            found_user_id = Some(v.id);
+                        }
+                    }
+                    return r;
+                }
+
+                warn!("While handling a logout request a login session without an ID token was discovered!");
+                true
+            });
+
+            match found_user_id {
+                Some(user_id) => remove_related_login_sessions(login_sessions, user_id),
+                None => return Err(Error::custom(format!("Error while logging out: no login session found")))
+            };
 
             let response = Response::empty(StatusCode(302)).with_header(
                 Header::from_str(&format!("Location: {}", redirect_uri)).map_err(|err| {
@@ -697,6 +774,107 @@ fn run_mock_openid_connect_server() {
             );
 
             request.respond(response).map_err(|err| err.into())
+        }
+
+        fn remove_related_login_sessions(
+            login_sessions: &mut LoginSessions,
+            user_id: &str
+        ) {
+            // remove all login sessions for the found user id, not just the one with the given token
+            // this helps in UI tests where previous tests logged a user in but didn't log them out and their token
+            // hasn't expired yet, and then the test calls /test/is_user_logged_in with a user id to see if they are
+            // logged in and finds they are, even if they had just been logged out using the id_token_hint...
+            login_sessions.retain(|access_or_refresh_token, login_session| {
+                // return false if the user id matches the one we are looking for so that retain() will discard this
+                // login session
+                let r = login_session.id != user_id;
+                if !r {
+                    info!("Terminating login session for user '{}' with access/refresh token '{}'", login_session.id, access_or_refresh_token);
+                }
+                r
+            });
+        }
+
+        /// Implement [OAuth 2.0 Token Revocation][rfc7009]
+        ///
+        /// [rfc7009]: https://tools.ietf.org/html/rfc7009
+        fn handle_oauth2_revocation_request(
+            mut request: Request,
+            login_sessions: &mut LoginSessions,
+            _known_users: &KnownUsers,
+        ) -> Result<(), Error> {
+            // TODO: handle both access and refresh tokens
+            let mut body = String::new();
+            request.as_reader().read_to_string(&mut body)?;
+
+            let query_params = parse_qs(body);
+            let token = require_query_param(&query_params, "token")?;
+            let token_type_hint = query_params.get_first_from_str("token_type_hint");
+
+            // https://tools.ietf.org/html/rfc7009#section-2.2.1:
+            //   unsupported_token_type:  The authorization server does not support
+            //   the revocation of the presented token type.  That is, the
+            //   client tried to revoke an access token on a server not
+            //   supporting this feature.
+            if matches!(token_type_hint, Some(hint_str) if hint_str == "access_token") {
+                let err_body = json!({
+                    "error": "unsupported_token_type",
+                    "error_description": "This mock OpenID Connect server only supports revocation of refresh tokens, not access tokens"
+                })
+                .to_string();
+                request
+                    .respond(
+                        Response::empty(StatusCode(400))
+                            .with_header(Header::from_str("Content-Type: application/json").unwrap())
+                            .with_data(err_body.as_bytes(), None),
+                    )
+                    .map_err(|err| err.into())
+            } else {
+                match login_sessions.remove(&token) {
+                    None => {
+                        warn!("Token '{}' could NOT be revoked: token is NOT known", &token);
+                        // From https://tools.ietf.org/html/rfc7009#section-2.2:
+                        //   Note: invalid tokens do not cause an error response since the client
+                        //   cannot handle such an error in a reasonable way.  Moreover, the
+                        //   purpose of the revocation request, invalidating the particular token,
+                        //   is already achieved.
+                    }
+                    Some(session) => {
+                        info!("Logout of refresh token '{}' terminates session for user '{}'", token, session.id);
+                        remove_related_login_sessions(login_sessions, session.id);
+                    }
+                };
+    
+                request
+                    .respond(Response::empty(StatusCode(200)))
+                    .map_err(|err| err.into())
+            }
+        }
+
+        fn handle_control_is_user_logged_in_request(
+            request: Request,
+            url: Url,
+            login_sessions: &LoginSessions,
+        ) -> Result<(), Error> {
+            let query = url
+                .get_parsed_query()
+                .ok_or(Error::custom("Missing query parameters"))?;
+            let username = require_query_param(&query, "username")?;
+
+            match login_sessions.iter().find(|(_, session)| session.id == username) {
+                Some((access_token, session)) => {
+                    info!("Login session found for user '{}' with access_token={:?} and id_token={:?}", &username, access_token, session.id_token);
+                    request
+                        .respond(Response::empty(StatusCode(200)))
+                        .map_err(|err| err.into())
+                }
+                None => {
+                    info!("No login session found for user '{}'", &username);
+                    request
+                        .respond(Response::empty(StatusCode(400)))
+                        .map_err(|err| err.into())
+                }
+            }
         }
 
         fn handle_token_request(
@@ -725,7 +903,7 @@ fn run_mock_openid_connect_server() {
                             trace!("client_id: {:?}", &authz_code.client_id);
                             trace!("username: {:?}", &authz_code.username);
                             // find static user id
-                            let session = LoginSession {
+                            let mut session = LoginSession {
                                 id: known_users
                                     .keys()
                                     .find(|k| k.to_string() == authz_code.username)
@@ -733,37 +911,50 @@ fn run_mock_openid_connect_server() {
                                         "Internal error, unknown user '{}'",
                                         authz_code.username
                                     )))?,
+                                id_token: None, // updated below after the token is generated
                             };
 
-                            let (token_doc, refresh_token) = if authz_code.username
+                            let (token_doc, access_or_refresh_token, id_token) = if authz_code.username
                                 == "non-spec-compliant-idtoken-payload"
                             {
-                                // This represents an ID Token with an illegal "acr" value that is not a string but rather a nested
-                                // structure. This will be rejected by the Rust OpenID Connect crate. We've seen this problem with
-                                // at least one real OpenID Connect provider deployment.
-                                let token_doc = r#"{
-                                    "access_token":"*****",
+                                // This represents an ID Token with an illegal "acr" value that is not a string but
+                                // rather a nested structure. This will be rejected by the Rust OpenID Connect crate.
+                                // We've seen this problem with at least one real OpenID Connect provider deployment.
+                                let dummy_access_token = String::from("*****");
+                                let id_token_with_invalid_acr = String::from("eyJraWQiOiIyOTM5ODY3ODU5NDEyMzYxNTU4MzQ0MjM1NzUzNzM5OTE2NDQ1IiwidHlwIjoiSldUIiwiYWxnIjoiUlMyNTYifQ.eyJpc3MiOiJodHRwczovL2xvZ2luLmVzc28tdWF0LmNoYXJ0ZXIuY29tOjg0NDMvbmlkcC9vYXV0aC9uYW0iLCJzdWIiOiIyMTJjYzI1ZmVkYjE0YjQ1ODlhNmNmNmI2MTFiZTdhNiIsImF1ZCI6Ijk3YTUwYjFiLWIwNmYtNGIyOC04ZDdmLTk1MjA0MjdkZWFlYSIsImV4cCI6MTYwNjE2NjM1MywiaWF0IjoxNjA2MTY2MDUzLCJub25jZSI6IkRVTU1ZX0ZJWEVEX1ZBTFVFX0ZPUl9OT1ciLCJhY3IiOnsidmFsdWVzIjpbImh0dHBzOi8vbG9naW4uZXNzby11YXQuY2hhcnRlci5jb206ODQ0My9uaWRwL2tlcmJlcm9zL3Zkcy91cmkiXX19.K8TjWJQ3xb11iRxoyxwOVqSJT3nj2tNrk8gsljeLTGgZIcdtrLKiNppU09DQFtYIG-I9sKCzb98ZszIBVw5V1uUr4ztGTBL6quEgtT_14wYA5og_z_piNyhmy7WYpRkCQDZiW-RavfrbbRDwl2LgillxHdIG76O_0YutxnV_LIjfFR9N5pRC511JAI-3GgO7IOd6sMTs2EbeBJLNs2w6gzqwOQiTjyDaRxz6QgisR2JhzW3WgpVX6MaAYz-TpT_6ylodXYUkBW5hwzVdj2Ja-4YNdvIPx1_gclvxlVW2Y_pBXFQgkOaV7k1NH0r_SmqCWARPp7oA56b2ppCkJNphhQ");
+                                let token_doc = format!(r#"{{
+                                    "access_token":"{}",
                                     "token_type":"bearer",
                                     "expires_in":299,
-                                    "id_token":"eyJraWQiOiIyOTM5ODY3ODU5NDEyMzYxNTU4MzQ0MjM1NzUzNzM5OTE2NDQ1IiwidHlwIjoiSldUIiwiYWxnIjoiUlMyNTYifQ.eyJpc3MiOiJodHRwczovL2xvZ2luLmVzc28tdWF0LmNoYXJ0ZXIuY29tOjg0NDMvbmlkcC9vYXV0aC9uYW0iLCJzdWIiOiIyMTJjYzI1ZmVkYjE0YjQ1ODlhNmNmNmI2MTFiZTdhNiIsImF1ZCI6Ijk3YTUwYjFiLWIwNmYtNGIyOC04ZDdmLTk1MjA0MjdkZWFlYSIsImV4cCI6MTYwNjE2NjM1MywiaWF0IjoxNjA2MTY2MDUzLCJub25jZSI6IkRVTU1ZX0ZJWEVEX1ZBTFVFX0ZPUl9OT1ciLCJhY3IiOnsidmFsdWVzIjpbImh0dHBzOi8vbG9naW4uZXNzby11YXQuY2hhcnRlci5jb206ODQ0My9uaWRwL2tlcmJlcm9zL3Zkcy91cmkiXX19.K8TjWJQ3xb11iRxoyxwOVqSJT3nj2tNrk8gsljeLTGgZIcdtrLKiNppU09DQFtYIG-I9sKCzb98ZszIBVw5V1uUr4ztGTBL6quEgtT_14wYA5og_z_piNyhmy7WYpRkCQDZiW-RavfrbbRDwl2LgillxHdIG76O_0YutxnV_LIjfFR9N5pRC511JAI-3GgO7IOd6sMTs2EbeBJLNs2w6gzqwOQiTjyDaRxz6QgisR2JhzW3WgpVX6MaAYz-TpT_6ylodXYUkBW5hwzVdj2Ja-4YNdvIPx1_gclvxlVW2Y_pBXFQgkOaV7k1NH0r_SmqCWARPp7oA56b2ppCkJNphhQ"
-                                }"#.to_string();
+                                    "id_token":"{}"
+                                }}"#, dummy_access_token, id_token_with_invalid_acr);
 
-                                (token_doc, None)
+                                (token_doc, dummy_access_token, id_token_with_invalid_acr)
                             } else {
                                 let token_response =
-                                    make_id_token_response(signing_key, &authz_code, &session, known_users)?;
+                                    make_id_token_response(
+                                        signing_key,
+                                        authz_code.client_id.clone(),
+                                        authz_code.nonce.clone(),
+                                        &session,
+                                        known_users)?;
                                 let token_doc = serde_json::to_string(&token_response).map_err(|err| {
                                     Error::custom(format!("Error while building ID Token JSON response: {}", err))
                                 })?;
-                                let refresh_token = token_response.refresh_token().cloned();
+                                let access_or_refresh_token = if let Some(token) = token_response.refresh_token() {
+                                    token.secret().clone()
+                                } else {
+                                    token_response.access_token().secret().clone()
+                                };
 
-                                (token_doc, refresh_token)
+                                let id_token = token_response.extra_fields().id_token().expect("Missing id_token").to_string();
+
+                                (token_doc, access_or_refresh_token, id_token)
                             };
 
-                            if let Some(token) = refresh_token {
-                                new_key = Some(token.secret().clone());
-                                new_session = Some(session.clone());
-                            }
+                            session.id_token = Some(id_token);
+                            new_key = Some(access_or_refresh_token);
+                            new_session = Some(session.clone());
 
                             request
                                 .respond(
@@ -788,7 +979,7 @@ fn run_mock_openid_connect_server() {
                     info!("client_id refreshing: {:?}", query_params);
                     if let Some(refresh_token) = query_params.get("refresh_token") {
                         let refresh_token = &refresh_token[0];
-                        if let Some(session) = login_sessions.get(refresh_token) {
+                        if let Some(mut session) = login_sessions.get_mut(refresh_token) {
                             let user = get_user_for_session(&session, known_users)?;
                             trace!("session: {:?}", &session.id);
                             // Check the intentional failure responses we might want to
@@ -833,25 +1024,26 @@ fn run_mock_openid_connect_server() {
                                 }
                             }
                             if user.refresh {
-                                let token_duration = get_token_duration_for_user(&user)?;
-                                let access_token = make_access_token()?;
-
-                                let mut token_response = StandardTokenResponse::new(
-                                    access_token.clone(),
-                                    CoreTokenType::Bearer,
-                                    EmptyExtraTokenFields {},
-                                );
-
-                                token_response.set_expires_in(Some(&Duration::from_secs(token_duration.into())));
-
-                                let refresh_token = make_refresh_token()?;
-                                token_response.set_refresh_token(Some(refresh_token.clone()));
+                                let token_response = make_id_token_response(
+                                    signing_key,
+                                    String::from("dummy_client_id"),
+                                    String::from("dummy_nonce"),
+                                    &session,
+                                    known_users)?;
 
                                 let token_doc = serde_json::to_string(&token_response).map_err(|err| {
-                                    Error::custom(format!("Error while building Access Token JSON response: {}", err))
+                                    Error::custom(format!("Error while building ID Token JSON response: {}", err))
                                 })?;
+                                let access_or_refresh_token = if let Some(token) = token_response.refresh_token() {
+                                    token.secret().clone()
+                                } else {
+                                    token_response.access_token().secret().clone()
+                                };
 
-                                new_key = Some(refresh_token.secret().to_string());
+                                let id_token = token_response.extra_fields().id_token().expect("Missing id_token").to_string();
+
+                                session.id_token = Some(id_token);
+                                new_key = Some(access_or_refresh_token);
                                 new_session = Some(session.clone());
 
                                 request
@@ -908,9 +1100,9 @@ fn run_mock_openid_connect_server() {
                 }
             };
 
-            // do this out here to avoid having both a mutable and immutable
-            // reference to login_sessions at the same time, which isn't
-            // permitted by the Rust borrow checker.
+            // do this out here to avoid having both a mutable and immutable reference to login_sessions at the same
+            // time, which isn't permitted by the Rust borrow checker. The key could be either an access token or a
+            // refresh token, we don't distinguish between the two.
             if let Some(key) = new_key {
                 if let Some(session) = new_session {
                     login_sessions.insert(key, session);
@@ -937,6 +1129,7 @@ fn run_mock_openid_connect_server() {
         }
 
         fn handle_request(
+            config: &OpenIDConnectMockMode,
             request: Request,
             discovery_doc: &str,
             jwks_doc: &str,
@@ -947,40 +1140,46 @@ fn run_mock_openid_connect_server() {
             known_users: &KnownUsers,
         ) -> Result<(), Error> {
             let url = urlparse(request.url());
-            trace!(
-                "request received: {:?} {:?} {:?}",
-                &request.method(),
-                &url.path,
-                &url.query
-            );
-            match request.method() {
-                Method::Get => match url.path.as_str() {
-                    "/.well-known/openid-configuration" => {
-                        return handle_discovery_request(request, discovery_doc);
+
+            match (request.method(), url.path.as_str()) {
+                // OpenID Connect 1.0. Discovery support
+                (Method::Get, "/.well-known/openid-configuration") => {
+                    return handle_discovery_request(request, discovery_doc);
+                }
+                // OpenID Connect 1.0. Discovery support
+                (Method::Get, "/jwk") => {
+                    return handle_jwks_request(request, jwks_doc);
+                }
+                // OAuth 2.0 Authorization Request support
+                (Method::Get, "/authorize") => {
+                    return handle_authorize_request(request, url, login_doc);
+                }
+                (Method::Get, "/login_form_submit") => {
+                    return handle_login_request(request, url, authz_codes, known_users);
+                }
+                // OpenID Connect 1.0. Discovery support
+                (Method::Get, "/userinfo") => {
+                    return handle_user_info_request(request);
+                }
+                // OpenID Connect RP-Initiated Logout 1.0 support
+                (Method::Get, "/logout") => {
+                    if matches!(config, OpenIDConnectMockMode::OIDCProviderWithRPInitiatedLogout) {
+                        return handle_logout_request(request, login_sessions, url);
                     }
-                    "/jwk" => {
-                        return handle_jwks_request(request, jwks_doc);
+                }
+                (Method::Post, "/token") => {
+                    return handle_token_request(request, signing_key, authz_codes, login_sessions, known_users);
+                }
+                // OAuth 2.0 Token Revocation support
+                (Method::Post, "/revoke") => {
+                    if matches!(config, OpenIDConnectMockMode::OIDCProviderWithOAuth2Revocation) {
+                        return handle_oauth2_revocation_request(request, login_sessions, known_users);
                     }
-                    "/authorize" => {
-                        return handle_authorize_request(request, url, login_doc);
-                    }
-                    "/login_form_submit" => {
-                        return handle_login_request(request, url, authz_codes, known_users);
-                    }
-                    "/userinfo" => {
-                        return handle_user_info_request(request);
-                    }
-                    "/logout" => {
-                        return handle_logout_request(request, url);
-                    }
-                    _ => {}
-                },
-                Method::Post => match url.path.as_str() {
-                    "/token" => {
-                        return handle_token_request(request, signing_key, authz_codes, login_sessions, known_users);
-                    }
-                    _ => {}
-                },
+                }
+                // Test control APIs
+                (Method::Get, "/test/is_user_logged_in") => {
+                    return handle_control_is_user_logged_in_request(request, url, login_sessions);
+                }
                 _ => {}
             };
 
@@ -990,13 +1189,24 @@ fn run_mock_openid_connect_server() {
         let address = "127.0.0.1:1818";
         info!("Mock OpenID Connect server: starting on {}", address);
 
-        let server = Server::http(address).unwrap();
+        let server = Server::https(
+            address,
+            tiny_http::SslConfig {
+                certificate: SELF_SIGNED_CERT_PEM.to_vec(),
+                private_key: SELF_SIGNED_KEY_PEM.to_vec(),
+            })
+            .unwrap();
+
+        info!("Mock OpenID Connect server: started");
+
         MOCK_OPENID_CONNECT_SERVER_RUNNING_FLAG.store(true, Ordering::Relaxed);
         while MOCK_OPENID_CONNECT_SERVER_RUNNING_FLAG.load(Ordering::Relaxed) {
             match server.recv_timeout(Duration::new(1, 0)) {
                 Ok(None) => { /* no request received within the timeout */ }
                 Ok(Some(request)) => {
+                    info!("Received {:?}", &request);
                     if let Err(err) = handle_request(
+                        &config,
                         request,
                         &discovery_doc,
                         &jwks_doc,
@@ -1004,7 +1214,7 @@ fn run_mock_openid_connect_server() {
                         &signing_key,
                         &mut authz_codes,
                         &mut login_sessions,
-                        &known_users,
+                        &mut known_users,
                     ) {
                         error!("{}", err);
                     }
@@ -1018,3 +1228,40 @@ fn run_mock_openid_connect_server() {
         info!("Mock OpenID Connect: stopped");
     });
 }
+
+static SELF_SIGNED_CERT_PEM: &[u8; 1160] = br#"
+-----BEGIN CERTIFICATE-----
+MIIDNjCCAh6gAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEygyMDBBRTIzM0Y4RUE2NkEwMTIyNTJDQThFRTA3OEE5NDM4NEEyQ0JBMCAXDTIxMDIwNTEzMTMxOFoYDzMwMTcwOTEyMTMxMzE4WjAzMTEwLwYDVQQDEygyMDBBRTIzM0Y4RUE2NkEwMTIyNTJDQThFRTA3OEE5NDM4NEEyQ0JBMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsb/U46pChhSpznNzX5+XETV+cmSs8AhqVP4Dka7W7RxJnc1H/S5aZRFZsRuQJ7HNW6S9C49WhaY2Pq7s0MQBNjb58WP7XoKjtMrjO6yxOfTv/KwRDbJBahA0H28PpjbKGVHFCN00J8ftV5Cq5K6nLdUslJrNNLx7Rdr3JymHEksJTeK1MQuRtt9EO/1uy1/6a9vIljLUxy2QkbkgVh46GNSu23FAzp21c6c6A99V0FWYhDFSywROpQlhpjuijJKGUR2mulDkp3uaOhcmyUFCOoZ5iZfemI92J8QBLoR2mpQ1d6Kj53P4BgnaiWDSe5JifzDKEFyXhNXkegwI1f+XhwIDAQABo1MwUTAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBQgCuIz+OpmoBIlLKjuB4qUOEosujAfBgNVHSMEGDAWgBQgCuIz+OpmoBIlLKjuB4qUOEosujANBgkqhkiG9w0BAQsFAAOCAQEABAPbMHpra5BFLRtqX/UG/x8yOpjEepIKdSH7sP8QbYcJXa1f7rAe8ZksgmkrLRegwAqo1hcCxJrEaVHTuW+jd4gy9K7HMp+wLaz6W0ToiKZdCVdTH8xIRxH/nVwWFI//Q4F7Qkm+ceHAeHs5qDDMLBuuZz15VcXcw4HaOkDcxeaqdo+8LXx6jvg0Pz5qzjFvdFIxdd8U/q2v2bUSN4g7CZ4Ae6ate0VPCozflIRauNCQ3BBvUMAwxMg9mkNDtpcbJ8rmqMwSjMTP1g9YIDZ2w9BGUagV0xDSHiE56vONQBX209/AWyzQxrvV6jw/222FX2rJL9UNDR+M3jH1QJzS7g==
+-----END CERTIFICATE-----
+"#;
+
+static SELF_SIGNED_KEY_PEM: &[u8; 1705] = br#"
+-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQCxv9TjqkKGFKnO
+c3Nfn5cRNX5yZKzwCGpU/gORrtbtHEmdzUf9LlplEVmxG5Ansc1bpL0Lj1aFpjY+
+ruzQxAE2NvnxY/tegqO0yuM7rLE59O/8rBENskFqEDQfbw+mNsoZUcUI3TQnx+1X
+kKrkrqct1SyUms00vHtF2vcnKYcSSwlN4rUxC5G230Q7/W7LX/pr28iWMtTHLZCR
+uSBWHjoY1K7bcUDOnbVzpzoD31XQVZiEMVLLBE6lCWGmO6KMkoZRHaa6UOSne5o6
+FybJQUI6hnmJl96Yj3YnxAEuhHaalDV3oqPnc/gGCdqJYNJ7kmJ/MMoQXJeE1eR6
+DAjV/5eHAgMBAAECggEABADSBp6bCPIGMQQgoRKzEEwoIONrkaxe2LMv2WQaqxRs
+BAXPjUAyAPy3DGoWgQ5cFahMKap8xF3N8vN1me4QKOxsDKe3zZUbosK/A2UMSMXf
+cc1eRPSyzHS498xEifXJ73AMA/sXZZ33FnXHo4bbdQjMDDzASmPEUvpvfo5M4HiO
+hWMd1+vL/zbTvOJblPax7pPG4wL5+U88MezhcYZQ5bCE1Ggixuvnm3UIZaEyBz8+
+Jb93RK1f+dXMTnT1PmKaBMWuALzM1wgkES6KLn9ZR6J0x+5r+FVe3lAzUPnsNN0W
+fDFVZ+A+padHmrUR+fYIcZRvjJU0wspsOppezM8rwQKBgQDnG80QQ9NwQESL14bS
+rXeruqnUngWEOBO8axvF+WR/ImhZAbagDl+F3ERDw+r7b3HkXrmgnVnc9GbuFP27
+8jsZsx7aWiejcFkvSW21msDmKEm7ZzBvkcfuWsRUjQk+adLzZcv+0fhJAA/Z3qak
+uBctntaiQJI/xAoxI2Mbo1s2SQKBgQDE5MrZ0eC69RLseZtMc4oligw8VNGRB5tN
+W9kgXMRpGN2tGsaQQ5fv4B7/gDLZ9HD9g4pAYDMAvjPFYzvfFdvdHbNj5C85nPK0
+P/4xLNkzULja28cwzahzCufNuj32fjt5WVPwfqZCd2uP7pl0AIf4lfdx3jp//f0g
+xplrmw8fTwKBgBaLTrisdR65FjayApPgmhDld5WnCJC6S6qQpDfuuQ/x0k4EbcU1
+Qbo0H3Cg1vZKC8kkOGVjlBWKvdOxtoK0AXHjWDoim0VFO13ygsI5Y2HQQkkGquHn
+TaKBti8tRt6QwiQ+JOUppFeyqtks8AKXdqNboEJZnCqePARJGGzkxYwJAoGAEHIT
+x3HSVYtW002s/QvBhDUtpHRpNLXv8Nw1HJDjDuw2x9iusSoULMMJk8m/dZkHPwWX
+rJzcZbl9VYVeYNnQjX2HmFZc43EKjKezsaPPWIvrhMxKrPbglQtaJULjHg2ZJh+h
+9Tp+5JpY76K8SoYo1UihbG9lb39lfzFXazd+Yd0CgYEAuP8OcGYA9Flg4VITsmsR
+quZMVrwtPtNEhgfUiJ4v1fCr1OK/QYAufz12GwcK92Q0GMhSkTxjuwvx5EvMIQn2
+oGnjilZ7SOyWqZYYqnOSAa1QyS1jKwVeGr0VbZTUsxAa1j6e3IDfjulXVcAsY3Py
+oku+A8ZldXbm+E5p9xuOE7w=
+-----END PRIVATE KEY-----
+"#;

@@ -7,7 +7,7 @@
       "actor": "krill",
       "timestamp": 1588257441234,
       "handle": "child",
-      "version": 1,
+      "version": 2,
       "sequence": 1,
       "summary": {
         "msg": "Update repo to embedded server",
@@ -15,6 +15,7 @@
         "args": {}
       },
       "effect": {
+        "result": "success",
         "events": [
           1
         ]
@@ -25,17 +26,18 @@
       "actor": "krill",
       "timestamp": 1588257441262,
       "handle": "child",
-      "version": 2,
+      "version": 3,
       "sequence": 2,
       "summary": {
         "msg": "Add parent 'ta' as 'Embedded parent'",
         "label": "cmd-ca-parent-add",
         "args": {
-          "parent_contact": "Embedded parent",
-          "parent": "ta"
+          "parent": "ta",
+          "parent_contact": "Embedded parent"
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           2
         ]
@@ -46,16 +48,17 @@
       "actor": "krill",
       "timestamp": 1588257441942,
       "handle": "child",
-      "version": 3,
+      "version": 5,
       "sequence": 3,
       "summary": {
-        "msg": "Update entitlements under parent 'ta': 0 => asn: 0 blocks, v4: 1 blocks, v6: 0 blocks ",
+        "msg": "Update entitlements under parent 'ta': 0 => asn: , v4: 10.0.0.0/16, v6:  ",
         "label": "cmd-ca-parent-entitlements",
         "args": {
           "parent": "ta"
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           3,
           4
@@ -67,16 +70,17 @@
       "actor": "krill",
       "timestamp": 1588257441983,
       "handle": "child",
-      "version": 5,
+      "version": 6,
       "sequence": 4,
       "summary": {
-        "msg": "Update entitlements under parent 'ta': 0 => asn: 0 blocks, v4: 1 blocks, v6: 0 blocks ",
+        "msg": "Update entitlements under parent 'ta': 0 => asn: , v4: 10.0.0.0/16, v6:  ",
         "label": "cmd-ca-parent-entitlements",
         "args": {
           "parent": "ta"
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           5
         ]
@@ -87,20 +91,21 @@
       "actor": "krill",
       "timestamp": 1588257442106,
       "handle": "child",
-      "version": 6,
+      "version": 7,
       "sequence": 5,
       "summary": {
         "msg": "Update received cert in RC '0', with resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
         "label": "cmd-ca-rcn-receive",
         "args": {
           "asn_blocks": "0",
-          "ipv6_blocks": "0",
           "class_name": "0",
-          "resources": "asn: , v4: 10.0.0.0/16, v6: ",
-          "ipv4_blocks": "1"
+          "ipv4_blocks": "1",
+          "ipv6_blocks": "0",
+          "resources": "asn: , v4: 10.0.0.0/16, v6: "
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           6
         ]
@@ -111,10 +116,10 @@
       "actor": "krill",
       "timestamp": 1588257442337,
       "handle": "child",
-      "version": 7,
+      "version": 10,
       "sequence": 6,
       "summary": {
-        "msg": "Update ROAs add: 2 remove: '0'",
+        "msg": "Update ROAs  ADD: 10.0.2.0/23 => 64496 10.0.0.0/24 => 64496",
         "label": "cmd-ca-roas-updated",
         "args": {
           "added": "2",
@@ -122,11 +127,11 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
           7,
           8,
-          9,
-          10
+          9
         ]
       }
     },
@@ -135,7 +140,7 @@
       "actor": "krill",
       "timestamp": 1588257442708,
       "handle": "child",
-      "version": 11,
+      "version": 13,
       "sequence": 7,
       "summary": {
         "msg": "Update repo to server at: https://localhost:3001/rfc8181/child",
@@ -145,11 +150,11 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
+          10,
           11,
-          12,
-          13,
-          14
+          12
         ]
       }
     },
@@ -158,22 +163,23 @@
       "actor": "krill",
       "timestamp": 1588257444143,
       "handle": "child",
-      "version": 15,
+      "version": 14,
       "sequence": 8,
       "summary": {
         "msg": "Update received cert in RC '0', with resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
         "label": "cmd-ca-rcn-receive",
         "args": {
           "asn_blocks": "0",
-          "ipv6_blocks": "0",
-          "resources": "asn: , v4: 10.0.0.0/16, v6: ",
+          "class_name": "0",
           "ipv4_blocks": "1",
-          "class_name": "0"
+          "ipv6_blocks": "0",
+          "resources": "asn: , v4: 10.0.0.0/16, v6: "
         }
       },
       "effect": {
+        "result": "success",
         "events": [
-          15
+          13
         ]
       }
     },
@@ -182,7 +188,7 @@
       "actor": "krill",
       "timestamp": 1588257444169,
       "handle": "child",
-      "version": 16,
+      "version": 15,
       "sequence": 9,
       "summary": {
         "msg": "Clean up old repository",
@@ -190,8 +196,9 @@
         "args": {}
       },
       "effect": {
+        "result": "success",
         "events": [
-          16
+          14
         ]
       }
     },
@@ -200,7 +207,7 @@
       "actor": "krill",
       "timestamp": 1588257444541,
       "handle": "child",
-      "version": 17,
+      "version": 18,
       "sequence": 10,
       "summary": {
         "msg": "Update repo to server at: https://localhost:3000/rfc8181/child",
@@ -210,11 +217,11 @@
         }
       },
       "effect": {
+        "result": "success",
         "events": [
-          17,
-          18,
-          19,
-          20
+          15,
+          16,
+          17
         ]
       }
     },
@@ -223,22 +230,23 @@
       "actor": "krill",
       "timestamp": 1588257445837,
       "handle": "child",
-      "version": 21,
+      "version": 19,
       "sequence": 11,
       "summary": {
         "msg": "Update received cert in RC '0', with resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
         "label": "cmd-ca-rcn-receive",
         "args": {
-          "resources": "asn: , v4: 10.0.0.0/16, v6: ",
-          "ipv4_blocks": "1",
-          "class_name": "0",
           "asn_blocks": "0",
-          "ipv6_blocks": "0"
+          "class_name": "0",
+          "ipv4_blocks": "1",
+          "ipv6_blocks": "0",
+          "resources": "asn: , v4: 10.0.0.0/16, v6: "
         }
       },
       "effect": {
+        "result": "success",
         "events": [
-          21
+          18
         ]
       }
     },
@@ -247,7 +255,7 @@
       "actor": "krill",
       "timestamp": 1588257446682,
       "handle": "child",
-      "version": 22,
+      "version": 20,
       "sequence": 12,
       "summary": {
         "msg": "Clean up old repository",
@@ -255,8 +263,9 @@
         "args": {}
       },
       "effect": {
+        "result": "success",
         "events": [
-          22
+          19
         ]
       }
     }

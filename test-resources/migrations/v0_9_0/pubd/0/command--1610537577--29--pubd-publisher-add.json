@@ -1,0 +1,18 @@
+{
+  "actor": "master-token",
+  "time": "2021-01-13T11:32:57.881361Z",
+  "handle": "0",
+  "version": 28,
+  "sequence": 29,
+  "details": {
+    "add_publisher": [
+      "ca",
+      "99CF6F9993932080374EBAFE6CD67A819A12F45B"
+    ]
+  },
+  "effect": {
+    "events": [
+      28
+    ]
+  }
+}

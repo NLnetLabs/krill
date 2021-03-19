@@ -205,8 +205,8 @@ impl Actor {
     #[cfg(feature = "multi-user")]
     pub fn is_allowed<A, R>(&self, action: A, resource: R) -> KrillResult<bool>
     where
-        A: ToPolar + Display + Clone,
-        R: ToPolar + Display + Clone,
+        A: ToPolar + Display + Debug + Clone,
+        R: ToPolar + Display + Debug + Clone,
     {
         if log_enabled!(log::Level::Trace) {
             trace!(
@@ -232,21 +232,13 @@ impl Actor {
             Some(policy) => match policy.is_allowed(self.clone(), action.clone(), resource.clone()) {
                 Ok(allowed) => {
                     if log_enabled!(log::Level::Trace) {
-                        if allowed {
-                            trace!(
-                                "Access granted: actor={}, action={}, resource={}",
-                                self.name(),
-                                &action,
-                                &resource
-                            );
-                        } else {
-                            trace!(
-                                "Access denied: actor={:?}, action={}, resource={}",
-                                self,
-                                &action,
-                                &resource
-                            );
-                        }
+                        trace!(
+                            "Access {}: actor={:?}, action={:?}, resource={:?}",
+                            if allowed { "granted" } else { "denied" },
+                            self,
+                            &action,
+                            &resource
+                        );
                     }
                     Ok(allowed)
                 }

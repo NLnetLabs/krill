@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
 
@@ -6,20 +5,24 @@ use chrono::Duration;
 
 use rpki::uri;
 
-use crate::commons::crypto::IdCert;
-use crate::commons::crypto::KrillSigner;
-use crate::commons::eventsourcing;
 use crate::commons::{
     actor::Actor,
     api::{
         ChildHandle, Entitlements, Handle, IssuanceRequest, ParentCaContact, ParentHandle, RcvdCert, RepositoryContact,
         ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse, RtaName, StorableCaCommand,
+        StorableRcEntitlement,
     },
+    crypto::{IdCert, KrillSigner},
+    eventsourcing::{self, StoredCommand},
 };
-use crate::daemon::ca::{
-    Evt, ResourceTaggedAttestation, RouteAuthorizationUpdates, RtaContentRequest, RtaPrepareRequest,
+use crate::daemon::{
+    ca::{CaEvt, ResourceTaggedAttestation, RouteAuthorizationUpdates, RtaContentRequest, RtaPrepareRequest},
+    config::Config,
 };
-use crate::daemon::config::Config;
+
+//------------ StoredCaCommand ---------------------------------------------
+
+pub type StoredCaCommand = StoredCommand<StorableCaCommand>;
 
 //------------ Command -----------------------------------------------------
 
@@ -41,16 +44,22 @@ pub enum CmdDet {
 
     // Add a new child under this parent CA
     ChildAdd(ChildHandle, Option<IdCert>, ResourceSet),
-    // Update some details for an existing child, e.g. resources.
+
+    // Update the resource entitlements for an existing child.
     ChildUpdateResources(ChildHandle, ResourceSet),
-    // Update some details for an existing child, e.g. resources.
+
+    // Update the IdCert used by the child for the RFC 6492 RPKI
+    // provisioning protocol.
     ChildUpdateId(ChildHandle, IdCert),
-    // Process an issuance request by an existing child.
+
+    // Process an issuance request sent by an existing child.
     ChildCertify(ChildHandle, IssuanceRequest, Arc<Config>, Arc<KrillSigner>),
+
     // Process a revoke request by an existing child.
-    ChildRevokeKey(ChildHandle, RevocationRequest, Arc<Config>, Arc<KrillSigner>),
+    ChildRevokeKey(ChildHandle, RevocationRequest),
+
     // Remove child (also revokes, and removes issued certs, and republishes)
-    ChildRemove(ChildHandle, Arc<Config>, Arc<KrillSigner>),
+    ChildRemove(ChildHandle),
 
     // ------------------------------------------------------------
     // Being a child (only allowed if this CA is not self-signed)
@@ -74,7 +83,8 @@ pub enum CmdDet {
     // Process new entitlements from a parent and remove/create/update
     // ResourceClasses and certificate requests or key revocation requests
     // as needed.
-    UpdateResourceClasses(ParentHandle, Entitlements, Arc<KrillSigner>),
+    UpdateEntitlements(ParentHandle, Entitlements, Arc<KrillSigner>),
+
     // Process a new certificate received from a parent.
     UpdateRcvdCert(ResourceClassName, RcvdCert, Arc<Config>, Arc<KrillSigner>),
 
@@ -96,7 +106,7 @@ pub enum CmdDet {
     //
     // RFC6489 dictates that 24 hours MUST be observed. However, shorter time frames can
     // be used for testing, and in case of emergency rolls.
-    KeyRollActivate(Duration, Arc<Config>, Arc<KrillSigner>),
+    KeyRollActivate(Duration, Arc<KrillSigner>),
 
     // Finish the keyroll after the parent confirmed that a key for a parent and resource
     // class has been revoked. I.e. remove the old key, and withdraw the crl and mft for it.
@@ -105,17 +115,23 @@ pub enum CmdDet {
     // ------------------------------------------------------------
     // ROA Support
     // ------------------------------------------------------------
+
+    // Update the authorizations for a CA.
+    // Note: ROA *objects* will be created by the CA itself. The command just
+    // contains the intent for which announcements should be authorized.
     RouteAuthorizationsUpdate(RouteAuthorizationUpdates, Arc<Config>, Arc<KrillSigner>),
+
+    // Re-issue any and all ROA objects which would otherwise expire in
+    // some time (default 4 weeks, configurable). Note that this command
+    // is intended to be sent by the scheduler - once a day is fine - and
+    // will only be stored if there any updates to be done.
+    RouteAuthorizationsRenew(Arc<Config>, Arc<KrillSigner>),
 
     // ------------------------------------------------------------
     // Publishing
     // ------------------------------------------------------------
-
-    // Republish, if needed, may be a no-op if everything is still fresh.
-    Republish(Arc<Config>, Arc<KrillSigner>),
-
     // Update the repository where this CA publishes
-    RepoUpdate(RepositoryContact, Arc<Config>, Arc<KrillSigner>),
+    RepoUpdate(RepositoryContact, Arc<KrillSigner>),
 
     // Clean up the old pending to withdraw repo.
     RepoRemoveOld(Arc<KrillSigner>),
@@ -135,7 +151,7 @@ pub enum CmdDet {
 }
 
 impl eventsourcing::CommandDetails for CmdDet {
-    type Event = Evt;
+    type Event = CaEvt;
     type StorableDetails = StorableCaCommand;
 
     fn store(&self) -> Self::StorableDetails {
@@ -160,71 +176,93 @@ impl From<CmdDet> for StorableCaCommand {
             // ------------------------------------------------------------
             // Being a parent
             // ------------------------------------------------------------
-            CmdDet::ChildAdd(child, id_cert_opt, res) => {
-                StorableCaCommand::ChildAdd(child, id_cert_opt.map(|c| c.ski_hex()), res)
+            CmdDet::ChildAdd(child, id_cert_opt, resources) => StorableCaCommand::ChildAdd {
+                child,
+                ski: id_cert_opt.map(|c| c.ski_hex()),
+                resources,
+            },
+            CmdDet::ChildUpdateResources(child, resources) => {
+                StorableCaCommand::ChildUpdateResources { child, resources }
             }
-            CmdDet::ChildUpdateResources(child, res) => StorableCaCommand::ChildUpdateResources(child, res),
-            CmdDet::ChildUpdateId(child, id) => StorableCaCommand::ChildUpdateId(child, id.ski_hex()),
+            CmdDet::ChildUpdateId(child, id) => StorableCaCommand::ChildUpdateId {
+                child,
+                ski: id.ski_hex(),
+            },
             CmdDet::ChildCertify(child, req, _, _) => {
-                let (rcn, limit, csr) = req.unpack();
+                let (resource_class_name, limit, csr) = req.unpack();
                 let ki = csr.public_key().key_identifier();
-                StorableCaCommand::ChildCertify(child, rcn, limit, ki)
+                StorableCaCommand::ChildCertify {
+                    child,
+                    resource_class_name,
+                    limit,
+                    ki,
+                }
             }
-            CmdDet::ChildRevokeKey(child, req, _, _) => StorableCaCommand::ChildRevokeKey(child, req),
-            CmdDet::ChildRemove(child, _, _) => StorableCaCommand::ChildRemove(child),
+            CmdDet::ChildRevokeKey(child, revoke_req) => StorableCaCommand::ChildRevokeKey { child, revoke_req },
+            CmdDet::ChildRemove(child) => StorableCaCommand::ChildRemove { child },
 
             // ------------------------------------------------------------
             // Being a child
             // ------------------------------------------------------------
             CmdDet::GenerateNewIdKey(_) => StorableCaCommand::GenerateNewIdKey,
-            CmdDet::AddParent(parent, contact) => StorableCaCommand::AddParent(parent, contact.into()),
-            CmdDet::UpdateParentContact(parent, contact) => {
-                StorableCaCommand::UpdateParentContact(parent, contact.into())
-            }
-            CmdDet::RemoveParent(parent) => StorableCaCommand::RemoveParent(parent),
-            CmdDet::UpdateResourceClasses(parent, entitlements, _) => {
-                let mut classes = BTreeMap::new();
-                for entitlement in entitlements.classes() {
-                    classes.insert(entitlement.class_name().clone(), entitlement.resource_set().clone());
+            CmdDet::AddParent(parent, contact) => StorableCaCommand::AddParent {
+                parent,
+                contact: contact.into(),
+            },
+            CmdDet::UpdateParentContact(parent, contact) => StorableCaCommand::UpdateParentContact {
+                parent,
+                contact: contact.into(),
+            },
+            CmdDet::RemoveParent(parent) => StorableCaCommand::RemoveParent { parent },
+            CmdDet::UpdateEntitlements(parent, cmd_entitlements, _) => {
+                let mut entitlements = vec![];
+                for entitlement in cmd_entitlements.classes() {
+                    entitlements.push(StorableRcEntitlement {
+                        resource_class_name: entitlement.class_name().clone(),
+                        resources: entitlement.resource_set().clone(),
+                    });
                 }
 
-                StorableCaCommand::UpdateResourceClasses(parent, classes)
+                StorableCaCommand::UpdateResourceEntitlements { parent, entitlements }
             }
-            CmdDet::UpdateRcvdCert(rcn, rcvd_cert, _, _) => {
-                StorableCaCommand::UpdateRcvdCert(rcn, rcvd_cert.resources().clone())
-            }
+            CmdDet::UpdateRcvdCert(resource_class_name, rcvd_cert, _, _) => StorableCaCommand::UpdateRcvdCert {
+                resource_class_name,
+                resources: rcvd_cert.resources().clone(),
+            },
 
             // ------------------------------------------------------------
             // Key rolls
             // ------------------------------------------------------------
-            CmdDet::KeyRollInitiate(duration, _) => StorableCaCommand::KeyRollInitiate(duration.num_seconds()),
-            CmdDet::KeyRollActivate(duration, _, _) => StorableCaCommand::KeyRollActivate(duration.num_seconds()),
-            CmdDet::KeyRollFinish(rcn, _) => StorableCaCommand::KeyRollFinish(rcn),
+            CmdDet::KeyRollInitiate(older_than, _) => StorableCaCommand::KeyRollInitiate {
+                older_than_seconds: older_than.num_seconds(),
+            },
+            CmdDet::KeyRollActivate(staged_for, _) => StorableCaCommand::KeyRollActivate {
+                staged_for_seconds: staged_for.num_seconds(),
+            },
+            CmdDet::KeyRollFinish(resource_class_name, _) => StorableCaCommand::KeyRollFinish { resource_class_name },
 
             // ------------------------------------------------------------
             // ROA Support
             // ------------------------------------------------------------
-            CmdDet::RouteAuthorizationsUpdate(updates, _, _) => StorableCaCommand::RoaDefinitionUpdates(updates.into()),
+            CmdDet::RouteAuthorizationsUpdate(updates, _, _) => StorableCaCommand::RoaDefinitionUpdates {
+                updates: updates.into(),
+            },
+            CmdDet::RouteAuthorizationsRenew(_, _) => StorableCaCommand::AutomaticRoaRenewal,
 
             // ------------------------------------------------------------
             // Publishing
             // ------------------------------------------------------------
-            CmdDet::Republish(_, _) => StorableCaCommand::Republish,
-            CmdDet::RepoUpdate(update, _, _) => {
-                let service_uri_opt = match update {
-                    RepositoryContact::Embedded(_) => None,
-                    RepositoryContact::Rfc8181(res) => Some(res.service_uri().clone()),
-                };
-                StorableCaCommand::RepoUpdate(service_uri_opt)
-            }
+            CmdDet::RepoUpdate(contact, _) => StorableCaCommand::RepoUpdate {
+                service_uri: contact.service_uri_opt().cloned(),
+            },
             CmdDet::RepoRemoveOld(_) => StorableCaCommand::RepoRemoveOld,
 
             // ------------------------------------------------------------
             // Resource Tagged Attestations
             // ------------------------------------------------------------
-            CmdDet::RtaMultiPrepare(name, _, _) => StorableCaCommand::RtaPrepare(name),
-            CmdDet::RtaSign(name, _, _) => StorableCaCommand::RtaSign(name),
-            CmdDet::RtaCoSign(name, _, _) => StorableCaCommand::RtaCoSign(name),
+            CmdDet::RtaMultiPrepare(name, _, _) => StorableCaCommand::RtaPrepare { name },
+            CmdDet::RtaSign(name, _, _) => StorableCaCommand::RtaSign { name },
+            CmdDet::RtaCoSign(name, _, _) => StorableCaCommand::RtaCoSign { name },
         }
     }
 }
@@ -293,26 +331,13 @@ impl CmdDet {
         handle: &Handle,
         child_handle: ChildHandle,
         request: RevocationRequest,
-        config: Arc<Config>,
-        signer: Arc<KrillSigner>,
         actor: &Actor,
     ) -> Cmd {
-        eventsourcing::SentCommand::new(
-            handle,
-            None,
-            CmdDet::ChildRevokeKey(child_handle, request, config, signer),
-            actor,
-        )
+        eventsourcing::SentCommand::new(handle, None, CmdDet::ChildRevokeKey(child_handle, request), actor)
     }
 
-    pub fn child_remove(
-        handle: &Handle,
-        child_handle: ChildHandle,
-        config: Arc<Config>,
-        signer: Arc<KrillSigner>,
-        actor: &Actor,
-    ) -> Cmd {
-        eventsourcing::SentCommand::new(handle, None, CmdDet::ChildRemove(child_handle, config, signer), actor)
+    pub fn child_remove(handle: &Handle, child_handle: ChildHandle, actor: &Actor) -> Cmd {
+        eventsourcing::SentCommand::new(handle, None, CmdDet::ChildRemove(child_handle), actor)
     }
 
     pub fn update_id(handle: &Handle, signer: Arc<KrillSigner>, actor: &Actor) -> Cmd {
@@ -331,7 +356,7 @@ impl CmdDet {
         eventsourcing::SentCommand::new(handle, None, CmdDet::RemoveParent(parent), actor)
     }
 
-    pub fn upd_resource_classes(
+    pub fn update_entitlements(
         handle: &Handle,
         parent: ParentHandle,
         entitlements: Entitlements,
@@ -341,7 +366,7 @@ impl CmdDet {
         eventsourcing::SentCommand::new(
             handle,
             None,
-            CmdDet::UpdateResourceClasses(parent, entitlements, signer),
+            CmdDet::UpdateEntitlements(parent, entitlements, signer),
             actor,
         )
     }
@@ -370,32 +395,16 @@ impl CmdDet {
         eventsourcing::SentCommand::new(handle, None, CmdDet::KeyRollInitiate(duration, signer), actor)
     }
 
-    pub fn key_roll_activate(
-        handle: &Handle,
-        staging: Duration,
-        config: Arc<Config>,
-        signer: Arc<KrillSigner>,
-        actor: &Actor,
-    ) -> Cmd {
-        eventsourcing::SentCommand::new(handle, None, CmdDet::KeyRollActivate(staging, config, signer), actor)
+    pub fn key_roll_activate(handle: &Handle, staging: Duration, signer: Arc<KrillSigner>, actor: &Actor) -> Cmd {
+        eventsourcing::SentCommand::new(handle, None, CmdDet::KeyRollActivate(staging, signer), actor)
     }
 
     pub fn key_roll_finish(handle: &Handle, rcn: ResourceClassName, res: RevocationResponse, actor: &Actor) -> Cmd {
         eventsourcing::SentCommand::new(handle, None, CmdDet::KeyRollFinish(rcn, res), actor)
     }
 
-    pub fn publish(handle: &Handle, config: Arc<Config>, signer: Arc<KrillSigner>, actor: &Actor) -> Cmd {
-        eventsourcing::SentCommand::new(handle, None, CmdDet::Republish(config, signer), actor)
-    }
-
-    pub fn update_repo(
-        handle: &Handle,
-        contact: RepositoryContact,
-        config: Arc<Config>,
-        signer: Arc<KrillSigner>,
-        actor: &Actor,
-    ) -> Cmd {
-        eventsourcing::SentCommand::new(handle, None, CmdDet::RepoUpdate(contact, config, signer), actor)
+    pub fn update_repo(handle: &Handle, contact: RepositoryContact, signer: Arc<KrillSigner>, actor: &Actor) -> Cmd {
+        eventsourcing::SentCommand::new(handle, None, CmdDet::RepoUpdate(contact, signer), actor)
     }
 
     pub fn remove_old_repo(handle: &Handle, signer: Arc<KrillSigner>, actor: &Actor) -> Cmd {

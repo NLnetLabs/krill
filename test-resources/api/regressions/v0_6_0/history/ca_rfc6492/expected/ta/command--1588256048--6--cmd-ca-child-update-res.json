@@ -6,18 +6,18 @@
     "version": 8,
     "sequence": 6,
     "details": {
-      "child_update_resources": [
-        "rfc6492",
-        {
-          "asn": "AS65000",
-          "v4": "10.0.0.0/16",
-          "v6": ""
-        }
-      ]
+      "type": "child_update_resources",
+      "child": "rfc6492",
+      "resources": {
+        "asn": "AS65000",
+        "v4": "10.0.0.0/16",
+        "v6": ""
+      }
     },
     "effect": {
+      "result": "success",
       "events": [
-        8
+        7
       ]
     }
   },
@@ -25,16 +25,15 @@
     "Events": [
       {
         "id": "ta",
-        "version": 8,
+        "version": 7,
         "details": {
-          "child_updated_resources": [
-            "rfc6492",
-            {
-              "asn": "AS65000",
-              "v4": "10.0.0.0/16",
-              "v6": ""
-            }
-          ]
+          "type": "child_updated_resources",
+          "child": "rfc6492",
+          "resources": {
+            "asn": "AS65000",
+            "v4": "10.0.0.0/16",
+            "v6": ""
+          }
         }
       }
     ]

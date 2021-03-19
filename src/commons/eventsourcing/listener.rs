@@ -2,18 +2,23 @@ use std::sync::RwLock;
 
 use super::Aggregate;
 
-//------------ EventListener -------------------------------------------------
+//------------ PreSaveEventListener ------------------------------------------
 
-/// This trait defines a listener for type of events.
-/// EventListeners can be registered to an AggregateStore, and
-/// will receive all events for the Aggregate as they are being
-/// stored.
-///
-/// Note that at this time the events really happened, so
-/// EventListeners do not have the luxury of failure in case
-/// they do not like what happened.
-pub trait EventListener<A: Aggregate>: Send + Sync + 'static {
-    fn listen(&self, agg: &A, event: &A::Event);
+/// This trait defines a listener for events which is designed to receive
+/// the events *before* the Aggregate is saved. Thus, they are allowed
+/// to return an error in case of issues, which will then roll back the
+/// intended change to an aggregate.
+pub trait PreSaveEventListener<A: Aggregate>: Send + Sync + 'static {
+    fn listen(&self, agg: &A, events: &[A::Event]) -> Result<(), A::Error>;
+}
+
+//------------ PostSaveEventListener ------------------------------------------
+
+/// This trait defines a listener for events which is designed to receive
+/// them *after* the updated Aggregate is saved. Because the updates already
+/// happened EventListeners of this type are not allowed to fail.
+pub trait PostSaveEventListener<A: Aggregate>: Send + Sync + 'static {
+    fn listen(&self, agg: &A, events: &[A::Event]);
 }
 
 //------------ EventCounter --------------------------------------------------
@@ -41,8 +46,8 @@ impl EventCounter {
     }
 }
 
-impl<A: Aggregate> EventListener<A> for EventCounter {
-    fn listen(&self, _agg: &A, _event: &A::Event) {
-        self.counter.write().unwrap().total += 1;
+impl<A: Aggregate> PostSaveEventListener<A> for EventCounter {
+    fn listen(&self, _agg: &A, events: &[A::Event]) {
+        self.counter.write().unwrap().total += events.len();
     }
 }

@@ -40,15 +40,17 @@ pub fn test_announcements_enabled() -> bool {
 }
 
 pub const CASERVER_DIR: &str = "cas";
+pub const CA_OBJECTS_DIR: &str = "ca_objects";
 
 pub const PUBSERVER_DFLT: &str = "0";
 pub const PUBSERVER_DIR: &str = "pubd";
-pub const PUBSERVER_BACKUP_DIR: &str = "pubd-bk";
+pub const PUBSERVER_CONTENT_DIR: &str = "pubd_objects";
+pub const PUBSERVER_BACKUP_DIR: &str = "pubd_bk";
 
 pub const REPOSITORY_DIR: &str = "repo";
 pub const REPOSITORY_RRDP_DIR: &str = "rrdp";
+pub const REPOSITORY_RRDP_ARCHIVE_DIR: &str = "archive";
 pub const REPOSITORY_RSYNC_DIR: &str = "rsync";
-pub const REPOSITORY_NOTIFICATION_RETAIN_SECONDS: i64 = 600;
 
 pub const STATUS_DIR: &str = "status";
 
@@ -81,6 +83,9 @@ pub const ACTOR_DEF_KRILL: ActorDef = ActorDef::system("krill", "admin");
 pub const ACTOR_DEF_ANON: ActorDef = ActorDef::anonymous();
 pub const ACTOR_DEF_MASTER_TOKEN: ActorDef = ActorDef::system("master-token", "admin");
 pub const ACTOR_DEF_TESTBED: ActorDef = ActorDef::system("testbed", "testbed");
+
+pub const SCHEDULER_INTERVAL_SECONDS_REPUBLISH: u32 = 600;
+pub const SCHEDULER_INTERVAL_SECONDS_ROA_RENEW: u32 = 3600;
 
 #[cfg(test)]
 pub const ACTOR_DEF_TEST: ActorDef = ActorDef::system("test", "admin");

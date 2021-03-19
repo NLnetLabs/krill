@@ -1,18 +1,22 @@
-use std::collections::HashSet;
-
-#[cfg(feature = "ui-tests")]
+#[cfg(all(feature = "ui-tests", feature = "multi-user"))]
 mod ui;
 
 #[tokio::test]
 #[cfg(all(feature = "ui-tests", feature = "multi-user"))]
 async fn multi_user_config_file_with_ta_test() {
-    use std::{collections::HashMap, str::FromStr};
+    
+    use std::{collections::{HashMap, HashSet}, str::FromStr};
 
     use krill::cli::options::{CaCommand, Command, HistoryOptions};
     use krill::commons::api::Handle;
     use krill::{cli::report::ApiResponse, test::*};
 
-    ui::run_krill_ui_test("multi_user_config_file_with_ta", false, true).await;
+    ui::run_krill_ui_test(
+        "multi_user_config_file_with_ta",
+        ui::OpenIDConnectMockMode::OIDCProviderWillNotBeStarted,
+        true,
+    )
+    .await;
 
     // Check the Krill event history after the actions performed against Krill
     // by the Cypress browser driving test script we just executed. Expect at

@@ -3,20 +3,20 @@
     "actor": "krill",
     "time": "2020-04-30T14:22:26.197759Z",
     "handle": "CA2",
-    "version": 7,
+    "version": 8,
     "sequence": 6,
     "details": {
-      "child_add": [
-        "CA3",
-        "ea0f8ee6add9a1666082e35d65633d6c4d02882b",
-        {
-          "asn": "",
-          "v4": "10.1.0.0/24",
-          "v6": ""
-        }
-      ]
+      "type": "child_add",
+      "child": "CA3",
+      "ski": "ea0f8ee6add9a1666082e35d65633d6c4d02882b",
+      "resources": {
+        "asn": "",
+        "v4": "10.1.0.0/24",
+        "v6": ""
+      }
     },
     "effect": {
+      "result": "success",
       "events": [
         7
       ]
@@ -28,18 +28,14 @@
         "id": "CA2",
         "version": 7,
         "details": {
-          "child_added": [
-            "CA3",
-            {
-              "id_cert": "MIIDOjCCAiKgAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyhFQTBGOEVFNkFERDlBMTY2NjA4MkUzNUQ2NTYzM0Q2QzREMDI4ODJCMB4XDTIwMDQzMDE0MTcyNFoXDTM1MDQzMDE0MjIyNFowMzExMC8GA1UEAxMoRUEwRjhFRTZBREQ5QTE2NjYwODJFMzVENjU2MzNENkM0RDAyODgyQjCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAM9p8WvdYOWC7twVoP6o8q7NjRSqoYY8Mp0Et6zIH1W7TNjWjv7mhQMv6NfhCQQg4vYNN9rUFu9L7h8K40Pn8CVWH847r47sjQ8axAhnPkVSeRrqSR95Gm2qSn+p6zSZ4xjJBBOCUJNQ5eSWfCcYTfOudfGUhyutx3SHrVyoXZAi/xe9b+Vk1MUYFsZL+AF3fo5WQNW3bdtBX6vz9fiVjrseZZFkMTnWvNEvZXkalJhkKWLZRc3p45PfgPGJK74yP/V+Y4bcCF+6XSP/yulCgcKVMAG76KUdEmrCxsrhmhhkEanpxcwYgzut7VAwspLlVV2r2ccbrR0ZPZzmHQZnu50CAwEAAaNZMFcwDwYDVR0TAQH/BAUwAwEB/zAgBgNVHQ4BAQAEFgQU6g+O5q3ZoWZgguNdZWM9bE0CiCswIgYDVR0jAQEABBgwFoAU6g+O5q3ZoWZgguNdZWM9bE0CiCswDQYJKoZIhvcNAQELBQADggEBAMf4mgucHa864jVLgsw/9VF+xDDws38Na0ggYGkcg3NXKu1nLSHzzuagvyE53K1JAHLg+QzSvk/9onbsB9mDrCVk9RsgJQNnFEama+wA7dFNU2tb4Qa1i1Qn6mAAPVzz4mf0m9nBvNbZ2XLeFTB56omWnLyQY8oMWbLYe3KaenDSi3fqvZIcebdhcLOQFqGEF3CmpmHYtitfRPDFwK5qmbxix7Ne0DZXKaRROX2GH50miHV7eBbdn/H1AqozIkI0Wmdrcbr/ijR17whfGWjOY4AqWhZwf6qEJP1m/CR/JZ8b/8AJMTg9XVEeH20yU4Q55VyWH7jTT1cGrtSGvr0pHC4=",
-              "resources": {
-                "asn": "",
-                "v4": "10.1.0.0/24",
-                "v6": ""
-              },
-              "used_keys": {}
-            }
-          ]
+          "type": "child_added",
+          "child": "CA3",
+          "id_cert": "MIIDOjCCAiKgAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyhFQTBGOEVFNkFERDlBMTY2NjA4MkUzNUQ2NTYzM0Q2QzREMDI4ODJCMB4XDTIwMDQzMDE0MTcyNFoXDTM1MDQzMDE0MjIyNFowMzExMC8GA1UEAxMoRUEwRjhFRTZBREQ5QTE2NjYwODJFMzVENjU2MzNENkM0RDAyODgyQjCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAM9p8WvdYOWC7twVoP6o8q7NjRSqoYY8Mp0Et6zIH1W7TNjWjv7mhQMv6NfhCQQg4vYNN9rUFu9L7h8K40Pn8CVWH847r47sjQ8axAhnPkVSeRrqSR95Gm2qSn+p6zSZ4xjJBBOCUJNQ5eSWfCcYTfOudfGUhyutx3SHrVyoXZAi/xe9b+Vk1MUYFsZL+AF3fo5WQNW3bdtBX6vz9fiVjrseZZFkMTnWvNEvZXkalJhkKWLZRc3p45PfgPGJK74yP/V+Y4bcCF+6XSP/yulCgcKVMAG76KUdEmrCxsrhmhhkEanpxcwYgzut7VAwspLlVV2r2ccbrR0ZPZzmHQZnu50CAwEAAaNZMFcwDwYDVR0TAQH/BAUwAwEB/zAgBgNVHQ4BAQAEFgQU6g+O5q3ZoWZgguNdZWM9bE0CiCswIgYDVR0jAQEABBgwFoAU6g+O5q3ZoWZgguNdZWM9bE0CiCswDQYJKoZIhvcNAQELBQADggEBAMf4mgucHa864jVLgsw/9VF+xDDws38Na0ggYGkcg3NXKu1nLSHzzuagvyE53K1JAHLg+QzSvk/9onbsB9mDrCVk9RsgJQNnFEama+wA7dFNU2tb4Qa1i1Qn6mAAPVzz4mf0m9nBvNbZ2XLeFTB56omWnLyQY8oMWbLYe3KaenDSi3fqvZIcebdhcLOQFqGEF3CmpmHYtitfRPDFwK5qmbxix7Ne0DZXKaRROX2GH50miHV7eBbdn/H1AqozIkI0Wmdrcbr/ijR17whfGWjOY4AqWhZwf6qEJP1m/CR/JZ8b/8AJMTg9XVEeH20yU4Q55VyWH7jTT1cGrtSGvr0pHC4=",
+          "resources": {
+            "asn": "",
+            "v4": "10.1.0.0/24",
+            "v6": ""
+          }
         }
       }
     ]

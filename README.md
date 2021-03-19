@@ -7,6 +7,8 @@
 
 # Krill
 
+<img align="right" src="https://www.nlnetlabs.nl/static/logos/Krill/Krill_Icon_Red.svg" height="100">
+
 Krill is a Resource Public Key Infrastructure (RPKI) daemon, featuring a
 Certificate Authority (CA) and publication server, written in Rust.  If you have
 any feedback, we would love to hear from you. Don’t hesitate to [create an issue
@@ -15,19 +17,7 @@ our [RPKI mailing list](https://lists.nlnetlabs.nl/mailman/listinfo/rpki). You
 can lean more about Krill and RPKI technology by reading our documentation on
 [Read the Docs](https://rpki.readthedocs.io/en/latest/krill/index.html).
 
-## 1-Click App
-
-Krill is available as a 1-Click App on the 
-[AWS Marketplace](https://aws.amazon.com/marketplace/pp/B0886F8GNJ) and 
-[DigitalOcean Marketplace](https://marketplace.digitalocean.com/apps/krill?refcode=cab39584666c).
-This offers a fully automated installation of Krill and adds NGINX, Rsyncd, 
-Docker, Gluster, automated TLS configuration, Prometheus monitoring, log streaming
-and clustering capabilities out-of-the-box.
-
 ## Quick Start with Pre-built Packages
-
-### Disclaimer
-> These packages are provided on a best effort basis as a convenience for our community until such time as equivalent official operating system repository provided packages become available.
 
 Assuming you have a machine running a recent Debian or Ubuntu distribution, you 
 can install Krill from our [software package repository](https://packages.nlnetlabs.nl).
@@ -53,7 +43,7 @@ You can then install, enable and start Krill by running
 
 ```bash
 sudo apt install krill
-systemctl enable --now krill
+sudo systemctl enable --now krill
 
 ```
 
@@ -80,7 +70,7 @@ file.
 apt install build-essential libssl-dev openssl pkg-config curl
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source ~/.cargo/env
-cargo install krill
+cargo install --locked krill
 mkdir ~/data
 krillc config simple --token correct-horse-battery-staple --data ~/data/ > ~/data/krill.conf
 krill --config ~/data/krill.conf
@@ -95,7 +85,7 @@ If you have an older version of Rust and Krill, you can update via:
 
 ```bash
 rustup update
-cargo install -f krill
+cargo install --locked --force krill
 ```
 
 ## Introduction
@@ -188,7 +178,7 @@ apt install libssl-dev openssl pkg-config
 The easiest way to get Krill is to leave it to cargo by saying
 
 ```bash
-cargo install krill
+cargo install --locked krill
 ```
 
 If you want to try the master branch from the repository instead of a
@@ -272,9 +262,8 @@ There are three ways to interact with Krill: a user interface (UI), a command
 line interface (CLI) and and application programming interface (API). For most
 scenarios, the UI will be the most convenient way to interact with Krill. 
 
-![Krill Welcome page](https://rpki.readthedocs.io/en/latest/_images/krill-ui-welome.png)
+![Krill ROA Management](https://nlnetlabs.nl/static/images/krill/krill-roa-management.png)
 
-Please
-refer to the
+Please refer to the
 [documentation](https://rpki.readthedocs.io/en/latest/krill/index.html) to
 determine what is best for you.

@@ -502,7 +502,7 @@ impl Request {
 
 //------------ RequestPath ---------------------------------------------------
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RequestPath {
     path: PathAndQuery,
     segment: (usize, usize),

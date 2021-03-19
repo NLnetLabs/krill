@@ -1,5 +1,5 @@
 #[allow(non_camel_case_types)]
-#[derive(Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Permission {
     LOGIN,
     PUB_ADMIN,
