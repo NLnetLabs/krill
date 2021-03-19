@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 #[cfg(feature = "ui-tests")]
 mod ui;
 
@@ -19,12 +21,14 @@ async fn multi_user_config_file_with_ta_test() {
     // be attributed to the internal 'krill' user.
     // TODO: improve this to match the exact sequence of expected actions and
     // attributed actors.
-    let mut cas_and_users = HashMap::new();
-    cas_and_users.insert("ca_admin", "admin@krill");
-    cas_and_users.insert("ca_readwrite", "readwrite@krill");
-    cas_and_users.insert("ca_readonly", "rohelper@krill");
+    info!("Verifying that CAs were modified by the expected users according to the history log");
 
-    for (ca, user) in cas_and_users {
+    let mut cas_and_users = HashMap::new();
+    cas_and_users.insert("ca_admin", vec!["krill", "user:admin@krill"]);
+    cas_and_users.insert("ca_readwrite", vec!["krill", "user:readwrite@krill", "user:joe", "user:sally"]);
+    cas_and_users.insert("ca_readonly", vec!["krill", "user:rohelper@krill"]);
+
+    for (ca, expected_users) in cas_and_users {
         let r = krill_admin(Command::CertAuth(CaCommand::ShowHistory(
             Handle::from_str(ca).unwrap(),
             HistoryOptions::default(),
@@ -37,26 +41,16 @@ async fn multi_user_config_file_with_ta_test() {
         );
 
         if let ApiResponse::CertAuthHistory(history) = r {
-            let mut krill_count = 0;
-            let mut user_count = 0;
-            for cmd in history.commands() {
-                let expected_user = format!("user:{}", user);
-                match &cmd.actor {
-                    s if s == "krill" => krill_count += 1,
-                    s if s == &expected_user => user_count += 1,
-                    _ => assert!(
-                        false,
-                        format!("Unexpected actor {} in history for CA '{}'", &cmd.actor, ca)
-                    ),
-                }
-            }
-            assert!(
-                krill_count > 0,
-                format!("Missing history actions by user krill for CA '{}'", ca)
-            );
-            assert!(
-                user_count > 0,
-                format!("Missing history actions by user '{}' for CA '{}'", user, ca)
+            // each expected user should be present at least once in the history of the CA
+            // no other users should be present in the CA history
+            let expected_users_set: HashSet<String> = expected_users.iter().map(|u| u.to_string()).collect();
+            let found_users_set: HashSet<String> = history.commands().iter().map(|r| r.actor.clone()).collect();
+
+            assert_eq!(
+                expected_users_set,
+                found_users_set,
+                "One or more users in the history of CA '{}' is missing or unexpected",
+                ca
             );
         }
     }

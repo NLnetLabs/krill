@@ -1,5 +1,11 @@
-// Difficulty entering XML into Lagosta XML input fields:
-// ------------------------------------------------------
+// This demonstrates use of config-file based users with Krill and Lagosta.
+// It also demonstrates the custom role-per-ca demo policy because that
+// requires multiple CAs and registered parents and repositories to demo
+// ability to create ROAs but not to perform other CA "write" operations,
+// which is already setup by this demo.
+
+// A note about difficulty entering XML into Lagosta XML input fields:
+// -----------------------------------------------------------------------------
 // Using cy.type() to enter XML into these fields is extremely slow, one
 // animated character at a time. I haven't yet found a way to copy-paste into
 // them. Setting the text directly can be done but there is a challenge that has
@@ -22,6 +28,8 @@ let admin     = { u: 'admin@krill',     p: 'admin'     };
 let readonly  = { u: 'readonly@krill',  p: 'readonly'  };
 let readwrite = { u: 'readwrite@krill', p: 'readwrite' };
 let rohelper  = { u: 'rohelper@krill',  p: 'rohelper'  };
+let joe = { u: 'joe', p: 'abc' };
+let sally = { u: 'sally', p: 'abc' };
 
 // For the tests below to work these users must only have access to a single CA,
 // at the time of CA creation, otherwise only the first user gets to create a CA,
@@ -62,9 +70,13 @@ let add_roa_test_settings = [
   { d: 'admin',     u: admin.u,     p: admin.p,     o: true,  ca: 'ca_admin' },
 ];
 
+let joe_cas = ['ta', 'testbed', 'ca_admin', 'ca_readwrite', 'ca_readonly'];
+let sally_cas = ['ca_readwrite', 'ca_readonly'];
+
 describe('Config File Users with TA', () => {
   create_ca_test_settings.forEach(function (ts) {
     it('Create CA as ' + ts.d + ' user should ' + (ts.o ? 'succeed' : 'fail'), () => {
+      // sign in
       cy.visit('/')
       cy.get('#login_id').type(ts.u)
       cy.get('#login_password').type(ts.p)
@@ -93,6 +105,7 @@ describe('Config File Users with TA', () => {
       if (ts.a == 'Register') {
         cy.intercept('GET', '/api/v1/cas/' + ts.ca + '/repo/request.xml').as('getRepoRequestXML')
 
+        // sign in
         cy.visit('/')
         cy.get('#login_id').type(ts.u)
         cy.get('#login_password').type(ts.p)
@@ -169,6 +182,7 @@ describe('Config File Users with TA', () => {
       if (ts.a == 'Register') {
         cy.intercept('GET', '/api/v1/cas/' + ts.ca + '/child_request.xml').as('getChildRequestXML')
 
+        // sign in
         cy.visit('/')
         cy.get('input[placeholder="Your username"]').type(ts.u)
         cy.get(':password').type(ts.p)
@@ -243,6 +257,7 @@ describe('Config File Users with TA', () => {
     it('Add ROA for CA ' + ts.ca + ' as ' + ts.d + ' user should ' + (ts.o ? 'succeed' : 'fail'), () => {
       cy.intercept('GET', '/api/v1/cas/' + ts.ca + '/routes/analysis/full').as('analyzeRoutes')
 
+      // sign in
       cy.visit('/')
       cy.get('input[placeholder="Your username"]').type(ts.u)
       cy.get(':password').type(ts.p)
@@ -250,7 +265,7 @@ describe('Config File Users with TA', () => {
       cy.contains(ts.u)
       cy.contains('Sign In').should('not.exist')
 
-      // Add a ROA
+      // add a ROA
       cy.get('div#tab-roas').click()
       cy.get('body').then(($body) => {
         // Check if Krill has issued the resources to the CA yet by seeing if the UI was able to fetch them, if it
@@ -285,5 +300,152 @@ describe('Config File Users with TA', () => {
         cy.contains('Your user does not have sufficient rights to perform this action. Please contact your administrator.')
       }
     })
+  })
+
+  // This test exercises the custom role-per-ca demo policy.
+  it('CUSTOM POLICY: Joe can see all CAs but only write to ca_readwrite', () => {
+    cy.intercept('GET', '/api/v1/cas/ca_readonly/repo/status').as('statusRO')
+    cy.intercept('GET', '/api/v1/cas/ca_readwrite/repo/status').as('statusRW')
+    cy.intercept('GET', '/api/v1/cas/ca_readwrite/child_request.xml').as('getChildRequestXML')
+
+    // sign in
+    cy.visit('/')
+    cy.get('input[placeholder="Your username"]').type(joe.u)
+    cy.get(':password').type(joe.p)
+    cy.contains('Sign In').click()
+    cy.contains(joe.u)
+    cy.contains('Sign In').should('not.exist')
+
+    // the CA drop down should contain all the CAs
+    // click the dropdown to open it and show the list
+    cy.get('.switcher > .el-select > .el-input > .el-input__inner').click()
+    // check that the list contains every CA
+    joe_cas.forEach(function (ca_name) {
+      cy.get('.el-select-dropdown__wrap.el-scrollbar__wrap > ul').contains(ca_name)
+    })
+
+    // attempting to create a ROA on ca_readonly should fail
+    cy.get('.el-select-dropdown__wrap.el-scrollbar__wrap > ul').contains('ca_readonly').click()
+    cy.get('#tab-roas').click()
+    cy.wait('@statusRO')
+    cy.contains('Add ROA').click()
+    cy.get('div[role="dialog"]')
+    cy.contains('Add ROA')
+    cy.get('#add_roa_asn').clear().type('AS18')
+    cy.get('#add_roa_prefix').clear().type('10.0.0.1/32')
+    cy.get('div[role="dialog"] button').contains('Confirm').click()
+    cy.contains('Your user does not have sufficient rights to perform this action. Please contact your administrator.')
+    cy.get('div[role="dialog"] button').contains('Cancel').click()
+
+    // attempting to create a ROA on ca_readwrite should succeed
+    cy.get('.switcher > .el-select > .el-input > .el-input__inner').click()
+    cy.get('.el-select-dropdown__wrap.el-scrollbar__wrap > ul').contains('ca_readwrite').click()
+    cy.get('#tab-roas').click()
+    cy.wait('@statusRW')
+    cy.contains('Add ROA').click()
+    cy.get('div[role="dialog"]')
+    cy.contains('Add ROA')
+    cy.get('#add_roa_asn').clear().type('AS19')
+    cy.get('#add_roa_prefix').clear().type('10.0.0.1/32')
+    cy.get('div[role="dialog"] button').contains('Confirm').click()
+    cy.contains('ROA added')
+
+    // attempting to add a parent on ca_readwrite should succeed
+    cy.get('#tab-parents').click()
+    cy.contains('Add an additional parent').click()
+
+    // grab the parents tab child request XML from the Krill UI
+    cy.wait('@getChildRequestXML').its('response.statusCode').should('eq', 200)
+    cy.get('div#pane-parents pre[contenteditable="false"] code').contains("<child_request")
+    cy.get('div#pane-parents pre[contenteditable="false"] code').invoke('text').then(child_req_xml => {
+      // use the local testbed UI to submit the request to register the child
+      cy.visit("/index.html#/testbed")
+
+      // enter the request XML into the testbed UI edit field
+      cy.get('div#tab-addChild').contains('Register CA').click()
+      cy.get('#addChild pre[contenteditable="true"]').invoke('text', child_req_xml)
+      cy.get('#addChild pre[contenteditable="true"]').type('{end}')
+      cy.get('#addChild input[placeholder^="The AS resources"]').type('AS192')
+      cy.get('#addChild input[placeholder^="The IPv4 resources"]').type('192.168.0.0/24')
+      cy.get('#addChild button').contains('Register child CA').click()
+      cy.get('div[role="dialog"] button').contains('OK').click()
+      cy.contains('has been added to the testbed')
+
+      // grab the parent response XML from the testbed UI
+      cy.get('#addChild pre[contenteditable="false"]').contains("<parent_response")
+      cy.get('#addChild pre[contenteditable="false"]').invoke('text').then(parent_resp_xml => {
+        // navigate back to Krill
+        cy.visit("/")
+
+        // enter the response XML into the Krill UI edit field
+        cy.get('#tab-parents').click()
+        cy.contains('Add an additional parent').click()
+        cy.get('div#pane-parents pre[contenteditable="true"]').invoke('text', parent_resp_xml)
+        cy.get('div#pane-parents pre[contenteditable="true"]').type('{end}')
+
+        // change the default name for the parent as there is already a parent named testbed
+        // TODO: this CSS selector is unreadable and unreliable, give the input field an ID
+        // and select that instead
+        cy.get('.mt-3 > .el-col > .el-input > .el-input__inner').type('otherparent')
+
+        cy.get('div#pane-parents button').contains('Confirm').click()
+
+        cy.contains('Success')
+      })
+    })
+  })
+
+  // This test exercises the custom role-per-ca demo policy.
+  it('CUSTOM POLICY: Sally can only see two CAs and only make ROA changes in one CA', () => {
+    cy.intercept('GET', '/api/v1/cas/ca_readonly/repo/status').as('statusRO')
+    cy.intercept('GET', '/api/v1/cas/ca_readwrite/repo/status').as('statusRW')
+
+    // sign in
+    cy.visit('/')
+    cy.get('input[placeholder="Your username"]').type(sally.u)
+    cy.get(':password').type(sally.p)
+    cy.contains('Sign In').click()
+    cy.contains(sally.u)
+    cy.contains('Sign In').should('not.exist')
+
+    // the CA drop down should contain all the CAs
+    // click the dropdown to open it and show the list
+    cy.get('.switcher > .el-select > .el-input > .el-input__inner').click()
+    // check that the list contains every CA
+    sally_cas.forEach(function (ca_name) {
+      cy.get('.el-select-dropdown__wrap.el-scrollbar__wrap > ul').contains(ca_name)
+    })
+
+    // attempting to create a ROA on ca_readonly should fail
+    cy.get('.el-select-dropdown__wrap.el-scrollbar__wrap > ul').contains('ca_readonly').click()
+    cy.get('#tab-roas').click()
+    cy.wait('@statusRO')
+    cy.contains('Add ROA').click()
+    cy.get('div[role="dialog"]')
+    cy.contains('Add ROA')
+    cy.get('#add_roa_asn').clear().type('AS18')
+    cy.get('#add_roa_prefix').clear().type('10.0.0.1/32')
+    cy.get('div[role="dialog"] button').contains('Confirm').click()
+    cy.contains('Your user does not have sufficient rights to perform this action. Please contact your administrator.')
+    cy.get('div[role="dialog"] button').contains('Cancel').click()
+
+    // attempting to create a ROA on ca_readwrite should succeed
+    cy.get('.switcher > .el-select > .el-input > .el-input__inner').click()
+    cy.get('.el-select-dropdown__wrap.el-scrollbar__wrap > ul').contains('ca_readwrite').click()
+    cy.get('#tab-roas').click()
+    cy.wait('@statusRW')
+    cy.contains('Add ROA').click()
+    cy.get('div[role="dialog"]')
+    cy.contains('Add ROA')
+    cy.get('#add_roa_asn').clear().type('AS22')
+    cy.get('#add_roa_prefix').clear().type('10.0.0.1/32')
+    cy.get('div[role="dialog"] button').contains('Confirm').click()
+    cy.contains('ROA added')
+
+    // attempting to add an additional parent on ca_readwrite should fail
+    cy.get('#tab-parents').click()
+    cy.contains('Add an additional parent').click()
+    cy.contains('Confirm').click()
+    cy.contains('Your user does not have sufficient rights to perform this action. Please contact your administrator.')
   })
 })

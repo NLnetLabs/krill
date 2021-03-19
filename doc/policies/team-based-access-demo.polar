@@ -1,30 +1,25 @@
-# test setup:
+# Important user attributes that influence the behaviour of this policy:
+#   - team:     The name of one of the teams defined below in this policy file.
+#   - teamrole: A role understood by Krill, either built-in or defined in a custom
+#               policy file (e.g. roawrite defined in role-per-ca-demo.polar). The
+#               user will have this role only for the CAs that the team is allowed
+#               to work with.
 #
-# users: (where: tN = team number, r = readonly, w = readwrite, roaw = readonly + roa write)
-#    admin
-#    t1ro, t1rw
-#    t2ro, t2rw
-#    t3ro, t3rw, t3roaw
+# Examples:
+#   joe   = { password_hash="...", attributes={ team="t1", teamrole="readonly" }}
+#   sally = { password_hash="...", attributes={ team="t2", teamrole="readwrite" }}
 #
-# teams:
-#   - t1 users: t1ro, t1rw - has role based access to ca1
-#   - t2 users: t2ro, t2rw - has role based access to ca2
-#   - t3 users: t3ro, t3rw - has role based access to ca1 and ca2
-#        users: t3roaw     - has readonly access to ca1 and ca2, PLUS write access to ca1 ROAs
-#
-# users have two important attributes:
-#   - team: which team they belong to
-#   - teamrole: their role within the team
+# Assuming that Krill has CAs ca1, ca2 and ca3 then, and based on the teams
+# defined below in this policy file:
+#   - team "t1" only has access to CA ca1
+#   - team "t2" only has access to CA ca2
+#   - joe has readonly access to the CAs that his team "t1" has access to
+#   - sally has readwrite access to the CAs that her team "t2" has access to
 
 
 ###
-### team assignments (edit me)
+### team definitions (edit me)
 ###
-
-# An alternative way of doing this might be to act as if Krill has per CA metadata like which
-# teams are permitted to use which roles with the CA, and represent that as an Oso dictionary
-# "returned" by a rule, but for one off exceptions like the rule for t3 below that impact
-# multiple CAs that becomes quite unwieldy.
 
 
 # Team t1 can only work with CA ca1, they cannot see or do anything with other CAs
@@ -35,39 +30,17 @@ is_team_member_role_permitted_on_ca(team_name, _role, ca: Handle) if
 is_team_member_role_permitted_on_ca(team_name, _role, ca: Handle) if
     team_name = "t2" and ca.name in ["ca2"];
 
-# Team t3 can work with CA ca2 and CA ca1, but with ca1 the only write action permitted is
-# updating of ROAs. These two rules could be combined into a single rule but I find it more
-# readable as two rules.
-is_team_member_role_permitted_on_ca(team_name, _role, ca: Handle) if
-    team_name = "t3" and ca.name in ["ca2"];
-
-is_team_member_role_permitted_on_ca(team_name, role, ca: Handle) if
-    team_name = "t3" and ca.name in ["ca1"] and role in ["roawrite", "readonly"];
-
 
 
 ################################################################################
-#                   DO NOT TOUCH ANYTHING BELOW THIS POINT                     #
+#                YOU SHOULD NOT NEED TO EDIT BELOW THIS POINT                  #
+#                TO CONFIGURE YOUR TEAMS EDIT THE LINES ABOVE                  #
 ################################################################################
 
 
 ###
 ### rules - evaluated at runtime (and also by the ?= tests above on load)
 ###
-
-
-# Create a role named 'roawrite' that gives users read-only access to Krill PLUS the right to update (create, delete)
-# route authorizations aka ROAs:
-does_role_have_permission("roawrite", action: Permission) if
-    does_role_have_permission("readonly", action) or
-    action = new Permission("ROUTES_UPDATE");
-
-# Create a role named "login_and_list_cas"
-does_role_have_permission("login_and_list_cas", action: Permission) if
-    action in [
-        new Permission("LOGIN"),
-        new Permission("CA_LIST")
-    ];
 
 
 # rules for team members
@@ -86,9 +59,6 @@ can_team_member_perform_action_without_resource(actor: Actor, action: Permission
     lookup_team_role(actor, role) and
     does_role_have_permission(role, action);
 
-# Note: This rule cannot be tested in this file because it relies on
-# does_role_have_permission() which is not defined in this file. This CAN be tested using an
-# Oso query from within Rust after the policy files have been loaded.
 can_team_member_perform_action_on_ca(actor: Actor, action: Permission, ca: Handle) if
     lookup_team_role(actor, role) and
     does_role_have_permission(role, action) and
@@ -118,28 +88,13 @@ lookup_team_role(actor: Actor, out_role) if
 #   allow(actor: Actor, action: Permission, nil) if
 
 
-# team member needing a permission that is NOT related to a resource
 allow(actor: Actor, action: Permission, _resource: Option) if
     _resource = nil and
     can_team_member_perform_action_without_resource(actor, action);
 
 
-# team member needing a permission on a specific CA
 allow(actor: Actor, action: Permission, ca: Handle) if
     can_team_member_perform_action_on_ca(actor, action, ca);
-
-
-# NON-team member needing a permission that is NOT related to a resource
-allow(actor: Actor, action: Permission, _resource: Option) if
-    _resource = nil and
-    role = actor.attr("role") and
-    does_role_have_permission(role, action);
-
-
-# NON-team member needing a permission on a specific CA
-allow(actor: Actor, action: Permission, ca: Handle) if
-    role in actor.attr(ca.name) and
-    does_role_have_permission(role, action);
 
 
 ###
@@ -223,25 +178,3 @@ allow(actor: Actor, action: Permission, ca: Handle) if
 ?= not allow(new Actor("t2test", { team: "t2", teamrole: "admin" }), new Permission("PUB_ADMIN"), new Handle("ca1"));
 ?= not allow(new Actor("t2test", { team: "t2", teamrole: "admin" }), new Permission("PUB_ADMIN"), new Handle("ca3"));
 ?=     allow(new Actor("t2test", { team: "t2", teamrole: "admin" }), new Permission("PUB_ADMIN"), new Handle("ca2"));
-
-# test non-team based access with different roles in different CAs
-# as the user should not have a role that grants access to resources via rules other than those defined in this policy
-# file the user won't have role="readonly" or role="readwrite" or such, but the user does need some role otherwise they
-# won't be granted the right to login or to list CAs, so we use a custom role for just those "global" rights.
-?= not allow(new Actor("test", {}), new Permission("LOGIN"), nil);
-?=     allow(new Actor("test", { role: "login_and_list_cas" }), new Permission("LOGIN"), nil);
-
-# note how unlike in the tests above where the team users either have full write access to a CA or they do not,
-# here the user has ROUTES_UPDATE write access on one CA but has the different CA_UPDATE write access on another CA.
-?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("CA_READ"), new Handle("ca3"));
-?=     allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("CA_READ"), new Handle("ca1"));
-?=     allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("CA_READ"), new Handle("ca2"));
-?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("CA_UPDATE"), new Handle("ca3"));
-?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("CA_UPDATE"), new Handle("ca1"));
-?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("CA_UPDATE"), new Handle("ca2"));
-?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("ROUTES_UPDATE"), new Handle("ca1"));
-?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("ROUTES_UPDATE"), new Handle("ca3"));
-?=     allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("ROUTES_UPDATE"), new Handle("ca2"));
-?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("PUB_ADMIN"), new Handle("ca3"));
-?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("PUB_ADMIN"), new Handle("ca1"));
-?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("PUB_ADMIN"), new Handle("ca2"));
