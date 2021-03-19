@@ -4,7 +4,8 @@ mod ui;
 #[tokio::test]
 #[cfg(all(feature = "ui-tests", feature = "multi-user"))]
 async fn multi_user_config_file_with_ta_test() {
-    
+    use log::info;
+
     use std::{collections::{HashMap, HashSet}, str::FromStr};
 
     use krill::cli::options::{CaCommand, Command, HistoryOptions};

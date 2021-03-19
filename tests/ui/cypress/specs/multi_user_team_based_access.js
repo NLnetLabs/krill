@@ -8,10 +8,10 @@ let t2ro = { u: 'team2ro@krill', p: 'team2ro' };
 let t2rw = { u: 'team2rw@krill', p: 'team2rw' };
 
 let create_ca_test_settings = [
-  { d: 't1ro', u: t1ro.u, p: t1ro.p, o: false, ca: 'ca1', t: 'Red Team', tr: 'Read Only' },
-  { d: 't1rw', u: t1rw.u, p: t1rw.p, o: true, ca: 'ca1', t: 'Red Team', tr: 'Read Write' },
+  { d: 't1ro', u: t1ro.u, p: t1ro.p, o: false, ca: 'ca1', t: 'Red Team',  tr: 'Read Only' },
+  { d: 't1rw', u: t1rw.u, p: t1rw.p, o: true,  ca: 'ca1', t: 'Red Team',  tr: 'Read Write' },
   { d: 't2ro', u: t2ro.u, p: t2ro.p, o: false, ca: 'ca2', t: 'Blue Team', tr: 'Read Only' },
-  { d: 't2rw', u: t2rw.u, p: t2rw.p, o: true, ca: 'ca2', t: 'Blue Team', tr: 'Read Write' },
+  { d: 't2rw', u: t2rw.u, p: t2rw.p, o: true,  ca: 'ca2', t: 'Blue Team', tr: 'Read Write' },
 ];
 
 describe('Config File users with custom team policy', () => {
