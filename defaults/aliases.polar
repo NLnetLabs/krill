@@ -7,7 +7,7 @@
 # role to the name "Read Only" and does a quick sanity check to show that it
 # works.
 #
-# does_role_have_permission("Read Only", action: Permission, resource) if
-#     does_role_have_permission("readonly", action, resource);
+# role_allow("Read Only", action: Permission, resource) if
+#     role_allow("readonly", action, resource);
 #
-# ?= does_role_have_permission("Read Only", CA_LIST, _);
+# ?= role_allow("Read Only", CA_LIST, _);

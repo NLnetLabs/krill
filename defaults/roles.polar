@@ -30,38 +30,38 @@
 # Otherwise some_role should be a string that we want to contain some value
 # other than whitespace, so we check that it is non-empty after trimming any
 # leading and/or trailing whitespace.
-does_role_have_permission(some_role, action: Permission) if
+role_allow(some_role, action: Permission) if
     not some_role = nil and
     not some_role.trim().is_empty() and
     action = LOGIN;
 
 ### TEST: [
 # Actors with a role can login.
-?= does_role_have_permission("some role", LOGIN);
+?= role_allow("some role", LOGIN);
 # Conversely, actors without a role cannot do anything.
-?= not does_role_have_permission(nil, LOGIN);
-?= not does_role_have_permission("", LOGIN);
-?= not does_role_have_permission("  ", LOGIN);
-?= not does_role_have_permission(nil, nil);
-?= not does_role_have_permission(nil, _);
+?= not role_allow(nil, LOGIN);
+?= not role_allow("", LOGIN);
+?= not role_allow("  ", LOGIN);
+?= not role_allow(nil, nil);
+?= not role_allow(nil, _);
 ### ]
 
 
 # The admin role has the right to do anything with any resource:
 # --------------------------------------------------------------
-does_role_have_permission("admin", _action);
+role_allow("admin", _action);
 
 ### TEST: [
-?= does_role_have_permission("admin", _);
-?= does_role_have_permission("admin", "take over the world");
-?= not does_role_have_permission("other", "take over the world");
-?= does_role_have_permission("admin", CA_CREATE);
+?= role_allow("admin", _);
+?= role_allow("admin", "take over the world");
+?= not role_allow("other", "take over the world");
+?= role_allow("admin", CA_CREATE);
 ### ]
 
 
 # The readonly role has the following rights:
 # -------------------------------------------
-does_role_have_permission("readonly", action: Permission) if
+role_allow("readonly", action: Permission) if
     action in [
         CA_LIST,
         CA_READ,
@@ -72,17 +72,17 @@ does_role_have_permission("readonly", action: Permission) if
     ];
 
 ### TEST: [
-?= does_role_have_permission("readonly", CA_LIST);
-?= does_role_have_permission("readonly", CA_READ);
-?= not does_role_have_permission("readonly", CA_CREATE);
-?= not does_role_have_permission("readonly", CA_CREATE);
+?= role_allow("readonly", CA_LIST);
+?= role_allow("readonly", CA_READ);
+?= not role_allow("readonly", CA_CREATE);
+?= not role_allow("readonly", CA_CREATE);
 # etc
 ### ]
 
 
 # The readwrite role has the following rights:
 # --------------------------------------------
-does_role_have_permission("readwrite", action: Permission) if
+role_allow("readwrite", action: Permission) if
     action in [
         CA_LIST,
         CA_READ,
@@ -98,10 +98,10 @@ does_role_have_permission("readwrite", action: Permission) if
     ];
 
 ### TEST: [
-?= does_role_have_permission("readwrite", CA_LIST);
-?= does_role_have_permission("readwrite", CA_READ);
-?= does_role_have_permission("readwrite", CA_CREATE);
-?= does_role_have_permission("readwrite", CA_CREATE);
+?= role_allow("readwrite", CA_LIST);
+?= role_allow("readwrite", CA_READ);
+?= role_allow("readwrite", CA_CREATE);
+?= role_allow("readwrite", CA_CREATE);
 # etc
 ### ]
 
@@ -111,7 +111,7 @@ does_role_have_permission("readwrite", action: Permission) if
 # Note: The testbed role is a special case which is automatically assigned
 # temporarily to anonymous users accessing the testbed UI/API. It should not be
 # used outside of this file.
-does_role_have_permission("testbed", action: Permission) if
+role_allow("testbed", action: Permission) if
     action in [
         CA_READ,
         CA_UPDATE,
@@ -122,9 +122,9 @@ does_role_have_permission("testbed", action: Permission) if
     ];
 
 ### TEST: [
-?= does_role_have_permission("testbed", CA_READ);
-?= does_role_have_permission("testbed", CA_UPDATE);
-?= does_role_have_permission("testbed", PUB_ADMIN);
-?= not does_role_have_permission("testbed", ROUTES_UPDATE);
+?= role_allow("testbed", CA_READ);
+?= role_allow("testbed", CA_UPDATE);
+?= role_allow("testbed", PUB_ADMIN);
+?= not role_allow("testbed", ROUTES_UPDATE);
 # etc
 ### ]

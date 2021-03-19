@@ -48,20 +48,20 @@ is_team_member_role_permitted_on_ca(team_name, _role, ca: Handle) if
 # allow()
 # +--> can_team_member_perform_action_without_resource(actor, action)
 # |    +--> lookup_team_role(actor, role) 
-# |    +--> does_role_have_permission(role, action, resource)
+# |    +--> role_allow(role, action, resource)
 # +--> can_team_member_perform_action_on_ca(actor, action, ca)
 #      +--> lookup_team_role(actor, role) 
-#      +--> does_role_have_permission(role, action, ca)
+#      +--> role_allow(role, action, ca)
 #      +--> does_team_member_have_rights_on_ca(actor, ca)
 #      |    +--> is_team_member_role_permitted_on_ca(team, role, ca)
 
 can_team_member_perform_action_without_resource(actor: Actor, action: Permission) if
     lookup_team_role(actor, role) and
-    does_role_have_permission(role, action);
+    role_allow(role, action);
 
 can_team_member_perform_action_on_ca(actor: Actor, action: Permission, ca: Handle) if
     lookup_team_role(actor, role) and
-    does_role_have_permission(role, action) and
+    role_allow(role, action) and
     does_team_member_have_rights_on_ca(actor, ca);
 
 is_actor_in_team(actor: Actor, team_name) if

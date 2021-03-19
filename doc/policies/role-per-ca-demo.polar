@@ -30,12 +30,12 @@
 
 # Create a role named 'roawrite' that gives users read-only access to Krill PLUS the right to update (create, delete)
 # route authorizations aka ROAs:
-does_role_have_permission("roawrite", action: Permission) if
-    does_role_have_permission("readonly", action) or
+role_allow("roawrite", action: Permission) if
+    role_allow("readonly", action) or
     action = ROUTES_UPDATE;
 
 # Create a role named "login_and_list_cas"
-does_role_have_permission("login_and_list_cas", action: Permission) if
+role_allow("login_and_list_cas", action: Permission) if
     action in [
         LOGIN,
         CA_LIST
@@ -57,12 +57,12 @@ does_role_have_permission("login_and_list_cas", action: Permission) if
 allow(actor: Actor, action: Permission, _resource: Option) if
     _resource = nil and
     role = actor.attr("role") and
-    does_role_have_permission(role, action);
+    role_allow(role, action);
 
 
 allow(actor: Actor, action: Permission, ca: Handle) if
     role in actor.attr(ca.name) and
-    does_role_have_permission(role, action);
+    role_allow(role, action);
 
 
 ###

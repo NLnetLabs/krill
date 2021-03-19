@@ -23,7 +23,7 @@
 allow(actor: Actor, action: Permission, _resource: Option) if
     _resource = nil and
     actor_has_role(actor, role) and
-    does_role_have_permission(role, action);
+    role_allow(role, action);
 
 ### TEST: [
 # Sanity check: verify that the built-in master-token test actor can login.
@@ -49,7 +49,7 @@ actor_has_role(actor: Actor, role) if role in actor.attr("role");
 # access to the CA.
 allow(actor: Actor, action: Permission, ca: Handle) if
     actor_has_role(actor, role) and
-    does_role_have_permission(role, action) and
+    role_allow(role, action) and
     actor_can_access_ca(actor, ca);
 
 ### TEST: [
