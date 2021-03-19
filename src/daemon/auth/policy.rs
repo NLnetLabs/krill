@@ -116,15 +116,19 @@ impl AuthPolicy {
     }
 
     fn load_user_policy(config: Arc<Config>, oso: &mut Oso) -> KrillResult<()> {
-        if config.auth_policy.is_file() {
-            info!(
-                "Loading user-defined authorization policy from file {:?}",
-                &config.auth_policy
-            );
-            let fname = config.auth_policy.file_name().unwrap().to_str().unwrap();
-            let mut buffer = Vec::new();
-            std::fs::File::open(config.auth_policy.as_path())?.read_to_end(&mut buffer)?;
-            AuthPolicy::load_internal_policy(oso, &buffer, fname)?;
+        for policy in config.auth_policies.iter() {
+            if policy.is_file() {
+                info!(
+                    "Loading user-defined authorization policy file {:?}",
+                    policy
+                );
+                let fname = policy.file_name().unwrap().to_str().unwrap();
+                let mut buffer = Vec::new();
+                std::fs::File::open(policy.as_path())?.read_to_end(&mut buffer)?;
+                AuthPolicy::load_internal_policy(oso, &buffer, fname)?;
+            } else {
+                warn!("Skipping user-defined authorization policy file {:?}: file does not exist or is not a regular file", policy);
+            }
         }
 
         Ok(())
