@@ -49,12 +49,11 @@ role_allow(some_role, action: Permission) if
 
 # The admin role has the right to do anything with any resource:
 # --------------------------------------------------------------
-role_allow("admin", _action);
+role_allow("admin", _action: Permission);
 
 ### TEST: [
 ?= role_allow("admin", _);
-?= role_allow("admin", "take over the world");
-?= not role_allow("other", "take over the world");
+?= not role_allow("admin", "take over the world");
 ?= role_allow("admin", CA_CREATE);
 ### ]
 
