@@ -77,6 +77,9 @@ struct CachedSession {
     pub session: ClientSession,
 }
 
+pub type EncryptFn = fn(&[u8], &[u8], &mut [u8]) -> KrillResult<Vec<u8>>;
+pub type DecryptFn = fn(&[u8], &[u8], &[u8]) -> KrillResult<Vec<u8>>;
+
 /// A short term cache to reduce the impact of session token decryption and
 /// deserialization (e.g. for multiple requests in a short space of time by the
 /// Lagosta UI client) while keeping potentially sensitive data in-memory for as
@@ -84,8 +87,8 @@ struct CachedSession {
 /// expiration, that is handled separately by the AuthProvider.
 pub struct LoginSessionCache {
     cache: RwLock<HashMap<Token, CachedSession>>,
-    encrypt_fn: fn(&[u8], &[u8], &mut [u8]) -> KrillResult<Vec<u8>>,
-    decrypt_fn: fn(&[u8], &[u8], &[u8]) -> KrillResult<Vec<u8>>,
+    encrypt_fn: EncryptFn,
+    decrypt_fn: DecryptFn,
     ttl_secs: u64,
 }
 
@@ -114,20 +117,20 @@ impl LoginSessionCache {
         }
     }
 
-    pub fn with_encrypter(self, encrypt_fn: fn(&[u8], &[u8], &mut [u8]) -> KrillResult<Vec<u8>>) -> Self {
+    pub fn with_encrypter(self, encrypt_fn: EncryptFn) -> Self {
         LoginSessionCache {
             cache: self.cache,
-            encrypt_fn: encrypt_fn,
+            encrypt_fn,
             decrypt_fn: self.decrypt_fn,
             ttl_secs: self.ttl_secs,
         }
     }
 
-    pub fn with_decrypter(self, decrypt_fn: fn(&[u8], &[u8], &[u8]) -> KrillResult<Vec<u8>>) -> Self {
+    pub fn with_decrypter(self, decrypt_fn: DecryptFn) -> Self {
         LoginSessionCache {
             cache: self.cache,
             encrypt_fn: self.encrypt_fn,
-            decrypt_fn: decrypt_fn,
+            decrypt_fn,
             ttl_secs: self.ttl_secs,
         }
     }

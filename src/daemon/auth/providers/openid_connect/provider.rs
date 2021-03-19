@@ -79,6 +79,7 @@ const NONCE_COOKIE_NAME: &str = "__Host-krill_login_nonce";
 const CSRF_COOKIE_NAME: &str = "__Host-krill_login_csrf_hash";
 const LOGIN_SESSION_STATE_KEY_PATH: &str = "login_session_state.key"; // TODO: decide on proper location
 
+#[allow(clippy::enum_variant_names)]
 enum TokenKind {
     AccessToken,
     RefreshToken,
@@ -432,7 +433,7 @@ impl OpenIDConnectAuthProvider {
         // From https://openid.net/specs/openid-connect-rpinitiated-1_0.html#RedirectionAfterLogout:
         //   "An id_token_hint carring an ID Token for the RP is also REQUIRED when requesting
         //    post-logout redirection"
-        let id_token = id_token.ok_or(Error::custom("Missing id token"))?;
+        let id_token = id_token.ok_or_else(|| Error::custom("Missing id token"))?;
         Ok(format!(
             "{}?post_logout_redirect_uri={}&id_token_hint={}",
             provider_url,
@@ -531,7 +532,7 @@ impl OpenIDConnectAuthProvider {
             &session
                 .secrets
                 .get(TokenKind::RefreshToken.into())
-                .ok_or(CoreErrorResponseType::Extension(
+                .ok_or_else(|| CoreErrorResponseType::Extension(
                     "Internal error: Token refresh attempted without a refresh token".to_string(),
                 ))?;
 
@@ -544,7 +545,7 @@ impl OpenIDConnectAuthProvider {
                         let token_response = conn
                             .client
                             .exchange_refresh_token(&RefreshToken::new(refresh_token.to_string()))
-                            .request(logging_http_client);
+                        .request(logging_http_client);
 
                         match token_response {
                             Ok(token_response) => {
