@@ -135,6 +135,18 @@ impl AuthPolicy {
 // Allow our "no resource" type to match the "nil" in Oso policy rules by making it convertable to the Rust type Oso
 // uses when registering the nil constant. We can't use Option::<PolarValue>::None directly as it doesn't implement
 // the Display trait which we depend on in non-trace level logging in `fn Actor::is_allowed()`.
+//
+// Note: for now it is not possible to use 'nil' directly due to https://github.com/osohq/oso/issues/788. Instead you
+// have to do something like this:
+//
+//   allow(actor: Actor, action: Permission, _resource: Option) if
+//       _resource = nil and
+//       ...
+//
+// WHen the bug is fixed you should then be able to do this:
+//
+//   allow(actor: Actor, action: Permission, nil) if
+//      ...
 impl ToPolar for NoResourceType {
     fn to_polar(self) -> oso::PolarValue {
         Option::<PolarValue>::None.to_polar()
