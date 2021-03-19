@@ -108,7 +108,7 @@ impl AuthPolicy {
     }
 
     fn load_internal_policy(oso: &mut Oso, bytes: &[u8], fname: &str) -> KrillResult<()> {
-        trace!("Loading internal Polar policy '{}'", fname);
+        trace!("Loading Polar policy '{}'", fname);
         oso.load_str(
             std::str::from_utf8(bytes).map_err(|err| {
                 Error::custom(format!("Internal Polar policy '{}' is not valid UTF-8: {}", fname, err))
