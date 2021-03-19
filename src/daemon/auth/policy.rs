@@ -35,14 +35,27 @@ impl AuthPolicy {
         let mut oso = Oso::new();
         oso.register_class(Actor::get_polar_class()).unwrap();
         oso.register_class(Handle::get_polar_class()).unwrap();
-        oso.register_class(Permission::get_polar_class()).unwrap();
 
+        // Register both the Permission enum as a Polar class and its variants as Polar constants. The former is useful
+        // for writing Polar rules that only match on actual Krill Permissions, not on artibrary strings, e.g.
+        // `allow(actor, action: Permission, resource)`. The latter is useful when writing rules that depend on a
+        // specific permission, e.g. `if action = CA_READ`. Without the variants as constants we would have to create a
+        // new Permission each time, converting from a string to the Permission type, e.g.
+        // `action = new Permission("CA_READ")`.
+        oso.register_class(Permission::get_polar_class()).unwrap();
+        for permission in Permission::iter() {
+            let name = format!("{}", permission);
+            oso.register_constant(permission, &name).unwrap();
+        }
+
+        // Load built-in Polar authorization policy rules from embedded strings
         Self::load_internal_policy(&mut oso, include_bytes!("../../../defaults/roles.polar"), "roles")?;
         Self::load_internal_policy(&mut oso, include_bytes!("../../../defaults/rules.polar"), "rules")?;
         Self::load_internal_policy(&mut oso, include_bytes!("../../../defaults/aliases.polar"), "aliases")?;
         Self::load_internal_policy(&mut oso, include_bytes!("../../../defaults/rbac.polar"), "rbac")?;
         Self::load_internal_policy(&mut oso, include_bytes!("../../../defaults/abac.polar"), "abac")?;
 
+        // Load additional policy rules from files optionally provided by the customer
         Self::load_user_policy(config, &mut oso)?;
 
         // Sanity check: Verify the roles assigned to the built-in actors are as

@@ -28,7 +28,7 @@ allow(actor: Actor, action: Permission, _resource: Option) if
 ### TEST: [
 # Sanity check: verify that the built-in master-token test actor can login.
 # Exercises the rules above.
-?= allow(Actor.builtin("master-token"), new Permission("LOGIN"), _);
+?= allow(Actor.builtin("master-token"), LOGIN, _);
 ### ]
 
 
@@ -53,7 +53,7 @@ allow(actor: Actor, action: Permission, ca: Handle) if
     actor_can_access_ca(actor, ca);
 
 ### TEST: [
-?= allow(Actor.builtin("master-token"), new Permission("CA_READ"), _);
+?= allow(Actor.builtin("master-token"), CA_READ, _);
 ### ]
 
 

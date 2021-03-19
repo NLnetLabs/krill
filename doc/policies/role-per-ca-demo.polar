@@ -32,13 +32,13 @@
 # route authorizations aka ROAs:
 does_role_have_permission("roawrite", action: Permission) if
     does_role_have_permission("readonly", action) or
-    action = new Permission("ROUTES_UPDATE");
+    action = ROUTES_UPDATE;
 
 # Create a role named "login_and_list_cas"
 does_role_have_permission("login_and_list_cas", action: Permission) if
     action in [
-        new Permission("LOGIN"),
-        new Permission("CA_LIST")
+        LOGIN,
+        CA_LIST
     ];
 
 
@@ -70,18 +70,18 @@ allow(actor: Actor, action: Permission, ca: Handle) if
 ###
 
 
-?= not allow(new Actor("test", {}), new Permission("LOGIN"), nil);
-?=     allow(new Actor("test", { role: "login_and_list_cas" }), new Permission("LOGIN"), nil);
+?= not allow(new Actor("test", {}), LOGIN, nil);
+?=     allow(new Actor("test", { role: "login_and_list_cas" }), LOGIN, nil);
 
-?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("CA_READ"), new Handle("ca3"));
-?=     allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("CA_READ"), new Handle("ca1"));
-?=     allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("CA_READ"), new Handle("ca2"));
-?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("CA_UPDATE"), new Handle("ca3"));
-?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("CA_UPDATE"), new Handle("ca1"));
-?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("CA_UPDATE"), new Handle("ca2"));
-?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("ROUTES_UPDATE"), new Handle("ca1"));
-?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("ROUTES_UPDATE"), new Handle("ca3"));
-?=     allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("ROUTES_UPDATE"), new Handle("ca2"));
-?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("PUB_ADMIN"), new Handle("ca3"));
-?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("PUB_ADMIN"), new Handle("ca1"));
-?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), new Permission("PUB_ADMIN"), new Handle("ca2"));
+?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), CA_READ, new Handle("ca3"));
+?=     allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), CA_READ, new Handle("ca1"));
+?=     allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), CA_READ, new Handle("ca2"));
+?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), CA_UPDATE, new Handle("ca3"));
+?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), CA_UPDATE, new Handle("ca1"));
+?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), CA_UPDATE, new Handle("ca2"));
+?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), ROUTES_UPDATE, new Handle("ca1"));
+?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), ROUTES_UPDATE, new Handle("ca3"));
+?=     allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), ROUTES_UPDATE, new Handle("ca2"));
+?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), PUB_ADMIN, new Handle("ca3"));
+?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), PUB_ADMIN, new Handle("ca1"));
+?= not allow(new Actor("test", { ca1: "readonly", ca2: "roawrite" }), PUB_ADMIN, new Handle("ca2"));

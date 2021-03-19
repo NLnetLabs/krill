@@ -33,15 +33,15 @@
 does_role_have_permission(some_role, action: Permission) if
     not some_role = nil and
     not some_role.trim().is_empty() and
-    action = new Permission("LOGIN");
+    action = LOGIN;
 
 ### TEST: [
 # Actors with a role can login.
-?= does_role_have_permission("some role", new Permission("LOGIN"));
+?= does_role_have_permission("some role", LOGIN);
 # Conversely, actors without a role cannot do anything.
-?= not does_role_have_permission(nil, new Permission("LOGIN"));
-?= not does_role_have_permission("", new Permission("LOGIN"));
-?= not does_role_have_permission("  ", new Permission("LOGIN"));
+?= not does_role_have_permission(nil, LOGIN);
+?= not does_role_have_permission("", LOGIN);
+?= not does_role_have_permission("  ", LOGIN);
 ?= not does_role_have_permission(nil, nil);
 ?= not does_role_have_permission(nil, _);
 ### ]
@@ -55,7 +55,7 @@ does_role_have_permission("admin", _action);
 ?= does_role_have_permission("admin", _);
 ?= does_role_have_permission("admin", "take over the world");
 ?= not does_role_have_permission("other", "take over the world");
-?= does_role_have_permission("admin", new Permission("CA_CREATE"));
+?= does_role_have_permission("admin", CA_CREATE);
 ### ]
 
 
@@ -63,19 +63,19 @@ does_role_have_permission("admin", _action);
 # -------------------------------------------
 does_role_have_permission("readonly", action: Permission) if
     action in [
-        new Permission("CA_LIST"),
-        new Permission("CA_READ"),
-        new Permission("PUB_LIST"),
-        new Permission("PUB_READ"),
-        new Permission("ROUTES_READ"),
-        new Permission("ROUTES_ANALYSIS")
+        CA_LIST,
+        CA_READ,
+        PUB_LIST,
+        PUB_READ,
+        ROUTES_READ,
+        ROUTES_ANALYSIS
     ];
 
 ### TEST: [
-?= does_role_have_permission("readonly", new Permission("CA_LIST"));
-?= does_role_have_permission("readonly", new Permission("CA_READ"));
-?= not does_role_have_permission("readonly", new Permission("CA_CREATE"));
-?= not does_role_have_permission("readonly", new Permission("CA_CREATE"));
+?= does_role_have_permission("readonly", CA_LIST);
+?= does_role_have_permission("readonly", CA_READ);
+?= not does_role_have_permission("readonly", CA_CREATE);
+?= not does_role_have_permission("readonly", CA_CREATE);
 # etc
 ### ]
 
@@ -84,24 +84,24 @@ does_role_have_permission("readonly", action: Permission) if
 # --------------------------------------------
 does_role_have_permission("readwrite", action: Permission) if
     action in [
-        new Permission("CA_LIST"),
-        new Permission("CA_READ"),
-        new Permission("CA_CREATE"),
-        new Permission("CA_UPDATE"),
-        new Permission("PUB_LIST"),
-        new Permission("PUB_READ"),
-        new Permission("PUB_CREATE"),
-        new Permission("PUB_DELETE"),
-        new Permission("ROUTES_READ"),
-        new Permission("ROUTES_ANALYSIS"),
-        new Permission("ROUTES_UPDATE")
+        CA_LIST,
+        CA_READ,
+        CA_CREATE,
+        CA_UPDATE,
+        PUB_LIST,
+        PUB_READ,
+        PUB_CREATE,
+        PUB_DELETE,
+        ROUTES_READ,
+        ROUTES_ANALYSIS,
+        ROUTES_UPDATE
     ];
 
 ### TEST: [
-?= does_role_have_permission("readwrite", new Permission("CA_LIST"));
-?= does_role_have_permission("readwrite", new Permission("CA_READ"));
-?= does_role_have_permission("readwrite", new Permission("CA_CREATE"));
-?= does_role_have_permission("readwrite", new Permission("CA_CREATE"));
+?= does_role_have_permission("readwrite", CA_LIST);
+?= does_role_have_permission("readwrite", CA_READ);
+?= does_role_have_permission("readwrite", CA_CREATE);
+?= does_role_have_permission("readwrite", CA_CREATE);
 # etc
 ### ]
 
@@ -113,18 +113,18 @@ does_role_have_permission("readwrite", action: Permission) if
 # used outside of this file.
 does_role_have_permission("testbed", action: Permission) if
     action in [
-        new Permission("CA_READ"),
-        new Permission("CA_UPDATE"),
-        new Permission("PUB_READ"),
-        new Permission("PUB_CREATE"),
-        new Permission("PUB_DELETE"),
-        new Permission("PUB_ADMIN")
+        CA_READ,
+        CA_UPDATE,
+        PUB_READ,
+        PUB_CREATE,
+        PUB_DELETE,
+        PUB_ADMIN
     ];
 
 ### TEST: [
-?= does_role_have_permission("testbed", new Permission("CA_READ"));
-?= does_role_have_permission("testbed", new Permission("CA_UPDATE"));
-?= does_role_have_permission("testbed", new Permission("PUB_ADMIN"));
-?= not does_role_have_permission("testbed", new Permission("ROUTES_UPDATE"));
+?= does_role_have_permission("testbed", CA_READ);
+?= does_role_have_permission("testbed", CA_UPDATE);
+?= does_role_have_permission("testbed", PUB_ADMIN);
+?= not does_role_have_permission("testbed", ROUTES_UPDATE);
 # etc
 ### ]

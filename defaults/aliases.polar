@@ -10,4 +10,4 @@
 # does_role_have_permission("Read Only", action: Permission, resource) if
 #     does_role_have_permission("readonly", action, resource);
 #
-# ?= does_role_have_permission("Read Only", new Permission("CA_LIST"), _);
+# ?= does_role_have_permission("Read Only", CA_LIST, _);

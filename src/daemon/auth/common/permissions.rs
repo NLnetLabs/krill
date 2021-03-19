@@ -1,75 +1,74 @@
-#[allow(non_camel_case_types)]
-#[derive(Clone, Debug, PartialEq)]
-pub enum Permission {
-    LOGIN,
-    PUB_ADMIN,
-    PUB_LIST,
-    PUB_READ,
-    PUB_CREATE,
-    PUB_DELETE,
-    CA_LIST,
-    CA_READ,
-    CA_CREATE,
-    CA_UPDATE,
-    CA_ADMIN,
-    CA_DELETE,
-    ROUTES_READ,
-    ROUTES_UPDATE,
-    ROUTES_ANALYSIS,
-    RTA_LIST,
-    RTA_READ,
-    RTA_UPDATE,
+// Based on https://github.com/rust-lang/rfcs/issues/284#issuecomment-277871931
+// Use a macro to build the Permission enum so that we can iterate over the enum variants when adding them as Polar
+// constants in struct AuthPolicy. This ensures that we don't accidentally miss one. We can also implement the Display
+// trait that we need Actor::is_allowed() and the FromStr trait and avoid labour intensive and error prone duplication
+// of the enum variants that would be needed when implementing the traits manually.
+macro_rules! iterable_enum {
+    ($name:ident { $($variant:ident),* })   => (
+        #[allow(non_camel_case_types)]
+        #[derive(Clone, Debug, PartialEq)]
+        pub enum $name { $($variant),* }
+
+        impl std::fmt::Display for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match self {
+                    $( Self::$variant => write!(f, stringify!($variant)) ),+
+                }
+            }
+        }
+
+        impl std::str::FromStr for $name {
+            type Err = String;
+        
+            fn from_str(input: &str) -> Result<Self, Self::Err> {
+                match input {
+                    $( stringify!($variant) => { Ok($name::$variant) }
+                    ),+
+                    _ => Err(format!("Unknown {} '{}'", stringify!($name), input))
+                }
+            }
+        }
+        
+        impl $name {
+            pub fn iter() -> Iter {
+                Iter(None)
+            }
+        }
+
+        pub struct Iter(Option<$name>);
+
+        impl Iterator for Iter {
+            type Item = $name;
+            
+            fn next(&mut self) -> Option<Self::Item> {
+                match self.0 {
+                    None                  => $( { self.0 = Some($name::$variant); Some($name::$variant) },
+                    Some($name::$variant) => )* None,
+                }
+            }
+        }
+    );
 }
 
-impl std::fmt::Display for Permission {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Permission::LOGIN => write!(f, "LOGIN"),
-            Permission::PUB_ADMIN => write!(f, "PUB_ADMIN"),
-            Permission::PUB_LIST => write!(f, "PUB_LIST"),
-            Permission::PUB_READ => write!(f, "PUB_READ"),
-            Permission::PUB_CREATE => write!(f, "PUB_CREATE"),
-            Permission::PUB_DELETE => write!(f, "PUB_DELETE"),
-            Permission::CA_LIST => write!(f, "CA_LIST"),
-            Permission::CA_READ => write!(f, "CA_READ"),
-            Permission::CA_CREATE => write!(f, "CA_CREATE"),
-            Permission::CA_DELETE => write!(f, "CA_DELETE"),
-            Permission::CA_UPDATE => write!(f, "CA_UPDATE"),
-            Permission::CA_ADMIN => write!(f, "CA_ADMIN"),
-            Permission::ROUTES_READ => write!(f, "ROUTES_READ"),
-            Permission::ROUTES_UPDATE => write!(f, "ROUTES_UPDATE"),
-            Permission::ROUTES_ANALYSIS => write!(f, "ROUTES_ANALYSIS"),
-            Permission::RTA_LIST => write!(f, "RTA_LIST"),
-            Permission::RTA_READ => write!(f, "RTA_READ"),
-            Permission::RTA_UPDATE => write!(f, "RTA_UPDATE"),
-        }
-    }
-}
-
-impl std::str::FromStr for Permission {
-    type Err = String;
-
-    fn from_str(input: &str) -> Result<Self, Self::Err> {
-        match input {
-            "LOGIN" => Ok(Permission::LOGIN),
-            "PUB_ADMIN" => Ok(Permission::PUB_ADMIN),
-            "PUB_LIST" => Ok(Permission::PUB_LIST),
-            "PUB_READ" => Ok(Permission::PUB_READ),
-            "PUB_CREATE" => Ok(Permission::PUB_CREATE),
-            "PUB_DELETE" => Ok(Permission::PUB_DELETE),
-            "CA_LIST" => Ok(Permission::CA_LIST),
-            "CA_READ" => Ok(Permission::CA_READ),
-            "CA_CREATE" => Ok(Permission::CA_CREATE),
-            "CA_DELETE" => Ok(Permission::CA_DELETE),
-            "CA_UPDATE" => Ok(Permission::CA_UPDATE),
-            "CA_ADMIN" => Ok(Permission::CA_ADMIN),
-            "ROUTES_READ" => Ok(Permission::ROUTES_READ),
-            "ROUTES_UPDATE" => Ok(Permission::ROUTES_UPDATE),
-            "ROUTES_ANALYSIS" => Ok(Permission::ROUTES_ANALYSIS),
-            "RTA_LIST" => Ok(Permission::RTA_LIST),
-            "RTA_READ" => Ok(Permission::RTA_READ),
-            "RTA_UPDATE" => Ok(Permission::RTA_UPDATE),
-            _ => Err(format!("Unknown permission '{}'", input))
-        }
+iterable_enum! {
+    Permission {
+        LOGIN,
+        PUB_ADMIN,
+        PUB_LIST,
+        PUB_READ,
+        PUB_CREATE,
+        PUB_DELETE,
+        CA_LIST,
+        CA_READ,
+        CA_CREATE,
+        CA_UPDATE,
+        CA_ADMIN,
+        CA_DELETE,
+        ROUTES_READ,
+        ROUTES_UPDATE,
+        ROUTES_ANALYSIS,
+        RTA_LIST,
+        RTA_READ,
+        RTA_UPDATE
     }
 }
