@@ -253,7 +253,7 @@ impl From<CmdDet> for StorableCaCommand {
             // Publishing
             // ------------------------------------------------------------
             CmdDet::RepoUpdate(contact, _) => StorableCaCommand::RepoUpdate {
-                service_uri: contact.service_uri_opt().cloned(),
+                service_uri: contact.service_uri().clone(),
             },
             CmdDet::RepoRemoveOld(_) => StorableCaCommand::RepoRemoveOld,
 

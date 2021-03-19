@@ -271,11 +271,8 @@ impl CommandSummary {
         self.with_arg("removed", nr)
     }
 
-    pub fn with_service_uri_opt(self, service_uri_opt: Option<&ServiceUri>) -> Self {
-        match service_uri_opt {
-            None => self,
-            Some(uri) => self.with_arg("service_uri", uri),
-        }
+    pub fn with_service_uri(self, service_uri: &ServiceUri) -> Self {
+        self.with_arg("service_uri", service_uri)
     }
 
     pub fn with_rta_name(self, name: &str) -> Self {
@@ -466,7 +463,7 @@ pub enum StorableCaCommand {
     AutomaticRoaRenewal,
     Republish,
     RepoUpdate {
-        service_uri: Option<ServiceUri>,
+        service_uri: ServiceUri,
     },
     RepoRemoveOld,
     RtaPrepare {
@@ -557,7 +554,7 @@ impl WithStorableDetails for StorableCaCommand {
             StorableCaCommand::AutomaticRoaRenewal => CommandSummary::new("cmd-ca-roas-renewed", &self),
             StorableCaCommand::Republish => CommandSummary::new("cmd-ca-publish", &self),
             StorableCaCommand::RepoUpdate { service_uri } => {
-                CommandSummary::new("cmd-ca-repo-update", &self).with_service_uri_opt(service_uri.as_ref())
+                CommandSummary::new("cmd-ca-repo-update", &self).with_service_uri(service_uri)
             }
             StorableCaCommand::RepoRemoveOld => CommandSummary::new("cmd-ca-repo-clean", &self),
 
@@ -696,10 +693,7 @@ impl fmt::Display for StorableCaCommand {
             // Publishing
             // ------------------------------------------------------------
             StorableCaCommand::Republish => write!(f, "Republish"),
-            StorableCaCommand::RepoUpdate { service_uri } => match service_uri {
-                None => write!(f, "Update repo to embedded server"),
-                Some(uri) => write!(f, "Update repo to server at: {}", uri),
-            },
+            StorableCaCommand::RepoUpdate { service_uri } => write!(f, "Update repo to server at: {}", service_uri),
             StorableCaCommand::RepoRemoveOld => write!(f, "Clean up old repository"),
 
             // ------------------------------------------------------------

@@ -7,14 +7,20 @@ use std::{path::PathBuf, sync::Arc};
 
 use serde::de::DeserializeOwned;
 
-use crate::commons::eventsourcing::{
-    AggregateStore, AggregateStoreError, CommandKey, KeyStoreKey, KeyStoreVersion, KeyValueError, KeyValueStore,
-};
 use crate::commons::util::file;
 use crate::constants::KRILL_VERSION;
 use crate::daemon::ca::CertAuth;
 use crate::pubd::RepositoryAccess;
 use crate::{commons::api::Handle, daemon::config::Config};
+use crate::{
+    commons::{
+        crypto::KrillSigner,
+        eventsourcing::{
+            AggregateStore, AggregateStoreError, CommandKey, KeyStoreKey, KeyStoreVersion, KeyValueError, KeyValueStore,
+        },
+    },
+    pubd::RepositoryManager,
+};
 
 use self::v0_9_0::{CaObjectsMigration, PubdObjectsMigration};
 
@@ -198,15 +204,19 @@ pub async fn update_storage_version(work_dir: &PathBuf) -> Result<(), UpgradeErr
 }
 
 fn upgrade_0_9_0(config: Arc<Config>) -> Result<(), UpgradeError> {
+    let mut pubd_dir = config.data_dir.clone();
+    let mut repo_manager = None;
+    pubd_dir.push("pubd");
+    if pubd_dir.exists() {
+        PubdObjectsMigration::migrate(config.clone())?;
+        let signer = Arc::new(KrillSigner::build(&config.data_dir)?);
+        repo_manager = Some(RepositoryManager::build(config.clone(), signer)?);
+    }
+
     let mut cas_dir = config.data_dir.clone();
     cas_dir.push("cas");
     if cas_dir.exists() {
-        CaObjectsMigration::migrate(config.clone())?;
-    }
-    let mut pubd_dir = config.data_dir.clone();
-    pubd_dir.push("pubd");
-    if pubd_dir.exists() {
-        PubdObjectsMigration::migrate(config)?;
+        CaObjectsMigration::migrate(config, repo_manager)?;
     }
     Ok(())
 }

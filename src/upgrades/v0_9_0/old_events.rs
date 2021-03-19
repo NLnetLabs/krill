@@ -17,16 +17,16 @@ use crate::{
         api::{
             rrdp::{CurrentObjects, DeltaElements, PublishElement, RrdpSession},
             Base64, ChildHandle, HexEncodedHash, IssuanceRequest, IssuedCert, ObjectName, ParentHandle,
-            PublisherHandle, RcvdCert, RepoInfo, ResourceClassName, ResourceSet, RevocationRequest, RevocationsDelta,
-            RevokedObject, RoaAggregateKey, RtaName, TaCertDetails,
+            PublisherHandle, RcvdCert, RepoInfo, RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest,
+            RevocationsDelta, RevokedObject, RoaAggregateKey, RtaName, TaCertDetails,
         },
         crypto::IdCert,
         eventsourcing::StoredEvent,
     },
     daemon::ca::{self, CaEvt, CaEvtDet, PreparedRta, RouteAuthorization, SignedRta},
     pubd::{
-        Publisher, RepositoryAccessEvent, RepositoryAccessEventDetails, RepositoryAccessInitDetails, RrdpSessionReset,
-        RrdpUpdate,
+        Publisher, RepositoryAccessEvent, RepositoryAccessEventDetails, RepositoryAccessInitDetails, RepositoryManager,
+        RrdpSessionReset, RrdpUpdate,
     },
     upgrades::UpgradeError,
 };
@@ -83,13 +83,38 @@ impl From<OldPubdIniDet> for RepositoryAccessInitDetails {
 }
 
 impl OldCaEvt {
-    pub fn into_stored_ca_event(self, version: u64) -> Result<CaEvt, UpgradeError> {
+    pub fn into_stored_ca_event(
+        self,
+        version: u64,
+        repo_manager: &Option<RepositoryManager>,
+    ) -> Result<CaEvt, UpgradeError> {
         let (id, _, details) = self.unpack();
-        Ok(CaEvt::new(&id, version, details.try_into()?))
+
+        let event = match details {
+            OldCaEvtDet::RepoUpdated(contact) => {
+                let contact = match contact {
+                    OldRepositoryContact::Rfc8181(res) => RepositoryContact::new(res),
+                    OldRepositoryContact::Embedded(_) => {
+                        let res = repo_manager
+                            .as_ref()
+                            .ok_or(UpgradeError::KrillError(
+                                crate::commons::error::Error::RepositoryServerNotEnabled,
+                            ))?
+                            .repository_response(&id)?;
+                        RepositoryContact::new(res)
+                    }
+                };
+                CaEvtDet::RepoUpdated { contact }
+            }
+            _ => details.try_into()?,
+        };
+
+        Ok(CaEvt::new(&id, version, event))
     }
 
     pub fn needs_migration(&self) -> bool {
         !matches!(self.details(), OldCaEvtDet::ObjectSetUpdated(_, _))
+            && !matches!(self.details(), OldCaEvtDet::RepoCleaned(_))
     }
 }
 
@@ -135,8 +160,8 @@ pub enum OldCaEvtDet {
 
     // Publishing
     ObjectSetUpdated(ResourceClassName, HashMap<KeyIdentifier, CurrentObjectSetDelta>),
-    RepoUpdated(RepositoryContact),
-    RepoCleaned(RepositoryContact),
+    RepoUpdated(OldRepositoryContact),
+    RepoCleaned(OldRepositoryContact),
 
     // Rta
     RtaPrepared(RtaName, PreparedRta),
@@ -241,12 +266,8 @@ impl TryFrom<OldCaEvtDet> for CaEvtDet {
 
             OldCaEvtDet::ObjectSetUpdated(_, _) => unimplemented!("This event must not be migrated"),
 
-            OldCaEvtDet::RepoUpdated(contact) => CaEvtDet::RepoUpdated {
-                contact: contact.into(),
-            },
-            OldCaEvtDet::RepoCleaned(contact) => CaEvtDet::RepoCleaned {
-                contact: contact.into(),
-            },
+            OldCaEvtDet::RepoUpdated(contact) => unimplemented!("Repo Updated event must be converted the hard way"),
+            OldCaEvtDet::RepoCleaned(_contact) => unimplemented!("This event must not be migrated"),
 
             OldCaEvtDet::RtaPrepared(name, prepared) => CaEvtDet::RtaPrepared { name, prepared },
             OldCaEvtDet::RtaSigned(name, rta) => CaEvtDet::RtaSigned { name, rta },

@@ -15,9 +15,8 @@ use crate::commons::api::{
     AddChildRequest, AllCertAuthIssues, CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthInit, CertAuthIssues,
     CertAuthList, CertAuthStats, ChildAuthRequest, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria,
     Handle, ListReply, ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublicationServerUris, PublishDelta,
-    PublisherDetails, PublisherHandle, RepoInfo, RepoStatus, RepositoryContact, RepositoryUpdate, ResourceSet,
-    RoaDefinition, RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, ServerInfo, TaCertDetails,
-    UpdateChildRequest,
+    PublisherDetails, PublisherHandle, RepoInfo, RepoStatus, RepositoryContact, ResourceSet, RoaDefinition,
+    RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, ServerInfo, TaCertDetails, UpdateChildRequest,
 };
 use crate::commons::bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion};
 use crate::commons::crypto::KrillSigner;
@@ -219,16 +218,16 @@ impl KrillServer {
                 if !caserver.has_ca(&ta_handle)? {
                     info!("Creating embedded Trust Anchor");
 
-                    let repo_info: RepoInfo = repo_manager.repo_info_for(&ta_handle)?;
-
                     let ta_uri = format!("{}ta/ta.cer", service_uri);
                     let ta_uri = uri::Https::from_string(ta_uri).unwrap();
 
                     let ta_aia = format!("{}ta/ta.cer", uris.rsync_jail().to_string());
                     let ta_aia = uri::Rsync::from_string(ta_aia).unwrap();
 
-                    // Add TA
-                    caserver.init_ta(repo_info, ta_aia, vec![ta_uri], &system_actor).await?;
+                    // Add TA (uses repo_manager so that it can be set up as a publisher)
+                    caserver
+                        .init_ta(ta_aia, vec![ta_uri], repo_manager, &system_actor)
+                        .await?;
 
                     let ta = caserver.get_trust_anchor().await?;
 
@@ -252,10 +251,9 @@ impl KrillServer {
                             testbed_ca.id_cert().clone(),
                         );
                         repo_manager.create_publisher(pub_req, &system_actor)?;
-                        let rfc8181_uri =
-                            uri::Https::from_string(format!("{}rfc8181/{}", service_uri, testbed_ca_handle)).unwrap();
-                        let repo_response = repo_manager.repository_response(rfc8181_uri, &testbed_ca_handle)?;
-                        let repo_contact = RepositoryContact::rfc8181(repo_response);
+
+                        let repo_response = repo_manager.repository_response(&testbed_ca_handle)?;
+                        let repo_contact = RepositoryContact::new(repo_response);
                         caserver
                             .update_repo(testbed_ca_handle.clone(), repo_contact, &system_actor)
                             .await?;
@@ -424,8 +422,7 @@ impl KrillServer {
 ///
 impl KrillServer {
     pub fn repository_response(&self, publisher: &PublisherHandle) -> KrillResult<rfc8183::RepositoryResponse> {
-        let rfc8181_uri = uri::Https::from_string(format!("{}rfc8181/{}", self.service_uri, publisher)).unwrap();
-        self.get_repo_manager()?.repository_response(rfc8181_uri, publisher)
+        self.get_repo_manager()?.repository_response(publisher)
     }
 
     pub fn rfc8181(&self, publisher: PublisherHandle, msg_bytes: Bytes) -> KrillResult<Bytes> {
@@ -755,33 +752,7 @@ impl KrillServer {
     }
 
     /// Update the repository for a CA, or return an error. (see `CertAuth::repo_update`)
-    pub async fn ca_update_repo(&self, handle: Handle, update: RepositoryUpdate, actor: &Actor) -> KrillEmptyResult {
-        let contact = match update {
-            RepositoryUpdate::Embedded => {
-                // Add to embedded publication server if not present
-                if self.get_repo_manager()?.get_publisher_details(&handle).is_err() {
-                    let id_cert = {
-                        let ca = self.get_caserver()?.get_ca(&handle).await?;
-                        ca.id_cert().clone()
-                    };
-
-                    // Add publisher
-                    let req = rfc8183::PublisherRequest::new(None, handle.clone(), id_cert);
-                    self.add_publisher(req, actor)?;
-                }
-
-                RepositoryContact::embedded(self.get_repo_manager()?.repo_info_for(&handle)?)
-            }
-            RepositoryUpdate::Rfc8181(response) => {
-                // first check that the new repo can be contacted
-                if let Err(error) = self.get_caserver()?.send_rfc8181_list(&handle, &response, false).await {
-                    return Err(Error::CaRepoIssue(handle, error.to_error_response().msg().to_string()));
-                }
-
-                RepositoryContact::rfc8181(response)
-            }
-        };
-
+    pub async fn ca_update_repo(&self, handle: Handle, contact: RepositoryContact, actor: &Actor) -> KrillEmptyResult {
         Ok(self.get_caserver()?.update_repo(handle, contact, actor).await?)
     }
 

@@ -40,6 +40,7 @@ use crate::{
         config::Config,
         mq::MessageQueue,
     },
+    pubd::RepositoryManager,
 };
 
 //------------ CaLocks ------------------------------------------------------
@@ -201,9 +202,9 @@ impl CaManager {
     /// Initializes an embedded trust anchor with all resources.
     pub async fn init_ta(
         &self,
-        info: RepoInfo,
         ta_aia: uri::Rsync,
         ta_uris: Vec<uri::Https>,
+        repo_manager: &Arc<RepositoryManager>,
         actor: &Actor,
     ) -> KrillResult<()> {
         let ta_handle = ca::ta_handle();
@@ -216,9 +217,14 @@ impl CaManager {
             let init = IniDet::init(&ta_handle, self.signer.deref())?;
             self.ca_store.add(init)?;
 
-            // add embedded repo
-            let embedded = RepositoryContact::embedded(info);
-            let upd_repo_cmd = CmdDet::update_repo(&ta_handle, embedded, self.signer.clone(), actor);
+            // add to repo
+            let ta = self.get_trust_anchor().await?;
+            let pub_req = ta.publisher_request();
+            repo_manager.create_publisher(pub_req, actor)?;
+            let repository_response = repo_manager.repository_response(&ta_handle)?;
+            let contact = RepositoryContact::new(repository_response);
+
+            let upd_repo_cmd = CmdDet::update_repo(&ta_handle, contact, self.signer.clone(), actor);
             self.ca_store.command(upd_repo_cmd)?;
 
             // make trust anchor

@@ -10,15 +10,18 @@ use bytes::Bytes;
 
 use rpki::uri::Rsync;
 
-use krill::cli::options::{BulkCaCommand, CaCommand, Command, PublishersCommand};
 use krill::cli::report::ApiResponse;
 use krill::commons::api::{
-    Handle, ObjectName, ParentCaReq, ParentHandle, PublisherHandle, RepoStatus, RepositoryUpdate,
-    ResourceClassKeysInfo, ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates, RtaList,
+    Handle, ObjectName, ParentCaReq, ParentHandle, PublisherHandle, RepoStatus, ResourceClassKeysInfo,
+    ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates, RtaList,
 };
 use krill::commons::remote::rfc8183;
 use krill::daemon::ca::ta_handle;
 use krill::test::*;
+use krill::{
+    cli::options::{BulkCaCommand, CaCommand, Command, PublishersCommand},
+    commons::api::RepositoryContact,
+};
 
 fn handle_for(s: &str) -> Handle {
     Handle::from_str(s).unwrap()
@@ -36,8 +39,8 @@ async fn repo_status(ca: &Handle) -> RepoStatus {
     }
 }
 
-async fn repo_update(ca: &Handle, update: RepositoryUpdate) {
-    let command = Command::CertAuth(CaCommand::RepoUpdate(ca.clone(), update));
+async fn repo_update(ca: &Handle, contact: RepositoryContact) {
+    let command = Command::CertAuth(CaCommand::RepoUpdate(ca.clone(), contact));
     krill_admin(command).await;
 }
 
@@ -93,8 +96,8 @@ async fn set_up_ca_with_repo(ca: &Handle) {
     let response = embedded_repository_response(ca).await;
 
     // Update the repo for the child
-    let update = RepositoryUpdate::Rfc8181(response);
-    repo_update(ca, update).await;
+    let contact = RepositoryContact::new(response);
+    repo_update(ca, contact).await;
     assert!(repo_ready(ca).await);
 }
 
@@ -759,8 +762,8 @@ async fn functional() {
         let response = dedicated_repository_response(&ca3).await;
 
         // Update CA3 to use dedicated repo
-        let update = RepositoryUpdate::Rfc8181(response);
-        repo_update(&ca3, update).await;
+        let contact = RepositoryContact::new(response);
+        repo_update(&ca3, contact).await;
         assert!(repo_ready(&ca3).await);
 
         // This should result in a key roll and content published in both repos

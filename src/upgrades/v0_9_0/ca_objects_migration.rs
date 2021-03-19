@@ -1,5 +1,6 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
+use api::RepositoryContact;
 use rpki::{crl::Crl, crypto::KeyIdentifier, manifest::Manifest, x509::Time};
 
 use crate::{
@@ -23,6 +24,7 @@ use crate::{
         },
         config::Config,
     },
+    pubd::RepositoryManager,
     upgrades::{UpgradeError, UpgradeResult, UpgradeStore},
 };
 
@@ -32,23 +34,32 @@ use super::{old_commands::*, old_events::*};
 pub struct CaObjectsMigration;
 
 impl CaObjectsMigration {
-    pub fn migrate(config: Arc<Config>) -> UpgradeResult<()> {
+    pub fn migrate(config: Arc<Config>, repo_manager: Option<RepositoryManager>) -> UpgradeResult<()> {
+        let repo_manager = Arc::new(repo_manager);
         let store = KeyValueStore::disk(&config.data_dir, CASERVER_DIR)?;
         let ca_store = AggregateStore::<ca::CertAuth>::disk(&config.data_dir, CASERVER_DIR)?;
 
         let signer = Arc::new(KrillSigner::build(&config.data_dir)?);
 
-        let cas_store_migration = CasStoreMigration { store, ca_store };
+        let cas_store_migration = CasStoreMigration {
+            store,
+            ca_store,
+            repo_manager: repo_manager.clone(),
+        };
         if cas_store_migration.needs_migrate()? {
             info!("Krill version is older than 0.9.0-RC1, will now upgrade data structures.");
-            Self::populate_ca_objects_store(config, signer)?;
+            Self::populate_ca_objects_store(config, repo_manager, signer)?;
             cas_store_migration.migrate()
         } else {
             Ok(())
         }
     }
 
-    fn populate_ca_objects_store(config: Arc<Config>, signer: Arc<KrillSigner>) -> UpgradeResult<()> {
+    fn populate_ca_objects_store(
+        config: Arc<Config>,
+        repo_manager: Arc<Option<RepositoryManager>>,
+        signer: Arc<KrillSigner>,
+    ) -> UpgradeResult<()> {
         // Read all CAS based on snapshots and events, using the pre-0_9_0 data structs
         // which are preserved here.
         info!("Krill will now populate the CA Objects Store");
@@ -59,7 +70,7 @@ impl CaObjectsMigration {
 
         for ca_handle in store.list()? {
             let ca = store.get_latest(&ca_handle)?;
-            let objects = ca.ca_objects();
+            let objects = ca.ca_objects(repo_manager.as_ref())?;
 
             ca_objects_store.put_ca_objects(&ca_handle, &objects)?;
         }
@@ -72,6 +83,7 @@ impl CaObjectsMigration {
 struct CasStoreMigration {
     store: KeyValueStore,
     ca_store: AggregateStore<ca::CertAuth>,
+    repo_manager: Arc<Option<RepositoryManager>>,
 }
 
 impl UpgradeStore for CasStoreMigration {
@@ -127,7 +139,9 @@ impl UpgradeStore for CasStoreMigration {
                             info.last_event += 1;
 
                             events.push(info.last_event);
-                            let migrated_event = old_evt.into_stored_ca_event(info.last_event)?;
+
+                            let migrated_event = old_evt.into_stored_ca_event(info.last_event, &self.repo_manager)?;
+
                             let key = KeyStoreKey::scoped(scope.clone(), format!("delta-{}.json", info.last_event));
                             self.store.store(&key, &migrated_event)?;
                         }
@@ -146,7 +160,7 @@ impl UpgradeStore for CasStoreMigration {
                 info.last_command += 1;
                 info.last_update = old_cmd.time;
 
-                let migrated_cmd = old_cmd.into_ca_command();
+                let migrated_cmd = old_cmd.into_ca_command(&self.repo_manager)?;
                 let cmd_key = CommandKey::for_stored(&migrated_cmd);
                 let key = KeyStoreKey::scoped(scope.clone(), format!("{}.json", cmd_key));
 
@@ -191,8 +205,8 @@ struct CertAuth {
 
     id: Rfc8183Id, // Used for RFC 6492 (up-down) and RFC 8181 (publication)
 
-    repository: Option<RepositoryContact>,
-    repository_pending_withdraw: Option<RepositoryContact>,
+    repository: Option<OldRepositoryContact>,
+    repository_pending_withdraw: Option<OldRepositoryContact>,
 
     parents: HashMap<ParentHandle, ParentCaContact>,
 
@@ -230,7 +244,7 @@ impl Aggregate for CertAuth {
             resources.insert(rcn.clone(), ResourceClass::for_ta(rcn, key_id));
         }
 
-        let repository = repo_info.map(RepositoryContact::embedded);
+        let repository = repo_info.map(OldRepositoryContact::embedded);
 
         Ok(CertAuth {
             handle,
@@ -419,7 +433,7 @@ impl Aggregate for CertAuth {
 }
 
 impl CertAuth {
-    pub fn ca_objects(&self) -> CaObjects {
+    pub fn ca_objects(&self, repo_manager: &Option<RepositoryManager>) -> Result<CaObjects, UpgradeError> {
         let objects = self
             .resources
             .iter()
@@ -429,7 +443,24 @@ impl CertAuth {
             })
             .collect();
 
-        CaObjects::new(self.handle.clone(), self.repository.clone().map(|r| r.into()), objects)
+        let repo = match &self.repository {
+            None => None,
+            Some(old) => match old {
+                OldRepositoryContact::Embedded(_) => {
+                    if let Some(repo_manager) = repo_manager {
+                        let res = repo_manager.repository_response(&self.handle)?;
+                        Some(RepositoryContact::new(res))
+                    } else {
+                        return Err(UpgradeError::KrillError(
+                            crate::commons::error::Error::RepositoryServerNotEnabled,
+                        ));
+                    }
+                }
+                OldRepositoryContact::Rfc8181(res) => Some(RepositoryContact::new(res.clone())),
+            },
+        };
+
+        Ok(CaObjects::new(self.handle.clone(), repo, objects))
     }
 }
 
@@ -448,23 +479,14 @@ impl From<Rfc8183Id> for ca::Rfc8183Id {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
-pub enum RepositoryContact {
+pub enum OldRepositoryContact {
     Embedded(RepoInfo),
     Rfc8181(rfc8183::RepositoryResponse),
 }
 
-impl From<RepositoryContact> for api::RepositoryContact {
-    fn from(old: RepositoryContact) -> Self {
-        match old {
-            RepositoryContact::Embedded(info) => api::RepositoryContact::embedded(info),
-            RepositoryContact::Rfc8181(response) => api::RepositoryContact::rfc8181(response),
-        }
-    }
-}
-
-impl RepositoryContact {
+impl OldRepositoryContact {
     fn embedded(info: RepoInfo) -> Self {
-        RepositoryContact::Embedded(info)
+        OldRepositoryContact::Embedded(info)
     }
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

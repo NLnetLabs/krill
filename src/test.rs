@@ -16,14 +16,13 @@ use tokio::time::{delay_for, timeout};
 use rpki::crypto::KeyIdentifier;
 use rpki::uri;
 
-use crate::cli::options::{BulkCaCommand, CaCommand, Command, KrillPubcOptions, Options, PublishersCommand};
 use crate::cli::report::{ApiResponse, ReportFormat};
 use crate::cli::{Error, KrillClient, KrillPubdClient};
 use crate::commons::api::{
     AddChildRequest, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ChildAuthRequest, ChildHandle, Handle,
     ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublicationServerUris, PublisherDetails,
-    PublisherHandle, PublisherList, RepositoryUpdate, ResourceClassName, ResourceSet, RoaDefinition,
-    RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, Token, TypedPrefix, UpdateChildRequest,
+    PublisherHandle, PublisherList, ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates, RtaList,
+    RtaName, RtaPrepResponse, Token, TypedPrefix, UpdateChildRequest,
 };
 use crate::commons::bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion};
 use crate::commons::crypto::SignSupport;
@@ -32,6 +31,10 @@ use crate::commons::remote::rfc8183::{ChildRequest, RepositoryResponse};
 use crate::commons::util::httpclient;
 use crate::daemon::ca::{ta_handle, ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest};
 use crate::daemon::http::server;
+use crate::{
+    cli::options::{BulkCaCommand, CaCommand, Command, KrillPubcOptions, Options, PublishersCommand},
+    commons::api::RepositoryContact,
+};
 
 #[cfg(test)]
 use crate::commons::crypto::IdCert;
@@ -213,20 +216,20 @@ pub async fn delete_ca(ca: &Handle) {
     krill_admin(Command::CertAuth(CaCommand::Delete(ca.clone()))).await;
 }
 
-// We use embedded when not testing RFC 8181 - so that the CMS signing/verification overhead can be reduced.
-pub async fn init_ca_with_embedded_repo(handle: &Handle) {
-    krill_admin(Command::CertAuth(CaCommand::Init(CertAuthInit::new(handle.clone())))).await;
-    krill_admin(Command::CertAuth(CaCommand::RepoUpdate(
-        handle.clone(),
-        RepositoryUpdate::Embedded,
-    )))
-    .await;
-}
+// // We use embedded when not testing RFC 8181 - so that the CMS signing/verification overhead can be reduced.
+// pub async fn init_ca_with_embedded_repo(handle: &Handle) {
+//     krill_admin(Command::CertAuth(CaCommand::Init(CertAuthInit::new(handle.clone())))).await;
+//     krill_admin(Command::CertAuth(CaCommand::RepoUpdate(
+//         handle.clone(),
+//         RepositoryUpdate::Embedded,
+//     )))
+//     .await;
+// }
 
 pub async fn ca_repo_update_rfc8181(handle: &Handle, response: RepositoryResponse) {
     krill_admin(Command::CertAuth(CaCommand::RepoUpdate(
         handle.clone(),
-        RepositoryUpdate::Rfc8181(response),
+        RepositoryContact::new(response),
     )))
     .await;
 }

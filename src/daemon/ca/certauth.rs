@@ -118,26 +118,15 @@ impl Aggregate for CertAuth {
 
     fn init(event: Ini) -> KrillResult<Self> {
         let (handle, _version, details) = event.unpack();
-        let (id, repo_info, ta_opt) = details.unpack();
+        let id = details.unpack();
 
-        let mut parents = HashMap::new();
-        let mut resources = HashMap::new();
-        let mut next_class_name = 0;
-
+        let parents = HashMap::new();
+        let resources = HashMap::new();
+        let next_class_name = 0;
         let children = HashMap::new();
         let routes = Routes::default();
         let rtas = Rtas::default();
-
-        if let Some(ta_details) = ta_opt {
-            let key_id = ta_details.cert().subject_key_identifier();
-            parents.insert(ta_handle(), ParentCaContact::Ta(ta_details));
-
-            let rcn = ResourceClassName::from(next_class_name);
-            next_class_name += 1;
-            resources.insert(rcn.clone(), ResourceClass::for_ta(rcn, key_id));
-        }
-
-        let repository = repo_info.map(RepositoryContact::embedded);
+        let repository = None;
 
         Ok(CertAuth {
             handle,
@@ -379,7 +368,6 @@ impl Aggregate for CertAuth {
                 }
                 self.repository = Some(contact);
             }
-            CaEvtDet::RepoCleaned { .. } => {} // historic event, no effect in current code
 
             //-----------------------------------------------------------------------
             // Resource Tagged Attestations

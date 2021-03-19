@@ -62,14 +62,10 @@ impl CaPublisher {
         repo_contact: RepositoryContact,
         ca_elements: Vec<PublishElement>,
     ) -> Result<(), Error> {
-        let list_reply = match &repo_contact {
-            RepositoryContact::Embedded { .. } => self.get_embedded()?.list(ca_handle)?,
-            RepositoryContact::Rfc8181 { server_response } => {
-                self.caserver
-                    .send_rfc8181_list(ca_handle, server_response, false)
-                    .await?
-            }
-        };
+        let list_reply = self
+            .caserver
+            .send_rfc8181_list(ca_handle, repo_contact.response(), false)
+            .await?;
 
         #[allow(clippy::mutable_key_type)]
         let delta = {
@@ -97,17 +93,9 @@ impl CaPublisher {
             PublishDelta::new(publishes, updates, withdraws)
         };
 
-        match &repo_contact {
-            RepositoryContact::Embedded { .. } => {
-                self.get_embedded()?.publish(ca_handle.clone(), delta)?;
-                self.caserver.ca_repo_status_set_elements(ca_handle).await?;
-            }
-            RepositoryContact::Rfc8181 { server_response } => {
-                self.caserver
-                    .send_rfc8181_delta(ca_handle, server_response, delta)
-                    .await?
-            }
-        };
+        self.caserver
+            .send_rfc8181_delta(ca_handle, repo_contact.response(), delta)
+            .await?;
 
         Ok(())
     }

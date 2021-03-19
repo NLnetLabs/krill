@@ -13,6 +13,8 @@ use crate::{
         remote::rfc8183::ServiceUri,
     },
     daemon::ca::StoredCaCommand,
+    pubd::RepositoryManager,
+    upgrades::{UpgradeError, UpgradeResult},
 };
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -27,18 +29,38 @@ pub struct OldStoredCaCommand {
 }
 
 impl OldStoredCaCommand {
-    pub fn into_ca_command(self) -> StoredCaCommand {
+    pub fn into_ca_command(self, repo_manager: &Option<RepositoryManager>) -> UpgradeResult<StoredCaCommand> {
         let (actor, time, handle, version, sequence, details, effect) = (
             self.actor,
             self.time,
             self.handle,
             self.version,
             self.sequence,
-            self.details.into(),
+            self.details,
             self.effect.into(),
         );
 
-        StoredCaCommand::new(actor, time, handle, version, sequence, details, effect)
+        let details = match details {
+            OldStorableCaCommand::RepoUpdate(service_uri_opt) => {
+                let service_uri = match service_uri_opt {
+                    Some(service_uri) => service_uri,
+                    None => repo_manager
+                        .as_ref()
+                        .ok_or(UpgradeError::KrillError(
+                            crate::commons::error::Error::RepositoryServerNotEnabled,
+                        ))?
+                        .repository_response(&handle)?
+                        .service_uri()
+                        .clone(),
+                };
+                StorableCaCommand::RepoUpdate { service_uri }
+            }
+            _ => details.into(),
+        };
+
+        Ok(StoredCaCommand::new(
+            actor, time, handle, version, sequence, details, effect,
+        ))
     }
 
     pub fn set_events(&mut self, events: Vec<u64>) {
@@ -193,7 +215,10 @@ impl From<OldStorableCaCommand> for StorableCaCommand {
             }
             OldStorableCaCommand::RoaDefinitionUpdates(updates) => StorableCaCommand::RoaDefinitionUpdates { updates },
             OldStorableCaCommand::Republish => StorableCaCommand::Republish,
-            OldStorableCaCommand::RepoUpdate(service_uri) => StorableCaCommand::RepoUpdate { service_uri },
+            OldStorableCaCommand::RepoUpdate(service_uri) => {
+                // StorableCaCommand::RepoUpdate { service_uri },
+                unimplemented!("#440 get service uri from embedded repo if needed")
+            }
             OldStorableCaCommand::RepoRemoveOld => StorableCaCommand::RepoRemoveOld,
             OldStorableCaCommand::RtaPrepare(name) => StorableCaCommand::RtaPrepare { name },
             OldStorableCaCommand::RtaSign(name) => StorableCaCommand::RtaSign { name },

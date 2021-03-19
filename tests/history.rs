@@ -63,7 +63,7 @@ async fn history() {
         server_cas_dir.push("cas");
         file::backup_dir(&source, &server_cas_dir).unwrap();
 
-        CaObjectsMigration::migrate(config.clone()).unwrap();
+        CaObjectsMigration::migrate(config.clone(), None).unwrap();
 
         let event_queue = Arc::new(MessageQueue::default());
         let signer = Arc::new(KrillSigner::build(&server_dir).unwrap());

@@ -7,7 +7,7 @@ use crate::{
     commons::{
         api::{
             ChildHandle, Handle, IssuanceRequest, IssuedCert, ObjectName, ParentCaContact, ParentHandle,
-            ParentResourceClassName, RcvdCert, RepoInfo, RepositoryContact, ResourceClassName, ResourceSet,
+            ParentResourceClassName, RcvdCert,  RepositoryContact, ResourceClassName, ResourceSet,
             RevocationRequest, RevokedObject, RoaAggregateKey, RtaName, TaCertDetails,
         },
         crypto::{IdCert, KrillSigner},
@@ -28,37 +28,18 @@ pub type Ini = StoredEvent<IniDet>;
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct IniDet {
     id: Rfc8183Id,
-
-    // The following two fields need to be kept to maintain data compatibility
-    // with Krill 0.4.2 installations.
-    //
-    // Newer versions of krill will no longer include these fields. I.e. there
-    // will be no default embedded repository, and trust anchors will be created
-    // through an explicit command and events.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    info: Option<RepoInfo>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ta_details: Option<TaCertDetails>,
 }
 
 impl IniDet {
-    pub fn unpack(self) -> (Rfc8183Id, Option<RepoInfo>, Option<TaCertDetails>) {
-        (self.id, self.info, self.ta_details)
+    pub fn unpack(self) -> Rfc8183Id {
+        self.id
     }
 }
 
 impl IniDet {
     pub fn init(handle: &Handle, signer: &KrillSigner) -> KrillResult<Ini> {
         let id = Rfc8183Id::generate(signer)?;
-        Ok(Ini::new(
-            handle,
-            0,
-            IniDet {
-                id,
-                info: None,
-                ta_details: None,
-            },
-        ))
+        Ok(Ini::new(handle, 0, IniDet { id }))
     }
 }
 
@@ -545,10 +526,6 @@ pub enum CaEvtDet {
         // requesting certificates when it knows which URIs it can use.
         contact: RepositoryContact,
     },
-    RepoCleaned {
-        // Mark an old repository as cleaned, so that it can be removed.
-        contact: RepositoryContact,
-    },
 
     // Rta
     //
@@ -880,26 +857,9 @@ impl fmt::Display for CaEvtDet {
             }
 
             // Publishing
-            CaEvtDet::RepoUpdated { contact } => match contact {
-                RepositoryContact::Embedded { .. } => write!(f, "updated repository to embedded server"),
-                RepositoryContact::Rfc8181 { server_response } => {
-                    write!(
-                        f,
-                        "updated repository to remote server: {}",
-                        server_response.service_uri()
-                    )
-                }
-            },
-            CaEvtDet::RepoCleaned { contact } => match contact {
-                RepositoryContact::Embedded { .. } => write!(f, "cleaned old embedded repository"),
-                RepositoryContact::Rfc8181 { server_response } => {
-                    write!(
-                        f,
-                        "cleaned repository at remote server: {}",
-                        server_response.service_uri()
-                    )
-                }
-            },
+            CaEvtDet::RepoUpdated { contact } => {
+                write!(f, "updated repository to remote server: {}", contact.service_uri())
+            }
 
             // Rta
             CaEvtDet::RtaPrepared { name, prepared } => {

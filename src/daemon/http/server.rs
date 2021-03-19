@@ -21,16 +21,16 @@ use hyper::server::conn::AddrIncoming;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::Method;
 
-use crate::commons::actor::Actor;
 use crate::commons::api::{
     BgpStats, ChildHandle, CommandHistoryCriteria, Handle, ParentCaContact, ParentCaReq, ParentHandle, PublisherList,
-    RepositoryUpdate, RoaDefinitionUpdates, RtaName, Token,
+    RoaDefinitionUpdates, RtaName, Token,
 };
 use crate::commons::bgp::BgpAnalysisAdvice;
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::AggregateStoreError;
 use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
+use crate::commons::{actor::Actor, api::RepositoryContact};
 use crate::commons::{KrillEmptyResult, KrillResult};
 use crate::constants::{KRILL_ENV_UPGRADE_ONLY, KRILL_VERSION_MAJOR, KRILL_VERSION_MINOR, KRILL_VERSION_PATCH};
 use crate::daemon::auth::common::permissions::Permission;
@@ -1367,7 +1367,7 @@ async fn api_ca_repo_status(req: Request, handle: Handle) -> RoutingResult {
     }
 }
 
-fn extract_repository_update(handle: &Handle, bytes: Bytes) -> Result<RepositoryUpdate, Error> {
+fn extract_repository_contact(handle: &Handle, bytes: Bytes) -> Result<RepositoryContact, Error> {
     let string = String::from_utf8(bytes.to_vec()).map_err(Error::custom)?;
 
     // TODO: Switch based on Content-Type header
@@ -1377,7 +1377,7 @@ fn extract_repository_update(handle: &Handle, bytes: Bytes) -> Result<Repository
         } else {
             let response = rfc8183::RepositoryResponse::validate(string.as_bytes())
                 .map_err(|e| Error::CaRepoResponseInvalidXml(handle.clone(), e.to_string()))?;
-            Ok(RepositoryUpdate::Rfc8181(response))
+            Ok(RepositoryContact::new(response))
         }
     } else {
         serde_json::from_str(&string).map_err(Error::JsonError)
@@ -1392,7 +1392,7 @@ pub async fn api_ca_repo_update(req: Request, handle: Handle) -> RoutingResult {
         match req
             .api_bytes()
             .await
-            .map(|bytes| extract_repository_update(&handle, bytes))
+            .map(|bytes| extract_repository_contact(&handle, bytes))
         {
             Ok(Ok(update)) => render_empty_res(server.read().await.ca_update_repo(handle, update, &actor).await),
             Ok(Err(e)) | Err(e) => render_error(e),
