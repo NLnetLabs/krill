@@ -1,10 +1,7 @@
 //! Rust integration test to verify that invoking the restricted create CA REST API requires a valid bearer token.
 use std::str::FromStr;
 
-use krill::{
-    commons::api::{Handle, Token},
-    test::{init_ca, start_krill, test_config, tmp_dir},
-};
+use krill::{commons::api::{Handle, Token}, test::{init_ca, start_krill_with_custom_config, test_config, tmp_dir}};
 
 extern crate krill;
 
@@ -19,7 +16,7 @@ async fn auth_check() {
     config.auth_token = Token::from("wrong secret");
 
     // Start Krill with the customized config
-    start_krill(Some(config), false).await;
+    start_krill_with_custom_config(config).await;
 
     // Try and create a CA. The test suite support function `init_ca()` will invoke the create CA REST API passing the
     // bearer token that is hard-coded into the test support suite functions ('secret').

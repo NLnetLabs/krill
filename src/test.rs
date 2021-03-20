@@ -98,28 +98,34 @@ pub fn init_config(config: &Config) {
     config.verify().unwrap();
 }
 
+/// Starts krill server for testing using the given configuration. Creates a random base directory in the 'work' folder,
+/// adjusts the config to use it and returns it. Be sure to clean it up when the test is done.
+pub async fn start_krill_with_custom_config(mut config: Config) -> PathBuf {
+    let dir = tmp_dir();
+    config.set_data_dir(dir.clone());
+    start_krill(config).await;
+    dir
+}
+
+/// Starts krill server for testing using the default test configuration, and optionally with testbed mode enabled.
+/// Creates a random base directory in the 'work' folder, and returns it. Be sure to clean it up when the test is done.
+pub async fn start_krill_with_default_test_config(enable_testbed: bool) -> PathBuf {
+    let dir = tmp_dir();
+    let config = test_config(&dir, enable_testbed);
+    start_krill(config).await;
+    dir
+}
+
+async fn start_krill(config: Config) {
+    init_config(&config);
+    tokio::spawn(start_krill_with_error_trap(Arc::new(config), KrillMode::Ca));
+    assert!(krill_server_ready().await);
+}
+
 async fn start_krill_with_error_trap(config: Arc<Config>, mode: KrillMode) {
     if let Err(err) = server::start_krill_daemon(config, mode).await {
         error!("Krill failed to start: {}", err);
     }
-}
-
-/// Starts krill server for testing, with embedded TA and repo.
-/// Creates a random base directory in the 'work' folder, and returns
-/// it. Be sure to clean it up when the test is done.
-pub async fn start_krill(config: Option<Config>, enable_testbed: bool) -> PathBuf {
-    let dir = tmp_dir();
-    let config = if let Some(mut config) = config {
-        config.set_data_dir(dir.clone());
-        config
-    } else {
-        test_config(&dir, enable_testbed)
-    };
-    init_config(&config);
-
-    tokio::spawn(start_krill_with_error_trap(Arc::new(config), KrillMode::Ca));
-    assert!(krill_server_ready().await);
-    dir
 }
 
 /// Starts a krill pubd for testing on its own port, and its
