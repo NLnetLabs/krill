@@ -421,9 +421,9 @@ describe('Config File Users with TA', () => {
 
     // attempting to create a ROA on ca_readonly should fail
     cy.get('.el-select-dropdown__wrap.el-scrollbar__wrap > ul').contains('ca_readonly').click()
+    cy.wait('@statusRO')
     cy.get('h3 > strong').contains('ca_readonly')
     cy.get('#tab-roas').click()
-    cy.wait('@statusRO')
     cy.contains('Add ROA').click()
     cy.get('div[role="dialog"]')
     cy.contains('Add ROA')
@@ -436,9 +436,9 @@ describe('Config File Users with TA', () => {
     // attempting to create a ROA on ca_readwrite should succeed
     cy.get('.switcher > .el-select > .el-input > .el-input__inner').click()
     cy.get('.el-select-dropdown__wrap.el-scrollbar__wrap > ul').contains('ca_readwrite').click()
+    cy.wait('@statusRW')
     cy.get('h3 > strong').contains('ca_readwrite')
     cy.get('#tab-roas').click()
-    cy.wait('@statusRW')
     cy.contains('Add ROA').click()
     cy.get('div[role="dialog"]')
     cy.contains('Add ROA')
