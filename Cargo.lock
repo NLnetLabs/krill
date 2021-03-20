@@ -1447,9 +1447,9 @@ dependencies = [
 
 [[package]]
 name = "oauth2"
-version = "4.0.0-alpha.6"
+version = "4.0.0-beta.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "10eb04b69330e2ab6d9286193a5f5318cfa1998420178b1abc51475a3a4fe18b"
+checksum = "d64828351c656346fb1b8cb0622b4170c4bb5a382bf4c19666ce395722d08594"
 dependencies = [
  "base64 0.12.3",
  "chrono",
@@ -1457,6 +1457,7 @@ dependencies = [
  "rand 0.7.3",
  "serde",
  "serde_json",
+ "serde_path_to_error",
  "sha2 0.9.3",
  "thiserror",
  "url 2.2.1",
@@ -1488,9 +1489,9 @@ checksum = "624a8340c38c1b80fd549087862da4ba43e08858af025b236e509b6649fc13d5"
 
 [[package]]
 name = "openidconnect"
-version = "2.0.0-alpha.3"
+version = "2.0.0-beta.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce0e644b7d831b1130919795779f184fec990cbe0b7f7eb36be0e930f71c305c"
+checksum = "c0c051ae25ec20dc81bb0308c6d7b84556caaefea0cbbae5ec5611f0fcc843e7"
 dependencies = [
  "base64 0.12.3",
  "chrono",
@@ -1504,6 +1505,7 @@ dependencies = [
  "serde-value",
  "serde_derive",
  "serde_json",
+ "serde_path_to_error",
  "thiserror",
  "untrusted",
  "url 2.2.1",
@@ -2261,6 +2263,15 @@ checksum = "dcac07dbffa1c65e7f816ab9eba78eb142c6d44410f4eeba1e26e4f5dfa56b95"
 dependencies = [
  "itoa",
  "ryu",
+ "serde",
+]
+
+[[package]]
+name = "serde_path_to_error"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42f6109f0506e20f7e0f910e51a0079acf41da8e0694e6442527c4ddf5a2b158"
+dependencies = [
  "serde",
 ]
 
