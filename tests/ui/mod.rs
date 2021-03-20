@@ -21,9 +21,8 @@ pub enum OpenIDConnectMockMode {
 pub async fn run_krill_ui_test(
     test_name: &str,
     _: OpenIDConnectMockMode,
-    testbed_enabled: bool,
 ) {
-    do_run_krill_ui_test(test_name, testbed_enabled).await;
+    do_run_krill_ui_test(test_name).await;
 }
 
 #[cfg(feature = "multi-user")]
