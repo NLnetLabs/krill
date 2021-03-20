@@ -396,6 +396,9 @@ describe('Config File Users with TA', () => {
   })
 
   // This test exercises the custom role-per-ca demo policy.
+  // TODO: the CA dropdown box CSS selector is unreadable and unreliable, give the custom dropdown inner input field an
+  // ID and select that instead. Similarly, the CA title selector is a weak selector, it can easily break later or match
+  // the wrong thing if the UI design is changed and should alos be given its own ID to match on.
   it('CUSTOM POLICY: Sally can only see two CAs and only make ROA changes in one CA', () => {
     cy.intercept('GET', '/api/v1/cas/ca_readonly/repo/status').as('statusRO')
     cy.intercept('GET', '/api/v1/cas/ca_readwrite/repo/status').as('statusRW')
@@ -418,6 +421,7 @@ describe('Config File Users with TA', () => {
 
     // attempting to create a ROA on ca_readonly should fail
     cy.get('.el-select-dropdown__wrap.el-scrollbar__wrap > ul').contains('ca_readonly').click()
+    cy.get('h3 > strong').contains('ca_readonly')
     cy.get('#tab-roas').click()
     cy.wait('@statusRO')
     cy.contains('Add ROA').click()
@@ -432,6 +436,7 @@ describe('Config File Users with TA', () => {
     // attempting to create a ROA on ca_readwrite should succeed
     cy.get('.switcher > .el-select > .el-input > .el-input__inner').click()
     cy.get('.el-select-dropdown__wrap.el-scrollbar__wrap > ul').contains('ca_readwrite').click()
+    cy.get('h3 > strong').contains('ca_readwrite')
     cy.get('#tab-roas').click()
     cy.wait('@statusRW')
     cy.contains('Add ROA').click()
