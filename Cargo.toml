@@ -57,7 +57,7 @@ syslog          = "^4.0"
 rustc_version   = "0.2.3"
 
 [features]
-default = []
+default = [ "multi-user" ]
 rta = []
 multi-user = [ "basic-cookies", "jmespatch/sync", "regex", "oso", "openidconnect", "reqwestblocking", "urlparse" ]
 functional-tests = []
