@@ -42,8 +42,17 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        rust: [stable, 1.45.0, beta]
-        args: ["--features functional-tests,ui-tests", "--all-features", "--no-default-features"] 
+
+        # Test against Rust 1.45.0 because in build.rs we say that is the oldest supported version.
+        # Test against beta Rust to get early warning of any problems that might occur with the upcoming Rust release.
+        # Order: oldest Rust to newest Rust.
+        rust: [1.45.0, stable, beta]
+
+        # Test with default features, all features and no features.
+        # Note: "functional-tests,ui-tests" bulds the same Krill as "" because these features only enable more types
+        # of test, they don't change the compilation of Krill itself.
+        # Order: fewest features to most features.
+        args: ["--no-default-features", "--features functional-tests,ui-tests", "--all-features"] 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v1
