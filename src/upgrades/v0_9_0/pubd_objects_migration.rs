@@ -26,7 +26,7 @@ use crate::{
         PublisherStats, RepoStats, RepositoryAccess, RepositoryAccessInitDetails, RepositoryContent, RrdpServer,
         RrdpSessionReset, RrdpUpdate, RsyncdStore,
     },
-    upgrades::{UpgradeError, UpgradeResult, UpgradeStore},
+    upgrades::{UpgradeError, UpgradeResult, UpgradeStore, MIGRATION_SCOPE},
 };
 
 use super::{
@@ -58,7 +58,12 @@ impl PubdObjectsMigration {
 
     fn populate_repo_content(config: Arc<Config>) -> UpgradeResult<()> {
         let old_store = AggregateStore::<OldRepository>::disk(&config.data_dir, PUBSERVER_DIR)?;
-        old_store.warm()?;
+        if old_store.warm().is_err() {
+            // this is most likely because the info last event is off by one, try deleting the info
+            let kv = KeyValueStore::disk(&config.data_dir, PUBSERVER_DIR)?;
+            let info = KeyStoreKey::scoped("0".to_string(), "info.json".to_string());
+            kv.archive_to(&info, MIGRATION_SCOPE)?;
+        }
 
         let old_repo = old_store.get_latest(&Self::repository_handle())?;
 
@@ -130,7 +135,7 @@ impl UpgradeStore for PubdStoreMigration {
         // migrate commands and events
         for cmd_key in self.command_keys(scope)? {
             let mut old_cmd: OldStoredRepositoryCommand = self.get(&cmd_key)?;
-            self.archive_migrated(&cmd_key)?;
+            self.archive_to_migration_scope(&cmd_key)?;
 
             if let Some(evt_versions) = old_cmd.effect.events() {
                 debug!("  command: {}", cmd_key);
@@ -144,7 +149,7 @@ impl UpgradeStore for PubdStoreMigration {
                         .get(&event_key)?
                         .ok_or_else(|| UpgradeError::Custom(format!("Cannot parse old event: {}", event_key)))?;
 
-                    self.archive_migrated(&event_key)?;
+                    self.archive_to_migration_scope(&event_key)?;
 
                     if old_evt.needs_migration() {
                         info.last_event += 1;

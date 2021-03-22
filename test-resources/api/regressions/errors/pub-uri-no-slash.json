@@ -1,1 +1,0 @@
-{"label":"pub-uri-no-slash","msg":"Publisher uri 'rsync://host/module/folder' must have a trailing slash","args":{"uri":"rsync://host/module/folder"}}

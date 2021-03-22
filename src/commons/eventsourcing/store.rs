@@ -643,14 +643,14 @@ where
         trace!("Trying to load aggregate id: {}", handle);
 
         let info_key = Self::key_for_info(handle);
-        let info: StoredValueInfo = self
+        let limit = self
             .kv
-            .get(&info_key)
+            .get::<StoredValueInfo>(&info_key)
             .map_err(|_| AggregateStoreError::InfoCorrupt(handle.clone()))?
-            .ok_or_else(|| AggregateStoreError::InfoMissing(handle.clone()))?;
+            .map(|info| info.last_event);
 
         match self.cache_get(handle) {
-            None => match self.get_aggregate(handle, Some(info.last_event))? {
+            None => match self.get_aggregate(handle, limit)? {
                 None => {
                     error!("Could not load aggregate with id: {} from disk", handle);
                     Err(AggregateStoreError::UnknownAggregate(handle.clone()))
@@ -665,7 +665,7 @@ where
             Some(mut arc) => {
                 if self.has_updates(handle, &arc)? {
                     let agg = Arc::make_mut(&mut arc);
-                    self.update_aggregate(handle, agg, Some(info.last_event))?;
+                    self.update_aggregate(handle, agg, limit)?;
                 }
                 trace!("Loaded aggregate id: {} from memory", handle);
                 Ok(arc)

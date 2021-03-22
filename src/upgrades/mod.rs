@@ -27,7 +27,8 @@ use self::v0_9_0::{CaObjectsMigration, PubdObjectsMigration};
 pub mod v0_9_0;
 
 pub type UpgradeResult<T> = Result<T, UpgradeError>;
-const MIGRATION_SCOPE: &str = "migration-0.9";
+
+pub const MIGRATION_SCOPE: &str = "migration";
 
 //------------ UpgradeError --------------------------------------------------
 
@@ -151,17 +152,17 @@ pub trait UpgradeStore {
         let snapshot_bk_key = KeyStoreKey::scoped(scope.to_string(), "snapshot-bk.json".to_string());
 
         if self.store().has(&snapshot_key)? {
-            self.archive_migrated(&snapshot_key)?;
+            self.archive_to_migration_scope(&snapshot_key)?;
         }
 
         if self.store().has(&snapshot_bk_key)? {
-            self.archive_migrated(&snapshot_bk_key)?;
+            self.archive_to_migration_scope(&snapshot_bk_key)?;
         }
 
         Ok(())
     }
 
-    fn archive_migrated(&self, key: &KeyStoreKey) -> Result<(), UpgradeError> {
+    fn archive_to_migration_scope(&self, key: &KeyStoreKey) -> Result<(), UpgradeError> {
         self.store()
             .archive_to(&key, MIGRATION_SCOPE)
             .map_err(UpgradeError::KeyStoreError)
@@ -234,12 +235,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_upgrade_0_9_0() {
+    fn test_upgrade_0_8_1() {
         let work_dir = tmp_dir();
-        let source = PathBuf::from("test-resources/migrations/v0_9_0/");
+        let source = PathBuf::from("test-resources/migrations/v0_8_1/");
         file::backup_dir(&source, &work_dir).unwrap();
 
         let config = Arc::new(Config::test(&work_dir));
+        let _ = config.init_logging();
+
+        upgrade_0_9_0(config).unwrap();
+
+        let _ = fs::remove_dir_all(work_dir);
+    }
+
+    #[test]
+    fn test_upgrade_0_6_0() {
+        let work_dir = tmp_dir();
+        let source = PathBuf::from("test-resources/migrations/v0_6_0/");
+        file::backup_dir(&source, &work_dir).unwrap();
+
+        let config = Arc::new(Config::test(&work_dir));
+        let _ = config.init_logging();
 
         upgrade_0_9_0(config).unwrap();
 

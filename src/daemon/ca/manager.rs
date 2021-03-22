@@ -19,8 +19,8 @@ use crate::{
             self, AddChildRequest, Base64, CaCommandDetails, CaCommandResult, CertAuthList, CertAuthSummary,
             ChildAuthRequest, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Entitlements, Handle,
             IssuanceRequest, IssuanceResponse, IssuedCert, ListReply, ParentCaContact, ParentCaReq, ParentHandle,
-            ParentStatuses, PublishDelta, RcvdCert, RepoInfo, RepoStatus, RepositoryContact, ResourceClassName,
-            ResourceSet, RevocationRequest, RevocationResponse, RtaName, StoredEffect, UpdateChildRequest,
+            ParentStatuses, PublishDelta, RcvdCert, RepoStatus, RepositoryContact, ResourceClassName, ResourceSet,
+            RevocationRequest, RevocationResponse, RtaName, StoredEffect, UpdateChildRequest,
         },
         crypto::{IdCert, KrillSigner, ProtocolCms, ProtocolCmsBuilder},
         error::Error,
@@ -334,7 +334,7 @@ impl CaManager {
 ///
 impl CaManager {
     /// Gets the history for a CA.
-    pub async fn get_ca_history(&self, handle: &Handle, crit: CommandHistoryCriteria) -> KrillResult<CommandHistory> {
+    pub async fn ca_history(&self, handle: &Handle, crit: CommandHistoryCriteria) -> KrillResult<CommandHistory> {
         let ca_lock = self.locks.ca(handle).await;
         let _lock = ca_lock.read().await;
         self.ca_store
@@ -343,7 +343,7 @@ impl CaManager {
     }
 
     /// Shows the details for a CA command.
-    pub fn get_ca_command_details(&self, handle: &Handle, command: CommandKey) -> KrillResult<CaCommandDetails> {
+    pub fn ca_command_details(&self, handle: &Handle, command: CommandKey) -> KrillResult<CaCommandDetails> {
         let command = self.ca_store.get_command(handle, &command)?;
 
         let effect = command.effect().clone();

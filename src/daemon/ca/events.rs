@@ -7,8 +7,8 @@ use crate::{
     commons::{
         api::{
             ChildHandle, Handle, IssuanceRequest, IssuedCert, ObjectName, ParentCaContact, ParentHandle,
-            ParentResourceClassName, RcvdCert,  RepositoryContact, ResourceClassName, ResourceSet,
-            RevocationRequest, RevokedObject, RoaAggregateKey, RtaName, TaCertDetails,
+            ParentResourceClassName, RcvdCert, RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest,
+            RevokedObject, RoaAggregateKey, RtaName, TaCertDetails,
         },
         crypto::{IdCert, KrillSigner},
         eventsourcing::StoredEvent,
@@ -37,9 +37,13 @@ impl IniDet {
 }
 
 impl IniDet {
+    pub fn new(handle: &Handle, id: Rfc8183Id) -> Ini {
+        Ini::new(handle, 0, IniDet { id })
+    }
+
     pub fn init(handle: &Handle, signer: &KrillSigner) -> KrillResult<Ini> {
         let id = Rfc8183Id::generate(signer)?;
-        Ok(Ini::new(handle, 0, IniDet { id }))
+        Ok(Self::new(handle, id))
     }
 }
 

@@ -1,0 +1,15 @@
+{
+  "actor": "krill",
+  "time": "2021-03-22T10:55:35.533611230Z",
+  "handle": "ca",
+  "version": 1,
+  "sequence": 1,
+  "details": {
+    "repo_update": "https://localhost:3000/rfc8181/ca"
+  },
+  "effect": {
+    "events": [
+      1
+    ]
+  }
+}

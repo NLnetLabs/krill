@@ -1,6 +1,7 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
-use api::RepositoryContact;
+use api::{RepositoryContact, StorableCaCommand, StoredEffect};
+use ca::{CaEvt, IniDet, StoredCaCommand};
 use rpki::{crl::Crl, crypto::KeyIdentifier, manifest::Manifest, x509::Time};
 
 use crate::{
@@ -28,6 +29,7 @@ use crate::{
     upgrades::{UpgradeError, UpgradeResult, UpgradeStore},
 };
 
+use super::super::MIGRATION_SCOPE;
 use super::{old_commands::*, old_events::*};
 
 /// Migrate the current objects for each CA into the CaObjectStore
@@ -64,7 +66,14 @@ impl CaObjectsMigration {
         // which are preserved here.
         info!("Krill will now populate the CA Objects Store");
         let store = AggregateStore::<CertAuth>::disk(&config.data_dir, CASERVER_DIR)?;
-        store.warm()?;
+        if store.warm().is_err() {
+            // most likely we are dealing with off by one errors in old krill info files. Archive them for migration and try again.
+            let kv = KeyValueStore::disk(&config.data_dir, CASERVER_DIR)?;
+            for c in store.list()? {
+                let info_key = KeyStoreKey::scoped(c.to_string(), "info.json".to_string());
+                kv.archive_to(&info_key, MIGRATION_SCOPE)?;
+            }
+        }
 
         let ca_objects_store = CaObjectsStore::disk(config, signer)?;
 
@@ -100,11 +109,21 @@ impl UpgradeStore for CasStoreMigration {
     fn migrate(&self) -> Result<(), UpgradeError> {
         info!("Krill will now reformat existing command and event data, and remove unnecessary data");
 
+        let dflt_actor = "krill".to_string();
+
         // For each CA:
         //   - build a new
         for scope in self.store.scopes()? {
-            let info_key = KeyStoreKey::scoped(scope.clone(), "info.json".to_string());
-            let mut info: StoredValueInfo = match self.store.get(&info_key) {
+            // Archive all keys in the scope, then we can write new keys as needed without
+            // overwriting anything when we renumber.
+            for key in self.store.keys(Some(scope.clone()), "")? {
+                self.archive_to_migration_scope(&key)?;
+            }
+
+            let migration_scope = format!("{}/{}", scope, MIGRATION_SCOPE);
+
+            let migration_info_key = KeyStoreKey::scoped(migration_scope.clone(), "info.json".to_string());
+            let mut info: StoredValueInfo = match self.store.get(&migration_info_key) {
                 Ok(Some(info)) => info,
                 _ => StoredValueInfo::default(),
             };
@@ -115,25 +134,89 @@ impl UpgradeStore for CasStoreMigration {
 
             // Find all command keys and sort them by sequence.
             // Then turn them back into key store keys for further processing.
-            let cmd_keys = self.command_keys(&scope)?;
+            let cmd_keys = self.command_keys(&migration_scope)?;
+
+            // Get the time to use if we need to inject commands and events for the init
+            // event, based on the first recorded time in command keys.
+            let time_for_init_command = match cmd_keys.first() {
+                Some(first_command) => {
+                    let old_cmd: OldStoredCaCommand = self.get(&first_command)?;
+                    old_cmd.time
+                }
+                None => Time::now(),
+            };
+
+            // Migrate the init event.
+            let old_init_key = KeyStoreKey::scoped(migration_scope.clone(), "delta-0.json".to_string());
+            let init_key = KeyStoreKey::scoped(scope.clone(), "delta-0.json".to_string());
+
+            let old_init: OldCaIni = self.get(&old_init_key)?;
+            let (id, _, old_ini_det) = old_init.unpack();
+            let (rfc_8183_id, repo_opt, ta_opt) = old_ini_det.unpack();
+            let ini = IniDet::new(&id, rfc_8183_id.into());
+            debug!("  init: {}", init_key);
+            self.store.store(&init_key, &ini)?;
+
+            // If the CA was initialized with an embedded repository, then make sure that
+            // we generate a command + events to update the repository to the 'local' RFC 8181
+            // version of this repository.
+
+            if repo_opt.is_some() {
+                debug!("  +- Generate command and event for initialized repository");
+                let res = self
+                    .repo_manager
+                    .as_ref()
+                    .as_ref()
+                    .ok_or(UpgradeError::KrillError(
+                        crate::commons::error::Error::RepositoryServerNotEnabled,
+                    ))?
+                    .repository_response(&id)?;
+
+                let contact = RepositoryContact::new(res);
+                let service_uri = contact.service_uri().clone();
+
+                info.last_event += 1;
+                let event = CaEvt::new(&id, info.last_event, CaEvtDet::RepoUpdated { contact });
+
+                let command = StoredCaCommand::new(
+                    dflt_actor.clone(),
+                    time_for_init_command,
+                    id,
+                    info.last_event,
+                    info.last_command,
+                    StorableCaCommand::RepoUpdate { service_uri },
+                    StoredEffect::Success { events: vec![1] },
+                );
+
+                info.last_command += 1;
+                info.last_update = time_for_init_command;
+
+                let event_key = Self::event_key(&scope, info.last_event);
+                self.store.store(&event_key, &event)?;
+
+                let cmd_key = CommandKey::for_stored(&command);
+                let key = KeyStoreKey::scoped(scope.clone(), format!("{}.json", cmd_key));
+
+                self.store.store(&key, &command)?;
+            }
+
+            // If the CA was initialized as a trust anchor, then migrate..
+            if let Some(ta) = ta_opt {
+                unimplemented!("Migrate TA ")
+            }
 
             for cmd_key in cmd_keys {
                 debug!("  command: {}", cmd_key);
                 let mut old_cmd: OldStoredCaCommand = self.get(&cmd_key)?;
 
-                self.archive_migrated(&cmd_key)?;
-
                 if let Some(evt_versions) = old_cmd.effect.events() {
                     let mut events = vec![];
                     for v in evt_versions {
-                        let event_key = Self::event_key(&scope, *v);
-                        debug!("  +- event: {}", event_key);
-                        let old_evt: OldCaEvt = self
-                            .store
-                            .get(&event_key)?
-                            .ok_or_else(|| UpgradeError::Custom(format!("Cannot parse old event: {}", event_key)))?;
-
-                        self.archive_migrated(&event_key)?;
+                        let migration_event_key = Self::event_key(&&migration_scope, *v);
+                        debug!("  +- event: {}", migration_event_key);
+                        let old_evt: OldCaEvt = self.store.get(&migration_event_key)?.ok_or_else(|| {
+                            UpgradeError::Custom(format!("Cannot parse old event: {}", migration_event_key))
+                        })?;
 
                         if old_evt.needs_migration() {
                             info.last_event += 1;
@@ -142,8 +225,9 @@ impl UpgradeStore for CasStoreMigration {
 
                             let migrated_event = old_evt.into_stored_ca_event(info.last_event, &self.repo_manager)?;
 
-                            let key = KeyStoreKey::scoped(scope.clone(), format!("delta-{}.json", info.last_event));
-                            self.store.store(&key, &migrated_event)?;
+                            let event_key =
+                                KeyStoreKey::scoped(scope.clone(), format!("delta-{}.json", info.last_event));
+                            self.store.store(&event_key, &migrated_event)?;
                         }
                     }
 
@@ -172,6 +256,7 @@ impl UpgradeStore for CasStoreMigration {
             info.snapshot_version = 0;
             info.last_command -= 1;
 
+            let info_key = KeyStoreKey::scoped(scope.clone(), "info.json".to_string());
             self.store.store(&info_key, &info)?;
         }
 

@@ -70,21 +70,6 @@ async fn dedicated_repo_add_publisher(req: rfc8183::PublisherRequest) {
     krill_dedicated_pubd_admin(command).await;
 }
 
-async fn repo_ready(ca: &Handle) -> bool {
-    for _ in 0..300 {
-        // let repo_state = repo_state(ca).await;
-        // if repo_state.as_list().elements().len() == number {
-        let repo_state = repo_status(ca).await;
-        if let Some(exchange) = repo_state.last_exchange() {
-            if exchange.was_success() {
-                return true;
-            }
-        }
-        delay_for(Duration::from_millis(100)).await
-    }
-    false
-}
-
 async fn set_up_ca_with_repo(ca: &Handle) {
     init_ca(ca).await;
 
@@ -98,7 +83,6 @@ async fn set_up_ca_with_repo(ca: &Handle) {
     // Update the repo for the child
     let contact = RepositoryContact::new(response);
     repo_update(ca, contact).await;
-    assert!(repo_ready(ca).await);
 }
 
 async fn expected_mft_and_crl(ca: &Handle, rcn: &ResourceClassName) -> Vec<String> {
@@ -764,7 +748,6 @@ async fn functional() {
         // Update CA3 to use dedicated repo
         let contact = RepositoryContact::new(response);
         repo_update(&ca3, contact).await;
-        assert!(repo_ready(&ca3).await);
 
         // This should result in a key roll and content published in both repos
         assert!(state_becomes_new_key(&ca3).await);

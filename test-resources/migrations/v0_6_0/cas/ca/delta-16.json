@@ -1,0 +1,24 @@
+{
+  "id": "ca",
+  "version": 16,
+  "details": {
+    "key_roll_finished": [
+      "0",
+      {
+        "ca_repo": "rsync://localhost/repo/ca/0",
+        "added": [],
+        "updated": [],
+        "withdrawn": [
+          {
+            "name": "B497A5F1E84F9089F5F51A899725A7C5B076E03F.crl",
+            "hash": "818a04f23313075aacfb186deccc953fe455e006123b89b0b98b09724ae98a05"
+          },
+          {
+            "name": "B497A5F1E84F9089F5F51A899725A7C5B076E03F.mft",
+            "hash": "aa6dc72699ab63e9c88956676a931796038de033a77a5f7e7a6262a73af60733"
+          }
+        ]
+      }
+    ]
+  }
+}

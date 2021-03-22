@@ -1,1 +1,0 @@
-{"label":"ca-roa-not-entitled","msg":"Prefix in ROA '192.168.0.0/16-24 => 64496' not held by you", "args":{"asn":"64496","ca":"ca","prefix":"192.168.0.0/16","max_length":"24"}}

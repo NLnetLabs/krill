@@ -15,8 +15,8 @@ use crate::commons::api::{
     AddChildRequest, AllCertAuthIssues, CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthInit, CertAuthIssues,
     CertAuthList, CertAuthStats, ChildAuthRequest, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria,
     Handle, ListReply, ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublicationServerUris, PublishDelta,
-    PublisherDetails, PublisherHandle, RepoInfo, RepoStatus, RepositoryContact, ResourceSet, RoaDefinition,
-    RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, ServerInfo, TaCertDetails, UpdateChildRequest,
+    PublisherDetails, PublisherHandle, RepoStatus, RepositoryContact, ResourceSet, RoaDefinition, RoaDefinitionUpdates,
+    RtaList, RtaName, RtaPrepResponse, ServerInfo, TaCertDetails, UpdateChildRequest,
 };
 use crate::commons::bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion};
 use crate::commons::crypto::KrillSigner;
@@ -228,13 +228,6 @@ impl KrillServer {
                     caserver
                         .init_ta(ta_aia, vec![ta_uri], repo_manager, &system_actor)
                         .await?;
-
-                    let ta = caserver.get_trust_anchor().await?;
-
-                    // Add publisher
-                    let req = rfc8183::PublisherRequest::new(None, ta_handle.clone(), ta.id_cert().clone());
-
-                    repo_manager.create_publisher(req, &system_actor)?;
 
                     let testbed_ca_handle = testbed_ca_handle();
                     if !caserver.has_ca(&testbed_ca_handle)? {
@@ -715,11 +708,11 @@ impl KrillServer {
         crit: CommandHistoryCriteria,
     ) -> KrillResult<Option<CommandHistory>> {
         let server = self.get_caserver()?;
-        Ok(server.get_ca_history(handle, crit).await.ok())
+        Ok(server.ca_history(handle, crit).await.ok())
     }
 
     pub fn ca_command_details(&self, handle: &Handle, command: CommandKey) -> KrillResult<CaCommandDetails> {
-        self.get_caserver()?.get_ca_command_details(handle, command)
+        self.get_caserver()?.ca_command_details(handle, command)
     }
 
     /// Returns the publisher request for a CA, or NONE of the CA cannot be found.
