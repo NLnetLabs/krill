@@ -990,9 +990,6 @@ mod tests {
         env::set_var(KRILL_ENV_AUTH_TOKEN, "secret");
 
         let c = Config::read_config("./defaults/krill-testbed.conf").unwrap();
-        let expected_socket_addr: SocketAddr = ([127, 0, 0, 1], 3000).into();
-        assert_eq!(c.socket_addr(), expected_socket_addr);
-        assert!(c.testbed().is_some());
 
         let testbed = c.testbed().unwrap();
         assert_eq!(testbed.ta_aia(), &test::rsync("rsync://testbed.example.com/ta/ta.cer"));
