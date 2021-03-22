@@ -7,7 +7,6 @@ async fn multi_user_team_policy_test() {
     ui::run_krill_ui_test(
         "multi_user_team_policy",
         ui::OpenIDConnectMockMode::OIDCProviderWillNotBeStarted,
-        false,
     )
     .await
 }

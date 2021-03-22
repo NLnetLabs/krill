@@ -15,7 +15,7 @@ use syslog::Facility;
 
 use rpki::uri;
 
-use crate::commons::api::Token;
+use crate::commons::api::{PublicationServerUris, Token};
 use crate::commons::util::ext_serde;
 use crate::constants::*;
 use crate::daemon::http::tls_keys;
@@ -277,6 +277,8 @@ pub struct Config {
 
     #[serde(flatten)]
     pub repository_retention: RepositoryRetentionConfig,
+
+    pub testbed: Option<TestBed>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -343,6 +345,37 @@ impl RepositoryRetentionConfig {
     }
 }
 
+#[derive(Clone, Debug, Deserialize)]
+pub struct TestBed {
+    ta_aia: uri::Rsync,
+    ta_uri: uri::Https,
+    rrdp_base_uri: uri::Https,
+    rsync_jail: uri::Rsync,
+}
+
+impl TestBed {
+    pub fn new(ta_aia: uri::Rsync, ta_uri: uri::Https, rrdp_base_uri: uri::Https, rsync_jail: uri::Rsync) -> Self {
+        TestBed {
+            ta_aia,
+            ta_uri,
+            rrdp_base_uri,
+            rsync_jail,
+        }
+    }
+
+    pub fn ta_aia(&self) -> &uri::Rsync {
+        &self.ta_aia
+    }
+
+    pub fn ta_uri(&self) -> &uri::Https {
+        &self.ta_uri
+    }
+
+    pub fn publication_server_uris(&self) -> PublicationServerUris {
+        PublicationServerUris::new(self.rrdp_base_uri.clone(), self.rsync_jail.clone())
+    }
+}
+
 /// # Accessors
 impl Config {
     pub fn set_data_dir(&mut self, data_dir: PathBuf) {
@@ -375,6 +408,10 @@ impl Config {
         uri::Https::from_str(&self.service_uri).unwrap()
     }
 
+    pub fn ta_cert_uri(&self) -> uri::Https {
+        uri::Https::from_string(format!("{}ta/ta.cer", &self.service_uri)).unwrap()
+    }
+
     pub fn pid_file(&self) -> PathBuf {
         match &self.pid_file {
             None => {
@@ -393,14 +430,21 @@ impl Config {
             0
         }
     }
+
+    pub fn testbed(&self) -> Option<&TestBed> {
+        self.testbed.as_ref()
+    }
 }
 
 /// # Create
 impl Config {
-    fn test_config(data_dir: &PathBuf) -> Self {
+    fn test_config(data_dir: &PathBuf, enable_testbed: bool) -> Self {
+        use crate::test;
+
         let ip = ConfigDefaults::ip();
         let port = ConfigDefaults::port();
         let pid_file = None;
+
         let https_mode = HttpsMode::Generate;
         let data_dir = data_dir.clone();
         let always_recover_data = false;
@@ -471,6 +515,17 @@ impl Config {
             retention_archive: false,
         };
 
+        let testbed = if enable_testbed {
+            Some(TestBed::new(
+                test::rsync("rsync://localhost/ta/ta.cer"),
+                test::https("https://localhost/ta/ta.cer"),
+                test::https("https://localhost/rrdp/"),
+                test::rsync("rsync://localhost/repo/"),
+            ))
+        } else {
+            None
+        };
+
         Config {
             ip,
             port,
@@ -506,15 +561,16 @@ impl Config {
             roa_deaggregate_threshold,
             issuance_timing,
             repository_retention,
+            testbed,
         }
     }
 
-    pub fn test(data_dir: &PathBuf) -> Self {
-        Self::test_config(data_dir)
+    pub fn test(data_dir: &PathBuf, enable_testbed: bool) -> Self {
+        Self::test_config(data_dir, enable_testbed)
     }
 
     pub fn pubd_test(data_dir: &PathBuf) -> Self {
-        let mut config = Self::test_config(data_dir);
+        let mut config = Self::test_config(data_dir, false);
         config.port = 3001;
         config.service_uri = "https://localhost:3001/".to_string();
         config
@@ -910,8 +966,10 @@ impl<'de> Deserialize<'de> for AuthType {
 #[cfg(test)]
 mod tests {
 
-    use super::*;
+    use crate::test;
     use std::env;
+
+    use super::*;
 
     #[test]
     fn should_parse_default_config_file() {
@@ -922,6 +980,24 @@ mod tests {
         let c = Config::read_config("./defaults/krill.conf").unwrap();
         let expected_socket_addr: SocketAddr = ([127, 0, 0, 1], 3000).into();
         assert_eq!(c.socket_addr(), expected_socket_addr);
+        assert!(c.testbed().is_none());
+    }
+
+    #[test]
+    fn should_parse_testbed_config_file() {
+        // Config for auth token is required! If there is nothing in the conf
+        // file, then an environment variable must be set.
+        env::set_var(KRILL_ENV_AUTH_TOKEN, "secret");
+
+        let c = Config::read_config("./defaults/krill-testbed.conf").unwrap();
+
+        let testbed = c.testbed().unwrap();
+        assert_eq!(testbed.ta_aia(), &test::rsync("rsync://testbed.example.com/ta/ta.cer"));
+        assert_eq!(testbed.ta_uri(), &test::https("https://testbed.example.com/ta/ta.cer"));
+
+        let uris = testbed.publication_server_uris();
+        assert_eq!(uris.rrdp_base_uri(), &test::https("https://testbed.example.com/rrdp/"));
+        assert_eq!(uris.rsync_jail(), &test::rsync("rsync://testbed.example.com/repo/"));
     }
 
     #[test]

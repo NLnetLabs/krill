@@ -161,7 +161,7 @@ impl fmt::Display for Token {
 
 //------------ PublicationServerUris -----------------------------------------
 
-/// Contains the information needed to initialise a new Publication Server
+/// Contains the information needed to initialize a new Publication Server
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublicationServerUris {
     rrdp_base_uri: uri::Https,

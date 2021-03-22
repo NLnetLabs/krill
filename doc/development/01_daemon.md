@@ -65,8 +65,8 @@ mapping calls to the following components (we will describe each component in mo
 
 | Element             | Code Path                     | Responsibility                                              |
 | ------------------- | ----------------------------- | ----------------------------------------------------------- |
-| `CaServer`          | src/daemon/ca/server.rs       | Manages Krill CAs.                                          |
-| `RepositoryManager` | src/pubd/pubserver.rs         | Manages access to and content of the repository.            |
+| `CaManager`         | src/daemon/ca/manager.rs      | Manages Krill CAs.                                          |
+| `RepositoryManager` | src/pubd/manager.rs           |  Manages access to and content of the repository.            |
 | `Scheduler`         | src/daemon/scheduler.rs       | Schedules and executes background jobs.                     |
 | `Authorizer`        | src/daemon/auth/authorizer.rs | Verifies authentication and authorization for API requests. |
 | `BgpAnalyser`       | src/commons/bgp/analyser.rs   | Compares authorizations to BGP, downloads RIS whois dumps.  |
@@ -79,15 +79,15 @@ The `KrillServer` elements are initialized based on which ```KrillMode``` is sel
 
 | KrillMode | Operation |
 |-|-|
-| Pubd | The KrillServer will have Some(PubServer), but no (None) CaServer |
-| Ca | The KrillServer will have Some(CaServer), but no (None) PubServer |
-| Mixed | The KrillServer will have both a CaServer and a PubServer |
-| Testbed | Krill runs in test mode. It will have a PubServer, CaServer **AND** an embedded TA |
+| Pubd | The KrillServer will have a Repository Manager, but no CA Manager |
+| Ca | The KrillServer will have a CA Manager, but no Repository Manager |
+| Mixed | The KrillServer will have both a CA and Repository Manager |
 
 If Krill is started with the `krillpubd` binary, then the mode will always be ```KrillMode::Pubd```. If it is started with the
 `krill` binary, then the mode will *normally* be ```KrillMode::Ca```. However, for backward compatibility with existing deployments,
 the KrillServer will change this mode to ```KrillMode::Mixed``` if it finds that a data directory exists for an initialized
-Publication Server with at least one active `Publisher`. ```KrillMode::Testbed``` can be forced if the user sets the URIs for the test
-Publication Server rsync and RRDP URI base, using the following two environment variables: `KRILL_TESTBED_RSYNC` and `KRILL_TESTBED_RRDP`.
+Publication Server with at least one active `Publisher`.
 
+Furthermore, ```KrillMode::Mixed``` will be forced if `[testbed]` is enabled in the configuration, see 
+[krill-testbed.conf](../../defaults/krill-testbed.conf)
 
