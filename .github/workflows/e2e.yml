@@ -99,7 +99,7 @@ jobs:
         sudo ldconfig
 
     - name: Install Terraform
-      uses: hashicorp/setup-terraform@v1
+      uses: hashicorp/setup-terraform@v1.3.2
       with:
         terraform_version: "0.12.19"
 
