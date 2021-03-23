@@ -126,7 +126,7 @@ pub enum OldCaEvtDet {
     TrustAnchorMade(TaCertDetails),
 
     // Being a parent Events
-    ChildAdded(ChildHandle, ChildDetails),
+    ChildAdded(ChildHandle, OldChildDetails),
     ChildCertificateIssued(ChildHandle, ResourceClassName, KeyIdentifier),
     ChildKeyRevoked(ChildHandle, ResourceClassName, KeyIdentifier),
     ChildCertificatesUpdated(ResourceClassName, ChildCertificateUpdates),
@@ -136,19 +136,19 @@ pub enum OldCaEvtDet {
 
     // Being a child Events
     IdUpdated(Rfc8183Id),
-    ParentAdded(ParentHandle, ParentCaContact),
-    ParentUpdated(ParentHandle, ParentCaContact),
+    ParentAdded(ParentHandle, OldParentCaContact),
+    ParentUpdated(ParentHandle, OldParentCaContact),
     ParentRemoved(ParentHandle, Vec<ObjectsDelta>),
 
-    ResourceClassAdded(ResourceClassName, ResourceClass),
+    ResourceClassAdded(ResourceClassName, OldResourceClass),
     ResourceClassRemoved(ResourceClassName, ObjectsDelta, ParentHandle, Vec<RevocationRequest>),
     CertificateRequested(ResourceClassName, IssuanceRequest, KeyIdentifier),
     CertificateReceived(ResourceClassName, KeyIdentifier, RcvdCert),
 
     // Key life cycle
     KeyRollPendingKeyAdded(ResourceClassName, KeyIdentifier),
-    KeyPendingToNew(ResourceClassName, CertifiedKey, ObjectsDelta),
-    KeyPendingToActive(ResourceClassName, CertifiedKey, ObjectsDelta),
+    KeyPendingToNew(ResourceClassName, OldCertifiedKey, ObjectsDelta),
+    KeyPendingToActive(ResourceClassName, OldCertifiedKey, ObjectsDelta),
     KeyRollActivated(ResourceClassName, RevocationRequest),
     KeyRollFinished(ResourceClassName, ObjectsDelta),
     UnexpectedKeyFound(ResourceClassName, RevocationRequest),
@@ -332,8 +332,8 @@ pub struct WithdrawnObject {
 pub struct CurrentObjectSetDelta {
     pub number: u64,
     pub revocations_delta: RevocationsDelta,
-    pub manifest_info: ManifestInfo,
-    pub crl_info: CrlInfo,
+    pub manifest_info: OldManifestInfo,
+    pub crl_info: OldCrlInfo,
     pub objects_delta: ObjectsDelta,
 }
 
@@ -405,10 +405,10 @@ impl RoaUpdates {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RoaInfo {
-    pub object: CurrentObject,        // actual ROA
-    name: ObjectName,                 // Name for object in repo
-    since: Time,                      // first ROA in RC created
-    replaces: Option<ReplacedObject>, // for revoking when re-newing
+    pub object: CurrentObject,           // actual ROA
+    name: ObjectName,                    // Name for object in repo
+    since: Time,                         // first ROA in RC created
+    replaces: Option<OldReplacedObject>, // for revoking when re-newing
 }
 
 impl RoaInfo {
