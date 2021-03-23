@@ -58,12 +58,12 @@ jobs:
           # corresponding branch in the framework repo, use that branch.
           echo "::set-output name=branch::${GITHUB_HEAD_REF}"
 
-        elif git ls-remote --exit-code --heads https://github.com/NLnetLabs/rpki-deploy ${GITHUB_HEAD_REF}; then
+        elif git ls-remote --exit-code --heads https://github.com/NLnetLabs/rpki-deploy ${GITHUB_BASE_REF}; then
           # If the e2e test framework has been modified for the branch we are merging into it will have a corresponding
           # branch in the framework repo and we will need to run that version of the framework, not the master version.
           echo "::set-output name=branch::${GITHUB_BASE_REF}"
 
-        elif git ls-remote --exit-code --heads https://github.com/NLnetLabs/rpki-deploy ${GITHUB_HEAD_REF}; then
+        else
           # Otherwise use the master branch version.
           echo "::set-output name=branch::master"
         fi
