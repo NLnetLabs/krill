@@ -190,6 +190,10 @@ impl CaManager {
         })
     }
 
+    pub fn testbed_enabled(&self) -> bool {
+        self.config.testbed().is_some()
+    }
+
     /// Gets the TrustAnchor, if present. Returns an error if the TA is uninitialized.
     pub async fn get_trust_anchor(&self) -> KrillResult<Arc<CertAuth>> {
         let ta_handle = ca::ta_handle();

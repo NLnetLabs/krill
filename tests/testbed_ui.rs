@@ -7,7 +7,6 @@ async fn testbed_ui_test() {
     ui::run_krill_ui_test(
         "testbed_ui",
         ui::OpenIDConnectMockMode::OIDCProviderWillNotBeStarted,
-        true,
     )
     .await;
 }
