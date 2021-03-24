@@ -3,6 +3,14 @@
 ################################################################################
 
 
+# A dummy rule which can be "overridden" by a more specific match.
+# Allows overriding rules that are hard to write a more specific rule for,
+# especially because matching on a Permission variant is not considered more
+# specific than on any variant of Permission due to this issue:
+#   https://github.com/osohq/oso/issues/801
+disallow(_, _, _) if false;
+
+
 # note: using = or != with application types results in error:
 #   "comparison operators are unimplemented in the oso Rust library"
 # so we don't compare nil to actor.attr() results to see if an attribute is set.
@@ -22,6 +30,7 @@
 
 allow(actor: Actor, action: Permission, _resource: Option) if
     _resource = nil and
+    not disallow(actor, action, _resource) and
     actor_has_role(actor, role) and
     role_allow(role, action);
 
@@ -48,6 +57,7 @@ actor_has_role(actor: Actor, role) if role in actor.attr("role");
 # explicitly or implicitly denied access to the CA or is explicitly granted
 # access to the CA.
 allow(actor: Actor, action: Permission, ca: Handle) if
+    not disallow(actor, action, ca) and
     actor_has_role(actor, role) and
     role_allow(role, action) and
     actor_can_access_ca(actor, ca);
