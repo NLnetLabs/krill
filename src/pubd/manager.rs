@@ -34,7 +34,7 @@ pub struct RepositoryManager {
 /// # Constructing
 ///
 impl RepositoryManager {
-    pub fn remove_if_empty(config: Arc<Config>, signer: Arc<KrillSigner>) -> Result<Option<Self>, Error> {
+    pub fn keep_if_used(config: Arc<Config>, signer: Arc<KrillSigner>) -> Result<Option<Self>, Error> {
         let mut pub_server_dir = config.data_dir.clone();
         pub_server_dir.push(PUBSERVER_DIR);
 
@@ -66,7 +66,7 @@ impl RepositoryManager {
                     let _result = fs::remove_dir_all(pub_server_dir);
                     Ok(None)
                 } else {
-                    warn!("Using pre-existing repository server. Note this will be DEPRECATED. You should use 'krillpubd' in future. See Changelog.md");
+                    warn!("Enabling embedded publication server. This will be deprecated in future. You should use 'krillpubd' in future. See Changelog.md");
                     Ok(Some(server))
                 }
             } else {
@@ -293,7 +293,7 @@ mod tests {
 
     fn make_server(work_dir: &PathBuf) -> RepositoryManager {
         enable_test_mode();
-        let config = Arc::new(Config::test(work_dir));
+        let config = Arc::new(Config::test(work_dir, true));
         init_config(&config);
 
         let signer = KrillSigner::build(work_dir).unwrap();

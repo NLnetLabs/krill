@@ -65,7 +65,7 @@ impl Scheduler {
     pub fn build(
         event_queue: Arc<MessageQueue>,
         ca_manager: Option<Arc<CaManager>>,
-        repository_manager: Option<Arc<RepositoryManager>>,
+        repo_manager: Option<Arc<RepositoryManager>>,
         bgp_analyser: Arc<BgpAnalyser>,
         #[cfg(feature = "multi-user")] login_session_cache: Arc<LoginSessionCache>,
         config: &Config,
@@ -80,7 +80,7 @@ impl Scheduler {
             cas_event_triggers = Some(make_cas_event_triggers(
                 event_queue.clone(),
                 ca_manager.clone(),
-                repository_manager,
+                repo_manager,
                 actor.clone(),
             ));
 

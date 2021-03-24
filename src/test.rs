@@ -42,9 +42,9 @@ pub const KRILL_SERVER_URI: &str = "https://localhost:3000/";
 pub const KRILL_PUBD_SERVER_URI: &str = "https://localhost:3001/";
 
 pub fn init_logging() {
-    // Just creates a test config so we can initialise logging, then forgets about it
+    // Just creates a test config so we can initialize logging, then forgets about it
     let d = PathBuf::from(".");
-    let _ = Config::test(&d).init_logging();
+    let _ = Config::test(&d, false).init_logging();
 }
 
 pub fn info(msg: impl std::fmt::Display) {
@@ -83,10 +83,12 @@ pub async fn server_ready(uri: &str) -> bool {
     false
 }
 
-pub fn test_config(dir: &PathBuf) -> Config {
-    crate::constants::enable_test_mode();
-    crate::constants::enable_test_announcements();
-    Config::test(dir)
+pub fn test_config(dir: &PathBuf, enable_testbed: bool) -> Config {
+    if enable_testbed {
+        crate::constants::enable_test_mode();
+        crate::constants::enable_test_announcements();
+    }
+    Config::test(dir, enable_testbed)
 }
 
 pub fn init_config(config: &Config) {
@@ -96,47 +98,41 @@ pub fn init_config(config: &Config) {
     config.verify().unwrap();
 }
 
+/// Starts krill server for testing using the given configuration. Creates a random base directory in the 'work' folder,
+/// adjusts the config to use it and returns it. Be sure to clean it up when the test is done.
+pub async fn start_krill_with_custom_config(mut config: Config) -> PathBuf {
+    let dir = tmp_dir();
+    config.set_data_dir(dir.clone());
+    start_krill(config).await;
+    dir
+}
+
+/// Starts krill server for testing using the default test configuration, and optionally with testbed mode enabled.
+/// Creates a random base directory in the 'work' folder, and returns it. Be sure to clean it up when the test is done.
+pub async fn start_krill_with_default_test_config(enable_testbed: bool) -> PathBuf {
+    let dir = tmp_dir();
+    let config = test_config(&dir, enable_testbed);
+    start_krill(config).await;
+    dir
+}
+
+async fn start_krill(config: Config) {
+    init_config(&config);
+    tokio::spawn(start_krill_with_error_trap(Arc::new(config), KrillMode::Ca));
+    assert!(krill_server_ready().await);
+}
+
 async fn start_krill_with_error_trap(config: Arc<Config>, mode: KrillMode) {
     if let Err(err) = server::start_krill_daemon(config, mode).await {
         error!("Krill failed to start: {}", err);
     }
 }
 
-/// Starts krill server for testing, with embedded TA and repo.
-/// Creates a random base directory in the 'work' folder, and returns
-/// it. Be sure to clean it up when the test is done.
-pub async fn start_krill(config: Option<Config>, enable_testbed: bool) -> PathBuf {
-    let dir = tmp_dir();
-    let config = if let Some(mut config) = config {
-        config.set_data_dir(dir.clone());
-        config
-    } else {
-        test_config(&dir)
-    };
-    init_config(&config);
-
-    let mode = match enable_testbed {
-        false => KrillMode::Ca,
-        true => {
-            let uris = {
-                let rsync_base = uri::Rsync::from_str("rsync://localhost/repo/").unwrap();
-                let rrdp_base_uri = uri::Https::from_str("https://localhost:3000/test-rrdp/").unwrap();
-                PublicationServerUris::new(rrdp_base_uri, rsync_base)
-            };
-            KrillMode::Testbed(uris)
-        }
-    };
-
-    tokio::spawn(start_krill_with_error_trap(Arc::new(config), mode));
-    assert!(krill_server_ready().await);
-    dir
-}
-
 /// Starts a krill pubd for testing on its own port, and its
 /// own tempdir for storage.
 pub async fn start_krill_pubd() -> PathBuf {
     let dir = tmp_dir();
-    let mut config = test_config(&dir);
+    let mut config = test_config(&dir, false);
     init_config(&config);
 
     config.port = 3001;

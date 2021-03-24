@@ -1787,7 +1787,7 @@ mod tests {
 
     #[tokio::test]
     async fn start_krill_daemon() {
-        let dir = test::start_krill(None, false).await;
+        let dir = test::start_krill_with_default_test_config(false).await;
         let _ = fs::remove_dir_all(dir);
     }
 

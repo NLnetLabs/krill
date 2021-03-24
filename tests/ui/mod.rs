@@ -21,16 +21,14 @@ pub enum OpenIDConnectMockMode {
 pub async fn run_krill_ui_test(
     test_name: &str,
     _: OpenIDConnectMockMode,
-    testbed_enabled: bool,
 ) {
-    do_run_krill_ui_test(test_name, testbed_enabled).await;
+    do_run_krill_ui_test(test_name).await;
 }
 
 #[cfg(feature = "multi-user")]
 pub async fn run_krill_ui_test(
     test_name: &str,
     openid_connect_mock_mode: OpenIDConnectMockMode,
-    testbed_enabled: bool,
 ) {
     use OpenIDConnectMockMode::*;
 
@@ -39,7 +37,7 @@ pub async fn run_krill_ui_test(
         _ => Some(openid_connect_mock::start(openid_connect_mock_mode, 1).await),
     };
 
-    do_run_krill_ui_test(test_name, testbed_enabled).await;
+    do_run_krill_ui_test(test_name).await;
 
     if let Some(handle) = op_handle {
         openid_connect_mock::stop(handle).await;
@@ -123,13 +121,13 @@ impl CypressRunner {
     }
 }
 
-async fn do_run_krill_ui_test(test_name: &str, testbed_enabled: bool) {
+async fn do_run_krill_ui_test(test_name: &str) {
     krill::constants::enable_test_mode();
     let config_path = &format!("test-resources/ui/{}.conf", test_name);
     let config = Config::read_config(&config_path).unwrap();
 
     // Start Krill as a Tokio task in the background and wait just until we can tell that it has started.
-    start_krill(Some(config), testbed_enabled).await;
+    start_krill_with_custom_config(config).await;
 
     // Run the specified Cypress UI test suite and wait for it to finish
     assert!(CypressRunner::run(test_name).await.success());

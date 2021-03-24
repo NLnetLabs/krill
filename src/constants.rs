@@ -15,8 +15,6 @@ pub const KRILL_DEFAULT_CONFIG_FILE: &str = "./defaults/krill-multi-user.conf";
 
 const KRILL_ENV_TEST: &str = "KRILL_TEST";
 const KRILL_ENV_TEST_ANN: &str = "KRILL_TEST_ANN";
-pub const KRILL_ENV_TESTBED_RSYNC: &str = "KRILL_TESTBED_RSYNC";
-pub const KRILL_ENV_TESTBED_RRDP: &str = "KRILL_TESTBED_RRDP";
 pub const KRILL_ENV_UPGRADE_ONLY: &str = "KRILL_UPGRADE_ONLY";
 pub const KRILL_ENV_FORCE_RECOVER: &str = "KRILL_FORCE_RECOVER";
 pub const KRILL_ENV_LOG_LEVEL: &str = "KRILL_LOG_LEVEL";
