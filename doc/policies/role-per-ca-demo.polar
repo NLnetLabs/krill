@@ -24,7 +24,7 @@
 
 
 ###
-### rules - evaluated at runtime (and also by the ?= tests above on load)
+### rules
 ###
 
 
@@ -34,6 +34,7 @@ role_allow("roawrite", action: Permission) if
     role_allow("readonly", action) or
     action = ROUTES_UPDATE;
 
+
 # Create a role named "login_and_list_cas"
 role_allow("login_and_list_cas", action: Permission) if
     action in [
@@ -42,24 +43,10 @@ role_allow("login_and_list_cas", action: Permission) if
     ];
 
 
-###
-### simple rule activation - entrypoints used by Oso which make use of the rules above
-###
-
-
-# note: when https://github.com/osohq/oso/issues/788 is fixed we will be able to replace this:
-#   allow(actor: Actor, action: Permission, _resource: Option) if
-#       _resource = nil and
-# with this:
-#   allow(actor: Actor, action: Permission, nil) if
-
-
-allow(actor: Actor, action: Permission, _resource: Option) if
-    _resource = nil and
-    role = actor.attr("role") and
-    role_allow(role, action);
-
-
+# Grant the actor the requested permission on the specified CA ONLY if:
+#   - they have a user attribute named the same as the CA, AND
+#   - the value of that attribute is a role known to Krill, AND
+#   - that role grants the requested permission
 allow(actor: Actor, action: Permission, ca: Handle) if
     role in actor.attr(ca.name) and
     role_allow(role, action);
