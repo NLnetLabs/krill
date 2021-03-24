@@ -23,11 +23,11 @@
 
 
 # Team t1 can only work with CA ca1, they cannot see or do anything with other CAs
-is_team_member_role_permitted_on_ca(team_name, _role, ca: Handle) if
+team_allow(team_name, ca: Handle) if
     team_name = "t1" and ca.name in ["ca1"];
 
 # Team t2 can only work with CA ca2, they cannot see or do anything with other CAs
-is_team_member_role_permitted_on_ca(team_name, _role, ca: Handle) if
+team_allow(team_name, ca: Handle) if
     team_name = "t2" and ca.name in ["ca2"];
 
 
@@ -53,7 +53,7 @@ is_team_member_role_permitted_on_ca(team_name, _role, ca: Handle) if
 #      +--> lookup_team_role(actor, role) 
 #      +--> role_allow(role, action, ca)
 #      +--> does_team_member_have_rights_on_ca(actor, ca)
-#      |    +--> is_team_member_role_permitted_on_ca(team, role, ca)
+#           +--> team_allow(team, ca)
 
 can_team_member_perform_action_without_resource(actor: Actor, action: Permission) if
     lookup_team_role(actor, role) and
@@ -69,8 +69,7 @@ is_actor_in_team(actor: Actor, team_name) if
 
 does_team_member_have_rights_on_ca(actor: Actor, ca: Handle) if
     team_name in actor.attr("team") and
-    lookup_team_role(actor, role) and
-    is_team_member_role_permitted_on_ca(team_name, role, ca);
+    team_allow(team_name, ca);
 
 lookup_team_role(actor: Actor, out_role) if
     out_role in actor.attr("teamrole");
