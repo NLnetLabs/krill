@@ -303,6 +303,11 @@ describe('Config File Users with TA', () => {
   })
 
   // This test exercises the custom role-per-ca demo policy.
+  // As Joe should only be able to do write operations to the CA called 'ca_readwrite', so we test:
+  //   - Which CAs can Joe see in the CA dropdown list? Joe should only be able to see them all.
+  //   - Can Joe create a ROA on ca_readonly? This should fail.
+  //   - Can Joe create a ROA on ca_readwrite? This should succeed.
+  //   - Can Joe add an additional parent to ca_readwrite? This should succeed.
   it('CUSTOM POLICY: Joe can see all CAs but only write to ca_readwrite', () => {
     cy.intercept('GET', '/api/v1/cas/ca_readonly/repo/status').as('statusRO')
     cy.intercept('GET', '/api/v1/cas/ca_readwrite/repo/status').as('statusRW')
@@ -396,6 +401,12 @@ describe('Config File Users with TA', () => {
   })
 
   // This test exercises the custom role-per-ca demo policy.
+  // As Sally should only be able to see two CAs and only be able to add ROAs to one other CA, we test:
+  //   - Which CAs can Sally see in the CA dropdown list? Sally should only be able to see a specific subset.
+  //   - Can Sally create a ROA on ca_readonly? This should fail.
+  //   - Can Sally create a ROA on ca_readwrite? This should succeed.
+  //   - Can Sally add an additional parent to ca_readwrite? This should fail.
+  //
   // TODO: the CA dropdown box CSS selector is unreadable and unreliable, give the custom dropdown inner input field an
   // ID and select that instead. Similarly, the CA title selector is a weak selector, it can easily break later or match
   // the wrong thing if the UI design is changed and should alos be given its own ID to match on.
