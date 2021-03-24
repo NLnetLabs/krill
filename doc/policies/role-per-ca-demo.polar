@@ -35,12 +35,9 @@ role_allow("roawrite", action: Permission) if
     action = ROUTES_UPDATE;
 
 
-# Create a role named "login_and_list_cas"
+# Create a role named 'login_and_list_cas' that grants the rights to login and to list CAs, but no other rights:
 role_allow("login_and_list_cas", action: Permission) if
-    action in [
-        LOGIN,
-        CA_LIST
-    ];
+    action in [LOGIN, CA_LIST];
 
 
 # Grant the actor the requested permission on the specified CA ONLY if:
