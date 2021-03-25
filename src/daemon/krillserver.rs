@@ -13,10 +13,10 @@ use rpki::x509::Time;
 use crate::commons::actor::{Actor, ActorDef};
 use crate::commons::api::{
     AddChildRequest, AllCertAuthIssues, CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthInit, CertAuthIssues,
-    CertAuthList, CertAuthStats, ChildAuthRequest, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria,
-    Handle, ListReply, ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublicationServerUris, PublishDelta,
-    PublisherDetails, PublisherHandle, RepoStatus, RepositoryContact, ResourceSet, RoaDefinition, RoaDefinitionUpdates,
-    RtaList, RtaName, RtaPrepResponse, ServerInfo, TaCertDetails, UpdateChildRequest,
+    CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Handle, ListReply,
+    ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublicationServerUris, PublishDelta, PublisherDetails,
+    PublisherHandle, RepoStatus, RepositoryContact, ResourceSet, RoaDefinition, RoaDefinitionUpdates, RtaList, RtaName,
+    RtaPrepResponse, ServerInfo, TaCertDetails, UpdateChildRequest,
 };
 use crate::commons::bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion};
 use crate::commons::crypto::KrillSigner;
@@ -253,10 +253,11 @@ impl KrillServer {
 
                         // Establish the TA (parent) <-> testbed CA (child) relationship
                         let testbed_ca_resources = ResourceSet::all_resources();
-                        let auth = ChildAuthRequest::Rfc8183(testbed_ca.child_request());
-                        let child_req = AddChildRequest::new(testbed_ca_handle.clone(), testbed_ca_resources, auth);
+                        let child_request = testbed_ca.child_request();
+                        let add_child_request =
+                            AddChildRequest::new(testbed_ca_handle.clone(), testbed_ca_resources, child_request);
                         let parent_ca_contact = caserver
-                            .ca_add_child(&ta_handle, child_req, &service_uri, &system_actor)
+                            .ca_add_child(&ta_handle, add_child_request, &service_uri, &system_actor)
                             .await?;
                         let parent_req = ParentCaReq::new(ta_handle.clone(), parent_ca_contact);
                         caserver
@@ -519,7 +520,7 @@ impl KrillServer {
 
     /// Adds a parent to a CA, will check first if the parent can be reached.
     pub async fn ca_parent_add(&self, handle: Handle, parent: ParentCaReq, actor: &Actor) -> KrillEmptyResult {
-        self.ca_parent_reachable(&handle, parent.handle(), parent.contact())
+        self.ca_parent_reachable(&handle, parent.contact())
             .await
             .map_err(|_| Error::CaParentAddNotResponsive(handle.clone(), parent.handle().clone()))?;
         Ok(self.get_caserver()?.ca_parent_add(handle, parent, actor).await?)
@@ -533,21 +534,16 @@ impl KrillServer {
         contact: ParentCaContact,
         actor: &Actor,
     ) -> KrillEmptyResult {
-        self.ca_parent_reachable(&handle, &parent, &contact).await?;
+        self.ca_parent_reachable(&handle, &contact).await?;
         Ok(self
             .get_caserver()?
             .ca_parent_update(handle, parent, contact, actor)
             .await?)
     }
 
-    async fn ca_parent_reachable(
-        &self,
-        handle: &Handle,
-        parent: &ParentHandle,
-        contact: &ParentCaContact,
-    ) -> KrillEmptyResult {
+    async fn ca_parent_reachable(&self, handle: &Handle, contact: &ParentCaContact) -> KrillEmptyResult {
         self.get_caserver()?
-            .get_entitlements_from_parent_and_contact(handle, parent, contact)
+            .get_entitlements_from_parent_and_contact(handle, contact)
             .await?;
         Ok(())
     }
@@ -556,8 +552,8 @@ impl KrillServer {
         Ok(self.get_caserver()?.ca_parent_remove(handle, parent, actor).await?)
     }
 
-    pub async fn ca_parent_revoke(&self, handle: &Handle, parent: &ParentHandle, actor: &Actor) -> KrillEmptyResult {
-        Ok(self.get_caserver()?.ca_parent_revoke(handle, parent, actor).await?)
+    pub async fn ca_parent_revoke(&self, handle: &Handle, parent: &ParentHandle) -> KrillEmptyResult {
+        Ok(self.get_caserver()?.ca_parent_revoke(handle, parent).await?)
     }
 }
 
@@ -668,15 +664,11 @@ impl KrillServer {
     pub async fn ca_deactivate(&self, ca_handle: &Handle, actor: &Actor) -> KrillResult<()> {
         let ca = self.get_caserver()?.get_ca(ca_handle).await?;
         for parent in ca.parents() {
-            if let Err(e) = self.ca_parent_revoke(ca_handle, parent, actor).await {
+            if let Err(e) = self.ca_parent_revoke(ca_handle, parent).await {
                 warn!(
                     "Removing CA '{}', but could not send revoke requests to parent '{}': {}",
                     ca_handle, parent, e
                 );
-            }
-
-            if let ParentCaContact::Embedded = ca.parent(parent)? {
-                self.ca_child_remove(parent, ca_handle.clone(), actor).await?;
             }
         }
 

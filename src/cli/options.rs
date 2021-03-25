@@ -15,8 +15,8 @@ use rpki::uri;
 use rpki::x509::Time;
 
 use crate::commons::api::{
-    AddChildRequest, AuthorizationFmtError, CertAuthInit, ChildAuthRequest, ChildHandle, Handle, ParentCaContact,
-    ParentCaReq, ParentHandle, PublicationServerUris, PublisherHandle, ResourceSet, ResourceSetError, RoaDefinition,
+    AddChildRequest, AuthorizationFmtError, CertAuthInit, ChildHandle, Handle, ParentCaContact, ParentCaReq,
+    ParentHandle, PublicationServerUris, PublisherHandle, ResourceSet, ResourceSetError, RoaDefinition,
     RoaDefinitionUpdates, RtaName, Token, UpdateChildRequest,
 };
 use crate::commons::crypto::{IdCert, SignSupport};
@@ -1191,8 +1191,7 @@ impl Options {
     fn parse_matches_cas_children_add(matches: &ArgMatches) -> Result<Options, Error> {
         let path = matches.value_of("request").unwrap();
         let bytes = Self::read_file_arg(path)?;
-        let request = rfc8183::ChildRequest::validate(bytes.as_ref())?;
-        let auth_request = ChildAuthRequest::Rfc8183(request);
+        let child_request = rfc8183::ChildRequest::validate(bytes.as_ref())?;
 
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
@@ -1202,8 +1201,8 @@ impl Options {
 
         let resources = Self::parse_resource_args(matches)?.ok_or(Error::MissingResources)?;
 
-        let child_request = AddChildRequest::new(child, resources, auth_request);
-        let command = Command::CertAuth(CaCommand::ChildAdd(my_ca, child_request));
+        let add_child_request = AddChildRequest::new(child, resources, child_request);
+        let command = Command::CertAuth(CaCommand::ChildAdd(my_ca, add_child_request));
         Ok(Options::make(general_args, command))
     }
 

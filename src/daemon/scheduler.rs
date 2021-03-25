@@ -168,7 +168,7 @@ fn make_cas_event_triggers(
                         );
 
                         if ca_manager
-                            .send_revoke_requests(&handle, &parent, revocations, &actor)
+                            .send_revoke_requests(&handle, &parent, revocations)
                             .await
                             .is_err()
                         {
@@ -185,10 +185,7 @@ fn make_cas_event_triggers(
                             revocation.key(),
                             rcn
                         );
-                        if let Err(e) = ca_manager
-                            .send_revoke_unexpected_key(&handle, rcn, revocation, &actor)
-                            .await
-                        {
+                        if let Err(e) = ca_manager.send_revoke_unexpected_key(&handle, rcn, revocation).await {
                             error!("Could not revoke unexpected surplus key at parent: {}", e);
                         }
                     }

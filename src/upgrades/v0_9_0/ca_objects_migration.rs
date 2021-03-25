@@ -2,7 +2,7 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use api::{RepositoryContact, StorableCaCommand, StoredEffect};
 use ca::{CaEvt, IniDet, StoredCaCommand};
-use rpki::{crl::Crl, crypto::KeyIdentifier, manifest::Manifest, x509::Time};
+use rpki::{crl::Crl, crypto::KeyIdentifier, manifest::Manifest, uri, x509::Time};
 
 use crate::{
     commons::{
@@ -43,16 +43,26 @@ impl CaObjectsMigration {
 
         let signer = Arc::new(KrillSigner::build(&config.data_dir)?);
 
-        let cas_store_migration = CasStoreMigration {
-            store,
-            ca_store,
-            repo_manager: repo_manager.clone(),
-        };
-        if cas_store_migration.needs_migrate()? {
+        if store.version_is_before(KeyStoreVersion::V0_6)? {
+            Err(UpgradeError::custom("Cannot upgrade Krill installations from before version 0.6.0. Please upgrade to any version ranging from 0.6.0 to 0.8.1 first, and then upgrade to this version."))
+        } else if store.version_is_before(KeyStoreVersion::V0_9_0_RC1)? {
             info!("Krill version is older than 0.9.0-RC1, will now upgrade data structures.");
-            Self::populate_ca_objects_store(config, repo_manager, signer)?;
-            cas_store_migration.migrate()
+
+            // Populate object store which will contain all objects produced by CAs, while we are
+            // at it.. return the information we will need in case we need to convert embedded child-parent
+            // CA relationships to use RFC 6492.
+            let derived_embedded_ca_info_map = Self::populate_ca_objects_store(config, repo_manager.clone(), signer)?;
+
+            // Migrate existing CAs to the new data structure, commands and events
+            CasStoreMigration {
+                store,
+                ca_store,
+                repo_manager,
+                derived_embedded_ca_info_map,
+            }
+            .migrate()
         } else {
+            debug!("Krill is up to date, no CA data migration needed.");
             Ok(())
         }
     }
@@ -61,7 +71,7 @@ impl CaObjectsMigration {
         config: Arc<Config>,
         repo_manager: Arc<Option<RepositoryManager>>,
         signer: Arc<KrillSigner>,
-    ) -> UpgradeResult<()> {
+    ) -> UpgradeResult<HashMap<Handle, DerivedEmbeddedCaMigrationInfo>> {
         // Read all CAS based on snapshots and events, using the pre-0_9_0 data structs
         // which are preserved here.
         info!("Krill will now populate the CA Objects Store");
@@ -75,16 +85,49 @@ impl CaObjectsMigration {
             }
         }
 
-        let ca_objects_store = CaObjectsStore::disk(config, signer)?;
+        let ca_objects_store = CaObjectsStore::disk(config.clone(), signer)?;
+
+        let mut res = HashMap::new();
 
         for ca_handle in store.list()? {
             let ca = store.get_latest(&ca_handle)?;
             let objects = ca.ca_objects(repo_manager.as_ref())?;
 
             ca_objects_store.put_ca_objects(&ca_handle, &objects)?;
+
+            res.insert(ca_handle, Self::derived_embedded_ca_info(ca, &config));
         }
 
-        Ok(())
+        Ok(res)
+    }
+
+    fn derived_embedded_ca_info(ca: Arc<OldCertAuth>, config: &Config) -> DerivedEmbeddedCaMigrationInfo {
+        let service_uri = format!("{}rfc6492/{}", config.service_uri().to_string(), ca.handle);
+        let service_uri = uri::Https::from_string(service_uri).unwrap();
+        let service_uri = rfc8183::ServiceUri::Https(service_uri);
+
+        let child_request = rfc8183::ChildRequest::new(ca.handle.clone(), ca.id.cert.clone());
+        let parent_responses = ca
+            .children
+            .keys()
+            .map(|child_handle| {
+                (
+                    child_handle.clone(),
+                    rfc8183::ParentResponse::new(
+                        None,
+                        ca.id.cert.clone(),
+                        ca.handle.clone(),
+                        child_handle.clone(),
+                        service_uri.clone(),
+                    ),
+                )
+            })
+            .collect();
+
+        DerivedEmbeddedCaMigrationInfo {
+            child_request,
+            parent_responses,
+        }
     }
 }
 
@@ -93,17 +136,12 @@ struct CasStoreMigration {
     store: KeyValueStore,
     ca_store: AggregateStore<ca::CertAuth>,
     repo_manager: Arc<Option<RepositoryManager>>,
+    derived_embedded_ca_info_map: HashMap<Handle, DerivedEmbeddedCaMigrationInfo>,
 }
 
 impl UpgradeStore for CasStoreMigration {
     fn needs_migrate(&self) -> Result<bool, UpgradeError> {
-        if self.store.scopes()?.is_empty() {
-            Ok(false)
-        } else if Self::version_before(&self.store, KeyStoreVersion::V0_6)? {
-            Err(UpgradeError::custom("Cannot upgrade Krill installations from before version 0.6.0. Please upgrade to any version ranging from 0.6.0 to 0.8.1 first, and then upgrade to this version."))
-        } else {
-            Self::version_before(&self.store, KeyStoreVersion::V0_9_0_RC1)
-        }
+        unreachable!("checked directly on keystore")
     }
 
     fn migrate(&self) -> Result<(), UpgradeError> {
@@ -200,9 +238,13 @@ impl UpgradeStore for CasStoreMigration {
                 self.store.store(&key, &command)?;
             }
 
-            // If the CA was initialized as a trust anchor, then migrate..
-            if let Some(ta) = ta_opt {
-                unimplemented!("Migrate TA ")
+            // If the CA was initialized as a trust anchor, then we refuse to upgrade.
+            // This can only happen if this is a very old test system. People will need
+            // to set up a new test system instead.
+            if ta_opt.is_some() {
+                return Err(UpgradeError::custom(
+                    "This Krill instance is set up as a test system, using a Trust Anchor, which cannot be migrated.",
+                ));
             }
 
             for cmd_key in cmd_keys {
@@ -223,7 +265,11 @@ impl UpgradeStore for CasStoreMigration {
 
                             events.push(info.last_event);
 
-                            let migrated_event = old_evt.into_stored_ca_event(info.last_event, &self.repo_manager)?;
+                            let migrated_event = old_evt.into_stored_ca_event(
+                                info.last_event,
+                                &self.repo_manager,
+                                &self.derived_embedded_ca_info_map,
+                            )?;
 
                             let event_key =
                                 KeyStoreKey::scoped(scope.clone(), format!("delta-{}.json", info.last_event));
@@ -244,7 +290,7 @@ impl UpgradeStore for CasStoreMigration {
                 info.last_command += 1;
                 info.last_update = old_cmd.time;
 
-                let migrated_cmd = old_cmd.into_ca_command(&self.repo_manager)?;
+                let migrated_cmd = old_cmd.into_ca_command(&self.repo_manager, &self.derived_embedded_ca_info_map)?;
                 let cmd_key = CommandKey::for_stored(&migrated_cmd);
                 let key = KeyStoreKey::scoped(scope.clone(), format!("{}.json", cmd_key));
 
@@ -514,7 +560,7 @@ impl Aggregate for OldCertAuth {
     }
 
     fn process_command(&self, _command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
-        unimplemented!("We will not apply commands for this migration")
+        unreachable!("We will not apply commands for this migration")
     }
 }
 
@@ -582,16 +628,6 @@ pub enum OldParentCaContact {
     Ta(TaCertDetails),
     Embedded,
     Rfc6492(rfc8183::ParentResponse),
-}
-
-impl From<OldParentCaContact> for api::ParentCaContact {
-    fn from(old: OldParentCaContact) -> Self {
-        match old {
-            OldParentCaContact::Ta(ta_cert_details) => api::ParentCaContact::for_ta(ta_cert_details),
-            OldParentCaContact::Embedded => api::ParentCaContact::embedded(),
-            OldParentCaContact::Rfc6492(response) => api::ParentCaContact::for_rfc6492(response),
-        }
-    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

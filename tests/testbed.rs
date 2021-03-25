@@ -49,7 +49,7 @@ async fn add_and_remove_certificate_authority() {
 
     // get the CA's child request details just like testbed web UI would extract
     // these from user provided <child_request/> XML
-    let rfc8183_child_request = child_request(&dummy_ca_handle).await;
+    let rfc8183_child_request = request(&dummy_ca_handle).await;
 
     // verify that we can register a child CA with the testbed in the same way
     // that an API client (such as the testbed web UI) would do.
@@ -60,7 +60,7 @@ async fn add_and_remove_certificate_authority() {
         &AddChildRequest::new(
             dummy_ca_handle.clone(),
             ResourceSet::from_strs("AS1", "", "").unwrap(),
-            ChildAuthRequest::Rfc8183(rfc8183_child_request),
+            rfc8183_child_request,
         ),
         None, // no token, the testbed API should be open
     )

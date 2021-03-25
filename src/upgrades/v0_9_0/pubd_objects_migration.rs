@@ -309,7 +309,7 @@ impl Aggregate for OldRepository {
     }
 
     fn process_command(&self, _command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
-        unimplemented!("no need to process commands for migration")
+        unreachable!("no need to process commands for migration")
     }
 }
 

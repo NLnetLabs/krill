@@ -393,7 +393,7 @@ pub enum CaEvtDet {
     // Being a parent Events
     ChildAdded {
         child: ChildHandle,
-        id_cert: Option<IdCert>,
+        id_cert: IdCert,
         resources: ResourceSet,
     },
     ChildCertificateIssued {
@@ -578,7 +578,7 @@ impl CaEvtDet {
         handle: &Handle,
         version: u64,
         child: ChildHandle,
-        id_cert: Option<IdCert>,
+        id_cert: IdCert,
         resources: ResourceSet,
     ) -> CaEvt {
         StoredEvent::new(
@@ -678,11 +678,13 @@ impl fmt::Display for CaEvtDet {
                 id_cert,
                 resources,
             } => {
-                write!(f, "added child '{}' with resources '{}", child, resources)?;
-                if let Some(cert) = id_cert {
-                    write!(f, ", id (hash): {}", cert.ski_hex())?;
-                }
-                Ok(())
+                write!(
+                    f,
+                    "added child '{}' with resources '{}, id (hash): {}",
+                    child,
+                    resources,
+                    id_cert.ski_hex()
+                )
             }
             CaEvtDet::ChildCertificateIssued {
                 child,
@@ -739,7 +741,6 @@ impl fmt::Display for CaEvtDet {
             CaEvtDet::IdUpdated { id } => write!(f, "updated RFC8183 id to key '{}'", id.key_hash()),
             CaEvtDet::ParentAdded { parent, contact } => {
                 let contact_str = match contact {
-                    ParentCaContact::Embedded => "embedded",
                     ParentCaContact::Ta(_) => "TA proxy",
                     ParentCaContact::Rfc6492(_) => "RFC6492",
                 };
@@ -747,7 +748,6 @@ impl fmt::Display for CaEvtDet {
             }
             CaEvtDet::ParentUpdated { parent, contact } => {
                 let contact_str = match contact {
-                    ParentCaContact::Embedded => "embedded",
                     ParentCaContact::Ta(_) => "TA proxy",
                     ParentCaContact::Rfc6492(_) => "RFC6492",
                 };

@@ -19,10 +19,10 @@ use rpki::uri;
 use crate::cli::report::{ApiResponse, ReportFormat};
 use crate::cli::{Error, KrillClient, KrillPubdClient};
 use crate::commons::api::{
-    AddChildRequest, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ChildAuthRequest, ChildHandle, Handle,
-    ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublicationServerUris, PublisherDetails,
-    PublisherHandle, PublisherList, ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates, RtaList,
-    RtaName, RtaPrepResponse, Token, TypedPrefix, UpdateChildRequest,
+    AddChildRequest, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ChildHandle, Handle, ParentCaContact, ParentCaReq,
+    ParentHandle, ParentStatuses, PublicationServerUris, PublisherDetails, PublisherHandle, PublisherList,
+    ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, Token,
+    TypedPrefix, UpdateChildRequest,
 };
 use crate::commons::bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion};
 use crate::commons::crypto::SignSupport;
@@ -250,32 +250,19 @@ pub async fn parent_contact(handle: &Handle, child: &ChildHandle) -> ParentCaCon
     }
 }
 
-pub async fn child_request(handle: &Handle) -> rfc8183::ChildRequest {
+pub async fn request(handle: &Handle) -> rfc8183::ChildRequest {
     match krill_admin(Command::CertAuth(CaCommand::ChildRequest(handle.clone()))).await {
         ApiResponse::Rfc8183ChildRequest(req) => req,
         _ => panic!("Expected child request"),
     }
 }
 
-// We use embedded when not testing RFC 6492 - so that the CMS signing/verification overhead can be reduced.
-pub async fn add_child_to_ta_embedded(handle: &Handle, resources: ResourceSet) -> ParentCaContact {
-    let auth = ChildAuthRequest::Embedded;
-    let req = AddChildRequest::new(handle.clone(), resources, auth);
-    let res = krill_admin(Command::CertAuth(CaCommand::ChildAdd(ta_handle(), req))).await;
-
-    match res {
-        ApiResponse::ParentCaContact(info) => info,
-        _ => panic!("Expected ParentCaInfo response"),
-    }
-}
-
 pub async fn add_child_to_ta_rfc6492(
     handle: &Handle,
-    req: rfc8183::ChildRequest,
+    child_request: rfc8183::ChildRequest,
     resources: ResourceSet,
 ) -> ParentCaContact {
-    let auth = ChildAuthRequest::Rfc8183(req);
-    let req = AddChildRequest::new(handle.clone(), resources, auth);
+    let req = AddChildRequest::new(handle.clone(), resources, child_request);
     let res = krill_admin(Command::CertAuth(CaCommand::ChildAdd(ta_handle(), req))).await;
 
     match res {
@@ -287,13 +274,17 @@ pub async fn add_child_to_ta_rfc6492(
 pub async fn add_child_rfc6492(
     parent: &ParentHandle,
     child: &ChildHandle,
-    req: rfc8183::ChildRequest,
+    child_request: rfc8183::ChildRequest,
     resources: ResourceSet,
 ) -> ParentCaContact {
-    let auth = ChildAuthRequest::Rfc8183(req);
-    let req = AddChildRequest::new(child.clone(), resources, auth);
+    let add_child_request = AddChildRequest::new(child.clone(), resources, child_request);
 
-    match krill_admin(Command::CertAuth(CaCommand::ChildAdd(parent.clone(), req))).await {
+    match krill_admin(Command::CertAuth(CaCommand::ChildAdd(
+        parent.clone(),
+        add_child_request,
+    )))
+    .await
+    {
         ApiResponse::ParentCaContact(info) => info,
         _ => panic!("Expected ParentCaInfo response"),
     }

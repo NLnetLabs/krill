@@ -647,8 +647,8 @@ pub async fn rfc6492(req: Request) -> RoutingResult {
             Ok(bytes) => bytes,
             Err(e) => return render_error(e),
         };
-        let lock = state.read().await;
-        match lock.rfc6492(ca, bytes, &actor).await {
+        let krill_server = state.read().await;
+        match krill_server.rfc6492(ca, bytes, &actor).await {
             Ok(bytes) => Ok(HttpResponse::rfc6492(bytes.to_vec())),
             Err(e) => render_error(e),
         }

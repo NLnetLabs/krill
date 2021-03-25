@@ -145,20 +145,20 @@ impl From<&IdCert> for IdCertPem {
 /// This type represents information about a child CA that is shared through the API.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildCaInfo {
-    id_cert: Option<IdCertPem>,
+    id_cert: IdCertPem,
     entitled_resources: ResourceSet,
 }
 
 impl ChildCaInfo {
-    pub fn new(id_cert: Option<&IdCert>, entitled_resources: ResourceSet) -> Self {
+    pub fn new(id_cert: &IdCert, entitled_resources: ResourceSet) -> Self {
         ChildCaInfo {
-            id_cert: id_cert.map(IdCertPem::from),
+            id_cert: id_cert.into(),
             entitled_resources,
         }
     }
 
-    pub fn id_cert(&self) -> Option<&IdCertPem> {
-        self.id_cert.as_ref()
+    pub fn id_cert(&self) -> &IdCertPem {
+        &self.id_cert
     }
 
     pub fn entitled_resources(&self) -> &ResourceSet {
@@ -168,10 +168,8 @@ impl ChildCaInfo {
 
 impl fmt::Display for ChildCaInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if let Some(id) = &self.id_cert {
-            writeln!(f, "{}", id.pem())?;
-            writeln!(f, "SHA256 hash of PEM encoded certificate: {}", id.hash())?;
-        }
+        writeln!(f, "{}", self.id_cert.pem())?;
+        writeln!(f, "SHA256 hash of PEM encoded certificate: {}", self.id_cert.hash())?;
         writeln!(f, "resources: {}", self.entitled_resources)
     }
 }
@@ -1070,7 +1068,6 @@ impl ParentInfo {
     pub fn new(handle: ParentHandle, contact: ParentCaContact) -> Self {
         let kind = match contact {
             ParentCaContact::Ta(_) => ParentKindInfo::Ta,
-            ParentCaContact::Embedded => ParentKindInfo::Embedded,
             ParentCaContact::Rfc6492(_) => ParentKindInfo::Rfc6492,
         };
         ParentInfo { handle, kind }

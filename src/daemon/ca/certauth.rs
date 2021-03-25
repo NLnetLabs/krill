@@ -392,7 +392,7 @@ impl Aggregate for CertAuth {
             CmdDet::MakeTrustAnchor(uris, signer) => self.trust_anchor_make(uris, signer),
 
             // being a parent
-            CmdDet::ChildAdd(child, id_cert_opt, resources) => self.child_add(child, id_cert_opt, resources),
+            CmdDet::ChildAdd(child, id_cert, resources) => self.child_add(child, id_cert, resources),
             CmdDet::ChildUpdateResources(child, res) => self.child_update_resources(&child, res),
             CmdDet::ChildUpdateId(child, id) => self.child_update_id(&child, id),
             CmdDet::ChildCertify(child, request, config, signer) => self.child_certify(child, request, &config, signer),
@@ -426,7 +426,7 @@ impl Aggregate for CertAuth {
             // Republish
             CmdDet::RepoUpdate(contact, signer) => self.update_repo(contact, &signer),
             CmdDet::RepoRemoveOld(_signer) => {
-                unimplemented!("historic command")
+                unreachable!("historic command")
             }
 
             // Resource Tagged Attestations
@@ -598,11 +598,8 @@ impl CertAuth {
         let child_handle = content.sender();
         let child = self.get_child(child_handle)?;
 
-        let child_cert = child
-            .id_cert()
-            .ok_or_else(|| Error::CaChildUnauthorized(self.handle.clone(), child_handle.clone()))?;
-
-        msg.validate(child_cert).map_err(|_| Error::Rfc6492SignatureInvalid)?;
+        msg.validate(child.id_cert())
+            .map_err(|_| Error::Rfc6492SignatureInvalid)?;
 
         Ok(content)
     }
@@ -729,12 +726,7 @@ impl CertAuth {
 
     /// Adds the child, returns an error if the child is a duplicate,
     /// or if the resources are empty, or not held by this CA.
-    fn child_add(
-        &self,
-        child: ChildHandle,
-        id_cert: Option<IdCert>,
-        resources: ResourceSet,
-    ) -> KrillResult<Vec<CaEvt>> {
+    fn child_add(&self, child: ChildHandle, id_cert: IdCert, resources: ResourceSet) -> KrillResult<Vec<CaEvt>> {
         if resources.is_empty() {
             Err(Error::CaChildMustHaveResources(self.handle.clone(), child))
         } else if !self.all_resources().contains(&resources) {
@@ -839,7 +831,7 @@ impl CertAuth {
 
         let child = self.get_child(child_handle)?;
 
-        if Some(&id_cert) != child.id_cert() {
+        if &id_cert != child.id_cert() {
             res.push(CaEvtDet::child_updated_cert(
                 &self.handle,
                 self.version,

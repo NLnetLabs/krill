@@ -105,13 +105,8 @@ pub trait UpgradeStore {
     fn needs_migrate(&self) -> Result<bool, UpgradeError>;
     fn migrate(&self) -> Result<(), UpgradeError>;
 
-    fn version_before(kv: &KeyValueStore, before: KeyStoreVersion) -> Result<bool, UpgradeError> {
-        let key = KeyStoreKey::simple("version".to_string());
-        match kv.get::<KeyStoreVersion>(&key) {
-            Err(e) => Err(UpgradeError::KeyStoreError(e)),
-            Ok(None) => Ok(true),
-            Ok(Some(current_version)) => Ok(current_version < before),
-        }
+    fn version_before(kv: &KeyValueStore, later: KeyStoreVersion) -> Result<bool, UpgradeError> {
+        kv.version_is_before(later).map_err(UpgradeError::KeyStoreError)
     }
 
     fn store(&self) -> &KeyValueStore;

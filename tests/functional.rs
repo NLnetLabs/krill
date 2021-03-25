@@ -164,7 +164,7 @@ async fn will_publish(test_msg: &str, publisher: &PublisherHandle, files: &[Stri
 }
 
 async fn set_up_ca_under_parent_with_resources(ca: &Handle, parent: &ParentHandle, resources: &ResourceSet) {
-    let child_request = child_request(ca).await;
+    let child_request = request(ca).await;
     let parent = {
         let contact = add_child_rfc6492(parent, ca, child_request, resources.clone()).await;
         ParentCaReq::new(parent.clone(), contact)

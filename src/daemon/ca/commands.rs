@@ -43,7 +43,7 @@ pub enum CmdDet {
     // ------------------------------------------------------------
 
     // Add a new child under this parent CA
-    ChildAdd(ChildHandle, Option<IdCert>, ResourceSet),
+    ChildAdd(ChildHandle, IdCert, ResourceSet),
 
     // Update the resource entitlements for an existing child.
     ChildUpdateResources(ChildHandle, ResourceSet),
@@ -176,9 +176,9 @@ impl From<CmdDet> for StorableCaCommand {
             // ------------------------------------------------------------
             // Being a parent
             // ------------------------------------------------------------
-            CmdDet::ChildAdd(child, id_cert_opt, resources) => StorableCaCommand::ChildAdd {
+            CmdDet::ChildAdd(child, id_cert, resources) => StorableCaCommand::ChildAdd {
                 child,
-                ski: id_cert_opt.map(|c| c.ski_hex()),
+                ski: id_cert.ski_hex(),
                 resources,
             },
             CmdDet::ChildUpdateResources(child, resources) => {
@@ -278,7 +278,7 @@ impl CmdDet {
     pub fn child_add(
         handle: &Handle,
         child_handle: Handle,
-        child_id_cert: Option<IdCert>,
+        child_id_cert: IdCert,
         child_resources: ResourceSet,
         actor: &Actor,
     ) -> Cmd {

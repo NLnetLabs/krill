@@ -451,17 +451,12 @@ impl Eq for TaCertDetails {}
 #[serde(tag = "type")]
 pub enum ParentCaContact {
     Ta(TaCertDetails),
-    Embedded,
     Rfc6492(rfc8183::ParentResponse),
 }
 
 impl ParentCaContact {
     pub fn for_rfc6492(response: rfc8183::ParentResponse) -> Self {
         ParentCaContact::Rfc6492(response)
-    }
-
-    pub fn embedded() -> Self {
-        ParentCaContact::Embedded
     }
 
     pub fn for_ta(ta_cert_details: TaCertDetails) -> Self {
@@ -484,7 +479,6 @@ impl fmt::Display for ParentCaContact {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             ParentCaContact::Ta(details) => write!(f, "{}", details.tal()),
-            ParentCaContact::Embedded => write!(f, "Embedded parent"),
             ParentCaContact::Rfc6492(response) => {
                 let bytes = response.encode_vec();
                 let xml = unsafe { from_utf8_unchecked(&bytes) };
@@ -499,7 +493,6 @@ impl fmt::Display for ParentCaContact {
 #[serde(rename_all = "snake_case")]
 pub enum StorableParentContact {
     Ta,
-    Embedded,
     Rfc6492,
 }
 
@@ -507,7 +500,6 @@ impl fmt::Display for StorableParentContact {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             StorableParentContact::Ta => write!(f, "This CA is a TA"),
-            StorableParentContact::Embedded => write!(f, "Embedded parent"),
             StorableParentContact::Rfc6492 => write!(f, "RFC 6492 Parent"),
         }
     }
@@ -517,7 +509,6 @@ impl From<ParentCaContact> for StorableParentContact {
     fn from(parent: ParentCaContact) -> Self {
         match parent {
             ParentCaContact::Ta(_) => StorableParentContact::Ta,
-            ParentCaContact::Embedded => StorableParentContact::Embedded,
             ParentCaContact::Rfc6492(_) => StorableParentContact::Rfc6492,
         }
     }
@@ -546,63 +537,32 @@ impl CertAuthInit {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[allow(clippy::large_enum_variant)]
-#[serde(rename_all = "snake_case")]
-pub enum CertAuthPubMode {
-    Embedded,
-    Rfc8181(IdCert),
-}
-
 //------------ AddChildRequest -----------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AddChildRequest {
     handle: Handle,
     resources: ResourceSet,
-    auth: ChildAuthRequest,
+    child_request: rfc8183::ChildRequest,
 }
 
 impl fmt::Display for AddChildRequest {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "handle '{}' resources '{}' kind '{}'",
-            self.handle, self.resources, self.auth
-        )
+        write!(f, "handle '{}' resources '{}'", self.handle, self.resources,)
     }
 }
 
 impl AddChildRequest {
-    pub fn new(handle: Handle, resources: ResourceSet, auth: ChildAuthRequest) -> Self {
+    pub fn new(handle: Handle, resources: ResourceSet, request: rfc8183::ChildRequest) -> Self {
         AddChildRequest {
             handle,
             resources,
-            auth,
+            child_request: request,
         }
     }
 
-    pub fn unwrap(self) -> (Handle, ResourceSet, ChildAuthRequest) {
-        (self.handle, self.resources, self.auth)
-    }
-}
-
-//------------ ChildAuthRequest ----------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[allow(clippy::large_enum_variant)]
-#[serde(rename_all = "snake_case")]
-pub enum ChildAuthRequest {
-    Embedded,
-    Rfc8183(rfc8183::ChildRequest),
-}
-
-impl fmt::Display for ChildAuthRequest {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            ChildAuthRequest::Embedded => write!(f, "embedded"),
-            ChildAuthRequest::Rfc8183(req) => req.fmt(f),
-        }
+    pub fn unpack(self) -> (Handle, ResourceSet, rfc8183::ChildRequest) {
+        (self.handle, self.resources, self.child_request)
     }
 }
 

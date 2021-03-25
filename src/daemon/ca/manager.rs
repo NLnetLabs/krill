@@ -17,10 +17,10 @@ use crate::{
         api::rrdp::PublishElement,
         api::{
             self, AddChildRequest, Base64, CaCommandDetails, CaCommandResult, CertAuthList, CertAuthSummary,
-            ChildAuthRequest, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Entitlements, Handle,
-            IssuanceRequest, IssuanceResponse, IssuedCert, ListReply, ParentCaContact, ParentCaReq, ParentHandle,
-            ParentStatuses, PublishDelta, RcvdCert, RepoStatus, RepositoryContact, ResourceClassName, ResourceSet,
-            RevocationRequest, RevocationResponse, RtaName, StoredEffect, UpdateChildRequest,
+            ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Entitlements, Handle, IssuanceRequest,
+            IssuanceResponse, IssuedCert, ListReply, ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses,
+            PublishDelta, RcvdCert, RepoStatus, RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest,
+            RevocationResponse, RtaName, StoredEffect, UpdateChildRequest,
         },
         crypto::{IdCert, KrillSigner, ProtocolCms, ProtocolCmsBuilder},
         error::Error,
@@ -379,20 +379,11 @@ impl CaManager {
         actor: &Actor,
     ) -> KrillResult<ParentCaContact> {
         info!("CA '{}' process add child request: {}", &ca, &req);
-        let (child_handle, child_res, child_auth) = req.unwrap();
-
-        let id_cert = match &child_auth {
-            ChildAuthRequest::Embedded => None,
-            ChildAuthRequest::Rfc8183(req) => Some(req.id_cert().clone()),
-        };
+        let (child_handle, child_res, request) = req.unpack();
+        let (tag, _, id_cert) = request.unpack();
 
         let add_child = CmdDet::child_add(&ca, child_handle.clone(), id_cert, child_res, actor);
         self.send_command(add_child).await?;
-
-        let tag = match child_auth {
-            ChildAuthRequest::Rfc8183(req) => req.tag().cloned(),
-            _ => None,
-        };
 
         self.ca_parent_contact(ca, child_handle, tag, service_uri).await
     }
@@ -404,7 +395,7 @@ impl CaManager {
         ca.get_child(child).map(|details| details.clone().into())
     }
 
-    /// Show a contact for a child. Shows "embedded" if the parent does not know any id cert for the child.
+    /// Show a contact for a child.
     pub async fn ca_parent_contact(
         &self,
         ca_handle: &Handle,
@@ -412,16 +403,10 @@ impl CaManager {
         tag: Option<String>,
         service_uri: &uri::Https,
     ) -> KrillResult<ParentCaContact> {
-        let ca = self.get_ca(ca_handle).await?;
-        let child = ca.get_child(&child_handle)?;
-        if child.id_cert().is_some() {
-            let response = self
-                .ca_parent_response(ca_handle, child_handle, tag, service_uri)
-                .await?;
-            Ok(ParentCaContact::for_rfc6492(response))
-        } else {
-            Ok(ParentCaContact::Embedded)
-        }
+        let response = self
+            .ca_parent_response(ca_handle, child_handle, tag, service_uri)
+            .await?;
+        Ok(ParentCaContact::for_rfc6492(response))
     }
 
     /// Gets an RFC8183 Parent Response for the child.
@@ -635,7 +620,7 @@ impl CaManager {
     /// and all relevant content will be withdrawn from the repository.
     pub async fn ca_parent_remove(&self, handle: Handle, parent: ParentHandle, actor: &Actor) -> KrillResult<()> {
         // best effort, request revocations for any remaining keys under this parent.
-        if let Err(e) = self.ca_parent_revoke(&handle, &parent, actor).await {
+        if let Err(e) = self.ca_parent_revoke(&handle, &parent).await {
             warn!(
                 "Removing parent '{}' from CA '{}', but could not send revoke requests: {}",
                 parent, handle, e
@@ -648,11 +633,10 @@ impl CaManager {
     }
 
     /// Send revocation requests for a parent of a CA when the parent is removed.
-    pub async fn ca_parent_revoke(&self, handle: &Handle, parent: &ParentHandle, actor: &Actor) -> KrillResult<()> {
+    pub async fn ca_parent_revoke(&self, handle: &Handle, parent: &ParentHandle) -> KrillResult<()> {
         let ca = self.get_ca(&handle).await?;
         let revoke_requests = ca.revoke_under_parent(&parent, &self.signer)?;
-        self.send_revoke_requests(&handle, &parent, revoke_requests, actor)
-            .await?;
+        self.send_revoke_requests(&handle, &parent, revoke_requests).await?;
         Ok(())
     }
 
@@ -776,7 +760,7 @@ impl CaManager {
         let child = self.get_ca(handle).await?;
         let requests = child.revoke_requests(parent);
 
-        let revoke_responses = self.send_revoke_requests(handle, parent, requests, actor).await?;
+        let revoke_responses = self.send_revoke_requests(handle, parent, requests).await?;
 
         for (rcn, revoke_responses) in revoke_responses.into_iter() {
             for response in revoke_responses.into_iter() {
@@ -793,15 +777,11 @@ impl CaManager {
         handle: &Handle,
         parent: &ParentHandle,
         revoke_requests: HashMap<ResourceClassName, Vec<RevocationRequest>>,
-        actor: &Actor,
     ) -> KrillResult<HashMap<ResourceClassName, Vec<RevocationResponse>>> {
         let child = self.get_ca(handle).await?;
         match child.parent(parent)? {
             ParentCaContact::Ta(_) => Err(Error::TaNotAllowed),
-            ParentCaContact::Embedded => {
-                self.send_revoke_requests_embedded(revoke_requests, handle, parent, actor)
-                    .await
-            }
+
             ParentCaContact::Rfc6492(parent_res) => {
                 let uri = parent_res.service_uri().to_string();
 
@@ -837,37 +817,13 @@ impl CaManager {
         handle: &Handle,
         rcn: ResourceClassName,
         revocation: RevocationRequest,
-        actor: &Actor,
     ) -> KrillResult<HashMap<ResourceClassName, Vec<RevocationResponse>>> {
         let child = self.ca_store.get_latest(handle)?;
         let parent = child.parent_for_rc(&rcn)?;
         let mut requests = HashMap::new();
         requests.insert(rcn, vec![revocation]);
 
-        self.send_revoke_requests(handle, parent, requests, actor).await
-    }
-
-    async fn send_revoke_requests_embedded(
-        &self,
-        revoke_requests: HashMap<ResourceClassName, Vec<RevocationRequest>>,
-        handle: &Handle,
-        parent_h: &ParentHandle,
-        actor: &Actor,
-    ) -> KrillResult<HashMap<ResourceClassName, Vec<RevocationResponse>>> {
-        let mut revoke_map = HashMap::new();
-
-        for (rcn, revoke_requests) in revoke_requests.into_iter() {
-            let mut revocations = vec![];
-            for req in revoke_requests.into_iter() {
-                revocations.push((&req).into());
-
-                self.send_command(CmdDet::child_revoke_key(parent_h, handle.clone(), req, actor))
-                    .await?;
-            }
-            revoke_map.insert(rcn, revocations);
-        }
-
-        Ok(revoke_map)
+        self.send_revoke_requests(handle, parent, requests).await
     }
 
     async fn send_revoke_requests_rfc6492(
@@ -916,10 +872,7 @@ impl CaManager {
 
         let issued_certs = match child.parent(parent)? {
             ParentCaContact::Ta(_) => Err(Error::TaNotAllowed),
-            ParentCaContact::Embedded => {
-                self.send_cert_requests_embedded(cert_requests, handle, parent, actor)
-                    .await
-            }
+
             ParentCaContact::Rfc6492(parent_res) => {
                 let uri = parent_res.service_uri().to_string();
                 match self
@@ -961,46 +914,6 @@ impl CaManager {
         }
 
         Ok(())
-    }
-
-    async fn send_cert_requests_embedded(
-        &self,
-        requests: HashMap<ResourceClassName, Vec<IssuanceRequest>>,
-        handle: &Handle,
-        parent_h: &ParentHandle,
-        actor: &Actor,
-    ) -> KrillResult<HashMap<ResourceClassName, Vec<IssuedCert>>> {
-        let mut issued_map = HashMap::new();
-
-        for (rcn, requests) in requests.into_iter() {
-            let mut issued_certs = vec![];
-            for req in requests.into_iter() {
-                let pub_key = req.csr().public_key().clone();
-                let parent_class = req.class_name().clone();
-
-                let parent = self
-                    .send_command(CmdDet::child_certify(
-                        parent_h,
-                        handle.clone(),
-                        req,
-                        self.config.clone(),
-                        self.signer.clone(),
-                        actor,
-                    ))
-                    .await?;
-
-                let response =
-                    parent.issuance_response(handle, &parent_class, &pub_key, &self.config.issuance_timing)?;
-
-                let (_, _, _, issued) = response.unwrap();
-
-                issued_certs.push(issued);
-            }
-
-            issued_map.insert(rcn, issued_certs);
-        }
-
-        Ok(issued_map)
     }
 
     async fn send_cert_requests_rfc6492(
@@ -1071,30 +984,18 @@ impl CaManager {
     ) -> KrillResult<api::Entitlements> {
         let ca = self.get_ca(&handle).await?;
         let contact = ca.parent(parent)?;
-        self.get_entitlements_from_parent_and_contact(handle, parent, contact)
-            .await
+        self.get_entitlements_from_parent_and_contact(handle, contact).await
     }
 
     pub async fn get_entitlements_from_parent_and_contact(
         &self,
         handle: &Handle,
-        parent: &ParentHandle,
         contact: &ParentCaContact,
     ) -> KrillResult<api::Entitlements> {
         match contact {
             ParentCaContact::Ta(_) => Err(Error::TaNotAllowed),
-            ParentCaContact::Embedded => self.get_entitlements_embedded(handle, parent).await,
             ParentCaContact::Rfc6492(res) => self.get_entitlements_rfc6492(handle, res).await,
         }
-    }
-
-    async fn get_entitlements_embedded(
-        &self,
-        handle: &Handle,
-        parent: &ParentHandle,
-    ) -> KrillResult<api::Entitlements> {
-        let parent = self.ca_store.get_latest(parent)?;
-        parent.list(handle, &self.config.issuance_timing)
     }
 
     async fn get_entitlements_rfc6492(

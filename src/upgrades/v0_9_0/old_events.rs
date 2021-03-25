@@ -16,12 +16,13 @@ use crate::{
     commons::{
         api::{
             rrdp::{CurrentObjects, DeltaElements, PublishElement, RrdpSession},
-            Base64, ChildHandle, HexEncodedHash, IssuanceRequest, IssuedCert, ObjectName, ParentHandle,
-            PublisherHandle, RcvdCert, RepoInfo, RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest,
-            RevocationsDelta, RevokedObject, RoaAggregateKey, RtaName, TaCertDetails,
+            Base64, ChildHandle, Handle, HexEncodedHash, IssuanceRequest, IssuedCert, ObjectName, ParentCaContact,
+            ParentHandle, PublisherHandle, RcvdCert, RepoInfo, RepositoryContact, ResourceClassName, ResourceSet,
+            RevocationRequest, RevocationsDelta, RevokedObject, RoaAggregateKey, RtaName, TaCertDetails,
         },
         crypto::IdCert,
         eventsourcing::StoredEvent,
+        remote::rfc8183,
     },
     daemon::ca::{self, CaEvt, CaEvtDet, PreparedRta, RouteAuthorization, SignedRta},
     pubd::{
@@ -82,11 +83,17 @@ impl From<OldPubdIniDet> for RepositoryAccessInitDetails {
     }
 }
 
+pub struct DerivedEmbeddedCaMigrationInfo {
+    pub child_request: rfc8183::ChildRequest,
+    pub parent_responses: HashMap<ChildHandle, rfc8183::ParentResponse>,
+}
+
 impl OldCaEvt {
     pub fn into_stored_ca_event(
         self,
         version: u64,
         repo_manager: &Option<RepositoryManager>,
+        derived_embedded_ca_info_map: &HashMap<Handle, DerivedEmbeddedCaMigrationInfo>,
     ) -> Result<CaEvt, UpgradeError> {
         let (id, _, details) = self.unpack();
 
@@ -105,6 +112,49 @@ impl OldCaEvt {
                     }
                 };
                 CaEvtDet::RepoUpdated { contact }
+            }
+            OldCaEvtDet::ParentAdded(parent, old_contact) => {
+                let contact = match old_contact {
+                    OldParentCaContact::Rfc6492(res) => ParentCaContact::for_rfc6492(res),
+                    OldParentCaContact::Ta(details) => ParentCaContact::Ta(details),
+                    OldParentCaContact::Embedded => match derived_embedded_ca_info_map.get(&parent) {
+                        Some(info) => {
+                            let res = info.parent_responses.get(&id).ok_or_else(|| UpgradeError::Custom(
+                                format!("Cannot upgrade CA '{}' using embedded parent '{}' which no longer has this CA as a child", id, parent)))?;
+                            ParentCaContact::for_rfc6492(res.clone())
+                        }
+                        None => {
+                            return Err(UpgradeError::Custom(format!(
+                                "Cannot upgrade CA '{}' using embedded parent '{}' which is no longer present",
+                                id, parent
+                            )))
+                        }
+                    },
+                };
+                CaEvtDet::ParentAdded { parent, contact }
+            }
+            OldCaEvtDet::ChildAdded(child, old_details) => {
+                let (resources, id_cert_opt) = (old_details.resources, old_details.id_cert);
+
+                let id_cert = match id_cert_opt {
+                    Some(id_cert) => id_cert,
+                    None => {
+                        let child_info = derived_embedded_ca_info_map.get(&child).ok_or_else(|| {
+                            UpgradeError::Custom(format!(
+                                "Cannot upgrade CA {}, embedded child {} is no longer present",
+                                id, child
+                            ))
+                        })?;
+
+                        child_info.child_request.id_cert().clone()
+                    }
+                };
+
+                CaEvtDet::ChildAdded {
+                    child,
+                    id_cert,
+                    resources,
+                }
             }
             _ => details.try_into()?,
         };
@@ -174,11 +224,9 @@ impl TryFrom<OldCaEvtDet> for CaEvtDet {
     fn try_from(old: OldCaEvtDet) -> Result<Self, Self::Error> {
         let evt = match old {
             OldCaEvtDet::TrustAnchorMade(ta_cert_details) => CaEvtDet::TrustAnchorMade { ta_cert_details },
-            OldCaEvtDet::ChildAdded(child, details) => CaEvtDet::ChildAdded {
-                child,
-                id_cert: details.id_cert,
-                resources: details.resources,
-            },
+            OldCaEvtDet::ChildAdded(_child, _details) => {
+                unreachable!("Add child must be converted with embedded children in mind")
+            }
             OldCaEvtDet::ChildCertificateIssued(child, resource_class_name, ki) => CaEvtDet::ChildCertificateIssued {
                 child,
                 resource_class_name,
@@ -202,14 +250,12 @@ impl TryFrom<OldCaEvtDet> for CaEvtDet {
             OldCaEvtDet::ChildRemoved(child) => CaEvtDet::ChildRemoved { child },
 
             OldCaEvtDet::IdUpdated(id) => CaEvtDet::IdUpdated { id: id.into() },
-            OldCaEvtDet::ParentAdded(parent, contact) => CaEvtDet::ParentAdded {
-                parent,
-                contact: contact.into(),
-            },
-            OldCaEvtDet::ParentUpdated(parent, contact) => CaEvtDet::ParentUpdated {
-                parent,
-                contact: contact.into(),
-            },
+            OldCaEvtDet::ParentAdded(_parent, _contact) => {
+                unreachable!("Parent Added event is migrated differently")
+            }
+            OldCaEvtDet::ParentUpdated(_parent, _contact) => {
+                unreachable!("Parent Updated event is migrated differently")
+            }
             OldCaEvtDet::ParentRemoved(parent, _delta) => CaEvtDet::ParentRemoved { parent },
 
             OldCaEvtDet::ResourceClassAdded(_rcn, rc) => rc.into_added_event()?,
@@ -264,10 +310,12 @@ impl TryFrom<OldCaEvtDet> for CaEvtDet {
                 updates: updates.try_into()?,
             },
 
-            OldCaEvtDet::ObjectSetUpdated(_, _) => unimplemented!("This event must not be migrated"),
+            OldCaEvtDet::ObjectSetUpdated(_, _) => unreachable!("This event must not be migrated"),
 
-            OldCaEvtDet::RepoUpdated(contact) => unimplemented!("Repo Updated event must be converted the hard way"),
-            OldCaEvtDet::RepoCleaned(_contact) => unimplemented!("This event must not be migrated"),
+            OldCaEvtDet::RepoUpdated(_contact) => {
+                unreachable!("Repo Updated is migrated with the embedded repo context")
+            }
+            OldCaEvtDet::RepoCleaned(_contact) => unreachable!("This event must not be migrated"),
 
             OldCaEvtDet::RtaPrepared(name, prepared) => CaEvtDet::RtaPrepared { name, prepared },
             OldCaEvtDet::RtaSigned(name, rta) => CaEvtDet::RtaSigned { name, rta },
@@ -552,7 +600,7 @@ impl From<OldPubdEvtDet> for RepositoryAccessEventDetails {
                 publisher: publisher.into(),
             },
             OldPubdEvtDet::PublisherRemoved(name, _) => RepositoryAccessEventDetails::PublisherRemoved { name },
-            _ => unimplemented!("no need to migrate these"),
+            _ => unreachable!("no need to migrate these old events"),
         }
     }
 }

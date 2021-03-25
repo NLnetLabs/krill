@@ -235,8 +235,8 @@ impl CommandSummary {
         self.with_arg("publisher", publisher)
     }
 
-    pub fn with_id_ski(self, id_opt: Option<&String>) -> Self {
-        self.with_arg("id_key", id_opt.map(|v| v.as_str()).unwrap_or("<none>"))
+    pub fn with_id_ski(self, id: &str) -> Self {
+        self.with_arg("id_key", id)
     }
 
     pub fn with_resources(self, resources: &ResourceSet) -> Self {
@@ -404,7 +404,7 @@ pub enum StorableCaCommand {
     MakeTrustAnchor,
     ChildAdd {
         child: ChildHandle,
-        ski: Option<String>,
+        ski: String,
         resources: ResourceSet,
     },
     ChildUpdateResources {
@@ -499,7 +499,7 @@ impl WithStorableDetails for StorableCaCommand {
             }
             StorableCaCommand::ChildUpdateId { child, ski } => CommandSummary::new("cmd-ca-child-update-id", &self)
                 .with_child(child)
-                .with_id_ski(Some(ski)),
+                .with_id_ski(ski),
             StorableCaCommand::ChildCertify {
                 child,
                 resource_class_name,
@@ -588,7 +588,7 @@ impl fmt::Display for StorableCaCommand {
                 f,
                 "Add child '{}' with RFC8183 key '{}' and resources '{}'",
                 child,
-                ski.as_ref().map(|ski| ski.as_str()).unwrap_or_else(|| "<none>"),
+                ski,
                 resources.summary()
             ),
             StorableCaCommand::ChildUpdateResources { child, resources } => {
