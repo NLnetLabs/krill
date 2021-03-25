@@ -49,7 +49,7 @@ The `MasterTokenAuthProvider` is tried first because:
 
   - The check it performs is quick and cheap (simple string comparison) while the `OpenIDConnectAuthProvider` has to
     base64 decode, decrypt and deserialize the bearer token (although it has a v short lived cache to minimize the impact
-    of bursts parallel requests from the user agent), and
+    of bursts of parallel requests from the user agent), and
   - It can only fail in very simple ways, while it can be hard to know for a given error from the
     `OpenIDConnectAuthProvider` whether or not it should be a hard failure or if it would be okay to try the
     `MasterTokenAuthProvider` as a fallback.
