@@ -19,5 +19,6 @@ Further reading:
 - [Overview](./overview.md)
 - [Requirements](./requirements.md)
 - [Architecture](./architecture.md)
-- [Authentication & Authorization](./authn.md)
+- [Authentication](./authentication.md)
+- [Authorization](./authorization.md)
 - [Testing](./testing.md)

@@ -55,6 +55,37 @@ The `MasterTokenAuthProvider` is tried first because:
     `OpenIDConnectAuthProvider` whether or not it should be a hard failure or if it would be okay to try the
     `MasterTokenAuthProvider` as a fallback.
 
+## ActorDef vs Actor
+
+A deliberate separation exists that is worth mentioning: `ActorDef` vs `Actor`.
+
+`AuthProvider` implementations return `Option<ActorDef>` from `fn authenticate()` to indicate either `None` if no
+credentials were found or `Some<ActorDef>` if the credentials were good. They don't return an `Actor` because only the
+`Authorizer` is allowed to supply `Actor` instances. Just because an `AuthProvider` thinks the HTTP request is
+authenticated and was able to extract some identity information from it is not the same as saying that the request
+should be handled, e.g. the `Authorizer` does a sanity check that the authenticating client has permisison to
+login in Krill.
+
+This is especially important in the OpenID Connect case because a corporate employee will be able to login to the
+central identity provider at their organization but that is not the same as saying that all 10,000 employees should have
+the right to login to Krill.
+
+So, `AuthProviders` respond with a definition of the actor they propose be created, an `ActorDef`, and only the
+`Authorizer` can decide to promote that to an `Actor`.
+
+TODO: What about the credentials found but not good case?
+
+## Built-in Actors
+
+There are currently four built-in actors, which for convenience have entries in `constants.rs`: _(ordered from most to least powerful)_
+
+Actor | Represents | Role | Comments
+------|------------|------|----------
+`ACTOR_DEF_KRILL` | Krill itself | `admin` | Used for initial startup and scheduled actions that are not directly attributable to a REST API client.
+`ACTOR_DEF_MASTER_TOKEN` | A client using the master API token | `admin` | Used by the users of Lagosta when `auth_type = "master-token"` (the default), or by direct clients of the REST API, or indirect clients of the REST API via `krillc`. |
+`ACTOR_DEF_TESTBED` | An anonmymous client of the testbed | `testbed` (temporarily) | Used by the testbed REST API handler functions to make internal requests to restricted APIs on the behalf of the anonymous client. See `Request::upgrade_from_anonymous`. |
+`ACTOR_DEF_ANON` | An anonymous client | None | Used for REST API calls that lack credentials or for which an error occurs during authentication. By still having an actor even in this case we can handle all API calls the same way. The anonymous actor has no role and so, unless overriden by a custom authorization policy, has no rights in Krill. It can thus only successfully request REST API endpoints that do not require authentication. |
+
 ## Debatable design choices
 
 A couple of design properties that emerged and that should perhaps be revisited are:
