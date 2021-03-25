@@ -17,5 +17,7 @@ The feature is enabled by default. To disable the feature when building pass the
 Further reading:
 
 - [Overview](./overview.md)
+- [Requirements](./requirements.md)
 - [Architecture](./architecture.md)
+- [Authentication & Authorization](./authn.md)
 - [Testing](./testing.md)
