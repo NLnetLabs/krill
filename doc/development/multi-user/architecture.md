@@ -33,6 +33,7 @@ Authentication is delegated by the `Authorizer` to an `AuthProvder` which is a t
 - `ConfigFileAuthProvider`
 - `OpenIDConnectAuthProvider`
 
+Authorization is done by calling through `Actor::is_allowed(action, resource)` to a shared reference to the `AuthPolicy` which in turn delegates to [Oso](https://crates.io/crates/oso).
 ## Authentication
 
 There is *always* an instance of `MasterTokenAuthProvider` because it is required to authenticate direct REST API calls
@@ -74,3 +75,6 @@ A couple of design properties that emerged and that should perhaps be revisited 
   - If we continue to bundle more and more "plugin" implementations into Krill it will gain more and more crate
     dependencies, will increase in size, in compile time and test execution time. The more plugins that are added
     the more the separate FFI plugin dynamic library model might make sense.
+
+  - The term "resource" in authorization was inherited from Oso but clashes with the arguably more important (for Krill)
+    RPKI meaning of the term "resource".
