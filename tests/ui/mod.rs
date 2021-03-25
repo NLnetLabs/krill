@@ -94,7 +94,7 @@ impl CypressRunner {
                     .arg("--entrypoint").arg("cypress");
             }
     
-            cmd.arg("cypress/included:6.2.0");
+            cmd.arg("cypress/included:6.8.0");
     
             if std::env::var("CYPRESS_INTERACTIVE").is_ok() {
                 cmd

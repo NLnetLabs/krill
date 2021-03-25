@@ -30,78 +30,77 @@
 # Otherwise some_role should be a string that we want to contain some value
 # other than whitespace, so we check that it is non-empty after trimming any
 # leading and/or trailing whitespace.
-role_allow(some_role, action: Permission, _) if
+role_allow(some_role, action: Permission) if
     not some_role = nil and
     not some_role.trim().is_empty() and
-    action = new Permission("LOGIN");
+    action = LOGIN;
 
 ### TEST: [
 # Actors with a role can login.
-?= role_allow("some role", new Permission("LOGIN"), _);
+?= role_allow("some role", LOGIN);
 # Conversely, actors without a role cannot do anything.
-?= not role_allow(nil, new Permission("LOGIN"), _);
-?= not role_allow("", new Permission("LOGIN"), _);
-?= not role_allow("  ", new Permission("LOGIN"), _);
-?= not role_allow(nil, nil, nil);
-# ?= not role_allow(nil, _, _);
+?= not role_allow(nil, LOGIN);
+?= not role_allow("", LOGIN);
+?= not role_allow("  ", LOGIN);
+?= not role_allow(nil, nil);
+?= not role_allow(nil, _);
 ### ]
 
 
 # The admin role has the right to do anything with any resource:
 # --------------------------------------------------------------
-role_allow("admin", _action, _resource);
+role_allow("admin", _action: Permission);
 
 ### TEST: [
-# ?= role_allow("admin", _, _);
-?= role_allow("admin", "take over", "the world");
-?= not role_allow("other", "take over", "the world");
-?= role_allow("admin", new Permission("CA_CREATE"), "/api/v1/cas");
+?= role_allow("admin", _);
+?= not role_allow("admin", "take over the world");
+?= role_allow("admin", CA_CREATE);
 ### ]
 
 
 # The readonly role has the following rights:
 # -------------------------------------------
-role_allow("readonly", action: Permission, _resource) if
+role_allow("readonly", action: Permission) if
     action in [
-        new Permission("CA_LIST"),
-        new Permission("CA_READ"),
-        new Permission("PUB_LIST"),
-        new Permission("PUB_READ"),
-        new Permission("ROUTES_READ"),
-        new Permission("ROUTES_ANALYSIS")
+        CA_LIST,
+        CA_READ,
+        PUB_LIST,
+        PUB_READ,
+        ROUTES_READ,
+        ROUTES_ANALYSIS
     ];
 
 ### TEST: [
-?= role_allow("readonly", new Permission("CA_LIST"), _);
-?= role_allow("readonly", new Permission("CA_READ"), "some resource");
-?= not role_allow("readonly", new Permission("CA_CREATE"), _);
-?= not role_allow("readonly", new Permission("CA_CREATE"), "some resource");
+?= role_allow("readonly", CA_LIST);
+?= role_allow("readonly", CA_READ);
+?= not role_allow("readonly", CA_CREATE);
+?= not role_allow("readonly", CA_CREATE);
 # etc
 ### ]
 
 
 # The readwrite role has the following rights:
 # --------------------------------------------
-role_allow("readwrite", action: Permission, _resource) if
+role_allow("readwrite", action: Permission) if
     action in [
-        new Permission("CA_LIST"),
-        new Permission("CA_READ"),
-        new Permission("CA_CREATE"),
-        new Permission("CA_UPDATE"),
-        new Permission("PUB_LIST"),
-        new Permission("PUB_READ"),
-        new Permission("PUB_CREATE"),
-        new Permission("PUB_DELETE"),
-        new Permission("ROUTES_READ"),
-        new Permission("ROUTES_ANALYSIS"),
-        new Permission("ROUTES_UPDATE")
+        CA_LIST,
+        CA_READ,
+        CA_CREATE,
+        CA_UPDATE,
+        PUB_LIST,
+        PUB_READ,
+        PUB_CREATE,
+        PUB_DELETE,
+        ROUTES_READ,
+        ROUTES_ANALYSIS,
+        ROUTES_UPDATE
     ];
 
 ### TEST: [
-?= role_allow("readwrite", new Permission("CA_LIST"), _);
-?= role_allow("readwrite", new Permission("CA_READ"), "some resource");
-?= role_allow("readwrite", new Permission("CA_CREATE"), _);
-?= role_allow("readwrite", new Permission("CA_CREATE"), "some resource");
+?= role_allow("readwrite", CA_LIST);
+?= role_allow("readwrite", CA_READ);
+?= role_allow("readwrite", CA_CREATE);
+?= role_allow("readwrite", CA_CREATE);
 # etc
 ### ]
 
@@ -111,20 +110,20 @@ role_allow("readwrite", action: Permission, _resource) if
 # Note: The testbed role is a special case which is automatically assigned
 # temporarily to anonymous users accessing the testbed UI/API. It should not be
 # used outside of this file.
-role_allow("testbed", action: Permission, _resource) if
+role_allow("testbed", action: Permission) if
     action in [
-        new Permission("CA_READ"),
-        new Permission("CA_UPDATE"),
-        new Permission("PUB_READ"),
-        new Permission("PUB_CREATE"),
-        new Permission("PUB_DELETE"),
-        new Permission("PUB_ADMIN")
+        CA_READ,
+        CA_UPDATE,
+        PUB_READ,
+        PUB_CREATE,
+        PUB_DELETE,
+        PUB_ADMIN
     ];
 
 ### TEST: [
-?= role_allow("testbed", new Permission("CA_READ"), _);
-?= role_allow("testbed", new Permission("CA_UPDATE"), "some resource");
-?= role_allow("testbed", new Permission("PUB_ADMIN"), _);
-?= not role_allow("testbed", new Permission("ROUTES_UPDATE"), _);
+?= role_allow("testbed", CA_READ);
+?= role_allow("testbed", CA_UPDATE);
+?= role_allow("testbed", PUB_ADMIN);
+?= not role_allow("testbed", ROUTES_UPDATE);
 # etc
 ### ]

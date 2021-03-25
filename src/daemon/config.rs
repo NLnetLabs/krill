@@ -85,8 +85,8 @@ impl ConfigDefaults {
         }
     }
     #[cfg(feature = "multi-user")]
-    fn auth_policy() -> PathBuf {
-        PathBuf::from("./policy.polar")
+    fn auth_policies() -> Vec<PathBuf> {
+        vec![]
     }
     #[cfg(feature = "multi-user")]
     fn auth_private_attributes() -> Vec<String> {
@@ -226,8 +226,8 @@ pub struct Config {
     pub auth_type: AuthType,
 
     #[cfg(feature = "multi-user")]
-    #[serde(default = "ConfigDefaults::auth_policy")]
-    pub auth_policy: PathBuf,
+    #[serde(default = "ConfigDefaults::auth_policies")]
+    pub auth_policies: Vec<PathBuf>,
 
     #[cfg(feature = "multi-user")]
     #[serde(default = "ConfigDefaults::auth_private_attributes")]
@@ -458,9 +458,7 @@ impl Config {
         let auth_type = AuthType::MasterToken;
         let auth_token = Token::from("secret");
         #[cfg(feature = "multi-user")]
-        let mut auth_policy = data_dir.clone();
-        #[cfg(feature = "multi-user")]
-        auth_policy.push("policy.polar");
+        let auth_policies = vec![];
         #[cfg(feature = "multi-user")]
         let auth_private_attributes = vec![];
         #[cfg(feature = "multi-user")]
@@ -541,7 +539,7 @@ impl Config {
             auth_type,
             auth_token,
             #[cfg(feature = "multi-user")]
-            auth_policy,
+            auth_policies,
             #[cfg(feature = "multi-user")]
             auth_private_attributes,
             #[cfg(feature = "multi-user")]
@@ -817,6 +815,7 @@ impl Config {
             .level_for("mio", framework_level)
             .level_for("reqwest", framework_level)
             .level_for("tokio_reactor", framework_level)
+            .level_for("tokio_util::codec::framed_read", framework_level)
             .level_for("want", framework_level)
             .level_for("tracing::span", framework_level)
             .level_for("h2", framework_level)
