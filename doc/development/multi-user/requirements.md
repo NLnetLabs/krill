@@ -2,7 +2,7 @@
 
 The primary initial requirements that influenced the architecture were:
 
-  - Don't implement support multi-user for `krillc` or direct REST API clients at this point.
+  - Don't implement support for multi-user for `krillc` or direct REST API clients at this point.
   - Target but don't restrict support to Active Directory identity providers. OpenID Connect seemed to be the modern
     standards based way to do authentication and be able to know who is authenticating and some properties about them,
     which would also be supported by Active Directory deployments (requires that they have the right components but is
