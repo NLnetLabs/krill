@@ -465,7 +465,6 @@ pub enum StorableCaCommand {
     RepoUpdate {
         service_uri: ServiceUri,
     },
-    RepoRemoveOld,
     RtaPrepare {
         name: RtaName,
     },
@@ -556,7 +555,6 @@ impl WithStorableDetails for StorableCaCommand {
             StorableCaCommand::RepoUpdate { service_uri } => {
                 CommandSummary::new("cmd-ca-repo-update", &self).with_service_uri(service_uri)
             }
-            StorableCaCommand::RepoRemoveOld => CommandSummary::new("cmd-ca-repo-clean", &self),
 
             // RTA
             StorableCaCommand::RtaPrepare { name } => {
@@ -694,7 +692,6 @@ impl fmt::Display for StorableCaCommand {
             // ------------------------------------------------------------
             StorableCaCommand::Republish => write!(f, "Republish"),
             StorableCaCommand::RepoUpdate { service_uri } => write!(f, "Update repo to server at: {}", service_uri),
-            StorableCaCommand::RepoRemoveOld => write!(f, "Clean up old repository"),
 
             // ------------------------------------------------------------
             // RTA

@@ -133,9 +133,6 @@ pub enum CmdDet {
     // Update the repository where this CA publishes
     RepoUpdate(RepositoryContact, Arc<KrillSigner>),
 
-    // Clean up the old pending to withdraw repo.
-    RepoRemoveOld(Arc<KrillSigner>),
-
     // ------------------------------------------------------------
     // Resource Tagged Attestations
     // ------------------------------------------------------------
@@ -255,7 +252,6 @@ impl From<CmdDet> for StorableCaCommand {
             CmdDet::RepoUpdate(contact, _) => StorableCaCommand::RepoUpdate {
                 service_uri: contact.service_uri().clone(),
             },
-            CmdDet::RepoRemoveOld(_) => StorableCaCommand::RepoRemoveOld,
 
             // ------------------------------------------------------------
             // Resource Tagged Attestations
@@ -405,10 +401,6 @@ impl CmdDet {
 
     pub fn update_repo(handle: &Handle, contact: RepositoryContact, signer: Arc<KrillSigner>, actor: &Actor) -> Cmd {
         eventsourcing::SentCommand::new(handle, None, CmdDet::RepoUpdate(contact, signer), actor)
-    }
-
-    pub fn remove_old_repo(handle: &Handle, signer: Arc<KrillSigner>, actor: &Actor) -> Cmd {
-        eventsourcing::SentCommand::new(handle, None, CmdDet::RepoRemoveOld(signer), actor)
     }
 
     //-------------------------------------------------------------------------------

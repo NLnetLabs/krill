@@ -249,7 +249,7 @@ impl From<OldStorableCaCommand> for StorableCaCommand {
             OldStorableCaCommand::RepoUpdate(_service_uri) => {
                 unreachable!("migrated differently getting the service uri for embedded repo")
             }
-            OldStorableCaCommand::RepoRemoveOld => StorableCaCommand::RepoRemoveOld,
+            OldStorableCaCommand::RepoRemoveOld => unreachable!("This command is not migrated"),
             OldStorableCaCommand::RtaPrepare(name) => StorableCaCommand::RtaPrepare { name },
             OldStorableCaCommand::RtaSign(name) => StorableCaCommand::RtaSign { name },
             OldStorableCaCommand::RtaCoSign(name) => StorableCaCommand::RtaCoSign { name },

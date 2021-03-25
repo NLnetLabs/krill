@@ -425,9 +425,6 @@ impl Aggregate for CertAuth {
 
             // Republish
             CmdDet::RepoUpdate(contact, signer) => self.update_repo(contact, &signer),
-            CmdDet::RepoRemoveOld(_signer) => {
-                unreachable!("historic command")
-            }
 
             // Resource Tagged Attestations
             CmdDet::RtaMultiPrepare(name, request, signer) => self.rta_multi_prep(name, request, signer.deref()),
