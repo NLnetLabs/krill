@@ -538,14 +538,15 @@ impl OpenIDConnectAuthProvider {
 
         debug!("OpenID Connect: Refreshing token for user: \"{}\"", &session.id);
         trace!("OpenID Connect: Submitting RFC-6749 section 6 Access Token Refresh request");
-        match self.conn.read() {
+        let mut conn_error = false;
+        let res = match self.conn.read() {
             Ok(conn_guard) => {
                 match &*conn_guard {
                     Some(conn) => {
                         let token_response = conn
                             .client
                             .exchange_refresh_token(&RefreshToken::new(refresh_token.to_string()))
-                        .request(logging_http_client);
+                            .request(logging_http_client);
 
                         match token_response {
                             Ok(token_response) => {
@@ -582,10 +583,13 @@ impl OpenIDConnectAuthProvider {
                                     // therefore **not** end up in the `ServerReponse` variant.
                                     openidconnect::RequestTokenError::ServerResponse(r) => Err(r.error().clone()),
                                     openidconnect::RequestTokenError::Request(r) => {
-                                        Err(CoreErrorResponseType::Extension(format!(
+                                        let err_msg = format!(
                                             "Network failure while refreshing token: {}",
                                             r.to_string()
-                                        )))
+                                        );
+                                        warn!("{}", err_msg);
+                                        conn_error = true;
+                                        Err(CoreErrorResponseType::Extension(err_msg))
                                     }
                                     openidconnect::RequestTokenError::Parse(r, _) => {
                                         Err(CoreErrorResponseType::Extension(format!(
@@ -595,6 +599,8 @@ impl OpenIDConnectAuthProvider {
                                     }
                                     openidconnect::RequestTokenError::Other(err_string) => match err_string.as_str() {
                                         "temporarily_unavailable" | "server_error" => {
+                                            warn!("{}", err_string);
+                                            conn_error = true;
                                             Err(CoreErrorResponseType::Extension(err_string.to_string()))
                                         }
                                         _ => Err(CoreErrorResponseType::Extension(format!(
@@ -618,7 +624,16 @@ impl OpenIDConnectAuthProvider {
                 "Internal error: Unable to acquire internal lock: {}",
                 err
             ))),
+        };
+
+        if conn_error {
+            if let Ok(mut conn_guard) = self.conn.write() {
+                debug!("Discarding current OpenID Connect provider connection details due to connection issue");
+                *conn_guard = None;
+            }
         }
+
+        res
     }
 
     fn extract_claim(
@@ -1198,7 +1213,8 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 //      https://openid.net/specs/openid-connect-core-1_0.html#AuthResponse
                 // ==========================================================================================
                 trace!("OpenID Connect: Submitting RFC-6749 section 4.1.3 Access Token Request");
-                match &*self.conn.read().map_err(|err| {
+                let mut conn_error = false;
+                let res = match &*self.conn.read().map_err(|err| {
                     OpenIDConnectAuthProvider::internal_error(
                         "Unable to login: Unable to acquire internal lock",
                         Some(&err.to_string()),
@@ -1214,7 +1230,10 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                                     RequestTokenError::ServerResponse(provider_err) => {
                                         (format!("Server returned error response: {:?}", provider_err), None)
                                     }
-                                    RequestTokenError::Request(req) => (format!("Request failed: {:?}", req), None),
+                                    RequestTokenError::Request(req) => {
+                                        conn_error = true;
+                                        (format!("Request failed: {:?}", req), None)
+                                    },
                                     RequestTokenError::Parse(parse_err, res) => {
                                         let body = match std::str::from_utf8(&res) {
                                             Ok(text) => text.to_string(),
@@ -1222,7 +1241,14 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                                         };
                                         (format!("Failed to parse server response: {}", parse_err), Some(body))
                                     }
-                                    RequestTokenError::Other(msg) => (msg, None),
+                                    RequestTokenError::Other(err_string) => match err_string.as_str() {
+                                        "temporarily_unavailable" | "server_error" => {
+                                            warn!("{}", err_string);
+                                            conn_error = true;
+                                            (err_string.to_string(), None)
+                                        }
+                                        _ => (err_string, None),
+                                    }
                                 };
                                 OpenIDConnectAuthProvider::internal_error(
                                     format!("OpenID Connect: Code exchange failed: {}", msg),
@@ -1496,7 +1522,16 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                             None,
                         ))
                     }
+                };
+
+                if conn_error {
+                    if let Ok(mut conn_guard) = self.conn.write() {
+                        debug!("Discarding current OpenID Connect provider connection details due to connection issue");
+                        *conn_guard = None;
+                    }
                 }
+
+                res
             }
 
             _ => Err(Error::ApiInvalidCredentials("Missing credentials".to_string())),
