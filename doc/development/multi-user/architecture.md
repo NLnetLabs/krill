@@ -34,6 +34,7 @@ Authentication is delegated by the `Authorizer` to an `AuthProvder` which is a t
 - `OpenIDConnectAuthProvider`
 
 Authorization is done by calling through `Actor::is_allowed(action, resource)` to a shared reference to the `AuthPolicy` which in turn delegates to [Oso](https://crates.io/crates/oso).
+
 ## Authentication
 
 There is *always* an instance of `MasterTokenAuthProvider` because it is required to authenticate direct REST API calls
