@@ -33,7 +33,7 @@ pub struct RepositoryManager {
 /// # Constructing
 ///
 impl RepositoryManager {
-    pub fn remove_if_empty(config: Arc<Config>, signer: Arc<KrillSigner>) -> Result<Option<Self>, Error> {
+    pub fn keep_if_used(config: Arc<Config>, signer: Arc<KrillSigner>) -> Result<Option<Self>, Error> {
         let mut pub_server_dir = config.data_dir.clone();
         pub_server_dir.push(PUBSERVER_DIR);
 
@@ -65,7 +65,7 @@ impl RepositoryManager {
                     let _result = fs::remove_dir_all(pub_server_dir);
                     Ok(None)
                 } else {
-                    warn!("Using pre-existing repository server. Note this will be DEPRECATED. You should use 'krillpubd' in future. See Changelog.md");
+                    warn!("Enabling embedded publication server. This will be deprecated in future. You should use 'krillpubd' in future. See Changelog.md");
                     Ok(Some(server))
                 }
             } else {
@@ -149,9 +149,11 @@ impl RepositoryManager {
                 let list_reply = self.list(&publisher_handle)?;
                 (rfc8181::Message::list_reply(list_reply), false)
             }
-            rfc8181::QueryMessage::PublishDelta(delta) => match self.publish(publisher_handle, delta) {
+            rfc8181::QueryMessage::PublishDelta(delta) => match self.publish(publisher_handle.clone(), delta) {
                 Ok(()) => (rfc8181::Message::success_reply(), true),
                 Err(e) => {
+                    warn!("Rejecting delta sent by: {}. Error was: {}", publisher_handle, e);
+
                     let error_code = e.to_rfc8181_error_code();
                     let report_error = rfc8181::ReportError::reply(error_code, None);
                     let mut builder = rfc8181::ErrorReply::build_with_capacity(1);
@@ -292,7 +294,7 @@ mod tests {
 
     fn make_server(work_dir: &PathBuf) -> RepositoryManager {
         enable_test_mode();
-        let config = Arc::new(Config::test(work_dir));
+        let config = Arc::new(Config::test(work_dir, true));
         init_config(&config);
 
         let signer = KrillSigner::build(work_dir).unwrap();

@@ -235,7 +235,7 @@ mod tests {
         let source = PathBuf::from("test-resources/migrations/v0_8_1/");
         file::backup_dir(&source, &work_dir).unwrap();
 
-        let config = Arc::new(Config::test(&work_dir));
+        let config = Arc::new(Config::test(&work_dir, false));
         let _ = config.init_logging();
 
         upgrade_0_9_0(config).unwrap();
@@ -249,7 +249,7 @@ mod tests {
         let source = PathBuf::from("test-resources/migrations/v0_6_0/");
         file::backup_dir(&source, &work_dir).unwrap();
 
-        let config = Arc::new(Config::test(&work_dir));
+        let config = Arc::new(Config::test(&work_dir, false));
         let _ = config.init_logging();
 
         upgrade_0_9_0(config).unwrap();

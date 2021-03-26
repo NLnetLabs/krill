@@ -1,4 +1,4 @@
-use crate::commons::actor::ActorDef;
+use crate::{commons::actor::ActorDef, daemon::auth::common::NoResourceType};
 
 pub const KRILL_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const KRILL_VERSION_MAJOR: &str = env!("CARGO_PKG_VERSION_MAJOR");
@@ -15,8 +15,6 @@ pub const KRILL_DEFAULT_CONFIG_FILE: &str = "./defaults/krill-multi-user.conf";
 
 const KRILL_ENV_TEST: &str = "KRILL_TEST";
 const KRILL_ENV_TEST_ANN: &str = "KRILL_TEST_ANN";
-pub const KRILL_ENV_TESTBED_RSYNC: &str = "KRILL_TESTBED_RSYNC";
-pub const KRILL_ENV_TESTBED_RRDP: &str = "KRILL_TESTBED_RRDP";
 pub const KRILL_ENV_UPGRADE_ONLY: &str = "KRILL_UPGRADE_ONLY";
 pub const KRILL_ENV_FORCE_RECOVER: &str = "KRILL_FORCE_RECOVER";
 pub const KRILL_ENV_LOG_LEVEL: &str = "KRILL_LOG_LEVEL";
@@ -76,6 +74,8 @@ pub const ID_CERTIFICATE_VALIDITY_YEARS: i32 = 15;
 pub const BGP_RIS_REFRESH_MINUTES: i64 = 60;
 
 pub const HTTTP_CLIENT_TIMEOUT_SECS: u64 = 120;
+
+pub const NO_RESOURCE: NoResourceType = NoResourceType;
 
 pub const ACTOR_DEF_KRILL: ActorDef = ActorDef::system("krill", "admin");
 pub const ACTOR_DEF_ANON: ActorDef = ActorDef::anonymous();

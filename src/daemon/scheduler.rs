@@ -64,7 +64,6 @@ impl Scheduler {
     pub fn build(
         event_queue: Arc<MessageQueue>,
         ca_manager: Option<Arc<CaManager>>,
-        repository_manager: Option<Arc<RepositoryManager>>,
         bgp_analyser: Arc<BgpAnalyser>,
         #[cfg(feature = "multi-user")] login_session_cache: Arc<LoginSessionCache>,
         config: &Config,
@@ -175,16 +174,22 @@ fn requeue_time() -> Time {
     Time::now() + chrono::Duration::seconds(REQUEUE_DELAY_SECONDS)
 }
 
+fn requeue_time_test() -> Time {
+    Time::now() + chrono::Duration::seconds(5)
+}
+
 async fn try_sync_repo(event_queue: &Arc<MessageQueue>, ca_manager: Arc<CaManager>, ca: Handle) {
     debug!("Synchronize CA {} with repository", ca);
 
     if let Err(e) = ca_manager.ca_repo_sync_all(&ca).await {
-        if test_mode_enabled() {
-            error!("Failed to publish for '{}', error: {}", ca, e);
+        let time = if test_mode_enabled() {
+            requeue_time_test()
         } else {
-            error!("Failed to publish for '{}' will reschedule, error: {}", ca, e);
-            event_queue.reschedule_sync_repo(ca, requeue_time());
-        }
+            requeue_time()
+        };
+
+        error!("Failed to publish for '{}' will reschedule, error: {}", ca, e);
+        event_queue.reschedule_sync_repo(ca, time);
     }
 }
 

@@ -33,9 +33,9 @@ intervaltree    = "0.2.6"
 jmespatch       = { version = "^0.3", features = ["sync"], optional = true }
 libflate        = "^1.0"
 log             = "^0.4"
-openidconnect   = { version = "^2.0.0-alpha.3", optional = true, default_features = false }
+openidconnect   = { version = "^2.0.0-beta", optional = true, default_features = false }
 openssl         = { version = "^0.10", features = ["v110"] }
-oso             = { version = "^0.8", optional = true }
+oso             = { version = "^0.11", optional = true }
 regex           = { version = "^1.4", optional = true }
 reqwest         = { version = "0.10.8", features = ["json"] }
 reqwestblocking = { version = "0.9.24", optional = true, package = "reqwest" }
@@ -57,7 +57,7 @@ syslog          = "^4.0"
 rustc_version   = "0.2.3"
 
 [features]
-default = []
+default = [ "multi-user" ]
 rta = []
 multi-user = [ "basic-cookies", "jmespatch/sync", "regex", "oso", "openidconnect", "reqwestblocking", "urlparse" ]
 functional-tests = []

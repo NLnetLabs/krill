@@ -222,7 +222,40 @@ pub struct CaObjects {
     classes: HashMap<ResourceClassName, ResourceClassObjects>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    deprecated_repos: Vec<RepositoryContact>,
+    deprecated_repos: Vec<DeprecatedRepository>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct DeprecatedRepository {
+    contact: RepositoryContact,
+    clean_attempts: usize,
+}
+
+impl DeprecatedRepository {
+    pub fn new(contact: RepositoryContact, clean_attempts: usize) -> Self {
+        DeprecatedRepository {
+            contact,
+            clean_attempts,
+        }
+    }
+
+    pub fn contact(&self) -> &RepositoryContact {
+        &self.contact
+    }
+
+    pub fn clean_attempts(&self) -> usize {
+        self.clean_attempts
+    }
+
+    pub fn inc_clean_attempts(&mut self) {
+        self.clean_attempts += 1;
+    }
+}
+
+impl From<DeprecatedRepository> for RepositoryContact {
+    fn from(deprecated: DeprecatedRepository) -> Self {
+        deprecated.contact
+    }
 }
 
 mod ca_objects_classes_serde {
@@ -311,10 +344,20 @@ impl CaObjects {
         all_elements
     }
 
-    pub fn ca_take_deprecated_repos(&mut self) -> Vec<RepositoryContact> {
-        let mut res = vec![];
-        std::mem::swap(&mut res, &mut self.deprecated_repos);
-        res
+    pub fn deprecated_repos(&self) -> &Vec<DeprecatedRepository> {
+        &self.deprecated_repos
+    }
+
+    pub fn deprecated_repo_remove(&mut self, to_remove: &RepositoryContact) {
+        self.deprecated_repos.retain(|current| current.contact() != to_remove);
+    }
+
+    pub fn deprecated_repo_inc_clean_attempts(&mut self, contact: &RepositoryContact) {
+        for current in self.deprecated_repos.iter_mut() {
+            if current.contact() == contact {
+                current.inc_clean_attempts()
+            }
+        }
     }
 
     /// Add a new resource class, this returns an error in case the class already exists.
@@ -453,7 +496,7 @@ impl CaObjects {
 
     fn deprecate_repo(&mut self, old_repo: RepositoryContact) {
         if !self.has_old_repo(&old_repo) {
-            self.deprecated_repos.push(old_repo);
+            self.deprecated_repos.push(DeprecatedRepository::new(old_repo, 0));
         }
     }
 }
