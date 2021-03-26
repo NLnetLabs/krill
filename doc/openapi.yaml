@@ -268,11 +268,10 @@ paths:
                     asn: 'AS1'
                     v4: '10.0.0.0/8'
                     v6: '::'
-                  auth:
-                    rfc8183:
-                      tag: null
-                      child_handle: 'ca'
-                      id_cert: '<base64>'
+                  child_request:
+                    tag: null
+                    child_handle: 'ca'
+                    id_cert: '<base64>'
       responses:
         '200':
           $ref: '#/components/responses/Rfc6492'
@@ -1394,7 +1393,7 @@ components:
       required:
         - handle
         - resources
-        - auth
+        - child_request
       properties:
         handle:
           allOf:
@@ -1402,8 +1401,18 @@ components:
             - description: The handle attribute uniquely identifies the new Certificate Authority within this Krill instance.
         resources:
           $ref: '#/components/schemas/Resources'
-        auth:
-          $ref: '#/components/schemas/Rfc8183'
+        child_request:
+          type: object
+          properties:
+            tag:
+              type: string
+            child_handle:
+              type: string
+            id_cert:
+              type: string
+              format: base64
+          
+          
     UpdateCAChildRequest:
       type: object
       properties:
