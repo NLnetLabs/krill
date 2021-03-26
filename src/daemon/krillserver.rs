@@ -678,7 +678,7 @@ impl KrillServer {
         for parent in ca.parents() {
             if let Err(e) = self.ca_parent_revoke(ca_handle, parent, actor).await {
                 warn!(
-                    "Removing CA '{}', but could not send revoke requests to parent '{}': {}",
+                    "Removing CA '{}', but could not send revoke requests to parent '{}'. {}",
                     ca_handle, parent, e
                 );
             }
@@ -691,7 +691,7 @@ impl KrillServer {
         let publisher = CaPublisher::new(self.get_ca_manager()?.clone(), self.repo_manager.clone());
         if let Err(e) = publisher.clean_all_repos(&ca_handle).await {
             warn!(
-                "Could not withdraw objects for deactivated CA '{}'. Error was: {}",
+                "Removing CA '{}' but could not withdraw objects. Error was: {}",
                 ca_handle, e
             );
         }
