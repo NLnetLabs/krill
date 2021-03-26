@@ -134,7 +134,7 @@ pub struct OpenIDConnectAuthProvider {
     config: Arc<Config>,
     session_cache: Arc<LoginSessionCache>,
     session_key: Vec<u8>,
-    conn: Arc<RwLock<Option<ProviderConnectionProperties>>>,
+    conn: RwLock<Option<ProviderConnectionProperties>>,
 }
 
 impl OpenIDConnectAuthProvider {
@@ -145,7 +145,7 @@ impl OpenIDConnectAuthProvider {
             config,
             session_cache,
             session_key,
-            conn: Arc::new(RwLock::new(None)),
+            conn: RwLock::new(None),
         })
     }
 
