@@ -1,7 +1,8 @@
 use std::{
     io::Read,
     str::FromStr,
-    sync::{Arc, Mutex},
+    sync::{Arc, 
+    },
 };
 
 use oso::{Oso, PolarClass, PolarValue, ToPolar};
@@ -15,15 +16,13 @@ use crate::{
     },
 };
 
-/// Access to Oso is protected by a shareable mutex lock, as demonstrated in the
-/// Oso Rust [getting started example](https://github.com/osohq/oso-rust-quickstart/blob/d469f7594b1d07e2203f5dc6e88d0435fef35468/src/server.rs#L50).
 #[derive(Clone)]
 pub struct AuthPolicy {
-    oso: Arc<Mutex<Oso>>,
+    oso: Arc<Oso>,
 }
 
 impl std::ops::Deref for AuthPolicy {
-    type Target = Arc<Mutex<Oso>>;
+    type Target = Arc<Oso>;
 
     fn deref(&self) -> &Self::Target {
         &self.oso
@@ -86,7 +85,7 @@ impl AuthPolicy {
         Self::exec_query(&mut oso, r#"actor_has_role(Actor.builtin("testbed"), "testbed")"#)?;
 
         Ok(AuthPolicy {
-            oso: Arc::new(Mutex::new(oso)),
+            oso: Arc::new(oso),
         })
     }
 
@@ -96,15 +95,9 @@ impl AuthPolicy {
         A: ToPolar,
         R: ToPolar,
     {
-        match self.oso.lock() {
-            Ok(mut oso) => oso
-                .is_allowed(actor, action, resource)
-                .map_err(|err| Error::custom(format!("Internal error while checking access against policy: {}", err))),
-            Err(err) => Err(Error::custom(format!(
-                "Internal error obtaining access policy lock: {}",
-                err
-            ))),
-        }
+        self.oso
+            .is_allowed(actor, action, resource)
+            .map_err(|err| Error::custom(format!("Internal error while checking access against policy: {}", err)))
     }
 
     fn load_internal_policy(oso: &mut Oso, bytes: &[u8], fname: &str) -> KrillResult<()> {
