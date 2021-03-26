@@ -42,6 +42,8 @@ use crate::{
     },
 };
 
+use super::DeprecatedRepository;
+
 //------------ CaLocks ------------------------------------------------------
 
 pub struct CaLockMap(HashMap<Handle, tokio::sync::RwLock<()>>);
@@ -1156,17 +1158,25 @@ impl CaManager {
         Ok(self.ca_objects_store.ca_objects(ca)?.repo_elements_map())
     }
 
-    /// Get all old repos for best effort clean-up. They may not be reachable after all.
-    /// Clears the list of old repos for the given CA.
-    pub fn ca_take_deprecated_repos(&self, ca: &Handle) -> KrillResult<Vec<RepositoryContact>> {
-        let mut res = vec![];
+    /// Get deprecated repositories so that they can be cleaned.
+    pub fn ca_deprecated_repos(&self, ca: &Handle) -> KrillResult<Vec<DeprecatedRepository>> {
+        Ok(self.ca_objects_store.ca_objects(ca)?.deprecated_repos().clone())
+    }
 
+    /// Remove a deprecated repo
+    pub fn ca_deprecated_repo_remove(&self, ca: &Handle, to_remove: &RepositoryContact) -> KrillResult<()> {
         self.ca_objects_store.with_ca_objects(ca, |objects| {
-            res = objects.ca_take_deprecated_repos();
+            objects.deprecated_repo_remove(to_remove);
             Ok(())
-        })?;
+        })
+    }
 
-        Ok(res)
+    /// Increase the clean attempt counter for a deprecated repository
+    pub fn ca_deprecated_repo_inc_clean_attempts(&self, ca: &Handle, contact: &RepositoryContact) -> KrillResult<()> {
+        self.ca_objects_store.with_ca_objects(ca, |objects| {
+            objects.deprecated_repo_inc_clean_attempts(contact);
+            Ok(())
+        })
     }
 
     /// Update repository where a CA publishes.

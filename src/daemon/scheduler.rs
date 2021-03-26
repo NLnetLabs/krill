@@ -202,22 +202,28 @@ fn requeue_time() -> Time {
     Time::now() + chrono::Duration::seconds(REQUEUE_DELAY_SECONDS)
 }
 
+fn requeue_time_test() -> Time {
+    Time::now() + chrono::Duration::seconds(5)
+}
+
 async fn try_publish(
     event_queue: &Arc<MessageQueue>,
-    caserver: Arc<CaManager>,
-    pubserver: Option<Arc<RepositoryManager>>,
+    ca_manager: Arc<CaManager>,
+    repo_manager: Option<Arc<RepositoryManager>>,
     ca: Handle,
 ) {
     info!("Try to publish for '{}'", ca);
-    let publisher = CaPublisher::new(caserver.clone(), pubserver);
+    let publisher = CaPublisher::new(ca_manager.clone(), repo_manager);
 
     if let Err(e) = publisher.publish(&ca).await {
-        if test_mode_enabled() {
-            error!("Failed to publish for '{}', error: {}", ca, e);
+        let time = if test_mode_enabled() {
+            requeue_time_test()
         } else {
-            error!("Failed to publish for '{}' will reschedule, error: {}", ca, e);
-            event_queue.reschedule_sync_repo(ca, requeue_time());
-        }
+            requeue_time()
+        };
+
+        error!("Failed to publish for '{}' will reschedule, error: {}", ca, e);
+        event_queue.reschedule_sync_repo(ca, time);
     }
 }
 

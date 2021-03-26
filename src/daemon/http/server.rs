@@ -284,6 +284,7 @@ pub fn render_empty_res(res: Result<(), Error>) -> RoutingResult {
 }
 
 fn render_error(e: Error) -> RoutingResult {
+    debug!("Server Error: {}", e);
     Ok(HttpResponse::response_from_error(e))
 }
 

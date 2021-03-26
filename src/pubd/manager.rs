@@ -150,9 +150,11 @@ impl RepositoryManager {
                 let list_reply = self.list(&publisher_handle)?;
                 (rfc8181::Message::list_reply(list_reply), false)
             }
-            rfc8181::QueryMessage::PublishDelta(delta) => match self.publish(publisher_handle, delta) {
+            rfc8181::QueryMessage::PublishDelta(delta) => match self.publish(publisher_handle.clone(), delta) {
                 Ok(()) => (rfc8181::Message::success_reply(), true),
                 Err(e) => {
+                    warn!("Rejecting delta sent by: {}. Error was: {}", publisher_handle, e);
+
                     let error_code = e.to_rfc8181_error_code();
                     let report_error = rfc8181::ReportError::reply(error_code, None);
                     let mut builder = rfc8181::ErrorReply::build_with_capacity(1);
