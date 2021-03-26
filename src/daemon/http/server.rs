@@ -1177,7 +1177,7 @@ async fn api_ca_deactivate(req: Request, handle: Handle) -> RoutingResult {
     aa!(
         req,
         Permission::CA_READ,
-        render_json_res(req.state().read().await.ca_deactivate(&handle, &actor).await)
+        render_json_res(req.state().read().await.ca_delete(&handle, &actor).await)
     )
 }
 

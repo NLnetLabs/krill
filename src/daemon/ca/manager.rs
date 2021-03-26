@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::Arc;
 
+use api::{Publish, Update, Withdraw};
 use futures::future::join_all;
 use tokio::sync::Mutex;
 
@@ -321,11 +322,52 @@ impl CaManager {
         self.ca_store.has(handle).map_err(Error::AggregateStoreError)
     }
 
-    // Delete a CA after revocations and withdrawals.
-    pub async fn delete_ca(&self, handle: &Handle, actor: &Actor) -> KrillResult<()> {
-        warn!("Deleting CA '{}' as requested by: {}", handle, actor);
-        self.ca_store.drop_aggregate(handle)?;
-        self.locks.drop_ca(handle).await;
+    /// Delete a CA. Let it do best effort revocation requests and withdraw
+    /// all its objects first. Note that any children of this CA will be left
+    /// orphaned, and they will only learn of this sad fact when they choose
+    /// to call home.
+    pub async fn delete_ca(&self, ca_handle: &Handle, actor: &Actor) -> KrillResult<()> {
+        warn!("Deleting CA '{}' as requested by: {}", ca_handle, actor);
+
+        let ca = self.get_ca(ca_handle).await?;
+
+        // Request revocations from all parents - best effort
+        info!(
+            "Will try to request revocations from all parents CA '{}' before removing it.",
+            ca_handle
+        );
+        for parent in ca.parents() {
+            if let Err(e) = self.ca_parent_revoke(ca_handle, &parent).await {
+                warn!(
+                    "Removing CA '{}', but could not send revoke requests to parent '{}': {}",
+                    ca_handle, parent, e
+                );
+            }
+        }
+
+        // Clean all repos - again best effort
+        info!(
+            "Will try to clean up all repositories for CA '{}' before removing it.",
+            ca_handle
+        );
+        let mut repos: Vec<RepositoryContact> = self
+            .ca_repo_elements(ca_handle)
+            .await?
+            .into_iter()
+            .map(|(contact, _)| contact)
+            .collect();
+        repos.append(&mut self.ca_take_deprecated_repos(ca_handle)?);
+
+        for repo_contact in repos {
+            if self.ca_repo_sync(ca_handle, &repo_contact, vec![]).await.is_err() {
+                info!(
+                    "Could not clean up deprecated repository. This is fine - objects there are no longer referenced."
+                );
+            }
+        }
+
+        self.ca_store.drop_aggregate(ca_handle)?;
+        self.locks.drop_ca(ca_handle).await;
         Ok(())
     }
 }
@@ -1050,6 +1092,97 @@ impl CaManager {
 /// # Publishing
 ///
 impl CaManager {
+    /// Synchronize all CAs with their repositories. Meant to be called by the background
+    /// schedular. This will log issues, but will not fail on errors with individual CAs -
+    /// because otherwise this would prevent other CAs from syncing. Note however, that the
+    /// repository status is tracked per CA and can be monitored.
+    ///
+    /// This function can still fail on internal errors, e.g. I/O issues when saving state
+    /// changes to the repo status structure.
+    pub async fn cas_repo_sync_all(&self, actor: &Actor) {
+        match self.ca_list(actor) {
+            Ok(ca_list) => {
+                for ca in ca_list.cas() {
+                    let ca_handle = ca.handle();
+                    if let Err(e) = self.ca_repo_sync_all(ca_handle).await {
+                        error!(
+                            "Could not synchronize CA '{}' with its repository/-ies. Error: {}",
+                            ca_handle, e
+                        );
+                    }
+                }
+            }
+            Err(e) => error!("Could not get CA list! {}", e),
+        }
+    }
+
+    /// Synchronize a CA with its repositories.
+    ///
+    /// Note typically a CA will have only one active repository, but in case
+    /// there are multiple during a migration, this function will ensure that
+    /// they are all synchronized.
+    pub async fn ca_repo_sync_all(&self, ca_handle: &Handle) -> KrillResult<()> {
+        // Note that this is a no-op for new CAs which do not yet have any repository configured.
+        for (repo_contact, ca_elements) in self.ca_repo_elements(ca_handle).await? {
+            self.ca_repo_sync(ca_handle, &repo_contact, ca_elements).await?;
+        }
+
+        // Best effort clean-up of old repos
+        for deprecated in self.ca_take_deprecated_repos(ca_handle)? {
+            info!(
+                "Will try to clean up deprecated repository '{}' for CA '{}'",
+                deprecated, ca_handle
+            );
+            if self.ca_repo_sync(ca_handle, &deprecated, vec![]).await.is_err() {
+                info!(
+                    "Could not clean up deprecated repository. This is fine - objects there are no longer referenced."
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn ca_repo_sync(
+        &self,
+        ca_handle: &Handle,
+        repo_contact: &RepositoryContact,
+        publish_elements: Vec<PublishElement>,
+    ) -> KrillResult<()> {
+        let list_reply = self.send_rfc8181_list(ca_handle, repo_contact.response()).await?;
+
+        #[allow(clippy::mutable_key_type)]
+        let delta = {
+            let elements: HashMap<_, _> = list_reply.into_elements().into_iter().map(|el| el.unpack()).collect();
+
+            let mut all_objects: HashMap<_, _> = publish_elements.into_iter().map(|el| el.unpack()).collect();
+
+            let mut withdraws = vec![];
+            let mut updates = vec![];
+            for (uri, hash) in elements.into_iter() {
+                match all_objects.remove(&uri) {
+                    Some(base64) => {
+                        if base64.to_encoded_hash() != hash {
+                            updates.push(Update::new(None, uri, base64, hash))
+                        }
+                    }
+                    None => withdraws.push(Withdraw::new(None, uri, hash)),
+                }
+            }
+            let publishes = all_objects
+                .into_iter()
+                .map(|(uri, base64)| Publish::new(None, uri, base64))
+                .collect();
+
+            PublishDelta::new(publishes, updates, withdraws)
+        };
+
+        self.send_rfc8181_delta(ca_handle, repo_contact.response(), delta)
+            .await?;
+
+        Ok(())
+    }
+
     /// Get the current objects for a CA for each repository that it's using.
     ///
     /// Notes:
@@ -1112,7 +1245,6 @@ impl CaManager {
         &self,
         ca_handle: &Handle,
         repository: &rfc8183::RepositoryResponse,
-        cleanup: bool,
     ) -> KrillResult<ListReply> {
         let uri = repository.service_uri().to_string();
 
@@ -1121,13 +1253,11 @@ impl CaManager {
             .await
         {
             Err(e) => {
-                if !cleanup {
-                    self.status_store
-                        .lock()
-                        .await
-                        .set_status_repo_failure(ca_handle, uri, &e)
-                        .await?;
-                }
+                self.status_store
+                    .lock()
+                    .await
+                    .set_status_repo_failure(ca_handle, uri, &e)
+                    .await?;
                 return Err(e);
             }
             Ok(reply) => reply,
@@ -1144,24 +1274,20 @@ impl CaManager {
             }
             rfc8181::ReplyMessage::SuccessReply => {
                 let err = Error::custom("Got success reply to list query?!");
-                if !cleanup {
-                    self.status_store
-                        .lock()
-                        .await
-                        .set_status_repo_failure(ca_handle, uri, &err)
-                        .await?;
-                }
+                self.status_store
+                    .lock()
+                    .await
+                    .set_status_repo_failure(ca_handle, uri, &err)
+                    .await?;
                 Err(err)
             }
             rfc8181::ReplyMessage::ErrorReply(e) => {
                 let err = Error::Custom(format!("Got error reply: {}", e));
-                if !cleanup {
-                    self.status_store
-                        .lock()
-                        .await
-                        .set_status_repo_failure(ca_handle, uri, &err)
-                        .await?;
-                }
+                self.status_store
+                    .lock()
+                    .await
+                    .set_status_repo_failure(ca_handle, uri, &err)
+                    .await?;
                 Err(err)
             }
         }

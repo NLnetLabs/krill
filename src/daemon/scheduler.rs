@@ -25,7 +25,6 @@ use crate::{
         mq::{MessageQueue, QueueTask},
     },
     pubd::RepositoryManager,
-    publish::CaPublisher,
 };
 
 #[cfg(feature = "multi-user")]
@@ -80,7 +79,6 @@ impl Scheduler {
             cas_event_triggers = Some(make_cas_event_triggers(
                 event_queue.clone(),
                 ca_manager.clone(),
-                repository_manager,
                 actor.clone(),
             ));
 
@@ -107,12 +105,7 @@ impl Scheduler {
 }
 
 #[allow(clippy::cognitive_complexity)]
-fn make_cas_event_triggers(
-    event_queue: Arc<MessageQueue>,
-    ca_manager: Arc<CaManager>,
-    repository_manager: Option<Arc<RepositoryManager>>,
-    actor: Actor,
-) -> ScheduleHandle {
+fn make_cas_event_triggers(event_queue: Arc<MessageQueue>, ca_manager: Arc<CaManager>, actor: Actor) -> ScheduleHandle {
     SkippingScheduler::run(1, "scan for queued triggers", move || {
         let mut rt = Runtime::new().unwrap();
 
@@ -122,30 +115,13 @@ fn make_cas_event_triggers(
                     QueueTask::ServerStarted => {
                         info!("Will re-sync all CAs with their parents and repository after startup");
                         ca_manager.cas_refresh_all(&actor).await;
-                        let publisher = CaPublisher::new(ca_manager.clone(), repository_manager.clone());
-                        match ca_manager.ca_list(&actor) {
-                            Err(e) => error!("Unable to obtain CA list: {}", e),
-                            Ok(list) => {
-                                for ca in list.cas() {
-                                    if publisher.publish(ca.handle()).await.is_err() {
-                                        error!(
-                                            "Unable to synchronise CA '{}' with its repository after startup",
-                                            ca.handle()
-                                        );
-                                    } else {
-                                        info!("CA '{}' is in sync with its repository", ca.handle());
-                                    }
-                                }
-                            }
-                        }
+                        ca_manager.cas_repo_sync_all(&actor).await;
                     }
 
-                    QueueTask::SyncRepo(handle) => {
-                        try_publish(&event_queue, ca_manager.clone(), repository_manager.clone(), handle).await
-                    }
+                    QueueTask::SyncRepo(handle) => try_sync_repo(&event_queue, ca_manager.clone(), handle).await,
                     QueueTask::RescheduleSyncRepo(handle, time) => {
                         if time > Time::now() {
-                            try_publish(&event_queue, ca_manager.clone(), repository_manager.clone(), handle).await
+                            try_sync_repo(&event_queue, ca_manager.clone(), handle).await
                         } else {
                             event_queue.reschedule_sync_repo(handle, time);
                         }
@@ -199,16 +175,10 @@ fn requeue_time() -> Time {
     Time::now() + chrono::Duration::seconds(REQUEUE_DELAY_SECONDS)
 }
 
-async fn try_publish(
-    event_queue: &Arc<MessageQueue>,
-    caserver: Arc<CaManager>,
-    pubserver: Option<Arc<RepositoryManager>>,
-    ca: Handle,
-) {
-    info!("Try to publish for '{}'", ca);
-    let publisher = CaPublisher::new(caserver.clone(), pubserver);
+async fn try_sync_repo(event_queue: &Arc<MessageQueue>, ca_manager: Arc<CaManager>, ca: Handle) {
+    debug!("Synchronize CA {} with repository", ca);
 
-    if let Err(e) = publisher.publish(&ca).await {
+    if let Err(e) = ca_manager.ca_repo_sync_all(&ca).await {
         if test_mode_enabled() {
             error!("Failed to publish for '{}', error: {}", ca, e);
         } else {

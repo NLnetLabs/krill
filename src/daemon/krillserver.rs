@@ -40,7 +40,6 @@ use crate::daemon::http::HttpResponse;
 use crate::daemon::mq::MessageQueue;
 use crate::daemon::scheduler::Scheduler;
 use crate::pubd::{RepoStats, RepositoryManager};
-use crate::publish::CaPublisher;
 
 //------------ KrillMode ----------------------------------------------------
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
@@ -629,14 +628,7 @@ impl KrillServer {
 
     /// Re-sync all CAs with their repositories
     pub async fn resync_all(&self, actor: &Actor) -> KrillEmptyResult {
-        let publisher = CaPublisher::new(self.get_caserver()?.clone(), self.repo_manager.clone());
-
-        for ca in self.ca_list(actor)?.cas() {
-            if let Err(e) = publisher.publish(ca.handle()).await {
-                error!("Failed to sync ca: {}. Got error: {}", ca.handle(), e)
-            }
-        }
-
+        self.get_caserver()?.cas_repo_sync_all(actor).await;
         Ok(())
     }
 
@@ -659,27 +651,11 @@ impl KrillServer {
         self.get_caserver()?.get_ca(handle).await.map(|ca| ca.as_ca_info())
     }
 
-    // Deactivate the CA, the event will be picked up and trigger that
-    // all keys are revoked and all objects withdrawn, and the CA is removed.
-    pub async fn ca_deactivate(&self, ca_handle: &Handle, actor: &Actor) -> KrillResult<()> {
-        let ca = self.get_caserver()?.get_ca(ca_handle).await?;
-        for parent in ca.parents() {
-            if let Err(e) = self.ca_parent_revoke(ca_handle, parent).await {
-                warn!(
-                    "Removing CA '{}', but could not send revoke requests to parent '{}': {}",
-                    ca_handle, parent, e
-                );
-            }
-        }
-
-        let publisher = CaPublisher::new(self.get_caserver()?.clone(), self.repo_manager.clone());
-        if let Err(e) = publisher.clean_all_repos(&ca_handle).await {
-            warn!(
-                "Could not withdraw objects for deactivated CA '{}'. Error was: {}",
-                ca_handle, e
-            );
-        }
-
+    /// Delete a CA. Let it do best effort revocation requests and withdraw
+    /// all its objects first. Note that any children of this CA will be left
+    /// orphaned, and they will only learn of this sad fact when they choose
+    /// to call home.
+    pub async fn ca_delete(&self, ca_handle: &Handle, actor: &Actor) -> KrillResult<()> {
         self.get_caserver()?.delete_ca(ca_handle, actor).await
     }
 

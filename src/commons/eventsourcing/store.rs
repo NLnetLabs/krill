@@ -49,6 +49,7 @@ impl Default for StoredValueInfo {
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 // Do NOT EVER change the order.. this is used to check whether migrations are needed
 #[allow(non_camel_case_types)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum KeyStoreVersion {
     Pre0_6,
     V0_6,
