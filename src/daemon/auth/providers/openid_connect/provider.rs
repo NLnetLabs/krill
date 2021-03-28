@@ -814,7 +814,6 @@ impl OpenIDConnectAuthProvider {
         None
     }
 
-    // TODO: change to this with_connection(closure) ?
     fn get_connection(&self) -> KrillResult<RwLockReadGuard<Option<ProviderConnectionProperties>>> {
         let conn_guard = self.conn
             .read()
