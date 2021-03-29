@@ -1168,6 +1168,7 @@ components:
         rpki_notify:
           type: string
           format: uri
+    
     Resources:
       type: object
       properties:
@@ -1181,6 +1182,7 @@ components:
         asn: ""
         v4: "10.0.0.0/0"
         v6: "2001:db8::/32"
+    
     ROA:
       type: object
       properties:
@@ -1190,6 +1192,7 @@ components:
           type: string
         max_length:
           type: integer
+    
     ROADelta:
       type: object
       properties:
@@ -1201,9 +1204,11 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ROA'
+    
     ServiceUri:
       type: string
       format: uri
+    
     rfcCommon:
       type: object
       properties:
@@ -1260,6 +1265,22 @@ components:
         repo_info:
           base_uri: 'rsync://localhost/repo/ca/'
           rpki_notify: 'https://localhost:3000/rrdp/notification.xml'
+      
+    Rfc8183PublisherRequest:
+      type: object
+      properties:
+        tag:
+          type: string
+          nullable: true
+        id_cert:
+          $ref: '#/components/schemas/IdCert'
+        publisher_handle:
+          $ref: '#/components/schemas/Handle'
+      example:
+        tag: null
+        publisher_handle: "publisher"
+        id_cert: 'MIID..6g=='
+        
       
       
     Rfc8183:
@@ -1441,6 +1462,7 @@ components:
           allOf:
             - $ref: '#/components/schemas/Handle'
             - description: The handle attribute uniquely identifies the new Certificate Authority within this Krill instance.
+            
     AddCAChildRequest:
       type: object
       required:
