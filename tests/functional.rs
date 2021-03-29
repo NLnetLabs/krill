@@ -12,8 +12,8 @@ use rpki::uri::Rsync;
 
 use krill::cli::report::ApiResponse;
 use krill::commons::api::{
-    Handle, ObjectName, ParentCaReq, ParentHandle, PublisherHandle, RepoStatus, ResourceClassKeysInfo,
-    ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates, RtaList,
+    Handle, ObjectName, ParentCaReq, ParentHandle, PublisherHandle, ResourceClassKeysInfo, ResourceClassName,
+    ResourceSet, RoaDefinition, RoaDefinitionUpdates, RtaList,
 };
 use krill::commons::remote::rfc8183;
 use krill::daemon::ca::ta_handle;
@@ -29,14 +29,6 @@ fn handle_for(s: &str) -> Handle {
 
 fn resources(v4: &str) -> ResourceSet {
     ResourceSet::from_strs("", v4, "").unwrap()
-}
-
-async fn repo_status(ca: &Handle) -> RepoStatus {
-    let command = Command::CertAuth(CaCommand::RepoStatus(ca.clone()));
-    match krill_admin(command).await {
-        ApiResponse::RepoStatus(state) => state,
-        _ => panic!("Expected repo state"),
-    }
 }
 
 async fn repo_update(ca: &Handle, contact: RepositoryContact) {
