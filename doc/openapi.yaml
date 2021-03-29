@@ -274,7 +274,7 @@ paths:
                     id_cert: '<base64>'
       responses:
         '200':
-          $ref: '#/components/responses/Rfc6492'
+          $ref: '#/components/responses/Rfc8183ParentResponse'
         '400':
           description: Bad request parameters.
           content:
@@ -404,7 +404,7 @@ paths:
         - $ref: '#/components/parameters/child_handle'
       responses:
         '200':
-          $ref: '#/components/responses/Rfc6492'
+          $ref: '#/components/responses/Rfc8183ParentResponse'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -436,7 +436,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Rfc6492'
+                $ref: '#/components/schemas/Rfc8183ParentResponse'
             application/xml:
               schema:
                 $ref: '#/components/schemas/RFC8183ParentResponseXML'
@@ -485,6 +485,9 @@ paths:
       description: |
         Add a parent to the CA. Note that your CA will only request a certificate
         from any of its parents after a repository has been configured for it.
+        
+        Submit the RFC 8183 Parent Response XML, or JSON. The JSON format allows
+        overriding the parent_handle with local name for your CA.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
       requestBody:
@@ -493,6 +496,9 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/AddParentCARequest'
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/RFC8183ParentResponseXML'
       responses:
         '200':
           $ref: '#/components/responses/Success'
@@ -524,7 +530,7 @@ paths:
         - $ref: '#/components/parameters/parent_handle'
       responses:
         '200':
-          $ref: '#/components/responses/Rfc6492'
+          $ref: '#/components/responses/Rfc8183ParentResponse'
         '403':
           $ref: '#/components/responses/Forbidden'
         '400':
@@ -550,7 +556,10 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Rfc6492'
+              $ref: '#/components/schemas/Rfc8183ParentContact'
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/RFC8183ParentResponseXML'
       responses:
         '200':
           $ref: '#/components/responses/Success'
@@ -1218,7 +1227,32 @@ components:
         id_cert:
           $ref: '#/components/schemas/IdCert'
 
-    Rfc6492:
+    Rfc8183ParentContact:
+      type: object
+      properties:
+        type:
+          type: string
+        tag:
+          type: string
+          nullable: true
+        id_cert:
+          $ref: '#/components/schemas/IdCert'
+        parent_handle:
+          $ref: '#/components/schemas/Handle'
+        child_handle:
+          $ref: '#/components/schemas/Handle'
+        service_uri:
+          $ref: '#/components/schemas/ServiceUri'
+      example:
+        type: "rfc6492"
+        tag: null
+        id_cert: "MIIDNDCCAhygAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyg5NjczMEUwQTg2MkE0RDkyNjQ1NEY5RTgzNzYxMzMzQkI0Qjc0QTVDMB4XDTIxMDMwNDE2MTQwNFoXDTM2MDMwNDE2MTkwNFowMzExMC8GA1UEAxMoOTY3MzBFMEE4NjJBNEQ5MjY0NTRGOUU4Mzc2MTMzM0JCNEI3NEE1QzCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAOCNekDo59PLdJnfiPg9kUycEb3EF17TnnUEKJaCunheH/brWakMumqpBox3H2fn1XY7e2e1SFezp52yqcIggLUOj3K49SvTzdDCCwA2MGuzaDHK6IhOuLKH9D9BqA2FTWVr3PNk77g+Bn1TfKF+G+JMr3jvDMkJAW9+58vnl7UJ/g+H6/lWqWAW1JeA3go9B+qdxC9DA02h+7vXPGhsVeUw688LFBv1fDGlQFX02zx0uNrKQQHddL1aJIM01i5M+N3uWJ5u3wCJRvxAr/P9KNtCO1sTFxR2dE/8W0+rfJWkAnDcgzeDCjznICF1146Thjxir08dYlj5YAeR3c5r5L8CAwEAAaNTMFEwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUlnMOCoYqTZJkVPnoN2EzO7S3SlwwHwYDVR0jBBgwFoAUlnMOCoYqTZJkVPnoN2EzO7S3SlwwDQYJKoZIhvcNAQELBQADggEBAGUq4w7nv6Ez4kBdqfgyU0taKHgxIOTKJ6EwsDZj6eVGF6ThrutAonMVUeu1zs5ZW/uYaRWPffHzY8m1wdyrwYVw0HxRWY96vrhOOrVk32J6ip9V9bfFSjZLVnVcBz5V/odB++bJHhMoFNUaoqEGSNleiPotBtOHahlIL1EDEAt7bC5Kk7vEl0VmRJs7Hp1kpdZRJlVy7sLWL082hCJCulG57qL2UbsQ2wmFk+ImJ2RO3GSrNEI4//kHIw7GQFeeROfeb5HvyC/QOCzfBmMc/ipApuyzROSXHsE6CiaM2uWCjHs1NZBu+Za2EoFOhgYN1akeqqo50vRfO3Dd6Bm/rQY="
+        parent_handle: "ta"
+        child_handle: "testbed"
+        service_uri: "https://localhost:3000/rfc6492/ta"
+        
+        
+    Rfc8183ParentResponse:
       type: object
       properties:
         rfc6492:
@@ -1236,12 +1270,11 @@ components:
             service_uri:
               $ref: '#/components/schemas/ServiceUri'
       example:
-        - type: "rfc6492"
-        - tag: null
-        - id_cert: "MIIDNDCCAhygAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyg5NjczMEUwQTg2MkE0RDkyNjQ1NEY5RTgzNzYxMzMzQkI0Qjc0QTVDMB4XDTIxMDMwNDE2MTQwNFoXDTM2MDMwNDE2MTkwNFowMzExMC8GA1UEAxMoOTY3MzBFMEE4NjJBNEQ5MjY0NTRGOUU4Mzc2MTMzM0JCNEI3NEE1QzCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAOCNekDo59PLdJnfiPg9kUycEb3EF17TnnUEKJaCunheH/brWakMumqpBox3H2fn1XY7e2e1SFezp52yqcIggLUOj3K49SvTzdDCCwA2MGuzaDHK6IhOuLKH9D9BqA2FTWVr3PNk77g+Bn1TfKF+G+JMr3jvDMkJAW9+58vnl7UJ/g+H6/lWqWAW1JeA3go9B+qdxC9DA02h+7vXPGhsVeUw688LFBv1fDGlQFX02zx0uNrKQQHddL1aJIM01i5M+N3uWJ5u3wCJRvxAr/P9KNtCO1sTFxR2dE/8W0+rfJWkAnDcgzeDCjznICF1146Thjxir08dYlj5YAeR3c5r5L8CAwEAAaNTMFEwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUlnMOCoYqTZJkVPnoN2EzO7S3SlwwHwYDVR0jBBgwFoAUlnMOCoYqTZJkVPnoN2EzO7S3SlwwDQYJKoZIhvcNAQELBQADggEBAGUq4w7nv6Ez4kBdqfgyU0taKHgxIOTKJ6EwsDZj6eVGF6ThrutAonMVUeu1zs5ZW/uYaRWPffHzY8m1wdyrwYVw0HxRWY96vrhOOrVk32J6ip9V9bfFSjZLVnVcBz5V/odB++bJHhMoFNUaoqEGSNleiPotBtOHahlIL1EDEAt7bC5Kk7vEl0VmRJs7Hp1kpdZRJlVy7sLWL082hCJCulG57qL2UbsQ2wmFk+ImJ2RO3GSrNEI4//kHIw7GQFeeROfeb5HvyC/QOCzfBmMc/ipApuyzROSXHsE6CiaM2uWCjHs1NZBu+Za2EoFOhgYN1akeqqo50vRfO3Dd6Bm/rQY="
-        - parent_handle: "ta"
-        - child_handle: "testbed"
-        - service_uri: "https://localhost:3000/rfc6492/ta"
+        tag: null
+        id_cert: "MIIDNDCCAhygAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyg5NjczMEUwQTg2MkE0RDkyNjQ1NEY5RTgzNzYxMzMzQkI0Qjc0QTVDMB4XDTIxMDMwNDE2MTQwNFoXDTM2MDMwNDE2MTkwNFowMzExMC8GA1UEAxMoOTY3MzBFMEE4NjJBNEQ5MjY0NTRGOUU4Mzc2MTMzM0JCNEI3NEE1QzCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAOCNekDo59PLdJnfiPg9kUycEb3EF17TnnUEKJaCunheH/brWakMumqpBox3H2fn1XY7e2e1SFezp52yqcIggLUOj3K49SvTzdDCCwA2MGuzaDHK6IhOuLKH9D9BqA2FTWVr3PNk77g+Bn1TfKF+G+JMr3jvDMkJAW9+58vnl7UJ/g+H6/lWqWAW1JeA3go9B+qdxC9DA02h+7vXPGhsVeUw688LFBv1fDGlQFX02zx0uNrKQQHddL1aJIM01i5M+N3uWJ5u3wCJRvxAr/P9KNtCO1sTFxR2dE/8W0+rfJWkAnDcgzeDCjznICF1146Thjxir08dYlj5YAeR3c5r5L8CAwEAAaNTMFEwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUlnMOCoYqTZJkVPnoN2EzO7S3SlwwHwYDVR0jBBgwFoAUlnMOCoYqTZJkVPnoN2EzO7S3SlwwDQYJKoZIhvcNAQELBQADggEBAGUq4w7nv6Ez4kBdqfgyU0taKHgxIOTKJ6EwsDZj6eVGF6ThrutAonMVUeu1zs5ZW/uYaRWPffHzY8m1wdyrwYVw0HxRWY96vrhOOrVk32J6ip9V9bfFSjZLVnVcBz5V/odB++bJHhMoFNUaoqEGSNleiPotBtOHahlIL1EDEAt7bC5Kk7vEl0VmRJs7Hp1kpdZRJlVy7sLWL082hCJCulG57qL2UbsQ2wmFk+ImJ2RO3GSrNEI4//kHIw7GQFeeROfeb5HvyC/QOCzfBmMc/ipApuyzROSXHsE6CiaM2uWCjHs1NZBu+Za2EoFOhgYN1akeqqo50vRfO3Dd6Bm/rQY="
+        parent_handle: "ta"
+        child_handle: "testbed"
+        service_uri: "https://localhost:3000/rfc6492/ta"
 
     Rfc8183RepositoryResponse:
       type: object
@@ -1513,7 +1546,7 @@ components:
             - $ref: '#/components/schemas/Handle'
             - description: The local handle by which your ca refers to this parent.
         contact:
-          $ref: '#/components/schemas/Rfc6492'
+          $ref: '#/components/schemas/Rfc8183ParentContact'
 
     # Error codes ordered ascending by error code
     CaRepoSameResponse:
@@ -2823,12 +2856,12 @@ components:
                     details:
                       type: object
 
-    Rfc6492:
+    Rfc8183ParentResponse:
       description: Success.
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/Rfc6492'
+            $ref: '#/components/schemas/Rfc8183ParentResponse'
 
     Rfc8183O:
       description: Success.
