@@ -530,7 +530,7 @@ paths:
         - $ref: '#/components/parameters/parent_handle'
       responses:
         '200':
-          $ref: '#/components/responses/Rfc8183ParentResponse'
+          $ref: '#/components/responses/Rfc8183ParentContact'
         '403':
           $ref: '#/components/responses/Forbidden'
         '400':
@@ -2862,6 +2862,13 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Rfc8183ParentResponse'
+    
+    Rfc8183ParentContact:
+      description: Success.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Rfc8183ParentContact'
 
     Rfc8183O:
       description: Success.
