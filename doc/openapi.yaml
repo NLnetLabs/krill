@@ -619,15 +619,18 @@ paths:
         - "Certificate Authorities"
       summary: Update the Repository for a CA.
       description: |
-        This will update the repository for a CA. I.e. it will trigger the
-        following:
-          - A check that the new Repository can be reached and allows the CA to
-            connect.
-          - Re-issue all objects using the base uri for the new repository.
-          - Publish the new objects.
-          - Request new certificates with SIA entries pointing to the new
-            locations.
-          - (best effort) Clean up of the old repository.
+        This will add a repository to the CA, if one was not defined earlier.
+        In that case it will also trigger that the CA requests resource certificates
+        from its parents (if configured) now that it knows which URIs to use.
+        
+        If the CA did have a repository configured, then this will trigger an
+        update of the configured repository by means of a key rollover for all
+        existing certificates received under each parent. The new key will use
+        the new repository, but the current key will keep using the old repository
+        until the new key is activated. Note API end point for key activiation
+        will need to be called for this (this will activate *ALL* keys for the CA).
+        
+        Post either an RFC 8183 Repository Response XML file, or a JSON equivalent.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
       requestBody:
@@ -635,7 +638,13 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Rfc8183'
+              type: object
+              properties:
+                repository_response:
+                  $ref: '#/components/schemas/Rfc8183RepositoryResponse'
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/RFC8183RepositoryResponseXML'
       responses:
         '200':
           $ref: '#/components/responses/Success'
@@ -669,7 +678,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Rfc8183RepositoryResponse'
+                $ref: '#/components/schemas/Rfc8183PublisherRequest'
             application/xml:
               schema:
                 $ref: '#/components/schemas/RFC8183PublisherRequestXML'
@@ -1203,15 +1212,7 @@ components:
           nullable: true
         id_cert:
           $ref: '#/components/schemas/IdCert'
-    Embedded:
-      type: object
-      required:
-        - type
-      properties:
-        type:
-          type: string
-          enum: [embedded]
-          default: embedded
+
     Rfc6492:
       type: object
       properties:
@@ -1236,13 +1237,7 @@ components:
         - parent_handle: "ta"
         - child_handle: "testbed"
         - service_uri: "https://localhost:3000/rfc6492/ta"
-    rfc8181Base:
-      allOf:
-        - $ref: '#/components/schemas/rfcCommon'
-        - type: object
-          properties:
-            publisher_handle:
-              $ref: '#/components/schemas/Handle'
+
     Rfc8183RepositoryResponse:
       type: object
       properties:
@@ -1257,6 +1252,16 @@ components:
           $ref: '#/components/schemas/ServiceUri'
         repo_info:
           $ref: '#/components/schemas/RepoInfo'
+      example:
+        tag: null
+        publisher_handle: "publisher"
+        id_cert: 'MIID..6g=='
+        service_uri: "https://repo.example.com/rfc8181/publisher/"
+        repo_info:
+          base_uri: 'rsync://localhost/repo/ca/'
+          rpki_notify: 'https://localhost:3000/rrdp/notification.xml'
+      
+      
     Rfc8183:
       allOf:
         - $ref: '#/components/schemas/rfcCommon'
@@ -1264,6 +1269,7 @@ components:
           properties:
             child_handle:
               $ref: '#/components/schemas/Handle'
+              
     RFC8183PublisherRequestXML:
       type: object
       properties:
@@ -1290,6 +1296,50 @@ components:
         version: 1
         publisher_handle: 'child'
         publisher_bpki_ta: 'MIID..6g=='
+
+    RFC8183RepositoryResponseXML:
+      type: object
+      properties:
+        xmlns:
+          type: string
+          format: url
+          xml:
+            attribute: true
+        version:
+          type: integer
+          xml:
+            attribute: true
+        service_uri:
+          type: string
+          format: uri
+          xml:
+            attribute: true
+        publisher_handle:
+          type: string
+          xml:
+            attribute: true
+        sia_base:
+          type: string
+          xml:
+            attribute: true
+        rrdp_notification_uri:
+          type: string
+          xml:
+            attribute: true
+        repository_bpki_ta:
+          type: string
+          format: base64
+      xml:
+        name: 'repository_response'
+      example:
+        xmlns: http://www.hactrn.net/uris/rpki/rpki-setup/
+        version: 1
+        service_uri: 'https://localhost:3000/rfc6492/ta'
+        publisher_handle: 'child'
+        sia_base: 'rsync://localhost/repo/ca/'
+        rrdp_notification_uri: 'https://localhost:3000/rrdp/notification.xml'
+        repository_bpki_ta: 'MIID..6g=='
+        
     RFC8183RequestXML:
       type: object
       properties:
@@ -1316,6 +1366,7 @@ components:
         version: 1
         child_handle: 'child'
         child_bpki_ta: 'MIID..6g=='
+    
     RFC8183ParentResponseXML:
       type: object
       properties:
@@ -1353,11 +1404,13 @@ components:
         child_handle: 'child'
         parent_handle: 'ta'
         parent_bpki_ta: 'MIID..6g=='
+    
     PendingKey:
       type: object
       properties:
         key_id:
           type: string
+    
     CertifiedKey:
       allOf:
         - $ref: '#/components/schemas/PendingKey'

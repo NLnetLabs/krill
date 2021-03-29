@@ -1412,7 +1412,7 @@ pub async fn api_ca_repo_update(req: Request, handle: Handle) -> RoutingResult {
             .await
             .map(|bytes| extract_repository_contact(&handle, bytes))
         {
-            Ok(Ok(update)) => render_empty_res(server.read().await.ca_update_repo(handle, update, &actor).await),
+            Ok(Ok(update)) => render_empty_res(server.read().await.ca_repo_update(handle, update, &actor).await),
             Ok(Err(e)) | Err(e) => render_error(e),
         }
     })

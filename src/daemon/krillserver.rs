@@ -710,7 +710,7 @@ impl KrillServer {
     }
 
     /// Update the repository for a CA, or return an error. (see `CertAuth::repo_update`)
-    pub async fn ca_update_repo(&self, handle: Handle, contact: RepositoryContact, actor: &Actor) -> KrillEmptyResult {
+    pub async fn ca_repo_update(&self, handle: Handle, contact: RepositoryContact, actor: &Actor) -> KrillEmptyResult {
         Ok(self.get_ca_manager()?.update_repo(handle, contact, actor).await?)
     }
 

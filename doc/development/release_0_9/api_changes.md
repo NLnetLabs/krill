@@ -117,4 +117,31 @@ NEW:
 }
 ```
 
+## Add or Update Repository
+
+To add or update the repository the RFC 8183 Repository Response needs to be submitted, either as
+XML, or in JSON format. The JSON format no longer supports 'embedded', so the following is NO LONGER
+supported:
+
+```
+{
+  "tag": "string",
+  "id_cert": "string",
+  "child_handle": "string"
+}
+```
+
+NEW:
+{
+  "repository_response": {
+    "tag": null,
+    "publisher_handle": "publisher",
+    "id_cert": "MIID..6g==",
+    "service_uri": "https://repo.example.com/rfc8181/publisher/",
+    "repo_info": {
+      "base_uri": "rsync://localhost/repo/ca/",
+      "rpki_notify": "https://localhost:3000/rrdp/notification.xml"
+    }
+  }
+}
 
