@@ -1130,13 +1130,21 @@ impl CaManager {
     /// Note typically a CA will have only one active repository, but in case
     /// there are multiple during a migration, this function will ensure that
     /// they are all synchronized.
+    ///
+    /// In case the CA had deprecated repositories, then a clean up will be
+    /// attempted. I.e. the CA will try to withdraw all objects from the deprecated
+    /// repository. If this clean up fails then the number of clean-up attempts
+    /// for the repository in question is incremented, and this function will
+    /// fail. When there have been 5 failed attempts, then the old repository
+    /// is assumed to be unreachable and it will be dropped - i.e. the CA will
+    /// no longer try to clean up objects.
     pub async fn ca_repo_sync_all(&self, ca_handle: &Handle) -> KrillResult<()> {
         // Note that this is a no-op for new CAs which do not yet have any repository configured.
         for (repo_contact, ca_elements) in self.ca_repo_elements(ca_handle).await? {
             self.ca_repo_sync(ca_handle, &repo_contact, ca_elements).await?;
         }
 
-        // Best effort clean-up of old repos
+        // Clean-up of old repos
         for deprecated in self.ca_deprecated_repos(ca_handle)? {
             info!(
                 "Will try to clean up deprecated repository '{}' for CA '{}'",

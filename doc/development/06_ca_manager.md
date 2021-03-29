@@ -336,24 +336,13 @@ CA Repository Related Functions
 
 ### CA Repository Configuration
 
-Before a CA can publish anything they need to have a repository configured. Currently
-Krill still has the concept of an 'embedded' - in this Krill instance - vs 'Rfc8181'
-remote repository. However, we plan to change this in the very short term. Even if
-a Repository Server on the same Krill Instance is used, it can do the full RFC 8181
-protocol - so having just one option will greatly simplify things.
-
-For now, get an RFC 8183 Repository Response from the Publication Server, which we
-would get in response to the `rfc8183::PublisherRequest` we get from `CertAuth::publisher_request()`,
-and create the following enum:
+Before a CA can publish anything they need to have a repository configured.
 
 ```rust
-pub enum RepositoryContact {
-    Embedded {
-        info: RepoInfo,
-    },
-    Rfc8181 {
-        server_response: rfc8183::RepositoryResponse,
-    },
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[allow(clippy::large_enum_variant)]
+pub struct RepositoryContact {
+    repository_response: rfc8183::RepositoryResponse,
 }
 ```
 
@@ -422,28 +411,100 @@ impl CaManager {
 }
 ```
 
-### CA Repository Synchronization
+### CA Repository Content Generation
 
-This will be improved, see issue [#440](https://github.com/NLnetLabs/krill/issues/440).
+The set of objects to be published by a Krill CA is updated whenever there are relevant changes. For
+example: when the intended RouteAuthorizations are updated (see below), ROA *objects* are updated and
+this triggers (through the pre-save-event-listener) that the relevant manifest(s) and CRL(s) are also
+generated. Alternatively new manifests and CRLs can be generated when the 'republish' background job
+detects that an update is needed before the time for the 'next update' is drawing near.
 
-For now synchronization with a remote repository is handled by the `CaPublisher` type which can
-contain an option of an embedded repository. This is to support the two current models: RFC compliant
-remote - or even local - repository, and the embedded.
+See: src/daemon/scheduler.rs
+```rust
+fn make_cas_republish(ca_server: Arc<CaManager>, event_queue: Arc<MessageQueue>) -> ScheduleHandle {
+    SkippingScheduler::run(
+        SCHEDULER_INTERVAL_SECONDS_REPUBLISH,
+        "CA certificate republish",
+        move || {
+            let mut rt = Runtime::new().unwrap();
+            rt.block_on(async {
+                debug!("Triggering background republication for all CAs, note this may be a no-op");
+                match ca_server.republish_all().await {
+                    Err(e) => error!("Background republishing of MFT and CRLs failed: {}", e),
+                    Ok(cas) => {
+                        for ca in cas {
+                            info!("Re-issued MFT and CRL for CA: {}", ca);
+                            event_queue.schedule_sync_repo(ca);
+                        }
+                    }
+                }
+            })
+        },
+    )
+}
+```
 
-When we remove the 'embedded' option this can all be simplified massively.
-
-So, not putting too much effort in documenting this right now.. suffice to say that synchronization
-with repositories is triggered by the `MessageQueue` listening for relevant events.
-
-In addition to this we have a function on `KrillServer` to trigger that all CAs synchronize with their
-repository:
+Whenever a change in the CA's content occurs the following function is called to schedule that the
+CA will synchronize its updated content with its repository as a separate - asynchronous - effort.
+We also have a function to RE-schedule this synchronization which is called in case a synchronization
+failed:
 
 ```rust
-/// # Bulk background operations CAS
-///
-impl KrillServer {
-    /// Re-sync all CAs with their repositories
-    pub async fn resync_all(&self, actor: &Actor) -> KrillEmptyResult { ... }
+impl MessageQueue {
+    /// Schedules that a CA synchronizes with its repositories.
+    pub fn schedule_sync_repo(&self, ca: Handle) {
+        self.schedule(QueueTask::SyncRepo(ca));
+    }
+
+    /// RE-Schedules that a CA synchronizes with its repositories. This function
+    /// takes a time argument to indicate *when* the resynchronization should be
+    /// attempted.
+    pub fn reschedule_sync_repo(&self, ca: Handle, time: Time) {
+        self.schedule(QueueTask::RescheduleSyncRepo(ca, time));
+    }
+}
+```
+
+### CA Repository Synchronization
+
+We have the following function in `CaManager` that triggers CAs to synchronize with
+their Repository/-ies:
+
+```rust
+impl CaManager {
+    /// Synchronize a CA with its repositories.
+    ///
+    /// Note typically a CA will have only one active repository, but in case
+    /// there are multiple during a migration, this function will ensure that
+    /// they are all synchronized.
+    ///
+    /// In case the CA had deprecated repositories, then a clean up will be
+    /// attempted. I.e. the CA will try to withdraw all objects from the deprecated
+    /// repository. If this clean up fails then the number of clean-up attempts
+    /// for the repository in question is incremented, and this function will
+    /// fail. When there have been 5 failed attempts, then the old repository
+    /// is assumed to be unreachable and it will be dropped - i.e. the CA will
+    /// no longer try to clean up objects.
+    pub async fn ca_repo_sync_all(&self, ca_handle: &Handle) -> KrillResult<()> { ... }
+}
+```
+
+The above function is called by the scheduler which looks for pending `QueueTask::SyncRepo`
+and `QueueTask::RescheduleSyncRepo` tasks. Furthermore synchronization for all CAs is done
+whenever Krill starts up, and it can be triggered through the API - both paths call the
+following function:
+
+```rust
+impl CaManager {
+    /// Synchronize all CAs with their repositories. Meant to be called by the background
+    /// schedular. This will log issues, but will not fail on errors with individual CAs -
+    /// because otherwise this would prevent other CAs from syncing. Note however, that the
+    /// repository status is tracked per CA and can be monitored.
+    ///
+    /// This function can still fail on internal errors, e.g. I/O issues when saving state
+    /// changes to the repo status structure.
+    pub async fn cas_repo_sync_all(&self, actor: &Actor) {
+    }
 }
 ```
 
