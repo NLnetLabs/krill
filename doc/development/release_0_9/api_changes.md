@@ -75,3 +75,46 @@ Embedded is no longer allowed, there is still a notion of a 'type' because we su
 ```
 
 
+## Show Repository
+
+Since we no longer support 'embedded', the JSON format of the show repository API response has changed a bit.
+The JSON member "rfc8181" now appears as "repository_response". We still have a JSON member called "contact",
+so that we remain a bit flexible in case we would like to include more information in future, next to which
+repository is configured.
+
+OLD:
+```
+{
+  "contact": {
+    "rfc8181": {
+      "tag": null,
+      "publisher_handle": "ca",
+      "id_cert": "MIID..Vg==",
+      "service_uri": "https://localhost:3000/rfc8181/ca",
+      "repo_info": {
+        "base_uri": "rsync://localhost/repo/ca/",
+        "rpki_notify": "https://localhost:3000/rrdp/notificati.xml"
+      }
+    }
+  }
+}
+```
+
+NEW:
+```
+  "contact": {
+    "repository_response": {
+      "tag": null,
+      "publisher_handle": "ca",
+      "id_cert": "MIID..Vg==",
+      "service_uri": "https://localhost:3000/rfc8181/ca",
+      "repo_info": {
+        "base_uri": "rsync://localhost/repo/ca/",
+        "rpki_notify": "https://localhost:3000/rrdp/notificati.xml"
+      }
+    }
+  }
+}
+```
+
+

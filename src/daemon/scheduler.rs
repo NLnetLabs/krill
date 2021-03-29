@@ -24,7 +24,6 @@ use crate::{
         config::Config,
         mq::{MessageQueue, QueueTask},
     },
-    pubd::RepositoryManager,
 };
 
 #[cfg(feature = "multi-user")]

@@ -669,7 +669,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Rfc8181'
+                $ref: '#/components/schemas/Rfc8183RepositoryResponse'
             application/xml:
               schema:
                 $ref: '#/components/schemas/RFC8183PublisherRequestXML'
@@ -1243,7 +1243,7 @@ components:
           properties:
             publisher_handle:
               $ref: '#/components/schemas/Handle'
-    Rfc8181:
+    Rfc8183RepositoryResponse:
       type: object
       properties:
         tag:
@@ -2705,13 +2705,13 @@ components:
               contact:
                 type: object
                 properties:
-                  rfc8181:
-                    $ref: '#/components/schemas/Rfc8181'
+                  repository_contact:
+                    $ref: '#/components/schemas/Rfc8183RepositoryResponse'
           examples:
             contact:
               value:
                 contact:
-                  rfc8181:
+                  repository_contact:
                     tag: null
                     publisher_handle: 'ca'
                     id_cert: 'MIID..Vg=='
