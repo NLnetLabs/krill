@@ -1,44 +1,50 @@
 // The mock OpenID Connect provider only checks usernames, not passwords.
-let admin = { u: 'admin@krill' }
-let readonly = { u: 'readonly@krill' }
-let readwrite = { u: 'readwrite@krill' }
-let shorttoken = { u: 'shorttokenwithoutrefresh@krill' }
-let shortrefresh = { u: 'shorttokenwithrefresh@krill' }
-let badidtoken = { u: 'non-spec-compliant-idtoken-payload' }
-let badrole = { u: 'user-with-unknown-role' }
-let refreshinvalidrequest = { u: 'user-with-invalid-request-on-refresh' }
-let refreshinvalidclient = { u: 'user-with-invalid-client-on-refresh' }
-let wrongcsrfstate = { u: 'user-with-wrong-csrf-state-value' }
-let ca_name = 'dummy-ca-name'
+const admin = { u: 'adm@krill' }
+const readonly = { u: 'ro@krill' }
+const readwrite = { u: 'rw@krill' }
+const shorttoken = { u: 'shorttokenwithoutrefresh@krill' }
+const shortrefresh = { u: 'shorttokenwithrefresh@krill' }
+const badidtoken = { u: 'non-spec-compliant-idtoken-payload' }
+const badrole = { u: 'user-with-unknown-role' }
+const refreshinvalidrequest = { u: 'user-with-invalid-request-on-refresh' }
+const refreshinvalidclient = { u: 'user-with-invalid-client-on-refresh' }
+const wrongcsrfstate = { u: 'user-with-wrong-csrf-state-value' }
+const ca_name = 'dummy-ca-name'
 
-let login_test_settings = [
+const login_test_settings = [
   { d: 'empty', u: '', o: false },
-  { d: 'incorrect', u: 'wrong_user_name', o: false },
-  { d: 'admin', u: admin.u, o: true },
-  { d: 'readonly', u: readonly.u, o: true },
-  { d: 'readwrite', u: readwrite.u, o: true },
-  { d: 'badidtoken', u: badidtoken.u, o: false },
+  { d: 'incorrect', u: 'wrong_user_name', o: false, fm: 'unknown_user' },
+  { d: 'admin', u: admin.u, o: true, r: 'admin' },
+  { d: 'readonly', u: readonly.u, o: true, r: 'readonly' },
+  { d: 'readwrite', u: readwrite.u, o: true, r: 'readwrite' },
+  { d: 'badidtoken', u: badidtoken.u, o: false, fm: 'malformed_id_token' },
   { d: 'badrole', u: badrole.u, o: false },
-  { d: 'wrongcsrfstate', u: wrongcsrfstate.u, o: false },
+  { d: 'wrongcsrfstate', u: wrongcsrfstate.u, o: false, fm: 'wrong_csrf_state' },
+]
+
+const short_token_test_settings = [
+  { ca: 'some-handle-name', o: true, token_secs: 5, create_ca_after_secs: 0 },          // should succeed with a freshly issued token
+  { ca: 'some-other-handle-name', o: true, token_secs: 10, create_ca_after_secs: 5 },   // should succeed with a token due to expire but not yet expired
+  { ca: 'yet-another-handle-name', o: false, token_secs: 5, create_ca_after_secs: 10 }, // should fail after token expiration
 ]
 
 const create_ca_settings_401 = [
-  'user-with-invalid-grant-on-refresh',
-  'user-with-invalid-client-on-refresh',
-  'user-with-invalid-request-on-refresh',
-  'user-with-500-on-refresh',
-  'user-with-503-on-refresh',
-].map((u) => ({
-  u: u,
+  'invalid_request',
+  'invalid_grant',
+  'invalid_client',
+  'http_500',
+  'http_503',
+].map((fm) => ({
+  fm: fm,
   responseCode: 401,
 }))
 
 const create_ca_settings_403 = [
-  'user-with-unauthorized-client-on-refresh',
-  'user-with-invalid-scope-on-refresh',
-  'user-with-unsupported-grant-type-on-refresh',
-].map((u) => ({
-  u: u,
+  'unauthorized_client',
+  'invalid_scope',
+  'unsupported_grant_type',
+].map((fm) => ({
+  fm: fm,
   responseCode: 403,
 }))
 
@@ -72,7 +78,19 @@ describe('OpenID Connect provider with RP-Initiated logout', () => {
         cy.url().should('not.include', Cypress.config('baseUrl'))
         cy.contains('Mock OpenID Connect login form')
 
-        if (ts.u != '') cy.get('input[name="username"]').clear().type(ts.u)
+        // Login, and while doing so specify the behaviour we want the OpenID Connect mock to exhibit for this user
+        if (ts.u != '') {
+          cy.get('input[name="username"]').clear().type(ts.u)
+        }
+        if (ts.fm) {
+          // Cause the mock to exhibit the requested failure mode 
+          cy.get('select[name="failure_mode"]').select(ts.fm)
+        }
+        if (ts.r) {
+          // Force the mock to respond with a role attribute for this user
+          cy.get('input[name="userattr1"]').clear().type('role')
+          cy.get('input[name="userattrval1"]').clear().type(ts.r)
+        }
 
         cy.contains('Sign In').click()
 
@@ -80,10 +98,11 @@ describe('OpenID Connect provider with RP-Initiated logout', () => {
         cy.url().should('include', Cypress.config('baseUrl'))
 
         if (ts.o) {
+          // A good outcome, i.e. login should have succeeded
           cy.contains('Sign In').should('not.exist')
           cy.get('#userinfo').click()
           cy.get('#userinfo_table').contains(ts.u)
-          cy.get('#userinfo_table').contains('role')
+          cy.get('#userinfo_table').contains(ts.r) // assumes that ts.r is not a substring of ts.u
         } else if (ts.d == 'badidtoken') {
           cy.contains('OpenID Connect: Code exchange failed: Failed to parse server response')
           cy.contains('return to the login page')
@@ -108,6 +127,8 @@ describe('OpenID Connect provider with RP-Initiated logout', () => {
     cy.url().should('not.include', Cypress.config('baseUrl'))
     cy.contains('Mock OpenID Connect login form')
     cy.get('input[name="username"]').clear().type(admin.u)
+    cy.get('input[name="userattr1"]').clear().type('role') // a role is required to be able to login
+    cy.get('input[name="userattrval1"]').clear().type('admin')
     cy.contains('Sign In').click()
 
     // verify that we are shown to be logged in to the Krill UI
@@ -134,26 +155,21 @@ describe('OpenID Connect provider with RP-Initiated logout', () => {
   })
 
   it('Login with short-lived non-refreshable token and try to refresh page', () => {
-    cy.intercept('GET', '/api/v1/authorized').as('isAuthorized')
+    // login
     cy.visit('/')
-
-    cy.wait('@isAuthorized').its('response.statusCode').should('eq', 403)
     cy.url().should('not.include', Cypress.config('baseUrl'))
     cy.contains('Mock OpenID Connect login form')
     cy.get('input[name="username"]').clear().type(shorttoken.u)
-
-    cy.intercept('GET', '/index.html').as('postLoginIndexFetch')
-    cy.intercept('GET', '/api/v1/authorized').as('isAuthorized')
+    cy.get('input[name="userattr1"]').clear().type('role')         // a role is required to be able to login
+    cy.get('input[name="userattrval1"]').clear().type('readwrite')
+    cy.get('input[name="refresh"]').uncheck()                      // prevent issuing of refresh tokens for this user
     cy.contains('Sign In').click()
 
-    cy.wait('@postLoginIndexFetch').its('response.statusCode').should('eq', 200)
-    cy.wait('@isAuthorized').its('response.statusCode').should('eq', 200)
-    cy.url().should('include', Cypress.config('baseUrl'))
+    // verify that we are shown to be logged in to the Krill UI
     cy.contains('Sign In').should('not.exist')
+    cy.url().should('include', Cypress.config('baseUrl'))
     cy.get('#userinfo').click()
     cy.get('#userinfo_table').contains(shorttoken.u)
-    cy.contains(shorttoken.u)
-    cy.contains('Welcome to Krill')
 
     // the token has a lifetime of 5 second and no refresh token
     // wait 6 seconds...
@@ -162,84 +178,100 @@ describe('OpenID Connect provider with RP-Initiated logout', () => {
     // by the time Krill verifies it!
     cy.wait(6000)
 
-    // verify that we are shown the OpenID Connect provider login page
-    // cy.intercept('GET', '/api/v1/authorized').as('isAuthorized')
+    // verify that if we reload the Krill UI we are shown the OpenID Connect
+    // provider login page
     cy.intercept('GET', '/auth/login').as('getLoginURL')
     cy.intercept('GET', /^https:\/\/localhost:1818\/authorize.+/).as('oidcLoginForm')
-
     cy.visit('/')
-    // not sure why but even though the 401 response is sent and Cypress debug
-    // logs show it, the following test never finds a match...
-    // cy.wait('@isAuthorized').its('response.statusCode').should('eq', 401)
     cy.wait(['@getLoginURL', '@oidcLoginForm'])
-
     cy.url().should('not.include', Cypress.config('baseUrl'))
     cy.contains('Mock OpenID Connect login form')
-    cy.get('input[name="username"]')
   })
 
-  it('Login with short-lived non-refreshable token and try to create a CA', () => {
-    cy.intercept('GET', '/api/v1/authorized').as('isAuthorized')
-    cy.visit('/')
+  short_token_test_settings.forEach((ts) =>
+    it('Login with short-lived non-refreshable token and try to create a CA after ' + ts.create_ca_after_secs + ' out of ' + ts.token_secs + ' secs' + ' should ' + (ts.o ? 'succeed' : 'fail'), () => {
+      // note: a short token with a 1 second lifetime doesn't work in the GitHub
+      // Action runner environment because the token has sometimes already expired
+      // by the time Krill verifies it! And we also want to test that we still have
+      // rights when less than half the token lifetime is remaining (as at this
+      // point Krill switches from considering the token to be ACTIVE to NEEDS
+      // REFRESH), and for a short lifetime like 5 seconds window in which to time
+      // the test to check after 3 seconds but before 5 seconds is just too small,
+      // so we use a longer lifetime for this test.
 
-    cy.wait('@isAuthorized').its('response.statusCode').should('eq', 403)
-    cy.url().should('not.include', Cypress.config('baseUrl'))
-    cy.contains('Mock OpenID Connect login form')
-    cy.get('input[name="username"]').clear().type(shorttoken.u)
-
-    cy.intercept('GET', '/index.html').as('postLoginIndexFetch')
-    cy.intercept('GET', '/api/v1/authorized').as('isAuthorized')
-    cy.contains('Sign In').click()
-
-    cy.wait('@postLoginIndexFetch').its('response.statusCode').should('eq', 200)
-    cy.wait('@isAuthorized').its('response.statusCode').should('eq', 200)
-    cy.url().should('include', Cypress.config('baseUrl'))
-    cy.contains('Sign In').should('not.exist')
-    cy.get('#userinfo').click()
-    cy.get('#userinfo_table').contains(shorttoken.u)
-    cy.contains(shorttoken.u)
-    cy.contains('Welcome to Krill')
-
-    // the token has a lifetime of 5 second and no refresh token
-    // wait 6 seconds...
-    // note: a shorter token with a 1 second lifetime doesn't work in the GitHub
-    // Action runner environment because the token has sometimes already expired
-    // by the time Krill verifies it!
-    cy.wait(6000)
-
-    // Try to create a CA, by typing in the input, clicking the 'Create CA' button
-    // and then clicking 'Ok'. This should fail, since the token can't be refreshed.
-    cy.intercept('POST', '/api/v1/cas').as('createCA')
-    cy.contains('CA Handle')
-    cy.get('form input[type="text"]').type('some-handle-name')
-    cy.contains('Create CA').click()
-    cy.contains('OK').click()
-
-    cy.wait('@createCA').its('response.statusCode').should('eq', 401)
-    cy.contains('Your login session has expired. Please login again.')
-  });
-
-  [...create_ca_settings_401, ...create_ca_settings_403].forEach((ts) =>
-    it(`Login as ${ts.u} and try to create a CA`, () => {
-      cy.intercept('GET', '/api/v1/authorized').as('isAuthorized')
+      // login
       cy.visit('/')
-
-      cy.wait('@isAuthorized').its('response.statusCode').should('eq', 403)
       cy.url().should('not.include', Cypress.config('baseUrl'))
       cy.contains('Mock OpenID Connect login form')
-      cy.get('input[name="username"]').clear().type(ts.u)
-
-      cy.intercept('GET', '/index.html').as('postLoginIndexFetch')
-      cy.intercept('GET', '/api/v1/authorized').as('isAuthorized')
+      cy.get('input[name="username"]').clear().type(shorttoken.u + '_delay_' + ts.create_ca_after_secs)
+      cy.get('input[name="userattr1"]').clear().type('role')         // a role is required to be able to login
+      cy.get('input[name="userattrval1"]').clear().type('readwrite')
+      cy.get('input[name="userattr2"]').clear().type('inc_cas')      // force the create CA welcome page to show
+      cy.get('input[name="userattrval2"]').clear().type(ts.ca)       //   (by making Lagosta think there are no CAs)
+      cy.get('input[name="refresh"]').uncheck()                      // prevent issuing of refresh tokens for this user
+      cy.get('input[name="token_secs"]').clear().type(ts.token_secs) // control the lifetime of the issued access token
       cy.contains('Sign In').click()
 
-      cy.wait('@postLoginIndexFetch').its('response.statusCode').should('eq', 200)
-      cy.wait('@isAuthorized').its('response.statusCode').should('eq', 200)
-      cy.url().should('include', Cypress.config('baseUrl'))
+      // record the approximate time at which the token was issued
+      let issued_at_ms = Date.now()
+      
+      // verify that we are shown to be logged in to the Krill UI
       cy.contains('Sign In').should('not.exist')
+      cy.url().should('include', Cypress.config('baseUrl'))
       cy.get('#userinfo').click()
-      cy.get('#userinfo_table').contains(ts.u)
-      cy.contains(ts.u)
+      cy.get('#userinfo_table').contains(shorttoken.u)
+
+      // verify that we are shown the CA create page
+      cy.contains('Welcome to Krill')
+
+      // calculate the remaining time necessary to wait until the
+      // create_ca_after_secs moment
+      let time_elapsed_ms = Date.now() - issued_at_ms
+      let time_remaining_ms = ts.create_ca_after_secs*1000 - time_elapsed_ms
+      cy.wait(time_remaining_ms)
+
+      // Try to create a CA, by typing in the input, clicking the 'Create CA' button
+      // and then clicking 'Ok'. This should fail, since the token can't be refreshed.
+      cy.intercept('POST', '/api/v1/cas').as('createCA')
+      cy.contains('CA Handle')
+      cy.get('form input[type="text"]').type(ts.ca)
+      cy.contains('Create CA').click()
+      cy.contains('OK').click()
+
+      if (ts.o) {
+        cy.wait('@createCA').its('response.statusCode').should('eq', 200)
+      } else {
+        cy.wait('@createCA').its('response.statusCode').should('eq', 401)
+        cy.contains('Your login session has expired. Please login again.')
+      }
+    })
+  );
+
+  [...create_ca_settings_401, ...create_ca_settings_403].forEach((ts) =>
+    it('Try to create a CA with mock failure mode ' + ts.fm + ' enabled', () => {
+      let user_name = 'user_' + ts.fm;
+      let ca_name = 'some-unique-handle-name-' + Date.now();
+
+      // login
+      cy.visit('/')
+      cy.url().should('not.include', Cypress.config('baseUrl'))
+      cy.contains('Mock OpenID Connect login form')
+      cy.get('input[name="username"]').clear().type(user_name)
+      cy.get('input[name="userattr1"]').clear().type('role')         // a role is required to be able to login
+      cy.get('input[name="userattrval1"]').clear().type('readwrite')
+      cy.get('input[name="userattr2"]').clear().type('inc_cas')      // force the create CA welcome page to show
+      cy.get('input[name="userattrval2"]').clear().type(ca_name)     //   (by making Lagosta think there are no CAs)
+      cy.get('select[name="failure_mode"]').select(ts.fm)
+      cy.get('select[name="failure_endpoint"]').select('token')
+      cy.contains('Sign In').click()
+
+      // verify that we are shown to be logged in to the Krill UI
+      cy.contains('Sign In').should('not.exist')
+      cy.url().should('include', Cypress.config('baseUrl'))
+      cy.get('#userinfo').click()
+      cy.get('#userinfo_table').contains(user_name)
+
+      // verify that we are shown the create CA welcome page
       cy.contains('Welcome to Krill')
 
       // the token has a lifetime of 5 second and no refresh token
@@ -251,10 +283,11 @@ describe('OpenID Connect provider with RP-Initiated logout', () => {
 
       // Try to create a CA, by typing in the input, clicking the 'Create CA' button
       // and then clicking 'Ok'. This should fail, since the mock server should return a
-      // 400 with 'invalid_request', which should be turned into a 401 by krill
+      // exhibit the undesirable behaviour we configured which should result in an
+      // error from Krill.
       cy.intercept('POST', '/api/v1/cas').as('createCA')
       cy.contains('CA Handle')
-      cy.get('form input[type="text"]').type('some-handle-name')
+      cy.get('form input[type="text"]').type(ca_name)
       cy.contains('Create CA').click()
       cy.contains('OK').click()  
 
@@ -263,26 +296,31 @@ describe('OpenID Connect provider with RP-Initiated logout', () => {
   )
 
   it('Login with short-lived refreshable token and try to refresh page', () => {
+    let token_secs = 2;
+
+    // login
     cy.visit('/')
     cy.url().should('not.include', Cypress.config('baseUrl'))
     cy.contains('Mock OpenID Connect login form')
-    cy.get('input[name="username"]').type(shortrefresh.u)
+    cy.get('input[name="username"]').clear().type(shortrefresh.u)
+    cy.get('input[name="userattr1"]').clear().type('role')         // a role is required to be able to login
+    cy.get('input[name="userattrval1"]').clear().type('readonly')
+    cy.get('input[name="token_secs"]').clear().type(token_secs)    // control the lifetime of the issued access token
     cy.contains('Sign In').click()
 
-    cy.url().should('include', Cypress.config('baseUrl'))
+    // verify that we are shown to be logged in to the Krill UI
     cy.contains('Sign In').should('not.exist')
+    cy.url().should('include', Cypress.config('baseUrl'))
     cy.get('#userinfo').click()
     cy.get('#userinfo_table').contains(shortrefresh.u)
-    cy.contains(shortrefresh.u)
-    cy.contains('Welcome to Krill')
 
     for (let i = 0; i < 5; i++) {
-      // the token has a lifetime of 5 seconds and has a refresh token
-      // wait 6 seconds..
+      // the token has a lifetime of 2 seconds and has a refresh token
+      // wait 3 seconds..
       // note: a shorter token with a 1 second lifetime doesn't work in the
       // GitHub Action runner environment because the token has sometimes
       // already expired by the time Krill verifies it!
-      cy.wait(6000)
+      cy.wait(1000 * (token_secs + 1))
 
       // verify that we are still logged in to Krill
       cy.visit('/')
@@ -290,8 +328,6 @@ describe('OpenID Connect provider with RP-Initiated logout', () => {
       cy.contains('Sign In').should('not.exist')
       cy.get('#userinfo').click()
       cy.get('#userinfo_table').contains(shortrefresh.u)
-      cy.contains(shortrefresh.u)
-      cy.contains('Welcome to Krill')
     }
   })
 })

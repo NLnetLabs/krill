@@ -93,11 +93,16 @@ type CustomIdTokenFields = IdTokenFields<
 type CustomTokenResponse = StandardTokenResponse<CustomIdTokenFields, CoreTokenType>;
 // end cascade
 
-// This failure mode can be invoked for a user at user creation time.
-// The failure mode will be activated on a 'refresh_token' request
-// from Krill to the OIDC Provider
 #[derive(Clone, Debug)]
-enum RefreshTokenFailureMode {
+enum FailureMode {
+    // These are various generic failure modes,
+    // without Oauth/OpenID Connect specific errors
+    NoResponse{ rel_path_prefix: String },
+    SlowResponse{ rel_path_prefix: String, duration: Duration },
+    Error500Response{ rel_path_prefix: String },
+    Error503Response{ rel_path_prefix: String },
+    WrongCSRFState,
+    MalformedIDToken,
     // These are the RFC 6749 5.2 Errors
     InvalidRequestErrorResponse,
     InvalidClientErrorResponse,
@@ -105,53 +110,33 @@ enum RefreshTokenFailureMode {
     InvalidScopeErrorResponse,
     UnauthorizedClientErrorResponse,
     UnsupportedGrantTypeErrorResponse,
-    // These are various generic failure modes,
-    // without OAUTH/OpenID Connect specific errors
-    NoResponse,
-    SlowResponse(Duration),
-    Error500Response,
-    Error503Response,
 }
 
-impl SerdeSerialize for RefreshTokenFailureMode {
+impl SerdeSerialize for FailureMode {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: SerdeSerializer,
     {
         let mut state = serializer.serialize_struct("Error", 0)?;
         match self {
-            RefreshTokenFailureMode::InvalidRequestErrorResponse => {
-                state.serialize_field("error", "invalid_request")?
-            }
-            RefreshTokenFailureMode::InvalidClientErrorResponse => state.serialize_field("error", "invalid_client")?,
-            RefreshTokenFailureMode::InvalidGrantErrorResponse => state.serialize_field("error", "invalid_grant")?,
-            RefreshTokenFailureMode::UnauthorizedClientErrorResponse => {
-                state.serialize_field("error", "unauthorized_client")?
-            }
-            RefreshTokenFailureMode::InvalidScopeErrorResponse => state.serialize_field("error", "invalid_scope")?,
-            RefreshTokenFailureMode::UnsupportedGrantTypeErrorResponse => {
-                state.serialize_field("error", "unsupported_grant_type")?
-            }
-            _ => state.serialize_field("error", "unknown_error")?,
+            FailureMode::InvalidRequestErrorResponse => state.serialize_field("error", "invalid_request")?,
+            FailureMode::InvalidClientErrorResponse => state.serialize_field("error", "invalid_client")?,
+            FailureMode::InvalidGrantErrorResponse => state.serialize_field("error", "invalid_grant")?,
+            FailureMode::UnauthorizedClientErrorResponse => state.serialize_field("error", "unauthorized_client")?,
+            FailureMode::InvalidScopeErrorResponse => state.serialize_field("error", "invalid_scope")?,
+            FailureMode::UnsupportedGrantTypeErrorResponse => state.serialize_field("error", "unsupported_grant_type")?,
+            _ => unreachable!()
         }
         state.end()
     }
 }
 
-impl Default for RefreshTokenFailureMode {
-    fn default() -> Self {
-        RefreshTokenFailureMode::InvalidRequestErrorResponse
-    }
-}
-
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 struct KnownUser {
-    role: Option<&'static str>,
-    inc_cas: Option<&'static str>,
-    exc_cas: Option<&'static str>,
+    attributes: HashMap<String, String>,
     token_secs: Option<u32>,
     refresh: bool,
-    on_refresh_token_failure: Option<RefreshTokenFailureMode>,
+    failure_mode: Option<FailureMode>,
 }
 
 struct TempAuthzCodeDetails {
@@ -172,7 +157,7 @@ type TempAuthzCodes = HashMap<TempAuthzCode, TempAuthzCodeDetails>;
 type LoggedInAccessToken = String;
 type LoginSessions = HashMap<LoggedInAccessToken, LoginSession>;
 
-type KnownUserId = &'static str;
+type KnownUserId = String;
 type KnownUsers = HashMap<KnownUserId, KnownUser>;
 
 const DEFAULT_TOKEN_DURATION_SECS: u32 = 3600;
@@ -223,184 +208,6 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
         let mut authz_codes = TempAuthzCodes::new();
         let mut login_sessions = LoginSessions::new();
         let mut known_users = KnownUsers::new();
-
-        known_users.insert(
-            "admin@krill",
-            KnownUser {
-                role: Some("admin"),
-                exc_cas: Some("ta,testbed"),
-                ..Default::default()
-            },
-        );
-        known_users.insert(
-            "readonly@krill",
-            KnownUser {
-                role: Some("readonly"),
-                exc_cas: Some("ta,testbed"),
-                ..Default::default()
-            },
-        );
-        known_users.insert(
-            "readwrite@krill",
-            KnownUser {
-                role: Some("readwrite"),
-                exc_cas: Some("ta,testbed"),
-                ..Default::default()
-            },
-        );
-        known_users.insert(
-            "shorttokenwithoutrefresh@krill",
-            KnownUser {
-                role: Some("readwrite"),
-                exc_cas: Some("ta,testbed"),
-                token_secs: Some(5),
-                ..Default::default()
-            },
-        );
-        known_users.insert(
-            "shorttokenwithrefresh@krill",
-            KnownUser {
-                role: Some("readwrite"),
-                exc_cas: Some("ta,testbed"),
-                token_secs: Some(5),
-                refresh: true,
-                ..Default::default()
-            },
-        );
-        known_users.insert(
-            "non-spec-compliant-idtoken-payload",
-            KnownUser {
-                role: Some("readonly"),
-                exc_cas: Some("ta,testbed"),
-                ..Default::default()
-            },
-        );
-        known_users.insert(
-            "user-with-unknown-role",
-            KnownUser {
-                role: None,
-                exc_cas: Some("ta,testbed"),
-                ..Default::default()
-            },
-        );
-        known_users.insert(
-            "user-with-invalid-request-on-refresh",
-            KnownUser {
-                role: Some("readonly"),
-                exc_cas: Some("ta,testbed"),
-                token_secs: Some(5),
-                refresh: true,
-                on_refresh_token_failure: Some(RefreshTokenFailureMode::InvalidRequestErrorResponse),
-                ..Default::default()
-            },
-        );
-        known_users.insert(
-            "user-with-invalid-client-on-refresh",
-            KnownUser {
-                role: Some("readonly"),
-                exc_cas: Some("ta,testbed"),
-                token_secs: Some(5),
-                refresh: true,
-                on_refresh_token_failure: Some(RefreshTokenFailureMode::InvalidClientErrorResponse),
-                ..Default::default()
-            },
-        );
-        known_users.insert(
-            "user-with-invalid-grant-on-refresh",
-            KnownUser {
-                role: Some("readonly"),
-                exc_cas: Some("ta,testbed"),
-                token_secs: Some(5),
-                refresh: true,
-                on_refresh_token_failure: Some(RefreshTokenFailureMode::InvalidGrantErrorResponse),
-                ..Default::default()
-            },
-        );
-        known_users.insert(
-            "user-with-invalid-scope-on-refresh",
-            KnownUser {
-                role: Some("readonly"),
-                exc_cas: Some("ta,testbed"),
-                token_secs: Some(5),
-                refresh: true,
-                on_refresh_token_failure: Some(RefreshTokenFailureMode::InvalidScopeErrorResponse),
-                ..Default::default()
-            },
-        );
-        known_users.insert(
-            "user-with-unauthorized-client-on-refresh",
-            KnownUser {
-                role: Some("readonly"),
-                exc_cas: Some("ta,testbed"),
-                token_secs: Some(5),
-                refresh: true,
-                on_refresh_token_failure: Some(RefreshTokenFailureMode::UnauthorizedClientErrorResponse),
-                ..Default::default()
-            },
-        );
-        known_users.insert(
-            "user-with-unsupported-grant-type-on-refresh",
-            KnownUser {
-                role: Some("readonly"),
-                exc_cas: Some("ta,testbed"),
-                token_secs: Some(5),
-                refresh: true,
-                on_refresh_token_failure: Some(RefreshTokenFailureMode::UnsupportedGrantTypeErrorResponse),
-                ..Default::default()
-            },
-        );
-        known_users.insert(
-            "user-with-no-response-on-refresh",
-            KnownUser {
-                role: Some("readonly"),
-                exc_cas: Some("ta,testbed"),
-                token_secs: Some(5),
-                refresh: true,
-                on_refresh_token_failure: Some(RefreshTokenFailureMode::NoResponse),
-                ..Default::default()
-            },
-        );
-        known_users.insert(
-            "user-with-slow-response-on-refresh",
-            KnownUser {
-                role: Some("readonly"),
-                exc_cas: Some("ta,testbed"),
-                token_secs: Some(5),
-                refresh: true,
-                on_refresh_token_failure: Some(RefreshTokenFailureMode::SlowResponse(Duration::from_secs(25))),
-                ..Default::default()
-            },
-        );
-        known_users.insert(
-            "user-with-500-on-refresh",
-            KnownUser {
-                role: Some("readonly"),
-                exc_cas: Some("ta,testbed"),
-                token_secs: Some(5),
-                refresh: true,
-                on_refresh_token_failure: Some(RefreshTokenFailureMode::Error500Response),
-                ..Default::default()
-            },
-        );
-        known_users.insert(
-            "user-with-503-on-refresh",
-            KnownUser {
-                role: Some("readonly"),
-                exc_cas: Some("ta,testbed"),
-                token_secs: Some(5),
-                refresh: true,
-                on_refresh_token_failure: Some(RefreshTokenFailureMode::Error503Response),
-                ..Default::default()
-            },
-        );
-        known_users.insert(
-            "user-with-wrong-csrf-state-value",
-            KnownUser {
-                role: Some("admin"),
-                exc_cas: Some("ta,testbed"),
-                ..Default::default()
-            },
-        );
 
         let logout_metadata = match config {
             OpenIDConnectMockMode::OIDCProviderWithRPInitiatedLogout => CustomAdditionalMetadata {
@@ -460,7 +267,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
         let jwks_doc = serde_json::to_string(&jwks)
             .map_err(|err| Error::custom(format!("Error while building jwks JSON response: {}", err)))
             .unwrap();
-        let login_doc = std::fs::read_to_string("test-resources/ui/oidc_login.html").unwrap();
+        let login_doc = std::str::from_utf8(include_bytes!("../../test-resources/ui/oidc_login.html")).unwrap();
 
         fn make_random_value() -> Result<String, Error> {
             let mut access_token_bytes: [u8; 4] = [0; 4];
@@ -528,9 +335,9 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
                         SubjectIdentifier::new(session.id.to_string()),
                     ),
                     CustomAdditionalClaims {
-                        role: user.role.map(|role| role.to_string()),
-                        inc_cas: user.inc_cas.map_or(None, |v| Some(v.to_string())),
-                        exc_cas: user.exc_cas.map_or(None, |v| Some(v.to_string())),
+                        role: user.attributes.get("role").map_or(None, |v| Some(v.to_string())),
+                        inc_cas: user.attributes.get("inc_cas").map_or(None, |v| Some(v.to_string())),
+                        exc_cas: user.attributes.get("exc_cas").map_or(None, |v| Some(v.to_string())),
                     },
                 )
                 // Optional: specify the user's e-mail address. This should only be provided if the
@@ -650,7 +457,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
             request: Request,
             url: Url,
             authz_codes: &mut TempAuthzCodes,
-            known_users: &KnownUsers,
+            known_users: &mut KnownUsers,
         ) -> Result<(), Error> {
             let query = url
                 .get_parsed_query()
@@ -658,63 +465,135 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
             let redirect_uri = require_query_param(&query, "redirect_uri")?;
             let redirect_uri = base64_decode(redirect_uri)?;
 
+            fn bool_query_param(query: &Query, param: &str) -> bool {
+                match query.get_first_from_str(param) {
+                    Some(value) => bool::from_str(&value).unwrap_or(false),
+                    None => false
+                }
+            }
+
             fn with_redirect_uri(
                 redirect_uri: String,
                 query: Query,
                 authz_codes: &mut TempAuthzCodes,
-                known_users: &KnownUsers,
-            ) -> Result<Response<std::io::Empty>, Error> {
+                known_users: &mut KnownUsers,
+            ) -> Result<(KnownUser, Response<std::io::Empty>), Error> {
                 let username = require_query_param(&query, "username")?;
+                let failure_mode = query.get_first_from_str("failure_mode");
 
-                match known_users.get(username.as_str()) {
-                    Some(_user) => {
-                        let client_id = base64_decode(require_query_param(&query, "client_id")?)?;
-                        let nonce = base64_decode(require_query_param(&query, "nonce")?)?;
-                        let state = if username == "user-with-wrong-csrf-state-value" {
-                            info!("Deliberately returning the wrong CSRF state value to the client");
-                            "some-wrong-csrf-value".to_string()
-                        } else {
-                            base64_decode(require_query_param(&query, "state")?)?
+                let user = match known_users.get(username.as_str()) {
+                    Some(user) => {
+                        user
+                    }
+                    None if (username.trim().is_empty() || failure_mode == Some("unknown_user".to_string())) => {
+                        return Err(Error::custom(format!("Unknown username '{}'", username)))
+                    }
+                    None => {
+                        // Create the user on the fly
+
+                        // What attributes should the user have?
+                        let mut attributes: HashMap<String, String> = HashMap::new();
+                        for i in 1..=5 {
+                            if let Some(attr_name) = query.get_first_from_str(&format!("userattr{}", i)) {
+                                if let Some(attr_val) = query.get_first_from_str(&format!("userattrval{}", i)) {
+                                    attributes.insert(attr_name, attr_val);
+                                }
+                            }
+                        }
+
+                        // How long should the issued access token be valid for?
+                        let token_secs = Some(u32::from_str(&require_query_param(&query, "token_secs")?)
+                            .map_err(|err| Error::custom(
+                                format!("Failed to parse token_secs query parameter: {}", err)))?);
+
+                        // Should the user be issued a refresh token?
+                        let refresh = bool_query_param(&query, "refresh");
+
+                        // Should we exhibit some sort of failure for this user?
+                        let mut failure_mode = None;
+                        if let Some(mode) = query.get_first_from_str("failure_mode") {
+                            if let Some(endpoint) = query.get_first_from_str("failure_endpoint") {
+                                failure_mode = match (&mode[..], &endpoint[..]) {
+                                    ("none", "none") => None,
+                                    ("no_response", endpoint) => Some(FailureMode::NoResponse{ rel_path_prefix: format!("/{}", endpoint) }),
+                                    ("slow_response", endpoint) => Some(FailureMode::SlowResponse{ rel_path_prefix: format!("/{}", endpoint), duration: Duration::from_secs(25) }),
+                                    ("http_500", endpoint) => Some(FailureMode::Error500Response{ rel_path_prefix: format!("/{}", endpoint) }),
+                                    ("http_503", endpoint) => Some(FailureMode::Error503Response{ rel_path_prefix: format!("/{}", endpoint) }),
+                                    ("invalid_request", _) => Some(FailureMode::InvalidRequestErrorResponse),
+                                    ("invalid_client", _) => Some(FailureMode::InvalidClientErrorResponse),
+                                    ("invalid_grant", _) => Some(FailureMode::InvalidGrantErrorResponse),
+                                    ("unauthorized_client", _) => Some(FailureMode::UnauthorizedClientErrorResponse),
+                                    ("invalid_scope", _) => Some(FailureMode::InvalidScopeErrorResponse),
+                                    ("unsupported_grant_type", _) => Some(FailureMode::UnsupportedGrantTypeErrorResponse),
+                                    ("wrong_csrf_state", _) => Some(FailureMode::WrongCSRFState),
+                                    ("malformed_id_token", _) => Some(FailureMode::MalformedIDToken),
+                                    (err_mode, err_endpoint) => {
+                                        return Err(Error::custom(
+                                            format!("Unknown failure mode '{}' or endpoint '{:?}'", err_mode, err_endpoint)));
+                                    }
+                                };
+                            }
+                        }
+
+                        let user = KnownUser {
+                            attributes,
+                            token_secs,
+                            refresh,
+                            failure_mode,
                         };
 
-                        let mut code_bytes: [u8; 4] = [0; 4];
-                        openssl::rand::rand_bytes(&mut code_bytes)
-                            .map_err(|err: openssl::error::ErrorStack| Error::custom(format!("Rand error: {}", err)))?;
-                        let code = base64::encode(code_bytes);
+                        trace!("Creating mock user '{}': {:?}", &username, &user);
 
-                        authz_codes.insert(
-                            code.clone(),
-                            TempAuthzCodeDetails {
-                                client_id,
-                                nonce: nonce.clone(),
-                                username,
-                            },
-                        );
+                        known_users.insert(username.clone(), user);
 
-                        let urlsafe_code = url_encode(code)?;
-                        let urlsafe_state = url_encode(state)?;
-                        let urlsafe_nonce = url_encode(nonce)?;
-
-                        Ok(Response::empty(StatusCode(302)).with_header(
-                            Header::from_str(&format!(
-                                "Location: {}?code={}&state={}&nonce={}",
-                                redirect_uri, urlsafe_code, urlsafe_state, urlsafe_nonce
-                            ))
-                            .map_err(|err| {
-                                Error::custom(format!("Error while constructing HTTP Location header: {:?}", err))
-                            })?,
-                        ))
+                        known_users.get(username.as_str()).unwrap()
                     }
-                    None => Err(Error::custom("Unknown user name")),
-                }
+                };
+
+                let client_id = base64_decode(require_query_param(&query, "client_id")?)?;
+                let nonce = base64_decode(require_query_param(&query, "nonce")?)?;
+                let state = if matches!(user.failure_mode, Some(FailureMode::WrongCSRFState)) {
+                    info!("Deliberately returning the wrong CSRF state value to the client");
+                    "some-wrong-csrf-value".to_string()
+                } else {
+                    base64_decode(require_query_param(&query, "state")?)?
+                };
+
+                let mut code_bytes: [u8; 4] = [0; 4];
+                openssl::rand::rand_bytes(&mut code_bytes)
+                    .map_err(|err: openssl::error::ErrorStack| Error::custom(format!("Rand error: {}", err)))?;
+                let code = base64::encode(code_bytes);
+
+                authz_codes.insert(
+                    code.clone(),
+                    TempAuthzCodeDetails {
+                        client_id,
+                        nonce: nonce.clone(),
+                        username,
+                    },
+                );
+
+                let urlsafe_code = url_encode(code)?;
+                let urlsafe_state = url_encode(state)?;
+                let urlsafe_nonce = url_encode(nonce)?;
+
+                Ok((user.clone(), Response::empty(StatusCode(302)).with_header(
+                    Header::from_str(&format!(
+                        "Location: {}?code={}&state={}&nonce={}",
+                        redirect_uri, urlsafe_code, urlsafe_state, urlsafe_nonce
+                    ))
+                    .map_err(|err| {
+                        Error::custom(format!("Error while constructing HTTP Location header: {:?}", err))
+                    })?,
+                )))
             }
 
             // per RFC 6749 and OpenID Connect Core 1.0 section 3.1.26
             // Authentication Error Response we should still return a
             // redirect on error but with query params describing the error.
-            let response = match with_redirect_uri(redirect_uri.clone(), query, authz_codes, known_users) {
-                Ok(response) => response,
-                Err(err) => Response::empty(StatusCode(302)).with_header(
+            let (user, response) = match with_redirect_uri(redirect_uri.clone(), query, authz_codes, known_users) {
+                Ok((user, response)) => (Some(user), response),
+                Err(err) => (None, Response::empty(StatusCode(302)).with_header(
                     Header::from_str(&format!(
                         "Location: {}?error={}",
                         redirect_uri,
@@ -723,8 +602,10 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
                     .map_err(|err| {
                         Error::custom(format!("Error while constructing HTTP Location header: {:?}", err))
                     })?,
-                ),
+                )),
             };
+
+            let request = simulate_server_failure(request, user, &url)?;
 
             request.respond(response).map_err(|err| err.into())
         }
@@ -734,6 +615,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
         /// [openid-connect-rpinitiated-1_0]: https://openid.net/specs/openid-connect-rpinitiated-1_0.htmlc
         fn handle_logout_request(
             request: Request,
+            known_users: &KnownUsers,
             login_sessions: &mut LoginSessions,
             url: Url) -> Result<(), Error>
         {
@@ -743,7 +625,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
             let redirect_uri = require_query_param(&query, "post_logout_redirect_uri")?;
             let id_token_hint = require_query_param(&query, "id_token_hint")?;
 
-            let mut found_user_id: Option<&str> = None;
+            let mut found_user_id: Option<String> = None;
             login_sessions.retain(|_k, v| {
                 // return false if the id token matches the one we are looking for so that retain() will discard this
                 // login session
@@ -752,7 +634,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
                     if !r {
                         info!("Logout of id token '{}' terminates session for user '{}' with access/refresh token '{}'", id_token_hint, v.id, _k);
                         if found_user_id.is_none() {
-                            found_user_id = Some(v.id);
+                            found_user_id = Some(v.id.clone());
                         }
                     }
                     return r;
@@ -763,17 +645,21 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
             });
 
             match found_user_id {
-                Some(user_id) => remove_related_login_sessions(login_sessions, user_id),
+                Some(user_id) => {
+                    let request = simulate_server_failure(request, known_users.get(&user_id).cloned(), &url)?;
+        
+                    remove_related_login_sessions(login_sessions, &user_id);
+
+                    let response = Response::empty(StatusCode(302)).with_header(
+                        Header::from_str(&format!("Location: {}", redirect_uri)).map_err(|err| {
+                            Error::custom(format!("Error while constructing HTTP Location header: {:?}", err))
+                        })?,
+                    );
+        
+                    return request.respond(response).map_err(|err| err.into());
+                }
                 None => return Err(Error::custom(format!("Error while logging out: no login session found")))
             };
-
-            let response = Response::empty(StatusCode(302)).with_header(
-                Header::from_str(&format!("Location: {}", redirect_uri)).map_err(|err| {
-                    Error::custom(format!("Error while constructing HTTP Location header: {:?}", err))
-                })?,
-            );
-
-            request.respond(response).map_err(|err| err.into())
         }
 
         fn remove_related_login_sessions(
@@ -801,7 +687,8 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
         fn handle_oauth2_revocation_request(
             mut request: Request,
             login_sessions: &mut LoginSessions,
-            _known_users: &KnownUsers,
+            known_users: &KnownUsers,
+            url: Url,
         ) -> Result<(), Error> {
             // TODO: handle both access and refresh tokens
             let mut body = String::new();
@@ -830,6 +717,9 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
                     )
                     .map_err(|err| err.into())
             } else {
+                let user = get_requesting_user(&request, known_users, login_sessions).ok();
+                let request = simulate_server_failure(request, user, &url)?;
+
                 match login_sessions.remove(&token) {
                     None => {
                         warn!("Token '{}' could NOT be revoked: token is NOT known", &token);
@@ -841,7 +731,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
                     }
                     Some(session) => {
                         info!("Logout of refresh token '{}' terminates session for user '{}'", token, session.id);
-                        remove_related_login_sessions(login_sessions, session.id);
+                        remove_related_login_sessions(login_sessions, &session.id);
                     }
                 };
     
@@ -883,12 +773,13 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
             authz_codes: &mut TempAuthzCodes,
             login_sessions: &mut LoginSessions,
             known_users: &KnownUsers,
+            url: Url,
         ) -> Result<(), Error> {
             let mut body = String::new();
             request.as_reader().read_to_string(&mut body)?;
 
             let query_params = parse_qs(body);
-            let mut new_key: Option<String> = None;
+            let mut new_keys: Vec<String> = Vec::new();
             let mut new_session: Option<LoginSession> = None;
 
             // we skip over verifying the Authorization HTTP header but perhaps
@@ -902,6 +793,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
                         if let Some(authz_code) = authz_codes.remove(code) {
                             trace!("client_id: {:?}", &authz_code.client_id);
                             trace!("username: {:?}", &authz_code.username);
+
                             // find static user id
                             let mut session = LoginSession {
                                 id: known_users
@@ -910,13 +802,16 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
                                     .ok_or(Error::custom(format!(
                                         "Internal error, unknown user '{}'",
                                         authz_code.username
-                                    )))?,
+                                    )))?.clone(),
                                 id_token: None, // updated below after the token is generated
                             };
 
-                            let (token_doc, access_or_refresh_token, id_token) = if authz_code.username
-                                == "non-spec-compliant-idtoken-payload"
-                            {
+                            let issue_bad_token = if let Some(user) = known_users.get(&session.id) {
+                                matches!(user.failure_mode, Some(FailureMode::MalformedIDToken))
+                            } else {
+                                false
+                            };
+                            let (token_doc, id_token) = if issue_bad_token {
                                 // This represents an ID Token with an illegal "acr" value that is not a string but
                                 // rather a nested structure. This will be rejected by the Rust OpenID Connect crate.
                                 // We've seen this problem with at least one real OpenID Connect provider deployment.
@@ -929,7 +824,9 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
                                     "id_token":"{}"
                                 }}"#, dummy_access_token, id_token_with_invalid_acr);
 
-                                (token_doc, dummy_access_token, id_token_with_invalid_acr)
+                                new_keys.push(dummy_access_token);
+
+                                (token_doc, id_token_with_invalid_acr)
                             } else {
                                 let token_response =
                                     make_id_token_response(
@@ -941,19 +838,18 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
                                 let token_doc = serde_json::to_string(&token_response).map_err(|err| {
                                     Error::custom(format!("Error while building ID Token JSON response: {}", err))
                                 })?;
-                                let access_or_refresh_token = if let Some(token) = token_response.refresh_token() {
-                                    token.secret().clone()
-                                } else {
-                                    token_response.access_token().secret().clone()
-                                };
+                                if let Some(token) = token_response.refresh_token() {
+                                    new_keys.push(token.secret().clone());
+                                }
+                                
+                                new_keys.push(token_response.access_token().secret().clone());
 
                                 let id_token = token_response.extra_fields().id_token().expect("Missing id_token").to_string();
 
-                                (token_doc, access_or_refresh_token, id_token)
+                                (token_doc, id_token)
                             };
 
                             session.id_token = Some(id_token);
-                            new_key = Some(access_or_refresh_token);
                             new_session = Some(session.clone());
 
                             request
@@ -984,46 +880,41 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
                             trace!("session: {:?}", &session.id);
                             // Check the intentional failure responses we might want to
                             // impose on users and return the apprioriate HTTP response.
-                            match user.on_refresh_token_failure {
-                                None => {}
-                                Some(RefreshTokenFailureMode::NoResponse) => {
-                                    trace!("Not responding to request");
-                                    thread::park();
+
+                            let request = simulate_server_failure(request, Some(user.clone()), &url)?;
+
+                            let failure_json_str = if let Some(ref failure_mode) = user.failure_mode {
+                                match failure_mode {
+                                    FailureMode::InvalidRequestErrorResponse |
+                                    FailureMode::InvalidClientErrorResponse |
+                                    FailureMode::InvalidGrantErrorResponse |
+                                    FailureMode::InvalidScopeErrorResponse |
+                                    FailureMode::UnauthorizedClientErrorResponse |
+                                    FailureMode::UnsupportedGrantTypeErrorResponse => {
+                                        Some(json!(failure_mode).to_string())
+                                    }
+                                    _ => None
                                 }
-                                Some(RefreshTokenFailureMode::SlowResponse(dur)) => {
-                                    trace!("Responding slowly after {} seconds", &dur.as_secs());
-                                    thread::sleep(dur);
-                                }
-                                Some(RefreshTokenFailureMode::Error500Response) => {
-                                    trace!("Responding with a 500");
-                                    return request
-                                        .respond(Response::empty(StatusCode(500)))
-                                        .map_err(|err| err.into());
-                                }
-                                Some(RefreshTokenFailureMode::Error503Response) => {
-                                    trace!("Responding with a 503");
-                                    return request
-                                        .respond(Response::empty(StatusCode(503)))
-                                        .map_err(|err| err.into());
-                                }
-                                Some(err_mode) => {
-                                    trace!(
-                                        "(Intentionally) returning error '{}' for user '{}'",
-                                        json!(err_mode),
-                                        &session.id
-                                    );
-                                    return request
-                                        .respond(
-                                            Response::empty(StatusCode(400))
-                                                .with_header(
-                                                    Header::from_str("Content-Type: application/json").unwrap(),
-                                                )
-                                                .with_data(json!(err_mode).to_string().as_bytes(), None),
-                                        )
-                                        .map_err(|err| err.into());
-                                }
-                            }
-                            if user.refresh {
+                            } else {
+                                None
+                            };
+
+                            if let Some(json_str) = failure_json_str {
+                                warn!(
+                                    "Simulating refresh failure: Responding with HTTP 400 error '{}' for user '{}'",
+                                    json_str,
+                                    &session.id
+                                );
+                                return request
+                                    .respond(
+                                        Response::empty(StatusCode(400))
+                                            .with_header(
+                                                Header::from_str("Content-Type: application/json").unwrap(),
+                                            )
+                                            .with_data(json_str.as_bytes(), None),
+                                    )
+                                    .map_err(|err| err.into());
+                            } else if user.refresh {
                                 let token_response = make_id_token_response(
                                     signing_key,
                                     String::from("dummy_client_id"),
@@ -1034,16 +925,15 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
                                 let token_doc = serde_json::to_string(&token_response).map_err(|err| {
                                     Error::custom(format!("Error while building ID Token JSON response: {}", err))
                                 })?;
-                                let access_or_refresh_token = if let Some(token) = token_response.refresh_token() {
-                                    token.secret().clone()
-                                } else {
-                                    token_response.access_token().secret().clone()
-                                };
+                                if let Some(token) = token_response.refresh_token() {
+                                    new_keys.push(token.secret().clone());
+                                }
+
+                                new_keys.push(token_response.access_token().secret().clone());
 
                                 let id_token = token_response.extra_fields().id_token().expect("Missing id_token").to_string();
 
                                 session.id_token = Some(id_token);
-                                new_key = Some(access_or_refresh_token);
                                 new_session = Some(session.clone());
 
                                 request
@@ -1054,11 +944,11 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
                                     )
                                     .map_err(|err| err.into())
                             } else {
-                                trace!("Internal error for user '{:?}'", &user.role);
+                                trace!("Internal error for user session.id={} user={:?}", session.id, &user);
                                 Err(Error::custom(format!("Internal error: cowardly refusing to generate a new token for user '{}' that should not get refresh tokens", session.id)))
                             }
                         } else {
-                            warn!("Invalid refresh token: Responding with 'invalid_grant'");
+                            warn!("Invalid refresh token: Responding with HTTP 400 'invalid_grant'");
                             request
                                 .respond(
                                     Response::empty(StatusCode(400))
@@ -1068,7 +958,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
                                 .map_err(|err| err.into())
                         }
                     } else {
-                        warn!("Missing query parameter 'refresh_token': Responding with 'invalid_request'");
+                        warn!("Missing query parameter 'refresh_token': Responding with HTTP 400 'invalid_request'");
                         request
                             .respond(
                                 Response::empty(StatusCode(400))
@@ -1079,7 +969,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
                     }
                 }
                 Some(grant_type) => {
-                    warn!("Unsupported grant type: {:?}", grant_type);
+                    warn!("Unsupported grant type: {:?}. Responding with HTTP 400 'unsupported_grant_type'", grant_type);
                     request
                         .respond(
                             Response::empty(StatusCode(400))
@@ -1089,7 +979,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
                         .map_err(|err| err.into())
                 }
                 None => {
-                    warn!("Missing query parameter 'grant_type': Responding with 'invalid_request'");
+                    warn!("Missing query parameter 'grant_type': Responding with HTTP 400 'invalid_request'");
                     request
                         .respond(
                             Response::empty(StatusCode(400))
@@ -1103,22 +993,59 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
             // do this out here to avoid having both a mutable and immutable reference to login_sessions at the same
             // time, which isn't permitted by the Rust borrow checker. The key could be either an access token or a
             // refresh token, we don't distinguish between the two.
-            if let Some(key) = new_key {
-                if let Some(session) = new_session {
-                    login_sessions.insert(key, session);
+            if let Some(session) = new_session {
+                for key in new_keys {
+                    login_sessions.insert(key, session.clone());
                 }
             }
 
             r
         }
 
-        fn handle_user_info_request(request: Request) -> Result<(), Error> {
+        fn get_requesting_user(
+            request: &Request,
+            known_users: &KnownUsers,
+            login_sessions: &mut LoginSessions
+        ) -> Result<KnownUser, Error> {
+            let authz_hdr = request.headers().iter().find(|&hdr| hdr.field.equiv("Authorization")).ok_or_else(
+                || Error::custom("Missing Authorization HTTP request header on call to userinfo endpoint")
+            )?.value.as_str().to_string();
+
+            if !authz_hdr.to_lowercase().starts_with("bearer ") {
+                return Err(Error::custom(format!("Authorization HTTP request header '{}' does not start with 'Bearer ' (case insensitive)", authz_hdr)))
+            }
+
+            let access_token = authz_hdr.splitn(2, ' ').nth(1).ok_or_else(
+                || Error::custom(format!("Failed to extract access token after the first space in '{}'", authz_hdr))
+            )?;
+
+            let login_session = login_sessions.get(access_token).ok_or_else(
+                || Error::custom(format!("Unknown Authorization HTTP request header access token value '{}'", access_token))
+            )?;
+
+            let user = known_users.get(&login_session.id).ok_or_else(
+                || Error::custom(format!("No known users found for login session ID '{}'", login_session.id))
+            )?;
+
+            Ok(user.clone())
+        }
+
+        fn handle_user_info_request(
+            request: Request,
+            known_users: &KnownUsers,
+            login_sessions: &mut LoginSessions,
+            url: Url,
+        ) -> Result<(), Error> {
             let standard_claims: StandardClaims<CoreGenderClaim> =
                 StandardClaims::new(SubjectIdentifier::new("sub-123".to_string()));
             let additional_claims = EmptyAdditionalClaims {};
             let claims = UserInfoClaims::new(standard_claims, additional_claims);
             let claims_doc = serde_json::to_string(&claims)
                 .map_err(|err| Error::custom(format!("Error while building UserInfo JSON response: {}", err)))?;
+
+            let user = get_requesting_user(&request, known_users, login_sessions)?;
+            let request = simulate_server_failure(request, Some(user), &url)?;
+
             request
                 .respond(
                     Response::empty(StatusCode(200))
@@ -1137,7 +1064,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
             signing_key: &CoreRsaPrivateSigningKey,
             authz_codes: &mut TempAuthzCodes,
             login_sessions: &mut LoginSessions,
-            known_users: &KnownUsers,
+            known_users: &mut KnownUsers,
         ) -> Result<(), Error> {
             let url = urlparse(request.url());
 
@@ -1159,21 +1086,21 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
                 }
                 // OpenID Connect 1.0. Discovery support
                 (Method::Get, "/userinfo") => {
-                    return handle_user_info_request(request);
+                    return handle_user_info_request(request, known_users, login_sessions, url);
                 }
                 // OpenID Connect RP-Initiated Logout 1.0 support
                 (Method::Get, "/logout") => {
                     if matches!(config, OpenIDConnectMockMode::OIDCProviderWithRPInitiatedLogout) {
-                        return handle_logout_request(request, login_sessions, url);
+                        return handle_logout_request(request, known_users, login_sessions, url);
                     }
                 }
                 (Method::Post, "/token") => {
-                    return handle_token_request(request, signing_key, authz_codes, login_sessions, known_users);
+                    return handle_token_request(request, signing_key, authz_codes, login_sessions, known_users, url);
                 }
                 // OAuth 2.0 Token Revocation support
                 (Method::Post, "/revoke") => {
                     if matches!(config, OpenIDConnectMockMode::OIDCProviderWithOAuth2Revocation) {
-                        return handle_oauth2_revocation_request(request, login_sessions, known_users);
+                        return handle_oauth2_revocation_request(request, login_sessions, known_users, url);
                     }
                 }
                 // Test control APIs
@@ -1227,6 +1154,41 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
 
         info!("Mock OpenID Connect: stopped");
     });
+}
+
+fn simulate_server_failure(request: Request, user: Option<KnownUser>, url: &Url) -> Result<Request, Error> {
+    if let Some(user) = user {
+        if let Some(ref failure_mode) = user.failure_mode {
+            trace!("Checking if failure {:?} should be simulated for URL {}", user.failure_mode, url.path);
+            match failure_mode {
+                FailureMode::SlowResponse{ rel_path_prefix: prefix, duration: dur } if url.path.starts_with(prefix) => {
+                    warn!("Simulating server failure: Responding slowly after {} seconds", &dur.as_secs());
+                    thread::sleep(*dur);
+                }
+                FailureMode::NoResponse{ rel_path_prefix: prefix } if url.path.starts_with(prefix) => {
+                    warn!("Simulating server failure: Not responding to request");
+                    thread::park();
+                    // unknown how long park will keep the thread blocked for
+                    return Err(Error::custom("Aborting after deliberately blocking the request"));
+                }
+                FailureMode::Error500Response{ rel_path_prefix: prefix } if url.path.starts_with(prefix) => {
+                    warn!("Simulating server failure: Responding with HTTP 500");
+                    request.respond(Response::empty(StatusCode(500)))?;
+                    return Err(Error::custom("Aborting after deliberately returning a HTTP 500 response"));
+                }
+                FailureMode::Error503Response{ rel_path_prefix: prefix } if url.path.starts_with(prefix) => {
+                    warn!("Simulating server failure: Responding with HTTP 503");
+                    request.respond(Response::empty(StatusCode(503)))?;
+                    return Err(Error::custom("Aborting after deliberately returning a HTTP 503 response"));
+                }
+                _ => {
+                    trace!("No simulation rules matched");
+                }
+            }
+        }
+    }
+
+    Ok(request)
 }
 
 static SELF_SIGNED_CERT_PEM: &[u8; 1160] = br#"
