@@ -1097,7 +1097,14 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                     SessionStatus::Active => {
                         return Ok(Some(ActorDef::user(session.id, session.attributes, None)));
                     }
-                    SessionStatus::NeedsRefresh | SessionStatus::Expired => {
+                    SessionStatus::NeedsRefresh => {
+                        // If we have a refresh token try and extend the session. Otherwise return the cached token
+                        // and continue the login session until it expires.
+                        if !session.secrets.contains_key(TokenKind::RefreshToken.into()) {
+                            return Ok(Some(ActorDef::user(session.id, session.attributes, None)));
+                        }
+                    }
+                    SessionStatus::Expired => {
                         // We can only try to extend the session if we have a refresh token. Otherwise, return early
                         // with an error that indicates the user needs to login again.
                         if !session.secrets.contains_key(TokenKind::RefreshToken.into()) {
