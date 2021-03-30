@@ -822,7 +822,7 @@ impl OpenIDConnectAuthProvider {
                 Some(&err.to_string()),
             ))?;
 
-        conn_guard.as_ref().ok_or(OpenIDConnectAuthProvider::internal_error(
+        conn_guard.as_ref().ok_or_else(|| OpenIDConnectAuthProvider::internal_error(
                 "Connection to provider not yet established",
                 None,
             ))?;
