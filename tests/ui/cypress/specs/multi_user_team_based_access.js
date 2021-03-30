@@ -28,7 +28,6 @@ describe('Config File users with custom team policy', () => {
       // verify our team and role
       cy.get('#userinfo')
       cy.get('#userinfo').click()
-      cy.screenshot()
       cy.get('#userinfo_table').contains(ts.t)
       cy.get('#userinfo_table').contains(ts.tr)
 
