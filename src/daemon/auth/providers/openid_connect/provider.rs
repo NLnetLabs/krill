@@ -179,6 +179,7 @@ impl OpenIDConnectAuthProvider {
             userinfo_endpoint_supported,
             logout_mode,
         };
+        trace!("OpenID Connect: Provider connection initialized");
         Ok(conn)
     }
 
