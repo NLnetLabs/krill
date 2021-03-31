@@ -150,6 +150,7 @@ supported:
 ```
 
 NEW:
+```
 {
   "repository_response": {
     "tag": null,
@@ -162,4 +163,4 @@ NEW:
     }
   }
 }
-
+```
