@@ -1,3 +1,6 @@
+// Matches commons::util::httpclient::http_client_timeout() when test mode is enabled.
+const KRILL_TEST_HTTP_CLIENT_TIMEOUT_SECS = 5;
+
 // The mock OpenID Connect provider only checks usernames, not passwords.
 const admin = { u: 'adm@krill' }
 const readonly = { u: 'ro@krill' }
@@ -11,6 +14,7 @@ const refreshinvalidclient = { u: 'user-with-invalid-client-on-refresh' }
 const wrongcsrfstate = { u: 'user-with-wrong-csrf-state-value' }
 const ca_name = 'dummy-ca-name'
 
+// d: description, u: user, o: outcome, fm: failure mode, r: role
 const login_test_settings = [
   { d: 'empty', u: '', o: false },
   { d: 'incorrect', u: 'wrong_user_name', o: false, fm: 'unknown_user' },
@@ -22,23 +26,27 @@ const login_test_settings = [
   { d: 'wrongcsrfstate', u: wrongcsrfstate.u, o: false, fm: 'wrong_csrf_state' },
 ]
 
+// o: outcome
 const short_token_test_settings = [
   { ca: 'some-handle-name', o: true, token_secs: 5, create_ca_after_secs: 0 },          // should succeed with a freshly issued token
   { ca: 'some-other-handle-name', o: true, token_secs: 10, create_ca_after_secs: 5 },   // should succeed with a token due to expire but not yet expired
   { ca: 'yet-another-handle-name', o: false, token_secs: 5, create_ca_after_secs: 10 }, // should fail after token expiration
 ]
 
+// fm: failure mode
 const create_ca_settings_401 = [
   'invalid_request',
   'invalid_grant',
   'invalid_client',
   'http_500',
   'http_503',
+  'no_response',
 ].map((fm) => ({
   fm: fm,
   responseCode: 401,
 }))
 
+// fm: failure mode
 const create_ca_settings_403 = [
   'unauthorized_client',
   'invalid_scope',
@@ -330,4 +338,76 @@ describe('OpenID Connect provider with RP-Initiated logout', () => {
       cy.get('#userinfo_table').contains(shortrefresh.u)
     }
   })
+
+  [-2, +2].forEach((timeout_adjust_secs) =>
+    it('Slow provider response (' + (timeout_adjust_secs < 0 ? 'within' : 'beyond') + ' Krill HTTP client timeout) is handled correctly', () => {
+      let name_prefix = 'slow-response-';
+      let name_postfix = (timeout_adjust_secs < 0 ? 'within' : 'beyond') + '-krill-max';
+      let user_name = name_prefix + name_postfix;
+      let ca_name = name_prefix + 'ca-' + name_postfix;
+      let token_secs = 2; // we can't set it too low otherwise the initial token can expire before Krill sees it!
+      let delay_secs = KRILL_TEST_HTTP_CLIENT_TIMEOUT_SECS + timeout_adjust_secs;
+
+      // login
+      cy.visit('/')
+      cy.url().should('not.include', Cypress.config('baseUrl'))
+      cy.contains('Mock OpenID Connect login form')
+      cy.get('input[name="username"]').clear().type(user_name)
+      cy.get('input[name="userattr1"]').clear().type('role')         // a role is required to be able to login
+      cy.get('input[name="userattrval1"]').clear().type('readwrite')
+      cy.get('input[name="userattr2"]').clear().type('inc_cas')      // force the create CA welcome page to show
+      cy.get('input[name="userattrval2"]').clear().type(ca_name)     //   (by making Lagosta think there are no CAs)
+      cy.get('select[name="failure_mode"]').select('slow_response')
+      cy.get('select[name="failure_endpoint"]').select('token')
+      cy.get('input[name="failure_param"]').clear().type(delay_secs) // control the delay at the provider
+      cy.get('input[name="token_secs"]').clear().type(token_secs)    // control the lifetime of the issued access token
+      cy.contains('Sign In').click()
+
+      // record the approximate time at which the token was issued
+      let issued_at_ms = Date.now()
+
+      // verify that we are shown to be logged in to the Krill UI
+      cy.contains('Sign In').should('not.exist')
+      cy.url().should('include', Cypress.config('baseUrl'))
+      cy.get('#userinfo').click()
+      cy.get('#userinfo_table').contains(user_name)
+
+      // verify that we are shown the create CA welcome page
+      cy.contains('Welcome to Krill')
+
+      // wait for the access token issued to Krill to expire so that it is forced to use the provider token endpoint to
+      // exchange the refresh token for a new access token
+      let time_elapsed_ms = Date.now() - issued_at_ms
+      let time_till_after_expiration_ms = (token_secs * 1000) - time_elapsed_ms + 1000
+      cy.log('Waiting ' + time_till_after_expiration_ms + 'ms until the Krill access token ' + token_secs*1000 + 'ms expiration point should have passed')
+      cy.wait(time_till_after_expiration_ms)
+
+      // Try to create a CA, by typing in the input, clicking the 'Create CA' button and then clicking 'Ok'.
+      cy.intercept('POST', '/api/v1/cas').as('createCA')
+      cy.contains('CA Handle')
+      cy.get('form input[type="text"]').type(ca_name)
+      cy.contains('Create CA').click()
+      cy.contains('OK').click()  
+
+      // Verify that the attempt to create the CA occurred.
+      //
+      // In the case where we configure the provider to respond slowly, but still within the Krill HTTP client timeout,
+      // the CA creation attempt should be successful, and the response should have a new bearer token piggybacked on it
+      // (which resulted from the token refresh attempt).
+      //
+      // In the case where we configure the provider to take longer to respond than Krill will wait, the CA creation
+      // attempt should fail because Krill should have been unable to refresh its expired access token and thus should
+      // deny the CA creation request.
+      let expected_status_code = (timeout_adjust_secs < 0 ? 200 : 401);
+      let time_till_after_provider_delay_is_over_ms = delay_secs * 1000;
+      let time_to_wait_ms = time_till_after_provider_delay_is_over_ms + 3000;
+      if (timeout_adjust_secs < 0) {
+        cy.log('Expecting within ' + time_till_after_provider_delay_is_over_ms + 'ms the provider to finish delaying and for Krill to create the CA')
+      } else {
+        cy.log('Expecting Krill to timeout the provider before the ' + time_till_after_provider_delay_is_over_ms + 'ms remaining provider delay elapses')
+      }
+      cy.log('Waiting max ' + time_to_wait_ms + 'ms for Krill to respond to the CA create request')
+      cy.wait('@createCA', { responseTimeout: time_to_wait_ms }).its('response.statusCode').should('eq', expected_status_code)
+    })
+  )
 })

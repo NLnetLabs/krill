@@ -69,15 +69,15 @@
                     </tr>
 
                     <tr>
-                        <td>Mock failure</td>
+                        <td>Failure mode</td>
                         <td>
                             <select name="failure_mode">
                                 <option value="none" selected>None</option>
                                 <option value="unknown_user">Unknown user</option>
-                                <option value="no_response">No response</option>
-                                <option value="slow_response">Slow response</option>
-                                <option value="http_500">HTTP 500 Internal Server Error</option>
-                                <option value="http_503">HTTP 503 Service Unavailable</option>
+                                <option value="no_response">No response (any endpoint)</option>
+                                <option value="slow_response">Slow response (any endpoint, param is # seconds delay)</option>
+                                <option value="http_500">HTTP 500 Internal Server Error (any endpoint)</option>
+                                <option value="http_503">HTTP 503 Service Unavailable (any endpoint)</option>
                                 <option value="invalid_request">Refresh error invalid_request</option>
                                 <option value="invalid_client">Refresh error invalid_client</option>
                                 <option value="invalid_grant">Refresh error invalid_grant</option>
@@ -92,7 +92,7 @@
                     </tr>
 
                     <tr>
-                        <td>Failing endpoint</td>
+                        <td>Failure endpoint</td>
                         <td>
                             <select name="failure_endpoint">
                                 <option value="none" selected>None</option>
@@ -102,6 +102,13 @@
                                 <option value="token">/token</option>
                             </select>
                         </td>
+                        <td>For an '(any endpoint)' failure mode, select the endpoint that should be affected.</td>
+                    </tr>
+
+                    <tr>
+                        <td>Failure parameter</td>
+                        <td><input type="text" name="failure_param" /></td>
+                        <td>For failure modes that take extra parameters (currently only "Slow response"), specify the required parameter value.</td>
                     </tr>
 
                     <tr>

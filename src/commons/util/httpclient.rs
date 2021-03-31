@@ -10,7 +10,7 @@ use reqwest::{Response, StatusCode};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use crate::commons::api::{ErrorResponse, Token};
+use crate::{commons::api::{ErrorResponse, Token}, constants::test_mode_enabled};
 use crate::commons::util::file;
 use crate::constants::{HTTTP_CLIENT_TIMEOUT_SECS, KRILL_CLI_API_ENV, KRILL_HTTPS_ROOT_CERTS_ENV};
 
@@ -225,8 +225,16 @@ fn load_root_cert(path: &str) -> Result<reqwest::Certificate, Error> {
     reqwest::Certificate::from_pem(file.as_ref()).map_err(Error::https_root_cert_error)
 }
 
+pub fn http_client_timeout() -> Duration {
+    if test_mode_enabled() {
+        Duration::from_secs(5)
+    } else {
+        Duration::from_secs(HTTTP_CLIENT_TIMEOUT_SECS)
+    }
+}
+
 pub async fn client(uri: &str) -> Result<reqwest::Client, Error> {
-    let mut builder = reqwest::ClientBuilder::new().timeout(Duration::from_secs(HTTTP_CLIENT_TIMEOUT_SECS));
+    let mut builder = reqwest::ClientBuilder::new().timeout(http_client_timeout());
 
     if let Ok(cert_list) = env::var(KRILL_HTTPS_ROOT_CERTS_ENV) {
         for path in cert_list.split(':') {
@@ -346,7 +354,7 @@ impl Error {
         }
     }
 
-    fn https_root_cert_error(e: impl fmt::Display) -> Self {
+    pub fn https_root_cert_error(e: impl fmt::Display) -> Self {
         Error::HttpsRootCertError(e.to_string())
     }
 }

@@ -509,6 +509,14 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
                         // Should the user be issued a refresh token?
                         let refresh = bool_query_param(&query, "refresh");
 
+                        fn duration_failure_param(query: &Query) -> Result<Duration, Error> {
+                            let secs: String = require_query_param(query, "failure_param")?;
+                            let secs: u64 = u64::from_str(&secs)
+                                .map_err(|err| Error::custom(
+                                    format!("Failed to parse failure_param query parameter: {}", err)))?;
+                            Ok(Duration::from_secs(secs))
+                        }
+
                         // Should we exhibit some sort of failure for this user?
                         let mut failure_mode = None;
                         if let Some(mode) = query.get_first_from_str("failure_mode") {
@@ -516,7 +524,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
                                 failure_mode = match (&mode[..], &endpoint[..]) {
                                     ("none", "none") => None,
                                     ("no_response", endpoint) => Some(FailureMode::NoResponse{ rel_path_prefix: format!("/{}", endpoint) }),
-                                    ("slow_response", endpoint) => Some(FailureMode::SlowResponse{ rel_path_prefix: format!("/{}", endpoint), duration: Duration::from_secs(25) }),
+                                    ("slow_response", endpoint) => Some(FailureMode::SlowResponse{ rel_path_prefix: format!("/{}", endpoint), duration: duration_failure_param(&query)? }),
                                     ("http_500", endpoint) => Some(FailureMode::Error500Response{ rel_path_prefix: format!("/{}", endpoint) }),
                                     ("http_503", endpoint) => Some(FailureMode::Error503Response{ rel_path_prefix: format!("/{}", endpoint) }),
                                     ("invalid_request", _) => Some(FailureMode::InvalidRequestErrorResponse),
