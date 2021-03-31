@@ -40,7 +40,6 @@ const create_ca_settings_401 = [
   'invalid_client',
   'http_500',
   'http_503',
-  'no_response',
 ].map((fm) => ({
   fm: fm,
   responseCode: 401,
