@@ -556,25 +556,41 @@ impl RrdpServer {
         }
     }
 
-    // Push the delta and truncate excessive deltas.
-    //  - keep no more than the size of the snapshot
-    //  - don't keep deltas older than configured seconds
-    //  - but keep a minimum of configured deltas
+    // Push the delta and truncate excessive deltas:
+    //  - never keep more than the size of the snapshot
+    //  - always keep 'retention_delta_files_min_nr' files
+    //  - always keep 'retention_delta_files_min_seconds' files
+    //  - beyond this:
+    //     - never keep more than 'retention_delta_files_max_nr'
+    //     - never keep older than 'retention_delta_files_max_seconds'
+    //     - keep the others
     fn update_deltas(&mut self, elements: DeltaElements, config: &RepositoryRetentionConfig) {
         self.deltas.push_front(Delta::new(self.session, self.serial, elements));
         let mut keep = 0;
         let mut size = 0;
         let snapshot_size = self.snapshot.size();
 
-        let retain_secs = config.retention_delta_files_seconds;
-        let minimum = config.retention_delta_files_min_nr;
+        let min_nr = config.retention_delta_files_min_nr;
+        let min_secs = config.retention_delta_files_min_seconds;
+        let max_nr = config.retention_delta_files_max_nr;
+        let max_secs = config.retention_delta_files_max_seconds;
 
         for delta in &self.deltas {
             size += delta.elements().size();
-            if size > snapshot_size || (keep > minimum && delta.older_than_seconds(retain_secs)) {
-                break;
+
+            if size > snapshot_size {
+                // never keep more than the size of the snapshot
+            } else if keep < min_nr || delta.younger_than_seconds(min_secs) {
+                // always keep 'retention_delta_files_min_nr' files
+                // always keep 'retention_delta_files_min_seconds' file
+                keep += 1
+            } else if keep == max_nr || delta.older_than_seconds(max_secs) {
+                // never keep more than 'retention_delta_files_max_nr'
+                // never keep older than 'retention_delta_files_max_seconds'
+            } else {
+                // keep the remainder
+                keep += 1;
             }
-            keep += 1;
         }
         self.deltas.truncate(keep);
     }
