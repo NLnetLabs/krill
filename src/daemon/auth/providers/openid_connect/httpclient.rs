@@ -25,7 +25,7 @@ fn configure_http_client_for_krill(mut builder: reqwestblocking::ClientBuilder, 
             builder = builder.add_root_certificate(cert);
         }
     }
-    
+
     if uri.starts_with("https://localhost") || uri.starts_with("https://127.0.0.1") {
         builder = builder.danger_accept_invalid_certs(true);
     }
