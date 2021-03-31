@@ -336,7 +336,7 @@ describe('OpenID Connect provider with RP-Initiated logout', () => {
       cy.get('#userinfo').click()
       cy.get('#userinfo_table').contains(shortrefresh.u)
     }
-  })
+  });
 
   [-2, +2].forEach((timeout_adjust_secs) =>
     it('Slow provider response (' + (timeout_adjust_secs < 0 ? 'within' : 'beyond') + ' Krill HTTP client timeout) is handled correctly', () => {
