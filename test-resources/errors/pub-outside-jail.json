@@ -1,0 +1,1 @@
+{"label":"pub-outside-jail","msg":"Publishing uri 'rsync://somehost/module/folder' outside repository uri 'rsync://otherhost/module/folder'","args":{"uri":"rsync://somehost/module/folder","base_uri":"rsync://otherhost/module/folder"}}

@@ -818,3 +818,320 @@ impl Error {
         }
     }
 }
+
+//------------ Tests ---------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+
+    use std::str::FromStr;
+
+    use crate::commons::api::RoaDefinition;
+
+    use super::*;
+    use crate::test::definition;
+    use crate::test::test_id_certificate;
+
+    fn verify(expected_json: &str, e: Error) {
+        let actual = e.to_error_response();
+        let expected: ErrorResponse = serde_json::from_str(expected_json).unwrap();
+        assert_eq!(actual, expected);
+
+        // check that serde works too
+        let serialized = serde_json::to_string(&actual).unwrap();
+        let des = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(actual, des);
+    }
+
+    #[test]
+    fn error_response_json_regression() {
+        let ca = Handle::from_str("ca").unwrap();
+        let parent = ParentHandle::from_str("parent").unwrap();
+        let child = ChildHandle::from_str("child").unwrap();
+        let publisher = PublisherHandle::from_str("publisher").unwrap();
+
+        let auth = RouteAuthorization::new(RoaDefinition::from_str("192.168.0.0/16-24 => 64496").unwrap());
+
+        //-----------------------------------------------------------------
+        // System Issues
+        //-----------------------------------------------------------------
+
+        let io_err = io::Error::new(io::ErrorKind::Other, "can't read file");
+        verify(
+            include_str!("../../test-resources/errors/sys-io.json"),
+            Error::IoError(io_err),
+        );
+
+        verify(
+            include_str!("../../test-resources/errors/sys-store.json"),
+            Error::AggregateStoreError(AggregateStoreError::InitError(ca.clone())),
+        );
+        verify(
+            include_str!("../../test-resources/errors/sys-signer.json"),
+            Error::SignerError("signer issue".to_string()),
+        );
+        verify(
+            include_str!("../../test-resources/errors/sys-https.json"),
+            Error::HttpsSetup("can't find pem file".to_string()),
+        );
+        verify(
+            include_str!("../../test-resources/errors/sys-http-client.json"),
+            Error::HttpClientError(httpclient::Error::Forbidden),
+        );
+
+        //-----------------------------------------------------------------
+        // General API Client Issues
+        //-----------------------------------------------------------------
+        let invalid_rsync_json = "\"https://host/module/folder\"";
+        let json_err = serde_json::from_str::<uri::Rsync>(invalid_rsync_json).err().unwrap();
+        verify(
+            include_str!("../../test-resources/errors/api-json.json"),
+            Error::JsonError(json_err),
+        );
+        verify(
+            include_str!("../../test-resources/errors/api-unknown-method.json"),
+            Error::ApiUnknownMethod,
+        );
+        verify(
+            include_str!("../../test-resources/errors/api-unknown-resource.json"),
+            Error::ApiUnknownResource,
+        );
+
+        //-----------------------------------------------------------------
+        // Repository Issues
+        //-----------------------------------------------------------------
+        verify(
+            include_str!("../../test-resources/errors/repo-not-set.json"),
+            Error::RepoNotSet,
+        );
+
+        //-----------------------------------------------------------------
+        // Publisher Issues
+        //-----------------------------------------------------------------
+        verify(
+            include_str!("../../test-resources/errors/pub-unknown.json"),
+            Error::PublisherUnknown(publisher.clone()),
+        );
+        verify(
+            include_str!("../../test-resources/errors/pub-duplicate.json"),
+            Error::PublisherDuplicate(publisher),
+        );
+        verify(
+            include_str!("../../test-resources/errors/pub-outside-jail.json"),
+            Error::PublisherUriOutsideBase(
+                "rsync://somehost/module/folder".to_string(),
+                "rsync://otherhost/module/folder".to_string(),
+            ),
+        );
+        verify(
+            include_str!("../../test-resources/errors/pub-uri-no-slash.json"),
+            Error::PublisherBaseUriNoSlash("rsync://host/module/folder".to_string()),
+        );
+
+        //-----------------------------------------------------------------
+        // RFC 8181
+        //-----------------------------------------------------------------
+        verify(
+            include_str!("../../test-resources/errors/rfc8181-validation.json"),
+            Error::Rfc8181Validation(ValidationError),
+        );
+        verify(
+            include_str!("../../test-resources/errors/rfc8181-decode.json"),
+            Error::Rfc8181Decode("could not parse CMS".to_string()),
+        );
+        verify(
+            include_str!("../../test-resources/errors/rfc8181-protocol-message.json"),
+            Error::Rfc8181MessageError(rfc8181::MessageError::InvalidVersion),
+        );
+        verify(
+            include_str!("../../test-resources/errors/rfc8181-delta.json"),
+            Error::Rfc8181Delta(PublicationDeltaError::ObjectAlreadyPresent(
+                uri::Rsync::from_str("rsync://host/module/file.cer").unwrap(),
+            )),
+        );
+
+        //-----------------------------------------------------------------
+        // CA Issues (label: ca-*)
+        //-----------------------------------------------------------------
+        verify(
+            include_str!("../../test-resources/errors/ca-duplicate.json"),
+            Error::CaDuplicate(ca.clone()),
+        );
+        verify(
+            include_str!("../../test-resources/errors/ca-unknown.json"),
+            Error::CaUnknown(ca.clone()),
+        );
+
+        verify(
+            include_str!("../../test-resources/errors/ca-repo-same.json"),
+            Error::CaRepoInUse(ca.clone()),
+        );
+        verify(
+            include_str!("../../test-resources/errors/ca-repo-issue.json"),
+            Error::CaRepoIssue(ca.clone(), "cannot connect".to_string()),
+        );
+        verify(
+            include_str!("../../test-resources/errors/ca-repo-response-invalid-xml.json"),
+            Error::CaRepoResponseInvalidXml(ca.clone(), "expected some tag".to_string()),
+        );
+        verify(
+            include_str!("../../test-resources/errors/ca-repo-response-wrong-xml.json"),
+            Error::CaRepoResponseWrongXml(ca.clone()),
+        );
+
+        verify(
+            include_str!("../../test-resources/errors/ca-parent-duplicate.json"),
+            Error::CaParentDuplicateName(ca.clone(), parent.clone()),
+        );
+        verify(
+            include_str!("../../test-resources/errors/ca-parent-unknown.json"),
+            Error::CaParentUnknown(ca.clone(), parent.clone()),
+        );
+        verify(
+            include_str!("../../test-resources/errors/ca-parent-issue.json"),
+            Error::CaParentIssue(ca.clone(), parent, "connection refused".to_string()),
+        );
+        verify(
+            include_str!("../../test-resources/errors/ca-parent-response-invalid-xml.json"),
+            Error::CaParentResponseInvalidXml(ca.clone(), "expected something".to_string()),
+        );
+        verify(
+            include_str!("../../test-resources/errors/ca-parent-response-wrong-xml.json"),
+            Error::CaParentResponseWrongXml(ca.clone()),
+        );
+
+        verify(
+            include_str!("../../test-resources/errors/rfc6492-protocol.json"),
+            Error::Rfc6492(rfc6492::Error::InvalidVersion),
+        );
+        verify(
+            include_str!("../../test-resources/errors/rfc6492-invalid-csr.json"),
+            Error::Rfc6492InvalidCsrSent("invalid signature".to_string()),
+        );
+        verify(
+            include_str!("../../test-resources/errors/rfc6492-invalid-signature.json"),
+            Error::Rfc6492SignatureInvalid,
+        );
+
+        verify(
+            include_str!("../../test-resources/errors/ca-child-duplicate.json"),
+            Error::CaChildDuplicate(ca.clone(), child.clone()),
+        );
+        verify(
+            include_str!("../../test-resources/errors/ca-child-unknown.json"),
+            Error::CaChildUnknown(ca.clone(), child.clone()),
+        );
+        verify(
+            include_str!("../../test-resources/errors/ca-child-resources-required.json"),
+            Error::CaChildMustHaveResources(ca.clone(), child.clone()),
+        );
+        verify(
+            include_str!("../../test-resources/errors/ca-child-resources-extra.json"),
+            Error::CaChildExtraResources(ca.clone(), child.clone()),
+        );
+        verify(
+            include_str!("../../test-resources/errors/ca-child-unauthorized.json"),
+            Error::CaChildUnauthorized(ca.clone(), child),
+        );
+
+        verify(
+            include_str!("../../test-resources/errors/ca-roa-unknown.json"),
+            Error::CaAuthorizationUnknown(ca.clone(), auth),
+        );
+        verify(
+            include_str!("../../test-resources/errors/ca-roa-duplicate.json"),
+            Error::CaAuthorizationDuplicate(ca.clone(), auth),
+        );
+
+        verify(
+            include_str!("../../test-resources/errors/ca-roa-invalid-max-length.json"),
+            Error::CaAuthorizationInvalidMaxlength(ca.clone(), auth),
+        );
+        verify(
+            include_str!("../../test-resources/errors/ca-roa-not-entitled.json"),
+            Error::CaAuthorizationNotEntitled(ca, auth),
+        );
+
+        verify(
+            include_str!("../../test-resources/errors/key-re-use.json"),
+            Error::KeyUseAttemptReuse,
+        );
+        verify(
+            include_str!("../../test-resources/errors/key-no-new.json"),
+            Error::KeyUseNoNewKey,
+        );
+        verify(
+            include_str!("../../test-resources/errors/key-no-current.json"),
+            Error::KeyUseNoCurrentKey,
+        );
+        verify(
+            include_str!("../../test-resources/errors/key-no-old.json"),
+            Error::KeyUseNoOldKey,
+        );
+        verify(
+            include_str!("../../test-resources/errors/key-no-cert.json"),
+            Error::KeyUseNoIssuedCert,
+        );
+        let ki = test_id_certificate().subject_public_key_info().key_identifier();
+        verify(
+            include_str!("../../test-resources/errors/key-no-match.json"),
+            Error::KeyUseNoMatch(ki),
+        );
+
+        verify(
+            include_str!("../../test-resources/errors/rc-unknown.json"),
+            Error::ResourceClassUnknown(ResourceClassName::from("RC0")),
+        );
+        verify(
+            include_str!("../../test-resources/errors/rc-resources.json"),
+            Error::ResourceSetError(ResourceSetError::Mix),
+        );
+        verify(
+            include_str!("../../test-resources/errors/rc-missing-resources.json"),
+            Error::MissingResources,
+        );
+
+        verify(
+            include_str!("../../test-resources/errors/ta-not-allowed.json"),
+            Error::TaNotAllowed,
+        );
+        verify(
+            include_str!("../../test-resources/errors/ta-name-reserved.json"),
+            Error::TaNameReserved,
+        );
+        verify(
+            include_str!("../../test-resources/errors/ta-initialised.json"),
+            Error::TaAlreadyInitialised,
+        );
+
+        verify(
+            include_str!("../../test-resources/errors/general-error.json"),
+            Error::custom("some unlikely corner case"),
+        );
+    }
+
+    #[test]
+    fn roa_delta_json() {
+        let mut error = RoaDeltaError::default();
+
+        let duplicate = definition("10.0.0.0/20-24 => 1");
+        let not_held = definition("10.128.0.0/9 => 1");
+        let invalid_length = definition("10.0.1.0/25 => 1");
+        let unknown = definition("192.168.0.0/16 => 1");
+
+        error.add_duplicate(duplicate);
+        error.add_notheld(not_held);
+        error.add_invalid_length(invalid_length);
+        error.add_unknown(unknown);
+
+        // println!(
+        //     "{}",
+        //     serde_json::to_string_pretty(&Error::RoaDeltaError(error).to_error_response()).unwrap()
+        // );
+
+        verify(
+            include_str!("../../test-resources/errors/ca-roa-delta-error.json"),
+            Error::RoaDeltaError(error),
+        );
+    }
+}
