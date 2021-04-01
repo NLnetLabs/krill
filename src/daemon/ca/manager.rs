@@ -1277,7 +1277,7 @@ impl CaManager {
         Ok(())
     }
 
-    pub async fn send_rfc8181_list(
+    async fn send_rfc8181_list(
         &self,
         ca_handle: &Handle,
         repository: &rfc8183::RepositoryResponse,
