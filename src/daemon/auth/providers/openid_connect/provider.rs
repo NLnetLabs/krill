@@ -492,7 +492,7 @@ impl OpenIDConnectAuthProvider {
                 // therefore **not** end up in the `ServerReponse` variant.
                 openidconnect::RequestTokenError::ServerResponse(r) => Err(r.error().clone()),
                 openidconnect::RequestTokenError::Request(r) => {
-                    self.forget_connection(lock_guard);
+                    self.on_connection_issue(lock_guard);
                     Err(RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension(
                         format!("Network failure while revoking token: {}", r.to_string()),
                     )))
@@ -504,7 +504,7 @@ impl OpenIDConnectAuthProvider {
                 }
                 openidconnect::RequestTokenError::Other(err_string) => match err_string.as_str() {
                     "temporarily_unavailable" | "server_error" => {
-                        self.forget_connection(lock_guard);
+                        self.on_connection_issue(lock_guard);
                         Err(RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension(
                             err_string.to_string(),
                         )))
@@ -576,7 +576,7 @@ impl OpenIDConnectAuthProvider {
                     // therefore **not** end up in the `ServerReponse` variant.
                     openidconnect::RequestTokenError::ServerResponse(r) => Err(r.error().clone()),
                     openidconnect::RequestTokenError::Request(r) => {
-                        self.forget_connection(lock_guard);
+                        self.on_connection_issue(lock_guard);
                         Err(CoreErrorResponseType::Extension(format!(
                             "Network failure while refreshing token: {}",
                             r.to_string()
@@ -590,7 +590,7 @@ impl OpenIDConnectAuthProvider {
                     }
                     openidconnect::RequestTokenError::Other(err_string) => match err_string.as_str() {
                         "temporarily_unavailable" | "server_error" => {
-                            self.forget_connection(lock_guard);
+                            self.on_connection_issue(lock_guard);
                             Err(CoreErrorResponseType::Extension(err_string.to_string()))
                         }
                         _ => Err(CoreErrorResponseType::Extension(format!(
@@ -832,12 +832,21 @@ impl OpenIDConnectAuthProvider {
         Ok(conn_guard)
     }
 
-    fn forget_connection(&self, read_locked_conn: RwLockReadGuard<Option<ProviderConnectionProperties>>) {
-        std::mem::drop(read_locked_conn);
-        if let Ok(mut conn_guard) = self.conn.write() {
-            debug!("Discarding current OpenID Connect provider connection details due to connection issue");
-            *conn_guard = None;
-        }
+    /// What, if anything, should we do if we encounter a problem with the connection to the OpenID Connect provider?
+    ///
+    /// We could forget the previous discovery results and re-do discovery on the next attempt to talk to the provider.
+    /// However the OpenID Connect Discovery 1.0 specification doesn't say anything about re-doing discovery. For
+    /// providers that don't support discovery, they would never be able to make changes to their core configuration
+    /// without also requiring clients to manually modify their configuration accordingly, so the chances of such an
+    /// impacting change occuring or that the right way to adapt to it is to automatically discover it while Krill is
+    /// running seems unlikely.
+    ///
+    /// TODO: It might be good to keep track of the count of issues that occur by type of issue and to expose those
+    /// metrics via the Prometheus metrics interface.
+    ///
+    /// TODO: Use a simple exponential backoff strategy to lessen the load on a provider that is struggling?
+    fn on_connection_issue(&self, _read_locked_conn: RwLockReadGuard<Option<ProviderConnectionProperties>>) {
+        warn!("OpenID Connect: Connection failed. Is the provider up and reachable?");
     }
 
     fn verify_csrf_token(&self, state: String, csrf_token_hash: String) -> KrillResult<()> {
@@ -872,7 +881,7 @@ impl OpenIDConnectAuthProvider {
                         (format!("Server returned error response: {:?}", provider_err), None)
                     }
                     RequestTokenError::Request(req) => {
-                        self.forget_connection(lock_guard);
+                        self.on_connection_issue(lock_guard);
                         (format!("Request failed: {:?}", req), None)
                     },
                     RequestTokenError::Parse(parse_err, res) => {
@@ -884,7 +893,7 @@ impl OpenIDConnectAuthProvider {
                     }
                     RequestTokenError::Other(err_string) => match err_string.as_str() {
                         "temporarily_unavailable" | "server_error" => {
-                            self.forget_connection(lock_guard);
+                            self.on_connection_issue(lock_guard);
                             (err_string.to_string(), None)
                         }
                         _ => (err_string, None),
@@ -968,7 +977,7 @@ impl OpenIDConnectAuthProvider {
                                 (format!("Server returned error response: {:?}", provider_err), None)
                             }
                             UserInfoError::Request(req) => {
-                                self.forget_connection(lock_guard);
+                                self.on_connection_issue(lock_guard);
                                 (format!("Request failed: {:?}", req), None)
                             }
                             UserInfoError::Parse(parse_err) => {
@@ -976,7 +985,7 @@ impl OpenIDConnectAuthProvider {
                             }
                             UserInfoError::Other(err_string) => match err_string.as_str() {
                                 "temporarily_unavailable" | "server_error" => {
-                                    self.forget_connection(lock_guard);
+                                    self.on_connection_issue(lock_guard);
                                     (err_string.to_string(), None)
                                 }
                                 _ => (err_string, None),
