@@ -33,7 +33,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
-use crate::ui::OpenIDConnectMockMode;
+use crate::ui::{OpenIDConnectMockConfig, OpenIDConnectMockMode::{self, *}};
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct CustomAdditionalMetadata {
@@ -179,10 +179,10 @@ pub async fn main() {
         .apply()
         .map_err(|e| format!("Failed to init stderr logging: {}", e));
 
-    start(OpenIDConnectMockMode::OIDCProviderWithRPInitiatedLogout, 2500).await;
+    start(OpenIDConnectMockConfig::enabled(WithRPInitiatedLogout), 2500).await;
 }
 
-pub async fn start(config: OpenIDConnectMockMode, delay_secs: u64) -> task::JoinHandle<()> {
+pub async fn start(config: OpenIDConnectMockConfig, delay_secs: u64) -> task::JoinHandle<()> {
     let join_handle = task::spawn_blocking(move || {
         run_mock_openid_connect_server(config);
     });
@@ -198,29 +198,31 @@ pub async fn start(config: OpenIDConnectMockMode, delay_secs: u64) -> task::Join
 }
 
 pub async fn stop(join_handle: task::JoinHandle<()>) {
+    info!("Signalling the OpenID Connect server to stop");
     MOCK_OPENID_CONNECT_SERVER_RUNNING_FLAG.store(false, Ordering::Relaxed);
     join_handle.await.unwrap();
 }
 
-fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
+fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
+    let mut enabled = config.enabled_on_startup();
     let mut authz_codes = TempAuthzCodes::new();
     let mut login_sessions = LoginSessions::new();
     let mut known_users = KnownUsers::new();
 
-    let logout_metadata = match config {
-        OpenIDConnectMockMode::OIDCProviderWithRPInitiatedLogout => CustomAdditionalMetadata {
+    let logout_metadata = match config.mode() {
+        WithRPInitiatedLogout => CustomAdditionalMetadata {
             end_session_endpoint: Some(String::from("https://localhost:1818/logout")),
             revocation_endpoint: None,
         },
-        OpenIDConnectMockMode::OIDCProviderWithOAuth2Revocation => CustomAdditionalMetadata {
+        WithOAuth2Revocation => CustomAdditionalMetadata {
             end_session_endpoint: None,
             revocation_endpoint: Some(String::from("https://localhost:1818/revoke")),
         },
-        OpenIDConnectMockMode::OIDCProviderWithNoLogoutEndpoints => CustomAdditionalMetadata {
+        WithNoLogoutEndpoints => CustomAdditionalMetadata {
             end_session_endpoint: None,
             revocation_endpoint: None,
         },
-        OpenIDConnectMockMode::OIDCProviderWillNotBeStarted => {
+        NotStarted => {
             unreachable!()
         }
     };
@@ -1061,7 +1063,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
     }
 
     fn handle_request(
-        config: &OpenIDConnectMockMode,
+        mode: OpenIDConnectMockMode,
         request: Request,
         discovery_doc: &str,
         jwks_doc: &str,
@@ -1070,47 +1072,62 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
         authz_codes: &mut TempAuthzCodes,
         login_sessions: &mut LoginSessions,
         known_users: &mut KnownUsers,
+        enabled: &mut bool,
     ) -> Result<(), Error> {
         let url = urlparse(request.url());
 
-        match (request.method(), url.path.as_str()) {
+        if !*enabled {
+            warn!("All OpenID Connect endpoints are disabled! POST /test/enable to re-enable them.")
+        }
+
+        match (&enabled, request.method(), url.path.as_str()) {
             // OpenID Connect 1.0. Discovery support
-            (Method::Get, "/.well-known/openid-configuration") => {
+            (true, Method::Get, "/.well-known/openid-configuration") => {
                 return handle_discovery_request(request, discovery_doc);
             }
             // OpenID Connect 1.0. Discovery support
-            (Method::Get, "/jwk") => {
+            (true, Method::Get, "/jwk") => {
                 return handle_jwks_request(request, jwks_doc);
             }
             // OAuth 2.0 Authorization Request support
-            (Method::Get, "/authorize") => {
+            (true, Method::Get, "/authorize") => {
                 return handle_authorize_request(request, url, login_doc);
             }
-            (Method::Get, "/login_form_submit") => {
+            (true, Method::Get, "/login_form_submit") => {
                 return handle_login_request(request, url, authz_codes, known_users);
             }
             // OpenID Connect 1.0. Discovery support
-            (Method::Get, "/userinfo") => {
+            (true, Method::Get, "/userinfo") => {
                 return handle_user_info_request(request, known_users, login_sessions, url);
             }
             // OpenID Connect RP-Initiated Logout 1.0 support
-            (Method::Get, "/logout") => {
-                if matches!(config, OpenIDConnectMockMode::OIDCProviderWithRPInitiatedLogout) {
+            (true, Method::Get, "/logout") => {
+                if matches!(mode, WithRPInitiatedLogout) {
                     return handle_logout_request(request, known_users, login_sessions, url);
                 }
             }
-            (Method::Post, "/token") => {
+            (true, Method::Post, "/token") => {
                 return handle_token_request(request, signing_key, authz_codes, login_sessions, known_users, url);
             }
             // OAuth 2.0 Token Revocation support
-            (Method::Post, "/revoke") => {
-                if matches!(config, OpenIDConnectMockMode::OIDCProviderWithOAuth2Revocation) {
+            (true, Method::Post, "/revoke") => {
+                if matches!(mode, WithOAuth2Revocation) {
                     return handle_oauth2_revocation_request(request, login_sessions, known_users, url);
                 }
             }
             // Test control APIs
-            (Method::Get, "/test/is_user_logged_in") => {
+            (_, Method::Get, "/test/is_user_logged_in") => {
                 return handle_control_is_user_logged_in_request(request, url, login_sessions);
+            }
+            (_, Method::Post, "/test/enable") => {
+                info!("Enabling all OpenID Connect endpoints!");
+                *enabled = true;
+                return request.respond(Response::empty(StatusCode(200))).map_err(|err| err.into());
+            }
+            (_, Method::Post, "/test/disable") => {
+                warn!("Disabling all OpenID Connect endpoints!");
+                *enabled = false;
+                return request.respond(Response::empty(StatusCode(200))).map_err(|err| err.into());
             }
             _ => {}
         };
@@ -1131,6 +1148,10 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
 
     info!("Mock OpenID Connect server: started");
 
+    if !enabled {
+        warn!("All OpenID Connect endpoints are disabled! POST /test/enable to re-enable them.")
+    }
+
     MOCK_OPENID_CONNECT_SERVER_RUNNING_FLAG.store(true, Ordering::Relaxed);
     while MOCK_OPENID_CONNECT_SERVER_RUNNING_FLAG.load(Ordering::Relaxed) {
         match server.recv_timeout(Duration::new(1, 0)) {
@@ -1138,7 +1159,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
             Ok(Some(request)) => {
                 info!("Received {:?}", &request);
                 if let Err(err) = handle_request(
-                    &config,
+                    config.mode(),
                     request,
                     &discovery_doc,
                     &jwks_doc,
@@ -1147,6 +1168,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
                     &mut authz_codes,
                     &mut login_sessions,
                     &mut known_users,
+                    &mut enabled,
                 ) {
                     error!("{}", err);
                 }

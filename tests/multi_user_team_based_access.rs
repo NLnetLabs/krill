@@ -6,7 +6,7 @@ mod ui;
 async fn multi_user_team_based_access_test() {
     ui::run_krill_ui_test(
         "multi_user_team_based_access",
-        ui::OpenIDConnectMockMode::OIDCProviderWillNotBeStarted,
+        ui::OpenIDConnectMockConfig::do_not_start()
     )
     .await
 }

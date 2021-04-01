@@ -14,7 +14,7 @@ async fn multi_user_config_file_with_ta_test() {
 
     ui::run_krill_ui_test(
         "multi_user_config_file_with_ta",
-        ui::OpenIDConnectMockMode::OIDCProviderWillNotBeStarted,
+        ui::OpenIDConnectMockConfig::do_not_start()
     )
     .await;
 

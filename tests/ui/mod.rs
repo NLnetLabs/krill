@@ -1,6 +1,7 @@
 #[cfg(feature = "multi-user")]
 mod openid_connect_mock;
 
+use OpenIDConnectMockMode::NotStarted;
 use tokio::task;
 
 use std::{env, process::ExitStatus};
@@ -10,17 +11,50 @@ use krill::daemon::config::Config;
 use krill::test::*;
 
 #[allow(dead_code)]
+#[derive(Copy, Clone)]
 pub enum OpenIDConnectMockMode {
-    OIDCProviderWillNotBeStarted,
-    OIDCProviderWithRPInitiatedLogout,
-    OIDCProviderWithOAuth2Revocation,
-    OIDCProviderWithNoLogoutEndpoints,
+    NotStarted,
+    WithRPInitiatedLogout,
+    WithOAuth2Revocation,
+    WithNoLogoutEndpoints,
+}
+
+pub struct OpenIDConnectMockConfig {
+    mode: OpenIDConnectMockMode,
+    enabled_on_startup: bool,
+}
+
+#[allow(dead_code)]
+impl OpenIDConnectMockConfig {
+    /// Don't start the OpenID Connect mock.
+    pub fn do_not_start() -> OpenIDConnectMockConfig {
+        Self { mode: NotStarted, enabled_on_startup: false }
+    }
+
+    /// Start the OpenID Mock and enable it ready for use.
+    pub fn enabled(mode: OpenIDConnectMockMode) -> OpenIDConnectMockConfig {
+        Self { mode, enabled_on_startup: true }
+    }
+
+    /// Start the OpenID Mock initially disabled. This can be useful to prevent initial OpenID Connect Discovery
+    /// succeeding before the first test runs.
+    pub fn disabled(mode: OpenIDConnectMockMode) -> OpenIDConnectMockConfig {
+        Self { mode, enabled_on_startup: false }
+    }
+
+    pub fn mode(&self) -> OpenIDConnectMockMode {
+        self.mode
+    }
+
+    pub fn enabled_on_startup(&self) -> bool {
+        self.enabled_on_startup
+    }
 }
 
 #[cfg(not(feature = "multi-user"))]
 pub async fn run_krill_ui_test(
     test_name: &str,
-    _: OpenIDConnectMockMode,
+    _: OpenIDConnectMockConfig,
 ) {
     do_run_krill_ui_test(test_name).await;
 }
@@ -28,13 +62,11 @@ pub async fn run_krill_ui_test(
 #[cfg(feature = "multi-user")]
 pub async fn run_krill_ui_test(
     test_name: &str,
-    openid_connect_mock_mode: OpenIDConnectMockMode,
+    openid_connect_mock_config: OpenIDConnectMockConfig,
 ) {
-    use OpenIDConnectMockMode::*;
-
-    let op_handle = match openid_connect_mock_mode {
-        OIDCProviderWillNotBeStarted => None,
-        _ => Some(openid_connect_mock::start(openid_connect_mock_mode, 1).await),
+    let op_handle = match openid_connect_mock_config.mode() {
+        NotStarted => None,
+        _ => Some(openid_connect_mock::start(openid_connect_mock_config, 1).await),
     };
 
     do_run_krill_ui_test(test_name).await;
