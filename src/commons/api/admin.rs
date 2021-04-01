@@ -296,27 +296,6 @@ impl fmt::Display for PublisherDetails {
     }
 }
 
-//------------ PublisherClientRequest ----------------------------------------
-
-/// This type defines request for a new Publisher client, i.e. the proxy that
-/// is used by an embedded CA to do the actual publication.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct PublisherClientRequest {
-    handle: Handle,
-    contact: RepositoryContact,
-}
-
-impl PublisherClientRequest {
-    pub fn rfc8183(handle: Handle, response: rfc8183::RepositoryResponse) -> Self {
-        let contact = RepositoryContact::new(response);
-        PublisherClientRequest { handle, contact }
-    }
-
-    pub fn unpack(self) -> (Handle, RepositoryContact) {
-        (self.handle, self.contact)
-    }
-}
-
 //------------ PubServerContact ----------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
