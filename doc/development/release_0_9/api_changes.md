@@ -4,7 +4,7 @@ API Changes Introduced in Release 0.9
 In this release we removed the concept of 'embedded' CA parents and children, and embedded repositories.
 As a result some API changes were introduced.
 
-### Add Child
+### Add Child `POST /cas/{ca_handle}/children`
 
 The JSON format no longer supports `embedded`.
 
@@ -44,7 +44,7 @@ New:
 }
 ```
 
-## Add Parent
+## Add Parent `POST /cas/{ca_handle}/parents`
 
 The `type` value `embedded` is no longer allowed. There is still a notion of a `type` because it can also be `ta`.
 
@@ -62,7 +62,7 @@ The `type` value `embedded` is no longer allowed. There is still a notion of a `
 }
 ```
 
-### Update Parent
+### Update Parent `POST /cas/{ca_handle}/parents/{parent_handle}`
 
 To update a parent, submit the RFC 8183 Parent Response, or the contact JSON (i.e. minus the `handle` in the Add Parent):
 
@@ -77,7 +77,7 @@ To update a parent, submit the RFC 8183 Parent Response, or the contact JSON (i.
 }
 ```
 
-### Get Parent
+### Get Parent `GET /cas/{ca_handle}/parents/{parent_handle}`
 
 Returns the parent contact with the type `rfc6492` as an embedded field call `type`.
 
@@ -93,7 +93,7 @@ Returns the parent contact with the type `rfc6492` as an embedded field call `ty
 ```
 
 
-## Show Repository
+## Show Repository `GET /cas/{ca_handle}/repo`
 
 Since we no longer support `embedded`, the JSON format of the show repository API response has changed a bit.
 The JSON member `rfc8181` now appears as `repository_response`. We still have a JSON member called `contact`,
@@ -136,7 +136,7 @@ New:
 }
 ```
 
-## Add or Update Repository
+## Add or Update Repository `POST /cas/{ca_handle}/repo`
 
 To add or update the repository the RFC 8183 Repository Response needs to be submitted, either as
 XML, or in JSON format. The JSON format no longer supports `embedded`, so the following is **no longer**
