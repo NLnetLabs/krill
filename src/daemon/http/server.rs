@@ -840,7 +840,7 @@ async fn api_cas(req: Request, path: &mut RequestPath) -> RoutingResult {
             match path.next() {
                 None => match *req.method() {
                     Method::GET => api_ca_info(req, ca).await,
-                    Method::DELETE => api_ca_deactivate(req, ca).await,
+                    Method::DELETE => api_ca_delete(req, ca).await,
                     _ => render_unknown_method(),
                 },
                 Some("child_request.xml") => api_ca_child_req_xml(req, ca).await,
@@ -1181,7 +1181,7 @@ async fn api_ca_info(req: Request, handle: Handle) -> RoutingResult {
     )
 }
 
-async fn api_ca_deactivate(req: Request, handle: Handle) -> RoutingResult {
+async fn api_ca_delete(req: Request, handle: Handle) -> RoutingResult {
     let actor = req.actor();
     aa!(
         req,
