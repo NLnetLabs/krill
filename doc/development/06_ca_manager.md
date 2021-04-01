@@ -503,8 +503,7 @@ impl CaManager {
     ///
     /// This function can still fail on internal errors, e.g. I/O issues when saving state
     /// changes to the repo status structure.
-    pub async fn cas_repo_sync_all(&self, actor: &Actor) {
-    }
+    pub async fn cas_repo_sync_all(&self, actor: &Actor) { ... }
 }
 ```
 
