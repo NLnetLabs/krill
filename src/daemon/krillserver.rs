@@ -539,7 +539,7 @@ impl KrillServer {
 
     async fn ca_parent_reachable(&self, handle: &Handle, contact: &ParentCaContact) -> KrillEmptyResult {
         self.get_ca_manager()?
-            .get_entitlements_from_parent_and_contact(handle, contact)
+            .get_entitlements_from_contact(handle, contact)
             .await?;
         Ok(())
     }

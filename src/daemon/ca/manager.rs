@@ -1035,10 +1035,10 @@ impl CaManager {
     ) -> KrillResult<api::Entitlements> {
         let ca = self.get_ca(&handle).await?;
         let contact = ca.parent(parent)?;
-        self.get_entitlements_from_parent_and_contact(handle, contact).await
+        self.get_entitlements_from_contact(handle, contact).await
     }
 
-    pub async fn get_entitlements_from_parent_and_contact(
+    pub async fn get_entitlements_from_contact(
         &self,
         handle: &Handle,
         contact: &ParentCaContact,
