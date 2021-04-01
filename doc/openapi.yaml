@@ -2813,13 +2813,13 @@ components:
               contact:
                 type: object
                 properties:
-                  repository_contact:
+                  repository_response:
                     $ref: '#/components/schemas/Rfc8183RepositoryResponse'
           examples:
             contact:
               value:
                 contact:
-                  repository_contact:
+                  repository_response:
                     tag: null
                     publisher_handle: 'ca'
                     id_cert: 'MIID..Vg=='
