@@ -312,7 +312,7 @@ impl PublisherClientRequest {
         PublisherClientRequest { handle, contact }
     }
 
-    pub fn unwrap(self) -> (Handle, RepositoryContact) {
+    pub fn unpack(self) -> (Handle, RepositoryContact) {
         (self.handle, self.contact)
     }
 }

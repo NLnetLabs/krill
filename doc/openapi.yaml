@@ -487,7 +487,7 @@ paths:
         from any of its parents after a repository has been configured for it.
         
         Submit the RFC 8183 Parent Response XML, or JSON. The JSON format allows
-        overriding the parent_handle with local name for your CA.
+        overriding the parent_handle with a local name for your CA.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
       requestBody:

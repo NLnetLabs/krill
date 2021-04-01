@@ -336,7 +336,8 @@ CA Repository Related Functions
 
 ### CA Repository Configuration
 
-Before a CA can publish anything they need to have a repository configured.
+Before a CA can publish anything they need to have a repository configured. We need to
+submit a `RepositoryContact`, which wraps and RFC 8183 Response:
 
 ```rust
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -419,7 +420,8 @@ this triggers (through the pre-save-event-listener) that the relevant manifest(s
 generated. Alternatively new manifests and CRLs can be generated when the 'republish' background job
 detects that an update is needed before the time for the 'next update' is drawing near.
 
-See: src/daemon/scheduler.rs
+See the following code in `scheduler.rs`:
+
 ```rust
 fn make_cas_republish(ca_server: Arc<CaManager>, event_queue: Arc<MessageQueue>) -> ScheduleHandle {
     SkippingScheduler::run(
