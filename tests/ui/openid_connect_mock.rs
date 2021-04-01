@@ -161,7 +161,6 @@ type KnownUsers = HashMap<KnownUserId, KnownUser>;
 
 const DEFAULT_TOKEN_DURATION_SECS: u32 = 3600;
 static MOCK_OPENID_CONNECT_SERVER_RUNNING_FLAG: AtomicBool = AtomicBool::new(false);
-static 
 
 #[tokio::main]
 pub async fn main() {
