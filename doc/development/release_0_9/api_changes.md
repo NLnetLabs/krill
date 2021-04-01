@@ -2,11 +2,11 @@ API Changes Introduced in Release 0.9
 =====================================
 
 In this release we removed the concept of 'embedded' CA parents and children, and embedded repositories.
-As a result some API were introduced.
+As a result some API changes were introduced.
 
 ### Add Child
 
-The JSON format no longer supports 'embedded'.
+The JSON format no longer supports `embedded`.
 
 Old:
 ```
@@ -46,7 +46,7 @@ New:
 
 ## Add Parent
 
-Embedded is no longer allowed, there is still a notion of a 'type' because we support "ta".
+The `type` value `embedded` is no longer allowed. There is still a notion of a `type` because it can also be `ta`.
 
 ```
 {
@@ -64,7 +64,7 @@ Embedded is no longer allowed, there is still a notion of a 'type' because we su
 
 ### Update Parent
 
-To update a parent submit the RFC 8183 Parent Response, or the contact JSON (i.e. minus the handle in the Add Parent):
+To update a parent, submit the RFC 8183 Parent Response, or the contact JSON (i.e. minus the `handle` in the Add Parent):
 
 ```
 {
@@ -79,7 +79,7 @@ To update a parent submit the RFC 8183 Parent Response, or the contact JSON (i.e
 
 ### Get Parent
 
-Returns the parent contact with the type "rfc6492" as an embedded field call "type".
+Returns the parent contact with the type `rfc6492` as an embedded field call `type`.
 
 ```
 {
@@ -95,12 +95,12 @@ Returns the parent contact with the type "rfc6492" as an embedded field call "ty
 
 ## Show Repository
 
-Since we no longer support 'embedded', the JSON format of the show repository API response has changed a bit.
-The JSON member "rfc8181" now appears as "repository_response". We still have a JSON member called "contact",
+Since we no longer support `embedded`, the JSON format of the show repository API response has changed a bit.
+The JSON member `rfc8181` now appears as `repository_response`. We still have a JSON member called `contact`,
 so that we remain a bit flexible in case we would like to include more information in future, next to which
 repository is configured.
 
-OLD:
+Old:
 ```
 {
   "contact": {
@@ -118,8 +118,9 @@ OLD:
 }
 ```
 
-NEW:
+New:
 ```
+{
   "contact": {
     "repository_response": {
       "tag": null,
@@ -138,9 +139,10 @@ NEW:
 ## Add or Update Repository
 
 To add or update the repository the RFC 8183 Repository Response needs to be submitted, either as
-XML, or in JSON format. The JSON format no longer supports 'embedded', so the following is NO LONGER
+XML, or in JSON format. The JSON format no longer supports `embedded`, so the following is **no longer**
 supported:
 
+Old:
 ```
 {
   "tag": "string",
@@ -149,7 +151,7 @@ supported:
 }
 ```
 
-NEW:
+New:
 ```
 {
   "repository_response": {
