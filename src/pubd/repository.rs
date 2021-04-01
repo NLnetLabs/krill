@@ -580,6 +580,7 @@ impl RrdpServer {
 
             if size > snapshot_size {
                 // never keep more than the size of the snapshot
+                break;
             } else if keep < min_nr || delta.younger_than_seconds(min_secs) {
                 // always keep 'retention_delta_files_min_nr' files
                 // always keep 'retention_delta_files_min_seconds' file
@@ -587,6 +588,7 @@ impl RrdpServer {
             } else if keep == max_nr || delta.older_than_seconds(max_secs) {
                 // never keep more than 'retention_delta_files_max_nr'
                 // never keep older than 'retention_delta_files_max_seconds'
+                break;
             } else {
                 // keep the remainder
                 keep += 1;
