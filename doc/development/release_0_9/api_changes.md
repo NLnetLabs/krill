@@ -9,7 +9,7 @@ As a result some API changes were introduced.
 The JSON format no longer supports `embedded`.
 
 Old:
-```
+```json
 {
   "handle": "ca",
   "resources": {
@@ -28,7 +28,7 @@ Old:
 ```
 
 New:
-```
+```json
 {
   "handle": "ca",
   "resources": {
@@ -48,7 +48,7 @@ New:
 
 The `type` value `embedded` is no longer allowed. There is still a notion of a `type` because it can also be `ta`.
 
-```
+```json
 {
   "handle": "string",
   "contact": {
@@ -66,7 +66,7 @@ The `type` value `embedded` is no longer allowed. There is still a notion of a `
 
 To update a parent, submit the RFC 8183 Parent Response, or the contact JSON (i.e. minus the `handle` in the Add Parent):
 
-```
+```json
 {
   "type": "rfc6492",
   "tag": null,
@@ -81,7 +81,7 @@ To update a parent, submit the RFC 8183 Parent Response, or the contact JSON (i.
 
 Returns the parent contact with the type `rfc6492` as an embedded field call `type`.
 
-```
+```json
 {
   "type": "rfc6492",
   "tag": null,
@@ -101,7 +101,7 @@ so that we remain a bit flexible in case we would like to include more informati
 repository is configured.
 
 Old:
-```
+```json
 {
   "contact": {
     "rfc8181": {
@@ -119,7 +119,7 @@ Old:
 ```
 
 New:
-```
+```json
 {
   "contact": {
     "repository_response": {
@@ -143,7 +143,7 @@ XML, or in JSON format. The JSON format no longer supports `embedded`, so the fo
 supported:
 
 Old:
-```
+```json
 {
   "tag": "string",
   "id_cert": "string",
@@ -152,7 +152,7 @@ Old:
 ```
 
 New:
-```
+```json
 {
   "repository_response": {
     "tag": null,
