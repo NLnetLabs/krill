@@ -1,7 +1,0 @@
-{
-  "id": "child",
-  "version": 8,
-  "details": {
-    "route_authorization_added": "2001:db8::/32-48 => 64496"
-  }
-}

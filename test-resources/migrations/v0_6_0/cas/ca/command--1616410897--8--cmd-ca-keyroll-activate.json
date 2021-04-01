@@ -1,0 +1,17 @@
+{
+  "actor": "krill",
+  "time": "2021-03-22T11:01:37.673503176Z",
+  "handle": "ca",
+  "version": 13,
+  "sequence": 8,
+  "details": {
+    "key_roll_activate": 0
+  },
+  "effect": {
+    "events": [
+      13,
+      14,
+      15
+    ]
+  }
+}

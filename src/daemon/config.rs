@@ -15,7 +15,7 @@ use syslog::Facility;
 
 use rpki::uri;
 
-use crate::commons::api::{PublicationServerUris, Token};
+use crate::commons::api::{PublicationServerUris, PublisherHandle, Token};
 use crate::commons::util::ext_serde;
 use crate::constants::*;
 use crate::daemon::http::tls_keys;
@@ -425,8 +425,8 @@ impl Config {
         uri::Https::from_str(&self.service_uri).unwrap()
     }
 
-    pub fn ta_cert_uri(&self) -> uri::Https {
-        uri::Https::from_string(format!("{}ta/ta.cer", &self.service_uri)).unwrap()
+    pub fn rfc8181_uri(&self, publisher: &PublisherHandle) -> uri::Https {
+        uri::Https::from_string(format!("{}rfc8181/{}/", self.service_uri, publisher)).unwrap()
     }
 
     pub fn pid_file(&self) -> PathBuf {

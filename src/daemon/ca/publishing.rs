@@ -252,6 +252,12 @@ impl DeprecatedRepository {
     }
 }
 
+impl From<DeprecatedRepository> for RepositoryContact {
+    fn from(deprecated: DeprecatedRepository) -> Self {
+        deprecated.contact
+    }
+}
+
 mod ca_objects_classes_serde {
 
     use super::*;

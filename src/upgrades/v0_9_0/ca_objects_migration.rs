@@ -1,6 +1,8 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
-use rpki::{crl::Crl, crypto::KeyIdentifier, manifest::Manifest, x509::Time};
+use api::{RepositoryContact, StorableCaCommand, StoredEffect};
+use ca::{CaEvt, IniDet, StoredCaCommand};
+use rpki::{crl::Crl, crypto::KeyIdentifier, manifest::Manifest, uri, x509::Time};
 
 use crate::{
     commons::{
@@ -23,48 +25,109 @@ use crate::{
         },
         config::Config,
     },
+    pubd::RepositoryManager,
     upgrades::{UpgradeError, UpgradeResult, UpgradeStore},
 };
 
+use super::super::MIGRATION_SCOPE;
 use super::{old_commands::*, old_events::*};
 
 /// Migrate the current objects for each CA into the CaObjectStore
 pub struct CaObjectsMigration;
 
 impl CaObjectsMigration {
-    pub fn migrate(config: Arc<Config>) -> UpgradeResult<()> {
+    pub fn migrate(config: Arc<Config>, repo_manager: Option<RepositoryManager>) -> UpgradeResult<()> {
+        let repo_manager = Arc::new(repo_manager);
         let store = KeyValueStore::disk(&config.data_dir, CASERVER_DIR)?;
         let ca_store = AggregateStore::<ca::CertAuth>::disk(&config.data_dir, CASERVER_DIR)?;
 
         let signer = Arc::new(KrillSigner::build(&config.data_dir)?);
 
-        let cas_store_migration = CasStoreMigration { store, ca_store };
-        if cas_store_migration.needs_migrate()? {
+        if store.version_is_before(KeyStoreVersion::V0_6)? {
+            Err(UpgradeError::custom("Cannot upgrade Krill installations from before version 0.6.0. Please upgrade to any version ranging from 0.6.0 to 0.8.1 first, and then upgrade to this version."))
+        } else if store.version_is_before(KeyStoreVersion::V0_9_0_RC1)? {
             info!("Krill version is older than 0.9.0-RC1, will now upgrade data structures.");
-            Self::populate_ca_objects_store(config, signer)?;
-            cas_store_migration.migrate()
+
+            // Populate object store which will contain all objects produced by CAs, while we are
+            // at it.. return the information we will need in case we need to convert embedded child-parent
+            // CA relationships to use RFC 6492.
+            let derived_embedded_ca_info_map = Self::populate_ca_objects_store(config, repo_manager.clone(), signer)?;
+
+            // Migrate existing CAs to the new data structure, commands and events
+            CasStoreMigration {
+                store,
+                ca_store,
+                repo_manager,
+                derived_embedded_ca_info_map,
+            }
+            .migrate()
         } else {
+            debug!("Krill is up to date, no CA data migration needed.");
             Ok(())
         }
     }
 
-    fn populate_ca_objects_store(config: Arc<Config>, signer: Arc<KrillSigner>) -> UpgradeResult<()> {
+    fn populate_ca_objects_store(
+        config: Arc<Config>,
+        repo_manager: Arc<Option<RepositoryManager>>,
+        signer: Arc<KrillSigner>,
+    ) -> UpgradeResult<HashMap<Handle, DerivedEmbeddedCaMigrationInfo>> {
         // Read all CAS based on snapshots and events, using the pre-0_9_0 data structs
         // which are preserved here.
         info!("Krill will now populate the CA Objects Store");
-        let store = AggregateStore::<CertAuth>::disk(&config.data_dir, CASERVER_DIR)?;
-        store.warm()?;
+        let store = AggregateStore::<OldCertAuth>::disk(&config.data_dir, CASERVER_DIR)?;
+        if store.warm().is_err() {
+            // most likely we are dealing with off by one errors in old krill info files. Archive them for migration and try again.
+            let kv = KeyValueStore::disk(&config.data_dir, CASERVER_DIR)?;
+            for c in store.list()? {
+                let info_key = KeyStoreKey::scoped(c.to_string(), "info.json".to_string());
+                kv.archive_to(&info_key, MIGRATION_SCOPE)?;
+            }
+        }
 
-        let ca_objects_store = CaObjectsStore::disk(config, signer)?;
+        let ca_objects_store = CaObjectsStore::disk(config.clone(), signer)?;
+
+        let mut res = HashMap::new();
 
         for ca_handle in store.list()? {
             let ca = store.get_latest(&ca_handle)?;
-            let objects = ca.ca_objects();
+            let objects = ca.ca_objects(repo_manager.as_ref())?;
 
             ca_objects_store.put_ca_objects(&ca_handle, &objects)?;
+
+            res.insert(ca_handle, Self::derived_embedded_ca_info(ca, &config));
         }
 
-        Ok(())
+        Ok(res)
+    }
+
+    fn derived_embedded_ca_info(ca: Arc<OldCertAuth>, config: &Config) -> DerivedEmbeddedCaMigrationInfo {
+        let service_uri = format!("{}rfc6492/{}", config.service_uri().to_string(), ca.handle);
+        let service_uri = uri::Https::from_string(service_uri).unwrap();
+        let service_uri = rfc8183::ServiceUri::Https(service_uri);
+
+        let child_request = rfc8183::ChildRequest::new(ca.handle.clone(), ca.id.cert.clone());
+        let parent_responses = ca
+            .children
+            .keys()
+            .map(|child_handle| {
+                (
+                    child_handle.clone(),
+                    rfc8183::ParentResponse::new(
+                        None,
+                        ca.id.cert.clone(),
+                        ca.handle.clone(),
+                        child_handle.clone(),
+                        service_uri.clone(),
+                    ),
+                )
+            })
+            .collect();
+
+        DerivedEmbeddedCaMigrationInfo {
+            child_request,
+            parent_responses,
+        }
     }
 }
 
@@ -72,27 +135,33 @@ impl CaObjectsMigration {
 struct CasStoreMigration {
     store: KeyValueStore,
     ca_store: AggregateStore<ca::CertAuth>,
+    repo_manager: Arc<Option<RepositoryManager>>,
+    derived_embedded_ca_info_map: HashMap<Handle, DerivedEmbeddedCaMigrationInfo>,
 }
 
 impl UpgradeStore for CasStoreMigration {
     fn needs_migrate(&self) -> Result<bool, UpgradeError> {
-        if self.store.scopes()?.is_empty() {
-            Ok(false)
-        } else if Self::version_before(&self.store, KeyStoreVersion::V0_6)? {
-            Err(UpgradeError::custom("Cannot upgrade Krill installations from before version 0.6.0. Please upgrade to any version ranging from 0.6.0 to 0.8.1 first, and then upgrade to this version."))
-        } else {
-            Self::version_before(&self.store, KeyStoreVersion::V0_9_0_RC1)
-        }
+        unreachable!("checked directly on keystore")
     }
 
     fn migrate(&self) -> Result<(), UpgradeError> {
         info!("Krill will now reformat existing command and event data, and remove unnecessary data");
 
+        let dflt_actor = "krill".to_string();
+
         // For each CA:
         //   - build a new
         for scope in self.store.scopes()? {
-            let info_key = KeyStoreKey::scoped(scope.clone(), "info.json".to_string());
-            let mut info: StoredValueInfo = match self.store.get(&info_key) {
+            // Archive all keys in the scope, then we can write new keys as needed without
+            // overwriting anything when we renumber.
+            for key in self.store.keys(Some(scope.clone()), "")? {
+                self.archive_to_migration_scope(&key)?;
+            }
+
+            let migration_scope = format!("{}/{}", scope, MIGRATION_SCOPE);
+
+            let migration_info_key = KeyStoreKey::scoped(migration_scope.clone(), "info.json".to_string());
+            let mut info: StoredValueInfo = match self.store.get(&migration_info_key) {
                 Ok(Some(info)) => info,
                 _ => StoredValueInfo::default(),
             };
@@ -103,33 +172,108 @@ impl UpgradeStore for CasStoreMigration {
 
             // Find all command keys and sort them by sequence.
             // Then turn them back into key store keys for further processing.
-            let cmd_keys = self.command_keys(&scope)?;
+            let cmd_keys = self.command_keys(&migration_scope)?;
+
+            // Get the time to use if we need to inject commands and events for the init
+            // event, based on the first recorded time in command keys.
+            let time_for_init_command = match cmd_keys.first() {
+                Some(first_command) => {
+                    let old_cmd: OldStoredCaCommand = self.get(&first_command)?;
+                    old_cmd.time
+                }
+                None => Time::now(),
+            };
+
+            // Migrate the init event.
+            let old_init_key = KeyStoreKey::scoped(migration_scope.clone(), "delta-0.json".to_string());
+            let init_key = KeyStoreKey::scoped(scope.clone(), "delta-0.json".to_string());
+
+            let old_init: OldCaIni = self.get(&old_init_key)?;
+            let (id, _, old_ini_det) = old_init.unpack();
+            let (rfc_8183_id, repo_opt, ta_opt) = old_ini_det.unpack();
+            let ini = IniDet::new(&id, rfc_8183_id.into());
+            debug!("  init: {}", init_key);
+            self.store.store(&init_key, &ini)?;
+
+            // If the CA was initialized with an embedded repository, then make sure that
+            // we generate a command + events to update the repository to the 'local' RFC 8181
+            // version of this repository.
+
+            if repo_opt.is_some() {
+                debug!("  +- Generate command and event for initialized repository");
+                let res = self
+                    .repo_manager
+                    .as_ref()
+                    .as_ref()
+                    .ok_or(UpgradeError::KrillError(
+                        crate::commons::error::Error::RepositoryServerNotEnabled,
+                    ))?
+                    .repository_response(&id)?;
+
+                let contact = RepositoryContact::new(res);
+                let service_uri = contact.service_uri().clone();
+
+                info.last_event += 1;
+                let event = CaEvt::new(&id, info.last_event, CaEvtDet::RepoUpdated { contact });
+
+                let command = StoredCaCommand::new(
+                    dflt_actor.clone(),
+                    time_for_init_command,
+                    id,
+                    info.last_event,
+                    info.last_command,
+                    StorableCaCommand::RepoUpdate { service_uri },
+                    StoredEffect::Success { events: vec![1] },
+                );
+
+                info.last_command += 1;
+                info.last_update = time_for_init_command;
+
+                let event_key = Self::event_key(&scope, info.last_event);
+                self.store.store(&event_key, &event)?;
+
+                let cmd_key = CommandKey::for_stored(&command);
+                let key = KeyStoreKey::scoped(scope.clone(), format!("{}.json", cmd_key));
+
+                self.store.store(&key, &command)?;
+            }
+
+            // If the CA was initialized as a trust anchor, then we refuse to upgrade.
+            // This can only happen if this is a very old test system. People will need
+            // to set up a new test system instead.
+            if ta_opt.is_some() {
+                return Err(UpgradeError::custom(
+                    "This Krill instance is set up as a test system, using a Trust Anchor, which cannot be migrated.",
+                ));
+            }
 
             for cmd_key in cmd_keys {
                 debug!("  command: {}", cmd_key);
                 let mut old_cmd: OldStoredCaCommand = self.get(&cmd_key)?;
 
-                self.archive_migrated(&cmd_key)?;
-
                 if let Some(evt_versions) = old_cmd.effect.events() {
                     let mut events = vec![];
                     for v in evt_versions {
-                        let event_key = Self::event_key(&scope, *v);
-                        debug!("  +- event: {}", event_key);
-                        let old_evt: OldCaEvt = self
-                            .store
-                            .get(&event_key)?
-                            .ok_or_else(|| UpgradeError::Custom(format!("Cannot parse old event: {}", event_key)))?;
-
-                        self.archive_migrated(&event_key)?;
+                        let migration_event_key = Self::event_key(&&migration_scope, *v);
+                        debug!("  +- event: {}", migration_event_key);
+                        let old_evt: OldCaEvt = self.store.get(&migration_event_key)?.ok_or_else(|| {
+                            UpgradeError::Custom(format!("Cannot parse old event: {}", migration_event_key))
+                        })?;
 
                         if old_evt.needs_migration() {
                             info.last_event += 1;
 
                             events.push(info.last_event);
-                            let migrated_event = old_evt.into_stored_ca_event(info.last_event)?;
-                            let key = KeyStoreKey::scoped(scope.clone(), format!("delta-{}.json", info.last_event));
-                            self.store.store(&key, &migrated_event)?;
+
+                            let migrated_event = old_evt.into_stored_ca_event(
+                                info.last_event,
+                                &self.repo_manager,
+                                &self.derived_embedded_ca_info_map,
+                            )?;
+
+                            let event_key =
+                                KeyStoreKey::scoped(scope.clone(), format!("delta-{}.json", info.last_event));
+                            self.store.store(&event_key, &migrated_event)?;
                         }
                     }
 
@@ -146,7 +290,7 @@ impl UpgradeStore for CasStoreMigration {
                 info.last_command += 1;
                 info.last_update = old_cmd.time;
 
-                let migrated_cmd = old_cmd.into_ca_command();
+                let migrated_cmd = old_cmd.into_ca_command(&self.repo_manager, &self.derived_embedded_ca_info_map)?;
                 let cmd_key = CommandKey::for_stored(&migrated_cmd);
                 let key = KeyStoreKey::scoped(scope.clone(), format!("{}.json", cmd_key));
 
@@ -158,6 +302,7 @@ impl UpgradeStore for CasStoreMigration {
             info.snapshot_version = 0;
             info.last_command -= 1;
 
+            let info_key = KeyStoreKey::scoped(scope.clone(), "info.json".to_string());
             self.store.store(&info_key, &info)?;
         }
 
@@ -185,25 +330,25 @@ impl UpgradeStore for CasStoreMigration {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-struct CertAuth {
+struct OldCertAuth {
     handle: Handle,
     version: u64,
 
     id: Rfc8183Id, // Used for RFC 6492 (up-down) and RFC 8181 (publication)
 
-    repository: Option<RepositoryContact>,
-    repository_pending_withdraw: Option<RepositoryContact>,
+    repository: Option<OldRepositoryContact>,
+    repository_pending_withdraw: Option<OldRepositoryContact>,
 
-    parents: HashMap<ParentHandle, ParentCaContact>,
+    parents: HashMap<ParentHandle, OldParentCaContact>,
 
     next_class_name: u32,
-    resources: HashMap<ResourceClassName, ResourceClass>,
+    resources: HashMap<ResourceClassName, OldResourceClass>,
 
-    children: HashMap<ChildHandle, ChildDetails>,
-    routes: Routes,
+    children: HashMap<ChildHandle, OldChildDetails>,
+    routes: OldRoutes,
 }
 
-impl Aggregate for CertAuth {
+impl Aggregate for OldCertAuth {
     type Command = OldStoredCaCommand;
     type StorableCommandDetails = OldStorableCaCommand;
     type Event = OldCaEvt;
@@ -219,20 +364,20 @@ impl Aggregate for CertAuth {
         let mut next_class_name = 0;
 
         let children = HashMap::new();
-        let routes = Routes::default();
+        let routes = OldRoutes::default();
 
         if let Some(ta_details) = ta_opt {
             let key_id = ta_details.cert().subject_key_identifier();
-            parents.insert(ta_handle(), ParentCaContact::Ta(ta_details));
+            parents.insert(ta_handle(), OldParentCaContact::Ta(ta_details));
 
             let rcn = ResourceClassName::from(next_class_name);
             next_class_name += 1;
-            resources.insert(rcn.clone(), ResourceClass::for_ta(rcn, key_id));
+            resources.insert(rcn.clone(), OldResourceClass::for_ta(rcn, key_id));
         }
 
-        let repository = repo_info.map(RepositoryContact::embedded);
+        let repository = repo_info.map(OldRepositoryContact::embedded);
 
-        Ok(CertAuth {
+        Ok(OldCertAuth {
             handle,
             version: 1,
 
@@ -264,10 +409,11 @@ impl Aggregate for CertAuth {
             //-----------------------------------------------------------------------
             OldCaEvtDet::TrustAnchorMade(details) => {
                 let key_id = details.cert().subject_key_identifier();
-                self.parents.insert(ta_handle(), ParentCaContact::Ta(details));
+                self.parents.insert(ta_handle(), OldParentCaContact::Ta(details));
                 let rcn = ResourceClassName::from(self.next_class_name);
                 self.next_class_name += 1;
-                self.resources.insert(rcn.clone(), ResourceClass::for_ta(rcn, key_id));
+                self.resources
+                    .insert(rcn.clone(), OldResourceClass::for_ta(rcn, key_id));
             }
 
             //-----------------------------------------------------------------------
@@ -414,12 +560,12 @@ impl Aggregate for CertAuth {
     }
 
     fn process_command(&self, _command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
-        unimplemented!("We will not apply commands for this migration")
+        unreachable!("We will not apply commands for this migration")
     }
 }
 
-impl CertAuth {
-    pub fn ca_objects(&self) -> CaObjects {
+impl OldCertAuth {
+    pub fn ca_objects(&self, repo_manager: &Option<RepositoryManager>) -> Result<CaObjects, UpgradeError> {
         let objects = self
             .resources
             .iter()
@@ -429,7 +575,24 @@ impl CertAuth {
             })
             .collect();
 
-        CaObjects::new(self.handle.clone(), self.repository.clone().map(|r| r.into()), objects)
+        let repo = match &self.repository {
+            None => None,
+            Some(old) => match old {
+                OldRepositoryContact::Embedded(_) => {
+                    if let Some(repo_manager) = repo_manager {
+                        let res = repo_manager.repository_response(&self.handle)?;
+                        Some(RepositoryContact::new(res))
+                    } else {
+                        return Err(UpgradeError::KrillError(
+                            crate::commons::error::Error::RepositoryServerNotEnabled,
+                        ));
+                    }
+                }
+                OldRepositoryContact::Rfc8181(res) => Some(RepositoryContact::new(res.clone())),
+            },
+        };
+
+        Ok(CaObjects::new(self.handle.clone(), repo, objects))
     }
 }
 
@@ -448,70 +611,51 @@ impl From<Rfc8183Id> for ca::Rfc8183Id {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
-pub enum RepositoryContact {
+pub enum OldRepositoryContact {
     Embedded(RepoInfo),
     Rfc8181(rfc8183::RepositoryResponse),
 }
 
-impl From<RepositoryContact> for api::RepositoryContact {
-    fn from(old: RepositoryContact) -> Self {
-        match old {
-            RepositoryContact::Embedded(info) => api::RepositoryContact::embedded(info),
-            RepositoryContact::Rfc8181(response) => api::RepositoryContact::rfc8181(response),
-        }
-    }
-}
-
-impl RepositoryContact {
+impl OldRepositoryContact {
     fn embedded(info: RepoInfo) -> Self {
-        RepositoryContact::Embedded(info)
+        OldRepositoryContact::Embedded(info)
     }
 }
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
-pub enum ParentCaContact {
+pub enum OldParentCaContact {
     Ta(TaCertDetails),
     Embedded,
     Rfc6492(rfc8183::ParentResponse),
 }
 
-impl From<ParentCaContact> for api::ParentCaContact {
-    fn from(old: ParentCaContact) -> Self {
-        match old {
-            ParentCaContact::Ta(ta_cert_details) => api::ParentCaContact::for_ta(ta_cert_details),
-            ParentCaContact::Embedded => api::ParentCaContact::embedded(),
-            ParentCaContact::Rfc6492(response) => api::ParentCaContact::for_rfc6492(response),
-        }
-    }
-}
-
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ResourceClass {
+pub struct OldResourceClass {
     name: ResourceClassName,
     name_space: String,
 
     parent_handle: ParentHandle,
     parent_rc_name: ResourceClassName,
 
-    roas: Roas,
-    certificates: ChildCertificates,
+    roas: OldRoas,
+    certificates: OldChildCertificates,
 
     last_key_change: Time,
-    key_state: KeyState,
+    key_state: OldKeyState,
 }
 
-impl ResourceClass {
+impl OldResourceClass {
     pub fn for_ta(parent_rc_name: ResourceClassName, pending_key: KeyIdentifier) -> Self {
-        ResourceClass {
+        OldResourceClass {
             name: parent_rc_name.clone(),
             name_space: parent_rc_name.to_string(),
             parent_handle: ta_handle(),
             parent_rc_name,
-            roas: Roas::default(),
-            certificates: ChildCertificates::default(),
+            roas: OldRoas::default(),
+            certificates: OldChildCertificates::default(),
             last_key_change: Time::now(),
-            key_state: KeyState::pending(pending_key),
+            key_state: OldKeyState::pending(pending_key),
         }
     }
 
@@ -525,17 +669,17 @@ impl ResourceClass {
             .collect();
 
         match &self.key_state {
-            KeyState::Pending(_) => None,
+            OldKeyState::Pending(_) => None,
 
-            KeyState::Active(current) | KeyState::RollPending(_, current) => Some(ResourceClassKeyState::current(
-                Self::object_set_for_current(current, roas, certs),
-            )),
-            KeyState::RollNew(new, current) => Some(ResourceClassKeyState::staging(
+            OldKeyState::Active(current) | OldKeyState::RollPending(_, current) => Some(
+                ResourceClassKeyState::current(Self::object_set_for_current(current, roas, certs)),
+            ),
+            OldKeyState::RollNew(new, current) => Some(ResourceClassKeyState::staging(
                 Self::object_set_for_certified_key(new),
                 Self::object_set_for_current(current, roas, certs),
             )),
 
-            KeyState::RollOld(current, old) => Some(ResourceClassKeyState::old(
+            OldKeyState::RollOld(current, old) => Some(ResourceClassKeyState::old(
                 Self::object_set_for_current(current, roas, certs),
                 Self::object_set_for_certified_key(&old.key),
             )),
@@ -544,7 +688,7 @@ impl ResourceClass {
 
     pub fn into_added_event(self) -> Result<CaEvtDet, UpgradeError> {
         let pending_key = match self.key_state {
-            KeyState::Pending(pending) => Some(pending),
+            OldKeyState::Pending(pending) => Some(pending),
             _ => None,
         }
         .ok_or_else(|| UpgradeError::custom("Added a resource class which is not in state pending."))?
@@ -562,7 +706,7 @@ impl ResourceClass {
     }
 
     fn object_set_for_current(
-        key: &CertifiedKey,
+        key: &OldCertifiedKey,
         roas: HashMap<ObjectName, PublishedRoa>,
         certs: HashMap<ObjectName, PublishedCert>,
     ) -> CurrentKeyObjectSet {
@@ -582,7 +726,7 @@ impl ResourceClass {
         )
     }
 
-    fn object_set_for_certified_key(key: &CertifiedKey) -> BasicKeyObjectSet {
+    fn object_set_for_certified_key(key: &OldCertifiedKey) -> BasicKeyObjectSet {
         let current_set = key.current_set.clone();
 
         let mft = Manifest::decode(current_set.manifest_info.current.content().to_bytes(), true).unwrap();
@@ -623,21 +767,21 @@ impl ResourceClass {
     pub fn received_cert(&mut self, key_id: KeyIdentifier, cert: RcvdCert) {
         // if there is a pending key, then we need to do some promotions..
         match &mut self.key_state {
-            KeyState::Pending(_pending) => panic!("Would have received KeyPendingToActive event"),
-            KeyState::Active(current) => {
+            OldKeyState::Pending(_pending) => panic!("Would have received KeyPendingToActive event"),
+            OldKeyState::Active(current) => {
                 current.set_incoming_cert(cert);
             }
-            KeyState::RollPending(_pending, current) => {
+            OldKeyState::RollPending(_pending, current) => {
                 current.set_incoming_cert(cert);
             }
-            KeyState::RollNew(new, current) => {
+            OldKeyState::RollNew(new, current) => {
                 if new.key_id == key_id {
                     new.set_incoming_cert(cert);
                 } else {
                     current.set_incoming_cert(cert);
                 }
             }
-            KeyState::RollOld(current, old) => {
+            OldKeyState::RollOld(current, old) => {
                 if current.key_id == key_id {
                     current.set_incoming_cert(cert);
                 } else {
@@ -650,29 +794,29 @@ impl ResourceClass {
     /// Adds a pending key.
     pub fn pending_key_added(&mut self, key_id: KeyIdentifier) {
         match &self.key_state {
-            KeyState::Active(current) => {
-                let pending = PendingKey { key_id, request: None };
-                self.key_state = KeyState::RollPending(pending, current.clone())
+            OldKeyState::Active(current) => {
+                let pending = OldPendingKey { key_id, request: None };
+                self.key_state = OldKeyState::RollPending(pending, current.clone())
             }
             _ => panic!("Should never create event to add key when roll in progress"),
         }
     }
 
     /// Moves a pending key to new
-    pub fn pending_key_to_new(&mut self, new: CertifiedKey) {
+    pub fn pending_key_to_new(&mut self, new: OldCertifiedKey) {
         match &self.key_state {
-            KeyState::RollPending(_pending, current) => {
-                self.key_state = KeyState::RollNew(new, current.clone());
+            OldKeyState::RollPending(_pending, current) => {
+                self.key_state = OldKeyState::RollNew(new, current.clone());
             }
             _ => panic!("Cannot move pending to new, if state is not roll pending"),
         }
     }
 
     /// Moves a pending key to current
-    pub fn pending_key_to_active(&mut self, new: CertifiedKey) {
+    pub fn pending_key_to_active(&mut self, new: OldCertifiedKey) {
         match &self.key_state {
-            KeyState::Pending(_pending) => {
-                self.key_state = KeyState::Active(new);
+            OldKeyState::Pending(_pending) => {
+                self.key_state = OldKeyState::Active(new);
             }
             _ => panic!("Cannot move pending to active, if state is not pending"),
         }
@@ -681,12 +825,12 @@ impl ResourceClass {
     /// Activates the new key
     pub fn new_key_activated(&mut self, revoke_req: RevocationRequest) {
         match &self.key_state {
-            KeyState::RollNew(new, current) => {
-                let old_key = OldKey {
+            OldKeyState::RollNew(new, current) => {
+                let old_key = OldOldKey {
                     key: current.clone(),
                     revoke_req,
                 };
-                self.key_state = KeyState::RollOld(new.clone(), old_key);
+                self.key_state = OldKeyState::RollOld(new.clone(), old_key);
             }
             _ => panic!("Should never create event to activate key when no roll in progress"),
         }
@@ -695,8 +839,8 @@ impl ResourceClass {
     /// Removes the old key, we return the to the state where there is one active key.
     pub fn old_key_removed(&mut self) {
         match &self.key_state {
-            KeyState::RollOld(current, _old) => {
-                self.key_state = KeyState::Active(current.clone());
+            OldKeyState::RollOld(current, _old) => {
+                self.key_state = OldKeyState::Active(current.clone());
             }
             _ => panic!("Should never create event to remove old key, when there is none"),
         }
@@ -704,7 +848,7 @@ impl ResourceClass {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct Roas {
+pub struct OldRoas {
     #[serde(alias = "inner", skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
     simple: HashMap<RouteAuthorization, RoaInfo>,
 
@@ -712,16 +856,16 @@ pub struct Roas {
     aggregate: HashMap<RoaAggregateKey, AggregateRoaInfo>,
 }
 
-impl Default for Roas {
+impl Default for OldRoas {
     fn default() -> Self {
-        Roas {
+        OldRoas {
             simple: HashMap::new(),
             aggregate: HashMap::new(),
         }
     }
 }
 
-impl Roas {
+impl OldRoas {
     pub fn updated(&mut self, updates: RoaUpdates) {
         let (updated, removed, aggregate_updated, aggregate_removed) = updates.unpack();
 
@@ -765,17 +909,17 @@ impl Roas {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ReplacedObject {
+pub struct OldReplacedObject {
     revocation: Revocation,
     hash: HexEncodedHash,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ChildCertificates {
+pub struct OldChildCertificates {
     inner: HashMap<KeyIdentifier, IssuedCert>,
 }
 
-impl ChildCertificates {
+impl OldChildCertificates {
     pub fn key_revoked(&mut self, key: &KeyIdentifier) {
         self.inner.remove(key);
     }
@@ -786,15 +930,15 @@ impl ChildCertificates {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ChildDetails {
+pub struct OldChildDetails {
     pub id_cert: Option<IdCert>,
     pub resources: ResourceSet,
-    used_keys: HashMap<KeyIdentifier, LastResponse>,
+    used_keys: HashMap<KeyIdentifier, OldLastResponse>,
 }
 
-impl ChildDetails {
+impl OldChildDetails {
     pub fn is_issued(&self, ki: &KeyIdentifier) -> bool {
-        matches!(self.used_keys.get(ki), Some(LastResponse::Current(_)))
+        matches!(self.used_keys.get(ki), Some(OldLastResponse::Current(_)))
     }
 
     pub fn set_id_cert(&mut self, id_cert: IdCert) {
@@ -806,28 +950,28 @@ impl ChildDetails {
     }
 
     pub fn add_issue_response(&mut self, rcn: ResourceClassName, ki: KeyIdentifier) {
-        self.used_keys.insert(ki, LastResponse::Current(rcn));
+        self.used_keys.insert(ki, OldLastResponse::Current(rcn));
     }
 
     pub fn add_revoke_response(&mut self, ki: KeyIdentifier) {
-        self.used_keys.insert(ki, LastResponse::Revoked);
+        self.used_keys.insert(ki, OldLastResponse::Revoked);
     }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
-pub enum LastResponse {
+pub enum OldLastResponse {
     Current(ResourceClassName),
     Revoked,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct Routes {
+pub struct OldRoutes {
     map: HashMap<RouteAuthorization, RouteInfo>,
 }
 
-impl Routes {
+impl OldRoutes {
     /// Adds a new authorization, or updates an existing one.
     pub fn add(&mut self, auth: RouteAuthorization) {
         self.map.insert(auth, RouteInfo::default());
@@ -839,9 +983,9 @@ impl Routes {
     }
 }
 
-impl Default for Routes {
+impl Default for OldRoutes {
     fn default() -> Self {
-        Routes { map: HashMap::new() }
+        OldRoutes { map: HashMap::new() }
     }
 }
 
@@ -865,32 +1009,32 @@ impl Default for RouteInfo {
 #[derive(Clone, Debug, Deserialize, Eq, Serialize, PartialEq)]
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
-pub enum KeyState {
-    Pending(PendingKey),
+pub enum OldKeyState {
+    Pending(OldPendingKey),
     Active(CurrentKey),
-    RollPending(PendingKey, CurrentKey),
+    RollPending(OldPendingKey, CurrentKey),
     RollNew(NewKey, CurrentKey),
-    RollOld(CurrentKey, OldKey),
+    RollOld(CurrentKey, OldOldKey),
 }
 
-impl KeyState {
+impl OldKeyState {
     fn pending(key_id: KeyIdentifier) -> Self {
-        KeyState::Pending(PendingKey { key_id, request: None })
+        OldKeyState::Pending(OldPendingKey { key_id, request: None })
     }
 
     pub fn apply_delta(&mut self, delta: CurrentObjectSetDelta, key_id: KeyIdentifier) {
         match self {
-            KeyState::Pending(_pending) => panic!("Should never have delta for pending"),
-            KeyState::Active(current) => current.apply_delta(delta),
-            KeyState::RollPending(_pending, current) => current.apply_delta(delta),
-            KeyState::RollNew(new, current) => {
+            OldKeyState::Pending(_pending) => panic!("Should never have delta for pending"),
+            OldKeyState::Active(current) => current.apply_delta(delta),
+            OldKeyState::RollPending(_pending, current) => current.apply_delta(delta),
+            OldKeyState::RollNew(new, current) => {
                 if new.key_id == key_id {
                     new.apply_delta(delta)
                 } else {
                     current.apply_delta(delta)
                 }
             }
-            KeyState::RollOld(current, old) => {
+            OldKeyState::RollOld(current, old) => {
                 if current.key_id == key_id {
                     current.apply_delta(delta)
                 } else {
@@ -902,23 +1046,23 @@ impl KeyState {
 
     pub fn add_request(&mut self, key_id: KeyIdentifier, req: IssuanceRequest) {
         match self {
-            KeyState::Pending(pending) => pending.add_request(req),
-            KeyState::Active(current) => current.add_request(req),
-            KeyState::RollPending(pending, current) => {
+            OldKeyState::Pending(pending) => pending.add_request(req),
+            OldKeyState::Active(current) => current.add_request(req),
+            OldKeyState::RollPending(pending, current) => {
                 if pending.key_id == key_id {
                     pending.add_request(req)
                 } else {
                     current.add_request(req)
                 }
             }
-            KeyState::RollNew(new, current) => {
+            OldKeyState::RollNew(new, current) => {
                 if new.key_id == key_id {
                     new.add_request(req)
                 } else {
                     current.add_request(req)
                 }
             }
-            KeyState::RollOld(current, old) => {
+            OldKeyState::RollOld(current, old) => {
                 if current.key_id == key_id {
                     current.add_request(req)
                 } else {
@@ -930,12 +1074,12 @@ impl KeyState {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct PendingKey {
+pub struct OldPendingKey {
     key_id: KeyIdentifier,
     request: Option<IssuanceRequest>,
 }
 
-impl PendingKey {
+impl OldPendingKey {
     pub fn add_request(&mut self, req: IssuanceRequest) {
         self.request = Some(req)
     }
@@ -945,29 +1089,29 @@ impl PendingKey {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Serialize, PartialEq)]
-pub struct OldKey {
-    key: CertifiedKey,
+pub struct OldOldKey {
+    key: OldCertifiedKey,
     revoke_req: RevocationRequest,
 }
 
-type NewKey = CertifiedKey;
-type CurrentKey = CertifiedKey;
+type NewKey = OldCertifiedKey;
+type CurrentKey = OldCertifiedKey;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct CertifiedKey {
+pub struct OldCertifiedKey {
     key_id: KeyIdentifier,
     incoming_cert: RcvdCert,
-    current_set: CurrentObjectSet,
+    current_set: OldCurrentObjectSet,
     request: Option<IssuanceRequest>,
 }
 
-impl From<CertifiedKey> for ca::CertifiedKey {
-    fn from(old: CertifiedKey) -> Self {
+impl From<OldCertifiedKey> for ca::CertifiedKey {
+    fn from(old: OldCertifiedKey) -> Self {
         ca::CertifiedKey::new(old.key_id, old.incoming_cert, old.request)
     }
 }
 
-impl CertifiedKey {
+impl OldCertifiedKey {
     pub fn set_incoming_cert(&mut self, incoming_cert: RcvdCert) {
         self.request = None;
         self.incoming_cert = incoming_cert;
@@ -983,14 +1127,14 @@ impl CertifiedKey {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct CurrentObjectSet {
+pub struct OldCurrentObjectSet {
     number: u64,
     revocations: Revocations,
-    manifest_info: ManifestInfo,
-    crl_info: CrlInfo,
+    manifest_info: OldManifestInfo,
+    crl_info: OldCrlInfo,
 }
 
-impl CurrentObjectSet {
+impl OldCurrentObjectSet {
     pub fn apply_delta(&mut self, delta: CurrentObjectSetDelta) {
         self.number = delta.number;
         self.revocations.apply_delta(delta.revocations_delta);
@@ -1000,7 +1144,7 @@ impl CurrentObjectSet {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ManifestInfo {
+pub struct OldManifestInfo {
     name: ObjectName,
     current: CurrentObject,
     next_update: Time,
@@ -1008,7 +1152,7 @@ pub struct ManifestInfo {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct CrlInfo {
+pub struct OldCrlInfo {
     name: ObjectName, // can be derived from CRL, but keeping in mem saves cpu
     current: CurrentObject,
     old: Option<HexEncodedHash>,
