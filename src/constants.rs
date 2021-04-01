@@ -73,7 +73,8 @@ pub const ID_CERTIFICATE_VALIDITY_YEARS: i32 = 15;
 
 pub const BGP_RIS_REFRESH_MINUTES: i64 = 60;
 
-pub const HTTTP_CLIENT_TIMEOUT_SECS: u64 = 120;
+pub const HTTP_CLIENT_TIMEOUT_SECS: u64 = 120;
+pub const OPENID_CONNECT_HTTP_CLIENT_TIMEOUT_SECS: u64 = 10;
 
 pub const NO_RESOURCE: NoResourceType = NoResourceType;
 
