@@ -799,6 +799,11 @@ impl Delta {
         self.time < then
     }
 
+    pub fn younger_than_seconds(&self, seconds: i64) -> bool {
+        let then = Time::now() - Duration::seconds(seconds);
+        self.time > then
+    }
+
     pub fn elements(&self) -> &DeltaElements {
         &self.elements
     }

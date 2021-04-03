@@ -7,8 +7,8 @@ use crate::{
     commons::{
         api::{
             ChildHandle, Handle, IssuanceRequest, IssuedCert, ObjectName, ParentCaContact, ParentHandle,
-            ParentResourceClassName, RcvdCert, RepoInfo, RepositoryContact, ResourceClassName, ResourceSet,
-            RevocationRequest, RevokedObject, RoaAggregateKey, RtaName, TaCertDetails,
+            ParentResourceClassName, RcvdCert, RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest,
+            RevokedObject, RoaAggregateKey, RtaName, TaCertDetails,
         },
         crypto::{IdCert, KrillSigner},
         eventsourcing::StoredEvent,
@@ -28,37 +28,22 @@ pub type Ini = StoredEvent<IniDet>;
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct IniDet {
     id: Rfc8183Id,
-
-    // The following two fields need to be kept to maintain data compatibility
-    // with Krill 0.4.2 installations.
-    //
-    // Newer versions of krill will no longer include these fields. I.e. there
-    // will be no default embedded repository, and trust anchors will be created
-    // through an explicit command and events.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    info: Option<RepoInfo>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ta_details: Option<TaCertDetails>,
 }
 
 impl IniDet {
-    pub fn unpack(self) -> (Rfc8183Id, Option<RepoInfo>, Option<TaCertDetails>) {
-        (self.id, self.info, self.ta_details)
+    pub fn unpack(self) -> Rfc8183Id {
+        self.id
     }
 }
 
 impl IniDet {
+    pub fn new(handle: &Handle, id: Rfc8183Id) -> Ini {
+        Ini::new(handle, 0, IniDet { id })
+    }
+
     pub fn init(handle: &Handle, signer: &KrillSigner) -> KrillResult<Ini> {
         let id = Rfc8183Id::generate(signer)?;
-        Ok(Ini::new(
-            handle,
-            0,
-            IniDet {
-                id,
-                info: None,
-                ta_details: None,
-            },
-        ))
+        Ok(Self::new(handle, id))
     }
 }
 
@@ -408,7 +393,7 @@ pub enum CaEvtDet {
     // Being a parent Events
     ChildAdded {
         child: ChildHandle,
-        id_cert: Option<IdCert>,
+        id_cert: IdCert,
         resources: ResourceSet,
     },
     ChildCertificateIssued {
@@ -545,10 +530,6 @@ pub enum CaEvtDet {
         // requesting certificates when it knows which URIs it can use.
         contact: RepositoryContact,
     },
-    RepoCleaned {
-        // Mark an old repository as cleaned, so that it can be removed.
-        contact: RepositoryContact,
-    },
 
     // Rta
     //
@@ -597,7 +578,7 @@ impl CaEvtDet {
         handle: &Handle,
         version: u64,
         child: ChildHandle,
-        id_cert: Option<IdCert>,
+        id_cert: IdCert,
         resources: ResourceSet,
     ) -> CaEvt {
         StoredEvent::new(
@@ -697,11 +678,13 @@ impl fmt::Display for CaEvtDet {
                 id_cert,
                 resources,
             } => {
-                write!(f, "added child '{}' with resources '{}", child, resources)?;
-                if let Some(cert) = id_cert {
-                    write!(f, ", id (hash): {}", cert.ski_hex())?;
-                }
-                Ok(())
+                write!(
+                    f,
+                    "added child '{}' with resources '{}, id (hash): {}",
+                    child,
+                    resources,
+                    id_cert.ski_hex()
+                )
             }
             CaEvtDet::ChildCertificateIssued {
                 child,
@@ -758,7 +741,6 @@ impl fmt::Display for CaEvtDet {
             CaEvtDet::IdUpdated { id } => write!(f, "updated RFC8183 id to key '{}'", id.key_hash()),
             CaEvtDet::ParentAdded { parent, contact } => {
                 let contact_str = match contact {
-                    ParentCaContact::Embedded => "embedded",
                     ParentCaContact::Ta(_) => "TA proxy",
                     ParentCaContact::Rfc6492(_) => "RFC6492",
                 };
@@ -766,7 +748,6 @@ impl fmt::Display for CaEvtDet {
             }
             CaEvtDet::ParentUpdated { parent, contact } => {
                 let contact_str = match contact {
-                    ParentCaContact::Embedded => "embedded",
                     ParentCaContact::Ta(_) => "TA proxy",
                     ParentCaContact::Rfc6492(_) => "RFC6492",
                 };
@@ -880,26 +861,9 @@ impl fmt::Display for CaEvtDet {
             }
 
             // Publishing
-            CaEvtDet::RepoUpdated { contact } => match contact {
-                RepositoryContact::Embedded { .. } => write!(f, "updated repository to embedded server"),
-                RepositoryContact::Rfc8181 { server_response } => {
-                    write!(
-                        f,
-                        "updated repository to remote server: {}",
-                        server_response.service_uri()
-                    )
-                }
-            },
-            CaEvtDet::RepoCleaned { contact } => match contact {
-                RepositoryContact::Embedded { .. } => write!(f, "cleaned old embedded repository"),
-                RepositoryContact::Rfc8181 { server_response } => {
-                    write!(
-                        f,
-                        "cleaned repository at remote server: {}",
-                        server_response.service_uri()
-                    )
-                }
-            },
+            CaEvtDet::RepoUpdated { contact } => {
+                write!(f, "updated repository to remote server: {}", contact.service_uri())
+            }
 
             // Rta
             CaEvtDet::RtaPrepared { name, prepared } => {

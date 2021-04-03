@@ -7,21 +7,28 @@ use std::{path::PathBuf, sync::Arc};
 
 use serde::de::DeserializeOwned;
 
-use crate::commons::eventsourcing::{
-    AggregateStore, AggregateStoreError, CommandKey, KeyStoreKey, KeyStoreVersion, KeyValueError, KeyValueStore,
-};
 use crate::commons::util::file;
 use crate::constants::KRILL_VERSION;
 use crate::daemon::ca::CertAuth;
 use crate::pubd::RepositoryAccess;
 use crate::{commons::api::Handle, daemon::config::Config};
+use crate::{
+    commons::{
+        crypto::KrillSigner,
+        eventsourcing::{
+            AggregateStore, AggregateStoreError, CommandKey, KeyStoreKey, KeyStoreVersion, KeyValueError, KeyValueStore,
+        },
+    },
+    pubd::RepositoryManager,
+};
 
 use self::v0_9_0::{CaObjectsMigration, PubdObjectsMigration};
 
 pub mod v0_9_0;
 
 pub type UpgradeResult<T> = Result<T, UpgradeError>;
-const MIGRATION_SCOPE: &str = "migration-0.9";
+
+pub const MIGRATION_SCOPE: &str = "migration";
 
 //------------ UpgradeError --------------------------------------------------
 
@@ -98,13 +105,8 @@ pub trait UpgradeStore {
     fn needs_migrate(&self) -> Result<bool, UpgradeError>;
     fn migrate(&self) -> Result<(), UpgradeError>;
 
-    fn version_before(kv: &KeyValueStore, before: KeyStoreVersion) -> Result<bool, UpgradeError> {
-        let key = KeyStoreKey::simple("version".to_string());
-        match kv.get::<KeyStoreVersion>(&key) {
-            Err(e) => Err(UpgradeError::KeyStoreError(e)),
-            Ok(None) => Ok(true),
-            Ok(Some(current_version)) => Ok(current_version < before),
-        }
+    fn version_before(kv: &KeyValueStore, later: KeyStoreVersion) -> Result<bool, UpgradeError> {
+        kv.version_is_before(later).map_err(UpgradeError::KeyStoreError)
     }
 
     fn store(&self) -> &KeyValueStore;
@@ -145,17 +147,17 @@ pub trait UpgradeStore {
         let snapshot_bk_key = KeyStoreKey::scoped(scope.to_string(), "snapshot-bk.json".to_string());
 
         if self.store().has(&snapshot_key)? {
-            self.archive_migrated(&snapshot_key)?;
+            self.archive_to_migration_scope(&snapshot_key)?;
         }
 
         if self.store().has(&snapshot_bk_key)? {
-            self.archive_migrated(&snapshot_bk_key)?;
+            self.archive_to_migration_scope(&snapshot_bk_key)?;
         }
 
         Ok(())
     }
 
-    fn archive_migrated(&self, key: &KeyStoreKey) -> Result<(), UpgradeError> {
+    fn archive_to_migration_scope(&self, key: &KeyStoreKey) -> Result<(), UpgradeError> {
         self.store()
             .archive_to(&key, MIGRATION_SCOPE)
             .map_err(UpgradeError::KeyStoreError)
@@ -198,15 +200,19 @@ pub async fn update_storage_version(work_dir: &PathBuf) -> Result<(), UpgradeErr
 }
 
 fn upgrade_0_9_0(config: Arc<Config>) -> Result<(), UpgradeError> {
+    let mut pubd_dir = config.data_dir.clone();
+    let mut repo_manager = None;
+    pubd_dir.push("pubd");
+    if pubd_dir.exists() {
+        PubdObjectsMigration::migrate(config.clone())?;
+        let signer = Arc::new(KrillSigner::build(&config.data_dir)?);
+        repo_manager = Some(RepositoryManager::build(config.clone(), signer)?);
+    }
+
     let mut cas_dir = config.data_dir.clone();
     cas_dir.push("cas");
     if cas_dir.exists() {
-        CaObjectsMigration::migrate(config.clone())?;
-    }
-    let mut pubd_dir = config.data_dir.clone();
-    pubd_dir.push("pubd");
-    if pubd_dir.exists() {
-        PubdObjectsMigration::migrate(config)?;
+        CaObjectsMigration::migrate(config, repo_manager)?;
     }
     Ok(())
 }
@@ -224,12 +230,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_upgrade_0_9_0() {
+    fn test_upgrade_0_8_1() {
         let work_dir = tmp_dir();
-        let source = PathBuf::from("test-resources/migrations/v0_9_0/");
+        let source = PathBuf::from("test-resources/migrations/v0_8_1/");
         file::backup_dir(&source, &work_dir).unwrap();
 
-        let config = Arc::new(Config::test(&work_dir, true));
+        let config = Arc::new(Config::test(&work_dir, false));
+        let _ = config.init_logging();
+
+        upgrade_0_9_0(config).unwrap();
+
+        let _ = fs::remove_dir_all(work_dir);
+    }
+
+    #[test]
+    fn test_upgrade_0_6_0() {
+        let work_dir = tmp_dir();
+        let source = PathBuf::from("test-resources/migrations/v0_6_0/");
+        file::backup_dir(&source, &work_dir).unwrap();
+
+        let config = Arc::new(Config::test(&work_dir, false));
+        let _ = config.init_logging();
 
         upgrade_0_9_0(config).unwrap();
 

@@ -1,0 +1,12 @@
+{
+  "id": "ta",
+  "version": 1,
+  "details": {
+    "repo_updated": {
+      "embedded": {
+        "base_uri": "rsync://localhost/repo/ta/",
+        "rpki_notify": "https://localhost:3000/rrdp/notification.xml"
+      }
+    }
+  }
+}

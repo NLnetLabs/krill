@@ -242,12 +242,11 @@ impl ResourceClass {
 
         let rcvd_resources = rcvd_cert.resources();
 
-        let mut res = vec![];
-        res.push(CaEvtDet::CertificateReceived {
+        let mut res = vec![CaEvtDet::CertificateReceived {
             resource_class_name: self.name.clone(),
             ki,
             rcvd_cert: rcvd_cert.clone(),
-        });
+        }];
 
         if rcvd_resources != current_key.incoming_cert().resources() {
             debug!("Received a new certificate for resource class: {}, with resources: {}, will now re-issue certs and ROAs if needed.", self.name, rcvd_resources);

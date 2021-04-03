@@ -9,6 +9,8 @@ use serde::Serialize;
 
 use crate::commons::util::file;
 
+use super::KeyStoreVersion;
+
 //------------ KeyStoreKey ---------------------------------------------------
 
 #[derive(Clone, Debug)]
@@ -190,6 +192,25 @@ impl KeyValueStore {
         match self {
             KeyValueStore::Disk(disk_store) => disk_store.keys(scope, matching),
         }
+    }
+
+    /// Returns the version of a key store.
+    /// KeyStore use a specific key-value pair to track their version. If the key is absent it
+    /// is assumed that the version was from before Krill 0.6.0. An error is returned if the key
+    /// is present, but the value is corrupt or not recognized.
+    pub fn version(&self) -> Result<KeyStoreVersion, KeyValueError> {
+        let key = KeyStoreKey::simple("version".to_string());
+        self.get(&key)
+            .map(|version_opt| version_opt.unwrap_or(KeyStoreVersion::Pre0_6))
+    }
+
+    /// Returns whether the version of this key store predates the given version.
+    /// KeyStore use a specific key-value pair to track their version. If the key is absent it
+    /// is assumed that the version was from before Krill 0.6.0. An error is returned if the key
+    /// is present, but the value is corrupt or not recognized.
+    pub fn version_is_before(&self, later: KeyStoreVersion) -> Result<bool, KeyValueError> {
+        let version = self.version()?;
+        Ok(version < later)
     }
 }
 

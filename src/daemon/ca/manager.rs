@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::Arc;
 
+use api::{Publish, Update, Withdraw};
 use futures::future::join_all;
 use tokio::sync::Mutex;
 
@@ -17,10 +18,10 @@ use crate::{
         api::rrdp::PublishElement,
         api::{
             self, AddChildRequest, Base64, CaCommandDetails, CaCommandResult, CertAuthList, CertAuthSummary,
-            ChildAuthRequest, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Entitlements, Handle,
-            IssuanceRequest, IssuanceResponse, IssuedCert, ListReply, ParentCaContact, ParentCaReq, ParentHandle,
-            ParentStatuses, PublishDelta, RcvdCert, RepoInfo, RepoStatus, RepositoryContact, ResourceClassName,
-            ResourceSet, RevocationRequest, RevocationResponse, RtaName, StoredEffect, UpdateChildRequest,
+            ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Entitlements, Handle, IssuanceRequest,
+            IssuanceResponse, IssuedCert, ListReply, ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses,
+            PublishDelta, RcvdCert, RepoStatus, RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest,
+            RevocationResponse, RtaName, StoredEffect, UpdateChildRequest,
         },
         crypto::{IdCert, KrillSigner, ProtocolCms, ProtocolCmsBuilder},
         error::Error,
@@ -40,6 +41,7 @@ use crate::{
         config::Config,
         mq::MessageQueue,
     },
+    pubd::RepositoryManager,
 };
 
 use super::DeprecatedRepository;
@@ -207,9 +209,9 @@ impl CaManager {
     /// Initializes an embedded trust anchor with all resources.
     pub async fn init_ta(
         &self,
-        info: RepoInfo,
         ta_aia: uri::Rsync,
         ta_uris: Vec<uri::Https>,
+        repo_manager: &Arc<RepositoryManager>,
         actor: &Actor,
     ) -> KrillResult<()> {
         let ta_handle = ca::ta_handle();
@@ -222,9 +224,14 @@ impl CaManager {
             let init = IniDet::init(&ta_handle, self.signer.deref())?;
             self.ca_store.add(init)?;
 
-            // add embedded repo
-            let embedded = RepositoryContact::embedded(info);
-            let upd_repo_cmd = CmdDet::update_repo(&ta_handle, embedded, self.signer.clone(), actor);
+            // add to repo
+            let ta = self.get_trust_anchor().await?;
+            let pub_req = ta.publisher_request();
+            repo_manager.create_publisher(pub_req, actor)?;
+            let repository_response = repo_manager.repository_response(&ta_handle)?;
+            let contact = RepositoryContact::new(repository_response);
+
+            let upd_repo_cmd = CmdDet::update_repo(&ta_handle, contact, self.signer.clone(), actor);
             self.ca_store.command(upd_repo_cmd)?;
 
             // make trust anchor
@@ -321,11 +328,55 @@ impl CaManager {
         self.ca_store.has(handle).map_err(Error::AggregateStoreError)
     }
 
-    // Delete a CA after revocations and withdrawals.
-    pub async fn delete_ca(&self, handle: &Handle, actor: &Actor) -> KrillResult<()> {
-        warn!("Deleting CA '{}' as requested by: {}", handle, actor);
-        self.ca_store.drop_aggregate(handle)?;
-        self.locks.drop_ca(handle).await;
+    /// Delete a CA. Let it do best effort revocation requests and withdraw
+    /// all its objects first. Note that any children of this CA will be left
+    /// orphaned, and they will only learn of this sad fact when they choose
+    /// to call home.
+    pub async fn delete_ca(&self, ca_handle: &Handle, actor: &Actor) -> KrillResult<()> {
+        warn!("Deleting CA '{}' as requested by: {}", ca_handle, actor);
+
+        let ca = self.get_ca(ca_handle).await?;
+
+        // Request revocations from all parents - best effort
+        info!(
+            "Will try to request revocations from all parents CA '{}' before removing it.",
+            ca_handle
+        );
+        for parent in ca.parents() {
+            if let Err(e) = self.ca_parent_revoke(ca_handle, &parent).await {
+                warn!(
+                    "Removing CA '{}', but could not send revoke requests to parent '{}': {}",
+                    ca_handle, parent, e
+                );
+            }
+        }
+
+        // Clean all repos - again best effort
+        info!(
+            "Will try to clean up all repositories for CA '{}' before removing it.",
+            ca_handle
+        );
+        let mut repos: Vec<RepositoryContact> = self
+            .ca_repo_elements(ca_handle)
+            .await?
+            .into_iter()
+            .map(|(contact, _)| contact)
+            .collect();
+
+        for deprecated in self.ca_deprecated_repos(ca_handle)? {
+            repos.push(deprecated.into());
+        }
+
+        for repo_contact in repos {
+            if self.ca_repo_sync(ca_handle, &repo_contact, vec![]).await.is_err() {
+                info!(
+                    "Could not clean up deprecated repository. This is fine - objects there are no longer referenced."
+                );
+            }
+        }
+
+        self.ca_store.drop_aggregate(ca_handle)?;
+        self.locks.drop_ca(ca_handle).await;
         Ok(())
     }
 }
@@ -334,7 +385,7 @@ impl CaManager {
 ///
 impl CaManager {
     /// Gets the history for a CA.
-    pub async fn get_ca_history(&self, handle: &Handle, crit: CommandHistoryCriteria) -> KrillResult<CommandHistory> {
+    pub async fn ca_history(&self, handle: &Handle, crit: CommandHistoryCriteria) -> KrillResult<CommandHistory> {
         let ca_lock = self.locks.ca(handle).await;
         let _lock = ca_lock.read().await;
         self.ca_store
@@ -343,7 +394,7 @@ impl CaManager {
     }
 
     /// Shows the details for a CA command.
-    pub fn get_ca_command_details(&self, handle: &Handle, command: CommandKey) -> KrillResult<CaCommandDetails> {
+    pub fn ca_command_details(&self, handle: &Handle, command: CommandKey) -> KrillResult<CaCommandDetails> {
         let command = self.ca_store.get_command(handle, &command)?;
 
         let effect = command.effect().clone();
@@ -379,20 +430,11 @@ impl CaManager {
         actor: &Actor,
     ) -> KrillResult<ParentCaContact> {
         info!("CA '{}' process add child request: {}", &ca, &req);
-        let (child_handle, child_res, child_auth) = req.unwrap();
-
-        let id_cert = match &child_auth {
-            ChildAuthRequest::Embedded => None,
-            ChildAuthRequest::Rfc8183(req) => Some(req.id_cert().clone()),
-        };
+        let (child_handle, child_res, request) = req.unpack();
+        let (tag, _, id_cert) = request.unpack();
 
         let add_child = CmdDet::child_add(&ca, child_handle.clone(), id_cert, child_res, actor);
         self.send_command(add_child).await?;
-
-        let tag = match child_auth {
-            ChildAuthRequest::Rfc8183(req) => req.tag().cloned(),
-            _ => None,
-        };
 
         self.ca_parent_contact(ca, child_handle, tag, service_uri).await
     }
@@ -404,7 +446,7 @@ impl CaManager {
         ca.get_child(child).map(|details| details.clone().into())
     }
 
-    /// Show a contact for a child. Shows "embedded" if the parent does not know any id cert for the child.
+    /// Show a contact for a child.
     pub async fn ca_parent_contact(
         &self,
         ca_handle: &Handle,
@@ -412,16 +454,10 @@ impl CaManager {
         tag: Option<String>,
         service_uri: &uri::Https,
     ) -> KrillResult<ParentCaContact> {
-        let ca = self.get_ca(ca_handle).await?;
-        let child = ca.get_child(&child_handle)?;
-        if child.id_cert().is_some() {
-            let response = self
-                .ca_parent_response(ca_handle, child_handle, tag, service_uri)
-                .await?;
-            Ok(ParentCaContact::for_rfc6492(response))
-        } else {
-            Ok(ParentCaContact::Embedded)
-        }
+        let response = self
+            .ca_parent_response(ca_handle, child_handle, tag, service_uri)
+            .await?;
+        Ok(ParentCaContact::for_rfc6492(response))
     }
 
     /// Gets an RFC8183 Parent Response for the child.
@@ -635,7 +671,7 @@ impl CaManager {
     /// and all relevant content will be withdrawn from the repository.
     pub async fn ca_parent_remove(&self, handle: Handle, parent: ParentHandle, actor: &Actor) -> KrillResult<()> {
         // best effort, request revocations for any remaining keys under this parent.
-        if let Err(e) = self.ca_parent_revoke(&handle, &parent, actor).await {
+        if let Err(e) = self.ca_parent_revoke(&handle, &parent).await {
             warn!(
                 "Removing parent '{}' from CA '{}', but could not send revoke requests: {}",
                 parent, handle, e
@@ -648,11 +684,10 @@ impl CaManager {
     }
 
     /// Send revocation requests for a parent of a CA when the parent is removed.
-    pub async fn ca_parent_revoke(&self, handle: &Handle, parent: &ParentHandle, actor: &Actor) -> KrillResult<()> {
+    pub async fn ca_parent_revoke(&self, handle: &Handle, parent: &ParentHandle) -> KrillResult<()> {
         let ca = self.get_ca(&handle).await?;
         let revoke_requests = ca.revoke_under_parent(&parent, &self.signer)?;
-        self.send_revoke_requests(&handle, &parent, revoke_requests, actor)
-            .await?;
+        self.send_revoke_requests(&handle, &parent, revoke_requests).await?;
         Ok(())
     }
 
@@ -776,7 +811,7 @@ impl CaManager {
         let child = self.get_ca(handle).await?;
         let requests = child.revoke_requests(parent);
 
-        let revoke_responses = self.send_revoke_requests(handle, parent, requests, actor).await?;
+        let revoke_responses = self.send_revoke_requests(handle, parent, requests).await?;
 
         for (rcn, revoke_responses) in revoke_responses.into_iter() {
             for response in revoke_responses.into_iter() {
@@ -793,15 +828,11 @@ impl CaManager {
         handle: &Handle,
         parent: &ParentHandle,
         revoke_requests: HashMap<ResourceClassName, Vec<RevocationRequest>>,
-        actor: &Actor,
     ) -> KrillResult<HashMap<ResourceClassName, Vec<RevocationResponse>>> {
         let child = self.get_ca(handle).await?;
         match child.parent(parent)? {
             ParentCaContact::Ta(_) => Err(Error::TaNotAllowed),
-            ParentCaContact::Embedded => {
-                self.send_revoke_requests_embedded(revoke_requests, handle, parent, actor)
-                    .await
-            }
+
             ParentCaContact::Rfc6492(parent_res) => {
                 let uri = parent_res.service_uri().to_string();
 
@@ -837,37 +868,13 @@ impl CaManager {
         handle: &Handle,
         rcn: ResourceClassName,
         revocation: RevocationRequest,
-        actor: &Actor,
     ) -> KrillResult<HashMap<ResourceClassName, Vec<RevocationResponse>>> {
         let child = self.ca_store.get_latest(handle)?;
         let parent = child.parent_for_rc(&rcn)?;
         let mut requests = HashMap::new();
         requests.insert(rcn, vec![revocation]);
 
-        self.send_revoke_requests(handle, parent, requests, actor).await
-    }
-
-    async fn send_revoke_requests_embedded(
-        &self,
-        revoke_requests: HashMap<ResourceClassName, Vec<RevocationRequest>>,
-        handle: &Handle,
-        parent_h: &ParentHandle,
-        actor: &Actor,
-    ) -> KrillResult<HashMap<ResourceClassName, Vec<RevocationResponse>>> {
-        let mut revoke_map = HashMap::new();
-
-        for (rcn, revoke_requests) in revoke_requests.into_iter() {
-            let mut revocations = vec![];
-            for req in revoke_requests.into_iter() {
-                revocations.push((&req).into());
-
-                self.send_command(CmdDet::child_revoke_key(parent_h, handle.clone(), req, actor))
-                    .await?;
-            }
-            revoke_map.insert(rcn, revocations);
-        }
-
-        Ok(revoke_map)
+        self.send_revoke_requests(handle, parent, requests).await
     }
 
     async fn send_revoke_requests_rfc6492(
@@ -916,10 +923,7 @@ impl CaManager {
 
         let issued_certs = match child.parent(parent)? {
             ParentCaContact::Ta(_) => Err(Error::TaNotAllowed),
-            ParentCaContact::Embedded => {
-                self.send_cert_requests_embedded(cert_requests, handle, parent, actor)
-                    .await
-            }
+
             ParentCaContact::Rfc6492(parent_res) => {
                 let uri = parent_res.service_uri().to_string();
                 match self
@@ -961,46 +965,6 @@ impl CaManager {
         }
 
         Ok(())
-    }
-
-    async fn send_cert_requests_embedded(
-        &self,
-        requests: HashMap<ResourceClassName, Vec<IssuanceRequest>>,
-        handle: &Handle,
-        parent_h: &ParentHandle,
-        actor: &Actor,
-    ) -> KrillResult<HashMap<ResourceClassName, Vec<IssuedCert>>> {
-        let mut issued_map = HashMap::new();
-
-        for (rcn, requests) in requests.into_iter() {
-            let mut issued_certs = vec![];
-            for req in requests.into_iter() {
-                let pub_key = req.csr().public_key().clone();
-                let parent_class = req.class_name().clone();
-
-                let parent = self
-                    .send_command(CmdDet::child_certify(
-                        parent_h,
-                        handle.clone(),
-                        req,
-                        self.config.clone(),
-                        self.signer.clone(),
-                        actor,
-                    ))
-                    .await?;
-
-                let response =
-                    parent.issuance_response(handle, &parent_class, &pub_key, &self.config.issuance_timing)?;
-
-                let (_, _, _, issued) = response.unwrap();
-
-                issued_certs.push(issued);
-            }
-
-            issued_map.insert(rcn, issued_certs);
-        }
-
-        Ok(issued_map)
     }
 
     async fn send_cert_requests_rfc6492(
@@ -1071,30 +1035,18 @@ impl CaManager {
     ) -> KrillResult<api::Entitlements> {
         let ca = self.get_ca(&handle).await?;
         let contact = ca.parent(parent)?;
-        self.get_entitlements_from_parent_and_contact(handle, parent, contact)
-            .await
+        self.get_entitlements_from_contact(handle, contact).await
     }
 
-    pub async fn get_entitlements_from_parent_and_contact(
+    pub async fn get_entitlements_from_contact(
         &self,
         handle: &Handle,
-        parent: &ParentHandle,
         contact: &ParentCaContact,
     ) -> KrillResult<api::Entitlements> {
         match contact {
             ParentCaContact::Ta(_) => Err(Error::TaNotAllowed),
-            ParentCaContact::Embedded => self.get_entitlements_embedded(handle, parent).await,
             ParentCaContact::Rfc6492(res) => self.get_entitlements_rfc6492(handle, res).await,
         }
-    }
-
-    async fn get_entitlements_embedded(
-        &self,
-        handle: &Handle,
-        parent: &ParentHandle,
-    ) -> KrillResult<api::Entitlements> {
-        let parent = self.ca_store.get_latest(parent)?;
-        parent.list(handle, &self.config.issuance_timing)
     }
 
     async fn get_entitlements_rfc6492(
@@ -1149,6 +1101,112 @@ impl CaManager {
 /// # Publishing
 ///
 impl CaManager {
+    /// Synchronize all CAs with their repositories. Meant to be called by the background
+    /// schedular. This will log issues, but will not fail on errors with individual CAs -
+    /// because otherwise this would prevent other CAs from syncing. Note however, that the
+    /// repository status is tracked per CA and can be monitored.
+    ///
+    /// This function can still fail on internal errors, e.g. I/O issues when saving state
+    /// changes to the repo status structure.
+    pub async fn cas_repo_sync_all(&self, actor: &Actor) {
+        match self.ca_list(actor) {
+            Ok(ca_list) => {
+                for ca in ca_list.cas() {
+                    let ca_handle = ca.handle();
+                    if let Err(e) = self.ca_repo_sync_all(ca_handle).await {
+                        error!(
+                            "Could not synchronize CA '{}' with its repository/-ies. Error: {}",
+                            ca_handle, e
+                        );
+                    }
+                }
+            }
+            Err(e) => error!("Could not get CA list! {}", e),
+        }
+    }
+
+    /// Synchronize a CA with its repositories.
+    ///
+    /// Note typically a CA will have only one active repository, but in case
+    /// there are multiple during a migration, this function will ensure that
+    /// they are all synchronized.
+    ///
+    /// In case the CA had deprecated repositories, then a clean up will be
+    /// attempted. I.e. the CA will try to withdraw all objects from the deprecated
+    /// repository. If this clean up fails then the number of clean-up attempts
+    /// for the repository in question is incremented, and this function will
+    /// fail. When there have been 5 failed attempts, then the old repository
+    /// is assumed to be unreachable and it will be dropped - i.e. the CA will
+    /// no longer try to clean up objects.
+    pub async fn ca_repo_sync_all(&self, ca_handle: &Handle) -> KrillResult<()> {
+        // Note that this is a no-op for new CAs which do not yet have any repository configured.
+        for (repo_contact, ca_elements) in self.ca_repo_elements(ca_handle).await? {
+            self.ca_repo_sync(ca_handle, &repo_contact, ca_elements).await?;
+        }
+
+        // Clean-up of old repos
+        for deprecated in self.ca_deprecated_repos(ca_handle)? {
+            info!(
+                "Will try to clean up deprecated repository '{}' for CA '{}'",
+                deprecated.contact(),
+                ca_handle
+            );
+
+            if let Err(e) = self.ca_repo_sync(ca_handle, &deprecated.contact(), vec![]).await {
+                warn!("Could not clean up deprecated repository: {}", e);
+
+                if deprecated.clean_attempts() < 5 {
+                    self.ca_deprecated_repo_increment_clean_attempts(ca_handle, deprecated.contact())?;
+                    return Err(e);
+                }
+            }
+
+            self.ca_deprecated_repo_remove(ca_handle, deprecated.contact())?;
+        }
+
+        Ok(())
+    }
+
+    async fn ca_repo_sync(
+        &self,
+        ca_handle: &Handle,
+        repo_contact: &RepositoryContact,
+        publish_elements: Vec<PublishElement>,
+    ) -> KrillResult<()> {
+        let list_reply = self.send_rfc8181_list(ca_handle, repo_contact.response()).await?;
+
+        #[allow(clippy::mutable_key_type)]
+        let delta = {
+            let elements: HashMap<_, _> = list_reply.into_elements().into_iter().map(|el| el.unpack()).collect();
+
+            let mut all_objects: HashMap<_, _> = publish_elements.into_iter().map(|el| el.unpack()).collect();
+
+            let mut withdraws = vec![];
+            let mut updates = vec![];
+            for (uri, hash) in elements.into_iter() {
+                match all_objects.remove(&uri) {
+                    Some(base64) => {
+                        if base64.to_encoded_hash() != hash {
+                            updates.push(Update::new(None, uri, base64, hash))
+                        }
+                    }
+                    None => withdraws.push(Withdraw::new(None, uri, hash)),
+                }
+            }
+            let publishes = all_objects
+                .into_iter()
+                .map(|(uri, base64)| Publish::new(None, uri, base64))
+                .collect();
+
+            PublishDelta::new(publishes, updates, withdraws)
+        };
+
+        self.send_rfc8181_delta(ca_handle, repo_contact.response(), delta)
+            .await?;
+
+        Ok(())
+    }
+
     /// Get the current objects for a CA for each repository that it's using.
     ///
     /// Notes:
@@ -1172,7 +1230,11 @@ impl CaManager {
     }
 
     /// Increase the clean attempt counter for a deprecated repository
-    pub fn ca_deprecated_repo_inc_clean_attempts(&self, ca: &Handle, contact: &RepositoryContact) -> KrillResult<()> {
+    pub fn ca_deprecated_repo_increment_clean_attempts(
+        &self,
+        ca: &Handle,
+        contact: &RepositoryContact,
+    ) -> KrillResult<()> {
         self.ca_objects_store.with_ca_objects(ca, |objects| {
             objects.deprecated_repo_inc_clean_attempts(contact);
             Ok(())
@@ -1215,11 +1277,10 @@ impl CaManager {
         Ok(())
     }
 
-    pub async fn send_rfc8181_list(
+    async fn send_rfc8181_list(
         &self,
         ca_handle: &Handle,
         repository: &rfc8183::RepositoryResponse,
-        cleanup: bool,
     ) -> KrillResult<ListReply> {
         let uri = repository.service_uri().to_string();
 
@@ -1228,13 +1289,11 @@ impl CaManager {
             .await
         {
             Err(e) => {
-                if !cleanup {
-                    self.status_store
-                        .lock()
-                        .await
-                        .set_status_repo_failure(ca_handle, uri, &e)
-                        .await?;
-                }
+                self.status_store
+                    .lock()
+                    .await
+                    .set_status_repo_failure(ca_handle, uri, &e)
+                    .await?;
                 return Err(e);
             }
             Ok(reply) => reply,
@@ -1251,24 +1310,20 @@ impl CaManager {
             }
             rfc8181::ReplyMessage::SuccessReply => {
                 let err = Error::custom("Got success reply to list query?!");
-                if !cleanup {
-                    self.status_store
-                        .lock()
-                        .await
-                        .set_status_repo_failure(ca_handle, uri, &err)
-                        .await?;
-                }
+                self.status_store
+                    .lock()
+                    .await
+                    .set_status_repo_failure(ca_handle, uri, &err)
+                    .await?;
                 Err(err)
             }
             rfc8181::ReplyMessage::ErrorReply(e) => {
                 let err = Error::Custom(format!("Got error reply: {}", e));
-                if !cleanup {
-                    self.status_store
-                        .lock()
-                        .await
-                        .set_status_repo_failure(ca_handle, uri, &err)
-                        .await?;
-                }
+                self.status_store
+                    .lock()
+                    .await
+                    .set_status_repo_failure(ca_handle, uri, &err)
+                    .await?;
                 Err(err)
             }
         }

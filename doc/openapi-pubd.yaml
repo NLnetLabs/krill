@@ -41,7 +41,7 @@ info:
 
     # Errors
     The format of and level of detail included in error reports from a Krill
-    server depend on the type of failure that occured:
+    server depend on the type of failure that occurred:
     - **5XX/Server Errors:** This type of failure occurs within or is caused
       by the environment in which Krill operates, or by bugs within Krill
       itself. Examples include network issues, resource starvation, access
@@ -99,8 +99,8 @@ tags:
       'publishers' by the Krill Publication Server.
   - name: "Pubd"
     description: |
-      Initialise your Publication Server instance with your public repository URIs,
-      or delete your current instance so that it can be re-initialised.
+      Initialize your Publication Server instance with your public repository URIs,
+      or delete your current instance so that it can be re-initialized.
   - name: "Other"
 
 security:

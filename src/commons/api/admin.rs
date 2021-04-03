@@ -296,144 +296,59 @@ impl fmt::Display for PublisherDetails {
     }
 }
 
-//------------ PublisherClientRequest ----------------------------------------
-
-/// This type defines request for a new Publisher client, i.e. the proxy that
-/// is used by an embedded CA to do the actual publication.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct PublisherClientRequest {
-    handle: Handle,
-    server_info: RepositoryContact,
-}
-
-impl PublisherClientRequest {
-    pub fn rfc8183(handle: Handle, response: rfc8183::RepositoryResponse) -> Self {
-        let server_info = RepositoryContact::rfc8181(response);
-        PublisherClientRequest { handle, server_info }
-    }
-
-    pub fn embedded(handle: Handle, repo_info: RepoInfo) -> Self {
-        let server_info = RepositoryContact::embedded(repo_info);
-        PublisherClientRequest { handle, server_info }
-    }
-
-    pub fn unwrap(self) -> (Handle, RepositoryContact) {
-        (self.handle, self.server_info)
-    }
-}
-
-//------------ RepositoryUpdate ----------------------------------------------
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[allow(clippy::large_enum_variant)]
-#[serde(rename_all = "snake_case")]
-pub enum RepositoryUpdate {
-    Embedded,
-    Rfc8181(rfc8183::RepositoryResponse),
-}
-
-impl RepositoryUpdate {
-    pub fn embedded() -> Self {
-        RepositoryUpdate::Embedded
-    }
-
-    pub fn rfc8181(response: rfc8183::RepositoryResponse) -> Self {
-        RepositoryUpdate::Rfc8181(response)
-    }
-
-    pub fn as_response_opt(&self) -> Option<&rfc8183::RepositoryResponse> {
-        match self {
-            RepositoryUpdate::Embedded => None,
-            RepositoryUpdate::Rfc8181(res) => Some(res),
-        }
-    }
-}
-
 //------------ PubServerContact ----------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[allow(clippy::large_enum_variant)]
-#[serde(rename_all = "snake_case")]
-#[serde(tag = "type")]
-pub enum RepositoryContact {
-    Embedded {
-        info: RepoInfo,
-    },
-    Rfc8181 {
-        server_response: rfc8183::RepositoryResponse,
-    },
+pub struct RepositoryContact {
+    repository_response: rfc8183::RepositoryResponse,
 }
 
 impl RepositoryContact {
+    pub fn new(repository_response: rfc8183::RepositoryResponse) -> Self {
+        RepositoryContact { repository_response }
+    }
+
     pub fn uri(&self) -> String {
-        match self {
-            RepositoryContact::Embedded { .. } => "embedded".to_string(),
-            RepositoryContact::Rfc8181 { server_response } => server_response.service_uri().to_string(),
-        }
+        self.repository_response.service_uri().to_string()
     }
 
-    pub fn embedded(info: RepoInfo) -> Self {
-        RepositoryContact::Embedded { info }
-    }
-
-    pub fn is_embedded(&self) -> bool {
-        matches!(self, RepositoryContact::Embedded { .. })
-    }
-
-    pub fn rfc8181(server_response: rfc8183::RepositoryResponse) -> Self {
-        RepositoryContact::Rfc8181 { server_response }
-    }
-
-    pub fn is_rfc8183(&self) -> bool {
-        !self.is_embedded()
-    }
-
-    pub fn as_reponse_opt(&self) -> Option<&rfc8183::RepositoryResponse> {
-        match self {
-            RepositoryContact::Embedded { .. } => None,
-            RepositoryContact::Rfc8181 { server_response } => Some(server_response),
-        }
+    pub fn response(&self) -> &rfc8183::RepositoryResponse {
+        &self.repository_response
     }
 
     pub fn repo_info(&self) -> &RepoInfo {
-        match self {
-            RepositoryContact::Embedded { info } => info,
-            RepositoryContact::Rfc8181 { server_response } => server_response.repo_info(),
-        }
+        self.repository_response.repo_info()
     }
 
-    pub fn service_uri_opt(&self) -> Option<&ServiceUri> {
-        match self {
-            RepositoryContact::Embedded { .. } => None,
-            RepositoryContact::Rfc8181 { server_response } => Some(server_response.service_uri()),
-        }
+    pub fn service_uri(&self) -> &ServiceUri {
+        self.repository_response.service_uri()
     }
 }
 
 impl fmt::Display for RepositoryContact {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let msg = match self {
-            RepositoryContact::Embedded { .. } => "embedded publication server".to_string(),
-            RepositoryContact::Rfc8181 { server_response } => {
-                format!("remote publication server at {}", server_response.service_uri())
-            }
-        };
-        write!(f, "{}", msg)
+        write!(
+            f,
+            "remote publication server at {}",
+            self.repository_response.service_uri()
+        )
     }
 }
 
 impl std::hash::Hash for RepositoryContact {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.as_reponse_opt().map(|r| r.to_string()).hash(state)
+        self.repository_response.to_string().hash(state)
     }
 }
 
-impl PartialEq for RepositoryContact {
+impl std::cmp::PartialEq for RepositoryContact {
     fn eq(&self, other: &Self) -> bool {
-        self.as_reponse_opt().map(|r| r.to_string()) == other.as_reponse_opt().map(|r| r.to_string())
+        self.repository_response == other.repository_response
     }
 }
 
-impl Eq for RepositoryContact {}
+impl std::cmp::Eq for RepositoryContact {}
 
 //------------ ParentCaReq ---------------------------------------------------
 
@@ -515,17 +430,12 @@ impl Eq for TaCertDetails {}
 #[serde(tag = "type")]
 pub enum ParentCaContact {
     Ta(TaCertDetails),
-    Embedded,
     Rfc6492(rfc8183::ParentResponse),
 }
 
 impl ParentCaContact {
     pub fn for_rfc6492(response: rfc8183::ParentResponse) -> Self {
         ParentCaContact::Rfc6492(response)
-    }
-
-    pub fn embedded() -> Self {
-        ParentCaContact::Embedded
     }
 
     pub fn for_ta(ta_cert_details: TaCertDetails) -> Self {
@@ -548,7 +458,6 @@ impl fmt::Display for ParentCaContact {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             ParentCaContact::Ta(details) => write!(f, "{}", details.tal()),
-            ParentCaContact::Embedded => write!(f, "Embedded parent"),
             ParentCaContact::Rfc6492(response) => {
                 let bytes = response.encode_vec();
                 let xml = unsafe { from_utf8_unchecked(&bytes) };
@@ -563,7 +472,6 @@ impl fmt::Display for ParentCaContact {
 #[serde(rename_all = "snake_case")]
 pub enum StorableParentContact {
     Ta,
-    Embedded,
     Rfc6492,
 }
 
@@ -571,7 +479,6 @@ impl fmt::Display for StorableParentContact {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             StorableParentContact::Ta => write!(f, "This CA is a TA"),
-            StorableParentContact::Embedded => write!(f, "Embedded parent"),
             StorableParentContact::Rfc6492 => write!(f, "RFC 6492 Parent"),
         }
     }
@@ -581,7 +488,6 @@ impl From<ParentCaContact> for StorableParentContact {
     fn from(parent: ParentCaContact) -> Self {
         match parent {
             ParentCaContact::Ta(_) => StorableParentContact::Ta,
-            ParentCaContact::Embedded => StorableParentContact::Embedded,
             ParentCaContact::Rfc6492(_) => StorableParentContact::Rfc6492,
         }
     }
@@ -610,63 +516,32 @@ impl CertAuthInit {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[allow(clippy::large_enum_variant)]
-#[serde(rename_all = "snake_case")]
-pub enum CertAuthPubMode {
-    Embedded,
-    Rfc8181(IdCert),
-}
-
 //------------ AddChildRequest -----------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AddChildRequest {
     handle: Handle,
     resources: ResourceSet,
-    auth: ChildAuthRequest,
+    child_request: rfc8183::ChildRequest,
 }
 
 impl fmt::Display for AddChildRequest {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "handle '{}' resources '{}' kind '{}'",
-            self.handle, self.resources, self.auth
-        )
+        write!(f, "handle '{}' resources '{}'", self.handle, self.resources,)
     }
 }
 
 impl AddChildRequest {
-    pub fn new(handle: Handle, resources: ResourceSet, auth: ChildAuthRequest) -> Self {
+    pub fn new(handle: Handle, resources: ResourceSet, request: rfc8183::ChildRequest) -> Self {
         AddChildRequest {
             handle,
             resources,
-            auth,
+            child_request: request,
         }
     }
 
-    pub fn unwrap(self) -> (Handle, ResourceSet, ChildAuthRequest) {
-        (self.handle, self.resources, self.auth)
-    }
-}
-
-//------------ ChildAuthRequest ----------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[allow(clippy::large_enum_variant)]
-#[serde(rename_all = "snake_case")]
-pub enum ChildAuthRequest {
-    Embedded,
-    Rfc8183(rfc8183::ChildRequest),
-}
-
-impl fmt::Display for ChildAuthRequest {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            ChildAuthRequest::Embedded => write!(f, "embedded"),
-            ChildAuthRequest::Rfc8183(req) => req.fmt(f),
-        }
+    pub fn unpack(self) -> (Handle, ResourceSet, rfc8183::ChildRequest) {
+        (self.handle, self.resources, self.child_request)
     }
 }
 

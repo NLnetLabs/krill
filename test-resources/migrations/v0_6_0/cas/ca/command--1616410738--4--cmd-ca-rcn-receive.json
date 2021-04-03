@@ -1,0 +1,22 @@
+{
+  "actor": "krill",
+  "time": "2021-03-22T10:58:58.744562377Z",
+  "handle": "ca",
+  "version": 5,
+  "sequence": 4,
+  "details": {
+    "update_rcvd_cert": [
+      "0",
+      {
+        "asn": "",
+        "v4": "192.168.0.0/16",
+        "v6": ""
+      }
+    ]
+  },
+  "effect": {
+    "events": [
+      5
+    ]
+  }
+}

@@ -21,18 +21,20 @@ use hyper::server::conn::AddrIncoming;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::Method;
 
-use crate::commons::actor::Actor;
 use crate::commons::api::{
     BgpStats, ChildHandle, CommandHistoryCriteria, Handle, ParentCaContact, ParentCaReq, ParentHandle, PublisherList,
-    RepositoryUpdate, RoaDefinitionUpdates, RtaName, Token,
+    RoaDefinitionUpdates, RtaName, Token,
 };
 use crate::commons::bgp::BgpAnalysisAdvice;
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::AggregateStoreError;
 use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
+use crate::commons::{actor::Actor, api::RepositoryContact};
 use crate::commons::{KrillEmptyResult, KrillResult};
-use crate::constants::{KRILL_ENV_UPGRADE_ONLY, KRILL_VERSION_MAJOR, KRILL_VERSION_MINOR, KRILL_VERSION_PATCH, NO_RESOURCE};
+use crate::constants::{
+    KRILL_ENV_UPGRADE_ONLY, KRILL_VERSION_MAJOR, KRILL_VERSION_MINOR, KRILL_VERSION_PATCH, NO_RESOURCE,
+};
 use crate::daemon::auth::common::permissions::Permission;
 use crate::daemon::auth::Auth;
 use crate::daemon::ca::RouteAuthorizationUpdates;
@@ -648,8 +650,8 @@ pub async fn rfc6492(req: Request) -> RoutingResult {
             Ok(bytes) => bytes,
             Err(e) => return render_error(e),
         };
-        let lock = state.read().await;
-        match lock.rfc6492(ca, bytes, &actor).await {
+        let krill_server = state.read().await;
+        match krill_server.rfc6492(ca, bytes, &actor).await {
             Ok(bytes) => Ok(HttpResponse::rfc6492(bytes.to_vec())),
             Err(e) => render_error(e),
         }
@@ -838,7 +840,7 @@ async fn api_cas(req: Request, path: &mut RequestPath) -> RoutingResult {
             match path.next() {
                 None => match *req.method() {
                     Method::GET => api_ca_info(req, ca).await,
-                    Method::DELETE => api_ca_deactivate(req, ca).await,
+                    Method::DELETE => api_ca_delete(req, ca).await,
                     _ => render_unknown_method(),
                 },
                 Some("child_request.xml") => api_ca_child_req_xml(req, ca).await,
@@ -1031,7 +1033,7 @@ pub async fn api_show_pbl(req: Request, publisher: Handle) -> RoutingResult {
 //------------ repository_response ---------------------------------------------
 
 pub async fn api_repository_response_xml(req: Request, publisher: Handle) -> RoutingResult {
-    aa!(req, Permission::PUB_READ, publisher.clone(),{
+    aa!(req, Permission::PUB_READ, publisher.clone(), {
         match repository_response(&req, &publisher).await {
             Ok(res) => Ok(HttpResponse::xml(res.encode_vec())),
             Err(e) => render_error(e),
@@ -1179,13 +1181,13 @@ async fn api_ca_info(req: Request, handle: Handle) -> RoutingResult {
     )
 }
 
-async fn api_ca_deactivate(req: Request, handle: Handle) -> RoutingResult {
+async fn api_ca_delete(req: Request, handle: Handle) -> RoutingResult {
     let actor = req.actor();
     aa!(
         req,
         Permission::CA_DELETE,
         handle.clone(),
-        render_json_res(req.state().read().await.ca_deactivate(&handle, &actor).await)
+        render_json_res(req.state().read().await.ca_delete(&handle, &actor).await)
     )
 }
 
@@ -1383,7 +1385,7 @@ async fn api_ca_repo_status(req: Request, handle: Handle) -> RoutingResult {
     }
 }
 
-fn extract_repository_update(handle: &Handle, bytes: Bytes) -> Result<RepositoryUpdate, Error> {
+fn extract_repository_contact(handle: &Handle, bytes: Bytes) -> Result<RepositoryContact, Error> {
     let string = String::from_utf8(bytes.to_vec()).map_err(Error::custom)?;
 
     // TODO: Switch based on Content-Type header
@@ -1393,7 +1395,7 @@ fn extract_repository_update(handle: &Handle, bytes: Bytes) -> Result<Repository
         } else {
             let response = rfc8183::RepositoryResponse::validate(string.as_bytes())
                 .map_err(|e| Error::CaRepoResponseInvalidXml(handle.clone(), e.to_string()))?;
-            Ok(RepositoryUpdate::Rfc8181(response))
+            Ok(RepositoryContact::new(response))
         }
     } else {
         serde_json::from_str(&string).map_err(Error::JsonError)
@@ -1401,16 +1403,16 @@ fn extract_repository_update(handle: &Handle, bytes: Bytes) -> Result<Repository
 }
 
 pub async fn api_ca_repo_update(req: Request, handle: Handle) -> RoutingResult {
-    aa!(req, Permission::CA_UPDATE, handle.clone(),  {
+    aa!(req, Permission::CA_UPDATE, handle.clone(), {
         let actor = req.actor();
         let server = req.state().clone();
 
         match req
             .api_bytes()
             .await
-            .map(|bytes| extract_repository_update(&handle, bytes))
+            .map(|bytes| extract_repository_contact(&handle, bytes))
         {
-            Ok(Ok(update)) => render_empty_res(server.read().await.ca_update_repo(handle, update, &actor).await),
+            Ok(Ok(update)) => render_empty_res(server.read().await.ca_repo_update(handle, update, &actor).await),
             Ok(Err(e)) | Err(e) => render_error(e),
         }
     })
@@ -1610,9 +1612,7 @@ async fn api_ca_routes_analysis(req: Request, path: &mut RequestPath, ca: Handle
                     let state = req.state.clone();
                     match req.json().await {
                         Err(e) => render_error(e),
-                        Ok(updates) => {
-                            render_json_res(state.read().await.ca_routes_bgp_dry_run(&ca, updates).await)
-                        }
+                        Ok(updates) => render_json_res(state.read().await.ca_routes_bgp_dry_run(&ca, updates).await),
                     }
                 }
                 _ => render_unknown_method(),
@@ -1623,13 +1623,9 @@ async fn api_ca_routes_analysis(req: Request, path: &mut RequestPath, ca: Handle
                     let server = req.state().clone();
                     match req.json().await {
                         Err(e) => render_error(e),
-                        Ok(resources) => render_json_res(
-                            server
-                                .read()
-                                .await
-                                .ca_routes_bgp_suggest(&ca, Some(resources))
-                                .await,
-                        ),
+                        Ok(resources) => {
+                            render_json_res(server.read().await.ca_routes_bgp_suggest(&ca, Some(resources)).await)
+                        }
                     }
                 }
                 _ => render_unknown_method(),

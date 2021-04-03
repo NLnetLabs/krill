@@ -29,13 +29,13 @@ impl LastResponse {}
 /// and [ResourceClassName] are kept in the parent's [ResourceClass].
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildDetails {
-    id_cert: Option<IdCert>,
+    id_cert: IdCert,
     resources: ResourceSet,
     used_keys: HashMap<KeyIdentifier, LastResponse>,
 }
 
 impl ChildDetails {
-    pub fn new(id_cert: Option<IdCert>, resources: ResourceSet) -> Self {
+    pub fn new(id_cert: IdCert, resources: ResourceSet) -> Self {
         ChildDetails {
             id_cert,
             resources,
@@ -43,12 +43,12 @@ impl ChildDetails {
         }
     }
 
-    pub fn id_cert(&self) -> Option<&IdCert> {
-        self.id_cert.as_ref()
+    pub fn id_cert(&self) -> &IdCert {
+        &self.id_cert
     }
 
     pub fn set_id_cert(&mut self, id_cert: IdCert) {
-        self.id_cert = Some(id_cert);
+        self.id_cert = id_cert;
     }
 
     pub fn resources(&self) -> &ResourceSet {

@@ -10,15 +10,18 @@ use bytes::Bytes;
 
 use rpki::uri::Rsync;
 
-use krill::cli::options::{BulkCaCommand, CaCommand, Command, PublishersCommand};
 use krill::cli::report::ApiResponse;
 use krill::commons::api::{
-    Handle, ObjectName, ParentCaReq, ParentHandle, PublisherHandle, RepoStatus, RepositoryUpdate,
-    ResourceClassKeysInfo, ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates, RtaList,
+    Handle, ObjectName, ParentCaReq, ParentHandle, PublisherHandle, ResourceClassKeysInfo, ResourceClassName,
+    ResourceSet, RoaDefinition, RoaDefinitionUpdates, RtaList,
 };
 use krill::commons::remote::rfc8183;
 use krill::daemon::ca::ta_handle;
 use krill::test::*;
+use krill::{
+    cli::options::{BulkCaCommand, CaCommand, Command, PublishersCommand},
+    commons::api::RepositoryContact,
+};
 
 fn handle_for(s: &str) -> Handle {
     Handle::from_str(s).unwrap()
@@ -28,16 +31,8 @@ fn resources(v4: &str) -> ResourceSet {
     ResourceSet::from_strs("", v4, "").unwrap()
 }
 
-async fn repo_status(ca: &Handle) -> RepoStatus {
-    let command = Command::CertAuth(CaCommand::RepoStatus(ca.clone()));
-    match krill_admin(command).await {
-        ApiResponse::RepoStatus(state) => state,
-        _ => panic!("Expected repo state"),
-    }
-}
-
-async fn repo_update(ca: &Handle, update: RepositoryUpdate) {
-    let command = Command::CertAuth(CaCommand::RepoUpdate(ca.clone(), update));
+async fn repo_update(ca: &Handle, contact: RepositoryContact) {
+    let command = Command::CertAuth(CaCommand::RepoUpdate(ca.clone(), contact));
     krill_admin(command).await;
 }
 
@@ -67,21 +62,6 @@ async fn dedicated_repo_add_publisher(req: rfc8183::PublisherRequest) {
     krill_dedicated_pubd_admin(command).await;
 }
 
-async fn repo_ready(ca: &Handle) -> bool {
-    for _ in 0..300 {
-        // let repo_state = repo_state(ca).await;
-        // if repo_state.as_list().elements().len() == number {
-        let repo_state = repo_status(ca).await;
-        if let Some(exchange) = repo_state.last_exchange() {
-            if exchange.was_success() {
-                return true;
-            }
-        }
-        delay_for(Duration::from_millis(100)).await
-    }
-    false
-}
-
 async fn set_up_ca_with_repo(ca: &Handle) {
     init_ca(ca).await;
 
@@ -93,9 +73,8 @@ async fn set_up_ca_with_repo(ca: &Handle) {
     let response = embedded_repository_response(ca).await;
 
     // Update the repo for the child
-    let update = RepositoryUpdate::Rfc8181(response);
-    repo_update(ca, update).await;
-    assert!(repo_ready(ca).await);
+    let contact = RepositoryContact::new(response);
+    repo_update(ca, contact).await;
 }
 
 async fn expected_mft_and_crl(ca: &Handle, rcn: &ResourceClassName) -> Vec<String> {
@@ -177,7 +156,7 @@ async fn will_publish(test_msg: &str, publisher: &PublisherHandle, files: &[Stri
 }
 
 async fn set_up_ca_under_parent_with_resources(ca: &Handle, parent: &ParentHandle, resources: &ResourceSet) {
-    let child_request = child_request(ca).await;
+    let child_request = request(ca).await;
     let parent = {
         let contact = add_child_rfc6492(parent, ca, child_request, resources.clone()).await;
         ParentCaReq::new(parent.clone(), contact)
@@ -759,9 +738,8 @@ async fn functional() {
         let response = dedicated_repository_response(&ca3).await;
 
         // Update CA3 to use dedicated repo
-        let update = RepositoryUpdate::Rfc8181(response);
-        repo_update(&ca3, update).await;
-        assert!(repo_ready(&ca3).await);
+        let contact = RepositoryContact::new(response);
+        repo_update(&ca3, contact).await;
 
         // This should result in a key roll and content published in both repos
         assert!(state_becomes_new_key(&ca3).await);

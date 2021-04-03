@@ -43,7 +43,7 @@ pub enum CmdDet {
     // ------------------------------------------------------------
 
     // Add a new child under this parent CA
-    ChildAdd(ChildHandle, Option<IdCert>, ResourceSet),
+    ChildAdd(ChildHandle, IdCert, ResourceSet),
 
     // Update the resource entitlements for an existing child.
     ChildUpdateResources(ChildHandle, ResourceSet),
@@ -133,9 +133,6 @@ pub enum CmdDet {
     // Update the repository where this CA publishes
     RepoUpdate(RepositoryContact, Arc<KrillSigner>),
 
-    // Clean up the old pending to withdraw repo.
-    RepoRemoveOld(Arc<KrillSigner>),
-
     // ------------------------------------------------------------
     // Resource Tagged Attestations
     // ------------------------------------------------------------
@@ -176,9 +173,9 @@ impl From<CmdDet> for StorableCaCommand {
             // ------------------------------------------------------------
             // Being a parent
             // ------------------------------------------------------------
-            CmdDet::ChildAdd(child, id_cert_opt, resources) => StorableCaCommand::ChildAdd {
+            CmdDet::ChildAdd(child, id_cert, resources) => StorableCaCommand::ChildAdd {
                 child,
-                ski: id_cert_opt.map(|c| c.ski_hex()),
+                ski: id_cert.ski_hex(),
                 resources,
             },
             CmdDet::ChildUpdateResources(child, resources) => {
@@ -253,9 +250,8 @@ impl From<CmdDet> for StorableCaCommand {
             // Publishing
             // ------------------------------------------------------------
             CmdDet::RepoUpdate(contact, _) => StorableCaCommand::RepoUpdate {
-                service_uri: contact.service_uri_opt().cloned(),
+                service_uri: contact.service_uri().clone(),
             },
-            CmdDet::RepoRemoveOld(_) => StorableCaCommand::RepoRemoveOld,
 
             // ------------------------------------------------------------
             // Resource Tagged Attestations
@@ -278,7 +274,7 @@ impl CmdDet {
     pub fn child_add(
         handle: &Handle,
         child_handle: Handle,
-        child_id_cert: Option<IdCert>,
+        child_id_cert: IdCert,
         child_resources: ResourceSet,
         actor: &Actor,
     ) -> Cmd {
@@ -405,10 +401,6 @@ impl CmdDet {
 
     pub fn update_repo(handle: &Handle, contact: RepositoryContact, signer: Arc<KrillSigner>, actor: &Actor) -> Cmd {
         eventsourcing::SentCommand::new(handle, None, CmdDet::RepoUpdate(contact, signer), actor)
-    }
-
-    pub fn remove_old_repo(handle: &Handle, signer: Arc<KrillSigner>, actor: &Actor) -> Cmd {
-        eventsourcing::SentCommand::new(handle, None, CmdDet::RepoRemoveOld(signer), actor)
     }
 
     //-------------------------------------------------------------------------------

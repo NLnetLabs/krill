@@ -87,9 +87,16 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
         logging.info(f'-> Adding CA "{ca_handle}"')
         krill_ca_api.add_ca(krill_ca_api_lib.AddCARequest(ca_handle))
 
+        logging.info(f'-> Getting RFC 8183 publisher request for CA "{ca_handle}"')
+        rfc8183_request = krill_ca_api.get_ca_publisher_request(ca_handle, format='json')
+
+        logging.info(f'-> Getting RFC 8183 repository_response for CA "{ca_handle}"')
+        rfc8183_response = krill_pub_api.add_publisher(rfc8183_request)
+
+        logging.info(f'-> ')
         krill_ca_api.update_ca_repository(
             ca_handle,
-            rfc8183='embedded')
+            inline_object=krill_ca_api_lib.InlineObject(repository_response=rfc8183_response))
         logging.info(f'-> Added CA "{ca_handle}"')
 
     def link_child_ca_under_parent_ca(child_ca_handle, parent_ca_handle, resources):
@@ -100,7 +107,7 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
         req = krill_ca_api_lib.AddCAChildRequest(
             handle=child_ca_handle,
             resources=resources,
-            auth='embedded')
+            child_request=rfc8183_request)
         krill_ca_api.add_child_ca(parent_ca_handle, req)
         logging.info(f'-> Added CA "{child_ca_handle} as a child of "{parent_ca_handle}"')
 
@@ -109,14 +116,15 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
 
         logging.info(f'-> Waiting for resources of child CA "{child_ca_handle}" to be registered')
         wait_until_child_ca_has_at_least_one(parent_ca_handle, child_ca_handle, 'entitled_resources.asn')
-    
+
     def link_parent_ca_above_child_ca(parent_ca_handle, child_ca_handle, resources):
-        logging.info(f'-> Getting RFC 6492 parent contact for CA "{child_ca_handle}"')
+        logging.info(f'-> Getting RFC 8183 parent response for CA "{child_ca_handle}"')
+        rfc8183parentresponse = krill_ca_api.get_child_ca_parent_contact(parent_ca_handle, child_ca_handle)
 
         logging.info(f'-> Adding CA "{parent_ca_handle}" as a parent of "{child_ca_handle}"')
         req = krill_ca_api_lib.AddParentCARequest(
             handle=parent_ca_handle,
-            contact=krill_ca_api_lib.Embedded())
+            contact=rfc8183parentresponse)
         krill_ca_api.add_ca_parent(child_ca_handle, req)
         logging.info(f'-> Added CA "{parent_ca_handle}" as a parent of "{child_ca_handle}"')
 
@@ -163,8 +171,6 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
 
         parent_resources = krill_ca_api_lib.Resources(asn=KRILL_PARENT_ASNS, v4=KRILL_PARENT_IPV4S, v6=KRILL_PARENT_IPV6S)
         child_resources = krill_ca_api_lib.Resources(asn=KRILL_CHILD_ASNS, v4=KRILL_CHILD_IPV4S, v6=KRILL_CHILD_IPV6S)
-
-        pubs = krill_pub_api.list_publishers()
 
         logging.info(f'Checking if Krill has an embedded TA "{ta_handle}"')
         ca_handles = [ca.handle for ca in krill_ca_api.list_cas().cas]

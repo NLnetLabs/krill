@@ -2,7 +2,6 @@ use std::fs;
 use std::sync::Arc;
 
 use bytes::Bytes;
-use rpki::uri;
 
 use crate::commons::api::PublicationServerUris;
 use crate::commons::crypto::KrillSigner;
@@ -216,11 +215,8 @@ impl RepositoryManager {
     }
 
     /// Returns the RFC8183 Repository Response for the publisher.
-    pub fn repository_response(
-        &self,
-        rfc8181_uri: uri::Https,
-        publisher: &PublisherHandle,
-    ) -> KrillResult<rfc8183::RepositoryResponse> {
+    pub fn repository_response(&self, publisher: &PublisherHandle) -> KrillResult<rfc8183::RepositoryResponse> {
+        let rfc8181_uri = self.config.rfc8181_uri(publisher);
         self.access.repository_response(rfc8181_uri, publisher)
     }
 
@@ -265,7 +261,10 @@ mod tests {
 
     use tokio::time::delay_for;
 
+    use rpki::uri;
+
     use super::*;
+
     use crate::{
         commons::{
             api::rrdp::{PublicationDeltaError, RrdpSession},
