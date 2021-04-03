@@ -1573,7 +1573,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 })
             }
 
-            _ => Err(Error::ApiInvalidCredentials("Missing credentials".to_string())),
+            _ => Err(Error::ApiInvalidCredentials("Request is not RFC-6749 section 4.1.2 compliant".to_string())),
         }
     }
 
