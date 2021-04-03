@@ -206,11 +206,13 @@ impl OpenIDConnectAuthProvider {
         // Contact the OpenID Connect: identity provider discovery endpoint to
         // learn about and configure ourselves to talk to it.
         let meta = WantedMeta::discover(&issuer, logging_http_client).map_err(|e| {
-            Error::Custom(format!(
-                "OpenID Connect: Discovery failed with issuer {}: {}",
-                issuer.to_string(),
-                e.to_string()
-            ))
+            let source: Option<_> = {
+                use std::error::Error;
+                e.source().map(|v| v.to_string())
+            };
+            Self::internal_error(
+                format!("OpenID Connect: Discovery failed with issuer {}: {}", issuer.as_str(), e),
+                source)
         })?;
 
         Ok(meta)
@@ -876,13 +878,18 @@ impl OpenIDConnectAuthProvider {
             .exchange_code(AuthorizationCode::new(code.to_string()))
             .request(logging_http_client)
             .map_err(|e| {
+                let source: Option<_> = {
+                    use std::error::Error;
+                    e.source().map(|v| v.to_string())
+                };
+
                 let (msg, additional_info) = match e {
                     RequestTokenError::ServerResponse(provider_err) => {
-                        (format!("Server returned error response: {:?}", provider_err), None)
+                        (format!("Server returned error response: {:?}", provider_err), source)
                     }
                     RequestTokenError::Request(req) => {
                         self.on_connection_issue(lock_guard);
-                        (format!("Request failed: {:?}", req), None)
+                        (format!("Request failed: {:?}", req), source)
                     },
                     RequestTokenError::Parse(parse_err, res) => {
                         let body = match std::str::from_utf8(&res) {
@@ -894,9 +901,9 @@ impl OpenIDConnectAuthProvider {
                     RequestTokenError::Other(err_string) => match err_string.as_str() {
                         "temporarily_unavailable" | "server_error" => {
                             self.on_connection_issue(lock_guard);
-                            (err_string.to_string(), None)
+                            (err_string.to_string(), source)
                         }
-                        _ => (err_string, None),
+                        _ => (err_string, source),
                     }
                 };
                 OpenIDConnectAuthProvider::internal_error(
@@ -969,29 +976,34 @@ impl OpenIDConnectAuthProvider {
                     .require_signed_response(false)
                     .request(logging_http_client)
                     .map_err(|e| {
+                        let source: Option<_> = {
+                            use std::error::Error;
+                            e.source().map(|v| v.to_string())
+                        };
+        
                         let (msg, additional_info) = match e {
                             UserInfoError::ClaimsVerification(provider_err) => {
-                                (format!("Failed to verify claims: {:?}", provider_err), None)
+                                (format!("Failed to verify claims: {:?}", provider_err), source)
                             }
                             UserInfoError::Response(_, _, provider_err) => {
-                                (format!("Server returned error response: {:?}", provider_err), None)
+                                (format!("Server returned error response: {:?}", provider_err), source)
                             }
                             UserInfoError::Request(req) => {
                                 self.on_connection_issue(lock_guard);
-                                (format!("Request failed: {:?}", req), None)
+                                (format!("Request failed: {:?}", req), source)
                             }
                             UserInfoError::Parse(parse_err) => {
-                                (format!("Failed to parse server response: {}", parse_err), None)
+                                (format!("Failed to parse server response: {}", parse_err), source)
                             }
                             UserInfoError::Other(err_string) => match err_string.as_str() {
                                 "temporarily_unavailable" | "server_error" => {
                                     self.on_connection_issue(lock_guard);
-                                    (err_string.to_string(), None)
+                                    (err_string.to_string(), source)
                                 }
-                                _ => (err_string, None),
+                                _ => (err_string, source),
                             }
                             _ => {
-                                ("Unknown error".to_string(), None)
+                                ("Unknown error".to_string(), source)
                             }
                         };
                         OpenIDConnectAuthProvider::internal_error(
