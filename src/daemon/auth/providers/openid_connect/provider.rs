@@ -224,7 +224,7 @@ impl OpenIDConnectAuthProvider {
         let mut ok = true;
         let mut email_scope_supported = false;
 
-        info!("Verifying OpenID Connect: Provider capabilities..");
+        info!("OpenID Connect: Verifying provider capabilities..");
 
         // From: https://openid.net/specs/openid-connect-discovery-1_0.html
         // response_modes_supported
