@@ -883,12 +883,12 @@ impl OpenIDConnectAuthProvider {
                         self.on_connection_issue(lock_guard);
                         (format!("Request failed: {:?}", req), None)
                     },
-                    RequestTokenError::Parse(ref parse_err, ref res) => {
-                        let body = match std::str::from_utf8(&res) {
+                    RequestTokenError::Parse(_, ref res) => {
+                        let body = match std::str::from_utf8(res) {
                             Ok(text) => text.to_string(),
-                            Err(_) => format!("{:?}", &res),
+                            Err(_) => format!("{:?}", res),
                         };
-                        (format!("Failed to parse server response: {}", parse_err), Some(body))
+                        ("Failed to parse server response".to_string(), Some(body))
                     }
                     RequestTokenError::Other(ref err_string) => match err_string.as_str() {
                         "temporarily_unavailable" | "server_error" => {

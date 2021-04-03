@@ -214,12 +214,14 @@ impl LoginSessionCache {
         }
 
         let bytes = base64::decode(token.as_ref().as_bytes())
-            .map_err(|err| Error::ApiInvalidCredentials(format!("Invalid bearer token: {}", err)))?;
+            .map_err(|err| {
+                debug!("Invalid bearer token: cannot decode: {}", err);
+                Error::ApiInvalidCredentials("Invalid bearer token".to_string())
+            })?;
 
         if bytes.len() <= TAG_SIZE {
-            return Err(Error::ApiInvalidCredentials(
-                "Invalid bearer token: token is too short".to_string(),
-            ));
+            debug!("Invalid bearer token: decoded token is too short");
+            return Err(Error::ApiInvalidCredentials("Invalid bearer token".to_string()));
         }
 
         let encrypted_len = bytes.len() - TAG_SIZE;
@@ -227,7 +229,10 @@ impl LoginSessionCache {
         let unencrypted_bytes = (self.decrypt_fn)(key, encrypted_bytes, tag_bytes)?;
 
         let session = serde_json::from_slice::<ClientSession>(&unencrypted_bytes)
-            .map_err(|err| Error::Custom(format!("Unable to deserializing client session: {}", err)))?;
+            .map_err(|err| {
+                debug!("Invalid bearer token: cannot deserialize: {}", err);
+                Error::ApiInvalidCredentials("Invalid bearer token".to_string())
+            })?;
 
         trace!("Session cache miss, deserialized session id {}", &session.id);
 
