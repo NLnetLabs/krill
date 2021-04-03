@@ -158,7 +158,7 @@ impl OpenIDConnectAuthProvider {
             .write()
             .map_err(|err| OpenIDConnectAuthProvider::internal_error(
                 "Unable to initialize provider connection: Unable to acquire internal lock",
-                Some(&err.to_string()),
+                Some(&stringify_cause_chain(err)),
             ))?;
 
         if conn_guard.is_none() {
@@ -206,13 +206,8 @@ impl OpenIDConnectAuthProvider {
         // Contact the OpenID Connect: identity provider discovery endpoint to
         // learn about and configure ourselves to talk to it.
         let meta = WantedMeta::discover(&issuer, logging_http_client).map_err(|e| {
-            let source: Option<_> = {
-                use std::error::Error;
-                e.source().map(|v| v.to_string())
-            };
-            Self::internal_error(
-                format!("OpenID Connect: Discovery failed with issuer {}: {}", issuer.as_str(), e),
-                source)
+            Error::custom(format!("OpenID Connect: Discovery failed with issuer {}, {}",
+                issuer.as_str(), stringify_cause_chain(e)))
         })?;
 
         Ok(meta)
@@ -653,7 +648,7 @@ impl OpenIDConnectAuthProvider {
                     "OpenID Connect: Unable to compile JMESPath expression '{}'",
                     &jmespath_string
                 ),
-                Some(e.to_string()),
+                Some(stringify_cause_chain(e)),
             )
         })?;
 
@@ -686,7 +681,7 @@ impl OpenIDConnectAuthProvider {
             let claims = claims.map_err(|e| {
                 OpenIDConnectAuthProvider::internal_error(
                     "OpenID Connect: Unable to prepare claims for parsing",
-                    Some(&e.to_string()),
+                    Some(&stringify_cause_chain(e)),
                 )
             })?;
 
@@ -695,7 +690,7 @@ impl OpenIDConnectAuthProvider {
             let result = expr.search(&claims).map_err(|e| {
                 OpenIDConnectAuthProvider::internal_error(
                     "OpenID Connect: Error while searching claims",
-                    Some(&e.to_string()),
+                    Some(&stringify_cause_chain(e)),
                 )
             })?;
             debug!("Search result in {:?}: '{:?}'", source, &result);
@@ -777,6 +772,8 @@ impl OpenIDConnectAuthProvider {
         None
     }
 
+    /// Log and convert the given error such that the detailed, possibly sensitive details are logged and only the
+    /// high level statement about the error is passed back to the caller.
     fn internal_error<S>(msg: S, additional_info: Option<S>) -> Error
     where
         S: Into<String>,
@@ -823,7 +820,7 @@ impl OpenIDConnectAuthProvider {
             .read()
             .map_err(|err| OpenIDConnectAuthProvider::internal_error(
                 "Unable to login: Unable to acquire internal lock",
-                Some(&err.to_string()),
+                Some(&stringify_cause_chain(err)),
             ))?;
 
         conn_guard.as_ref().ok_or_else(|| OpenIDConnectAuthProvider::internal_error(
@@ -864,11 +861,11 @@ impl OpenIDConnectAuthProvider {
             }
             Err(err) => {
                 Err(Self::internal_error("OpenID Connect: Invalid CSRF token",
-                    Some(&err.to_string())))
+                    Some(&stringify_cause_chain(err))))
             }
         }
     }
-    
+
     fn get_token_response(&self, code: Token) -> KrillResult<FlexibleTokenResponse> {
         let lock_guard = self.get_connection()?;
         let conn = lock_guard.deref().as_ref().unwrap(); // safe to unwrap as was tested in get_connection()
@@ -878,37 +875,39 @@ impl OpenIDConnectAuthProvider {
             .exchange_code(AuthorizationCode::new(code.to_string()))
             .request(logging_http_client)
             .map_err(|e| {
-                let source: Option<_> = {
-                    use std::error::Error;
-                    e.source().map(|v| v.to_string())
-                };
-
                 let (msg, additional_info) = match e {
-                    RequestTokenError::ServerResponse(provider_err) => {
-                        (format!("Server returned error response: {:?}", provider_err), source)
+                    RequestTokenError::ServerResponse(ref provider_err) => {
+                        (format!("Server returned error response: {:?}", provider_err), None)
                     }
-                    RequestTokenError::Request(req) => {
+                    RequestTokenError::Request(ref req) => {
                         self.on_connection_issue(lock_guard);
-                        (format!("Request failed: {:?}", req), source)
+                        (format!("Request failed: {:?}", req), None)
                     },
-                    RequestTokenError::Parse(parse_err, res) => {
+                    RequestTokenError::Parse(ref parse_err, ref res) => {
                         let body = match std::str::from_utf8(&res) {
                             Ok(text) => text.to_string(),
                             Err(_) => format!("{:?}", &res),
                         };
                         (format!("Failed to parse server response: {}", parse_err), Some(body))
                     }
-                    RequestTokenError::Other(err_string) => match err_string.as_str() {
+                    RequestTokenError::Other(ref err_string) => match err_string.as_str() {
                         "temporarily_unavailable" | "server_error" => {
                             self.on_connection_issue(lock_guard);
-                            (err_string.to_string(), source)
+                            (err_string.to_string(), None)
                         }
-                        _ => (err_string, source),
+                        _ => (err_string.clone(), None),
                     }
                 };
+
+                let cause_chain_str = stringify_cause_chain(e);
+                let additional_info = match additional_info {
+                    Some(ai_str) => format!("{}, {}", ai_str, cause_chain_str),
+                    None => cause_chain_str
+                };
+
                 OpenIDConnectAuthProvider::internal_error(
                     format!("OpenID Connect: Code exchange failed: {}", msg),
-                    additional_info,
+                    Some(additional_info),
                 )
             })?;
 
@@ -941,7 +940,7 @@ impl OpenIDConnectAuthProvider {
             .map_err(|e| {
                 OpenIDConnectAuthProvider::internal_error(
                     format!("OpenID Connect: ID token verification failed: {}", e.to_string()),
-                    None,
+                    Some(stringify_cause_chain(e)),
                 )
             })?;
 
@@ -968,7 +967,7 @@ impl OpenIDConnectAuthProvider {
                     .map_err(|e| {
                         OpenIDConnectAuthProvider::internal_error(
                             "OpenID Connect: Provider has no user info endpoint",
-                            Some(&e.to_string()),
+                            Some(&stringify_cause_chain(e)),
                         )
                     })?
                     // don't require the response to be signed as the spec says
@@ -976,39 +975,35 @@ impl OpenIDConnectAuthProvider {
                     .require_signed_response(false)
                     .request(logging_http_client)
                     .map_err(|e| {
-                        let source: Option<_> = {
-                            use std::error::Error;
-                            e.source().map(|v| v.to_string())
-                        };
-        
-                        let (msg, additional_info) = match e {
-                            UserInfoError::ClaimsVerification(provider_err) => {
-                                (format!("Failed to verify claims: {:?}", provider_err), source)
+                        let msg = match e {
+                            UserInfoError::ClaimsVerification(ref provider_err) => {
+                                format!("Failed to verify claims: {:?}", provider_err)
                             }
-                            UserInfoError::Response(_, _, provider_err) => {
-                                (format!("Server returned error response: {:?}", provider_err), source)
+                            UserInfoError::Response(_, _, ref provider_err) => {
+                                format!("Server returned error response: {:?}", provider_err)
                             }
-                            UserInfoError::Request(req) => {
+                            UserInfoError::Request(ref req) => {
                                 self.on_connection_issue(lock_guard);
-                                (format!("Request failed: {:?}", req), source)
+                                format!("Request failed: {:?}", req)
                             }
-                            UserInfoError::Parse(parse_err) => {
-                                (format!("Failed to parse server response: {}", parse_err), source)
+                            UserInfoError::Parse(ref parse_err) => {
+                                format!("Failed to parse server response: {}", parse_err)
                             }
-                            UserInfoError::Other(err_string) => match err_string.as_str() {
+                            UserInfoError::Other(ref err_string) => match err_string.as_str() {
                                 "temporarily_unavailable" | "server_error" => {
                                     self.on_connection_issue(lock_guard);
-                                    (err_string.to_string(), source)
+                                    err_string.to_string()
                                 }
-                                _ => (err_string, source),
+                                _ => err_string.clone()
                             }
                             _ => {
-                                ("Unknown error".to_string(), source)
+                                "Unknown error".to_string()
                             }
                         };
+
                         OpenIDConnectAuthProvider::internal_error(
                             format!("OpenID Connect: UserInfo request failed: {}", msg),
-                            additional_info,
+                            Some(stringify_cause_chain(e)),
                         )
                     })?
             )
@@ -1103,7 +1098,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         self.initialize_connection_if_needed().map_err(|err| {
             OpenIDConnectAuthProvider::internal_error(
                 "OpenID Connect: Cannot authenticate request: Failed to connect to provider",
-                Some(&err.to_string()),
+                Some(&stringify_cause_chain(err)),
             )
         })?;
 
@@ -1239,7 +1234,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         self.initialize_connection_if_needed().map_err(|err| {
             OpenIDConnectAuthProvider::internal_error(
                 "OpenID Connect: Cannot get login URL: Failed to connect to provider",
-                Some(&err.to_string()),
+                Some(&stringify_cause_chain(err)),
             )
         })?;
 
@@ -1390,7 +1385,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                         "Unable to construct HTTP cookie '{}' with value '{}'",
                         cookie_name, cookie_value
                     ),
-                    Some(err.to_string()),
+                    Some(stringify_cause_chain(err)),
                 )
             })
         }
@@ -1409,7 +1404,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         self.initialize_connection_if_needed().map_err(|err| {
             OpenIDConnectAuthProvider::internal_error(
                 "OpenID Connect: Cannot login user: Failed to connect to provider",
-                Some(&err.to_string()),
+                Some(&stringify_cause_chain(err)),
             )
         })?;
 
@@ -1626,7 +1621,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         self.initialize_connection_if_needed().map_err(|err| {
             OpenIDConnectAuthProvider::internal_error(
                 "OpenID Connect: Cannot logout with provider: Failed to connect to provider",
-                Some(&err.to_string()),
+                Some(&stringify_cause_chain(err)),
             )
         })?;
 
@@ -1672,7 +1667,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                                 "Error while building OpenID Connect RP-Initiated Logout URL for user '{}'",
                                 session.id
                             ),
-                            Some(err.to_string()),
+                            Some(stringify_cause_chain(err)),
                         );
                         post_logout_redirect_url.clone()
                     })
@@ -1722,4 +1717,18 @@ fn with_default_claims(claims: &Option<ConfigAuthOpenIDConnectClaims>) -> Config
     });
 
     claims
+}
+
+// Based on: https://github.com/ramosbugs/openidconnect-rs/blob/main/examples/google.rs#L38
+pub fn stringify_cause_chain<F: std::error::Error>(fail: F) -> String {
+    let mut cause_chain = String::new();
+    let mut cur_fail: Option<&dyn std::error::Error> = Some(&fail);
+    while let Some(cause) = cur_fail {
+        if !cause_chain.is_empty() {
+            cause_chain.push_str(", ");
+        }
+        cause_chain.push_str(&format!("caused by: {}", cause));
+        cur_fail = cause.source();
+    }
+    cause_chain
 }
