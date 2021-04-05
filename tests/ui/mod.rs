@@ -56,7 +56,7 @@ pub async fn run_krill_ui_test(
     test_name: &str,
     _: OpenIDConnectMockConfig,
 ) {
-    do_run_krill_ui_test(test_name).await;
+    assert!(do_run_krill_ui_test(test_name).await);
 }
 
 #[cfg(feature = "multi-user")]
@@ -69,11 +69,13 @@ pub async fn run_krill_ui_test(
         _ => Some(openid_connect_mock::start(openid_connect_mock_config, 1).await),
     };
 
-    do_run_krill_ui_test(test_name).await;
+    let test_result = do_run_krill_ui_test(test_name).await;
 
     if let Some(handle) = op_handle {
         openid_connect_mock::stop(handle).await;
     }
+
+    assert!(test_result);
 }
 
 struct CypressRunner {
@@ -96,9 +98,9 @@ impl CypressRunner {
             // "integrationFolder" property otherwise Cypress mysteriously complains
             // that it cannot find the spec file.
             let cypress_spec_path = format!("tests/ui/cypress/specs/{}.js", test_name);
-    
+
             let mut cmd = Command::new("docker");
-    
+
             cmd
                 .arg("run")
                 .arg("--name").arg("cypress")
@@ -107,7 +109,7 @@ impl CypressRunner {
                 .arg("--ipc=host")
                 .arg("-v").arg(format!("{}:/e2e", env::current_dir().unwrap().display()))
                 .arg("-w").arg("/e2e");
-    
+
             if let Ok(debug_level) = std::env::var("CYPRESS_DEBUG") {
                 // Example values:
                 //   - To get LOTS of Cypress logging:           CYPRESS_DEBUG=cypress:*
@@ -115,7 +117,7 @@ impl CypressRunner {
                 cmd
                     .arg("-e").arg(format!("DEBUG={}", debug_level));
             }
-    
+
             if std::env::var("CYPRESS_INTERACTIVE").is_ok() {
                 // After running `cargo test` a Chrome browser should open from the Cypress Docker container on your local
                 // X server. For this to work you might need to run this command in your shell prior to `cargo test`:
@@ -125,9 +127,9 @@ impl CypressRunner {
                     .arg("-e").arg("DISPLAY")
                     .arg("--entrypoint").arg("cypress");
             }
-    
+
             cmd.arg("cypress/included:6.8.0");
-    
+
             if std::env::var("CYPRESS_INTERACTIVE").is_ok() {
                 cmd
                     .arg("open")
@@ -136,7 +138,7 @@ impl CypressRunner {
                 cmd
                     .arg("--spec").arg(cypress_spec_path);
             }
-    
+
             cmd
                 .arg("--browser").arg("chrome")
                 .status()
@@ -153,7 +155,7 @@ impl CypressRunner {
     }
 }
 
-async fn do_run_krill_ui_test(test_name: &str) {
+async fn do_run_krill_ui_test(test_name: &str) -> bool {
     krill::constants::enable_test_mode();
     let config_path = &format!("test-resources/ui/{}.conf", test_name);
     let config = Config::read_config(&config_path).unwrap();
@@ -162,5 +164,5 @@ async fn do_run_krill_ui_test(test_name: &str) {
     start_krill_with_custom_config(config).await;
 
     // Run the specified Cypress UI test suite and wait for it to finish
-    assert!(CypressRunner::run(test_name).await.success());
+    CypressRunner::run(test_name).await.success()
 }
