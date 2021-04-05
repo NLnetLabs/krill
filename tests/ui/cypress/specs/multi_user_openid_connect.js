@@ -1,4 +1,5 @@
-// Matches commons::util::httpclient::http_client_timeout() when test mode is enabled.
+// Matches daemon::auth::providers::openid_connect::http_client::openid_connect_provider_timeout() when test mode is
+// enabled.
 const KRILL_TEST_HTTP_CLIENT_TIMEOUT_SECS = 5;
 
 // The mock OpenID Connect provider only checks usernames, not passwords.

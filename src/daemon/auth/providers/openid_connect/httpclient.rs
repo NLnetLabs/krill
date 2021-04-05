@@ -1,6 +1,6 @@
 use std::{env, path::PathBuf, str::FromStr, time::Duration};
 
-use crate::{commons::util::file, constants::KRILL_HTTPS_ROOT_CERTS_ENV, constants::OPENID_CONNECT_HTTP_CLIENT_TIMEOUT_SECS};
+use crate::{commons::util::file, constants::KRILL_HTTPS_ROOT_CERTS_ENV, constants::{OPENID_CONNECT_HTTP_CLIENT_TIMEOUT_SECS, test_mode_enabled}};
 
 use crate::commons::error::Error;
 
@@ -14,10 +14,18 @@ fn load_root_cert(path: &str) -> Result<reqwestblocking::Certificate, httpclient
     reqwestblocking::Certificate::from_pem(file.as_ref()).map_err(httpclient::Error::https_root_cert_error)
 }
 
+fn openid_connect_provider_timeout() -> Duration {
+    if test_mode_enabled() {
+        Duration::from_secs(5)
+    } else {
+        Duration::from_secs(OPENID_CONNECT_HTTP_CLIENT_TIMEOUT_SECS)
+    }
+}
+
 // Based on httpclient::client().  We can't just use the original function as the invoked functions are specific to
 // types in the reqwest crate version being used.
 fn configure_http_client_for_krill(mut builder: reqwestblocking::ClientBuilder, uri: &str) -> Result<reqwestblocking::ClientBuilder, httpclient::Error> {
-    builder = builder.timeout(Duration::from_secs(OPENID_CONNECT_HTTP_CLIENT_TIMEOUT_SECS));
+    builder = builder.timeout(openid_connect_provider_timeout());
 
     if let Ok(cert_list) = env::var(KRILL_HTTPS_ROOT_CERTS_ENV) {
         for path in cert_list.split(':') {
