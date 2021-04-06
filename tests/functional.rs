@@ -737,6 +737,10 @@ async fn functional() {
         dedicated_repo_add_publisher(publisher_request).await;
         let response = dedicated_repository_response(&ca3).await;
 
+        // Wait a tiny bit.. when we add a new repo we check that it's available or
+        // it will be rejected.
+        delay_for(Duration::from_secs(1)).await;
+
         // Update CA3 to use dedicated repo
         let contact = RepositoryContact::new(response);
         repo_update(&ca3, contact).await;
