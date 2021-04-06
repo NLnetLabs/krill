@@ -111,6 +111,12 @@ describe('OpenID Connect provider with RP-Initiated logout', () => {
           cy.get('#userinfo').click()
           cy.get('#userinfo_table').contains(ts.u)
           cy.get('#userinfo_table').contains(ts.r) // assumes that ts.r is not a substring of ts.u
+
+          // check the source="config-file" "extra" property claim mapping
+          // for the only user for which a value is defined in krill.conf: 'admin'
+          if (ts.d == 'admin') {
+            cy.get('#userinfo_table').contains('extra_val')
+          }
         } else if (ts.d == 'badidtoken') {
           cy.contains('OpenID Connect: Code exchange failed: Failed to parse server response')
           cy.contains('return to the login page')
