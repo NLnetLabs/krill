@@ -1,6 +1,9 @@
 use rpki::{crypto::KeyIdentifier, x509::Time};
 
-use std::{collections::BTreeMap, fmt};
+use std::{
+    collections::{BTreeMap, HashMap},
+    fmt,
+};
 
 use crate::{
     commons::{
@@ -13,7 +16,11 @@ use crate::{
         remote::rfc8183::ServiceUri,
     },
     daemon::ca::StoredCaCommand,
+    pubd::RepositoryManager,
+    upgrades::{UpgradeError, UpgradeResult},
 };
+
+use super::old_events::DerivedEmbeddedCaMigrationInfo;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldStoredCaCommand {
@@ -27,18 +34,61 @@ pub struct OldStoredCaCommand {
 }
 
 impl OldStoredCaCommand {
-    pub fn into_ca_command(self) -> StoredCaCommand {
+    pub fn into_ca_command(
+        self,
+        repo_manager: &Option<RepositoryManager>,
+        derived_embedded_ca_info_map: &HashMap<Handle, DerivedEmbeddedCaMigrationInfo>,
+    ) -> UpgradeResult<StoredCaCommand> {
         let (actor, time, handle, version, sequence, details, effect) = (
             self.actor,
             self.time,
             self.handle,
             self.version,
             self.sequence,
-            self.details.into(),
+            self.details,
             self.effect.into(),
         );
 
-        StoredCaCommand::new(actor, time, handle, version, sequence, details, effect)
+        let details = match details {
+            OldStorableCaCommand::RepoUpdate(service_uri_opt) => {
+                let service_uri = match service_uri_opt {
+                    Some(service_uri) => service_uri,
+                    None => repo_manager
+                        .as_ref()
+                        .ok_or(UpgradeError::KrillError(
+                            crate::commons::error::Error::RepositoryServerNotEnabled,
+                        ))?
+                        .repository_response(&handle)?
+                        .service_uri()
+                        .clone(),
+                };
+                StorableCaCommand::RepoUpdate { service_uri }
+            }
+            OldStorableCaCommand::ChildAdd(child, id_ski_opt, resources) => {
+                let ski = match id_ski_opt {
+                    Some(ski) => ski,
+                    None => derived_embedded_ca_info_map
+                        .get(&child)
+                        .ok_or_else(|| {
+                            UpgradeError::Custom(format!(
+                                "Cannot upgrade CA history for {}, child {} is no longer present",
+                                handle, child
+                            ))
+                        })?
+                        .child_request
+                        .id_cert()
+                        .ski_hex(),
+                };
+
+                StorableCaCommand::ChildAdd { child, ski, resources }
+            }
+
+            _ => details.into(),
+        };
+
+        Ok(StoredCaCommand::new(
+            actor, time, handle, version, sequence, details, effect,
+        ))
     }
 
     pub fn set_events(&mut self, events: Vec<u64>) {
@@ -111,7 +161,7 @@ pub enum OldStorableCaCommand {
     ChildRevokeKey(ChildHandle, RevocationRequest),
     ChildRemove(ChildHandle),
     GenerateNewIdKey,
-    AddParent(ParentHandle, StorableParentContact),
+    AddParent(ParentHandle, OldStorableParentContact),
     UpdateParentContact(ParentHandle, StorableParentContact),
     RemoveParent(ParentHandle),
     UpdateResourceClasses(ParentHandle, BTreeMap<ResourceClassName, ResourceSet>),
@@ -131,7 +181,7 @@ pub enum OldStorableCaCommand {
 
 impl WithStorableDetails for OldStorableCaCommand {
     fn summary(&self) -> crate::commons::api::CommandSummary {
-        unimplemented!("not needed for migration")
+        unreachable!("not needed for migration")
     }
 }
 
@@ -139,8 +189,8 @@ impl From<OldStorableCaCommand> for StorableCaCommand {
     fn from(old: OldStorableCaCommand) -> Self {
         match old {
             OldStorableCaCommand::MakeTrustAnchor => StorableCaCommand::MakeTrustAnchor,
-            OldStorableCaCommand::ChildAdd(child, ski, resources) => {
-                StorableCaCommand::ChildAdd { child, ski, resources }
+            OldStorableCaCommand::ChildAdd(_child, _ski, _resources) => {
+                unreachable!("migrated differently")
             }
             OldStorableCaCommand::ChildUpdateResources(child, resources) => {
                 StorableCaCommand::ChildUpdateResources { child, resources }
@@ -161,7 +211,10 @@ impl From<OldStorableCaCommand> for StorableCaCommand {
 
             OldStorableCaCommand::GenerateNewIdKey => StorableCaCommand::GenerateNewIdKey,
 
-            OldStorableCaCommand::AddParent(parent, contact) => StorableCaCommand::AddParent { parent, contact },
+            OldStorableCaCommand::AddParent(parent, contact) => StorableCaCommand::AddParent {
+                parent,
+                contact: contact.into(),
+            },
             OldStorableCaCommand::UpdateParentContact(parent, contact) => {
                 StorableCaCommand::UpdateParentContact { parent, contact }
             }
@@ -193,8 +246,10 @@ impl From<OldStorableCaCommand> for StorableCaCommand {
             }
             OldStorableCaCommand::RoaDefinitionUpdates(updates) => StorableCaCommand::RoaDefinitionUpdates { updates },
             OldStorableCaCommand::Republish => StorableCaCommand::Republish,
-            OldStorableCaCommand::RepoUpdate(service_uri) => StorableCaCommand::RepoUpdate { service_uri },
-            OldStorableCaCommand::RepoRemoveOld => StorableCaCommand::RepoRemoveOld,
+            OldStorableCaCommand::RepoUpdate(_service_uri) => {
+                unreachable!("migrated differently getting the service uri for embedded repo")
+            }
+            OldStorableCaCommand::RepoRemoveOld => unreachable!("This command is not migrated"),
             OldStorableCaCommand::RtaPrepare(name) => StorableCaCommand::RtaPrepare { name },
             OldStorableCaCommand::RtaSign(name) => StorableCaCommand::RtaSign { name },
             OldStorableCaCommand::RtaCoSign(name) => StorableCaCommand::RtaCoSign { name },
@@ -266,7 +321,7 @@ pub enum OldStorableRepositoryCommand {
 
 impl WithStorableDetails for OldStorableRepositoryCommand {
     fn summary(&self) -> crate::commons::api::CommandSummary {
-        unimplemented!("not needed for migration")
+        unreachable!("not needed for migration")
     }
 }
 
@@ -275,7 +330,24 @@ impl From<OldStorableRepositoryCommand> for StorableRepositoryCommand {
         match old {
             OldStorableRepositoryCommand::AddPublisher(name, _) => StorableRepositoryCommand::AddPublisher { name },
             OldStorableRepositoryCommand::RemovePublisher(name) => StorableRepositoryCommand::RemovePublisher { name },
-            _ => unimplemented!("no need to migrate"),
+            _ => unreachable!("no need to migrate these old commands"),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OldStorableParentContact {
+    Ta,
+    Embedded,
+    Rfc6492,
+}
+
+impl From<OldStorableParentContact> for StorableParentContact {
+    fn from(old: OldStorableParentContact) -> Self {
+        match old {
+            OldStorableParentContact::Ta => StorableParentContact::Ta,
+            _ => StorableParentContact::Rfc6492,
         }
     }
 }

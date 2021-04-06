@@ -88,10 +88,14 @@ impl MessageQueue {
         q.push_back(task);
     }
 
+    /// Schedules that a CA synchronizes with its repositories.
     pub fn schedule_sync_repo(&self, ca: Handle) {
         self.schedule(QueueTask::SyncRepo(ca));
     }
 
+    /// RE-Schedules that a CA synchronizes with its repositories. This function
+    /// takes a time argument to indicate *when* the resynchronization should be
+    /// attempted.
     pub fn reschedule_sync_repo(&self, ca: Handle, time: Time) {
         self.schedule(QueueTask::RescheduleSyncRepo(ca, time));
     }

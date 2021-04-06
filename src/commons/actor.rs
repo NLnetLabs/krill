@@ -208,6 +208,15 @@ impl Actor {
         A: ToPolar + Display + Debug + Clone,
         R: ToPolar + Display + Debug + Clone,
     {
+        if log_enabled!(log::Level::Trace) {
+            trace!(
+                "Access check: actor={}, action={}, resource={}",
+                self.name(),
+                &action,
+                &resource
+            );
+        }
+
         if let Some(api_error) = &self.auth_error {
             trace!(
                 "Authentication denied: actor={}, action={}, resource={}: {}",

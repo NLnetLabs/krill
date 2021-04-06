@@ -15,7 +15,7 @@ use syslog::Facility;
 
 use rpki::uri;
 
-use crate::commons::api::{PublicationServerUris, Token};
+use crate::commons::api::{PublicationServerUris, PublisherHandle, Token};
 use crate::commons::util::ext_serde;
 use crate::constants::*;
 use crate::daemon::http::tls_keys;
@@ -85,8 +85,8 @@ impl ConfigDefaults {
         }
     }
     #[cfg(feature = "multi-user")]
-    fn auth_policy() -> PathBuf {
-        PathBuf::from("./policy.polar")
+    fn auth_policies() -> Vec<PathBuf> {
+        vec![]
     }
     #[cfg(feature = "multi-user")]
     fn auth_private_attributes() -> Vec<String> {
@@ -226,8 +226,8 @@ pub struct Config {
     pub auth_type: AuthType,
 
     #[cfg(feature = "multi-user")]
-    #[serde(default = "ConfigDefaults::auth_policy")]
-    pub auth_policy: PathBuf,
+    #[serde(default = "ConfigDefaults::auth_policies")]
+    pub auth_policies: Vec<PathBuf>,
 
     #[cfg(feature = "multi-user")]
     #[serde(default = "ConfigDefaults::auth_private_attributes")]
@@ -303,38 +303,55 @@ pub struct IssuanceTimingConfig {
 pub struct RepositoryRetentionConfig {
     #[serde(default = "RepositoryRetentionConfig::dflt_retention_old_notification_files_seconds")]
     pub retention_old_notification_files_seconds: i64,
-    #[serde(default = "RepositoryRetentionConfig::dflt_retention_delta_files_seconds")]
-    pub retention_delta_files_seconds: i64,
     #[serde(default = "RepositoryRetentionConfig::dflt_retention_delta_files_min_nr")]
     pub retention_delta_files_min_nr: usize,
+    #[serde(default = "RepositoryRetentionConfig::dflt_retention_delta_files_min_seconds")]
+    pub retention_delta_files_min_seconds: i64,
+    #[serde(default = "RepositoryRetentionConfig::dflt_retention_delta_files_max_nr")]
+    pub retention_delta_files_max_nr: usize,
+    #[serde(default = "RepositoryRetentionConfig::dflt_retention_delta_files_max_seconds")]
+    pub retention_delta_files_max_seconds: i64,
     #[serde(default = "RepositoryRetentionConfig::dflt_retention_archive")]
     pub retention_archive: bool,
 }
 
 impl RepositoryRetentionConfig {
     // Time to keep any files still referenced by notification
-    // files updated up to X minutes ago. Default: 10 min
+    // files updated up to X seconds ago. We should not delete these
+    // files too eagerly or we would risk that RPs with an old
+    // notification file try to retrieve them, without success.
+    //
+    // Default: 10 min (just to be safe, 1 min is prob. fine)
     fn dflt_retention_old_notification_files_seconds() -> i64 {
         600
     }
 
-    // Time to keep deltas. Defaults to two hours meaning that
-    // almost all RPs are expected to have retrieved the deltas
-    // by then. Typically RPs fetch every 1-10 minutes, some
-    // implementations use 1 hour intervals.
-    //
-    // We could keep all deltas up to the size of the snapshot,
-    // but if we leave some deltas out we may succeed in keeping
-    // the notification file relatively small
-    fn dflt_retention_delta_files_seconds() -> i64 {
-        7200 // 2 hours
-    }
-
     // Keep at least X (default 5) delta files in the notification
-    // file. They may be old, but their impact on the notification
+    // file, even if they would be too old. Their impact on the notification
     // file size is not too bad.
     fn dflt_retention_delta_files_min_nr() -> usize {
         5
+    }
+
+    // Minimum time to keep deltas. Defaults to 20 minutes, which
+    // is double a commonly used update interval, allowing the vast
+    // majority of RPs to update using deltas.
+    fn dflt_retention_delta_files_min_seconds() -> i64 {
+        1200 // 20 minutes
+    }
+
+    // Maximum time to keep deltas. Defaults to two hours meaning,
+    // which is double to slowest normal update interval seen used
+    // by a minority of RPs.
+    fn dflt_retention_delta_files_max_seconds() -> i64 {
+        7200 // 2 hours
+    }
+
+    // For files older than the min seconds specified (default 20 mins),
+    // and younger than max seconds (2 hours), keep at most up to a total
+    // nr of files X (default 50).
+    fn dflt_retention_delta_files_max_nr() -> usize {
+        50
     }
 
     // If set to true, we will archive - rather than delete - old
@@ -408,8 +425,8 @@ impl Config {
         uri::Https::from_str(&self.service_uri).unwrap()
     }
 
-    pub fn ta_cert_uri(&self) -> uri::Https {
-        uri::Https::from_string(format!("{}ta/ta.cer", &self.service_uri)).unwrap()
+    pub fn rfc8181_uri(&self, publisher: &PublisherHandle) -> uri::Https {
+        uri::Https::from_string(format!("{}rfc8181/{}/", self.service_uri, publisher)).unwrap()
     }
 
     pub fn pid_file(&self) -> PathBuf {
@@ -458,9 +475,7 @@ impl Config {
         let auth_type = AuthType::MasterToken;
         let auth_token = Token::from("secret");
         #[cfg(feature = "multi-user")]
-        let mut auth_policy = data_dir.clone();
-        #[cfg(feature = "multi-user")]
-        auth_policy.push("policy.polar");
+        let auth_policies = vec![];
         #[cfg(feature = "multi-user")]
         let auth_private_attributes = vec![];
         #[cfg(feature = "multi-user")]
@@ -510,8 +525,10 @@ impl Config {
 
         let repository_retention = RepositoryRetentionConfig {
             retention_old_notification_files_seconds: 1,
-            retention_delta_files_seconds: 1,
+            retention_delta_files_min_seconds: 0,
             retention_delta_files_min_nr: 5,
+            retention_delta_files_max_seconds: 1,
+            retention_delta_files_max_nr: 50,
             retention_archive: false,
         };
 
@@ -541,7 +558,7 @@ impl Config {
             auth_type,
             auth_token,
             #[cfg(feature = "multi-user")]
-            auth_policy,
+            auth_policies,
             #[cfg(feature = "multi-user")]
             auth_private_attributes,
             #[cfg(feature = "multi-user")]
@@ -817,6 +834,7 @@ impl Config {
             .level_for("mio", framework_level)
             .level_for("reqwest", framework_level)
             .level_for("tokio_reactor", framework_level)
+            .level_for("tokio_util::codec::framed_read", framework_level)
             .level_for("want", framework_level)
             .level_for("tracing::span", framework_level)
             .level_for("h2", framework_level)

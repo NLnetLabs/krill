@@ -16,17 +16,18 @@ use crate::{
     commons::{
         api::{
             rrdp::{CurrentObjects, DeltaElements, PublishElement, RrdpSession},
-            Base64, ChildHandle, HexEncodedHash, IssuanceRequest, IssuedCert, ObjectName, ParentHandle,
-            PublisherHandle, RcvdCert, RepoInfo, ResourceClassName, ResourceSet, RevocationRequest, RevocationsDelta,
-            RevokedObject, RoaAggregateKey, RtaName, TaCertDetails,
+            Base64, ChildHandle, Handle, HexEncodedHash, IssuanceRequest, IssuedCert, ObjectName, ParentCaContact,
+            ParentHandle, PublisherHandle, RcvdCert, RepoInfo, RepositoryContact, ResourceClassName, ResourceSet,
+            RevocationRequest, RevocationsDelta, RevokedObject, RoaAggregateKey, RtaName, TaCertDetails,
         },
         crypto::IdCert,
         eventsourcing::StoredEvent,
+        remote::rfc8183,
     },
     daemon::ca::{self, CaEvt, CaEvtDet, PreparedRta, RouteAuthorization, SignedRta},
     pubd::{
-        Publisher, RepositoryAccessEvent, RepositoryAccessEventDetails, RepositoryAccessInitDetails, RrdpSessionReset,
-        RrdpUpdate,
+        Publisher, RepositoryAccessEvent, RepositoryAccessEventDetails, RepositoryAccessInitDetails, RepositoryManager,
+        RrdpSessionReset, RrdpUpdate,
     },
     upgrades::UpgradeError,
 };
@@ -82,14 +83,88 @@ impl From<OldPubdIniDet> for RepositoryAccessInitDetails {
     }
 }
 
+pub struct DerivedEmbeddedCaMigrationInfo {
+    pub child_request: rfc8183::ChildRequest,
+    pub parent_responses: HashMap<ChildHandle, rfc8183::ParentResponse>,
+}
+
 impl OldCaEvt {
-    pub fn into_stored_ca_event(self, version: u64) -> Result<CaEvt, UpgradeError> {
+    pub fn into_stored_ca_event(
+        self,
+        version: u64,
+        repo_manager: &Option<RepositoryManager>,
+        derived_embedded_ca_info_map: &HashMap<Handle, DerivedEmbeddedCaMigrationInfo>,
+    ) -> Result<CaEvt, UpgradeError> {
         let (id, _, details) = self.unpack();
-        Ok(CaEvt::new(&id, version, details.try_into()?))
+
+        let event = match details {
+            OldCaEvtDet::RepoUpdated(contact) => {
+                let contact = match contact {
+                    OldRepositoryContact::Rfc8181(res) => RepositoryContact::new(res),
+                    OldRepositoryContact::Embedded(_) => {
+                        let res = repo_manager
+                            .as_ref()
+                            .ok_or(UpgradeError::KrillError(
+                                crate::commons::error::Error::RepositoryServerNotEnabled,
+                            ))?
+                            .repository_response(&id)?;
+                        RepositoryContact::new(res)
+                    }
+                };
+                CaEvtDet::RepoUpdated { contact }
+            }
+            OldCaEvtDet::ParentAdded(parent, old_contact) => {
+                let contact = match old_contact {
+                    OldParentCaContact::Rfc6492(res) => ParentCaContact::for_rfc6492(res),
+                    OldParentCaContact::Ta(details) => ParentCaContact::Ta(details),
+                    OldParentCaContact::Embedded => match derived_embedded_ca_info_map.get(&parent) {
+                        Some(info) => {
+                            let res = info.parent_responses.get(&id).ok_or_else(|| UpgradeError::Custom(
+                                format!("Cannot upgrade CA '{}' using embedded parent '{}' which no longer has this CA as a child", id, parent)))?;
+                            ParentCaContact::for_rfc6492(res.clone())
+                        }
+                        None => {
+                            return Err(UpgradeError::Custom(format!(
+                                "Cannot upgrade CA '{}' using embedded parent '{}' which is no longer present",
+                                id, parent
+                            )))
+                        }
+                    },
+                };
+                CaEvtDet::ParentAdded { parent, contact }
+            }
+            OldCaEvtDet::ChildAdded(child, old_details) => {
+                let (resources, id_cert_opt) = (old_details.resources, old_details.id_cert);
+
+                let id_cert = match id_cert_opt {
+                    Some(id_cert) => id_cert,
+                    None => {
+                        let child_info = derived_embedded_ca_info_map.get(&child).ok_or_else(|| {
+                            UpgradeError::Custom(format!(
+                                "Cannot upgrade CA {}, embedded child {} is no longer present",
+                                id, child
+                            ))
+                        })?;
+
+                        child_info.child_request.id_cert().clone()
+                    }
+                };
+
+                CaEvtDet::ChildAdded {
+                    child,
+                    id_cert,
+                    resources,
+                }
+            }
+            _ => details.try_into()?,
+        };
+
+        Ok(CaEvt::new(&id, version, event))
     }
 
     pub fn needs_migration(&self) -> bool {
         !matches!(self.details(), OldCaEvtDet::ObjectSetUpdated(_, _))
+            && !matches!(self.details(), OldCaEvtDet::RepoCleaned(_))
     }
 }
 
@@ -101,7 +176,7 @@ pub enum OldCaEvtDet {
     TrustAnchorMade(TaCertDetails),
 
     // Being a parent Events
-    ChildAdded(ChildHandle, ChildDetails),
+    ChildAdded(ChildHandle, OldChildDetails),
     ChildCertificateIssued(ChildHandle, ResourceClassName, KeyIdentifier),
     ChildKeyRevoked(ChildHandle, ResourceClassName, KeyIdentifier),
     ChildCertificatesUpdated(ResourceClassName, ChildCertificateUpdates),
@@ -111,19 +186,19 @@ pub enum OldCaEvtDet {
 
     // Being a child Events
     IdUpdated(Rfc8183Id),
-    ParentAdded(ParentHandle, ParentCaContact),
-    ParentUpdated(ParentHandle, ParentCaContact),
+    ParentAdded(ParentHandle, OldParentCaContact),
+    ParentUpdated(ParentHandle, OldParentCaContact),
     ParentRemoved(ParentHandle, Vec<ObjectsDelta>),
 
-    ResourceClassAdded(ResourceClassName, ResourceClass),
+    ResourceClassAdded(ResourceClassName, OldResourceClass),
     ResourceClassRemoved(ResourceClassName, ObjectsDelta, ParentHandle, Vec<RevocationRequest>),
     CertificateRequested(ResourceClassName, IssuanceRequest, KeyIdentifier),
     CertificateReceived(ResourceClassName, KeyIdentifier, RcvdCert),
 
     // Key life cycle
     KeyRollPendingKeyAdded(ResourceClassName, KeyIdentifier),
-    KeyPendingToNew(ResourceClassName, CertifiedKey, ObjectsDelta),
-    KeyPendingToActive(ResourceClassName, CertifiedKey, ObjectsDelta),
+    KeyPendingToNew(ResourceClassName, OldCertifiedKey, ObjectsDelta),
+    KeyPendingToActive(ResourceClassName, OldCertifiedKey, ObjectsDelta),
     KeyRollActivated(ResourceClassName, RevocationRequest),
     KeyRollFinished(ResourceClassName, ObjectsDelta),
     UnexpectedKeyFound(ResourceClassName, RevocationRequest),
@@ -135,8 +210,8 @@ pub enum OldCaEvtDet {
 
     // Publishing
     ObjectSetUpdated(ResourceClassName, HashMap<KeyIdentifier, CurrentObjectSetDelta>),
-    RepoUpdated(RepositoryContact),
-    RepoCleaned(RepositoryContact),
+    RepoUpdated(OldRepositoryContact),
+    RepoCleaned(OldRepositoryContact),
 
     // Rta
     RtaPrepared(RtaName, PreparedRta),
@@ -149,11 +224,9 @@ impl TryFrom<OldCaEvtDet> for CaEvtDet {
     fn try_from(old: OldCaEvtDet) -> Result<Self, Self::Error> {
         let evt = match old {
             OldCaEvtDet::TrustAnchorMade(ta_cert_details) => CaEvtDet::TrustAnchorMade { ta_cert_details },
-            OldCaEvtDet::ChildAdded(child, details) => CaEvtDet::ChildAdded {
-                child,
-                id_cert: details.id_cert,
-                resources: details.resources,
-            },
+            OldCaEvtDet::ChildAdded(_child, _details) => {
+                unreachable!("Add child must be converted with embedded children in mind")
+            }
             OldCaEvtDet::ChildCertificateIssued(child, resource_class_name, ki) => CaEvtDet::ChildCertificateIssued {
                 child,
                 resource_class_name,
@@ -177,14 +250,12 @@ impl TryFrom<OldCaEvtDet> for CaEvtDet {
             OldCaEvtDet::ChildRemoved(child) => CaEvtDet::ChildRemoved { child },
 
             OldCaEvtDet::IdUpdated(id) => CaEvtDet::IdUpdated { id: id.into() },
-            OldCaEvtDet::ParentAdded(parent, contact) => CaEvtDet::ParentAdded {
-                parent,
-                contact: contact.into(),
-            },
-            OldCaEvtDet::ParentUpdated(parent, contact) => CaEvtDet::ParentUpdated {
-                parent,
-                contact: contact.into(),
-            },
+            OldCaEvtDet::ParentAdded(_parent, _contact) => {
+                unreachable!("Parent Added event is migrated differently")
+            }
+            OldCaEvtDet::ParentUpdated(_parent, _contact) => {
+                unreachable!("Parent Updated event is migrated differently")
+            }
             OldCaEvtDet::ParentRemoved(parent, _delta) => CaEvtDet::ParentRemoved { parent },
 
             OldCaEvtDet::ResourceClassAdded(_rcn, rc) => rc.into_added_event()?,
@@ -239,14 +310,12 @@ impl TryFrom<OldCaEvtDet> for CaEvtDet {
                 updates: updates.try_into()?,
             },
 
-            OldCaEvtDet::ObjectSetUpdated(_, _) => unimplemented!("This event must not be migrated"),
+            OldCaEvtDet::ObjectSetUpdated(_, _) => unreachable!("This event must not be migrated"),
 
-            OldCaEvtDet::RepoUpdated(contact) => CaEvtDet::RepoUpdated {
-                contact: contact.into(),
-            },
-            OldCaEvtDet::RepoCleaned(contact) => CaEvtDet::RepoCleaned {
-                contact: contact.into(),
-            },
+            OldCaEvtDet::RepoUpdated(_contact) => {
+                unreachable!("Repo Updated is migrated with the embedded repo context")
+            }
+            OldCaEvtDet::RepoCleaned(_contact) => unreachable!("This event must not be migrated"),
 
             OldCaEvtDet::RtaPrepared(name, prepared) => CaEvtDet::RtaPrepared { name, prepared },
             OldCaEvtDet::RtaSigned(name, rta) => CaEvtDet::RtaSigned { name, rta },
@@ -311,8 +380,8 @@ pub struct WithdrawnObject {
 pub struct CurrentObjectSetDelta {
     pub number: u64,
     pub revocations_delta: RevocationsDelta,
-    pub manifest_info: ManifestInfo,
-    pub crl_info: CrlInfo,
+    pub manifest_info: OldManifestInfo,
+    pub crl_info: OldCrlInfo,
     pub objects_delta: ObjectsDelta,
 }
 
@@ -384,10 +453,10 @@ impl RoaUpdates {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RoaInfo {
-    pub object: CurrentObject,        // actual ROA
-    name: ObjectName,                 // Name for object in repo
-    since: Time,                      // first ROA in RC created
-    replaces: Option<ReplacedObject>, // for revoking when re-newing
+    pub object: CurrentObject,           // actual ROA
+    name: ObjectName,                    // Name for object in repo
+    since: Time,                         // first ROA in RC created
+    replaces: Option<OldReplacedObject>, // for revoking when re-newing
 }
 
 impl RoaInfo {
@@ -531,7 +600,7 @@ impl From<OldPubdEvtDet> for RepositoryAccessEventDetails {
                 publisher: publisher.into(),
             },
             OldPubdEvtDet::PublisherRemoved(name, _) => RepositoryAccessEventDetails::PublisherRemoved { name },
-            _ => unimplemented!("no need to migrate these"),
+            _ => unreachable!("no need to migrate these old events"),
         }
     }
 }

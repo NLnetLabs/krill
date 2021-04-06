@@ -4,6 +4,8 @@ use std::fmt;
 
 use super::Storable;
 
+pub trait InitEvent: fmt::Display + Eq + PartialEq + Send + Sync + Storable + 'static {}
+
 //------------ Event --------------------------------------------------------
 
 pub trait Event: fmt::Display + Eq + PartialEq + Send + Sync + Storable + 'static {

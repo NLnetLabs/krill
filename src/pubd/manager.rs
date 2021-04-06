@@ -2,7 +2,6 @@ use std::fs;
 use std::sync::Arc;
 
 use bytes::Bytes;
-use rpki::uri;
 
 use crate::commons::api::PublicationServerUris;
 use crate::commons::crypto::KrillSigner;
@@ -150,9 +149,11 @@ impl RepositoryManager {
                 let list_reply = self.list(&publisher_handle)?;
                 (rfc8181::Message::list_reply(list_reply), false)
             }
-            rfc8181::QueryMessage::PublishDelta(delta) => match self.publish(publisher_handle, delta) {
+            rfc8181::QueryMessage::PublishDelta(delta) => match self.publish(publisher_handle.clone(), delta) {
                 Ok(()) => (rfc8181::Message::success_reply(), true),
                 Err(e) => {
+                    warn!("Rejecting delta sent by: {}. Error was: {}", publisher_handle, e);
+
                     let error_code = e.to_rfc8181_error_code();
                     let report_error = rfc8181::ReportError::reply(error_code, None);
                     let mut builder = rfc8181::ErrorReply::build_with_capacity(1);
@@ -214,11 +215,8 @@ impl RepositoryManager {
     }
 
     /// Returns the RFC8183 Repository Response for the publisher.
-    pub fn repository_response(
-        &self,
-        rfc8181_uri: uri::Https,
-        publisher: &PublisherHandle,
-    ) -> KrillResult<rfc8183::RepositoryResponse> {
+    pub fn repository_response(&self, publisher: &PublisherHandle) -> KrillResult<rfc8183::RepositoryResponse> {
+        let rfc8181_uri = self.config.rfc8181_uri(publisher);
         self.access.repository_response(rfc8181_uri, publisher)
     }
 
@@ -263,7 +261,10 @@ mod tests {
 
     use tokio::time::delay_for;
 
+    use rpki::uri;
+
     use super::*;
+
     use crate::{
         commons::{
             api::rrdp::{PublicationDeltaError, RrdpSession},

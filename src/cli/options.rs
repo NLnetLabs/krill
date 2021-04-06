@@ -14,18 +14,20 @@ use rpki::crypto::KeyIdentifier;
 use rpki::uri;
 use rpki::x509::Time;
 
-use crate::cli::report::{ReportError, ReportFormat};
 use crate::commons::api::{
-    AddChildRequest, AuthorizationFmtError, CertAuthInit, ChildAuthRequest, ChildHandle, Handle, ParentCaContact,
-    ParentCaReq, ParentHandle, PublicationServerUris, PublisherHandle, ResourceSet, ResourceSetError,
+    AddChildRequest, AuthorizationFmtError, CertAuthInit, ChildHandle, Handle, ParentCaContact, ParentCaReq,
+    ParentHandle, PublicationServerUris, PublisherHandle, ResourceSet, ResourceSetError, RoaDefinition,
     RoaDefinitionUpdates, RtaName, Token, UpdateChildRequest,
 };
-use crate::commons::api::{RepositoryUpdate, RoaDefinition};
 use crate::commons::crypto::{IdCert, SignSupport};
 use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
 use crate::constants::*;
 use crate::daemon::ca::{ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest};
+use crate::{
+    cli::report::{ReportError, ReportFormat},
+    commons::api::RepositoryContact,
+};
 
 struct GeneralArgs {
     server: uri::Https,
@@ -1189,8 +1191,7 @@ impl Options {
     fn parse_matches_cas_children_add(matches: &ArgMatches) -> Result<Options, Error> {
         let path = matches.value_of("request").unwrap();
         let bytes = Self::read_file_arg(path)?;
-        let request = rfc8183::ChildRequest::validate(bytes.as_ref())?;
-        let auth_request = ChildAuthRequest::Rfc8183(request);
+        let child_request = rfc8183::ChildRequest::validate(bytes.as_ref())?;
 
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
@@ -1200,8 +1201,8 @@ impl Options {
 
         let resources = Self::parse_resource_args(matches)?.ok_or(Error::MissingResources)?;
 
-        let child_request = AddChildRequest::new(child, resources, auth_request);
-        let command = Command::CertAuth(CaCommand::ChildAdd(my_ca, child_request));
+        let add_child_request = AddChildRequest::new(child, resources, child_request);
+        let command = Command::CertAuth(CaCommand::ChildAdd(my_ca, add_child_request));
         Ok(Options::make(general_args, command))
     }
 
@@ -1542,7 +1543,7 @@ impl Options {
         let bytes = Self::read_file_arg(path)?;
         let response = rfc8183::RepositoryResponse::validate(bytes.as_ref())?;
 
-        let update = RepositoryUpdate::rfc8181(response);
+        let update = RepositoryContact::new(response);
         let command = Command::CertAuth(CaCommand::RepoUpdate(my_ca, update));
         Ok(Options::make(general_args, command))
     }
@@ -2113,14 +2114,14 @@ pub enum Command {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(clippy::large_enum_variant)]
 pub enum CaCommand {
-    Init(CertAuthInit), // Initialise a CA
+    Init(CertAuthInit), // Initialize a CA
     UpdateId(Handle),   // Update CA id
     Delete(Handle),     // Delete the CA -> let it withdraw and request revocation as well
 
     // Publishing
     RepoPublisherRequest(Handle), // Get the RFC8183 publisher request
     RepoDetails(Handle),
-    RepoUpdate(Handle, RepositoryUpdate),
+    RepoUpdate(Handle, RepositoryContact),
     RepoStatus(Handle),
 
     // Parents (to this CA)

@@ -3,6 +3,14 @@
 ################################################################################
 
 
+# A dummy rule which can be "overridden" by a more specific match.
+# Allows overriding rules that are hard to write a more specific rule for,
+# especially because matching on a Permission variant is not considered more
+# specific than on any variant of Permission due to this issue:
+#   https://github.com/osohq/oso/issues/801
+disallow(_, _, _) if false;
+
+
 # note: using = or != with application types results in error:
 #   "comparison operators are unimplemented in the oso Rust library"
 # so we don't compare nil to actor.attr() results to see if an attribute is set.
@@ -14,16 +22,22 @@
 # The action belongs to a role and thus to have access the user must have the
 # required role that includes the requested action.
 
-# Verify that the given actor has the required role to perform the requested
-# action on the given relative API request path.
-allow(actor: Actor, action: Permission, resource: RequestPath) if
+# note: when https://github.com/osohq/oso/issues/788 is fixed we will be able to replace this:
+#   allow(actor: Actor, action: Permission, _resource: Option) if
+#       _resource = nil and
+# with this:
+#   allow(actor: Actor, action: Permission, nil) if
+
+allow(actor: Actor, action: Permission, _resource: Option) if
+    _resource = nil and
+    not disallow(actor, action, _resource) and
     actor_has_role(actor, role) and
-    role_allow(role, action, resource);
+    role_allow(role, action);
 
 ### TEST: [
 # Sanity check: verify that the built-in master-token test actor can login.
 # Exercises the rules above.
-?= allow(Actor.builtin("master-token"), new Permission("LOGIN"), new RequestPath("/"));
+?= allow(Actor.builtin("master-token"), LOGIN, _);
 ### ]
 
 
@@ -43,12 +57,13 @@ actor_has_role(actor: Actor, role) if role in actor.attr("role");
 # explicitly or implicitly denied access to the CA or is explicitly granted
 # access to the CA.
 allow(actor: Actor, action: Permission, ca: Handle) if
+    not disallow(actor, action, ca) and
     actor_has_role(actor, role) and
-    role_allow(role, action, ca) and
+    role_allow(role, action) and
     actor_can_access_ca(actor, ca);
 
 ### TEST: [
-?= allow(Actor.builtin("master-token"), new Permission("CA_READ"), new RequestPath("/"));
+?= allow(Actor.builtin("master-token"), CA_READ, _);
 ### ]
 
 
@@ -119,10 +134,10 @@ actor_cannot_access_ca(_actor: Actor{name: "dummy-test-actor3"}, ca: Handle) if
 ?= actor_cannot_access_ca(new Actor("dummy-test-actor3", {}), new Handle("dummy-test-ca3"));
 
 # test CA access restrictions based on actor attribute values
-?= print("TEST1") and actor_can_access_ca(new Actor("a", {}), new Handle("ca1"));
-?= print("TEST2") and actor_can_access_ca(new Actor("a", {inc_cas: "ca1"}), new Handle("ca1"));
-?= print("TEST3") and not actor_can_access_ca(new Actor("a", {inc_cas: "ca1"}), new Handle("ca2"));
-?= print("TEST4") and not actor_can_access_ca(new Actor("a", {exc_cas: "ca1"}), new Handle("ca1"));
-?= print("TEST5") and actor_can_access_ca(new Actor("a", {exc_cas: "ca1"}), new Handle("ca2"));
+?= actor_can_access_ca(new Actor("a", {}), new Handle("ca1"));
+?= actor_can_access_ca(new Actor("a", {inc_cas: "ca1"}), new Handle("ca1"));
+?= not actor_can_access_ca(new Actor("a", {inc_cas: "ca1"}), new Handle("ca2"));
+?= not actor_can_access_ca(new Actor("a", {exc_cas: "ca1"}), new Handle("ca1"));
+?= actor_can_access_ca(new Actor("a", {exc_cas: "ca1"}), new Handle("ca2"));
 
 ### ]

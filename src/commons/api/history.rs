@@ -235,8 +235,8 @@ impl CommandSummary {
         self.with_arg("publisher", publisher)
     }
 
-    pub fn with_id_ski(self, id_opt: Option<&String>) -> Self {
-        self.with_arg("id_key", id_opt.map(|v| v.as_str()).unwrap_or("<none>"))
+    pub fn with_id_ski(self, id: &str) -> Self {
+        self.with_arg("id_key", id)
     }
 
     pub fn with_resources(self, resources: &ResourceSet) -> Self {
@@ -271,11 +271,8 @@ impl CommandSummary {
         self.with_arg("removed", nr)
     }
 
-    pub fn with_service_uri_opt(self, service_uri_opt: Option<&ServiceUri>) -> Self {
-        match service_uri_opt {
-            None => self,
-            Some(uri) => self.with_arg("service_uri", uri),
-        }
+    pub fn with_service_uri(self, service_uri: &ServiceUri) -> Self {
+        self.with_arg("service_uri", service_uri)
     }
 
     pub fn with_rta_name(self, name: &str) -> Self {
@@ -407,7 +404,7 @@ pub enum StorableCaCommand {
     MakeTrustAnchor,
     ChildAdd {
         child: ChildHandle,
-        ski: Option<String>,
+        ski: String,
         resources: ResourceSet,
     },
     ChildUpdateResources {
@@ -466,9 +463,8 @@ pub enum StorableCaCommand {
     AutomaticRoaRenewal,
     Republish,
     RepoUpdate {
-        service_uri: Option<ServiceUri>,
+        service_uri: ServiceUri,
     },
-    RepoRemoveOld,
     RtaPrepare {
         name: RtaName,
     },
@@ -502,7 +498,7 @@ impl WithStorableDetails for StorableCaCommand {
             }
             StorableCaCommand::ChildUpdateId { child, ski } => CommandSummary::new("cmd-ca-child-update-id", &self)
                 .with_child(child)
-                .with_id_ski(Some(ski)),
+                .with_id_ski(ski),
             StorableCaCommand::ChildCertify {
                 child,
                 resource_class_name,
@@ -557,9 +553,8 @@ impl WithStorableDetails for StorableCaCommand {
             StorableCaCommand::AutomaticRoaRenewal => CommandSummary::new("cmd-ca-roas-renewed", &self),
             StorableCaCommand::Republish => CommandSummary::new("cmd-ca-publish", &self),
             StorableCaCommand::RepoUpdate { service_uri } => {
-                CommandSummary::new("cmd-ca-repo-update", &self).with_service_uri_opt(service_uri.as_ref())
+                CommandSummary::new("cmd-ca-repo-update", &self).with_service_uri(service_uri)
             }
-            StorableCaCommand::RepoRemoveOld => CommandSummary::new("cmd-ca-repo-clean", &self),
 
             // RTA
             StorableCaCommand::RtaPrepare { name } => {
@@ -591,7 +586,7 @@ impl fmt::Display for StorableCaCommand {
                 f,
                 "Add child '{}' with RFC8183 key '{}' and resources '{}'",
                 child,
-                ski.as_ref().map(|ski| ski.as_str()).unwrap_or_else(|| "<none>"),
+                ski,
                 resources.summary()
             ),
             StorableCaCommand::ChildUpdateResources { child, resources } => {
@@ -696,11 +691,7 @@ impl fmt::Display for StorableCaCommand {
             // Publishing
             // ------------------------------------------------------------
             StorableCaCommand::Republish => write!(f, "Republish"),
-            StorableCaCommand::RepoUpdate { service_uri } => match service_uri {
-                None => write!(f, "Update repo to embedded server"),
-                Some(uri) => write!(f, "Update repo to server at: {}", uri),
-            },
-            StorableCaCommand::RepoRemoveOld => write!(f, "Clean up old repository"),
+            StorableCaCommand::RepoUpdate { service_uri } => write!(f, "Update repo to server at: {}", service_uri),
 
             // ------------------------------------------------------------
             // RTA
