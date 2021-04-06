@@ -900,8 +900,6 @@ async fn api_ca_repo(req: Request, path: &mut RequestPath, ca: Handle) -> Routin
             Method::POST => api_ca_repo_update(req, ca).await,
             _ => render_unknown_method(),
         },
-        Some("request.json") => api_ca_publisher_req_json(req, ca).await,
-        Some("request.xml") => api_ca_publisher_req_xml(req, ca).await,
         Some("status") => api_ca_repo_status(req, ca).await,
         _ => render_unknown_method(),
     }
@@ -1169,6 +1167,8 @@ async fn api_ca_id(req: Request, path: &mut RequestPath, ca: Handle) -> RoutingR
         Method::GET => match path.next() {
             Some("child_request.xml") => api_ca_child_req_xml(req, ca).await,
             Some("child_request.json") => api_ca_child_req_json(req, ca).await,
+            Some("publisher_request.json") => api_ca_publisher_req_json(req, ca).await,
+            Some("publisher_request.xml") => api_ca_publisher_req_xml(req, ca).await,
             _ => render_unknown_method(),
         },
         _ => render_unknown_method(),

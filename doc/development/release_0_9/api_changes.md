@@ -4,13 +4,22 @@ API Changes Introduced in Release 0.9
 In this release we removed the concept of 'embedded' CA parents and children, and embedded repositories.
 As a result some API changes were introduced.
 
-### Get RFC8183 Child Request
+### Get RFC 8183 Child Request
 
 The endpoints for getting the RFC Child Request XML and JSON have moved, and are now under 'id':
 
 ```
 /api/v1/cas/<name>/child_request.xml  -> /api/v1/cas/<name>/id/child_request.xml
 /api/v1/cas/<name>/child_request.json -> /api/v1/cas/<name>/id/child_request.json
+```
+
+### Get RFC 8183 Publisher Request
+
+The endpoints for getting the RFC Publisher Request XML and JSON have moved from 'repo', and are now under 'id':
+
+```
+/api/v1/cas/<name>/repo/request.xml  -> /api/v1/cas/<name>/id/publisher_request.xml
+/api/v1/cas/<name>/repo/request.json -> /api/v1/cas/<name>/id/publisher_request.json
 ```
 
 ### Add Child `POST /cas/{ca_handle}/children`

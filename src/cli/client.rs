@@ -187,7 +187,7 @@ impl KrillClient {
             }
 
             CaCommand::RepoPublisherRequest(handle) => {
-                let uri = format!("api/v1/cas/{}/repo/request.json", handle);
+                let uri = format!("api/v1/cas/{}/id/publisher_request.json", handle);
                 let req: rfc8183::PublisherRequest = get_json(&self.server, &self.token, &uri).await?;
                 Ok(ApiResponse::Rfc8183PublisherRequest(req))
             }
