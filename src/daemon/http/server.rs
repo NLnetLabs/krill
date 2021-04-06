@@ -843,12 +843,10 @@ async fn api_cas(req: Request, path: &mut RequestPath) -> RoutingResult {
                     Method::DELETE => api_ca_delete(req, ca).await,
                     _ => render_unknown_method(),
                 },
-                Some("child_request.xml") => api_ca_child_req_xml(req, ca).await,
-                Some("child_request.json") => api_ca_child_req_json(req, ca).await,
                 Some("children") => api_ca_children(req, path, ca).await,
                 Some("history") => api_ca_history(req, path, ca).await,
                 Some("command") => api_ca_command_details(req, path, ca).await,
-                Some("id") => api_ca_regenerate_id(req, ca).await,
+                Some("id") => api_ca_id(req, path, ca).await,
                 Some("issues") => api_ca_issues(req, ca).await,
                 Some("keys") => api_ca_keys(req, path, ca).await,
                 Some("parents") => api_ca_parents(req, path, ca).await,
@@ -1162,12 +1160,17 @@ pub async fn api_ca_init(req: Request) -> RoutingResult {
     })
 }
 
-async fn api_ca_regenerate_id(req: Request, handle: Handle) -> RoutingResult {
+async fn api_ca_id(req: Request, path: &mut RequestPath, ca: Handle) -> RoutingResult {
     match *req.method() {
-        Method::POST => aa!(req, Permission::CA_UPDATE, handle.clone(), {
+        Method::POST => aa!(req, Permission::CA_UPDATE, ca.clone(), {
             let actor = req.actor();
-            render_empty_res(req.state().read().await.ca_update_id(handle, &actor).await)
+            render_empty_res(req.state().read().await.ca_update_id(ca, &actor).await)
         }),
+        Method::GET => match path.next() {
+            Some("child_request.xml") => api_ca_child_req_xml(req, ca).await,
+            Some("child_request.json") => api_ca_child_req_json(req, ca).await,
+            _ => render_unknown_method(),
+        },
         _ => render_unknown_method(),
     }
 }

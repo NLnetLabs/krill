@@ -181,7 +181,7 @@ impl KrillClient {
             }
 
             CaCommand::ChildRequest(handle) => {
-                let uri = format!("api/v1/cas/{}/child_request.json", handle);
+                let uri = format!("api/v1/cas/{}/id/child_request.json", handle);
                 let req = get_json(&self.server, &self.token, &uri).await?;
                 Ok(ApiResponse::Rfc8183ChildRequest(req))
             }

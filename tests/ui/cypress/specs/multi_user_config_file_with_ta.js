@@ -24,10 +24,10 @@
 // This is less hacky but very slow: (even with "type(xml, {delay: 0}))")
 //   cy.get('... pre[contenteditable="true"]').clear().type(xml)
 
-let admin     = { u: 'admin@krill',     p: 'admin'     };
-let readonly  = { u: 'readonly@krill',  p: 'readonly'  };
+let admin = { u: 'admin@krill', p: 'admin' };
+let readonly = { u: 'readonly@krill', p: 'readonly' };
 let readwrite = { u: 'readwrite@krill', p: 'readwrite' };
-let rohelper  = { u: 'rohelper@krill',  p: 'rohelper'  };
+let rohelper = { u: 'rohelper@krill', p: 'rohelper' };
 let joe = { u: 'joe', p: 'abc' };
 let sally = { u: 'sally', p: 'abc' };
 
@@ -42,32 +42,32 @@ let sally = { u: 'sally', p: 'abc' };
 // the read only user needs to be created for it by another user, and should be
 // tested for CA creation failure *before* that CA is created.
 let create_ca_test_settings = [
-  { d: 'readonly',  u: readonly.u,  p: readonly.p,  o: false, ca: 'ca_readonly' },
-  { d: 'readwrite', u: readwrite.u, p: readwrite.p, o: true,  ca: 'ca_readwrite' },
-  { d: 'admin',     u: admin.u,     p: admin.p,     o: true,  ca: 'ca_admin' },
-  { d: 'rohelper',  u: rohelper.u,  p: rohelper.p,  o: true,  ca: 'ca_readonly' },  // create the CA for the readonly user as they cannot do it themselves
-];                                                                                  
+  { d: 'readonly', u: readonly.u, p: readonly.p, o: false, ca: 'ca_readonly' },
+  { d: 'readwrite', u: readwrite.u, p: readwrite.p, o: true, ca: 'ca_readwrite' },
+  { d: 'admin', u: admin.u, p: admin.p, o: true, ca: 'ca_admin' },
+  { d: 'rohelper', u: rohelper.u, p: rohelper.p, o: true, ca: 'ca_readonly' },  // create the CA for the readonly user as they cannot do it themselves
+];
 
 let register_publisher_test_settings = [
-  { d: 'readonly',  u: readonly.u,  p: readonly.p,  o: false, a: 'Register',   ca: 'ca_readonly' },
-  { d: 'readwrite', u: readwrite.u, p: readwrite.p, o: true,  a: 'Register',   ca: 'ca_readwrite' },
-  { d: 'admin',     u: admin.u,     p: admin.p,     o: true,  a: 'Register',   ca: 'ca_admin' },
-  { d: 'rohelper',  u: rohelper.u,  p: rohelper.p,  o: true,  a: 'Unregister', ca: 'ca_readonly' }, // unregister the half-registered publisher created by the readonly user
-  { d: 'rohelper',  u: rohelper.u,  p: rohelper.p,  o: true,  a: 'Register',   ca: 'ca_readonly' }, // re-register it properly now
+  { d: 'readonly', u: readonly.u, p: readonly.p, o: false, a: 'Register', ca: 'ca_readonly' },
+  { d: 'readwrite', u: readwrite.u, p: readwrite.p, o: true, a: 'Register', ca: 'ca_readwrite' },
+  { d: 'admin', u: admin.u, p: admin.p, o: true, a: 'Register', ca: 'ca_admin' },
+  { d: 'rohelper', u: rohelper.u, p: rohelper.p, o: true, a: 'Unregister', ca: 'ca_readonly' }, // unregister the half-registered publisher created by the readonly user
+  { d: 'rohelper', u: rohelper.u, p: rohelper.p, o: true, a: 'Register', ca: 'ca_readonly' }, // re-register it properly now
 ];
 
 let register_parent_test_settings = [
-  { d: 'readonly',  u: readonly.u,  p: readonly.p,  o: false, a: 'Register',   ca: 'ca_readonly' },
-  { d: 'readwrite', u: readwrite.u, p: readwrite.p, o: true,  a: 'Register',   ca: 'ca_readwrite' },
-  { d: 'admin',     u: admin.u,     p: admin.p,     o: true,  a: 'Register',   ca: 'ca_admin' },
-  { d: 'rohelper',  u: rohelper.u,  p: rohelper.p,  o: true,  a: 'Unregister', ca: 'ca_readonly' }, // unregister the half-registered parent created by the readonly user
-  { d: 'rohelper',  u: rohelper.u,  p: rohelper.p,  o: true,  a: 'Register',   ca: 'ca_readonly' }, // re-register it properly now
+  { d: 'readonly', u: readonly.u, p: readonly.p, o: false, a: 'Register', ca: 'ca_readonly' },
+  { d: 'readwrite', u: readwrite.u, p: readwrite.p, o: true, a: 'Register', ca: 'ca_readwrite' },
+  { d: 'admin', u: admin.u, p: admin.p, o: true, a: 'Register', ca: 'ca_admin' },
+  { d: 'rohelper', u: rohelper.u, p: rohelper.p, o: true, a: 'Unregister', ca: 'ca_readonly' }, // unregister the half-registered parent created by the readonly user
+  { d: 'rohelper', u: rohelper.u, p: rohelper.p, o: true, a: 'Register', ca: 'ca_readonly' }, // re-register it properly now
 ];
 
 let add_roa_test_settings = [
-  { d: 'readonly',  u: readonly.u,  p: readonly.p,  o: false, ca: 'ca_readonly' },
-  { d: 'readwrite', u: readwrite.u, p: readwrite.p, o: true,  ca: 'ca_readwrite' },
-  { d: 'admin',     u: admin.u,     p: admin.p,     o: true,  ca: 'ca_admin' },
+  { d: 'readonly', u: readonly.u, p: readonly.p, o: false, ca: 'ca_readonly' },
+  { d: 'readwrite', u: readwrite.u, p: readwrite.p, o: true, ca: 'ca_readwrite' },
+  { d: 'admin', u: admin.u, p: admin.p, o: true, ca: 'ca_admin' },
 ];
 
 let joe_cas = ['ta', 'testbed', 'ca_admin', 'ca_readwrite', 'ca_readonly'];
@@ -180,7 +180,7 @@ describe('Config File Users with TA', () => {
   register_parent_test_settings.forEach(function (ts) {
     it(ts.a + ' CA ' + ts.ca + ' with parent as ' + ts.d + ' user should ' + (ts.o ? 'succeed' : 'fail'), () => {
       if (ts.a == 'Register') {
-        cy.intercept('GET', '/api/v1/cas/' + ts.ca + '/child_request.xml').as('getChildRequestXML')
+        cy.intercept('GET', '/api/v1/cas/' + ts.ca + '/id/child_request.xml').as('getChildRequestXML')
 
         // sign in
         cy.visit('/')
@@ -311,7 +311,7 @@ describe('Config File Users with TA', () => {
   it('CUSTOM POLICY: Joe can see all CAs but only write to ca_readwrite', () => {
     cy.intercept('GET', '/api/v1/cas/ca_readonly/repo/status').as('statusRO')
     cy.intercept('GET', '/api/v1/cas/ca_readwrite/repo/status').as('statusRW')
-    cy.intercept('GET', '/api/v1/cas/ca_readwrite/child_request.xml').as('getChildRequestXML')
+    cy.intercept('GET', '/api/v1/cas/ca_readwrite/id/child_request.xml').as('getChildRequestXML')
 
     // sign in
     cy.visit('/')
