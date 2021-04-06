@@ -58,11 +58,11 @@ The `MasterTokenAuthProvider` is tried first because:
     `OpenIDConnectAuthProvider` whether or not it should be a hard failure or if it would be okay to try the
     `MasterTokenAuthProvider` as a fallback.
 
-## ActorDef vs Actor
+## ActorDef vs Actor vs LoggedInUser
 
-A deliberate separation exists that is worth mentioning: `ActorDef` vs `Actor`.
+A deliberate separation exists that is worth mentioning: `ActorDef` vs `Actor` vs `LoggedInUser`.
 
-`AuthProvider` implementations return `Result<Option<ActorDef>>` from `fn authenticate()` to indicate either:
+`AuthProvider` implementations return `Result<Option<ActorDef>>` from `authenticate()` to indicate either:
 
   - `Ok(None)` if no credentials were found, OR
   - `Ok(Some<ActorDef>)` if the credentials were good, OR
@@ -71,13 +71,15 @@ A deliberate separation exists that is worth mentioning: `ActorDef` vs `Actor`.
 An `ActorDef` is returned instead of an `Actor` because only the `Authorizer` is allowed to create `Actor` instances.
 The `AuthProvider` therefore indicates the kind of `Actor` that could be created if the `Authorizer` permits it.
 
-This is especially important in the OpenID Connect case because a corporate employee will be able to login to the
-central identity provider at their organization but that is not the same as saying that all 10,000 employees should have
-the right to login to Krill.
+`AuthProvider` implementations return `Result<LoggedInUser>` from `login()`. Why not also return `ActorDef` here?
+`LoggedInUser` is a subset of `ActorDef` that is intended to be serialized and sent back to Lagosta after login, to give
+Lagosta what it needs to authenticate subsequent requests to the Krill API and metadata about the logged in user to
+render in the UI.
 
-So, `AuthProviders` respond with a definition of the actor they propose be created, an `ActorDef`, and only the
-`Authorizer` can decide to promote that to an `Actor`.
-
+In both the `authenticate()` and `login()` cases the `Authorizer` does any additional checks required and only
+then accepts the recommendation of the `AuthProvider`. This is especially important in the OpenID Connect case because a
+corporate employee will be able to login to the central identity provider at their organization but that is not the same
+as saying that all 10,000 employees should have the right to login to Krill.
 ## Built-in Actors
 
 There are currently four built-in actors, which for convenience have entries in `constants.rs`: _(ordered from most to least powerful)_
