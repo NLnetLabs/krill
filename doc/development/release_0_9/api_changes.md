@@ -22,22 +22,11 @@ The endpoints for getting the RFC Publisher Request XML and JSON have moved from
 /api/v1/cas/<name>/repo/request.json -> /api/v1/cas/<name>/id/publisher_request.json
 ```
 
-### Add/Update Parent
-
-There is no separate endpoint anymore for adding a named parent by posting XML to `/api/v1/cas/<ca>/parents-xml/<parent-name>`.
-
-Instead adding a parent can be done by posting XML or JSON to: `/api/v1/cas/<ca>/parents` in which case the parent name will be extracted
-from the XML, or by posting to `/api/v1/cas/<ca>/parents/<parent-name>` in which case the parent name in the path will
-override the name in the submitted JSON or XML.
-
-In all cases the server will verify that the parent can be reached, and if so, will add the parent if there
-was no parent for that name, or update the parent contact details in case there was.
-
 
 
 ### Add Child `POST /cas/{ca_handle}/children`
 
-The JSON format no longer supports `embedded`.
+The JSON format no longer supports `embedded` and is no longer includes unused fields:
 
 Old:
 ```json
@@ -67,17 +56,39 @@ New:
     "v4": "10.0.0.0/8",
     "v6": "::"
   },
-  "child_request": {
-    "tag": null,
-    "child_handle": "ca",
-    "id_cert": "<base64>"
-  }
+  "id_cert": "<base64>"
 }
 ```
 
-## Add Parent `POST /cas/{ca_handle}/parents`
 
-The `type` value `embedded` is no longer allowed. There is still a notion of a `type` because it can also be `ta`.
+### Add/Update Parent
+
+There is no separate endpoint anymore for adding a named parent by posting XML to `/api/v1/cas/<ca>/parents-xml/<parent-name>`.
+
+Instead adding a parent can be done by posting XML or JSON to: `/api/v1/cas/<ca>/parents` in which case the parent name will be extracted
+from the XML, or by posting to `/api/v1/cas/<ca>/parents/<parent-name>` in which case the parent name in the path will
+override the name in the submitted JSON or XML.
+
+In all cases the server will verify that the parent can be reached, and if so, will add the parent if there
+was no parent for that name, or update the parent contact details in case there was.
+
+When posting the *LOCAL* parent name can be included in the path, in which case it overrides the parent handle in submitted
+XML. If the parent name is included in the path and JSON is submitted, then an error will be returned if the names
+in the path and the JSON do not match.
+
+Paths:
+```
+POST /cas/{ca_handle}/parents
+POST /cas/{ca_handle}/parents/{parent_handle}
+```
+
+The JSON body has to include the local name by which the CA will refer to its parent, this is also the
+name show to the user in the UI. The local name maps to the `handle` field in the JSON below. The second
+component is the `contact`. Krill used to support an `embedded` type, but this is no longer supported, so
+this structure MUST have `"type": "rfc6492"`. We still have this type because we need to support the notion
+of a (test) Trust Anchor as well. The remainder of this structure maps to the RFC 8183 Parent Response XML,
+but then in JSON format. Note that the `parent_handle` is the handle that the parent wants the CA to use
+in messages sent to it - and it may be different from the local name stored in `handle`:
 
 ```json
 {
