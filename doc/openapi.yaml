@@ -249,9 +249,7 @@ paths:
         - "Certificate Authorities"
       summary: Add a child CA.
       description: |
-        This adds a child CA. The request body must include a JSON
-        representation of the [RFC 8183 Child Request XML](https://tools.ietf.org/html/rfc8183#section-5.2.1),
-        though the 'tag' and 'child_handle' attributes are ignored.
+        This adds a child CA.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
       requestBody:
@@ -1501,7 +1499,7 @@ components:
       required:
         - handle
         - resources
-        - child_request
+        - id_cert
       properties:
         handle:
           allOf:
@@ -1509,16 +1507,9 @@ components:
             - description: The handle attribute uniquely identifies the new Certificate Authority within this Krill instance.
         resources:
           $ref: '#/components/schemas/Resources'
-        child_request:
-          type: object
-          properties:
-            tag:
-              type: string
-            child_handle:
-              type: string
-            id_cert:
-              type: string
-              format: base64
+        id_cert:
+          type: string
+          format: base64
           
           
     UpdateCAChildRequest:

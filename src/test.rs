@@ -258,7 +258,8 @@ pub async fn add_child_to_ta_rfc6492(
     child_request: rfc8183::ChildRequest,
     resources: ResourceSet,
 ) -> ParentCaContact {
-    let req = AddChildRequest::new(handle.clone(), resources, child_request);
+    let (_, _, id_cert) = child_request.unpack();
+    let req = AddChildRequest::new(handle.clone(), resources, id_cert);
     let res = krill_admin(Command::CertAuth(CaCommand::ChildAdd(ta_handle(), req))).await;
 
     match res {
@@ -273,7 +274,9 @@ pub async fn add_child_rfc6492(
     child_request: rfc8183::ChildRequest,
     resources: ResourceSet,
 ) -> ParentCaContact {
-    let add_child_request = AddChildRequest::new(child.clone(), resources, child_request);
+    let (_, _, id_cert) = child_request.unpack();
+
+    let add_child_request = AddChildRequest::new(child.clone(), resources, id_cert);
 
     match krill_admin(Command::CertAuth(CaCommand::ChildAdd(
         parent.clone(),

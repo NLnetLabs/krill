@@ -1201,7 +1201,8 @@ impl Options {
 
         let resources = Self::parse_resource_args(matches)?.ok_or(Error::MissingResources)?;
 
-        let add_child_request = AddChildRequest::new(child, resources, child_request);
+        let (_, _, id_cert) = child_request.unpack();
+        let add_child_request = AddChildRequest::new(child, resources, id_cert);
         let command = Command::CertAuth(CaCommand::ChildAdd(my_ca, add_child_request));
         Ok(Options::make(general_args, command))
     }

@@ -430,13 +430,12 @@ impl CaManager {
         actor: &Actor,
     ) -> KrillResult<ParentCaContact> {
         info!("CA '{}' process add child request: {}", &ca, &req);
-        let (child_handle, child_res, request) = req.unpack();
-        let (tag, _, id_cert) = request.unpack();
+        let (child_handle, child_res, id_cert) = req.unpack();
 
         let add_child = CmdDet::child_add(&ca, child_handle.clone(), id_cert, child_res, actor);
         self.send_command(add_child).await?;
 
-        self.ca_parent_contact(ca, child_handle, tag, service_uri).await
+        self.ca_parent_contact(ca, child_handle, service_uri).await
     }
 
     /// Show details for a child under the CA.
@@ -451,12 +450,9 @@ impl CaManager {
         &self,
         ca_handle: &Handle,
         child_handle: ChildHandle,
-        tag: Option<String>,
         service_uri: &uri::Https,
     ) -> KrillResult<ParentCaContact> {
-        let response = self
-            .ca_parent_response(ca_handle, child_handle, tag, service_uri)
-            .await?;
+        let response = self.ca_parent_response(ca_handle, child_handle, service_uri).await?;
         Ok(ParentCaContact::for_rfc6492(response))
     }
 
@@ -465,7 +461,6 @@ impl CaManager {
         &self,
         ca: &Handle,
         child_handle: ChildHandle,
-        tag: Option<String>,
         service_uri: &uri::Https,
     ) -> KrillResult<rfc8183::ParentResponse> {
         let ca = self.get_ca(ca).await?;
@@ -474,7 +469,7 @@ impl CaManager {
         let service_uri = rfc8183::ServiceUri::Https(service_uri);
 
         Ok(rfc8183::ParentResponse::new(
-            tag,
+            None,
             ca.id_cert().clone(),
             ca.handle().clone(),
             child_handle,
