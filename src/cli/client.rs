@@ -210,15 +210,15 @@ impl KrillClient {
                 Ok(ApiResponse::Empty)
             }
 
-            CaCommand::AddParent(handle, parent) => {
+            CaCommand::AddParent(handle, parent_req) => {
                 let uri = format!("api/v1/cas/{}/parents", handle);
-                post_json(&self.server, &self.token, &uri, parent).await?;
+                post_json(&self.server, &self.token, &uri, parent_req).await?;
                 Ok(ApiResponse::Empty)
             }
 
-            CaCommand::UpdateParentContact(handle, parent, contact) => {
-                let uri = format!("api/v1/cas/{}/parents/{}", handle, parent);
-                post_json(&self.server, &self.token, &uri, contact).await?;
+            CaCommand::UpdateParentContact(handle, parent_req) => {
+                let uri = format!("api/v1/cas/{}/parents", handle);
+                post_json(&self.server, &self.token, &uri, parent_req).await?;
                 Ok(ApiResponse::Empty)
             }
 

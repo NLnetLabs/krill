@@ -330,10 +330,10 @@ pub async fn parent_statuses(ca: &Handle) -> ParentStatuses {
 }
 
 pub async fn update_parent_contact(ca: &Handle, parent: &ParentHandle, contact: ParentCaContact) {
+    let parent_req = ParentCaReq::new(parent.clone(), contact);
     krill_admin(Command::CertAuth(CaCommand::UpdateParentContact(
         ca.clone(),
-        parent.clone(),
-        contact,
+        parent_req,
     )))
     .await;
 }

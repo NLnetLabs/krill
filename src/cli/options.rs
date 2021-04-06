@@ -1319,7 +1319,9 @@ impl Options {
 
         let contact = ParentCaContact::for_rfc6492(response);
 
-        let command = Command::CertAuth(CaCommand::UpdateParentContact(my_ca, parent, contact));
+        let parent_req = ParentCaReq::new(parent, contact);
+
+        let command = Command::CertAuth(CaCommand::UpdateParentContact(my_ca, parent_req));
         Ok(Options::make(general_args, command))
     }
 
@@ -2130,7 +2132,7 @@ pub enum CaCommand {
     AddParent(Handle, ParentCaReq),
     MyParentCaContact(Handle, ParentHandle),
     ParentStatuses(Handle),
-    UpdateParentContact(Handle, ParentHandle, ParentCaContact),
+    UpdateParentContact(Handle, ParentCaReq),
     RemoveParent(Handle, ParentHandle),
 
     // Children
