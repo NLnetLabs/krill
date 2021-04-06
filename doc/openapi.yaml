@@ -217,7 +217,7 @@ paths:
         '500':
           $ref: '#/components/responses/GeneralErrorResponse'
 
-  /cas/{ca_handle}/child_request.{format}:
+  /cas/{ca_handle}/id/child_request.{format}:
     get:
       operationId: get_ca_child_request
       tags:
