@@ -351,8 +351,13 @@ describe('OpenID Connect provider with RP-Initiated logout', () => {
       let name_postfix = (timeout_adjust_secs < 0 ? 'within' : 'beyond') + '-krill-max';
       let user_name = name_prefix + name_postfix;
       let ca_name = name_prefix + 'ca-' + name_postfix;
-      let token_secs = 2; // we can't set it too low otherwise the initial token can expire before Krill sees it!
       let delay_secs = KRILL_TEST_HTTP_CLIENT_TIMEOUT_SECS + timeout_adjust_secs;
+
+      // Pick a token expiration time that is not too long so we don't have to wait unnecessarily, but not too short as
+      // on a slow system like GitHub Actions it can take a few seconds just for login to complete and then one of the
+      // static asset fetches from the browser to Krill causes the token refresh attempt to occur already (and we don't
+      // want it to occur until we try to create a CA).
+      let token_secs = 5;
 
       // login
       cy.visit('/')
