@@ -24,8 +24,11 @@ the `Authorizer`.
 
 `Actor` instances are obtained from the `Authorizer` in one of two ways:
 
-  - By calling `.authenticate()` to authenticate an HTTP request.
-  - By calling `.actor_from_def()` to obtain a representation of one of the built-in actors.
+  - By calling `.actor_from_request()` to authenticate an HTTP request.
+  - By calling `.actor_from_def()` to obtain a representation of one of the built-in actors. This is only used by
+    `KrillServer` to obtain the internal Krill actor to attribute internal Krill actions to, and by the testbuid API to
+    upgrade an anonymous actor to a special `testbed` actor.
+
 
 Authentication is delegated by the `Authorizer` to an `AuthProvder` which is a trait with three implementations:
 
@@ -59,12 +62,14 @@ The `MasterTokenAuthProvider` is tried first because:
 
 A deliberate separation exists that is worth mentioning: `ActorDef` vs `Actor`.
 
-`AuthProvider` implementations return `Option<ActorDef>` from `fn authenticate()` to indicate either `None` if no
-credentials were found or `Some<ActorDef>` if the credentials were good. They don't return an `Actor` because only the
-`Authorizer` is allowed to supply `Actor` instances. Just because an `AuthProvider` thinks the HTTP request is
-authenticated and was able to extract some identity information from it is not the same as saying that the request
-should be handled, e.g. the `Authorizer` does a sanity check that the authenticating client has permisison to
-login in Krill.
+`AuthProvider` implementations return `Result<Option<ActorDef>>` from `fn authenticate()` to indicate either:
+
+  - `Ok(None)` if no credentials were found, OR
+  - `Ok(Some<ActorDef>)` if the credentials were good, OR
+  - `Err` if credentials were present but incorrect.
+
+An `ActorDef` is returned instead of an `Actor` because only the `Authorizer` is allowed to create `Actor` instances.
+The `AuthProvider` therefore indicates the kind of `Actor` that could be created if the `Authorizer` permits it.
 
 This is especially important in the OpenID Connect case because a corporate employee will be able to login to the
 central identity provider at their organization but that is not the same as saying that all 10,000 employees should have
@@ -72,8 +77,6 @@ the right to login to Krill.
 
 So, `AuthProviders` respond with a definition of the actor they propose be created, an `ActorDef`, and only the
 `Authorizer` can decide to promote that to an `Actor`.
-
-TODO: What about the credentials found but not good case?
 
 ## Built-in Actors
 
