@@ -22,15 +22,15 @@ use hyper::service::{make_service_fn, service_fn};
 use hyper::Method;
 
 use crate::commons::api::{
-    BgpStats, ChildHandle, CommandHistoryCriteria, Handle, ParentCaContact, ParentCaReq, ParentHandle, PublisherList,
+    BgpStats, ChildHandle, CommandHistoryCriteria, Handle, ParentCaContact, ParentHandle, PublisherList,
     RoaDefinitionUpdates, RtaName, Token,
 };
+use crate::commons::api::{ParentCaReq, RepositoryContact};
 use crate::commons::bgp::BgpAnalysisAdvice;
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::AggregateStoreError;
 use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
-use crate::commons::{actor::Actor, api::RepositoryContact};
 use crate::commons::{KrillEmptyResult, KrillResult};
 use crate::constants::{
     KRILL_ENV_UPGRADE_ONLY, KRILL_VERSION_MAJOR, KRILL_VERSION_MINOR, KRILL_VERSION_PATCH, NO_RESOURCE,
@@ -850,7 +850,6 @@ async fn api_cas(req: Request, path: &mut RequestPath) -> RoutingResult {
                 Some("issues") => api_ca_issues(req, ca).await,
                 Some("keys") => api_ca_keys(req, path, ca).await,
                 Some("parents") => api_ca_parents(req, path, ca).await,
-                Some("parents-xml") => api_ca_add_parent_xml(req, path, ca).await,
                 Some("repo") => api_ca_repo(req, path, ca).await,
                 Some("routes") => api_ca_routes(req, path, ca).await,
                 Some("rta") => api_ca_rta(req, path, ca).await,
@@ -880,14 +879,14 @@ async fn api_ca_parents(req: Request, path: &mut RequestPath, ca: Handle) -> Rou
     if let Some(parent) = path.path_arg() {
         match *req.method() {
             Method::GET => api_ca_my_parent_contact(req, ca, parent).await,
-            Method::POST => api_ca_update_parent(req, ca, parent).await,
+            Method::POST => api_ca_parent_add_or_update(req, ca, Some(parent)).await,
             Method::DELETE => api_ca_remove_parent(req, ca, parent).await,
             _ => render_unknown_method(),
         }
     } else {
         match *req.method() {
             Method::GET => api_ca_my_parent_statuses(req, ca).await,
-            Method::POST => api_ca_add_parent(req, ca).await,
+            Method::POST => api_ca_parent_add_or_update(req, ca, None).await,
             _ => render_unknown_method(),
         }
     }
@@ -1405,7 +1404,7 @@ fn extract_repository_contact(handle: &Handle, bytes: Bytes) -> Result<Repositor
     }
 }
 
-pub async fn api_ca_repo_update(req: Request, handle: Handle) -> RoutingResult {
+async fn api_ca_repo_update(req: Request, handle: Handle) -> RoutingResult {
     aa!(req, Permission::CA_UPDATE, handle.clone(), {
         let actor = req.actor();
         let server = req.state().clone();
@@ -1421,103 +1420,59 @@ pub async fn api_ca_repo_update(req: Request, handle: Handle) -> RoutingResult {
     })
 }
 
-async fn api_ca_add_parent(req: Request, ca: Handle) -> RoutingResult {
+async fn api_ca_parent_add_or_update(req: Request, ca: Handle, parent_override: Option<Handle>) -> RoutingResult {
     aa!(req, Permission::CA_UPDATE, ca.clone(), {
         let actor = req.actor();
         let server = req.state().clone();
-
-        let parent_req = match req.json().await {
-            Ok(req) => req,
-            Err(e) => return render_error(e),
-        };
-
-        match ca_parent_add(server, ca, parent_req, &actor).await {
-            Ok(()) => render_ok(),
-            Err(e) => render_error(e),
-        }
-    })
-}
-
-async fn api_ca_add_parent_xml(req: Request, path: &mut RequestPath, ca: Handle) -> RoutingResult {
-    aa!(req, Permission::CA_UPDATE, ca.clone(), {
-        let actor = req.actor();
-        let server = req.state().clone();
-
-        let parent = match path.path_arg() {
-            Some(parent) => parent,
-            None => return render_error(Error::ApiInvalidHandle),
-        };
 
         let bytes = match req.api_bytes().await {
             Ok(bytes) => bytes,
             Err(e) => return render_error(e),
         };
 
-        let string = match String::from_utf8(bytes.to_vec()).map_err(Error::custom) {
-            Ok(string) => string,
-            Err(e) => return render_error(e),
-        };
-
-        let parent_req = if string.starts_with("<repository") {
-            return render_error(Error::CaParentResponseWrongXml(ca));
-        } else {
-            let res = match rfc8183::ParentResponse::validate(string.as_bytes())
-                .map_err(|e| Error::CaParentResponseInvalidXml(ca.clone(), e.to_string()))
-            {
-                Ok(res) => res,
-                Err(e) => return render_error(e),
-            };
-            let contact = ParentCaContact::Rfc6492(res);
-
-            ParentCaReq::new(parent, contact)
-        };
-
-        match ca_parent_add(server, ca, parent_req, &actor).await {
-            Ok(()) => render_ok(),
+        match extract_parent_ca_req(&ca, bytes, parent_override) {
+            Ok(parent_req) => render_empty_res(
+                server
+                    .read()
+                    .await
+                    .ca_parent_add_or_update(ca, parent_req, &actor)
+                    .await,
+            ),
             Err(e) => render_error(e),
         }
     })
 }
 
-async fn ca_parent_add(server: State, ca: Handle, parent_req: ParentCaReq, actor: &Actor) -> Result<(), Error> {
-    server.read().await.ca_parent_add(ca, parent_req, actor).await
-}
-
-fn extract_parent_ca_contact(ca: &Handle, bytes: Bytes) -> Result<ParentCaContact, Error> {
+fn extract_parent_ca_req(ca: &Handle, bytes: Bytes, parent_override: Option<Handle>) -> Result<ParentCaReq, Error> {
     let string = String::from_utf8(bytes.to_vec()).map_err(Error::custom)?;
 
     // TODO: Switch based on Content-Type header
-    if string.starts_with('<') {
+    let req = if string.starts_with('<') {
         if string.starts_with("<repository") {
-            Err(Error::CaParentResponseWrongXml(ca.clone()))
+            return Err(Error::CaParentResponseWrongXml(ca.clone()));
         } else {
             let res = rfc8183::ParentResponse::validate(string.as_bytes())
                 .map_err(|e| Error::CaParentResponseInvalidXml(ca.clone(), e.to_string()))?;
-            Ok(ParentCaContact::Rfc6492(res))
+
+            let parent_name = parent_override.unwrap_or_else(|| res.parent_handle().clone());
+            let contact = ParentCaContact::for_rfc6492(res);
+            ParentCaReq::new(parent_name, contact)
         }
     } else {
-        serde_json::from_str(&string).map_err(Error::JsonError)
-    }
-}
-
-async fn api_ca_update_parent(req: Request, ca: Handle, parent: ParentHandle) -> RoutingResult {
-    aa!(req, Permission::CA_UPDATE, ca.clone(), {
-        let actor = req.actor();
-        let server = req.state().clone();
-
-        let bytes = match req.api_bytes().await {
-            Ok(bytes) => bytes,
-            Err(e) => return render_error(e),
-        };
-
-        match extract_parent_ca_contact(&ca, bytes) {
-            Ok(contact) => {
-                let res = server.read().await.ca_parent_update(ca, parent, contact, &actor).await;
-                render_empty_res(res)
+        let req: ParentCaReq = serde_json::from_str(&string).map_err(Error::JsonError)?;
+        if let Some(parent_override) = parent_override {
+            if req.handle() != &parent_override {
+                return Err(Error::Custom(format!(
+                    "Used different parent names on path ({}) and submitted JSON ({}) for adding/updating a parent",
+                    parent_override,
+                    req.handle()
+                )));
             }
-            Err(e) => render_error(e),
         }
-    })
+        req
+    };
+
+    Ok(req)
 }
 
 async fn api_ca_remove_parent(req: Request, ca: Handle, parent: Handle) -> RoutingResult {

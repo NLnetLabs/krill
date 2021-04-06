@@ -22,6 +22,19 @@ The endpoints for getting the RFC Publisher Request XML and JSON have moved from
 /api/v1/cas/<name>/repo/request.json -> /api/v1/cas/<name>/id/publisher_request.json
 ```
 
+### Add/Update Parent
+
+There is no separate endpoint anymore for adding a named parent by posting XML to `/api/v1/cas/<ca>/parents-xml/<parent-name>`.
+
+Instead adding a parent can be done by posting XML or JSON to: `/api/v1/cas/<ca>/parents` in which case the parent name will be extracted
+from the XML, or by posting to `/api/v1/cas/<ca>/parents/<parent-name>` in which case the parent name in the path will
+override the name in the submitted JSON or XML.
+
+In all cases the server will verify that the parent can be reached, and if so, will add the parent if there
+was no parent for that name, or update the parent contact details in case there was.
+
+
+
 ### Add Child `POST /cas/{ca_handle}/children`
 
 The JSON format no longer supports `embedded`.

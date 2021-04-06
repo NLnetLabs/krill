@@ -254,7 +254,7 @@ impl KrillServer {
                             .await?;
                         let parent_req = ParentCaReq::new(ta_handle.clone(), parent_ca_contact);
                         ca_manager
-                            .ca_parent_add(testbed_ca_handle, parent_req, &system_actor)
+                            .ca_parent_add_or_update(testbed_ca_handle, parent_req, &system_actor)
                             .await?;
                     }
                 }
@@ -514,26 +514,18 @@ impl KrillServer {
         self.get_ca_manager()?.get_ca(handle).await.map(|ca| ca.child_request())
     }
 
-    /// Adds a parent to a CA, will check first if the parent can be reached.
-    pub async fn ca_parent_add(&self, handle: Handle, parent: ParentCaReq, actor: &Actor) -> KrillEmptyResult {
-        self.ca_parent_reachable(&handle, parent.contact())
-            .await
-            .map_err(|_| Error::CaParentAddNotResponsive(handle.clone(), parent.handle().clone()))?;
-        Ok(self.get_ca_manager()?.ca_parent_add(handle, parent, actor).await?)
-    }
-
     /// Updates a parent contact for a CA
-    pub async fn ca_parent_update(
+    pub async fn ca_parent_add_or_update(
         &self,
         handle: Handle,
-        parent: ParentHandle,
-        contact: ParentCaContact,
+        parent_req: ParentCaReq,
         actor: &Actor,
     ) -> KrillEmptyResult {
-        self.ca_parent_reachable(&handle, &contact).await?;
+        self.ca_parent_reachable(&handle, parent_req.contact()).await?;
+
         Ok(self
             .get_ca_manager()?
-            .ca_parent_update(handle, parent, contact, actor)
+            .ca_parent_add_or_update(handle, parent_req, actor)
             .await?)
     }
 
