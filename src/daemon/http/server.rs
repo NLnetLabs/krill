@@ -245,10 +245,7 @@ async fn map_requests(req: hyper::Request<hyper::Body>, state: State) -> Result<
         res = render_not_found(req).await;
     }
 
-    let res = match res {
-        Ok(res) => Ok(res),
-        Err(_) => Err(Error::custom("should have received not found response")),
-    };
+    let res = res.map_err(|_| Error::custom("should have received not found response"));
 
     // Augment the response with any updated auth details that were determined
     // above.
