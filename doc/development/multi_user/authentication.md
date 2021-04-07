@@ -246,7 +246,9 @@ the issued bearer token. The only thing clustered Krill servers would need to sh
 
 ### Protecting sensitive details
 
-Why encrypt the data when the connection to the client browser should already be TLS encrypted? The data we send inside the bearer token is stored by the browser in local storage which is vulnerable, especially on a shared computer.
+Why encrypt the data when the connection to the client browser should already be TLS encrypted? The data we send inside the bearer token is stored by the browser in local storage which is vulnerable, especially on a shared computer. The 
+data is opaque to the Krill web user interface, it does not read or interpret it, it only sends it back as a bearer
+token to Krill on subsequent requests to the Krill REST API.
 
 In the OpenIDConnectAuthProvider case we also need to remember a sensitive access token issued by the provider. That 
 token must not be leaked to unauthorized parties. User attributes that are used for authorization but marked as "hidden"
