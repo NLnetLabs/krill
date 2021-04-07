@@ -240,7 +240,7 @@ cache it in memory as Krill does with other data, or if Krill later supports a r
 as well.
 
 However, to avoid adding yet more state to the Krill server and to simplify the challenge of supporting clustered Krill
-deployemnts in future, these providers store the session state in the client browser instead. They do this by creating
+deployments in future, these providers store the session state in the client browser instead. They do this by creating
 an en/decryption key on startup and storing it on disk and using this key to en/decrypt details of the users session as
 the issued bearer token. The only thing clustered Krill servers would need to share then would be the en/decryption key.
 
