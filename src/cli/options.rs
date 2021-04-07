@@ -314,18 +314,28 @@ impl Options {
         app.subcommand(sub)
     }
 
-    fn make_cas_show_history_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("history").about("Show full history of a CA");
+    fn make_cas_show_history_details_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("details").about("Show details for a command in the history of a CA");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
 
         sub = sub.arg(
-            Arg::with_name("full")
-                .long("full")
-                .help("Show history including publication")
-                .required(false),
+            Arg::with_name("key")
+                .long("key")
+                .value_name("command key string")
+                .help("The command key as shown in 'history commands'")
+                .required(true),
         );
+
+        app.subcommand(sub)
+    }
+
+    fn make_cas_show_history_list_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("commands").about("Show the commands sent to a CA");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
 
         sub = sub.arg(
             Arg::with_name("rows")
@@ -362,19 +372,11 @@ impl Options {
         app.subcommand(sub)
     }
 
-    fn make_cas_show_action_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("action").about("Show details for a specific CA action");
+    fn make_cas_show_history_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("history").about("Show the history of a CA");
 
-        sub = Self::add_general_args(sub);
-        sub = Self::add_my_ca_arg(sub);
-
-        sub = sub.arg(
-            Arg::with_name("key")
-                .long("key")
-                .value_name("action key string")
-                .help("The action key (as shown in the history output)")
-                .required(true),
-        );
+        sub = Self::make_cas_show_history_list_sc(sub);
+        sub = Self::make_cas_show_history_details_sc(sub);
 
         app.subcommand(sub)
     }
@@ -979,7 +981,6 @@ impl Options {
         app = Self::make_cas_list_sc(app);
         app = Self::make_cas_show_ca_sc(app);
         app = Self::make_cas_show_history_sc(app);
-        app = Self::make_cas_show_action_sc(app);
         app = Self::make_cas_add_ca_sc(app);
         app = Self::make_cas_delete_ca_sc(app);
         app = Self::make_cas_children_sc(app);
@@ -1139,14 +1140,20 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_history(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_history_details(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+        let key = matches.value_of("key").unwrap();
+
+        let command = Command::CertAuth(CaCommand::ShowHistoryDetails(my_ca, key.to_string()));
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_cas_history_commands(matches: &ArgMatches) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
         let mut options = HistoryOptions::default();
-        if matches.is_present("full") {
-            options.short = false;
-        }
 
         if let Some(offset) = matches.value_of("offset") {
             let offset =
@@ -1175,17 +1182,18 @@ impl Options {
             options.before = Some(time);
         }
 
-        let command = Command::CertAuth(CaCommand::ShowHistory(my_ca, options));
+        let command = Command::CertAuth(CaCommand::ShowHistoryCommands(my_ca, options));
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_action(matches: &ArgMatches) -> Result<Options, Error> {
-        let general_args = GeneralArgs::from_matches(matches)?;
-        let my_ca = Self::parse_my_ca(matches)?;
-        let key = matches.value_of("key").unwrap();
-
-        let command = Command::CertAuth(CaCommand::ShowAction(my_ca, key.to_string()));
-        Ok(Options::make(general_args, command))
+    fn parse_matches_cas_history(matches: &ArgMatches) -> Result<Options, Error> {
+        if let Some(m) = matches.subcommand_matches("commands") {
+            Self::parse_matches_cas_history_commands(m)
+        } else if let Some(m) = matches.subcommand_matches("details") {
+            Self::parse_matches_cas_history_details(m)
+        } else {
+            Err(Error::UnrecognisedSubCommand)
+        }
     }
 
     fn parse_matches_cas_children_add(matches: &ArgMatches) -> Result<Options, Error> {
@@ -1755,8 +1763,6 @@ impl Options {
             Self::parse_matches_cas_show(m)
         } else if let Some(m) = matches.subcommand_matches("history") {
             Self::parse_matches_cas_history(m)
-        } else if let Some(m) = matches.subcommand_matches("action") {
-            Self::parse_matches_cas_action(m)
         } else if let Some(m) = matches.subcommand_matches("children") {
             Self::parse_matches_cas_children(m)
         } else if let Some(m) = matches.subcommand_matches("parents") {
@@ -2155,8 +2161,8 @@ pub enum CaCommand {
 
     // Show details for this CA
     Show(Handle),
-    ShowHistory(Handle, HistoryOptions),
-    ShowAction(Handle, String),
+    ShowHistoryCommands(Handle, HistoryOptions),
+    ShowHistoryDetails(Handle, String),
     Issues(Option<Handle>),
 
     // RTA
@@ -2172,7 +2178,6 @@ pub enum CaCommand {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HistoryOptions {
-    pub short: bool,
     pub offset: u64,
     pub rows: u64,
     pub after: Option<Time>,
@@ -2182,7 +2187,6 @@ pub struct HistoryOptions {
 impl Default for HistoryOptions {
     fn default() -> Self {
         HistoryOptions {
-            short: true,
             offset: 0,
             rows: 100,
             after: None,
@@ -2191,28 +2195,20 @@ impl Default for HistoryOptions {
     }
 }
 
-impl fmt::Display for HistoryOptions {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut s = if self.short { "short" } else { "full" }.to_string();
-
+impl HistoryOptions {
+    pub fn url_path_parameters(&self) -> String {
         if let Some(before) = self.before {
             let after = self.after.map(|t| t.timestamp()).unwrap_or_else(|| 0);
-            s.push_str(&format!(
-                "/{}/{}/{}/{}",
-                self.rows,
-                self.offset,
-                after,
-                before.timestamp()
-            ));
+            format!("{}/{}/{}/{}", self.rows, self.offset, after, before.timestamp())
         } else if let Some(after) = self.after {
-            s.push_str(&format!("/{}/{}/{}", self.rows, self.offset, after.timestamp()));
+            format!("{}/{}/{}", self.rows, self.offset, after.timestamp())
         } else if self.offset != 0 {
-            s.push_str(&format!("/{}/{}", self.rows, self.offset));
+            format!("{}/{}", self.rows, self.offset)
         } else if self.rows != 100 {
-            s.push_str(&format!("/{}", self.rows));
+            format!("{}", self.rows)
+        } else {
+            "".to_string()
         }
-
-        write!(f, "{}", s)
     }
 }
 

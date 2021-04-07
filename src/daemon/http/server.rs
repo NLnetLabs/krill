@@ -845,7 +845,7 @@ async fn api_cas(req: Request, path: &mut RequestPath) -> RoutingResult {
                 },
                 Some("children") => api_ca_children(req, path, ca).await,
                 Some("history") => api_ca_history(req, path, ca).await,
-                Some("command") => api_ca_command_details(req, path, ca).await,
+
                 Some("id") => api_ca_id(req, path, ca).await,
                 Some("issues") => api_ca_issues(req, ca).await,
                 Some("keys") => api_ca_keys(req, path, ca).await,
@@ -1232,14 +1232,27 @@ async fn api_ca_children(req: Request, path: &mut RequestPath, ca: Handle) -> Ro
     }
 }
 
-async fn api_ca_history(req: Request, path: &mut RequestPath, handle: Handle) -> RoutingResult {
-    let crit = match parse_history_path(path) {
-        Some(crit) => crit,
-        None => return render_unknown_method(),
-    };
-
+async fn api_ca_history_commands(req: Request, path: &mut RequestPath, handle: Handle) -> RoutingResult {
     match *req.method() {
         Method::GET => aa!(req, Permission::CA_READ, handle.clone(), {
+            // /api/v1/cas/{ca}/history/commands  /<rows>/<offset>/<after>/<before>
+            let mut crit = CommandHistoryCriteria::default();
+
+            if let Some(rows) = path.path_arg() {
+                crit.set_rows(rows);
+            }
+
+            if let Some(offset) = path.path_arg() {
+                crit.set_offset(offset);
+            }
+
+            if let Some(after) = path.path_arg() {
+                crit.set_after(after);
+            }
+
+            if let Some(before) = path.path_arg() {
+                crit.set_before(before);
+            }
             match req.state().read().await.ca_history(&handle, crit).await {
                 Ok(history) => render_json(history),
                 Err(e) => render_error(e),
@@ -1249,39 +1262,12 @@ async fn api_ca_history(req: Request, path: &mut RequestPath, handle: Handle) ->
     }
 }
 
-fn parse_history_path(path: &mut RequestPath) -> Option<CommandHistoryCriteria> {
-    // /api/v1/cas/{ca}/history/short|full/<rows>/<offset>/<after>/<before>
-    let mut crit = CommandHistoryCriteria::default();
-
+async fn api_ca_history(req: Request, path: &mut RequestPath, ca: Handle) -> RoutingResult {
     match path.next() {
-        Some("short") => crit.set_excludes(&["cmd-ca-publish"]),
-        Some("full") => {}
-        _ => return None,
-    };
-
-    if let Some(rows) = path.path_arg() {
-        crit.set_rows(rows);
-    } else {
-        return Some(crit);
+        Some("details") => api_ca_command_details(req, path, ca).await,
+        Some("commands") => api_ca_history_commands(req, path, ca).await,
+        _ => render_unknown_method(),
     }
-
-    if let Some(offset) = path.path_arg() {
-        crit.set_offset(offset);
-    } else {
-        return Some(crit);
-    }
-
-    if let Some(after) = path.path_arg() {
-        crit.set_after(after);
-    } else {
-        return Some(crit);
-    }
-
-    if let Some(before) = path.path_arg() {
-        crit.set_before(before);
-    }
-
-    Some(crit)
 }
 
 async fn api_ca_command_details(req: Request, path: &mut RequestPath, handle: Handle) -> RoutingResult {
