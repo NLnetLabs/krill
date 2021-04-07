@@ -103,3 +103,9 @@ Prior to multi-user support the Lagosta web user interface only needed to check 
 valid bearer token and after that could assume that calls to the API would not fail for authentication reasons. With
 multi-user support any call to the Krill REST API can fail because the Krill server can expire or terminate the login
 session, while previously only Lagosta could terminate a login session.
+
+Lagosta has not been redesigned for multi-user support, instead it has been grafted on top with as few changes as
+possible. One consequence of this is that Lagosta still checks if the user is "authorized" on every Vue "view" that is
+loaded which in turn causes an authentication failure when the UI is initially browsed to by an end user. Rather than
+pollute the Krill log with a warning every time a user loads the UI we treat this authz failures when invoking the
+`/api/authorized` endpoint as benign and deliberately do not log them as warnings.
