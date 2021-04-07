@@ -41,19 +41,16 @@ Authorization is done by calling through `Actor::is_allowed(action, resource)` t
 ## Authentication
 
 There is *always* an instance of `MasterTokenAuthProvider` because it is required to authenticate direct REST API calls
-and indirect REST API calls (via `krillc`) which use the master API token to authenticate.
-
-If the configured provider (via `auth_type = "..."` in `krill.conf`) is `config-file` or `openid-connect` there will
-also be an instance of `ConfigFileAuthProvider` or `OpenIDConnectAuthProvider` respectively.
+and indirect REST API calls (via `krillc`) which use the master API token to authenticate. If the configured provider
+(via `auth_type = "..."` in `krill.conf`) is `config-file` or `openid-connect` there will also be an instance of
+`ConfigFileAuthProvider` or `OpenIDConnectAuthProvider` respectively.
 
 The `Authorizer` asks the `MasterTokenAuthProvider` to attempt to authenticate a request first, if that fails and there
-is another `AuthProvider` that is then asked to authenticate.
-
-The `MasterTokenAuthProvider` is tried first because:
+is another `AuthProvider` that is then asked to authenticate. The `MasterTokenAuthProvider` is tried first because:
 
   - The check it performs is quick and cheap (simple string comparison) while the `OpenIDConnectAuthProvider` has to
-    base64 decode, decrypt and deserialize the bearer token (although it has a v short lived cache to minimize the impact
-    of bursts of parallel requests from the user agent), and
+    base64 decode, decrypt and deserialize the bearer token (although it has a v short lived cache to minimize the
+    impact of bursts of parallel requests from the user agent), and
   - It can only fail in very simple ways, while it can be hard to know for a given error from the
     `OpenIDConnectAuthProvider` whether or not it should be a hard failure or if it would be okay to try the
     `MasterTokenAuthProvider` as a fallback.
@@ -68,25 +65,27 @@ A deliberate separation exists that is worth mentioning: `ActorDef` vs `Actor` v
   - `Ok(Some<ActorDef>)` if the credentials were good, OR
   - `Err` if credentials were present but incorrect.
 
-An `ActorDef` is returned instead of an `Actor` because only the `Authorizer` is allowed to create `Actor` instances.
-The `AuthProvider` therefore indicates the kind of `Actor` that could be created if the `Authorizer` permits it.
+An `ActorDef` defines what an actor could look like but is not an instance of `Actor`. It is returned instead of `Actor`
+because only the `Authorizer` is allowed to create `Actor` instances. The `AuthProvider` therefore indicates the kind of
+`Actor` that could be created if the `Authorizer` permits it.
 
-`AuthProvider` implementations return `Result<LoggedInUser>` from `login()`. Why not also return `ActorDef` here?
-`LoggedInUser` is a subset of `ActorDef` that is intended to be serialized and sent back to Lagosta after login, to give
-Lagosta what it needs to authenticate subsequent requests to the Krill API and metadata about the logged in user to
-render in the UI.
+`AuthProvider` implementations return `Result<LoggedInUser>` from `login()`. We could possibly return an `ActorDef` here
+but the `LoggedInUser` type is returned instead as its purposely limited to contain only information about the logged in
+user which is needed by Lagosta. Unlike `ActorDef` the type is also therefore serializable.
 
-In both the `authenticate()` and `login()` cases the `Authorizer` does any additional checks required and only
-then accepts the recommendation of the `AuthProvider`. This is especially important in the OpenID Connect case because a
-corporate employee will be able to login to the central identity provider at their organization but that is not the same
-as saying that all 10,000 employees should have the right to login to Krill.
+In both the `authenticate()` and `login()` cases the `Authorizer` does any additional checks required (e.g. checks with
+the Oso [authorization](./authorization.md) policy engine if the user has the `LOGIN` permission) and only then accepts
+the recommendation of the `AuthProvider`. This is especially important in the OpenID Connect case because a corporate
+employee will be able to login to the central identity provider at their organization but that is not the same as saying
+that all 10,000 employees should have the right to login to Krill.
 ## Built-in Actors
 
-There are currently four built-in actors, which for convenience have entries in `constants.rs`: _(ordered from most to least powerful)_
+There are currently four built-in actors, which for convenience have entries in `constants.rs`: _(ordered from most to
+least powerful)_
 
 Actor | Represents | Role | Comments
 ------|------------|------|----------
-`ACTOR_DEF_KRILL` | Krill itself | `admin` | Used for initial startup and scheduled actions that are not directly attributable to a REST API client.
+`ACTOR_DEF_KRILL` | Krill itself | `admin` | Used for initial startup and scheduled actions that are not directlyattributable to a REST API client.
 `ACTOR_DEF_MASTER_TOKEN` | A client using the master API token | `admin` | Used by the users of Lagosta when `auth_type = "master-token"` (the default), or by direct clients of the REST API, or indirect clients of the REST API via `krillc`. |
 `ACTOR_DEF_TESTBED` | An anonmymous client of the testbed | `testbed` (temporarily) | Used by the testbed REST API handler functions to make internal requests to restricted APIs on the behalf of the anonymous client. See `Request::upgrade_from_anonymous`. |
 `ACTOR_DEF_ANON` | An anonymous client | None | Used for REST API calls that lack credentials or for which an error occurs during authentication. By still having an actor even in this case we can handle all API calls the same way. The anonymous actor has no role and so, unless overriden by a custom authorization policy, has no rights in Krill. It can thus only successfully request REST API endpoints that do not require authentication. |
