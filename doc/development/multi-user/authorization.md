@@ -125,6 +125,8 @@ Useful reading:
   - https://docs.osohq.com/rust/getting-started/policies.html
   - https://docs.osohq.com/rust/reference/polar/classes.html
   - https://docs.rs/oso/0.11.3/oso/index.html
+  - defaults/rules.polar
+  - defaults/roles.polar
 
 `Actor::is_allowed()` defers to [`Oso::is_allowed()`](https://docs.rs/oso/0.11.3/oso/struct.Oso.html#method.is_allowed).
 Oso will evaluate whether the given `Actor`, `Permission` and resource combination yields true or false according to the
@@ -137,6 +139,46 @@ in again via the OpenID Connect provider.
 
 Thus the same static policy can return true for Joe having read-access to CA `some_ca` but can return false for the same
 check for Alice.
+
+The rule enforcement process starts with lines starting of the form `allow(...)` in `rules.polar`. Oso will follow
+`allow(...)` rules to other rules defined in the `.polar` files, but always starts at the most specific `allow(...)`
+match that it can find. It will evaluate all matching `allow(...)` root rules until a rule results in `true` or all
+rules are exhausted, e.g.:
+
+```
+allow(actor: Actor, action: Permission, _resource: Option) if
+    _resource = nil and
+    not disallow(actor, action, _resource) and
+    actor_has_role(actor, role) and
+    role_allow(role, action);
+```
+
+_(the `_resource = nil` bit is a workaround for [Oso bug #788](https://github.com/osohq/oso/issues/788) which is already
+closed and so hopefully will be fixed in a new release of Oso soon)_
+
+This rule says allow the requested action if it is not expressly disallowed and the actor has the role required by the
+specified action. If we look at a role definition in `roles.polar`:
+
+```
+role_allow("admin", _action: Permission);
+```
+
+Here we see an extremely simple rule that says any action (of type `Permission`) can be used with role name `admin`.
+This will feed back into the `allow(...)` rule above so that `actor_has_role(actor, "admin")` will be evaluated. If we
+look at that rule back in `rules.polar`:
+
+```
+actor_has_role(actor: Actor, role) if role in actor.attr("role");
+```
+
+This says that the actor has the role if the actors attributes include an attribute called `role` which has the given
+role value. Finally, if we follow `ACTOR_DEF_MASTER_TOKEN` from `constants.rs` we see an example of an `ActorDef` which
+would yield an `Actor` with a `role` attribute with value `admin`. According to the rules we just looked at that actor
+has all Permissions in Krill.
+
+Note that this is not quite as powerful as Krill itself as Krill code can of course perform actions without going via
+the REST API and so without any permission checks at all. Remember that permission checks are primarily applied to REST
+API calls.
 
 ## Putting it all together
 
