@@ -72,11 +72,11 @@ crate. It would also make the check more magic and less obvious, and without mor
 within a handler function thereby requiring the function to be split up if separate rules need to be applied to
 different flows within it.
 
-Instead for the case where REST API handler functions all have to do almost but not quite exactly the same thing, the
+Instead, for the case where REST API handler functions all have to do almost but not quite exactly the same thing, the
 authorization check has been extracted to a Rust declarative macro (which does not require a separate crate). With more
 changes to the Krill REST API handling code it might be possible to use a normal function instead of a macro, but for
 now REST API handler functions invoke this macro via `aa!(...)`. AA here denotes that the macro checks that the given
-actor is both authenticated and has the necessary permission.
+actor is both authenticated and authorized.
 
 
 The `aa!` macro can be described like so: 
@@ -125,8 +125,8 @@ Useful reading:
   - https://docs.osohq.com/rust/getting-started/policies.html
   - https://docs.osohq.com/rust/reference/polar/classes.html
   - https://docs.rs/oso/0.11.3/oso/index.html
-  - defaults/rules.polar
-  - defaults/roles.polar
+  - [defaults/rules.polar](../../../defaults/rules.polar)
+  - [defaults/roles.polar](../../../defaults/roles.polar)
 
 `Actor::is_allowed()` defers to [`Oso::is_allowed()`](https://docs.rs/oso/0.11.3/oso/struct.Oso.html#method.is_allowed).
 Oso will evaluate whether the given `Actor`, `Permission` and resource combination yields true or false according to the
