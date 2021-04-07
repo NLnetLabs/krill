@@ -236,7 +236,7 @@ bearer token. It needs therefore to store these details somewhere.
 It could keep an in-memory mapping of issued tokens to user IDs and retrieve the user attributes from the loaded config 
 object. However, we face the same challenge but on a larger scale with the `OpenIDConnectAuthProvider` as there we need 
 to remember metadata returned by the remote provider service. We could store the data in a key value store on disk and 
-cache it in memory as Krill does with other data, or if Krill later supports a remove key value store it could use that
+cache it in memory as Krill does with other data, or if Krill later supports a remote key value store it could use that
 as well.
 
 However, to avoid adding yet more state to the Krill server and to simplify the challenge of supporting clustered Krill
