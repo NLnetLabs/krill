@@ -109,3 +109,113 @@ possible. One consequence of this is that Lagosta still checks if the user is "a
 loaded which in turn causes an authentication failure when the UI is initially browsed to by an end user. Rather than
 pollute the Krill log with a warning every time a user loads the UI we treat this authz failures when invoking the
 `/api/authorized` endpoint as benign and deliberately do not log them as warnings.
+
+## Interface with Lagosta
+
+If we look at Krill upto and including v0.8.2, the interface with Lagosta was extremely simple:
+  - The Lagosta login form would store the given API token in browser storage and then attempt to visit the welcome page
+    of the UI.
+  - Every Vue "view" load would make a call to the Krill `GET /api/v1/authorized` endpoint passing the stored API token
+    in the `Authorize: bearer xxx` HTTP request header.
+  - Krill would then compare the API token string to the one it was configured with and respond with success or failure.
+
+That was it. No login, no logout, no login form discovery and no OpenID Connect callback handler.
+
+The API that Lagosta now uses to login and logout of Krill is not part of the publically documented Krill API. The
+essence of it (taken from `daemon/http/auth.rs`) is:
+
+```rust
+pub async fn auth(req: Request) -> RoutingResult {
+    match req.path.full() {
+        #[cfg(feature = "multi-user")]
+        "/auth/callback" if *req.method() == Method::GET => {
+            req.login()
+                .await
+                .and_then(|user| {
+                    Ok(build_auth_redirect_location(user).map_err(|err| {
+                        Error::custom(format!(
+                            "Unable to build redirect with logged in user details: {:?}",
+                            err
+                        ))
+                    })?)
+                })
+                .map(|location| HttpResponse::found(&location))
+                .or_else(render_error_redirect)
+        }
+        "/auth/login" if *req.method() == Method::GET => req.get_login_url().await.or_else(render_error),
+        "/auth/login" if *req.method() == Method::POST => match req.login().await {
+            Ok(logged_in_user) => Ok(HttpResponse::json(&logged_in_user)),
+            Err(err) => render_error(err),
+        },
+        "/auth/logout" if *req.method() == Method::POST => req.logout().await.or_else(render_error),
+        _ => Err(req),
+    }
+}
+```
+
+These endpoints map on to and are routed to the four functions each `AuthProvider` has to implement.
+
+Firstly, notice that the "GET /auth/callback" endpoint is not handled unless the multi-user feature is enabled. This is
+because this endpoint is only needed by the OpenID Connect provider.
+
+The "POST /auth/login" endpoint is roughly equivalent to what was done in Krill v0.8.2 and earlier. It is a POST
+endpoint now rather than GET because login can have side-effects, e.g. it could cause Krill to make changes to its
+internal state _(in actual fact all of the `AuthProvider` implementations are currently stateless on the Krill
+server-side)_.
+
+## MasterTokenAuthProvider
+
+This is the default provider which is backward compatible with earlier versions of Krill. It is an extremely simple
+provider. The essence of this provider implementation can be reduced to something like the following (based on
+`daemon/auth/providers/master_token.rs`):
+
+Login and post-logout-redirect URLs are hard-coded, and logout doesn't actually do anything.
+
+```rust
+impl AuthProvider for MasterTokenAuthProvider {
+    fn get_login_url(&self) -> KrillResult<HttpResponse> {
+        Ok(HttpResponse::text_no_cache("/login"))
+    }
+
+    fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
+        Ok(HttpResponse::text_no_cache("/"))
+    }
+}
+```
+
+Authenticating a request simply checks if it the given bearer token matches the master API token Krill has been
+configured with:
+
+```rust
+impl AuthProvider for MasterTokenAuthProvider {
+    fn authenticate(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
+        match self.get_bearer_token(request) {
+            Some(token) if token == self.required_token => Ok(Some(ACTOR_DEF_MASTER_TOKEN)),
+            Some(_) => Err(Error::ApiInvalidCredentials("Invalid bearer token".to_string())),
+            None => Ok(None),
+        }
+    }
+```
+
+And as there are no other credentials such as a password to check, login verification is the same as authentication. The
+only extra piece is that login is for the UI and the UI wants to know the users ID and any attributes they have so these
+are packaged up and returned to the caller:
+
+```rust
+impl AuthProvider for MasterTokenAuthProvider {
+    fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
+        match self.authenticate(request)? {
+            Some(actor_def) => Ok(LoggedInUser {
+                token: self.required_token.clone(),
+                id: actor_def.name.as_str().to_string(),
+                attributes: actor_def.attributes.as_map(),
+            }),
+            None => Err(Error::ApiInvalidCredentials("Missing bearer token".to_string())),
+        }
+    }
+```
+
+Note that the hard-coded URL responses are marked as uncacheable. This is important because if we later reconfigure this
+Krill instance to use a different auth provider, the same requests will be made by Lagosta and thus if the responses
+were cached the users browser might used cached responses from the previous provider instead of contacting Krill again
+to get responses from the new provider.
