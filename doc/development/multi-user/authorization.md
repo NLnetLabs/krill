@@ -176,10 +176,8 @@ async fn api(req: Request) -> RoutingResult {
             restricted_endpoint => {
                 aa!(req, Permission::LOGIN, {                 // 11
                     match restricted_endpoint {
-                        Some("bulk") => api_bulk(req, &mut path).await,
                         Some("cas") => api_cas(req, &mut path).await,
-                        Some("publishers") => api_publishers(req, &mut path).await,
-                        Some("pubd") => aa!(req, Permission::PUB_ADMIN, api_publication_server(req, &mut path).await),
+                        // ...
                         _ => render_unknown_method(),
                     }
                 })
@@ -190,7 +188,7 @@ async fn api(req: Request) -> RoutingResult {
 
 // An example of no_warn
 async fn api_authorized(req: Request) -> RoutingResult {
-    aa!(no_warn                                               // 12
+    aa!(no_warn                                               // 13
         req,
         Permission::LOGIN,
         match *req.method() {
@@ -206,14 +204,14 @@ async fn api_ca_delete(req: Request, handle: Handle) -> RoutingResult {
     aa!(
         req,
         Permission::CA_DELETE,
-        handle.clone(),                                       // 13
+        handle.clone(),                                       // 14
         render_json_res(req.state().read().await.ca_delete(&handle, &actor).await)
     )
 }
 
 // An example of resource specific restriction deeper within Krill
 async fn api_cas_list(req: Request) -> RoutingResult {
-    aa!(req, Permission::CA_LIST, {                           // 14
+    aa!(req, Permission::CA_LIST, {                           // 15
         let actor = req.actor();
         render_json_res(req.state().read().await.ca_list(&actor))
     })
