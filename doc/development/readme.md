@@ -17,4 +17,4 @@ components and/or concepts in Krill:
 4. [Event Sourcing in Krill](./04_es_krill.md)
 5. [Repository Manager](./05_repo_manager.md)
 6. [Certificate Authority Manager](./06_ca_manager.md)
-7. [Multi-User Feature](./multi-user/readme.md)
+7. [Multi-User Feature](./multi_user/readme.md)
