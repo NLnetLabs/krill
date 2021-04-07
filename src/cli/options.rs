@@ -489,25 +489,7 @@ impl Options {
     }
 
     fn make_cas_parents_add_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("add").about("Add a parent to a CA");
-
-        sub = Self::add_general_args(sub);
-        sub = Self::add_my_ca_arg(sub);
-        sub = Self::add_parent_arg(sub);
-        sub = sub.arg(
-            Arg::with_name("response")
-                .long("response")
-                .short("r")
-                .help("The location of the RFC8183 Parent Response XML file")
-                .value_name("<XML file>")
-                .required(true),
-        );
-
-        app.subcommand(sub)
-    }
-
-    fn make_cas_parents_update_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("update").about("Update an existing parent of a CA");
+        let mut sub = SubCommand::with_name("add").about("Add a parent to, or update a parent of a CA");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -558,7 +540,6 @@ impl Options {
 
         sub = Self::make_cas_parents_request_sc(sub);
         sub = Self::make_cas_parents_add_sc(sub);
-        sub = Self::make_cas_parents_update_sc(sub);
         sub = Self::make_cas_parents_contact_sc(sub);
         sub = Self::make_cas_parents_statuses_sc(sub);
         sub = Self::make_cas_parents_remove_sc(sub);
@@ -1314,25 +1295,6 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_parents_update(matches: &ArgMatches) -> Result<Options, Error> {
-        let general_args = GeneralArgs::from_matches(matches)?;
-        let my_ca = Self::parse_my_ca(matches)?;
-
-        let parent = matches.value_of("parent").unwrap();
-        let parent = Handle::from_str(parent).map_err(|_| Error::InvalidHandle)?;
-
-        let path = matches.value_of("response").unwrap();
-        let bytes = Self::read_file_arg(path)?;
-        let response = rfc8183::ParentResponse::validate(bytes.as_ref())?;
-
-        let contact = ParentCaContact::for_rfc6492(response);
-
-        let parent_req = ParentCaReq::new(parent, contact);
-
-        let command = Command::CertAuth(CaCommand::UpdateParentContact(my_ca, parent_req));
-        Ok(Options::make(general_args, command))
-    }
-
     fn parse_matches_cas_parents_info(matches: &ArgMatches) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
@@ -1366,8 +1328,6 @@ impl Options {
             Self::parse_matches_cas_parents_request(m)
         } else if let Some(m) = matches.subcommand_matches("add") {
             Self::parse_matches_cas_parents_add(m)
-        } else if let Some(m) = matches.subcommand_matches("update") {
-            Self::parse_matches_cas_parents_update(m)
         } else if let Some(m) = matches.subcommand_matches("contact") {
             Self::parse_matches_cas_parents_info(m)
         } else if let Some(m) = matches.subcommand_matches("statuses") {
@@ -2137,7 +2097,6 @@ pub enum CaCommand {
     AddParent(Handle, ParentCaReq),
     MyParentCaContact(Handle, ParentHandle),
     ParentStatuses(Handle),
-    UpdateParentContact(Handle, ParentCaReq),
     RemoveParent(Handle, ParentHandle),
 
     // Children

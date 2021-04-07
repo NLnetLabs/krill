@@ -216,12 +216,6 @@ impl KrillClient {
                 Ok(ApiResponse::Empty)
             }
 
-            CaCommand::UpdateParentContact(handle, parent_req) => {
-                let uri = format!("api/v1/cas/{}/parents", handle);
-                post_json(&self.server, &self.token, &uri, parent_req).await?;
-                Ok(ApiResponse::Empty)
-            }
-
             CaCommand::RemoveParent(handle, parent) => {
                 let uri = format!("api/v1/cas/{}/parents/{}", handle, parent);
                 delete(&self.server, &self.token, &uri).await?;
