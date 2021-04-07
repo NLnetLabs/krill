@@ -145,7 +145,7 @@ The rule enforcement process starts with lines starting of the form `allow(...)`
 match that it can find. It will evaluate all matching `allow(...)` root rules until a rule results in `true` or all
 rules are exhausted, e.g.:
 
-```
+```rust
 allow(actor: Actor, action: Permission, _resource: Option) if
     _resource = nil and
     not disallow(actor, action, _resource) and
@@ -159,7 +159,7 @@ closed and so hopefully will be fixed in a new release of Oso soon)_
 This rule says allow the requested action if it is not expressly disallowed and the actor has the role required by the
 specified action. If we look at a role definition in `roles.polar`:
 
-```
+```rust
 role_allow("admin", _action: Permission);
 ```
 
@@ -167,7 +167,7 @@ Here we see an extremely simple rule that says any action (of type `Permission`)
 This will feed back into the `allow(...)` rule above so that `actor_has_role(actor, "admin")` will be evaluated. If we
 look at that rule back in `rules.polar`:
 
-```
+```rust
 actor_has_role(actor: Actor, role) if role in actor.attr("role");
 ```
 
