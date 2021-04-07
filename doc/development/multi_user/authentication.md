@@ -74,7 +74,7 @@ The expected flow through the `AuthProvider` functions is as follows:
   4. (optional) A client invokes `logout()` to terminate the provider login session, if any such session state is being
      managed by Krill.
 
-Some `AuthProvider` implementations will use more of the optional function calls in this flow, others less.
+Some `AuthProvider` implementations will use more of/do more in the optional function calls in this flow, others less.
 
 
 ## Raising errors
@@ -99,15 +99,15 @@ do not handle authorization.
 
 ## Impact on Lagosta
 
-Prior to multi-user support the Lagosta web user interface only needed to check on page load if the current user has a
-valid bearer token and after that could assume that calls to the API would not fail for authentication reasons. With
-multi-user support any call to the Krill REST API can fail because the Krill server can expire or terminate the login
-session, while previously only Lagosta could terminate a login session.
+Prior to multi-user support the Lagosta web user interface only needed to check on Vue "view" activation if the current
+user has a valid bearer token and after that could assume that calls to the API would not fail for authentication
+reasons. With multi-user support any call to the Krill REST API can fail because the Krill server can expire or
+terminate the login session, while previously only Lagosta could terminate a login session.
 
 Lagosta has not been redesigned for multi-user support, instead it has been grafted on top with as few changes as
-possible. One consequence of this is that Lagosta still checks if the user is "authorized" on every Vue "view" that is
-loaded which in turn causes an authentication failure when the UI is initially browsed to by an end user. Rather than
-pollute the Krill log with a warning every time a user loads the UI we treat this authz failures when invoking the
+possible. One consequence of this is that Lagosta still checks if the user is "authorized" on every Vue "view"
+activation which in turn causes an authentication failure when the UI is initially browsed to by an end user. Rather
+than pollute the Krill log with a warning every time a user loads the UI we treat these failures when invoking the
 `/api/authorized` endpoint as benign and deliberately do not log them as warnings.
 
 ## Interface with Lagosta
@@ -119,7 +119,8 @@ If we look at Krill upto and including v0.8.2, the interface with Lagosta was ex
     in the `Authorize: bearer xxx` HTTP request header.
   - Krill would then compare the API token string to the one it was configured with and respond with success or failure.
 
-That was it. No login, no logout, no login form discovery and no OpenID Connect callback handler.
+That was it. No login, no logout, no login form discovery, no OpenID Connect callback handler and no receipt, use or
+storage of user identity or metadata.
 
 The API that Lagosta now uses to login and logout of Krill is not part of the publically documented Krill API. The
 essence of it (taken from `daemon/http/auth.rs`) is:
