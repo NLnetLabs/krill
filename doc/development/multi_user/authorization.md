@@ -195,9 +195,23 @@ impl ActorDef {
     }
 ```
 
-Note that this is not quite as powerful as Krill itself as Krill code can of course perform actions without going via
-the REST API and so without any permission checks at all. Remember that permission checks are primarily applied to REST
-API calls.
+The `Actor` object exposed to Oso Polar syntax is actually a proxy type defined in `policy.rs` like this: _(with some parts stripped out to keep it simpler here)_
+
+```rust
+impl PolarClass for Actor {
+    fn get_polar_class() -> oso::Class {
+        Self::get_polar_class_builder()
+            .add_method("attr", Actor::attribute)
+            .build()
+    }
+
+    fn get_polar_class_builder() -> oso::ClassBuilder<Self> {
+        oso::Class::builder()
+    }
+}
+```
+
+Notice the `attr` "method" definition. It is this that allows Oso Polar syntax to invoke `actor.attr("role")` and reach in and retrieve an actual attribute value from the `Actor` instance.
 
 ## Putting it all together
 
