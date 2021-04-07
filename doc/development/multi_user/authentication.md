@@ -250,8 +250,7 @@ Why encrypt the data when the connection to the client browser should already be
 
 In the OpenIDConnectAuthProvider case we also need to remember a sensitive access token issued by the provider. That 
 token must not be leaked to unauthorized parties. User attributes that are used for authorization but marked as "hidden"
-so that they are not displayed by Krill web user interface in the client browser are also part of the encrypted
+so that they are not displayed by the Krill web user interface in the client browser are also part of the encrypted
 structured bearer token and could potentially contain sensistive information.
 
-As such we use the encrypted structured bearer token approach for both the `ConfigFileAuthProvider` and the
-`OpenIDConnectAuthProvider`.
+As such we use the encrypted structured bearer token approach for both the `ConfigFileAuthProvider` and the `OpenIDConnectAuthProvider`.
