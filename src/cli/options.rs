@@ -219,7 +219,7 @@ impl Options {
                 .long("parent")
                 .short("p")
                 .value_name("name")
-                .help("The local name by which your ca refers to this parent")
+                .help("The local name by which the CA refers to this parent")
                 .required(true),
         )
     }
@@ -268,7 +268,7 @@ impl Options {
                     .short("a")
                     .long("attribute")
                     .value_name("attr")
-                    .help("Specify key=value pair attributes to give the user in Krill")
+                    .help("Specify key=value pair attributes to give the user")
                     .required(false)
                     .multiple(true),
             )
@@ -466,7 +466,7 @@ impl Options {
     }
 
     fn make_cas_children_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("children").about("Manage children for a CA in Krill");
+        let mut sub = SubCommand::with_name("children").about("Manage children for a CA");
 
         sub = Self::make_cas_children_add_sc(sub);
         sub = Self::make_cas_children_update_sc(sub);
@@ -487,7 +487,7 @@ impl Options {
     }
 
     fn make_cas_parents_add_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("add").about("Add a parent to this CA");
+        let mut sub = SubCommand::with_name("add").about("Add a parent to a CA");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -505,7 +505,7 @@ impl Options {
     }
 
     fn make_cas_parents_update_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("update").about("Update an existing parent of this CA");
+        let mut sub = SubCommand::with_name("update").about("Update an existing parent of a CA");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -523,7 +523,7 @@ impl Options {
     }
 
     fn make_cas_parents_statuses_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("statuses").about("Show overview of all parent statuses of this CA");
+        let mut sub = SubCommand::with_name("statuses").about("Show overview of all parent statuses of a CA");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -532,7 +532,7 @@ impl Options {
     }
 
     fn make_cas_parents_contact_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("contact").about("Show contact information for a parent of this CA");
+        let mut sub = SubCommand::with_name("contact").about("Show contact information for a parent of a CA");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -542,7 +542,7 @@ impl Options {
     }
 
     fn make_cas_parents_remove_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("remove").about("Remove an existing parent from this CA");
+        let mut sub = SubCommand::with_name("remove").about("Remove an existing parent from a CA");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -552,7 +552,7 @@ impl Options {
     }
 
     fn make_cas_parents_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("parents").about("Manage parents for this CA");
+        let mut sub = SubCommand::with_name("parents").about("Manage parents for a CA");
 
         sub = Self::make_cas_parents_request_sc(sub);
         sub = Self::make_cas_parents_add_sc(sub);
@@ -565,7 +565,7 @@ impl Options {
     }
 
     fn make_cas_keyroll_init_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("init").about("Initialize roll for all keys held by this CA");
+        let mut sub = SubCommand::with_name("init").about("Initialize roll for all keys held by a CA");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -574,7 +574,7 @@ impl Options {
     }
 
     fn make_cas_keyroll_activate_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("activate").about("Finish roll for all keys held by this CA");
+        let mut sub = SubCommand::with_name("activate").about("Finish roll for all keys held by a CA");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -583,7 +583,7 @@ impl Options {
     }
 
     fn make_cas_keyroll_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("keyroll").about("Perform a manual key rollover in Krill");
+        let mut sub = SubCommand::with_name("keyroll").about("Perform a manual key rollover for a CA");
 
         sub = Self::make_cas_keyroll_init_sc(sub);
         sub = Self::make_cas_keyroll_activate_sc(sub);
@@ -703,7 +703,7 @@ impl Options {
     }
 
     fn make_cas_routes_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("roas").about("Manage ROAs for your CA");
+        let mut sub = SubCommand::with_name("roas").about("Manage ROAs for a CA");
 
         sub = Self::make_cas_routes_list_sc(sub);
         sub = Self::make_cas_routes_update_sc(sub);
@@ -740,7 +740,7 @@ impl Options {
     }
 
     fn make_cas_repo_update_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("update").about("Change which repository this CA uses");
+        let mut sub = SubCommand::with_name("update").about("Change which repository a CA uses");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -757,7 +757,7 @@ impl Options {
     }
 
     fn make_cas_repo_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("repo").about("Manage the repository for your CA");
+        let mut sub = SubCommand::with_name("repo").about("Manage the repository for a CA");
 
         sub = Self::make_cas_repo_request_sc(sub);
         sub = Self::make_cas_repo_show_sc(sub);
@@ -768,7 +768,7 @@ impl Options {
     }
 
     fn make_cas_issues_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("issues").about("Show issues for CAs");
+        let mut sub = SubCommand::with_name("issues").about("Show issues for a CA");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -816,7 +816,7 @@ impl Options {
 
     #[cfg(feature = "rta")]
     fn make_cas_rta_sign_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("sign").about("Create an RTA signed by this CA");
+        let mut sub = SubCommand::with_name("sign").about("Create an RTA signed by a CA");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -1863,7 +1863,7 @@ impl KrillPubcOptions {
             Arg::with_name("rsync")
                 .long("rsync")
                 .value_name("uri")
-                .help("Specify the base rsync URI for your repository, must end with '/'")
+                .help("Specify the base rsync URI for the repository, must end with '/'")
                 .required(true),
         )
     }
@@ -1874,7 +1874,7 @@ impl KrillPubcOptions {
                 .long("rrdp")
                 .value_name("uri")
                 .help(
-                    "Specify the base https URI for your RRDP (excluding notification.xml), \
+                    "Specify the base https URI for the RRDP (excluding notification.xml), \
                     must \
                     end with '/'",
                 )
@@ -1951,7 +1951,7 @@ impl KrillPubcOptions {
     }
 
     fn make_publication_server_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("server").about("Manage your Publication Server (init/stats)");
+        let mut sub = SubCommand::with_name("server").about("Manage the Publication Server (init/stats)");
         sub = Self::make_publication_server_stats_sc(sub);
         sub = Self::make_publication_server_init_sc(sub);
         sub = Self::make_publication_server_clear_sc(sub);
