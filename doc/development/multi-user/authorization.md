@@ -172,9 +172,28 @@ actor_has_role(actor: Actor, role) if role in actor.attr("role");
 ```
 
 This says that the actor has the role if the actors attributes include an attribute called `role` which has the given
-role value. Finally, if we follow `ACTOR_DEF_MASTER_TOKEN` from `constants.rs` we see an example of an `ActorDef` which
-would yield an `Actor` with a `role` attribute with value `admin`. According to the rules we just looked at that actor
-has all Permissions in Krill.
+role value.
+
+Finally, if we follow `ACTOR_DEF_MASTER_TOKEN` from `constants.rs` we see an example of an `ActorDef` which
+would yield an `Actor` with a `role` attribute with value `admin`. According to the rules we just looked at, that actor
+would have all Permissions in Krill:
+
+```rust
+// --- constants.rs ---
+pub const ACTOR_DEF_MASTER_TOKEN: ActorDef = ActorDef::system("master-token", "admin");
+
+// --- actor.rs ---
+impl ActorDef {
+    pub const fn system(name: &'static str, role: &'static str) -> ActorDef {
+        ActorDef {
+            name: ActorName::AsStaticStr(name),
+            attributes: Attributes::RoleOnly(role),
+            is_user: false,
+            new_auth: None,
+            auth_error: None,
+        }
+    }
+```
 
 Note that this is not quite as powerful as Krill itself as Krill code can of course perform actions without going via
 the REST API and so without any permission checks at all. Remember that permission checks are primarily applied to REST
