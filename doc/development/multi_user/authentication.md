@@ -20,8 +20,9 @@ particular identity possesses the details needed to confirm that identity. It do
     * [Protecting sensitive details](#protecting-sensitive-details)
     * [Session caching](#session-caching)
     * [ConfigFileAuthProvider](#configfileauthprovider)
-    * [Password management](#password-management)
-    * [Modified login form](#modified-login-form)
+        * [Password management](#password-management)
+        * [Modified login form](#modified-login-form)
+        * [AuthProvider implementation](#authprovider-implementation)
 
 ## Abstract 'plugin' interface
 
