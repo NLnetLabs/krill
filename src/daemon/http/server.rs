@@ -799,7 +799,6 @@ async fn api(req: Request) -> RoutingResult {
                     match restricted_endpoint {
                         Some("bulk") => api_bulk(req, &mut path).await,
                         Some("cas") => api_cas(req, &mut path).await,
-                        Some("publishers") => api_publishers(req, &mut path).await,
                         Some("pubd") => aa!(req, Permission::PUB_ADMIN, api_publication_server(req, &mut path).await),
                         _ => render_unknown_method(),
                     }
@@ -922,7 +921,9 @@ async fn api_ca_routes(req: Request, path: &mut RequestPath, ca: Handle) -> Rout
 
 async fn api_publication_server(req: Request, path: &mut RequestPath) -> RoutingResult {
     match path.next() {
-        None => match *req.method() {
+        Some("publishers") => api_publishers(req, path).await,
+        Some("stale") => api_stale_publishers(req, path.next()).await,
+        Some("init") => match *req.method() {
             Method::POST => {
                 let state = req.state.clone();
                 match req.json().await {
@@ -944,7 +945,7 @@ async fn api_publishers(req: Request, path: &mut RequestPath) -> RoutingResult {
                 None => api_show_pbl(req, publisher).await,
                 Some("response.xml") => api_repository_response_xml(req, publisher).await,
                 Some("response.json") => api_repository_response_json(req, publisher).await,
-                Some("stale") => api_stale_publishers(req, path.next()).await,
+
                 _ => render_unknown_method(),
             },
             None => api_list_pbl(req).await,

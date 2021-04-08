@@ -1801,8 +1801,12 @@ impl fmt::Display for AllCertAuthIssues {
                 }
                 let parent_issues = issues.parent_issues();
                 if !parent_issues.is_empty() {
-                    for (parent, issue) in parent_issues.iter() {
-                        writeln!(f, "   Parent '{}' has issue: {}", parent, issue)?;
+                    for parent_issue in parent_issues.iter() {
+                        writeln!(
+                            f,
+                            "   Parent '{}' has issue: {}",
+                            parent_issue.parent, parent_issue.issue
+                        )?;
                     }
                 }
             }
@@ -1815,38 +1819,45 @@ impl fmt::Display for AllCertAuthIssues {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthIssues {
-    repo: Option<ErrorResponse>,
-    parents: HashMap<ParentHandle, ErrorResponse>,
+    repo_issue: Option<ErrorResponse>,
+    parent_issues: Vec<CertAuthParentIssue>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CertAuthParentIssue {
+    pub parent: ParentHandle,
+    pub issue: ErrorResponse,
 }
 
 impl Default for CertAuthIssues {
     fn default() -> Self {
         CertAuthIssues {
-            repo: None,
-            parents: HashMap::new(),
+            repo_issue: None,
+            parent_issues: vec![],
         }
     }
 }
 
 impl CertAuthIssues {
     pub fn add_repo_issue(&mut self, issue: ErrorResponse) {
-        self.repo = Some(issue);
+        self.repo_issue = Some(issue);
     }
 
     pub fn repo_issue(&self) -> Option<&ErrorResponse> {
-        self.repo.as_ref()
+        self.repo_issue.as_ref()
     }
 
     pub fn add_parent_issue(&mut self, parent: ParentHandle, issue: ErrorResponse) {
-        self.parents.insert(parent, issue);
+        let parent_issue = CertAuthParentIssue { parent, issue };
+        self.parent_issues.push(parent_issue);
     }
 
-    pub fn parent_issues(&self) -> &HashMap<ParentHandle, ErrorResponse> {
-        &self.parents
+    pub fn parent_issues(&self) -> &Vec<CertAuthParentIssue> {
+        &self.parent_issues
     }
 
     pub fn is_empty(&self) -> bool {
-        self.repo.is_none() && self.parents.is_empty()
+        self.repo_issue.is_none() && self.parent_issues.is_empty()
     }
 }
 
@@ -1860,8 +1871,8 @@ impl fmt::Display for CertAuthIssues {
             }
             let parent_issues = self.parent_issues();
             if !parent_issues.is_empty() {
-                for (parent, issue) in parent_issues.iter() {
-                    writeln!(f, "Parent '{}' has issue: {}", parent, issue)?;
+                for parent_issue in parent_issues.iter() {
+                    writeln!(f, "Parent '{}' has issue: {}", parent_issue.parent, parent_issue.issue)?;
                 }
             }
         }
@@ -2267,5 +2278,25 @@ mod test {
         let empty_set_string = empty_set.to_string();
         let empty_set_from_string = ResourceSet::from_str(&empty_set_string).unwrap();
         assert_eq!(empty_set, empty_set_from_string);
+    }
+
+    #[test]
+    fn serde_cert_auth_issues() {
+        let mut issues = CertAuthIssues::default();
+
+        use crate::commons::error::Error;
+        use crate::commons::util::httpclient;
+
+        issues.add_repo_issue(Error::HttpClientError(httpclient::Error::Forbidden).to_error_response());
+        issues.add_parent_issue(
+            Handle::from_str("parent").unwrap(),
+            Error::Rfc6492SignatureInvalid.to_error_response(),
+        );
+
+        // println!("{}", serde_json::to_string_pretty(&issues).unwrap());
+        let serialized = serde_json::to_string_pretty(&issues).unwrap();
+        let deserialized = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(issues, deserialized);
     }
 }

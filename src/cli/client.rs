@@ -504,11 +504,11 @@ impl KrillPubdClient {
 
         match command {
             PublishersCommand::PublisherList => {
-                let list: PublisherList = get_json(&server, &token, "api/v1/publishers").await?;
+                let list: PublisherList = get_json(&server, &token, "api/v1/pubd/publishers").await?;
                 Ok(ApiResponse::PublisherList(list))
             }
             PublishersCommand::StalePublishers(seconds) => {
-                let uri = format!("api/v1/publication/stale/{}", seconds);
+                let uri = format!("api/v1/pubd/stale/{}", seconds);
                 let stales = get_json(&server, &token, &uri).await?;
                 Ok(ApiResponse::PublisherList(stales))
             }
@@ -517,31 +517,31 @@ impl KrillPubdClient {
                 Ok(ApiResponse::RepoStats(stats))
             }
             PublishersCommand::RepositoryInit(uris) => {
-                let uri = "api/v1/pubd";
+                let uri = "api/v1/pubd/init";
                 post_json(&server, &token, uri, uris).await?;
                 Ok(ApiResponse::Empty)
             }
             PublishersCommand::RepositoryClear => {
-                let uri = "api/v1/pubd";
+                let uri = "api/v1/pubd/init";
                 delete(&server, &token, uri).await?;
                 Ok(ApiResponse::Empty)
             }
             PublishersCommand::AddPublisher(req) => {
-                let res = post_json_with_response(&server, &token, "api/v1/publishers", req).await?;
+                let res = post_json_with_response(&server, &token, "api/v1/pubd/publishers", req).await?;
                 Ok(ApiResponse::Rfc8183RepositoryResponse(res))
             }
             PublishersCommand::RemovePublisher(handle) => {
-                let uri = format!("api/v1/publishers/{}", handle);
+                let uri = format!("api/v1/pubd/publishers/{}", handle);
                 delete(&server, &token, &uri).await?;
                 Ok(ApiResponse::Empty)
             }
             PublishersCommand::ShowPublisher(handle) => {
-                let uri = format!("api/v1/publishers/{}", handle);
+                let uri = format!("api/v1/pubd/publishers/{}", handle);
                 let details: PublisherDetails = get_json(&server, &token, &uri).await?;
                 Ok(ApiResponse::PublisherDetails(details))
             }
             PublishersCommand::RepositoryResponse(handle) => {
-                let uri = format!("api/v1/publishers/{}/response.json", handle);
+                let uri = format!("api/v1/pubd/publishers/{}/response.json", handle);
                 let res = get_json(&server, &token, &uri).await?;
                 Ok(ApiResponse::Rfc8183RepositoryResponse(res))
             }
