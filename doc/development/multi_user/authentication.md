@@ -378,3 +378,168 @@ impl AuthProvider for ConfigFileAuthProvider {
         }
     }
 ```
+
+### `OpenIDConnectAuthProvider`
+
+This provider is instantiated if `krill.conf` contains `auth_type = "openid-connect"`. This `AuthProvider` supports
+connecting to an external OpenID Connect Core 1.0 compliant identity provider to authenticate users and provide user
+metadata on our behalf.
+
+#### Rust crate dependencies
+
+The core client implementation is provided by the
+[openidconnect v2](https://crates.io/crates/openidconnect/2.0.0-beta.1) Rust crate which in turn builds on the
+[oauth2 v4](https://crates.io/crates/oauth2/4.0.0-beta.1) crate (both by the same author). We use these newest (and at
+the time of writing not yet finally released) versions as they are based on newer dependencies, contain support for
+OAuth 2.0 Token Revocation (which I contributed) and better error reporting, and these versions despite being new have
+been stable for quite some time.
+
+Additional dependencies are added for HTTP cookie parsing, JMESPath, regular expressions, URL parsing, etc. See also
+[Krill issue #428](https://github.com/NLnetLabs/krill/issues/428) concerning a second `reqwest` dependency.
+
+#### Security
+
+There are LOTS of documents about OAuth 2.0, bearer token and OpenID Connect security and things you should or shouldn't
+do. Reviewing the current implementation against these is yet to be done.
+
+#### Standards
+
+- OAuth 2.0 standardizes authentication but says nothing about identity.
+- OpenID Connect Core 1.0 standardizes identity on top of OAuth 2.0 but requires a lot of client side configuration and
+  says nothing about logout.
+- OpenID Connect Discovery 1.0 solves the configuration problem by standardizing a provider endpoint which can be used
+  to greatly reduce the amount of client side configuration required.
+- Various OpenID Connect drafts attempt to standardize login sessions and various logout mechanisms.
+- Some providers lack support for a standardized logout mechanism but do support the OAuth 2.0 Token Revocation
+  standard.
+
+This provider implements the following standards:
+
+- [RFC 6749 The OAuth 2.0 Authorization Framework](https://tools.ietf.org/html/rfc6749)
+- [RFC 7009 OAuth 2.0 Token Revocation](https://tools.ietf.org/html/rfc7009)
+- [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html)
+- [OpenID Connect Discovery 1.0](https://openid.net/specs/openid-connect-discovery-1_0.html)
+- [OpenID Connect RP-Initiated Logout 1.0 (DRAFT)](https://openid.net/specs/openid-connect-rpinitiated-1_0.html)
+
+Where the standards define optional elements, only support for those needed thus far have been implemented.
+
+#### Interoperability
+
+This implementation has been seen to work without any known issues with Micorosft Azure Active Directory, AWS Cognito,
+RedHat KeyCloak, Google Cloud Platform and Micro Focus NetIQ Access Manager 4.5.
+
+#### Terminology
+
+The OAuth 2.0 and OpenID Connect Core specifications define terms which have the following meaning in the context of
+Krill:
+
+| OAuth 2.0 Term | OpenID Connect Term | Meaning in Krill |
+|---|---|---|
+| Authorization Server | OpenID Provider (OP) | Remote OpenID Connect Core 1.0 compliant identity provider service. |
+| Client | Relying Party (RP) | The Krill server. |
+| Resource Owner | End-User | End-user interacting with the Lagosta web user interface. |
+| Resource Server | N/A | We do not access resources of the provider, we only use it for authentication & identity. |
+| User-Agent | User-Agent | The browser running the Lagosta web user interface. |
+
+#### Code smell
+
+In no particular order:
+
+- The terminology used by the specificaitons is **NOT** used, or not used consistently, in the Rust code
+  implementation in Krill.
+- There are lots of possibly out-dated comments in the code which need reviewing and updating or removing.
+- The core `provider.rs` source code file is too large.
+- There are likely opportunities to simplify and make the code more Rust idiomatic.
+- There are very few comments on the structs and functions.
+- There are no unit tests (there are however LOTS of 'integration' tests).
+
+#### Testing
+
+Testing the provider code in isolation cannot ensure that the chain of communication from Lagosta
+via Krill to the OP and back again works as expected and yields an acceptable end user experience. Therefore the
+majority of the tests use Cypress to drive Lagosta in a browser connected to an instance of Krill which in turn connects
+to a locally deployed mock OP.
+#### Flow
+
+This implementation supports the [OpenID Connect Authorization Code Flow](https://openid.net/specs/openid-connect-core-1_0.html#CodeFlowAuth) 
+which builds on the [OAuth 2.0 Authorization Code Grant](https://tools.ietf.org/html/rfc6749#section-4.1) flow.
+
+Before any of that can happen however three things must first happen:
+
+1. The instance of Krill must be registered with the OP, resulting in client credentials and an issuer URL.
+2. The discovery issuer URL of the OP and the issued client credentials must be configured in the `krill.conf` file.
+3. The `krill.conf` file and the OP must be suitably configured to permit users access to and grant them a role in
+   Krill.
+
+Once these have been properly setup the "login" flow according to RFC 6749 looks like this (with Krill specific
+annotations added in parentheses):
+
+```
+4.1.  Authorization Code Grant
+
+   The authorization code grant type is used to obtain both access
+   tokens and refresh tokens and is optimized for confidential clients.
+   Since this is a redirection-based flow, the client must be capable of
+   interacting with the resource owner's user-agent (typically a web
+   browser) and capable of receiving incoming requests (via redirection)
+   from the authorization server.
+
+     +----------+
+     | Resource |
+     |   Owner  |
+     |(End-User)|
+     +----------+
+          ^
+          |
+         (B)
+     +----|-----+          Client Identifier      +---------------+
+     |         -+----(A)-- & Redirection URI ---->|               |
+     |  User-   |                                 | Authorization |
+     |  Agent  -+----(B)-- User authenticates --->|     Server    |
+     | (Lagosta)|                                 |    (OpenID    |
+     |         -+----(C)-- Authorization Code ---<|    Provider)  |
+     +-|----|---+                                 +---------------+
+       |    |                                         ^      v
+      (A)  (C)                                        |      |
+       |    |                                         |      |
+       ^    v                                         |      |
+     +---------+                                      |      |
+     |         |>---(D)-- Authorization Code ---------'      |
+     |  Client |          & Redirection URI                  |
+     | (Krill) |                                             |
+     |         |<---(E)----- Access Token -------------------'
+     +---------+       (w/ Optional Refresh Token)
+
+   Note: The lines illustrating steps (A), (B), and (C) are broken into
+   two parts as they pass through the user-agent.
+
+                     Figure 3: Authorization Code Flow
+```
+
+[RFC 6749 section 4.1](https://tools.ietf.org/html/rfc6749#section-4.1) goes into a lot of detail about what happens at
+each step. The OpenID Connect Core 1.0 specification summarizes this more succinctly (and more relevant to us) as (with
+letters referencing the diagram above added by me in parantheses)
+
+> 3.1.1.  Authorization Code Flow Steps
+>
+> The Authorization Code Flow goes through the following steps.
+> 
+> 1. Client prepares an Authentication Request containing the desired request parameters. (A)
+> 2. Client sends the request to the Authorization Server. (A)
+> 3. Authorization Server Authenticates the End-User. (B)
+> 4. Authorization Server obtains End-User Consent/Authorization. (B)
+> 5. Authorization Server sends the End-User back to the Client with an Authorization Code. (C)
+> 6. Client requests a response using the Authorization Code at the Token Endpoint. (D)
+> 7. Client receives a response that contains an ID Token and Access Token in the response body. (E)
+> 8. Client validates the ID token and retrieves the End-User's Subject Identifier.
+
+#### Architecture
+
+The current implementation handles concurrent requests by making onward requests to the OP in the same thread as the 
+caller. There is no centralized management or queueing of requests and thus not rate limiting or deduplication of
+requests (e.g. multiple requests for static assets from the user-agent causing multiple concurrent requests to the OP to
+refresh an expiring or expired access token).
+
+Diagnosing problems and handling errors from the provider may involve logging sensitive or complex details such as
+access tokens or entire request/response exchanges with the OP. The implementation endeavours to hide this complexity
+from the end user while still giving them meaningful errors in the Lagosta web user interface.
