@@ -272,7 +272,16 @@ encrypted structured bearer token and could potentially contain sensistive infor
 As such we use the encrypted structured bearer token approach for both the `ConfigFileAuthProvider` and the
 `OpenIDConnectAuthProvider`.
 
-[^1]: https://openid.net/specs/openid-connect-core-1_0.html#AccessTokenDisclosure_
+### Session caching
+
+As browsers can make multiple requests in parallel or in short succession (e.g. for static assets) and every HTTP
+request is checked for the authentication, it could be wasteful and possibly impacting if Krill has to repeatedly base64
+decode, decrypt and JSON deserialize the same bearer token over and over again. The results of this process are
+therefore stored in an in-memory "cache" in the Krill server. As the content of the bearer token may contain sensitive
+details and thus should not be stored for longer than necessary, and as the cache is only intended to assist with short
+bursts of activity, the cache is therefore very short lived. The cache is implemented by
+`daemon::auth::common::session::LoginSessionCache`. A Krill scheduled job sweeps the cache periodically to evict expired
+entries.
 
 ### `ConfigFileAuthProvider`
 
@@ -282,4 +291,92 @@ definition of arbitrary user identities each with their own metadata by adding T
 
 #### Password management
 
-As storing passwords is a security risk we instead store password hashes. We considered
+As storing passwords is a security risk we instead store password hashes.
+
+We considered using the popular Apache `.htpasswd` format but unfortunately it either uses insecure SHA1, or
+non-standard modified MD5 [^2] or would require additional crate dependencies to support bcrypt or Linux crypt, and even
+then would only be useful if the operator already had the Apache tooling installed to be able to work with `.htpasswd`
+files. Also any hash also needs to be computable by the Lagosta web user interface client code from a password entered
+by the user as avoiding transmiting passwords also reduces the attack surface.
+
+So, instead `krillc` has been extended with a `config user` subcommand to generate hex encoded SHA-256 hashes and
+Lagosta uses the CryptoJS library [^3][^4] to SHA-256 hash the given password. The hex encoding ensures the produced
+hash is the same as produced by CryptoJS.
+
+#### Modified login form
+
+The standard login view built-in to Lagosta at `/login` only has a single input field for the master API token. This has
+been extended so that when invoked as `/login?withId=true` it will instead show username and password input fields. When
+the `GET /auth/login` Krill endpoint is queried by Lagosta to determine the login URL to use,
+`ConfigFileAuthProvider::get_login_url()` responds with `/login?withId=true` to cause this modified login form to be
+shown to the user.
+
+#### AuthProvider implementation
+
+The actual implementation is quite simple and similar to that of the `MasterTokenAuthProvider`. The essence of this
+provider implementation can be reduced to something like the following (based on
+`daemon/auth/providers/config_file/provider.rs`):
+
+Login and post-logout-redirect URLs are hard-coded. Logout evicts the session from the cache, though it would quickly
+expire anyway:
+
+```rust
+impl AuthProvider for ConfigFileAuthProvider {
+    fn get_login_url(&self) -> KrillResult<HttpResponse> {
+        Ok(HttpResponse::text_no_cache("/login?withId=true"))
+    }
+
+    fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
+        if let Some(token) = self.get_bearer_token(request) {
+            self.session_cache.remove(&token);
+        }
+
+        Ok(HttpResponse::text_no_cache("/"))
+    }
+}
+```
+Authenticating a request checks if the given bearer token can be fetched from the cache, or otherwise can be decoded,
+decrypted and deserialized and stored in the cache:
+
+```rust
+impl AuthProvider for ConfigFileAuthProvider {
+    fn authenticate(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
+        match self.get_bearer_token(request) {
+            Some(token) => {
+                let session = self.session_cache.decode(token, &self.key, true)?;
+                Ok(Some(ActorDef::user(session.id, session.attributes, None)))
+            }
+            _None_ => Ok(None),
+        }
+    }
+```
+
+Login checks for the required id and password hash query parameters, looks up the user in the users that were loaded on
+startup from `krill.conf` and creates and caches a session object based on the users detailsm and returns the generated
+token and user details to the `Authorizer` for eventual transmission back to Lagosta as JSON:
+
+```rust
+impl AuthProvider for ConfigFileAuthProvider {
+    fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
+        if let Some(Auth::IdAndPasswordHash { id, password_hash }) = self.get_auth(request) {
+            if let Some(user) = self.users.get(&id) {
+                if user.password_hash == password_hash {
+                    let api_token =
+                        self.session_cache
+                            .encode(&id, &user.attributes, HashMap::new(), &self.key, None)?;
+
+                    Ok(LoggedInUser {
+                        token: api_token,
+                        id: id.to_string(),
+                        attributes: user.attributes.clone(),
+                    })
+                }
+            }
+        }
+    }
+```
+
+[^1]: https://openid.net/specs/openid-connect-core-1_0.html#AccessTokenDisclosure_
+[^2]: https://httpd.apache.org/docs/current/misc/password_encryptions.html
+[^3]: https://code.google.com/archive/p/crypto-js/
+[^4]: _TODO: CryptoJS is apparently inactive and advises using Forge instead: https://github.com/digitalbazaar/forge_
