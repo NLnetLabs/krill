@@ -21,4 +21,5 @@ Further reading:
 - [Architecture](./architecture.md)
 - [Authentication](./authentication.md)
 - [Authorization](./authorization.md)
+- [Diagnostics](./diagnostics.md)
 - [Testing](./testing.md)
