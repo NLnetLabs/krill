@@ -8,7 +8,6 @@ particular identity possesses the details needed to confirm that identity. It do
 **IS** that identity, they could for example be using borrowed or stolen proof to verify their claim.
 
 **Contents:**
-
 * [Abstract 'plugin' interface](#abstract-plugin-interface)
 * [Expected call sequence](#expected-call-sequence)
 * [Raising errors](#raising-errors)
@@ -19,8 +18,10 @@ particular identity possesses the details needed to confirm that identity. It do
 * [Stateful providers](#stateful-providers)
     * [Storing session state](#storing-session-state)
     * [Protecting sensitive details](#protecting-sensitive-details)
+    * [Session caching](#session-caching)
     * [ConfigFileAuthProvider](#configfileauthprovider)
     * [Password management](#password-management)
+    * [Modified login form](#modified-login-form)
 
 ## Abstract 'plugin' interface
 
