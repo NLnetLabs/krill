@@ -12,7 +12,7 @@ krill_auth_session_cache_size 3
 
 This value should nearly always be zero however as the cache is very short lived.
 
-### Logs
+## Logs
 
 Enabling `DEBUG` or `TRACE` level logging to see things like:
 
