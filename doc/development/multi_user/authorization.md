@@ -3,6 +3,21 @@
 > Authorization is the act of granting an authenticated party permission to do something.<br/>
 > _Source: https://docs.microsoft.com/en-us/azure/active-directory/develop/authentication-vs-authorization_
 
+**Contents:**
+
+<!--ts-->
+* [Where is authorization applied?](#where-is-authorization-applied)
+* [When is authorization applied?](#when-is-authorization-applied)
+* [Resource terminology](#resource-terminology)
+* [Permissions](#permissions)
+* [Tight integration with <a href="http://www.osohq.com/" rel="nofollow">Oso</a>](#tight-integration-with-oso)
+* [The aa! macro](#the-aa-macro)
+* [The Oso policy](#the-oso-policy)
+* [Putting it all together](#putting-it-all-together)
+
+<!-- Added by: ximon, at: do  8 apr 2021 10:49:52 CEST -->
+
+<!--te-->
 
 ## Where is authorization applied?
 

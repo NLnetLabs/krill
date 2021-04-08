@@ -1,5 +1,13 @@
 # Multi-User: Architecture
 
+**Contents:**
+  * [Key architectural decisions](#key-architectural-decisions)
+  * [Primary components &amp; flow](#primary-components--flow)
+  * [Authentication](#authentication)
+  * [ActorDef vs Actor vs LoggedInUser](#actordef-vs-actor-vs-loggedinuser)
+  * [Built-in Actors](#built-in-actors)
+  * [Debatable design choices](#debatable-design-choices)
+
 ## Key architectural decisions
 
   - Don't add to the state stored by the server as that will complicate later efforts to run Krill as a distributed

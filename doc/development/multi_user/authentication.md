@@ -7,10 +7,20 @@ Authentication in the context of Krill is the act of determining whether a clien
 particular identity possesses the details needed to confirm that identity. It doesn't actually tell you that the client
 **IS** that identity, they could for example be using borrowed or stolen proof to verify their claim.
 
-`AuthProvider` is not named `AuthenticationProvider` because its function overlaps with that of authorization too. The
-`AuthProvider` does not make a determination about whether or not a given client is authorized to do something, but it
-does supply requested metadata about the authenticated client (when available) which is then used by the
-[authorization policy engine](./authorization) to make an authorization determination.
+**Contents:**
+
+* [Abstract 'plugin' interface](#abstract-plugin-interface)
+* [Expected call sequence](#expected-call-sequence)
+* [Raising errors](#raising-errors)
+* [Impact on Lagosta](#impact-on-lagosta)
+* [Interface with Lagosta](#interface-with-lagosta)
+* [Stateless providers](#stateless-providers)
+    * [MasterTokenAuthProvider](#mastertokenauthprovider)
+* [Stateful providers](#stateful-providers)
+    * [Storing session state](#storing-session-state)
+    * [Protecting sensitive details](#protecting-sensitive-details)
+    * [ConfigFileAuthProvider](#configfileauthprovider)
+    * [Password management](#password-management)
 
 ## Abstract 'plugin' interface
 
@@ -20,6 +30,11 @@ login form must be part of Lagosta then clearly the form has to be added to Lago
 Lagosta, submitting the form has to invoke the Krill login REST API, but the form is otherwise self-contained and
 nothing else in Lagosta needs to be changed to support a new provider. If the login form is hosted by some external
 service such as an OpenID Connect provider then no changes are needed in Lagosta at all to support the new provider!
+
+`AuthProvider` is not named `AuthenticationProvider` because its function overlaps with that of authorization too. The
+`AuthProvider` does not make a determination about whether or not a given client is authorized to do something, but it
+does supply requested metadata about the authenticated client (when available) which is then used by the
+[authorization policy engine](./authorization) to make an authorization determination.
 
 The `AuthProvider` defines four functions which every provider must implement:
 
@@ -166,7 +181,7 @@ server-side)_.
 
 ## Stateless providers
 
-### MasterTokenAuthProvider
+### `MasterTokenAuthProvider`
 
 This is the default provider which is backward compatible with earlier versions of Krill. It is an extremely simple
 provider. The essence of this provider implementation can be reduced to something like the following (based on
@@ -225,9 +240,6 @@ to get responses from the new provider.
 
 ## Stateful providers
 
-This provider is instantiated if `krill.conf` contains `auth_type = "config-file"`. This `AuthProvider` supports the 
-definition of arbitrary user identities each with their own metadata by adding TOML keys to an `[auth_users]` section in 
-`krill.conf`.
 
 ### Storing session state
 
@@ -261,3 +273,13 @@ As such we use the encrypted structured bearer token approach for both the `Conf
 `OpenIDConnectAuthProvider`.
 
 [^1]: https://openid.net/specs/openid-connect-core-1_0.html#AccessTokenDisclosure_
+
+### `ConfigFileAuthProvider`
+
+This provider is instantiated if `krill.conf` contains `auth_type = "config-file"`. This `AuthProvider` supports the 
+definition of arbitrary user identities each with their own metadata by adding TOML keys to an `[auth_users]` section in 
+`krill.conf`.
+
+#### Password management
+
+As storing passwords is a security risk we instead store password hashes. We considered
