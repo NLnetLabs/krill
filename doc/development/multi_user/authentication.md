@@ -8,6 +8,9 @@ particular identity possesses the details needed to confirm that identity. It do
 **IS** that identity, they could for example be using borrowed or stolen proof to verify their claim.
 
 **Contents:**
+
+<!-- generated using gh-md-toc -->
+
 * [Abstract 'plugin' interface](#abstract-plugin-interface)
 * [Expected call sequence](#expected-call-sequence)
 * [Raising errors](#raising-errors)
@@ -23,6 +26,15 @@ particular identity possesses the details needed to confirm that identity. It do
         * [Password management](#password-management)
         * [Modified login form](#modified-login-form)
         * [AuthProvider implementation](#authprovider-implementation)
+    * [OpenIDConnectAuthProvider](#openidconnectauthprovider)
+        * [Rust crate dependencies](#rust-crate-dependencies)
+        * [Security](#security)
+        * [Standards](#standards)
+        * [Interoperability](#interoperability)
+        * [Terminology](#terminology)
+        * [Code smell](#code-smell)
+        * [Testing](#testing)
+        * [Flow](#flow)
 
 ## Abstract 'plugin' interface
 
