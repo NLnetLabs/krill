@@ -134,7 +134,7 @@ do not handle authorization.
 Prior to multi-user support the Lagosta web user interface only needed to check on Vue "view" activation if the current
 user has a valid bearer token and after that could assume that calls to the API would not fail for authentication
 reasons. With multi-user support any call to the Krill REST API can fail because the Krill server can reject the request
-did to insufficient user rights, or the session can expire or be terminated, while previously only Lagosta could terminate
+due to insufficient user rights, or the session can expire or be terminated, while previously only Lagosta could terminate
 a login session.
 
 Lagosta has not been redesigned for multi-user support, instead it has been grafted on top with as few changes as
