@@ -17,25 +17,27 @@ particular identity possesses the details needed to confirm that identity. It do
 * [Impact on Lagosta](#impact-on-lagosta)
 * [Interface with Lagosta](#interface-with-lagosta)
 * [Stateless providers](#stateless-providers)
-    * [MasterTokenAuthProvider](#mastertokenauthprovider)
+   * [MasterTokenAuthProvider](#mastertokenauthprovider)
 * [Stateful providers](#stateful-providers)
-    * [Storing session state](#storing-session-state)
-    * [Protecting sensitive details](#protecting-sensitive-details)
-    * [Session caching](#session-caching)
-    * [ConfigFileAuthProvider](#configfileauthprovider)
-        * [Password management](#password-management)
-        * [Modified login form](#modified-login-form)
-        * [AuthProvider implementation](#authprovider-implementation)
-    * [OpenIDConnectAuthProvider](#openidconnectauthprovider)
-        * [Rust crate dependencies](#rust-crate-dependencies)
-        * [Security](#security)
-        * [Standards](#standards)
-        * [Interoperability](#interoperability)
-        * [Terminology](#terminology)
-        * [Code smell](#code-smell)
-        * [Testing](#testing)
-        * [Flow](#flow)
-
+   * [Storing session state](#storing-session-state)
+   * [Protecting sensitive details](#protecting-sensitive-details)
+   * [Session caching](#session-caching)
+   * [ConfigFileAuthProvider](#configfileauthprovider)
+      * [Password management](#password-management)
+      * [Modified login form](#modified-login-form)
+      * [AuthProvider implementation](#authprovider-implementation)
+   * [OpenIDConnectAuthProvider](#openidconnectauthprovider)
+      * [Rust crate dependencies](#rust-crate-dependencies)
+      * [Security](#security)
+      * [Standards](#standards)
+      * [Interoperability](#interoperability)
+      * [Terminology](#terminology)
+      * [Code smell](#code-smell)
+      * [Testing](#testing)
+      * [Flow](#flow)
+      * [Modified login form](#modified-login-form-1)
+      * [Architecture](#architecture)
+      * [Known issues](#known-issues)
 
 ## Abstract 'plugin' interface
 
@@ -271,6 +273,11 @@ Instead the current approach avoids the distributed Krill deployment scenario pr
 session state in the client browser. This is done by creating an en/decryption key on startup and storing it on disk and
 using this key to en/decrypt a structured bearer token that contains the session details. The only thing clustered Krill
 servers would need to share then would be the en/decryption key file.
+
+The encryption uses the AEAD AES 256 GCM cipher.
+
+_**NOTE:** Currently the encryption nonce/IV and AAD/extra data values are hard-coded. This needs to be reviewed and/or
+changed._
 
 ### Protecting sensitive details
 
@@ -548,6 +555,12 @@ letters referencing the diagram above added by me in parantheses)
 > 7. Client receives a response that contains an ID Token and Access Token in the response body. (E)
 > 8. Client validates the ID token and retrieves the End-User's Subject Identifier.
 
+#### Modified login form
+
+The Lagosta login form is NOT modified for the OpenID Connect provider, in fact it isn't used at all. Instead the
+`GET /auth/login` endpoint is responded to by `AuthProvider::get_login_url()` with a URL that directs the user to a
+login page location determined by OpenID Connect Discovery, and including per login attempt unique query parameter
+values.
 #### Architecture
 
 The current implementation handles concurrent requests by making onward requests to the OP in the same thread as the 
@@ -559,3 +572,33 @@ Diagnosing problems and handling errors from the provider may involve logging se
 access tokens or entire request/response exchanges with the OP. The implementation endeavours to hide this complexity
 from the end user while still giving them meaningful errors in the Lagosta web user interface.
 
+This provider uses the same approach as the `ConfigFileAuthProvider` to create and cache encoded encrypted structured
+bearer tokens. See above for more details.
+
+#### Known issues
+
+Unfortunately the provider is implemented using synchronous Rust code while the `openidconnect` crate uses a version of
+`reqwest` which uses its own async runtime around an asynchronous implementation. This caused failures reportedly to do
+with multiple async runtimes when used in Krill, perhaps some interaction with the existing Tokio runtime that Krill
+uses. Switching the provider over to be asynchronous is also non-trivial due to the lack of stable Rust support for
+async traits. The end result is that currently the OpenID Connect support in Krill brings in a second older copy of the
+`reqwest` dependency that is synchronous internally rather than the asynchronous version used by the rest of Krill.
+
+#### Infinite flexibility
+
+There is a lot of room in the specifications for supporting additional features and OPs can structure claim responses
+seemingly however they like. The incomplete final standardization of logout and varied state of deployment of certain
+optional features further complicates interoperation with actual OPs.
+
+This implementation tries to flexible where it seems to be needed to enable a reasonable quality of integration with the
+OP and to enable a reasonable end-user experience:
+
+- Support for various logout behaviours (e.g. AWS Cognito only supports a non-standard logout endpoint, one
+  potential customer wanted control over where users were redirected to after logout, and one tested OP deployment
+  claimed support for OAuth 2.0 Token Revocation but was not standards compliant meaning we couldn't automatically use
+  that approach but need to be able to turn that feature off).
+- Support for refresh tokens and extending the login session with the OP (but not all OPs support or permit refresh
+  tokens).
+- JMESPath and regular expression based support for arbitrary parsing and extraction of claim values from OP token and
+  user info endpoint responses.
+- Limited support for passing custom login related parameters such as scopes and other parameters.
