@@ -303,7 +303,7 @@ Lagosta web user interface client code from a password entered by the user as av
 reduces the attack surface.
 
 So, instead `krillc` has been extended with a `config user` subcommand to generate hex encoded SHA-256 hashes and
-Lagosta uses the [CryptoJS library](https://code.google.com/archive/p/crypto-js/) to SHA-256 hash the given password.
+Lagosta uses the [CryptoJS library](https://www.npmjs.com/package/crypto-js) to SHA-256 hash the given password.
 The hex encoding ensures the produced hash is the same as produced by CryptoJS.
 
 #### Modified login form
