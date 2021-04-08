@@ -62,6 +62,9 @@ be updated via the API, it does not make sense to permit ROA creation but not de
 define higher level Krill "permissions" and authorization policy is based around these, not around the REST API relative
 paths and HTTP methods used to invoke them.
 
+_**NOTE:** The set of Permission variants, the locations at which permission checks are applied, and which permissions
+are required in those locations for those actions to be performed need to be reviewed._
+
 ## Tight integration with [Oso](http://www.osohq.com/)
 
 The core of Oso is written in Rust and can thus be tightly integrated with Krill.
