@@ -36,6 +36,7 @@ particular identity possesses the details needed to confirm that identity. It do
         * [Testing](#testing)
         * [Flow](#flow)
 
+
 ## Abstract 'plugin' interface
 
 The `AuthProvider` Rust trait enables Krill to support different authentication providers without Lagosta needing to
@@ -414,6 +415,8 @@ Additional dependencies are added for HTTP cookie parsing, JMESPath, regular exp
 There are LOTS of documents about OAuth 2.0, bearer token and OpenID Connect security and things you should or shouldn't
 do. Reviewing the current implementation against these is yet to be done.
 
+_**Note:** Encrypted payload based communication with the OP is not currently supported._
+
 #### Standards
 
 - OAuth 2.0 standardizes authentication but says nothing about identity.
@@ -555,3 +558,4 @@ refresh an expiring or expired access token).
 Diagnosing problems and handling errors from the provider may involve logging sensitive or complex details such as
 access tokens or entire request/response exchanges with the OP. The implementation endeavours to hide this complexity
 from the end user while still giving them meaningful errors in the Lagosta web user interface.
+
