@@ -164,7 +164,9 @@ endpoint now rather than GET because login can have side-effects, e.g. it could 
 internal state _(in actual fact all of the `AuthProvider` implementations are currently stateless on the Krill
 server-side)_.
 
-## MasterTokenAuthProvider
+## Stateless providers
+
+### MasterTokenAuthProvider
 
 This is the default provider which is backward compatible with earlier versions of Krill. It is an extremely simple
 provider. The essence of this provider implementation can be reduced to something like the following (based on
@@ -221,7 +223,7 @@ Krill instance to use a different auth provider, the same requests will be made 
 were cached the users browser might used cached responses from the previous provider instead of contacting Krill again
 to get responses from the new provider.
 
-## ConfigFileAuthProvider
+## Stateful providers
 
 This provider is instantiated if `krill.conf` contains `auth_type = "config-file"`. This `AuthProvider` supports the 
 definition of arbitrary user identities each with their own metadata by adding TOML keys to an `[auth_users]` section in 
@@ -230,29 +232,32 @@ definition of arbitrary user identities each with their own metadata by adding T
 ### Storing session state
 
 Unlike with the `MasterTokenAuthProvider` where the user identity and attributes are implicitly "master-token" and
-"role=admin" respectively, with this provider Krill cannot know the identity and user attributes from an arbitrary 
-bearer token. It needs therefore to store these details somewhere.
+"role=admin" respectively, the `ConfigFileAuthProvider` and `OpenIDConnectAuthProvider` cannot know the identity and
+user attributes from an arbitrary bearer token. They need therefore to store these details somewhere.
 
-It could keep an in-memory mapping of issued tokens to user IDs and retrieve the user attributes from the loaded config 
-object. However, we face the same challenge but on a larger scale with the `OpenIDConnectAuthProvider` as there we need 
-to remember metadata returned by the remote provider service. We could store the data in a key value store on disk and 
-cache it in memory as Krill does with other data, or if Krill later supports a remote key value store it could use that
-as well.
+The details could be kept in an in-memory mapping of issued tokens to user details but this wouldn't work in future if
+we want to support distributed Krill deployment scenarios. We could store the data in a key value store on disk and 
+cache it in memory as Krill does with other data. Any changes required later to support distributing the current key
+value store would also then work for the login session state as well. 
 
-However, to avoid adding yet more state to the Krill server and to simplify the challenge of supporting clustered Krill
-deployments in future, these providers store the session state in the client browser instead. They do this by creating
-an en/decryption key on startup and storing it on disk and using this key to en/decrypt details of the users session as
-the issued bearer token. The only thing clustered Krill servers would need to share then would be the en/decryption key.
+Instead the current approach avoids the distributed Krill deployment scenario problems almost entirely by storing the
+session state in the client browser. This is done by creating an en/decryption key on startup and storing it on disk and
+using this key to en/decrypt a structured bearer token that contains the session details. The only thing clustered Krill
+servers would need to share then would be the en/decryption key file.
 
 ### Protecting sensitive details
 
-Why encrypt the data when the connection to the client browser should already be TLS encrypted? The data we send inside the bearer token is stored by the browser in local storage which is vulnerable, especially on a shared computer. The 
+Why encrypt the data when the connection to the client browser should already be TLS encrypted? The data we send inside
+the bearer token is stored by the browser in local storage which is vulnerable, especially on a shared computer. The 
 data is opaque to the Krill web user interface, it does not read or interpret it, it only sends it back as a bearer
 token to Krill on subsequent requests to the Krill REST API.
 
 In the OpenIDConnectAuthProvider case we also need to remember a sensitive access token issued by the provider. That 
-token must not be leaked to unauthorized parties. User attributes that are used for authorization but marked as "hidden"
-so that they are not displayed by the Krill web user interface in the client browser are also part of the encrypted
-structured bearer token and could potentially contain sensistive information.
+token must not be leaked to unauthorized parties [^1]. User attributes that are used for authorization but marked as
+"hidden" so that they are not displayed by the Krill web user interface in the client browser are also part of the
+encrypted structured bearer token and could potentially contain sensistive information.
 
-As such we use the encrypted structured bearer token approach for both the `ConfigFileAuthProvider` and the `OpenIDConnectAuthProvider`.
+As such we use the encrypted structured bearer token approach for both the `ConfigFileAuthProvider` and the
+`OpenIDConnectAuthProvider`.
+
+[^1]: https://openid.net/specs/openid-connect-core-1_0.html#AccessTokenDisclosure_
