@@ -267,9 +267,9 @@ data is opaque to the Krill web user interface, it does not read or interpret it
 token to Krill on subsequent requests to the Krill REST API.
 
 In the OpenIDConnectAuthProvider case we also need to remember a sensitive access token issued by the provider. That 
-token must not be leaked to unauthorized parties [^1]. User attributes that are used for authorization but marked as
-"hidden" so that they are not displayed by the Krill web user interface in the client browser are also part of the
-encrypted structured bearer token and could potentially contain sensistive information.
+token [must not be leaked to unauthorized parties](https://openid.net/specs/openid-connect-core-1_0.html#AccessTokenDisclosure).
+User attributes that are used for authorization but marked as "hidden" so that they are not displayed by the Krill web
+user interface in the client browser are also part of the encrypted structured bearer token and could potentially contain sensistive information.
 
 As such we use the encrypted structured bearer token approach for both the `ConfigFileAuthProvider` and the
 `OpenIDConnectAuthProvider`.
@@ -296,14 +296,15 @@ definition of arbitrary user identities each with their own metadata by adding T
 As storing passwords is a security risk we instead store password hashes.
 
 We considered using the popular Apache `.htpasswd` format but unfortunately it either uses insecure SHA1, or
-non-standard modified MD5 [^2] or would require additional crate dependencies to support bcrypt or Linux crypt, and even
-then would only be useful if the operator already had the Apache tooling installed to be able to work with `.htpasswd`
-files. Also any hash also needs to be computable by the Lagosta web user interface client code from a password entered
-by the user as avoiding transmiting passwords also reduces the attack surface.
+[non-standard MD5](https://httpd.apache.org/docs/current/misc/password_encryptions.html) or would require additional
+crate dependencies to support bcrypt or Linux crypt, and even then would only be useful if the operator already had the
+Apache tooling installed to be able to work with `.htpasswd` files. Also any hash also needs to be computable by the
+Lagosta web user interface client code from a password entered by the user as avoiding transmiting passwords also
+reduces the attack surface.
 
 So, instead `krillc` has been extended with a `config user` subcommand to generate hex encoded SHA-256 hashes and
-Lagosta uses the CryptoJS library [^3][^4] to SHA-256 hash the given password. The hex encoding ensures the produced
-hash is the same as produced by CryptoJS.
+Lagosta uses the [CryptoJS library](https://code.google.com/archive/p/crypto-js/) to SHA-256 hash the given password.
+The hex encoding ensures the produced hash is the same as produced by CryptoJS.
 
 #### Modified login form
 
@@ -377,8 +378,3 @@ impl AuthProvider for ConfigFileAuthProvider {
         }
     }
 ```
-
-[^1]: https://openid.net/specs/openid-connect-core-1_0.html#AccessTokenDisclosure_
-[^2]: https://httpd.apache.org/docs/current/misc/password_encryptions.html
-[^3]: https://code.google.com/archive/p/crypto-js/
-[^4]: _TODO: CryptoJS is apparently inactive and advises using Forge instead: https://github.com/digitalbazaar/forge_
