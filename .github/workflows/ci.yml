@@ -60,8 +60,8 @@ jobs:
       uses: hecrj/setup-rust-action@v1
       with:
         rust-version: ${{ matrix.rust }}
-    - run: cargo build --verbose ${{ matrix.args }}
-    - run: cargo test --verbose ${{ matrix.args }} 2>&1
+    - run: cargo build --verbose ${{ matrix.args }} --locked
+    - run: cargo test --verbose ${{ matrix.args }} -- --test-threads=1 2>&1
     - name: Archive Cypress UI test image & video captures
       if: ${{ always() }}
       uses: actions/upload-artifact@v2

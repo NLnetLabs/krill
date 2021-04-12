@@ -55,12 +55,13 @@ async fn add_and_remove_certificate_authority() {
     // that an API client (such as the testbed web UI) would do.
     // <child_request/>   --> testbed
     // <parent_response/> <-- testbed
+    let (_, _, child_id_cert) = rfc8183_child_request.unpack();
     let add_child_response: ParentCaContact = post_json_with_response(
         &format!("{}testbed/children", KRILL_SERVER_URI),
         &AddChildRequest::new(
             dummy_ca_handle.clone(),
             ResourceSet::from_strs("AS1", "", "").unwrap(),
-            rfc8183_child_request,
+            child_id_cert,
         ),
         None, // no token, the testbed API should be open
     )

@@ -181,13 +181,13 @@ impl KrillClient {
             }
 
             CaCommand::ChildRequest(handle) => {
-                let uri = format!("api/v1/cas/{}/child_request.json", handle);
+                let uri = format!("api/v1/cas/{}/id/child_request.json", handle);
                 let req = get_json(&self.server, &self.token, &uri).await?;
                 Ok(ApiResponse::Rfc8183ChildRequest(req))
             }
 
             CaCommand::RepoPublisherRequest(handle) => {
-                let uri = format!("api/v1/cas/{}/repo/request.json", handle);
+                let uri = format!("api/v1/cas/{}/id/publisher_request.json", handle);
                 let req: rfc8183::PublisherRequest = get_json(&self.server, &self.token, &uri).await?;
                 Ok(ApiResponse::Rfc8183PublisherRequest(req))
             }
@@ -210,15 +210,9 @@ impl KrillClient {
                 Ok(ApiResponse::Empty)
             }
 
-            CaCommand::AddParent(handle, parent) => {
+            CaCommand::AddParent(handle, parent_req) => {
                 let uri = format!("api/v1/cas/{}/parents", handle);
-                post_json(&self.server, &self.token, &uri, parent).await?;
-                Ok(ApiResponse::Empty)
-            }
-
-            CaCommand::UpdateParentContact(handle, parent, contact) => {
-                let uri = format!("api/v1/cas/{}/parents/{}", handle, parent);
-                post_json(&self.server, &self.token, &uri, contact).await?;
+                post_json(&self.server, &self.token, &uri, parent_req).await?;
                 Ok(ApiResponse::Empty)
             }
 
@@ -326,15 +320,19 @@ impl KrillClient {
                 Ok(ApiResponse::CertAuthInfo(ca_info))
             }
 
-            CaCommand::ShowHistory(handle, options) => {
-                let uri = format!("api/v1/cas/{}/history/{}", handle, options);
+            CaCommand::ShowHistoryCommands(handle, options) => {
+                let uri = format!(
+                    "api/v1/cas/{}/history/commands/{}",
+                    handle,
+                    options.url_path_parameters()
+                );
                 let history = get_json(&self.server, &self.token, &uri).await?;
 
                 Ok(ApiResponse::CertAuthHistory(history))
             }
 
-            CaCommand::ShowAction(handle, key) => {
-                let uri = format!("api/v1/cas/{}/command/{}", handle, key);
+            CaCommand::ShowHistoryDetails(handle, key) => {
+                let uri = format!("api/v1/cas/{}/history/details/{}", handle, key);
                 let action = get_json(&self.server, &self.token, &uri).await?;
 
                 Ok(ApiResponse::CertAuthAction(action))
@@ -506,11 +504,11 @@ impl KrillPubdClient {
 
         match command {
             PublishersCommand::PublisherList => {
-                let list: PublisherList = get_json(&server, &token, "api/v1/publishers").await?;
+                let list: PublisherList = get_json(&server, &token, "api/v1/pubd/publishers").await?;
                 Ok(ApiResponse::PublisherList(list))
             }
             PublishersCommand::StalePublishers(seconds) => {
-                let uri = format!("api/v1/publication/stale/{}", seconds);
+                let uri = format!("api/v1/pubd/stale/{}", seconds);
                 let stales = get_json(&server, &token, &uri).await?;
                 Ok(ApiResponse::PublisherList(stales))
             }
@@ -519,31 +517,31 @@ impl KrillPubdClient {
                 Ok(ApiResponse::RepoStats(stats))
             }
             PublishersCommand::RepositoryInit(uris) => {
-                let uri = "api/v1/pubd";
+                let uri = "api/v1/pubd/init";
                 post_json(&server, &token, uri, uris).await?;
                 Ok(ApiResponse::Empty)
             }
             PublishersCommand::RepositoryClear => {
-                let uri = "api/v1/pubd";
+                let uri = "api/v1/pubd/init";
                 delete(&server, &token, uri).await?;
                 Ok(ApiResponse::Empty)
             }
             PublishersCommand::AddPublisher(req) => {
-                let res = post_json_with_response(&server, &token, "api/v1/publishers", req).await?;
+                let res = post_json_with_response(&server, &token, "api/v1/pubd/publishers", req).await?;
                 Ok(ApiResponse::Rfc8183RepositoryResponse(res))
             }
             PublishersCommand::RemovePublisher(handle) => {
-                let uri = format!("api/v1/publishers/{}", handle);
+                let uri = format!("api/v1/pubd/publishers/{}", handle);
                 delete(&server, &token, &uri).await?;
                 Ok(ApiResponse::Empty)
             }
             PublishersCommand::ShowPublisher(handle) => {
-                let uri = format!("api/v1/publishers/{}", handle);
+                let uri = format!("api/v1/pubd/publishers/{}", handle);
                 let details: PublisherDetails = get_json(&server, &token, &uri).await?;
                 Ok(ApiResponse::PublisherDetails(details))
             }
             PublishersCommand::RepositoryResponse(handle) => {
-                let uri = format!("api/v1/publishers/{}/response.json", handle);
+                let uri = format!("api/v1/pubd/publishers/{}/response.json", handle);
                 let res = get_json(&server, &token, &uri).await?;
                 Ok(ApiResponse::Rfc8183RepositoryResponse(res))
             }

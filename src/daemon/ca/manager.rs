@@ -430,13 +430,12 @@ impl CaManager {
         actor: &Actor,
     ) -> KrillResult<ParentCaContact> {
         info!("CA '{}' process add child request: {}", &ca, &req);
-        let (child_handle, child_res, request) = req.unpack();
-        let (tag, _, id_cert) = request.unpack();
+        let (child_handle, child_res, id_cert) = req.unpack();
 
         let add_child = CmdDet::child_add(&ca, child_handle.clone(), id_cert, child_res, actor);
         self.send_command(add_child).await?;
 
-        self.ca_parent_contact(ca, child_handle, tag, service_uri).await
+        self.ca_parent_contact(ca, child_handle, service_uri).await
     }
 
     /// Show details for a child under the CA.
@@ -451,12 +450,9 @@ impl CaManager {
         &self,
         ca_handle: &Handle,
         child_handle: ChildHandle,
-        tag: Option<String>,
         service_uri: &uri::Https,
     ) -> KrillResult<ParentCaContact> {
-        let response = self
-            .ca_parent_response(ca_handle, child_handle, tag, service_uri)
-            .await?;
+        let response = self.ca_parent_response(ca_handle, child_handle, service_uri).await?;
         Ok(ParentCaContact::for_rfc6492(response))
     }
 
@@ -465,7 +461,6 @@ impl CaManager {
         &self,
         ca: &Handle,
         child_handle: ChildHandle,
-        tag: Option<String>,
         service_uri: &uri::Https,
     ) -> KrillResult<rfc8183::ParentResponse> {
         let ca = self.get_ca(ca).await?;
@@ -474,7 +469,7 @@ impl CaManager {
         let service_uri = rfc8183::ServiceUri::Https(service_uri);
 
         Ok(rfc8183::ParentResponse::new(
-            tag,
+            None,
             ca.id_cert().clone(),
             ca.handle().clone(),
             child_handle,
@@ -641,28 +636,26 @@ impl CaManager {
 /// # CAs as children
 ///
 impl CaManager {
-    /// Adds a parent to a CA. This will trigger that the CA connects to this new parent
-    /// in order to learn its resource entitlements and set up the resource class(es) under
-    /// this parent, and request certificate(s).
-    pub async fn ca_parent_add(&self, handle: Handle, parent: ParentCaReq, actor: &Actor) -> KrillResult<()> {
-        let (parent_handle, parent_contact) = parent.unpack();
-
-        let add = CmdDet::add_parent(&handle, parent_handle, parent_contact, actor);
-        self.send_command(add).await?;
-        Ok(())
-    }
-
-    /// Updates a parent of a CA, this can be used to update the service uri and/or
-    /// identity certificate for an existing parent.
-    pub async fn ca_parent_update(
+    /// Adds a new parent, or updates an existing parent of a CA. Adding a parent will trigger that the
+    /// CA connects to this new parent in order to learn its resource entitlements and set up the resource
+    /// class(es) under it, and request certificate(s).
+    pub async fn ca_parent_add_or_update(
         &self,
         handle: Handle,
-        parent: ParentHandle,
-        contact: ParentCaContact,
+        parent_req: ParentCaReq,
         actor: &Actor,
     ) -> KrillResult<()> {
-        let upd = CmdDet::update_parent(&handle, parent, contact, actor);
-        self.send_command(upd).await?;
+        let ca = self.get_ca(&handle).await?;
+
+        let (parent, contact) = parent_req.unpack();
+
+        let cmd = if !ca.parent_known(&parent) {
+            CmdDet::add_parent(&handle, parent, contact, actor)
+        } else {
+            CmdDet::update_parent(&handle, parent, contact, actor)
+        };
+
+        self.send_command(cmd).await?;
         Ok(())
     }
 

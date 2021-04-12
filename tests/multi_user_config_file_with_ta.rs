@@ -33,7 +33,7 @@ async fn multi_user_config_file_with_ta_test() {
     cas_and_users.insert("ca_readonly", vec!["krill", "user:rohelper@krill"]);
 
     for (ca, expected_users) in cas_and_users {
-        let r = krill_admin(Command::CertAuth(CaCommand::ShowHistory(
+        let r = krill_admin(Command::CertAuth(CaCommand::ShowHistoryCommands(
             Handle::from_str(ca).unwrap(),
             HistoryOptions::default(),
         )))
