@@ -103,7 +103,7 @@ describe('Config File Users with TA', () => {
   register_publisher_test_settings.forEach(function (ts) {
     it(ts.a + ' CA ' + ts.ca + ' with repository as ' + ts.d + ' user should ' + (ts.o ? 'succeed' : 'fail'), () => {
       if (ts.a == 'Register') {
-        cy.intercept('GET', '/api/v1/cas/' + ts.ca + '/repo/request.xml').as('getRepoRequestXML')
+        cy.intercept('GET', '/api/v1/cas/' + ts.ca + '/id/publisher_request.xml').as('getRepoRequestXML')
 
         // sign in
         cy.visit('/')
