@@ -26,7 +26,7 @@ The endpoints for getting the RFC Publisher Request XML and JSON have moved from
 
 ### Add Child `POST /cas/{ca_handle}/children`
 
-The JSON format no longer supports `embedded` and is no longer includes unused fields:
+The JSON format no longer supports `embedded` and no longer include unused fields:
 
 Old:
 ```json
