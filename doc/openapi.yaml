@@ -672,7 +672,7 @@ paths:
         '500':
           $ref: '#/components/responses/GeneralErrorResponse'
 
-  /cas/{ca_handle}/id/publisher-request.{format}:
+  /cas/{ca_handle}/id/publisher_request.{format}:
     get:
       operationId: get_ca_publisher_request
       tags:
