@@ -154,12 +154,7 @@ impl OpenIDConnectAuthProvider {
     }
 
     fn initialize_connection_if_needed(&self) -> KrillResult<()> {
-        let mut conn_guard = self.conn
-            .write()
-            .map_err(|err| OpenIDConnectAuthProvider::internal_error(
-                "Unable to initialize provider connection: Unable to acquire internal lock",
-                Some(&stringify_cause_chain(err)),
-            ))?;
+        let mut conn_guard = self.conn.write().unwrap(); // should never fail, better to panic and crash out if it does
 
         if conn_guard.is_none() {
             *conn_guard = Some(self.initialize_connection()?);
@@ -816,12 +811,7 @@ impl OpenIDConnectAuthProvider {
     }
 
     fn get_connection(&self) -> KrillResult<RwLockReadGuard<Option<ProviderConnectionProperties>>> {
-        let conn_guard = self.conn
-            .read()
-            .map_err(|err| OpenIDConnectAuthProvider::internal_error(
-                "Unable to login: Unable to acquire internal lock",
-                Some(&stringify_cause_chain(err)),
-            ))?;
+        let conn_guard = self.conn.read().unwrap(); // should never fail, better to panic and crash out if it does
 
         conn_guard.as_ref().ok_or_else(|| OpenIDConnectAuthProvider::internal_error(
                 "Connection to provider not yet established",
