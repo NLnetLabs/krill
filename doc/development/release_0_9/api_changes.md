@@ -83,7 +83,7 @@ POST /cas/{ca_handle}/parents/{parent_handle}
 ```
 
 The JSON body has to include the local name by which the CA will refer to its parent, this is also the
-name show to the user in the UI. The local name maps to the `handle` field in the JSON below. The second
+name shown to the user in the UI. The local name maps to the `handle` field in the JSON below. The second
 component is the `contact`. Krill used to support an `embedded` type, but this is no longer supported, so
 this structure MUST have `"type": "rfc6492"`. We still have this type because we need to support the notion
 of a (test) Trust Anchor as well. The remainder of this structure maps to the RFC 8183 Parent Response XML,
