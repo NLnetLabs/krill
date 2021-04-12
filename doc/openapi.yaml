@@ -217,7 +217,7 @@ paths:
         '500':
           $ref: '#/components/responses/GeneralErrorResponse'
 
-  /cas/{ca_handle}/child_request.{format}:
+  /cas/{ca_handle}/id/child_request.{format}:
     get:
       operationId: get_ca_child_request
       tags:
@@ -249,9 +249,7 @@ paths:
         - "Certificate Authorities"
       summary: Add a child CA.
       description: |
-        This adds a child CA. The request body must include a JSON
-        representation of the [RFC 8183 Child Request XML](https://tools.ietf.org/html/rfc8183#section-5.2.1),
-        though the 'tag' and 'child_handle' attributes are ignored.
+        This adds a child CA.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
       requestBody:
@@ -481,13 +479,14 @@ paths:
       operationId: add_ca_parent
       tags:
         - "Certificate Authorities"
-      summary: Add a parent to a CA.
+      summary: Add or update a parent to a CA.
       description: |
         Add a parent to the CA. Note that your CA will only request a certificate
         from any of its parents after a repository has been configured for it.
         
-        Submit the RFC 8183 Parent Response XML, or JSON. The JSON format allows
-        overriding the parent_handle with a local name for your CA.
+        Submit the RFC 8183 Parent Response XML, or JSON. The JSON format expects
+        the local name for the parent as 'handle', whereas in case of XML this will
+        be taken from the `parent_handle`.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
       requestBody:
@@ -544,10 +543,11 @@ paths:
       operationId: update_ca_parent_contact
       tags:
         - "Certificate Authorities"
-      summary: Update the contact information for an existing parent.
+      summary: Add or update a parent to a CA.
       description: |
-        Should not be needed often, but say that your parent updates their ID
-        cert or service URI for RFC 6492, then you will need to tell the CA.
+        In this case the local name of the parent is specified in the path. An error
+        will be returned in case this name does not match the handle in the submitted JSON.
+        If XML was submitted then this will simply override the name found for `publisher_handle`.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
         - $ref: '#/components/parameters/parent_handle'
@@ -672,7 +672,7 @@ paths:
         '500':
           $ref: '#/components/responses/GeneralErrorResponse'
 
-  /cas/{ca_handle}/repo/request.{format}:
+  /cas/{ca_handle}/id/publisher_request.{format}:
     get:
       operationId: get_ca_publisher_request
       tags:
@@ -1501,7 +1501,7 @@ components:
       required:
         - handle
         - resources
-        - child_request
+        - id_cert
       properties:
         handle:
           allOf:
@@ -1509,16 +1509,9 @@ components:
             - description: The handle attribute uniquely identifies the new Certificate Authority within this Krill instance.
         resources:
           $ref: '#/components/schemas/Resources'
-        child_request:
-          type: object
-          properties:
-            tag:
-              type: string
-            child_handle:
-              type: string
-            id_cert:
-              type: string
-              format: base64
+        id_cert:
+          type: string
+          format: base64
           
           
     UpdateCAChildRequest:

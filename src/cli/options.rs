@@ -181,7 +181,7 @@ impl Options {
             Arg::with_name("child")
                 .value_name("name")
                 .long("child")
-                .help("The name of the child CA you wish to control.")
+                .help("The name of the child CA you wish to control")
                 .required(true),
         )
     }
@@ -219,14 +219,14 @@ impl Options {
                 .long("parent")
                 .short("p")
                 .value_name("name")
-                .help("The local name by which your ca refers to this parent.")
+                .help("The local name by which the CA refers to this parent")
                 .required(true),
         )
     }
 
     fn make_config_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut config_sub =
-            SubCommand::with_name("config").about("Creates a configuration file for krill and prints it to STDOUT.");
+            SubCommand::with_name("config").about("Creates a configuration file for krill and prints it to STDOUT");
 
         fn add_data_dir_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
             app.arg(
@@ -234,7 +234,7 @@ impl Options {
                     .long("data")
                     .short("d")
                     .value_name("path")
-                    .help("Override the default path (./data/) for the data directory (must end with '/').")
+                    .help("Override the default path (./data/) for the data directory (must end with '/')")
                     .required(false),
             )
         }
@@ -245,7 +245,7 @@ impl Options {
                     .long("logfile")
                     .short("l")
                     .value_name("path")
-                    .help("Override the default path (./krill.log) for the log file.")
+                    .help("Override the default path (./krill.log) for the log file")
                     .required(false),
             )
         }
@@ -268,7 +268,7 @@ impl Options {
                     .short("a")
                     .long("attribute")
                     .value_name("attr")
-                    .help("Specify key=value pair attributes to give the user in Krill")
+                    .help("Specify key=value pair attributes to give the user")
                     .required(false)
                     .multiple(true),
             )
@@ -298,7 +298,7 @@ impl Options {
     }
 
     fn make_cas_list_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let sub = SubCommand::with_name("list").about("List the current CAs.");
+        let sub = SubCommand::with_name("list").about("List the current CAs");
 
         let sub = Self::add_general_args(sub);
 
@@ -306,7 +306,7 @@ impl Options {
     }
 
     fn make_cas_show_ca_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("show").about("Show details of a CA.");
+        let mut sub = SubCommand::with_name("show").about("Show details of a CA");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -314,18 +314,28 @@ impl Options {
         app.subcommand(sub)
     }
 
-    fn make_cas_show_history_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("history").about("Show full history of a CA.");
+    fn make_cas_show_history_details_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("details").about("Show details for a command in the history of a CA");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
 
         sub = sub.arg(
-            Arg::with_name("full")
-                .long("full")
-                .help("Show history including publication.")
-                .required(false),
+            Arg::with_name("key")
+                .long("key")
+                .value_name("command key string")
+                .help("The command key as shown in 'history commands'")
+                .required(true),
         );
+
+        app.subcommand(sub)
+    }
+
+    fn make_cas_show_history_list_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("commands").about("Show the commands sent to a CA");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
 
         sub = sub.arg(
             Arg::with_name("rows")
@@ -362,25 +372,17 @@ impl Options {
         app.subcommand(sub)
     }
 
-    fn make_cas_show_action_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("action").about("Show details for a specific CA action.");
+    fn make_cas_show_history_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("history").about("Show the history of a CA");
 
-        sub = Self::add_general_args(sub);
-        sub = Self::add_my_ca_arg(sub);
-
-        sub = sub.arg(
-            Arg::with_name("key")
-                .long("key")
-                .value_name("action key string")
-                .help("The action key (as shown in the history).")
-                .required(true),
-        );
+        sub = Self::make_cas_show_history_list_sc(sub);
+        sub = Self::make_cas_show_history_details_sc(sub);
 
         app.subcommand(sub)
     }
 
     fn make_cas_add_ca_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("add").about("Add a new CA.");
+        let mut sub = SubCommand::with_name("add").about("Add a new CA");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -399,7 +401,7 @@ impl Options {
     }
 
     fn make_cas_children_add_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("add").about("Add a child to a CA.");
+        let mut sub = SubCommand::with_name("add").about("Add a child to a CA");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -409,7 +411,7 @@ impl Options {
             Arg::with_name("request")
                 .long("request")
                 .short("r")
-                .help("The location of the RFC8183 Child Request XML file.")
+                .help("The location of the RFC8183 Child Request XML file")
                 .value_name("<XML file>")
                 .required(true),
         );
@@ -418,7 +420,7 @@ impl Options {
     }
 
     fn make_cas_children_update_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("update").about("Update an existing child of a CA.");
+        let mut sub = SubCommand::with_name("update").about("Update an existing child of a CA");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -436,7 +438,7 @@ impl Options {
     }
 
     fn make_cas_children_response_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("response").about("Show the RFC8183 Parent Response XML.");
+        let mut sub = SubCommand::with_name("response").about("Show the RFC8183 Parent Response XML");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -446,7 +448,7 @@ impl Options {
     }
 
     fn make_cas_children_info_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("info").about("Show info for a child (id and resources).");
+        let mut sub = SubCommand::with_name("info").about("Show info for a child (id and resources)");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -456,7 +458,7 @@ impl Options {
     }
 
     fn make_cas_children_remove_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("remove").about("Remove an existing child from a CA.");
+        let mut sub = SubCommand::with_name("remove").about("Remove an existing child from a CA");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -466,7 +468,7 @@ impl Options {
     }
 
     fn make_cas_children_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("children").about("Manage children for a CA in Krill.");
+        let mut sub = SubCommand::with_name("children").about("Manage children for a CA");
 
         sub = Self::make_cas_children_add_sc(sub);
         sub = Self::make_cas_children_update_sc(sub);
@@ -478,7 +480,7 @@ impl Options {
     }
 
     fn make_cas_parents_request_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("request").about("Show RFC8183 Child Request XML.");
+        let mut sub = SubCommand::with_name("request").about("Show RFC8183 Child Request XML");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -487,7 +489,7 @@ impl Options {
     }
 
     fn make_cas_parents_add_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("add").about("Add a parent to this CA.");
+        let mut sub = SubCommand::with_name("add").about("Add a parent to, or update a parent of a CA");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -496,25 +498,7 @@ impl Options {
             Arg::with_name("response")
                 .long("response")
                 .short("r")
-                .help("The location of the RFC8183 Parent Response XML file.")
-                .value_name("<XML file>")
-                .required(true),
-        );
-
-        app.subcommand(sub)
-    }
-
-    fn make_cas_parents_update_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("update").about("Update an existing parent of this CA.");
-
-        sub = Self::add_general_args(sub);
-        sub = Self::add_my_ca_arg(sub);
-        sub = Self::add_parent_arg(sub);
-        sub = sub.arg(
-            Arg::with_name("response")
-                .long("response")
-                .short("r")
-                .help("The location of the RFC8183 Parent Response XML file.")
+                .help("The location of the RFC8183 Parent Response XML file")
                 .value_name("<XML file>")
                 .required(true),
         );
@@ -523,7 +507,7 @@ impl Options {
     }
 
     fn make_cas_parents_statuses_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("statuses").about("Show overview of all parent statuses of this CA.");
+        let mut sub = SubCommand::with_name("statuses").about("Show overview of all parent statuses of a CA");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -532,7 +516,7 @@ impl Options {
     }
 
     fn make_cas_parents_contact_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("contact").about("Show contact information for a parent of this CA.");
+        let mut sub = SubCommand::with_name("contact").about("Show contact information for a parent of a CA");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -542,7 +526,7 @@ impl Options {
     }
 
     fn make_cas_parents_remove_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("remove").about("Remove an existing parent from this CA.");
+        let mut sub = SubCommand::with_name("remove").about("Remove an existing parent from a CA");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -552,11 +536,10 @@ impl Options {
     }
 
     fn make_cas_parents_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("parents").about("Manage parents for this CA.");
+        let mut sub = SubCommand::with_name("parents").about("Manage parents for a CA");
 
         sub = Self::make_cas_parents_request_sc(sub);
         sub = Self::make_cas_parents_add_sc(sub);
-        sub = Self::make_cas_parents_update_sc(sub);
         sub = Self::make_cas_parents_contact_sc(sub);
         sub = Self::make_cas_parents_statuses_sc(sub);
         sub = Self::make_cas_parents_remove_sc(sub);
@@ -565,7 +548,7 @@ impl Options {
     }
 
     fn make_cas_keyroll_init_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("init").about("Initialise roll for all keys held by this CA.");
+        let mut sub = SubCommand::with_name("init").about("Initialize roll for all keys held by a CA");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -574,7 +557,7 @@ impl Options {
     }
 
     fn make_cas_keyroll_activate_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("activate").about("Finish roll for all keys held by this CA.");
+        let mut sub = SubCommand::with_name("activate").about("Finish roll for all keys held by a CA");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -583,7 +566,7 @@ impl Options {
     }
 
     fn make_cas_keyroll_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("keyroll").about("Perform a manual key-roll in Krill.");
+        let mut sub = SubCommand::with_name("keyroll").about("Perform a manual key rollover for a CA");
 
         sub = Self::make_cas_keyroll_init_sc(sub);
         sub = Self::make_cas_keyroll_activate_sc(sub);
@@ -592,7 +575,7 @@ impl Options {
     }
 
     fn make_cas_routes_list_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("list").about("Show current authorizations.");
+        let mut sub = SubCommand::with_name("list").about("Show current authorizations");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -601,7 +584,7 @@ impl Options {
     }
 
     fn make_cas_routes_update_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("update").about("Update authorizations.");
+        let mut sub = SubCommand::with_name("update").about("Update authorizations");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -650,7 +633,7 @@ impl Options {
         sub = sub.arg(
             Arg::with_name("try")
                 .long("try")
-                .help("Try to perform the update, advice in case it would result in errors or invalids.")
+                .help("Try to perform the update, advice in case it would result in errors or invalids")
                 .required(false),
         );
 
@@ -658,7 +641,7 @@ impl Options {
     }
 
     fn make_cas_routes_bgp_full_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("analyze").about("Show full report of ROAs vs known BGP announcements.");
+        let mut sub = SubCommand::with_name("analyze").about("Show full report of ROAs vs known BGP announcements");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -666,7 +649,7 @@ impl Options {
     }
 
     fn make_cas_routes_bgp_suggestions_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("suggest").about("Show ROA suggestions based on known BGP announcements.");
+        let mut sub = SubCommand::with_name("suggest").about("Show ROA suggestions based on known BGP announcements");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -694,7 +677,7 @@ impl Options {
 
     fn make_cas_routes_bgp_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub =
-            SubCommand::with_name("bgp").about("Show current authorizations in relation to known announcements.");
+            SubCommand::with_name("bgp").about("Show current authorizations in relation to known announcements");
 
         sub = Self::make_cas_routes_bgp_full_sc(sub);
         sub = Self::make_cas_routes_bgp_suggestions_sc(sub);
@@ -703,7 +686,7 @@ impl Options {
     }
 
     fn make_cas_routes_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("roas").about("Manage ROAs for your CA.");
+        let mut sub = SubCommand::with_name("roas").about("Manage ROAs for a CA");
 
         sub = Self::make_cas_routes_list_sc(sub);
         sub = Self::make_cas_routes_update_sc(sub);
@@ -713,7 +696,7 @@ impl Options {
     }
 
     fn make_cas_repo_request_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("request").about("Show RFC8183 Publisher Request XML.");
+        let mut sub = SubCommand::with_name("request").about("Show RFC8183 Publisher Request XML");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -722,7 +705,7 @@ impl Options {
     }
 
     fn make_cas_repo_show_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("show").about("Show current repo config.");
+        let mut sub = SubCommand::with_name("show").about("Show current repo config");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -731,7 +714,7 @@ impl Options {
     }
 
     fn make_cas_repo_status_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("status").about("Show current repo status.");
+        let mut sub = SubCommand::with_name("status").about("Show current repo status");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -740,7 +723,7 @@ impl Options {
     }
 
     fn make_cas_repo_update_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("update").about("Change which repository this CA uses.");
+        let mut sub = SubCommand::with_name("update").about("Change which repository a CA uses");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -749,7 +732,7 @@ impl Options {
                 .value_name("file")
                 .long("response")
                 .short("r")
-                .help("The location of the RFC8183 Publisher Response XML file.")
+                .help("The location of the RFC8183 Publisher Response XML file")
                 .required(true),
         );
 
@@ -757,7 +740,7 @@ impl Options {
     }
 
     fn make_cas_repo_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("repo").about("Manage the repository for your CA.");
+        let mut sub = SubCommand::with_name("repo").about("Manage the repository for a CA");
 
         sub = Self::make_cas_repo_request_sc(sub);
         sub = Self::make_cas_repo_show_sc(sub);
@@ -768,7 +751,7 @@ impl Options {
     }
 
     fn make_cas_issues_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("issues").about("Show issues for CAs.");
+        let mut sub = SubCommand::with_name("issues").about("Show issues for a CA");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -816,7 +799,7 @@ impl Options {
 
     #[cfg(feature = "rta")]
     fn make_cas_rta_sign_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("sign").about("Create RTA signed by this CA");
+        let mut sub = SubCommand::with_name("sign").about("Create an RTA signed by a CA");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -854,7 +837,7 @@ impl Options {
             Arg::with_name("keys")
                 .long("keys")
                 .short("k")
-                .value_name("hexencoded keyidentifiers")
+                .value_name("hex encoded key identifiers")
                 .multiple(true)
                 .help("Optional additional keys to include in this RTA")
                 .required(false),
@@ -942,7 +925,7 @@ impl Options {
     }
 
     fn make_bulk_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("bulk").about("Manually trigger refresh/republish/resync for all CAs.");
+        let mut sub = SubCommand::with_name("bulk").about("Manually trigger refresh/republish/resync for all CAs");
 
         let mut refresh =
             SubCommand::with_name("refresh").about("Force that all CAs ask their parents for updated certificates");
@@ -961,7 +944,7 @@ impl Options {
     }
 
     fn make_health_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let health = SubCommand::with_name("health").about("Perform an authenticated health check.");
+        let health = SubCommand::with_name("health").about("Perform an authenticated health check");
         let health = Self::add_general_args(health);
         app.subcommand(health)
     }
@@ -979,7 +962,6 @@ impl Options {
         app = Self::make_cas_list_sc(app);
         app = Self::make_cas_show_ca_sc(app);
         app = Self::make_cas_show_history_sc(app);
-        app = Self::make_cas_show_action_sc(app);
         app = Self::make_cas_add_ca_sc(app);
         app = Self::make_cas_delete_ca_sc(app);
         app = Self::make_cas_children_sc(app);
@@ -1139,14 +1121,20 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_history(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_history_details(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+        let key = matches.value_of("key").unwrap();
+
+        let command = Command::CertAuth(CaCommand::ShowHistoryDetails(my_ca, key.to_string()));
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_cas_history_commands(matches: &ArgMatches) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
         let mut options = HistoryOptions::default();
-        if matches.is_present("full") {
-            options.short = false;
-        }
 
         if let Some(offset) = matches.value_of("offset") {
             let offset =
@@ -1175,17 +1163,18 @@ impl Options {
             options.before = Some(time);
         }
 
-        let command = Command::CertAuth(CaCommand::ShowHistory(my_ca, options));
+        let command = Command::CertAuth(CaCommand::ShowHistoryCommands(my_ca, options));
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_action(matches: &ArgMatches) -> Result<Options, Error> {
-        let general_args = GeneralArgs::from_matches(matches)?;
-        let my_ca = Self::parse_my_ca(matches)?;
-        let key = matches.value_of("key").unwrap();
-
-        let command = Command::CertAuth(CaCommand::ShowAction(my_ca, key.to_string()));
-        Ok(Options::make(general_args, command))
+    fn parse_matches_cas_history(matches: &ArgMatches) -> Result<Options, Error> {
+        if let Some(m) = matches.subcommand_matches("commands") {
+            Self::parse_matches_cas_history_commands(m)
+        } else if let Some(m) = matches.subcommand_matches("details") {
+            Self::parse_matches_cas_history_details(m)
+        } else {
+            Err(Error::UnrecognisedSubCommand)
+        }
     }
 
     fn parse_matches_cas_children_add(matches: &ArgMatches) -> Result<Options, Error> {
@@ -1201,7 +1190,8 @@ impl Options {
 
         let resources = Self::parse_resource_args(matches)?.ok_or(Error::MissingResources)?;
 
-        let add_child_request = AddChildRequest::new(child, resources, child_request);
+        let (_, _, id_cert) = child_request.unpack();
+        let add_child_request = AddChildRequest::new(child, resources, id_cert);
         let command = Command::CertAuth(CaCommand::ChildAdd(my_ca, add_child_request));
         Ok(Options::make(general_args, command))
     }
@@ -1305,23 +1295,6 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_parents_update(matches: &ArgMatches) -> Result<Options, Error> {
-        let general_args = GeneralArgs::from_matches(matches)?;
-        let my_ca = Self::parse_my_ca(matches)?;
-
-        let parent = matches.value_of("parent").unwrap();
-        let parent = Handle::from_str(parent).map_err(|_| Error::InvalidHandle)?;
-
-        let path = matches.value_of("response").unwrap();
-        let bytes = Self::read_file_arg(path)?;
-        let response = rfc8183::ParentResponse::validate(bytes.as_ref())?;
-
-        let contact = ParentCaContact::for_rfc6492(response);
-
-        let command = Command::CertAuth(CaCommand::UpdateParentContact(my_ca, parent, contact));
-        Ok(Options::make(general_args, command))
-    }
-
     fn parse_matches_cas_parents_info(matches: &ArgMatches) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
@@ -1355,8 +1328,6 @@ impl Options {
             Self::parse_matches_cas_parents_request(m)
         } else if let Some(m) = matches.subcommand_matches("add") {
             Self::parse_matches_cas_parents_add(m)
-        } else if let Some(m) = matches.subcommand_matches("update") {
-            Self::parse_matches_cas_parents_update(m)
         } else if let Some(m) = matches.subcommand_matches("contact") {
             Self::parse_matches_cas_parents_info(m)
         } else if let Some(m) = matches.subcommand_matches("statuses") {
@@ -1625,7 +1596,7 @@ impl Options {
         let validity = SignSupport::sign_validity_days(days);
 
         let resources = Self::parse_resource_args(matches)?
-            .ok_or_else(|| Error::general("You must specify at least one of --ipv4, --ipv6 or --asn."))?;
+            .ok_or_else(|| Error::general("You must specify at least one of --ipv4, --ipv6 or --asn"))?;
 
         let keys = if let Some(keys) = matches.values_of("keys") {
             let mut res = vec![];
@@ -1672,7 +1643,7 @@ impl Options {
 
         let name = matches.value_of("name").unwrap().to_string();
         let resources = Self::parse_resource_args(matches)?
-            .ok_or_else(|| Error::general("You must specify at least one of --ipv4, --ipv6 or --asn."))?;
+            .ok_or_else(|| Error::general("You must specify at least one of --ipv4, --ipv6 or --asn"))?;
 
         let days = matches.value_of("days").unwrap();
         let days =
@@ -1752,8 +1723,6 @@ impl Options {
             Self::parse_matches_cas_show(m)
         } else if let Some(m) = matches.subcommand_matches("history") {
             Self::parse_matches_cas_history(m)
-        } else if let Some(m) = matches.subcommand_matches("action") {
-            Self::parse_matches_cas_action(m)
         } else if let Some(m) = matches.subcommand_matches("children") {
             Self::parse_matches_cas_children(m)
         } else if let Some(m) = matches.subcommand_matches("parents") {
@@ -1826,19 +1795,19 @@ impl KrillPubcOptions {
     }
 
     fn make_publishers_list_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("list").about("List all publishers.");
+        let mut sub = SubCommand::with_name("list").about("List all publishers");
         sub = Options::add_general_args(sub);
         app.subcommand(sub)
     }
 
     fn make_publishers_stale_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("stale").about("List all publishers which have not published in a while.");
+        let mut sub = SubCommand::with_name("stale").about("List all publishers which have not published in a while");
         sub = Options::add_general_args(sub);
         sub = sub.arg(
             Arg::with_name("seconds")
                 .value_name("seconds")
                 .long("seconds")
-                .help("The number of seconds since last publication.")
+                .help("The number of seconds since last publication")
                 .required(true),
         );
         app.subcommand(sub)
@@ -1850,7 +1819,7 @@ impl KrillPubcOptions {
                 .value_name("handle")
                 .short("p")
                 .long("publisher")
-                .help("The handle (name) of the publisher.")
+                .help("The handle (name) of the publisher")
                 .required(true),
         )
     }
@@ -1860,7 +1829,7 @@ impl KrillPubcOptions {
             Arg::with_name("rsync")
                 .long("rsync")
                 .value_name("uri")
-                .help("Specify the base rsync URI for your repository, must end with '/'.")
+                .help("Specify the base rsync URI for the repository, must end with '/'")
                 .required(true),
         )
     }
@@ -1871,7 +1840,7 @@ impl KrillPubcOptions {
                 .long("rrdp")
                 .value_name("uri")
                 .help(
-                    "Specify the base https URI for your RRDP (excluding notification.xml), \
+                    "Specify the base https URI for the RRDP (excluding notification.xml), \
                     must \
                     end with '/'",
                 )
@@ -1880,7 +1849,7 @@ impl KrillPubcOptions {
     }
 
     fn make_publishers_add_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("add").about("Add a publisher.");
+        let mut sub = SubCommand::with_name("add").about("Add a publisher");
         sub = Options::add_general_args(sub);
 
         sub = sub
@@ -1889,7 +1858,7 @@ impl KrillPubcOptions {
                     .value_name("file")
                     .long("request")
                     .short("r")
-                    .help("The location of the RFC8183 Publisher Request XML file.")
+                    .help("The location of the RFC8183 Publisher Request XML file")
                     .required(true),
             )
             .arg(
@@ -1897,7 +1866,7 @@ impl KrillPubcOptions {
                     .value_name("handle")
                     .short("p")
                     .long("publisher")
-                    .help("Override the publisher handle in the XML.")
+                    .help("Override the publisher handle in the XML")
                     .required(false),
             );
 
@@ -1905,34 +1874,34 @@ impl KrillPubcOptions {
     }
 
     fn make_publishers_remove_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("remove").about("Remove a publisher.");
+        let mut sub = SubCommand::with_name("remove").about("Remove a publisher");
         sub = Options::add_general_args(sub);
         sub = Self::add_publisher_arg(sub);
         app.subcommand(sub)
     }
 
     fn make_publishers_show_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("show").about("Show details for a publisher.");
+        let mut sub = SubCommand::with_name("show").about("Show details for a publisher");
         sub = Options::add_general_args(sub);
         sub = Self::add_publisher_arg(sub);
         app.subcommand(sub)
     }
 
     fn make_publishers_response_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("response").about("Show RFC8183 Repository Response XML.");
+        let mut sub = SubCommand::with_name("response").about("Show RFC8183 Repository Response XML");
         sub = Options::add_general_args(sub);
         sub = Self::add_publisher_arg(sub);
         app.subcommand(sub)
     }
 
     fn make_publication_server_stats_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("stats").about("Show publication server stats.");
+        let mut sub = SubCommand::with_name("stats").about("Show publication server stats");
         sub = Options::add_general_args(sub);
         app.subcommand(sub)
     }
 
     fn make_publication_server_init_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("init").about("Initialise publication server.");
+        let mut sub = SubCommand::with_name("init").about("Initialize publication server");
         sub = Options::add_general_args(sub);
 
         sub = Self::add_rsync_base_arg(sub);
@@ -1942,14 +1911,13 @@ impl KrillPubcOptions {
     }
 
     fn make_publication_server_clear_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("clear")
-            .about("Clear the publication server so it can re-initialised. (you must first remove all publishers)");
+        let mut sub = SubCommand::with_name("clear").about("Clear the publication server so it can re-initialized");
         sub = Options::add_general_args(sub);
         app.subcommand(sub)
     }
 
     fn make_publication_server_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("server").about("Manage your Publication Server (init/stats)");
+        let mut sub = SubCommand::with_name("server").about("Manage the Publication Server (init/stats)");
         sub = Self::make_publication_server_stats_sc(sub);
         sub = Self::make_publication_server_init_sc(sub);
         sub = Self::make_publication_server_clear_sc(sub);
@@ -2129,7 +2097,6 @@ pub enum CaCommand {
     AddParent(Handle, ParentCaReq),
     MyParentCaContact(Handle, ParentHandle),
     ParentStatuses(Handle),
-    UpdateParentContact(Handle, ParentHandle, ParentCaContact),
     RemoveParent(Handle, ParentHandle),
 
     // Children
@@ -2153,8 +2120,8 @@ pub enum CaCommand {
 
     // Show details for this CA
     Show(Handle),
-    ShowHistory(Handle, HistoryOptions),
-    ShowAction(Handle, String),
+    ShowHistoryCommands(Handle, HistoryOptions),
+    ShowHistoryDetails(Handle, String),
     Issues(Option<Handle>),
 
     // RTA
@@ -2170,7 +2137,6 @@ pub enum CaCommand {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HistoryOptions {
-    pub short: bool,
     pub offset: u64,
     pub rows: u64,
     pub after: Option<Time>,
@@ -2180,7 +2146,6 @@ pub struct HistoryOptions {
 impl Default for HistoryOptions {
     fn default() -> Self {
         HistoryOptions {
-            short: true,
             offset: 0,
             rows: 100,
             after: None,
@@ -2189,28 +2154,20 @@ impl Default for HistoryOptions {
     }
 }
 
-impl fmt::Display for HistoryOptions {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut s = if self.short { "short" } else { "full" }.to_string();
-
+impl HistoryOptions {
+    pub fn url_path_parameters(&self) -> String {
         if let Some(before) = self.before {
             let after = self.after.map(|t| t.timestamp()).unwrap_or_else(|| 0);
-            s.push_str(&format!(
-                "/{}/{}/{}/{}",
-                self.rows,
-                self.offset,
-                after,
-                before.timestamp()
-            ));
+            format!("{}/{}/{}/{}", self.rows, self.offset, after, before.timestamp())
         } else if let Some(after) = self.after {
-            s.push_str(&format!("/{}/{}/{}", self.rows, self.offset, after.timestamp()));
+            format!("{}/{}/{}", self.rows, self.offset, after.timestamp())
         } else if self.offset != 0 {
-            s.push_str(&format!("/{}/{}", self.rows, self.offset));
+            format!("{}/{}", self.rows, self.offset)
         } else if self.rows != 100 {
-            s.push_str(&format!("/{}", self.rows));
+            format!("{}", self.rows)
+        } else {
+            "".to_string()
         }
-
-        write!(f, "{}", s)
     }
 }
 
@@ -2348,15 +2305,15 @@ impl fmt::Display for Error {
                 f,
                 "The publisher handle may only contain -_A-Za-z0-9, (\\ /) see issue #83"
             ),
-            Error::InvalidSeconds => write!(f, "Use a number of 0 or more seconds."),
+            Error::InvalidSeconds => write!(f, "Use a number of 0 or more seconds"),
             Error::MissingArgWithEnv(arg, var) => write!(
                 f,
                 "Missing argument: --{}, alternatively you may use env var: {}",
                 arg, var
             ),
             Error::MissingResources => write!(f, "You must specify resources when adding a CA (--asn, --ipv4, --ipv6)"),
-            Error::InvalidChildIdCert => write!(f, "Invalid ID cert for child."),
-            Error::UnrecognisedSubCommand => write!(f, "Unrecognised sub-command. Use 'help'."),
+            Error::InvalidChildIdCert => write!(f, "Invalid ID cert for child"),
+            Error::UnrecognisedSubCommand => write!(f, "Unrecognised sub-command. Use 'help'"),
             Error::GeneralArgumentError(s) => s.fmt(f),
         }
     }

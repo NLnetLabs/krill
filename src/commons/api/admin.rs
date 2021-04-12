@@ -522,7 +522,7 @@ impl CertAuthInit {
 pub struct AddChildRequest {
     handle: Handle,
     resources: ResourceSet,
-    child_request: rfc8183::ChildRequest,
+    id_cert: IdCert,
 }
 
 impl fmt::Display for AddChildRequest {
@@ -532,16 +532,16 @@ impl fmt::Display for AddChildRequest {
 }
 
 impl AddChildRequest {
-    pub fn new(handle: Handle, resources: ResourceSet, request: rfc8183::ChildRequest) -> Self {
+    pub fn new(handle: Handle, resources: ResourceSet, id_cert: IdCert) -> Self {
         AddChildRequest {
             handle,
             resources,
-            child_request: request,
+            id_cert,
         }
     }
 
-    pub fn unpack(self) -> (Handle, ResourceSet, rfc8183::ChildRequest) {
-        (self.handle, self.resources, self.child_request)
+    pub fn unpack(self) -> (Handle, ResourceSet, IdCert) {
+        (self.handle, self.resources, self.id_cert)
     }
 }
 

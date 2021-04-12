@@ -925,7 +925,7 @@ impl CertAuth {
         self.parents.keys()
     }
 
-    fn parent_known(&self, parent: &ParentHandle) -> bool {
+    pub fn parent_known(&self, parent: &ParentHandle) -> bool {
         self.parents.contains_key(parent)
     }
 
