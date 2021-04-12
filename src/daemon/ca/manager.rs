@@ -649,7 +649,7 @@ impl CaManager {
 
         let (parent, contact) = parent_req.unpack();
 
-        let cmd = if ca.parent(&parent).is_err() {
+        let cmd = if !ca.parent_known(&parent) {
             CmdDet::add_parent(&handle, parent, contact, actor)
         } else {
             CmdDet::update_parent(&handle, parent, contact, actor)
