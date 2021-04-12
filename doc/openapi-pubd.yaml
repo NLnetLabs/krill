@@ -119,7 +119,7 @@ paths:
         '403':
           $ref: '#/components/responses/ForbiddenResponse'
 
-  /publishers:
+  /pubd/publishers:
     get:
       operationId: list_publishers
       tags:
@@ -172,7 +172,7 @@ paths:
         '500':
           $ref: '#/components/responses/GeneralErrorResponse'
 
-  /publishers/{publisher_handle}:
+  /pubd/publishers/{publisher_handle}:
     get:
       operationId: get_publisher
       tags:
@@ -225,7 +225,7 @@ paths:
         '500':
           $ref: '#/components/responses/GeneralErrorResponse'
 
-  /publishers/{publisher_handle}/response.{format}:
+  /pubd/publishers/{publisher_handle}/response.{format}:
     get:
       operationId: get_publisher_repository_response
       tags:
@@ -262,7 +262,7 @@ paths:
         '500':
           $ref: '#/components/responses/GeneralErrorResponse'
 
-  /publishers/stale/{seconds}:
+  /pubd/stale/{seconds}:
     get:
       operationId: list_publishers_stale_seconds
       tags:
@@ -289,7 +289,7 @@ paths:
         '500':
           $ref: '#/components/responses/GeneralErrorResponse'
 
-  /pubd:
+  /pubd/init:
     post:
       operationId: initialise_pubd
       tags:
