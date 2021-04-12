@@ -107,7 +107,7 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
         req = krill_ca_api_lib.AddCAChildRequest(
             handle=child_ca_handle,
             resources=resources,
-            child_request=rfc8183_request)
+            id_cert=rfc8183_request.id_cert)
         krill_ca_api.add_child_ca(parent_ca_handle, req)
         logging.info(f'-> Added CA "{child_ca_handle} as a child of "{parent_ca_handle}"')
 
