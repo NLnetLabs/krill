@@ -799,7 +799,6 @@ async fn api(req: Request) -> RoutingResult {
                     match restricted_endpoint {
                         Some("bulk") => api_bulk(req, &mut path).await,
                         Some("cas") => api_cas(req, &mut path).await,
-                        Some("publishers") => api_publishers(req, &mut path).await,
                         Some("pubd") => aa!(req, Permission::PUB_ADMIN, api_publication_server(req, &mut path).await),
                         _ => render_unknown_method(),
                     }
@@ -845,7 +844,7 @@ async fn api_cas(req: Request, path: &mut RequestPath) -> RoutingResult {
                 },
                 Some("children") => api_ca_children(req, path, ca).await,
                 Some("history") => api_ca_history(req, path, ca).await,
-                Some("command") => api_ca_command_details(req, path, ca).await,
+
                 Some("id") => api_ca_id(req, path, ca).await,
                 Some("issues") => api_ca_issues(req, ca).await,
                 Some("keys") => api_ca_keys(req, path, ca).await,
@@ -922,7 +921,9 @@ async fn api_ca_routes(req: Request, path: &mut RequestPath, ca: Handle) -> Rout
 
 async fn api_publication_server(req: Request, path: &mut RequestPath) -> RoutingResult {
     match path.next() {
-        None => match *req.method() {
+        Some("publishers") => api_publishers(req, path).await,
+        Some("stale") => api_stale_publishers(req, path.next()).await,
+        Some("init") => match *req.method() {
             Method::POST => {
                 let state = req.state.clone();
                 match req.json().await {
@@ -944,7 +945,7 @@ async fn api_publishers(req: Request, path: &mut RequestPath) -> RoutingResult {
                 None => api_show_pbl(req, publisher).await,
                 Some("response.xml") => api_repository_response_xml(req, publisher).await,
                 Some("response.json") => api_repository_response_json(req, publisher).await,
-                Some("stale") => api_stale_publishers(req, path.next()).await,
+
                 _ => render_unknown_method(),
             },
             None => api_list_pbl(req).await,
@@ -1232,14 +1233,27 @@ async fn api_ca_children(req: Request, path: &mut RequestPath, ca: Handle) -> Ro
     }
 }
 
-async fn api_ca_history(req: Request, path: &mut RequestPath, handle: Handle) -> RoutingResult {
-    let crit = match parse_history_path(path) {
-        Some(crit) => crit,
-        None => return render_unknown_method(),
-    };
-
+async fn api_ca_history_commands(req: Request, path: &mut RequestPath, handle: Handle) -> RoutingResult {
     match *req.method() {
         Method::GET => aa!(req, Permission::CA_READ, handle.clone(), {
+            // /api/v1/cas/{ca}/history/commands  /<rows>/<offset>/<after>/<before>
+            let mut crit = CommandHistoryCriteria::default();
+
+            if let Some(rows) = path.path_arg() {
+                crit.set_rows(rows);
+            }
+
+            if let Some(offset) = path.path_arg() {
+                crit.set_offset(offset);
+            }
+
+            if let Some(after) = path.path_arg() {
+                crit.set_after(after);
+            }
+
+            if let Some(before) = path.path_arg() {
+                crit.set_before(before);
+            }
             match req.state().read().await.ca_history(&handle, crit).await {
                 Ok(history) => render_json(history),
                 Err(e) => render_error(e),
@@ -1249,39 +1263,12 @@ async fn api_ca_history(req: Request, path: &mut RequestPath, handle: Handle) ->
     }
 }
 
-fn parse_history_path(path: &mut RequestPath) -> Option<CommandHistoryCriteria> {
-    // /api/v1/cas/{ca}/history/short|full/<rows>/<offset>/<after>/<before>
-    let mut crit = CommandHistoryCriteria::default();
-
+async fn api_ca_history(req: Request, path: &mut RequestPath, ca: Handle) -> RoutingResult {
     match path.next() {
-        Some("short") => crit.set_excludes(&["cmd-ca-publish"]),
-        Some("full") => {}
-        _ => return None,
-    };
-
-    if let Some(rows) = path.path_arg() {
-        crit.set_rows(rows);
-    } else {
-        return Some(crit);
+        Some("details") => api_ca_command_details(req, path, ca).await,
+        Some("commands") => api_ca_history_commands(req, path, ca).await,
+        _ => render_unknown_method(),
     }
-
-    if let Some(offset) = path.path_arg() {
-        crit.set_offset(offset);
-    } else {
-        return Some(crit);
-    }
-
-    if let Some(after) = path.path_arg() {
-        crit.set_after(after);
-    } else {
-        return Some(crit);
-    }
-
-    if let Some(before) = path.path_arg() {
-        crit.set_before(before);
-    }
-
-    Some(crit)
 }
 
 async fn api_ca_command_details(req: Request, path: &mut RequestPath, handle: Handle) -> RoutingResult {
