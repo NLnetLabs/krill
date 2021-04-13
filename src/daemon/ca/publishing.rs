@@ -338,6 +338,8 @@ impl CaObjects {
             res.insert(repo.clone(), vec![]);
 
             for rco in self.classes.values() {
+                // Note the map 'res' will get entries for other (old) repositories
+                // if there are any keys with such repositories.
                 rco.add_elements(&mut res, repo);
             }
         }
@@ -401,7 +403,7 @@ impl CaObjects {
         self.classes.remove(class_name);
 
         if let Some(old_repo) = old_repo_opt {
-            self.deprecate_repo(old_repo);
+            self.deprecate_repo_if_no_longer_used(old_repo);
         }
     }
 
@@ -439,8 +441,11 @@ impl CaObjects {
     // Finish a keyroll
     fn keyroll_finish(&mut self, rcn: &ResourceClassName) -> KrillResult<()> {
         let rco = self.get_class_mut(rcn)?;
+
+        // finish the key roll for this rco. This will remove the old key, and return
+        // an old_repo if there was one.
         if let Some(old_repo) = rco.keyroll_finish()? {
-            self.deprecate_repo(old_repo);
+            self.deprecate_repo_if_no_longer_used(old_repo);
         }
 
         Ok(())
@@ -493,7 +498,11 @@ impl CaObjects {
         Ok(required)
     }
 
-    // Update the repository on this, but save the old values if they existed.
+    // Update the repository.
+    //
+    // If the repository is being migrated, i.e. there already is a current repository,
+    // then make sure that the current repository is preserved as the old repository for
+    // existing keys.
     fn update_repo(&mut self, repo: &RepositoryContact) {
         if let Some(old) = &self.repo {
             for rco in self.classes.values_mut() {
@@ -507,7 +516,8 @@ impl CaObjects {
         self.classes.values().any(|rco| rco.has_old_repo(old_repo))
     }
 
-    fn deprecate_repo(&mut self, old_repo: RepositoryContact) {
+    // Marks a repository as deprecated unless it's (still) in use by any key
+    fn deprecate_repo_if_no_longer_used(&mut self, old_repo: RepositoryContact) {
         if !self.has_old_repo(&old_repo) {
             self.deprecated_repos.push(DeprecatedRepository::new(old_repo, 0));
         }
@@ -525,6 +535,9 @@ impl ResourceClassObjects {
     }
 
     #[allow(clippy::clippy::mutable_key_type)]
+    /// Adds all the elements for this resource class to the map which is passed on. It will use
+    /// the default repository, or an optional old repository if any of the keys had one as part
+    /// of a repository migration.
     fn add_elements(&self, map: &mut HashMap<RepositoryContact, Vec<PublishElement>>, dflt_repo: &RepositoryContact) {
         match &self.keys {
             ResourceClassKeyState::Current(state) => state.current_set.add_elements(map, dflt_repo),
@@ -781,6 +794,9 @@ impl CurrentKeyObjectSet {
         CurrentKeyObjectSet { basic, roas, certs }
     }
 
+    /// Adds all the elements for this set to the map which is passed on. It will use
+    /// the default repository unless this key had an old repository set - as part of
+    /// repository migration.
     #[allow(clippy::mutable_key_type)]
     fn add_elements(&self, map: &mut HashMap<RepositoryContact, Vec<PublishElement>>, dflt_repo: &RepositoryContact) {
         let repo = self.old_repo.as_ref().unwrap_or(dflt_repo);
@@ -1023,6 +1039,9 @@ impl BasicKeyObjectSet {
         }
     }
 
+    /// Adds all the elements for this set to the map which is passed on. It will use
+    /// the default repository unless this key had an old repository set - as part of
+    /// repository migration.
     #[allow(clippy::mutable_key_type)]
     fn add_elements(&self, map: &mut HashMap<RepositoryContact, Vec<PublishElement>>, dflt_repo: &RepositoryContact) {
         let repo = self.old_repo.as_ref().unwrap_or(dflt_repo);
