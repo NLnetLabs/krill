@@ -780,9 +780,8 @@ async fn functional() {
         ca_roll_activate(&ca3).await;
         assert!(state_becomes_active(&ca3).await);
 
-        // Force resync - it looks like on GH actions publication is not triggered always
-        // perhaps a timing issue in the scheduling. Trying this for now before investigating
-        // further.
+        // Wait a tiny bit.. then force resync.
+        delay_for(Duration::from_secs(1)).await;
         resync_all().await;
 
         // Expect that CA3 publishes nothing in the embedded repo
