@@ -179,13 +179,26 @@ impl CaObjectsStore {
         }
     }
 
+    /// Perform an action (closure) on a mutable instance of the CaObjects for a
+    /// CA. If the CA did not have any CaObjects yet, one will be created. The
+    /// closure is executed within a write lock.
     pub fn with_ca_objects<F>(&self, ca: &Handle, op: F) -> KrillResult<()>
     where
         F: FnOnce(&mut CaObjects) -> KrillResult<()>,
     {
-        let mut objects = self.ca_objects(ca)?;
+        let lock = self.store.write().unwrap();
+
+        let key = Self::key(ca);
+
+        let mut objects = lock
+            .get(&key)
+            .map_err(Error::KeyValueError)?
+            .unwrap_or_else(|| CaObjects::new(ca.clone(), None, HashMap::new()));
+
         op(&mut objects)?;
-        self.put_ca_objects(ca, &objects)?;
+
+        lock.store(&key, &objects).map_err(Error::KeyValueError)?;
+
         Ok(())
     }
 
