@@ -436,7 +436,7 @@ impl ResourceClass {
         duration: Duration,
         signer: &KrillSigner,
     ) -> KrillResult<Vec<CaEvtDet>> {
-        if self.last_key_change + duration > Time::now() {
+        if duration > Duration::seconds(0) && self.last_key_change + duration > Time::now() {
             return Ok(vec![]);
         }
 
@@ -451,7 +451,9 @@ impl ResourceClass {
 
     /// Activate a new key, if it's been longer than the staging period.
     pub fn keyroll_activate(&self, staging_time: Duration, signer: &KrillSigner) -> KrillResult<Vec<CaEvtDet>> {
-        if !self.key_state.has_new_key() || self.last_key_change + staging_time > Time::now() {
+        if !self.key_state.has_new_key()
+            || (staging_time > Duration::seconds(0) && self.last_key_change + staging_time > Time::now())
+        {
             return Ok(vec![]);
         }
 
