@@ -6,6 +6,8 @@ describe('OpenID Connect provider with fallback logout URL', () => {
     cy.url().should('not.include', Cypress.config('baseUrl'))
     cy.contains('Mock OpenID Connect login form')
     cy.get('input[name="username"]').clear().type(username)
+    cy.get('input[name="userattr1"]').clear().type('role')         // a role is required to be able to login
+    cy.get('input[name="userattrval1"]').clear().type('admin')
     cy.contains('Sign In').click()
 
     // We should end up back in the Krill UI

@@ -67,7 +67,7 @@ impl ConfigFileAuthProvider {
 
     fn init_session_key(config: Arc<Config>) -> KrillResult<Vec<u8>> {
         let key_path = config.data_dir.join(LOGIN_SESSION_STATE_KEY_PATH);
-        info!("Initializing session encryption key {}", &key_path.display());
+        info!("Initializing login session encryption key {}", &key_path.display());
         crypt::load_or_create_key(key_path.as_path())
     }
 

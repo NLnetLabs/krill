@@ -1,6 +1,6 @@
 let login_test_settings = [
-  { u: 'shorttokenwithrefresh@krill', o: true },
-  { u: 'shorttokenwithoutrefresh@krill', o: false }
+  { u: 'shorttokenwithrefresh@krill', o: true, refresh: true },
+  { u: 'shorttokenwithoutrefresh@krill', o: false, refresh: false }
 ];
 
 describe('OpenID Connect provider with OAuth 2 revocation', () => {
@@ -15,6 +15,13 @@ describe('OpenID Connect provider with OAuth 2 revocation', () => {
       cy.url().should('not.include', Cypress.config('baseUrl'))
       cy.contains('Mock OpenID Connect login form')
       cy.get('input[name="username"]').clear().type(ts.u)
+      cy.get('input[name="userattr1"]').clear().type('role')         // a role is required to be able to login
+      cy.get('input[name="userattrval1"]').clear().type('readonly')
+      if (ts.refresh) {
+        cy.get('input[name="refresh"]').check()                      // ensure issuing of refresh tokens for this user
+      } else {
+        cy.get('input[name="refresh"]').uncheck()                    // prevent issuing of refresh tokens for this user
+      }
       cy.contains('Sign In').click()
 
       cy.wait(['@getLoginForm', '@submitLoginForm', '@completeTheLoginInKrill', '@afterLoginCompleteInKrill'])

@@ -12,7 +12,7 @@ use serde::Serialize;
 
 use crate::commons::api::{ErrorResponse, Token};
 use crate::commons::util::file;
-use crate::constants::{HTTTP_CLIENT_TIMEOUT_SECS, KRILL_CLI_API_ENV, KRILL_HTTPS_ROOT_CERTS_ENV};
+use crate::constants::{HTTP_CLIENT_TIMEOUT_SECS, KRILL_CLI_API_ENV, KRILL_HTTPS_ROOT_CERTS_ENV};
 
 const JSON_CONTENT: &str = "application/json";
 
@@ -226,7 +226,7 @@ fn load_root_cert(path: &str) -> Result<reqwest::Certificate, Error> {
 }
 
 pub async fn client(uri: &str) -> Result<reqwest::Client, Error> {
-    let mut builder = reqwest::ClientBuilder::new().timeout(Duration::from_secs(HTTTP_CLIENT_TIMEOUT_SECS));
+    let mut builder = reqwest::ClientBuilder::new().timeout(Duration::from_secs(HTTP_CLIENT_TIMEOUT_SECS));
 
     if let Ok(cert_list) = env::var(KRILL_HTTPS_ROOT_CERTS_ENV) {
         for path in cert_list.split(':') {
@@ -346,7 +346,7 @@ impl Error {
         }
     }
 
-    fn https_root_cert_error(e: impl fmt::Display) -> Self {
+    pub fn https_root_cert_error(e: impl fmt::Display) -> Self {
         Error::HttpsRootCertError(e.to_string())
     }
 }

@@ -1,22 +1,168 @@
 <html>
+
 <head>
     <title>Mock OpenID Connect login form</title>
     <style>
-        body { text-align: center; }
-        p { font-style: italic; }
+        body {
+            text-align: center;
+        }
+
+        p {
+            font-style: italic;
+        }
+
+        legend {
+            background-color: #000;
+            color: #fff;
+            padding: 3px 6px;
+        }
+
+        .output {
+            font: 1rem 'Fira Sans', sans-serif;
+        }
+
+        input,
+        select {
+            margin: 6px;
+            width: 200px;
+        }
+
+        input.short {
+            width: 92px;
+        }
+
+        th {
+            text-decoration: underline;
+        }
     </style>
 </head>
+
 <body>
     <h1>Mock OpenID Connect login form</h1>
+
     <p>Note: This mock service does not require a password.</p>
+
     <form action="/login_form_submit">
-        <label for="username">Username</label>
-        <input type="text" name="username" />
-        <input type="submit" value="Sign In" />
-        <input type="hidden" name="client_id" value="<CLIENT_ID>"/>
-        <input type="hidden" name="nonce" value="<NONCE>"/>
-        <input type="hidden" name="state" value="<STATE>"/>
-        <input type="hidden" name="redirect_uri" value="<REDIRECT_URI>"/>
+        <for="username">Username</>
+            <input type="text" class="short" name="username" />
+            <input type="submit" value="Sign In" />
+            <fieldset>
+                <legend>Test controls (optional</legend>
+
+                <table>
+                    <tr>
+                        <th>Setting</th>
+                        <th>Value</th>
+                        <th>Explanation</th>
+                    </tr>
+
+                    <tr>
+                        <td>Token expiration</td>
+                        <td><input type="number" name="token_secs" value=5 /></td>
+                        <td>Seconds until the issued access token expires</td>
+                    </tr>
+
+                    <tr>
+                        <td>Enable refresh</td>
+                        <td><input type="checkbox" name="refresh" value="true" checked /></td>
+                        <td>Should a refresh token be issued to the client?</td>
+                    </tr>
+
+                    <tr>
+                        <td>Failure mode</td>
+                        <td>
+                            <select name="failure_mode">
+                                <option value="none" selected>None</option>
+                                <option value="unknown_user">Unknown user</option>
+                                <option value="no_response">No response (any endpoint)</option>
+                                <option value="slow_response">Slow response (any endpoint, param is # seconds delay)</option>
+                                <option value="http_500">HTTP 500 Internal Server Error (any endpoint)</option>
+                                <option value="http_503">HTTP 503 Service Unavailable (any endpoint)</option>
+                                <option value="invalid_request">Refresh error invalid_request</option>
+                                <option value="invalid_client">Refresh error invalid_client</option>
+                                <option value="invalid_grant">Refresh error invalid_grant</option>
+                                <option value="unauthorized_client">Refresh error unauthorized_client</option>
+                                <option value="invalid_scope">Refresh error invalid_scope</option>
+                                <option value="unsupported_grant_type">Refresh error unsupported_grant_type</option>
+                                <option value="wrong_csrf_state">Wrong CSRF token</option>
+                                <option value="malformed_id_token">Malformed ID token</option>
+                            </select>
+                        </td>
+                        <td>Type of failure to simulate</td>
+                    </tr>
+
+                    <tr>
+                        <td>Failure endpoint</td>
+                        <td>
+                            <select name="failure_endpoint">
+                                <option value="none" selected>None</option>
+                                <option value="login_form_submit">/login_form_submit</option>
+                                <option value="logout">/logout</option>
+                                <option value="revoke">/revoke</option>
+                                <option value="token">/token</option>
+                            </select>
+                        </td>
+                        <td>For an '(any endpoint)' failure mode, select the endpoint that should be affected.</td>
+                    </tr>
+
+                    <tr>
+                        <td>Failure parameter</td>
+                        <td><input type="text" name="failure_param" /></td>
+                        <td>For failure modes that take extra parameters (currently only "Slow response"), specify the required parameter value.</td>
+                    </tr>
+
+                    <tr>
+                        <td>User attribute 1</td>
+                        <td>
+                            <input type="text" class="short" name="userattr1" placeholder="role" />
+                            <input type="text" class="short" name="userattrval1" placeholder="admin" />
+                        </td>
+                        <td></td>
+                    </tr>
+
+                    <tr>
+                        <td>User attribute 2</td>
+                        <td>
+                            <input type="text" class="short" name="userattr2" placeholder="inc_cas" />
+                            <input type="text" class="short" name="userattrval2" />
+                        </td>
+                        <td></td>
+                    </tr>
+
+                    <tr>
+                        <td>User attribute 3</td>
+                        <td>
+                            <input type="text" class="short" name="userattr3" placeholder="exc_cas" />
+                            <input type="text" class="short" name="userattrval3" />
+                        </td>
+                        <td></td>
+                    </tr>
+
+                    <tr>
+                        <td>User attribute 4</td>
+                        <td>
+                            <input type="text" class="short" name="userattr4" />
+                            <input type="text" class="short" name="userattrval4" />
+                        </td>
+                        <td></td>
+                    </tr>
+
+                    <tr>
+                        <td>User attribute 5</td>
+                        <td>
+                            <input type="text" class="short" name="userattr5" />
+                            <input type="text" class="short" name="userattrval5" />
+                        </td>
+                        <td></td>
+                    </tr>
+                </table>
+            </fieldset>
+
+            <input type="hidden" name="client_id" value="<CLIENT_ID>" />
+            <input type="hidden" name="nonce" value="<NONCE>" />
+            <input type="hidden" name="state" value="<STATE>" />
+            <input type="hidden" name="redirect_uri" value="<REDIRECT_URI>" />
     </form>
 </body>
+
 </html>
