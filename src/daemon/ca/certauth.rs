@@ -983,7 +983,11 @@ impl CertAuth {
 
     /// Removes a parent. Returns an error if it doesn't exist.
     fn remove_parent(&self, parent: Handle) -> KrillResult<Vec<CaEvt>> {
-        Ok(vec![CaEvtDet::parent_removed(&self.handle, self.version, parent)])
+        if !self.parent_known(&parent) {
+            Err(Error::CaParentUnknown(self.handle.clone(), parent))
+        } else {
+            Ok(vec![CaEvtDet::parent_removed(&self.handle, self.version, parent)])
+        }
     }
 
     /// Updates an existing parent's contact. This will return an error if

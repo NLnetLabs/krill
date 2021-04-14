@@ -1,8 +1,8 @@
-use std::borrow::Cow;
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::{borrow::Cow, path::Path};
 use std::{fmt, fs};
 
 use bytes::Bytes;
@@ -14,21 +14,21 @@ use rpki::uri;
 use crate::commons::api::{Base64, HexEncodedHash, ListElement, Publish, Update, Withdraw};
 
 /// Creates a sub dir if needed, return full path to it
-pub fn sub_dir(base: &PathBuf, name: &str) -> Result<PathBuf, io::Error> {
-    let mut full_path = base.clone();
+pub fn sub_dir(base: &Path, name: &str) -> Result<PathBuf, io::Error> {
+    let mut full_path = base.to_path_buf();
     full_path.push(name);
     create_dir(&full_path)?;
     Ok(full_path)
 }
 
-pub fn create_dir(dir: &PathBuf) -> Result<(), io::Error> {
+pub fn create_dir(dir: &Path) -> Result<(), io::Error> {
     if !dir.is_dir() {
         fs::create_dir(dir)?;
     }
     Ok(())
 }
 
-pub fn create_file_with_path(path: &PathBuf) -> Result<File, io::Error> {
+pub fn create_file_with_path(path: &Path) -> Result<File, io::Error> {
     if !path.exists() {
         if let Some(parent) = path.parent() {
             trace!("Creating path: {}", parent.to_string_lossy());
@@ -39,14 +39,14 @@ pub fn create_file_with_path(path: &PathBuf) -> Result<File, io::Error> {
 }
 
 /// Derive the path for this file.
-pub fn file_path(base_path: &PathBuf, file_name: &str) -> PathBuf {
-    let mut path = base_path.clone();
+pub fn file_path(base_path: &Path, file_name: &str) -> PathBuf {
+    let mut path = base_path.to_path_buf();
     path.push(file_name);
     path
 }
 
 /// Saves a file, creating parent dirs as needed
-pub fn save(content: &[u8], full_path: &PathBuf) -> Result<(), io::Error> {
+pub fn save(content: &[u8], full_path: &Path) -> Result<(), io::Error> {
     let mut f = create_file_with_path(full_path)?;
     f.write_all(content)?;
 
@@ -55,62 +55,62 @@ pub fn save(content: &[u8], full_path: &PathBuf) -> Result<(), io::Error> {
 }
 
 /// Saves an object to json - unwraps any json errors!
-pub fn save_json<O: Serialize>(object: &O, full_path: &PathBuf) -> Result<(), io::Error> {
+pub fn save_json<O: Serialize>(object: &O, full_path: &Path) -> Result<(), io::Error> {
     let json = serde_json::to_string(object).unwrap();
     save(&Bytes::from(json), full_path)
 }
 
-/// Loads a files and deserialzes as json for the expected type. Maps json
+/// Loads a files and deserializes as json for the expected type. Maps json
 /// errors to io::Error
-pub fn load_json<O: DeserializeOwned>(full_path: &PathBuf) -> Result<O, io::Error> {
+pub fn load_json<O: DeserializeOwned>(full_path: &Path) -> Result<O, io::Error> {
     let bytes = read(full_path)?;
     serde_json::from_slice(&bytes).map_err(|_| io::Error::new(io::ErrorKind::Other, "could not deserialize json"))
 }
 
 /// Saves a file, creating parent dirs as needed
-pub fn save_in_dir(content: &Bytes, base_path: &PathBuf, name: &str) -> Result<(), io::Error> {
-    let mut full_path = base_path.clone();
+pub fn save_in_dir(content: &Bytes, base_path: &Path, name: &str) -> Result<(), io::Error> {
+    let mut full_path = base_path.to_path_buf();
     full_path.push(name);
     save(content, &full_path)
 }
 
 /// Saves a file under a base directory, using the rsync uri to create
 /// sub-directories preserving the rsync authority and module in dir names.
-pub fn save_with_rsync_uri(content: &Bytes, base_path: &PathBuf, uri: &uri::Rsync) -> Result<(), io::Error> {
+pub fn save_with_rsync_uri(content: &Bytes, base_path: &Path, uri: &uri::Rsync) -> Result<(), io::Error> {
     let path = path_with_rsync(base_path, uri);
     save(content, &path)
 }
 
 /// Reads a file to Bytes
-pub fn read(path: &PathBuf) -> Result<Bytes, io::Error> {
+pub fn read(path: &Path) -> Result<Bytes, io::Error> {
     let mut f = File::open(path).map_err(|_| Error::cannot_read(path))?;
     let mut bytes = Vec::new();
     f.read_to_end(&mut bytes)?;
     Ok(Bytes::from(bytes))
 }
 
-pub fn read_with_rsync_uri(base_path: &PathBuf, uri: &uri::Rsync) -> Result<Bytes, io::Error> {
+pub fn read_with_rsync_uri(base_path: &Path, uri: &uri::Rsync) -> Result<Bytes, io::Error> {
     let path = path_with_rsync(base_path, uri);
     read(&path)
 }
 
-pub fn delete_with_rsync_uri(base_path: &PathBuf, uri: &uri::Rsync) -> Result<(), io::Error> {
+pub fn delete_with_rsync_uri(base_path: &Path, uri: &uri::Rsync) -> Result<(), io::Error> {
     delete(&path_with_rsync(base_path, uri))
 }
 
-pub fn delete_in_dir(base_path: &PathBuf, name: &str) -> Result<(), io::Error> {
-    let mut full_path = base_path.clone();
+pub fn delete_in_dir(base_path: &Path, name: &str) -> Result<(), io::Error> {
+    let mut full_path = base_path.to_path_buf();
     full_path.push(name);
     delete(&full_path)
 }
 
-pub fn delete(full_path: &PathBuf) -> Result<(), io::Error> {
+pub fn delete(full_path: &Path) -> Result<(), io::Error> {
     trace!("Removing file: {}", full_path.to_string_lossy());
     fs::remove_file(full_path)?;
     Ok(())
 }
 
-pub fn clean_file_and_path(path: &PathBuf) -> Result<(), io::Error> {
+pub fn clean_file_and_path(path: &Path) -> Result<(), io::Error> {
     if path.exists() {
         fs::remove_file(&path)?;
 
@@ -129,8 +129,8 @@ pub fn clean_file_and_path(path: &PathBuf) -> Result<(), io::Error> {
     Ok(())
 }
 
-fn path_with_rsync(base_path: &PathBuf, uri: &uri::Rsync) -> PathBuf {
-    let mut path = base_path.clone();
+fn path_with_rsync(base_path: &Path, uri: &uri::Rsync) -> PathBuf {
+    let mut path = base_path.to_path_buf();
     path.push(uri.module().authority());
     path.push(uri.module().module());
     path.push(uri.path());
@@ -141,7 +141,7 @@ fn path_with_rsync(base_path: &PathBuf, uri: &uri::Rsync) -> PathBuf {
 /// using the provided rsync_base URI as the rsync prefix.
 /// Allows a publication client to publish the contents below some base
 /// dir, in their own designated rsync URI name space.
-pub fn crawl_incl_rsync_base(base_path: &PathBuf, rsync_base: &uri::Rsync) -> Result<Vec<CurrentFile>, Error> {
+pub fn crawl_incl_rsync_base(base_path: &Path, rsync_base: &uri::Rsync) -> Result<Vec<CurrentFile>, Error> {
     crawl_disk(base_path, base_path, Some(rsync_base))
 }
 
@@ -149,11 +149,11 @@ pub fn crawl_incl_rsync_base(base_path: &PathBuf, rsync_base: &uri::Rsync) -> Re
 /// deriving the rsync_base URI from the directory structure. This is
 /// useful when reading ['CurrentFile'] instances that were saved in some
 /// base directory as is done by the ['FileStore'].
-pub fn crawl_derive_rsync_uri(base_path: &PathBuf) -> Result<Vec<CurrentFile>, Error> {
+pub fn crawl_derive_rsync_uri(base_path: &Path) -> Result<Vec<CurrentFile>, Error> {
     crawl_disk(base_path, base_path, None)
 }
 
-fn crawl_disk(base_path: &PathBuf, path: &PathBuf, rsync_base: Option<&uri::Rsync>) -> Result<Vec<CurrentFile>, Error> {
+fn crawl_disk(base_path: &Path, path: &Path, rsync_base: Option<&uri::Rsync>) -> Result<Vec<CurrentFile>, Error> {
     let mut res = Vec::new();
 
     for entry in fs::read_dir(path).map_err(|_| Error::cannot_read(path))? {
@@ -174,7 +174,7 @@ fn crawl_disk(base_path: &PathBuf, path: &PathBuf, rsync_base: Option<&uri::Rsyn
     Ok(res)
 }
 
-fn derive_uri(base_path: &PathBuf, path: &PathBuf, rsync_base: Option<&uri::Rsync>) -> Result<uri::Rsync, Error> {
+fn derive_uri(base_path: &Path, path: &Path, rsync_base: Option<&uri::Rsync>) -> Result<uri::Rsync, Error> {
     let rel = path.strip_prefix(base_path).map_err(|_| Error::PathOutsideBasePath)?;
 
     let rel_string = rel.to_string_lossy().to_string();
@@ -193,11 +193,11 @@ fn derive_uri(base_path: &PathBuf, path: &PathBuf, rsync_base: Option<&uri::Rsyn
 ///
 /// This is needed when making a back-up copy when we need to do upgrades on data, which
 /// could in theory fail, in which case we want to leave teh old data in place.
-pub fn backup_dir(base_path: &PathBuf, target_path: &PathBuf) -> Result<(), Error> {
+pub fn backup_dir(base_path: &Path, target_path: &Path) -> Result<(), Error> {
     if base_path.to_string_lossy() == Cow::Borrowed("/") || target_path.to_string_lossy() == Cow::Borrowed("/") {
         Err(Error::BackupExcessive)
     } else if base_path.is_file() {
-        let mut target = target_path.clone();
+        let mut target = target_path.to_path_buf();
         target.push(base_path.file_name().unwrap());
 
         if target.exists() {
@@ -209,7 +209,7 @@ pub fn backup_dir(base_path: &PathBuf, target_path: &PathBuf) -> Result<(), Erro
     } else if base_path.is_dir() {
         for entry in fs::read_dir(base_path)? {
             let path = entry?.path();
-            let mut target = target_path.clone();
+            let mut target = target_path.to_path_buf();
             target.push(path.file_name().unwrap());
             if path.is_dir() {
                 backup_dir(&path, &target)?;
@@ -255,7 +255,7 @@ impl CurrentFile {
 
     /// Saves this file under a base directory, based on the (rsync) uri of
     /// this file.
-    pub fn save(&self, base_path: &PathBuf) -> Result<(), io::Error> {
+    pub fn save(&self, base_path: &Path) -> Result<(), io::Error> {
         save_with_rsync_uri(&self.content.to_bytes(), &base_path, &self.uri)
     }
 
@@ -337,17 +337,17 @@ impl fmt::Display for Error {
 }
 
 impl Error {
-    pub fn cannot_read(path: &PathBuf) -> Error {
+    pub fn cannot_read(path: &Path) -> Error {
         let str = path.to_string_lossy().to_string();
         Error::CannotRead(str)
     }
 
-    fn backup_cannot_read(path: &PathBuf) -> Error {
+    fn backup_cannot_read(path: &Path) -> Error {
         let str = path.to_string_lossy().to_string();
         Error::BackupCannotReadSource(str)
     }
 
-    fn backup_target_exists(path: &PathBuf) -> Error {
+    fn backup_target_exists(path: &Path) -> Error {
         let str = path.to_string_lossy().to_string();
         Error::BackupTargetExists(str)
     }

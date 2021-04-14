@@ -1,12 +1,12 @@
 //! Helper functions for testing Krill.
 
-use std::fs;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
+use std::{fs, path::Path};
 
 use bytes::Bytes;
 
@@ -86,7 +86,7 @@ pub async fn server_ready(uri: &str) -> bool {
     false
 }
 
-pub fn test_config(dir: &PathBuf, enable_testbed: bool) -> Config {
+pub fn test_config(dir: &Path, enable_testbed: bool) -> Config {
     if enable_testbed {
         crate::constants::enable_test_mode();
         crate::constants::enable_test_announcements();
@@ -96,7 +96,7 @@ pub fn test_config(dir: &PathBuf, enable_testbed: bool) -> Config {
 
 pub fn init_config(config: &Config) {
     if config.init_logging().is_err() {
-        trace!("Logging already initialised");
+        trace!("Logging already initialized");
     }
     config.verify().unwrap();
 }
@@ -541,11 +541,11 @@ pub fn tmp_dir() -> PathBuf {
 
 /// This method sets up a random subdirectory and returns it. It is
 /// assumed that the caller will clean this directory themselves.
-pub fn sub_dir(base_dir: &PathBuf) -> PathBuf {
+pub fn sub_dir(base_dir: &Path) -> PathBuf {
     let mut bytes = [0; 8];
     openssl::rand::rand_bytes(&mut bytes).unwrap();
 
-    let mut dir = base_dir.clone();
+    let mut dir = base_dir.to_path_buf();
     dir.push(hex::encode(bytes));
 
     let full_path = PathBuf::from(&dir);
@@ -566,8 +566,8 @@ pub fn as_bytes(s: &str) -> Bytes {
     Bytes::copy_from_slice(s.as_bytes())
 }
 
-pub fn save_file(base_dir: &PathBuf, file_name: &str, content: &[u8]) {
-    let mut full_name = base_dir.clone();
+pub fn save_file(base_dir: &Path, file_name: &str, content: &[u8]) {
+    let mut full_name = base_dir.to_path_buf();
     full_name.push(PathBuf::from(file_name));
     let mut f = File::create(full_name).unwrap();
     f.write_all(content).unwrap();

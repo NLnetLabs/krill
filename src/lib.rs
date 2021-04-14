@@ -1,3 +1,4 @@
+#![allow(clippy::upper_case_acronyms)]
 extern crate base64;
 #[macro_use]
 extern crate bcder;

@@ -1,8 +1,7 @@
-use std::collections::HashMap;
 use std::fmt;
+use std::{collections::HashMap, path::Path};
 
 use std::io;
-use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 
@@ -49,7 +48,6 @@ impl Default for StoredValueInfo {
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 // Do NOT EVER change the order.. this is used to check whether migrations are needed
 #[allow(non_camel_case_types)]
-#[allow(clippy::upper_case_acronyms)]
 pub enum KeyStoreVersion {
     Pre0_6,
     V0_6,
@@ -161,8 +159,8 @@ where
     A::Error: From<AggregateStoreError>,
 {
     /// Creates an AggregateStore using a disk based KeyValueStore
-    pub fn disk(work_dir: &PathBuf, name_space: &str) -> StoreResult<Self> {
-        let mut path = work_dir.clone();
+    pub fn disk(work_dir: &Path, name_space: &str) -> StoreResult<Self> {
+        let mut path = work_dir.to_path_buf();
         path.push(name_space);
         let existed = path.exists();
 

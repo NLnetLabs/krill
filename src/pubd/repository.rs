@@ -1,10 +1,13 @@
-use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::fs;
 use std::mem;
 use std::path::PathBuf;
 use std::str::{from_utf8_unchecked, FromStr};
 use std::sync::{Arc, RwLock};
+use std::{
+    collections::{HashMap, VecDeque},
+    path::Path,
+};
 
 use bytes::Bytes;
 use rpki::crypto::KeyIdentifier;
@@ -61,7 +64,7 @@ impl RepositoryContentProxy {
     }
 
     // Initialise
-    pub fn init(&self, work_dir: &PathBuf, uris: PublicationServerUris) -> KrillResult<()> {
+    pub fn init(&self, work_dir: &Path, uris: PublicationServerUris) -> KrillResult<()> {
         if self.store.read().unwrap().has(&self.key)? {
             Err(Error::RepositoryServerAlreadyInitialised)
         } else {
@@ -72,7 +75,7 @@ impl RepositoryContentProxy {
             let session = RrdpSession::default();
             let stats = RepoStats::new(session);
 
-            let mut repo_dir = work_dir.clone();
+            let mut repo_dir = work_dir.to_path_buf();
             repo_dir.push(REPOSITORY_DIR);
 
             let rrdp = RrdpServer::create(rrdp_base_uri, &repo_dir, session);
@@ -206,15 +209,10 @@ impl RepositoryContent {
         }
     }
 
-    pub fn init(
-        rrdp_base_uri: uri::Https,
-        rsync_jail: uri::Rsync,
-        session: RrdpSession,
-        repo_base_dir: &PathBuf,
-    ) -> Self {
+    pub fn init(rrdp_base_uri: uri::Https, rsync_jail: uri::Rsync, session: RrdpSession, repo_base_dir: &Path) -> Self {
         let publishers = HashMap::new();
-        let rrdp = RrdpServer::create(rrdp_base_uri, &repo_base_dir, session);
-        let rsync = RsyncdStore::new(rsync_jail, &repo_base_dir);
+        let rrdp = RrdpServer::create(rrdp_base_uri, repo_base_dir, session);
+        let rsync = RsyncdStore::new(rsync_jail, repo_base_dir);
         let stats = RepoStats::new(session);
 
         RepositoryContent {
@@ -281,7 +279,7 @@ impl RepositoryContent {
     }
 
     pub fn session_reset(&mut self, config: &RepositoryRetentionConfig) -> KrillResult<()> {
-        self.rrdp.session_reset()?;
+        self.rrdp.session_reset();
         self.stats.session_reset(self.rrdp.notification());
         self.write_repository(config)?;
 
@@ -346,8 +344,8 @@ impl RsyncdStore {
         Arc::new(RwLock::new(()))
     }
 
-    pub fn new(base_uri: uri::Rsync, repo_dir: &PathBuf) -> Self {
-        let mut rsync_dir = PathBuf::from(repo_dir);
+    pub fn new(base_uri: uri::Rsync, repo_dir: &Path) -> Self {
+        let mut rsync_dir = repo_dir.to_path_buf();
         rsync_dir.push(REPOSITORY_RSYNC_DIR);
         let lock = Self::new_lock();
         RsyncdStore {
@@ -362,7 +360,7 @@ impl RsyncdStore {
 ///
 impl RsyncdStore {
     /// Write all the files to disk for rsync to a tmp-dir, then switch
-    /// things over in an effort to minimise the chance of people getting
+    /// things over in an effort to minimize the chance of people getting
     /// inconsistent syncs..
     pub fn write(&self, snapshot: &Snapshot) -> KrillResult<()> {
         let _lock = self
@@ -462,11 +460,11 @@ impl RrdpServer {
         }
     }
 
-    pub fn create(rrdp_base_uri: uri::Https, repo_dir: &PathBuf, session: RrdpSession) -> Self {
-        let mut rrdp_base_dir = repo_dir.clone();
+    pub fn create(rrdp_base_uri: uri::Https, repo_dir: &Path, session: RrdpSession) -> Self {
+        let mut rrdp_base_dir = repo_dir.to_path_buf();
         rrdp_base_dir.push(REPOSITORY_RRDP_DIR);
 
-        let mut rrdp_archive_dir = repo_dir.clone();
+        let mut rrdp_archive_dir = repo_dir.to_path_buf();
         rrdp_archive_dir.push(REPOSITORY_RRDP_ARCHIVE_DIR);
 
         let snapshot = Snapshot::create(session);
@@ -509,7 +507,7 @@ impl RrdpServer {
     /// Performs a session reset of the RRDP server. Useful if the serial needs
     /// to be rolled, or in case the RRDP server needed to recover to a previous
     /// state.
-    fn session_reset(&mut self) -> KrillResult<()> {
+    fn session_reset(&mut self) {
         let session = RrdpSession::random();
         let serial = 0;
 
@@ -529,8 +527,6 @@ impl RrdpServer {
         self.old_notifications.clear();
         self.snapshot = snapshot;
         self.deltas = VecDeque::new();
-
-        Ok(())
     }
 
     /// Updates the RRDP server with the elements. Note that this assumes that
@@ -763,8 +759,8 @@ impl RrdpServer {
         format!("{}/{}/snapshot.xml", session, serial)
     }
 
-    fn new_snapshot_path(base: &PathBuf, session: &RrdpSession, serial: u64) -> PathBuf {
-        let mut path = base.clone();
+    fn new_snapshot_path(base: &Path, session: &RrdpSession, serial: u64) -> PathBuf {
+        let mut path = base.to_path_buf();
         path.push(Self::snapshot_rel(session, serial));
         path
     }

@@ -31,7 +31,7 @@ use crate::commons::error::Error;
 use crate::commons::eventsourcing::AggregateStoreError;
 use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
-use crate::commons::{KrillEmptyResult, KrillResult};
+use crate::commons::KrillResult;
 use crate::constants::{
     KRILL_ENV_UPGRADE_ONLY, KRILL_VERSION_MAJOR, KRILL_VERSION_MINOR, KRILL_VERSION_PATCH, NO_RESOURCE,
 };
@@ -51,19 +51,18 @@ use crate::upgrades::{pre_start_upgrade, update_storage_version};
 pub type State = Arc<RwLock<KrillServer>>;
 
 pub fn parse_config() -> KrillResult<Config> {
-    Ok(Config::create().map_err(|e| Error::Custom(format!("Could not parse config: {}", e)))?)
+    Config::create().map_err(|e| Error::Custom(format!("Could not parse config: {}", e)))
 }
 
-fn write_pid_file(config: &Config) -> KrillEmptyResult {
+fn write_pid_file_or_die(config: &Config) {
     let pid_file = config.pid_file();
     if let Err(e) = file::save(process::id().to_string().as_bytes(), &pid_file) {
         eprintln!("Could not write PID file: {}", e);
         ::std::process::exit(1);
     }
-    Ok(())
 }
 
-fn test_data_dir(config: &Config) -> KrillEmptyResult {
+fn test_data_dir_or_die(config: &Config) {
     let mut test_file = config.data_dir.clone();
     test_file.push("test");
 
@@ -82,12 +81,11 @@ fn test_data_dir(config: &Config) -> KrillEmptyResult {
         );
         ::std::process::exit(1);
     }
-    Ok(())
 }
 
 pub async fn start_krill_daemon(config: Arc<Config>, mode: KrillMode) -> Result<(), Error> {
-    write_pid_file(&config)?;
-    test_data_dir(&config)?;
+    write_pid_file_or_die(&config);
+    test_data_dir_or_die(&config);
 
     // Call upgrade, this will only do actual work if needed.
     pre_start_upgrade(config.clone()).map_err(|e| Error::Custom(format!("Could not upgrade Krill: {}", e)))?;
@@ -282,11 +280,13 @@ pub fn render_empty_res(res: Result<(), Error>) -> RoutingResult {
     }
 }
 
+#[allow(clippy::unnecessary_wraps)]
 fn render_error(e: Error) -> RoutingResult {
     debug!("Server Error: {}", e);
     Ok(HttpResponse::response_from_error(e))
 }
 
+#[allow(clippy::unnecessary_wraps)]
 fn render_json<O: Serialize>(obj: O) -> RoutingResult {
     Ok(HttpResponse::json(&obj))
 }
@@ -299,20 +299,24 @@ fn render_json_res<O: Serialize>(res: Result<O, Error>) -> RoutingResult {
 }
 
 /// A clean 404 result for the API (no content, not for humans)
+#[allow(clippy::unnecessary_wraps)]
 fn render_unknown_resource() -> RoutingResult {
     Ok(HttpResponse::response_from_error(Error::ApiUnknownResource))
 }
 
 /// A clean 200 result for the API (no content, not for humans)
+#[allow(clippy::unnecessary_wraps)]
 pub fn render_ok() -> RoutingResult {
     Ok(HttpResponse::ok())
 }
 
+#[allow(clippy::unnecessary_wraps)]
 pub fn render_unknown_method() -> RoutingResult {
     Ok(HttpResponse::response_from_error(Error::ApiUnknownMethod))
 }
 
 /// A clean 404 response
+#[allow(clippy::unnecessary_wraps)]
 pub async fn render_not_found(_req: Request) -> RoutingResult {
     Ok(HttpResponse::not_found())
 }

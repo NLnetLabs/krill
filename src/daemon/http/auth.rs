@@ -37,6 +37,7 @@ fn build_auth_redirect_location(user: LoggedInUser) -> Result<String, Error> {
     ))
 }
 
+#[allow(clippy::unnecessary_wraps)]
 fn render_error(err: Error) -> RoutingResult {
     Ok(HttpResponse::response_from_error(err))
 }
@@ -52,12 +53,12 @@ pub async fn auth(req: Request) -> RoutingResult {
             req.login()
                 .await
                 .and_then(|user| {
-                    Ok(build_auth_redirect_location(user).map_err(|err| {
+                    build_auth_redirect_location(user).map_err(|err| {
                         Error::custom(format!(
                             "Unable to build redirect with logged in user details: {:?}",
                             err
                         ))
-                    })?)
+                    })
                 })
                 .map(|location| HttpResponse::found(&location))
                 .or_else(render_error_redirect)

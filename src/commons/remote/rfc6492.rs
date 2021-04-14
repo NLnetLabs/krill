@@ -642,14 +642,14 @@ impl Res {
         let v4 = inrs.v4().to_string();
         let v6 = inrs.v6().to_string();
 
-        let mut attrs = vec![];
-
-        attrs.push(("cert_url", cert_url.as_str()));
-        attrs.push(("class_name", class_name.as_str()));
-        attrs.push(("resource_set_as", asn.as_str()));
-        attrs.push(("resource_set_ipv4", v4.as_str()));
-        attrs.push(("resource_set_ipv6", v6.as_str()));
-        attrs.push(("resource_set_notafter", not_after.as_str()));
+        let attrs = vec![
+            ("cert_url", cert_url.as_str()),
+            ("class_name", class_name.as_str()),
+            ("resource_set_as", asn.as_str()),
+            ("resource_set_ipv4", v4.as_str()),
+            ("resource_set_ipv6", v6.as_str()),
+            ("resource_set_notafter", not_after.as_str()),
+        ];
 
         w.put_element("class", Some(&attrs), |w| {
             for issued in issued {
@@ -668,8 +668,7 @@ impl Res {
         // TODO: Use a better xml library so we don't have to do
         //       super-messy allocations. Probably roll our own,
         //       at least for composing.
-        let mut attrs_strings = vec![];
-        attrs_strings.push(("cert_url", cert_url));
+        let mut attrs_strings = vec![("cert_url", cert_url)];
 
         if let Some(asn) = limit.asn() {
             attrs_strings.push(("resource_set_as", asn.to_string()));

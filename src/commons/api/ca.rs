@@ -150,9 +150,9 @@ pub struct ChildCaInfo {
 }
 
 impl ChildCaInfo {
-    pub fn new(id_cert: &IdCert, entitled_resources: ResourceSet) -> Self {
+    pub fn new(id_cert: IdCertPem, entitled_resources: ResourceSet) -> Self {
         ChildCaInfo {
-            id_cert: id_cert.into(),
+            id_cert,
             entitled_resources,
         }
     }
@@ -614,9 +614,9 @@ impl From<&str> for ObjectName {
     }
 }
 
-impl Into<Bytes> for ObjectName {
-    fn into(self) -> Bytes {
-        Bytes::from(self.0)
+impl From<ObjectName> for Bytes {
+    fn from(object_name: ObjectName) -> Self {
+        Bytes::from(object_name.0)
     }
 }
 

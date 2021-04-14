@@ -1,9 +1,8 @@
 //! Support for signing mft, crl, certificates, roas..
 //! Common objects for TAs and CAs
-use std::convert::TryFrom;
 use std::ops::Deref;
-use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
+use std::{convert::TryFrom, path::Path};
 
 use bytes::Bytes;
 
@@ -36,7 +35,7 @@ pub struct KrillSigner {
 }
 
 impl KrillSigner {
-    pub fn build(work_dir: &PathBuf) -> KrillResult<Self> {
+    pub fn build(work_dir: &Path) -> KrillResult<Self> {
         let signer = OpenSslSigner::build(work_dir)?;
         let signer = Arc::new(RwLock::new(signer));
         Ok(KrillSigner { signer })

@@ -20,15 +20,14 @@
 //! [openid-connect-discovery-1_0]: https://openid.net/specs/openid-connect-discovery-1_0.html
 //! [openid-connect-rpinitiated-1_0]: https://openid.net/specs/openid-connect-rpinitiated-1_0.html
 
-use std::ops::Deref;
-use std::{path::PathBuf, sync::RwLockReadGuard};
-use std::sync::Arc;
 use std::{
     collections::{
         hash_map::Entry::{Occupied, Vacant},
         HashMap,
     },
-    sync::RwLock,
+    ops::Deref,
+    path::Path,
+    sync::{Arc, RwLock, RwLockReadGuard},
 };
 
 use basic_cookies::Cookie;
@@ -36,6 +35,7 @@ use hyper::header::{HeaderValue, SET_COOKIE};
 use jmespatch as jmespath;
 use jmespath::ToJmespath;
 
+use openidconnect::UserInfoError;
 use openidconnect::{core::CoreRevocableToken, AccessToken, RequestTokenError, RevocationErrorResponseType};
 use openidconnect::{
     core::{
@@ -48,7 +48,6 @@ use openidconnect::{
     AuthenticationFlow, AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce, OAuth2TokenResponse,
     RedirectUrl, RefreshToken, Scope,
 };
-use openidconnect::UserInfoError;
 
 use urlparse::{urlparse, GetQuery};
 
@@ -109,7 +108,6 @@ impl From<TokenKind> for &'static str {
         }
     }
 }
-
 enum LogoutMode {
     OAuth2TokenRevocation {
         revocation_url: String,
@@ -201,8 +199,11 @@ impl OpenIDConnectAuthProvider {
         // Contact the OpenID Connect: identity provider discovery endpoint to
         // learn about and configure ourselves to talk to it.
         let meta = WantedMeta::discover(&issuer, logging_http_client).map_err(|e| {
-            Error::custom(format!("OpenID Connect: Discovery failed with issuer {}, {}",
-                issuer.as_str(), stringify_cause_chain(e)))
+            Error::custom(format!(
+                "OpenID Connect: Discovery failed with issuer {}, {}",
+                issuer.as_str(),
+                stringify_cause_chain(e)
+            ))
         })?;
 
         Ok(meta)
@@ -456,7 +457,8 @@ impl OpenIDConnectAuthProvider {
 
         trace!("OpenID Connect: Revoking token for user: \"{}\"", &session.id);
         trace!("OpenID Connect: Submitting RFC-7009 section 2 Token Revocation request");
-        let lock_guard = self.get_connection()
+        let lock_guard = self
+            .get_connection()
             .map_err(|err| RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension(err.to_string())))?;
         let conn = lock_guard.deref().as_ref().unwrap(); // safe to unwrap as was tested in get_connection()
 
@@ -513,21 +515,20 @@ impl OpenIDConnectAuthProvider {
     /// the OpenID Connect Provider. This Error is FOR INTERNAL CONSUMPTION only. The caller of this function is
     /// responsible for creating end-user error messages, logging and (optionally) retrying.
     fn try_refresh_token(&self, session: &ClientSession) -> Result<Auth, CoreErrorResponseType> {
-        let refresh_token =
-            &session
-                .secrets
-                .get(TokenKind::RefreshToken.into())
-                .ok_or_else(|| CoreErrorResponseType::Extension(
-                    "Internal error: Token refresh attempted without a refresh token".to_string(),
-                ))?;
+        let refresh_token = &session.secrets.get(TokenKind::RefreshToken.into()).ok_or_else(|| {
+            CoreErrorResponseType::Extension(
+                "Internal error: Token refresh attempted without a refresh token".to_string(),
+            )
+        })?;
 
         debug!("OpenID Connect: Refreshing token for user: \"{}\"", &session.id);
         trace!("OpenID Connect: Submitting RFC-6749 section 6 Access Token Refresh request");
 
-        let lock_guard = self.get_connection()
+        let lock_guard = self
+            .get_connection()
             .map_err(|err| CoreErrorResponseType::Extension(err.to_string()))?;
         let conn = lock_guard.deref().as_ref().unwrap(); // safe to unwrap as was tested in get_connection()
-        
+
         let token_response = conn
             .client
             .exchange_refresh_token(&RefreshToken::new(refresh_token.to_string()))
@@ -574,12 +575,10 @@ impl OpenIDConnectAuthProvider {
                             r.to_string()
                         )))
                     }
-                    openidconnect::RequestTokenError::Parse(r, _) => {
-                        Err(CoreErrorResponseType::Extension(format!(
-                            "Error while parsing refreshed token: {}",
-                            r.to_string()
-                        )))
-                    }
+                    openidconnect::RequestTokenError::Parse(r, _) => Err(CoreErrorResponseType::Extension(format!(
+                        "Error while parsing refreshed token: {}",
+                        r.to_string()
+                    ))),
                     openidconnect::RequestTokenError::Other(err_string) => match err_string.as_str() {
                         "temporarily_unavailable" | "server_error" => {
                             self.on_connection_issue(lock_guard);
@@ -714,7 +713,7 @@ impl OpenIDConnectAuthProvider {
         Ok(None)
     }
 
-    fn init_session_key(data_dir: &PathBuf) -> KrillResult<Vec<u8>> {
+    fn init_session_key(data_dir: &Path) -> KrillResult<Vec<u8>> {
         let key_path = data_dir.join(LOGIN_SESSION_STATE_KEY_PATH);
         info!("Initializing session encryption key {}", &key_path.display());
         crypt::load_or_create_key(key_path.as_path())
@@ -813,10 +812,9 @@ impl OpenIDConnectAuthProvider {
     fn get_connection(&self) -> KrillResult<RwLockReadGuard<Option<ProviderConnectionProperties>>> {
         let conn_guard = self.conn.read().unwrap(); // should never fail, better to panic and crash out if it does
 
-        conn_guard.as_ref().ok_or_else(|| OpenIDConnectAuthProvider::internal_error(
-                "Connection to provider not yet established",
-                None,
-            ))?;
+        conn_guard.as_ref().ok_or_else(|| {
+            OpenIDConnectAuthProvider::internal_error("Connection to provider not yet established", None)
+        })?;
 
         Ok(conn_guard)
     }
@@ -841,18 +839,19 @@ impl OpenIDConnectAuthProvider {
     fn verify_csrf_token(&self, state: String, csrf_token_hash: String) -> KrillResult<()> {
         let request_csrf_hash = sha256(state.as_bytes());
         match base64::decode_config(csrf_token_hash, base64::URL_SAFE_NO_PAD) {
-            Ok(cookie_csrf_hash) if request_csrf_hash == cookie_csrf_hash => {
-                Ok(())
-            }
-            Ok(cookie_csrf_hash) => {
-                Err(Self::internal_error("OpenID Connect: CSRF token mismatch",
-                    Some(&format!("cookie CSRF hash={:?}, request CSRF hash={:?}",
-                    &cookie_csrf_hash, request_csrf_hash.to_vec()))))
-            }
-            Err(err) => {
-                Err(Self::internal_error("OpenID Connect: Invalid CSRF token",
-                    Some(&stringify_cause_chain(err))))
-            }
+            Ok(cookie_csrf_hash) if request_csrf_hash == cookie_csrf_hash => Ok(()),
+            Ok(cookie_csrf_hash) => Err(Self::internal_error(
+                "OpenID Connect: CSRF token mismatch",
+                Some(&format!(
+                    "cookie CSRF hash={:?}, request CSRF hash={:?}",
+                    &cookie_csrf_hash,
+                    request_csrf_hash.to_vec()
+                )),
+            )),
+            Err(err) => Err(Self::internal_error(
+                "OpenID Connect: Invalid CSRF token",
+                Some(&stringify_cause_chain(err)),
+            )),
         }
     }
 
@@ -872,7 +871,7 @@ impl OpenIDConnectAuthProvider {
                     RequestTokenError::Request(ref req) => {
                         self.on_connection_issue(lock_guard);
                         (format!("Request failed: {:?}", req), None)
-                    },
+                    }
                     RequestTokenError::Parse(_, ref res) => {
                         let body = match std::str::from_utf8(res) {
                             Ok(text) => text.to_string(),
@@ -886,13 +885,13 @@ impl OpenIDConnectAuthProvider {
                             (err_string.to_string(), None)
                         }
                         _ => (err_string.clone(), None),
-                    }
+                    },
                 };
 
                 let cause_chain_str = stringify_cause_chain(e);
                 let additional_info = match additional_info {
                     Some(ai_str) => format!("{}, {}", ai_str, cause_chain_str),
-                    None => cause_chain_str
+                    None => cause_chain_str,
                 };
 
                 OpenIDConnectAuthProvider::internal_error(
@@ -904,7 +903,11 @@ impl OpenIDConnectAuthProvider {
         Ok(token_response)
     }
 
-    fn get_token_id_claims<'a>(&self, token_response: &'a FlexibleTokenResponse, nonce_hash: Nonce) -> KrillResult<&'a FlexibleIdTokenClaims> {
+    fn get_token_id_claims<'a>(
+        &self,
+        token_response: &'a FlexibleTokenResponse,
+        nonce_hash: Nonce,
+    ) -> KrillResult<&'a FlexibleIdTokenClaims> {
         let lock_guard = self.get_connection()?;
         let conn = lock_guard.deref().as_ref().unwrap(); // safe to unwrap as was tested in get_connection()
         let mut id_token_verifier: CoreIdTokenVerifier = conn.client.id_token_verifier();
@@ -942,7 +945,10 @@ impl OpenIDConnectAuthProvider {
         Ok(id_token_claims)
     }
 
-    fn get_user_info_claims(&self, token_response: &FlexibleTokenResponse) -> KrillResult<Option<FlexibleUserInfoClaims>> {
+    fn get_user_info_claims(
+        &self,
+        token_response: &FlexibleTokenResponse,
+    ) -> KrillResult<Option<FlexibleUserInfoClaims>> {
         let lock_guard = self.get_connection()?;
         let conn = lock_guard.deref().as_ref().unwrap(); // safe to unwrap as was tested in get_connection()
 
@@ -984,18 +990,16 @@ impl OpenIDConnectAuthProvider {
                                     self.on_connection_issue(lock_guard);
                                     err_string.to_string()
                                 }
-                                _ => err_string.clone()
-                            }
-                            _ => {
-                                "Unknown error".to_string()
-                            }
+                                _ => err_string.clone(),
+                            },
+                            _ => "Unknown error".to_string(),
                         };
 
                         OpenIDConnectAuthProvider::internal_error(
                             format!("OpenID Connect: UserInfo request failed: {}", msg),
                             Some(stringify_cause_chain(e)),
                         )
-                    })?
+                    })?,
             )
         } else {
             None
@@ -1010,8 +1014,8 @@ impl OpenIDConnectAuthProvider {
         user: Option<&ConfigUserDetails>,
         id_token_claims: &FlexibleIdTokenClaims,
         user_info_claims: Option<FlexibleUserInfoClaims>,
-        id: &str)
-     -> KrillResult<HashMap<String, String>> {
+        id: &str,
+    ) -> KrillResult<HashMap<String, String>> {
         let mut attributes: HashMap<String, String> = HashMap::new();
         for (attr_name, claim_conf) in claims_conf {
             if attr_name == "id" {
@@ -1237,7 +1241,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
 
         let lock_guard = self.get_connection()?;
         let conn = lock_guard.deref().as_ref().unwrap(); // safe to unwrap as was tested in get_connection()
-        
+
         // At the time of writing the underlying oauth2 crate CsrfToken::new_random() function is used to
         // generate a "base64-encoded 128-bit" URL safe value that we use as the "state" parameter in the login
         // URL that the client is redirected to. Each attempt by the client to login should re-request the
@@ -1368,7 +1372,10 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         //   Path=/       - Required for cookie names that are prefixed with __Host.
         // From: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie#attributes
         fn make_secure_cookie_value(cookie_name: &str, cookie_value: &str) -> KrillResult<HeaderValue> {
-            let cookie_str = format!("{}={}; Secure; HttpOnly; SameSite=Lax; Max-Age=300; Path=/", cookie_name, cookie_value);
+            let cookie_str = format!(
+                "{}={}; Secure; HttpOnly; SameSite=Lax; Max-Age=300; Path=/",
+                cookie_name, cookie_value
+            );
             HeaderValue::from_str(&cookie_str).map_err(|err| {
                 OpenIDConnectAuthProvider::internal_error(
                     format!(
@@ -1402,7 +1409,12 @@ impl AuthProvider for OpenIDConnectAuthProvider {
             // OpenID Connect Authorization Code Flow
             // See: https://tools.ietf.org/html/rfc6749#section-4.1
             //      https://openid.net/specs/openid-connect-core-1_0.html#CodeFlowSteps
-            Some(Auth::AuthorizationCode { code, state, nonce, csrf_token_hash }) => {
+            Some(Auth::AuthorizationCode {
+                code,
+                state,
+                nonce,
+                csrf_token_hash,
+            }) => {
                 // verify the CSRF "state" value by hashing it and comparing it to the value in the CSRF cookie
                 // TODO: use constant time comparison, e.g. as provided by the ring crate?
                 self.verify_csrf_token(state, csrf_token_hash)?;
@@ -1469,8 +1481,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 // claim is actually the hash of the original nonce, as per
                 // the advice in the OpenID Core 1.0 spec. See:
                 // https://openid.net/specs/openid-connect-core-1_0.html#NonceNotes
-                let nonce_hash =
-                    Nonce::new(base64::encode_config(sha256(nonce.as_bytes()), base64::URL_SAFE_NO_PAD));
+                let nonce_hash = Nonce::new(base64::encode_config(sha256(nonce.as_bytes()), base64::URL_SAFE_NO_PAD));
 
                 let id_token_claims = self.get_token_id_claims(&token_response, nonce_hash)?;
 
@@ -1513,9 +1524,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
 
                 let id = self
                     .extract_claim(&id_claim_conf, &id_token_claims, user_info_claims.as_ref())?
-                    .ok_or_else(|| {
-                        OpenIDConnectAuthProvider::internal_error("No value found for 'id' claim", None)
-                    })?;
+                    .ok_or_else(|| OpenIDConnectAuthProvider::internal_error("No value found for 'id' claim", None))?;
 
                 // Lookup the a user in the config file authentication provider
                 // configuration by the id value that we just obtained, if
@@ -1563,7 +1572,9 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 })
             }
 
-            _ => Err(Error::ApiInvalidCredentials("Request is not RFC-6749 section 4.1.2 compliant".to_string())),
+            _ => Err(Error::ApiInvalidCredentials(
+                "Request is not RFC-6749 section 4.1.2 compliant".to_string(),
+            )),
         }
     }
 

@@ -26,10 +26,10 @@ pub struct OpenSslSigner {
 }
 
 impl OpenSslSigner {
-    pub fn build(work_dir: &PathBuf) -> Result<Self, SignerError> {
+    pub fn build(work_dir: &Path) -> Result<Self, SignerError> {
         let meta_data = fs::metadata(&work_dir)?;
         if meta_data.is_dir() {
-            let mut keys_dir = PathBuf::from(work_dir);
+            let mut keys_dir = work_dir.to_path_buf();
             keys_dir.push("keys");
             if !keys_dir.is_dir() {
                 fs::create_dir_all(&keys_dir)?;
@@ -39,7 +39,7 @@ impl OpenSslSigner {
                 keys_dir: keys_dir.into(),
             })
         } else {
-            Err(SignerError::InvalidWorkDir(work_dir.clone()))
+            Err(SignerError::InvalidWorkDir(work_dir.to_path_buf()))
         }
     }
 }
@@ -182,7 +182,7 @@ impl OpenSslKeyPair {
         // Issues unwrapping this indicate a bug in the openssl library.
         // So, there is no way to recover.
         let mut b = Bytes::from(self.pkey.rsa().unwrap().public_key_to_der()?);
-        Ok(PublicKey::decode(&mut b).map_err(|_| SignerError::DecodeError)?)
+        PublicKey::decode(&mut b).map_err(|_| SignerError::DecodeError)
     }
 }
 

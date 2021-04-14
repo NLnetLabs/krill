@@ -19,7 +19,7 @@ macro_rules! iterable_enum {
 
         impl std::str::FromStr for $name {
             type Err = String;
-        
+
             fn from_str(input: &str) -> Result<Self, Self::Err> {
                 match input {
                     $( stringify!($variant) => { Ok($name::$variant) }
@@ -28,7 +28,7 @@ macro_rules! iterable_enum {
                 }
             }
         }
-        
+
         impl $name {
             pub fn iter() -> Iter {
                 Iter(None)
@@ -39,7 +39,7 @@ macro_rules! iterable_enum {
 
         impl Iterator for Iter {
             type Item = $name;
-            
+
             fn next(&mut self) -> Option<Self::Item> {
                 match self.0 {
                     None                  => $( { self.0 = Some($name::$variant); Some($name::$variant) },

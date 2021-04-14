@@ -55,6 +55,7 @@ struct IdTbsCertificate {
 ///
 impl IdTbsCertificate {
     /// Encodes this certificate.
+    #[allow(clippy::needless_lifetimes)]
     fn encode<'a>(&'a self) -> impl encode::Values + 'a {
         encode::sequence((
             (
@@ -217,6 +218,7 @@ impl SignedAttributes {
     }
 
     /// Encodes the SignedAttributes for inclusion in a CMS.
+    #[allow(clippy::needless_lifetimes)]
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
         (
             encode::sequence((oid::CONTENT_TYPE.encode(), encode::set(self.content_type.encode()))),
@@ -357,6 +359,7 @@ impl IdCert {
             .map_err(Into::into)
     }
 
+    #[allow(clippy::needless_lifetimes)]
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
         self.signed_data.encode_ref()
     }
@@ -650,6 +653,7 @@ impl IdExtensions {
 // We have to do this the hard way because some extensions are optional.
 // Therefore we need logic to determine which ones to encode.
 impl IdExtensions {
+    #[allow(clippy::needless_lifetimes)]
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
         encode::sequence_as(
             Tag::CTX_3,
