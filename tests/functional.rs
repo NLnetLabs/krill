@@ -44,22 +44,9 @@ async fn embedded_repository_response(publisher: &PublisherHandle) -> rfc8183::R
     }
 }
 
-async fn dedicated_repository_response(publisher: &PublisherHandle) -> rfc8183::RepositoryResponse {
-    let command = PublishersCommand::RepositoryResponse(publisher.clone());
-    match krill_dedicated_pubd_admin(command).await {
-        ApiResponse::Rfc8183RepositoryResponse(response) => response,
-        _ => panic!("Expected repository response."),
-    }
-}
-
 async fn embedded_repo_add_publisher(req: rfc8183::PublisherRequest) {
     let command = PublishersCommand::AddPublisher(req);
     krill_embedded_pubd_admin(command).await;
-}
-
-async fn dedicated_repo_add_publisher(req: rfc8183::PublisherRequest) {
-    let command = PublishersCommand::AddPublisher(req);
-    krill_dedicated_pubd_admin(command).await;
 }
 
 async fn set_up_ca_with_repo(ca: &Handle) {
@@ -84,40 +71,15 @@ async fn expected_mft_and_crl(ca: &Handle, rcn: &ResourceClassName) -> Vec<Strin
     vec![mft_file, crl_file]
 }
 
-async fn expected_new_key_mft_and_crl(ca: &Handle, rcn: &ResourceClassName) -> Vec<String> {
-    let rc_key = ca_new_key_for_rcn(ca, rcn).await;
-    let mft_file = rc_key.incoming_cert().mft_name().to_string();
-    let crl_file = rc_key.incoming_cert().crl_name().to_string();
-    vec![mft_file, crl_file]
-}
-
 async fn expected_issued_cer(ca: &Handle, rcn: &ResourceClassName) -> String {
     let rc_key = ca_key_for_rcn(ca, rcn).await;
     ObjectName::from(rc_key.incoming_cert().cert()).to_string()
 }
 
-async fn will_publish_embedded(test_msg: &str, publisher: &PublisherHandle, files: &[String]) -> bool {
-    will_publish(test_msg, publisher, files, PubServer::Embedded).await
-}
-
-async fn will_publish_dedicated(test_msg: &str, publisher: &PublisherHandle, files: &[String]) -> bool {
-    will_publish(test_msg, publisher, files, PubServer::Dedicated).await
-}
-
-enum PubServer {
-    Embedded,
-    Dedicated,
-}
-
-async fn will_publish(test_msg: &str, publisher: &PublisherHandle, files: &[String], server: PubServer) -> bool {
+async fn will_publish(test_msg: &str, publisher: &PublisherHandle, files: &[String]) -> bool {
     let objects: Vec<_> = files.iter().map(|s| s.as_str()).collect();
     for _ in 0..6000 {
-        let details = {
-            match &server {
-                PubServer::Dedicated => dedicated_repo_publisher_details(publisher).await,
-                PubServer::Embedded => publisher_details(publisher).await,
-            }
-        };
+        let details = publisher_details(publisher).await;
 
         let current_files = details.current_files();
 
@@ -227,10 +189,6 @@ async fn refresh_all() {
     krill_admin(Command::Bulk(BulkCaCommand::Refresh)).await;
 }
 
-async fn resync_all() {
-    krill_admin(Command::Bulk(BulkCaCommand::Sync)).await;
-}
-
 #[tokio::test]
 async fn functional() {
     init_logging();
@@ -263,7 +221,6 @@ async fn functional() {
     info("#     - ROAs are cleaned up/created accordingly                  #");
     info("#  * CAs can perform key rolls:                                  #");
     info("#     - Content (ROAs) should be unaffected                      #");
-    info("#  * CAs can migrate to a new Publication Server (uses keyroll)  #");
     info("#                                                                #");
     info("#  * RTAs can be created and co-signed under multiple CAs        #");
     info("#                                                                #");
@@ -276,14 +233,6 @@ async fn functional() {
     info("##################################################################");
     info("");
     let krill_dir = start_krill_with_default_test_config(true).await;
-
-    info("##################################################################");
-    info("#                                                                #");
-    info("#               Start Secondary Publication Server               #");
-    info("#                                                                #");
-    info("##################################################################");
-    info("");
-    let pubd_dir = start_krill_pubd().await;
 
     let ta = ta_handle();
     let testbed = handle_for("testbed");
@@ -323,7 +272,7 @@ async fn functional() {
         let mut expected_files = expected_mft_and_crl(&ta, &rcn_0).await;
         expected_files.push(expected_issued_cer(&testbed, &rcn_0).await);
         assert!(
-            will_publish_embedded(
+            will_publish(
                 "TA should have manifest, crl and cert for testbed",
                 &ta,
                 &expected_files
@@ -365,7 +314,7 @@ async fn functional() {
         expected_files.push(expected_issued_cer(&ca1, &rcn_0).await);
         expected_files.push(expected_issued_cer(&ca2, &rcn_0).await);
         assert!(
-            will_publish_embedded(
+            will_publish(
                 "testbed CA should have mft, crl and certs for CA1 and CA2",
                 &testbed,
                 &expected_files
@@ -394,7 +343,7 @@ async fn functional() {
         info("");
         let mut expected_files = expected_mft_and_crl(&ca1, &rcn_0).await;
         expected_files.push(expected_issued_cer(&ca3, &rcn_0).await);
-        assert!(will_publish_embedded("CA1 should publish the certificate for CA3", &ca1, &expected_files).await);
+        assert!(will_publish("CA1 should publish the certificate for CA3", &ca1, &expected_files).await);
     }
 
     {
@@ -417,7 +366,7 @@ async fn functional() {
         let mut expected_files = expected_mft_and_crl(&ca2, &rcn_0).await;
         // CA3 will have the certificate from CA2 under its resource class '1' rather than '0'
         expected_files.push(expected_issued_cer(&ca3, &rcn_1).await);
-        assert!(will_publish_embedded("CA2 should have mft, crl and a cert for CA3", &ca2, &expected_files).await);
+        assert!(will_publish("CA2 should have mft, crl and a cert for CA3", &ca2, &expected_files).await);
     }
 
     {
@@ -444,7 +393,7 @@ async fn functional() {
         expected_files.append(&mut expected_mft_and_crl(&ca3, &rcn_1).await);
         expected_files.push(expected_issued_cer(&ca4, &rcn_1).await);
         assert!(
-            will_publish_embedded(
+            will_publish(
                 "CA3 should have two resource classes and a cert for CA4 in each",
                 &ca3,
                 &expected_files
@@ -464,7 +413,7 @@ async fn functional() {
         let mut expected_files = expected_mft_and_crl(&ca4, &rcn_0).await;
         expected_files.append(&mut expected_mft_and_crl(&ca4, &rcn_1).await);
         assert!(
-            will_publish_embedded(
+            will_publish(
                 "CA4 should now have two resource classes, each with a mft and crl",
                 &ca4,
                 &expected_files
@@ -506,7 +455,7 @@ async fn functional() {
         for roa in roas {
             expected_files.push(ObjectName::from(roa).to_string());
         }
-        assert!(will_publish_embedded(test_msg, &ca4, &expected_files).await);
+        assert!(will_publish(test_msg, &ca4, &expected_files).await);
     }
 
     {
@@ -552,7 +501,7 @@ async fn functional() {
         // and the roa for rc1
         expected_files.push(ObjectName::from(&route_rc1_1).to_string());
 
-        assert!(will_publish_embedded("CA4 should now aggregate ROAs", &ca4, &expected_files).await);
+        assert!(will_publish("CA4 should now aggregate ROAs", &ca4, &expected_files).await);
     }
 
     {
@@ -696,7 +645,7 @@ async fn functional() {
             let mut expected_files = expected_mft_and_crl(&ca3, &rcn_0).await;
             expected_files.append(&mut expected_mft_and_crl(&ca3, &rcn_1).await);
             assert!(
-                will_publish_embedded(
+                will_publish(
                     "CA3 should no longer publish the cert for CA4 after CA4 has been deleted",
                     &ca3,
                     &expected_files
@@ -707,105 +656,9 @@ async fn functional() {
 
         // Expect that CA4 withdraws all
         {
-            assert!(will_publish_embedded("CA4 should withdraw all objects when it's deleted", &ca4, &[]).await);
-        }
-    }
-
-    {
-        info("##################################################################");
-        info("#                                                                #");
-        info("# Migrate a Repository for CA3 (using a keyroll)                 #");
-        info("#                                                                #");
-        info("# CA3 currently uses the embedded publication server. In order   #");
-        info("# to migrate it, we will need to do the following:               #");
-        info("#                                                                #");
-        info("# - get the RFC 8183 publisher request from CA3                  #");
-        info("# - add CA3 as a publisher under the dedicated (separate) pubd,  #");
-        info("# - get the response                                             #");
-        info("# - update the repo config for CA3 using the 8183 response       #");
-        info("#    -- this should initiate a key roll                          #");
-        info("#    -- the new key publishes in the new repo                    #");
-        info("# - complete the key roll                                        #");
-        info("#    -- the old key should be cleaned up,                        #");
-        info("#    -- nothing published for CA3 in the embedded repo           #");
-        info("#                                                                #");
-        info("##################################################################");
-        info("");
-
-        // Add CA3 to dedicated repo
-        let publisher_request = publisher_request(&ca3).await;
-        dedicated_repo_add_publisher(publisher_request).await;
-        let response = dedicated_repository_response(&ca3).await;
-
-        // Wait a tiny bit.. when we add a new repo we check that it's available or
-        // it will be rejected.
-        delay_for(Duration::from_secs(1)).await;
-
-        // Update CA3 to use dedicated repo
-        let contact = RepositoryContact::new(response);
-        repo_update(&ca3, contact).await;
-
-        // This should result in a key roll and content published in both repos
-        assert!(state_becomes_new_key(&ca3).await);
-
-        // Expect that CA3 still publishes two current keys in the embedded repo
-        {
-            let mut expected_files = expected_mft_and_crl(&ca3, &rcn_0).await;
-            expected_files.append(&mut expected_mft_and_crl(&ca3, &rcn_1).await);
-            assert!(
-                will_publish_embedded(
-                    "CA3 should publish the MFT and CRL for both current keys in the embedded repo",
-                    &ca3,
-                    &expected_files
-                )
-                .await
-            );
-        }
-
-        // Expect that CA3 publishes two new keys in the dedicated repo
-        {
-            let mut expected_files = expected_new_key_mft_and_crl(&ca3, &rcn_0).await;
-            expected_files.append(&mut expected_new_key_mft_and_crl(&ca3, &rcn_1).await);
-            assert!(
-                will_publish_dedicated(
-                    "CA3 should publish the MFT and CRL for both new keys in the dedicated repo",
-                    &ca3,
-                    &expected_files
-                )
-                .await
-            );
-        }
-
-        // Complete the keyroll, this should remove the content in the embedded repo
-        ca_roll_activate(&ca3).await;
-        assert!(state_becomes_active(&ca3).await);
-
-        // Wait a tiny bit.. then force resync.
-        delay_for(Duration::from_secs(5)).await;
-        resync_all().await;
-
-        // Expect that CA3 publishes nothing in the embedded repo
-        {
-            assert!(
-                will_publish_embedded("CA3 should no longer publish anything in the embedded repo", &ca3, &[]).await
-            );
-        }
-
-        // Expect that CA3  publishes two current keys in the dedicated repo
-        {
-            let mut expected_files = expected_mft_and_crl(&ca3, &rcn_0).await;
-            expected_files.append(&mut expected_mft_and_crl(&ca3, &rcn_1).await);
-            assert!(
-                will_publish_dedicated(
-                    "CA3 should publish the MFT and CRL for both current keys in the dedicated repo",
-                    &ca3,
-                    &expected_files
-                )
-                .await
-            );
+            assert!(will_publish("CA4 should withdraw all objects when it's deleted", &ca4, &[]).await);
         }
     }
 
     let _ = fs::remove_dir_all(krill_dir);
-    let _ = fs::remove_dir_all(pubd_dir);
 }
