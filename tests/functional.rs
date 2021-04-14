@@ -781,7 +781,7 @@ async fn functional() {
         assert!(state_becomes_active(&ca3).await);
 
         // Wait a tiny bit.. then force resync.
-        delay_for(Duration::from_secs(1)).await;
+        delay_for(Duration::from_secs(5)).await;
         resync_all().await;
 
         // Expect that CA3 publishes nothing in the embedded repo
