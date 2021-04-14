@@ -132,7 +132,7 @@ async fn start_krill_with_error_trap(config: Arc<Config>, mode: KrillMode) {
 }
 
 /// Starts a krill pubd for testing on its own port, and its
-/// own tempdir for storage.
+/// own temp dir for storage.
 pub async fn start_krill_pubd() -> PathBuf {
     let dir = tmp_dir();
     let mut config = test_config(&dir, false);
@@ -144,7 +144,7 @@ pub async fn start_krill_pubd() -> PathBuf {
     tokio::spawn(start_krill_with_error_trap(Arc::new(config), KrillMode::Pubd));
     assert!(krill_pubd_ready().await);
 
-    // Initialise the repository using separate URIs
+    // Initialize the repository using separate URIs
     let uris = {
         let rsync_base = uri::Rsync::from_str("rsync://localhost/dedicated-repo/").unwrap();
         let rrdp_base_uri = uri::Https::from_str("https://localhost:3001/test-rrdp/").unwrap();

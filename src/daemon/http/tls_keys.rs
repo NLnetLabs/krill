@@ -75,7 +75,7 @@ impl HttpsSigner {
         Ok(HttpsSigner { private })
     }
 
-    /// Saves the private key in PEM format so that actix can use it.
+    /// Saves the private key in PEM format so that hyper can use it.
     fn save_private_key(&self, data_dir: &Path) -> Result<(), Error> {
         let key_file_path = key_file_path(data_dir);
         let bytes = Bytes::from(self.private.private_key_to_pem_pkcs8()?);
@@ -254,7 +254,6 @@ impl std::error::Error for Error {}
 
 #[cfg(test)]
 mod tests {
-    // use actix_web::*;
     use crate::test;
 
     use super::*;

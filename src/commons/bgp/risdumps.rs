@@ -53,8 +53,8 @@ impl RisDumpLoader {
 
     fn parse_dump(bytes: &[u8]) -> Result<Vec<Announcement>, RisDumpError> {
         let mut res = vec![];
-        for lres in bytes.lines() {
-            let line = lres.map_err(RisDumpError::parse_error)?;
+        for lines_res in bytes.lines() {
+            let line = lines_res.map_err(RisDumpError::parse_error)?;
             if line.is_empty() || line.starts_with('%') {
                 continue;
             }
@@ -143,10 +143,10 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn download_bgp_ris_dumps() {
-        let bgp_risdump_v4_uri = "http://www.ris.ripe.net/dumps/riswhoisdump.IPv4.gz";
-        let bgp_risdump_v6_uri = "http://www.ris.ripe.net/dumps/riswhoisdump.IPv6.gz";
+        let bgp_ris_dump_v4_uri = "http://www.ris.ripe.net/dumps/riswhoisdump.IPv4.gz";
+        let bgp_ris_dump_v6_uri = "http://www.ris.ripe.net/dumps/riswhoisdump.IPv6.gz";
 
-        let loader = RisDumpLoader::new(bgp_risdump_v4_uri, bgp_risdump_v6_uri);
+        let loader = RisDumpLoader::new(bgp_ris_dump_v4_uri, bgp_ris_dump_v6_uri);
         let announcements = loader.download_updates().await.unwrap();
 
         assert!(!announcements.is_empty())

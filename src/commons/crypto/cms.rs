@@ -438,7 +438,7 @@ impl ProtocolCrl {
 
     /// Validates the certificate revocation list.
     ///
-    /// The CRL’s signature is validated against the provided public key.
+    /// The CRL signature is validated against the provided public key.
     ///
     /// Note that this method is used to test that our own CRLs are valid.
     /// However, it seems rather pointless to check the included ProtocolCrl

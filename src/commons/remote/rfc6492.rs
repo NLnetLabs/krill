@@ -587,9 +587,9 @@ impl Res {
 impl Res {
     fn encode<W: io::Write>(&self, w: &mut XmlWriter<W>) -> Result<(), io::Error> {
         match self {
-            Res::List(ents) => Self::encode_entitlements(ents, w),
+            Res::List(entitlements) => Self::encode_entitlements(entitlements, w),
             Res::Issue(response) => Self::encode_issuance_response(response, w),
-            Res::Revoke(response) => Self::encode_revoke_reponse(response, w),
+            Res::Revoke(response) => Self::encode_revoke_response(response, w),
             Res::NotPerformed(err) => Self::encode_error_response(err, w),
         }
     }
@@ -629,7 +629,7 @@ impl Res {
         class_name: &ResourceClassName,
         cert_url: &uri::Rsync,
         not_after: Time,
-        inrs: &ResourceSet,
+        resources: &ResourceSet,
         issued: impl Iterator<Item = &'a IssuedCert>,
         issuer: &SigningCert,
         w: &mut XmlWriter<W>,
@@ -638,9 +638,9 @@ impl Res {
         let class_name = class_name.to_string();
         let not_after = not_after.to_rfc3339_opts(SecondsFormat::Secs, true);
 
-        let asn = inrs.asn().to_string();
-        let v4 = inrs.v4().to_string();
-        let v6 = inrs.v6().to_string();
+        let asn = resources.asn().to_string();
+        let v4 = resources.v4().to_string();
+        let v6 = resources.v6().to_string();
 
         let attrs = vec![
             ("cert_url", cert_url.as_str()),
@@ -700,7 +700,7 @@ impl Res {
         w.put_element("description", Some(&att), |w| w.put_text(&error.description))
     }
 
-    fn encode_revoke_reponse<W: io::Write>(res: &RevocationResponse, w: &mut XmlWriter<W>) -> Result<(), io::Error> {
+    fn encode_revoke_response<W: io::Write>(res: &RevocationResponse, w: &mut XmlWriter<W>) -> Result<(), io::Error> {
         let class_name = res.class_name().to_string();
         let bytes = res.key().as_slice();
         let encoded = base64::encode_config(bytes, base64::URL_SAFE_NO_PAD);
@@ -986,7 +986,7 @@ mod tests {
         let content = msg.content().to_bytes();
         let xml = unsafe { from_utf8_unchecked(content.as_ref()) };
 
-        // this version contains mailformed XML, the sender and receiver attributes are missing.
+        // this version contains malformed XML, the sender and receiver attributes are missing.
         // see RFC6492 section 3.2
 
         // Lacnic content

@@ -26,7 +26,7 @@ pub trait Aggregate: Storable + Send + Sync + 'static {
     type Error: std::error::Error + Send + Sync;
 
     /// Creates a new instance. Expects an event with data needed to
-    /// initialise the instance. Typically this means that a specific
+    /// initialize the instance. Typically this means that a specific
     /// 'create' event is passed, with all the needed data, or just an empty
     /// marker if no data is needed. Implementations must return an error in
     /// case the instance cannot be created.

@@ -63,7 +63,7 @@ impl fmt::Display for RepositoryAccessInitDetails {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Initialised publication server. RRDP base uri: {}, Rsync Jail: {}",
+            "Initialized publication server. RRDP base uri: {}, Rsync Jail: {}",
             self.rrdp_base_uri, self.rsync_jail
         )
     }

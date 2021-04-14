@@ -413,7 +413,7 @@ mod tests {
     use crate::test;
 
     #[test]
-    fn diskstore_move_key() {
+    fn disk_store_move_key() {
         test::test_under_tmp(|d| {
             let store = KeyValueStore::disk(&d, "store").unwrap();
 

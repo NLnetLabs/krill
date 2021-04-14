@@ -47,11 +47,11 @@ mod tests {
 
     //------------ InitPersonEvent -----------------------------------------------
 
-    /// Every aggregate defines their own initialisation event. This is the first
+    /// Every aggregate defines their own initialization event. This is the first
     /// event stored for an instance.
     ///
     /// Here we define a type wrapping around the generic StoredEvent, so we only
-    /// need to define the unique initialisation details.
+    /// need to define the unique initialization details.
     type InitPersonEvent = StoredEvent<InitPersonDetails>;
 
     impl InitPersonEvent {
@@ -67,7 +67,7 @@ mod tests {
 
     impl fmt::Display for InitPersonDetails {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            write!(f, "person initialised with name '{}'", self.name)
+            write!(f, "person initialized with name '{}'", self.name)
         }
     }
 

@@ -721,20 +721,20 @@ mod tests {
         );
 
         let expected = {
-            let mut added = vec![];
-            added.push(definition("192.168.0.0/16 => 64496"));
-            added.push(definition("192.168.1.0/24 => 64496"));
+            let added = vec![
+                definition("192.168.0.0/16 => 64496"),
+                definition("192.168.1.0/24 => 64496"),
+            ];
 
-            let mut removed = vec![];
-            removed.push(definition("192.168.3.0/24 => 64496"));
+            let removed = vec![definition("192.168.3.0/24 => 64496")];
             RoaDefinitionUpdates::new(added, removed)
         };
 
         let parsed = RoaDefinitionUpdates::from_str(delta).unwrap();
         assert_eq!(expected, parsed);
 
-        let reparsed = RoaDefinitionUpdates::from_str(&parsed.to_string()).unwrap();
-        assert_eq!(parsed, reparsed);
+        let re_parsed = RoaDefinitionUpdates::from_str(&parsed.to_string()).unwrap();
+        assert_eq!(parsed, re_parsed);
     }
 
     #[test]

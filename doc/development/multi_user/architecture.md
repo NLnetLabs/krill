@@ -34,11 +34,11 @@ the `Authorizer`.
 
   - By calling `.actor_from_request()` to authenticate an HTTP request.
   - By calling `.actor_from_def()` to obtain a representation of one of the built-in actors. This is only used by
-    `KrillServer` to obtain the internal Krill actor to attribute internal Krill actions to, and by the testbuid API to
+    `KrillServer` to obtain the internal Krill actor to attribute internal Krill actions to, and by the test build API to
     upgrade an anonymous actor to a special `testbed` actor.
 
 
-Authentication is delegated by the `Authorizer` to an `AuthProvder` which is a trait with three implementations:
+Authentication is delegated by the `Authorizer` to an `AuthProvider` which is a trait with three implementations:
 
 - `MasterTokenAuthProvider`
 - `ConfigFileAuthProvider`
@@ -93,10 +93,10 @@ least powerful)_
 
 Actor | Represents | Role | Comments
 ------|------------|------|----------
-`ACTOR_DEF_KRILL` | Krill itself | `admin` | Used for initial startup and scheduled actions that are not directlyattributable to a REST API client.
+`ACTOR_DEF_KRILL` | Krill itself | `admin` | Used for initial startup and scheduled actions that are not directly attributable to a REST API client.
 `ACTOR_DEF_MASTER_TOKEN` | A client using the master API token | `admin` | Used by the users of Lagosta when `auth_type = "master-token"` (the default), or by direct clients of the REST API, or indirect clients of the REST API via `krillc`. |
-`ACTOR_DEF_TESTBED` | An anonmymous client of the testbed | `testbed` (temporarily) | Used by the testbed REST API handler functions to make internal requests to restricted APIs on the behalf of the anonymous client. See `Request::upgrade_from_anonymous`. |
-`ACTOR_DEF_ANON` | An anonymous client | None | Used for REST API calls that lack credentials or for which an error occurs during authentication. By still having an actor even in this case we can handle all API calls the same way. The anonymous actor has no role and so, unless overriden by a custom authorization policy, has no rights in Krill. It can thus only successfully request REST API endpoints that do not require authentication. |
+`ACTOR_DEF_TESTBED` | An anonymous client of the testbed | `testbed` (temporarily) | Used by the testbed REST API handler functions to make internal requests to restricted APIs on the behalf of the anonymous client. See `Request::upgrade_from_anonymous`. |
+`ACTOR_DEF_ANON` | An anonymous client | None | Used for REST API calls that lack credentials or for which an error occurs during authentication. By still having an actor even in this case we can handle all API calls the same way. The anonymous actor has no role and so, unless overridden by a custom authorization policy, has no rights in Krill. It can thus only successfully request REST API endpoints that do not require authentication. |
 
 ## Debatable design choices
 
@@ -110,7 +110,7 @@ A couple of design properties that emerged and that should perhaps be revisited 
 
   - There's a second `reqwest` dependency because using the main v0.10 `reqwest` dependency in the
     `OpenIDConnectAuthProvider` caused panics from its use of an internal async Tokio loop wrapper around its
-    synchronous client implementation, while in earlier versions of `reqwest` the sychronous client is actually
+    synchronous client implementation, while in earlier versions of `reqwest` the synchronous client is actually
     synchronous code.
     
   - Switching to the `async` `reqwest` client would require working around the problem that

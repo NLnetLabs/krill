@@ -489,7 +489,7 @@ impl CaObjects {
         let mut required = false;
 
         for (_, rco) in self.classes.iter_mut() {
-            if rco.requires_reissuance(hours) {
+            if rco.requires_re_issuance(hours) {
                 required = true;
                 rco.reissue(timing, signer)?;
             }
@@ -635,7 +635,7 @@ impl ResourceClassObjects {
         }
     }
 
-    fn requires_reissuance(&self, hours: i64) -> bool {
+    fn requires_re_issuance(&self, hours: i64) -> bool {
         match &self.keys {
             ResourceClassKeyState::Current(state) => state.current_set.requires_reissuance(hours),
             ResourceClassKeyState::Old(state) => {

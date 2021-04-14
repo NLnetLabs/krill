@@ -57,7 +57,7 @@ impl Base64 {
         Base64::from(base64::encode(content))
     }
 
-    /// Decodes into bytes (e.g. for saving to disk for rcync)
+    /// Decodes into bytes (e.g. for saving to disk for rsync)
     pub fn to_bytes(&self) -> Bytes {
         Bytes::from(base64::decode(&self.0).unwrap())
     }

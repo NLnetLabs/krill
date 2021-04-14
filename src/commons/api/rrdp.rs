@@ -748,11 +748,11 @@ impl DeltaElements {
 
 impl From<publication::PublishDelta> for DeltaElements {
     fn from(d: publication::PublishDelta) -> Self {
-        let (pbls, upds, wdrs) = d.unwrap();
+        let (publishers, updates, withdraws) = d.unwrap();
 
-        let publishes = pbls.into_iter().map(PublishElement::from).collect();
-        let updates = upds.into_iter().map(UpdateElement::from).collect();
-        let withdraws = wdrs.into_iter().map(WithdrawElement::from).collect();
+        let publishes = publishers.into_iter().map(PublishElement::from).collect();
+        let updates = updates.into_iter().map(UpdateElement::from).collect();
+        let withdraws = withdraws.into_iter().map(WithdrawElement::from).collect();
 
         DeltaElements {
             publishes,

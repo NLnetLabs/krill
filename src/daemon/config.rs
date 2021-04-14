@@ -56,7 +56,7 @@ impl ConfigDefaults {
             Ok(level) => match LevelFilter::from_str(&level) {
                 Ok(level) => level,
                 Err(_) => {
-                    eprintln!("Unrecognised value for log level in env var {}", KRILL_ENV_LOG_LEVEL);
+                    eprintln!("Unrecognized value for log level in env var {}", KRILL_ENV_LOG_LEVEL);
                     ::std::process::exit(1);
                 }
             },

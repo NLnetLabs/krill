@@ -743,13 +743,13 @@ pub struct ResourceSetSummary {
 }
 
 impl ResourceSetSummary {
-    pub fn asn_bloks(&self) -> usize {
+    pub fn asn_blocks(&self) -> usize {
         self.asns
     }
-    pub fn ipv4_bloks(&self) -> usize {
+    pub fn ipv4_blocks(&self) -> usize {
         self.ipv4
     }
-    pub fn ipv6_bloks(&self) -> usize {
+    pub fn ipv6_blocks(&self) -> usize {
         self.ipv6
     }
 }
@@ -1494,8 +1494,8 @@ impl CertAuthInfo {
 
         let empty = ResourceSet::default();
         let resources = resource_classes.values().fold(ResourceSet::default(), |res, rci| {
-            let rc_resouces = rci.current_resources().unwrap_or(&empty);
-            res.union(rc_resouces)
+            let rc_resources = rci.current_resources().unwrap_or(&empty);
+            res.union(rc_resources)
         });
 
         CertAuthInfo {
@@ -2163,7 +2163,7 @@ mod test {
     }
 
     #[test]
-    fn serialize_deserialise_repo_info() {
+    fn serialize_deserialize_repo_info() {
         let info = RepoInfo::new(
             test::rsync("rsync://some/module/folder/"),
             test::https("https://host/notification.xml"),
@@ -2205,12 +2205,6 @@ mod test {
         let resource_set_v4_differs = ResourceSet::from_strs(asns, ipv4s_2, ipv6s).unwrap();
         let resource_set_v6_differs = ResourceSet::from_strs(asns, ipv4s, ipv6s_2).unwrap();
         let resource_set_2 = ResourceSet::from_strs(asns_2, ipv4s_2, ipv6s_2).unwrap();
-
-        assert_eq!(resource_set, resource_set);
-        assert_eq!(resource_set_asn_differs, resource_set_asn_differs);
-        assert_eq!(resource_set_v4_differs, resource_set_v4_differs);
-        assert_eq!(resource_set_v6_differs, resource_set_v6_differs);
-        assert_eq!(resource_set_2, resource_set_2);
 
         assert_ne!(resource_set, resource_set_asn_differs);
         assert_ne!(resource_set, resource_set_v4_differs);

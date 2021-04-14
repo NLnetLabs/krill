@@ -264,7 +264,7 @@ where
             let mut last_update = Time::now();
 
             // Check all commands and associated events
-            let mut hunkydory = true;
+            let mut all_ok = true;
 
             let command_keys = self.command_keys_ascending(&handle, &criteria)?;
             info!("Processing {} commands for {}", command_keys.len(), handle);
@@ -273,24 +273,24 @@ where
                     info!("Processed {} commands", counter);
                 }
 
-                if hunkydory {
+                if all_ok {
                     if let Ok(cmd) = self.get_command::<A::StorableCommandDetails>(&handle, &command_key) {
                         if let Some(events) = cmd.effect().events() {
                             for version in events {
                                 if let Ok(Some(_)) = self.get_event::<A::Event>(&handle, *version) {
                                     last_good_evt = *version;
                                 } else {
-                                    hunkydory = false;
+                                    all_ok = false;
                                 }
                             }
                         }
                         last_good_cmd = cmd.sequence();
                         last_update = cmd.time();
                     } else {
-                        hunkydory = false;
+                        all_ok = false;
                     }
                 }
-                if !hunkydory {
+                if !all_ok {
                     warn!(
                         "Command {} was corrupt, or not all events could be loaded. Will archive surplus",
                         command_key
@@ -303,7 +303,7 @@ where
 
             self.archive_surplus_events(&handle, last_good_evt + 1)?;
 
-            if !hunkydory {
+            if !all_ok {
                 warn!(
                     "State for '{}' can only be recovered to version: {}. Check corrupt and surplus dirs",
                     &handle, last_good_evt
@@ -878,7 +878,7 @@ where
         }
 
         if aggregate_opt.is_none() {
-            warn!("No snapshots found for '{}' will try from initialisation event.", id);
+            warn!("No snapshots found for '{}' will try from initialization event.", id);
             let init_key = Self::key_for_event(id, 0);
             aggregate_opt = match self.kv.get::<A::InitEvent>(&init_key)? {
                 Some(e) => {
@@ -999,7 +999,7 @@ where
 pub enum AggregateStoreError {
     IoError(io::Error),
     KeyStoreError(KeyValueError),
-    NotInitialised,
+    NotInitialized,
     UnknownAggregate(Handle),
     InitError(Handle),
     ReplayError(Handle, u64, u64),
@@ -1022,7 +1022,7 @@ impl fmt::Display for AggregateStoreError {
         match self {
             AggregateStoreError::IoError(e) => e.fmt(f),
             AggregateStoreError::KeyStoreError(e) => write!(f, "KeyStore Error: {}", e),
-            AggregateStoreError::NotInitialised => write!(f, "This aggregate store is not initialised"),
+            AggregateStoreError::NotInitialized => write!(f, "This aggregate store is not initialized"),
             AggregateStoreError::UnknownAggregate(handle) => write!(f, "unknown entity: {}", handle),
             AggregateStoreError::InitError(handle) => {
                 write!(f, "Init event exists for '{}', but cannot be applied", handle)

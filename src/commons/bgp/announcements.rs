@@ -92,7 +92,7 @@ impl Announcement {
                 invalidating.push(*roa);
             }
 
-            // NOTE: Valid announcments already returned, we only have invalids left
+            // NOTE: Valid announcements already returned, we only have invalids left
 
             let validity = if same_asn_found {
                 AnnouncementValidity::InvalidLength

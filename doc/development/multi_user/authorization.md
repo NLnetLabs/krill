@@ -46,13 +46,13 @@ that can be acted upon by an actor.
 _**TODO:** Rename all such authorization related uses of 'resource' to 'target' instead?_
 
 A resource is currently either a CA `Handle` or `NoResource`. The latter applies to actions such as logging in or
-listing all CAs, which do not relate to a single specific resource. In Oso policy language `NoReource` is mapped to Oso
+listing all CAs, which do not relate to a single specific resource. In Oso policy language `NoResource` is mapped to Oso
 `nil`.
 
 ## Permissions
 
 Permissions in Krill are defined as a variants of a `Permission` enum. Every action that must be secured behind a
-permission check invokes `Actor::is_allowed(perimssion, resource)` with the required permission for that action.
+permission check invokes `Actor::is_allowed(permission, resource)` with the required permission for that action.
 
 Authorization rules are written in terms of needing a specific permission. An alternative would have been to grant
 access to Krill based on the requested HTTP REST API relative path. However, that would then require that writers of
@@ -109,7 +109,7 @@ permission on the specified "resource".
 There are two additional combinatorial variants of the macro invocation syntax:
 
   - `aa!(no_warn ...` - this is only used by the handler function for
-    `GET /api/authorized` to supress logging of auth failures which would otherwise be caused by every initial load of
+    `GET /api/authorized` to suppress logging of auth failures which would otherwise be caused by every initial load of
     the Lagosta web user interface.
   - `aa!($req, $permission, $action)` - this is used in cases where the permission check is not related to a specific
     "resource", e.g. `LOGIN`.
@@ -341,7 +341,7 @@ pub fn ca_list(&self, actor: &Actor) -> KrillResult<CertAuthList> {
 | 9 | Chain to the next handler by returning an Err if we are not the handler for this request.
 | 10 | Handle the `/api/v1/authorized` endpoint separately (see 12 below).
 | 11 | Don't proceed to handle the following endpoints unless the user has `LOGIN` permission.
-| 12 | Check also for the `LOGIN` permission when handling `/api/v1/authorize`, but via `no_warn` supress failure logging.
+| 12 | Check also for the `LOGIN` permission when handling `/api/v1/authorize`, but via `no_warn` suppress failure logging.
 | 13 | To delete a CA the user must have both `CA_DELETE` permission AND access to the particular CA handle.
 | 14 | To list CAs the user must have `CA_LIST` permission. However, notice that the `actor` is passed in to `ca_list()`...
 | 15 | ... Looking closely at `ca_list()` we see that it further requires `CA_READ` permission on each individual CA handle in order to include that CA in the list result.

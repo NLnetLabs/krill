@@ -428,7 +428,7 @@ impl OpenIDConnectAuthProvider {
         // E.g. state or ui_locales?
 
         // From https://openid.net/specs/openid-connect-rpinitiated-1_0.html#RedirectionAfterLogout:
-        //   "An id_token_hint carring an ID Token for the RP is also REQUIRED when requesting
+        //   "An id_token_hint carrying an ID Token for the RP is also REQUIRED when requesting
         //    post-logout redirection"
         let id_token = id_token.ok_or_else(|| Error::custom("Missing id token"))?;
         Ok(format!(
@@ -483,7 +483,7 @@ impl OpenIDConnectAuthProvider {
                 // defines two additional error responses, `server_error` and
                 // `temporarily_unavailable`, that don't have variant counterparts
                 // in the openid-connect crate. These two error messages will
-                // therefore **not** end up in the `ServerReponse` variant.
+                // therefore **not** end up in the `ServerResponse` variant.
                 openidconnect::RequestTokenError::ServerResponse(r) => Err(r.error().clone()),
                 openidconnect::RequestTokenError::Request(r) => {
                     self.on_connection_issue(lock_guard);
@@ -566,7 +566,7 @@ impl OpenIDConnectAuthProvider {
                     // defines two additional error responses, `server_error` and
                     // `temporarily_unavailable`, that don't have variant counterparts
                     // in the openid-connect crate. These two error messages will
-                    // therefore **not** end up in the `ServerReponse` variant.
+                    // therefore **not** end up in the `ServerResponse` variant.
                     openidconnect::RequestTokenError::ServerResponse(r) => Err(r.error().clone()),
                     openidconnect::RequestTokenError::Request(r) => {
                         self.on_connection_issue(lock_guard);
@@ -825,7 +825,7 @@ impl OpenIDConnectAuthProvider {
     /// However the OpenID Connect Discovery 1.0 specification doesn't say anything about re-doing discovery. For
     /// providers that don't support discovery, they would never be able to make changes to their core configuration
     /// without also requiring clients to manually modify their configuration accordingly, so the chances of such an
-    /// impacting change occuring or that the right way to adapt to it is to automatically discover it while Krill is
+    /// impacting change occurring or that the right way to adapt to it is to automatically discover it while Krill is
     /// running seems unlikely.
     ///
     /// TODO: It might be good to keep track of the count of issues that occur by type of issue and to expose those
@@ -1128,7 +1128,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 let new_auth = match self.try_refresh_token(&session) {
                     Ok(auth) => {
                         trace!(
-                            "OpenID Connect: Succesfully refreshed token for user \"{}\"",
+                            "OpenID Connect: Successfully refreshed token for user \"{}\"",
                             &session.id
                         );
                         auth
@@ -1289,9 +1289,9 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         //
         // This is actually exactly the same mechanism used to pass a nonce value to the 3rd party authorization
         // server and check it afterwards, the only difference being that the state parameter is passed back to
-        // us as a request parameter on the authorisation code redirect response from the 3rd party, and the
+        // us as a request parameter on the authorization code redirect response from the 3rd party, and the
         // nonce is a value embedded in the ID token that is issued at the very end of the login process (after
-        // the authorisation code is exchanged for access and id tokens), except the hash and hashed value are
+        // the authorization code is exchanged for access and id tokens), except the hash and hashed value are
         // in reversed positions.
         let csrf_token = CsrfToken::new_random();
         let csrf_token_hash = sha256(csrf_token.secret().as_bytes());
@@ -1305,13 +1305,13 @@ impl AuthProvider for OpenIDConnectAuthProvider {
 
         // From https://openid.net/specs/openid-connect-core-1_0.html#AuthRequest:
         //   "prompt: login - The Authorization Server SHOULD prompt the
-        //    End-User for reauthentication. If it cannot reauthenticate the
+        //    End-User for re-authentication. If it cannot re-authenticate the
         //    End-User, it MUST return an error, typically login_required."
         // We set this because the only time a user of Lagosta should be sent
         // to the OpenID Connect: provider login form is when they actually want
         // to specify who to login as, we don't want the provider somehow
         // automatically completing the login process because it has some notion
-        // of an existing loging session.
+        // of an existing login session.
         request = request.add_prompt(CoreAuthPrompt::Login);
 
         // The "openid" scope that OpenID Connect: providers are required to
@@ -1444,7 +1444,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 // us a refresh token. We may also receive a scope value but
                 // only if different to the scope that we requested. Ensure,
                 // where not already done by the openidconnect crate, that the
-                // OAuth2 security consideratons are taken into account.
+                // OAuth2 security considerations are taken into account.
                 // See: https://tools.ietf.org/html/rfc6749#section-5.1
                 //      https://tools.ietf.org/html/rfc6749#section-10
 

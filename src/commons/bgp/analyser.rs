@@ -17,7 +17,7 @@ use crate::constants::{test_announcements_enabled, BGP_RIS_REFRESH_MINUTES};
 
 /// This type helps analyse ROAs vs BGP and vice versa.
 pub struct BgpAnalyser {
-    dumploader: Option<RisDumpLoader>,
+    dump_loader: Option<RisDumpLoader>,
     seen: RwLock<Announcements>,
 }
 
@@ -26,20 +26,20 @@ impl BgpAnalyser {
         if test_announcements_enabled() {
             Self::with_test_announcements()
         } else {
-            let dumploader = if ris_enabled {
+            let dump_loader = if ris_enabled {
                 Some(RisDumpLoader::new(ris_v4_uri, ris_v6_uri))
             } else {
                 None
             };
             BgpAnalyser {
-                dumploader,
+                dump_loader,
                 seen: RwLock::new(Announcements::default()),
             }
         }
     }
 
     pub async fn update(&self) -> Result<bool, BgpAnalyserError> {
-        if let Some(loader) = &self.dumploader {
+        if let Some(loader) = &self.dump_loader {
             let mut seen = self.seen.write().await;
             if let Some(last_time) = seen.last_checked() {
                 if (last_time + Duration::minutes(BGP_RIS_REFRESH_MINUTES)) > Time::now() {
@@ -122,7 +122,7 @@ impl BgpAnalyser {
                     .iter()
                     .filter(|va| {
                         // VALID announcements under THIS ROA
-                        // Already covered so it's under this ROA's prefix
+                        // Already covered so it's under this ROA prefix
                         // ASN must match
                         // Prefix length must be allowed under this ROA (it could be allowed by another ROA and therefore valid)
                         va.validity() == AnnouncementValidity::Valid
@@ -276,7 +276,7 @@ impl BgpAnalyser {
         let mut announcements = Announcements::default();
         announcements.update(Self::test_announcements());
         BgpAnalyser {
-            dumploader: None,
+            dump_loader: None,
             seen: RwLock::new(announcements),
         }
     }
@@ -317,10 +317,10 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn download_ris_dumps() {
-        let bgp_risdump_v4_uri = "http://www.ris.ripe.net/dumps/riswhoisdump.IPv4.gz";
-        let bgp_risdump_v6_uri = "http://www.ris.ripe.net/dumps/riswhoisdump.IPv6.gz";
+        let bgp_ris_dump_v4_uri = "http://www.ris.ripe.net/dumps/riswhoisdump.IPv4.gz";
+        let bgp_ris_dump_v6_uri = "http://www.ris.ripe.net/dumps/riswhoisdump.IPv6.gz";
 
-        let analyser = BgpAnalyser::new(true, bgp_risdump_v4_uri, bgp_risdump_v6_uri);
+        let analyser = BgpAnalyser::new(true, bgp_ris_dump_v4_uri, bgp_ris_dump_v6_uri);
 
         assert!(analyser.seen.read().await.is_empty());
         assert!(analyser.seen.read().await.last_checked().is_none());

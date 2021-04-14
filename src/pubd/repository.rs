@@ -63,10 +63,10 @@ impl RepositoryContentProxy {
         Ok(RepositoryContentProxy { store, key: dflt_key })
     }
 
-    // Initialise
+    // Initialize
     pub fn init(&self, work_dir: &Path, uris: PublicationServerUris) -> KrillResult<()> {
         if self.store.read().unwrap().has(&self.key)? {
-            Err(Error::RepositoryServerAlreadyInitialised)
+            Err(Error::RepositoryServerAlreadyInitialized)
         } else {
             let (rrdp_base_uri, rsync_jail) = uris.unpack();
 
@@ -90,7 +90,7 @@ impl RepositoryContentProxy {
         }
     }
 
-    // Clear all content, so it can be re-initialised.
+    // Clear all content, so it can be re-initialized.
     // Only to be called after all publishers have been removed from the RepoAccess as well.
     pub fn clear(&self) -> KrillResult<()> {
         let store = self.store.write().unwrap();
@@ -112,7 +112,7 @@ impl RepositoryContentProxy {
     // This is only supposed to be called if adding the publisher
     // to the RepositoryAccess was successful (and *that* will fail if
     // the publisher is a duplicate). This method can only fail if
-    // there is an issue with the underlying keyvalue store.
+    // there is an issue with the underlying key value store.
     pub fn add_publisher(&self, name: PublisherHandle) -> KrillResult<()> {
         self.write(|content| content.add_publisher(name))
     }
@@ -153,7 +153,7 @@ impl RepositoryContentProxy {
 
     fn write<F: FnOnce(&mut RepositoryContent) -> KrillResult<()>>(&self, op: F) -> KrillResult<()> {
         let store = self.store.write().unwrap();
-        let mut content: RepositoryContent = store.get(&self.key)?.ok_or(Error::RepositoryServerNotInitialised)?;
+        let mut content: RepositoryContent = store.get(&self.key)?.ok_or(Error::RepositoryServerNotInitialized)?;
 
         op(&mut content)?;
 
@@ -166,7 +166,7 @@ impl RepositoryContentProxy {
             .read()
             .unwrap()
             .get(&self.key)?
-            .ok_or(Error::RepositoryServerNotInitialised)
+            .ok_or(Error::RepositoryServerNotInitialized)
     }
 
     pub fn list_reply(&self, name: &PublisherHandle) -> KrillResult<ListReply> {
@@ -223,7 +223,7 @@ impl RepositoryContent {
         }
     }
 
-    // Clears all content on disk so the repository can be re-initialised
+    // Clears all content on disk so the repository can be re-initialized
     pub fn clear(&self) {
         self.rrdp.clear();
         self.rsync.clear();
@@ -832,7 +832,7 @@ impl RepositoryAccessProxy {
 
     pub fn init(&self, uris: PublicationServerUris, signer: &KrillSigner) -> KrillResult<()> {
         if self.initialized()? {
-            Err(Error::RepositoryServerAlreadyInitialised)
+            Err(Error::RepositoryServerAlreadyInitialized)
         } else {
             let (rrdp_base_uri, rsync_jail) = uris.unpack();
 
@@ -846,7 +846,7 @@ impl RepositoryAccessProxy {
 
     pub fn clear(&self) -> KrillResult<()> {
         if !self.initialized()? {
-            Err(Error::RepositoryServerNotInitialised)
+            Err(Error::RepositoryServerNotInitialized)
         } else if !self.publishers()?.is_empty() {
             Err(Error::RepositoryServerHasPublishers)
         } else {
