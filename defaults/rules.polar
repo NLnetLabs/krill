@@ -22,22 +22,15 @@ disallow(_, _, _) if false;
 # The action belongs to a role and thus to have access the user must have the
 # required role that includes the requested action.
 
-# note: when https://github.com/osohq/oso/issues/788 is fixed we will be able to replace this:
-#   allow(actor: Actor, action: Permission, _resource: Option) if
-#       _resource = nil and
-# with this:
-#   allow(actor: Actor, action: Permission, nil) if
-
-allow(actor: Actor, action: Permission, _resource: Option) if
-    _resource = nil and
+allow(actor: Actor, action: Permission, nil) if
     not disallow(actor, action, _resource) and
     actor_has_role(actor, role) and
     role_allow(role, action);
 
 ### TEST: [
-# Sanity check: verify that the built-in master-token test actor can login.
+# Sanity check: verify that the built-in master-token test actor can login.c
 # Exercises the rules above.
-?= allow(Actor.builtin("master-token"), LOGIN, _);
+?= allow(Actor.builtin("master-token"), LOGIN, nil);
 ### ]
 
 
