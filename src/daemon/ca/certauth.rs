@@ -1267,15 +1267,13 @@ impl CertAuth {
     ///    - initiate a roll to a new key using the new repo
     ///
     pub fn update_repo(&self, contact: RepositoryContact, signer: &KrillSigner) -> KrillResult<Vec<CaEvt>> {
-        // check that it is indeed different
-        if let Some(existing_contact) = &self.repository {
-            // If this is the same repo as before, then reject this update.
-            // We could make it idempotent, but then again, probably..
-            // the principle of least astonishment would be to reject this,
-            // the user is explicitly trying something that is not needed.
-            if existing_contact == &contact {
-                return Err(Error::CaRepoInUse(self.handle.clone()));
-            }
+        if let Some(_existing_contact) = &self.repository {
+            // Disallow, see issue 481
+            return Err(Error::CaRepoAlreadyConfigured(self.handle.clone()));
+            // TODO: check that it is indeed different and then allow (issue 480)
+            // if existing_contact == &contact {
+            //     return Err(Error::CaRepoInUse(self.handle.clone()));
+            // }
         }
 
         // register updated repo
