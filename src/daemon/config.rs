@@ -1,10 +1,10 @@
-use std::fs::File;
 use std::io;
 use std::io::Read;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::{env, fmt};
+use std::{fs::File, path::Path};
 
 use clap::{App, Arg};
 use log::{error, LevelFilter};
@@ -56,7 +56,7 @@ impl ConfigDefaults {
             Ok(level) => match LevelFilter::from_str(&level) {
                 Ok(level) => level,
                 Err(_) => {
-                    eprintln!("Unrecognised value for log level in env var {}", KRILL_ENV_LOG_LEVEL);
+                    eprintln!("Unrecognized value for log level in env var {}", KRILL_ENV_LOG_LEVEL);
                     ::std::process::exit(1);
                 }
             },
@@ -455,7 +455,7 @@ impl Config {
 
 /// # Create
 impl Config {
-    fn test_config(data_dir: &PathBuf, enable_testbed: bool) -> Self {
+    fn test_config(data_dir: &Path, enable_testbed: bool) -> Self {
         use crate::test;
 
         let ip = ConfigDefaults::ip();
@@ -463,7 +463,7 @@ impl Config {
         let pid_file = None;
 
         let https_mode = HttpsMode::Generate;
-        let data_dir = data_dir.clone();
+        let data_dir = data_dir.to_path_buf();
         let always_recover_data = false;
         let service_uri = ConfigDefaults::service_uri();
 
@@ -582,11 +582,11 @@ impl Config {
         }
     }
 
-    pub fn test(data_dir: &PathBuf, enable_testbed: bool) -> Self {
+    pub fn test(data_dir: &Path, enable_testbed: bool) -> Self {
         Self::test_config(data_dir, enable_testbed)
     }
 
-    pub fn pubd_test(data_dir: &PathBuf) -> Self {
+    pub fn pubd_test(data_dir: &Path) -> Self {
         let mut config = Self::test_config(data_dir, false);
         config.port = 3001;
         config.service_uri = "https://localhost:3001/".to_string();
@@ -745,7 +745,7 @@ impl Config {
     }
 
     /// Creates a file logger using the file provided by `path`.
-    fn file_logger(&self, path: &PathBuf) -> Result<(), ConfigError> {
+    fn file_logger(&self, path: &Path) -> Result<(), ConfigError> {
         let file = match fern::log_file(path) {
             Ok(file) => file,
             Err(err) => {

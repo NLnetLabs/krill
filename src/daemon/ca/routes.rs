@@ -266,9 +266,9 @@ impl Routes {
 
         for auth in self.map.keys() {
             let key = RoaAggregateKey::new(auth.asn(), None);
-            if let Some(authzs) = map.get_mut(&key) {
-                authzs.push(*auth);
-                authzs.sort();
+            if let Some(authorizations) = map.get_mut(&key) {
+                authorizations.push(*auth);
+                authorizations.sort();
             } else {
                 map.insert(key, vec![*auth]);
             }
@@ -402,10 +402,10 @@ impl Eq for RoaInfo {}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum RoaMode {
-    Simple,           // below agg threshold, and currently simple
-    StopAggregating,  // below deagg threshold, and currently aggregating
-    StartAggregating, // above agg threshold, and currently simple
-    Aggregate,        // above deagg threshold, and currently aggregating
+    Simple,           // below aggregation threshold, and currently simple
+    StopAggregating,  // below de-aggregation threshold, and currently aggregating
+    StartAggregating, // above aggregation threshold, and currently simple
+    Aggregate,        // above de-aggregation threshold, and currently aggregating
 }
 
 //------------ Roas --------------------------------------------------------
@@ -463,7 +463,7 @@ impl Roas {
 
     /// Returns the desired RoaMode based on the current situation, and
     /// the intended changes.
-    fn mode(&self, total: usize, deagg_threshold: usize, agg_threshold: usize) -> RoaMode {
+    fn mode(&self, total: usize, de_aggregation_threshold: usize, aggregation_threshold: usize) -> RoaMode {
         let mode = {
             if total == 0 {
                 // if everything will be removed, make sure no strategy change is triggered
@@ -473,12 +473,12 @@ impl Roas {
                     RoaMode::Simple
                 }
             } else if self.is_currently_aggregating() {
-                if total < deagg_threshold {
+                if total < de_aggregation_threshold {
                     RoaMode::StopAggregating
                 } else {
                     RoaMode::Aggregate
                 }
-            } else if total > agg_threshold {
+            } else if total > aggregation_threshold {
                 RoaMode::StartAggregating
             } else {
                 RoaMode::Simple
@@ -582,18 +582,18 @@ impl Roas {
 
         debug!("Will create '{}' aggregates", desired_aggregates.len());
 
-        // Add new ROAs, and update ROAs with changed authzs
-        for (key, authzs) in desired_aggregates.iter() {
+        // Add new ROAs, and update ROAs with changed authorizations
+        for (key, authorizations) in desired_aggregates.iter() {
             if let Some(existing) = self.aggregate.get(key) {
                 // check if we need to update
-                let mut existing_authzs = existing.authorizations().clone();
-                existing_authzs.sort();
+                let mut existing_authorizations = existing.authorizations().clone();
+                existing_authorizations.sort();
 
-                if authzs != &existing_authzs {
+                if authorizations != &existing_authorizations {
                     // replace ROA
                     let aggregate = Self::make_aggregate_roa(
                         key,
-                        authzs.clone(),
+                        authorizations.clone(),
                         Some(existing.roa_info()),
                         certified_key,
                         issuance_timing,
@@ -603,8 +603,14 @@ impl Roas {
                 }
             } else {
                 // new ROA
-                let aggregate =
-                    Self::make_aggregate_roa(key, authzs.clone(), None, certified_key, issuance_timing, signer)?;
+                let aggregate = Self::make_aggregate_roa(
+                    key,
+                    authorizations.clone(),
+                    None,
+                    certified_key,
+                    issuance_timing,
+                    signer,
+                )?;
                 roa_updates.update_aggregate(*key, aggregate);
             }
         }
@@ -679,10 +685,10 @@ impl Roas {
             let roa_info = aggregate.roa_info();
 
             if roa_info.expires() < renew_threshold {
-                let authzs = aggregate.authorizations().clone();
+                let authorizations = aggregate.authorizations().clone();
                 let name = ObjectName::from(roa_key);
                 let new_roa = Self::make_roa(
-                    authzs.as_slice(),
+                    authorizations.as_slice(),
                     &name,
                     None,
                     certified_key,
@@ -690,7 +696,7 @@ impl Roas {
                     signer,
                 )?;
                 let new_roa_info = RoaInfo::updated_roa(roa_info, new_roa);
-                let aggregate = AggregateRoaInfo::new(authzs, new_roa_info);
+                let aggregate = AggregateRoaInfo::new(authorizations, new_roa_info);
 
                 updates.update_aggregate(*roa_key, aggregate);
             }
@@ -725,10 +731,10 @@ impl Roas {
         for (roa_key, aggregate) in self.aggregate.iter() {
             let roa = aggregate.roa_info();
 
-            let authzs = aggregate.authorizations().clone();
+            let authorizations = aggregate.authorizations().clone();
             let name = ObjectName::from(roa_key);
             let new_roa = Self::make_roa(
-                authzs.as_slice(),
+                authorizations.as_slice(),
                 &name,
                 None,
                 certified_key,
@@ -736,7 +742,7 @@ impl Roas {
                 signer,
             )?;
             let new_roa_info = RoaInfo::updated_roa(roa, new_roa);
-            let aggregate = AggregateRoaInfo::new(authzs, new_roa_info);
+            let aggregate = AggregateRoaInfo::new(authorizations, new_roa_info);
 
             updates.update_aggregate(*roa_key, aggregate);
         }
@@ -753,7 +759,7 @@ impl Roas {
     }
 
     pub fn make_roa(
-        authzs: &[RouteAuthorization],
+        authorizations: &[RouteAuthorization],
         name: &ObjectName,
         new_repo: Option<&uri::Rsync>,
         certified_key: &CertifiedKey,
@@ -775,14 +781,14 @@ impl Roas {
 
         let signing_key = certified_key.key_id();
 
-        let asn = authzs
+        let asn = authorizations
             .first()
             .ok_or_else(|| Error::custom("Attempt to create ROA without prefixes"))?
             .asn();
 
         let mut roa_builder = RoaBuilder::new(asn.into());
 
-        for auth in authzs {
+        for auth in authorizations {
             if auth.asn() != asn {
                 return Err(Error::custom("Attempt to create ROA for multiple ASNs"));
             }
@@ -809,7 +815,7 @@ impl Roas {
 
     pub fn make_aggregate_roa(
         key: &RoaAggregateKey,
-        authzs: Vec<RouteAuthorization>,
+        authorizations: Vec<RouteAuthorization>,
         old_roa: Option<&RoaInfo>,
         certified_key: &CertifiedKey,
         issuance_timing: &IssuanceTimingConfig,
@@ -817,7 +823,7 @@ impl Roas {
     ) -> KrillResult<AggregateRoaInfo> {
         let name = ObjectName::from(key);
         let roa = Self::make_roa(
-            authzs.as_slice(),
+            authorizations.as_slice(),
             &name,
             None,
             certified_key,
@@ -828,7 +834,7 @@ impl Roas {
             Some(old_roa) => RoaInfo::updated_roa(old_roa, roa),
             None => RoaInfo::new_roa(roa),
         };
-        Ok(AggregateRoaInfo::new(authzs, info))
+        Ok(AggregateRoaInfo::new(authorizations, info))
     }
 }
 

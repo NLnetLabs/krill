@@ -67,7 +67,7 @@ async fn testbed_enabled(req: Request) -> RoutingResult {
 // Open (token-less) addition/removal of child CAs under the testbed CA.
 // Note: Anyone can request any resources irrespective of the resources they
 // have the rights to in the real global RPKI hierarchy and anyone can
-// unregister any child CA even if not "owned" by them.
+// un-register any child CA even if not "owned" by them.
 async fn testbed_children(req: Request, path: &mut RequestPath) -> RoutingResult {
     match (req.method().clone(), path.path_arg()) {
         (Method::GET, Some(child)) => match path.next() {
@@ -81,7 +81,7 @@ async fn testbed_children(req: Request, path: &mut RequestPath) -> RoutingResult
 }
 
 // Open (token-less) addition/removal of publishers to the testbed repository.
-// Note: Anyone can become a publisher and anyone can unregister a publisher
+// Note: Anyone can become a publisher and anyone can un-register a publisher
 // even if not "owned" by them.
 async fn testbed_publishers(req: Request, path: &mut RequestPath) -> RoutingResult {
     match (req.method().clone(), path.path_arg()) {

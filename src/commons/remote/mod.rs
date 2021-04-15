@@ -1,5 +1,3 @@
-//! This module provides support for proxying RFC compliant clients, using XML in
-//! CMS to the krill native HTTPS JSON API.
 pub mod api;
 pub mod cmslogger;
 pub mod id;

@@ -218,7 +218,7 @@ impl CaManager {
         let lock = self.locks.ca(&ta_handle).await;
         let _ = lock.write().await;
         if self.ca_store.has(&ta_handle)? {
-            Err(Error::TaAlreadyInitialised)
+            Err(Error::TaAlreadyInitialized)
         } else {
             // init normal CA
             let init = IniDet::init(&ta_handle, self.signer.deref())?;
@@ -1074,7 +1074,7 @@ impl CaManager {
         cms_logger: Option<CmsLogger>,
     ) -> KrillResult<rfc6492::Res> {
         let response = self
-            .send_procotol_msg_and_validate(
+            .send_protocol_msg_and_validate(
                 signing_key,
                 parent_res.service_uri(),
                 parent_res.id_cert(),
@@ -1393,7 +1393,7 @@ impl CaManager {
         let cms_logger = CmsLogger::for_rfc8181_sent(self.config.rfc8181_log_dir.as_ref(), ca_handle);
 
         let response = self
-            .send_procotol_msg_and_validate(
+            .send_protocol_msg_and_validate(
                 &ca.id_key(),
                 repository.service_uri(),
                 repository.id_cert(),
@@ -1413,7 +1413,7 @@ impl CaManager {
 /// # Support sending RFC 6492 and 8181 'protocol' messages, and verifying responses.
 ///
 impl CaManager {
-    async fn send_procotol_msg_and_validate(
+    async fn send_protocol_msg_and_validate(
         &self,
         signing_key: &KeyIdentifier,
         service_uri: &rfc8183::ServiceUri,

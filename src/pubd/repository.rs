@@ -1,10 +1,13 @@
-use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::fs;
 use std::mem;
 use std::path::PathBuf;
 use std::str::{from_utf8_unchecked, FromStr};
 use std::sync::{Arc, RwLock};
+use std::{
+    collections::{HashMap, VecDeque},
+    path::Path,
+};
 
 use bytes::Bytes;
 use rpki::crypto::KeyIdentifier;
@@ -60,10 +63,10 @@ impl RepositoryContentProxy {
         Ok(RepositoryContentProxy { store, key: dflt_key })
     }
 
-    // Initialise
-    pub fn init(&self, work_dir: &PathBuf, uris: PublicationServerUris) -> KrillResult<()> {
+    // Initialize
+    pub fn init(&self, work_dir: &Path, uris: PublicationServerUris) -> KrillResult<()> {
         if self.store.read().unwrap().has(&self.key)? {
-            Err(Error::RepositoryServerAlreadyInitialised)
+            Err(Error::RepositoryServerAlreadyInitialized)
         } else {
             let (rrdp_base_uri, rsync_jail) = uris.unpack();
 
@@ -72,7 +75,7 @@ impl RepositoryContentProxy {
             let session = RrdpSession::default();
             let stats = RepoStats::new(session);
 
-            let mut repo_dir = work_dir.clone();
+            let mut repo_dir = work_dir.to_path_buf();
             repo_dir.push(REPOSITORY_DIR);
 
             let rrdp = RrdpServer::create(rrdp_base_uri, &repo_dir, session);
@@ -87,7 +90,7 @@ impl RepositoryContentProxy {
         }
     }
 
-    // Clear all content, so it can be re-initialised.
+    // Clear all content, so it can be re-initialized.
     // Only to be called after all publishers have been removed from the RepoAccess as well.
     pub fn clear(&self) -> KrillResult<()> {
         let store = self.store.write().unwrap();
@@ -109,7 +112,7 @@ impl RepositoryContentProxy {
     // This is only supposed to be called if adding the publisher
     // to the RepositoryAccess was successful (and *that* will fail if
     // the publisher is a duplicate). This method can only fail if
-    // there is an issue with the underlying keyvalue store.
+    // there is an issue with the underlying key value store.
     pub fn add_publisher(&self, name: PublisherHandle) -> KrillResult<()> {
         self.write(|content| content.add_publisher(name))
     }
@@ -150,7 +153,7 @@ impl RepositoryContentProxy {
 
     fn write<F: FnOnce(&mut RepositoryContent) -> KrillResult<()>>(&self, op: F) -> KrillResult<()> {
         let store = self.store.write().unwrap();
-        let mut content: RepositoryContent = store.get(&self.key)?.ok_or(Error::RepositoryServerNotInitialised)?;
+        let mut content: RepositoryContent = store.get(&self.key)?.ok_or(Error::RepositoryServerNotInitialized)?;
 
         op(&mut content)?;
 
@@ -163,7 +166,7 @@ impl RepositoryContentProxy {
             .read()
             .unwrap()
             .get(&self.key)?
-            .ok_or(Error::RepositoryServerNotInitialised)
+            .ok_or(Error::RepositoryServerNotInitialized)
     }
 
     pub fn list_reply(&self, name: &PublisherHandle) -> KrillResult<ListReply> {
@@ -206,15 +209,10 @@ impl RepositoryContent {
         }
     }
 
-    pub fn init(
-        rrdp_base_uri: uri::Https,
-        rsync_jail: uri::Rsync,
-        session: RrdpSession,
-        repo_base_dir: &PathBuf,
-    ) -> Self {
+    pub fn init(rrdp_base_uri: uri::Https, rsync_jail: uri::Rsync, session: RrdpSession, repo_base_dir: &Path) -> Self {
         let publishers = HashMap::new();
-        let rrdp = RrdpServer::create(rrdp_base_uri, &repo_base_dir, session);
-        let rsync = RsyncdStore::new(rsync_jail, &repo_base_dir);
+        let rrdp = RrdpServer::create(rrdp_base_uri, repo_base_dir, session);
+        let rsync = RsyncdStore::new(rsync_jail, repo_base_dir);
         let stats = RepoStats::new(session);
 
         RepositoryContent {
@@ -225,7 +223,7 @@ impl RepositoryContent {
         }
     }
 
-    // Clears all content on disk so the repository can be re-initialised
+    // Clears all content on disk so the repository can be re-initialized
     pub fn clear(&self) {
         self.rrdp.clear();
         self.rsync.clear();
@@ -281,7 +279,7 @@ impl RepositoryContent {
     }
 
     pub fn session_reset(&mut self, config: &RepositoryRetentionConfig) -> KrillResult<()> {
-        self.rrdp.session_reset()?;
+        self.rrdp.session_reset();
         self.stats.session_reset(self.rrdp.notification());
         self.write_repository(config)?;
 
@@ -346,8 +344,8 @@ impl RsyncdStore {
         Arc::new(RwLock::new(()))
     }
 
-    pub fn new(base_uri: uri::Rsync, repo_dir: &PathBuf) -> Self {
-        let mut rsync_dir = PathBuf::from(repo_dir);
+    pub fn new(base_uri: uri::Rsync, repo_dir: &Path) -> Self {
+        let mut rsync_dir = repo_dir.to_path_buf();
         rsync_dir.push(REPOSITORY_RSYNC_DIR);
         let lock = Self::new_lock();
         RsyncdStore {
@@ -362,7 +360,7 @@ impl RsyncdStore {
 ///
 impl RsyncdStore {
     /// Write all the files to disk for rsync to a tmp-dir, then switch
-    /// things over in an effort to minimise the chance of people getting
+    /// things over in an effort to minimize the chance of people getting
     /// inconsistent syncs..
     pub fn write(&self, snapshot: &Snapshot) -> KrillResult<()> {
         let _lock = self
@@ -462,11 +460,11 @@ impl RrdpServer {
         }
     }
 
-    pub fn create(rrdp_base_uri: uri::Https, repo_dir: &PathBuf, session: RrdpSession) -> Self {
-        let mut rrdp_base_dir = repo_dir.clone();
+    pub fn create(rrdp_base_uri: uri::Https, repo_dir: &Path, session: RrdpSession) -> Self {
+        let mut rrdp_base_dir = repo_dir.to_path_buf();
         rrdp_base_dir.push(REPOSITORY_RRDP_DIR);
 
-        let mut rrdp_archive_dir = repo_dir.clone();
+        let mut rrdp_archive_dir = repo_dir.to_path_buf();
         rrdp_archive_dir.push(REPOSITORY_RRDP_ARCHIVE_DIR);
 
         let snapshot = Snapshot::create(session);
@@ -509,7 +507,7 @@ impl RrdpServer {
     /// Performs a session reset of the RRDP server. Useful if the serial needs
     /// to be rolled, or in case the RRDP server needed to recover to a previous
     /// state.
-    fn session_reset(&mut self) -> KrillResult<()> {
+    fn session_reset(&mut self) {
         let session = RrdpSession::random();
         let serial = 0;
 
@@ -529,8 +527,6 @@ impl RrdpServer {
         self.old_notifications.clear();
         self.snapshot = snapshot;
         self.deltas = VecDeque::new();
-
-        Ok(())
     }
 
     /// Updates the RRDP server with the elements. Note that this assumes that
@@ -763,8 +759,8 @@ impl RrdpServer {
         format!("{}/{}/snapshot.xml", session, serial)
     }
 
-    fn new_snapshot_path(base: &PathBuf, session: &RrdpSession, serial: u64) -> PathBuf {
-        let mut path = base.clone();
+    fn new_snapshot_path(base: &Path, session: &RrdpSession, serial: u64) -> PathBuf {
+        let mut path = base.to_path_buf();
         path.push(Self::snapshot_rel(session, serial));
         path
     }
@@ -836,7 +832,7 @@ impl RepositoryAccessProxy {
 
     pub fn init(&self, uris: PublicationServerUris, signer: &KrillSigner) -> KrillResult<()> {
         if self.initialized()? {
-            Err(Error::RepositoryServerAlreadyInitialised)
+            Err(Error::RepositoryServerAlreadyInitialized)
         } else {
             let (rrdp_base_uri, rsync_jail) = uris.unpack();
 
@@ -850,7 +846,7 @@ impl RepositoryAccessProxy {
 
     pub fn clear(&self) -> KrillResult<()> {
         if !self.initialized()? {
-            Err(Error::RepositoryServerNotInitialised)
+            Err(Error::RepositoryServerNotInitialized)
         } else if !self.publishers()?.is_empty() {
             Err(Error::RepositoryServerHasPublishers)
         } else {

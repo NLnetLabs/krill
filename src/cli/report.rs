@@ -118,7 +118,7 @@ impl FromStr for ReportFormat {
             "none" => Ok(ReportFormat::None),
             "json" => Ok(ReportFormat::Json),
             "text" => Ok(ReportFormat::Text),
-            _ => Err(ReportError::UnrecognisedFormat(s.to_string())),
+            _ => Err(ReportError::UnrecognizedFormat(s.to_string())),
         }
     }
 }
@@ -129,14 +129,14 @@ impl FromStr for ReportFormat {
 #[derive(Debug)]
 pub enum ReportError {
     UnsupportedFormat,
-    UnrecognisedFormat(String),
+    UnrecognizedFormat(String),
 }
 
 impl fmt::Display for ReportError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             ReportError::UnsupportedFormat => write!(f, "This report format is not supported for this data"),
-            ReportError::UnrecognisedFormat(s) => write!(f, "This report format is not recognised: {}", s),
+            ReportError::UnrecognizedFormat(s) => write!(f, "This report format is not recognized: {}", s),
         }
     }
 }
