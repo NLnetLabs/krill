@@ -218,6 +218,7 @@ async fn state_becomes_active(handle: &Handle) -> bool {
 }
 
 #[tokio::test]
+#[ignore = "See issue 481"]
 async fn migrate_repository() {
     init_logging();
 
