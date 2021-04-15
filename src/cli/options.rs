@@ -722,8 +722,8 @@ impl Options {
         app.subcommand(sub)
     }
 
-    fn make_cas_repo_update_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("update").about("Change which repository a CA uses");
+    fn make_cas_repo_configure_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("configure").about("Configure which repository a CA uses");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -745,7 +745,7 @@ impl Options {
         sub = Self::make_cas_repo_request_sc(sub);
         sub = Self::make_cas_repo_show_sc(sub);
         sub = Self::make_cas_repo_status_sc(sub);
-        sub = Self::make_cas_repo_update_sc(sub);
+        sub = Self::make_cas_repo_configure_sc(sub);
 
         app.subcommand(sub)
     }
@@ -1506,7 +1506,7 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_repo_update(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_repo_configure(matches: &ArgMatches) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
@@ -1514,8 +1514,8 @@ impl Options {
         let bytes = Self::read_file_arg(path)?;
         let response = rfc8183::RepositoryResponse::validate(bytes.as_ref())?;
 
-        let update = RepositoryContact::new(response);
-        let command = Command::CertAuth(CaCommand::RepoUpdate(my_ca, update));
+        let repo_contact = RepositoryContact::new(response);
+        let command = Command::CertAuth(CaCommand::RepoUpdate(my_ca, repo_contact));
         Ok(Options::make(general_args, command))
     }
 
@@ -1526,8 +1526,8 @@ impl Options {
             Self::parse_matches_cas_repo_details(m)
         } else if let Some(m) = matches.subcommand_matches("status") {
             Self::parse_matches_cas_repo_status(m)
-        } else if let Some(m) = matches.subcommand_matches("update") {
-            Self::parse_matches_cas_repo_update(m)
+        } else if let Some(m) = matches.subcommand_matches("configure") {
+            Self::parse_matches_cas_repo_configure(m)
         } else {
             Err(Error::UnrecognisedSubCommand)
         }
