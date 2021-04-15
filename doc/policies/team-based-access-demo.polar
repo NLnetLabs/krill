@@ -80,15 +80,7 @@ lookup_team_role(actor: Actor, out_role) if
 ###
 
 
-# note: when https://github.com/osohq/oso/issues/788 is fixed we will be able to replace this:
-#   allow(actor: Actor, action: Permission, _resource: Option) if
-#       _resource = nil and
-# with this:
-#   allow(actor: Actor, action: Permission, nil) if
-
-
-allow(actor: Actor, action: Permission, _resource: Option) if
-    _resource = nil and
+allow(actor: Actor, action: Permission, nil) if
     can_team_member_perform_action_without_resource(actor, action);
 
 
