@@ -1235,7 +1235,19 @@ impl CaManager {
     }
 
     /// Update repository where a CA publishes.
-    pub async fn update_repo(&self, handle: Handle, new_contact: RepositoryContact, actor: &Actor) -> KrillResult<()> {
+    pub async fn update_repo(
+        &self,
+        handle: Handle,
+        new_contact: RepositoryContact,
+        check_repo: bool,
+        actor: &Actor,
+    ) -> KrillResult<()> {
+        if check_repo {
+            // First verify that this repository can be reached and responds to a list request.
+            self.send_rfc8181_list(&handle, new_contact.response())
+                .await
+                .map_err(|e| Error::CaRepoIssue(handle.clone(), e.to_string()))?;
+        }
         let cmd = CmdDet::update_repo(&handle, new_contact, self.signer.clone(), actor);
         self.send_command(cmd).await?;
         Ok(())

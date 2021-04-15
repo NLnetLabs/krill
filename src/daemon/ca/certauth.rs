@@ -1262,11 +1262,10 @@ impl CertAuth {
 ///
 impl CertAuth {
     /// Update repository:
-    ///    - check that it is indeed different if one was already configured
-    ///    - check that key roll is allowed (none in progress)
-    ///    - initiate a roll to a new key using the new repo
-    ///
-    pub fn update_repo(&self, contact: RepositoryContact, signer: &KrillSigner) -> KrillResult<Vec<CaEvt>> {
+    ///    - Will return an error in case the repo is already set (issue 481)
+    ///    - Will support migrations using key rollover in future (issue 480)
+    ///    - Assumes that the repository can be reached (this is checked by CaManager before issuing the command to this CA)
+    pub fn update_repo(&self, contact: RepositoryContact, _signer: &KrillSigner) -> KrillResult<Vec<CaEvt>> {
         if let Some(_existing_contact) = &self.repository {
             // Disallow, see issue 481
             return Err(Error::CaRepoAlreadyConfigured(self.handle.clone()));
@@ -1274,25 +1273,23 @@ impl CertAuth {
             // if existing_contact == &contact {
             //     return Err(Error::CaRepoInUse(self.handle.clone()));
             // }
+            // // Initiate rolls in all RCs so we can use the new repo in the new key.
+            // let info = contact.repo_info().clone();
+            // for rc in self.resources.values() {
+            //     // If we are in any keyroll, reject.. because we will need to
+            //     // introduce the change as a key roll (new key, new repo, etc),
+            //     // and we can only do one roll at a time.
+            //     if !rc.key_roll_possible() {
+            //         // If we can't roll... well then we have to bail out.
+            //         // Note: none of these events are committed in that case.
+            //         return Err(Error::KeyRollNotAllowed);
+            //     }
+            //     evt_dets.append(&mut rc.keyroll_initiate(&info, Duration::seconds(0), &signer)?);
+            // }
         }
 
         // register updated repo
-        let mut evt_dets = vec![];
-        let info = contact.repo_info().clone();
-        evt_dets.push(CaEvtDet::RepoUpdated { contact });
-
-        // Initiate rolls in all RCs so we can use the new repo in the new key.
-        for rc in self.resources.values() {
-            // If we are in any keyroll, reject.. because we will need to
-            // introduce the change as a key roll (new key, new repo, etc),
-            // and we can only do one roll at a time.
-            if !rc.key_roll_possible() {
-                // If we can't roll... well then we have to bail out.
-                // Note: none of these events are committed in that case.
-                return Err(Error::KeyRollNotAllowed);
-            }
-            evt_dets.append(&mut rc.keyroll_initiate(&info, Duration::seconds(0), &signer)?);
-        }
+        let evt_dets = vec![CaEvtDet::RepoUpdated { contact }];
 
         Ok(self.evts_from_details(evt_dets))
     }
