@@ -145,29 +145,32 @@ pub async fn start_krill_daemon(config: Arc<Config>, mode: KrillMode) -> Result<
     Ok(())
 }
 
-struct ApiCallLogger {
+struct RequestLogger {
     req_method: hyper::Method,
     req_path: String,
 }
 
-impl ApiCallLogger {
-    fn new(req: &Request) -> Self {
+impl RequestLogger {
+    fn begin(req: &hyper::Request<hyper::Body>) -> Self {
+        let req_method = req.method().clone();
+        let req_path = RequestPath::from_request(&req).full().to_string();
+
         if log_enabled!(log::Level::Trace) {
             trace!(
                 "Request: method={} path={} headers={:?}",
-                &req.method(),
-                &req.path(),
+                &req_method,
+                &req_path,
                 &req.headers()
             );
         }
 
-        ApiCallLogger {
-            req_method: req.method().clone(),
-            req_path: req.path.full().to_string(),
+        RequestLogger {
+            req_method,
+            req_path,
         }
     }
 
-    fn log(&self, res: Result<&HttpResponse, &Error>) {
+    fn end(&self, res: Result<&HttpResponse, &Error>) {
         match res {
             Ok(response) => {
                 match (response.status(), response.benign(), response.cause()) {
@@ -190,17 +193,13 @@ impl ApiCallLogger {
 }
 
 async fn map_requests(req: hyper::Request<hyper::Body>, state: State) -> Result<hyper::Response<hyper::Body>, Error> {
+    let logger = RequestLogger::begin(&req);
+
     let req = Request::new(req, state).await;
 
     // Save any updated auth details, e.g. if an OpenID Connect token needed
     // refreshing.
     let new_auth = req.actor().new_auth();
-
-    // Make a logger that we can use to skip logging of very large static
-    // responses as they are not helpful when diagnosing issues (you can get
-    // the same information from your browser in an easier to use form) and they
-    // just make the trace log unusable.
-    let logger = ApiCallLogger::new(&req);
 
     // We used to use .or_else() here but that causes a large recursive call
     // tree due to these calls being to async functions, large enough with the
@@ -250,7 +249,7 @@ async fn map_requests(req: hyper::Request<hyper::Body>, state: State) -> Result<
     let res = add_new_auth_to_response(res, new_auth);
 
     // Log the request and the response.
-    logger.log(res.as_ref());
+    logger.end(res.as_ref());
 
     res.map(|res| res.response())
 }
