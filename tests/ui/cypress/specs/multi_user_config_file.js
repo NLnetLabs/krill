@@ -1,15 +1,15 @@
-let admin     = { u: 'admin@krill',     p: 'admin_pass'     };
-let readonly  = { u: 'readonly@krill',  p: 'readonly_pass'  };
+let admin = { u: 'admin@krill', p: 'admin_pass' };
+let readonly = { u: 'readonly@krill', p: 'readonly_pass' };
 let readwrite = { u: 'readwrite@krill', p: 'readwrite_pass' };
-let ca_name   = 'dummy-ca-name';
+let ca_name = 'dummy-ca-name';
 
 let login_test_settings = [
-  { d: 'empty',        u: '',                   p: '',               o: false },
-  { d: 'master token', u: 'secret',             p: 'secret',         o: false },
-  { d: 'incorrect',    u: 'wrong_user_name',    p: 'wrong_password', o: false },
-  { d: 'admin',        u: admin.u,              p: admin.p,          o: true  },
-  { d: 'readonly',     u: readonly.u,           p: readonly.p,       o: true  },
-  { d: 'readwrite',    u: readwrite.u,          p: readwrite.p,      o: true  },
+  { d: 'empty', u: '', p: '', o: false },
+  { d: 'admin token', u: 'secret', p: 'secret', o: false },
+  { d: 'incorrect', u: 'wrong_user_name', p: 'wrong_password', o: false },
+  { d: 'admin', u: admin.u, p: admin.p, o: true },
+  { d: 'readonly', u: readonly.u, p: readonly.p, o: true },
+  { d: 'readwrite', u: readwrite.u, p: readwrite.p, o: true },
 ];
 
 describe('Config File users', () => {
@@ -21,7 +21,7 @@ describe('Config File users', () => {
     cy.url().should('include', Cypress.config('baseUrl'))
 
     // make sure that user name field exists (which would not be the case if the
-    // built-in master token based login form were shown)
+    // built-in admin token based login form were shown)
     cy.contains('Username')
 
     // check that a password form input field and the text Password are shown on
@@ -83,7 +83,7 @@ describe('Config File users', () => {
     cy.get('#userinfo_table').contains(admin.u)
 
     // Skip ahead a minute and check that we are still logged in
-    cy.tick(1*60*1000)
+    cy.tick(1 * 60 * 1000)
     cy.visit('/')
     cy.contains('Sign In').should('not.exist')
     cy.get('#userinfo').click()
@@ -91,7 +91,7 @@ describe('Config File users', () => {
 
     // Skip ahead till just before the idle timeout and check that we are still
     // logged in.
-    cy.tick(28*60*1000)
+    cy.tick(28 * 60 * 1000)
     cy.visit('/')
     cy.contains('Sign In').should('not.exist')
     cy.get('#userinfo').click()
@@ -99,7 +99,7 @@ describe('Config File users', () => {
 
     // Skip ahead another 31 minutes to just beyond the UI 30 minute idle
     // timeout threshold and verify that we have been logged out
-    cy.tick(31*60*1000)
+    cy.tick(31 * 60 * 1000)
     cy.visit('/')
     cy.get('#userinfo').should('not.exist')
     cy.contains('Sign In')

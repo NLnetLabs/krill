@@ -11,6 +11,20 @@ magnitude of these changes we decided that we will have a dedicated 0.9.0 releas
 them. We intend to follow up with a Krill 1.0.0 release with minimal or no further functional
 or technical changes.
 
+### Master Token is now Admin Token
+
+See issue #433. Up until now Krill was using an array of inconsistent and inappropriate
+names to refer to the token that can be used for authentication and authorization. We have
+now renamed all these references to "ADMIN TOKEN".
+
+This means that the `auth_token` in the `krill.conf` file was renamed to `admin_token`,
+The env variable alternative for the Krill daemon was renamed from `KRILL_AUTH_TOKEN`
+to `KRILL_ADMIN_TOKEN`. For your CLI the env variable `KRILL_CLI_TOKEN` has been renamed
+to `KRILL_ADMIN_TOKEN`.
+
+In this release Krill will still support the old names, but you will get warnings reported
+to the console (CLI) and logs. We plan to remove this support in the next major release.
+
 ### Separate binary for Publication Server
 
 Krill now has a dedicated binary for running an RPKI Publication Server, and a dedicated CLI 

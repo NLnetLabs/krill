@@ -28,9 +28,9 @@ allow(actor: Actor, action: Permission, nil) if
     role_allow(role, action);
 
 ### TEST: [
-# Sanity check: verify that the built-in master-token test actor can login.c
+# Sanity check: verify that the built-in admin-token test actor can login.c
 # Exercises the rules above.
-?= allow(Actor.builtin("master-token"), LOGIN, nil);
+?= allow(Actor.builtin("admin-token"), LOGIN, nil);
 ### ]
 
 
@@ -56,7 +56,7 @@ allow(actor: Actor, action: Permission, ca: Handle) if
     actor_can_access_ca(actor, ca);
 
 ### TEST: [
-?= allow(Actor.builtin("master-token"), CA_READ, _);
+?= allow(Actor.builtin("admin-token"), CA_READ, _);
 ### ]
 
 

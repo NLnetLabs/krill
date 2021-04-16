@@ -8,7 +8,7 @@ external and internal actions require an `Actor` instance, and all external requ
 authorization checks.
 
 However, not all tests will exercise login as that is only used by Lagosta. The existing Krill integration tests use a
-fixed master API token without login because that was all Krill supported before, and must continue to work for the
+fixed admin API token without login because that was all Krill supported before, and must continue to work for the
 direct REST API clients and indirect REST API client via `krillc`.
 
 Also, as the multi-user feature is aimed entirely (at present) at Lagosta users, it only works if it works from the UI

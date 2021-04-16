@@ -33,5 +33,5 @@
 # actor_can_access_ca(actor: Actor{name: "some@user.com"}, ca: Handle) if
 #     ca.name in ["some_ca_handle", "some_other_ca_handle"];
 
-# actor_cannot_access_ca(actor: Actor{name: "master-token"}, ca: Handle) if
+# actor_cannot_access_ca(actor: Actor{name: "admin-token"}, ca: Handle) if
 #     ca.name in ["ca2"] and cut;

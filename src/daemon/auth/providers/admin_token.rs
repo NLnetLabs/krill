@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::commons::error::Error;
 use crate::commons::KrillResult;
 use crate::commons::{actor::ActorDef, api::Token};
-use crate::constants::ACTOR_DEF_MASTER_TOKEN;
+use crate::constants::ACTOR_DEF_ADMIN_TOKEN;
 use crate::daemon::auth::{AuthProvider, LoggedInUser};
 use crate::daemon::config::Config;
 use crate::daemon::http::HttpResponse;
@@ -15,26 +15,26 @@ use crate::daemon::http::HttpResponse;
 // Lagosta could change this path without requiring that we update to match.
 const LAGOSTA_LOGIN_ROUTE_PATH: &str = "/login";
 
-pub struct MasterTokenAuthProvider {
+pub struct AdminTokenAuthProvider {
     required_token: Token,
 }
 
-impl MasterTokenAuthProvider {
+impl AdminTokenAuthProvider {
     pub fn new(config: Arc<Config>) -> Self {
-        MasterTokenAuthProvider {
-            required_token: config.auth_token.clone(),
+        AdminTokenAuthProvider {
+            required_token: config.admin_token.clone(),
         }
     }
 }
 
-impl AuthProvider for MasterTokenAuthProvider {
+impl AuthProvider for AdminTokenAuthProvider {
     fn authenticate(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
         if log_enabled!(log::Level::Trace) {
             trace!("Attempting to authenticate the request..");
         }
 
         let res = match self.get_bearer_token(request) {
-            Some(token) if token == self.required_token => Ok(Some(ACTOR_DEF_MASTER_TOKEN)),
+            Some(token) if token == self.required_token => Ok(Some(ACTOR_DEF_ADMIN_TOKEN)),
             Some(_) => Err(Error::ApiInvalidCredentials("Invalid bearer token".to_string())),
             None => Ok(None),
         };

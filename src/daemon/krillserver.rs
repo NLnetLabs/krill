@@ -27,7 +27,7 @@ use crate::commons::{KrillEmptyResult, KrillResult};
 use crate::constants::*;
 #[cfg(feature = "multi-user")]
 use crate::daemon::auth::common::session::LoginSessionCache;
-use crate::daemon::auth::providers::MasterTokenAuthProvider;
+use crate::daemon::auth::providers::AdminTokenAuthProvider;
 #[cfg(feature = "multi-user")]
 use crate::daemon::auth::providers::{ConfigFileAuthProvider, OpenIDConnectAuthProvider};
 use crate::daemon::auth::{Authorizer, LoggedInUser};
@@ -67,8 +67,7 @@ impl KrillMode {
 
 //------------ KrillServer ---------------------------------------------------
 
-/// This is the master krill server that is doing all the orchestration
-/// for all the components.
+/// This is the krill server that is doing all the orchestration for all components.
 pub struct KrillServer {
     // The base URI for this service
     service_uri: uri::Https,
@@ -167,7 +166,7 @@ impl KrillServer {
         // dyn AuthProvider, or concrete type needs to be known in async fn,
         // etc.
         let authorizer = match config.auth_type {
-            AuthType::MasterToken => Authorizer::new(config.clone(), MasterTokenAuthProvider::new(config.clone()))?,
+            AuthType::AdminToken => Authorizer::new(config.clone(), AdminTokenAuthProvider::new(config.clone()))?,
             #[cfg(feature = "multi-user")]
             AuthType::ConfigFile => Authorizer::new(
                 config.clone(),

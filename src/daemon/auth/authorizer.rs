@@ -4,15 +4,15 @@ use std::any::Any;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::{commons::api::Token, daemon::auth::common::permissions::Permission};
+use crate::commons::actor::{Actor, ActorDef};
 use crate::commons::error::Error;
 use crate::commons::KrillResult;
-use crate::constants::{NO_RESOURCE, ACTOR_DEF_ANON};
+use crate::constants::{ACTOR_DEF_ANON, NO_RESOURCE};
 use crate::daemon::auth::policy::AuthPolicy;
-use crate::daemon::auth::providers::MasterTokenAuthProvider;
+use crate::daemon::auth::providers::AdminTokenAuthProvider;
 use crate::daemon::config::Config;
 use crate::daemon::http::HttpResponse;
-use crate::commons::actor::{Actor, ActorDef};
+use crate::{commons::api::Token, daemon::auth::common::permissions::Permission};
 
 //------------ Authorizer ----------------------------------------------------
 
@@ -58,7 +58,7 @@ pub trait AuthProvider: Send + Sync {
 /// accessed.
 pub struct Authorizer {
     primary_provider: Box<dyn AuthProvider>,
-    legacy_provider: Option<MasterTokenAuthProvider>,
+    legacy_provider: Option<AdminTokenAuthProvider>,
     policy: AuthPolicy,
     private_attributes: Vec<String>,
 }
@@ -73,28 +73,28 @@ impl Authorizer {
     ///
     /// # Legacy support for krillc
     ///
-    /// As krillc only supports [MasterTokenAuthProvider] based authentication, if
+    /// As krillc only supports [AdminTokenAuthProvider] based authentication, if
     /// `P` an instance of some other provider, an instance of
-    /// [MasterTokenAuthProvider] will also be created. This will be used as a
+    /// [AdminTokenAuthProvider] will also be created. This will be used as a
     /// fallback when Lagosta is configured to use some other [AuthProvider].
     pub fn new<P>(config: Arc<Config>, provider: P) -> KrillResult<Self>
     where
         P: AuthProvider + Any,
     {
         let value_any = &provider as &dyn Any;
-        let is_master_token_provider = value_any.downcast_ref::<MasterTokenAuthProvider>().is_some();
+        let is_admin_token_provider = value_any.downcast_ref::<AdminTokenAuthProvider>().is_some();
 
-        let legacy_provider = if is_master_token_provider {
-            // the configured provider is the master token provider so no
-            // master token provider is needed for backward compatibility
+        let legacy_provider = if is_admin_token_provider {
+            // the configured provider is the admin token provider so no
+            // admin token provider is needed for backward compatibility
             None
         } else {
-            // the configured provider is not the master token provider so we
-            // also need an instance of the master token provider in order to
+            // the configured provider is not the admin token provider so we
+            // also need an instance of the admin token provider in order to
             // provider backward compatibility for krillc and other API clients
-            // that only understand the original, legacy, master token based
+            // that only understand the original, legacy, admin token based
             // authentication.
-            Some(MasterTokenAuthProvider::new(config.clone()))
+            Some(AdminTokenAuthProvider::new(config.clone()))
         };
 
         #[cfg(feature = "multi-user")]
@@ -212,8 +212,16 @@ pub struct LoggedInUser {
 #[derive(Clone, Debug)]
 pub enum Auth {
     Bearer(Token),
-    AuthorizationCode { code: Token, state: String, nonce: String, csrf_token_hash: String },
-    IdAndPasswordHash { id: String, password_hash: Token },
+    AuthorizationCode {
+        code: Token,
+        state: String,
+        nonce: String,
+        csrf_token_hash: String,
+    },
+    IdAndPasswordHash {
+        id: String,
+        password_hash: Token,
+    },
 }
 
 impl Auth {
@@ -221,7 +229,12 @@ impl Auth {
         Auth::Bearer(token)
     }
     pub fn authorization_code(code: Token, state: String, nonce: String, csrf_token_hash: String) -> Self {
-        Auth::AuthorizationCode { code, state, nonce, csrf_token_hash }
+        Auth::AuthorizationCode {
+            code,
+            state,
+            nonce,
+            csrf_token_hash,
+        }
     }
 
     pub fn id_and_password_hash(id: String, password_hash: Token) -> Self {

@@ -1,15 +1,10 @@
-use std::{
-    io::Read,
-    str::FromStr,
-    sync::{Arc, 
-    },
-};
+use std::{io::Read, str::FromStr, sync::Arc};
 
 use oso::{Oso, PolarClass, PolarValue, ToPolar};
 
 use crate::{
     commons::{actor::Actor, api::Handle, error::Error, KrillResult},
-    constants::{ACTOR_DEF_ANON, ACTOR_DEF_KRILL, ACTOR_DEF_MASTER_TOKEN, ACTOR_DEF_TESTBED},
+    constants::{ACTOR_DEF_ADMIN_TOKEN, ACTOR_DEF_ANON, ACTOR_DEF_KRILL, ACTOR_DEF_TESTBED},
     daemon::{
         auth::common::{permissions::Permission, NoResourceType},
         config::Config,
@@ -66,10 +61,10 @@ impl AuthPolicy {
         // have the "admin" role.
         Self::exec_query(&mut oso, r#"actor_has_role(Actor.builtin("krill"), "admin")"#)?;
 
-        // The "master-token" built-in actor is used for logins using the master
-        // token (aka the "auth_token" set in the config file or via env var).
+        // The "admin-token" built-in actor is used for logins using the admin
+        // token (aka the "admin_token" set in the config file or via env var).
         // This actor should have the "admin" role.
-        Self::exec_query(&mut oso, r#"actor_has_role(Actor.builtin("master-token"), "admin")"#)?;
+        Self::exec_query(&mut oso, r#"actor_has_role(Actor.builtin("admin-token"), "admin")"#)?;
 
         // The built-in test actor "anon" represents a not-logged-in user and
         // as such lacks a role. We should be able to test that it the actor
@@ -84,9 +79,7 @@ impl AuthPolicy {
         // have the "testbed" role.
         Self::exec_query(&mut oso, r#"actor_has_role(Actor.builtin("testbed"), "testbed")"#)?;
 
-        Ok(AuthPolicy {
-            oso: Arc::new(oso),
-        })
+        Ok(AuthPolicy { oso: Arc::new(oso) })
     }
 
     pub fn is_allowed<U, A, R>(&self, actor: U, action: A, resource: R) -> Result<bool, Error>
@@ -123,10 +116,7 @@ impl AuthPolicy {
 
     fn load_user_policy(config: Arc<Config>, oso: &mut Oso) -> KrillResult<()> {
         for policy in config.auth_policies.iter() {
-            info!(
-                "Loading user-defined authorization policy file {:?}",
-                policy
-            );
+            info!("Loading user-defined authorization policy file {:?}", policy);
             let fname = policy.file_name().unwrap().to_str().unwrap();
             let mut buffer = Vec::new();
             std::fs::File::open(policy.as_path())?.read_to_end(&mut buffer)?;
@@ -136,7 +126,6 @@ impl AuthPolicy {
         Ok(())
     }
 }
-
 
 // Allow our "no resource" type to match the "nil" in Oso policy rules by making it convertable to the Rust type Oso
 // uses when registering the nil constant. We can't use Option::<PolarValue>::None directly as it doesn't implement
@@ -169,7 +158,7 @@ impl PolarClass for Actor {
                 match name.as_str() {
                     "anon" => Actor::test_from_def(ACTOR_DEF_ANON),
                     "krill" => Actor::test_from_def(ACTOR_DEF_KRILL),
-                    "master-token" => Actor::test_from_def(ACTOR_DEF_MASTER_TOKEN),
+                    "admin-token" => Actor::test_from_def(ACTOR_DEF_ADMIN_TOKEN),
                     "testbed" => Actor::test_from_def(ACTOR_DEF_TESTBED),
                     _ => panic!("Unknown built-in actor name '{}'", name),
                 }
