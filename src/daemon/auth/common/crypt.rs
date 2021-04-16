@@ -15,14 +15,14 @@ const AAD: &[u8; 5] = b"krill";
 // Returns the encrypted bytes and also outputs the tag that will be needed
 // during decryption to verify the encrypted data during decryption.
 pub(crate) fn encrypt(key: &[u8], plaintext: &[u8], mut tag: &mut [u8]) -> KrillResult<Vec<u8>> {
-    let cipher = openssl::symm::Cipher::aes_256_gcm();
+    let cipher = openssl::symm::Cipher::chacha20_poly1305();
     openssl::symm::encrypt_aead(cipher, &key, Some(&IV), AAD, plaintext, &mut tag)
         .map_err(|err| Error::Custom(format!("Encryption error: {}", &err)))
 }
 
 // Requires the tag that resulted from encryption to verify the data.
 pub(crate) fn decrypt(key: &[u8], ciphertext: &[u8], tag: &[u8]) -> KrillResult<Vec<u8>> {
-    let cipher = openssl::symm::Cipher::aes_256_gcm();
+    let cipher = openssl::symm::Cipher::chacha20_poly1305();
     openssl::symm::decrypt_aead(cipher, &key, Some(&IV), AAD, ciphertext, tag)
         .map_err(|err| Error::Custom(format!("Decryption error: {}", &err)))
 }
