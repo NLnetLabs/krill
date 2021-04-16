@@ -19,6 +19,7 @@ pub const KRILL_ENV_UPGRADE_ONLY: &str = "KRILL_UPGRADE_ONLY";
 pub const KRILL_ENV_FORCE_RECOVER: &str = "KRILL_FORCE_RECOVER";
 pub const KRILL_ENV_LOG_LEVEL: &str = "KRILL_LOG_LEVEL";
 pub const KRILL_ENV_ADMIN_TOKEN: &str = "KRILL_ADMIN_TOKEN";
+pub const KRILL_ENV_ADMIN_TOKEN_DEPRECATED: &str = "KRILL_AUTH_TOKEN";
 pub const KRILL_ENV_SERVER_PORT: &str = "KRILL_SERVER_PORT";
 
 pub fn enable_test_mode() {
@@ -58,6 +59,7 @@ pub const KRILL_CLI_SERVER_DFLT: &str = "https://localhost:3000/";
 
 pub const KRILL_CLI_ADMIN_TOKEN_ARG: &str = "token";
 pub const KRILL_CLI_TOKEN_ENV: &str = "KRILL_ADMIN_TOKEN";
+pub const KRILL_CLI_TOKEN_ENV_DEPRECATED: &str = "KRILL_CLI_TOKEN";
 pub const KRILL_CLI_FORMAT_ARG: &str = "format";
 pub const KRILL_CLI_FORMAT_ENV: &str = "KRILL_CLI_FORMAT";
 pub const KRILL_CLI_API_ARG: &str = "api";

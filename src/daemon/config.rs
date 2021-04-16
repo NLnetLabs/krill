@@ -78,10 +78,13 @@ impl ConfigDefaults {
     fn admin_token() -> Token {
         match env::var(KRILL_ENV_ADMIN_TOKEN) {
             Ok(token) => Token::from(token),
-            Err(_) => {
-                eprintln!("You MUST provide a value for the \"admin token\", either by setting \"admin_token\" in the config file, or by setting the KRILL_ADMIN_TOKEN environment variable.");
-                ::std::process::exit(1);
-            }
+            Err(_) => match env::var(KRILL_ENV_ADMIN_TOKEN_DEPRECATED) {
+                Ok(token) => Token::from(token),
+                Err(_) => {
+                    eprintln!("You MUST provide a value for the \"admin token\", either by setting \"admin_token\" in the config file, or by setting the KRILL_ADMIN_TOKEN environment variable.");
+                    ::std::process::exit(1);
+                }
+            },
         }
     }
     #[cfg(feature = "multi-user")]
@@ -219,7 +222,7 @@ pub struct Config {
     #[serde(default = "ConfigDefaults::syslog_facility")]
     syslog_facility: String,
 
-    #[serde(default = "ConfigDefaults::admin_token")]
+    #[serde(default = "ConfigDefaults::admin_token", alias = "auth_token")]
     pub admin_token: Token,
 
     #[serde(default = "ConfigDefaults::auth_type")]
@@ -641,6 +644,10 @@ impl Config {
     }
 
     pub fn verify(&self) -> Result<(), ConfigError> {
+        if env::var(KRILL_ENV_ADMIN_TOKEN_DEPRECATED).is_ok() {
+            warn!("The environment variable for setting the admin token has been updated from '{}' to '{}', please update as the old value may not be supported in future releases", KRILL_ENV_ADMIN_TOKEN_DEPRECATED, KRILL_ENV_ADMIN_TOKEN)
+        }
+
         if self.port < 1024 {
             return Err(ConfigError::other("Port number must be >1024"));
         }
@@ -1164,5 +1171,13 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn config_should_accept_and_warn_about_auth_token() {
+        let old_config = b"auth_token = \"secret\"";
+
+        let c: Config = toml::from_slice(old_config).unwrap();
+        assert_eq!(c.admin_token.as_ref(), "secret");
     }
 }
