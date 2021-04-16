@@ -254,7 +254,7 @@ impl RepositoryManager {
 #[cfg(test)]
 mod tests {
     use core::time::Duration;
-    use std::str::FromStr;
+    use std::{path::Path, str::FromStr};
     use std::{path::PathBuf, str::from_utf8};
 
     use bytes::Bytes;
@@ -276,7 +276,7 @@ mod tests {
         test::{self, https, init_config, rsync},
     };
 
-    fn publisher_alice(work_dir: &PathBuf) -> Publisher {
+    fn publisher_alice(work_dir: &Path) -> Publisher {
         let signer = KrillSigner::build(work_dir).unwrap();
 
         let key = signer.create_key().unwrap();
@@ -292,7 +292,7 @@ mod tests {
         rfc8183::PublisherRequest::new(None, handle, id_cert.clone())
     }
 
-    fn make_server(work_dir: &PathBuf) -> RepositoryManager {
+    fn make_server(work_dir: &Path) -> RepositoryManager {
         enable_test_mode();
         let config = Arc::new(Config::test(work_dir, true));
         init_config(&config);
@@ -300,16 +300,16 @@ mod tests {
         let signer = KrillSigner::build(work_dir).unwrap();
         let signer = Arc::new(signer);
 
-        let pubserver = RepositoryManager::build(config, signer).unwrap();
+        let repository_manager = RepositoryManager::build(config, signer).unwrap();
 
         let rsync_base = rsync("rsync://localhost/repo/");
         let rrdp_base = https("https://localhost/repo/rrdp/");
 
         let uris = PublicationServerUris::new(rrdp_base, rsync_base);
 
-        pubserver.init(uris).unwrap();
+        repository_manager.init(uris).unwrap();
 
-        pubserver
+        repository_manager
     }
 
     #[test]
@@ -606,8 +606,8 @@ mod tests {
         assert!(find_in_reply(&list_reply, &test::rsync("rsync://localhost/repo/alice/file.txt")).is_some());
         assert!(find_in_reply(&list_reply, &test::rsync("rsync://localhost/repo/alice/file2.txt")).is_some());
 
-        fn path_to_snapshot(base_dir: &PathBuf, session: &RrdpSession, serial: u64) -> PathBuf {
-            let mut path = base_dir.clone();
+        fn path_to_snapshot(base_dir: &Path, session: &RrdpSession, serial: u64) -> PathBuf {
+            let mut path = base_dir.to_path_buf();
             path.push("repo");
             path.push("rrdp");
             path.push(session.to_string());
@@ -638,8 +638,8 @@ mod tests {
         let _ = fs::remove_dir_all(d);
     }
 
-    fn session_dir(work_dir: &PathBuf) -> PathBuf {
-        let mut rrdp_dir = work_dir.clone();
+    fn session_dir(work_dir: &Path) -> PathBuf {
+        let mut rrdp_dir = work_dir.to_path_buf();
         rrdp_dir.push("repo/rrdp");
 
         for entry in fs::read_dir(&rrdp_dir).unwrap() {
@@ -651,24 +651,24 @@ mod tests {
         panic!("Could not find session dir under: {}", work_dir.to_string_lossy())
     }
 
-    fn session_dir_contains_serial(session: &PathBuf, serial: u64) -> bool {
-        let mut path = session.clone();
+    fn session_dir_contains_serial(session_path: &Path, serial: u64) -> bool {
+        let mut path = session_path.to_path_buf();
         path.push(serial.to_string());
         path.is_dir()
     }
 
-    fn session_dir_contains_delta(session: &PathBuf, serial: u64) -> bool {
-        let mut path = session.clone();
+    fn session_dir_contains_delta(session_path: &Path, serial: u64) -> bool {
+        let mut path = session_path.to_path_buf();
         path.push(format!("{}/delta.xml", serial));
         path.exists()
     }
 
-    fn session_dir_contains_snapshot(session: &PathBuf, serial: u64) -> bool {
-        session_dir_snapshot(session, serial).exists()
+    fn session_dir_contains_snapshot(session_path: &Path, serial: u64) -> bool {
+        session_dir_snapshot(session_path, serial).exists()
     }
 
-    fn session_dir_snapshot(session: &PathBuf, serial: u64) -> PathBuf {
-        let mut path = session.clone();
+    fn session_dir_snapshot(session_path: &Path, serial: u64) -> PathBuf {
+        let mut path = session_path.to_path_buf();
         path.push(format!("{}/snapshot.xml", serial));
         path
     }

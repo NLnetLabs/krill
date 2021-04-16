@@ -1,7 +1,6 @@
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::fmt;
-use std::iter::FromIterator;
 use std::str::FromStr;
 
 use rpki::x509::Time;
@@ -93,7 +92,7 @@ impl Announcement {
                 invalidating.push(*roa);
             }
 
-            // NOTE: Valid announcments already returned, we only have invalids left
+            // NOTE: Valid announcements already returned, we only have invalids left
 
             let validity = if same_asn_found {
                 AnnouncementValidity::InvalidLength
@@ -195,8 +194,8 @@ impl Announcements {
     }
 
     pub fn equivalent(&self, announcements: &[Announcement]) -> bool {
-        let current_set: HashSet<&Announcement> = HashSet::from_iter(self.seen.all().into_iter());
-        let new_set: HashSet<&Announcement> = HashSet::from_iter(announcements.iter());
+        let current_set: HashSet<&Announcement> = self.seen.all().into_iter().collect();
+        let new_set: HashSet<&Announcement> = announcements.iter().collect();
         current_set == new_set
     }
 

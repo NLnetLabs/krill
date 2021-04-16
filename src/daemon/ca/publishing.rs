@@ -489,7 +489,7 @@ impl CaObjects {
         let mut required = false;
 
         for (_, rco) in self.classes.iter_mut() {
-            if rco.requires_reissuance(hours) {
+            if rco.requires_re_issuance(hours) {
                 required = true;
                 rco.reissue(timing, signer)?;
             }
@@ -635,7 +635,7 @@ impl ResourceClassObjects {
         }
     }
 
-    fn requires_reissuance(&self, hours: i64) -> bool {
+    fn requires_re_issuance(&self, hours: i64) -> bool {
         match &self.keys {
             ResourceClassKeyState::Current(state) => state.current_set.requires_reissuance(hours),
             ResourceClassKeyState::Old(state) => {
@@ -805,7 +805,7 @@ impl CurrentKeyObjectSet {
         let mft_uri = base_uri.join(self.manifest.name().as_bytes());
         let crl_uri = base_uri.join(self.crl.name().as_bytes());
 
-        let elements = map.entry(repo.clone()).or_insert(vec![]);
+        let elements = map.entry(repo.clone()).or_insert_with(Vec::new);
         elements.push(PublishElement::new(Base64::from(&self.manifest.0), mft_uri));
         elements.push(PublishElement::new(Base64::from(&self.crl.0), crl_uri));
 
@@ -1050,7 +1050,7 @@ impl BasicKeyObjectSet {
         let mft_uri = base_uri.join(self.manifest.name().as_bytes());
         let crl_uri = base_uri.join(self.crl.name().as_bytes());
 
-        let elements = map.entry(repo.clone()).or_insert(vec![]);
+        let elements = map.entry(repo.clone()).or_insert_with(Vec::new);
         elements.push(PublishElement::new(Base64::from(&self.manifest.0), mft_uri));
         elements.push(PublishElement::new(Base64::from(&self.crl.0), crl_uri));
     }

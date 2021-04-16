@@ -155,12 +155,12 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for MessageQueue {
                 CaEvtDet::ResourceClassRemoved {
                     resource_class_name,
                     parent,
-                    revoke_reqs,
+                    revoke_requests,
                 } => {
                     self.schedule_sync_repo(handle.clone());
 
                     let mut revocations_map = HashMap::new();
-                    revocations_map.insert(resource_class_name.clone(), revoke_reqs.clone());
+                    revocations_map.insert(resource_class_name.clone(), revoke_requests.clone());
 
                     self.schedule(QueueTask::ResourceClassRemoved(
                         handle.clone(),

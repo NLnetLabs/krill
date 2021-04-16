@@ -1,7 +1,7 @@
-use std::any::Any;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
+use std::{any::Any, path::Path};
 use std::{fmt, fs, io};
 
 use serde::de::DeserializeOwned;
@@ -88,8 +88,8 @@ pub enum KeyValueStore {
 }
 
 impl KeyValueStore {
-    pub fn disk(workdir: &PathBuf, name_space: &str) -> Result<Self, KeyValueError> {
-        let mut base = workdir.clone();
+    pub fn disk(work_dir: &Path, name_space: &str) -> Result<Self, KeyValueError> {
+        let mut base = work_dir.to_path_buf();
         base.push(name_space);
 
         if !base.exists() {
@@ -179,7 +179,7 @@ impl KeyValueStore {
     /// Returns whether a scope exists
     pub fn has_scope(&self, scope: String) -> Result<bool, KeyValueError> {
         match self {
-            KeyValueStore::Disk(disk_store) => disk_store.has_scope(scope),
+            KeyValueStore::Disk(disk_store) => Ok(disk_store.has_scope(scope)),
         }
     }
 
@@ -323,8 +323,8 @@ impl KeyValueStoreDiskImpl {
         }
     }
 
-    fn has_scope(&self, scope: String) -> Result<bool, KeyValueError> {
-        Ok(self.scope_path(Some(&scope)).exists())
+    fn has_scope(&self, scope: String) -> bool {
+        self.scope_path(Some(&scope)).exists()
     }
 
     fn scopes(&self) -> Result<Vec<String>, KeyValueError> {
@@ -347,7 +347,7 @@ impl KeyValueStoreDiskImpl {
         Ok(res)
     }
 
-    fn read_dir(dir: &PathBuf, files: bool, dirs: bool) -> Result<Vec<String>, KeyValueError> {
+    fn read_dir(dir: &Path, files: bool, dirs: bool) -> Result<Vec<String>, KeyValueError> {
         match fs::read_dir(dir) {
             Err(e) => Err(KeyValueError::IoError(e)),
             Ok(dir) => {
@@ -413,7 +413,7 @@ mod tests {
     use crate::test;
 
     #[test]
-    fn diskstore_move_key() {
+    fn disk_store_move_key() {
         test::test_under_tmp(|d| {
             let store = KeyValueStore::disk(&d, "store").unwrap();
 

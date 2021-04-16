@@ -28,7 +28,6 @@ pub struct ConfigAuthOpenIDConnect {
     #[serde(default)]
     pub insecure: bool,
 }
-
 #[derive(Clone, Debug, Deserialize)]
 pub struct ConfigAuthOpenIDConnectClaim {
     pub source: Option<ConfigAuthOpenIDConnectClaimSource>,

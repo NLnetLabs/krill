@@ -100,9 +100,9 @@ impl ChildDetails {
     }
 }
 
-impl Into<ChildCaInfo> for ChildDetails {
-    fn into(self) -> ChildCaInfo {
-        ChildCaInfo::new(self.id_cert.as_ref(), self.resources)
+impl From<ChildDetails> for ChildCaInfo {
+    fn from(details: ChildDetails) -> Self {
+        ChildCaInfo::new((&details.id_cert).into(), details.resources)
     }
 }
 

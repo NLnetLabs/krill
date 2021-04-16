@@ -2,8 +2,7 @@
 //! - Updating the format of commands or events
 //! - Export / Import data
 
-use std::{fmt, io, str::FromStr};
-use std::{path::PathBuf, sync::Arc};
+use std::{fmt, io, path::Path, str::FromStr, sync::Arc};
 
 use serde::de::DeserializeOwned;
 
@@ -174,10 +173,10 @@ pub fn pre_start_upgrade(config: Arc<Config>) -> Result<(), UpgradeError> {
     upgrade_0_9_0(config)
 }
 
-pub async fn update_storage_version(work_dir: &PathBuf) -> Result<(), UpgradeError> {
+pub async fn update_storage_version(work_dir: &Path) -> Result<(), UpgradeError> {
     let current = KeyStoreVersion::current();
 
-    let mut ca_dir = work_dir.clone();
+    let mut ca_dir = work_dir.to_path_buf();
     ca_dir.push("cas");
     if ca_dir.exists() {
         let ca_store: AggregateStore<CertAuth> = AggregateStore::disk(work_dir, "cas")?;
@@ -186,7 +185,7 @@ pub async fn update_storage_version(work_dir: &PathBuf) -> Result<(), UpgradeErr
         }
     }
 
-    let mut pubd_dir = work_dir.clone();
+    let mut pubd_dir = work_dir.to_path_buf();
     pubd_dir.push("pubd");
     if pubd_dir.exists() {
         let pubd_store: AggregateStore<RepositoryAccess> = AggregateStore::disk(work_dir, "pubd")?;

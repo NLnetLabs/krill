@@ -203,9 +203,9 @@ pub enum Error {
     // Repository Server Issues
     //-----------------------------------------------------------------
     RepositoryServerNotEnabled,
-    RepositoryServerNotInitialised,
+    RepositoryServerNotInitialized,
     RepositoryServerHasPublishers,
-    RepositoryServerAlreadyInitialised,
+    RepositoryServerAlreadyInitialized,
 
     //-----------------------------------------------------------------
     // Publishing
@@ -261,7 +261,7 @@ pub enum Error {
     //-----------------------------------------------------------------
     CaAuthorizationUnknown(Handle, RouteAuthorization),
     CaAuthorizationDuplicate(Handle, RouteAuthorization),
-    CaAuthorizationInvalidMaxlength(Handle, RouteAuthorization),
+    CaAuthorizationInvalidMaxLength(Handle, RouteAuthorization),
     CaAuthorizationNotEntitled(Handle, RouteAuthorization),
     RoaDeltaError(RoaDeltaError),
 
@@ -288,7 +288,7 @@ pub enum Error {
     //-----------------------------------------------------------------
     TaNotAllowed,
     TaNameReserved,
-    TaAlreadyInitialised,
+    TaAlreadyInitialized,
 
     //-----------------------------------------------------------------
     // Resource Tagged Attestation issues
@@ -352,9 +352,9 @@ impl fmt::Display for Error {
             // Repository Server Issues
             //-----------------------------------------------------------------
             Error::RepositoryServerNotEnabled=> write!(f, "Publication Server not enabled"),
-            Error::RepositoryServerNotInitialised => write!(f, "Publication Server not initialised"),
+            Error::RepositoryServerNotInitialized => write!(f, "Publication Server not initialized"),
             Error::RepositoryServerHasPublishers => write!(f, "Publication Server cannot be removed, still has publishers"),
-            Error::RepositoryServerAlreadyInitialised => write!(f, "Publication Server already initialised"),
+            Error::RepositoryServerAlreadyInitialized => write!(f, "Publication Server already initialized"),
 
             //-----------------------------------------------------------------
             // RFC 8181 (publishing)
@@ -370,7 +370,7 @@ impl fmt::Display for Error {
             // CA Issues
             //-----------------------------------------------------------------
             Error::CaServerNotEnabled => write!(f, "CA Server not enabled on this Krill installation"),
-            Error::CaDuplicate(ca) => write!(f, "CA '{}' was already initialised", ca),
+            Error::CaDuplicate(ca) => write!(f, "CA '{}' was already initialized", ca),
             Error::CaUnknown(ca) => write!(f, "CA '{}' is unknown", ca),
 
             // CA Repo Issues
@@ -412,7 +412,7 @@ impl fmt::Display for Error {
             //-----------------------------------------------------------------
             Error::CaAuthorizationUnknown(_ca, roa) => write!(f, "Cannot remove unknown ROA '{}'", roa),
             Error::CaAuthorizationDuplicate(_ca, roa) => write!(f, "ROA '{}' already present", roa),
-            Error::CaAuthorizationInvalidMaxlength(_ca, roa) => write!(f, "Invalid max length in ROA: '{}'", roa),
+            Error::CaAuthorizationInvalidMaxLength(_ca, roa) => write!(f, "Invalid max length in ROA: '{}'", roa),
             Error::CaAuthorizationNotEntitled(_ca, roa) => write!(f, "Prefix in ROA '{}' not held by you", roa),
             Error::RoaDeltaError(e) => write!(f, "ROA delta rejected:\n\n'{}' ", e),
 
@@ -440,7 +440,7 @@ impl fmt::Display for Error {
             //-----------------------------------------------------------------
             Error::TaNotAllowed => write!(f, "Functionality not supported for Trust Anchor"),
             Error::TaNameReserved => write!(f, "Name reserved for embedded Trust Anchor"),
-            Error::TaAlreadyInitialised => write!(f, "TrustAnchor was already initialised"),
+            Error::TaAlreadyInitialized => write!(f, "TrustAnchor was already initialized"),
 
             //-----------------------------------------------------------------
             // Resource Tagged Attestation issues
@@ -662,9 +662,9 @@ impl Error {
             // Repository Server Issues
             //-----------------------------------------------------------------
             Error::RepositoryServerNotEnabled => ErrorResponse::new("pub-no-server", &self),
-            Error::RepositoryServerNotInitialised => ErrorResponse::new("pub-repo-not-initialised", &self),
+            Error::RepositoryServerNotInitialized => ErrorResponse::new("pub-repo-not-initialized", &self),
             Error::RepositoryServerHasPublishers => ErrorResponse::new("pub-repo-has-publishers", &self),
-            Error::RepositoryServerAlreadyInitialised => ErrorResponse::new("pub-repo-initialised", &self),
+            Error::RepositoryServerAlreadyInitialized => ErrorResponse::new("pub-repo-initialized", &self),
 
             //-----------------------------------------------------------------
             // Publishing
@@ -759,7 +759,7 @@ impl Error {
                 .with_ca(ca)
                 .with_auth(auth),
 
-            Error::CaAuthorizationInvalidMaxlength(ca, auth) => ErrorResponse::new("ca-roa-invalid-max-length", &self)
+            Error::CaAuthorizationInvalidMaxLength(ca, auth) => ErrorResponse::new("ca-roa-invalid-max-length", &self)
                 .with_ca(ca)
                 .with_auth(auth),
 
@@ -794,7 +794,7 @@ impl Error {
             //-----------------------------------------------------------------
             Error::TaNotAllowed => ErrorResponse::new("ta-not-allowed", &self),
             Error::TaNameReserved => ErrorResponse::new("ta-name-reserved", &self),
-            Error::TaAlreadyInitialised => ErrorResponse::new("ta-initialised", &self),
+            Error::TaAlreadyInitialized => ErrorResponse::new("ta-initialized", &self),
 
             //-----------------------------------------------------------------
             // Resource Tagged Attestation issues
@@ -1048,7 +1048,7 @@ mod tests {
 
         verify(
             include_str!("../../test-resources/errors/ca-roa-invalid-max-length.json"),
-            Error::CaAuthorizationInvalidMaxlength(ca.clone(), auth),
+            Error::CaAuthorizationInvalidMaxLength(ca.clone(), auth),
         );
         verify(
             include_str!("../../test-resources/errors/ca-roa-not-entitled.json"),
@@ -1103,8 +1103,8 @@ mod tests {
             Error::TaNameReserved,
         );
         verify(
-            include_str!("../../test-resources/errors/ta-initialised.json"),
-            Error::TaAlreadyInitialised,
+            include_str!("../../test-resources/errors/ta-initialized.json"),
+            Error::TaAlreadyInitialized,
         );
 
         verify(

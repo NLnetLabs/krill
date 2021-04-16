@@ -75,7 +75,7 @@ This prevents that Relying Parties can retrieve a half-written file. (#352)
 
 As it turned out the previous release (0.8.1) still insisted on cleaning up 'redundant ROAs'
 when migrating to that version. This clean-up would not cause any issues with regards to the
-validity of your announcements. However, we realised in 0.8.1 that users should be the once
+validity of your announcements. However, we realized in 0.8.1 that users should be the once
 to decide whether they want to have extra ROAs or not. Therefore this clean-up should have
 been removed then.
 
@@ -313,11 +313,11 @@ Breaking changes:
 
 The most striking change in this release is the inclusion of a new front-end: Lagosta.
 
-Lagosta 0.1 'Fritto misto' supports the following features:
+Lagosta 0.1 'Fritto Misto' supports the following features:
 * Set up your Krill CA under an RIR/NIR parent
 * Configure your CA to publish at a remote repository
 * Maintain ROAs
-* Internationalisation (English and Portuguese)
+* Internationalization (English and Portuguese)
 
 Please talk to us if you want to contribute other languages! Many advanced features are currently available in the CLI only, but we will continue to extend the front-end functionality.
  
@@ -332,7 +332,7 @@ The following features and improvements were introduced to the core Krill and CL
 
 Breaking changes:
 * The error responses have been overhauled.
-* Some CLI options have been changed to make naming and behaviour more consistent.
+* Some CLI options have been changed to make naming and behavior more consistent.
 
 For more information please have a look at [Read the Docs](https://rpki.readthedocs.io/en/latest/krill/index.html).
 
@@ -363,7 +363,7 @@ changes introduced, so the binary can just be used to replace any installed 0.4.
 
 ## 0.4.0 'The Krill Factor'
 
-This release focuses on stabilising the API and internal data format, which allows upgrades to 
+This release focuses on stabilizing the API and internal data format, which allows upgrades to 
 future versions of Krill without the need for complicated data migrations. We do not expect to
 introduce breaking changes to the API from this point forward. Please note however, that in some
 cases the JSON structure in API responses might be extended with additional information in new
@@ -371,7 +371,7 @@ JSON members.
 
 Overview of changes:
 * Document the Krill server API using OpenAPI 3 (#148)
-* Stabilise JSON API (#141)
+* Stabilize JSON API (#141)
 * Better API response when a method does not exist (#146)
 * Support upgrading, preserving data (#53)
 * Set up automated end-to-end testing (TA-CA-ROAs-validation) (#66)

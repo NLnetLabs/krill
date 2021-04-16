@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::Path;
 
 use tokio::sync::RwLock;
 
@@ -35,7 +35,7 @@ pub struct StatusStore {
 }
 
 impl StatusStore {
-    pub fn new(work_dir: &PathBuf, namespace: &str) -> KrillResult<Self> {
+    pub fn new(work_dir: &Path, namespace: &str) -> KrillResult<Self> {
         let store = KeyValueStore::disk(work_dir, namespace)?;
         let lock = RwLock::new(());
         Ok(StatusStore { store, lock })
@@ -148,10 +148,7 @@ impl StatusStore {
 
     fn error_to_error_res(error: &Error) -> ErrorResponse {
         match error {
-            Error::HttpClientError(http_error) => match http_error {
-                httpclient::Error::ErrorWithJson(_, res) => res.clone(),
-                _ => error.to_error_response(),
-            },
+            Error::HttpClientError(httpclient::Error::ErrorWithJson(_, res)) => res.clone(),
             _ => error.to_error_response(),
         }
     }

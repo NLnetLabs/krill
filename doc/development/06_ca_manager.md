@@ -928,7 +928,7 @@ pub enum CaEvtDet {
     ResourceClassRemoved {
         resource_class_name: ResourceClassName,
         parent: ParentHandle,
-        revoke_reqs: Vec<RevocationRequest>,
+        revoke_requests: Vec<RevocationRequest>,
     },
     CertificateRequested {
         resource_class_name: ResourceClassName,
@@ -969,7 +969,7 @@ pub enum CaEvtDet {
         // When a 'new' key is activated (becomes current), the previous current key will be
         // marked as old and we will request its revocation. Note that any current ROAs and/or
         // delegated certificates will also be re-issued under the new 'current' key. These changes
-        // are tracked in seperate `RoasUpdated` and `ChildCertificatesUpdated` events.
+        // are tracked in separate `RoasUpdated` and `ChildCertificatesUpdated` events.
         resource_class_name: ResourceClassName,
         revoke_req: RevocationRequest,
     },

@@ -1074,7 +1074,7 @@ impl Options {
 
     #[cfg(not(feature = "multi-user"))]
     fn parse_matches_user_config(_: &ArgMatches) -> Result<Options, Error> {
-        Err(Error::UnrecognisedSubCommand)
+        Err(Error::UnrecognizedSubCommand)
     }
 
     fn parse_matches_config(matches: &ArgMatches) -> Result<Options, Error> {
@@ -1083,7 +1083,7 @@ impl Options {
         } else if let Some(m) = matches.subcommand_matches("user") {
             Self::parse_matches_user_config(m)
         } else {
-            Err(Error::UnrecognisedSubCommand)
+            Err(Error::UnrecognizedSubCommand)
         }
     }
 
@@ -1173,7 +1173,7 @@ impl Options {
         } else if let Some(m) = matches.subcommand_matches("details") {
             Self::parse_matches_cas_history_details(m)
         } else {
-            Err(Error::UnrecognisedSubCommand)
+            Err(Error::UnrecognizedSubCommand)
         }
     }
 
@@ -1265,7 +1265,7 @@ impl Options {
         } else if let Some(m) = matches.subcommand_matches("remove") {
             Self::parse_matches_cas_children_remove(m)
         } else {
-            Err(Error::UnrecognisedSubCommand)
+            Err(Error::UnrecognizedSubCommand)
         }
     }
 
@@ -1335,7 +1335,7 @@ impl Options {
         } else if let Some(m) = matches.subcommand_matches("remove") {
             Self::parse_matches_cas_parents_remove(m)
         } else {
-            Err(Error::UnrecognisedSubCommand)
+            Err(Error::UnrecognizedSubCommand)
         }
     }
 
@@ -1363,7 +1363,7 @@ impl Options {
         } else if let Some(m) = matches.subcommand_matches("activate") {
             Self::parse_matches_cas_keyroll_activate(m)
         } else {
-            Err(Error::UnrecognisedSubCommand)
+            Err(Error::UnrecognizedSubCommand)
         }
     }
 
@@ -1463,7 +1463,7 @@ impl Options {
         } else if let Some(m) = matches.subcommand_matches("suggest") {
             Self::parse_matches_cas_routes_bgp_suggest(m)
         } else {
-            Err(Error::UnrecognisedSubCommand)
+            Err(Error::UnrecognizedSubCommand)
         }
     }
 
@@ -1475,7 +1475,7 @@ impl Options {
         } else if let Some(m) = matches.subcommand_matches("bgp") {
             Self::parse_matches_cas_routes_bgp(m)
         } else {
-            Err(Error::UnrecognisedSubCommand)
+            Err(Error::UnrecognizedSubCommand)
         }
     }
 
@@ -1529,7 +1529,7 @@ impl Options {
         } else if let Some(m) = matches.subcommand_matches("configure") {
             Self::parse_matches_cas_repo_configure(m)
         } else {
-            Err(Error::UnrecognisedSubCommand)
+            Err(Error::UnrecognizedSubCommand)
         }
     }
 
@@ -1662,7 +1662,7 @@ impl Options {
         } else if let Some(m) = matches.subcommand_matches("cosign") {
             Self::parse_matches_cas_rta_multi_sign(m)
         } else {
-            Err(Error::UnrecognisedSubCommand)
+            Err(Error::UnrecognizedSubCommand)
         }
     }
 
@@ -1676,7 +1676,7 @@ impl Options {
         } else if let Some(m) = matches.subcommand_matches("multi") {
             Self::parse_matches_cas_rta_multi(m)
         } else {
-            Err(Error::UnrecognisedSubCommand)
+            Err(Error::UnrecognizedSubCommand)
         }
     }
 
@@ -1694,7 +1694,7 @@ impl Options {
             let command = Command::Bulk(BulkCaCommand::Sync);
             Ok(Options::make(general_args, command))
         } else {
-            Err(Error::UnrecognisedSubCommand)
+            Err(Error::UnrecognizedSubCommand)
         }
     }
 
@@ -1744,7 +1744,7 @@ impl Options {
         } else if let Some(m) = matches.subcommand_matches("info") {
             Self::parse_matches_info(m)
         } else {
-            Err(Error::UnrecognisedSubCommand)
+            Err(Error::UnrecognizedSubCommand)
         }
     }
 
@@ -2041,7 +2041,7 @@ impl KrillPubcOptions {
         } else if let Some(m) = matches.subcommand_matches("clear") {
             Self::parse_matches_publication_server_clear(m)
         } else {
-            Err(Error::UnrecognisedSubCommand)
+            Err(Error::UnrecognizedSubCommand)
         }
     }
 
@@ -2061,7 +2061,7 @@ impl KrillPubcOptions {
         } else if let Some(m) = matches.subcommand_matches("server") {
             Self::parse_matches_publication_server(m)
         } else {
-            Err(Error::UnrecognisedSubCommand)
+            Err(Error::UnrecognizedSubCommand)
         }
     }
 }
@@ -2288,7 +2288,7 @@ pub enum Error {
     MissingArgWithEnv(String, String),
     MissingResources,
     InvalidChildIdCert,
-    UnrecognisedSubCommand,
+    UnrecognizedSubCommand,
     GeneralArgumentError(String),
 }
 
@@ -2313,7 +2313,7 @@ impl fmt::Display for Error {
             ),
             Error::MissingResources => write!(f, "You must specify resources when adding a CA (--asn, --ipv4, --ipv6)"),
             Error::InvalidChildIdCert => write!(f, "Invalid ID cert for child"),
-            Error::UnrecognisedSubCommand => write!(f, "Unrecognised sub-command. Use 'help'"),
+            Error::UnrecognizedSubCommand => write!(f, "Unrecognized sub-command. Use 'help'"),
             Error::GeneralArgumentError(s) => s.fmt(f),
         }
     }

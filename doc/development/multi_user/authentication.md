@@ -145,7 +145,7 @@ than pollute the Krill log with a warning every time a user loads the UI we trea
 
 ## Interface with Lagosta
 
-If we look at Krill upto and including v0.8.2, the interface with Lagosta was extremely simple:
+If we look at Krill up to and including v0.8.2, the interface with Lagosta was extremely simple:
   - The Lagosta login form would store the given API token in browser storage and then attempt to visit the welcome page
     of the UI.
   - Every Vue "view" load would make a call to the Krill `GET /api/v1/authorized` endpoint passing the stored API token
@@ -155,7 +155,7 @@ If we look at Krill upto and including v0.8.2, the interface with Lagosta was ex
 That was it. No login, no logout, no login form discovery, no OpenID Connect callback handler and no receipt, use or
 storage of user identity or metadata.
 
-The API that Lagosta now uses to login and logout of Krill is not part of the publically documented Krill API. The
+The API that Lagosta now uses to login and logout of Krill is not part of the publicly documented Krill API. The
 essence of it (taken from `daemon/http/auth.rs`) is:
 
 ```rust
@@ -290,7 +290,7 @@ token to Krill on subsequent requests to the Krill REST API.
 In the OpenIDConnectAuthProvider case we also need to remember a sensitive access token issued by the provider. That 
 token [must not be leaked to unauthorized parties](https://openid.net/specs/openid-connect-core-1_0.html#AccessTokenDisclosure).
 User attributes that are used for authorization but marked as "hidden" so that they are not displayed by the Krill web
-user interface in the client browser are also part of the encrypted structured bearer token and could potentially contain sensistive information.
+user interface in the client browser are also part of the encrypted structured bearer token and could potentially contain sensitive information.
 
 As such we use the encrypted structured bearer token approach for both the `ConfigFileAuthProvider` and the
 `OpenIDConnectAuthProvider`.
@@ -320,7 +320,7 @@ We considered using the popular Apache `.htpasswd` format but unfortunately it e
 [non-standard MD5](https://httpd.apache.org/docs/current/misc/password_encryptions.html) or would require additional
 crate dependencies to support bcrypt or Linux crypt, and even then would only be useful if the operator already had the
 Apache tooling installed to be able to work with `.htpasswd` files. Also any hash also needs to be computable by the
-Lagosta web user interface client code from a password entered by the user as avoiding transmiting passwords also
+Lagosta web user interface client code from a password entered by the user as avoiding transmitting passwords also
 reduces the attack surface.
 
 So, instead `krillc` has been extended with a `config user` subcommand to generate hex encoded SHA-256 hashes and
@@ -376,7 +376,7 @@ impl AuthProvider for ConfigFileAuthProvider {
 ```
 
 Login checks for the required id and password hash query parameters, looks up the user in the users that were loaded on
-startup from `krill.conf` and creates and caches a session object based on the users detailsm and returns the generated
+startup from `krill.conf` and creates and caches a session object based on the users details and returns the generated
 token and user details to the `Authorizer` for eventual transmission back to Lagosta as JSON:
 
 ```rust
@@ -448,7 +448,7 @@ Where the standards define optional elements, only support for those needed thus
 
 #### Interoperability
 
-This implementation has been seen to work without any known issues with Micorosft Azure Active Directory, AWS Cognito,
+This implementation has been seen to work without any known issues with Microsoft Azure Active Directory, AWS Cognito,
 RedHat KeyCloak, Google Cloud Platform and Micro Focus NetIQ Access Manager 4.5.
 
 #### Terminology
@@ -468,7 +468,7 @@ Krill:
 
 In no particular order:
 
-- The terminology used by the specificaitons is **NOT** used, or not used consistently, in the Rust code
+- The terminology used by the specifications is **NOT** used, or not used consistently, in the Rust code
   implementation in Krill.
 - There are lots of possibly out-dated comments in the code which need reviewing and updating or removing.
 - The core `provider.rs` source code file is too large.
@@ -541,7 +541,7 @@ annotations added in parentheses):
 
 [RFC 6749 section 4.1](https://tools.ietf.org/html/rfc6749#section-4.1) goes into a lot of detail about what happens at
 each step. The OpenID Connect Core 1.0 specification summarizes this more succinctly (and more relevant to us) as (with
-letters referencing the diagram above added by me in parantheses)
+letters referencing the diagram above added by me in parentheses)
 
 > 3.1.1.  Authorization Code Flow Steps
 >
@@ -594,7 +594,7 @@ optional features further complicates interoperation with actual OPs.
 This implementation tries to flexible where it seems to be needed to enable a reasonable quality of integration with the
 OP and to enable a reasonable end-user experience:
 
-- Support for various logout behaviours (e.g. AWS Cognito only supports a non-standard logout endpoint, one
+- Support for various logout behaviors (e.g. AWS Cognito only supports a non-standard logout endpoint, one
   potential customer wanted control over where users were redirected to after logout, and one tested OP deployment
   claimed support for OAuth 2.0 Token Revocation but was not standards compliant meaning we couldn't automatically use
   that approach but need to be able to turn that feature off).

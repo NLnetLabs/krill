@@ -3,9 +3,8 @@
 //! Support for the RFC8183 out-of-band setup requests and responses
 //! used to exchange identity and configuration between CAs and their
 //! parent CA and/or RPKI Publication Servers.
-use std::convert::TryFrom;
-use std::path::PathBuf;
 use std::str::{from_utf8_unchecked, FromStr};
+use std::{convert::TryFrom, path::Path};
 use std::{fmt, io};
 
 use base64::DecodeError;
@@ -487,7 +486,7 @@ impl PublisherRequest {
     }
 
     /// Saves this as an XML file
-    pub fn save(&self, full_path: &PathBuf) -> Result<(), io::Error> {
+    pub fn save(&self, full_path: &Path) -> Result<(), io::Error> {
         let xml = self.encode_vec();
         file::save(&Bytes::from(xml), full_path)
     }
@@ -503,9 +502,9 @@ impl fmt::Display for PublisherRequest {
     }
 }
 
-impl Into<IdCert> for PublisherRequest {
-    fn into(self) -> IdCert {
-        self.id_cert
+impl From<PublisherRequest> for IdCert {
+    fn from(r: PublisherRequest) -> Self {
+        r.id_cert
     }
 }
 
@@ -662,7 +661,7 @@ impl RepositoryResponse {
     }
 
     /// Saves this as an XML file
-    pub fn save(&self, full_path: &PathBuf) -> Result<(), io::Error> {
+    pub fn save(&self, full_path: &Path) -> Result<(), io::Error> {
         let xml = self.encode_vec();
         file::save(&Bytes::from(xml), full_path)
     }

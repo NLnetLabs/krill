@@ -391,10 +391,10 @@ impl fmt::Display for AttributesError {
 }
 
 impl AttributesError {
-    fn extras(atts: &[OwnedAttribute]) -> Self {
-        let atts: Vec<String> = atts.iter().map(|a| format!("{}", a)).collect();
-        let atts = atts.join(", ");
-        AttributesError::ExtraAttributes(atts)
+    fn extras(attributes: &[OwnedAttribute]) -> Self {
+        let attributes: Vec<String> = attributes.iter().map(|a| format!("{}", a)).collect();
+        let attributes = attributes.join(", ");
+        AttributesError::ExtraAttributes(attributes)
     }
 }
 

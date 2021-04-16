@@ -187,21 +187,20 @@ impl<S: WithStorableDetails> StoredCommand<S> {
         &self.effect
     }
 }
-
-impl<S: WithStorableDetails> Into<CommandHistoryRecord> for StoredCommand<S> {
-    fn into(self) -> CommandHistoryRecord {
-        let summary = self.details.summary();
-        let command_key = CommandKey::new(self.sequence, self.time, summary.label.clone());
+impl<S: WithStorableDetails> From<StoredCommand<S>> for CommandHistoryRecord {
+    fn from(command: StoredCommand<S>) -> Self {
+        let summary = command.details.summary();
+        let command_key = CommandKey::new(command.sequence, command.time, summary.label.clone());
 
         CommandHistoryRecord {
             key: command_key.to_string(),
-            actor: self.actor,
-            timestamp: self.time.timestamp_millis(),
-            handle: self.handle,
-            version: self.version,
-            sequence: self.sequence,
+            actor: command.actor,
+            timestamp: command.time.timestamp_millis(),
+            handle: command.handle,
+            version: command.version,
+            sequence: command.sequence,
             summary,
-            effect: self.effect,
+            effect: command.effect,
         }
     }
 }

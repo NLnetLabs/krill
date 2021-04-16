@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, VecDeque},
     mem,
-    path::PathBuf,
+    path::{Path, PathBuf},
     str::FromStr,
     sync::Arc,
 };
@@ -349,8 +349,8 @@ pub struct OldRrdpServer {
 }
 
 impl OldRrdpServer {
-    pub fn create(rrdp_base_uri: uri::Https, repo_dir: &PathBuf, session: RrdpSession) -> Self {
-        let mut rrdp_base_dir = PathBuf::from(repo_dir);
+    pub fn create(rrdp_base_uri: uri::Https, repo_dir: &Path, session: RrdpSession) -> Self {
+        let mut rrdp_base_dir = repo_dir.to_path_buf();
         rrdp_base_dir.push(REPOSITORY_RRDP_DIR);
 
         let snapshot = OldSnapshot::create(session);
@@ -416,8 +416,8 @@ impl OldRrdpServer {
         format!("{}/{}/snapshot.xml", session, serial)
     }
 
-    fn new_snapshot_path(base: &PathBuf, session: &RrdpSession, serial: u64) -> PathBuf {
-        let mut path = base.clone();
+    fn new_snapshot_path(base: &Path, session: &RrdpSession, serial: u64) -> PathBuf {
+        let mut path = base.to_path_buf();
         path.push(Self::snapshot_rel(session, serial));
         path
     }

@@ -439,11 +439,11 @@ impl Aggregate for CertAuth {
 impl CertAuth {
     // For many commands with multiple resulting events, it's easier to build a list of event *details*
     // and worry about numbering the versions here.
-    fn evts_from_details(&self, evt_dets: Vec<CaEvtDet>) -> Vec<CaEvt> {
+    fn events_from_details(&self, event_details: Vec<CaEvtDet>) -> Vec<CaEvt> {
         let mut res = vec![];
         let mut version = self.version;
-        for det in evt_dets {
-            res.push(StoredEvent::new(&self.handle, version, det));
+        for event in event_details {
+            res.push(StoredEvent::new(&self.handle, version, event));
             version += 1;
         }
         res
@@ -529,7 +529,7 @@ impl CertAuth {
     }
 }
 
-/// # Being a trustanchor
+/// # Being a Trust Anchor
 ///
 impl CertAuth {
     fn trust_anchor_make(&self, uris: Vec<uri::Https>, signer: Arc<KrillSigner>) -> KrillResult<Vec<CaEvt>> {
@@ -681,9 +681,9 @@ impl CertAuth {
         for ki in child_keys {
             if let Some(issued) = my_rc.issued(&ki) {
                 issued_certs.push(issued.clone());
-                let eligble_not_after = Self::child_cert_eligible_not_after(issued, issuance_timing);
-                if eligble_not_after > not_after {
-                    not_after = eligble_not_after
+                let eligible_not_after = Self::child_cert_eligible_not_after(issued, issuance_timing);
+                if eligible_not_after > not_after {
+                    not_after = eligible_not_after
                 }
             }
         }
@@ -871,7 +871,7 @@ impl CertAuth {
 
         let mut res = vec![];
 
-        // Find all the certs in all RCs for this child and revoke, and unpublish them.
+        // Find all the certs in all RCs for this child and revoke, and withdraw them.
         for (rcn, rc) in self.resources.iter() {
             let certified_keys = child.issued(rcn);
 
@@ -967,7 +967,7 @@ impl CertAuth {
     }
 
     /// Adds a parent. This method will return an error in case a parent
-    /// by this name (handle) is already known. Or in case the same reponse
+    /// by this name (handle) is already known. Or in case the same response
     /// is used for more than one parent.
     fn add_parent(&self, parent: Handle, info: ParentCaContact) -> KrillResult<Vec<CaEvt>> {
         if self.parent_known(&parent) {
@@ -983,7 +983,11 @@ impl CertAuth {
 
     /// Removes a parent. Returns an error if it doesn't exist.
     fn remove_parent(&self, parent: Handle) -> KrillResult<Vec<CaEvt>> {
-        Ok(vec![CaEvtDet::parent_removed(&self.handle, self.version, parent)])
+        if !self.parent_known(&parent) {
+            Err(Error::CaParentUnknown(self.handle.clone(), parent))
+        } else {
+            Ok(vec![CaEvtDet::parent_removed(&self.handle, self.version, parent)])
+        }
     }
 
     /// Updates an existing parent's contact. This will return an error if
@@ -1096,14 +1100,14 @@ impl CertAuth {
             // in the entitlements now received.
             class.parent_handle() == &parent_handle && !entitled_classes.contains(&class.parent_rc_name())
         }) {
-            let revoke_reqs = rc.revoke(signer.deref())?;
+            let revoke_requests = rc.revoke(signer.deref())?;
 
             debug!("Updating Entitlements for CA: {}, Removing RC: {}", &self.handle, &rcn);
 
             event_details.push(CaEvtDet::ResourceClassRemoved {
                 resource_class_name: rcn.clone(),
                 parent: parent_handle.clone(),
-                revoke_reqs,
+                revoke_requests,
             });
         }
 
@@ -1149,7 +1153,7 @@ impl CertAuth {
             }
         }
 
-        Ok(self.evts_from_details(event_details))
+        Ok(self.events_from_details(event_details))
     }
 
     /// This method updates the received certificate for the given parent
@@ -1291,7 +1295,7 @@ impl CertAuth {
         // register updated repo
         let evt_dets = vec![CaEvtDet::RepoUpdated { contact }];
 
-        Ok(self.evts_from_details(evt_dets))
+        Ok(self.events_from_details(evt_dets))
     }
 }
 
@@ -1322,7 +1326,7 @@ impl CertAuth {
             }
         }
 
-        Ok(self.evts_from_details(evt_dets))
+        Ok(self.events_from_details(evt_dets))
     }
 
     /// Renew existing ROA objects if needed.
@@ -1339,7 +1343,7 @@ impl CertAuth {
             }
         }
 
-        Ok(self.evts_from_details(evt_dets))
+        Ok(self.events_from_details(evt_dets))
     }
 
     /// Verifies that the updates are correct, i.e.:
