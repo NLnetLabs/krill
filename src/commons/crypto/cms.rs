@@ -51,6 +51,7 @@ impl ProtocolCmsBuilder {
         self.encode().to_captured(Mode::Der).into_bytes()
     }
 
+    #[allow(clippy::needless_lifetimes)]
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
         // ContentInfo ::= SEQUENCE {
         //           contentType ContentType,
@@ -283,6 +284,7 @@ struct ProtocolSignerInfo {
 }
 
 impl ProtocolSignerInfo {
+    #[allow(clippy::needless_lifetimes)]
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
         // SignerInfo ::= SEQUENCE {
         //      version CMSVersion,
@@ -436,7 +438,7 @@ impl ProtocolCrl {
 
     /// Validates the certificate revocation list.
     ///
-    /// The CRL’s signature is validated against the provided public key.
+    /// The CRL signature is validated against the provided public key.
     ///
     /// Note that this method is used to test that our own CRLs are valid.
     /// However, it seems rather pointless to check the included ProtocolCrl
@@ -447,6 +449,7 @@ impl ProtocolCrl {
         self.signed_data.verify_signature(public_key)
     }
 
+    #[allow(clippy::needless_lifetimes)]
     pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
         self.signed_data.encode_ref()
     }
@@ -490,6 +493,7 @@ impl CrlNumber {
         })
     }
 
+    #[allow(clippy::needless_lifetimes)]
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
         encode::sequence((
             oid::CE_CRL_NUMBER.encode(),

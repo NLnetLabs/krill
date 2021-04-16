@@ -1,10 +1,10 @@
 //! Data objects used in the (RRDP) repository. I.e. the publish, update, and
 //! withdraw elements, as well as the notification, snapshot and delta file
 //! definitions.
-use std::collections::HashMap;
 use std::fmt;
 use std::io;
 use std::path::PathBuf;
+use std::{collections::HashMap, path::Path};
 
 use bytes::Bytes;
 use chrono::Duration;
@@ -153,11 +153,11 @@ impl From<publication::Update> for UpdateElement {
     }
 }
 
-impl Into<PublishElement> for UpdateElement {
-    fn into(self) -> PublishElement {
+impl From<UpdateElement> for PublishElement {
+    fn from(el: UpdateElement) -> Self {
         PublishElement {
-            uri: self.uri,
-            base64: self.base64,
+            uri: el.uri,
+            base64: el.base64,
         }
     }
 }
@@ -332,9 +332,8 @@ impl Notification {
         self.serial += 1;
         self.time = time;
 
-        let mut refs_to_retire = vec![];
+        let mut refs_to_retire = vec![(Time::now(), self.snapshot.clone())];
 
-        refs_to_retire.push((Time::now(), self.snapshot.clone()));
         self.snapshot = snapshot;
 
         for d in &self.deltas {
@@ -351,7 +350,7 @@ impl Notification {
         Notification::new(session, 0, snapshot, vec![])
     }
 
-    pub fn write_xml(&self, path: &PathBuf) -> Result<(), io::Error> {
+    pub fn write_xml(&self, path: &Path) -> Result<(), io::Error> {
         trace!("Writing notification file: {}", path.to_string_lossy());
         let mut file = file::create_file_with_path(&path)?;
 
@@ -664,7 +663,7 @@ impl Snapshot {
         self.current_objects.elements().iter().fold(0, |sum, p| sum + p.size())
     }
 
-    pub fn write_xml(&self, path: &PathBuf) -> Result<(), io::Error> {
+    pub fn write_xml(&self, path: &Path) -> Result<(), io::Error> {
         trace!("Writing snapshot file: {}", path.to_string_lossy());
         let vec = self.xml();
         let bytes = Bytes::from(vec);
@@ -749,11 +748,11 @@ impl DeltaElements {
 
 impl From<publication::PublishDelta> for DeltaElements {
     fn from(d: publication::PublishDelta) -> Self {
-        let (pbls, upds, wdrs) = d.unwrap();
+        let (publishers, updates, withdraws) = d.unwrap();
 
-        let publishes = pbls.into_iter().map(PublishElement::from).collect();
-        let updates = upds.into_iter().map(UpdateElement::from).collect();
-        let withdraws = wdrs.into_iter().map(WithdrawElement::from).collect();
+        let publishes = publishers.into_iter().map(PublishElement::from).collect();
+        let updates = updates.into_iter().map(UpdateElement::from).collect();
+        let withdraws = withdraws.into_iter().map(WithdrawElement::from).collect();
 
         DeltaElements {
             publishes,
@@ -825,7 +824,7 @@ impl Delta {
         (self.session, self.serial, self.elements)
     }
 
-    pub fn write_xml(&self, path: &PathBuf) -> Result<(), io::Error> {
+    pub fn write_xml(&self, path: &Path) -> Result<(), io::Error> {
         trace!("Writing delta file: {}", path.to_string_lossy());
         let vec = self.xml();
         let bytes = Bytes::from(vec);

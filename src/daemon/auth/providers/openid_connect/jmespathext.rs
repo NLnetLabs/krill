@@ -33,8 +33,14 @@ fn make_recap_fn() -> Box<CustomFunction> {
 
         if let jmespath::Variable::String(str) = &*args[0] {
             if let jmespath::Variable::String(re_str) = &*args[1] {
-                let re = Regex::new(&re_str).unwrap_or_else(|_| panic!("Invalid regular expression for '{}' for recap() JMESPath function", &re_str));
-                if let Some(captures) = re.captures_iter(&str).next() {
+                let re = Regex::new(&re_str).unwrap_or_else(|_| {
+                    panic!(
+                        "Invalid regular expression for '{}' for recap() JMESPath function",
+                        &re_str
+                    )
+                });
+                let mut iter = re.captures_iter(&str);
+                if let Some(captures) = iter.next() {
                     // captures[0] is the entire match
                     // captures[1] is the value of the first capture group match
                     res = captures[1].to_string();
@@ -68,7 +74,12 @@ fn make_resub_fn() -> Box<CustomFunction> {
         if let jmespath::Variable::String(str) = &*args[0] {
             if let jmespath::Variable::String(re_str) = &*args[1] {
                 if let jmespath::Variable::String(newval) = &*args[2] {
-                    let re = Regex::new(&re_str).unwrap_or_else(|_| panic!("Invalid regular expression for '{}' for resub() JMESPath function", &re_str));
+                    let re = Regex::new(&re_str).unwrap_or_else(|_| {
+                        panic!(
+                            "Invalid regular expression for '{}' for resub() JMESPath function",
+                            &re_str
+                        )
+                    });
                     res = re.replace(str.as_str(), newval.as_str()).to_string();
                 }
             }

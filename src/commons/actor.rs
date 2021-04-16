@@ -131,11 +131,11 @@ impl PartialEq<ActorDef> for Actor {
 
 impl Actor {
     /// Only for use in testing
-    pub fn test_from_def(repr: ActorDef) -> Actor {
+    pub fn test_from_def(actor_def: ActorDef) -> Actor {
         Actor {
-            name: repr.name.clone(),
-            is_user: repr.is_user,
-            attributes: repr.attributes,
+            name: actor_def.name.clone(),
+            is_user: actor_def.is_user,
+            attributes: actor_def.attributes,
             new_auth: None,
             auth_error: None,
             policy: None,
@@ -154,13 +154,13 @@ impl Actor {
         }
     }
 
-    pub fn new(repr: ActorDef, policy: AuthPolicy) -> Actor {
+    pub fn new(actor_def: ActorDef, policy: AuthPolicy) -> Actor {
         Actor {
-            name: repr.name.clone(),
-            is_user: repr.is_user,
-            attributes: repr.attributes.clone(),
-            new_auth: repr.new_auth.clone(),
-            auth_error: repr.auth_error,
+            name: actor_def.name.clone(),
+            is_user: actor_def.is_user,
+            attributes: actor_def.attributes.clone(),
+            new_auth: actor_def.new_auth.clone(),
+            auth_error: actor_def.auth_error,
             policy: Some(policy),
         }
     }

@@ -64,7 +64,7 @@ pub async fn statics(req: Request) -> RoutingResult {
     };
 
     // Do not log static responses even at TRACE level because by definition
-    // static responses are often of little diagnostical value and their large
+    // static responses are often of little diagnostic value and their large
     // size makes it harder to see other potentially more useful log messages.
     res.map(|mut res| {
         res.do_not_log();

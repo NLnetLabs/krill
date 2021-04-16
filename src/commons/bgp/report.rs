@@ -242,7 +242,7 @@ impl fmt::Display for BgpAnalysisSuggestion {
         if !self.redundant.is_empty() {
             writeln!(
                 f,
-                "Remove the following ROAs made redundant by a covering ROA using maxlength:"
+                "Remove the following ROAs made redundant by a covering ROA using max length:"
             )?;
             for auth in &self.redundant {
                 writeln!(f, "  {}", auth)?;
@@ -441,13 +441,13 @@ impl fmt::Display for BgpAnalysisReport {
                 writeln!(f)?;
             }
 
-            if let Some(unseens) = entry_map.get(&BgpAnalysisState::RoaUnseen) {
+            if let Some(not_seen) = entry_map.get(&BgpAnalysisState::RoaUnseen) {
                 writeln!(
                     f,
                     "Authorizations for which no announcements are seen (you may wish to remove these):"
                 )?;
                 writeln!(f)?;
-                for roa in unseens {
+                for roa in not_seen {
                     writeln!(f, "\tDefinition: {}", roa.definition)?;
                 }
                 writeln!(f)?;
@@ -520,10 +520,10 @@ impl fmt::Display for BgpAnalysisReport {
                 }
             }
 
-            if let Some(valids) = entry_map.get(&BgpAnalysisState::AnnouncementValid) {
+            if let Some(valid) = entry_map.get(&BgpAnalysisState::AnnouncementValid) {
                 writeln!(f, "Announcements which are valid:")?;
                 writeln!(f)?;
-                for ann in valids {
+                for ann in valid {
                     writeln!(f, "\tAnnouncement: {}", ann.definition)?;
                 }
                 writeln!(f)?;

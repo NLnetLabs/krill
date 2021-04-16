@@ -51,9 +51,9 @@ impl fmt::Display for CaCommandDetails {
 
         match self.effect() {
             CaCommandResult::Error(msg) => writeln!(f, "Error:  {}", msg)?,
-            CaCommandResult::Events(evts) => {
+            CaCommandResult::Events(events) => {
                 writeln!(f, "Changes:")?;
-                for evt in evts {
+                for evt in events {
                     writeln!(f, "  {}", evt.details().to_string())?;
                 }
             }
@@ -201,7 +201,7 @@ impl StoredEffect {
 //------------ CommandSummary ------------------------------------------------
 
 /// Generic command summary used to show command details in history in a way
-/// that support internationalisation.
+/// that support internationalization.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CommandSummary {
     pub msg: Message,
@@ -242,9 +242,9 @@ impl CommandSummary {
     pub fn with_resources(self, resources: &ResourceSet) -> Self {
         let summary = resources.summary();
         self.with_arg("resources", resources)
-            .with_arg("asn_blocks", summary.asn_bloks())
-            .with_arg("ipv4_blocks", summary.ipv4_bloks())
-            .with_arg("ipv6_blocks", summary.ipv6_bloks())
+            .with_arg("asn_blocks", summary.asn_blocks())
+            .with_arg("ipv4_blocks", summary.ipv4_blocks())
+            .with_arg("ipv6_blocks", summary.ipv6_blocks())
     }
 
     pub fn with_rcn(self, rcn: &ResourceClassName) -> Self {

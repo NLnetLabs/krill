@@ -152,7 +152,7 @@ impl ResourceClass {
     }
 
     /// Returns a ResourceClassInfo for this, which contains all the
-    /// same data, but which does not have any behaviour.
+    /// same data, but which does not have any behavior.
     pub fn as_info(&self) -> ResourceClassInfo {
         ResourceClassInfo::new(
             self.name_space.clone(),
@@ -299,7 +299,7 @@ impl ResourceClass {
     /// Request certificates for any key that needs it.
     /// Also, create revocation events for any unexpected keys to recover from
     /// issues where the parent believes we have keys that we do not know. This
-    /// can happen in corner cases where re-initialisation of Krill as a child
+    /// can happen in corner cases where re-initialization of Krill as a child
     /// is done without proper revocation at the parent, or as is the case with
     /// ARIN - Krill is sometimes told to just drop all resources.
     pub fn make_entitlement_events(
@@ -603,7 +603,7 @@ impl ResourceClass {
     /// Create an EE certificate to be used on an RTA,
     /// returns None if there is no overlap in resources
     /// between the desired resources on the RTA and this
-    /// RC's current resources.
+    /// ResourceClass current resources.
     pub fn create_rta_ee(
         &self,
         resources: &ResourceSet,

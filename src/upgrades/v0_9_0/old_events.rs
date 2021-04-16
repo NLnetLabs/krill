@@ -259,11 +259,11 @@ impl TryFrom<OldCaEvtDet> for CaEvtDet {
             OldCaEvtDet::ParentRemoved(parent, _delta) => CaEvtDet::ParentRemoved { parent },
 
             OldCaEvtDet::ResourceClassAdded(_rcn, rc) => rc.into_added_event()?,
-            OldCaEvtDet::ResourceClassRemoved(resource_class_name, _delta, parent, revoke_reqs) => {
+            OldCaEvtDet::ResourceClassRemoved(resource_class_name, _delta, parent, revoke_requests) => {
                 CaEvtDet::ResourceClassRemoved {
                     resource_class_name,
                     parent,
-                    revoke_reqs,
+                    revoke_requests,
                 }
             }
             OldCaEvtDet::CertificateRequested(resource_class_name, req, ki) => CaEvtDet::CertificateRequested {
@@ -456,7 +456,7 @@ pub struct RoaInfo {
     pub object: CurrentObject,           // actual ROA
     name: ObjectName,                    // Name for object in repo
     since: Time,                         // first ROA in RC created
-    replaces: Option<OldReplacedObject>, // for revoking when re-newing
+    replaces: Option<OldReplacedObject>, // for revoking when renewing
 }
 
 impl RoaInfo {

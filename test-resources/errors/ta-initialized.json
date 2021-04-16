@@ -1,0 +1,5 @@
+{
+    "label": "ta-initialized",
+    "msg": "TrustAnchor was already initialized",
+    "args": {}
+}
