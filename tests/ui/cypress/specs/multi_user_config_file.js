@@ -48,7 +48,7 @@ describe('Config File users', () => {
       if (ts.p == '') cy.contains('Please enter your password')
 
       if (ts.o) {
-        cy.contains('Sign In').should('not.exist')
+        cy.contains('Sign In', { timeout: 10000 }).should('not.exist')
         cy.get('#userinfo').click()
         cy.get('#userinfo_table').contains(ts.u)
       } else {
@@ -62,7 +62,7 @@ describe('Config File users', () => {
     cy.get('input[placeholder="Your username"]').type(admin.u)
     cy.get(':password').type(admin.p)
     cy.contains('Sign In').click()
-    cy.contains('Sign In').should('not.exist')
+    cy.contains('Sign In', { timeout: 10000 }).should('not.exist')
     cy.get('#userinfo').click()
     cy.get('#userinfo_table').contains(admin.u)
     cy.get('.logout').click()
@@ -78,7 +78,7 @@ describe('Config File users', () => {
     cy.get('input[placeholder="Your username"]').type(admin.u)
     cy.get(':password').type(admin.p)
     cy.contains('Sign In').click()
-    cy.contains('Sign In').should('not.exist')
+    cy.contains('Sign In', { timeout: 10000 }).should('not.exist')
     cy.get('#userinfo').click()
     cy.get('#userinfo_table').contains(admin.u)
 
