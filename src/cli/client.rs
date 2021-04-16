@@ -18,7 +18,6 @@ use crate::commons::api::{
 use crate::commons::bgp::BgpAnalysisAdvice;
 use crate::commons::remote::rfc8183;
 #[cfg(feature = "multi-user")]
-use crate::commons::util::sha256;
 use crate::commons::util::{file, httpclient};
 use crate::constants::KRILL_CLI_API_ENV;
 use crate::daemon::config::Config;
@@ -431,11 +430,42 @@ impl KrillClient {
 
     #[cfg(feature = "multi-user")]
     fn user(&self, details: KrillUserDetails) -> Result<ApiResponse, Error> {
-        let password_hash = {
-            eprint!("Enter the password to hash: ");
-            let mut password = String::new();
-            io::stdin().read_line(&mut password)?;
-            hex::encode(sha256(&password.trim().as_bytes()))
+        let (password_hash, salt) = {
+            use scrypt::scrypt;
+
+            let password = rpassword::read_password_from_tty(Some("Enter the password to hash: ")).unwrap();
+            
+            // The scrypt-js NPM documentation (https://www.npmjs.com/package/scrypt-js) says:
+            //   "TL;DR - either only allow ASCII characters in passwords, or use
+            //            String.prototype.normalize('NFKC') on any password"
+            // So in Lagosta we do the NFKC normalization and thus we need to do the same here.
+            use unicode_normalization::UnicodeNormalization;
+
+            let user_id = details.id().nfkc().collect::<String>();
+            let password = password.trim().nfkc().collect::<String>();
+
+            let log_n = 13;
+            let r = 8;
+            let p = 1;
+            let params = scrypt::Params::new(log_n, r, p).unwrap();
+
+            // hash twice with two different salts
+            // hash first with a salt the client browser knows how to construct based on the users id and a site 
+            // specific string.
+
+            let weak_salt = format!("krill-lagosta-{}", user_id);
+            let weak_salt = weak_salt.nfkc().collect::<String>();
+
+            let mut interim_hash: [u8; 32] = [0; 32];
+            scrypt(password.as_bytes(), weak_salt.as_bytes(), &params, &mut interim_hash).unwrap();
+
+            // hash again using a strong random salt only known to the server
+            let mut strong_salt: [u8; 32] = [0; 32];
+            openssl::rand::rand_bytes(&mut strong_salt).unwrap();
+            let mut final_hash: [u8; 32] = [0; 32];
+            scrypt(&interim_hash, &strong_salt, &params, &mut final_hash).unwrap();
+
+            (final_hash, strong_salt)
         };
 
         // Due to https://github.com/alexcrichton/toml-rs/issues/406 we cannot
@@ -463,10 +493,11 @@ impl KrillClient {
         let toml = format!(
             r#"
 [auth_users]
-"{id}" = {{ {attrs}password_hash="{ph}" }}"#,
+"{id}" = {{ {attrs}password_hash="{ph}", salt="{salt}" }}"#,
             id = details.id(),
             attrs = attrs_fragment,
-            ph = password_hash
+            ph = hex::encode(password_hash),
+            salt = hex::encode(salt),
         );
 
         Ok(ApiResponse::GenericBody(toml))
@@ -562,6 +593,7 @@ pub enum Error {
     EmptyResponse,
     Rfc8183(rfc8183::Error),
     InitError(String),
+    InputError(String),
 }
 
 impl fmt::Display for Error {
@@ -575,6 +607,7 @@ impl fmt::Display for Error {
             Error::EmptyResponse => write!(f, "Empty response received from server"),
             Error::Rfc8183(e) => e.fmt(f),
             Error::InitError(s) => s.fmt(f),
+            Error::InputError(s) => s.fmt(f),
         }
     }
 }

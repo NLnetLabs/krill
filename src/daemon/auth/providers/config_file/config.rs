@@ -7,5 +7,9 @@ pub struct ConfigUserDetails {
     #[serde(default)]
     pub attributes: HashMap<String, String>,
 
+    // optional so that OpenIDConnectAuthProvider can also use config file user defined attributes
+    // without requiring a dummy password hash and salt
     pub password_hash: Option<String>,
+
+    pub salt: Option<String>,
 }

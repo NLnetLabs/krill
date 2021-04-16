@@ -22,6 +22,7 @@ const LOGIN_SESSION_STATE_KEY_PATH: &str = "login_session_state.key"; // TODO: d
 
 struct UserDetails {
     password_hash: Token,
+    salt: String,
     attributes: HashMap<String, String>,
 }
 
@@ -32,8 +33,15 @@ fn get_checked_config_user(id: &str, user: &ConfigUserDetails) -> KrillResult<Us
         .ok_or_else(|| Error::ConfigError(format!("Password hash missing for user '{}'", id)))?
         .to_string();
 
+    let salt = user
+        .salt
+        .as_ref()
+        .ok_or_else(|| Error::ConfigError(format!("Password salt missing for user '{}'", id)))?
+        .to_string();
+
     Ok(UserDetails {
         password_hash: Token::from(password_hash),
+        salt: salt,
         attributes: user.attributes.clone(),
     })
 }
@@ -117,7 +125,23 @@ impl AuthProvider for ConfigFileAuthProvider {
     fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
         if let Some(Auth::IdAndPasswordHash { id, password_hash }) = self.get_auth(request) {
             if let Some(user) = self.users.get(&id) {
-                if user.password_hash == password_hash {
+                use scrypt::scrypt;
+
+                // The password has already been hashed once with a weak salt (weak because it is known to the
+                // client browser and is trivially based on the users id and a site/Krill specific value). Now hash the
+                // given hash again using a locally stored strong salt and compare the resulting hash to the hash we
+                // have stored locally for the user.
+                let log_n = 13;
+                let r = 8;
+                let p = 1;
+                let params = scrypt::Params::new(log_n, r, p).unwrap();
+    
+                let password_hash_bytes = hex::decode(password_hash.as_ref()).unwrap();
+                let strong_salt = hex::decode(&user.salt).unwrap();
+                let mut hashed_hash: [u8; 32] = [0; 32];
+                scrypt(password_hash_bytes.as_slice(), strong_salt.as_slice(), &params, &mut hashed_hash).unwrap();
+
+                if hex::encode(hashed_hash) == user.password_hash.as_ref() {
                     let api_token =
                         self.session_cache
                             .encode(&id, &user.attributes, HashMap::new(), &self.key, None)?;
@@ -128,12 +152,15 @@ impl AuthProvider for ConfigFileAuthProvider {
                         attributes: user.attributes.clone(),
                     })
                 } else {
-                    Err(Error::ApiInvalidCredentials("Incorrect password".to_string()))
+                    trace!("Incorrect password for user {}", id);
+                    Err(Error::ApiInvalidCredentials("Incorrect credentials".to_string()))
                 }
             } else {
-                Err(Error::ApiInvalidCredentials("Unknown user".to_string()))
+                trace!("Unknown user {}", id);
+                Err(Error::ApiInvalidCredentials("Incorrect credentials".to_string()))
             }
         } else {
+            trace!("Missing pr incomplete credentials for login attempt");
             Err(Error::ApiInvalidCredentials("Missing credentials".to_string()))
         }
     }
