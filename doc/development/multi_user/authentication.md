@@ -295,6 +295,11 @@ user interface in the client browser are also part of the encrypted structured b
 As such we use the encrypted structured bearer token approach for both the `ConfigFileAuthProvider` and the
 `OpenIDConnectAuthProvider`.
 
+Encryption is done using a higher level AEAD algorithm (rather than compose lower level cryptographic primitives together ourselves). Initially the AES-GCM 256 algorithm was used as it is supported by the OpenSSL crate that Krill
+already depends on. However, The ChaCha20-Poly1305 algorithm was instead chosen due to AES-GCM performance being 
+dependent on hardware acceleration, not being constant time, potentially leaking keys via cache timing attacks, and 
+being harder to select a secure nonce with AES-GCM than with ChaCha20-Poly1305. See [Krill issue #382](https://github.com/NLnetLabs/krill/issues/382) and links from there for more context, e.g. [this article](https://soatok.blog/2020/07/12/comparison-of-symmetric-encryption-methods/#aes-gcm-vs-chacha20poly1305) and [this article](https://latacora.micro.blog/2018/04/03/cryptographic-right-answers.html).
+
 ### Session caching
 
 As browsers can make multiple requests in parallel or in short succession (e.g. for static assets) and every HTTP
@@ -323,9 +328,32 @@ Apache tooling installed to be able to work with `.htpasswd` files. Also any has
 Lagosta web user interface client code from a password entered by the user as avoiding transmitting passwords also
 reduces the attack surface.
 
-So, instead `krillc` has been extended with a `config user` subcommand to generate hex encoded SHA-256 hashes and
-Lagosta uses the [CryptoJS library](https://www.npmjs.com/package/crypto-js) to SHA-256 hash the given password.
-The hex encoding ensures the produced hash is the same as produced by CryptoJS.
+Instead `krillc` has been extended with a `config user` subcommand to generate password hashes, and 3rd party 
+dependencies have been added to Krill and Lagosta to hash using the `scrypt` algorithm (see
+[RFC 7914](https://tools.ietf.org/html/rfc7914)). See [Krill issue #382](https://github.com/NLnetLabs/krill/issues/382)
+for more information about why `scrypt` was chosen.
+
+The password hashing is actually done in four places:
+
+1. When `krillc config user` is executed the given password is hashed using a "shared salt" known to both Krill and
+Lagosta.
+
+2. Next `krillc config user` hashes the hash from step 1 using a randomly generated salt known only to Krill. This
+random hash is output by `krillc` along with the final password hash so that both can be stored by the operator in the 
+`krill.conf` file.
+
+3. When a user submits their password to Lagosta in the browser it will be hashed using the "shared secret" before being
+sent to Krill as a HTTPS Authorization request header.
+
+4. Krill then uses the user-specific random salt from `krill.conf` to hash the given hash and compares that to the hash
+from `krill.conf` for the user. If the user id is unknown, the hashing is done anyway using a fake salt.
+
+The "shared salt" ensures that Lagosta generated password hashes are different to those stored in `krill.conf` and
+thus prevents replay of `krill.conf` password hashes as valid login tokens if `krill.conf` is stolen.
+
+The hashing of password hashes even for unknown user ids limits the ability of attackers to use timing differences to 
+determine if a username is known to Krill or not. The use of a strong hashing algorithm and per user random salts limit the ability of attackers to brute force passwords by slowing down login attempts and by preventing the use of stock 
+rainbow tables. The amount of slow down caused by using a strong hashing algorithm is a choice with consequences, too slow and the Krill login experience becomes annoying and can possibly be used as a Dos vector.
 
 #### Modified login form
 
