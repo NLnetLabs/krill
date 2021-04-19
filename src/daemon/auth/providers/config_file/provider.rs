@@ -128,7 +128,7 @@ impl AuthProvider for ConfigFileAuthProvider {
 
     fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
         if let Some(Auth::IdAndPasswordHash { id, password_hash }) = self.get_auth(request) {
-                use scrypt::scrypt;
+            use scrypt::scrypt;
 
             // Do NOT bail out if the user is not known because then the unknown user path would return very quickly
             // compared to the known user path and timing differences can aid attackers.            
@@ -137,28 +137,26 @@ impl AuthProvider for ConfigFileAuthProvider {
                 None => (self.fake_password_hash.clone(), self.fake_salt.clone()),
             };
 
-                // The password has already been hashed once with a weak salt (weak because it is known to the
-                // client browser and is trivially based on the users id and a site/Krill specific value). Now hash the
-                // given hash again using a locally stored strong salt and compare the resulting hash to the hash we
-                // have stored locally for the user.
-                let log_n = 13;
-                let r = 8;
-                let p = 1;
-                let params = scrypt::Params::new(log_n, r, p).unwrap();
-    
-                let password_hash_bytes = hex::decode(password_hash.as_ref()).unwrap();
+            // The password has already been hashed once with a weak salt (weak because it is known to the
+            // client browser and is trivially based on the users id and a site/Krill specific value). Now hash the
+            // given hash again using a locally stored strong salt and compare the resulting hash to the hash we
+            // have stored locally for the user.
+            let log_n = 13;
+            let r = 8;
+            let p = 1;
+            let params = scrypt::Params::new(log_n, r, p).unwrap();
+
+            let password_hash_bytes = hex::decode(password_hash.as_ref()).unwrap();
             let strong_salt = hex::decode(&user_salt).unwrap();
-                let mut hashed_hash: [u8; 32] = [0; 32];
-                scrypt(password_hash_bytes.as_slice(), strong_salt.as_slice(), &params, &mut hashed_hash).unwrap();
+            let mut hashed_hash: [u8; 32] = [0; 32];
+            scrypt(password_hash_bytes.as_slice(), strong_salt.as_slice(), &params, &mut hashed_hash).unwrap();
 
             if hex::encode(hashed_hash) == user_password_hash.as_ref() {
                 // And now finally check the user, so that both known and unknown user code paths do the same work
                 // and don't result in an obvious timing difference between the two scenarios which could potentially
                 // be used to discover user names.
                 if let Some(user) = self.users.get(&id) {
-                    let api_token =
-                        self.session_cache
-                            .encode(&id, &user.attributes, HashMap::new(), &self.key, None)?;
+                    let api_token = self.session_cache.encode(&id, &user.attributes, HashMap::new(), &self.key, None)?;
 
                     Ok(LoggedInUser {
                         token: api_token,
