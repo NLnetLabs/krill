@@ -22,6 +22,9 @@ use crate::commons::util::{file, httpclient};
 use crate::constants::KRILL_CLI_API_ENV;
 use crate::daemon::config::Config;
 
+#[cfg(feature = "multi-user")]
+use crate::constants::{ PW_HASH_LOG_N, PW_HASH_P, PW_HASH_R };
+
 fn resolve_uri(server: &uri::Https, path: &str) -> String {
     format!("{}{}", server, path)
 }
@@ -443,11 +446,7 @@ impl KrillClient {
 
             let user_id = details.id().nfkc().collect::<String>();
             let password = password.trim().nfkc().collect::<String>();
-
-            let log_n = 13;
-            let r = 8;
-            let p = 1;
-            let params = scrypt::Params::new(log_n, r, p).unwrap();
+            let params = scrypt::Params::new(PW_HASH_LOG_N, PW_HASH_R, PW_HASH_P).unwrap();
 
             // hash twice with two different salts
             // hash first with a salt the client browser knows how to construct based on the users id and a site 

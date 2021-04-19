@@ -12,6 +12,8 @@ use crate::daemon::auth::{Auth, AuthProvider, LoggedInUser};
 use crate::daemon::config::Config;
 use crate::daemon::http::HttpResponse;
 
+use crate::constants::{ PW_HASH_LOG_N, PW_HASH_P, PW_HASH_R };
+
 // This is NOT an actual relative path to redirect to. Instead it is the path
 // string of an entry in the Vue router routes table to "route" to (in the
 // Lagosta single page application). See the routes array in router.js of the
@@ -141,10 +143,7 @@ impl AuthProvider for ConfigFileAuthProvider {
             // client browser and is trivially based on the users id and a site/Krill specific value). Now hash the
             // given hash again using a locally stored strong salt and compare the resulting hash to the hash we
             // have stored locally for the user.
-            let log_n = 13;
-            let r = 8;
-            let p = 1;
-            let params = scrypt::Params::new(log_n, r, p).unwrap();
+            let params = scrypt::Params::new(PW_HASH_LOG_N, PW_HASH_R, PW_HASH_P).unwrap();
 
             let password_hash_bytes = hex::decode(password_hash.as_ref()).unwrap();
             let strong_salt = hex::decode(&user_salt).unwrap();

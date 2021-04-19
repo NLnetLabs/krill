@@ -88,3 +88,11 @@ pub const SCHEDULER_INTERVAL_SECONDS_ROA_RENEW: u32 = 3600;
 
 #[cfg(test)]
 pub const ACTOR_DEF_TEST: ActorDef = ActorDef::system("test", "admin");
+
+// Note: These must match the values used by Lagosta.
+#[cfg(feature = "multi-user")]
+pub const PW_HASH_LOG_N: u8  = 13;
+#[cfg(feature = "multi-user")]
+pub const PW_HASH_R: u32 = 8;
+#[cfg(feature = "multi-user")]
+pub const PW_HASH_P: u32 = 1;
