@@ -58,8 +58,7 @@ pub const KRILL_CLI_SERVER_ENV: &str = "KRILL_CLI_SERVER";
 pub const KRILL_CLI_SERVER_DFLT: &str = "https://localhost:3000/";
 
 pub const KRILL_CLI_ADMIN_TOKEN_ARG: &str = "token";
-pub const KRILL_CLI_TOKEN_ENV: &str = "KRILL_ADMIN_TOKEN";
-pub const KRILL_CLI_TOKEN_ENV_DEPRECATED: &str = "KRILL_CLI_TOKEN";
+pub const KRILL_CLI_TOKEN_ENV: &str = "KRILL_CLI_TOKEN";
 pub const KRILL_CLI_FORMAT_ARG: &str = "format";
 pub const KRILL_CLI_FORMAT_ENV: &str = "KRILL_CLI_FORMAT";
 pub const KRILL_CLI_API_ARG: &str = "api";

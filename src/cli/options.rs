@@ -54,16 +54,6 @@ impl GeneralArgs {
         let token = {
             let mut token = env::var(KRILL_CLI_TOKEN_ENV).ok().map(Token::from);
 
-            if let Ok(token_str) = env::var(KRILL_CLI_TOKEN_ENV_DEPRECATED) {
-                if token.is_none() {
-                    token = Some(Token::from(token_str));
-                    eprintln!(
-                        "*** Warning: env variable {} has been deprecated, please use {}",
-                        KRILL_CLI_TOKEN_ENV_DEPRECATED, KRILL_CLI_TOKEN_ENV
-                    );
-                }
-            }
-
             if let Some(token_str) = matches.value_of(KRILL_CLI_ADMIN_TOKEN_ARG) {
                 token = Some(Token::from(token_str));
             }
