@@ -6,7 +6,7 @@ The feature adds several related but distinct capabilities to Krill:
   - Pluggable authentication:
     - Changes the interface with Lagosta
     - Three "plugins" so far:
-      - Master API Token
+      - Admin API Token
       - Config File Users
       - OpenID Connect _(powered by [openidconnect-rs](https://crates.io/crates/openidconnect))_, including:
         - A mock OpenID Connect server for testing

@@ -20,10 +20,10 @@ generate_password() {
 create_first_time_configuration() {
     if [ ! -f "${KRILL_CONF}" ]; then
         # generate a token for authenticating with Krill
-        GENERATED_TOKEN="$(generate_password)"
+        ADMIN_TOKEN="$(generate_password)"
 
         # generate a config file using our preferred filesystem locations
-        # and generated token
+        # and generated admin token
         # note: we don't configure Krill to store its PID file under /var/run/
         # because that requires root privileges potentially at least once per
         # boot, and Krill doesn't drop privileges yet so when run as a non-root
@@ -31,7 +31,7 @@ create_first_time_configuration() {
         # See: https://stackoverflow.com/a/28312577
         krillc config simple \
             --data "${KRILL_DATA}" \
-            --token "${GENERATED_TOKEN}" |
+            --token "${ADMIN_TOKEN}" |
             sed -e "s|^\(### log_type.\+\)|\1\nlog_type = \"syslog\"|" \
                 > "${KRILL_CONF}"
     fi

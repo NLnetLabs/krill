@@ -54,11 +54,11 @@ impl GeneralArgs {
         let token = {
             let mut token = env::var(KRILL_CLI_TOKEN_ENV).ok().map(Token::from);
 
-            if let Some(token_str) = matches.value_of(KRILL_CLI_TOKEN_ARG) {
+            if let Some(token_str) = matches.value_of(KRILL_CLI_ADMIN_TOKEN_ARG) {
                 token = Some(Token::from(token_str));
             }
 
-            token.ok_or_else(|| Error::missing_arg_with_env(KRILL_CLI_TOKEN_ARG, KRILL_CLI_TOKEN_ENV))?
+            token.ok_or_else(|| Error::missing_arg_with_env(KRILL_CLI_ADMIN_TOKEN_ARG, KRILL_CLI_TOKEN_ENV))?
         };
 
         let format = {
@@ -142,9 +142,9 @@ impl Options {
                 .required(false),
         )
         .arg(
-            Arg::with_name(KRILL_CLI_TOKEN_ARG)
+            Arg::with_name(KRILL_CLI_ADMIN_TOKEN_ARG)
                 .short("t")
-                .long(KRILL_CLI_TOKEN_ARG)
+                .long(KRILL_CLI_ADMIN_TOKEN_ARG)
                 .value_name("string")
                 .help("The secret token for the krill server. Or set env: KRILL_CLI_TOKEN")
                 .required(false),

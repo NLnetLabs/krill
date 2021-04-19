@@ -1,6 +1,6 @@
-let master = { u: 'master-token', p: 'secret' };
+let admin = { u: 'admin-token', p: 'secret' };
 
-describe('Master API token', () => {
+describe('admin API token', () => {
   it('The correct login form is shown', () => {
     cy.visit('/')
 
@@ -34,20 +34,20 @@ describe('Master API token', () => {
 
   it('Can login with correct password', () => {
     cy.visit('/')
-    cy.get(':password').type(master.p)
+    cy.get(':password').type(admin.p)
     cy.contains('Sign In').click()
     cy.contains('Sign In').should('not.exist')
     cy.get('#userinfo').click()
-    cy.get('#userinfo_table').contains(master.u)
+    cy.get('#userinfo_table').contains(admin.u)
   })
 
   it('Can logout', () => {
     cy.visit('/')
-    cy.get(':password').type(master.p)
+    cy.get(':password').type(admin.p)
     cy.contains('Sign In').click()
     cy.contains('Sign In').should('not.exist')
     cy.get('#userinfo').click()
-    cy.get('#userinfo_table').contains(master.u)
+    cy.get('#userinfo_table').contains(admin.u)
     cy.get('.logout').click()
     cy.contains('Sign In')
   })

@@ -195,13 +195,13 @@ role value.
 Note that only the `allow` rule name has special meaning to Oso, there is nothing special about the names `role_allow`
 or `actor_has_role`, these could be named anything we like.
 
-Finally, if we follow `ACTOR_DEF_MASTER_TOKEN` from `constants.rs` we see an example of an `ActorDef` which
+Finally, if we follow `ACTOR_DEF_ADMIN_TOKEN` from `constants.rs` we see an example of an `ActorDef` which
 would yield an `Actor` with a `role` attribute with value `admin`. According to the rules we just looked at, that actor
 would have all Permissions in Krill:
 
 ```rust
 // --- constants.rs ---
-pub const ACTOR_DEF_MASTER_TOKEN: ActorDef = ActorDef::system("master-token", "admin");
+pub const ACTOR_DEF_ADMIN_TOKEN: ActorDef = ActorDef::system("admin-token", "admin");
 
 // --- actor.rs ---
 impl ActorDef {

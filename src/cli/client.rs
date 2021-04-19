@@ -401,7 +401,7 @@ impl KrillClient {
         let multi_add_on = include_str!("../../defaults/krill-multi-user.conf");
 
         let mut config = defaults.to_string();
-        config = config.replace("### auth_token =", &format!("auth_token = \"{}\"", self.token));
+        config = config.replace("### admin_token =", &format!("admin_token = \"{}\"", self.token));
 
         config = config.replace(
             "### service_uri = \"https://localhost:3000/\"",

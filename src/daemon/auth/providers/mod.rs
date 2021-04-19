@@ -1,11 +1,11 @@
-pub mod master_token;
+pub mod admin_token;
 
 #[cfg(feature = "multi-user")]
 pub mod config_file;
 #[cfg(feature = "multi-user")]
 pub mod openid_connect;
 
-pub use master_token::MasterTokenAuthProvider;
+pub use admin_token::AdminTokenAuthProvider;
 
 #[cfg(feature = "multi-user")]
 pub use config_file::provider::ConfigFileAuthProvider;
