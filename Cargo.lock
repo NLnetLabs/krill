@@ -1499,21 +1499,10 @@ dependencies = [
  "impl-trait-for-tuples",
  "lazy_static",
  "maplit",
- "oso-derive",
  "polar-core",
  "thiserror",
  "tracing",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "oso-derive"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "10418fa29eb11e5355d356220295d9695ce1b73f7375218270b988fa99b1c608"
-dependencies = [
- "quote",
- "syn",
 ]
 
 [[package]]
