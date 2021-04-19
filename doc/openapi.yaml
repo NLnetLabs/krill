@@ -138,7 +138,7 @@ tags:
   - name: "Other"
 
 security:
-  - KRILL_AUTH_TOKEN: []
+  - KRILL_ADMIN_TOKEN: []
 
 paths:
   /authorized:
@@ -1105,10 +1105,10 @@ externalDocs:
 
 components:
   securitySchemes:
-    KRILL_AUTH_TOKEN:
+    KRILL_ADMIN_TOKEN:
       type: http
       scheme: bearer
-      bearerFormat: KRILL_AUTH_TOKEN
+      bearerFormat: KRILL_ADMIN_TOKEN
 
   parameters:
     ca_handle:

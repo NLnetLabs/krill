@@ -17,7 +17,7 @@ particular identity possesses the details needed to confirm that identity. It do
 * [Impact on Lagosta](#impact-on-lagosta)
 * [Interface with Lagosta](#interface-with-lagosta)
 * [Stateless providers](#stateless-providers)
-   * [MasterTokenAuthProvider](#mastertokenauthprovider)
+   * [AdminTokenAuthProvider](#AdminTokenAuthProvider)
 * [Stateful providers](#stateful-providers)
    * [Storing session state](#storing-session-state)
    * [Protecting sensitive details](#protecting-sensitive-details)
@@ -199,16 +199,16 @@ server-side)_.
 
 ## Stateless providers
 
-### `MasterTokenAuthProvider`
+### `AdminTokenAuthProvider`
 
 This is the default provider which is backward compatible with earlier versions of Krill. It is an extremely simple
 provider. The essence of this provider implementation can be reduced to something like the following (based on
-`daemon/auth/providers/master_token.rs`):
+`daemon/auth/providers/admin_token.rs`):
 
 Login and post-logout-redirect URLs are hard-coded, and logout doesn't actually do anything.
 
 ```rust
-impl AuthProvider for MasterTokenAuthProvider {
+impl AuthProvider for AdminTokenAuthProvider {
     fn get_login_url(&self) -> KrillResult<HttpResponse> {
         Ok(HttpResponse::text_no_cache("/login"))
     }
@@ -219,14 +219,14 @@ impl AuthProvider for MasterTokenAuthProvider {
 }
 ```
 
-Authenticating a request simply checks if it the given bearer token matches the master API token Krill has been
+Authenticating a request simply checks if it the given bearer token matches the admin API token Krill has been
 configured with:
 
 ```rust
-impl AuthProvider for MasterTokenAuthProvider {
+impl AuthProvider for AdminTokenAuthProvider {
     fn authenticate(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
         match self.get_bearer_token(request) {
-            Some(token) if token == self.required_token => Ok(Some(ACTOR_DEF_MASTER_TOKEN)),
+            Some(token) if token == self.required_token => Ok(Some(ACTOR_DEF_ADMIN_TOKEN)),
             Some(_) => Err(Error::ApiInvalidCredentials("Invalid bearer token".to_string())),
             None => Ok(None),
         }
@@ -238,7 +238,7 @@ only extra piece is that login is for the UI and the UI wants to know the users 
 are packaged up and returned to the caller:
 
 ```rust
-impl AuthProvider for MasterTokenAuthProvider {
+impl AuthProvider for AdminTokenAuthProvider {
     fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
         match self.authenticate(request)? {
             Some(actor_def) => Ok(LoggedInUser {
@@ -261,7 +261,7 @@ to get responses from the new provider.
 
 ### Storing session state
 
-Unlike with the `MasterTokenAuthProvider` where the user identity and attributes are implicitly "master-token" and
+Unlike with the `AdminTokenAuthProvider` where the user identity and attributes are implicitly "admin-token" and
 "role=admin" respectively, the `ConfigFileAuthProvider` and `OpenIDConnectAuthProvider` cannot know the identity and
 user attributes from an arbitrary bearer token. They need therefore to store these details somewhere.
 
@@ -329,7 +329,7 @@ The hex encoding ensures the produced hash is the same as produced by CryptoJS.
 
 #### Modified login form
 
-The standard login view built-in to Lagosta at `/login` only has a single input field for the master API token. This has
+The standard login view built-in to Lagosta at `/login` only has a single input field for the admin API token. This has
 been extended so that when invoked as `/login?withId=true` it will instead show username and password input fields. When
 the `GET /auth/login` Krill endpoint is queried by Lagosta to determine the login URL to use,
 `ConfigFileAuthProvider::get_login_url()` responds with `/login?withId=true` to cause this modified login form to be
@@ -337,7 +337,7 @@ shown to the user.
 
 #### AuthProvider implementation
 
-The actual implementation is quite simple and similar to that of the `MasterTokenAuthProvider`. The essence of this
+The actual implementation is quite simple and similar to that of the `AdminTokenAuthProvider`. The essence of this
 provider implementation can be reduced to something like the following (based on
 `daemon/auth/providers/config_file/provider.rs`):
 

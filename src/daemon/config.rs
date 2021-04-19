@@ -73,15 +73,18 @@ impl ConfigDefaults {
         "daemon".to_string()
     }
     fn auth_type() -> AuthType {
-        AuthType::MasterToken
+        AuthType::AdminToken
     }
-    fn auth_token() -> Token {
-        match env::var(KRILL_ENV_AUTH_TOKEN) {
+    fn admin_token() -> Token {
+        match env::var(KRILL_ENV_ADMIN_TOKEN) {
             Ok(token) => Token::from(token),
-            Err(_) => {
-                eprintln!("You MUST provide a value for the master API key, either by setting \"auth_token\" in the config file, or by setting the KRILL_AUTH_TOKEN environment variable.");
-                ::std::process::exit(1);
-            }
+            Err(_) => match env::var(KRILL_ENV_ADMIN_TOKEN_DEPRECATED) {
+                Ok(token) => Token::from(token),
+                Err(_) => {
+                    eprintln!("You MUST provide a value for the \"admin token\", either by setting \"admin_token\" in the config file, or by setting the KRILL_ADMIN_TOKEN environment variable.");
+                    ::std::process::exit(1);
+                }
+            },
         }
     }
     #[cfg(feature = "multi-user")]
@@ -219,8 +222,8 @@ pub struct Config {
     #[serde(default = "ConfigDefaults::syslog_facility")]
     syslog_facility: String,
 
-    #[serde(default = "ConfigDefaults::auth_token")]
-    pub auth_token: Token,
+    #[serde(default = "ConfigDefaults::admin_token", alias = "auth_token")]
+    pub admin_token: Token,
 
     #[serde(default = "ConfigDefaults::auth_type")]
     pub auth_type: AuthType,
@@ -472,8 +475,8 @@ impl Config {
         let mut log_file = data_dir.clone();
         log_file.push("krill.log");
         let syslog_facility = ConfigDefaults::syslog_facility();
-        let auth_type = AuthType::MasterToken;
-        let auth_token = Token::from("secret");
+        let auth_type = AuthType::AdminToken;
+        let admin_token = Token::from("secret");
         #[cfg(feature = "multi-user")]
         let auth_policies = vec![];
         #[cfg(feature = "multi-user")]
@@ -556,7 +559,7 @@ impl Config {
             log_file,
             syslog_facility,
             auth_type,
-            auth_token,
+            admin_token,
             #[cfg(feature = "multi-user")]
             auth_policies,
             #[cfg(feature = "multi-user")]
@@ -641,6 +644,10 @@ impl Config {
     }
 
     pub fn verify(&self) -> Result<(), ConfigError> {
+        if env::var(KRILL_ENV_ADMIN_TOKEN_DEPRECATED).is_ok() {
+            warn!("The environment variable for setting the admin token has been updated from '{}' to '{}', please update as the old value may not be supported in future releases", KRILL_ENV_ADMIN_TOKEN_DEPRECATED, KRILL_ENV_ADMIN_TOKEN)
+        }
+
         if self.port < 1024 {
             return Err(ConfigError::other("Port number must be >1024"));
         }
@@ -946,7 +953,7 @@ impl<'de> Deserialize<'de> for HttpsMode {
 /// The target to log to.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AuthType {
-    MasterToken,
+    AdminToken,
     #[cfg(feature = "multi-user")]
     ConfigFile,
     #[cfg(feature = "multi-user")]
@@ -960,17 +967,17 @@ impl<'de> Deserialize<'de> for AuthType {
     {
         let string = String::deserialize(d)?;
         match string.as_str() {
-            "master-token" => Ok(AuthType::MasterToken),
+            "admin-token" => Ok(AuthType::AdminToken),
             #[cfg(feature = "multi-user")]
             "config-file" => Ok(AuthType::ConfigFile),
             #[cfg(feature = "multi-user")]
             "openid-connect" => Ok(AuthType::OpenIDConnect),
             _ => {
                 #[cfg(not(feature = "multi-user"))]
-                let msg = format!("expected \"master-token\", found: \"{}\"", string);
+                let msg = format!("expected \"admin-token\", found: \"{}\"", string);
                 #[cfg(feature = "multi-user")]
                 let msg = format!(
-                    "expected \"config-file\", \"master-token\", or \"openid-connect\", found: \"{}\"",
+                    "expected \"config-file\", \"admin-token\", or \"openid-connect\", found: \"{}\"",
                     string
                 );
                 Err(de::Error::custom(msg))
@@ -993,7 +1000,7 @@ mod tests {
     fn should_parse_default_config_file() {
         // Config for auth token is required! If there is nothing in the conf
         // file, then an environment variable must be set.
-        env::set_var(KRILL_ENV_AUTH_TOKEN, "secret");
+        env::set_var(KRILL_ENV_ADMIN_TOKEN, "secret");
 
         let c = Config::read_config("./defaults/krill.conf").unwrap();
         let expected_socket_addr: SocketAddr = ([127, 0, 0, 1], 3000).into();
@@ -1005,7 +1012,7 @@ mod tests {
     fn should_parse_testbed_config_file() {
         // Config for auth token is required! If there is nothing in the conf
         // file, then an environment variable must be set.
-        env::set_var(KRILL_ENV_AUTH_TOKEN, "secret");
+        env::set_var(KRILL_ENV_ADMIN_TOKEN, "secret");
 
         let c = Config::read_config("./defaults/krill-testbed.conf").unwrap();
 
@@ -1039,7 +1046,7 @@ mod tests {
         }
 
         // Krill requires an auth token to be defined, give it one in the environment
-        env::set_var(KRILL_ENV_AUTH_TOKEN, "secret");
+        env::set_var(KRILL_ENV_ADMIN_TOKEN, "secret");
 
         // Define sets of log targets aka components of Krill that we want to test log settings for, based on the
         // rules & exceptions that the actual code under test is supposed to configure the logger with
@@ -1164,5 +1171,13 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn config_should_accept_and_warn_about_auth_token() {
+        let old_config = b"auth_token = \"secret\"";
+
+        let c: Config = toml::from_slice(old_config).unwrap();
+        assert_eq!(c.admin_token.as_ref(), "secret");
     }
 }

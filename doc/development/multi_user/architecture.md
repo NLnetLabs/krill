@@ -40,7 +40,7 @@ the `Authorizer`.
 
 Authentication is delegated by the `Authorizer` to an `AuthProvider` which is a trait with three implementations:
 
-- `MasterTokenAuthProvider`
+- `AdminTokenAuthProvider`
 - `ConfigFileAuthProvider`
 - `OpenIDConnectAuthProvider`
 
@@ -48,20 +48,20 @@ Authorization is done by calling through `Actor::is_allowed(action, resource)` t
 
 ## Authentication
 
-There is *always* an instance of `MasterTokenAuthProvider` because it is required to authenticate direct REST API calls
-and indirect REST API calls (via `krillc`) which use the master API token to authenticate. If the configured provider
+There is *always* an instance of `AdminTokenAuthProvider` because it is required to authenticate direct REST API calls
+and indirect REST API calls (via `krillc`) which use the admin token to authenticate. If the configured provider
 (via `auth_type = "..."` in `krill.conf`) is `config-file` or `openid-connect` there will also be an instance of
 `ConfigFileAuthProvider` or `OpenIDConnectAuthProvider` respectively.
 
-The `Authorizer` asks the `MasterTokenAuthProvider` to attempt to authenticate a request first, if that fails and there
-is another `AuthProvider` that is then asked to authenticate. The `MasterTokenAuthProvider` is tried first because:
+The `Authorizer` asks the `AdminTokenAuthProvider` to attempt to authenticate a request first, if that fails and there
+is another `AuthProvider` that is then asked to authenticate. The `AdminTokenAuthProvider` is tried first because:
 
   - The check it performs is quick and cheap (simple string comparison) while the `OpenIDConnectAuthProvider` has to
     base64 decode, decrypt and deserialize the bearer token (although it has a v short lived cache to minimize the
     impact of bursts of parallel requests from the user agent), and
   - It can only fail in very simple ways, while it can be hard to know for a given error from the
     `OpenIDConnectAuthProvider` whether or not it should be a hard failure or if it would be okay to try the
-    `MasterTokenAuthProvider` as a fallback.
+    `AdminTokenAuthProvider` as a fallback.
 
 ## ActorDef vs Actor vs LoggedInUser
 
@@ -94,7 +94,7 @@ least powerful)_
 Actor | Represents | Role | Comments
 ------|------------|------|----------
 `ACTOR_DEF_KRILL` | Krill itself | `admin` | Used for initial startup and scheduled actions that are not directly attributable to a REST API client.
-`ACTOR_DEF_MASTER_TOKEN` | A client using the master API token | `admin` | Used by the users of Lagosta when `auth_type = "master-token"` (the default), or by direct clients of the REST API, or indirect clients of the REST API via `krillc`. |
+`ACTOR_DEF_ADMIN_TOKEN` | A client using the admin API token | `admin` | Used by the users of Lagosta when `auth_type = "admin-token"` (the default), or by direct clients of the REST API, or indirect clients of the REST API via `krillc`. |
 `ACTOR_DEF_TESTBED` | An anonymous client of the testbed | `testbed` (temporarily) | Used by the testbed REST API handler functions to make internal requests to restricted APIs on the behalf of the anonymous client. See `Request::upgrade_from_anonymous`. |
 `ACTOR_DEF_ANON` | An anonymous client | None | Used for REST API calls that lack credentials or for which an error occurs during authentication. By still having an actor even in this case we can handle all API calls the same way. The anonymous actor has no role and so, unless overridden by a custom authorization policy, has no rights in Krill. It can thus only successfully request REST API endpoints that do not require authentication. |
 
