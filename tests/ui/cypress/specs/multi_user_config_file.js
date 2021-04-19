@@ -1,3 +1,11 @@
+// A note about strong password hashing login delays
+// -----------------------------------------------------------------------------
+// The strong password hashing on the client and server side when logging in with
+// config file users causes the login process to take a few seconds. As such we
+// extend the default timeout when checking for Sign In completion, like so:
+//
+//   cy.contains('Sign In', { timeout: 10000 }).should('not.exist')
+
 let admin = { u: 'admin@krill', p: 'admin_pass' };
 let readonly = { u: 'readonly@krill', p: 'readonly_pass' };
 let readwrite = { u: 'readwrite@krill', p: 'readwrite_pass' };
@@ -48,7 +56,7 @@ describe('Config File users', () => {
       if (ts.p == '') cy.contains('Please enter your password')
 
       if (ts.o) {
-        cy.contains('Sign In').should('not.exist')
+        cy.contains('Sign In', { timeout: 10000 }).should('not.exist')
         cy.get('#userinfo').click()
         cy.get('#userinfo_table').contains(ts.u)
       } else {
@@ -62,7 +70,7 @@ describe('Config File users', () => {
     cy.get('input[placeholder="Your username"]').type(admin.u)
     cy.get(':password').type(admin.p)
     cy.contains('Sign In').click()
-    cy.contains('Sign In').should('not.exist')
+    cy.contains('Sign In', { timeout: 10000 }).should('not.exist')
     cy.get('#userinfo').click()
     cy.get('#userinfo_table').contains(admin.u)
     cy.get('.logout').click()
@@ -78,7 +86,7 @@ describe('Config File users', () => {
     cy.get('input[placeholder="Your username"]').type(admin.u)
     cy.get(':password').type(admin.p)
     cy.contains('Sign In').click()
-    cy.contains('Sign In').should('not.exist')
+    cy.contains('Sign In', { timeout: 10000 }).should('not.exist')
     cy.get('#userinfo').click()
     cy.get('#userinfo_table').contains(admin.u)
 

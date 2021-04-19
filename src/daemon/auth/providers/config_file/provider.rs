@@ -12,6 +12,8 @@ use crate::daemon::auth::{Auth, AuthProvider, LoggedInUser};
 use crate::daemon::config::Config;
 use crate::daemon::http::HttpResponse;
 
+use crate::constants::{ PW_HASH_LOG_N, PW_HASH_P, PW_HASH_R };
+
 // This is NOT an actual relative path to redirect to. Instead it is the path
 // string of an entry in the Vue router routes table to "route" to (in the
 // Lagosta single page application). See the routes array in router.js of the
@@ -22,6 +24,7 @@ const LOGIN_SESSION_STATE_KEY_PATH: &str = "login_session_state.key"; // TODO: d
 
 struct UserDetails {
     password_hash: Token,
+    salt: String,
     attributes: HashMap<String, String>,
 }
 
@@ -32,8 +35,15 @@ fn get_checked_config_user(id: &str, user: &ConfigUserDetails) -> KrillResult<Us
         .ok_or_else(|| Error::ConfigError(format!("Password hash missing for user '{}'", id)))?
         .to_string();
 
+    let salt = user
+        .salt
+        .as_ref()
+        .ok_or_else(|| Error::ConfigError(format!("Password salt missing for user '{}'", id)))?
+        .to_string();
+
     Ok(UserDetails {
         password_hash: Token::from(password_hash),
+        salt: salt,
         attributes: user.attributes.clone(),
     })
 }
@@ -42,6 +52,8 @@ pub struct ConfigFileAuthProvider {
     key: Vec<u8>,
     users: HashMap<String, UserDetails>,
     session_cache: Arc<LoginSessionCache>,
+    fake_password_hash: String,
+    fake_salt: String,
 }
 
 impl ConfigFileAuthProvider {
@@ -59,6 +71,8 @@ impl ConfigFileAuthProvider {
                     key,
                     users,
                     session_cache,
+                    fake_password_hash: hex::encode("fake password hash"),
+                    fake_salt: hex::encode("fake salt"),
                 })
             }
             None => Err(Error::ConfigError("Missing [auth_users] config section!".into())),
@@ -116,11 +130,32 @@ impl AuthProvider for ConfigFileAuthProvider {
 
     fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
         if let Some(Auth::IdAndPasswordHash { id, password_hash }) = self.get_auth(request) {
-            if let Some(user) = self.users.get(&id) {
-                if user.password_hash == password_hash {
-                    let api_token =
-                        self.session_cache
-                            .encode(&id, &user.attributes, HashMap::new(), &self.key, None)?;
+            use scrypt::scrypt;
+
+            // Do NOT bail out if the user is not known because then the unknown user path would return very quickly
+            // compared to the known user path and timing differences can aid attackers.            
+            let (user_password_hash, user_salt) = match self.users.get(&id) {
+                Some(user) => (user.password_hash.to_string(), user.salt.clone()),
+                None => (self.fake_password_hash.clone(), self.fake_salt.clone()),
+            };
+
+            // The password has already been hashed once with a weak salt (weak because it is known to the
+            // client browser and is trivially based on the users id and a site/Krill specific value). Now hash the
+            // given hash again using a locally stored strong salt and compare the resulting hash to the hash we
+            // have stored locally for the user.
+            let params = scrypt::Params::new(PW_HASH_LOG_N, PW_HASH_R, PW_HASH_P).unwrap();
+
+            let password_hash_bytes = hex::decode(password_hash.as_ref()).unwrap();
+            let strong_salt = hex::decode(&user_salt).unwrap();
+            let mut hashed_hash: [u8; 32] = [0; 32];
+            scrypt(password_hash_bytes.as_slice(), strong_salt.as_slice(), &params, &mut hashed_hash).unwrap();
+
+            if hex::encode(hashed_hash) == user_password_hash.as_ref() {
+                // And now finally check the user, so that both known and unknown user code paths do the same work
+                // and don't result in an obvious timing difference between the two scenarios which could potentially
+                // be used to discover user names.
+                if let Some(user) = self.users.get(&id) {
+                    let api_token = self.session_cache.encode(&id, &user.attributes, HashMap::new(), &self.key, None)?;
 
                     Ok(LoggedInUser {
                         token: api_token,
@@ -128,12 +163,15 @@ impl AuthProvider for ConfigFileAuthProvider {
                         attributes: user.attributes.clone(),
                     })
                 } else {
-                    Err(Error::ApiInvalidCredentials("Incorrect password".to_string()))
+                    trace!("Incorrect password for user {}", id);
+                    Err(Error::ApiInvalidCredentials("Incorrect credentials".to_string()))
                 }
             } else {
-                Err(Error::ApiInvalidCredentials("Unknown user".to_string()))
+                trace!("Unknown user {}", id);
+                Err(Error::ApiInvalidCredentials("Incorrect credentials".to_string()))
             }
         } else {
+            trace!("Missing pr incomplete credentials for login attempt");
             Err(Error::ApiInvalidCredentials("Missing credentials".to_string()))
         }
     }

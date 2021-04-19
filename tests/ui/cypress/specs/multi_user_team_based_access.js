@@ -2,6 +2,14 @@
 // Team memberships and user roles within teams are defined in test-resources/ui/multi_user_team_based_access.conf.
 // This test verifies that team roles and team CA rights work as expected, as defined in those files.
 
+// A note about strong password hashing login delays
+// -----------------------------------------------------------------------------
+// The strong password hashing on the client and server side when logging in with
+// config file users causes the login process to take a few seconds. As such we
+// extend the default timeout when checking for Sign In completion, like so:
+//
+//   cy.contains('Sign In', { timeout: 10000 }).should('not.exist')
+
 let t1ro = { u: 'team1ro@krill', p: 'team1ro' };
 let t1rw = { u: 'team1rw@krill', p: 'team1rw' };
 let t2ro = { u: 'team2ro@krill', p: 'team2ro' };
@@ -21,8 +29,8 @@ describe('Config File users with custom team policy', () => {
       cy.get('#login_id').type(ts.u)
       cy.get('#login_password').type(ts.p)
       cy.contains('Sign In').click()
+      cy.contains('Sign In', { timeout: 10000 }).should('not.exist')
       cy.contains(ts.u)
-      cy.contains('Sign In').should('not.exist')
       cy.contains('Welcome to Krill')
 
       // verify our team and role
