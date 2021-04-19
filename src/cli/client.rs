@@ -17,7 +17,6 @@ use crate::commons::api::{
 };
 use crate::commons::bgp::BgpAnalysisAdvice;
 use crate::commons::remote::rfc8183;
-#[cfg(feature = "multi-user")]
 use crate::commons::util::{file, httpclient};
 use crate::constants::KRILL_CLI_API_ENV;
 use crate::daemon::config::Config;
