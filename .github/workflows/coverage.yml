@@ -31,7 +31,7 @@ jobs:
     # use a long timeout with tarpaulin as UI tests have to docker pull the
     # cypress.io image which can cause a test timeout with the default tarpaulin
     # timeout of 1 minute.
-    - run: cargo tarpaulin --locked --verbose --out Html --timeout 600 ${{ matrix.args }}
+    - run: cargo tarpaulin --locked --verbose --out Html --timeout 900 ${{ matrix.args }}
     - name: Archive code coverage results
       uses: actions/upload-artifact@v2
       with:
