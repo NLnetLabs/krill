@@ -239,7 +239,7 @@ impl KrillServer {
                         let repo_response = repo_manager.repository_response(&testbed_ca_handle)?;
                         let repo_contact = RepositoryContact::new(repo_response);
                         ca_manager
-                            .update_repo(testbed_ca_handle.clone(), repo_contact, &system_actor)
+                            .update_repo(testbed_ca_handle.clone(), repo_contact, false, &system_actor)
                             .await?;
 
                         // Establish the TA (parent) <-> testbed CA (child) relationship
@@ -703,7 +703,7 @@ impl KrillServer {
 
     /// Update the repository for a CA, or return an error. (see `CertAuth::repo_update`)
     pub async fn ca_repo_update(&self, handle: Handle, contact: RepositoryContact, actor: &Actor) -> KrillEmptyResult {
-        Ok(self.get_ca_manager()?.update_repo(handle, contact, actor).await?)
+        Ok(self.get_ca_manager()?.update_repo(handle, contact, true, actor).await?)
     }
 
     pub async fn ca_update_id(&self, handle: Handle, actor: &Actor) -> KrillEmptyResult {

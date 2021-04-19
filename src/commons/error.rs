@@ -225,6 +225,7 @@ pub enum Error {
 
     // CA Repo Issues
     CaRepoInUse(Handle),
+    CaRepoAlreadyConfigured(Handle),
     CaRepoIssue(Handle, String),
     CaRepoResponseInvalidXml(Handle, String),
     CaRepoResponseWrongXml(Handle),
@@ -374,6 +375,7 @@ impl fmt::Display for Error {
 
             // CA Repo Issues
             Error::CaRepoInUse(ca) => write!(f, "CA '{}' already uses this repository", ca),
+            Error::CaRepoAlreadyConfigured(ca) => write!(f, "CA '{}' already has a repository, see issue 481 for planned work to support migrations", ca),
             Error::CaRepoIssue(ca, e) => write!(f, "CA '{}' cannot get response from repository '{}'. Is the 'service_uri' in the XML reachable? Note that when upgrading Krill you should re-use existing configuration and data. For a fresh \
             re-install of Krill you will need to send XML to all other parties again: parent(s), children, and repository", ca,        e),
             Error::CaRepoResponseInvalidXml(ca, e) => write!(f, "CA '{}' got invalid repository response xml: {}", ca, e),
@@ -684,6 +686,7 @@ impl Error {
             Error::CaUnknown(ca) => ErrorResponse::new("ca-unknown", &self).with_ca(ca),
 
             Error::CaRepoInUse(ca) => ErrorResponse::new("ca-repo-same", &self).with_ca(ca),
+            Error::CaRepoAlreadyConfigured(ca) => ErrorResponse::new("ca-repo-already-configured", &self).with_ca(ca),
 
             Error::CaRepoIssue(ca, err) => ErrorResponse::new("ca-repo-issue", &self).with_ca(ca).with_cause(err),
 
