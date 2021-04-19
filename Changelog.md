@@ -21,8 +21,8 @@ This means that the `auth_token` in the `krill.conf` file was renamed to `admin_
 The env variable alternative for the Krill daemon was renamed from `KRILL_AUTH_TOKEN`
 to `KRILL_ADMIN_TOKEN`.
 
-In this release Krill will still support the old names, but you will get warnings reported
-to the console (CLI) and logs. We may remove this support in the next major release.
+In this release Krill will still support the old names, but we may remove this support
+in a future release.
 
 ### Separate binary for Publication Server
 
