@@ -24,6 +24,14 @@
 // This is less hacky but very slow: (even with "type(xml, {delay: 0}))")
 //   cy.get('... pre[contenteditable="true"]').clear().type(xml)
 
+// A note about strong password hashing login delays
+// -----------------------------------------------------------------------------
+// The strong password hashing on the client and server side when logging in with
+// config file users causes the login process to take a few seconds. As such we
+// extend the default timeout when checking for Sign In completion, like so:
+//
+//   cy.contains('Sign In', { timeout: 10000 }).should('not.exist')
+
 let admin = { u: 'admin@krill', p: 'admin' };
 let readonly = { u: 'readonly@krill', p: 'readonly' };
 let readwrite = { u: 'readwrite@krill', p: 'readwrite' };
@@ -81,8 +89,8 @@ describe('Config File Users with TA', () => {
       cy.get('#login_id').type(ts.u)
       cy.get('#login_password').type(ts.p)
       cy.contains('Sign In').click()
+      cy.contains('Sign In', { timeout: 10000 }).should('not.exist')
       cy.contains(ts.u)
-      cy.contains('Sign In').should('not.exist')
       cy.contains('Welcome to Krill')
 
       // create a CA
@@ -110,8 +118,8 @@ describe('Config File Users with TA', () => {
         cy.get('#login_id').type(ts.u)
         cy.get('#login_password').type(ts.p)
         cy.contains('Sign In').click()
+        cy.contains('Sign In', { timeout: 10000 }).should('not.exist')
         cy.contains(ts.u)
-        cy.contains('Sign In').should('not.exist')
 
         // wait for Lagosta to finish fetching the repository request XML
         cy.wait('@getRepoRequestXML').its('response.statusCode').should('eq', 200)
@@ -187,8 +195,8 @@ describe('Config File Users with TA', () => {
         cy.get('input[placeholder="Your username"]').type(ts.u)
         cy.get(':password').type(ts.p)
         cy.contains('Sign In').click()
+        cy.contains('Sign In', { timeout: 10000 }).should('not.exist')
         cy.contains(ts.u)
-        cy.contains('Sign In').should('not.exist')
 
         // wait for Lagosta to finish fetching the repository request XML
         cy.wait('@getChildRequestXML').its('response.statusCode').should('eq', 200)
@@ -262,8 +270,8 @@ describe('Config File Users with TA', () => {
       cy.get('input[placeholder="Your username"]').type(ts.u)
       cy.get(':password').type(ts.p)
       cy.contains('Sign In').click()
+      cy.contains('Sign In', { timeout: 10000 }).should('not.exist')
       cy.contains(ts.u)
-      cy.contains('Sign In').should('not.exist')
 
       // add a ROA
       cy.get('div#tab-roas').click()
@@ -318,8 +326,8 @@ describe('Config File Users with TA', () => {
     cy.get('input[placeholder="Your username"]').type(joe.u)
     cy.get(':password').type(joe.p)
     cy.contains('Sign In').click()
+    cy.contains('Sign In', { timeout: 10000 }).should('not.exist')
     cy.contains(joe.u)
-    cy.contains('Sign In').should('not.exist')
 
     // the CA drop down should contain all the CAs
     // click the dropdown to open it and show the list
@@ -419,8 +427,8 @@ describe('Config File Users with TA', () => {
     cy.get('input[placeholder="Your username"]').type(sally.u)
     cy.get(':password').type(sally.p)
     cy.contains('Sign In').click()
+    cy.contains('Sign In', { timeout: 10000 }).should('not.exist')
     cy.contains(sally.u)
-    cy.contains('Sign In').should('not.exist')
 
     // the CA drop down should contain all the CAs
     // click the dropdown to open it and show the list

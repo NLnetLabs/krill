@@ -1,3 +1,11 @@
+// A note about strong password hashing login delays
+// -----------------------------------------------------------------------------
+// The strong password hashing on the client and server side when logging in with
+// config file users causes the login process to take a few seconds. As such we
+// extend the default timeout when checking for Sign In completion, like so:
+//
+//   cy.contains('Sign In', { timeout: 10000 }).should('not.exist')
+
 let admin     = { u: 'admin@krill',     p: 'admin_pass'     };
 let readonly  = { u: 'readonly@krill',  p: 'readonly_pass'  };
 let readwrite = { u: 'readwrite@krill', p: 'readwrite_pass' };
