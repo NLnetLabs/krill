@@ -28,8 +28,8 @@ that we may have incompatible API changes in MINOR releases. E.g. from 0.8.2 to 
 We use PATCH versions for minor functionality as well as bug fixes.
 
 Whenever it's feasible we will use release candidates, even for patch releases as they
-may still include functional changes. We may skip this in case a patch release is purely
-a bug fix release which does not introduce any functional changes.
+may still include functional changes. We may skip this only in case a patch release is
+purely an urgent bug fix release which does not introduce any functional changes.
 
 In future, after 1.0.0, we plan to use semantic versioning rules as described here:
 https://semver.org
