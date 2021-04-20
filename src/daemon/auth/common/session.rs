@@ -8,9 +8,8 @@ use crate::commons::api::Token;
 use crate::commons::error::Error;
 use crate::commons::KrillResult;
 
-use super::crypt;
+use super::crypt::{self, CryptState, NonceState};
 
-const TAG_SIZE: usize = 16;
 const MAX_CACHE_SECS: u64 = 30;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -77,8 +76,8 @@ struct CachedSession {
     pub session: ClientSession,
 }
 
-pub type EncryptFn = fn(&[u8], &[u8], &mut [u8]) -> KrillResult<Vec<u8>>;
-pub type DecryptFn = fn(&[u8], &[u8], &[u8]) -> KrillResult<Vec<u8>>;
+pub type EncryptFn = fn(&[u8], &[u8], &NonceState) -> KrillResult<Vec<u8>>;
+pub type DecryptFn = fn(&[u8], &[u8]) -> KrillResult<Vec<u8>>;
 
 /// A short term cache to reduce the impact of session token decryption and
 /// deserialization (e.g. for multiple requests in a short space of time by the
@@ -178,7 +177,7 @@ impl LoginSessionCache {
         id: &str,
         attributes: &HashMap<String, String>,
         secrets: HashMap<String, String>,
-        key: &[u8],
+        crypt_state: &CryptState,
         expires_in: Option<Duration>,
     ) -> KrillResult<Token> {
         let session = ClientSession {
@@ -195,17 +194,14 @@ impl LoginSessionCache {
             .map_err(|err| Error::Custom(format!("Error while serializing session data: {}", err)))?;
         let unencrypted_bytes = session_json_str.as_bytes();
 
-        let mut tag: [u8; 16] = [0; 16];
-        let mut encrypted_bytes = (self.encrypt_fn)(key, unencrypted_bytes, &mut tag)?;
-        encrypted_bytes.extend(tag.iter());
-
+        let encrypted_bytes = (self.encrypt_fn)(&crypt_state.key, unencrypted_bytes, &crypt_state.nonce)?;
         let token = Token::from(base64::encode(&encrypted_bytes));
 
         self.cache_session(&token, &session);
         Ok(token)
     }
 
-    pub fn decode(&self, token: Token, key: &[u8], add_to_cache: bool) -> KrillResult<ClientSession> {
+    pub fn decode(&self, token: Token, key: &CryptState, add_to_cache: bool) -> KrillResult<ClientSession> {
         if let Some(session) = self.lookup_session(&token) {
             trace!("Session cache hit for session id {}", &session.id);
             return Ok(session);
@@ -219,14 +215,7 @@ impl LoginSessionCache {
                 Error::ApiInvalidCredentials("Invalid bearer token".to_string())
             })?;
 
-        if bytes.len() <= TAG_SIZE {
-            debug!("Invalid bearer token: decoded token is too short");
-            return Err(Error::ApiInvalidCredentials("Invalid bearer token".to_string()));
-        }
-
-        let encrypted_len = bytes.len() - TAG_SIZE;
-        let (encrypted_bytes, tag_bytes) = bytes.split_at(encrypted_len);
-        let unencrypted_bytes = (self.decrypt_fn)(key, encrypted_bytes, tag_bytes)?;
+        let unencrypted_bytes = (self.decrypt_fn)(&key.key, &bytes)?;
 
         let session = serde_json::from_slice::<ClientSession>(&unencrypted_bytes)
             .map_err(|err| {
@@ -291,7 +280,8 @@ mod tests {
     fn basic_login_session_cache_test() {
         use super::*;
 
-        const KEY: &[u8] = "unused".as_bytes();
+        let key_bytes: [u8; 32] = [0; 32];
+        let KEY: CryptState = CryptState::from_key_bytes(key_bytes).unwrap();
 
         fn one_attr_map(k: &str, v: &str) -> HashMap<String, String> {
             let mut m: HashMap<String, String> = HashMap::new();
@@ -304,13 +294,13 @@ mod tests {
         let cache = LoginSessionCache::new()
             .with_ttl(1)
             .with_encrypter(|_, v, _| Ok(v.to_vec()))
-            .with_decrypter(|_, v, _| Ok(v.to_vec()));
+            .with_decrypter(|_, v| Ok(v.to_vec()));
 
         // Add an item to the cache and verify that the cache now has 1 item
-        let item1_token = cache.encode("some id", &HashMap::new(), HashMap::new(), KEY, None).unwrap();
+        let item1_token = cache.encode("some id", &HashMap::new(), HashMap::new(), &KEY, None).unwrap();
         assert_eq!(cache.size(), 1);
 
-        let item1 = cache.decode(item1_token, KEY, true).unwrap();
+        let item1 = cache.decode(item1_token, &KEY, true).unwrap();
         assert_eq!(item1.id, "some id");
         assert_eq!(item1.attributes, HashMap::new());
         assert_eq!(item1.expires_in, None);
@@ -329,7 +319,7 @@ mod tests {
                 "other id",
                 &some_attrs,
                 some_secrets,
-                KEY,
+                &KEY,
                 Some(Duration::from_secs(10)),
             )
             .unwrap();
@@ -345,7 +335,7 @@ mod tests {
         std::thread::sleep(Duration::from_secs(2));
         assert_eq!(cache.size(), 1);
 
-        let item2 = cache.decode(item2_token, KEY, true).unwrap();
+        let item2 = cache.decode(item2_token, &KEY, true).unwrap();
         assert_eq!(item2.id, "other id");
         assert_eq!(item2.attributes, one_attr_map("some attr key", "some attr val"));
         assert_eq!(item2.expires_in, Some(Duration::from_secs(10)));
