@@ -48,7 +48,7 @@ Release Checklist
 [ ] Update Changelog.md
 [ ] Add the version to KeyStoreVersion
 [ ] Bump the version in the OpenAPI docs (to be deprecated in future)
-[ ] Update https://rpki.readthedocs.io/en/latest/krill/
+[ ] Update https://krill.readthedocs.io/en/latest/cli.html
 [ ] Make blog post (if deemed useful)
 [ ] Make a tagged release Lagosta and add it to Krill (refer to tag in commit)
 [ ] Make a PR to the dev branch, review, merge
