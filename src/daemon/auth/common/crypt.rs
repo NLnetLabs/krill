@@ -42,7 +42,6 @@ impl NonceState {
         &nonce[4..].copy_from_slice(&count.to_ne_bytes());
 
         // TODO: persist the nonce to disk to avoid nonce-reuse
-        error!("XIMON: issuing nonce: {:?}", &nonce);
 
         nonce
     }
