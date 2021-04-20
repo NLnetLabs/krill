@@ -43,20 +43,20 @@ Given a version number MAJOR.MINOR.PATCH, increment the:
 Release Checklist
 -----------------
 
-[ ] Make a prep-release branch off the dev branch
-[ ] Update version in Cargo.toml
-[ ] Update Changelog.md
-[ ] Add the version to KeyStoreVersion
-[ ] Bump the version in the OpenAPI docs (to be deprecated in future)
-[ ] Update https://krill.readthedocs.io/en/latest/cli.html
-[ ] Make blog post (if deemed useful)
-[ ] Make a tagged release Lagosta and add it to Krill (refer to tag in commit)
-[ ] Make a PR to the dev branch, review, merge
-[ ] Make a PR to the main branch, final review, merge
-[ ] Make a GH release
-[ ] Add packages if needed (automated, may just work)
-[ ] Cargo publish
-[ ] Inform users: mailing list, discord, twitter
+- [ ] Make a prep-release branch off the dev branch
+- [ ] Update version in Cargo.toml
+- [ ] Update Changelog.md
+- [ ] Add the version to KeyStoreVersion
+- [ ] Bump the version in the OpenAPI docs (to be deprecated in future)
+- [ ] Update https://krill.readthedocs.io/en/latest/cli.html
+- [ ] Make blog post (if deemed useful)
+- [ ] Make a tagged release Lagosta and add it to Krill (refer to tag in commit)
+- [ ] Make a PR to the dev branch, review, merge
+- [ ] Make a PR to the main branch, final review, merge
+- [ ] Make a GH release
+- [ ] Add packages if needed (automated, may just work)
+- [ ] Cargo publish
+- [ ] Inform users: mailing list, discord, twitter
 
 
 Release Candidate Steps
@@ -68,8 +68,8 @@ new RC release dependent on the nature of the fix.
 
 Generally speaking we will want to do the following:
 
-[ ] Deploy to our own production environment
-[ ] Work with users with support contracts to test if needed
-[ ] Test data migrations of real systems (in addition to unit testing during development)
-[ ] Chase translations for new UI labels
-[ ] Get confirmation from a number of users
+- [ ] Deploy to our own production environment
+- [ ] Work with users with support contracts to test if needed
+- [ ] Test data migrations of real systems (in addition to unit testing during development)
+- [ ] Chase translations for new UI labels
+- [ ] Get confirmation from a number of users
