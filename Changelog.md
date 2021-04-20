@@ -42,7 +42,12 @@ then ask you to give us a tar ball of your data directory - again excluding the 
 
 The Krill Publication Server now uses its own binaries for the server and CLI. If you are using Krill
 to host your own Publication Server, then please have a good look at the section below called
-"Separate binary for Publication Server".
+"Separate binary for Publication Server". Most importantly, be aware that the new binaries `krillpubd`
+and `krillpubc` are not included in the debian packages or Docker images for the moment. We have
+two open issue to resolve this before the 0.9.0 release (#361 and #490 respectively). For the moment
+you will need to use `cargo` to install these binaries as described here:
+
+https://krill.readthedocs.io/en/latest/install-and-run.html
 
 
 Please read below for more details!
