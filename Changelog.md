@@ -140,32 +140,12 @@ configuration file and data directory that you were using until now.
 - Mixed Mode
 
 If you are running Krill in a "mixed mode" where you operate both one or more CAs **and** you have
-an embedded repository server then you can continue to use the `krill` binary and your current
-configuration file and data directory.
+an embedded repository server then no action is required at this time. You can continue to use the
+`krill` binary and your current configuration file and data directory.
 
-However, you should migrate your setup to using separate dedicated instances for the Publication
-Server and CA functions. Support for this mixed mode will be removed in future.
-
-The migration steps depend on your particular setup.
-
-If you are **not** operating any Krill CA which serves as a parent CA, then this can be
-achieved relatively simply:
-- duplicate your configuration file and data directory to a new server
-- use `krillpubd` to start operating your current server in Publication Server mode
-- use `krill` on your new server to operate CAs there
-
-If any of your Krill CAs do serve as a parent CA, then the following approach is advised:
-- continue to run `krill` in mixed mode for now
-- set up a new Krill Repository Server using `krillpubd` on a new system, use new URIs here.
-- migrate each of your CAs to use this new repository:
-
-  1. Get your CA's Publisher Request XML: `krillc repo request --ca <myca> >./pub-req.xml`
-  2. Add your CA to the new Publication Server: `krillpubc add --request pub-req.xml >./rep-res.xml` 
-  3. Update your CA's repo: ` krillc repo update -ca <myca> --response ./data/rep-res.xml`
-    
-- stop your main `krill`
-- remove the `pubd` directory under your data directory (back it up to be sure)
-- start your main `krill` again - it will now run in "CA" mode
+You will be required to run a separate `krill` binary for your CA(s) and `krillpubd` for your
+Publication Server in a future release, when we have implemented this [open issue](https://github.com/NLnetLabs/krill/issues/480)
+to allow existing CAs to migrate to using a new repository by doing a specialized key roll.
 
 ### Other fixes
 
