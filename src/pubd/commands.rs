@@ -1,27 +1,36 @@
 use std::fmt;
 
-use crate::commons::api::{PublishDelta, PublisherHandle, RepositoryHandle, StorableRepositoryCommand};
-use crate::commons::eventsourcing::CommandDetails;
-use crate::commons::eventsourcing::SentCommand;
-use crate::commons::remote::rfc8183;
-use crate::pubd::Evt;
+use rpki::uri;
+
+use crate::{
+    commons::{
+        actor::Actor,
+        api::{PublisherHandle, RepositoryHandle, StorableRepositoryCommand},
+        eventsourcing::{CommandDetails, SentCommand},
+        remote::rfc8183,
+    },
+    pubd::RepositoryAccessEvent,
+};
 
 //------------ Cmd ---------------------------------------------------------
-pub type Cmd = SentCommand<CmdDet>;
+pub type RepoAccessCmd = SentCommand<RepoAccessCmdDet>;
 
 //------------ CmdDet ------------------------------------------------------
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
-#[serde(rename_all = "snake_case")]
-pub enum CmdDet {
-    AddPublisher(rfc8183::PublisherRequest),
-    RemovePublisher(PublisherHandle),
-    Publish(PublisherHandle, PublishDelta),
-    SessionReset,
+#[serde(rename_all = "snake_case", tag = "type")]
+pub enum RepoAccessCmdDet {
+    AddPublisher {
+        request: rfc8183::PublisherRequest,
+        base_uri: uri::Rsync,
+    },
+    RemovePublisher {
+        name: PublisherHandle,
+    },
 }
 
-impl CommandDetails for CmdDet {
-    type Event = Evt;
+impl CommandDetails for RepoAccessCmdDet {
+    type Event = RepositoryAccessEvent;
     type StorableDetails = StorableRepositoryCommand;
 
     fn store(&self) -> Self::StorableDetails {
@@ -29,45 +38,40 @@ impl CommandDetails for CmdDet {
     }
 }
 
-impl CmdDet {
-    pub fn add_publisher(handle: &RepositoryHandle, request: rfc8183::PublisherRequest) -> Cmd {
-        SentCommand::new(handle, None, CmdDet::AddPublisher(request))
+impl RepoAccessCmdDet {
+    pub fn add_publisher(
+        handle: &RepositoryHandle,
+        request: rfc8183::PublisherRequest,
+        base_uri: uri::Rsync,
+        actor: &Actor,
+    ) -> RepoAccessCmd {
+        SentCommand::new(
+            handle,
+            None,
+            RepoAccessCmdDet::AddPublisher { request, base_uri },
+            actor,
+        )
     }
 
-    pub fn remove_publisher(handle: &RepositoryHandle, publisher: PublisherHandle) -> Cmd {
-        SentCommand::new(handle, None, CmdDet::RemovePublisher(publisher))
-    }
-
-    pub fn publish(handle: &RepositoryHandle, publisher: PublisherHandle, delta: PublishDelta) -> Cmd {
-        SentCommand::new(handle, None, CmdDet::Publish(publisher, delta))
-    }
-
-    pub fn session_reset(handle: &RepositoryHandle) -> Cmd {
-        SentCommand::new(handle, None, CmdDet::SessionReset)
+    pub fn remove_publisher(handle: &RepositoryHandle, name: PublisherHandle, actor: &Actor) -> RepoAccessCmd {
+        SentCommand::new(handle, None, RepoAccessCmdDet::RemovePublisher { name }, actor)
     }
 }
 
-impl fmt::Display for CmdDet {
+impl fmt::Display for RepoAccessCmdDet {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         StorableRepositoryCommand::from(self.clone()).fmt(f)
     }
 }
 
-impl From<CmdDet> for StorableRepositoryCommand {
-    fn from(d: CmdDet) -> Self {
+impl From<RepoAccessCmdDet> for StorableRepositoryCommand {
+    fn from(d: RepoAccessCmdDet) -> Self {
         match d {
-            CmdDet::AddPublisher(req) => {
-                let (_, pbl, id) = req.unpack();
-                StorableRepositoryCommand::AddPublisher(pbl, id.ski_hex())
+            RepoAccessCmdDet::AddPublisher { request, .. } => {
+                let (_, name, _) = request.unpack();
+                StorableRepositoryCommand::AddPublisher { name }
             }
-            CmdDet::RemovePublisher(pbl) => StorableRepositoryCommand::RemovePublisher(pbl),
-            CmdDet::Publish(pbl, delta) => StorableRepositoryCommand::Publish(
-                pbl,
-                delta.publishes().len(),
-                delta.updates().len(),
-                delta.withdraws().len(),
-            ),
-            CmdDet::SessionReset => StorableRepositoryCommand::SessionReset,
+            RepoAccessCmdDet::RemovePublisher { name } => StorableRepositoryCommand::RemovePublisher { name },
         }
     }
 }

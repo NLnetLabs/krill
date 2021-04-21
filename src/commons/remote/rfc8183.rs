@@ -3,9 +3,8 @@
 //! Support for the RFC8183 out-of-band setup requests and responses
 //! used to exchange identity and configuration between CAs and their
 //! parent CA and/or RPKI Publication Servers.
-use std::convert::TryFrom;
-use std::path::PathBuf;
 use std::str::{from_utf8_unchecked, FromStr};
+use std::{convert::TryFrom, path::Path};
 use std::{fmt, io};
 
 use base64::DecodeError;
@@ -487,7 +486,7 @@ impl PublisherRequest {
     }
 
     /// Saves this as an XML file
-    pub fn save(&self, full_path: &PathBuf) -> Result<(), io::Error> {
+    pub fn save(&self, full_path: &Path) -> Result<(), io::Error> {
         let xml = self.encode_vec();
         file::save(&Bytes::from(xml), full_path)
     }
@@ -503,9 +502,9 @@ impl fmt::Display for PublisherRequest {
     }
 }
 
-impl Into<IdCert> for PublisherRequest {
-    fn into(self) -> IdCert {
-        self.id_cert
+impl From<PublisherRequest> for IdCert {
+    fn from(r: PublisherRequest) -> Self {
+        r.id_cert
     }
 }
 
@@ -662,7 +661,7 @@ impl RepositoryResponse {
     }
 
     /// Saves this as an XML file
-    pub fn save(&self, full_path: &PathBuf) -> Result<(), io::Error> {
+    pub fn save(&self, full_path: &Path) -> Result<(), io::Error> {
         let xml = self.encode_vec();
         file::save(&Bytes::from(xml), full_path)
     }
@@ -728,34 +727,33 @@ impl<'de> Deserialize<'de> for ServiceUri {
 
 //------------ Error ---------------------------------------------------------
 
-#[derive(Debug, Display)]
+#[derive(Debug)]
 pub enum Error {
-    #[display(fmt = "Invalid XML")]
     InvalidXml,
-
-    #[display(fmt = "Invalid version")]
     InvalidVersion,
-
-    #[display(fmt = "Invalid XML file: {}", _0)]
     XmlReadError(XmlReaderErr),
-
-    #[display(fmt = "Invalid XML file: {}", _0)]
     XmlAttributesError(AttributesError),
-
-    #[display(fmt = "Invalid base64: {}", _0)]
     Base64Error(DecodeError),
-
-    #[display(fmt = "Invalid handle in XML, MUST be [-_A-Za-z0-9/]{{1,255}}")]
     InvalidHandle,
-
-    #[display(fmt = "Cannot parse identity certificate: {}", _0)]
     CannotParseIdCert(decode::Error),
-
-    #[display(fmt = "Invalid identity certificate: {}", _0)]
     InvalidIdCert(x509::ValidationError),
-
-    #[display(fmt = "{}", _0)]
     Uri(uri::Error),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Error::InvalidXml => write!(f, "Invalid XML"),
+            Error::InvalidVersion => write!(f, "Invalid version"),
+            Error::XmlReadError(e) => write!(f, "Invalid XML file: {}", e),
+            Error::XmlAttributesError(e) => write!(f, "Invalid XML file: {}", e),
+            Error::Base64Error(e) => write!(f, "Invalid base64: {}", e),
+            Error::InvalidHandle => write!(f, "Invalid handle in XML, MUST be [-_A-Za-z0-9/]{{1,255}}"),
+            Error::CannotParseIdCert(e) => write!(f, "Cannot parse identity certificate: {}", e),
+            Error::InvalidIdCert(e) => write!(f, "Invalid identity certificate: {}", e),
+            Error::Uri(e) => e.fmt(f),
+        }
+    }
 }
 
 impl From<XmlReaderErr> for Error {
@@ -890,6 +888,12 @@ mod tests {
         let decoded = ChildRequest::validate_at(encoded.as_slice(), rpkid_time()).unwrap();
 
         assert_eq!(req, decoded);
+    }
+
+    #[test]
+    fn child_request_non_ascii_base64() {
+        let xml = include_str!("../../../test-resources/remote/child-breaks.xml");
+        ChildRequest::validate_at(xml.as_bytes(), Time::utc(2021, 1, 7, 15, 31, 0)).unwrap();
     }
 
     #[test]

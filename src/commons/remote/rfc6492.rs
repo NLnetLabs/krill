@@ -1,10 +1,9 @@
-use std::convert::TryFrom;
 use std::str::FromStr;
+use std::{convert::TryFrom, fmt::Display};
 use std::{fmt, io};
 
 use bytes::Bytes;
 use chrono::{DateTime, SecondsFormat, Utc};
-use serde::export::fmt::Display;
 
 use rpki::cert::Cert;
 use rpki::crypto::KeyIdentifier;
@@ -588,9 +587,9 @@ impl Res {
 impl Res {
     fn encode<W: io::Write>(&self, w: &mut XmlWriter<W>) -> Result<(), io::Error> {
         match self {
-            Res::List(ents) => Self::encode_entitlements(ents, w),
+            Res::List(entitlements) => Self::encode_entitlements(entitlements, w),
             Res::Issue(response) => Self::encode_issuance_response(response, w),
-            Res::Revoke(response) => Self::encode_revoke_reponse(response, w),
+            Res::Revoke(response) => Self::encode_revoke_response(response, w),
             Res::NotPerformed(err) => Self::encode_error_response(err, w),
         }
     }
@@ -630,7 +629,7 @@ impl Res {
         class_name: &ResourceClassName,
         cert_url: &uri::Rsync,
         not_after: Time,
-        inrs: &ResourceSet,
+        resources: &ResourceSet,
         issued: impl Iterator<Item = &'a IssuedCert>,
         issuer: &SigningCert,
         w: &mut XmlWriter<W>,
@@ -639,18 +638,18 @@ impl Res {
         let class_name = class_name.to_string();
         let not_after = not_after.to_rfc3339_opts(SecondsFormat::Secs, true);
 
-        let asn = inrs.asn().to_string();
-        let v4 = inrs.v4().to_string();
-        let v6 = inrs.v6().to_string();
+        let asn = resources.asn().to_string();
+        let v4 = resources.v4().to_string();
+        let v6 = resources.v6().to_string();
 
-        let mut attrs = vec![];
-
-        attrs.push(("cert_url", cert_url.as_str()));
-        attrs.push(("class_name", class_name.as_str()));
-        attrs.push(("resource_set_as", asn.as_str()));
-        attrs.push(("resource_set_ipv4", v4.as_str()));
-        attrs.push(("resource_set_ipv6", v6.as_str()));
-        attrs.push(("resource_set_notafter", not_after.as_str()));
+        let attrs = vec![
+            ("cert_url", cert_url.as_str()),
+            ("class_name", class_name.as_str()),
+            ("resource_set_as", asn.as_str()),
+            ("resource_set_ipv4", v4.as_str()),
+            ("resource_set_ipv6", v6.as_str()),
+            ("resource_set_notafter", not_after.as_str()),
+        ];
 
         w.put_element("class", Some(&attrs), |w| {
             for issued in issued {
@@ -669,8 +668,7 @@ impl Res {
         // TODO: Use a better xml library so we don't have to do
         //       super-messy allocations. Probably roll our own,
         //       at least for composing.
-        let mut attrs_strings = vec![];
-        attrs_strings.push(("cert_url", cert_url));
+        let mut attrs_strings = vec![("cert_url", cert_url)];
 
         if let Some(asn) = limit.asn() {
             attrs_strings.push(("resource_set_as", asn.to_string()));
@@ -702,7 +700,7 @@ impl Res {
         w.put_element("description", Some(&att), |w| w.put_text(&error.description))
     }
 
-    fn encode_revoke_reponse<W: io::Write>(res: &RevocationResponse, w: &mut XmlWriter<W>) -> Result<(), io::Error> {
+    fn encode_revoke_response<W: io::Write>(res: &RevocationResponse, w: &mut XmlWriter<W>) -> Result<(), io::Error> {
         let class_name = res.class_name().to_string();
         let bytes = res.key().as_slice();
         let encoded = base64::encode_config(bytes, base64::URL_SAFE_NO_PAD);
@@ -809,52 +807,45 @@ impl fmt::Display for NotPerformedResponse {
 
 //------------ Error ---------------------------------------------------------
 
-#[derive(Debug, Display)]
+#[derive(Debug)]
 pub enum Error {
-    #[display(fmt = "Unexpected XML Start Tag: {}", _0)]
     UnexpectedStart(String),
-
-    #[display(fmt = "Invalid XML file: {}", _0)]
     XmlReadError(XmlReaderErr),
-
-    #[display(fmt = "Invalid use of attributes in XML file: {}", _0)]
     XmlAttributesError(AttributesError),
-
-    #[display(fmt = "Unknown message type")]
     UnknownMessageType,
-
-    #[display(fmt = "Unexpected message type")]
     WrongMessageType,
-
-    #[display(fmt = "Invalid protocol version, MUST be 1")]
     InvalidVersion,
-
-    #[display(fmt = "Invalid URI: {}", _0)]
     UriError(uri::Error),
-
-    #[display(fmt = "{}", _0)]
     ResSetErr(ResourceSetError),
-
-    #[display(fmt = "Invalid date time syntax: {}", _0)]
     Time(chrono::ParseError),
-
-    #[display(fmt = "Could not parse encoded certificate.")]
     InvalidCert,
-
-    #[display(fmt = "Invalid handle.")]
     InvalidHandle,
-
-    #[display(fmt = "Could not parse encoded certificate request.")]
     InvalidCsr,
-
-    #[display(fmt = "Could not parse SKI in revoke request.")]
     InvalidSki,
-
-    #[display(fmt = "Invalid not-performed error code: {}.", _0)]
     InvalidErrorCode(String),
-
-    #[display(fmt = "{}", _0)]
     InrSyntax(String),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Error::UnexpectedStart(s) => write!(f, "Unexpected XML Start Tag: {}", s),
+            Error::XmlReadError(e) => write!(f, "Invalid XML file: {}", e),
+            Error::XmlAttributesError(e) => write!(f, "Invalid use of attributes in XML file: {}", e),
+            Error::UnknownMessageType => write!(f, "Unknown message type"),
+            Error::WrongMessageType => write!(f, "Unexpected message type"),
+            Error::InvalidVersion => write!(f, "Invalid protocol version, MUST be 1"),
+            Error::UriError(e) => write!(f, "Invalid URI: {}", e),
+            Error::ResSetErr(e) => e.fmt(f),
+            Error::Time(e) => write!(f, "Invalid date time syntax: {}", e),
+            Error::InvalidCert => write!(f, "Could not parse encoded certificate."),
+            Error::InvalidHandle => write!(f, "Invalid handle."),
+            Error::InvalidCsr => write!(f, "Could not parse encoded certificate request."),
+            Error::InvalidSki => write!(f, "Could not parse SKI in revoke request."),
+            Error::InvalidErrorCode(code) => write!(f, "Invalid not-performed error code: {}.", code),
+            Error::InrSyntax(e) => e.fmt(f),
+        }
+    }
 }
 
 impl Error {
@@ -995,7 +986,7 @@ mod tests {
         let content = msg.content().to_bytes();
         let xml = unsafe { from_utf8_unchecked(content.as_ref()) };
 
-        // this version contains mailformed XML, the sender and receiver attributes are missing.
+        // this version contains malformed XML, the sender and receiver attributes are missing.
         // see RFC6492 section 3.2
 
         // Lacnic content

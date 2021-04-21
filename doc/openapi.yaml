@@ -1,7 +1,7 @@
 openapi: "3.0.2"
 info:
   title: Krill RPKI Server API
-  version: 0.8.1
+  version: 0.9.0-rc1
   description: |
     # Introduction
     Welcome to the documentation for the Krill server API, a JSON based
@@ -10,7 +10,7 @@ info:
 
     ## Clients
     To interact with a Krill server using this API, either:
-    - Use the [Krill CLI](https://rpki.readthedocs.io/en/latest/krill/using-cli.html).
+    - Use the [Krill CLI](https://rpki.readthedocs.io/en/latest/krill/cli.html).
     - Load this API specification into the Swagger [editor](https://editor.swagger.io/)
       or [viewer](https://petstore.swagger.io/) and use it to submit requests to
       a Krill server via your browser.
@@ -76,7 +76,6 @@ info:
     Possible keys in the error response json are:
     ```
        "cause":      "The underlying error, usually a system error"
-       "publisher":  "The handle of the publisher"
        "ca":         "The handle of the CA that encountered an error"
        "parent":     "The handle by which the CA knows a parent involved in an error"
        "child":      "The handle by which the CA knows its child involved in an error"
@@ -106,7 +105,6 @@ servers:
         default: '3000'
 
 tags:
-  - name: "Publishers"
   - name: "Certificate Authorities"
   - name: "Key Rolls"
     description: |
@@ -140,7 +138,7 @@ tags:
   - name: "Other"
 
 security:
-  - KRILL_AUTH_TOKEN: []
+  - KRILL_ADMIN_TOKEN: []
 
 paths:
   /authorized:
@@ -154,129 +152,6 @@ paths:
           $ref: '#/components/responses/Success'
         '403':
           $ref: '#/components/responses/Forbidden'
-
-  /publishers:
-    get:
-      operationId: list_publishers
-      tags:
-        - "Publishers"
-      summary: List publishers.
-      responses:
-        '200':
-          $ref: '#/components/responses/ListPublishers'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/GeneralErrorResponse'
-
-    post:
-      operationId: add_publisher
-      tags:
-        - "Publishers"
-      summary: Add publisher.
-      description: |
-        Adds an RFC 8181 publisher. Expects a JSON representation of the
-        [RFC 8183 XML](https://tools.ietf.org/html/rfc8183#section-5.2.3).
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AddPublisherRequest'
-      responses:
-        '200':
-          $ref: '#/components/responses/AddPublisher'
-        '400':
-          $ref: '#/components/responses/PubDuplicateResponse'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/GeneralErrorResponse'
-
-  /publishers/{publisher_handle}:
-    get:
-      operationId: get_publisher
-      tags:
-        - "Publishers"
-      summary: Get details for publisher.
-      description: Gets the information for a publisher by a given handle.
-      parameters:
-        - $ref: '#/components/parameters/publisher_handle'
-      responses:
-        '200':
-          $ref: '#/components/responses/GetPublisher'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/PubUnknownResponse'
-        '500':
-          $ref: '#/components/responses/GeneralErrorResponse'
-
-    delete:
-      operationId: delete_publisher
-      tags:
-        - "Publishers"
-      summary: Delete a publisher.
-      description: This action also removes all the published content for a publisher.
-      parameters:
-        - $ref: '#/components/parameters/publisher_handle'
-      responses:
-        '200':
-          $ref: '#/components/responses/Success'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/PubUnknownResponse'
-        '500':
-          $ref: '#/components/responses/GeneralErrorResponse'
-
-  /publishers/{publisher_handle}/response.{format}:
-    get:
-      operationId: get_publisher_repository_response
-      tags:
-        - "Publishers"
-      summary: Get Repository Response for publisher.
-      description: |
-        Gets the [RFC 8183 Repository Response](https://tools.ietf.org/html/rfc8183#section-5.2.4)
-        for a publisher.
-      parameters:
-        - $ref: '#/components/parameters/publisher_handle'
-        - $ref: '#/components/parameters/format'
-      responses:
-        '200':
-          description: Success.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Rfc8181'
-            application/xml:
-              schema:
-                $ref: '#/components/schemas/RFC8183RepositoryResponseXML'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/PubUnknownResponse'
-        '500':
-          $ref: '#/components/responses/GeneralErrorResponse'
-
-  /publishers/stale/{seconds}:
-    get:
-      operationId: list_publishers_stale_seconds
-      tags:
-        - "Publishers"
-      summary: List all publishers which have not published for X seconds.
-      description: |
-        Lists all publishers which have not published for the given time (seconds). Typically one
-        might expect updates from Krill publishers every 16 hours.
-      parameters:
-        - $ref: '#/components/parameters/seconds'
-      responses:
-        '200':
-          $ref: '#/components/responses/StalePublishers'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/GeneralErrorResponse'
 
   /cas:
     get:
@@ -342,7 +217,7 @@ paths:
         '500':
           $ref: '#/components/responses/GeneralErrorResponse'
 
-  /cas/{ca_handle}/child_request.{format}:
+  /cas/{ca_handle}/id/child_request.{format}:
     get:
       operationId: get_ca_child_request
       tags:
@@ -374,9 +249,7 @@ paths:
         - "Certificate Authorities"
       summary: Add a child CA.
       description: |
-        This adds a child CA. The request body must include a JSON
-        representation of the [RFC 8183 Child Request XML](https://tools.ietf.org/html/rfc8183#section-5.2.1),
-        though the 'tag' and 'child_handle' attributes are ignored.
+        This adds a child CA.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
       requestBody:
@@ -393,14 +266,13 @@ paths:
                     asn: 'AS1'
                     v4: '10.0.0.0/8'
                     v6: '::'
-                  auth:
-                    rfc8183:
-                      tag: null
-                      child_handle: 'ca'
-                      id_cert: '<base64>'
+                  child_request:
+                    tag: null
+                    child_handle: 'ca'
+                    id_cert: '<base64>'
       responses:
         '200':
-          $ref: '#/components/responses/Rfc6492'
+          $ref: '#/components/responses/Rfc8183ParentResponse'
         '400':
           description: Bad request parameters.
           content:
@@ -530,7 +402,7 @@ paths:
         - $ref: '#/components/parameters/child_handle'
       responses:
         '200':
-          $ref: '#/components/responses/Rfc8183O'
+          $ref: '#/components/responses/Rfc8183ParentResponse'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -562,7 +434,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Rfc6492'
+                $ref: '#/components/schemas/Rfc8183ParentResponse'
             application/xml:
               schema:
                 $ref: '#/components/schemas/RFC8183ParentResponseXML'
@@ -607,10 +479,14 @@ paths:
       operationId: add_ca_parent
       tags:
         - "Certificate Authorities"
-      summary: Add a parent to a CA.
+      summary: Add or update a parent to a CA.
       description: |
         Add a parent to the CA. Note that your CA will only request a certificate
         from any of its parents after a repository has been configured for it.
+        
+        Submit the RFC 8183 Parent Response XML, or JSON. The JSON format expects
+        the local name for the parent as 'handle', whereas in case of XML this will
+        be taken from the `parent_handle`.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
       requestBody:
@@ -619,6 +495,9 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/AddParentCARequest'
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/RFC8183ParentResponseXML'
       responses:
         '200':
           $ref: '#/components/responses/Success'
@@ -650,7 +529,7 @@ paths:
         - $ref: '#/components/parameters/parent_handle'
       responses:
         '200':
-          $ref: '#/components/responses/Rfc6492'
+          $ref: '#/components/responses/Rfc8183ParentContact'
         '403':
           $ref: '#/components/responses/Forbidden'
         '400':
@@ -664,10 +543,11 @@ paths:
       operationId: update_ca_parent_contact
       tags:
         - "Certificate Authorities"
-      summary: Update the contact information for an existing parent.
+      summary: Add or update a parent to a CA.
       description: |
-        Should not be needed often, but say that your parent updates their ID
-        cert or service URI for RFC 6492, then you will need to tell the CA.
+        In this case the local name of the parent is specified in the path. An error
+        will be returned in case this name does not match the handle in the submitted JSON.
+        If XML was submitted then this will simply override the name found for `publisher_handle`.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
         - $ref: '#/components/parameters/parent_handle'
@@ -676,7 +556,10 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Rfc6492'
+              $ref: '#/components/schemas/Rfc8183ParentContact'
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/RFC8183ParentResponseXML'
       responses:
         '200':
           $ref: '#/components/responses/Success'
@@ -745,15 +628,18 @@ paths:
         - "Certificate Authorities"
       summary: Update the Repository for a CA.
       description: |
-        This will update the repository for a CA. I.e. it will trigger the
-        following:
-          - A check that the new Repository can be reached and allows the CA to
-            connect.
-          - Re-issue all objects using the base uri for the new repository.
-          - Publish the new objects.
-          - Request new certificates with SIA entries pointing to the new
-            locations.
-          - (best effort) Clean up of the old repository.
+        This will add a repository to the CA, if one was not defined earlier.
+        In that case it will also trigger that the CA requests resource certificates
+        from its parents (if configured) now that it knows which URIs to use.
+        
+        If the CA did have a repository configured, then this will trigger an
+        update of the configured repository by means of a key rollover for all
+        existing certificates received under each parent. The new key will use
+        the new repository, but the current key will keep using the old repository
+        until the new key is activated. Note API end point for key activiation
+        will need to be called for this (this will activate *ALL* keys for the CA).
+        
+        Post either an RFC 8183 Repository Response XML file, or a JSON equivalent.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
       requestBody:
@@ -761,7 +647,13 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Rfc8181'
+              type: object
+              properties:
+                repository_response:
+                  $ref: '#/components/schemas/Rfc8183RepositoryResponse'
+          application/xml:
+            schema:
+              $ref: '#/components/schemas/RFC8183RepositoryResponseXML'
       responses:
         '200':
           $ref: '#/components/responses/Success'
@@ -780,7 +672,7 @@ paths:
         '500':
           $ref: '#/components/responses/GeneralErrorResponse'
 
-  /cas/{ca_handle}/repo/request.{format}:
+  /cas/{ca_handle}/id/publisher_request.{format}:
     get:
       operationId: get_ca_publisher_request
       tags:
@@ -795,7 +687,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/rfc8181Base'
+                $ref: '#/components/schemas/Rfc8183PublisherRequest'
             application/xml:
               schema:
                 $ref: '#/components/schemas/RFC8183PublisherRequestXML'
@@ -1003,7 +895,7 @@ paths:
       description: |
         Tries to updates the ROA configurations.
 
-        Returns an empty reponse if succesful, or an extended advice in case the
+        Returns an empty response if successful, or an extended advice in case the
         update would result in any invalid announcements for the prefixes in the
         change set.
       parameters:
@@ -1213,10 +1105,10 @@ externalDocs:
 
 components:
   securitySchemes:
-    KRILL_AUTH_TOKEN:
+    KRILL_ADMIN_TOKEN:
       type: http
       scheme: bearer
-      bearerFormat: KRILL_AUTH_TOKEN
+      bearerFormat: KRILL_ADMIN_TOKEN
 
   parameters:
     ca_handle:
@@ -1285,6 +1177,7 @@ components:
         rpki_notify:
           type: string
           format: uri
+    
     Resources:
       type: object
       properties:
@@ -1298,6 +1191,7 @@ components:
         asn: ""
         v4: "10.0.0.0/0"
         v6: "2001:db8::/32"
+    
     ROA:
       type: object
       properties:
@@ -1307,6 +1201,7 @@ components:
           type: string
         max_length:
           type: integer
+    
     ROADelta:
       type: object
       properties:
@@ -1318,9 +1213,11 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ROA'
+    
     ServiceUri:
       type: string
       format: uri
+    
     rfcCommon:
       type: object
       properties:
@@ -1329,33 +1226,96 @@ components:
           nullable: true
         id_cert:
           $ref: '#/components/schemas/IdCert'
-    Rfc6492:
-      allOf:
-        - $ref: '#/components/schemas/rfcCommon'
-        - type: object
-          properties:
-            parent_handle:
-              $ref: '#/components/schemas/Handle'
-            child_handle:
-              $ref: '#/components/schemas/Handle'
-            service_uri:
-              $ref: '#/components/schemas/ServiceUri'
-    rfc8181Base:
-      allOf:
-        - $ref: '#/components/schemas/rfcCommon'
-        - type: object
-          properties:
-            publisher_handle:
-              $ref: '#/components/schemas/Handle'
-    Rfc8181:
-      allOf:
-        - $ref: '#/components/schemas/rfc8181Base'
-        - type: object
-          properties:
-            service_uri:
-              $ref: '#/components/schemas/ServiceUri'
-            repo_info:
-              $ref: '#/components/schemas/RepoInfo'
+
+    Rfc8183ParentContact:
+      type: object
+      properties:
+        type:
+          type: string
+        tag:
+          type: string
+          nullable: true
+        id_cert:
+          $ref: '#/components/schemas/IdCert'
+        parent_handle:
+          $ref: '#/components/schemas/Handle'
+        child_handle:
+          $ref: '#/components/schemas/Handle'
+        service_uri:
+          $ref: '#/components/schemas/ServiceUri'
+      example:
+        type: "rfc6492"
+        tag: null
+        id_cert: "MIIDNDCCAhygAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyg5NjczMEUwQTg2MkE0RDkyNjQ1NEY5RTgzNzYxMzMzQkI0Qjc0QTVDMB4XDTIxMDMwNDE2MTQwNFoXDTM2MDMwNDE2MTkwNFowMzExMC8GA1UEAxMoOTY3MzBFMEE4NjJBNEQ5MjY0NTRGOUU4Mzc2MTMzM0JCNEI3NEE1QzCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAOCNekDo59PLdJnfiPg9kUycEb3EF17TnnUEKJaCunheH/brWakMumqpBox3H2fn1XY7e2e1SFezp52yqcIggLUOj3K49SvTzdDCCwA2MGuzaDHK6IhOuLKH9D9BqA2FTWVr3PNk77g+Bn1TfKF+G+JMr3jvDMkJAW9+58vnl7UJ/g+H6/lWqWAW1JeA3go9B+qdxC9DA02h+7vXPGhsVeUw688LFBv1fDGlQFX02zx0uNrKQQHddL1aJIM01i5M+N3uWJ5u3wCJRvxAr/P9KNtCO1sTFxR2dE/8W0+rfJWkAnDcgzeDCjznICF1146Thjxir08dYlj5YAeR3c5r5L8CAwEAAaNTMFEwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUlnMOCoYqTZJkVPnoN2EzO7S3SlwwHwYDVR0jBBgwFoAUlnMOCoYqTZJkVPnoN2EzO7S3SlwwDQYJKoZIhvcNAQELBQADggEBAGUq4w7nv6Ez4kBdqfgyU0taKHgxIOTKJ6EwsDZj6eVGF6ThrutAonMVUeu1zs5ZW/uYaRWPffHzY8m1wdyrwYVw0HxRWY96vrhOOrVk32J6ip9V9bfFSjZLVnVcBz5V/odB++bJHhMoFNUaoqEGSNleiPotBtOHahlIL1EDEAt7bC5Kk7vEl0VmRJs7Hp1kpdZRJlVy7sLWL082hCJCulG57qL2UbsQ2wmFk+ImJ2RO3GSrNEI4//kHIw7GQFeeROfeb5HvyC/QOCzfBmMc/ipApuyzROSXHsE6CiaM2uWCjHs1NZBu+Za2EoFOhgYN1akeqqo50vRfO3Dd6Bm/rQY="
+        parent_handle: "ta"
+        child_handle: "testbed"
+        service_uri: "https://localhost:3000/rfc6492/ta"
+        
+    # TODO: this looks identical to the Rfc8183ParentContact type immediately above? consolidate this?
+    Rfc8183ParentResponse:
+      type: object
+      properties:
+          type:
+            type: string
+          tag:
+            type: string
+            nullable: true
+          id_cert:
+            $ref: '#/components/schemas/IdCert'
+          parent_handle:
+            $ref: '#/components/schemas/Handle'
+          child_handle:
+            $ref: '#/components/schemas/Handle'
+          service_uri:
+            $ref: '#/components/schemas/ServiceUri'
+      example:
+        type: "rfc6492"
+        tag: null
+        id_cert: "MIIDNDCCAhygAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyg5NjczMEUwQTg2MkE0RDkyNjQ1NEY5RTgzNzYxMzMzQkI0Qjc0QTVDMB4XDTIxMDMwNDE2MTQwNFoXDTM2MDMwNDE2MTkwNFowMzExMC8GA1UEAxMoOTY3MzBFMEE4NjJBNEQ5MjY0NTRGOUU4Mzc2MTMzM0JCNEI3NEE1QzCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAOCNekDo59PLdJnfiPg9kUycEb3EF17TnnUEKJaCunheH/brWakMumqpBox3H2fn1XY7e2e1SFezp52yqcIggLUOj3K49SvTzdDCCwA2MGuzaDHK6IhOuLKH9D9BqA2FTWVr3PNk77g+Bn1TfKF+G+JMr3jvDMkJAW9+58vnl7UJ/g+H6/lWqWAW1JeA3go9B+qdxC9DA02h+7vXPGhsVeUw688LFBv1fDGlQFX02zx0uNrKQQHddL1aJIM01i5M+N3uWJ5u3wCJRvxAr/P9KNtCO1sTFxR2dE/8W0+rfJWkAnDcgzeDCjznICF1146Thjxir08dYlj5YAeR3c5r5L8CAwEAAaNTMFEwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUlnMOCoYqTZJkVPnoN2EzO7S3SlwwHwYDVR0jBBgwFoAUlnMOCoYqTZJkVPnoN2EzO7S3SlwwDQYJKoZIhvcNAQELBQADggEBAGUq4w7nv6Ez4kBdqfgyU0taKHgxIOTKJ6EwsDZj6eVGF6ThrutAonMVUeu1zs5ZW/uYaRWPffHzY8m1wdyrwYVw0HxRWY96vrhOOrVk32J6ip9V9bfFSjZLVnVcBz5V/odB++bJHhMoFNUaoqEGSNleiPotBtOHahlIL1EDEAt7bC5Kk7vEl0VmRJs7Hp1kpdZRJlVy7sLWL082hCJCulG57qL2UbsQ2wmFk+ImJ2RO3GSrNEI4//kHIw7GQFeeROfeb5HvyC/QOCzfBmMc/ipApuyzROSXHsE6CiaM2uWCjHs1NZBu+Za2EoFOhgYN1akeqqo50vRfO3Dd6Bm/rQY="
+        parent_handle: "ta"
+        child_handle: "testbed"
+        service_uri: "https://localhost:3000/rfc6492/ta"
+
+    Rfc8183RepositoryResponse:
+      type: object
+      properties:
+        tag:
+          type: string
+          nullable: true
+        id_cert:
+          $ref: '#/components/schemas/IdCert'
+        publisher_handle:
+          $ref: '#/components/schemas/Handle'
+        service_uri:
+          $ref: '#/components/schemas/ServiceUri'
+        repo_info:
+          $ref: '#/components/schemas/RepoInfo'
+      example:
+        tag: null
+        publisher_handle: "publisher"
+        id_cert: 'MIID..6g=='
+        service_uri: "https://repo.example.com/rfc8181/publisher/"
+        repo_info:
+          base_uri: 'rsync://localhost/repo/ca/'
+          rpki_notify: 'https://localhost:3000/rrdp/notification.xml'
+      
+    Rfc8183PublisherRequest:
+      type: object
+      properties:
+        tag:
+          type: string
+          nullable: true
+        id_cert:
+          $ref: '#/components/schemas/IdCert'
+        publisher_handle:
+          $ref: '#/components/schemas/Handle'
+      example:
+        tag: null
+        publisher_handle: "publisher"
+        id_cert: 'MIID..6g=='
+        
+      
+      
     Rfc8183:
       allOf:
         - $ref: '#/components/schemas/rfcCommon'
@@ -1363,6 +1323,7 @@ components:
           properties:
             child_handle:
               $ref: '#/components/schemas/Handle'
+              
     RFC8183PublisherRequestXML:
       type: object
       properties:
@@ -1389,6 +1350,50 @@ components:
         version: 1
         publisher_handle: 'child'
         publisher_bpki_ta: 'MIID..6g=='
+
+    RFC8183RepositoryResponseXML:
+      type: object
+      properties:
+        xmlns:
+          type: string
+          format: url
+          xml:
+            attribute: true
+        version:
+          type: integer
+          xml:
+            attribute: true
+        service_uri:
+          type: string
+          format: uri
+          xml:
+            attribute: true
+        publisher_handle:
+          type: string
+          xml:
+            attribute: true
+        sia_base:
+          type: string
+          xml:
+            attribute: true
+        rrdp_notification_uri:
+          type: string
+          xml:
+            attribute: true
+        repository_bpki_ta:
+          type: string
+          format: base64
+      xml:
+        name: 'repository_response'
+      example:
+        xmlns: http://www.hactrn.net/uris/rpki/rpki-setup/
+        version: 1
+        service_uri: 'https://localhost:3000/rfc6492/ta'
+        publisher_handle: 'child'
+        sia_base: 'rsync://localhost/repo/ca/'
+        rrdp_notification_uri: 'https://localhost:3000/rrdp/notification.xml'
+        repository_bpki_ta: 'MIID..6g=='
+        
     RFC8183RequestXML:
       type: object
       properties:
@@ -1415,52 +1420,7 @@ components:
         version: 1
         child_handle: 'child'
         child_bpki_ta: 'MIID..6g=='
-    RFC8183RepositoryResponseXML:
-      type: object
-      properties:
-        xmlns:
-          type: string
-          format: url
-          xml:
-            attribute: true
-        version:
-          type: integer
-          xml:
-            attribute: true
-        publisher_handle:
-          type: string
-          xml:
-            attribute: true
-        service_uri:
-          type: string
-          format: uri
-          xml:
-            attribute: true
-        sia_base:
-          type: string
-          format: uri
-          xml:
-            attribute: true
-        rrdp_notification_uri:
-          type: string
-          format: uri
-          xml:
-            attribute: true
-        repository_bpki_ta:
-          type: string
-          format: base64
-      xml:
-        name: 'repository_response'
-      # The example below is not shown by ReDoc, presumably due to:
-      # https://github.com/Redocly/redoc/issues/492
-      example:
-        xmlns: http://www.hactrn.net/uris/rpki/rpki-setup/
-        version: 1
-        publisher_handle: 'ta'
-        service_uri: 'https://localhost:3000/rfc8181/ta'
-        sia_base: 'rsync://localhost/repo/ta/'
-        rrdp_notification_uri: 'https://localhost:3000/rrdp/notification.xml'
-        repository_bpki_ta: 'MIID..aQ=='
+    
     RFC8183ParentResponseXML:
       type: object
       properties:
@@ -1498,11 +1458,13 @@ components:
         child_handle: 'child'
         parent_handle: 'ta'
         parent_bpki_ta: 'MIID..6g=='
+    
     PendingKey:
       type: object
       properties:
         key_id:
           type: string
+    
     CertifiedKey:
       allOf:
         - $ref: '#/components/schemas/PendingKey'
@@ -1533,12 +1495,13 @@ components:
           allOf:
             - $ref: '#/components/schemas/Handle'
             - description: The handle attribute uniquely identifies the new Certificate Authority within this Krill instance.
+            
     AddCAChildRequest:
       type: object
       required:
         - handle
         - resources
-        - auth
+        - id_cert
       properties:
         handle:
           allOf:
@@ -1546,8 +1509,11 @@ components:
             - description: The handle attribute uniquely identifies the new Certificate Authority within this Krill instance.
         resources:
           $ref: '#/components/schemas/Resources'
-        auth:
-          $ref: '#/components/schemas/Rfc8183'
+        id_cert:
+          type: string
+          format: base64
+          
+          
     UpdateCAChildRequest:
       type: object
       properties:
@@ -1573,64 +1539,9 @@ components:
             - $ref: '#/components/schemas/Handle'
             - description: The local handle by which your ca refers to this parent.
         contact:
-          $ref: '#/components/schemas/Rfc6492'
-    AddPublisherRequest:
-      type: object
-      required:
-        - publisher_handle
-        - id_cert
-      properties:
-        publisher_handle:
-          $ref: '#/components/schemas/Handle'
-        tag:
-          type: string
-        id_cert:
-          $ref: '#/components/schemas/IdCert'
-      externalDocs:
-        url: https://tools.ietf.org/html/rfc8183#section-5.2.3
+          $ref: '#/components/schemas/Rfc8183ParentContact'
 
     # Error codes ordered ascending by error code
-    PubDuplicateResponse:
-      type: object
-      required:
-        - label
-        - msg
-        - args
-      properties:
-        label:
-          type: string
-          enum: [pub-duplicate]
-        msg:
-          type: string
-          example: Duplicate publisher 'ca'
-        args:
-          type: object
-          required:
-            - publisher
-          properties:
-            publisher:
-              type: string
-              example: ca
-    PubUnknownResponse:
-      type: object
-      required:
-        - label
-        - msg
-        - args
-      properties:
-        label:
-          type: string
-          enum: [pub-unknown]
-        msg:
-          type: string
-          example: Unknown publisher 'ca'
-        args:
-          required:
-            - publisher
-          properties:
-            publisher:
-              type: string
-              example: ca
     CaRepoSameResponse:
       type: object
       required:
@@ -2448,22 +2359,6 @@ components:
                 "rir": "denied!"
                 "nir": "cannot connect"
 
-
-    PubDuplicateResponse:
-      description: Publisher handle already in use
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/PubDuplicateResponse'
-
-    PubUnknownResponse:
-      description: Unknown publisher
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/PubUnknownResponse'
-
-
     CaRepoSameResponse:
       description: Same Repository
       content:
@@ -2899,113 +2794,7 @@ components:
               entitled_resources:
                 $ref: '#/components/schemas/Resources'
 
-    ListPublishers:
-      description: Success.
-      content:
-        application/json:
-          schema:
-            type: object
-            properties:
-              publishers:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    handle:
-                      $ref: '#/components/schemas/Handle'
-                    links:
-                      type: array
-                      items:
-                        type: object
-                        properties:
-                          rel:
-                            type: string
-                            enum: [self]
-                          link:
-                            type: string
-                            format: uri
-          example:
-            publishers:
-              - handle: 'ca'
-                links:
-                  rel: 'self'
-                  link: '/api/v1/publishers/ca'
 
-    GetPublisher:
-      description: Success.
-      content:
-        application/json:
-          schema:
-            type: object
-            properties:
-              handle:
-                $ref: '#/components/schemas/Handle'
-              id_cert:
-                $ref: '#/components/schemas/IdCert'
-              base_uri:
-                type: string
-                format: uri
-              current_files:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    base64:
-                      type: string
-                      format: base64
-                    uri:
-                      type: string
-                      format: uri
-          example:
-            handle: 'child'
-            id_cert: 'MIID..zw=='
-            base_uri: 'rsync://<KRILL_SERVER_FQDN>/repo/child/'
-            current_files:
-              - base64: 'MIIK..TZPZ'
-                uri: 'rsync://<KRILL_SERVER_FQDN>/repo/child/0/A815..A01C.mft'
-              - base64: 'MIIB..6Lg8'
-                uri: 'rsync://<KRILL_SERVER_FQDN>/repo/child/0/A815..A01C.crl'
-              - base64: 'MIIJ..Cg4='
-                uri: 'rsync://<KRILL_SERVER_FQDN>/repo/child/0/3130..3936.roa'
-
-    AddPublisher:
-      description: Success.
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Rfc8181'
-
-    StalePublishers:
-      description: Success.
-      content:
-        application/json:
-          schema:
-            type: object
-            properties:
-              publishers:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    handle:
-                      $ref: '#/components/schemas/Handle'
-                    links:
-                      type: array
-                      items:
-                        type: object
-                        properties:
-                          rel:
-                            type: string
-                            enum: [self]
-                          link:
-                            type: string
-                            format: uri
-          example:
-            publishers:
-              - handle: 'ca'
-                links:
-                  rel: 'self'
-                  link: '/api/v1/publishers/ca'
 
     GetRepositoryForCA:
       description: Success.
@@ -3017,13 +2806,13 @@ components:
               contact:
                 type: object
                 properties:
-                  rfc8181:
-                    $ref: '#/components/schemas/Rfc8181'
+                  repository_response:
+                    $ref: '#/components/schemas/Rfc8183RepositoryResponse'
           examples:
             contact:
               value:
                 contact:
-                  rfc8181:
+                  repository_response:
                     tag: null
                     publisher_handle: 'ca'
                     id_cert: 'MIID..Vg=='
@@ -3060,12 +2849,19 @@ components:
                     details:
                       type: object
 
-    Rfc6492:
+    Rfc8183ParentResponse:
       description: Success.
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/Rfc6492'
+            $ref: '#/components/schemas/Rfc8183ParentResponse'
+    
+    Rfc8183ParentContact:
+      description: Success.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Rfc8183ParentContact'
 
     Rfc8183O:
       description: Success.
@@ -3073,3 +2869,4 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Rfc8183'
+

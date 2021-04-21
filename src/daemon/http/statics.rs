@@ -4,9 +4,9 @@ use crate::daemon::http::RoutingResult;
 use crate::daemon::http::{HttpResponse, Request};
 
 pub async fn statics(req: Request) -> RoutingResult {
-    match *req.method() {
+    let res = match *req.method() {
         Method::GET => match req.path.full() {
-            "/" => Ok(HttpResponse(
+            "/" => Ok(HttpResponse::new(
                 hyper::Response::builder()
                     .status(StatusCode::FOUND)
                     .header("location", "/index.html")
@@ -61,7 +61,15 @@ pub async fn statics(req: Request) -> RoutingResult {
             _ => Err(req),
         },
         _ => Err(req),
-    }
+    };
+
+    // Do not log static responses even at TRACE level because by definition
+    // static responses are often of little diagnostic value and their large
+    // size makes it harder to see other potentially more useful log messages.
+    res.map(|mut res| {
+        res.do_not_log();
+        res
+    })
 }
 
 static INDEX: &[u8] = include_bytes!("../../../lagosta/index.html");

@@ -9,7 +9,7 @@ use crate::commons::api::{ChildCaInfo, ChildHandle, IssuedCert, ResourceClassNam
 use crate::commons::crypto::IdCert;
 use crate::commons::error::Error;
 use crate::commons::KrillResult;
-use crate::daemon::config::CONFIG;
+use crate::daemon::config::IssuanceTimingConfig;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
@@ -29,13 +29,13 @@ impl LastResponse {}
 /// and [ResourceClassName] are kept in the parent's [ResourceClass].
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildDetails {
-    id_cert: Option<IdCert>,
+    id_cert: IdCert,
     resources: ResourceSet,
     used_keys: HashMap<KeyIdentifier, LastResponse>,
 }
 
 impl ChildDetails {
-    pub fn new(id_cert: Option<IdCert>, resources: ResourceSet) -> Self {
+    pub fn new(id_cert: IdCert, resources: ResourceSet) -> Self {
         ChildDetails {
             id_cert,
             resources,
@@ -43,12 +43,12 @@ impl ChildDetails {
         }
     }
 
-    pub fn id_cert(&self) -> Option<&IdCert> {
-        self.id_cert.as_ref()
+    pub fn id_cert(&self) -> &IdCert {
+        &self.id_cert
     }
 
     pub fn set_id_cert(&mut self, id_cert: IdCert) {
-        self.id_cert = Some(id_cert);
+        self.id_cert = id_cert;
     }
 
     pub fn resources(&self) -> &ResourceSet {
@@ -100,9 +100,9 @@ impl ChildDetails {
     }
 }
 
-impl Into<ChildCaInfo> for ChildDetails {
-    fn into(self) -> ChildCaInfo {
-        ChildCaInfo::new(self.id_cert.as_ref(), self.resources)
+impl From<ChildDetails> for ChildCaInfo {
+    fn from(details: ChildDetails) -> Self {
+        ChildCaInfo::new((&details.id_cert).into(), details.resources)
     }
 }
 
@@ -139,12 +139,12 @@ impl ChildCertificates {
         self.inner.values()
     }
 
-    pub fn expiring(&self) -> Vec<&IssuedCert> {
+    pub fn expiring(&self, issuance_timing: &IssuanceTimingConfig) -> Vec<&IssuedCert> {
         self.inner
             .values()
             .filter(|issued| {
                 issued.validity().not_after()
-                    < Time::now() + Duration::weeks(CONFIG.timing_child_certificate_reissue_weeks_before)
+                    < Time::now() + Duration::weeks(issuance_timing.timing_child_certificate_reissue_weeks_before)
             })
             .collect()
     }

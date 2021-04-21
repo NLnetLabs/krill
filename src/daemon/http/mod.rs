@@ -1,23 +1,28 @@
 use serde::de::DeserializeOwned;
-use std::convert::TryInto;
 use std::io;
 use std::str::FromStr;
+use std::{convert::TryInto, str::from_utf8};
 
 use bytes::{Buf, BufMut, Bytes};
 use serde::Serialize;
 
-use hyper::body::HttpBody;
 use hyper::http::uri::PathAndQuery;
+use hyper::{body::HttpBody, HeaderMap};
 use hyper::{Body, Method, StatusCode};
 
-use crate::commons::api::Token;
 use crate::commons::error::Error;
 use crate::commons::remote::{rfc6492, rfc8181};
-use crate::daemon::auth::Auth;
+use crate::commons::{
+    actor::{Actor, ActorDef},
+    KrillResult,
+};
+use crate::daemon::auth::LoggedInUser;
 use crate::daemon::http::server::State;
 
+pub mod auth;
 pub mod server;
 pub mod statics;
+pub mod testbed;
 pub mod tls;
 pub mod tls_keys;
 
@@ -72,6 +77,7 @@ struct Response {
     content_type: ContentType,
     max_age: Option<usize>,
     body: Vec<u8>,
+    cause: Option<Error>,
 }
 
 impl Response {
@@ -81,6 +87,7 @@ impl Response {
             content_type: ContentType::Text,
             max_age: None,
             body: Vec::new(),
+            cause: None,
         }
     }
 
@@ -88,13 +95,22 @@ impl Response {
         let mut builder = hyper::Response::builder()
             .status(self.status)
             .header("Content-Type", self.content_type.as_ref());
+
         if let Some(max_age) = self.max_age {
             builder = builder.header("Cache-Control", &format!("max-age={}", max_age));
         }
 
+        if self.status == StatusCode::UNAUTHORIZED {
+            builder = builder.header("WWW-Authenticate", "Bearer");
+        }
+
         let response = builder.body(self.body.into()).unwrap();
 
-        HttpResponse(response)
+        let mut r = HttpResponse::new(response);
+        if let Some(cause) = self.cause {
+            r.set_cause(cause);
+        }
+        r
     }
 }
 
@@ -116,32 +132,103 @@ impl io::Write for Response {
 
 //------------ HttpResponse ---------------------------------------------------
 
-pub struct HttpResponse(hyper::Response<Body>);
+pub struct HttpResponse {
+    response: hyper::Response<Body>,
+    cause: Option<Error>,
+    loggable: bool,
+    benign: bool,
+}
 
 impl HttpResponse {
+    pub fn new(response: hyper::Response<Body>) -> Self {
+        HttpResponse {
+            response,
+            cause: None,
+            loggable: true,
+            benign: false,
+        }
+    }
+
+    pub fn response(self) -> hyper::Response<Body> {
+        self.response
+    }
+
+    pub fn loggable(&self) -> bool {
+        self.loggable
+    }
+
+    pub fn benign(&self) -> bool {
+        self.benign
+    }
+
+    pub fn cause(&self) -> Option<&Error> {
+        self.cause.as_ref()
+    }
+
+    /// Hint to the response handling code that, if logging responses, that this
+    /// response should not be logged (perhaps it is sensitive, distracting or
+    /// simply not considered helpful).
+    pub fn do_not_log(&mut self) {
+        self.loggable = false;
+    }
+
+    /// Hint to the response handling code that, if warning about certain
+    /// responses or classes of response, that this response should be considered
+    /// benign, i.e. not worth warning about.
+    pub fn with_benign(mut self, benign: bool) -> Self {
+        self.benign = benign;
+        self
+    }
+
+    /// When logging it can be useful to have the original cause to log rather
+    /// than the HTTP response body (as that might for example be JSON or XML).
+    pub fn set_cause(&mut self, error: Error) {
+        self.cause = Some(error);
+    }
+
+    pub fn status(&self) -> StatusCode {
+        self.response.status()
+    }
+
+    pub fn body(&self) -> &Body {
+        self.response.body()
+    }
+
+    pub fn headers(&self) -> &HeaderMap {
+        self.response.headers()
+    }
+
     fn ok_response(content_type: ContentType, body: Vec<u8>) -> Self {
         Response {
             status: StatusCode::OK,
             content_type,
             max_age: None,
             body,
+            cause: None,
         }
         .finalize()
-    }
-
-    pub fn response(self) -> hyper::Response<Body> {
-        self.0
     }
 
     pub fn json<O: Serialize>(object: &O) -> Self {
         match serde_json::to_string(object) {
             Ok(json) => Self::ok_response(ContentType::Json, json.into_bytes()),
-            Err(e) => Self::error(Error::JsonError(e)),
+            Err(e) => Self::response_from_error(Error::JsonError(e)),
         }
     }
 
     pub fn text(body: Vec<u8>) -> Self {
         Self::ok_response(ContentType::Text, body)
+    }
+
+    pub fn text_no_cache(body: Vec<u8>) -> Self {
+        HttpResponse::new(
+            hyper::Response::builder()
+                .status(StatusCode::OK)
+                .header("Content-Type", ContentType::Text.as_ref())
+                .header("Cache-Control", "no-cache")
+                .body(body.into())
+                .unwrap(),
+        )
     }
 
     pub fn xml(body: Vec<u8>) -> Self {
@@ -154,6 +241,7 @@ impl HttpResponse {
             content_type: ContentType::Xml,
             max_age: Some(seconds),
             body,
+            cause: None,
         }
         .finalize()
     }
@@ -198,8 +286,7 @@ impl HttpResponse {
         Self::ok_response(ContentType::Woff2, content.to_vec())
     }
 
-    pub fn error(error: Error) -> Self {
-        error!("{}", error);
+    fn response_from_error(error: Error) -> Self {
         let status = error.status();
         let response = error.to_error_response();
         let body = serde_json::to_string(&response).unwrap();
@@ -208,6 +295,7 @@ impl HttpResponse {
             content_type: ContentType::Json,
             max_age: None,
             body: body.into_bytes(),
+            cause: Some(error),
         }
         .finalize()
     }
@@ -216,12 +304,26 @@ impl HttpResponse {
         Response::new(StatusCode::OK).finalize()
     }
 
+    pub fn found(location: &str) -> Self {
+        Self::new(
+            hyper::Response::builder()
+                .status(StatusCode::FOUND)
+                .header("Location", location)
+                .body(hyper::Body::empty())
+                .unwrap(),
+        )
+    }
+
     pub fn not_found() -> Self {
         Response::new(StatusCode::NOT_FOUND).finalize()
     }
 
-    pub fn forbidden() -> Self {
-        Response::new(StatusCode::FORBIDDEN).finalize()
+    pub fn unauthorized(reason: String) -> Self {
+        Self::response_from_error(Error::ApiInvalidCredentials(reason))
+    }
+
+    pub fn forbidden(reason: String) -> Self {
+        Self::response_from_error(Error::ApiInsufficientRights(reason))
     }
 }
 
@@ -231,12 +333,38 @@ pub struct Request {
     request: hyper::Request<hyper::Body>,
     path: RequestPath,
     state: State,
+    actor: Actor,
 }
 
 impl Request {
-    pub fn new(request: hyper::Request<hyper::Body>, state: State) -> Self {
+    pub async fn new(request: hyper::Request<hyper::Body>, state: State) -> Self {
         let path = RequestPath::from_request(&request);
-        Request { request, path, state }
+        let actor = state.read().await.actor_from_request(&request);
+
+        Request {
+            request,
+            path,
+            state,
+            actor,
+        }
+    }
+
+    pub fn headers(&self) -> &HeaderMap {
+        self.request.headers()
+    }
+
+    pub async fn upgrade_from_anonymous(&mut self, actor_def: ActorDef) {
+        if self.actor.is_anonymous() {
+            self.actor = self.state.read().await.actor_from_def(actor_def);
+            info!(
+                "Permitted anonymous actor to become actor '{}' for the duration of this request",
+                self.actor.name()
+            );
+        }
+    }
+
+    pub fn actor(&self) -> Actor {
+        self.actor.clone()
     }
 
     /// Returns the complete path.
@@ -272,7 +400,13 @@ impl Request {
     /// Get a json object from a post body
     pub async fn json<O: DeserializeOwned>(self) -> Result<O, Error> {
         let bytes = self.api_bytes().await?;
-        serde_json::from_slice(&bytes).map_err(Error::JsonError)
+
+        if bytes.iter().any(|c| !c.is_ascii()) {
+            Err(Error::NonAsciiCharsInput)
+        } else {
+            let string = from_utf8(&bytes).map_err(|_| Error::InvalidUtf8Input)?;
+            serde_json::from_str(string).map_err(Error::JsonError)
+        }
     }
 
     pub async fn api_bytes(self) -> Result<Bytes, Error> {
@@ -353,35 +487,35 @@ impl Request {
         Ok(vec.into())
     }
 
-    /// Checks whether the Bearer token is set to what we expect
-    pub async fn is_authorized(&self) -> bool {
-        if let Some(header) = self.request.headers().get("Authorization") {
-            if let Ok(header) = header.to_str() {
-                if header.len() > 6 {
-                    let (bearer, token) = header.split_at(6);
-                    let bearer = bearer.trim();
-                    let token = Token::from(token.trim());
+    pub async fn get_login_url(&self) -> KrillResult<HttpResponse> {
+        self.state.read().await.get_login_url()
+    }
 
-                    if "Bearer" == bearer {
-                        return self.state.read().await.is_api_allowed(&Auth::bearer(token));
-                    }
-                }
-            }
-        }
-        false
+    pub async fn login(&self) -> KrillResult<LoggedInUser> {
+        self.state.read().await.login(&self.request)
+    }
+
+    pub async fn logout(&self) -> KrillResult<HttpResponse> {
+        self.state.read().await.logout(&self.request)
     }
 }
 
 //------------ RequestPath ---------------------------------------------------
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RequestPath {
     path: PathAndQuery,
     segment: (usize, usize),
 }
 
+impl std::fmt::Display for RequestPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.full())
+    }
+}
+
 impl RequestPath {
-    fn from_request<B>(request: &hyper::Request<B>) -> Self {
+    pub fn from_request<B>(request: &hyper::Request<B>) -> Self {
         let path = request.uri().path_and_query().unwrap().clone();
         let mut res = RequestPath { path, segment: (0, 0) };
         res.next_segment();
@@ -432,14 +566,6 @@ impl RequestPath {
     where
         T: FromStr,
     {
-        // TODO change to .flatten() when rust 1.40 is more commonplace,
-        //      it seems a bit over the top to require 1.40 for this only.
-        match self.next().map(|s| T::from_str(s).ok()) {
-            None => None,
-            Some(opt) => match opt {
-                None => None,
-                Some(t) => Some(t),
-            },
-        }
+        self.next().map(|s| T::from_str(s).ok()).flatten()
     }
 }

@@ -67,7 +67,7 @@ jobs:
       CARGO_DEB_VER: 1.28.0
       # A Krill version of the form 'x.y.z-plus' denotes a dev build that is
       # newer than the released x.y.z version but is not yet a new release.
-      NEXT_VER_LABEL: plus
+      NEXT_VER_LABEL: bis
     name: deb-pkg
     runs-on: ubuntu-latest
     # Build on the oldest platform we are targeting in order to avoid
@@ -185,7 +185,7 @@ jobs:
         echo " -- maintainer ${MAINTAINER}  ${RFC5322_TS}" >>debian/changelog
 
         DEB_VER="${DEB_KRILL_VER}-1${OS_REL}"
-        cargo deb --variant ${OS_NAME}-${OS_REL} --deb-version ${DEB_VER} -v
+        cargo deb --variant ${OS_NAME}-${OS_REL} --deb-version ${DEB_VER} -v -- --locked
 
     # See what Lintian thinks of our package.
     - name: Verify the DEB package

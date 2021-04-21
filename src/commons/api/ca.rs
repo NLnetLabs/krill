@@ -6,7 +6,7 @@ use std::convert::TryFrom;
 use std::ops::Deref;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::{fmt, ops, str};
+use std::{fmt, str};
 
 use bytes::Bytes;
 use chrono::{Duration, TimeZone, Utc};
@@ -15,23 +15,20 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use rpki::cert::Cert;
 use rpki::crl::{Crl, CrlEntry};
 use rpki::crypto::KeyIdentifier;
-use rpki::manifest::{FileAndHash, Manifest};
+use rpki::manifest::Manifest;
 use rpki::resources::{AsBlocks, AsResources, IpBlocks, IpBlocksForFamily, IpResources};
 use rpki::roa::{Roa, RoaIpAddress};
 use rpki::uri;
 use rpki::x509::{Serial, Time};
 
-use crate::commons::api::publication::Publish;
-use crate::commons::api::rrdp::PublishElement;
-use crate::commons::api::{publication, EntitlementClass, Entitlements, RoaAggregateKey, SigningCert};
 use crate::commons::api::{
-    Base64, ChildHandle, ErrorResponse, Handle, HexEncodedHash, IssuanceRequest, ParentCaContact, ParentHandle,
-    RepositoryContact, RequestResourceLimit, RoaDefinition,
+    rrdp::PublishElement, Base64, ChildHandle, ErrorResponse, Handle, HexEncodedHash, IssuanceRequest, ParentCaContact,
+    ParentHandle, RepositoryContact, RequestResourceLimit, RoaDefinition,
 };
+use crate::commons::api::{EntitlementClass, Entitlements, RoaAggregateKey, SigningCert};
 use crate::commons::crypto::IdCert;
 use crate::commons::util::ext_serde;
 use crate::daemon::ca::RouteAuthorization;
-use crate::daemon::config::CONFIG;
 
 //------------ ResourceClassName -------------------------------------------
 
@@ -40,8 +37,10 @@ use crate::daemon::config::CONFIG;
 /// in practice names can be expected to be short and plain ascii or even numbers.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialOrd, PartialEq)]
 pub struct ResourceClassName {
-    name: Arc<String>,
+    name: Arc<str>,
 }
+
+pub type ParentResourceClassName = ResourceClassName;
 
 impl Default for ResourceClassName {
     fn default() -> ResourceClassName {
@@ -49,25 +48,29 @@ impl Default for ResourceClassName {
     }
 }
 
+impl AsRef<str> for ResourceClassName {
+    fn as_ref(&self) -> &str {
+        &self.name
+    }
+}
+
 impl From<u32> for ResourceClassName {
     fn from(nr: u32) -> ResourceClassName {
         ResourceClassName {
-            name: Arc::new(format!("{}", nr)),
+            name: format!("{}", nr).into(),
         }
     }
 }
 
 impl From<&str> for ResourceClassName {
     fn from(s: &str) -> ResourceClassName {
-        ResourceClassName {
-            name: Arc::new(s.to_string()),
-        }
+        ResourceClassName { name: s.into() }
     }
 }
 
 impl From<String> for ResourceClassName {
     fn from(s: String) -> ResourceClassName {
-        ResourceClassName { name: Arc::new(s) }
+        ResourceClassName { name: s.into() }
     }
 }
 
@@ -126,7 +129,7 @@ impl From<&IdCert> for IdCertPem {
             .map(|b| unsafe { std::str::from_utf8_unchecked(b) })
         {
             pem.push_str(line);
-            pem.push_str("\n");
+            pem.push('\n');
         }
 
         pem.push_str("-----END CERTIFICATE-----\n");
@@ -142,20 +145,20 @@ impl From<&IdCert> for IdCertPem {
 /// This type represents information about a child CA that is shared through the API.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildCaInfo {
-    id_cert: Option<IdCertPem>,
+    id_cert: IdCertPem,
     entitled_resources: ResourceSet,
 }
 
 impl ChildCaInfo {
-    pub fn new(id_cert: Option<&IdCert>, entitled_resources: ResourceSet) -> Self {
+    pub fn new(id_cert: IdCertPem, entitled_resources: ResourceSet) -> Self {
         ChildCaInfo {
-            id_cert: id_cert.map(IdCertPem::from),
+            id_cert,
             entitled_resources,
         }
     }
 
-    pub fn id_cert(&self) -> Option<&IdCertPem> {
-        self.id_cert.as_ref()
+    pub fn id_cert(&self) -> &IdCertPem {
+        &self.id_cert
     }
 
     pub fn entitled_resources(&self) -> &ResourceSet {
@@ -165,10 +168,8 @@ impl ChildCaInfo {
 
 impl fmt::Display for ChildCaInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if let Some(id) = &self.id_cert {
-            writeln!(f, "{}", id.pem())?;
-            writeln!(f, "SHA256 hash of PEM encoded certificate: {}", id.hash())?;
-        }
+        writeln!(f, "{}", self.id_cert.pem())?;
+        writeln!(f, "SHA256 hash of PEM encoded certificate: {}", self.id_cert.hash())?;
         writeln!(f, "resources: {}", self.entitled_resources)
     }
 }
@@ -213,10 +214,10 @@ impl From<&IssuedCert> for ReplacedObject {
     }
 }
 
-impl From<&CurrentObject> for ReplacedObject {
-    fn from(current: &CurrentObject) -> Self {
-        let revocation = Revocation::from(current);
-        let hash = current.to_hex_hash();
+impl From<&Roa> for ReplacedObject {
+    fn from(roa: &Roa) -> Self {
+        let revocation = Revocation::from(roa.cert());
+        let hash = HexEncodedHash::from_content(roa.to_captured().as_slice());
         ReplacedObject { revocation, hash }
     }
 }
@@ -239,6 +240,7 @@ pub struct IssuedCert {
     limit: RequestResourceLimit, // the limit on the request
     resource_set: ResourceSet,
     cert: Cert,
+    #[serde(skip_serializing_if = "Option::is_none")]
     replaces: Option<ReplacedObject>,
 }
 
@@ -341,7 +343,7 @@ impl RcvdCert {
 
     /// Return the CA repository URI where this certificate publishes.
     pub fn ca_repository(&self) -> &uri::Rsync {
-        self.cert().ca_repository().unwrap()
+        self.cert.ca_repository().unwrap()
     }
 
     /// The URI of the MFT published by THIS certificate.
@@ -378,6 +380,14 @@ impl From<IssuedCert> for RcvdCert {
 
 impl AsRef<Cert> for RcvdCert {
     fn as_ref(&self) -> &Cert {
+        &self.cert
+    }
+}
+
+impl Deref for RcvdCert {
+    type Target = Cert;
+
+    fn deref(&self) -> &Self::Target {
         &self.cert
     }
 }
@@ -437,6 +447,8 @@ impl fmt::Display for TrustAnchorLocator {
 
 //------------ RepoInfo ------------------------------------------------------
 
+/// Contains the rsync and RRDP base URIs for a repository,
+/// or publisher inside a repository.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RepoInfo {
     base_uri: uri::Rsync,
@@ -544,87 +556,6 @@ impl CertifiedKeyInfo {
     }
 }
 
-//------------ CurrentObject -------------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct CurrentObject {
-    content: Base64,
-    serial: Serial,
-    expires: Time,
-}
-
-impl CurrentObject {
-    pub fn content(&self) -> &Base64 {
-        &self.content
-    }
-    pub fn serial(&self) -> Serial {
-        self.serial
-    }
-    pub fn expires(&self) -> Time {
-        self.expires
-    }
-
-    pub fn to_hex_hash(&self) -> HexEncodedHash {
-        let bytes = self.content.to_bytes();
-        HexEncodedHash::from_content(bytes.as_ref())
-    }
-}
-
-impl From<&Cert> for CurrentObject {
-    fn from(cert: &Cert) -> Self {
-        let content = Base64::from(cert);
-        let serial = cert.serial_number();
-        let expires = cert.validity().not_after();
-        CurrentObject {
-            content,
-            serial,
-            expires,
-        }
-    }
-}
-
-impl From<&Crl> for CurrentObject {
-    fn from(crl: &Crl) -> Self {
-        let content = Base64::from(crl);
-        let serial = crl.crl_number(); // never revoked
-        let expires = crl.next_update();
-
-        CurrentObject {
-            content,
-            serial,
-            expires,
-        }
-    }
-}
-
-impl From<&Manifest> for CurrentObject {
-    fn from(mft: &Manifest) -> Self {
-        let content = Base64::from(mft);
-        let serial = mft.cert().serial_number();
-        let expires = mft.content().next_update();
-
-        CurrentObject {
-            content,
-            serial,
-            expires,
-        }
-    }
-}
-
-impl From<&Roa> for CurrentObject {
-    fn from(roa: &Roa) -> Self {
-        let content = Base64::from(roa);
-        let serial = roa.cert().serial_number();
-        let expires = roa.cert().validity().not_after();
-
-        CurrentObject {
-            content,
-            serial,
-            expires,
-        }
-    }
-}
-
 //------------ ObjectName ----------------------------------------------------
 
 /// This type is used to represent the (deterministic) file names for
@@ -677,9 +608,15 @@ impl From<&RoaAggregateKey> for ObjectName {
     }
 }
 
-impl Into<Bytes> for ObjectName {
-    fn into(self) -> Bytes {
-        Bytes::from(self.0)
+impl From<&str> for ObjectName {
+    fn from(s: &str) -> Self {
+        ObjectName(s.to_string())
+    }
+}
+
+impl From<ObjectName> for Bytes {
+    fn from(object_name: ObjectName) -> Self {
+        Bytes::from(object_name.0)
     }
 }
 
@@ -703,95 +640,6 @@ impl Deref for ObjectName {
     }
 }
 
-//------------ CurrentObjects ------------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct CurrentObjects(HashMap<ObjectName, CurrentObject>);
-
-impl Default for CurrentObjects {
-    fn default() -> Self {
-        CurrentObjects(HashMap::new())
-    }
-}
-
-impl CurrentObjects {
-    pub fn insert(&mut self, name: ObjectName, object: CurrentObject) -> Option<CurrentObject> {
-        self.0.insert(name, object)
-    }
-
-    pub fn apply_delta(&mut self, delta: ObjectsDelta) {
-        for add in delta.added.into_iter() {
-            self.0.insert(add.name, add.object);
-        }
-        for upd in delta.updated.into_iter() {
-            self.0.insert(upd.name, upd.object);
-        }
-        for wdr in delta.withdrawn.into_iter() {
-            self.0.remove(&wdr.name);
-        }
-    }
-
-    pub fn deactivate(&mut self) {
-        self.0
-            .retain(|name, _| name.ends_with(".mft") || name.ends_with(".crl"))
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    pub fn names(&self) -> impl Iterator<Item = &ObjectName> {
-        self.0.keys()
-    }
-
-    pub fn object_for(&self, name: &ObjectName) -> Option<&CurrentObject> {
-        self.0.get(name)
-    }
-
-    /// Returns withdraws for all the objects in this set. E.g. when the resource
-    /// class containing this set is removed, or the key is destroyed.
-    pub fn withdraw(&self) -> Vec<WithdrawnObject> {
-        self.0
-            .iter()
-            .map(|(name, object)| WithdrawnObject::for_current(name.clone(), object))
-            .collect()
-    }
-
-    /// Returns publish's for all objects in this set.
-    pub fn publish(&self, base_uri: &RepoInfo, name_space: &str) -> Vec<Publish> {
-        let ca_repo = base_uri.ca_repository(name_space);
-        self.0
-            .iter()
-            .map(|(name, object)| Publish::new(None, ca_repo.join(name.as_bytes()), object.content.clone()))
-            .collect()
-    }
-
-    /// Returns Manifest Entries, i.e. excluding the manifest itself
-    pub fn mft_entries(&self) -> Vec<FileAndHash<Bytes, Bytes>> {
-        self.0
-            .keys()
-            .filter(|k| !k.as_ref().ends_with("mft"))
-            .map(|k| {
-                let name_bytes = k.clone().into();
-                let hash_bytes = self.0[k].content.to_encoded_hash().as_bytes();
-                FileAndHash::new(name_bytes, hash_bytes)
-            })
-            .collect()
-    }
-}
-
-impl ops::Add for CurrentObjects {
-    type Output = CurrentObjects;
-
-    fn add(self, other: CurrentObjects) -> CurrentObjects {
-        let mut map = self.0;
-        for (name, object) in other.0.into_iter() {
-            map.insert(name, object);
-        }
-        CurrentObjects(map)
-    }
-}
-
 //------------ Revocation ----------------------------------------------------
 
 /// A Crl Revocation. Note that this type differs from CrlEntry in
@@ -800,15 +648,6 @@ impl ops::Add for CurrentObjects {
 pub struct Revocation {
     serial: Serial,
     expires: Time,
-}
-
-impl From<&CurrentObject> for Revocation {
-    fn from(co: &CurrentObject) -> Self {
-        Revocation {
-            serial: co.serial(),
-            expires: co.expires(),
-        }
-    }
 }
 
 impl From<&Cert> for Revocation {
@@ -893,273 +732,6 @@ impl RevocationsDelta {
     }
 }
 
-//------------ CurrentObjectSet ----------------------------------------------
-
-/// This type describes the complete current set of objects for CA key.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct CurrentObjectSetInfo {
-    this_update: Time,
-    next_update: Time,
-    number: u64,
-    revocations: Revocations,
-    objects: CurrentObjects,
-}
-
-impl Default for CurrentObjectSetInfo {
-    fn default() -> Self {
-        CurrentObjectSetInfo {
-            this_update: Time::now(),
-            next_update: Time::tomorrow(),
-            number: 1,
-            revocations: Revocations::default(),
-            objects: CurrentObjects::default(),
-        }
-    }
-}
-
-impl CurrentObjectSetInfo {
-    pub fn number(&self) -> u64 {
-        self.number
-    }
-    pub fn revocations(&self) -> &Revocations {
-        &self.revocations
-    }
-    pub fn objects(&self) -> &CurrentObjects {
-        &self.objects
-    }
-}
-
-//------------ PublicationDelta ----------------------------------------------
-
-/// This type describes a set up of objects published for a CA key.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct PublicationDeltaInfo {
-    this_update: Time,
-    next_update: Time,
-    number: u64,
-    revocations: RevocationsDelta,
-    objects: ObjectsDelta,
-}
-
-impl PublicationDeltaInfo {
-    pub fn new(
-        this_update: Time,
-        next_update: Time,
-        number: u64,
-        revocations: RevocationsDelta,
-        objects: ObjectsDelta,
-    ) -> Self {
-        PublicationDeltaInfo {
-            this_update,
-            next_update,
-            number,
-            revocations,
-            objects,
-        }
-    }
-
-    pub fn unpack(self) -> (Time, Time, u64, RevocationsDelta, ObjectsDelta) {
-        (
-            self.this_update,
-            self.next_update,
-            self.number,
-            self.revocations,
-            self.objects,
-        )
-    }
-
-    pub fn objects(&self) -> &ObjectsDelta {
-        &self.objects
-    }
-}
-
-impl Into<publication::PublishDelta> for PublicationDeltaInfo {
-    fn into(self) -> publication::PublishDelta {
-        self.objects.into()
-    }
-}
-
-//------------ ObjectsDelta --------------------------------------------------
-
-/// This type defines the changes to be published under a resource class,
-/// so it includes the base 'ca_repo' and all objects that are added,
-/// updated, or withdrawn.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ObjectsDelta {
-    ca_repo: uri::Rsync,
-    added: Vec<AddedObject>,
-    updated: Vec<UpdatedObject>,
-    withdrawn: Vec<WithdrawnObject>,
-}
-
-impl ObjectsDelta {
-    /// Creates an empty ObjectsDelta for a key. Requires the ca_repo uri
-    /// for this key.
-    pub fn new(ca_repo: uri::Rsync) -> Self {
-        ObjectsDelta {
-            ca_repo,
-            added: vec![],
-            updated: vec![],
-            withdrawn: vec![],
-        }
-    }
-
-    pub fn add(&mut self, added: AddedObject) {
-        self.added.push(added);
-    }
-
-    pub fn added(&self) -> &Vec<AddedObject> {
-        &self.added
-    }
-
-    pub fn update(&mut self, updated: UpdatedObject) {
-        self.updated.push(updated);
-    }
-
-    pub fn updated(&self) -> &Vec<UpdatedObject> {
-        &self.updated
-    }
-
-    pub fn withdraw(&mut self, withdrawn: WithdrawnObject) {
-        self.withdrawn.push(withdrawn);
-    }
-
-    pub fn withdrawn(&self) -> &Vec<WithdrawnObject> {
-        &self.withdrawn
-    }
-
-    pub fn len(&self) -> usize {
-        self.added.len() + self.updated.len() + self.withdrawn.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.added.is_empty() && self.updated.is_empty() && self.withdrawn.is_empty()
-    }
-}
-
-impl Into<publication::PublishDelta> for ObjectsDelta {
-    fn into(self) -> publication::PublishDelta {
-        let mut builder = publication::PublishDeltaBuilder::new();
-
-        for a in self.added.into_iter() {
-            let publish = publication::Publish::new(None, self.ca_repo.join(a.name.as_bytes()), a.object.content);
-            builder.add_publish(publish);
-        }
-        for u in self.updated.into_iter() {
-            let update = publication::Update::new(None, self.ca_repo.join(u.name.as_bytes()), u.object.content, u.old);
-            builder.add_update(update);
-        }
-        for w in self.withdrawn.into_iter() {
-            let withdraw = publication::Withdraw::new(None, self.ca_repo.join(w.name.as_bytes()), w.hash);
-            builder.add_withdraw(withdraw);
-        }
-        builder.finish()
-    }
-}
-
-//------------ AddedObject ---------------------------------------------------
-
-/// An object that is newly added to the repository.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct AddedObject {
-    name: ObjectName,
-    object: CurrentObject,
-}
-
-impl AddedObject {
-    pub fn new(name: ObjectName, object: CurrentObject) -> Self {
-        AddedObject { name, object }
-    }
-
-    pub fn name(&self) -> &ObjectName {
-        &self.name
-    }
-
-    pub fn object(&self) -> &CurrentObject {
-        &self.object
-    }
-}
-
-impl From<&Cert> for AddedObject {
-    fn from(cert: &Cert) -> Self {
-        let name = ObjectName::from(cert);
-        let object = CurrentObject::from(cert);
-        AddedObject { name, object }
-    }
-}
-
-//------------ UpdatedObject -------------------------------------------------
-
-/// A new object that replaces an earlier version by this name.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct UpdatedObject {
-    name: ObjectName,
-    object: CurrentObject,
-    old: HexEncodedHash,
-}
-
-impl UpdatedObject {
-    pub fn new(name: ObjectName, object: CurrentObject, old: HexEncodedHash) -> Self {
-        UpdatedObject { name, object, old }
-    }
-
-    pub fn for_cert(new: &Cert, old: HexEncodedHash) -> Self {
-        let name = ObjectName::from(new);
-        let object = CurrentObject::from(new);
-        UpdatedObject { name, object, old }
-    }
-
-    pub fn name(&self) -> &ObjectName {
-        &self.name
-    }
-
-    pub fn object(&self) -> &CurrentObject {
-        &self.object
-    }
-
-    pub fn old(&self) -> &HexEncodedHash {
-        &self.old
-    }
-}
-
-//------------ WithdrawnObject -----------------------------------------------
-
-/// An object that is to be withdrawn from the repository.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct WithdrawnObject {
-    name: ObjectName,
-    hash: HexEncodedHash,
-}
-
-impl WithdrawnObject {
-    pub fn new(name: ObjectName, hash: HexEncodedHash) -> Self {
-        WithdrawnObject { name, hash }
-    }
-
-    pub fn for_current(name: ObjectName, current: &CurrentObject) -> Self {
-        WithdrawnObject {
-            name,
-            hash: current.to_hex_hash(),
-        }
-    }
-
-    pub fn name(&self) -> &ObjectName {
-        &self.name
-    }
-
-    pub fn hash(&self) -> &HexEncodedHash {
-        &self.hash
-    }
-}
-
-impl From<&Cert> for WithdrawnObject {
-    fn from(c: &Cert) -> Self {
-        let name = ObjectName::from(c);
-        let hash = HexEncodedHash::from_content(c.to_captured().as_slice());
-        WithdrawnObject { name, hash }
-    }
-}
-
 //------------ ResourceSetSummary --------------------------------------------
 /// This type defines a summary of a set of Internet Number Resources, for
 /// use in concise reporting.
@@ -1171,13 +743,13 @@ pub struct ResourceSetSummary {
 }
 
 impl ResourceSetSummary {
-    pub fn asn_bloks(&self) -> usize {
+    pub fn asn_blocks(&self) -> usize {
         self.asns
     }
-    pub fn ipv4_bloks(&self) -> usize {
+    pub fn ipv4_blocks(&self) -> usize {
         self.ipv4
     }
-    pub fn ipv6_bloks(&self) -> usize {
+    pub fn ipv6_blocks(&self) -> usize {
         self.ipv6
     }
 }
@@ -1210,7 +782,7 @@ impl fmt::Display for ResourceSetSummary {
 ///
 /// This type supports conversions to and from string representations,
 /// and is (de)serializable.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ResourceSet {
     asn: AsBlocks,
 
@@ -1381,8 +953,8 @@ impl FromStr for ResourceSet {
         if s.len() < 16 || !s.starts_with("asn: ") {
             return Err(ResourceSetError::FromString);
         }
-        let v4_start = s.find(", v4: ").ok_or_else(|| ResourceSetError::FromString)?;
-        let v6_start = s.find(", v6: ").ok_or_else(|| ResourceSetError::FromString)?;
+        let v4_start = s.find(", v4: ").ok_or(ResourceSetError::FromString)?;
+        let v6_start = s.find(", v6: ").ok_or(ResourceSetError::FromString)?;
 
         let asn = &s[5..v4_start];
         let v4 = &s[v4_start + 6..v6_start];
@@ -1420,19 +992,6 @@ impl fmt::Display for ResourceSet {
         write!(f, "asn: {}, v4: {}, v6: {}", self.asn, self.v4(), self.v6())
     }
 }
-
-// TODO: Implement equals better on enclosed AsBlocks and IpBlocks, and check corner cases
-impl PartialEq for ResourceSet {
-    fn eq(&self, other: &Self) -> bool {
-        if let (Ok(self_str), Ok(other_str)) = (serde_json::to_string(&self), serde_json::to_string(other)) {
-            self_str == other_str
-        } else {
-            false
-        }
-    }
-}
-
-impl Eq for ResourceSet {}
 
 //------------ CertAuthList --------------------------------------------------
 
@@ -1479,17 +1038,22 @@ impl CertAuthSummary {
 }
 
 //------------ ParentKindInfo ------------------------------------------------
-#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ParentKindInfo {
-    #[display(fmt = "This CA is a TA")]
     Ta,
-
-    #[display(fmt = "Embedded parent")]
     Embedded,
-
-    #[display(fmt = "RFC 6492 Parent")]
     Rfc6492,
+}
+
+impl fmt::Display for ParentKindInfo {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ParentKindInfo::Ta => write!(f, "This CA is a TA"),
+            ParentKindInfo::Embedded => write!(f, "Embedded parent"),
+            ParentKindInfo::Rfc6492 => write!(f, "RFC 6492 Parent"),
+        }
+    }
 }
 
 //------------ ParentInfo ----------------------------------------------------
@@ -1504,7 +1068,6 @@ impl ParentInfo {
     pub fn new(handle: ParentHandle, contact: ParentCaContact) -> Self {
         let kind = match contact {
             ParentCaContact::Ta(_) => ParentKindInfo::Ta,
-            ParentCaContact::Embedded => ParentKindInfo::Embedded,
             ParentCaContact::Rfc6492(_) => ParentKindInfo::Rfc6492,
         };
         ParentInfo { handle, kind }
@@ -1535,16 +1098,23 @@ impl ParentStatuses {
         self.0.get(parent)
     }
 
-    pub fn set_failure(&mut self, parent: &ParentHandle, uri: String, error: ErrorResponse) {
-        self.get_mut_status(parent).set_failure(uri, error);
+    pub fn set_failure(&mut self, parent: &ParentHandle, uri: String, error: ErrorResponse, next_seconds: i64) {
+        self.get_mut_status(parent).set_failure(uri, error, next_seconds);
     }
 
-    pub fn set_entitlements(&mut self, parent: &ParentHandle, uri: String, entitlements: &Entitlements) {
-        self.get_mut_status(parent).set_entitlements(uri, entitlements);
+    pub fn set_entitlements(
+        &mut self,
+        parent: &ParentHandle,
+        uri: String,
+        entitlements: &Entitlements,
+        next_seconds: i64,
+    ) {
+        self.get_mut_status(parent)
+            .set_entitlements(uri, entitlements, next_seconds);
     }
 
-    pub fn set_last_updated(&mut self, parent: &ParentHandle, uri: String) {
-        self.get_mut_status(parent).set_last_updated(uri);
+    pub fn set_last_updated(&mut self, parent: &ParentHandle, uri: String, next_seconds: i64) {
+        self.get_mut_status(parent).set_last_updated(uri, next_seconds);
     }
 
     fn get_mut_status(&mut self, parent: &ParentHandle) -> &mut ParentStatus {
@@ -1702,21 +1272,21 @@ impl ParentStatus {
         self.last_exchange.map(|e| e.into_failure_opt()).flatten()
     }
 
-    fn set_next_exchange_plus_one_hour(&mut self) {
-        self.next_exchange_before = (Time::now() + Duration::hours(1)).timestamp();
+    fn set_next_exchange_plus_seconds(&mut self, next_seconds: i64) {
+        self.next_exchange_before = (Time::now() + Duration::seconds(next_seconds)).timestamp();
     }
 
-    fn set_failure(&mut self, uri: String, error: ErrorResponse) {
+    fn set_failure(&mut self, uri: String, error: ErrorResponse, next_seconds: i64) {
         self.last_exchange = Some(ParentExchange {
             timestamp: Time::now().timestamp(),
             uri,
             result: ParentExchangeResult::Failure(error),
         });
-        self.set_next_exchange_plus_one_hour();
+        self.set_next_exchange_plus_seconds(next_seconds);
     }
 
-    fn set_entitlements(&mut self, uri: String, entitlements: &Entitlements) {
-        self.set_last_updated(uri);
+    fn set_entitlements(&mut self, uri: String, entitlements: &Entitlements, next_run_seconds: i64) {
+        self.set_last_updated(uri, next_run_seconds);
 
         self.entitlements = entitlements
             .classes()
@@ -1734,16 +1304,16 @@ impl ParentStatus {
         }
 
         self.all_resources = all_resources;
-        self.set_next_exchange_plus_one_hour();
+        self.set_next_exchange_plus_seconds(next_run_seconds);
     }
 
-    fn set_last_updated(&mut self, uri: String) {
+    fn set_last_updated(&mut self, uri: String, next_run_seconds: i64) {
         self.last_exchange = Some(ParentExchange {
             timestamp: Time::now().timestamp(),
             uri,
             result: ParentExchangeResult::Success,
         });
-        self.set_next_exchange_plus_one_hour();
+        self.set_next_exchange_plus_seconds(next_run_seconds);
     }
 }
 
@@ -1769,7 +1339,7 @@ impl Default for RepoStatus {
     fn default() -> Self {
         RepoStatus {
             last_exchange: None,
-            next_exchange_before: Self::now_plus_republish_hours(),
+            next_exchange_before: Self::now_plus_hours(1),
             published: vec![],
         }
     }
@@ -1784,18 +1354,14 @@ impl RepoStatus {
         self.last_exchange.as_ref()
     }
 
-    pub fn published(&self) -> &Vec<PublishElement> {
-        &self.published
-    }
-
     pub fn into_failure_opt(self) -> Option<ErrorResponse> {
         self.last_exchange.map(|e| e.into_failure_opt()).flatten()
     }
 }
 
 impl RepoStatus {
-    fn now_plus_republish_hours() -> i64 {
-        (Time::now() + Duration::hours(CONFIG.republish_hours())).timestamp()
+    fn now_plus_hours(hours: i64) -> i64 {
+        (Time::now() + Duration::hours(hours)).timestamp()
     }
 
     pub fn set_failure(&mut self, uri: String, error: ErrorResponse) {
@@ -1807,23 +1373,23 @@ impl RepoStatus {
         self.next_exchange_before = (Time::now() + Duration::minutes(5)).timestamp();
     }
 
-    pub fn set_success(&mut self, uri: String, published: Vec<PublishElement>) {
+    pub fn set_published(&mut self, uri: String, published: Vec<PublishElement>, next_hours: i64) {
         self.last_exchange = Some(ParentExchange {
             timestamp: Time::now().timestamp(),
             uri,
             result: ParentExchangeResult::Success,
         });
         self.published = published;
-        self.next_exchange_before = Self::now_plus_republish_hours();
+        self.next_exchange_before = Self::now_plus_hours(next_hours);
     }
 
-    pub fn set_last_updated(&mut self, uri: String) {
+    pub fn set_last_updated(&mut self, uri: String, next_hours: i64) {
         self.last_exchange = Some(ParentExchange {
             timestamp: Time::now().timestamp(),
             uri,
             result: ParentExchangeResult::Success,
         });
-        self.next_exchange_before = Self::now_plus_republish_hours();
+        self.next_exchange_before = Self::now_plus_hours(next_hours);
     }
 }
 
@@ -1840,22 +1406,6 @@ impl fmt::Display for RepoStatus {
                     "Next contact on or before: {}",
                     self.next_exchange_before().to_rfc3339()
                 )?;
-
-                if exchange.was_success() {
-                    write!(f, "Published Objects:")?;
-                } else {
-                    write!(f, "LAST KNOWN Published Objects:")?;
-                }
-
-                if self.published.is_empty() {
-                    writeln!(f, " None")?;
-                } else {
-                    writeln!(f)?;
-                }
-
-                for object in &self.published {
-                    writeln!(f, "  {} {}", object.base64().to_encoded_hash(), object.uri())?;
-                }
             }
         }
         Ok(())
@@ -1944,8 +1494,8 @@ impl CertAuthInfo {
 
         let empty = ResourceSet::default();
         let resources = resource_classes.values().fold(ResourceSet::default(), |res, rci| {
-            let rc_resouces = rci.current_resources().unwrap_or(&empty);
-            res.union(rc_resouces)
+            let rc_resources = rci.current_resources().unwrap_or(&empty);
+            res.union(rc_resources)
         });
 
         CertAuthInfo {
@@ -1985,19 +1535,6 @@ impl CertAuthInfo {
 
     pub fn children(&self) -> &Vec<ChildHandle> {
         &self.children
-    }
-
-    pub fn published_objects(&self) -> Vec<Publish> {
-        let mut res = vec![];
-
-        if let Some(repo_info) = &self.repo_info {
-            for (_rc_name, rc) in self.resource_classes.iter() {
-                let name_space = rc.name_space();
-                res.append(&mut rc.current_objects().publish(repo_info, name_space));
-            }
-        }
-
-        res
     }
 }
 
@@ -2045,12 +1582,6 @@ impl fmt::Display for CertAuthInfo {
             writeln!(f, "Resource Class: {}", name,)?;
             writeln!(f, "Parent: {}", rc.parent_handle())?;
             writeln!(f, "{}", rc.keys())?;
-
-            writeln!(f, "Current objects:")?;
-            for object in rc.current_objects().names() {
-                writeln!(f, "  {}", object)?;
-            }
-            writeln!(f)?;
         }
 
         writeln!(f, "Children:")?;
@@ -2073,21 +1604,14 @@ pub struct ResourceClassInfo {
     name_space: String,
     parent_handle: ParentHandle,
     keys: ResourceClassKeysInfo,
-    current_objects: CurrentObjects,
 }
 
 impl ResourceClassInfo {
-    pub fn new(
-        name_space: String,
-        parent_handle: ParentHandle,
-        keys: ResourceClassKeysInfo,
-        current_objects: CurrentObjects,
-    ) -> Self {
+    pub fn new(name_space: String, parent_handle: ParentHandle, keys: ResourceClassKeysInfo) -> Self {
         ResourceClassInfo {
             name_space,
             parent_handle,
             keys,
-            current_objects,
         }
     }
 
@@ -2105,12 +1629,12 @@ impl ResourceClassInfo {
         self.keys.current_key()
     }
 
-    pub fn current_resources(&self) -> Option<&ResourceSet> {
-        self.current_key().map(|k| k.incoming_cert().resources())
+    pub fn new_key(&self) -> Option<&CertifiedKeyInfo> {
+        self.keys.new_key()
     }
 
-    pub fn current_objects(&self) -> &CurrentObjects {
-        &self.current_objects
+    pub fn current_resources(&self) -> Option<&ResourceSet> {
+        self.current_key().map(|k| k.incoming_cert().resources())
     }
 }
 
@@ -2128,22 +1652,19 @@ pub enum ResourceClassKeysInfo {
     RollOld(RollOldInfo),
 }
 
-#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
-#[display(fmt = "pending")]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PendingInfo {
     #[serde(rename = "pending_key")]
     pub _pending_key: PendingKeyInfo,
 }
 
-#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
-#[display(fmt = "active")]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ActiveInfo {
     #[serde(rename = "active_key")]
     pub _active_key: CertifiedKeyInfo,
 }
 
-#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
-#[display(fmt = "roll phase 1: pending and active key")]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RollPendingInfo {
     #[serde(rename = "pending_key")]
     pub _pending_key: PendingKeyInfo,
@@ -2151,8 +1672,7 @@ pub struct RollPendingInfo {
     pub _active_key: CertifiedKeyInfo,
 }
 
-#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
-#[display(fmt = "roll phase 2: new and active key")]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RollNewInfo {
     #[serde(rename = "new_key")]
     pub _new_key: CertifiedKeyInfo,
@@ -2160,8 +1680,7 @@ pub struct RollNewInfo {
     pub _active_key: CertifiedKeyInfo,
 }
 
-#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
-#[display(fmt = "roll phase 3: active and old key")]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RollOldInfo {
     #[serde(rename = "active_key")]
     pub _active_key: CertifiedKeyInfo,
@@ -2179,6 +1698,14 @@ impl ResourceClassKeysInfo {
             _ => None,
         }
     }
+
+    pub fn new_key(&self) -> Option<&CertifiedKeyInfo> {
+        if let ResourceClassKeysInfo::RollNew(new) = self {
+            Some(&new._new_key)
+        } else {
+            None
+        }
+    }
 }
 
 impl fmt::Display for ResourceClassKeysInfo {
@@ -2188,21 +1715,11 @@ impl fmt::Display for ResourceClassKeysInfo {
         res.push_str("State: ");
 
         match &self {
-            ResourceClassKeysInfo::Pending(p) => {
-                res.push_str(&p.to_string());
-            }
-            ResourceClassKeysInfo::Active(a) => {
-                res.push_str(&a.to_string());
-            }
-            ResourceClassKeysInfo::RollPending(r) => {
-                res.push_str(&r.to_string());
-            }
-            ResourceClassKeysInfo::RollNew(r) => {
-                res.push_str(&r.to_string());
-            }
-            ResourceClassKeysInfo::RollOld(r) => {
-                res.push_str(&r.to_string());
-            }
+            ResourceClassKeysInfo::Pending(_) => res.push_str("pending"),
+            ResourceClassKeysInfo::Active(_) => res.push_str("active"),
+            ResourceClassKeysInfo::RollPending(_) => res.push_str("roll phase 1: pending and active key"),
+            ResourceClassKeysInfo::RollNew(_) => res.push_str("roll phase 2: new and active key"),
+            ResourceClassKeysInfo::RollOld(_) => res.push_str("roll phase 3: active and old key"),
         }
 
         if let Some(key) = self.current_key() {
@@ -2237,21 +1754,10 @@ impl CaRepoDetails {
 impl fmt::Display for CaRepoDetails {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "Repository Details:")?;
-        match self.contact() {
-            RepositoryContact::Embedded(repo_info) => {
-                writeln!(f, "  type:        embedded")?;
-                writeln!(f, "  base_uri:    {}", repo_info.base_uri())?;
-                writeln!(f, "  rpki_notify: {}", repo_info.rpki_notify())?;
-            }
-            RepositoryContact::Rfc8181(response) => {
-                writeln!(f, "  type:        remote")?;
-                writeln!(f, "  service uri: {}", response.service_uri())?;
-                let repo_info = response.repo_info();
-                writeln!(f, "  base_uri:    {}", repo_info.base_uri())?;
-                writeln!(f, "  rpki_notify: {}", repo_info.rpki_notify())?;
-            }
-        }
-
+        writeln!(f, "  service uri: {}", self.contact.service_uri())?;
+        let repo_info = self.contact.repo_info();
+        writeln!(f, "  base_uri:    {}", repo_info.base_uri())?;
+        writeln!(f, "  rpki_notify: {}", repo_info.rpki_notify())?;
         writeln!(f)?;
 
         Ok(())
@@ -2295,8 +1801,12 @@ impl fmt::Display for AllCertAuthIssues {
                 }
                 let parent_issues = issues.parent_issues();
                 if !parent_issues.is_empty() {
-                    for (parent, issue) in parent_issues.iter() {
-                        writeln!(f, "   Parent '{}' has issue: {}", parent, issue)?;
+                    for parent_issue in parent_issues.iter() {
+                        writeln!(
+                            f,
+                            "   Parent '{}' has issue: {}",
+                            parent_issue.parent, parent_issue.issue
+                        )?;
                     }
                 }
             }
@@ -2309,38 +1819,45 @@ impl fmt::Display for AllCertAuthIssues {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthIssues {
-    repo: Option<ErrorResponse>,
-    parents: HashMap<ParentHandle, ErrorResponse>,
+    repo_issue: Option<ErrorResponse>,
+    parent_issues: Vec<CertAuthParentIssue>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CertAuthParentIssue {
+    pub parent: ParentHandle,
+    pub issue: ErrorResponse,
 }
 
 impl Default for CertAuthIssues {
     fn default() -> Self {
         CertAuthIssues {
-            repo: None,
-            parents: HashMap::new(),
+            repo_issue: None,
+            parent_issues: vec![],
         }
     }
 }
 
 impl CertAuthIssues {
     pub fn add_repo_issue(&mut self, issue: ErrorResponse) {
-        self.repo = Some(issue);
+        self.repo_issue = Some(issue);
     }
 
     pub fn repo_issue(&self) -> Option<&ErrorResponse> {
-        self.repo.as_ref()
+        self.repo_issue.as_ref()
     }
 
     pub fn add_parent_issue(&mut self, parent: ParentHandle, issue: ErrorResponse) {
-        self.parents.insert(parent, issue);
+        let parent_issue = CertAuthParentIssue { parent, issue };
+        self.parent_issues.push(parent_issue);
     }
 
-    pub fn parent_issues(&self) -> &HashMap<ParentHandle, ErrorResponse> {
-        &self.parents
+    pub fn parent_issues(&self) -> &Vec<CertAuthParentIssue> {
+        &self.parent_issues
     }
 
     pub fn is_empty(&self) -> bool {
-        self.repo.is_none() && self.parents.is_empty()
+        self.repo_issue.is_none() && self.parent_issues.is_empty()
     }
 }
 
@@ -2354,8 +1871,8 @@ impl fmt::Display for CertAuthIssues {
             }
             let parent_issues = self.parent_issues();
             if !parent_issues.is_empty() {
-                for (parent, issue) in parent_issues.iter() {
-                    writeln!(f, "Parent '{}' has issue: {}", parent, issue)?;
+                for parent_issue in parent_issues.iter() {
+                    writeln!(f, "Parent '{}' has issue: {}", parent_issue.parent, parent_issue.issue)?;
                 }
             }
         }
@@ -2516,28 +2033,32 @@ impl fmt::Display for RtaPrepResponse {
 
 //------------ ResSetErr -----------------------------------------------------
 
-#[derive(Clone, Debug, Display, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ResourceSetError {
-    #[display(fmt = "Cannot parse ASN resource: {}", _0)]
     Asn(String),
-
-    #[display(fmt = "Cannot parse IPv4 resource: {}", _0)]
     V4(String),
-
-    #[display(fmt = "Cannot parse IPv6 resource: {}", _0)]
     V6(String),
-
-    #[display(fmt = "Mixed Address Families in configured resource set")]
     Mix,
-
-    #[display(fmt = "Found inherited resources on CA certificate")]
     InheritOnCaCert,
-
-    #[display(fmt = "Limit in CSR exceeds resource entitlements.")]
     Limit,
-
-    #[display(fmt = "Cannot parse resource set string, expected: 'asn: <ASNs>, ipv4: <IPv4s>, ipv6: <IPv6s>'.")]
     FromString,
+}
+
+impl fmt::Display for ResourceSetError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ResourceSetError::Asn(s) => write!(f, "Cannot parse ASN resource: {}", s),
+            ResourceSetError::V4(s) => write!(f, "Cannot parse IPv4 resource: {}", s),
+            ResourceSetError::V6(s) => write!(f, "Cannot parse IPv6 resource: {}", s),
+            ResourceSetError::Mix => write!(f, "Mixed Address Families in configured resource set"),
+            ResourceSetError::InheritOnCaCert => write!(f, "Found inherited resources on CA certificate"),
+            ResourceSetError::Limit => write!(f, "Limit in CSR exceeds resource entitlements."),
+            ResourceSetError::FromString => write!(
+                f,
+                "Cannot parse resource set string, expected: 'asn: <ASNs>, ipv4: <IPv4s>, ipv6: <IPv6s>'."
+            ),
+        }
+    }
 }
 
 impl ResourceSetError {
@@ -2642,7 +2163,7 @@ mod test {
     }
 
     #[test]
-    fn serialize_deserialise_repo_info() {
+    fn serialize_deserialize_repo_info() {
         let info = RepoInfo::new(
             test::rsync("rsync://some/module/folder/"),
             test::https("https://host/notification.xml"),
@@ -2685,12 +2206,6 @@ mod test {
         let resource_set_v6_differs = ResourceSet::from_strs(asns, ipv4s, ipv6s_2).unwrap();
         let resource_set_2 = ResourceSet::from_strs(asns_2, ipv4s_2, ipv6s_2).unwrap();
 
-        assert_eq!(resource_set, resource_set);
-        assert_eq!(resource_set_asn_differs, resource_set_asn_differs);
-        assert_eq!(resource_set_v4_differs, resource_set_v4_differs);
-        assert_eq!(resource_set_v6_differs, resource_set_v6_differs);
-        assert_eq!(resource_set_2, resource_set_2);
-
         assert_ne!(resource_set, resource_set_asn_differs);
         assert_ne!(resource_set, resource_set_v4_differs);
         assert_ne!(resource_set, resource_set_v6_differs);
@@ -2701,6 +2216,18 @@ mod test {
             ResourceSet::from_strs("", "10.0.0.0/16, 192.168.0.0/16", "2001:db8::/32, 2000:db8::/32").unwrap();
         assert_ne!(default_set, certified);
         assert_ne!(resource_set, certified);
+    }
+
+    #[test]
+    fn resource_set_equivalent() {
+        let set: ResourceSet =
+            serde_json::from_str(include_str!("../../../test-resources/resources/parent_resources.json")).unwrap();
+        let equivalent: ResourceSet = serde_json::from_str(include_str!(
+            "../../../test-resources/resources/parent_resources_reordered.json"
+        ))
+        .unwrap();
+
+        assert_eq!(set, equivalent);
     }
 
     #[test]
@@ -2745,5 +2272,25 @@ mod test {
         let empty_set_string = empty_set.to_string();
         let empty_set_from_string = ResourceSet::from_str(&empty_set_string).unwrap();
         assert_eq!(empty_set, empty_set_from_string);
+    }
+
+    #[test]
+    fn serde_cert_auth_issues() {
+        let mut issues = CertAuthIssues::default();
+
+        use crate::commons::error::Error;
+        use crate::commons::util::httpclient;
+
+        issues.add_repo_issue(Error::HttpClientError(httpclient::Error::Forbidden).to_error_response());
+        issues.add_parent_issue(
+            Handle::from_str("parent").unwrap(),
+            Error::Rfc6492SignatureInvalid.to_error_response(),
+        );
+
+        // println!("{}", serde_json::to_string_pretty(&issues).unwrap());
+        let serialized = serde_json::to_string_pretty(&issues).unwrap();
+        let deserialized = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(issues, deserialized);
     }
 }

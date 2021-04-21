@@ -2,9 +2,9 @@
 //! storing them unencrypted on disk.
 use std::fs::File;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::{fs, io};
+use std::{fmt, fs, io};
 
 use bytes::Bytes;
 use openssl::error::ErrorStack;
@@ -22,24 +22,24 @@ use rpki::crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, Signatu
 /// An openssl based signer.
 #[derive(Clone, Debug)]
 pub struct OpenSslSigner {
-    keys_dir: Arc<PathBuf>,
+    keys_dir: Arc<Path>,
 }
 
 impl OpenSslSigner {
-    pub fn build(work_dir: &PathBuf) -> Result<Self, SignerError> {
+    pub fn build(work_dir: &Path) -> Result<Self, SignerError> {
         let meta_data = fs::metadata(&work_dir)?;
         if meta_data.is_dir() {
-            let mut keys_dir = PathBuf::from(work_dir);
+            let mut keys_dir = work_dir.to_path_buf();
             keys_dir.push("keys");
             if !keys_dir.is_dir() {
                 fs::create_dir_all(&keys_dir)?;
             }
 
-            let keys_dir = Arc::new(keys_dir);
-
-            Ok(OpenSslSigner { keys_dir })
+            Ok(OpenSslSigner {
+                keys_dir: keys_dir.into(),
+            })
         } else {
-            Err(SignerError::InvalidWorkDir(work_dir.clone()))
+            Err(SignerError::InvalidWorkDir(work_dir.to_path_buf()))
         }
     }
 }
@@ -182,31 +182,33 @@ impl OpenSslKeyPair {
         // Issues unwrapping this indicate a bug in the openssl library.
         // So, there is no way to recover.
         let mut b = Bytes::from(self.pkey.rsa().unwrap().public_key_to_der()?);
-        Ok(PublicKey::decode(&mut b).map_err(|_| SignerError::DecodeError)?)
+        PublicKey::decode(&mut b).map_err(|_| SignerError::DecodeError)
     }
 }
 
 //------------ OpenSslKeyError -----------------------------------------------
 
-#[derive(Debug, Display)]
+#[derive(Debug)]
 pub enum SignerError {
-    #[display(fmt = "OpenSsl Error: {}", _0)]
     OpenSslError(ErrorStack),
-
-    #[display(fmt = "Could not decode public key info: {}", _0)]
     JsonError(serde_json::Error),
-
-    #[display(fmt = "Invalid base path: {:?}", _0)]
     InvalidWorkDir(PathBuf),
-
-    #[display(fmt = "{}", _0)]
     IoError(io::Error),
-
-    #[display(fmt = "Could not find key")]
     KeyNotFound,
-
-    #[display(fmt = "Could not decode key")]
     DecodeError,
+}
+
+impl fmt::Display for SignerError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            SignerError::OpenSslError(e) => write!(f, "OpenSsl Error: {}", e),
+            SignerError::JsonError(e) => write!(f, "Could not decode public key info: {}", e),
+            SignerError::InvalidWorkDir(path) => write!(f, "Invalid base path: {}", path.to_string_lossy()),
+            SignerError::IoError(e) => e.fmt(f),
+            SignerError::KeyNotFound => write!(f, "Could not find key"),
+            SignerError::DecodeError => write!(f, "Could not decode key"),
+        }
+    }
 }
 
 impl From<ErrorStack> for SignerError {

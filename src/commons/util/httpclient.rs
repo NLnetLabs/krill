@@ -12,7 +12,7 @@ use serde::Serialize;
 
 use crate::commons::api::{ErrorResponse, Token};
 use crate::commons::util::file;
-use crate::constants::{HTTTP_CLIENT_TIMEOUT_SECS, KRILL_CLI_API_ENV, KRILL_HTTPS_ROOT_CERTS_ENV};
+use crate::constants::{HTTP_CLIENT_TIMEOUT_SECS, KRILL_CLI_API_ENV, KRILL_HTTPS_ROOT_CERTS_ENV};
 
 const JSON_CONTENT: &str = "application/json";
 
@@ -226,7 +226,7 @@ fn load_root_cert(path: &str) -> Result<reqwest::Certificate, Error> {
 }
 
 pub async fn client(uri: &str) -> Result<reqwest::Client, Error> {
-    let mut builder = reqwest::ClientBuilder::new().timeout(Duration::from_secs(HTTTP_CLIENT_TIMEOUT_SECS));
+    let mut builder = reqwest::ClientBuilder::new().timeout(Duration::from_secs(HTTP_CLIENT_TIMEOUT_SECS));
 
     if let Ok(cert_list) = env::var(KRILL_HTTPS_ROOT_CERTS_ENV) {
         for path in cert_list.split(':') {
@@ -292,41 +292,40 @@ async fn opt_text_response(res: Response) -> Result<Option<String>, Error> {
 
 //------------ Error ---------------------------------------------------------
 
-#[derive(Debug, Display)]
+#[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum Error {
-    #[display(fmt = "Request Error: {}", _0)]
     RequestError(reqwest::Error),
-
-    #[display(fmt = "Access Forbidden")]
     Forbidden,
-
-    #[display(fmt = "Received bad status: {}", _0)]
     BadStatus(StatusCode),
-
-    #[display(fmt = "Status: {}, Error: {}", _0, _1)]
     ErrorWithBody(StatusCode, String),
-
-    #[display(fmt = "Status: {}, ErrorResponse: {}", _0, _1)]
     ErrorWithJson(StatusCode, ErrorResponse),
-
-    #[display(fmt = "{}", _0)]
     JsonError(serde_json::Error),
-
-    #[display(fmt = "{}", _0)]
     InvalidHeader(InvalidHeaderValue),
-
-    #[display(fmt = "Empty response received from server")]
     EmptyResponse,
-
-    #[display(fmt = "Unexpected response: {}", _0)]
     UnexpectedResponse(String),
-
-    #[display(
-        fmt = "HTTPS root cert error, check files under dir defined in KRILL_HTTPS_ROOT_CERTS: {}",
-        _0
-    )]
     HttpsRootCertError(String),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Error::RequestError(e) => write!(f, "Request Error: {}", e),
+            Error::Forbidden => write!(f, "Access Forbidden"),
+            Error::BadStatus(code) => write!(f, "Received bad status: {}", code),
+            Error::ErrorWithBody(code, e) => write!(f, "Status: {}, Error: {}", code, e),
+            Error::ErrorWithJson(code, res) => write!(f, "Status: {}, ErrorResponse: {}", code, res),
+            Error::JsonError(e) => e.fmt(f),
+            Error::InvalidHeader(e) => e.fmt(f),
+            Error::EmptyResponse => write!(f, "Empty response received from server"),
+            Error::UnexpectedResponse(s) => write!(f, "Unexpected response: {}", s),
+            Error::HttpsRootCertError(e) => write!(
+                f,
+                "HTTPS root cert error, check files under dir defined in KRILL_HTTPS_ROOT_CERTS: {}",
+                e
+            ),
+        }
+    }
 }
 
 impl Error {
@@ -347,7 +346,7 @@ impl Error {
         }
     }
 
-    fn https_root_cert_error(e: impl fmt::Display) -> Self {
+    pub fn https_root_cert_error(e: impl fmt::Display) -> Self {
         Error::HttpsRootCertError(e.to_string())
     }
 }

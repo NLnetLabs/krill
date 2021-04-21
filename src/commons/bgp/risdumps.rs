@@ -53,8 +53,8 @@ impl RisDumpLoader {
 
     fn parse_dump(bytes: &[u8]) -> Result<Vec<Announcement>, RisDumpError> {
         let mut res = vec![];
-        for lres in bytes.lines() {
-            let line = lres.map_err(RisDumpError::parse_error)?;
+        for lines_res in bytes.lines() {
+            let line = lines_res.map_err(RisDumpError::parse_error)?;
             if line.is_empty() || line.starts_with('%') {
                 continue;
             }
@@ -85,19 +85,23 @@ impl RisDumpLoader {
 
 //------------ Error --------------------------------------------------------
 
-#[derive(Debug, Display)]
+#[derive(Debug)]
 pub enum RisDumpError {
-    #[display(fmt = "Cannot get uri: {}", _0)]
     ReqwestError(reqwest::Error),
-
-    #[display(fmt = "Missing column in announcements input")]
     MissingColumn,
-
-    #[display(fmt = "Error parsing announcements: {}", _0)]
     ParseError(String),
-
-    #[display(fmt = "IO error: {}", _0)]
     IoError(io::Error),
+}
+
+impl fmt::Display for RisDumpError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            RisDumpError::ReqwestError(e) => write!(f, "Cannot get uri: {}", e),
+            RisDumpError::MissingColumn => write!(f, "Missing column in announcements input"),
+            RisDumpError::ParseError(s) => write!(f, "Error parsing announcements: {}", s),
+            RisDumpError::IoError(e) => write!(f, "IO error: {}", e),
+        }
+    }
 }
 
 impl RisDumpError {
@@ -139,10 +143,10 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn download_bgp_ris_dumps() {
-        let bgp_risdump_v4_uri = "http://www.ris.ripe.net/dumps/riswhoisdump.IPv4.gz";
-        let bgp_risdump_v6_uri = "http://www.ris.ripe.net/dumps/riswhoisdump.IPv6.gz";
+        let bgp_ris_dump_v4_uri = "http://www.ris.ripe.net/dumps/riswhoisdump.IPv4.gz";
+        let bgp_ris_dump_v6_uri = "http://www.ris.ripe.net/dumps/riswhoisdump.IPv6.gz";
 
-        let loader = RisDumpLoader::new(bgp_risdump_v4_uri, bgp_risdump_v6_uri);
+        let loader = RisDumpLoader::new(bgp_ris_dump_v4_uri, bgp_ris_dump_v6_uri);
         let announcements = loader.download_updates().await.unwrap();
 
         assert!(!announcements.is_empty())

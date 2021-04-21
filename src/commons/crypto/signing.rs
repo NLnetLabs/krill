@@ -1,9 +1,8 @@
 //! Support for signing mft, crl, certificates, roas..
 //! Common objects for TAs and CAs
-use std::convert::TryFrom;
 use std::ops::Deref;
-use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
+use std::{convert::TryFrom, path::Path};
 
 use bytes::Bytes;
 
@@ -24,7 +23,6 @@ use crate::commons::util::softsigner::OpenSslSigner;
 use crate::commons::util::AllowedUri;
 use crate::commons::KrillResult;
 use crate::daemon::ca::CertifiedKey;
-use crate::daemon::config::CONFIG;
 
 //------------ Signer --------------------------------------------------------
 
@@ -37,7 +35,7 @@ pub struct KrillSigner {
 }
 
 impl KrillSigner {
-    pub fn build(work_dir: &PathBuf) -> KrillResult<Self> {
+    pub fn build(work_dir: &Path) -> KrillResult<Self> {
         let signer = OpenSslSigner::build(work_dir)?;
         let signer = Arc::new(RwLock::new(signer));
         Ok(KrillSigner { signer })
@@ -175,13 +173,13 @@ impl CsrInfo {
         }
     }
 
-    pub fn allowed_uris(&self, testmode: bool) -> bool {
-        self.ca_repository.allowed_uri(testmode)
-            && self.rpki_manifest.allowed_uri(testmode)
+    pub fn global_uris(&self) -> bool {
+        self.ca_repository.seems_global_uri()
+            && self.rpki_manifest.seems_global_uri()
             && self
                 .rpki_notify
                 .as_ref()
-                .map(|uri| uri.allowed_uri(testmode))
+                .map(|uri| uri.seems_global_uri())
                 .unwrap_or_else(|| true)
     }
 
@@ -246,6 +244,7 @@ impl SignSupport {
         limit: RequestResourceLimit,
         replaces: Option<ReplacedObject>,
         signing_key: &CertifiedKey,
+        weeks: i64,
         signer: &KrillSigner,
     ) -> KrillResult<IssuedCert> {
         let signing_cert = signing_key.incoming_cert();
@@ -254,7 +253,8 @@ impl SignSupport {
             return Err(Error::MissingResources);
         }
 
-        let request = CertRequest::Ca(csr);
+        let validity = Self::sign_validity_weeks(weeks);
+        let request = CertRequest::Ca(csr, validity);
 
         let tbs = Self::make_tbs_cert(&resources, signing_cert, request, signer)?;
         let cert = signer.sign_cert(tbs, &signing_key.key_id())?;
@@ -292,19 +292,19 @@ impl SignSupport {
         let issuer = signing_cert.cert().subject().clone();
 
         let validity = match &request {
-            CertRequest::Ca(_) => Self::sign_validity_weeks(CONFIG.timing_child_certificate_valid_weeks),
+            CertRequest::Ca(_, validity) => *validity,
             CertRequest::Ee(_, validity) => *validity,
         };
 
         let pub_key = match &request {
-            CertRequest::Ca(info) => info.key.clone(),
+            CertRequest::Ca(info, _) => info.key.clone(),
             CertRequest::Ee(key, _) => key.clone(),
         };
 
         let subject = Some(Name::from_pub_key(&pub_key));
 
         let key_usage = match &request {
-            CertRequest::Ca(_) => KeyUsage::Ca,
+            CertRequest::Ca(_, _) => KeyUsage::Ca,
             CertRequest::Ee(_, _) => KeyUsage::Ee,
         };
 
@@ -332,7 +332,7 @@ impl SignSupport {
         cert.set_crl_uri(Some(signing_cert.crl_uri()));
 
         match request {
-            CertRequest::Ca(csr) => {
+            CertRequest::Ca(csr, _) => {
                 let (ca_repository, rpki_manifest, rpki_notify, _pub_key) = csr.unpack();
                 cert.set_basic_ca(Some(true));
                 cert.set_ca_repository(Some(ca_repository));
@@ -364,7 +364,7 @@ impl SignSupport {
 
 #[allow(clippy::large_enum_variant)]
 enum CertRequest {
-    Ca(CsrInfo),
+    Ca(CsrInfo, Validity),
     Ee(PublicKey, Validity),
 }
 

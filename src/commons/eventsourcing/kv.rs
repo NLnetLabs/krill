@@ -1,7 +1,7 @@
-use std::any::Any;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
+use std::{any::Any, path::Path};
 use std::{fmt, fs, io};
 
 use serde::de::DeserializeOwned;
@@ -9,15 +9,21 @@ use serde::Serialize;
 
 use crate::commons::util::file;
 
+use super::KeyStoreVersion;
+
 //------------ KeyStoreKey ---------------------------------------------------
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct KeyStoreKey {
     scope: Option<String>,
     name: String,
 }
 
 impl KeyStoreKey {
+    pub fn new(scope: Option<String>, name: String) -> Self {
+        KeyStoreKey { scope, name }
+    }
+
     pub fn simple(name: String) -> Self {
         KeyStoreKey { scope: None, name }
     }
@@ -76,13 +82,14 @@ impl fmt::Display for KeyStoreKey {
 
 /// Using an enum here, because we expect to have more implementations in future.
 /// Not using generics because it's harder on the compiler.
+#[derive(Debug)]
 pub enum KeyValueStore {
     Disk(KeyValueStoreDiskImpl),
 }
 
 impl KeyValueStore {
-    pub fn disk(workdir: &PathBuf, name_space: &str) -> Result<Self, KeyValueError> {
-        let mut base = workdir.clone();
+    pub fn disk(work_dir: &Path, name_space: &str) -> Result<Self, KeyValueError> {
+        let mut base = work_dir.to_path_buf();
         base.push(name_space);
 
         if !base.exists() {
@@ -122,9 +129,16 @@ impl KeyValueStore {
     }
 
     /// Delete a key-value pair
-    pub fn drop(&self, key: &KeyStoreKey) -> Result<(), KeyValueError> {
+    pub fn drop_key(&self, key: &KeyStoreKey) -> Result<(), KeyValueError> {
         match self {
-            KeyValueStore::Disk(disk_store) => disk_store.drop(key),
+            KeyValueStore::Disk(disk_store) => disk_store.drop_key(key),
+        }
+    }
+
+    /// Delete a scope
+    pub fn drop_scope(&self, scope: &str) -> Result<(), KeyValueError> {
+        match self {
+            KeyValueStore::Disk(disk_store) => disk_store.drop_scope(scope),
         }
     }
 
@@ -138,6 +152,11 @@ impl KeyValueStore {
     /// Archive a key
     pub fn archive(&self, key: &KeyStoreKey) -> Result<(), KeyValueError> {
         self.move_key(key, &key.archived())
+    }
+
+    /// Archive a key to an arbitrary scope
+    pub fn archive_to(&self, key: &KeyStoreKey, scope: &str) -> Result<(), KeyValueError> {
+        self.move_key(key, &key.sub_scope(scope))
     }
 
     /// Archive a key as corrupt
@@ -160,7 +179,7 @@ impl KeyValueStore {
     /// Returns whether a scope exists
     pub fn has_scope(&self, scope: String) -> Result<bool, KeyValueError> {
         match self {
-            KeyValueStore::Disk(disk_store) => disk_store.has_scope(scope),
+            KeyValueStore::Disk(disk_store) => Ok(disk_store.has_scope(scope)),
         }
     }
 
@@ -174,12 +193,32 @@ impl KeyValueStore {
             KeyValueStore::Disk(disk_store) => disk_store.keys(scope, matching),
         }
     }
+
+    /// Returns the version of a key store.
+    /// KeyStore use a specific key-value pair to track their version. If the key is absent it
+    /// is assumed that the version was from before Krill 0.6.0. An error is returned if the key
+    /// is present, but the value is corrupt or not recognized.
+    pub fn version(&self) -> Result<KeyStoreVersion, KeyValueError> {
+        let key = KeyStoreKey::simple("version".to_string());
+        self.get(&key)
+            .map(|version_opt| version_opt.unwrap_or(KeyStoreVersion::Pre0_6))
+    }
+
+    /// Returns whether the version of this key store predates the given version.
+    /// KeyStore use a specific key-value pair to track their version. If the key is absent it
+    /// is assumed that the version was from before Krill 0.6.0. An error is returned if the key
+    /// is present, but the value is corrupt or not recognized.
+    pub fn version_is_before(&self, later: KeyStoreVersion) -> Result<bool, KeyValueError> {
+        let version = self.version()?;
+        Ok(version < later)
+    }
 }
 
 impl KeyValueStore {}
 
 /// This type can store and retrieve values to/from disk, using json
 /// serialization
+#[derive(Debug)]
 pub struct KeyValueStoreDiskImpl {
     base: PathBuf,
 }
@@ -188,6 +227,13 @@ impl KeyValueStoreDiskImpl {
     fn file_path(&self, key: &KeyStoreKey) -> PathBuf {
         let mut path = self.scope_path(key.scope.as_ref());
         path.push(key.name());
+        path
+    }
+
+    /// creates a file path, prefixing the name with '.' much like vi
+    fn swap_file_path(&self, key: &KeyStoreKey) -> PathBuf {
+        let mut path = self.scope_path(key.scope.as_ref());
+        path.push(format!(".{}", key.name()));
         path
     }
 
@@ -200,9 +246,14 @@ impl KeyValueStoreDiskImpl {
     }
 
     fn store<V: Any + Serialize>(&self, key: &KeyStoreKey, value: &V) -> Result<(), KeyValueError> {
-        let mut f = file::create_file_with_path(&self.file_path(key))?;
+        let swap_file_path = self.swap_file_path(key);
+        let file_path = self.file_path(key);
+        let mut swap_file = file::create_file_with_path(&swap_file_path)?;
         let json = serde_json::to_string_pretty(value)?;
-        f.write_all(json.as_ref())?;
+        swap_file.write_all(json.as_ref())?;
+
+        fs::rename(swap_file_path, file_path)?;
+
         Ok(())
     }
 
@@ -237,10 +288,18 @@ impl KeyValueStoreDiskImpl {
         path.exists()
     }
 
-    pub fn drop(&self, key: &KeyStoreKey) -> Result<(), KeyValueError> {
+    pub fn drop_key(&self, key: &KeyStoreKey) -> Result<(), KeyValueError> {
         let path = self.file_path(key);
         if path.exists() {
             fs::remove_file(path)?;
+        }
+        Ok(())
+    }
+
+    pub fn drop_scope(&self, scope: &str) -> Result<(), KeyValueError> {
+        let path = self.scope_path(Some(&scope.to_string()));
+        if path.exists() {
+            fs::remove_dir_all(path)?;
         }
         Ok(())
     }
@@ -264,8 +323,8 @@ impl KeyValueStoreDiskImpl {
         }
     }
 
-    fn has_scope(&self, scope: String) -> Result<bool, KeyValueError> {
-        Ok(self.scope_path(Some(&scope)).exists())
+    fn has_scope(&self, scope: String) -> bool {
+        self.scope_path(Some(&scope)).exists()
     }
 
     fn scopes(&self) -> Result<Vec<String>, KeyValueError> {
@@ -288,7 +347,7 @@ impl KeyValueStoreDiskImpl {
         Ok(res)
     }
 
-    fn read_dir(dir: &PathBuf, files: bool, dirs: bool) -> Result<Vec<String>, KeyValueError> {
+    fn read_dir(dir: &Path, files: bool, dirs: bool) -> Result<Vec<String>, KeyValueError> {
         match fs::read_dir(dir) {
             Err(e) => Err(KeyValueError::IoError(e)),
             Ok(dir) => {
@@ -354,7 +413,7 @@ mod tests {
     use crate::test;
 
     #[test]
-    fn diskstore_move_key() {
+    fn disk_store_move_key() {
         test::test_under_tmp(|d| {
             let store = KeyValueStore::disk(&d, "store").unwrap();
 

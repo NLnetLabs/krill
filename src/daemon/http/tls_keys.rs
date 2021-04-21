@@ -1,6 +1,7 @@
 //! Some helper stuff for creating a private key and certificate for HTTPS
 //! in case they are not provided
 use std::path::PathBuf;
+use std::{fmt, path::Path};
 
 use bytes::Bytes;
 
@@ -23,21 +24,21 @@ pub const HTTPS_SUB_DIR: &str = "ssl";
 pub const KEY_FILE: &str = "key.pem";
 pub const CERT_FILE: &str = "cert.pem";
 
-pub fn key_file_path(data_dir: &PathBuf) -> PathBuf {
-    let mut https_dir = data_dir.clone();
+pub fn key_file_path(data_dir: &Path) -> PathBuf {
+    let mut https_dir = data_dir.to_path_buf();
     https_dir.push(HTTPS_SUB_DIR);
     file::file_path(&https_dir, KEY_FILE)
 }
 
-pub fn cert_file_path(data_dir: &PathBuf) -> PathBuf {
-    let mut https_dir = data_dir.clone();
+pub fn cert_file_path(data_dir: &Path) -> PathBuf {
+    let mut https_dir = data_dir.to_path_buf();
     https_dir.push(HTTPS_SUB_DIR);
     file::file_path(&https_dir, CERT_FILE)
 }
 
 /// Creates a new private key and certificate file if either is found to be
 /// missing in the base_path directory.
-pub fn create_key_cert_if_needed(data_dir: &PathBuf) -> Result<(), Error> {
+pub fn create_key_cert_if_needed(data_dir: &Path) -> Result<(), Error> {
     let key_file_path = key_file_path(data_dir);
     let cert_file_path = cert_file_path(data_dir);
 
@@ -51,7 +52,7 @@ pub fn create_key_cert_if_needed(data_dir: &PathBuf) -> Result<(), Error> {
 /// Creates a new private key and certificate to be used when serving HTTPS.
 /// Only call this in case there is no current key and certificate file
 /// present, or have your files ruthlessly overwritten!
-fn create_key_and_cert(data_dir: &PathBuf) -> Result<(), Error> {
+fn create_key_and_cert(data_dir: &Path) -> Result<(), Error> {
     let mut signer = HttpsSigner::build()?;
     signer.save_private_key(data_dir)?;
     signer.save_certificate(data_dir)?;
@@ -74,8 +75,8 @@ impl HttpsSigner {
         Ok(HttpsSigner { private })
     }
 
-    /// Saves the private key in PEM format so that actix can use it.
-    fn save_private_key(&self, data_dir: &PathBuf) -> Result<(), Error> {
+    /// Saves the private key in PEM format so that hyper can use it.
+    fn save_private_key(&self, data_dir: &Path) -> Result<(), Error> {
         let key_file_path = key_file_path(data_dir);
         let bytes = Bytes::from(self.private.private_key_to_pem_pkcs8()?);
         file::save(&bytes, &key_file_path)?;
@@ -105,8 +106,8 @@ impl HttpsSigner {
         Ok(signature)
     }
 
-    /// Saves a self-signed certificate so that actix can use it.
-    fn save_certificate(&mut self, data_dir: &PathBuf) -> Result<(), Error> {
+    /// Saves a self-signed certificate so that hyper can use it.
+    fn save_certificate(&mut self, data_dir: &Path) -> Result<(), Error> {
         let pub_key = self.public_key_info()?;
         let tbs_cert = TbsHttpsCertificate::from(&pub_key);
 
@@ -186,6 +187,7 @@ impl From<&PublicKey> for TbsHttpsCertificate {
 }
 
 impl TbsHttpsCertificate {
+    #[allow(clippy::needless_lifetimes)]
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
         encode::sequence((
             (
@@ -209,28 +211,29 @@ impl TbsHttpsCertificate {
 
 //------------ Error ---------------------------------------------------------
 
-#[derive(Debug, Display)]
+#[derive(Debug)]
 pub enum Error {
-    #[display(fmt = "{}", _0)]
     IoError(std::io::Error),
-
-    #[display(fmt = "{}", _0)]
     OpenSslError(openssl::error::ErrorStack),
-
-    #[display(fmt = "{}", _0)]
     DecodeError(decode::Error),
-
-    #[display(fmt = "Could not make certificate")]
     BuildError,
-
-    #[display(fmt = "Certificate PEM file contains no certificates")]
     EmptyCertStack,
-
-    #[display(fmt = "Cannot create PKCS12 Identity: {}", _0)]
     Pkcs12(String),
-
-    #[display(fmt = "Connection error: {}", _0)]
     Connection(String),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Error::IoError(e) => e.fmt(f),
+            Error::OpenSslError(e) => e.fmt(f),
+            Error::DecodeError(e) => e.fmt(f),
+            Error::BuildError => write!(f, "Could not make certificate"),
+            Error::EmptyCertStack => write!(f, "Certificate PEM file contains no certificates"),
+            Error::Pkcs12(e) => write!(f, "Cannot create PKCS12 Identity: {}", e),
+            Error::Connection(e) => write!(f, "Connection error: {}", e),
+        }
+    }
 }
 
 impl From<openssl::error::ErrorStack> for Error {
@@ -251,7 +254,6 @@ impl std::error::Error for Error {}
 
 #[cfg(test)]
 mod tests {
-    // use actix_web::*;
     use crate::test;
 
     use super::*;

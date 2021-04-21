@@ -28,8 +28,8 @@ pub use self::commands::*;
 mod events;
 pub use self::events::*;
 
-mod server;
-pub use self::server::CaServer;
+mod manager;
+pub use self::manager::CaManager;
 
 mod rta;
 pub use self::rta::*;
@@ -37,7 +37,7 @@ pub use self::rta::*;
 mod status;
 pub use self::status::*;
 
-pub const TA_NAME: &str = "ta";              // reserved for TA
+pub const TA_NAME: &str = "ta"; // reserved for TA
 pub const TESTBED_CA_NAME: &str = "testbed"; // reserved for testbed mode
 
 pub fn ta_handle() -> Handle {

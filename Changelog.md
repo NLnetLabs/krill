@@ -1,13 +1,185 @@
 # Change Log
 
-Please see [here](https://github.com/NLnetLabs/krill/projects?query=is%3Aopen+sort%3Aname-asc)
-for planned releases.
+## 0.9.0 RC
+
+Welcome to the Krill 0.9.0 Release Candidate.
+
+This release introduces a number of breaking API changes as well as new functionality. We invite users
+to test this release and contact us in case of any issues, comments or questions.
+
+A quick overview of the main points:
+
+- API
+
+If you are currently using the CLI and/or API for automation please check the updated documentation here:
+https://krill.readthedocs.io/en/latest/cli.html
+
+- Data Migration
+
+This new release includes an automated migration and clean up of existing data. We have tested this
+migration of course, but still we would very much like to encourage existing users to help us test
+this further on real data.
+
+In order to test the upgrade you can do the following:
+- install Krill 0.9.0-rc1 on a test machine
+- copy over your existing data directory, but exclude the `keys` directory
+- set the ENV variable KRILL_UPGRADE_ONLY
+- start krill v0.9.0-rc1 using your copied data directory
+
+If all goes well you should see the message:
+
+  Krill upgrade successful
+
+Note, by excluding the `keys` directory you make sure that this new Krill instance cannot do anything
+with your current private keys. E.g. it cannot publish anything or request certificates from your
+parent CA. 
+
+If there are any issues please let us know so that we can resolve these issues before we finalize the
+Krill v0.9.0 release. If you would like us to test your data instead then please contact us. We will
+then ask you to give us a tar ball of your data directory - again excluding the `keys` directory.
+
+- Publication Server
+
+The Krill Publication Server now uses its own binaries for the server and CLI. If you are using Krill
+to host your own Publication Server, then please have a good look at the section below called
+"Separate binary for Publication Server". Most importantly, be aware that the new binaries `krillpubd`
+and `krillpubc` are not included in the debian packages or Docker images for the moment. We have
+two open issue to resolve this before the 0.9.0 release (#361 and #490 respectively). For the moment
+you will need to use `cargo` to install these binaries as described here:
+
+https://krill.readthedocs.io/en/latest/install-and-run.html
+
+
+Please read below for more details!
+
+
+### Breaking Changes
+
+This is release includes breaking changes in the Krill API. In addition to this we have also added
+dedicated binaries for running your own Publication Server (`krillpubd`) and its own CLI (`krillpubc`).
+You will also find that a number of commands of `krillc` have been changed or moved around. While
+we take no pleasure in introducing such breaking changes to users we felt that they were necessary
+for the future maintainability and useability of Krill. Furthermore, with these changes we believe
+that we will be on track for a 1.0.0 release in the near future.
+
+If you were using the CLI or API for automation please have a look at the updated documentation here:
+https://krill.readthedocs.io/en/latest/cli.html
+
+
+
+### Login with Named Users
+
+The Krill User Interface now has support for named users. Until version 0.8.2 Krill had
+one admin token that was used by the CLI, API and UI. Now you can configure multiple users
+using a local configuration file, or an OpenID Connect provider and have different access
+restrictions for every user. The CLI still relies on a single admin token.
+
+You can read more about this new feature here:
+https://krill.readthedocs.io/en/latest/multi-user.html
+
+
+### Data Usage and History
+
+Krill uses an event sourced architecture, meaning that its current state is the direct result of
+all past events that occurred. Rather than just persisting the current state itself, it can
+be rebuilt based on those events. We believe that this is an important feature, because it
+ensures by definition that the history, or audit log, of past events explains the current state
+of Krill CAs. So, this is very attractive from a security and accountability perspective.
+
+Krill history until version 0.8.2 has been growing excessively because every RPKI CA has to
+republish new Manifests and CRLs regularly as a protection against potential replay attacks.
+Over time this results in a lot of changes, and a lot of history.
+
+However, the changes resulting from the republication of Manifests and CRLs are not really
+interesting in the long term because they do not reflect any semantic changes resulting from
+user actions, or interactions between CAs and their parent or child CAs.
+
+Therefore we decided to change the Krill architecture to a hybrid event-sourcing model. All
+changes, except republication, are still tracked as commands and events in the Krill history.
+So there is a complete overview of all semantically important changes maintained.
+
+As a result of this the amount disk space used by Krill is reduced significantly. When you
+upgrade to Krill 0.9.0 your existing history will be migrated and cleaned up automatically.
+
+
+### Master Token is now Admin Token
+
+See issue #433. Up until now Krill was using an array of inconsistent and inappropriate
+names to refer to the token that can be used for authentication and authorization. We have
+now renamed all these references to "ADMIN TOKEN".
+
+This means that the `auth_token` in the `krill.conf` file was renamed to `admin_token`,
+The env variable alternative for the Krill daemon was renamed from `KRILL_AUTH_TOKEN`
+to `KRILL_ADMIN_TOKEN`.
+
+In this release Krill will still support the old names, but we may remove this support
+in a future release.
+
+### Separate binary for Publication Server
+
+Krill now has a dedicated binary for running an RPKI Publication Server, and a dedicated CLI 
+for managing it: `krillpubd` and `krillpubc`.
+
+We believe that having dedicated binaries for this purpose will make Krill easier to manage
+for the vast majority of operators who do not need to run their own Publication Server. And
+for operators who do need to run their own Publication Server, this will make it easier to
+manage different access control settings for their Krill Publication and CA Servers, and it
+will make it easier to migrate or phase out Publication Servers in future.
+
+#### Migration for existing users
+
+If you are using Krill to operate a CA only, and you use third party service for your RPKI
+repository, then this change does not affect you.
+
+- Dedicated Mode
+
+If you are running a dedicated Krill instance to operate your own publication server, you should
+start it using the newly provided binary 'krillpubd' instead of 'krill'. You can use the same
+configuration file and data directory that you were using until now.
+
+- Mixed Mode
+
+If you are running Krill in a "mixed mode" where you operate both one or more CAs **and** you have
+an embedded repository server then you can continue to use the `krill` binary and your current
+configuration file and data directory.
+
+However, you should migrate your setup to using separate dedicated instances for the Publication
+Server and CA functions. Support for this mixed mode will be removed in future.
+
+The migration steps depend on your particular setup.
+
+If you are **not** operating any Krill CA which serves as a parent CA, then this can be
+achieved relatively simply:
+- duplicate your configuration file and data directory to a new server
+- use `krillpubd` to start operating your current server in Publication Server mode
+- use `krill` on your new server to operate CAs there
+
+If any of your Krill CAs do serve as a parent CA, then the following approach is advised:
+- continue to run `krill` in mixed mode for now
+- set up a new Krill Repository Server using `krillpubd` on a new system, use new URIs here.
+- migrate each of your CAs to use this new repository:
+
+  1. Get your CA's Publisher Request XML: `krillc repo request --ca <myca> >./pub-req.xml`
+  2. Add your CA to the new Publication Server: `krillpubc add --request pub-req.xml >./rep-res.xml` 
+  3. Update your CA's repo: ` krillc repo update -ca <myca> --response ./data/rep-res.xml`
+    
+- stop your main `krill`
+- remove the `pubd` directory under your data directory (back it up to be sure)
+- start your main `krill` again - it will now run in "CA" mode
+
+### Other fixes
+
+ROAs will now be recreated if your CA lost a prefix, and gets it back later. This will help in
+the rather unlikely case that a parent CA temporarily removed one of your resources in error. (#96)
+
+Let the Publication Server write the notification.xml file to a new file, and then rename it.
+This prevents that Relying Parties can retrieve a half-written file. (#352)
 
 ## 0.8.2 'Can't touch this'
 
 As it turned out the previous release (0.8.1) still insisted on cleaning up 'redundant ROAs'
 when migrating to that version. This clean-up would not cause any issues with regards to the
-validity of your announcements. However, we realised in 0.8.1 that users should be the once
+validity of your announcements. However, we realized in 0.8.1 that users should be the once
 to decide whether they want to have extra ROAs or not. Therefore this clean-up should have
 been removed then.
 
@@ -245,11 +417,11 @@ Breaking changes:
 
 The most striking change in this release is the inclusion of a new front-end: Lagosta.
 
-Lagosta 0.1 'Fritto misto' supports the following features:
+Lagosta 0.1 'Fritto Misto' supports the following features:
 * Set up your Krill CA under an RIR/NIR parent
 * Configure your CA to publish at a remote repository
 * Maintain ROAs
-* Internationalisation (English and Portuguese)
+* Internationalization (English and Portuguese)
 
 Please talk to us if you want to contribute other languages! Many advanced features are currently available in the CLI only, but we will continue to extend the front-end functionality.
  
@@ -264,7 +436,7 @@ The following features and improvements were introduced to the core Krill and CL
 
 Breaking changes:
 * The error responses have been overhauled.
-* Some CLI options have been changed to make naming and behaviour more consistent.
+* Some CLI options have been changed to make naming and behavior more consistent.
 
 For more information please have a look at [Read the Docs](https://rpki.readthedocs.io/en/latest/krill/index.html).
 
@@ -295,7 +467,7 @@ changes introduced, so the binary can just be used to replace any installed 0.4.
 
 ## 0.4.0 'The Krill Factor'
 
-This release focuses on stabilising the API and internal data format, which allows upgrades to 
+This release focuses on stabilizing the API and internal data format, which allows upgrades to 
 future versions of Krill without the need for complicated data migrations. We do not expect to
 introduce breaking changes to the API from this point forward. Please note however, that in some
 cases the JSON structure in API responses might be extended with additional information in new
@@ -303,7 +475,7 @@ JSON members.
 
 Overview of changes:
 * Document the Krill server API using OpenAPI 3 (#148)
-* Stabilise JSON API (#141)
+* Stabilize JSON API (#141)
 * Better API response when a method does not exist (#146)
 * Support upgrading, preserving data (#53)
 * Set up automated end-to-end testing (TA-CA-ROAs-validation) (#66)

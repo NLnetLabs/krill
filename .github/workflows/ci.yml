@@ -42,7 +42,17 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest]
-        rust: [stable, beta]
+
+        # Test against Rust 1.45.0 because in build.rs we say that is the oldest supported version.
+        # Test against beta Rust to get early warning of any problems that might occur with the upcoming Rust release.
+        # Order: oldest Rust to newest Rust.
+        rust: [1.45.0, stable, beta]
+
+        # Test with default features, all features and no features.
+        # Note: "functional-tests,ui-tests" bulds the same Krill as "" because these features only enable more types
+        # of test, they don't change the compilation of Krill itself.
+        # Order: fewest features to most features.
+        args: ["--no-default-features", "--features functional-tests,ui-tests", "--all-features"] 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v1
@@ -50,5 +60,11 @@ jobs:
       uses: hecrj/setup-rust-action@v1
       with:
         rust-version: ${{ matrix.rust }}
-    - run: cargo build --verbose
-    - run: cargo test --verbose 2>&1
+    - run: cargo build --verbose ${{ matrix.args }} --locked
+    - run: cargo test --verbose ${{ matrix.args }} -- --test-threads=1 2>&1
+    - name: Archive Cypress UI test image & video captures
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v2
+      with:
+        name: cypress-ui-test-captures ${{ matrix.os }} ${{ matrix.rust }}
+        path: target/ui/

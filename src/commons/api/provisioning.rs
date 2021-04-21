@@ -429,8 +429,8 @@ impl FromStr for RequestResourceLimit {
             return Err(());
         }
 
-        let v6_lead_start = s.find(v6_lead).ok_or_else(|| ())?;
-        let asn_lead_start = s.find(asn_lead).ok_or_else(|| ())?;
+        let v6_lead_start = s.find(v6_lead).ok_or(())?;
+        let asn_lead_start = s.find(asn_lead).ok_or(())?;
 
         let v4_str = &s[v4_lead.len()..v6_lead_start];
         let v6_str = &s[v6_lead_start + v6_lead.len()..asn_lead_start];
@@ -481,11 +481,16 @@ impl fmt::Display for RequestResourceLimit {
 
 /// This type represents a Certificate Revocation Request as
 /// defined in section 3.5.1 of RFC6492.
-#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
-#[display(fmt = "class name '{}' key '{}'", class_name, key)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RevocationRequest {
     class_name: ResourceClassName,
     key: KeyIdentifier,
+}
+
+impl fmt::Display for RevocationRequest {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "class name '{}' key '{}'", self.class_name, self.key)
+    }
 }
 
 impl RevocationRequest {

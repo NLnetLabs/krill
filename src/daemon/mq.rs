@@ -4,69 +4,77 @@
 //! entitlements.
 
 use std::collections::{HashMap, VecDeque};
+use std::fmt;
 use std::sync::RwLock;
 
 use rpki::x509::Time;
 
 use crate::commons::api::{Handle, ParentHandle, ResourceClassName, RevocationRequest};
 use crate::commons::eventsourcing::{self, Event};
-use crate::daemon::ca::{CertAuth, Evt, EvtDet};
+use crate::daemon::ca::{CaEvt, CaEvtDet, CertAuth};
 
-//------------ QueueEvent ----------------------------------------------------
+//------------ QueueTask ----------------------------------------------------
 
-/// This type contains all the events of interest for a KrillServer, with
-/// the details needed for triggered processing.
-#[derive(Clone, Debug, Display, Eq, PartialEq)]
+/// This type contains tasks with the details needed for triggered processing.
+#[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(clippy::large_enum_variant)]
-pub enum QueueEvent {
-    #[display(fmt = "delta for '{}' version '{}'", _0, _1)]
-    Delta(Handle, u64),
-
-    #[display(fmt = "parent added to '{}' version '{}'", _0, _1)]
-    ParentAdded(Handle, u64, ParentHandle),
-
-    #[display(fmt = "configured repository for '{}' version '{}'", _0, _1)]
-    RepositoryConfigured(Handle, u64),
-
-    #[display(fmt = "requests pending for '{}' version '{}'", _0, _1)]
-    RequestsPending(Handle, u64),
-
-    #[display(fmt = "resource class removed for '{}' version '{}'", _0, _1)]
-    ResourceClassRemoved(
-        Handle,
-        u64,
-        ParentHandle,
-        HashMap<ResourceClassName, Vec<RevocationRequest>>,
-    ),
-
-    #[display(fmt = "unexpected key found for '{}' version '{}' resource class: '{}'", _0, _1, _2)]
-    UnexpectedKey(Handle, u64, ResourceClassName, RevocationRequest),
-
-    #[display(fmt = "clean up old repo *if it exists* for '{}' version '{}'", _0, _1)]
-    CleanOldRepo(Handle, u64),
-
-    #[display(fmt = "reschedule failed publication for '{}'", _0)]
-    ReschedulePublish(Handle, Time),
-
-    #[display(fmt = "Server just started")]
+pub enum QueueTask {
     ServerStarted,
+
+    SyncRepo(Handle),
+    RescheduleSyncRepo(Handle, Time),
+
+    SyncParent(Handle, ParentHandle),
+    RescheduleSyncParent(Handle, ParentHandle, Time),
+
+    ResourceClassRemoved(Handle, ParentHandle, HashMap<ResourceClassName, Vec<RevocationRequest>>),
+    UnexpectedKey(Handle, ResourceClassName, RevocationRequest),
 }
 
-#[derive(Debug)]
-pub struct EventQueueListener {
-    q: RwLock<VecDeque<QueueEvent>>,
-}
-
-impl Default for EventQueueListener {
-    fn default() -> Self {
-        let mut vec = VecDeque::new();
-        vec.push_back(QueueEvent::ServerStarted);
-        EventQueueListener { q: RwLock::new(vec) }
+impl fmt::Display for QueueTask {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            QueueTask::ServerStarted => write!(f, "Server just started"),
+            QueueTask::SyncRepo(ca) => write!(f, "synchronize repo for '{}'", ca),
+            QueueTask::RescheduleSyncRepo(ca, time) => write!(
+                f,
+                "reschedule failed synchronize repo for '{}' at: {}",
+                ca,
+                time.to_rfc3339()
+            ),
+            QueueTask::SyncParent(ca, parent) => write!(f, "synchronize CA '{}' with parent '{}'", ca, parent),
+            QueueTask::RescheduleSyncParent(ca, parent, time) => write!(
+                f,
+                "reschedule failed synchronize CA '{}' with parent '{}' for {}",
+                ca,
+                parent,
+                time.to_rfc3339()
+            ),
+            QueueTask::ResourceClassRemoved(ca, _, _) => {
+                write!(f, "resource class removed for '{}' ", ca)
+            }
+            QueueTask::UnexpectedKey(ca, rcn, _) => {
+                write!(f, "unexpected key found for '{}' resource class: '{}'", ca, rcn)
+            }
+        }
     }
 }
 
-impl EventQueueListener {
-    pub fn pop_all(&self) -> Vec<QueueEvent> {
+#[derive(Debug)]
+pub struct MessageQueue {
+    q: RwLock<VecDeque<QueueTask>>,
+}
+
+impl Default for MessageQueue {
+    fn default() -> Self {
+        let mut vec = VecDeque::new();
+        vec.push_back(QueueTask::ServerStarted);
+        MessageQueue { q: RwLock::new(vec) }
+    }
+}
+
+impl MessageQueue {
+    pub fn pop_all(&self) -> Vec<QueueTask> {
         let mut res = vec![];
         let mut q = self.q.write().unwrap();
         while let Some(evt) = q.pop_front() {
@@ -75,73 +83,119 @@ impl EventQueueListener {
         res
     }
 
-    pub fn push_back(&self, evt: QueueEvent) {
-        self.q.write().unwrap().push_back(evt)
+    fn schedule(&self, task: QueueTask) {
+        let mut q = self.q.write().unwrap();
+        q.push_back(task);
+    }
+
+    /// Schedules that a CA synchronizes with its repositories.
+    pub fn schedule_sync_repo(&self, ca: Handle) {
+        self.schedule(QueueTask::SyncRepo(ca));
+    }
+
+    /// RE-Schedules that a CA synchronizes with its repositories. This function
+    /// takes a time argument to indicate *when* the resynchronization should be
+    /// attempted.
+    pub fn reschedule_sync_repo(&self, ca: Handle, time: Time) {
+        self.schedule(QueueTask::RescheduleSyncRepo(ca, time));
+    }
+
+    pub fn schedule_sync_parent(&self, ca: Handle, parent: ParentHandle) {
+        self.schedule(QueueTask::SyncParent(ca, parent));
+    }
+
+    pub fn reschedule_sync_parent(&self, ca: Handle, parent: ParentHandle, time: Time) {
+        self.schedule(QueueTask::RescheduleSyncParent(ca, parent, time));
+    }
+
+    fn drop_sync_parent(&self, ca: &Handle, parent: &ParentHandle) {
+        let mut q = self.q.write().unwrap();
+        q.retain(|existing| match existing {
+            QueueTask::SyncParent(ex_ca, ex_parent) | QueueTask::RescheduleSyncParent(ex_ca, ex_parent, _) => {
+                ca != ex_ca || parent != ex_parent
+            }
+            _ => true,
+        });
     }
 }
 
-unsafe impl Send for EventQueueListener {}
-unsafe impl Sync for EventQueueListener {}
+unsafe impl Send for MessageQueue {}
+unsafe impl Sync for MessageQueue {}
 
 /// Implement listening for CertAuth Published events.
-impl eventsourcing::EventListener<CertAuth> for EventQueueListener {
-    fn listen(&self, _ca: &CertAuth, event: &Evt) {
-        trace!("Seen CertAuth event '{}'", event);
+impl eventsourcing::PostSaveEventListener<CertAuth> for MessageQueue {
+    fn listen(&self, ca: &CertAuth, events: &[CaEvt]) {
+        for event in events {
+            trace!("Seen CertAuth event '{}'", event);
 
-        let handle = event.handle();
-        let version = event.version();
+            let handle = event.handle();
 
-        match event.details() {
-            EvtDet::ObjectSetUpdated(_, _)
-            | EvtDet::ParentRemoved(_, _)
-            | EvtDet::KeyPendingToNew(_, _, _)
-            | EvtDet::KeyPendingToActive(_, _, _)
-            | EvtDet::KeyRollFinished(_, _) => {
-                let evt = QueueEvent::Delta(handle.clone(), version);
-                self.push_back(evt);
-            }
-            EvtDet::ResourceClassRemoved(class_name, _delta, parent, revocations) => {
-                self.push_back(QueueEvent::Delta(handle.clone(), version));
+            match event.details() {
+                CaEvtDet::RoasUpdated { .. }
+                | CaEvtDet::ChildCertificatesUpdated { .. }
+                | CaEvtDet::ChildKeyRevoked { .. }
+                | CaEvtDet::KeyPendingToNew { .. }
+                | CaEvtDet::KeyPendingToActive { .. }
+                | CaEvtDet::KeyRollFinished { .. } => self.schedule_sync_repo(handle.clone()),
 
-                let mut revocations_map = HashMap::new();
-                revocations_map.insert(class_name.clone(), revocations.clone());
+                CaEvtDet::KeyRollActivated {
+                    resource_class_name, ..
+                } => {
+                    if let Ok(parent) = ca.parent_for_rc(resource_class_name) {
+                        self.schedule_sync_parent(handle.clone(), parent.clone());
+                    }
+                    self.schedule_sync_repo(handle.clone());
+                }
 
-                self.push_back(QueueEvent::ResourceClassRemoved(
+                CaEvtDet::ParentRemoved { parent } => {
+                    self.drop_sync_parent(&handle, parent);
+                    self.schedule_sync_repo(handle.clone());
+                }
+
+                CaEvtDet::ResourceClassRemoved {
+                    resource_class_name,
+                    parent,
+                    revoke_requests,
+                } => {
+                    self.schedule_sync_repo(handle.clone());
+
+                    let mut revocations_map = HashMap::new();
+                    revocations_map.insert(resource_class_name.clone(), revoke_requests.clone());
+
+                    self.schedule(QueueTask::ResourceClassRemoved(
+                        handle.clone(),
+                        parent.clone(),
+                        revocations_map,
+                    ))
+                }
+
+                CaEvtDet::UnexpectedKeyFound {
+                    resource_class_name,
+                    revoke_req,
+                } => self.schedule(QueueTask::UnexpectedKey(
                     handle.clone(),
-                    version,
-                    parent.clone(),
-                    revocations_map,
-                ))
-            }
+                    resource_class_name.clone(),
+                    revoke_req.clone(),
+                )),
 
-            EvtDet::UnexpectedKeyFound(rcn, revocation) => self.push_back(QueueEvent::UnexpectedKey(
-                handle.clone(),
-                version,
-                rcn.clone(),
-                revocation.clone(),
-            )),
+                CaEvtDet::ParentAdded { parent, .. } => {
+                    self.schedule_sync_parent(handle.clone(), parent.clone());
+                }
+                CaEvtDet::RepoUpdated { .. } => {
+                    for parent in ca.parents() {
+                        self.schedule_sync_parent(handle.clone(), parent.clone());
+                    }
+                }
+                CaEvtDet::CertificateRequested {
+                    resource_class_name, ..
+                } => {
+                    if let Ok(parent) = ca.parent_for_rc(resource_class_name) {
+                        self.schedule_sync_parent(handle.clone(), parent.clone());
+                    }
+                }
 
-            EvtDet::ParentAdded(parent, _contact) => {
-                let evt = QueueEvent::ParentAdded(handle.clone(), version, parent.clone());
-                self.push_back(evt);
+                _ => {}
             }
-            EvtDet::RepoUpdated(_) => {
-                let evt = QueueEvent::RepositoryConfigured(handle.clone(), version);
-                self.push_back(evt);
-            }
-            EvtDet::CertificateRequested(_, _, _) => {
-                let evt = QueueEvent::RequestsPending(handle.clone(), version);
-                self.push_back(evt);
-            }
-            EvtDet::KeyRollActivated(_, _) => {
-                let evt = QueueEvent::RequestsPending(handle.clone(), version);
-                self.push_back(evt);
-            }
-            EvtDet::CertificateReceived(_, _, _) => {
-                let evt = QueueEvent::CleanOldRepo(handle.clone(), version);
-                self.push_back(evt);
-            }
-            _ => {}
         }
     }
 }

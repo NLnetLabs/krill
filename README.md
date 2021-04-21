@@ -95,10 +95,10 @@ statements about the association of Internet routing resources. In
 particular, it allows the holder of an IP address prefix to publish which
 AS number will be the origin of BGP route announcements for it.
 
-Krill lets organisations run RPKI on their own systems as a child of one or more
+Krill lets organizations run RPKI on their own systems as a child of one or more
 Regional Internet Registries (RIRs). It can also run under a different parent,
 such as a National Internet Registry (NIR) or Enterprise and, in turn, act as a
-parent for other organisations.
+parent for other organizations.
 
 ## System Requirements
 

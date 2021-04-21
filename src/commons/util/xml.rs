@@ -1,7 +1,7 @@
 //! Support for RPKI XML structures.
 use std::fs::File;
 use std::path::Path;
-use std::{fs, io};
+use std::{fmt, fs, io};
 
 use base64::DecodeError;
 use bytes::Bytes;
@@ -218,6 +218,7 @@ impl<R: io::Read> XmlReader<R> {
         let chars: Vec<u8> = chars
             .into_bytes()
             .into_iter()
+            .filter(|c| *c < 128_u8) // strip anything above 7bit ascii.. like unicode whitespace
             .filter(|c| !b" \n\t\r\x0b\x0c=".contains(c))
             .collect();
 
@@ -265,37 +266,35 @@ impl XmlReader<fs::File> {
 
 //------------ XmlReaderErr --------------------------------------------------
 
-#[derive(Debug, Display)]
+#[derive(Debug)]
 pub enum XmlReaderErr {
-    #[display(fmt = "Expected Start of Document")]
     ExpectedStartDocument,
-
-    #[display(fmt = "Expected Start Element")]
     ExpectedStart,
-
-    #[display(fmt = "Expected Start Element with name: {}", _0)]
     ExpectedNamedStart(String),
-
-    #[display(fmt = "Expected Characters Element")]
     ExpectedCharacters,
-
-    #[display(fmt = "Expected Close Element with name: {}", _0)]
     ExpectedClose(String),
-
-    #[display(fmt = "Expected End of Document")]
     ExpectedEnd,
-
-    #[display(fmt = "Error reading file: {}", _0)]
     IoError(io::Error),
-
-    #[display(fmt = "Attributes Error: {}", _0)]
     AttributesError(AttributesError),
-
-    #[display(fmt = "XML Reader Error: {}", _0)]
     ReaderError(reader::Error),
-
-    #[display(fmt = "Base64 decoding issue: {}", _0)]
     Base64Error(DecodeError),
+}
+
+impl fmt::Display for XmlReaderErr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            XmlReaderErr::ExpectedStartDocument => write!(f, "Expected Start of Document"),
+            XmlReaderErr::ExpectedStart => write!(f, "Expected Start Element"),
+            XmlReaderErr::ExpectedNamedStart(name) => write!(f, "Expected Start Element with name: {}", name),
+            XmlReaderErr::ExpectedCharacters => write!(f, "Expected Characters Element"),
+            XmlReaderErr::ExpectedClose(name) => write!(f, "Expected Close Element with name: {}", name),
+            XmlReaderErr::ExpectedEnd => write!(f, "Expected End of Document"),
+            XmlReaderErr::IoError(e) => write!(f, "Error reading file: {}", e),
+            XmlReaderErr::AttributesError(e) => write!(f, "Attributes Error: {}", e),
+            XmlReaderErr::ReaderError(e) => write!(f, "XML Reader Error: {}", e),
+            XmlReaderErr::Base64Error(e) => write!(f, "Base64 decoding issue: {}", e),
+        }
+    }
 }
 
 impl From<io::Error> for XmlReaderErr {
@@ -374,23 +373,28 @@ impl Attributes {
 
 //------------ AttributesError -----------------------------------------------
 
-#[derive(Debug, Display)]
+#[derive(Debug)]
 pub enum AttributesError {
-    #[display(fmt = "Required attribute missing: {}", _0)]
     MissingAttribute(String),
-
-    #[display(fmt = "Extra attributes found: {}", _0)]
     ExtraAttributes(String),
-
-    #[display(fmt = "Wrong hex encoding: {}", _0)]
     HexError(FromHexError),
 }
 
+impl fmt::Display for AttributesError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            AttributesError::MissingAttribute(name) => write!(f, "Required attribute missing: {}", name),
+            AttributesError::ExtraAttributes(name) => write!(f, "Extra attributes found: {}", name),
+            AttributesError::HexError(e) => write!(f, "Wrong hex encoding: {}", e),
+        }
+    }
+}
+
 impl AttributesError {
-    fn extras(atts: &[OwnedAttribute]) -> Self {
-        let atts: Vec<String> = atts.iter().map(|a| format!("{}", a)).collect();
-        let atts = atts.join(", ");
-        AttributesError::ExtraAttributes(atts)
+    fn extras(attributes: &[OwnedAttribute]) -> Self {
+        let attributes: Vec<String> = attributes.iter().map(|a| format!("{}", a)).collect();
+        let attributes = attributes.join(", ");
+        AttributesError::ExtraAttributes(attributes)
     }
 }
 

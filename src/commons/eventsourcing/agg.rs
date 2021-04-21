@@ -3,7 +3,7 @@ use crate::commons::eventsourcing::WithStorableDetails;
 
 //------------ Aggregate -----------------------------------------------------
 
-/// This trait defines an Aggregate for use with the event sourcing framwork.
+/// This trait defines an Aggregate for use with the event sourcing framework.
 ///
 /// An aggregate is term coming from DDD (Domain Driven Design) and is used to
 /// describe an abstraction where a cluster of structs (the aggregate) provides
@@ -19,14 +19,14 @@ use crate::commons::eventsourcing::WithStorableDetails;
 /// 'events' are returned that contain state changes to the aggregate. These events
 /// still need to be applied to become persisted.
 pub trait Aggregate: Storable + Send + Sync + 'static {
-    type Command: Command<Event = Self::Event, StorableDetails = Self::StorableCommandDetails>;
+    type Command: Command<StorableDetails = Self::StorableCommandDetails>;
     type StorableCommandDetails: WithStorableDetails;
     type Event: Event;
     type InitEvent: Event;
     type Error: std::error::Error + Send + Sync;
 
     /// Creates a new instance. Expects an event with data needed to
-    /// initialise the instance. Typically this means that a specific
+    /// initialize the instance. Typically this means that a specific
     /// 'create' event is passed, with all the needed data, or just an empty
     /// marker if no data is needed. Implementations must return an error in
     /// case the instance cannot be created.
@@ -43,9 +43,10 @@ pub trait Aggregate: Storable + Send + Sync + 'static {
     /// doing additional allocations where we can.
     fn apply(&mut self, event: Self::Event);
 
-    /// Applies all events. Assumes that the list ordered, starting with the
-    /// oldest event, applicable, self.version matches the oldest event, and
-    /// contiguous, i.e. there are no missing events.
+    /// Applies all events. Assumes that:
+    /// - the list is contiguous (nothing missing) and ordered from old to new
+    /// - the events are all applicable to this aggregate
+    /// - the version of the aggregate matches that of the first (oldest) event
     fn apply_all(&mut self, events: Vec<Self::Event>) {
         for event in events {
             self.apply(event);
@@ -54,7 +55,7 @@ pub trait Aggregate: Storable + Send + Sync + 'static {
 
     /// Processes a command. I.e. validate the command, and return a list of
     /// events that will result in the desired new state, but do not apply
-    /// these event here.
+    /// these events here.
     ///
     /// The command is moved, because we want to enable moving its data
     /// without reallocating.

@@ -1,7 +1,0 @@
-{
-  "id": "ca",
-  "version": 31,
-  "details": {
-    "route_authorization_removed": "10.0.0.0/24-24 => 1"
-  }
-}

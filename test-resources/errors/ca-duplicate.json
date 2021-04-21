@@ -1,0 +1,7 @@
+{
+    "label": "ca-duplicate",
+    "msg": "CA 'ca' was already initialized",
+    "args": {
+        "ca": "ca"
+    }
+}
