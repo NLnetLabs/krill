@@ -1,6 +1,6 @@
 //! Support for signing things using software keys (through openssl) and
 //! storing them unencrypted on disk.
-use std::fs::File;
+use std::{fs::File, ops::Deref};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -11,6 +11,7 @@ use openssl::error::ErrorStack;
 use openssl::hash::MessageDigest;
 use openssl::pkey::{PKey, PKeyRef, Private};
 use openssl::rsa::Rsa;
+use pkcs11::{Ctx, types::*};
 use serde::{de, ser};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -196,6 +197,7 @@ pub enum SignerError {
     IoError(io::Error),
     KeyNotFound,
     DecodeError,
+    Pkcs11Error(String),
 }
 
 impl fmt::Display for SignerError {
@@ -207,6 +209,7 @@ impl fmt::Display for SignerError {
             SignerError::IoError(e) => e.fmt(f),
             SignerError::KeyNotFound => write!(f, "Could not find key"),
             SignerError::DecodeError => write!(f, "Could not decode key"),
+            SignerError::Pkcs11Error(e) => write!(f, "PKCS#11 error: {}", e),
         }
     }
 }
@@ -226,6 +229,199 @@ impl From<serde_json::Error> for SignerError {
 impl From<io::Error> for SignerError {
     fn from(e: io::Error) -> Self {
         SignerError::IoError(e)
+    }
+}
+
+//------------ Pkcs11Signer --------------------------------------------------
+
+#[derive(Clone, Debug)]
+struct Pkcs11Ctx {
+    ctx: Arc<Ctx>
+}
+
+impl Pkcs11Ctx {
+    pub fn new(lib_path: &Path) -> Result<Self, SignerError> {
+        let mut ctx = Ctx::new(lib_path)
+            .map_err(|err| SignerError::Pkcs11Error(format!("Failed to create context: {}", err)))?;
+
+        // TODO: are these arg values okay?
+        let mut args = CK_C_INITIALIZE_ARGS::new();
+        args.CreateMutex = None;
+        args.DestroyMutex = None;
+        args.LockMutex = None;
+        args.UnlockMutex = None;
+        args.flags = CKF_OS_LOCKING_OK;
+        ctx.initialize(Some(args))
+            .map_err(|err| SignerError::Pkcs11Error(format!("Failed to initialize: {}", err)))?;
+
+        let ctx = Arc::new(ctx);
+
+        Ok(Pkcs11Ctx { ctx })
+    }
+}
+
+impl Deref for Pkcs11Ctx {
+    type Target = Ctx;
+
+    fn deref(&self) -> &Self::Target {
+        &self.ctx
+    }
+}
+
+impl Drop for Pkcs11Ctx {
+    fn drop(&mut self) {
+        trace!("Finalizing PKCS#11 connection..");
+        if let Some(ctx) = Arc::get_mut(&mut self.ctx) {
+            if let Err(err) = ctx.finalize() {
+                warn!("Failed to finalize PKCS#11 application: {}", err);
+            }
+        } else {
+            warn!("Failed to finalize PKCS#11 application: Unable to get mutable access to the context");
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct Pkcs11Session {
+    ctx: Pkcs11Ctx,
+    handle: CK_SESSION_HANDLE
+}
+
+impl Pkcs11Session {
+    pub fn new(ctx: Pkcs11Ctx, slot_id: CK_SLOT_ID) -> Result<Self, SignerError> {
+        let handle = ctx.open_session(slot_id, CKF_SERIAL_SESSION | CKF_RW_SESSION, None, None)
+            .map_err(|err| SignerError::Pkcs11Error(format!("Failed to open session: {}", err)))?;
+        Ok(Self { ctx, handle })
+    }
+}
+
+impl Deref for Pkcs11Session {
+    type Target = CK_SESSION_HANDLE;
+
+    fn deref(&self) -> &Self::Target {
+        &self.handle
+    }
+}
+
+impl Drop for Pkcs11Session {
+    fn drop(&mut self) {
+        trace!("Finalizing PKCS#11 connection..");
+        if let Err(err) = self.ctx.close_session(self.handle) {
+            warn!("Failed to close PKCS#11 session: {}", err);
+        }
+    }
+}
+
+/// A PKCS#11 based signer.
+#[derive(Clone, Debug)]
+pub struct Pkcs11Signer {
+    ctx: Pkcs11Ctx,
+    login_session: Pkcs11Session,
+    slot_id: CK_SLOT_ID,
+}
+
+impl Pkcs11Signer {
+    pub fn build(lib_path: &Path, pin: &str, slot_id: u64) -> Result<Self, SignerError> {
+        let ctx = Pkcs11Ctx::new(lib_path)?;
+        let slot_id: CK_SLOT_ID = slot_id;
+        let login_session = Pkcs11Session::new(ctx.clone(), slot_id)?;
+
+        ctx.login(*login_session, CKU_USER, Some(pin))
+            .map_err(|err| SignerError::Pkcs11Error(format!("Failed to login: {}", err)))?;
+    
+        Ok(Pkcs11Signer { ctx, login_session, slot_id })
+    }
+
+    fn open_session(&self) -> Result<Pkcs11Session, SignerError> {
+        Pkcs11Session::new(self.ctx.clone(), self.slot_id)
+    }
+}
+
+impl Signer for Pkcs11Signer {
+    type KeyId = KeyIdentifier;
+    type Error = SignerError;
+
+    // Currently results in PKCS#11: CKR_USER_NOT_LOGGED_IN (0x101)
+    fn create_key(&mut self, _algorithm: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
+        const PUBLIC_EXPONENT: [u8; 3] = [0x01, 0x00, 0x01];
+
+        let mut key_id: [u8; 4] = [0; 4];
+        openssl::rand::rand_bytes(&mut key_id).map_err(SignerError::OpenSslError)?;
+        // let key_id = libc::rand::random::<[u8; 4]>();
+        let mech = CK_MECHANISM {
+            mechanism: pkcs11::types::CKM_RSA_PKCS_KEY_PAIR_GEN,
+            pParameter: std::ptr::null_mut(),
+            ulParameterLen: 0,
+        };
+
+        let mut priv_template: Vec<CK_ATTRIBUTE> = Vec::new();
+        let mut pub_template: Vec<CK_ATTRIBUTE> = Vec::new();
+
+        priv_template
+            .push(CK_ATTRIBUTE::new(pkcs11::types::CKA_SIGN).with_bool(&pkcs11::types::CK_TRUE));
+        priv_template.push(CK_ATTRIBUTE::new(pkcs11::types::CKA_ID).with_bytes(&key_id));
+        priv_template
+            .push(CK_ATTRIBUTE::new(pkcs11::types::CKA_TOKEN).with_bool(&pkcs11::types::CK_TRUE));
+    
+        pub_template
+            .push(CK_ATTRIBUTE::new(pkcs11::types::CKA_VERIFY).with_bool(&pkcs11::types::CK_TRUE));
+        pub_template.push(CK_ATTRIBUTE::new(pkcs11::types::CKA_ID).with_bytes(&key_id));
+        pub_template
+            .push(CK_ATTRIBUTE::new(pkcs11::types::CKA_PUBLIC_EXPONENT).with_bytes(&PUBLIC_EXPONENT));
+        pub_template.push(CK_ATTRIBUTE::new(pkcs11::types::CKA_MODULUS_BITS).with_ck_ulong(&1024));
+        pub_template
+            .push(CK_ATTRIBUTE::new(pkcs11::types::CKA_TOKEN).with_bool(&pkcs11::types::CK_TRUE));
+        pub_template
+            .push(CK_ATTRIBUTE::new(pkcs11::types::CKA_PRIVATE).with_bool(&pkcs11::types::CK_FALSE));
+        pub_template
+            .push(CK_ATTRIBUTE::new(pkcs11::types::CKA_ENCRYPT).with_bool(&pkcs11::types::CK_TRUE));
+
+        let param = [CKM_RSA_PKCS];
+        let mut allowed_mechanisms_attr = CK_ATTRIBUTE::new(CKA_ALLOWED_MECHANISMS);
+        allowed_mechanisms_attr.ulValueLen = ::std::mem::size_of::<CK_MECHANISM_TYPE>() as u64; // is as safe here?
+        allowed_mechanisms_attr.pValue = &param as *const CK_MECHANISM_TYPE as CK_VOID_PTR;
+
+        pub_template.push(allowed_mechanisms_attr);
+        priv_template.push(allowed_mechanisms_attr);
+
+        let session = self.open_session()?;
+        self.ctx.generate_key_pair(*session, &mech, &pub_template, &priv_template)
+            .map_err(|err| SignerError::Pkcs11Error(format!("Failed to create key: {}", err)))?;
+
+        // let mut b = Bytes::from(self.pkey.rsa().unwrap().public_key_to_der()?);
+        // PublicKey::decode(&mut b).map_err(|_| SignerError::DecodeError)
+
+        // Ok(key_id)
+        Err(SignerError::Pkcs11Error("get_key_info: not implemented".to_string()))
+    }
+
+    fn get_key_info(&self, key_id: &Self::KeyId) -> Result<PublicKey, KeyError<Self::Error>> {
+        Err(KeyError::Signer(SignerError::Pkcs11Error("get_key_info: not implemented".to_string())))
+    }
+
+    fn destroy_key(&mut self, key_id: &Self::KeyId) -> Result<(), KeyError<Self::Error>> {
+        Err(KeyError::Signer(SignerError::Pkcs11Error("destroy_key: not implemented".to_string())))
+    }
+
+    fn sign<D: AsRef<[u8]> + ?Sized>(
+        &self,
+        key_id: &Self::KeyId,
+        _algorithm: SignatureAlgorithm,
+        data: &D,
+    ) -> Result<Signature, SigningError<Self::Error>> {
+        Err(SigningError::Signer(SignerError::Pkcs11Error("sign: not implemented".to_string())))
+    }
+
+    fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
+        &self,
+        _algorithm: SignatureAlgorithm,
+        data: &D,
+    ) -> Result<(Signature, PublicKey), SignerError> {
+        Err(SignerError::Pkcs11Error("sign_one_off: not implemented".to_string()))
+    }
+
+    fn rand(&self, target: &mut [u8]) -> Result<(), SignerError> {
+        Err(SignerError::Pkcs11Error("rand: not implemented".to_string()))
     }
 }
 

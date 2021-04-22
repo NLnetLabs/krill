@@ -19,7 +19,7 @@ use rpki::{rta, uri};
 use crate::commons::api::{IssuedCert, RcvdCert, ReplacedObject, RepoInfo, RequestResourceLimit, ResourceSet};
 use crate::commons::crypto::{self, CryptoResult};
 use crate::commons::error::Error;
-use crate::commons::util::softsigner::OpenSslSigner;
+use crate::commons::util::softsigner::{OpenSslSigner, Pkcs11Signer};
 use crate::commons::util::AllowedUri;
 use crate::commons::KrillResult;
 use crate::daemon::ca::CertifiedKey;
@@ -31,12 +31,19 @@ use crate::daemon::ca::CertifiedKey;
 pub struct KrillSigner {
     // use a blocking lock to avoid having to be async, for signing operations
     // this should be fine.
-    signer: Arc<RwLock<OpenSslSigner>>,
+    // signer: Arc<RwLock<OpenSslSigner>>,
+    signer: Arc<RwLock<Pkcs11Signer>>,
 }
 
 impl KrillSigner {
     pub fn build(work_dir: &Path) -> KrillResult<Self> {
-        let signer = OpenSslSigner::build(work_dir)?;
+        // let signer = OpenSslSigner::build(work_dir)?;
+        // let signer = Arc::new(RwLock::new(signer));
+        // softhsm2-util --init-token --slot 0 --label "My token 1"
+        //    ... User PIN: 7890
+        //    ... is re-assigned to slot 313129207
+        let USER_PIN = "7890";
+        let signer = Pkcs11Signer::build(Path::new("/usr/local/lib/softhsm/libsofthsm2.so"), USER_PIN, 313129207)?;
         let signer = Arc::new(RwLock::new(signer));
         Ok(KrillSigner { signer })
     }
