@@ -6,7 +6,8 @@ use std::{
     sync::Arc,
 };
 
-use rpki::{crypto::KeyIdentifier, uri};
+use chrono::Duration;
+use rpki::{crypto::KeyIdentifier, uri, x509::Time};
 
 use crate::{
     commons::{
@@ -110,8 +111,16 @@ impl UpgradeStore for PubdStoreMigration {
         let scope = "0";
         let handle = Handle::from_str(scope).unwrap();
 
-        let info_key = KeyStoreKey::scoped(scope.to_string(), "info.json".to_string());
-        let mut info: StoredValueInfo = match self.store.get(&info_key) {
+        // Archive all keys in the scope, then we can write new keys as needed without
+        // overwriting anything when we renumber.
+        for key in self.store.keys(Some(scope.to_string()), "")? {
+            self.archive_to_migration_scope(&key)?;
+        }
+
+        let migration_scope = format!("{}/{}", scope, MIGRATION_SCOPE);
+
+        let migration_info_key = KeyStoreKey::scoped(migration_scope.clone(), "info.json".to_string());
+        let mut info: StoredValueInfo = match self.store.get(&migration_info_key) {
             Ok(Some(info)) => info,
             _ => StoredValueInfo::default(),
         };
@@ -121,10 +130,11 @@ impl UpgradeStore for PubdStoreMigration {
         info.last_command = 1;
 
         // migrate init
-        let init_key = Self::event_key(&scope, 0);
+        let old_init_key = Self::event_key(&migration_scope, 0);
+        let init_key = Self::event_key(scope, 0);
         let old_init: OldPubdInit = self
             .store
-            .get(&init_key)?
+            .get(&old_init_key)?
             .ok_or_else(|| UpgradeError::custom("Cannot read pubd init event"))?;
 
         let (_, _, old_init) = old_init.unpack();
@@ -133,29 +143,51 @@ impl UpgradeStore for PubdStoreMigration {
         self.store.store(&init_key, &init)?;
 
         // migrate commands and events
-        let cmd_keys = self.command_keys(scope)?;
-
-        info!("Will migrate {} commands for publication server", cmd_keys.len());
+        let old_cmd_keys = self.command_keys(&migration_scope)?;
 
         let mut total_migrated = 0;
+        let time_started = Time::now();
+        let total_commands = old_cmd_keys.len();
 
-        for cmd_key in cmd_keys {
-            let mut old_cmd: OldStoredRepositoryCommand = self.get(&cmd_key)?;
-            self.archive_to_migration_scope(&cmd_key)?;
+        info!("Will migrate {} commands for publication server", total_commands);
+
+        for old_cmd_key in old_cmd_keys {
+            // Do the migration counter first, so that we can just call continue when we need to skip commands
+            total_migrated += 1;
+            if total_migrated % 100 == 0 {
+                // ETA:
+                //  - (total_migrated / (now - started)) * total
+                let mut time_passed = (Time::now().timestamp() - time_started.timestamp()) as usize;
+                if time_passed == 0 {
+                    time_passed = 1; // avoid divide by zero.. we are doing approximate estimates here
+                }
+                let migrated_per_second = total_migrated / time_passed;
+                let expected_seconds = (total_commands / migrated_per_second) as i64;
+                let eta = time_started + Duration::seconds(expected_seconds);
+                info!(
+                    "  migrated {} commands, expect to finish: {}",
+                    total_migrated,
+                    eta.to_rfc3339()
+                );
+            }
+
+            if old_cmd_key.name().contains("pubd-publish.json") {
+                continue; // There is no migration needed for these commands.
+            }
+
+            let mut old_cmd: OldStoredRepositoryCommand = self.get(&old_cmd_key)?;
 
             if let Some(evt_versions) = old_cmd.effect.events() {
-                debug!("  command: {}", cmd_key);
+                debug!("  command: {}", old_cmd_key);
 
                 let mut events = vec![];
                 for v in evt_versions {
-                    let event_key = Self::event_key(scope, *v);
-                    debug!("  +- event: {}", event_key);
+                    let old_event_key = Self::event_key(&migration_scope, *v);
+                    debug!("  +- event: {}", old_event_key);
                     let old_evt: OldPubdEvt = self
                         .store
-                        .get(&event_key)?
-                        .ok_or_else(|| UpgradeError::Custom(format!("Cannot parse old event: {}", event_key)))?;
-
-                    self.archive_to_migration_scope(&event_key)?;
+                        .get(&old_event_key)?
+                        .ok_or_else(|| UpgradeError::Custom(format!("Cannot parse old event: {}", old_event_key)))?;
 
                     if old_evt.needs_migration() {
                         info.last_event += 1;
@@ -185,11 +217,6 @@ impl UpgradeStore for PubdStoreMigration {
             let key = KeyStoreKey::scoped(scope.to_string(), format!("{}.json", cmd_key));
 
             self.store.store(&key, &migrated_cmd)?;
-
-            total_migrated += 1;
-            if total_migrated % 100 == 0 {
-                info!("  migrated {} commands", total_migrated);
-            }
         }
 
         info!("Finished migrating publication server commands");
@@ -202,6 +229,7 @@ impl UpgradeStore for PubdStoreMigration {
         // update the info file
         info.snapshot_version = 0;
         info.last_command -= 1;
+        let info_key = KeyStoreKey::scoped(scope.to_string(), "info.json".to_string());
         self.store.store(&info_key, &info)?;
 
         // verify that we can now rebuild the 0.9 publication server based on
