@@ -133,7 +133,13 @@ impl UpgradeStore for PubdStoreMigration {
         self.store.store(&init_key, &init)?;
 
         // migrate commands and events
-        for cmd_key in self.command_keys(scope)? {
+        let cmd_keys = self.command_keys(scope)?;
+
+        info!("Will migrate {} commands for publication server", cmd_keys.len());
+
+        let mut total_migrated = 0;
+
+        for cmd_key in cmd_keys {
             let mut old_cmd: OldStoredRepositoryCommand = self.get(&cmd_key)?;
             self.archive_to_migration_scope(&cmd_key)?;
 
@@ -179,7 +185,14 @@ impl UpgradeStore for PubdStoreMigration {
             let key = KeyStoreKey::scoped(scope.to_string(), format!("{}.json", cmd_key));
 
             self.store.store(&key, &migrated_cmd)?;
+
+            total_migrated += 1;
+            if total_migrated % 100 == 0 {
+                info!("  migrated {} commands", total_migrated);
+            }
         }
+
+        info!("Finished migrating publication server commands");
 
         // move out the snapshots, we will rebuild from events
         // there will not be too many now that the publication
