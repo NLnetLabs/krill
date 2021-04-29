@@ -26,9 +26,16 @@ In order to test the upgrade you can do the following:
 - set the ENV variable KRILL_UPGRADE_ONLY
 - start krill v0.9.0-rc1 using your copied data directory
 
-If all goes well you should see the message:
+A minimal Krill config file to achieve this would be:
+```
+data_dir = "/path/to/your/copied/data"
+admin_token = "secret"
+```
 
+If all goes well you should see the message:
+```
   Krill upgrade successful
+```
 
 Note, by excluding the `keys` directory you make sure that this new Krill instance cannot do anything
 with your current private keys. E.g. it cannot publish anything or request certificates from your
