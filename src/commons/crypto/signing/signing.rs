@@ -19,7 +19,7 @@ use rpki::{rta, uri};
 use crate::commons::api::{IssuedCert, RcvdCert, ReplacedObject, RepoInfo, RequestResourceLimit, ResourceSet};
 use crate::commons::crypto::{self, CryptoResult};
 use crate::commons::error::Error;
-use crate::commons::util::softsigner::{OpenSslSigner, Pkcs11Signer};
+use crate::commons::crypto::signing::Pkcs11Signer;
 use crate::commons::util::AllowedUri;
 use crate::commons::KrillResult;
 use crate::daemon::ca::CertifiedKey;
@@ -36,7 +36,7 @@ pub struct KrillSigner {
 }
 
 impl KrillSigner {
-    pub fn build(work_dir: &Path) -> KrillResult<Self> {
+    pub fn build(_work_dir: &Path) -> KrillResult<Self> {
         // let signer = OpenSslSigner::build(work_dir)?;
         // let signer = Arc::new(RwLock::new(signer));
         // softhsm2-util --init-token --slot 0 --label "My token 1"
@@ -48,8 +48,8 @@ impl KrillSigner {
         //   sudo apt-install -y opensc # to install pkcs11-tool
         //   `
         //   pkcs11-tool --module /usr/local/lib/softhsm/libsofthsm2.so -p 7890 --delete-object --id <ID>> --type <privkey|pubkey>
-        let USER_PIN = "7890";
-        let signer = Pkcs11Signer::build(Path::new("/usr/local/lib/softhsm/libsofthsm2.so"), USER_PIN, 313129207)?;
+        let user_pin = "7890";
+        let signer = Pkcs11Signer::build(Path::new("/usr/local/lib/softhsm/libsofthsm2.so"), user_pin, 313129207)?;
         let signer = Arc::new(RwLock::new(signer));
         Ok(KrillSigner { signer })
     }
