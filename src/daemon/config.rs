@@ -15,8 +15,11 @@ use syslog::Facility;
 
 use rpki::uri;
 
-use crate::commons::api::{PublicationServerUris, PublisherHandle, Token};
 use crate::commons::util::ext_serde;
+use crate::commons::{
+    api::{PublicationServerUris, PublisherHandle, Token},
+    error::KrillIoError,
+};
 use crate::constants::*;
 use crate::daemon::http::tls_keys;
 
@@ -724,8 +727,10 @@ impl Config {
 
     pub fn read_config(file: &str) -> Result<Self, ConfigError> {
         let mut v = Vec::new();
-        let mut f = File::open(file)?;
-        f.read_to_end(&mut v)?;
+        let mut f =
+            File::open(file).map_err(|e| KrillIoError::new(format!("Could not read config file '{}'", file), e))?;
+        f.read_to_end(&mut v)
+            .map_err(|e| KrillIoError::new(format!("Could not read config file '{}'", file), e))?;
 
         let c: Config = toml::from_slice(v.as_slice())?;
         Ok(c)
@@ -853,7 +858,7 @@ impl Config {
 
 #[derive(Debug)]
 pub enum ConfigError {
-    IoError(io::Error),
+    IoError(KrillIoError),
     TomlError(toml::de::Error),
     RpkiUriError(uri::Error),
     Other(String),
@@ -876,8 +881,8 @@ impl ConfigError {
     }
 }
 
-impl From<io::Error> for ConfigError {
-    fn from(e: io::Error) -> Self {
+impl From<KrillIoError> for ConfigError {
+    fn from(e: KrillIoError) -> Self {
         ConfigError::IoError(e)
     }
 }

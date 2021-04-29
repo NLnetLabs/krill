@@ -2,7 +2,6 @@
 use std::collections::HashMap;
 
 use std::convert::TryFrom;
-use std::io;
 use std::path::PathBuf;
 use std::str::{from_utf8_unchecked, FromStr};
 use std::{env, fmt};
@@ -14,14 +13,17 @@ use rpki::crypto::KeyIdentifier;
 use rpki::uri;
 use rpki::x509::Time;
 
-use crate::commons::api::{
-    AddChildRequest, AuthorizationFmtError, CertAuthInit, ChildHandle, Handle, ParentCaContact, ParentCaReq,
-    ParentHandle, PublicationServerUris, PublisherHandle, ResourceSet, ResourceSetError, RoaDefinition,
-    RoaDefinitionUpdates, RtaName, Token, UpdateChildRequest,
-};
 use crate::commons::crypto::{IdCert, SignSupport};
 use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
+use crate::commons::{
+    api::{
+        AddChildRequest, AuthorizationFmtError, CertAuthInit, ChildHandle, Handle, ParentCaContact, ParentCaReq,
+        ParentHandle, PublicationServerUris, PublisherHandle, ResourceSet, ResourceSetError, RoaDefinition,
+        RoaDefinitionUpdates, RtaName, Token, UpdateChildRequest,
+    },
+    error::KrillIoError,
+};
 use crate::constants::*;
 use crate::daemon::ca::{ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest};
 use crate::{
@@ -2278,7 +2280,7 @@ pub enum PublishersCommand {
 #[derive(Debug)]
 pub enum Error {
     UriError(uri::Error),
-    IoError(io::Error),
+    IoError(KrillIoError),
     ReportError(ReportError),
     Rfc8183(rfc8183::Error),
     ResSetErr(ResourceSetError),
@@ -2341,8 +2343,8 @@ impl From<uri::Error> for Error {
     }
 }
 
-impl From<io::Error> for Error {
-    fn from(e: io::Error) -> Self {
+impl From<KrillIoError> for Error {
+    fn from(e: KrillIoError) -> Self {
         Error::IoError(e)
     }
 }

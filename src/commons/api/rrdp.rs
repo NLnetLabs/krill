@@ -2,7 +2,6 @@
 //! withdraw elements, as well as the notification, snapshot and delta file
 //! definitions.
 use std::fmt;
-use std::io;
 use std::path::PathBuf;
 use std::{collections::HashMap, path::Path};
 
@@ -14,11 +13,11 @@ use uuid::Uuid;
 use rpki::uri;
 use rpki::x509::Time;
 
-use crate::commons::api::publication;
 use crate::commons::api::Base64;
 use crate::commons::api::HexEncodedHash;
 use crate::commons::util::file;
 use crate::commons::util::xml::XmlWriter;
+use crate::commons::{api::publication, error::KrillIoError};
 
 const VERSION: &str = "1";
 const NS: &str = "http://www.ripe.net/rpki/rrdp";
@@ -350,7 +349,7 @@ impl Notification {
         Notification::new(session, 0, snapshot, vec![])
     }
 
-    pub fn write_xml(&self, path: &Path) -> Result<(), io::Error> {
+    pub fn write_xml(&self, path: &Path) -> Result<(), KrillIoError> {
         trace!("Writing notification file: {}", path.to_string_lossy());
         let mut file = file::create_file_with_path(&path)?;
 
@@ -386,9 +385,8 @@ impl Notification {
 
                 Ok(())
             })
-        })?;
-
-        Ok(())
+        })
+        .map_err(|e| KrillIoError::new(format!("Could not write XML to: {}", path.to_string_lossy()), e))
     }
 }
 
@@ -663,14 +661,12 @@ impl Snapshot {
         self.current_objects.elements().iter().fold(0, |sum, p| sum + p.size())
     }
 
-    pub fn write_xml(&self, path: &Path) -> Result<(), io::Error> {
+    pub fn write_xml(&self, path: &Path) -> Result<(), KrillIoError> {
         trace!("Writing snapshot file: {}", path.to_string_lossy());
         let vec = self.xml();
         let bytes = Bytes::from(vec);
 
-        file::save(&bytes, path)?;
-
-        Ok(())
+        file::save(&bytes, path)
     }
 
     pub fn xml(&self) -> Vec<u8> {
@@ -824,7 +820,7 @@ impl Delta {
         (self.session, self.serial, self.elements)
     }
 
-    pub fn write_xml(&self, path: &Path) -> Result<(), io::Error> {
+    pub fn write_xml(&self, path: &Path) -> Result<(), KrillIoError> {
         trace!("Writing delta file: {}", path.to_string_lossy());
         let vec = self.xml();
         let bytes = Bytes::from(vec);

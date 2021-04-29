@@ -1,1 +1,7 @@
-{"label":"sys-io","msg":"I/O error: can't read file","args":{"cause":"can't read file"}}
+{
+    "label": "sys-io",
+    "msg": "I/O error: context: Trouble reading 'foo', underlying io::Error: can't read file",
+    "args": {
+        "cause": "context: Trouble reading 'foo', underlying io::Error: can't read file"
+    }
+}

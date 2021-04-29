@@ -1,7 +1,7 @@
 // TODO: Fold this into OpenSslSigner?
 use std::{fs::File, io::Write, path::Path};
 
-use crate::commons::error::Error;
+use crate::commons::error::{Error, KrillIoError};
 use crate::commons::KrillResult;
 
 const AES_256_GCM_KEY_BIT_LENGTH: usize = 256;
@@ -35,8 +35,14 @@ pub(crate) fn load_or_create_key(key_path: &Path) -> KrillResult<Vec<u8>> {
         openssl::rand::rand_bytes(&mut key_bytes)
             .map_err(|err| Error::Custom(format!("Unable to generate symmetric key: {}", err)))?;
 
-        let mut f = File::create(key_path)?;
-        f.write_all(&key_bytes)?;
+        let mut f = File::create(key_path)
+            .map_err(|e| KrillIoError::new(format!("Could not create key file '{}'", key_path.to_string_lossy()), e))?;
+        f.write_all(&key_bytes).map_err(|e| {
+            KrillIoError::new(
+                format!("Could not write to key file '{}'", key_path.to_string_lossy()),
+                e,
+            )
+        })?;
         Ok(key_bytes.to_vec())
     }
 }

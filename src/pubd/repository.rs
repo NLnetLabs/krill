@@ -25,7 +25,7 @@ use crate::{
             StorableRepositoryCommand,
         },
         crypto::{IdCert, KrillSigner, ProtocolCms, ProtocolCmsBuilder},
-        error::Error,
+        error::{Error, KrillIoError},
         eventsourcing::{Aggregate, AggregateStore, AggregateStoreError, KeyStoreKey, KeyValueStore},
         remote::rfc8183,
         util::file,
@@ -370,7 +370,15 @@ impl RsyncdStore {
 
         let mut new_dir = self.rsync_dir.clone();
         new_dir.push(&format!("tmp-{}", snapshot.serial()));
-        fs::create_dir_all(&new_dir)?;
+        fs::create_dir_all(&new_dir).map_err(|e| {
+            KrillIoError::new(
+                format!(
+                    "Could not create dir(s) '{}' for publishing rsync",
+                    new_dir.to_string_lossy()
+                ),
+                e,
+            )
+        })?;
 
         let elements = snapshot.elements();
 
@@ -395,13 +403,39 @@ impl RsyncdStore {
         old_dir.push("old");
 
         if current_dir.exists() {
-            fs::rename(&current_dir, &old_dir)?;
+            fs::rename(&current_dir, &old_dir).map_err(|e| {
+                KrillIoError::new(
+                    format!(
+                        "Could not rename rsync dir from '{}' to '{}' while publishing",
+                        current_dir.to_string_lossy(),
+                        old_dir.to_string_lossy()
+                    ),
+                    e,
+                )
+            })?;
         }
 
-        fs::rename(&new_dir, &current_dir)?;
+        fs::rename(&new_dir, &current_dir).map_err(|e| {
+            KrillIoError::new(
+                format!(
+                    "Could not rename rsync dir from '{}' to '{}' while publishing",
+                    new_dir.to_string_lossy(),
+                    current_dir.to_string_lossy()
+                ),
+                e,
+            )
+        })?;
 
         if old_dir.exists() {
-            fs::remove_dir_all(&old_dir)?;
+            fs::remove_dir_all(&old_dir).map_err(|e| {
+                KrillIoError::new(
+                    format!(
+                        "Could not clean up old rsync dir '{}' while publishing",
+                        old_dir.to_string_lossy()
+                    ),
+                    e,
+                )
+            })?;
         }
 
         Ok(())
@@ -653,12 +687,37 @@ impl RrdpServer {
         let notification_path_new = self.notification_path_new();
         let notification_path = self.notification_path();
         self.notification.write_xml(&notification_path_new)?;
-        fs::rename(notification_path_new, notification_path)?;
+        fs::rename(&notification_path_new, &notification_path).map_err(|e| {
+            KrillIoError::new(
+                format!(
+                    "Could not rename notification file from '{}' to '{}'",
+                    notification_path_new.to_string_lossy(),
+                    notification_path.to_string_lossy()
+                ),
+                e,
+            )
+        })?;
 
         // clean up under the base dir:
         // - old session dirs
-        for entry in fs::read_dir(&self.rrdp_base_dir)? {
-            let entry = entry?;
+        for entry in fs::read_dir(&self.rrdp_base_dir).map_err(|e| {
+            KrillIoError::new(
+                format!(
+                    "Could not read RRDP base directory '{}'",
+                    self.rrdp_base_dir.to_string_lossy()
+                ),
+                e,
+            )
+        })? {
+            let entry = entry.map_err(|e| {
+                KrillIoError::new(
+                    format!(
+                        "Could not read RRDP base directory '{}'",
+                        self.rrdp_base_dir.to_string_lossy()
+                    ),
+                    e,
+                )
+            })?;
             if self.session.to_string() == entry.file_name().to_string_lossy() {
                 continue;
             } else {
@@ -673,8 +732,24 @@ impl RrdpServer {
         let mut session_dir = self.rrdp_base_dir.clone();
         session_dir.push(self.session.to_string());
 
-        for entry in fs::read_dir(&session_dir)? {
-            let entry = entry?;
+        for entry in fs::read_dir(&session_dir).map_err(|e| {
+            KrillIoError::new(
+                format!(
+                    "Could not read RRDP session directory '{}'",
+                    session_dir.to_string_lossy()
+                ),
+                e,
+            )
+        })? {
+            let entry = entry.map_err(|e| {
+                KrillIoError::new(
+                    format!(
+                        "Could not read RRDP session directory '{}'",
+                        session_dir.to_string_lossy()
+                    ),
+                    e,
+                )
+            })?;
             let path = entry.path();
 
             // remove any dir or file that is:

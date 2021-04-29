@@ -11,31 +11,40 @@ use serde::Serialize;
 
 use rpki::uri;
 
-use crate::commons::api::{Base64, HexEncodedHash, ListElement, Publish, Update, Withdraw};
+use crate::commons::{
+    api::{Base64, HexEncodedHash, ListElement, Publish, Update, Withdraw},
+    error::KrillIoError,
+};
 
 /// Creates a sub dir if needed, return full path to it
-pub fn sub_dir(base: &Path, name: &str) -> Result<PathBuf, io::Error> {
+pub fn sub_dir(base: &Path, name: &str) -> Result<PathBuf, KrillIoError> {
     let mut full_path = base.to_path_buf();
     full_path.push(name);
     create_dir(&full_path)?;
     Ok(full_path)
 }
 
-pub fn create_dir(dir: &Path) -> Result<(), io::Error> {
+pub fn create_dir(dir: &Path) -> Result<(), KrillIoError> {
     if !dir.is_dir() {
-        fs::create_dir(dir)?;
+        fs::create_dir(dir)
+            .map_err(|e| KrillIoError::new(format!("could not create dir: {}", dir.to_string_lossy()), e))?;
     }
     Ok(())
 }
 
-pub fn create_file_with_path(path: &Path) -> Result<File, io::Error> {
+pub fn create_file_with_path(path: &Path) -> Result<File, KrillIoError> {
     if !path.exists() {
         if let Some(parent) = path.parent() {
             trace!("Creating path: {}", parent.to_string_lossy());
-            fs::create_dir_all(parent)?;
+            fs::create_dir_all(parent).map_err(|e| {
+                KrillIoError::new(
+                    format!("Could not create dir path for: {}", parent.to_string_lossy()),
+                    e,
+                )
+            })?;
         }
     }
-    File::create(path)
+    File::create(path).map_err(|e| KrillIoError::new(format!("Could not create file: {}", path.to_string_lossy()), e))
 }
 
 /// Derive the path for this file.
@@ -46,29 +55,34 @@ pub fn file_path(base_path: &Path, file_name: &str) -> PathBuf {
 }
 
 /// Saves a file, creating parent dirs as needed
-pub fn save(content: &[u8], full_path: &Path) -> Result<(), io::Error> {
+pub fn save(content: &[u8], full_path: &Path) -> Result<(), KrillIoError> {
     let mut f = create_file_with_path(full_path)?;
-    f.write_all(content)?;
+    f.write_all(content)
+        .map_err(|e| KrillIoError::new(format!("Could not write to: {}", full_path.to_string_lossy()), e))?;
 
     trace!("Saved file: {}", full_path.to_string_lossy());
     Ok(())
 }
 
 /// Saves an object to json - unwraps any json errors!
-pub fn save_json<O: Serialize>(object: &O, full_path: &Path) -> Result<(), io::Error> {
+pub fn save_json<O: Serialize>(object: &O, full_path: &Path) -> Result<(), KrillIoError> {
     let json = serde_json::to_string(object).unwrap();
     save(&Bytes::from(json), full_path)
 }
 
-/// Loads a files and deserializes as json for the expected type. Maps json
-/// errors to io::Error
-pub fn load_json<O: DeserializeOwned>(full_path: &Path) -> Result<O, io::Error> {
+/// Loads a files and deserializes as json for the expected type. Maps json errors to KrillIoError
+pub fn load_json<O: DeserializeOwned>(full_path: &Path) -> Result<O, KrillIoError> {
     let bytes = read(full_path)?;
-    serde_json::from_slice(&bytes).map_err(|_| io::Error::new(io::ErrorKind::Other, "could not deserialize json"))
+    serde_json::from_slice(&bytes).map_err(|_| {
+        KrillIoError::new(
+            format!("Could not load json for file: {}", full_path.to_string_lossy()),
+            io::Error::new(io::ErrorKind::Other, "could not deserialize json"),
+        )
+    })
 }
 
 /// Saves a file, creating parent dirs as needed
-pub fn save_in_dir(content: &Bytes, base_path: &Path, name: &str) -> Result<(), io::Error> {
+pub fn save_in_dir(content: &Bytes, base_path: &Path, name: &str) -> Result<(), KrillIoError> {
     let mut full_path = base_path.to_path_buf();
     full_path.push(name);
     save(content, &full_path)
@@ -76,51 +90,60 @@ pub fn save_in_dir(content: &Bytes, base_path: &Path, name: &str) -> Result<(), 
 
 /// Saves a file under a base directory, using the rsync uri to create
 /// sub-directories preserving the rsync authority and module in dir names.
-pub fn save_with_rsync_uri(content: &Bytes, base_path: &Path, uri: &uri::Rsync) -> Result<(), io::Error> {
+pub fn save_with_rsync_uri(content: &Bytes, base_path: &Path, uri: &uri::Rsync) -> Result<(), KrillIoError> {
     let path = path_with_rsync(base_path, uri);
     save(content, &path)
 }
 
 /// Reads a file to Bytes
-pub fn read(path: &Path) -> Result<Bytes, io::Error> {
-    let mut f = File::open(path).map_err(|_| Error::cannot_read(path))?;
+pub fn read(path: &Path) -> Result<Bytes, KrillIoError> {
+    let mut f =
+        File::open(path).map_err(|e| KrillIoError::new(format!("Could not read: '{}'", path.to_string_lossy()), e))?;
     let mut bytes = Vec::new();
-    f.read_to_end(&mut bytes)?;
+    f.read_to_end(&mut bytes)
+        .map_err(|e| KrillIoError::new(format!("Could not read: {}", path.to_string_lossy()), e))?;
     Ok(Bytes::from(bytes))
 }
 
-pub fn read_with_rsync_uri(base_path: &Path, uri: &uri::Rsync) -> Result<Bytes, io::Error> {
+pub fn read_with_rsync_uri(base_path: &Path, uri: &uri::Rsync) -> Result<Bytes, KrillIoError> {
     let path = path_with_rsync(base_path, uri);
     read(&path)
 }
 
-pub fn delete_with_rsync_uri(base_path: &Path, uri: &uri::Rsync) -> Result<(), io::Error> {
+pub fn delete_with_rsync_uri(base_path: &Path, uri: &uri::Rsync) -> Result<(), KrillIoError> {
     delete(&path_with_rsync(base_path, uri))
 }
 
-pub fn delete_in_dir(base_path: &Path, name: &str) -> Result<(), io::Error> {
+pub fn delete_in_dir(base_path: &Path, name: &str) -> Result<(), KrillIoError> {
     let mut full_path = base_path.to_path_buf();
     full_path.push(name);
     delete(&full_path)
 }
 
-pub fn delete(full_path: &Path) -> Result<(), io::Error> {
+pub fn delete(full_path: &Path) -> Result<(), KrillIoError> {
     trace!("Removing file: {}", full_path.to_string_lossy());
-    fs::remove_file(full_path)?;
-    Ok(())
+    fs::remove_file(full_path)
+        .map_err(|e| KrillIoError::new(format!("Could not remove file: {}", full_path.to_string_lossy()), e))
 }
 
-pub fn clean_file_and_path(path: &Path) -> Result<(), io::Error> {
+pub fn clean_file_and_path(path: &Path) -> Result<(), KrillIoError> {
     if path.exists() {
-        fs::remove_file(&path)?;
+        fs::remove_file(&path)
+            .map_err(|e| KrillIoError::new(format!("Could not remove file: {}", path.to_string_lossy()), e))?;
 
         let mut parent_opt = path.parent();
 
         while parent_opt.is_some() {
             let parent = parent_opt.unwrap();
-            if parent.read_dir()?.count() == 0 {
+            if parent
+                .read_dir()
+                .map_err(|e| KrillIoError::new(format!("Could not read directory: '{}'", parent.to_string_lossy()), e))?
+                .count()
+                == 0
+            {
                 trace!("Will delete {}", parent.to_string_lossy().to_string());
-                fs::remove_dir(parent)?;
+                fs::remove_dir(parent)
+                    .map_err(|e| KrillIoError::new(format!("Could not remove dir: {}", parent.to_string_lossy()), e))?;
             }
 
             parent_opt = parent.parent();
@@ -203,21 +226,59 @@ pub fn backup_dir(base_path: &Path, target_path: &Path) -> Result<(), Error> {
         if target.exists() {
             Err(Error::backup_target_exists(target_path))
         } else {
-            fs::copy(base_path, target_path)?;
+            fs::copy(base_path, target_path).map_err(|e| {
+                KrillIoError::new(
+                    format!(
+                        "Could not back up file from '{}' to '{}'",
+                        base_path.to_string_lossy(),
+                        target_path.to_string_lossy()
+                    ),
+                    e,
+                )
+            })?;
             Ok(())
         }
     } else if base_path.is_dir() {
-        for entry in fs::read_dir(base_path)? {
-            let path = entry?.path();
+        for entry in fs::read_dir(base_path).map_err(|e| {
+            KrillIoError::new(
+                format!("Could not read dir '{}' for backup", base_path.to_string_lossy()),
+                e,
+            )
+        })? {
+            let path = entry
+                .map_err(|e| {
+                    KrillIoError::new(
+                        format!(
+                            "Could not read entry for dir '{}' for backup",
+                            base_path.to_string_lossy()
+                        ),
+                        e,
+                    )
+                })?
+                .path();
             let mut target = target_path.to_path_buf();
             target.push(path.file_name().unwrap());
             if path.is_dir() {
                 backup_dir(&path, &target)?;
             } else if path.is_file() {
                 if let Some(parent) = target.parent() {
-                    fs::create_dir_all(parent)?;
+                    fs::create_dir_all(parent).map_err(|e| {
+                        KrillIoError::new(
+                            format!("Could not create dir(s) '{}' for backup", parent.to_string_lossy()),
+                            e,
+                        )
+                    })?;
                 }
-                fs::copy(&path, &target)?;
+                fs::copy(&path, &target).map_err(|e| {
+                    KrillIoError::new(
+                        format!(
+                            "Could not backup '{}' to '{}'",
+                            path.to_string_lossy(),
+                            target.to_string_lossy()
+                        ),
+                        e,
+                    )
+                })?;
             } else {
                 return Err(Error::backup_cannot_read(&path));
             }
@@ -255,7 +316,7 @@ impl CurrentFile {
 
     /// Saves this file under a base directory, based on the (rsync) uri of
     /// this file.
-    pub fn save(&self, base_path: &Path) -> Result<(), io::Error> {
+    pub fn save(&self, base_path: &Path) -> Result<(), KrillIoError> {
         save_with_rsync_uri(&self.content.to_bytes(), &base_path, &self.uri)
     }
 
@@ -319,7 +380,7 @@ pub enum Error {
     BackupExcessive,
     BackupCannotReadSource(String),
     BackupTargetExists(String),
-    Io(io::Error),
+    Io(KrillIoError),
 }
 
 impl fmt::Display for Error {
@@ -355,18 +416,9 @@ impl Error {
 
 impl std::error::Error for Error {}
 
-impl From<io::Error> for Error {
-    fn from(e: io::Error) -> Self {
+impl From<KrillIoError> for Error {
+    fn from(e: KrillIoError) -> Self {
         Error::Io(e)
-    }
-}
-
-impl From<Error> for io::Error {
-    fn from(e: Error) -> Self {
-        match e {
-            Error::Io(ioe) => ioe,
-            _ => io::Error::new(io::ErrorKind::Other, e),
-        }
     }
 }
 
