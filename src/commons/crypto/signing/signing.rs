@@ -17,9 +17,9 @@ use rpki::x509::{Name, Serial, Time, Validity};
 use rpki::{rta, uri};
 
 use crate::commons::api::{IssuedCert, RcvdCert, ReplacedObject, RepoInfo, RequestResourceLimit, ResourceSet};
+use crate::commons::crypto::signing::Pkcs11Signer;
 use crate::commons::crypto::{self, CryptoResult};
 use crate::commons::error::Error;
-use crate::commons::crypto::signing::Pkcs11Signer;
 use crate::commons::util::AllowedUri;
 use crate::commons::KrillResult;
 use crate::daemon::ca::CertifiedKey;

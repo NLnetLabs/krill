@@ -1,9 +1,18 @@
-use std::{ops::Deref, path::Path, sync::{Arc, atomic::{AtomicU8, Ordering}}};
+use std::{
+    ops::Deref,
+    path::Path,
+    sync::{
+        atomic::{AtomicU8, Ordering},
+        Arc,
+    },
+};
 
 use bytes::Bytes;
 use once_cell::sync::OnceCell;
-use pkcs11::{Ctx, types::*};
-use rpki::crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError, signer::KeyError};
+use pkcs11::{types::*, Ctx};
+use rpki::crypto::{
+    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
+};
 
 use crate::constants::test_mode_enabled;
 
@@ -16,7 +25,7 @@ static CTX_REF_COUNT: AtomicU8 = AtomicU8::new(0);
 
 #[derive(Debug)]
 struct Pkcs11Ctx {
-    ctx: Arc<Ctx>
+    ctx: Arc<Ctx>,
 }
 
 impl Pkcs11Ctx {
@@ -78,14 +87,20 @@ struct Pkcs11Session {
 impl Pkcs11Session {
     pub fn new(ctx: Arc<Pkcs11Ctx>, slot_id: CK_SLOT_ID) -> Result<Self, SignerError> {
         // PKCS#11 v2.21: "For legacy reasons, the CKF_SERIAL_SESSION bit must always be set"
-        let handle = ctx.open_session(slot_id, CKF_SERIAL_SESSION | CKF_RW_SESSION, None, None)
+        let handle = ctx
+            .open_session(slot_id, CKF_SERIAL_SESSION | CKF_RW_SESSION, None, None)
             .map_err(|err| SignerError::Pkcs11Error(format!("Failed to open PKCS#11 session: {}", err)))?;
-        Ok(Self { ctx, handle, logged_in: false })
+        Ok(Self {
+            ctx,
+            handle,
+            logged_in: false,
+        })
     }
 
     fn login(&mut self, user: CK_USER_TYPE, pin: Option<&str>) -> Result<(), SignerError> {
         info!("PKCS#11: Logging in");
-        self.ctx.login(self.handle, user, pin)
+        self.ctx
+            .login(self.handle, user, pin)
             .or_else(|err| {
                 if matches!(err, pkcs11::errors::Error::Pkcs11(CKR_USER_ALREADY_LOGGED_IN)) && test_mode_enabled() {
                     warn!("PKCS#11: Ignoring error CKR_USER_ALREADY_LOGGED_IN because test mode is enabled");
@@ -139,7 +154,11 @@ impl Pkcs11Signer {
 
         login_session.login(CKU_USER, Some(pin))?;
 
-        Ok(Pkcs11Signer { ctx, login_session, slot_id })
+        Ok(Pkcs11Signer {
+            ctx,
+            login_session,
+            slot_id,
+        })
     }
 
     fn open_session(&self) -> Result<Pkcs11Session, SignerError> {
@@ -169,8 +188,12 @@ impl Pkcs11Signer {
         let mut pub_template: Vec<CK_ATTRIBUTE> = Vec::new();
         pub_template.push(CK_ATTRIBUTE::new(CKA_MODULUS));
         pub_template.push(CK_ATTRIBUTE::new(CKA_PUBLIC_EXPONENT));
-        let (_, res_vec) = self.ctx.get_attribute_value(*session, pub_handle, &mut pub_template)
-            .map_err(|err| SignerError::Pkcs11Error(format!("Failed to get modulus and/or public exponent lengths: {}", err)))?;
+        let (_, res_vec) = self
+            .ctx
+            .get_attribute_value(*session, pub_handle, &mut pub_template)
+            .map_err(|err| {
+                SignerError::Pkcs11Error(format!("Failed to get modulus and/or public exponent lengths: {}", err))
+            })?;
 
         let mut modulus = Vec::with_capacity(res_vec[0].ulValueLen as usize);
         let mut public_exp = Vec::with_capacity(res_vec[1].ulValueLen as usize);
@@ -179,8 +202,11 @@ impl Pkcs11Signer {
         pub_template.clear();
         pub_template.push(CK_ATTRIBUTE::new(CKA_MODULUS).with_bytes(modulus.as_mut_slice()));
         pub_template.push(CK_ATTRIBUTE::new(CKA_PUBLIC_EXPONENT).with_bytes(public_exp.as_mut_slice()));
-        self.ctx.get_attribute_value(*session, pub_handle, &mut pub_template)
-            .map_err(|err| SignerError::Pkcs11Error(format!("Failed to get modulus and/or public exponent value: {}", err)))?;
+        self.ctx
+            .get_attribute_value(*session, pub_handle, &mut pub_template)
+            .map_err(|err| {
+                SignerError::Pkcs11Error(format!("Failed to get modulus and/or public exponent value: {}", err))
+            })?;
 
         // TODO: use the input exponent value from the top of this function if we got a zero length exponent attribute
         // value back from the PKCS#11 interface.
@@ -197,7 +223,7 @@ impl Pkcs11Signer {
         //     AlgorithmIdentifier   ::=  SEQUENCE  {
         //         algorithm              OBJECT IDENTIFIER,
         //         parameters             ANY DEFINED BY algorithm OPTIONAL  }
-        // 
+        //
         // The subjectPublicKey bit string is a DER encoding of the following ASN.1 definition:
         //
         //     RSAPublicKey          ::= SEQUENCE {
@@ -224,81 +250,125 @@ impl Pkcs11Signer {
         let modulus = bcder::Unsigned::from_slice(modulus);
         let public_exp = bcder::Unsigned::from_slice(public_exp);
 
-        let rsa_public_key = bcder::encode::sequence(( modulus.encode(), public_exp.encode() ));
+        let rsa_public_key = bcder::encode::sequence((modulus.encode(), public_exp.encode()));
 
         use crate::bcder::encode::Values; // for .write_encoded()
         let mut rsa_public_key_bytes: Vec<u8> = Vec::new();
-        rsa_public_key.write_encoded(bcder::Mode::Der, &mut rsa_public_key_bytes)
-            .map_err(|err| SignerError::Pkcs11Error(
-                format!("Failed to create DER encoded RSAPublicKey from constituent parts: {}", err)))?;
+        rsa_public_key
+            .write_encoded(bcder::Mode::Der, &mut rsa_public_key_bytes)
+            .map_err(|err| {
+                SignerError::Pkcs11Error(format!(
+                    "Failed to create DER encoded RSAPublicKey from constituent parts: {}",
+                    err
+                ))
+            })?;
 
         let subject_public_key = bcder::BitString::new(0, bytes::Bytes::from(rsa_public_key_bytes));
 
-        let subject_public_key_info = bcder::encode::sequence(( algorithm.encode(), subject_public_key.encode() ));
+        let subject_public_key_info = bcder::encode::sequence((algorithm.encode(), subject_public_key.encode()));
 
         let mut subject_public_key_info_source: Vec<u8> = Vec::new();
-        subject_public_key_info.write_encoded(bcder::Mode::Der, &mut subject_public_key_info_source)
-            .map_err(|err| SignerError::Pkcs11Error(
-                format!("Failed to create DER encoded SubjectPublicKeyInfo from constituent parts: {}", err)))?;
+        subject_public_key_info
+            .write_encoded(bcder::Mode::Der, &mut subject_public_key_info_source)
+            .map_err(|err| {
+                SignerError::Pkcs11Error(format!(
+                    "Failed to create DER encoded SubjectPublicKeyInfo from constituent parts: {}",
+                    err
+                ))
+            })?;
 
-        let public_key = PublicKey::decode(subject_public_key_info_source.as_slice())
-            .map_err(|err| SignerError::Pkcs11Error(
-                format!("Failed to create public key from the DER encoded SubjectPublicKeyInfo: {}", err)))?;
+        let public_key = PublicKey::decode(subject_public_key_info_source.as_slice()).map_err(|err| {
+            SignerError::Pkcs11Error(format!(
+                "Failed to create public key from the DER encoded SubjectPublicKeyInfo: {}",
+                err
+            ))
+        })?;
 
         Ok(public_key)
     }
 
-    fn find_key(&self, key_id: &KeyIdentifier, key_class: CK_OBJECT_CLASS) -> Result<CK_OBJECT_HANDLE, KeyError<SignerError>> {
+    fn find_key(
+        &self,
+        key_id: &KeyIdentifier,
+        key_class: CK_OBJECT_CLASS,
+    ) -> Result<CK_OBJECT_HANDLE, KeyError<SignerError>> {
         let session = self.open_session()?;
 
         let human_key_class = match key_class {
             CKO_PUBLIC_KEY => "public key",
             CKO_PRIVATE_KEY => "private key",
-            _ => "key"
+            _ => "key",
         };
-        
-        trace!("PKCS#11: Finding key handle for {} with ID {}", &human_key_class, &key_id);
+
+        trace!(
+            "PKCS#11: Finding key handle for {} with ID {}",
+            &human_key_class,
+            &key_id
+        );
 
         let mut template: Vec<CK_ATTRIBUTE> = Vec::new();
         template.push(CK_ATTRIBUTE::new(CKA_CLASS).with_ck_ulong(&key_class));
         template.push(CK_ATTRIBUTE::new(CKA_ID).with_bytes(key_id.as_slice()));
 
-        self.ctx.find_objects_init(*session, &template)
-            .map_err(|err| SignerError::Pkcs11Error(format!("Failed to initialize find for {} with id {}: {}", &human_key_class, &key_id, err)))?;
+        self.ctx.find_objects_init(*session, &template).map_err(|err| {
+            SignerError::Pkcs11Error(format!(
+                "Failed to initialize find for {} with id {}: {}",
+                &human_key_class, &key_id, err
+            ))
+        })?;
 
         let max_object_count = 2;
-        let res = self.ctx.find_objects(*session, max_object_count)
-            .map_err(|err| SignerError::Pkcs11Error(format!("Failed to perform find for {} with id {}: {}", &human_key_class, &key_id, err)));
+        let res = self.ctx.find_objects(*session, max_object_count).map_err(|err| {
+            SignerError::Pkcs11Error(format!(
+                "Failed to perform find for {} with id {}: {}",
+                &human_key_class, &key_id, err
+            ))
+        });
         let res = match res {
             Err(err) => {
-                self.ctx.find_objects_final(*session)
-                    .map_err(|err2| KeyError::Signer(SignerError::Pkcs11Error(format!("Failed to finalize find for {} with id {}: {} (after find failed with error: {}", &human_key_class, &key_id, err2, err))))?;
+                self.ctx.find_objects_final(*session).map_err(|err2| {
+                    KeyError::Signer(SignerError::Pkcs11Error(format!(
+                        "Failed to finalize find for {} with id {}: {} (after find failed with error: {}",
+                        &human_key_class, &key_id, err2, err
+                    )))
+                })?;
                 Err(KeyError::Signer(err))
             }
             Ok(results) => match results.len() {
                 0 => Err(KeyError::KeyNotFound),
                 1 => Ok(results[0]),
-                _ => Err(KeyError::Signer(SignerError::Pkcs11Error(format!("More than one {} found with id {}", &human_key_class, &key_id))))
-            }
+                _ => Err(KeyError::Signer(SignerError::Pkcs11Error(format!(
+                    "More than one {} found with id {}",
+                    &human_key_class, &key_id
+                )))),
+            },
         };
 
-        if let Err(err) = self.ctx.find_objects_final(*session)
-            .map_err(|err| KeyError::Signer(SignerError::Pkcs11Error(
-                format!("Failed to finalize find for {} with id {}: {}", &human_key_class, &key_id, err)))) {
+        if let Err(err) = self.ctx.find_objects_final(*session).map_err(|err| {
+            KeyError::Signer(SignerError::Pkcs11Error(format!(
+                "Failed to finalize find for {} with id {}: {}",
+                &human_key_class, &key_id, err
+            )))
+        }) {
             warn!("PKCS#11: {}", err);
         }
 
         res
     }
 
-    fn build_key(&self, algorithm: PublicKeyFormat) -> Result<(PublicKey, CK_OBJECT_HANDLE, CK_OBJECT_HANDLE), SignerError> {
+    fn build_key(
+        &self,
+        algorithm: PublicKeyFormat,
+    ) -> Result<(PublicKey, CK_OBJECT_HANDLE, CK_OBJECT_HANDLE), SignerError> {
         // https://tools.ietf.org/html/rfc6485#section-3: Asymmetric Key Pair Formats
         //   "The RSA key pairs used to compute the signatures MUST have a 2048-bit
         //    modulus and a public exponent (e) of 65,537."
 
         if !matches!(algorithm, PublicKeyFormat::Rsa) {
-            return Err(SignerError::Pkcs11Error(
-                format!("Algorithm {:?} not supported while creating key", &algorithm)));
+            return Err(SignerError::Pkcs11Error(format!(
+                "Algorithm {:?} not supported while creating key",
+                &algorithm
+            )));
         }
 
         let mech = CK_MECHANISM {
@@ -335,23 +405,30 @@ impl Pkcs11Signer {
         pub_template.push(allowed_mechanisms_attr);
         priv_template.push(allowed_mechanisms_attr);
 
-        trace!("PKCS#11: Generating key pair with templates: public key={:?}, private key={:?}",
-            &pub_template, &priv_template);
+        trace!(
+            "PKCS#11: Generating key pair with templates: public key={:?}, private key={:?}",
+            &pub_template,
+            &priv_template
+        );
 
         let session = self.open_session()?;
-        let (pub_handle, priv_handle) = self.ctx.generate_key_pair(*session, &mech, &pub_template, &priv_template)
+        let (pub_handle, priv_handle) = self
+            .ctx
+            .generate_key_pair(*session, &mech, &pub_template, &priv_template)
             .map_err(|err| SignerError::Pkcs11Error(format!("Failed to create key: {}", err)))?;
 
         // TODO: if we encounter an error from this point on should we delete the keys that we just created?
-            
+
         let public_key = self.get_public_key_from_handle(pub_handle)?;
         let key_identifier = public_key.key_identifier();
-        
+
         let mut template: Vec<CK_ATTRIBUTE> = Vec::new();
         template.push(CK_ATTRIBUTE::new(CKA_ID).with_bytes(key_identifier.as_slice()));
-        self.ctx.set_attribute_value(*session, pub_handle, &template)
+        self.ctx
+            .set_attribute_value(*session, pub_handle, &template)
             .map_err(|err| SignerError::Pkcs11Error(format!("Failed to set attributes on public key: {}", err)))?;
-        self.ctx.set_attribute_value(*session, priv_handle, &template)
+        self.ctx
+            .set_attribute_value(*session, priv_handle, &template)
             .map_err(|err| SignerError::Pkcs11Error(format!("Failed to set attributes on private key: {}", err)))?;
 
         debug!("PKCS#11: Generated key pair with ID {}", key_identifier);
@@ -363,13 +440,15 @@ impl Pkcs11Signer {
         &self,
         priv_handle: CK_OBJECT_HANDLE,
         algorithm: SignatureAlgorithm,
-        data: &D
+        data: &D,
     ) -> Result<Signature, SignerError> {
         debug!("PKCS#11: Signing");
 
         if algorithm.public_key_format() != PublicKeyFormat::Rsa {
-            return Err(SignerError::Pkcs11Error(
-                format!("Algorithm public key format not supported for signing: {:?}", algorithm.public_key_format())));
+            return Err(SignerError::Pkcs11Error(format!(
+                "Algorithm public key format not supported for signing: {:?}",
+                algorithm.public_key_format()
+            )));
         }
 
         let mech = CK_MECHANISM {
@@ -379,13 +458,15 @@ impl Pkcs11Signer {
         };
 
         let session = self.open_session()?;
-        self.ctx.sign_init(*session, &mech, priv_handle)
+        self.ctx
+            .sign_init(*session, &mech, priv_handle)
             .map_err(|err| SignerError::Pkcs11Error(format!("Failed to initialize sign: {}", err)))?;
 
-        let signed = self.ctx.sign(*session, data.as_ref())
+        let signed = self
+            .ctx
+            .sign(*session, data.as_ref())
             .map_err(|err| SignerError::Pkcs11Error(format!("Failed to sign: {}", err)))?;
 
-            
         let sig = Signature::new(SignatureAlgorithm::default(), Bytes::from(signed));
 
         // temporarily for testing purposes log some data we can use to verify that signing is working correctly:
@@ -419,21 +500,24 @@ impl Signer for Pkcs11Signer {
 
     fn get_key_info(&self, key_id: &Self::KeyId) -> Result<PublicKey, KeyError<Self::Error>> {
         let pub_handle = self.find_key(key_id, CKO_PUBLIC_KEY)?;
-        self.get_public_key_from_handle(pub_handle).map_err(|err| KeyError::Signer(err))
+        self.get_public_key_from_handle(pub_handle)
+            .map_err(|err| KeyError::Signer(err))
     }
 
     fn destroy_key(&mut self, key_id: &Self::KeyId) -> Result<(), KeyError<Self::Error>> {
         debug!("PKCS#11: Deleting key pair with ID {}", &key_id);
-        
+
         let session = self.open_session()?;
 
         if let Ok(pub_handle) = self.find_key(key_id, CKO_PUBLIC_KEY) {
-            self.ctx.destroy_object(*session, pub_handle)
+            self.ctx
+                .destroy_object(*session, pub_handle)
                 .map_err(|err| SignerError::Pkcs11Error(format!("Failed to delete public key: {}", err)))?;
         }
 
         if let Ok(priv_handle) = self.find_key(key_id, CKO_PRIVATE_KEY) {
-            self.ctx.destroy_object(*session, priv_handle)
+            self.ctx
+                .destroy_object(*session, priv_handle)
                 .map_err(|err| SignerError::Pkcs11Error(format!("Failed to delete private key: {}", err)))?;
         }
 
@@ -446,18 +530,17 @@ impl Signer for Pkcs11Signer {
         algorithm: SignatureAlgorithm,
         data: &D,
     ) -> Result<Signature, SigningError<Self::Error>> {
-        let priv_handle = self.find_key(key_id, CKO_PRIVATE_KEY)
-            .map_err(|err| match err {
-                KeyError::KeyNotFound => SigningError::KeyNotFound,
-                KeyError::Signer(err) => SigningError::Signer(err),
-            })?;
+        let priv_handle = self.find_key(key_id, CKO_PRIVATE_KEY).map_err(|err| match err {
+            KeyError::KeyNotFound => SigningError::KeyNotFound,
+            KeyError::Signer(err) => SigningError::Signer(err),
+        })?;
 
         error!("XIMON: sign with key id: {}", &key_id);
 
         self.sign_with_key(priv_handle, algorithm, data)
             .map_err(|err| SigningError::Signer(err))
     }
- 
+
     fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
         &self,
         algorithm: SignatureAlgorithm,
@@ -472,7 +555,9 @@ impl Signer for Pkcs11Signer {
 
     fn rand(&self, target: &mut [u8]) -> Result<(), SignerError> {
         let session = self.open_session()?;
-        let random_value = self.ctx.generate_random(*session, target.len() as CK_ULONG)
+        let random_value = self
+            .ctx
+            .generate_random(*session, target.len() as CK_ULONG)
             .map_err(|err| SignerError::Pkcs11Error(format!("Failed to generate random value: {}", err)))?;
         target.copy_from_slice(random_value.as_slice());
         Ok(())
