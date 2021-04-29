@@ -147,8 +147,6 @@ dependencies = [
 [[package]]
 name = "bcder"
 version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f15ee59abf7ada81b3fb624ffb851f67df2f274d547c6e5f3e2091dc590f3972"
 dependencies = [
  "backtrace",
  "bytes 0.5.6",
@@ -1132,6 +1130,7 @@ dependencies = [
  "libc",
  "libflate",
  "log",
+ "once_cell",
  "openidconnect",
  "openssl",
  "oso",
@@ -2124,8 +2123,6 @@ dependencies = [
 [[package]]
 name = "rpki"
 version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75e999e1cb19aeb312c08c95bfd195f724dd05abd96ddc2cc6fa70b0cddb5927"
 dependencies = [
  "base64 0.13.0",
  "bcder",

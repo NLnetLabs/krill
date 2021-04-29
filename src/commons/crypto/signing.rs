@@ -42,6 +42,12 @@ impl KrillSigner {
         // softhsm2-util --init-token --slot 0 --label "My token 1"
         //    ... User PIN: 7890
         //    ... is re-assigned to slot 313129207
+        //
+        // Useful commands:
+        //   softhsm2-util --show-slots
+        //   sudo apt-install -y opensc # to install pkcs11-tool
+        //   `
+        //   pkcs11-tool --module /usr/local/lib/softhsm/libsofthsm2.so -p 7890 --delete-object --id <ID>> --type <privkey|pubkey>
         let USER_PIN = "7890";
         let signer = Pkcs11Signer::build(Path::new("/usr/local/lib/softhsm/libsofthsm2.so"), USER_PIN, 313129207)?;
         let signer = Arc::new(RwLock::new(signer));
