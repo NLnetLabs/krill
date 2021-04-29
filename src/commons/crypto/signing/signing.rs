@@ -17,12 +17,15 @@ use rpki::x509::{Name, Serial, Time, Validity};
 use rpki::{rta, uri};
 
 use crate::commons::api::{IssuedCert, RcvdCert, ReplacedObject, RepoInfo, RequestResourceLimit, ResourceSet};
+#[cfg(feature = "hsm")]
 use crate::commons::crypto::signing::Pkcs11Signer;
 use crate::commons::crypto::{self, CryptoResult};
 use crate::commons::error::Error;
 use crate::commons::util::AllowedUri;
 use crate::commons::KrillResult;
 use crate::daemon::ca::CertifiedKey;
+
+use super::OpenSslSigner;
 
 //------------ Signer --------------------------------------------------------
 
@@ -31,14 +34,22 @@ use crate::daemon::ca::CertifiedKey;
 pub struct KrillSigner {
     // use a blocking lock to avoid having to be async, for signing operations
     // this should be fine.
-    // signer: Arc<RwLock<OpenSslSigner>>,
+    #[cfg(not(feature = "hsm"))]
+    signer: Arc<RwLock<OpenSslSigner>>,
+    #[cfg(feature = "hsm")]
     signer: Arc<RwLock<Pkcs11Signer>>,
 }
 
 impl KrillSigner {
+    #[cfg(not(feature = "hsm"))]
+    pub fn build(work_dir: &Path) -> KrillResult<Self> {
+        let signer = OpenSslSigner::build(work_dir)?;
+        let signer = Arc::new(RwLock::new(signer));
+        Ok(KrillSigner { signer })
+    }
+
+    #[cfg(feature = "hsm")]
     pub fn build(_work_dir: &Path) -> KrillResult<Self> {
-        // let signer = OpenSslSigner::build(work_dir)?;
-        // let signer = Arc::new(RwLock::new(signer));
         // softhsm2-util --init-token --slot 0 --label "My token 1"
         //    ... User PIN: 7890
         //    ... is re-assigned to slot 313129207

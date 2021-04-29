@@ -8,7 +8,9 @@ pub use self::signing::*;
 mod softsigner;
 pub use self::softsigner::*;
 
+#[cfg(feature = "hsm")]
 mod pkcs11;
+#[cfg(feature = "hsm")]
 pub use self::pkcs11::*;
 
 #[derive(Debug)]
@@ -19,6 +21,7 @@ pub enum SignerError {
     IoError(std::io::Error),
     KeyNotFound,
     DecodeError,
+    #[cfg(feature = "hsm")]
     Pkcs11Error(String),
 }
 
@@ -31,6 +34,7 @@ impl fmt::Display for SignerError {
             SignerError::IoError(e) => e.fmt(f),
             SignerError::KeyNotFound => write!(f, "Could not find key"),
             SignerError::DecodeError => write!(f, "Could not decode key"),
+            #[cfg(feature = "hsm")]
             SignerError::Pkcs11Error(e) => write!(f, "PKCS#11 error: {}", e),
         }
     }
