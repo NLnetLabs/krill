@@ -4,30 +4,19 @@ use api::{RepositoryContact, StorableCaCommand, StoredEffect};
 use ca::{CaEvt, IniDet, StoredCaCommand};
 use rpki::{crl::Crl, crypto::KeyIdentifier, manifest::Manifest, uri, x509::Time};
 
-use crate::{
-    commons::{
-        api::{
+use crate::{commons::{api::{
             self, ChildHandle, Handle, HexEncodedHash, IssuanceRequest, IssuedCert, ObjectName, ParentHandle, RcvdCert,
             RepoInfo, ResourceClassName, ResourceSet, Revocation, RevocationRequest, Revocations, RoaAggregateKey,
             TaCertDetails,
-        },
-        crypto::{IdCert, KrillSigner},
-        eventsourcing::{
+        }, crypto::{IdCert, KrillSigner, OpenSslSigner, SignerImpl}, eventsourcing::{
             Aggregate, AggregateStore, CommandKey, KeyStoreKey, KeyStoreVersion, KeyValueStore, StoredValueInfo,
-        },
-        remote::rfc8183,
-    },
-    constants::CASERVER_DIR,
-    daemon::{
+        }, remote::rfc8183}, constants::CASERVER_DIR, daemon::{
         ca::{
             self, ta_handle, BasicKeyObjectSet, CaEvtDet, CaObjects, CaObjectsStore, CurrentKeyObjectSet,
             PublishedCert, PublishedRoa, ResourceClassKeyState, ResourceClassObjects, RouteAuthorization,
         },
         config::Config,
-    },
-    pubd::RepositoryManager,
-    upgrades::{UpgradeError, UpgradeResult, UpgradeStore},
-};
+    }, pubd::RepositoryManager, upgrades::{UpgradeError, UpgradeResult, UpgradeStore}};
 
 use super::super::MIGRATION_SCOPE;
 use super::{old_commands::*, old_events::*};
@@ -41,7 +30,9 @@ impl CaObjectsMigration {
         let store = KeyValueStore::disk(&config.data_dir, CASERVER_DIR)?;
         let ca_store = AggregateStore::<ca::CertAuth>::disk(&config.data_dir, CASERVER_DIR)?;
 
-        let signer = Arc::new(KrillSigner::build(&config.data_dir)?);
+        let signer = SignerImpl::OpenSsl(OpenSslSigner::build(&config.data_dir)
+            .map_err(|err| UpgradeError::custom(format!("{}", err)))?);
+        let signer = Arc::new(KrillSigner::build(signer)?);
 
         if store.version_is_before(KeyStoreVersion::V0_6)? {
             Err(UpgradeError::custom("Cannot upgrade Krill installations from before version 0.6.0. Please upgrade to any version ranging from 0.6.0 to 0.8.1 first, and then upgrade to this version."))

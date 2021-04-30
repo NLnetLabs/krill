@@ -6,7 +6,7 @@ use std::{fmt, io, path::Path, str::FromStr, sync::Arc};
 
 use serde::de::DeserializeOwned;
 
-use crate::commons::util::file;
+use crate::commons::{crypto::{OpenSslSigner, SignerImpl}, util::file};
 use crate::constants::KRILL_VERSION;
 use crate::daemon::ca::CertAuth;
 use crate::pubd::RepositoryAccess;
@@ -204,7 +204,9 @@ fn upgrade_0_9_0(config: Arc<Config>) -> Result<(), UpgradeError> {
     pubd_dir.push("pubd");
     if pubd_dir.exists() {
         PubdObjectsMigration::migrate(config.clone())?;
-        let signer = Arc::new(KrillSigner::build(&config.data_dir)?);
+        let signer = SignerImpl::OpenSsl(OpenSslSigner::build(&config.data_dir)
+            .map_err(|err| UpgradeError::custom(format!("{}", err)))?);
+        let signer = Arc::new(KrillSigner::build(signer)?);
         repo_manager = Some(RepositoryManager::build(config.clone(), signer)?);
     }
 

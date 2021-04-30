@@ -265,19 +265,11 @@ mod tests {
 
     use super::*;
 
-    use crate::{
-        commons::{
-            api::rrdp::{PublicationDeltaError, RrdpSession},
-            api::{Handle, ListElement, PublishDeltaBuilder},
-            crypto::{IdCert, IdCertBuilder},
-            util::file::{self, CurrentFile},
-        },
-        pubd::Publisher,
-        test::{self, https, init_config, rsync},
-    };
+    use crate::{commons::{api::rrdp::{PublicationDeltaError, RrdpSession}, api::{Handle, ListElement, PublishDeltaBuilder}, crypto::{IdCert, IdCertBuilder, OpenSslSigner, SignerImpl}, util::file::{self, CurrentFile}}, pubd::Publisher, test::{self, https, init_config, rsync}};
 
     fn publisher_alice(work_dir: &Path) -> Publisher {
-        let signer = KrillSigner::build(work_dir).unwrap();
+        let signer = SignerImpl::OpenSsl(OpenSslSigner::build(work_dir).unwrap());
+        let signer = KrillSigner::build(signer).unwrap();
 
         let key = signer.create_key().unwrap();
         let id_cert = IdCertBuilder::new_ta_id_cert(&key, &signer).unwrap();
@@ -297,7 +289,8 @@ mod tests {
         let config = Arc::new(Config::test(work_dir, true));
         init_config(&config);
 
-        let signer = KrillSigner::build(work_dir).unwrap();
+        let signer = SignerImpl::OpenSsl(OpenSslSigner::build(work_dir).unwrap());
+        let signer = KrillSigner::build(signer).unwrap();
         let signer = Arc::new(signer);
 
         let repository_manager = RepositoryManager::build(config, signer).unwrap();

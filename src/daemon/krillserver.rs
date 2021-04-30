@@ -10,7 +10,9 @@ use rpki::cert::Cert;
 use rpki::uri;
 use rpki::x509::Time;
 
-use crate::commons::actor::{Actor, ActorDef};
+use crate::{commons::{actor::{Actor, ActorDef}, crypto::{OpenSslSigner, SignerImpl}}, daemon::config::SignerType};
+#[cfg(feature = "hsm")]
+use crate::commons::crypto::Pkcs11Signer;
 use crate::commons::api::{
     AddChildRequest, AllCertAuthIssues, CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthInit, CertAuthIssues,
     CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Handle, ListReply,
@@ -154,7 +156,12 @@ impl KrillServer {
         let mut repo_dir = work_dir.clone();
         repo_dir.push("repo");
 
-        let signer = Arc::new(KrillSigner::build(work_dir)?);
+        let signer = match config.signer_type {
+            SignerType::OpenSsl => SignerImpl::OpenSsl(OpenSslSigner::build(work_dir)?),
+            #[cfg(feature = "hsm")]
+            SignerType::Pkcs11 => SignerImpl::Pkcs11(Pkcs11Signer::build(config.clone())?),
+        };
+        let signer = Arc::new(KrillSigner::build(signer)?);
 
         #[cfg(feature = "multi-user")]
         let login_session_cache = Arc::new(LoginSessionCache::new());

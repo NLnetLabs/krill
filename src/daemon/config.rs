@@ -24,6 +24,8 @@ use crate::daemon::http::tls_keys;
 use crate::daemon::auth::providers::config_file::config::ConfigAuthUsers;
 #[cfg(feature = "multi-user")]
 use crate::daemon::auth::providers::openid_connect::ConfigAuthOpenIDConnect;
+#[cfg(feature = "hsm")]
+use crate::commons::crypto::ConfigSignerPkcs11;
 
 //------------ ConfigDefaults ------------------------------------------------
 
@@ -94,6 +96,9 @@ impl ConfigDefaults {
     #[cfg(feature = "multi-user")]
     fn auth_private_attributes() -> Vec<String> {
         vec![]
+    }
+    fn signer_type() -> SignerType {
+        SignerType::OpenSsl
     }
     fn ca_refresh() -> u32 {
         600
@@ -241,6 +246,12 @@ pub struct Config {
 
     #[cfg(feature = "multi-user")]
     pub auth_openidconnect: Option<ConfigAuthOpenIDConnect>,
+
+    #[serde(default = "ConfigDefaults::signer_type")]
+    pub signer_type: SignerType,
+
+    #[cfg(feature = "hsm")]
+    pub signer_pkcs11: Option<ConfigSignerPkcs11>,
 
     #[serde(default = "ConfigDefaults::ca_refresh")]
     pub ca_refresh: u32,
@@ -485,6 +496,9 @@ impl Config {
         let auth_users = None;
         #[cfg(feature = "multi-user")]
         let auth_openidconnect = None;
+        let signer_type = SignerType::OpenSsl;
+        #[cfg(feature = "hsm")]
+        let signer_pkcs11 = None;
         let ca_refresh = 1;
         let post_limit_api = ConfigDefaults::post_limit_api();
         let post_limit_rfc8181 = ConfigDefaults::post_limit_rfc8181();
@@ -568,6 +582,9 @@ impl Config {
             auth_users,
             #[cfg(feature = "multi-user")]
             auth_openidconnect,
+            signer_type,
+            #[cfg(feature = "hsm")]
+            signer_pkcs11,
             ca_refresh,
             post_limit_api,
             post_limit_rfc8181,
@@ -950,7 +967,6 @@ impl<'de> Deserialize<'de> for HttpsMode {
 
 //------------ AuthType -----------------------------------------------------
 
-/// The target to log to.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AuthType {
     AdminToken,
@@ -978,6 +994,40 @@ impl<'de> Deserialize<'de> for AuthType {
                 #[cfg(feature = "multi-user")]
                 let msg = format!(
                     "expected \"config-file\", \"admin-token\", or \"openid-connect\", found: \"{}\"",
+                    string
+                );
+                Err(de::Error::custom(msg))
+            }
+        }
+    }
+}
+
+
+//------------ SignerType -----------------------------------------------------
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SignerType {
+    OpenSsl,
+    #[cfg(feature = "hsm")]
+    Pkcs11,
+}
+
+impl<'de> Deserialize<'de> for SignerType {
+    fn deserialize<D>(d: D) -> Result<SignerType, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let string = String::deserialize(d)?;
+        match string.as_str() {
+            "openssl" => Ok(SignerType::OpenSsl),
+            #[cfg(feature = "hsm")]
+            "pkcs11" => Ok(SignerType::Pkcs11),
+            _ => {
+                #[cfg(not(feature = "hsm"))]
+                let msg = format!("expected \"openssl\", found: \"{}\"", string);
+                #[cfg(feature = "hsm")]
+                let msg = format!(
+                    "expected \"openssl\", or \"pkcs11\", found: \"{}\"",
                     string
                 );
                 Err(de::Error::custom(msg))

@@ -14,11 +14,22 @@ use rpki::crypto::{
     signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
 };
 
-use crate::constants::test_mode_enabled;
+use crate::{constants::test_mode_enabled, daemon::config::Config};
 
 use super::SignerError;
 
 //------------ Pkcs11Signer --------------------------------------------------
+
+use serde::Deserialize;
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct ConfigSignerPkcs11 {
+    pub lib_path: String,
+
+    pub user_pin: String,
+
+    pub slot_id: CK_SLOT_ID,
+}
 
 static ONE_CTX: OnceCell<Arc<Ctx>> = OnceCell::new();
 static CTX_REF_COUNT: AtomicU8 = AtomicU8::new(0);
@@ -147,12 +158,28 @@ pub struct Pkcs11Signer {
 }
 
 impl Pkcs11Signer {
-    pub fn build(lib_path: &Path, pin: &str, slot_id: u64) -> Result<Self, SignerError> {
-        let ctx = Arc::new(Pkcs11Ctx::new(lib_path)?);
-        let slot_id: CK_SLOT_ID = slot_id;
+    pub fn build(config: Arc<Config>) -> Result<Self, SignerError> {
+        // softhsm2-util --init-token --slot 0 --label "My token 1"
+        //    ... User PIN: 7890
+        //    ... is re-assigned to slot 313129207
+        //
+        // Useful commands:
+        //   softhsm2-util --show-slots
+        //   sudo apt-install -y opensc # to install pkcs11-tool
+        //   `
+        //   pkcs11-tool --module /usr/local/lib/softhsm/libsofthsm2.so -p 7890 --delete-object --id <ID>> --type <privkey|pubkey>
+        // let user_pin = "7890";
+        // let lib_path = Path::new("/usr/local/lib/softhsm/libsofthsm2.so");
+        // let slot_id = 313129207;
+
+        let config = config.signer_pkcs11.as_ref().ok_or(
+            SignerError::Pkcs11Error("Missing configuration file settings".to_string()))?;
+
+        let ctx = Arc::new(Pkcs11Ctx::new(Path::new(&config.lib_path))?);
+        let slot_id = config.slot_id;
         let mut login_session = Pkcs11Session::new(ctx.clone(), slot_id)?;
 
-        login_session.login(CKU_USER, Some(pin))?;
+        login_session.login(CKU_USER, Some(&config.user_pin))?;
 
         Ok(Pkcs11Signer {
             ctx,
@@ -535,7 +562,7 @@ impl Signer for Pkcs11Signer {
             KeyError::Signer(err) => SigningError::Signer(err),
         })?;
 
-        error!("XIMON: sign with key id: {}", &key_id);
+        // error!("XIMON: sign with key id: {}", &key_id);
 
         self.sign_with_key(priv_handle, algorithm, data)
             .map_err(|err| SigningError::Signer(err))
