@@ -638,8 +638,15 @@ async fn functional() {
     info("##################################################################");
     info("");
     {
-        delete_ca(&ca4).await;
+        // Remove CA4 from CA3
+        delete_parent(&ca4, &ca3).await;
 
+        // Expect that CA4 withdraws all
+        {
+            assert!(will_publish("CA4 should withdraw objects when parent is removed", &ca4, &[]).await);
+        }
+
+        delete_ca(&ca4).await;
         // Expect that CA3 no longer publishes certificates for CA4
         {
             let mut expected_files = expected_mft_and_crl(&ca3, &rcn_0).await;
@@ -652,11 +659,6 @@ async fn functional() {
                 )
                 .await
             );
-        }
-
-        // Expect that CA4 withdraws all
-        {
-            assert!(will_publish("CA4 should withdraw all objects when it's deleted", &ca4, &[]).await);
         }
     }
 

@@ -986,7 +986,21 @@ impl CertAuth {
         if !self.parent_known(&parent) {
             Err(Error::CaParentUnknown(self.handle.clone(), parent))
         } else {
-            Ok(vec![CaEvtDet::parent_removed(&self.handle, self.version, parent)])
+            let mut event_details = vec![];
+
+            for (rcn, rc) in &self.resources {
+                if rc.parent_handle() == &parent {
+                    event_details.push(CaEvtDet::ResourceClassRemoved {
+                        resource_class_name: rcn.clone(),
+                        parent: parent.clone(),
+                        revoke_requests: vec![], // We will do a best effort revoke request, but not triggered through this event
+                    });
+                }
+            }
+
+            event_details.push(CaEvtDet::ParentRemoved { parent });
+
+            Ok(self.events_from_details(event_details))
         }
     }
 
