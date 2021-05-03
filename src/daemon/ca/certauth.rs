@@ -414,7 +414,7 @@ impl Aggregate for CertAuth {
 
             // Key rolls
             CmdDet::KeyRollInitiate(duration, signer) => self.keyroll_initiate(duration, signer),
-            CmdDet::KeyRollActivate(duration, signer) => self.keyroll_activate(duration, signer),
+            CmdDet::KeyRollActivate(duration, config, signer) => self.keyroll_activate(duration, config, signer),
             CmdDet::KeyRollFinish(rcn, response) => self.keyroll_finish(rcn, response),
 
             // Route Authorizations
@@ -1220,7 +1220,12 @@ impl CertAuth {
         Ok(res)
     }
 
-    fn keyroll_activate(&self, staging_time: Duration, signer: Arc<KrillSigner>) -> KrillResult<Vec<CaEvt>> {
+    fn keyroll_activate(
+        &self,
+        staging_time: Duration,
+        config: Arc<Config>,
+        signer: Arc<KrillSigner>,
+    ) -> KrillResult<Vec<CaEvt>> {
         if self.is_ta() {
             return Ok(vec![]);
         }
@@ -1231,7 +1236,10 @@ impl CertAuth {
         for (rcn, rc) in self.resources.iter() {
             let mut activated = false;
 
-            for details in rc.keyroll_activate(staging_time, signer.deref())?.into_iter() {
+            for details in rc
+                .keyroll_activate(staging_time, &config.issuance_timing, signer.deref())?
+                .into_iter()
+            {
                 activated = true;
                 res.push(StoredEvent::new(self.handle(), version, details));
                 version += 1;

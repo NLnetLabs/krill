@@ -450,18 +450,42 @@ impl ResourceClass {
     }
 
     /// Activate a new key, if it's been longer than the staging period.
-    pub fn keyroll_activate(&self, staging_time: Duration, signer: &KrillSigner) -> KrillResult<Vec<CaEvtDet>> {
-        if !self.key_state.has_new_key()
-            || (staging_time > Duration::seconds(0) && self.last_key_change + staging_time > Time::now())
-        {
-            return Ok(vec![]);
-        }
+    pub fn keyroll_activate(
+        &self,
+        staging_time: Duration,
+        issuance_timing: &IssuanceTimingConfig,
+        signer: &KrillSigner,
+    ) -> KrillResult<Vec<CaEvtDet>> {
+        if let Some(new_key) = self.key_state.new_key() {
+            if staging_time > Duration::seconds(0) && self.last_key_change + staging_time > Time::now() {
+                Ok(vec![])
+            } else {
+                let key_activated =
+                    self.key_state
+                        .keyroll_activate(self.name.clone(), self.parent_rc_name.clone(), signer)?;
 
-        Ok(vec![self.key_state.keyroll_activate(
-            self.name.clone(),
-            self.parent_rc_name.clone(),
-            signer,
-        )?])
+                let roa_updates = self.roas.activate_key(new_key, issuance_timing, signer)?;
+                let roas_updated = CaEvtDet::RoasUpdated {
+                    resource_class_name: self.name.clone(),
+                    updates: roa_updates,
+                };
+
+                let mut cert_updates = ChildCertificateUpdates::default();
+                for issued in self.certificates.iter() {
+                    // re-issue
+                    let re_issued = self.re_issue(issued, None, new_key, None, issuance_timing, signer)?;
+                    cert_updates.issue(re_issued);
+                }
+                let certs_updated = CaEvtDet::ChildCertificatesUpdated {
+                    resource_class_name: self.name.clone(),
+                    updates: cert_updates,
+                };
+
+                Ok(vec![key_activated, roas_updated, certs_updated])
+            }
+        } else {
+            Ok(vec![])
+        }
     }
 
     /// Finish a key roll, withdraw the old key

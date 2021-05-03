@@ -8,10 +8,9 @@ use tokio::time::delay_for;
 
 use rpki::uri::Rsync;
 
-use krill::cli::report::ApiResponse;
 use krill::commons::api::{
     Handle, ObjectName, ParentCaReq, ParentHandle, PublisherHandle, ResourceClassKeysInfo, ResourceClassName,
-    ResourceSet,
+    ResourceSet, RoaDefinitionUpdates,
 };
 use krill::commons::remote::rfc8183;
 use krill::daemon::ca::ta_handle;
@@ -20,6 +19,7 @@ use krill::{
     cli::options::{CaCommand, Command, PublishersCommand},
     commons::api::RepositoryContact,
 };
+use krill::{cli::report::ApiResponse, commons::api::RoaDefinition};
 
 fn handle_for(s: &str) -> Handle {
     Handle::from_str(s).unwrap()
@@ -249,6 +249,7 @@ async fn migrate_repository() {
 
     let ca1 = handle_for("CA1");
     let ca1_res = resources("10.0.0.0/16");
+    let ca1_route_definition = RoaDefinition::from_str("10.0.0.0/16-16 => 65000").unwrap();
 
     let rcn_0 = ResourceClassName::from(0);
 
@@ -290,6 +291,18 @@ async fn migrate_repository() {
     {
         info("##################################################################");
         info("#                                                                #");
+        info("#                      Create a ROA for CA1                      #");
+        info("#                                                                #");
+        info("##################################################################");
+        info("");
+        let mut updates = RoaDefinitionUpdates::empty();
+        updates.add(ca1_route_definition);
+        ca_route_authorizations_update(&ca1, updates).await;
+    }
+
+    {
+        info("##################################################################");
+        info("#                                                                #");
         info("#    Verify that the testbed published the expected objects      #");
         info("#                                                                #");
         info("##################################################################");
@@ -313,7 +326,9 @@ async fn migrate_repository() {
         info("#                                                                #");
         info("##################################################################");
         info("");
-        let expected_files = expected_mft_and_crl(&ca1, &rcn_0).await;
+        let mut expected_files = expected_mft_and_crl(&ca1, &rcn_0).await;
+        expected_files.push(ObjectName::from(&ca1_route_definition).to_string());
+
         assert!(will_publish_embedded("CA1 should publish the certificate for CA3", &ca1, &expected_files).await);
     }
 
@@ -356,7 +371,9 @@ async fn migrate_repository() {
 
         // Expect that CA1 still publishes two current keys in the embedded repo
         {
-            let expected_files = expected_mft_and_crl(&ca1, &rcn_0).await;
+            let mut expected_files = expected_mft_and_crl(&ca1, &rcn_0).await;
+            expected_files.push(ObjectName::from(&ca1_route_definition).to_string());
+
             assert!(
                 will_publish_embedded(
                     "CA1 should publish the MFT and CRL for both current keys in the embedded repo",
@@ -384,16 +401,11 @@ async fn migrate_repository() {
         ca_roll_activate(&ca1).await;
         assert!(state_becomes_active(&ca1).await);
 
-        // Expect that CA3 publishes nothing in the embedded repo
-        {
-            assert!(
-                will_publish_embedded("CA1 should no longer publish anything in the embedded repo", &ca1, &[]).await
-            );
-        }
-
         // Expect that CA1 publishes two current keys in the dedicated repo
         {
-            let expected_files = expected_mft_and_crl(&ca1, &rcn_0).await;
+            let mut expected_files = expected_mft_and_crl(&ca1, &rcn_0).await;
+            expected_files.push(ObjectName::from(&ca1_route_definition).to_string());
+
             assert!(
                 will_publish_dedicated(
                     "CA1 should publish the MFT and CRL for both current keys in the dedicated repo",
@@ -401,6 +413,13 @@ async fn migrate_repository() {
                     &expected_files
                 )
                 .await
+            );
+        }
+
+        // Expect that CA3 publishes nothing in the embedded repo
+        {
+            assert!(
+                will_publish_embedded("CA1 should no longer publish anything in the embedded repo", &ca1, &[]).await
             );
         }
     }
