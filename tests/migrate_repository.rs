@@ -416,7 +416,7 @@ async fn migrate_repository() {
             );
         }
 
-        // Expect that CA3 publishes nothing in the embedded repo
+        // Expect that CA1 publishes nothing in the embedded repo
         {
             assert!(
                 will_publish_embedded("CA1 should no longer publish anything in the embedded repo", &ca1, &[]).await
