@@ -3,6 +3,8 @@ use std::{fmt, path::PathBuf};
 
 use openssl::error::ErrorStack;
 
+use crate::commons::error::KrillIoError;
+
 pub use self::signing::*;
 
 mod softsigner;

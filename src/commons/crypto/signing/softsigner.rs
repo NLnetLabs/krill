@@ -1,11 +1,10 @@
 //! Support for signing things using software keys (through openssl) and
 //! storing them unencrypted on disk.
-use std::fs;
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::{fmt, fs};
+use std::fs;
 
 use bytes::Bytes;
 use openssl::hash::MessageDigest;

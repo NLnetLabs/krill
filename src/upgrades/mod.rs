@@ -6,7 +6,7 @@ use std::{fmt, path::Path, str::FromStr, sync::Arc};
 
 use serde::de::DeserializeOwned;
 
-use crate::commons::{crypto::{OpenSslSigner, SignerImpl}, util::file};
+use crate::commons::crypto::{OpenSslSigner, SignerImpl};
 use crate::commons::error::KrillIoError;
 use crate::constants::KRILL_VERSION;
 use crate::daemon::ca::CertAuth;
