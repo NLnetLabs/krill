@@ -176,6 +176,13 @@ impl KeyValueStore {
         }
     }
 
+    /// Archives the content of a scope to sub-scope in that scope
+    pub fn scope_archive(&self, scope: &str, sub_scope: &str) -> Result<(), KeyValueError> {
+        match self {
+            KeyValueStore::Disk(disk_store) => disk_store.scope_archive(scope, sub_scope),
+        }
+    }
+
     /// Returns whether a scope exists
     pub fn has_scope(&self, scope: String) -> Result<bool, KeyValueError> {
         match self {
@@ -237,7 +244,7 @@ impl KeyValueStoreDiskImpl {
         path
     }
 
-    fn scope_path(&self, scope: Option<&String>) -> PathBuf {
+    fn scope_path<P: AsRef<Path>>(&self, scope: Option<P>) -> PathBuf {
         let mut path = self.base.clone();
         if let Some(scope) = scope {
             path.push(scope);
@@ -389,6 +396,18 @@ impl KeyValueStoreDiskImpl {
 
     fn scopes(&self) -> Result<Vec<String>, KeyValueError> {
         Self::read_dir(&self.base, false, true)
+    }
+
+    fn scope_archive(&self, scope: &str, sub_scope: &str) -> Result<(), KeyValueError> {
+        let scope_path = self.scope_path(Some(scope));
+        let tmp_path = self.scope_path(Some(format!(".{}", scope)));
+        let end_path = self.scope_path(Some(format!("{}/{}", scope, sub_scope)));
+
+        fs::rename(&scope_path, &tmp_path)?;
+        fs::create_dir_all(&scope_path)?;
+        fs::rename(&tmp_path, &end_path)?;
+
+        Ok(())
     }
 
     fn keys(&self, scope: Option<String>, matching: &str) -> Result<Vec<KeyStoreKey>, KeyValueError> {

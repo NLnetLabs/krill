@@ -113,9 +113,7 @@ impl UpgradeStore for PubdStoreMigration {
 
         // Archive all keys in the scope, then we can write new keys as needed without
         // overwriting anything when we renumber.
-        for key in self.store.keys(Some(scope.to_string()), "")? {
-            self.archive_to_migration_scope(&key)?;
-        }
+        self.store.scope_archive(scope, MIGRATION_SCOPE)?;
 
         let migration_scope = format!("{}/{}", scope, MIGRATION_SCOPE);
 
