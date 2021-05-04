@@ -3,7 +3,6 @@
 //! http://www.ris.ripe.net/dumps/riswhoisdump.IPv4.gz
 
 use std::fmt;
-use std::io;
 use std::io::{BufRead, Read};
 use std::num::ParseIntError;
 use std::str::FromStr;
@@ -11,8 +10,11 @@ use std::str::FromStr;
 use bytes::Bytes;
 use libflate::gzip::Decoder;
 
-use crate::commons::api::{AsNumber, AuthorizationFmtError, TypedPrefix};
 use crate::commons::bgp::Announcement;
+use crate::commons::{
+    api::{AsNumber, AuthorizationFmtError, TypedPrefix},
+    error::KrillIoError,
+};
 
 pub struct RisDumpLoader {
     bgp_risdumps_v4_uri: String,
@@ -45,8 +47,12 @@ impl RisDumpLoader {
 
     fn gunzip(bytes: Bytes) -> Result<Vec<u8>, RisDumpError> {
         let mut gunzipped: Vec<u8> = vec![];
-        let mut decoder = Decoder::new(bytes.as_ref())?;
-        decoder.read_to_end(&mut gunzipped)?;
+        let mut decoder = Decoder::new(bytes.as_ref())
+            .map_err(|e| RisDumpError::UnzipError(format!("Could not unzip dump file: {}", e)))?;
+
+        decoder
+            .read_to_end(&mut gunzipped)
+            .map_err(|e| RisDumpError::UnzipError(format!("Could not unzip dump file: {}", e)))?;
 
         Ok(gunzipped)
     }
@@ -90,7 +96,8 @@ pub enum RisDumpError {
     ReqwestError(reqwest::Error),
     MissingColumn,
     ParseError(String),
-    IoError(io::Error),
+    IoError(KrillIoError),
+    UnzipError(String),
 }
 
 impl fmt::Display for RisDumpError {
@@ -100,6 +107,7 @@ impl fmt::Display for RisDumpError {
             RisDumpError::MissingColumn => write!(f, "Missing column in announcements input"),
             RisDumpError::ParseError(s) => write!(f, "Error parsing announcements: {}", s),
             RisDumpError::IoError(e) => write!(f, "IO error: {}", e),
+            RisDumpError::UnzipError(s) => write!(f, "Error unzipping: {}", s),
         }
     }
 }
@@ -128,8 +136,8 @@ impl From<reqwest::Error> for RisDumpError {
     }
 }
 
-impl From<io::Error> for RisDumpError {
-    fn from(e: io::Error) -> Self {
+impl From<KrillIoError> for RisDumpError {
+    fn from(e: KrillIoError) -> Self {
         RisDumpError::IoError(e)
     }
 }

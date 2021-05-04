@@ -2,11 +2,11 @@
 //! - Updating the format of commands or events
 //! - Export / Import data
 
-use std::{fmt, io, path::Path, str::FromStr, sync::Arc};
+use std::{fmt, path::Path, str::FromStr, sync::Arc};
 
 use serde::de::DeserializeOwned;
 
-use crate::commons::util::file;
+use crate::commons::error::KrillIoError;
 use crate::constants::KRILL_VERSION;
 use crate::daemon::ca::CertAuth;
 use crate::pubd::RepositoryAccess;
@@ -35,7 +35,7 @@ pub const MIGRATION_SCOPE: &str = "migration";
 pub enum UpgradeError {
     AggregateStoreError(AggregateStoreError),
     KeyStoreError(KeyValueError),
-    IoError(io::Error),
+    IoError(KrillIoError),
     Unrecognised(String),
     CannotLoadAggregate(Handle),
     KrillError(crate::commons::error::Error),
@@ -77,14 +77,8 @@ impl From<KeyValueError> for UpgradeError {
     }
 }
 
-impl From<file::Error> for UpgradeError {
-    fn from(e: file::Error) -> Self {
-        UpgradeError::IoError(e.into())
-    }
-}
-
-impl From<io::Error> for UpgradeError {
-    fn from(e: io::Error) -> Self {
+impl From<KrillIoError> for UpgradeError {
+    fn from(e: KrillIoError) -> Self {
         UpgradeError::IoError(e)
     }
 }

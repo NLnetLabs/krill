@@ -4,7 +4,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::{fmt, fs, io};
+use std::{fmt, fs};
 
 use bytes::Bytes;
 use openssl::error::ErrorStack;
@@ -17,6 +17,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use rpki::crypto::signer::KeyError;
 use rpki::crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError};
 
+use crate::commons::error::KrillIoError;
+
 //------------ OpenSslSigner -------------------------------------------------
 
 /// An openssl based signer.
@@ -27,12 +29,25 @@ pub struct OpenSslSigner {
 
 impl OpenSslSigner {
     pub fn build(work_dir: &Path) -> Result<Self, SignerError> {
-        let meta_data = fs::metadata(&work_dir)?;
+        let meta_data = fs::metadata(&work_dir).map_err(|e| {
+            KrillIoError::new(
+                format!("Could not get metadata from '{}'", work_dir.to_string_lossy()),
+                e,
+            )
+        })?;
         if meta_data.is_dir() {
             let mut keys_dir = work_dir.to_path_buf();
             keys_dir.push("keys");
             if !keys_dir.is_dir() {
-                fs::create_dir_all(&keys_dir)?;
+                fs::create_dir_all(&keys_dir).map_err(|e| {
+                    KrillIoError::new(
+                        format!(
+                            "Could not create dir(s) '{}' for key storage",
+                            keys_dir.to_string_lossy()
+                        ),
+                        e,
+                    )
+                })?;
             }
 
             Ok(OpenSslSigner {
@@ -57,7 +72,8 @@ impl OpenSslSigner {
     fn load_key(&self, id: &KeyIdentifier) -> Result<OpenSslKeyPair, SignerError> {
         let path = self.key_path(id);
         if path.exists() {
-            let f = File::open(path)?;
+            let f = File::open(&path)
+                .map_err(|e| KrillIoError::new(format!("Could not read key file '{}'", path.to_string_lossy()), e))?;
             let kp: OpenSslKeyPair = serde_json::from_reader(f)?;
             Ok(kp)
         } else {
@@ -85,8 +101,10 @@ impl Signer for OpenSslSigner {
         let path = self.key_path(&key_id);
         let json = serde_json::to_string(&kp)?;
 
-        let mut f = File::create(path)?;
-        f.write_all(json.as_ref())?;
+        let mut f = File::create(&path)
+            .map_err(|e| KrillIoError::new(format!("Could not create key file '{}'", path.to_string_lossy()), e))?;
+        f.write_all(json.as_ref())
+            .map_err(|e| KrillIoError::new(format!("Could write to key file '{}'", path.to_string_lossy()), e))?;
 
         Ok(key_id)
     }
@@ -99,7 +117,12 @@ impl Signer for OpenSslSigner {
     fn destroy_key(&mut self, key_id: &Self::KeyId) -> Result<(), KeyError<Self::Error>> {
         let path = self.key_path(key_id);
         if path.exists() {
-            fs::remove_file(path).map_err(SignerError::IoError)?;
+            fs::remove_file(&path).map_err(|e| {
+                SignerError::IoError(KrillIoError::new(
+                    format!("Could not remove key file '{}'", path.to_string_lossy()),
+                    e,
+                ))
+            })?;
         }
         Ok(())
     }
@@ -193,7 +216,7 @@ pub enum SignerError {
     OpenSslError(ErrorStack),
     JsonError(serde_json::Error),
     InvalidWorkDir(PathBuf),
-    IoError(io::Error),
+    IoError(KrillIoError),
     KeyNotFound,
     DecodeError,
 }
@@ -223,8 +246,8 @@ impl From<serde_json::Error> for SignerError {
     }
 }
 
-impl From<io::Error> for SignerError {
-    fn from(e: io::Error) -> Self {
+impl From<KrillIoError> for SignerError {
+    fn from(e: KrillIoError) -> Self {
         SignerError::IoError(e)
     }
 }
