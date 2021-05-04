@@ -3,19 +3,19 @@
 [![Docker Build Status](https://img.shields.io/docker/cloud/build/nlnetlabs/krill.svg)](https://hub.docker.com/r/nlnetlabs/krill)
 [![Documentation Status](https://readthedocs.org/projects/rpki/badge/?version=latest)](https://rpki.readthedocs.io/en/latest/krill/?badge=latest)
 [![E2E Test Status](https://github.com/nlnetlabs/krill/workflows/E2E%20Test/badge.svg)](https://github.com/NLnetLabs/krill/actions?query=workflow%3A%22E2E+Test%22)
+[![](https://img.shields.io/discord/818584154278199396?label=rpki%20on%20discord&logo=discord)](https://discord.gg/8dvKB5Ykhy)
 [![](https://img.shields.io/twitter/follow/krillrpki.svg?label=Follow&style=social)](https://twitter.com/krillrpki)
 
 # Krill
-
-<img align="right" src="https://www.nlnetlabs.nl/static/logos/Krill/Krill_Icon_Red.svg" height="100">
 
 Krill is a Resource Public Key Infrastructure (RPKI) daemon, featuring a
 Certificate Authority (CA) and publication server, written in Rust.  If you have
 any feedback, we would love to hear from you. Don’t hesitate to [create an issue
 on Github](https://github.com/NLnetLabs/krill/issues/new) or post a message on
-our [RPKI mailing list](https://lists.nlnetlabs.nl/mailman/listinfo/rpki). You
-can lean more about Krill and RPKI technology by reading our documentation on
-[Read the Docs](https://rpki.readthedocs.io/en/latest/krill/index.html).
+our [RPKI mailing list](https://lists.nlnetlabs.nl/mailman/listinfo/rpki) or
+[Discord server](https://discord.gg/8dvKB5Ykhy). You can lean more about Krill
+and RPKI technology by reading our documentation on [Read the
+Docs](https://rpki.readthedocs.io/en/latest/krill/index.html).
 
 ## Quick Start with Pre-built Packages
 
@@ -262,8 +262,9 @@ There are three ways to interact with Krill: a user interface (UI), a command
 line interface (CLI) and and application programming interface (API). For most
 scenarios, the UI will be the most convenient way to interact with Krill. 
 
-![Krill ROA Management](https://nlnetlabs.nl/static/images/krill/krill-roa-management.png)
+![Krill Welcome page](https://rpki.readthedocs.io/en/latest/_images/krill-ui-welome.png)
 
-Please refer to the
+Please
+refer to the
 [documentation](https://rpki.readthedocs.io/en/latest/krill/index.html) to
 determine what is best for you.
