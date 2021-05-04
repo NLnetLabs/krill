@@ -569,11 +569,6 @@ impl CaEvtDet {
         StoredEvent::new(handle, version, CaEvtDet::ParentUpdated { parent, contact })
     }
 
-    /// This marks a parent as removed
-    pub(super) fn parent_removed(handle: &Handle, version: u64, parent: ParentHandle) -> CaEvt {
-        StoredEvent::new(handle, version, CaEvtDet::ParentRemoved { parent })
-    }
-
     pub(super) fn child_added(
         handle: &Handle,
         version: u64,

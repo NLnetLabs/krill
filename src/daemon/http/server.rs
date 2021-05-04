@@ -73,7 +73,7 @@ fn test_data_dir_or_die(config: &Config) {
             e
         );
         ::std::process::exit(1);
-    } else if let Err(e) = file::delete(&test_file) {
+    } else if let Err(e) = file::delete_file(&test_file) {
         eprintln!(
             "Cannot delete test file in data dir: {}, Error: {}",
             test_file.to_string_lossy(),
@@ -164,10 +164,7 @@ impl RequestLogger {
             );
         }
 
-        RequestLogger {
-            req_method,
-            req_path,
-        }
+        RequestLogger { req_method, req_path }
     }
 
     fn end(&self, res: Result<&HttpResponse, &Error>) {
