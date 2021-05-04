@@ -1,5 +1,5 @@
 // This module provides encryption and decryption for the ConfigFileAuthProvider and OpenIDConnectAuthProvider login
-// session state that they "store" at the cient browser. The ChaCha20-Poly1305 AEAD algorithm was chosen based on a
+// session state that they "store" at the client browser. The ChaCha20-Poly1305 AEAD algorithm was chosen based on a
 // couple of articles about the current best algorithms to use in various situations [1, 2] and for example that it is
 // tricky to use random nonces safely with AES-GCM [2], and on the availability and quality of NPM libraries and Rust
 // crates are available at the time of writing for the recommended algorithms.
