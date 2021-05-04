@@ -274,8 +274,8 @@ impl Pkcs11Signer {
         let algorithm = PublicKeyFormat::Rsa;
 
         use crate::bcder::encode::PrimitiveContent; // for .encode()
-        let modulus = bcder::Unsigned::from_slice(modulus);
-        let public_exp = bcder::Unsigned::from_slice(public_exp);
+        let modulus = bcder::Unsigned::from_be_bytes(modulus);
+        let public_exp = bcder::Unsigned::from_be_bytes(public_exp);
 
         let rsa_public_key = bcder::encode::sequence((modulus.encode(), public_exp.encode()));
 
