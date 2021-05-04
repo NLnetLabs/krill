@@ -16,8 +16,8 @@ use bcder::{BitString, Mode, Tag};
 use rpki::crypto::{PublicKey, Signature, SignatureAlgorithm};
 use rpki::x509::{Name, Validity};
 
-use crate::commons::crypto::IdExtensions;
 use crate::commons::util::file;
+use crate::commons::{crypto::IdExtensions, error::KrillIoError};
 
 const KEY_SIZE: u32 = 2048;
 pub const HTTPS_SUB_DIR: &str = "ssl";
@@ -213,7 +213,7 @@ impl TbsHttpsCertificate {
 
 #[derive(Debug)]
 pub enum Error {
-    IoError(std::io::Error),
+    IoError(KrillIoError),
     OpenSslError(openssl::error::ErrorStack),
     DecodeError(decode::Error),
     BuildError,
@@ -242,8 +242,8 @@ impl From<openssl::error::ErrorStack> for Error {
     }
 }
 
-impl From<std::io::Error> for Error {
-    fn from(e: std::io::Error) -> Self {
+impl From<KrillIoError> for Error {
+    fn from(e: KrillIoError) -> Self {
         Error::IoError(e)
     }
 }

@@ -18,7 +18,7 @@ pub enum SignerError {
     OpenSslError(ErrorStack),
     JsonError(serde_json::Error),
     InvalidWorkDir(PathBuf),
-    IoError(std::io::Error),
+    IoError(KrillIoError),
     KeyNotFound,
     DecodeError,
     #[cfg(feature = "hsm")]
@@ -52,8 +52,8 @@ impl From<serde_json::Error> for SignerError {
     }
 }
 
-impl From<std::io::Error> for SignerError {
-    fn from(e: std::io::Error) -> Self {
+impl From<KrillIoError> for SignerError {
+    fn from(e: KrillIoError) -> Self {
         SignerError::IoError(e)
     }
 }

@@ -2,12 +2,12 @@ use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use std::{any::Any, path::Path};
-use std::{fmt, fs, io};
+use std::{fmt, fs};
 
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use crate::commons::util::file;
+use crate::commons::{error::KrillIoError, util::file};
 
 use super::KeyStoreVersion;
 
@@ -176,6 +176,13 @@ impl KeyValueStore {
         }
     }
 
+    /// Archives the content of a scope to sub-scope in that scope
+    pub fn scope_archive(&self, scope: &str, sub_scope: &str) -> Result<(), KeyValueError> {
+        match self {
+            KeyValueStore::Disk(disk_store) => disk_store.scope_archive(scope, sub_scope),
+        }
+    }
+
     /// Returns whether a scope exists
     pub fn has_scope(&self, scope: String) -> Result<bool, KeyValueError> {
         match self {
@@ -237,7 +244,7 @@ impl KeyValueStoreDiskImpl {
         path
     }
 
-    fn scope_path(&self, scope: Option<&String>) -> PathBuf {
+    fn scope_path<P: AsRef<Path>>(&self, scope: Option<P>) -> PathBuf {
         let mut path = self.base.clone();
         if let Some(scope) = scope {
             path.push(scope);
@@ -250,9 +257,23 @@ impl KeyValueStoreDiskImpl {
         let file_path = self.file_path(key);
         let mut swap_file = file::create_file_with_path(&swap_file_path)?;
         let json = serde_json::to_string_pretty(value)?;
-        swap_file.write_all(json.as_ref())?;
+        swap_file.write_all(json.as_ref()).map_err(|e| {
+            KrillIoError::new(
+                format!("Could not write to tmp file: {}", swap_file_path.to_string_lossy()),
+                e,
+            )
+        })?;
 
-        fs::rename(swap_file_path, file_path)?;
+        fs::rename(&swap_file_path, &file_path).map_err(|e| {
+            KrillIoError::new(
+                format!(
+                    "Could not rename tmp file {} to {}",
+                    swap_file_path.to_string_lossy(),
+                    file_path.to_string_lossy()
+                ),
+                e,
+            )
+        })?;
 
         Ok(())
     }
@@ -264,7 +285,16 @@ impl KeyValueStoreDiskImpl {
         } else {
             let mut f = file::create_file_with_path(&path)?;
             let json = serde_json::to_string_pretty(value)?;
-            f.write_all(json.as_ref())?;
+            f.write_all(json.as_ref()).map_err(|e| {
+                KrillIoError::new(
+                    format!(
+                        "Could not store value for key '{}' in file '{}'",
+                        key.to_string(),
+                        path.to_string_lossy()
+                    ),
+                    e,
+                )
+            })?;
             Ok(())
         }
     }
@@ -274,7 +304,16 @@ impl KeyValueStoreDiskImpl {
         let path_str = path.to_string_lossy().into_owned();
 
         if path.exists() {
-            let f = File::open(path)?;
+            let f = File::open(path).map_err(|e| {
+                KrillIoError::new(
+                    format!(
+                        "Could not read value for key '{}' from file '{}'",
+                        key.to_string(),
+                        path_str
+                    ),
+                    e,
+                )
+            })?;
             let v = serde_json::from_reader(f)?;
             Ok(Some(v))
         } else {
@@ -291,7 +330,16 @@ impl KeyValueStoreDiskImpl {
     pub fn drop_key(&self, key: &KeyStoreKey) -> Result<(), KeyValueError> {
         let path = self.file_path(key);
         if path.exists() {
-            fs::remove_file(path)?;
+            fs::remove_file(&path).map_err(|e| {
+                KrillIoError::new(
+                    format!(
+                        "Could not drop key '{}', removing file '{}' failed",
+                        key.to_string(),
+                        path.to_string_lossy()
+                    ),
+                    e,
+                )
+            })?;
         }
         Ok(())
     }
@@ -299,7 +347,16 @@ impl KeyValueStoreDiskImpl {
     pub fn drop_scope(&self, scope: &str) -> Result<(), KeyValueError> {
         let path = self.scope_path(Some(&scope.to_string()));
         if path.exists() {
-            fs::remove_dir_all(path)?;
+            fs::remove_dir_all(&path).map_err(|e| {
+                KrillIoError::new(
+                    format!(
+                        "Could not drop scope '{}', removing dir '{}' failed",
+                        scope,
+                        path.to_string_lossy()
+                    ),
+                    e,
+                )
+            })?;
         }
         Ok(())
     }
@@ -313,12 +370,22 @@ impl KeyValueStoreDiskImpl {
         } else {
             if let Some(parent) = to_path.parent() {
                 if !parent.exists() {
-                    fs::create_dir(parent)?;
+                    fs::create_dir(parent).map_err(|e| {
+                        KrillIoError::new(
+                            format!(
+                                "Could not rename key from '{}' to '{}'. Creating parent dir '{}' failed.",
+                                from,
+                                to,
+                                parent.to_string_lossy()
+                            ),
+                            e,
+                        )
+                    })?;
                 }
             }
 
-            fs::rename(from_path, to_path)?;
-
+            fs::rename(from_path, to_path)
+                .map_err(|e| KrillIoError::new(format!("Could not rename key from '{}' to '{}'", from, to,), e))?;
             Ok(())
         }
     }
@@ -329,6 +396,44 @@ impl KeyValueStoreDiskImpl {
 
     fn scopes(&self) -> Result<Vec<String>, KeyValueError> {
         Self::read_dir(&self.base, false, true)
+    }
+
+    fn scope_archive(&self, scope: &str, sub_scope: &str) -> Result<(), KeyValueError> {
+        let scope_path = self.scope_path(Some(scope));
+        let tmp_path = self.scope_path(Some(format!(".{}", scope)));
+        let end_path = self.scope_path(Some(format!("{}/{}", scope, sub_scope)));
+
+        fs::rename(&scope_path, &tmp_path).map_err(|e| {
+            KrillIoError::new(
+                format!(
+                    "Could not archive scope contents, rename from dir '{}' to tmp dir '{}' failed",
+                    scope_path.to_string_lossy(),
+                    tmp_path.to_string_lossy()
+                ),
+                e,
+            )
+        })?;
+        fs::create_dir_all(&scope_path).map_err(|e| {
+            KrillIoError::new(
+                format!(
+                    "Could not archive scope contents, recreating scope dir '{}' failed",
+                    scope_path.to_string_lossy(),
+                ),
+                e,
+            )
+        })?;
+        fs::rename(&tmp_path, &end_path).map_err(|e| {
+            KrillIoError::new(
+                format!(
+                    "Could not archive scope contents, rename tmp dir with contents '{}' into archive path '{}' failed",
+                    tmp_path.to_string_lossy(),
+                    end_path.to_string_lossy(),
+                ),
+                e,
+            )
+        })?;
+
+        Ok(())
     }
 
     fn keys(&self, scope: Option<String>, matching: &str) -> Result<Vec<KeyStoreKey>, KeyValueError> {
@@ -349,7 +454,10 @@ impl KeyValueStoreDiskImpl {
 
     fn read_dir(dir: &Path, files: bool, dirs: bool) -> Result<Vec<String>, KeyValueError> {
         match fs::read_dir(dir) {
-            Err(e) => Err(KeyValueError::IoError(e)),
+            Err(e) => Err(KeyValueError::IoError(KrillIoError::new(
+                format!("Could not read directory {}", dir.to_string_lossy()),
+                e,
+            ))),
             Ok(dir) => {
                 let mut res = vec![];
 
@@ -375,14 +483,14 @@ impl KeyValueStoreDiskImpl {
 /// This type defines possible Errors for KeyStore
 #[derive(Debug)]
 pub enum KeyValueError {
-    IoError(io::Error),
+    IoError(KrillIoError),
     JsonError(serde_json::Error),
     UnknownKey(KeyStoreKey),
     DuplicateKey(KeyStoreKey),
 }
 
-impl From<io::Error> for KeyValueError {
-    fn from(e: io::Error) -> Self {
+impl From<KrillIoError> for KeyValueError {
+    fn from(e: KrillIoError) -> Self {
         KeyValueError::IoError(e)
     }
 }

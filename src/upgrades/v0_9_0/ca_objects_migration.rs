@@ -238,7 +238,16 @@ impl UpgradeStore for CasStoreMigration {
                 ));
             }
 
+            info!("Will migrate {} commands for CA {}", cmd_keys.len(), scope);
+
+            let mut total_migrated = 0;
             for cmd_key in cmd_keys {
+                // Do the migration counter first, so that we can just call continue when we need to skip commands
+                total_migrated += 1;
+                if total_migrated % 100 == 0 {
+                    info!("  migrated {} commands", total_migrated);
+                }
+
                 debug!("  command: {}", cmd_key);
                 let mut old_cmd: OldStoredCaCommand = self.get(&cmd_key)?;
 
@@ -287,6 +296,7 @@ impl UpgradeStore for CasStoreMigration {
 
                 self.store.store(&key, &migrated_cmd)?;
             }
+            info!("Finished migrating commands for CA {}", scope);
 
             self.archive_snapshots(&scope)?;
 

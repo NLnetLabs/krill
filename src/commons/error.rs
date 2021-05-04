@@ -160,7 +160,7 @@ pub enum Error {
     //-----------------------------------------------------------------
     // System Issues
     //-----------------------------------------------------------------
-    IoError(io::Error),
+    IoError(KrillIoError),
     KeyValueError(KeyValueError),
     AggregateStoreError(AggregateStoreError),
     SignerError(String),
@@ -455,8 +455,8 @@ impl fmt::Display for Error {
     }
 }
 
-impl From<io::Error> for Error {
-    fn from(e: io::Error) -> Self {
+impl From<KrillIoError> for Error {
+    fn from(e: KrillIoError) -> Self {
         Error::IoError(e)
     }
 }
@@ -822,6 +822,24 @@ impl Error {
     }
 }
 
+#[derive(Debug)]
+pub struct KrillIoError {
+    context: String,
+    cause: io::Error,
+}
+
+impl KrillIoError {
+    pub fn new(context: String, cause: io::Error) -> Self {
+        KrillIoError { context, cause }
+    }
+}
+
+impl fmt::Display for KrillIoError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "context: {}, underlying io::Error: {}", self.context, self.cause)
+    }
+}
+
 //------------ Tests ---------------------------------------------------------
 
 #[cfg(test)]
@@ -859,10 +877,14 @@ mod tests {
         // System Issues
         //-----------------------------------------------------------------
 
-        let io_err = io::Error::new(io::ErrorKind::Other, "can't read file");
+        let krill_io_err = KrillIoError::new(
+            "Trouble reading 'foo'".to_string(),
+            io::Error::new(io::ErrorKind::Other, "can't read file"),
+        );
+
         verify(
             include_str!("../../test-resources/errors/sys-io.json"),
-            Error::IoError(io_err),
+            Error::IoError(krill_io_err),
         );
 
         verify(

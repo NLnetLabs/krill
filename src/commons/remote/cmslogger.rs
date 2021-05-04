@@ -1,11 +1,14 @@
+use std::fmt;
 use std::path::PathBuf;
-use std::{fmt, io};
 
 use bytes::Bytes;
 use rpki::x509::Time;
 
-use crate::commons::api::{Handle, PublisherHandle};
 use crate::commons::util::file;
+use crate::commons::{
+    api::{Handle, PublisherHandle},
+    error::KrillIoError,
+};
 
 /// This type helps to log CMS (RFC8181 and RFC6492) protocol messages
 /// for auditing purposes.
@@ -68,23 +71,23 @@ impl CmsLogger {
         Self::new(path)
     }
 
-    pub fn received(&self, msg: &Bytes) -> Result<(), io::Error> {
+    pub fn received(&self, msg: &Bytes) -> Result<(), KrillIoError> {
         self.save(msg, "rcvd")
     }
 
-    pub fn reply(&self, msg: &Bytes) -> Result<(), io::Error> {
+    pub fn reply(&self, msg: &Bytes) -> Result<(), KrillIoError> {
         self.save(msg, "repl")
     }
 
-    pub fn sent(&self, msg: &Bytes) -> Result<(), io::Error> {
+    pub fn sent(&self, msg: &Bytes) -> Result<(), KrillIoError> {
         self.save(msg, "sent")
     }
 
-    pub fn err(&self, msg: impl fmt::Display) -> Result<(), io::Error> {
+    pub fn err(&self, msg: impl fmt::Display) -> Result<(), KrillIoError> {
         self.save(msg.to_string().as_bytes(), "err")
     }
 
-    fn save(&self, content: &[u8], ext: &str) -> Result<(), io::Error> {
+    fn save(&self, content: &[u8], ext: &str) -> Result<(), KrillIoError> {
         if let Some(path) = self.path.as_ref() {
             let mut path = path.clone();
             path.push(&format!("{}.{}", self.now, ext));

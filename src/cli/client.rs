@@ -1,4 +1,4 @@
-use std::{env, fmt, io};
+use std::{env, fmt};
 
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -7,9 +7,6 @@ use rpki::uri;
 
 #[cfg(feature = "multi-user")]
 use crate::cli::options::KrillUserDetails;
-use crate::cli::options::{
-    BulkCaCommand, CaCommand, Command, KrillInitDetails, KrillPubcOptions, Options, PublishersCommand,
-};
 use crate::cli::report::{ApiResponse, ReportError};
 use crate::commons::api::{
     AllCertAuthIssues, CaRepoDetails, CertAuthIssues, ChildCaInfo, ParentCaContact, ParentStatuses, PublisherDetails,
@@ -20,9 +17,13 @@ use crate::commons::remote::rfc8183;
 use crate::commons::util::{file, httpclient};
 use crate::constants::KRILL_CLI_API_ENV;
 use crate::daemon::config::Config;
+use crate::{
+    cli::options::{BulkCaCommand, CaCommand, Command, KrillInitDetails, KrillPubcOptions, Options, PublishersCommand},
+    commons::error::KrillIoError,
+};
 
 #[cfg(feature = "multi-user")]
-use crate::constants::{ PW_HASH_LOG_N, PW_HASH_P, PW_HASH_R };
+use crate::constants::{PW_HASH_LOG_N, PW_HASH_P, PW_HASH_R};
 
 fn resolve_uri(server: &uri::Https, path: &str) -> String {
     format!("{}{}", server, path)
@@ -431,12 +432,13 @@ impl KrillClient {
     }
 
     #[cfg(feature = "multi-user")]
+    #[allow(clippy::clippy::unnecessary_wraps)]
     fn user(&self, details: KrillUserDetails) -> Result<ApiResponse, Error> {
         let (password_hash, salt) = {
             use scrypt::scrypt;
 
             let password = rpassword::read_password_from_tty(Some("Enter the password to hash: ")).unwrap();
-            
+
             // The scrypt-js NPM documentation (https://www.npmjs.com/package/scrypt-js) says:
             //   "TL;DR - either only allow ASCII characters in passwords, or use
             //            String.prototype.normalize('NFKC') on any password"
@@ -448,7 +450,7 @@ impl KrillClient {
             let params = scrypt::Params::new(PW_HASH_LOG_N, PW_HASH_R, PW_HASH_P).unwrap();
 
             // hash twice with two different salts
-            // hash first with a salt the client browser knows how to construct based on the users id and a site 
+            // hash first with a salt the client browser knows how to construct based on the users id and a site
             // specific string.
 
             let weak_salt = format!("krill-lagosta-{}", user_id);
@@ -587,7 +589,7 @@ pub enum Error {
     ServerDown,
     HttpClientError(httpclient::Error),
     ReportError(ReportError),
-    IoError(io::Error),
+    IoError(KrillIoError),
     EmptyResponse,
     Rfc8183(rfc8183::Error),
     InitError(String),
@@ -622,8 +624,8 @@ impl From<httpclient::Error> for Error {
     }
 }
 
-impl From<io::Error> for Error {
-    fn from(e: io::Error) -> Self {
+impl From<KrillIoError> for Error {
+    fn from(e: KrillIoError) -> Self {
         Error::IoError(e)
     }
 }
