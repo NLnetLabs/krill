@@ -2,7 +2,7 @@
 // session state that they "store" at the client browser. The ChaCha20-Poly1305 AEAD algorithm was chosen based on a
 // couple of articles about the current best algorithms to use in various situations [1, 2] and for example that it is
 // tricky to use random nonces safely with AES-GCM [2], and on the availability and quality of NPM libraries and Rust
-// crates are available at the time of writing for the recommended algorithms.
+// crates available at the time of writing for the recommended algorithms.
 //
 // The encryption uses a two part (sender unique + counter) nonce which was based on guidance in section 4 "Security
 // Considerations" of RFC-8439 "ChaCha20 and Poly1305 for IETF Protocols". The "sender unique" part serves both to
