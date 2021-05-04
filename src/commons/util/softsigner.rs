@@ -31,7 +31,7 @@ impl OpenSslSigner {
     pub fn build(work_dir: &Path) -> Result<Self, SignerError> {
         let meta_data = fs::metadata(&work_dir).map_err(|e| {
             KrillIoError::new(
-                format!("Could not get meta data from '{}'", work_dir.to_string_lossy()),
+                format!("Could not get metadata from '{}'", work_dir.to_string_lossy()),
                 e,
             )
         })?;

@@ -406,7 +406,7 @@ impl RsyncdStore {
             fs::rename(&current_dir, &old_dir).map_err(|e| {
                 KrillIoError::new(
                     format!(
-                        "Could not rename rsync dir from '{}' to '{}' while publishing",
+                        "Could not rename current rsync dir from '{}' to '{}' while publishing",
                         current_dir.to_string_lossy(),
                         old_dir.to_string_lossy()
                     ),
@@ -418,7 +418,7 @@ impl RsyncdStore {
         fs::rename(&new_dir, &current_dir).map_err(|e| {
             KrillIoError::new(
                 format!(
-                    "Could not rename rsync dir from '{}' to '{}' while publishing",
+                    "Could not rename new rsync dir from '{}' to '{}' while publishing",
                     new_dir.to_string_lossy(),
                     current_dir.to_string_lossy()
                 ),
@@ -430,7 +430,7 @@ impl RsyncdStore {
             fs::remove_dir_all(&old_dir).map_err(|e| {
                 KrillIoError::new(
                     format!(
-                        "Could not clean up old rsync dir '{}' while publishing",
+                        "Could not remove up old rsync dir '{}' while publishing",
                         old_dir.to_string_lossy()
                     ),
                     e,
@@ -712,7 +712,7 @@ impl RrdpServer {
             let entry = entry.map_err(|e| {
                 KrillIoError::new(
                     format!(
-                        "Could not read RRDP base directory '{}'",
+                        "Could not read entry in RRDP base directory '{}'",
                         self.rrdp_base_dir.to_string_lossy()
                     ),
                     e,
@@ -744,7 +744,7 @@ impl RrdpServer {
             let entry = entry.map_err(|e| {
                 KrillIoError::new(
                     format!(
-                        "Could not read RRDP session directory '{}'",
+                        "Could not read entry in RRDP session directory '{}'",
                         session_dir.to_string_lossy()
                     ),
                     e,

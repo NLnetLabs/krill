@@ -73,10 +73,10 @@ pub fn save_json<O: Serialize>(object: &O, full_path: &Path) -> Result<(), Krill
 /// Loads a files and deserializes as json for the expected type. Maps json errors to KrillIoError
 pub fn load_json<O: DeserializeOwned>(full_path: &Path) -> Result<O, KrillIoError> {
     let bytes = read(full_path)?;
-    serde_json::from_slice(&bytes).map_err(|_| {
+    serde_json::from_slice(&bytes).map_err(|e| {
         KrillIoError::new(
             format!("Could not load json for file: {}", full_path.to_string_lossy()),
-            io::Error::new(io::ErrorKind::Other, "could not deserialize json"),
+            io::Error::new(io::ErrorKind::Other, format!("could not deserialize json: {}", e)),
         )
     })
 }
@@ -98,7 +98,7 @@ pub fn save_with_rsync_uri(content: &Bytes, base_path: &Path, uri: &uri::Rsync) 
 /// Reads a file to Bytes
 pub fn read(path: &Path) -> Result<Bytes, KrillIoError> {
     let mut f =
-        File::open(path).map_err(|e| KrillIoError::new(format!("Could not read: '{}'", path.to_string_lossy()), e))?;
+        File::open(path).map_err(|e| KrillIoError::new(format!("Could not open: '{}'", path.to_string_lossy()), e))?;
     let mut bytes = Vec::new();
     f.read_to_end(&mut bytes)
         .map_err(|e| KrillIoError::new(format!("Could not read: {}", path.to_string_lossy()), e))?;
@@ -111,25 +111,27 @@ pub fn read_with_rsync_uri(base_path: &Path, uri: &uri::Rsync) -> Result<Bytes, 
 }
 
 pub fn delete_with_rsync_uri(base_path: &Path, uri: &uri::Rsync) -> Result<(), KrillIoError> {
-    delete(&path_with_rsync(base_path, uri))
+    delete_file(&path_with_rsync(base_path, uri))
 }
 
 pub fn delete_in_dir(base_path: &Path, name: &str) -> Result<(), KrillIoError> {
     let mut full_path = base_path.to_path_buf();
     full_path.push(name);
-    delete(&full_path)
+    delete_file(&full_path)
 }
 
-pub fn delete(full_path: &Path) -> Result<(), KrillIoError> {
+/// Deletes a file, but does not touch the parent directories. See [`clean_file_and_path`] for an alternative
+/// that does.
+pub fn delete_file(full_path: &Path) -> Result<(), KrillIoError> {
     trace!("Removing file: {}", full_path.to_string_lossy());
     fs::remove_file(full_path)
         .map_err(|e| KrillIoError::new(format!("Could not remove file: {}", full_path.to_string_lossy()), e))
 }
 
+/// Removes the file and any **empty** directories on the path after removing it.
 pub fn clean_file_and_path(path: &Path) -> Result<(), KrillIoError> {
     if path.exists() {
-        fs::remove_file(&path)
-            .map_err(|e| KrillIoError::new(format!("Could not remove file: {}", path.to_string_lossy()), e))?;
+        delete_file(&path)?;
 
         let mut parent_opt = path.parent();
 

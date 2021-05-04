@@ -728,7 +728,7 @@ impl Config {
     pub fn read_config(file: &str) -> Result<Self, ConfigError> {
         let mut v = Vec::new();
         let mut f =
-            File::open(file).map_err(|e| KrillIoError::new(format!("Could not read config file '{}'", file), e))?;
+            File::open(file).map_err(|e| KrillIoError::new(format!("Could not read open file '{}'", file), e))?;
         f.read_to_end(&mut v)
             .map_err(|e| KrillIoError::new(format!("Could not read config file '{}'", file), e))?;
 
