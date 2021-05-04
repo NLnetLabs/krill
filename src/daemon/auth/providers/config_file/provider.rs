@@ -82,7 +82,7 @@ impl ConfigFileAuthProvider {
     fn init_session_key(config: Arc<Config>) -> KrillResult<CryptState> {
         let key_path = config.data_dir.join(LOGIN_SESSION_STATE_KEY_PATH);
         info!("Initializing login session encryption key {}", &key_path.display());
-        crypt::crpyt_init(key_path.as_path())
+        crypt::crypt_init(key_path.as_path())
     }
 
     fn get_auth(&self, request: &hyper::Request<hyper::Body>) -> Option<Auth> {

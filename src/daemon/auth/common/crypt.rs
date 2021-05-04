@@ -123,7 +123,7 @@ pub(crate) fn decrypt(key: &[u8], payload: &[u8]) -> KrillResult<Vec<u8>> {
         .map_err(|err| Error::Custom(format!("Decryption error: {}", &err)))
 }
 
-pub(crate) fn crpyt_init(key_path: &Path) -> KrillResult<CryptState> {
+pub(crate) fn crypt_init(key_path: &Path) -> KrillResult<CryptState> {
     if key_path.exists() {
         let key_bytes = std::fs::read(key_path)
             .map_err(|err| Error::Custom(format!("Unable to load symmetric key: {}", err)))?;

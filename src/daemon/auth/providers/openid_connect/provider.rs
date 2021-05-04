@@ -716,7 +716,7 @@ impl OpenIDConnectAuthProvider {
     fn init_session_key(data_dir: &Path) -> KrillResult<CryptState> {
         let key_path = data_dir.join(LOGIN_SESSION_STATE_KEY_PATH);
         info!("Initializing session encryption key {}", &key_path.display());
-        crypt::crpyt_init(key_path.as_path())
+        crypt::crypt_init(key_path.as_path())
     }
 
     fn oidc_conf(&self) -> KrillResult<&ConfigAuthOpenIDConnect> {
