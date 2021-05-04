@@ -86,7 +86,7 @@ async fn expected_issued_cer(ca: &Handle, rcn: &ResourceClassName) -> String {
 async fn will_publish(test_msg: &str, publisher: &PublisherHandle, files: &[String]) -> bool {
     let objects: Vec<_> = files.iter().map(|s| s.as_str()).collect();
     // for _ in 0..6000 {
-    for _ in 0..50 {
+    for _ in 0..100 {
         let details = publisher_details(publisher).await;
 
         let current_files = details.current_files();
@@ -732,11 +732,13 @@ async fn functional() {
         // Expect that CA1 no longer publishes the certificate for CA3
         // i.e. CA3 requested its revocation.
         {
+            let mut expected_files = expected_mft_and_crl(&ca1, &rcn_0).await;
+            expected_files.push(ObjectName::from(&ca1_route_definition).to_string());
             assert!(
                 will_publish(
                     "CA1 should no longer publish the cer for CA3 after CA3 has been deleted",
                     &ca1,
-                    &expected_mft_and_crl(&ca1, &rcn_0).await
+                    &expected_files
                 )
                 .await
             );
