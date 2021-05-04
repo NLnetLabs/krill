@@ -245,7 +245,7 @@ impl From<OldStorableCaCommand> for StorableCaCommand {
                 StorableCaCommand::KeyRollFinish { resource_class_name }
             }
             OldStorableCaCommand::RoaDefinitionUpdates(updates) => StorableCaCommand::RoaDefinitionUpdates { updates },
-            OldStorableCaCommand::Republish => StorableCaCommand::Republish,
+            OldStorableCaCommand::Republish => StorableCaCommand::ReissueBeforeExpiring,
             OldStorableCaCommand::RepoUpdate(_service_uri) => {
                 unreachable!("migrated differently getting the service uri for embedded repo")
             }

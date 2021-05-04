@@ -1381,7 +1381,7 @@ impl CertAuth {
             let authorizations: Vec<&RouteAuthorization> = desired_routes.authorizations().collect();
 
             if !addition.max_length_valid() {
-                // The (max) length is invalid for thie prefix
+                // The (max) length is invalid for this prefix
                 delta_errors.add_invalid_length(roa_def);
             } else if !all_resources.contains_roa_address(&addition.as_roa_ip_address()) {
                 // We do not hold the prefix
