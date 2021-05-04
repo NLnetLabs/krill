@@ -51,15 +51,12 @@ impl NonceState {
 
     fn next(&self) -> [u8; CHACHA20_NONCE_BYTE_LEN] {
         // increment the counter atomically
-        // TODO: Is this the right Ordering type?
         let count = self.counter.fetch_add(1, Ordering::SeqCst);
 
         // combine the fixed sender unique part with the increasing counter part
         let mut nonce: [u8; CHACHA20_NONCE_BYTE_LEN] = [0; CHACHA20_NONCE_BYTE_LEN];
         &nonce[0..4].copy_from_slice(&self.sender_unique);
         &nonce[4..].copy_from_slice(&count.to_ne_bytes());
-
-        // TODO: persist the nonce to disk to avoid nonce-reuse
 
         nonce
     }
@@ -109,7 +106,6 @@ pub(crate) fn encrypt(key: &[u8], plaintext: &[u8], nonce: &NonceState) -> Krill
     Ok(payload)
 }
 
-// Requires the tag that resulted from encryption to verify the data.
 // `payload` should be of the form nonce + tag + cipher text.
 // Returns the plain text resulting from decryption, or an error.
 pub(crate) fn decrypt(key: &[u8], payload: &[u8]) -> KrillResult<Vec<u8>> {
