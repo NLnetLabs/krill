@@ -15,10 +15,13 @@ use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use rpki::uri;
 use rpki::x509;
 
-use crate::commons::api::{Handle, PublisherHandle, RepoInfo};
 use crate::commons::crypto::IdCert;
 use crate::commons::util::file;
 use crate::commons::util::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
+use crate::commons::{
+    api::{Handle, PublisherHandle, RepoInfo},
+    error::KrillIoError,
+};
 
 pub const VERSION: &str = "1";
 pub const NS: &str = "http://www.hactrn.net/uris/rpki/rpki-setup/";
@@ -486,7 +489,7 @@ impl PublisherRequest {
     }
 
     /// Saves this as an XML file
-    pub fn save(&self, full_path: &Path) -> Result<(), io::Error> {
+    pub fn save(&self, full_path: &Path) -> Result<(), KrillIoError> {
         let xml = self.encode_vec();
         file::save(&Bytes::from(xml), full_path)
     }
@@ -661,7 +664,7 @@ impl RepositoryResponse {
     }
 
     /// Saves this as an XML file
-    pub fn save(&self, full_path: &Path) -> Result<(), io::Error> {
+    pub fn save(&self, full_path: &Path) -> Result<(), KrillIoError> {
         let xml = self.encode_vec();
         file::save(&Bytes::from(xml), full_path)
     }

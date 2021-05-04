@@ -1,4 +1,4 @@
-use std::{env, fmt, io};
+use std::{env, fmt};
 
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -7,9 +7,6 @@ use rpki::uri;
 
 #[cfg(feature = "multi-user")]
 use crate::cli::options::KrillUserDetails;
-use crate::cli::options::{
-    BulkCaCommand, CaCommand, Command, KrillInitDetails, KrillPubcOptions, Options, PublishersCommand,
-};
 use crate::cli::report::{ApiResponse, ReportError};
 use crate::commons::api::{
     AllCertAuthIssues, CaRepoDetails, CertAuthIssues, ChildCaInfo, ParentCaContact, ParentStatuses, PublisherDetails,
@@ -20,6 +17,10 @@ use crate::commons::remote::rfc8183;
 use crate::commons::util::{file, httpclient};
 use crate::constants::KRILL_CLI_API_ENV;
 use crate::daemon::config::Config;
+use crate::{
+    cli::options::{BulkCaCommand, CaCommand, Command, KrillInitDetails, KrillPubcOptions, Options, PublishersCommand},
+    commons::error::KrillIoError,
+};
 
 #[cfg(feature = "multi-user")]
 use crate::constants::{PW_HASH_LOG_N, PW_HASH_P, PW_HASH_R};
@@ -588,7 +589,7 @@ pub enum Error {
     ServerDown,
     HttpClientError(httpclient::Error),
     ReportError(ReportError),
-    IoError(io::Error),
+    IoError(KrillIoError),
     EmptyResponse,
     Rfc8183(rfc8183::Error),
     InitError(String),
@@ -623,8 +624,8 @@ impl From<httpclient::Error> for Error {
     }
 }
 
-impl From<io::Error> for Error {
-    fn from(e: io::Error) -> Self {
+impl From<KrillIoError> for Error {
+    fn from(e: KrillIoError) -> Self {
         Error::IoError(e)
     }
 }
