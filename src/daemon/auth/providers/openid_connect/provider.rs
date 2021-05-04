@@ -51,7 +51,6 @@ use openidconnect::{
 
 use urlparse::{urlparse, GetQuery};
 
-use crate::{commons::error::Error, daemon::auth::common::crypt::CryptState};
 use crate::commons::util::sha256;
 use crate::commons::KrillResult;
 use crate::commons::{actor::ActorDef, api::Token};
@@ -66,6 +65,7 @@ use crate::daemon::config::Config;
 use crate::daemon::http::auth::url_encode;
 use crate::daemon::http::auth::AUTH_CALLBACK_ENDPOINT;
 use crate::daemon::http::HttpResponse;
+use crate::{commons::error::Error, daemon::auth::common::crypt::CryptState};
 
 use super::config::{
     ConfigAuthOpenIDConnect, ConfigAuthOpenIDConnectClaim, ConfigAuthOpenIDConnectClaimSource as ClaimSource,

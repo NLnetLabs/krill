@@ -2,7 +2,6 @@ use std::{collections::HashMap, sync::Arc};
 
 use urlparse::{urlparse, GetQuery};
 
-use crate::{commons::error::Error, daemon::auth::common::crypt::CryptState};
 use crate::commons::KrillResult;
 use crate::commons::{actor::ActorDef, api::Token};
 use crate::daemon::auth::common::crypt;
@@ -11,8 +10,9 @@ use crate::daemon::auth::providers::config_file::config::ConfigUserDetails;
 use crate::daemon::auth::{Auth, AuthProvider, LoggedInUser};
 use crate::daemon::config::Config;
 use crate::daemon::http::HttpResponse;
+use crate::{commons::error::Error, daemon::auth::common::crypt::CryptState};
 
-use crate::constants::{ PW_HASH_LOG_N, PW_HASH_P, PW_HASH_R };
+use crate::constants::{PW_HASH_LOG_N, PW_HASH_P, PW_HASH_R};
 
 // This is NOT an actual relative path to redirect to. Instead it is the path
 // string of an entry in the Vue router routes table to "route" to (in the
@@ -133,7 +133,7 @@ impl AuthProvider for ConfigFileAuthProvider {
             use scrypt::scrypt;
 
             // Do NOT bail out if the user is not known because then the unknown user path would return very quickly
-            // compared to the known user path and timing differences can aid attackers.            
+            // compared to the known user path and timing differences can aid attackers.
             let (user_password_hash, user_salt) = match self.users.get(&id) {
                 Some(user) => (user.password_hash.to_string(), user.salt.clone()),
                 None => (self.fake_password_hash.clone(), self.fake_salt.clone()),
@@ -148,14 +148,22 @@ impl AuthProvider for ConfigFileAuthProvider {
             let password_hash_bytes = hex::decode(password_hash.as_ref()).unwrap();
             let strong_salt = hex::decode(&user_salt).unwrap();
             let mut hashed_hash: [u8; 32] = [0; 32];
-            scrypt(password_hash_bytes.as_slice(), strong_salt.as_slice(), &params, &mut hashed_hash).unwrap();
+            scrypt(
+                password_hash_bytes.as_slice(),
+                strong_salt.as_slice(),
+                &params,
+                &mut hashed_hash,
+            )
+            .unwrap();
 
             if hex::encode(hashed_hash) == user_password_hash.as_ref() {
                 // And now finally check the user, so that both known and unknown user code paths do the same work
                 // and don't result in an obvious timing difference between the two scenarios which could potentially
                 // be used to discover user names.
                 if let Some(user) = self.users.get(&id) {
-                    let api_token = self.session_cache.encode(&id, &user.attributes, HashMap::new(), &self.session_key, None)?;
+                    let api_token =
+                        self.session_cache
+                            .encode(&id, &user.attributes, HashMap::new(), &self.session_key, None)?;
 
                     Ok(LoggedInUser {
                         token: api_token,

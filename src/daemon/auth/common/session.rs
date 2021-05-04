@@ -65,7 +65,7 @@ impl ClientSession {
 
         SessionStatus::Active
     }
-    
+
     pub fn get_secret(&self, key: &str) -> Option<&String> {
         self.secrets.get(&key.to_string())
     }
@@ -209,19 +209,17 @@ impl LoginSessionCache {
             trace!("Session cache miss, deserializing...");
         }
 
-        let bytes = base64::decode(token.as_ref().as_bytes())
-            .map_err(|err| {
-                debug!("Invalid bearer token: cannot decode: {}", err);
-                Error::ApiInvalidCredentials("Invalid bearer token".to_string())
-            })?;
+        let bytes = base64::decode(token.as_ref().as_bytes()).map_err(|err| {
+            debug!("Invalid bearer token: cannot decode: {}", err);
+            Error::ApiInvalidCredentials("Invalid bearer token".to_string())
+        })?;
 
         let unencrypted_bytes = (self.decrypt_fn)(&key.key, &bytes)?;
 
-        let session = serde_json::from_slice::<ClientSession>(&unencrypted_bytes)
-            .map_err(|err| {
-                debug!("Invalid bearer token: cannot deserialize: {}", err);
-                Error::ApiInvalidCredentials("Invalid bearer token".to_string())
-            })?;
+        let session = serde_json::from_slice::<ClientSession>(&unencrypted_bytes).map_err(|err| {
+            debug!("Invalid bearer token: cannot deserialize: {}", err);
+            Error::ApiInvalidCredentials("Invalid bearer token".to_string())
+        })?;
 
         trace!("Session cache miss, deserialized session id {}", &session.id);
 
@@ -297,7 +295,9 @@ mod tests {
             .with_decrypter(|_, v| Ok(v.to_vec()));
 
         // Add an item to the cache and verify that the cache now has 1 item
-        let item1_token = cache.encode("some id", &HashMap::new(), HashMap::new(), &key, None).unwrap();
+        let item1_token = cache
+            .encode("some id", &HashMap::new(), HashMap::new(), &key, None)
+            .unwrap();
         assert_eq!(cache.size(), 1);
 
         let item1 = cache.decode(item1_token, &key, true).unwrap();

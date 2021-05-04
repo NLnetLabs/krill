@@ -17,7 +17,12 @@
 // 4: https://github.com/NLnetLabs/krill/issues/382
 
 // TODO: Fold this into OpenSslSigner?
-use std::{fs::File, io::Write, path::Path, sync::atomic::{AtomicU64, Ordering}};
+use std::{
+    fs::File,
+    io::Write,
+    path::Path,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use crate::commons::error::Error;
 use crate::commons::KrillResult;
@@ -40,8 +45,8 @@ pub struct NonceState {
 impl NonceState {
     pub fn new() -> KrillResult<NonceState> {
         let mut sender_unique: [u8; 4] = [0; 4];
-        openssl::rand::rand_bytes(&mut sender_unique).map_err(
-            |err| Error::Custom(format!("Unable to generate a random sender id: {}", &err)))?;
+        openssl::rand::rand_bytes(&mut sender_unique)
+            .map_err(|err| Error::Custom(format!("Unable to generate a random sender id: {}", &err)))?;
 
         Ok(NonceState {
             sender_unique,
@@ -69,7 +74,10 @@ pub struct CryptState {
 
 impl CryptState {
     pub fn from_key_bytes(key: [u8; CHACHA20_KEY_BYTE_LEN]) -> KrillResult<CryptState> {
-        Ok(CryptState { key, nonce: NonceState::new()? })
+        Ok(CryptState {
+            key,
+            nonce: NonceState::new()?,
+        })
     }
 
     pub fn from_key_vec(key_vec: Vec<u8>) -> KrillResult<CryptState> {
@@ -112,7 +120,7 @@ pub(crate) fn decrypt(key: &[u8], payload: &[u8]) -> KrillResult<Vec<u8>> {
     let nonce = &payload[0..CHACHA20_NONCE_BYTE_LEN];
     let tag = &payload[CHACHA20_NONCE_BYTE_LEN..CLEARTEXT_PREFIX_LEN];
     let cipher_text = &payload[CLEARTEXT_PREFIX_LEN..];
-    
+
     let cipher = openssl::symm::Cipher::chacha20_poly1305();
     openssl::symm::decrypt_aead(cipher, &key, Some(nonce), &UNUSED_AAD, cipher_text, tag)
         .map_err(|err| Error::Custom(format!("Decryption error: {}", &err)))
@@ -120,8 +128,8 @@ pub(crate) fn decrypt(key: &[u8], payload: &[u8]) -> KrillResult<Vec<u8>> {
 
 pub(crate) fn crypt_init(key_path: &Path) -> KrillResult<CryptState> {
     if key_path.exists() {
-        let key_bytes = std::fs::read(key_path)
-            .map_err(|err| Error::Custom(format!("Unable to load symmetric key: {}", err)))?;
+        let key_bytes =
+            std::fs::read(key_path).map_err(|err| Error::Custom(format!("Unable to load symmetric key: {}", err)))?;
         CryptState::from_key_vec(key_bytes)
     } else {
         let mut key_bytes = [0; CHACHA20_KEY_BYTE_LEN];
