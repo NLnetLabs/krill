@@ -55,8 +55,8 @@ impl NonceState {
 
         // combine the fixed sender unique part with the increasing counter part
         let mut nonce: [u8; CHACHA20_NONCE_BYTE_LEN] = [0; CHACHA20_NONCE_BYTE_LEN];
-        &nonce[0..4].copy_from_slice(&self.sender_unique);
-        &nonce[4..].copy_from_slice(&count.to_ne_bytes());
+        nonce[0..4].copy_from_slice(&self.sender_unique);
+        nonce[4..].copy_from_slice(&count.to_ne_bytes());
 
         nonce
     }
@@ -78,7 +78,7 @@ impl CryptState {
         let boxed_array: Box<[u8; CHACHA20_KEY_BYTE_LEN]> = key_vec
             .into_boxed_slice()
             .try_into()
-            .map_err(|_| Error::custom(format!("Unable to process session encryption key")))?;
+            .map_err(|_| Error::custom("Unable to process session encryption key".to_string()))?;
 
         Self::from_key_bytes(*boxed_array)
     }
@@ -106,7 +106,7 @@ pub(crate) fn encrypt(key: &[u8], plaintext: &[u8], nonce: &NonceState) -> Krill
 pub(crate) fn decrypt(key: &[u8], payload: &[u8]) -> KrillResult<Vec<u8>> {
     // TODO: Do we need to get the cipher each time or could we do this just once?
     if payload.len() <= CLEARTEXT_PREFIX_LEN {
-        return Err(Error::Custom(format!("Decryption error: Insufficient data")));
+        return Err(Error::Custom("Decryption error: Insufficient data".to_string()));
     }
 
     let nonce = &payload[0..CHACHA20_NONCE_BYTE_LEN];

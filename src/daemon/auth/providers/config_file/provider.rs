@@ -43,7 +43,7 @@ fn get_checked_config_user(id: &str, user: &ConfigUserDetails) -> KrillResult<Us
 
     Ok(UserDetails {
         password_hash: Token::from(password_hash),
-        salt: salt,
+        salt,
         attributes: user.attributes.clone(),
     })
 }
