@@ -2,7 +2,6 @@ use std::{collections::HashMap, sync::Arc};
 
 use urlparse::{urlparse, GetQuery};
 
-use crate::commons::error::Error;
 use crate::commons::KrillResult;
 use crate::commons::{actor::ActorDef, api::Token};
 use crate::daemon::auth::common::crypt;
@@ -11,6 +10,7 @@ use crate::daemon::auth::providers::config_file::config::ConfigUserDetails;
 use crate::daemon::auth::{Auth, AuthProvider, LoggedInUser};
 use crate::daemon::config::Config;
 use crate::daemon::http::HttpResponse;
+use crate::{commons::error::Error, daemon::auth::common::crypt::CryptState};
 
 use crate::constants::{PW_HASH_LOG_N, PW_HASH_P, PW_HASH_R};
 
@@ -49,8 +49,8 @@ fn get_checked_config_user(id: &str, user: &ConfigUserDetails) -> KrillResult<Us
 }
 
 pub struct ConfigFileAuthProvider {
-    key: Vec<u8>,
     users: HashMap<String, UserDetails>,
+    session_key: CryptState,
     session_cache: Arc<LoginSessionCache>,
     fake_password_hash: String,
     fake_salt: String,
@@ -65,11 +65,11 @@ impl ConfigFileAuthProvider {
                     users.insert(k.clone(), get_checked_config_user(k, v)?);
                 }
 
-                let key = Self::init_session_key(config.clone())?;
+                let session_key = Self::init_session_key(config.clone())?;
 
                 Ok(ConfigFileAuthProvider {
-                    key,
                     users,
+                    session_key,
                     session_cache,
                     fake_password_hash: hex::encode("fake password hash"),
                     fake_salt: hex::encode("fake salt"),
@@ -79,10 +79,10 @@ impl ConfigFileAuthProvider {
         }
     }
 
-    fn init_session_key(config: Arc<Config>) -> KrillResult<Vec<u8>> {
+    fn init_session_key(config: Arc<Config>) -> KrillResult<CryptState> {
         let key_path = config.data_dir.join(LOGIN_SESSION_STATE_KEY_PATH);
         info!("Initializing login session encryption key {}", &key_path.display());
-        crypt::load_or_create_key(key_path.as_path())
+        crypt::crypt_init(key_path.as_path())
     }
 
     fn get_auth(&self, request: &hyper::Request<hyper::Body>) -> Option<Auth> {
@@ -107,7 +107,7 @@ impl AuthProvider for ConfigFileAuthProvider {
             Some(token) => {
                 // see if we can decode, decrypt and deserialize the users token
                 // into a login session structure
-                let session = self.session_cache.decode(token, &self.key, true)?;
+                let session = self.session_cache.decode(token, &self.session_key, true)?;
 
                 trace!("id={}, attributes={:?}", &session.id, &session.attributes);
 
@@ -163,7 +163,7 @@ impl AuthProvider for ConfigFileAuthProvider {
                 if let Some(user) = self.users.get(&id) {
                     let api_token =
                         self.session_cache
-                            .encode(&id, &user.attributes, HashMap::new(), &self.key, None)?;
+                            .encode(&id, &user.attributes, HashMap::new(), &self.session_key, None)?;
 
                     Ok(LoggedInUser {
                         token: api_token,
