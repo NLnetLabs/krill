@@ -627,7 +627,7 @@ async fn functional() {
         let multi_rta_ca2 = rta_show(ca2, multi_rta_name.clone()).await;
         rta_multi_cosign(ca1.clone(), multi_rta_name.clone(), multi_rta_ca2).await;
 
-        let _multi_signed = rta_show(ca1, multi_rta_name).await;
+        let _multi_signed = rta_show(ca1.clone(), multi_rta_name).await;
     }
 
     info("##################################################################");
@@ -657,13 +657,26 @@ async fn functional() {
     info("");
     {
         delete_ca(&ca3).await;
-        // Expect that CA3 no longer publishes certificates for CA4
+        // Expect that CA3 no longer publishes anything
         {
             assert!(
                 will_publish(
                     "CA3 should no longer publish anything after it has been deleted",
                     &ca3,
                     &[]
+                )
+                .await
+            );
+        }
+
+        // Expect that CA1 no longer publishes the certificate for CA3
+        // i.e. CA3 requested its revocation.
+        {
+            assert!(
+                will_publish(
+                    "CA1 should no longer publish the cer for CA3 after CA3 has been deleted",
+                    &ca1,
+                    &expected_mft_and_crl(&ca1, &rcn_0).await
                 )
                 .await
             );
