@@ -281,7 +281,7 @@ mod tests {
         use super::*;
 
         let key_bytes: [u8; 32] = [0; 32];
-        let KEY: CryptState = CryptState::from_key_bytes(key_bytes).unwrap();
+        let key: CryptState = CryptState::from_key_bytes(key_bytes).unwrap();
 
         fn one_attr_map(k: &str, v: &str) -> HashMap<String, String> {
             let mut m: HashMap<String, String> = HashMap::new();
@@ -297,10 +297,10 @@ mod tests {
             .with_decrypter(|_, v| Ok(v.to_vec()));
 
         // Add an item to the cache and verify that the cache now has 1 item
-        let item1_token = cache.encode("some id", &HashMap::new(), HashMap::new(), &KEY, None).unwrap();
+        let item1_token = cache.encode("some id", &HashMap::new(), HashMap::new(), &key, None).unwrap();
         assert_eq!(cache.size(), 1);
 
-        let item1 = cache.decode(item1_token, &KEY, true).unwrap();
+        let item1 = cache.decode(item1_token, &key, true).unwrap();
         assert_eq!(item1.id, "some id");
         assert_eq!(item1.attributes, HashMap::new());
         assert_eq!(item1.expires_in, None);
@@ -319,7 +319,7 @@ mod tests {
                 "other id",
                 &some_attrs,
                 some_secrets,
-                &KEY,
+                &key,
                 Some(Duration::from_secs(10)),
             )
             .unwrap();
@@ -335,7 +335,7 @@ mod tests {
         std::thread::sleep(Duration::from_secs(2));
         assert_eq!(cache.size(), 1);
 
-        let item2 = cache.decode(item2_token, &KEY, true).unwrap();
+        let item2 = cache.decode(item2_token, &key, true).unwrap();
         assert_eq!(item2.id, "other id");
         assert_eq!(item2.attributes, one_attr_map("some attr key", "some attr val"));
         assert_eq!(item2.expires_in, Some(Duration::from_secs(10)));
