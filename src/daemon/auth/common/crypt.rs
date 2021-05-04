@@ -69,12 +69,7 @@ pub struct CryptState {
 
 impl CryptState {
     pub fn from_key_bytes(key: [u8; CHACHA20_KEY_BYTE_LEN]) -> KrillResult<CryptState> {
-        let nonce = NonceState::new()?;
-
-        Ok(CryptState {
-            key,
-            nonce,
-        })
+        Ok(CryptState { key, nonce: NonceState::new()? })
     }
 
     pub fn from_key_vec(key_vec: Vec<u8>) -> KrillResult<CryptState> {
@@ -99,7 +94,7 @@ pub(crate) fn encrypt(key: &[u8], plaintext: &[u8], nonce: &NonceState) -> Krill
     let cipher_text = openssl::symm::encrypt_aead(cipher, &key, Some(&nonce), &UNUSED_AAD, plaintext, &mut tag)
         .map_err(|err| Error::Custom(format!("Encryption error: {}", &err)))?;
 
-    let mut payload = Vec::with_capacity(CLEARTEXT_PREFIX_LEN + cipher_text.len());
+    let mut payload = Vec::with_capacity(nonce.len() + tag.len() + cipher_text.len());
     payload.extend_from_slice(&nonce);
     payload.extend_from_slice(&tag);
     payload.extend(cipher_text);
@@ -110,7 +105,7 @@ pub(crate) fn encrypt(key: &[u8], plaintext: &[u8], nonce: &NonceState) -> Krill
 // Returns the plain text resulting from decryption, or an error.
 pub(crate) fn decrypt(key: &[u8], payload: &[u8]) -> KrillResult<Vec<u8>> {
     // TODO: Do we need to get the cipher each time or could we do this just once?
-    if payload.len() < CLEARTEXT_PREFIX_LEN {
+    if payload.len() <= CLEARTEXT_PREFIX_LEN {
         return Err(Error::Custom(format!("Decryption error: Insufficient data")));
     }
 
