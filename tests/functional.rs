@@ -687,36 +687,59 @@ async fn functional() {
         let multi_rta_ca2 = rta_show(ca2, multi_rta_name.clone()).await;
         rta_multi_cosign(ca1.clone(), multi_rta_name.clone(), multi_rta_ca2).await;
 
-        let _multi_signed = rta_show(ca1, multi_rta_name).await;
+        let _multi_signed = rta_show(ca1.clone(), multi_rta_name).await;
     }
 
     info("##################################################################");
     info("#                                                                #");
-    info("# Remove CA4, we expect that its objects are also removed since  #");
+    info("# Remove parent from CA4, we expect that objects are withdrawn   #");
+    info("#                                                                #");
+    info("##################################################################");
+    info("");
+    {
+        // Remove CA4 from CA3
+        delete_parent(&ca4, &ca3).await;
+
+        // Expect that CA4 withdraws all
+        {
+            assert!(will_publish("CA4 should withdraw objects when parent is removed", &ca4, &[]).await);
+        }
+
+        delete_ca(&ca4).await;
+    }
+
+    info("##################################################################");
+    info("#                                                                #");
+    info("# Remove CA3, we expect that its objects are also removed since  #");
     info("# we are doing this all gracefully.                              #");
     info("#                                                                #");
     info("##################################################################");
     info("");
     {
-        delete_ca(&ca4).await;
-
-        // Expect that CA3 no longer publishes certificates for CA4
+        delete_ca(&ca3).await;
+        // Expect that CA3 no longer publishes anything
         {
-            let mut expected_files = expected_mft_and_crl(&ca3, &rcn_0).await;
-            expected_files.append(&mut expected_mft_and_crl(&ca3, &rcn_1).await);
             assert!(
                 will_publish(
-                    "CA3 should no longer publish the cert for CA4 after CA4 has been deleted",
+                    "CA3 should no longer publish anything after it has been deleted",
                     &ca3,
-                    &expected_files
+                    &[]
                 )
                 .await
             );
         }
 
-        // Expect that CA4 withdraws all
+        // Expect that CA1 no longer publishes the certificate for CA3
+        // i.e. CA3 requested its revocation.
         {
-            assert!(will_publish("CA4 should withdraw all objects when it's deleted", &ca4, &[]).await);
+            assert!(
+                will_publish(
+                    "CA1 should no longer publish the cer for CA3 after CA3 has been deleted",
+                    &ca1,
+                    &expected_mft_and_crl(&ca1, &rcn_0).await
+                )
+                .await
+            );
         }
     }
 

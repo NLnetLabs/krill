@@ -51,7 +51,6 @@ use openidconnect::{
 
 use urlparse::{urlparse, GetQuery};
 
-use crate::commons::error::Error;
 use crate::commons::util::sha256;
 use crate::commons::KrillResult;
 use crate::commons::{actor::ActorDef, api::Token};
@@ -66,6 +65,7 @@ use crate::daemon::config::Config;
 use crate::daemon::http::auth::url_encode;
 use crate::daemon::http::auth::AUTH_CALLBACK_ENDPOINT;
 use crate::daemon::http::HttpResponse;
+use crate::{commons::error::Error, daemon::auth::common::crypt::CryptState};
 
 use super::config::{
     ConfigAuthOpenIDConnect, ConfigAuthOpenIDConnectClaim, ConfigAuthOpenIDConnectClaimSource as ClaimSource,
@@ -135,7 +135,7 @@ pub struct ProviderConnectionProperties {
 pub struct OpenIDConnectAuthProvider {
     config: Arc<Config>,
     session_cache: Arc<LoginSessionCache>,
-    session_key: Vec<u8>,
+    session_key: CryptState,
     conn: Arc<RwLock<Option<ProviderConnectionProperties>>>,
 }
 
@@ -713,10 +713,10 @@ impl OpenIDConnectAuthProvider {
         Ok(None)
     }
 
-    fn init_session_key(data_dir: &Path) -> KrillResult<Vec<u8>> {
+    fn init_session_key(data_dir: &Path) -> KrillResult<CryptState> {
         let key_path = data_dir.join(LOGIN_SESSION_STATE_KEY_PATH);
         info!("Initializing session encryption key {}", &key_path.display());
-        crypt::load_or_create_key(key_path.as_path())
+        crypt::crypt_init(key_path.as_path())
     }
 
     fn oidc_conf(&self) -> KrillResult<&ConfigAuthOpenIDConnect> {
