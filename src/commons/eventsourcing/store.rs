@@ -1,7 +1,6 @@
 use std::fmt;
 use std::{collections::HashMap, path::Path};
 
-use std::io;
 use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 
@@ -10,11 +9,14 @@ use serde::{Deserialize, Serialize};
 
 use rpki::x509::Time;
 
-use crate::commons::api::{CommandHistory, CommandHistoryCriteria, CommandHistoryRecord, Handle, Label};
 use crate::commons::eventsourcing::cmd::{Command, StoredCommandBuilder};
 use crate::commons::eventsourcing::{
     Aggregate, Event, KeyStoreKey, KeyValueError, KeyValueStore, PostSaveEventListener, StoredCommand,
     WithStorableDetails,
+};
+use crate::commons::{
+    api::{CommandHistory, CommandHistoryCriteria, CommandHistoryRecord, Handle, Label},
+    error::KrillIoError,
 };
 
 use super::PreSaveEventListener;
@@ -997,7 +999,7 @@ where
 /// This type defines possible Errors for the AggregateStore
 #[derive(Debug)]
 pub enum AggregateStoreError {
-    IoError(io::Error),
+    IoError(KrillIoError),
     KeyStoreError(KeyValueError),
     NotInitialized,
     UnknownAggregate(Handle),

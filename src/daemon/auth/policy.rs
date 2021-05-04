@@ -3,7 +3,12 @@ use std::{io::Read, str::FromStr, sync::Arc};
 use oso::{Oso, PolarClass, PolarValue, ToPolar};
 
 use crate::{
-    commons::{actor::Actor, api::Handle, error::Error, KrillResult},
+    commons::{
+        actor::Actor,
+        api::Handle,
+        error::{Error, KrillIoError},
+        KrillResult,
+    },
     constants::{ACTOR_DEF_ADMIN_TOKEN, ACTOR_DEF_ANON, ACTOR_DEF_KRILL, ACTOR_DEF_TESTBED},
     daemon::{
         auth::common::{permissions::Permission, NoResourceType},
@@ -119,7 +124,14 @@ impl AuthPolicy {
             info!("Loading user-defined authorization policy file {:?}", policy);
             let fname = policy.file_name().unwrap().to_str().unwrap();
             let mut buffer = Vec::new();
-            std::fs::File::open(policy.as_path())?.read_to_end(&mut buffer)?;
+            std::fs::File::open(policy.as_path())
+                .map_err(|e| {
+                    KrillIoError::new(format!("Could not open policy file '{}'", policy.to_string_lossy()), e)
+                })?
+                .read_to_end(&mut buffer)
+                .map_err(|e| {
+                    KrillIoError::new(format!("Could not read policy file '{}'", policy.to_string_lossy()), e)
+                })?;
             AuthPolicy::load_internal_policy(oso, &buffer, fname)?;
         }
 
