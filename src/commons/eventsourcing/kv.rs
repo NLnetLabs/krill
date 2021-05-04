@@ -403,9 +403,35 @@ impl KeyValueStoreDiskImpl {
         let tmp_path = self.scope_path(Some(format!(".{}", scope)));
         let end_path = self.scope_path(Some(format!("{}/{}", scope, sub_scope)));
 
-        fs::rename(&scope_path, &tmp_path)?;
-        fs::create_dir_all(&scope_path)?;
-        fs::rename(&tmp_path, &end_path)?;
+        fs::rename(&scope_path, &tmp_path).map_err(|e| {
+            KrillIoError::new(
+                format!(
+                    "Could not archive scope contents, rename from dir '{}' to tmp dir '{}' failed",
+                    scope_path.to_string_lossy(),
+                    tmp_path.to_string_lossy()
+                ),
+                e,
+            )
+        })?;
+        fs::create_dir_all(&scope_path).map_err(|e| {
+            KrillIoError::new(
+                format!(
+                    "Could not archive scope contents, recreating scope dir '{}' failed",
+                    scope_path.to_string_lossy(),
+                ),
+                e,
+            )
+        })?;
+        fs::rename(&tmp_path, &end_path).map_err(|e| {
+            KrillIoError::new(
+                format!(
+                    "Could not archive scope contents, rename tmp dir with contents '{}' into archive path '{}' failed",
+                    tmp_path.to_string_lossy(),
+                    end_path.to_string_lossy(),
+                ),
+                e,
+            )
+        })?;
 
         Ok(())
     }
