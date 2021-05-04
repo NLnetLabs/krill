@@ -414,7 +414,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
                     .with_header(Header::from_str("Content-Type: application/json").unwrap())
                     .with_data(discovery_doc.clone().as_bytes(), None),
             )
-            .map_err(|err| err.into())
+            .map_err(|err: std::io::Error| Error::custom(format!("IO error: {}", err)))
     }
 
     fn handle_jwks_request(request: Request, jwks_doc: &str) -> Result<(), Error> {
@@ -450,7 +450,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
                         None,
                     ),
             )
-            .map_err(|err| err.into())
+            .map_err(|err: std::io::Error| Error::custom(format!("IO error: {}", err)))
     }
 
     fn handle_login_request(
@@ -614,7 +614,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
 
         let request = simulate_server_failure(request, user, &url)?;
 
-        request.respond(response).map_err(|err| err.into())
+        request.respond(response).map_err(|err: std::io::Error| Error::custom(format!("IO error: {}", err)))
     }
 
     /// Implement [OpenID Connect RP-Initiated Logout 1.0 - draft 01][openid-connect-rpinitiated-1_0]
@@ -663,7 +663,8 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
                     })?,
                 );
     
-                return request.respond(response).map_err(|err| err.into());
+                return request.respond(response).map_err(|err: std::io::Error| Error::custom(format!("IO error: {}", err)));
+
             }
             None => return Err(Error::custom(format!("Error while logging out: no login session found")))
         };
@@ -699,7 +700,8 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
     ) -> Result<(), Error> {
         // TODO: handle both access and refresh tokens
         let mut body = String::new();
-        request.as_reader().read_to_string(&mut body)?;
+        request.as_reader().read_to_string(&mut body)
+            .map_err(|err: std::io::Error| Error::custom(format!("IO error: {}", err)))?;
 
         let query_params = parse_qs(body);
         let token = require_query_param(&query_params, "token")?;
@@ -722,7 +724,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
                         .with_header(Header::from_str("Content-Type: application/json").unwrap())
                         .with_data(err_body.as_bytes(), None),
                 )
-                .map_err(|err| err.into())
+                .map_err(|err: std::io::Error| Error::custom(format!("IO error: {}", err)))
         } else {
             let user = get_requesting_user(&request, known_users, login_sessions).ok();
             let request = simulate_server_failure(request, user, &url)?;
@@ -744,7 +746,8 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
 
             request
                 .respond(Response::empty(StatusCode(200)))
-                .map_err(|err| err.into())
+                .map_err(|err: std::io::Error| Error::custom(format!("IO error: {}", err)))
+
         }
     }
 
@@ -763,13 +766,13 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
                 info!("Login session found for user '{}' with access_token={:?} and id_token={:?}", &username, access_token, session.id_token);
                 request
                     .respond(Response::empty(StatusCode(200)))
-                    .map_err(|err| err.into())
+                    .map_err(|err: std::io::Error| Error::custom(format!("IO error: {}", err)))
             }
             None => {
                 info!("No login session found for user '{}'", &username);
                 request
                     .respond(Response::empty(StatusCode(400)))
-                    .map_err(|err| err.into())
+                    .map_err(|err: std::io::Error| Error::custom(format!("IO error: {}", err)))
             }
         }
     }
@@ -783,7 +786,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
         url: Url,
     ) -> Result<(), Error> {
         let mut body = String::new();
-        request.as_reader().read_to_string(&mut body)?;
+        request.as_reader().read_to_string(&mut body).map_err(|err: std::io::Error| Error::custom(format!("IO error: {}", err)))?;
 
         let query_params = parse_qs(body);
         let mut new_keys: Vec<String> = Vec::new();
@@ -865,7 +868,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
                                     .with_header(Header::from_str("Content-Type: application/json").unwrap())
                                     .with_data(token_doc.clone().as_bytes(), None),
                             )
-                            .map_err(|err| err.into())
+                            .map_err(|err: std::io::Error| Error::custom(format!("IO error: {}", err)))
                     } else {
                         Err(Error::custom(format!(
                             "Unknown temporary authorization code '{}'",
@@ -920,7 +923,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
                                         )
                                         .with_data(json_str.as_bytes(), None),
                                 )
-                                .map_err(|err| err.into());
+                                .map_err(|err: std::io::Error| Error::custom(format!("IO error: {}", err)))
                         } else if user.refresh {
                             let token_response = make_id_token_response(
                                 signing_key,
@@ -949,7 +952,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
                                         .with_header(Header::from_str("Content-Type: application/json").unwrap())
                                         .with_data(token_doc.clone().as_bytes(), None),
                                 )
-                                .map_err(|err| err.into())
+                                .map_err(|err: std::io::Error| Error::custom(format!("IO error: {}", err)))
                         } else {
                             trace!("Internal error for user session.id={} user={:?}", session.id, &user);
                             Err(Error::custom(format!("Internal error: cowardly refusing to generate a new token for user '{}' that should not get refresh tokens", session.id)))
@@ -962,7 +965,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
                                     .with_header(Header::from_str("Content-Type: application/json").unwrap())
                                     .with_data(json!({"error":"invalid_grant"}).to_string().as_bytes(), None),
                             )
-                            .map_err(|err| err.into())
+                            .map_err(|err: std::io::Error| Error::custom(format!("IO error: {}", err)))
                     }
                 } else {
                     warn!("Missing query parameter 'refresh_token': Responding with HTTP 400 'invalid_request'");
@@ -972,7 +975,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
                                 .with_header(Header::from_str("Content-Type: application/json").unwrap())
                                 .with_data(json!({"error":"invalid_request"}).to_string().as_bytes(), None),
                         )
-                        .map_err(|err| err.into())
+                        .map_err(|err: std::io::Error| Error::custom(format!("IO error: {}", err)))
                 }
             }
             Some(grant_type) => {
@@ -983,7 +986,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
                             .with_header(Header::from_str("Content-Type: application/json").unwrap())
                             .with_data(json!({"error":"unsupported_grant_type"}).to_string().as_bytes(), None),
                     )
-                    .map_err(|err| err.into())
+                    .map_err(|err: std::io::Error| Error::custom(format!("IO error: {}", err)))
             }
             None => {
                 warn!("Missing query parameter 'grant_type': Responding with HTTP 400 'invalid_request'");
@@ -993,7 +996,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
                             .with_header(Header::from_str("Content-Type: application/json").unwrap())
                             .with_data(json!({"error":"invalid_request"}).to_string().as_bytes(), None),
                     )
-                    .map_err(|err| err.into())
+                    .map_err(|err: std::io::Error| Error::custom(format!("IO error: {}", err)))
             }
         };
 
@@ -1059,7 +1062,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
                     .with_header(Header::from_str("Content-Type: application/json").unwrap())
                     .with_data(claims_doc.clone().as_bytes(), None),
             )
-            .map_err(|err| err.into())
+            .map_err(|err: std::io::Error| Error::custom(format!("IO error: {}", err)))
     }
 
     fn handle_request(
@@ -1122,12 +1125,13 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
             (_, Method::Post, "/test/enable") => {
                 info!("Enabling all OpenID Connect endpoints!");
                 *enabled = true;
-                return request.respond(Response::empty(StatusCode(200))).map_err(|err| err.into());
+                return request.respond(Response::empty(StatusCode(200))).map_err(|err: std::io::Error| Error::custom(format!("IO error: {}", err)));
+
             }
             (_, Method::Post, "/test/disable") => {
                 warn!("Disabling all OpenID Connect endpoints!");
                 *enabled = false;
-                return request.respond(Response::empty(StatusCode(200))).map_err(|err| err.into());
+                return request.respond(Response::empty(StatusCode(200))).map_err(|err: std::io::Error| Error::custom(format!("IO error: {}", err)));
             }
             _ => {}
         };
@@ -1193,12 +1197,14 @@ fn simulate_server_failure(request: Request, user: Option<KnownUser>, url: &Url)
                 }
                 FailureMode::Error500Response{ rel_path_prefix: prefix } if url.path.starts_with(prefix) => {
                     warn!("Simulating server failure: Responding with HTTP 500");
-                    request.respond(Response::empty(StatusCode(500)))?;
+                    request.respond(Response::empty(StatusCode(500)))
+                        .map_err(|err: std::io::Error| Error::custom(format!("IO error: {}", err)))?;
                     return Err(Error::custom("Aborting after deliberately returning a HTTP 500 response"));
                 }
                 FailureMode::Error503Response{ rel_path_prefix: prefix } if url.path.starts_with(prefix) => {
                     warn!("Simulating server failure: Responding with HTTP 503");
-                    request.respond(Response::empty(StatusCode(503)))?;
+                    request.respond(Response::empty(StatusCode(503)))
+                        .map_err(|err: std::io::Error| Error::custom(format!("IO error: {}", err)))?;
                     return Err(Error::custom("Aborting after deliberately returning a HTTP 503 response"));
                 }
                 _ => {
