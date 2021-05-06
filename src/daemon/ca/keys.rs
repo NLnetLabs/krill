@@ -524,9 +524,12 @@ impl KeyState {
         }
     }
 
-    /// Returns true if there is a new key
-    pub fn has_new_key(&self) -> bool {
-        matches!(self, KeyState::RollNew(_, _))
+    /// Returns the new key, iff there is a key roll in progress and there is a new key.
+    pub fn new_key(&self) -> Option<&CertifiedKey> {
+        match self {
+            KeyState::RollNew(new, _) => Some(new),
+            _ => None,
+        }
     }
 
     fn knows_key(&self, key_id: KeyIdentifier) -> bool {
