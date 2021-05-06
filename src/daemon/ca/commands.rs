@@ -106,7 +106,7 @@ pub enum CmdDet {
     //
     // RFC6489 dictates that 24 hours MUST be observed. However, shorter time frames can
     // be used for testing, and in case of emergency rolls.
-    KeyRollActivate(Duration, Arc<KrillSigner>),
+    KeyRollActivate(Duration, Arc<Config>, Arc<KrillSigner>),
 
     // Finish the keyroll after the parent confirmed that a key for a parent and resource
     // class has been revoked. I.e. remove the old key, and withdraw the crl and mft for it.
@@ -233,7 +233,7 @@ impl From<CmdDet> for StorableCaCommand {
             CmdDet::KeyRollInitiate(older_than, _) => StorableCaCommand::KeyRollInitiate {
                 older_than_seconds: older_than.num_seconds(),
             },
-            CmdDet::KeyRollActivate(staged_for, _) => StorableCaCommand::KeyRollActivate {
+            CmdDet::KeyRollActivate(staged_for, _, _) => StorableCaCommand::KeyRollActivate {
                 staged_for_seconds: staged_for.num_seconds(),
             },
             CmdDet::KeyRollFinish(resource_class_name, _) => StorableCaCommand::KeyRollFinish { resource_class_name },
@@ -391,8 +391,14 @@ impl CmdDet {
         eventsourcing::SentCommand::new(handle, None, CmdDet::KeyRollInitiate(duration, signer), actor)
     }
 
-    pub fn key_roll_activate(handle: &Handle, staging: Duration, signer: Arc<KrillSigner>, actor: &Actor) -> Cmd {
-        eventsourcing::SentCommand::new(handle, None, CmdDet::KeyRollActivate(staging, signer), actor)
+    pub fn key_roll_activate(
+        handle: &Handle,
+        staging: Duration,
+        config: Arc<Config>,
+        signer: Arc<KrillSigner>,
+        actor: &Actor,
+    ) -> Cmd {
+        eventsourcing::SentCommand::new(handle, None, CmdDet::KeyRollActivate(staging, config, signer), actor)
     }
 
     pub fn key_roll_finish(handle: &Handle, rcn: ResourceClassName, res: RevocationResponse, actor: &Actor) -> Cmd {
