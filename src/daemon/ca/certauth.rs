@@ -1293,7 +1293,12 @@ impl CertAuth {
             }
 
             if started {
-                info!("Started key roll for ca: {}, rc: {}", &self.handle, rcn);
+                info!(
+                    "Started key roll for ca: {}, rc: {}, under parent: {}",
+                    &self.handle,
+                    rcn,
+                    rc.parent_handle()
+                );
             }
         }
 
@@ -1326,7 +1331,12 @@ impl CertAuth {
             }
 
             if activated {
-                info!("Activated key for ca: {}, rc: {}", &self.handle, rcn);
+                info!(
+                    "Activated key for ca: {}, rc: {}, under parent: {}",
+                    &self.handle,
+                    rcn,
+                    rc.parent_handle()
+                );
             }
         }
 
@@ -1344,7 +1354,12 @@ impl CertAuth {
 
         let finish_details = my_rc.keyroll_finish()?;
 
-        info!("Finished key roll for ca: {}, rc: {}", &self.handle, rcn);
+        info!(
+            "Finished key roll for ca: {}, rc: {}, under parent: {}",
+            &self.handle,
+            rcn,
+            my_rc.parent_handle()
+        );
 
         Ok(vec![StoredEvent::new(self.handle(), self.version, finish_details)])
     }
