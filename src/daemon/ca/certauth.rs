@@ -809,7 +809,11 @@ impl CertAuth {
             Err(Error::CaChildExtraResources(self.handle.clone(), child_handle.clone()))
         } else {
             let child = self.get_child(child_handle)?;
-            if &resources != child.resources() {
+            let diff = resources.difference(child.resources());
+
+            if !diff.is_empty() {
+                info!("Updating resources for child '{}' under CA '{}': {}", child_handle, self.handle(), diff);
+                
                 Ok(vec![CaEvtDet::child_updated_resources(
                     &self.handle,
                     self.version,
@@ -1048,7 +1052,7 @@ impl CertAuth {
         signer: &KrillSigner,
     ) -> KrillResult<Vec<CaEvtDet>> {
         let repo = self.repository_contact()?;
-        rc.make_entitlement_events(entitlement, repo.repo_info(), signer)
+        rc.make_entitlement_events(self.handle(), entitlement, repo.repo_info(), signer)
     }
 
     /// Returns the open revocation requests for the given parent.
@@ -1116,7 +1120,7 @@ impl CertAuth {
         }) {
             let revoke_requests = rc.revoke(signer.deref())?;
 
-            debug!("Updating Entitlements for CA: {}, Removing RC: {}", &self.handle, &rcn);
+            info!("Updating Entitlements for CA: {}, Removing RC: {}", &self.handle, &rcn);
 
             event_details.push(CaEvtDet::ResourceClassRemoved {
                 resource_class_name: rcn.clone(),
@@ -1192,7 +1196,7 @@ impl CertAuth {
 
         let rc = self.resources.get(&rcn).ok_or(Error::ResourceClassUnknown(rcn))?;
 
-        let evt_details = rc.update_received_cert(rcvd_cert, &self.routes, config, signer.deref())?;
+        let evt_details = rc.update_received_cert(self.handle(), rcvd_cert, &self.routes, config, signer.deref())?;
 
         let mut res = vec![];
         let mut version = self.version;
