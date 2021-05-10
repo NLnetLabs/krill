@@ -5,26 +5,14 @@ use rpki::cert::Cert;
 use rpki::crypto::KeyIdentifier;
 use rpki::x509::{Time, Validity};
 
-use crate::{
-    commons::{
-        api::{
-            EntitlementClass, HexEncodedHash, IssuanceRequest, IssuedCert, ParentHandle, RcvdCert, ReplacedObject,
-            RepoInfo, RequestResourceLimit, ResourceClassInfo, ResourceClassName, ResourceSet, Revocation,
-            RevocationRequest,
-        },
-        crypto::{CsrInfo, KrillSigner, SignSupport},
-        error::Error,
-        KrillResult,
-    },
-    daemon::{
+use crate::{commons::{KrillResult, api::{EntitlementClass, Handle, HexEncodedHash, IssuanceRequest, IssuedCert, ParentHandle, RcvdCert, ReplacedObject, RepoInfo, RequestResourceLimit, ResourceClassInfo, ResourceClassName, ResourceSet, Revocation, RevocationRequest}, crypto::{CsrInfo, KrillSigner, SignSupport}, error::Error}, daemon::{
         ca::events::{ChildCertificateUpdates, RoaUpdates},
         ca::{
             self, ta_handle, CaEvtDet, CertifiedKey, ChildCertificates, CurrentKey, KeyState, NewKey, OldKey,
             PendingKey, Roas, Routes,
         },
         config::{Config, IssuanceTimingConfig},
-    },
-};
+    }};
 
 //------------ ResourceClass -----------------------------------------------
 
@@ -176,6 +164,7 @@ impl ResourceClass {
     /// Returns event details for receiving the certificate.
     pub fn update_received_cert(
         &self,
+        handle: &Handle,
         rcvd_cert: RcvdCert,
         routes: &Routes,
         config: &Config,
@@ -190,6 +179,14 @@ impl ResourceClass {
                 if rcvd_cert_ki != pending.key_id() {
                     Err(Error::KeyUseNoMatch(rcvd_cert_ki))
                 } else {
+                    info!(
+                        "Received certificate for CA '{}' under RC '{}', with resources: '{}' valid until: '{}'",
+                        handle,
+                        self.name,
+                        rcvd_cert.resources(),
+                        rcvd_cert.validity().not_after().to_rfc3339()
+                    );
+                    
                     let current_key = CertifiedKey::create(rcvd_cert);
                     Ok(vec![CaEvtDet::KeyPendingToActive {
                         resource_class_name: self.name.clone(),
@@ -197,7 +194,7 @@ impl ResourceClass {
                     }])
                 }
             }
-            KeyState::Active(current) => self.update_rcvd_cert_current(current, rcvd_cert, routes, config, signer),
+            KeyState::Active(current) => self.update_rcvd_cert_current(handle, current, rcvd_cert, routes, config, signer),
             KeyState::RollPending(pending, current) => {
                 if rcvd_cert_ki == pending.key_id() {
                     let new_key = CertifiedKey::create(rcvd_cert);
@@ -206,7 +203,7 @@ impl ResourceClass {
                         new_key,
                     }])
                 } else {
-                    self.update_rcvd_cert_current(current, rcvd_cert, routes, config, signer)
+                    self.update_rcvd_cert_current(handle, current, rcvd_cert, routes, config, signer)
                 }
             }
             KeyState::RollNew(new, current) => {
@@ -217,18 +214,19 @@ impl ResourceClass {
                         rcvd_cert,
                     }])
                 } else {
-                    self.update_rcvd_cert_current(current, rcvd_cert, routes, config, signer)
+                    self.update_rcvd_cert_current(handle, current, rcvd_cert, routes, config, signer)
                 }
             }
             KeyState::RollOld(current, _old) => {
                 // We will never request a new certificate for an old key
-                self.update_rcvd_cert_current(current, rcvd_cert, routes, config, signer)
+                self.update_rcvd_cert_current(handle, current, rcvd_cert, routes, config, signer)
             }
         }
     }
 
     fn update_rcvd_cert_current(
         &self,
+        handle: &Handle,
         current_key: &CurrentKey,
         rcvd_cert: RcvdCert,
         routes: &Routes,
@@ -248,8 +246,18 @@ impl ResourceClass {
             rcvd_cert: rcvd_cert.clone(),
         }];
 
-        if rcvd_resources != current_key.incoming_cert().resources() {
-            debug!("Received a new certificate for resource class: {}, with resources: {}, will now re-issue certs and ROAs if needed.", self.name, rcvd_resources);
+        let rcvd_resources_diff = rcvd_resources.difference(current_key.incoming_cert().resources());
+
+        if !rcvd_resources_diff.is_empty() {
+
+            info!(
+                "Received new certificate under CA '{}' under RC '{}' with changed resources: '{}', valid until: {}",
+                handle,
+                self.name,
+                rcvd_resources_diff,
+                rcvd_cert.validity().not_after().to_rfc3339()
+            );
+            
             // Check whether child certificates should be shrunk
             //
             // NOTE: We need to pro-actively shrink child certificates to avoid invalidating them.
@@ -291,6 +299,13 @@ impl ResourceClass {
                     updates,
                 });
             }
+        } else {
+            info!(
+                "Received new certificate for CA '{}' under RC '{}', valid until: {}",
+                handle,
+                self.name,
+                rcvd_cert.validity().not_after().to_rfc3339()
+            )
         }
 
         Ok(res)
@@ -304,12 +319,13 @@ impl ResourceClass {
     /// ARIN - Krill is sometimes told to just drop all resources.
     pub fn make_entitlement_events(
         &self,
+        handle: &Handle,
         entitlement: &EntitlementClass,
         base_repo: &RepoInfo,
         signer: &KrillSigner,
     ) -> KrillResult<Vec<CaEvtDet>> {
         self.key_state
-            .make_entitlement_events(self.name.clone(), entitlement, base_repo, &self.name_space, signer)
+            .make_entitlement_events(handle, self.name.clone(), entitlement, base_repo, &self.name_space, signer)
     }
 
     /// Request new certificates for all keys when the base repo changes.
