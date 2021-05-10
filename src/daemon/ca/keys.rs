@@ -106,6 +106,12 @@ impl CertifiedKey {
             // This is rather odd. The parent should just exclude the resource class in the
             // eligible entitlements instead. So, we will essentially just ignore this until
             // they do.
+            warn!(
+                "Will NOT request certificate for CA '{}' under RC '{}', the eligible not after time is set in the past: {}",
+                handle,
+                rcn,
+                new_not_after.to_rfc3339()
+            );
             false
         } else if until_not_after_millis == until_new_not_after_millis {
             // no change needed
