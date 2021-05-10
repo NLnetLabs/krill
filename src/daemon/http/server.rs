@@ -21,10 +21,10 @@ use hyper::server::conn::AddrIncoming;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::Method;
 
-use crate::commons::api::{
+use crate::{commons::api::{
     BgpStats, ChildHandle, CommandHistoryCriteria, Handle, ParentCaContact, ParentHandle, PublisherList,
     RoaDefinitionUpdates, RtaName, Token,
-};
+}, constants::KRILL_ENV_HTTP_LOG_INFO};
 use crate::commons::api::{ParentCaReq, RepositoryContact};
 use crate::commons::bgp::BgpAnalysisAdvice;
 use crate::commons::error::Error;
@@ -176,8 +176,12 @@ impl RequestLogger {
                     _ => {}
                 }
 
-                info!("{} {} {}", self.req_method, self.req_path, response.status());
-
+                if env::var(KRILL_ENV_HTTP_LOG_INFO).is_ok() {
+                    info!("{} {} {}", self.req_method, self.req_path, response.status());
+                } else {
+                    debug!("{} {} {}", self.req_method, self.req_path, response.status());
+                }
+                
                 if response.loggable() && log_enabled!(log::Level::Trace) {
                     trace!("Response: headers={:?} body={:?}", response.headers(), response.body());
                 }
