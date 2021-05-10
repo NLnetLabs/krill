@@ -21,6 +21,7 @@ pub const KRILL_ENV_LOG_LEVEL: &str = "KRILL_LOG_LEVEL";
 pub const KRILL_ENV_ADMIN_TOKEN: &str = "KRILL_ADMIN_TOKEN";
 pub const KRILL_ENV_ADMIN_TOKEN_DEPRECATED: &str = "KRILL_AUTH_TOKEN";
 pub const KRILL_ENV_SERVER_PORT: &str = "KRILL_SERVER_PORT";
+pub const KRILL_ENV_HTTP_LOG_INFO: &str = "KRILL_HTTP_LOG_INFO";
 
 pub fn enable_test_mode() {
     std::env::set_var(KRILL_ENV_TEST, "1");
