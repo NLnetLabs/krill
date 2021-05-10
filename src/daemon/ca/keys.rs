@@ -114,7 +114,11 @@ impl CertifiedKey {
             );
             false
         } else if until_not_after_millis == until_new_not_after_millis {
-            // no change needed
+            debug!(
+                "Will not request new certificate for CA '{}' under RC '{}'. Resources and not after time are unchanged\n",
+                handle,
+                rcn,
+            );
             false
         } else if until_new_not_after_millis < until_not_after_millis {
             warn!(
