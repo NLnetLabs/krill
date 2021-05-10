@@ -18,9 +18,10 @@ use crate::{
     commons::{
         api::{
             self, CertAuthInfo, ChildHandle, EntitlementClass, Entitlements, Handle, IdCertPem, IssuanceRequest,
-            IssuedCert, ParentCaContact, ParentHandle, RcvdCert, RepoInfo, RepositoryContact, RequestResourceLimit,
-            ResourceClassName, ResourceSet, Revocation, RevocationRequest, RevocationResponse, RoaDefinition, RtaList,
-            RtaName, RtaPrepResponse, SigningCert, StorableCaCommand, TaCertDetails, TrustAnchorLocator,
+            IssuedCert, ObjectName, ParentCaContact, ParentHandle, RcvdCert, RepoInfo, RepositoryContact,
+            RequestResourceLimit, ResourceClassName, ResourceSet, Revocation, RevocationRequest, RevocationResponse,
+            RoaDefinition, RtaList, RtaName, RtaPrepResponse, SigningCert, StorableCaCommand, TaCertDetails,
+            TrustAnchorLocator,
         },
         crypto::{CsrInfo, IdCert, IdCertBuilder, KrillSigner, ProtocolCms, ProtocolCmsBuilder},
         error::{Error, RoaDeltaError},
@@ -382,10 +383,14 @@ impl Aggregate for CertAuth {
     }
 
     fn process_command(&self, command: Cmd) -> KrillResult<Vec<CaEvt>> {
-        info!(
-            "Sending command to CA '{}', version: {}: {}",
-            self.handle, self.version, command
-        );
+        if log_enabled!(log::Level::Trace) {
+            trace!(
+                "Sending command to CA '{}', version: {}: {}",
+                self.handle,
+                self.version,
+                command
+            );
+        }
 
         match command.into_details() {
             // trust anchor
@@ -578,6 +583,8 @@ impl CertAuth {
 
         let ta_cert_details = TaCertDetails::new(cert, resources, tal);
 
+        info!("Created Trust Anchor");
+
         Ok(vec![StoredEvent::new(
             &self.handle,
             self.version,
@@ -731,6 +738,11 @@ impl CertAuth {
         } else if self.has_child(&child) {
             Err(Error::CaChildDuplicate(self.handle.clone(), child))
         } else {
+            info!(
+                "CA '{}' added child '{}' with resources '{}'",
+                self.handle, child, resources
+            );
+
             Ok(vec![CaEvtDet::child_added(
                 &self.handle,
                 self.version,
@@ -765,6 +777,12 @@ impl CertAuth {
 
         let issued =
             self.issue_child_certificate(&child, rcn.clone(), csr_info, limit, &config.issuance_timing, &signer)?;
+
+        let cert_name = ObjectName::from(issued.cert());
+        info!(
+            "CA '{}' issued certificate '{}' to child '{}'",
+            self.handle, cert_name, child
+        );
 
         let issued_event = CaEvtDet::child_certificate_issued(
             &self.handle,
@@ -809,11 +827,15 @@ impl CertAuth {
             Err(Error::CaChildExtraResources(self.handle.clone(), child_handle.clone()))
         } else {
             let child = self.get_child(child_handle)?;
-            let diff = resources.difference(child.resources());
 
-            if !diff.is_empty() {
-                info!("Updating resources for child '{}' under CA '{}': {}", child_handle, self.handle(), diff);
-                
+            let resources_diff = resources.difference(child.resources());
+
+            if !resources_diff.is_empty() {
+                info!(
+                    "CA '{}' update child '{}' resources: {}",
+                    self.handle, child_handle, resources_diff
+                );
+
                 Ok(vec![CaEvtDet::child_updated_resources(
                     &self.handle,
                     self.version,
@@ -821,6 +843,13 @@ impl CertAuth {
                     resources,
                 )])
             } else {
+                // Using 'debug' here, because there are possible use cases where updating the child resources to some expected
+                // resource set should be considered a no-op without complaints. E.g. if there is a background job calling
+                // the API and setting entitlements.
+                debug!(
+                    "CA '{}' update child '{}' resources has no effect, child already holds all resources",
+                    self.handle, child_handle
+                );
                 Ok(vec![])
             }
         }
@@ -828,20 +857,30 @@ impl CertAuth {
 
     /// Updates child IdCert
     fn child_update_id(&self, child_handle: &Handle, id_cert: IdCert) -> KrillResult<Vec<CaEvt>> {
-        let mut res = vec![];
-
         let child = self.get_child(child_handle)?;
 
         if &id_cert != child.id_cert() {
-            res.push(CaEvtDet::child_updated_cert(
+            info!(
+                "CA '{}' updated child '{}' cert. New key id: {}",
+                self.handle,
+                child_handle,
+                id_cert.subject_public_key_info().key_identifier()
+            );
+
+            Ok(vec![CaEvtDet::child_updated_cert(
                 &self.handle,
                 self.version,
                 child_handle.clone(),
                 id_cert,
-            ));
+            )])
+        } else {
+            // Using 'debug' here, because of possible no-op use cases where the API is called from a background job.
+            debug!(
+                "CA '{}' updated child '{}' cert had no effect. Child ID certificate is identical",
+                self.handle, child_handle
+            );
+            Ok(vec![])
         }
-
-        Ok(res)
     }
 
     /// Revokes a key for a child. So, add the last cert for the key to the CRL, and withdraw
@@ -860,6 +899,12 @@ impl CertAuth {
 
         let mut child_certificate_updates = ChildCertificateUpdates::default();
         child_certificate_updates.remove(key);
+
+        let cert_name = ObjectName::new(&key, "cer");
+        info!(
+            "CA '{}' revoked certificate '{}' for child '{}'",
+            handle, cert_name, child_handle
+        );
 
         let rev = CaEvtDet::child_revoke_key(handle, version, child_handle, rcn.clone(), key);
         let upd = CaEvtDet::child_certificates_updated(handle, version + 1, rcn, child_certificate_updates);
@@ -892,6 +937,11 @@ impl CertAuth {
 
             let mut cert_updates = ChildCertificateUpdates::default();
             for issued in issued_certs {
+                let cert_name = ObjectName::from(issued.cert());
+                info!(
+                    "CA '{}' revoked certificate '{}' for child '{}'",
+                    handle, cert_name, child_handle
+                );
                 cert_updates.remove(issued.subject_key_identifier())
             }
             res.push(CaEvtDet::child_certificates_updated(
@@ -903,6 +953,7 @@ impl CertAuth {
             version += 1;
         }
 
+        info!("CA '{}' removed child '{}'", handle, child_handle);
         res.push(CaEvtDet::child_removed(handle, version, child_handle.clone()));
 
         Ok(res)
@@ -921,6 +972,11 @@ impl CertAuth {
     fn generate_new_id_key(&self, signer: Arc<KrillSigner>) -> KrillResult<Vec<CaEvt>> {
         let id = Rfc8183Id::generate(&signer)?;
 
+        info!(
+            "CA '{}' generated new ID certificate with key id: {}",
+            self.handle,
+            id.key_id()
+        );
         Ok(vec![CaEvtDet::id_updated(&self.handle, self.version, id)])
     }
 
@@ -981,6 +1037,7 @@ impl CertAuth {
         } else if self.is_ta() {
             Err(Error::TaNotAllowed)
         } else {
+            info!("CA '{}' added parent '{}'", self.handle, parent);
             Ok(vec![CaEvtDet::parent_added(&self.handle, self.version, parent, info)])
         }
     }
@@ -991,6 +1048,8 @@ impl CertAuth {
             Err(Error::CaParentUnknown(self.handle.clone(), parent))
         } else {
             let mut event_details = vec![];
+
+            info!("CA '{}' removed parent '{}'", self.handle, parent);
 
             for (rcn, rc) in &self.resources {
                 if rc.parent_handle() == &parent {
@@ -1016,6 +1075,7 @@ impl CertAuth {
         } else if self.is_ta() {
             Err(Error::TaNotAllowed)
         } else {
+            info!("CA '{}' updated contact info for parent '{}'", self.handle, parent);
             Ok(vec![CaEvtDet::parent_updated(&self.handle, self.version, parent, info)])
         }
     }
@@ -1146,6 +1206,8 @@ impl CertAuth {
 
                     let resource_class_name = ResourceClassName::from(next_class_name);
                     next_class_name += 1;
+
+                    info!("CA '{}' received entitlement under parent '{}', created resource class '{}' and made certificate request", self.handle, parent_handle, resource_class_name);
 
                     let ns = resource_class_name.to_string();
 
@@ -1319,8 +1381,13 @@ impl CertAuth {
         }
 
         // register updated repo
-        let evt_dets = vec![CaEvtDet::RepoUpdated { contact }];
+        info!(
+            "CA '{}' updated repository. Service URI will be: {}",
+            self.handle,
+            contact.service_uri()
+        );
 
+        let evt_dets = vec![CaEvtDet::RepoUpdated { contact }];
         Ok(self.events_from_details(evt_dets))
     }
 }
@@ -1345,6 +1412,8 @@ impl CertAuth {
         for (rcn, rc) in self.resources.iter() {
             let updates = rc.update_roas(&routes, None, config, signer.deref())?;
             if updates.contains_changes() {
+                info!("CA '{}' under RC '{}' updated ROAs: {}", self.handle, rcn, updates);
+
                 evt_dets.push(CaEvtDet::RoasUpdated {
                     resource_class_name: rcn.clone(),
                     updates,
@@ -1362,6 +1431,11 @@ impl CertAuth {
         for (rcn, rc) in self.resources.iter() {
             let updates = rc.renew_roas(&config.issuance_timing, signer)?;
             if updates.contains_changes() {
+                info!(
+                    "CA '{}' reissued ROAs under RC '{}' before they would expire: {}",
+                    self.handle, rcn, updates
+                );
+
                 evt_dets.push(CaEvtDet::RoasUpdated {
                     resource_class_name: rcn.clone(),
                     updates,
@@ -1507,6 +1581,8 @@ impl CertAuth {
 
         let rta = SignedRta::new(resources, revocation_info, rta);
 
+        info!("CA '{}' signed an RTA object named '{}'", self.handle, name);
+
         // Return the RTA
         Ok(vec![StoredEvent::new(
             self.handle(),
@@ -1626,6 +1702,11 @@ impl CertAuth {
         }
 
         let prepared = PreparedRta::new(resources, validity, keys);
+
+        info!(
+            "CA '{}' prepared an RTA object named '{}' for multi-signing",
+            self.handle, name
+        );
 
         Ok(vec![StoredEvent::new(
             self.handle(),
