@@ -1013,7 +1013,7 @@ impl fmt::Display for ResourceSet {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ResourceSetDiff {
     added: ResourceSet,
-    removed: ResourceSet
+    removed: ResourceSet,
 }
 
 impl ResourceSetDiff {
@@ -1028,13 +1028,33 @@ impl fmt::Display for ResourceSetDiff {
             write!(f, "<no changes in resources>")?;
         }
         if !self.added.is_empty() {
-            write!(f, "Added: {}", self.added)?;
-            if !self.removed.is_empty() {    
+            write!(f, "Added:")?;
+            if !self.added.asn.is_empty() {
+                write!(f, " asn: {}", self.added.asn)?;
+            }
+            if !self.added.v4.is_empty() {
+                write!(f, " ipv4: {}", self.added.v4())?;
+            }
+            if !self.added.v6.is_empty() {
+                write!(f, " ipv6: {}", self.added.v6())?;
+            }
+
+            if !self.removed.is_empty() {
                 write!(f, " ")?;
             }
         }
         if !self.removed.is_empty() {
-            write!(f, "Removed: {}", self.removed)?;
+            write!(f, "Removed:")?;
+
+            if !self.removed.asn.is_empty() {
+                write!(f, " asn: {}", self.removed.asn)?;
+            }
+            if !self.removed.v4.is_empty() {
+                write!(f, " ipv4: {}", self.removed.v4())?;
+            }
+            if !self.removed.v6.is_empty() {
+                write!(f, " ipv6: {}", self.removed.v6())?;
+            }
         }
 
         Ok(())
@@ -2344,7 +2364,6 @@ mod test {
         let expected_diff = ResourceSetDiff {
             added: ResourceSet::from_strs(asn_added, "", ipv6_added).unwrap(),
             removed: ResourceSet::from_strs("", ipv4_removed, "").unwrap(),
-
         };
 
         assert!(!diff.is_empty());

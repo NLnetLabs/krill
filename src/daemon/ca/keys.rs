@@ -5,7 +5,11 @@ use serde::{Deserialize, Serialize};
 use rpki::crypto::KeyIdentifier;
 use rpki::x509::Time;
 
-use crate::commons::api::{ActiveInfo, CertifiedKeyInfo, EntitlementClass, Handle, IssuanceRequest, PendingInfo, PendingKeyInfo, RcvdCert, RepoInfo, RequestResourceLimit, ResourceClassKeysInfo, ResourceClassName, ResourceSet, RevocationRequest, RollNewInfo, RollOldInfo, RollPendingInfo};
+use crate::commons::api::{
+    ActiveInfo, CertifiedKeyInfo, EntitlementClass, Handle, IssuanceRequest, PendingInfo, PendingKeyInfo, RcvdCert,
+    RepoInfo, RequestResourceLimit, ResourceClassKeysInfo, ResourceClassName, ResourceSet, RevocationRequest,
+    RollNewInfo, RollOldInfo, RollPendingInfo,
+};
 use crate::commons::crypto::KrillSigner;
 use crate::commons::error::Error;
 use crate::commons::KrillResult;
@@ -70,16 +74,20 @@ impl CertifiedKey {
         self.old_repo = Some(repo.clone())
     }
 
-    pub fn wants_update(&self, handle: &Handle, rcn: &ResourceClassName, new_resources: &ResourceSet, new_not_after: Time) -> bool {
+    pub fn wants_update(
+        &self,
+        handle: &Handle,
+        rcn: &ResourceClassName,
+        new_resources: &ResourceSet,
+        new_not_after: Time,
+    ) -> bool {
         // If resources have changed, then we need to request a new certificate.
         let resources_diff = new_resources.difference(self.incoming_cert.resources());
 
         if !resources_diff.is_empty() {
             info!(
-                "Will request new certificate for CA '{}' under RC '{}'. Resources have changed:{}\n",
-                handle,
-                rcn,
-                resources_diff
+                "Will request new certificate for CA '{}' under RC '{}'. Resources have changed: '{}'",
+                handle, rcn, resources_diff
             );
             return true;
         }
@@ -123,11 +131,12 @@ impl CertifiedKey {
         } else if until_new_not_after_millis < until_not_after_millis {
             warn!(
                 "Parent of CA '{}' reduced not after time for certificate under RC '{}'",
-                handle,
-                rcn,
+                handle, rcn,
             );
             true
-        } else if until_not_after_millis <= 0 || (until_new_not_after_millis as f64 / until_not_after_millis as f64) > 1.1_f64 {
+        } else if until_not_after_millis <= 0
+            || (until_new_not_after_millis as f64 / until_not_after_millis as f64) > 1.1_f64
+        {
             info!(
                 "Will request new certificate for CA '{}' under RC '{}'. Not after time increased to: {}\n",
                 handle,
