@@ -1,6 +1,6 @@
 # Change Log
 
-## 0.9.0 RC
+## 0.9.0 RC 2
 
 Welcome to the Krill 0.9.0 Release Candidate.
 
@@ -21,7 +21,7 @@ migration of course, but still we would very much like to encourage existing use
 this further on real data.
 
 In order to test the upgrade you can do the following:
-- install Krill 0.9.0-rc1 on a test machine
+- install Krill 0.9.0-rc2 on a test machine
 - copy over your existing data directory, but exclude the `keys` directory
 - set the ENV variable KRILL_UPGRADE_ONLY
 - start krill v0.9.0-rc1 using your copied data directory
@@ -161,6 +161,14 @@ the rather unlikely case that a parent CA temporarily removed one of your resour
 
 Let the Publication Server write the notification.xml file to a new file, and then rename it.
 This prevents that Relying Parties can retrieve a half-written file. (#352)
+
+Logging is now much less noisy. And Krill CAs will report *which* new resources were received
+from, or removed by a parent. As part of this change we also fix a harmless, but annoying, bug
+in certificate request logic. Krill would wrongfully report that a parent had reduced the 
+eligible 'not after' time, when in fact it had extended it. Furthermore Krill will now request
+a new certificate only if the new 'not after' time is more than 10% further into the future
+compared to the current certificate - this is safe and will reduce noise levels where parent
+CAs use a simple strategy which returns a new 'not after' time for every request. (#513, #514)
 
 ## 0.8.2 'Can't touch this'
 
