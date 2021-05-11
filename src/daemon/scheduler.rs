@@ -250,7 +250,7 @@ fn make_cas_refresh(ca_server: Arc<CaManager>, refresh_rate: u32, actor: Actor) 
     SkippingScheduler::run(refresh_rate, "CA certificate refresh", move || {
         let mut rt = Runtime::new().unwrap();
         rt.block_on(async {
-            info!("Triggering background refresh for all CAs");
+            debug!("Triggering background refresh for all CAs");
             ca_server.cas_refresh_all(&actor).await;
         });
     })
