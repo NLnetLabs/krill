@@ -19,7 +19,7 @@ name: Packaging
 on:
   push:
     branches:
-    - master
+    - main
     paths-ignore:
       - '.dockerignore'
       - '.github/workflow/pkg.yml'
@@ -33,7 +33,7 @@ on:
   # Hmm, annoying, do we really have to duplicate this?
   pull_request:
     branches:
-    - master
+    - main
     paths-ignore:
       - '.dockerignore'
       - '.github/workflow/pkg.yml'
