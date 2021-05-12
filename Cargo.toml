@@ -31,6 +31,7 @@ hex                   = "^0.4"
 hyper                 = "^0.13"
 intervaltree          = "0.2.6"
 jmespatch             = { version = "^0.3", features = ["sync"], optional = true }
+kmip                  = { version = "0.1.0", path = "/home/ximon/Documents/code/krill/hsm/kmip/visa/test-client", package = "test-client", optional = true }
 libflate              = "^1.0"
 log                   = "^0.4"
 once_cell             = { version = "^1.7.2", optional = true }
@@ -69,7 +70,7 @@ functional-tests = []
 ui-tests = []
 extra-debug = [ "rpki/extra-debug" ]
 static-openssl = [ "openssl/vendored" ]
-hsm = [ "once_cell", "pkcs11" ]
+hsm = [ "once_cell", "pkcs11", "kmip" ]
 
 # Make sure that Krill crashes on panics, rather than losing threads and
 # limping on in a bad state.

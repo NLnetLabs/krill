@@ -15,7 +15,7 @@ use syslog::Facility;
 
 use rpki::uri;
 
-use crate::commons::util::ext_serde;
+use crate::commons::{crypto::ConfigSignerKmip, util::ext_serde};
 use crate::commons::{
     api::{PublicationServerUris, PublisherHandle, Token},
     error::KrillIoError,
@@ -255,6 +255,9 @@ pub struct Config {
 
     #[cfg(feature = "hsm")]
     pub signer_pkcs11: Option<ConfigSignerPkcs11>,
+
+    #[cfg(feature = "hsm")]
+    pub signer_kmip: Option<ConfigSignerKmip>,
 
     #[serde(default = "ConfigDefaults::ca_refresh")]
     pub ca_refresh: u32,
@@ -502,6 +505,8 @@ impl Config {
         let signer_type = SignerType::OpenSsl;
         #[cfg(feature = "hsm")]
         let signer_pkcs11 = None;
+        #[cfg(feature = "hsm")]
+        let signer_kmip = None;
         let ca_refresh = 1;
         let post_limit_api = ConfigDefaults::post_limit_api();
         let post_limit_rfc8181 = ConfigDefaults::post_limit_rfc8181();
@@ -588,6 +593,8 @@ impl Config {
             signer_type,
             #[cfg(feature = "hsm")]
             signer_pkcs11,
+            #[cfg(feature = "hsm")]
+            signer_kmip,
             ca_refresh,
             post_limit_api,
             post_limit_rfc8181,
@@ -1015,6 +1022,8 @@ pub enum SignerType {
     OpenSsl,
     #[cfg(feature = "hsm")]
     Pkcs11,
+    #[cfg(feature = "hsm")]
+    Kmip
 }
 
 impl<'de> Deserialize<'de> for SignerType {
@@ -1027,12 +1036,14 @@ impl<'de> Deserialize<'de> for SignerType {
             "openssl" => Ok(SignerType::OpenSsl),
             #[cfg(feature = "hsm")]
             "pkcs11" => Ok(SignerType::Pkcs11),
+            #[cfg(feature = "hsm")]
+            "kmip" => Ok(SignerType::Kmip),
             _ => {
                 #[cfg(not(feature = "hsm"))]
                 let msg = format!("expected \"openssl\", found: \"{}\"", string);
                 #[cfg(feature = "hsm")]
                 let msg = format!(
-                    "expected \"openssl\", or \"pkcs11\", found: \"{}\"",
+                    "expected \"openssl\", \"pkcs11\" or \"kmip\", found: \"{}\"",
                     string
                 );
                 Err(de::Error::custom(msg))

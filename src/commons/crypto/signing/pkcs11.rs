@@ -25,9 +25,7 @@ use serde::Deserialize;
 #[derive(Clone, Debug, Deserialize)]
 pub struct ConfigSignerPkcs11 {
     pub lib_path: String,
-
     pub user_pin: String,
-
     pub slot_id: CK_SLOT_ID,
 }
 
@@ -424,13 +422,23 @@ impl Pkcs11Signer {
         priv_template.push(CK_ATTRIBUTE::new(CKA_EXTRACTABLE).with_bool(&CK_FALSE));
         priv_template.push(CK_ATTRIBUTE::new(CKA_LABEL).with_string("Krill"));
 
-        let param = [CKM_SHA256_RSA_PKCS];
-        let mut allowed_mechanisms_attr = CK_ATTRIBUTE::new(CKA_ALLOWED_MECHANISMS);
-        allowed_mechanisms_attr.ulValueLen = ::std::mem::size_of::<CK_MECHANISM_TYPE>() as u64; // TODO: is 'as' safe?
-        allowed_mechanisms_attr.pValue = &param as *const CK_MECHANISM_TYPE as CK_VOID_PTR;
+        // Attempting to use CKA_ALLOWED_MECHANISMS with Kryptus causes error CKA_INVALID_MECHANISM_TYPE with:
+        //   > command_line_client.py man get-knet-server-version
+        //     Version:  1.25.0
+        //
+        //   > pkcs11-tool --module /path/to/libkNETPKCS11.so -I
+        //     Cryptoki version 2.40
+        //     Manufacturer     KRYPTUS
+        //     Library          PKCS11 (ver 1.7)
+        //     Using slot 0 with a present token (0x3e8)
 
-        pub_template.push(allowed_mechanisms_attr);
-        priv_template.push(allowed_mechanisms_attr);
+        // let param = [CKM_SHA256_RSA_PKCS];
+        // let mut allowed_mechanisms_attr = CK_ATTRIBUTE::new(CKA_ALLOWED_MECHANISMS);
+        // allowed_mechanisms_attr.ulValueLen = ::std::mem::size_of::<CK_MECHANISM_TYPE>() as u64; // TODO: is 'as' safe?
+        // allowed_mechanisms_attr.pValue = &param as *const CK_MECHANISM_TYPE as CK_VOID_PTR;
+
+        // pub_template.push(allowed_mechanisms_attr);
+        // priv_template.push(allowed_mechanisms_attr);
 
         trace!(
             "PKCS#11: Generating key pair with templates: public key={:?}, private key={:?}",
@@ -513,6 +521,26 @@ impl Pkcs11Signer {
 
         Ok(sig)
     }
+
+    fn delete_key_pair(&self, key_id: &KeyIdentifier) -> Result<(), SignerError> {
+        debug!("PKCS#11: Deleting key pair with ID {}", &key_id);
+
+        let session = self.open_session()?;
+
+        if let Ok(pub_handle) = self.find_key(key_id, CKO_PUBLIC_KEY) {
+            self.ctx
+                .destroy_object(*session, pub_handle)
+                .map_err(|err| SignerError::Pkcs11Error(format!("Failed to delete public key: {}", err)))?;
+        }
+
+        if let Ok(priv_handle) = self.find_key(key_id, CKO_PRIVATE_KEY) {
+            self.ctx
+                .destroy_object(*session, priv_handle)
+                .map_err(|err| SignerError::Pkcs11Error(format!("Failed to delete private key: {}", err)))?;
+        }
+
+        Ok(())
+    }
 }
 
 impl Signer for Pkcs11Signer {
@@ -532,23 +560,7 @@ impl Signer for Pkcs11Signer {
     }
 
     fn destroy_key(&mut self, key_id: &Self::KeyId) -> Result<(), KeyError<Self::Error>> {
-        debug!("PKCS#11: Deleting key pair with ID {}", &key_id);
-
-        let session = self.open_session()?;
-
-        if let Ok(pub_handle) = self.find_key(key_id, CKO_PUBLIC_KEY) {
-            self.ctx
-                .destroy_object(*session, pub_handle)
-                .map_err(|err| SignerError::Pkcs11Error(format!("Failed to delete public key: {}", err)))?;
-        }
-
-        if let Ok(priv_handle) = self.find_key(key_id, CKO_PRIVATE_KEY) {
-            self.ctx
-                .destroy_object(*session, priv_handle)
-                .map_err(|err| SignerError::Pkcs11Error(format!("Failed to delete private key: {}", err)))?;
-        }
-
-        Ok(())
+        self.delete_key_pair(key_id).map_err(|err| KeyError::Signer(err))
     }
 
     fn sign<D: AsRef<[u8]> + ?Sized>(
@@ -562,12 +574,11 @@ impl Signer for Pkcs11Signer {
             KeyError::Signer(err) => SigningError::Signer(err),
         })?;
 
-        // error!("XIMON: sign with key id: {}", &key_id);
-
         self.sign_with_key(priv_handle, algorithm, data)
             .map_err(|err| SigningError::Signer(err))
     }
 
+    // TODO: As this requires creating a key, shouldn't this be &mut like create_key() ?
     fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
         &self,
         algorithm: SignatureAlgorithm,
@@ -577,10 +588,13 @@ impl Signer for Pkcs11Signer {
 
         let signature = self.sign_with_key(priv_handle, algorithm, data.as_ref())?;
 
+        self.delete_key_pair(&key.key_identifier())?;
+
         Ok((signature, key))
     }
 
     fn rand(&self, target: &mut [u8]) -> Result<(), SignerError> {
+        // Should we seed the random number generator?
         let session = self.open_session()?;
         let random_value = self
             .ctx

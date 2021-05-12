@@ -13,7 +13,9 @@ pub use self::softsigner::*;
 #[cfg(feature = "hsm")]
 mod pkcs11;
 #[cfg(feature = "hsm")]
-pub use self::pkcs11::*;
+mod kmip;
+#[cfg(feature = "hsm")]
+pub use self::{pkcs11::*, kmip::*};
 
 #[derive(Debug)]
 pub enum SignerError {
@@ -25,6 +27,8 @@ pub enum SignerError {
     DecodeError,
     #[cfg(feature = "hsm")]
     Pkcs11Error(String),
+    #[cfg(feature = "hsm")]
+    KmipError(String),
 }
 
 impl fmt::Display for SignerError {
@@ -38,6 +42,8 @@ impl fmt::Display for SignerError {
             SignerError::DecodeError => write!(f, "Could not decode key"),
             #[cfg(feature = "hsm")]
             SignerError::Pkcs11Error(e) => write!(f, "PKCS#11 error: {}", e),
+            #[cfg(feature = "hsm")]
+            SignerError::KmipError(e) => write!(f, "KMIP error: {}", e),
         }
     }
 }

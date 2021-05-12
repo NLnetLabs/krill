@@ -12,7 +12,7 @@ use rpki::x509::Time;
 
 use crate::{commons::{actor::{Actor, ActorDef}, crypto::{OpenSslSigner, SignerImpl}}, daemon::config::SignerType};
 #[cfg(feature = "hsm")]
-use crate::commons::crypto::Pkcs11Signer;
+use crate::commons::crypto::{Pkcs11Signer, KmipSigner};
 use crate::commons::api::{
     AddChildRequest, AllCertAuthIssues, CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthInit, CertAuthIssues,
     CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Handle, ListReply,
@@ -160,6 +160,8 @@ impl KrillServer {
             SignerType::OpenSsl => SignerImpl::OpenSsl(OpenSslSigner::build(work_dir)?),
             #[cfg(feature = "hsm")]
             SignerType::Pkcs11 => SignerImpl::Pkcs11(Pkcs11Signer::build(config.clone())?),
+            #[cfg(feature = "hsm")]
+            SignerType::Kmip => SignerImpl::Kmip(KmipSigner::build(config.clone())?),
         };
         let signer = Arc::new(KrillSigner::build(signer)?);
 

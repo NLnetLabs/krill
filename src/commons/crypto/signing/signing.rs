@@ -19,7 +19,7 @@ use rpki::{rta, uri};
 
 use crate::commons::api::{IssuedCert, RcvdCert, ReplacedObject, RepoInfo, RequestResourceLimit, ResourceSet};
 #[cfg(feature = "hsm")]
-use crate::commons::crypto::signing::Pkcs11Signer;
+use crate::commons::crypto::signing::{Pkcs11Signer, KmipSigner};
 use crate::commons::crypto::{self, CryptoResult};
 use crate::commons::error::Error;
 use crate::commons::util::AllowedUri;
@@ -35,6 +35,8 @@ pub enum SignerImpl {
     OpenSsl(OpenSslSigner),
     #[cfg(feature = "hsm")]
     Pkcs11(Pkcs11Signer),
+    #[cfg(feature = "hsm")]
+    Kmip(KmipSigner)
 }
 
 // This is an enum in preparation of other supported signer types
@@ -58,6 +60,8 @@ impl KrillSigner {
             SignerImpl::OpenSsl(signer) => signer.create_key(PublicKeyFormat::Rsa),
             #[cfg(feature = "hsm")]
             SignerImpl::Pkcs11(signer) => signer.create_key(PublicKeyFormat::Rsa),
+            #[cfg(feature = "hsm")]
+            SignerImpl::Kmip(signer) => signer.create_key(PublicKeyFormat::Rsa),
         }
         .map_err(crypto::Error::signer)
     }
@@ -67,6 +71,8 @@ impl KrillSigner {
             SignerImpl::OpenSsl(signer) => signer.destroy_key(key_id),
             #[cfg(feature = "hsm")]
             SignerImpl::Pkcs11(signer) => signer.destroy_key(key_id),
+            #[cfg(feature = "hsm")]
+            SignerImpl::Kmip(signer) => signer.destroy_key(key_id),
         }
         .map_err(crypto::Error::signer)
     }
@@ -76,6 +82,8 @@ impl KrillSigner {
             SignerImpl::OpenSsl(signer) => signer.get_key_info(key_id),
             #[cfg(feature = "hsm")]
             SignerImpl::Pkcs11(signer) => signer.get_key_info(key_id),
+            #[cfg(feature = "hsm")]
+            SignerImpl::Kmip(signer) => signer.get_key_info(key_id),
         }
         .map_err(crypto::Error::key_error)
     }
@@ -85,6 +93,8 @@ impl KrillSigner {
             SignerImpl::OpenSsl(signer) => Serial::random(signer),
             #[cfg(feature = "hsm")]
             SignerImpl::Pkcs11(signer) => Serial::random(signer),
+            #[cfg(feature = "hsm")]
+            SignerImpl::Kmip(signer) => Serial::random(signer),
         }
         .map_err(crypto::Error::signer)
     }
@@ -94,6 +104,8 @@ impl KrillSigner {
             SignerImpl::OpenSsl(signer) => signer.sign(key_id, SignatureAlgorithm::default(), data),
             #[cfg(feature = "hsm")]
             SignerImpl::Pkcs11(signer) => signer.sign(key_id, SignatureAlgorithm::default(), data),
+            #[cfg(feature = "hsm")]
+            SignerImpl::Kmip(signer) => signer.sign(key_id, SignatureAlgorithm::default(), data),
         }
         .map_err(crypto::Error::signing)
     }
@@ -103,6 +115,8 @@ impl KrillSigner {
             SignerImpl::OpenSsl(signer) => signer.sign_one_off(SignatureAlgorithm::default(), data),
             #[cfg(feature = "hsm")]
             SignerImpl::Pkcs11(signer) => signer.sign_one_off(SignatureAlgorithm::default(), data),
+            #[cfg(feature = "hsm")]
+            SignerImpl::Kmip(signer) => signer.sign_one_off(SignatureAlgorithm::default(), data),
         }
         .map_err(crypto::Error::signer)
     }
@@ -113,6 +127,8 @@ impl KrillSigner {
             SignerImpl::OpenSsl(signer) => signer.get_key_info(key),
             #[cfg(feature = "hsm")]
             SignerImpl::Pkcs11(signer) => signer.get_key_info(key),
+            #[cfg(feature = "hsm")]
+            SignerImpl::Kmip(signer) => signer.get_key_info(key),
         }
         .map_err(crypto::Error::key_error)?;
         let enc = match signer.deref() {
@@ -135,6 +151,16 @@ impl KrillSigner {
                     Some(&base_repo.rpki_notify()),
                 )
             }
+            #[cfg(feature = "hsm")]
+            SignerImpl::Kmip(signer) => {
+                Csr::construct(
+                    signer,
+                    key,
+                    &base_repo.ca_repository(name_space).join(&[]), // force trailing slash
+                    &base_repo.rpki_manifest(name_space, &pub_key.key_identifier()),
+                    Some(&base_repo.rpki_notify()),
+                )
+            }
         }
         .map_err(crypto::Error::signing)?;
         Ok(Csr::decode(enc.as_slice())?)
@@ -145,6 +171,8 @@ impl KrillSigner {
             SignerImpl::OpenSsl(signer) => tbs.into_cert(signer, key_id),
             #[cfg(feature = "hsm")]
             SignerImpl::Pkcs11(signer) => tbs.into_cert(signer, key_id),
+            #[cfg(feature = "hsm")]
+            SignerImpl::Kmip(signer) => tbs.into_cert(signer, key_id),
         }
         .map_err(crypto::Error::signing)
     }
@@ -154,6 +182,8 @@ impl KrillSigner {
             SignerImpl::OpenSsl(signer) => tbs.into_crl(signer, key_id),
             #[cfg(feature = "hsm")]
             SignerImpl::Pkcs11(signer) => tbs.into_crl(signer, key_id),
+            #[cfg(feature = "hsm")]
+            SignerImpl::Kmip(signer) => tbs.into_crl(signer, key_id),
         }
         .map_err(crypto::Error::signing)
     }
@@ -168,6 +198,8 @@ impl KrillSigner {
             SignerImpl::OpenSsl(signer) => content.into_manifest(builder, signer, key_id),
             #[cfg(feature = "hsm")]
             SignerImpl::Pkcs11(signer) => content.into_manifest(builder, signer, key_id),
+            #[cfg(feature = "hsm")]
+            SignerImpl::Kmip(signer) => content.into_manifest(builder, signer, key_id),
         }
         .map_err(crypto::Error::signing)
     }
@@ -182,6 +214,8 @@ impl KrillSigner {
             SignerImpl::OpenSsl(signer) => roa_builder.finalize(object_builder, signer, key_id),
             #[cfg(feature = "hsm")]
             SignerImpl::Pkcs11(signer) => roa_builder.finalize(object_builder, signer, key_id),
+            #[cfg(feature = "hsm")]
+            SignerImpl::Kmip(signer) => roa_builder.finalize(object_builder, signer, key_id),
         }
         .map_err(crypto::Error::signing)
     }
@@ -193,6 +227,8 @@ impl KrillSigner {
             SignerImpl::OpenSsl(signer) => rta_builder.sign(signer, &key, None, None),
             #[cfg(feature = "hsm")]
             SignerImpl::Pkcs11(signer) => rta_builder.sign(signer, &key, None, None),
+            #[cfg(feature = "hsm")]
+            SignerImpl::Kmip(signer) => rta_builder.sign(signer, &key, None, None),
         }
         .map_err(crypto::Error::signing)
     }
