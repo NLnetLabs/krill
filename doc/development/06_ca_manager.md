@@ -220,7 +220,9 @@ certain resources, and in that case the revocation request may fail. This
 is treated as a non-critical issue.
 
 Note that if the CA actively removes a parent, it will pro-actively send
-revocation requests for all its keys first, and we do not trigger this task.
+revocation requests for all its keys first, remove *all* resource classes
+under a parent so that objects will be withdrawn, and then remove the
+actual parent altogether.
 
 ### QueueTask::UnexpectedKey
 

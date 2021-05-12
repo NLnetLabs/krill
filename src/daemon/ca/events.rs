@@ -339,6 +339,36 @@ impl RoaUpdates {
     }
 }
 
+impl fmt::Display for RoaUpdates {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if !self.updated.is_empty() {
+            write!(f, "Added single VRP ROAs: ")?;
+            for roa in self.updated.keys() {
+                write!(f, "{} ", ObjectName::from(roa))?;
+            }
+        }
+        if !self.removed.is_empty() {
+            write!(f, "Removed single VRP ROAs: ")?;
+            for roa in self.removed.keys() {
+                write!(f, "{} ", ObjectName::from(roa))?;
+            }
+        }
+        if !self.aggregate_updated.is_empty() {
+            write!(f, "Added ASN aggregated ROAs: ")?;
+            for roa in self.aggregate_updated.keys() {
+                write!(f, "{} ", ObjectName::from(roa))?;
+            }
+        }
+        if !self.aggregate_removed.is_empty() {
+            write!(f, "Removed ASN aggregated ROAs: ")?;
+            for roa in self.aggregate_removed.keys() {
+                write!(f, "{} ", ObjectName::from(roa))?;
+            }
+        }
+        Ok(())
+    }
+}
+
 //------------ ChildCertificateUpdates -------------------------------------
 
 /// Describes an update to the set of ROAs under a ResourceClass.
@@ -567,11 +597,6 @@ impl CaEvtDet {
         contact: ParentCaContact,
     ) -> CaEvt {
         StoredEvent::new(handle, version, CaEvtDet::ParentUpdated { parent, contact })
-    }
-
-    /// This marks a parent as removed
-    pub(super) fn parent_removed(handle: &Handle, version: u64, parent: ParentHandle) -> CaEvt {
-        StoredEvent::new(handle, version, CaEvtDet::ParentRemoved { parent })
     }
 
     pub(super) fn child_added(

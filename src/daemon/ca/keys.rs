@@ -6,9 +6,9 @@ use rpki::crypto::KeyIdentifier;
 use rpki::x509::Time;
 
 use crate::commons::api::{
-    ActiveInfo, CertifiedKeyInfo, EntitlementClass, IssuanceRequest, PendingInfo, PendingKeyInfo, RcvdCert, RepoInfo,
-    RequestResourceLimit, ResourceClassKeysInfo, ResourceClassName, ResourceSet, RevocationRequest, RollNewInfo,
-    RollOldInfo, RollPendingInfo,
+    ActiveInfo, CertifiedKeyInfo, EntitlementClass, Handle, IssuanceRequest, PendingInfo, PendingKeyInfo, RcvdCert,
+    RepoInfo, RequestResourceLimit, ResourceClassKeysInfo, ResourceClassName, ResourceSet, RevocationRequest,
+    RollNewInfo, RollOldInfo, RollPendingInfo,
 };
 use crate::commons::crypto::KrillSigner;
 use crate::commons::error::Error;
@@ -74,13 +74,20 @@ impl CertifiedKey {
         self.old_repo = Some(repo.clone())
     }
 
-    pub fn wants_update(&self, new_resources: &ResourceSet, new_not_after: Time) -> bool {
+    pub fn wants_update(
+        &self,
+        handle: &Handle,
+        rcn: &ResourceClassName,
+        new_resources: &ResourceSet,
+        new_not_after: Time,
+    ) -> bool {
         // If resources have changed, then we need to request a new certificate.
-        if self.incoming_cert.resources() != new_resources {
-            debug!(
-                "Resources have changed from:\n{}\nto:\n{}\n",
-                self.incoming_cert.resources(),
-                new_resources
+        let resources_diff = new_resources.difference(self.incoming_cert.resources());
+
+        if !resources_diff.is_empty() {
+            info!(
+                "Will request new certificate for CA '{}' under RC '{}'. Resources have changed: '{}'",
+                handle, rcn, resources_diff
             );
             return true;
         }
@@ -97,26 +104,53 @@ impl CertifiedKey {
 
         let not_after = self.incoming_cert().cert().validity().not_after();
 
-        let not_after = not_after.timestamp_millis();
-        let new_not_after = new_not_after.timestamp_millis();
+        let now = Time::now().timestamp_millis();
+        let until_not_after_millis = not_after.timestamp_millis() - now;
+        let until_new_not_after_millis = new_not_after.timestamp_millis() - now;
 
-        if not_after == new_not_after {
-            trace!("No change in not after time for certificate for key '{}'", self.key_id);
-            false
-        } else if not_after < new_not_after {
+        if until_new_not_after_millis < 0 {
+            // New not after time is in the past!
+            //
+            // This is rather odd. The parent should just exclude the resource class in the
+            // eligible entitlements instead. So, we will essentially just ignore this until
+            // they do.
             warn!(
-                "Parent reduced not after time for certificate for key '{}'",
-                self.key_id
+                "Will NOT request certificate for CA '{}' under RC '{}', the eligible not after time is set in the past: {}",
+                handle,
+                rcn,
+                new_not_after.to_rfc3339()
+            );
+            false
+        } else if until_not_after_millis == until_new_not_after_millis {
+            debug!(
+                "Will not request new certificate for CA '{}' under RC '{}'. Resources and not after time are unchanged\n",
+                handle,
+                rcn,
+            );
+            false
+        } else if until_new_not_after_millis < until_not_after_millis {
+            warn!(
+                "Parent of CA '{}' reduced not after time for certificate under RC '{}'",
+                handle, rcn,
             );
             true
-        } else if (new_not_after as f64 / not_after as f64) > 1.1_f64 {
-            debug!(
-                "Parent increased not after time >10% for certificate for key '{}'",
-                self.key_id
+        } else if until_not_after_millis <= 0
+            || (until_new_not_after_millis as f64 / until_not_after_millis as f64) > 1.1_f64
+        {
+            info!(
+                "Will request new certificate for CA '{}' under RC '{}'. Not after time increased to: {}\n",
+                handle,
+                rcn,
+                new_not_after.to_rfc3339()
             );
             true
         } else {
-            debug!("New not after time less than 10% after current time for for certificate for key '{}', not requesting a new certificate.", self.key_id);
+            debug!(
+                "Will not request new certificate for CA '{}' under RC '{}'. Not after time increased by less than 10%: {}\n",
+                handle,
+                rcn,
+                new_not_after.to_rfc3339()
+            );
             false
         }
     }
@@ -279,6 +313,7 @@ impl KeyState {
 
     pub fn make_entitlement_events(
         &self,
+        handle: &Handle,
         rcn: ResourceClassName,
         entitlement: &EntitlementClass,
         base_repo: &RepoInfo,
@@ -292,34 +327,34 @@ impl KeyState {
                 keys_for_requests.push((base_repo, pending.key_id()));
             }
             KeyState::Active(current) => {
-                if current.wants_update(entitlement.resource_set(), entitlement.not_after()) {
+                if current.wants_update(handle, &rcn, entitlement.resource_set(), entitlement.not_after()) {
                     let repo = current.old_repo.as_ref().unwrap_or(base_repo);
                     keys_for_requests.push((repo, current.key_id()));
                 }
             }
             KeyState::RollPending(pending, current) => {
                 keys_for_requests.push((base_repo, pending.key_id()));
-                if current.wants_update(entitlement.resource_set(), entitlement.not_after()) {
+                if current.wants_update(handle, &rcn, entitlement.resource_set(), entitlement.not_after()) {
                     let repo = current.old_repo.as_ref().unwrap_or(base_repo);
                     keys_for_requests.push((repo, current.key_id()));
                 }
             }
             KeyState::RollNew(new, current) => {
-                if new.wants_update(entitlement.resource_set(), entitlement.not_after()) {
+                if new.wants_update(handle, &rcn, entitlement.resource_set(), entitlement.not_after()) {
                     let repo = new.old_repo.as_ref().unwrap_or(base_repo);
                     keys_for_requests.push((repo, new.key_id()));
                 }
-                if current.wants_update(entitlement.resource_set(), entitlement.not_after()) {
+                if current.wants_update(handle, &rcn, entitlement.resource_set(), entitlement.not_after()) {
                     let repo = current.old_repo.as_ref().unwrap_or(base_repo);
                     keys_for_requests.push((repo, current.key_id()));
                 }
             }
             KeyState::RollOld(current, old) => {
-                if current.wants_update(entitlement.resource_set(), entitlement.not_after()) {
+                if current.wants_update(handle, &rcn, entitlement.resource_set(), entitlement.not_after()) {
                     let repo = current.old_repo.as_ref().unwrap_or(base_repo);
                     keys_for_requests.push((repo, current.key_id()));
                 }
-                if old.wants_update(entitlement.resource_set(), entitlement.not_after()) {
+                if old.wants_update(handle, &rcn, entitlement.resource_set(), entitlement.not_after()) {
                     let repo = old.old_repo.as_ref().unwrap_or(base_repo);
                     keys_for_requests.push((repo, current.key_id()));
                 }
@@ -524,9 +559,12 @@ impl KeyState {
         }
     }
 
-    /// Returns true if there is a new key
-    pub fn has_new_key(&self) -> bool {
-        matches!(self, KeyState::RollNew(_, _))
+    /// Returns the new key, iff there is a key roll in progress and there is a new key.
+    pub fn new_key(&self) -> Option<&CertifiedKey> {
+        match self {
+            KeyState::RollNew(new, _) => Some(new),
+            _ => None,
+        }
     }
 
     fn knows_key(&self, key_id: KeyIdentifier) -> bool {

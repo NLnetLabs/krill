@@ -928,6 +928,21 @@ impl ResourceSet {
         ResourceSet { asn, v4, v6 }
     }
 
+    /// Returns the difference from another ResourceSet towards `self`.
+    pub fn difference(&self, other: &ResourceSet) -> ResourceSetDiff {
+        let added = ResourceSet {
+            asn: self.asn.difference(&other.asn),
+            v4: self.v4.difference(&other.v4),
+            v6: self.v6.difference(&other.v6),
+        };
+        let removed = ResourceSet {
+            asn: other.asn.difference(&self.asn),
+            v4: other.v4.difference(&self.v4),
+            v6: other.v6.difference(&self.v6),
+        };
+        ResourceSetDiff { added, removed }
+    }
+
     pub fn contains_roa_address(&self, roa_address: &RoaIpAddress) -> bool {
         self.v4.contains_roa(roa_address) || self.v6.contains_roa(roa_address)
     }
@@ -990,6 +1005,59 @@ impl TryFrom<&Cert> for ResourceSet {
 impl fmt::Display for ResourceSet {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "asn: {}, v4: {}, v6: {}", self.asn, self.v4(), self.v6())
+    }
+}
+
+//------------ ResourceSetDiff -----------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ResourceSetDiff {
+    added: ResourceSet,
+    removed: ResourceSet,
+}
+
+impl ResourceSetDiff {
+    pub fn is_empty(&self) -> bool {
+        self.added.is_empty() && self.removed.is_empty()
+    }
+}
+
+impl fmt::Display for ResourceSetDiff {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.is_empty() {
+            write!(f, "<no changes in resources>")?;
+        }
+        if !self.added.is_empty() {
+            write!(f, "Added:")?;
+            if !self.added.asn.is_empty() {
+                write!(f, " asn: {}", self.added.asn)?;
+            }
+            if !self.added.v4.is_empty() {
+                write!(f, " ipv4: {}", self.added.v4())?;
+            }
+            if !self.added.v6.is_empty() {
+                write!(f, " ipv6: {}", self.added.v6())?;
+            }
+
+            if !self.removed.is_empty() {
+                write!(f, " ")?;
+            }
+        }
+        if !self.removed.is_empty() {
+            write!(f, "Removed:")?;
+
+            if !self.removed.asn.is_empty() {
+                write!(f, " asn: {}", self.removed.asn)?;
+            }
+            if !self.removed.v4.is_empty() {
+                write!(f, " ipv4: {}", self.removed.v4())?;
+            }
+            if !self.removed.v6.is_empty() {
+                write!(f, " ipv6: {}", self.removed.v6())?;
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -2271,6 +2339,34 @@ mod test {
         let empty_set_string = empty_set.to_string();
         let empty_set_from_string = ResourceSet::from_str(&empty_set_string).unwrap();
         assert_eq!(empty_set, empty_set_from_string);
+    }
+
+    #[test]
+    fn resource_set_difference() {
+        let set1_asns = "AS65000-AS65003, AS65005";
+        let set2_asns = "AS65000, AS65003, AS65005";
+        let asn_added = "AS65001-AS65002";
+
+        let set1_ipv4s = "10.0.0.0-10.4.5.6, 192.168.0.0";
+        let set2_ipv4s = "10.0.0.0/8, 192.168.0.0";
+        let ipv4_removed = "10.4.5.7-10.255.255.255";
+
+        let set1_ipv6s = "::1, 2001:db8::/32";
+        let set2_ipv6s = "::1, 2001:db8::/56";
+        let ipv6_added = "2001:db8:0:100::-2001:db8:ffff:ffff:ffff:ffff:ffff:ffff";
+
+        let set1 = ResourceSet::from_strs(set1_asns, set1_ipv4s, set1_ipv6s).unwrap();
+        let set2 = ResourceSet::from_strs(set2_asns, set2_ipv4s, set2_ipv6s).unwrap();
+
+        let diff = set1.difference(&set2);
+
+        let expected_diff = ResourceSetDiff {
+            added: ResourceSet::from_strs(asn_added, "", ipv6_added).unwrap(),
+            removed: ResourceSet::from_strs("", ipv4_removed, "").unwrap(),
+        };
+
+        assert!(!diff.is_empty());
+        assert_eq!(expected_diff, diff);
     }
 
     #[test]

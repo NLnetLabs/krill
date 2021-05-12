@@ -1,8 +1,36 @@
 # Change Log
 
-## 0.9.0 RC
+## 0.9.0 RC 2
 
-Welcome to the Krill 0.9.0 Release Candidate.
+This release candidate fixes a number of issues introduced in 0.9.0-rc1:
+
+- Log migration progress and speed up process (#503)
+- Rename auto-renewal commands in history (#501)
+- Re-issue objects properly during a key rollover (#509)
+- Withdraw objects when removing a parent (#508)
+
+Furthermore we made the following improvements:
+
+- Report *which* file/dir was involved in case of I/O errors (#495)
+- Change HTTP access log to 'debug'. Use KRILL_HTTP_LO_INFO_=1 if you want 'info' (#513)
+- Refine logging command / change logging (#518)
+- Improve certificate request logic and logging (#514)
+
+Regarding certificate request logic and logging. Krill CAs will now report *which* new resources
+were received from, or removed by a parent. As part of this change we also fixed a harmless,
+but annoying, bug in certificate request logic. Krill would wrongfully report that a parent had
+reduced the  eligible 'not after' time, when in fact it had extended it, and then request the
+new certificate regardless. Krill will now report correctly, and will only request a new certificate
+if the new 'not after' time is more than 10% further into the future compared to the current certificate.
+This is safe and will reduce noise levels where parent CAs use a simple strategy which returns a
+new 'not after' time for every request.
+
+The UI also received some fixes:
+- Show the repository status properly (introduced in 0.9.0-rc1)
+- Update the link to documentation
+- Show the alert banner for new versions only for 'production' version
+
+## 0.9.0 RC 1
 
 This release introduces a number of breaking API changes as well as new functionality. We invite users
 to test this release and contact us in case of any issues, comments or questions.
@@ -21,7 +49,7 @@ migration of course, but still we would very much like to encourage existing use
 this further on real data.
 
 In order to test the upgrade you can do the following:
-- install Krill 0.9.0-rc1 on a test machine
+- install Krill 0.9.0-rc2 on a test machine
 - copy over your existing data directory, but exclude the `keys` directory
 - set the ENV variable KRILL_UPGRADE_ONLY
 - start krill v0.9.0-rc1 using your copied data directory

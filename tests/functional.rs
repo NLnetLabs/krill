@@ -71,6 +71,13 @@ async fn expected_mft_and_crl(ca: &Handle, rcn: &ResourceClassName) -> Vec<Strin
     vec![mft_file, crl_file]
 }
 
+async fn expected_new_key_mft_and_crl(ca: &Handle, rcn: &ResourceClassName) -> Vec<String> {
+    let rc_key = ca_new_key_for_rcn(ca, rcn).await;
+    let mft_file = rc_key.incoming_cert().mft_name().to_string();
+    let crl_file = rc_key.incoming_cert().crl_name().to_string();
+    vec![mft_file, crl_file]
+}
+
 async fn expected_issued_cer(ca: &Handle, rcn: &ResourceClassName) -> String {
     let rc_key = ca_key_for_rcn(ca, rcn).await;
     ObjectName::from(rc_key.incoming_cert().cert()).to_string()
@@ -240,6 +247,7 @@ async fn functional() {
     let ca1 = handle_for("CA1");
     let ca1_res = resources("10.0.0.0/16");
     let ca1_res_reduced = resources("10.0.0.0/24");
+    let ca1_route_definition = RoaDefinition::from_str("10.0.0.0/16-16 => 65000").unwrap();
 
     let ca2 = handle_for("CA2");
     let ca2_res = resources("10.1.0.0/16");
@@ -349,6 +357,31 @@ async fn functional() {
     {
         info("##################################################################");
         info("#                                                                #");
+        info("#       Let CA1 publish a ROA (covering CA3 resources)           #");
+        info("#                                                                #");
+        info("##################################################################");
+        info("");
+
+        let mut updates = RoaDefinitionUpdates::empty();
+        updates.add(ca1_route_definition);
+        ca_route_authorizations_update(&ca1, updates).await;
+
+        let mut expected_files = expected_mft_and_crl(&ca1, &rcn_0).await;
+        expected_files.push(expected_issued_cer(&ca3, &rcn_0).await);
+        expected_files.push(ObjectName::from(&ca1_route_definition).to_string());
+        assert!(
+            will_publish(
+                "CA1 should publish the certificate for CA3 and a ROA",
+                &ca1,
+                &expected_files
+            )
+            .await
+        );
+    }
+
+    {
+        info("##################################################################");
+        info("#                                                                #");
         info("#                      Set up CA3 under CA2                      #");
         info("#                                                                #");
         info("##################################################################");
@@ -431,8 +464,34 @@ async fn functional() {
         info("");
         ca_roll_init(&ca1).await;
         assert!(state_becomes_new_key(&ca1).await);
+
+        let mut expected_files = expected_mft_and_crl(&ca1, &rcn_0).await;
+        expected_files.push(expected_issued_cer(&ca3, &rcn_0).await);
+        expected_files.push(ObjectName::from(&ca1_route_definition).to_string());
+        expected_files.append(&mut expected_new_key_mft_and_crl(&ca1, &rcn_0).await);
+        assert!(
+            will_publish(
+                "CA1 should publish MFT and CRL for both keys and the certificate for CA3 and a ROA",
+                &ca1,
+                &expected_files
+            )
+            .await
+        );
+
         ca_roll_activate(&ca1).await;
         assert!(state_becomes_active(&ca1).await);
+
+        let mut expected_files = expected_mft_and_crl(&ca1, &rcn_0).await;
+        expected_files.push(expected_issued_cer(&ca3, &rcn_0).await);
+        expected_files.push(ObjectName::from(&ca1_route_definition).to_string());
+        assert!(
+            will_publish(
+                "CA1 should now publish MFT and CRL for the activated key only, and the certificate for CA3 and a ROA",
+                &ca1,
+                &expected_files
+            )
+            .await
+        );
     }
 
     //------------------------------------------------------------------------------------------
@@ -507,7 +566,7 @@ async fn functional() {
     {
         info("##################################################################");
         info("#                                                                #");
-        info("# Remove ROAs below the deaggregation threshold and we get       #");
+        info("# Remove ROAs below the de-aggregation threshold and we get      #");
         info("# separate files again                                           #");
         info("#                                                                #");
         info("##################################################################");
@@ -542,7 +601,7 @@ async fn functional() {
         refresh_all().await; // if we skip this, then CA4 will not find out that it's resources were reduced
 
         expect_roas_for_ca4(
-            "CA4 resources are schrunk and we expect only one remaining roa",
+            "CA4 resources are shrunk and we expect only one remaining roa",
             &[route_rc1_1],
         )
         .await;
@@ -627,36 +686,61 @@ async fn functional() {
         let multi_rta_ca2 = rta_show(ca2, multi_rta_name.clone()).await;
         rta_multi_cosign(ca1.clone(), multi_rta_name.clone(), multi_rta_ca2).await;
 
-        let _multi_signed = rta_show(ca1, multi_rta_name).await;
+        let _multi_signed = rta_show(ca1.clone(), multi_rta_name).await;
     }
 
     info("##################################################################");
     info("#                                                                #");
-    info("# Remove CA4, we expect that its objects are also removed since  #");
+    info("# Remove parent from CA4, we expect that objects are withdrawn   #");
+    info("#                                                                #");
+    info("##################################################################");
+    info("");
+    {
+        // Remove CA4 from CA3
+        delete_parent(&ca4, &ca3).await;
+
+        // Expect that CA4 withdraws all
+        {
+            assert!(will_publish("CA4 should withdraw objects when parent is removed", &ca4, &[]).await);
+        }
+
+        delete_ca(&ca4).await;
+    }
+
+    info("##################################################################");
+    info("#                                                                #");
+    info("# Remove CA3, we expect that its objects are also removed since  #");
     info("# we are doing this all gracefully.                              #");
     info("#                                                                #");
     info("##################################################################");
     info("");
     {
-        delete_ca(&ca4).await;
-
-        // Expect that CA3 no longer publishes certificates for CA4
+        delete_ca(&ca3).await;
+        // Expect that CA3 no longer publishes anything
         {
-            let mut expected_files = expected_mft_and_crl(&ca3, &rcn_0).await;
-            expected_files.append(&mut expected_mft_and_crl(&ca3, &rcn_1).await);
             assert!(
                 will_publish(
-                    "CA3 should no longer publish the cert for CA4 after CA4 has been deleted",
+                    "CA3 should no longer publish anything after it has been deleted",
                     &ca3,
-                    &expected_files
+                    &[]
                 )
                 .await
             );
         }
 
-        // Expect that CA4 withdraws all
+        // Expect that CA1 no longer publishes the certificate for CA3
+        // i.e. CA3 requested its revocation.
         {
-            assert!(will_publish("CA4 should withdraw all objects when it's deleted", &ca4, &[]).await);
+            let mut expected_files = expected_mft_and_crl(&ca1, &rcn_0).await;
+            expected_files.push(ObjectName::from(&ca1_route_definition).to_string());
+            assert!(
+                will_publish(
+                    "CA1 should no longer publish the cer for CA3 after CA3 has been deleted",
+                    &ca1,
+                    &expected_files
+                )
+                .await
+            );
         }
     }
 
