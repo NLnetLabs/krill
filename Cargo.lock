@@ -2222,8 +2222,8 @@ dependencies = [
 
 [[package]]
 name = "rpki"
-version = "0.10.1-dev"
-source = "git+https://github.com/ximon18/rpki-rs?branch=0.10.0-unsigned-from-slice#22b2f986f564566ab23781b590f479301163a51d"
+version = "0.10.2-dev"
+source = "git+https://github.com/ximon18/rpki-rs?branch=0.10.1-unsigned-from-slice#cdd658c07fb64235a33526bdf38c75c6ee63fecf"
 dependencies = [
  "base64 0.13.0",
  "bcder",
