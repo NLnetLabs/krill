@@ -407,7 +407,10 @@ impl Pkcs11Signer {
         pub_template.push(CK_ATTRIBUTE::new(CKA_ENCRYPT).with_bool(&CK_FALSE));
         pub_template.push(CK_ATTRIBUTE::new(CKA_WRAP).with_bool(&CK_FALSE));
         pub_template.push(CK_ATTRIBUTE::new(CKA_TOKEN).with_bool(&CK_TRUE));
-        pub_template.push(CK_ATTRIBUTE::new(CKA_PRIVATE).with_bool(&CK_FALSE));
+
+        // AWS CloudHSM requires CKA_PRIVATE to be true for a public key
+        // See: https://docs.aws.amazon.com/cloudhsm/latest/userguide/pkcs11-attributes.html
+        pub_template.push(CK_ATTRIBUTE::new(CKA_PRIVATE).with_bool(&CK_TRUE));
         pub_template.push(CK_ATTRIBUTE::new(CKA_MODULUS_BITS).with_ck_ulong(&2048));
         pub_template.push(CK_ATTRIBUTE::new(CKA_PUBLIC_EXPONENT).with_bytes(&[0x01, 0x00, 0x01]));
         pub_template.push(CK_ATTRIBUTE::new(CKA_LABEL).with_string("Krill"));
@@ -418,7 +421,11 @@ impl Pkcs11Signer {
         priv_template.push(CK_ATTRIBUTE::new(CKA_UNWRAP).with_bool(&CK_FALSE));
         priv_template.push(CK_ATTRIBUTE::new(CKA_SENSITIVE).with_bool(&CK_TRUE));
         priv_template.push(CK_ATTRIBUTE::new(CKA_TOKEN).with_bool(&CK_TRUE));
+
+        // AWS CloudHSM requires CKA_PRIVATE to be true for a private key
+        // See: https://docs.aws.amazon.com/cloudhsm/latest/userguide/pkcs11-attributes.html
         priv_template.push(CK_ATTRIBUTE::new(CKA_PRIVATE).with_bool(&CK_TRUE));
+
         priv_template.push(CK_ATTRIBUTE::new(CKA_EXTRACTABLE).with_bool(&CK_FALSE));
         priv_template.push(CK_ATTRIBUTE::new(CKA_LABEL).with_string("Krill"));
 
@@ -457,6 +464,9 @@ impl Pkcs11Signer {
         let public_key = self.get_public_key_from_handle(pub_handle)?;
         let key_identifier = public_key.key_identifier();
 
+        // TODO: C_SetAttributeValue is not supported by AWS CloudHSM.
+        // Attempting to set an attribute causes error CKR_FUNCTION_NOT_SUPPORTED (0x54).
+        // See: https://docs.aws.amazon.com/cloudhsm/latest/userguide/pkcs11-apis.html
         let mut template: Vec<CK_ATTRIBUTE> = Vec::new();
         template.push(CK_ATTRIBUTE::new(CKA_ID).with_bytes(key_identifier.as_slice()));
         self.ctx
