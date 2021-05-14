@@ -118,7 +118,7 @@ fn make_cas_event_triggers(event_queue: Arc<MessageQueue>, ca_manager: Arc<CaMan
 
                     QueueTask::SyncRepo(handle) => try_sync_repo(&event_queue, ca_manager.clone(), handle).await,
                     QueueTask::RescheduleSyncRepo(handle, time) => {
-                        if time > Time::now() {
+                        if Time::now() > time {
                             try_sync_repo(&event_queue, ca_manager.clone(), handle).await
                         } else {
                             event_queue.reschedule_sync_repo(handle, time);
@@ -128,7 +128,7 @@ fn make_cas_event_triggers(event_queue: Arc<MessageQueue>, ca_manager: Arc<CaMan
                         try_sync_parent(&event_queue, &ca_manager, ca, parent, &actor).await
                     }
                     QueueTask::RescheduleSyncParent(ca, parent, time) => {
-                        if time > Time::now() {
+                        if Time::now() > time {
                             try_sync_parent(&event_queue, &ca_manager, ca, parent, &actor).await
                         } else {
                             event_queue.reschedule_sync_parent(ca, parent, time);
@@ -181,14 +181,14 @@ async fn try_sync_repo(event_queue: &Arc<MessageQueue>, ca_manager: Arc<CaManage
     debug!("Synchronize CA {} with repository", ca);
 
     if let Err(e) = ca_manager.ca_repo_sync_all(&ca).await {
-        let time = if test_mode_enabled() {
+        let requeue_time = if test_mode_enabled() {
             requeue_time_test()
         } else {
             requeue_time()
         };
 
         error!("Failed to publish for '{}' will reschedule, error: {}", ca, e);
-        event_queue.reschedule_sync_repo(ca, time);
+        event_queue.reschedule_sync_repo(ca, requeue_time);
     }
 }
 
@@ -202,11 +202,17 @@ async fn try_sync_parent(
 ) {
     info!("Synchronize CA '{}' with its parent '{}'", ca, parent);
     if let Err(e) = ca_manager.ca_sync_parent(&ca, &parent, actor).await {
+        let requeue_time = if test_mode_enabled() {
+            requeue_time_test()
+        } else {
+            requeue_time()
+        };
+
         error!(
             "Failed to synchronize CA '{}' with its parent '{}', error: {}",
             ca, parent, e
         );
-        event_queue.reschedule_sync_parent(ca, parent, requeue_time());
+        event_queue.reschedule_sync_parent(ca, parent, requeue_time);
     }
 }
 
