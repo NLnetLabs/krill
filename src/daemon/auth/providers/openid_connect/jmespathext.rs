@@ -33,17 +33,22 @@ fn make_recap_fn() -> Box<CustomFunction> {
 
         if let jmespath::Variable::String(str) = &*args[0] {
             if let jmespath::Variable::String(re_str) = &*args[1] {
-                let re = Regex::new(&re_str).unwrap_or_else(|_| {
-                    panic!(
-                        "Invalid regular expression for '{}' for recap() JMESPath function",
-                        &re_str
-                    )
-                });
-                let mut iter = re.captures_iter(&str);
-                if let Some(captures) = iter.next() {
-                    // captures[0] is the entire match
-                    // captures[1] is the value of the first capture group match
-                    res = captures[1].to_string();
+                match Regex::new(&re_str) {
+                    Ok(re) => {
+                        let mut iter = re.captures_iter(&str);
+                        if let Some(captures) = iter.next() {
+                            // captures[0] is the entire match
+                            // captures[1] is the value of the first capture group match
+                            res = captures[1].to_string();
+                        }
+                    }
+                    Err(err) => {
+                        return Err(JmespathError::new(
+                            &re_str,
+                            0,
+                            ErrorReason::Parse(format!("Invalid regular expression: {}", err)),
+                        ));
+                    }
                 }
             }
         }
