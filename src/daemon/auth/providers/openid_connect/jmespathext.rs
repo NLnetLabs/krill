@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use jmespatch as jmespath;
 use jmespath::functions::{ArgumentType, CustomFunction, Signature};
-use jmespath::{Context, Rcvar, Runtime};
+use jmespath::{Context, ErrorReason, JmespathError, Rcvar, Runtime};
 
 use regex::Regex;
 
@@ -24,7 +24,7 @@ pub fn init_runtime() -> Runtime {
 ///
 /// Returns an empty string if no match is found.
 fn make_recap_fn() -> Box<CustomFunction> {
-    let fn_signature = Signature::new(vec![ArgumentType::String, ArgumentType::String], None);
+    let fn_signature = Signature::new(vec![ArgumentType::Any, ArgumentType::String], None);
 
     let fn_impl = Box::new(|args: &[Rcvar], _: &mut Context| {
         trace!("jmespath recap() arguments: {:?}", args);
@@ -62,32 +62,86 @@ fn make_recap_fn() -> Box<CustomFunction> {
 /// Returns the given string unchanged if no match is found to replace.
 fn make_resub_fn() -> Box<CustomFunction> {
     let fn_signature = Signature::new(
-        vec![ArgumentType::String, ArgumentType::String, ArgumentType::String],
+        vec![ArgumentType::Any, ArgumentType::String, ArgumentType::String],
         None,
     );
 
     let fn_impl = Box::new(|args: &[Rcvar], _: &mut Context| {
         trace!("jmespath fn resub() arguments: {:?}", args);
 
-        let mut res = String::new();
-
         if let jmespath::Variable::String(str) = &*args[0] {
+            let mut res = String::new();
             if let jmespath::Variable::String(re_str) = &*args[1] {
                 if let jmespath::Variable::String(newval) = &*args[2] {
-                    let re = Regex::new(&re_str).unwrap_or_else(|_| {
-                        panic!(
-                            "Invalid regular expression for '{}' for resub() JMESPath function",
-                            &re_str
-                        )
-                    });
-                    res = re.replace(str.as_str(), newval.as_str()).to_string();
+                    match Regex::new(&re_str) {
+                        Ok(re) => {
+                            res = re.replace(str.as_str(), newval.as_str()).to_string();
+                        }
+                        Err(err) => {
+                            return Err(JmespathError::new(
+                                &re_str,
+                                0,
+                                ErrorReason::Parse(format!("Invalid regular expression: {}", err)),
+                            ));
+                        }
+                    }
                 }
             }
+            trace!("jmespath resub() result: {}", &res);
+            return Ok(Arc::new(jmespath::Variable::String(res)));
         }
 
-        trace!("jmespath resub() result: {}", &res);
-        Ok(Arc::new(jmespath::Variable::String(res)))
+        Ok(Arc::new(jmespath::Variable::Null))
     });
 
     Box::new(CustomFunction::new(fn_signature, fn_impl))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resub_should_handle_null_input() {
+        let runtime = init_runtime();
+
+        // Parse some JSON data into a JMESPath variable
+        let json_str = r#"
+        {
+            "groups":["a", "b"]
+        }
+        "#;
+        let jmespath_var = jmespath::Variable::from_json(json_str).unwrap();
+
+        // Create an expression that should yield null when evaluated
+        let null_expr = "groups[?@ == 'idontexist'] | [0]";
+        let should_yield_null = runtime.compile(null_expr).unwrap();
+        let result = should_yield_null.search(&jmespath_var).unwrap();
+        assert_eq!(jmespath::Variable::Null, *result);
+
+        // Now use that expression as input to the resub() function and verify that it returns null too
+        let should_also_yield_null = runtime
+            .compile(&format!("resub({}, '^.+$', 'admin')", null_expr))
+            .unwrap();
+        let result = should_also_yield_null.search(&jmespath_var).unwrap();
+        assert_eq!(jmespath::Variable::Null, *result);
+    }
+
+    #[test]
+    fn resub_should_return_error_when_given_an_invalid_regex() {
+        let runtime = init_runtime();
+
+        // an opening square bracket without matching closing square bracket is an invalid regular expression
+        let should_also_yield_null = runtime.compile("resub('dummy input', '[', 'admin')").unwrap();
+
+        // Parse some JSON data into a JMESPath variable
+        let json_str = r#"
+        {
+            "groups":["a", "b"]
+        }
+        "#;
+        let jmespath_var = jmespath::Variable::from_json(json_str).unwrap();
+
+        assert!(should_also_yield_null.search(&jmespath_var).is_err());
+    }
 }
