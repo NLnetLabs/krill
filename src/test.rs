@@ -39,7 +39,6 @@ use crate::{
 #[cfg(test)]
 use crate::commons::crypto::IdCert;
 use crate::daemon::config::Config;
-use crate::daemon::krillserver::KrillMode;
 
 pub const KRILL_SERVER_URI: &str = "https://localhost:3000/";
 pub const KRILL_PUBD_SERVER_URI: &str = "https://localhost:3001/";
@@ -121,12 +120,12 @@ pub async fn start_krill_with_default_test_config(enable_testbed: bool) -> PathB
 
 async fn start_krill(config: Config) {
     init_config(&config);
-    tokio::spawn(start_krill_with_error_trap(Arc::new(config), KrillMode::Ca));
+    tokio::spawn(start_krill_with_error_trap(Arc::new(config)));
     assert!(krill_server_ready().await);
 }
 
-async fn start_krill_with_error_trap(config: Arc<Config>, mode: KrillMode) {
-    if let Err(err) = server::start_krill_daemon(config, mode).await {
+async fn start_krill_with_error_trap(config: Arc<Config>) {
+    if let Err(err) = server::start_krill_daemon(config).await {
         error!("Krill failed to start: {}", err);
     }
 }
@@ -141,7 +140,7 @@ pub async fn start_krill_pubd() -> PathBuf {
     config.port = 3001;
     config.service_uri = "https://localhost:3001/".to_string();
 
-    tokio::spawn(start_krill_with_error_trap(Arc::new(config), KrillMode::Pubd));
+    tokio::spawn(start_krill_with_error_trap(Arc::new(config)));
     assert!(krill_pubd_ready().await);
 
     // Initialize the repository using separate URIs

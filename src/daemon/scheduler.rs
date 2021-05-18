@@ -33,21 +33,21 @@ pub struct Scheduler {
     /// Responsible for listening to events and executing triggered processes, such
     /// as publication of newly generated RPKI objects.
     #[allow(dead_code)] // just need to keep this in scope
-    cas_event_triggers: Option<ScheduleHandle>,
+    cas_event_triggers: ScheduleHandle,
 
     /// Responsible for periodically republishing so that MFTs and CRLs do not go stale.
     #[allow(dead_code)] // just need to keep this in scope
-    cas_republish: Option<ScheduleHandle>,
+    cas_republish: ScheduleHandle,
 
     /// Responsible for periodically reissuing ROAs before they would expire.
     #[allow(dead_code)] // just need to keep this in scope
-    cas_roas_renew: Option<ScheduleHandle>,
+    cas_roas_renew: ScheduleHandle,
 
     /// Responsible for letting CA check with their parents whether their resource
     /// entitlements have changed *and* for the shrinking of issued certificates, if
     /// they are not renewed within the configured grace period.
     #[allow(dead_code)] // just need to keep this in scope
-    cas_refresh: Option<ScheduleHandle>,
+    cas_refresh: ScheduleHandle,
 
     /// Responsible for refreshing announcement information
     #[allow(dead_code)] // just need to keep this in scope
@@ -62,28 +62,17 @@ pub struct Scheduler {
 impl Scheduler {
     pub fn build(
         event_queue: Arc<MessageQueue>,
-        ca_manager: Option<Arc<CaManager>>,
+        ca_manager: Arc<CaManager>,
         bgp_analyser: Arc<BgpAnalyser>,
         #[cfg(feature = "multi-user")] login_session_cache: Arc<LoginSessionCache>,
         config: &Config,
         actor: &Actor,
     ) -> Self {
-        let mut cas_event_triggers = None;
-        let mut cas_republish = None;
-        let mut cas_roas_renew = None;
-        let mut cas_refresh = None;
+        let cas_event_triggers = make_cas_event_triggers(event_queue.clone(), ca_manager.clone(), actor.clone());
 
-        if let Some(ca_manager) = ca_manager.as_ref() {
-            cas_event_triggers = Some(make_cas_event_triggers(
-                event_queue.clone(),
-                ca_manager.clone(),
-                actor.clone(),
-            ));
-
-            cas_republish = Some(make_cas_republish(ca_manager.clone(), event_queue));
-            cas_roas_renew = Some(make_cas_roa_renew(ca_manager.clone(), actor.clone()));
-            cas_refresh = Some(make_cas_refresh(ca_manager.clone(), config.ca_refresh, actor.clone()));
-        }
+        let cas_republish = make_cas_republish(ca_manager.clone(), event_queue);
+        let cas_roas_renew = make_cas_roa_renew(ca_manager.clone(), actor.clone());
+        let cas_refresh = make_cas_refresh(ca_manager, config.ca_refresh, actor.clone());
 
         let announcements_refresh = make_announcements_refresh(bgp_analyser);
 
@@ -93,8 +82,8 @@ impl Scheduler {
         Scheduler {
             cas_event_triggers,
             cas_republish,
-            cas_refresh,
             cas_roas_renew,
+            cas_refresh,
             announcements_refresh,
             #[cfg(feature = "multi-user")]
             login_cache_sweeper_sh,
