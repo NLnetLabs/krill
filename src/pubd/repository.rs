@@ -26,7 +26,7 @@ use crate::{
         },
         crypto::{IdCert, KrillSigner, ProtocolCms, ProtocolCmsBuilder},
         error::{Error, KrillIoError},
-        eventsourcing::{Aggregate, AggregateStore, AggregateStoreError, KeyStoreKey, KeyValueStore},
+        eventsourcing::{Aggregate, AggregateStore, KeyStoreKey, KeyValueStore},
         remote::rfc8183,
         util::file,
         KrillResult,
@@ -931,13 +931,9 @@ impl RepositoryAccessProxy {
     }
 
     fn read(&self) -> KrillResult<Arc<RepositoryAccess>> {
-        match self.store.get_latest(&self.key) {
-            Ok(repo) => Ok(repo),
-            Err(e) => match e {
-                AggregateStoreError::UnknownAggregate(_) => Err(Error::RepositoryServerNotEnabled),
-                _ => Err(Error::AggregateStoreError(e)),
-            },
-        }
+        self.store
+            .get_latest(&self.key)
+            .map_err(|_| Error::custom("Publication Server data missing"))
     }
 
     pub fn publishers(&self) -> KrillResult<Vec<PublisherHandle>> {

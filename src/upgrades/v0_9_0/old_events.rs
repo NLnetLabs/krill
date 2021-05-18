@@ -92,7 +92,7 @@ impl OldCaEvt {
     pub fn into_stored_ca_event(
         self,
         version: u64,
-        repo_manager: &Option<RepositoryManager>,
+        repo_manager: &RepositoryManager,
         derived_embedded_ca_info_map: &HashMap<Handle, DerivedEmbeddedCaMigrationInfo>,
     ) -> Result<CaEvt, UpgradeError> {
         let (id, _, details) = self.unpack();
@@ -102,12 +102,7 @@ impl OldCaEvt {
                 let contact = match contact {
                     OldRepositoryContact::Rfc8181(res) => RepositoryContact::new(res),
                     OldRepositoryContact::Embedded(_) => {
-                        let res = repo_manager
-                            .as_ref()
-                            .ok_or(UpgradeError::KrillError(
-                                crate::commons::error::Error::RepositoryServerNotEnabled,
-                            ))?
-                            .repository_response(&id)?;
+                        let res = repo_manager.repository_response(&id)?;
                         RepositoryContact::new(res)
                     }
                 };
