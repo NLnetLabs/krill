@@ -116,33 +116,37 @@ fn make_cas_event_triggers(event_queue: Arc<MessageQueue>, ca_manager: Arc<CaMan
                         ca_manager.cas_repo_sync_all(&actor).await;
                     }
 
-                    QueueTask::SyncRepo(handle) => try_sync_repo(&event_queue, ca_manager.clone(), handle).await,
-                    QueueTask::RescheduleSyncRepo(handle, time) => {
-                        if Time::now() > time {
-                            try_sync_repo(&event_queue, ca_manager.clone(), handle).await
+                    QueueTask::SyncRepo { ca } => try_sync_repo(&event_queue, ca_manager.clone(), ca).await,
+                    QueueTask::RescheduleSyncRepo { ca, due } => {
+                        if Time::now() > due {
+                            try_sync_repo(&event_queue, ca_manager.clone(), ca).await
                         } else {
-                            event_queue.reschedule_sync_repo(handle, time);
+                            event_queue.reschedule_sync_repo(ca, due);
                         }
                     }
-                    QueueTask::SyncParent(ca, parent) => {
+                    QueueTask::SyncParent { ca, parent } => {
                         try_sync_parent(&event_queue, &ca_manager, ca, parent, &actor).await
                     }
-                    QueueTask::RescheduleSyncParent(ca, parent, time) => {
-                        if Time::now() > time {
+                    QueueTask::RescheduleSyncParent { ca, parent, due } => {
+                        if Time::now() > due {
                             try_sync_parent(&event_queue, &ca_manager, ca, parent, &actor).await
                         } else {
-                            event_queue.reschedule_sync_parent(ca, parent, time);
+                            event_queue.reschedule_sync_parent(ca, parent, due);
                         }
                     }
 
-                    QueueTask::ResourceClassRemoved(handle, parent, revocations) => {
+                    QueueTask::ResourceClassRemoved {
+                        ca,
+                        parent,
+                        revocation_requests,
+                    } => {
                         info!(
                             "Trigger send revoke requests for removed RC for '{}' under '{}'",
-                            handle, parent
+                            ca, parent
                         );
 
                         if ca_manager
-                            .send_revoke_requests(&handle, &parent, revocations)
+                            .send_revoke_requests(&ca, &parent, revocation_requests)
                             .await
                             .is_err()
                         {
@@ -153,13 +157,20 @@ fn make_cas_event_triggers(event_queue: Arc<MessageQueue>, ca_manager: Arc<CaMan
                             );
                         }
                     }
-                    QueueTask::UnexpectedKey(handle, rcn, revocation) => {
+                    QueueTask::UnexpectedKey {
+                        ca,
+                        rcn,
+                        revocation_request,
+                    } => {
                         info!(
                             "Trigger sending revocation requests for unexpected key with id '{}' in RC '{}'",
-                            revocation.key(),
+                            revocation_request.key(),
                             rcn
                         );
-                        if let Err(e) = ca_manager.send_revoke_unexpected_key(&handle, rcn, revocation).await {
+                        if let Err(e) = ca_manager
+                            .send_revoke_unexpected_key(&ca, rcn, revocation_request)
+                            .await
+                        {
                             error!("Could not revoke unexpected surplus key at parent: {}", e);
                         }
                     }

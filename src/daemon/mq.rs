@@ -21,39 +21,59 @@ use crate::daemon::ca::{CaEvt, CaEvtDet, CertAuth};
 pub enum QueueTask {
     ServerStarted,
 
-    SyncRepo(Handle),
-    RescheduleSyncRepo(Handle, Time),
+    SyncRepo {
+        ca: Handle,
+    },
+    RescheduleSyncRepo {
+        ca: Handle,
+        due: Time,
+    },
 
-    SyncParent(Handle, ParentHandle),
-    RescheduleSyncParent(Handle, ParentHandle, Time),
+    SyncParent {
+        ca: Handle,
+        parent: ParentHandle,
+    },
+    RescheduleSyncParent {
+        ca: Handle,
+        parent: ParentHandle,
+        due: Time,
+    },
 
-    ResourceClassRemoved(Handle, ParentHandle, HashMap<ResourceClassName, Vec<RevocationRequest>>),
-    UnexpectedKey(Handle, ResourceClassName, RevocationRequest),
+    ResourceClassRemoved {
+        ca: Handle,
+        parent: ParentHandle,
+        revocation_requests: HashMap<ResourceClassName, Vec<RevocationRequest>>,
+    },
+    UnexpectedKey {
+        ca: Handle,
+        rcn: ResourceClassName,
+        revocation_request: RevocationRequest,
+    },
 }
 
 impl fmt::Display for QueueTask {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             QueueTask::ServerStarted => write!(f, "Server just started"),
-            QueueTask::SyncRepo(ca) => write!(f, "synchronize repo for '{}'", ca),
-            QueueTask::RescheduleSyncRepo(ca, time) => write!(
+            QueueTask::SyncRepo { ca } => write!(f, "synchronize repo for '{}'", ca),
+            QueueTask::RescheduleSyncRepo { ca, due } => write!(
                 f,
                 "reschedule failed synchronize repo for '{}' at: {}",
                 ca,
-                time.to_rfc3339()
+                due.to_rfc3339()
             ),
-            QueueTask::SyncParent(ca, parent) => write!(f, "synchronize CA '{}' with parent '{}'", ca, parent),
-            QueueTask::RescheduleSyncParent(ca, parent, time) => write!(
+            QueueTask::SyncParent { ca, parent } => write!(f, "synchronize CA '{}' with parent '{}'", ca, parent),
+            QueueTask::RescheduleSyncParent { ca, parent, due } => write!(
                 f,
                 "reschedule failed synchronize CA '{}' with parent '{}' for {}",
                 ca,
                 parent,
-                time.to_rfc3339()
+                due.to_rfc3339()
             ),
-            QueueTask::ResourceClassRemoved(ca, _, _) => {
+            QueueTask::ResourceClassRemoved { ca, .. } => {
                 write!(f, "resource class removed for '{}' ", ca)
             }
-            QueueTask::UnexpectedKey(ca, rcn, _) => {
+            QueueTask::UnexpectedKey { ca, rcn, .. } => {
                 write!(f, "unexpected key found for '{}' resource class: '{}'", ca, rcn)
             }
         }
@@ -90,29 +110,29 @@ impl MessageQueue {
 
     /// Schedules that a CA synchronizes with its repositories.
     pub fn schedule_sync_repo(&self, ca: Handle) {
-        self.schedule(QueueTask::SyncRepo(ca));
+        self.schedule(QueueTask::SyncRepo { ca });
     }
 
     /// RE-Schedules that a CA synchronizes with its repositories. This function
     /// takes a time argument to indicate *when* the resynchronization should be
     /// attempted.
-    pub fn reschedule_sync_repo(&self, ca: Handle, time: Time) {
-        self.schedule(QueueTask::RescheduleSyncRepo(ca, time));
+    pub fn reschedule_sync_repo(&self, ca: Handle, due: Time) {
+        self.schedule(QueueTask::RescheduleSyncRepo { ca, due });
     }
 
     pub fn schedule_sync_parent(&self, ca: Handle, parent: ParentHandle) {
-        self.schedule(QueueTask::SyncParent(ca, parent));
+        self.schedule(QueueTask::SyncParent { ca, parent });
     }
 
-    pub fn reschedule_sync_parent(&self, ca: Handle, parent: ParentHandle, time: Time) {
-        self.schedule(QueueTask::RescheduleSyncParent(ca, parent, time));
+    pub fn reschedule_sync_parent(&self, ca: Handle, parent: ParentHandle, due: Time) {
+        self.schedule(QueueTask::RescheduleSyncParent { ca, parent, due });
     }
 
-    fn drop_sync_parent(&self, ca: &Handle, parent: &ParentHandle) {
+    fn drop_sync_parent(&self, dropping_ca: &Handle, parent_to_drop: &ParentHandle) {
         let mut q = self.q.write().unwrap();
         q.retain(|existing| match existing {
-            QueueTask::SyncParent(ex_ca, ex_parent) | QueueTask::RescheduleSyncParent(ex_ca, ex_parent, _) => {
-                ca != ex_ca || parent != ex_parent
+            QueueTask::SyncParent { ca, parent } | QueueTask::RescheduleSyncParent { ca, parent, .. } => {
+                dropping_ca != ca || parent_to_drop != parent
             }
             _ => true,
         });
@@ -162,21 +182,21 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for MessageQueue {
                     let mut revocations_map = HashMap::new();
                     revocations_map.insert(resource_class_name.clone(), revoke_requests.clone());
 
-                    self.schedule(QueueTask::ResourceClassRemoved(
-                        handle.clone(),
-                        parent.clone(),
-                        revocations_map,
-                    ))
+                    self.schedule(QueueTask::ResourceClassRemoved {
+                        ca: handle.clone(),
+                        parent: parent.clone(),
+                        revocation_requests: revocations_map,
+                    })
                 }
 
                 CaEvtDet::UnexpectedKeyFound {
                     resource_class_name,
                     revoke_req,
-                } => self.schedule(QueueTask::UnexpectedKey(
-                    handle.clone(),
-                    resource_class_name.clone(),
-                    revoke_req.clone(),
-                )),
+                } => self.schedule(QueueTask::UnexpectedKey {
+                    ca: handle.clone(),
+                    rcn: resource_class_name.clone(),
+                    revocation_request: revoke_req.clone(),
+                }),
 
                 CaEvtDet::ParentAdded { parent, .. } => {
                     self.schedule_sync_parent(handle.clone(), parent.clone());
