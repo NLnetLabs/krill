@@ -1,10 +1,12 @@
 Krill Command Line Client Setup
 ===============================
 
-There are two CLI binaries included in Krill: `krillc` is intended to manage Certification
-Authorities, and `krillpubc` is used to manage a Publication Server.
+There is a CLI binary included in Krill: `krillc`
 
-Essentially the CLIs are a small convenient way to access the Krill API and represent responses
+The CLI can be used to manage Certification Authorities, as well as the Publication Server (if used).
+And it offers some functionality to users that the UI does not offer.
+
+Essentially the CLI is a small convenient way to access the Krill API and represent responses
 to the user. They parse command line arguments and/or files supplied by the user (where applicable),
 and query or post (JSON) to the appropriate API end-point. Responses can be displayed as JSON, or
 plain text.
@@ -23,8 +25,6 @@ The code can be found under `src/cli`. An overview of the most important element
 | Element             | Code Path                    | Responsibility                                                       |
 |---------------------|------------------------------|----------------------------------------------------------------------|
 | `KrillClient`       | src/cli/client.rs            | The client code for Krill CA operations.                             |
-| `KrillPubdClient`   | src/cli/client.rs            | The client code for Krill Publication Server operations.             |
-| `Command`           | src/cli/options.rs           | Enum for the intended CA command.                                    |
-| `PublishersCommand` | src/cli/options.rs           | Enum for the intended Publication Server command.                    |
+| `Command`           | src/cli/options.rs           | Enum for the intended command.                                       |
 | `ApiResponse`       | src/cli/report.rs            | Structure to represent API responses.                                |
 
