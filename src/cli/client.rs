@@ -18,7 +18,7 @@ use crate::commons::util::{file, httpclient};
 use crate::constants::KRILL_CLI_API_ENV;
 use crate::daemon::config::Config;
 use crate::{
-    cli::options::{BulkCaCommand, CaCommand, Command, KrillInitDetails, KrillPubcOptions, Options, PublishersCommand},
+    cli::options::{BulkCaCommand, CaCommand, Command, KrillInitDetails, Options, PubServerCommand},
     commons::error::KrillIoError,
 };
 
@@ -122,6 +122,7 @@ impl KrillClient {
             Command::Info => client.info().await,
             Command::Bulk(cmd) => client.bulk(cmd).await,
             Command::CertAuth(cmd) => client.certauth(cmd).await,
+            Command::PubServer(cmd) => client.publishers(cmd).await,
             Command::Init(details) => client.init_config(details),
             #[cfg(feature = "multi-user")]
             Command::User(cmd) => client.user(cmd),
@@ -397,6 +398,56 @@ impl KrillClient {
         }
     }
 
+    /// Processes the options, and returns a response ready for formatting.
+    /// Note that this function is public to help integration testing the API
+    /// and client.
+    pub async fn publishers(&self, command: PubServerCommand) -> Result<ApiResponse, Error> {
+        match command {
+            PubServerCommand::PublisherList => {
+                let list: PublisherList = get_json(&self.server, &self.token, "api/v1/pubd/publishers").await?;
+                Ok(ApiResponse::PublisherList(list))
+            }
+            PubServerCommand::StalePublishers(seconds) => {
+                let uri = format!("api/v1/pubd/stale/{}", seconds);
+                let stales = get_json(&self.server, &self.token, &uri).await?;
+                Ok(ApiResponse::PublisherList(stales))
+            }
+            PubServerCommand::RepositoryStats => {
+                let stats = get_json(&self.server, &self.token, "stats/repo").await?;
+                Ok(ApiResponse::RepoStats(stats))
+            }
+            PubServerCommand::RepositoryInit(uris) => {
+                let uri = "api/v1/pubd/init";
+                post_json(&self.server, &self.token, uri, uris).await?;
+                Ok(ApiResponse::Empty)
+            }
+            PubServerCommand::RepositoryClear => {
+                let uri = "api/v1/pubd/init";
+                delete(&self.server, &self.token, uri).await?;
+                Ok(ApiResponse::Empty)
+            }
+            PubServerCommand::AddPublisher(req) => {
+                let res = post_json_with_response(&self.server, &self.token, "api/v1/pubd/publishers", req).await?;
+                Ok(ApiResponse::Rfc8183RepositoryResponse(res))
+            }
+            PubServerCommand::RemovePublisher(handle) => {
+                let uri = format!("api/v1/pubd/publishers/{}", handle);
+                delete(&self.server, &self.token, &uri).await?;
+                Ok(ApiResponse::Empty)
+            }
+            PubServerCommand::ShowPublisher(handle) => {
+                let uri = format!("api/v1/pubd/publishers/{}", handle);
+                let details: PublisherDetails = get_json(&self.server, &self.token, &uri).await?;
+                Ok(ApiResponse::PublisherDetails(details))
+            }
+            PubServerCommand::RepositoryResponse(handle) => {
+                let uri = format!("api/v1/pubd/publishers/{}/response.json", handle);
+                let res = get_json(&self.server, &self.token, &uri).await?;
+                Ok(ApiResponse::Rfc8183RepositoryResponse(res))
+            }
+        }
+    }
+
     fn init_config(&self, details: KrillInitDetails) -> Result<ApiResponse, Error> {
         let defaults = include_str!("../../defaults/krill.conf");
         let multi_add_on = include_str!("../../defaults/krill-multi-user.conf");
@@ -501,82 +552,6 @@ impl KrillClient {
         );
 
         Ok(ApiResponse::GenericBody(toml))
-    }
-}
-
-//------------ KrillPubdClient -----------------------------------------------
-
-pub struct KrillPubdClient;
-
-impl KrillPubdClient {
-    /// Delegates the options to be processed, and reports the response
-    /// back to the user. Note that error reporting is handled by CLI.
-    pub async fn report(options: KrillPubcOptions) -> Result<(), Error> {
-        let format = options.format;
-        let res = Self::process(options).await?;
-
-        if let Some(string) = res.report(format)? {
-            println!("{}", string)
-        }
-        Ok(())
-    }
-
-    /// Processes the options, and returns a response ready for formatting.
-    /// Note that this function is public to help integration testing the API
-    /// and client.
-    pub async fn process(options: KrillPubcOptions) -> Result<ApiResponse, Error> {
-        let (server, token, _format, api, command) = options.unpack();
-
-        if api {
-            // passing the api option in the env, so that the call
-            // to the back-end will just print and exit.
-            env::set_var(KRILL_CLI_API_ENV, "1")
-        }
-
-        match command {
-            PublishersCommand::PublisherList => {
-                let list: PublisherList = get_json(&server, &token, "api/v1/pubd/publishers").await?;
-                Ok(ApiResponse::PublisherList(list))
-            }
-            PublishersCommand::StalePublishers(seconds) => {
-                let uri = format!("api/v1/pubd/stale/{}", seconds);
-                let stales = get_json(&server, &token, &uri).await?;
-                Ok(ApiResponse::PublisherList(stales))
-            }
-            PublishersCommand::RepositoryStats => {
-                let stats = get_json(&server, &token, "stats/repo").await?;
-                Ok(ApiResponse::RepoStats(stats))
-            }
-            PublishersCommand::RepositoryInit(uris) => {
-                let uri = "api/v1/pubd/init";
-                post_json(&server, &token, uri, uris).await?;
-                Ok(ApiResponse::Empty)
-            }
-            PublishersCommand::RepositoryClear => {
-                let uri = "api/v1/pubd/init";
-                delete(&server, &token, uri).await?;
-                Ok(ApiResponse::Empty)
-            }
-            PublishersCommand::AddPublisher(req) => {
-                let res = post_json_with_response(&server, &token, "api/v1/pubd/publishers", req).await?;
-                Ok(ApiResponse::Rfc8183RepositoryResponse(res))
-            }
-            PublishersCommand::RemovePublisher(handle) => {
-                let uri = format!("api/v1/pubd/publishers/{}", handle);
-                delete(&server, &token, &uri).await?;
-                Ok(ApiResponse::Empty)
-            }
-            PublishersCommand::ShowPublisher(handle) => {
-                let uri = format!("api/v1/pubd/publishers/{}", handle);
-                let details: PublisherDetails = get_json(&server, &token, &uri).await?;
-                Ok(ApiResponse::PublisherDetails(details))
-            }
-            PublishersCommand::RepositoryResponse(handle) => {
-                let uri = format!("api/v1/pubd/publishers/{}/response.json", handle);
-                let res = get_json(&server, &token, &uri).await?;
-                Ok(ApiResponse::Rfc8183RepositoryResponse(res))
-            }
-        }
     }
 }
 
