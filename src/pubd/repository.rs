@@ -58,9 +58,9 @@ impl RepositoryContentProxy {
         let work_dir = &config.data_dir;
         let store = KeyValueStore::disk(work_dir, PUBSERVER_CONTENT_DIR)?;
         let store = RwLock::new(store);
+        let key = KeyStoreKey::simple(format!("{}.json", PUBSERVER_DFLT));
 
-        let dflt_key = KeyStoreKey::simple(PUBSERVER_DFLT.to_string());
-        Ok(RepositoryContentProxy { store, key: dflt_key })
+        Ok(RepositoryContentProxy { store, key })
     }
 
     // Initialize
