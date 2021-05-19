@@ -1,11 +1,4 @@
-use std::{
-    ops::Deref,
-    path::Path,
-    sync::{
-        atomic::{AtomicU8, Ordering},
-        Arc,
-    },
-};
+use std::{collections::HashMap, ops::Deref, path::Path, sync::{Arc, Mutex, atomic::{AtomicU8, Ordering}}};
 
 use bytes::Bytes;
 use once_cell::sync::OnceCell;
@@ -153,6 +146,7 @@ pub struct Pkcs11Signer {
     ctx: Arc<Pkcs11Ctx>,
     login_session: Pkcs11Session,
     slot_id: CK_SLOT_ID,
+    key_map: Arc<Mutex<HashMap<KeyIdentifier, [u8; 20]>>>, // Mutex needed for interior mutability as build_key() is called from both &self and &mut self fns.
 }
 
 impl Pkcs11Signer {
@@ -179,10 +173,13 @@ impl Pkcs11Signer {
 
         login_session.login(CKU_USER, Some(&config.user_pin))?;
 
+        let key_map = Arc::new(Mutex::new(HashMap::new()));
+
         Ok(Pkcs11Signer {
             ctx,
             login_session,
             slot_id,
+            key_map,
         })
     }
 
@@ -331,9 +328,13 @@ impl Pkcs11Signer {
             &key_id
         );
 
+        // let cka_id = key_id.as_slice();
+        let cka_id_lock = self.key_map.lock().unwrap();
+        let cka_id = cka_id_lock.get(key_id).unwrap();
+
         let mut template: Vec<CK_ATTRIBUTE> = Vec::new();
         template.push(CK_ATTRIBUTE::new(CKA_CLASS).with_ck_ulong(&key_class));
-        template.push(CK_ATTRIBUTE::new(CKA_ID).with_bytes(key_id.as_slice()));
+        template.push(CK_ATTRIBUTE::new(CKA_ID).with_bytes(cka_id));
 
         self.ctx.find_objects_init(*session, &template).map_err(|err| {
             SignerError::Pkcs11Error(format!(
@@ -378,6 +379,8 @@ impl Pkcs11Signer {
             warn!("PKCS#11: {}", err);
         }
 
+        trace!("PKCS#11: Found key with handle: {:?}", res);
+
         res
     }
 
@@ -402,7 +405,75 @@ impl Pkcs11Signer {
             ulParameterLen: 0,
         };
 
+        // A note about PKCS#11 public and private key handle lifetimes:
+        //
+        // From the PKCS#11 v2.20 specification section 9.4 Object types:
+        //
+        //   Cryptoki represents object information with the following types:
+        //
+        //   ♦ CK_OBJECT_HANDLE; CK_OBJECT_HANDLE_PTR
+        //
+        //   CK_OBJECT_HANDLE is a token-specific identifier for an object. It is defined as
+        //   follows:
+        //
+        //     typedef CK_ULONG CK_OBJECT_HANDLE;
+        //
+        //   When an object is created or found on a token by an application, Cryptoki assigns it an
+        //   object handle for that application’s sessions to use to access it. A particular object on a
+        //   token does not necessarily have a handle which is fixed for the lifetime of the object;
+        //   however, if a particular session can use a particular handle to access a particular object,
+        //   then that session will continue to be able to use that handle to access that object as long
+        //   as the session continues to exist, the object continues to exist, and the object continues to
+        //   be accessible to the session.
+        //
+        // Thus WE CANNOT PERSIST THESE HANDLE VALUES in our key value storage and use them later to work with the keys.
+        // Instead we must lookup the keys based on one or more attribute values. We might be able to cache handle
+        // values for the lifetime of the Krill process. We also therefore have to ensure that there are attributes of
+        // the keys that we know or can control the value of.
+        //
+        // One way to lookup the keys is using the CKA_MODULUS and CKA_PUBLIC_EXPONENT attributes as these can be
+        // derived from the public key itself, and according to the PKCS#11 v2.20 specification section 12.1.2 "RSA
+        // public key objects" and section 12.1.3 "RSA private key objects" are available for CKK_RSA keys as genearated
+        // by the CKM_RSA_PKCS_KEY_PAIR_GEN mechanism which we use here. However, with KMIP it isn't possible to locate
+        // a key by its modulus, it is however possible to locate a key by its Digest. This is also theoretically
+        // possible with PKCS#11 via the CKA_HASH_OF_SUBJECT_PUBLIC_KEY attribute, but the PKCS#11 v2.20 specification
+        // allows this attribute to be empty and indeed with SoftHSMv2 it is empty. It is unclear if "real" PKCS#11
+        // implementations support this attribute, but at least the AWS CloudHSM does not appear to support it as
+        // https://docs.aws.amazon.com/cloudhsm/latest/userguide/pkcs11-attributes.html doesn't include it under the
+        // GetAttributeValue heading. So, there isn't a common approach we can use in both the PKCS#11 and KMIP cases.
+        //
+        // Thus, if we cannot rely on an attribute of the key that we can derive from the key itself such as its modulus
+        // or hash, we must instead set an attribute on the key and we must do that at key creation time (as AWS
+        // CloudHSM doesn't permit adding or modifying attributes once the key is created), and so it cannot be set to
+        // the hash of the key bits as the key bits aren not yet known. We can just generate a random value and use that
+        // as the attribute value that can be used to lookup the key in future. For PKCS#11 we can use the store this
+        // value in the CKA_ID attribute. In KMIP we might be able to just use the Unique Identifier string attribute
+        // that the server is required to generate and persist. From the KMIP 1.0 specification: "This attribute SHALL
+        // be assigned by the key management system at creation or registration time, and then SHALL NOT be changed or
+        // deleted before the object is destroyed". However, the public and private keys receive their own distinct
+        // Unique Identifier values and we want a single identifier to refer to both at the same time. The CKA_ID
+        // PKCS#11 permits CKA_ID values of public and private keys to be the same. It's unclear from the PKCS#11 spec
+        // if CKA_ID should actually be the X.509 "Key Identifier", the spec has some advice on this matter but
+        // acknowledges that the values could be anything. The alternative would be to use the CKA_LABEL field but it
+        // might be desirable to set that to something descriptive, e.g. something about Krill and the CA a key relates
+        // to, it is even conceivable that the label is something a HSM operator might feel they can edit to give the
+        // keys names that they can easily keep track of. Similar concerns may be valid for the KMIP Name attribute, but
+        // it's unclear what alternative can be used. There is a KMIP Application Specific Information attribute but the
+        // server can reject setting this if the "Application Namespace" is not supported, whatever that means. KMIP has
+        // a "Custom Attribute" that can be set by clients, the only requirement being that the name begin with "x-".
+        // PyKMIP at least seems to support it but it's unknown if this is supported by real KMIP implementations.
+        //
+        // For now we will use CKA_ID for PKCS#11 and "Name" for KMIP as both have been seen to work on all platforms
+        // tested so far.
+
         let mut pub_template: Vec<CK_ATTRIBUTE> = Vec::new();
+
+        // As a quick test on AWS CloudHSM, store an in-memory only mapping of KeyIdentifier -> PKCS#11 CKA_ID, and
+        // generate the CKA_ID here now for storing on the key at creation time.
+        let mut cka_id: [u8; 20] = [0; 20];
+        self.rand(&mut cka_id)?;
+        pub_template.push(CK_ATTRIBUTE::new(CKA_ID).with_bytes(&cka_id));
+
         pub_template.push(CK_ATTRIBUTE::new(CKA_VERIFY).with_bool(&CK_TRUE));
         pub_template.push(CK_ATTRIBUTE::new(CKA_ENCRYPT).with_bool(&CK_FALSE));
         pub_template.push(CK_ATTRIBUTE::new(CKA_WRAP).with_bool(&CK_FALSE));
@@ -416,6 +487,10 @@ impl Pkcs11Signer {
         pub_template.push(CK_ATTRIBUTE::new(CKA_LABEL).with_string("Krill"));
 
         let mut priv_template: Vec<CK_ATTRIBUTE> = Vec::new();
+
+        // AWS CloudHSM quick test
+        priv_template.push(CK_ATTRIBUTE::new(CKA_ID).with_bytes(&cka_id));
+
         priv_template.push(CK_ATTRIBUTE::new(CKA_SIGN).with_bool(&CK_TRUE));
         priv_template.push(CK_ATTRIBUTE::new(CKA_DECRYPT).with_bool(&CK_FALSE));
         priv_template.push(CK_ATTRIBUTE::new(CKA_UNWRAP).with_bool(&CK_FALSE));
@@ -467,16 +542,19 @@ impl Pkcs11Signer {
         // TODO: C_SetAttributeValue is not supported by AWS CloudHSM.
         // Attempting to set an attribute causes error CKR_FUNCTION_NOT_SUPPORTED (0x54).
         // See: https://docs.aws.amazon.com/cloudhsm/latest/userguide/pkcs11-apis.html
-        let mut template: Vec<CK_ATTRIBUTE> = Vec::new();
-        template.push(CK_ATTRIBUTE::new(CKA_ID).with_bytes(key_identifier.as_slice()));
-        self.ctx
-            .set_attribute_value(*session, pub_handle, &template)
-            .map_err(|err| SignerError::Pkcs11Error(format!("Failed to set attributes on public key: {}", err)))?;
-        self.ctx
-            .set_attribute_value(*session, priv_handle, &template)
-            .map_err(|err| SignerError::Pkcs11Error(format!("Failed to set attributes on private key: {}", err)))?;
+        // let mut template: Vec<CK_ATTRIBUTE> = Vec::new();
+        // template.push(CK_ATTRIBUTE::new(CKA_ID).with_bytes(key_identifier.as_slice()));
+        // self.ctx
+        //     .set_attribute_value(*session, pub_handle, &template)
+        //     .map_err(|err| SignerError::Pkcs11Error(format!("Failed to set attributes on public key: {}", err)))?;
+        // self.ctx
+        //     .set_attribute_value(*session, priv_handle, &template)
+        //     .map_err(|err| SignerError::Pkcs11Error(format!("Failed to set attributes on private key: {}", err)))?;
 
-        debug!("PKCS#11: Generated key pair with ID {}", key_identifier);
+        debug!("PKCS#11: Generated key pair with ID {}", &key_identifier);
+
+        // AWS CloudHSM quick test
+        self.key_map.lock().unwrap().insert(key_identifier, cka_id);
 
         Ok((public_key, pub_handle, priv_handle))
     }
@@ -495,6 +573,22 @@ impl Pkcs11Signer {
                 algorithm.public_key_format()
             )));
         }
+
+        // Note: The AWS CloudHSM Known Issues for the PKCS#11 Library states:
+        // https://docs.aws.amazon.com/cloudhsm/latest/userguide/ki-pkcs11-sdk.html#ki-pkcs11-7
+        //
+        //   Issue: You could not hash more than 16KB of data
+        //   For larger buffers, only the first 16KB will be hashed and returned. The excess data would have been
+        //   silently ignored.
+        //   Resolution status: Data less than 16KB in size continues to be sent to the HSM for hashing. We have added
+        //   capability to hash locally, in software, data between 16KB and 64KB in size. The client and the SDKs will
+        //   explicitly fail if the data buffer is larger than 64KB. You must update your client and SDK(s) to version
+        //   1.1.1 or higher to benefit from the fix.
+        //
+        // TODO: if data is larger than 16KB we should hash locally and only use the HSM for signing, not for hashing.
+        // Should we enable this behaviour based on detection of an AWS CloudHSM or a config flag or ??? As an example,
+        // Oracle enables an AWS CloudHSM specific workaround by detecting a CLOUDHSM_IGNORE_CKA_MODIFIABLE_FALSE
+        // environment variable.
 
         let mech = CK_MECHANISM {
             mechanism: CKM_SHA256_RSA_PKCS,
