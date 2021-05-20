@@ -15,7 +15,9 @@ use syslog::Facility;
 
 use rpki::uri;
 
-use crate::commons::{crypto::ConfigSignerKmip, util::ext_serde};
+use crate::commons::util::ext_serde;
+#[cfg(feature = "hsm")]
+use crate::commons::crypto::ConfigSignerKmip;
 use crate::commons::{
     api::{PublicationServerUris, PublisherHandle, Token},
     error::KrillIoError,

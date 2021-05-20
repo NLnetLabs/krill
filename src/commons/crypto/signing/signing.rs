@@ -36,9 +36,32 @@ use super::{OpenSslSigner, SignerError};
 #[derive(Debug, Clone)]
 pub struct KeyMap {
     // Sled is "It is fully thread-safe, and all operations are atomic".
+    #[cfg(feature = "hsm")]
     db: sled::Db,
 }
 
+#[cfg(not(feature = "hsm"))]
+impl KeyMap {
+    pub fn persistent(_data_dir: &Path) -> KrillResult<Self> {
+        Ok(Self { })
+    }
+
+    pub fn in_memory() -> KrillResult<Self> {
+        Ok(Self { })
+    }
+
+    pub fn add_key(&self, _key_id: KeyIdentifier, _key_handle: &[u8]) {
+        // NO OP
+    }
+
+    pub fn get_key(&self, _key_id: &KeyIdentifier) -> Result<Vec<u8>, SignerError> {
+        // When the HSM feature is disabled we only have the OpenSSL signer which uses the KeyIdentifier as the key id
+        // and so doesn't even call this function
+        unreachable!()
+    }
+}
+
+#[cfg(feature = "hsm")]
 impl KeyMap {
     pub fn persistent(data_dir: &Path) -> KrillResult<Self> {
         let db_path = data_dir.join("keys/map.db");
@@ -575,6 +598,7 @@ impl ManifestEntry for Crl {
     }
 }
 
+#[cfg(feature = "hsm")]
 #[cfg(test)]
 mod tests {
     use std::convert::TryFrom;
