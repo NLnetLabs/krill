@@ -189,7 +189,7 @@ where
     }
 
     /// Warms up the cache, to be used after startup. Will fail if any aggregates fail to load
-    /// in which case a 'recover' operations can be tried.
+    /// in which case a 'recover' operation can be tried.
     ///
     /// In case any surplus event(s) and/or command(s) are encountered, i.e. extra entries not
     /// recorded in the 'info.json' which is always saved last on state changes - then it is
