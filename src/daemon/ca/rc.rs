@@ -5,14 +5,26 @@ use rpki::cert::Cert;
 use rpki::crypto::KeyIdentifier;
 use rpki::x509::{Time, Validity};
 
-use crate::{commons::{KrillResult, api::{EntitlementClass, Handle, HexEncodedHash, IssuanceRequest, IssuedCert, ParentHandle, RcvdCert, ReplacedObject, RepoInfo, RequestResourceLimit, ResourceClassInfo, ResourceClassName, ResourceSet, Revocation, RevocationRequest}, crypto::{CsrInfo, KrillSigner, SignSupport}, error::Error}, daemon::{
+use crate::{
+    commons::{
+        api::{
+            EntitlementClass, Handle, HexEncodedHash, IssuanceRequest, IssuedCert, ParentHandle, RcvdCert,
+            ReplacedObject, RepoInfo, RequestResourceLimit, ResourceClassInfo, ResourceClassName, ResourceSet,
+            Revocation, RevocationRequest,
+        },
+        crypto::{CsrInfo, KrillSigner, SignSupport},
+        error::Error,
+        KrillResult,
+    },
+    daemon::{
         ca::events::{ChildCertificateUpdates, RoaUpdates},
         ca::{
             self, ta_handle, CaEvtDet, CertifiedKey, ChildCertificates, CurrentKey, KeyState, NewKey, OldKey,
             PendingKey, Roas, Routes,
         },
         config::{Config, IssuanceTimingConfig},
-    }};
+    },
+};
 
 //------------ ResourceClass -----------------------------------------------
 
@@ -186,7 +198,7 @@ impl ResourceClass {
                         rcvd_cert.resources(),
                         rcvd_cert.validity().not_after().to_rfc3339()
                     );
-                    
+
                     let current_key = CertifiedKey::create(rcvd_cert);
                     Ok(vec![CaEvtDet::KeyPendingToActive {
                         resource_class_name: self.name.clone(),
@@ -194,7 +206,9 @@ impl ResourceClass {
                     }])
                 }
             }
-            KeyState::Active(current) => self.update_rcvd_cert_current(handle, current, rcvd_cert, routes, config, signer),
+            KeyState::Active(current) => {
+                self.update_rcvd_cert_current(handle, current, rcvd_cert, routes, config, signer)
+            }
             KeyState::RollPending(pending, current) => {
                 if rcvd_cert_ki == pending.key_id() {
                     let new_key = CertifiedKey::create(rcvd_cert);
@@ -249,7 +263,6 @@ impl ResourceClass {
         let rcvd_resources_diff = rcvd_resources.difference(current_key.incoming_cert().resources());
 
         if !rcvd_resources_diff.is_empty() {
-
             info!(
                 "Received new certificate under CA '{}' under RC '{}' with changed resources: '{}', valid until: {}",
                 handle,
@@ -257,7 +270,7 @@ impl ResourceClass {
                 rcvd_resources_diff,
                 rcvd_cert.validity().not_after().to_rfc3339()
             );
-            
+
             // Check whether child certificates should be shrunk
             //
             // NOTE: We need to pro-actively shrink child certificates to avoid invalidating them.
@@ -324,8 +337,14 @@ impl ResourceClass {
         base_repo: &RepoInfo,
         signer: &KrillSigner,
     ) -> KrillResult<Vec<CaEvtDet>> {
-        self.key_state
-            .make_entitlement_events(handle, self.name.clone(), entitlement, base_repo, &self.name_space, signer)
+        self.key_state.make_entitlement_events(
+            handle,
+            self.name.clone(),
+            entitlement,
+            base_repo,
+            &self.name_space,
+            signer,
+        )
     }
 
     /// Request new certificates for all keys when the base repo changes.

@@ -93,7 +93,7 @@ pub const ACTOR_DEF_TEST: ActorDef = ActorDef::system("test", "admin");
 
 // Note: These must match the values used by Lagosta.
 #[cfg(feature = "multi-user")]
-pub const PW_HASH_LOG_N: u8  = 13;
+pub const PW_HASH_LOG_N: u8 = 13;
 #[cfg(feature = "multi-user")]
 pub const PW_HASH_R: u32 = 8;
 #[cfg(feature = "multi-user")]
