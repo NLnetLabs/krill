@@ -204,7 +204,6 @@ fn upgrade_0_9_0(config: Arc<Config>) -> Result<(), UpgradeError> {
     let mut cas_dir = config.data_dir.clone();
     cas_dir.push("cas");
     if cas_dir.exists() {
-        debug!("XIMON2");
         CaObjectsMigration::migrate(config, repo_manager)?;
     }
     Ok(())
