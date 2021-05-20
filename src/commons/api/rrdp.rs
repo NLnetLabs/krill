@@ -113,7 +113,7 @@ impl PublishElement {
 impl From<publication::Publish> for PublishElement {
     fn from(p: publication::Publish) -> Self {
         let (_tag, uri, base64) = p.unpack();
-        PublishElement { uri, base64 }
+        PublishElement { base64, uri }
     }
 }
 
@@ -148,7 +148,7 @@ impl UpdateElement {
 impl From<publication::Update> for UpdateElement {
     fn from(u: publication::Update) -> Self {
         let (_tag, uri, base64, hash) = u.unwrap();
-        UpdateElement { uri, base64, hash }
+        UpdateElement { uri, hash, base64 }
     }
 }
 

@@ -113,8 +113,8 @@ impl ChildRequest {
                 id_cert.validate_ta_at(now)?;
 
                 Ok(ChildRequest {
-                    child_handle,
                     tag,
+                    child_handle,
                     id_cert,
                 })
             })

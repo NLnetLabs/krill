@@ -453,8 +453,7 @@ impl FromStr for RequestResourceLimit {
         } else {
             Some(AsBlocks::from_str(asn_str).map_err(|_| ())?)
         };
-
-        Ok(RequestResourceLimit { v4, v6, asn })
+        Ok(RequestResourceLimit { asn, v4, v6 })
     }
 }
 
