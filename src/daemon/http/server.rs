@@ -184,7 +184,6 @@ impl RequestLogger {
                 } else {
                     debug!("{} {} {}", self.req_method, self.req_path, response.status());
                 }
-
                 if response.loggable() && log_enabled!(log::Level::Trace) {
                     trace!("Response: headers={:?} body={:?}", response.headers(), response.body());
                 }

@@ -12,7 +12,7 @@ This release candidate fixes a number of issues introduced in 0.9.0-rc1:
 Furthermore we made the following improvements:
 
 - Report *which* file/dir was involved in case of I/O errors (#495)
-- Change HTTP access log to 'debug'. Use KRILL_HTTP_LO_INFO_=1 if you want 'info' (#513)
+- Change HTTP access log to 'debug'. Use KRILL_HTTP_LOG_INFO=1 if you want 'info' (#513)
 - Refine logging command / change logging (#518)
 - Improve certificate request logic and logging (#514)
 
