@@ -1,5 +1,26 @@
 # Change Log
 
+## 0.9.0 RC 3
+
+This release candidate reverses the proposed split in binaries for Krill CA and Publication Server
+functions. Separate binaries were introduced in an effort to make things less confusing to end-users,
+meaning we would not show functions that most users do not need. However, it seems that the benefits
+to users who use Krill for CA functions only were marginal, at the expense of complicating operations
+for Publication Server users significantly.
+
+Updated documentation for this version is available here:
+https://krill.docs.nlnetlabs.nl/en/v0.9.0rc3/
+
+In addition to this a number of smaller issues were resolved as well:
+- Optimistic rebuild in case of surplus events found (#530)
+- Reschedule failures *after* the time to check again has passed, not before! (#524)
+- The UI translations have now been updated (#381)
+
+Unfortunately we could not find any volunteers to help us with the French translations of new strings
+in the UI. The UI will fall back to English for these items. If you are a native French speaker and
+would like to help out, please let us know.
+
+
 ## 0.9.0 RC 2
 
 This release candidate fixes a number of issues introduced in 0.9.0-rc1:
