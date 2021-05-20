@@ -17,11 +17,11 @@ use rpki::crypto::KeyIdentifier;
 use rpki::uri;
 
 use crate::cli::report::{ApiResponse, ReportFormat};
-use crate::cli::{Error, KrillClient, KrillPubdClient};
+use crate::cli::{Error, KrillClient};
 use crate::commons::api::{
     AddChildRequest, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ChildHandle, Handle, ParentCaContact, ParentCaReq,
     ParentHandle, ParentStatuses, PublicationServerUris, PublisherDetails, PublisherHandle, PublisherList,
-    ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, Token,
+    ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse,
     TypedPrefix, UpdateChildRequest,
 };
 use crate::commons::bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion};
@@ -32,14 +32,13 @@ use crate::commons::util::httpclient;
 use crate::daemon::ca::{ta_handle, ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest};
 use crate::daemon::http::server;
 use crate::{
-    cli::options::{BulkCaCommand, CaCommand, Command, KrillPubcOptions, Options, PublishersCommand},
+    cli::options::{BulkCaCommand, CaCommand, Command, Options, PubServerCommand},
     commons::api::RepositoryContact,
 };
 
 #[cfg(test)]
 use crate::commons::crypto::IdCert;
 use crate::daemon::config::Config;
-use crate::daemon::krillserver::KrillMode;
 
 pub const KRILL_SERVER_URI: &str = "https://localhost:3000/";
 pub const KRILL_PUBD_SERVER_URI: &str = "https://localhost:3001/";
@@ -121,12 +120,12 @@ pub async fn start_krill_with_default_test_config(enable_testbed: bool) -> PathB
 
 async fn start_krill(config: Config) {
     init_config(&config);
-    tokio::spawn(start_krill_with_error_trap(Arc::new(config), KrillMode::Ca));
+    tokio::spawn(start_krill_with_error_trap(Arc::new(config)));
     assert!(krill_server_ready().await);
 }
 
-async fn start_krill_with_error_trap(config: Arc<Config>, mode: KrillMode) {
-    if let Err(err) = server::start_krill_daemon(config, mode).await {
+async fn start_krill_with_error_trap(config: Arc<Config>) {
+    if let Err(err) = server::start_krill_daemon(config).await {
         error!("Krill failed to start: {}", err);
     }
 }
@@ -141,7 +140,7 @@ pub async fn start_krill_pubd() -> PathBuf {
     config.port = 3001;
     config.service_uri = "https://localhost:3001/".to_string();
 
-    tokio::spawn(start_krill_with_error_trap(Arc::new(config), KrillMode::Pubd));
+    tokio::spawn(start_krill_with_error_trap(Arc::new(config)));
     assert!(krill_pubd_ready().await);
 
     // Initialize the repository using separate URIs
@@ -150,7 +149,7 @@ pub async fn start_krill_pubd() -> PathBuf {
         let rrdp_base_uri = uri::Https::from_str("https://localhost:3001/test-rrdp/").unwrap();
         PublicationServerUris::new(rrdp_base_uri, rsync_base)
     };
-    let command = PublishersCommand::RepositoryInit(uris);
+    let command = PubServerCommand::RepositoryInit(uris);
     krill_dedicated_pubd_admin(command).await;
 
     dir
@@ -164,29 +163,18 @@ pub async fn krill_admin(command: Command) -> ApiResponse {
     }
 }
 
-pub async fn krill_embedded_pubd_admin(command: PublishersCommand) -> ApiResponse {
-    let options = KrillPubcOptions::new(
-        https(KRILL_SERVER_URI),
-        Token::from("secret"),
-        ReportFormat::Json,
-        false,
-        command,
-    );
-    match KrillPubdClient::process(options).await {
-        Ok(res) => res, // ok
-        Err(e) => panic!("{}", e),
-    }
+pub async fn krill_embedded_pubd_admin(command: PubServerCommand) -> ApiResponse {
+    krill_admin(Command::PubServer(command)).await
 }
 
-pub async fn krill_dedicated_pubd_admin(command: PublishersCommand) -> ApiResponse {
-    let options = KrillPubcOptions::new(
+pub async fn krill_dedicated_pubd_admin(command: PubServerCommand) -> ApiResponse {
+    let options = Options::new(
         https(KRILL_PUBD_SERVER_URI),
-        Token::from("secret"),
+        "secret",
         ReportFormat::Json,
-        false,
-        command,
+        Command::PubServer(command),
     );
-    match KrillPubdClient::process(options).await {
+    match KrillClient::process(options).await {
         Ok(res) => res, // ok
         Err(e) => panic!("{}", e),
     }
@@ -490,21 +478,21 @@ pub async fn ca_current_resources(handle: &Handle) -> ResourceSet {
 }
 
 pub async fn list_publishers() -> PublisherList {
-    match krill_embedded_pubd_admin(PublishersCommand::PublisherList).await {
+    match krill_embedded_pubd_admin(PubServerCommand::PublisherList).await {
         ApiResponse::PublisherList(pub_list) => pub_list,
         _ => panic!("Expected publisher list"),
     }
 }
 
 pub async fn publisher_details(publisher: &PublisherHandle) -> PublisherDetails {
-    match krill_embedded_pubd_admin(PublishersCommand::ShowPublisher(publisher.clone())).await {
+    match krill_embedded_pubd_admin(PubServerCommand::ShowPublisher(publisher.clone())).await {
         ApiResponse::PublisherDetails(pub_details) => pub_details,
         _ => panic!("Expected publisher details"),
     }
 }
 
 pub async fn dedicated_repo_publisher_details(publisher: &PublisherHandle) -> PublisherDetails {
-    match krill_dedicated_pubd_admin(PublishersCommand::ShowPublisher(publisher.clone())).await {
+    match krill_dedicated_pubd_admin(PubServerCommand::ShowPublisher(publisher.clone())).await {
         ApiResponse::PublisherDetails(pub_details) => pub_details,
         _ => panic!("Expected publisher details"),
     }

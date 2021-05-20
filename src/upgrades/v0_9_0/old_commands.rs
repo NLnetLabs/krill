@@ -36,7 +36,7 @@ pub struct OldStoredCaCommand {
 impl OldStoredCaCommand {
     pub fn into_ca_command(
         self,
-        repo_manager: &Option<RepositoryManager>,
+        repo_manager: &RepositoryManager,
         derived_embedded_ca_info_map: &HashMap<Handle, DerivedEmbeddedCaMigrationInfo>,
     ) -> UpgradeResult<StoredCaCommand> {
         let (actor, time, handle, version, sequence, details, effect) = (
@@ -53,14 +53,7 @@ impl OldStoredCaCommand {
             OldStorableCaCommand::RepoUpdate(service_uri_opt) => {
                 let service_uri = match service_uri_opt {
                     Some(service_uri) => service_uri,
-                    None => repo_manager
-                        .as_ref()
-                        .ok_or(UpgradeError::KrillError(
-                            crate::commons::error::Error::RepositoryServerNotEnabled,
-                        ))?
-                        .repository_response(&handle)?
-                        .service_uri()
-                        .clone(),
+                    None => repo_manager.repository_response(&handle)?.service_uri().clone(),
                 };
                 StorableCaCommand::RepoUpdate { service_uri }
             }

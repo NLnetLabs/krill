@@ -26,7 +26,7 @@ use crate::{
         },
         crypto::{IdCert, KrillSigner, ProtocolCms, ProtocolCmsBuilder},
         error::{Error, KrillIoError},
-        eventsourcing::{Aggregate, AggregateStore, AggregateStoreError, KeyStoreKey, KeyValueStore},
+        eventsourcing::{Aggregate, AggregateStore, KeyStoreKey, KeyValueStore},
         remote::rfc8183,
         util::file,
         KrillResult,
@@ -58,9 +58,9 @@ impl RepositoryContentProxy {
         let work_dir = &config.data_dir;
         let store = KeyValueStore::disk(work_dir, PUBSERVER_CONTENT_DIR)?;
         let store = RwLock::new(store);
+        let key = KeyStoreKey::simple(format!("{}.json", PUBSERVER_DFLT));
 
-        let dflt_key = KeyStoreKey::simple(PUBSERVER_DFLT.to_string());
-        Ok(RepositoryContentProxy { store, key: dflt_key })
+        Ok(RepositoryContentProxy { store, key })
     }
 
     // Initialize
@@ -931,13 +931,9 @@ impl RepositoryAccessProxy {
     }
 
     fn read(&self) -> KrillResult<Arc<RepositoryAccess>> {
-        match self.store.get_latest(&self.key) {
-            Ok(repo) => Ok(repo),
-            Err(e) => match e {
-                AggregateStoreError::UnknownAggregate(_) => Err(Error::RepositoryServerNotEnabled),
-                _ => Err(Error::AggregateStoreError(e)),
-            },
-        }
+        self.store
+            .get_latest(&self.key)
+            .map_err(|e| Error::custom(format!("Publication Server data missing: {}", e)))
     }
 
     pub fn publishers(&self) -> KrillResult<Vec<PublisherHandle>> {

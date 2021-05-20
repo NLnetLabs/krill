@@ -194,14 +194,12 @@ pub async fn update_storage_version(work_dir: &Path) -> Result<(), UpgradeError>
 
 fn upgrade_0_9_0(config: Arc<Config>) -> Result<(), UpgradeError> {
     let mut pubd_dir = config.data_dir.clone();
-    let mut repo_manager = None;
     pubd_dir.push("pubd");
     if pubd_dir.exists() {
         PubdObjectsMigration::migrate(config.clone())?;
-        debug!("XIMON1");
-        let signer = Arc::new(KrillSigner::build(config.clone())?);
-        repo_manager = Some(RepositoryManager::build(config.clone(), signer)?);
     }
+    let signer = Arc::new(KrillSigner::build(config.clone())?);
+    let repo_manager = RepositoryManager::build(config.clone(), signer)?;
 
     let mut cas_dir = config.data_dir.clone();
     cas_dir.push("cas");

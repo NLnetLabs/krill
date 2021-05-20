@@ -58,6 +58,7 @@ pub enum KeyStoreVersion {
     V0_8,
     V0_8_1_RC1,
     V0_8_1,
+    V0_8_2,
     V0_9_0_RC1,
 }
 
@@ -187,12 +188,13 @@ where
         Ok(store)
     }
 
-    /// Warms up the cache, to be used after startup. Will fail if any aggregates fail to load,
-    /// or if any surplus commands or events not covered in their `StoredValueInfo` are found.
-    /// The latter indicates an incomplete write 'transaction' happened when saving an updated
-    /// version. Perhaps because a disk was full.
+    /// Warms up the cache, to be used after startup. Will fail if any aggregates fail to load
+    /// in which case a 'recover' operation can be tried.
     ///
-    /// In case this fails, the user may want to use the recover option to see what can be salvaged.
+    /// In case any surplus event(s) and/or command(s) are encountered, i.e. extra entries not
+    /// recorded in the 'info.json' which is always saved last on state changes - then it is
+    /// assumed that an incomplete transaction took place. The surplus entries will be archived
+    /// and warnings will be reported.
     pub fn warm(&self) -> StoreResult<()> {
         for handle in self.list()? {
             let _ = self
@@ -206,27 +208,27 @@ where
             // for events we can just check if the next event, after
             // the last event in the info exists
             if self.get_event::<A::Event>(&handle, info.last_event + 1)?.is_some() {
-                return Err(AggregateStoreError::WarmupFailed(
-                    handle,
-                    format!(
-                        "Additional event(s) found after version: {}. Force recover.",
-                        info.last_event
-                    ),
-                ));
+                warn!(
+                    "Found surplus event(s) for '{}' when warming up the cache. Will archive!",
+                    handle
+                );
+                self.archive_surplus_events(&handle, info.last_event + 1)?;
             }
 
             // Check if there are any commands with a sequence after the last
             // recorded sequence in the info.
             let mut crit = CommandHistoryCriteria::default();
             crit.set_after_sequence(info.last_command);
-            if !self.command_keys_ascending(&handle, &crit)?.is_empty() {
-                return Err(AggregateStoreError::WarmupFailed(
-                    handle,
-                    format!(
-                        "Additional commands(s) found after version: {}. Force recover.",
-                        info.last_command
-                    ),
-                ));
+            let surplus_commands = self.command_keys_ascending(&handle, &crit)?;
+            if !surplus_commands.is_empty() {
+                warn!(
+                    "Found surplus command(s) for '{}' when warming up the cache. Will archive!",
+                    handle
+                );
+
+                for command in surplus_commands {
+                    self.archive_surplus_command(&handle, &command)?;
+                }
             }
         }
         Ok(())
@@ -770,6 +772,7 @@ where
                     if let Ok(v) = u64::from_str(&name[start..end]) {
                         if v >= from {
                             let key = Self::key_for_event(id, v);
+                            warn!("Archiving surplus event for '{}': {}", id, key);
                             self.kv
                                 .archive_surplus(&key)
                                 .map_err(AggregateStoreError::KeyStoreError)?
@@ -784,6 +787,7 @@ where
     /// Archive a surplus value for a key
     fn archive_surplus_command(&self, id: &Handle, key: &CommandKey) -> Result<(), AggregateStoreError> {
         let key = Self::key_for_command(id, key);
+        warn!("Archiving surplus command for '{}': {}", id, key);
         self.kv
             .archive_surplus(&key)
             .map_err(AggregateStoreError::KeyStoreError)
@@ -812,7 +816,7 @@ where
     /// limit to the event nr, i.e. the resulting aggregate version will be limit + 1
     fn get_aggregate(&self, id: &Handle, limit: Option<u64>) -> Result<Option<A>, AggregateStoreError> {
         // 1) Try to get a snapshot.
-        // 2) If that fails try the backup
+        // 2) If that fails, or if it exceeds the limit, try the backup
         // 3) If that fails, try to get the init event.
         //
         // Then replay all newer events that can be found up to the version (or latest if version is None)

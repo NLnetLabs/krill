@@ -202,7 +202,6 @@ pub enum Error {
     //-----------------------------------------------------------------
     // Repository Server Issues
     //-----------------------------------------------------------------
-    RepositoryServerNotEnabled,
     RepositoryServerNotInitialized,
     RepositoryServerHasPublishers,
     RepositoryServerAlreadyInitialized,
@@ -219,7 +218,6 @@ pub enum Error {
     //-----------------------------------------------------------------
     // CA Issues
     //-----------------------------------------------------------------
-    CaServerNotEnabled,
     CaDuplicate(Handle),
     CaUnknown(Handle),
 
@@ -351,7 +349,6 @@ impl fmt::Display for Error {
             //-----------------------------------------------------------------
             // Repository Server Issues
             //-----------------------------------------------------------------
-            Error::RepositoryServerNotEnabled=> write!(f, "Publication Server not enabled"),
             Error::RepositoryServerNotInitialized => write!(f, "Publication Server not initialized"),
             Error::RepositoryServerHasPublishers => write!(f, "Publication Server cannot be removed, still has publishers"),
             Error::RepositoryServerAlreadyInitialized => write!(f, "Publication Server already initialized"),
@@ -369,7 +366,6 @@ impl fmt::Display for Error {
             //-----------------------------------------------------------------
             // CA Issues
             //-----------------------------------------------------------------
-            Error::CaServerNotEnabled => write!(f, "CA Server not enabled on this Krill installation"),
             Error::CaDuplicate(ca) => write!(f, "CA '{}' was already initialized", ca),
             Error::CaUnknown(ca) => write!(f, "CA '{}' is unknown", ca),
 
@@ -661,7 +657,6 @@ impl Error {
             //-----------------------------------------------------------------
             // Repository Server Issues
             //-----------------------------------------------------------------
-            Error::RepositoryServerNotEnabled => ErrorResponse::new("pub-no-server", &self),
             Error::RepositoryServerNotInitialized => ErrorResponse::new("pub-repo-not-initialized", &self),
             Error::RepositoryServerHasPublishers => ErrorResponse::new("pub-repo-has-publishers", &self),
             Error::RepositoryServerAlreadyInitialized => ErrorResponse::new("pub-repo-initialized", &self),
@@ -680,7 +675,6 @@ impl Error {
             //-----------------------------------------------------------------
             // CA Issues (label: ca-*)
             //-----------------------------------------------------------------
-            Error::CaServerNotEnabled => ErrorResponse::new("ca-server-disabled", &self),
             Error::CaDuplicate(ca) => ErrorResponse::new("ca-duplicate", &self).with_ca(ca),
 
             Error::CaUnknown(ca) => ErrorResponse::new("ca-unknown", &self).with_ca(ca),

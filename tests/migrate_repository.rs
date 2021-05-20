@@ -16,7 +16,7 @@ use krill::commons::remote::rfc8183;
 use krill::daemon::ca::ta_handle;
 use krill::test::*;
 use krill::{
-    cli::options::{CaCommand, Command, PublishersCommand},
+    cli::options::{CaCommand, Command, PubServerCommand},
     commons::api::RepositoryContact,
 };
 use krill::{cli::report::ApiResponse, commons::api::RoaDefinition};
@@ -35,7 +35,7 @@ async fn repo_update(ca: &Handle, contact: RepositoryContact) {
 }
 
 async fn embedded_repository_response(publisher: &PublisherHandle) -> rfc8183::RepositoryResponse {
-    let command = PublishersCommand::RepositoryResponse(publisher.clone());
+    let command = PubServerCommand::RepositoryResponse(publisher.clone());
     match krill_embedded_pubd_admin(command).await {
         ApiResponse::Rfc8183RepositoryResponse(response) => response,
         _ => panic!("Expected repository response."),
@@ -43,7 +43,7 @@ async fn embedded_repository_response(publisher: &PublisherHandle) -> rfc8183::R
 }
 
 async fn dedicated_repository_response(publisher: &PublisherHandle) -> rfc8183::RepositoryResponse {
-    let command = PublishersCommand::RepositoryResponse(publisher.clone());
+    let command = PubServerCommand::RepositoryResponse(publisher.clone());
     match krill_dedicated_pubd_admin(command).await {
         ApiResponse::Rfc8183RepositoryResponse(response) => response,
         _ => panic!("Expected repository response."),
@@ -51,12 +51,12 @@ async fn dedicated_repository_response(publisher: &PublisherHandle) -> rfc8183::
 }
 
 async fn embedded_repo_add_publisher(req: rfc8183::PublisherRequest) {
-    let command = PublishersCommand::AddPublisher(req);
+    let command = PubServerCommand::AddPublisher(req);
     krill_embedded_pubd_admin(command).await;
 }
 
 async fn dedicated_repo_add_publisher(req: rfc8183::PublisherRequest) {
-    let command = PublishersCommand::AddPublisher(req);
+    let command = PubServerCommand::AddPublisher(req);
     krill_dedicated_pubd_admin(command).await;
 }
 
