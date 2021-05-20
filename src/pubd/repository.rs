@@ -933,7 +933,7 @@ impl RepositoryAccessProxy {
     fn read(&self) -> KrillResult<Arc<RepositoryAccess>> {
         self.store
             .get_latest(&self.key)
-            .map_err(|_| Error::custom("Publication Server data missing"))
+            .map_err(|e| Error::custom(format!("Publication Server data missing: {}", e)))
     }
 
     pub fn publishers(&self) -> KrillResult<Vec<PublisherHandle>> {
