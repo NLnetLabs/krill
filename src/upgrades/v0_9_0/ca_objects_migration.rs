@@ -8,7 +8,7 @@ use crate::{commons::{api::{
             self, ChildHandle, Handle, HexEncodedHash, IssuanceRequest, IssuedCert, ObjectName, ParentHandle, RcvdCert,
             RepoInfo, ResourceClassName, ResourceSet, Revocation, RevocationRequest, Revocations, RoaAggregateKey,
             TaCertDetails,
-        }, crypto::{IdCert, KrillSigner, OpenSslSigner, SignerImpl}, eventsourcing::{
+        }, crypto::{IdCert, KrillSigner}, eventsourcing::{
             Aggregate, AggregateStore, CommandKey, KeyStoreKey, KeyStoreVersion, KeyValueStore, StoredValueInfo,
         }, remote::rfc8183}, constants::CASERVER_DIR, daemon::{
         ca::{
@@ -30,9 +30,7 @@ impl CaObjectsMigration {
         let store = KeyValueStore::disk(&config.data_dir, CASERVER_DIR)?;
         let ca_store = AggregateStore::<ca::CertAuth>::disk(&config.data_dir, CASERVER_DIR)?;
 
-        let signer = SignerImpl::OpenSsl(OpenSslSigner::build(&config.data_dir)
-            .map_err(|err| UpgradeError::custom(format!("{}", err)))?);
-        let signer = Arc::new(KrillSigner::build(signer)?);
+        let signer = Arc::new(KrillSigner::build(config.clone())?);
 
         if store.version_is_before(KeyStoreVersion::V0_6)? {
             Err(UpgradeError::custom("Cannot upgrade Krill installations from before version 0.6.0. Please upgrade to any version ranging from 0.6.0 to 0.8.1 first, and then upgrade to this version."))

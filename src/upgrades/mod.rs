@@ -6,7 +6,6 @@ use std::{fmt, path::Path, str::FromStr, sync::Arc};
 
 use serde::de::DeserializeOwned;
 
-use crate::commons::crypto::{OpenSslSigner, SignerImpl};
 use crate::commons::error::KrillIoError;
 use crate::constants::KRILL_VERSION;
 use crate::daemon::ca::CertAuth;
@@ -199,15 +198,15 @@ fn upgrade_0_9_0(config: Arc<Config>) -> Result<(), UpgradeError> {
     pubd_dir.push("pubd");
     if pubd_dir.exists() {
         PubdObjectsMigration::migrate(config.clone())?;
-        let signer = SignerImpl::OpenSsl(OpenSslSigner::build(&config.data_dir)
-            .map_err(|err| UpgradeError::custom(format!("{}", err)))?);
-        let signer = Arc::new(KrillSigner::build(signer)?);
+        debug!("XIMON1");
+        let signer = Arc::new(KrillSigner::build(config.clone())?);
         repo_manager = Some(RepositoryManager::build(config.clone(), signer)?);
     }
 
     let mut cas_dir = config.data_dir.clone();
     cas_dir.push("cas");
     if cas_dir.exists() {
+        debug!("XIMON2");
         CaObjectsMigration::migrate(config, repo_manager)?;
     }
     Ok(())

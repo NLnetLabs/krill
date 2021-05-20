@@ -47,6 +47,7 @@ rpki                  = { version = "0.10.2-dev", git = "https://github.com/ximo
 scrypt                = { version = "^0.6", optional = true, default-features = false }
 serde                 = { version = "^1.0", features = ["derive"] }
 serde_json            = "^1.0"
+sled                  = { version = "0.34.6", optional = true }
 tokio                 = { version = "^0.2", features = ["rt-core", "macros", "time"] }
 tokio-rustls          = "^0.14"
 toml                  = "^0.5"
@@ -70,7 +71,7 @@ functional-tests = []
 ui-tests = []
 extra-debug = [ "rpki/extra-debug" ]
 static-openssl = [ "openssl/vendored" ]
-hsm = [ "once_cell", "pkcs11", "kmip" ]
+hsm = [ "once_cell", "pkcs11", "kmip", "sled" ]
 
 # Make sure that Krill crashes on panics, rather than losing threads and
 # limping on in a bad state.

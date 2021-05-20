@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::Deref, path::Path, sync::{Arc, Mutex, atomic::{AtomicU8, Ordering}}};
+use std::{ops::Deref, path::Path, sync::{Arc, atomic::{AtomicU8, Ordering}}};
 
 use bytes::Bytes;
 use once_cell::sync::OnceCell;
@@ -9,7 +9,7 @@ use rpki::crypto::{
 
 use crate::{constants::test_mode_enabled, daemon::config::Config};
 
-use super::SignerError;
+use super::{KeyMap, SignerError};
 
 //------------ Pkcs11Signer --------------------------------------------------
 
@@ -146,11 +146,11 @@ pub struct Pkcs11Signer {
     ctx: Arc<Pkcs11Ctx>,
     login_session: Pkcs11Session,
     slot_id: CK_SLOT_ID,
-    key_map: Arc<Mutex<HashMap<KeyIdentifier, [u8; 20]>>>, // Mutex needed for interior mutability as build_key() is called from both &self and &mut self fns.
+    key_lookup: Arc<KeyMap>,
 }
 
 impl Pkcs11Signer {
-    pub fn build(config: Arc<Config>) -> Result<Self, SignerError> {
+    pub fn build(config: Arc<Config>, key_lookup: Arc<KeyMap>) -> Result<Self, SignerError> {
         // softhsm2-util --init-token --slot 0 --label "My token 1"
         //    ... User PIN: 7890
         //    ... is re-assigned to slot 313129207
@@ -173,13 +173,11 @@ impl Pkcs11Signer {
 
         login_session.login(CKU_USER, Some(&config.user_pin))?;
 
-        let key_map = Arc::new(Mutex::new(HashMap::new()));
-
         Ok(Pkcs11Signer {
             ctx,
             login_session,
             slot_id,
-            key_map,
+            key_lookup,
         })
     }
 
@@ -329,12 +327,11 @@ impl Pkcs11Signer {
         );
 
         // let cka_id = key_id.as_slice();
-        let cka_id_lock = self.key_map.lock().unwrap();
-        let cka_id = cka_id_lock.get(key_id).unwrap();
+        let cka_id = self.key_lookup.get_key(key_id)?;
 
         let mut template: Vec<CK_ATTRIBUTE> = Vec::new();
         template.push(CK_ATTRIBUTE::new(CKA_CLASS).with_ck_ulong(&key_class));
-        template.push(CK_ATTRIBUTE::new(CKA_ID).with_bytes(cka_id));
+        template.push(CK_ATTRIBUTE::new(CKA_ID).with_bytes(cka_id.as_slice()));
 
         self.ctx.find_objects_init(*session, &template).map_err(|err| {
             SignerError::Pkcs11Error(format!(
@@ -387,7 +384,7 @@ impl Pkcs11Signer {
     fn build_key(
         &self,
         algorithm: PublicKeyFormat,
-    ) -> Result<(PublicKey, CK_OBJECT_HANDLE, CK_OBJECT_HANDLE), SignerError> {
+    ) -> Result<(PublicKey, CK_OBJECT_HANDLE, CK_OBJECT_HANDLE, [u8; 20]), SignerError> {
         // https://tools.ietf.org/html/rfc6485#section-3: Asymmetric Key Pair Formats
         //   "The RSA key pairs used to compute the signatures MUST have a 2048-bit
         //    modulus and a public exponent (e) of 65,537."
@@ -553,10 +550,7 @@ impl Pkcs11Signer {
 
         debug!("PKCS#11: Generated key pair with ID {}", &key_identifier);
 
-        // AWS CloudHSM quick test
-        self.key_map.lock().unwrap().insert(key_identifier, cka_id);
-
-        Ok((public_key, pub_handle, priv_handle))
+        Ok((public_key, pub_handle, priv_handle, cka_id))
     }
 
     fn sign_with_key<D: AsRef<[u8]> + ?Sized>(
@@ -653,8 +647,10 @@ impl Signer for Pkcs11Signer {
 
     // TODO: extend the fn signature to accept a context string, e.g. CA name, to label the key with?
     fn create_key(&mut self, algorithm: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
-        let (key, _, _) = self.build_key(algorithm)?;
-        Ok(key.key_identifier())
+        let (key, _, _, cka_id) = self.build_key(algorithm)?;
+        let key_id = key.key_identifier();
+        self.key_lookup.add_key(key_id.clone(), &cka_id[..]);
+        Ok(key_id)
     }
 
     fn get_key_info(&self, key_id: &Self::KeyId) -> Result<PublicKey, KeyError<Self::Error>> {
@@ -688,7 +684,7 @@ impl Signer for Pkcs11Signer {
         algorithm: SignatureAlgorithm,
         data: &D,
     ) -> Result<(Signature, PublicKey), SignerError> {
-        let (key, _, priv_handle) = self.build_key(PublicKeyFormat::Rsa)?;
+        let (key, _, priv_handle, _) = self.build_key(PublicKeyFormat::Rsa)?;
 
         let signature = self.sign_with_key(priv_handle, algorithm, data.as_ref())?;
 

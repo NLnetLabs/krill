@@ -8,7 +8,7 @@ use rpki::crypto::{
 
 use crate::daemon::config::Config;
 
-use super::SignerError;
+use super::{KeyMap, SignerError};
 
 //------------ KmipSigner --------------------------------------------------
 
@@ -54,10 +54,11 @@ pub struct ConfigSignerKmip {
 pub struct KmipSigner {
     conn: Arc<ConnectionDetails>,
     supports_rng_retrieve: bool,
+    key_lookup: Arc<KeyMap>,
 }
 
 impl KmipSigner {
-    pub fn build(config: Arc<Config>) -> Result<Self, SignerError> {
+    pub fn build(config: Arc<Config>, key_lookup: Arc<KeyMap>) -> Result<Self, SignerError> {
         let config = config.signer_kmip.as_ref().ok_or(
             SignerError::KmipError("Missing configuration file settings".into()))?;
 
@@ -108,6 +109,7 @@ impl KmipSigner {
         Ok(KmipSigner {
             conn,
             supports_rng_retrieve,
+            key_lookup,
         })
     }
 
@@ -179,7 +181,10 @@ impl KmipSigner {
         key_id: &KeyIdentifier,
         is_private: bool,
     ) -> Result<String, KeyError<SignerError>> {
-        let key_name_prefix = hex::encode(key_id);
+        let key_name_prefix_vec = self.key_lookup.get_key(key_id)?;
+        let key_name_prefix = String::from_utf8(key_name_prefix_vec)
+            .map_err(|err| KeyError::Signer(SignerError::KmipError(format!(
+                "Failed to convert lookeded up key name prefix bytes to String: {}", err))))?;
 
         let (key_type, key_name, human_key_class) = match is_private {
             false => (KeyType::PUBLIC, format!("{}-public", key_name_prefix), "public key"),
@@ -201,7 +206,7 @@ impl KmipSigner {
         match results.len() {
             0 => Err(KeyError::KeyNotFound),
             1 => Ok(results[0].clone()),
-            _ => Err(KeyError::Signer(SignerError::Pkcs11Error(format!(
+            _ => Err(KeyError::Signer(SignerError::KmipError(format!(
                     "More than one {} found with id {}", &human_key_class, &key_id)))),
         }
     }
@@ -209,7 +214,7 @@ impl KmipSigner {
     fn build_key(
         &self,
         algorithm: PublicKeyFormat,
-    ) -> Result<(PublicKey, String, String), SignerError> {
+    ) -> Result<(PublicKey, String, String, String), SignerError> {
         if !matches!(algorithm, PublicKeyFormat::Rsa) {
             return Err(SignerError::KmipError(format!(
                 "Algorithm {:?} not supported while creating key",
@@ -241,7 +246,7 @@ impl KmipSigner {
         kmip::activate_key(self.conn.clone(), &priv_id)
             .map_err(|err| SignerError::KmipError(format!("Failed to activate new private key: {}", err)))?;
 
-        Ok((public_key, pub_id, priv_id))
+        Ok((public_key, pub_id, priv_id, key_name_prefix))
     }
 
     fn sign_with_key<D: AsRef<[u8]> + ?Sized>(
@@ -309,8 +314,10 @@ impl Signer for KmipSigner {
 
     // TODO: extend the fn signature to accept a context string, e.g. CA name, to label the key with?
     fn create_key(&mut self, algorithm: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
-        let (key, _, _) = self.build_key(algorithm)?;
-        Ok(key.key_identifier())
+        let (key, _, _, key_name_prefix) = self.build_key(algorithm)?;
+        let key_id = key.key_identifier();
+        self.key_lookup.add_key(key_id.clone(), key_name_prefix.as_bytes());
+        Ok(key_id)
     }
 
     fn get_key_info(&self, key_id: &Self::KeyId) -> Result<PublicKey, KeyError<Self::Error>> {
@@ -345,7 +352,7 @@ impl Signer for KmipSigner {
         algorithm: SignatureAlgorithm,
         data: &D,
     ) -> Result<(Signature, PublicKey), SignerError> {
-        let (key, _, priv_id) = self.build_key(PublicKeyFormat::Rsa)?;
+        let (key, _, priv_id, _) = self.build_key(PublicKeyFormat::Rsa)?;
 
         let signature = self.sign_with_key(&priv_id, algorithm, data.as_ref())?;
 

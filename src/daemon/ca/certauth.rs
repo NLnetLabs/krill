@@ -1754,13 +1754,12 @@ impl CertAuth {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{commons::crypto::{OpenSslSigner, SignerImpl}, test};
+    use crate::test;
 
     #[test]
     fn generate_id_cert() {
         test::test_under_tmp(|d| {
-            let s = SignerImpl::OpenSsl(OpenSslSigner::build(&d).unwrap());
-            let signer = KrillSigner::build(s).unwrap();
+            let signer = KrillSigner::test(&d).unwrap();
             let id = Rfc8183Id::generate(&signer).unwrap();
             id.cert.validate_ta().unwrap();
         });

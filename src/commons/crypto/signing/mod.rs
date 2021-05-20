@@ -29,6 +29,7 @@ pub enum SignerError {
     Pkcs11Error(String),
     #[cfg(feature = "hsm")]
     KmipError(String),
+    KeyMapError(String),
 }
 
 impl fmt::Display for SignerError {
@@ -44,6 +45,7 @@ impl fmt::Display for SignerError {
             SignerError::Pkcs11Error(e) => write!(f, "PKCS#11 error: {}", e),
             #[cfg(feature = "hsm")]
             SignerError::KmipError(e) => write!(f, "KMIP error: {}", e),
+            SignerError::KeyMapError(e) => write!(f, "Key map access error: {}", e),
         }
     }
 }

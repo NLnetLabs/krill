@@ -16,7 +16,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use rpki::crypto::signer::KeyError;
 use rpki::crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError};
 
-use super::SignerError;
+use super::{KeyMap, SignerError};
 use crate::commons::error::KrillIoError;
 
 //------------ OpenSslSigner -------------------------------------------------
@@ -25,10 +25,11 @@ use crate::commons::error::KrillIoError;
 #[derive(Clone, Debug)]
 pub struct OpenSslSigner {
     keys_dir: Arc<Path>,
+    key_lookup: Arc<KeyMap>,
 }
 
 impl OpenSslSigner {
-    pub fn build(work_dir: &Path) -> Result<Self, SignerError> {
+    pub fn build(work_dir: &Path, key_lookup: Arc<KeyMap>) -> Result<Self, SignerError> {
         let meta_data = fs::metadata(&work_dir).map_err(|e| {
             KrillIoError::new(
                 format!("Could not get metadata from '{}'", work_dir.to_string_lossy()),
@@ -52,6 +53,7 @@ impl OpenSslSigner {
 
             Ok(OpenSslSigner {
                 keys_dir: keys_dir.into(),
+                key_lookup,
             })
         } else {
             Err(SignerError::InvalidWorkDir(work_dir.to_path_buf()))
@@ -105,6 +107,8 @@ impl Signer for OpenSslSigner {
             .map_err(|e| KrillIoError::new(format!("Could not create key file '{}'", path.to_string_lossy()), e))?;
         f.write_all(json.as_ref())
             .map_err(|e| KrillIoError::new(format!("Could write to key file '{}'", path.to_string_lossy()), e))?;
+
+        self.key_lookup.add_key(key_id.clone(), key_id.clone().as_slice());
 
         Ok(key_id)
     }
@@ -220,7 +224,8 @@ pub mod tests {
     #[test]
     fn should_return_subject_public_key_info() {
         test::test_under_tmp(|d| {
-            let mut s = OpenSslSigner::build(&d).unwrap();
+            let key_meta = Arc::new(KeyMap::in_memory().unwrap());
+            let mut s = OpenSslSigner::build(&d, key_meta.clone()).unwrap();
             let ki = s.create_key(PublicKeyFormat::Rsa).unwrap();
             s.get_key_info(&ki).unwrap();
             s.destroy_key(&ki).unwrap();
