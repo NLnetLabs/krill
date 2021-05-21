@@ -461,13 +461,11 @@ impl KeyValueStoreDiskImpl {
             Ok(dir) => {
                 let mut res = vec![];
 
-                for d in dir {
-                    if let Ok(d) = d {
-                        let path = d.path();
-                        if (dirs && path.is_dir()) || (files && path.is_file()) {
-                            if let Some(name) = path.file_name() {
-                                res.push(name.to_string_lossy().to_string())
-                            }
+                for d in dir.flatten() {
+                    let path = d.path();
+                    if (dirs && path.is_dir()) || (files && path.is_file()) {
+                        if let Some(name) = path.file_name() {
+                            res.push(name.to_string_lossy().to_string())
                         }
                     }
                 }

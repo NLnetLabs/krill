@@ -21,10 +21,6 @@ use hyper::server::conn::AddrIncoming;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::Method;
 
-use crate::{commons::api::{
-    BgpStats, ChildHandle, CommandHistoryCriteria, Handle, ParentCaContact, ParentHandle, PublisherList,
-    RoaDefinitionUpdates, RtaName, Token,
-}, constants::KRILL_ENV_HTTP_LOG_INFO};
 use crate::commons::api::{ParentCaReq, RepositoryContact};
 use crate::commons::bgp::BgpAnalysisAdvice;
 use crate::commons::error::Error;
@@ -43,8 +39,15 @@ use crate::daemon::http::auth::auth;
 use crate::daemon::http::statics::statics;
 use crate::daemon::http::testbed::testbed;
 use crate::daemon::http::{tls, tls_keys, HttpResponse, Request, RequestPath, RoutingResult};
-use crate::daemon::krillserver::{KrillMode, KrillServer};
+use crate::daemon::krillserver::KrillServer;
 use crate::upgrades::{pre_start_upgrade, update_storage_version};
+use crate::{
+    commons::api::{
+        BgpStats, ChildHandle, CommandHistoryCriteria, Handle, ParentCaContact, ParentHandle, PublisherList,
+        RoaDefinitionUpdates, RtaName, Token,
+    },
+    constants::KRILL_ENV_HTTP_LOG_INFO,
+};
 
 //------------ State -----------------------------------------------------
 
@@ -83,7 +86,7 @@ fn test_data_dir_or_die(config: &Config) {
     }
 }
 
-pub async fn start_krill_daemon(config: Arc<Config>, mode: KrillMode) -> Result<(), Error> {
+pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
     write_pid_file_or_die(&config);
     test_data_dir_or_die(&config);
 
@@ -91,7 +94,7 @@ pub async fn start_krill_daemon(config: Arc<Config>, mode: KrillMode) -> Result<
     pre_start_upgrade(config.clone()).map_err(|e| Error::Custom(format!("Could not upgrade Krill: {}", e)))?;
 
     // Create the server, this will create the necessary data sub-directories if needed
-    let krill = KrillServer::build(config.clone(), mode).await?;
+    let krill = KrillServer::build(config.clone()).await?;
 
     // Update the version identifiers for the storage dirs
     update_storage_version(&config.data_dir)
@@ -181,7 +184,6 @@ impl RequestLogger {
                 } else {
                     debug!("{} {} {}", self.req_method, self.req_path, response.status());
                 }
-                
                 if response.loggable() && log_enabled!(log::Level::Trace) {
                     trace!("Response: headers={:?} body={:?}", response.headers(), response.body());
                 }

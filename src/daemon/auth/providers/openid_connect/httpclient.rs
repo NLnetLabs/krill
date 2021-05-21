@@ -1,6 +1,10 @@
 use std::{env, path::PathBuf, str::FromStr, time::Duration};
 
-use crate::{commons::util::file, constants::KRILL_HTTPS_ROOT_CERTS_ENV, constants::{OPENID_CONNECT_HTTP_CLIENT_TIMEOUT_SECS, test_mode_enabled}};
+use crate::{
+    commons::util::file,
+    constants::KRILL_HTTPS_ROOT_CERTS_ENV,
+    constants::{test_mode_enabled, OPENID_CONNECT_HTTP_CLIENT_TIMEOUT_SECS},
+};
 
 use crate::commons::error::Error;
 
@@ -24,7 +28,10 @@ fn openid_connect_provider_timeout() -> Duration {
 
 // Based on httpclient::client().  We can't just use the original function as the invoked functions are specific to
 // types in the reqwest crate version being used.
-fn configure_http_client_for_krill(mut builder: reqwestblocking::ClientBuilder, uri: &str) -> Result<reqwestblocking::ClientBuilder, httpclient::Error> {
+fn configure_http_client_for_krill(
+    mut builder: reqwestblocking::ClientBuilder,
+    uri: &str,
+) -> Result<reqwestblocking::ClientBuilder, httpclient::Error> {
     builder = builder.timeout(openid_connect_provider_timeout());
 
     if let Ok(cert_list) = env::var(KRILL_HTTPS_ROOT_CERTS_ENV) {
@@ -44,7 +51,7 @@ fn configure_http_client_for_krill(mut builder: reqwestblocking::ClientBuilder, 
 // This is basically a copy of oauth2::reqwest::blocking::http_client() with the addition of the same logic Krill uses
 // in its main HTTP client configuration (to permit insecure TLS server certificates if the server host is "localhost",
 // useful when testing with a local OpenID Connect provider with a self-signed certificate, e.g. our mock provider, and
-// to support custom TLS root certificates). 
+// to support custom TLS root certificates).
 //
 // NOTE: Why does this use a second aliased reqwest dependency as reqwestblocking?
 // This is due to the reqwest 0.10.x blocking implementation actually using a futures runtime and that you can't use a
@@ -110,7 +117,7 @@ fn http_client(request: openidconnect::HttpRequest) -> Result<openidconnect::Htt
     })
 }
 
-// Wrap the httpclient produced above with optional logging of requests to and responses from the OpenID Connect 
+// Wrap the httpclient produced above with optional logging of requests to and responses from the OpenID Connect
 // provider.
 pub fn logging_http_client(req: openidconnect::HttpRequest) -> Result<openidconnect::HttpResponse, Error> {
     if log_enabled!(log::Level::Trace) {

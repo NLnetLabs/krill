@@ -552,17 +552,17 @@ impl Config {
         Config {
             ip,
             port,
-            pid_file,
             https_mode,
             data_dir,
             always_recover_data,
+            pid_file,
             service_uri,
             log_level,
             log_type,
             log_file,
             syslog_facility,
-            auth_type,
             admin_token,
+            auth_type,
             #[cfg(feature = "multi-user")]
             auth_policies,
             #[cfg(feature = "multi-user")]

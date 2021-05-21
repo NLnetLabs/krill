@@ -23,14 +23,9 @@ configuration, and concurrency are handled.
 Binaries
 --------
 
-The project includes two binaries which can be used to start a Krill daemon. These binaries are fairly
-thin executables which are responsible for parsing a configuration file, setting the operation mode, and
-then starting the `HTTPS Server` which includes the real `KrillServer`.
-
-Typically the `krill` binary is used to start Krill as a Certification Authority server, while `krillpubd`
-is used to start it as a dedicated Publication Server. That said, mixed operation is also possible as we
-will explain below.
-
+The project includes two binaries:
+* `krill` is used to start a Krill daemon
+* `krillc` is the CLI which uses the daemon's API
 
 HTTPS Server
 ------------
@@ -70,24 +65,4 @@ mapping calls to the following components (we will describe each component in mo
 | `Scheduler`         | src/daemon/scheduler.rs       | Schedules and executes background jobs.                     |
 | `Authenticator`      | src/daemon/auth/authentication.rs | Verifies authentication for API requests. |
 | `BgpAnalyser`       | src/commons/bgp/analyser.rs   | Compares authorizations to BGP, downloads RIS whois dumps.  |
-
-
-KrillMode
----------
-
-The `KrillServer` elements are initialized based on which ```KrillMode``` is selected. The following modes are possible:
-
-| KrillMode | Operation |
-|-|-|
-| Pubd | The KrillServer will have a Repository Manager, but no CA Manager |
-| Ca | The KrillServer will have a CA Manager, but no Repository Manager |
-| Mixed | The KrillServer will have both a CA and Repository Manager |
-
-If Krill is started with the `krillpubd` binary, then the mode will always be ```KrillMode::Pubd```. If it is started with the
-`krill` binary, then the mode will *normally* be ```KrillMode::Ca```. However, for backward compatibility with existing deployments,
-the KrillServer will change this mode to ```KrillMode::Mixed``` if it finds that a data directory exists for an initialized
-Publication Server with at least one active `Publisher`.
-
-Furthermore, ```KrillMode::Mixed``` will be forced if `[testbed]` is enabled in the configuration, see 
-[krill-testbed.conf](../../defaults/krill-testbed.conf)
 

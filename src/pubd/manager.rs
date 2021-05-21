@@ -1,4 +1,3 @@
-use std::fs;
 use std::sync::Arc;
 
 use bytes::Bytes;
@@ -14,7 +13,6 @@ use crate::commons::{
     actor::Actor,
     api::{ListReply, PublishDelta, PublisherDetails, PublisherHandle, RepoInfo},
 };
-use crate::constants::*;
 use crate::daemon::config::Config;
 use crate::pubd::{RepoStats, RepositoryAccessProxy, RepositoryContentProxy};
 
@@ -33,62 +31,6 @@ pub struct RepositoryManager {
 /// # Constructing
 ///
 impl RepositoryManager {
-    pub fn keep_if_used(config: Arc<Config>, signer: Arc<KrillSigner>) -> Result<Option<Self>, Error> {
-        let mut pub_server_dir = config.data_dir.clone();
-        pub_server_dir.push(PUBSERVER_DIR);
-
-        let mut repo_instance_dir = pub_server_dir.clone();
-        repo_instance_dir.push(PUBSERVER_DFLT);
-
-        let mut backup_pub_server_dir = config.data_dir.clone();
-        backup_pub_server_dir.push(PUBSERVER_BACKUP_DIR);
-
-        let mut corrupt_error_msg = "Could not start pre-existing repository server. This points at a corrupted data directory from an old installation.\n".to_string();
-        corrupt_error_msg.push_str(
-            "However, It looks like your configuration does not require that your run your own repository server.\n",
-        );
-        corrupt_error_msg.push_str(&format!(
-            "Krill will now make a backup of this directory at {}\n",
-            backup_pub_server_dir.to_string_lossy()
-        ));
-        corrupt_error_msg.push_str(
-            "If you do not need to run your own repository you may delete this directory and just start Krill again.\n",
-        );
-        corrupt_error_msg.push_str("If you do need to run your own repository then please use your previous installation and contact us at 'rpki-team@nlnetlabs.nl'.\n");
-
-        if repo_instance_dir.exists() {
-            if let Ok(server) = RepositoryManager::build(config, signer) {
-                if server.publishers()?.is_empty() {
-                    info!(
-                        "Removing unused repository server directory. Use 'krillpubd' instead if you need to run a repository."
-                    );
-                    let _result = fs::remove_dir_all(pub_server_dir);
-                    Ok(None)
-                } else {
-                    warn!("Enabling embedded publication server. This will be deprecated in future. You should use 'krillpubd' in future. See Changelog.md");
-                    Ok(Some(server))
-                }
-            } else {
-                if let Err(e) = fs::rename(&pub_server_dir, &backup_pub_server_dir) {
-                    corrupt_error_msg.push_str(&format!(
-                        "COULD NOT rename {} to {}. Error: {}",
-                        pub_server_dir.to_string_lossy(),
-                        backup_pub_server_dir.to_string_lossy(),
-                        e
-                    ));
-                }
-
-                Err(Error::Custom(corrupt_error_msg))
-            }
-        } else if pub_server_dir.exists() {
-            info!("Removing unused repository server directory. Use 'krillpubd' if you need to run a repository.");
-            let _result = fs::remove_dir_all(pub_server_dir);
-            Ok(None)
-        } else {
-            Ok(None)
-        }
-    }
-
     /// Builds a RepositoryManager. This will use a disk based KeyValueStore using the
     /// the data directory specified in the supplied `Config`.
     pub fn build(config: Arc<Config>, signer: Arc<KrillSigner>) -> Result<Self, Error> {
@@ -253,15 +195,19 @@ impl RepositoryManager {
 
 #[cfg(test)]
 mod tests {
-    use core::time::Duration;
-    use std::{path::Path, str::FromStr};
-    use std::{path::PathBuf, str::from_utf8};
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+        str::{from_utf8, FromStr},
+        time::Duration,
+    };
 
     use bytes::Bytes;
-
     use tokio::time::delay_for;
 
     use rpki::uri;
+
+    use crate::constants::*;
 
     use super::*;
 

@@ -82,7 +82,7 @@ impl PubdObjectsMigration {
         );
 
         let repo_content_store = KeyValueStore::disk(&config.data_dir, PUBSERVER_CONTENT_DIR)?;
-        let dflt_key = KeyStoreKey::simple(PUBSERVER_DFLT.to_string());
+        let dflt_key = KeyStoreKey::simple(format!("{}.json", PUBSERVER_DFLT));
 
         repo_content_store.store(&dflt_key, &repo_content).unwrap();
 

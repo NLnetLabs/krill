@@ -36,7 +36,7 @@ use super::{old_commands::*, old_events::*};
 pub struct CaObjectsMigration;
 
 impl CaObjectsMigration {
-    pub fn migrate(config: Arc<Config>, repo_manager: Option<RepositoryManager>) -> UpgradeResult<()> {
+    pub fn migrate(config: Arc<Config>, repo_manager: RepositoryManager) -> UpgradeResult<()> {
         let repo_manager = Arc::new(repo_manager);
         let store = KeyValueStore::disk(&config.data_dir, CASERVER_DIR)?;
         let ca_store = AggregateStore::<ca::CertAuth>::disk(&config.data_dir, CASERVER_DIR)?;
@@ -69,7 +69,7 @@ impl CaObjectsMigration {
 
     fn populate_ca_objects_store(
         config: Arc<Config>,
-        repo_manager: Arc<Option<RepositoryManager>>,
+        repo_manager: Arc<RepositoryManager>,
         signer: Arc<KrillSigner>,
     ) -> UpgradeResult<HashMap<Handle, DerivedEmbeddedCaMigrationInfo>> {
         // Read all CAS based on snapshots and events, using the pre-0_9_0 data structs
@@ -135,7 +135,7 @@ impl CaObjectsMigration {
 struct CasStoreMigration {
     store: KeyValueStore,
     ca_store: AggregateStore<ca::CertAuth>,
-    repo_manager: Arc<Option<RepositoryManager>>,
+    repo_manager: Arc<RepositoryManager>,
     derived_embedded_ca_info_map: HashMap<Handle, DerivedEmbeddedCaMigrationInfo>,
 }
 
@@ -201,14 +201,7 @@ impl UpgradeStore for CasStoreMigration {
 
             if repo_opt.is_some() {
                 debug!("  +- Generate command and event for initialized repository");
-                let res = self
-                    .repo_manager
-                    .as_ref()
-                    .as_ref()
-                    .ok_or(UpgradeError::KrillError(
-                        crate::commons::error::Error::RepositoryServerNotEnabled,
-                    ))?
-                    .repository_response(&id)?;
+                let res = self.repo_manager.repository_response(&id)?;
 
                 let contact = RepositoryContact::new(res);
                 let service_uri = contact.service_uri().clone();
@@ -575,7 +568,7 @@ impl Aggregate for OldCertAuth {
 }
 
 impl OldCertAuth {
-    pub fn ca_objects(&self, repo_manager: &Option<RepositoryManager>) -> Result<CaObjects, UpgradeError> {
+    pub fn ca_objects(&self, repo_manager: &RepositoryManager) -> Result<CaObjects, UpgradeError> {
         let objects = self
             .resources
             .iter()
@@ -589,14 +582,8 @@ impl OldCertAuth {
             None => None,
             Some(old) => match old {
                 OldRepositoryContact::Embedded(_) => {
-                    if let Some(repo_manager) = repo_manager {
-                        let res = repo_manager.repository_response(&self.handle)?;
-                        Some(RepositoryContact::new(res))
-                    } else {
-                        return Err(UpgradeError::KrillError(
-                            crate::commons::error::Error::RepositoryServerNotEnabled,
-                        ));
-                    }
+                    let res = repo_manager.repository_response(&self.handle)?;
+                    Some(RepositoryContact::new(res))
                 }
                 OldRepositoryContact::Rfc8181(res) => Some(RepositoryContact::new(res.clone())),
             },

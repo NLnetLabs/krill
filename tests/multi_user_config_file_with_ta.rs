@@ -6,7 +6,10 @@ mod ui;
 async fn multi_user_config_file_with_ta_test() {
     use log::info;
 
-    use std::{collections::{HashMap, HashSet}, str::FromStr};
+    use std::{
+        collections::{HashMap, HashSet},
+        str::FromStr,
+    };
 
     use krill::cli::options::{CaCommand, Command, HistoryOptions};
     use krill::commons::api::Handle;
@@ -14,7 +17,7 @@ async fn multi_user_config_file_with_ta_test() {
 
     ui::run_krill_ui_test(
         "multi_user_config_file_with_ta",
-        ui::OpenIDConnectMockConfig::do_not_start()
+        ui::OpenIDConnectMockConfig::do_not_start(),
     )
     .await;
 
@@ -29,7 +32,10 @@ async fn multi_user_config_file_with_ta_test() {
 
     let mut cas_and_users = HashMap::new();
     cas_and_users.insert("ca_admin", vec!["krill", "user:admin@krill"]);
-    cas_and_users.insert("ca_readwrite", vec!["krill", "user:readwrite@krill", "user:joe", "user:sally"]);
+    cas_and_users.insert(
+        "ca_readwrite",
+        vec!["krill", "user:readwrite@krill", "user:joe", "user:sally"],
+    );
     cas_and_users.insert("ca_readonly", vec!["krill", "user:rohelper@krill"]);
 
     for (ca, expected_users) in cas_and_users {
@@ -51,8 +57,7 @@ async fn multi_user_config_file_with_ta_test() {
             let found_users_set: HashSet<String> = history.commands().iter().map(|r| r.actor.clone()).collect();
 
             assert_eq!(
-                expected_users_set,
-                found_users_set,
+                expected_users_set, found_users_set,
                 "One or more users in the history of CA '{}' is missing or unexpected",
                 ca
             );

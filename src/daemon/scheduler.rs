@@ -33,21 +33,21 @@ pub struct Scheduler {
     /// Responsible for listening to events and executing triggered processes, such
     /// as publication of newly generated RPKI objects.
     #[allow(dead_code)] // just need to keep this in scope
-    cas_event_triggers: Option<ScheduleHandle>,
+    cas_event_triggers: ScheduleHandle,
 
     /// Responsible for periodically republishing so that MFTs and CRLs do not go stale.
     #[allow(dead_code)] // just need to keep this in scope
-    cas_republish: Option<ScheduleHandle>,
+    cas_republish: ScheduleHandle,
 
     /// Responsible for periodically reissuing ROAs before they would expire.
     #[allow(dead_code)] // just need to keep this in scope
-    cas_roas_renew: Option<ScheduleHandle>,
+    cas_roas_renew: ScheduleHandle,
 
     /// Responsible for letting CA check with their parents whether their resource
     /// entitlements have changed *and* for the shrinking of issued certificates, if
     /// they are not renewed within the configured grace period.
     #[allow(dead_code)] // just need to keep this in scope
-    cas_refresh: Option<ScheduleHandle>,
+    cas_refresh: ScheduleHandle,
 
     /// Responsible for refreshing announcement information
     #[allow(dead_code)] // just need to keep this in scope
@@ -62,28 +62,17 @@ pub struct Scheduler {
 impl Scheduler {
     pub fn build(
         event_queue: Arc<MessageQueue>,
-        ca_manager: Option<Arc<CaManager>>,
+        ca_manager: Arc<CaManager>,
         bgp_analyser: Arc<BgpAnalyser>,
         #[cfg(feature = "multi-user")] login_session_cache: Arc<LoginSessionCache>,
         config: &Config,
         actor: &Actor,
     ) -> Self {
-        let mut cas_event_triggers = None;
-        let mut cas_republish = None;
-        let mut cas_roas_renew = None;
-        let mut cas_refresh = None;
+        let cas_event_triggers = make_cas_event_triggers(event_queue.clone(), ca_manager.clone(), actor.clone());
 
-        if let Some(ca_manager) = ca_manager.as_ref() {
-            cas_event_triggers = Some(make_cas_event_triggers(
-                event_queue.clone(),
-                ca_manager.clone(),
-                actor.clone(),
-            ));
-
-            cas_republish = Some(make_cas_republish(ca_manager.clone(), event_queue));
-            cas_roas_renew = Some(make_cas_roa_renew(ca_manager.clone(), actor.clone()));
-            cas_refresh = Some(make_cas_refresh(ca_manager.clone(), config.ca_refresh, actor.clone()));
-        }
+        let cas_republish = make_cas_republish(ca_manager.clone(), event_queue);
+        let cas_roas_renew = make_cas_roa_renew(ca_manager.clone(), actor.clone());
+        let cas_refresh = make_cas_refresh(ca_manager, config.ca_refresh, actor.clone());
 
         let announcements_refresh = make_announcements_refresh(bgp_analyser);
 
@@ -93,8 +82,8 @@ impl Scheduler {
         Scheduler {
             cas_event_triggers,
             cas_republish,
-            cas_refresh,
             cas_roas_renew,
+            cas_refresh,
             announcements_refresh,
             #[cfg(feature = "multi-user")]
             login_cache_sweeper_sh,
@@ -116,33 +105,37 @@ fn make_cas_event_triggers(event_queue: Arc<MessageQueue>, ca_manager: Arc<CaMan
                         ca_manager.cas_repo_sync_all(&actor).await;
                     }
 
-                    QueueTask::SyncRepo(handle) => try_sync_repo(&event_queue, ca_manager.clone(), handle).await,
-                    QueueTask::RescheduleSyncRepo(handle, time) => {
-                        if time > Time::now() {
-                            try_sync_repo(&event_queue, ca_manager.clone(), handle).await
+                    QueueTask::SyncRepo { ca } => try_sync_repo(&event_queue, ca_manager.clone(), ca).await,
+                    QueueTask::RescheduleSyncRepo { ca, due } => {
+                        if Time::now() > due {
+                            try_sync_repo(&event_queue, ca_manager.clone(), ca).await
                         } else {
-                            event_queue.reschedule_sync_repo(handle, time);
+                            event_queue.reschedule_sync_repo(ca, due);
                         }
                     }
-                    QueueTask::SyncParent(ca, parent) => {
+                    QueueTask::SyncParent { ca, parent } => {
                         try_sync_parent(&event_queue, &ca_manager, ca, parent, &actor).await
                     }
-                    QueueTask::RescheduleSyncParent(ca, parent, time) => {
-                        if time > Time::now() {
+                    QueueTask::RescheduleSyncParent { ca, parent, due } => {
+                        if Time::now() > due {
                             try_sync_parent(&event_queue, &ca_manager, ca, parent, &actor).await
                         } else {
-                            event_queue.reschedule_sync_parent(ca, parent, time);
+                            event_queue.reschedule_sync_parent(ca, parent, due);
                         }
                     }
 
-                    QueueTask::ResourceClassRemoved(handle, parent, revocations) => {
+                    QueueTask::ResourceClassRemoved {
+                        ca,
+                        parent,
+                        revocation_requests,
+                    } => {
                         info!(
                             "Trigger send revoke requests for removed RC for '{}' under '{}'",
-                            handle, parent
+                            ca, parent
                         );
 
                         if ca_manager
-                            .send_revoke_requests(&handle, &parent, revocations)
+                            .send_revoke_requests(&ca, &parent, revocation_requests)
                             .await
                             .is_err()
                         {
@@ -153,13 +146,20 @@ fn make_cas_event_triggers(event_queue: Arc<MessageQueue>, ca_manager: Arc<CaMan
                             );
                         }
                     }
-                    QueueTask::UnexpectedKey(handle, rcn, revocation) => {
+                    QueueTask::UnexpectedKey {
+                        ca,
+                        rcn,
+                        revocation_request,
+                    } => {
                         info!(
                             "Trigger sending revocation requests for unexpected key with id '{}' in RC '{}'",
-                            revocation.key(),
+                            revocation_request.key(),
                             rcn
                         );
-                        if let Err(e) = ca_manager.send_revoke_unexpected_key(&handle, rcn, revocation).await {
+                        if let Err(e) = ca_manager
+                            .send_revoke_unexpected_key(&ca, rcn, revocation_request)
+                            .await
+                        {
                             error!("Could not revoke unexpected surplus key at parent: {}", e);
                         }
                     }
@@ -181,14 +181,14 @@ async fn try_sync_repo(event_queue: &Arc<MessageQueue>, ca_manager: Arc<CaManage
     debug!("Synchronize CA {} with repository", ca);
 
     if let Err(e) = ca_manager.ca_repo_sync_all(&ca).await {
-        let time = if test_mode_enabled() {
+        let requeue_time = if test_mode_enabled() {
             requeue_time_test()
         } else {
             requeue_time()
         };
 
         error!("Failed to publish for '{}' will reschedule, error: {}", ca, e);
-        event_queue.reschedule_sync_repo(ca, time);
+        event_queue.reschedule_sync_repo(ca, requeue_time);
     }
 }
 
@@ -202,11 +202,17 @@ async fn try_sync_parent(
 ) {
     info!("Synchronize CA '{}' with its parent '{}'", ca, parent);
     if let Err(e) = ca_manager.ca_sync_parent(&ca, &parent, actor).await {
+        let requeue_time = if test_mode_enabled() {
+            requeue_time_test()
+        } else {
+            requeue_time()
+        };
+
         error!(
             "Failed to synchronize CA '{}' with its parent '{}', error: {}",
             ca, parent, e
         );
-        event_queue.reschedule_sync_parent(ca, parent, requeue_time());
+        event_queue.reschedule_sync_parent(ca, parent, requeue_time);
     }
 }
 
