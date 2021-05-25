@@ -1131,12 +1131,35 @@ dependencies = [
 
 [[package]]
 name = "kmip"
-version = "0.2.0"
+version = "0.2.1"
+source = "git+https://github.com/ximon18/kmip?tag=v0.2.1#5ff5b399ec24d6f9f415c248780c7268d06ef797"
 dependencies = [
  "enumflags2",
+ "kmip-ttlv",
  "num-derive",
  "num-traits",
- "ttlv",
+]
+
+[[package]]
+name = "kmip-client"
+version = "0.1.0"
+source = "git+https://github.com/ximon18/kmip-client?tag=v0.1.0#a2904e1374f9106fd054e51e4dff0646ddf78e1a"
+dependencies = [
+ "hex",
+ "kmip",
+ "log",
+ "num",
+ "openssl",
+]
+
+[[package]]
+name = "kmip-ttlv"
+version = "0.2.1"
+source = "git+https://github.com/ximon18/ttlv?tag=v0.2.1#00edd4ede7485be9d0b0cb3e593098c789e2e11c"
+dependencies = [
+ "num-derive",
+ "num-traits",
+ "scroll",
 ]
 
 [[package]]
@@ -1158,6 +1181,7 @@ dependencies = [
  "hyper 0.13.10",
  "intervaltree",
  "jmespatch",
+ "kmip-client",
  "libc",
  "libflate",
  "log",
@@ -1176,7 +1200,6 @@ dependencies = [
  "serde",
  "serde_json",
  "syslog",
- "test-client",
  "tiny_http",
  "tokio 0.2.25",
  "tokio-rustls",
@@ -2620,17 +2643,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "test-client"
-version = "0.1.0"
-dependencies = [
- "hex",
- "kmip",
- "log",
- "num",
- "openssl",
-]
-
-[[package]]
 name = "textwrap"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3029,15 +3041,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "283d3b89e1368717881a9d51dad843cc435380d8109c9e47d38780a324698d8b"
 dependencies = [
  "cfg-if 0.1.10",
-]
-
-[[package]]
-name = "ttlv"
-version = "0.2.0"
-dependencies = [
- "num-derive",
- "num-traits",
- "scroll",
 ]
 
 [[package]]
