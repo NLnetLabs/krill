@@ -89,6 +89,8 @@ impl KmipSigner {
         let si = kmip::get_server_info(conn.clone())
             .map_err(|err| SignerError::KmipError(format!("Unable to query KMIP server info: {}", err)))?;
 
+        info!("KMIP: Provider details: {:?}", si.id);
+
         // We don't check every possible operation that we might need, only the major ones
         for op in &[kmip::Operation::CreateKeyPair, kmip::Operation::Sign] {
             if !si.supported_ops.contains(&op) {
