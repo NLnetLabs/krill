@@ -534,11 +534,11 @@ impl Pkcs11Signer {
             .generate_key_pair(*session, &mech, &pub_template, &priv_template)
             .map_err(|err| SignerError::Pkcs11Error(format!("Failed to create key: {}", err)))?;
 
-        // TODO: if we encounter an error from this point on should we delete the keys that we just created?
-
+            
         let public_key = self.get_public_key_from_handle(pub_handle)?;
         let key_identifier = public_key.key_identifier();
-
+            
+        // TODO: if we encounter an error from this point on should we delete the keys that we just created?
         // TODO: C_SetAttributeValue is not supported by AWS CloudHSM.
         // Attempting to set an attribute causes error CKR_FUNCTION_NOT_SUPPORTED (0x54).
         // See: https://docs.aws.amazon.com/cloudhsm/latest/userguide/pkcs11-apis.html
@@ -551,7 +551,10 @@ impl Pkcs11Signer {
         //     .set_attribute_value(*session, priv_handle, &template)
         //     .map_err(|err| SignerError::Pkcs11Error(format!("Failed to set attributes on private key: {}", err)))?;
 
-        debug!("PKCS#11: Generated key pair with ID {}", &key_identifier);
+        if log_enabled!(log::Level::Debug) {
+            debug!("PKCS#11: Generated key pair with key ID {}, public handle {}, private handle {}, and CKA_ID {}",
+                key_identifier, pub_handle, priv_handle, hex::encode_upper(cka_id));
+        }
 
         Ok((public_key, pub_handle, priv_handle, cka_id))
     }
@@ -623,23 +626,18 @@ impl Pkcs11Signer {
         Ok(sig)
     }
 
-    fn delete_key_pair(&self, key_id: &KeyIdentifier) -> Result<(), SignerError> {
-        debug!("PKCS#11: Deleting key pair with ID {}", &key_id);
-
+    fn delete_key_by_handle(&self, key_handle: u64) -> Result<(), SignerError> {
+        trace!("PKCS#11: Deleting key with PKCS#11 handle {}", key_handle);
         let session = self.open_session()?;
+        self.ctx.destroy_object(*session, key_handle)
+            .map_err(|err| SignerError::Pkcs11Error(format!("Failed to delete key with PKCS#11 handle {}: {}",
+                key_handle, err)))
+    }
 
-        if let Ok(pub_handle) = self.find_key(key_id, CKO_PUBLIC_KEY) {
-            self.ctx
-                .destroy_object(*session, pub_handle)
-                .map_err(|err| SignerError::Pkcs11Error(format!("Failed to delete public key: {}", err)))?;
-        }
-
-        if let Ok(priv_handle) = self.find_key(key_id, CKO_PRIVATE_KEY) {
-            self.ctx
-                .destroy_object(*session, priv_handle)
-                .map_err(|err| SignerError::Pkcs11Error(format!("Failed to delete private key: {}", err)))?;
-        }
-
+    fn delete_key_pair(&self, key_id: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
+        debug!("PKCS#11: Deleting key pair with ID {}", &key_id);
+        self.delete_key_by_handle(self.find_key(key_id, CKO_PUBLIC_KEY)?)?;
+        self.delete_key_by_handle(self.find_key(key_id, CKO_PRIVATE_KEY)?)?;
         Ok(())
     }
 }
@@ -663,7 +661,7 @@ impl Signer for Pkcs11Signer {
     }
 
     fn destroy_key(&mut self, key_id: &Self::KeyId) -> Result<(), KeyError<Self::Error>> {
-        self.delete_key_pair(key_id).map_err(|err| KeyError::Signer(err))
+        self.delete_key_pair(key_id)
     }
 
     fn sign<D: AsRef<[u8]> + ?Sized>(
@@ -687,11 +685,19 @@ impl Signer for Pkcs11Signer {
         algorithm: SignatureAlgorithm,
         data: &D,
     ) -> Result<(Signature, PublicKey), SignerError> {
-        let (key, _, priv_handle, _) = self.build_key(PublicKeyFormat::Rsa)?;
+        let (key, pub_handle, priv_handle, cka_id) = self.build_key(PublicKeyFormat::Rsa)?;
 
         let signature = self.sign_with_key(priv_handle, algorithm, data.as_ref())?;
+        
+        if let Err(err) = self.delete_key_by_handle(pub_handle) {
+            warn!("PKCS#11: Failed to delete one-off public key with PKCS#11 handle {}, key id {} and CKA_ID {}: {}",
+                pub_handle, key.key_identifier(), hex::encode_upper(cka_id), err);
+        }
 
-        self.delete_key_pair(&key.key_identifier())?;
+        if let Err(err) = self.delete_key_by_handle(priv_handle) {
+            warn!("PKCS#11: Failed to delete one-off private key with PKCS#11 handle {}, key id {} and CKA_ID {}: {}",
+                priv_handle, key.key_identifier(), hex::encode_upper(cka_id), err);
+        }
 
         Ok((signature, key))
     }
