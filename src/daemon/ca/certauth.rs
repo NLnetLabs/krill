@@ -14,6 +14,7 @@ use rpki::{
     x509::{Serial, Time, Validity},
 };
 
+use crate::commons::api::IdCertPemWithSignerInfo;
 use crate::{
     commons::{
         api::{
@@ -461,7 +462,7 @@ impl CertAuth {
     /// Returns a `CertAuthInfo` for this, which includes a data representation
     /// of the internal structure, in particular with regards to parent, children,
     /// resource classes and keys.
-    pub fn as_ca_info(&self) -> CertAuthInfo {
+    pub fn as_ca_info(&self, signer: Arc<KrillSigner>) -> CertAuthInfo {
         let handle = self.handle.clone();
         let repo_info = self.repository.as_ref().map(|repo| repo.repo_info().clone());
 
@@ -470,11 +471,12 @@ impl CertAuth {
         let mut resources = HashMap::new();
 
         for (name, rc) in &self.resources {
-            resources.insert(name.clone(), rc.as_info());
+            resources.insert(name.clone(), rc.as_info(signer.clone()));
         }
         let children: Vec<ChildHandle> = self.children.keys().cloned().collect();
 
         let id_cert_pem = IdCertPem::from(&self.id.cert);
+        let id_cert_pem = IdCertPemWithSignerInfo::new(id_cert_pem, signer);
 
         CertAuthInfo::new(handle, id_cert_pem, repo_info, parents, resources, children)
     }

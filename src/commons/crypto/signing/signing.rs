@@ -60,10 +60,9 @@ impl KeyMap {
         // NOOP
     }
 
-    pub fn get_key(&self, _signer_name: &str, _key_id: &KeyIdentifier) -> Result<Vec<u8>, SignerError> {
+    pub fn get_key(&self, _signer_name: &str, key_id: &KeyIdentifier) -> Result<Vec<u8>, SignerError> {
         // When the HSM feature is disabled we only have the OpenSSL signer which uses the KeyIdentifier as the key id
-        // and so doesn't even call this function
-        unreachable!()
+        Ok(key_id.as_slice().to_vec())
     }
 
     pub fn get_signer_name_for_key(&self, _key_id: &KeyIdentifier) -> CryptoResult<String> {
@@ -329,22 +328,38 @@ impl KrillSigner {
         self.signers[self.keyroll_signer_idx].clone()
     }
 
-    fn signer_for_key(&self, _key_id: &KeyIdentifier) -> CryptoResult<Arc<RwLock<SignerImpl>>> {
-        #[cfg(feature = "hsm")]
-        {
-            // lookup the key by key_id to get the signer id
-            let signer_name = self.key_lookup.get_signer_name_for_key(_key_id)?;
-            let signer_idx = self.signer_names.iter().position(|item| item == &signer_name);
-            if let Some(idx) = signer_idx {
-                Ok(self.signers[idx].clone())
-            } else {
-                Err(crypto::Error::signer(format!("Unknown signer '{}'", signer_name)))
-            }
+    #[cfg(feature = "hsm")]
+    fn signer_for_key(&self, key_id: &KeyIdentifier) -> CryptoResult<Arc<RwLock<SignerImpl>>> {
+        // lookup the key by key_id to get the signer id
+        let signer_name = self.key_lookup.get_signer_name_for_key(key_id)?;
+        let signer_idx = self.signer_names.iter().position(|item| item == &signer_name);
+        if let Some(idx) = signer_idx {
+            Ok(self.signers[idx].clone())
+        } else {
+            Err(crypto::Error::signer(format!("Unknown signer '{}'", signer_name)))
         }
+    }
 
+    #[cfg(feature = "hsm")]
+    pub fn signer_name_for_key(&self, key_id: &KeyIdentifier) -> Option<String> {
+        self.key_lookup.get_signer_name_for_key(key_id).ok()
+    }
+
+    #[cfg(not(feature = "hsm"))]
+    fn signer_for_key(&self, _key_id: &KeyIdentifier) -> CryptoResult<Arc<RwLock<SignerImpl>>> {
         // There's only the OpenSsl signer when not using the HSM feature
-        #[cfg(not(feature = "hsm"))]
         Ok(self.signers[0].clone())
+    }
+
+    #[cfg(not(feature = "hsm"))]
+    pub fn signer_name_for_key(&self, _key_id: &KeyIdentifier) -> Option<String> {
+        // There's only the OpenSsl signer when not using the HSM feature
+        Some(self.signer_names[0].clone())
+    }
+
+    pub fn signer_key_for_key(&self, key_id: &KeyIdentifier) -> Option<String> {
+        let signer_name = self.signer_name_for_key(key_id)?;
+        Some(hex::encode_upper(self.key_lookup.get_key(&signer_name, key_id).ok()?))
     }
 }
 

@@ -27,6 +27,7 @@ use crate::commons::api::{
 };
 use crate::commons::api::{EntitlementClass, Entitlements, RoaAggregateKey, SigningCert};
 use crate::commons::crypto::IdCert;
+use crate::commons::crypto::KrillSigner;
 use crate::commons::util::ext_serde;
 use crate::daemon::ca::RouteAuthorization;
 
@@ -106,6 +107,7 @@ impl<'de> Deserialize<'de> for ResourceClassName {
 pub struct IdCertPem {
     pem: String,
     hash: HexEncodedHash,
+    key_id: KeyIdentifier,
 }
 
 impl IdCertPem {
@@ -115,6 +117,10 @@ impl IdCertPem {
 
     pub fn hash(&self) -> &HexEncodedHash {
         &self.hash
+    }
+
+    pub fn key_id(&self) -> &KeyIdentifier {
+        &self.key_id
     }
 }
 
@@ -136,7 +142,9 @@ impl From<&IdCert> for IdCertPem {
 
         let hash = HexEncodedHash::from_content(&cer.to_bytes());
 
-        IdCertPem { pem, hash }
+        let key_id = cer.subject_public_key_info().key_identifier();
+
+        IdCertPem { pem, hash, key_id }
     }
 }
 
@@ -517,11 +525,12 @@ impl Eq for RepoInfo {}
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PendingKeyInfo {
     key_id: KeyIdentifier,
+    signer: KeySignerInfo,
 }
 
 impl PendingKeyInfo {
-    pub fn new(key_id: KeyIdentifier) -> Self {
-        PendingKeyInfo { key_id }
+    pub fn new(key_id: KeyIdentifier, signer: Arc<KrillSigner>) -> Self {
+        PendingKeyInfo { key_id, signer: KeySignerInfo::build(signer, &key_id) }
     }
 }
 
@@ -532,14 +541,16 @@ impl PendingKeyInfo {
 /// and has at least a MFT and CRL.
 pub struct CertifiedKeyInfo {
     key_id: KeyIdentifier,
+    signer: KeySignerInfo,
     incoming_cert: RcvdCert,
     request: Option<IssuanceRequest>,
 }
 
 impl CertifiedKeyInfo {
-    pub fn new(key_id: KeyIdentifier, incoming_cert: RcvdCert) -> Self {
+    pub fn new(key_id: KeyIdentifier, incoming_cert: RcvdCert, signer: Arc<KrillSigner>) -> Self {
         CertifiedKeyInfo {
             key_id,
+            signer: KeySignerInfo::build(signer, &key_id),
             incoming_cert,
             request: None,
         }
@@ -1533,12 +1544,48 @@ impl fmt::Display for ParentExchangeResult {
 
 //------------ CertAuthInfo --------------------------------------------------
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct KeySignerInfo {
+    name: String,
+    key_id: String,
+}
+
+impl KeySignerInfo {
+    pub fn build(signer: Arc<KrillSigner>, key_id: &KeyIdentifier) -> Self {
+        let signer_name = signer.signer_name_for_key(key_id).or(Some("Unknown".to_string())).unwrap();
+        let signer_key_id = signer.signer_key_for_key(key_id).or(Some("Unknown".to_string())).unwrap();
+        Self { name: signer_name, key_id: signer_key_id }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct IdCertPemWithSignerInfo {
+    #[serde(flatten)]
+    id_cert_pem: IdCertPem,
+    signer: KeySignerInfo,
+}
+
+impl IdCertPemWithSignerInfo {
+    pub fn new(id_cert_pem: IdCertPem, signer: Arc<KrillSigner>) -> Self {
+        let key_id = id_cert_pem.key_id().clone();
+        Self { id_cert_pem, signer: KeySignerInfo::build(signer, &key_id) }
+    }
+
+    pub fn id_cert(&self) -> &IdCertPem {
+        &self.id_cert_pem
+    }
+
+    pub fn signer(&self) -> &KeySignerInfo {
+        &self.signer
+    }
+}
+
 /// This type represents the details of a CertAuth that need
 /// to be exposed through the API/CLI/UI
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthInfo {
     handle: Handle,
-    id_cert: IdCertPem,
+    id_cert: IdCertPemWithSignerInfo,
     repo_info: Option<RepoInfo>,
     parents: Vec<ParentInfo>,
     resources: ResourceSet,
@@ -1549,7 +1596,7 @@ pub struct CertAuthInfo {
 impl CertAuthInfo {
     pub fn new(
         handle: Handle,
-        id_cert: IdCertPem,
+        id_cert: IdCertPemWithSignerInfo,
         repo_info: Option<RepoInfo>,
         parents: HashMap<ParentHandle, ParentCaContact>,
         resource_classes: HashMap<ResourceClassName, ResourceClassInfo>,
@@ -1581,7 +1628,7 @@ impl CertAuthInfo {
         &self.handle
     }
 
-    pub fn id_cert(&self) -> &IdCertPem {
+    pub fn id_cert(&self) -> &IdCertPemWithSignerInfo {
         &self.id_cert
     }
 
@@ -1621,8 +1668,12 @@ impl fmt::Display for CertAuthInfo {
         }
         writeln!(f)?;
 
-        writeln!(f, "ID cert PEM:\n{}", self.id_cert().pem())?;
-        writeln!(f, "Hash: {}", self.id_cert().hash())?;
+        writeln!(f, "ID cert PEM:\n{}", self.id_cert().id_cert().pem())?;
+        writeln!(f, "Hash: {}", self.id_cert().id_cert().hash())?;
+        writeln!(f, "Key ID: {}", self.id_cert().id_cert().key_id())?;
+        writeln!(f, "Signer Name: {}", self.id_cert().signer().name)?;
+        writeln!(f, "Signer Key ID: {}", self.id_cert().signer().key_id)?;
+
         writeln!(f)?;
 
         let resources = self.resources();

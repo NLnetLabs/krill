@@ -1,4 +1,5 @@
 use std::ops::{Deref, DerefMut};
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
@@ -48,8 +49,8 @@ impl CertifiedKey {
         }
     }
 
-    pub fn as_info(&self) -> CertifiedKeyInfo {
-        CertifiedKeyInfo::new(self.key_id, self.incoming_cert.clone())
+    pub fn as_info(&self, signer: Arc<KrillSigner>) -> CertifiedKeyInfo {
+        CertifiedKeyInfo::new(self.key_id, self.incoming_cert.clone(), signer)
     }
 
     pub fn key_id(&self) -> &KeyIdentifier {
@@ -175,8 +176,8 @@ impl PendingKey {
         PendingKey { key_id, request: None }
     }
 
-    pub fn as_info(&self) -> PendingKeyInfo {
-        PendingKeyInfo::new(self.key_id)
+    pub fn as_info(&self, signer: Arc<KrillSigner>) -> PendingKeyInfo {
+        PendingKeyInfo::new(self.key_id, signer)
     }
 
     pub fn unwrap(self) -> (KeyIdentifier, Option<IssuanceRequest>) {
@@ -479,25 +480,25 @@ impl KeyState {
         }
     }
 
-    pub fn as_info(&self) -> ResourceClassKeysInfo {
+    pub fn as_info(&self, signer: Arc<KrillSigner>) -> ResourceClassKeysInfo {
         match self.clone() {
             KeyState::Pending(p) => ResourceClassKeysInfo::Pending(PendingInfo {
-                _pending_key: p.as_info(),
+                _pending_key: p.as_info(signer),
             }),
             KeyState::Active(c) => ResourceClassKeysInfo::Active(ActiveInfo {
-                _active_key: c.as_info(),
+                _active_key: c.as_info(signer),
             }),
             KeyState::RollPending(p, c) => ResourceClassKeysInfo::RollPending(RollPendingInfo {
-                _pending_key: p.as_info(),
-                _active_key: c.as_info(),
+                _pending_key: p.as_info(signer.clone()),
+                _active_key: c.as_info(signer),
             }),
             KeyState::RollNew(n, c) => ResourceClassKeysInfo::RollNew(RollNewInfo {
-                _new_key: n.as_info(),
-                _active_key: c.as_info(),
+                _new_key: n.as_info(signer.clone()),
+                _active_key: c.as_info(signer),
             }),
             KeyState::RollOld(c, o) => ResourceClassKeysInfo::RollOld(RollOldInfo {
-                _old_key: o.as_info(),
-                _active_key: c.as_info(),
+                _old_key: o.as_info(signer.clone()),
+                _active_key: c.as_info(signer),
             }),
         }
     }

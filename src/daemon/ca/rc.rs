@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
 
@@ -141,11 +143,11 @@ impl ResourceClass {
 
     /// Returns a ResourceClassInfo for this, which contains all the
     /// same data, but which does not have any behavior.
-    pub fn as_info(&self) -> ResourceClassInfo {
+    pub fn as_info(&self, signer: Arc<KrillSigner>) -> ResourceClassInfo {
         ResourceClassInfo::new(
             self.name_space.clone(),
             self.parent_handle.clone(),
-            self.key_state.as_info(),
+            self.key_state.as_info(signer),
         )
     }
 }

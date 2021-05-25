@@ -563,9 +563,9 @@ impl KrillServer {
         self.ca_manager.ca_list(actor)
     }
 
-    /// Returns the public CA info for a CA, or NONE if the CA cannot be found.
     pub async fn ca_info(&self, handle: &Handle) -> KrillResult<CertAuthInfo> {
-        self.ca_manager.get_ca(handle).await.map(|ca| ca.as_ca_info())
+        let krill_signer = self.ca_manager.get_signer();
+        self.ca_manager.get_ca(handle).await.map(|ca| ca.as_ca_info(krill_signer))
     }
 
     /// Delete a CA. Let it do best effort revocation requests and withdraw
