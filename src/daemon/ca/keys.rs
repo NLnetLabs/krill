@@ -518,7 +518,7 @@ impl KeyState {
     ) -> KrillResult<Vec<CaEvtDet>> {
         match self {
             KeyState::Active(_current) => {
-                let pending_key_id = signer.create_key()?;
+                let pending_key_id = signer.create_key_for_key_roll()?;
 
                 let req =
                     self.create_issuance_req(base_repo, name_space, parent_class_name, &pending_key_id, signer)?;

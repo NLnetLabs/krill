@@ -6,8 +6,6 @@ use rpki::crypto::{
     signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
 };
 
-use crate::daemon::config::Config;
-
 use super::{KeyMap, SignerError};
 
 //------------ KmipSigner --------------------------------------------------
@@ -52,16 +50,15 @@ pub struct ConfigSignerKmip {
 /// A KMIP based signer.
 #[derive(Clone, Debug)]
 pub struct KmipSigner {
+    name: String,
     conn: Arc<ConnectionDetails>,
     supports_rng_retrieve: bool,
     key_lookup: Arc<KeyMap>,
 }
 
 impl KmipSigner {
-    pub fn build(config: Arc<Config>, key_lookup: Arc<KeyMap>) -> Result<Self, SignerError> {
-        let config = config.signer_kmip.as_ref().ok_or(
-            SignerError::KmipError("Missing configuration file settings".into()))?;
-
+    pub fn build(name: &str, config: &ConfigSignerKmip, key_lookup: Arc<KeyMap>) -> Result<Self, SignerError> {
+        let name = name.to_string();
         let mut conn = ConnectionDetails::new(config.host.clone(), config.port);
 
         if config.insecure {
@@ -107,10 +104,15 @@ impl KmipSigner {
         }
 
         Ok(KmipSigner {
+            name,
             conn,
             supports_rng_retrieve,
             key_lookup,
         })
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     fn get_public_key_from_id(&self, pub_id: &str) -> Result<PublicKey, SignerError> {
@@ -181,7 +183,7 @@ impl KmipSigner {
         key_id: &KeyIdentifier,
         is_private: bool,
     ) -> Result<String, KeyError<SignerError>> {
-        let key_name_prefix_vec = self.key_lookup.get_key(key_id)?;
+        let key_name_prefix_vec = self.key_lookup.get_key(&self.name, key_id)?;
         let key_name_prefix = String::from_utf8(key_name_prefix_vec)
             .map_err(|err| KeyError::Signer(SignerError::KmipError(format!(
                 "Failed to convert lookeded up key name prefix bytes to String: {}", err))))?;
@@ -316,7 +318,7 @@ impl Signer for KmipSigner {
     fn create_key(&mut self, algorithm: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
         let (key, _, _, key_name_prefix) = self.build_key(algorithm)?;
         let key_id = key.key_identifier();
-        self.key_lookup.add_key(key_id.clone(), key_name_prefix.as_bytes());
+        self.key_lookup.add_key(&self.name, key_id.clone(), key_name_prefix.as_bytes());
         Ok(key_id)
     }
 

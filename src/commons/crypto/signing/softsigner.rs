@@ -21,43 +21,75 @@ use crate::commons::error::KrillIoError;
 
 //------------ OpenSslSigner -------------------------------------------------
 
+#[derive(Clone, Debug, Deserialize, Hash)]
+pub struct ConfigSignerOpenSsl {
+    #[serde(default)]
+    pub keys_path: Option<PathBuf>,
+}
+
+impl ConfigSignerOpenSsl {
+    pub fn new(path: &Path) -> Self {
+        Self { keys_path: Some(path.into()) }
+    }
+}
+
+impl Default for ConfigSignerOpenSsl {
+    fn default() -> Self {
+        Self { keys_path: None }
+    }
+}
+
 /// An openssl based signer.
 #[derive(Clone, Debug)]
 pub struct OpenSslSigner {
+    name: String,
     keys_dir: Arc<Path>,
     key_lookup: Arc<KeyMap>,
 }
 
 impl OpenSslSigner {
-    pub fn build(work_dir: &Path, key_lookup: Arc<KeyMap>) -> Result<Self, SignerError> {
-        let meta_data = fs::metadata(&work_dir).map_err(|e| {
-            KrillIoError::new(
-                format!("Could not get metadata from '{}'", work_dir.to_string_lossy()),
-                e,
-            )
-        })?;
-        if meta_data.is_dir() {
-            let mut keys_dir = work_dir.to_path_buf();
-            keys_dir.push("keys");
-            if !keys_dir.is_dir() {
-                fs::create_dir_all(&keys_dir).map_err(|e| {
-                    KrillIoError::new(
-                        format!(
-                            "Could not create dir(s) '{}' for key storage",
-                            keys_dir.to_string_lossy()
-                        ),
-                        e,
-                    )
-                })?;
-            }
+    pub fn build(name: &str, config: &ConfigSignerOpenSsl, work_dir: &Path, key_lookup: Arc<KeyMap>) -> Result<Self, SignerError> {
+        let name = name.to_string();
 
-            Ok(OpenSslSigner {
-                keys_dir: keys_dir.into(),
-                key_lookup,
-            })
+        let keys_dir = if let Some(path) = &config.keys_path {
+            path.clone()
         } else {
-            Err(SignerError::InvalidWorkDir(work_dir.to_path_buf()))
+            let meta_data = fs::metadata(&work_dir).map_err(|e| {
+                KrillIoError::new(
+                    format!("Could not get metadata from '{}'", work_dir.to_string_lossy()),
+                    e,
+                )
+            })?;
+            if meta_data.is_dir() {
+                let mut keys_dir = work_dir.to_path_buf();
+                keys_dir.push("keys");
+                keys_dir
+            } else {
+                return Err(SignerError::InvalidWorkDir(work_dir.to_path_buf()))
+            }
+        };
+
+        if !keys_dir.is_dir() {
+            fs::create_dir_all(&keys_dir).map_err(|e| {
+                KrillIoError::new(
+                    format!(
+                        "Could not create dir(s) '{}' for key storage",
+                        keys_dir.display()
+                    ),
+                    e,
+                )
+            })?;
         }
+
+        Ok(OpenSslSigner {
+            name,
+            keys_dir: keys_dir.into(),
+            key_lookup,
+        })
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
     }
 }
 
@@ -108,7 +140,7 @@ impl Signer for OpenSslSigner {
         f.write_all(json.as_ref())
             .map_err(|e| KrillIoError::new(format!("Could write to key file '{}'", path.to_string_lossy()), e))?;
 
-        self.key_lookup.add_key(key_id.clone(), key_id.clone().as_slice());
+        self.key_lookup.add_key(&self.name, key_id.clone(), key_id.clone().as_slice());
 
         Ok(key_id)
     }
@@ -225,7 +257,8 @@ pub mod tests {
     fn should_return_subject_public_key_info() {
         test::test_under_tmp(|d| {
             let key_meta = Arc::new(KeyMap::in_memory().unwrap());
-            let mut s = OpenSslSigner::build(&d, key_meta.clone()).unwrap();
+            let signer_config = ConfigSignerOpenSsl::default();
+            let mut s = OpenSslSigner::build("Test", &signer_config, &d, key_meta.clone()).unwrap();
             let ki = s.create_key(PublicKeyFormat::Rsa).unwrap();
             s.get_key_info(&ki).unwrap();
             s.destroy_key(&ki).unwrap();

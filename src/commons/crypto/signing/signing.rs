@@ -1,9 +1,16 @@
 //! Support for signing mft, crl, certificates, roas..
 //! Common objects for TAs and CAs
-use std::{ops::Deref, path::Path};
+#[cfg(feature = "hsm")]
+use std::{collections::HashMap, fs::OpenOptions, path::{PathBuf}, str::FromStr};
+use std::path::Path;
+use std::ops::Deref;
 use std::sync::{Arc, RwLock};
 use std::convert::TryFrom;
 use std::ops::DerefMut;
+#[cfg(feature = "hsm")]
+use std::fs::File;
+#[cfg(feature = "hsm")]
+use std::io::{prelude::*, BufReader};
 
 use bytes::Bytes;
 
@@ -17,7 +24,9 @@ use rpki::sigobj::SignedObjectBuilder;
 use rpki::x509::{Name, Serial, Time, Validity};
 use rpki::{rta, uri};
 
-use crate::{commons::api::{IssuedCert, RcvdCert, ReplacedObject, RepoInfo, RequestResourceLimit, ResourceSet}, daemon::config::{Config, SignerType}};
+use crate::{commons::api::{IssuedCert, RcvdCert, ReplacedObject, RepoInfo, RequestResourceLimit, ResourceSet}, daemon::config::Config};
+#[cfg(feature = "hsm")]
+use crate::daemon::config::SignerType;
 #[cfg(feature = "hsm")]
 use crate::commons::crypto::signing::{Pkcs11Signer, KmipSigner};
 use crate::commons::crypto::{self, CryptoResult};
@@ -26,19 +35,16 @@ use crate::commons::util::AllowedUri;
 use crate::commons::KrillResult;
 use crate::daemon::ca::CertifiedKey;
 
-use super::{OpenSslSigner, SignerError};
+use super::{SignerError, ConfigSignerOpenSsl, OpenSslSigner};
+
+const OPENSSL_DEFAULT_SIGNER_NAME: &str = "OpenSSL";
 
 //------------ KeyMeta -------------------------------------------------------
 
-// This type is used as an abstraction over Sled so that the signer implementations don't become tied to specifics of
-// Sled.
 
+#[cfg(not(feature = "hsm"))]
 #[derive(Debug, Clone)]
-pub struct KeyMap {
-    // Sled is "It is fully thread-safe, and all operations are atomic".
-    #[cfg(feature = "hsm")]
-    db: sled::Db,
-}
+pub struct KeyMap { }
 
 #[cfg(not(feature = "hsm"))]
 impl KeyMap {
@@ -50,15 +56,35 @@ impl KeyMap {
         Ok(Self { })
     }
 
-    pub fn add_key(&self, _key_id: KeyIdentifier, _key_handle: &[u8]) {
-        // NO OP
+    pub fn add_key(&self, _signer_name: &str, _key_id: KeyIdentifier, _key_handle: &[u8]) {
+        // NOOP
     }
 
-    pub fn get_key(&self, _key_id: &KeyIdentifier) -> Result<Vec<u8>, SignerError> {
+    pub fn get_key(&self, _signer_name: &str, _key_id: &KeyIdentifier) -> Result<Vec<u8>, SignerError> {
         // When the HSM feature is disabled we only have the OpenSSL signer which uses the KeyIdentifier as the key id
         // and so doesn't even call this function
         unreachable!()
     }
+
+    pub fn get_signer_name_for_key(&self, _key_id: &KeyIdentifier) -> CryptoResult<String> {
+        // When the HSM feature is disabled we only have the OpenSSL signer.
+        Ok(OPENSSL_DEFAULT_SIGNER_NAME.to_string())
+    }
+}
+
+#[cfg(feature = "hsm")]
+type SignerName = String;
+
+#[cfg(feature = "hsm")]
+#[derive(Debug, Clone)]
+struct KeyInfo{ key_handle: Vec<u8>, signer_name: SignerName }
+
+#[cfg(feature = "hsm")]
+#[derive(Debug, Clone)]
+pub struct KeyMap {
+    db_path: Option<PathBuf>,
+
+    keys: Arc<RwLock<HashMap<KeyIdentifier, KeyInfo>>>,
 }
 
 #[cfg(feature = "hsm")]
@@ -66,62 +92,128 @@ impl KeyMap {
     pub fn persistent(data_dir: &Path) -> KrillResult<Self> {
         let db_path = data_dir.join("keys/map.db");
         debug!("Opening key map database at '{}'", &db_path.display());
-        let db = sled::Config::new()
-            .mode(sled::Mode::HighThroughput)
-            .path(&db_path)
-            .open()
-            .map_err(|err| Error::SignerError(
-                format!("Failed to open key map database '{}': {}", db_path.display(), err)))?;
-
-        Ok(Self { db })
+        Self::init(Some(db_path))
     }
 
     pub fn in_memory() -> KrillResult<Self> {
-        // useful for testing
-        let db = sled::Config::new()
-            .temporary(true)
-            .open()
-            .map_err(|err| Error::SignerError(
-                format!("Failed to open in-memory key map database: {}", err)))?;
-
-        Ok(Self { db })
+        Self::init(None)
     }
 
-    pub fn add_key(&self, key_id: KeyIdentifier, key_handle: &[u8]) {
-        debug!("Add key {} => {:?}", &key_id, key_handle);
+    fn init(db_path: Option<PathBuf>) -> KrillResult<Self> {
+        trace!("Initializing signer mappings");
 
-        fn add_and_flush(db: &sled::Db, key_id: KeyIdentifier, key_handle: &[u8]) -> Result<(), SignerError> {
-            db
-                .compare_and_swap(key_id, None as Option<KeyIdentifier>, Some(key_handle.to_vec()))
-                .map_err(|err| SignerError::KeyMapError(format!("Insert failed: {}", err)))?
-                .map_err(|err| SignerError::KeyMapError(format!("Insert failed: Key already exists! (underlying error: {})", err)))?;
-            db
-                .flush()
-                .map_err(|err| SignerError::KeyMapError(format!("Flush failed: {}", err)))?;
+        let mut keys = HashMap::new();
 
-            Ok(())
+        if let Some(ref db_path) = db_path {
+            trace!("Opening signer mapping database '{}'", db_path.display());
+
+            if let Ok(file) = File::open(db_path) {
+                let reader = BufReader::new(file);
+
+                for line in reader.lines() {
+                    // PoC line format: <signer_name><comma><hex key_identifer><comma><hex key handle>
+                    // TODO: Prefix the line with a time date field for when the key was created.
+                    let line = line.map_err(|err| Error::SignerError(
+                        format!("Failed to read line from database file: {}", err)))?;
+                    trace!("Read signer mapping database line: {}", &line);
+
+                    let mut fields_iter = line.split(',');
+                    let signer_name = fields_iter.next();
+                    let hex_key_id = fields_iter.next();
+                    let hex_key_handle = fields_iter.next();
+
+                    if let (Some(signer_name), Some(hex_key_id), Some(hex_key_handle)) = (signer_name, hex_key_id, hex_key_handle) {
+                        let signer_name = signer_name.to_string();
+                        let key_id = KeyIdentifier::from_str(hex_key_id)
+                            .map_err(|err| Error::SignerError(
+                                format!("Failed to parse hex key identifier from database file: {}", err)))?;
+                        let key_handle = hex::decode(hex_key_handle)
+                            .map_err(|err| Error::SignerError(
+                                format!("Failed to parse hex key handle from database file: {}", err)))?;
+        
+                        // TODO: Use an index into a vector of signer names instead of cloning the signer name for each
+                        // record.
+                        let key_info = KeyInfo { key_handle, signer_name: signer_name.clone() };
+                        if keys.insert(key_id.clone(), key_info).is_some() {
+                            return Err(Error::SignerError("Duplicate key while restoring keys lookup table".to_string()));
+                        }
+                    } else {
+                        return Err(Error::SignerError("Failed to parse database file line".to_string()));
+                    }
+                }
+            }
         }
 
-        if let Err(err) = add_and_flush(&self.db, key_id.clone(), key_handle) {
+        let keys = Arc::new(RwLock::new(keys));
+    
+        Ok(Self { db_path, keys })
+    }
+
+    fn add_and_flush(
+        &self,
+        signer_name: String,
+        key_id: KeyIdentifier,
+        key_handle: &[u8]
+    )-> Result<(), SignerError> {
+        let hex_key_id = hex::encode_upper(key_id.as_slice());
+        let hex_key_handle = hex::encode_upper(&key_handle);
+        let key_handle = key_handle.to_vec();
+        let key_info = KeyInfo { key_handle, signer_name: signer_name.clone() };
+
+        let mut keys = self.keys.write()
+            .map_err(|err| SignerError::KeyMapError(format!("Failed to lock keys map for writing: {}", err)))?;
+
+        if keys.insert(key_id.clone(), key_info).is_some() {
+            return Err(SignerError::KeyMapError("Duplicate key while inserting into keys lookup table".to_string()));
+        }
+
+        if let Some(db_path) = &self.db_path {
+            let mut file = OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(db_path)
+                .map_err(|err| SignerError::KeyMapError(
+                    format!("Failed to open key map database '{}': {}", db_path.display(), err)))?;
+
+            write!(file, "{},{},{}\n", signer_name, hex_key_id, hex_key_handle)
+                .map_err(|err| SignerError::KeyMapError(
+                    format!("Failed to append to key map database '{}': {}", db_path.display(), err)))?;
+        }
+
+        Ok(())
+    }
+
+    pub fn add_key(&self, signer_name: &str, key_id: KeyIdentifier, key_handle: &[u8]) {
+        trace!("Add key {} for signer {}", &key_id, signer_name);
+
+        if let Err(err) = self.add_and_flush(signer_name.to_string(), key_id.clone(), key_handle) {
             // Abort Krill because if we cannot write the key mapping record completely to disk we will never be
             // able to sign with this key or show in the history which signer this key was used with.
             panic!("Failed to add key {} to key map: {}", key_id, err);
         }
     }
 
-    pub fn get_key(&self, key_id: &KeyIdentifier) -> Result<Vec<u8>, SignerError> {
-        debug!("Get key {}", &key_id);
-        let possible_value = self.db.get(key_id)
-            .map_err(|err| SignerError::KeyMapError(format!("Failed to access key meta: {}", err)))?
-            .and_then(|v| Some(v.deref().to_vec()));
-
-        possible_value.ok_or(SignerError::KeyNotFound)
+    pub fn get_key(&self, _signer_name: &str, key_id: &KeyIdentifier) -> Result<Vec<u8>, SignerError> {
+        // Note: We don't currently support multiple signers with the same KeyIdentifier
+        trace!("Get key {} for signer {}", key_id, _signer_name);
+        self.keys
+            .read()
+            .map_err(|err| SignerError::KeyMapError(
+                format!("Failed to get key handle for key id '{}': Failed to lock keys map for reading: {}", key_id, err)))?
+            .get(key_id)
+            .ok_or(SignerError::KeyNotFound)
+            .map(|v| v.key_handle.clone())
     }
-}
 
-impl Drop for KeyMap {
-    fn drop(&mut self) {
-        debug!("Closing key map database");
+    pub fn get_signer_name_for_key(&self, key_id: &KeyIdentifier) -> CryptoResult<String> {
+        trace!("Get signer name for key {}", &key_id);
+        self.keys
+            .read()
+            .map_err(|err| crate::commons::crypto::error::Error::SignerError(
+                format!("Failed to get signer name for key id '{}': Failed to lock keys map for reading: {}", key_id, err)))?
+            .get(key_id)
+            .ok_or(crate::commons::crypto::error::Error::KeyNotFound)
+            .map(|v| v.signer_name.clone())
     }
 }
 
@@ -141,41 +233,135 @@ pub enum SignerImpl {
 pub struct KrillSigner {
     // use a blocking lock to avoid having to be async, for signing operations
     // this should be fine.
-    signer: Arc<RwLock<SignerImpl>>,
+    signers: Vec<Arc<RwLock<SignerImpl>>>,
+    default_signer_idx: usize,
+    keyroll_signer_idx: usize,
     key_lookup: Arc<KeyMap>,
+    signer_names: Vec<String>,
 }
 
 impl KrillSigner {
     pub fn build(config: Arc<Config>) -> KrillResult<Self> {
         let key_lookup = Arc::new(KeyMap::persistent(&config.data_dir)?);
+        let mut signers = Vec::new();
+        let mut signer_names = Vec::new();
 
-        let signer = match config.signer_type {
-            SignerType::OpenSsl => SignerImpl::OpenSsl(OpenSslSigner::build(&config.data_dir, key_lookup.clone())?),
-            #[cfg(feature = "hsm")]
-            SignerType::Pkcs11 => SignerImpl::Pkcs11(Pkcs11Signer::build(config.clone(), key_lookup.clone())?),
-            #[cfg(feature = "hsm")]
-            SignerType::Kmip => SignerImpl::Kmip(KmipSigner::build(config.clone(), key_lookup.clone())?),
-        };
+        #[allow(unused_mut)] // because without the HSM feature this is only set here
+        let mut default_signer_idx: Option<usize> = None;
+        #[allow(unused_mut)] // because without the HSM feature this is only set here
+        let mut keyroll_signer_idx: Option<usize> = None;
 
-        let signer = Arc::new(RwLock::new(signer));
+        #[cfg(feature = "hsm")]
+        if let Some(config_signers) = &config.signers {
+            for (idx, signer) in config_signers.iter().enumerate() {
+                let signer_name = &signer.name;
 
-        Ok(KrillSigner { signer, key_lookup })
+                signer_names.push(signer_name.clone());
+
+                signers.push(match &signer.signer_conf {
+                    SignerType::OpenSsl(signer_conf) => {
+                        SignerImpl::OpenSsl(OpenSslSigner::build(signer_name, &signer_conf, &config.data_dir, key_lookup.clone())?)
+                    }
+                    SignerType::Pkcs11(signer_conf) => {
+                        SignerImpl::Pkcs11(Pkcs11Signer::build(signer_name, &signer_conf, key_lookup.clone())?)
+                    }
+                    SignerType::Kmip(signer_conf) => {
+                        SignerImpl::Kmip(KmipSigner::build(signer_name, &signer_conf, key_lookup.clone())?)
+                    }
+                });
+
+                if signer.default {
+                    if default_signer_idx.is_some() {
+                        return Err(Error::ConfigError("Only one signer can be set as the default signer".to_string()));
+                    } else {
+                        default_signer_idx = Some(idx);
+                    }
+                }
+
+                if signer.keyroll {
+                    if keyroll_signer_idx.is_some() {
+                        return Err(Error::ConfigError("Only one signer can be set as the keyroll signer".to_string()));
+                    } else {
+                        keyroll_signer_idx = Some(idx);
+                    }
+                }                
+
+                info!("Initialized signer '{}'", signer_name);
+            }
+        }
+
+        if signers.is_empty() {
+            let signer_config = ConfigSignerOpenSsl::default();
+            signer_names.push(OPENSSL_DEFAULT_SIGNER_NAME.to_string());
+            signers.push(SignerImpl::OpenSsl(OpenSslSigner::build(
+                OPENSSL_DEFAULT_SIGNER_NAME, &signer_config, &config.data_dir, key_lookup.clone())?));
+        }
+
+        let default_signer_idx = default_signer_idx.unwrap_or(0);
+        let keyroll_signer_idx = keyroll_signer_idx.unwrap_or(0);
+
+        #[cfg(feature = "hsm")]
+        info!("Using '{}' as the default signer", &signer_names[default_signer_idx]);
+
+        let signers: Vec<_> = signers.into_iter().map(|s| Arc::new(RwLock::new(s))).collect();
+
+        Ok(KrillSigner { signers, default_signer_idx, keyroll_signer_idx, key_lookup, signer_names })
     }
 
     pub fn test(data_dir: &Path) -> KrillResult<Self> {
         let key_lookup = Arc::new(KeyMap::in_memory()?);
+        let signer_config = ConfigSignerOpenSsl::default();
+        let signer = SignerImpl::OpenSsl(OpenSslSigner::build(
+            OPENSSL_DEFAULT_SIGNER_NAME, &signer_config, &data_dir, key_lookup.clone())?);
+        let signers = vec![Arc::new(RwLock::new(signer))];
+        let signer_names = vec![OPENSSL_DEFAULT_SIGNER_NAME.to_string()];
+        let default_signer_idx = 0;
+        let keyroll_signer_idx = 0;
+        Ok(KrillSigner { signers, default_signer_idx, keyroll_signer_idx, key_lookup, signer_names })
+    }
 
-        let signer = SignerImpl::OpenSsl(OpenSslSigner::build(&data_dir, key_lookup.clone())?);
+    /// Returns the default signer
+    fn signer(&self) -> Arc<RwLock<SignerImpl>> {
+        self.signers[self.default_signer_idx].clone()
+    }
 
-        let signer = Arc::new(RwLock::new(signer));
+    fn keyroll_signer(&self) -> Arc<RwLock<SignerImpl>> {
+        self.signers[self.keyroll_signer_idx].clone()
+    }
 
-        Ok(KrillSigner { signer, key_lookup })
+    fn signer_for_key(&self, _key_id: &KeyIdentifier) -> CryptoResult<Arc<RwLock<SignerImpl>>> {
+        #[cfg(feature = "hsm")]
+        {
+            // lookup the key by key_id to get the signer id
+            let signer_name = self.key_lookup.get_signer_name_for_key(_key_id)?;
+            let signer_idx = self.signer_names.iter().position(|item| item == &signer_name);
+            if let Some(idx) = signer_idx {
+                Ok(self.signers[idx].clone())
+            } else {
+                Err(crypto::Error::signer(format!("Unknown signer '{}'", signer_name)))
+            }
+        }
+
+        // There's only the OpenSsl signer when not using the HSM feature
+        #[cfg(not(feature = "hsm"))]
+        Ok(self.signers[0].clone())
     }
 }
 
 impl KrillSigner {
     pub fn create_key(&self) -> CryptoResult<KeyIdentifier> {
-        match self.signer.write().unwrap().deref_mut() {
+        match self.signer().write().unwrap().deref_mut() {
+            SignerImpl::OpenSsl(signer) => signer.create_key(PublicKeyFormat::Rsa),
+            #[cfg(feature = "hsm")]
+            SignerImpl::Pkcs11(signer) => signer.create_key(PublicKeyFormat::Rsa),
+            #[cfg(feature = "hsm")]
+            SignerImpl::Kmip(signer) => signer.create_key(PublicKeyFormat::Rsa),
+        }
+        .map_err(crypto::Error::signer)
+    }
+
+    pub fn create_key_for_key_roll(&self) -> CryptoResult<KeyIdentifier> {
+        match self.keyroll_signer().write().unwrap().deref_mut() {
             SignerImpl::OpenSsl(signer) => signer.create_key(PublicKeyFormat::Rsa),
             #[cfg(feature = "hsm")]
             SignerImpl::Pkcs11(signer) => signer.create_key(PublicKeyFormat::Rsa),
@@ -186,7 +372,7 @@ impl KrillSigner {
     }
 
     pub fn destroy_key(&self, key_id: &KeyIdentifier) -> CryptoResult<()> {
-        match self.signer.write().unwrap().deref_mut() {
+        match self.signer_for_key(key_id)?.write().unwrap().deref_mut() {
             SignerImpl::OpenSsl(signer) => signer.destroy_key(key_id),
             #[cfg(feature = "hsm")]
             SignerImpl::Pkcs11(signer) => signer.destroy_key(key_id),
@@ -197,7 +383,7 @@ impl KrillSigner {
     }
 
     pub fn get_key_info(&self, key_id: &KeyIdentifier) -> CryptoResult<PublicKey> {
-        match self.signer.read().unwrap().deref() {
+        match self.signer_for_key(key_id)?.read().unwrap().deref() {
             SignerImpl::OpenSsl(signer) => signer.get_key_info(key_id),
             #[cfg(feature = "hsm")]
             SignerImpl::Pkcs11(signer) => signer.get_key_info(key_id),
@@ -208,7 +394,7 @@ impl KrillSigner {
     }
 
     pub fn random_serial(&self) -> CryptoResult<Serial> {
-        match self.signer.read().unwrap().deref() {
+        match self.signer().read().unwrap().deref() {
             SignerImpl::OpenSsl(signer) => Serial::random(signer),
             #[cfg(feature = "hsm")]
             SignerImpl::Pkcs11(signer) => Serial::random(signer),
@@ -219,7 +405,7 @@ impl KrillSigner {
     }
 
     pub fn sign<D: AsRef<[u8]> + ?Sized>(&self, key_id: &KeyIdentifier, data: &D) -> CryptoResult<Signature> {
-        match self.signer.read().unwrap().deref() {
+        match self.signer_for_key(key_id)?.read().unwrap().deref() {
             SignerImpl::OpenSsl(signer) => signer.sign(key_id, SignatureAlgorithm::default(), data),
             #[cfg(feature = "hsm")]
             SignerImpl::Pkcs11(signer) => signer.sign(key_id, SignatureAlgorithm::default(), data),
@@ -230,7 +416,7 @@ impl KrillSigner {
     }
 
     pub fn sign_one_off<D: AsRef<[u8]> + ?Sized>(&self, data: &D) -> CryptoResult<(Signature, PublicKey)> {
-        match self.signer.read().unwrap().deref() {
+        match self.signer().read().unwrap().deref() {
             SignerImpl::OpenSsl(signer) => signer.sign_one_off(SignatureAlgorithm::default(), data),
             #[cfg(feature = "hsm")]
             SignerImpl::Pkcs11(signer) => signer.sign_one_off(SignatureAlgorithm::default(), data),
@@ -240,53 +426,36 @@ impl KrillSigner {
         .map_err(crypto::Error::signer)
     }
 
-    pub fn sign_csr(&self, base_repo: &RepoInfo, name_space: &str, key: &KeyIdentifier) -> CryptoResult<Csr> {
-        let signer = self.signer.read().unwrap();
-        let pub_key = match signer.deref() {
-            SignerImpl::OpenSsl(signer) => signer.get_key_info(key),
-            #[cfg(feature = "hsm")]
-            SignerImpl::Pkcs11(signer) => signer.get_key_info(key),
-            #[cfg(feature = "hsm")]
-            SignerImpl::Kmip(signer) => signer.get_key_info(key),
+    pub fn sign_csr(&self, base_repo: &RepoInfo, name_space: &str, key_id: &KeyIdentifier) -> CryptoResult<Csr> {
+        let locked_signer = self.signer_for_key(key_id)?;
+        let signer = locked_signer.read().unwrap();
+
+        fn do_sign<S>(signer: &S, base_repo: &RepoInfo, name_space: &str, key_id: &KeyIdentifier) -> CryptoResult<Csr>
+        where
+            S: Signer<KeyId = KeyIdentifier>
+        {
+            let pub_key = signer.get_key_info(key_id).map_err(crypto::Error::key_error)?;
+            let ca_repository = &base_repo.ca_repository(name_space).join(&[]);
+            let rpki_manifest = &base_repo.rpki_manifest(name_space, &pub_key.key_identifier());
+            let rpki_notify = Some(base_repo.rpki_notify());
+
+            let enc = Csr::construct(signer, key_id, ca_repository, rpki_manifest, rpki_notify.as_ref())
+                .map_err(crypto::Error::signing)?;
+
+            Ok(Csr::decode(enc.as_slice())?)
         }
-        .map_err(crypto::Error::key_error)?;
-        let enc = match signer.deref() {
-            SignerImpl::OpenSsl(signer) => {
-                Csr::construct(
-                    signer,
-                    key,
-                    &base_repo.ca_repository(name_space).join(&[]), // force trailing slash
-                    &base_repo.rpki_manifest(name_space, &pub_key.key_identifier()),
-                    Some(&base_repo.rpki_notify()),
-                )
-            }
+
+        match signer.deref() {
+            SignerImpl::OpenSsl(signer) => do_sign(signer, base_repo, name_space, key_id),
             #[cfg(feature = "hsm")]
-            SignerImpl::Pkcs11(signer) => {
-                Csr::construct(
-                    signer,
-                    key,
-                    &base_repo.ca_repository(name_space).join(&[]), // force trailing slash
-                    &base_repo.rpki_manifest(name_space, &pub_key.key_identifier()),
-                    Some(&base_repo.rpki_notify()),
-                )
-            }
+            SignerImpl::Pkcs11(signer) => do_sign(signer, base_repo, name_space, key_id),
             #[cfg(feature = "hsm")]
-            SignerImpl::Kmip(signer) => {
-                Csr::construct(
-                    signer,
-                    key,
-                    &base_repo.ca_repository(name_space).join(&[]), // force trailing slash
-                    &base_repo.rpki_manifest(name_space, &pub_key.key_identifier()),
-                    Some(&base_repo.rpki_notify()),
-                )
-            }
+            SignerImpl::Kmip(signer) => do_sign(signer, base_repo, name_space, key_id),
         }
-        .map_err(crypto::Error::signing)?;
-        Ok(Csr::decode(enc.as_slice())?)
     }
 
     pub fn sign_cert(&self, tbs: TbsCert, key_id: &KeyIdentifier) -> CryptoResult<Cert> {
-        match self.signer.read().unwrap().deref() {
+        match self.signer_for_key(key_id)?.read().unwrap().deref() {
             SignerImpl::OpenSsl(signer) => tbs.into_cert(signer, key_id),
             #[cfg(feature = "hsm")]
             SignerImpl::Pkcs11(signer) => tbs.into_cert(signer, key_id),
@@ -297,7 +466,7 @@ impl KrillSigner {
     }
 
     pub fn sign_crl(&self, tbs: TbsCertList<Vec<CrlEntry>>, key_id: &KeyIdentifier) -> CryptoResult<Crl> {
-        match self.signer.read().unwrap().deref() {
+        match self.signer_for_key(key_id)?.read().unwrap().deref() {
             SignerImpl::OpenSsl(signer) => tbs.into_crl(signer, key_id),
             #[cfg(feature = "hsm")]
             SignerImpl::Pkcs11(signer) => tbs.into_crl(signer, key_id),
@@ -313,7 +482,7 @@ impl KrillSigner {
         builder: SignedObjectBuilder,
         key_id: &KeyIdentifier,
     ) -> CryptoResult<Manifest> {
-        match self.signer.read().unwrap().deref() {
+        match self.signer_for_key(key_id)?.read().unwrap().deref() {
             SignerImpl::OpenSsl(signer) => content.into_manifest(builder, signer, key_id),
             #[cfg(feature = "hsm")]
             SignerImpl::Pkcs11(signer) => content.into_manifest(builder, signer, key_id),
@@ -329,7 +498,7 @@ impl KrillSigner {
         object_builder: SignedObjectBuilder,
         key_id: &KeyIdentifier,
     ) -> CryptoResult<Roa> {
-        match self.signer.read().unwrap().deref() {
+        match self.signer_for_key(key_id)?.read().unwrap().deref() {
             SignerImpl::OpenSsl(signer) => roa_builder.finalize(object_builder, signer, key_id),
             #[cfg(feature = "hsm")]
             SignerImpl::Pkcs11(signer) => roa_builder.finalize(object_builder, signer, key_id),
@@ -340,14 +509,14 @@ impl KrillSigner {
     }
 
     pub fn sign_rta(&self, rta_builder: &mut rta::RtaBuilder, ee: Cert) -> CryptoResult<()> {
-        let key = ee.subject_key_identifier();
+        let key_id = ee.subject_key_identifier();
         rta_builder.push_cert(ee);
-        match self.signer.read().unwrap().deref() {
-            SignerImpl::OpenSsl(signer) => rta_builder.sign(signer, &key, None, None),
+        match self.signer_for_key(&key_id)?.read().unwrap().deref() {
+            SignerImpl::OpenSsl(signer) => rta_builder.sign(signer, &key_id, None, None),
             #[cfg(feature = "hsm")]
-            SignerImpl::Pkcs11(signer) => rta_builder.sign(signer, &key, None, None),
+            SignerImpl::Pkcs11(signer) => rta_builder.sign(signer, &key_id, None, None),
             #[cfg(feature = "hsm")]
-            SignerImpl::Kmip(signer) => rta_builder.sign(signer, &key, None, None),
+            SignerImpl::Kmip(signer) => rta_builder.sign(signer, &key_id, None, None),
         }
         .map_err(crypto::Error::signing)
     }
@@ -609,6 +778,8 @@ mod tests {
 
     use super::KeyMap;
 
+    const TEST_SIGNER_NAME: &str = "TestSigner";
+
     fn make_key_id(n: u8) -> KeyIdentifier {
         let mut dummy_key_id_bytes: [u8; 20] = [0; 20];
         dummy_key_id_bytes[19] = n;
@@ -618,7 +789,7 @@ mod tests {
     #[test]
     fn lookup_add_key_should_succeed() {
         let lookup = KeyMap::in_memory().unwrap();
-        lookup.add_key(make_key_id(1), &[]);
+        lookup.add_key(TEST_SIGNER_NAME, make_key_id(1), &[]);
     }
 
     #[test]
@@ -626,8 +797,8 @@ mod tests {
     fn lookup_add_dup_key_should_fail() {
         let lookup = KeyMap::in_memory().unwrap();
         let key_id = make_key_id(1);
-        lookup.add_key(key_id.clone(), &[]);
-        lookup.add_key(key_id.clone(), &[]);
+        lookup.add_key(TEST_SIGNER_NAME, key_id.clone(), &[]);
+        lookup.add_key(TEST_SIGNER_NAME, key_id.clone(), &[]);
     }
 
     #[test]
@@ -635,14 +806,14 @@ mod tests {
         let lookup = KeyMap::in_memory().unwrap();
         let key_id = make_key_id(1);
         let handle = [1, 2, 3];
-        lookup.add_key(key_id.clone(), &handle);
-        assert_eq!(handle, lookup.get_key(&key_id).unwrap().as_slice());
+        lookup.add_key(TEST_SIGNER_NAME, key_id.clone(), &handle);
+        assert_eq!(handle, lookup.get_key(TEST_SIGNER_NAME, &key_id).unwrap().as_slice());
     }
 
     #[test]
     fn lookup_get_nonexisting_key_should_fail() {
         let lookup = KeyMap::in_memory().unwrap();
         let key_id = make_key_id(1);
-        assert!(matches!(lookup.get_key(&key_id), Err(SignerError::KeyNotFound)));
+        assert!(matches!(lookup.get_key(TEST_SIGNER_NAME, &key_id), Err(SignerError::KeyNotFound)));
     }
 }

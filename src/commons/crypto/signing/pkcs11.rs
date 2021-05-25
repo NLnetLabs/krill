@@ -7,7 +7,7 @@ use rpki::crypto::{
     signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
 };
 
-use crate::{constants::test_mode_enabled, daemon::config::Config};
+use crate::constants::test_mode_enabled;
 
 use super::{KeyMap, SignerError};
 
@@ -143,6 +143,7 @@ impl Drop for Pkcs11Session {
 /// A PKCS#11 based signer.
 #[derive(Clone, Debug)]
 pub struct Pkcs11Signer {
+    name: String,
     ctx: Arc<Pkcs11Ctx>,
     login_session: Pkcs11Session,
     slot_id: CK_SLOT_ID,
@@ -150,7 +151,7 @@ pub struct Pkcs11Signer {
 }
 
 impl Pkcs11Signer {
-    pub fn build(config: Arc<Config>, key_lookup: Arc<KeyMap>) -> Result<Self, SignerError> {
+    pub fn build(name: &str, config: &ConfigSignerPkcs11, key_lookup: Arc<KeyMap>) -> Result<Self, SignerError> {
         // softhsm2-util --init-token --slot 0 --label "My token 1"
         //    ... User PIN: 7890
         //    ... is re-assigned to slot 313129207
@@ -164,9 +165,7 @@ impl Pkcs11Signer {
         // let lib_path = Path::new("/usr/local/lib/softhsm/libsofthsm2.so");
         // let slot_id = 313129207;
 
-        let config = config.signer_pkcs11.as_ref().ok_or(
-            SignerError::Pkcs11Error("Missing configuration file settings".to_string()))?;
-
+        let name = name.to_string();
         let ctx = Arc::new(Pkcs11Ctx::new(Path::new(&config.lib_path))?);
         let slot_id = config.slot_id;
         let mut login_session = Pkcs11Session::new(ctx.clone(), slot_id)?;
@@ -174,11 +173,16 @@ impl Pkcs11Signer {
         login_session.login(CKU_USER, Some(&config.user_pin))?;
 
         Ok(Pkcs11Signer {
+            name,
             ctx,
             login_session,
             slot_id,
             key_lookup,
         })
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     fn open_session(&self) -> Result<Pkcs11Session, SignerError> {
@@ -327,7 +331,7 @@ impl Pkcs11Signer {
         );
 
         // let cka_id = key_id.as_slice();
-        let cka_id = self.key_lookup.get_key(key_id)?;
+        let cka_id = self.key_lookup.get_key(&self.name, key_id)?;
 
         let mut template: Vec<CK_ATTRIBUTE> = Vec::new();
         template.push(CK_ATTRIBUTE::new(CKA_CLASS).with_ck_ulong(&key_class));
@@ -649,7 +653,7 @@ impl Signer for Pkcs11Signer {
     fn create_key(&mut self, algorithm: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
         let (key, _, _, cka_id) = self.build_key(algorithm)?;
         let key_id = key.key_identifier();
-        self.key_lookup.add_key(key_id.clone(), &cka_id[..]);
+        self.key_lookup.add_key(&self.name, key_id.clone(), &cka_id[..]);
         Ok(key_id)
     }
 

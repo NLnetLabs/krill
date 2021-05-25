@@ -2152,7 +2152,7 @@ mod test {
     use rpki::crypto::signer::Signer;
     use rpki::crypto::PublicKeyFormat;
 
-    use crate::{commons::crypto::{KeyMap, OpenSslSigner}, test};
+    use crate::{commons::crypto::{ConfigSignerOpenSsl, KeyMap, OpenSslSigner}, test};
 
     use super::*;
 
@@ -2190,7 +2190,8 @@ mod test {
     fn mft_uri() {
         test::test_under_tmp(|d| {
             let key_meta = KeyMap::in_memory().unwrap();
-            let mut signer = OpenSslSigner::build(&d, Arc::new(key_meta)).unwrap();
+            let signer_config = ConfigSignerOpenSsl::default();
+            let mut signer = OpenSslSigner::build("Test", &signer_config, &d, Arc::new(key_meta)).unwrap();
             let key_id = signer.create_key(PublicKeyFormat::Rsa).unwrap();
             let pub_key = signer.get_key_info(&key_id).unwrap();
 
