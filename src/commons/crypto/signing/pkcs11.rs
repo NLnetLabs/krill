@@ -330,7 +330,6 @@ impl Pkcs11Signer {
             &key_id
         );
 
-        // let cka_id = key_id.as_slice();
         let cka_id = self.key_lookup.get_key(&self.name, key_id)?;
 
         let mut template: Vec<CK_ATTRIBUTE> = Vec::new();
