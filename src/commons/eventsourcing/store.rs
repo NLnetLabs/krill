@@ -176,8 +176,8 @@ where
         let store = AggregateStore {
             kv,
             cache,
-            post_save_listeners,
             pre_save_listeners,
+            post_save_listeners,
             outer_lock,
         };
 

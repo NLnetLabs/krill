@@ -88,7 +88,7 @@ pub struct PostLimits {
 
 impl PostLimits {
     fn new(api: u64, rfc6492: u64, rfc8181: u64) -> Self {
-        PostLimits { api, rfc8181, rfc6492 }
+        PostLimits { api, rfc6492, rfc8181 }
     }
 
     pub fn api(&self) -> u64 {

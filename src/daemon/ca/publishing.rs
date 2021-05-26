@@ -67,7 +67,7 @@ impl CaObjectsStore {
         let work_dir = &config.data_dir;
         let store = KeyValueStore::disk(work_dir, CA_OBJECTS_DIR)?;
         let store = Arc::new(RwLock::new(store));
-        Ok(CaObjectsStore { store, config, signer })
+        Ok(CaObjectsStore { store, signer, config })
     }
 }
 

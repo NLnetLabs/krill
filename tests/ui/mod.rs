@@ -1,11 +1,11 @@
 #[cfg(feature = "multi-user")]
 mod openid_connect_mock;
 
-use OpenIDConnectMockMode::NotStarted;
 use tokio::task;
+use OpenIDConnectMockMode::NotStarted;
 
-use std::{env, process::ExitStatus};
 use std::process::Command;
+use std::{env, process::ExitStatus};
 
 use krill::daemon::config::Config;
 use krill::test::*;
@@ -28,18 +28,27 @@ pub struct OpenIDConnectMockConfig {
 impl OpenIDConnectMockConfig {
     /// Don't start the OpenID Connect mock.
     pub fn do_not_start() -> OpenIDConnectMockConfig {
-        Self { mode: NotStarted, enabled_on_startup: false }
+        Self {
+            mode: NotStarted,
+            enabled_on_startup: false,
+        }
     }
 
     /// Start the OpenID Mock and enable it ready for use.
     pub fn enabled(mode: OpenIDConnectMockMode) -> OpenIDConnectMockConfig {
-        Self { mode, enabled_on_startup: true }
+        Self {
+            mode,
+            enabled_on_startup: true,
+        }
     }
 
     /// Start the OpenID Mock initially disabled. This can be useful to prevent initial OpenID Connect Discovery
     /// succeeding before the first test runs.
     pub fn disabled(mode: OpenIDConnectMockMode) -> OpenIDConnectMockConfig {
-        Self { mode, enabled_on_startup: false }
+        Self {
+            mode,
+            enabled_on_startup: false,
+        }
     }
 
     pub fn mode(&self) -> OpenIDConnectMockMode {
@@ -52,18 +61,12 @@ impl OpenIDConnectMockConfig {
 }
 
 #[cfg(not(feature = "multi-user"))]
-pub async fn run_krill_ui_test(
-    test_name: &str,
-    _: OpenIDConnectMockConfig,
-) {
+pub async fn run_krill_ui_test(test_name: &str, _: OpenIDConnectMockConfig) {
     assert!(do_run_krill_ui_test(test_name).await);
 }
 
 #[cfg(feature = "multi-user")]
-pub async fn run_krill_ui_test(
-    test_name: &str,
-    openid_connect_mock_config: OpenIDConnectMockConfig,
-) {
+pub async fn run_krill_ui_test(test_name: &str, openid_connect_mock_config: OpenIDConnectMockConfig) {
     let op_handle = match openid_connect_mock_config.mode() {
         NotStarted => None,
         _ => Some(openid_connect_mock::start(openid_connect_mock_config, 1).await),
@@ -79,7 +82,7 @@ pub async fn run_krill_ui_test(
 }
 
 struct CypressRunner {
-    status: ExitStatus
+    status: ExitStatus,
 }
 impl CypressRunner {
     pub async fn run(test_name: &str) -> Self {
@@ -89,8 +92,13 @@ impl CypressRunner {
             // If `cargo test` is stopped with CTRL-C the background Cypress Docker container continues to run. This
             // prevents the next run of `cargo test` from working as the container unexpectedly already exists. Tell
             // Docker to kill it to avoid leaving it lying around.
-            Command::new("docker").arg("kill").arg("cypress").spawn().expect("Failed to kill Cypress Docker container");    
-        }).expect("Error setting Ctrl-C handler");
+            Command::new("docker")
+                .arg("kill")
+                .arg("cypress")
+                .spawn()
+                .expect("Failed to kill Cypress Docker container");
+        })
+        .expect("Error setting Ctrl-C handler");
 
         let task = task::spawn_blocking(move || {
             // NOTE: the directory mentioned here must be the same as the directory
@@ -101,53 +109,52 @@ impl CypressRunner {
 
             let mut cmd = Command::new("docker");
 
-            cmd
-                .arg("run")
-                .arg("--name").arg("cypress")
+            cmd.arg("run")
+                .arg("--name")
+                .arg("cypress")
                 .arg("--rm")
                 .arg("--net=host")
                 .arg("--ipc=host")
-                .arg("-v").arg(format!("{}:/e2e", env::current_dir().unwrap().display()))
-                .arg("-w").arg("/e2e");
+                .arg("-v")
+                .arg(format!("{}:/e2e", env::current_dir().unwrap().display()))
+                .arg("-w")
+                .arg("/e2e");
 
             if let Ok(debug_level) = std::env::var("CYPRESS_DEBUG") {
                 // Example values:
                 //   - To get LOTS of Cypress logging:           CYPRESS_DEBUG=cypress:*
                 //   - To get logging relating to HTTP requests: CYPRESS_DEBUG=cypress:proxy:http:*
-                cmd
-                    .arg("-e").arg(format!("DEBUG={}", debug_level));
+                cmd.arg("-e").arg(format!("DEBUG={}", debug_level));
             }
 
             if std::env::var("CYPRESS_INTERACTIVE").is_ok() {
                 // After running `cargo test` a Chrome browser should open from the Cypress Docker container on your local
                 // X server. For this to work you might need to run this command in your shell prior to `cargo test`:
                 //   xhost +
-                cmd
-                    .arg("-v").arg(format!("/tmp/.X11-unix:/tmp/.X11-unix"))
-                    .arg("-e").arg("DISPLAY")
-                    .arg("--entrypoint").arg("cypress");
+                cmd.arg("-v")
+                    .arg(format!("/tmp/.X11-unix:/tmp/.X11-unix"))
+                    .arg("-e")
+                    .arg("DISPLAY")
+                    .arg("--entrypoint")
+                    .arg("cypress");
             }
 
             cmd.arg("cypress/included:6.8.0");
 
             if std::env::var("CYPRESS_INTERACTIVE").is_ok() {
-                cmd
-                    .arg("open")
-                    .arg("--project").arg(".");
+                cmd.arg("open").arg("--project").arg(".");
             } else {
-                cmd
-                    .arg("--spec").arg(cypress_spec_path);
+                cmd.arg("--spec").arg(cypress_spec_path);
             }
 
-            cmd
-                .arg("--browser").arg("chrome")
+            cmd.arg("--browser")
+                .arg("chrome")
                 .status()
                 .expect("Failed to run Cypress Docker UI test suite")
-        }).await;
+        })
+        .await;
 
-        Self {
-            status: task.unwrap()
-        }
+        Self { status: task.unwrap() }
     }
 
     pub fn success(self) -> bool {
