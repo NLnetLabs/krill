@@ -8,6 +8,7 @@ KRILL_GROUP=${KRILL_USER}
 KRILL_HOME_DIR="/var/lib/krill"
 KRILL_HOME_DIR_PERMS=700
 KRILL_CONF="/etc/krill.conf"
+KRILL_DATA="${KRILL_HOME_DIR}/data/"
 
 if [ $EUID -ne 0 ]; then
     echo >&2 "ERROR: RTRTR postinst script must be run as root"
