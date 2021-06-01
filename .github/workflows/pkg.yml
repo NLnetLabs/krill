@@ -216,7 +216,7 @@ jobs:
         # higher and tilda is treated as lower.
         KRILL_VER=$(cargo read-manifest | jq -r '.version')
         KRILL_NEW_VER=$(echo $KRILL_VER | tr '-' '~')
-        PKG_RTRTR_VER=$(echo $KRILL_NEW_VER | sed -e "s/~$NEXT_VER_LABEL/-$NEXT_VER_LABEL/")
+        PKG_KRILL_VER=$(echo $KRILL_NEW_VER | sed -e "s/~$NEXT_VER_LABEL/-$NEXT_VER_LABEL/")
 
         case ${OS_NAME} in
           debian|ubuntu)
@@ -285,7 +285,7 @@ jobs:
 
     # Upload the produced package. The artifact will be available via the GH Actions job summary and build log pages,
     # but only to users logged in to GH with sufficient rights in this project. The uploaded artifact is also downloaded
-    # by the next job (see below) to sanity check that it can be installed and results in a working RTRTR installation.
+    # by the next job (see below) to sanity check that it can be installed and results in a working Krill installation.
     - name: Upload package
       uses: actions/upload-artifact@v2
       with:
