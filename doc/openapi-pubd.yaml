@@ -1,8 +1,14 @@
 openapi: "3.0.2"
 info:
   title: Krill RPKI Publication Server API
-  version: 0.9.0-rc2
+  version: 0.9.0
   description: |
+    # WARNING
+
+    This part of the documentation will be deprecated in the next release.
+    Please have a look at https://krill.docs.nlnetlabs.nl/en/stable/cli.html
+    instead.
+
     # Introduction
 
     Many operators can use an RPKI Publication Server provided by
