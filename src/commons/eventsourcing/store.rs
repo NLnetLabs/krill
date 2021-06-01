@@ -49,6 +49,7 @@ impl Default for StoredValueInfo {
 
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 // Do NOT EVER change the order.. this is used to check whether migrations are needed
+// See this issue for planned fix: https://github.com/NLnetLabs/krill/issues/521
 #[allow(non_camel_case_types)]
 pub enum KeyStoreVersion {
     Pre0_6,
@@ -60,11 +61,12 @@ pub enum KeyStoreVersion {
     V0_8_1,
     V0_8_2,
     V0_9_0_RC1,
+    V0_9_0,
 }
 
 impl KeyStoreVersion {
     pub fn current() -> Self {
-        KeyStoreVersion::V0_9_0_RC1
+        KeyStoreVersion::V0_9_0
     }
 }
 
