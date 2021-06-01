@@ -315,6 +315,10 @@ jobs:
         exclude:
           - image: 'debian:bullseye'
             mode: 'upgrade-from-published'
+          - image: 'centos:7'
+            mode: 'upgrade-from-published'
+          - image: 'centos:8'
+            mode: 'upgrade-from-published'
     steps:
     # Set some environment variables that will be available to "run" steps below in this job, and some output variables
     # that will be available in GH Action step definitions below.
