@@ -167,7 +167,6 @@ assets = [
     { source = "pkg/rpm/postinst", dest = "/usr/share/krill/rpm/postinst", mode = "755" },
     { source = "pkg/rpm/postrm", dest = "/usr/share/krill/rpm/postrm", mode = "755" },
 ]
-pre_install_script = "/usr/share/krill/rpm/preinst $*"
 post_install_script = "/usr/share/krill/rpm/postinst $*"
 post_uninstall_script = "/usr/share/krill/rpm/postrm $*"
 
