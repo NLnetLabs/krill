@@ -62,6 +62,8 @@ jobs:
           - 'debian:stretch'  # debian/9
           - 'debian:buster'   # debian/10
           - 'debian:bullseye' # debian/11
+          - 'centos:7'
+          - 'centos:8'
         include:
           - image: 'centos:7'
             extra_build_args: '--features static-openssl'
@@ -310,8 +312,8 @@ jobs:
           - 'debian:stretch'  # debian/9
           - 'debian:buster'   # debian/10
           - 'debian:bullseye' # debian/11
-          - "centos:7"
-          - "centos:8"
+          - 'centos:8'
+          - 'centos:7'
         mode:
           - 'fresh-install'
           - 'upgrade-from-published'
