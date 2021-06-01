@@ -178,6 +178,7 @@ jobs:
     # arguments.
     - name: Create the package
       env:
+        MATRIX_IMAGE: ${{ matrix.image }}
         EXTRA_BUILD_ARGS: ${{ matrix.extra_build_args }}
       run: |
         # Debian
@@ -258,6 +259,7 @@ jobs:
               debian:stretch)           SYSTEMD_SERVICE_UNIT_FILE="krill-debian-stretch.krill.service"  ;;
               debian:buster)            SYSTEMD_SERVICE_UNIT_FILE="krill-debian-buster.krill.service"   ;;
               debian:bullseye)          SYSTEMD_SERVICE_UNIT_FILE="krill-debian-bullseye.krill.service" ;;
+              *) echo >&2 "ERROR: Unsupported matrix image value: '${MATRIX_IMAGE}'" ;;
             esac
 
             # Copy the chosen systemd service unit file to where Cargo.toml expects it to be
