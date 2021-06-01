@@ -3,11 +3,11 @@
 #   - https://docs.fedoraproject.org/en-US/packaging-guidelines/Scriptlets/#_systemd
 #   - https://cgit.freedesktop.org/systemd/systemd/tree/src/core/macros.systemd.in
 
-K_USER=krill
-K_GROUP=${K_USER}
-K_HOME_DIR=/var/lib/krill
-K_HOME_DIR_PERMS=700
-K_CONF="/etc/krill.conf"
+KRILL_USER=krill
+KRILL_GROUP=${K_USER}
+KRILL_HOME_DIR="/var/lib/krill"
+KRILL_HOME_DIR_PERMS=700
+KRILL_CONF="/etc/krill.conf"
 
 if [ $EUID -ne 0 ]; then
     echo >&2 "ERROR: RTRTR postinst script must be run as root"
@@ -38,7 +38,7 @@ generate_password() {
 }
 
 create_first_time_configuration() {
-    if [ ! -f "${K_CONF}" ]; then
+    if [ ! -f "${KRILL_CONF}" ]; then
         # generate a token for authenticating with Krill
         ADMIN_TOKEN="$(generate_password)"
 
