@@ -312,8 +312,8 @@ jobs:
           - 'debian:stretch'  # debian/9
           - 'debian:buster'   # debian/10
           - 'debian:bullseye' # debian/11
-          - 'centos:8'
           - 'centos:7'
+          - 'centos:8'
         mode:
           - 'fresh-install'
           - 'upgrade-from-published'
