@@ -7,7 +7,7 @@ This is the first major release of Krill in a while.
 
 While basic ROA management is unchanged, there were many changes under the hood:
 
-- Multi-user support in the User Interface (local users or OpenID connect)
+- Multi-user support in the User Interface (local users or OpenID Connect)
 - Reduce disk space usage and growth over time
 - API and naming consistency (in preparation for 1.0 in future)
 - Publication Server improvements (to whom it may concern)
