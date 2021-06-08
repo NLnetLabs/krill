@@ -19,7 +19,8 @@ use serde::Deserialize;
 pub struct ConfigSignerPkcs11 {
     pub lib_path: String,
     pub user_pin: String,
-    pub slot_id: CK_SLOT_ID,
+    pub slot_id: Option<CK_SLOT_ID>,
+    pub slot_label: Option<String>,
 }
 
 static ONE_CTX: OnceCell<Arc<Ctx>> = OnceCell::new();
@@ -167,7 +168,32 @@ impl Pkcs11Signer {
 
         let name = name.to_string();
         let ctx = Arc::new(Pkcs11Ctx::new(Path::new(&config.lib_path))?);
-        let slot_id = config.slot_id;
+
+        let slot_id = if let Some(slot_id) = config.slot_id {
+            slot_id
+        } else if let Some(slot_label) = &config.slot_label {
+            fn has_token_label(ctx: Arc<Pkcs11Ctx>, slot_id: CK_SLOT_ID, slot_label: &str) -> bool {
+                match ctx.get_token_info(slot_id) {
+                    Ok(info) => {
+                        info.label.to_string() == slot_label
+                    }
+                    Err(err) => {
+                        warn!("Failed to obtain token info for PKCS#11 slot id '{}': {}", slot_id, err);
+                        false
+                    }
+                }
+            }
+
+            ctx
+                .get_slot_list(true)
+                .map_err(|err| SignerError::Pkcs11Error(format!("Failed to enumerate PKCS#11 slots: {}", err)))?
+                .into_iter()
+                .find(|&slot_id| has_token_label(ctx.clone(), slot_id, slot_label))
+                .ok_or(SignerError::Pkcs11Error(format!("No PKCS#11 slot found with label '{}'", slot_label)))?
+        } else {
+            return Err(SignerError::Pkcs11Error(format!("No slot_id or slot_label specified for signer '{}'", name)));
+        };
+
         let mut login_session = Pkcs11Session::new(ctx.clone(), slot_id)?;
 
         login_session.login(CKU_USER, Some(&config.user_pin))?;
