@@ -270,12 +270,15 @@ impl KrillSigner {
 
                 signers.push(match &signer.signer_conf {
                     SignerType::OpenSsl(signer_conf) => {
+                        info!("Initializing OpenSSL signer '{}'", signer_name);
                         SignerImpl::OpenSsl(OpenSslSigner::build(signer_name, &signer_conf, &config.data_dir, key_lookup.clone())?)
                     }
                     SignerType::Pkcs11(signer_conf) => {
+                        info!("Initializing PKCS#11 signer '{}'", signer_name);
                         SignerImpl::Pkcs11(Pkcs11Signer::build(signer_name, &signer_conf, key_lookup.clone())?)
                     }
                     SignerType::Kmip(signer_conf) => {
+                        info!("Initializing KMIP signer '{}'", signer_name);
                         SignerImpl::Kmip(KmipSigner::build(signer_name, &signer_conf, key_lookup.clone())?)
                     }
                 });
