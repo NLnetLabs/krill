@@ -735,7 +735,6 @@ impl From<&PublicKey> for IdExtensions {
 
 #[cfg(test)]
 pub mod tests {
-
     use crate::test::*;
 
     use super::*;
@@ -750,9 +749,8 @@ pub mod tests {
     #[test]
     fn should_create_self_signed_ta_id_cert() {
         test_under_tmp(|d| {
-            let s = KrillSigner::build(&d).unwrap();
+            let s = KrillSigner::test(&d).unwrap();
             let key_id = s.create_key().unwrap();
-
             let id_cert = IdCertBuilder::new_ta_id_cert(&key_id, &s).unwrap();
             id_cert.validate_ta().unwrap();
         });

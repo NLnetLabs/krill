@@ -19,7 +19,7 @@ build = "build.rs"
 [dependencies]
 base64                = "^0.13"
 basic-cookies         = { version = "^0.1", optional = true }
-bcder                 = "0.5.0"
+bcder                 = { version = "0.5.2-dev", git = "https://github.com/ximon18/bcder", branch = "0.5.1-unsigned-from-slice" }
 bytes                 = "^0.5"
 chrono                = { version = "^0.4", features = ["serde"] }
 clap                  = "^2.33"
@@ -31,16 +31,19 @@ hex                   = "^0.4"
 hyper                 = "^0.13"
 intervaltree          = "0.2.6"
 jmespatch             = { version = "^0.3", features = ["sync"], optional = true }
+kmip                  = { version = "0.1.0", git = "https://github.com/ximon18/kmip-client", tag = "v0.1.0", package = "kmip-client", optional = true }
 libflate              = "^1.0"
 log                   = "^0.4"
+once_cell             = { version = "^1.7.2", optional = true }
 openidconnect         = { version = "^2.0.0", optional = true, default_features = false }
 openssl               = { version = "^0.10", features = ["v110"] }
 oso                   = { version = "^0.12", optional = true, default_features = false }
+pkcs11                = { version = "^0.5", optional = true }
 regex                 = { version = "^1.4", optional = true, default_features = false, features = ["std"] }
 reqwest               = { version = "0.10.8", features = ["json"] }
 reqwestblocking       = { version = "0.9.24", optional = true, package = "reqwest" }
 rpassword             = { version = "^5.0", optional = true }
-rpki                  = "^0.10.1"
+rpki                  = { version = "0.10.2-dev", git = "https://github.com/ximon18/rpki-rs", branch = "0.10.1-unsigned-from-slice" }
 scrypt                = { version = "^0.6", optional = true, default-features = false }
 serde                 = { version = "^1.0", features = ["derive"] }
 serde_json            = "^1.0"
@@ -67,6 +70,7 @@ functional-tests = []
 ui-tests = []
 extra-debug = [ "rpki/extra-debug" ]
 static-openssl = [ "openssl/vendored" ]
+hsm = [ "once_cell", "pkcs11", "kmip" ]
 
 # Make sure that Krill crashes on panics, rather than losing threads and
 # limping on in a bad state.

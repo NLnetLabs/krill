@@ -8,7 +8,6 @@ use std::str::FromStr;
 pub mod ext_serde;
 pub mod file;
 pub mod httpclient;
-pub mod softsigner;
 pub mod xml;
 
 pub fn sha256(object: &[u8]) -> Bytes {

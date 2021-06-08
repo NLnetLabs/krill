@@ -198,6 +198,10 @@ impl CaManager {
         self.config.testbed().is_some()
     }
 
+    pub fn get_signer(&self) -> Arc<KrillSigner> {
+        self.signer.clone()
+    }
+
     /// Gets the TrustAnchor, if present. Returns an error if the TA is uninitialized.
     pub async fn get_trust_anchor(&self) -> KrillResult<Arc<CertAuth>> {
         let ta_handle = ca::ta_handle();

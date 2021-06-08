@@ -198,7 +198,7 @@ fn upgrade_0_9_0(config: Arc<Config>) -> Result<(), UpgradeError> {
     if pubd_dir.exists() {
         PubdObjectsMigration::migrate(config.clone())?;
     }
-    let signer = Arc::new(KrillSigner::build(&config.data_dir)?);
+    let signer = Arc::new(KrillSigner::build(config.clone())?);
     let repo_manager = RepositoryManager::build(config.clone(), signer)?;
 
     let mut cas_dir = config.data_dir.clone();

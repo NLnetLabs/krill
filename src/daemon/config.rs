@@ -15,7 +15,11 @@ use syslog::Facility;
 
 use rpki::uri;
 
-use crate::commons::util::ext_serde;
+use crate::commons::{util::ext_serde};
+#[cfg(feature = "hsm")]
+use crate::commons::crypto::ConfigSignerOpenSsl;
+#[cfg(feature = "hsm")]
+use crate::commons::crypto::ConfigSignerKmip;
 use crate::commons::{
     api::{PublicationServerUris, PublisherHandle, Token},
     error::KrillIoError,
@@ -27,6 +31,8 @@ use crate::daemon::http::tls_keys;
 use crate::daemon::auth::providers::config_file::config::ConfigAuthUsers;
 #[cfg(feature = "multi-user")]
 use crate::daemon::auth::providers::openid_connect::ConfigAuthOpenIDConnect;
+#[cfg(feature = "hsm")]
+use crate::commons::crypto::ConfigSignerPkcs11;
 
 //------------ ConfigDefaults ------------------------------------------------
 
@@ -244,6 +250,9 @@ pub struct Config {
 
     #[cfg(feature = "multi-user")]
     pub auth_openidconnect: Option<ConfigAuthOpenIDConnect>,
+
+    #[cfg(feature = "hsm")]
+    pub signers: Option<Vec<ConfigSigner>>,
 
     #[serde(default = "ConfigDefaults::ca_refresh")]
     pub ca_refresh: u32,
@@ -488,6 +497,8 @@ impl Config {
         let auth_users = None;
         #[cfg(feature = "multi-user")]
         let auth_openidconnect = None;
+        #[cfg(feature = "hsm")]
+        let signers = None;
         let ca_refresh = 1;
         let post_limit_api = ConfigDefaults::post_limit_api();
         let post_limit_rfc8181 = ConfigDefaults::post_limit_rfc8181();
@@ -571,6 +582,8 @@ impl Config {
             auth_users,
             #[cfg(feature = "multi-user")]
             auth_openidconnect,
+            #[cfg(feature = "hsm")]
+            signers,
             ca_refresh,
             post_limit_api,
             post_limit_rfc8181,
@@ -955,7 +968,6 @@ impl<'de> Deserialize<'de> for HttpsMode {
 
 //------------ AuthType -----------------------------------------------------
 
-/// The target to log to.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AuthType {
     AdminToken,
@@ -989,6 +1001,64 @@ impl<'de> Deserialize<'de> for AuthType {
             }
         }
     }
+}
+
+
+//------------ Signers -----------------------------------------------------
+
+// Supports TOML such as:
+//
+//   [[signers]]
+//   name = "My PKCS#11 signer"
+//   type = "PKCS#11"
+//   lib_path = "/path/to/pkcs11.so"
+//   ...
+//
+//   # One signer can be made the default. By default if no signers are specified then an OpenSSL signer will be used.
+//   [[signers]]
+//   name = "My OpenSSL Signer"
+//   type = "OpenSSL"
+//   default = true
+//
+//   [[signers]]
+//   name = "My KMIP Signer"
+//   type = "KMIP"
+//   host = "example.com"
+//   ...
+//
+//   # Multiple signers of the same type are supported
+//   [[signers]]
+//   name = "My Other KMIP Signer"
+//   type = "KMIP"
+//   ...
+
+#[cfg(feature = "hsm")]
+#[derive(Clone, Debug, Deserialize)]
+pub struct ConfigSigner {
+    pub name: String,
+
+    /// By default, create keys with this signer.
+    #[serde(default)]
+    pub default: bool,
+
+    /// If initiating a keyroll, create the new key with this signer.
+    #[serde(default)]
+    pub keyroll: bool,
+
+    #[serde(flatten)]
+    pub signer_conf: SignerType,
+}
+
+#[cfg(feature = "hsm")]
+#[derive(Clone, Debug, Deserialize)]
+#[serde(tag = "type")]
+pub enum SignerType {
+    #[serde(alias = "OpenSSL")]
+    OpenSsl(ConfigSignerOpenSsl),
+    #[serde(alias = "PKCS#11")]
+    Pkcs11(ConfigSignerPkcs11),
+    #[serde(alias = "KMIP")]
+    Kmip(ConfigSignerKmip),
 }
 
 //------------ Tests ---------------------------------------------------------
@@ -1136,47 +1206,47 @@ mod tests {
             }
         }
 
-        //
-        // Test that Oso logging at levels below Info is only enabled if the Oso POLAR_LOG=1
-        // environment variable is set
-        //
-        let component = "oso";
-        for set_polar_log_env_var in &[true, false] {
-            // setup env vars
-            if *set_polar_log_env_var {
-                env::set_var("POLAR_LOG", "1");
-            } else {
-                env::remove_var("POLAR_LOG");
-            }
+            //
+            // Test that Oso logging at levels below Info is only enabled if the Oso POLAR_LOG=1
+            // environment variable is set
+            //
+            let component = "oso";
+            for set_polar_log_env_var in &[true, false] {
+                // setup env vars
+                if *set_polar_log_env_var {
+                    env::set_var("POLAR_LOG", "1");
+                } else {
+                    env::remove_var("POLAR_LOG");
+                }
 
-            // for each Krill config log level we want to test
-            for config_level in &["debug", "trace"] {
-                // build a logger for that config
-                let log = void_logger_from_krill_config(format!(r#"log_level = "{}""#, config_level).as_bytes());
+                // for each Krill config log level we want to test
+                for config_level in &["debug", "trace"] {
+                    // build a logger for that config
+                    let log = void_logger_from_krill_config(format!(r#"log_level = "{}""#, config_level).as_bytes());
 
-                // for each level of interest that messages could be logged at
-                for log_msg_level in &[LL::Debug, LL::Trace] {
-                    // determine if logging should be enabled or not
-                    let should_be_enabled =
-                        should_logging_be_enabled_at_this_krill_config_log_level(log_msg_level, config_level)
-                            && *set_polar_log_env_var;
+                    // for each level of interest that messages could be logged at
+                    for log_msg_level in &[LL::Debug, LL::Trace] {
+                        // determine if logging should be enabled or not
+                        let should_be_enabled =
+                            should_logging_be_enabled_at_this_krill_config_log_level(log_msg_level, config_level)
+                                && *set_polar_log_env_var;
 
-                    // verify that logging is enabled or not as expected
-                    assert_eq!(
-                        should_be_enabled,
-                        log.enabled(&for_target_at_level(component, *log_msg_level)),
-                        // output an easy to understand test failure description
-                        r#"Logging at level {} with log_level={} should be {} for component {} and env var POLAR_LOG is {}"#,
-                        log_msg_level,
-                        config_level,
-                        if should_be_enabled { "enabled" } else { "disabled" },
-                        component,
-                        if *set_polar_log_env_var { "set" } else { "not set" }
-                    );
+                        // verify that logging is enabled or not as expected
+                        assert_eq!(
+                            should_be_enabled,
+                            log.enabled(&for_target_at_level(component, *log_msg_level)),
+                            // output an easy to understand test failure description
+                            r#"Logging at level {} with log_level={} should be {} for component {} and env var POLAR_LOG is {}"#,
+                            log_msg_level,
+                            config_level,
+                            if should_be_enabled { "enabled" } else { "disabled" },
+                            component,
+                            if *set_polar_log_env_var { "set" } else { "not set" }
+                        );
+                    }
                 }
             }
         }
-    }
 
     #[test]
     fn config_should_accept_and_warn_about_auth_token() {
