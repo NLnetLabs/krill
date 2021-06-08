@@ -167,6 +167,17 @@ impl KeyMap {
         }
 
         if let Some(db_path) = &self.db_path {
+            // Determine the parent directory of the where we will create the key map database file
+            let parent_dir = db_path
+                .parent()
+                .ok_or(SignerError::KeyMapError(
+                    format!("Failed ot open key map database '{}': Path has no parent!", db_path.display())))?;
+
+            // Create the parent directory if not existing
+            std::fs::create_dir_all(parent_dir)
+                .map_err(|err| SignerError::KeyMapError(
+                    format!("Failed to open key map database '{}': Cannot create parent directory: {}", db_path.display(), err)))?;
+
             let mut file = OpenOptions::new()
                 .create(true)
                 .append(true)
