@@ -194,6 +194,28 @@ impl Pkcs11Signer {
             return Err(SignerError::Pkcs11Error(format!("No slot_id or slot_label specified for signer '{}'", name)));
         };
 
+        let slot_info = ctx.get_slot_info(slot_id)
+            .map_err(|err| SignerError::Pkcs11Error(
+                format!("Failed to obtain slot info for PKCS#11 slot id '{}': {}", slot_id, err)))?;
+
+        info!("PKCS#11: slot id            : {}", slot_id);
+        info!("PKCS#11: slot description   : {}", slot_info.slotDescription);
+        info!("PKCS#11: slot manufacturer  : {}", slot_info.manufacturerID);
+        info!("PKCS#11: slot hardware ver  : {}", slot_info.hardwareVersion);
+        info!("PKCS#11: slot firmware ver  : {}", slot_info.firmwareVersion);
+
+        let token_info = ctx.get_token_info(slot_id)
+            .map_err(|err| SignerError::Pkcs11Error(
+                format!("Failed to obtain token info for PKCS#11 slot id '{}': {}", slot_id, err)))?;
+
+        info!("PKCS#11: token label        : {}", token_info.label);
+        info!("PKCS#11: token manufacturer : {}", token_info.manufacturerID);
+        info!("PKCS#11: token model        : {}", token_info.model);
+        info!("PKCS#11: token serial nr    : {}", token_info.serialNumber);
+        info!("PKCS#11: token session count: {}", token_info.ulSessionCount);
+        info!("PKCS#11: token hardware ver : {}", token_info.hardwareVersion);
+        info!("PKCS#11: token firmware ver : {}", token_info.firmwareVersion);
+
         let mut login_session = Pkcs11Session::new(ctx.clone(), slot_id)?;
 
         login_session.login(CKU_USER, Some(&config.user_pin))?;
