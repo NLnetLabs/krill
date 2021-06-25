@@ -328,7 +328,7 @@ impl CaObjects {
         }
     }
 
-    #[allow(clippy::clippy::mutable_key_type)]
+    #[allow(clippy::mutable_key_type)]
     /// Returns all PublishedElements mapped to each RepositoryContact.
     /// There could be more than one repository - although usually there isn't.
     pub fn repo_elements_map(&self) -> HashMap<RepositoryContact, Vec<PublishElement>> {
@@ -534,7 +534,7 @@ impl ResourceClassObjects {
         ResourceClassObjects { keys }
     }
 
-    #[allow(clippy::clippy::mutable_key_type)]
+    #[allow(clippy::mutable_key_type)]
     /// Adds all the elements for this resource class to the map which is passed on. It will use
     /// the default repository, or an optional old repository if any of the keys had one as part
     /// of a repository migration.

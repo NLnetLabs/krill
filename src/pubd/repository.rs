@@ -467,7 +467,7 @@ pub struct RrdpServer {
 }
 
 impl RrdpServer {
-    #[allow(clippy::clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         rrdp_base_uri: uri::Https,
         rrdp_base_dir: PathBuf,

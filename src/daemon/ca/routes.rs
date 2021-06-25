@@ -176,10 +176,10 @@ impl RouteAuthorizationUpdates {
     pub fn affected_prefixes(&self) -> ResourceSet {
         let mut resources = ResourceSet::default();
         for roa in &self.added {
-            resources = resources.union(&roa.prefix().clone().into());
+            resources = resources.union(&roa.prefix().into());
         }
         for roa in &self.removed {
-            resources = resources.union(&roa.prefix().clone().into());
+            resources = resources.union(&roa.prefix().into());
         }
         resources
     }

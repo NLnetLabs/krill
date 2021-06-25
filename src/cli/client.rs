@@ -483,7 +483,7 @@ impl KrillClient {
     }
 
     #[cfg(feature = "multi-user")]
-    #[allow(clippy::clippy::unnecessary_wraps)]
+    #[allow(clippy::unnecessary_wraps)]
     fn user(&self, details: KrillUserDetails) -> Result<ApiResponse, Error> {
         let (password_hash, salt) = {
             use scrypt::scrypt;
