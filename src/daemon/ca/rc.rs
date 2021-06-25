@@ -1,9 +1,11 @@
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
 
-use rpki::cert::Cert;
-use rpki::crypto::KeyIdentifier;
-use rpki::x509::{Time, Validity};
+use rpki::repository::{
+    cert::Cert,
+    crypto::KeyIdentifier,
+    x509::{Time, Validity},
+};
 
 use crate::{
     commons::{

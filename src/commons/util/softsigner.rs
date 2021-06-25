@@ -14,8 +14,8 @@ use openssl::rsa::Rsa;
 use serde::{de, ser};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use rpki::crypto::signer::KeyError;
-use rpki::crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError};
+use rpki::repository::crypto::signer::KeyError;
+use rpki::repository::crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError};
 
 use crate::commons::error::KrillIoError;
 

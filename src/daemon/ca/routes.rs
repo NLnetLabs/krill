@@ -7,10 +7,10 @@ use std::str::FromStr;
 use chrono::Duration;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
-use rpki::roa::{Roa, RoaBuilder};
-use rpki::sigobj::SignedObjectBuilder;
+use rpki::repository::roa::{Roa, RoaBuilder};
+use rpki::repository::sigobj::SignedObjectBuilder;
+use rpki::repository::x509::Time;
 use rpki::uri;
-use rpki::x509::Time;
 
 use crate::{
     commons::{
@@ -769,12 +769,12 @@ impl Roas {
         let incoming_cert = certified_key.incoming_cert();
         let crl_uri = match &new_repo {
             None => incoming_cert.crl_uri(),
-            Some(base_uri) => base_uri.join(incoming_cert.crl_name().as_bytes()),
+            Some(base_uri) => base_uri.join(incoming_cert.crl_name().as_bytes()).unwrap(),
         };
 
         let roa_uri = match &new_repo {
             None => incoming_cert.uri_for_name(name),
-            Some(base_uri) => base_uri.join(name.as_bytes()),
+            Some(base_uri) => base_uri.join(name.as_bytes()).unwrap(),
         };
 
         let aia = incoming_cert.uri();

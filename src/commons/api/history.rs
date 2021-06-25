@@ -4,7 +4,7 @@ use std::str::FromStr;
 
 use chrono::{DateTime, NaiveDateTime, SecondsFormat, Utc};
 
-use rpki::{crypto::KeyIdentifier, x509::Time};
+use rpki::repository::{crypto::KeyIdentifier, x509::Time};
 
 use crate::{
     commons::{

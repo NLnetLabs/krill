@@ -1,6 +1,6 @@
 //! General utility modules for use all over the code base
 use bytes::Bytes;
-use rpki::crypto::DigestAlgorithm;
+use rpki::repository::crypto::DigestAlgorithm;
 use rpki::uri::{Https, Rsync};
 use std::net::IpAddr;
 use std::str::FromStr;

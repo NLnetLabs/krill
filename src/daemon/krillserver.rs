@@ -6,9 +6,13 @@ use std::sync::Arc;
 use bytes::Bytes;
 use chrono::Duration;
 
-use rpki::cert::Cert;
-use rpki::uri;
-use rpki::x509::Time;
+use rpki::{
+    repository::{
+        cert::Cert,
+        x509::Time,
+    },
+    uri,
+};
 
 use crate::commons::actor::{Actor, ActorDef};
 use crate::commons::api::{

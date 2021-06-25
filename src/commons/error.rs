@@ -5,9 +5,9 @@ use std::{fmt, io};
 
 use hyper::StatusCode;
 
-use rpki::crypto::KeyIdentifier;
+use rpki::repository::crypto::KeyIdentifier;
+use rpki::repository::x509::ValidationError;
 use rpki::uri;
-use rpki::x509::ValidationError;
 
 use crate::commons::api::rrdp::PublicationDeltaError;
 use crate::commons::api::{

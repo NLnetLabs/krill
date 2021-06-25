@@ -4,7 +4,7 @@ use std::fs;
 use std::str::FromStr;
 use std::time::Duration;
 
-use tokio::time::delay_for;
+use tokio::time::sleep;
 
 use rpki::uri::Rsync;
 
@@ -132,7 +132,7 @@ async fn will_publish(test_msg: &str, publisher: &PublisherHandle, files: &[Stri
             }
         }
 
-        delay_for(Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(100)).await;
     }
 
     let details = publisher_details(publisher).await;
@@ -187,7 +187,7 @@ async fn state_becomes_new_key(handle: &Handle) -> bool {
             return true;
         }
 
-        delay_for(Duration::from_secs(1)).await
+        sleep(Duration::from_secs(1)).await
     }
     false
 }
@@ -212,7 +212,7 @@ async fn state_becomes_active(handle: &Handle) -> bool {
             return true;
         }
 
-        delay_for(Duration::from_millis(100)).await
+        sleep(Duration::from_millis(100)).await
     }
     false
 }
@@ -360,7 +360,7 @@ async fn migrate_repository() {
 
         // Wait a tiny bit.. when we add a new repo we check that it's available or
         // it will be rejected.
-        delay_for(Duration::from_secs(1)).await;
+        sleep(Duration::from_secs(1)).await;
 
         // Update CA1 to use dedicated repo
         let contact = RepositoryContact::new(response);

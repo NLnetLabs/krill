@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use rpki::crypto::KeyIdentifier;
+use rpki::repository::crypto::KeyIdentifier;
 
 use crate::{
     commons::{

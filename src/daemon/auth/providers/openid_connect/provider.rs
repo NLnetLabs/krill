@@ -397,6 +397,7 @@ impl OpenIDConnectAuthProvider {
             self.config
                 .service_uri()
                 .join(AUTH_CALLBACK_ENDPOINT.trim_start_matches('/').as_bytes())
+                .unwrap()
                 .to_string(),
         )?;
 
