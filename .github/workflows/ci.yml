@@ -43,10 +43,10 @@ jobs:
       matrix:
         os: [ubuntu-latest]
 
-        # Test against Rust 1.45.0 because in build.rs we say that is the oldest supported version.
+        # Test against Rust 1.46.0 because in build.rs we say that is the oldest supported version.
         # Test against beta Rust to get early warning of any problems that might occur with the upcoming Rust release.
         # Order: oldest Rust to newest Rust.
-        rust: [1.45.0, stable, beta]
+        rust: [1.46.0, stable, beta]
 
         # Test with default features, all features and no features.
         # Note: "functional-tests,ui-tests" bulds the same Krill as "" because these features only enable more types
