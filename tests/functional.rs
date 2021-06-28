@@ -94,7 +94,7 @@ async fn will_publish(test_msg: &str, publisher: &PublisherHandle, files: &[Stri
             let current_files: Vec<&Rsync> = current_files.iter().map(|p| p.uri()).collect();
             let mut all_matched = true;
             for o in &objects {
-                if current_files.iter().find(|uri| uri.ends_with(o)).is_none() {
+                if !current_files.iter().any(|uri| uri.ends_with(o)) {
                     all_matched = false;
                 }
             }
