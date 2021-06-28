@@ -23,7 +23,7 @@ use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 use urlparse::{parse_qs, urlparse, GetQuery, Query, Url};
 
 use tokio::task;
-use tokio::time::delay_for;
+use tokio::time::sleep;
 
 use krill::commons::error::Error;
 
@@ -203,7 +203,7 @@ pub async fn start(config: OpenIDConnectMockConfig, delay_secs: u64) -> task::Jo
     // otherwise Krill might fail to query its discovery endpoint
     while !MOCK_OPENID_CONNECT_SERVER_RUNNING_FLAG.load(Ordering::Relaxed) {
         info!("Waiting for mock OpenID Connect server to start");
-        delay_for(Duration::from_secs(delay_secs)).await;
+        sleep(Duration::from_secs(delay_secs)).await;
     }
 
     join_handle
