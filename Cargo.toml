@@ -19,7 +19,7 @@ build = "build.rs"
 [dependencies]
 base64                = "^0.13"
 basic-cookies         = { version = "^0.1", optional = true }
-bcder                 = "0.6.0"
+bcder                 = "^0.6"
 bytes                 = "1.0"
 chrono                = { version = "^0.4", features = ["serde"] }
 clap                  = "^2.33"
