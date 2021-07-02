@@ -11,9 +11,9 @@ use rfc8183::ServiceUri;
 use serde::de;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use rpki::cert::Cert;
+use rpki::repository::cert::Cert;
+use rpki::repository::x509::Time;
 use rpki::uri;
-use rpki::x509::Time;
 
 use crate::commons::api::ca::{ResourceSet, TrustAnchorLocator};
 use crate::commons::api::rrdp::PublishElement;

@@ -6,15 +6,16 @@ use std::{convert::TryFrom, path::Path};
 
 use bytes::Bytes;
 
-use rpki::cert::{Cert, KeyUsage, Overclaim, TbsCert};
-use rpki::crl::{Crl, CrlEntry, TbsCertList};
-use rpki::crypto::{DigestAlgorithm, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer};
-use rpki::csr::Csr;
-use rpki::manifest::{FileAndHash, Manifest, ManifestContent};
-use rpki::roa::{Roa, RoaBuilder};
-use rpki::sigobj::SignedObjectBuilder;
-use rpki::x509::{Name, Serial, Time, Validity};
-use rpki::{rta, uri};
+use rpki::repository::cert::{Cert, KeyUsage, Overclaim, TbsCert};
+use rpki::repository::crl::{Crl, CrlEntry, TbsCertList};
+use rpki::repository::crypto::{DigestAlgorithm, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer};
+use rpki::repository::csr::Csr;
+use rpki::repository::manifest::{FileAndHash, Manifest, ManifestContent};
+use rpki::repository::roa::{Roa, RoaBuilder};
+use rpki::repository::sigobj::SignedObjectBuilder;
+use rpki::repository::x509::{Name, Serial, Time, Validity};
+use rpki::repository::rta;
+use rpki::uri;
 
 use crate::commons::api::{IssuedCert, RcvdCert, ReplacedObject, RepoInfo, RequestResourceLimit, ResourceSet};
 use crate::commons::crypto::{self, CryptoResult};
@@ -88,7 +89,7 @@ impl KrillSigner {
         let enc = Csr::construct(
             signer.deref(),
             key,
-            &base_repo.ca_repository(name_space).join(&[]), // force trailing slash
+            &base_repo.ca_repository(name_space).join(&[]).unwrap(), // force trailing slash
             &base_repo.rpki_manifest(name_space, &pub_key.key_identifier()),
             Some(&base_repo.rpki_notify()),
         )

@@ -9,7 +9,7 @@ use tokio::sync::Mutex;
 use bytes::Bytes;
 use chrono::Duration;
 
-use rpki::crypto::KeyIdentifier;
+use rpki::repository::crypto::KeyIdentifier;
 use rpki::uri;
 
 use crate::{
@@ -518,7 +518,7 @@ impl CaManager {
     pub async fn rfc6492(&self, ca_handle: &Handle, msg_bytes: Bytes, actor: &Actor) -> KrillResult<Bytes> {
         let ca = self.get_ca(ca_handle).await?;
 
-        let msg = match ProtocolCms::decode(msg_bytes.clone(), false) {
+        let msg = match ProtocolCms::decode(msg_bytes.as_ref(), false) {
             Ok(msg) => msg,
             Err(e) => {
                 let msg = format!(

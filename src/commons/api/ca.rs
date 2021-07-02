@@ -12,14 +12,14 @@ use bytes::Bytes;
 use chrono::{Duration, TimeZone, Utc};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use rpki::cert::Cert;
-use rpki::crl::{Crl, CrlEntry};
-use rpki::crypto::KeyIdentifier;
-use rpki::manifest::Manifest;
-use rpki::resources::{AsBlocks, AsResources, IpBlocks, IpBlocksForFamily, IpResources};
-use rpki::roa::{Roa, RoaIpAddress};
+use rpki::repository::cert::Cert;
+use rpki::repository::crl::{Crl, CrlEntry};
+use rpki::repository::crypto::KeyIdentifier;
+use rpki::repository::manifest::Manifest;
+use rpki::repository::resources::{AsBlocks, AsResources, IpBlocks, IpBlocksForFamily, IpResources};
+use rpki::repository::roa::{Roa, RoaIpAddress};
+use rpki::repository::x509::{Serial, Time};
 use rpki::uri;
-use rpki::x509::{Serial, Time};
 
 use crate::commons::api::{
     rrdp::PublishElement, Base64, ChildHandle, ErrorResponse, Handle, HexEncodedHash, IssuanceRequest, ParentCaContact,
@@ -356,7 +356,8 @@ impl RcvdCert {
     }
 
     pub fn uri_for_name(&self, name: &ObjectName) -> uri::Rsync {
-        self.cert.ca_repository().unwrap().join(name.as_bytes())
+        // unwraps here are safe
+        self.cert.ca_repository().unwrap().join(name.as_bytes()).unwrap()
     }
 
     pub fn resources(&self) -> &ResourceSet {
@@ -469,7 +470,7 @@ impl RepoInfo {
     pub fn ca_repository(&self, name_space: &str) -> uri::Rsync {
         match name_space {
             "" => self.base_uri.clone(),
-            _ => self.base_uri.join(name_space.as_ref()),
+            _ => self.base_uri.join(name_space.as_ref()).unwrap(),
         }
     }
 
@@ -492,7 +493,7 @@ impl RepoInfo {
     }
 
     pub fn resolve(&self, name_space: &str, file_name: &str) -> uri::Rsync {
-        self.ca_repository(name_space).join(file_name.as_ref())
+        self.ca_repository(name_space).join(file_name.as_ref()).unwrap()
     }
 
     pub fn mft_name(signing_key: &KeyIdentifier) -> ObjectName {
@@ -2149,8 +2150,10 @@ impl ResourceSetError {
 mod test {
     use bytes::Bytes;
 
-    use rpki::crypto::signer::Signer;
-    use rpki::crypto::PublicKeyFormat;
+    use rpki::repository::crypto::{
+        signer::Signer,
+        PublicKeyFormat,
+    };
 
     use crate::commons::util::softsigner::OpenSslSigner;
     use crate::test;
@@ -2196,23 +2199,19 @@ mod test {
 
             let mft_uri = info().rpki_manifest("", &pub_key.key_identifier());
 
-            unsafe {
-                use std::str;
+            let mft_path = mft_uri.relative_to(&base_uri()).unwrap();
 
-                let mft_path = str::from_utf8_unchecked(mft_uri.relative_to(&base_uri()).unwrap());
+            assert_eq!(44, mft_path.len());
 
-                assert_eq!(44, mft_path.len());
+            // the file name should be the hexencoded pub key info
+            // not repeating that here, but checking that the name
+            // part is validly hex encoded.
+            let name = &mft_path[..40];
+            hex::decode(name).unwrap();
 
-                // the file name should be the hexencoded pub key info
-                // not repeating that here, but checking that the name
-                // part is validly hex encoded.
-                let name = &mft_path[..40];
-                hex::decode(name).unwrap();
-
-                // and the extension is '.mft'
-                let ext = &mft_path[40..];
-                assert_eq!(ext, ".mft");
-            }
+            // and the extension is '.mft'
+            let ext = &mft_path[40..];
+            assert_eq!(ext, ".mft");
         });
     }
 

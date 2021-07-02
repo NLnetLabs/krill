@@ -13,7 +13,7 @@ use bytes::Bytes;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 use rpki::uri;
-use rpki::x509;
+use rpki::repository::x509;
 
 use crate::commons::crypto::IdCert;
 use crate::commons::util::file;
@@ -799,7 +799,7 @@ impl From<uri::Error> for Error {
 
 #[cfg(test)]
 mod tests {
-    use rpki::x509::Time;
+    use rpki::repository::x509::Time;
 
     use crate::test;
     use crate::test::test_id_certificate;

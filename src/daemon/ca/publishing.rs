@@ -11,7 +11,7 @@ use std::{
 use bytes::Bytes;
 use chrono::Duration;
 
-use rpki::{
+use rpki::repository::{
     cert::Cert,
     crl::{Crl, TbsCertList},
     crypto::{DigestAlgorithm, KeyIdentifier, PublicKey},
@@ -328,7 +328,7 @@ impl CaObjects {
         }
     }
 
-    #[allow(clippy::clippy::mutable_key_type)]
+    #[allow(clippy::mutable_key_type)]
     /// Returns all PublishedElements mapped to each RepositoryContact.
     /// There could be more than one repository - although usually there isn't.
     pub fn repo_elements_map(&self) -> HashMap<RepositoryContact, Vec<PublishElement>> {
@@ -534,7 +534,7 @@ impl ResourceClassObjects {
         ResourceClassObjects { keys }
     }
 
-    #[allow(clippy::clippy::mutable_key_type)]
+    #[allow(clippy::mutable_key_type)]
     /// Adds all the elements for this resource class to the map which is passed on. It will use
     /// the default repository, or an optional old repository if any of the keys had one as part
     /// of a repository migration.
@@ -802,8 +802,8 @@ impl CurrentKeyObjectSet {
         let repo = self.old_repo.as_ref().unwrap_or(dflt_repo);
 
         let base_uri = self.signing_cert.ca_repository();
-        let mft_uri = base_uri.join(self.manifest.name().as_bytes());
-        let crl_uri = base_uri.join(self.crl.name().as_bytes());
+        let mft_uri = base_uri.join(self.manifest.name().as_bytes()).unwrap();
+        let crl_uri = base_uri.join(self.crl.name().as_bytes()).unwrap();
 
         let elements = map.entry(repo.clone()).or_insert_with(Vec::new);
         elements.push(PublishElement::new(Base64::from(&self.manifest.0), mft_uri));
@@ -812,14 +812,14 @@ impl CurrentKeyObjectSet {
         for (name, roa) in &self.roas {
             elements.push(PublishElement::new(
                 Base64::from(&roa.0),
-                base_uri.join(name.as_bytes()),
+                base_uri.join(name.as_bytes()).unwrap(),
             ));
         }
 
         for (name, cert) in &self.certs {
             elements.push(PublishElement::new(
                 Base64::from(cert.as_ref()),
-                base_uri.join(name.as_bytes()),
+                base_uri.join(name.as_bytes()).unwrap(),
             ));
         }
     }
@@ -1047,8 +1047,8 @@ impl BasicKeyObjectSet {
         let repo = self.old_repo.as_ref().unwrap_or(dflt_repo);
 
         let base_uri = self.signing_cert.ca_repository();
-        let mft_uri = base_uri.join(self.manifest.name().as_bytes());
-        let crl_uri = base_uri.join(self.crl.name().as_bytes());
+        let mft_uri = base_uri.join(self.manifest.name().as_bytes()).unwrap();
+        let crl_uri = base_uri.join(self.crl.name().as_bytes()).unwrap();
 
         let elements = map.entry(repo.clone()).or_insert_with(Vec::new);
         elements.push(PublishElement::new(Base64::from(&self.manifest.0), mft_uri));

@@ -3,10 +3,12 @@ use std::fmt;
 
 use bytes::Bytes;
 
-use rpki::crypto::{DigestAlgorithm, KeyIdentifier};
-use rpki::rta;
-use rpki::sigobj::MessageDigest;
-use rpki::x509::Validity;
+use rpki::repository::{
+    crypto::{DigestAlgorithm, KeyIdentifier},
+    rta,
+    sigobj::MessageDigest,
+    x509::Validity,
+};
 
 use crate::commons::api::{Base64, ResourceClassName, ResourceSet, Revocation, RtaList, RtaName};
 use crate::commons::error::Error;

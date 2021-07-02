@@ -9,10 +9,11 @@ use bcder::string::OctetString;
 use bcder::{decode, encode, BitString, Unsigned};
 use bcder::{Mode, Oid, Tag};
 
-use rpki::crypto::{DigestAlgorithm, KeyIdentifier, PublicKey, Signature, SignatureAlgorithm};
-use rpki::oid;
-use rpki::sigobj::{MessageDigest, SignedAttrs};
-use rpki::x509::{update_once, Name, SignedData, Time, ValidationError};
+use rpki::repository::crypto::{DigestAlgorithm, KeyIdentifier, PublicKey, Signature, SignatureAlgorithm};
+use rpki::repository::oid;
+use rpki::repository::sigobj::{MessageDigest, SignedAttrs};
+use rpki::repository::x509::{update_once, Name, SignedData, Time, ValidationError};
+
 
 use crate::commons::crypto::{CryptoResult, IdCert, IdCertBuilder, KrillSigner, SignedAttributes};
 
@@ -74,7 +75,7 @@ impl ProtocolCmsBuilder {
         //  The eContentType for the RPKI Protocol Message object is defined as
         //  id-ct-xml, and has the numerical value of 1.2.840.113549.1.9.16.1.28.
 
-        let digest_algorithms = encode::set(encode::sequence(rpki::oid::SHA256.encode()));
+        let digest_algorithms = encode::set(encode::sequence(rpki::repository::oid::SHA256.encode()));
 
         let encap_content_info = encode::sequence((
             oid::PROTOCOL_CONTENT_TYPE.encode(),

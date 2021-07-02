@@ -7,11 +7,13 @@ use bytes::Bytes;
 use chrono::Duration;
 
 use rpki::{
-    cert::{Cert, KeyUsage, Overclaim, TbsCert},
-    crypto::{KeyIdentifier, PublicKey},
-    rta::RtaBuilder,
+    repository::{
+        cert::{Cert, KeyUsage, Overclaim, TbsCert},
+        crypto::{KeyIdentifier, PublicKey},
+        rta::RtaBuilder,
+        x509::{Serial, Time, Validity},
+    },
     uri,
-    x509::{Serial, Time, Validity},
 };
 
 use crate::{

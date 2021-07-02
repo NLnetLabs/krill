@@ -7,7 +7,7 @@ use std::sync::{Arc, RwLock};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-use rpki::x509::Time;
+use rpki::repository::x509::Time;
 
 use crate::commons::eventsourcing::cmd::{Command, StoredCommandBuilder};
 use crate::commons::eventsourcing::{

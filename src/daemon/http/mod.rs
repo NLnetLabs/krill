@@ -450,9 +450,9 @@ impl Request {
         assert_body_size(size_processed, body.size_hint().lower(), limit)?;
 
         // If there's only 1 chunk, we can just return Buf::to_bytes()
-        let mut first = if let Some(buf) = body.data().await {
+        let first = if let Some(buf) = body.data().await {
             let buf = buf.map_err(|_| Error::PostCannotRead)?;
-            let size: u64 = buf.bytes().len().try_into().map_err(|_| Error::PostTooBig)?;
+            let size: u64 = buf.len().try_into().map_err(|_| Error::PostTooBig)?;
             size_processed += size;
             buf
         } else {
@@ -462,11 +462,11 @@ impl Request {
         assert_body_size(size_processed, body.size_hint().lower(), limit)?;
         let second = if let Some(buf) = body.data().await {
             let buf = buf.map_err(|_| Error::PostCannotRead)?;
-            let size: u64 = buf.bytes().len().try_into().map_err(|_| Error::PostTooBig)?;
+            let size: u64 = buf.len().try_into().map_err(|_| Error::PostTooBig)?;
             size_processed += size;
             buf
         } else {
-            return Ok(first.to_bytes());
+            return Ok(first);
         };
 
         assert_body_size(size_processed, body.size_hint().lower(), limit)?;
@@ -478,7 +478,7 @@ impl Request {
 
         while let Some(buf) = body.data().await {
             let buf = buf.map_err(|_| Error::PostCannotRead)?;
-            let size: u64 = buf.bytes().len().try_into().map_err(|_| Error::PostTooBig)?;
+            let size: u64 = buf.len().try_into().map_err(|_| Error::PostTooBig)?;
             size_processed += size;
             assert_body_size(size_processed, body.size_hint().lower(), limit)?;
             vec.put(buf);

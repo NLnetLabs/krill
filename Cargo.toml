@@ -19,8 +19,8 @@ build = "build.rs"
 [dependencies]
 base64                = "^0.13"
 basic-cookies         = { version = "^0.1", optional = true }
-bcder                 = "0.5.0"
-bytes                 = "^0.5"
+bcder                 = "^0.6"
+bytes                 = "1.0"
 chrono                = { version = "^0.4", features = ["serde"] }
 clap                  = "^2.33"
 clokwerk              = "^0.3"
@@ -28,7 +28,7 @@ fern                  = { version = "^0.5", features = ["syslog-4"] }
 futures               = "^0.3"
 futures-util          = "^0.3"
 hex                   = "^0.4"
-hyper                 = "^0.13"
+hyper                 = { version = "^0.14", features = ["server"] }
 intervaltree          = "0.2.6"
 jmespatch             = { version = "^0.3", features = ["sync"], optional = true }
 libflate              = "^1.0"
@@ -37,15 +37,16 @@ openidconnect         = { version = "^2.0.0", optional = true, default_features 
 openssl               = { version = "^0.10", features = ["v110"] }
 oso                   = { version = "^0.12", optional = true, default_features = false }
 regex                 = { version = "^1.4", optional = true, default_features = false, features = ["std"] }
-reqwest               = { version = "0.10.8", features = ["json"] }
+reqwest               = { version = "0.11", features = ["json"] }
 reqwestblocking       = { version = "0.9.24", optional = true, package = "reqwest" }
 rpassword             = { version = "^5.0", optional = true }
-rpki                  = "^0.10.1"
+# rpki                  = "^0.10.1"
+rpki  = { version = "0.11.1-dev", features = [ "repository", "rrdp", "serde" ], git = "https://github.com/NLnetLabs/rpki-rs.git" }
 scrypt                = { version = "^0.6", optional = true, default-features = false }
 serde                 = { version = "^1.0", features = ["derive"] }
 serde_json            = "^1.0"
-tokio                 = { version = "^0.2", features = ["rt-core", "macros", "time"] }
-tokio-rustls          = "^0.14"
+tokio                 = { version = "1", features = ["rt", "rt-multi-thread", "macros", "time"] }
+tokio-rustls          = "^0.22"
 toml                  = "^0.5"
 unicode-normalization = { version = "^0.1", optional = true }
 urlparse              = { version = "^0.7", optional = true }

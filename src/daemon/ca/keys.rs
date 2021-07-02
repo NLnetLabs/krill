@@ -2,8 +2,8 @@ use std::ops::{Deref, DerefMut};
 
 use serde::{Deserialize, Serialize};
 
-use rpki::crypto::KeyIdentifier;
-use rpki::x509::Time;
+use rpki::repository::crypto::KeyIdentifier;
+use rpki::repository::x509::Time;
 
 use crate::commons::api::{
     ActiveInfo, CertifiedKeyInfo, EntitlementClass, Handle, IssuanceRequest, PendingInfo, PendingKeyInfo, RcvdCert,

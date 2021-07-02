@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use std::fmt;
 use std::str::FromStr;
 
-use rpki::x509::Time;
+use rpki::repository::x509::Time;
 
 use crate::commons::api::{AsNumber, RoaDefinition, TypedPrefix};
 use crate::commons::bgp::{IpRange, TypedPrefixTree, TypedPrefixTreeBuilder};

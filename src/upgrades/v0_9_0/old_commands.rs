@@ -1,4 +1,4 @@
-use rpki::{crypto::KeyIdentifier, x509::Time};
+use rpki::repository::{crypto::KeyIdentifier, x509::Time};
 
 use std::{
     collections::{BTreeMap, HashMap},

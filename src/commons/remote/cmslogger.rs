@@ -2,7 +2,7 @@ use std::fmt;
 use std::path::PathBuf;
 
 use bytes::Bytes;
-use rpki::x509::Time;
+use rpki::repository::x509::Time;
 
 use crate::commons::util::file;
 use crate::commons::{
