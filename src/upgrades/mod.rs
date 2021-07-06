@@ -15,8 +15,9 @@ use crate::{
     commons::{
         crypto::KrillSigner,
         eventsourcing::{
-            AggregateStore, AggregateStoreError, CommandKey, KeyStoreKey, KeyStoreVersion, KeyValueError, KeyValueStore,
+            AggregateStore, AggregateStoreError, CommandKey, KeyStoreKey, KeyValueError, KeyValueStore,
         },
+        util::KrillVersion,
     },
     pubd::RepositoryManager,
 };
@@ -98,7 +99,7 @@ pub trait UpgradeStore {
     fn needs_migrate(&self) -> Result<bool, UpgradeError>;
     fn migrate(&self) -> Result<(), UpgradeError>;
 
-    fn version_before(kv: &KeyValueStore, later: KeyStoreVersion) -> Result<bool, UpgradeError> {
+    fn version_before(kv: &KeyValueStore, later: KrillVersion) -> Result<bool, UpgradeError> {
         kv.version_is_before(later).map_err(UpgradeError::KeyStoreError)
     }
 
@@ -168,7 +169,7 @@ pub fn pre_start_upgrade(config: Arc<Config>) -> Result<(), UpgradeError> {
 }
 
 pub async fn update_storage_version(work_dir: &Path) -> Result<(), UpgradeError> {
-    let current = KeyStoreVersion::current();
+    let current = KrillVersion::current();
 
     let mut ca_dir = work_dir.to_path_buf();
     ca_dir.push("cas");
