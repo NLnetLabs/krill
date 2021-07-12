@@ -1403,7 +1403,6 @@ impl ManifestBuilder {
         let this_update = Time::five_minutes_ago();
         let now = Time::now();
         let next_update = Time::now() + Duration::hours(issuance_timing.timing_publish_next_hours);
-        let valid_until = Time::now() + Duration::days(issuance_timing.timing_publish_valid_days);
 
         let entries = self.entries.iter().map(|(k, v)| FileAndHash::new(k, v));
 
@@ -1417,7 +1416,7 @@ impl ManifestBuilder {
             );
             let mut object_builder = SignedObjectBuilder::new(
                 signer.random_serial()?,
-                Validity::new(this_update, valid_until),
+                Validity::new(this_update, next_update),
                 crl_uri,
                 aia.clone(),
                 mft_uri,
