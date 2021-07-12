@@ -27,6 +27,7 @@ use crate::commons::api::{
 };
 use crate::commons::api::{EntitlementClass, Entitlements, RoaAggregateKey, SigningCert};
 use crate::commons::crypto::IdCert;
+use crate::commons::remote::rfc8183::ServiceUri;
 use crate::commons::util::ext_serde;
 use crate::daemon::ca::RouteAuthorization;
 
@@ -1167,23 +1168,24 @@ impl ParentStatuses {
         self.0.get(parent)
     }
 
-    pub fn set_failure(&mut self, parent: &ParentHandle, uri: String, error: ErrorResponse, next_seconds: i64) {
-        self.get_mut_status(parent).set_failure(uri, error, next_seconds);
+    pub fn set_failure(&mut self, parent: &ParentHandle, uri: &ServiceUri, error: ErrorResponse, next_seconds: i64) {
+        self.get_mut_status(parent)
+            .set_failure(uri.clone(), error, next_seconds);
     }
 
     pub fn set_entitlements(
         &mut self,
         parent: &ParentHandle,
-        uri: String,
+        uri: &ServiceUri,
         entitlements: &Entitlements,
         next_seconds: i64,
     ) {
         self.get_mut_status(parent)
-            .set_entitlements(uri, entitlements, next_seconds);
+            .set_entitlements(uri.clone(), entitlements, next_seconds);
     }
 
-    pub fn set_last_updated(&mut self, parent: &ParentHandle, uri: String, next_seconds: i64) {
-        self.get_mut_status(parent).set_last_updated(uri, next_seconds);
+    pub fn set_last_updated(&mut self, parent: &ParentHandle, uri: &ServiceUri, next_seconds: i64) {
+        self.get_mut_status(parent).set_last_updated(uri.clone(), next_seconds);
     }
 
     fn get_mut_status(&mut self, parent: &ParentHandle) -> &mut ParentStatus {
@@ -1345,7 +1347,7 @@ impl ParentStatus {
         self.next_exchange_before = (Time::now() + Duration::seconds(next_seconds)).timestamp();
     }
 
-    fn set_failure(&mut self, uri: String, error: ErrorResponse, next_seconds: i64) {
+    fn set_failure(&mut self, uri: ServiceUri, error: ErrorResponse, next_seconds: i64) {
         self.last_exchange = Some(ParentExchange {
             timestamp: Time::now().timestamp(),
             uri,
@@ -1354,7 +1356,7 @@ impl ParentStatus {
         self.set_next_exchange_plus_seconds(next_seconds);
     }
 
-    fn set_entitlements(&mut self, uri: String, entitlements: &Entitlements, next_run_seconds: i64) {
+    fn set_entitlements(&mut self, uri: ServiceUri, entitlements: &Entitlements, next_run_seconds: i64) {
         self.set_last_updated(uri, next_run_seconds);
 
         self.entitlements = entitlements
@@ -1376,7 +1378,7 @@ impl ParentStatus {
         self.set_next_exchange_plus_seconds(next_run_seconds);
     }
 
-    fn set_last_updated(&mut self, uri: String, next_run_seconds: i64) {
+    fn set_last_updated(&mut self, uri: ServiceUri, next_run_seconds: i64) {
         self.last_exchange = Some(ParentExchange {
             timestamp: Time::now().timestamp(),
             uri,
@@ -1433,7 +1435,7 @@ impl RepoStatus {
         (Time::now() + Duration::hours(hours)).timestamp()
     }
 
-    pub fn set_failure(&mut self, uri: String, error: ErrorResponse) {
+    pub fn set_failure(&mut self, uri: ServiceUri, error: ErrorResponse) {
         self.last_exchange = Some(ParentExchange {
             timestamp: Time::now().timestamp(),
             uri,
@@ -1442,7 +1444,7 @@ impl RepoStatus {
         self.next_exchange_before = (Time::now() + Duration::minutes(5)).timestamp();
     }
 
-    pub fn set_published(&mut self, uri: String, published: Vec<PublishElement>, next_hours: i64) {
+    pub fn set_published(&mut self, uri: ServiceUri, published: Vec<PublishElement>, next_hours: i64) {
         self.last_exchange = Some(ParentExchange {
             timestamp: Time::now().timestamp(),
             uri,
@@ -1452,7 +1454,7 @@ impl RepoStatus {
         self.next_exchange_before = Self::now_plus_hours(next_hours);
     }
 
-    pub fn set_last_updated(&mut self, uri: String, next_hours: i64) {
+    pub fn set_last_updated(&mut self, uri: ServiceUri, next_hours: i64) {
         self.last_exchange = Some(ParentExchange {
             timestamp: Time::now().timestamp(),
             uri,
@@ -1484,7 +1486,7 @@ impl fmt::Display for RepoStatus {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParentExchange {
     timestamp: i64,
-    uri: String,
+    uri: ServiceUri,
     result: ParentExchangeResult,
 }
 
@@ -1493,7 +1495,7 @@ impl ParentExchange {
         Time::new(Utc.timestamp(self.timestamp, 0))
     }
 
-    pub fn uri(&self) -> &str {
+    pub fn uri(&self) -> &ServiceUri {
         &self.uri
     }
 
@@ -2150,10 +2152,7 @@ impl ResourceSetError {
 mod test {
     use bytes::Bytes;
 
-    use rpki::repository::crypto::{
-        signer::Signer,
-        PublicKeyFormat,
-    };
+    use rpki::repository::crypto::{signer::Signer, PublicKeyFormat};
 
     use crate::commons::util::softsigner::OpenSslSigner;
     use crate::test;

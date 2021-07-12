@@ -452,6 +452,13 @@ impl ParentCaContact {
     pub fn is_ta(&self) -> bool {
         matches!(*self, ParentCaContact::Ta(_))
     }
+
+    pub fn parent_uri(&self) -> Option<&ServiceUri> {
+        match &self {
+            ParentCaContact::Ta(_) => None,
+            ParentCaContact::Rfc6492(parent) => Some(parent.service_uri()),
+        }
+    }
 }
 
 impl fmt::Display for ParentCaContact {
