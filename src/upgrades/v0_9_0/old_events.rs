@@ -6,10 +6,12 @@ use std::{
 };
 
 use rpki::{
-    crypto::KeyIdentifier,
-    roa::Roa,
+    repository::{
+        crypto::KeyIdentifier,
+        roa::Roa,
+        x509::{Serial, Time},
+    },
     uri,
-    x509::{Serial, Time},
 };
 
 use crate::{

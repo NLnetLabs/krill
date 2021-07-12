@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use chrono::Duration;
 
-use rpki::crypto::KeyIdentifier;
-use rpki::x509::Time;
+use rpki::repository::crypto::KeyIdentifier;
+use rpki::repository::x509::Time;
 
 use crate::commons::api::{ChildCaInfo, ChildHandle, IssuedCert, ResourceClassName, ResourceSet};
 use crate::commons::crypto::IdCert;

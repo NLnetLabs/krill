@@ -9,9 +9,9 @@ use std::{env, fmt};
 use bytes::Bytes;
 use clap::{App, Arg, ArgMatches, SubCommand};
 
-use rpki::crypto::KeyIdentifier;
 use rpki::uri;
-use rpki::x509::Time;
+use rpki::repository::crypto::KeyIdentifier;
+use rpki::repository::x509::Time;
 
 use crate::commons::crypto::{IdCert, SignSupport};
 use crate::commons::remote::rfc8183;
@@ -1362,7 +1362,7 @@ impl Options {
         let id_cert = {
             if let Some(path) = matches.value_of("idcert") {
                 let bytes = Self::read_file_arg(path)?;
-                let id_cert = IdCert::decode(bytes).map_err(|_| Error::InvalidChildIdCert)?;
+                let id_cert = IdCert::decode(bytes.as_ref()).map_err(|_| Error::InvalidChildIdCert)?;
                 Some(id_cert)
             } else {
                 None

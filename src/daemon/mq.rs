@@ -7,7 +7,7 @@ use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::sync::RwLock;
 
-use rpki::x509::Time;
+use rpki::repository::x509::Time;
 
 use crate::commons::api::{Handle, ParentHandle, ResourceClassName, RevocationRequest};
 use crate::commons::eventsourcing::{self, Event};

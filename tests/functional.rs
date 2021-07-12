@@ -4,7 +4,7 @@ use std::fs;
 use std::str::FromStr;
 use std::time::Duration;
 
-use tokio::time::delay_for;
+use tokio::time::sleep;
 
 use bytes::Bytes;
 
@@ -94,7 +94,7 @@ async fn will_publish(test_msg: &str, publisher: &PublisherHandle, files: &[Stri
             let current_files: Vec<&Rsync> = current_files.iter().map(|p| p.uri()).collect();
             let mut all_matched = true;
             for o in &objects {
-                if current_files.iter().find(|uri| uri.ends_with(o)).is_none() {
+                if !current_files.iter().any(|uri| uri.ends_with(o)) {
                     all_matched = false;
                 }
             }
@@ -103,7 +103,7 @@ async fn will_publish(test_msg: &str, publisher: &PublisherHandle, files: &[Stri
             }
         }
 
-        delay_for(Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(100)).await;
     }
 
     let details = publisher_details(publisher).await;
@@ -162,7 +162,7 @@ async fn state_becomes_new_key(handle: &Handle) -> bool {
             return true;
         }
 
-        delay_for(Duration::from_secs(1)).await
+        sleep(Duration::from_secs(1)).await
     }
     false
 }
@@ -187,7 +187,7 @@ async fn state_becomes_active(handle: &Handle) -> bool {
             return true;
         }
 
-        delay_for(Duration::from_millis(100)).await
+        sleep(Duration::from_millis(100)).await
     }
     false
 }

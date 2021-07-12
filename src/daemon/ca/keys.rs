@@ -2,8 +2,8 @@ use std::ops::{Deref, DerefMut};
 
 use serde::{Deserialize, Serialize};
 
-use rpki::crypto::KeyIdentifier;
-use rpki::x509::Time;
+use rpki::repository::crypto::KeyIdentifier;
+use rpki::repository::x509::Time;
 
 use crate::commons::api::{
     ActiveInfo, CertifiedKeyInfo, EntitlementClass, Handle, IssuanceRequest, PendingInfo, PendingKeyInfo, RcvdCert,
@@ -123,7 +123,7 @@ impl CertifiedKey {
             false
         } else if until_not_after_millis == until_new_not_after_millis {
             debug!(
-                "Will not request new certificate for CA '{}' under RC '{}'. Resources and not after time are unchanged\n",
+                "Will not request new certificate for CA '{}' under RC '{}'. Resources and not after time are unchanged.",
                 handle,
                 rcn,
             );
@@ -138,7 +138,7 @@ impl CertifiedKey {
             || (until_new_not_after_millis as f64 / until_not_after_millis as f64) > 1.1_f64
         {
             info!(
-                "Will request new certificate for CA '{}' under RC '{}'. Not after time increased to: {}\n",
+                "Will request new certificate for CA '{}' under RC '{}'. Not after time increased to: {}",
                 handle,
                 rcn,
                 new_not_after.to_rfc3339()
@@ -146,7 +146,7 @@ impl CertifiedKey {
             true
         } else {
             debug!(
-                "Will not request new certificate for CA '{}' under RC '{}'. Not after time increased by less than 10%: {}\n",
+                "Will not request new certificate for CA '{}' under RC '{}'. Not after time increased by less than 10%: {}",
                 handle,
                 rcn,
                 new_not_after.to_rfc3339()

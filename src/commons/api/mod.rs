@@ -27,11 +27,11 @@ use std::sync::Arc;
 use bytes::Bytes;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use rpki::cert::Cert;
-use rpki::crl::Crl;
-use rpki::crypto::KeyIdentifier;
-use rpki::manifest::Manifest;
-use rpki::roa::Roa;
+use rpki::repository::cert::Cert;
+use rpki::repository::crl::Crl;
+use rpki::repository::crypto::KeyIdentifier;
+use rpki::repository::manifest::Manifest;
+use rpki::repository::roa::Roa;
 
 use crate::commons::error::RoaDeltaError;
 use crate::commons::util::sha256;

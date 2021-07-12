@@ -2,7 +2,7 @@ use std::fmt;
 use std::fs;
 use std::mem;
 use std::path::PathBuf;
-use std::str::{from_utf8_unchecked, FromStr};
+use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 use std::{
     collections::{HashMap, VecDeque},
@@ -10,9 +10,9 @@ use std::{
 };
 
 use bytes::Bytes;
-use rpki::crypto::KeyIdentifier;
 use rpki::uri;
-use rpki::x509::Time;
+use rpki::repository::crypto::KeyIdentifier;
+use rpki::repository::x509::Time;
 
 use crate::{
     commons::{
@@ -388,8 +388,6 @@ impl RsyncdStore {
                 .relative_to(&self.base_uri)
                 .ok_or_else(|| Error::publishing_outside_jail(publish.uri(), &self.base_uri))?;
 
-            let rel = unsafe { from_utf8_unchecked(rel) };
-
             let mut path = new_dir.clone();
             path.push(rel);
 
@@ -469,7 +467,7 @@ pub struct RrdpServer {
 }
 
 impl RrdpServer {
-    #[allow(clippy::clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         rrdp_base_uri: uri::Https,
         rrdp_base_dir: PathBuf,
@@ -815,7 +813,7 @@ impl RrdpServer {
 ///
 impl RrdpServer {
     pub fn notification_uri(&self) -> uri::Https {
-        self.rrdp_base_uri.join(b"notification.xml")
+        self.rrdp_base_uri.join(b"notification.xml").unwrap()
     }
 
     fn notification_path_new(&self) -> PathBuf {
@@ -845,7 +843,7 @@ impl RrdpServer {
     }
 
     fn new_snapshot_uri(base: &uri::Https, session: &RrdpSession, serial: u64) -> uri::Https {
-        base.join(Self::snapshot_rel(session, serial).as_ref())
+        base.join(Self::snapshot_rel(session, serial).as_ref()).unwrap()
     }
 
     fn snapshot_uri(&self) -> uri::Https {
@@ -1101,7 +1099,7 @@ impl RepositoryAccess {
     }
 
     fn notification_uri(&self) -> uri::Https {
-        self.rrdp_base.join(b"notification.xml")
+        self.rrdp_base.join(b"notification.xml").unwrap()
     }
 
     fn base_uri_for(&self, name: &PublisherHandle) -> KrillResult<uri::Rsync> {

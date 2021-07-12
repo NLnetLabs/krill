@@ -2,7 +2,10 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use api::{RepositoryContact, StorableCaCommand, StoredEffect};
 use ca::{CaEvt, IniDet, StoredCaCommand};
-use rpki::{crl::Crl, crypto::KeyIdentifier, manifest::Manifest, uri, x509::Time};
+use rpki::{
+    repository::{crl::Crl, crypto::KeyIdentifier, manifest::Manifest, x509::Time},
+    uri,
+};
 
 use crate::{
     commons::{

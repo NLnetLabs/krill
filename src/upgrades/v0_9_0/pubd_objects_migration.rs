@@ -7,7 +7,10 @@ use std::{
 };
 
 use chrono::Duration;
-use rpki::{crypto::KeyIdentifier, uri, x509::Time};
+use rpki::{
+    repository::{crypto::KeyIdentifier, x509::Time},
+    uri,
+};
 
 use crate::{
     commons::{
@@ -462,7 +465,7 @@ impl OldRrdpServer {
     }
 
     fn new_snapshot_uri(base: &uri::Https, session: &RrdpSession, serial: u64) -> uri::Https {
-        base.join(Self::snapshot_rel(session, serial).as_ref())
+        base.join(Self::snapshot_rel(session, serial).as_ref()).unwrap()
     }
 }
 

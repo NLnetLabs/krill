@@ -155,6 +155,7 @@ impl AuthPolicy {
 //   allow(actor: Actor, action: Permission, nil) if
 //      ...
 impl ToPolar for NoResourceType {
+    #[allow(clippy::wrong_self_convention)]
     fn to_polar(self) -> oso::PolarValue {
         Option::<PolarValue>::None.to_polar()
     }

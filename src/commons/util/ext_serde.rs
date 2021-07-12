@@ -1,7 +1,7 @@
 //! Defines helper methods for Serializing and Deserializing external types.
 use bytes::Bytes;
 use log::LevelFilter;
-use rpki::resources::{AsBlocks, IpBlocks};
+use rpki::repository::resources::{AsBlocks, IpBlocks};
 use serde::de;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::str::FromStr;
