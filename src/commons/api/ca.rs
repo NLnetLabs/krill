@@ -1195,6 +1195,10 @@ impl ParentStatuses {
 
         self.0.get_mut(parent).unwrap()
     }
+
+    pub fn remove(&mut self, parent: &ParentHandle) {
+        self.0.remove(parent);
+    }
 }
 
 impl IntoIterator for ParentStatuses {

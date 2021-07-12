@@ -671,6 +671,8 @@ impl CaManager {
             );
         }
 
+        self.status_store.lock().await.remove_parent(&handle, &parent).await?;
+
         let upd = CmdDet::remove_parent(&handle, parent, actor);
         self.send_command(upd).await?;
         Ok(())
