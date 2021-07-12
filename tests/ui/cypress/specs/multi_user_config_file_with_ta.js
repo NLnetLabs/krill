@@ -338,8 +338,11 @@ describe('Config File Users with TA', () => {
     })
 
     // attempting to create a ROA on ca_readonly should fail
-    cy.get('.el-select-dropdown__wrap.el-scrollbar__wrap > ul').contains('ca_readonly').click()
-    cy.wait('@statusRO')
+    cy.url().should('not.contain', '#/cas/ca_readonly').then((unused) => {
+      // only change the current CA and wait for an update from the backend if the current CA isn't the one we want
+      cy.get('.el-select-dropdown__wrap.el-scrollbar__wrap > ul').contains('ca_readonly').click()
+      cy.wait('@statusRO')
+    })
     cy.get('#tab-roas').click()
     cy.contains('Add ROA').click()
     cy.get('div[role="dialog"]')
