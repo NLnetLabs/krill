@@ -51,9 +51,6 @@ impl ConfigDefaults {
         env::var(KRILL_ENV_FORCE_RECOVER).is_ok()
     }
 
-    fn service_uri() -> String {
-        "https://localhost:3000/".to_string()
-    }
     fn log_level() -> LevelFilter {
         match env::var(KRILL_ENV_LOG_LEVEL) {
             Ok(level) => match LevelFilter::from_str(&level) {
@@ -207,8 +204,7 @@ pub struct Config {
 
     pub pid_file: Option<PathBuf>,
 
-    #[serde(default = "ConfigDefaults::service_uri")]
-    pub service_uri: String,
+    service_uri: Option<uri::Https>,
 
     #[serde(
         default = "ConfigDefaults::log_level",
@@ -428,11 +424,23 @@ impl Config {
     }
 
     pub fn service_uri(&self) -> uri::Https {
-        uri::Https::from_str(&self.service_uri).unwrap()
+        match &self.service_uri {
+            None => {
+                if self.ip == ConfigDefaults::ip() {
+                    uri::Https::from_string(format!("https://localhost:{}/", self.port)).unwrap()
+                } else {
+                    // This should be unreachable code because config::verify() ensures that the
+                    // service_uri is specified in cases where a non-default (127.0.0.1) IP address
+                    // is specified. Still returning a URI here rather than blowing up at runtime.
+                    uri::Https::from_string(format!("https://{}:{}/", self.ip, self.port)).unwrap()
+                }
+            },
+            Some(uri) => uri.clone()
+        }
     }
 
     pub fn rfc8181_uri(&self, publisher: &PublisherHandle) -> uri::Https {
-        uri::Https::from_string(format!("{}rfc8181/{}/", self.service_uri, publisher)).unwrap()
+        uri::Https::from_string(format!("{}rfc8181/{}/", self.service_uri(), publisher)).unwrap()
     }
 
     pub fn pid_file(&self) -> PathBuf {
@@ -471,7 +479,6 @@ impl Config {
         let https_mode = HttpsMode::Generate;
         let data_dir = data_dir.to_path_buf();
         let always_recover_data = false;
-        let service_uri = ConfigDefaults::service_uri();
 
         let log_level = LevelFilter::Debug;
         let log_type = LogType::Stderr;
@@ -556,7 +563,7 @@ impl Config {
             data_dir,
             always_recover_data,
             pid_file,
-            service_uri,
+            service_uri: None,
             log_level,
             log_type,
             log_file,
@@ -595,7 +602,6 @@ impl Config {
     pub fn pubd_test(data_dir: &Path) -> Self {
         let mut config = Self::test_config(data_dir, false);
         config.port = 3001;
-        config.service_uri = "https://localhost:3001/".to_string();
         config
     }
 
@@ -655,18 +661,20 @@ impl Config {
             return Err(ConfigError::other("Port number must be >1024"));
         }
 
-        if !self.service_uri.ends_with('/') {
-            return Err(ConfigError::other("service URI must end with '/'"));
-        } else {
-            uri::Https::from_str(&self.service_uri)
-                .map_err(|_| ConfigError::Other(format!("Invalid service uri: {}", self.service_uri)))?;
+        if self.ip != ConfigDefaults::ip() && self.service_uri.is_none() {
+            return Err(ConfigError::other("Please specify a URI for 'service_uri' if you enable binding to IP addresses other than 127.0.0.1"));
+        }
 
-            if self.service_uri.as_str().matches('/').count() != 3 {
+        if let Some(service_uri) = &self.service_uri {
+            if !service_uri.as_str().ends_with('/') {
+                return Err(ConfigError::other("service URI must end with '/'"));
+            } else if service_uri.as_str().matches('/').count() != 3 {
                 return Err(ConfigError::other(
                     "Service URI MUST specify a host name only, e.g. https://rpki.example.com:3000/",
                 ));
             }
         }
+
 
         if self.issuance_timing.timing_publish_next_hours < 2 {
             return Err(ConfigError::other("timing_publish_next_hours must be at least 2"));

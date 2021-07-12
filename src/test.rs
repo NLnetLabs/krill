@@ -143,9 +143,7 @@ pub async fn start_krill_pubd() -> PathBuf {
     let dir = tmp_dir();
     let mut config = test_config(&dir, false);
     init_config(&config);
-
     config.port = 3001;
-    config.service_uri = "https://localhost:3001/".to_string();
 
     tokio::spawn(start_krill_with_error_trap(Arc::new(config)));
     assert!(krill_pubd_ready().await);
