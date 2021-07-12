@@ -117,6 +117,14 @@ impl StatusStore {
         self.set_ca_status(ca, &status)
     }
 
+    pub async fn remove_parent(&self, ca: &Handle, parent: &ParentHandle) -> KrillResult<()> {
+        let _lock = self.lock.write().await;
+        let mut status = self.get_ca_status(ca)?;
+        status.parents.remove(parent);
+
+        Ok(())
+    }
+
     pub async fn set_status_repo_failure(&self, ca: &Handle, uri: ServiceUri, error: &Error) -> KrillResult<()> {
         let _lock = self.lock.write().await;
         let mut status = self.get_ca_status(ca)?;
