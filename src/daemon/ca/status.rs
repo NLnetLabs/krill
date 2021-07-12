@@ -7,6 +7,7 @@ use crate::commons::api::{
 };
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::{KeyStoreKey, KeyValueStore};
+use crate::commons::remote::rfc8183::ServiceUri;
 use crate::commons::util::httpclient;
 use crate::commons::KrillResult;
 
@@ -72,7 +73,7 @@ impl StatusStore {
         &self,
         ca: &Handle,
         parent: &ParentHandle,
-        uri: String,
+        uri: &ServiceUri,
         error: &Error,
         next_run_seconds: i64,
     ) -> KrillResult<()> {
@@ -91,7 +92,7 @@ impl StatusStore {
         &self,
         ca: &Handle,
         parent: &ParentHandle,
-        uri: String,
+        uri: &ServiceUri,
         next_run_seconds: i64,
     ) -> KrillResult<()> {
         let _lock = self.lock.write().await;
@@ -104,7 +105,7 @@ impl StatusStore {
         &self,
         ca: &Handle,
         parent: &ParentHandle,
-        uri: String,
+        uri: &ServiceUri,
         entitlements: &Entitlements,
         next_run_seconds: i64,
     ) -> KrillResult<()> {
@@ -116,7 +117,7 @@ impl StatusStore {
         self.set_ca_status(ca, &status)
     }
 
-    pub async fn set_status_repo_failure(&self, ca: &Handle, uri: String, error: &Error) -> KrillResult<()> {
+    pub async fn set_status_repo_failure(&self, ca: &Handle, uri: ServiceUri, error: &Error) -> KrillResult<()> {
         let _lock = self.lock.write().await;
         let mut status = self.get_ca_status(ca)?;
 
@@ -126,7 +127,7 @@ impl StatusStore {
         self.set_ca_status(ca, &status)
     }
 
-    pub async fn set_status_repo_success(&self, ca: &Handle, uri: String, next_hours: i64) -> KrillResult<()> {
+    pub async fn set_status_repo_success(&self, ca: &Handle, uri: ServiceUri, next_hours: i64) -> KrillResult<()> {
         let _lock = self.lock.write().await;
         let mut status = self.get_ca_status(ca)?;
         status.repo.set_last_updated(uri, next_hours);
@@ -136,7 +137,7 @@ impl StatusStore {
     pub async fn set_status_repo_published(
         &self,
         ca: &Handle,
-        uri: String,
+        uri: ServiceUri,
         published: Vec<PublishElement>,
         next_hours: i64,
     ) -> KrillResult<()> {
