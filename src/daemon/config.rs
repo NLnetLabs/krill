@@ -429,9 +429,6 @@ impl Config {
                 if self.ip == ConfigDefaults::ip() {
                     uri::Https::from_string(format!("https://localhost:{}/", self.port)).unwrap()
                 } else {
-                    // This should be unreachable code because config::verify() ensures that the
-                    // service_uri is specified in cases where a non-default (127.0.0.1) IP address
-                    // is specified. Still returning a URI here rather than blowing up at runtime.
                     uri::Https::from_string(format!("https://{}:{}/", self.ip, self.port)).unwrap()
                 }
             },
@@ -659,10 +656,6 @@ impl Config {
 
         if self.port < 1024 {
             return Err(ConfigError::other("Port number must be >1024"));
-        }
-
-        if self.ip != ConfigDefaults::ip() && self.service_uri.is_none() {
-            return Err(ConfigError::other("Please specify a URI for 'service_uri' if you enable binding to IP addresses other than 127.0.0.1"));
         }
 
         if let Some(service_uri) = &self.service_uri {
