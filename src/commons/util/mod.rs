@@ -136,15 +136,16 @@ impl Ord for KrillVersion {
     fn cmp(&self, other: &Self) -> Ordering {
         let mut res = self.major.cmp(&other.major);
 
-        if res.is_eq() {
+        // use res.is_eq() when the minimum rust requirement will be 1.53 or higher
+        if res == Ordering::Equal {
             res = self.minor.cmp(&other.minor);
         }
 
-        if res.is_eq() {
+        if res == Ordering::Equal {
             res = self.patch.cmp(&other.patch);
         }
 
-        if res.is_eq() {
+        if res == Ordering::Equal {
             res = self.release.cmp(&other.release);
         }
 
