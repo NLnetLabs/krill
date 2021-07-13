@@ -1374,27 +1374,26 @@ impl CertAuth {
     ///    - Will return an error in case the repo is already set (issue 481)
     ///    - Will support migrations using key rollover in future (issue 480)
     ///    - Assumes that the repository can be reached (this is checked by CaManager before issuing the command to this CA)
-    pub fn update_repo(&self, contact: RepositoryContact, _signer: &KrillSigner) -> KrillResult<Vec<CaEvt>> {
-        if let Some(_existing_contact) = &self.repository {
-            // Disallow, see issue 481
-            return Err(Error::CaRepoAlreadyConfigured(self.handle.clone()));
-            // TODO: check that it is indeed different and then allow (issue 480)
-            // if existing_contact == &contact {
-            //     return Err(Error::CaRepoInUse(self.handle.clone()));
-            // }
-            // // Initiate rolls in all RCs so we can use the new repo in the new key.
-            // let info = contact.repo_info().clone();
-            // for rc in self.resources.values() {
-            //     // If we are in any keyroll, reject.. because we will need to
-            //     // introduce the change as a key roll (new key, new repo, etc),
-            //     // and we can only do one roll at a time.
-            //     if !rc.key_roll_possible() {
-            //         // If we can't roll... well then we have to bail out.
-            //         // Note: none of these events are committed in that case.
-            //         return Err(Error::KeyRollNotAllowed);
-            //     }
-            //     evt_dets.append(&mut rc.keyroll_initiate(&info, Duration::seconds(0), &signer)?);
-            // }
+    pub fn update_repo(&self, contact: RepositoryContact, signer: &KrillSigner) -> KrillResult<Vec<CaEvt>> {
+        let mut evt_dets = vec![];
+        if let Some(existing_contact) = &self.repository {
+            if existing_contact == &contact {
+                return Err(Error::CaRepoInUse(self.handle.clone()));
+            }
+            // Initiate rolls in all RCs so we can use the new repo in the new key.
+            let info = contact.repo_info().clone();
+            for rc in self.resources.values() {
+                // If we are in any keyroll, reject.. because we will need to
+                // introduce the change as a key roll (new key, new repo, etc),
+                // and we can only do one roll at a time.
+                if !rc.key_roll_possible() {
+                    // If we can't roll... well then we have to bail out.
+                    // Note: none of these events are committed in that case.
+                    return Err(Error::KeyRollNotAllowed);
+                }
+
+                evt_dets.append(&mut rc.keyroll_initiate(&info, Duration::seconds(0), &signer)?);
+            }
         }
 
         // register updated repo
@@ -1404,7 +1403,7 @@ impl CertAuth {
             contact.service_uri()
         );
 
-        let evt_dets = vec![CaEvtDet::RepoUpdated { contact }];
+        evt_dets.push(CaEvtDet::RepoUpdated { contact });
         Ok(self.events_from_details(evt_dets))
     }
 }
