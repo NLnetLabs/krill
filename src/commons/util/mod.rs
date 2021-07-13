@@ -28,7 +28,7 @@ pub struct KrillVersion {
     major: u64,
     minor: u64,
     patch: u64,
-    release: KrillVersionRelease
+    release_type: KrillVersionReleaseType
 }
 
 impl KrillVersion {
@@ -43,15 +43,15 @@ impl KrillVersion {
     }
     
     pub fn release(major: u64, minor: u64, patch: u64) -> Self {
-        KrillVersion { major, minor, patch, release: KrillVersionRelease::Release}
+        KrillVersion { major, minor, patch, release_type: KrillVersionReleaseType::Release}
     }
 
     pub fn candidate(major: u64, minor: u64, patch: u64, number: u64) -> Self {
-        KrillVersion { major, minor, patch, release: KrillVersionRelease::Candidate(number)}
+        KrillVersion { major, minor, patch, release_type: KrillVersionReleaseType::Candidate(number)}
     }
 
     fn dev(major: u64, minor: u64, patch: u64, addition: String) -> Self {
-        KrillVersion { major, minor, patch, release: KrillVersionRelease::Dev(addition)}
+        KrillVersion { major, minor, patch, release_type: KrillVersionReleaseType::Dev(addition)}
     }
 }
 
@@ -113,7 +113,7 @@ impl FromStr for KrillVersion {
 
 impl fmt::Display for KrillVersion {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}.{}.{}{}", self.major, self.minor, self.patch, self.release)
+        write!(f, "{}.{}.{}{}", self.major, self.minor, self.patch, self.release_type)
     }
 }
 
@@ -146,7 +146,7 @@ impl Ord for KrillVersion {
         }
 
         if res == Ordering::Equal {
-            res = self.release.cmp(&other.release);
+            res = self.release_type.cmp(&other.release_type);
         }
 
         res
@@ -182,44 +182,44 @@ impl<'de> Deserialize<'de> for KrillVersion {
 
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-enum KrillVersionRelease {
+enum KrillVersionReleaseType {
     Release,
     Candidate(u64),
     Dev(String)
 }
 
-impl Ord for KrillVersionRelease {
+impl Ord for KrillVersionReleaseType {
     fn cmp(&self, other: &Self) -> Ordering {
         match &self {
-            KrillVersionRelease::Release => match other {
-                KrillVersionRelease::Release => Ordering::Equal,
+            KrillVersionReleaseType::Release => match other {
+                KrillVersionReleaseType::Release => Ordering::Equal,
                 _ => Ordering::Greater
             },
-            KrillVersionRelease::Candidate(nr) => match other {
-                KrillVersionRelease::Release => Ordering::Less,
-                KrillVersionRelease::Candidate(nr_other) => nr.cmp(nr_other),
-                &KrillVersionRelease::Dev(_) => Ordering::Greater
+            KrillVersionReleaseType::Candidate(nr) => match other {
+                KrillVersionReleaseType::Release => Ordering::Less,
+                KrillVersionReleaseType::Candidate(nr_other) => nr.cmp(nr_other),
+                &KrillVersionReleaseType::Dev(_) => Ordering::Greater
             },
-            KrillVersionRelease::Dev(text) => match other {
-                KrillVersionRelease::Dev(text_other) => text.cmp(text_other),
+            KrillVersionReleaseType::Dev(_) => match other {
+                KrillVersionReleaseType::Dev(_) => Ordering::Equal,
                 _ => Ordering::Less
             }
         }
     }
 }
 
-impl PartialOrd for KrillVersionRelease {
+impl PartialOrd for KrillVersionReleaseType {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl fmt::Display for KrillVersionRelease {
+impl fmt::Display for KrillVersionReleaseType {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            KrillVersionRelease::Release => write!(f, ""),
-            KrillVersionRelease::Candidate(nr) => write!(f, "-rc{}", nr),
-            KrillVersionRelease::Dev(text) => write!(f, "-{}", text),
+            KrillVersionReleaseType::Release => write!(f, ""),
+            KrillVersionReleaseType::Candidate(nr) => write!(f, "-rc{}", nr),
+            KrillVersionReleaseType::Dev(text) => write!(f, "-{}", text),
         }
     }
 }
@@ -328,7 +328,7 @@ mod tests {
         let v0_9_1_rc1 = KrillVersion::from_str("0.9.1-rc1").unwrap();
         let v0_9_1_rc2 = KrillVersion::from_str("0.9.1-rc2").unwrap();
         let v0_9_1_bis = KrillVersion::from_str("0.9.1-bis").unwrap();
-
+        
         assert!(v0_9_1 > v0_9_1_rc1);
         assert!(v0_9_1_rc2 > v0_9_1_rc1);
         assert!(v0_9_1_rc1 > v0_9_1_bis);
