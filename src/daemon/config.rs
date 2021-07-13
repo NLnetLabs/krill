@@ -152,10 +152,6 @@ impl ConfigDefaults {
         90
     }
 
-    fn timing_publish_valid_days() -> i64 {
-        7
-    }
-
     fn timing_publish_next_hours() -> i64 {
         24
     }
@@ -289,8 +285,6 @@ pub struct Config {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct IssuanceTimingConfig {
-    #[serde(default = "ConfigDefaults::timing_publish_valid_days")]
-    pub timing_publish_valid_days: i64,
     #[serde(default = "ConfigDefaults::timing_publish_next_hours")]
     pub timing_publish_next_hours: i64,
     #[serde(default = "ConfigDefaults::timing_publish_hours_before_next")]
@@ -510,7 +504,6 @@ impl Config {
         let roa_aggregate_threshold = 3;
         let roa_deaggregate_threshold = 2;
 
-        let timing_publish_valid_days = ConfigDefaults::timing_publish_valid_days();
         let timing_publish_next_hours = ConfigDefaults::timing_publish_next_hours();
         let timing_publish_hours_before_next = ConfigDefaults::timing_publish_hours_before_next();
         let timing_child_certificate_valid_weeks = ConfigDefaults::timing_child_certificate_valid_weeks();
@@ -520,7 +513,6 @@ impl Config {
         let timing_roa_reissue_weeks_before = ConfigDefaults::timing_roa_reissue_weeks_before();
 
         let issuance_timing = IssuanceTimingConfig {
-            timing_publish_valid_days,
             timing_publish_next_hours,
             timing_publish_hours_before_next,
             timing_child_certificate_valid_weeks,
@@ -682,12 +674,6 @@ impl Config {
             return Err(ConfigError::other(
                 "timing_publish_hours_before_next must be smaller than timing_publish_hours",
             ));
-        }
-
-        if self.issuance_timing.timing_publish_valid_days < 1
-            || self.issuance_timing.timing_publish_valid_days < (self.issuance_timing.timing_publish_next_hours / 24)
-        {
-            return Err(ConfigError::other("timing_publish_valid_days must be 1 or bigger, and must be at least as long as timing_publish_next_hours"));
         }
 
         if self.issuance_timing.timing_child_certificate_valid_weeks < 2 {
