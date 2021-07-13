@@ -451,22 +451,20 @@ impl KrillServer {
     /// Updates a parent contact for a CA
     pub async fn ca_parent_add_or_update(
         &self,
-        handle: Handle,
+        ca: Handle,
         parent_req: ParentCaReq,
         actor: &Actor,
     ) -> KrillEmptyResult {
-        self.ca_parent_reachable(&handle, parent_req.contact()).await?;
+        let parent = parent_req.handle();
+        let contact = parent_req.contact();
+        self.ca_manager.get_entitlements_from_contact(&ca, parent, contact, false).await?;
 
         Ok(self
             .ca_manager
-            .ca_parent_add_or_update(handle, parent_req, actor)
+            .ca_parent_add_or_update(ca, parent_req, actor)
             .await?)
     }
 
-    async fn ca_parent_reachable(&self, handle: &Handle, contact: &ParentCaContact) -> KrillEmptyResult {
-        self.ca_manager.get_entitlements_from_contact(handle, contact).await?;
-        Ok(())
-    }
 
     pub async fn ca_parent_remove(&self, handle: Handle, parent: ParentHandle, actor: &Actor) -> KrillEmptyResult {
         Ok(self.ca_manager.ca_parent_remove(handle, parent, actor).await?)
