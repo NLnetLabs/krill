@@ -749,47 +749,18 @@ impl CaManager {
 
     /// Try to get updates from a specific parent of a CA.
     async fn get_updates_from_parent(&self, handle: &Handle, parent: &ParentHandle, actor: &Actor) -> KrillResult<()> {
-        if handle == &ta_handle() {
-            Ok(()) // The (test) TA never needs updates.
-        } else {
+        if handle != &ta_handle() {
             let ca = self.get_ca(&handle).await?;
-
-            let next_run_seconds = self.config.ca_refresh as i64;
 
             if ca.repository_contact().is_ok() {
                 let ca = self.get_ca(&handle).await?;
                 let parent_contact = ca.parent(parent)?;
+                let entitlements = self.get_entitlements_from_contact(handle, parent, parent_contact, true).await?;
 
-                // We can unwrap the parent_uri here because the parent contact type
-                // cannot be TA here. So it is always set.
-                let parent_uri = parent_contact.parent_uri().unwrap();
-
-                match self.get_entitlements_from_contact(handle, parent_contact).await {
-                    Err(e) => {
-                        self.status_store
-                            .lock()
-                            .await
-                            .set_parent_failure(handle, parent, parent_uri, &e, next_run_seconds)
-                            .await?;
-                        Err(e)
-                    }
-                    Ok(entitlements) => {
-                        self.status_store
-                            .lock()
-                            .await
-                            .set_parent_entitlements(handle, parent, parent_uri, &entitlements, next_run_seconds)
-                            .await?;
-
-                        self.update_entitlements(handle, parent.clone(), entitlements, actor)
-                            .await?;
-
-                        Ok(())
-                    }
-                }
-            } else {
-                Ok(()) // Pending requests will be picked up by the scheduler.
+                self.update_entitlements(handle, parent.clone(), entitlements, actor).await?;
             }
         }
+        Ok(())
     }
 
     /// Sends requests to a specific parent for the CA matching handle.
@@ -1027,12 +998,41 @@ impl CaManager {
 
     pub async fn get_entitlements_from_contact(
         &self,
-        handle: &Handle,
+        ca: &Handle,
+        parent: &ParentHandle,
         contact: &ParentCaContact,
+        existing_parent: bool,
     ) -> KrillResult<api::Entitlements> {
         match contact {
             ParentCaContact::Ta(_) => Err(Error::TaNotAllowed),
-            ParentCaContact::Rfc6492(res) => self.get_entitlements_rfc6492(handle, res).await,
+            ParentCaContact::Rfc6492(res) => {
+                let result = self.get_entitlements_rfc6492(ca, res).await;
+                let uri = res.service_uri();
+                let next_run_seconds = self.config.ca_refresh as i64;
+
+                match  &result {
+                    Err(error) => {
+                        if existing_parent {
+                            // only update the status store with errors for existing parents
+                            // otherwise we end up with entries if a new parent is rejected because
+                            // of the error.
+                            self.status_store
+                                .lock()
+                                .await
+                                .set_parent_failure(ca, parent, uri, error, next_run_seconds)
+                                .await?;
+                        }
+                    },
+                    Ok(entitlements) => {
+                        self.status_store
+                            .lock()
+                            .await
+                            .set_parent_entitlements(ca, parent, uri, &entitlements, next_run_seconds)
+                            .await?;
+                    }
+                }
+                result
+            }
         }
     }
 
