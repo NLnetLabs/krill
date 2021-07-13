@@ -20,9 +20,10 @@ use crate::{
         },
         crypto::IdCert,
         eventsourcing::{
-            Aggregate, AggregateStore, CommandKey, KeyStoreKey, KeyStoreVersion, KeyValueStore, StoredEvent,
+            Aggregate, AggregateStore, CommandKey, KeyStoreKey, KeyValueStore, StoredEvent,
             StoredValueInfo,
         },
+        util::KrillVersion,
     },
     constants::{PUBSERVER_CONTENT_DIR, PUBSERVER_DFLT, PUBSERVER_DIR, REPOSITORY_RRDP_DIR},
     daemon::config::Config,
@@ -102,10 +103,10 @@ impl UpgradeStore for PubdStoreMigration {
     fn needs_migrate(&self) -> Result<bool, UpgradeError> {
         if !self.store.has_scope("0".to_string())? {
             Ok(false)
-        } else if Self::version_before(&self.store, KeyStoreVersion::V0_6)? {
+        } else if Self::version_before(&self.store, KrillVersion::release(0, 6, 0))? {
             Err(UpgradeError::custom("Cannot upgrade Krill installations from before version 0.6.0. Please upgrade to any version ranging from 0.6.0 to 0.8.1 first, and then upgrade to this version."))
         } else {
-            Self::version_before(&self.store, KeyStoreVersion::V0_9_0_RC1)
+            Self::version_before(&self.store, KrillVersion::candidate(0,9,0,1))
         }
     }
 
@@ -248,9 +249,9 @@ impl UpgradeStore for PubdStoreMigration {
         &self.store
     }
 
-    fn version_before(kv: &KeyValueStore, before: KeyStoreVersion) -> Result<bool, UpgradeError> {
+    fn version_before(kv: &KeyValueStore, before: KrillVersion) -> Result<bool, UpgradeError> {
         let key = KeyStoreKey::simple("version".to_string());
-        match kv.get::<KeyStoreVersion>(&key) {
+        match kv.get::<KrillVersion>(&key) {
             Err(e) => Err(UpgradeError::KeyStoreError(e)),
             Ok(None) => Ok(true),
             Ok(Some(current_version)) => Ok(current_version < before),
