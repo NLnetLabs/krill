@@ -4,7 +4,8 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 use std::env;
 use std::fs::File;
-use std::path::PathBuf;
+use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::process;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -57,38 +58,60 @@ pub fn parse_config() -> KrillResult<Config> {
     Config::create().map_err(|e| Error::Custom(format!("Could not parse config: {}", e)))
 }
 
+fn print_write_error_hint_and_die(error_msg: String) {
+    eprintln!("{}", error_msg);
+    eprintln!();
+    eprintln!("Hint: if you use systemd you may need to override the allowed ReadWritePaths,");
+    eprintln!("the easiest way may be by doing 'systemctl edit krill' and add a section like:");
+    eprintln!();
+    eprintln!("[Service]");
+    eprintln!("ReadWritePaths=/local/path1 /local/path2 ...");
+}
+
 fn write_pid_file_or_die(config: &Config) {
     let pid_file = config.pid_file();
     if let Err(e) = file::save(process::id().to_string().as_bytes(), &pid_file) {
-        eprintln!("Could not write PID file: {}", e);
-        ::std::process::exit(1);
+        print_write_error_hint_and_die(format!("Could not write PID file: {}", e));
     }
 }
 
-fn test_data_dir_or_die(config: &Config) {
-    let mut test_file = config.data_dir.clone();
-    test_file.push("test");
+fn test_data_dir_or_die(config_item: &str, dir: &Path) {
+    let test_file = dir.join("test");
 
     if let Err(e) = file::save(b"test", &test_file) {
-        eprintln!(
-            "Cannot write to data dir: {}, Error: {}",
-            config.data_dir.to_string_lossy(),
-            e
+        print_write_error_hint_and_die(
+            format!(
+                "Cannot write to dir '{}' for configuration setting '{}', Error: {}",
+                dir.to_string_lossy(),
+                config_item,
+                e
+            )
         );
-        ::std::process::exit(1);
     } else if let Err(e) = file::delete_file(&test_file) {
-        eprintln!(
-            "Cannot delete test file in data dir: {}, Error: {}",
-            test_file.to_string_lossy(),
-            e
+        print_write_error_hint_and_die(
+            format!(
+                "Cannot delete test file '{}' in dir for configuration setting '{}', Error: {}",
+                test_file.to_string_lossy(),
+                config_item,
+                e
+            )
         );
-        ::std::process::exit(1);
+    }
+}
+
+fn test_data_dirs_or_die(config: &Config) {
+    test_data_dir_or_die("data_dir", &config.data_dir);
+    if let Some(rfc8181_log_dir) = &config.rfc8181_log_dir {
+        test_data_dir_or_die("rfc8181_log_dir", rfc8181_log_dir);
+    }
+    if let Some(rfc6492_log_dir) = &config.rfc6492_log_dir {
+        test_data_dir_or_die("rfc6492_log_dir", rfc6492_log_dir);
     }
 }
 
 pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
     write_pid_file_or_die(&config);
-    test_data_dir_or_die(&config);
+    test_data_dirs_or_die(&config);
 
     // Call upgrade, this will only do actual work if needed.
     pre_start_upgrade(config.clone()).map_err(|e| Error::Custom(format!("Could not upgrade Krill: {}", e)))?;
@@ -104,7 +127,6 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
     // If the operator wanted to do the upgrade only, now is a good time to report success and stop
     if env::var(KRILL_ENV_UPGRADE_ONLY).is_ok() {
         println!("Krill upgrade successful");
-        ::std::process::exit(0);
     }
 
     let state = Arc::new(RwLock::new(krill));
@@ -142,7 +164,6 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
 
     if server.await.is_err() {
         eprintln!("Krill failed to start");
-        ::std::process::exit(1);
     }
 
     Ok(())
@@ -1628,7 +1649,6 @@ async fn rrdp(req: Request) -> RoutingResult {
 
         match File::open(full_path) {
             Ok(mut file) => {
-                use std::io::Read;
                 let mut buffer = Vec::new();
                 file.read_to_end(&mut buffer).unwrap();
 
