@@ -924,12 +924,18 @@ impl CaManager {
                     .await
                 {
                     Err(e) => {
+                        if let Error::Rfc6492NotPerformed(res) = &e {
+                            error!("CA '{}' got a not performed response from parent '{}', message was: {}", handle, parent, res);
+                            
+                        }
+                        
                         self.status_store
                             .lock()
                             .await
                             .set_parent_failure(handle, parent, uri, &e, REQUEUE_DELAY_SECONDS)
                             .await?;
                         Err(e)
+
                     }
                     Ok(res) => {
                         self.status_store
