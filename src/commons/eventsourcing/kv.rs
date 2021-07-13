@@ -210,7 +210,7 @@ impl KeyValueStore {
     pub fn version(&self) -> Result<KrillVersion, KeyValueError> {
         let key = KeyStoreKey::simple("version".to_string());
         self.get(&key)
-            .map(|version_opt| version_opt.unwrap_or(KrillVersion::v0_5_0_or_before()))
+            .map(|version_opt| version_opt.unwrap_or_else(KrillVersion::v0_5_0_or_before))
     }
 
     /// Returns whether the version of this key store predates the given version.
