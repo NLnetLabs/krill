@@ -16,9 +16,10 @@ use crate::{
         },
         crypto::{IdCert, KrillSigner},
         eventsourcing::{
-            Aggregate, AggregateStore, CommandKey, KeyStoreKey, KeyStoreVersion, KeyValueStore, StoredValueInfo,
+            Aggregate, AggregateStore, CommandKey, KeyStoreKey, KeyValueStore, StoredValueInfo,
         },
         remote::rfc8183,
+        util::KrillVersion,
     },
     constants::CASERVER_DIR,
     daemon::{
@@ -46,9 +47,9 @@ impl CaObjectsMigration {
 
         let signer = Arc::new(KrillSigner::build(&config.data_dir)?);
 
-        if store.version_is_before(KeyStoreVersion::V0_6)? {
+        if store.version_is_before(KrillVersion::release(0,6,0))? {
             Err(UpgradeError::custom("Cannot upgrade Krill installations from before version 0.6.0. Please upgrade to any version ranging from 0.6.0 to 0.8.1 first, and then upgrade to this version."))
-        } else if store.version_is_before(KeyStoreVersion::V0_9_0_RC1)? {
+        } else if store.version_is_before(KrillVersion::candidate(0,9,0,1))? {
             info!("Krill version is older than 0.9.0-RC1, will now upgrade data structures.");
 
             // Populate object store which will contain all objects produced by CAs, while we are

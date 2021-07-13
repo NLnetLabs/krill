@@ -671,6 +671,8 @@ impl CaManager {
             );
         }
 
+        self.status_store.lock().await.remove_parent(&handle, &parent).await?;
+
         let upd = CmdDet::remove_parent(&handle, parent, actor);
         self.send_command(upd).await?;
         Ok(())
@@ -747,45 +749,18 @@ impl CaManager {
 
     /// Try to get updates from a specific parent of a CA.
     async fn get_updates_from_parent(&self, handle: &Handle, parent: &ParentHandle, actor: &Actor) -> KrillResult<()> {
-        if handle == &ta_handle() {
-            Ok(()) // The (test) TA never needs updates.
-        } else {
+        if handle != &ta_handle() {
             let ca = self.get_ca(&handle).await?;
 
-            let next_run_seconds = self.config.ca_refresh as i64;
+            if ca.repository_contact().is_ok() {
+                let ca = self.get_ca(&handle).await?;
+                let parent_contact = ca.parent(parent)?;
+                let entitlements = self.get_entitlements_from_contact(handle, parent, parent_contact, true).await?;
 
-            match ca.repository_contact() {
-                Ok(contact) => {
-                    let uri = contact.uri();
-                    match self.get_entitlements_from_parent(handle, parent).await {
-                        Err(e) => {
-                            self.status_store
-                                .lock()
-                                .await
-                                .set_parent_failure(handle, parent, uri, &e, next_run_seconds)
-                                .await?;
-                            Err(e)
-                        }
-                        Ok(entitlements) => {
-                            self.status_store
-                                .lock()
-                                .await
-                                .set_parent_entitlements(handle, parent, uri, &entitlements, next_run_seconds)
-                                .await?;
-                            if !self
-                                .update_entitlements(handle, parent.clone(), entitlements, actor)
-                                .await?
-                            {
-                                return Ok(()); // Nothing to do
-                            }
-
-                            Ok(()) // Pending requests will be picked up by the scheduler.
-                        }
-                    }
-                }
-                Err(_) => Ok(()),
+                self.update_entitlements(handle, parent.clone(), entitlements, actor).await?;
             }
         }
+        Ok(())
     }
 
     /// Sends requests to a specific parent for the CA matching handle.
@@ -827,7 +802,7 @@ impl CaManager {
             ParentCaContact::Ta(_) => Err(Error::TaNotAllowed),
 
             ParentCaContact::Rfc6492(parent_res) => {
-                let uri = parent_res.service_uri().to_string();
+                let parent_uri = parent_res.service_uri();
 
                 let next_run_seconds = self.config.ca_refresh as i64;
 
@@ -839,7 +814,7 @@ impl CaManager {
                         self.status_store
                             .lock()
                             .await
-                            .set_parent_failure(handle, parent, uri, &e, next_run_seconds)
+                            .set_parent_failure(handle, parent, parent_uri, &e, next_run_seconds)
                             .await?;
                         Err(e)
                     }
@@ -847,7 +822,7 @@ impl CaManager {
                         self.status_store
                             .lock()
                             .await
-                            .set_parent_last_updated(handle, parent, uri, next_run_seconds)
+                            .set_parent_last_updated(handle, parent, parent_uri, next_run_seconds)
                             .await?;
                         Ok(res)
                     }
@@ -918,7 +893,7 @@ impl CaManager {
             ParentCaContact::Ta(_) => Err(Error::TaNotAllowed),
 
             ParentCaContact::Rfc6492(parent_res) => {
-                let uri = parent_res.service_uri().to_string();
+                let uri = parent_res.service_uri();
                 match self
                     .send_cert_requests_rfc6492(cert_requests, &child.id_key(), &parent_res)
                     .await
@@ -1027,24 +1002,43 @@ impl CaManager {
         Ok(new_version > current_version)
     }
 
-    async fn get_entitlements_from_parent(
-        &self,
-        handle: &Handle,
-        parent: &ParentHandle,
-    ) -> KrillResult<api::Entitlements> {
-        let ca = self.get_ca(&handle).await?;
-        let contact = ca.parent(parent)?;
-        self.get_entitlements_from_contact(handle, contact).await
-    }
-
     pub async fn get_entitlements_from_contact(
         &self,
-        handle: &Handle,
+        ca: &Handle,
+        parent: &ParentHandle,
         contact: &ParentCaContact,
+        existing_parent: bool,
     ) -> KrillResult<api::Entitlements> {
         match contact {
             ParentCaContact::Ta(_) => Err(Error::TaNotAllowed),
-            ParentCaContact::Rfc6492(res) => self.get_entitlements_rfc6492(handle, res).await,
+            ParentCaContact::Rfc6492(res) => {
+                let result = self.get_entitlements_rfc6492(ca, res).await;
+                let uri = res.service_uri();
+                let next_run_seconds = self.config.ca_refresh as i64;
+
+                match  &result {
+                    Err(error) => {
+                        if existing_parent {
+                            // only update the status store with errors for existing parents
+                            // otherwise we end up with entries if a new parent is rejected because
+                            // of the error.
+                            self.status_store
+                                .lock()
+                                .await
+                                .set_parent_failure(ca, parent, uri, error, next_run_seconds)
+                                .await?;
+                        }
+                    },
+                    Ok(entitlements) => {
+                        self.status_store
+                            .lock()
+                            .await
+                            .set_parent_entitlements(ca, parent, uri, &entitlements, next_run_seconds)
+                            .await?;
+                    }
+                }
+                result
+            }
         }
     }
 
@@ -1274,26 +1268,12 @@ impl CaManager {
         }
     }
 
-    /// Update the RepoStatus for a CA.
-    pub async fn ca_repo_status_set_elements(&self, ca: &Handle) -> KrillResult<()> {
-        let published = self.ca_objects_store.ca_objects(ca)?.all_publish_elements();
-        let next_hours = self.config.issuance_timing.timing_publish_next_hours;
-
-        self.status_store
-            .lock()
-            .await
-            .set_status_repo_published(ca, "embedded".to_string(), published, next_hours)
-            .await?;
-
-        Ok(())
-    }
-
     async fn send_rfc8181_list(
         &self,
         ca_handle: &Handle,
         repository: &rfc8183::RepositoryResponse,
     ) -> KrillResult<ListReply> {
-        let uri = repository.service_uri().to_string();
+        let uri = repository.service_uri();
 
         let reply = match self
             .send_rfc8181_and_validate_response(ca_handle, repository, rfc8181::Message::list_query().into_bytes())
@@ -1303,7 +1283,7 @@ impl CaManager {
                 self.status_store
                     .lock()
                     .await
-                    .set_status_repo_failure(ca_handle, uri, &e)
+                    .set_status_repo_failure(ca_handle, uri.clone(), &e)
                     .await?;
                 return Err(e);
             }
@@ -1315,7 +1295,7 @@ impl CaManager {
                 self.status_store
                     .lock()
                     .await
-                    .set_status_repo_success(ca_handle, uri, self.config.republish_hours())
+                    .set_status_repo_success(ca_handle, uri.clone(), self.config.republish_hours())
                     .await?;
                 Ok(list_reply)
             }
@@ -1324,7 +1304,7 @@ impl CaManager {
                 self.status_store
                     .lock()
                     .await
-                    .set_status_repo_failure(ca_handle, uri, &err)
+                    .set_status_repo_failure(ca_handle, uri.clone(), &err)
                     .await?;
                 Err(err)
             }
@@ -1333,7 +1313,7 @@ impl CaManager {
                 self.status_store
                     .lock()
                     .await
-                    .set_status_repo_failure(ca_handle, uri, &err)
+                    .set_status_repo_failure(ca_handle, uri.clone(), &err)
                     .await?;
                 Err(err)
             }
@@ -1347,7 +1327,7 @@ impl CaManager {
         delta: PublishDelta,
     ) -> KrillResult<()> {
         let message = rfc8181::Message::publish_delta_query(delta);
-        let uri = repository.service_uri().to_string();
+        let uri = repository.service_uri();
 
         let reply = match self
             .send_rfc8181_and_validate_response(ca_handle, repository, message.into_bytes())
@@ -1358,7 +1338,7 @@ impl CaManager {
                 self.status_store
                     .lock()
                     .await
-                    .set_status_repo_failure(ca_handle, uri, &e)
+                    .set_status_repo_failure(ca_handle, uri.clone(), &e)
                     .await?;
                 return Err(e);
             }
@@ -1375,7 +1355,7 @@ impl CaManager {
                 self.status_store
                     .lock()
                     .await
-                    .set_status_repo_published(ca_handle, uri, published, self.config.republish_hours())
+                    .set_status_repo_published(ca_handle, uri.clone(), published, self.config.republish_hours())
                     .await?;
                 Ok(())
             }
@@ -1384,7 +1364,7 @@ impl CaManager {
                 self.status_store
                     .lock()
                     .await
-                    .set_status_repo_failure(ca_handle, uri, &err)
+                    .set_status_repo_failure(ca_handle, uri.clone(), &err)
                     .await?;
                 Err(err)
             }
@@ -1393,7 +1373,7 @@ impl CaManager {
                 self.status_store
                     .lock()
                     .await
-                    .set_status_repo_failure(ca_handle, uri, &err)
+                    .set_status_repo_failure(ca_handle, uri.clone(), &err)
                     .await?;
                 Err(err)
             }

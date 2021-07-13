@@ -14,6 +14,7 @@ use crate::commons::eventsourcing::{
     Aggregate, Event, KeyStoreKey, KeyValueError, KeyValueStore, PostSaveEventListener, StoredCommand,
     WithStorableDetails,
 };
+use crate::commons::util::KrillVersion;
 use crate::commons::{
     api::{CommandHistory, CommandHistoryCriteria, CommandHistoryRecord, Handle, Label},
     error::KrillIoError,
@@ -44,29 +45,6 @@ impl Default for StoredValueInfo {
             last_command: 0,
             last_update: Time::now(),
         }
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-// Do NOT EVER change the order.. this is used to check whether migrations are needed
-// See this issue for planned fix: https://github.com/NLnetLabs/krill/issues/521
-#[allow(non_camel_case_types)]
-pub enum KeyStoreVersion {
-    Pre0_6,
-    V0_6,
-    V0_7,
-    V0_8_0_RC1,
-    V0_8,
-    V0_8_1_RC1,
-    V0_8_1,
-    V0_8_2,
-    V0_9_0_RC1,
-    V0_9_0,
-}
-
-impl KeyStoreVersion {
-    pub fn current() -> Self {
-        KeyStoreVersion::V0_9_0
     }
 }
 
@@ -184,7 +162,7 @@ where
         };
 
         if !existed {
-            store.set_version(&KeyStoreVersion::current())?;
+            store.set_version(&KrillVersion::current())?;
         }
 
         Ok(store)
@@ -713,14 +691,14 @@ where
         KeyStoreKey::scoped(agg.to_string(), format!("{}.json", command))
     }
 
-    pub fn get_version(&self) -> Result<KeyStoreVersion, AggregateStoreError> {
-        match self.kv.get::<KeyStoreVersion>(&Self::key_version())? {
+    pub fn get_version(&self) -> Result<KrillVersion, AggregateStoreError> {
+        match self.kv.get::<KrillVersion>(&Self::key_version())? {
             Some(version) => Ok(version),
-            None => Ok(KeyStoreVersion::Pre0_6),
+            None => Ok(KrillVersion::v0_5_0_or_before()),
         }
     }
 
-    pub fn set_version(&self, version: &KeyStoreVersion) -> Result<(), AggregateStoreError> {
+    pub fn set_version(&self, version: &KrillVersion) -> Result<(), AggregateStoreError> {
         self.kv.store(&Self::key_version(), version)?;
         Ok(())
     }
