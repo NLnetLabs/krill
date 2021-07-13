@@ -327,10 +327,15 @@ mod tests {
         let v0_9_1 = KrillVersion::from_str("0.9.1").unwrap();
         let v0_9_1_rc1 = KrillVersion::from_str("0.9.1-rc1").unwrap();
         let v0_9_1_rc2 = KrillVersion::from_str("0.9.1-rc2").unwrap();
-        let v0_9_1_bis = KrillVersion::from_str("0.9.1-bis").unwrap();
+        let v0_9_1_dev = KrillVersion::from_str("0.9.1-dev").unwrap();
         
         assert!(v0_9_1 > v0_9_1_rc1);
         assert!(v0_9_1_rc2 > v0_9_1_rc1);
-        assert!(v0_9_1_rc1 > v0_9_1_bis);
+        assert!(v0_9_1_rc1 > v0_9_1_dev);
+
+        let v0_9_0 = KrillVersion::from_str("0.9.0").unwrap();
+        assert!(v0_9_1 > v0_9_0);
+        assert!(v0_9_1_rc2 > v0_9_0);
+        assert!(v0_9_1_dev > v0_9_0);
     }
 }
