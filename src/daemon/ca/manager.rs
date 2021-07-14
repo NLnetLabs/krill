@@ -765,8 +765,7 @@ impl CaManager {
 
     /// Sends requests to a specific parent for the CA matching handle.
     async fn send_requests(&self, handle: &Handle, parent: &ParentHandle, actor: &Actor) -> KrillResult<()> {
-        self.send_revoke_requests_handle_responses(handle, parent, actor)
-            .await?;
+        self.send_revoke_requests_handle_responses(handle, parent, actor).await?;
         self.send_cert_requests_handle_responses(handle, parent, actor).await
     }
 
@@ -868,7 +867,25 @@ impl CaManager {
 
                 match response {
                     rfc6492::Res::Revoke(revoke_response) => revocations.push(revoke_response),
-                    rfc6492::Res::NotPerformed(e) => return Err(Error::Rfc6492NotPerformed(e)),
+                    rfc6492::Res::NotPerformed(e) => {
+                        // If we get one of the following responses:
+                        //    1301         revoke - no such resource class
+                        //    1302         revoke - no such key
+                        //
+                        // Then we can consider this revocation redundant from the parent side, so just add it
+                        // as revoked to this CA and move on. While this may be unexpected this is unlikely to
+                        // be a problem. If we would keep insisting that the parent revokes a key they already
+                        // revoked, then we can end up in a stuck loop.
+                        //
+                        // More importantly we should re-sync things if we get 12** errors to certificate sign
+                        // requests, but that is done in another function.
+                        if e.status() == 1301 || e.status() == 1302 {
+                            let revoke_response = (&req).into();
+                            revocations.push(revoke_response)
+                        } else {
+                            return Err(Error::Rfc6492NotPerformed(e))
+                        }
+                    },
                     rfc6492::Res::List(_) => return Err(Error::custom("Got a List response to revoke request??")),
                     rfc6492::Res::Issue(_) => return Err(Error::custom("Issue response to revoke request??")),
                 }
