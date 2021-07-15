@@ -199,11 +199,13 @@ impl RepositoryContentProxy {
         if let Some(content) = self.read_content_cache() {
             Ok(content)
         } else {
-            let content: Arc<RepositoryContent> = self.store
+            let content: RepositoryContent = self.store
                 .read()
                 .unwrap()
                 .get(&self.key)?
                 .ok_or(Error::RepositoryServerNotInitialized)?;
+
+            let content = Arc::new(content);
 
             self.update_content_cache(content.clone());
 
