@@ -198,9 +198,15 @@ fn upgrade_0_9_0(config: Arc<Config>) -> Result<(), UpgradeError> {
 }
 
 fn needs_v0_9_0_upgrade(work_dir: &Path, ns: &str) -> bool {
-    let version_path = work_dir.join(ns).join("version");
-    let version_found = file::load_json(&version_path).unwrap_or(KeyStoreVersion::Pre0_6);
-    version_found < KeyStoreVersion::V0_9_0
+    let keystore_path = work_dir.join(ns);
+    if keystore_path.exists() {
+        let version_path = keystore_path.join("version");
+        let version_found = file::load_json(&version_path).unwrap_or(KeyStoreVersion::Pre0_6);
+        version_found < KeyStoreVersion::V0_9_0
+    } else {
+        false
+    }
+
 }
 
 //------------ Tests ---------------------------------------------------------
