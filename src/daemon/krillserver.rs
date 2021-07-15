@@ -330,7 +330,7 @@ impl KrillServer {
     }
 
     /// Removes a publisher, blows up if it didn't exist.
-    pub fn remove_publisher(&mut self, publisher: PublisherHandle, actor: &Actor) -> KrillEmptyResult {
+    pub fn remove_publisher(&self, publisher: PublisherHandle, actor: &Actor) -> KrillEmptyResult {
         self.repo_manager.remove_publisher(publisher, actor)
     }
 
@@ -604,7 +604,7 @@ impl KrillServer {
         self.ca_manager.get_ca(handle).await.map(|ca| ca.publisher_request())
     }
 
-    pub async fn ca_init(&mut self, init: CertAuthInit) -> KrillEmptyResult {
+    pub async fn ca_init(&self, init: CertAuthInit) -> KrillEmptyResult {
         let handle = init.unpack();
         self.ca_manager.init_ca(&handle)
     }
