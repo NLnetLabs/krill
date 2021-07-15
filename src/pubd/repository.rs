@@ -49,6 +49,7 @@ use super::RepositoryAccessInitDetails;
 /// so that callers don't need to worry about storage details.
 #[derive(Debug)]
 pub struct RepositoryContentProxy {
+    cache: RwLock<Option<Arc<RepositoryContent>>>,
     store: RwLock<KeyValueStore>,
     key: KeyStoreKey,
 }
@@ -59,8 +60,15 @@ impl RepositoryContentProxy {
         let store = KeyValueStore::disk(work_dir, PUBSERVER_CONTENT_DIR)?;
         let store = RwLock::new(store);
         let key = KeyStoreKey::simple(format!("{}.json", PUBSERVER_DFLT));
+        let cache = RwLock::new(None);
 
-        Ok(RepositoryContentProxy { store, key })
+        let proxy = RepositoryContentProxy { cache, store, key };
+
+        // Warm the cache, ignore error indicating there is no content.
+        info!("Warming the repository content cache, this can take a minute for large repositories.");
+        let _ = proxy.read_content();
+
+        Ok(proxy)
     }
 
     // Initialize
@@ -68,23 +76,31 @@ impl RepositoryContentProxy {
         if self.store.read().unwrap().has(&self.key)? {
             Err(Error::RepositoryServerAlreadyInitialized)
         } else {
-            let (rrdp_base_uri, rsync_jail) = uris.unpack();
+            // initialize new repo content
+            let repository_content = {
+                let (rrdp_base_uri, rsync_jail) = uris.unpack();
 
-            let publishers = HashMap::new();
+                let publishers = HashMap::new();
 
-            let session = RrdpSession::default();
-            let stats = RepoStats::new(session);
+                let session = RrdpSession::default();
+                let stats = RepoStats::new(session);
 
-            let mut repo_dir = work_dir.to_path_buf();
-            repo_dir.push(REPOSITORY_DIR);
+                let mut repo_dir = work_dir.to_path_buf();
+                repo_dir.push(REPOSITORY_DIR);
 
-            let rrdp = RrdpServer::create(rrdp_base_uri, &repo_dir, session);
-            let rsync = RsyncdStore::new(rsync_jail, &repo_dir);
+                let rrdp = RrdpServer::create(rrdp_base_uri, &repo_dir, session);
+                let rsync = RsyncdStore::new(rsync_jail, &repo_dir);
 
-            let repo = RepositoryContent::new(publishers, rrdp, rsync, stats);
+                RepositoryContent::new(publishers, rrdp, rsync, stats)
+            };
 
+            // Store newly initialized repo content on disk
             let store = self.store.write().unwrap();
-            store.store(&self.key, &repo)?;
+            store.store(&self.key, &repository_content)?;
+
+            // Store newly initialized repo content in cache
+            let mut cache = self.cache.write().unwrap();
+            cache.replace(Arc::new(repository_content));
 
             Ok(())
         }
@@ -151,22 +167,48 @@ impl RepositoryContentProxy {
         self.write(|content| content.session_reset(config))
     }
 
+
     fn write<F: FnOnce(&mut RepositoryContent) -> KrillResult<()>>(&self, op: F) -> KrillResult<()> {
+        // If there is any existing content, then we can assume that the cache
+        // has it - because it's initialized when we read the content during
+        // initialization.
         let store = self.store.write().unwrap();
-        let mut content: RepositoryContent = store.get(&self.key)?.ok_or(Error::RepositoryServerNotInitialized)?;
+        let mut cache = self.cache.write().unwrap();
 
-        op(&mut content)?;
+        let content_arc: &mut Arc<RepositoryContent> = cache.as_mut().ok_or(Error::RepositoryServerNotInitialized)?;
+        let content = Arc::<RepositoryContent>::get_mut(content_arc).unwrap();
 
-        store.store(&self.key, &content)?;
+        op(content)?;
+
+        store.store(&self.key, content)?;
         Ok(())
     }
 
-    fn read_content(&self) -> KrillResult<RepositoryContent> {
-        self.store
+    fn read_content_cache(&self) -> Option<Arc<RepositoryContent>> {
+        self.cache
             .read()
             .unwrap()
-            .get(&self.key)?
-            .ok_or(Error::RepositoryServerNotInitialized)
+            .clone()
+    }
+
+    fn update_content_cache(&self, content: Arc<RepositoryContent>) {
+        self.cache.write().unwrap().replace(content);
+    }
+
+    fn read_content(&self) -> KrillResult<Arc<RepositoryContent>> {
+        if let Some(content) = self.read_content_cache() {
+            Ok(content)
+        } else {
+            let content: Arc<RepositoryContent> = self.store
+                .read()
+                .unwrap()
+                .get(&self.key)?
+                .ok_or(Error::RepositoryServerNotInitialized)?;
+
+            self.update_content_cache(content.clone());
+
+            Ok(content)
+        }
     }
 
     pub fn list_reply(&self, name: &PublisherHandle) -> KrillResult<ListReply> {

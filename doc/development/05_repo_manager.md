@@ -43,6 +43,7 @@ pub struct RepositoryAccessProxy {
 /// so that callers don't need to worry about storage details.
 #[derive(Debug)]
 pub struct RepositoryContentProxy {
+    cache: RwLock<Option<Arc<RepositoryContent>>>,
     store: RwLock<KeyValueStore>,
     key: KeyStoreKey,
 }
