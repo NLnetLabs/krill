@@ -1146,7 +1146,7 @@ pub async fn api_ca_init(req: Request) -> RoutingResult {
         let state = req.state().clone();
 
         match req.json().await {
-            Ok(ca_init) => render_empty_res(state.ca_init(ca_init).await),
+            Ok(ca_init) => render_empty_res(state.ca_init(ca_init)),
             Err(e) => render_error(e),
         }
     })

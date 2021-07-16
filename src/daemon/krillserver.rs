@@ -604,7 +604,7 @@ impl KrillServer {
         self.ca_manager.get_ca(handle).await.map(|ca| ca.publisher_request())
     }
 
-    pub async fn ca_init(&self, init: CertAuthInit) -> KrillEmptyResult {
+    pub fn ca_init(&self, init: CertAuthInit) -> KrillEmptyResult {
         let handle = init.unpack();
         self.ca_manager.init_ca(&handle)
     }
