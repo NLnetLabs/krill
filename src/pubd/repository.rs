@@ -128,6 +128,9 @@ impl RepositoryContentProxy {
             store.drop_key(&self.key)?;
         }
 
+        let mut cache = self.cache.write().unwrap();
+        cache.take();
+
         Ok(())
     }
 
