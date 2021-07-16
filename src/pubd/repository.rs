@@ -49,7 +49,7 @@ use super::RepositoryAccessInitDetails;
 /// so that callers don't need to worry about storage details.
 #[derive(Debug)]
 pub struct RepositoryContentProxy {
-    cache: RwLock<Option<Arc<RepositoryContent>>>,
+    cache: RwLock<Option<RepositoryContent>>,
     store: RwLock<KeyValueStore>,
     key: KeyStoreKey,
 }
@@ -63,15 +63,27 @@ impl RepositoryContentProxy {
         let cache = RwLock::new(None);
 
         let proxy = RepositoryContentProxy { cache, store, key };
-
-        // Warm the cache, ignore error indicating there is no content.
-        info!("Warming the repository content cache, this can take a minute for large repositories.");
-        let _ = proxy.read_content();
-
+        proxy.warm_cache()?;
+        
         Ok(proxy)
     }
+        
+    fn warm_cache(&self) -> KrillResult<()> {
 
-    // Initialize
+        let key_store_read = self.store
+                .read()
+                .unwrap();
+        
+        if key_store_read.has(&self.key)? {
+            info!("Warming the repository content cache, this can take a minute for large repositories.");
+            let content = key_store_read.get(&self.key)?.unwrap();
+            self.cache.write().unwrap().replace(content);
+        }
+
+        Ok(())
+    }
+
+    /// Initialize
     pub fn init(&self, work_dir: &Path, uris: PublicationServerUris) -> KrillResult<()> {
         if self.store.read().unwrap().has(&self.key)? {
             Err(Error::RepositoryServerAlreadyInitialized)
@@ -100,7 +112,7 @@ impl RepositoryContentProxy {
 
             // Store newly initialized repo content in cache
             let mut cache = self.cache.write().unwrap();
-            cache.replace(Arc::new(repository_content));
+            cache.replace(repository_content);
 
             Ok(())
         }
@@ -119,22 +131,23 @@ impl RepositoryContentProxy {
         Ok(())
     }
 
+    /// Return the repository content stats
     pub fn stats(&self) -> KrillResult<RepoStats> {
-        self.read_content().map(|c| c.stats().clone())
+        self.read(|content| Ok(content.stats().clone()))
     }
 
-    // Adds a publisher with an empty set of published objects.
-    // Replaces an existing publisher if it existed.
-    // This is only supposed to be called if adding the publisher
-    // to the RepositoryAccess was successful (and *that* will fail if
-    // the publisher is a duplicate). This method can only fail if
-    // there is an issue with the underlying key value store.
+    /// Add a publisher with an empty set of published objects.
+    ///
+    /// Replaces an existing publisher if it existed.
+    /// This is only supposed to be called if adding the publisher
+    /// to the RepositoryAccess was successful (and *that* will fail if
+    /// the publisher is a duplicate). This method can only fail if
+    /// there is an issue with the underlying key value store.
     pub fn add_publisher(&self, name: PublisherHandle) -> KrillResult<()> {
         self.write(|content| content.add_publisher(name))
     }
 
-    // Removes a publisher and its content. Will also write the updated
-    // RRDP and rsync content.
+    /// Removes a publisher and its content.
     pub fn remove_publisher(
         &self,
         name: &PublisherHandle,
@@ -144,9 +157,10 @@ impl RepositoryContentProxy {
         self.write(|content| content.remove_publisher(name, jail, config))
     }
 
-    // Publish an update for a publisher. Assumes that the RFC 8181 CMS has
-    // been verified, but will check that all objects are within the publisher's
-    // uri space (jail).
+    /// Publish an update for a publisher.
+    ///
+    /// Assumes that the RFC 8181 CMS has been verified, but will check that all objects
+    /// are within the publisher's uri space (jail).
     pub fn publish(
         &self,
         name: &PublisherHandle,
@@ -157,17 +171,27 @@ impl RepositoryContentProxy {
         self.write(|content| content.publish(name, delta.into(), jail, config))
     }
 
-    // Write all current files to disk
+    /// Write all current files to disk
     pub fn write_repository(&self, config: &RepositoryRetentionConfig) -> KrillResult<()> {
-        self.read_content()?.write_repository(config)
+        self.read(|content| content.write_repository(config))
     }
 
-    // Reset the RRDP session
+    /// Reset the RRDP session
     pub fn session_reset(&self, config: &RepositoryRetentionConfig) -> KrillResult<()> {
         self.write(|content| content.session_reset(config))
     }
 
+    /// Create a list reply containing all current objects for a publisher
+    pub fn list_reply(&self, name: &PublisherHandle) -> KrillResult<ListReply> {
+        self.read(|content| content.list_reply(name))
+    }
 
+    // Get all current objects for a publisher
+    pub fn current_objects(&self, name: &PublisherHandle) -> KrillResult<CurrentObjects> {
+        self.read(|content| content.objects_for_publisher(name).map(|o| o.clone()))
+    }
+
+    // Execute a closure on a mutable repository content in a single write 'transaction'
     fn write<F: FnOnce(&mut RepositoryContent) -> KrillResult<()>>(&self, op: F) -> KrillResult<()> {
         // If there is any existing content, then we can assume that the cache
         // has it - because it's initialized when we read the content during
@@ -175,8 +199,7 @@ impl RepositoryContentProxy {
         let store = self.store.write().unwrap();
         let mut cache = self.cache.write().unwrap();
 
-        let content_arc: &mut Arc<RepositoryContent> = cache.as_mut().ok_or(Error::RepositoryServerNotInitialized)?;
-        let content = Arc::<RepositoryContent>::get_mut(content_arc).unwrap();
+        let content: &mut RepositoryContent = cache.as_mut().ok_or(Error::RepositoryServerNotInitialized)?;
 
         op(content)?;
 
@@ -184,41 +207,16 @@ impl RepositoryContentProxy {
         Ok(())
     }
 
-    fn read_content_cache(&self) -> Option<Arc<RepositoryContent>> {
-        self.cache
-            .read()
-            .unwrap()
-            .clone()
-    }
-
-    fn update_content_cache(&self, content: Arc<RepositoryContent>) {
-        self.cache.write().unwrap().replace(content);
-    }
-
-    fn read_content(&self) -> KrillResult<Arc<RepositoryContent>> {
-        if let Some(content) = self.read_content_cache() {
-            Ok(content)
-        } else {
-            let content: RepositoryContent = self.store
-                .read()
-                .unwrap()
-                .get(&self.key)?
-                .ok_or(Error::RepositoryServerNotInitialized)?;
-
-            let content = Arc::new(content);
-
-            self.update_content_cache(content.clone());
-
-            Ok(content)
-        }
-    }
-
-    pub fn list_reply(&self, name: &PublisherHandle) -> KrillResult<ListReply> {
-        self.read_content()?.list_reply(name)
-    }
-
-    pub fn current_objects(&self, name: &PublisherHandle) -> KrillResult<CurrentObjects> {
-        self.read_content()?.objects_for_publisher(name).map(|o| o.clone())
+    // Execute a closure on a mutable repository content in a single read 'transaction'
+    // 
+    // This function fails if the repository content is not initialized.
+    fn read<A, F: FnOnce(&RepositoryContent) -> KrillResult<A>>(&self, op: F) -> KrillResult<A> {
+        // Note that because the content is initialized it is implied that the cache MUST always be
+        // set. I.e. it is set on initialization and updated whenever the repository content is updated.
+        // So, we can safely read from the cache only.
+        let cache = self.cache.read().unwrap();
+        let content = cache.as_ref().ok_or(Error::RepositoryServerNotInitialized)?;
+        op(content)
     }
 }
 
