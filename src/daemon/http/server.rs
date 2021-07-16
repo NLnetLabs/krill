@@ -334,7 +334,6 @@ pub async fn health(req: Request) -> RoutingResult {
 pub async fn metrics(req: Request) -> RoutingResult {
     if req.is_get() && req.path().segment().starts_with("metrics") {
         let server = req.state();
-        let server = server;
 
         struct AllBgpStats {
             announcements_valid: HashMap<Handle, usize>,
@@ -595,8 +594,7 @@ pub async fn rfc8181(req: Request) -> RoutingResult {
             Err(e) => return render_error(e),
         };
 
-        let read = state;
-        match read.rfc8181(publisher, bytes) {
+        match state.rfc8181(publisher, bytes) {
             Ok(bytes) => Ok(HttpResponse::rfc8181(bytes.to_vec())),
             Err(e) => render_error(e),
         }
