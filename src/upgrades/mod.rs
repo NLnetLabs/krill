@@ -7,15 +7,13 @@ use std::{fmt, path::Path, str::FromStr, sync::Arc};
 use serde::de::DeserializeOwned;
 
 use crate::commons::error::KrillIoError;
-use crate::constants::KRILL_VERSION;
-use crate::daemon::ca::CertAuth;
-use crate::pubd::RepositoryAccess;
+use crate::commons::util::file;
 use crate::{commons::api::Handle, daemon::config::Config};
 use crate::{
     commons::{
         crypto::KrillSigner,
         eventsourcing::{
-            AggregateStore, AggregateStoreError, CommandKey, KeyStoreKey, KeyValueError, KeyValueStore,
+            AggregateStoreError, CommandKey, KeyStoreKey, KeyValueError, KeyValueStore,
         },
         util::KrillVersion,
     },
@@ -171,43 +169,45 @@ pub fn pre_start_upgrade(config: Arc<Config>) -> Result<(), UpgradeError> {
 pub async fn update_storage_version(work_dir: &Path) -> Result<(), UpgradeError> {
     let current = KrillVersion::current();
 
-    let mut ca_dir = work_dir.to_path_buf();
-    ca_dir.push("cas");
-    if ca_dir.exists() {
-        let ca_store: AggregateStore<CertAuth> = AggregateStore::disk(work_dir, "cas")?;
-        if ca_store.get_version()? != current {
-            ca_store.set_version(&current)?;
-        }
+    if needs_v0_9_0_upgrade(work_dir, "cas") {
+        debug!("Updating version file for cas");
+        file::save_json(&current, &work_dir.join("cas/version"))?;
+    }
+    
+    if needs_v0_9_0_upgrade(work_dir, "pubd") {
+        debug!("Updating version file for pubd");
+        file::save_json(&current, &work_dir.join("pubd/version"))?;
     }
 
-    let mut pubd_dir = work_dir.to_path_buf();
-    pubd_dir.push("pubd");
-    if pubd_dir.exists() {
-        let pubd_store: AggregateStore<RepositoryAccess> = AggregateStore::disk(work_dir, "pubd")?;
-        if pubd_store.get_version()? != current {
-            pubd_store.set_version(&current)?;
-        }
-    }
-
-    info!("Upgraded Krill to version: {}", KRILL_VERSION);
     Ok(())
 }
 
 fn upgrade_0_9_0(config: Arc<Config>) -> Result<(), UpgradeError> {
-    let mut pubd_dir = config.data_dir.clone();
-    pubd_dir.push("pubd");
-    if pubd_dir.exists() {
+    let work_dir = &config.data_dir;
+    if needs_v0_9_0_upgrade(work_dir, "pubd") {
         PubdObjectsMigration::migrate(config.clone())?;
     }
-    let signer = Arc::new(KrillSigner::build(&config.data_dir)?);
-    let repo_manager = RepositoryManager::build(config.clone(), signer)?;
 
-    let mut cas_dir = config.data_dir.clone();
-    cas_dir.push("cas");
-    if cas_dir.exists() {
+    if needs_v0_9_0_upgrade(work_dir, "cas") {
+        let signer = Arc::new(KrillSigner::build(work_dir)?);
+        let repo_manager = RepositoryManager::build(config.clone(), signer)?;
+        
         CaObjectsMigration::migrate(config, repo_manager)?;
     }
+
     Ok(())
+}
+
+fn needs_v0_9_0_upgrade(work_dir: &Path, ns: &str) -> bool {
+    let keystore_path = work_dir.join(ns);
+    if keystore_path.exists() {
+        let version_path = keystore_path.join("version");
+        let version_found = file::load_json(&version_path).unwrap_or_else(|_| KrillVersion::v0_5_0_or_before());
+        version_found < KrillVersion::release(0, 9, 0)
+    } else {
+        false
+    }
+
 }
 
 //------------ Tests ---------------------------------------------------------
