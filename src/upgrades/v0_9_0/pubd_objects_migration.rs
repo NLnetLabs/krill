@@ -159,8 +159,8 @@ impl UpgradeStore for PubdStoreMigration {
                 if time_passed == 0 {
                     time_passed = 1; // avoid divide by zero.. we are doing approximate estimates here
                 }
-                let migrated_per_second = total_migrated / time_passed;
-                let expected_seconds = (total_commands / migrated_per_second) as i64;
+                let migrated_per_second: f64 = total_migrated as f64 / time_passed as f64;
+                let expected_seconds = (total_commands as f64 / migrated_per_second) as i64;
                 let eta = time_started + Duration::seconds(expected_seconds);
                 info!(
                     "  migrated {} commands, expect to finish: {}",
