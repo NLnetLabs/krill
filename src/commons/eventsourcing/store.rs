@@ -243,6 +243,7 @@ where
 
         // Save the snapshot if it does not yet match the latest state
         if info.snapshot_version != agg.version() {
+            info!("Updating snapshot for '{}', to decrease future load times.", handle);
             self.store_snapshot(handle, agg.as_ref())?;
         }
 
