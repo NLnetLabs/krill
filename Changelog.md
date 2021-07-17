@@ -1,6 +1,6 @@
 # Change Log
 
-## 0.9.1-RC1 'All for One'
+## 0.9.1-RC2 'All for One'
 
 Note: this is an RC release meant for testing. If no issues are found we will release it
 on Monday 19 July 2021.
