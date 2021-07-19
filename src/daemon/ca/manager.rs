@@ -1027,17 +1027,40 @@ impl CaManager {
                                             break;
                                         },
                                         1204 => {
-                                            error!(
-                                                "CA '{}' under parent '{}' was told it is re-using a key under resource class '{}'. Will reset keys for resource class.",
+
+                                            // The parent says that the CA is re-using a key across RCs. Krill CAs never
+                                            // re-use keys - so this is extremely unlikely. Still there seems to be a 
+                                            // disagreement and in this case the parent has the last word. Recovering by
+                                            // dropping all keys in the RC and making a new pending key should be possible,
+                                            // but it's complicated with regards to corner cases: e.g. what if we were in
+                                            // the middle of key roll..
+                                            //
+                                            // So, the most straightforward way to deal with this is by dropping this current
+                                            // RC altogether. Then the CA will find its resource entitlements in a future
+                                            // synchronization with the parent and just create a new RC - and issue all
+                                            // eligible certificates and ROAs under it.
+
+                                            let reason = "parent claims we are re-using keys".to_string();
+                                            self.send_command(CmdDet::drop_resource_class(
                                                 handle,
-                                                parent,
-                                                &rcn
-                                            );
-                                            // parent thinks we are re-using a key
-                                            todo!("Reset keys for RC -> create just a pending key")
+                                                rcn.clone(),
+                                                reason.clone(),
+                                                self.signer.clone(),
+                                                actor,
+                                            )).await?;
+
+                                            // push the error for reporting, this will also trigger that the CA will
+                                            // sync with its parent again - and then it will just find revocation
+                                            // requests for this RC - which are sent on a best effort basis
+                                            errors.push(Error::CaParentSyncError(
+                                                handle.clone(),
+                                                parent.clone(),
+                                                rcn.clone(),
+                                                reason
+                                            ));
+                                            break;
                                         }
                                         _ => {
-
                                             todo!()
                                         }
                                     }
