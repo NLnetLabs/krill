@@ -42,6 +42,8 @@ use crate::{
     },
 };
 
+use super::DropReason;
+
 //------------ Rfc8183Id ---------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -417,6 +419,9 @@ impl Aggregate for CertAuth {
             }
             CmdDet::UpdateRcvdCert(class_name, rcvd_cert, config, signer) => {
                 self.update_received_cert(class_name, rcvd_cert, &config, signer)
+            }
+            CmdDet::DropResourceClass(rcn, reason, signer) => {
+                self.drop_resource_class(rcn, reason, signer)
             }
 
             // Key rolls
@@ -1248,7 +1253,7 @@ impl CertAuth {
     ///
     /// This will also generate appropriate events for changes affecting
     /// issued ROAs and delegated certificates - if because resources were
-    //  lost and ROAs/Certs would be become invalid.
+    ///  lost and ROAs/Certs would be become invalid.
     fn update_received_cert(
         &self,
         rcn: ResourceClassName,
@@ -1271,6 +1276,32 @@ impl CertAuth {
         }
 
         Ok(res)
+    }
+
+    /// Drop a resource class because it no longer works on this parent for the specified
+    /// reason. Note that this will generate revocation requests for the current keys which
+    /// be sent to the parent on a best effort basis - e.g. if the parent removed the resource
+    /// class it may well refuse to revoke the keys - it may not known them.
+    fn drop_resource_class(
+        &self,
+        rcn: ResourceClassName,
+        reason: DropReason,
+        signer: Arc<KrillSigner>,
+    ) -> KrillResult<Vec<CaEvt>> {
+        warn!("Dropping resource class '{}' because of reason: {}", rcn, reason);
+
+        let rc = self.resources.get(&rcn).ok_or(Error::ResourceClassUnknown(rcn.clone()))?;
+        let revoke_requests = rc.revoke(signer.deref())?;
+
+        Ok(self.events_from_details(
+            vec![
+                CaEvtDet::ResourceClassRemoved {
+                    resource_class_name: rcn,
+                    parent: rc.parent_handle().clone(),
+                    revoke_requests
+                }
+            ]
+        ))
     }
 }
 
