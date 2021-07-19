@@ -1061,7 +1061,20 @@ impl CaManager {
                                             break;
                                         }
                                         _ => {
-                                            todo!()
+                                            // Other not performed responses can be due to temporary issues at the
+                                            // parent (e.g. it had an internal error of some kind), or because of
+                                            // protocol version mismatches and such (in future maybe?).
+                                            //
+                                            // In any event we cannot take any action to recover, so just report
+                                            // them and let the schedular try to sync with the parent again.
+                                            let issue = format!("parent returned not performed response to certificate request: {}", not_performed);
+                                            errors.push(Error::CaParentSyncError(
+                                                handle.clone(),
+                                                parent.clone(),
+                                                rcn.clone(),
+                                                issue
+                                            ));
+                                            break;
                                         }
                                     }
                                 }
