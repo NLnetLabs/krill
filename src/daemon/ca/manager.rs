@@ -1078,7 +1078,28 @@ impl CaManager {
                                         }
                                     }
                                 }
-                                _ => todo!()
+                                rfc6492::Res::List(_) => {
+                                    // A list response to certificate sign request??
+                                    let issue = "parent returned a list response to a certificate request".to_string();
+                                    errors.push(Error::CaParentSyncError(
+                                        handle.clone(),
+                                        parent.clone(),
+                                        rcn.clone(),
+                                        issue
+                                    ));
+                                    break;
+                                },
+                                rfc6492::Res::Revoke(_) => {
+                                    // A list response to certificate sign request??
+                                    let issue = "parent returned a revoke response to a certificate request".to_string();
+                                    errors.push(Error::CaParentSyncError(
+                                        handle.clone(),
+                                        parent.clone(),
+                                        rcn.clone(),
+                                        issue
+                                    ));
+                                    break;
+                                }
                             }
                         }
                 }
