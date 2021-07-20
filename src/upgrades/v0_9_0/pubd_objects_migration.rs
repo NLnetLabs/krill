@@ -12,27 +12,16 @@ use rpki::{
     uri,
 };
 
-use crate::{
-    commons::{
-        api::{
+use crate::{commons::{api::{
             rrdp::{Delta, Notification, PublishElement, RrdpSession, Snapshot, SnapshotRef},
             Handle, HexEncodedHash, PublisherHandle, RepositoryHandle,
-        },
-        crypto::IdCert,
-        eventsourcing::{
+        }, crypto::IdCert, eventsourcing::{
             Aggregate, AggregateStore, CommandKey, KeyStoreKey, KeyValueStore, StoredEvent,
             StoredValueInfo,
-        },
-        util::KrillVersion,
-    },
-    constants::{PUBSERVER_CONTENT_DIR, PUBSERVER_DFLT, PUBSERVER_DIR, REPOSITORY_RRDP_DIR},
-    daemon::config::Config,
-    pubd::{
+        }, util::KrillVersion}, constants::{KRILL_VERSION, PUBSERVER_CONTENT_DIR, PUBSERVER_DFLT, PUBSERVER_DIR, REPOSITORY_RRDP_DIR}, daemon::config::Config, pubd::{
         PublisherStats, RepoStats, RepositoryAccess, RepositoryAccessInitDetails, RepositoryContent, RrdpServer,
         RrdpSessionReset, RrdpUpdate, RsyncdStore,
-    },
-    upgrades::{UpgradeError, UpgradeResult, UpgradeStore, MIGRATION_SCOPE},
-};
+    }, upgrades::{UpgradeError, UpgradeResult, UpgradeStore, MIGRATION_SCOPE}};
 
 use super::{
     old_commands::{OldStorableRepositoryCommand, OldStoredEffect, OldStoredRepositoryCommand},
@@ -151,7 +140,7 @@ impl UpgradeStore for PubdStoreMigration {
         let time_started = Time::now();
         let total_commands = old_cmd_keys.len();
 
-        info!("Will migrate {} commands for publication server", total_commands);
+        info!("Will migrate {} commands for Publication Server", total_commands);
 
         for old_cmd_key in old_cmd_keys {
             // Do the migration counter first, so that we can just call continue when we need to skip commands
@@ -163,8 +152,8 @@ impl UpgradeStore for PubdStoreMigration {
                 if time_passed == 0 {
                     time_passed = 1; // avoid divide by zero.. we are doing approximate estimates here
                 }
-                let migrated_per_second = total_migrated / time_passed;
-                let expected_seconds = (total_commands / migrated_per_second) as i64;
+                let migrated_per_second: f64 = total_migrated as f64 / time_passed as f64;
+                let expected_seconds = (total_commands as f64 / migrated_per_second) as i64;
                 let eta = time_started + Duration::seconds(expected_seconds);
                 info!(
                     "  migrated {} commands, expect to finish: {}",
@@ -221,7 +210,7 @@ impl UpgradeStore for PubdStoreMigration {
             self.store.store(&key, &migrated_cmd)?;
         }
 
-        info!("Finished migrating publication server commands");
+        info!("Finished migrating Publication Server commands");
 
         // move out the snapshots, we will rebuild from events
         // there will not be too many now that the publication
@@ -236,11 +225,14 @@ impl UpgradeStore for PubdStoreMigration {
 
         // verify that we can now rebuild the 0.9 publication server based on
         // migrated commands and events.
+        info!("Will rebuild the Publication Server from events and warm up the cache");
         self.new_store.warm().map_err(|e| UpgradeError::Custom(format!("Could not rebuild state after migrating pubd! Error was: {}. Please report this issue to rpki-team@nlnetlabs.nl. For the time being: restore all files in the 'migration-0.9' directory to their parent directory and revert to the previous version of Krill.", e)))?;
 
         // Great, we have migrated everything, now delete the archived
         // commands and events which are no longer relevant
         self.drop_migration_scope(scope)?;
+
+        info!("Done migrating the Publication Server to Krill version {}", KRILL_VERSION);
 
         Ok(())
     }
