@@ -517,6 +517,21 @@ async fn functional() {
         assert!(will_publish(test_msg, &ca4, &expected_files).await);
     }
 
+    // short hand to expect ROAs under CA4, re-added when parent comes back
+    // i.e. it now has RC 2 and 3, but no more 0 and 1
+    async fn expect_roas_for_ca4_re_added(test_msg: &str, roas: &[RoaDefinition]) {
+        let ca4 = handle_for("CA4");
+        let rcn_2 = ResourceClassName::from(2);
+        let rcn_3 = ResourceClassName::from(3);
+
+        let mut expected_files = expected_mft_and_crl(&ca4, &rcn_2).await;
+        expected_files.append(&mut expected_mft_and_crl(&ca4, &rcn_3).await);
+        for roa in roas {
+            expected_files.push(ObjectName::from(roa).to_string());
+        }
+        assert!(will_publish(test_msg, &ca4, &expected_files).await);
+    }
+
     {
         info("##################################################################");
         info("#                                                                #");
@@ -696,15 +711,34 @@ async fn functional() {
     info("##################################################################");
     info("");
     {
-        // Remove CA4 from CA3
+        // Remove parent CA3 from CA4
         delete_parent(&ca4, &ca3).await;
+        delete_child(&ca3, &ca4).await;
 
         // Expect that CA4 withdraws all
         {
             assert!(will_publish("CA4 should withdraw objects when parent is removed", &ca4, &[]).await);
         }
 
-        delete_ca(&ca4).await;
+        // delete_ca(&ca4).await;
+    }
+
+    info("##################################################################");
+    info("#                                                                #");
+    info("# Add parent back to CA4, expect that ROAs are published again   #");
+    info("#                                                                #");
+    info("##################################################################");
+    info("");
+    {
+        // Add parent CA3 back to CA4
+        set_up_ca_under_parent_with_resources(&ca4, &ca3, &ca4_res_under_ca_3).await;
+
+        // Expect that the ROAs are published again when parent and resources are back.
+        expect_roas_for_ca4_re_added(
+            "CA4 resources have been extended again, and we expect two roas",
+            &[route_rc0_1, route_rc1_1],
+        )
+        .await;
     }
 
     info("##################################################################");
