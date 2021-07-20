@@ -3,8 +3,7 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 use chrono::Duration;
 use rpki::{crl::Crl, crypto::KeyIdentifier, manifest::Manifest, uri, x509::Time};
 
-use crate::{
-    commons::{
+use crate::{commons::{
         api::{
             ChildHandle, Handle, HexEncodedHash, IssuanceRequest, IssuedCert, ObjectName, ParentHandle, RcvdCert,
             RepoInfo, ResourceClassName, ResourceSet, Revocation, RevocationRequest, Revocations, RoaAggregateKey,
@@ -15,19 +14,14 @@ use crate::{
             Aggregate, AggregateStore, CommandKey, KeyStoreKey, KeyStoreVersion, KeyValueStore, StoredValueInfo,
         },
         remote::rfc8183,
-    },
-    constants::CASERVER_DIR,
-    daemon::{
+    }, constants::{CASERVER_DIR, KRILL_VERSION}, daemon::{
         ca::{
             self, ta_handle, BasicKeyObjectSet, CaEvtDet, CaObjects, CaObjectsStore, CurrentKeyObjectSet,
             PublishedCert, PublishedRoa, ResourceClassKeyState, ResourceClassObjects, RouteAuthorization,
             CaEvt, IniDet, StoredCaCommand,
         },
         config::Config,
-    },
-    pubd::RepositoryManager,
-    upgrades::{UpgradeError, UpgradeResult, UpgradeStore},
-};
+    }, pubd::RepositoryManager, upgrades::{UpgradeError, UpgradeResult, UpgradeStore}};
 
 use super::super::MIGRATION_SCOPE;
 use super::{old_commands::*, old_events::*};
@@ -329,7 +323,8 @@ impl UpgradeStore for CasStoreMigration {
         //    --> clean up the archived commands and events
         //    --> restore to previous version of Krill is not supported
         for scope in self.store.scopes()? {
-            info!("Check state of '{}' before cleanup.", scope);
+            info!("Will rebuild CA '{}' from events and warm up the cache", scope);
+
             let ca = Handle::from_str(&scope)
                     .map_err(|e| UpgradeError::Custom(format!("Found invalid ca name: {}", e)))?;
             
@@ -338,6 +333,8 @@ impl UpgradeStore for CasStoreMigration {
             
             self.drop_migration_scope(&scope)?;
         }
+
+        info!("Done migration CAs to Krill version {}", KRILL_VERSION);
 
         Ok(())
     }
