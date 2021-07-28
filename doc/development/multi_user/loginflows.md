@@ -18,6 +18,8 @@ With this configuration the Krill `GET /auth/login` REST API endpoint responds w
 
 ![PlantUML Diagram](http://www.plantuml.com/plantuml/svg/TP51JyCm38Nl-HN-0sFtQPq60d40YKc3dNR9shSraCR8Te3nwsahMWPebyYAdz_td2pLl5Xkegj31Tepsuu_N57GDGpIX0Io6XJv45BRbeQCgGhw6lsHYiAvUtzWDK-J1Tr9Y95cT7lpI5EVhPxsOwDaFXabtvqEzAGGqhnhWcd76jnHzRnpaDN3-XTbcoxRcYLyUWkSPdG5Bn2Q8na45Hc_82rSFtzgj864_P449SBReFkNkOywNDO-LH5wyZAQonAgn49x7s8MzBbzjA7bY7ws6CePhOq5V-3KRRCJVbS8HIvz93KMVm2ru6qon4YRZ8jd9MCIpeQkc3f4nH3W373bHNkVyHUjnZQD2I32GWrKMvv3gjooFN8Jlm00)
 
+_Tip: To edit the diagram, replace `/svg/` with `/uml/` in the image URL._
+
 ## `auth_type = "config-file"`
 
 With this configuration the Krill `GET /auth/login` REST API endpoint responds with `/login?withId=true`. The same internal login form is shown as with `auth_type = "admin-token"` but with two differences:
@@ -29,4 +31,10 @@ With this configuration the Krill `GET /auth/login` REST API endpoint responds w
 
 With OpenID Connect the flow is different:
 
-![PlantUML Diagram](http://www.plantuml.com/plantuml/svg/dPHFJzjC4CRl_XHpufPmU6ye3ho5gcfB2-9F2v8bDB47PyjwrfeTKz9Ft_4wZX8AgEebSdPtdldDytXz51L5kyPdIrSHt8UWY_2KPQsjkjAro0gdM0SxjhFsJiBFIBApzbcSzpihPotnnvFZm4obdajuj1wIPNaE9wGaZMC2NHBuK3ksvjA01gXSR3sk8C-pRDqR9lD17WxWm_ihsCTEb_kfR7DaDjaScT6JoJDwkBuuXN2VcWmmiAQ14UTPSw7AYUsdaYwIsE8y8L_tVro4OP-g_ZHo1R5RD4vZAlXFAkWDMArLso2A_jaaeta6-XKVNOrAfhN5MF08sVu9cOtL9lIYluD5_-h1_6_qBzF8Bq1P2AyMNMoS3UkW-X23k5-eBZ0GLsrmhAFMovcNwFq2ouV3CbIKtzpSx4L5fVpszhRWIzB9SGWFZWvWEfscs0O9UYgNo3KDCHa6kSS-Gcei8fJLCvPUl1yC48JG6_83SOenoRtbpVdPfR7EKiLad6bUy64jo7gdgvRodMPtVRE2zyQ1x75y2UywyVbiQBaxVX_gV81vo_DFtw_W_xAa6DEhQj5VfKc4OXiuqg2mxVGNr789fKVNG8DjwxW6wJoPG8sEeoRDORz2nUtaHuqBqauOiC-qb5NRNvPe32xmu6GAPhmGIoCp_QqFGUm6v21mZyvtGibwz3fkPG1RzsdzQE-b1jbEDytgkE356j87Cn2Y7SEQUaiALZBcRnrDVyHq_qCtNCVzZ7oa4U2LXkSeCUbiFbesHS4R0X890eqHMx-CkCgExATh_6y0)
+![PlantUML Diagram](http://www.plantuml.com/plantuml/svg/bLHDJnin4BtlhvWJjoI7tb0MQ9EsegMG4cY550bDTeTT5w-z6izIqbzVhns710LABr5aUzx7U_QUE46Mhj5PhKg2EsjbQH-phFMhgb0j6e4phAm_jhFsWUrlHxopzfMLrZih5osPq-d46aE5pDW-U0xEiZo7AGbnemo1r0JQLifuScv0B9JAjHfNaETPjkQ6mL64XqFu_F4AHjX9FGfZcoFZmUP8BTAwmz5eVE7P8H73MQ2POKLmVNbsTEodXFBvV7x0L2hs6cyxLdcS7aUmJz-dvqUHha2jbrZS1mFNZXYKWpX7PIySJGckMpPANB3rZaleurYj3RQM1VKpNobAB_iS7rI5GXuhp0VrRLB_55AMHlpqteXZIc-COM7MGTpSt2pCVqRn1YNpaCW--UF1YqENQnLz596zvxMi_g0eQu1CsLfb967jlo19vd5XIyedayd1flA5cPCC9jRUApg4uN0OMeqGz5ZKQ2gABNePf1xwXgdn3IAldcdfmNjZWC246iJUamajHxXNifbTpBtMSPWO94zz8nMZaLjPjPJlaDtsPBwbP6YtCFtlmkBEAyb_-Na5xuk2d0lt-NGALy4FaskjSHGHjlF-XbBKK6XK3JJOjifKm9qc3r2XCau2PjmlKN2x_uHnITAn0UoRBNZL2fNWl0PlEUOPwaclflRAFFxMjyDrKR9bk4EbEwPG06f9Mnd0qwDBV_tj5ClR7GUloYpCSYrIMvyTE7yCA-eZMHWXh_b7HyDVpWy0sow-sL56sb4Iy0BX3Da5dFITwrqip4O1CLk6nYlsV1cPCZlnFrsZ_m80)
+
+_Tip: To edit the diagram, replace `/svg/` with `/uml/` in the image URL._
+
+The parts of this flow that involve Krill can be diagnosed by increasing the Krill log level to debug or trace.
+
+The parts of this flow that happen between the browser and the 3rd party OpenID Connect Provider will not be visible in the Krill logs. Instead you will need to monitor the requests and responses in the browser, e.g. using the Google Chrome Developer Tools Network tab.
