@@ -23,6 +23,9 @@ pub struct ConfigAuthOpenIDConnect {
     pub extra_login_params: HashMap<String, String>,
 
     #[serde(default)]
+    pub no_default_prompt: bool,
+
+    #[serde(default)]
     pub logout_url: Option<String>,
 
     #[serde(default)]
