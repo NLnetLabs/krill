@@ -33,7 +33,7 @@ Cypress.on('uncaught:exception', (err, runnable) => {
     console.log("Krill UI Test: err: ", err)
     console.log("Krill UI Test: runnable: ", runnable)
 
-    if (err.description.includes('ResizeObserver loop limit exceeded')) {
+    if (err && err.description && err.description.includes('ResizeObserver loop limit exceeded')) {
         // returning false here prevents Cypress from
         // failing the test
         console.log("Krill UI Test: Ignoring 'ResizeObserver loop limit exceeded' error")
