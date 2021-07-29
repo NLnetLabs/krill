@@ -28,16 +28,18 @@
 //   - https://github.com/WICG/resize-observer/issues/38
 
 // Define a custom uncaught exception handling policy for Cypress.
+// Returning false prevents Cypress from failing the test.
 Cypress.on('uncaught:exception', (err, runnable) => {
     console.log("Krill UI Test: Examining uncaught exception..")
     console.log("Krill UI Test: err: ", err)
     console.log("Krill UI Test: runnable: ", runnable)
 
-    if (err && err.description && err.description.includes('ResizeObserver loop limit exceeded')) {
-        // returning false here prevents Cypress from
-        // failing the test
-        console.log("Krill UI Test: Ignoring 'ResizeObserver loop limit exceeded' error")
-        return false
+    if (err && err.description) {
+        if (err.description.includes('ResizeObserver loop limit exceeded') ||
+            err.description.includes('Redirected when going from')) {
+            console.log("Krill UI Test: Ignoring exception " + err.description)
+            return false
+        }
     }
 
     // on any other error message the test fails
