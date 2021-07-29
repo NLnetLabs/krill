@@ -32,12 +32,17 @@
 Cypress.on('uncaught:exception', (err, runnable) => {
     console.log("Krill UI Test: Examining uncaught exception..")
     console.log("Krill UI Test: err: ", err)
-    console.log("Krill UI Test: runnable: ", runnable)
 
-    if (err && err.description) {
-        if (err.description.includes('ResizeObserver loop limit exceeded') ||
-            err.description.includes('Redirected when going from')) {
-            console.log("Krill UI Test: Ignoring exception " + err.description)
+    if (err.message) {
+        if (err.message.includes('ResizeObserver loop limit exceeded')) {
+            console.log("Krill UI Test: Ignoring 'ResizeObserver loop limit exceeded' exception")
+            return false
+        }
+        if (err.message.includes('Redirected when going from')) {
+            // This happens when going from "/onboarding" to "/interstitial" via a navigation guard and is triggered
+            // when logging out of Krill.
+            // TODO: Is it safe to ignore this or is this pointing to a real bug in Lagosta?
+            console.log("Krill UI Test: Ignoring 'Redirected when going from' exception")
             return false
         }
     }
