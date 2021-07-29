@@ -67,6 +67,11 @@
     ]
   },
   {
+    "asn": 64497,
+    "prefix": "10.1.0.0/24",
+    "state": "roa_not_held"
+  },
+  {
     "asn": 64496,
     "prefix": "10.0.0.0/22",
     "state": "announcement_valid",
