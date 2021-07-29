@@ -40,7 +40,12 @@ describe('Config File users', () => {
 
   login_test_settings.forEach(function (ts) {
     it('Login with ' + ts.d + ' credentials should ' + (ts.o ? 'succeed' : 'fail'), () => {
-      cy.visit('/')
+      // Work around the "Login with incorrect credentials should fail" test failing with ESOCKETTIMEDOUT by increasing
+      // the response timeout as mentioned on https://github.com/cypress-io/cypress/issues/7062. This isn't anything to
+      // do with incorrect credentials as re-ordering the tests causes a different test to fail. Rather, on a 2-vcpu
+      // GitHub Actions runner Azure VM Krill is apparently busy around the time of the 4th test and takes longer to
+      // respond. The issue is reproducible on a 1-vcpu AWS t2.small EC2 instance but not on a 2-vcpu AWS EC2 instance.
+      cy.visit('/', { responseTimeout: 31000 })
       cy.contains('Username')
       cy.contains('Password')
 
