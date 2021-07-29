@@ -312,7 +312,7 @@ describe('Config File Users with TA', () => {
 
   // This test exercises the custom role-per-ca demo policy.
   // As Joe should only be able to do write operations to the CA called 'ca_readwrite', so we test:
-  //   - Which CAs can Joe see in the CA dropdown list? Joe should only be able to see them all.
+  //   - Which CAs can Joe see in the CA dropdown list? Joe should be able to see them all.
   //   - Can Joe create a ROA on ca_readonly? This should fail.
   //   - Can Joe create a ROA on ca_readwrite? This should succeed.
   //   - Can Joe add an additional parent to ca_readwrite? This should succeed.
@@ -337,12 +337,16 @@ describe('Config File Users with TA', () => {
       cy.get('.el-select-dropdown__wrap.el-scrollbar__wrap > ul').contains(ca_name)
     })
 
-    // attempting to create a ROA on ca_readonly should fail
-    cy.url().should('not.contain', '#/cas/ca_readonly').then((unused) => {
-      // only change the current CA and wait for an update from the backend if the current CA isn't the one we want
-      cy.get('.el-select-dropdown__wrap.el-scrollbar__wrap > ul').contains('ca_readonly').click()
-      cy.wait('@statusRO')
+    // ensure we are working with CA ca_readonly
+    cy.url().then(($url) => {
+      if (!$url.includes('#/cas/ca_readonly')) {
+        // only change the current CA and wait for an update from the backend if the current CA isn't the one we want
+        cy.get('.el-select-dropdown__wrap.el-scrollbar__wrap > ul').contains('ca_readonly').click()
+        cy.wait('@statusRO')
+      }
     })
+
+    // attempting to create a ROA on ca_readonly should fail
     cy.get('#tab-roas').click()
     cy.contains('Add ROA').click()
     cy.get('div[role="dialog"]')
