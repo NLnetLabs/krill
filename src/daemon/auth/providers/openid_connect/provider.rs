@@ -1319,7 +1319,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         // of an existing login session.
 
         // https://github.com/NLnetLabs/krill/issues/614
-        if !oidc_conf.no_default_prompt {
+        if oidc_conf.prompt_for_login {
             request = request.add_prompt(CoreAuthPrompt::Login);
         }
 

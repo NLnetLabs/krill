@@ -22,8 +22,8 @@ pub struct ConfigAuthOpenIDConnect {
     #[serde(default)]
     pub extra_login_params: HashMap<String, String>,
 
-    #[serde(default)]
-    pub no_default_prompt: bool,
+    #[serde(default = "default_prompt_for_login")]
+    pub prompt_for_login: bool,
 
     #[serde(default)]
     pub logout_url: Option<String>,
@@ -31,6 +31,12 @@ pub struct ConfigAuthOpenIDConnect {
     #[serde(default)]
     pub insecure: bool,
 }
+
+fn default_prompt_for_login() -> bool {
+    // On by default for backward compatability. See: https://github.com/NLnetLabs/krill/issues/614
+    true
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct ConfigAuthOpenIDConnectClaim {
     pub source: Option<ConfigAuthOpenIDConnectClaimSource>,
