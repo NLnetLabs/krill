@@ -241,7 +241,15 @@ jobs:
             echo " -- maintainer ${MAINTAINER}  ${RFC5322_TS}" >>target/debian/changelog
 
             DEB_VER="${PKG_KRILL_VER}-1${OS_REL}"
-            cargo deb --variant ${OS_NAME}-${OS_REL} --deb-version ${DEB_VER} -v -- --locked ${EXTRA_BUILD_ARGS}
+            # Args after -- are passed to cargo build
+            # Use --output to generate the .deb file in a common location, see notes on actions/upload-artifact below.
+            cargo deb \
+              --deb-version ${DEB_VER} \
+              --output target/pkg/
+              --variant ${OS_NAME}-${OS_REL} \
+              --verbose \
+              -- \
+              --locked ${EXTRA_BUILD_ARGS}
             ;;
           centos)
             # Build and strip Krill as cargo generate-rpm doesn't do this for us
@@ -267,6 +275,13 @@ jobs:
             cp pkg/common/${SYSTEMD_SERVICE_UNIT_FILE} target/rpm/krill.service
 
             cargo generate-rpm
+
+            # Move the generated .rpm file to a common location, see notes on actions/upload-artifact below, as
+            # cargo generate-rpm --output doesn't support specifying only the output directory and I'd prefer not to
+            # either lose the details in the name (which has the form routinator-0.10.0-dev-1.x86_64.rpm) nor try to
+            # have this script generate such a name. See: https://github.com/cat-in-136/cargo-generate-rpm/issues/22
+            mkdir target/pkg/
+            mv target/generate-rpm/*.rpm target/pkg/
             ;;
         esac
 
@@ -275,26 +290,29 @@ jobs:
       run: |
         case ${OS_NAME} in
           debian|ubuntu)
-            lintian -v target/debian/*.deb
+            lintian -v target/pkg/*.deb
             ;;
           centos)
             # cargo generate-rpm creates RPMs that rpmlint considers to have
             # errors so don't use the rpmlint exit code otherwise we will always
             # abort the workflow.
-            rpmlint target/generate-rpm/*.rpm || true
+            rpmlint target/pkg/*.rpm || true
             ;;
         esac
 
     # Upload the produced package. The artifact will be available via the GH Actions job summary and build log pages,
     # but only to users logged in to GH with sufficient rights in this project. The uploaded artifact is also downloaded
     # by the next job (see below) to sanity check that it can be installed and results in a working Krill installation.
+    # Take packages from a single input directory for both .deb and.rpm files, otherwise "the least common ancestor of
+    # all the search paths will be used as the root directory of the artifact" (quoting
+    # https://github.com/actions/upload-artifact) while the packages.nlnetlabs.nl publishing script expects the package
+    # to be at the root of the zip file.
     - name: Upload package
       uses: actions/upload-artifact@v2
       with:
         name: ${{ env.OS_NAME }}_${{ env.OS_REL }}
         path: |
-          target/debian/*.deb
-          target/generate-rpm/*.rpm
+          target/pkg/*
 
   # Download and sanity check on target operating systems the packages created by previous jobs (see above). Don't test
   # on GH runners as they come with lots of software and libraries pre-installed and thus are not representative of the
@@ -402,12 +420,12 @@ jobs:
       run: |
         case ${OS_NAME} in
           debian|ubuntu)
-            DEB_FILE=$(ls -1 debian/*.deb)
+            DEB_FILE=$(ls -1 pkg/*.deb)
             sg lxd -c "lxc file push ${DEB_FILE} testcon/tmp/"
             echo "PKG_FILE=$(basename $DEB_FILE)" >> $GITHUB_ENV
             ;;
           centos)
-            RPM_FILE=$(ls -1 generate-rpm/*.rpm)
+            RPM_FILE=$(ls -1 pkg/*.rpm)
             sg lxd -c "lxc file push ${RPM_FILE} testcon/tmp/"
             echo "PKG_FILE=$(basename $RPM_FILE)" >> $GITHUB_ENV
             ;;
