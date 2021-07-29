@@ -174,6 +174,10 @@ type KnownUsers = HashMap<KnownUserId, KnownUser>;
 const DEFAULT_TOKEN_DURATION_SECS: u32 = 3600;
 static MOCK_OPENID_CONNECT_SERVER_RUNNING_FLAG: AtomicBool = AtomicBool::new(false);
 
+// This function is not used by the integration tests which are the main users of this code, but sometimes it's helpful
+// to be able to spin up the mock outside of an integration test which is why this main() fn exists. If we don't allow
+// dead_code then cargo test spams the output with function is never used warnings.
+#[allow(dead_code)]
 #[tokio::main]
 pub async fn main() {
     // Log to stdout.
