@@ -1,5 +1,13 @@
 # Change Log
 
+## 0.9.1 'All for One'
+
+This release fixes an issue where the Publication Server would lock up (#606). Users who do
+not use Krill to operate their own Publication Server do not need to upgrade to this release.
+
+This locking issue was cause by slow deserialisation of the repository content. It primarily
+affected large repositories because more content makes this process slower, and having more
+publishers who publish regularly means it is triggered more frequently.
 
 ## 0.9.0 'One for All'
 

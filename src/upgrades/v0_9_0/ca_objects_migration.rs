@@ -1,37 +1,23 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
-use api::{RepositoryContact, StorableCaCommand, StoredEffect};
-use ca::{CaEvt, IniDet, StoredCaCommand};
-use rpki::{
-    repository::{crl::Crl, crypto::KeyIdentifier, manifest::Manifest, x509::Time},
-    uri,
-};
+use chrono::Duration;
+use rpki::repository::{crl::Crl, crypto::KeyIdentifier, manifest::Manifest, x509::Time};
+use rpki::uri;
 
-use crate::{
-    commons::{
-        api::{
-            self, ChildHandle, Handle, HexEncodedHash, IssuanceRequest, IssuedCert, ObjectName, ParentHandle, RcvdCert,
+use crate::{commons::{api::{
+            ChildHandle, Handle, HexEncodedHash, IssuanceRequest, IssuedCert, ObjectName, ParentHandle, RcvdCert,
             RepoInfo, ResourceClassName, ResourceSet, Revocation, RevocationRequest, Revocations, RoaAggregateKey,
-            TaCertDetails,
-        },
-        crypto::{IdCert, KrillSigner},
-        eventsourcing::{
+            TaCertDetails, RepositoryContact, StorableCaCommand, StoredEffect
+        }, crypto::{IdCert, KrillSigner}, eventsourcing::{
             Aggregate, AggregateStore, CommandKey, KeyStoreKey, KeyValueStore, StoredValueInfo,
-        },
-        remote::rfc8183,
-        util::KrillVersion,
-    },
-    constants::CASERVER_DIR,
-    daemon::{
+        }, remote::rfc8183, util::KrillVersion}, constants::{CASERVER_DIR, KRILL_VERSION}, daemon::{
         ca::{
             self, ta_handle, BasicKeyObjectSet, CaEvtDet, CaObjects, CaObjectsStore, CurrentKeyObjectSet,
             PublishedCert, PublishedRoa, ResourceClassKeyState, ResourceClassObjects, RouteAuthorization,
+            CaEvt, IniDet, StoredCaCommand,
         },
         config::Config,
-    },
-    pubd::RepositoryManager,
-    upgrades::{UpgradeError, UpgradeResult, UpgradeStore},
-};
+    }, pubd::RepositoryManager, upgrades::{UpgradeError, UpgradeResult, UpgradeStore}};
 
 use super::super::MIGRATION_SCOPE;
 use super::{old_commands::*, old_events::*};
@@ -247,21 +233,37 @@ impl UpgradeStore for CasStoreMigration {
             info!("Will migrate {} commands for CA {}", cmd_keys.len(), scope);
 
             let mut total_migrated = 0;
+            let time_started = Time::now();
+            let total_commands = cmd_keys.len();
+
             for cmd_key in cmd_keys {
                 // Do the migration counter first, so that we can just call continue when we need to skip commands
                 total_migrated += 1;
                 if total_migrated % 100 == 0 {
-                    info!("  migrated {} commands", total_migrated);
+                    // ETA:
+                    //  - (total_migrated / (now - started)) * total
+                    let mut time_passed = (Time::now().timestamp() - time_started.timestamp()) as usize;
+                    if time_passed == 0 {
+                        time_passed = 1; // avoid divide by zero.. we are doing approximate estimates here
+                    }
+                    let migrated_per_second: f64 = total_migrated as f64 / time_passed as f64;
+                    let expected_seconds = (total_commands as f64 / migrated_per_second) as i64;
+                    let eta = time_started + Duration::seconds(expected_seconds);
+                    info!(
+                        "  migrated {} commands, expect to finish: {}",
+                        total_migrated,
+                        eta.to_rfc3339()
+                    );
                 }
 
-                debug!("  command: {}", cmd_key);
+                trace!("  command: {}", cmd_key);
                 let mut old_cmd: OldStoredCaCommand = self.get(&cmd_key)?;
 
                 if let Some(evt_versions) = old_cmd.effect.events() {
                     let mut events = vec![];
                     for v in evt_versions {
                         let migration_event_key = Self::event_key(&&migration_scope, *v);
-                        debug!("  +- event: {}", migration_event_key);
+                        trace!("  +- event: {}", migration_event_key);
                         let old_evt: OldCaEvt = self.store.get(&migration_event_key)?.ok_or_else(|| {
                             UpgradeError::Custom(format!("Cannot parse old event: {}", migration_event_key))
                         })?;
@@ -317,16 +319,18 @@ impl UpgradeStore for CasStoreMigration {
         //    --> clean up the archived commands and events
         //    --> restore to previous version of Krill is not supported
         for scope in self.store.scopes()? {
-            info!("Check state of '{}' before cleanup.", scope);
-            let ca =
-                Handle::from_str(&scope).map_err(|e| UpgradeError::Custom(format!("Found invalid ca name: {}", e)))?;
+            info!("Will rebuild CA '{}' from events and warm up the cache", scope);
 
-            self.ca_store.get_latest(&ca).map_err(|e| {
-                UpgradeError::Custom(format!("Could not rebuild CA '{}' after migration: {}", scope, e))
-            })?;
-
+            let ca = Handle::from_str(&scope)
+                    .map_err(|e| UpgradeError::Custom(format!("Found invalid ca name: {}", e)))?;
+            
+            self.ca_store.warm_aggregate(&ca)
+                .map_err(|e| UpgradeError::Custom(format!("Could not rebuild CA '{}' after migration: {}", ca, e)))?;
+            
             self.drop_migration_scope(&scope)?;
         }
+
+        info!("Done migration CAs to Krill version {}", KRILL_VERSION);
 
         Ok(())
     }
