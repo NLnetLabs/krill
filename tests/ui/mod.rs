@@ -139,7 +139,7 @@ impl CypressRunner {
                     .arg("cypress");
             }
 
-            cmd.arg("cypress/included:8.0.0");
+            cmd.arg("cypress/included:8.1.0");
 
             if std::env::var("CYPRESS_INTERACTIVE").is_ok() {
                 cmd.arg("open").arg("--project").arg(".");
