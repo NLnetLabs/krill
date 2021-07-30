@@ -51,12 +51,6 @@ impl StatusStore {
         Ok(self.store.get(&Self::status_key(ca))?.unwrap_or_default())
     }
 
-    /// Save the status for a CA
-    fn set_ca_status(&self, ca: &Handle, status: &CaStatus) -> KrillResult<()> {
-        self.store.store(&Self::status_key(ca), status)?;
-        Ok(())
-    }
-
     pub async fn get_parent_statuses(&self, ca: &Handle) -> KrillResult<ParentStatuses> {
         let _lock = self.lock.read().await;
         let status = self.get_ca_status(ca)?;
@@ -77,15 +71,14 @@ impl StatusStore {
         error: &Error,
         next_run_seconds: i64,
     ) -> KrillResult<()> {
-        let _lock = self.lock.write().await;
-        let mut status = self.get_ca_status(ca)?;
-
         let error_response = Self::error_to_error_res(&error);
 
-        status
-            .parents
-            .set_failure(parent, uri, error_response, next_run_seconds);
-        self.set_ca_status(ca, &status)
+        self.update_ca_status(ca, |status| {
+            status
+                .parents
+                .set_failure(parent, uri, error_response, next_run_seconds)
+        })
+        .await
     }
 
     pub async fn set_parent_last_updated(
@@ -95,10 +88,10 @@ impl StatusStore {
         uri: &ServiceUri,
         next_run_seconds: i64,
     ) -> KrillResult<()> {
-        let _lock = self.lock.write().await;
-        let mut status = self.get_ca_status(ca)?;
-        status.parents.set_last_updated(parent, uri, next_run_seconds);
-        self.set_ca_status(ca, &status)
+        self.update_ca_status(ca, |status| {
+            status.parents.set_last_updated(parent, uri, next_run_seconds)
+        })
+        .await
     }
 
     pub async fn set_parent_entitlements(
@@ -109,37 +102,27 @@ impl StatusStore {
         entitlements: &Entitlements,
         next_run_seconds: i64,
     ) -> KrillResult<()> {
-        let _lock = self.lock.write().await;
-        let mut status = self.get_ca_status(ca)?;
-        status
-            .parents
-            .set_entitlements(parent, uri, entitlements, next_run_seconds);
-        self.set_ca_status(ca, &status)
+        self.update_ca_status(ca, |status| {
+            status
+                .parents
+                .set_entitlements(parent, uri, entitlements, next_run_seconds)
+        })
+        .await
     }
 
     pub async fn remove_parent(&self, ca: &Handle, parent: &ParentHandle) -> KrillResult<()> {
-        let _lock = self.lock.write().await;
-        let mut status = self.get_ca_status(ca)?;
-        status.parents.remove(parent);
-
-        Ok(())
+        self.update_ca_status(ca, |status| status.parents.remove(parent)).await
     }
 
     pub async fn set_status_repo_failure(&self, ca: &Handle, uri: ServiceUri, error: &Error) -> KrillResult<()> {
-        let _lock = self.lock.write().await;
-        let mut status = self.get_ca_status(ca)?;
-
         let error_response = Self::error_to_error_res(&error);
-
-        status.repo.set_failure(uri, error_response);
-        self.set_ca_status(ca, &status)
+        self.update_ca_status(ca, |status| status.repo.set_failure(uri, error_response))
+            .await
     }
 
     pub async fn set_status_repo_success(&self, ca: &Handle, uri: ServiceUri, next_hours: i64) -> KrillResult<()> {
-        let _lock = self.lock.write().await;
-        let mut status = self.get_ca_status(ca)?;
-        status.repo.set_last_updated(uri, next_hours);
-        self.set_ca_status(ca, &status)
+        self.update_ca_status(ca, |status| status.repo.set_last_updated(uri, next_hours))
+            .await
     }
 
     pub async fn set_status_repo_published(
@@ -149,10 +132,21 @@ impl StatusStore {
         published: Vec<PublishElement>,
         next_hours: i64,
     ) -> KrillResult<()> {
+        self.update_ca_status(ca, |status| status.repo.set_published(uri, published, next_hours))
+            .await
+    }
+
+    async fn update_ca_status<F>(&self, ca: &Handle, op: F) -> KrillResult<()>
+    where
+        F: FnOnce(&mut CaStatus),
+    {
         let _lock = self.lock.write().await;
         let mut status = self.get_ca_status(ca)?;
-        status.repo.set_published(uri, published, next_hours);
-        self.set_ca_status(ca, &status)
+        op(&mut status);
+
+        self.store.store(&Self::status_key(ca), &status)?;
+
+        Ok(())
     }
 
     fn error_to_error_res(error: &Error) -> ErrorResponse {
