@@ -1,9 +1,12 @@
-use std::path::Path;
+use std::{collections::HashMap, path::Path};
 
 use tokio::sync::RwLock;
 
 use crate::commons::{
-    api::{rrdp::PublishElement, Entitlements, ErrorResponse, Handle, ParentHandle, ParentStatuses, RepoStatus},
+    api::{
+        rrdp::PublishElement, ChildHandle, ChildStatus, Entitlements, ErrorResponse, Handle, ParentHandle,
+        ParentStatuses, RepoStatus,
+    },
     error::Error,
     eventsourcing::{KeyStoreKey, KeyValueStore},
     remote::rfc8183::ServiceUri,
@@ -17,6 +20,8 @@ use crate::commons::{
 struct CaStatus {
     repo: RepoStatus,
     parents: ParentStatuses,
+    #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
+    children: HashMap<ChildHandle, ChildStatus>,
 }
 
 impl Default for CaStatus {
@@ -24,6 +29,7 @@ impl Default for CaStatus {
         CaStatus {
             repo: RepoStatus::default(),
             parents: ParentStatuses::default(),
+            children: HashMap::new(),
         }
     }
 }
@@ -114,6 +120,31 @@ impl StatusStore {
         self.update_ca_status(ca, |status| status.parents.remove(parent)).await
     }
 
+    pub async fn set_child_success(
+        &self,
+        ca: &Handle,
+        child: &ChildHandle,
+        user_agent: Option<String>,
+    ) -> KrillResult<()> {
+        self.update_ca_child_status(ca, child, |status| status.set_success(user_agent))
+            .await
+    }
+
+    pub async fn set_child_failure(
+        &self,
+        ca: &Handle,
+        child: &ChildHandle,
+        user_agent: Option<String>,
+        error: &Error,
+    ) -> KrillResult<()> {
+        let error_response = Self::error_to_error_res(&error);
+
+        self.update_ca_child_status(ca, child, |status| status.set_failure(user_agent, error_response))
+            .await
+    }
+
+    pub async fn remove_child
+
     pub async fn set_status_repo_failure(&self, ca: &Handle, uri: ServiceUri, error: &Error) -> KrillResult<()> {
         let error_response = Self::error_to_error_res(&error);
         self.update_ca_status(ca, |status| status.repo.set_failure(uri, error_response))
@@ -147,6 +178,21 @@ impl StatusStore {
         self.store.store(&Self::status_key(ca), &status)?;
 
         Ok(())
+    }
+
+    async fn update_ca_child_status<F>(&self, ca: &Handle, child: &ChildHandle, op: F) -> KrillResult<()>
+    where
+        F: FnOnce(&mut ChildStatus),
+    {
+        self.update_ca_status(ca, |status| {
+            if !status.children.contains_key(child) {
+                status.children.insert(child.clone(), ChildStatus::default());
+            }
+
+            let mut child_status = status.children.get_mut(child).unwrap();
+            op(&mut child_status)
+        })
+        .await
     }
 
     fn error_to_error_res(error: &Error) -> ErrorResponse {

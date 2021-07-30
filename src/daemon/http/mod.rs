@@ -1,3 +1,4 @@
+use hyper::header::USER_AGENT;
 use serde::de::DeserializeOwned;
 use std::io;
 use std::str::FromStr;
@@ -351,6 +352,13 @@ impl Request {
 
     pub fn headers(&self) -> &HeaderMap {
         self.request.headers()
+    }
+
+    pub fn user_agent(&self) -> Option<String> {
+        match self.headers().get(&USER_AGENT) {
+            None => None,
+            Some(value) => value.to_str().ok().map(|s| s.to_string()),
+        }
     }
 
     pub async fn upgrade_from_anonymous(&mut self, actor_def: ActorDef) {

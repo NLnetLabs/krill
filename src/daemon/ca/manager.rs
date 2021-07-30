@@ -515,7 +515,13 @@ impl CaManager {
     /// - validates the request
     /// - processes the child request
     /// - signs a response and returns the bytes
-    pub async fn rfc6492(&self, ca_handle: &Handle, msg_bytes: Bytes, actor: &Actor) -> KrillResult<Bytes> {
+    pub async fn rfc6492(
+        &self,
+        ca_handle: &Handle,
+        msg_bytes: Bytes,
+        user_agent: Option<String>,
+        actor: &Actor,
+    ) -> KrillResult<Bytes> {
         let ca = self.get_ca(ca_handle).await?;
 
         let msg = match ProtocolCms::decode(msg_bytes.as_ref(), false) {
@@ -540,22 +546,23 @@ impl CaManager {
         let (res, should_log_cms) = match content {
             rfc6492::Content::Qry(rfc6492::Qry::Revoke(req)) => {
                 let res = self.revoke(ca_handle, child.clone(), req, actor).await?;
-                let msg = rfc6492::Message::revoke_response(child, recipient, res);
+                let msg = rfc6492::Message::revoke_response(child.clone(), recipient, res);
                 (self.wrap_rfc6492_response(ca_handle, msg).await, true)
             }
             rfc6492::Content::Qry(rfc6492::Qry::List) => {
                 let entitlements = self.list(ca_handle, &child).await?;
-                let msg = rfc6492::Message::list_response(child, recipient, entitlements);
+                let msg = rfc6492::Message::list_response(child.clone(), recipient, entitlements);
                 (self.wrap_rfc6492_response(ca_handle, msg).await, false)
             }
             rfc6492::Content::Qry(rfc6492::Qry::Issue(req)) => {
                 let res = self.issue(ca_handle, &child, req, actor).await?;
-                let msg = rfc6492::Message::issue_response(child, recipient, res);
+                let msg = rfc6492::Message::issue_response(child.clone(), recipient, res);
                 (self.wrap_rfc6492_response(ca_handle, msg).await, true)
             }
             _ => (Err(Error::custom("Unsupported RFC6492 message")), true),
         };
 
+        // Log CMS messages if needed, and if enabled by config (this is a no-op if it isn't)
         match &res {
             Ok(reply_bytes) => {
                 if should_log_cms {
@@ -566,6 +573,24 @@ impl CaManager {
             Err(e) => {
                 cms_logger.received(&msg_bytes)?;
                 cms_logger.err(e)?;
+            }
+        }
+
+        // Set child status
+        match &res {
+            Ok(_) => {
+                self.status_store
+                    .lock()
+                    .await
+                    .set_child_success(ca.handle(), &child, user_agent)
+                    .await?;
+            }
+            Err(e) => {
+                self.status_store
+                    .lock()
+                    .await
+                    .set_child_failure(ca.handle(), &child, user_agent, e)
+                    .await?;
             }
         }
 
@@ -755,9 +780,12 @@ impl CaManager {
             if ca.repository_contact().is_ok() {
                 let ca = self.get_ca(&handle).await?;
                 let parent_contact = ca.parent(parent)?;
-                let entitlements = self.get_entitlements_from_contact(handle, parent, parent_contact, true).await?;
+                let entitlements = self
+                    .get_entitlements_from_contact(handle, parent, parent_contact, true)
+                    .await?;
 
-                self.update_entitlements(handle, parent.clone(), entitlements, actor).await?;
+                self.update_entitlements(handle, parent.clone(), entitlements, actor)
+                    .await?;
             }
         }
         Ok(())
@@ -1010,7 +1038,7 @@ impl CaManager {
                 let uri = res.service_uri();
                 let next_run_seconds = self.config.ca_refresh as i64;
 
-                match  &result {
+                match &result {
                     Err(error) => {
                         if existing_parent {
                             // only update the status store with errors for existing parents
@@ -1022,7 +1050,7 @@ impl CaManager {
                                 .set_parent_failure(ca, parent, uri, error, next_run_seconds)
                                 .await?;
                         }
-                    },
+                    }
                     Ok(entitlements) => {
                         self.status_store
                             .lock()

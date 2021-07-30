@@ -77,23 +77,19 @@ fn test_data_dir_or_die(config_item: &str, dir: &Path) {
     let test_file = dir.join("test");
 
     if let Err(e) = file::save(b"test", &test_file) {
-        print_write_error_hint_and_die(
-            format!(
-                "Cannot write to dir '{}' for configuration setting '{}', Error: {}",
-                dir.to_string_lossy(),
-                config_item,
-                e
-            )
-        );
+        print_write_error_hint_and_die(format!(
+            "Cannot write to dir '{}' for configuration setting '{}', Error: {}",
+            dir.to_string_lossy(),
+            config_item,
+            e
+        ));
     } else if let Err(e) = file::delete_file(&test_file) {
-        print_write_error_hint_and_die(
-            format!(
-                "Cannot delete test file '{}' in dir for configuration setting '{}', Error: {}",
-                test_file.to_string_lossy(),
-                config_item,
-                e
-            )
-        );
+        print_write_error_hint_and_die(format!(
+            "Cannot delete test file '{}' in dir for configuration setting '{}', Error: {}",
+            test_file.to_string_lossy(),
+            config_item,
+            e
+        ));
     }
 }
 
@@ -665,13 +661,14 @@ pub async fn rfc6492(req: Request) -> RoutingResult {
 
         let actor = req.actor();
         let state = req.state().clone();
+        let user_agent = req.user_agent();
 
         let bytes = match req.rfc6492_bytes().await {
             Ok(bytes) => bytes,
             Err(e) => return render_error(e),
         };
         let krill_server = state;
-        match krill_server.rfc6492(ca, bytes, &actor).await {
+        match krill_server.rfc6492(ca, bytes, user_agent, &actor).await {
             Ok(bytes) => Ok(HttpResponse::rfc6492(bytes.to_vec())),
             Err(e) => render_error(e),
         }
@@ -991,7 +988,8 @@ pub async fn api_stale_publishers(req: Request, seconds: Option<&str>) -> Routin
         let seconds = seconds.unwrap_or("");
         match i64::from_str(seconds) {
             Ok(seconds) => render_json_res(
-                req.state().repo_stats()
+                req.state()
+                    .repo_stats()
                     .map(|stats| PublisherList::build(&stats.stale_publishers(seconds))),
             ),
             Err(_) => render_error(Error::ApiInvalidSeconds),
@@ -1003,7 +1001,9 @@ pub async fn api_stale_publishers(req: Request, seconds: Option<&str>) -> Routin
 pub async fn api_list_pbl(req: Request) -> RoutingResult {
     aa!(req, Permission::PUB_LIST, {
         render_json_res(
-            req.state().publishers().map(|publishers| PublisherList::build(&publishers)),
+            req.state()
+                .publishers()
+                .map(|publishers| PublisherList::build(&publishers)),
         )
     })
 }
@@ -1431,9 +1431,7 @@ async fn api_ca_parent_add_or_update(req: Request, ca: Handle, parent_override: 
         };
 
         match extract_parent_ca_req(&ca, bytes, parent_override) {
-            Ok(parent_req) => render_empty_res(
-                server.ca_parent_add_or_update(ca, parent_req, &actor).await,
-            ),
+            Ok(parent_req) => render_empty_res(server.ca_parent_add_or_update(ca, parent_req, &actor).await),
             Err(e) => render_error(e),
         }
     })
@@ -1577,9 +1575,7 @@ async fn api_ca_routes_analysis(req: Request, path: &mut RequestPath, ca: Handle
                     let server = req.state().clone();
                     match req.json().await {
                         Err(e) => render_error(e),
-                        Ok(resources) => {
-                            render_json_res(server.ca_routes_bgp_suggest(&ca, Some(resources)).await)
-                        }
+                        Ok(resources) => render_json_res(server.ca_routes_bgp_suggest(&ca, Some(resources)).await),
                     }
                 }
                 _ => render_unknown_method(),

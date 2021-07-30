@@ -7,10 +7,7 @@ use bytes::Bytes;
 use chrono::Duration;
 
 use rpki::{
-    repository::{
-        cert::Cert,
-        x509::Time,
-    },
+    repository::{cert::Cert, x509::Time},
     uri,
 };
 
@@ -457,14 +454,12 @@ impl KrillServer {
     ) -> KrillEmptyResult {
         let parent = parent_req.handle();
         let contact = parent_req.contact();
-        self.ca_manager.get_entitlements_from_contact(&ca, parent, contact, false).await?;
+        self.ca_manager
+            .get_entitlements_from_contact(&ca, parent, contact, false)
+            .await?;
 
-        Ok(self
-            .ca_manager
-            .ca_parent_add_or_update(ca, parent_req, actor)
-            .await?)
+        Ok(self.ca_manager.ca_parent_add_or_update(ca, parent_req, actor).await?)
     }
-
 
     pub async fn ca_parent_remove(&self, handle: Handle, parent: ParentHandle, actor: &Actor) -> KrillEmptyResult {
         Ok(self.ca_manager.ca_parent_remove(handle, parent, actor).await?)
@@ -646,8 +641,14 @@ impl KrillServer {
             .await?)
     }
 
-    pub async fn rfc6492(&self, handle: Handle, msg_bytes: Bytes, actor: &Actor) -> KrillResult<Bytes> {
-        Ok(self.ca_manager.rfc6492(&handle, msg_bytes, actor).await?)
+    pub async fn rfc6492(
+        &self,
+        handle: Handle,
+        msg_bytes: Bytes,
+        user_agent: Option<String>,
+        actor: &Actor,
+    ) -> KrillResult<Bytes> {
+        Ok(self.ca_manager.rfc6492(&handle, msg_bytes, user_agent, actor).await?)
     }
 }
 
