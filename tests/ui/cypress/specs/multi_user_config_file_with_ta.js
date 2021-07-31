@@ -111,7 +111,7 @@ describe('Config File Users with TA', () => {
   register_publisher_test_settings.forEach(function (ts) {
     it(ts.a + ' CA ' + ts.ca + ' with repository as ' + ts.d + ' user should ' + (ts.o ? 'succeed' : 'fail'), () => {
       if (ts.a == 'Register') {
-        cy.intercept('GET', '/api/v1/cas/' + ts.ca + '/id/publisher_request.xml').as('getRepoRequestXML')
+        cy.intercept({ method: 'GET', path: '/api/v1/cas/' + ts.ca + '/id/publisher_request.xml'}).as('getRepoRequestXML')
 
         // sign in
         cy.visit('/')
@@ -188,7 +188,7 @@ describe('Config File Users with TA', () => {
   register_parent_test_settings.forEach(function (ts) {
     it(ts.a + ' CA ' + ts.ca + ' with parent as ' + ts.d + ' user should ' + (ts.o ? 'succeed' : 'fail'), () => {
       if (ts.a == 'Register') {
-        cy.intercept('GET', '/api/v1/cas/' + ts.ca + '/id/child_request.xml').as('getChildRequestXML')
+        cy.intercept({ method: 'GET', '/api/v1/cas/' + ts.ca + '/id/child_request.xml'}).as('getChildRequestXML')
 
         // sign in
         cy.visit('/')
@@ -263,7 +263,7 @@ describe('Config File Users with TA', () => {
 
   add_roa_test_settings.forEach(function (ts) {
     it('Add ROA for CA ' + ts.ca + ' as ' + ts.d + ' user should ' + (ts.o ? 'succeed' : 'fail'), () => {
-      cy.intercept('GET', '/api/v1/cas/' + ts.ca + '/routes/analysis/full').as('analyzeRoutes')
+      cy.intercept({ method: 'GET', path: '/api/v1/cas/' + ts.ca + '/routes/analysis/full'}).as('analyzeRoutes')
 
       // sign in
       cy.visit('/')
@@ -317,9 +317,9 @@ describe('Config File Users with TA', () => {
   //   - Can Joe create a ROA on ca_readwrite? This should succeed.
   //   - Can Joe add an additional parent to ca_readwrite? This should succeed.
   it('CUSTOM POLICY: Joe can see all CAs but only write to ca_readwrite', () => {
-    cy.intercept('GET', '/api/v1/cas/ca_readonly/repo/status').as('statusRO')
-    cy.intercept('GET', '/api/v1/cas/ca_readwrite/repo/status').as('statusRW')
-    cy.intercept('GET', '/api/v1/cas/ca_readwrite/id/child_request.xml').as('getChildRequestXML')
+    cy.intercept({ method: 'GET', path: '/api/v1/cas/ca_readonly/repo/status'}).as('statusRO')
+    cy.intercept({ method: 'GET', path: '/api/v1/cas/ca_readwrite/repo/status'}).as('statusRW')
+    cy.intercept({ method: 'GET', path: '/api/v1/cas/ca_readwrite/id/child_request.xml'}).as('getChildRequestXML')
 
     // sign in
     cy.visit('/')
@@ -426,8 +426,8 @@ describe('Config File Users with TA', () => {
   // ID and select that instead. Similarly, the CA title selector is a weak selector, it can easily break later or match
   // the wrong thing if the UI design is changed and should alos be given its own ID to match on.
   it('CUSTOM POLICY: Sally can only see two CAs and only make ROA changes in one CA', () => {
-    cy.intercept('GET', '/api/v1/cas/ca_readonly/repo/status').as('statusRO')
-    cy.intercept('GET', '/api/v1/cas/ca_readwrite/repo/status').as('statusRW')
+    cy.intercept({ method: 'GET', path: '/api/v1/cas/ca_readonly/repo/status'}).as('statusRO')
+    cy.intercept({ method: 'GET', path: '/api/v1/cas/ca_readwrite/repo/status'}).as('statusRW')
 
     // sign in
     cy.visit('/')

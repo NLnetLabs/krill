@@ -120,13 +120,12 @@ impl CypressRunner {
                 .arg("-w")
                 .arg("/e2e");
 
-            // if let Ok(debug_level) = std::env::var("CYPRESS_DEBUG") {
+            if let Ok(debug_level) = std::env::var("CYPRESS_DEBUG") {
                 // Example values:
                 //   - To get LOTS of Cypress logging:           CYPRESS_DEBUG=cypress:*
                 //   - To get logging relating to HTTP requests: CYPRESS_DEBUG=cypress:proxy:http:*
-                // cmd.arg("-e").arg(format!("DEBUG={}", debug_level));
-            // }
-            cmd.arg("-e").arg("DEBUG=cypress:*");
+                cmd.arg("-e").arg(format!("DEBUG={}", debug_level));
+            }
 
             if std::env::var("CYPRESS_INTERACTIVE").is_ok() {
                 // After running `cargo test` a Chrome browser should open from the Cypress Docker container on your local
