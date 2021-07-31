@@ -120,12 +120,13 @@ impl CypressRunner {
                 .arg("-w")
                 .arg("/e2e");
 
-            if let Ok(debug_level) = std::env::var("CYPRESS_DEBUG") {
+            // if let Ok(debug_level) = std::env::var("CYPRESS_DEBUG") {
                 // Example values:
                 //   - To get LOTS of Cypress logging:           CYPRESS_DEBUG=cypress:*
                 //   - To get logging relating to HTTP requests: CYPRESS_DEBUG=cypress:proxy:http:*
-                cmd.arg("-e").arg(format!("DEBUG={}", debug_level));
-            }
+                // cmd.arg("-e").arg(format!("DEBUG={}", debug_level));
+            // }
+            cmd.arg("-e").arg("DEBUG=cypress:*");
 
             if std::env::var("CYPRESS_INTERACTIVE").is_ok() {
                 // After running `cargo test` a Chrome browser should open from the Cypress Docker container on your local
@@ -173,3 +174,4 @@ async fn do_run_krill_ui_test(test_name: &str) -> bool {
     // Run the specified Cypress UI test suite and wait for it to finish
     CypressRunner::run(test_name).await.success()
 }
+
