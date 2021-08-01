@@ -32,7 +32,7 @@ describe('OpenID Connect provider connection issues are tolerated', () => {
     cy.request({ url: 'https://127.0.0.1:1818/test/is_user_logged_in?username=admin', failOnStatusCode: false }).its('status').should('eq', 200)
 
     // logout
-    cy.intercept('GET', /^https:\/\/localhost:1818\/logout.+/).as('oidcLogout')
+    cy.intercept({ method: 'GET', url: /^https:\/\/localhost:1818\/logout.+/}).as('oidcLogout')
     cy.get('.logout').click()
     cy.wait('@oidcLogout').its('response.statusCode').should('eq', 302)
 
