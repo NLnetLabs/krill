@@ -68,3 +68,4 @@ jobs:
       with:
         name: cypress-ui-test-captures ${{ matrix.os }} ${{ matrix.rust }}
         path: target/ui/
+        if-no-files-found: ignore
