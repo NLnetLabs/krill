@@ -188,7 +188,7 @@ describe('Config File Users with TA', () => {
   register_parent_test_settings.forEach(function (ts) {
     it(ts.a + ' CA ' + ts.ca + ' with parent as ' + ts.d + ' user should ' + (ts.o ? 'succeed' : 'fail'), () => {
       if (ts.a == 'Register') {
-        cy.intercept({ method: 'GET', '/api/v1/cas/' + ts.ca + '/id/child_request.xml'}).as('getChildRequestXML')
+        cy.intercept({ method: 'GET', path: '/api/v1/cas/' + ts.ca + '/id/child_request.xml'}).as('getChildRequestXML')
 
         // sign in
         cy.visit('/')
