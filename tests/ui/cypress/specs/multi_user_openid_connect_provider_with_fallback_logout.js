@@ -21,7 +21,7 @@ describe('OpenID Connect provider with fallback logout URL', () => {
     cy.request('https://127.0.0.1:1818/test/is_user_logged_in?username=' + username).its('status').should('eq', 200)
 
     // logout
-    cy.intercept({ method: 'GET', path: '/auth/logout'}).as('getLogoutURL')
+    cy.intercept({ method: 'POST', path: '/auth/logout'}).as('getLogoutURL')
     cy.intercept({ method: 'GET', path: '/index.html'}).as('getLoginForm')
     cy.get('.logout').click()
 
