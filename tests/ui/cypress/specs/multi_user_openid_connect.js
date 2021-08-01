@@ -58,9 +58,9 @@ const create_ca_settings_403 = [
 
 describe('OpenID Connect provider with RP-Initiated logout', () => {
   it('The correct login form is shown', () => {
-    cy.intercept('GET', '/api/v1/authorized').as('isAuthorized')
-    cy.intercept('GET', '/auth/login').as('getLoginURL')
-    cy.intercept('GET', /^https:\/\/localhost:1818\/authorize.+/).as('oidcLoginForm')
+    cy.intercept({ method: 'GET', path: '/api/v1/authorized'}).as('isAuthorized')
+    cy.intercept({ method: 'GET', path: '/auth/login'}).as('getLoginURL')
+    cy.intercept({ method: 'GET', url: /^https:\/\/localhost:1818\/authorize.+/}).as('oidcLoginForm')
     cy.visit('/')
     cy.wait(['@isAuthorized', '@getLoginURL', '@oidcLoginForm'])
 
@@ -155,7 +155,7 @@ describe('OpenID Connect provider with RP-Initiated logout', () => {
     cy.request({ url: 'https://127.0.0.1:1818/test/is_user_logged_in?username=' + admin.u, failOnStatusCode: false }).its('status').should('eq', 200)
 
     // logout
-    cy.intercept('GET', /^https:\/\/localhost:1818\/logout.+/).as('oidcLogout')
+    cy.intercept({ method: 'GET', url: /^https:\/\/localhost:1818\/logout.+/}).as('oidcLogout')
     cy.get('.logout').click()
     cy.wait('@oidcLogout').its('response.statusCode').should('eq', 302)
 
@@ -194,8 +194,8 @@ describe('OpenID Connect provider with RP-Initiated logout', () => {
 
     // verify that if we reload the Krill UI we are shown the OpenID Connect
     // provider login page
-    cy.intercept('GET', '/auth/login').as('getLoginURL')
-    cy.intercept('GET', /^https:\/\/localhost:1818\/authorize.+/).as('oidcLoginForm')
+    cy.intercept({ method: 'GET', path: '/auth/login'}).as('getLoginURL')
+    cy.intercept({ method: 'GET', url: /^https:\/\/localhost:1818\/authorize.+/}).as('oidcLoginForm')
     cy.visit('/')
     cy.wait(['@getLoginURL', '@oidcLoginForm'])
     cy.url().should('not.include', Cypress.config('baseUrl'))
@@ -246,7 +246,7 @@ describe('OpenID Connect provider with RP-Initiated logout', () => {
 
       // Try to create a CA, by typing in the input, clicking the 'Create CA' button
       // and then clicking 'Ok'. This should fail, since the token can't be refreshed.
-      cy.intercept('POST', '/api/v1/cas').as('createCA')
+      cy.intercept({ method: 'POST', path: '/api/v1/cas'}).as('createCA')
       cy.contains('CA Handle')
       cy.get('form input[type="text"]').type(ts.ca)
       cy.contains('Create CA').click()
@@ -299,7 +299,7 @@ describe('OpenID Connect provider with RP-Initiated logout', () => {
       // and then clicking 'Ok'. This should fail, since the mock server should return a
       // exhibit the undesirable behaviour we configured which should result in an
       // error from Krill.
-      cy.intercept('POST', '/api/v1/cas').as('createCA')
+      cy.intercept({ method: 'POST', path: '/api/v1/cas'}).as('createCA')
       cy.contains('CA Handle')
       cy.get('form input[type="text"]').type(ca_name)
       cy.contains('Create CA').click()
@@ -394,7 +394,7 @@ describe('OpenID Connect provider with RP-Initiated logout', () => {
       cy.wait(time_till_after_expiration_ms)
 
       // Try to create a CA, by typing in the input, clicking the 'Create CA' button and then clicking 'Ok'.
-      cy.intercept('POST', '/api/v1/cas').as('createCA')
+      cy.intercept({ method: 'POST', path: '/api/v1/cas'}).as('createCA')
       cy.contains('CA Handle')
       cy.get('form input[type="text"]').type(ca_name)
       cy.contains('Create CA').click()
