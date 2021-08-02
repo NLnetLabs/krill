@@ -29,9 +29,14 @@
 
 // Define a custom uncaught exception handling policy for Cypress.
 // Returning false prevents Cypress from failing the test.
-Cypress.on('uncaught:exception', (err, runnable) => {
+Cypress.on('uncaught:exception', (err, runnable, promise) => {
     console.log("Krill UI Test: Examining uncaught exception..")
     console.log("Krill UI Test: err: ", err)
+
+    if (promise) {
+        console.log("Krill UI Test: Ignoring unhandled promise rejection.")
+        return false
+    }
 
     if (err.message) {
         if (err.message.includes('ResizeObserver loop limit exceeded')) {
