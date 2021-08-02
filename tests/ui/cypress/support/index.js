@@ -41,7 +41,7 @@ beforeEach(() => {
             params: { cacheDisabled: true }
         });
     }
-}
+}):
 
 // Define a custom uncaught exception handling policy for Cypress.
 // Returning false prevents Cypress from failing the test.
