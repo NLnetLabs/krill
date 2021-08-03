@@ -4,8 +4,8 @@ use tokio::sync::RwLock;
 
 use crate::commons::{
     api::{
-        rrdp::PublishElement, ChildHandle, ChildStats, ChildStatus, ChildrenStats, Entitlements, ErrorResponse, Handle,
-        ParentHandle, ParentStatuses, RepoStatus,
+        rrdp::PublishElement, ChildConnectionStats, ChildHandle, ChildStatus, ChildrenConnectionStats, Entitlements,
+        ErrorResponse, Handle, ParentHandle, ParentStatuses, RepoStatus,
     },
     error::Error,
     eventsourcing::{KeyStoreKey, KeyValueStore},
@@ -25,14 +25,14 @@ struct CaStatus {
 }
 
 impl CaStatus {
-    pub fn get_children_stats(&self) -> ChildrenStats {
+    pub fn get_children_stats(&self) -> ChildrenConnectionStats {
         let children = self
             .children
             .clone()
             .into_iter()
-            .map(|(handle, status)| ChildStats::new(handle, status.into()))
+            .map(|(handle, status)| ChildConnectionStats::new(handle, status.into()))
             .collect();
-        ChildrenStats::new(children)
+        ChildrenConnectionStats::new(children)
     }
 }
 
@@ -155,7 +155,7 @@ impl StatusStore {
             .await
     }
 
-    pub async fn get_children_status(&self, ca: &Handle) -> KrillResult<ChildrenStats> {
+    pub async fn get_children_status(&self, ca: &Handle) -> KrillResult<ChildrenConnectionStats> {
         let _lock = self.lock.read().await;
         let status = self.get_ca_status(ca)?;
 

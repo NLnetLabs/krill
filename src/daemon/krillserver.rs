@@ -24,7 +24,7 @@ use crate::commons::eventsourcing::CommandKey;
 use crate::commons::remote::rfc8183;
 use crate::commons::{
     actor::{Actor, ActorDef},
-    api::ChildrenStats,
+    api::ChildrenConnectionStats,
 };
 use crate::commons::{KrillEmptyResult, KrillResult};
 use crate::constants::*;
@@ -440,7 +440,7 @@ impl KrillServer {
     }
 
     /// Show children stats under the CA.
-    pub async fn ca_children_stats(&self, ca: &Handle) -> KrillResult<ChildrenStats> {
+    pub async fn ca_children_stats(&self, ca: &Handle) -> KrillResult<ChildrenConnectionStats> {
         self.ca_manager.ca_children_stats(ca).await
     }
 }

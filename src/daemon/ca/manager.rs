@@ -22,7 +22,7 @@ use crate::{
             PublishDelta, RcvdCert, RepoStatus, RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest,
             RevocationResponse, RtaName, StoredEffect, UpdateChildRequest,
         },
-        api::{rrdp::PublishElement, ChildrenStats},
+        api::{rrdp::PublishElement, ChildrenConnectionStats},
         crypto::{IdCert, KrillSigner, ProtocolCms, ProtocolCmsBuilder},
         error::Error,
         eventsourcing::{Aggregate, AggregateStore, Command, CommandKey},
@@ -446,7 +446,7 @@ impl CaManager {
     }
 
     /// Show the (connection) stats for children under a CA.
-    pub async fn ca_children_stats(&self, ca: &Handle) -> KrillResult<ChildrenStats> {
+    pub async fn ca_children_stats(&self, ca: &Handle) -> KrillResult<ChildrenConnectionStats> {
         self.status_store.lock().await.get_children_status(ca).await
     }
 

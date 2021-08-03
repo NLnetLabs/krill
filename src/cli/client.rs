@@ -9,8 +9,8 @@ use rpki::uri;
 use crate::cli::options::KrillUserDetails;
 use crate::cli::report::{ApiResponse, ReportError};
 use crate::commons::api::{
-    AllCertAuthIssues, CaRepoDetails, CertAuthIssues, ChildCaInfo, ParentCaContact, ParentStatuses, PublisherDetails,
-    PublisherList, RepoStatus, Token,
+    AllCertAuthIssues, CaRepoDetails, CertAuthIssues, ChildCaInfo, ChildrenConnectionStats, ParentCaContact,
+    ParentStatuses, PublisherDetails, PublisherList, RepoStatus, Token,
 };
 use crate::commons::bgp::BgpAnalysisAdvice;
 use crate::commons::remote::rfc8183;
@@ -257,6 +257,11 @@ impl KrillClient {
                 let uri = format!("api/v1/cas/{}/children/{}", handle, child);
                 delete(&self.server, &self.token, &uri).await?;
                 Ok(ApiResponse::Empty)
+            }
+            CaCommand::ChildConnections(handle) => {
+                let uri = format!("api/v1/cas/{}/children", handle);
+                let stats: ChildrenConnectionStats = get_json(&self.server, &self.token, &uri).await?;
+                Ok(ApiResponse::ChildrenStats(stats))
             }
 
             CaCommand::KeyRollInit(handle) => {

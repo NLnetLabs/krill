@@ -1538,27 +1538,57 @@ impl fmt::Display for ExchangeResult {
     }
 }
 
-//------------ ChildrenStats -------------------------------------------------
+//------------ ChildConnectionStats ------------------------------------------
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ChildrenStats {
-    children: Vec<ChildStats>,
+pub struct ChildrenConnectionStats {
+    children: Vec<ChildConnectionStats>,
 }
 
-impl ChildrenStats {
-    pub fn new(children: Vec<ChildStats>) -> Self {
-        ChildrenStats { children }
+impl ChildrenConnectionStats {
+    pub fn new(children: Vec<ChildConnectionStats>) -> Self {
+        ChildrenConnectionStats { children }
+    }
+}
+
+impl fmt::Display for ChildrenConnectionStats {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if !self.children.is_empty() {
+            writeln!(f, "handle, user_agent, last_exchange, result")?;
+            for child in &self.children {
+                match &child.last_exchange {
+                    None => {
+                        writeln!(f, "{}, n/a, never, n/a", child.handle)?;
+                    }
+                    Some(exchange) => {
+                        let agent = exchange.user_agent.as_deref().unwrap_or("");
+                        let time = Time::new(Utc.timestamp(exchange.timestamp, 0));
+
+                        writeln!(
+                            f,
+                            "{},{},{},{}",
+                            child.handle,
+                            agent,
+                            time.to_rfc3339(),
+                            exchange.result
+                        )?;
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ChildStats {
+pub struct ChildConnectionStats {
     handle: ChildHandle,
     last_exchange: Option<ChildExchange>,
 }
 
-impl ChildStats {
+impl ChildConnectionStats {
     pub fn new(handle: ChildHandle, last_exchange: Option<ChildExchange>) -> Self {
-        ChildStats { handle, last_exchange }
+        ChildConnectionStats { handle, last_exchange }
     }
 }
 
