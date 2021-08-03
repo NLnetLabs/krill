@@ -27,22 +27,6 @@
 //   - https://stackoverflow.com/questions/49384120/resizeobserver-loop-limit-exceeded/63519375#63519375
 //   - https://github.com/WICG/resize-observer/issues/38
 
-// Disable browser caching otherwise cy.intercept() calls can mysteriously fail to satisfy a subsequent
-// call to cy.wait(). See: https://github.com/cypress-io/cypress/issues/14459.
-// TODO: Could this be done with before() instead of beforeEach() ?
-beforeEach(() => {
-    if (Cypress.browser.family === 'chromium') {
-        Cypress.automation('remote:debugger:protocol', {
-            command: 'Network.enable',
-            params: {}
-        });
-        Cypress.automation('remote:debugger:protocol', {
-            command: 'Network.setCacheDisabled',
-            params: { cacheDisabled: true }
-        });
-    }
-}
-
 // Define a custom uncaught exception handling policy for Cypress.
 // Returning false prevents Cypress from failing the test.
 Cypress.on('uncaught:exception', (err, runnable, promise) => {
