@@ -1258,8 +1258,6 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
                     &mut enabled,
                 ) {
                     error!("{}", err);
-                } else {
-                    info!("Completed request.");
                 }
             }
             Err(err) => {
