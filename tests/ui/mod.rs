@@ -173,4 +173,3 @@ async fn do_run_krill_ui_test(test_name: &str) -> bool {
     // Run the specified Cypress UI test suite and wait for it to finish
     CypressRunner::run(test_name).await.success()
 }
-
