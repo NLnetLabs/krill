@@ -58,11 +58,11 @@ const create_ca_settings_403 = [
 
 describe('OpenID Connect provider with RP-Initiated logout', () => {
   it('The correct login form is shown', () => {
-    cy.intercept({ method: 'GET', path: '/api/v1/authorized'}).as('isAuthorized')
-    cy.intercept({ method: 'GET', path: '/auth/login'}).as('getLoginURL')
-    cy.intercept({ method: 'GET', url: /^https:\/\/localhost:1818\/authorize.+/}).as('oidcLoginForm')
+    // cy.intercept({ method: 'GET', path: '/api/v1/authorized'}).as('isAuthorized')
+    // cy.intercept({ method: 'GET', path: '/auth/login'}).as('getLoginURL')
+    // cy.intercept({ method: 'GET', url: /^https:\/\/localhost:1818\/authorize.+/}).as('oidcLoginForm')
     cy.visit('/')
-    cy.wait(['@isAuthorized', '@getLoginURL', '@oidcLoginForm'])
+    // cy.wait(['@isAuthorized', '@getLoginURL', '@oidcLoginForm'])
 
     // make sure we haven't been redirected away from Krill (as would be the
     // case if an OpenID Connect login form were shown)
@@ -194,10 +194,10 @@ describe('OpenID Connect provider with RP-Initiated logout', () => {
 
     // verify that if we reload the Krill UI we are shown the OpenID Connect
     // provider login page
-    cy.intercept({ method: 'GET', path: '/auth/login'}).as('getLoginURL')
-    cy.intercept({ method: 'GET', url: /^https:\/\/localhost:1818\/authorize.+/}).as('oidcLoginForm')
+    // cy.intercept({ method: 'GET', path: '/auth/login'}).as('getLoginURL')
+    // cy.intercept({ method: 'GET', url: /^https:\/\/localhost:1818\/authorize.+/}).as('oidcLoginForm')
     cy.visit('/')
-    cy.wait(['@getLoginURL', '@oidcLoginForm'])
+    // cy.wait(['@getLoginURL', '@oidcLoginForm'])
     cy.url().should('not.include', Cypress.config('baseUrl'))
     cy.contains('Mock OpenID Connect login form')
   })
