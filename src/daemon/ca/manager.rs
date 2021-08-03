@@ -1453,7 +1453,7 @@ impl CaManager {
 
         let uri = service_uri.to_string();
 
-        let res = httpclient::post_binary(&uri, &signed_msg, content_type)
+        let res = httpclient::post_binary_with_full_ua(&uri, &signed_msg, content_type)
             .await
             .map_err(Error::HttpClientError)?;
 

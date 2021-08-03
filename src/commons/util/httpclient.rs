@@ -12,7 +12,7 @@ use serde::Serialize;
 
 use crate::commons::api::{ErrorResponse, Token};
 use crate::commons::util::file;
-use crate::constants::{HTTP_CLIENT_TIMEOUT_SECS, KRILL_CLI_API_ENV, KRILL_HTTPS_ROOT_CERTS_ENV};
+use crate::constants::{HTTP_CLIENT_TIMEOUT_SECS, KRILL_CLI_API_ENV, KRILL_HTTPS_ROOT_CERTS_ENV, KRILL_VERSION};
 
 const JSON_CONTENT: &str = "application/json";
 
@@ -184,17 +184,22 @@ pub async fn post_empty(uri: &str, token: Option<&Token>) -> Result<(), Error> {
     }
 }
 
-/// Posts binary data, and expects a binary response.
+/// Posts binary data, and expects a binary response. Includes the full krill version
+/// as the user agent. Intended for sending RFC 6492 (provisioning) and 8181 (publication)
+/// to the trusted parent or publication server.
 ///
 /// Note: Bytes may be empty if the post was successful, but the response was
 /// empty.
-pub async fn post_binary(uri: &str, data: &Bytes, content_type: &str) -> Result<Bytes, Error> {
+pub async fn post_binary_with_full_ua(uri: &str, data: &Bytes, content_type: &str) -> Result<Bytes, Error> {
     let body = data.to_vec();
     if env::var(KRILL_CLI_API_ENV).is_ok() {
         report_post_and_exit(uri, None, None, PostBody::Bytes(&body));
     }
 
-    let headers = headers(Some(content_type), None)?;
+    let mut headers = HeaderMap::new();
+    headers.insert(USER_AGENT, HeaderValue::from_str(&format!("krill/{}", KRILL_VERSION))?);
+    headers.insert(CONTENT_TYPE, HeaderValue::from_str(content_type)?);
+
     let res = client(uri).await?.post(uri).headers(headers).body(body).send().await?;
 
     match res.status() {
