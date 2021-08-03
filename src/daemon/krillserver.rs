@@ -11,7 +11,6 @@ use rpki::{
     uri,
 };
 
-use crate::commons::actor::{Actor, ActorDef};
 use crate::commons::api::{
     AddChildRequest, AllCertAuthIssues, CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthInit, CertAuthIssues,
     CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Handle, ListReply,
@@ -23,6 +22,10 @@ use crate::commons::bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion}
 use crate::commons::crypto::KrillSigner;
 use crate::commons::eventsourcing::CommandKey;
 use crate::commons::remote::rfc8183;
+use crate::commons::{
+    actor::{Actor, ActorDef},
+    api::ChildrenStats,
+};
 use crate::commons::{KrillEmptyResult, KrillResult};
 use crate::constants::*;
 #[cfg(feature = "multi-user")]
@@ -430,10 +433,15 @@ impl KrillServer {
         Ok(())
     }
 
-    /// Show details for a child under the TA.
-    pub async fn ca_child_show(&self, parent: &ParentHandle, child: &ChildHandle) -> KrillResult<ChildCaInfo> {
-        let child = self.ca_manager.ca_show_child(parent, child).await?;
+    /// Show details for a child under the CA.
+    pub async fn ca_child_show(&self, ca: &Handle, child: &ChildHandle) -> KrillResult<ChildCaInfo> {
+        let child = self.ca_manager.ca_show_child(ca, child).await?;
         Ok(child)
+    }
+
+    /// Show children stats under the CA.
+    pub async fn ca_children_stats(&self, ca: &Handle) -> KrillResult<ChildrenStats> {
+        self.ca_manager.ca_children_stats(ca).await
     }
 }
 

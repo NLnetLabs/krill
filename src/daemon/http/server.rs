@@ -1101,6 +1101,15 @@ async fn api_ca_child_show(req: Request, ca: Handle, child: ChildHandle) -> Rout
     )
 }
 
+async fn api_ca_children_stats(req: Request, ca: Handle) -> RoutingResult {
+    aa!(
+        req,
+        Permission::CA_READ,
+        ca.clone(),
+        render_json_res(req.state().ca_children_stats(&ca).await)
+    )
+}
+
 async fn api_ca_parent_contact(req: Request, ca: Handle, child: ChildHandle) -> RoutingResult {
     aa!(
         req,
@@ -1241,6 +1250,7 @@ async fn api_ca_children(req: Request, path: &mut RequestPath, ca: Handle) -> Ro
         },
         None => match *req.method() {
             Method::POST => api_ca_add_child(req, ca).await,
+            Method::GET => api_ca_children_stats(req, ca).await,
             _ => render_unknown_method(),
         },
     }

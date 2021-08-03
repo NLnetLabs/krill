@@ -1538,6 +1538,30 @@ impl fmt::Display for ExchangeResult {
     }
 }
 
+//------------ ChildrenStats -------------------------------------------------
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ChildrenStats {
+    children: Vec<ChildStats>,
+}
+
+impl ChildrenStats {
+    pub fn new(children: Vec<ChildStats>) -> Self {
+        ChildrenStats { children }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ChildStats {
+    handle: ChildHandle,
+    last_exchange: Option<ChildExchange>,
+}
+
+impl ChildStats {
+    pub fn new(handle: ChildHandle, last_exchange: Option<ChildExchange>) -> Self {
+        ChildStats { handle, last_exchange }
+    }
+}
+
 //------------ ChildStatus ---------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1566,6 +1590,12 @@ impl ChildStatus {
 impl Default for ChildStatus {
     fn default() -> Self {
         ChildStatus { last_exchange: None }
+    }
+}
+
+impl From<ChildStatus> for Option<ChildExchange> {
+    fn from(status: ChildStatus) -> Self {
+        status.last_exchange
     }
 }
 

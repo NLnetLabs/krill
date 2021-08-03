@@ -4,8 +4,8 @@ use tokio::sync::RwLock;
 
 use crate::commons::{
     api::{
-        rrdp::PublishElement, ChildHandle, ChildStatus, Entitlements, ErrorResponse, Handle, ParentHandle,
-        ParentStatuses, RepoStatus,
+        rrdp::PublishElement, ChildHandle, ChildStats, ChildStatus, ChildrenStats, Entitlements, ErrorResponse, Handle,
+        ParentHandle, ParentStatuses, RepoStatus,
     },
     error::Error,
     eventsourcing::{KeyStoreKey, KeyValueStore},
@@ -22,6 +22,18 @@ struct CaStatus {
     parents: ParentStatuses,
     #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
     children: HashMap<ChildHandle, ChildStatus>,
+}
+
+impl CaStatus {
+    pub fn get_children_stats(&self) -> ChildrenStats {
+        let children = self
+            .children
+            .clone()
+            .into_iter()
+            .map(|(handle, status)| ChildStats::new(handle, status.into()))
+            .collect();
+        ChildrenStats::new(children)
+    }
 }
 
 impl Default for CaStatus {
@@ -143,7 +155,12 @@ impl StatusStore {
             .await
     }
 
-    pub async fn remove_child
+    pub async fn get_children_status(&self, ca: &Handle) -> KrillResult<ChildrenStats> {
+        let _lock = self.lock.read().await;
+        let status = self.get_ca_status(ca)?;
+
+        Ok(status.get_children_stats())
+    }
 
     pub async fn set_status_repo_failure(&self, ca: &Handle, uri: ServiceUri, error: &Error) -> KrillResult<()> {
         let error_response = Self::error_to_error_res(&error);

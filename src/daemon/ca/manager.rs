@@ -15,7 +15,6 @@ use rpki::uri;
 use crate::{
     commons::{
         actor::Actor,
-        api::rrdp::PublishElement,
         api::{
             self, AddChildRequest, Base64, CaCommandDetails, CaCommandResult, CertAuthList, CertAuthSummary,
             ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Entitlements, Handle, IssuanceRequest,
@@ -23,6 +22,7 @@ use crate::{
             PublishDelta, RcvdCert, RepoStatus, RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest,
             RevocationResponse, RtaName, StoredEffect, UpdateChildRequest,
         },
+        api::{rrdp::PublishElement, ChildrenStats},
         crypto::{IdCert, KrillSigner, ProtocolCms, ProtocolCmsBuilder},
         error::Error,
         eventsourcing::{Aggregate, AggregateStore, Command, CommandKey},
@@ -443,6 +443,11 @@ impl CaManager {
         trace!("Finding details for CA: {} under parent: {}", child, ca);
         let ca = self.get_ca(ca).await?;
         ca.get_child(child).map(|details| details.clone().into())
+    }
+
+    /// Show the (connection) stats for children under a CA.
+    pub async fn ca_children_stats(&self, ca: &Handle) -> KrillResult<ChildrenStats> {
+        self.status_store.lock().await.get_children_status(ca).await
     }
 
     /// Show a contact for a child.
