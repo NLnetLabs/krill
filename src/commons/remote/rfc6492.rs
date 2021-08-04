@@ -729,6 +729,10 @@ impl NotPerformedResponse {
         }
     }
 
+    pub fn status(&self) -> u64 {
+        self.status
+    }
+
     /// Creates a response for a status value defined in RFC6492. Also adds
     /// the description defined in the RFC.
     pub fn from_code(code: &str) -> Result<Self, Error> {

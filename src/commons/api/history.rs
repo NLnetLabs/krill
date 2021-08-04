@@ -15,7 +15,7 @@ use crate::{
         eventsourcing::{CommandKey, CommandKeyError, StoredCommand, WithStorableDetails},
         remote::rfc8183::ServiceUri,
     },
-    daemon::ca,
+    daemon::ca::{self, DropReason},
 };
 
 //------------ CaCommandDetails ----------------------------------------------
@@ -448,6 +448,10 @@ pub enum StorableCaCommand {
         resource_class_name: ResourceClassName,
         resources: ResourceSet,
     },
+    DropResourceClass {
+        resource_class_name: ResourceClassName,
+        reason: DropReason,
+    },
     KeyRollInitiate {
         older_than_seconds: i64,
     },
@@ -537,6 +541,12 @@ impl WithStorableDetails for StorableCaCommand {
             } => CommandSummary::new("cmd-ca-rcn-receive", &self)
                 .with_rcn(resource_class_name)
                 .with_resources(resources),
+            StorableCaCommand::DropResourceClass {
+                resource_class_name,
+                reason,
+            } => CommandSummary::new("cmd-ca-rc-drop", &self)
+                .with_rcn(resource_class_name)
+                .with_arg("reason", reason),
             StorableCaCommand::KeyRollInitiate { older_than_seconds } => {
                 CommandSummary::new("cmd-ca-keyroll-init", &self).with_seconds(*older_than_seconds)
             }
@@ -639,6 +649,14 @@ impl fmt::Display for StorableCaCommand {
                 "Update received cert in RC '{}', with resources '{}'",
                 resource_class_name,
                 resources.summary()
+            ),
+            StorableCaCommand::DropResourceClass {
+                resource_class_name,
+                reason,
+            } => write!(
+                f,
+                "Removing resource class '{}' because of reason: {}",
+                resource_class_name, reason
             ),
 
             // ------------------------------------------------------------

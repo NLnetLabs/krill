@@ -167,6 +167,7 @@ pub enum Error {
     HttpsSetup(String),
     HttpClientError(httpclient::Error),
     ConfigError(String),
+
     //-----------------------------------------------------------------
     // General API Client Issues
     //-----------------------------------------------------------------
@@ -235,6 +236,7 @@ pub enum Error {
     CaParentResponseInvalidXml(Handle, String),
     CaParentResponseWrongXml(Handle),
     CaParentAddNotResponsive(Handle, ParentHandle),
+    CaParentSyncError(Handle, ParentHandle, ResourceClassName, String),
 
     //-----------------------------------------------------------------
     // RFC6492 (requesting resources)
@@ -296,6 +298,7 @@ pub enum Error {
     // If we really don't know any more..
     //-----------------------------------------------------------------
     Custom(String),
+    Multiple(Vec<Error>),
 }
 
 impl fmt::Display for Error {
@@ -383,6 +386,17 @@ impl fmt::Display for Error {
             Error::CaParentResponseInvalidXml(ca, e) => write!(f, "CA '{}' got invalid parent response xml: {}", ca, e),
             Error::CaParentResponseWrongXml(ca) => write!(f, "CA '{}' got repository response when adding parent", ca),
             Error::CaParentAddNotResponsive(ca, parent) => write!(f, "CA '{}' cannot get response from parent '{}'. Is the 'service_uri' in the XML reachable? Note that when upgrading Krill you should re-use existing configuration and data. For a fresh re-install of Krill you will need to send XML to all other parties again: parent(s), children, and repository",        ca, parent),
+            Error::CaParentSyncError(ca, parent, rcn, error_msg) => {
+                write!(
+                    f,
+                    "CA '{}' could not sync with parent '{}', for resource class '{}', error: {}",
+                    ca,
+                    parent,
+                    rcn,
+                    error_msg
+                )
+            }
+
 
             //-----------------------------------------------------------------
             // RFC6492 (requesting resources)
@@ -444,7 +458,12 @@ impl fmt::Display for Error {
             //-----------------------------------------------------------------
             // If we really don't know any more..
             //-----------------------------------------------------------------
-            Error::Custom(s) => s.fmt(f)
+            Error::Custom(s) => s.fmt(f),
+
+            Error::Multiple(errors) => {
+                let error_strings: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
+                write!(f, "Multiple errors: {}", error_strings.join(", "))
+            }
         }
     }
 }
@@ -716,6 +735,11 @@ impl Error {
                 .with_ca(ca)
                 .with_parent(parent),
 
+            Error::CaParentSyncError(ca, parent, rcn, _errors) => ErrorResponse::new("ca-parent-sync", &self)
+                .with_ca(ca)
+                .with_parent(parent)
+                .with_resource_class(rcn),
+
             //-----------------------------------------------------------------
             // RFC6492 (requesting resources, not on JSON api)
             //-----------------------------------------------------------------
@@ -796,6 +820,7 @@ impl Error {
             // If we really don't know any more..
             //-----------------------------------------------------------------
             Error::Custom(_msg) => ErrorResponse::new("general-error", &self),
+            Error::Multiple(_errors) => ErrorResponse::new("multiple-errors", &self),
         }
     }
 

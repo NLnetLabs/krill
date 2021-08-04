@@ -28,6 +28,8 @@ pub type StoredCaCommand = StoredCommand<StorableCaCommand>;
 
 pub type Cmd = eventsourcing::SentCommand<CmdDet>;
 
+pub type DropReason = String;
+
 //------------ CommandDetails ----------------------------------------------
 
 #[derive(Clone, Debug)]
@@ -87,6 +89,10 @@ pub enum CmdDet {
 
     // Process a new certificate received from a parent.
     UpdateRcvdCert(ResourceClassName, RcvdCert, Arc<Config>, Arc<KrillSigner>),
+
+    // Drop a resource class under a parent because of issues
+    // obtaining a certificate for it.
+    DropResourceClass(ResourceClassName, DropReason, Arc<KrillSigner>),
 
     // ------------------------------------------------------------
     // Key rolls
@@ -226,6 +232,12 @@ impl From<CmdDet> for StorableCaCommand {
                 resource_class_name,
                 resources: rcvd_cert.resources().clone(),
             },
+            CmdDet::DropResourceClass(resource_class_name, reason, _) => {
+                StorableCaCommand::DropResourceClass {
+                    resource_class_name,
+                    reason
+                }
+            }
 
             // ------------------------------------------------------------
             // Key rolls
@@ -379,6 +391,21 @@ impl CmdDet {
             handle,
             None,
             CmdDet::UpdateRcvdCert(class_name, cert, config, signer),
+            actor,
+        )
+    }
+
+    pub fn drop_resource_class(
+        handle: &Handle,
+        class_name: ResourceClassName,
+        reason: DropReason,
+        signer: Arc<KrillSigner>,
+        actor: &Actor,
+    ) -> Cmd {
+        eventsourcing::SentCommand::new(
+            handle, 
+            None, 
+            CmdDet::DropResourceClass(class_name, reason, signer), 
             actor,
         )
     }
