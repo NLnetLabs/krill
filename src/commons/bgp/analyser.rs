@@ -62,15 +62,31 @@ impl BgpAnalyser {
         }
     }
 
-    pub async fn analyse(&self, roas: &[RoaDefinition], scope: &ResourceSet) -> BgpAnalysisReport {
+    pub async fn analyse(
+        &self,
+        roas: &[RoaDefinition],
+        resources_held: &ResourceSet,
+        limited_scope: Option<ResourceSet>,
+    ) -> BgpAnalysisReport {
         let seen = self.seen.read().await;
         let mut entries = vec![];
 
-        let roas: Vec<RoaDefinition> = roas
+        let roas: Vec<RoaDefinition> = match &limited_scope {
+            None => roas.to_vec(),
+            Some(limit) => roas
+                .iter()
+                .filter(|roa| limit.contains_roa_address(&roa.as_roa_ip_address()))
+                .cloned()
+                .collect(),
+        };
+
+        let (roas, roas_not_held): (Vec<RoaDefinition>, _) = roas
             .iter()
-            .filter(|roa| scope.contains_roa_address(&roa.as_roa_ip_address()))
-            .cloned()
-            .collect();
+            .partition(|roa| resources_held.contains_roa_address(&roa.as_roa_ip_address()));
+
+        for not_held in roas_not_held {
+            entries.push(BgpAnalysisEntry::roa_not_held(not_held));
+        }
 
         if seen.last_checked().is_none() {
             // nothing to analyse, just push all ROAs as 'no announcement info'
@@ -78,7 +94,12 @@ impl BgpAnalyser {
                 entries.push(BgpAnalysisEntry::roa_no_announcement_info(roa));
             }
         } else {
-            let (v4_scope, v6_scope) = IpRange::for_resource_set(&scope);
+            let scope = match &limited_scope {
+                Some(limit) => limit,
+                None => resources_held,
+            };
+
+            let (v4_scope, v6_scope) = IpRange::for_resource_set(scope);
 
             let mut scoped_announcements = vec![];
 
@@ -218,11 +239,16 @@ impl BgpAnalyser {
         BgpAnalysisReport::new(entries)
     }
 
-    pub async fn suggest(&self, roas: &[RoaDefinition], scope: &ResourceSet) -> BgpAnalysisSuggestion {
+    pub async fn suggest(
+        &self,
+        roas: &[RoaDefinition],
+        resources_held: &ResourceSet,
+        limited_scope: Option<ResourceSet>,
+    ) -> BgpAnalysisSuggestion {
         let mut suggestion = BgpAnalysisSuggestion::default();
 
         // perform analysis
-        let entries = self.analyse(roas, scope).await.into_entries();
+        let entries = self.analyse(roas, resources_held, limited_scope).await.into_entries();
         for entry in &entries {
             match entry.state() {
                 BgpAnalysisState::RoaUnseen => suggestion.add_stale(*entry.definition()),
@@ -243,6 +269,7 @@ impl BgpAnalyser {
                 BgpAnalysisState::RoaSeen | BgpAnalysisState::RoaAs0 => suggestion.add_keep(*entry.definition()),
                 BgpAnalysisState::RoaDisallowing => suggestion.add_disallowing(*entry.definition()),
                 BgpAnalysisState::RoaRedundant => suggestion.add_redundant(*entry.definition()),
+                BgpAnalysisState::RoaNotHeld => suggestion.add_not_held(*entry.definition()),
                 BgpAnalysisState::RoaAs0Redundant => suggestion.add_as0_redundant(*entry.definition()),
                 BgpAnalysisState::AnnouncementValid => {}
                 BgpAnalysisState::AnnouncementNotFound => suggestion.add_not_found(entry.announcement()),
@@ -335,11 +362,14 @@ mod tests {
         let roa_as0 = definition("10.0.4.0/24 => 0");
         let roa_unseen_completely = definition("10.0.3.0/24 => 64497");
 
+        let roa_not_held = definition("10.1.0.0/24 => 64497");
+
         let roa_authorizing_single = definition("192.168.1.0/24 => 64497");
         let roa_unseen_redundant = definition("192.168.1.0/24 => 64498");
         let roa_as0_redundant = definition("192.168.1.0/24 => 0");
 
-        let resources = ResourceSet::from_strs("", "10.0.0.0/8, 192.168.0.0/16", "").unwrap();
+        let resources_held = ResourceSet::from_strs("", "10.0.0.0/16, 192.168.0.0/16", "").unwrap();
+        let limit = None;
 
         let analyser = BgpAnalyser::with_test_announcements();
 
@@ -349,11 +379,13 @@ mod tests {
                     roa_too_permissive,
                     roa_as0,
                     roa_unseen_completely,
+                    roa_not_held,
                     roa_authorizing_single,
                     roa_unseen_redundant,
                     roa_as0_redundant,
                 ],
-                &resources,
+                &resources_held,
+                limit,
             )
             .await;
 
@@ -368,8 +400,8 @@ mod tests {
         let roa = definition("10.0.0.0/22 => 0");
         let analyser = BgpAnalyser::with_test_announcements();
 
-        let resources = ResourceSet::from_strs("", "10.0.0.0/8, 192.168.0.0/16", "").unwrap();
-        let report = analyser.analyse(&[roa], &resources).await;
+        let resources_held = ResourceSet::from_strs("", "10.0.0.0/8, 192.168.0.0/16", "").unwrap();
+        let report = analyser.analyse(&[roa], &resources_held, None).await;
 
         assert!(!report.contains_invalids());
 
@@ -385,7 +417,7 @@ mod tests {
 
         assert_eq!(disallowed, expected);
 
-        let suggestion = analyser.suggest(&[roa], &resources).await;
+        let suggestion = analyser.suggest(&[roa], &resources_held, None).await;
         let updates = RoaDefinitionUpdates::from(suggestion);
 
         let added = updates.added();
@@ -400,10 +432,10 @@ mod tests {
         let roa2 = definition("10.0.3.0/24 => 64497");
         let roa3 = definition("10.0.4.0/24 => 0");
 
-        let resources = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
+        let resources_held = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
 
         let analyser = BgpAnalyser::new(false, "", "");
-        let table = analyser.analyse(&[roa1, roa2, roa3], &resources).await;
+        let table = analyser.analyse(&[roa1, roa2, roa3], &resources_held, None).await;
         let table_entries = table.entries();
         assert_eq!(3, table_entries.len());
 
@@ -428,7 +460,8 @@ mod tests {
 
         let analyser = BgpAnalyser::with_test_announcements();
 
-        let scope = ResourceSet::from_strs("", "10.0.0.0/22", "").unwrap();
+        let resources_held = ResourceSet::from_strs("", "10.0.0.0/8, 192.168.0.0/16", "").unwrap();
+        let limit = Some(ResourceSet::from_strs("", "10.0.0.0/22", "").unwrap());
         let suggestion_resource_subset = analyser
             .suggest(
                 &[
@@ -440,7 +473,8 @@ mod tests {
                     roa_unseen_redundant,
                     roa_as0_redundant,
                 ],
-                &scope,
+                &resources_held,
+                limit,
             )
             .await;
 
@@ -450,7 +484,6 @@ mod tests {
         .unwrap();
         assert_eq!(suggestion_resource_subset, expected);
 
-        let scope = ResourceSet::from_strs("", "10.0.0.0/8,192.168.0.0/16", "").unwrap();
         let suggestion_all_roas_in_scope = analyser
             .suggest(
                 &[
@@ -462,7 +495,8 @@ mod tests {
                     roa_unseen_redundant,
                     roa_as0_redundant,
                 ],
-                &scope,
+                &resources_held,
+                None,
             )
             .await;
 
