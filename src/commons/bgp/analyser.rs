@@ -66,12 +66,12 @@ impl BgpAnalyser {
         &self,
         roas: &[RoaDefinition],
         resources_held: &ResourceSet,
-        limit: Option<ResourceSet>,
+        limited_scope: Option<ResourceSet>,
     ) -> BgpAnalysisReport {
         let seen = self.seen.read().await;
         let mut entries = vec![];
 
-        let roas: Vec<RoaDefinition> = match &limit {
+        let roas: Vec<RoaDefinition> = match &limited_scope {
             None => roas.to_vec(),
             Some(limit) => roas
                 .iter()
@@ -94,7 +94,7 @@ impl BgpAnalyser {
                 entries.push(BgpAnalysisEntry::roa_no_announcement_info(roa));
             }
         } else {
-            let scope = match &limit {
+            let scope = match &limited_scope {
                 Some(limit) => limit,
                 None => resources_held,
             };
@@ -243,12 +243,12 @@ impl BgpAnalyser {
         &self,
         roas: &[RoaDefinition],
         resources_held: &ResourceSet,
-        limit: Option<ResourceSet>,
+        limited_scope: Option<ResourceSet>,
     ) -> BgpAnalysisSuggestion {
         let mut suggestion = BgpAnalysisSuggestion::default();
 
         // perform analysis
-        let entries = self.analyse(roas, resources_held, limit).await.into_entries();
+        let entries = self.analyse(roas, resources_held, limited_scope).await.into_entries();
         for entry in &entries {
             match entry.state() {
                 BgpAnalysisState::RoaUnseen => suggestion.add_stale(*entry.definition()),
