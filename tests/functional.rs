@@ -497,11 +497,11 @@ async fn functional() {
     //------------------------------------------------------------------------------------------
     // Test managing ROAs
     //------------------------------------------------------------------------------------------
-    let route_rc0_1 = RoaDefinition::from_str("10.0.0.0/16-16 => 64496").unwrap();
-    let route_rc0_2 = RoaDefinition::from_str("10.0.0.0/16-16 => 64497").unwrap();
-    let route_rc0_3 = RoaDefinition::from_str("10.0.0.0/24-24 => 64496").unwrap();
-    let route_rc0_4 = RoaDefinition::from_str("10.0.0.0/24-24 => 64497").unwrap();
-    let route_rc1_1 = RoaDefinition::from_str("10.1.0.0/24-24 => 64496").unwrap();
+    let route_resource_set_10_0_0_0_def_1 = RoaDefinition::from_str("10.0.0.0/16-16 => 64496").unwrap();
+    let route_resource_set_10_0_0_0_def_2 = RoaDefinition::from_str("10.0.0.0/16-16 => 64497").unwrap();
+    let route_resource_set_10_0_0_0_def_3 = RoaDefinition::from_str("10.0.0.0/24-24 => 64496").unwrap();
+    let route_resource_set_10_0_0_0_def_4 = RoaDefinition::from_str("10.0.0.0/24-24 => 64497").unwrap();
+    let route_resource_set_10_1_0_0_def_1 = RoaDefinition::from_str("10.1.0.0/24-24 => 64496").unwrap();
 
     // short hand to expect ROAs under CA4
     async fn expect_roas_for_ca4(test_msg: &str, roas: &[RoaDefinition]) {
@@ -540,13 +540,17 @@ async fn functional() {
         info("##################################################################");
         info("");
         let mut updates = RoaDefinitionUpdates::empty();
-        updates.add(route_rc0_1);
-        updates.add(route_rc0_2);
-        updates.add(route_rc1_1);
+        updates.add(route_resource_set_10_0_0_0_def_1);
+        updates.add(route_resource_set_10_0_0_0_def_2);
+        updates.add(route_resource_set_10_1_0_0_def_1);
         ca_route_authorizations_update(&ca4, updates).await;
         expect_roas_for_ca4(
             "CA4 should now have 2 roas in rc0 and 1 in rc1",
-            &[route_rc0_1, route_rc0_2, route_rc1_1],
+            &[
+                route_resource_set_10_0_0_0_def_1,
+                route_resource_set_10_0_0_0_def_2,
+                route_resource_set_10_1_0_0_def_1,
+            ],
         )
         .await;
     }
@@ -560,8 +564,8 @@ async fn functional() {
         info("##################################################################");
         info("");
         let mut updates = RoaDefinitionUpdates::empty();
-        updates.add(route_rc0_3);
-        updates.add(route_rc0_4);
+        updates.add(route_resource_set_10_0_0_0_def_3);
+        updates.add(route_resource_set_10_0_0_0_def_4);
         ca_route_authorizations_update(&ca4, updates).await;
 
         // expect MFT and CRL for RC0 and RC1
@@ -573,7 +577,7 @@ async fn functional() {
         expected_files.push("AS64497.roa".to_string());
 
         // and the roa for rc1
-        expected_files.push(ObjectName::from(&route_rc1_1).to_string());
+        expected_files.push(ObjectName::from(&route_resource_set_10_1_0_0_def_1).to_string());
 
         assert!(will_publish("CA4 should now aggregate ROAs", &ca4, &expected_files).await);
     }
@@ -587,12 +591,16 @@ async fn functional() {
         info("##################################################################");
         info("");
         let mut updates = RoaDefinitionUpdates::empty();
-        updates.remove(route_rc0_2);
-        updates.remove(route_rc0_3);
-        updates.remove(route_rc0_4);
+        updates.remove(route_resource_set_10_0_0_0_def_2);
+        updates.remove(route_resource_set_10_0_0_0_def_3);
+        updates.remove(route_resource_set_10_0_0_0_def_4);
         ca_route_authorizations_update(&ca4, updates).await;
 
-        expect_roas_for_ca4("CA4 should now de-aggregate ROAS", &[route_rc0_1, route_rc1_1]).await;
+        expect_roas_for_ca4(
+            "CA4 should now de-aggregate ROAS",
+            &[route_resource_set_10_0_0_0_def_1, route_resource_set_10_1_0_0_def_1],
+        )
+        .await;
     }
 
     //------------------------------------------------------------------------------------------
@@ -617,7 +625,7 @@ async fn functional() {
 
         expect_roas_for_ca4(
             "CA4 resources are shrunk and we expect only one remaining roa",
-            &[route_rc1_1],
+            &[route_resource_set_10_1_0_0_def_1],
         )
         .await;
     }
@@ -641,7 +649,7 @@ async fn functional() {
         // Expect that the ROA is re-added now that resources are back.
         expect_roas_for_ca4(
             "CA4 resources have been extended again, and we expect two roas",
-            &[route_rc0_1, route_rc1_1],
+            &[route_resource_set_10_0_0_0_def_1, route_resource_set_10_1_0_0_def_1],
         )
         .await;
     }
@@ -736,7 +744,7 @@ async fn functional() {
         // Expect that the ROAs are published again when parent and resources are back.
         expect_roas_for_ca4_re_added(
             "CA4 resources have been extended again, and we expect two roas",
-            &[route_rc0_1, route_rc1_1],
+            &[route_resource_set_10_0_0_0_def_1, route_resource_set_10_1_0_0_def_1],
         )
         .await;
     }
