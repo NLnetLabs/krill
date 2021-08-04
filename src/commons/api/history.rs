@@ -6,14 +6,17 @@ use chrono::{DateTime, NaiveDateTime, SecondsFormat, Utc};
 
 use rpki::repository::{crypto::KeyIdentifier, x509::Time};
 
-use crate::{commons::{
+use crate::{
+    commons::{
         api::{
             ArgKey, ArgVal, ChildHandle, Handle, Label, Message, ParentHandle, PublisherHandle, RequestResourceLimit,
             ResourceClassName, ResourceSet, RevocationRequest, RoaDefinitionUpdates, RtaName, StorableParentContact,
         },
         eventsourcing::{CommandKey, CommandKeyError, StoredCommand, WithStorableDetails},
         remote::rfc8183::ServiceUri,
-    }, daemon::ca::{self, DropReason}};
+    },
+    daemon::ca::{self, DropReason},
+};
 
 //------------ CaCommandDetails ----------------------------------------------
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -540,9 +543,10 @@ impl WithStorableDetails for StorableCaCommand {
                 .with_resources(resources),
             StorableCaCommand::DropResourceClass {
                 resource_class_name,
-                ..
+                reason,
             } => CommandSummary::new("cmd-ca-rc-drop", &self)
-                .with_rcn(resource_class_name),
+                .with_rcn(resource_class_name)
+                .with_arg("reason", reason),
             StorableCaCommand::KeyRollInitiate { older_than_seconds } => {
                 CommandSummary::new("cmd-ca-keyroll-init", &self).with_seconds(*older_than_seconds)
             }
@@ -648,12 +652,11 @@ impl fmt::Display for StorableCaCommand {
             ),
             StorableCaCommand::DropResourceClass {
                 resource_class_name,
-                reason
+                reason,
             } => write!(
                 f,
                 "Removing resource class '{}' because of reason: {}",
-                resource_class_name,
-                reason
+                resource_class_name, reason
             ),
 
             // ------------------------------------------------------------
