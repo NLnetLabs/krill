@@ -25,7 +25,7 @@ struct CaStatus {
 }
 
 impl CaStatus {
-    pub fn get_children_stats(&self) -> ChildrenConnectionStats {
+    pub fn get_children_connection_stats(&self) -> ChildrenConnectionStats {
         let children = self
             .children
             .clone()
@@ -155,11 +155,11 @@ impl StatusStore {
             .await
     }
 
-    pub async fn get_children_status(&self, ca: &Handle) -> KrillResult<ChildrenConnectionStats> {
+    pub async fn get_stats_child_connections(&self, ca: &Handle) -> KrillResult<ChildrenConnectionStats> {
         let _lock = self.lock.read().await;
         let status = self.get_ca_status(ca)?;
 
-        Ok(status.get_children_stats())
+        Ok(status.get_children_connection_stats())
     }
 
     pub async fn set_status_repo_failure(&self, ca: &Handle, uri: ServiceUri, error: &Error) -> KrillResult<()> {

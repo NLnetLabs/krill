@@ -446,8 +446,8 @@ impl CaManager {
     }
 
     /// Show the (connection) stats for children under a CA.
-    pub async fn ca_children_stats(&self, ca: &Handle) -> KrillResult<ChildrenConnectionStats> {
-        self.status_store.lock().await.get_children_status(ca).await
+    pub async fn ca_stats_child_connections(&self, ca: &Handle) -> KrillResult<ChildrenConnectionStats> {
+        self.status_store.lock().await.get_stats_child_connections(ca).await
     }
 
     /// Show a contact for a child.

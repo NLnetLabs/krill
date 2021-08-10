@@ -440,8 +440,8 @@ impl KrillServer {
     }
 
     /// Show children stats under the CA.
-    pub async fn ca_children_stats(&self, ca: &Handle) -> KrillResult<ChildrenConnectionStats> {
-        self.ca_manager.ca_children_stats(ca).await
+    pub async fn ca_stats_child_connections(&self, ca: &Handle) -> KrillResult<ChildrenConnectionStats> {
+        self.ca_manager.ca_stats_child_connections(ca).await
     }
 }
 
