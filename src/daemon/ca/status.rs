@@ -202,11 +202,13 @@ impl StatusStore {
         F: FnOnce(&mut ChildStatus),
     {
         self.update_ca_status(ca, |status| {
-            if !status.children.contains_key(child) {
-                status.children.insert(child.clone(), ChildStatus::default());
-            }
-
-            let mut child_status = status.children.get_mut(child).unwrap();
+            let mut child_status = match status.children.get_mut(child) {
+                Some(child_status) => child_status,
+                None => {
+                    status.children.insert(child.clone(), ChildStatus::default());
+                    status.children.get_mut(child).unwrap()
+                }
+            };
             op(&mut child_status)
         })
         .await
