@@ -1558,7 +1558,7 @@ impl fmt::Display for ChildrenConnectionStats {
             for child in &self.children {
                 match &child.last_exchange {
                     None => {
-                        writeln!(f, "{}, n/a, never, n/a", child.handle)?;
+                        writeln!(f, "{},n/a,never,n/a", child.handle)?;
                     }
                     Some(exchange) => {
                         let agent = exchange.user_agent.as_deref().unwrap_or("");

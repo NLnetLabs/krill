@@ -359,6 +359,8 @@ impl Request {
         match self.headers().get(&USER_AGENT) {
             None => None,
             Some(value) => value.to_str().ok().map(|s| {
+                // Note: HeaderValue.to_str() only returns ok in case the value is plain
+                //       ascii so it's safe to treat bytes as characters here.
                 if s.len() > HTTP_USER_AGENT_TRUNCATE {
                     s[..HTTP_USER_AGENT_TRUNCATE].to_string()
                 } else {
