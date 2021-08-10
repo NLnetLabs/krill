@@ -18,8 +18,8 @@ use crate::{
         api::{
             self, AddChildRequest, Base64, CaCommandDetails, CaCommandResult, CertAuthList, CertAuthSummary,
             ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Entitlements, Handle, IssuanceRequest,
-            IssuanceResponse, IssuedCert, ListReply, ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses,
-            PublishDelta, RcvdCert, RepoStatus, RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest,
+            IssuanceResponse, ListReply, ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublishDelta,
+            RcvdCert, RepoStatus, RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest,
             RevocationResponse, RtaName, StoredEffect, UpdateChildRequest,
         },
         api::{rrdp::PublishElement, ChildrenConnectionStats},
@@ -446,8 +446,8 @@ impl CaManager {
     }
 
     /// Show the (connection) stats for children under a CA.
-    pub async fn ca_children_stats(&self, ca: &Handle) -> KrillResult<ChildrenConnectionStats> {
-        self.status_store.lock().await.get_children_status(ca).await
+    pub async fn ca_stats_child_connections(&self, ca: &Handle) -> KrillResult<ChildrenConnectionStats> {
+        self.status_store.lock().await.get_stats_child_connections(ca).await
     }
 
     /// Show a contact for a child.
@@ -896,12 +896,30 @@ impl CaManager {
                 let revoke = rfc6492::Message::revoke(sender, recipient, req.clone());
 
                 let response = self
-                    .send_rfc6492_and_validate_response(signing_key, parent_res, revoke.into_bytes(), Some(cms_logger))
+                    .send_rfc6492_and_validate_response(signing_key, parent_res, revoke.into_bytes(), Some(&cms_logger))
                     .await?;
 
                 match response {
                     rfc6492::Res::Revoke(revoke_response) => revocations.push(revoke_response),
-                    rfc6492::Res::NotPerformed(e) => return Err(Error::Rfc6492NotPerformed(e)),
+                    rfc6492::Res::NotPerformed(e) => {
+                        // If we get one of the following responses:
+                        //    1301         revoke - no such resource class
+                        //    1302         revoke - no such key
+                        //
+                        // Then we can consider this revocation redundant from the parent side, so just add it
+                        // as revoked to this CA and move on. While this may be unexpected this is unlikely to
+                        // be a problem. If we would keep insisting that the parent revokes a key they already
+                        // revoked, then we can end up in a stuck loop.
+                        //
+                        // More importantly we should re-sync things if we get 12** errors to certificate sign
+                        // requests, but that is done in another function.
+                        if e.status() == 1301 || e.status() == 1302 {
+                            let revoke_response = (&req).into();
+                            revocations.push(revoke_response)
+                        } else {
+                            return Err(Error::Rfc6492NotPerformed(e));
+                        }
+                    }
                     rfc6492::Res::List(_) => return Err(Error::custom("Got a List response to revoke request??")),
                     rfc6492::Res::Issue(_) => return Err(Error::custom("Issue response to revoke request??")),
                 }
@@ -920,92 +938,240 @@ impl CaManager {
         actor: &Actor,
     ) -> KrillResult<()> {
         let child = self.get_ca(handle).await?;
-        let cert_requests = child.cert_requests(parent);
+        let requests = child.cert_requests(parent);
+        let signing_key = child.id_key();
+        let parent_res = child.parent(parent)?.parent_response().ok_or(Error::TaNotAllowed)?;
 
-        let issued_certs = match child.parent(parent)? {
-            ParentCaContact::Ta(_) => Err(Error::TaNotAllowed),
+        let sender = parent_res.child_handle();
+        let recipient = parent_res.parent_handle();
+        let cms_logger = Some(CmsLogger::for_rfc6492_sent(
+            self.config.rfc6492_log_dir.as_ref(),
+            sender,
+            recipient,
+        ));
 
-            ParentCaContact::Rfc6492(parent_res) => {
-                let uri = parent_res.service_uri();
+        // We may need to do work for multiple resource class and there may therefore be
+        // multiple errors. We want to keep track of those, rather than bailing out on the
+        // first error, because an issue in one resource class does not necessarily mean
+        // that there should be an issue in the the others.
+        //
+        // Of course for most CAs there will only be one resource class under a parent,
+        // but we need to be prepared to deal with N classes.
+        let mut errors = vec![];
+
+        for (rcn, requests) in requests.into_iter() {
+            // We could have multiple requests in a single resource class (multiple keys during rollover)
+            for req in requests {
+                let msg = rfc6492::Message::issue(sender.clone(), recipient.clone(), req).into_bytes();
+
                 match self
-                    .send_cert_requests_rfc6492(cert_requests, &child.id_key(), &parent_res)
+                    .send_rfc6492_and_validate_response(&signing_key, parent_res, msg, cms_logger.as_ref())
                     .await
                 {
                     Err(e) => {
-                        self.status_store
-                            .lock()
-                            .await
-                            .set_parent_failure(handle, parent, uri, &e, REQUEUE_DELAY_SECONDS)
-                            .await?;
-                        Err(e)
+                        // If any of the requests for an RC results in an error, then
+                        // record the error and break the loop. We will sync again.
+                        errors.push(Error::CaParentSyncError(
+                            handle.clone(),
+                            parent.clone(),
+                            rcn.clone(),
+                            e.to_string(),
+                        ));
+                        break;
                     }
-                    Ok(res) => {
-                        self.status_store
-                            .lock()
-                            .await
-                            .set_parent_last_updated(handle, parent, uri, self.config.ca_refresh as i64)
-                            .await?;
-                        Ok(res)
+                    Ok(response) => {
+                        match response {
+                            rfc6492::Res::Issue(issuance) => {
+                                // Update the received certificate.
+                                //
+                                // In a typical exchange we will only have one key under an RC under a
+                                // parent. During a key roll there may be multiple keys and requests. It
+                                // is still fine to update the received certificate for key "A" even if we
+                                // would get an error for the request for key "B". The reason is such an
+                                // *unlikely* failure would still trigger an appropriate response at
+                                // the resource class level in the next loop iteration below.
+                                let (_, _, _, issued) = issuance.unwrap();
+                                if let Err(e) = self
+                                    .send_command(CmdDet::upd_received_cert(
+                                        handle,
+                                        rcn.clone(),
+                                        RcvdCert::from(issued),
+                                        self.config.clone(),
+                                        self.signer.clone(),
+                                        actor,
+                                    ))
+                                    .await
+                                {
+                                    // Note that sending the command to update a received certificate
+                                    // cannot fail unless there are bigger issues like this being the wrong
+                                    // response for this resource class. This would be extremely odd because
+                                    // we only just asked the resource class which request to send. Still, in
+                                    // order to handle this the most graceful way we can, we should just drop
+                                    // this resource class and report an error. If there are are still resource
+                                    // entitlements under the parent for this resource class, then a new class
+                                    // will be automatically created when we synchronize the entitlements again.
+
+                                    let reason = format!("received certificate cannot be added, error: {}", e);
+
+                                    self.send_command(CmdDet::drop_resource_class(
+                                        handle,
+                                        rcn.clone(),
+                                        reason.clone(),
+                                        self.signer.clone(),
+                                        actor,
+                                    ))
+                                    .await?;
+
+                                    // push the error for reporting, this will also trigger that the CA will
+                                    // sync with its parent again - and then it will just find revocation
+                                    // requests for this RC - which are sent on a best effort basis
+                                    errors.push(Error::CaParentSyncError(
+                                        handle.clone(),
+                                        parent.clone(),
+                                        rcn.clone(),
+                                        reason,
+                                    ));
+                                    break;
+                                }
+                            }
+                            rfc6492::Res::NotPerformed(not_performed) => {
+                                match not_performed.status() {
+                                    1201 | 1202 => {
+                                        // Okay, so it looks like the parent *just* told the CA that it was entitled
+                                        // to certain resources in a resource class and now in response to certificate
+                                        // sign request they say the resource class is gone (1201), or there are no resources
+                                        // in it (1202). This can happen as a result of a race condition if the child CA
+                                        // was asking the entitlements just moments before the parent removed them.
+
+                                        let reason = "parent removed entitlement to resource class".to_string();
+
+                                        self.send_command(CmdDet::drop_resource_class(
+                                            handle,
+                                            rcn.clone(),
+                                            reason.clone(),
+                                            self.signer.clone(),
+                                            actor,
+                                        ))
+                                        .await?;
+
+                                        // push the error for reporting, this will also trigger that the CA will
+                                        // sync with its parent again - and then it will just find revocation
+                                        // requests for this RC - which are sent on a best effort basis
+                                        errors.push(Error::CaParentSyncError(
+                                            handle.clone(),
+                                            parent.clone(),
+                                            rcn.clone(),
+                                            reason,
+                                        ));
+                                        break;
+                                    }
+                                    1204 => {
+                                        // The parent says that the CA is re-using a key across RCs. Krill CAs never
+                                        // re-use keys - so this is extremely unlikely. Still there seems to be a
+                                        // disagreement and in this case the parent has the last word. Recovering by
+                                        // dropping all keys in the RC and making a new pending key should be possible,
+                                        // but it's complicated with regards to corner cases: e.g. what if we were in
+                                        // the middle of key roll..
+                                        //
+                                        // So, the most straightforward way to deal with this is by dropping this current
+                                        // RC altogether. Then the CA will find its resource entitlements in a future
+                                        // synchronization with the parent and just create a new RC - and issue all
+                                        // eligible certificates and ROAs under it.
+
+                                        let reason = "parent claims we are re-using keys".to_string();
+                                        self.send_command(CmdDet::drop_resource_class(
+                                            handle,
+                                            rcn.clone(),
+                                            reason.clone(),
+                                            self.signer.clone(),
+                                            actor,
+                                        ))
+                                        .await?;
+
+                                        // push the error for reporting, this will also trigger that the CA will
+                                        // sync with its parent again - and then it will just find revocation
+                                        // requests for this RC - which are sent on a best effort basis
+                                        errors.push(Error::CaParentSyncError(
+                                            handle.clone(),
+                                            parent.clone(),
+                                            rcn.clone(),
+                                            reason,
+                                        ));
+                                        break;
+                                    }
+                                    _ => {
+                                        // Other not performed responses can be due to temporary issues at the
+                                        // parent (e.g. it had an internal error of some kind), or because of
+                                        // protocol version mismatches and such (in future maybe?).
+                                        //
+                                        // In any event we cannot take any action to recover, so just report
+                                        // them and let the schedular try to sync with the parent again.
+                                        let issue = format!(
+                                            "parent returned not performed response to certificate request: {}",
+                                            not_performed
+                                        );
+                                        errors.push(Error::CaParentSyncError(
+                                            handle.clone(),
+                                            parent.clone(),
+                                            rcn.clone(),
+                                            issue,
+                                        ));
+                                        break;
+                                    }
+                                }
+                            }
+                            rfc6492::Res::List(_) => {
+                                // A list response to certificate sign request??
+                                let issue = "parent returned a list response to a certificate request".to_string();
+                                errors.push(Error::CaParentSyncError(
+                                    handle.clone(),
+                                    parent.clone(),
+                                    rcn.clone(),
+                                    issue,
+                                ));
+                                break;
+                            }
+                            rfc6492::Res::Revoke(_) => {
+                                // A list response to certificate sign request??
+                                let issue = "parent returned a revoke response to a certificate request".to_string();
+                                errors.push(Error::CaParentSyncError(
+                                    handle.clone(),
+                                    parent.clone(),
+                                    rcn.clone(),
+                                    issue,
+                                ));
+                                break;
+                            }
+                        }
                     }
                 }
             }
-        }?;
+        }
 
-        for (class_name, issued_certs) in issued_certs.into_iter() {
-            for issued in issued_certs.into_iter() {
-                self.send_command(CmdDet::upd_received_cert(
-                    handle,
-                    class_name.clone(),
-                    RcvdCert::from(issued),
-                    self.config.clone(),
-                    self.signer.clone(),
-                    actor,
-                ))
+        let uri = parent_res.service_uri();
+        if errors.is_empty() {
+            self.status_store
+                .lock()
+                .await
+                .set_parent_last_updated(handle, parent, uri, self.config.ca_refresh as i64)
                 .await?;
-            }
+
+            Ok(())
+        } else {
+            let e = if errors.len() == 1 {
+                errors.pop().unwrap()
+            } else {
+                Error::Multiple(errors)
+            };
+
+            self.status_store
+                .lock()
+                .await
+                .set_parent_failure(handle, parent, uri, &e, REQUEUE_DELAY_SECONDS)
+                .await?;
+
+            Err(e)
         }
-
-        Ok(())
-    }
-
-    async fn send_cert_requests_rfc6492(
-        &self,
-        requests: HashMap<ResourceClassName, Vec<IssuanceRequest>>,
-        signing_key: &KeyIdentifier,
-        parent_res: &rfc8183::ParentResponse,
-    ) -> KrillResult<HashMap<ResourceClassName, Vec<IssuedCert>>> {
-        let mut issued_map = HashMap::new();
-
-        for (rcn, requests) in requests.into_iter() {
-            let mut issued_certs = vec![];
-
-            for req in requests.into_iter() {
-                let sender = parent_res.child_handle().clone();
-                let recipient = parent_res.parent_handle().clone();
-
-                let cms_logger = CmsLogger::for_rfc6492_sent(self.config.rfc6492_log_dir.as_ref(), &sender, &recipient);
-
-                let issue = rfc6492::Message::issue(sender, recipient, req);
-
-                let response = self
-                    .send_rfc6492_and_validate_response(signing_key, parent_res, issue.into_bytes(), Some(cms_logger))
-                    .await?;
-
-                match response {
-                    rfc6492::Res::NotPerformed(e) => return Err(Error::Rfc6492NotPerformed(e)),
-                    rfc6492::Res::Issue(issue_response) => {
-                        let (_, _, _, issued) = issue_response.unwrap();
-                        issued_certs.push(issued);
-                    }
-                    rfc6492::Res::List(_) => return Err(Error::custom("List reply to issue request??")),
-                    rfc6492::Res::Revoke(_) => return Err(Error::custom("Revoke reply to issue request??")),
-                }
-            }
-
-            issued_map.insert(rcn, issued_certs);
-        }
-
-        Ok(issued_map)
     }
 
     /// Updates the CA resource classes, if entitlements are different from
@@ -1098,7 +1264,7 @@ impl CaManager {
         signing_key: &KeyIdentifier,
         parent_res: &rfc8183::ParentResponse,
         msg: Bytes,
-        cms_logger: Option<CmsLogger>,
+        cms_logger: Option<&CmsLogger>,
     ) -> KrillResult<rfc6492::Res> {
         let response = self
             .send_protocol_msg_and_validate(
@@ -1424,7 +1590,7 @@ impl CaManager {
                 repository.id_cert(),
                 rfc8181::CONTENT_TYPE,
                 msg,
-                Some(cms_logger),
+                Some(&cms_logger),
             )
             .await?;
 
@@ -1445,7 +1611,7 @@ impl CaManager {
         service_id: &IdCert,
         content_type: &str,
         msg: Bytes,
-        cms_logger: Option<CmsLogger>,
+        cms_logger: Option<&CmsLogger>,
     ) -> KrillResult<ProtocolCms> {
         let signed_msg = ProtocolCmsBuilder::create(signing_key, self.signer.deref(), msg)
             .map_err(Error::signer)?
@@ -1453,7 +1619,7 @@ impl CaManager {
 
         let uri = service_uri.to_string();
 
-        let res = httpclient::post_protocol_cms(&uri, &signed_msg, content_type)
+        let res = httpclient::post_binary_with_full_ua(&uri, &signed_msg, content_type)
             .await
             .map_err(Error::HttpClientError)?;
 

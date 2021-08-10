@@ -202,10 +202,24 @@ impl ResourceClass {
                     );
 
                     let current_key = CertifiedKey::create(rcvd_cert);
-                    Ok(vec![CaEvtDet::KeyPendingToActive {
-                        resource_class_name: self.name.clone(),
-                        current_key,
-                    }])
+                    
+                    let updates = self.roas.update(routes, &current_key, config, signer)?;
+
+                    let mut events = vec![
+                        CaEvtDet::KeyPendingToActive {
+                            resource_class_name: self.name.clone(),
+                            current_key,
+                        }
+                    ];
+
+                    if updates.contains_changes() {
+                        events.push(CaEvtDet::RoasUpdated {
+                            resource_class_name: self.name.clone(),
+                            updates,
+                        })
+                    }
+
+                    Ok(events)
                 }
             }
             KeyState::Active(current) => {

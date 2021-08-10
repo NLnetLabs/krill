@@ -1558,7 +1558,7 @@ impl fmt::Display for ChildrenConnectionStats {
             for child in &self.children {
                 match &child.last_exchange {
                     None => {
-                        writeln!(f, "{}, n/a, never, n/a", child.handle)?;
+                        writeln!(f, "{},n/a,never,n/a", child.handle)?;
                     }
                     Some(exchange) => {
                         let agent = exchange.user_agent.as_deref().unwrap_or("");
@@ -2097,6 +2097,7 @@ pub struct BgpStats {
     pub roas_redundant: usize,
     pub roas_stale: usize,
     pub roas_disallowing: usize,
+    pub roas_not_held: usize,
     pub roas_total: usize,
 }
 
@@ -2112,6 +2113,7 @@ impl Default for BgpStats {
             roas_redundant: 0,
             roas_stale: 0,
             roas_disallowing: 0,
+            roas_not_held: 0,
             roas_total: 0,
         }
     }
@@ -2144,6 +2146,10 @@ impl BgpStats {
 
     pub fn increment_roas_redundant(&mut self) {
         self.roas_redundant += 1;
+    }
+
+    pub fn increment_roas_not_held(&mut self) {
+        self.roas_not_held += 1;
     }
 
     pub fn increment_roas_stale(&mut self) {

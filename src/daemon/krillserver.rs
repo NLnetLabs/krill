@@ -440,8 +440,8 @@ impl KrillServer {
     }
 
     /// Show children stats under the CA.
-    pub async fn ca_children_stats(&self, ca: &Handle) -> KrillResult<ChildrenConnectionStats> {
-        self.ca_manager.ca_children_stats(ca).await
+    pub async fn ca_stats_child_connections(&self, ca: &Handle) -> KrillResult<ChildrenConnectionStats> {
+        self.ca_manager.ca_stats_child_connections(ca).await
     }
 }
 
@@ -494,7 +494,9 @@ impl KrillServer {
                 let bgp_report = if ca.handle().as_str() == "ta" || ca.handle().as_str() == "testbed" {
                     BgpAnalysisReport::new(vec![])
                 } else {
-                    self.bgp_analyser.analyse(roas.as_slice(), &ca.all_resources()).await
+                    self.bgp_analyser
+                        .analyse(roas.as_slice(), &ca.all_resources(), None)
+                        .await
                 };
 
                 res.insert(
@@ -680,8 +682,11 @@ impl KrillServer {
     pub async fn ca_routes_bgp_analysis(&self, handle: &Handle) -> KrillResult<BgpAnalysisReport> {
         let ca = self.ca_manager.get_ca(handle).await?;
         let definitions = ca.roa_definitions();
-        let resources = ca.all_resources();
-        Ok(self.bgp_analyser.analyse(definitions.as_slice(), &resources).await)
+        let resources_held = ca.all_resources();
+        Ok(self
+            .bgp_analyser
+            .analyse(definitions.as_slice(), &resources_held, None)
+            .await)
     }
 
     pub async fn ca_routes_bgp_dry_run(
@@ -693,7 +698,8 @@ impl KrillServer {
 
         let updates: RouteAuthorizationUpdates = updates.into();
         let updates = updates.into_explicit();
-        let resources = updates.affected_prefixes();
+        let resources_held = ca.all_resources();
+        let limit = Some(updates.affected_prefixes());
 
         let (would_be_routes, _) = ca.update_authorizations(&updates)?;
         let roas: Vec<RoaDefinition> = would_be_routes
@@ -702,23 +708,22 @@ impl KrillServer {
             .map(|a| a.into())
             .collect();
 
-        Ok(self.bgp_analyser.analyse(roas.as_slice(), &resources).await)
+        Ok(self.bgp_analyser.analyse(roas.as_slice(), &resources_held, limit).await)
     }
 
     pub async fn ca_routes_bgp_suggest(
         &self,
         handle: &Handle,
-        scope: Option<ResourceSet>,
+        limit: Option<ResourceSet>,
     ) -> KrillResult<BgpAnalysisSuggestion> {
         let ca = self.ca_manager.get_ca(handle).await?;
         let definitions = ca.roa_definitions();
-        let mut resources = ca.all_resources();
+        let resources_held = ca.all_resources();
 
-        if let Some(scope) = scope {
-            resources = resources.intersection(&scope);
-        }
-
-        Ok(self.bgp_analyser.suggest(definitions.as_slice(), &resources).await)
+        Ok(self
+            .bgp_analyser
+            .suggest(definitions.as_slice(), &resources_held, limit)
+            .await)
     }
 }
 

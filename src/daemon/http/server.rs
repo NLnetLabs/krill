@@ -868,7 +868,10 @@ async fn api_cas(req: Request, path: &mut RequestPath) -> RoutingResult {
                 Some("parents") => api_ca_parents(req, path, ca).await,
                 Some("repo") => api_ca_repo(req, path, ca).await,
                 Some("routes") => api_ca_routes(req, path, ca).await,
+                Some("stats") => api_ca_stats(req, path, ca).await,
+
                 Some("rta") => api_ca_rta(req, path, ca).await,
+
                 _ => render_unknown_method(),
             }
         }),
@@ -932,6 +935,16 @@ async fn api_ca_routes(req: Request, path: &mut RequestPath, ca: Handle) -> Rout
             _ => render_unknown_method(),
         },
         Some("analysis") => api_ca_routes_analysis(req, path, ca).await,
+        _ => render_unknown_method(),
+    }
+}
+
+async fn api_ca_stats(req: Request, path: &mut RequestPath, ca: Handle) -> RoutingResult {
+    match path.next() {
+        Some("children") => match path.next() {
+            Some("connections") => api_ca_stats_child_connections(req, ca).await,
+            _ => render_unknown_method(),
+        },
         _ => render_unknown_method(),
     }
 }
@@ -1101,12 +1114,12 @@ async fn api_ca_child_show(req: Request, ca: Handle, child: ChildHandle) -> Rout
     )
 }
 
-async fn api_ca_children_stats(req: Request, ca: Handle) -> RoutingResult {
+async fn api_ca_stats_child_connections(req: Request, ca: Handle) -> RoutingResult {
     aa!(
         req,
         Permission::CA_READ,
         ca.clone(),
-        render_json_res(req.state().ca_children_stats(&ca).await)
+        render_json_res(req.state().ca_stats_child_connections(&ca).await)
     )
 }
 
@@ -1250,7 +1263,6 @@ async fn api_ca_children(req: Request, path: &mut RequestPath, ca: Handle) -> Ro
         },
         None => match *req.method() {
             Method::POST => api_ca_add_child(req, ca).await,
-            Method::GET => api_ca_children_stats(req, ca).await,
             _ => render_unknown_method(),
         },
     }

@@ -173,7 +173,7 @@ pub async fn post_empty(uri: &str, token: Option<&Token>) -> Result<(), Error> {
 ///
 /// Note: Bytes may be empty if the post was successful, but the response was
 /// empty.
-pub async fn post_protocol_cms(uri: &str, data: &Bytes, content_type: &str) -> Result<Bytes, Error> {
+pub async fn post_binary_with_full_ua(uri: &str, data: &Bytes, content_type: &str) -> Result<Bytes, Error> {
     let body = data.to_vec();
 
     let mut headers = HeaderMap::new();

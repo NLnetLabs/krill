@@ -442,6 +442,13 @@ impl ParentCaContact {
         ParentCaContact::Ta(ta_cert_details)
     }
 
+    pub fn parent_response(&self) -> Option<&rfc8183::ParentResponse> {
+        match &self {
+            ParentCaContact::Ta(_) => None,
+            ParentCaContact::Rfc6492(res) => Some(res)
+        }
+    }
+
     pub fn to_ta_cert(&self) -> &Cert {
         match &self {
             ParentCaContact::Ta(details) => details.cert(),
