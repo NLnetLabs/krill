@@ -17,6 +17,7 @@ use crate::commons::{
     actor::{Actor, ActorDef},
     KrillResult,
 };
+use crate::constants::HTTP_USER_AGENT_TRUNCATE;
 use crate::daemon::auth::LoggedInUser;
 use crate::daemon::http::server::State;
 
@@ -357,7 +358,13 @@ impl Request {
     pub fn user_agent(&self) -> Option<String> {
         match self.headers().get(&USER_AGENT) {
             None => None,
-            Some(value) => value.to_str().ok().map(|s| s.to_string()),
+            Some(value) => value.to_str().ok().map(|s| {
+                if s.len() > HTTP_USER_AGENT_TRUNCATE {
+                    s[..HTTP_USER_AGENT_TRUNCATE].to_string()
+                } else {
+                    s.to_string()
+                }
+            }),
         }
     }
 
