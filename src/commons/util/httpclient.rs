@@ -24,24 +24,7 @@ fn report_get_and_exit(uri: &str, token: Option<&Token>) {
     std::process::exit(0);
 }
 
-enum PostBody<'a> {
-    String(&'a String),
-    Bytes(&'a Vec<u8>),
-}
-
-impl<'a> fmt::Display for PostBody<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            PostBody::String(string) => write!(f, "{}", string),
-            PostBody::Bytes(bytes) => {
-                let base64 = base64::encode(bytes);
-                write!(f, "<binary content, base64 encoded for display here> {}", base64)
-            }
-        }
-    }
-}
-
-fn report_post_and_exit(uri: &str, content_type: Option<&str>, token: Option<&Token>, body: PostBody) {
+fn report_post_and_exit(uri: &str, content_type: Option<&str>, token: Option<&Token>, body: &str) {
     println!("POST:\n  {}", uri);
 
     if content_type.is_some() || token.is_some() {
@@ -85,7 +68,7 @@ pub async fn get_json<T: DeserializeOwned>(uri: &str, token: Option<&Token>) -> 
 
     let headers = headers(Some(JSON_CONTENT), token)?;
 
-    let res = client(uri).await?.get(uri).headers(headers).send().await?;
+    let res = client(uri)?.get(uri).headers(headers).send().await?;
     process_json_response(res).await
 }
 
@@ -97,7 +80,7 @@ pub async fn get_text(uri: &str, token: Option<&Token>) -> Result<String, Error>
     }
 
     let headers = headers(None, token)?;
-    let res = client(uri).await?.get(uri).headers(headers).send().await?;
+    let res = client(uri)?.get(uri).headers(headers).send().await?;
     match opt_text_response(res).await? {
         Some(res) => Ok(res),
         None => Err(Error::EmptyResponse),
@@ -112,7 +95,7 @@ pub async fn get_ok(uri: &str, token: Option<&Token>) -> Result<(), Error> {
     }
 
     let headers = headers(None, token)?;
-    let res = client(uri).await?.get(uri).headers(headers).send().await?;
+    let res = client(uri)?.get(uri).headers(headers).send().await?;
     opt_text_response(res).await?; // Will return nice errors with possible body.
     Ok(())
 }
@@ -122,13 +105,13 @@ pub async fn get_ok(uri: &str, token: Option<&Token>) -> Result<(), Error> {
 pub async fn post_json(uri: &str, data: impl Serialize, token: Option<&Token>) -> Result<(), Error> {
     if env::var(KRILL_CLI_API_ENV).is_ok() {
         let body = serde_json::to_string_pretty(&data)?;
-        report_post_and_exit(uri, Some(JSON_CONTENT), token, PostBody::String(&body));
+        report_post_and_exit(uri, Some(JSON_CONTENT), token, &body);
     }
 
     let body = serde_json::to_string(&data)?;
     let headers = headers(Some(JSON_CONTENT), token)?;
 
-    let res = client(uri).await?.post(uri).headers(headers).body(body).send().await?;
+    let res = client(uri)?.post(uri).headers(headers).body(body).send().await?;
     if let Some(res) = opt_text_response(res).await? {
         Err(Error::UnexpectedResponse(res))
     } else {
@@ -160,23 +143,23 @@ pub async fn post_json_with_opt_response<T: DeserializeOwned>(
 ) -> Result<Option<T>, Error> {
     if env::var(KRILL_CLI_API_ENV).is_ok() {
         let body = serde_json::to_string_pretty(&data)?;
-        report_post_and_exit(uri, Some(JSON_CONTENT), token, PostBody::String(&body));
+        report_post_and_exit(uri, Some(JSON_CONTENT), token, &body);
     }
 
     let body = serde_json::to_string(&data)?;
     let headers = headers(Some(JSON_CONTENT), token)?;
-    let res = client(uri).await?.post(uri).headers(headers).body(body).send().await?;
+    let res = client(uri)?.post(uri).headers(headers).body(body).send().await?;
     process_opt_json_response(res).await
 }
 
 /// Performs a POST with no data to the given URI and expects and empty 200 OK response.
 pub async fn post_empty(uri: &str, token: Option<&Token>) -> Result<(), Error> {
     if env::var(KRILL_CLI_API_ENV).is_ok() {
-        report_post_and_exit(uri, None, token, PostBody::String(&"<empty>".to_string()));
+        report_post_and_exit(uri, None, token, "<empty>");
     }
 
     let headers = headers(Some(JSON_CONTENT), token)?;
-    let res = client(uri).await?.post(uri).headers(headers).send().await?;
+    let res = client(uri)?.post(uri).headers(headers).send().await?;
     if let Some(res) = opt_text_response(res).await? {
         Err(Error::UnexpectedResponse(res))
     } else {
@@ -190,17 +173,20 @@ pub async fn post_empty(uri: &str, token: Option<&Token>) -> Result<(), Error> {
 ///
 /// Note: Bytes may be empty if the post was successful, but the response was
 /// empty.
-pub async fn post_binary_with_full_ua(uri: &str, data: &Bytes, content_type: &str) -> Result<Bytes, Error> {
+pub async fn post_protocol_cms(uri: &str, data: &Bytes, content_type: &str) -> Result<Bytes, Error> {
     let body = data.to_vec();
-    if env::var(KRILL_CLI_API_ENV).is_ok() {
-        report_post_and_exit(uri, None, None, PostBody::Bytes(&body));
-    }
 
     let mut headers = HeaderMap::new();
     headers.insert(USER_AGENT, HeaderValue::from_str(&format!("krill/{}", KRILL_VERSION))?);
     headers.insert(CONTENT_TYPE, HeaderValue::from_str(content_type)?);
 
-    let res = client(uri).await?.post(uri).headers(headers).body(body).send().await?;
+    let client = reqwest::ClientBuilder::new()
+        .timeout(Duration::from_secs(HTTP_CLIENT_TIMEOUT_SECS))
+        .danger_accept_invalid_certs(true)
+        .build()
+        .map_err(Error::RequestError)?;
+
+    let res = client.post(uri).headers(headers).body(body).send().await?;
 
     match res.status() {
         StatusCode::OK => {
@@ -216,7 +202,7 @@ pub async fn delete(uri: &str, token: Option<&Token>) -> Result<(), Error> {
     report_delete(uri, None, token);
 
     let headers = headers(None, token)?;
-    let res = client(uri).await?.delete(uri).headers(headers).send().await?;
+    let res = client(uri)?.delete(uri).headers(headers).send().await?;
 
     match res.status() {
         StatusCode::OK => Ok(()),
@@ -230,7 +216,7 @@ fn load_root_cert(path: &str) -> Result<reqwest::Certificate, Error> {
     reqwest::Certificate::from_pem(file.as_ref()).map_err(Error::https_root_cert_error)
 }
 
-pub async fn client(uri: &str) -> Result<reqwest::Client, Error> {
+pub fn client(uri: &str) -> Result<reqwest::Client, Error> {
     let mut builder = reqwest::ClientBuilder::new().timeout(Duration::from_secs(HTTP_CLIENT_TIMEOUT_SECS));
 
     if let Ok(cert_list) = env::var(KRILL_HTTPS_ROOT_CERTS_ENV) {
