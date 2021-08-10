@@ -1,3 +1,4 @@
+use hyper::header::USER_AGENT;
 use serde::de::DeserializeOwned;
 use std::io;
 use std::str::FromStr;
@@ -16,6 +17,7 @@ use crate::commons::{
     actor::{Actor, ActorDef},
     KrillResult,
 };
+use crate::constants::HTTP_USER_AGENT_TRUNCATE;
 use crate::daemon::auth::LoggedInUser;
 use crate::daemon::http::server::State;
 
@@ -351,6 +353,21 @@ impl Request {
 
     pub fn headers(&self) -> &HeaderMap {
         self.request.headers()
+    }
+
+    pub fn user_agent(&self) -> Option<String> {
+        match self.headers().get(&USER_AGENT) {
+            None => None,
+            Some(value) => value.to_str().ok().map(|s| {
+                // Note: HeaderValue.to_str() only returns ok in case the value is plain
+                //       ascii so it's safe to treat bytes as characters here.
+                if s.len() > HTTP_USER_AGENT_TRUNCATE {
+                    s[..HTTP_USER_AGENT_TRUNCATE].to_string()
+                } else {
+                    s.to_string()
+                }
+            }),
+        }
     }
 
     pub async fn upgrade_from_anonymous(&mut self, actor_def: ActorDef) {

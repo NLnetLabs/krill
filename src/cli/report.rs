@@ -5,8 +5,8 @@ use serde::Serialize;
 
 use crate::commons::api::{
     AllCertAuthIssues, CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthIssues, CertAuthList, ChildCaInfo,
-    CommandHistory, ParentCaContact, ParentStatuses, PublisherDetails, PublisherList, RepoStatus, RoaDefinitions,
-    RtaList, RtaPrepResponse, ServerInfo,
+    ChildrenConnectionStats, CommandHistory, ParentCaContact, ParentStatuses, PublisherDetails, PublisherList,
+    RepoStatus, RoaDefinitions, RtaList, RtaPrepResponse, ServerInfo,
 };
 use crate::commons::bgp::{BgpAnalysisAdvice, BgpAnalysisReport, BgpAnalysisSuggestion};
 use crate::commons::remote::api::ClientInfos;
@@ -36,6 +36,7 @@ pub enum ApiResponse {
     ParentStatuses(ParentStatuses),
 
     ChildInfo(ChildCaInfo),
+    ChildrenStats(ChildrenConnectionStats),
 
     PublisherDetails(PublisherDetails),
     PublisherList(PublisherList),
@@ -81,6 +82,7 @@ impl ApiResponse {
                 ApiResponse::ParentCaContact(contact) => Ok(Some(contact.report(fmt)?)),
                 ApiResponse::ParentStatuses(statuses) => Ok(Some(statuses.report(fmt)?)),
                 ApiResponse::ChildInfo(info) => Ok(Some(info.report(fmt)?)),
+                ApiResponse::ChildrenStats(stats) => Ok(Some(stats.report(fmt)?)),
                 ApiResponse::PublisherList(list) => Ok(Some(list.report(fmt)?)),
                 ApiResponse::PublisherDetails(details) => Ok(Some(details.report(fmt)?)),
                 ApiResponse::RepoStats(stats) => Ok(Some(stats.report(fmt)?)),
@@ -177,6 +179,7 @@ impl Report for CaCommandDetails {}
 impl Report for PublisherList {}
 
 impl Report for RepoStats {}
+impl Report for ChildrenConnectionStats {}
 
 impl Report for PublisherDetails {}
 

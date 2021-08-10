@@ -7,14 +7,10 @@ use bytes::Bytes;
 use chrono::Duration;
 
 use rpki::{
-    repository::{
-        cert::Cert,
-        x509::Time,
-    },
+    repository::{cert::Cert, x509::Time},
     uri,
 };
 
-use crate::commons::actor::{Actor, ActorDef};
 use crate::commons::api::{
     AddChildRequest, AllCertAuthIssues, CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthInit, CertAuthIssues,
     CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Handle, ListReply,
@@ -26,6 +22,10 @@ use crate::commons::bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion}
 use crate::commons::crypto::KrillSigner;
 use crate::commons::eventsourcing::CommandKey;
 use crate::commons::remote::rfc8183;
+use crate::commons::{
+    actor::{Actor, ActorDef},
+    api::ChildrenConnectionStats,
+};
 use crate::commons::{KrillEmptyResult, KrillResult};
 use crate::constants::*;
 #[cfg(feature = "multi-user")]
@@ -433,10 +433,15 @@ impl KrillServer {
         Ok(())
     }
 
-    /// Show details for a child under the TA.
-    pub async fn ca_child_show(&self, parent: &ParentHandle, child: &ChildHandle) -> KrillResult<ChildCaInfo> {
-        let child = self.ca_manager.ca_show_child(parent, child).await?;
+    /// Show details for a child under the CA.
+    pub async fn ca_child_show(&self, ca: &Handle, child: &ChildHandle) -> KrillResult<ChildCaInfo> {
+        let child = self.ca_manager.ca_show_child(ca, child).await?;
         Ok(child)
+    }
+
+    /// Show children stats under the CA.
+    pub async fn ca_stats_child_connections(&self, ca: &Handle) -> KrillResult<ChildrenConnectionStats> {
+        self.ca_manager.ca_stats_child_connections(ca).await
     }
 }
 
@@ -457,14 +462,12 @@ impl KrillServer {
     ) -> KrillEmptyResult {
         let parent = parent_req.handle();
         let contact = parent_req.contact();
-        self.ca_manager.get_entitlements_from_contact(&ca, parent, contact, false).await?;
+        self.ca_manager
+            .get_entitlements_from_contact(&ca, parent, contact, false)
+            .await?;
 
-        Ok(self
-            .ca_manager
-            .ca_parent_add_or_update(ca, parent_req, actor)
-            .await?)
+        Ok(self.ca_manager.ca_parent_add_or_update(ca, parent_req, actor).await?)
     }
-
 
     pub async fn ca_parent_remove(&self, handle: Handle, parent: ParentHandle, actor: &Actor) -> KrillEmptyResult {
         Ok(self.ca_manager.ca_parent_remove(handle, parent, actor).await?)
@@ -646,8 +649,14 @@ impl KrillServer {
             .await?)
     }
 
-    pub async fn rfc6492(&self, handle: Handle, msg_bytes: Bytes, actor: &Actor) -> KrillResult<Bytes> {
-        Ok(self.ca_manager.rfc6492(&handle, msg_bytes, actor).await?)
+    pub async fn rfc6492(
+        &self,
+        handle: Handle,
+        msg_bytes: Bytes,
+        user_agent: Option<String>,
+        actor: &Actor,
+    ) -> KrillResult<Bytes> {
+        Ok(self.ca_manager.rfc6492(&handle, msg_bytes, user_agent, actor).await?)
     }
 }
 

@@ -1355,7 +1355,7 @@ impl ParentStatus {
         self.last_exchange = Some(ParentExchange {
             timestamp: Time::now().timestamp(),
             uri,
-            result: ParentExchangeResult::Failure(error),
+            result: ExchangeResult::Failure(error),
         });
         self.set_next_exchange_plus_seconds(next_seconds);
     }
@@ -1386,7 +1386,7 @@ impl ParentStatus {
         self.last_exchange = Some(ParentExchange {
             timestamp: Time::now().timestamp(),
             uri,
-            result: ParentExchangeResult::Success,
+            result: ExchangeResult::Success,
         });
         self.set_next_exchange_plus_seconds(next_run_seconds);
     }
@@ -1443,7 +1443,7 @@ impl RepoStatus {
         self.last_exchange = Some(ParentExchange {
             timestamp: Time::now().timestamp(),
             uri,
-            result: ParentExchangeResult::Failure(error),
+            result: ExchangeResult::Failure(error),
         });
         self.next_exchange_before = (Time::now() + Duration::minutes(5)).timestamp();
     }
@@ -1452,7 +1452,7 @@ impl RepoStatus {
         self.last_exchange = Some(ParentExchange {
             timestamp: Time::now().timestamp(),
             uri,
-            result: ParentExchangeResult::Success,
+            result: ExchangeResult::Success,
         });
         self.published = published;
         self.next_exchange_before = Self::now_plus_hours(next_hours);
@@ -1462,7 +1462,7 @@ impl RepoStatus {
         self.last_exchange = Some(ParentExchange {
             timestamp: Time::now().timestamp(),
             uri,
-            result: ParentExchangeResult::Success,
+            result: ExchangeResult::Success,
         });
         self.next_exchange_before = Self::now_plus_hours(next_hours);
     }
@@ -1491,7 +1491,7 @@ impl fmt::Display for RepoStatus {
 pub struct ParentExchange {
     timestamp: i64,
     uri: ServiceUri,
-    result: ParentExchangeResult,
+    result: ExchangeResult,
 }
 
 impl ParentExchange {
@@ -1503,39 +1503,137 @@ impl ParentExchange {
         &self.uri
     }
 
-    pub fn result(&self) -> &ParentExchangeResult {
+    pub fn result(&self) -> &ExchangeResult {
         &self.result
     }
 
     pub fn was_success(&self) -> bool {
         match &self.result {
-            ParentExchangeResult::Success => true,
-            ParentExchangeResult::Failure(_) => false,
+            ExchangeResult::Success => true,
+            ExchangeResult::Failure(_) => false,
         }
     }
 
     pub fn into_failure_opt(self) -> Option<ErrorResponse> {
         match self.result {
-            ParentExchangeResult::Success => None,
-            ParentExchangeResult::Failure(error) => Some(error),
+            ExchangeResult::Success => None,
+            ExchangeResult::Failure(error) => Some(error),
         }
     }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
-pub enum ParentExchangeResult {
+pub enum ExchangeResult {
     Success,
     Failure(ErrorResponse),
 }
 
-impl fmt::Display for ParentExchangeResult {
+impl fmt::Display for ExchangeResult {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ParentExchangeResult::Success => write!(f, "success"),
-            ParentExchangeResult::Failure(e) => write!(f, "failure: {}", e.msg()),
+            ExchangeResult::Success => write!(f, "success"),
+            ExchangeResult::Failure(e) => write!(f, "failure: {}", e.msg()),
         }
     }
+}
+
+//------------ ChildConnectionStats ------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ChildrenConnectionStats {
+    children: Vec<ChildConnectionStats>,
+}
+
+impl ChildrenConnectionStats {
+    pub fn new(children: Vec<ChildConnectionStats>) -> Self {
+        ChildrenConnectionStats { children }
+    }
+}
+
+impl fmt::Display for ChildrenConnectionStats {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if !self.children.is_empty() {
+            writeln!(f, "handle, user_agent, last_exchange, result")?;
+            for child in &self.children {
+                match &child.last_exchange {
+                    None => {
+                        writeln!(f, "{},n/a,never,n/a", child.handle)?;
+                    }
+                    Some(exchange) => {
+                        let agent = exchange.user_agent.as_deref().unwrap_or("");
+                        let time = Time::new(Utc.timestamp(exchange.timestamp, 0));
+
+                        writeln!(
+                            f,
+                            "{},{},{},{}",
+                            child.handle,
+                            agent,
+                            time.to_rfc3339(),
+                            exchange.result
+                        )?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ChildConnectionStats {
+    handle: ChildHandle,
+    last_exchange: Option<ChildExchange>,
+}
+
+impl ChildConnectionStats {
+    pub fn new(handle: ChildHandle, last_exchange: Option<ChildExchange>) -> Self {
+        ChildConnectionStats { handle, last_exchange }
+    }
+}
+
+//------------ ChildStatus ---------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ChildStatus {
+    last_exchange: Option<ChildExchange>,
+}
+
+impl ChildStatus {
+    pub fn set_success(&mut self, user_agent: Option<String>) {
+        self.last_exchange = Some(ChildExchange {
+            timestamp: Time::now().timestamp(),
+            result: ExchangeResult::Success,
+            user_agent,
+        });
+    }
+
+    pub fn set_failure(&mut self, user_agent: Option<String>, error_response: ErrorResponse) {
+        self.last_exchange = Some(ChildExchange {
+            timestamp: Time::now().timestamp(),
+            result: ExchangeResult::Failure(error_response),
+            user_agent,
+        });
+    }
+}
+
+impl Default for ChildStatus {
+    fn default() -> Self {
+        ChildStatus { last_exchange: None }
+    }
+}
+
+impl From<ChildStatus> for Option<ChildExchange> {
+    fn from(status: ChildStatus) -> Self {
+        status.last_exchange
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ChildExchange {
+    timestamp: i64,
+    result: ExchangeResult,
+    user_agent: Option<String>,
 }
 
 //------------ CertAuthInfo --------------------------------------------------

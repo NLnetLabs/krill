@@ -76,6 +76,7 @@ pub const ID_CERTIFICATE_VALIDITY_YEARS: i32 = 15;
 pub const BGP_RIS_REFRESH_MINUTES: i64 = 60;
 
 pub const HTTP_CLIENT_TIMEOUT_SECS: u64 = 120;
+pub const HTTP_USER_AGENT_TRUNCATE: usize = 256; // Will truncate received user-agent values at this size.
 pub const OPENID_CONNECT_HTTP_CLIENT_TIMEOUT_SECS: u64 = 30;
 
 pub const NO_RESOURCE: NoResourceType = NoResourceType;

@@ -15,7 +15,6 @@ use rpki::uri;
 use crate::{
     commons::{
         actor::Actor,
-        api::rrdp::PublishElement,
         api::{
             self, AddChildRequest, Base64, CaCommandDetails, CaCommandResult, CertAuthList, CertAuthSummary,
             ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Entitlements, Handle, IssuanceRequest,
@@ -23,6 +22,7 @@ use crate::{
             RcvdCert, RepoStatus, RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest,
             RevocationResponse, RtaName, StoredEffect, UpdateChildRequest,
         },
+        api::{rrdp::PublishElement, ChildrenConnectionStats},
         crypto::{IdCert, KrillSigner, ProtocolCms, ProtocolCmsBuilder},
         error::Error,
         eventsourcing::{Aggregate, AggregateStore, Command, CommandKey},
@@ -445,6 +445,11 @@ impl CaManager {
         ca.get_child(child).map(|details| details.clone().into())
     }
 
+    /// Show the (connection) stats for children under a CA.
+    pub async fn ca_stats_child_connections(&self, ca: &Handle) -> KrillResult<ChildrenConnectionStats> {
+        self.status_store.lock().await.get_stats_child_connections(ca).await
+    }
+
     /// Show a contact for a child.
     pub async fn ca_parent_contact(
         &self,
@@ -515,7 +520,13 @@ impl CaManager {
     /// - validates the request
     /// - processes the child request
     /// - signs a response and returns the bytes
-    pub async fn rfc6492(&self, ca_handle: &Handle, msg_bytes: Bytes, actor: &Actor) -> KrillResult<Bytes> {
+    pub async fn rfc6492(
+        &self,
+        ca_handle: &Handle,
+        msg_bytes: Bytes,
+        user_agent: Option<String>,
+        actor: &Actor,
+    ) -> KrillResult<Bytes> {
         let ca = self.get_ca(ca_handle).await?;
 
         let msg = match ProtocolCms::decode(msg_bytes.as_ref(), false) {
@@ -540,22 +551,23 @@ impl CaManager {
         let (res, should_log_cms) = match content {
             rfc6492::Content::Qry(rfc6492::Qry::Revoke(req)) => {
                 let res = self.revoke(ca_handle, child.clone(), req, actor).await?;
-                let msg = rfc6492::Message::revoke_response(child, recipient, res);
+                let msg = rfc6492::Message::revoke_response(child.clone(), recipient, res);
                 (self.wrap_rfc6492_response(ca_handle, msg).await, true)
             }
             rfc6492::Content::Qry(rfc6492::Qry::List) => {
                 let entitlements = self.list(ca_handle, &child).await?;
-                let msg = rfc6492::Message::list_response(child, recipient, entitlements);
+                let msg = rfc6492::Message::list_response(child.clone(), recipient, entitlements);
                 (self.wrap_rfc6492_response(ca_handle, msg).await, false)
             }
             rfc6492::Content::Qry(rfc6492::Qry::Issue(req)) => {
                 let res = self.issue(ca_handle, &child, req, actor).await?;
-                let msg = rfc6492::Message::issue_response(child, recipient, res);
+                let msg = rfc6492::Message::issue_response(child.clone(), recipient, res);
                 (self.wrap_rfc6492_response(ca_handle, msg).await, true)
             }
             _ => (Err(Error::custom("Unsupported RFC6492 message")), true),
         };
 
+        // Log CMS messages if needed, and if enabled by config (this is a no-op if it isn't)
         match &res {
             Ok(reply_bytes) => {
                 if should_log_cms {
@@ -566,6 +578,24 @@ impl CaManager {
             Err(e) => {
                 cms_logger.received(&msg_bytes)?;
                 cms_logger.err(e)?;
+            }
+        }
+
+        // Set child status
+        match &res {
+            Ok(_) => {
+                self.status_store
+                    .lock()
+                    .await
+                    .set_child_success(ca.handle(), &child, user_agent)
+                    .await?;
+            }
+            Err(e) => {
+                self.status_store
+                    .lock()
+                    .await
+                    .set_child_failure(ca.handle(), &child, user_agent, e)
+                    .await?;
             }
         }
 
@@ -1589,7 +1619,7 @@ impl CaManager {
 
         let uri = service_uri.to_string();
 
-        let res = httpclient::post_binary(&uri, &signed_msg, content_type)
+        let res = httpclient::post_binary_with_full_ua(&uri, &signed_msg, content_type)
             .await
             .map_err(Error::HttpClientError)?;
 
