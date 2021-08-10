@@ -13,29 +13,26 @@ use bytes::Bytes;
 use hyper::StatusCode;
 use tokio::time::{sleep, timeout};
 
-use rpki::{
-    repository::crypto::KeyIdentifier,
-    uri,
-};
+use rpki::{repository::crypto::KeyIdentifier, uri};
 
 use crate::{
+    cli::{
+        options::{BulkCaCommand, CaCommand, Command, Options, PubServerCommand},
+        report::{ApiResponse, ReportFormat},
+        {Error, KrillClient},
+    },
     commons::{
         api::{
-            AddChildRequest, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ChildHandle, Handle, ParentCaContact, ParentCaReq,
-            ParentHandle, ParentStatuses, PublicationServerUris, PublisherDetails, PublisherHandle, PublisherList,
-            ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse,
-            TypedPrefix, UpdateChildRequest, RepositoryContact,
+            AddChildRequest, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ChildHandle, Handle, ParentCaContact,
+            ParentCaReq, ParentHandle, ParentStatuses, PublicationServerUris, PublisherDetails, PublisherHandle,
+            PublisherList, RepositoryContact, ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates,
+            RtaList, RtaName, RtaPrepResponse, TypedPrefix, UpdateChildRequest,
         },
         bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion},
         crypto::SignSupport,
         remote::rfc8183,
         remote::rfc8183::{ChildRequest, RepositoryResponse},
         util::httpclient,
-    },
-    cli::{
-        {Error, KrillClient},
-        options::{BulkCaCommand, CaCommand, Command, Options, PubServerCommand},
-        report::{ApiResponse, ReportFormat},
     },
     daemon::{
         ca::{ta_handle, ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest},
@@ -72,7 +69,7 @@ pub async fn server_ready(uri: &str) -> bool {
     let health = format!("{}health", uri);
 
     for _ in 0..300 {
-        match httpclient::client(&health).await {
+        match httpclient::client(&health) {
             Ok(client) => {
                 let res = timeout(Duration::from_millis(100), client.get(&health).send()).await;
 

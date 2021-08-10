@@ -494,7 +494,9 @@ impl KrillServer {
                 let bgp_report = if ca.handle().as_str() == "ta" || ca.handle().as_str() == "testbed" {
                     BgpAnalysisReport::new(vec![])
                 } else {
-                    self.bgp_analyser.analyse(roas.as_slice(), &ca.all_resources(), None).await
+                    self.bgp_analyser
+                        .analyse(roas.as_slice(), &ca.all_resources(), None)
+                        .await
                 };
 
                 res.insert(
@@ -681,7 +683,10 @@ impl KrillServer {
         let ca = self.ca_manager.get_ca(handle).await?;
         let definitions = ca.roa_definitions();
         let resources_held = ca.all_resources();
-        Ok(self.bgp_analyser.analyse(definitions.as_slice(), &resources_held, None).await)
+        Ok(self
+            .bgp_analyser
+            .analyse(definitions.as_slice(), &resources_held, None)
+            .await)
     }
 
     pub async fn ca_routes_bgp_dry_run(
@@ -715,7 +720,10 @@ impl KrillServer {
         let definitions = ca.roa_definitions();
         let resources_held = ca.all_resources();
 
-        Ok(self.bgp_analyser.suggest(definitions.as_slice(), &resources_held, limit).await)
+        Ok(self
+            .bgp_analyser
+            .suggest(definitions.as_slice(), &resources_held, limit)
+            .await)
     }
 }
 
