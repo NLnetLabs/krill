@@ -21,6 +21,7 @@ set -e
 KRILL_CONF=/var/krill/data/krill.conf
 KRILL_FQDN="${KRILL_FQDN:-localhost:3000}"
 KRILL_ADMIN_TOKEN="${KRILL_ADMIN_TOKEN:-None}"
+KRILL_AUTH_TOKEN="${KRILL_AUTH_TOKEN:-None}"
 KRILL_LOG_LEVEL="${KRILL_LOG_LEVEL:-warn}"
 KRILL_USE_TA="${KRILL_USE_TA:-false}"
 
@@ -39,11 +40,21 @@ if [ "$1" == "krill" ]; then
     # Does the operator want to use their own API token? If so they must
     # supply the KRILL_ADMIN_TOKEN env var.
     if [ "${KRILL_ADMIN_TOKEN}" == "None" ]; then
-        # Generate a unique hard to guess authorization token and export it
-        # so that the Krill daemon uses it (unless overridden by the Krill
-        # daemon config file). Only do this if the operator didn't already
-        # supply a token when launching the Docker container.
-        export KRILL_ADMIN_TOKEN=$(uuidgen)
+
+        # Check if the deprecated env variable was used.
+        if [ "${KRILL_AUTH_TOKEN}" == "None" ]; then
+            # Deprecated env variable was not set either.
+            #
+            # Generate a unique hard to guess authorization token and export it
+            # so that the Krill daemon uses it (unless overridden by the Krill
+            # daemon config file). Only do this if the operator didn't already
+            # supply a token when launching the Docker container.
+            export KRILL_ADMIN_TOKEN=$(uuidgen)
+        else
+            # Deprecated env variable was set. Use it.
+            export KRILL_ADMIN_TOKEN=${KRILL_AUTH_TOKEN}
+        fi
+
     fi
 
     # Announce the token in the Docker logs so that clients can obtain it.
