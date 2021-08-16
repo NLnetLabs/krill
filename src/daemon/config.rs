@@ -425,8 +425,8 @@ impl Config {
                 } else {
                     uri::Https::from_string(format!("https://{}:{}/", self.ip, self.port)).unwrap()
                 }
-            },
-            Some(uri) => uri.clone()
+            }
+            Some(uri) => uri.clone(),
         }
     }
 
@@ -460,7 +460,7 @@ impl Config {
 
 /// # Create
 impl Config {
-    fn test_config(data_dir: &Path, enable_testbed: bool) -> Self {
+    fn test_config(data_dir: &Path, enable_testbed: bool, enable_ca_refresh: bool) -> Self {
         use crate::test;
 
         let ip = ConfigDefaults::ip();
@@ -486,7 +486,7 @@ impl Config {
         let auth_users = None;
         #[cfg(feature = "multi-user")]
         let auth_openidconnect = None;
-        let ca_refresh = 1;
+        let ca_refresh = if enable_ca_refresh { 1 } else { 86400 };
         let post_limit_api = ConfigDefaults::post_limit_api();
         let post_limit_rfc8181 = ConfigDefaults::post_limit_rfc8181();
         let rfc8181_log_dir = {
@@ -584,12 +584,12 @@ impl Config {
         }
     }
 
-    pub fn test(data_dir: &Path, enable_testbed: bool) -> Self {
-        Self::test_config(data_dir, enable_testbed)
+    pub fn test(data_dir: &Path, enable_testbed: bool, enable_ca_refresh: bool) -> Self {
+        Self::test_config(data_dir, enable_testbed, enable_ca_refresh)
     }
 
     pub fn pubd_test(data_dir: &Path) -> Self {
-        let mut config = Self::test_config(data_dir, false);
+        let mut config = Self::test_config(data_dir, false, false);
         config.port = 3001;
         config
     }
@@ -659,7 +659,6 @@ impl Config {
                 ));
             }
         }
-
 
         if self.issuance_timing.timing_publish_next_hours < 2 {
             return Err(ConfigError::other("timing_publish_next_hours must be at least 2"));

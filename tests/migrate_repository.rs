@@ -233,7 +233,7 @@ async fn migrate_repository() {
     info("#                                                                #");
     info("##################################################################");
     info("");
-    let krill_dir = start_krill_with_default_test_config(true).await;
+    let krill_dir = start_krill_with_default_test_config(true, false).await;
 
     info("##################################################################");
     info("#                                                                #");
@@ -434,7 +434,6 @@ async fn migrate_repository() {
     info("#  down.                                                         #");
     info("#                                                                #");
     info("##################################################################");
-
 
     let _ = fs::remove_dir_all(krill_dir);
     let _ = fs::remove_dir_all(pubd_dir);

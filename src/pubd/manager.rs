@@ -240,7 +240,7 @@ mod tests {
 
     fn make_server(work_dir: &Path) -> RepositoryManager {
         enable_test_mode();
-        let config = Arc::new(Config::test(work_dir, true));
+        let config = Arc::new(Config::test(work_dir, true, false));
         init_config(&config);
 
         let signer = KrillSigner::build(work_dir).unwrap();
