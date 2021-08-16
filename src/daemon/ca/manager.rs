@@ -765,6 +765,21 @@ impl CaManager {
                     for parent in ca.parents() {
                         updates.push(self.ca_sync_parent_infallible(ca_handle.clone(), parent.clone(), actor.clone()));
                     }
+
+                    if let Some(threshold_hours) = self.config.suspend_child_after_inactive_hours {
+                        if let Ok(child_stats) = self.ca_stats_child_connections(&ca_handle).await {
+                            for child in child_stats.inactive_children(threshold_hours) {
+                                info!(
+                                    "Child '{}' under CA '{}' was inactive for more than {} hours. Will suspend it.",
+                                    child, ca_handle, threshold_hours
+                                );
+                                let req = UpdateChildRequest::suspend(true);
+                                if let Err(e) = self.ca_child_update(&ca_handle, child, req, actor).await {
+                                    error!("Could not suspend inactive child, error: {}", e);
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
