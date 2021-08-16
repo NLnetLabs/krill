@@ -240,6 +240,8 @@ pub struct Config {
     #[serde(default = "ConfigDefaults::ca_refresh")]
     pub ca_refresh: u32,
 
+    pub suspend_child_after_inactive_hours: Option<i64>,
+
     #[serde(default = "ConfigDefaults::post_limit_api")]
     pub post_limit_api: u64,
 
@@ -568,6 +570,7 @@ impl Config {
             #[cfg(feature = "multi-user")]
             auth_openidconnect,
             ca_refresh,
+            suspend_child_after_inactive_hours: None,
             post_limit_api,
             post_limit_rfc8181,
             rfc8181_log_dir,

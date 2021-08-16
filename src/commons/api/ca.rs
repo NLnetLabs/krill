@@ -1562,6 +1562,14 @@ impl ChildrenConnectionStats {
     pub fn new(children: Vec<ChildConnectionStats>) -> Self {
         ChildrenConnectionStats { children }
     }
+
+    pub fn inactive_children(&self, threshold_hours: i64) -> Vec<ChildHandle> {
+        self.children
+            .iter()
+            .filter(|child| child.inactive(threshold_hours))
+            .map(|child| child.handle.clone())
+            .collect()
+    }
 }
 
 impl fmt::Display for ChildrenConnectionStats {
@@ -1602,6 +1610,13 @@ pub struct ChildConnectionStats {
 impl ChildConnectionStats {
     pub fn new(handle: ChildHandle, last_exchange: Option<ChildExchange>) -> Self {
         ChildConnectionStats { handle, last_exchange }
+    }
+
+    pub fn inactive(&self, threshold_hours: i64) -> bool {
+        match &self.last_exchange {
+            None => false, // if there has been no exchange at all, the child is not yet active, rather than inactive
+            Some(exchange) => exchange.timestamp < (Time::now() - Duration::hours(threshold_hours)).timestamp(),
+        }
     }
 }
 
