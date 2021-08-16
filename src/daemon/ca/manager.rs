@@ -553,24 +553,38 @@ impl CaManager {
 
         let content = ca.verify_rfc6492(msg)?;
 
-        let (child, recipient, content) = content.unpack();
+        let (child_handle, recipient, content) = content.unpack();
 
-        let cms_logger = CmsLogger::for_rfc6492_rcvd(self.config.rfc6492_log_dir.as_ref(), &recipient, &child);
+        // If the child was suspended, because it was inactive, then we can now conclude
+        // that it's become active again. So unsuspend it first, before processing the request
+        // further.
+        let child_ca = ca.get_child(&child_handle)?;
+        if child_ca.is_suspended() {
+            info!(
+                "Child '{}' under CA '{}' became active again, will unsuspend it.",
+                child_handle, ca_handle
+            );
+            let req = UpdateChildRequest::suspend(false);
+            self.ca_child_update(ca_handle, child_handle.clone(), req, actor)
+                .await?;
+        }
+
+        let cms_logger = CmsLogger::for_rfc6492_rcvd(self.config.rfc6492_log_dir.as_ref(), &recipient, &child_handle);
 
         let (res, should_log_cms) = match content {
             rfc6492::Content::Qry(rfc6492::Qry::Revoke(req)) => {
-                let res = self.revoke(ca_handle, child.clone(), req, actor).await?;
-                let msg = rfc6492::Message::revoke_response(child.clone(), recipient, res);
+                let res = self.revoke(ca_handle, child_handle.clone(), req, actor).await?;
+                let msg = rfc6492::Message::revoke_response(child_handle.clone(), recipient, res);
                 (self.wrap_rfc6492_response(ca_handle, msg).await, true)
             }
             rfc6492::Content::Qry(rfc6492::Qry::List) => {
-                let entitlements = self.list(ca_handle, &child).await?;
-                let msg = rfc6492::Message::list_response(child.clone(), recipient, entitlements);
+                let entitlements = self.list(ca_handle, &child_handle).await?;
+                let msg = rfc6492::Message::list_response(child_handle.clone(), recipient, entitlements);
                 (self.wrap_rfc6492_response(ca_handle, msg).await, false)
             }
             rfc6492::Content::Qry(rfc6492::Qry::Issue(req)) => {
-                let res = self.issue(ca_handle, &child, req, actor).await?;
-                let msg = rfc6492::Message::issue_response(child.clone(), recipient, res);
+                let res = self.issue(ca_handle, &child_handle, req, actor).await?;
+                let msg = rfc6492::Message::issue_response(child_handle.clone(), recipient, res);
                 (self.wrap_rfc6492_response(ca_handle, msg).await, true)
             }
             _ => (Err(Error::custom("Unsupported RFC6492 message")), true),
@@ -596,14 +610,14 @@ impl CaManager {
                 self.status_store
                     .lock()
                     .await
-                    .set_child_success(ca.handle(), &child, user_agent)
+                    .set_child_success(ca.handle(), &child_handle, user_agent)
                     .await?;
             }
             Err(e) => {
                 self.status_store
                     .lock()
                     .await
-                    .set_child_failure(ca.handle(), &child, user_agent, e)
+                    .set_child_failure(ca.handle(), &child_handle, user_agent, e)
                     .await?;
             }
         }

@@ -12,9 +12,7 @@ use crate::{commons::api::Handle, daemon::config::Config};
 use crate::{
     commons::{
         crypto::KrillSigner,
-        eventsourcing::{
-            AggregateStoreError, CommandKey, KeyStoreKey, KeyValueError, KeyValueStore,
-        },
+        eventsourcing::{AggregateStoreError, CommandKey, KeyStoreKey, KeyValueError, KeyValueStore},
         util::KrillVersion,
     },
     pubd::RepositoryManager,
@@ -173,7 +171,7 @@ pub async fn update_storage_version(work_dir: &Path) -> Result<(), UpgradeError>
         debug!("Updating version file for cas");
         file::save_json(&current, &work_dir.join("cas/version"))?;
     }
-    
+
     if needs_v0_9_0_upgrade(work_dir, "pubd") {
         debug!("Updating version file for pubd");
         file::save_json(&current, &work_dir.join("pubd/version"))?;
@@ -191,7 +189,7 @@ fn upgrade_0_9_0(config: Arc<Config>) -> Result<(), UpgradeError> {
     if needs_v0_9_0_upgrade(work_dir, "cas") {
         let signer = Arc::new(KrillSigner::build(work_dir)?);
         let repo_manager = RepositoryManager::build(config.clone(), signer)?;
-        
+
         CaObjectsMigration::migrate(config, repo_manager)?;
     }
 
@@ -207,7 +205,6 @@ fn needs_v0_9_0_upgrade(work_dir: &Path, ns: &str) -> bool {
     } else {
         false
     }
-
 }
 
 //------------ Tests ---------------------------------------------------------
@@ -228,7 +225,7 @@ mod tests {
         let source = PathBuf::from("test-resources/migrations/v0_8_1/");
         file::backup_dir(&source, &work_dir).unwrap();
 
-        let config = Arc::new(Config::test(&work_dir, false));
+        let config = Arc::new(Config::test(&work_dir, false, false));
         let _ = config.init_logging();
 
         upgrade_0_9_0(config).unwrap();
@@ -242,7 +239,7 @@ mod tests {
         let source = PathBuf::from("test-resources/migrations/v0_6_0/");
         file::backup_dir(&source, &work_dir).unwrap();
 
-        let config = Arc::new(Config::test(&work_dir, false));
+        let config = Arc::new(Config::test(&work_dir, false, false));
         let _ = config.init_logging();
 
         upgrade_0_9_0(config).unwrap();
