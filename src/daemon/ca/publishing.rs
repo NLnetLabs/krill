@@ -864,6 +864,11 @@ impl CurrentKeyObjectSet {
             }
         }
 
+        for suspended in cert_updates.suspended() {
+            let name = ObjectName::from(suspended.cert());
+            self.certs.remove(&name);
+        }
+
         self.reissue(timing, signer)
     }
 

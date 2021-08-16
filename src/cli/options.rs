@@ -1380,7 +1380,7 @@ impl Options {
         };
         let resources = Self::parse_resource_args(matches)?;
 
-        let update = UpdateChildRequest::new(id_cert, resources);
+        let update = UpdateChildRequest::new(id_cert, resources, None);
 
         let command = Command::CertAuth(CaCommand::ChildUpdate(my_ca, child, update));
         Ok(Options::make(general_args, command))

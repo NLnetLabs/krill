@@ -496,15 +496,23 @@ impl CaManager {
         req: UpdateChildRequest,
         actor: &Actor,
     ) -> KrillResult<()> {
-        let (id_opt, resources_opt) = req.unpack();
+        let (id_opt, resources_opt, suspend_opt) = req.unpack();
 
         if let Some(id) = id_opt {
             self.send_command(CmdDet::child_update_id(ca, child.clone(), id, actor))
                 .await?;
         }
         if let Some(resources) = resources_opt {
-            self.send_command(CmdDet::child_update_resources(ca, child, resources, actor))
+            self.send_command(CmdDet::child_update_resources(ca, child.clone(), resources, actor))
                 .await?;
+        }
+        if let Some(suspend) = suspend_opt {
+            if suspend {
+                self.send_command(CmdDet::child_suspend_inactive(ca, child, actor))
+                    .await?;
+            } else {
+                self.send_command(CmdDet::child_unsuspend(ca, child, actor)).await?;
+            }
         }
         Ok(())
     }

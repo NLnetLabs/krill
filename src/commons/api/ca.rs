@@ -245,6 +245,8 @@ pub struct IssuedCert {
     replaces: Option<ReplacedObject>,
 }
 
+pub type SuspendedCert = IssuedCert;
+
 impl IssuedCert {
     pub fn new(
         uri: uri::Rsync,
