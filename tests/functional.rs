@@ -264,6 +264,8 @@ async fn functional() {
 
     let rcn_0 = ResourceClassName::from(0);
     let rcn_1 = ResourceClassName::from(1);
+    let rcn_2 = ResourceClassName::from(2);
+    let rcn_3 = ResourceClassName::from(3);
 
     info("##################################################################");
     info("#                                                                #");
@@ -727,8 +729,6 @@ async fn functional() {
         {
             assert!(will_publish("CA4 should withdraw objects when parent is removed", &ca4, &[]).await);
         }
-
-        // delete_ca(&ca4).await;
     }
 
     info("##################################################################");
@@ -747,6 +747,50 @@ async fn functional() {
             &[route_resource_set_10_0_0_0_def_1, route_resource_set_10_1_0_0_def_1],
         )
         .await;
+    }
+
+    info("##################################################################");
+    info("#                                                                #");
+    info("# Suspend CA4, expect that parent CA3 stops publishing its certs #");
+    info("#                                                                #");
+    info("##################################################################");
+    info("");
+    {
+        suspend_inactive_child(&ca3, &ca4).await;
+
+        let mut expected_files = expected_mft_and_crl(&ca3, &rcn_0).await;
+        expected_files.append(&mut expected_mft_and_crl(&ca3, &rcn_1).await);
+        assert!(
+            will_publish(
+                "CA3 should have two resource classes and no cert for CA4 in either",
+                &ca3,
+                &expected_files
+            )
+            .await
+        );
+    }
+
+    info("##################################################################");
+    info("#                                                                #");
+    info("# Unsuspend CA4, expect that parent publishes its certs again    #");
+    info("#                                                                #");
+    info("##################################################################");
+    info("");
+    {
+        unsuspend_child(&ca3, &ca4).await;
+
+        let mut expected_files = expected_mft_and_crl(&ca3, &rcn_0).await;
+        expected_files.append(&mut expected_mft_and_crl(&ca3, &rcn_1).await);
+        expected_files.push(expected_issued_cer(&ca4, &rcn_2).await);
+        expected_files.push(expected_issued_cer(&ca4, &rcn_3).await);
+        assert!(
+            will_publish(
+                "CA3 should have two resource classes and a cert for CA4 in each",
+                &ca3,
+                &expected_files
+            )
+            .await
+        );
     }
 
     info("##################################################################");

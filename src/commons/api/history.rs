@@ -428,6 +428,12 @@ pub enum StorableCaCommand {
     ChildRemove {
         child: ChildHandle,
     },
+    ChildSuspendInactive {
+        child: ChildHandle,
+    },
+    ChildUnsuspend {
+        child: ChildHandle,
+    },
     GenerateNewIdKey,
     AddParent {
         parent: ParentHandle,
@@ -513,6 +519,12 @@ impl WithStorableDetails for StorableCaCommand {
                 .with_key(ki),
             StorableCaCommand::ChildRemove { child } => {
                 CommandSummary::new("cmd-ca-child-remove", &self).with_child(child)
+            }
+            StorableCaCommand::ChildSuspendInactive { child } => {
+                CommandSummary::new("cmd-ca-child-suspend-inactive", &self).with_child(child)
+            }
+            StorableCaCommand::ChildUnsuspend { child } => {
+                CommandSummary::new("cmd-ca-unsuspend", &self).with_child(child)
             }
             StorableCaCommand::ChildRevokeKey { child, revoke_req } => {
                 CommandSummary::new("cmd-ca-child-revoke", &self)
@@ -615,7 +627,13 @@ impl fmt::Display for StorableCaCommand {
                 revoke_req.class_name()
             ),
             StorableCaCommand::ChildRemove { child } => {
-                write!(f, "Remove child '{}' and revoke&remove its certs", child)
+                write!(f, "Remove child '{}' and revoke & remove its certs", child)
+            }
+            StorableCaCommand::ChildSuspendInactive { child } => {
+                write!(f, "Suspend inactive child '{}': stop publishing its certs", child)
+            }
+            StorableCaCommand::ChildUnsuspend { child } => {
+                write!(f, "Unsuspend child '{}': publish its unexpired certs", child)
             }
 
             // ------------------------------------------------------------

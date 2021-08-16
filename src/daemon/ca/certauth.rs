@@ -207,7 +207,7 @@ impl Aggregate for CertAuth {
                 updates,
             } => {
                 let rc = self.resources.get_mut(&resource_class_name).unwrap();
-                let (issued, removed) = updates.unpack();
+                let (issued, removed, suspended) = updates.unpack();
                 for iss in issued {
                     rc.certificate_issued(iss)
                 }
@@ -215,7 +215,7 @@ impl Aggregate for CertAuth {
                     rc.key_revoked(&rem);
 
                     // This loop is inefficient, but certificate revocations are not that common, so it's
-                    // not a big deal. Tracking this better would require that track the child handle somehow.
+                    // not a big deal. Tracking this better would require to track the child handle somehow.
                     // That is a bit hard when this revocation is the result from a republish where we lost
                     // all resources delegated to the child.
                     for child in self.children.values_mut() {
@@ -223,6 +223,9 @@ impl Aggregate for CertAuth {
                             child.add_revoke_response(rem)
                         }
                     }
+                }
+                for suspended in suspended {
+                    rc.certificate_suspended(suspended);
                 }
             }
 
@@ -237,6 +240,10 @@ impl Aggregate for CertAuth {
             CaEvtDet::ChildRemoved { child } => {
                 self.children.remove(&child);
             }
+
+            CaEvtDet::ChildSuspended { child } => self.children.get_mut(&child).unwrap().suspend(),
+
+            CaEvtDet::ChildUnsuspended { child } => self.children.get_mut(&child).unwrap().unsuspend(),
 
             //-----------------------------------------------------------------------
             // Being a child
@@ -407,6 +414,8 @@ impl Aggregate for CertAuth {
             CmdDet::ChildCertify(child, request, config, signer) => self.child_certify(child, request, &config, signer),
             CmdDet::ChildRevokeKey(child, request) => self.child_revoke_key(child, request),
             CmdDet::ChildRemove(child) => self.child_remove(&child),
+            CmdDet::ChildSuspendInactive(child) => self.child_suspend_inactive(&child),
+            CmdDet::ChildUnsuspend(child) => self.child_unsuspend(&child),
 
             // being a child
             CmdDet::GenerateNewIdKey(signer) => self.generate_new_id_key(signer),
@@ -960,6 +969,123 @@ impl CertAuth {
 
         info!("CA '{}' removed child '{}'", handle, child_handle);
         res.push(CaEvtDet::child_removed(handle, version, child_handle.clone()));
+
+        Ok(res)
+    }
+
+    // Suspend a child. The intention is that this is called when it is discovered
+    // that the child has been inactive, i.e. not contacting this parent for a pro-longed
+    // period of time (hours).
+    //
+    // When a child is suspended we need to:
+    // - mark it as suspended
+    // - withdraw all certificates issued to it (suspend them)
+    fn child_suspend_inactive(&self, child_handle: &ChildHandle) -> KrillResult<Vec<CaEvt>> {
+        let mut res = vec![];
+
+        let child = self.get_child(&child_handle)?;
+
+        if child.is_suspended() {
+            return Ok(res); // nothing to do, child is already suspended
+        }
+
+        let mut version = self.version;
+        let handle = &self.handle;
+
+        // Find all the certs in all RCs for this child and suspend them.
+        for (rcn, rc) in self.resources.iter() {
+            let certified_keys = child.issued(rcn);
+
+            if certified_keys.is_empty() {
+                continue;
+            }
+
+            let mut cert_updates = ChildCertificateUpdates::default();
+
+            for key in certified_keys {
+                if let Some(issued) = rc.issued(&key) {
+                    cert_updates.suspend(issued.clone());
+                }
+            }
+
+            res.push(CaEvtDet::child_certificates_updated(
+                handle,
+                version,
+                rcn.clone(),
+                cert_updates,
+            ));
+            version += 1;
+        }
+
+        info!("CA '{}' suspended inactive child '{}'", handle, child_handle);
+        res.push(CaEvtDet::child_suspended(handle, version, child_handle.clone()));
+
+        Ok(res)
+    }
+
+    // Unsuspend a child. The intention is that this is called automatically when
+    // a suspended (inactive) child CA is seen to contact this parent again.
+    //
+    // When a child is unsuspended we need to:
+    // - mark it as unsuspended
+    // - republish suspended certificates for it, which
+    //    - will not expire for another day
+    //    - do not exceed the current resource entitlements of the CA
+    // - other suspended certificates will just be removed.
+    //
+    // Then the child may or may not request new certificates as it sees fit.
+    // I.e. the unsuspend should be done before the child gets an answer to its
+    // RFC 6492 list request.
+    fn child_unsuspend(&self, child_handle: &ChildHandle) -> KrillResult<Vec<CaEvt>> {
+        let mut res = vec![];
+
+        let child = self.get_child(&child_handle)?;
+
+        if !child.is_suspended() {
+            return Ok(res); // nothing to do, child is not suspended
+        }
+
+        let mut version = self.version;
+        let handle = &self.handle;
+
+        // Find all the certs in all RCs for this child and suspend them.
+        for (rcn, rc) in self.resources.iter() {
+            let certified_keys = child.issued(rcn);
+
+            if certified_keys.is_empty() {
+                continue;
+            }
+
+            let mut cert_updates = ChildCertificateUpdates::default();
+
+            for key in certified_keys {
+                if let Some(issued) = rc.suspended(&key) {
+                    // check that the cert is actually not expired or about to expire and not overclaiming
+                    if issued.validity().not_after() > Time::now() + Duration::days(1)
+                        && child.resources().contains(issued.resource_set())
+                    {
+                        // certificate is still fit for publication, so move it back to issued
+                        cert_updates.issue(issued.clone());
+                    } else {
+                        // certificate should not be published as is. Remove it and the child will request
+                        // a new certificate because the resources and or validity entitlements will have
+                        // changed.
+                        cert_updates.remove(issued.subject_key_identifier());
+                    }
+                }
+            }
+
+            res.push(CaEvtDet::child_certificates_updated(
+                handle,
+                version,
+                rcn.clone(),
+                cert_updates,
+            ));
+            version += 1;
+        }
+
+        info!("CA '{}' unsuspended child '{}'", handle, child_handle);
+        res.push(CaEvtDet::child_unsuspended(handle, version, child_handle.clone()));
 
         Ok(res)
     }

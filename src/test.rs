@@ -294,6 +294,28 @@ pub async fn delete_child(ca: &Handle, child: &ChildHandle) {
     krill_admin(Command::CertAuth(CaCommand::ChildDelete(ca.clone(), child.clone()))).await;
 }
 
+pub async fn suspend_inactive_child(ca: &Handle, child: &ChildHandle) {
+    let update = UpdateChildRequest::suspend(true);
+
+    krill_admin(Command::CertAuth(CaCommand::ChildUpdate(
+        ca.clone(),
+        child.clone(),
+        update,
+    )))
+    .await;
+}
+
+pub async fn unsuspend_child(ca: &Handle, child: &ChildHandle) {
+    let update = UpdateChildRequest::suspend(false);
+
+    krill_admin(Command::CertAuth(CaCommand::ChildUpdate(
+        ca.clone(),
+        child.clone(),
+        update,
+    )))
+    .await;
+}
+
 async fn send_child_request(ca: &Handle, child: &Handle, req: UpdateChildRequest) {
     match krill_admin(Command::CertAuth(CaCommand::ChildUpdate(
         ca.clone(),
