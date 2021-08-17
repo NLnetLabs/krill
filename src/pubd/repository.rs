@@ -10,9 +10,9 @@ use std::{
 };
 
 use bytes::Bytes;
-use rpki::uri;
 use rpki::repository::crypto::KeyIdentifier;
 use rpki::repository::x509::Time;
+use rpki::uri;
 
 use crate::{
     commons::{
@@ -64,16 +64,13 @@ impl RepositoryContentProxy {
 
         let proxy = RepositoryContentProxy { cache, store, key };
         proxy.warm_cache()?;
-        
+
         Ok(proxy)
     }
-        
-    fn warm_cache(&self) -> KrillResult<()> {
 
-        let key_store_read = self.store
-                .read()
-                .unwrap();
-        
+    fn warm_cache(&self) -> KrillResult<()> {
+        let key_store_read = self.store.read().unwrap();
+
         if key_store_read.has(&self.key)? {
             info!("Warming the repository content cache, this can take a minute for large repositories.");
             let content = key_store_read.get(&self.key)?.unwrap();
@@ -179,9 +176,14 @@ impl RepositoryContentProxy {
         self.read(|content| content.write_repository(config))
     }
 
-    /// Reset the RRDP session
+    /// Reset the RRDP session if is initialized. Otherwise do nothing.
     pub fn session_reset(&self, config: &RepositoryRetentionConfig) -> KrillResult<()> {
-        self.write(|content| content.session_reset(config))
+        if self.cache.read().unwrap().is_some() {
+            self.write(|content| content.session_reset(config))
+        } else {
+            // repository server was not initialized on this Krill instance. Nothing to reset.
+            Ok(())
+        }
     }
 
     /// Create a list reply containing all current objects for a publisher
@@ -211,7 +213,7 @@ impl RepositoryContentProxy {
     }
 
     // Execute a closure on a mutable repository content in a single read 'transaction'
-    // 
+    //
     // This function fails if the repository content is not initialized.
     fn read<A, F: FnOnce(&RepositoryContent) -> KrillResult<A>>(&self, op: F) -> KrillResult<A> {
         // Note that because the content is initialized it is implied that the cache MUST always be
@@ -324,6 +326,8 @@ impl RepositoryContent {
     }
 
     pub fn session_reset(&mut self, config: &RepositoryRetentionConfig) -> KrillResult<()> {
+        info!("Perform RRDP session reset - ensures a consistent view for RPs in case we restarted from a backup.");
+
         self.rrdp.session_reset();
         self.stats.session_reset(self.rrdp.notification());
         self.write_repository(config)?;
