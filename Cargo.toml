@@ -13,6 +13,10 @@ license = "MPL-2.0"
 exclude = [
   "test-resources/*",
   "tests/*",
+  ".github/*",
+  "docker/*",
+  "pkg/*",
+  "Dockerfile",
 ]
 build = "build.rs"
 
