@@ -398,7 +398,7 @@ impl Aggregate for CertAuth {
 
         match command.into_details() {
             // trust anchor
-            CmdDet::MakeTrustAnchor(uris, signer) => self.trust_anchor_make(uris, signer),
+            CmdDet::MakeTrustAnchor(uris, rsync_uri, signer) => self.trust_anchor_make(uris, rsync_uri, signer),
 
             // being a parent
             CmdDet::ChildAdd(child, id_cert, resources) => self.child_add(child, id_cert, resources),
@@ -542,7 +542,12 @@ impl CertAuth {
 /// # Being a Trust Anchor
 ///
 impl CertAuth {
-    fn trust_anchor_make(&self, uris: Vec<uri::Https>, signer: Arc<KrillSigner>) -> KrillResult<Vec<CaEvt>> {
+    fn trust_anchor_make(
+        &self,
+        uris: Vec<uri::Https>,
+        rsync_uri: Option<uri::Rsync>,
+        signer: Arc<KrillSigner>,
+    ) -> KrillResult<Vec<CaEvt>> {
         if !self.resources.is_empty() {
             return Err(Error::custom("Cannot turn CA with resources into TA"));
         }
@@ -584,7 +589,7 @@ impl CertAuth {
             signer.sign_cert(cert, &key)?
         };
 
-        let tal = TrustAnchorLocator::new(uris, &cert);
+        let tal = TrustAnchorLocator::new(uris, rsync_uri, &cert);
 
         let ta_cert_details = TaCertDetails::new(cert, resources, tal);
 

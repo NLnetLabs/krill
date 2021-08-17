@@ -406,7 +406,10 @@ impl Eq for RcvdCert {}
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TrustAnchorLocator {
-    uris: Vec<uri::Https>, // We won't create TALs with rsync, this is not for parsing.
+    uris: Vec<uri::Https>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rsync_uri: Option<uri::Rsync>,
 
     #[serde(deserialize_with = "ext_serde::de_bytes", serialize_with = "ext_serde::ser_bytes")]
     encoded_ski: Bytes,
@@ -414,12 +417,16 @@ pub struct TrustAnchorLocator {
 
 impl TrustAnchorLocator {
     /// Creates a new TAL, panics when the provided Cert is not a TA cert.
-    pub fn new(uris: Vec<uri::Https>, cert: &Cert) -> Self {
+    pub fn new(uris: Vec<uri::Https>, rsync_uri: Option<uri::Rsync>, cert: &Cert) -> Self {
         if cert.authority_key_identifier().is_some() {
             panic!("Trying to create TAL for a non-TA certificate.")
         }
         let encoded_ski = cert.subject_public_key_info().to_info_bytes();
-        TrustAnchorLocator { uris, encoded_ski }
+        TrustAnchorLocator {
+            uris,
+            rsync_uri,
+            encoded_ski,
+        }
     }
 }
 
@@ -430,6 +437,10 @@ impl fmt::Display for TrustAnchorLocator {
         for uri in self.uris.iter() {
             writeln!(f, "{}", uri)?;
         }
+        if let Some(rsync_uri) = &self.rsync_uri {
+            writeln!(f, "{}", rsync_uri)?;
+        }
+
         writeln!(f)?;
 
         let len = base64.len();
@@ -2354,8 +2365,9 @@ mod test {
         let der = include_bytes!("../../../test-resources/ta.cer");
         let cert = Cert::decode(Bytes::from_static(der)).unwrap();
         let uri = test::https("https://localhost/ta.cer");
+        let rsync_uri = Some(test::rsync("rsync://localhost/ta/ta.cer"));
 
-        let tal = TrustAnchorLocator::new(vec![uri], &cert);
+        let tal = TrustAnchorLocator::new(vec![uri], rsync_uri, &cert);
 
         let expected_tal = include_str!("../../../test-resources/test.tal");
         let found_tal = tal.to_string();

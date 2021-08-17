@@ -235,7 +235,8 @@ impl CaManager {
             self.ca_store.command(upd_repo_cmd)?;
 
             // make trust anchor
-            let make_ta_cmd = CmdDet::make_trust_anchor(&ta_handle, ta_uris, self.signer.clone(), actor);
+            let make_ta_cmd =
+                CmdDet::make_trust_anchor(&ta_handle, ta_uris, Some(ta_aia.clone()), self.signer.clone(), actor);
             let ta = self.ca_store.command(make_ta_cmd)?;
 
             // receive the self signed cert (now as child of self)
