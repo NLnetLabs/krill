@@ -501,9 +501,8 @@ mod tests {
 
         // new snapshot should be published, and should be empty now
         assert!(session_dir_contains_snapshot(&session, 4));
-        let snapshot_bytes = file::read(&session_dir_snapshot(&session, 4)).unwrap();
+        let snapshot_bytes = file::read(&session_dir_snapshot(&session, 4).unwrap()).unwrap();
         let snapshot_xml = from_utf8(&snapshot_bytes).unwrap();
-        println!("\n\nsnapshot:\n\n{}", snapshot_xml);
         assert!(!snapshot_xml.contains("/alice/"));
 
         let _ = fs::remove_dir_all(d);
@@ -552,22 +551,12 @@ mod tests {
         assert!(find_in_reply(&list_reply, &test::rsync("rsync://localhost/repo/alice/file.txt")).is_some());
         assert!(find_in_reply(&list_reply, &test::rsync("rsync://localhost/repo/alice/file2.txt")).is_some());
 
-        fn path_to_snapshot(base_dir: &Path, session: &RrdpSession, serial: u64) -> PathBuf {
-            let mut path = base_dir.to_path_buf();
-            path.push("repo");
-            path.push("rrdp");
-            path.push(session.to_string());
-            path.push(serial.to_string());
-            path.push("snapshot.xml");
-            path
-        }
-
         // Find RRDP files on disk
         let stats_before = server.repo_stats().unwrap();
         let session_before = stats_before.session();
-        let snapshot_before_session_reset = path_to_snapshot(&d, &session_before, 1);
+        let snapshot_before_session_reset = find_in_session_and_serial_dir(&d, &session_before, 1, "snapshot.xml");
 
-        assert!(snapshot_before_session_reset.exists());
+        assert!(snapshot_before_session_reset.is_some());
 
         // Now test that a session reset works...
         server.rrdp_session_reset().unwrap();
@@ -575,11 +564,15 @@ mod tests {
         // Should write new session and snapshot
         let stats_after = server.repo_stats().unwrap();
         let session_after = stats_after.session();
-        let snapshot_after_session_reset = path_to_snapshot(&d, &session_after, 0);
-        assert!(snapshot_after_session_reset.exists());
+
+        let snapshot_after_session_reset = find_in_session_and_serial_dir(&d, &session_after, 0, "snapshot.xml");
+
+        assert!(snapshot_after_session_reset.is_some());
 
         // and clean up old dir
-        assert!(!snapshot_before_session_reset.exists());
+        let snapshot_before_session_reset = find_in_session_and_serial_dir(&d, &session_before, 1, "snapshot.xml");
+
+        assert!(snapshot_before_session_reset.is_none());
 
         let _ = fs::remove_dir_all(d);
     }
@@ -604,18 +597,44 @@ mod tests {
     }
 
     fn session_dir_contains_delta(session_path: &Path, serial: u64) -> bool {
-        let mut path = session_path.to_path_buf();
-        path.push(format!("{}/delta.xml", serial));
-        path.exists()
+        find_in_serial_dir(session_path, serial, "delta.xml").is_some()
     }
 
     fn session_dir_contains_snapshot(session_path: &Path, serial: u64) -> bool {
-        session_dir_snapshot(session_path, serial).exists()
+        find_in_serial_dir(session_path, serial, "snapshot.xml").is_some()
     }
 
-    fn session_dir_snapshot(session_path: &Path, serial: u64) -> PathBuf {
-        let mut path = session_path.to_path_buf();
-        path.push(format!("{}/snapshot.xml", serial));
-        path
+    fn session_dir_snapshot(session_path: &Path, serial: u64) -> Option<PathBuf> {
+        find_in_serial_dir(session_path, serial, "snapshot.xml")
+    }
+
+    /// Expects files (like delta.xml or snapshot.xml) under dir structure like:
+    /// <session_path>/<serial>/<some random>/<filename>
+    fn find_in_serial_dir(session_path: &Path, serial: u64, filename: &str) -> Option<PathBuf> {
+        let serial_dir = session_path.join(serial.to_string());
+        if let Ok(randoms) = fs::read_dir(&serial_dir) {
+            for entry in randoms {
+                let entry = entry.unwrap();
+                if let Ok(files) = fs::read_dir(entry.path()) {
+                    for file in files {
+                        let file = file.unwrap();
+                        if file.file_name().to_string_lossy() == filename {
+                            return Some(file.path());
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn find_in_session_and_serial_dir(
+        base_dir: &Path,
+        session: &RrdpSession,
+        serial: u64,
+        filename: &str,
+    ) -> Option<PathBuf> {
+        let session_path = base_dir.join(format!("repo/rrdp/{}", session));
+        find_in_serial_dir(&session_path, serial, filename)
     }
 }

@@ -10,9 +10,9 @@ use std::{
 };
 
 use bytes::Bytes;
-use rpki::uri;
 use rpki::repository::crypto::KeyIdentifier;
 use rpki::repository::x509::Time;
+use rpki::uri;
 
 use crate::{
     commons::{
@@ -64,16 +64,13 @@ impl RepositoryContentProxy {
 
         let proxy = RepositoryContentProxy { cache, store, key };
         proxy.warm_cache()?;
-        
+
         Ok(proxy)
     }
-        
-    fn warm_cache(&self) -> KrillResult<()> {
 
-        let key_store_read = self.store
-                .read()
-                .unwrap();
-        
+    fn warm_cache(&self) -> KrillResult<()> {
+        let key_store_read = self.store.read().unwrap();
+
         if key_store_read.has(&self.key)? {
             info!("Warming the repository content cache, this can take a minute for large repositories.");
             let content = key_store_read.get(&self.key)?.unwrap();
@@ -211,7 +208,7 @@ impl RepositoryContentProxy {
     }
 
     // Execute a closure on a mutable repository content in a single read 'transaction'
-    // 
+    //
     // This function fails if the repository content is not initialized.
     fn read<A, F: FnOnce(&RepositoryContent) -> KrillResult<A>>(&self, op: F) -> KrillResult<A> {
         // Note that because the content is initialized it is implied that the cache MUST always be
@@ -547,8 +544,8 @@ impl RrdpServer {
         let snapshot = Snapshot::create(session);
 
         let serial = 0;
-        let snapshot_uri = Self::new_snapshot_uri(&rrdp_base_uri, &session, serial);
-        let snapshot_path = Self::new_snapshot_path(&rrdp_base_dir, &session, serial);
+        let snapshot_uri = snapshot.uri(&rrdp_base_uri);
+        let snapshot_path = snapshot.path(&rrdp_base_dir);
         let snapshot_hash = HexEncodedHash::from_content(snapshot.xml().as_slice());
 
         let snapshot_ref = SnapshotRef::new(snapshot_uri, snapshot_path, snapshot_hash);
@@ -586,12 +583,10 @@ impl RrdpServer {
     /// state.
     fn session_reset(&mut self) {
         let session = RrdpSession::random();
-        let serial = 0;
-
         let snapshot = self.snapshot.session_reset(session);
 
-        let snapshot_uri = Self::new_snapshot_uri(&self.rrdp_base_uri, &session, serial);
-        let snapshot_path = Self::new_snapshot_path(&self.rrdp_base_dir, &session, serial);
+        let snapshot_uri = snapshot.uri(&self.rrdp_base_uri);
+        let snapshot_path = snapshot.path(&self.rrdp_base_dir);
         let snapshot_hash = HexEncodedHash::from_content(snapshot.xml().as_slice());
 
         let snapshot_ref = SnapshotRef::new(snapshot_uri, snapshot_path, snapshot_hash);
@@ -676,8 +671,8 @@ impl RrdpServer {
     // relevant.
     fn update_notification(&mut self, config: &RepositoryRetentionConfig) {
         let snapshot_ref = {
-            let snapshot_uri = self.snapshot_uri();
-            let snapshot_path = self.snapshot_path(self.serial);
+            let snapshot_uri = self.snapshot.uri(&self.rrdp_base_uri);
+            let snapshot_path = self.snapshot.path(&self.rrdp_base_dir);
             let snapshot_xml = self.snapshot.xml();
             let snapshot_hash = HexEncodedHash::from_content(snapshot_xml.as_slice());
             SnapshotRef::new(snapshot_uri, snapshot_path, snapshot_hash)
@@ -691,8 +686,8 @@ impl RrdpServer {
                 let xml = delta.xml();
                 let hash = HexEncodedHash::from_content(xml.as_slice());
 
-                let delta_uri = self.delta_uri(serial);
-                let delta_path = self.delta_path(serial);
+                let delta_uri = delta.uri(&self.rrdp_base_uri);
+                let delta_path = delta.path(&self.rrdp_base_dir);
                 let file_ref = FileRef::new(delta_uri, delta_path, hash);
                 DeltaRef::new(serial, file_ref)
             })
@@ -712,14 +707,14 @@ impl RrdpServer {
     /// no longer referenced in the notification file.
     fn write(&self, config: &RepositoryRetentionConfig) -> Result<(), Error> {
         // write snapshot if it's not there
-        let snapshot_path = self.snapshot_path(self.serial);
+        let snapshot_path = self.snapshot.path(&self.rrdp_base_dir);
         if !snapshot_path.exists() {
             self.snapshot.write_xml(&snapshot_path)?;
         }
 
         // write deltas if they are not there
         for delta in &self.deltas {
-            let path = self.delta_path(delta.serial());
+            let path = delta.path(&self.rrdp_base_dir);
             if !path.exists() {
                 // assume that if the delta exists, it is correct
                 delta.write_xml(&path)?;
@@ -803,7 +798,7 @@ impl RrdpServer {
                 // Skip the current serial
                 if serial == self.serial {
                     continue;
-                // Clean up old serial dirs
+                // Clean up old serial dirs once deltas are out of scope
                 } else if !self.notification.includes_delta(serial)
                     && !self.old_notifications.iter().any(|n| n.includes_delta(serial))
                 {
@@ -821,17 +816,6 @@ impl RrdpServer {
                         let _best_effort_rm = fs::remove_dir_all(path);
                     } else {
                         let _best_effort_rm = fs::remove_file(path);
-                    }
-
-                // clean snapshots no longer referenced in retained notification files
-                // unless archiving mode is enabled -- in that case leave the snapshots
-                // and they will be archived when the delta go out of scope (see above)
-                } else if !self.old_notifications.iter().any(|n| n.includes_snapshot(serial))
-                    && !config.retention_archive
-                {
-                    let snapshot_path = Self::new_snapshot_path(&self.rrdp_base_dir, &self.session, serial);
-                    if snapshot_path.exists() {
-                        let _best_effort_rm = fs::remove_file(snapshot_path);
                     }
                 } else {
                     // we still need this
@@ -870,47 +854,6 @@ impl RrdpServer {
     fn notification_path(&self) -> PathBuf {
         let mut path = self.rrdp_base_dir.clone();
         path.push("notification.xml");
-        path
-    }
-
-    fn snapshot_rel(session: &RrdpSession, serial: u64) -> String {
-        format!("{}/{}/snapshot.xml", session, serial)
-    }
-
-    fn new_snapshot_path(base: &Path, session: &RrdpSession, serial: u64) -> PathBuf {
-        let mut path = base.to_path_buf();
-        path.push(Self::snapshot_rel(session, serial));
-        path
-    }
-
-    fn snapshot_path(&self, serial: u64) -> PathBuf {
-        Self::new_snapshot_path(&self.rrdp_base_dir, &self.session, serial)
-    }
-
-    fn new_snapshot_uri(base: &uri::Https, session: &RrdpSession, serial: u64) -> uri::Https {
-        base.join(Self::snapshot_rel(session, serial).as_ref()).unwrap()
-    }
-
-    fn snapshot_uri(&self) -> uri::Https {
-        Self::new_snapshot_uri(&self.rrdp_base_uri, &self.session, self.serial)
-    }
-
-    fn delta_rel(session: &RrdpSession, serial: u64) -> String {
-        format!("{}/{}/delta.xml", session, serial)
-    }
-
-    fn delta_uri(&self, serial: u64) -> uri::Https {
-        uri::Https::from_string(format!(
-            "{}{}",
-            self.rrdp_base_uri.to_string(),
-            Self::delta_rel(&self.session, serial)
-        ))
-        .unwrap() // Cannot fail. Config checked at startup.
-    }
-
-    fn delta_path(&self, serial: u64) -> PathBuf {
-        let mut path = self.rrdp_base_dir.clone();
-        path.push(Self::delta_rel(&self.session, serial));
         path
     }
 }
