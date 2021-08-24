@@ -1,7 +1,19 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{net::TcpStream, path::PathBuf, sync::Arc};
 
 use bytes::Bytes;
-use kmip::{ConnectionDetails, KeyType};
+use kmip::{
+    types::{
+        common::{KeyMaterial, ObjectType, Operation, UniqueIdentifier},
+        request::{Attribute, RequestPayload},
+        response::ManagedObject,
+        response::{GetResponsePayload, KeyBlock, KeyValue, QueryResponsePayload, ResponsePayload},
+    },
+    Client, ClientBuilder,
+};
+use openssl::{
+    error::ErrorStack,
+    ssl::{SslConnector, SslFiletype, SslMethod, SslStream, SslVerifyMode},
+};
 use rpki::crypto::{
     signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
 };
@@ -47,67 +59,96 @@ pub struct ConfigSignerKmip {
     pub password: Option<String>,
 }
 
+type KmipClient = Client<SslStream<TcpStream>>;
+
+fn make_conn(config: &ConfigSignerKmip) -> Result<KmipClient, SignerError> {
+    fn create_tls_client(config: &ConfigSignerKmip) -> Result<SslConnector, ErrorStack> {
+        let mut connector = SslConnector::builder(SslMethod::tls()).unwrap();
+        connector.set_verify(SslVerifyMode::NONE);
+        if config.insecure {
+            connector.set_verify(SslVerifyMode::NONE);
+        } else if let Some(path) = &config.server_ca_cert_path {
+            connector.set_ca_file(path)?;
+        }
+        if let Some(path) = &config.client_cert_path {
+            connector.set_certificate_file(path, SslFiletype::PEM)?;
+        }
+        if let Some(path) = &config.client_cert_private_key_path {
+            connector.set_private_key_file(path, SslFiletype::PEM)?;
+        }
+        Ok(connector.build())
+    }
+
+    fn create_kmip_client(tls_stream: SslStream<TcpStream>, config: &ConfigSignerKmip) -> KmipClient {
+        let mut client = ClientBuilder::new(tls_stream);
+        if let Some(username) = &config.username {
+            client = client.with_credentials(username.clone(), config.password.clone());
+        }
+        client.configure()
+    }
+
+    let tls_client = create_tls_client(&config)
+        .map_err(|err| SignerError::KmipError(format!("Failed to create TLS client: {}", err)))?;
+
+    let tcp_stream = TcpStream::connect(format!("{}:{}", config.host, config.port))
+        .map_err(|err| SignerError::KmipError(format!("Failed to connect: {}", err)))?;
+
+    let tls_stream = tls_client
+        .connect(&config.host, tcp_stream)
+        .map_err(|err| SignerError::KmipError(format!("TLS handshake failed: {}", err)))?;
+
+    Ok(create_kmip_client(tls_stream, config))
+}
+
 /// A KMIP based signer.
 #[derive(Clone, Debug)]
 pub struct KmipSigner {
     name: String,
-    conn: Arc<ConnectionDetails>,
+    config: ConfigSignerKmip,
     supports_rng_retrieve: bool,
     key_lookup: Arc<KeyMap>,
 }
 
 impl KmipSigner {
+    fn conn(&self) -> Result<KmipClient, SignerError> {
+        make_conn(&self.config)
+    }
+
     pub fn build(name: &str, config: &ConfigSignerKmip, key_lookup: Arc<KeyMap>) -> Result<Self, SignerError> {
         let name = name.to_string();
-        let mut conn = ConnectionDetails::new(config.host.clone(), config.port);
 
-        if config.insecure {
-            conn.set_insecure();
-        } else if let Some(path) = &config.server_ca_cert_path {
-            conn.set_server_ca_cert(path);
-        }
-
-        // TODO: Do we need to check that we have BOTH cert and key?
-        if let Some(path) = &config.client_cert_path {
-            conn.set_client_cert(path);
-        }
-        if let Some(path) = &config.client_cert_private_key_path {
-            conn.set_client_cert_private_key(path);
-        }
-
-        match (&config.username, &config.password) {
-            (None, None) => Ok(()),
-            (None, Some(_)) => Err(SignerError::KmipError("Password specified but username missing".into())),
-            (Some(_), None) => Err(SignerError::KmipError("Username specified but password missing".into())),
-            (Some(u), Some(p)) => Ok(conn.set_credentials(u.clone(), p.clone())),
-        }?;
-
-        let conn = Arc::new(conn);
+        let mut conn = make_conn(&config)?;
 
         // TODO: Is it okay to fail to start Krill if the KMIP server is unreachable?
-        info!("KMIP: Discovering provider details using {}", &conn);
-        let si = kmip::get_server_info(conn.clone())
-            .map_err(|err| SignerError::KmipError(format!("Unable to query KMIP server info: {}", err)))?;
+        // info!("KMIP: Discovering provider details using {}", &conn);
+        let res: QueryResponsePayload = conn
+            .query()
+            .map_err(|err| SignerError::KmipError(format!("Unable to query KMIP server info: {:?}", err)))?;
 
-        info!("KMIP: Provider details: {:?}", si.id);
+        info!("KMIP: Provider details: {:?}", res.vendor_identification);
 
+        let operations = res.operations.unwrap_or(Vec::new());
         // We don't check every possible operation that we might need, only the major ones
-        for op in &[kmip::Operation::CreateKeyPair, kmip::Operation::Sign] {
-            if !si.supported_ops.contains(&op) {
-                return Err(SignerError::KmipError(
-                    format!("KMIP server cannot be used as it lacks support for the {:?} operation", op)));
+        for op in &[Operation::CreateKeyPair, Operation::Sign] {
+            if !operations.contains(&op) {
+                return Err(SignerError::KmipError(format!(
+                    "KMIP server cannot be used as it lacks support for the {:?} operation",
+                    op
+                )));
             }
         }
 
-        let supports_rng_retrieve = si.supported_ops.contains(&kmip::Operation::RngRetrieve);
+        let supports_rng_retrieve = operations.contains(&Operation::RNGRetrieve);
 
         if !supports_rng_retrieve {
-            warn!("KMIP server does not support the Rng Retrieve operation. Random numbers will be generated by Krill.");
+            warn!(
+                "KMIP server does not support the Rng Retrieve operation. Random numbers will be generated by Krill."
+            );
         }
 
         Ok(KmipSigner {
             name,
-            conn,
+            config: config.clone(),
             supports_rng_retrieve,
             key_lookup,
         })
@@ -120,31 +161,66 @@ impl KmipSigner {
     fn get_public_key_from_id(&self, pub_id: &str) -> Result<PublicKey, SignerError> {
         let algorithm = PublicKeyFormat::Rsa;
 
-        let rsa_public_key = kmip::get_rsa_key_material(self.conn.clone(), pub_id)
-            .map_err(|err| SignerError::KmipError(format!("Failed to get key material: {}", err)))?;
+        let res = self
+            .conn()?
+            .do_request(RequestPayload::Get(
+                Some(UniqueIdentifier(pub_id.to_string())),
+                None,
+                None,
+                None,
+            ))
+            .map_err(|err| SignerError::KmipError(format!("Failed to get key material: {:?}", err)))?;
 
-        let rsa_public_key_bytes = match rsa_public_key {
-            kmip::RsaPublicKey::DerEncoded(bytes) => {
-                bytes
+        let rsa_public_key_bytes = if let ResponsePayload::Get(GetResponsePayload {
+            object_type: ObjectType::PublicKey,
+            cryptographic_object:
+                ManagedObject::PublicKey(kmip::types::response::PublicKey {
+                    key_block:
+                        KeyBlock {
+                            key_value: KeyValue { key_material: km, .. },
+                            ..
+                        },
+                }),
+            ..
+        }) = res
+        {
+            match km {
+                KeyMaterial::Bytes(bytes) => bytes,
+                KeyMaterial::TransparentRSAPrivateKey(_s) => {
+                    // use s.Modulus, s.PublicExponent
+                    return Err(SignerError::KmipError(
+                        "Failed to get key material: transparent RSA private key material is not yet supported"
+                            .to_string(),
+                    ));
+                }
+                KeyMaterial::TransparentRSAPublicKey(s) => {
+                    let modulus = bcder::Unsigned::from_be_bytes(s.modulus);
+                    let public_exp = bcder::Unsigned::from_be_bytes(s.public_exponent);
+                    let rsa_public_key = bcder::encode::sequence((modulus.encode(), public_exp.encode()));
+
+                    let mut bytes: Vec<u8> = Vec::new();
+                    rsa_public_key
+                        .write_encoded(bcder::Mode::Der, &mut bytes)
+                        .map_err(|err| {
+                            SignerError::KmipError(format!(
+                                "Failed to create DER encoded RSAPublicKey from constituent parts: {}",
+                                err
+                            ))
+                        })?;
+
+                    bytes
+                }
+                _ => {
+                    return Err(SignerError::KmipError(format!(
+                        "Failed to get key material: key material type {:?} is not yet supported",
+                        km
+                    )));
+                }
             }
-            kmip::RsaPublicKey::Components { modulus, public_exponent } => {
-                let modulus = bcder::Unsigned::from_be_bytes(modulus);
-                let public_exp = bcder::Unsigned::from_be_bytes(public_exponent);
-        
-                let rsa_public_key = bcder::encode::sequence((modulus.encode(), public_exp.encode()));
-        
-                let mut bytes: Vec<u8> = Vec::new();
-                rsa_public_key
-                    .write_encoded(bcder::Mode::Der, &mut bytes)
-                    .map_err(|err| {
-                        SignerError::KmipError(format!(
-                            "Failed to create DER encoded RSAPublicKey from constituent parts: {}",
-                            err
-                        ))
-                    })?;
-        
-                bytes
-            }
+        } else {
+            return Err(SignerError::KmipError(
+                "Failed to get key material: unsupported response payload from Get operation".to_string(),
+            ));
         };
 
         let subject_public_key = bcder::BitString::new(0, bytes::Bytes::from(rsa_public_key_bytes));
@@ -180,45 +256,94 @@ impl KmipSigner {
         Ok(public_key)
     }
 
-    fn find_key(
-        &self,
-        key_id: &KeyIdentifier,
-        is_private: bool,
-    ) -> Result<String, KeyError<SignerError>> {
+    fn find_key(&self, key_id: &KeyIdentifier, is_private: bool) -> Result<String, KeyError<SignerError>> {
         let key_name_prefix_vec = self.key_lookup.get_key(&self.name, key_id)?;
-        let key_name_prefix = String::from_utf8(key_name_prefix_vec)
-            .map_err(|err| KeyError::Signer(SignerError::KmipError(format!(
-                "Failed to convert lookeded up key name prefix bytes to String: {}", err))))?;
+        let key_name_prefix = String::from_utf8(key_name_prefix_vec).map_err(|err| {
+            KeyError::Signer(SignerError::KmipError(format!(
+                "Failed to convert lookeded up key name prefix bytes to String: {}",
+                err
+            )))
+        })?;
 
         let (key_type, key_name, human_key_class) = match is_private {
-            false => (KeyType::PUBLIC, format!("{}-public", key_name_prefix), "public key"),
-            true => (KeyType::PRIVATE, format!("{}-private", key_name_prefix), "private key"),
+            false => (
+                ObjectType::PublicKey,
+                format!("{}-public", key_name_prefix),
+                "public key",
+            ),
+            true => (
+                ObjectType::PrivateKey,
+                format!("{}-private", key_name_prefix),
+                "private key",
+            ),
         };
 
-        trace!(
-            "KMIP: Finding key id for {} with ID {}",
-            &human_key_class,
-            &key_id
-        );
+        trace!("KMIP: Finding key id for {} with ID {}", &human_key_class, &key_id);
 
-        let results = kmip::locate(self.conn.clone(), Some(&key_name), Some(key_type))
-            .map_err(|err| KeyError::Signer(SignerError::KmipError(format!(
-                "Failed to perform find for {} with id {}: {}",
-                &human_key_class, &key_id, err
-            ))))?;
+        let res = self
+            .conn()?
+            .do_request(RequestPayload::Locate(vec![
+                Attribute::Name(key_name),
+                Attribute::ObjectType(key_type),
+            ]))
+            .map_err(|err| {
+                KeyError::Signer(SignerError::KmipError(format!(
+                    "Failed to perform find for {} with id {}: {:?}",
+                    &human_key_class, &key_id, err
+                )))
+            })?;
 
-        match results.len() {
-            0 => Err(KeyError::KeyNotFound),
-            1 => Ok(results[0].clone()),
-            _ => Err(KeyError::Signer(SignerError::KmipError(format!(
-                    "More than one {} found with id {}", &human_key_class, &key_id)))),
+        if let ResponsePayload::Locate(res) = res {
+            match res.unique_identifiers.len() {
+                0 => Err(KeyError::KeyNotFound),
+                1 => Ok(res.unique_identifiers[0].to_string()),
+                _ => Err(KeyError::Signer(SignerError::KmipError(format!(
+                    "More than one {} found with id {}",
+                    &human_key_class, &key_id
+                )))),
+            }
+        } else {
+            Err(KeyError::Signer(SignerError::KmipError(
+                "Internal error: mismatched locate response payload type".to_string(),
+            )))
         }
     }
 
-    fn build_key(
-        &self,
-        algorithm: PublicKeyFormat,
-    ) -> Result<(PublicKey, String, String, String), SignerError> {
+    fn prepare_keys_for_use(&self, priv_id: &str, pub_id: &str) -> Result<(PublicKey, String), SignerError> {
+        let public_key = self.get_public_key_from_id(&pub_id)?;
+        let key_identifier = public_key.key_identifier();
+        let key_name_prefix = hex::encode(key_identifier);
+        let pub_key_name = format!("{}-public", key_name_prefix);
+        let priv_key_name = format!("{}-private", key_name_prefix);
+
+        let mut conn = self.conn()?;
+
+        conn.do_request(RequestPayload::ModifyAttribute(
+            Some(UniqueIdentifier(pub_id.to_string())),
+            Attribute::Name(pub_key_name),
+        ))
+        .map_err(|err| SignerError::KmipError(format!("Failed to set name on new public key: {:?}", err)))?;
+        conn.do_request(RequestPayload::ModifyAttribute(
+            Some(UniqueIdentifier(priv_id.to_string())),
+            Attribute::Name(priv_key_name),
+        ))
+        .map_err(|err| SignerError::KmipError(format!("Failed to set name on new private key: {:?}", err)))?;
+
+        debug!(
+            "KMIP: Generated pub/priv key pair with HSM IDs {} and {} and named {}-(public|private)",
+            pub_id, priv_id, key_name_prefix
+        );
+
+        // It might be possible to combine this with the key creation step by setting an activation date attribute in
+        // the past. At least one KMIP specification test case does this when registering (importing) a key, not sure if
+        // it is possible when creating a key pair or if HSMs support it.
+        conn.activate_key(&priv_id)
+            .map_err(|err| SignerError::KmipError(format!("Failed to activate new private key: {:?}", err)))?;
+
+        Ok((public_key, key_name_prefix))
+    }
+
+    fn build_key(&self, algorithm: PublicKeyFormat) -> Result<(PublicKey, String, String, String), SignerError> {
         if !matches!(algorithm, PublicKeyFormat::Rsa) {
             return Err(SignerError::KmipError(format!(
                 "Algorithm {:?} not supported while creating key",
@@ -228,27 +353,23 @@ impl KmipSigner {
 
         trace!("KMIP: Generating key pair");
 
-        let (priv_id, pub_id) = kmip::create_rsa_key_pair(self.conn.clone(), TEMP_PUB_KEY_NAME, TEMP_PRIV_KEY_NAME, 2048)
-            .map_err(|err| SignerError::KmipError(format!("Failed to create key: {}", err)))?;
+        let (priv_id, pub_id) = self
+            .conn()?
+            .create_rsa_key_pair(2048, TEMP_PRIV_KEY_NAME.into(), TEMP_PUB_KEY_NAME.into())
+            .map_err(|err| SignerError::KmipError(format!("Failed to create key: {:?}", err)))?;
 
-        let public_key = self.get_public_key_from_id(&pub_id)?;
-        let key_identifier = public_key.key_identifier();
-        let key_name_prefix = hex::encode(key_identifier);
-        let pub_key_name = format!("{}-public", &key_name_prefix);
-        let priv_key_name = format!("{}-private", &key_name_prefix);
+        let (public_key, key_name_prefix) = self.prepare_keys_for_use(&priv_id, &pub_id).or_else(|err| {
+            // cleanup
+            if let Err(err) = self.conn()?.destroy_key(&priv_id) {
+                warn!("Failed to destroy KMIP private key with ID '{}: {:?}'", priv_id, err);
+            }
+            if let Err(err) = self.conn()?.destroy_key(&pub_id) {
+                warn!("Failed to destroy KMIP public key with ID '{}: {:?}'", pub_id, err);
+            }
 
-        kmip::set_key_name(self.conn.clone(), &pub_id, &pub_key_name)
-            .map_err(|err| SignerError::KmipError(format!("Failed to set name on new public key: {}", err)))?;
-        kmip::set_key_name(self.conn.clone(), &priv_id, &priv_key_name)
-            .map_err(|err| SignerError::KmipError(format!("Failed to set name on new private key: {}", err)))?;
-
-        debug!("KMIP: Generated pub/priv key pair with HSM IDs {} and {} and named {}-(public|private)", pub_id, priv_id, key_name_prefix);
-
-        // It might be possible to combine this with the key creation step by setting an activation date attribute in
-        // the past. At least one KMIP specification test case does this when registering (importing) a key, not sure if
-        // it is possible when creating a key pair or if HSMs support it.
-        kmip::activate_key(self.conn.clone(), &priv_id)
-            .map_err(|err| SignerError::KmipError(format!("Failed to activate new private key: {}", err)))?;
+            // propagate the original error
+            Err(err)
+        })?;
 
         Ok((public_key, pub_id, priv_id, key_name_prefix))
     }
@@ -268,10 +389,12 @@ impl KmipSigner {
             )));
         }
 
-        let signed = kmip::sign(self.conn.clone(), priv_id, data.as_ref())
-            .map_err(|err| SignerError::KmipError(format!("Failed to sign: {}", err)))?;
+        let signed = self
+            .conn()?
+            .sign(priv_id, data.as_ref())
+            .map_err(|err| SignerError::KmipError(format!("Failed to sign: {:?}", err)))?;
 
-        let sig = Signature::new(SignatureAlgorithm::default(), Bytes::from(signed.clone()));
+        let sig = Signature::new(SignatureAlgorithm::default(), Bytes::from(signed.signature_data));
 
         // temporarily for testing purposes log some data we can use to verify that signing is working correctly:
         //   (plus we also log the key identifier in the caller fn sign())
@@ -289,7 +412,7 @@ impl KmipSigner {
         //     Verified OK
         //
         // if you can't get the key out of the HSM using pkcs11-tool you can instead use the error! statements
-        // above in get_public_key_from_id() which print out the public key in PEM format, and then use 
+        // above in get_public_key_from_id() which print out the public key in PEM format, and then use
         // -keyform PEM with the openssl dgst command instead of -keyform DER.
 
         Ok(sig)
@@ -297,16 +420,19 @@ impl KmipSigner {
 
     fn delete_key_pair(&self, key_id: &KeyIdentifier) -> Result<(), SignerError> {
         if let Ok(id) = self.find_key(key_id, false) {
-            kmip::destroy_key(self.conn.clone(), &id)
-                .map_err(|err| SignerError::KmipError(format!("Failed to destroy public key: {}", err)))?;
+            self.conn()?
+                .destroy_key(&id)
+                .map_err(|err| SignerError::KmipError(format!("Failed to destroy public key: {:?}", err)))?;
         }
         if let Ok(id) = self.find_key(key_id, true) {
             // We have to revoke (deactivate) the activated private key before we are allowed to destroy it.
-            kmip::revoke_key(self.conn.clone(), &id)
-                .map_err(|err| SignerError::KmipError(format!("Failed to revoke private key: {}", err)))?;
+            self.conn()?
+                .revoke_key(&id)
+                .map_err(|err| SignerError::KmipError(format!("Failed to revoke private key: {:?}", err)))?;
 
-            kmip::destroy_key(self.conn.clone(), &id)
-                .map_err(|err| SignerError::KmipError(format!("Failed to destroy private key: {}", err)))?;
+            self.conn()?
+                .revoke_key(&id)
+                .map_err(|err| SignerError::KmipError(format!("Failed to destroy private key: {:?}", err)))?;
         }
         Ok(())
     }
@@ -320,13 +446,15 @@ impl Signer for KmipSigner {
     fn create_key(&mut self, algorithm: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
         let (key, _, _, key_name_prefix) = self.build_key(algorithm)?;
         let key_id = key.key_identifier();
-        self.key_lookup.add_key(&self.name, key_id.clone(), key_name_prefix.as_bytes());
+        self.key_lookup
+            .add_key(&self.name, key_id.clone(), key_name_prefix.as_bytes());
         Ok(key_id)
     }
 
     fn get_key_info(&self, key_id: &Self::KeyId) -> Result<PublicKey, KeyError<Self::Error>> {
         let pub_id = self.find_key(key_id, false)?;
-        self.get_public_key_from_id(&pub_id).map_err(|err| KeyError::Signer(err))
+        self.get_public_key_from_id(&pub_id)
+            .map_err(|err| KeyError::Signer(err))
     }
 
     fn destroy_key(&mut self, key_id: &Self::KeyId) -> Result<(), KeyError<Self::Error>> {
@@ -368,13 +496,15 @@ impl Signer for KmipSigner {
     fn rand(&self, target: &mut [u8]) -> Result<(), SignerError> {
         if self.supports_rng_retrieve {
             // Should we seed the random number generator?
-            let random_value = kmip::generate_random(self.conn.clone(), target.len() as i32)
-                .map_err(|err| SignerError::KmipError(format!("Failed to generate random value: {}", err)))?;
-            target.copy_from_slice(random_value.as_slice());
+            let random_value = self
+                .conn()?
+                .rng_retrieve(target.len() as i32)
+                .map_err(|err| SignerError::KmipError(format!("Failed to generate random value: {:?}", err)))?;
+            target.copy_from_slice(random_value.data.as_slice());
             Ok(())
         } else {
             openssl::rand::rand_bytes(target)
-                .map_err(|err| SignerError::KmipError(format!("Failed to generate ramdom value in s/w: {}", err)))
+                .map_err(|err| SignerError::KmipError(format!("Failed to generate ramdom value in s/w: {:?}", err)))
         }
     }
 }
