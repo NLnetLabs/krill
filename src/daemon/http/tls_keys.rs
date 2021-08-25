@@ -13,11 +13,16 @@ use bcder::encode::{Constructed, PrimitiveContent, Values};
 use bcder::{decode, encode};
 use bcder::{BitString, Mode, Tag};
 
-use rpki::crypto::{PublicKey, Signature, SignatureAlgorithm};
-use rpki::x509::{Name, Validity};
+use rpki::repository::{
+    crypto::{PublicKey, Signature, SignatureAlgorithm},
+    x509::{Name, Validity},
+};
 
-use crate::commons::util::file;
-use crate::commons::{crypto::IdExtensions, error::KrillIoError};
+use crate::commons::{
+    crypto::IdExtensions,
+    error::KrillIoError,
+    util::file,
+};
 
 const KEY_SIZE: u32 = 2048;
 pub const HTTPS_SUB_DIR: &str = "ssl";

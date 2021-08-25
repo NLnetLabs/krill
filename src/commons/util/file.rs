@@ -156,8 +156,8 @@ pub fn clean_file_and_path(path: &Path) -> Result<(), KrillIoError> {
 
 fn path_with_rsync(base_path: &Path, uri: &uri::Rsync) -> PathBuf {
     let mut path = base_path.to_path_buf();
-    path.push(uri.module().authority());
-    path.push(uri.module().module());
+    path.push(uri.authority());
+    path.push(uri.module_name());
     path.push(uri.path());
     path
 }

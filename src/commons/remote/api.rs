@@ -1,6 +1,6 @@
 use std::fmt;
 
-use rpki::crypto::KeyIdentifier;
+use rpki::repository::crypto::KeyIdentifier;
 use rpki::uri;
 
 use crate::commons::api::Handle;

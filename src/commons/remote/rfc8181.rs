@@ -554,14 +554,13 @@ impl ErrorReply {
 
 impl fmt::Display for ErrorReply {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Got error response: ")?;
+        write!(f, "error reply including: ")?;
         for err in &self.errors {
             match &err.error_text {
                 None => write!(f, "error code: {} ", err.error_code)?,
                 Some(text) => write!(f, "error code: {}, text: {} ", err.error_code, text)?,
             }
         }
-        writeln!(f)?;
         Ok(())
     }
 }

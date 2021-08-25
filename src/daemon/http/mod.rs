@@ -1,3 +1,4 @@
+use hyper::header::USER_AGENT;
 use serde::de::DeserializeOwned;
 use std::io;
 use std::str::FromStr;
@@ -16,6 +17,7 @@ use crate::commons::{
     actor::{Actor, ActorDef},
     KrillResult,
 };
+use crate::constants::HTTP_USER_AGENT_TRUNCATE;
 use crate::daemon::auth::LoggedInUser;
 use crate::daemon::http::server::State;
 
@@ -339,7 +341,7 @@ pub struct Request {
 impl Request {
     pub async fn new(request: hyper::Request<hyper::Body>, state: State) -> Self {
         let path = RequestPath::from_request(&request);
-        let actor = state.read().await.actor_from_request(&request);
+        let actor = state.actor_from_request(&request);
 
         Request {
             request,
@@ -353,9 +355,24 @@ impl Request {
         self.request.headers()
     }
 
+    pub fn user_agent(&self) -> Option<String> {
+        match self.headers().get(&USER_AGENT) {
+            None => None,
+            Some(value) => value.to_str().ok().map(|s| {
+                // Note: HeaderValue.to_str() only returns ok in case the value is plain
+                //       ascii so it's safe to treat bytes as characters here.
+                if s.len() > HTTP_USER_AGENT_TRUNCATE {
+                    s[..HTTP_USER_AGENT_TRUNCATE].to_string()
+                } else {
+                    s.to_string()
+                }
+            }),
+        }
+    }
+
     pub async fn upgrade_from_anonymous(&mut self, actor_def: ActorDef) {
         if self.actor.is_anonymous() {
-            self.actor = self.state.read().await.actor_from_def(actor_def);
+            self.actor = self.state.actor_from_def(actor_def);
             info!(
                 "Permitted anonymous actor to become actor '{}' for the duration of this request",
                 self.actor.name()
@@ -410,17 +427,17 @@ impl Request {
     }
 
     pub async fn api_bytes(self) -> Result<Bytes, Error> {
-        let limit = self.state().read().await.limit_api();
+        let limit = self.state().limit_api();
         self.read_bytes(limit).await
     }
 
     pub async fn rfc6492_bytes(self) -> Result<Bytes, Error> {
-        let limit = self.state().read().await.limit_rfc6492();
+        let limit = self.state().limit_rfc6492();
         self.read_bytes(limit).await
     }
 
     pub async fn rfc8181_bytes(self) -> Result<Bytes, Error> {
-        let limit = self.state().read().await.limit_rfc8181();
+        let limit = self.state().limit_rfc8181();
         self.read_bytes(limit).await
     }
 
@@ -450,9 +467,9 @@ impl Request {
         assert_body_size(size_processed, body.size_hint().lower(), limit)?;
 
         // If there's only 1 chunk, we can just return Buf::to_bytes()
-        let mut first = if let Some(buf) = body.data().await {
+        let first = if let Some(buf) = body.data().await {
             let buf = buf.map_err(|_| Error::PostCannotRead)?;
-            let size: u64 = buf.bytes().len().try_into().map_err(|_| Error::PostTooBig)?;
+            let size: u64 = buf.len().try_into().map_err(|_| Error::PostTooBig)?;
             size_processed += size;
             buf
         } else {
@@ -462,11 +479,11 @@ impl Request {
         assert_body_size(size_processed, body.size_hint().lower(), limit)?;
         let second = if let Some(buf) = body.data().await {
             let buf = buf.map_err(|_| Error::PostCannotRead)?;
-            let size: u64 = buf.bytes().len().try_into().map_err(|_| Error::PostTooBig)?;
+            let size: u64 = buf.len().try_into().map_err(|_| Error::PostTooBig)?;
             size_processed += size;
             buf
         } else {
-            return Ok(first.to_bytes());
+            return Ok(first);
         };
 
         assert_body_size(size_processed, body.size_hint().lower(), limit)?;
@@ -478,7 +495,7 @@ impl Request {
 
         while let Some(buf) = body.data().await {
             let buf = buf.map_err(|_| Error::PostCannotRead)?;
-            let size: u64 = buf.bytes().len().try_into().map_err(|_| Error::PostTooBig)?;
+            let size: u64 = buf.len().try_into().map_err(|_| Error::PostTooBig)?;
             size_processed += size;
             assert_body_size(size_processed, body.size_hint().lower(), limit)?;
             vec.put(buf);
@@ -488,15 +505,15 @@ impl Request {
     }
 
     pub async fn get_login_url(&self) -> KrillResult<HttpResponse> {
-        self.state.read().await.get_login_url()
+        self.state.get_login_url()
     }
 
     pub async fn login(&self) -> KrillResult<LoggedInUser> {
-        self.state.read().await.login(&self.request)
+        self.state.login(&self.request)
     }
 
     pub async fn logout(&self) -> KrillResult<HttpResponse> {
-        self.state.read().await.logout(&self.request)
+        self.state.logout(&self.request)
     }
 }
 

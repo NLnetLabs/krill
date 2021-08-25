@@ -4,7 +4,7 @@ use std::fs;
 use std::str::FromStr;
 use std::time::Duration;
 
-use tokio::time::delay_for;
+use tokio::time::sleep;
 
 use rpki::uri::Rsync;
 
@@ -123,7 +123,7 @@ async fn will_publish(test_msg: &str, publisher: &PublisherHandle, files: &[Stri
             let current_files: Vec<&Rsync> = current_files.iter().map(|p| p.uri()).collect();
             let mut all_matched = true;
             for o in &objects {
-                if current_files.iter().find(|uri| uri.ends_with(o)).is_none() {
+                if !current_files.iter().any(|uri| uri.ends_with(o)) {
                     all_matched = false;
                 }
             }
@@ -132,7 +132,7 @@ async fn will_publish(test_msg: &str, publisher: &PublisherHandle, files: &[Stri
             }
         }
 
-        delay_for(Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(100)).await;
     }
 
     let details = publisher_details(publisher).await;
@@ -187,7 +187,7 @@ async fn state_becomes_new_key(handle: &Handle) -> bool {
             return true;
         }
 
-        delay_for(Duration::from_secs(1)).await
+        sleep(Duration::from_secs(1)).await
     }
     false
 }
@@ -212,13 +212,12 @@ async fn state_becomes_active(handle: &Handle) -> bool {
             return true;
         }
 
-        delay_for(Duration::from_millis(100)).await
+        sleep(Duration::from_millis(100)).await
     }
     false
 }
 
 #[tokio::test]
-#[ignore = "See issue 481"]
 async fn migrate_repository() {
     init_logging();
 
@@ -360,7 +359,7 @@ async fn migrate_repository() {
 
         // Wait a tiny bit.. when we add a new repo we check that it's available or
         // it will be rejected.
-        delay_for(Duration::from_secs(1)).await;
+        sleep(Duration::from_secs(1)).await;
 
         // Update CA1 to use dedicated repo
         let contact = RepositoryContact::new(response);
@@ -423,6 +422,19 @@ async fn migrate_repository() {
             );
         }
     }
+
+    info("##################################################################");
+    info("#                                                                #");
+    info("#            -------====== SUCCESS ======-------                 #");
+    info("#                                                                #");
+    info("#                                                                #");
+    info("#  Test finished successfully.. please ignore any errors after   #");
+    info("#  this point - you might see errors from CAs which cannot       #");
+    info("#  synchronize from background threads as the server is shutting #");
+    info("#  down.                                                         #");
+    info("#                                                                #");
+    info("##################################################################");
+
 
     let _ = fs::remove_dir_all(krill_dir);
     let _ = fs::remove_dir_all(pubd_dir);

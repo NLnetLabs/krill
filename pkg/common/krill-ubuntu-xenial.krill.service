@@ -1,0 +1,17 @@
+[Unit]
+Description=Krill
+Documentation=man:krill(1)
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/krill --config=/etc/krill.conf
+Type=simple
+Restart=on-failure
+User=krill
+RestartSec=10
+StartLimitInterval=10m
+StartLimitBurst=5
+WorkingDirectory=/var/lib/krill
+
+[Install]
+WantedBy=multi-user.target

@@ -11,29 +11,33 @@ use std::{fs, path::Path};
 use bytes::Bytes;
 
 use hyper::StatusCode;
-use tokio::time::{delay_for, timeout};
+use tokio::time::{sleep, timeout};
 
-use rpki::crypto::KeyIdentifier;
-use rpki::uri;
+use rpki::{repository::crypto::KeyIdentifier, uri};
 
-use crate::cli::report::{ApiResponse, ReportFormat};
-use crate::cli::{Error, KrillClient};
-use crate::commons::api::{
-    AddChildRequest, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ChildHandle, Handle, ParentCaContact, ParentCaReq,
-    ParentHandle, ParentStatuses, PublicationServerUris, PublisherDetails, PublisherHandle, PublisherList,
-    ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse,
-    TypedPrefix, UpdateChildRequest,
-};
-use crate::commons::bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion};
-use crate::commons::crypto::SignSupport;
-use crate::commons::remote::rfc8183;
-use crate::commons::remote::rfc8183::{ChildRequest, RepositoryResponse};
-use crate::commons::util::httpclient;
-use crate::daemon::ca::{ta_handle, ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest};
-use crate::daemon::http::server;
 use crate::{
-    cli::options::{BulkCaCommand, CaCommand, Command, Options, PubServerCommand},
-    commons::api::RepositoryContact,
+    cli::{
+        options::{BulkCaCommand, CaCommand, Command, Options, PubServerCommand},
+        report::{ApiResponse, ReportFormat},
+        {Error, KrillClient},
+    },
+    commons::{
+        api::{
+            AddChildRequest, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ChildHandle, Handle, ParentCaContact,
+            ParentCaReq, ParentHandle, ParentStatuses, PublicationServerUris, PublisherDetails, PublisherHandle,
+            PublisherList, RepositoryContact, ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates,
+            RtaList, RtaName, RtaPrepResponse, TypedPrefix, UpdateChildRequest,
+        },
+        bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion},
+        crypto::SignSupport,
+        remote::rfc8183,
+        remote::rfc8183::{ChildRequest, RepositoryResponse},
+        util::httpclient,
+    },
+    daemon::{
+        ca::{ta_handle, ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest},
+        http::server,
+    },
 };
 
 #[cfg(test)]
@@ -65,7 +69,7 @@ pub async fn server_ready(uri: &str) -> bool {
     let health = format!("{}health", uri);
 
     for _ in 0..300 {
-        match httpclient::client(&health).await {
+        match httpclient::client(&health) {
             Ok(client) => {
                 let res = timeout(Duration::from_millis(100), client.get(&health).send()).await;
 
@@ -79,7 +83,7 @@ pub async fn server_ready(uri: &str) -> bool {
             }
             Err(_) => return false,
         }
-        delay_for(Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(100)).await;
     }
 
     false
@@ -136,9 +140,7 @@ pub async fn start_krill_pubd() -> PathBuf {
     let dir = tmp_dir();
     let mut config = test_config(&dir, false);
     init_config(&config);
-
     config.port = 3001;
-    config.service_uri = "https://localhost:3001/".to_string();
 
     tokio::spawn(start_krill_with_error_trap(Arc::new(config)));
     assert!(krill_pubd_ready().await);
@@ -437,7 +439,7 @@ pub async fn ca_contains_resources(handle: &Handle, resources: &ResourceSet) -> 
         if ca_current_resources(handle).await.contains(resources) {
             return true;
         }
-        delay_for(Duration::from_secs(1)).await
+        sleep(Duration::from_secs(1)).await
     }
     false
 }
@@ -447,7 +449,7 @@ pub async fn ca_equals_resources(handle: &Handle, resources: &ResourceSet) -> bo
         if &ca_current_resources(handle).await == resources {
             return true;
         }
-        delay_for(Duration::from_secs(1)).await
+        sleep(Duration::from_secs(1)).await
     }
     false
 }
@@ -458,7 +460,7 @@ pub async fn rc_is_removed(handle: &Handle) -> bool {
         if ca.resource_classes().get(&ResourceClassName::default()).is_none() {
             return true;
         }
-        delay_for(Duration::from_millis(100)).await
+        sleep(Duration::from_millis(100)).await
     }
     false
 }

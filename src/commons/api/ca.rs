@@ -12,14 +12,14 @@ use bytes::Bytes;
 use chrono::{Duration, TimeZone, Utc};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use rpki::cert::Cert;
-use rpki::crl::{Crl, CrlEntry};
-use rpki::crypto::KeyIdentifier;
-use rpki::manifest::Manifest;
-use rpki::resources::{AsBlocks, AsResources, IpBlocks, IpBlocksForFamily, IpResources};
-use rpki::roa::{Roa, RoaIpAddress};
+use rpki::repository::cert::Cert;
+use rpki::repository::crl::{Crl, CrlEntry};
+use rpki::repository::crypto::KeyIdentifier;
+use rpki::repository::manifest::Manifest;
+use rpki::repository::resources::{AsBlocks, AsResources, IpBlocks, IpBlocksForFamily, IpResources};
+use rpki::repository::roa::{Roa, RoaIpAddress};
+use rpki::repository::x509::{Serial, Time};
 use rpki::uri;
-use rpki::x509::{Serial, Time};
 
 use crate::commons::api::{
     rrdp::PublishElement, Base64, ChildHandle, ErrorResponse, Handle, HexEncodedHash, IssuanceRequest, ParentCaContact,
@@ -28,6 +28,7 @@ use crate::commons::api::{
 use crate::commons::api::{EntitlementClass, Entitlements, RoaAggregateKey, SigningCert};
 use crate::commons::crypto::IdCert;
 use crate::commons::crypto::KrillSigner;
+use crate::commons::remote::rfc8183::ServiceUri;
 use crate::commons::util::ext_serde;
 use crate::daemon::ca::RouteAuthorization;
 
@@ -364,7 +365,8 @@ impl RcvdCert {
     }
 
     pub fn uri_for_name(&self, name: &ObjectName) -> uri::Rsync {
-        self.cert.ca_repository().unwrap().join(name.as_bytes())
+        // unwraps here are safe
+        self.cert.ca_repository().unwrap().join(name.as_bytes()).unwrap()
     }
 
     pub fn resources(&self) -> &ResourceSet {
@@ -412,7 +414,10 @@ impl Eq for RcvdCert {}
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TrustAnchorLocator {
-    uris: Vec<uri::Https>, // We won't create TALs with rsync, this is not for parsing.
+    uris: Vec<uri::Https>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rsync_uri: Option<uri::Rsync>,
 
     #[serde(deserialize_with = "ext_serde::de_bytes", serialize_with = "ext_serde::ser_bytes")]
     encoded_ski: Bytes,
@@ -420,12 +425,16 @@ pub struct TrustAnchorLocator {
 
 impl TrustAnchorLocator {
     /// Creates a new TAL, panics when the provided Cert is not a TA cert.
-    pub fn new(uris: Vec<uri::Https>, cert: &Cert) -> Self {
+    pub fn new(uris: Vec<uri::Https>, rsync_uri: Option<uri::Rsync>, cert: &Cert) -> Self {
         if cert.authority_key_identifier().is_some() {
             panic!("Trying to create TAL for a non-TA certificate.")
         }
         let encoded_ski = cert.subject_public_key_info().to_info_bytes();
-        TrustAnchorLocator { uris, encoded_ski }
+        TrustAnchorLocator {
+            uris,
+            rsync_uri,
+            encoded_ski,
+        }
     }
 }
 
@@ -436,6 +445,10 @@ impl fmt::Display for TrustAnchorLocator {
         for uri in self.uris.iter() {
             writeln!(f, "{}", uri)?;
         }
+        if let Some(rsync_uri) = &self.rsync_uri {
+            writeln!(f, "{}", rsync_uri)?;
+        }
+
         writeln!(f)?;
 
         let len = base64.len();
@@ -477,7 +490,7 @@ impl RepoInfo {
     pub fn ca_repository(&self, name_space: &str) -> uri::Rsync {
         match name_space {
             "" => self.base_uri.clone(),
-            _ => self.base_uri.join(name_space.as_ref()),
+            _ => self.base_uri.join(name_space.as_ref()).unwrap(),
         }
     }
 
@@ -500,7 +513,7 @@ impl RepoInfo {
     }
 
     pub fn resolve(&self, name_space: &str, file_name: &str) -> uri::Rsync {
-        self.ca_repository(name_space).join(file_name.as_ref())
+        self.ca_repository(name_space).join(file_name.as_ref()).unwrap()
     }
 
     pub fn mft_name(signing_key: &KeyIdentifier) -> ObjectName {
@@ -1177,23 +1190,24 @@ impl ParentStatuses {
         self.0.get(parent)
     }
 
-    pub fn set_failure(&mut self, parent: &ParentHandle, uri: String, error: ErrorResponse, next_seconds: i64) {
-        self.get_mut_status(parent).set_failure(uri, error, next_seconds);
+    pub fn set_failure(&mut self, parent: &ParentHandle, uri: &ServiceUri, error: ErrorResponse, next_seconds: i64) {
+        self.get_mut_status(parent)
+            .set_failure(uri.clone(), error, next_seconds);
     }
 
     pub fn set_entitlements(
         &mut self,
         parent: &ParentHandle,
-        uri: String,
+        uri: &ServiceUri,
         entitlements: &Entitlements,
         next_seconds: i64,
     ) {
         self.get_mut_status(parent)
-            .set_entitlements(uri, entitlements, next_seconds);
+            .set_entitlements(uri.clone(), entitlements, next_seconds);
     }
 
-    pub fn set_last_updated(&mut self, parent: &ParentHandle, uri: String, next_seconds: i64) {
-        self.get_mut_status(parent).set_last_updated(uri, next_seconds);
+    pub fn set_last_updated(&mut self, parent: &ParentHandle, uri: &ServiceUri, next_seconds: i64) {
+        self.get_mut_status(parent).set_last_updated(uri.clone(), next_seconds);
     }
 
     fn get_mut_status(&mut self, parent: &ParentHandle) -> &mut ParentStatus {
@@ -1202,6 +1216,10 @@ impl ParentStatuses {
         }
 
         self.0.get_mut(parent).unwrap()
+    }
+
+    pub fn remove(&mut self, parent: &ParentHandle) {
+        self.0.remove(parent);
     }
 }
 
@@ -1355,16 +1373,16 @@ impl ParentStatus {
         self.next_exchange_before = (Time::now() + Duration::seconds(next_seconds)).timestamp();
     }
 
-    fn set_failure(&mut self, uri: String, error: ErrorResponse, next_seconds: i64) {
+    fn set_failure(&mut self, uri: ServiceUri, error: ErrorResponse, next_seconds: i64) {
         self.last_exchange = Some(ParentExchange {
             timestamp: Time::now().timestamp(),
             uri,
-            result: ParentExchangeResult::Failure(error),
+            result: ExchangeResult::Failure(error),
         });
         self.set_next_exchange_plus_seconds(next_seconds);
     }
 
-    fn set_entitlements(&mut self, uri: String, entitlements: &Entitlements, next_run_seconds: i64) {
+    fn set_entitlements(&mut self, uri: ServiceUri, entitlements: &Entitlements, next_run_seconds: i64) {
         self.set_last_updated(uri, next_run_seconds);
 
         self.entitlements = entitlements
@@ -1386,11 +1404,11 @@ impl ParentStatus {
         self.set_next_exchange_plus_seconds(next_run_seconds);
     }
 
-    fn set_last_updated(&mut self, uri: String, next_run_seconds: i64) {
+    fn set_last_updated(&mut self, uri: ServiceUri, next_run_seconds: i64) {
         self.last_exchange = Some(ParentExchange {
             timestamp: Time::now().timestamp(),
             uri,
-            result: ParentExchangeResult::Success,
+            result: ExchangeResult::Success,
         });
         self.set_next_exchange_plus_seconds(next_run_seconds);
     }
@@ -1443,30 +1461,30 @@ impl RepoStatus {
         (Time::now() + Duration::hours(hours)).timestamp()
     }
 
-    pub fn set_failure(&mut self, uri: String, error: ErrorResponse) {
+    pub fn set_failure(&mut self, uri: ServiceUri, error: ErrorResponse) {
         self.last_exchange = Some(ParentExchange {
             timestamp: Time::now().timestamp(),
             uri,
-            result: ParentExchangeResult::Failure(error),
+            result: ExchangeResult::Failure(error),
         });
         self.next_exchange_before = (Time::now() + Duration::minutes(5)).timestamp();
     }
 
-    pub fn set_published(&mut self, uri: String, published: Vec<PublishElement>, next_hours: i64) {
+    pub fn set_published(&mut self, uri: ServiceUri, published: Vec<PublishElement>, next_hours: i64) {
         self.last_exchange = Some(ParentExchange {
             timestamp: Time::now().timestamp(),
             uri,
-            result: ParentExchangeResult::Success,
+            result: ExchangeResult::Success,
         });
         self.published = published;
         self.next_exchange_before = Self::now_plus_hours(next_hours);
     }
 
-    pub fn set_last_updated(&mut self, uri: String, next_hours: i64) {
+    pub fn set_last_updated(&mut self, uri: ServiceUri, next_hours: i64) {
         self.last_exchange = Some(ParentExchange {
             timestamp: Time::now().timestamp(),
             uri,
-            result: ParentExchangeResult::Success,
+            result: ExchangeResult::Success,
         });
         self.next_exchange_before = Self::now_plus_hours(next_hours);
     }
@@ -1494,8 +1512,8 @@ impl fmt::Display for RepoStatus {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParentExchange {
     timestamp: i64,
-    uri: String,
-    result: ParentExchangeResult,
+    uri: ServiceUri,
+    result: ExchangeResult,
 }
 
 impl ParentExchange {
@@ -1503,43 +1521,141 @@ impl ParentExchange {
         Time::new(Utc.timestamp(self.timestamp, 0))
     }
 
-    pub fn uri(&self) -> &str {
+    pub fn uri(&self) -> &ServiceUri {
         &self.uri
     }
 
-    pub fn result(&self) -> &ParentExchangeResult {
+    pub fn result(&self) -> &ExchangeResult {
         &self.result
     }
 
     pub fn was_success(&self) -> bool {
         match &self.result {
-            ParentExchangeResult::Success => true,
-            ParentExchangeResult::Failure(_) => false,
+            ExchangeResult::Success => true,
+            ExchangeResult::Failure(_) => false,
         }
     }
 
     pub fn into_failure_opt(self) -> Option<ErrorResponse> {
         match self.result {
-            ParentExchangeResult::Success => None,
-            ParentExchangeResult::Failure(error) => Some(error),
+            ExchangeResult::Success => None,
+            ExchangeResult::Failure(error) => Some(error),
         }
     }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
-pub enum ParentExchangeResult {
+pub enum ExchangeResult {
     Success,
     Failure(ErrorResponse),
 }
 
-impl fmt::Display for ParentExchangeResult {
+impl fmt::Display for ExchangeResult {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ParentExchangeResult::Success => write!(f, "success"),
-            ParentExchangeResult::Failure(e) => write!(f, "failure: {}", e.msg()),
+            ExchangeResult::Success => write!(f, "success"),
+            ExchangeResult::Failure(e) => write!(f, "failure: {}", e.msg()),
         }
     }
+}
+
+//------------ ChildConnectionStats ------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ChildrenConnectionStats {
+    children: Vec<ChildConnectionStats>,
+}
+
+impl ChildrenConnectionStats {
+    pub fn new(children: Vec<ChildConnectionStats>) -> Self {
+        ChildrenConnectionStats { children }
+    }
+}
+
+impl fmt::Display for ChildrenConnectionStats {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if !self.children.is_empty() {
+            writeln!(f, "handle, user_agent, last_exchange, result")?;
+            for child in &self.children {
+                match &child.last_exchange {
+                    None => {
+                        writeln!(f, "{},n/a,never,n/a", child.handle)?;
+                    }
+                    Some(exchange) => {
+                        let agent = exchange.user_agent.as_deref().unwrap_or("");
+                        let time = Time::new(Utc.timestamp(exchange.timestamp, 0));
+
+                        writeln!(
+                            f,
+                            "{},{},{},{}",
+                            child.handle,
+                            agent,
+                            time.to_rfc3339(),
+                            exchange.result
+                        )?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ChildConnectionStats {
+    handle: ChildHandle,
+    last_exchange: Option<ChildExchange>,
+}
+
+impl ChildConnectionStats {
+    pub fn new(handle: ChildHandle, last_exchange: Option<ChildExchange>) -> Self {
+        ChildConnectionStats { handle, last_exchange }
+    }
+}
+
+//------------ ChildStatus ---------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ChildStatus {
+    last_exchange: Option<ChildExchange>,
+}
+
+impl ChildStatus {
+    pub fn set_success(&mut self, user_agent: Option<String>) {
+        self.last_exchange = Some(ChildExchange {
+            timestamp: Time::now().timestamp(),
+            result: ExchangeResult::Success,
+            user_agent,
+        });
+    }
+
+    pub fn set_failure(&mut self, user_agent: Option<String>, error_response: ErrorResponse) {
+        self.last_exchange = Some(ChildExchange {
+            timestamp: Time::now().timestamp(),
+            result: ExchangeResult::Failure(error_response),
+            user_agent,
+        });
+    }
+}
+
+impl Default for ChildStatus {
+    fn default() -> Self {
+        ChildStatus { last_exchange: None }
+    }
+}
+
+impl From<ChildStatus> for Option<ChildExchange> {
+    fn from(status: ChildStatus) -> Self {
+        status.last_exchange
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ChildExchange {
+    timestamp: i64,
+    result: ExchangeResult,
+    user_agent: Option<String>,
 }
 
 //------------ CertAuthInfo --------------------------------------------------
@@ -2043,6 +2159,7 @@ pub struct BgpStats {
     pub roas_redundant: usize,
     pub roas_stale: usize,
     pub roas_disallowing: usize,
+    pub roas_not_held: usize,
     pub roas_total: usize,
 }
 
@@ -2058,6 +2175,7 @@ impl Default for BgpStats {
             roas_redundant: 0,
             roas_stale: 0,
             roas_disallowing: 0,
+            roas_not_held: 0,
             roas_total: 0,
         }
     }
@@ -2090,6 +2208,10 @@ impl BgpStats {
 
     pub fn increment_roas_redundant(&mut self) {
         self.roas_redundant += 1;
+    }
+
+    pub fn increment_roas_not_held(&mut self) {
+        self.roas_not_held += 1;
     }
 
     pub fn increment_roas_stale(&mut self) {
@@ -2200,8 +2322,7 @@ impl ResourceSetError {
 mod test {
     use bytes::Bytes;
 
-    use rpki::crypto::signer::Signer;
-    use rpki::crypto::PublicKeyFormat;
+    use rpki::repository::crypto::{signer::Signer, PublicKeyFormat};
 
     use crate::{commons::crypto::{ConfigSignerOpenSsl, KeyMap, OpenSslSigner}, test};
 
@@ -2248,23 +2369,19 @@ mod test {
 
             let mft_uri = info().rpki_manifest("", &pub_key.key_identifier());
 
-            unsafe {
-                use std::str;
+            let mft_path = mft_uri.relative_to(&base_uri()).unwrap();
 
-                let mft_path = str::from_utf8_unchecked(mft_uri.relative_to(&base_uri()).unwrap());
+            assert_eq!(44, mft_path.len());
 
-                assert_eq!(44, mft_path.len());
+            // the file name should be the hexencoded pub key info
+            // not repeating that here, but checking that the name
+            // part is validly hex encoded.
+            let name = &mft_path[..40];
+            hex::decode(name).unwrap();
 
-                // the file name should be the hexencoded pub key info
-                // not repeating that here, but checking that the name
-                // part is validly hex encoded.
-                let name = &mft_path[..40];
-                hex::decode(name).unwrap();
-
-                // and the extension is '.mft'
-                let ext = &mft_path[40..];
-                assert_eq!(ext, ".mft");
-            }
+            // and the extension is '.mft'
+            let ext = &mft_path[40..];
+            assert_eq!(ext, ".mft");
         });
     }
 
@@ -2300,8 +2417,9 @@ mod test {
         let der = include_bytes!("../../../test-resources/ta.cer");
         let cert = Cert::decode(Bytes::from_static(der)).unwrap();
         let uri = test::https("https://localhost/ta.cer");
+        let rsync_uri = Some(test::rsync("rsync://localhost/ta/ta.cer"));
 
-        let tal = TrustAnchorLocator::new(vec![uri], &cert);
+        let tal = TrustAnchorLocator::new(vec![uri], rsync_uri, &cert);
 
         let expected_tal = include_str!("../../../test-resources/test.tal");
         let found_tal = tal.to_string();

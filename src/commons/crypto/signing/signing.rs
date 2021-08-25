@@ -14,15 +14,16 @@ use std::io::{prelude::*, BufReader};
 
 use bytes::Bytes;
 
-use rpki::cert::{Cert, KeyUsage, Overclaim, TbsCert};
-use rpki::crl::{Crl, CrlEntry, TbsCertList};
-use rpki::crypto::{DigestAlgorithm, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer};
-use rpki::csr::Csr;
-use rpki::manifest::{FileAndHash, Manifest, ManifestContent};
-use rpki::roa::{Roa, RoaBuilder};
-use rpki::sigobj::SignedObjectBuilder;
-use rpki::x509::{Name, Serial, Time, Validity};
-use rpki::{rta, uri};
+use rpki::repository::cert::{Cert, KeyUsage, Overclaim, TbsCert};
+use rpki::repository::crl::{Crl, CrlEntry, TbsCertList};
+use rpki::repository::crypto::{DigestAlgorithm, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer};
+use rpki::repository::csr::Csr;
+use rpki::repository::manifest::{FileAndHash, Manifest, ManifestContent};
+use rpki::repository::roa::{Roa, RoaBuilder};
+use rpki::repository::sigobj::SignedObjectBuilder;
+use rpki::repository::x509::{Name, Serial, Time, Validity};
+use rpki::repository::rta;
+use rpki::uri;
 
 use crate::{commons::api::{IssuedCert, RcvdCert, ReplacedObject, RepoInfo, RequestResourceLimit, ResourceSet}, daemon::config::Config};
 #[cfg(feature = "hsm")]
@@ -464,7 +465,7 @@ impl KrillSigner {
             S: Signer<KeyId = KeyIdentifier>
         {
             let pub_key = signer.get_key_info(key_id).map_err(crypto::Error::key_error)?;
-            let ca_repository = &base_repo.ca_repository(name_space).join(&[]);
+            let ca_repository = &base_repo.ca_repository(name_space).join(&[]).unwrap();
             let rpki_manifest = &base_repo.rpki_manifest(name_space, &pub_key.key_identifier());
             let rpki_notify = Some(base_repo.rpki_notify());
 
@@ -801,7 +802,7 @@ impl ManifestEntry for Crl {
 mod tests {
     use std::convert::TryFrom;
 
-    use rpki::crypto::KeyIdentifier;
+    use rpki::repository::crypto::KeyIdentifier;
 
     use crate::commons::crypto::SignerError;
 

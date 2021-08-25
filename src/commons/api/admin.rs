@@ -11,9 +11,9 @@ use rfc8183::ServiceUri;
 use serde::de;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use rpki::cert::Cert;
+use rpki::repository::cert::Cert;
+use rpki::repository::x509::Time;
 use rpki::uri;
-use rpki::x509::Time;
 
 use crate::commons::api::ca::{ResourceSet, TrustAnchorLocator};
 use crate::commons::api::rrdp::PublishElement;
@@ -442,6 +442,13 @@ impl ParentCaContact {
         ParentCaContact::Ta(ta_cert_details)
     }
 
+    pub fn parent_response(&self) -> Option<&rfc8183::ParentResponse> {
+        match &self {
+            ParentCaContact::Ta(_) => None,
+            ParentCaContact::Rfc6492(res) => Some(res)
+        }
+    }
+
     pub fn to_ta_cert(&self) -> &Cert {
         match &self {
             ParentCaContact::Ta(details) => details.cert(),
@@ -451,6 +458,13 @@ impl ParentCaContact {
 
     pub fn is_ta(&self) -> bool {
         matches!(*self, ParentCaContact::Ta(_))
+    }
+
+    pub fn parent_uri(&self) -> Option<&ServiceUri> {
+        match &self {
+            ParentCaContact::Ta(_) => None,
+            ParentCaContact::Rfc6492(parent) => Some(parent.service_uri()),
+        }
     }
 }
 

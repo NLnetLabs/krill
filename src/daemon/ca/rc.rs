@@ -3,9 +3,11 @@ use std::sync::Arc;
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
 
-use rpki::cert::Cert;
-use rpki::crypto::KeyIdentifier;
-use rpki::x509::{Time, Validity};
+use rpki::repository::{
+    cert::Cert,
+    crypto::KeyIdentifier,
+    x509::{Time, Validity},
+};
 
 use crate::{
     commons::{
@@ -202,10 +204,24 @@ impl ResourceClass {
                     );
 
                     let current_key = CertifiedKey::create(rcvd_cert);
-                    Ok(vec![CaEvtDet::KeyPendingToActive {
-                        resource_class_name: self.name.clone(),
-                        current_key,
-                    }])
+                    
+                    let updates = self.roas.update(routes, &current_key, config, signer)?;
+
+                    let mut events = vec![
+                        CaEvtDet::KeyPendingToActive {
+                            resource_class_name: self.name.clone(),
+                            current_key,
+                        }
+                    ];
+
+                    if updates.contains_changes() {
+                        events.push(CaEvtDet::RoasUpdated {
+                            resource_class_name: self.name.clone(),
+                            updates,
+                        })
+                    }
+
+                    Ok(events)
                 }
             }
             KeyState::Active(current) => {

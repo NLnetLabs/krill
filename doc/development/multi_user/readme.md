@@ -21,5 +21,6 @@ Further reading:
 - [Architecture](./architecture.md)
 - [Authentication](./authentication.md)
 - [Authorization](./authorization.md)
+- [Login Flows](./loginflows.md)
 - [Diagnostics](./diagnostics.md)
 - [Testing](./testing.md)

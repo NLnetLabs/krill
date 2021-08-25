@@ -9,9 +9,9 @@ use std::{env, fmt};
 use bytes::Bytes;
 use clap::{App, Arg, ArgMatches, SubCommand};
 
-use rpki::crypto::KeyIdentifier;
+use rpki::repository::crypto::KeyIdentifier;
+use rpki::repository::x509::Time;
 use rpki::uri;
-use rpki::x509::Time;
 
 use crate::commons::crypto::{IdCert, SignSupport};
 use crate::commons::remote::rfc8183;
@@ -469,6 +469,15 @@ impl Options {
         app.subcommand(sub)
     }
 
+    fn make_cas_children_connections_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("connections").about("Show connections stats for children of a CA");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+
+        app.subcommand(sub)
+    }
+
     fn make_cas_children_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("children").about("Manage children for a CA");
 
@@ -477,6 +486,7 @@ impl Options {
         sub = Self::make_cas_children_info_sc(sub);
         sub = Self::make_cas_children_remove_sc(sub);
         sub = Self::make_cas_children_response_sc(sub);
+        sub = Self::make_cas_children_connections_sc(sub);
 
         app.subcommand(sub)
     }
@@ -1362,7 +1372,7 @@ impl Options {
         let id_cert = {
             if let Some(path) = matches.value_of("idcert") {
                 let bytes = Self::read_file_arg(path)?;
-                let id_cert = IdCert::decode(bytes).map_err(|_| Error::InvalidChildIdCert)?;
+                let id_cert = IdCert::decode(bytes.as_ref()).map_err(|_| Error::InvalidChildIdCert)?;
                 Some(id_cert)
             } else {
                 None
@@ -1409,6 +1419,14 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
+    fn parse_matches_cas_children_connections(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+
+        let command = Command::CertAuth(CaCommand::ChildConnections(my_ca));
+        Ok(Options::make(general_args, command))
+    }
+
     fn parse_matches_cas_children(matches: &ArgMatches) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("add") {
             Self::parse_matches_cas_children_add(m)
@@ -1420,6 +1438,8 @@ impl Options {
             Self::parse_matches_cas_children_update(m)
         } else if let Some(m) = matches.subcommand_matches("remove") {
             Self::parse_matches_cas_children_remove(m)
+        } else if let Some(m) = matches.subcommand_matches("connections") {
+            Self::parse_matches_cas_children_connections(m)
         } else {
             Err(Error::UnrecognizedSubCommand)
         }
@@ -2087,6 +2107,7 @@ pub enum CaCommand {
     ChildAdd(Handle, AddChildRequest),
     ChildUpdate(Handle, ChildHandle, UpdateChildRequest),
     ChildDelete(Handle, ChildHandle),
+    ChildConnections(Handle),
 
     // Key Management
     KeyRollInit(Handle),

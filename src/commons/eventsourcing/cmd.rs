@@ -1,6 +1,6 @@
 use std::fmt;
 
-use rpki::x509::Time;
+use rpki::repository::x509::Time;
 
 use crate::commons::eventsourcing::store::CommandKey;
 use crate::commons::eventsourcing::{Event, Storable};

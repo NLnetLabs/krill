@@ -9,8 +9,8 @@ use rpki::uri;
 use crate::cli::options::KrillUserDetails;
 use crate::cli::report::{ApiResponse, ReportError};
 use crate::commons::api::{
-    AllCertAuthIssues, CaRepoDetails, CertAuthIssues, ChildCaInfo, ParentCaContact, ParentStatuses, PublisherDetails,
-    PublisherList, RepoStatus, Token,
+    AllCertAuthIssues, CaRepoDetails, CertAuthIssues, ChildCaInfo, ChildrenConnectionStats, ParentCaContact,
+    ParentStatuses, PublisherDetails, PublisherList, RepoStatus, Token,
 };
 use crate::commons::bgp::BgpAnalysisAdvice;
 use crate::commons::remote::rfc8183;
@@ -258,6 +258,11 @@ impl KrillClient {
                 delete(&self.server, &self.token, &uri).await?;
                 Ok(ApiResponse::Empty)
             }
+            CaCommand::ChildConnections(handle) => {
+                let uri = format!("api/v1/cas/{}/stats/children/connections", handle);
+                let stats: ChildrenConnectionStats = get_json(&self.server, &self.token, &uri).await?;
+                Ok(ApiResponse::ChildrenStats(stats))
+            }
 
             CaCommand::KeyRollInit(handle) => {
                 let uri = format!("api/v1/cas/{}/keys/roll_init", handle);
@@ -483,7 +488,7 @@ impl KrillClient {
     }
 
     #[cfg(feature = "multi-user")]
-    #[allow(clippy::clippy::unnecessary_wraps)]
+    #[allow(clippy::unnecessary_wraps)]
     fn user(&self, details: KrillUserDetails) -> Result<ApiResponse, Error> {
         let (password_hash, salt) = {
             use scrypt::scrypt;

@@ -7,11 +7,13 @@ use bytes::Bytes;
 use chrono::Duration;
 
 use rpki::{
-    cert::{Cert, KeyUsage, Overclaim, TbsCert},
-    crypto::{KeyIdentifier, PublicKey},
-    rta::RtaBuilder,
+    repository::{
+        cert::{Cert, KeyUsage, Overclaim, TbsCert},
+        crypto::{KeyIdentifier, PublicKey},
+        rta::RtaBuilder,
+        x509::{Serial, Time, Validity},
+    },
     uri,
-    x509::{Serial, Time, Validity},
 };
 
 use crate::commons::api::IdCertPemWithSignerInfo;
@@ -40,6 +42,8 @@ use crate::{
         config::{Config, IssuanceTimingConfig},
     },
 };
+
+use super::DropReason;
 
 //------------ Rfc8183Id ---------------------------------------------------
 
@@ -395,7 +399,7 @@ impl Aggregate for CertAuth {
 
         match command.into_details() {
             // trust anchor
-            CmdDet::MakeTrustAnchor(uris, signer) => self.trust_anchor_make(uris, signer),
+            CmdDet::MakeTrustAnchor(uris, rsync_uri, signer) => self.trust_anchor_make(uris, rsync_uri, signer),
 
             // being a parent
             CmdDet::ChildAdd(child, id_cert, resources) => self.child_add(child, id_cert, resources),
@@ -417,6 +421,7 @@ impl Aggregate for CertAuth {
             CmdDet::UpdateRcvdCert(class_name, rcvd_cert, config, signer) => {
                 self.update_received_cert(class_name, rcvd_cert, &config, signer)
             }
+            CmdDet::DropResourceClass(rcn, reason, signer) => self.drop_resource_class(rcn, reason, signer),
 
             // Key rolls
             CmdDet::KeyRollInitiate(duration, signer) => self.keyroll_initiate(duration, signer),
@@ -539,7 +544,12 @@ impl CertAuth {
 /// # Being a Trust Anchor
 ///
 impl CertAuth {
-    fn trust_anchor_make(&self, uris: Vec<uri::Https>, signer: Arc<KrillSigner>) -> KrillResult<Vec<CaEvt>> {
+    fn trust_anchor_make(
+        &self,
+        uris: Vec<uri::Https>,
+        rsync_uri: Option<uri::Rsync>,
+        signer: Arc<KrillSigner>,
+    ) -> KrillResult<Vec<CaEvt>> {
         if !self.resources.is_empty() {
             return Err(Error::custom("Cannot turn CA with resources into TA"));
         }
@@ -581,7 +591,7 @@ impl CertAuth {
             signer.sign_cert(cert, &key)?
         };
 
-        let tal = TrustAnchorLocator::new(uris, &cert);
+        let tal = TrustAnchorLocator::new(uris, rsync_uri, &cert);
 
         let ta_cert_details = TaCertDetails::new(cert, resources, tal);
 
@@ -1248,7 +1258,7 @@ impl CertAuth {
     ///
     /// This will also generate appropriate events for changes affecting
     /// issued ROAs and delegated certificates - if because resources were
-    //  lost and ROAs/Certs would be become invalid.
+    /// lost and ROAs/Certs would be become invalid.
     fn update_received_cert(
         &self,
         rcn: ResourceClassName,
@@ -1271,6 +1281,31 @@ impl CertAuth {
         }
 
         Ok(res)
+    }
+
+    /// Drop a resource class because it no longer works under this parent for the specified
+    /// reason. Note that this will generate revocation requests for the current keys which
+    /// will be sent to the parent on a best effort basis - e.g. if the parent removed the resource
+    /// class it may well refuse to revoke the keys - it may not known them.
+    fn drop_resource_class(
+        &self,
+        rcn: ResourceClassName,
+        reason: DropReason,
+        signer: Arc<KrillSigner>,
+    ) -> KrillResult<Vec<CaEvt>> {
+        warn!("Dropping resource class '{}' because of reason: {}", rcn, reason);
+
+        let rc = self
+            .resources
+            .get(&rcn)
+            .ok_or(Error::ResourceClassUnknown(rcn.clone()))?;
+        let revoke_requests = rc.revoke(signer.deref())?;
+
+        Ok(self.events_from_details(vec![CaEvtDet::ResourceClassRemoved {
+            resource_class_name: rcn,
+            parent: rc.parent_handle().clone(),
+            revoke_requests,
+        }]))
     }
 }
 
@@ -1374,27 +1409,26 @@ impl CertAuth {
     ///    - Will return an error in case the repo is already set (issue 481)
     ///    - Will support migrations using key rollover in future (issue 480)
     ///    - Assumes that the repository can be reached (this is checked by CaManager before issuing the command to this CA)
-    pub fn update_repo(&self, contact: RepositoryContact, _signer: &KrillSigner) -> KrillResult<Vec<CaEvt>> {
-        if let Some(_existing_contact) = &self.repository {
-            // Disallow, see issue 481
-            return Err(Error::CaRepoAlreadyConfigured(self.handle.clone()));
-            // TODO: check that it is indeed different and then allow (issue 480)
-            // if existing_contact == &contact {
-            //     return Err(Error::CaRepoInUse(self.handle.clone()));
-            // }
-            // // Initiate rolls in all RCs so we can use the new repo in the new key.
-            // let info = contact.repo_info().clone();
-            // for rc in self.resources.values() {
-            //     // If we are in any keyroll, reject.. because we will need to
-            //     // introduce the change as a key roll (new key, new repo, etc),
-            //     // and we can only do one roll at a time.
-            //     if !rc.key_roll_possible() {
-            //         // If we can't roll... well then we have to bail out.
-            //         // Note: none of these events are committed in that case.
-            //         return Err(Error::KeyRollNotAllowed);
-            //     }
-            //     evt_dets.append(&mut rc.keyroll_initiate(&info, Duration::seconds(0), &signer)?);
-            // }
+    pub fn update_repo(&self, contact: RepositoryContact, signer: &KrillSigner) -> KrillResult<Vec<CaEvt>> {
+        let mut evt_dets = vec![];
+        if let Some(existing_contact) = &self.repository {
+            if existing_contact == &contact {
+                return Err(Error::CaRepoInUse(self.handle.clone()));
+            }
+            // Initiate rolls in all RCs so we can use the new repo in the new key.
+            let info = contact.repo_info().clone();
+            for rc in self.resources.values() {
+                // If we are in any keyroll, reject.. because we will need to
+                // introduce the change as a key roll (new key, new repo, etc),
+                // and we can only do one roll at a time.
+                if !rc.key_roll_possible() {
+                    // If we can't roll... well then we have to bail out.
+                    // Note: none of these events are committed in that case.
+                    return Err(Error::KeyRollNotAllowed);
+                }
+
+                evt_dets.append(&mut rc.keyroll_initiate(&info, Duration::seconds(0), &signer)?);
+            }
         }
 
         // register updated repo
@@ -1404,7 +1438,7 @@ impl CertAuth {
             contact.service_uri()
         );
 
-        let evt_dets = vec![CaEvtDet::RepoUpdated { contact }];
+        evt_dets.push(CaEvtDet::RepoUpdated { contact });
         Ok(self.events_from_details(evt_dets))
     }
 }

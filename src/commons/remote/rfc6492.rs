@@ -5,12 +5,12 @@ use std::{fmt, io};
 use bytes::Bytes;
 use chrono::{DateTime, SecondsFormat, Utc};
 
-use rpki::cert::Cert;
-use rpki::crypto::KeyIdentifier;
-use rpki::csr::Csr;
-use rpki::resources::{AsBlocks, IpBlocks};
+use rpki::repository::cert::Cert;
+use rpki::repository::crypto::KeyIdentifier;
+use rpki::repository::csr::Csr;
+use rpki::repository::resources::{AsBlocks, IpBlocks};
+use rpki::repository::x509::Time;
 use rpki::uri;
-use rpki::x509::Time;
 
 use crate::commons::api::{
     EntitlementClass, Entitlements, Handle, IssuanceRequest, IssuanceResponse, IssuedCert, RequestResourceLimit,
@@ -727,6 +727,10 @@ impl NotPerformedResponse {
             status,
             description: description.to_string(),
         }
+    }
+
+    pub fn status(&self) -> u64 {
+        self.status
     }
 
     /// Creates a response for a status value defined in RFC6492. Also adds

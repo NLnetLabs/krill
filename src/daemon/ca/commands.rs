@@ -28,6 +28,8 @@ pub type StoredCaCommand = StoredCommand<StorableCaCommand>;
 
 pub type Cmd = eventsourcing::SentCommand<CmdDet>;
 
+pub type DropReason = String;
+
 //------------ CommandDetails ----------------------------------------------
 
 #[derive(Clone, Debug)]
@@ -36,7 +38,7 @@ pub enum CmdDet {
     // ------------------------------------------------------------
     // Being a TA
     // ------------------------------------------------------------
-    MakeTrustAnchor(Vec<uri::Https>, Arc<KrillSigner>),
+    MakeTrustAnchor(Vec<uri::Https>, Option<uri::Rsync>, Arc<KrillSigner>),
 
     // ------------------------------------------------------------
     // Being a parent
@@ -87,6 +89,10 @@ pub enum CmdDet {
 
     // Process a new certificate received from a parent.
     UpdateRcvdCert(ResourceClassName, RcvdCert, Arc<Config>, Arc<KrillSigner>),
+
+    // Drop a resource class under a parent because of issues
+    // obtaining a certificate for it.
+    DropResourceClass(ResourceClassName, DropReason, Arc<KrillSigner>),
 
     // ------------------------------------------------------------
     // Key rolls
@@ -168,7 +174,7 @@ impl From<CmdDet> for StorableCaCommand {
             // ------------------------------------------------------------
             // Being a TA
             // ------------------------------------------------------------
-            CmdDet::MakeTrustAnchor(_, _) => StorableCaCommand::MakeTrustAnchor,
+            CmdDet::MakeTrustAnchor(_, _, _) => StorableCaCommand::MakeTrustAnchor,
 
             // ------------------------------------------------------------
             // Being a parent
@@ -226,6 +232,10 @@ impl From<CmdDet> for StorableCaCommand {
                 resource_class_name,
                 resources: rcvd_cert.resources().clone(),
             },
+            CmdDet::DropResourceClass(resource_class_name, reason, _) => StorableCaCommand::DropResourceClass {
+                resource_class_name,
+                reason,
+            },
 
             // ------------------------------------------------------------
             // Key rolls
@@ -265,8 +275,14 @@ impl From<CmdDet> for StorableCaCommand {
 
 impl CmdDet {
     /// Turns this CA into a TrustAnchor
-    pub fn make_trust_anchor(handle: &Handle, uris: Vec<uri::Https>, signer: Arc<KrillSigner>, actor: &Actor) -> Cmd {
-        eventsourcing::SentCommand::new(handle, None, CmdDet::MakeTrustAnchor(uris, signer), actor)
+    pub fn make_trust_anchor(
+        handle: &Handle,
+        uris: Vec<uri::Https>,
+        rsync_uri: Option<uri::Rsync>,
+        signer: Arc<KrillSigner>,
+        actor: &Actor,
+    ) -> Cmd {
+        eventsourcing::SentCommand::new(handle, None, CmdDet::MakeTrustAnchor(uris, rsync_uri, signer), actor)
     }
 
     /// Adds a child to this CA. Will return an error in case you try
@@ -379,6 +395,21 @@ impl CmdDet {
             handle,
             None,
             CmdDet::UpdateRcvdCert(class_name, cert, config, signer),
+            actor,
+        )
+    }
+
+    pub fn drop_resource_class(
+        handle: &Handle,
+        class_name: ResourceClassName,
+        reason: DropReason,
+        signer: Arc<KrillSigner>,
+        actor: &Actor,
+    ) -> Cmd {
+        eventsourcing::SentCommand::new(
+            handle,
+            None,
+            CmdDet::DropResourceClass(class_name, reason, signer),
             actor,
         )
     }

@@ -2,7 +2,7 @@ use std::fmt;
 use std::fs;
 use std::mem;
 use std::path::PathBuf;
-use std::str::{from_utf8_unchecked, FromStr};
+use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 use std::{
     collections::{HashMap, VecDeque},
@@ -10,9 +10,9 @@ use std::{
 };
 
 use bytes::Bytes;
-use rpki::crypto::KeyIdentifier;
 use rpki::uri;
-use rpki::x509::Time;
+use rpki::repository::crypto::KeyIdentifier;
+use rpki::repository::x509::Time;
 
 use crate::{
     commons::{
@@ -49,6 +49,7 @@ use super::RepositoryAccessInitDetails;
 /// so that callers don't need to worry about storage details.
 #[derive(Debug)]
 pub struct RepositoryContentProxy {
+    cache: RwLock<Option<RepositoryContent>>,
     store: RwLock<KeyValueStore>,
     key: KeyStoreKey,
 }
@@ -59,32 +60,59 @@ impl RepositoryContentProxy {
         let store = KeyValueStore::disk(work_dir, PUBSERVER_CONTENT_DIR)?;
         let store = RwLock::new(store);
         let key = KeyStoreKey::simple(format!("{}.json", PUBSERVER_DFLT));
+        let cache = RwLock::new(None);
 
-        Ok(RepositoryContentProxy { store, key })
+        let proxy = RepositoryContentProxy { cache, store, key };
+        proxy.warm_cache()?;
+        
+        Ok(proxy)
+    }
+        
+    fn warm_cache(&self) -> KrillResult<()> {
+
+        let key_store_read = self.store
+                .read()
+                .unwrap();
+        
+        if key_store_read.has(&self.key)? {
+            info!("Warming the repository content cache, this can take a minute for large repositories.");
+            let content = key_store_read.get(&self.key)?.unwrap();
+            self.cache.write().unwrap().replace(content);
+        }
+
+        Ok(())
     }
 
-    // Initialize
+    /// Initialize
     pub fn init(&self, work_dir: &Path, uris: PublicationServerUris) -> KrillResult<()> {
         if self.store.read().unwrap().has(&self.key)? {
             Err(Error::RepositoryServerAlreadyInitialized)
         } else {
-            let (rrdp_base_uri, rsync_jail) = uris.unpack();
+            // initialize new repo content
+            let repository_content = {
+                let (rrdp_base_uri, rsync_jail) = uris.unpack();
 
-            let publishers = HashMap::new();
+                let publishers = HashMap::new();
 
-            let session = RrdpSession::default();
-            let stats = RepoStats::new(session);
+                let session = RrdpSession::default();
+                let stats = RepoStats::new(session);
 
-            let mut repo_dir = work_dir.to_path_buf();
-            repo_dir.push(REPOSITORY_DIR);
+                let mut repo_dir = work_dir.to_path_buf();
+                repo_dir.push(REPOSITORY_DIR);
 
-            let rrdp = RrdpServer::create(rrdp_base_uri, &repo_dir, session);
-            let rsync = RsyncdStore::new(rsync_jail, &repo_dir);
+                let rrdp = RrdpServer::create(rrdp_base_uri, &repo_dir, session);
+                let rsync = RsyncdStore::new(rsync_jail, &repo_dir);
 
-            let repo = RepositoryContent::new(publishers, rrdp, rsync, stats);
+                RepositoryContent::new(publishers, rrdp, rsync, stats)
+            };
 
+            // Store newly initialized repo content on disk
             let store = self.store.write().unwrap();
-            store.store(&self.key, &repo)?;
+            store.store(&self.key, &repository_content)?;
+
+            // Store newly initialized repo content in cache
+            let mut cache = self.cache.write().unwrap();
+            cache.replace(repository_content);
 
             Ok(())
         }
@@ -100,25 +128,29 @@ impl RepositoryContentProxy {
             store.drop_key(&self.key)?;
         }
 
+        let mut cache = self.cache.write().unwrap();
+        cache.take();
+
         Ok(())
     }
 
+    /// Return the repository content stats
     pub fn stats(&self) -> KrillResult<RepoStats> {
-        self.read_content().map(|c| c.stats().clone())
+        self.read(|content| Ok(content.stats().clone()))
     }
 
-    // Adds a publisher with an empty set of published objects.
-    // Replaces an existing publisher if it existed.
-    // This is only supposed to be called if adding the publisher
-    // to the RepositoryAccess was successful (and *that* will fail if
-    // the publisher is a duplicate). This method can only fail if
-    // there is an issue with the underlying key value store.
+    /// Add a publisher with an empty set of published objects.
+    ///
+    /// Replaces an existing publisher if it existed.
+    /// This is only supposed to be called if adding the publisher
+    /// to the RepositoryAccess was successful (and *that* will fail if
+    /// the publisher is a duplicate). This method can only fail if
+    /// there is an issue with the underlying key value store.
     pub fn add_publisher(&self, name: PublisherHandle) -> KrillResult<()> {
         self.write(|content| content.add_publisher(name))
     }
 
-    // Removes a publisher and its content. Will also write the updated
-    // RRDP and rsync content.
+    /// Removes a publisher and its content.
     pub fn remove_publisher(
         &self,
         name: &PublisherHandle,
@@ -128,9 +160,10 @@ impl RepositoryContentProxy {
         self.write(|content| content.remove_publisher(name, jail, config))
     }
 
-    // Publish an update for a publisher. Assumes that the RFC 8181 CMS has
-    // been verified, but will check that all objects are within the publisher's
-    // uri space (jail).
+    /// Publish an update for a publisher.
+    ///
+    /// Assumes that the RFC 8181 CMS has been verified, but will check that all objects
+    /// are within the publisher's uri space (jail).
     pub fn publish(
         &self,
         name: &PublisherHandle,
@@ -141,40 +174,52 @@ impl RepositoryContentProxy {
         self.write(|content| content.publish(name, delta.into(), jail, config))
     }
 
-    // Write all current files to disk
+    /// Write all current files to disk
     pub fn write_repository(&self, config: &RepositoryRetentionConfig) -> KrillResult<()> {
-        self.read_content()?.write_repository(config)
+        self.read(|content| content.write_repository(config))
     }
 
-    // Reset the RRDP session
+    /// Reset the RRDP session
     pub fn session_reset(&self, config: &RepositoryRetentionConfig) -> KrillResult<()> {
         self.write(|content| content.session_reset(config))
     }
 
+    /// Create a list reply containing all current objects for a publisher
+    pub fn list_reply(&self, name: &PublisherHandle) -> KrillResult<ListReply> {
+        self.read(|content| content.list_reply(name))
+    }
+
+    // Get all current objects for a publisher
+    pub fn current_objects(&self, name: &PublisherHandle) -> KrillResult<CurrentObjects> {
+        self.read(|content| content.objects_for_publisher(name).map(|o| o.clone()))
+    }
+
+    // Execute a closure on a mutable repository content in a single write 'transaction'
     fn write<F: FnOnce(&mut RepositoryContent) -> KrillResult<()>>(&self, op: F) -> KrillResult<()> {
+        // If there is any existing content, then we can assume that the cache
+        // has it - because it's initialized when we read the content during
+        // initialization.
         let store = self.store.write().unwrap();
-        let mut content: RepositoryContent = store.get(&self.key)?.ok_or(Error::RepositoryServerNotInitialized)?;
+        let mut cache = self.cache.write().unwrap();
 
-        op(&mut content)?;
+        let content: &mut RepositoryContent = cache.as_mut().ok_or(Error::RepositoryServerNotInitialized)?;
 
-        store.store(&self.key, &content)?;
+        op(content)?;
+
+        store.store(&self.key, content)?;
         Ok(())
     }
 
-    fn read_content(&self) -> KrillResult<RepositoryContent> {
-        self.store
-            .read()
-            .unwrap()
-            .get(&self.key)?
-            .ok_or(Error::RepositoryServerNotInitialized)
-    }
-
-    pub fn list_reply(&self, name: &PublisherHandle) -> KrillResult<ListReply> {
-        self.read_content()?.list_reply(name)
-    }
-
-    pub fn current_objects(&self, name: &PublisherHandle) -> KrillResult<CurrentObjects> {
-        self.read_content()?.objects_for_publisher(name).map(|o| o.clone())
+    // Execute a closure on a mutable repository content in a single read 'transaction'
+    // 
+    // This function fails if the repository content is not initialized.
+    fn read<A, F: FnOnce(&RepositoryContent) -> KrillResult<A>>(&self, op: F) -> KrillResult<A> {
+        // Note that because the content is initialized it is implied that the cache MUST always be
+        // set. I.e. it is set on initialization and updated whenever the repository content is updated.
+        // So, we can safely read from the cache only.
+        let cache = self.cache.read().unwrap();
+        let content = cache.as_ref().ok_or(Error::RepositoryServerNotInitialized)?;
+        op(content)
     }
 }
 
@@ -388,8 +433,6 @@ impl RsyncdStore {
                 .relative_to(&self.base_uri)
                 .ok_or_else(|| Error::publishing_outside_jail(publish.uri(), &self.base_uri))?;
 
-            let rel = unsafe { from_utf8_unchecked(rel) };
-
             let mut path = new_dir.clone();
             path.push(rel);
 
@@ -469,7 +512,7 @@ pub struct RrdpServer {
 }
 
 impl RrdpServer {
-    #[allow(clippy::clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         rrdp_base_uri: uri::Https,
         rrdp_base_dir: PathBuf,
@@ -815,7 +858,7 @@ impl RrdpServer {
 ///
 impl RrdpServer {
     pub fn notification_uri(&self) -> uri::Https {
-        self.rrdp_base_uri.join(b"notification.xml")
+        self.rrdp_base_uri.join(b"notification.xml").unwrap()
     }
 
     fn notification_path_new(&self) -> PathBuf {
@@ -845,7 +888,7 @@ impl RrdpServer {
     }
 
     fn new_snapshot_uri(base: &uri::Https, session: &RrdpSession, serial: u64) -> uri::Https {
-        base.join(Self::snapshot_rel(session, serial).as_ref())
+        base.join(Self::snapshot_rel(session, serial).as_ref()).unwrap()
     }
 
     fn snapshot_uri(&self) -> uri::Https {
@@ -1101,7 +1144,7 @@ impl RepositoryAccess {
     }
 
     fn notification_uri(&self) -> uri::Https {
-        self.rrdp_base.join(b"notification.xml")
+        self.rrdp_base.join(b"notification.xml").unwrap()
     }
 
     fn base_uri_for(&self, name: &PublisherHandle) -> KrillResult<uri::Rsync> {

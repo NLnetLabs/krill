@@ -3,7 +3,7 @@ use std::{ops::Deref, path::Path, sync::{Arc, atomic::{AtomicU8, Ordering}}};
 use bytes::Bytes;
 use once_cell::sync::OnceCell;
 use pkcs11::{types::*, Ctx};
-use rpki::crypto::{
+use rpki::repository::crypto::{
     signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
 };
 

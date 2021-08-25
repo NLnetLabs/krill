@@ -1,12 +1,12 @@
 use std::fmt;
 use std::str::FromStr;
 
-use rpki::cert::Cert;
-use rpki::crypto::{KeyIdentifier, PublicKey};
-use rpki::csr::Csr;
-use rpki::resources::{AsBlocks, IpBlocks, IpBlocksForFamily};
+use rpki::repository::cert::Cert;
+use rpki::repository::crypto::{KeyIdentifier, PublicKey};
+use rpki::repository::csr::Csr;
+use rpki::repository::resources::{AsBlocks, IpBlocks, IpBlocksForFamily};
+use rpki::repository::x509::Time;
 use rpki::uri;
-use rpki::x509::Time;
 
 use crate::commons::api::ca::{IssuedCert, RcvdCert, ResourceClassName, ResourceSet};
 use crate::commons::util::ext_serde;

@@ -208,7 +208,7 @@ mod tests {
     };
 
     use bytes::Bytes;
-    use tokio::time::delay_for;
+    use tokio::time::sleep;
 
     use rpki::uri;
 
@@ -358,7 +358,7 @@ mod tests {
         assert!(find_in_reply(&list_reply, &test::rsync("rsync://localhost/repo/alice/file.txt")).is_some());
         assert!(find_in_reply(&list_reply, &test::rsync("rsync://localhost/repo/alice/file2.txt")).is_some());
 
-        delay_for(Duration::from_secs(2)).await;
+        sleep(Duration::from_secs(2)).await;
 
         // Update
         // - update file
@@ -464,7 +464,7 @@ mod tests {
         assert!(session_dir_contains_delta(&session, 2));
         assert!(session_dir_contains_snapshot(&session, 2));
 
-        delay_for(Duration::from_secs(2)).await;
+        sleep(Duration::from_secs(2)).await;
 
         // Add file 4,5,6
         //

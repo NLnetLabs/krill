@@ -14,7 +14,7 @@ use openssl::{
     error::ErrorStack,
     ssl::{SslConnector, SslFiletype, SslMethod, SslStream, SslVerifyMode},
 };
-use rpki::crypto::{
+use rpki::repository::crypto::{
     signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
 };
 

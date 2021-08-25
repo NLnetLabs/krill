@@ -397,6 +397,7 @@ impl OpenIDConnectAuthProvider {
             self.config
                 .service_uri()
                 .join(AUTH_CALLBACK_ENDPOINT.trim_start_matches('/').as_bytes())
+                .unwrap()
                 .to_string(),
         )?;
 
@@ -1303,6 +1304,10 @@ impl AuthProvider for OpenIDConnectAuthProvider {
             || Nonce::new(base64::encode_config(nonce_hash, base64::URL_SAFE_NO_PAD)),
         );
 
+        // This unwrap is safe as we check in new() that the OpenID Connect
+        // config exists.
+        let oidc_conf = self.oidc_conf()?;
+
         // From https://openid.net/specs/openid-connect-core-1_0.html#AuthRequest:
         //   "prompt: login - The Authorization Server SHOULD prompt the
         //    End-User for re-authentication. If it cannot re-authenticate the
@@ -1312,7 +1317,11 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         // to specify who to login as, we don't want the provider somehow
         // automatically completing the login process because it has some notion
         // of an existing login session.
-        request = request.add_prompt(CoreAuthPrompt::Login);
+
+        // https://github.com/NLnetLabs/krill/issues/614
+        if oidc_conf.prompt_for_login {
+            request = request.add_prompt(CoreAuthPrompt::Login);
+        }
 
         // The "openid" scope that OpenID Connect: providers are required to
         // check for is sent automatically by the openidconnect crate. We can
@@ -1331,10 +1340,6 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         }
 
         // TODO: use request.set_pkce_challenge() ?
-
-        // This unwrap is safe as we check in new() that the OpenID Connect
-        // config exists.
-        let oidc_conf = self.oidc_conf()?;
 
         for scope in &oidc_conf.extra_login_scopes {
             request = request.add_scope(Scope::new(scope.clone()));

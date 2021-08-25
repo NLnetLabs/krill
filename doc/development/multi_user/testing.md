@@ -25,11 +25,33 @@ this has not yet been verified as working on Mac OS. Cypress in turn is driven b
 As UI based tests can be quite slow they are gated behind their own `ui-tests` feature, which also has the benefit
 that users without a working Docker setup are still able to run `cargo test`.
 
-To run the UI tests one must therefore do: `cargo test --features ui-tests`.
+To run the UI tests one must therefore do:
+
+```
+cargo test --features ui-tests
+```
 
 Cypress has a very useful interactive test run mode which can be launched like so:
 
 ```
 $ xhost +
-$ CYPRESS_INTERACTIVE=1 cargo test --features ui-tests
+$ CYPRESS_INTERACTIVE=1 cargo test --features ui-tests <some_test_name>
 ```
+
+You want the `<some_test_name>` because you want Krill to be setup correctly to run a particular test that you will then run interactively, you don't want Krill to run all tests and constantly be changing the backend state as a result while you try to use Cypress to run a single test suite that has expectations about the state that Krill is in.
+
+For example you might do:
+```
+$ xhost +
+$ CYPRESS_INTERACTIVE=1 cargo test --features ui-tests multi_user_config_file_with_ta
+```
+
+After a short delay a browser window should open with a Cypress welcome message something like this:
+
+![Cypress welcome popup](images/cypress-welcome-popup.png)
+
+Dismiss the message and then click on the `multi_user_config_file_with_ta.js` test in the tree of tests that is shown to you, i.e. run the same test as you invoked with `cargo test` so that Krill has the expected configuration and starting conditions.
+
+You should then see something like this:
+
+![Cypress test running](images/cypress-test-running.png)

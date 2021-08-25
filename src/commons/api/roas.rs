@@ -6,8 +6,8 @@ use std::str::FromStr;
 
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
-use rpki::resources::{AsBlocks, AsId, IpBlocks, IpBlocksBuilder, Prefix};
-use rpki::roa::RoaIpAddress;
+use rpki::repository::resources::{AsBlocks, AsId, IpBlocks, IpBlocksBuilder, Prefix};
+use rpki::repository::roa::RoaIpAddress;
 
 use crate::commons::api::ResourceSet;
 use crate::daemon::ca::RouteAuthorizationUpdates;

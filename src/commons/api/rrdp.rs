@@ -11,7 +11,7 @@ use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
 
 use rpki::uri;
-use rpki::x509::Time;
+use rpki::repository::x509::Time;
 
 use crate::commons::api::Base64;
 use crate::commons::api::HexEncodedHash;

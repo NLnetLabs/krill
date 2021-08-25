@@ -7,13 +7,14 @@ use std::sync::{Arc, RwLock};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-use rpki::x509::Time;
+use rpki::repository::x509::Time;
 
 use crate::commons::eventsourcing::cmd::{Command, StoredCommandBuilder};
 use crate::commons::eventsourcing::{
     Aggregate, Event, KeyStoreKey, KeyValueError, KeyValueStore, PostSaveEventListener, StoredCommand,
     WithStorableDetails,
 };
+use crate::commons::util::KrillVersion;
 use crate::commons::{
     api::{CommandHistory, CommandHistoryCriteria, CommandHistoryRecord, Handle, Label},
     error::KrillIoError,
@@ -44,27 +45,6 @@ impl Default for StoredValueInfo {
             last_command: 0,
             last_update: Time::now(),
         }
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
-// Do NOT EVER change the order.. this is used to check whether migrations are needed
-#[allow(non_camel_case_types)]
-pub enum KeyStoreVersion {
-    Pre0_6,
-    V0_6,
-    V0_7,
-    V0_8_0_RC1,
-    V0_8,
-    V0_8_1_RC1,
-    V0_8_1,
-    V0_8_2,
-    V0_9_0_RC1,
-}
-
-impl KeyStoreVersion {
-    pub fn current() -> Self {
-        KeyStoreVersion::V0_9_0_RC1
     }
 }
 
@@ -182,7 +162,7 @@ where
         };
 
         if !existed {
-            store.set_version(&KeyStoreVersion::current())?;
+            store.set_version(&KrillVersion::current())?;
         }
 
         Ok(store)
@@ -190,47 +170,61 @@ where
 
     /// Warms up the cache, to be used after startup. Will fail if any aggregates fail to load
     /// in which case a 'recover' operation can be tried.
+    pub fn warm(&self) -> StoreResult<()> {
+        for handle in self.list()? {
+            self.warm_aggregate(&handle)?;
+        }
+        Ok(())
+    }
+
+    /// Warm the cache for a specific aggregate. If successful save the latest snapshot
+    /// as well (will help in case of migrations where snapshots were dropped).
     ///
     /// In case any surplus event(s) and/or command(s) are encountered, i.e. extra entries not
     /// recorded in the 'info.json' which is always saved last on state changes - then it is
     /// assumed that an incomplete transaction took place. The surplus entries will be archived
     /// and warnings will be reported.
-    pub fn warm(&self) -> StoreResult<()> {
-        for handle in self.list()? {
-            let _ = self
-                .get_latest(&handle)
-                .map_err(|e| AggregateStoreError::WarmupFailed(handle.clone(), e.to_string()))?;
+    pub fn warm_aggregate(&self, handle: &Handle) -> StoreResult<()> {
+        let agg = self
+            .get_latest(handle)
+            .map_err(|e| AggregateStoreError::WarmupFailed(handle.clone(), e.to_string()))?;
 
-            // check that last command and event are consistent with
-            // the info, if not fail warmup and force recover
-            let info = self.get_info(&handle)?;
+        // check that last command and event are consistent with
+        // the info, if not fail warmup and force recover
+        let info = self.get_info(handle)?;
 
-            // for events we can just check if the next event, after
-            // the last event in the info exists
-            if self.get_event::<A::Event>(&handle, info.last_event + 1)?.is_some() {
-                warn!(
-                    "Found surplus event(s) for '{}' when warming up the cache. Will archive!",
-                    handle
-                );
-                self.archive_surplus_events(&handle, info.last_event + 1)?;
-            }
+        // for events we can just check if the next event, after
+        // the last event in the info exists
+        if self.get_event::<A::Event>(handle, info.last_event + 1)?.is_some() {
+            warn!(
+                "Found surplus event(s) for '{}' when warming up the cache. Will archive!",
+                handle
+            );
+            self.archive_surplus_events(handle, info.last_event + 1)?;
+        }
 
-            // Check if there are any commands with a sequence after the last
-            // recorded sequence in the info.
-            let mut crit = CommandHistoryCriteria::default();
-            crit.set_after_sequence(info.last_command);
-            let surplus_commands = self.command_keys_ascending(&handle, &crit)?;
-            if !surplus_commands.is_empty() {
-                warn!(
-                    "Found surplus command(s) for '{}' when warming up the cache. Will archive!",
-                    handle
-                );
+        // Check if there are any commands with a sequence after the last
+        // recorded sequence in the info.
+        let mut crit = CommandHistoryCriteria::default();
+        crit.set_after_sequence(info.last_command);
+        let surplus_commands = self.command_keys_ascending(handle, &crit)?;
+        if !surplus_commands.is_empty() {
+            warn!(
+                "Found surplus command(s) for '{}' when warming up the cache. Will archive!",
+                handle
+            );
 
-                for command in surplus_commands {
-                    self.archive_surplus_command(&handle, &command)?;
-                }
+            for command in surplus_commands {
+                self.archive_surplus_command(handle, &command)?;
             }
         }
+
+        // Save the snapshot if it does not yet match the latest state
+        if info.snapshot_version != agg.version() {
+            info!("Updating snapshot for '{}', to decrease future load times.", handle);
+            self.store_snapshot(handle, agg.as_ref())?;
+        }
+
         Ok(())
     }
 
@@ -711,14 +705,14 @@ where
         KeyStoreKey::scoped(agg.to_string(), format!("{}.json", command))
     }
 
-    pub fn get_version(&self) -> Result<KeyStoreVersion, AggregateStoreError> {
-        match self.kv.get::<KeyStoreVersion>(&Self::key_version())? {
+    pub fn get_version(&self) -> Result<KrillVersion, AggregateStoreError> {
+        match self.kv.get::<KrillVersion>(&Self::key_version())? {
             Some(version) => Ok(version),
-            None => Ok(KeyStoreVersion::Pre0_6),
+            None => Ok(KrillVersion::v0_5_0_or_before()),
         }
     }
 
-    pub fn set_version(&self, version: &KeyStoreVersion) -> Result<(), AggregateStoreError> {
+    pub fn set_version(&self, version: &KrillVersion) -> Result<(), AggregateStoreError> {
         self.kv.store(&Self::key_version(), version)?;
         Ok(())
     }

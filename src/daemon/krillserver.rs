@@ -6,11 +6,11 @@ use std::sync::Arc;
 use bytes::Bytes;
 use chrono::Duration;
 
-use rpki::cert::Cert;
-use rpki::uri;
-use rpki::x509::Time;
+use rpki::{
+    repository::{cert::Cert, x509::Time},
+    uri,
+};
 
-use crate::commons::actor::{Actor, ActorDef};
 use crate::commons::api::{
     AddChildRequest, AllCertAuthIssues, CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthInit, CertAuthIssues,
     CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Handle, ListReply,
@@ -22,6 +22,10 @@ use crate::commons::bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion}
 use crate::commons::crypto::KrillSigner;
 use crate::commons::eventsourcing::CommandKey;
 use crate::commons::remote::rfc8183;
+use crate::commons::{
+    actor::{Actor, ActorDef},
+    api::ChildrenConnectionStats,
+};
 use crate::commons::{KrillEmptyResult, KrillResult};
 use crate::constants::*;
 #[cfg(feature = "multi-user")]
@@ -330,7 +334,7 @@ impl KrillServer {
     }
 
     /// Removes a publisher, blows up if it didn't exist.
-    pub fn remove_publisher(&mut self, publisher: PublisherHandle, actor: &Actor) -> KrillEmptyResult {
+    pub fn remove_publisher(&self, publisher: PublisherHandle, actor: &Actor) -> KrillEmptyResult {
         self.repo_manager.remove_publisher(publisher, actor)
     }
 
@@ -429,10 +433,15 @@ impl KrillServer {
         Ok(())
     }
 
-    /// Show details for a child under the TA.
-    pub async fn ca_child_show(&self, parent: &ParentHandle, child: &ChildHandle) -> KrillResult<ChildCaInfo> {
-        let child = self.ca_manager.ca_show_child(parent, child).await?;
+    /// Show details for a child under the CA.
+    pub async fn ca_child_show(&self, ca: &Handle, child: &ChildHandle) -> KrillResult<ChildCaInfo> {
+        let child = self.ca_manager.ca_show_child(ca, child).await?;
         Ok(child)
+    }
+
+    /// Show children stats under the CA.
+    pub async fn ca_stats_child_connections(&self, ca: &Handle) -> KrillResult<ChildrenConnectionStats> {
+        self.ca_manager.ca_stats_child_connections(ca).await
     }
 }
 
@@ -447,21 +456,17 @@ impl KrillServer {
     /// Updates a parent contact for a CA
     pub async fn ca_parent_add_or_update(
         &self,
-        handle: Handle,
+        ca: Handle,
         parent_req: ParentCaReq,
         actor: &Actor,
     ) -> KrillEmptyResult {
-        self.ca_parent_reachable(&handle, parent_req.contact()).await?;
+        let parent = parent_req.handle();
+        let contact = parent_req.contact();
+        self.ca_manager
+            .get_entitlements_from_contact(&ca, parent, contact, false)
+            .await?;
 
-        Ok(self
-            .ca_manager
-            .ca_parent_add_or_update(handle, parent_req, actor)
-            .await?)
-    }
-
-    async fn ca_parent_reachable(&self, handle: &Handle, contact: &ParentCaContact) -> KrillEmptyResult {
-        self.ca_manager.get_entitlements_from_contact(handle, contact).await?;
-        Ok(())
+        Ok(self.ca_manager.ca_parent_add_or_update(ca, parent_req, actor).await?)
     }
 
     pub async fn ca_parent_remove(&self, handle: Handle, parent: ParentHandle, actor: &Actor) -> KrillEmptyResult {
@@ -489,7 +494,9 @@ impl KrillServer {
                 let bgp_report = if ca.handle().as_str() == "ta" || ca.handle().as_str() == "testbed" {
                     BgpAnalysisReport::new(vec![])
                 } else {
-                    self.bgp_analyser.analyse(roas.as_slice(), &ca.all_resources()).await
+                    self.bgp_analyser
+                        .analyse(roas.as_slice(), &ca.all_resources(), None)
+                        .await
                 };
 
                 res.insert(
@@ -604,7 +611,7 @@ impl KrillServer {
         self.ca_manager.get_ca(handle).await.map(|ca| ca.publisher_request())
     }
 
-    pub async fn ca_init(&mut self, init: CertAuthInit) -> KrillEmptyResult {
+    pub fn ca_init(&self, init: CertAuthInit) -> KrillEmptyResult {
         let handle = init.unpack();
         self.ca_manager.init_ca(&handle)
     }
@@ -644,8 +651,14 @@ impl KrillServer {
             .await?)
     }
 
-    pub async fn rfc6492(&self, handle: Handle, msg_bytes: Bytes, actor: &Actor) -> KrillResult<Bytes> {
-        Ok(self.ca_manager.rfc6492(&handle, msg_bytes, actor).await?)
+    pub async fn rfc6492(
+        &self,
+        handle: Handle,
+        msg_bytes: Bytes,
+        user_agent: Option<String>,
+        actor: &Actor,
+    ) -> KrillResult<Bytes> {
+        Ok(self.ca_manager.rfc6492(&handle, msg_bytes, user_agent, actor).await?)
     }
 }
 
@@ -669,8 +682,11 @@ impl KrillServer {
     pub async fn ca_routes_bgp_analysis(&self, handle: &Handle) -> KrillResult<BgpAnalysisReport> {
         let ca = self.ca_manager.get_ca(handle).await?;
         let definitions = ca.roa_definitions();
-        let resources = ca.all_resources();
-        Ok(self.bgp_analyser.analyse(definitions.as_slice(), &resources).await)
+        let resources_held = ca.all_resources();
+        Ok(self
+            .bgp_analyser
+            .analyse(definitions.as_slice(), &resources_held, None)
+            .await)
     }
 
     pub async fn ca_routes_bgp_dry_run(
@@ -682,7 +698,8 @@ impl KrillServer {
 
         let updates: RouteAuthorizationUpdates = updates.into();
         let updates = updates.into_explicit();
-        let resources = updates.affected_prefixes();
+        let resources_held = ca.all_resources();
+        let limit = Some(updates.affected_prefixes());
 
         let (would_be_routes, _) = ca.update_authorizations(&updates)?;
         let roas: Vec<RoaDefinition> = would_be_routes
@@ -691,23 +708,22 @@ impl KrillServer {
             .map(|a| a.into())
             .collect();
 
-        Ok(self.bgp_analyser.analyse(roas.as_slice(), &resources).await)
+        Ok(self.bgp_analyser.analyse(roas.as_slice(), &resources_held, limit).await)
     }
 
     pub async fn ca_routes_bgp_suggest(
         &self,
         handle: &Handle,
-        scope: Option<ResourceSet>,
+        limit: Option<ResourceSet>,
     ) -> KrillResult<BgpAnalysisSuggestion> {
         let ca = self.ca_manager.get_ca(handle).await?;
         let definitions = ca.roa_definitions();
-        let mut resources = ca.all_resources();
+        let resources_held = ca.all_resources();
 
-        if let Some(scope) = scope {
-            resources = resources.intersection(&scope);
-        }
-
-        Ok(self.bgp_analyser.suggest(definitions.as_slice(), &resources).await)
+        Ok(self
+            .bgp_analyser
+            .suggest(definitions.as_slice(), &resources_held, limit)
+            .await)
     }
 }
 

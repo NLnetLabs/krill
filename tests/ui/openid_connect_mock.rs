@@ -23,7 +23,7 @@ use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 use urlparse::{parse_qs, urlparse, GetQuery, Query, Url};
 
 use tokio::task;
-use tokio::time::delay_for;
+use tokio::time::sleep;
 
 use krill::commons::error::Error;
 
@@ -174,6 +174,10 @@ type KnownUsers = HashMap<KnownUserId, KnownUser>;
 const DEFAULT_TOKEN_DURATION_SECS: u32 = 3600;
 static MOCK_OPENID_CONNECT_SERVER_RUNNING_FLAG: AtomicBool = AtomicBool::new(false);
 
+// This function is not used by the integration tests which are the main users of this code, but sometimes it's helpful
+// to be able to spin up the mock outside of an integration test which is why this main() fn exists. If we don't allow
+// dead_code then cargo test spams the output with function is never used warnings.
+#[allow(dead_code)]
 #[tokio::main]
 pub async fn main() {
     // Log to stdout.
@@ -203,7 +207,7 @@ pub async fn start(config: OpenIDConnectMockConfig, delay_secs: u64) -> task::Jo
     // otherwise Krill might fail to query its discovery endpoint
     while !MOCK_OPENID_CONNECT_SERVER_RUNNING_FLAG.load(Ordering::Relaxed) {
         info!("Waiting for mock OpenID Connect server to start");
-        delay_for(Duration::from_secs(delay_secs)).await;
+        sleep(Duration::from_secs(delay_secs)).await;
     }
 
     join_handle
