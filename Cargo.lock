@@ -1127,6 +1127,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "kmip"
+version = "0.1.0-dev"
+source = "git+https://github.com/NLnetLabs/kmip?branch=main#dbbc6b4919baaae052c1f9baf263ed549b354598"
+dependencies = [
+ "enum-display-derive",
+ "enum-flags",
+ "kmip-ttlv",
+ "serde",
+ "serde_bytes",
+ "serde_derive",
+]
+
+[[package]]
+name = "kmip-ttlv"
+version = "0.1.0-dev"
+source = "git+https://github.com/NLnetLabs/kmip-ttlv.git?branch=main#bce3f54480e88c5d66bba1654166a174e602f600"
+dependencies = [
+ "hex",
+ "log",
+ "serde",
+]
+
+[[package]]
 name = "krill"
 version = "0.9.1"
 dependencies = [
@@ -1145,7 +1168,7 @@ dependencies = [
  "hyper 0.14.9",
  "intervaltree",
  "jmespatch",
- "krill-kmip-protocol",
+ "kmip",
  "libc",
  "libflate",
  "log",
@@ -1172,29 +1195,6 @@ dependencies = [
  "urlparse",
  "uuid 0.8.2",
  "xml-rs",
-]
-
-[[package]]
-name = "krill-kmip-protocol"
-version = "0.1.0-dev"
-source = "git+https://github.com/NLnetLabs/krill-kmip-protocol?branch=main#47acc5277d8dbddf8893f6b35d61c0ada377fed1"
-dependencies = [
- "enum-display-derive",
- "enum-flags",
- "krill-kmip-ttlv",
- "serde",
- "serde_bytes",
- "serde_derive",
-]
-
-[[package]]
-name = "krill-kmip-ttlv"
-version = "0.1.0-dev"
-source = "git+https://github.com/NLnetLabs/krill-kmip-ttlv.git?branch=main#4d9541536b8a6c3a68a335e913223523533f80df"
-dependencies = [
- "hex",
- "log",
- "serde",
 ]
 
 [[package]]
