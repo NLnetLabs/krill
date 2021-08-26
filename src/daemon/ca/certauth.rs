@@ -207,7 +207,7 @@ impl Aggregate for CertAuth {
                 updates,
             } => {
                 let rc = self.resources.get_mut(&resource_class_name).unwrap();
-                let (issued, removed, suspended) = updates.unpack();
+                let (issued, removed, suspended_certs) = updates.unpack();
                 for iss in issued {
                     rc.certificate_issued(iss)
                 }
@@ -215,7 +215,7 @@ impl Aggregate for CertAuth {
                     rc.key_revoked(&rem);
 
                     // This loop is inefficient, but certificate revocations are not that common, so it's
-                    // not a big deal. Tracking this better would require to track the child handle somehow.
+                    // not a big deal. Tracking this better would require that we track the child handle somehow.
                     // That is a bit hard when this revocation is the result from a republish where we lost
                     // all resources delegated to the child.
                     for child in self.children.values_mut() {
@@ -224,8 +224,8 @@ impl Aggregate for CertAuth {
                         }
                     }
                 }
-                for suspended in suspended {
-                    rc.certificate_suspended(suspended);
+                for cert in suspended_certs {
+                    rc.certificate_suspended(cert);
                 }
             }
 
@@ -1033,9 +1033,9 @@ impl CertAuth {
     //
     // When a child is unsuspended we need to:
     // - mark it as unsuspended
-    // - republish suspended certificates for it, which
-    //    - will not expire for another day
-    //    - do not exceed the current resource entitlements of the CA
+    // - republish existing suspended certificates for it, provided that
+    //    - they will not expire for another day
+    //    - they do not exceed the current resource entitlements of the CA
     // - other suspended certificates will just be removed.
     //
     // Then the child may or may not request new certificates as it sees fit.
