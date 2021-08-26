@@ -3,7 +3,9 @@ use std::{net::TcpStream, path::PathBuf, sync::Arc};
 use bytes::Bytes;
 use kmip::{
     types::{
-        common::{KeyMaterial, ObjectType, Operation, UniqueIdentifier},
+        common::{
+            KeyMaterial, ObjectType, Operation, TransparentRSAPrivateKey, TransparentRSAPublicKey, UniqueIdentifier,
+        },
         request::{Attribute, RequestPayload},
         response::ManagedObject,
         response::{GetResponsePayload, KeyBlock, KeyValue, QueryResponsePayload, ResponsePayload},
@@ -171,6 +173,24 @@ impl KmipSigner {
             ))
             .map_err(|err| SignerError::KmipError(format!("Failed to get key material: {:?}", err)))?;
 
+        fn rsa_public_key_from_parts(modulus: &[u8], public_exponent: &[u8]) -> Result<bytes::Bytes, SignerError> {
+            let modulus = bcder::Unsigned::from_be_bytes(modulus);
+            let public_exp = bcder::Unsigned::from_be_bytes(public_exponent);
+            let rsa_public_key = bcder::encode::sequence((modulus.encode(), public_exp.encode()));
+
+            let mut bytes: Vec<u8> = Vec::new();
+            rsa_public_key
+                .write_encoded(bcder::Mode::Der, &mut bytes)
+                .map_err(|err| {
+                    SignerError::KmipError(format!(
+                        "Failed to create DER encoded RSAPublicKey from constituent parts: {}",
+                        err
+                    ))
+                })?;
+
+            Ok(bytes::Bytes::from(bytes))
+        }
+
         let rsa_public_key_bytes = if let ResponsePayload::Get(GetResponsePayload {
             object_type: ObjectType::PublicKey,
             cryptographic_object:
@@ -185,31 +205,16 @@ impl KmipSigner {
         }) = res
         {
             match km {
-                KeyMaterial::Bytes(bytes) => bytes,
-                KeyMaterial::TransparentRSAPrivateKey(_s) => {
-                    // use s.Modulus, s.PublicExponent
-                    return Err(SignerError::KmipError(
-                        "Failed to get key material: transparent RSA private key material is not yet supported"
-                            .to_string(),
-                    ));
-                }
-                KeyMaterial::TransparentRSAPublicKey(s) => {
-                    let modulus = bcder::Unsigned::from_be_bytes(s.modulus);
-                    let public_exp = bcder::Unsigned::from_be_bytes(s.public_exponent);
-                    let rsa_public_key = bcder::encode::sequence((modulus.encode(), public_exp.encode()));
-
-                    let mut bytes: Vec<u8> = Vec::new();
-                    rsa_public_key
-                        .write_encoded(bcder::Mode::Der, &mut bytes)
-                        .map_err(|err| {
-                            SignerError::KmipError(format!(
-                                "Failed to create DER encoded RSAPublicKey from constituent parts: {}",
-                                err
-                            ))
-                        })?;
-
-                    bytes
-                }
+                KeyMaterial::Bytes(bytes) => bytes::Bytes::from(bytes),
+                KeyMaterial::TransparentRSAPublicKey(TransparentRSAPublicKey {
+                    modulus: m,
+                    public_exponent: p,
+                }) => rsa_public_key_from_parts(&m, &p)?,
+                KeyMaterial::TransparentRSAPrivateKey(TransparentRSAPrivateKey {
+                    modulus: m,
+                    public_exponent: Some(p),
+                    ..
+                }) => rsa_public_key_from_parts(&m, &p)?,
                 _ => {
                     return Err(SignerError::KmipError(format!(
                         "Failed to get key material: key material type {:?} is not yet supported",
@@ -223,7 +228,7 @@ impl KmipSigner {
             ));
         };
 
-        let subject_public_key = bcder::BitString::new(0, bytes::Bytes::from(rsa_public_key_bytes));
+        let subject_public_key = bcder::BitString::new(0, rsa_public_key_bytes);
 
         use crate::bcder::encode::PrimitiveContent; // for .encode()
         let subject_public_key_info = bcder::encode::sequence((algorithm.encode(), subject_public_key.encode()));
