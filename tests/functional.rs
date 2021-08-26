@@ -623,9 +623,6 @@ async fn functional() {
         ca_equals_resources(&ca1, &ca1_res_reduced).await;
         ca_equals_resources(&ca3, &ca3_res_reduced).await;
         ca_equals_resources(&ca4, &ca4_res_reduced).await;
-        refresh_all().await; // if we skip this, then CA4 will not find out that it's resources were reduced
-        refresh_all().await; // if we skip this, then CA4 will not find out that it's resources were reduced
-        refresh_all().await; // if we skip this, then CA4 will not find out that it's resources were reduced
 
         expect_roas_for_ca4(
             "CA4 resources are shrunk and we expect only one remaining roa",
