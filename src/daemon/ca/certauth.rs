@@ -207,10 +207,15 @@ impl Aggregate for CertAuth {
                 updates,
             } => {
                 let rc = self.resources.get_mut(&resource_class_name).unwrap();
-                let (issued, removed, suspended_certs) = updates.unpack();
-                for iss in issued {
-                    rc.certificate_issued(iss)
+                let (issued, removed, suspended_certs, unsuspended_certs) = updates.unpack();
+                for cert in issued {
+                    rc.certificate_issued(cert)
                 }
+
+                for cert in unsuspended_certs {
+                    rc.certificate_unsuspended(cert)
+                }
+
                 for rem in removed {
                     rc.key_revoked(&rem);
 
@@ -1059,18 +1064,18 @@ impl CertAuth {
             let mut cert_updates = ChildCertificateUpdates::default();
 
             for key in certified_keys {
-                if let Some(issued) = rc.suspended(&key) {
+                if let Some(cert) = rc.suspended(&key) {
                     // check that the cert is actually not expired or about to expire and not overclaiming
-                    if issued.validity().not_after() > Time::now() + Duration::days(1)
-                        && child.resources().contains(issued.resource_set())
+                    if cert.validity().not_after() > Time::now() + Duration::days(1)
+                        && child.resources().contains(cert.resource_set())
                     {
                         // certificate is still fit for publication, so move it back to issued
-                        cert_updates.issue(issued.clone());
+                        cert_updates.unsuspend(cert.clone());
                     } else {
                         // certificate should not be published as is. Remove it and the child will request
                         // a new certificate because the resources and or validity entitlements will have
                         // changed.
-                        cert_updates.remove(issued.subject_key_identifier());
+                        cert_updates.remove(cert.subject_key_identifier());
                     }
                 }
             }

@@ -5,7 +5,9 @@ use chrono::Duration;
 use rpki::repository::crypto::KeyIdentifier;
 use rpki::repository::x509::Time;
 
-use crate::commons::api::{ChildCaInfo, ChildHandle, IssuedCert, ResourceClassName, ResourceSet, SuspendedCert};
+use crate::commons::api::{
+    ChildCaInfo, ChildHandle, IssuedCert, ResourceClassName, ResourceSet, SuspendedCert, UnsuspendedCert,
+};
 use crate::commons::crypto::IdCert;
 use crate::commons::error::Error;
 use crate::commons::KrillResult;
@@ -160,7 +162,12 @@ pub struct ChildCertificates {
 impl ChildCertificates {
     pub fn certificate_issued(&mut self, issued: IssuedCert) {
         let ki = issued.cert().subject_key_identifier();
-        self.suspended.remove(&ki); // most likely a no-op, needed in case this was an unsuspend
+        self.issued.insert(ki, issued);
+    }
+
+    pub fn certificate_unsuspended(&mut self, issued: UnsuspendedCert) {
+        let ki = issued.cert().subject_key_identifier();
+        self.suspended.remove(&ki);
         self.issued.insert(ki, issued);
     }
 
