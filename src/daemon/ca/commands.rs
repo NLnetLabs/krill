@@ -69,8 +69,9 @@ pub enum CmdDet {
     // the child is seen again and unsuspended (see below).
     ChildSuspendInactive(ChildHandle),
 
-    // Unsuspend a child (when it contacts the server again). I.e. re-issue
-    // any and all certificates for it based on the current state.
+    // Unsuspend a child (when it contacts the server again). I.e. mark it as active once
+    // again and republish existing certificates provided that they are not expired, or
+    // about to expire, and do not claim resources no longer associated with this child.
     ChildUnsuspend(ChildHandle),
 
     // ------------------------------------------------------------
