@@ -150,7 +150,8 @@ pub struct Children {
 /// The collection of certificates issued under a [ResourceClass](ca.ResourceClass).
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildCertificates {
-    inner: HashMap<KeyIdentifier, IssuedCert>,
+    #[serde(alias = "inner")] // Note: we cannot remove this unless we migrate existing json on upgrade.
+    issued: HashMap<KeyIdentifier, IssuedCert>,
 
     #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
     suspended: HashMap<KeyIdentifier, SuspendedCert>,
@@ -160,22 +161,22 @@ impl ChildCertificates {
     pub fn certificate_issued(&mut self, issued: IssuedCert) {
         let ki = issued.cert().subject_key_identifier();
         self.suspended.remove(&ki); // most likely a no-op, needed in case this was an unsuspend
-        self.inner.insert(ki, issued);
+        self.issued.insert(ki, issued);
     }
 
     pub fn certificate_suspended(&mut self, suspended: SuspendedCert) {
         let ki = suspended.cert().subject_key_identifier();
-        self.inner.remove(&ki);
+        self.issued.remove(&ki);
         self.suspended.insert(ki, suspended);
     }
 
     pub fn key_revoked(&mut self, key: &KeyIdentifier) {
-        self.inner.remove(key);
+        self.issued.remove(key);
         self.suspended.remove(key);
     }
 
     pub fn get_issued(&self, ki: &KeyIdentifier) -> Option<&IssuedCert> {
-        self.inner.get(ki)
+        self.issued.get(ki)
     }
 
     pub fn get_suspended(&self, ki: &KeyIdentifier) -> Option<&SuspendedCert> {
@@ -183,11 +184,11 @@ impl ChildCertificates {
     }
 
     pub fn current(&self) -> impl Iterator<Item = &IssuedCert> {
-        self.inner.values()
+        self.issued.values()
     }
 
     pub fn expiring(&self, issuance_timing: &IssuanceTimingConfig) -> Vec<&IssuedCert> {
-        self.inner
+        self.issued
             .values()
             .filter(|issued| {
                 issued.validity().not_after()
@@ -197,21 +198,21 @@ impl ChildCertificates {
     }
 
     pub fn overclaiming(&self, resources: &ResourceSet) -> Vec<&IssuedCert> {
-        self.inner
+        self.issued
             .values()
             .filter(|issued| !resources.contains(issued.resource_set()))
             .collect()
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &IssuedCert> {
-        self.inner.values()
+        self.issued.values()
     }
 }
 
 impl Default for ChildCertificates {
     fn default() -> Self {
         ChildCertificates {
-            inner: HashMap::new(),
+            issued: HashMap::new(),
             suspended: HashMap::new(),
         }
     }
