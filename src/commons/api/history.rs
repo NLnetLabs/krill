@@ -524,7 +524,7 @@ impl WithStorableDetails for StorableCaCommand {
                 CommandSummary::new("cmd-ca-child-suspend-inactive", &self).with_child(child)
             }
             StorableCaCommand::ChildUnsuspend { child } => {
-                CommandSummary::new("cmd-ca-unsuspend", &self).with_child(child)
+                CommandSummary::new("cmd-ca-child-unsuspend", &self).with_child(child)
             }
             StorableCaCommand::ChildRevokeKey { child, revoke_req } => {
                 CommandSummary::new("cmd-ca-child-revoke", &self)
