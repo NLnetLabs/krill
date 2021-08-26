@@ -519,7 +519,9 @@ impl CaManager {
     /// Removes a child from this CA. This will also ensure that certificates issued to the child
     /// are revoked and withdrawn.
     pub async fn ca_child_remove(&self, ca: &Handle, child: ChildHandle, actor: &Actor) -> KrillResult<()> {
+        self.status_store.lock().await.remove_child(&ca, &child).await?;
         self.send_command(CmdDet::child_remove(ca, child, actor)).await?;
+
         Ok(())
     }
 

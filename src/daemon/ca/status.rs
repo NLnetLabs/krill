@@ -155,6 +155,13 @@ impl StatusStore {
             .await
     }
 
+    pub async fn remove_child(&self, ca: &Handle, child: &ChildHandle) -> KrillResult<()> {
+        self.update_ca_status(ca, |status| {
+            status.children.remove(child);
+        })
+        .await
+    }
+
     pub async fn get_stats_child_connections(&self, ca: &Handle) -> KrillResult<ChildrenConnectionStats> {
         let _lock = self.lock.read().await;
         let status = self.get_ca_status(ca)?;
