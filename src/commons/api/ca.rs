@@ -246,6 +246,7 @@ pub struct IssuedCert {
 }
 
 pub type SuspendedCert = IssuedCert;
+pub type UnsuspendedCert = IssuedCert;
 
 impl IssuedCert {
     pub fn new(
@@ -705,6 +706,10 @@ impl Revocations {
 
     pub fn add(&mut self, revocation: Revocation) {
         self.0.push(revocation);
+    }
+
+    pub fn remove(&mut self, revocation: &Revocation) {
+        self.0.retain(|existing| existing != revocation);
     }
 
     pub fn apply_delta(&mut self, delta: RevocationsDelta) {

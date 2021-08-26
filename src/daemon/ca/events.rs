@@ -8,7 +8,7 @@ use crate::{
         api::{
             ChildHandle, Handle, IssuanceRequest, IssuedCert, ObjectName, ParentCaContact, ParentHandle,
             ParentResourceClassName, RcvdCert, RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest,
-            RevokedObject, RoaAggregateKey, RtaName, SuspendedCert, TaCertDetails,
+            RevokedObject, RoaAggregateKey, RtaName, SuspendedCert, TaCertDetails, UnsuspendedCert,
         },
         crypto::{IdCert, KrillSigner},
         eventsourcing::StoredEvent,
@@ -377,19 +377,26 @@ pub struct ChildCertificateUpdates {
     issued: Vec<IssuedCert>,
     removed: Vec<KeyIdentifier>,
     suspended: Vec<SuspendedCert>,
+    unsuspended: Vec<UnsuspendedCert>,
 }
 
 impl ChildCertificateUpdates {
-    pub fn new(issued: Vec<IssuedCert>, removed: Vec<KeyIdentifier>, suspended: Vec<IssuedCert>) -> Self {
+    pub fn new(
+        issued: Vec<IssuedCert>,
+        removed: Vec<KeyIdentifier>,
+        suspended: Vec<SuspendedCert>,
+        unsuspended: Vec<UnsuspendedCert>,
+    ) -> Self {
         ChildCertificateUpdates {
             issued,
             removed,
             suspended,
+            unsuspended,
         }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.issued.is_empty() && self.removed.is_empty()
+        self.issued.is_empty() && self.removed.is_empty() && self.suspended.is_empty() && self.unsuspended.is_empty()
     }
 
     /// Add an issued certificate to the current set of issued certificates.
@@ -426,8 +433,25 @@ impl ChildCertificateUpdates {
         &self.suspended
     }
 
-    pub fn unpack(self) -> (Vec<IssuedCert>, Vec<KeyIdentifier>, Vec<SuspendedCert>) {
-        (self.issued, self.removed, self.suspended)
+    /// Unsuspend a certificate
+    pub fn unsuspend(&mut self, unsuspended_cert: UnsuspendedCert) {
+        self.unsuspended.push(unsuspended_cert);
+    }
+
+    /// List all unsuspended certificates in this update.
+    pub fn unsuspended(&self) -> &Vec<UnsuspendedCert> {
+        &self.unsuspended
+    }
+
+    pub fn unpack(
+        self,
+    ) -> (
+        Vec<IssuedCert>,
+        Vec<KeyIdentifier>,
+        Vec<SuspendedCert>,
+        Vec<UnsuspendedCert>,
+    ) {
+        (self.issued, self.removed, self.suspended, self.unsuspended)
     }
 }
 
@@ -783,7 +807,7 @@ impl fmt::Display for CaEvtDet {
                 )?;
                 let issued = updates.issued();
                 if !issued.is_empty() {
-                    write!(f, " (re-)issued keys: ")?;
+                    write!(f, " issued keys: ")?;
                     for iss in issued {
                         write!(f, " {}", iss.subject_key_identifier())?;
                     }
@@ -795,6 +819,21 @@ impl fmt::Display for CaEvtDet {
                         write!(f, " {}", rev)?;
                     }
                 }
+                let suspended = updates.suspended();
+                if !suspended.is_empty() {
+                    write!(f, " suspended keys: ")?;
+                    for cert in suspended {
+                        write!(f, " {}", cert.subject_key_identifier())?;
+                    }
+                }
+                let unsuspended = updates.unsuspended();
+                if !unsuspended.is_empty() {
+                    write!(f, " unsuspended keys: ")?;
+                    for cert in unsuspended {
+                        write!(f, " {}", cert.subject_key_identifier())?;
+                    }
+                }
+
                 Ok(())
             }
             CaEvtDet::ChildKeyRevoked {

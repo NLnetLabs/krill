@@ -12,7 +12,7 @@ use crate::{
         api::{
             EntitlementClass, Handle, HexEncodedHash, IssuanceRequest, IssuedCert, ParentHandle, RcvdCert,
             ReplacedObject, RepoInfo, RequestResourceLimit, ResourceClassInfo, ResourceClassName, ResourceSet,
-            Revocation, RevocationRequest, SuspendedCert,
+            Revocation, RevocationRequest, SuspendedCert, UnsuspendedCert,
         },
         crypto::{CsrInfo, KrillSigner, SignSupport},
         error::Error,
@@ -616,6 +616,10 @@ impl ResourceClass {
     /// Stores an [IssuedCert](krill_commons.api.ca.IssuedCert)
     pub fn certificate_issued(&mut self, issued: IssuedCert) {
         self.certificates.certificate_issued(issued);
+    }
+
+    pub fn certificate_unsuspended(&mut self, unsuspended: UnsuspendedCert) {
+        self.certificates.certificate_unsuspended(unsuspended);
     }
 
     pub fn certificate_suspended(&mut self, suspended: SuspendedCert) {
