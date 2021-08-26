@@ -1612,6 +1612,8 @@ impl ChildConnectionStats {
         ChildConnectionStats { handle, last_exchange }
     }
 
+    /// The child is considered 'inactive' if there was at least one exchange, and the
+    /// last exchange is longer ago than the specified threshold hours.
     pub fn inactive(&self, threshold_hours: i64) -> bool {
         match &self.last_exchange {
             None => false, // if there has been no exchange at all, the child is not yet active, rather than inactive
