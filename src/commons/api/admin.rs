@@ -594,11 +594,19 @@ impl UpdateChildRequest {
         }
     }
 
-    pub fn suspend(suspend: bool) -> Self {
+    pub fn suspend() -> Self {
         UpdateChildRequest {
             id_cert: None,
             resources: None,
-            suspend: Some(suspend),
+            suspend: Some(true),
+        }
+    }
+
+    pub fn unsuspend() -> Self {
+        UpdateChildRequest {
+            id_cert: None,
+            resources: None,
+            suspend: Some(false),
         }
     }
 

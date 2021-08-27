@@ -566,7 +566,7 @@ impl CaManager {
                 "Child '{}' under CA '{}' became active again, will unsuspend it.",
                 child_handle, ca_handle
             );
-            let req = UpdateChildRequest::suspend(false);
+            let req = UpdateChildRequest::unsuspend();
             self.ca_child_update(ca_handle, child_handle.clone(), req, actor)
                 .await?;
         }
@@ -776,7 +776,7 @@ impl CaManager {
                                     "Child '{}' under CA '{}' was inactive for more than {} hours. Will suspend it.",
                                     child, ca_handle, threshold_hours
                                 );
-                                let req = UpdateChildRequest::suspend(true);
+                                let req = UpdateChildRequest::suspend();
                                 if let Err(e) = self.ca_child_update(&ca_handle, child, req, actor).await {
                                     error!("Could not suspend inactive child, error: {}", e);
                                 }

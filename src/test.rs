@@ -295,7 +295,7 @@ pub async fn delete_child(ca: &Handle, child: &ChildHandle) {
 }
 
 pub async fn suspend_inactive_child(ca: &Handle, child: &ChildHandle) {
-    let update = UpdateChildRequest::suspend(true);
+    let update = UpdateChildRequest::suspend();
 
     krill_admin(Command::CertAuth(CaCommand::ChildUpdate(
         ca.clone(),
@@ -306,7 +306,7 @@ pub async fn suspend_inactive_child(ca: &Handle, child: &ChildHandle) {
 }
 
 pub async fn unsuspend_child(ca: &Handle, child: &ChildHandle) {
-    let update = UpdateChildRequest::suspend(false);
+    let update = UpdateChildRequest::unsuspend();
 
     krill_admin(Command::CertAuth(CaCommand::ChildUpdate(
         ca.clone(),
