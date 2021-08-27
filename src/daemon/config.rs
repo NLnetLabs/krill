@@ -63,18 +63,23 @@ impl ConfigDefaults {
             _ => LevelFilter::Info,
         }
     }
+
     fn log_type() -> LogType {
         LogType::File
     }
+
     fn log_file() -> PathBuf {
         PathBuf::from("./krill.log")
     }
+
     fn syslog_facility() -> String {
         "daemon".to_string()
     }
+
     fn auth_type() -> AuthType {
         AuthType::AdminToken
     }
+
     fn admin_token() -> Token {
         match env::var(KRILL_ENV_ADMIN_TOKEN) {
             Ok(token) => Token::from(token),
@@ -87,14 +92,17 @@ impl ConfigDefaults {
             },
         }
     }
+
     #[cfg(feature = "multi-user")]
     fn auth_policies() -> Vec<PathBuf> {
         vec![]
     }
+
     #[cfg(feature = "multi-user")]
     fn auth_private_attributes() -> Vec<String> {
         vec![]
     }
+
     fn ca_refresh() -> u32 {
         600
     }
