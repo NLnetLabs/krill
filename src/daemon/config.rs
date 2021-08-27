@@ -627,7 +627,7 @@ impl Config {
     pub fn create() -> Result<Self, ConfigError> {
         let config_file = Self::get_config_filename();
 
-        let config = match Self::read_config(&config_file) {
+        let mut config = match Self::read_config(&config_file) {
             Err(e) => {
                 if config_file == KRILL_DEFAULT_CONFIG_FILE {
                     Err(ConfigError::other(
@@ -646,6 +646,23 @@ impl Config {
                 Ok(config)
             }
         }?;
+
+        if config.ca_refresh_seconds < CA_REFRESH_SECONDS_MIN {
+            warn!(
+                "The value for 'ca_refresh_seconds' was below the minimum value, changing it to {} seconds",
+                CA_REFRESH_SECONDS_MIN
+            );
+            config.ca_refresh_seconds = CA_REFRESH_SECONDS_MIN;
+        }
+
+        if config.ca_refresh_seconds > CA_REFRESH_SECONDS_MAX {
+            warn!(
+                "The value for 'ca_refresh_seconds' was above the maximum value, changing it to {} seconds",
+                CA_REFRESH_SECONDS_MAX
+            );
+            config.ca_refresh_seconds = CA_REFRESH_SECONDS_MAX;
+        }
+
         config
             .verify()
             .map_err(|e| ConfigError::Other(format!("Error parsing config file: {}, error: {}", config_file, e)))?;
