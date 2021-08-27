@@ -103,7 +103,7 @@ impl ConfigDefaults {
         vec![]
     }
 
-    fn ca_refresh() -> u32 {
+    fn ca_refresh_seconds() -> u32 {
         600
     }
 
@@ -245,8 +245,8 @@ pub struct Config {
     #[cfg(feature = "multi-user")]
     pub auth_openidconnect: Option<ConfigAuthOpenIDConnect>,
 
-    #[serde(default = "ConfigDefaults::ca_refresh")]
-    pub ca_refresh: u32,
+    #[serde(default = "ConfigDefaults::ca_refresh_seconds", alias = "ca_refresh")]
+    pub ca_refresh_seconds: u32,
 
     pub suspend_child_after_inactive_hours: Option<i64>,
 
@@ -496,7 +496,7 @@ impl Config {
         let auth_users = None;
         #[cfg(feature = "multi-user")]
         let auth_openidconnect = None;
-        let ca_refresh = if enable_ca_refresh { 1 } else { 86400 };
+        let ca_refresh_seconds = if enable_ca_refresh { 1 } else { 86400 };
         let post_limit_api = ConfigDefaults::post_limit_api();
         let post_limit_rfc8181 = ConfigDefaults::post_limit_rfc8181();
         let rfc8181_log_dir = {
@@ -577,7 +577,7 @@ impl Config {
             auth_users,
             #[cfg(feature = "multi-user")]
             auth_openidconnect,
-            ca_refresh,
+            ca_refresh_seconds,
             suspend_child_after_inactive_hours: None,
             post_limit_api,
             post_limit_rfc8181,

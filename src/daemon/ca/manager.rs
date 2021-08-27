@@ -877,7 +877,7 @@ impl CaManager {
             ParentCaContact::Rfc6492(parent_res) => {
                 let parent_uri = parent_res.service_uri();
 
-                let next_run_seconds = self.config.ca_refresh as i64;
+                let next_run_seconds = self.config.ca_refresh_seconds as i64;
 
                 match self
                     .send_revoke_requests_rfc6492(revoke_requests, &child.id_key(), parent_res)
@@ -1193,7 +1193,7 @@ impl CaManager {
             self.status_store
                 .lock()
                 .await
-                .set_parent_last_updated(handle, parent, uri, self.config.ca_refresh as i64)
+                .set_parent_last_updated(handle, parent, uri, self.config.ca_refresh_seconds as i64)
                 .await?;
 
             Ok(())
@@ -1247,7 +1247,7 @@ impl CaManager {
             ParentCaContact::Rfc6492(res) => {
                 let result = self.get_entitlements_rfc6492(ca, res).await;
                 let uri = res.service_uri();
-                let next_run_seconds = self.config.ca_refresh as i64;
+                let next_run_seconds = self.config.ca_refresh_seconds as i64;
 
                 match &result {
                     Err(error) => {
