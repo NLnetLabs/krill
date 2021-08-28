@@ -602,7 +602,7 @@ mod tests {
     }
 
     fn session_dir_contains_snapshot(session_path: &Path, serial: u64) -> bool {
-        find_in_serial_dir(session_path, serial, "snapshot.xml").is_some()
+        session_dir_snapshot(session_path, serial).is_some()
     }
 
     fn session_dir_snapshot(session_path: &Path, serial: u64) -> Option<PathBuf> {
