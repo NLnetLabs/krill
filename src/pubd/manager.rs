@@ -207,7 +207,7 @@ mod tests {
 
     use rpki::uri;
 
-    use crate::constants::*;
+    use crate::{constants::*, pubd::RrdpServer};
 
     use super::*;
 
@@ -496,14 +496,24 @@ mod tests {
         assert!(session_dir_contains_delta(&session, 2));
         assert!(session_dir_contains_snapshot(&session, 2));
 
+        // Wait a bit to ensure that the notification file for serial 2 will be out of scope
+        sleep(Duration::from_secs(2)).await;
+
         // Removing the publisher should remove its contents
         server.remove_publisher(alice_handle, &actor).unwrap();
 
         // new snapshot should be published, and should be empty now
         assert!(session_dir_contains_snapshot(&session, 4));
-        let snapshot_bytes = file::read(&session_dir_snapshot(&session, 4).unwrap()).unwrap();
+        let snapshot_bytes = file::read(&RrdpServer::session_dir_snapshot(&session, 4).unwrap().unwrap()).unwrap();
         let snapshot_xml = from_utf8(&snapshot_bytes).unwrap();
         assert!(!snapshot_xml.contains("/alice/"));
+
+        // We expect that the delta for serial 2 is still there because it is still referenced,
+        // but the snapshot is gone because it is no longer referenced and the notification for
+        // serial 2 is now more than 1 second old (1s is the retention time configured for the test)
+        assert!(session_dir_contains_serial(&session, 2));
+        assert!(session_dir_contains_delta(&session, 2));
+        assert!(!session_dir_contains_snapshot(&session, 2));
 
         let _ = fs::remove_dir_all(d);
     }
@@ -598,35 +608,15 @@ mod tests {
     }
 
     fn session_dir_contains_delta(session_path: &Path, serial: u64) -> bool {
-        find_in_serial_dir(session_path, serial, "delta.xml").is_some()
+        RrdpServer::find_in_serial_dir(session_path, serial, "delta.xml")
+            .unwrap()
+            .is_some()
     }
 
     fn session_dir_contains_snapshot(session_path: &Path, serial: u64) -> bool {
-        session_dir_snapshot(session_path, serial).is_some()
-    }
-
-    fn session_dir_snapshot(session_path: &Path, serial: u64) -> Option<PathBuf> {
-        find_in_serial_dir(session_path, serial, "snapshot.xml")
-    }
-
-    /// Expects files (like delta.xml or snapshot.xml) under dir structure like:
-    /// <session_path>/<serial>/<some random>/<filename>
-    fn find_in_serial_dir(session_path: &Path, serial: u64, filename: &str) -> Option<PathBuf> {
-        let serial_dir = session_path.join(serial.to_string());
-        if let Ok(randoms) = fs::read_dir(&serial_dir) {
-            for entry in randoms {
-                let entry = entry.unwrap();
-                if let Ok(files) = fs::read_dir(entry.path()) {
-                    for file in files {
-                        let file = file.unwrap();
-                        if file.file_name().to_string_lossy() == filename {
-                            return Some(file.path());
-                        }
-                    }
-                }
-            }
-        }
-        None
+        RrdpServer::session_dir_snapshot(session_path, serial)
+            .unwrap()
+            .is_some()
     }
 
     fn find_in_session_and_serial_dir(
@@ -636,6 +626,6 @@ mod tests {
         filename: &str,
     ) -> Option<PathBuf> {
         let session_path = base_dir.join(format!("repo/rrdp/{}", session));
-        find_in_serial_dir(&session_path, serial, filename)
+        RrdpServer::find_in_serial_dir(&session_path, serial, filename).unwrap()
     }
 }

@@ -817,6 +817,26 @@ impl RrdpServer {
                     } else {
                         let _best_effort_rm = fs::remove_file(path);
                     }
+                // We still need this old serial dir for the delta, but may not need the snapshot
+                // in it unless archiving is enabled.. in that case leave them and move them when
+                // the complete serial dir goes out of scope above.
+                } else if !config.retention_archive
+                    && !self
+                        .old_notifications
+                        .iter()
+                        .any(|old_notification| old_notification.includes_snapshot(serial))
+                {
+                    // see if the there is a snapshot file in this serial dir and if so do a best
+                    // effort removal.
+                    if let Ok(Some(snapshot_file_to_remove)) = Self::session_dir_snapshot(&session_dir, serial) {
+                        // snapshot files are stored under their own unique random dir, e.g:
+                        // <session_dir>/<serial>/<random>/snapshot.xml
+                        //
+                        // So also remove the otherwise empty parent directory.
+                        if let Some(snapshot_parent_dir) = snapshot_file_to_remove.parent() {
+                            let _ = fs::remove_dir_all(snapshot_parent_dir);
+                        }
+                    }
                 } else {
                     // we still need this
                 }
@@ -855,6 +875,46 @@ impl RrdpServer {
         let mut path = self.rrdp_base_dir.clone();
         path.push("notification.xml");
         path
+    }
+
+    pub fn session_dir_snapshot(session_path: &Path, serial: u64) -> KrillResult<Option<PathBuf>> {
+        Self::find_in_serial_dir(session_path, serial, "snapshot.xml")
+    }
+
+    /// Expects files (like delta.xml or snapshot.xml) under dir structure like:
+    /// <session_path>/<serial>/<some random>/<filename>
+    pub fn find_in_serial_dir(session_path: &Path, serial: u64, filename: &str) -> KrillResult<Option<PathBuf>> {
+        let serial_dir = session_path.join(serial.to_string());
+        if let Ok(randoms) = fs::read_dir(&serial_dir) {
+            for entry in randoms {
+                let entry = entry.map_err(|e| {
+                    Error::io_error_with_context(
+                        format!(
+                            "Could not open directory entry under RRDP directory {}",
+                            serial_dir.to_string_lossy()
+                        ),
+                        e,
+                    )
+                })?;
+                if let Ok(files) = fs::read_dir(entry.path()) {
+                    for file in files {
+                        let file = file.map_err(|e| {
+                            Error::io_error_with_context(
+                                format!(
+                                    "Could not open directory entry under RRDP directory {}",
+                                    entry.path().to_string_lossy()
+                                ),
+                                e,
+                            )
+                        })?;
+                        if file.file_name().to_string_lossy() == filename {
+                            return Ok(Some(file.path()));
+                        }
+                    }
+                }
+            }
+        }
+        Ok(None)
     }
 }
 
