@@ -176,7 +176,7 @@ impl RepositoryContentProxy {
         self.read(|content| content.write_repository(config))
     }
 
-    /// Reset the RRDP session if is initialized. Otherwise do nothing.
+    /// Reset the RRDP session if it is initialized. Otherwise do nothing.
     pub fn session_reset(&self, config: &RepositoryRetentionConfig) -> KrillResult<()> {
         if self.cache.read().unwrap().is_some() {
             self.write(|content| content.session_reset(config))
@@ -326,7 +326,9 @@ impl RepositoryContent {
     }
 
     pub fn session_reset(&mut self, config: &RepositoryRetentionConfig) -> KrillResult<()> {
-        info!("Perform RRDP session reset - ensures a consistent view for RPs in case we restarted from a backup.");
+        info!(
+            "Performing RRDP session reset. This ensures a consistent view for RPs in case we restarted from a backup."
+        );
 
         self.rrdp.session_reset();
         self.stats.session_reset(self.rrdp.notification());
