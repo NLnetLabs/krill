@@ -566,6 +566,7 @@ mod tests {
         let session_after = stats_after.session();
 
         let snapshot_after_session_reset = find_in_session_and_serial_dir(&d, &session_after, 0, "snapshot.xml");
+        assert_ne!(snapshot_before_session_reset, snapshot_after_session_reset);
 
         assert!(snapshot_after_session_reset.is_some());
 
