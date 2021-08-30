@@ -754,6 +754,13 @@ impl KrillServer {
     pub fn repository_clear(&self) -> KrillResult<()> {
         self.repo_manager.repository_clear()
     }
+
+    /// Perform an RRDP session reset. Useful after a restart of the server as we can never be
+    /// certain whether the previous state was the last public state seen by validators, or..
+    /// the server was started using a back up.
+    pub fn repository_session_reset(&self) -> KrillResult<()> {
+        self.repo_manager.rrdp_session_reset()
+    }
 }
 
 /// # Handle Resource Tagged Attestation requests
