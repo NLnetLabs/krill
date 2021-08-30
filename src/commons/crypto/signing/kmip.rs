@@ -174,8 +174,8 @@ impl KmipSigner {
             .map_err(|err| SignerError::KmipError(format!("Failed to get key material: {:?}", err)))?;
 
         fn rsa_public_key_from_parts(modulus: &[u8], public_exponent: &[u8]) -> Result<bytes::Bytes, SignerError> {
-            let modulus = bcder::Unsigned::from_be_bytes(modulus);
-            let public_exp = bcder::Unsigned::from_be_bytes(public_exponent);
+            let modulus = bcder::Unsigned::from_slice(modulus).map_err(|_| SignerError::DecodeError)?;
+            let public_exp = bcder::Unsigned::from_slice(public_exponent).map_err(|_| SignerError::DecodeError)?;
             let rsa_public_key = bcder::encode::sequence((modulus.encode(), public_exp.encode()));
 
             let mut bytes: Vec<u8> = Vec::new();

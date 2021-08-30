@@ -148,8 +148,8 @@ dependencies = [
 
 [[package]]
 name = "bcder"
-version = "0.6.2"
-source = "git+https://github.com/ximon18/bcder.git?branch=0.6.1-unsigned-from-slice#d5a7ca53db281fc7d232c51014e391e6dc3c3b42"
+version = "0.6.1-dev"
+source = "git+https://github.com/nlnetlabs/bcder.git?branch=unsigned-from-slice#ab82a8217761cb7992575c2f27d46cffe3081e45"
 dependencies = [
  "backtrace",
  "bytes 1.0.1",
@@ -2170,7 +2170,7 @@ dependencies = [
 [[package]]
 name = "rpki"
 version = "0.12.4"
-source = "git+https://github.com/ximon18/rpki-rs.git?branch=0.12.3-unsigned-from-slice#6064799b230cac8dc98ad63d31a5083d10e30982"
+source = "git+https://github.com/ximon18/rpki-rs.git?branch=0.12.3-unsigned-from-slice#02d0c0d3ba0fb3b95917d7659eab767ed98d7332"
 dependencies = [
  "base64 0.13.0",
  "bcder",

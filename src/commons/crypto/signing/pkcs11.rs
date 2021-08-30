@@ -1,5 +1,6 @@
 use std::{ops::Deref, path::Path, sync::{Arc, atomic::{AtomicU8, Ordering}}};
 
+use bcder::encode::Values;
 use bytes::Bytes;
 use once_cell::sync::OnceCell;
 use pkcs11::{types::*, Ctx};
@@ -316,25 +317,28 @@ impl Pkcs11Signer {
         //
         // We need to encode this as an ASN.1 INTEGER.
 
+        fn rsa_public_key_from_parts(modulus: &[u8], public_exponent: &[u8]) -> Result<bytes::Bytes, SignerError> {
+            let modulus = bcder::Unsigned::from_slice(modulus).map_err(|_| SignerError::DecodeError)?;
+            let public_exp = bcder::Unsigned::from_slice(public_exponent).map_err(|_| SignerError::DecodeError)?;
+            let rsa_public_key = bcder::encode::sequence((modulus.encode(), public_exp.encode()));
+    
+            let mut bytes: Vec<u8> = Vec::new();
+            rsa_public_key
+                .write_encoded(bcder::Mode::Der, &mut bytes)
+                .map_err(|err| {
+                    SignerError::Pkcs11Error(format!(
+                        "Failed to create DER encoded RSAPublicKey from constituent parts: {}",
+                        err
+                    ))
+                })?;
+    
+            Ok(bytes::Bytes::from(bytes))
+        }
+    
         let algorithm = PublicKeyFormat::Rsa;
 
         use crate::bcder::encode::PrimitiveContent; // for .encode()
-        let modulus = bcder::Unsigned::from_be_bytes(modulus);
-        let public_exp = bcder::Unsigned::from_be_bytes(public_exp);
-
-        let rsa_public_key = bcder::encode::sequence((modulus.encode(), public_exp.encode()));
-
-        use crate::bcder::encode::Values; // for .write_encoded()
-        let mut rsa_public_key_bytes: Vec<u8> = Vec::new();
-        rsa_public_key
-            .write_encoded(bcder::Mode::Der, &mut rsa_public_key_bytes)
-            .map_err(|err| {
-                SignerError::Pkcs11Error(format!(
-                    "Failed to create DER encoded RSAPublicKey from constituent parts: {}",
-                    err
-                ))
-            })?;
-
+        let rsa_public_key_bytes = rsa_public_key_from_parts(modulus.as_slice(), public_exp.as_slice())?;
         let subject_public_key = bcder::BitString::new(0, bytes::Bytes::from(rsa_public_key_bytes));
 
         let subject_public_key_info = bcder::encode::sequence((algorithm.encode(), subject_public_key.encode()));
