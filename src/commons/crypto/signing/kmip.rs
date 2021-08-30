@@ -86,7 +86,7 @@ fn make_conn(config: &ConfigSignerKmip) -> Result<KmipClient, SignerError> {
         if let Some(username) = &config.username {
             client = client.with_credentials(username.clone(), config.password.clone());
         }
-        client.configure()
+        client.build()
     }
 
     let tls_client = create_tls_client(&config)

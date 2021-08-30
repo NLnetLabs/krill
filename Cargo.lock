@@ -1127,13 +1127,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "kmip"
+name = "kmip-protocol"
 version = "0.1.0"
-source = "git+https://github.com/NLnetLabs/kmip?branch=main#6f98db2f0fe200d3c1126e6162d21f42eba9f9b1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "772565eccf5d604aebe665d99f06683697857ec16f0057af7bf2e19cbcbebca9"
 dependencies = [
  "enum-display-derive",
  "enum-flags",
  "kmip-ttlv",
+ "rustc_version",
  "serde",
  "serde_bytes",
  "serde_derive",
@@ -1141,12 +1143,13 @@ dependencies = [
 
 [[package]]
 name = "kmip-ttlv"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce13b6c07c81b0baf1c86feaeecfc67e2a77ae24802d2e078971fea821c4ad41"
+checksum = "271ccf2f8e6c377f652f58bde3c8869b94ae083271ec3a3eefa403e06d8ba2e5"
 dependencies = [
  "hex",
  "log",
+ "rustc_version",
  "serde",
 ]
 
@@ -1169,7 +1172,7 @@ dependencies = [
  "hyper 0.14.9",
  "intervaltree",
  "jmespatch",
- "kmip",
+ "kmip-protocol",
  "libc",
  "libflate",
  "log",
