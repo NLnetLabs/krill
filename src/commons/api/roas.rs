@@ -231,18 +231,18 @@ impl FromStr for RoaDefinition {
         let mut prefix_parts = prefix_part.split('-');
         let prefix_str = prefix_parts.next().ok_or_else(|| AuthorizationFmtError::auth(s))?;
 
-        let prefix = TypedPrefix::from_str(&prefix_str.trim())?;
+        let prefix = TypedPrefix::from_str(prefix_str.trim())?;
 
         let max_length = match prefix_parts.next() {
             None => None,
-            Some(length_str) => Some(u8::from_str(&length_str.trim()).map_err(|_| AuthorizationFmtError::auth(s))?),
+            Some(length_str) => Some(u8::from_str(length_str.trim()).map_err(|_| AuthorizationFmtError::auth(s))?),
         };
 
         let asn_str = parts.next().ok_or_else(|| AuthorizationFmtError::auth(s))?;
         if parts.next().is_some() {
             return Err(AuthorizationFmtError::auth(s));
         }
-        let origin = AsNumber::from_str(&asn_str.trim())?;
+        let origin = AsNumber::from_str(asn_str.trim())?;
 
         Ok(RoaDefinition {
             asn: origin,
@@ -389,7 +389,7 @@ impl FromStr for RoaDefinitionUpdates {
 
         for line in s.lines() {
             let line = match line.find('#') {
-                None => &line,
+                None => line,
                 Some(pos) => &line[..pos],
             };
             let line = line.trim();

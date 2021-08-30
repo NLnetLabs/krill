@@ -14,7 +14,6 @@ use rpki::repository::oid;
 use rpki::repository::sigobj::{MessageDigest, SignedAttrs};
 use rpki::repository::x509::{update_once, Name, SignedData, Time, ValidationError};
 
-
 use crate::commons::crypto::{CryptoResult, IdCert, IdCertBuilder, KrillSigner, SignedAttributes};
 
 //------------ ProtocolCmsBuilder ------------------------------------------

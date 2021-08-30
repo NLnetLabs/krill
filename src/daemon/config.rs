@@ -1203,7 +1203,7 @@ mod tests {
                 for component in &krill_key_components {
                     // framework components shouldn't log at Trace level
                     let should_be_enabled = should_be_enabled
-                        && (*log_msg_level < LL::Trace || !krill_framework_components.contains(&component));
+                        && (*log_msg_level < LL::Trace || !krill_framework_components.contains(component));
 
                     // verify that logging is enabled or not as expected
                     assert_eq!(

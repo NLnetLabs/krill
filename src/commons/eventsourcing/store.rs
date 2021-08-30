@@ -91,8 +91,8 @@ impl FromStr for CommandKey {
         if parts.len() != 4 || parts[0] != "command" {
             Err(CommandKeyError(s.to_string()))
         } else {
-            let timestamp_secs = i64::from_str(&parts[1]).map_err(|_| CommandKeyError(s.to_string()))?;
-            let sequence = u64::from_str(&parts[2]).map_err(|_| CommandKeyError(s.to_string()))?;
+            let timestamp_secs = i64::from_str(parts[1]).map_err(|_| CommandKeyError(s.to_string()))?;
+            let sequence = u64::from_str(parts[2]).map_err(|_| CommandKeyError(s.to_string()))?;
             // strip .json if present on the label part
             let label = {
                 let end = parts[3].to_string();

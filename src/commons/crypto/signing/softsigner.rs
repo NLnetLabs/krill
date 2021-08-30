@@ -14,7 +14,9 @@ use serde::{de, ser};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use rpki::repository::crypto::signer::KeyError;
-use rpki::repository::crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError};
+use rpki::repository::crypto::{
+    KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
+};
 
 use super::{KeyMap, SignerError};
 use crate::commons::error::KrillIoError;

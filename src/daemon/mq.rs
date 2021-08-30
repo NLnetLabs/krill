@@ -168,7 +168,7 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for MessageQueue {
                 }
 
                 CaEvtDet::ParentRemoved { parent } => {
-                    self.drop_sync_parent(&handle, parent);
+                    self.drop_sync_parent(handle, parent);
                     self.schedule_sync_repo(handle.clone());
                 }
 

@@ -12,16 +12,26 @@ use rpki::{
     uri,
 };
 
-use crate::{commons::{api::{
+use crate::{
+    commons::{
+        api::{
             rrdp::{Delta, Notification, PublishElement, RrdpSession, Snapshot, SnapshotRef},
             Handle, HexEncodedHash, PublisherHandle, RepositoryHandle,
-        }, crypto::IdCert, eventsourcing::{
-            Aggregate, AggregateStore, CommandKey, KeyStoreKey, KeyValueStore, StoredEvent,
-            StoredValueInfo,
-        }, util::KrillVersion}, constants::{KRILL_VERSION, PUBSERVER_CONTENT_DIR, PUBSERVER_DFLT, PUBSERVER_DIR, REPOSITORY_RRDP_DIR}, daemon::config::Config, pubd::{
+        },
+        crypto::IdCert,
+        eventsourcing::{
+            Aggregate, AggregateStore, CommandKey, KeyStoreKey, KeyValueStore, StoredEvent, StoredValueInfo,
+        },
+        util::KrillVersion,
+    },
+    constants::{KRILL_VERSION, PUBSERVER_CONTENT_DIR, PUBSERVER_DFLT, PUBSERVER_DIR, REPOSITORY_RRDP_DIR},
+    daemon::config::Config,
+    pubd::{
         PublisherStats, RepoStats, RepositoryAccess, RepositoryAccessInitDetails, RepositoryContent, RrdpServer,
         RrdpSessionReset, RrdpUpdate, RsyncdStore,
-    }, upgrades::{UpgradeError, UpgradeResult, UpgradeStore, MIGRATION_SCOPE}};
+    },
+    upgrades::{UpgradeError, UpgradeResult, UpgradeStore, MIGRATION_SCOPE},
+};
 
 use super::{
     old_commands::{OldStorableRepositoryCommand, OldStoredEffect, OldStoredRepositoryCommand},
@@ -95,7 +105,7 @@ impl UpgradeStore for PubdStoreMigration {
         } else if Self::version_before(&self.store, KrillVersion::release(0, 6, 0))? {
             Err(UpgradeError::custom("Cannot upgrade Krill installations from before version 0.6.0. Please upgrade to any version ranging from 0.6.0 to 0.8.1 first, and then upgrade to this version."))
         } else {
-            Self::version_before(&self.store, KrillVersion::candidate(0,9,0,1))
+            Self::version_before(&self.store, KrillVersion::candidate(0, 9, 0, 1))
         }
     }
 
@@ -215,7 +225,7 @@ impl UpgradeStore for PubdStoreMigration {
         // move out the snapshots, we will rebuild from events
         // there will not be too many now that the publication
         // deltas are no longer done as events
-        self.archive_snapshots(&scope)?;
+        self.archive_snapshots(scope)?;
 
         // update the info file
         info.snapshot_version = 0;
@@ -232,7 +242,10 @@ impl UpgradeStore for PubdStoreMigration {
         // commands and events which are no longer relevant
         self.drop_migration_scope(scope)?;
 
-        info!("Done migrating the Publication Server to Krill version {}", KRILL_VERSION);
+        info!(
+            "Done migrating the Publication Server to Krill version {}",
+            KRILL_VERSION
+        );
 
         Ok(())
     }

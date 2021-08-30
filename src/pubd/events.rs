@@ -1,7 +1,7 @@
 use std::fmt;
 
-use rpki::uri;
 use rpki::repository::x509::Time;
+use rpki::uri;
 
 use crate::commons::api::rrdp::{Delta, DeltaElements, Notification, Snapshot};
 use crate::commons::api::{Handle, PublisherHandle};

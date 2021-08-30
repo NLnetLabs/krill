@@ -1028,7 +1028,7 @@ impl RepositoryAccessProxy {
 
     /// Parse submitted bytes by a Publisher as an RFC8181 ProtocolCms object, and validates it.
     pub fn validate(&self, publisher: &PublisherHandle, msg: Bytes) -> KrillResult<ProtocolCms> {
-        let publisher = self.get_publisher(&publisher)?;
+        let publisher = self.get_publisher(publisher)?;
         let msg = ProtocolCms::decode(msg, false).map_err(|e| Error::Rfc8181Decode(e.to_string()))?;
         msg.validate(publisher.id_cert()).map_err(Error::Rfc8181Validation)?;
         Ok(msg)

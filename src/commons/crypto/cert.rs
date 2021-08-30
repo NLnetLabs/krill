@@ -128,7 +128,7 @@ impl IdCertBuilder {
     ) -> CryptoResult<IdCert> {
         let issuing_key_info = signer.get_key_info(issuing_key)?;
 
-        let tbs = Self::make_tbs_certificate_request(1, &issuing_key_info, &subject_key, ext);
+        let tbs = Self::make_tbs_certificate_request(1, &issuing_key_info, subject_key, ext);
 
         let enc_cert = tbs.encode();
         let enc_cert_c = enc_cert.to_captured(Mode::Der);

@@ -18,11 +18,7 @@ use rpki::repository::{
     x509::{Name, Validity},
 };
 
-use crate::commons::{
-    crypto::IdExtensions,
-    error::KrillIoError,
-    util::file,
-};
+use crate::commons::{crypto::IdExtensions, error::KrillIoError, util::file};
 
 const KEY_SIZE: u32 = 2048;
 pub const HTTPS_SUB_DIR: &str = "ssl";

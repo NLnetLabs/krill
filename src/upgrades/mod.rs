@@ -149,7 +149,7 @@ pub trait UpgradeStore {
 
     fn archive_to_migration_scope(&self, key: &KeyStoreKey) -> Result<(), UpgradeError> {
         self.store()
-            .archive_to(&key, MIGRATION_SCOPE)
+            .archive_to(key, MIGRATION_SCOPE)
             .map_err(UpgradeError::KeyStoreError)
     }
 

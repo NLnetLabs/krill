@@ -174,7 +174,7 @@ struct RequestLogger {
 impl RequestLogger {
     fn begin(req: &hyper::Request<hyper::Body>) -> Self {
         let req_method = req.method().clone();
-        let req_path = RequestPath::from_request(&req).full().to_string();
+        let req_path = RequestPath::from_request(req).full().to_string();
 
         if log_enabled!(log::Level::Trace) {
             trace!(
@@ -1038,6 +1038,7 @@ pub async fn api_add_pbl(req: Request) -> RoutingResult {
 
 /// Removes a publisher. Should be idempotent! If if did not exist then
 /// that's just fine.
+#[allow(clippy::redundant_clone)] // false positive
 pub async fn api_remove_pbl(req: Request, publisher: Handle) -> RoutingResult {
     aa!(req, Permission::PUB_DELETE, publisher.clone(), {
         let actor = req.actor();
@@ -1046,6 +1047,7 @@ pub async fn api_remove_pbl(req: Request, publisher: Handle) -> RoutingResult {
 }
 
 /// Returns a json structure with publisher details
+#[allow(clippy::redundant_clone)] // false positive
 pub async fn api_show_pbl(req: Request, publisher: Handle) -> RoutingResult {
     aa!(
         req,
@@ -1057,6 +1059,7 @@ pub async fn api_show_pbl(req: Request, publisher: Handle) -> RoutingResult {
 
 //------------ repository_response ---------------------------------------------
 
+#[allow(clippy::redundant_clone)] // false positive
 pub async fn api_repository_response_xml(req: Request, publisher: Handle) -> RoutingResult {
     aa!(req, Permission::PUB_READ, publisher.clone(), {
         match repository_response(&req, &publisher).await {
@@ -1066,6 +1069,7 @@ pub async fn api_repository_response_xml(req: Request, publisher: Handle) -> Rou
     })
 }
 
+#[allow(clippy::redundant_clone)] // false positive
 pub async fn api_repository_response_json(req: Request, publisher: Handle) -> RoutingResult {
     aa!(req, Permission::PUB_READ, publisher.clone(), {
         match repository_response(&req, &publisher).await {
@@ -1309,6 +1313,7 @@ async fn api_ca_history(req: Request, path: &mut RequestPath, ca: Handle) -> Rou
     }
 }
 
+#[allow(clippy::redundant_clone)] // false positive
 async fn api_ca_command_details(req: Request, path: &mut RequestPath, handle: Handle) -> RoutingResult {
     // /api/v1/cas/{ca}/command/<command-key>
     match path.path_arg() {

@@ -838,7 +838,7 @@ impl CertAuth {
     ) -> KrillResult<IssuedCert> {
         let my_rc = self.resources.get(&rcn).ok_or(Error::ResourceClassUnknown(rcn))?;
 
-        let child = self.get_child(&child)?;
+        let child = self.get_child(child)?;
         child.resources().apply_limit(&limit)?;
 
         my_rc.issue_cert(csr_info, child.resources(), limit, issuance_timing, signer)
@@ -939,7 +939,7 @@ impl CertAuth {
     }
 
     fn child_remove(&self, child_handle: &ChildHandle) -> KrillResult<Vec<CaEvt>> {
-        let child = self.get_child(&child_handle)?;
+        let child = self.get_child(child_handle)?;
 
         let mut version = self.version;
         let handle = &self.handle;
@@ -995,7 +995,7 @@ impl CertAuth {
     fn child_suspend_inactive(&self, child_handle: &ChildHandle) -> KrillResult<Vec<CaEvt>> {
         let mut res = vec![];
 
-        let child = self.get_child(&child_handle)?;
+        let child = self.get_child(child_handle)?;
 
         if child.is_suspended() {
             return Ok(res); // nothing to do, child is already suspended
@@ -1051,7 +1051,7 @@ impl CertAuth {
     fn child_unsuspend(&self, child_handle: &ChildHandle) -> KrillResult<Vec<CaEvt>> {
         let mut res = vec![];
 
-        let child = self.get_child(&child_handle)?;
+        let child = self.get_child(child_handle)?;
 
         if !child.is_suspended() {
             return Ok(res); // nothing to do, child is not suspended
@@ -1338,7 +1338,7 @@ impl CertAuth {
         for ent in entitlements.classes() {
             let parent_rc_name = ent.class_name();
 
-            match self.find_parent_rc(&parent_handle, &parent_rc_name) {
+            match self.find_parent_rc(&parent_handle, parent_rc_name) {
                 Some(rc) => {
                     // We have a matching RC, make requests (note this may be a no-op).
                     event_details.append(&mut self.make_request_events(ent, rc, signer.deref())?);
@@ -1429,7 +1429,7 @@ impl CertAuth {
         let rc = self
             .resources
             .get(&rcn)
-            .ok_or(Error::ResourceClassUnknown(rcn.clone()))?;
+            .ok_or_else(|| Error::ResourceClassUnknown(rcn.clone()))?;
         let revoke_requests = rc.revoke(signer.deref())?;
 
         Ok(self.events_from_details(vec![CaEvtDet::ResourceClassRemoved {
@@ -1558,7 +1558,7 @@ impl CertAuth {
                     return Err(Error::KeyRollNotAllowed);
                 }
 
-                evt_dets.append(&mut rc.keyroll_initiate(&info, Duration::seconds(0), &signer)?);
+                evt_dets.append(&mut rc.keyroll_initiate(&info, Duration::seconds(0), signer)?);
             }
         }
 
@@ -1804,14 +1804,14 @@ impl CertAuth {
                 .current_resources()
                 .ok_or_else(|| Error::custom("RC for RTA has no resources"))?;
 
-            let intersection = rc_resources.intersection(&resources);
+            let intersection = rc_resources.intersection(resources);
             if intersection.is_empty() {
                 return Err(Error::custom(
                     "RC for prepared RTA no longer contains relevant resources",
                 ));
             }
 
-            let ee = rc.create_rta_ee(&intersection, validity, *key, &signer)?;
+            let ee = rc.create_rta_ee(&intersection, validity, *key, signer)?;
             rc_ee.insert(rcn.clone(), ee);
         }
 
@@ -1828,7 +1828,7 @@ impl CertAuth {
         // If there are no other keys supplied, then we MUST have all resources.
         // Otherwise we will just assume that others sign over the resources that
         // we do not have.
-        if keys.is_empty() && !self.all_resources().contains(&resources) {
+        if keys.is_empty() && !self.all_resources().contains(resources) {
             return Err(Error::RtaResourcesNotHeld);
         }
 
@@ -1839,7 +1839,7 @@ impl CertAuth {
                 let intersection = resources.intersection(rc_resources);
                 if !intersection.is_empty() {
                     let key = signer.create_key()?;
-                    let ee = rc.create_rta_ee(&intersection, validity, key, &signer)?;
+                    let ee = rc.create_rta_ee(&intersection, validity, key, signer)?;
                     rc_ee.insert(rcn.clone(), ee);
                 }
             }

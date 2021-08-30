@@ -271,14 +271,14 @@ mod tests {
         fn process_command(&self, command: Self::Command) -> PersonResult {
             match command.into_details() {
                 PersonCommandDetails::ChangeName(name) => {
-                    let event = PersonEvent::name_changed(&self, name);
+                    let event = PersonEvent::name_changed(self, name);
                     Ok(vec![event])
                 }
                 PersonCommandDetails::GoAroundTheSun => {
                     if self.age == 255 {
                         Err(PersonError::TooOld)
                     } else {
-                        let event = PersonEvent::had_birthday(&self);
+                        let event = PersonEvent::had_birthday(self);
                         Ok(vec![event])
                     }
                 }

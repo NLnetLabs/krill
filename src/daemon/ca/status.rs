@@ -89,7 +89,7 @@ impl StatusStore {
         error: &Error,
         next_run_seconds: i64,
     ) -> KrillResult<()> {
-        let error_response = Self::error_to_error_res(&error);
+        let error_response = Self::error_to_error_res(error);
 
         self.update_ca_status(ca, |status| {
             status
@@ -149,7 +149,7 @@ impl StatusStore {
         user_agent: Option<String>,
         error: &Error,
     ) -> KrillResult<()> {
-        let error_response = Self::error_to_error_res(&error);
+        let error_response = Self::error_to_error_res(error);
 
         self.update_ca_child_status(ca, child, |status| status.set_failure(user_agent, error_response))
             .await
@@ -170,7 +170,7 @@ impl StatusStore {
     }
 
     pub async fn set_status_repo_failure(&self, ca: &Handle, uri: ServiceUri, error: &Error) -> KrillResult<()> {
-        let error_response = Self::error_to_error_res(&error);
+        let error_response = Self::error_to_error_res(error);
         self.update_ca_status(ca, |status| status.repo.set_failure(uri, error_response))
             .await
     }

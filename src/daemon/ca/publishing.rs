@@ -1198,7 +1198,7 @@ impl Deref for PublishedCert {
 
 impl AsRef<Cert> for PublishedCert {
     fn as_ref(&self) -> &Cert {
-        &self.0.as_ref()
+        self.0.as_ref()
     }
 }
 
