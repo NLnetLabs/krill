@@ -561,6 +561,10 @@ impl Error {
     pub fn custom(msg: impl fmt::Display) -> Self {
         Error::Custom(msg.to_string())
     }
+
+    pub fn io_error_with_context(context: String, cause: io::Error) -> Self {
+        Error::IoError(KrillIoError::new(context, cause))
+    }
 }
 
 impl std::error::Error for Error {}

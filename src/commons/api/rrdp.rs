@@ -10,8 +10,8 @@ use chrono::Duration;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
 
-use rpki::uri;
 use rpki::repository::x509::Time;
+use rpki::uri;
 
 use crate::commons::api::Base64;
 use crate::commons::api::HexEncodedHash;
@@ -322,29 +322,6 @@ impl NotificationUpdate {
 }
 
 impl Notification {
-    pub fn update_old_way(&mut self, update: NotificationUpdate) {
-        let (time, session_opt, snapshot, delta, last_delta) = update.unwrap();
-        if let Some(session) = session_opt {
-            self.session = session;
-        }
-
-        self.serial += 1;
-        self.time = time;
-
-        let mut refs_to_retire = vec![(Time::now(), self.snapshot.clone())];
-
-        self.snapshot = snapshot;
-
-        for d in &self.deltas {
-            if d.serial < last_delta {
-                refs_to_retire.push((Time::now(), d.file_ref.clone()));
-            }
-        }
-
-        self.deltas.insert(0, delta);
-        self.deltas.retain(|delta| delta.serial >= last_delta);
-    }
-
     pub fn create(session: RrdpSession, snapshot: SnapshotRef) -> Self {
         Notification::new(session, 0, snapshot, vec![])
     }
@@ -604,6 +581,20 @@ impl PublicationDeltaError {
         PublicationDeltaError::NoObjectForHashAndOrUri(uri.clone())
     }
 }
+
+//------------ RrdpFileRandom ------------------------------------------------
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RrdpFileRandom(String);
+
+impl Default for RrdpFileRandom {
+    fn default() -> Self {
+        let mut bytes = [0; 8];
+        openssl::rand::rand_bytes(&mut bytes).unwrap();
+        let s = hex::encode(bytes);
+        RrdpFileRandom(s)
+    }
+}
+
 //------------ Snapshot ------------------------------------------------------
 
 /// A structure to contain the RRDP snapshot data.
@@ -611,6 +602,16 @@ impl PublicationDeltaError {
 pub struct Snapshot {
     session: RrdpSession,
     serial: u64,
+
+    // By using the default (i.e. random) for deserializing where this is absent, we do not
+    // need to migrate data when upgrading to this version where we introduce this new field.
+    // Note that this will result in new random values for existing Snapshot files, but
+    // because we now also perform a session reset on start up (see issue #533) it will
+    // not matter that this value does not map to the previous path of where this snapshot
+    // was stored, as it will be promptly replaced and forgotten.
+    #[serde(default)]
+    random: RrdpFileRandom,
+
     current_objects: CurrentObjects,
 }
 
@@ -619,6 +620,7 @@ impl Snapshot {
         Snapshot {
             session,
             serial,
+            random: RrdpFileRandom::default(),
             current_objects,
         }
     }
@@ -632,6 +634,7 @@ impl Snapshot {
         Snapshot {
             session,
             serial: 0,
+            random: RrdpFileRandom::default(),
             current_objects,
         }
     }
@@ -640,6 +643,7 @@ impl Snapshot {
         Snapshot {
             session,
             serial: 0,
+            random: RrdpFileRandom::default(),
             current_objects: self.current_objects.clone(),
         }
     }
@@ -654,11 +658,24 @@ impl Snapshot {
 
     pub fn apply_delta(&mut self, elements: DeltaElements, jail: &uri::Rsync) -> Result<(), PublicationDeltaError> {
         self.serial += 1;
+        self.random = RrdpFileRandom::default();
         self.current_objects.apply_delta(elements, jail)
     }
 
     pub fn size(&self) -> usize {
         self.current_objects.elements().iter().fold(0, |sum, p| sum + p.size())
+    }
+
+    fn rel_path(&self) -> String {
+        format!("{}/{}/{}/snapshot.xml", self.session, self.serial, self.random.0)
+    }
+
+    pub fn uri(&self, rrdp_base_uri: &uri::Https) -> uri::Https {
+        rrdp_base_uri.join(self.rel_path().as_ref()).unwrap()
+    }
+
+    pub fn path(&self, base_path: &Path) -> PathBuf {
+        base_path.join(self.rel_path())
     }
 
     pub fn write_xml(&self, path: &Path) -> Result<(), KrillIoError> {
@@ -765,6 +782,16 @@ impl From<publication::PublishDelta> for DeltaElements {
 pub struct Delta {
     session: RrdpSession,
     serial: u64,
+
+    // By using the default (i.e. random) for deserializing where this is absent, we do not
+    // need to migrate data when upgrading to this version where we introduce this new field.
+    // Note that this will result in new random values for existing Snapshot files, but
+    // because we now also perform a session reset on start up (see issue #533) it will
+    // not matter that this value does not map to the previous path of where this snapshot
+    // was stored, as it will be promptly replaced and forgotten.
+    #[serde(default)]
+    random: RrdpFileRandom,
+
     time: Time,
     elements: DeltaElements,
 }
@@ -774,6 +801,7 @@ impl Delta {
         Delta {
             session,
             time: Time::now(),
+            random: RrdpFileRandom::default(),
             serial,
             elements,
         }
@@ -818,6 +846,18 @@ impl Delta {
 
     pub fn unwrap(self) -> (RrdpSession, u64, DeltaElements) {
         (self.session, self.serial, self.elements)
+    }
+
+    fn rel_path(&self) -> String {
+        format!("{}/{}/{}/delta.xml", self.session, self.serial, self.random.0)
+    }
+
+    pub fn uri(&self, rrdp_base_uri: &uri::Https) -> uri::Https {
+        rrdp_base_uri.join(self.rel_path().as_ref()).unwrap()
+    }
+
+    pub fn path(&self, base_path: &Path) -> PathBuf {
+        base_path.join(self.rel_path())
     }
 
     pub fn write_xml(&self, path: &Path) -> Result<(), KrillIoError> {
