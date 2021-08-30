@@ -4,20 +4,30 @@ use chrono::Duration;
 use rpki::repository::{crl::Crl, crypto::KeyIdentifier, manifest::Manifest, x509::Time};
 use rpki::uri;
 
-use crate::{commons::{api::{
+use crate::{
+    commons::{
+        api::{
             ChildHandle, Handle, HexEncodedHash, IssuanceRequest, IssuedCert, ObjectName, ParentHandle, RcvdCert,
-            RepoInfo, ResourceClassName, ResourceSet, Revocation, RevocationRequest, Revocations, RoaAggregateKey,
-            TaCertDetails, RepositoryContact, StorableCaCommand, StoredEffect
-        }, crypto::{IdCert, KrillSigner}, eventsourcing::{
-            Aggregate, AggregateStore, CommandKey, KeyStoreKey, KeyValueStore, StoredValueInfo,
-        }, remote::rfc8183, util::KrillVersion}, constants::{CASERVER_DIR, KRILL_VERSION}, daemon::{
+            RepoInfo, RepositoryContact, ResourceClassName, ResourceSet, Revocation, RevocationRequest, Revocations,
+            RoaAggregateKey, StorableCaCommand, StoredEffect, TaCertDetails,
+        },
+        crypto::{IdCert, KrillSigner},
+        eventsourcing::{Aggregate, AggregateStore, CommandKey, KeyStoreKey, KeyValueStore, StoredValueInfo},
+        remote::rfc8183,
+        util::KrillVersion,
+    },
+    constants::{CASERVER_DIR, KRILL_VERSION},
+    daemon::{
         ca::{
-            self, ta_handle, BasicKeyObjectSet, CaEvtDet, CaObjects, CaObjectsStore, CurrentKeyObjectSet,
-            PublishedCert, PublishedRoa, ResourceClassKeyState, ResourceClassObjects, RouteAuthorization,
-            CaEvt, IniDet, StoredCaCommand,
+            self, ta_handle, BasicKeyObjectSet, CaEvt, CaEvtDet, CaObjects, CaObjectsStore, CurrentKeyObjectSet,
+            IniDet, PublishedCert, PublishedRoa, ResourceClassKeyState, ResourceClassObjects, RouteAuthorization,
+            StoredCaCommand,
         },
         config::Config,
-    }, pubd::RepositoryManager, upgrades::{UpgradeError, UpgradeResult, UpgradeStore}};
+    },
+    pubd::RepositoryManager,
+    upgrades::{UpgradeError, UpgradeResult, UpgradeStore},
+};
 
 use super::super::MIGRATION_SCOPE;
 use super::{old_commands::*, old_events::*};
@@ -33,9 +43,9 @@ impl CaObjectsMigration {
 
         let signer = Arc::new(KrillSigner::build(&config.data_dir)?);
 
-        if store.version_is_before(KrillVersion::release(0,6,0))? {
+        if store.version_is_before(KrillVersion::release(0, 6, 0))? {
             Err(UpgradeError::custom("Cannot upgrade Krill installations from before version 0.6.0. Please upgrade to any version ranging from 0.6.0 to 0.8.1 first, and then upgrade to this version."))
-        } else if store.version_is_before(KrillVersion::candidate(0,9,0,1))? {
+        } else if store.version_is_before(KrillVersion::candidate(0, 9, 0, 1))? {
             info!("Krill version is older than 0.9.0-RC1, will now upgrade data structures.");
 
             // Populate object store which will contain all objects produced by CAs, while we are
@@ -321,12 +331,13 @@ impl UpgradeStore for CasStoreMigration {
         for scope in self.store.scopes()? {
             info!("Will rebuild CA '{}' from events and warm up the cache", scope);
 
-            let ca = Handle::from_str(&scope)
-                    .map_err(|e| UpgradeError::Custom(format!("Found invalid ca name: {}", e)))?;
-            
-            self.ca_store.warm_aggregate(&ca)
+            let ca =
+                Handle::from_str(&scope).map_err(|e| UpgradeError::Custom(format!("Found invalid ca name: {}", e)))?;
+
+            self.ca_store
+                .warm_aggregate(&ca)
                 .map_err(|e| UpgradeError::Custom(format!("Could not rebuild CA '{}' after migration: {}", ca, e)))?;
-            
+
             self.drop_migration_scope(&scope)?;
         }
 

@@ -7,11 +7,7 @@ use std::{fmt, fs};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use crate::commons::{
-    error::KrillIoError, 
-    util::file,
-    util::KrillVersion,
-};
+use crate::commons::{error::KrillIoError, util::file, util::KrillVersion};
 
 //------------ KeyStoreKey ---------------------------------------------------
 

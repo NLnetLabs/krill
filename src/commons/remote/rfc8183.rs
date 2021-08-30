@@ -12,8 +12,8 @@ use bcder::decode;
 use bytes::Bytes;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
-use rpki::uri;
 use rpki::repository::x509;
+use rpki::uri;
 
 use crate::commons::crypto::IdCert;
 use crate::commons::util::file;
