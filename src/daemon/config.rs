@@ -69,18 +69,23 @@ impl ConfigDefaults {
             _ => LevelFilter::Info,
         }
     }
+
     fn log_type() -> LogType {
         LogType::File
     }
+
     fn log_file() -> PathBuf {
         PathBuf::from("./krill.log")
     }
+
     fn syslog_facility() -> String {
         "daemon".to_string()
     }
+
     fn auth_type() -> AuthType {
         AuthType::AdminToken
     }
+
     fn admin_token() -> Token {
         match env::var(KRILL_ENV_ADMIN_TOKEN) {
             Ok(token) => Token::from(token),
@@ -93,15 +98,18 @@ impl ConfigDefaults {
             },
         }
     }
+
     #[cfg(feature = "multi-user")]
     fn auth_policies() -> Vec<PathBuf> {
         vec![]
     }
+
     #[cfg(feature = "multi-user")]
     fn auth_private_attributes() -> Vec<String> {
         vec![]
     }
-    fn ca_refresh() -> u32 {
+
+    fn ca_refresh_seconds() -> u32 {
         600
     }
 
@@ -246,8 +254,10 @@ pub struct Config {
     #[cfg(feature = "hsm")]
     pub signers: Option<Vec<ConfigSigner>>,
 
-    #[serde(default = "ConfigDefaults::ca_refresh")]
-    pub ca_refresh: u32,
+    #[serde(default = "ConfigDefaults::ca_refresh_seconds", alias = "ca_refresh")]
+    pub ca_refresh_seconds: u32,
+
+    pub suspend_child_after_inactive_hours: Option<i64>,
 
     #[serde(default = "ConfigDefaults::post_limit_api")]
     pub post_limit_api: u64,
@@ -434,8 +444,8 @@ impl Config {
                 } else {
                     uri::Https::from_string(format!("https://{}:{}/", self.ip, self.port)).unwrap()
                 }
-            },
-            Some(uri) => uri.clone()
+            }
+            Some(uri) => uri.clone(),
         }
     }
 
@@ -469,7 +479,7 @@ impl Config {
 
 /// # Create
 impl Config {
-    fn test_config(data_dir: &Path, enable_testbed: bool) -> Self {
+    fn test_config(data_dir: &Path, enable_testbed: bool, enable_ca_refresh: bool) -> Self {
         use crate::test;
 
         let ip = ConfigDefaults::ip();
@@ -497,7 +507,7 @@ impl Config {
         let auth_openidconnect = None;
         #[cfg(feature = "hsm")]
         let signers = None;
-        let ca_refresh = 1;
+        let ca_refresh_seconds = if enable_ca_refresh { 1 } else { 86400 };
         let post_limit_api = ConfigDefaults::post_limit_api();
         let post_limit_rfc8181 = ConfigDefaults::post_limit_rfc8181();
         let rfc8181_log_dir = {
@@ -580,7 +590,8 @@ impl Config {
             auth_openidconnect,
             #[cfg(feature = "hsm")]
             signers,
-            ca_refresh,
+            ca_refresh_seconds,
+            suspend_child_after_inactive_hours: None,
             post_limit_api,
             post_limit_rfc8181,
             rfc8181_log_dir,
@@ -597,12 +608,12 @@ impl Config {
         }
     }
 
-    pub fn test(data_dir: &Path, enable_testbed: bool) -> Self {
-        Self::test_config(data_dir, enable_testbed)
+    pub fn test(data_dir: &Path, enable_testbed: bool, enable_ca_refresh: bool) -> Self {
+        Self::test_config(data_dir, enable_testbed, enable_ca_refresh)
     }
 
     pub fn pubd_test(data_dir: &Path) -> Self {
-        let mut config = Self::test_config(data_dir, false);
+        let mut config = Self::test_config(data_dir, false, false);
         config.port = 3001;
         config
     }
@@ -629,7 +640,7 @@ impl Config {
     pub fn create() -> Result<Self, ConfigError> {
         let config_file = Self::get_config_filename();
 
-        let config = match Self::read_config(&config_file) {
+        let mut config = match Self::read_config(&config_file) {
             Err(e) => {
                 if config_file == KRILL_DEFAULT_CONFIG_FILE {
                     Err(ConfigError::other(
@@ -648,6 +659,23 @@ impl Config {
                 Ok(config)
             }
         }?;
+
+        if config.ca_refresh_seconds < CA_REFRESH_SECONDS_MIN {
+            warn!(
+                "The value for 'ca_refresh_seconds' was below the minimum value, changing it to {} seconds",
+                CA_REFRESH_SECONDS_MIN
+            );
+            config.ca_refresh_seconds = CA_REFRESH_SECONDS_MIN;
+        }
+
+        if config.ca_refresh_seconds > CA_REFRESH_SECONDS_MAX {
+            warn!(
+                "The value for 'ca_refresh_seconds' was above the maximum value, changing it to {} seconds",
+                CA_REFRESH_SECONDS_MAX
+            );
+            config.ca_refresh_seconds = CA_REFRESH_SECONDS_MAX;
+        }
+
         config
             .verify()
             .map_err(|e| ConfigError::Other(format!("Error parsing config file: {}, error: {}", config_file, e)))?;
@@ -672,7 +700,6 @@ impl Config {
                 ));
             }
         }
-
 
         if self.issuance_timing.timing_publish_next_hours < 2 {
             return Err(ConfigError::other("timing_publish_next_hours must be at least 2"));

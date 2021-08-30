@@ -500,15 +500,23 @@ impl CaManager {
         req: UpdateChildRequest,
         actor: &Actor,
     ) -> KrillResult<()> {
-        let (id_opt, resources_opt) = req.unpack();
+        let (id_opt, resources_opt, suspend_opt) = req.unpack();
 
         if let Some(id) = id_opt {
             self.send_command(CmdDet::child_update_id(ca, child.clone(), id, actor))
                 .await?;
         }
         if let Some(resources) = resources_opt {
-            self.send_command(CmdDet::child_update_resources(ca, child, resources, actor))
+            self.send_command(CmdDet::child_update_resources(ca, child.clone(), resources, actor))
                 .await?;
+        }
+        if let Some(suspend) = suspend_opt {
+            if suspend {
+                self.send_command(CmdDet::child_suspend_inactive(ca, child, actor))
+                    .await?;
+            } else {
+                self.send_command(CmdDet::child_unsuspend(ca, child, actor)).await?;
+            }
         }
         Ok(())
     }
@@ -516,7 +524,9 @@ impl CaManager {
     /// Removes a child from this CA. This will also ensure that certificates issued to the child
     /// are revoked and withdrawn.
     pub async fn ca_child_remove(&self, ca: &Handle, child: ChildHandle, actor: &Actor) -> KrillResult<()> {
+        self.status_store.lock().await.remove_child(&ca, &child).await?;
         self.send_command(CmdDet::child_remove(ca, child, actor)).await?;
+
         Ok(())
     }
 
@@ -549,24 +559,38 @@ impl CaManager {
 
         let content = ca.verify_rfc6492(msg)?;
 
-        let (child, recipient, content) = content.unpack();
+        let (child_handle, recipient, content) = content.unpack();
 
-        let cms_logger = CmsLogger::for_rfc6492_rcvd(self.config.rfc6492_log_dir.as_ref(), &recipient, &child);
+        // If the child was suspended, because it was inactive, then we can now conclude
+        // that it's become active again. So unsuspend it first, before processing the request
+        // further.
+        let child_ca = ca.get_child(&child_handle)?;
+        if child_ca.is_suspended() {
+            info!(
+                "Child '{}' under CA '{}' became active again, will unsuspend it.",
+                child_handle, ca_handle
+            );
+            let req = UpdateChildRequest::unsuspend();
+            self.ca_child_update(ca_handle, child_handle.clone(), req, actor)
+                .await?;
+        }
+
+        let cms_logger = CmsLogger::for_rfc6492_rcvd(self.config.rfc6492_log_dir.as_ref(), &recipient, &child_handle);
 
         let (res, should_log_cms) = match content {
             rfc6492::Content::Qry(rfc6492::Qry::Revoke(req)) => {
-                let res = self.revoke(ca_handle, child.clone(), req, actor).await?;
-                let msg = rfc6492::Message::revoke_response(child.clone(), recipient, res);
+                let res = self.revoke(ca_handle, child_handle.clone(), req, actor).await?;
+                let msg = rfc6492::Message::revoke_response(child_handle.clone(), recipient, res);
                 (self.wrap_rfc6492_response(ca_handle, msg).await, true)
             }
             rfc6492::Content::Qry(rfc6492::Qry::List) => {
-                let entitlements = self.list(ca_handle, &child).await?;
-                let msg = rfc6492::Message::list_response(child.clone(), recipient, entitlements);
+                let entitlements = self.list(ca_handle, &child_handle).await?;
+                let msg = rfc6492::Message::list_response(child_handle.clone(), recipient, entitlements);
                 (self.wrap_rfc6492_response(ca_handle, msg).await, false)
             }
             rfc6492::Content::Qry(rfc6492::Qry::Issue(req)) => {
-                let res = self.issue(ca_handle, &child, req, actor).await?;
-                let msg = rfc6492::Message::issue_response(child.clone(), recipient, res);
+                let res = self.issue(ca_handle, &child_handle, req, actor).await?;
+                let msg = rfc6492::Message::issue_response(child_handle.clone(), recipient, res);
                 (self.wrap_rfc6492_response(ca_handle, msg).await, true)
             }
             _ => (Err(Error::custom("Unsupported RFC6492 message")), true),
@@ -592,14 +616,14 @@ impl CaManager {
                 self.status_store
                     .lock()
                     .await
-                    .set_child_success(ca.handle(), &child, user_agent)
+                    .set_child_success(ca.handle(), &child_handle, user_agent)
                     .await?;
             }
             Err(e) => {
                 self.status_store
                     .lock()
                     .await
-                    .set_child_failure(ca.handle(), &child, user_agent, e)
+                    .set_child_failure(ca.handle(), &child_handle, user_agent, e)
                     .await?;
             }
         }
@@ -748,6 +772,21 @@ impl CaManager {
                     for parent in ca.parents() {
                         updates.push(self.ca_sync_parent_infallible(ca_handle.clone(), parent.clone(), actor.clone()));
                     }
+
+                    if let Some(threshold_hours) = self.config.suspend_child_after_inactive_hours {
+                        if let Ok(child_stats) = self.ca_stats_child_connections(&ca_handle).await {
+                            for child in child_stats.inactive_children(threshold_hours) {
+                                info!(
+                                    "Child '{}' under CA '{}' was inactive for more than {} hours. Will suspend it.",
+                                    child, ca_handle, threshold_hours
+                                );
+                                let req = UpdateChildRequest::suspend();
+                                if let Err(e) = self.ca_child_update(&ca_handle, child, req, actor).await {
+                                    error!("Could not suspend inactive child, error: {}", e);
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -842,7 +881,7 @@ impl CaManager {
             ParentCaContact::Rfc6492(parent_res) => {
                 let parent_uri = parent_res.service_uri();
 
-                let next_run_seconds = self.config.ca_refresh as i64;
+                let next_run_seconds = self.config.ca_refresh_seconds as i64;
 
                 match self
                     .send_revoke_requests_rfc6492(revoke_requests, &child.id_key(), parent_res)
@@ -1158,7 +1197,7 @@ impl CaManager {
             self.status_store
                 .lock()
                 .await
-                .set_parent_last_updated(handle, parent, uri, self.config.ca_refresh as i64)
+                .set_parent_last_updated(handle, parent, uri, self.config.ca_refresh_seconds as i64)
                 .await?;
 
             Ok(())
@@ -1212,7 +1251,7 @@ impl CaManager {
             ParentCaContact::Rfc6492(res) => {
                 let result = self.get_entitlements_rfc6492(ca, res).await;
                 let uri = res.service_uri();
-                let next_run_seconds = self.config.ca_refresh as i64;
+                let next_run_seconds = self.config.ca_refresh_seconds as i64;
 
                 match &result {
                     Err(error) => {

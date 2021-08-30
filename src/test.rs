@@ -50,7 +50,7 @@ pub const KRILL_PUBD_SERVER_URI: &str = "https://localhost:3001/";
 pub fn init_logging() {
     // Just creates a test config so we can initialize logging, then forgets about it
     let d = PathBuf::from(".");
-    let _ = Config::test(&d, false).init_logging();
+    let _ = Config::test(&d, false, false).init_logging();
 }
 
 pub fn info(msg: impl std::fmt::Display) {
@@ -89,12 +89,12 @@ pub async fn server_ready(uri: &str) -> bool {
     false
 }
 
-pub fn test_config(dir: &Path, enable_testbed: bool) -> Config {
+pub fn test_config(dir: &Path, enable_testbed: bool, enable_ca_refresh: bool) -> Config {
     if enable_testbed {
         crate::constants::enable_test_mode();
         crate::constants::enable_test_announcements();
     }
-    Config::test(dir, enable_testbed)
+    Config::test(dir, enable_testbed, enable_ca_refresh)
 }
 
 pub fn init_config(config: &Config) {
@@ -115,9 +115,9 @@ pub async fn start_krill_with_custom_config(mut config: Config) -> PathBuf {
 
 /// Starts krill server for testing using the default test configuration, and optionally with testbed mode enabled.
 /// Creates a random base directory in the 'work' folder, and returns it. Be sure to clean it up when the test is done.
-pub async fn start_krill_with_default_test_config(enable_testbed: bool) -> PathBuf {
+pub async fn start_krill_with_default_test_config(enable_testbed: bool, enable_ca_refresh: bool) -> PathBuf {
     let dir = tmp_dir();
-    let config = test_config(&dir, enable_testbed);
+    let config = test_config(&dir, enable_testbed, enable_ca_refresh);
     start_krill(config).await;
     dir
 }
@@ -138,7 +138,7 @@ async fn start_krill_with_error_trap(config: Arc<Config>) {
 /// own temp dir for storage.
 pub async fn start_krill_pubd() -> PathBuf {
     let dir = tmp_dir();
-    let mut config = test_config(&dir, false);
+    let mut config = test_config(&dir, false, false);
     init_config(&config);
     config.port = 3001;
 
@@ -294,6 +294,28 @@ pub async fn delete_child(ca: &Handle, child: &ChildHandle) {
     krill_admin(Command::CertAuth(CaCommand::ChildDelete(ca.clone(), child.clone()))).await;
 }
 
+pub async fn suspend_inactive_child(ca: &Handle, child: &ChildHandle) {
+    let update = UpdateChildRequest::suspend();
+
+    krill_admin(Command::CertAuth(CaCommand::ChildUpdate(
+        ca.clone(),
+        child.clone(),
+        update,
+    )))
+    .await;
+}
+
+pub async fn unsuspend_child(ca: &Handle, child: &ChildHandle) {
+    let update = UpdateChildRequest::unsuspend();
+
+    krill_admin(Command::CertAuth(CaCommand::ChildUpdate(
+        ca.clone(),
+        child.clone(),
+        update,
+    )))
+    .await;
+}
+
 async fn send_child_request(ca: &Handle, child: &Handle, req: UpdateChildRequest) {
     match krill_admin(Command::CertAuth(CaCommand::ChildUpdate(
         ca.clone(),
@@ -439,6 +461,7 @@ pub async fn ca_contains_resources(handle: &Handle, resources: &ResourceSet) -> 
         if ca_current_resources(handle).await.contains(resources) {
             return true;
         }
+        refresh_all().await;
         sleep(Duration::from_secs(1)).await
     }
     false
@@ -449,6 +472,7 @@ pub async fn ca_equals_resources(handle: &Handle, resources: &ResourceSet) -> bo
         if &ca_current_resources(handle).await == resources {
             return true;
         }
+        refresh_all().await;
         sleep(Duration::from_secs(1)).await
     }
     false
@@ -460,6 +484,7 @@ pub async fn rc_is_removed(handle: &Handle) -> bool {
         if ca.resource_classes().get(&ResourceClassName::default()).is_none() {
             return true;
         }
+        refresh_all().await;
         sleep(Duration::from_millis(100)).await
     }
     false

@@ -239,7 +239,7 @@ async fn functional() {
     info("#                                                                #");
     info("##################################################################");
     info("");
-    let krill_dir = start_krill_with_default_test_config(true).await;
+    let krill_dir = start_krill_with_default_test_config(true, false).await;
 
     let ta = ta_handle();
     let testbed = handle_for("testbed");
@@ -264,6 +264,8 @@ async fn functional() {
 
     let rcn_0 = ResourceClassName::from(0);
     let rcn_1 = ResourceClassName::from(1);
+    let rcn_2 = ResourceClassName::from(2);
+    let rcn_3 = ResourceClassName::from(3);
 
     info("##################################################################");
     info("#                                                                #");
@@ -621,7 +623,6 @@ async fn functional() {
         ca_equals_resources(&ca1, &ca1_res_reduced).await;
         ca_equals_resources(&ca3, &ca3_res_reduced).await;
         ca_equals_resources(&ca4, &ca4_res_reduced).await;
-        refresh_all().await; // if we skip this, then CA4 will not find out that it's resources were reduced
 
         expect_roas_for_ca4(
             "CA4 resources are shrunk and we expect only one remaining roa",
@@ -644,7 +645,6 @@ async fn functional() {
         ca_equals_resources(&ca1, &ca1_res).await;
         ca_equals_resources(&ca3, &ca3_res_combined).await;
         ca_equals_resources(&ca4, &ca4_res_under_ca_3).await;
-        refresh_all().await;
 
         // Expect that the ROA is re-added now that resources are back.
         expect_roas_for_ca4(
@@ -727,8 +727,6 @@ async fn functional() {
         {
             assert!(will_publish("CA4 should withdraw objects when parent is removed", &ca4, &[]).await);
         }
-
-        // delete_ca(&ca4).await;
     }
 
     info("##################################################################");
@@ -747,6 +745,50 @@ async fn functional() {
             &[route_resource_set_10_0_0_0_def_1, route_resource_set_10_1_0_0_def_1],
         )
         .await;
+    }
+
+    info("##################################################################");
+    info("#                                                                #");
+    info("# Suspend CA4, expect that parent CA3 stops publishing its certs #");
+    info("#                                                                #");
+    info("##################################################################");
+    info("");
+    {
+        suspend_inactive_child(&ca3, &ca4).await;
+
+        let mut expected_files = expected_mft_and_crl(&ca3, &rcn_0).await;
+        expected_files.append(&mut expected_mft_and_crl(&ca3, &rcn_1).await);
+        assert!(
+            will_publish(
+                "CA3 should have two resource classes and no cert for CA4 in either",
+                &ca3,
+                &expected_files
+            )
+            .await
+        );
+    }
+
+    info("##################################################################");
+    info("#                                                                #");
+    info("# Unsuspend CA4, expect that parent publishes its certs again    #");
+    info("#                                                                #");
+    info("##################################################################");
+    info("");
+    {
+        refresh_all().await;
+
+        let mut expected_files = expected_mft_and_crl(&ca3, &rcn_0).await;
+        expected_files.append(&mut expected_mft_and_crl(&ca3, &rcn_1).await);
+        expected_files.push(expected_issued_cer(&ca4, &rcn_2).await);
+        expected_files.push(expected_issued_cer(&ca4, &rcn_3).await);
+        assert!(
+            will_publish(
+                "CA3 should have two resource classes and a cert for CA4 in each",
+                &ca3,
+                &expected_files
+            )
+            .await
+        );
     }
 
     info("##################################################################");

@@ -864,6 +864,21 @@ impl CurrentKeyObjectSet {
             }
         }
 
+        for cert in cert_updates.unsuspended() {
+            let name = ObjectName::from(cert.cert());
+            self.revocations.remove(&Revocation::from(cert.cert()));
+            if let Some(old) = self.certs.insert(name, cert.clone().into()) {
+                // this should not happen, but just to be safe.
+                self.revocations.add(Revocation::from(&old));
+            }
+        }
+
+        for suspended in cert_updates.suspended() {
+            let name = ObjectName::from(suspended.cert());
+            self.certs.remove(&name);
+            self.revocations.add(Revocation::from(suspended.cert()));
+        }
+
         self.reissue(timing, signer)
     }
 

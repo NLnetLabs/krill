@@ -336,7 +336,7 @@ pub struct ChildCertificateUpdates {
 
 impl From<ChildCertificateUpdates> for ca::ChildCertificateUpdates {
     fn from(old: ChildCertificateUpdates) -> Self {
-        ca::ChildCertificateUpdates::new(old.issued, old.removed)
+        ca::ChildCertificateUpdates::new(old.issued, old.removed, vec![], vec![])
     }
 }
 

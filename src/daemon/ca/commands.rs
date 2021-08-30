@@ -63,6 +63,17 @@ pub enum CmdDet {
     // Remove child (also revokes, and removes issued certs, and republishes)
     ChildRemove(ChildHandle),
 
+    // Suspend a child (done by a background process which checks for inactive children)
+    // When a child is inactive it is assumed that they no longer maintain their repository.
+    // The certificate(s) issued to the child will be removed (and revoked) until
+    // the child is seen again and unsuspended (see below).
+    ChildSuspendInactive(ChildHandle),
+
+    // Unsuspend a child (when it contacts the server again). I.e. mark it as active once
+    // again and republish existing certificates provided that they are not expired, or
+    // about to expire, and do not claim resources no longer associated with this child.
+    ChildUnsuspend(ChildHandle),
+
     // ------------------------------------------------------------
     // Being a child (only allowed if this CA is not self-signed)
     // ------------------------------------------------------------
@@ -203,6 +214,8 @@ impl From<CmdDet> for StorableCaCommand {
             }
             CmdDet::ChildRevokeKey(child, revoke_req) => StorableCaCommand::ChildRevokeKey { child, revoke_req },
             CmdDet::ChildRemove(child) => StorableCaCommand::ChildRemove { child },
+            CmdDet::ChildSuspendInactive(child) => StorableCaCommand::ChildSuspendInactive { child },
+            CmdDet::ChildUnsuspend(child) => StorableCaCommand::ChildUnsuspend { child },
 
             // ------------------------------------------------------------
             // Being a child
@@ -350,6 +363,14 @@ impl CmdDet {
 
     pub fn child_remove(handle: &Handle, child_handle: ChildHandle, actor: &Actor) -> Cmd {
         eventsourcing::SentCommand::new(handle, None, CmdDet::ChildRemove(child_handle), actor)
+    }
+
+    pub fn child_suspend_inactive(handle: &Handle, child_handle: ChildHandle, actor: &Actor) -> Cmd {
+        eventsourcing::SentCommand::new(handle, None, CmdDet::ChildSuspendInactive(child_handle), actor)
+    }
+
+    pub fn child_unsuspend(handle: &Handle, child_handle: ChildHandle, actor: &Actor) -> Cmd {
+        eventsourcing::SentCommand::new(handle, None, CmdDet::ChildUnsuspend(child_handle), actor)
     }
 
     pub fn update_id(handle: &Handle, signer: Arc<KrillSigner>, actor: &Actor) -> Cmd {

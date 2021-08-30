@@ -123,6 +123,9 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
         println!("Krill upgrade successful");
     }
 
+    // Reset the RRDP session after a restart.
+    krill.repository_session_reset()?;
+
     let state = Arc::new(krill);
 
     let service = make_service_fn(move |_| {
@@ -1755,7 +1758,7 @@ mod tests {
 
     #[tokio::test]
     async fn start_krill_daemon() {
-        let dir = test::start_krill_with_default_test_config(false).await;
+        let dir = test::start_krill_with_default_test_config(false, false).await;
         let _ = fs::remove_dir_all(dir);
     }
 

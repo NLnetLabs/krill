@@ -253,6 +253,9 @@ pub struct IssuedCert {
     replaces: Option<ReplacedObject>,
 }
 
+pub type SuspendedCert = IssuedCert;
+pub type UnsuspendedCert = IssuedCert;
+
 impl IssuedCert {
     pub fn new(
         uri: uri::Rsync,
@@ -714,6 +717,10 @@ impl Revocations {
 
     pub fn add(&mut self, revocation: Revocation) {
         self.0.push(revocation);
+    }
+
+    pub fn remove(&mut self, revocation: &Revocation) {
+        self.0.retain(|existing| existing != revocation);
     }
 
     pub fn apply_delta(&mut self, delta: RevocationsDelta) {
@@ -1571,6 +1578,14 @@ impl ChildrenConnectionStats {
     pub fn new(children: Vec<ChildConnectionStats>) -> Self {
         ChildrenConnectionStats { children }
     }
+
+    pub fn inactive_children(&self, threshold_hours: i64) -> Vec<ChildHandle> {
+        self.children
+            .iter()
+            .filter(|child| child.inactive(threshold_hours))
+            .map(|child| child.handle.clone())
+            .collect()
+    }
 }
 
 impl fmt::Display for ChildrenConnectionStats {
@@ -1611,6 +1626,15 @@ pub struct ChildConnectionStats {
 impl ChildConnectionStats {
     pub fn new(handle: ChildHandle, last_exchange: Option<ChildExchange>) -> Self {
         ChildConnectionStats { handle, last_exchange }
+    }
+
+    /// The child is considered 'inactive' if there was at least one exchange, and the
+    /// last exchange is longer ago than the specified threshold hours.
+    pub fn inactive(&self, threshold_hours: i64) -> bool {
+        match &self.last_exchange {
+            None => false, // if there has been no exchange at all, the child is not yet active, rather than inactive
+            Some(exchange) => exchange.timestamp < (Time::now() - Duration::hours(threshold_hours)).timestamp(),
+        }
     }
 }
 

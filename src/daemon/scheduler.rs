@@ -72,7 +72,7 @@ impl Scheduler {
 
         let cas_republish = make_cas_republish(ca_manager.clone(), event_queue);
         let cas_roas_renew = make_cas_roa_renew(ca_manager.clone(), actor.clone());
-        let cas_refresh = make_cas_refresh(ca_manager, config.ca_refresh, actor.clone());
+        let cas_refresh = make_cas_refresh(ca_manager, config.ca_refresh_seconds, actor.clone());
 
         let announcements_refresh = make_announcements_refresh(bgp_analyser);
 

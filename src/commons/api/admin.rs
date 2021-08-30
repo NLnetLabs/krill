@@ -445,7 +445,7 @@ impl ParentCaContact {
     pub fn parent_response(&self) -> Option<&rfc8183::ParentResponse> {
         match &self {
             ParentCaContact::Ta(_) => None,
-            ParentCaContact::Rfc6492(res) => Some(res)
+            ParentCaContact::Rfc6492(res) => Some(res),
         }
     }
 
@@ -565,16 +565,24 @@ impl AddChildRequest {
 pub struct UpdateChildRequest {
     id_cert: Option<IdCert>,
     resources: Option<ResourceSet>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    suspend: Option<bool>,
 }
 
 impl UpdateChildRequest {
-    pub fn new(id_cert: Option<IdCert>, resources: Option<ResourceSet>) -> Self {
-        UpdateChildRequest { id_cert, resources }
+    pub fn new(id_cert: Option<IdCert>, resources: Option<ResourceSet>, suspend: Option<bool>) -> Self {
+        UpdateChildRequest {
+            id_cert,
+            resources,
+            suspend,
+        }
     }
     pub fn id_cert(id_cert: IdCert) -> Self {
         UpdateChildRequest {
             id_cert: Some(id_cert),
             resources: None,
+            suspend: None,
         }
     }
 
@@ -582,11 +590,28 @@ impl UpdateChildRequest {
         UpdateChildRequest {
             id_cert: None,
             resources: Some(resources),
+            suspend: None,
         }
     }
 
-    pub fn unpack(self) -> (Option<IdCert>, Option<ResourceSet>) {
-        (self.id_cert, self.resources)
+    pub fn suspend() -> Self {
+        UpdateChildRequest {
+            id_cert: None,
+            resources: None,
+            suspend: Some(true),
+        }
+    }
+
+    pub fn unsuspend() -> Self {
+        UpdateChildRequest {
+            id_cert: None,
+            resources: None,
+            suspend: Some(false),
+        }
+    }
+
+    pub fn unpack(self) -> (Option<IdCert>, Option<ResourceSet>, Option<bool>) {
+        (self.id_cert, self.resources, self.suspend)
     }
 }
 
@@ -597,6 +622,9 @@ impl fmt::Display for UpdateChildRequest {
         }
         if let Some(resources) = &self.resources {
             write!(f, "new resources: {} ", resources)?;
+        }
+        if let Some(suspend) = self.suspend {
+            write!(f, "change suspend status to: {}", suspend)?;
         }
         Ok(())
     }

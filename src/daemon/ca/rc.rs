@@ -14,7 +14,7 @@ use crate::{
         api::{
             EntitlementClass, Handle, HexEncodedHash, IssuanceRequest, IssuedCert, ParentHandle, RcvdCert,
             ReplacedObject, RepoInfo, RequestResourceLimit, ResourceClassInfo, ResourceClassName, ResourceSet,
-            Revocation, RevocationRequest,
+            Revocation, RevocationRequest, SuspendedCert, UnsuspendedCert,
         },
         crypto::{CsrInfo, KrillSigner, SignSupport},
         error::Error,
@@ -204,15 +204,13 @@ impl ResourceClass {
                     );
 
                     let current_key = CertifiedKey::create(rcvd_cert);
-                    
+
                     let updates = self.roas.update(routes, &current_key, config, signer)?;
 
-                    let mut events = vec![
-                        CaEvtDet::KeyPendingToActive {
-                            resource_class_name: self.name.clone(),
-                            current_key,
-                        }
-                    ];
+                    let mut events = vec![CaEvtDet::KeyPendingToActive {
+                        resource_class_name: self.name.clone(),
+                        current_key,
+                    }];
 
                     if updates.contains_changes() {
                         events.push(CaEvtDet::RoasUpdated {
@@ -575,7 +573,7 @@ impl ResourceClass {
         let signing_key = self.get_current_key()?;
         let parent_resources = signing_key.incoming_cert().resources();
         let resources = parent_resources.intersection(child_resources);
-        let replaces = self.certificates.get(&csr.key_id()).map(ReplacedObject::from);
+        let replaces = self.certificates.get_issued(&csr.key_id()).map(ReplacedObject::from);
 
         let issued = SignSupport::make_issued_cert(
             csr,
@@ -622,9 +620,22 @@ impl ResourceClass {
         self.certificates.certificate_issued(issued);
     }
 
+    pub fn certificate_unsuspended(&mut self, unsuspended: UnsuspendedCert) {
+        self.certificates.certificate_unsuspended(unsuspended);
+    }
+
+    pub fn certificate_suspended(&mut self, suspended: SuspendedCert) {
+        self.certificates.certificate_suspended(suspended);
+    }
+
     /// Returns an issued certificate for a key, if it exists
     pub fn issued(&self, ki: &KeyIdentifier) -> Option<&IssuedCert> {
-        self.certificates.get(ki)
+        self.certificates.get_issued(ki)
+    }
+
+    /// Returns a suspended certificate for a key, if it exists
+    pub fn suspended(&self, ki: &KeyIdentifier) -> Option<&SuspendedCert> {
+        self.certificates.get_suspended(ki)
     }
 
     /// Removes a revoked key.

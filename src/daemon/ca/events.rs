@@ -8,7 +8,7 @@ use crate::{
         api::{
             ChildHandle, Handle, IssuanceRequest, IssuedCert, ObjectName, ParentCaContact, ParentHandle,
             ParentResourceClassName, RcvdCert, RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest,
-            RevokedObject, RoaAggregateKey, RtaName, TaCertDetails,
+            RevokedObject, RoaAggregateKey, RtaName, SuspendedCert, TaCertDetails, UnsuspendedCert,
         },
         crypto::{IdCert, KrillSigner},
         eventsourcing::StoredEvent,
@@ -376,31 +376,82 @@ impl fmt::Display for RoaUpdates {
 pub struct ChildCertificateUpdates {
     issued: Vec<IssuedCert>,
     removed: Vec<KeyIdentifier>,
+    suspended: Vec<SuspendedCert>,
+    unsuspended: Vec<UnsuspendedCert>,
 }
 
 impl ChildCertificateUpdates {
-    pub fn new(issued: Vec<IssuedCert>, removed: Vec<KeyIdentifier>) -> Self {
-        ChildCertificateUpdates { issued, removed }
+    pub fn new(
+        issued: Vec<IssuedCert>,
+        removed: Vec<KeyIdentifier>,
+        suspended: Vec<SuspendedCert>,
+        unsuspended: Vec<UnsuspendedCert>,
+    ) -> Self {
+        ChildCertificateUpdates {
+            issued,
+            removed,
+            suspended,
+            unsuspended,
+        }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.issued.is_empty() && self.removed.is_empty()
+        self.issued.is_empty() && self.removed.is_empty() && self.suspended.is_empty() && self.unsuspended.is_empty()
     }
+
+    /// Add an issued certificate to the current set of issued certificates.
+    /// Note that this is typically a newly issued certificate, but it can
+    /// also be a previously issued certificate which had been suspended and
+    /// is now unsuspended.
     pub fn issue(&mut self, new: IssuedCert) {
         self.issued.push(new);
     }
+
+    /// Remove certificates for a key identifier. This will ensure that they
+    /// are revoked.
     pub fn remove(&mut self, ki: KeyIdentifier) {
         self.removed.push(ki);
     }
 
+    /// List all currently issued (not suspended) certificates.
     pub fn issued(&self) -> &Vec<IssuedCert> {
         &self.issued
     }
+
+    /// List all removals (revocations).
     pub fn removed(&self) -> &Vec<KeyIdentifier> {
         &self.removed
     }
-    pub fn unpack(self) -> (Vec<IssuedCert>, Vec<KeyIdentifier>) {
-        (self.issued, self.removed)
+
+    /// Suspend a certificate
+    pub fn suspend(&mut self, suspended_cert: SuspendedCert) {
+        self.suspended.push(suspended_cert);
+    }
+
+    /// List all suspended certificates in this update.
+    pub fn suspended(&self) -> &Vec<SuspendedCert> {
+        &self.suspended
+    }
+
+    /// Unsuspend a certificate
+    pub fn unsuspend(&mut self, unsuspended_cert: UnsuspendedCert) {
+        self.unsuspended.push(unsuspended_cert);
+    }
+
+    /// List all unsuspended certificates in this update.
+    pub fn unsuspended(&self) -> &Vec<UnsuspendedCert> {
+        &self.unsuspended
+    }
+
+    pub fn unpack(
+        self,
+    ) -> (
+        Vec<IssuedCert>,
+        Vec<KeyIdentifier>,
+        Vec<SuspendedCert>,
+        Vec<UnsuspendedCert>,
+    ) {
+        (self.issued, self.removed, self.suspended, self.unsuspended)
     }
 }
 
@@ -421,21 +472,30 @@ pub enum CaEvtDet {
     },
 
     // Being a parent Events
+    /// A child was added to this (parent) CA
     ChildAdded {
         child: ChildHandle,
         id_cert: IdCert,
         resources: ResourceSet,
     },
+
+    /// A certificate was issued to the child of this (parent) CA
     ChildCertificateIssued {
         child: ChildHandle,
         resource_class_name: ResourceClassName,
         ki: KeyIdentifier,
     },
+
+    /// A child key was revoked.
     ChildKeyRevoked {
         child: ChildHandle,
         resource_class_name: ResourceClassName,
         ki: KeyIdentifier,
     },
+
+    /// Child certificates (for potentially multiple children) were updated
+    /// under a CA resource class. I.e. child certificates were issued,
+    /// removed, or suspended.
     ChildCertificatesUpdated {
         resource_class_name: ResourceClassName,
         updates: ChildCertificateUpdates,
@@ -449,6 +509,14 @@ pub enum CaEvtDet {
         resources: ResourceSet,
     },
     ChildRemoved {
+        child: ChildHandle,
+    },
+
+    // (Un)Suspend a child events
+    ChildSuspended {
+        child: ChildHandle,
+    },
+    ChildUnsuspended {
         child: ChildHandle,
     },
 
@@ -685,6 +753,14 @@ impl CaEvtDet {
     pub(super) fn child_removed(handle: &Handle, version: u64, child: ChildHandle) -> CaEvt {
         StoredEvent::new(handle, version, CaEvtDet::ChildRemoved { child })
     }
+
+    pub(super) fn child_suspended(handle: &Handle, version: u64, child: ChildHandle) -> CaEvt {
+        StoredEvent::new(handle, version, CaEvtDet::ChildSuspended { child })
+    }
+
+    pub(super) fn child_unsuspended(handle: &Handle, version: u64, child: ChildHandle) -> CaEvt {
+        StoredEvent::new(handle, version, CaEvtDet::ChildUnsuspended { child })
+    }
 }
 
 impl fmt::Display for CaEvtDet {
@@ -731,7 +807,7 @@ impl fmt::Display for CaEvtDet {
                 )?;
                 let issued = updates.issued();
                 if !issued.is_empty() {
-                    write!(f, " (re-)issued keys: ")?;
+                    write!(f, " issued keys: ")?;
                     for iss in issued {
                         write!(f, " {}", iss.subject_key_identifier())?;
                     }
@@ -743,6 +819,21 @@ impl fmt::Display for CaEvtDet {
                         write!(f, " {}", rev)?;
                     }
                 }
+                let suspended = updates.suspended();
+                if !suspended.is_empty() {
+                    write!(f, " suspended keys: ")?;
+                    for cert in suspended {
+                        write!(f, " {}", cert.subject_key_identifier())?;
+                    }
+                }
+                let unsuspended = updates.unsuspended();
+                if !unsuspended.is_empty() {
+                    write!(f, " unsuspended keys: ")?;
+                    for cert in unsuspended {
+                        write!(f, " {}", cert.subject_key_identifier())?;
+                    }
+                }
+
                 Ok(())
             }
             CaEvtDet::ChildKeyRevoked {
@@ -761,6 +852,8 @@ impl fmt::Display for CaEvtDet {
                 write!(f, "updated child '{}' resources to '{}'", child, resources)
             }
             CaEvtDet::ChildRemoved { child } => write!(f, "removed child '{}'", child),
+            CaEvtDet::ChildSuspended { child } => write!(f, "suspended child '{}'", child),
+            CaEvtDet::ChildUnsuspended { child } => write!(f, "unsuspended child '{}'", child),
 
             // Being a child Events
             CaEvtDet::IdUpdated { id } => write!(f, "updated RFC8183 id to key '{}'", id.key_hash()),
