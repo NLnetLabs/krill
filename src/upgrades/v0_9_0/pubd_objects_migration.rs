@@ -225,7 +225,7 @@ impl UpgradeStore for PubdStoreMigration {
         // move out the snapshots, we will rebuild from events
         // there will not be too many now that the publication
         // deltas are no longer done as events
-        self.archive_snapshots(&scope)?;
+        self.archive_snapshots(scope)?;
 
         // update the info file
         info.snapshot_version = 0;

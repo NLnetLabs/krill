@@ -133,7 +133,7 @@ impl fmt::Display for Announcement {
 
 impl Ord for Announcement {
     fn cmp(&self, other: &Self) -> Ordering {
-        let mut ordering = self.prefix.cmp(&other.prefix());
+        let mut ordering = self.prefix.cmp(other.prefix());
         if ordering == Ordering::Equal {
             ordering = self.asn.cmp(&other.asn);
         }

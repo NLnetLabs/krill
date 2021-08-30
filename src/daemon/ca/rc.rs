@@ -706,7 +706,7 @@ impl ResourceClass {
         }
 
         let pub_key = signer.get_key_info(&key).map_err(Error::signer)?;
-        let ee = SignSupport::make_rta_ee_cert(resources, &current, validity, pub_key, signer)?;
+        let ee = SignSupport::make_rta_ee_cert(resources, current, validity, pub_key, signer)?;
 
         Ok(ee)
     }

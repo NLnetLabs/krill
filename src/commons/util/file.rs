@@ -131,7 +131,7 @@ pub fn delete_file(full_path: &Path) -> Result<(), KrillIoError> {
 /// Removes the file and any **empty** directories on the path after removing it.
 pub fn clean_file_and_path(path: &Path) -> Result<(), KrillIoError> {
     if path.exists() {
-        delete_file(&path)?;
+        delete_file(path)?;
 
         let mut parent_opt = path.parent();
 
@@ -311,7 +311,7 @@ pub struct CurrentFile {
 
 impl CurrentFile {
     pub fn new(uri: uri::Rsync, content: &Bytes) -> Self {
-        let content = Base64::from_content(&content);
+        let content = Base64::from_content(content);
         let hash = content.to_encoded_hash();
         CurrentFile { uri, content, hash }
     }
@@ -319,7 +319,7 @@ impl CurrentFile {
     /// Saves this file under a base directory, based on the (rsync) uri of
     /// this file.
     pub fn save(&self, base_path: &Path) -> Result<(), KrillIoError> {
-        save_with_rsync_uri(&self.content.to_bytes(), &base_path, &self.uri)
+        save_with_rsync_uri(&self.content.to_bytes(), base_path, &self.uri)
     }
 
     pub fn uri(&self) -> &uri::Rsync {

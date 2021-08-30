@@ -260,7 +260,7 @@ impl SignSupport {
         let request = CertRequest::Ca(csr, validity);
 
         let tbs = Self::make_tbs_cert(&resources, signing_cert, request, signer)?;
-        let cert = signer.sign_cert(tbs, &signing_key.key_id())?;
+        let cert = signer.sign_cert(tbs, signing_key.key_id())?;
 
         let cert_uri = signing_cert.uri_for_object(&cert);
 
@@ -281,7 +281,7 @@ impl SignSupport {
         let request = CertRequest::Ee(pub_key, validity);
         let tbs = Self::make_tbs_cert(resources, signing_cert, request, signer)?;
 
-        let cert = signer.sign_cert(tbs, &signing_key.key_id())?;
+        let cert = signer.sign_cert(tbs, signing_key.key_id())?;
         Ok(cert)
     }
 

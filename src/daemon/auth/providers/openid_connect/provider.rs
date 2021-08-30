@@ -1027,7 +1027,7 @@ impl OpenIDConnectAuthProvider {
                     // Lookup the claim value in the auth_users config file section
                     user.unwrap().attributes.get(&attr_name.to_string()).cloned()
                 }
-                _ => self.extract_claim(&claim_conf, &id_token_claims, user_info_claims.as_ref())?,
+                _ => self.extract_claim(&claim_conf, id_token_claims, user_info_claims.as_ref())?,
             };
 
             if let Some(attr_value) = attr_value {
@@ -1528,7 +1528,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 })?;
 
                 let id = self
-                    .extract_claim(&id_claim_conf, &id_token_claims, user_info_claims.as_ref())?
+                    .extract_claim(id_claim_conf, id_token_claims, user_info_claims.as_ref())?
                     .ok_or_else(|| OpenIDConnectAuthProvider::internal_error("No value found for 'id' claim", None))?;
 
                 // Lookup the a user in the config file authentication provider

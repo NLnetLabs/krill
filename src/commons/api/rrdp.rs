@@ -328,7 +328,7 @@ impl Notification {
 
     pub fn write_xml(&self, path: &Path) -> Result<(), KrillIoError> {
         trace!("Writing notification file: {}", path.to_string_lossy());
-        let mut file = file::create_file_with_path(&path)?;
+        let mut file = file::create_file_with_path(path)?;
 
         XmlWriter::encode_to_file(&mut file, |w| {
             let a = [
@@ -864,7 +864,7 @@ impl Delta {
         trace!("Writing delta file: {}", path.to_string_lossy());
         let vec = self.xml();
         let bytes = Bytes::from(vec);
-        file::save(&bytes, &path)?;
+        file::save(&bytes, path)?;
 
         Ok(())
     }

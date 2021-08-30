@@ -344,7 +344,7 @@ impl CaManager {
             ca_handle
         );
         for parent in ca.parents() {
-            if let Err(e) = self.ca_parent_revoke(ca_handle, &parent).await {
+            if let Err(e) = self.ca_parent_revoke(ca_handle, parent).await {
                 warn!(
                     "Removing CA '{}', but could not send revoke requests to parent '{}': {}",
                     ca_handle, parent, e
@@ -433,7 +433,7 @@ impl CaManager {
         info!("CA '{}' process add child request: {}", &ca, &req);
         let (child_handle, child_res, id_cert) = req.unpack();
 
-        let add_child = CmdDet::child_add(&ca, child_handle.clone(), id_cert, child_res, actor);
+        let add_child = CmdDet::child_add(ca, child_handle.clone(), id_cert, child_res, actor);
         self.send_command(add_child).await?;
 
         self.ca_parent_contact(ca, child_handle, service_uri).await
@@ -520,7 +520,7 @@ impl CaManager {
     /// Removes a child from this CA. This will also ensure that certificates issued to the child
     /// are revoked and withdrawn.
     pub async fn ca_child_remove(&self, ca: &Handle, child: ChildHandle, actor: &Actor) -> KrillResult<()> {
-        self.status_store.lock().await.remove_child(&ca, &child).await?;
+        self.status_store.lock().await.remove_child(ca, &child).await?;
         self.send_command(CmdDet::child_remove(ca, child, actor)).await?;
 
         Ok(())
@@ -597,7 +597,7 @@ impl CaManager {
             Ok(reply_bytes) => {
                 if should_log_cms {
                     cms_logger.received(&msg_bytes)?;
-                    cms_logger.reply(&reply_bytes)?;
+                    cms_logger.reply(reply_bytes)?;
                 }
             }
             Err(e) => {
@@ -665,7 +665,7 @@ impl CaManager {
         let ca = self.send_command(cmd).await?;
 
         // The updated CA will now include the newly issued certificate.
-        let response = ca.issuance_response(child, &class_name, pub_key, &self.config.issuance_timing)?;
+        let response = ca.issuance_response(child, class_name, pub_key, &self.config.issuance_timing)?;
 
         Ok(response)
     }
@@ -735,9 +735,9 @@ impl CaManager {
 
     /// Send revocation requests for a parent of a CA when the parent is removed.
     pub async fn ca_parent_revoke(&self, handle: &Handle, parent: &ParentHandle) -> KrillResult<()> {
-        let ca = self.get_ca(&handle).await?;
-        let revoke_requests = ca.revoke_under_parent(&parent, &self.signer)?;
-        self.send_revoke_requests(&handle, &parent, revoke_requests).await?;
+        let ca = self.get_ca(handle).await?;
+        let revoke_requests = ca.revoke_under_parent(parent, &self.signer)?;
+        self.send_revoke_requests(handle, parent, revoke_requests).await?;
         Ok(())
     }
 
@@ -811,19 +811,19 @@ impl CaManager {
         let ca = self.get_ca(handle).await?;
 
         if ca.has_pending_requests(parent) {
-            self.send_requests(&handle, parent, actor).await
+            self.send_requests(handle, parent, actor).await
         } else {
-            self.get_updates_from_parent(&handle, &parent, actor).await
+            self.get_updates_from_parent(handle, parent, actor).await
         }
     }
 
     /// Try to get updates from a specific parent of a CA.
     async fn get_updates_from_parent(&self, handle: &Handle, parent: &ParentHandle, actor: &Actor) -> KrillResult<()> {
         if handle != &ta_handle() {
-            let ca = self.get_ca(&handle).await?;
+            let ca = self.get_ca(handle).await?;
 
             if ca.repository_contact().is_ok() {
-                let ca = self.get_ca(&handle).await?;
+                let ca = self.get_ca(handle).await?;
                 let parent_contact = ca.parent(parent)?;
                 let entitlements = self
                     .get_entitlements_from_contact(handle, parent, parent_contact, true)
@@ -1266,7 +1266,7 @@ impl CaManager {
                         self.status_store
                             .lock()
                             .await
-                            .set_parent_entitlements(ca, parent, uri, &entitlements, next_run_seconds)
+                            .set_parent_entitlements(ca, parent, uri, entitlements, next_run_seconds)
                             .await?;
                     }
                 }
@@ -1378,7 +1378,7 @@ impl CaManager {
                 ca_handle
             );
 
-            if let Err(e) = self.ca_repo_sync(ca_handle, &deprecated.contact(), vec![]).await {
+            if let Err(e) = self.ca_repo_sync(ca_handle, deprecated.contact(), vec![]).await {
                 warn!("Could not clean up deprecated repository: {}", e);
 
                 if deprecated.clean_attempts() < 5 {

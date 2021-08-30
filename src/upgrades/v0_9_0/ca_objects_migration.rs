@@ -178,7 +178,7 @@ impl UpgradeStore for CasStoreMigration {
             // event, based on the first recorded time in command keys.
             let time_for_init_command = match cmd_keys.first() {
                 Some(first_command) => {
-                    let old_cmd: OldStoredCaCommand = self.get(&first_command)?;
+                    let old_cmd: OldStoredCaCommand = self.get(first_command)?;
                     old_cmd.time
                 }
                 None => Time::now(),
@@ -272,7 +272,7 @@ impl UpgradeStore for CasStoreMigration {
                 if let Some(evt_versions) = old_cmd.effect.events() {
                     let mut events = vec![];
                     for v in evt_versions {
-                        let migration_event_key = Self::event_key(&&migration_scope, *v);
+                        let migration_event_key = Self::event_key(&migration_scope, *v);
                         trace!("  +- event: {}", migration_event_key);
                         let old_evt: OldCaEvt = self.store.get(&migration_event_key)?.ok_or_else(|| {
                             UpgradeError::Custom(format!("Cannot parse old event: {}", migration_event_key))

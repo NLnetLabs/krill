@@ -144,7 +144,7 @@ impl LoginSessionCache {
     fn lookup_session(&self, token: &Token) -> Option<ClientSession> {
         match self.cache.read() {
             Ok(readable_cache) => {
-                if let Some(cache_item) = readable_cache.get(&token) {
+                if let Some(cache_item) = readable_cache.get(token) {
                     return Some(cache_item.session.clone());
                 }
             }
