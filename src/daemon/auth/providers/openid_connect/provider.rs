@@ -51,7 +51,6 @@ use openidconnect::{
 
 use urlparse::{urlparse, GetQuery};
 
-use crate::commons::util::sha256;
 use crate::commons::KrillResult;
 use crate::commons::{actor::ActorDef, api::Token};
 use crate::daemon::auth::common::crypt;
@@ -60,12 +59,13 @@ use crate::daemon::auth::providers::config_file::config::ConfigUserDetails;
 use crate::daemon::auth::providers::openid_connect::config::ConfigAuthOpenIDConnectClaims;
 use crate::daemon::auth::providers::openid_connect::httpclient::logging_http_client;
 use crate::daemon::auth::providers::openid_connect::jmespathext;
-use crate::daemon::auth::{Auth, AuthProvider, LoggedInUser};
+use crate::daemon::auth::{Auth, LoggedInUser};
 use crate::daemon::config::Config;
 use crate::daemon::http::auth::url_encode;
 use crate::daemon::http::auth::AUTH_CALLBACK_ENDPOINT;
 use crate::daemon::http::HttpResponse;
 use crate::{commons::error::Error, daemon::auth::common::crypt::CryptState};
+use crate::{commons::util::sha256, daemon::auth::providers::AdminTokenAuthProvider};
 
 use super::config::{
     ConfigAuthOpenIDConnect, ConfigAuthOpenIDConnectClaim, ConfigAuthOpenIDConnectClaimSource as ClaimSource,
@@ -1078,7 +1078,7 @@ impl OpenIDConnectAuthProvider {
     }
 }
 
-impl AuthProvider for OpenIDConnectAuthProvider {
+impl OpenIDConnectAuthProvider {
     // Connect Core 1.0 section 3.1.26 Authentication Error Response
     // OAuth 2.0 RFC-674 4.1.2.1 (Authorization Request Errors) & 5.2 (Access Token Request Errors)
 
@@ -1087,7 +1087,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
     /// an error to report back to the user (one of the ApiAuth* Error types).
     /// Make sure to not leak any OIDC implementation details into the Error result!
     /// This function is also responsible for all logging around refreshing the token / extending the session.
-    fn authenticate(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
+    pub fn authenticate(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
         trace!("Attempting to authenticate the request..");
 
         self.initialize_connection_if_needed().map_err(|err| {
@@ -1097,7 +1097,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
             )
         })?;
 
-        let res = match self.get_bearer_token(request) {
+        let res = match AdminTokenAuthProvider::get_bearer_token(request) {
             Some(token) => {
                 // see if we can decode, decrypt and deserialize the users token
                 // into a login session structure
@@ -1207,7 +1207,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
     /// URL should be requested by the client on every login as the intention is
     /// that it contains randomly generated CSFF token and nonce values which
     /// can be used to protect against certain cross-site and replay attacks.
-    fn get_login_url(&self) -> KrillResult<HttpResponse> {
+    pub fn get_login_url(&self) -> KrillResult<HttpResponse> {
         // TODO: we probably should do some more work here to ensure we get the
         // proper security benefits of the CSRF token, currently we are
         // discarding the CSRF token instead of checking it.
@@ -1402,7 +1402,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         Ok(HttpResponse::new(res))
     }
 
-    fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
+    pub fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
         self.initialize_connection_if_needed().map_err(|err| {
             OpenIDConnectAuthProvider::internal_error(
                 "OpenID Connect: Cannot login user: Failed to connect to provider",
@@ -1602,9 +1602,9 @@ impl AuthProvider for OpenIDConnectAuthProvider {
     /// logout page is not possible, instead from the end-user's perspective they are returned to the Lagosta web UI
     /// index page (which currently immediately redirects the user to the 3rd party OpenID Connect provider login page)
     /// but before that Krill contacts the provider on the logged-in users behalf to revoke their token at the provider.
-    fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
+    pub fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
         // verify the bearer token indeed represents a logged-in Krill OpenID Connect provider session
-        let token = self.get_bearer_token(request).ok_or_else(|| {
+        let token = AdminTokenAuthProvider::get_bearer_token(request).ok_or_else(|| {
             warn!("Unexpectedly received a logout request without a session token.");
             Error::ApiInvalidCredentials("Invalid session token".to_string())
         })?;

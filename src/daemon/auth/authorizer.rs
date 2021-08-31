@@ -14,12 +14,14 @@ use crate::daemon::config::Config;
 use crate::daemon::http::HttpResponse;
 use crate::{commons::api::Token, daemon::auth::common::permissions::Permission};
 
+use super::providers::{ConfigFileAuthProvider, OpenIDConnectAuthProvider};
+
 //------------ Authorizer ----------------------------------------------------
 
 /// An AuthProvider authenticates and authorizes a given token.
 ///
 /// An AuthProvider is expected to configure itself using the global Krill
-/// [`CONFIG`] object. This avoids propagatation of potentially many provider
+/// [`CONFIG`] object. This avoids propagation of potentially many provider
 /// specific configuration values from the calling code to the provider
 /// implementation.
 ///
@@ -30,34 +32,68 @@ use crate::{commons::api::Token, daemon::auth::common::permissions::Permission};
 ///  * discovery      - as an interactive client where should I send my users to
 ///                     login and logout?
 ///  * introspection  - who is the currently "logged in" user?
-pub trait AuthProvider: Send + Sync {
-    fn get_bearer_token(&self, request: &hyper::Request<hyper::Body>) -> Option<Token> {
-        if let Some(header) = request.headers().get("Authorization") {
-            if let Ok(header) = header.to_str() {
-                if header.len() > 6 {
-                    let (bearer, token) = header.split_at(6);
-                    let bearer = bearer.trim();
+pub enum AuthProvider {
+    Token(AdminTokenAuthProvider),
+    ConfigFile(ConfigFileAuthProvider),
+    OpenIdConnect(OpenIDConnectAuthProvider),
+}
 
-                    if "Bearer" == bearer {
-                        return Some(Token::from(token.trim()));
-                    }
-                }
-            }
+impl From<AdminTokenAuthProvider> for AuthProvider {
+    fn from(provider: AdminTokenAuthProvider) -> Self {
+        AuthProvider::Token(provider)
+    }
+}
+
+impl From<ConfigFileAuthProvider> for AuthProvider {
+    fn from(provider: ConfigFileAuthProvider) -> Self {
+        AuthProvider::ConfigFile(provider)
+    }
+}
+
+impl From<OpenIDConnectAuthProvider> for AuthProvider {
+    fn from(provider: OpenIDConnectAuthProvider) -> Self {
+        AuthProvider::OpenIdConnect(provider)
+    }
+}
+
+impl AuthProvider {
+    pub fn authenticate(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
+        match &self {
+            AuthProvider::Token(provider) => provider.authenticate(request),
+            AuthProvider::ConfigFile(provider) => provider.authenticate(request),
+            AuthProvider::OpenIdConnect(provider) => provider.authenticate(request),
         }
-
-        None
     }
 
-    fn authenticate(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>>;
-    fn get_login_url(&self) -> KrillResult<HttpResponse>;
-    fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser>;
-    fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse>;
+    pub fn get_login_url(&self) -> KrillResult<HttpResponse> {
+        match &self {
+            AuthProvider::Token(provider) => provider.get_login_url(),
+            AuthProvider::ConfigFile(provider) => provider.get_login_url(),
+            AuthProvider::OpenIdConnect(provider) => provider.get_login_url(),
+        }
+    }
+
+    pub fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
+        match &self {
+            AuthProvider::Token(provider) => provider.login(request),
+            AuthProvider::ConfigFile(provider) => provider.login(request),
+            AuthProvider::OpenIdConnect(provider) => provider.login(request),
+        }
+    }
+
+    pub fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
+        match &self {
+            AuthProvider::Token(provider) => provider.logout(request),
+            AuthProvider::ConfigFile(provider) => provider.logout(request),
+            AuthProvider::OpenIdConnect(provider) => provider.logout(request),
+        }
+    }
 }
 
 /// This type is responsible for checking authorizations when the API is
 /// accessed.
 pub struct Authorizer {
-    primary_provider: Box<dyn AuthProvider>,
+    primary_provider: AuthProvider,
     legacy_provider: Option<AdminTokenAuthProvider>,
     policy: AuthPolicy,
     private_attributes: Vec<String>,
@@ -77,11 +113,8 @@ impl Authorizer {
     /// `P` an instance of some other provider, an instance of
     /// [AdminTokenAuthProvider] will also be created. This will be used as a
     /// fallback when Lagosta is configured to use some other [AuthProvider].
-    pub fn new<P>(config: Arc<Config>, provider: P) -> KrillResult<Self>
-    where
-        P: AuthProvider + Any,
-    {
-        let value_any = &provider as &dyn Any;
+    pub fn new(config: Arc<Config>, primary_provider: AuthProvider) -> KrillResult<Self> {
+        let value_any = &primary_provider as &dyn Any;
         let is_admin_token_provider = value_any.downcast_ref::<AdminTokenAuthProvider>().is_some();
 
         let legacy_provider = if is_admin_token_provider {
@@ -103,7 +136,7 @@ impl Authorizer {
         let private_attributes = vec!["role".to_string()];
 
         Ok(Authorizer {
-            primary_provider: Box::new(provider),
+            primary_provider,
             legacy_provider,
             policy: AuthPolicy::new(config)?,
             private_attributes,

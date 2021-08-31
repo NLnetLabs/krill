@@ -136,16 +136,18 @@ impl KrillServer {
         // dyn AuthProvider, or concrete type needs to be known in async fn,
         // etc.
         let authorizer = match config.auth_type {
-            AuthType::AdminToken => Authorizer::new(config.clone(), AdminTokenAuthProvider::new(config.clone()))?,
+            AuthType::AdminToken => {
+                Authorizer::new(config.clone(), AdminTokenAuthProvider::new(config.clone()).into())?
+            }
             #[cfg(feature = "multi-user")]
             AuthType::ConfigFile => Authorizer::new(
                 config.clone(),
-                ConfigFileAuthProvider::new(config.clone(), login_session_cache.clone())?,
+                ConfigFileAuthProvider::new(config.clone(), login_session_cache.clone())?.into(),
             )?,
             #[cfg(feature = "multi-user")]
             AuthType::OpenIDConnect => Authorizer::new(
                 config.clone(),
-                OpenIDConnectAuthProvider::new(config.clone(), login_session_cache.clone())?,
+                OpenIDConnectAuthProvider::new(config.clone(), login_session_cache.clone())?.into(),
             )?,
         };
         let system_actor = authorizer.actor_from_def(ACTOR_DEF_KRILL);

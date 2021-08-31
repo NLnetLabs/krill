@@ -4,7 +4,7 @@ use crate::commons::error::Error;
 use crate::commons::KrillResult;
 use crate::commons::{actor::ActorDef, api::Token};
 use crate::constants::ACTOR_DEF_ADMIN_TOKEN;
-use crate::daemon::auth::{AuthProvider, LoggedInUser};
+use crate::daemon::auth::LoggedInUser;
 use crate::daemon::config::Config;
 use crate::daemon::http::HttpResponse;
 
@@ -27,13 +27,13 @@ impl AdminTokenAuthProvider {
     }
 }
 
-impl AuthProvider for AdminTokenAuthProvider {
-    fn authenticate(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
+impl AdminTokenAuthProvider {
+    pub fn authenticate(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
         if log_enabled!(log::Level::Trace) {
             trace!("Attempting to authenticate the request..");
         }
 
-        let res = match self.get_bearer_token(request) {
+        let res = match Self::get_bearer_token(request) {
             Some(token) if token == self.required_token => Ok(Some(ACTOR_DEF_ADMIN_TOKEN)),
             Some(_) => Err(Error::ApiInvalidCredentials("Invalid bearer token".to_string())),
             None => Ok(None),
@@ -46,12 +46,12 @@ impl AuthProvider for AdminTokenAuthProvider {
         res
     }
 
-    fn get_login_url(&self) -> KrillResult<HttpResponse> {
+    pub fn get_login_url(&self) -> KrillResult<HttpResponse> {
         // Direct Lagosta to show the user the Lagosta API token login form
         Ok(HttpResponse::text_no_cache(LAGOSTA_LOGIN_ROUTE_PATH.into()))
     }
 
-    fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
+    pub fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
         match self.authenticate(request)? {
             Some(actor_def) => Ok(LoggedInUser {
                 token: self.required_token.clone(),
@@ -62,7 +62,7 @@ impl AuthProvider for AdminTokenAuthProvider {
         }
     }
 
-    fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
+    pub fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
         if let Ok(Some(actor)) = self.authenticate(request) {
             info!("User logged out: {}", actor.name.as_str());
         }
@@ -70,5 +70,22 @@ impl AuthProvider for AdminTokenAuthProvider {
         // Logout is complete, direct Lagosta to show the user the Lagosta
         // index page
         Ok(HttpResponse::text_no_cache(b"/".to_vec()))
+    }
+
+    pub fn get_bearer_token(request: &hyper::Request<hyper::Body>) -> Option<Token> {
+        if let Some(header) = request.headers().get("Authorization") {
+            if let Ok(header) = header.to_str() {
+                if header.len() > 6 {
+                    let (bearer, token) = header.split_at(6);
+                    let bearer = bearer.trim();
+
+                    if "Bearer" == bearer {
+                        return Some(Token::from(token.trim()));
+                    }
+                }
+            }
+        }
+
+        None
     }
 }
