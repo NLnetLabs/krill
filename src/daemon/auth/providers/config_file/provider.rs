@@ -2,12 +2,12 @@ use std::{collections::HashMap, sync::Arc};
 
 use urlparse::{urlparse, GetQuery};
 
+use crate::commons::util::httpclient;
 use crate::commons::KrillResult;
 use crate::commons::{actor::ActorDef, api::Token};
 use crate::daemon::auth::common::crypt;
 use crate::daemon::auth::common::session::*;
 use crate::daemon::auth::providers::config_file::config::ConfigUserDetails;
-use crate::daemon::auth::providers::AdminTokenAuthProvider;
 use crate::daemon::auth::{Auth, LoggedInUser};
 use crate::daemon::config::Config;
 use crate::daemon::http::HttpResponse;
@@ -87,7 +87,7 @@ impl ConfigFileAuthProvider {
     }
 
     fn get_auth(&self, request: &hyper::Request<hyper::Body>) -> Option<Auth> {
-        if let Some(password_hash) = AdminTokenAuthProvider::get_bearer_token(request) {
+        if let Some(password_hash) = httpclient::get_bearer_token(request) {
             if let Some(query) = urlparse(request.uri().to_string()).get_parsed_query() {
                 if let Some(id) = query.get_first_from_str("id") {
                     return Some(Auth::IdAndPasswordHash { id, password_hash });
@@ -104,7 +104,7 @@ impl ConfigFileAuthProvider {
             trace!("Attempting to authenticate the request..");
         }
 
-        let res = match AdminTokenAuthProvider::get_bearer_token(request) {
+        let res = match httpclient::get_bearer_token(request) {
             Some(token) => {
                 // see if we can decode, decrypt and deserialize the users token
                 // into a login session structure
@@ -186,7 +186,7 @@ impl ConfigFileAuthProvider {
     }
 
     pub fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
-        match AdminTokenAuthProvider::get_bearer_token(request) {
+        match httpclient::get_bearer_token(request) {
             Some(token) => {
                 self.session_cache.remove(&token);
 

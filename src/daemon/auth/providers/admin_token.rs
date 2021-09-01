@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::commons::error::Error;
+use crate::commons::util::httpclient;
 use crate::commons::KrillResult;
 use crate::commons::{actor::ActorDef, api::Token};
 use crate::constants::ACTOR_DEF_ADMIN_TOKEN;
@@ -33,7 +34,7 @@ impl AdminTokenAuthProvider {
             trace!("Attempting to authenticate the request..");
         }
 
-        let res = match Self::get_bearer_token(request) {
+        let res = match httpclient::get_bearer_token(request) {
             Some(token) if token == self.required_token => Ok(Some(ACTOR_DEF_ADMIN_TOKEN)),
             Some(_) => Err(Error::ApiInvalidCredentials("Invalid bearer token".to_string())),
             None => Ok(None),
@@ -70,22 +71,5 @@ impl AdminTokenAuthProvider {
         // Logout is complete, direct Lagosta to show the user the Lagosta
         // index page
         Ok(HttpResponse::text_no_cache(b"/".to_vec()))
-    }
-
-    pub fn get_bearer_token(request: &hyper::Request<hyper::Body>) -> Option<Token> {
-        if let Some(header) = request.headers().get("Authorization") {
-            if let Ok(header) = header.to_str() {
-                if header.len() > 6 {
-                    let (bearer, token) = header.split_at(6);
-                    let bearer = bearer.trim();
-
-                    if "Bearer" == bearer {
-                        return Some(Token::from(token.trim()));
-                    }
-                }
-            }
-        }
-
-        None
     }
 }

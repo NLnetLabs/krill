@@ -58,6 +58,24 @@ fn report_delete(uri: &str, content_type: Option<&str>, token: Option<&Token>) {
     }
 }
 
+/// Gets the Bearer token from the request header, if present.
+pub fn get_bearer_token(request: &hyper::Request<hyper::Body>) -> Option<Token> {
+    if let Some(header) = request.headers().get("Authorization") {
+        if let Ok(header) = header.to_str() {
+            if header.len() > 6 {
+                let (bearer, token) = header.split_at(6);
+                let bearer = bearer.trim();
+
+                if "Bearer" == bearer {
+                    return Some(Token::from(token.trim()));
+                }
+            }
+        }
+    }
+
+    None
+}
+
 /// Performs a GET request that expects a json response that can be
 /// deserialized into the an owned value of the expected type. Returns an error
 /// if nothing is returned.

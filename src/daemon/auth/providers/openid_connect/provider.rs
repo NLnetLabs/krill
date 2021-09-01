@@ -53,8 +53,9 @@ use openidconnect::{
 
 use urlparse::{urlparse, GetQuery};
 
-use crate::commons::KrillResult;
+use crate::commons::util::sha256;
 use crate::commons::{actor::ActorDef, api::Token};
+use crate::commons::{util::httpclient, KrillResult};
 use crate::daemon::auth::common::crypt;
 use crate::daemon::auth::common::session::*;
 use crate::daemon::auth::providers::config_file::config::ConfigUserDetails;
@@ -67,7 +68,6 @@ use crate::daemon::http::auth::url_encode;
 use crate::daemon::http::auth::AUTH_CALLBACK_ENDPOINT;
 use crate::daemon::http::HttpResponse;
 use crate::{commons::error::Error, daemon::auth::common::crypt::CryptState};
-use crate::{commons::util::sha256, daemon::auth::providers::AdminTokenAuthProvider};
 
 use super::config::{
     ConfigAuthOpenIDConnect, ConfigAuthOpenIDConnectClaim, ConfigAuthOpenIDConnectClaimSource as ClaimSource,
@@ -1108,7 +1108,7 @@ impl OpenIDConnectAuthProvider {
             )
         })?;
 
-        let res = match AdminTokenAuthProvider::get_bearer_token(request) {
+        let res = match httpclient::get_bearer_token(request) {
             Some(token) => {
                 // see if we can decode, decrypt and deserialize the users token
                 // into a login session structure
@@ -1615,7 +1615,7 @@ impl OpenIDConnectAuthProvider {
     /// but before that Krill contacts the provider on the logged-in users behalf to revoke their token at the provider.
     pub async fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
         // verify the bearer token indeed represents a logged-in Krill OpenID Connect provider session
-        let token = AdminTokenAuthProvider::get_bearer_token(request).ok_or_else(|| {
+        let token = httpclient::get_bearer_token(request).ok_or_else(|| {
             warn!("Unexpectedly received a logout request without a session token.");
             Error::ApiInvalidCredentials("Invalid session token".to_string())
         })?;
