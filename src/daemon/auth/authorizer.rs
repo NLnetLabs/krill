@@ -105,9 +105,6 @@ impl AuthProvider {
     }
 }
 
-unsafe impl Send for AuthProvider {}
-unsafe impl Sync for AuthProvider {}
-
 /// This type is responsible for checking authorizations when the API is
 /// accessed.
 pub struct Authorizer {
