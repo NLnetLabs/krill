@@ -154,7 +154,7 @@ impl OpenIDConnectAuthProvider {
     }
 
     async fn initialize_connection_if_needed(&self) -> KrillResult<()> {
-        let mut conn_guard = self.conn.write().await; // should never fail, better to panic and crash out if it does
+        let mut conn_guard = self.conn.write().await;
 
         if conn_guard.is_none() {
             *conn_guard = Some(self.initialize_connection().await?);
@@ -819,7 +819,7 @@ impl OpenIDConnectAuthProvider {
     }
 
     async fn get_connection<'a>(&'_ self) -> KrillResult<RwLockReadGuard<'_, Option<ProviderConnectionProperties>>> {
-        let conn_guard = self.conn.read().await; // should never fail, better to panic and crash out if it does
+        let conn_guard = self.conn.read().await;
 
         conn_guard.as_ref().ok_or_else(|| {
             OpenIDConnectAuthProvider::internal_error("Connection to provider not yet established", None)
