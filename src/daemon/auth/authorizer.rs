@@ -14,7 +14,8 @@ use crate::daemon::config::Config;
 use crate::daemon::http::HttpResponse;
 use crate::{commons::api::Token, daemon::auth::common::permissions::Permission};
 
-use super::providers::{ConfigFileAuthProvider, OpenIDConnectAuthProvider};
+#[cfg(feature = "multi-user")]
+use crate::daemon::auth::providers::{ConfigFileAuthProvider, OpenIDConnectAuthProvider};
 
 //------------ Authorizer ----------------------------------------------------
 
@@ -34,7 +35,11 @@ use super::providers::{ConfigFileAuthProvider, OpenIDConnectAuthProvider};
 ///  * introspection  - who is the currently "logged in" user?
 pub enum AuthProvider {
     Token(AdminTokenAuthProvider),
+
+    #[cfg(feature = "multi-user")]
     ConfigFile(ConfigFileAuthProvider),
+
+    #[cfg(feature = "multi-user")]
     OpenIdConnect(OpenIDConnectAuthProvider),
 }
 
@@ -44,12 +49,14 @@ impl From<AdminTokenAuthProvider> for AuthProvider {
     }
 }
 
+#[cfg(feature = "multi-user")]
 impl From<ConfigFileAuthProvider> for AuthProvider {
     fn from(provider: ConfigFileAuthProvider) -> Self {
         AuthProvider::ConfigFile(provider)
     }
 }
 
+#[cfg(feature = "multi-user")]
 impl From<OpenIDConnectAuthProvider> for AuthProvider {
     fn from(provider: OpenIDConnectAuthProvider) -> Self {
         AuthProvider::OpenIdConnect(provider)
@@ -60,7 +67,9 @@ impl AuthProvider {
     pub async fn authenticate(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
         match &self {
             AuthProvider::Token(provider) => provider.authenticate(request),
+            #[cfg(feature = "multi-user")]
             AuthProvider::ConfigFile(provider) => provider.authenticate(request),
+            #[cfg(feature = "multi-user")]
             AuthProvider::OpenIdConnect(provider) => provider.authenticate(request).await,
         }
     }
@@ -68,7 +77,9 @@ impl AuthProvider {
     pub async fn get_login_url(&self) -> KrillResult<HttpResponse> {
         match &self {
             AuthProvider::Token(provider) => provider.get_login_url(),
+            #[cfg(feature = "multi-user")]
             AuthProvider::ConfigFile(provider) => provider.get_login_url(),
+            #[cfg(feature = "multi-user")]
             AuthProvider::OpenIdConnect(provider) => provider.get_login_url().await,
         }
     }
@@ -76,7 +87,9 @@ impl AuthProvider {
     pub async fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
         match &self {
             AuthProvider::Token(provider) => provider.login(request),
+            #[cfg(feature = "multi-user")]
             AuthProvider::ConfigFile(provider) => provider.login(request),
+            #[cfg(feature = "multi-user")]
             AuthProvider::OpenIdConnect(provider) => provider.login(request).await,
         }
     }
@@ -84,7 +97,9 @@ impl AuthProvider {
     pub async fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
         match &self {
             AuthProvider::Token(provider) => provider.logout(request),
+            #[cfg(feature = "multi-user")]
             AuthProvider::ConfigFile(provider) => provider.logout(request),
+            #[cfg(feature = "multi-user")]
             AuthProvider::OpenIdConnect(provider) => provider.logout(request).await,
         }
     }
