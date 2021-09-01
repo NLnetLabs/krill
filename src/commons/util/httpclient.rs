@@ -216,8 +216,18 @@ fn load_root_cert(path: &str) -> Result<reqwest::Certificate, Error> {
     reqwest::Certificate::from_pem(file.as_ref()).map_err(Error::https_root_cert_error)
 }
 
+/// Default client for Krill use cases.
 pub fn client(uri: &str) -> Result<reqwest::Client, Error> {
-    let mut builder = reqwest::ClientBuilder::new().timeout(Duration::from_secs(HTTP_CLIENT_TIMEOUT_SECS));
+    client_with_tweaks(uri, Duration::from_secs(HTTP_CLIENT_TIMEOUT_SECS), true)
+}
+
+/// Client with tweaks - in particular needed by the openid connect client
+pub fn client_with_tweaks(uri: &str, timeout: Duration, allow_redirects: bool) -> Result<reqwest::Client, Error> {
+    let mut builder = reqwest::ClientBuilder::new().timeout(timeout);
+
+    if !allow_redirects {
+        builder = builder.redirect(reqwest::redirect::Policy::none());
+    }
 
     if let Ok(cert_list) = env::var(KRILL_HTTPS_ROOT_CERTS_ENV) {
         for path in cert_list.split(':') {
@@ -292,7 +302,10 @@ pub enum Error {
     ErrorWithBody(StatusCode, String),
     ErrorWithJson(StatusCode, ErrorResponse),
     JsonError(serde_json::Error),
-    InvalidHeader(InvalidHeaderValue),
+    InvalidHeaderName,
+    InvalidHeaderValue,
+    InvalidMethod(String),
+    InvalidStatusCode(u16),
     EmptyResponse,
     UnexpectedResponse(String),
     HttpsRootCertError(String),
@@ -307,7 +320,10 @@ impl fmt::Display for Error {
             Error::ErrorWithBody(code, e) => write!(f, "Status: {}, Error: {}", code, e),
             Error::ErrorWithJson(code, res) => write!(f, "Status: {}, ErrorResponse: {}", code, res),
             Error::JsonError(e) => e.fmt(f),
-            Error::InvalidHeader(e) => e.fmt(f),
+            Error::InvalidHeaderName => write!(f, "failed parse header name"),
+            Error::InvalidHeaderValue => write!(f, "failed parse header value"),
+            Error::InvalidMethod(m) => write!(f, "unrecognised method requested: '{}'", m),
+            Error::InvalidStatusCode(code) => write!(f, "unrecognised status code in response: '{}'", code),
             Error::EmptyResponse => write!(f, "Empty response received from server"),
             Error::UnexpectedResponse(s) => write!(f, "Unexpected response: {}", s),
             Error::HttpsRootCertError(e) => write!(
@@ -355,7 +371,8 @@ impl From<serde_json::Error> for Error {
 }
 
 impl From<InvalidHeaderValue> for Error {
-    fn from(v: InvalidHeaderValue) -> Self {
-        Error::InvalidHeader(v)
+    fn from(_v: InvalidHeaderValue) -> Self {
+        // note InvalidHeaderValue is a marker and contains no further information.
+        Error::InvalidHeaderValue
     }
 }

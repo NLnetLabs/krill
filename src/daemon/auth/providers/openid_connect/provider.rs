@@ -27,8 +27,10 @@ use std::{
     },
     ops::Deref,
     path::Path,
-    sync::{Arc, RwLock, RwLockReadGuard},
+    sync::Arc,
 };
+
+use tokio::sync::{RwLock, RwLockReadGuard};
 
 use basic_cookies::Cookie;
 use hyper::header::{HeaderValue, SET_COOKIE};
@@ -151,19 +153,19 @@ impl OpenIDConnectAuthProvider {
         })
     }
 
-    fn initialize_connection_if_needed(&self) -> KrillResult<()> {
-        let mut conn_guard = self.conn.write().unwrap(); // should never fail, better to panic and crash out if it does
+    async fn initialize_connection_if_needed(&self) -> KrillResult<()> {
+        let mut conn_guard = self.conn.write().await; // should never fail, better to panic and crash out if it does
 
         if conn_guard.is_none() {
-            *conn_guard = Some(self.initialize_connection()?);
+            *conn_guard = Some(self.initialize_connection().await?);
         }
 
         Ok(())
     }
 
-    fn initialize_connection(&self) -> KrillResult<ProviderConnectionProperties> {
+    async fn initialize_connection(&self) -> KrillResult<ProviderConnectionProperties> {
         trace!("OpenID Connect: Initializing provider connection...");
-        let meta = self.discover()?;
+        let meta = self.discover().await?;
         let (email_scope_supported, userinfo_endpoint_supported, logout_mode) =
             self.check_provider_capabilities(&meta)?;
         let client = self.build_client(meta, &logout_mode)?;
@@ -182,7 +184,7 @@ impl OpenIDConnectAuthProvider {
     /// discovery endpoint of the provider, e.g.
     ///   https://<provider.domain>/<something/.well-known/openid-configuration
     /// Via which we can discover both endpoint URIs and capability flags.
-    fn discover(&self) -> KrillResult<WantedMeta> {
+    async fn discover(&self) -> KrillResult<WantedMeta> {
         // Read from config the OpenID Connect identity provider discovery URL.
         // Strip off /.well-known/openid-configuration because the openid-connect
         // crate wants to add this itself and will fail if it is already present
@@ -198,13 +200,15 @@ impl OpenIDConnectAuthProvider {
 
         // Contact the OpenID Connect: identity provider discovery endpoint to
         // learn about and configure ourselves to talk to it.
-        let meta = WantedMeta::discover(&issuer, logging_http_client).map_err(|e| {
-            Error::custom(format!(
-                "OpenID Connect: Discovery failed with issuer {}, {}",
-                issuer.as_str(),
-                stringify_cause_chain(e)
-            ))
-        })?;
+        let meta = WantedMeta::discover_async(issuer.clone(), logging_http_client)
+            .await
+            .map_err(|e| {
+                Error::custom(format!(
+                    "OpenID Connect: Discovery failed with issuer {}, {}",
+                    issuer.as_str(),
+                    stringify_cause_chain(e)
+                ))
+            })?;
 
         Ok(meta)
     }
@@ -440,7 +444,7 @@ impl OpenIDConnectAuthProvider {
         ))
     }
 
-    fn try_revoke_token(&self, session: &ClientSession) -> Result<(), RevocationErrorResponseType> {
+    async fn try_revoke_token(&self, session: &ClientSession) -> Result<(), RevocationErrorResponseType> {
         // Connect to the OpenID Connect provider OAuth 2.0 token revocation endpoint to terminate the
         // provider session
         // From: https://tools.ietf.org/html/rfc7009#section-2
@@ -460,6 +464,7 @@ impl OpenIDConnectAuthProvider {
         trace!("OpenID Connect: Submitting RFC-7009 section 2 Token Revocation request");
         let lock_guard = self
             .get_connection()
+            .await
             .map_err(|err| RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension(err.to_string())))?;
         let conn = lock_guard.deref().as_ref().unwrap(); // safe to unwrap as was tested in get_connection()
 
@@ -472,7 +477,8 @@ impl OpenIDConnectAuthProvider {
                     err.to_string()
                 )))
             })?
-            .request(logging_http_client)
+            .request_async(logging_http_client)
+            .await
         {
             Ok(_) => Ok(()),
             Err(err) => match &err {
@@ -515,7 +521,7 @@ impl OpenIDConnectAuthProvider {
     /// Try refreshing the token once with the OIDC Provider and return either the new token, or the Error received from
     /// the OpenID Connect Provider. This Error is FOR INTERNAL CONSUMPTION only. The caller of this function is
     /// responsible for creating end-user error messages, logging and (optionally) retrying.
-    fn try_refresh_token(&self, session: &ClientSession) -> Result<Auth, CoreErrorResponseType> {
+    async fn try_refresh_token(&self, session: &ClientSession) -> Result<Auth, CoreErrorResponseType> {
         let refresh_token = &session.secrets.get(TokenKind::RefreshToken.into()).ok_or_else(|| {
             CoreErrorResponseType::Extension(
                 "Internal error: Token refresh attempted without a refresh token".to_string(),
@@ -527,13 +533,15 @@ impl OpenIDConnectAuthProvider {
 
         let lock_guard = self
             .get_connection()
+            .await
             .map_err(|err| CoreErrorResponseType::Extension(err.to_string()))?;
         let conn = lock_guard.deref().as_ref().unwrap(); // safe to unwrap as was tested in get_connection()
 
         let token_response = conn
             .client
             .exchange_refresh_token(&RefreshToken::new(refresh_token.to_string()))
-            .request(logging_http_client);
+            .request_async(logging_http_client)
+            .await;
 
         match token_response {
             Ok(token_response) => {
@@ -810,8 +818,8 @@ impl OpenIDConnectAuthProvider {
         None
     }
 
-    fn get_connection(&self) -> KrillResult<RwLockReadGuard<Option<ProviderConnectionProperties>>> {
-        let conn_guard = self.conn.read().unwrap(); // should never fail, better to panic and crash out if it does
+    async fn get_connection<'a>(&'_ self) -> KrillResult<RwLockReadGuard<'_, Option<ProviderConnectionProperties>>> {
+        let conn_guard = self.conn.read().await; // should never fail, better to panic and crash out if it does
 
         conn_guard.as_ref().ok_or_else(|| {
             OpenIDConnectAuthProvider::internal_error("Connection to provider not yet established", None)
@@ -856,14 +864,15 @@ impl OpenIDConnectAuthProvider {
         }
     }
 
-    fn get_token_response(&self, code: Token) -> KrillResult<FlexibleTokenResponse> {
-        let lock_guard = self.get_connection()?;
+    async fn get_token_response(&self, code: Token) -> KrillResult<FlexibleTokenResponse> {
+        let lock_guard = self.get_connection().await?;
         let conn = lock_guard.deref().as_ref().unwrap(); // safe to unwrap as was tested in get_connection()
 
         let token_response: FlexibleTokenResponse = conn
             .client
             .exchange_code(AuthorizationCode::new(code.to_string()))
-            .request(logging_http_client)
+            .request_async(logging_http_client)
+            .await
             .map_err(|e| {
                 let (msg, additional_info) = match e {
                     RequestTokenError::ServerResponse(ref provider_err) => {
@@ -904,12 +913,13 @@ impl OpenIDConnectAuthProvider {
         Ok(token_response)
     }
 
-    fn get_token_id_claims<'a>(
+    #[allow(clippy::needless_lifetimes)] // clippy says it can be elided, but.. it seems like it's a false positive.
+    async fn get_token_id_claims<'a>(
         &self,
         token_response: &'a FlexibleTokenResponse,
         nonce_hash: Nonce,
     ) -> KrillResult<&'a FlexibleIdTokenClaims> {
-        let lock_guard = self.get_connection()?;
+        let lock_guard = self.get_connection().await?;
         let conn = lock_guard.deref().as_ref().unwrap(); // safe to unwrap as was tested in get_connection()
         let mut id_token_verifier: CoreIdTokenVerifier = conn.client.id_token_verifier();
 
@@ -946,11 +956,11 @@ impl OpenIDConnectAuthProvider {
         Ok(id_token_claims)
     }
 
-    fn get_user_info_claims(
+    async fn get_user_info_claims(
         &self,
         token_response: &FlexibleTokenResponse,
     ) -> KrillResult<Option<FlexibleUserInfoClaims>> {
-        let lock_guard = self.get_connection()?;
+        let lock_guard = self.get_connection().await?;
         let conn = lock_guard.deref().as_ref().unwrap(); // safe to unwrap as was tested in get_connection()
 
         let user_info_claims: Option<FlexibleUserInfoClaims> = if conn.userinfo_endpoint_supported {
@@ -970,7 +980,8 @@ impl OpenIDConnectAuthProvider {
                     // don't require the response to be signed as the spec says
                     // signing it is optional: See: https://openid.net/specs/openid-connect-core-1_0.html#UserInfoResponse
                     .require_signed_response(false)
-                    .request(logging_http_client)
+                    .request_async(logging_http_client)
+                    .await
                     .map_err(|e| {
                         let msg = match e {
                             UserInfoError::ClaimsVerification(ref provider_err) => {
@@ -1087,10 +1098,10 @@ impl OpenIDConnectAuthProvider {
     /// an error to report back to the user (one of the ApiAuth* Error types).
     /// Make sure to not leak any OIDC implementation details into the Error result!
     /// This function is also responsible for all logging around refreshing the token / extending the session.
-    pub fn authenticate(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
+    pub async fn authenticate(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
         trace!("Attempting to authenticate the request..");
 
-        self.initialize_connection_if_needed().map_err(|err| {
+        self.initialize_connection_if_needed().await.map_err(|err| {
             OpenIDConnectAuthProvider::internal_error(
                 "OpenID Connect: Cannot authenticate request: Failed to connect to provider",
                 Some(&stringify_cause_chain(err)),
@@ -1126,7 +1137,7 @@ impl OpenIDConnectAuthProvider {
                 }
 
                 // Token needs refresh and we have a refresh token, try to refresh
-                let new_auth = match self.try_refresh_token(&session) {
+                let new_auth = match self.try_refresh_token(&session).await {
                     Ok(auth) => {
                         trace!(
                             "OpenID Connect: Successfully refreshed token for user \"{}\"",
@@ -1207,7 +1218,7 @@ impl OpenIDConnectAuthProvider {
     /// URL should be requested by the client on every login as the intention is
     /// that it contains randomly generated CSFF token and nonce values which
     /// can be used to protect against certain cross-site and replay attacks.
-    pub fn get_login_url(&self) -> KrillResult<HttpResponse> {
+    pub async fn get_login_url(&self) -> KrillResult<HttpResponse> {
         // TODO: we probably should do some more work here to ensure we get the
         // proper security benefits of the CSRF token, currently we are
         // discarding the CSRF token instead of checking it.
@@ -1226,7 +1237,7 @@ impl OpenIDConnectAuthProvider {
         //    hash of the session cookie to detect ID Token replay by third
         //    parties"
 
-        self.initialize_connection_if_needed().map_err(|err| {
+        self.initialize_connection_if_needed().await.map_err(|err| {
             OpenIDConnectAuthProvider::internal_error(
                 "OpenID Connect: Cannot get login URL: Failed to connect to provider",
                 Some(&stringify_cause_chain(err)),
@@ -1240,7 +1251,7 @@ impl OpenIDConnectAuthProvider {
         let nonce_b64_str = random_value.secret();
         let nonce_hash = sha256(nonce_b64_str.as_bytes());
 
-        let lock_guard = self.get_connection()?;
+        let lock_guard = self.get_connection().await?;
         let conn = lock_guard.deref().as_ref().unwrap(); // safe to unwrap as was tested in get_connection()
 
         // At the time of writing the underlying oauth2 crate CsrfToken::new_random() function is used to
@@ -1402,8 +1413,8 @@ impl OpenIDConnectAuthProvider {
         Ok(HttpResponse::new(res))
     }
 
-    pub fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
-        self.initialize_connection_if_needed().map_err(|err| {
+    pub async fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
+        self.initialize_connection_if_needed().await.map_err(|err| {
             OpenIDConnectAuthProvider::internal_error(
                 "OpenID Connect: Cannot login user: Failed to connect to provider",
                 Some(&stringify_cause_chain(err)),
@@ -1434,7 +1445,7 @@ impl OpenIDConnectAuthProvider {
                 // ==========================================================================================
                 trace!("OpenID Connect: Submitting RFC-6749 section 4.1.3 Access Token Request");
 
-                let token_response = self.get_token_response(code)?;
+                let token_response = self.get_token_response(code).await?;
 
                 // TODO: extract and keep the access token and refresh token so
                 // that we can extend the login session later. These are
@@ -1488,7 +1499,7 @@ impl OpenIDConnectAuthProvider {
                 // https://openid.net/specs/openid-connect-core-1_0.html#NonceNotes
                 let nonce_hash = Nonce::new(base64::encode_config(sha256(nonce.as_bytes()), base64::URL_SAFE_NO_PAD));
 
-                let id_token_claims = self.get_token_id_claims(&token_response, nonce_hash)?;
+                let id_token_claims = self.get_token_id_claims(&token_response, nonce_hash).await?;
 
                 // TODO: There's also a suggestion to verify the access token
                 // received above using the at_hash claim in the ID token, if
@@ -1500,7 +1511,7 @@ impl OpenIDConnectAuthProvider {
                 // See: https://openid.net/specs/openid-connect-core-1_0.html#UserInfo
                 // ==========================================================================================
 
-                let user_info_claims = self.get_user_info_claims(&token_response)?;
+                let user_info_claims = self.get_user_info_claims(&token_response).await?;
 
                 // ==========================================================================================
                 // Step 4: Extract and validate the "claims" that tells us which
@@ -1602,7 +1613,7 @@ impl OpenIDConnectAuthProvider {
     /// logout page is not possible, instead from the end-user's perspective they are returned to the Lagosta web UI
     /// index page (which currently immediately redirects the user to the 3rd party OpenID Connect provider login page)
     /// but before that Krill contacts the provider on the logged-in users behalf to revoke their token at the provider.
-    pub fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
+    pub async fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
         // verify the bearer token indeed represents a logged-in Krill OpenID Connect provider session
         let token = AdminTokenAuthProvider::get_bearer_token(request).ok_or_else(|| {
             warn!("Unexpectedly received a logout request without a session token.");
@@ -1624,7 +1635,7 @@ impl OpenIDConnectAuthProvider {
 
         // 2. verify that the provider is at least to some extent available, there's no point trying to log the token
         //    out of the provider if we know there's a problem with the provider
-        self.initialize_connection_if_needed().map_err(|err| {
+        self.initialize_connection_if_needed().await.map_err(|err| {
             OpenIDConnectAuthProvider::internal_error(
                 "OpenID Connect: Cannot logout with provider: Failed to connect to provider",
                 Some(&stringify_cause_chain(err)),
@@ -1632,7 +1643,7 @@ impl OpenIDConnectAuthProvider {
         })?;
 
         // 3. use the provider connection details to contact the provider to terminate the client session
-        let lock_guard = self.get_connection()?;
+        let lock_guard = self.get_connection().await?;
         let conn = lock_guard.deref().as_ref().unwrap(); // safe to unwrap as was tested in get_connection()
 
         let go_to_url = match &conn.logout_mode {
@@ -1640,7 +1651,7 @@ impl OpenIDConnectAuthProvider {
                 post_revocation_redirect_url,
                 ..
             } => {
-                if let Err(err) = self.try_revoke_token(&session) {
+                if let Err(err) = self.try_revoke_token(&session).await {
                     OpenIDConnectAuthProvider::internal_error(
                         format!("Error while revoking token for user '{}'", session.id),
                         Some(err.to_string()),

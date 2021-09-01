@@ -57,38 +57,41 @@ impl From<OpenIDConnectAuthProvider> for AuthProvider {
 }
 
 impl AuthProvider {
-    pub fn authenticate(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
+    pub async fn authenticate(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
         match &self {
             AuthProvider::Token(provider) => provider.authenticate(request),
             AuthProvider::ConfigFile(provider) => provider.authenticate(request),
-            AuthProvider::OpenIdConnect(provider) => provider.authenticate(request),
+            AuthProvider::OpenIdConnect(provider) => provider.authenticate(request).await,
         }
     }
 
-    pub fn get_login_url(&self) -> KrillResult<HttpResponse> {
+    pub async fn get_login_url(&self) -> KrillResult<HttpResponse> {
         match &self {
             AuthProvider::Token(provider) => provider.get_login_url(),
             AuthProvider::ConfigFile(provider) => provider.get_login_url(),
-            AuthProvider::OpenIdConnect(provider) => provider.get_login_url(),
+            AuthProvider::OpenIdConnect(provider) => provider.get_login_url().await,
         }
     }
 
-    pub fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
+    pub async fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
         match &self {
             AuthProvider::Token(provider) => provider.login(request),
             AuthProvider::ConfigFile(provider) => provider.login(request),
-            AuthProvider::OpenIdConnect(provider) => provider.login(request),
+            AuthProvider::OpenIdConnect(provider) => provider.login(request).await,
         }
     }
 
-    pub fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
+    pub async fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
         match &self {
             AuthProvider::Token(provider) => provider.logout(request),
             AuthProvider::ConfigFile(provider) => provider.logout(request),
-            AuthProvider::OpenIdConnect(provider) => provider.logout(request),
+            AuthProvider::OpenIdConnect(provider) => provider.logout(request).await,
         }
     }
 }
+
+unsafe impl Send for AuthProvider {}
+unsafe impl Sync for AuthProvider {}
 
 /// This type is responsible for checking authorizations when the API is
 /// accessed.
@@ -143,7 +146,7 @@ impl Authorizer {
         })
     }
 
-    pub fn actor_from_request(&self, request: &hyper::Request<hyper::Body>) -> Actor {
+    pub async fn actor_from_request(&self, request: &hyper::Request<hyper::Body>) -> Actor {
         trace!("Determining actor for request {:?}", &request);
 
         // Try the legacy provider first, if any
@@ -155,7 +158,7 @@ impl Authorizer {
         // Try the real provider if we did not already successfully authenticate
         authenticate_res = match authenticate_res {
             Ok(Some(res)) => Ok(Some(res)),
-            _ => self.primary_provider.authenticate(request),
+            _ => self.primary_provider.authenticate(request).await,
         };
 
         // Create an actor based on the authentication result
@@ -168,7 +171,7 @@ impl Authorizer {
 
             // error during authentication
             Err(err) => {
-                // reveives a commons::error::Error, but we need an ApiAuthError
+                // receives a commons::error::Error, but we need an ApiAuthError
                 self.actor_from_def(ACTOR_DEF_ANON.with_auth_error(err))
             }
         };
@@ -184,14 +187,14 @@ impl Authorizer {
 
     /// Return the URL at which an end-user should be directed to login with the
     /// configured provider.
-    pub fn get_login_url(&self) -> KrillResult<HttpResponse> {
-        self.primary_provider.get_login_url()
+    pub async fn get_login_url(&self) -> KrillResult<HttpResponse> {
+        self.primary_provider.get_login_url().await
     }
 
     /// Submit credentials directly to the configured provider to establish a
     /// login session, if supported by the configured provider.
-    pub fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
-        let user = self.primary_provider.login(request)?;
+    pub async fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
+        let user = self.primary_provider.login(request).await?;
 
         // The user has passed authentication, but may still not be
         // authorized to login as that requires a check against the policy
@@ -230,8 +233,8 @@ impl Authorizer {
 
     /// Return the URL at which an end-user should be directed to logout with
     /// the configured provider.
-    pub fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
-        self.primary_provider.logout(request)
+    pub async fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
+        self.primary_provider.logout(request).await
     }
 }
 
