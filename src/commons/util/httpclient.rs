@@ -60,20 +60,16 @@ fn report_delete(uri: &str, content_type: Option<&str>, token: Option<&Token>) {
 
 /// Gets the Bearer token from the request header, if present.
 pub fn get_bearer_token(request: &hyper::Request<hyper::Body>) -> Option<Token> {
-    if let Some(header) = request.headers().get("Authorization") {
-        if let Ok(header) = header.to_str() {
-            if header.len() > 6 {
-                let (bearer, token) = header.split_at(6);
-                let bearer = bearer.trim();
-
-                if "Bearer" == bearer {
-                    return Some(Token::from(token.trim()));
-                }
-            }
-        }
-    }
-
-    None
+    request
+        .headers()
+        .get(hyper::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|header_string| {
+            header_string
+                .to_lowercase()
+                .strip_prefix("bearer")
+                .map(|str| Token::from(str.trim()))
+        })
 }
 
 /// Performs a GET request that expects a json response that can be
@@ -269,7 +265,10 @@ fn headers(content_type: Option<&str>, token: Option<&Token>) -> Result<HeaderMa
         headers.insert(CONTENT_TYPE, HeaderValue::from_str(content_type)?);
     }
     if let Some(token) = token {
-        headers.insert("Authorization", HeaderValue::from_str(&format!("Bearer {}", token))?);
+        headers.insert(
+            hyper::header::AUTHORIZATION,
+            HeaderValue::from_str(&format!("Bearer {}", token))?,
+        );
     }
     Ok(headers)
 }
