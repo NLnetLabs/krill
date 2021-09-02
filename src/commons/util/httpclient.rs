@@ -64,12 +64,9 @@ pub fn get_bearer_token(request: &hyper::Request<hyper::Body>) -> Option<Token> 
         .headers()
         .get(hyper::header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
-        .and_then(|header_string| {
-            header_string
-                .to_lowercase()
-                .strip_prefix("bearer")
-                .map(|str| Token::from(str.trim()))
-        })
+        .filter(|&header_string| header_string.len() > 6)
+        .filter(|&header_string| header_string[0..6].eq_ignore_ascii_case("bearer"))
+        .and_then(|header_string| Some(Token::from(header_string[6..].trim())))
 }
 
 /// Performs a GET request that expects a json response that can be
