@@ -20,7 +20,7 @@ use hyper::server::conn::AddrIncoming;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::Method;
 
-use crate::commons::api::{ParentCaReq, ParentStatuses, RepositoryContact};
+use crate::commons::api::{ParentCaReq, ParentStatuses, RepoStatus, RepositoryContact};
 use crate::commons::bgp::BgpAnalysisAdvice;
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::AggregateStoreError;
@@ -498,13 +498,18 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 roas_total: HashMap::new(),
             };
 
-            let mut parent_stats: HashMap<Handle, ParentStatuses> = HashMap::new();
+            let mut ca_parent_statuses: HashMap<Handle, ParentStatuses> = HashMap::new();
+            let mut ca_repo_status: HashMap<Handle, RepoStatus> = HashMap::new();
 
             for (ca, status) in cas_status.iter() {
                 all_bgp_stats.add_ca(ca, status.bgp_stats());
 
                 if let Ok(parent_statuses) = server.ca_my_parent_statuses(ca).await {
-                    parent_stats.insert(ca.clone(), parent_statuses);
+                    ca_parent_statuses.insert(ca.clone(), parent_statuses);
+                }
+
+                if let Ok(repo_status) = server.ca_repo_status(ca).await {
+                    ca_repo_status.insert(ca.clone(), repo_status);
                 }
             }
 
@@ -518,7 +523,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
             res.push('\n');
             res.push_str("# HELP krill_ca_parent_success status of last ca-parent connection (0=issue, 1=success)\n");
             res.push_str("# TYPE krill_ca_parent_success gauge\n");
-            for (ca, parent_statuses) in parent_stats.iter() {
+            for (ca, parent_statuses) in ca_parent_statuses.iter() {
                 if ca.as_str() != TA_NAME {
                     for (parent, status) in parent_statuses.iter() {
                         // skip the ones for which we have no status yet, i.e it was really only just added
@@ -540,7 +545,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
             );
             res.push_str("# TYPE krill_ca_parent_last_success_time gauge\n");
 
-            for (ca, parent_statuses) in parent_stats.iter() {
+            for (ca, parent_statuses) in ca_parent_statuses.iter() {
                 if ca.as_str() != TA_NAME {
                     for (parent, status) in parent_statuses.iter() {
                         // skip the ones for which we have no successful connection at all. Most likely
@@ -558,10 +563,52 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 }
             }
 
+            {
+                // CA -> Repository status
+
+                res.push('\n');
+                res.push_str("# HELP krill_ca_repo_success status of last ca to publication server connection (0=issue, 1=success)\n");
+                res.push_str("# TYPE krill_ca_repo_success gauge\n");
+                for (ca, status) in ca_repo_status.iter() {
+                    // skip the ones for which we have no status yet, i.e it was really only just added
+                    // and no attempt to connect has yet been made.
+                    if let Some(exchange) = status.last_exchange() {
+                        let value = if exchange.was_success() { 1 } else { 0 };
+                        res.push_str(&format!("krill_ca_repo_success{{ca=\"{}\"}} {}\n", ca, value));
+                    }
+                }
+
+                res.push('\n');
+                res.push_str("# HELP krill_ca_repo_last_success_time timestamp of last successful ca to publication server connection\n");
+                res.push_str("# TYPE krill_ca_repo_last_success_time gauge\n");
+                for (ca, status) in ca_repo_status.iter() {
+                    // skip the ones for which we have no status yet, i.e it was really only just added
+                    // and no attempt to connect has yet been made.
+                    if let Some(last_success) = status.last_success() {
+                        res.push_str(&format!(
+                            "krill_ca_repo_last_success_time{{ca=\"{}\"}} {}\n",
+                            ca,
+                            last_success.timestamp()
+                        ));
+                    }
+                }
+
+                res.push('\n');
+                res.push_str("# HELP krill_ca_repo_next_before_time timestamp of next planned ca to publication server connection\n");
+                res.push_str("# TYPE krill_ca_repo_next_before_time gauge\n");
+                for (ca, status) in ca_repo_status.iter() {
+                    // skip the ones for which we have no status yet, i.e it was really only just added
+                    // and no attempt to connect has yet been made.
+                    let timestamp = status.next_exchange_before().timestamp();
+                    res.push_str(&format!(
+                        "krill_ca_repo_next_before_time{{ca=\"{}\"}} {}\n",
+                        ca, timestamp
+                    ));
+                }
+            }
+
             res.push('\n');
-            res.push_str(
-            "# HELP krill_cas_bgp_announcements_invalid_asn number of announcements seen for CA resources with RPKI state INVALID (ASN mismatch)\n",
-        );
+            res.push_str("# HELP krill_cas_bgp_announcements_invalid_asn number of announcements seen for CA resources with RPKI state INVALID (ASN mismatch)\n");
             res.push_str("# TYPE krill_cas_bgp_announcements_invalid_asn gauge\n");
             for (ca, nr) in all_bgp_stats.announcements_invalid_asn.iter() {
                 res.push_str(&format!(
@@ -571,9 +618,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
             }
 
             res.push('\n');
-            res.push_str(
-            "# HELP krill_cas_bgp_announcements_invalid_length number of announcements seen for CA resources with RPKI state INVALID (prefix exceeds max length)\n",
-        );
+            res.push_str("# HELP krill_cas_bgp_announcements_invalid_length number of announcements seen for CA resources with RPKI state INVALID (prefix exceeds max length)\n");
             res.push_str("# TYPE krill_cas_bgp_announcements_invalid_length gauge\n");
             for (ca, nr) in all_bgp_stats.announcements_invalid_length.iter() {
                 res.push_str(&format!(
@@ -583,9 +628,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
             }
 
             res.push('\n');
-            res.push_str(
-            "# HELP krill_cas_bgp_announcements_not_found number of announcements seen for CA resources with RPKI state NOT FOUND (none of the CA's ROAs cover this)\n",
-        );
+            res.push_str("# HELP krill_cas_bgp_announcements_not_found number of announcements seen for CA resources with RPKI state NOT FOUND (none of the CA's ROAs cover this)\n");
             res.push_str("# TYPE krill_cas_bgp_announcements_not_found gauge\n");
             for (ca, nr) in all_bgp_stats.announcements_not_found.iter() {
                 res.push_str(&format!(
@@ -595,27 +638,21 @@ pub async fn metrics(req: Request) -> RoutingResult {
             }
 
             res.push('\n');
-            res.push_str(
-            "# HELP krill_cas_bgp_roas_too_permissive number of ROAs for this CA which allow excess announcements (0 may also indicate that no BGP info is available)\n",
-        );
+            res.push_str("# HELP krill_cas_bgp_roas_too_permissive number of ROAs for this CA which allow excess announcements (0 may also indicate that no BGP info is available)\n");
             res.push_str("# TYPE krill_cas_bgp_roas_too_permissive gauge\n");
             for (ca, nr) in all_bgp_stats.roas_too_permissive.iter() {
                 res.push_str(&format!("krill_cas_bgp_roas_too_permissive{{ca=\"{}\"}} {}\n", ca, nr));
             }
 
             res.push('\n');
-            res.push_str(
-            "# HELP krill_cas_bgp_roas_redundant number of ROAs for this CA which are redundant (0 may also indicate that no BGP info is available)\n",
-        );
+            res.push_str("# HELP krill_cas_bgp_roas_redundant number of ROAs for this CA which are redundant (0 may also indicate that no BGP info is available)\n");
             res.push_str("# TYPE krill_cas_bgp_roas_redundant gauge\n");
             for (ca, nr) in all_bgp_stats.roas_redundant.iter() {
                 res.push_str(&format!("krill_cas_bgp_roas_redundant{{ca=\"{}\"}} {}\n", ca, nr));
             }
 
             res.push('\n');
-            res.push_str(
-            "# HELP krill_cas_bgp_roas_stale number of ROAs for this CA for which no announcements are seen (0 may also indicate that no BGP info is available)\n",
-        );
+            res.push_str("# HELP krill_cas_bgp_roas_stale number of ROAs for this CA for which no announcements are seen (0 may also indicate that no BGP info is available)\n");
             res.push_str("# TYPE krill_cas_bgp_roas_stale gauge\n");
             for (ca, nr) in all_bgp_stats.roas_stale.iter() {
                 res.push_str(&format!("krill_cas_bgp_roas_stale{{ca=\"{}\"}} {}\n", ca, nr));
