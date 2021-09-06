@@ -136,16 +136,18 @@ impl KrillServer {
         // dyn AuthProvider, or concrete type needs to be known in async fn,
         // etc.
         let authorizer = match config.auth_type {
-            AuthType::AdminToken => Authorizer::new(config.clone(), AdminTokenAuthProvider::new(config.clone()))?,
+            AuthType::AdminToken => {
+                Authorizer::new(config.clone(), AdminTokenAuthProvider::new(config.clone()).into())?
+            }
             #[cfg(feature = "multi-user")]
             AuthType::ConfigFile => Authorizer::new(
                 config.clone(),
-                ConfigFileAuthProvider::new(config.clone(), login_session_cache.clone())?,
+                ConfigFileAuthProvider::new(config.clone(), login_session_cache.clone())?.into(),
             )?,
             #[cfg(feature = "multi-user")]
             AuthType::OpenIDConnect => Authorizer::new(
                 config.clone(),
-                OpenIDConnectAuthProvider::new(config.clone(), login_session_cache.clone())?,
+                OpenIDConnectAuthProvider::new(config.clone(), login_session_cache.clone())?.into(),
             )?,
         };
         let system_actor = authorizer.actor_from_def(ACTOR_DEF_KRILL);
@@ -268,24 +270,24 @@ impl KrillServer {
         &self.system_actor
     }
 
-    pub fn actor_from_request(&self, request: &hyper::Request<hyper::Body>) -> Actor {
-        self.authorizer.actor_from_request(request)
+    pub async fn actor_from_request(&self, request: &hyper::Request<hyper::Body>) -> Actor {
+        self.authorizer.actor_from_request(request).await
     }
 
     pub fn actor_from_def(&self, actor_def: ActorDef) -> Actor {
         self.authorizer.actor_from_def(actor_def)
     }
 
-    pub fn get_login_url(&self) -> KrillResult<HttpResponse> {
-        self.authorizer.get_login_url()
+    pub async fn get_login_url(&self) -> KrillResult<HttpResponse> {
+        self.authorizer.get_login_url().await
     }
 
-    pub fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
-        self.authorizer.login(request)
+    pub async fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
+        self.authorizer.login(request).await
     }
 
-    pub fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
-        self.authorizer.logout(request)
+    pub async fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
+        self.authorizer.logout(request).await
     }
 
     pub fn limit_api(&self) -> u64 {

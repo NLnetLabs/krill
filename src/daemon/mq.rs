@@ -139,9 +139,6 @@ impl MessageQueue {
     }
 }
 
-unsafe impl Send for MessageQueue {}
-unsafe impl Sync for MessageQueue {}
-
 /// Implement listening for CertAuth Published events.
 impl eventsourcing::PostSaveEventListener<CertAuth> for MessageQueue {
     fn listen(&self, ca: &CertAuth, events: &[CaEvt]) {

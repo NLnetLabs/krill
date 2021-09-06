@@ -341,7 +341,7 @@ pub struct Request {
 impl Request {
     pub async fn new(request: hyper::Request<hyper::Body>, state: State) -> Self {
         let path = RequestPath::from_request(&request);
-        let actor = state.actor_from_request(&request);
+        let actor = state.actor_from_request(&request).await;
 
         Request {
             request,
@@ -505,15 +505,15 @@ impl Request {
     }
 
     pub async fn get_login_url(&self) -> KrillResult<HttpResponse> {
-        self.state.get_login_url()
+        self.state.get_login_url().await
     }
 
     pub async fn login(&self) -> KrillResult<LoggedInUser> {
-        self.state.login(&self.request)
+        self.state.login(&self.request).await
     }
 
     pub async fn logout(&self) -> KrillResult<HttpResponse> {
-        self.state.logout(&self.request)
+        self.state.logout(&self.request).await
     }
 }
 
