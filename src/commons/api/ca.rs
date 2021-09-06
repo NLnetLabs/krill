@@ -1186,6 +1186,10 @@ impl ParentStatuses {
         self.0.get(parent)
     }
 
+    pub fn iter(&self) -> impl Iterator<Item = (&ParentHandle, &ParentStatus)> {
+        self.0.iter()
+    }
+
     pub fn set_failure(&mut self, parent: &ParentHandle, uri: &ServiceUri, error: ErrorResponse, next_seconds: i64) {
         self.get_mut_status(parent)
             .set_failure(uri.clone(), error, next_seconds);
@@ -1343,6 +1347,7 @@ impl From<&IssuedCert> for ParentStatusCert {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParentStatus {
     last_exchange: Option<ParentExchange>,
+    last_success: Option<i64>,
     next_exchange_before: i64,
     all_resources: ResourceSet,
     entitlements: HashMap<ResourceClassName, KnownEntitlement>,
@@ -1351,6 +1356,11 @@ pub struct ParentStatus {
 impl ParentStatus {
     fn next_exchange_before(&self) -> Time {
         Time::new(Utc.timestamp(self.next_exchange_before, 0))
+    }
+
+    pub fn last_success(&self) -> Option<Time> {
+        self.last_success
+            .map(|timestamp| Time::new(Utc.timestamp(timestamp, 0)))
     }
 
     pub fn last_exchange(&self) -> Option<&ParentExchange> {
@@ -1401,11 +1411,13 @@ impl ParentStatus {
     }
 
     fn set_last_updated(&mut self, uri: ServiceUri, next_run_seconds: i64) {
+        let timestamp = Time::now().timestamp();
         self.last_exchange = Some(ParentExchange {
-            timestamp: Time::now().timestamp(),
+            timestamp,
             uri,
             result: ExchangeResult::Success,
         });
+        self.last_success = Some(timestamp);
         self.set_next_exchange_plus_seconds(next_run_seconds);
     }
 }
@@ -1414,6 +1426,7 @@ impl Default for ParentStatus {
     fn default() -> Self {
         ParentStatus {
             last_exchange: None,
+            last_success: None,
             all_resources: ResourceSet::default(),
             next_exchange_before: (Time::now() + Duration::hours(1)).timestamp(),
             entitlements: HashMap::new(),

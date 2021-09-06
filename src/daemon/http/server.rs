@@ -20,7 +20,7 @@ use hyper::server::conn::AddrIncoming;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::Method;
 
-use crate::commons::api::{ParentCaReq, RepositoryContact};
+use crate::commons::api::{ParentCaReq, ParentStatuses, RepositoryContact};
 use crate::commons::bgp::BgpAnalysisAdvice;
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::AggregateStoreError;
@@ -32,7 +32,7 @@ use crate::constants::{
 };
 use crate::daemon::auth::common::permissions::Permission;
 use crate::daemon::auth::Auth;
-use crate::daemon::ca::RouteAuthorizationUpdates;
+use crate::daemon::ca::{RouteAuthorizationUpdates, TA_NAME};
 use crate::daemon::config::Config;
 use crate::daemon::http::auth::auth;
 use crate::daemon::http::statics::statics;
@@ -497,8 +497,15 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 roas_stale: HashMap::new(),
                 roas_total: HashMap::new(),
             };
+
+            let mut parent_stats: HashMap<Handle, ParentStatuses> = HashMap::new();
+
             for (ca, status) in cas_status.iter() {
                 all_bgp_stats.add_ca(ca, status.bgp_stats());
+
+                if let Ok(parent_statuses) = server.ca_my_parent_statuses(ca).await {
+                    parent_stats.insert(ca.clone(), parent_statuses);
+                }
             }
 
             res.push('\n');
@@ -506,6 +513,49 @@ pub async fn metrics(req: Request) -> RoutingResult {
             res.push_str("# TYPE krill_cas_bgp_announcements_valid gauge\n");
             for (ca, nr) in all_bgp_stats.announcements_valid.iter() {
                 res.push_str(&format!("krill_cas_bgp_announcements_valid{{ca=\"{}\"}} {}\n", ca, nr));
+            }
+
+            res.push('\n');
+            res.push_str("# HELP krill_ca_parent_success status of last ca-parent connection (0=issue, 1=success)\n");
+            res.push_str("# TYPE krill_ca_parent_success gauge\n");
+            for (ca, parent_statuses) in parent_stats.iter() {
+                if ca.as_str() != TA_NAME {
+                    for (parent, status) in parent_statuses.iter() {
+                        // skip the ones for which we have no status yet, i.e it was really only just added
+                        // and no attempt to connect has yet been made.
+                        if let Some(exchange) = status.last_exchange() {
+                            let value = if exchange.was_success() { 1 } else { 0 };
+                            res.push_str(&format!(
+                                "krill_ca_parent_success{{ca=\"{}\", parent=\"{}\"}} {}\n",
+                                ca, parent, value
+                            ));
+                        }
+                    }
+                }
+            }
+
+            res.push('\n');
+            res.push_str(
+                "# HELP krill_ca_parent_last_success_time timestamp of last successful ca-parent connection\n",
+            );
+            res.push_str("# TYPE krill_ca_parent_last_success_time gauge\n");
+
+            for (ca, parent_statuses) in parent_stats.iter() {
+                if ca.as_str() != TA_NAME {
+                    for (parent, status) in parent_statuses.iter() {
+                        // skip the ones for which we have no successful connection at all. Most likely
+                        // they were just added (in which case it will come) - or were never successful
+                        // in which case the metric above will say that the status is 0
+                        if let Some(last_success) = status.last_success() {
+                            res.push_str(&format!(
+                                "krill_ca_parent_last_success_time{{ca=\"{}\", parent=\"{}\"}} {}\n",
+                                ca,
+                                parent,
+                                last_success.timestamp()
+                            ));
+                        }
+                    }
+                }
             }
 
             res.push('\n');
