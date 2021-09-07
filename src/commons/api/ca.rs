@@ -1553,10 +1553,7 @@ impl ParentExchange {
     }
 
     pub fn was_success(&self) -> bool {
-        match &self.result {
-            ExchangeResult::Success => true,
-            ExchangeResult::Failure(_) => false,
-        }
+        self.result.was_success()
     }
 
     pub fn into_failure_opt(self) -> Option<ErrorResponse> {
@@ -1572,6 +1569,15 @@ impl ParentExchange {
 pub enum ExchangeResult {
     Success,
     Failure(ErrorResponse),
+}
+
+impl ExchangeResult {
+    pub fn was_success(&self) -> bool {
+        match self {
+            ExchangeResult::Success => true,
+            ExchangeResult::Failure(_) => false,
+        }
+    }
 }
 
 impl fmt::Display for ExchangeResult {
@@ -1659,15 +1665,18 @@ impl ChildConnectionStats {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildStatus {
     last_exchange: Option<ChildExchange>,
+    last_success: Option<i64>,
 }
 
 impl ChildStatus {
     pub fn set_success(&mut self, user_agent: Option<String>) {
+        let timestamp = Time::now().timestamp();
         self.last_exchange = Some(ChildExchange {
-            timestamp: Time::now().timestamp(),
             result: ExchangeResult::Success,
+            timestamp,
             user_agent,
         });
+        self.last_success = Some(timestamp);
     }
 
     pub fn set_failure(&mut self, user_agent: Option<String>, error_response: ErrorResponse) {
@@ -1677,11 +1686,23 @@ impl ChildStatus {
             user_agent,
         });
     }
+
+    pub fn last_exchange(&self) -> Option<&ChildExchange> {
+        self.last_exchange.as_ref()
+    }
+
+    pub fn last_success(&self) -> Option<Time> {
+        self.last_success
+            .map(|timestamp| Time::new(Utc.timestamp(timestamp, 0)))
+    }
 }
 
 impl Default for ChildStatus {
     fn default() -> Self {
-        ChildStatus { last_exchange: None }
+        ChildStatus {
+            last_exchange: None,
+            last_success: None,
+        }
     }
 }
 
@@ -1696,6 +1717,20 @@ pub struct ChildExchange {
     timestamp: i64,
     result: ExchangeResult,
     user_agent: Option<String>,
+}
+
+impl ChildExchange {
+    pub fn was_success(&self) -> bool {
+        self.result.was_success()
+    }
+
+    pub fn time(&self) -> Time {
+        Time::new(Utc.timestamp(self.timestamp, 0))
+    }
+
+    pub fn user_agent(&self) -> Option<&String> {
+        self.user_agent.as_ref()
+    }
 }
 
 //------------ CertAuthInfo --------------------------------------------------
