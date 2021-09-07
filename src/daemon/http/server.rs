@@ -20,7 +20,7 @@ use hyper::server::conn::AddrIncoming;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::Method;
 
-use crate::commons::api::{ParentCaReq, ParentStatuses, RepoStatus, RepositoryContact};
+use crate::commons::api::{ChildStatus, ParentCaReq, ParentStatuses, RepoStatus, RepositoryContact};
 use crate::commons::bgp::BgpAnalysisAdvice;
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::AggregateStoreError;
@@ -500,6 +500,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
 
             let mut ca_parent_statuses: HashMap<Handle, ParentStatuses> = HashMap::new();
             let mut ca_repo_status: HashMap<Handle, RepoStatus> = HashMap::new();
+            let mut ca_child_status: HashMap<Handle, HashMap<ChildHandle, ChildStatus>> = HashMap::new();
 
             for (ca, status) in cas_status.iter() {
                 all_bgp_stats.add_ca(ca, status.bgp_stats());
@@ -510,6 +511,10 @@ pub async fn metrics(req: Request) -> RoutingResult {
 
                 if let Ok(repo_status) = server.ca_repo_status(ca).await {
                     ca_repo_status.insert(ca.clone(), repo_status);
+                }
+
+                if let Ok(child_status_map) = server.ca_child_status_map(ca).await {
+                    ca_child_status.insert(ca.clone(), child_status_map);
                 }
             }
 
@@ -620,6 +625,85 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 // krill_ca_child_last_connection{{ca="parent", child="child"}} 1630921599
                 // krill_ca_child_last_success{{ca="parent", child="child"}} 1630921599
                 // krill_ca_child_agent_total{{ca="parent", ua="krill/0.9.2"}} 11
+
+                res.push('\n');
+                res.push_str(
+                    "# HELP krill_ca_child_success status of last child to ca connection (0=issue, 1=success)\n",
+                );
+                res.push_str("# TYPE krill_ca_child_success gauge\n");
+                for (ca, child_status_map) in ca_child_status.iter() {
+                    // skip the ones for which we have no status yet, i.e it was really only just added
+                    // and no attempt to connect has yet been made.
+                    for (child, status) in child_status_map.iter() {
+                        if let Some(exchange) = status.last_exchange() {
+                            let value = if exchange.was_success() { 1 } else { 0 };
+                            res.push_str(&format!(
+                                "krill_ca_child_success{{ca=\"{}\", child=\"{}\"}} {}\n",
+                                ca, child, value
+                            ));
+                        }
+                    }
+                }
+
+                res.push('\n');
+                res.push_str("# HELP krill_ca_child_last_connection timestamp of last child to ca connection\n");
+                res.push_str("# TYPE krill_ca_child_last_connection gauge\n");
+                for (ca, child_status_map) in ca_child_status.iter() {
+                    // skip the ones for which we have no status yet, i.e it was really only just added
+                    // and no attempt to connect has yet been made.
+                    for (child, status) in child_status_map.iter() {
+                        if let Some(exchange) = status.last_exchange() {
+                            let timestamp = exchange.time().timestamp();
+                            res.push_str(&format!(
+                                "krill_ca_child_last_connection{{ca=\"{}\", child=\"{}\"}} {}\n",
+                                ca, child, timestamp
+                            ));
+                        }
+                    }
+                }
+
+                res.push('\n');
+                res.push_str("# HELP krill_ca_child_last_success timestamp of last child to ca connection\n");
+                res.push_str("# TYPE krill_ca_child_last_success gauge\n");
+                for (ca, child_status_map) in ca_child_status.iter() {
+                    // skip the ones for which we have no status yet, i.e it was really only just added
+                    // and no attempt to connect has yet been made.
+                    for (child, status) in child_status_map.iter() {
+                        if let Some(time) = status.last_success() {
+                            res.push_str(&format!(
+                                "krill_ca_child_last_success{{ca=\"{}\", child=\"{}\"}} {}\n",
+                                ca,
+                                child,
+                                time.timestamp()
+                            ));
+                        }
+                    }
+                }
+
+                res.push('\n');
+                res.push_str(
+                    "# HELP krill_ca_child_agent_total total children per user agent on their last connection\n",
+                );
+                res.push_str("# TYPE krill_ca_child_agent_total gauge\n");
+                for (ca, child_status_map) in ca_child_status.iter() {
+                    // skip the ones for which we have no status yet, i.e it was really only just added
+                    // and no attempt to connect has yet been made.
+
+                    let mut user_agent_totals: HashMap<String, usize> = HashMap::new();
+                    for status in child_status_map.values() {
+                        if let Some(exchange) = status.last_exchange() {
+                            let agent = exchange.user_agent().cloned().unwrap_or_else(|| "<none>".to_string());
+                            *user_agent_totals.entry(agent).or_insert(0) += 1;
+                        }
+                    }
+
+                    for (ua, total) in user_agent_totals.iter() {
+                        res.push_str(&format!(
+                            "krill_ca_child_agent_total{{ca=\"{}\", user_agent=\"{}\"}} {}\n",
+                            ca, ua, total
+                        ));
+                    }
+                }
             }
 
             {

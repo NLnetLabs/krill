@@ -17,9 +17,9 @@ use crate::{
         actor::Actor,
         api::{
             self, AddChildRequest, Base64, CaCommandDetails, CaCommandResult, CertAuthList, CertAuthSummary,
-            ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Entitlements, Handle, IssuanceRequest,
-            IssuanceResponse, ListReply, ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublishDelta,
-            RcvdCert, RepoStatus, RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest,
+            ChildCaInfo, ChildHandle, ChildStatus, CommandHistory, CommandHistoryCriteria, Entitlements, Handle,
+            IssuanceRequest, IssuanceResponse, ListReply, ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses,
+            PublishDelta, RcvdCert, RepoStatus, RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest,
             RevocationResponse, RtaName, StoredEffect, UpdateChildRequest,
         },
         api::{rrdp::PublishElement, ChildrenConnectionStats},
@@ -449,6 +449,11 @@ impl CaManager {
     /// Show the (connection) stats for children under a CA.
     pub async fn ca_stats_child_connections(&self, ca: &Handle) -> KrillResult<ChildrenConnectionStats> {
         self.status_store.lock().await.get_stats_child_connections(ca).await
+    }
+
+    /// Get the CA's child status map
+    pub async fn ca_child_status_map(&self, ca: &Handle) -> KrillResult<HashMap<ChildHandle, ChildStatus>> {
+        self.status_store.lock().await.get_child_status_map(ca).await
     }
 
     /// Show a contact for a child.
