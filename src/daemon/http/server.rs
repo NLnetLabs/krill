@@ -20,7 +20,7 @@ use hyper::server::conn::AddrIncoming;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::Method;
 
-use crate::commons::api::{ParentCaReq, ParentStatuses, RepositoryContact};
+use crate::commons::api::{ChildStatus, ParentCaReq, ParentStatuses, RepoStatus, RepositoryContact};
 use crate::commons::bgp::BgpAnalysisAdvice;
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::AggregateStoreError;
@@ -498,134 +498,283 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 roas_total: HashMap::new(),
             };
 
-            let mut parent_stats: HashMap<Handle, ParentStatuses> = HashMap::new();
+            let mut ca_parent_statuses: HashMap<Handle, ParentStatuses> = HashMap::new();
+            let mut ca_repo_status: HashMap<Handle, RepoStatus> = HashMap::new();
+            let mut ca_child_status: HashMap<Handle, HashMap<ChildHandle, ChildStatus>> = HashMap::new();
 
             for (ca, status) in cas_status.iter() {
                 all_bgp_stats.add_ca(ca, status.bgp_stats());
 
                 if let Ok(parent_statuses) = server.ca_my_parent_statuses(ca).await {
-                    parent_stats.insert(ca.clone(), parent_statuses);
+                    ca_parent_statuses.insert(ca.clone(), parent_statuses);
+                }
+
+                if let Ok(repo_status) = server.ca_repo_status(ca).await {
+                    ca_repo_status.insert(ca.clone(), repo_status);
+                }
+
+                if let Ok(child_status_map) = server.ca_child_status_map(ca).await {
+                    ca_child_status.insert(ca.clone(), child_status_map);
                 }
             }
 
-            res.push('\n');
-            res.push_str("# HELP krill_cas_bgp_announcements_valid number of announcements seen for CA resources with RPKI state VALID\n");
-            res.push_str("# TYPE krill_cas_bgp_announcements_valid gauge\n");
-            for (ca, nr) in all_bgp_stats.announcements_valid.iter() {
-                res.push_str(&format!("krill_cas_bgp_announcements_valid{{ca=\"{}\"}} {}\n", ca, nr));
+            {
+                // CA -> Parent metrics
+
+                // krill_ca_parent_success{{ca="ca", parent="parent"}} 1
+                // krill_ca_parent_last_success_time{{ca="ca", parent="parent"}} 1630921599 // timestamp
+
+                res.push('\n');
+                res.push_str(
+                    "# HELP krill_ca_parent_success status of last ca-parent connection (0=issue, 1=success)\n",
+                );
+                res.push_str("# TYPE krill_ca_parent_success gauge\n");
+                for (ca, parent_statuses) in ca_parent_statuses.iter() {
+                    if ca.as_str() != TA_NAME {
+                        for (parent, status) in parent_statuses.iter() {
+                            // skip the ones for which we have no status yet, i.e it was really only just added
+                            // and no attempt to connect has yet been made.
+                            if let Some(exchange) = status.last_exchange() {
+                                let value = if exchange.was_success() { 1 } else { 0 };
+                                res.push_str(&format!(
+                                    "krill_ca_parent_success{{ca=\"{}\", parent=\"{}\"}} {}\n",
+                                    ca, parent, value
+                                ));
+                            }
+                        }
+                    }
+                }
+
+                res.push('\n');
+                res.push_str(
+                    "# HELP krill_ca_parent_last_success_time timestamp of last successful ca-parent connection\n",
+                );
+                res.push_str("# TYPE krill_ca_parent_last_success_time gauge\n");
+
+                for (ca, parent_statuses) in ca_parent_statuses.iter() {
+                    if ca.as_str() != TA_NAME {
+                        for (parent, status) in parent_statuses.iter() {
+                            // skip the ones for which we have no successful connection at all. Most likely
+                            // they were just added (in which case it will come) - or were never successful
+                            // in which case the metric above will say that the status is 0
+                            if let Some(last_success) = status.last_success() {
+                                res.push_str(&format!(
+                                    "krill_ca_parent_last_success_time{{ca=\"{}\", parent=\"{}\"}} {}\n",
+                                    ca,
+                                    parent,
+                                    last_success.timestamp()
+                                ));
+                            }
+                        }
+                    }
+                }
             }
 
-            res.push('\n');
-            res.push_str("# HELP krill_ca_parent_success status of last ca-parent connection (0=issue, 1=success)\n");
-            res.push_str("# TYPE krill_ca_parent_success gauge\n");
-            for (ca, parent_statuses) in parent_stats.iter() {
-                if ca.as_str() != TA_NAME {
-                    for (parent, status) in parent_statuses.iter() {
-                        // skip the ones for which we have no status yet, i.e it was really only just added
-                        // and no attempt to connect has yet been made.
+            {
+                // CA -> Repository status
+
+                // krill_ca_repo_success{{ca="ca"}} 1
+                // krill_ca_repo_last_success_time{{ca="ca"}} 1630921599
+                // krill_ca_repo_next_before_time{{ca="ca"}} 1630921599
+
+                res.push('\n');
+                res.push_str("# HELP krill_ca_repo_success status of last ca to publication server connection (0=issue, 1=success)\n");
+                res.push_str("# TYPE krill_ca_repo_success gauge\n");
+                for (ca, status) in ca_repo_status.iter() {
+                    // skip the ones for which we have no status yet, i.e it was really only just added
+                    // and no attempt to connect has yet been made.
+                    if let Some(exchange) = status.last_exchange() {
+                        let value = if exchange.was_success() { 1 } else { 0 };
+                        res.push_str(&format!("krill_ca_repo_success{{ca=\"{}\"}} {}\n", ca, value));
+                    }
+                }
+
+                res.push('\n');
+                res.push_str("# HELP krill_ca_repo_last_success_time timestamp of last successful ca to publication server connection\n");
+                res.push_str("# TYPE krill_ca_repo_last_success_time gauge\n");
+                for (ca, status) in ca_repo_status.iter() {
+                    // skip the ones for which we have no status yet, i.e it was really only just added
+                    // and no attempt to connect has yet been made.
+                    if let Some(last_success) = status.last_success() {
+                        res.push_str(&format!(
+                            "krill_ca_repo_last_success_time{{ca=\"{}\"}} {}\n",
+                            ca,
+                            last_success.timestamp()
+                        ));
+                    }
+                }
+
+                res.push('\n');
+                res.push_str("# HELP krill_ca_repo_next_before_time timestamp of next planned ca to publication server connection\n");
+                res.push_str("# TYPE krill_ca_repo_next_before_time gauge\n");
+                for (ca, status) in ca_repo_status.iter() {
+                    // skip the ones for which we have no status yet, i.e it was really only just added
+                    // and no attempt to connect has yet been made.
+                    let timestamp = status.next_exchange_before().timestamp();
+                    res.push_str(&format!(
+                        "krill_ca_repo_next_before_time{{ca=\"{}\"}} {}\n",
+                        ca, timestamp
+                    ));
+                }
+            }
+
+            {
+                // CA -> Children
+
+                // krill_ca_child_success{{ca="parent", child="child"}} 1
+                // krill_ca_child_last_connection{{ca="parent", child="child"}} 1630921599
+                // krill_ca_child_last_success{{ca="parent", child="child"}} 1630921599
+                // krill_ca_child_agent_total{{ca="parent", ua="krill/0.9.2"}} 11
+
+                res.push('\n');
+                res.push_str(
+                    "# HELP krill_ca_child_success status of last child to ca connection (0=issue, 1=success)\n",
+                );
+                res.push_str("# TYPE krill_ca_child_success gauge\n");
+                for (ca, child_status_map) in ca_child_status.iter() {
+                    // skip the ones for which we have no status yet, i.e it was really only just added
+                    // and no attempt to connect has yet been made.
+                    for (child, status) in child_status_map.iter() {
                         if let Some(exchange) = status.last_exchange() {
                             let value = if exchange.was_success() { 1 } else { 0 };
                             res.push_str(&format!(
-                                "krill_ca_parent_success{{ca=\"{}\", parent=\"{}\"}} {}\n",
-                                ca, parent, value
+                                "krill_ca_child_success{{ca=\"{}\", child=\"{}\"}} {}\n",
+                                ca, child, value
                             ));
                         }
                     }
                 }
-            }
 
-            res.push('\n');
-            res.push_str(
-                "# HELP krill_ca_parent_last_success_time timestamp of last successful ca-parent connection\n",
-            );
-            res.push_str("# TYPE krill_ca_parent_last_success_time gauge\n");
-
-            for (ca, parent_statuses) in parent_stats.iter() {
-                if ca.as_str() != TA_NAME {
-                    for (parent, status) in parent_statuses.iter() {
-                        // skip the ones for which we have no successful connection at all. Most likely
-                        // they were just added (in which case it will come) - or were never successful
-                        // in which case the metric above will say that the status is 0
-                        if let Some(last_success) = status.last_success() {
+                res.push('\n');
+                res.push_str("# HELP krill_ca_child_last_connection timestamp of last child to ca connection\n");
+                res.push_str("# TYPE krill_ca_child_last_connection gauge\n");
+                for (ca, child_status_map) in ca_child_status.iter() {
+                    // skip the ones for which we have no status yet, i.e it was really only just added
+                    // and no attempt to connect has yet been made.
+                    for (child, status) in child_status_map.iter() {
+                        if let Some(exchange) = status.last_exchange() {
+                            let timestamp = exchange.time().timestamp();
                             res.push_str(&format!(
-                                "krill_ca_parent_last_success_time{{ca=\"{}\", parent=\"{}\"}} {}\n",
-                                ca,
-                                parent,
-                                last_success.timestamp()
+                                "krill_ca_child_last_connection{{ca=\"{}\", child=\"{}\"}} {}\n",
+                                ca, child, timestamp
                             ));
                         }
                     }
                 }
+
+                res.push('\n');
+                res.push_str(
+                    "# HELP krill_ca_child_last_success timestamp of last successful child to ca connection\n",
+                );
+                res.push_str("# TYPE krill_ca_child_last_success gauge\n");
+                for (ca, child_status_map) in ca_child_status.iter() {
+                    // skip the ones for which we have no status yet, i.e it was really only just added
+                    // and no attempt to connect has yet been made.
+                    for (child, status) in child_status_map.iter() {
+                        if let Some(time) = status.last_success() {
+                            res.push_str(&format!(
+                                "krill_ca_child_last_success{{ca=\"{}\", child=\"{}\"}} {}\n",
+                                ca,
+                                child,
+                                time.timestamp()
+                            ));
+                        }
+                    }
+                }
+
+                res.push('\n');
+                res.push_str(
+                    "# HELP krill_ca_child_agent_total total children per user agent on their last connection\n",
+                );
+                res.push_str("# TYPE krill_ca_child_agent_total gauge\n");
+                for (ca, child_status_map) in ca_child_status.iter() {
+                    // skip the ones for which we have no status yet, i.e it was really only just added
+                    // and no attempt to connect has yet been made.
+
+                    let mut user_agent_totals: HashMap<String, usize> = HashMap::new();
+                    for status in child_status_map.values() {
+                        if let Some(exchange) = status.last_exchange() {
+                            let agent = exchange.user_agent().cloned().unwrap_or_else(|| "<none>".to_string());
+                            *user_agent_totals.entry(agent).or_insert(0) += 1;
+                        }
+                    }
+
+                    for (ua, total) in user_agent_totals.iter() {
+                        res.push_str(&format!(
+                            "krill_ca_child_agent_total{{ca=\"{}\", user_agent=\"{}\"}} {}\n",
+                            ca, ua, total
+                        ));
+                    }
+                }
             }
 
-            res.push('\n');
-            res.push_str(
-            "# HELP krill_cas_bgp_announcements_invalid_asn number of announcements seen for CA resources with RPKI state INVALID (ASN mismatch)\n",
-        );
-            res.push_str("# TYPE krill_cas_bgp_announcements_invalid_asn gauge\n");
-            for (ca, nr) in all_bgp_stats.announcements_invalid_asn.iter() {
-                res.push_str(&format!(
-                    "krill_cas_bgp_announcements_invalid_asn{{ca=\"{}\"}} {}\n",
-                    ca, nr
-                ));
-            }
+            {
+                // BGP Announcement metrics
 
-            res.push('\n');
-            res.push_str(
-            "# HELP krill_cas_bgp_announcements_invalid_length number of announcements seen for CA resources with RPKI state INVALID (prefix exceeds max length)\n",
-        );
-            res.push_str("# TYPE krill_cas_bgp_announcements_invalid_length gauge\n");
-            for (ca, nr) in all_bgp_stats.announcements_invalid_length.iter() {
-                res.push_str(&format!(
-                    "krill_cas_bgp_announcements_invalid_length{{ca=\"{}\"}} {}\n",
-                    ca, nr
-                ));
-            }
+                res.push('\n');
+                res.push_str("# HELP krill_cas_bgp_announcements_valid number of announcements seen for CA resources with RPKI state VALID\n");
+                res.push_str("# TYPE krill_cas_bgp_announcements_valid gauge\n");
+                for (ca, nr) in all_bgp_stats.announcements_valid.iter() {
+                    res.push_str(&format!("krill_cas_bgp_announcements_valid{{ca=\"{}\"}} {}\n", ca, nr));
+                }
 
-            res.push('\n');
-            res.push_str(
-            "# HELP krill_cas_bgp_announcements_not_found number of announcements seen for CA resources with RPKI state NOT FOUND (none of the CA's ROAs cover this)\n",
-        );
-            res.push_str("# TYPE krill_cas_bgp_announcements_not_found gauge\n");
-            for (ca, nr) in all_bgp_stats.announcements_not_found.iter() {
-                res.push_str(&format!(
-                    "krill_cas_bgp_announcements_not_found{{ca=\"{}\"}} {}\n",
-                    ca, nr
-                ));
-            }
+                res.push('\n');
+                res.push_str("# HELP krill_cas_bgp_announcements_invalid_asn number of announcements seen for CA resources with RPKI state INVALID (ASN mismatch)\n");
+                res.push_str("# TYPE krill_cas_bgp_announcements_invalid_asn gauge\n");
+                for (ca, nr) in all_bgp_stats.announcements_invalid_asn.iter() {
+                    res.push_str(&format!(
+                        "krill_cas_bgp_announcements_invalid_asn{{ca=\"{}\"}} {}\n",
+                        ca, nr
+                    ));
+                }
 
-            res.push('\n');
-            res.push_str(
-            "# HELP krill_cas_bgp_roas_too_permissive number of ROAs for this CA which allow excess announcements (0 may also indicate that no BGP info is available)\n",
-        );
-            res.push_str("# TYPE krill_cas_bgp_roas_too_permissive gauge\n");
-            for (ca, nr) in all_bgp_stats.roas_too_permissive.iter() {
-                res.push_str(&format!("krill_cas_bgp_roas_too_permissive{{ca=\"{}\"}} {}\n", ca, nr));
-            }
+                res.push('\n');
+                res.push_str("# HELP krill_cas_bgp_announcements_invalid_length number of announcements seen for CA resources with RPKI state INVALID (prefix exceeds max length)\n");
+                res.push_str("# TYPE krill_cas_bgp_announcements_invalid_length gauge\n");
+                for (ca, nr) in all_bgp_stats.announcements_invalid_length.iter() {
+                    res.push_str(&format!(
+                        "krill_cas_bgp_announcements_invalid_length{{ca=\"{}\"}} {}\n",
+                        ca, nr
+                    ));
+                }
 
-            res.push('\n');
-            res.push_str(
-            "# HELP krill_cas_bgp_roas_redundant number of ROAs for this CA which are redundant (0 may also indicate that no BGP info is available)\n",
-        );
-            res.push_str("# TYPE krill_cas_bgp_roas_redundant gauge\n");
-            for (ca, nr) in all_bgp_stats.roas_redundant.iter() {
-                res.push_str(&format!("krill_cas_bgp_roas_redundant{{ca=\"{}\"}} {}\n", ca, nr));
-            }
+                res.push('\n');
+                res.push_str("# HELP krill_cas_bgp_announcements_not_found number of announcements seen for CA resources with RPKI state NOT FOUND (none of the CA's ROAs cover this)\n");
+                res.push_str("# TYPE krill_cas_bgp_announcements_not_found gauge\n");
+                for (ca, nr) in all_bgp_stats.announcements_not_found.iter() {
+                    res.push_str(&format!(
+                        "krill_cas_bgp_announcements_not_found{{ca=\"{}\"}} {}\n",
+                        ca, nr
+                    ));
+                }
 
-            res.push('\n');
-            res.push_str(
-            "# HELP krill_cas_bgp_roas_stale number of ROAs for this CA for which no announcements are seen (0 may also indicate that no BGP info is available)\n",
-        );
-            res.push_str("# TYPE krill_cas_bgp_roas_stale gauge\n");
-            for (ca, nr) in all_bgp_stats.roas_stale.iter() {
-                res.push_str(&format!("krill_cas_bgp_roas_stale{{ca=\"{}\"}} {}\n", ca, nr));
-            }
+                res.push('\n');
+                res.push_str("# HELP krill_cas_bgp_roas_too_permissive number of ROAs for this CA which allow excess announcements (0 may also indicate that no BGP info is available)\n");
+                res.push_str("# TYPE krill_cas_bgp_roas_too_permissive gauge\n");
+                for (ca, nr) in all_bgp_stats.roas_too_permissive.iter() {
+                    res.push_str(&format!("krill_cas_bgp_roas_too_permissive{{ca=\"{}\"}} {}\n", ca, nr));
+                }
 
-            res.push('\n');
-            res.push_str("# HELP krill_cas_bgp_roas_total total number of ROAs for this CA\n");
-            res.push_str("# TYPE krill_cas_bgp_roas_stale gauge\n");
-            for (ca, nr) in all_bgp_stats.roas_total.iter() {
-                res.push_str(&format!("krill_cas_bgp_roas_total{{ca=\"{}\"}} {}\n", ca, nr));
+                res.push('\n');
+                res.push_str("# HELP krill_cas_bgp_roas_redundant number of ROAs for this CA which are redundant (0 may also indicate that no BGP info is available)\n");
+                res.push_str("# TYPE krill_cas_bgp_roas_redundant gauge\n");
+                for (ca, nr) in all_bgp_stats.roas_redundant.iter() {
+                    res.push_str(&format!("krill_cas_bgp_roas_redundant{{ca=\"{}\"}} {}\n", ca, nr));
+                }
+
+                res.push('\n');
+                res.push_str("# HELP krill_cas_bgp_roas_stale number of ROAs for this CA for which no announcements are seen (0 may also indicate that no BGP info is available)\n");
+                res.push_str("# TYPE krill_cas_bgp_roas_stale gauge\n");
+                for (ca, nr) in all_bgp_stats.roas_stale.iter() {
+                    res.push_str(&format!("krill_cas_bgp_roas_stale{{ca=\"{}\"}} {}\n", ca, nr));
+                }
+
+                res.push('\n');
+                res.push_str("# HELP krill_cas_bgp_roas_total total number of ROAs for this CA\n");
+                res.push_str("# TYPE krill_cas_bgp_roas_stale gauge\n");
+                for (ca, nr) in all_bgp_stats.roas_total.iter() {
+                    res.push_str(&format!("krill_cas_bgp_roas_total{{ca=\"{}\"}} {}\n", ca, nr));
+                }
             }
         }
 
