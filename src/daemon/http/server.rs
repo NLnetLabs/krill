@@ -513,44 +513,53 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 }
             }
 
-            res.push('\n');
-            res.push_str("# HELP krill_ca_parent_success status of last ca-parent connection (0=issue, 1=success)\n");
-            res.push_str("# TYPE krill_ca_parent_success gauge\n");
-            for (ca, parent_statuses) in ca_parent_statuses.iter() {
-                if ca.as_str() != TA_NAME {
-                    for (parent, status) in parent_statuses.iter() {
-                        // skip the ones for which we have no status yet, i.e it was really only just added
-                        // and no attempt to connect has yet been made.
-                        if let Some(exchange) = status.last_exchange() {
-                            let value = if exchange.was_success() { 1 } else { 0 };
-                            res.push_str(&format!(
-                                "krill_ca_parent_success{{ca=\"{}\", parent=\"{}\"}} {}\n",
-                                ca, parent, value
-                            ));
+            {
+                // CA -> Parent metrics
+
+                // krill_ca_parent_success{{ca="ca", parent="parent"}} 1
+                // krill_ca_parent_last_success_time{{ca="ca", parent="parent"}} 1630921599 // timestamp
+
+                res.push('\n');
+                res.push_str(
+                    "# HELP krill_ca_parent_success status of last ca-parent connection (0=issue, 1=success)\n",
+                );
+                res.push_str("# TYPE krill_ca_parent_success gauge\n");
+                for (ca, parent_statuses) in ca_parent_statuses.iter() {
+                    if ca.as_str() != TA_NAME {
+                        for (parent, status) in parent_statuses.iter() {
+                            // skip the ones for which we have no status yet, i.e it was really only just added
+                            // and no attempt to connect has yet been made.
+                            if let Some(exchange) = status.last_exchange() {
+                                let value = if exchange.was_success() { 1 } else { 0 };
+                                res.push_str(&format!(
+                                    "krill_ca_parent_success{{ca=\"{}\", parent=\"{}\"}} {}\n",
+                                    ca, parent, value
+                                ));
+                            }
                         }
                     }
                 }
-            }
 
-            res.push('\n');
-            res.push_str(
-                "# HELP krill_ca_parent_last_success_time timestamp of last successful ca-parent connection\n",
-            );
-            res.push_str("# TYPE krill_ca_parent_last_success_time gauge\n");
+                res.push('\n');
+                res.push_str(
+                    "# HELP krill_ca_parent_last_success_time timestamp of last successful ca-parent connection\n",
+                );
+                res.push_str("# TYPE krill_ca_parent_last_success_time gauge\n");
 
-            for (ca, parent_statuses) in ca_parent_statuses.iter() {
-                if ca.as_str() != TA_NAME {
-                    for (parent, status) in parent_statuses.iter() {
-                        // skip the ones for which we have no successful connection at all. Most likely
-                        // they were just added (in which case it will come) - or were never successful
-                        // in which case the metric above will say that the status is 0
-                        if let Some(last_success) = status.last_success() {
-                            res.push_str(&format!(
-                                "krill_ca_parent_last_success_time{{ca=\"{}\", parent=\"{}\"}} {}\n",
-                                ca,
-                                parent,
-                                last_success.timestamp()
-                            ));
+                for (ca, parent_statuses) in ca_parent_statuses.iter() {
+                    if ca.as_str() != TA_NAME {
+                        for (parent, status) in parent_statuses.iter() {
+                            // skip the ones for which we have no successful connection at all. Most likely
+                            // they were just added (in which case it will come) - or were never successful
+                            // in which case the metric above will say that the status is 0
+                            if let Some(last_success) = status.last_success() {
+                                res.push_str(&format!(
+                                    "krill_ca_parent_last_success_time{{ca=\"{}\", parent=\"{}\"}} {}\n",
+                                    ca,
+                                    parent,
+                                    last_success.timestamp()
+                                ));
+                            }
                         }
                     }
                 }
@@ -558,6 +567,11 @@ pub async fn metrics(req: Request) -> RoutingResult {
 
             {
                 // CA -> Repository status
+
+                // krill_ca_repo_success{{ca="ca"}} 1
+                // krill_ca_repo_last_success_time{{ca="ca"}} 1630921599
+                // krill_ca_repo_next_before_time{{ca="ca"}} 1630921599
+
                 res.push('\n');
                 res.push_str("# HELP krill_ca_repo_success status of last ca to publication server connection (0=issue, 1=success)\n");
                 res.push_str("# TYPE krill_ca_repo_success gauge\n");
@@ -597,6 +611,15 @@ pub async fn metrics(req: Request) -> RoutingResult {
                         ca, timestamp
                     ));
                 }
+            }
+
+            {
+                // CA -> Children
+
+                // krill_ca_child_success{{ca="parent", child="child"}} 1
+                // krill_ca_child_last_connection{{ca="parent", child="child"}} 1630921599
+                // krill_ca_child_last_success{{ca="parent", child="child"}} 1630921599
+                // krill_ca_child_agent_total{{ca="parent", ua="krill/0.9.2"}} 11
             }
 
             {
