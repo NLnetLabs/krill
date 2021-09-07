@@ -1437,6 +1437,7 @@ impl Default for ParentStatus {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RepoStatus {
     last_exchange: Option<ParentExchange>,
+    last_success: Option<i64>,
     next_exchange_before: i64,
     published: Vec<PublishElement>,
 }
@@ -1445,6 +1446,7 @@ impl Default for RepoStatus {
     fn default() -> Self {
         RepoStatus {
             last_exchange: None,
+            last_success: None,
             next_exchange_before: Self::now_plus_hours(1),
             published: vec![],
         }
@@ -1452,12 +1454,17 @@ impl Default for RepoStatus {
 }
 
 impl RepoStatus {
-    fn next_exchange_before(&self) -> Time {
+    pub fn next_exchange_before(&self) -> Time {
         Time::new(Utc.timestamp(self.next_exchange_before, 0))
     }
 
     pub fn last_exchange(&self) -> Option<&ParentExchange> {
         self.last_exchange.as_ref()
+    }
+
+    pub fn last_success(&self) -> Option<Time> {
+        self.last_success
+            .map(|timestamp| Time::new(Utc.timestamp(timestamp, 0)))
     }
 
     pub fn into_failure_opt(self) -> Option<ErrorResponse> {
@@ -1480,21 +1487,25 @@ impl RepoStatus {
     }
 
     pub fn set_published(&mut self, uri: ServiceUri, published: Vec<PublishElement>, next_hours: i64) {
+        let timestamp = Time::now().timestamp();
         self.last_exchange = Some(ParentExchange {
-            timestamp: Time::now().timestamp(),
+            timestamp,
             uri,
             result: ExchangeResult::Success,
         });
         self.published = published;
+        self.last_success = Some(timestamp);
         self.next_exchange_before = Self::now_plus_hours(next_hours);
     }
 
     pub fn set_last_updated(&mut self, uri: ServiceUri, next_hours: i64) {
+        let timestamp = Time::now().timestamp();
         self.last_exchange = Some(ParentExchange {
-            timestamp: Time::now().timestamp(),
+            timestamp,
             uri,
             result: ExchangeResult::Success,
         });
+        self.last_success = Some(timestamp);
         self.next_exchange_before = Self::now_plus_hours(next_hours);
     }
 }
@@ -1507,6 +1518,9 @@ impl fmt::Display for RepoStatus {
                 writeln!(f, "URI: {}", exchange.uri())?;
                 writeln!(f, "Status: {}", exchange.result)?;
                 writeln!(f, "Last contacted: {}", exchange.time().to_rfc3339())?;
+                if let Some(success) = self.last_success() {
+                    writeln!(f, "Last successful contact: {}", success.to_rfc3339())?;
+                }
                 writeln!(
                     f,
                     "Next contact on or before: {}",
@@ -1539,10 +1553,7 @@ impl ParentExchange {
     }
 
     pub fn was_success(&self) -> bool {
-        match &self.result {
-            ExchangeResult::Success => true,
-            ExchangeResult::Failure(_) => false,
-        }
+        self.result.was_success()
     }
 
     pub fn into_failure_opt(self) -> Option<ErrorResponse> {
@@ -1558,6 +1569,15 @@ impl ParentExchange {
 pub enum ExchangeResult {
     Success,
     Failure(ErrorResponse),
+}
+
+impl ExchangeResult {
+    pub fn was_success(&self) -> bool {
+        match self {
+            ExchangeResult::Success => true,
+            ExchangeResult::Failure(_) => false,
+        }
+    }
 }
 
 impl fmt::Display for ExchangeResult {
@@ -1645,15 +1665,18 @@ impl ChildConnectionStats {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildStatus {
     last_exchange: Option<ChildExchange>,
+    last_success: Option<i64>,
 }
 
 impl ChildStatus {
     pub fn set_success(&mut self, user_agent: Option<String>) {
+        let timestamp = Time::now().timestamp();
         self.last_exchange = Some(ChildExchange {
-            timestamp: Time::now().timestamp(),
             result: ExchangeResult::Success,
+            timestamp,
             user_agent,
         });
+        self.last_success = Some(timestamp);
     }
 
     pub fn set_failure(&mut self, user_agent: Option<String>, error_response: ErrorResponse) {
@@ -1663,11 +1686,23 @@ impl ChildStatus {
             user_agent,
         });
     }
+
+    pub fn last_exchange(&self) -> Option<&ChildExchange> {
+        self.last_exchange.as_ref()
+    }
+
+    pub fn last_success(&self) -> Option<Time> {
+        self.last_success
+            .map(|timestamp| Time::new(Utc.timestamp(timestamp, 0)))
+    }
 }
 
 impl Default for ChildStatus {
     fn default() -> Self {
-        ChildStatus { last_exchange: None }
+        ChildStatus {
+            last_exchange: None,
+            last_success: None,
+        }
     }
 }
 
@@ -1682,6 +1717,20 @@ pub struct ChildExchange {
     timestamp: i64,
     result: ExchangeResult,
     user_agent: Option<String>,
+}
+
+impl ChildExchange {
+    pub fn was_success(&self) -> bool {
+        self.result.was_success()
+    }
+
+    pub fn time(&self) -> Time {
+        Time::new(Utc.timestamp(self.timestamp, 0))
+    }
+
+    pub fn user_agent(&self) -> Option<&String> {
+        self.user_agent.as_ref()
+    }
 }
 
 //------------ CertAuthInfo --------------------------------------------------

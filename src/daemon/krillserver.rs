@@ -13,10 +13,10 @@ use rpki::{
 
 use crate::commons::api::{
     AddChildRequest, AllCertAuthIssues, CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthInit, CertAuthIssues,
-    CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Handle, ListReply,
-    ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublicationServerUris, PublishDelta, PublisherDetails,
-    PublisherHandle, RepoStatus, RepositoryContact, ResourceSet, RoaDefinition, RoaDefinitionUpdates, RtaList, RtaName,
-    RtaPrepResponse, ServerInfo, TaCertDetails, UpdateChildRequest,
+    CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle, ChildStatus, CommandHistory, CommandHistoryCriteria, Handle,
+    ListReply, ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublicationServerUris, PublishDelta,
+    PublisherDetails, PublisherHandle, RepoStatus, RepositoryContact, ResourceSet, RoaDefinition, RoaDefinitionUpdates,
+    RtaList, RtaName, RtaPrepResponse, ServerInfo, TaCertDetails, UpdateChildRequest,
 };
 use crate::commons::bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion};
 use crate::commons::crypto::KrillSigner;
@@ -442,6 +442,11 @@ impl KrillServer {
     /// Show children stats under the CA.
     pub async fn ca_stats_child_connections(&self, ca: &Handle) -> KrillResult<ChildrenConnectionStats> {
         self.ca_manager.ca_stats_child_connections(ca).await
+    }
+
+    /// Get the ca child status map
+    pub async fn ca_child_status_map(&self, ca: &Handle) -> KrillResult<HashMap<ChildHandle, ChildStatus>> {
+        self.ca_manager.ca_child_status_map(ca).await
     }
 }
 

@@ -169,6 +169,13 @@ impl StatusStore {
         Ok(status.get_children_connection_stats())
     }
 
+    pub async fn get_child_status_map(&self, ca: &Handle) -> KrillResult<HashMap<ChildHandle, ChildStatus>> {
+        let _lock = self.lock.read().await;
+        let status = self.get_ca_status(ca)?;
+
+        Ok(status.children)
+    }
+
     pub async fn set_status_repo_failure(&self, ca: &Handle, uri: ServiceUri, error: &Error) -> KrillResult<()> {
         let error_response = Self::error_to_error_res(error);
         self.update_ca_status(ca, |status| status.repo.set_failure(uri, error_response))
