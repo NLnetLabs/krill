@@ -663,7 +663,9 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 }
 
                 res.push('\n');
-                res.push_str("# HELP krill_ca_child_last_success timestamp of last child to ca connection\n");
+                res.push_str(
+                    "# HELP krill_ca_child_last_success timestamp of last successful child to ca connection\n",
+                );
                 res.push_str("# TYPE krill_ca_child_last_success gauge\n");
                 for (ca, child_status_map) in ca_child_status.iter() {
                     // skip the ones for which we have no status yet, i.e it was really only just added
