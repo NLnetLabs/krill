@@ -514,13 +514,6 @@ pub async fn metrics(req: Request) -> RoutingResult {
             }
 
             res.push('\n');
-            res.push_str("# HELP krill_cas_bgp_announcements_valid number of announcements seen for CA resources with RPKI state VALID\n");
-            res.push_str("# TYPE krill_cas_bgp_announcements_valid gauge\n");
-            for (ca, nr) in all_bgp_stats.announcements_valid.iter() {
-                res.push_str(&format!("krill_cas_bgp_announcements_valid{{ca=\"{}\"}} {}\n", ca, nr));
-            }
-
-            res.push('\n');
             res.push_str("# HELP krill_ca_parent_success status of last ca-parent connection (0=issue, 1=success)\n");
             res.push_str("# TYPE krill_ca_parent_success gauge\n");
             for (ca, parent_statuses) in ca_parent_statuses.iter() {
@@ -565,7 +558,6 @@ pub async fn metrics(req: Request) -> RoutingResult {
 
             {
                 // CA -> Repository status
-
                 res.push('\n');
                 res.push_str("# HELP krill_ca_repo_success status of last ca to publication server connection (0=issue, 1=success)\n");
                 res.push_str("# TYPE krill_ca_repo_success gauge\n");
@@ -607,62 +599,73 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 }
             }
 
-            res.push('\n');
-            res.push_str("# HELP krill_cas_bgp_announcements_invalid_asn number of announcements seen for CA resources with RPKI state INVALID (ASN mismatch)\n");
-            res.push_str("# TYPE krill_cas_bgp_announcements_invalid_asn gauge\n");
-            for (ca, nr) in all_bgp_stats.announcements_invalid_asn.iter() {
-                res.push_str(&format!(
-                    "krill_cas_bgp_announcements_invalid_asn{{ca=\"{}\"}} {}\n",
-                    ca, nr
-                ));
-            }
+            {
+                // BGP Announcement metrics
 
-            res.push('\n');
-            res.push_str("# HELP krill_cas_bgp_announcements_invalid_length number of announcements seen for CA resources with RPKI state INVALID (prefix exceeds max length)\n");
-            res.push_str("# TYPE krill_cas_bgp_announcements_invalid_length gauge\n");
-            for (ca, nr) in all_bgp_stats.announcements_invalid_length.iter() {
-                res.push_str(&format!(
-                    "krill_cas_bgp_announcements_invalid_length{{ca=\"{}\"}} {}\n",
-                    ca, nr
-                ));
-            }
+                res.push('\n');
+                res.push_str("# HELP krill_cas_bgp_announcements_valid number of announcements seen for CA resources with RPKI state VALID\n");
+                res.push_str("# TYPE krill_cas_bgp_announcements_valid gauge\n");
+                for (ca, nr) in all_bgp_stats.announcements_valid.iter() {
+                    res.push_str(&format!("krill_cas_bgp_announcements_valid{{ca=\"{}\"}} {}\n", ca, nr));
+                }
 
-            res.push('\n');
-            res.push_str("# HELP krill_cas_bgp_announcements_not_found number of announcements seen for CA resources with RPKI state NOT FOUND (none of the CA's ROAs cover this)\n");
-            res.push_str("# TYPE krill_cas_bgp_announcements_not_found gauge\n");
-            for (ca, nr) in all_bgp_stats.announcements_not_found.iter() {
-                res.push_str(&format!(
-                    "krill_cas_bgp_announcements_not_found{{ca=\"{}\"}} {}\n",
-                    ca, nr
-                ));
-            }
+                res.push('\n');
+                res.push_str("# HELP krill_cas_bgp_announcements_invalid_asn number of announcements seen for CA resources with RPKI state INVALID (ASN mismatch)\n");
+                res.push_str("# TYPE krill_cas_bgp_announcements_invalid_asn gauge\n");
+                for (ca, nr) in all_bgp_stats.announcements_invalid_asn.iter() {
+                    res.push_str(&format!(
+                        "krill_cas_bgp_announcements_invalid_asn{{ca=\"{}\"}} {}\n",
+                        ca, nr
+                    ));
+                }
 
-            res.push('\n');
-            res.push_str("# HELP krill_cas_bgp_roas_too_permissive number of ROAs for this CA which allow excess announcements (0 may also indicate that no BGP info is available)\n");
-            res.push_str("# TYPE krill_cas_bgp_roas_too_permissive gauge\n");
-            for (ca, nr) in all_bgp_stats.roas_too_permissive.iter() {
-                res.push_str(&format!("krill_cas_bgp_roas_too_permissive{{ca=\"{}\"}} {}\n", ca, nr));
-            }
+                res.push('\n');
+                res.push_str("# HELP krill_cas_bgp_announcements_invalid_length number of announcements seen for CA resources with RPKI state INVALID (prefix exceeds max length)\n");
+                res.push_str("# TYPE krill_cas_bgp_announcements_invalid_length gauge\n");
+                for (ca, nr) in all_bgp_stats.announcements_invalid_length.iter() {
+                    res.push_str(&format!(
+                        "krill_cas_bgp_announcements_invalid_length{{ca=\"{}\"}} {}\n",
+                        ca, nr
+                    ));
+                }
 
-            res.push('\n');
-            res.push_str("# HELP krill_cas_bgp_roas_redundant number of ROAs for this CA which are redundant (0 may also indicate that no BGP info is available)\n");
-            res.push_str("# TYPE krill_cas_bgp_roas_redundant gauge\n");
-            for (ca, nr) in all_bgp_stats.roas_redundant.iter() {
-                res.push_str(&format!("krill_cas_bgp_roas_redundant{{ca=\"{}\"}} {}\n", ca, nr));
-            }
+                res.push('\n');
+                res.push_str("# HELP krill_cas_bgp_announcements_not_found number of announcements seen for CA resources with RPKI state NOT FOUND (none of the CA's ROAs cover this)\n");
+                res.push_str("# TYPE krill_cas_bgp_announcements_not_found gauge\n");
+                for (ca, nr) in all_bgp_stats.announcements_not_found.iter() {
+                    res.push_str(&format!(
+                        "krill_cas_bgp_announcements_not_found{{ca=\"{}\"}} {}\n",
+                        ca, nr
+                    ));
+                }
 
-            res.push('\n');
-            res.push_str("# HELP krill_cas_bgp_roas_stale number of ROAs for this CA for which no announcements are seen (0 may also indicate that no BGP info is available)\n");
-            res.push_str("# TYPE krill_cas_bgp_roas_stale gauge\n");
-            for (ca, nr) in all_bgp_stats.roas_stale.iter() {
-                res.push_str(&format!("krill_cas_bgp_roas_stale{{ca=\"{}\"}} {}\n", ca, nr));
-            }
+                res.push('\n');
+                res.push_str("# HELP krill_cas_bgp_roas_too_permissive number of ROAs for this CA which allow excess announcements (0 may also indicate that no BGP info is available)\n");
+                res.push_str("# TYPE krill_cas_bgp_roas_too_permissive gauge\n");
+                for (ca, nr) in all_bgp_stats.roas_too_permissive.iter() {
+                    res.push_str(&format!("krill_cas_bgp_roas_too_permissive{{ca=\"{}\"}} {}\n", ca, nr));
+                }
 
-            res.push('\n');
-            res.push_str("# HELP krill_cas_bgp_roas_total total number of ROAs for this CA\n");
-            res.push_str("# TYPE krill_cas_bgp_roas_stale gauge\n");
-            for (ca, nr) in all_bgp_stats.roas_total.iter() {
-                res.push_str(&format!("krill_cas_bgp_roas_total{{ca=\"{}\"}} {}\n", ca, nr));
+                res.push('\n');
+                res.push_str("# HELP krill_cas_bgp_roas_redundant number of ROAs for this CA which are redundant (0 may also indicate that no BGP info is available)\n");
+                res.push_str("# TYPE krill_cas_bgp_roas_redundant gauge\n");
+                for (ca, nr) in all_bgp_stats.roas_redundant.iter() {
+                    res.push_str(&format!("krill_cas_bgp_roas_redundant{{ca=\"{}\"}} {}\n", ca, nr));
+                }
+
+                res.push('\n');
+                res.push_str("# HELP krill_cas_bgp_roas_stale number of ROAs for this CA for which no announcements are seen (0 may also indicate that no BGP info is available)\n");
+                res.push_str("# TYPE krill_cas_bgp_roas_stale gauge\n");
+                for (ca, nr) in all_bgp_stats.roas_stale.iter() {
+                    res.push_str(&format!("krill_cas_bgp_roas_stale{{ca=\"{}\"}} {}\n", ca, nr));
+                }
+
+                res.push('\n');
+                res.push_str("# HELP krill_cas_bgp_roas_total total number of ROAs for this CA\n");
+                res.push_str("# TYPE krill_cas_bgp_roas_stale gauge\n");
+                for (ca, nr) in all_bgp_stats.roas_total.iter() {
+                    res.push_str(&format!("krill_cas_bgp_roas_total{{ca=\"{}\"}} {}\n", ca, nr));
+                }
             }
         }
 
