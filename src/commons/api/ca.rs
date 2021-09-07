@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 use std::convert::TryFrom;
-use std::ops::Deref;
+use std::ops::{self, Deref};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::{fmt, str};
@@ -1247,7 +1247,7 @@ impl fmt::Display for ParentStatuses {
                 Some(exchange) => {
                     writeln!(f, "URI: {}", exchange.uri)?;
                     writeln!(f, "Status: {}", exchange.result)?;
-                    writeln!(f, "Last contacted: {}", exchange.time().to_rfc3339())?;
+                    writeln!(f, "Last contacted: {}", exchange.timestamp().to_rfc3339())?;
                     writeln!(
                         f,
                         "Next contact on or before: {}",
@@ -1347,20 +1347,19 @@ impl From<&IssuedCert> for ParentStatusCert {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParentStatus {
     last_exchange: Option<ParentExchange>,
-    last_success: Option<i64>,
-    next_exchange_before: i64,
+    last_success: Option<Timestamp>,
+    next_exchange_before: Timestamp,
     all_resources: ResourceSet,
     entitlements: HashMap<ResourceClassName, KnownEntitlement>,
 }
 
 impl ParentStatus {
-    fn next_exchange_before(&self) -> Time {
-        Time::new(Utc.timestamp(self.next_exchange_before, 0))
+    fn next_exchange_before(&self) -> Timestamp {
+        self.next_exchange_before
     }
 
-    pub fn last_success(&self) -> Option<Time> {
+    pub fn last_success(&self) -> Option<Timestamp> {
         self.last_success
-            .map(|timestamp| Time::new(Utc.timestamp(timestamp, 0)))
     }
 
     pub fn last_exchange(&self) -> Option<&ParentExchange> {
@@ -1376,12 +1375,12 @@ impl ParentStatus {
     }
 
     fn set_next_exchange_plus_seconds(&mut self, next_seconds: i64) {
-        self.next_exchange_before = (Time::now() + Duration::seconds(next_seconds)).timestamp();
+        self.next_exchange_before += Duration::seconds(next_seconds);
     }
 
     fn set_failure(&mut self, uri: ServiceUri, error: ErrorResponse, next_seconds: i64) {
         self.last_exchange = Some(ParentExchange {
-            timestamp: Time::now().timestamp(),
+            timestamp: Timestamp::now(),
             uri,
             result: ExchangeResult::Failure(error),
         });
@@ -1411,7 +1410,7 @@ impl ParentStatus {
     }
 
     fn set_last_updated(&mut self, uri: ServiceUri, next_run_seconds: i64) {
-        let timestamp = Time::now().timestamp();
+        let timestamp = Timestamp::now();
         self.last_exchange = Some(ParentExchange {
             timestamp,
             uri,
@@ -1428,17 +1427,19 @@ impl Default for ParentStatus {
             last_exchange: None,
             last_success: None,
             all_resources: ResourceSet::default(),
-            next_exchange_before: (Time::now() + Duration::hours(1)).timestamp(),
+            next_exchange_before: Timestamp::now() + Duration::hours(1),
             entitlements: HashMap::new(),
         }
     }
 }
 
+//------------ RepoStatus ----------------------------------------------------
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RepoStatus {
     last_exchange: Option<ParentExchange>,
-    last_success: Option<i64>,
-    next_exchange_before: i64,
+    last_success: Option<Timestamp>,
+    next_exchange_before: Timestamp,
     published: Vec<PublishElement>,
 }
 
@@ -1447,24 +1448,23 @@ impl Default for RepoStatus {
         RepoStatus {
             last_exchange: None,
             last_success: None,
-            next_exchange_before: Self::now_plus_hours(1),
+            next_exchange_before: Timestamp::now_plus_hours(1),
             published: vec![],
         }
     }
 }
 
 impl RepoStatus {
-    pub fn next_exchange_before(&self) -> Time {
-        Time::new(Utc.timestamp(self.next_exchange_before, 0))
+    pub fn next_exchange_before(&self) -> Timestamp {
+        self.next_exchange_before
     }
 
     pub fn last_exchange(&self) -> Option<&ParentExchange> {
         self.last_exchange.as_ref()
     }
 
-    pub fn last_success(&self) -> Option<Time> {
+    pub fn last_success(&self) -> Option<Timestamp> {
         self.last_success
-            .map(|timestamp| Time::new(Utc.timestamp(timestamp, 0)))
     }
 
     pub fn into_failure_opt(self) -> Option<ErrorResponse> {
@@ -1473,21 +1473,18 @@ impl RepoStatus {
 }
 
 impl RepoStatus {
-    fn now_plus_hours(hours: i64) -> i64 {
-        (Time::now() + Duration::hours(hours)).timestamp()
-    }
-
     pub fn set_failure(&mut self, uri: ServiceUri, error: ErrorResponse) {
+        let timestamp = Timestamp::now();
         self.last_exchange = Some(ParentExchange {
-            timestamp: Time::now().timestamp(),
+            timestamp,
             uri,
             result: ExchangeResult::Failure(error),
         });
-        self.next_exchange_before = (Time::now() + Duration::minutes(5)).timestamp();
+        self.next_exchange_before = timestamp.plus_minutes(5);
     }
 
     pub fn set_published(&mut self, uri: ServiceUri, published: Vec<PublishElement>, next_hours: i64) {
-        let timestamp = Time::now().timestamp();
+        let timestamp = Timestamp::now();
         self.last_exchange = Some(ParentExchange {
             timestamp,
             uri,
@@ -1495,18 +1492,18 @@ impl RepoStatus {
         });
         self.published = published;
         self.last_success = Some(timestamp);
-        self.next_exchange_before = Self::now_plus_hours(next_hours);
+        self.next_exchange_before = timestamp.plus_hours(next_hours);
     }
 
     pub fn set_last_updated(&mut self, uri: ServiceUri, next_hours: i64) {
-        let timestamp = Time::now().timestamp();
+        let timestamp = Timestamp::now();
         self.last_exchange = Some(ParentExchange {
             timestamp,
             uri,
             result: ExchangeResult::Success,
         });
         self.last_success = Some(timestamp);
-        self.next_exchange_before = Self::now_plus_hours(next_hours);
+        self.next_exchange_before = timestamp.plus_hours(next_hours);
     }
 }
 
@@ -1515,9 +1512,11 @@ impl fmt::Display for RepoStatus {
         match &self.last_exchange {
             None => writeln!(f, "Status: connection still pending")?,
             Some(exchange) => {
+                Time::now();
+
                 writeln!(f, "URI: {}", exchange.uri())?;
                 writeln!(f, "Status: {}", exchange.result)?;
-                writeln!(f, "Last contacted: {}", exchange.time().to_rfc3339())?;
+                writeln!(f, "Last contacted: {}", exchange.timestamp().to_rfc3339())?;
                 if let Some(success) = self.last_success() {
                     writeln!(f, "Last successful contact: {}", success.to_rfc3339())?;
                 }
@@ -1532,16 +1531,18 @@ impl fmt::Display for RepoStatus {
     }
 }
 
+//------------ ParentExchange ------------------------------------------------
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParentExchange {
-    timestamp: i64,
+    timestamp: Timestamp,
     uri: ServiceUri,
     result: ExchangeResult,
 }
 
 impl ParentExchange {
-    pub fn time(&self) -> Time {
-        Time::new(Utc.timestamp(self.timestamp, 0))
+    pub fn timestamp(&self) -> Timestamp {
+        self.timestamp
     }
 
     pub fn uri(&self) -> &ServiceUri {
@@ -1563,6 +1564,8 @@ impl ParentExchange {
         }
     }
 }
+
+//------------ ExchangeResult ------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
@@ -1621,14 +1624,13 @@ impl fmt::Display for ChildrenConnectionStats {
                     }
                     Some(exchange) => {
                         let agent = exchange.user_agent.as_deref().unwrap_or("");
-                        let time = Time::new(Utc.timestamp(exchange.timestamp, 0));
 
                         writeln!(
                             f,
                             "{},{},{},{}",
                             child.handle,
                             agent,
-                            time.to_rfc3339(),
+                            exchange.timestamp.to_rfc3339(),
                             exchange.result
                         )?;
                     }
@@ -1655,7 +1657,7 @@ impl ChildConnectionStats {
     pub fn inactive(&self, threshold_hours: i64) -> bool {
         match &self.last_exchange {
             None => false, // if there has been no exchange at all, the child is not yet active, rather than inactive
-            Some(exchange) => exchange.timestamp < (Time::now() - Duration::hours(threshold_hours)).timestamp(),
+            Some(exchange) => exchange.timestamp < (Timestamp::now_minus_hours(threshold_hours)),
         }
     }
 }
@@ -1665,12 +1667,12 @@ impl ChildConnectionStats {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildStatus {
     last_exchange: Option<ChildExchange>,
-    last_success: Option<i64>,
+    last_success: Option<Timestamp>,
 }
 
 impl ChildStatus {
     pub fn set_success(&mut self, user_agent: Option<String>) {
-        let timestamp = Time::now().timestamp();
+        let timestamp = Timestamp::now();
         self.last_exchange = Some(ChildExchange {
             result: ExchangeResult::Success,
             timestamp,
@@ -1681,7 +1683,7 @@ impl ChildStatus {
 
     pub fn set_failure(&mut self, user_agent: Option<String>, error_response: ErrorResponse) {
         self.last_exchange = Some(ChildExchange {
-            timestamp: Time::now().timestamp(),
+            timestamp: Timestamp::now(),
             result: ExchangeResult::Failure(error_response),
             user_agent,
         });
@@ -1691,9 +1693,8 @@ impl ChildStatus {
         self.last_exchange.as_ref()
     }
 
-    pub fn last_success(&self) -> Option<Time> {
+    pub fn last_success(&self) -> Option<Timestamp> {
         self.last_success
-            .map(|timestamp| Time::new(Utc.timestamp(timestamp, 0)))
     }
 }
 
@@ -1712,9 +1713,11 @@ impl From<ChildStatus> for Option<ChildExchange> {
     }
 }
 
+//------------ ChildExchange -------------------------------------------------
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildExchange {
-    timestamp: i64,
+    timestamp: Timestamp,
     result: ExchangeResult,
     user_agent: Option<String>,
 }
@@ -1724,12 +1727,98 @@ impl ChildExchange {
         self.result.was_success()
     }
 
-    pub fn time(&self) -> Time {
-        Time::new(Utc.timestamp(self.timestamp, 0))
+    pub fn timestamp(&self) -> Timestamp {
+        self.timestamp
     }
 
     pub fn user_agent(&self) -> Option<&String> {
         self.user_agent.as_ref()
+    }
+}
+
+//------------ Timestamp -----------------------------------------------------
+
+/// A wrapper for unix timestamps with second precision, with some convenient stuff.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct Timestamp(i64);
+
+impl Timestamp {
+    pub fn now() -> Self {
+        Timestamp(Time::now().timestamp())
+    }
+
+    pub fn now_plus_hours(hours: i64) -> Self {
+        Timestamp::now().plus_hours(hours)
+    }
+
+    pub fn plus_hours(self, hours: i64) -> Self {
+        self + Duration::hours(hours)
+    }
+
+    pub fn now_minus_hours(hours: i64) -> Self {
+        Timestamp::now().minus_hours(hours)
+    }
+
+    pub fn minus_hours(self, hours: i64) -> Self {
+        self - Duration::hours(hours)
+    }
+
+    pub fn now_plus_minutes(minutes: i64) -> Self {
+        Timestamp::now().plus_minutes(minutes)
+    }
+
+    pub fn plus_minutes(self, minutes: i64) -> Self {
+        self + Duration::minutes(minutes)
+    }
+
+    pub fn to_rfc3339(&self) -> String {
+        Time::from(*self).to_rfc3339()
+    }
+}
+
+impl From<Timestamp> for Time {
+    fn from(timestamp: Timestamp) -> Self {
+        Time::new(Utc.timestamp(timestamp.0, 0))
+    }
+}
+
+//--- Display
+
+impl fmt::Display for Timestamp {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+//--- Add
+
+impl ops::Add<Duration> for Timestamp {
+    type Output = Self;
+
+    fn add(self, duration: Duration) -> Self::Output {
+        Timestamp(self.0 + duration.num_seconds())
+    }
+}
+
+impl ops::AddAssign<Duration> for Timestamp {
+    fn add_assign(&mut self, duration: Duration) {
+        self.0 += duration.num_seconds();
+    }
+}
+
+//--- Sub
+
+impl ops::Sub<Duration> for Timestamp {
+    type Output = Self;
+
+    fn sub(self, duration: Duration) -> Self::Output {
+        Timestamp(self.0 - duration.num_seconds())
+    }
+}
+
+impl ops::SubAssign<Duration> for Timestamp {
+    fn sub_assign(&mut self, duration: Duration) {
+        self.0 -= duration.num_seconds()
     }
 }
 

@@ -560,9 +560,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                             if let Some(last_success) = status.last_success() {
                                 res.push_str(&format!(
                                     "krill_ca_parent_last_success_time{{ca=\"{}\", parent=\"{}\"}} {}\n",
-                                    ca,
-                                    parent,
-                                    last_success.timestamp()
+                                    ca, parent, last_success
                                 ));
                             }
                         }
@@ -598,8 +596,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                     if let Some(last_success) = status.last_success() {
                         res.push_str(&format!(
                             "krill_ca_repo_last_success_time{{ca=\"{}\"}} {}\n",
-                            ca,
-                            last_success.timestamp()
+                            ca, last_success
                         ));
                     }
                 }
@@ -610,7 +607,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 for (ca, status) in ca_repo_status.iter() {
                     // skip the ones for which we have no status yet, i.e it was really only just added
                     // and no attempt to connect has yet been made.
-                    let timestamp = status.next_exchange_before().timestamp();
+                    let timestamp = status.next_exchange_before();
                     res.push_str(&format!(
                         "krill_ca_repo_next_before_time{{ca=\"{}\"}} {}\n",
                         ca, timestamp
@@ -653,7 +650,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                     // and no attempt to connect has yet been made.
                     for (child, status) in child_status_map.iter() {
                         if let Some(exchange) = status.last_exchange() {
-                            let timestamp = exchange.time().timestamp();
+                            let timestamp = exchange.timestamp();
                             res.push_str(&format!(
                                 "krill_ca_child_last_connection{{ca=\"{}\", child=\"{}\"}} {}\n",
                                 ca, child, timestamp
@@ -674,9 +671,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                         if let Some(time) = status.last_success() {
                             res.push_str(&format!(
                                 "krill_ca_child_last_success{{ca=\"{}\", child=\"{}\"}} {}\n",
-                                ca,
-                                child,
-                                time.timestamp()
+                                ca, child, time
                             ));
                         }
                     }
