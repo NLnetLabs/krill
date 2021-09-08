@@ -427,17 +427,17 @@ impl Request {
     }
 
     pub async fn api_bytes(self) -> Result<Bytes, Error> {
-        let limit = self.state().limit_api();
+        let limit = self.state().config.post_limit_api;
         self.read_bytes(limit).await
     }
 
     pub async fn rfc6492_bytes(self) -> Result<Bytes, Error> {
-        let limit = self.state().limit_rfc6492();
+        let limit = self.state().config.post_limit_rfc6492;
         self.read_bytes(limit).await
     }
 
     pub async fn rfc8181_bytes(self) -> Result<Bytes, Error> {
-        let limit = self.state().limit_rfc8181();
+        let limit = self.state().config.post_limit_rfc8181;
         self.read_bytes(limit).await
     }
 
