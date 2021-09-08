@@ -571,47 +571,47 @@ pub async fn metrics(req: Request) -> RoutingResult {
             }
 
             {
-                // CA -> Repository status
+                // CA -> Publication Server status
 
                 // krill_ca_repo_success{{ca="ca"}} 1
                 // krill_ca_repo_last_success_time{{ca="ca"}} 1630921599
                 // krill_ca_repo_next_before_time{{ca="ca"}} 1630921599
 
                 res.push('\n');
-                res.push_str("# HELP krill_ca_repo_success status of last CA to Publication Server connection (0=issue, 1=success)\n");
-                res.push_str("# TYPE krill_ca_repo_success gauge\n");
+                res.push_str("# HELP krill_ca_ps_success status of last CA to Publication Server connection (0=issue, 1=success)\n");
+                res.push_str("# TYPE krill_ca_ps_success gauge\n");
                 for (ca, status) in ca_repo_status.iter() {
                     // skip the ones for which we have no status yet, i.e it was really only just added
                     // and no attempt to connect has yet been made.
                     if let Some(exchange) = status.last_exchange() {
                         let value = if exchange.was_success() { 1 } else { 0 };
-                        res.push_str(&format!("krill_ca_repo_success{{ca=\"{}\"}} {}\n", ca, value));
+                        res.push_str(&format!("krill_ca_ps_success{{ca=\"{}\"}} {}\n", ca, value));
                     }
                 }
 
                 res.push('\n');
-                res.push_str("# HELP krill_ca_repo_last_success_time unix timestamp in seconds of last successful CA to Publication Server connection\n");
-                res.push_str("# TYPE krill_ca_repo_last_success_time gauge\n");
+                res.push_str("# HELP krill_ca_ps_last_success_time unix timestamp in seconds of last successful CA to Publication Server connection\n");
+                res.push_str("# TYPE krill_ca_ps_last_success_time gauge\n");
                 for (ca, status) in ca_repo_status.iter() {
                     // skip the ones for which we have no status yet, i.e it was really only just added
                     // and no attempt to connect has yet been made.
                     if let Some(last_success) = status.last_success() {
                         res.push_str(&format!(
-                            "krill_ca_repo_last_success_time{{ca=\"{}\"}} {}\n",
+                            "krill_ca_ps_last_success_time{{ca=\"{}\"}} {}\n",
                             ca, last_success
                         ));
                     }
                 }
 
                 res.push('\n');
-                res.push_str("# HELP krill_ca_repo_next_planned_time unix timestamp in seconds of next planned CA to Publication Server connection (unless e.g. ROAs are changed)\n");
-                res.push_str("# TYPE krill_ca_repo_next_planned_time gauge\n");
+                res.push_str("# HELP krill_ca_ps_next_planned_time unix timestamp in seconds of next planned CA to Publication Server connection (unless e.g. ROAs are changed)\n");
+                res.push_str("# TYPE krill_ca_ps_next_planned_time gauge\n");
                 for (ca, status) in ca_repo_status.iter() {
                     // skip the ones for which we have no status yet, i.e it was really only just added
                     // and no attempt to connect has yet been made.
                     let timestamp = status.next_exchange_before();
                     res.push_str(&format!(
-                        "krill_ca_repo_next_planned_time{{ca=\"{}\"}} {}\n",
+                        "krill_ca_ps_next_planned_time{{ca=\"{}\"}} {}\n",
                         ca, timestamp
                     ));
                 }
