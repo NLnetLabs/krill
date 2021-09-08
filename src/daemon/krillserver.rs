@@ -13,10 +13,10 @@ use rpki::{
 
 use crate::commons::api::{
     AddChildRequest, AllCertAuthIssues, CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthInit, CertAuthIssues,
-    CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle, ChildStatus, CommandHistory, CommandHistoryCriteria, Handle,
-    ListReply, ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublicationServerUris, PublishDelta,
-    PublisherDetails, PublisherHandle, RepoStatus, RepositoryContact, ResourceSet, RoaDefinition, RoaDefinitionUpdates,
-    RtaList, RtaName, RtaPrepResponse, ServerInfo, TaCertDetails, UpdateChildRequest,
+    CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Handle, ListReply,
+    ParentCaContact, ParentCaReq, ParentHandle, PublicationServerUris, PublishDelta, PublisherDetails, PublisherHandle,
+    RepositoryContact, ResourceSet, RoaDefinition, RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, ServerInfo,
+    TaCertDetails, UpdateChildRequest,
 };
 use crate::commons::bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion};
 use crate::commons::crypto::KrillSigner;
@@ -43,6 +43,8 @@ use crate::daemon::http::HttpResponse;
 use crate::daemon::mq::MessageQueue;
 use crate::daemon::scheduler::Scheduler;
 use crate::pubd::{RepoStats, RepositoryManager};
+
+use super::ca::CaStatus;
 
 //------------ KrillServer ---------------------------------------------------
 
@@ -443,12 +445,10 @@ impl KrillServer {
 
     /// Show children stats under the CA.
     pub async fn ca_stats_child_connections(&self, ca: &Handle) -> KrillResult<ChildrenConnectionStats> {
-        self.ca_manager.ca_stats_child_connections(ca).await
-    }
-
-    /// Get the ca child status map
-    pub async fn ca_child_status_map(&self, ca: &Handle) -> KrillResult<HashMap<ChildHandle, ChildStatus>> {
-        self.ca_manager.ca_child_status_map(ca).await
+        self.ca_manager
+            .get_ca_status(ca)
+            .await
+            .map(|status| status.get_children_connection_stats())
     }
 }
 
@@ -531,16 +531,15 @@ impl KrillServer {
     pub async fn ca_issues(&self, ca_handle: &Handle) -> KrillResult<CertAuthIssues> {
         let mut issues = CertAuthIssues::default();
 
-        let status = self.ca_repo_status(ca_handle).await?;
+        let ca_status = self.ca_manager.get_ca_status(ca_handle).await?;
 
-        if let Some(error) = status.into_failure_opt() {
+        if let Some(error) = ca_status.repo().to_failure_opt() {
             issues.add_repo_issue(error)
         }
 
-        let parent_statuses = self.ca_manager.ca_parent_statuses(ca_handle).await?;
-        for (parent, status) in parent_statuses.into_iter() {
-            if let Some(error) = status.into_failure_opt() {
-                issues.add_parent_issue(parent, error)
+        for (parent, status) in ca_status.parents().iter() {
+            if let Some(error) = status.to_failure_opt() {
+                issues.add_parent_issue(parent.clone(), error)
             }
         }
 
@@ -582,6 +581,11 @@ impl KrillServer {
         self.ca_manager.get_ca(handle).await.map(|ca| ca.as_ca_info())
     }
 
+    /// Returns the CA status, or an error if none can be found.
+    pub async fn ca_status(&self, ca: &Handle) -> KrillResult<Arc<CaStatus>> {
+        self.ca_manager.get_ca_status(ca).await
+    }
+
     /// Delete a CA. Let it do best effort revocation requests and withdraw
     /// all its objects first. Note that any children of this CA will be left
     /// orphaned, and they will only learn of this sad fact when they choose
@@ -594,10 +598,6 @@ impl KrillServer {
     pub async fn ca_my_parent_contact(&self, handle: &Handle, parent: &ParentHandle) -> KrillResult<ParentCaContact> {
         let ca = self.ca_manager.get_ca(handle).await?;
         ca.parent(parent).map(|p| p.clone())
-    }
-
-    pub async fn ca_my_parent_statuses(&self, ca: &Handle) -> KrillResult<ParentStatuses> {
-        self.ca_manager.ca_parent_statuses(ca).await
     }
 
     /// Returns the history for a CA, or NONE in case of issues (i.e. it does not exist).
@@ -629,10 +629,6 @@ impl KrillServer {
         let ca = self.ca_manager.get_ca(handle).await?;
         let contact = ca.repository_contact()?;
         Ok(CaRepoDetails::new(contact.clone()))
-    }
-
-    pub async fn ca_repo_status(&self, ca: &Handle) -> KrillResult<RepoStatus> {
-        self.ca_manager.ca_repo_status(ca).await
     }
 
     /// Update the repository for a CA, or return an error. (see `CertAuth::repo_update`)

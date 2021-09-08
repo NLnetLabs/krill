@@ -20,7 +20,7 @@ use hyper::server::conn::AddrIncoming;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::Method;
 
-use crate::commons::api::{ChildStatus, ParentCaReq, ParentStatuses, RepoStatus, RepositoryContact};
+use crate::commons::api::{ParentCaReq, RepositoryContact};
 use crate::commons::bgp::BgpAnalysisAdvice;
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::AggregateStoreError;
@@ -32,7 +32,7 @@ use crate::constants::{
 };
 use crate::daemon::auth::common::permissions::Permission;
 use crate::daemon::auth::Auth;
-use crate::daemon::ca::{RouteAuthorizationUpdates, TA_NAME};
+use crate::daemon::ca::{CaStatus, RouteAuthorizationUpdates, TA_NAME};
 use crate::daemon::config::Config;
 use crate::daemon::http::auth::auth;
 use crate::daemon::http::statics::statics;
@@ -462,8 +462,8 @@ pub async fn metrics(req: Request) -> RoutingResult {
             }
         }
 
-        if let Ok(cas_status) = server.cas_stats().await {
-            let number_cas = cas_status.len();
+        if let Ok(cas_stats) = server.cas_stats().await {
+            let number_cas = cas_stats.len();
 
             res.push('\n');
             res.push_str("# HELP krill_cas number of cas in krill\n");
@@ -473,14 +473,14 @@ pub async fn metrics(req: Request) -> RoutingResult {
             res.push('\n');
             res.push_str("# HELP krill_cas_roas number of roas for CA\n");
             res.push_str("# TYPE krill_cas_roas gauge\n");
-            for (ca, status) in cas_status.iter() {
+            for (ca, status) in cas_stats.iter() {
                 res.push_str(&format!("krill_cas_roas{{ca=\"{}\"}} {}\n", ca, status.roa_count()));
             }
 
             res.push('\n');
             res.push_str("# HELP krill_cas_children number of children for CA\n");
             res.push_str("# TYPE krill_cas_children gauge\n");
-            for (ca, status) in cas_status.iter() {
+            for (ca, status) in cas_stats.iter() {
                 res.push_str(&format!(
                     "krill_cas_children{{ca=\"{}\"}} {}\n",
                     ca,
@@ -500,23 +500,13 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 roas_total: HashMap::new(),
             };
 
-            let mut ca_parent_statuses: HashMap<Handle, ParentStatuses> = HashMap::new();
-            let mut ca_repo_status: HashMap<Handle, RepoStatus> = HashMap::new();
-            let mut ca_child_status: HashMap<Handle, HashMap<ChildHandle, ChildStatus>> = HashMap::new();
+            let mut ca_status_map: HashMap<Handle, Arc<CaStatus>> = HashMap::new();
 
-            for (ca, status) in cas_status.iter() {
+            for (ca, status) in cas_stats.iter() {
                 all_bgp_stats.add_ca(ca, status.bgp_stats());
 
-                if let Ok(parent_statuses) = server.ca_my_parent_statuses(ca).await {
-                    ca_parent_statuses.insert(ca.clone(), parent_statuses);
-                }
-
-                if let Ok(repo_status) = server.ca_repo_status(ca).await {
-                    ca_repo_status.insert(ca.clone(), repo_status);
-                }
-
-                if let Ok(child_status_map) = server.ca_child_status_map(ca).await {
-                    ca_child_status.insert(ca.clone(), child_status_map);
+                if let Ok(ca_status) = server.ca_status(ca).await {
+                    ca_status_map.insert(ca.clone(), ca_status);
                 }
             }
 
@@ -531,9 +521,9 @@ pub async fn metrics(req: Request) -> RoutingResult {
                     "# HELP krill_ca_parent_success status of last CA to parent connection (0=issue, 1=success)\n",
                 );
                 res.push_str("# TYPE krill_ca_parent_success gauge\n");
-                for (ca, parent_statuses) in ca_parent_statuses.iter() {
+                for (ca, status) in ca_status_map.iter() {
                     if ca.as_str() != TA_NAME {
-                        for (parent, status) in parent_statuses.iter() {
+                        for (parent, status) in status.parents().iter() {
                             // skip the ones for which we have no status yet, i.e it was really only just added
                             // and no attempt to connect has yet been made.
                             if let Some(exchange) = status.last_exchange() {
@@ -553,9 +543,9 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 );
                 res.push_str("# TYPE krill_ca_parent_last_success_time gauge\n");
 
-                for (ca, parent_statuses) in ca_parent_statuses.iter() {
+                for (ca, status) in ca_status_map.iter() {
                     if ca.as_str() != TA_NAME {
-                        for (parent, status) in parent_statuses.iter() {
+                        for (parent, status) in status.parents().iter() {
                             // skip the ones for which we have no successful connection at all. Most likely
                             // they were just added (in which case it will come) - or were never successful
                             // in which case the metric above will say that the status is 0
@@ -580,10 +570,10 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 res.push('\n');
                 res.push_str("# HELP krill_ca_ps_success status of last CA to Publication Server connection (0=issue, 1=success)\n");
                 res.push_str("# TYPE krill_ca_ps_success gauge\n");
-                for (ca, status) in ca_repo_status.iter() {
+                for (ca, status) in ca_status_map.iter() {
                     // skip the ones for which we have no status yet, i.e it was really only just added
                     // and no attempt to connect has yet been made.
-                    if let Some(exchange) = status.last_exchange() {
+                    if let Some(exchange) = status.repo().last_exchange() {
                         let value = if exchange.was_success() { 1 } else { 0 };
                         res.push_str(&format!("krill_ca_ps_success{{ca=\"{}\"}} {}\n", ca, value));
                     }
@@ -592,10 +582,10 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 res.push('\n');
                 res.push_str("# HELP krill_ca_ps_last_success_time unix timestamp in seconds of last successful CA to Publication Server connection\n");
                 res.push_str("# TYPE krill_ca_ps_last_success_time gauge\n");
-                for (ca, status) in ca_repo_status.iter() {
+                for (ca, status) in ca_status_map.iter() {
                     // skip the ones for which we have no status yet, i.e it was really only just added
                     // and no attempt to connect has yet been made.
-                    if let Some(last_success) = status.last_success() {
+                    if let Some(last_success) = status.repo().last_success() {
                         res.push_str(&format!(
                             "krill_ca_ps_last_success_time{{ca=\"{}\"}} {}\n",
                             ca, last_success
@@ -606,10 +596,10 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 res.push('\n');
                 res.push_str("# HELP krill_ca_ps_next_planned_time unix timestamp in seconds of next planned CA to Publication Server connection (unless e.g. ROAs are changed)\n");
                 res.push_str("# TYPE krill_ca_ps_next_planned_time gauge\n");
-                for (ca, status) in ca_repo_status.iter() {
+                for (ca, status) in ca_status_map.iter() {
                     // skip the ones for which we have no status yet, i.e it was really only just added
                     // and no attempt to connect has yet been made.
-                    let timestamp = status.next_exchange_before();
+                    let timestamp = status.repo().next_exchange_before();
                     res.push_str(&format!(
                         "krill_ca_ps_next_planned_time{{ca=\"{}\"}} {}\n",
                         ca, timestamp
@@ -630,10 +620,10 @@ pub async fn metrics(req: Request) -> RoutingResult {
                     "# HELP krill_ca_child_success status of last child to CA connection (0=issue, 1=success)\n",
                 );
                 res.push_str("# TYPE krill_ca_child_success gauge\n");
-                for (ca, child_status_map) in ca_child_status.iter() {
+                for (ca, status) in ca_status_map.iter() {
                     // skip the ones for which we have no status yet, i.e it was really only just added
                     // and no attempt to connect has yet been made.
-                    for (child, status) in child_status_map.iter() {
+                    for (child, status) in status.children().iter() {
                         if let Some(exchange) = status.last_exchange() {
                             let value = if exchange.was_success() { 1 } else { 0 };
                             res.push_str(&format!(
@@ -649,10 +639,10 @@ pub async fn metrics(req: Request) -> RoutingResult {
                     "# HELP krill_ca_child_last_connection unix timestamp in seconds of last child to CA connection\n",
                 );
                 res.push_str("# TYPE krill_ca_child_last_connection gauge\n");
-                for (ca, child_status_map) in ca_child_status.iter() {
+                for (ca, status) in ca_status_map.iter() {
                     // skip the ones for which we have no status yet, i.e it was really only just added
                     // and no attempt to connect has yet been made.
-                    for (child, status) in child_status_map.iter() {
+                    for (child, status) in status.children().iter() {
                         if let Some(exchange) = status.last_exchange() {
                             let timestamp = exchange.timestamp();
                             res.push_str(&format!(
@@ -668,10 +658,10 @@ pub async fn metrics(req: Request) -> RoutingResult {
                     "# HELP krill_ca_child_last_success unix timestamp in seconds of last successful child to CA connection\n",
                 );
                 res.push_str("# TYPE krill_ca_child_last_success gauge\n");
-                for (ca, child_status_map) in ca_child_status.iter() {
+                for (ca, status) in ca_status_map.iter() {
                     // skip the ones for which we have no status yet, i.e it was really only just added
                     // and no attempt to connect has yet been made.
-                    for (child, status) in child_status_map.iter() {
+                    for (child, status) in status.children().iter() {
                         if let Some(time) = status.last_success() {
                             res.push_str(&format!(
                                 "krill_ca_child_last_success{{ca=\"{}\", child=\"{}\"}} {}\n",
@@ -686,12 +676,12 @@ pub async fn metrics(req: Request) -> RoutingResult {
                     "# HELP krill_ca_child_agent_total total children per user agent based on their last connection\n",
                 );
                 res.push_str("# TYPE krill_ca_child_agent_total gauge\n");
-                for (ca, child_status_map) in ca_child_status.iter() {
+                for (ca, status) in ca_status_map.iter() {
                     // skip the ones for which we have no status yet, i.e it was really only just added
                     // and no attempt to connect has yet been made.
 
                     let mut user_agent_totals: HashMap<String, usize> = HashMap::new();
-                    for status in child_status_map.values() {
+                    for status in status.children().values() {
                         if let Some(exchange) = status.last_exchange() {
                             let agent = exchange.user_agent().cloned().unwrap_or_else(|| "<none>".to_string());
                             *user_agent_totals.entry(agent).or_insert(0) += 1;
@@ -1448,7 +1438,7 @@ async fn api_ca_my_parent_statuses(req: Request, ca: Handle) -> RoutingResult {
         req,
         Permission::CA_READ,
         ca.clone(),
-        render_json_res(req.state().ca_my_parent_statuses(&ca).await)
+        render_json_res(req.state().ca_status(&ca).await.map(|s| s.parents().clone()))
     )
 }
 
@@ -1609,7 +1599,7 @@ async fn api_ca_repo_status(req: Request, handle: Handle) -> RoutingResult {
             req,
             Permission::CA_READ,
             handle.clone(),
-            render_json_res(req.state().ca_repo_status(&handle).await)
+            render_json_res(req.state().ca_status(&handle).await.map(|status| status.repo().clone()))
         ),
         _ => render_unknown_method(),
     }

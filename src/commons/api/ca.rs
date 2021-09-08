@@ -1370,8 +1370,8 @@ impl ParentStatus {
         &self.entitlements
     }
 
-    pub fn into_failure_opt(self) -> Option<ErrorResponse> {
-        self.last_exchange.map(|e| e.into_failure_opt()).flatten()
+    pub fn to_failure_opt(&self) -> Option<ErrorResponse> {
+        self.last_exchange.as_ref().map(|e| e.to_failure_opt()).flatten()
     }
 
     fn set_next_exchange_plus_seconds(&mut self, next_seconds: i64) {
@@ -1467,8 +1467,8 @@ impl RepoStatus {
         self.last_success
     }
 
-    pub fn into_failure_opt(self) -> Option<ErrorResponse> {
-        self.last_exchange.map(|e| e.into_failure_opt()).flatten()
+    pub fn to_failure_opt(&self) -> Option<ErrorResponse> {
+        self.last_exchange.as_ref().map(|e| e.to_failure_opt()).flatten()
     }
 }
 
@@ -1557,10 +1557,10 @@ impl ParentExchange {
         self.result.was_success()
     }
 
-    pub fn into_failure_opt(self) -> Option<ErrorResponse> {
-        match self.result {
+    pub fn to_failure_opt(&self) -> Option<ErrorResponse> {
+        match &self.result {
             ExchangeResult::Success => None,
-            ExchangeResult::Failure(error) => Some(error),
+            ExchangeResult::Failure(error) => Some(error.clone()),
         }
     }
 }
