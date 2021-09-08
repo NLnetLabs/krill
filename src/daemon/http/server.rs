@@ -385,7 +385,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
         let mut res = String::new();
 
         let info = server.server_info();
-        res.push_str("# HELP krill_server_start timestamp of last krill server start\n");
+        res.push_str("# HELP krill_server_start unix timestamp in seconds of last krill server start\n");
         res.push_str("# TYPE krill_server_start gauge\n");
         res.push_str(&format!("krill_server_start {}\n", info.started()));
         res.push('\n');
@@ -414,7 +414,9 @@ pub async fn metrics(req: Request) -> RoutingResult {
 
             if let Some(last_update) = stats.last_update() {
                 res.push('\n');
-                res.push_str("# HELP krill_repo_rrdp_last_update timestamp of last update by any publisher\n");
+                res.push_str(
+                    "# HELP krill_repo_rrdp_last_update unix timestamp in seconds of last update by any publisher\n",
+                );
                 res.push_str("# TYPE krill_repo_rrdp_last_update gauge\n");
                 res.push_str(&format!("krill_repo_rrdp_last_update {}\n", last_update.timestamp()));
             }
@@ -447,7 +449,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
             }
 
             res.push('\n');
-            res.push_str("# HELP krill_repo_last_update timestamp of last update for publisher\n");
+            res.push_str("# HELP krill_repo_last_update unix timestamp in seconds of last update for publisher\n");
             res.push_str("# TYPE krill_repo_last_update gauge\n");
             for (publisher, stats) in publishers {
                 if let Some(last_update) = stats.last_update() {
@@ -547,7 +549,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
 
                 res.push('\n');
                 res.push_str(
-                    "# HELP krill_ca_parent_last_success_time timestamp of last successful ca-parent connection\n",
+                    "# HELP krill_ca_parent_last_success_time unix timestamp in seconds of last successful ca-parent connection\n",
                 );
                 res.push_str("# TYPE krill_ca_parent_last_success_time gauge\n");
 
@@ -588,7 +590,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 }
 
                 res.push('\n');
-                res.push_str("# HELP krill_ca_repo_last_success_time timestamp of last successful ca to publication server connection\n");
+                res.push_str("# HELP krill_ca_repo_last_success_time unix timestamp in seconds of last successful ca to publication server connection\n");
                 res.push_str("# TYPE krill_ca_repo_last_success_time gauge\n");
                 for (ca, status) in ca_repo_status.iter() {
                     // skip the ones for which we have no status yet, i.e it was really only just added
@@ -602,7 +604,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 }
 
                 res.push('\n');
-                res.push_str("# HELP krill_ca_repo_next_before_time timestamp of next planned ca to publication server connection\n");
+                res.push_str("# HELP krill_ca_repo_next_before_time unix timestamp in seconds of next planned ca to publication server connection\n");
                 res.push_str("# TYPE krill_ca_repo_next_before_time gauge\n");
                 for (ca, status) in ca_repo_status.iter() {
                     // skip the ones for which we have no status yet, i.e it was really only just added
@@ -643,7 +645,9 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 }
 
                 res.push('\n');
-                res.push_str("# HELP krill_ca_child_last_connection timestamp of last child to ca connection\n");
+                res.push_str(
+                    "# HELP krill_ca_child_last_connection unix timestamp in seconds of last child to ca connection\n",
+                );
                 res.push_str("# TYPE krill_ca_child_last_connection gauge\n");
                 for (ca, child_status_map) in ca_child_status.iter() {
                     // skip the ones for which we have no status yet, i.e it was really only just added
@@ -661,7 +665,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
 
                 res.push('\n');
                 res.push_str(
-                    "# HELP krill_ca_child_last_success timestamp of last successful child to ca connection\n",
+                    "# HELP krill_ca_child_last_success unix timestamp in seconds of last successful child to ca connection\n",
                 );
                 res.push_str("# TYPE krill_ca_child_last_success gauge\n");
                 for (ca, child_status_map) in ca_child_status.iter() {
