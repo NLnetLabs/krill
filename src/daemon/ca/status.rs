@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, path::Path, sync::Arc};
 
 use tokio::sync::RwLock;
 
@@ -50,14 +50,14 @@ impl Default for CaStatus {
 
 pub struct StatusStore {
     store: KeyValueStore,
-    lock: RwLock<()>,
+    cache: RwLock<HashMap<Handle, Arc<CaStatus>>>,
 }
 
 impl StatusStore {
     pub fn new(work_dir: &Path, namespace: &str) -> KrillResult<Self> {
         let store = KeyValueStore::disk(work_dir, namespace)?;
-        let lock = RwLock::new(());
-        Ok(StatusStore { store, lock })
+        let cache = RwLock::new(HashMap::new());
+        Ok(StatusStore { store, cache })
     }
 
     fn status_key(ca: &Handle) -> KeyStoreKey {
@@ -65,20 +65,30 @@ impl StatusStore {
     }
 
     /// Returns the stored CaStatus for a CA, or a default (empty) status if it can't be found
-    fn get_ca_status(&self, ca: &Handle) -> KrillResult<CaStatus> {
-        Ok(self.store.get(&Self::status_key(ca))?.unwrap_or_default())
+    async fn get_ca_status(&self, ca: &Handle) -> KrillResult<Arc<CaStatus>> {
+        // Try to get it from cache first
+        {
+            if let Some(status) = self.cache.read().await.get(ca) {
+                return Ok(status.clone());
+            }
+        }
+
+        // Try to get it from disk, and if present load the cache
+        let status: CaStatus = self.store.get(&Self::status_key(ca))?.unwrap_or_default();
+        let status = Arc::new(status);
+
+        self.cache.write().await.insert(ca.clone(), status.clone());
+        Ok(status)
     }
 
     pub async fn get_parent_statuses(&self, ca: &Handle) -> KrillResult<ParentStatuses> {
-        let _lock = self.lock.read().await;
-        let status = self.get_ca_status(ca)?;
-        Ok(status.parents)
+        let status = self.get_ca_status(ca).await?;
+        Ok(status.parents.clone())
     }
 
     pub async fn get_repo_status(&self, ca: &Handle) -> KrillResult<RepoStatus> {
-        let _lock = self.lock.read().await;
-        let status = self.get_ca_status(ca)?;
-        Ok(status.repo)
+        let status = self.get_ca_status(ca).await?;
+        Ok(status.repo.clone())
     }
 
     pub async fn set_parent_failure(
@@ -163,17 +173,13 @@ impl StatusStore {
     }
 
     pub async fn get_stats_child_connections(&self, ca: &Handle) -> KrillResult<ChildrenConnectionStats> {
-        let _lock = self.lock.read().await;
-        let status = self.get_ca_status(ca)?;
-
+        let status = self.get_ca_status(ca).await?;
         Ok(status.get_children_connection_stats())
     }
 
     pub async fn get_child_status_map(&self, ca: &Handle) -> KrillResult<HashMap<ChildHandle, ChildStatus>> {
-        let _lock = self.lock.read().await;
-        let status = self.get_ca_status(ca)?;
-
-        Ok(status.children)
+        let status = self.get_ca_status(ca).await?;
+        Ok(status.children.clone())
     }
 
     pub async fn set_status_repo_failure(&self, ca: &Handle, uri: ServiceUri, error: &Error) -> KrillResult<()> {
@@ -202,11 +208,14 @@ impl StatusStore {
     where
         F: FnOnce(&mut CaStatus),
     {
-        let _lock = self.lock.write().await;
-        let mut status = self.get_ca_status(ca)?;
+        let mut cache = self.cache.write().await;
+
+        let mut status: CaStatus = self.store.get(&Self::status_key(ca))?.unwrap_or_default();
+
         op(&mut status);
 
         self.store.store(&Self::status_key(ca), &status)?;
+        cache.insert(ca.clone(), Arc::new(status));
 
         Ok(())
     }
