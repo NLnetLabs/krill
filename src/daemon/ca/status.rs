@@ -17,7 +17,7 @@ use crate::commons::{
 //------------ CaStatus ------------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-struct CaStatus {
+pub struct CaStatus {
     repo: RepoStatus,
     parents: ParentStatuses,
     #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
@@ -33,6 +33,18 @@ impl CaStatus {
             .map(|(handle, status)| ChildConnectionStats::new(handle, status.into()))
             .collect();
         ChildrenConnectionStats::new(children)
+    }
+
+    pub fn repo(&self) -> &RepoStatus {
+        &self.repo
+    }
+
+    pub fn parents(&self) -> &ParentStatuses {
+        &self.parents
+    }
+
+    pub fn children(&self) -> &HashMap<ChildHandle, ChildStatus> {
+        &self.children
     }
 }
 
@@ -65,7 +77,7 @@ impl StatusStore {
     }
 
     /// Returns the stored CaStatus for a CA, or a default (empty) status if it can't be found
-    async fn get_ca_status(&self, ca: &Handle) -> KrillResult<Arc<CaStatus>> {
+    pub async fn get_ca_status(&self, ca: &Handle) -> KrillResult<Arc<CaStatus>> {
         // Try to get it from cache first
         {
             if let Some(status) = self.cache.read().await.get(ca) {
@@ -79,16 +91,6 @@ impl StatusStore {
 
         self.cache.write().await.insert(ca.clone(), status.clone());
         Ok(status)
-    }
-
-    pub async fn get_parent_statuses(&self, ca: &Handle) -> KrillResult<ParentStatuses> {
-        let status = self.get_ca_status(ca).await?;
-        Ok(status.parents.clone())
-    }
-
-    pub async fn get_repo_status(&self, ca: &Handle) -> KrillResult<RepoStatus> {
-        let status = self.get_ca_status(ca).await?;
-        Ok(status.repo.clone())
     }
 
     pub async fn set_parent_failure(
@@ -170,16 +172,6 @@ impl StatusStore {
             status.children.remove(child);
         })
         .await
-    }
-
-    pub async fn get_stats_child_connections(&self, ca: &Handle) -> KrillResult<ChildrenConnectionStats> {
-        let status = self.get_ca_status(ca).await?;
-        Ok(status.get_children_connection_stats())
-    }
-
-    pub async fn get_child_status_map(&self, ca: &Handle) -> KrillResult<HashMap<ChildHandle, ChildStatus>> {
-        let status = self.get_ca_status(ca).await?;
-        Ok(status.children.clone())
     }
 
     pub async fn set_status_repo_failure(&self, ca: &Handle, uri: ServiceUri, error: &Error) -> KrillResult<()> {

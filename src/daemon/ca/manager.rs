@@ -15,14 +15,14 @@ use rpki::uri;
 use crate::{
     commons::{
         actor::Actor,
+        api::rrdp::PublishElement,
         api::{
             self, AddChildRequest, Base64, CaCommandDetails, CaCommandResult, CertAuthList, CertAuthSummary,
-            ChildCaInfo, ChildHandle, ChildStatus, CommandHistory, CommandHistoryCriteria, Entitlements, Handle,
-            IssuanceRequest, IssuanceResponse, ListReply, ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses,
-            PublishDelta, RcvdCert, RepoStatus, RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest,
-            RevocationResponse, RtaName, StoredEffect, UpdateChildRequest,
+            ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Entitlements, Handle, IssuanceRequest,
+            IssuanceResponse, ListReply, ParentCaContact, ParentCaReq, ParentHandle, PublishDelta, RcvdCert,
+            RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse, RtaName,
+            StoredEffect, UpdateChildRequest,
         },
-        api::{rrdp::PublishElement, ChildrenConnectionStats},
         crypto::{IdCert, KrillSigner, ProtocolCms, ProtocolCmsBuilder},
         error::Error,
         eventsourcing::{Aggregate, AggregateStore, Command, CommandKey},
@@ -35,16 +35,14 @@ use crate::{
     daemon::{
         auth::common::permissions::Permission,
         ca::{
-            self, ta_handle, CaObjectsStore, CertAuth, Cmd, CmdDet, IniDet, ResourceTaggedAttestation,
-            RouteAuthorizationUpdates, RtaContentRequest, RtaPrepareRequest, StatusStore,
+            self, ta_handle, CaObjectsStore, CaStatus, CertAuth, Cmd, CmdDet, DeprecatedRepository, IniDet,
+            ResourceTaggedAttestation, RouteAuthorizationUpdates, RtaContentRequest, RtaPrepareRequest, StatusStore,
         },
         config::Config,
         mq::MessageQueue,
     },
     pubd::RepositoryManager,
 };
-
-use super::DeprecatedRepository;
 
 //------------ CaLocks ------------------------------------------------------
 
@@ -329,6 +327,15 @@ impl CaManager {
         self.ca_store.has(handle).map_err(Error::AggregateStoreError)
     }
 
+    /// Gets current CA status
+    pub async fn get_ca_status(&self, ca: &Handle) -> KrillResult<Arc<CaStatus>> {
+        if self.has_ca(ca)? {
+            self.status_store.lock().await.get_ca_status(ca).await
+        } else {
+            Err(Error::CaUnknown(ca.clone()))
+        }
+    }
+
     /// Delete a CA. Let it do best effort revocation requests and withdraw
     /// all its objects first. Note that any children of this CA will be left
     /// orphaned, and they will only learn of this sad fact when they choose
@@ -444,16 +451,6 @@ impl CaManager {
         trace!("Finding details for CA: {} under parent: {}", child, ca);
         let ca = self.get_ca(ca).await?;
         ca.get_child(child).map(|details| details.clone().into())
-    }
-
-    /// Show the (connection) stats for children under a CA.
-    pub async fn ca_stats_child_connections(&self, ca: &Handle) -> KrillResult<ChildrenConnectionStats> {
-        self.status_store.lock().await.get_stats_child_connections(ca).await
-    }
-
-    /// Get the CA's child status map
-    pub async fn ca_child_status_map(&self, ca: &Handle) -> KrillResult<HashMap<ChildHandle, ChildStatus>> {
-        self.status_store.lock().await.get_child_status_map(ca).await
     }
 
     /// Show a contact for a child.
@@ -746,15 +743,6 @@ impl CaManager {
         Ok(())
     }
 
-    /// Returns the parent statuses for this CA.
-    pub async fn ca_parent_statuses(&self, ca: &Handle) -> KrillResult<ParentStatuses> {
-        if self.ca_store.has(ca)? {
-            self.status_store.lock().await.get_parent_statuses(ca).await
-        } else {
-            Err(Error::CaUnknown(ca.clone()))
-        }
-    }
-
     /// Refresh all CAs:
     /// - process all CAs in parallel
     /// - process all parents for CAs in parallel
@@ -775,8 +763,9 @@ impl CaManager {
                     }
 
                     if let Some(threshold_hours) = self.config.suspend_child_after_inactive_hours {
-                        if let Ok(child_stats) = self.ca_stats_child_connections(&ca_handle).await {
-                            for child in child_stats.inactive_children(threshold_hours) {
+                        if let Ok(ca_status) = self.get_ca_status(&ca_handle).await {
+                            let connections = ca_status.get_children_connection_stats();
+                            for child in connections.inactive_children(threshold_hours) {
                                 info!(
                                     "Child '{}' under CA '{}' was inactive for more than {} hours. Will suspend it.",
                                     child, ca_handle, threshold_hours
@@ -1489,21 +1478,6 @@ impl CaManager {
         let cmd = CmdDet::update_repo(&handle, new_contact, self.signer.clone(), actor);
         self.send_command(cmd).await?;
         Ok(())
-    }
-
-    /// Returns the RepoStatus for a CA, this includes the last connection time and result, and the
-    /// objects currently known to be published.
-    ///
-    /// NOTE: This contains the status of the **CURRENT** repository only. It could be extended to
-    /// include the status of the old repository during a migration.
-    pub async fn ca_repo_status(&self, ca: &Handle) -> KrillResult<RepoStatus> {
-        let lock = self.locks.ca(ca).await;
-        let _ = lock.read().await;
-        if self.ca_store.has(ca)? {
-            self.status_store.lock().await.get_repo_status(ca).await
-        } else {
-            Err(Error::CaUnknown(ca.clone()))
-        }
     }
 
     async fn send_rfc8181_list(
