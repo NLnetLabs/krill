@@ -528,7 +528,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
 
                 res.push('\n');
                 res.push_str(
-                    "# HELP krill_ca_parent_success status of last ca-parent connection (0=issue, 1=success)\n",
+                    "# HELP krill_ca_parent_success status of last CA to parent connection (0=issue, 1=success)\n",
                 );
                 res.push_str("# TYPE krill_ca_parent_success gauge\n");
                 for (ca, parent_statuses) in ca_parent_statuses.iter() {
@@ -549,7 +549,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
 
                 res.push('\n');
                 res.push_str(
-                    "# HELP krill_ca_parent_last_success_time unix timestamp in seconds of last successful ca-parent connection\n",
+                    "# HELP krill_ca_parent_last_success_time unix timestamp in seconds of last successful CA to parent connection\n",
                 );
                 res.push_str("# TYPE krill_ca_parent_last_success_time gauge\n");
 
@@ -578,7 +578,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 // krill_ca_repo_next_before_time{{ca="ca"}} 1630921599
 
                 res.push('\n');
-                res.push_str("# HELP krill_ca_repo_success status of last ca to publication server connection (0=issue, 1=success)\n");
+                res.push_str("# HELP krill_ca_repo_success status of last CA to Publication Server connection (0=issue, 1=success)\n");
                 res.push_str("# TYPE krill_ca_repo_success gauge\n");
                 for (ca, status) in ca_repo_status.iter() {
                     // skip the ones for which we have no status yet, i.e it was really only just added
@@ -590,7 +590,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 }
 
                 res.push('\n');
-                res.push_str("# HELP krill_ca_repo_last_success_time unix timestamp in seconds of last successful ca to publication server connection\n");
+                res.push_str("# HELP krill_ca_repo_last_success_time unix timestamp in seconds of last successful CA to Publication Server connection\n");
                 res.push_str("# TYPE krill_ca_repo_last_success_time gauge\n");
                 for (ca, status) in ca_repo_status.iter() {
                     // skip the ones for which we have no status yet, i.e it was really only just added
@@ -604,7 +604,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 }
 
                 res.push('\n');
-                res.push_str("# HELP krill_ca_repo_next_before_time unix timestamp in seconds of next planned ca to publication server connection\n");
+                res.push_str("# HELP krill_ca_repo_next_before_time unix timestamp in seconds of next planned CA to Publication Server connection\n");
                 res.push_str("# TYPE krill_ca_repo_next_before_time gauge\n");
                 for (ca, status) in ca_repo_status.iter() {
                     // skip the ones for which we have no status yet, i.e it was really only just added
@@ -627,7 +627,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
 
                 res.push('\n');
                 res.push_str(
-                    "# HELP krill_ca_child_success status of last child to ca connection (0=issue, 1=success)\n",
+                    "# HELP krill_ca_child_success status of last child to CA connection (0=issue, 1=success)\n",
                 );
                 res.push_str("# TYPE krill_ca_child_success gauge\n");
                 for (ca, child_status_map) in ca_child_status.iter() {
@@ -646,7 +646,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
 
                 res.push('\n');
                 res.push_str(
-                    "# HELP krill_ca_child_last_connection unix timestamp in seconds of last child to ca connection\n",
+                    "# HELP krill_ca_child_last_connection unix timestamp in seconds of last child to CA connection\n",
                 );
                 res.push_str("# TYPE krill_ca_child_last_connection gauge\n");
                 for (ca, child_status_map) in ca_child_status.iter() {
@@ -665,7 +665,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
 
                 res.push('\n');
                 res.push_str(
-                    "# HELP krill_ca_child_last_success unix timestamp in seconds of last successful child to ca connection\n",
+                    "# HELP krill_ca_child_last_success unix timestamp in seconds of last successful child to CA connection\n",
                 );
                 res.push_str("# TYPE krill_ca_child_last_success gauge\n");
                 for (ca, child_status_map) in ca_child_status.iter() {
@@ -683,7 +683,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
 
                 res.push('\n');
                 res.push_str(
-                    "# HELP krill_ca_child_agent_total total children per user agent on their last connection\n",
+                    "# HELP krill_ca_child_agent_total total children per user agent based on their last connection\n",
                 );
                 res.push_str("# TYPE krill_ca_child_agent_total gauge\n");
                 for (ca, child_status_map) in ca_child_status.iter() {
