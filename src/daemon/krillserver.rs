@@ -75,37 +75,14 @@ pub struct KrillServer {
     // Time this server was started
     started: Time,
 
-    // Global size constraints on things which can be posted
-    post_limits: PostLimits,
-
     #[cfg(feature = "multi-user")]
     // Global login session cache
     login_session_cache: Arc<LoginSessionCache>,
 
     // System actor
     system_actor: Actor,
-}
 
-pub struct PostLimits {
-    api: u64,
-    rfc6492: u64,
-    rfc8181: u64,
-}
-
-impl PostLimits {
-    fn new(api: u64, rfc6492: u64, rfc8181: u64) -> Self {
-        PostLimits { api, rfc6492, rfc8181 }
-    }
-
-    pub fn api(&self) -> u64 {
-        self.api
-    }
-    pub fn rfc6492(&self) -> u64 {
-        self.rfc6492
-    }
-    pub fn rfc8181(&self) -> u64 {
-        self.rfc8181
-    }
+    pub config: Arc<Config>,
 }
 
 /// # Set up and initialization
@@ -233,12 +210,6 @@ impl KrillServer {
             &system_actor,
         );
 
-        let post_limits = PostLimits::new(
-            config.post_limit_api,
-            config.post_limit_rfc6492,
-            config.post_limit_rfc8181,
-        );
-
         Ok(KrillServer {
             service_uri,
             work_dir: work_dir.clone(),
@@ -248,10 +219,10 @@ impl KrillServer {
             bgp_analyser,
             scheduler,
             started: Time::now(),
-            post_limits,
             #[cfg(feature = "multi-user")]
             login_session_cache,
             system_actor,
+            config,
         })
     }
 
@@ -288,18 +259,6 @@ impl KrillServer {
 
     pub fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
         self.authorizer.logout(request)
-    }
-
-    pub fn limit_api(&self) -> u64 {
-        self.post_limits.api()
-    }
-
-    pub fn limit_rfc8181(&self) -> u64 {
-        self.post_limits.rfc8181()
-    }
-
-    pub fn limit_rfc6492(&self) -> u64 {
-        self.post_limits.rfc6492()
     }
 
     pub fn testbed_enabled(&self) -> bool {
