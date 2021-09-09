@@ -286,6 +286,9 @@ pub struct Config {
     #[serde(flatten)]
     pub repository_retention: RepositoryRetentionConfig,
 
+    #[serde(flatten)]
+    pub metrics: MetricsConfig,
+
     pub testbed: Option<TestBed>,
 }
 
@@ -366,6 +369,18 @@ impl RepositoryRetentionConfig {
     fn dflt_retention_archive() -> bool {
         false
     }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct MetricsConfig {
+    #[serde(default)] // false
+    pub metrics_hide_ca_details: bool,
+    #[serde(default)] // false
+    pub metrics_hide_child_details: bool,
+    #[serde(default)] // false
+    pub metrics_hide_publisher_details: bool,
+    #[serde(default)] // false
+    pub metrics_hide_roa_details: bool,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -544,6 +559,13 @@ impl Config {
             retention_archive: false,
         };
 
+        let metrics = MetricsConfig {
+            metrics_hide_ca_details: false,
+            metrics_hide_child_details: false,
+            metrics_hide_publisher_details: false,
+            metrics_hide_roa_details: false,
+        };
+
         let testbed = if enable_testbed {
             Some(TestBed::new(
                 test::rsync("rsync://localhost/ta/ta.cer"),
@@ -591,6 +613,7 @@ impl Config {
             roa_deaggregate_threshold,
             issuance_timing,
             repository_retention,
+            metrics,
             testbed,
         }
     }
