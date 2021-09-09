@@ -6,7 +6,7 @@ use rpki::repository::crypto::KeyIdentifier;
 use rpki::repository::x509::Time;
 
 use crate::commons::api::{
-    ChildCaInfo, ChildHandle, IssuedCert, ResourceClassName, ResourceSet, SuspendedCert, UnsuspendedCert,
+    ChildCaInfo, ChildHandle, ChildState, IssuedCert, ResourceClassName, ResourceSet, SuspendedCert, UnsuspendedCert,
 };
 use crate::commons::crypto::IdCert;
 use crate::commons::error::Error;
@@ -23,20 +23,6 @@ use crate::daemon::config::IssuanceTimingConfig;
 pub enum UsedKeyState {
     Current(ResourceClassName),
     Revoked,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[allow(clippy::large_enum_variant)]
-#[serde(rename_all = "snake_case")]
-pub enum ChildState {
-    Active,
-    Suspended,
-}
-
-impl Default for ChildState {
-    fn default() -> Self {
-        ChildState::Active
-    }
 }
 
 //------------ ChildInfo ---------------------------------------------------
@@ -135,7 +121,7 @@ impl ChildDetails {
 
 impl From<ChildDetails> for ChildCaInfo {
     fn from(details: ChildDetails) -> Self {
-        ChildCaInfo::new((&details.id_cert).into(), details.resources)
+        ChildCaInfo::new(details.state, (&details.id_cert).into(), details.resources)
     }
 }
 
