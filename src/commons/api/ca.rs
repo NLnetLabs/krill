@@ -141,21 +141,53 @@ impl From<&IdCert> for IdCertPem {
     }
 }
 
+//------------ ChildState ----------------------------------------------------
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[allow(clippy::large_enum_variant)]
+#[serde(rename_all = "snake_case")]
+pub enum ChildState {
+    Active,
+    Suspended,
+}
+
+impl Default for ChildState {
+    fn default() -> Self {
+        ChildState::Active
+    }
+}
+
+impl fmt::Display for ChildState {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match &self {
+            ChildState::Active => "active",
+            ChildState::Suspended => "suspended",
+        }
+        .fmt(f)
+    }
+}
+
 //------------ ChildCaInfo ---------------------------------------------------
 
 /// This type represents information about a child CA that is shared through the API.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildCaInfo {
+    state: ChildState,
     id_cert: IdCertPem,
     entitled_resources: ResourceSet,
 }
 
 impl ChildCaInfo {
-    pub fn new(id_cert: IdCertPem, entitled_resources: ResourceSet) -> Self {
+    pub fn new(state: ChildState, id_cert: IdCertPem, entitled_resources: ResourceSet) -> Self {
         ChildCaInfo {
+            state,
             id_cert,
             entitled_resources,
         }
+    }
+
+    pub fn state(&self) -> ChildState {
+        self.state
     }
 
     pub fn id_cert(&self) -> &IdCertPem {
@@ -171,7 +203,8 @@ impl fmt::Display for ChildCaInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "{}", self.id_cert.pem())?;
         writeln!(f, "SHA256 hash of PEM encoded certificate: {}", self.id_cert.hash())?;
-        writeln!(f, "resources: {}", self.entitled_resources)
+        writeln!(f, "resources: {}", self.entitled_resources)?;
+        writeln!(f, "state: {}", self.state)
     }
 }
 
