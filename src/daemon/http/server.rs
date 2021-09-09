@@ -531,7 +531,11 @@ pub async fn metrics(req: Request) -> RoutingResult {
                     }
                 }
 
-                if !server.config.metrics.metrics_hide_child_details {
+                // Do not show child metrics if none of the CAs has any children..
+                // Many users do not delegate so, showing these metrics would just be confusing.
+                let any_children = cas_stats.values().any(|ca| ca.child_count() > 0);
+
+                if any_children && !server.config.metrics.metrics_hide_child_details {
                     // CA -> Children
 
                     // krill_cas_children{ca="parent"} 11 // nr of children
