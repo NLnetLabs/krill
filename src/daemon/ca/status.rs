@@ -30,7 +30,10 @@ impl CaStatus {
             .children
             .clone()
             .into_iter()
-            .map(|(handle, status)| ChildConnectionStats::new(handle, status.into()))
+            .map(|(handle, status)| {
+                let state = status.child_state();
+                ChildConnectionStats::new(handle, status.into(), state)
+            })
             .collect();
         ChildrenConnectionStats::new(children)
     }
@@ -164,6 +167,13 @@ impl StatusStore {
         let error_response = Self::error_to_error_res(error);
 
         self.update_ca_child_status(ca, child, |status| status.set_failure(user_agent, error_response))
+            .await
+    }
+
+    /// Marks a child as suspended. Note that it will be implicitly unsuspended whenever a new success or
+    /// or failure is recorded for the child.
+    pub async fn set_child_suspended(&self, ca: &Handle, child: &ChildHandle) -> KrillResult<()> {
+        self.update_ca_child_status(ca, child, |status| status.set_suspended())
             .await
     }
 

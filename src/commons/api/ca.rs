@@ -1637,10 +1637,10 @@ impl ChildrenConnectionStats {
         ChildrenConnectionStats { children }
     }
 
-    pub fn inactive_children(&self, threshold_hours: i64) -> Vec<ChildHandle> {
+    pub fn suspension_candidates(&self, threshold_hours: i64) -> Vec<ChildHandle> {
         self.children
             .iter()
-            .filter(|child| child.inactive(threshold_hours))
+            .filter(|child| child.suspension_candidate(threshold_hours))
             .map(|child| child.handle.clone())
             .collect()
     }
@@ -1649,22 +1649,23 @@ impl ChildrenConnectionStats {
 impl fmt::Display for ChildrenConnectionStats {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if !self.children.is_empty() {
-            writeln!(f, "handle, user_agent, last_exchange, result")?;
+            writeln!(f, "handle,user_agent,last_exchange,result,state")?;
             for child in &self.children {
                 match &child.last_exchange {
                     None => {
-                        writeln!(f, "{},n/a,never,n/a", child.handle)?;
+                        writeln!(f, "{},n/a,never,n/a,{}", child.handle, child.state)?;
                     }
                     Some(exchange) => {
                         let agent = exchange.user_agent.as_deref().unwrap_or("");
 
                         writeln!(
                             f,
-                            "{},{},{},{}",
+                            "{},{},{},{},{}",
                             child.handle,
                             agent,
                             exchange.timestamp.to_rfc3339(),
-                            exchange.result
+                            exchange.result,
+                            child.state
                         )?;
                     }
                 }
@@ -1678,19 +1679,29 @@ impl fmt::Display for ChildrenConnectionStats {
 pub struct ChildConnectionStats {
     handle: ChildHandle,
     last_exchange: Option<ChildExchange>,
+    state: ChildState,
 }
 
 impl ChildConnectionStats {
-    pub fn new(handle: ChildHandle, last_exchange: Option<ChildExchange>) -> Self {
-        ChildConnectionStats { handle, last_exchange }
+    pub fn new(handle: ChildHandle, last_exchange: Option<ChildExchange>, state: ChildState) -> Self {
+        ChildConnectionStats {
+            handle,
+            last_exchange,
+            state,
+        }
     }
 
-    /// The child is considered 'inactive' if there was at least one exchange, and the
-    /// last exchange is longer ago than the specified threshold hours.
-    pub fn inactive(&self, threshold_hours: i64) -> bool {
-        match &self.last_exchange {
-            None => false, // if there has been no exchange at all, the child is not yet active, rather than inactive
-            Some(exchange) => exchange.timestamp < (Timestamp::now_minus_hours(threshold_hours)),
+    /// The child is considered a candidate for suspension if there was at least one exchange,
+    /// and the last exchange is longer ago than the specified threshold hours, and the child
+    /// is not already suspended.
+    pub fn suspension_candidate(&self, threshold_hours: i64) -> bool {
+        if self.state == ChildState::Suspended {
+            false
+        } else {
+            match &self.last_exchange {
+                None => false, // if there has been no exchange at all, the child is not yet active, rather than inactive
+                Some(exchange) => exchange.timestamp < (Timestamp::now_minus_hours(threshold_hours)),
+            }
         }
     }
 }
@@ -1701,6 +1712,7 @@ impl ChildConnectionStats {
 pub struct ChildStatus {
     last_exchange: Option<ChildExchange>,
     last_success: Option<Timestamp>,
+    suspended: Option<Timestamp>,
 }
 
 impl ChildStatus {
@@ -1712,6 +1724,7 @@ impl ChildStatus {
             user_agent,
         });
         self.last_success = Some(timestamp);
+        self.suspended = None;
     }
 
     pub fn set_failure(&mut self, user_agent: Option<String>, error_response: ErrorResponse) {
@@ -1720,6 +1733,11 @@ impl ChildStatus {
             result: ExchangeResult::Failure(error_response),
             user_agent,
         });
+        self.suspended = None;
+    }
+
+    pub fn set_suspended(&mut self) {
+        self.suspended = Some(Timestamp::now())
     }
 
     pub fn last_exchange(&self) -> Option<&ChildExchange> {
@@ -1729,6 +1747,18 @@ impl ChildStatus {
     pub fn last_success(&self) -> Option<Timestamp> {
         self.last_success
     }
+
+    pub fn suspended(&self) -> Option<Timestamp> {
+        self.suspended
+    }
+
+    pub fn child_state(&self) -> ChildState {
+        if self.suspended.is_none() {
+            ChildState::Active
+        } else {
+            ChildState::Suspended
+        }
+    }
 }
 
 impl Default for ChildStatus {
@@ -1736,6 +1766,7 @@ impl Default for ChildStatus {
         ChildStatus {
             last_exchange: None,
             last_success: None,
+            suspended: None,
         }
     }
 }
