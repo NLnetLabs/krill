@@ -765,11 +765,24 @@ impl CaManager {
                     if let Some(threshold_hours) = self.config.suspend_child_after_inactive_hours {
                         if let Ok(ca_status) = self.get_ca_status(&ca_handle).await {
                             let connections = ca_status.get_children_connection_stats();
-                            for child in connections.inactive_children(threshold_hours) {
+                            for child in connections.suspension_candidates(threshold_hours) {
                                 info!(
                                     "Child '{}' under CA '{}' was inactive for more than {} hours. Will suspend it.",
                                     child, ca_handle, threshold_hours
                                 );
+                                if let Err(e) = self
+                                    .status_store
+                                    .lock()
+                                    .await
+                                    .set_child_suspended(&ca_handle, &child)
+                                    .await
+                                {
+                                    error!(
+                                        "Could not update status to 'suspended' for inactive child, error: {}",
+                                        e
+                                    );
+                                }
+
                                 let req = UpdateChildRequest::suspend();
                                 if let Err(e) = self.ca_child_update(&ca_handle, child, req, actor).await {
                                     error!("Could not suspend inactive child, error: {}", e);
