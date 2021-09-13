@@ -1,12 +1,14 @@
 //! Helper functions for testing Krill.
 
-use std::fs::File;
-use std::io::Write;
-use std::path::PathBuf;
-use std::str::FromStr;
-use std::sync::Arc;
-use std::time::Duration;
-use std::{fs, path::Path};
+use std::{
+    fs,
+    fs::File,
+    io::Write,
+    path::{Path, PathBuf},
+    str::FromStr,
+    sync::Arc,
+    time::Duration,
+};
 
 use bytes::Bytes;
 
@@ -36,13 +38,13 @@ use crate::{
     },
     daemon::{
         ca::{ta_handle, ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest},
+        config::Config,
         http::server,
     },
 };
 
 #[cfg(test)]
 use crate::commons::crypto::IdCert;
-use crate::daemon::config::Config;
 
 pub const KRILL_SERVER_URI: &str = "https://localhost:3000/";
 pub const KRILL_PUBD_SERVER_URI: &str = "https://localhost:3001/";

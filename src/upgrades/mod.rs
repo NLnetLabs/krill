@@ -6,19 +6,18 @@ use std::{fmt, path::Path, str::FromStr, sync::Arc};
 
 use serde::de::DeserializeOwned;
 
-use crate::commons::error::KrillIoError;
-use crate::commons::util::file;
-use crate::{commons::api::Handle, daemon::config::Config};
 use crate::{
     commons::{
+        api::Handle,
         crypto::KrillSigner,
+        error::KrillIoError,
         eventsourcing::{AggregateStoreError, CommandKey, KeyStoreKey, KeyValueError, KeyValueStore},
-        util::KrillVersion,
+        util::{file, KrillVersion},
     },
+    daemon::config::Config,
     pubd::RepositoryManager,
+    upgrades::v0_9_0::{CaObjectsMigration, PubdObjectsMigration},
 };
-
-use self::v0_9_0::{CaObjectsMigration, PubdObjectsMigration};
 
 pub mod v0_9_0;
 

@@ -1,23 +1,24 @@
-use std::fmt;
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
 
 use chrono::Duration;
 
 use rpki::uri;
 
-use crate::commons::{
-    actor::Actor,
-    api::{
-        ChildHandle, Entitlements, Handle, IssuanceRequest, ParentCaContact, ParentHandle, RcvdCert, RepositoryContact,
-        ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse, RtaName, StorableCaCommand,
-        StorableRcEntitlement,
+use crate::{
+    commons::{
+        actor::Actor,
+        api::{
+            ChildHandle, Entitlements, Handle, IssuanceRequest, ParentCaContact, ParentHandle, RcvdCert,
+            RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse, RtaName,
+            StorableCaCommand, StorableRcEntitlement,
+        },
+        crypto::{IdCert, KrillSigner},
+        eventsourcing::{self, StoredCommand},
     },
-    crypto::{IdCert, KrillSigner},
-    eventsourcing::{self, StoredCommand},
-};
-use crate::daemon::{
-    ca::{CaEvt, ResourceTaggedAttestation, RouteAuthorizationUpdates, RtaContentRequest, RtaPrepareRequest},
-    config::Config,
+    daemon::{
+        ca::{CaEvt, ResourceTaggedAttestation, RouteAuthorizationUpdates, RtaContentRequest, RtaPrepareRequest},
+        config::Config,
+    },
 };
 
 //------------ StoredCaCommand ---------------------------------------------

@@ -1,8 +1,11 @@
 use std::sync::Arc;
 
 use jmespatch as jmespath;
-use jmespath::functions::{ArgumentType, CustomFunction, Signature};
-use jmespath::{Context, ErrorReason, JmespathError, Rcvar, Runtime};
+
+use jmespath::{
+    functions::{ArgumentType, CustomFunction, Signature},
+    Context, ErrorReason, JmespathError, Rcvar, Runtime,
+};
 
 use regex::Regex;
 

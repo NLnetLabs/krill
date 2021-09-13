@@ -1,34 +1,36 @@
 #[cfg(feature = "multi-user")]
 use std::collections::HashMap;
 
-use std::convert::TryFrom;
-use std::path::PathBuf;
-use std::str::{from_utf8_unchecked, FromStr};
-use std::{env, fmt};
+use std::{
+    convert::TryFrom,
+    path::PathBuf,
+    str::{from_utf8_unchecked, FromStr},
+    {env, fmt},
+};
 
 use bytes::Bytes;
 use clap::{App, Arg, ArgMatches, SubCommand};
 
-use rpki::repository::crypto::KeyIdentifier;
-use rpki::repository::x509::Time;
-use rpki::uri;
-
-use crate::commons::crypto::{IdCert, SignSupport};
-use crate::commons::remote::rfc8183;
-use crate::commons::util::file;
-use crate::commons::{
-    api::{
-        AddChildRequest, AuthorizationFmtError, CertAuthInit, ChildHandle, Handle, ParentCaContact, ParentCaReq,
-        ParentHandle, PublicationServerUris, PublisherHandle, ResourceSet, ResourceSetError, RoaDefinition,
-        RoaDefinitionUpdates, RtaName, Token, UpdateChildRequest,
-    },
-    error::KrillIoError,
+use rpki::{
+    repository::{crypto::KeyIdentifier, x509::Time},
+    uri,
 };
-use crate::constants::*;
-use crate::daemon::ca::{ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest};
+
 use crate::{
     cli::report::{ReportError, ReportFormat},
-    commons::api::RepositoryContact,
+    commons::{
+        api::{
+            AddChildRequest, AuthorizationFmtError, CertAuthInit, ChildHandle, Handle, ParentCaContact, ParentCaReq,
+            ParentHandle, PublicationServerUris, PublisherHandle, RepositoryContact, ResourceSet, ResourceSetError,
+            RoaDefinition, RoaDefinitionUpdates, RtaName, Token, UpdateChildRequest,
+        },
+        crypto::{IdCert, SignSupport},
+        error::KrillIoError,
+        remote::rfc8183,
+        util::file,
+    },
+    constants::*,
+    daemon::ca::{ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest},
 };
 
 struct GeneralArgs {

@@ -1,12 +1,15 @@
-use crate::commons::error::Error;
-#[cfg(feature = "multi-user")]
-use crate::daemon::http::server::render_error_redirect;
-
-#[cfg(feature = "multi-user")]
-use {crate::daemon::auth::LoggedInUser, urlparse::quote};
-
-use crate::daemon::http::{HttpResponse, Request, RoutingResult};
 use hyper::Method;
+
+use crate::{
+    commons::error::Error,
+    daemon::http::{HttpResponse, Request, RoutingResult},
+};
+
+#[cfg(feature = "multi-user")]
+use {
+    crate::daemon::{auth::LoggedInUser, http::server::render_error_redirect},
+    urlparse::quote,
+};
 
 pub const AUTH_CALLBACK_ENDPOINT: &str = "/auth/callback";
 pub const AUTH_LOGIN_ENDPOINT: &str = "/auth/login";

@@ -1,13 +1,10 @@
 use std::sync::Arc;
 
-use crate::commons::error::Error;
-use crate::commons::util::httpclient;
-use crate::commons::KrillResult;
-use crate::commons::{actor::ActorDef, api::Token};
-use crate::constants::ACTOR_DEF_ADMIN_TOKEN;
-use crate::daemon::auth::LoggedInUser;
-use crate::daemon::config::Config;
-use crate::daemon::http::HttpResponse;
+use crate::{
+    commons::{actor::ActorDef, api::Token, error::Error, util::httpclient, KrillResult},
+    constants::ACTOR_DEF_ADMIN_TOKEN,
+    daemon::{auth::LoggedInUser, config::Config, http::HttpResponse},
+};
 
 // This is NOT an actual relative path to redirect to. Instead it is the path
 // string of an entry in the Vue router routes table to "route" to (in the

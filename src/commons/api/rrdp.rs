@@ -1,23 +1,24 @@
 //! Data objects used in the (RRDP) repository. I.e. the publish, update, and
 //! withdraw elements, as well as the notification, snapshot and delta file
 //! definitions.
-use std::fmt;
-use std::path::PathBuf;
-use std::{collections::HashMap, path::Path};
+use std::{
+    fmt,
+    path::PathBuf,
+    {collections::HashMap, path::Path},
+};
 
 use bytes::Bytes;
 use chrono::Duration;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
 
-use rpki::repository::x509::Time;
-use rpki::uri;
+use rpki::{repository::x509::Time, uri};
 
-use crate::commons::api::Base64;
-use crate::commons::api::HexEncodedHash;
-use crate::commons::util::file;
-use crate::commons::util::xml::XmlWriter;
-use crate::commons::{api::publication, error::KrillIoError};
+use crate::commons::{
+    api::{publication, Base64, HexEncodedHash},
+    error::KrillIoError,
+    util::{file, xml::XmlWriter},
+};
 
 const VERSION: &str = "1";
 const NS: &str = "http://www.ripe.net/rpki/rrdp";

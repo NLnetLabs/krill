@@ -17,10 +17,9 @@ use crate::{
     },
     daemon::ca::StoredCaCommand,
     pubd::RepositoryManager,
+    upgrades::v0_9_0::old_events::DerivedEmbeddedCaMigrationInfo,
     upgrades::{UpgradeError, UpgradeResult},
 };
-
-use super::old_events::DerivedEmbeddedCaMigrationInfo;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldStoredCaCommand {

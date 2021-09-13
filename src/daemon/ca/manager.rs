@@ -1,6 +1,4 @@
-use std::collections::HashMap;
-use std::ops::Deref;
-use std::sync::Arc;
+use std::{collections::HashMap, ops::Deref, sync::Arc};
 
 use api::{Publish, Update, Withdraw};
 use futures::future::join_all;
@@ -9,8 +7,7 @@ use tokio::sync::Mutex;
 use bytes::Bytes;
 use chrono::Duration;
 
-use rpki::repository::crypto::KeyIdentifier;
-use rpki::uri;
+use rpki::{repository::crypto::KeyIdentifier, uri};
 
 use crate::{
     commons::{

@@ -1,17 +1,20 @@
 //! Some helper stuff for creating a private key and certificate for HTTPS
 //! in case they are not provided
-use std::path::PathBuf;
-use std::{fmt, path::Path};
+use std::{fmt, path::Path, path::PathBuf};
 
 use bytes::Bytes;
 
-use openssl::hash::MessageDigest;
-use openssl::pkey::{PKey, Private};
-use openssl::rsa::Rsa;
+use openssl::{
+    hash::MessageDigest,
+    pkey::{PKey, Private},
+    rsa::Rsa,
+};
 
-use bcder::encode::{Constructed, PrimitiveContent, Values};
-use bcder::{decode, encode};
-use bcder::{BitString, Mode, Tag};
+use bcder::{
+    decode,
+    encode::{self, Constructed, PrimitiveContent, Values},
+    BitString, Mode, Tag,
+};
 
 use rpki::repository::{
     crypto::{PublicKey, Signature, SignatureAlgorithm},

@@ -1,51 +1,58 @@
 //! Hyper based HTTP server for Krill.
 //!
-use std::collections::HashMap;
-use std::convert::Infallible;
-use std::env;
-use std::fs::File;
-use std::io::Read;
-use std::path::{Path, PathBuf};
-use std::process;
-use std::str::FromStr;
-use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    convert::Infallible,
+    env,
+    fs::File,
+    io::Read,
+    path::{Path, PathBuf},
+    process,
+    str::FromStr,
+    sync::Arc,
+};
 
 use bytes::Bytes;
 use serde::Serialize;
 
 use futures::TryFutureExt;
-use hyper::header::HeaderName;
-use hyper::http::HeaderValue;
-use hyper::server::conn::AddrIncoming;
-use hyper::service::{make_service_fn, service_fn};
-use hyper::Method;
 
-use crate::commons::api::{ParentCaReq, RepositoryContact};
-use crate::commons::bgp::BgpAnalysisAdvice;
-use crate::commons::error::Error;
-use crate::commons::eventsourcing::AggregateStoreError;
-use crate::commons::remote::rfc8183;
-use crate::commons::util::file;
-use crate::commons::KrillResult;
-use crate::constants::{
-    KRILL_ENV_UPGRADE_ONLY, KRILL_VERSION_MAJOR, KRILL_VERSION_MINOR, KRILL_VERSION_PATCH, NO_RESOURCE,
-};
-use crate::daemon::auth::common::permissions::Permission;
-use crate::daemon::auth::Auth;
-use crate::daemon::ca::{CaStatus, RouteAuthorizationUpdates, TA_NAME};
-use crate::daemon::config::Config;
-use crate::daemon::http::auth::auth;
-use crate::daemon::http::statics::statics;
-use crate::daemon::http::testbed::testbed;
-use crate::daemon::http::{tls, tls_keys, HttpResponse, Request, RequestPath, RoutingResult};
-use crate::daemon::krillserver::KrillServer;
-use crate::upgrades::{pre_start_upgrade, update_storage_version};
 use crate::{
-    commons::api::{
-        BgpStats, ChildHandle, CommandHistoryCriteria, Handle, ParentCaContact, ParentHandle, PublisherList,
-        RoaDefinitionUpdates, RtaName, Token,
+    commons::{
+        api::{
+            BgpStats, ChildHandle, CommandHistoryCriteria, Handle, ParentCaContact, ParentCaReq, ParentHandle,
+            PublisherList, RepositoryContact, RoaDefinitionUpdates, RtaName, Token,
+        },
+        bgp::BgpAnalysisAdvice,
+        error::Error,
+        eventsourcing::AggregateStoreError,
+        remote::rfc8183,
+        util::file,
+        KrillResult,
     },
-    constants::KRILL_ENV_HTTP_LOG_INFO,
+    constants::{
+        KRILL_ENV_HTTP_LOG_INFO, KRILL_ENV_UPGRADE_ONLY, KRILL_VERSION_MAJOR, KRILL_VERSION_MINOR, KRILL_VERSION_PATCH,
+        NO_RESOURCE,
+    },
+    daemon::{
+        auth::common::permissions::Permission,
+        auth::Auth,
+        ca::{CaStatus, RouteAuthorizationUpdates, TA_NAME},
+        config::Config,
+        http::{
+            auth::auth, statics::statics, testbed::testbed, tls, tls_keys, HttpResponse, Request, RequestPath,
+            RoutingResult,
+        },
+        krillserver::KrillServer,
+    },
+    upgrades::{pre_start_upgrade, update_storage_version},
+};
+use hyper::{
+    header::HeaderName,
+    http::HeaderValue,
+    server::conn::AddrIncoming,
+    service::{make_service_fn, service_fn},
+    Method,
 };
 
 //------------ State -----------------------------------------------------

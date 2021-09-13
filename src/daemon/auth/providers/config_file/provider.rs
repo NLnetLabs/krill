@@ -2,18 +2,20 @@ use std::{collections::HashMap, sync::Arc};
 
 use urlparse::{urlparse, GetQuery};
 
-use crate::commons::util::httpclient;
-use crate::commons::KrillResult;
-use crate::commons::{actor::ActorDef, api::Token};
-use crate::daemon::auth::common::crypt;
-use crate::daemon::auth::common::session::*;
-use crate::daemon::auth::providers::config_file::config::ConfigUserDetails;
-use crate::daemon::auth::{Auth, LoggedInUser};
-use crate::daemon::config::Config;
-use crate::daemon::http::HttpResponse;
-use crate::{commons::error::Error, daemon::auth::common::crypt::CryptState};
-
-use crate::constants::{PW_HASH_LOG_N, PW_HASH_P, PW_HASH_R};
+use crate::{
+    commons::{actor::ActorDef, api::Token, error::Error, util::httpclient, KrillResult},
+    constants::{PW_HASH_LOG_N, PW_HASH_P, PW_HASH_R},
+    daemon::{
+        auth::common::{
+            crypt::{self, CryptState},
+            session::*,
+        },
+        auth::providers::config_file::config::ConfigUserDetails,
+        auth::{Auth, LoggedInUser},
+        config::Config,
+        http::HttpResponse,
+    },
+};
 
 // This is NOT an actual relative path to redirect to. Instead it is the path
 // string of an entry in the Vue router routes table to "route" to (in the

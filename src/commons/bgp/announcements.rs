@@ -1,12 +1,11 @@
-use std::cmp::Ordering;
-use std::collections::HashSet;
-use std::fmt;
-use std::str::FromStr;
+use std::{cmp::Ordering, collections::HashSet, fmt, str::FromStr};
 
 use rpki::repository::x509::Time;
 
-use crate::commons::api::{AsNumber, RoaDefinition, TypedPrefix};
-use crate::commons::bgp::{IpRange, TypedPrefixTree, TypedPrefixTreeBuilder};
+use crate::commons::{
+    api::{AsNumber, RoaDefinition, TypedPrefix},
+    bgp::{IpRange, TypedPrefixTree, TypedPrefixTreeBuilder},
+};
 
 //------------ AnnouncementTree ----------------------------------------------
 

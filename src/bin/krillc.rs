@@ -1,9 +1,13 @@
 extern crate krill;
 
-use krill::cli::options::Options;
-use krill::cli::report::ReportFormat;
-use krill::cli::{Error, KrillClient};
-use krill::commons::util::httpclient;
+use krill::{
+    cli::{
+        options::Options,
+        report::ReportFormat,
+        {Error, KrillClient},
+    },
+    commons::util::httpclient,
+};
 
 #[tokio::main]
 async fn main() {

@@ -1,12 +1,19 @@
 use hyper::Method;
 
-use crate::daemon::ca::{ta_handle, testbed_ca_handle};
-use crate::daemon::http::server::{
-    api_add_pbl, api_ca_add_child, api_ca_child_remove, api_ca_parent_res_xml, api_remove_pbl,
-    api_repository_response_xml, render_ok, render_unknown_method,
+use crate::{
+    commons::api::Handle,
+    constants::ACTOR_DEF_TESTBED,
+    daemon::{
+        ca::{ta_handle, testbed_ca_handle},
+        http::{
+            server::{
+                api_add_pbl, api_ca_add_child, api_ca_child_remove, api_ca_parent_res_xml, api_remove_pbl,
+                api_repository_response_xml, render_ok, render_unknown_method,
+            },
+            HttpResponse, Request, RequestPath, RoutingResult,
+        },
+    },
 };
-use crate::daemon::http::{HttpResponse, Request, RequestPath, RoutingResult};
-use crate::{commons::api::Handle, constants::ACTOR_DEF_TESTBED};
 
 //------------ Support acting as a testbed -------------------------------------
 //

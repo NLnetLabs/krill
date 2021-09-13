@@ -1,16 +1,13 @@
-use std::cmp::Ordering;
-use std::fmt;
-use std::net::IpAddr;
-use std::ops::Deref;
-use std::str::FromStr;
+use std::{cmp::Ordering, fmt, net::IpAddr, ops::Deref, str::FromStr};
 
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
-use rpki::repository::resources::{AsBlocks, AsId, IpBlocks, IpBlocksBuilder, Prefix};
-use rpki::repository::roa::RoaIpAddress;
+use rpki::repository::{
+    resources::{AsBlocks, AsId, IpBlocks, IpBlocksBuilder, Prefix},
+    roa::RoaIpAddress,
+};
 
-use crate::commons::api::ResourceSet;
-use crate::daemon::ca::RouteAuthorizationUpdates;
+use crate::{commons::api::ResourceSet, daemon::ca::RouteAuthorizationUpdates};
 
 //------------ RoaAggregateKey ---------------------------------------------
 

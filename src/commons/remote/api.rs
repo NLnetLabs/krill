@@ -1,10 +1,8 @@
 use std::fmt;
 
-use rpki::repository::crypto::KeyIdentifier;
-use rpki::uri;
+use rpki::{repository::crypto::KeyIdentifier, uri};
 
-use crate::commons::api::Handle;
-use crate::commons::crypto::IdCert;
+use crate::commons::{api::Handle, crypto::IdCert};
 
 //------------ Client ------------------------------------------------------
 

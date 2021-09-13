@@ -1,14 +1,13 @@
 //! General utility modules for use all over the code base
-use std::cmp::Ordering;
-use std::fmt;
-use std::net::IpAddr;
-use std::str::FromStr;
+use std::{cmp::Ordering, fmt, net::IpAddr, str::FromStr};
 
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 use bytes::Bytes;
-use rpki::repository::crypto::DigestAlgorithm;
-use rpki::uri::{Https, Rsync};
+use rpki::{
+    repository::crypto::DigestAlgorithm,
+    uri::{Https, Rsync},
+};
 
 use crate::constants::KRILL_VERSION;
 

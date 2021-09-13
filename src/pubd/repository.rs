@@ -1,18 +1,17 @@
-use std::fmt;
-use std::fs;
-use std::mem;
-use std::path::PathBuf;
-use std::str::FromStr;
-use std::sync::{Arc, RwLock};
 use std::{
     collections::{HashMap, VecDeque},
-    path::Path,
+    fmt, fs, mem,
+    path::{Path, PathBuf},
+    str::FromStr,
+    sync::{Arc, RwLock},
 };
 
 use bytes::Bytes;
-use rpki::repository::crypto::KeyIdentifier;
-use rpki::repository::x509::Time;
-use rpki::uri;
+
+use rpki::{
+    repository::{crypto::KeyIdentifier, x509::Time},
+    uri,
+};
 
 use crate::{
     commons::{
@@ -36,11 +35,11 @@ use crate::{
         REPOSITORY_RRDP_DIR, REPOSITORY_RSYNC_DIR,
     },
     daemon::config::{Config, RepositoryRetentionConfig},
-    pubd::publishers::Publisher,
-    pubd::{RepoAccessCmd, RepoAccessCmdDet, RepositoryAccessEvent, RepositoryAccessEventDetails, RepositoryAccessIni},
+    pubd::{
+        publishers::Publisher, RepoAccessCmd, RepoAccessCmdDet, RepositoryAccessEvent, RepositoryAccessEventDetails,
+        RepositoryAccessIni, RepositoryAccessInitDetails,
+    },
 };
-
-use super::RepositoryAccessInitDetails;
 
 //------------ RepositoryContentProxy ----------------------------------------
 

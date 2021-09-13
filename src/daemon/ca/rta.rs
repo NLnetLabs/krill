@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-use std::fmt;
+use std::{collections::HashMap, fmt};
 
 use bytes::Bytes;
 
@@ -10,10 +9,12 @@ use rpki::repository::{
     x509::Validity,
 };
 
-use crate::commons::api::{Base64, ResourceClassName, ResourceSet, Revocation, RtaList, RtaName};
-use crate::commons::error::Error;
-use crate::commons::util::ext_serde;
-use crate::commons::KrillResult;
+use crate::commons::{
+    api::{Base64, ResourceClassName, ResourceSet, Revocation, RtaList, RtaName},
+    error::Error,
+    util::ext_serde,
+    KrillResult,
+};
 
 //------------ Rtas ---------------------------------------------------------
 

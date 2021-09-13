@@ -3,15 +3,21 @@
 //! signed material, or asking a newly added parent for resource
 //! entitlements.
 
-use std::collections::{HashMap, VecDeque};
-use std::fmt;
-use std::sync::RwLock;
+use std::{
+    collections::{HashMap, VecDeque},
+    fmt,
+    sync::RwLock,
+};
 
 use rpki::repository::x509::Time;
 
-use crate::commons::api::{Handle, ParentHandle, ResourceClassName, RevocationRequest};
-use crate::commons::eventsourcing::{self, Event};
-use crate::daemon::ca::{CaEvt, CaEvtDet, CertAuth};
+use crate::{
+    commons::{
+        api::{Handle, ParentHandle, ResourceClassName, RevocationRequest},
+        eventsourcing::{self, Event},
+    },
+    daemon::ca::{CaEvt, CaEvtDet, CertAuth},
+};
 
 //------------ QueueTask ----------------------------------------------------
 

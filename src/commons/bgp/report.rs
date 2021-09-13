@@ -1,9 +1,9 @@
-use std::cmp::Ordering;
-use std::collections::HashMap;
-use std::fmt;
+use std::{cmp::Ordering, collections::HashMap, fmt};
 
-use crate::commons::api::{BgpStats, RoaDefinition, RoaDefinitionUpdates};
-use crate::commons::bgp::Announcement;
+use crate::commons::{
+    api::{BgpStats, RoaDefinition, RoaDefinitionUpdates},
+    bgp::Announcement,
+};
 
 //------------ BgpAnalysisAdvice -------------------------------------------
 

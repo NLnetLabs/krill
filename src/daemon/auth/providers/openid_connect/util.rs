@@ -1,17 +1,16 @@
-use openidconnect::core::{
-    CoreAuthDisplay, CoreAuthPrompt, CoreClaimName, CoreClaimType, CoreClientAuthMethod, CoreErrorResponseType,
-    CoreGenderClaim, CoreGrantType, CoreJsonWebKey, CoreJsonWebKeyType, CoreJsonWebKeyUse,
-    CoreJweContentEncryptionAlgorithm, CoreJweKeyManagementAlgorithm, CoreJwsSigningAlgorithm, CoreResponseMode,
-    CoreResponseType, CoreRevocableToken, CoreRevocationErrorResponse, CoreSubjectIdentifierType,
-    CoreTokenIntrospectionResponse, CoreTokenType,
-};
 use openidconnect::{
+    core::{
+        CoreAuthDisplay, CoreAuthPrompt, CoreClaimName, CoreClaimType, CoreClientAuthMethod, CoreErrorResponseType,
+        CoreGenderClaim, CoreGrantType, CoreJsonWebKey, CoreJsonWebKeyType, CoreJsonWebKeyUse,
+        CoreJweContentEncryptionAlgorithm, CoreJweKeyManagementAlgorithm, CoreJwsSigningAlgorithm, CoreResponseMode,
+        CoreResponseType, CoreRevocableToken, CoreRevocationErrorResponse, CoreSubjectIdentifierType,
+        CoreTokenIntrospectionResponse, CoreTokenType,
+    },
     AdditionalClaims, AdditionalProviderMetadata, Client, ExtraTokenFields, IdTokenClaims, IdTokenFields,
     ProviderMetadata, StandardErrorResponse, StandardTokenResponse, UserInfoClaims,
 };
 
-use crate::commons::error::Error;
-use crate::commons::KrillResult;
+use crate::commons::{error::Error, KrillResult};
 
 // -----------------------------------------------------------------------------
 // Swap out the openidconnect crate types EmptyAdditionalClaims and

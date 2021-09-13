@@ -1,22 +1,25 @@
 //! Support for signing things using software keys (through openssl) and
 //! storing them unencrypted on disk.
-use std::fs::File;
-use std::io::Write;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::{fmt, fs};
+use std::{
+    fmt, fs,
+    fs::File,
+    io::Write,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use bytes::Bytes;
-use openssl::error::ErrorStack;
-use openssl::hash::MessageDigest;
-use openssl::pkey::{PKey, PKeyRef, Private};
-use openssl::rsa::Rsa;
-use serde::{de, ser};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{de, ser, Deserialize, Deserializer, Serialize, Serializer};
 
-use rpki::repository::crypto::signer::KeyError;
+use openssl::{
+    error::ErrorStack,
+    hash::MessageDigest,
+    pkey::{PKey, PKeyRef, Private},
+    rsa::Rsa,
+};
+
 use rpki::repository::crypto::{
-    KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
+    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
 };
 
 use crate::commons::error::KrillIoError;

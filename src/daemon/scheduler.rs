@@ -1,8 +1,10 @@
 //! Deal with asynchronous scheduled processes, either triggered by an
 //! event that occurred, or planned (e.g. re-publishing).
 
-use std::sync::{Arc, RwLock};
-use std::time::Duration;
+use std::{
+    sync::{Arc, RwLock},
+    time::Duration,
+};
 
 use clokwerk::{self, ScheduleHandle, TimeUnits};
 use tokio::runtime::Runtime;

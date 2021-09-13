@@ -1,13 +1,15 @@
-use std::fs::File;
-use std::io::{self, Read, Write};
-use std::path::PathBuf;
-use std::str::FromStr;
-use std::{borrow::Cow, path::Path};
-use std::{fmt, fs};
+use std::{
+    borrow::Cow,
+    fmt, fs,
+    fs::File,
+    io::{self, Read, Write},
+    path::Path,
+    path::PathBuf,
+    str::FromStr,
+};
 
 use bytes::Bytes;
-use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::{de::DeserializeOwned, Serialize};
 
 use rpki::uri;
 

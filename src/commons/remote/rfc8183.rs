@@ -3,24 +3,28 @@
 //! Support for the RFC8183 out-of-band setup requests and responses
 //! used to exchange identity and configuration between CAs and their
 //! parent CA and/or RPKI Publication Servers.
-use std::str::{from_utf8_unchecked, FromStr};
-use std::{convert::TryFrom, path::Path};
-use std::{fmt, io};
+use std::{
+    convert::TryFrom,
+    fmt, io,
+    path::Path,
+    str::{from_utf8_unchecked, FromStr},
+};
 
 use base64::DecodeError;
 use bcder::decode;
 use bytes::Bytes;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
-use rpki::repository::x509;
-use rpki::uri;
+use rpki::{repository::x509, uri};
 
-use crate::commons::crypto::IdCert;
-use crate::commons::util::file;
-use crate::commons::util::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
 use crate::commons::{
     api::{Handle, PublisherHandle, RepoInfo},
+    crypto::IdCert,
     error::KrillIoError,
+    util::{
+        file,
+        xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter},
+    },
 };
 
 pub const VERSION: &str = "1";
