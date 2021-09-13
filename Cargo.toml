@@ -67,10 +67,10 @@ rustc_version   = "0.2.3"
 default = [ "multi-user" ]
 rta = []
 multi-user = [ "basic-cookies", "jmespatch/sync", "regex", "oso", "openidconnect", "rpassword", "scrypt", "unicode-normalization", "urlparse" ]
-functional-tests = []
 ui-tests = []
 extra-debug = [ "rpki/extra-debug" ]
 static-openssl = [ "openssl/vendored" ]
+all-except-ui-tests = [ "multi-user", "rta", "static-openssl" ]
 
 # Make sure that Krill crashes on panics, rather than losing threads and
 # limping on in a bad state.

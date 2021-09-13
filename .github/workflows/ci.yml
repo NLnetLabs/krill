@@ -48,11 +48,9 @@ jobs:
         # Order: oldest Rust to newest Rust.
         rust: [1.47.0, stable, beta]
 
-        # Test with default features, all features and no features.
-        # Note: "functional-tests,ui-tests" builds the same Krill as "" because these features only enable more types
-        # of test, they don't change the compilation of Krill itself.
+        # Test with no features, default features ("") and all except UI tests.
         # Order: fewest features to most features.
-        args: ["--no-default-features", "--features functional-tests,ui-tests", "--all-features"] 
+        args: ["--no-default-features", "", "--features all-except-ui-tests" 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v1
