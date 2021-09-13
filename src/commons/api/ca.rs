@@ -144,7 +144,6 @@ impl From<&IdCert> for IdCertPem {
 //------------ ChildState ----------------------------------------------------
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
 pub enum ChildState {
     Active,
