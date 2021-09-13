@@ -2,10 +2,8 @@ use std::{collections::HashMap, sync::Arc};
 
 use urlparse::{urlparse, GetQuery};
 
-use crate::commons::KrillResult;
-use crate::commons::{actor::ActorDef, api::Token};
 use crate::{
-    commons::error::Error,
+    commons::{actor::ActorDef, api::Token, error::Error, util::httpclient, KrillResult},
     constants::{PW_HASH_LOG_N, PW_HASH_P, PW_HASH_R},
     daemon::{
         auth::common::{
@@ -13,7 +11,7 @@ use crate::{
             session::*,
         },
         auth::providers::config_file::config::ConfigUserDetails,
-        auth::{Auth, AuthProvider, LoggedInUser},
+        auth::{Auth, LoggedInUser},
         config::Config,
         http::HttpResponse,
     },
@@ -91,7 +89,7 @@ impl ConfigFileAuthProvider {
     }
 
     fn get_auth(&self, request: &hyper::Request<hyper::Body>) -> Option<Auth> {
-        if let Some(password_hash) = self.get_bearer_token(request) {
+        if let Some(password_hash) = httpclient::get_bearer_token(request) {
             if let Some(query) = urlparse(request.uri().to_string()).get_parsed_query() {
                 if let Some(id) = query.get_first_from_str("id") {
                     return Some(Auth::IdAndPasswordHash { id, password_hash });
@@ -102,13 +100,13 @@ impl ConfigFileAuthProvider {
     }
 }
 
-impl AuthProvider for ConfigFileAuthProvider {
-    fn authenticate(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
+impl ConfigFileAuthProvider {
+    pub fn authenticate(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
         if log_enabled!(log::Level::Trace) {
             trace!("Attempting to authenticate the request..");
         }
 
-        let res = match self.get_bearer_token(request) {
+        let res = match httpclient::get_bearer_token(request) {
             Some(token) => {
                 // see if we can decode, decrypt and deserialize the users token
                 // into a login session structure
@@ -128,12 +126,12 @@ impl AuthProvider for ConfigFileAuthProvider {
         res
     }
 
-    fn get_login_url(&self) -> KrillResult<HttpResponse> {
+    pub fn get_login_url(&self) -> KrillResult<HttpResponse> {
         // Direct Lagosta to show the user the Lagosta API token login form
         Ok(HttpResponse::text_no_cache(LAGOSTA_LOGIN_ROUTE_PATH.into()))
     }
 
-    fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
+    pub fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
         if let Some(Auth::IdAndPasswordHash { id, password_hash }) = self.get_auth(request) {
             use scrypt::scrypt;
 
@@ -189,8 +187,8 @@ impl AuthProvider for ConfigFileAuthProvider {
         }
     }
 
-    fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
-        match self.get_bearer_token(request) {
+    pub fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
+        match httpclient::get_bearer_token(request) {
             Some(token) => {
                 self.session_cache.remove(&token);
 

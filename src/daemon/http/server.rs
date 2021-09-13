@@ -17,14 +17,6 @@ use serde::Serialize;
 
 use futures::TryFutureExt;
 
-use hyper::{
-    header::HeaderName,
-    http::HeaderValue,
-    server::conn::AddrIncoming,
-    service::{make_service_fn, service_fn},
-    Method,
-};
-
 use crate::{
     commons::{
         api::{
@@ -54,6 +46,13 @@ use crate::{
         krillserver::KrillServer,
     },
     upgrades::{pre_start_upgrade, update_storage_version},
+};
+use hyper::{
+    header::HeaderName,
+    http::HeaderValue,
+    server::conn::AddrIncoming,
+    service::{make_service_fn, service_fn},
+    Method,
 };
 
 //------------ State -----------------------------------------------------
@@ -589,8 +588,6 @@ pub async fn metrics(req: Request) -> RoutingResult {
                     );
                     res.push_str("# TYPE krill_ca_child_state gauge\n");
                     for (ca, status) in ca_status_map.iter() {
-                        // skip the ones for which we have no status yet, i.e it was really only just added
-                        // and no attempt to connect has yet been made.
                         for (child, status) in status.children().iter() {
                             let value = if status.suspended().is_none() { 0 } else { 1 };
 
