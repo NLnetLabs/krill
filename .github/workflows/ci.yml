@@ -50,7 +50,7 @@ jobs:
 
         # Test with no features, default features ("") and all except UI tests.
         # Order: fewest features to most features.
-        args: ["--no-default-features", "", "--features all-except-ui-tests" 
+        args: ["--no-default-features", "", "--features all-except-ui-tests"]
     steps:
     - name: Checkout repository
       uses: actions/checkout@v1
