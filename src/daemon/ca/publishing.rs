@@ -34,12 +34,10 @@ use crate::{
     },
     constants::CA_OBJECTS_DIR,
     daemon::{
-        ca::{CaEvt, CertAuth},
+        ca::{CaEvt, CertAuth, CertifiedKey, ChildCertificateUpdates, RoaUpdates},
         config::{Config, IssuanceTimingConfig},
     },
 };
-
-use super::{CertifiedKey, ChildCertificateUpdates, RoaUpdates};
 
 //------------ CaObjectsStore ----------------------------------------------
 

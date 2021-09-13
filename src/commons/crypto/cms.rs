@@ -4,15 +4,18 @@
 use bytes::Bytes;
 use chrono::Utc;
 
-use bcder::encode::{Constructed, PrimitiveContent, Values};
-use bcder::string::OctetString;
-use bcder::{decode, encode, BitString, Unsigned};
-use bcder::{Mode, Oid, Tag};
+use bcder::{
+    encode::{Constructed, PrimitiveContent, Values},
+    string::OctetString,
+    {decode, encode, BitString, Mode, Oid, Tag, Unsigned},
+};
 
-use rpki::repository::crypto::{DigestAlgorithm, KeyIdentifier, PublicKey, Signature, SignatureAlgorithm};
-use rpki::repository::oid;
-use rpki::repository::sigobj::{MessageDigest, SignedAttrs};
-use rpki::repository::x509::{update_once, Name, SignedData, Time, ValidationError};
+use rpki::repository::{
+    crypto::{DigestAlgorithm, KeyIdentifier, PublicKey, Signature, SignatureAlgorithm},
+    oid,
+    sigobj::{MessageDigest, SignedAttrs},
+    x509::{update_once, Name, SignedData, Time, ValidationError},
+};
 
 use crate::commons::crypto::{CryptoResult, IdCert, IdCertBuilder, KrillSigner, SignedAttributes};
 

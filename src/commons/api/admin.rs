@@ -1,25 +1,33 @@
 //! Support for admin tasks, such as managing publishers and RFC8181 clients
 
-use std::convert::TryFrom;
-use std::fmt;
-use std::path::PathBuf;
-use std::str::{from_utf8_unchecked, FromStr};
-use std::sync::Arc;
+use std::{
+    convert::TryFrom,
+    fmt,
+    path::PathBuf,
+    str::{from_utf8_unchecked, FromStr},
+    sync::Arc,
+};
 
 use chrono::{DateTime, NaiveDateTime, Utc};
 use rfc8183::ServiceUri;
-use serde::de;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{
+    de, {Deserialize, Deserializer, Serialize, Serializer},
+};
 
-use rpki::repository::cert::Cert;
-use rpki::repository::x509::Time;
-use rpki::uri;
+use rpki::{
+    repository::{cert::Cert, x509::Time},
+    uri,
+};
 
-use crate::commons::api::ca::{ResourceSet, TrustAnchorLocator};
-use crate::commons::api::rrdp::PublishElement;
-use crate::commons::api::RepoInfo;
-use crate::commons::crypto::IdCert;
-use crate::commons::remote::rfc8183;
+use crate::commons::{
+    api::{
+        ca::{ResourceSet, TrustAnchorLocator},
+        rrdp::PublishElement,
+        RepoInfo,
+    },
+    crypto::IdCert,
+    remote::rfc8183,
+};
 
 //------------ Handle --------------------------------------------------------
 

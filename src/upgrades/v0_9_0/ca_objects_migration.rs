@@ -1,8 +1,11 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use chrono::Duration;
-use rpki::repository::{crl::Crl, crypto::KeyIdentifier, manifest::Manifest, x509::Time};
-use rpki::uri;
+
+use rpki::{
+    repository::{crl::Crl, crypto::KeyIdentifier, manifest::Manifest, x509::Time},
+    uri,
+};
 
 use crate::{
     commons::{
@@ -26,11 +29,9 @@ use crate::{
         config::Config,
     },
     pubd::RepositoryManager,
-    upgrades::{UpgradeError, UpgradeResult, UpgradeStore},
+    upgrades::v0_9_0::{old_commands::*, old_events::*},
+    upgrades::{UpgradeError, UpgradeResult, UpgradeStore, MIGRATION_SCOPE},
 };
-
-use super::super::MIGRATION_SCOPE;
-use super::{old_commands::*, old_events::*};
 
 /// Migrate the current objects for each CA into the CaObjectStore
 pub struct CaObjectsMigration;

@@ -2,18 +2,21 @@ use std::ops::{Deref, DerefMut};
 
 use serde::{Deserialize, Serialize};
 
-use rpki::repository::crypto::KeyIdentifier;
-use rpki::repository::x509::Time;
+use rpki::repository::{crypto::KeyIdentifier, x509::Time};
 
-use crate::commons::api::{
-    ActiveInfo, CertifiedKeyInfo, EntitlementClass, Handle, IssuanceRequest, PendingInfo, PendingKeyInfo, RcvdCert,
-    RepoInfo, RequestResourceLimit, ResourceClassKeysInfo, ResourceClassName, ResourceSet, RevocationRequest,
-    RollNewInfo, RollOldInfo, RollPendingInfo,
+use crate::{
+    commons::{
+        api::{
+            ActiveInfo, CertifiedKeyInfo, EntitlementClass, Handle, IssuanceRequest, PendingInfo, PendingKeyInfo,
+            RcvdCert, RepoInfo, RequestResourceLimit, ResourceClassKeysInfo, ResourceClassName, ResourceSet,
+            RevocationRequest, RollNewInfo, RollOldInfo, RollPendingInfo,
+        },
+        crypto::KrillSigner,
+        error::Error,
+        KrillResult,
+    },
+    daemon::ca::CaEvtDet,
 };
-use crate::commons::crypto::KrillSigner;
-use crate::commons::error::Error;
-use crate::commons::KrillResult;
-use crate::daemon::ca::CaEvtDet;
 
 //------------ CertifiedKey --------------------------------------------------
 

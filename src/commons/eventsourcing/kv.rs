@@ -1,11 +1,12 @@
-use std::fs::File;
-use std::io::Write;
-use std::path::PathBuf;
-use std::{any::Any, path::Path};
-use std::{fmt, fs};
+use std::{
+    any::Any,
+    fs::File,
+    io::Write,
+    path::{Path, PathBuf},
+    {fmt, fs},
+};
 
-use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::{de::DeserializeOwned, Serialize};
 
 use crate::commons::{error::KrillIoError, util::file, util::KrillVersion};
 

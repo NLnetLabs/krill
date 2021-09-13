@@ -35,43 +35,47 @@ use hyper::header::{HeaderValue, SET_COOKIE};
 use jmespatch as jmespath;
 use jmespath::ToJmespath;
 
-use openidconnect::UserInfoError;
-use openidconnect::{core::CoreRevocableToken, AccessToken, RequestTokenError, RevocationErrorResponseType};
 use openidconnect::{
     core::{
         CoreAuthPrompt, CoreErrorResponseType, CoreIdTokenVerifier, CoreJwsSigningAlgorithm, CoreResponseMode,
-        CoreResponseType,
+        CoreResponseType, CoreRevocableToken,
     },
-    RevocationUrl,
-};
-use openidconnect::{
-    AuthenticationFlow, AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce, OAuth2TokenResponse,
-    RedirectUrl, RefreshToken, Scope,
+    AccessToken, AuthenticationFlow, AuthorizationCode, ClientId, ClientSecret, CsrfToken, IssuerUrl, Nonce,
+    OAuth2TokenResponse, RedirectUrl, RefreshToken, RequestTokenError, RevocationErrorResponseType, RevocationUrl,
+    Scope, UserInfoError,
 };
 
 use urlparse::{urlparse, GetQuery};
 
-use crate::commons::util::sha256;
-use crate::commons::KrillResult;
-use crate::commons::{actor::ActorDef, api::Token};
-use crate::daemon::auth::common::crypt;
-use crate::daemon::auth::common::session::*;
-use crate::daemon::auth::providers::config_file::config::ConfigUserDetails;
-use crate::daemon::auth::providers::openid_connect::config::ConfigAuthOpenIDConnectClaims;
-use crate::daemon::auth::providers::openid_connect::httpclient::logging_http_client;
-use crate::daemon::auth::providers::openid_connect::jmespathext;
-use crate::daemon::auth::{Auth, AuthProvider, LoggedInUser};
-use crate::daemon::config::Config;
-use crate::daemon::http::auth::url_encode;
-use crate::daemon::http::auth::AUTH_CALLBACK_ENDPOINT;
-use crate::daemon::http::HttpResponse;
-use crate::{commons::error::Error, daemon::auth::common::crypt::CryptState};
-
-use super::config::{
-    ConfigAuthOpenIDConnect, ConfigAuthOpenIDConnectClaim, ConfigAuthOpenIDConnectClaimSource as ClaimSource,
-};
-use super::util::{
-    FlexibleClient, FlexibleIdTokenClaims, FlexibleTokenResponse, FlexibleUserInfoClaims, LogOrFail, WantedMeta,
+use crate::{
+    commons::{actor::ActorDef, api::Token, error::Error, util::sha256, KrillResult},
+    daemon::{
+        auth::{
+            common::{
+                crypt::{self, CryptState},
+                session::*,
+            },
+            providers::config_file::config::ConfigUserDetails,
+            providers::openid_connect::{
+                config::{
+                    ConfigAuthOpenIDConnect, ConfigAuthOpenIDConnectClaim,
+                    ConfigAuthOpenIDConnectClaimSource as ClaimSource, ConfigAuthOpenIDConnectClaims,
+                },
+                httpclient::logging_http_client,
+                jmespathext,
+                util::{
+                    FlexibleClient, FlexibleIdTokenClaims, FlexibleTokenResponse, FlexibleUserInfoClaims, LogOrFail,
+                    WantedMeta,
+                },
+            },
+            Auth, AuthProvider, LoggedInUser,
+        },
+        config::Config,
+        http::{
+            auth::{url_encode, AUTH_CALLBACK_ENDPOINT},
+            HttpResponse,
+        },
+    },
 };
 
 // On modern browsers (Chrome >= 51, Edge >= 16, Firefox >= 60 & Safari >= 12) the "__Host" prefix is a defence-in-depth

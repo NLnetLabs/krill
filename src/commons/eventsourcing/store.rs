@@ -1,23 +1,24 @@
-use std::fmt;
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::HashMap,
+    fmt,
+    path::Path,
+    str::FromStr,
+    sync::{Arc, RwLock},
+};
 
-use std::str::FromStr;
-use std::sync::{Arc, RwLock};
-
-use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use rpki::repository::x509::Time;
 
-use crate::commons::eventsourcing::cmd::{Command, StoredCommandBuilder};
 use crate::commons::eventsourcing::{
+    cmd::{Command, StoredCommandBuilder},
     Aggregate, Event, KeyStoreKey, KeyValueError, KeyValueStore, PostSaveEventListener, StoredCommand,
     WithStorableDetails,
 };
-use crate::commons::util::KrillVersion;
 use crate::commons::{
     api::{CommandHistory, CommandHistoryCriteria, CommandHistoryRecord, Handle, Label},
     error::KrillIoError,
+    util::KrillVersion,
 };
 
 use super::PreSaveEventListener;

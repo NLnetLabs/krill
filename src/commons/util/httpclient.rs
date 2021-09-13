@@ -1,18 +1,20 @@
 //! Some helper functions for HTTP calls
-use std::path::PathBuf;
-use std::str::FromStr;
-use std::time::Duration;
-use std::{env, fmt};
+use std::{env, fmt, path::PathBuf, str::FromStr, time::Duration};
 
 use bytes::Bytes;
-use reqwest::header::{HeaderMap, HeaderValue, InvalidHeaderValue, CONTENT_TYPE, USER_AGENT};
-use reqwest::{Response, StatusCode};
-use serde::de::DeserializeOwned;
-use serde::Serialize;
+use reqwest::{
+    header::{HeaderMap, HeaderValue, InvalidHeaderValue, CONTENT_TYPE, USER_AGENT},
+    Response, StatusCode,
+};
+use serde::{de::DeserializeOwned, Serialize};
 
-use crate::commons::api::{ErrorResponse, Token};
-use crate::commons::util::file;
-use crate::constants::{HTTP_CLIENT_TIMEOUT_SECS, KRILL_CLI_API_ENV, KRILL_HTTPS_ROOT_CERTS_ENV, KRILL_VERSION};
+use crate::{
+    commons::{
+        api::{ErrorResponse, Token},
+        util::file,
+    },
+    constants::{HTTP_CLIENT_TIMEOUT_SECS, KRILL_CLI_API_ENV, KRILL_HTTPS_ROOT_CERTS_ENV, KRILL_VERSION},
+};
 
 const JSON_CONTENT: &str = "application/json";
 

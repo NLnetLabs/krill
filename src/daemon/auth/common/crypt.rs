@@ -24,8 +24,10 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use crate::commons::error::{Error, KrillIoError};
-use crate::commons::KrillResult;
+use crate::commons::{
+    error::{Error, KrillIoError},
+    KrillResult,
+};
 
 const CHACHA20_KEY_BIT_LEN: usize = 256;
 const CHACHA20_KEY_BYTE_LEN: usize = CHACHA20_KEY_BIT_LEN / 8;

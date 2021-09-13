@@ -5,13 +5,17 @@ use tokio::sync::RwLock;
 
 use rpki::repository::x509::Time;
 
-use crate::commons::api::{AsNumber, ResourceSet, RoaDefinition};
-use crate::commons::bgp::{
-    make_roa_tree, make_validated_announcement_tree, Announcement, AnnouncementValidity, Announcements,
-    BgpAnalysisEntry, BgpAnalysisReport, BgpAnalysisState, BgpAnalysisSuggestion, IpRange, RisDumpError, RisDumpLoader,
-    ValidatedAnnouncement,
+use crate::{
+    commons::{
+        api::{AsNumber, ResourceSet, RoaDefinition},
+        bgp::{
+            make_roa_tree, make_validated_announcement_tree, Announcement, AnnouncementValidity, Announcements,
+            BgpAnalysisEntry, BgpAnalysisReport, BgpAnalysisState, BgpAnalysisSuggestion, IpRange, RisDumpError,
+            RisDumpLoader, ValidatedAnnouncement,
+        },
+    },
+    constants::{test_announcements_enabled, BGP_RIS_REFRESH_MINUTES},
 };
-use crate::constants::{test_announcements_enabled, BGP_RIS_REFRESH_MINUTES};
 
 //------------ BgpAnalyser -------------------------------------------------
 

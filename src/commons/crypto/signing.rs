@@ -1,31 +1,38 @@
 //! Support for signing mft, crl, certificates, roas..
 //! Common objects for TAs and CAs
-use std::ops::Deref;
-use std::sync::{Arc, RwLock};
-use std::{convert::TryFrom, path::Path};
+use std::{
+    ops::Deref,
+    sync::{Arc, RwLock},
+    {convert::TryFrom, path::Path},
+};
 
 use bytes::Bytes;
 
-use rpki::repository::cert::{Cert, KeyUsage, Overclaim, TbsCert};
-use rpki::repository::crl::{Crl, CrlEntry, TbsCertList};
-use rpki::repository::crypto::{
-    DigestAlgorithm, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer,
+use rpki::{
+    repository::{
+        cert::{Cert, KeyUsage, Overclaim, TbsCert},
+        crl::{Crl, CrlEntry, TbsCertList},
+        crypto::{DigestAlgorithm, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer},
+        csr::Csr,
+        manifest::{FileAndHash, Manifest, ManifestContent},
+        roa::{Roa, RoaBuilder},
+        rta,
+        sigobj::SignedObjectBuilder,
+        x509::{Name, Serial, Time, Validity},
+    },
+    uri,
 };
-use rpki::repository::csr::Csr;
-use rpki::repository::manifest::{FileAndHash, Manifest, ManifestContent};
-use rpki::repository::roa::{Roa, RoaBuilder};
-use rpki::repository::rta;
-use rpki::repository::sigobj::SignedObjectBuilder;
-use rpki::repository::x509::{Name, Serial, Time, Validity};
-use rpki::uri;
 
-use crate::commons::api::{IssuedCert, RcvdCert, ReplacedObject, RepoInfo, RequestResourceLimit, ResourceSet};
-use crate::commons::crypto::{self, CryptoResult};
-use crate::commons::error::Error;
-use crate::commons::util::softsigner::OpenSslSigner;
-use crate::commons::util::AllowedUri;
-use crate::commons::KrillResult;
-use crate::daemon::ca::CertifiedKey;
+use crate::{
+    commons::{
+        api::{IssuedCert, RcvdCert, ReplacedObject, RepoInfo, RequestResourceLimit, ResourceSet},
+        crypto::{self, CryptoResult},
+        error::Error,
+        util::{softsigner::OpenSslSigner, AllowedUri},
+        KrillResult,
+    },
+    daemon::ca::CertifiedKey,
+};
 
 //------------ Signer --------------------------------------------------------
 

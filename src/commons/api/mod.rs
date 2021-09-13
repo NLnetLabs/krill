@@ -20,22 +20,17 @@ pub use self::roas::*;
 
 pub mod rrdp;
 
-use std::collections::HashMap;
-use std::fmt;
-use std::sync::Arc;
+use std::{collections::HashMap, fmt, sync::Arc};
 
 use bytes::Bytes;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use rpki::repository::cert::Cert;
-use rpki::repository::crl::Crl;
-use rpki::repository::crypto::KeyIdentifier;
-use rpki::repository::manifest::Manifest;
-use rpki::repository::roa::Roa;
+use rpki::repository::{cert::Cert, crl::Crl, crypto::KeyIdentifier, manifest::Manifest, roa::Roa};
 
-use crate::commons::error::RoaDeltaError;
-use crate::commons::util::sha256;
-use crate::daemon::ca::RouteAuthorization;
+use crate::{
+    commons::{error::RoaDeltaError, util::sha256},
+    daemon::ca::RouteAuthorization,
+};
 
 // Some syntactic sugar to help this old coder's brain deal with the mess of Strings
 pub type Message = String;

@@ -1,18 +1,21 @@
 //! Authorization for the API
 
-use std::any::Any;
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::{any::Any, collections::HashMap, sync::Arc};
 
-use crate::commons::actor::{Actor, ActorDef};
-use crate::commons::error::Error;
-use crate::commons::KrillResult;
-use crate::constants::{ACTOR_DEF_ANON, NO_RESOURCE};
-use crate::daemon::auth::policy::AuthPolicy;
-use crate::daemon::auth::providers::AdminTokenAuthProvider;
-use crate::daemon::config::Config;
-use crate::daemon::http::HttpResponse;
-use crate::{commons::api::Token, daemon::auth::common::permissions::Permission};
+use crate::{
+    commons::{
+        actor::{Actor, ActorDef},
+        api::Token,
+        error::Error,
+        KrillResult,
+    },
+    constants::{ACTOR_DEF_ANON, NO_RESOURCE},
+    daemon::{
+        auth::{common::permissions::Permission, policy::AuthPolicy, providers::AdminTokenAuthProvider},
+        config::Config,
+        http::HttpResponse,
+    },
+};
 
 //------------ Authorizer ----------------------------------------------------
 

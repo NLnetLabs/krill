@@ -14,21 +14,25 @@
 //! For Krill it should be fine to use rust_tls though, so therefore this
 //! implementation was used in the end.
 
-use std::fs::File;
-use std::future::Future;
-use std::io::{self, BufReader, Read};
-use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
-use std::pin::Pin;
-use std::sync::Arc;
-use std::task::{Context, Poll};
+use std::{
+    fs::File,
+    future::Future,
+    io::{self, BufReader, Read},
+    net::SocketAddr,
+    path::{Path, PathBuf},
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
 
 use futures::ready;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_rustls::rustls::{NoClientAuth, ServerConfig, TLSError};
 
-use hyper::server::accept::Accept;
-use hyper::server::conn::{AddrIncoming, AddrStream};
+use hyper::server::{
+    accept::Accept,
+    conn::{AddrIncoming, AddrStream},
+};
 
 pub trait Transport: AsyncRead + AsyncWrite {
     fn remote_addr(&self) -> Option<SocketAddr>;

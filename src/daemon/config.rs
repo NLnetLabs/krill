@@ -1,32 +1,33 @@
-use std::io;
-use std::io::Read;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::path::PathBuf;
-use std::str::FromStr;
-use std::{env, fmt};
-use std::{fs::File, path::Path};
+use std::{
+    env, fmt,
+    fs::File,
+    io::{self, Read},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
 use clap::{App, Arg};
 use log::{error, LevelFilter};
-use serde::de;
-use serde::{Deserialize, Deserializer};
+use serde::{de, Deserialize, Deserializer};
+
 #[cfg(unix)]
 use syslog::Facility;
 
 use rpki::uri;
 
-use crate::commons::util::ext_serde;
-use crate::commons::{
-    api::{PublicationServerUris, PublisherHandle, Token},
-    error::KrillIoError,
+use crate::{
+    commons::{
+        api::{PublicationServerUris, PublisherHandle, Token},
+        error::KrillIoError,
+        util::ext_serde,
+    },
+    constants::*,
+    daemon::http::tls_keys,
 };
-use crate::constants::*;
-use crate::daemon::http::tls_keys;
 
 #[cfg(feature = "multi-user")]
-use crate::daemon::auth::providers::config_file::config::ConfigAuthUsers;
-#[cfg(feature = "multi-user")]
-use crate::daemon::auth::providers::openid_connect::ConfigAuthOpenIDConnect;
+use crate::daemon::auth::providers::{config_file::config::ConfigAuthUsers, openid_connect::ConfigAuthOpenIDConnect};
 
 //------------ ConfigDefaults ------------------------------------------------
 

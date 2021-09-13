@@ -30,12 +30,11 @@ use crate::{
         PublisherStats, RepoStats, RepositoryAccess, RepositoryAccessInitDetails, RepositoryContent, RrdpServer,
         RrdpSessionReset, RrdpUpdate, RsyncdStore,
     },
+    upgrades::v0_9_0::{
+        old_commands::{OldStorableRepositoryCommand, OldStoredEffect, OldStoredRepositoryCommand},
+        old_events::{OldCurrentObjects, OldPubdEvt, OldPubdEvtDet, OldPubdInit, OldPublisher},
+    },
     upgrades::{UpgradeError, UpgradeResult, UpgradeStore, MIGRATION_SCOPE},
-};
-
-use super::{
-    old_commands::{OldStorableRepositoryCommand, OldStoredEffect, OldStoredRepositoryCommand},
-    old_events::{OldCurrentObjects, OldPubdEvt, OldPubdEvtDet, OldPubdInit, OldPublisher},
 };
 
 pub struct PubdObjectsMigration;

@@ -1,25 +1,20 @@
-use hyper::header::USER_AGENT;
-use serde::de::DeserializeOwned;
-use std::io;
-use std::str::FromStr;
-use std::{convert::TryInto, str::from_utf8};
+use std::{convert::TryInto, io, str::from_utf8, str::FromStr};
 
 use bytes::{Buf, BufMut, Bytes};
-use serde::Serialize;
+use serde::{de::DeserializeOwned, Serialize};
 
-use hyper::http::uri::PathAndQuery;
-use hyper::{body::HttpBody, HeaderMap};
-use hyper::{Body, Method, StatusCode};
+use hyper::{body::HttpBody, header::USER_AGENT, http::uri::PathAndQuery, Body, HeaderMap, Method, StatusCode};
 
-use crate::commons::error::Error;
-use crate::commons::remote::{rfc6492, rfc8181};
-use crate::commons::{
-    actor::{Actor, ActorDef},
-    KrillResult,
+use crate::{
+    commons::{
+        actor::{Actor, ActorDef},
+        error::Error,
+        remote::{rfc6492, rfc8181},
+        KrillResult,
+    },
+    constants::HTTP_USER_AGENT_TRUNCATE,
+    daemon::{auth::LoggedInUser, http::server::State},
 };
-use crate::constants::HTTP_USER_AGENT_TRUNCATE;
-use crate::daemon::auth::LoggedInUser;
-use crate::daemon::http::server::State;
 
 pub mod auth;
 pub mod server;

@@ -1,6 +1,4 @@
-use std::collections::BTreeMap;
-use std::fmt;
-use std::str::FromStr;
+use std::{collections::BTreeMap, fmt, str::FromStr};
 
 use chrono::{DateTime, NaiveDateTime, SecondsFormat, Utc};
 

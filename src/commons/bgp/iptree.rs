@@ -1,5 +1,4 @@
-use std::collections::HashMap;
-use std::ops::Range;
+use std::{collections::HashMap, ops::Range};
 
 use intervaltree::IntervalTree;
 

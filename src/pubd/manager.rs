@@ -2,19 +2,20 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 
-use crate::commons::api::PublicationServerUris;
-use crate::commons::crypto::KrillSigner;
-use crate::commons::error::Error;
-use crate::commons::remote::cmslogger::CmsLogger;
-use crate::commons::remote::rfc8181;
-use crate::commons::remote::rfc8183;
-use crate::commons::KrillResult;
-use crate::commons::{
-    actor::Actor,
-    api::{ListReply, PublishDelta, PublisherDetails, PublisherHandle, RepoInfo},
+use crate::{
+    commons::{
+        actor::Actor,
+        api::{ListReply, PublicationServerUris, PublishDelta, PublisherDetails, PublisherHandle, RepoInfo},
+        crypto::KrillSigner,
+        error::Error,
+        remote::cmslogger::CmsLogger,
+        remote::rfc8181,
+        remote::rfc8183,
+        KrillResult,
+    },
+    daemon::config::Config,
+    pubd::{RepoStats, RepositoryAccessProxy, RepositoryContentProxy},
 };
-use crate::daemon::config::Config;
-use crate::pubd::{RepoStats, RepositoryAccessProxy, RepositoryContentProxy};
 
 //------------ RepositoryManager -----------------------------------------------------
 
