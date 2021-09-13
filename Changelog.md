@@ -1,5 +1,29 @@
 # Change Log
 
+## 0.9.2-RC1
+
+This release includes two features aimed at users who run a Krill CA to maintain ROAs:
+- Warn about ROA configurations for resources no longer held #602
+- Re-enable migration of CA content to a new Publication Server #480
+
+In addition to this we have added a lot of smaller improvements:
+- Synchronize the manifest EE lifetime and next update time #589
+- Improve error reporting on I/O errors #587
+- Add rsync URI to testbed TAL #624
+- Improve status reporting and monitoring #651, #650, #648
+
+The following features were added to support users who operate Krill as a parent
+CA, or Publication Server:
+- Optionally suspend inactive child CAs #623
+- Perform RRDP session reset on restart #533
+- Use unguessable URIs for RRDP deltas and snapshots #515
+
+The updated documentation for this release can be found here:
+https://krill.docs.nlnetlabs.nl/en/0.9.2/index.html
+
+The full list of changes can be found here:
+https://github.com/NLnetLabs/krill/projects/16
+
 ## 0.9.1 'All for One'
 
 This release fixes an issue where the Publication Server would lock up (#606). Users who do
