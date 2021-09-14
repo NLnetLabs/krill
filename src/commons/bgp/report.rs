@@ -1,9 +1,9 @@
-use std::cmp::Ordering;
-use std::collections::HashMap;
-use std::fmt;
+use std::{cmp::Ordering, collections::HashMap, fmt};
 
-use crate::commons::api::{BgpStats, RoaDefinition, RoaDefinitionUpdates};
-use crate::commons::bgp::Announcement;
+use crate::commons::{
+    api::{BgpStats, RoaDefinition, RoaDefinitionUpdates},
+    bgp::Announcement,
+};
 
 //------------ BgpAnalysisAdvice -------------------------------------------
 
@@ -85,6 +85,9 @@ pub struct BgpAnalysisSuggestion {
     redundant: Vec<RoaDefinition>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
+    not_held: Vec<RoaDefinition>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
     as0_redundant: Vec<RoaDefinition>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
@@ -156,6 +159,7 @@ impl Default for BgpAnalysisSuggestion {
             too_permissive: vec![],
             disallowing: vec![],
             redundant: vec![],
+            not_held: vec![],
             keep: vec![],
             as0_redundant: vec![],
             keep_disallowing: vec![],
@@ -191,6 +195,10 @@ impl BgpAnalysisSuggestion {
 
     pub fn add_redundant(&mut self, authorization: RoaDefinition) {
         self.redundant.push(authorization);
+    }
+
+    pub fn add_not_held(&mut self, authorization: RoaDefinition) {
+        self.not_held.push(authorization);
     }
 
     pub fn add_as0_redundant(&mut self, authorization: RoaDefinition) {
@@ -360,6 +368,10 @@ impl From<BgpAnalysisReport> for BgpStats {
                     stats.increment_roas_total();
                     stats.increment_roas_redundant();
                 }
+                BgpAnalysisState::RoaNotHeld => {
+                    stats.increment_roas_total();
+                    stats.increment_roas_not_held();
+                }
                 BgpAnalysisState::RoaDisallowing => {
                     stats.increment_roas_total();
                     stats.increment_roas_disallowing();
@@ -448,6 +460,18 @@ impl fmt::Display for BgpAnalysisReport {
                 )?;
                 writeln!(f)?;
                 for roa in not_seen {
+                    writeln!(f, "\tDefinition: {}", roa.definition)?;
+                }
+                writeln!(f)?;
+            }
+
+            if let Some(not_held) = entry_map.get(&BgpAnalysisState::RoaNotHeld) {
+                writeln!(
+                    f,
+                    "Authorizations for which no ROAs can be made - you do not have the prefix on your certificate(s):"
+                )?;
+                writeln!(f)?;
+                for roa in not_held {
                     writeln!(f, "\tDefinition: {}", roa.definition)?;
                 }
                 writeln!(f)?;
@@ -745,6 +769,18 @@ impl BgpAnalysisEntry {
         }
     }
 
+    pub fn roa_not_held(definition: RoaDefinition) -> Self {
+        BgpAnalysisEntry {
+            definition,
+            state: BgpAnalysisState::RoaNotHeld,
+            allowed_by: None,
+            disallowed_by: vec![],
+            made_redundant_by: vec![],
+            authorizes: vec![],
+            disallows: vec![],
+        }
+    }
+
     pub fn roa_no_announcement_info(definition: RoaDefinition) -> Self {
         BgpAnalysisEntry {
             definition,
@@ -839,6 +875,7 @@ pub enum BgpAnalysisState {
     RoaTooPermissive,
     RoaAs0,
     RoaAs0Redundant,
+    RoaNotHeld,
     AnnouncementValid,
     AnnouncementInvalidLength,
     AnnouncementInvalidAsn,

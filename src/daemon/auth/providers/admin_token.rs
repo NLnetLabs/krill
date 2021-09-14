@@ -1,12 +1,10 @@
 use std::sync::Arc;
 
-use crate::commons::error::Error;
-use crate::commons::KrillResult;
-use crate::commons::{actor::ActorDef, api::Token};
-use crate::constants::ACTOR_DEF_ADMIN_TOKEN;
-use crate::daemon::auth::{AuthProvider, LoggedInUser};
-use crate::daemon::config::Config;
-use crate::daemon::http::HttpResponse;
+use crate::{
+    commons::{actor::ActorDef, api::Token, error::Error, util::httpclient, KrillResult},
+    constants::ACTOR_DEF_ADMIN_TOKEN,
+    daemon::{auth::LoggedInUser, config::Config, http::HttpResponse},
+};
 
 // This is NOT an actual relative path to redirect to. Instead it is the path
 // string of an entry in the Vue router routes table to "route" to (in the
@@ -27,13 +25,13 @@ impl AdminTokenAuthProvider {
     }
 }
 
-impl AuthProvider for AdminTokenAuthProvider {
-    fn authenticate(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
+impl AdminTokenAuthProvider {
+    pub fn authenticate(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
         if log_enabled!(log::Level::Trace) {
             trace!("Attempting to authenticate the request..");
         }
 
-        let res = match self.get_bearer_token(request) {
+        let res = match httpclient::get_bearer_token(request) {
             Some(token) if token == self.required_token => Ok(Some(ACTOR_DEF_ADMIN_TOKEN)),
             Some(_) => Err(Error::ApiInvalidCredentials("Invalid bearer token".to_string())),
             None => Ok(None),
@@ -46,12 +44,12 @@ impl AuthProvider for AdminTokenAuthProvider {
         res
     }
 
-    fn get_login_url(&self) -> KrillResult<HttpResponse> {
+    pub fn get_login_url(&self) -> KrillResult<HttpResponse> {
         // Direct Lagosta to show the user the Lagosta API token login form
         Ok(HttpResponse::text_no_cache(LAGOSTA_LOGIN_ROUTE_PATH.into()))
     }
 
-    fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
+    pub fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
         match self.authenticate(request)? {
             Some(actor_def) => Ok(LoggedInUser {
                 token: self.required_token.clone(),
@@ -62,7 +60,7 @@ impl AuthProvider for AdminTokenAuthProvider {
         }
     }
 
-    fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
+    pub fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
         if let Ok(Some(actor)) = self.authenticate(request) {
             info!("User logged out: {}", actor.name.as_str());
         }

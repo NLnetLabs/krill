@@ -87,23 +87,23 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
         logging.info(f'-> Adding CA "{ca_handle}"')
         krill_ca_api.add_ca(krill_ca_api_lib.AddCARequest(ca_handle))
 
-        logging.info(f'-> Getting RFC 8183 publisher request for CA "{ca_handle}"')
+        logging.info(f'-> Getting RFC 8183 publisher request for CA "{ca_handle}" (API call `get_ca_publisher_request()`)')
         rfc8183_request = krill_ca_api.get_ca_publisher_request(ca_handle, format='json')
 
-        logging.info(f'-> Getting RFC 8183 repository_response for CA "{ca_handle}"')
+        logging.info(f'-> Submitting RFC 8183 publisher request for CA "{ca_handle}" in exchange for an RFC 8183 repository_response (API call `add_publisher()`)')
         rfc8183_response = krill_pub_api.add_publisher(rfc8183_request)
 
-        logging.info(f'-> ')
+        logging.info(f'-> Submitting RFC 8181 repository response for CA "{ca_handle}" (API call `update_ca_repository()`)')
         krill_ca_api.update_ca_repository(
             ca_handle,
             inline_object=krill_ca_api_lib.InlineObject(repository_response=rfc8183_response))
         logging.info(f'-> Added CA "{ca_handle}"')
 
     def link_child_ca_under_parent_ca(child_ca_handle, parent_ca_handle, resources):
-        logging.info(f'-> Getting RFC 8183 child request for CA "{child_ca_handle}"')
+        logging.info(f'-> Getting RFC 8183 child request for CA "{child_ca_handle}" (API call `get_ca_child_request()`)')
         rfc8183_request = krill_ca_api.get_ca_child_request(child_ca_handle, format="json")
 
-        logging.info(f'-> Adding CA "{child_ca_handle}" as a child of "{parent_ca_handle}"')
+        logging.info(f'-> Adding CA "{child_ca_handle}" as a child of "{parent_ca_handle}" (API call `add_child_ca()`)')
         req = krill_ca_api_lib.AddCAChildRequest(
             handle=child_ca_handle,
             resources=resources,
@@ -118,10 +118,10 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
         wait_until_child_ca_has_at_least_one(parent_ca_handle, child_ca_handle, 'entitled_resources.asn')
 
     def link_parent_ca_above_child_ca(parent_ca_handle, child_ca_handle, resources):
-        logging.info(f'-> Getting RFC 8183 parent response for CA "{child_ca_handle}"')
+        logging.info(f'-> Getting RFC 8183 parent response for CA "{child_ca_handle}" (API call `get_child_ca_parent_contact()`)')
         rfc8183parentresponse = krill_ca_api.get_child_ca_parent_contact(parent_ca_handle, child_ca_handle)
 
-        logging.info(f'-> Adding CA "{parent_ca_handle}" as a parent of "{child_ca_handle}"')
+        logging.info(f'-> Adding CA "{parent_ca_handle}" as a parent of "{child_ca_handle}" (API call `add_ca_parent()`)')
         req = krill_ca_api_lib.AddParentCARequest(
             handle=parent_ca_handle,
             contact=rfc8183parentresponse)
@@ -237,7 +237,8 @@ class TestKrillWithRelyingParties:
         # includes the work and output of creating the fixtures.
         pass
 
-    @pytest.mark.parametrize("service", [Routinator, RoutinatorUnstable, FortValidator, OctoRPKI, Rcynic, RPKIClient, RPKIValidator3])
+    #@pytest.mark.parametrize("service", [Routinator, RoutinatorUnstable, FortValidator, OctoRPKI, Rcynic, RPKIClient, RPKIValidator3])
+    @pytest.mark.parametrize("service", [Routinator, RoutinatorUnstable, FortValidator, OctoRPKI, Rcynic, RPKIClient])
     def test_rtr(self, docker_host_fqdn, docker_project, function_service_manager, service, metadata):
         #
         # Use Docker Compose to deploy the given Relying Party service and its dependencies.

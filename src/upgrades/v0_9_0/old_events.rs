@@ -6,10 +6,12 @@ use std::{
 };
 
 use rpki::{
-    crypto::KeyIdentifier,
-    roa::Roa,
+    repository::{
+        crypto::KeyIdentifier,
+        roa::Roa,
+        x509::{Serial, Time},
+    },
     uri,
-    x509::{Serial, Time},
 };
 
 use crate::{
@@ -334,7 +336,7 @@ pub struct ChildCertificateUpdates {
 
 impl From<ChildCertificateUpdates> for ca::ChildCertificateUpdates {
     fn from(old: ChildCertificateUpdates) -> Self {
-        ca::ChildCertificateUpdates::new(old.issued, old.removed)
+        ca::ChildCertificateUpdates::new(old.issued, old.removed, vec![], vec![])
     }
 }
 

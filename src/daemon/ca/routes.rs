@@ -1,16 +1,16 @@
-use std::cmp::Ordering;
-use std::collections::HashMap;
-use std::fmt;
-use std::ops::Deref;
-use std::str::FromStr;
+use std::{cmp::Ordering, collections::HashMap, fmt, ops::Deref, str::FromStr};
 
 use chrono::Duration;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
-use rpki::roa::{Roa, RoaBuilder};
-use rpki::sigobj::SignedObjectBuilder;
-use rpki::uri;
-use rpki::x509::Time;
+use rpki::{
+    repository::{
+        roa::{Roa, RoaBuilder},
+        sigobj::SignedObjectBuilder,
+        x509::Time,
+    },
+    uri,
+};
 
 use crate::{
     commons::{
@@ -176,10 +176,10 @@ impl RouteAuthorizationUpdates {
     pub fn affected_prefixes(&self) -> ResourceSet {
         let mut resources = ResourceSet::default();
         for roa in &self.added {
-            resources = resources.union(&roa.prefix().clone().into());
+            resources = resources.union(&roa.prefix().into());
         }
         for roa in &self.removed {
-            resources = resources.union(&roa.prefix().clone().into());
+            resources = resources.union(&roa.prefix().into());
         }
         resources
     }
@@ -769,12 +769,12 @@ impl Roas {
         let incoming_cert = certified_key.incoming_cert();
         let crl_uri = match &new_repo {
             None => incoming_cert.crl_uri(),
-            Some(base_uri) => base_uri.join(incoming_cert.crl_name().as_bytes()),
+            Some(base_uri) => base_uri.join(incoming_cert.crl_name().as_bytes()).unwrap(),
         };
 
         let roa_uri = match &new_repo {
             None => incoming_cert.uri_for_name(name),
-            Some(base_uri) => base_uri.join(name.as_bytes()),
+            Some(base_uri) => base_uri.join(name.as_bytes()).unwrap(),
         };
 
         let aia = incoming_cert.uri();

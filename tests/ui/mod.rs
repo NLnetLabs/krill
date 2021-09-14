@@ -132,14 +132,14 @@ impl CypressRunner {
                 // X server. For this to work you might need to run this command in your shell prior to `cargo test`:
                 //   xhost +
                 cmd.arg("-v")
-                    .arg(format!("/tmp/.X11-unix:/tmp/.X11-unix"))
+                    .arg("/tmp/.X11-unix:/tmp/.X11-unix")
                     .arg("-e")
                     .arg("DISPLAY")
                     .arg("--entrypoint")
                     .arg("cypress");
             }
 
-            cmd.arg("cypress/included:6.8.0");
+            cmd.arg("cypress/included:8.1.0");
 
             if std::env::var("CYPRESS_INTERACTIVE").is_ok() {
                 cmd.arg("open").arg("--project").arg(".");
@@ -165,7 +165,7 @@ impl CypressRunner {
 async fn do_run_krill_ui_test(test_name: &str) -> bool {
     krill::constants::enable_test_mode();
     let config_path = &format!("test-resources/ui/{}.conf", test_name);
-    let config = Config::read_config(&config_path).unwrap();
+    let config = Config::read_config(config_path).unwrap();
 
     // Start Krill as a Tokio task in the background and wait just until we can tell that it has started.
     start_krill_with_custom_config(config).await;

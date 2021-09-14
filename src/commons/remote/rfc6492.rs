@@ -1,23 +1,27 @@
-use std::str::FromStr;
-use std::{convert::TryFrom, fmt::Display};
-use std::{fmt, io};
+use std::{convert::TryFrom, fmt, fmt::Display, io, str::FromStr};
 
 use bytes::Bytes;
 use chrono::{DateTime, SecondsFormat, Utc};
 
-use rpki::cert::Cert;
-use rpki::crypto::KeyIdentifier;
-use rpki::csr::Csr;
-use rpki::resources::{AsBlocks, IpBlocks};
-use rpki::uri;
-use rpki::x509::Time;
-
-use crate::commons::api::{
-    EntitlementClass, Entitlements, Handle, IssuanceRequest, IssuanceResponse, IssuedCert, RequestResourceLimit,
-    ResourceClassName, ResourceSet, ResourceSetError, RevocationRequest, RevocationResponse, SigningCert,
+use rpki::{
+    repository::{
+        cert::Cert,
+        crypto::KeyIdentifier,
+        csr::Csr,
+        resources::{AsBlocks, IpBlocks},
+        x509::Time,
+    },
+    uri,
 };
-use crate::commons::crypto::ProtocolCms;
-use crate::commons::util::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
+
+use crate::commons::{
+    api::{
+        EntitlementClass, Entitlements, Handle, IssuanceRequest, IssuanceResponse, IssuedCert, RequestResourceLimit,
+        ResourceClassName, ResourceSet, ResourceSetError, RevocationRequest, RevocationResponse, SigningCert,
+    },
+    crypto::ProtocolCms,
+    util::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter},
+};
 
 //------------ Consts --------------------------------------------------------
 
@@ -727,6 +731,10 @@ impl NotPerformedResponse {
             status,
             description: description.to_string(),
         }
+    }
+
+    pub fn status(&self) -> u64 {
+        self.status
     }
 
     /// Creates a response for a status value defined in RFC6492. Also adds

@@ -24,8 +24,10 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-use crate::commons::error::{Error, KrillIoError};
-use crate::commons::KrillResult;
+use crate::commons::{
+    error::{Error, KrillIoError},
+    KrillResult,
+};
 
 const CHACHA20_KEY_BIT_LEN: usize = 256;
 const CHACHA20_KEY_BYTE_LEN: usize = CHACHA20_KEY_BIT_LEN / 8;
@@ -99,7 +101,7 @@ pub(crate) fn encrypt(key: &[u8], plaintext: &[u8], nonce: &NonceState) -> Krill
     let mut tag: [u8; POLY1305_TAG_BYTE_LEN] = [0; POLY1305_TAG_BYTE_LEN];
 
     let cipher = openssl::symm::Cipher::chacha20_poly1305();
-    let cipher_text = openssl::symm::encrypt_aead(cipher, &key, Some(&nonce), &UNUSED_AAD, plaintext, &mut tag)
+    let cipher_text = openssl::symm::encrypt_aead(cipher, key, Some(&nonce), &UNUSED_AAD, plaintext, &mut tag)
         .map_err(|err| Error::Custom(format!("Encryption error: {}", &err)))?;
 
     let mut payload = Vec::with_capacity(nonce.len() + tag.len() + cipher_text.len());
@@ -122,7 +124,7 @@ pub(crate) fn decrypt(key: &[u8], payload: &[u8]) -> KrillResult<Vec<u8>> {
     let cipher_text = &payload[CLEARTEXT_PREFIX_LEN..];
 
     let cipher = openssl::symm::Cipher::chacha20_poly1305();
-    openssl::symm::decrypt_aead(cipher, &key, Some(nonce), &UNUSED_AAD, cipher_text, tag)
+    openssl::symm::decrypt_aead(cipher, key, Some(nonce), &UNUSED_AAD, cipher_text, tag)
         .map_err(|err| Error::Custom(format!("Decryption error: {}", &err)))
 }
 

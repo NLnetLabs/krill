@@ -1,13 +1,15 @@
-use std::fs::File;
-use std::io::{self, Read, Write};
-use std::path::PathBuf;
-use std::str::FromStr;
-use std::{borrow::Cow, path::Path};
-use std::{fmt, fs};
+use std::{
+    borrow::Cow,
+    fmt, fs,
+    fs::File,
+    io::{self, Read, Write},
+    path::Path,
+    path::PathBuf,
+    str::FromStr,
+};
 
 use bytes::Bytes;
-use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::{de::DeserializeOwned, Serialize};
 
 use rpki::uri;
 
@@ -131,7 +133,7 @@ pub fn delete_file(full_path: &Path) -> Result<(), KrillIoError> {
 /// Removes the file and any **empty** directories on the path after removing it.
 pub fn clean_file_and_path(path: &Path) -> Result<(), KrillIoError> {
     if path.exists() {
-        delete_file(&path)?;
+        delete_file(path)?;
 
         let mut parent_opt = path.parent();
 
@@ -156,8 +158,8 @@ pub fn clean_file_and_path(path: &Path) -> Result<(), KrillIoError> {
 
 fn path_with_rsync(base_path: &Path, uri: &uri::Rsync) -> PathBuf {
     let mut path = base_path.to_path_buf();
-    path.push(uri.module().authority());
-    path.push(uri.module().module());
+    path.push(uri.authority());
+    path.push(uri.module_name());
     path.push(uri.path());
     path
 }
@@ -311,7 +313,7 @@ pub struct CurrentFile {
 
 impl CurrentFile {
     pub fn new(uri: uri::Rsync, content: &Bytes) -> Self {
-        let content = Base64::from_content(&content);
+        let content = Base64::from_content(content);
         let hash = content.to_encoded_hash();
         CurrentFile { uri, content, hash }
     }
@@ -319,7 +321,7 @@ impl CurrentFile {
     /// Saves this file under a base directory, based on the (rsync) uri of
     /// this file.
     pub fn save(&self, base_path: &Path) -> Result<(), KrillIoError> {
-        save_with_rsync_uri(&self.content.to_bytes(), &base_path, &self.uri)
+        save_with_rsync_uri(&self.content.to_bytes(), base_path, &self.uri)
     }
 
     pub fn uri(&self) -> &uri::Rsync {

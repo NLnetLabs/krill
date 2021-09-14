@@ -14,21 +14,25 @@
 //! For Krill it should be fine to use rust_tls though, so therefore this
 //! implementation was used in the end.
 
-use std::fs::File;
-use std::future::Future;
-use std::io::{self, BufReader, Read};
-use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
-use std::pin::Pin;
-use std::sync::Arc;
-use std::task::{Context, Poll};
+use std::{
+    fs::File,
+    future::Future,
+    io::{self, BufReader, Read},
+    net::SocketAddr,
+    path::{Path, PathBuf},
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+};
 
 use futures::ready;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_rustls::rustls::{NoClientAuth, ServerConfig, TLSError};
 
-use hyper::server::accept::Accept;
-use hyper::server::conn::{AddrIncoming, AddrStream};
+use hyper::server::{
+    accept::Accept,
+    conn::{AddrIncoming, AddrStream},
+};
 
 pub trait Transport: AsyncRead + AsyncWrite {
     fn remote_addr(&self) -> Option<SocketAddr>;
@@ -43,7 +47,7 @@ impl Transport for AddrStream {
 pub(crate) struct LiftIo<T>(pub(crate) T);
 
 impl<T: AsyncRead + Unpin> AsyncRead for LiftIo<T> {
-    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<io::Result<usize>> {
+    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut tokio::io::ReadBuf<'_>) -> Poll<io::Result<()>> {
         Pin::new(&mut self.get_mut().0).poll_read(cx, buf)
     }
 }
@@ -231,7 +235,7 @@ impl TlsStream {
 }
 
 impl AsyncRead for TlsStream {
-    fn poll_read(self: Pin<&mut Self>, cx: &mut Context, buf: &mut [u8]) -> Poll<io::Result<usize>> {
+    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut tokio::io::ReadBuf<'_>) -> Poll<io::Result<()>> {
         let pin = self.get_mut();
         match pin.state {
             State::Handshaking(ref mut accept) => match ready!(Pin::new(accept).poll(cx)) {

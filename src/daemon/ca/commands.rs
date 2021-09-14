@@ -1,23 +1,24 @@
-use std::fmt;
-use std::sync::Arc;
+use std::{fmt, sync::Arc};
 
 use chrono::Duration;
 
 use rpki::uri;
 
-use crate::commons::{
-    actor::Actor,
-    api::{
-        ChildHandle, Entitlements, Handle, IssuanceRequest, ParentCaContact, ParentHandle, RcvdCert, RepositoryContact,
-        ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse, RtaName, StorableCaCommand,
-        StorableRcEntitlement,
+use crate::{
+    commons::{
+        actor::Actor,
+        api::{
+            ChildHandle, Entitlements, Handle, IssuanceRequest, ParentCaContact, ParentHandle, RcvdCert,
+            RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse, RtaName,
+            StorableCaCommand, StorableRcEntitlement,
+        },
+        crypto::{IdCert, KrillSigner},
+        eventsourcing::{self, StoredCommand},
     },
-    crypto::{IdCert, KrillSigner},
-    eventsourcing::{self, StoredCommand},
-};
-use crate::daemon::{
-    ca::{CaEvt, ResourceTaggedAttestation, RouteAuthorizationUpdates, RtaContentRequest, RtaPrepareRequest},
-    config::Config,
+    daemon::{
+        ca::{CaEvt, ResourceTaggedAttestation, RouteAuthorizationUpdates, RtaContentRequest, RtaPrepareRequest},
+        config::Config,
+    },
 };
 
 //------------ StoredCaCommand ---------------------------------------------
@@ -28,6 +29,8 @@ pub type StoredCaCommand = StoredCommand<StorableCaCommand>;
 
 pub type Cmd = eventsourcing::SentCommand<CmdDet>;
 
+pub type DropReason = String;
+
 //------------ CommandDetails ----------------------------------------------
 
 #[derive(Clone, Debug)]
@@ -36,7 +39,7 @@ pub enum CmdDet {
     // ------------------------------------------------------------
     // Being a TA
     // ------------------------------------------------------------
-    MakeTrustAnchor(Vec<uri::Https>, Arc<KrillSigner>),
+    MakeTrustAnchor(Vec<uri::Https>, Option<uri::Rsync>, Arc<KrillSigner>),
 
     // ------------------------------------------------------------
     // Being a parent
@@ -60,6 +63,17 @@ pub enum CmdDet {
 
     // Remove child (also revokes, and removes issued certs, and republishes)
     ChildRemove(ChildHandle),
+
+    // Suspend a child (done by a background process which checks for inactive children)
+    // When a child is inactive it is assumed that they no longer maintain their repository.
+    // The certificate(s) issued to the child will be removed (and revoked) until
+    // the child is seen again and unsuspended (see below).
+    ChildSuspendInactive(ChildHandle),
+
+    // Unsuspend a child (when it contacts the server again). I.e. mark it as active once
+    // again and republish existing certificates provided that they are not expired, or
+    // about to expire, and do not claim resources no longer associated with this child.
+    ChildUnsuspend(ChildHandle),
 
     // ------------------------------------------------------------
     // Being a child (only allowed if this CA is not self-signed)
@@ -87,6 +101,10 @@ pub enum CmdDet {
 
     // Process a new certificate received from a parent.
     UpdateRcvdCert(ResourceClassName, RcvdCert, Arc<Config>, Arc<KrillSigner>),
+
+    // Drop a resource class under a parent because of issues
+    // obtaining a certificate for it.
+    DropResourceClass(ResourceClassName, DropReason, Arc<KrillSigner>),
 
     // ------------------------------------------------------------
     // Key rolls
@@ -168,7 +186,7 @@ impl From<CmdDet> for StorableCaCommand {
             // ------------------------------------------------------------
             // Being a TA
             // ------------------------------------------------------------
-            CmdDet::MakeTrustAnchor(_, _) => StorableCaCommand::MakeTrustAnchor,
+            CmdDet::MakeTrustAnchor(_, _, _) => StorableCaCommand::MakeTrustAnchor,
 
             // ------------------------------------------------------------
             // Being a parent
@@ -197,6 +215,8 @@ impl From<CmdDet> for StorableCaCommand {
             }
             CmdDet::ChildRevokeKey(child, revoke_req) => StorableCaCommand::ChildRevokeKey { child, revoke_req },
             CmdDet::ChildRemove(child) => StorableCaCommand::ChildRemove { child },
+            CmdDet::ChildSuspendInactive(child) => StorableCaCommand::ChildSuspendInactive { child },
+            CmdDet::ChildUnsuspend(child) => StorableCaCommand::ChildUnsuspend { child },
 
             // ------------------------------------------------------------
             // Being a child
@@ -225,6 +245,10 @@ impl From<CmdDet> for StorableCaCommand {
             CmdDet::UpdateRcvdCert(resource_class_name, rcvd_cert, _, _) => StorableCaCommand::UpdateRcvdCert {
                 resource_class_name,
                 resources: rcvd_cert.resources().clone(),
+            },
+            CmdDet::DropResourceClass(resource_class_name, reason, _) => StorableCaCommand::DropResourceClass {
+                resource_class_name,
+                reason,
             },
 
             // ------------------------------------------------------------
@@ -265,8 +289,14 @@ impl From<CmdDet> for StorableCaCommand {
 
 impl CmdDet {
     /// Turns this CA into a TrustAnchor
-    pub fn make_trust_anchor(handle: &Handle, uris: Vec<uri::Https>, signer: Arc<KrillSigner>, actor: &Actor) -> Cmd {
-        eventsourcing::SentCommand::new(handle, None, CmdDet::MakeTrustAnchor(uris, signer), actor)
+    pub fn make_trust_anchor(
+        handle: &Handle,
+        uris: Vec<uri::Https>,
+        rsync_uri: Option<uri::Rsync>,
+        signer: Arc<KrillSigner>,
+        actor: &Actor,
+    ) -> Cmd {
+        eventsourcing::SentCommand::new(handle, None, CmdDet::MakeTrustAnchor(uris, rsync_uri, signer), actor)
     }
 
     /// Adds a child to this CA. Will return an error in case you try
@@ -336,6 +366,14 @@ impl CmdDet {
         eventsourcing::SentCommand::new(handle, None, CmdDet::ChildRemove(child_handle), actor)
     }
 
+    pub fn child_suspend_inactive(handle: &Handle, child_handle: ChildHandle, actor: &Actor) -> Cmd {
+        eventsourcing::SentCommand::new(handle, None, CmdDet::ChildSuspendInactive(child_handle), actor)
+    }
+
+    pub fn child_unsuspend(handle: &Handle, child_handle: ChildHandle, actor: &Actor) -> Cmd {
+        eventsourcing::SentCommand::new(handle, None, CmdDet::ChildUnsuspend(child_handle), actor)
+    }
+
     pub fn update_id(handle: &Handle, signer: Arc<KrillSigner>, actor: &Actor) -> Cmd {
         eventsourcing::SentCommand::new(handle, None, CmdDet::GenerateNewIdKey(signer), actor)
     }
@@ -379,6 +417,21 @@ impl CmdDet {
             handle,
             None,
             CmdDet::UpdateRcvdCert(class_name, cert, config, signer),
+            actor,
+        )
+    }
+
+    pub fn drop_resource_class(
+        handle: &Handle,
+        class_name: ResourceClassName,
+        reason: DropReason,
+        signer: Arc<KrillSigner>,
+        actor: &Actor,
+    ) -> Cmd {
+        eventsourcing::SentCommand::new(
+            handle,
+            None,
+            CmdDet::DropResourceClass(class_name, reason, signer),
             actor,
         )
     }

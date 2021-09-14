@@ -11,7 +11,7 @@ use std::{
 use bytes::Bytes;
 use chrono::Duration;
 
-use rpki::{
+use rpki::repository::{
     cert::Cert,
     crl::{Crl, TbsCertList},
     crypto::{DigestAlgorithm, KeyIdentifier, PublicKey},
@@ -34,12 +34,10 @@ use crate::{
     },
     constants::CA_OBJECTS_DIR,
     daemon::{
-        ca::{CaEvt, CertAuth},
+        ca::{CaEvt, CertAuth, CertifiedKey, ChildCertificateUpdates, RoaUpdates},
         config::{Config, IssuanceTimingConfig},
     },
 };
-
-use super::{CertifiedKey, ChildCertificateUpdates, RoaUpdates};
 
 //------------ CaObjectsStore ----------------------------------------------
 
@@ -328,7 +326,7 @@ impl CaObjects {
         }
     }
 
-    #[allow(clippy::clippy::mutable_key_type)]
+    #[allow(clippy::mutable_key_type)]
     /// Returns all PublishedElements mapped to each RepositoryContact.
     /// There could be more than one repository - although usually there isn't.
     pub fn repo_elements_map(&self) -> HashMap<RepositoryContact, Vec<PublishElement>> {
@@ -534,7 +532,7 @@ impl ResourceClassObjects {
         ResourceClassObjects { keys }
     }
 
-    #[allow(clippy::clippy::mutable_key_type)]
+    #[allow(clippy::mutable_key_type)]
     /// Adds all the elements for this resource class to the map which is passed on. It will use
     /// the default repository, or an optional old repository if any of the keys had one as part
     /// of a repository migration.
@@ -802,8 +800,8 @@ impl CurrentKeyObjectSet {
         let repo = self.old_repo.as_ref().unwrap_or(dflt_repo);
 
         let base_uri = self.signing_cert.ca_repository();
-        let mft_uri = base_uri.join(self.manifest.name().as_bytes());
-        let crl_uri = base_uri.join(self.crl.name().as_bytes());
+        let mft_uri = base_uri.join(self.manifest.name().as_bytes()).unwrap();
+        let crl_uri = base_uri.join(self.crl.name().as_bytes()).unwrap();
 
         let elements = map.entry(repo.clone()).or_insert_with(Vec::new);
         elements.push(PublishElement::new(Base64::from(&self.manifest.0), mft_uri));
@@ -812,14 +810,14 @@ impl CurrentKeyObjectSet {
         for (name, roa) in &self.roas {
             elements.push(PublishElement::new(
                 Base64::from(&roa.0),
-                base_uri.join(name.as_bytes()),
+                base_uri.join(name.as_bytes()).unwrap(),
             ));
         }
 
         for (name, cert) in &self.certs {
             elements.push(PublishElement::new(
                 Base64::from(cert.as_ref()),
-                base_uri.join(name.as_bytes()),
+                base_uri.join(name.as_bytes()).unwrap(),
             ));
         }
     }
@@ -862,6 +860,21 @@ impl CurrentKeyObjectSet {
             if let Some(old) = self.certs.insert(name, issued.clone().into()) {
                 self.revocations.add(Revocation::from(&old));
             }
+        }
+
+        for cert in cert_updates.unsuspended() {
+            let name = ObjectName::from(cert.cert());
+            self.revocations.remove(&Revocation::from(cert.cert()));
+            if let Some(old) = self.certs.insert(name, cert.clone().into()) {
+                // this should not happen, but just to be safe.
+                self.revocations.add(Revocation::from(&old));
+            }
+        }
+
+        for suspended in cert_updates.suspended() {
+            let name = ObjectName::from(suspended.cert());
+            self.certs.remove(&name);
+            self.revocations.add(Revocation::from(suspended.cert()));
         }
 
         self.reissue(timing, signer)
@@ -1047,8 +1060,8 @@ impl BasicKeyObjectSet {
         let repo = self.old_repo.as_ref().unwrap_or(dflt_repo);
 
         let base_uri = self.signing_cert.ca_repository();
-        let mft_uri = base_uri.join(self.manifest.name().as_bytes());
-        let crl_uri = base_uri.join(self.crl.name().as_bytes());
+        let mft_uri = base_uri.join(self.manifest.name().as_bytes()).unwrap();
+        let crl_uri = base_uri.join(self.crl.name().as_bytes()).unwrap();
 
         let elements = map.entry(repo.clone()).or_insert_with(Vec::new);
         elements.push(PublishElement::new(Base64::from(&self.manifest.0), mft_uri));
@@ -1183,7 +1196,7 @@ impl Deref for PublishedCert {
 
 impl AsRef<Cert> for PublishedCert {
     fn as_ref(&self) -> &Cert {
-        &self.0.as_ref()
+        self.0.as_ref()
     }
 }
 
@@ -1403,7 +1416,6 @@ impl ManifestBuilder {
         let this_update = Time::five_minutes_ago();
         let now = Time::now();
         let next_update = Time::now() + Duration::hours(issuance_timing.timing_publish_next_hours);
-        let valid_until = Time::now() + Duration::days(issuance_timing.timing_publish_valid_days);
 
         let entries = self.entries.iter().map(|(k, v)| FileAndHash::new(k, v));
 
@@ -1417,7 +1429,7 @@ impl ManifestBuilder {
             );
             let mut object_builder = SignedObjectBuilder::new(
                 signer.random_serial()?,
-                Validity::new(this_update, valid_until),
+                Validity::new(this_update, next_update),
                 crl_uri,
                 aia.clone(),
                 mft_uri,

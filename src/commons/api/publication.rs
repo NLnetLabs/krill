@@ -3,8 +3,10 @@ use std::ops;
 
 use rpki::uri;
 
-use crate::commons::api::{Base64, HexEncodedHash};
-use crate::commons::util::file::CurrentFile;
+use crate::commons::{
+    api::{Base64, HexEncodedHash},
+    util::file::CurrentFile,
+};
 
 //------------ PublishRequest ------------------------------------------------
 

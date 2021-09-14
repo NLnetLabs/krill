@@ -2,15 +2,21 @@
 use bytes::Bytes;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use bcder::encode::{Constructed, PrimitiveContent, Values};
-use bcder::{decode, encode, Unsigned};
-use bcder::{BitString, Mode, OctetString, Oid, Tag};
-use rpki::crypto::{DigestAlgorithm, KeyIdentifier, PublicKey, Signature, SignatureAlgorithm};
-use rpki::oid;
-use rpki::x509::{encode_extension, update_once, Name, SignedData, Time, ValidationError, Validity};
+use bcder::{
+    encode::{Constructed, PrimitiveContent, Values},
+    {decode, encode, BitString, Mode, OctetString, Oid, Tag, Unsigned},
+};
 
-use crate::commons::crypto::{CryptoResult, KrillSigner};
-use crate::constants::ID_CERTIFICATE_VALIDITY_YEARS;
+use rpki::repository::{
+    crypto::{DigestAlgorithm, KeyIdentifier, PublicKey, Signature, SignatureAlgorithm},
+    oid,
+    x509::{encode_extension, update_once, Name, SignedData, Time, ValidationError, Validity},
+};
+
+use crate::{
+    commons::crypto::{CryptoResult, KrillSigner},
+    constants::ID_CERTIFICATE_VALIDITY_YEARS,
+};
 
 //------------ IdTbsCertificate ------------------------------------------------
 
@@ -128,7 +134,7 @@ impl IdCertBuilder {
     ) -> CryptoResult<IdCert> {
         let issuing_key_info = signer.get_key_info(issuing_key)?;
 
-        let tbs = Self::make_tbs_certificate_request(1, &issuing_key_info, &subject_key, ext);
+        let tbs = Self::make_tbs_certificate_request(1, &issuing_key_info, subject_key, ext);
 
         let enc_cert = tbs.encode();
         let enc_cert_c = enc_cert.to_captured(Mode::Der);

@@ -2,17 +2,19 @@
 //!
 //! http://www.ris.ripe.net/dumps/riswhoisdump.IPv4.gz
 
-use std::fmt;
-use std::io::{BufRead, Read};
-use std::num::ParseIntError;
-use std::str::FromStr;
+use std::{
+    fmt,
+    io::{BufRead, Read},
+    num::ParseIntError,
+    str::FromStr,
+};
 
 use bytes::Bytes;
 use libflate::gzip::Decoder;
 
-use crate::commons::bgp::Announcement;
 use crate::commons::{
     api::{AsNumber, AuthorizationFmtError, TypedPrefix},
+    bgp::Announcement,
     error::KrillIoError,
 };
 

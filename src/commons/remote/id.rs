@@ -2,9 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use rpki::uri;
 
-use crate::commons::api::Handle;
-use crate::commons::crypto::IdCert;
-use crate::commons::remote::rfc8183::ServiceUri;
+use crate::commons::{api::Handle, crypto::IdCert, remote::rfc8183::ServiceUri};
 
 //------------ ParentInfo ----------------------------------------------------
 

@@ -68,6 +68,8 @@ pub const KRILL_CLI_MY_CA_ARG: &str = "ca";
 pub const KRILL_CLI_MY_CA_ENV: &str = "KRILL_CLI_MY_CA";
 
 pub const REQUEUE_DELAY_SECONDS: i64 = 300;
+pub const CA_REFRESH_SECONDS_MIN: u32 = 600;
+pub const CA_REFRESH_SECONDS_MAX: u32 = 3600;
 
 pub const KRILL_HTTPS_ROOT_CERTS_ENV: &str = "KRILL_HTTPS_ROOT_CERTS";
 
@@ -76,6 +78,7 @@ pub const ID_CERTIFICATE_VALIDITY_YEARS: i32 = 15;
 pub const BGP_RIS_REFRESH_MINUTES: i64 = 60;
 
 pub const HTTP_CLIENT_TIMEOUT_SECS: u64 = 120;
+pub const HTTP_USER_AGENT_TRUNCATE: usize = 256; // Will truncate received user-agent values at this size.
 pub const OPENID_CONNECT_HTTP_CLIENT_TIMEOUT_SECS: u64 = 30;
 
 pub const NO_RESOURCE: NoResourceType = NoResourceType;

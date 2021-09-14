@@ -1,8 +1,11 @@
 use std::sync::Arc;
 
 use jmespatch as jmespath;
-use jmespath::functions::{ArgumentType, CustomFunction, Signature};
-use jmespath::{Context, ErrorReason, JmespathError, Rcvar, Runtime};
+
+use jmespath::{
+    functions::{ArgumentType, CustomFunction, Signature},
+    Context, ErrorReason, JmespathError, Rcvar, Runtime,
+};
 
 use regex::Regex;
 
@@ -33,9 +36,9 @@ fn make_recap_fn() -> Box<CustomFunction> {
 
         if let jmespath::Variable::String(str) = &*args[0] {
             if let jmespath::Variable::String(re_str) = &*args[1] {
-                match Regex::new(&re_str) {
+                match Regex::new(re_str) {
                     Ok(re) => {
-                        let mut iter = re.captures_iter(&str);
+                        let mut iter = re.captures_iter(str);
                         if let Some(captures) = iter.next() {
                             // captures[0] is the entire match
                             // captures[1] is the value of the first capture group match
@@ -44,7 +47,7 @@ fn make_recap_fn() -> Box<CustomFunction> {
                     }
                     Err(err) => {
                         return Err(JmespathError::new(
-                            &re_str,
+                            re_str,
                             0,
                             ErrorReason::Parse(format!("Invalid regular expression: {}", err)),
                         ));
@@ -78,13 +81,13 @@ fn make_resub_fn() -> Box<CustomFunction> {
             let mut res = String::new();
             if let jmespath::Variable::String(re_str) = &*args[1] {
                 if let jmespath::Variable::String(newval) = &*args[2] {
-                    match Regex::new(&re_str) {
+                    match Regex::new(re_str) {
                         Ok(re) => {
                             res = re.replace(str.as_str(), newval.as_str()).to_string();
                         }
                         Err(err) => {
                             return Err(JmespathError::new(
-                                &re_str,
+                                re_str,
                                 0,
                                 ErrorReason::Parse(format!("Invalid regular expression: {}", err)),
                             ));

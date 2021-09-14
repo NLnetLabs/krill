@@ -1,32 +1,33 @@
-use std::io;
-use std::io::Read;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::path::PathBuf;
-use std::str::FromStr;
-use std::{env, fmt};
-use std::{fs::File, path::Path};
+use std::{
+    env, fmt,
+    fs::File,
+    io::{self, Read},
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
 use clap::{App, Arg};
 use log::{error, LevelFilter};
-use serde::de;
-use serde::{Deserialize, Deserializer};
+use serde::{de, Deserialize, Deserializer};
+
 #[cfg(unix)]
 use syslog::Facility;
 
 use rpki::uri;
 
-use crate::commons::util::ext_serde;
-use crate::commons::{
-    api::{PublicationServerUris, PublisherHandle, Token},
-    error::KrillIoError,
+use crate::{
+    commons::{
+        api::{PublicationServerUris, PublisherHandle, Token},
+        error::KrillIoError,
+        util::ext_serde,
+    },
+    constants::*,
+    daemon::http::tls_keys,
 };
-use crate::constants::*;
-use crate::daemon::http::tls_keys;
 
 #[cfg(feature = "multi-user")]
-use crate::daemon::auth::providers::config_file::config::ConfigAuthUsers;
-#[cfg(feature = "multi-user")]
-use crate::daemon::auth::providers::openid_connect::ConfigAuthOpenIDConnect;
+use crate::daemon::auth::providers::{config_file::config::ConfigAuthUsers, openid_connect::ConfigAuthOpenIDConnect};
 
 //------------ ConfigDefaults ------------------------------------------------
 
@@ -51,9 +52,6 @@ impl ConfigDefaults {
         env::var(KRILL_ENV_FORCE_RECOVER).is_ok()
     }
 
-    fn service_uri() -> String {
-        "https://localhost:3000/".to_string()
-    }
     fn log_level() -> LevelFilter {
         match env::var(KRILL_ENV_LOG_LEVEL) {
             Ok(level) => match LevelFilter::from_str(&level) {
@@ -66,18 +64,23 @@ impl ConfigDefaults {
             _ => LevelFilter::Info,
         }
     }
+
     fn log_type() -> LogType {
         LogType::File
     }
+
     fn log_file() -> PathBuf {
         PathBuf::from("./krill.log")
     }
+
     fn syslog_facility() -> String {
         "daemon".to_string()
     }
+
     fn auth_type() -> AuthType {
         AuthType::AdminToken
     }
+
     fn admin_token() -> Token {
         match env::var(KRILL_ENV_ADMIN_TOKEN) {
             Ok(token) => Token::from(token),
@@ -90,15 +93,18 @@ impl ConfigDefaults {
             },
         }
     }
+
     #[cfg(feature = "multi-user")]
     fn auth_policies() -> Vec<PathBuf> {
         vec![]
     }
+
     #[cfg(feature = "multi-user")]
     fn auth_private_attributes() -> Vec<String> {
         vec![]
     }
-    fn ca_refresh() -> u32 {
+
+    fn ca_refresh_seconds() -> u32 {
         600
     }
 
@@ -152,10 +158,6 @@ impl ConfigDefaults {
         90
     }
 
-    fn timing_publish_valid_days() -> i64 {
-        7
-    }
-
     fn timing_publish_next_hours() -> i64 {
         24
     }
@@ -207,8 +209,7 @@ pub struct Config {
 
     pub pid_file: Option<PathBuf>,
 
-    #[serde(default = "ConfigDefaults::service_uri")]
-    pub service_uri: String,
+    service_uri: Option<uri::Https>,
 
     #[serde(
         default = "ConfigDefaults::log_level",
@@ -245,8 +246,10 @@ pub struct Config {
     #[cfg(feature = "multi-user")]
     pub auth_openidconnect: Option<ConfigAuthOpenIDConnect>,
 
-    #[serde(default = "ConfigDefaults::ca_refresh")]
-    pub ca_refresh: u32,
+    #[serde(default = "ConfigDefaults::ca_refresh_seconds", alias = "ca_refresh")]
+    pub ca_refresh_seconds: u32,
+
+    pub suspend_child_after_inactive_hours: Option<i64>,
 
     #[serde(default = "ConfigDefaults::post_limit_api")]
     pub post_limit_api: u64,
@@ -284,13 +287,14 @@ pub struct Config {
     #[serde(flatten)]
     pub repository_retention: RepositoryRetentionConfig,
 
+    #[serde(flatten)]
+    pub metrics: MetricsConfig,
+
     pub testbed: Option<TestBed>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct IssuanceTimingConfig {
-    #[serde(default = "ConfigDefaults::timing_publish_valid_days")]
-    pub timing_publish_valid_days: i64,
     #[serde(default = "ConfigDefaults::timing_publish_next_hours")]
     pub timing_publish_next_hours: i64,
     #[serde(default = "ConfigDefaults::timing_publish_hours_before_next")]
@@ -369,6 +373,18 @@ impl RepositoryRetentionConfig {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+pub struct MetricsConfig {
+    #[serde(default)] // false
+    pub metrics_hide_ca_details: bool,
+    #[serde(default)] // false
+    pub metrics_hide_child_details: bool,
+    #[serde(default)] // false
+    pub metrics_hide_publisher_details: bool,
+    #[serde(default)] // false
+    pub metrics_hide_roa_details: bool,
+}
+
+#[derive(Clone, Debug, Deserialize)]
 pub struct TestBed {
     ta_aia: uri::Rsync,
     ta_uri: uri::Https,
@@ -428,11 +444,20 @@ impl Config {
     }
 
     pub fn service_uri(&self) -> uri::Https {
-        uri::Https::from_str(&self.service_uri).unwrap()
+        match &self.service_uri {
+            None => {
+                if self.ip == ConfigDefaults::ip() {
+                    uri::Https::from_string(format!("https://localhost:{}/", self.port)).unwrap()
+                } else {
+                    uri::Https::from_string(format!("https://{}:{}/", self.ip, self.port)).unwrap()
+                }
+            }
+            Some(uri) => uri.clone(),
+        }
     }
 
     pub fn rfc8181_uri(&self, publisher: &PublisherHandle) -> uri::Https {
-        uri::Https::from_string(format!("{}rfc8181/{}/", self.service_uri, publisher)).unwrap()
+        uri::Https::from_string(format!("{}rfc8181/{}/", self.service_uri(), publisher)).unwrap()
     }
 
     pub fn pid_file(&self) -> PathBuf {
@@ -461,7 +486,7 @@ impl Config {
 
 /// # Create
 impl Config {
-    fn test_config(data_dir: &Path, enable_testbed: bool) -> Self {
+    fn test_config(data_dir: &Path, enable_testbed: bool, enable_ca_refresh: bool) -> Self {
         use crate::test;
 
         let ip = ConfigDefaults::ip();
@@ -471,7 +496,6 @@ impl Config {
         let https_mode = HttpsMode::Generate;
         let data_dir = data_dir.to_path_buf();
         let always_recover_data = false;
-        let service_uri = ConfigDefaults::service_uri();
 
         let log_level = LevelFilter::Debug;
         let log_type = LogType::Stderr;
@@ -488,7 +512,7 @@ impl Config {
         let auth_users = None;
         #[cfg(feature = "multi-user")]
         let auth_openidconnect = None;
-        let ca_refresh = 1;
+        let ca_refresh_seconds = if enable_ca_refresh { 1 } else { 86400 };
         let post_limit_api = ConfigDefaults::post_limit_api();
         let post_limit_rfc8181 = ConfigDefaults::post_limit_rfc8181();
         let rfc8181_log_dir = {
@@ -510,7 +534,6 @@ impl Config {
         let roa_aggregate_threshold = 3;
         let roa_deaggregate_threshold = 2;
 
-        let timing_publish_valid_days = ConfigDefaults::timing_publish_valid_days();
         let timing_publish_next_hours = ConfigDefaults::timing_publish_next_hours();
         let timing_publish_hours_before_next = ConfigDefaults::timing_publish_hours_before_next();
         let timing_child_certificate_valid_weeks = ConfigDefaults::timing_child_certificate_valid_weeks();
@@ -520,7 +543,6 @@ impl Config {
         let timing_roa_reissue_weeks_before = ConfigDefaults::timing_roa_reissue_weeks_before();
 
         let issuance_timing = IssuanceTimingConfig {
-            timing_publish_valid_days,
             timing_publish_next_hours,
             timing_publish_hours_before_next,
             timing_child_certificate_valid_weeks,
@@ -536,6 +558,13 @@ impl Config {
             retention_delta_files_max_seconds: 1,
             retention_delta_files_max_nr: 50,
             retention_archive: false,
+        };
+
+        let metrics = MetricsConfig {
+            metrics_hide_ca_details: false,
+            metrics_hide_child_details: false,
+            metrics_hide_publisher_details: false,
+            metrics_hide_roa_details: false,
         };
 
         let testbed = if enable_testbed {
@@ -556,7 +585,7 @@ impl Config {
             data_dir,
             always_recover_data,
             pid_file,
-            service_uri,
+            service_uri: None,
             log_level,
             log_type,
             log_file,
@@ -571,7 +600,8 @@ impl Config {
             auth_users,
             #[cfg(feature = "multi-user")]
             auth_openidconnect,
-            ca_refresh,
+            ca_refresh_seconds,
+            suspend_child_after_inactive_hours: None,
             post_limit_api,
             post_limit_rfc8181,
             rfc8181_log_dir,
@@ -584,18 +614,18 @@ impl Config {
             roa_deaggregate_threshold,
             issuance_timing,
             repository_retention,
+            metrics,
             testbed,
         }
     }
 
-    pub fn test(data_dir: &Path, enable_testbed: bool) -> Self {
-        Self::test_config(data_dir, enable_testbed)
+    pub fn test(data_dir: &Path, enable_testbed: bool, enable_ca_refresh: bool) -> Self {
+        Self::test_config(data_dir, enable_testbed, enable_ca_refresh)
     }
 
     pub fn pubd_test(data_dir: &Path) -> Self {
-        let mut config = Self::test_config(data_dir, false);
+        let mut config = Self::test_config(data_dir, false, false);
         config.port = 3001;
-        config.service_uri = "https://localhost:3001/".to_string();
         config
     }
 
@@ -621,7 +651,7 @@ impl Config {
     pub fn create() -> Result<Self, ConfigError> {
         let config_file = Self::get_config_filename();
 
-        let config = match Self::read_config(&config_file) {
+        let mut config = match Self::read_config(&config_file) {
             Err(e) => {
                 if config_file == KRILL_DEFAULT_CONFIG_FILE {
                     Err(ConfigError::other(
@@ -640,6 +670,23 @@ impl Config {
                 Ok(config)
             }
         }?;
+
+        if config.ca_refresh_seconds < CA_REFRESH_SECONDS_MIN {
+            warn!(
+                "The value for 'ca_refresh_seconds' was below the minimum value, changing it to {} seconds",
+                CA_REFRESH_SECONDS_MIN
+            );
+            config.ca_refresh_seconds = CA_REFRESH_SECONDS_MIN;
+        }
+
+        if config.ca_refresh_seconds > CA_REFRESH_SECONDS_MAX {
+            warn!(
+                "The value for 'ca_refresh_seconds' was above the maximum value, changing it to {} seconds",
+                CA_REFRESH_SECONDS_MAX
+            );
+            config.ca_refresh_seconds = CA_REFRESH_SECONDS_MAX;
+        }
+
         config
             .verify()
             .map_err(|e| ConfigError::Other(format!("Error parsing config file: {}, error: {}", config_file, e)))?;
@@ -655,13 +702,10 @@ impl Config {
             return Err(ConfigError::other("Port number must be >1024"));
         }
 
-        if !self.service_uri.ends_with('/') {
-            return Err(ConfigError::other("service URI must end with '/'"));
-        } else {
-            uri::Https::from_str(&self.service_uri)
-                .map_err(|_| ConfigError::Other(format!("Invalid service uri: {}", self.service_uri)))?;
-
-            if self.service_uri.as_str().matches('/').count() != 3 {
+        if let Some(service_uri) = &self.service_uri {
+            if !service_uri.as_str().ends_with('/') {
+                return Err(ConfigError::other("service URI must end with '/'"));
+            } else if service_uri.as_str().matches('/').count() != 3 {
                 return Err(ConfigError::other(
                     "Service URI MUST specify a host name only, e.g. https://rpki.example.com:3000/",
                 ));
@@ -682,12 +726,6 @@ impl Config {
             return Err(ConfigError::other(
                 "timing_publish_hours_before_next must be smaller than timing_publish_hours",
             ));
-        }
-
-        if self.issuance_timing.timing_publish_valid_days < 1
-            || self.issuance_timing.timing_publish_valid_days < (self.issuance_timing.timing_publish_next_hours / 24)
-        {
-            return Err(ConfigError::other("timing_publish_valid_days must be 1 or bigger, and must be at least as long as timing_publish_next_hours"));
         }
 
         if self.issuance_timing.timing_child_certificate_valid_weeks < 2 {
@@ -1119,7 +1157,7 @@ mod tests {
                 for component in &krill_key_components {
                     // framework components shouldn't log at Trace level
                     let should_be_enabled = should_be_enabled
-                        && (*log_msg_level < LL::Trace || !krill_framework_components.contains(&component));
+                        && (*log_msg_level < LL::Trace || !krill_framework_components.contains(component));
 
                     // verify that logging is enabled or not as expected
                     assert_eq!(

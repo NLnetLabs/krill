@@ -1,29 +1,33 @@
 use std::{env, fmt};
 
-use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::{de::DeserializeOwned, Serialize};
 
 use rpki::uri;
 
-#[cfg(feature = "multi-user")]
-use crate::cli::options::KrillUserDetails;
-use crate::cli::report::{ApiResponse, ReportError};
-use crate::commons::api::{
-    AllCertAuthIssues, CaRepoDetails, CertAuthIssues, ChildCaInfo, ParentCaContact, ParentStatuses, PublisherDetails,
-    PublisherList, RepoStatus, Token,
-};
-use crate::commons::bgp::BgpAnalysisAdvice;
-use crate::commons::remote::rfc8183;
-use crate::commons::util::{file, httpclient};
-use crate::constants::KRILL_CLI_API_ENV;
-use crate::daemon::config::Config;
 use crate::{
-    cli::options::{BulkCaCommand, CaCommand, Command, KrillInitDetails, Options, PubServerCommand},
-    commons::error::KrillIoError,
+    cli::{
+        options::{BulkCaCommand, CaCommand, Command, KrillInitDetails, Options, PubServerCommand},
+        report::{ApiResponse, ReportError},
+    },
+    commons::{
+        api::{
+            AllCertAuthIssues, CaRepoDetails, CertAuthIssues, ChildCaInfo, ChildrenConnectionStats, ParentCaContact,
+            ParentStatuses, PublisherDetails, PublisherList, RepoStatus, Token,
+        },
+        bgp::BgpAnalysisAdvice,
+        error::KrillIoError,
+        remote::rfc8183,
+        util::{file, httpclient},
+    },
+    constants::KRILL_CLI_API_ENV,
+    daemon::config::Config,
 };
 
 #[cfg(feature = "multi-user")]
-use crate::constants::{PW_HASH_LOG_N, PW_HASH_P, PW_HASH_R};
+use crate::{
+    cli::options::KrillUserDetails,
+    constants::{PW_HASH_LOG_N, PW_HASH_P, PW_HASH_R},
+};
 
 fn resolve_uri(server: &uri::Https, path: &str) -> String {
     format!("{}{}", server, path)
@@ -258,6 +262,11 @@ impl KrillClient {
                 delete(&self.server, &self.token, &uri).await?;
                 Ok(ApiResponse::Empty)
             }
+            CaCommand::ChildConnections(handle) => {
+                let uri = format!("api/v1/cas/{}/stats/children/connections", handle);
+                let stats: ChildrenConnectionStats = get_json(&self.server, &self.token, &uri).await?;
+                Ok(ApiResponse::ChildrenStats(stats))
+            }
 
             CaCommand::KeyRollInit(handle) => {
                 let uri = format!("api/v1/cas/{}/keys/roll_init", handle);
@@ -483,7 +492,7 @@ impl KrillClient {
     }
 
     #[cfg(feature = "multi-user")]
-    #[allow(clippy::clippy::unnecessary_wraps)]
+    #[allow(clippy::unnecessary_wraps)]
     fn user(&self, details: KrillUserDetails) -> Result<ApiResponse, Error> {
         let (password_hash, salt) = {
             use scrypt::scrypt;

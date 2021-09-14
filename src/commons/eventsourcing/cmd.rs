@@ -1,12 +1,14 @@
 use std::fmt;
 
-use rpki::x509::Time;
+use rpki::repository::x509::Time;
 
-use crate::commons::eventsourcing::store::CommandKey;
-use crate::commons::eventsourcing::{Event, Storable};
 use crate::commons::{
     actor::Actor,
     api::{CommandHistoryRecord, CommandSummary, Handle, StoredEffect},
+    eventsourcing::{
+        store::CommandKey,
+        {Event, Storable},
+    },
 };
 
 //------------ WithStorableDetails -------------------------------------------

@@ -6,20 +6,18 @@ use std::{fmt, path::Path, str::FromStr, sync::Arc};
 
 use serde::de::DeserializeOwned;
 
-use crate::commons::error::KrillIoError;
-use crate::commons::util::file;
-use crate::{commons::api::Handle, daemon::config::Config};
 use crate::{
     commons::{
+        api::Handle,
         crypto::KrillSigner,
-        eventsourcing::{
-            AggregateStoreError, CommandKey, KeyStoreKey, KeyStoreVersion, KeyValueError, KeyValueStore,
-        },
+        error::KrillIoError,
+        eventsourcing::{AggregateStoreError, CommandKey, KeyStoreKey, KeyValueError, KeyValueStore},
+        util::{file, KrillVersion},
     },
+    daemon::config::Config,
     pubd::RepositoryManager,
+    upgrades::v0_9_0::{CaObjectsMigration, PubdObjectsMigration},
 };
-
-use self::v0_9_0::{CaObjectsMigration, PubdObjectsMigration};
 
 pub mod v0_9_0;
 
@@ -96,7 +94,7 @@ pub trait UpgradeStore {
     fn needs_migrate(&self) -> Result<bool, UpgradeError>;
     fn migrate(&self) -> Result<(), UpgradeError>;
 
-    fn version_before(kv: &KeyValueStore, later: KeyStoreVersion) -> Result<bool, UpgradeError> {
+    fn version_before(kv: &KeyValueStore, later: KrillVersion) -> Result<bool, UpgradeError> {
         kv.version_is_before(later).map_err(UpgradeError::KeyStoreError)
     }
 
@@ -150,7 +148,7 @@ pub trait UpgradeStore {
 
     fn archive_to_migration_scope(&self, key: &KeyStoreKey) -> Result<(), UpgradeError> {
         self.store()
-            .archive_to(&key, MIGRATION_SCOPE)
+            .archive_to(key, MIGRATION_SCOPE)
             .map_err(UpgradeError::KeyStoreError)
     }
 
@@ -166,13 +164,13 @@ pub fn pre_start_upgrade(config: Arc<Config>) -> Result<(), UpgradeError> {
 }
 
 pub async fn update_storage_version(work_dir: &Path) -> Result<(), UpgradeError> {
-    let current = KeyStoreVersion::current();
+    let current = KrillVersion::current();
 
     if needs_v0_9_0_upgrade(work_dir, "cas") {
         debug!("Updating version file for cas");
         file::save_json(&current, &work_dir.join("cas/version"))?;
     }
-    
+
     if needs_v0_9_0_upgrade(work_dir, "pubd") {
         debug!("Updating version file for pubd");
         file::save_json(&current, &work_dir.join("pubd/version"))?;
@@ -190,7 +188,7 @@ fn upgrade_0_9_0(config: Arc<Config>) -> Result<(), UpgradeError> {
     if needs_v0_9_0_upgrade(work_dir, "cas") {
         let signer = Arc::new(KrillSigner::build(work_dir)?);
         let repo_manager = RepositoryManager::build(config.clone(), signer)?;
-        
+
         CaObjectsMigration::migrate(config, repo_manager)?;
     }
 
@@ -201,12 +199,11 @@ fn needs_v0_9_0_upgrade(work_dir: &Path, ns: &str) -> bool {
     let keystore_path = work_dir.join(ns);
     if keystore_path.exists() {
         let version_path = keystore_path.join("version");
-        let version_found = file::load_json(&version_path).unwrap_or(KeyStoreVersion::Pre0_6);
-        version_found < KeyStoreVersion::V0_9_0
+        let version_found = file::load_json(&version_path).unwrap_or_else(|_| KrillVersion::v0_5_0_or_before());
+        version_found < KrillVersion::release(0, 9, 0)
     } else {
         false
     }
-
 }
 
 //------------ Tests ---------------------------------------------------------
@@ -227,7 +224,7 @@ mod tests {
         let source = PathBuf::from("test-resources/migrations/v0_8_1/");
         file::backup_dir(&source, &work_dir).unwrap();
 
-        let config = Arc::new(Config::test(&work_dir, false));
+        let config = Arc::new(Config::test(&work_dir, false, false));
         let _ = config.init_logging();
 
         upgrade_0_9_0(config).unwrap();
@@ -241,7 +238,7 @@ mod tests {
         let source = PathBuf::from("test-resources/migrations/v0_6_0/");
         file::backup_dir(&source, &work_dir).unwrap();
 
-        let config = Arc::new(Config::test(&work_dir, false));
+        let config = Arc::new(Config::test(&work_dir, false, false));
         let _ = config.init_logging();
 
         upgrade_0_9_0(config).unwrap();

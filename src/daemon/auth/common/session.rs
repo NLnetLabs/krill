@@ -4,11 +4,10 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use crate::commons::api::Token;
-use crate::commons::error::Error;
-use crate::commons::KrillResult;
-
-use super::crypt::{self, CryptState, NonceState};
+use crate::{
+    commons::{api::Token, error::Error, KrillResult},
+    daemon::auth::common::crypt::{self, CryptState, NonceState},
+};
 
 const MAX_CACHE_SECS: u64 = 30;
 
@@ -144,7 +143,7 @@ impl LoginSessionCache {
     fn lookup_session(&self, token: &Token) -> Option<ClientSession> {
         match self.cache.read() {
             Ok(readable_cache) => {
-                if let Some(cache_item) = readable_cache.get(&token) {
+                if let Some(cache_item) = readable_cache.get(token) {
                     return Some(cache_item.session.clone());
                 }
             }

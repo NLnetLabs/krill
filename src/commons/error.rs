@@ -1,28 +1,29 @@
 //! Defines all Krill server side errors
 
-use std::fmt::Display;
-use std::{fmt, io};
+use std::{fmt, fmt::Display, io};
 
 use hyper::StatusCode;
 
-use rpki::crypto::KeyIdentifier;
-use rpki::uri;
-use rpki::x509::ValidationError;
-
-use crate::commons::api::rrdp::PublicationDeltaError;
-use crate::commons::api::{
-    ChildHandle, ErrorResponse, Handle, ParentHandle, PublisherHandle, ResourceClassName, ResourceSetError,
-    RoaDefinition,
+use rpki::{
+    repository::{crypto::KeyIdentifier, x509::ValidationError},
+    uri,
 };
-use crate::commons::eventsourcing::{AggregateStoreError, KeyValueError};
-use crate::commons::remote::rfc6492;
-use crate::commons::remote::rfc6492::NotPerformedResponse;
-use crate::commons::remote::rfc8181;
-use crate::commons::remote::rfc8181::ReportErrorCode;
-use crate::commons::util::httpclient;
-use crate::commons::util::softsigner::SignerError;
-use crate::daemon::ca::RouteAuthorization;
-use crate::daemon::http::tls_keys;
+
+use crate::{
+    commons::{
+        api::{
+            rrdp::PublicationDeltaError, ChildHandle, ErrorResponse, Handle, ParentHandle, PublisherHandle,
+            ResourceClassName, ResourceSetError, RoaDefinition,
+        },
+        eventsourcing::{AggregateStoreError, KeyValueError},
+        remote::{
+            rfc6492::{self, NotPerformedResponse},
+            rfc8181::{self, ReportErrorCode},
+        },
+        util::{httpclient, softsigner::SignerError},
+    },
+    daemon::{ca::RouteAuthorization, http::tls_keys},
+};
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RoaDeltaError {
@@ -167,6 +168,7 @@ pub enum Error {
     HttpsSetup(String),
     HttpClientError(httpclient::Error),
     ConfigError(String),
+
     //-----------------------------------------------------------------
     // General API Client Issues
     //-----------------------------------------------------------------
@@ -223,7 +225,6 @@ pub enum Error {
 
     // CA Repo Issues
     CaRepoInUse(Handle),
-    CaRepoAlreadyConfigured(Handle),
     CaRepoIssue(Handle, String),
     CaRepoResponseInvalidXml(Handle, String),
     CaRepoResponseWrongXml(Handle),
@@ -236,6 +237,7 @@ pub enum Error {
     CaParentResponseInvalidXml(Handle, String),
     CaParentResponseWrongXml(Handle),
     CaParentAddNotResponsive(Handle, ParentHandle),
+    CaParentSyncError(Handle, ParentHandle, ResourceClassName, String),
 
     //-----------------------------------------------------------------
     // RFC6492 (requesting resources)
@@ -297,6 +299,7 @@ pub enum Error {
     // If we really don't know any more..
     //-----------------------------------------------------------------
     Custom(String),
+    Multiple(Vec<Error>),
 }
 
 impl fmt::Display for Error {
@@ -371,7 +374,6 @@ impl fmt::Display for Error {
 
             // CA Repo Issues
             Error::CaRepoInUse(ca) => write!(f, "CA '{}' already uses this repository", ca),
-            Error::CaRepoAlreadyConfigured(ca) => write!(f, "CA '{}' already has a repository, see issue 481 for planned work to support migrations", ca),
             Error::CaRepoIssue(ca, e) => write!(f, "CA '{}' cannot get response from repository '{}'. Is the 'service_uri' in the XML reachable? Note that when upgrading Krill you should re-use existing configuration and data. For a fresh \
             re-install of Krill you will need to send XML to all other parties again: parent(s), children, and repository", ca,        e),
             Error::CaRepoResponseInvalidXml(ca, e) => write!(f, "CA '{}' got invalid repository response xml: {}", ca, e),
@@ -385,6 +387,17 @@ impl fmt::Display for Error {
             Error::CaParentResponseInvalidXml(ca, e) => write!(f, "CA '{}' got invalid parent response xml: {}", ca, e),
             Error::CaParentResponseWrongXml(ca) => write!(f, "CA '{}' got repository response when adding parent", ca),
             Error::CaParentAddNotResponsive(ca, parent) => write!(f, "CA '{}' cannot get response from parent '{}'. Is the 'service_uri' in the XML reachable? Note that when upgrading Krill you should re-use existing configuration and data. For a fresh re-install of Krill you will need to send XML to all other parties again: parent(s), children, and repository",        ca, parent),
+            Error::CaParentSyncError(ca, parent, rcn, error_msg) => {
+                write!(
+                    f,
+                    "CA '{}' could not sync with parent '{}', for resource class '{}', error: {}",
+                    ca,
+                    parent,
+                    rcn,
+                    error_msg
+                )
+            }
+
 
             //-----------------------------------------------------------------
             // RFC6492 (requesting resources)
@@ -446,7 +459,12 @@ impl fmt::Display for Error {
             //-----------------------------------------------------------------
             // If we really don't know any more..
             //-----------------------------------------------------------------
-            Error::Custom(s) => s.fmt(f)
+            Error::Custom(s) => s.fmt(f),
+
+            Error::Multiple(errors) => {
+                let error_strings: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
+                write!(f, "Multiple errors: {}", error_strings.join(", "))
+            }
         }
     }
 }
@@ -543,6 +561,10 @@ impl Error {
 
     pub fn custom(msg: impl fmt::Display) -> Self {
         Error::Custom(msg.to_string())
+    }
+
+    pub fn io_error_with_context(context: String, cause: io::Error) -> Self {
+        Error::IoError(KrillIoError::new(context, cause))
     }
 }
 
@@ -680,7 +702,6 @@ impl Error {
             Error::CaUnknown(ca) => ErrorResponse::new("ca-unknown", &self).with_ca(ca),
 
             Error::CaRepoInUse(ca) => ErrorResponse::new("ca-repo-same", &self).with_ca(ca),
-            Error::CaRepoAlreadyConfigured(ca) => ErrorResponse::new("ca-repo-already-configured", &self).with_ca(ca),
 
             Error::CaRepoIssue(ca, err) => ErrorResponse::new("ca-repo-issue", &self).with_ca(ca).with_cause(err),
 
@@ -718,6 +739,11 @@ impl Error {
             Error::CaParentAddNotResponsive(ca, parent) => ErrorResponse::new("ca-parent-add-unresponsive", &self)
                 .with_ca(ca)
                 .with_parent(parent),
+
+            Error::CaParentSyncError(ca, parent, rcn, _errors) => ErrorResponse::new("ca-parent-sync", &self)
+                .with_ca(ca)
+                .with_parent(parent)
+                .with_resource_class(rcn),
 
             //-----------------------------------------------------------------
             // RFC6492 (requesting resources, not on JSON api)
@@ -799,6 +825,7 @@ impl Error {
             // If we really don't know any more..
             //-----------------------------------------------------------------
             Error::Custom(_msg) => ErrorResponse::new("general-error", &self),
+            Error::Multiple(_errors) => ErrorResponse::new("multiple-errors", &self),
         }
     }
 

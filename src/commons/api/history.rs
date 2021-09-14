@@ -1,10 +1,8 @@
-use std::collections::BTreeMap;
-use std::fmt;
-use std::str::FromStr;
+use std::{collections::BTreeMap, fmt, str::FromStr};
 
 use chrono::{DateTime, NaiveDateTime, SecondsFormat, Utc};
 
-use rpki::{crypto::KeyIdentifier, x509::Time};
+use rpki::repository::{crypto::KeyIdentifier, x509::Time};
 
 use crate::{
     commons::{
@@ -15,7 +13,7 @@ use crate::{
         eventsourcing::{CommandKey, CommandKeyError, StoredCommand, WithStorableDetails},
         remote::rfc8183::ServiceUri,
     },
-    daemon::ca,
+    daemon::ca::{self, DropReason},
 };
 
 //------------ CaCommandDetails ----------------------------------------------
@@ -428,6 +426,12 @@ pub enum StorableCaCommand {
     ChildRemove {
         child: ChildHandle,
     },
+    ChildSuspendInactive {
+        child: ChildHandle,
+    },
+    ChildUnsuspend {
+        child: ChildHandle,
+    },
     GenerateNewIdKey,
     AddParent {
         parent: ParentHandle,
@@ -447,6 +451,10 @@ pub enum StorableCaCommand {
     UpdateRcvdCert {
         resource_class_name: ResourceClassName,
         resources: ResourceSet,
+    },
+    DropResourceClass {
+        resource_class_name: ResourceClassName,
+        reason: DropReason,
     },
     KeyRollInitiate {
         older_than_seconds: i64,
@@ -510,6 +518,12 @@ impl WithStorableDetails for StorableCaCommand {
             StorableCaCommand::ChildRemove { child } => {
                 CommandSummary::new("cmd-ca-child-remove", &self).with_child(child)
             }
+            StorableCaCommand::ChildSuspendInactive { child } => {
+                CommandSummary::new("cmd-ca-child-suspend-inactive", &self).with_child(child)
+            }
+            StorableCaCommand::ChildUnsuspend { child } => {
+                CommandSummary::new("cmd-ca-child-unsuspend", &self).with_child(child)
+            }
             StorableCaCommand::ChildRevokeKey { child, revoke_req } => {
                 CommandSummary::new("cmd-ca-child-revoke", &self)
                     .with_child(child)
@@ -537,6 +551,12 @@ impl WithStorableDetails for StorableCaCommand {
             } => CommandSummary::new("cmd-ca-rcn-receive", &self)
                 .with_rcn(resource_class_name)
                 .with_resources(resources),
+            StorableCaCommand::DropResourceClass {
+                resource_class_name,
+                reason,
+            } => CommandSummary::new("cmd-ca-rc-drop", &self)
+                .with_rcn(resource_class_name)
+                .with_arg("reason", reason),
             StorableCaCommand::KeyRollInitiate { older_than_seconds } => {
                 CommandSummary::new("cmd-ca-keyroll-init", &self).with_seconds(*older_than_seconds)
             }
@@ -605,7 +625,13 @@ impl fmt::Display for StorableCaCommand {
                 revoke_req.class_name()
             ),
             StorableCaCommand::ChildRemove { child } => {
-                write!(f, "Remove child '{}' and revoke&remove its certs", child)
+                write!(f, "Remove child '{}' and revoke & remove its certs", child)
+            }
+            StorableCaCommand::ChildSuspendInactive { child } => {
+                write!(f, "Suspend inactive child '{}': stop publishing its certs", child)
+            }
+            StorableCaCommand::ChildUnsuspend { child } => {
+                write!(f, "Unsuspend child '{}': publish its unexpired certs", child)
             }
 
             // ------------------------------------------------------------
@@ -639,6 +665,14 @@ impl fmt::Display for StorableCaCommand {
                 "Update received cert in RC '{}', with resources '{}'",
                 resource_class_name,
                 resources.summary()
+            ),
+            StorableCaCommand::DropResourceClass {
+                resource_class_name,
+                reason,
+            } => write!(
+                f,
+                "Removing resource class '{}' because of reason: {}",
+                resource_class_name, reason
             ),
 
             // ------------------------------------------------------------

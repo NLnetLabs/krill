@@ -1,25 +1,33 @@
 //! Support for admin tasks, such as managing publishers and RFC8181 clients
 
-use std::convert::TryFrom;
-use std::fmt;
-use std::path::PathBuf;
-use std::str::{from_utf8_unchecked, FromStr};
-use std::sync::Arc;
+use std::{
+    convert::TryFrom,
+    fmt,
+    path::PathBuf,
+    str::{from_utf8_unchecked, FromStr},
+    sync::Arc,
+};
 
 use chrono::{DateTime, NaiveDateTime, Utc};
 use rfc8183::ServiceUri;
-use serde::de;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{
+    de, {Deserialize, Deserializer, Serialize, Serializer},
+};
 
-use rpki::cert::Cert;
-use rpki::uri;
-use rpki::x509::Time;
+use rpki::{
+    repository::{cert::Cert, x509::Time},
+    uri,
+};
 
-use crate::commons::api::ca::{ResourceSet, TrustAnchorLocator};
-use crate::commons::api::rrdp::PublishElement;
-use crate::commons::api::RepoInfo;
-use crate::commons::crypto::IdCert;
-use crate::commons::remote::rfc8183;
+use crate::commons::{
+    api::{
+        ca::{ResourceSet, TrustAnchorLocator},
+        rrdp::PublishElement,
+        RepoInfo,
+    },
+    crypto::IdCert,
+    remote::rfc8183,
+};
 
 //------------ Handle --------------------------------------------------------
 
@@ -442,6 +450,13 @@ impl ParentCaContact {
         ParentCaContact::Ta(ta_cert_details)
     }
 
+    pub fn parent_response(&self) -> Option<&rfc8183::ParentResponse> {
+        match &self {
+            ParentCaContact::Ta(_) => None,
+            ParentCaContact::Rfc6492(res) => Some(res),
+        }
+    }
+
     pub fn to_ta_cert(&self) -> &Cert {
         match &self {
             ParentCaContact::Ta(details) => details.cert(),
@@ -451,6 +466,13 @@ impl ParentCaContact {
 
     pub fn is_ta(&self) -> bool {
         matches!(*self, ParentCaContact::Ta(_))
+    }
+
+    pub fn parent_uri(&self) -> Option<&ServiceUri> {
+        match &self {
+            ParentCaContact::Ta(_) => None,
+            ParentCaContact::Rfc6492(parent) => Some(parent.service_uri()),
+        }
     }
 }
 
@@ -551,16 +573,24 @@ impl AddChildRequest {
 pub struct UpdateChildRequest {
     id_cert: Option<IdCert>,
     resources: Option<ResourceSet>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    suspend: Option<bool>,
 }
 
 impl UpdateChildRequest {
-    pub fn new(id_cert: Option<IdCert>, resources: Option<ResourceSet>) -> Self {
-        UpdateChildRequest { id_cert, resources }
+    pub fn new(id_cert: Option<IdCert>, resources: Option<ResourceSet>, suspend: Option<bool>) -> Self {
+        UpdateChildRequest {
+            id_cert,
+            resources,
+            suspend,
+        }
     }
     pub fn id_cert(id_cert: IdCert) -> Self {
         UpdateChildRequest {
             id_cert: Some(id_cert),
             resources: None,
+            suspend: None,
         }
     }
 
@@ -568,11 +598,28 @@ impl UpdateChildRequest {
         UpdateChildRequest {
             id_cert: None,
             resources: Some(resources),
+            suspend: None,
         }
     }
 
-    pub fn unpack(self) -> (Option<IdCert>, Option<ResourceSet>) {
-        (self.id_cert, self.resources)
+    pub fn suspend() -> Self {
+        UpdateChildRequest {
+            id_cert: None,
+            resources: None,
+            suspend: Some(true),
+        }
+    }
+
+    pub fn unsuspend() -> Self {
+        UpdateChildRequest {
+            id_cert: None,
+            resources: None,
+            suspend: Some(false),
+        }
+    }
+
+    pub fn unpack(self) -> (Option<IdCert>, Option<ResourceSet>, Option<bool>) {
+        (self.id_cert, self.resources, self.suspend)
     }
 }
 
@@ -583,6 +630,9 @@ impl fmt::Display for UpdateChildRequest {
         }
         if let Some(resources) = &self.resources {
             write!(f, "new resources: {} ", resources)?;
+        }
+        if let Some(suspend) = self.suspend {
+            write!(f, "change suspend status to: {}", suspend)?;
         }
         Ok(())
     }

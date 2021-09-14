@@ -2,19 +2,20 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 
-use crate::commons::api::PublicationServerUris;
-use crate::commons::crypto::KrillSigner;
-use crate::commons::error::Error;
-use crate::commons::remote::cmslogger::CmsLogger;
-use crate::commons::remote::rfc8181;
-use crate::commons::remote::rfc8183;
-use crate::commons::KrillResult;
-use crate::commons::{
-    actor::Actor,
-    api::{ListReply, PublishDelta, PublisherDetails, PublisherHandle, RepoInfo},
+use crate::{
+    commons::{
+        actor::Actor,
+        api::{ListReply, PublicationServerUris, PublishDelta, PublisherDetails, PublisherHandle, RepoInfo},
+        crypto::KrillSigner,
+        error::Error,
+        remote::cmslogger::CmsLogger,
+        remote::rfc8181,
+        remote::rfc8183,
+        KrillResult,
+    },
+    daemon::config::Config,
+    pubd::{RepoStats, RepositoryAccessProxy, RepositoryContentProxy},
 };
-use crate::daemon::config::Config;
-use crate::pubd::{RepoStats, RepositoryAccessProxy, RepositoryContentProxy};
 
 //------------ RepositoryManager -----------------------------------------------------
 
@@ -203,11 +204,11 @@ mod tests {
     };
 
     use bytes::Bytes;
-    use tokio::time::delay_for;
+    use tokio::time::sleep;
 
     use rpki::uri;
 
-    use crate::constants::*;
+    use crate::{constants::*, pubd::RrdpServer};
 
     use super::*;
 
@@ -240,7 +241,7 @@ mod tests {
 
     fn make_server(work_dir: &Path) -> RepositoryManager {
         enable_test_mode();
-        let config = Arc::new(Config::test(work_dir, true));
+        let config = Arc::new(Config::test(work_dir, true, false));
         init_config(&config);
 
         let signer = KrillSigner::build(work_dir).unwrap();
@@ -362,7 +363,7 @@ mod tests {
         assert!(find_in_reply(&list_reply, &test::rsync("rsync://localhost/repo/alice/file.txt")).is_some());
         assert!(find_in_reply(&list_reply, &test::rsync("rsync://localhost/repo/alice/file2.txt")).is_some());
 
-        delay_for(Duration::from_secs(2)).await;
+        sleep(Duration::from_secs(2)).await;
 
         // Update
         // - update file
@@ -468,7 +469,7 @@ mod tests {
         assert!(session_dir_contains_delta(&session, 2));
         assert!(session_dir_contains_snapshot(&session, 2));
 
-        delay_for(Duration::from_secs(2)).await;
+        sleep(Duration::from_secs(2)).await;
 
         // Add file 4,5,6
         //
@@ -496,15 +497,24 @@ mod tests {
         assert!(session_dir_contains_delta(&session, 2));
         assert!(session_dir_contains_snapshot(&session, 2));
 
+        // Wait a bit to ensure that the notification file for serial 2 will be out of scope
+        sleep(Duration::from_secs(2)).await;
+
         // Removing the publisher should remove its contents
         server.remove_publisher(alice_handle, &actor).unwrap();
 
         // new snapshot should be published, and should be empty now
         assert!(session_dir_contains_snapshot(&session, 4));
-        let snapshot_bytes = file::read(&session_dir_snapshot(&session, 4)).unwrap();
+        let snapshot_bytes = file::read(&RrdpServer::session_dir_snapshot(&session, 4).unwrap().unwrap()).unwrap();
         let snapshot_xml = from_utf8(&snapshot_bytes).unwrap();
-        println!("\n\nsnapshot:\n\n{}", snapshot_xml);
         assert!(!snapshot_xml.contains("/alice/"));
+
+        // We expect that the delta for serial 2 is still there because it is still referenced,
+        // but the snapshot is gone because it is no longer referenced and the notification for
+        // serial 2 is now more than 1 second old (1s is the retention time configured for the test)
+        assert!(session_dir_contains_serial(&session, 2));
+        assert!(session_dir_contains_delta(&session, 2));
+        assert!(!session_dir_contains_snapshot(&session, 2));
 
         let _ = fs::remove_dir_all(d);
     }
@@ -552,22 +562,12 @@ mod tests {
         assert!(find_in_reply(&list_reply, &test::rsync("rsync://localhost/repo/alice/file.txt")).is_some());
         assert!(find_in_reply(&list_reply, &test::rsync("rsync://localhost/repo/alice/file2.txt")).is_some());
 
-        fn path_to_snapshot(base_dir: &Path, session: &RrdpSession, serial: u64) -> PathBuf {
-            let mut path = base_dir.to_path_buf();
-            path.push("repo");
-            path.push("rrdp");
-            path.push(session.to_string());
-            path.push(serial.to_string());
-            path.push("snapshot.xml");
-            path
-        }
-
         // Find RRDP files on disk
         let stats_before = server.repo_stats().unwrap();
         let session_before = stats_before.session();
-        let snapshot_before_session_reset = path_to_snapshot(&d, &session_before, 1);
+        let snapshot_before_session_reset = find_in_session_and_serial_dir(&d, &session_before, 1, "snapshot.xml");
 
-        assert!(snapshot_before_session_reset.exists());
+        assert!(snapshot_before_session_reset.is_some());
 
         // Now test that a session reset works...
         server.rrdp_session_reset().unwrap();
@@ -575,11 +575,16 @@ mod tests {
         // Should write new session and snapshot
         let stats_after = server.repo_stats().unwrap();
         let session_after = stats_after.session();
-        let snapshot_after_session_reset = path_to_snapshot(&d, &session_after, 0);
-        assert!(snapshot_after_session_reset.exists());
+
+        let snapshot_after_session_reset = find_in_session_and_serial_dir(&d, &session_after, 0, "snapshot.xml");
+        assert_ne!(snapshot_before_session_reset, snapshot_after_session_reset);
+
+        assert!(snapshot_after_session_reset.is_some());
 
         // and clean up old dir
-        assert!(!snapshot_before_session_reset.exists());
+        let snapshot_before_session_reset = find_in_session_and_serial_dir(&d, &session_before, 1, "snapshot.xml");
+
+        assert!(snapshot_before_session_reset.is_none());
 
         let _ = fs::remove_dir_all(d);
     }
@@ -604,18 +609,24 @@ mod tests {
     }
 
     fn session_dir_contains_delta(session_path: &Path, serial: u64) -> bool {
-        let mut path = session_path.to_path_buf();
-        path.push(format!("{}/delta.xml", serial));
-        path.exists()
+        RrdpServer::find_in_serial_dir(session_path, serial, "delta.xml")
+            .unwrap()
+            .is_some()
     }
 
     fn session_dir_contains_snapshot(session_path: &Path, serial: u64) -> bool {
-        session_dir_snapshot(session_path, serial).exists()
+        RrdpServer::session_dir_snapshot(session_path, serial)
+            .unwrap()
+            .is_some()
     }
 
-    fn session_dir_snapshot(session_path: &Path, serial: u64) -> PathBuf {
-        let mut path = session_path.to_path_buf();
-        path.push(format!("{}/snapshot.xml", serial));
-        path
+    fn find_in_session_and_serial_dir(
+        base_dir: &Path,
+        session: &RrdpSession,
+        serial: u64,
+        filename: &str,
+    ) -> Option<PathBuf> {
+        let session_path = base_dir.join(format!("repo/rrdp/{}", session));
+        RrdpServer::find_in_serial_dir(&session_path, serial, filename).unwrap()
     }
 }

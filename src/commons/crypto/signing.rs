@@ -1,28 +1,38 @@
 //! Support for signing mft, crl, certificates, roas..
 //! Common objects for TAs and CAs
-use std::ops::Deref;
-use std::sync::{Arc, RwLock};
-use std::{convert::TryFrom, path::Path};
+use std::{
+    ops::Deref,
+    sync::{Arc, RwLock},
+    {convert::TryFrom, path::Path},
+};
 
 use bytes::Bytes;
 
-use rpki::cert::{Cert, KeyUsage, Overclaim, TbsCert};
-use rpki::crl::{Crl, CrlEntry, TbsCertList};
-use rpki::crypto::{DigestAlgorithm, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer};
-use rpki::csr::Csr;
-use rpki::manifest::{FileAndHash, Manifest, ManifestContent};
-use rpki::roa::{Roa, RoaBuilder};
-use rpki::sigobj::SignedObjectBuilder;
-use rpki::x509::{Name, Serial, Time, Validity};
-use rpki::{rta, uri};
+use rpki::{
+    repository::{
+        cert::{Cert, KeyUsage, Overclaim, TbsCert},
+        crl::{Crl, CrlEntry, TbsCertList},
+        crypto::{DigestAlgorithm, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer},
+        csr::Csr,
+        manifest::{FileAndHash, Manifest, ManifestContent},
+        roa::{Roa, RoaBuilder},
+        rta,
+        sigobj::SignedObjectBuilder,
+        x509::{Name, Serial, Time, Validity},
+    },
+    uri,
+};
 
-use crate::commons::api::{IssuedCert, RcvdCert, ReplacedObject, RepoInfo, RequestResourceLimit, ResourceSet};
-use crate::commons::crypto::{self, CryptoResult};
-use crate::commons::error::Error;
-use crate::commons::util::softsigner::OpenSslSigner;
-use crate::commons::util::AllowedUri;
-use crate::commons::KrillResult;
-use crate::daemon::ca::CertifiedKey;
+use crate::{
+    commons::{
+        api::{IssuedCert, RcvdCert, ReplacedObject, RepoInfo, RequestResourceLimit, ResourceSet},
+        crypto::{self, CryptoResult},
+        error::Error,
+        util::{softsigner::OpenSslSigner, AllowedUri},
+        KrillResult,
+    },
+    daemon::ca::CertifiedKey,
+};
 
 //------------ Signer --------------------------------------------------------
 
@@ -88,7 +98,7 @@ impl KrillSigner {
         let enc = Csr::construct(
             signer.deref(),
             key,
-            &base_repo.ca_repository(name_space).join(&[]), // force trailing slash
+            &base_repo.ca_repository(name_space).join(&[]).unwrap(), // force trailing slash
             &base_repo.rpki_manifest(name_space, &pub_key.key_identifier()),
             Some(&base_repo.rpki_notify()),
         )
@@ -257,7 +267,7 @@ impl SignSupport {
         let request = CertRequest::Ca(csr, validity);
 
         let tbs = Self::make_tbs_cert(&resources, signing_cert, request, signer)?;
-        let cert = signer.sign_cert(tbs, &signing_key.key_id())?;
+        let cert = signer.sign_cert(tbs, signing_key.key_id())?;
 
         let cert_uri = signing_cert.uri_for_object(&cert);
 
@@ -278,7 +288,7 @@ impl SignSupport {
         let request = CertRequest::Ee(pub_key, validity);
         let tbs = Self::make_tbs_cert(resources, signing_cert, request, signer)?;
 
-        let cert = signer.sign_cert(tbs, &signing_key.key_id())?;
+        let cert = signer.sign_cert(tbs, signing_key.key_id())?;
         Ok(cert)
     }
 

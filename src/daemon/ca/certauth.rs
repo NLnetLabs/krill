@@ -1,17 +1,16 @@
-use std::convert::TryFrom;
-use std::ops::Deref;
-use std::sync::Arc;
-use std::{collections::HashMap, vec};
+use std::{collections::HashMap, convert::TryFrom, ops::Deref, sync::Arc, vec};
 
 use bytes::Bytes;
 use chrono::Duration;
 
 use rpki::{
-    cert::{Cert, KeyUsage, Overclaim, TbsCert},
-    crypto::{KeyIdentifier, PublicKey},
-    rta::RtaBuilder,
+    repository::{
+        cert::{Cert, KeyUsage, Overclaim, TbsCert},
+        crypto::{KeyIdentifier, PublicKey},
+        rta::RtaBuilder,
+        x509::{Serial, Time, Validity},
+    },
     uri,
-    x509::{Serial, Time, Validity},
 };
 
 use crate::{
@@ -39,6 +38,8 @@ use crate::{
         config::{Config, IssuanceTimingConfig},
     },
 };
+
+use super::DropReason;
 
 //------------ Rfc8183Id ---------------------------------------------------
 
@@ -203,15 +204,20 @@ impl Aggregate for CertAuth {
                 updates,
             } => {
                 let rc = self.resources.get_mut(&resource_class_name).unwrap();
-                let (issued, removed) = updates.unpack();
-                for iss in issued {
-                    rc.certificate_issued(iss)
+                let (issued, removed, suspended_certs, unsuspended_certs) = updates.unpack();
+                for cert in issued {
+                    rc.certificate_issued(cert)
                 }
+
+                for cert in unsuspended_certs {
+                    rc.certificate_unsuspended(cert)
+                }
+
                 for rem in removed {
                     rc.key_revoked(&rem);
 
                     // This loop is inefficient, but certificate revocations are not that common, so it's
-                    // not a big deal. Tracking this better would require that track the child handle somehow.
+                    // not a big deal. Tracking this better would require that we track the child handle somehow.
                     // That is a bit hard when this revocation is the result from a republish where we lost
                     // all resources delegated to the child.
                     for child in self.children.values_mut() {
@@ -219,6 +225,9 @@ impl Aggregate for CertAuth {
                             child.add_revoke_response(rem)
                         }
                     }
+                }
+                for cert in suspended_certs {
+                    rc.certificate_suspended(cert);
                 }
             }
 
@@ -233,6 +242,10 @@ impl Aggregate for CertAuth {
             CaEvtDet::ChildRemoved { child } => {
                 self.children.remove(&child);
             }
+
+            CaEvtDet::ChildSuspended { child } => self.children.get_mut(&child).unwrap().suspend(),
+
+            CaEvtDet::ChildUnsuspended { child } => self.children.get_mut(&child).unwrap().unsuspend(),
 
             //-----------------------------------------------------------------------
             // Being a child
@@ -394,7 +407,7 @@ impl Aggregate for CertAuth {
 
         match command.into_details() {
             // trust anchor
-            CmdDet::MakeTrustAnchor(uris, signer) => self.trust_anchor_make(uris, signer),
+            CmdDet::MakeTrustAnchor(uris, rsync_uri, signer) => self.trust_anchor_make(uris, rsync_uri, signer),
 
             // being a parent
             CmdDet::ChildAdd(child, id_cert, resources) => self.child_add(child, id_cert, resources),
@@ -403,6 +416,8 @@ impl Aggregate for CertAuth {
             CmdDet::ChildCertify(child, request, config, signer) => self.child_certify(child, request, &config, signer),
             CmdDet::ChildRevokeKey(child, request) => self.child_revoke_key(child, request),
             CmdDet::ChildRemove(child) => self.child_remove(&child),
+            CmdDet::ChildSuspendInactive(child) => self.child_suspend_inactive(&child),
+            CmdDet::ChildUnsuspend(child) => self.child_unsuspend(&child),
 
             // being a child
             CmdDet::GenerateNewIdKey(signer) => self.generate_new_id_key(signer),
@@ -416,6 +431,7 @@ impl Aggregate for CertAuth {
             CmdDet::UpdateRcvdCert(class_name, rcvd_cert, config, signer) => {
                 self.update_received_cert(class_name, rcvd_cert, &config, signer)
             }
+            CmdDet::DropResourceClass(rcn, reason, signer) => self.drop_resource_class(rcn, reason, signer),
 
             // Key rolls
             CmdDet::KeyRollInitiate(duration, signer) => self.keyroll_initiate(duration, signer),
@@ -537,7 +553,12 @@ impl CertAuth {
 /// # Being a Trust Anchor
 ///
 impl CertAuth {
-    fn trust_anchor_make(&self, uris: Vec<uri::Https>, signer: Arc<KrillSigner>) -> KrillResult<Vec<CaEvt>> {
+    fn trust_anchor_make(
+        &self,
+        uris: Vec<uri::Https>,
+        rsync_uri: Option<uri::Rsync>,
+        signer: Arc<KrillSigner>,
+    ) -> KrillResult<Vec<CaEvt>> {
         if !self.resources.is_empty() {
             return Err(Error::custom("Cannot turn CA with resources into TA"));
         }
@@ -579,7 +600,7 @@ impl CertAuth {
             signer.sign_cert(cert, &key)?
         };
 
-        let tal = TrustAnchorLocator::new(uris, &cert);
+        let tal = TrustAnchorLocator::new(uris, rsync_uri, &cert);
 
         let ta_cert_details = TaCertDetails::new(cert, resources, tal);
 
@@ -812,7 +833,7 @@ impl CertAuth {
     ) -> KrillResult<IssuedCert> {
         let my_rc = self.resources.get(&rcn).ok_or(Error::ResourceClassUnknown(rcn))?;
 
-        let child = self.get_child(&child)?;
+        let child = self.get_child(child)?;
         child.resources().apply_limit(&limit)?;
 
         my_rc.issue_cert(csr_info, child.resources(), limit, issuance_timing, signer)
@@ -913,7 +934,7 @@ impl CertAuth {
     }
 
     fn child_remove(&self, child_handle: &ChildHandle) -> KrillResult<Vec<CaEvt>> {
-        let child = self.get_child(&child_handle)?;
+        let child = self.get_child(child_handle)?;
 
         let mut version = self.version;
         let handle = &self.handle;
@@ -955,6 +976,123 @@ impl CertAuth {
 
         info!("CA '{}' removed child '{}'", handle, child_handle);
         res.push(CaEvtDet::child_removed(handle, version, child_handle.clone()));
+
+        Ok(res)
+    }
+
+    // Suspend a child. The intention is that this is called when it is discovered
+    // that the child has been inactive, i.e. not contacting this parent for a pro-longed
+    // period of time (hours).
+    //
+    // When a child is suspended we need to:
+    // - mark it as suspended
+    // - withdraw all certificates issued to it (suspend them)
+    fn child_suspend_inactive(&self, child_handle: &ChildHandle) -> KrillResult<Vec<CaEvt>> {
+        let mut res = vec![];
+
+        let child = self.get_child(child_handle)?;
+
+        if child.is_suspended() {
+            return Ok(res); // nothing to do, child is already suspended
+        }
+
+        let mut version = self.version;
+        let handle = &self.handle;
+
+        // Find all the certs in all RCs for this child and suspend them.
+        for (rcn, rc) in self.resources.iter() {
+            let certified_keys = child.issued(rcn);
+
+            if certified_keys.is_empty() {
+                continue;
+            }
+
+            let mut cert_updates = ChildCertificateUpdates::default();
+
+            for key in certified_keys {
+                if let Some(issued) = rc.issued(&key) {
+                    cert_updates.suspend(issued.clone());
+                }
+            }
+
+            res.push(CaEvtDet::child_certificates_updated(
+                handle,
+                version,
+                rcn.clone(),
+                cert_updates,
+            ));
+            version += 1;
+        }
+
+        info!("CA '{}' suspended inactive child '{}'", handle, child_handle);
+        res.push(CaEvtDet::child_suspended(handle, version, child_handle.clone()));
+
+        Ok(res)
+    }
+
+    // Unsuspend a child. The intention is that this is called automatically when
+    // a suspended (inactive) child CA is seen to contact this parent again.
+    //
+    // When a child is unsuspended we need to:
+    // - mark it as unsuspended
+    // - republish existing suspended certificates for it, provided that
+    //    - they will not expire for another day
+    //    - they do not exceed the current resource entitlements of the CA
+    // - other suspended certificates will just be removed.
+    //
+    // Then the child may or may not request new certificates as it sees fit.
+    // I.e. the unsuspend should be done before the child gets an answer to its
+    // RFC 6492 list request.
+    fn child_unsuspend(&self, child_handle: &ChildHandle) -> KrillResult<Vec<CaEvt>> {
+        let mut res = vec![];
+
+        let child = self.get_child(child_handle)?;
+
+        if !child.is_suspended() {
+            return Ok(res); // nothing to do, child is not suspended
+        }
+
+        let mut version = self.version;
+        let handle = &self.handle;
+
+        // Find all the certs in all RCs for this child and suspend them.
+        for (rcn, rc) in self.resources.iter() {
+            let certified_keys = child.issued(rcn);
+
+            if certified_keys.is_empty() {
+                continue;
+            }
+
+            let mut cert_updates = ChildCertificateUpdates::default();
+
+            for key in certified_keys {
+                if let Some(cert) = rc.suspended(&key) {
+                    // check that the cert is actually not expired or about to expire and not overclaiming
+                    if cert.validity().not_after() > Time::now() + Duration::days(1)
+                        && child.resources().contains(cert.resource_set())
+                    {
+                        // certificate is still fit for publication, so move it back to issued
+                        cert_updates.unsuspend(cert.clone());
+                    } else {
+                        // certificate should not be published as is. Remove it and the child will request
+                        // a new certificate because the resources and or validity entitlements will have
+                        // changed.
+                        cert_updates.remove(cert.subject_key_identifier());
+                    }
+                }
+            }
+
+            res.push(CaEvtDet::child_certificates_updated(
+                handle,
+                version,
+                rcn.clone(),
+                cert_updates,
+            ));
+            version += 1;
+        }
+
+        info!("CA '{}' unsuspended child '{}'", handle, child_handle);
+        res.push(CaEvtDet::child_unsuspended(handle, version, child_handle.clone()));
 
         Ok(res)
     }
@@ -1195,7 +1333,7 @@ impl CertAuth {
         for ent in entitlements.classes() {
             let parent_rc_name = ent.class_name();
 
-            match self.find_parent_rc(&parent_handle, &parent_rc_name) {
+            match self.find_parent_rc(&parent_handle, parent_rc_name) {
                 Some(rc) => {
                     // We have a matching RC, make requests (note this may be a no-op).
                     event_details.append(&mut self.make_request_events(ent, rc, signer.deref())?);
@@ -1246,7 +1384,7 @@ impl CertAuth {
     ///
     /// This will also generate appropriate events for changes affecting
     /// issued ROAs and delegated certificates - if because resources were
-    //  lost and ROAs/Certs would be become invalid.
+    /// lost and ROAs/Certs would be become invalid.
     fn update_received_cert(
         &self,
         rcn: ResourceClassName,
@@ -1269,6 +1407,31 @@ impl CertAuth {
         }
 
         Ok(res)
+    }
+
+    /// Drop a resource class because it no longer works under this parent for the specified
+    /// reason. Note that this will generate revocation requests for the current keys which
+    /// will be sent to the parent on a best effort basis - e.g. if the parent removed the resource
+    /// class it may well refuse to revoke the keys - it may not known them.
+    fn drop_resource_class(
+        &self,
+        rcn: ResourceClassName,
+        reason: DropReason,
+        signer: Arc<KrillSigner>,
+    ) -> KrillResult<Vec<CaEvt>> {
+        warn!("Dropping resource class '{}' because of reason: {}", rcn, reason);
+
+        let rc = self
+            .resources
+            .get(&rcn)
+            .ok_or_else(|| Error::ResourceClassUnknown(rcn.clone()))?;
+        let revoke_requests = rc.revoke(signer.deref())?;
+
+        Ok(self.events_from_details(vec![CaEvtDet::ResourceClassRemoved {
+            resource_class_name: rcn,
+            parent: rc.parent_handle().clone(),
+            revoke_requests,
+        }]))
     }
 }
 
@@ -1372,27 +1535,26 @@ impl CertAuth {
     ///    - Will return an error in case the repo is already set (issue 481)
     ///    - Will support migrations using key rollover in future (issue 480)
     ///    - Assumes that the repository can be reached (this is checked by CaManager before issuing the command to this CA)
-    pub fn update_repo(&self, contact: RepositoryContact, _signer: &KrillSigner) -> KrillResult<Vec<CaEvt>> {
-        if let Some(_existing_contact) = &self.repository {
-            // Disallow, see issue 481
-            return Err(Error::CaRepoAlreadyConfigured(self.handle.clone()));
-            // TODO: check that it is indeed different and then allow (issue 480)
-            // if existing_contact == &contact {
-            //     return Err(Error::CaRepoInUse(self.handle.clone()));
-            // }
-            // // Initiate rolls in all RCs so we can use the new repo in the new key.
-            // let info = contact.repo_info().clone();
-            // for rc in self.resources.values() {
-            //     // If we are in any keyroll, reject.. because we will need to
-            //     // introduce the change as a key roll (new key, new repo, etc),
-            //     // and we can only do one roll at a time.
-            //     if !rc.key_roll_possible() {
-            //         // If we can't roll... well then we have to bail out.
-            //         // Note: none of these events are committed in that case.
-            //         return Err(Error::KeyRollNotAllowed);
-            //     }
-            //     evt_dets.append(&mut rc.keyroll_initiate(&info, Duration::seconds(0), &signer)?);
-            // }
+    pub fn update_repo(&self, contact: RepositoryContact, signer: &KrillSigner) -> KrillResult<Vec<CaEvt>> {
+        let mut evt_dets = vec![];
+        if let Some(existing_contact) = &self.repository {
+            if existing_contact == &contact {
+                return Err(Error::CaRepoInUse(self.handle.clone()));
+            }
+            // Initiate rolls in all RCs so we can use the new repo in the new key.
+            let info = contact.repo_info().clone();
+            for rc in self.resources.values() {
+                // If we are in any keyroll, reject.. because we will need to
+                // introduce the change as a key roll (new key, new repo, etc),
+                // and we can only do one roll at a time.
+                if !rc.key_roll_possible() {
+                    // If we can't roll... well then we have to bail out.
+                    // Note: none of these events are committed in that case.
+                    return Err(Error::KeyRollNotAllowed);
+                }
+
+                evt_dets.append(&mut rc.keyroll_initiate(&info, Duration::seconds(0), signer)?);
+            }
         }
 
         // register updated repo
@@ -1402,7 +1564,7 @@ impl CertAuth {
             contact.service_uri()
         );
 
-        let evt_dets = vec![CaEvtDet::RepoUpdated { contact }];
+        evt_dets.push(CaEvtDet::RepoUpdated { contact });
         Ok(self.events_from_details(evt_dets))
     }
 }
@@ -1637,14 +1799,14 @@ impl CertAuth {
                 .current_resources()
                 .ok_or_else(|| Error::custom("RC for RTA has no resources"))?;
 
-            let intersection = rc_resources.intersection(&resources);
+            let intersection = rc_resources.intersection(resources);
             if intersection.is_empty() {
                 return Err(Error::custom(
                     "RC for prepared RTA no longer contains relevant resources",
                 ));
             }
 
-            let ee = rc.create_rta_ee(&intersection, validity, *key, &signer)?;
+            let ee = rc.create_rta_ee(&intersection, validity, *key, signer)?;
             rc_ee.insert(rcn.clone(), ee);
         }
 
@@ -1661,7 +1823,7 @@ impl CertAuth {
         // If there are no other keys supplied, then we MUST have all resources.
         // Otherwise we will just assume that others sign over the resources that
         // we do not have.
-        if keys.is_empty() && !self.all_resources().contains(&resources) {
+        if keys.is_empty() && !self.all_resources().contains(resources) {
             return Err(Error::RtaResourcesNotHeld);
         }
 
@@ -1672,7 +1834,7 @@ impl CertAuth {
                 let intersection = resources.intersection(rc_resources);
                 if !intersection.is_empty() {
                     let key = signer.create_key()?;
-                    let ee = rc.create_rta_ee(&intersection, validity, key, &signer)?;
+                    let ee = rc.create_rta_ee(&intersection, validity, key, signer)?;
                     rc_ee.insert(rcn.clone(), ee);
                 }
             }

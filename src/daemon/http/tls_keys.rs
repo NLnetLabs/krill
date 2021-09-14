@@ -1,23 +1,27 @@
 //! Some helper stuff for creating a private key and certificate for HTTPS
 //! in case they are not provided
-use std::path::PathBuf;
-use std::{fmt, path::Path};
+use std::{fmt, path::Path, path::PathBuf};
 
 use bytes::Bytes;
 
-use openssl::hash::MessageDigest;
-use openssl::pkey::{PKey, Private};
-use openssl::rsa::Rsa;
+use openssl::{
+    hash::MessageDigest,
+    pkey::{PKey, Private},
+    rsa::Rsa,
+};
 
-use bcder::encode::{Constructed, PrimitiveContent, Values};
-use bcder::{decode, encode};
-use bcder::{BitString, Mode, Tag};
+use bcder::{
+    decode,
+    encode::{self, Constructed, PrimitiveContent, Values},
+    BitString, Mode, Tag,
+};
 
-use rpki::crypto::{PublicKey, Signature, SignatureAlgorithm};
-use rpki::x509::{Name, Validity};
+use rpki::repository::{
+    crypto::{PublicKey, Signature, SignatureAlgorithm},
+    x509::{Name, Validity},
+};
 
-use crate::commons::util::file;
-use crate::commons::{crypto::IdExtensions, error::KrillIoError};
+use crate::commons::{crypto::IdExtensions, error::KrillIoError, util::file};
 
 const KEY_SIZE: u32 = 2048;
 pub const HTTPS_SUB_DIR: &str = "ssl";

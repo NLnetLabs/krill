@@ -23,7 +23,7 @@ use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 use urlparse::{parse_qs, urlparse, GetQuery, Query, Url};
 
 use tokio::task;
-use tokio::time::delay_for;
+use tokio::time::sleep;
 
 use krill::commons::error::Error;
 
@@ -174,6 +174,10 @@ type KnownUsers = HashMap<KnownUserId, KnownUser>;
 const DEFAULT_TOKEN_DURATION_SECS: u32 = 3600;
 static MOCK_OPENID_CONNECT_SERVER_RUNNING_FLAG: AtomicBool = AtomicBool::new(false);
 
+// This function is not used by the integration tests which are the main users of this code, but sometimes it's helpful
+// to be able to spin up the mock outside of an integration test which is why this main() fn exists. If we don't allow
+// dead_code then cargo test spams the output with function is never used warnings.
+#[allow(dead_code)]
 #[tokio::main]
 pub async fn main() {
     // Log to stdout.
@@ -203,7 +207,7 @@ pub async fn start(config: OpenIDConnectMockConfig, delay_secs: u64) -> task::Jo
     // otherwise Krill might fail to query its discovery endpoint
     while !MOCK_OPENID_CONNECT_SERVER_RUNNING_FLAG.load(Ordering::Relaxed) {
         info!("Waiting for mock OpenID Connect server to start");
-        delay_for(Duration::from_secs(delay_secs)).await;
+        sleep(Duration::from_secs(delay_secs)).await;
     }
 
     join_handle
@@ -300,7 +304,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
         known_users
             .get(&session.id)
             .cloned()
-            .ok_or(Error::custom(format!("Internal error, unknown user: {}", session.id)))
+            .ok_or_else(|| Error::custom(format!("Internal error, unknown user: {}", session.id)))
     }
 
     fn get_token_duration_for_user(user: &KnownUser) -> Result<u32, Error> {
@@ -347,9 +351,9 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
                     SubjectIdentifier::new(session.id.to_string()),
                 ),
                 CustomAdditionalClaims {
-                    role: user.attributes.get("role").map_or(None, |v| Some(v.to_string())),
-                    inc_cas: user.attributes.get("inc_cas").map_or(None, |v| Some(v.to_string())),
-                    exc_cas: user.attributes.get("exc_cas").map_or(None, |v| Some(v.to_string())),
+                    role: user.attributes.get("role").map(|v| v.to_string()),
+                    inc_cas: user.attributes.get("inc_cas").map(|v| v.to_string()),
+                    exc_cas: user.attributes.get("exc_cas").map(|v| v.to_string()),
                 },
             )
             // Optional: specify the user's e-mail address. This should only be provided if the
@@ -383,7 +387,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
         .unwrap();
 
         let mut token_response = CustomTokenResponse::new(
-            access_token.clone(),
+            access_token,
             CoreTokenType::Bearer,
             CustomIdTokenFields::new(Some(id_token), EmptyExtraTokenFields {}),
         );
@@ -416,7 +420,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
         // compliant { "error": "invalid_request" } JSON error response.
         query
             .get_first_from_str(param)
-            .ok_or(Error::custom(format!("Missing query parameter '{}'", param)))
+            .ok_or_else(|| Error::custom(format!("Missing query parameter '{}'", param)))
     }
 
     fn handle_discovery_request(request: Request, discovery_doc: &str) -> Result<(), Error> {
@@ -424,7 +428,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
             .respond(
                 Response::empty(StatusCode(200))
                     .with_header(Header::from_str("Content-Type: application/json").unwrap())
-                    .with_data(discovery_doc.clone().as_bytes(), None),
+                    .with_data(discovery_doc.as_bytes(), None),
             )
             .map_err(|err: std::io::Error| Error::custom(format!("IO error: {}", err)))
     }
@@ -434,7 +438,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
             .respond(
                 Response::empty(StatusCode(200))
                     .with_header(Header::from_str("Content-Type: application/json").unwrap())
-                    .with_data(jwks_doc.clone().as_bytes(), None),
+                    .with_data(jwks_doc.as_bytes(), None),
             )
             .map_err(|err: std::io::Error| Error::custom(format!("IO error: {}", err)))
     }
@@ -442,7 +446,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
     fn handle_authorize_request(request: Request, url: Url, login_doc: &str) -> Result<(), Error> {
         let query = url
             .get_parsed_query()
-            .ok_or(Error::custom("Missing query parameters"))?;
+            .ok_or_else(|| Error::custom("Missing query parameters"))?;
         let client_id = require_query_param(&query, "client_id")?;
         let nonce = require_query_param(&query, "nonce")?;
         let state = require_query_param(&query, "state")?;
@@ -473,7 +477,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
     ) -> Result<(), Error> {
         let query = url
             .get_parsed_query()
-            .ok_or(Error::custom("Missing query parameters"))?;
+            .ok_or_else(|| Error::custom("Missing query parameters"))?;
         let redirect_uri = require_query_param(&query, "redirect_uri")?;
         let redirect_uri = base64_decode(redirect_uri)?;
 
@@ -655,7 +659,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
     ) -> Result<(), Error> {
         let query = url
             .get_parsed_query()
-            .ok_or(Error::custom("Missing query parameters"))?;
+            .ok_or_else(|| Error::custom("Missing query parameters"))?;
         let redirect_uri = require_query_param(&query, "post_logout_redirect_uri")?;
         let id_token_hint = require_query_param(&query, "id_token_hint")?;
 
@@ -693,16 +697,12 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
                     })?,
                 );
 
-                return request
+                request
                     .respond(response)
-                    .map_err(|err: std::io::Error| Error::custom(format!("IO error: {}", err)));
+                    .map_err(|err: std::io::Error| Error::custom(format!("IO error: {}", err)))
             }
-            None => {
-                return Err(Error::custom(format!(
-                    "Error while logging out: no login session found"
-                )))
-            }
-        };
+            None => Err(Error::custom("Error while logging out: no login session found")),
+        }
     }
 
     fn remove_related_login_sessions(login_sessions: &mut LoginSessions, user_id: &str) {
@@ -797,7 +797,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
     ) -> Result<(), Error> {
         let query = url
             .get_parsed_query()
-            .ok_or(Error::custom("Missing query parameters"))?;
+            .ok_or_else(|| Error::custom("Missing query parameters"))?;
         let username = require_query_param(&query, "username")?;
 
         match login_sessions.iter().find(|(_, session)| session.id == username) {
@@ -854,10 +854,9 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
                             id: known_users
                                 .keys()
                                 .find(|k| k.to_string() == authz_code.username)
-                                .ok_or(Error::custom(format!(
-                                    "Internal error, unknown user '{}'",
-                                    authz_code.username
-                                )))?
+                                .ok_or_else(|| {
+                                    Error::custom(format!("Internal error, unknown user '{}'", authz_code.username))
+                                })?
                                 .clone(),
                             id_token: None, // updated below after the token is generated
                         };
@@ -890,7 +889,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
                             let token_response = make_id_token_response(
                                 signing_key,
                                 authz_code.client_id.clone(),
-                                authz_code.nonce.clone(),
+                                authz_code.nonce,
                                 &session,
                                 known_users,
                             )?;
@@ -913,13 +912,13 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
                         };
 
                         session.id_token = Some(id_token);
-                        new_session = Some(session.clone());
+                        new_session = Some(session);
 
                         request
                             .respond(
                                 Response::empty(StatusCode(200))
                                     .with_header(Header::from_str("Content-Type: application/json").unwrap())
-                                    .with_data(token_doc.clone().as_bytes(), None),
+                                    .with_data(token_doc.as_bytes(), None),
                             )
                             .map_err(|err: std::io::Error| Error::custom(format!("IO error: {}", err)))
                     } else {
@@ -939,7 +938,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
                 if let Some(refresh_token) = query_params.get("refresh_token") {
                     let refresh_token = &refresh_token[0];
                     if let Some(mut session) = login_sessions.get_mut(refresh_token) {
-                        let user = get_user_for_session(&session, known_users)?;
+                        let user = get_user_for_session(session, known_users)?;
                         trace!("session: {:?}", &session.id);
                         // Check the intentional failure responses we might want to
                         // impose on users and return the apprioriate HTTP response.
@@ -979,7 +978,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
                                 signing_key,
                                 String::from("dummy_client_id"),
                                 String::from("dummy_nonce"),
-                                &session,
+                                session,
                                 known_users,
                             )?;
 
@@ -1005,7 +1004,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
                                 .respond(
                                     Response::empty(StatusCode(200))
                                         .with_header(Header::from_str("Content-Type: application/json").unwrap())
-                                        .with_data(token_doc.clone().as_bytes(), None),
+                                        .with_data(token_doc.as_bytes(), None),
                                 )
                                 .map_err(|err: std::io::Error| Error::custom(format!("IO error: {}", err)))
                         } else {
@@ -1135,11 +1134,12 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
             .respond(
                 Response::empty(StatusCode(200))
                     .with_header(Header::from_str("Content-Type: application/json").unwrap())
-                    .with_data(claims_doc.clone().as_bytes(), None),
+                    .with_data(claims_doc.as_bytes(), None),
             )
             .map_err(|err: std::io::Error| Error::custom(format!("IO error: {}", err)))
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn handle_request(
         mode: OpenIDConnectMockMode,
         request: Request,
@@ -1246,7 +1246,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
                     request,
                     &discovery_doc,
                     &jwks_doc,
-                    &login_doc,
+                    login_doc,
                     &signing_key,
                     &mut authz_codes,
                     &mut login_sessions,

@@ -1,13 +1,15 @@
 //! Deal with asynchronous scheduled processes, either triggered by an
 //! event that occurred, or planned (e.g. re-publishing).
 
-use std::sync::{Arc, RwLock};
-use std::time::Duration;
+use std::{
+    sync::{Arc, RwLock},
+    time::Duration,
+};
 
 use clokwerk::{self, ScheduleHandle, TimeUnits};
 use tokio::runtime::Runtime;
 
-use rpki::x509::Time;
+use rpki::repository::x509::Time;
 
 use crate::{
     commons::{
@@ -72,7 +74,7 @@ impl Scheduler {
 
         let cas_republish = make_cas_republish(ca_manager.clone(), event_queue);
         let cas_roas_renew = make_cas_roa_renew(ca_manager.clone(), actor.clone());
-        let cas_refresh = make_cas_refresh(ca_manager, config.ca_refresh, actor.clone());
+        let cas_refresh = make_cas_refresh(ca_manager, config.ca_refresh_seconds, actor.clone());
 
         let announcements_refresh = make_announcements_refresh(bgp_analyser);
 
@@ -94,7 +96,7 @@ impl Scheduler {
 #[allow(clippy::cognitive_complexity)]
 fn make_cas_event_triggers(event_queue: Arc<MessageQueue>, ca_manager: Arc<CaManager>, actor: Actor) -> ScheduleHandle {
     SkippingScheduler::run(1, "scan for queued triggers", move || {
-        let mut rt = Runtime::new().unwrap();
+        let rt = Runtime::new().unwrap();
 
         rt.block_on(async {
             for evt in event_queue.pop_all() {
@@ -221,7 +223,7 @@ fn make_cas_republish(ca_server: Arc<CaManager>, event_queue: Arc<MessageQueue>)
         SCHEDULER_INTERVAL_SECONDS_REPUBLISH,
         "CA certificate republish",
         move || {
-            let mut rt = Runtime::new().unwrap();
+            let rt = Runtime::new().unwrap();
             rt.block_on(async {
                 debug!("Triggering background republication for all CAs, note this may be a no-op");
                 match ca_server.republish_all().await {
@@ -240,7 +242,7 @@ fn make_cas_republish(ca_server: Arc<CaManager>, event_queue: Arc<MessageQueue>)
 
 fn make_cas_roa_renew(ca_server: Arc<CaManager>, actor: Actor) -> ScheduleHandle {
     SkippingScheduler::run(SCHEDULER_INTERVAL_SECONDS_ROA_RENEW, "CA ROA renewal", move || {
-        let mut rt = Runtime::new().unwrap();
+        let rt = Runtime::new().unwrap();
         rt.block_on(async {
             debug!(
                 "Triggering background renewal for about to expire ROAs issued by all CAs, note this may be a no-op"
@@ -254,7 +256,7 @@ fn make_cas_roa_renew(ca_server: Arc<CaManager>, actor: Actor) -> ScheduleHandle
 
 fn make_cas_refresh(ca_server: Arc<CaManager>, refresh_rate: u32, actor: Actor) -> ScheduleHandle {
     SkippingScheduler::run(refresh_rate, "CA certificate refresh", move || {
-        let mut rt = Runtime::new().unwrap();
+        let rt = Runtime::new().unwrap();
         rt.block_on(async {
             debug!("Triggering background refresh for all CAs");
             ca_server.cas_refresh_all(&actor).await;
@@ -264,7 +266,7 @@ fn make_cas_refresh(ca_server: Arc<CaManager>, refresh_rate: u32, actor: Actor) 
 
 fn make_announcements_refresh(bgp_analyser: Arc<BgpAnalyser>) -> ScheduleHandle {
     SkippingScheduler::run(5, "update RIS BGP info", move || {
-        let mut rt = Runtime::new().unwrap();
+        let rt = Runtime::new().unwrap();
         rt.block_on(async {
             if let Err(e) = bgp_analyser.update().await {
                 error!("Failed to update BGP announcements: {}", e)
@@ -276,7 +278,7 @@ fn make_announcements_refresh(bgp_analyser: Arc<BgpAnalyser>) -> ScheduleHandle 
 #[cfg(feature = "multi-user")]
 fn make_login_cache_sweeper_sh(cache: Arc<LoginSessionCache>) -> ScheduleHandle {
     SkippingScheduler::run(60, "sweep session decryption cache", move || {
-        let mut rt = Runtime::new().unwrap();
+        let rt = Runtime::new().unwrap();
         rt.block_on(async {
             if let Err(e) = cache.sweep() {
                 error!("Background sweep of session decryption cache failed: {}", e);
@@ -377,10 +379,10 @@ mod tests {
         let counter_sh = counter.clone();
 
         let _schedule_handle = SkippingScheduler::run(1, "CA certificate refresh", move || {
-            let mut rt = Runtime::new().unwrap();
+            let rt = Runtime::new().unwrap();
             rt.block_on(async {
                 counter_sh.write().unwrap().inc();
-                tokio::time::delay_for(std::time::Duration::from_secs(2)).await;
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
             });
         });
 

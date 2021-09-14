@@ -51,7 +51,7 @@ describe('Testbed UI test', () => {
         cy.get('#addPublisher pre[contenteditable="true"]').invoke('text', xml)
         cy.get('#addPublisher pre[contenteditable="true"]').type('{end}')
 
-        cy.intercept('POST', '/testbed/publishers').as('addPublisher')
+        cy.intercept({ method: 'POST', path: '/testbed/publishers'}).as('addPublisher')
         cy.get('#addPublisher button').contains('Register publisher').click()
 
         if (ts.httpCode != 'n/a') {
@@ -81,7 +81,7 @@ describe('Testbed UI test', () => {
         cy.get('#addChild input[placeholder^="The AS resources"]').type('AS18')
         cy.get('#addChild input[placeholder^="The IPv4 resources"]').type('10.0.0.0/24')
 
-        cy.intercept('POST', '/testbed/children').as('addChild')
+        cy.intercept({ method: 'POST', path: '/testbed/children'}).as('addChild')
         cy.get('#addChild button').contains('Register child CA').click()
 
         if (ts.httpCode != 'n/a') {

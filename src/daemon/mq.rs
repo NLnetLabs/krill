@@ -3,15 +3,21 @@
 //! signed material, or asking a newly added parent for resource
 //! entitlements.
 
-use std::collections::{HashMap, VecDeque};
-use std::fmt;
-use std::sync::RwLock;
+use std::{
+    collections::{HashMap, VecDeque},
+    fmt,
+    sync::RwLock,
+};
 
-use rpki::x509::Time;
+use rpki::repository::x509::Time;
 
-use crate::commons::api::{Handle, ParentHandle, ResourceClassName, RevocationRequest};
-use crate::commons::eventsourcing::{self, Event};
-use crate::daemon::ca::{CaEvt, CaEvtDet, CertAuth};
+use crate::{
+    commons::{
+        api::{Handle, ParentHandle, ResourceClassName, RevocationRequest},
+        eventsourcing::{self, Event},
+    },
+    daemon::ca::{CaEvt, CaEvtDet, CertAuth},
+};
 
 //------------ QueueTask ----------------------------------------------------
 
@@ -139,9 +145,6 @@ impl MessageQueue {
     }
 }
 
-unsafe impl Send for MessageQueue {}
-unsafe impl Sync for MessageQueue {}
-
 /// Implement listening for CertAuth Published events.
 impl eventsourcing::PostSaveEventListener<CertAuth> for MessageQueue {
     fn listen(&self, ca: &CertAuth, events: &[CaEvt]) {
@@ -168,7 +171,7 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for MessageQueue {
                 }
 
                 CaEvtDet::ParentRemoved { parent } => {
-                    self.drop_sync_parent(&handle, parent);
+                    self.drop_sync_parent(handle, parent);
                     self.schedule_sync_repo(handle.clone());
                 }
 

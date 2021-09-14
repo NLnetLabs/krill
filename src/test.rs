@@ -1,44 +1,50 @@
 //! Helper functions for testing Krill.
 
-use std::fs::File;
-use std::io::Write;
-use std::path::PathBuf;
-use std::str::FromStr;
-use std::sync::Arc;
-use std::time::Duration;
-use std::{fs, path::Path};
+use std::{
+    fs,
+    fs::File,
+    io::Write,
+    path::{Path, PathBuf},
+    str::FromStr,
+    sync::Arc,
+    time::Duration,
+};
 
 use bytes::Bytes;
 
 use hyper::StatusCode;
-use tokio::time::{delay_for, timeout};
+use tokio::time::{sleep, timeout};
 
-use rpki::crypto::KeyIdentifier;
-use rpki::uri;
+use rpki::{repository::crypto::KeyIdentifier, uri};
 
-use crate::cli::report::{ApiResponse, ReportFormat};
-use crate::cli::{Error, KrillClient};
-use crate::commons::api::{
-    AddChildRequest, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ChildHandle, Handle, ParentCaContact, ParentCaReq,
-    ParentHandle, ParentStatuses, PublicationServerUris, PublisherDetails, PublisherHandle, PublisherList,
-    ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse,
-    TypedPrefix, UpdateChildRequest,
-};
-use crate::commons::bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion};
-use crate::commons::crypto::SignSupport;
-use crate::commons::remote::rfc8183;
-use crate::commons::remote::rfc8183::{ChildRequest, RepositoryResponse};
-use crate::commons::util::httpclient;
-use crate::daemon::ca::{ta_handle, ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest};
-use crate::daemon::http::server;
 use crate::{
-    cli::options::{BulkCaCommand, CaCommand, Command, Options, PubServerCommand},
-    commons::api::RepositoryContact,
+    cli::{
+        options::{BulkCaCommand, CaCommand, Command, Options, PubServerCommand},
+        report::{ApiResponse, ReportFormat},
+        {Error, KrillClient},
+    },
+    commons::{
+        api::{
+            AddChildRequest, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ChildHandle, Handle, ParentCaContact,
+            ParentCaReq, ParentHandle, ParentStatuses, PublicationServerUris, PublisherDetails, PublisherHandle,
+            PublisherList, RepositoryContact, ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates,
+            RtaList, RtaName, RtaPrepResponse, TypedPrefix, UpdateChildRequest,
+        },
+        bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion},
+        crypto::SignSupport,
+        remote::rfc8183,
+        remote::rfc8183::{ChildRequest, RepositoryResponse},
+        util::httpclient,
+    },
+    daemon::{
+        ca::{ta_handle, ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest},
+        config::Config,
+        http::server,
+    },
 };
 
 #[cfg(test)]
 use crate::commons::crypto::IdCert;
-use crate::daemon::config::Config;
 
 pub const KRILL_SERVER_URI: &str = "https://localhost:3000/";
 pub const KRILL_PUBD_SERVER_URI: &str = "https://localhost:3001/";
@@ -46,7 +52,7 @@ pub const KRILL_PUBD_SERVER_URI: &str = "https://localhost:3001/";
 pub fn init_logging() {
     // Just creates a test config so we can initialize logging, then forgets about it
     let d = PathBuf::from(".");
-    let _ = Config::test(&d, false).init_logging();
+    let _ = Config::test(&d, false, false).init_logging();
 }
 
 pub fn info(msg: impl std::fmt::Display) {
@@ -65,7 +71,7 @@ pub async fn server_ready(uri: &str) -> bool {
     let health = format!("{}health", uri);
 
     for _ in 0..300 {
-        match httpclient::client(&health).await {
+        match httpclient::client(&health) {
             Ok(client) => {
                 let res = timeout(Duration::from_millis(100), client.get(&health).send()).await;
 
@@ -79,18 +85,18 @@ pub async fn server_ready(uri: &str) -> bool {
             }
             Err(_) => return false,
         }
-        delay_for(Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(100)).await;
     }
 
     false
 }
 
-pub fn test_config(dir: &Path, enable_testbed: bool) -> Config {
+pub fn test_config(dir: &Path, enable_testbed: bool, enable_ca_refresh: bool) -> Config {
     if enable_testbed {
         crate::constants::enable_test_mode();
         crate::constants::enable_test_announcements();
     }
-    Config::test(dir, enable_testbed)
+    Config::test(dir, enable_testbed, enable_ca_refresh)
 }
 
 pub fn init_config(config: &Config) {
@@ -111,9 +117,9 @@ pub async fn start_krill_with_custom_config(mut config: Config) -> PathBuf {
 
 /// Starts krill server for testing using the default test configuration, and optionally with testbed mode enabled.
 /// Creates a random base directory in the 'work' folder, and returns it. Be sure to clean it up when the test is done.
-pub async fn start_krill_with_default_test_config(enable_testbed: bool) -> PathBuf {
+pub async fn start_krill_with_default_test_config(enable_testbed: bool, enable_ca_refresh: bool) -> PathBuf {
     let dir = tmp_dir();
-    let config = test_config(&dir, enable_testbed);
+    let config = test_config(&dir, enable_testbed, enable_ca_refresh);
     start_krill(config).await;
     dir
 }
@@ -134,11 +140,9 @@ async fn start_krill_with_error_trap(config: Arc<Config>) {
 /// own temp dir for storage.
 pub async fn start_krill_pubd() -> PathBuf {
     let dir = tmp_dir();
-    let mut config = test_config(&dir, false);
+    let mut config = test_config(&dir, false, false);
     init_config(&config);
-
     config.port = 3001;
-    config.service_uri = "https://localhost:3001/".to_string();
 
     tokio::spawn(start_krill_with_error_trap(Arc::new(config)));
     assert!(krill_pubd_ready().await);
@@ -292,6 +296,28 @@ pub async fn delete_child(ca: &Handle, child: &ChildHandle) {
     krill_admin(Command::CertAuth(CaCommand::ChildDelete(ca.clone(), child.clone()))).await;
 }
 
+pub async fn suspend_inactive_child(ca: &Handle, child: &ChildHandle) {
+    let update = UpdateChildRequest::suspend();
+
+    krill_admin(Command::CertAuth(CaCommand::ChildUpdate(
+        ca.clone(),
+        child.clone(),
+        update,
+    )))
+    .await;
+}
+
+pub async fn unsuspend_child(ca: &Handle, child: &ChildHandle) {
+    let update = UpdateChildRequest::unsuspend();
+
+    krill_admin(Command::CertAuth(CaCommand::ChildUpdate(
+        ca.clone(),
+        child.clone(),
+        update,
+    )))
+    .await;
+}
+
 async fn send_child_request(ca: &Handle, child: &Handle, req: UpdateChildRequest) {
     match krill_admin(Command::CertAuth(CaCommand::ChildUpdate(
         ca.clone(),
@@ -437,7 +463,8 @@ pub async fn ca_contains_resources(handle: &Handle, resources: &ResourceSet) -> 
         if ca_current_resources(handle).await.contains(resources) {
             return true;
         }
-        delay_for(Duration::from_secs(1)).await
+        refresh_all().await;
+        sleep(Duration::from_secs(1)).await
     }
     false
 }
@@ -447,7 +474,8 @@ pub async fn ca_equals_resources(handle: &Handle, resources: &ResourceSet) -> bo
         if &ca_current_resources(handle).await == resources {
             return true;
         }
-        delay_for(Duration::from_secs(1)).await
+        refresh_all().await;
+        sleep(Duration::from_secs(1)).await
     }
     false
 }
@@ -458,7 +486,8 @@ pub async fn rc_is_removed(handle: &Handle) -> bool {
         if ca.resource_classes().get(&ResourceClassName::default()).is_none() {
             return true;
         }
-        delay_for(Duration::from_millis(100)).await
+        refresh_all().await;
+        sleep(Duration::from_millis(100)).await
     }
     false
 }

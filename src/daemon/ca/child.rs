@@ -2,24 +2,32 @@ use std::collections::HashMap;
 
 use chrono::Duration;
 
-use rpki::crypto::KeyIdentifier;
-use rpki::x509::Time;
+use rpki::repository::{crypto::KeyIdentifier, x509::Time};
 
-use crate::commons::api::{ChildCaInfo, ChildHandle, IssuedCert, ResourceClassName, ResourceSet};
-use crate::commons::crypto::IdCert;
-use crate::commons::error::Error;
-use crate::commons::KrillResult;
-use crate::daemon::config::IssuanceTimingConfig;
+use crate::{
+    commons::{
+        api::{
+            ChildCaInfo, ChildHandle, ChildState, IssuedCert, ResourceClassName, ResourceSet, SuspendedCert,
+            UnsuspendedCert,
+        },
+        crypto::IdCert,
+        error::Error,
+        KrillResult,
+    },
+    daemon::config::IssuanceTimingConfig,
+};
 
+//------------ UsedKeyState ------------------------------------------------
+
+/// Tracks the state of a key used by a child CA. This is needed because
+/// RFC 6492 dictates that keys cannot be re-used across resource classes.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
-pub enum LastResponse {
+pub enum UsedKeyState {
     Current(ResourceClassName),
     Revoked,
 }
-
-impl LastResponse {}
 
 //------------ ChildInfo ---------------------------------------------------
 
@@ -29,18 +37,33 @@ impl LastResponse {}
 /// and [ResourceClassName] are kept in the parent's [ResourceClass].
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildDetails {
+    #[serde(default)]
+    state: ChildState,
     id_cert: IdCert,
     resources: ResourceSet,
-    used_keys: HashMap<KeyIdentifier, LastResponse>,
+    used_keys: HashMap<KeyIdentifier, UsedKeyState>,
 }
 
 impl ChildDetails {
     pub fn new(id_cert: IdCert, resources: ResourceSet) -> Self {
         ChildDetails {
+            state: ChildState::Active,
             id_cert,
             resources,
             used_keys: HashMap::new(),
         }
+    }
+
+    pub fn is_suspended(&self) -> bool {
+        self.state == ChildState::Suspended
+    }
+
+    pub fn suspend(&mut self) {
+        self.state = ChildState::Suspended;
+    }
+
+    pub fn unsuspend(&mut self) {
+        self.state = ChildState::Active;
     }
 
     pub fn id_cert(&self) -> &IdCert {
@@ -62,8 +85,8 @@ impl ChildDetails {
     pub fn issued(&self, rcn: &ResourceClassName) -> Vec<KeyIdentifier> {
         let mut res = vec![];
 
-        for (ki, last_response) in self.used_keys.iter() {
-            if let LastResponse::Current(found_rcn) = last_response {
+        for (ki, used_key_state) in self.used_keys.iter() {
+            if let UsedKeyState::Current(found_rcn) = used_key_state {
                 if found_rcn == rcn {
                     res.push(*ki)
                 }
@@ -74,23 +97,23 @@ impl ChildDetails {
     }
 
     pub fn is_issued(&self, ki: &KeyIdentifier) -> bool {
-        matches!(self.used_keys.get(ki), Some(LastResponse::Current(_)))
+        matches!(self.used_keys.get(ki), Some(UsedKeyState::Current(_)))
     }
 
     pub fn add_issue_response(&mut self, rcn: ResourceClassName, ki: KeyIdentifier) {
-        self.used_keys.insert(ki, LastResponse::Current(rcn));
+        self.used_keys.insert(ki, UsedKeyState::Current(rcn));
     }
 
     pub fn add_revoke_response(&mut self, ki: KeyIdentifier) {
-        self.used_keys.insert(ki, LastResponse::Revoked);
+        self.used_keys.insert(ki, UsedKeyState::Revoked);
     }
 
     /// Returns an error in case the key is already in use in another class.
     pub fn verify_key_allowed(&self, ki: &KeyIdentifier, rcn: &ResourceClassName) -> KrillResult<()> {
         if let Some(last_response) = self.used_keys.get(ki) {
             let allowed = match last_response {
-                LastResponse::Revoked => false,
-                LastResponse::Current(found) => found == rcn,
+                UsedKeyState::Revoked => false,
+                UsedKeyState::Current(found) => found == rcn,
             };
             if !allowed {
                 return Err(Error::KeyUseAttemptReuse);
@@ -102,7 +125,7 @@ impl ChildDetails {
 
 impl From<ChildDetails> for ChildCaInfo {
     fn from(details: ChildDetails) -> Self {
-        ChildCaInfo::new((&details.id_cert).into(), details.resources)
+        ChildCaInfo::new(details.state, (&details.id_cert).into(), details.resources)
     }
 }
 
@@ -119,28 +142,50 @@ pub struct Children {
 /// The collection of certificates issued under a [ResourceClass](ca.ResourceClass).
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildCertificates {
-    inner: HashMap<KeyIdentifier, IssuedCert>,
+    #[serde(alias = "inner")] // Note: we cannot remove this unless we migrate existing json on upgrade.
+    issued: HashMap<KeyIdentifier, IssuedCert>,
+
+    #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
+    suspended: HashMap<KeyIdentifier, SuspendedCert>,
 }
 
 impl ChildCertificates {
     pub fn certificate_issued(&mut self, issued: IssuedCert) {
-        self.inner.insert(issued.cert().subject_key_identifier(), issued);
+        let ki = issued.cert().subject_key_identifier();
+        self.issued.insert(ki, issued);
+    }
+
+    pub fn certificate_unsuspended(&mut self, issued: UnsuspendedCert) {
+        let ki = issued.cert().subject_key_identifier();
+        self.suspended.remove(&ki);
+        self.issued.insert(ki, issued);
+    }
+
+    pub fn certificate_suspended(&mut self, suspended: SuspendedCert) {
+        let ki = suspended.cert().subject_key_identifier();
+        self.issued.remove(&ki);
+        self.suspended.insert(ki, suspended);
     }
 
     pub fn key_revoked(&mut self, key: &KeyIdentifier) {
-        self.inner.remove(key);
+        self.issued.remove(key);
+        self.suspended.remove(key);
     }
 
-    pub fn get(&self, ki: &KeyIdentifier) -> Option<&IssuedCert> {
-        self.inner.get(ki)
+    pub fn get_issued(&self, ki: &KeyIdentifier) -> Option<&IssuedCert> {
+        self.issued.get(ki)
+    }
+
+    pub fn get_suspended(&self, ki: &KeyIdentifier) -> Option<&SuspendedCert> {
+        self.suspended.get(ki)
     }
 
     pub fn current(&self) -> impl Iterator<Item = &IssuedCert> {
-        self.inner.values()
+        self.issued.values()
     }
 
     pub fn expiring(&self, issuance_timing: &IssuanceTimingConfig) -> Vec<&IssuedCert> {
-        self.inner
+        self.issued
             .values()
             .filter(|issued| {
                 issued.validity().not_after()
@@ -150,19 +195,22 @@ impl ChildCertificates {
     }
 
     pub fn overclaiming(&self, resources: &ResourceSet) -> Vec<&IssuedCert> {
-        self.inner
+        self.issued
             .values()
             .filter(|issued| !resources.contains(issued.resource_set()))
             .collect()
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &IssuedCert> {
-        self.inner.values()
+        self.issued.values()
     }
 }
 
 impl Default for ChildCertificates {
     fn default() -> Self {
-        ChildCertificates { inner: HashMap::new() }
+        ChildCertificates {
+            issued: HashMap::new(),
+            suspended: HashMap::new(),
+        }
     }
 }

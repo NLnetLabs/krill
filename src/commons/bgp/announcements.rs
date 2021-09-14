@@ -1,12 +1,11 @@
-use std::cmp::Ordering;
-use std::collections::HashSet;
-use std::fmt;
-use std::str::FromStr;
+use std::{cmp::Ordering, collections::HashSet, fmt, str::FromStr};
 
-use rpki::x509::Time;
+use rpki::repository::x509::Time;
 
-use crate::commons::api::{AsNumber, RoaDefinition, TypedPrefix};
-use crate::commons::bgp::{IpRange, TypedPrefixTree, TypedPrefixTreeBuilder};
+use crate::commons::{
+    api::{AsNumber, RoaDefinition, TypedPrefix},
+    bgp::{IpRange, TypedPrefixTree, TypedPrefixTreeBuilder},
+};
 
 //------------ AnnouncementTree ----------------------------------------------
 
@@ -133,7 +132,7 @@ impl fmt::Display for Announcement {
 
 impl Ord for Announcement {
     fn cmp(&self, other: &Self) -> Ordering {
-        let mut ordering = self.prefix.cmp(&other.prefix());
+        let mut ordering = self.prefix.cmp(other.prefix());
         if ordering == Ordering::Equal {
             ordering = self.asn.cmp(&other.asn);
         }

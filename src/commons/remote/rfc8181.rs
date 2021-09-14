@@ -5,12 +5,14 @@ use bytes::Bytes;
 
 use rpki::uri;
 
-use crate::commons::api::{
-    Base64, HexEncodedHash, ListElement, ListReply, Publish, PublishDelta, PublishDeltaBuilder, PublishRequest, Update,
-    Withdraw,
+use crate::commons::{
+    api::{
+        Base64, HexEncodedHash, ListElement, ListReply, Publish, PublishDelta, PublishDeltaBuilder, PublishRequest,
+        Update, Withdraw,
+    },
+    crypto::ProtocolCms,
+    util::xml::{Attributes, AttributesError, XmlReader, XmlReaderErr, XmlWriter},
 };
-use crate::commons::crypto::ProtocolCms;
-use crate::commons::util::xml::{Attributes, AttributesError, XmlReader, XmlReaderErr, XmlWriter};
 
 pub const VERSION: &str = "4";
 pub const NS: &str = "http://www.hactrn.net/uris/rpki/publication-spec/";
@@ -554,14 +556,13 @@ impl ErrorReply {
 
 impl fmt::Display for ErrorReply {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Got error response: ")?;
+        write!(f, "error reply including: ")?;
         for err in &self.errors {
             match &err.error_text {
                 None => write!(f, "error code: {} ", err.error_code)?,
                 Some(text) => write!(f, "error code: {}, text: {} ", err.error_code, text)?,
             }
         }
-        writeln!(f)?;
         Ok(())
     }
 }

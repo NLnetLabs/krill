@@ -1,15 +1,14 @@
-use std::fs::File;
-use std::io::Write;
-use std::path::PathBuf;
-use std::{any::Any, path::Path};
-use std::{fmt, fs};
+use std::{
+    any::Any,
+    fs::File,
+    io::Write,
+    path::{Path, PathBuf},
+    {fmt, fs},
+};
 
-use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::{de::DeserializeOwned, Serialize};
 
-use crate::commons::{error::KrillIoError, util::file};
-
-use super::KeyStoreVersion;
+use crate::commons::{error::KrillIoError, util::file, util::KrillVersion};
 
 //------------ KeyStoreKey ---------------------------------------------------
 
@@ -205,17 +204,17 @@ impl KeyValueStore {
     /// KeyStore use a specific key-value pair to track their version. If the key is absent it
     /// is assumed that the version was from before Krill 0.6.0. An error is returned if the key
     /// is present, but the value is corrupt or not recognized.
-    pub fn version(&self) -> Result<KeyStoreVersion, KeyValueError> {
+    pub fn version(&self) -> Result<KrillVersion, KeyValueError> {
         let key = KeyStoreKey::simple("version".to_string());
         self.get(&key)
-            .map(|version_opt| version_opt.unwrap_or(KeyStoreVersion::Pre0_6))
+            .map(|version_opt| version_opt.unwrap_or_else(KrillVersion::v0_5_0_or_before))
     }
 
     /// Returns whether the version of this key store predates the given version.
     /// KeyStore use a specific key-value pair to track their version. If the key is absent it
     /// is assumed that the version was from before Krill 0.6.0. An error is returned if the key
     /// is present, but the value is corrupt or not recognized.
-    pub fn version_is_before(&self, later: KeyStoreVersion) -> Result<bool, KeyValueError> {
+    pub fn version_is_before(&self, later: KrillVersion) -> Result<bool, KeyValueError> {
         let version = self.version()?;
         Ok(version < later)
     }

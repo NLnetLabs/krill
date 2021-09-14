@@ -1,15 +1,20 @@
-use std::fmt;
-use std::str::FromStr;
+use std::{fmt, str::FromStr};
 
-use rpki::cert::Cert;
-use rpki::crypto::{KeyIdentifier, PublicKey};
-use rpki::csr::Csr;
-use rpki::resources::{AsBlocks, IpBlocks, IpBlocksForFamily};
-use rpki::uri;
-use rpki::x509::Time;
+use rpki::{
+    repository::{
+        cert::Cert,
+        crypto::{KeyIdentifier, PublicKey},
+        csr::Csr,
+        resources::{AsBlocks, IpBlocks, IpBlocksForFamily},
+        x509::Time,
+    },
+    uri,
+};
 
-use crate::commons::api::ca::{IssuedCert, RcvdCert, ResourceClassName, ResourceSet};
-use crate::commons::util::ext_serde;
+use crate::commons::{
+    api::ca::{IssuedCert, RcvdCert, ResourceClassName, ResourceSet},
+    util::ext_serde,
+};
 
 //------------ ProvisioningRequest -------------------------------------------
 
