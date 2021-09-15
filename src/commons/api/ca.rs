@@ -1698,15 +1698,19 @@ impl ChildConnectionStats {
         }
     }
 
-    /// The child is considered a candidate for suspension if there was at least one exchange,
-    /// and the last exchange is longer ago than the specified threshold hours, and the child
-    /// is not already suspended.
+    /// The child is considered a candidate for suspension if no exchange (see #664),
+    /// or the last exchange is longer ago than the specified threshold hours, and the
+    /// child is not already suspended.
     pub fn suspension_candidate(&self, threshold_hours: i64) -> bool {
         if self.state == ChildState::Suspended {
             false
         } else {
             match &self.last_exchange {
-                None => false, // if there has been no exchange at all, the child is not yet active, rather than inactive
+                None => {
+                    // Note: if the child was only just added, it won't have any certificates
+                    // and then it won't actually be suspended.
+                    true
+                }
                 Some(exchange) => exchange.timestamp < (Timestamp::now_minus_hours(threshold_hours)),
             }
         }
