@@ -177,6 +177,27 @@ impl StatusStore {
             .await
     }
 
+    /// Remove a CA from the saved status
+    /// This should be called when the CA is removed from Krill, but note that if this is done for a CA which still exists
+    /// a new empty default status will be re-generated when it is accessed for this CA.
+    pub async fn remove_ca(&self, ca: &Handle) -> KrillResult<()> {
+        let mut cache = self.cache.write().await;
+
+        if !cache.contains_key(ca) {
+            Ok(()) // idempotent
+        } else {
+            let key = Self::status_key(ca);
+
+            // will fail if there is an I/O error, but come back ok if the key had been dropped already.
+            self.store.drop_key(&key)?;
+
+            cache.remove(ca);
+
+            Ok(())
+        }
+    }
+
+    /// Removes a child for the given CA.
     pub async fn remove_child(&self, ca: &Handle, child: &ChildHandle) -> KrillResult<()> {
         self.update_ca_status(ca, |status| {
             status.children.remove(child);
