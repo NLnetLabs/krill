@@ -387,6 +387,61 @@ impl CaManager {
 
         Ok(())
     }
+
+    /// Re-synchronize the CAs and CaStatus
+    ///
+    /// - remove any surplus CA status entries
+    /// - create missing CA status entries
+    /// - check children for existing CAs:
+    ///    - remove surplus from status
+    ///    - add missing
+    pub async fn resync_ca_statuses(&self) -> KrillResult<()> {
+        let cas = self.ca_store.list()?;
+
+        let mut ca_statuses = self.status_store.lock().await.cas().await?;
+
+        // loop over existing CAs and get their status
+        for ca_handle in cas {
+            let ca = self.get_ca(&ca_handle).await?;
+            let status = match ca_statuses.remove(&ca_handle) {
+                Some(status) => status,
+                None => {
+                    // Getting a missing status will ensure that a new empty status is generated.
+                    self.status_store.lock().await.get_ca_status(&ca_handle).await?
+                }
+            };
+
+            let mut status_children = status.children().clone();
+
+            // add default status for missing children
+            for child in ca.children() {
+                if status_children.remove(child).is_none() {
+                    self.status_store
+                        .lock()
+                        .await
+                        .set_child_default_if_missing(&ca_handle, child)
+                        .await?;
+                }
+            }
+
+            // remove surplus children status
+            for surplus_child in status_children.keys() {
+                self.status_store
+                    .lock()
+                    .await
+                    .remove_child(&ca_handle, surplus_child)
+                    .await?;
+            }
+        }
+
+        // remove the status for any left-over CAs with status
+        for surplus_ca in ca_statuses.keys() {
+            info!("Removing the cached status for a removed CA: {}", surplus_ca);
+            self.status_store.lock().await.remove_ca(surplus_ca).await?;
+        }
+
+        Ok(())
+    }
 }
 
 /// # CA History

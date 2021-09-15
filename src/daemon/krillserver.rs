@@ -141,6 +141,8 @@ impl KrillServer {
 
         let ca_manager = Arc::new(ca::CaManager::build(config.clone(), event_queue.clone(), signer).await?);
 
+        ca_manager.resync_ca_statuses().await?;
+
         if let Some(testbed) = config.testbed() {
             let uris = testbed.publication_server_uris();
 
