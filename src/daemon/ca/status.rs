@@ -206,7 +206,7 @@ impl StatusStore {
         } else {
             let scope = ca.as_str();
 
-            self.store.drop_scope(scope)?; // idem potent; won't do anything if the scope does not exist.
+            self.store.drop_scope(scope)?; // will fail in case of I/O errors only
             cache.remove(ca);
 
             Ok(())
