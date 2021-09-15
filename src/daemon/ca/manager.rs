@@ -381,7 +381,10 @@ impl CaManager {
         }
 
         self.ca_store.drop_aggregate(ca_handle)?;
+        self.status_store.lock().await.remove_ca(ca_handle).await?;
+
         self.locks.drop_ca(ca_handle).await;
+
         Ok(())
     }
 }
