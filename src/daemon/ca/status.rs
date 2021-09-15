@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::Path, sync::Arc};
+use std::{collections::HashMap, path::Path, str::FromStr, sync::Arc};
 
 use tokio::sync::RwLock;
 
@@ -96,6 +96,19 @@ impl StatusStore {
         Ok(status)
     }
 
+    /// Returns all CAs for which a status exists
+    pub async fn cas(&self) -> KrillResult<HashMap<Handle, Arc<CaStatus>>> {
+        let mut cas = HashMap::new();
+        for scope in self.store.scopes()? {
+            if let Ok(ca) = Handle::from_str(&scope) {
+                let status = self.get_ca_status(&ca).await?;
+                cas.insert(ca, status);
+            }
+        }
+
+        Ok(cas)
+    }
+
     pub async fn set_parent_failure(
         &self,
         ca: &Handle,
@@ -177,6 +190,11 @@ impl StatusStore {
             .await
     }
 
+    /// Adds a child with default status values if the child is missing
+    pub async fn set_child_default_if_missing(&self, ca: &Handle, child: &ChildHandle) -> KrillResult<()> {
+        self.update_ca_child_status(ca, child, |_status| {}).await
+    }
+
     /// Remove a CA from the saved status
     /// This should be called when the CA is removed from Krill, but note that if this is done for a CA which still exists
     /// a new empty default status will be re-generated when it is accessed for this CA.
@@ -186,11 +204,9 @@ impl StatusStore {
         if !cache.contains_key(ca) {
             Ok(()) // idempotent
         } else {
-            let key = Self::status_key(ca);
+            let scope = ca.as_str();
 
-            // will fail if there is an I/O error, but come back ok if the key had been dropped already.
-            self.store.drop_key(&key)?;
-
+            self.store.drop_scope(scope)?; // idem potent; won't do anything if the scope does not exist.
             cache.remove(ca);
 
             Ok(())
