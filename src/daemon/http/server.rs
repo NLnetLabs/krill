@@ -589,7 +589,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                     res.push_str("# TYPE krill_ca_child_state gauge\n");
                     for (ca, status) in ca_status_map.iter() {
                         for (child, status) in status.children().iter() {
-                            let value = if status.suspended().is_none() { 0 } else { 1 };
+                            let value = if status.suspended().is_none() { 1 } else { 0 };
 
                             res.push_str(&format!(
                                 "krill_ca_child_state{{ca=\"{}\", child=\"{}\"}} {}\n",
