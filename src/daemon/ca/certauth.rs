@@ -1024,8 +1024,13 @@ impl CertAuth {
             version += 1;
         }
 
-        info!("CA '{}' suspended inactive child '{}'", handle, child_handle);
-        res.push(CaEvtDet::child_suspended(handle, version, child_handle.clone()));
+        // Only mark the child as suspended if there was at least one certificate
+        // to suspend above. If not this is a no-op - the child has not yet requested
+        // any certificates so there is nothing to suspend.
+        if !res.is_empty() {
+            info!("CA '{}' suspended inactive child '{}'", handle, child_handle);
+            res.push(CaEvtDet::child_suspended(handle, version, child_handle.clone()));
+        }
 
         Ok(res)
     }
