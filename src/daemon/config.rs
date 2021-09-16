@@ -760,6 +760,14 @@ impl Config {
             ));
         }
 
+        if let Some(threshold) = self.suspend_child_after_inactive_hours {
+            if threshold < 1 {
+                return Err(ConfigError::other(
+                    "suspend_child_after_inactive_hours must be 1 or higher (or not set at all)",
+                ));
+            }
+        }
+
         Ok(())
     }
 
