@@ -14,7 +14,7 @@ use rpki::repository::x509::Time;
 use crate::{
     commons::{
         actor::Actor,
-        api::{Handle, ParentHandle},
+        api::{Handle, ParentHandle, Timestamp},
         bgp::BgpAnalyser,
     },
     constants::{
@@ -95,6 +95,8 @@ impl Scheduler {
 
 #[allow(clippy::cognitive_complexity)]
 fn make_cas_event_triggers(event_queue: Arc<MessageQueue>, ca_manager: Arc<CaManager>, actor: Actor) -> ScheduleHandle {
+    let started = Timestamp::now();
+
     SkippingScheduler::run(1, "scan for queued triggers", move || {
         let rt = Runtime::new().unwrap();
 
@@ -103,7 +105,7 @@ fn make_cas_event_triggers(event_queue: Arc<MessageQueue>, ca_manager: Arc<CaMan
                 match evt {
                     QueueTask::ServerStarted => {
                         info!("Will re-sync all CAs with their parents and repository after startup");
-                        ca_manager.cas_refresh_all(&actor).await;
+                        ca_manager.cas_refresh_all(started, &actor).await;
                         ca_manager.cas_repo_sync_all(&actor).await;
                     }
 
@@ -255,11 +257,12 @@ fn make_cas_roa_renew(ca_server: Arc<CaManager>, actor: Actor) -> ScheduleHandle
 }
 
 fn make_cas_refresh(ca_server: Arc<CaManager>, refresh_rate: u32, actor: Actor) -> ScheduleHandle {
+    let server_started = Timestamp::now();
     SkippingScheduler::run(refresh_rate, "CA certificate refresh", move || {
         let rt = Runtime::new().unwrap();
         rt.block_on(async {
             debug!("Triggering background refresh for all CAs");
-            ca_server.cas_refresh_all(&actor).await;
+            ca_server.cas_refresh_all(server_started, &actor).await;
         });
     })
 }
