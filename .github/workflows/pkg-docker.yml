@@ -48,7 +48,7 @@ jobs:
       # Do a basic sanity check of the created image using the test tag to select the image to run.
       - name: Sanity check
         run: |
-          docker run --rm nlnetlabs/krill:sanitycheck --version
+          docker run --rm nlnetlabs/krill:sanitycheck krillc --version
 
       # Push the image and tags to Docker Hub.
       # The build uses the cached build outputs from the step above so we don't have to wait for the build again.
