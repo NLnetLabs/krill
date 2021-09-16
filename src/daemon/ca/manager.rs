@@ -818,14 +818,7 @@ impl CaManager {
             let threshold_hours = self
                 .config
                 .suspend_child_after_inactive_hours
-                .map(|hours| {
-                    if started < Timestamp::now_minus_hours(hours) {
-                        Some(hours)
-                    } else {
-                        None
-                    }
-                })
-                .flatten();
+                .filter(|hours| started < Timestamp::now_minus_hours(*hours));
 
             for ca_handle in cas {
                 if let Ok(ca) = self.get_ca(&ca_handle).await {
