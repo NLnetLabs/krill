@@ -12,7 +12,6 @@ use rpki::{repository::crypto::KeyIdentifier, uri};
 use crate::{
     commons::{
         actor::Actor,
-        api::rrdp::PublishElement,
         api::{
             self, AddChildRequest, Base64, CaCommandDetails, CaCommandResult, CertAuthList, CertAuthSummary,
             ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Entitlements, Handle, IssuanceRequest,
@@ -20,6 +19,7 @@ use crate::{
             RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse, RtaName,
             StoredEffect, UpdateChildRequest,
         },
+        api::{rrdp::PublishElement, Timestamp},
         crypto::{IdCert, KrillSigner, ProtocolCms, ProtocolCmsBuilder},
         error::Error,
         eventsourcing::{Aggregate, AggregateStore, Command, CommandKey},
@@ -807,9 +807,25 @@ impl CaManager {
     /// Note: this function can be called manually through the API, but is normally
     ///       triggered in the background, every 10 mins by default, or as configured
     ///       by 'ca_refresh' in the configuration.
-    pub async fn cas_refresh_all(&self, actor: &Actor) {
+    pub async fn cas_refresh_all(&self, started: Timestamp, actor: &Actor) {
         if let Ok(cas) = self.ca_store.list() {
             let mut updates = vec![];
+
+            // Set threshold hours if it was configured AND this server has been started
+            // longer ago than the hours specified. Otherwise we risk that *all* children
+            // without prior recorded status are suspended on upgrade, or that *all* children
+            // are suspended if the server had been down for more than the threshold hours.
+            let threshold_hours = self
+                .config
+                .suspend_child_after_inactive_hours
+                .map(|hours| {
+                    if started < Timestamp::now_minus_hours(hours) {
+                        Some(hours)
+                    } else {
+                        None
+                    }
+                })
+                .flatten();
 
             for ca_handle in cas {
                 if let Ok(ca) = self.get_ca(&ca_handle).await {
@@ -817,7 +833,7 @@ impl CaManager {
                         updates.push(self.ca_sync_parent_infallible(ca_handle.clone(), parent.clone(), actor.clone()));
                     }
 
-                    if let Some(threshold_hours) = self.config.suspend_child_after_inactive_hours {
+                    if let Some(threshold_hours) = threshold_hours {
                         if let Ok(ca_status) = self.get_ca_status(&ca_handle).await {
                             let connections = ca_status.get_children_connection_stats();
                             for child in connections.suspension_candidates(threshold_hours) {

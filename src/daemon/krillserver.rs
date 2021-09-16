@@ -4,10 +4,7 @@ use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use bytes::Bytes;
 use chrono::Duration;
 
-use rpki::{
-    repository::{cert::Cert, x509::Time},
-    uri,
-};
+use rpki::{repository::cert::Cert, uri};
 
 use crate::{
     commons::{
@@ -18,7 +15,7 @@ use crate::{
             CommandHistory, CommandHistoryCriteria, Handle, ListReply, ParentCaContact, ParentCaReq, ParentHandle,
             PublicationServerUris, PublishDelta, PublisherDetails, PublisherHandle, RepositoryContact, ResourceSet,
             RoaDefinition, RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, ServerInfo, TaCertDetails,
-            UpdateChildRequest,
+            Timestamp, UpdateChildRequest,
         },
         bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion},
         crypto::KrillSigner,
@@ -74,7 +71,7 @@ pub struct KrillServer {
     scheduler: Scheduler,
 
     // Time this server was started
-    started: Time,
+    started: Timestamp,
 
     #[cfg(feature = "multi-user")]
     // Global login session cache
@@ -223,7 +220,7 @@ impl KrillServer {
             ca_manager,
             bgp_analyser,
             scheduler,
-            started: Time::now(),
+            started: Timestamp::now(),
             #[cfg(feature = "multi-user")]
             login_session_cache,
             system_actor,
@@ -526,7 +523,7 @@ impl KrillServer {
 
     /// Refresh all CAs: ask for updates and shrink as needed.
     pub async fn cas_refresh_all(&self, actor: &Actor) -> KrillEmptyResult {
-        self.ca_manager.cas_refresh_all(actor).await;
+        self.ca_manager.cas_refresh_all(self.started, actor).await;
         Ok(())
     }
 }

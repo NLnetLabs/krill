@@ -8,22 +8,18 @@ use std::{
     sync::Arc,
 };
 
-use chrono::{DateTime, NaiveDateTime, Utc};
 use rfc8183::ServiceUri;
 use serde::{
     de, {Deserialize, Deserializer, Serialize, Serializer},
 };
 
-use rpki::{
-    repository::{cert::Cert, x509::Time},
-    uri,
-};
+use rpki::{repository::cert::Cert, uri};
 
 use crate::commons::{
     api::{
         ca::{ResourceSet, TrustAnchorLocator},
         rrdp::PublishElement,
-        RepoInfo,
+        RepoInfo, Timestamp,
     },
     crypto::IdCert,
     remote::rfc8183,
@@ -643,14 +639,14 @@ impl fmt::Display for UpdateChildRequest {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ServerInfo {
     version: String,
-    started: i64,
+    started: Timestamp,
 }
 
 impl ServerInfo {
-    pub fn new(version: &str, started: Time) -> Self {
+    pub fn new(version: &str, started: Timestamp) -> Self {
         ServerInfo {
             version: version.to_string(),
-            started: started.timestamp(),
+            started,
         }
     }
 
@@ -658,16 +654,14 @@ impl ServerInfo {
         &self.version
     }
 
-    pub fn started(&self) -> i64 {
+    pub fn started(&self) -> Timestamp {
         self.started
     }
 }
 
 impl fmt::Display for ServerInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let dt = DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(self.started(), 0), Utc);
-        let started = Time::new(dt);
-        write!(f, "Version: {}\nStarted: {}", self.version(), started.to_rfc3339())
+        write!(f, "Version: {}\nStarted: {}", self.version(), self.started.to_rfc3339())
     }
 }
 
