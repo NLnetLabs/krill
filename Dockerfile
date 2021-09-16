@@ -14,7 +14,7 @@ RUN apk add rust cargo openssl-dev
 WORKDIR /tmp/krill
 COPY . .
 
-RUN cargo build --target x86_64-alpine-linux-musl --release --locked
+RUN CARGO_HTTP_MULTIPLEXING=false cargo build --target x86_64-alpine-linux-musl --release --locked
 
 #
 # -- stage 2: create an image containing just the binaries, configs &
