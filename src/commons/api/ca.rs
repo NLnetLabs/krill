@@ -25,6 +25,7 @@ use rpki::{
     uri,
 };
 
+use crate::commons::util::KrillVersion;
 use crate::{
     commons::{
         api::{
@@ -1647,7 +1648,7 @@ impl ChildrenConnectionStats {
     pub fn suspension_candidates(&self, threshold_hours: i64) -> Vec<ChildHandle> {
         self.children
             .iter()
-            .filter(|child| child.suspension_candidate(threshold_hours))
+            .filter(|child| child.is_suspension_candidate(threshold_hours))
             .map(|child| child.handle.clone())
             .collect()
     }
@@ -1698,21 +1699,18 @@ impl ChildConnectionStats {
         }
     }
 
-    /// The child is considered a candidate for suspension if no exchange (see #664),
-    /// or the last exchange is longer ago than the specified threshold hours, and the
-    /// child is not already suspended.
-    pub fn suspension_candidate(&self, threshold_hours: i64) -> bool {
+    /// The child is considered a candidate for suspension if:
+    ///  - it is Krill 0.9.2-rc and up (see #670)
+    ///  - the last exchange is longer ago than the specified threshold hours
+    ///  - and the child is not already suspended
+    pub fn is_suspension_candidate(&self, threshold_hours: i64) -> bool {
         if self.state == ChildState::Suspended {
             false
         } else {
-            match &self.last_exchange {
-                None => {
-                    // Note: if the child was only just added, it won't have any certificates
-                    // and then it won't actually be suspended.
-                    true
-                }
-                Some(exchange) => exchange.timestamp < (Timestamp::now_minus_hours(threshold_hours)),
-            }
+            self.last_exchange
+                .as_ref()
+                .map(|exchange| exchange.is_krill_above_0_9_1() && exchange.more_than_hours_ago(threshold_hours))
+                .unwrap_or(false)
         }
     }
 }
@@ -1808,6 +1806,21 @@ impl ChildExchange {
 
     pub fn user_agent(&self) -> Option<&String> {
         self.user_agent.as_ref()
+    }
+
+    pub fn more_than_hours_ago(&self, hours: i64) -> bool {
+        self.timestamp < Timestamp::now_minus_hours(hours)
+    }
+
+    pub fn is_krill_above_0_9_1(&self) -> bool {
+        if let Some(agent) = &self.user_agent {
+            if let Some(version) = agent.strip_prefix("krill-") {
+                if let Ok(krill_version) = KrillVersion::from_str(version) {
+                    return krill_version > KrillVersion::release(0, 9, 1);
+                }
+            }
+        }
+        false
     }
 }
 
@@ -2756,5 +2769,81 @@ mod test {
         let deserialized = serde_json::from_str(&serialized).unwrap();
 
         assert_eq!(issues, deserialized);
+    }
+
+    #[test]
+    fn recognize_suspension_candidate() {
+        let handle = Handle::from_str("ca").unwrap();
+
+        let threshold_hours = 4;
+
+        fn new_exchange(agent: &str) -> ChildExchange {
+            let user_agent = if agent.is_empty() {
+                None
+            } else {
+                Some(agent.to_string())
+            };
+
+            ChildExchange {
+                timestamp: Timestamp::now(),
+                result: ExchangeResult::Success,
+                user_agent,
+            }
+        }
+
+        fn old_exchange(agent: &str) -> ChildExchange {
+            let user_agent = if agent.is_empty() {
+                None
+            } else {
+                Some(agent.to_string())
+            };
+
+            ChildExchange {
+                timestamp: Timestamp::now_minus_hours(5),
+                result: ExchangeResult::Success,
+                user_agent,
+            }
+        }
+
+        fn ca_stats_active_no_exchange(handle: &Handle) -> ChildConnectionStats {
+            ChildConnectionStats {
+                handle: handle.clone(),
+                last_exchange: None,
+                state: ChildState::Active,
+            }
+        }
+
+        fn ca_stats_active(handle: &Handle, exchange: ChildExchange) -> ChildConnectionStats {
+            ChildConnectionStats {
+                handle: handle.clone(),
+                last_exchange: Some(exchange),
+                state: ChildState::Active,
+            }
+        }
+
+        let new_ca = ca_stats_active_no_exchange(&handle);
+
+        let recent_krill_pre_0_9_2 = ca_stats_active(&handle, new_exchange("krill"));
+        let recent_krill_post_0_9_1 = ca_stats_active(&handle, new_exchange("krill-0.9.2-rc2"));
+        let recent_other_agent = ca_stats_active(&handle, new_exchange("other"));
+        let recent_no_agent = ca_stats_active(&handle, new_exchange(""));
+
+        let old_krill_pre_0_9_2 = ca_stats_active(&handle, old_exchange("krill"));
+        let old_krill_post_0_9_1 = ca_stats_active(&handle, old_exchange("krill-0.9.2-rc2"));
+        let old_other_agent = ca_stats_active(&handle, old_exchange("other"));
+        let old_no_agent = ca_stats_active(&handle, old_exchange(""));
+
+        assert!(!new_ca.is_suspension_candidate(threshold_hours));
+
+        assert!(!recent_krill_pre_0_9_2.is_suspension_candidate(threshold_hours));
+        assert!(!recent_krill_post_0_9_1.is_suspension_candidate(threshold_hours));
+        assert!(!recent_other_agent.is_suspension_candidate(threshold_hours));
+        assert!(!recent_no_agent.is_suspension_candidate(threshold_hours));
+
+        assert!(!old_krill_pre_0_9_2.is_suspension_candidate(threshold_hours));
+        assert!(!old_other_agent.is_suspension_candidate(threshold_hours));
+        assert!(!old_no_agent.is_suspension_candidate(threshold_hours));
+
+        assert!(old_krill_post_0_9_1.is_suspension_candidate(threshold_hours));
     }
 }
