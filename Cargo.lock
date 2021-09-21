@@ -941,7 +941,7 @@ dependencies = [
  "itoa",
  "log",
  "net2",
- "rustc_version",
+ "rustc_version 0.2.3",
  "time",
  "tokio 0.1.22",
  "tokio-buf",
@@ -1128,29 +1128,38 @@ dependencies = [
 
 [[package]]
 name = "kmip-protocol"
-version = "0.1.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "772565eccf5d604aebe665d99f06683697857ec16f0057af7bf2e19cbcbebca9"
+checksum = "83f72d1d2167a64579a9afa1d257923c045fa2723e5e83604cdd5f188910832c"
 dependencies = [
+ "cfg-if 1.0.0",
  "enum-display-derive",
  "enum-flags",
  "kmip-ttlv",
- "rustc_version",
+ "log",
+ "maybe-async",
+ "rustc_version 0.4.0",
+ "rustls",
+ "rustls-pemfile",
  "serde",
  "serde_bytes",
  "serde_derive",
+ "trait-set",
+ "webpki",
 ]
 
 [[package]]
 name = "kmip-ttlv"
-version = "0.1.2"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "271ccf2f8e6c377f652f58bde3c8869b94ae083271ec3a3eefa403e06d8ba2e5"
+checksum = "4829d1eaf141b0fd93402d9e219a2453984106931de6e0cdbd8ca02bec58f2bc"
 dependencies = [
+ "cfg-if 1.0.0",
  "hex",
- "log",
- "rustc_version",
+ "maybe-async",
+ "rustc_version 0.4.0",
  "serde",
+ "trait-set",
 ]
 
 [[package]]
@@ -1186,7 +1195,7 @@ dependencies = [
  "reqwest 0.9.24",
  "rpassword",
  "rpki",
- "rustc_version",
+ "rustc_version 0.2.3",
  "scrypt",
  "serde",
  "serde_json",
@@ -1311,6 +1320,17 @@ name = "matches"
 version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7ffc5c5338469d4d3ea17d269fa8ea3512ad247247c30bd2df69e68309ed0a08"
+
+[[package]]
+name = "maybe-async"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6007f9dad048e0a224f27ca599d669fca8cfa0dac804725aab542b2eb032bce6"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
 
 [[package]]
 name = "maybe-uninit"
@@ -1643,7 +1663,7 @@ checksum = "f842b1982eb6c2fe34036a4fbfb06dd185a3f5c8edfaacdf7d1ea10b07de6252"
 dependencies = [
  "lock_api",
  "parking_lot_core",
- "rustc_version",
+ "rustc_version 0.2.3",
 ]
 
 [[package]]
@@ -1656,7 +1676,7 @@ dependencies = [
  "cloudabi",
  "libc",
  "redox_syscall 0.1.57",
- "rustc_version",
+ "rustc_version 0.2.3",
  "smallvec 0.6.14",
  "winapi 0.3.9",
 ]
@@ -2211,7 +2231,16 @@ version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "138e3e0acb6c9fb258b19b67cb8abd63c00679d2851805ea151465464fe9030a"
 dependencies = [
- "semver",
+ "semver 0.9.0",
+]
+
+[[package]]
+name = "rustc_version"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bfa0f585226d2e68097d4f95d113b15b83a82e819ab25717ec0590d9584ef366"
+dependencies = [
+ "semver 1.0.4",
 ]
 
 [[package]]
@@ -2225,6 +2254,15 @@ dependencies = [
  "ring",
  "sct",
  "webpki",
+]
+
+[[package]]
+name = "rustls-pemfile"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5eebeaeb360c87bfb72e84abdb3447159c0eaececf1bef2aecd65a8be949d1c9"
+dependencies = [
+ "base64 0.13.0",
 ]
 
 [[package]]
@@ -2311,6 +2349,12 @@ checksum = "1d7eb9ef2c18661902cc47e535f9bc51b78acd254da71d375c2f6720d9a40403"
 dependencies = [
  "semver-parser",
 ]
+
+[[package]]
+name = "semver"
+version = "1.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "568a8e6258aa33c13358f81fd834adb854c6f7c9468520910a9b1e8fac068012"
 
 [[package]]
 name = "semver-parser"
@@ -2940,6 +2984,17 @@ dependencies = [
  "tracing-core",
  "tracing-log",
  "tracing-serde",
+]
+
+[[package]]
+name = "trait-set"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "875c4c873cc824e362fa9a9419ffa59807244824275a44ad06fec9684fff08f2"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

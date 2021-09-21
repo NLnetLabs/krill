@@ -1,24 +1,18 @@
-use std::{net::TcpStream, path::PathBuf, sync::Arc};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use bytes::Bytes;
-use kmip::{
-    types::{
+use kmip::{client::ClientCertificate, types::{
         common::{
             KeyMaterial, ObjectType, Operation, TransparentRSAPrivateKey, TransparentRSAPublicKey, UniqueIdentifier,
         },
         request::{Attribute, RequestPayload},
         response::ManagedObject,
         response::{GetResponsePayload, KeyBlock, KeyValue, QueryResponsePayload, ResponsePayload},
-    },
-    Client, ClientBuilder,
-};
-use openssl::{
-    error::ErrorStack,
-    ssl::{SslConnector, SslFiletype, SslMethod, SslStream, SslVerifyMode},
-};
+    }};
 use rpki::repository::crypto::{
     signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
 };
+use tokio_rustls::rustls::StreamOwned;
 
 use super::{KeyMap, SignerError};
 
@@ -61,45 +55,45 @@ pub struct ConfigSignerKmip {
     pub password: Option<String>,
 }
 
-type KmipClient = Client<SslStream<TcpStream>>;
+type KmipClient = kmip::client::Client<StreamOwned<tokio_rustls::rustls::ClientSession, std::net::TcpStream>>;
 
 fn make_conn(config: &ConfigSignerKmip) -> Result<KmipClient, SignerError> {
-    fn create_tls_client(config: &ConfigSignerKmip) -> Result<SslConnector, ErrorStack> {
-        let mut connector = SslConnector::builder(SslMethod::tls()).unwrap();
-        connector.set_verify(SslVerifyMode::NONE);
-        if config.insecure {
-            connector.set_verify(SslVerifyMode::NONE);
-        } else if let Some(path) = &config.server_ca_cert_path {
-            connector.set_ca_file(path)?;
-        }
-        if let Some(path) = &config.client_cert_path {
-            connector.set_certificate_file(path, SslFiletype::PEM)?;
-        }
-        if let Some(path) = &config.client_cert_private_key_path {
-            connector.set_private_key_file(path, SslFiletype::PEM)?;
-        }
-        Ok(connector.build())
+    fn load_binary_file(path: &std::path::PathBuf) -> Vec<u8> {
+        use std::{fs::File, io::Read};
+    
+        let mut bytes = Vec::new();
+        File::open(path)
+            .expect(&format!("Failed to open open file '{:?}'", path))
+            .read_to_end(&mut bytes)
+            .expect(&format!("Failed to read data from file '{:?}'", path));
+        bytes
     }
-
-    fn create_kmip_client(tls_stream: SslStream<TcpStream>, config: &ConfigSignerKmip) -> KmipClient {
-        let mut client = ClientBuilder::new(tls_stream);
-        if let Some(username) = &config.username {
-            client = client.with_credentials(username.clone(), config.password.clone());
+    
+    let mut kmip_config = kmip::client::ConnectionSettings::default();
+    kmip_config.host = config.host.clone();
+    kmip_config.port = config.port;
+    kmip_config.insecure = config.insecure;
+    kmip_config.ca_cert = config.server_ca_cert_path.as_ref().map(|path| load_binary_file(&path));
+    kmip_config.client_cert = match (config.client_cert_path.as_ref(), config.client_cert_private_key_path.as_ref()) {
+        (Some(path), None) => {
+            let cert_bytes = load_binary_file(&path);
+            Some(ClientCertificate::SeparatePem{cert_bytes, key_bytes: None})
         }
-        client.build()
-    }
+        (Some(cert_path), Some(key_path)) => {
+            let cert_bytes = load_binary_file(&cert_path);
+            let key_bytes = Some(load_binary_file(&key_path));
+            Some(ClientCertificate::SeparatePem{cert_bytes, key_bytes})
+        }
+        _ => None
+    };
+    kmip_config.username = config.username.clone();
+    kmip_config.password = config.password.clone();
+    kmip_config.connect_timeout = Some(Duration::from_secs(5));
+    kmip_config.read_timeout = Some(Duration::from_secs(5));
+    kmip_config.write_timeout = Some(Duration::from_secs(5));
+    kmip_config.max_response_bytes = Some(4096);
 
-    let tls_client = create_tls_client(&config)
-        .map_err(|err| SignerError::KmipError(format!("Failed to create TLS client: {}", err)))?;
-
-    let tcp_stream = TcpStream::connect(format!("{}:{}", config.host, config.port))
-        .map_err(|err| SignerError::KmipError(format!("Failed to connect: {}", err)))?;
-
-    let tls_stream = tls_client
-        .connect(&config.host, tcp_stream)
-        .map_err(|err| SignerError::KmipError(format!("TLS handshake failed: {}", err)))?;
-
-    Ok(create_kmip_client(tls_stream, config))
+    Ok(kmip::client::tls::rustls::connect(kmip_config))
 }
 
 /// A KMIP based signer.
@@ -119,7 +113,7 @@ impl KmipSigner {
     pub fn build(name: &str, config: &ConfigSignerKmip, key_lookup: Arc<KeyMap>) -> Result<Self, SignerError> {
         let name = name.to_string();
 
-        let mut conn = make_conn(&config)?;
+        let conn = make_conn(&config)?;
 
         // TODO: Is it okay to fail to start Krill if the KMIP server is unreachable?
         // info!("KMIP: Discovering provider details using {}", &conn);
@@ -321,7 +315,7 @@ impl KmipSigner {
         let pub_key_name = format!("{}-public", key_name_prefix);
         let priv_key_name = format!("{}-private", key_name_prefix);
 
-        let mut conn = self.conn()?;
+        let conn = self.conn()?;
 
         conn.do_request(RequestPayload::ModifyAttribute(
             Some(UniqueIdentifier(pub_id.to_string())),
