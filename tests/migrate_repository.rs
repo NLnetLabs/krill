@@ -423,18 +423,6 @@ async fn migrate_repository() {
         }
     }
 
-    info("##################################################################");
-    info("#                                                                #");
-    info("#            -------====== SUCCESS ======-------                 #");
-    info("#                                                                #");
-    info("#                                                                #");
-    info("#  Test finished successfully.. please ignore any errors after   #");
-    info("#  this point - you might see errors from CAs which cannot       #");
-    info("#  synchronize from background threads as the server is shutting #");
-    info("#  down.                                                         #");
-    info("#                                                                #");
-    info("##################################################################");
-
     let _ = fs::remove_dir_all(krill_dir);
     let _ = fs::remove_dir_all(pubd_dir);
 }
