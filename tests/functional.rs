@@ -2,191 +2,14 @@
 //!
 use std::fs;
 use std::str::FromStr;
-use std::time::Duration;
-
-use tokio::time::sleep;
 
 use bytes::Bytes;
 
-use rpki::uri::Rsync;
-
-use krill::cli::report::ApiResponse;
-use krill::commons::api::{
-    Handle, ObjectName, ParentCaReq, ParentHandle, PublisherHandle, ResourceClassKeysInfo, ResourceClassName,
-    ResourceSet, RoaDefinition, RoaDefinitionUpdates, RtaList,
-};
-use krill::commons::remote::rfc8183;
-use krill::daemon::ca::ta_handle;
-use krill::test::*;
 use krill::{
-    cli::options::{BulkCaCommand, CaCommand, Command, PubServerCommand},
-    commons::api::RepositoryContact,
+    commons::api::{ObjectName, ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates, RtaList},
+    daemon::ca::ta_handle,
+    test::*,
 };
-
-async fn repo_update(ca: &Handle, contact: RepositoryContact) {
-    let command = Command::CertAuth(CaCommand::RepoUpdate(ca.clone(), contact));
-    krill_admin(command).await;
-}
-
-async fn embedded_repository_response(publisher: &PublisherHandle) -> rfc8183::RepositoryResponse {
-    let command = PubServerCommand::RepositoryResponse(publisher.clone());
-    match krill_embedded_pubd_admin(command).await {
-        ApiResponse::Rfc8183RepositoryResponse(response) => response,
-        _ => panic!("Expected repository response."),
-    }
-}
-
-async fn embedded_repo_add_publisher(req: rfc8183::PublisherRequest) {
-    let command = PubServerCommand::AddPublisher(req);
-    krill_embedded_pubd_admin(command).await;
-}
-
-async fn set_up_ca_with_repo(ca: &Handle) {
-    init_ca(ca).await;
-
-    // Add the CA as a publisher
-    let publisher_request = publisher_request(ca).await;
-    embedded_repo_add_publisher(publisher_request).await;
-
-    // Get a Repository Response for the CA
-    let response = embedded_repository_response(ca).await;
-
-    // Update the repo for the child
-    let contact = RepositoryContact::new(response);
-    repo_update(ca, contact).await;
-}
-
-async fn expected_mft_and_crl(ca: &Handle, rcn: &ResourceClassName) -> Vec<String> {
-    let rc_key = ca_key_for_rcn(ca, rcn).await;
-    let mft_file = rc_key.incoming_cert().mft_name().to_string();
-    let crl_file = rc_key.incoming_cert().crl_name().to_string();
-    vec![mft_file, crl_file]
-}
-
-async fn expected_new_key_mft_and_crl(ca: &Handle, rcn: &ResourceClassName) -> Vec<String> {
-    let rc_key = ca_new_key_for_rcn(ca, rcn).await;
-    let mft_file = rc_key.incoming_cert().mft_name().to_string();
-    let crl_file = rc_key.incoming_cert().crl_name().to_string();
-    vec![mft_file, crl_file]
-}
-
-async fn expected_issued_cer(ca: &Handle, rcn: &ResourceClassName) -> String {
-    let rc_key = ca_key_for_rcn(ca, rcn).await;
-    ObjectName::from(rc_key.incoming_cert().cert()).to_string()
-}
-
-async fn will_publish(test_msg: &str, publisher: &PublisherHandle, files: &[String]) -> bool {
-    let objects: Vec<_> = files.iter().map(|s| s.as_str()).collect();
-    for _ in 0..6000 {
-        let details = publisher_details(publisher).await;
-
-        let current_files = details.current_files();
-
-        if current_files.len() == objects.len() {
-            let current_files: Vec<&Rsync> = current_files.iter().map(|p| p.uri()).collect();
-            let mut all_matched = true;
-            for o in &objects {
-                if !current_files.iter().any(|uri| uri.ends_with(o)) {
-                    all_matched = false;
-                }
-            }
-            if all_matched {
-                return true;
-            }
-        }
-
-        sleep(Duration::from_millis(100)).await;
-    }
-
-    let details = publisher_details(publisher).await;
-
-    eprintln!(
-        "Did not find match for test: {}, for publisher: {}",
-        test_msg, publisher
-    );
-    eprintln!("Found:");
-    for file in details.current_files() {
-        eprintln!("  {}", file.uri());
-    }
-    eprintln!("Expected:");
-    for file in objects {
-        eprintln!("  {}", file);
-    }
-
-    false
-}
-
-async fn set_up_ca_under_parent_with_resources(ca: &Handle, parent: &ParentHandle, resources: &ResourceSet) {
-    let child_request = request(ca).await;
-    let parent = {
-        let contact = add_child_rfc6492(parent, ca, child_request, resources.clone()).await;
-        ParentCaReq::new(parent.clone(), contact)
-    };
-    add_parent_to_ca(ca, parent).await;
-    assert!(ca_contains_resources(ca, resources).await);
-}
-
-async fn ca_roll_init(handle: &Handle) {
-    krill_admin(Command::CertAuth(CaCommand::KeyRollInit(handle.clone()))).await;
-}
-
-async fn ca_roll_activate(handle: &Handle) {
-    krill_admin(Command::CertAuth(CaCommand::KeyRollActivate(handle.clone()))).await;
-}
-
-async fn state_becomes_new_key(handle: &Handle) -> bool {
-    for _ in 0..30_u8 {
-        let ca = ca_details(handle).await;
-
-        // wait for ALL RCs to become state new key
-        let rc_map = ca.resource_classes();
-
-        let expected = rc_map.len();
-        let mut found = 0;
-
-        for rc in rc_map.values() {
-            if let ResourceClassKeysInfo::RollNew(_) = rc.keys() {
-                found += 1;
-            }
-        }
-
-        if found == expected {
-            return true;
-        }
-
-        sleep(Duration::from_secs(1)).await
-    }
-    false
-}
-
-async fn state_becomes_active(handle: &Handle) -> bool {
-    for _ in 0..300 {
-        let ca = ca_details(handle).await;
-
-        // wait for ALL RCs to become state active key
-        let rc_map = ca.resource_classes();
-
-        let expected = rc_map.len();
-        let mut found = 0;
-
-        for rc in rc_map.values() {
-            if let ResourceClassKeysInfo::Active(_) = rc.keys() {
-                found += 1;
-            }
-        }
-
-        if found == expected {
-            return true;
-        }
-
-        sleep(Duration::from_millis(100)).await
-    }
-    false
-}
-
-async fn refresh_all() {
-    krill_admin(Command::Bulk(BulkCaCommand::Refresh)).await;
-}
 
 #[tokio::test]
 async fn functional() {
@@ -274,7 +97,7 @@ async fn functional() {
         let mut expected_files = expected_mft_and_crl(&ta, &rcn_0).await;
         expected_files.push(expected_issued_cer(&testbed, &rcn_0).await);
         assert!(
-            will_publish(
+            will_publish_embedded(
                 "TA should have manifest, crl and cert for testbed",
                 &ta,
                 &expected_files
@@ -316,7 +139,7 @@ async fn functional() {
         expected_files.push(expected_issued_cer(&ca1, &rcn_0).await);
         expected_files.push(expected_issued_cer(&ca2, &rcn_0).await);
         assert!(
-            will_publish(
+            will_publish_embedded(
                 "testbed CA should have mft, crl and certs for CA1 and CA2",
                 &testbed,
                 &expected_files
@@ -345,7 +168,7 @@ async fn functional() {
         info("");
         let mut expected_files = expected_mft_and_crl(&ca1, &rcn_0).await;
         expected_files.push(expected_issued_cer(&ca3, &rcn_0).await);
-        assert!(will_publish("CA1 should publish the certificate for CA3", &ca1, &expected_files).await);
+        assert!(will_publish_embedded("CA1 should publish the certificate for CA3", &ca1, &expected_files).await);
     }
 
     {
@@ -364,7 +187,7 @@ async fn functional() {
         expected_files.push(expected_issued_cer(&ca3, &rcn_0).await);
         expected_files.push(ObjectName::from(&ca1_route_definition).to_string());
         assert!(
-            will_publish(
+            will_publish_embedded(
                 "CA1 should publish the certificate for CA3 and a ROA",
                 &ca1,
                 &expected_files
@@ -393,7 +216,7 @@ async fn functional() {
         let mut expected_files = expected_mft_and_crl(&ca2, &rcn_0).await;
         // CA3 will have the certificate from CA2 under its resource class '1' rather than '0'
         expected_files.push(expected_issued_cer(&ca3, &rcn_1).await);
-        assert!(will_publish("CA2 should have mft, crl and a cert for CA3", &ca2, &expected_files).await);
+        assert!(will_publish_embedded("CA2 should have mft, crl and a cert for CA3", &ca2, &expected_files).await);
     }
 
     {
@@ -420,7 +243,7 @@ async fn functional() {
         expected_files.append(&mut expected_mft_and_crl(&ca3, &rcn_1).await);
         expected_files.push(expected_issued_cer(&ca4, &rcn_1).await);
         assert!(
-            will_publish(
+            will_publish_embedded(
                 "CA3 should have two resource classes and a cert for CA4 in each",
                 &ca3,
                 &expected_files
@@ -440,7 +263,7 @@ async fn functional() {
         let mut expected_files = expected_mft_and_crl(&ca4, &rcn_0).await;
         expected_files.append(&mut expected_mft_and_crl(&ca4, &rcn_1).await);
         assert!(
-            will_publish(
+            will_publish_embedded(
                 "CA4 should now have two resource classes, each with a mft and crl",
                 &ca4,
                 &expected_files
@@ -464,7 +287,7 @@ async fn functional() {
         expected_files.push(ObjectName::from(&ca1_route_definition).to_string());
         expected_files.append(&mut expected_new_key_mft_and_crl(&ca1, &rcn_0).await);
         assert!(
-            will_publish(
+            will_publish_embedded(
                 "CA1 should publish MFT and CRL for both keys and the certificate for CA3 and a ROA",
                 &ca1,
                 &expected_files
@@ -479,7 +302,7 @@ async fn functional() {
         expected_files.push(expected_issued_cer(&ca3, &rcn_0).await);
         expected_files.push(ObjectName::from(&ca1_route_definition).to_string());
         assert!(
-            will_publish(
+            will_publish_embedded(
                 "CA1 should now publish MFT and CRL for the activated key only, and the certificate for CA3 and a ROA",
                 &ca1,
                 &expected_files
@@ -508,7 +331,7 @@ async fn functional() {
         for roa in roas {
             expected_files.push(ObjectName::from(roa).to_string());
         }
-        assert!(will_publish(test_msg, &ca4, &expected_files).await);
+        assert!(will_publish_embedded(test_msg, &ca4, &expected_files).await);
     }
 
     // short hand to expect ROAs under CA4, re-added when parent comes back
@@ -523,7 +346,7 @@ async fn functional() {
         for roa in roas {
             expected_files.push(ObjectName::from(roa).to_string());
         }
-        assert!(will_publish(test_msg, &ca4, &expected_files).await);
+        assert!(will_publish_embedded(test_msg, &ca4, &expected_files).await);
     }
 
     {
@@ -573,7 +396,7 @@ async fn functional() {
         // and the roa for rc1
         expected_files.push(ObjectName::from(&route_resource_set_10_1_0_0_def_1).to_string());
 
-        assert!(will_publish("CA4 should now aggregate ROAs", &ca4, &expected_files).await);
+        assert!(will_publish_embedded("CA4 should now aggregate ROAs", &ca4, &expected_files).await);
     }
 
     {
@@ -717,7 +540,7 @@ async fn functional() {
 
         // Expect that CA4 withdraws all
         {
-            assert!(will_publish("CA4 should withdraw objects when parent is removed", &ca4, &[]).await);
+            assert!(will_publish_embedded("CA4 should withdraw objects when parent is removed", &ca4, &[]).await);
         }
     }
 
@@ -751,7 +574,7 @@ async fn functional() {
         let mut expected_files = expected_mft_and_crl(&ca3, &rcn_0).await;
         expected_files.append(&mut expected_mft_and_crl(&ca3, &rcn_1).await);
         assert!(
-            will_publish(
+            will_publish_embedded(
                 "CA3 should have two resource classes and no cert for CA4 in either",
                 &ca3,
                 &expected_files
@@ -774,7 +597,7 @@ async fn functional() {
         expected_files.push(expected_issued_cer(&ca4, &rcn_2).await);
         expected_files.push(expected_issued_cer(&ca4, &rcn_3).await);
         assert!(
-            will_publish(
+            will_publish_embedded(
                 "CA3 should have two resource classes and a cert for CA4 in each",
                 &ca3,
                 &expected_files
@@ -795,7 +618,7 @@ async fn functional() {
         // Expect that CA3 no longer publishes anything
         {
             assert!(
-                will_publish(
+                will_publish_embedded(
                     "CA3 should no longer publish anything after it has been deleted",
                     &ca3,
                     &[]
@@ -810,7 +633,7 @@ async fn functional() {
             let mut expected_files = expected_mft_and_crl(&ca1, &rcn_0).await;
             expected_files.push(ObjectName::from(&ca1_route_definition).to_string());
             assert!(
-                will_publish(
+                will_publish_embedded(
                     "CA1 should no longer publish the cer for CA3 after CA3 has been deleted",
                     &ca1,
                     &expected_files
