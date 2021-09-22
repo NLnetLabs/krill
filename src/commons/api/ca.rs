@@ -1847,8 +1847,16 @@ impl Timestamp {
         Timestamp::now().minus_hours(hours)
     }
 
+    pub fn now_minus_seconds(seconds: i64) -> Self {
+        Timestamp::now().minus_seconds(seconds)
+    }
+
     pub fn minus_hours(self, hours: i64) -> Self {
         self - Duration::hours(hours)
+    }
+
+    pub fn minus_seconds(self, seconds: i64) -> Self {
+        self - Duration::seconds(seconds)
     }
 
     pub fn now_plus_minutes(minutes: i64) -> Self {

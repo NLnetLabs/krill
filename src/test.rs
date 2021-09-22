@@ -52,7 +52,7 @@ pub const KRILL_PUBD_SERVER_URI: &str = "https://localhost:3001/";
 pub fn init_logging() {
     // Just creates a test config so we can initialize logging, then forgets about it
     let d = PathBuf::from(".");
-    let _ = Config::test(&d, false, false).init_logging();
+    let _ = Config::test(&d, false, false, false).init_logging();
 }
 
 pub fn info(msg: impl std::fmt::Display) {
@@ -91,12 +91,12 @@ pub async fn server_ready(uri: &str) -> bool {
     false
 }
 
-pub fn test_config(dir: &Path, enable_testbed: bool, enable_ca_refresh: bool) -> Config {
+pub fn test_config(dir: &Path, enable_testbed: bool, enable_ca_refresh: bool, enable_suspend: bool) -> Config {
     if enable_testbed {
         crate::constants::enable_test_mode();
         crate::constants::enable_test_announcements();
     }
-    Config::test(dir, enable_testbed, enable_ca_refresh)
+    Config::test(dir, enable_testbed, enable_ca_refresh, enable_suspend)
 }
 
 pub fn init_config(config: &Config) {
@@ -117,9 +117,13 @@ pub async fn start_krill_with_custom_config(mut config: Config) -> PathBuf {
 
 /// Starts krill server for testing using the default test configuration, and optionally with testbed mode enabled.
 /// Creates a random base directory in the 'work' folder, and returns it. Be sure to clean it up when the test is done.
-pub async fn start_krill_with_default_test_config(enable_testbed: bool, enable_ca_refresh: bool) -> PathBuf {
+pub async fn start_krill_with_default_test_config(
+    enable_testbed: bool,
+    enable_ca_refresh: bool,
+    enable_suspend: bool,
+) -> PathBuf {
     let dir = tmp_dir();
-    let config = test_config(&dir, enable_testbed, enable_ca_refresh);
+    let config = test_config(&dir, enable_testbed, enable_ca_refresh, enable_suspend);
     start_krill(config).await;
     dir
 }
@@ -140,7 +144,7 @@ async fn start_krill_with_error_trap(config: Arc<Config>) {
 /// own temp dir for storage.
 pub async fn start_krill_pubd() -> PathBuf {
     let dir = tmp_dir();
-    let mut config = test_config(&dir, false, false);
+    let mut config = test_config(&dir, false, false, false);
     init_config(&config);
     config.port = 3001;
 
@@ -577,6 +581,14 @@ pub fn rsync(s: &str) -> uri::Rsync {
 
 pub fn https(s: &str) -> uri::Https {
     uri::Https::from_str(s).unwrap()
+}
+
+pub fn handle(s: &str) -> Handle {
+    Handle::from_str(s).unwrap()
+}
+
+pub fn resources(v4: &str) -> ResourceSet {
+    ResourceSet::from_strs("", v4, "").unwrap()
 }
 
 pub fn as_bytes(s: &str) -> Bytes {

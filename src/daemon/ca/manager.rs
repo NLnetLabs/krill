@@ -817,8 +817,8 @@ impl CaManager {
             // are suspended if the server had been down for more than the threshold hours.
             let threshold_hours = self
                 .config
-                .suspend_child_after_inactive_hours
-                .filter(|hours| started < Timestamp::now_minus_hours(*hours));
+                .suspend_child_after_inactive_seconds()
+                .filter(|secs| started < Timestamp::now_minus_seconds(*secs));
 
             for ca_handle in cas {
                 if let Ok(ca) = self.get_ca(&ca_handle).await {

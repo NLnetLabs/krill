@@ -23,14 +23,6 @@ use krill::{
     commons::api::RepositoryContact,
 };
 
-fn handle_for(s: &str) -> Handle {
-    Handle::from_str(s).unwrap()
-}
-
-fn resources(v4: &str) -> ResourceSet {
-    ResourceSet::from_strs("", v4, "").unwrap()
-}
-
 async fn repo_update(ca: &Handle, contact: RepositoryContact) {
     let command = Command::CertAuth(CaCommand::RepoUpdate(ca.clone(), contact));
     krill_admin(command).await;
@@ -239,26 +231,26 @@ async fn functional() {
     info("#                                                                #");
     info("##################################################################");
     info("");
-    let krill_dir = start_krill_with_default_test_config(true, false).await;
+    let krill_dir = start_krill_with_default_test_config(true, false, false).await;
 
     let ta = ta_handle();
-    let testbed = handle_for("testbed");
+    let testbed = handle("testbed");
 
-    let ca1 = handle_for("CA1");
+    let ca1 = handle("CA1");
     let ca1_res = resources("10.0.0.0/16");
     let ca1_res_reduced = resources("10.0.0.0/24");
     let ca1_route_definition = RoaDefinition::from_str("10.0.0.0/16-16 => 65000").unwrap();
 
-    let ca2 = handle_for("CA2");
+    let ca2 = handle("CA2");
     let ca2_res = resources("10.1.0.0/16");
 
-    let ca3 = handle_for("CA3");
+    let ca3 = handle("CA3");
     let ca3_res_under_ca_1 = resources("10.0.0.0/16");
     let ca3_res_under_ca_2 = resources("10.1.0.0/24");
     let ca3_res_combined = resources("10.0.0.0/16, 10.1.0.0/24");
     let ca3_res_reduced = resources("10.0.0.0/24,10.1.0.0/24");
 
-    let ca4 = handle_for("CA4");
+    let ca4 = handle("CA4");
     let ca4_res_under_ca_3 = resources("10.0.0.0-10.1.0.255");
     let ca4_res_reduced = resources("10.0.0.0/24,10.1.0.0/24");
 
@@ -507,7 +499,7 @@ async fn functional() {
 
     // short hand to expect ROAs under CA4
     async fn expect_roas_for_ca4(test_msg: &str, roas: &[RoaDefinition]) {
-        let ca4 = handle_for("CA4");
+        let ca4 = handle("CA4");
         let rcn_0 = ResourceClassName::from(0);
         let rcn_1 = ResourceClassName::from(1);
 
@@ -522,7 +514,7 @@ async fn functional() {
     // short hand to expect ROAs under CA4, re-added when parent comes back
     // i.e. it now has RC 2 and 3, but no more 0 and 1
     async fn expect_roas_for_ca4_re_added(test_msg: &str, roas: &[RoaDefinition]) {
-        let ca4 = handle_for("CA4");
+        let ca4 = handle("CA4");
         let rcn_2 = ResourceClassName::from(2);
         let rcn_3 = ResourceClassName::from(3);
 

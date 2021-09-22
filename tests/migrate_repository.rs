@@ -233,7 +233,7 @@ async fn migrate_repository() {
     info("#                                                                #");
     info("##################################################################");
     info("");
-    let krill_dir = start_krill_with_default_test_config(true, false).await;
+    let krill_dir = start_krill_with_default_test_config(true, false, false).await;
 
     info("##################################################################");
     info("#                                                                #");
