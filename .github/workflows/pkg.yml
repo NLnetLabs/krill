@@ -321,13 +321,15 @@ jobs:
         mode:
           - 'fresh-install'
           - 'upgrade-from-published'
-        exclude:
-          - image: 'debian:bullseye'
-            mode: 'upgrade-from-published'
-          - image: 'centos:7'
-            mode: 'upgrade-from-published'
-          - image: 'centos:8'
-            mode: 'upgrade-from-published'
+        # if we later add a new O/S or variant we won't have yet ever published
+        # the package so can't do a test upgrade over last published version. In
+        # that case add lines here like so to disable the upgrade from published
+        # test for that O/S (remember to change debian:bullseye to the correct
+        # O/S name!):
+        #
+        # exclude:
+        #   - image: 'debian:bullseye'
+        #     mode: 'upgrade-from-published'
     steps:
     # Set some environment variables that will be available to "run" steps below in this job, and some output variables
     # that will be available in GH Action step definitions below.
@@ -428,12 +430,13 @@ jobs:
             sg lxd -c "lxc exec testcon -- apt install -y krill"
             ;;
           centos)
-            rpm --import https://packages.nlnetlabs.nl/aptkey.asc
-            cat "[nlnetlabs]" >/etc/yum.repos.d/nlnetlabs.repo
-            cat "name=NLnet Labs" >>/etc/yum.repos.d/nlnetlabs.repo
-            cat "baseurl=https://packages.nlnetlabs.nl/linux/centos/$releasever/main/$basearch" >>/etc/yum.repos.d/nlnetlabs.repo
-            cat "enabled=1" >>/etc/yum.repos.d/nlnetlabs.repo
-            yum install -y krill
+            echo '[nlnetlabs]' >$HOME/nlnetlabs.repo
+            echo 'name=NLnet Labs' >>$HOME/nlnetlabs.repo
+            echo 'baseurl=https://packages.nlnetlabs.nl/linux/centos/$releasever/main/$basearch' >>$HOME/nlnetlabs.repo
+            echo 'enabled=1' >>$HOME/nlnetlabs.repo
+            sg lxd -c "lxc file push $HOME/nlnetlabs.repo testcon/etc/yum.repos.d/"
+            sg lxd -c "lxc exec testcon -- rpm --import https://packages.nlnetlabs.nl/aptkey.asc"
+            sg lxd -c "lxc exec testcon -- yum install -y krill"
             ;;
         esac
 
