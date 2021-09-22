@@ -77,10 +77,10 @@ async fn functional() {
     let ca4_res_under_ca_3 = resources("10.0.0.0-10.1.0.255");
     let ca4_res_reduced = resources("10.0.0.0/24,10.1.0.0/24");
 
-    let rcn_0 = ResourceClassName::from(0);
-    let rcn_1 = ResourceClassName::from(1);
-    let rcn_2 = ResourceClassName::from(2);
-    let rcn_3 = ResourceClassName::from(3);
+    let rcn_0 = rcn(0);
+    let rcn_1 = rcn(1);
+    let rcn_2 = rcn(2);
+    let rcn_3 = rcn(3);
 
     info("##################################################################");
     info("#                                                                #");
@@ -590,7 +590,7 @@ async fn functional() {
     info("##################################################################");
     info("");
     {
-        refresh_all().await;
+        cas_all_sync_parents().await;
 
         let mut expected_files = expected_mft_and_crl(&ca3, &rcn_0).await;
         expected_files.append(&mut expected_mft_and_crl(&ca3, &rcn_1).await);

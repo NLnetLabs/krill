@@ -1645,10 +1645,10 @@ impl ChildrenConnectionStats {
         ChildrenConnectionStats { children }
     }
 
-    pub fn suspension_candidates(&self, threshold_hours: i64) -> Vec<ChildHandle> {
+    pub fn suspension_candidates(&self, threshold_seconds: i64) -> Vec<ChildHandle> {
         self.children
             .iter()
-            .filter(|child| child.is_suspension_candidate(threshold_hours))
+            .filter(|child| child.is_suspension_candidate(threshold_seconds))
             .map(|child| child.handle.clone())
             .collect()
     }
@@ -1703,13 +1703,13 @@ impl ChildConnectionStats {
     ///  - it is Krill 0.9.2-rc and up (see #670)
     ///  - the last exchange is longer ago than the specified threshold hours
     ///  - and the child is not already suspended
-    pub fn is_suspension_candidate(&self, threshold_hours: i64) -> bool {
+    pub fn is_suspension_candidate(&self, threshold_seconds: i64) -> bool {
         if self.state == ChildState::Suspended {
             false
         } else {
             self.last_exchange
                 .as_ref()
-                .map(|exchange| exchange.is_krill_above_0_9_1() && exchange.more_than_hours_ago(threshold_hours))
+                .map(|exchange| exchange.is_krill_above_0_9_1() && exchange.more_than_seconds_ago(threshold_seconds))
                 .unwrap_or(false)
         }
     }
@@ -1808,13 +1808,13 @@ impl ChildExchange {
         self.user_agent.as_ref()
     }
 
-    pub fn more_than_hours_ago(&self, hours: i64) -> bool {
-        self.timestamp < Timestamp::now_minus_hours(hours)
+    pub fn more_than_seconds_ago(&self, seconds: i64) -> bool {
+        self.timestamp < Timestamp::now_minus_seconds(seconds)
     }
 
     pub fn is_krill_above_0_9_1(&self) -> bool {
         if let Some(agent) = &self.user_agent {
-            if let Some(version) = agent.strip_prefix("krill-") {
+            if let Some(version) = agent.strip_prefix("krill/") {
                 if let Ok(krill_version) = KrillVersion::from_str(version) {
                     return krill_version > KrillVersion::release(0, 9, 1);
                 }
@@ -1931,6 +1931,7 @@ pub struct CertAuthInfo {
     resources: ResourceSet,
     resource_classes: HashMap<ResourceClassName, ResourceClassInfo>,
     children: Vec<ChildHandle>,
+    suspended_children: Vec<ChildHandle>,
 }
 
 impl CertAuthInfo {
@@ -1941,6 +1942,7 @@ impl CertAuthInfo {
         parents: HashMap<ParentHandle, ParentCaContact>,
         resource_classes: HashMap<ResourceClassName, ResourceClassInfo>,
         children: Vec<ChildHandle>,
+        suspended_children: Vec<ChildHandle>,
     ) -> Self {
         let parents = parents
             .into_iter()
@@ -1961,6 +1963,7 @@ impl CertAuthInfo {
             resources,
             resource_classes,
             children,
+            suspended_children,
         }
     }
 
@@ -1990,6 +1993,10 @@ impl CertAuthInfo {
 
     pub fn children(&self) -> &Vec<ChildHandle> {
         &self.children
+    }
+
+    pub fn suspended_children(&self) -> &Vec<ChildHandle> {
+        &self.suspended_children
     }
 }
 

@@ -811,54 +811,70 @@ impl CaManager {
         if let Ok(cas) = self.ca_store.list() {
             let mut updates = vec![];
 
-            // Set threshold hours if it was configured AND this server has been started
-            // longer ago than the hours specified. Otherwise we risk that *all* children
-            // without prior recorded status are suspended on upgrade, or that *all* children
-            // are suspended if the server had been down for more than the threshold hours.
-            let threshold_hours = self
-                .config
-                .suspend_child_after_inactive_seconds()
-                .filter(|secs| started < Timestamp::now_minus_seconds(*secs));
-
             for ca_handle in cas {
-                if let Ok(ca) = self.get_ca(&ca_handle).await {
-                    for parent in ca.parents() {
-                        updates.push(self.ca_sync_parent_infallible(ca_handle.clone(), parent.clone(), actor.clone()));
-                    }
-
-                    if let Some(threshold_hours) = threshold_hours {
-                        if let Ok(ca_status) = self.get_ca_status(&ca_handle).await {
-                            let connections = ca_status.get_children_connection_stats();
-                            for child in connections.suspension_candidates(threshold_hours) {
-                                info!(
-                                    "Child '{}' under CA '{}' was inactive for more than {} hours. Will suspend it.",
-                                    child, ca_handle, threshold_hours
-                                );
-                                if let Err(e) = self
-                                    .status_store
-                                    .lock()
-                                    .await
-                                    .set_child_suspended(&ca_handle, &child)
-                                    .await
-                                {
-                                    error!(
-                                        "Could not update status to 'suspended' for inactive child, error: {}",
-                                        e
-                                    );
-                                }
-
-                                let req = UpdateChildRequest::suspend();
-                                if let Err(e) = self.ca_child_update(&ca_handle, child, req, actor).await {
-                                    error!("Could not suspend inactive child, error: {}", e);
-                                }
-                            }
-                        }
-                    }
-                }
+                updates.push(self.cas_refresh_single(ca_handle, started, actor));
             }
 
             join_all(updates).await;
         }
+    }
+
+    /// Refresh a single CA with its parents, and possibly suspend inactive children.
+    pub async fn cas_refresh_single(&self, ca_handle: Handle, started: Timestamp, actor: &Actor) {
+        let mut updates = vec![];
+
+        // Set threshold hours if it was configured AND this server has been started
+        // longer ago than the hours specified. Otherwise we risk that *all* children
+        // without prior recorded status are suspended on upgrade, or that *all* children
+        // are suspended if the server had been down for more than the threshold hours.
+        let threshold_seconds = self
+            .config
+            .suspend_child_after_inactive_seconds()
+            .filter(|secs| started < Timestamp::now_minus_seconds(*secs));
+
+        if let Ok(ca) = self.get_ca(&ca_handle).await {
+            for parent in ca.parents() {
+                updates.push(self.ca_sync_parent_infallible(ca_handle.clone(), parent.clone(), actor.clone()));
+            }
+
+            if let Some(threshold_seconds) = threshold_seconds {
+                if let Ok(ca_status) = self.get_ca_status(&ca_handle).await {
+                    let connections = ca_status.get_children_connection_stats();
+
+                    for child in connections.suspension_candidates(threshold_seconds) {
+                        let threshold_string = if threshold_seconds >= 3600 {
+                            format!("{} hours", threshold_seconds / 3600)
+                        } else {
+                            format!("{} seconds", threshold_seconds)
+                        };
+
+                        info!(
+                            "Child '{}' under CA '{}' was inactive for more than {}. Will suspend it.",
+                            child, ca_handle, threshold_string
+                        );
+                        if let Err(e) = self
+                            .status_store
+                            .lock()
+                            .await
+                            .set_child_suspended(&ca_handle, &child)
+                            .await
+                        {
+                            error!(
+                                "Could not update status to 'suspended' for inactive child, error: {}",
+                                e
+                            );
+                        }
+
+                        let req = UpdateChildRequest::suspend();
+                        if let Err(e) = self.ca_child_update(&ca_handle, child, req, actor).await {
+                            error!("Could not suspend inactive child, error: {}", e);
+                        }
+                    }
+                }
+            }
+        }
+
+        join_all(updates).await;
     }
 
     /// Synchronizes a CA with a parent, logging failures.
@@ -1410,7 +1426,7 @@ impl CaManager {
             Ok(ca_list) => {
                 for ca in ca_list.cas() {
                     let ca_handle = ca.handle();
-                    if let Err(e) = self.ca_repo_sync_all(ca_handle).await {
+                    if let Err(e) = self.cas_repo_sync_single(ca_handle).await {
                         error!(
                             "Could not synchronize CA '{}' with its repository/-ies. Error: {}",
                             ca_handle, e
@@ -1435,7 +1451,7 @@ impl CaManager {
     /// fail. When there have been 5 failed attempts, then the old repository
     /// is assumed to be unreachable and it will be dropped - i.e. the CA will
     /// no longer try to clean up objects.
-    pub async fn ca_repo_sync_all(&self, ca_handle: &Handle) -> KrillResult<()> {
+    pub async fn cas_repo_sync_single(&self, ca_handle: &Handle) -> KrillResult<()> {
         // Note that this is a no-op for new CAs which do not yet have any repository configured.
         for (repo_contact, ca_elements) in self.ca_repo_elements(ca_handle).await? {
             self.ca_repo_sync(ca_handle, &repo_contact, ca_elements).await?;

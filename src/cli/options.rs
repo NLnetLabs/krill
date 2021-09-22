@@ -2102,6 +2102,7 @@ pub enum CaCommand {
     MyParentCaContact(Handle, ParentHandle),
     ParentStatuses(Handle),
     RemoveParent(Handle, ParentHandle),
+    SyncAllParents(Handle), // Refresh with all parents
 
     // Children
     ParentResponse(Handle, ChildHandle), // Get an RFC8183 parent response for a child

@@ -184,7 +184,7 @@ fn requeue_time_test() -> Time {
 async fn try_sync_repo(event_queue: &Arc<MessageQueue>, ca_manager: Arc<CaManager>, ca: Handle) {
     debug!("Synchronize CA {} with repository", ca);
 
-    if let Err(e) = ca_manager.ca_repo_sync_all(&ca).await {
+    if let Err(e) = ca_manager.cas_repo_sync_single(&ca).await {
         let requeue_time = if test_mode_enabled() {
             requeue_time_test()
         } else {

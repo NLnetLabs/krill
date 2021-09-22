@@ -506,7 +506,7 @@ impl KrillServer {
     }
 }
 
-/// # Bulk background operations CAS
+/// # Synchronization operations for CAS
 ///
 impl KrillServer {
     /// Republish all CAs that need it.
@@ -516,14 +516,26 @@ impl KrillServer {
     }
 
     /// Re-sync all CAs with their repositories
-    pub async fn resync_all(&self, actor: &Actor) -> KrillEmptyResult {
+    pub async fn cas_repo_sync_all(&self, actor: &Actor) -> KrillEmptyResult {
         self.ca_manager.cas_repo_sync_all(actor).await;
+        Ok(())
+    }
+
+    /// Re-sync a specific CA with its repository
+    pub async fn cas_repo_sync_single(&self, ca: &Handle) -> KrillEmptyResult {
+        self.ca_manager.cas_repo_sync_single(ca).await?;
         Ok(())
     }
 
     /// Refresh all CAs: ask for updates and shrink as needed.
     pub async fn cas_refresh_all(&self, actor: &Actor) -> KrillEmptyResult {
         self.ca_manager.cas_refresh_all(self.started, actor).await;
+        Ok(())
+    }
+
+    /// Refresh a specific CA with its parents
+    pub async fn cas_refresh_single(&self, ca_handle: Handle, actor: &Actor) -> KrillEmptyResult {
+        self.ca_manager.cas_refresh_single(ca_handle, self.started, actor).await;
         Ok(())
     }
 }

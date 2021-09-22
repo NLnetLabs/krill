@@ -59,6 +59,14 @@ pub fn info(msg: impl std::fmt::Display) {
     info!("{}", msg); // we can change this to using the logger crate later
 }
 
+pub async fn sleep_seconds(secs: u64) {
+    sleep(Duration::from_secs(secs)).await
+}
+
+pub async fn sleep_millis(millis: u64) {
+    sleep(Duration::from_millis(millis)).await
+}
+
 pub async fn krill_server_ready() -> bool {
     server_ready(KRILL_SERVER_URI).await
 }
@@ -85,7 +93,7 @@ pub async fn server_ready(uri: &str) -> bool {
             }
             Err(_) => return false,
         }
-        sleep(Duration::from_millis(100)).await;
+        sleep_millis(100).await;
     }
 
     false
@@ -196,8 +204,30 @@ pub async fn krill_admin_expect_error(command: Command) -> Error {
     }
 }
 
-pub async fn refresh_all() {
+pub async fn cas_all_sync_parents() {
     krill_admin(Command::Bulk(BulkCaCommand::Refresh)).await;
+}
+
+pub async fn cas_single_sync_parents(ca: &Handle) {
+    krill_admin(Command::CertAuth(CaCommand::SyncAllParents(ca.clone()))).await;
+}
+
+pub async fn ca_suspend_child(ca: &Handle, child: &ChildHandle) {
+    krill_admin(Command::CertAuth(CaCommand::ChildUpdate(
+        ca.clone(),
+        child.clone(),
+        UpdateChildRequest::suspend(),
+    )))
+    .await;
+}
+
+pub async fn ca_unsuspend_child(ca: &Handle, child: &ChildHandle) {
+    krill_admin(Command::CertAuth(CaCommand::ChildUpdate(
+        ca.clone(),
+        child.clone(),
+        UpdateChildRequest::unsuspend(),
+    )))
+    .await;
 }
 
 pub async fn init_ca(handle: &Handle) {
@@ -333,7 +363,7 @@ async fn send_child_request(ca: &Handle, child: &Handle, req: UpdateChildRequest
         ApiResponse::Empty => {}
         _ => error!("Expected empty ok response"),
     }
-    refresh_all().await;
+    cas_all_sync_parents().await;
 }
 
 pub async fn add_parent_to_ca(ca: &Handle, parent: ParentCaReq) {
@@ -467,8 +497,8 @@ pub async fn ca_contains_resources(handle: &Handle, resources: &ResourceSet) -> 
         if ca_current_resources(handle).await.contains(resources) {
             return true;
         }
-        refresh_all().await;
-        sleep(Duration::from_secs(1)).await
+        cas_all_sync_parents().await;
+        sleep_seconds(1).await
     }
     false
 }
@@ -478,8 +508,8 @@ pub async fn ca_equals_resources(handle: &Handle, resources: &ResourceSet) -> bo
         if &ca_current_resources(handle).await == resources {
             return true;
         }
-        refresh_all().await;
-        sleep(Duration::from_secs(1)).await
+        cas_all_sync_parents().await;
+        sleep_seconds(1).await
     }
     false
 }
@@ -490,8 +520,8 @@ pub async fn rc_is_removed(handle: &Handle) -> bool {
         if ca.resource_classes().get(&ResourceClassName::default()).is_none() {
             return true;
         }
-        refresh_all().await;
-        sleep(Duration::from_millis(100)).await
+        cas_all_sync_parents().await;
+        sleep_seconds(100).await
     }
     false
 }
@@ -589,6 +619,10 @@ pub fn handle(s: &str) -> Handle {
 
 pub fn resources(v4: &str) -> ResourceSet {
     ResourceSet::from_strs("", v4, "").unwrap()
+}
+
+pub fn rcn(nr: u32) -> ResourceClassName {
+    ResourceClassName::from(nr)
 }
 
 pub fn as_bytes(s: &str) -> Bytes {
@@ -720,7 +754,7 @@ async fn will_publish(test_msg: &str, publisher: &PublisherHandle, files: &[Stri
             }
         }
 
-        sleep(Duration::from_millis(100)).await;
+        sleep_millis(100).await;
     }
 
     let details = publisher_details(publisher).await;
@@ -779,7 +813,7 @@ pub async fn state_becomes_new_key(handle: &Handle) -> bool {
             return true;
         }
 
-        sleep(Duration::from_secs(1)).await
+        sleep_seconds(1).await
     }
     false
 }
@@ -804,7 +838,7 @@ pub async fn state_becomes_active(handle: &Handle) -> bool {
             return true;
         }
 
-        sleep(Duration::from_millis(100)).await
+        sleep_millis(100).await
     }
     false
 }
