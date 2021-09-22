@@ -2790,7 +2790,7 @@ mod test {
     fn recognize_suspension_candidate() {
         let handle = Handle::from_str("ca").unwrap();
 
-        let threshold_hours = 4;
+        let threshold_seconds = 4 * 3600;
 
         fn new_exchange(agent: &str) -> ChildExchange {
             let user_agent = if agent.is_empty() {
@@ -2839,26 +2839,26 @@ mod test {
         let new_ca = ca_stats_active_no_exchange(&handle);
 
         let recent_krill_pre_0_9_2 = ca_stats_active(&handle, new_exchange("krill"));
-        let recent_krill_post_0_9_1 = ca_stats_active(&handle, new_exchange("krill-0.9.2-rc2"));
+        let recent_krill_post_0_9_1 = ca_stats_active(&handle, new_exchange("krill/0.9.2-rc2"));
         let recent_other_agent = ca_stats_active(&handle, new_exchange("other"));
         let recent_no_agent = ca_stats_active(&handle, new_exchange(""));
 
         let old_krill_pre_0_9_2 = ca_stats_active(&handle, old_exchange("krill"));
-        let old_krill_post_0_9_1 = ca_stats_active(&handle, old_exchange("krill-0.9.2-rc2"));
+        let old_krill_post_0_9_1 = ca_stats_active(&handle, old_exchange("krill/0.9.2-rc2"));
         let old_other_agent = ca_stats_active(&handle, old_exchange("other"));
         let old_no_agent = ca_stats_active(&handle, old_exchange(""));
 
-        assert!(!new_ca.is_suspension_candidate(threshold_hours));
+        assert!(!new_ca.is_suspension_candidate(threshold_seconds));
 
-        assert!(!recent_krill_pre_0_9_2.is_suspension_candidate(threshold_hours));
-        assert!(!recent_krill_post_0_9_1.is_suspension_candidate(threshold_hours));
-        assert!(!recent_other_agent.is_suspension_candidate(threshold_hours));
-        assert!(!recent_no_agent.is_suspension_candidate(threshold_hours));
+        assert!(!recent_krill_pre_0_9_2.is_suspension_candidate(threshold_seconds));
+        assert!(!recent_krill_post_0_9_1.is_suspension_candidate(threshold_seconds));
+        assert!(!recent_other_agent.is_suspension_candidate(threshold_seconds));
+        assert!(!recent_no_agent.is_suspension_candidate(threshold_seconds));
 
-        assert!(!old_krill_pre_0_9_2.is_suspension_candidate(threshold_hours));
-        assert!(!old_other_agent.is_suspension_candidate(threshold_hours));
-        assert!(!old_no_agent.is_suspension_candidate(threshold_hours));
+        assert!(!old_krill_pre_0_9_2.is_suspension_candidate(threshold_seconds));
+        assert!(!old_other_agent.is_suspension_candidate(threshold_seconds));
+        assert!(!old_no_agent.is_suspension_candidate(threshold_seconds));
 
-        assert!(old_krill_post_0_9_1.is_suspension_candidate(threshold_hours));
+        assert!(old_krill_post_0_9_1.is_suspension_candidate(threshold_seconds));
     }
 }
