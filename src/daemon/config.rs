@@ -249,7 +249,9 @@ pub struct Config {
     #[serde(default = "ConfigDefaults::ca_refresh_seconds", alias = "ca_refresh")]
     pub ca_refresh_seconds: u32,
 
-    pub suspend_child_after_inactive_hours: Option<i64>,
+    #[serde(skip)]
+    suspend_child_after_inactive_seconds: Option<i64>,
+    suspend_child_after_inactive_hours: Option<i64>,
 
     #[serde(default = "ConfigDefaults::post_limit_api")]
     pub post_limit_api: u64,
@@ -479,6 +481,13 @@ impl Config {
         }
     }
 
+    pub fn suspend_child_after_inactive_seconds(&self) -> Option<i64> {
+        match self.suspend_child_after_inactive_seconds {
+            Some(seconds) => Some(seconds),
+            None => self.suspend_child_after_inactive_hours.map(|hours| hours * 3600),
+        }
+    }
+
     pub fn testbed(&self) -> Option<&TestBed> {
         self.testbed.as_ref()
     }
@@ -486,7 +495,7 @@ impl Config {
 
 /// # Create
 impl Config {
-    fn test_config(data_dir: &Path, enable_testbed: bool, enable_ca_refresh: bool) -> Self {
+    fn test_config(data_dir: &Path, enable_testbed: bool, enable_ca_refresh: bool, enable_suspend: bool) -> Self {
         use crate::test;
 
         let ip = ConfigDefaults::ip();
@@ -578,6 +587,8 @@ impl Config {
             None
         };
 
+        let suspend_child_after_inactive_seconds = if enable_suspend { Some(3) } else { None };
+
         Config {
             ip,
             port,
@@ -601,6 +612,7 @@ impl Config {
             #[cfg(feature = "multi-user")]
             auth_openidconnect,
             ca_refresh_seconds,
+            suspend_child_after_inactive_seconds,
             suspend_child_after_inactive_hours: None,
             post_limit_api,
             post_limit_rfc8181,
@@ -619,12 +631,12 @@ impl Config {
         }
     }
 
-    pub fn test(data_dir: &Path, enable_testbed: bool, enable_ca_refresh: bool) -> Self {
-        Self::test_config(data_dir, enable_testbed, enable_ca_refresh)
+    pub fn test(data_dir: &Path, enable_testbed: bool, enable_ca_refresh: bool, enable_suspend: bool) -> Self {
+        Self::test_config(data_dir, enable_testbed, enable_ca_refresh, enable_suspend)
     }
 
     pub fn pubd_test(data_dir: &Path) -> Self {
-        let mut config = Self::test_config(data_dir, false, false);
+        let mut config = Self::test_config(data_dir, false, false, false);
         config.port = 3001;
         config
     }
@@ -761,10 +773,11 @@ impl Config {
         }
 
         if let Some(threshold) = self.suspend_child_after_inactive_hours {
-            if threshold < 1 {
-                return Err(ConfigError::other(
-                    "suspend_child_after_inactive_hours must be 1 or higher (or not set at all)",
-                ));
+            if threshold < CA_SUSPEND_MIN_HOURS {
+                return Err(ConfigError::Other(format!(
+                    "suspend_child_after_inactive_hours must be {} or higher (or not set at all)",
+                    CA_SUSPEND_MIN_HOURS
+                )));
             }
         }
 
