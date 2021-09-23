@@ -32,24 +32,24 @@ async fn test_suspension() {
     async fn expect_not_suspended(ca: &Handle, child: &ChildHandle) {
         let rcn_0 = rcn(0);
 
-        let mut expected_files = expected_mft_and_crl(&ca, &rcn_0).await;
-        expected_files.push(expected_issued_cer(&child, &rcn_0).await);
-        assert!(will_publish_embedded("CA should have mft, crl and cert for child", &ca, &expected_files).await);
+        let mut expected_files = expected_mft_and_crl(ca, &rcn_0).await;
+        expected_files.push(expected_issued_cer(child, &rcn_0).await);
+        assert!(will_publish_embedded("CA should have mft, crl and cert for child", ca, &expected_files).await);
 
-        let ca_info = ca_details(&ca).await;
-        assert!(ca_info.children().contains(&child));
-        assert!(!ca_info.suspended_children().contains(&child));
+        let ca_info = ca_details(ca).await;
+        assert!(ca_info.children().contains(child));
+        assert!(!ca_info.suspended_children().contains(child));
     }
 
     async fn expect_suspended(ca: &Handle, child: &ChildHandle) {
         let rcn_0 = rcn(0);
 
-        let expected_files = expected_mft_and_crl(&ca, &rcn_0).await;
-        assert!(will_publish_embedded("CA should have mft, crl only", &ca, &expected_files).await);
+        let expected_files = expected_mft_and_crl(ca, &rcn_0).await;
+        assert!(will_publish_embedded("CA should have mft, crl only", ca, &expected_files).await);
 
-        let ca_info = ca_details(&ca).await;
-        assert!(ca_info.children().contains(&child));
-        assert!(ca_info.suspended_children().contains(&child));
+        let ca_info = ca_details(ca).await;
+        assert!(ca_info.children().contains(child));
+        assert!(ca_info.suspended_children().contains(child));
     }
 
     // Wait for testbed to come up
