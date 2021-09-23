@@ -1170,16 +1170,18 @@ async fn api_ca_stats(req: Request, path: &mut RequestPath, ca: Handle) -> Routi
 }
 
 async fn api_ca_sync(req: Request, path: &mut RequestPath, ca: Handle) -> RoutingResult {
-    if req.is_post() {
-        let actor = req.actor();
-        match path.next() {
-            Some("parents") => render_empty_res(req.state().cas_refresh_single(ca, &actor).await),
-            Some("repo") => render_empty_res(req.state().cas_repo_sync_single(&ca).await),
-            _ => render_unknown_method(),
+    aa!(req, Permission::CA_UPDATE, ca.clone(), {
+        if req.is_post() {
+            let actor = req.actor();
+            match path.next() {
+                Some("parents") => render_empty_res(req.state().cas_refresh_single(ca, &actor).await),
+                Some("repo") => render_empty_res(req.state().cas_repo_sync_single(&ca).await),
+                _ => render_unknown_method(),
+            }
+        } else {
+            render_unknown_method()
         }
-    } else {
-        render_unknown_method()
-    }
+    })
 }
 
 async fn api_publication_server(req: Request, path: &mut RequestPath) -> RoutingResult {
