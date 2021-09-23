@@ -241,7 +241,7 @@ impl KrillClient {
                 Ok(ApiResponse::ParentCaContact(parent))
             }
 
-            CaCommand::SyncAllParents(handle) => {
+            CaCommand::Refresh(handle) => {
                 let uri = format!("api/v1/cas/{}/sync/parents", handle);
                 post_empty(&self.server, &self.token, &uri).await?;
                 Ok(ApiResponse::Empty)

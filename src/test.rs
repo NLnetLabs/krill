@@ -204,12 +204,12 @@ pub async fn krill_admin_expect_error(command: Command) -> Error {
     }
 }
 
-pub async fn cas_all_sync_parents() {
+pub async fn cas_refresh_all() {
     krill_admin(Command::Bulk(BulkCaCommand::Refresh)).await;
 }
 
-pub async fn cas_single_sync_parents(ca: &Handle) {
-    krill_admin(Command::CertAuth(CaCommand::SyncAllParents(ca.clone()))).await;
+pub async fn cas_refresh_single(ca: &Handle) {
+    krill_admin(Command::CertAuth(CaCommand::Refresh(ca.clone()))).await;
 }
 
 pub async fn ca_suspend_child(ca: &Handle, child: &ChildHandle) {
@@ -353,7 +353,7 @@ async fn send_child_request(ca: &Handle, child: &Handle, req: UpdateChildRequest
         ApiResponse::Empty => {}
         _ => error!("Expected empty ok response"),
     }
-    cas_all_sync_parents().await;
+    cas_refresh_all().await;
 }
 
 pub async fn add_parent_to_ca(ca: &Handle, parent: ParentCaReq) {
@@ -487,7 +487,7 @@ pub async fn ca_contains_resources(handle: &Handle, resources: &ResourceSet) -> 
         if ca_current_resources(handle).await.contains(resources) {
             return true;
         }
-        cas_all_sync_parents().await;
+        cas_refresh_all().await;
         sleep_seconds(1).await
     }
     false
@@ -498,7 +498,7 @@ pub async fn ca_equals_resources(handle: &Handle, resources: &ResourceSet) -> bo
         if &ca_current_resources(handle).await == resources {
             return true;
         }
-        cas_all_sync_parents().await;
+        cas_refresh_all().await;
         sleep_seconds(1).await
     }
     false
@@ -510,7 +510,7 @@ pub async fn rc_is_removed(handle: &Handle) -> bool {
         if ca.resource_classes().get(&ResourceClassName::default()).is_none() {
             return true;
         }
-        cas_all_sync_parents().await;
+        cas_refresh_all().await;
         sleep_seconds(100).await
     }
     false

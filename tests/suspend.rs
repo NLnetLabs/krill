@@ -89,13 +89,13 @@ async fn test_suspension() {
     {
         sleep_seconds(5).await;
 
-        cas_single_sync_parents(&testbed).await;
+        cas_refresh_single(&testbed).await;
         expect_suspended(&testbed, &ca).await;
     }
 
     // Let "CA" refresh with testbed, this should 'un-suspend' it.
     {
-        cas_single_sync_parents(&ca).await;
+        cas_refresh_single(&ca).await;
         expect_not_suspended(&testbed, &ca).await;
     }
 

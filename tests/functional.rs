@@ -590,7 +590,7 @@ async fn functional() {
     info("##################################################################");
     info("");
     {
-        cas_all_sync_parents().await;
+        cas_refresh_all().await;
 
         let mut expected_files = expected_mft_and_crl(&ca3, &rcn_0).await;
         expected_files.append(&mut expected_mft_and_crl(&ca3, &rcn_1).await);
