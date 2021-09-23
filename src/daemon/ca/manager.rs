@@ -859,10 +859,7 @@ impl CaManager {
                             .set_child_suspended(&ca_handle, &child)
                             .await
                         {
-                            error!(
-                                "Could not update status to 'suspended' for inactive child, error: {}",
-                                e
-                            );
+                            panic!("System level error encountered while updating ca status: {}", e);
                         }
 
                         let req = UpdateChildRequest::suspend();
