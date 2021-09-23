@@ -480,6 +480,27 @@ impl Options {
         app.subcommand(sub)
     }
 
+    fn make_cas_children_suspend_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("suspend").about("Suspend a child CA: hide certificate(s) issued to child");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+        sub = Self::add_child_arg(sub);
+
+        app.subcommand(sub)
+    }
+
+    fn make_cas_children_unsuspend_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub =
+            SubCommand::with_name("unsuspend").about("Suspend a child CA: republish certificate(s) issued to child");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+        sub = Self::add_child_arg(sub);
+
+        app.subcommand(sub)
+    }
+
     fn make_cas_children_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("children").about("Manage children for a CA");
 
@@ -489,6 +510,8 @@ impl Options {
         sub = Self::make_cas_children_remove_sc(sub);
         sub = Self::make_cas_children_response_sc(sub);
         sub = Self::make_cas_children_connections_sc(sub);
+        sub = Self::make_cas_children_suspend_sc(sub);
+        sub = Self::make_cas_children_unsuspend_sc(sub);
 
         app.subcommand(sub)
     }
@@ -1429,6 +1452,32 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
+    fn parse_matches_cas_children_suspend(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+
+        let child = matches.value_of("child").unwrap();
+        let child = Handle::from_str(child).map_err(|_| Error::InvalidHandle)?;
+
+        let update = UpdateChildRequest::suspend();
+
+        let command = Command::CertAuth(CaCommand::ChildUpdate(my_ca, child, update));
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_cas_children_unsuspend(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+
+        let child = matches.value_of("child").unwrap();
+        let child = Handle::from_str(child).map_err(|_| Error::InvalidHandle)?;
+
+        let update = UpdateChildRequest::unsuspend();
+
+        let command = Command::CertAuth(CaCommand::ChildUpdate(my_ca, child, update));
+        Ok(Options::make(general_args, command))
+    }
+
     fn parse_matches_cas_children(matches: &ArgMatches) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("add") {
             Self::parse_matches_cas_children_add(m)
@@ -1442,6 +1491,10 @@ impl Options {
             Self::parse_matches_cas_children_remove(m)
         } else if let Some(m) = matches.subcommand_matches("connections") {
             Self::parse_matches_cas_children_connections(m)
+        } else if let Some(m) = matches.subcommand_matches("suspend") {
+            Self::parse_matches_cas_children_suspend(m)
+        } else if let Some(m) = matches.subcommand_matches("unsuspend") {
+            Self::parse_matches_cas_children_unsuspend(m)
         } else {
             Err(Error::UnrecognizedSubCommand)
         }
