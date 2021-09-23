@@ -11,34 +11,18 @@ use krill::{
 async fn test_suspension() {
     init_logging();
 
-    info("##################################################################");
-    info("#                                                                #");
-    info("#  Test that suspension and un-suspension of child CAs works.    #");
-    info("#                                                                #");
-    info("#   Uses the following lay-out:                                  #");
-    info("#                                                                #");
-    info("#                  TA                                            #");
-    info("#                   |                                            #");
-    info("#                testbed                                         #");
-    info("#                   |                                            #");
-    info("#                  CA                                            #");
-    info("#                                                                #");
-    info("#  - Disable the normal background jobs for this test            #");
-    info("#  - Set suspension threshold to 5 seconds                       #");
-    info("#  - Test that a certificate is published for CA                 #");
-    info("#  - Wait 6 seconds                                              #");
-    info("#  - Trigger refresh of testbed                                  #");
-    info("#  - Test that CA is suspended and certificate withdrawn         #");
-    info("#  - Trigger refresh of CA                                       #");
-    info("#  - Test that CA is unsuspended and certificate published       #");
-    info("#  - Explicitly suspend CA                                       #");
-    info("#  - Test that CA is suspended and certificate withdrawn         #");
-    info("#  - Explicitly unsuspend CA                                     #");
-    info("#  - Test that CA is unsuspended and certificate published       #");
-    info("#                                                                #");
-    info("##################################################################");
+    //  Uses the following lay-out:
+    //
+    //                  TA
+    //                   |
+    //                testbed
+    //                   |
+    //                  CA
 
-    // Start krill with testbed
+    // Start krill with:
+    //  testbed enabled
+    //  ca_refresh disabled (we will trigger individual CA refreshes manually)
+    //  suspend enabled
     let krill_dir = start_krill_with_default_test_config(true, false, true).await;
 
     let testbed = handle("testbed");
