@@ -71,6 +71,7 @@ ui-tests = []
 extra-debug = [ "rpki/extra-debug" ]
 static-openssl = [ "openssl/vendored" ]
 all-except-ui-tests = [ "multi-user", "rta", "static-openssl" ]
+hsm = []
 
 # Make sure that Krill crashes on panics, rather than losing threads and
 # limping on in a bad state.
