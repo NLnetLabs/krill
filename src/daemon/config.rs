@@ -774,9 +774,10 @@ impl Config {
 
         if let Some(threshold) = self.suspend_child_after_inactive_hours {
             if threshold < CA_SUSPEND_MIN_HOURS {
-                return Err(ConfigError::other(
-                    "suspend_child_after_inactive_hours must be 1 or higher (or not set at all)",
-                ));
+                return Err(ConfigError::Other(format!(
+                    "suspend_child_after_inactive_hours must be {} or higher (or not set at all)",
+                    CA_SUSPEND_MIN_HOURS
+                )));
             }
         }
 
