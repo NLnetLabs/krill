@@ -492,7 +492,22 @@ impl CertAuth {
 
         let id_cert_pem = IdCertPem::from(&self.id.cert);
 
-        CertAuthInfo::new(handle, id_cert_pem, repo_info, parents, resources, children)
+        let suspended_children = self
+            .children
+            .iter()
+            .filter(|(_ca, details)| details.is_suspended())
+            .map(|(ca, _)| ca.clone())
+            .collect();
+
+        CertAuthInfo::new(
+            handle,
+            id_cert_pem,
+            repo_info,
+            parents,
+            resources,
+            children,
+            suspended_children,
+        )
     }
 
     /// Returns the current RoaDefinitions for this, i.e. the intended authorized

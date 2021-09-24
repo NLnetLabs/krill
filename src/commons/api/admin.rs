@@ -567,7 +567,10 @@ impl AddChildRequest {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct UpdateChildRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
     id_cert: Option<IdCert>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     resources: Option<ResourceSet>,
 
     #[serde(skip_serializing_if = "Option::is_none")]

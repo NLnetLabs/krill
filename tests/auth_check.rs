@@ -15,7 +15,7 @@ async fn auth_check() {
     // bearer token sent by the test suite support functions not to match and thus be rejected which in turn should
     // cause a Rust panic.
     let dir = tmp_dir();
-    let mut config = test_config(&dir, false, false);
+    let mut config = test_config(&dir, false, false, false);
     config.admin_token = Token::from("wrong secret");
 
     // Start Krill with the customized config

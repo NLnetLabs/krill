@@ -25,10 +25,10 @@ use crate::{
     },
     commons::{
         api::{
-            AddChildRequest, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ChildHandle, Handle, ParentCaContact,
-            ParentCaReq, ParentHandle, ParentStatuses, PublicationServerUris, PublisherDetails, PublisherHandle,
-            PublisherList, RepositoryContact, ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates,
-            RtaList, RtaName, RtaPrepResponse, TypedPrefix, UpdateChildRequest,
+            AddChildRequest, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ChildHandle, Handle, ObjectName,
+            ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublicationServerUris, PublisherDetails,
+            PublisherHandle, PublisherList, RepositoryContact, ResourceClassKeysInfo, ResourceClassName, ResourceSet,
+            RoaDefinition, RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, TypedPrefix, UpdateChildRequest,
         },
         bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion},
         crypto::SignSupport,
@@ -52,11 +52,19 @@ pub const KRILL_PUBD_SERVER_URI: &str = "https://localhost:3001/";
 pub fn init_logging() {
     // Just creates a test config so we can initialize logging, then forgets about it
     let d = PathBuf::from(".");
-    let _ = Config::test(&d, false, false).init_logging();
+    let _ = Config::test(&d, false, false, false).init_logging();
 }
 
 pub fn info(msg: impl std::fmt::Display) {
     info!("{}", msg); // we can change this to using the logger crate later
+}
+
+pub async fn sleep_seconds(secs: u64) {
+    sleep(Duration::from_secs(secs)).await
+}
+
+pub async fn sleep_millis(millis: u64) {
+    sleep(Duration::from_millis(millis)).await
 }
 
 pub async fn krill_server_ready() -> bool {
@@ -85,18 +93,18 @@ pub async fn server_ready(uri: &str) -> bool {
             }
             Err(_) => return false,
         }
-        sleep(Duration::from_millis(100)).await;
+        sleep_millis(100).await;
     }
 
     false
 }
 
-pub fn test_config(dir: &Path, enable_testbed: bool, enable_ca_refresh: bool) -> Config {
+pub fn test_config(dir: &Path, enable_testbed: bool, enable_ca_refresh: bool, enable_suspend: bool) -> Config {
     if enable_testbed {
         crate::constants::enable_test_mode();
         crate::constants::enable_test_announcements();
     }
-    Config::test(dir, enable_testbed, enable_ca_refresh)
+    Config::test(dir, enable_testbed, enable_ca_refresh, enable_suspend)
 }
 
 pub fn init_config(config: &Config) {
@@ -117,9 +125,13 @@ pub async fn start_krill_with_custom_config(mut config: Config) -> PathBuf {
 
 /// Starts krill server for testing using the default test configuration, and optionally with testbed mode enabled.
 /// Creates a random base directory in the 'work' folder, and returns it. Be sure to clean it up when the test is done.
-pub async fn start_krill_with_default_test_config(enable_testbed: bool, enable_ca_refresh: bool) -> PathBuf {
+pub async fn start_krill_with_default_test_config(
+    enable_testbed: bool,
+    enable_ca_refresh: bool,
+    enable_suspend: bool,
+) -> PathBuf {
     let dir = tmp_dir();
-    let config = test_config(&dir, enable_testbed, enable_ca_refresh);
+    let config = test_config(&dir, enable_testbed, enable_ca_refresh, enable_suspend);
     start_krill(config).await;
     dir
 }
@@ -140,7 +152,7 @@ async fn start_krill_with_error_trap(config: Arc<Config>) {
 /// own temp dir for storage.
 pub async fn start_krill_pubd() -> PathBuf {
     let dir = tmp_dir();
-    let mut config = test_config(&dir, false, false);
+    let mut config = test_config(&dir, false, false, false);
     init_config(&config);
     config.port = 3001;
 
@@ -192,8 +204,30 @@ pub async fn krill_admin_expect_error(command: Command) -> Error {
     }
 }
 
-async fn refresh_all() {
+pub async fn cas_refresh_all() {
     krill_admin(Command::Bulk(BulkCaCommand::Refresh)).await;
+}
+
+pub async fn cas_refresh_single(ca: &Handle) {
+    krill_admin(Command::CertAuth(CaCommand::Refresh(ca.clone()))).await;
+}
+
+pub async fn ca_suspend_child(ca: &Handle, child: &ChildHandle) {
+    krill_admin(Command::CertAuth(CaCommand::ChildUpdate(
+        ca.clone(),
+        child.clone(),
+        UpdateChildRequest::suspend(),
+    )))
+    .await;
+}
+
+pub async fn ca_unsuspend_child(ca: &Handle, child: &ChildHandle) {
+    krill_admin(Command::CertAuth(CaCommand::ChildUpdate(
+        ca.clone(),
+        child.clone(),
+        UpdateChildRequest::unsuspend(),
+    )))
+    .await;
 }
 
 pub async fn init_ca(handle: &Handle) {
@@ -203,16 +237,6 @@ pub async fn init_ca(handle: &Handle) {
 pub async fn delete_ca(ca: &Handle) {
     krill_admin(Command::CertAuth(CaCommand::Delete(ca.clone()))).await;
 }
-
-// // We use embedded when not testing RFC 8181 - so that the CMS signing/verification overhead can be reduced.
-// pub async fn init_ca_with_embedded_repo(handle: &Handle) {
-//     krill_admin(Command::CertAuth(CaCommand::Init(CertAuthInit::new(handle.clone())))).await;
-//     krill_admin(Command::CertAuth(CaCommand::RepoUpdate(
-//         handle.clone(),
-//         RepositoryUpdate::Embedded,
-//     )))
-//     .await;
-// }
 
 pub async fn ca_repo_update_rfc8181(handle: &Handle, response: RepositoryResponse) {
     krill_admin(Command::CertAuth(CaCommand::RepoUpdate(
@@ -329,7 +353,7 @@ async fn send_child_request(ca: &Handle, child: &Handle, req: UpdateChildRequest
         ApiResponse::Empty => {}
         _ => error!("Expected empty ok response"),
     }
-    refresh_all().await;
+    cas_refresh_all().await;
 }
 
 pub async fn add_parent_to_ca(ca: &Handle, parent: ParentCaReq) {
@@ -463,8 +487,8 @@ pub async fn ca_contains_resources(handle: &Handle, resources: &ResourceSet) -> 
         if ca_current_resources(handle).await.contains(resources) {
             return true;
         }
-        refresh_all().await;
-        sleep(Duration::from_secs(1)).await
+        cas_refresh_all().await;
+        sleep_seconds(1).await
     }
     false
 }
@@ -474,8 +498,8 @@ pub async fn ca_equals_resources(handle: &Handle, resources: &ResourceSet) -> bo
         if &ca_current_resources(handle).await == resources {
             return true;
         }
-        refresh_all().await;
-        sleep(Duration::from_secs(1)).await
+        cas_refresh_all().await;
+        sleep_seconds(1).await
     }
     false
 }
@@ -486,8 +510,8 @@ pub async fn rc_is_removed(handle: &Handle) -> bool {
         if ca.resource_classes().get(&ResourceClassName::default()).is_none() {
             return true;
         }
-        refresh_all().await;
-        sleep(Duration::from_millis(100)).await
+        cas_refresh_all().await;
+        sleep_seconds(100).await
     }
     false
 }
@@ -579,6 +603,18 @@ pub fn https(s: &str) -> uri::Https {
     uri::Https::from_str(s).unwrap()
 }
 
+pub fn handle(s: &str) -> Handle {
+    Handle::from_str(s).unwrap()
+}
+
+pub fn resources(v4: &str) -> ResourceSet {
+    ResourceSet::from_strs("", v4, "").unwrap()
+}
+
+pub fn rcn(nr: u32) -> ResourceClassName {
+    ResourceClassName::from(nr)
+}
+
 pub fn as_bytes(s: &str) -> Bytes {
     Bytes::copy_from_slice(s.as_bytes())
 }
@@ -603,6 +639,198 @@ pub fn definition(s: &str) -> RoaDefinition {
 
 pub fn typed_prefix(s: &str) -> TypedPrefix {
     TypedPrefix::from_str(s).unwrap()
+}
+
+pub async fn repo_update(ca: &Handle, contact: RepositoryContact) {
+    let command = Command::CertAuth(CaCommand::RepoUpdate(ca.clone(), contact));
+    krill_admin(command).await;
+}
+
+pub async fn embedded_repository_response(publisher: &PublisherHandle) -> rfc8183::RepositoryResponse {
+    let command = PubServerCommand::RepositoryResponse(publisher.clone());
+    match krill_embedded_pubd_admin(command).await {
+        ApiResponse::Rfc8183RepositoryResponse(response) => response,
+        _ => panic!("Expected repository response."),
+    }
+}
+
+pub async fn embedded_repo_add_publisher(req: rfc8183::PublisherRequest) {
+    let command = PubServerCommand::AddPublisher(req);
+    krill_embedded_pubd_admin(command).await;
+}
+
+pub async fn dedicated_repository_response(publisher: &PublisherHandle) -> rfc8183::RepositoryResponse {
+    let command = PubServerCommand::RepositoryResponse(publisher.clone());
+    match krill_dedicated_pubd_admin(command).await {
+        ApiResponse::Rfc8183RepositoryResponse(response) => response,
+        _ => panic!("Expected repository response."),
+    }
+}
+
+pub async fn dedicated_repo_add_publisher(req: rfc8183::PublisherRequest) {
+    let command = PubServerCommand::AddPublisher(req);
+    krill_dedicated_pubd_admin(command).await;
+}
+
+pub async fn set_up_ca_with_repo(ca: &Handle) {
+    init_ca(ca).await;
+
+    // Add the CA as a publisher
+    let publisher_request = publisher_request(ca).await;
+    embedded_repo_add_publisher(publisher_request).await;
+
+    // Get a Repository Response for the CA
+    let response = embedded_repository_response(ca).await;
+
+    // Update the repo for the child
+    let contact = RepositoryContact::new(response);
+    repo_update(ca, contact).await;
+}
+
+pub async fn expected_mft_and_crl(ca: &Handle, rcn: &ResourceClassName) -> Vec<String> {
+    let rc_key = ca_key_for_rcn(ca, rcn).await;
+    let mft_file = rc_key.incoming_cert().mft_name().to_string();
+    let crl_file = rc_key.incoming_cert().crl_name().to_string();
+    vec![mft_file, crl_file]
+}
+
+pub async fn expected_new_key_mft_and_crl(ca: &Handle, rcn: &ResourceClassName) -> Vec<String> {
+    let rc_key = ca_new_key_for_rcn(ca, rcn).await;
+    let mft_file = rc_key.incoming_cert().mft_name().to_string();
+    let crl_file = rc_key.incoming_cert().crl_name().to_string();
+    vec![mft_file, crl_file]
+}
+
+pub async fn expected_issued_cer(ca: &Handle, rcn: &ResourceClassName) -> String {
+    let rc_key = ca_key_for_rcn(ca, rcn).await;
+    ObjectName::from(rc_key.incoming_cert().cert()).to_string()
+}
+
+pub async fn will_publish_embedded(test_msg: &str, publisher: &PublisherHandle, files: &[String]) -> bool {
+    will_publish(test_msg, publisher, files, PubServer::Embedded).await
+}
+
+pub async fn will_publish_dedicated(test_msg: &str, publisher: &PublisherHandle, files: &[String]) -> bool {
+    will_publish(test_msg, publisher, files, PubServer::Dedicated).await
+}
+
+enum PubServer {
+    Embedded,
+    Dedicated,
+}
+
+async fn will_publish(test_msg: &str, publisher: &PublisherHandle, files: &[String], server: PubServer) -> bool {
+    let objects: Vec<_> = files.iter().map(|s| s.as_str()).collect();
+    for _ in 0..6000 {
+        let details = {
+            match &server {
+                PubServer::Dedicated => dedicated_repo_publisher_details(publisher).await,
+                PubServer::Embedded => publisher_details(publisher).await,
+            }
+        };
+
+        let current_files = details.current_files();
+
+        if current_files.len() == objects.len() {
+            let current_files: Vec<&uri::Rsync> = current_files.iter().map(|p| p.uri()).collect();
+            let mut all_matched = true;
+            for o in &objects {
+                if !current_files.iter().any(|uri| uri.ends_with(o)) {
+                    all_matched = false;
+                }
+            }
+            if all_matched {
+                return true;
+            }
+        }
+
+        sleep_millis(100).await;
+    }
+
+    let details = publisher_details(publisher).await;
+
+    eprintln!(
+        "Did not find match for test: {}, for publisher: {}",
+        test_msg, publisher
+    );
+    eprintln!("Found:");
+    for file in details.current_files() {
+        eprintln!("  {}", file.uri());
+    }
+    eprintln!("Expected:");
+    for file in objects {
+        eprintln!("  {}", file);
+    }
+
+    false
+}
+
+pub async fn set_up_ca_under_parent_with_resources(ca: &Handle, parent: &ParentHandle, resources: &ResourceSet) {
+    let child_request = request(ca).await;
+    let parent = {
+        let contact = add_child_rfc6492(parent, ca, child_request, resources.clone()).await;
+        ParentCaReq::new(parent.clone(), contact)
+    };
+    add_parent_to_ca(ca, parent).await;
+    assert!(ca_contains_resources(ca, resources).await);
+}
+
+pub async fn ca_roll_init(handle: &Handle) {
+    krill_admin(Command::CertAuth(CaCommand::KeyRollInit(handle.clone()))).await;
+}
+
+pub async fn ca_roll_activate(handle: &Handle) {
+    krill_admin(Command::CertAuth(CaCommand::KeyRollActivate(handle.clone()))).await;
+}
+
+pub async fn state_becomes_new_key(handle: &Handle) -> bool {
+    for _ in 0..30_u8 {
+        let ca = ca_details(handle).await;
+
+        // wait for ALL RCs to become state new key
+        let rc_map = ca.resource_classes();
+
+        let expected = rc_map.len();
+        let mut found = 0;
+
+        for rc in rc_map.values() {
+            if let ResourceClassKeysInfo::RollNew(_) = rc.keys() {
+                found += 1;
+            }
+        }
+
+        if found == expected {
+            return true;
+        }
+
+        sleep_seconds(1).await
+    }
+    false
+}
+
+pub async fn state_becomes_active(handle: &Handle) -> bool {
+    for _ in 0..300 {
+        let ca = ca_details(handle).await;
+
+        // wait for ALL RCs to become state active key
+        let rc_map = ca.resource_classes();
+
+        let expected = rc_map.len();
+        let mut found = 0;
+
+        for rc in rc_map.values() {
+            if let ResourceClassKeysInfo::Active(_) = rc.keys() {
+                found += 1;
+            }
+        }
+
+        if found == expected {
+            return true;
+        }
+
+        sleep_millis(100).await
+    }
+    false
 }
 
 #[cfg(test)]
