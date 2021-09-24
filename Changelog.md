@@ -1,6 +1,6 @@
 # Change Log
 
-## 0.9.2-RC2
+## 0.9.2-RC3
 
 This release includes two features aimed at users who run a Krill CA to maintain ROAs:
 - Warn about ROA configurations for resources no longer held #602
@@ -14,7 +14,7 @@ In addition to this we have added a lot of smaller improvements:
 
 The following features were added to support users who operate Krill as a parent
 CA, or Publication Server:
-- Optionally suspend inactive child CAs #623
+- Optionally suspend inactive child CAs using krill 0.9.2 and up #670
 - Perform RRDP session reset on restart #533
 - Use unguessable URIs for RRDP deltas and snapshots #515
 

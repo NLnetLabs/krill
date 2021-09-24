@@ -241,6 +241,12 @@ impl KrillClient {
                 Ok(ApiResponse::ParentCaContact(parent))
             }
 
+            CaCommand::Refresh(handle) => {
+                let uri = format!("api/v1/cas/{}/sync/parents", handle);
+                post_empty(&self.server, &self.token, &uri).await?;
+                Ok(ApiResponse::Empty)
+            }
+
             CaCommand::ChildInfo(handle, child) => {
                 let uri = format!("api/v1/cas/{}/children/{}", handle, child);
                 let info: ChildCaInfo = get_json(&self.server, &self.token, &uri).await?;

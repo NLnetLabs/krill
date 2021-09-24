@@ -1088,6 +1088,7 @@ async fn api_cas(req: Request, path: &mut RequestPath) -> RoutingResult {
                 Some("repo") => api_ca_repo(req, path, ca).await,
                 Some("routes") => api_ca_routes(req, path, ca).await,
                 Some("stats") => api_ca_stats(req, path, ca).await,
+                Some("sync") => api_ca_sync(req, path, ca).await,
 
                 Some("rta") => api_ca_rta(req, path, ca).await,
 
@@ -1166,6 +1167,21 @@ async fn api_ca_stats(req: Request, path: &mut RequestPath, ca: Handle) -> Routi
         },
         _ => render_unknown_method(),
     }
+}
+
+async fn api_ca_sync(req: Request, path: &mut RequestPath, ca: Handle) -> RoutingResult {
+    aa!(req, Permission::CA_UPDATE, ca.clone(), {
+        if req.is_post() {
+            let actor = req.actor();
+            match path.next() {
+                Some("parents") => render_empty_res(req.state().cas_refresh_single(ca, &actor).await),
+                Some("repo") => render_empty_res(req.state().cas_repo_sync_single(&ca).await),
+                _ => render_unknown_method(),
+            }
+        } else {
+            render_unknown_method()
+        }
+    })
 }
 
 async fn api_publication_server(req: Request, path: &mut RequestPath) -> RoutingResult {
@@ -1846,7 +1862,7 @@ async fn api_resync_all(req: Request) -> RoutingResult {
     match *req.method() {
         Method::POST => aa!(req, Permission::CA_ADMIN, {
             let actor = req.actor();
-            render_empty_res(req.state().resync_all(&actor).await)
+            render_empty_res(req.state().cas_repo_sync_all(&actor).await)
         }),
         _ => render_unknown_method(),
     }
@@ -1979,7 +1995,7 @@ mod tests {
 
     #[tokio::test]
     async fn start_krill_daemon() {
-        let dir = test::start_krill_with_default_test_config(false, false).await;
+        let dir = test::start_krill_with_default_test_config(false, false, false).await;
         let _ = fs::remove_dir_all(dir);
     }
 
