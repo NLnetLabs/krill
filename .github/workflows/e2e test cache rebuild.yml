@@ -21,8 +21,8 @@ jobs:
 
       - uses: docker/build-push-action@v1
         with:
-          username: ${{ secrets.DOCKER_HUB_ID }}
-          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+          username: ${{ secrets.E2E_TEST_DOCKER_HUB_ID }}
+          password: ${{ secrets.E2E_TEST_DOCKER_HUB_TOKEN }}
           repository: ximoneighteen/krillbuildbase
           tags: latest
           target: build
