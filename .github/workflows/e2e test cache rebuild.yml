@@ -18,8 +18,8 @@ jobs:
 
       - uses: docker/build-push-action@v1
         with:
-          username: ${{ secrets.XE_DOCKER_USER }}
-          password: ${{ secrets.XE_DOCKER_PASS }}
+          username: ${{ secrets.DOCKER_HUB_ID }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
           repository: ximoneighteen/krillbuildbase
           tags: latest
           target: build
