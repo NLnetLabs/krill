@@ -9,6 +9,9 @@ name: E2E Test Cache Image Builder
 on:
   schedule:
     - cron: '0 0 * * SUN'
+    
+  # Enable manual triggering of this workflow via the GitHub Actions web user interface.
+  workflow_dispatch:
 
 jobs:
   build-and-push:
