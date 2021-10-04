@@ -1,6 +1,6 @@
 # Change Log
 
-## 0.9.2-RC3
+## 0.9.2 'Motive and Opportunity'
 
 This release includes two features aimed at users who run a Krill CA to maintain ROAs:
 - Warn about ROA configurations for resources no longer held #602
