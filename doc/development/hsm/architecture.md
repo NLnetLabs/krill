@@ -66,3 +66,32 @@
   can be pragmatically expected to work in all customer environments.
 - TBD: Switch to `tokio-native-tls` to keep the benefits of and control of local O/S native TLS providers and avoid the
   'modern security' limitations of `rustls` while switching to an `async` model.
+
+## Control flow
+
+Prior to the addition of HSM support there was only ever a single Signer and control flow looked like this:
+
+```
+Krill calling code -> KrillSigner -> OpenSslSigner
+```
+
+With the addition of HSM support there may be multiple concurrently active Signers and the control flow becomes this:
+
+```
+Krill calling code -> KrillSigner -> SignerRouter -> SignerProvider -> One of: OpenSslSigner, KmipSigner or Pkcs11Signer.
+                                          |                              |
+                                          +--------> KeyMapper <---------+
+```
+
+_(note: in the current version of the code there is only an in-memory KeyMap used only by the KmipSigner and only ever
+ one active Signer impl)_
+
+The SignerRouter either:
+- Uses the KeyMapper to determine which Signer owns the KeyIdentifier being used, OR
+- Uses internal rules to decide which Signer to invoke (e.g. always generate random values and do one-off signing using
+  the OpenSslSigner for example)
+
+The Signers:
+- Update the KeyMapper when new keys are created to indicate that this Signer owns the key.
+- Store KeyIdentifier to HSM internal key identifier mappings in the KeyMapper.
+- Retrieve HSM internal key identifiers from the KeyMapper based on the KeyIdentifier being used.
