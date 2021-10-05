@@ -1,7 +1,7 @@
 //! Support for signing things using software keys (through openssl) and
 //! storing them unencrypted on disk.
 use std::{
-    fmt, fs,
+    fs,
     fs::File,
     io::Write,
     path::{Path, PathBuf},
@@ -12,7 +12,6 @@ use bytes::Bytes;
 use serde::{de, ser, Deserialize, Deserializer, Serialize, Serializer};
 
 use openssl::{
-    error::ErrorStack,
     hash::MessageDigest,
     pkey::{PKey, PKeyRef, Private},
     rsa::Rsa,
@@ -22,7 +21,7 @@ use rpki::repository::crypto::{
     signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
 };
 
-use crate::commons::error::KrillIoError;
+use crate::commons::{crypto::signers::error::SignerError, error::KrillIoError};
 
 //------------ OpenSslSigner -------------------------------------------------
 
@@ -61,6 +60,10 @@ impl OpenSslSigner {
         } else {
             Err(SignerError::InvalidWorkDir(work_dir.to_path_buf()))
         }
+    }
+
+    pub fn supports_random(&self) -> bool {
+        true
     }
 }
 
@@ -211,49 +214,6 @@ impl OpenSslKeyPair {
         // So, there is no way to recover.
         let mut b = Bytes::from(self.pkey.rsa().unwrap().public_key_to_der()?);
         PublicKey::decode(&mut b).map_err(|_| SignerError::DecodeError)
-    }
-}
-
-//------------ OpenSslKeyError -----------------------------------------------
-
-#[derive(Debug)]
-pub enum SignerError {
-    OpenSslError(ErrorStack),
-    JsonError(serde_json::Error),
-    InvalidWorkDir(PathBuf),
-    IoError(KrillIoError),
-    KeyNotFound,
-    DecodeError,
-}
-
-impl fmt::Display for SignerError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            SignerError::OpenSslError(e) => write!(f, "OpenSsl Error: {}", e),
-            SignerError::JsonError(e) => write!(f, "Could not decode public key info: {}", e),
-            SignerError::InvalidWorkDir(path) => write!(f, "Invalid base path: {}", path.to_string_lossy()),
-            SignerError::IoError(e) => e.fmt(f),
-            SignerError::KeyNotFound => write!(f, "Could not find key"),
-            SignerError::DecodeError => write!(f, "Could not decode key"),
-        }
-    }
-}
-
-impl From<ErrorStack> for SignerError {
-    fn from(e: ErrorStack) -> Self {
-        SignerError::OpenSslError(e)
-    }
-}
-
-impl From<serde_json::Error> for SignerError {
-    fn from(e: serde_json::Error) -> Self {
-        SignerError::JsonError(e)
-    }
-}
-
-impl From<KrillIoError> for SignerError {
-    fn from(e: KrillIoError) -> Self {
-        SignerError::IoError(e)
     }
 }
 

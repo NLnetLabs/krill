@@ -2551,7 +2551,8 @@ mod test {
 
     use rpki::repository::crypto::{signer::Signer, PublicKeyFormat};
 
-    use crate::commons::util::softsigner::OpenSslSigner;
+    use crate::commons::crypto::signers::softsigner::OpenSslSigner;
+
     use crate::test;
 
     use super::*;

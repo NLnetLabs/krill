@@ -67,3 +67,44 @@ jobs:
         name: cypress-ui-test-captures ${{ matrix.os }} ${{ matrix.rust }}
         path: target/ui/
         if-no-files-found: ignore
+
+  hsmtest:
+    name: hsmtest
+    runs-on: ubuntu-18.04
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v1
+
+    - name: Install Rust
+      uses: hecrj/setup-rust-action@v1
+      with:
+        rust-version: stable
+
+    - uses: actions/setup-python@v2
+      with:
+        python-version: '3.x'
+
+    - name: Install PyKMIP
+      uses: BSFishy/pip-action@v1
+      with:
+        packages: pykmip
+
+    - name: Compile the tests
+      run: |
+        cargo build --tests --no-default-features --features hsm,hsm-tests
+
+    - name: Run the tests against the PyKMIP server
+      run: |
+        cd test-resources/pykmip
+        python run-server.py &
+        sleep 5s
+        openssl s_client -connect 127.0.0.1:5696 || true
+        cd -
+        cargo test --no-default-features --features hsm,hsm-tests -- --test-threads=1 2>&1
+
+    - name: Dump PyKMIP log on failure
+      if: failure()
+      working-directory: test-resources/pykmip
+      run: |
+        ls -la
+        cat server.log

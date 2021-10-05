@@ -15,12 +15,13 @@ use crate::{
             rrdp::PublicationDeltaError, ChildHandle, ErrorResponse, Handle, ParentHandle, PublisherHandle,
             ResourceClassName, ResourceSetError, RoaDefinition,
         },
+        crypto::signers::error::SignerError,
         eventsourcing::{AggregateStoreError, KeyValueError},
         remote::{
             rfc6492::{self, NotPerformedResponse},
             rfc8181::{self, ReportErrorCode},
         },
-        util::{httpclient, softsigner::SignerError},
+        util::httpclient,
     },
     daemon::{ca::RouteAuthorization, http::tls_keys},
 };
