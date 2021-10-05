@@ -9,6 +9,9 @@ name: E2E Test Cache Image Builder
 on:
   schedule:
     - cron: '0 0 * * SUN'
+    
+  # Enable manual triggering of this workflow via the GitHub Actions web user interface.
+  workflow_dispatch:
 
 jobs:
   build-and-push:
@@ -18,8 +21,8 @@ jobs:
 
       - uses: docker/build-push-action@v1
         with:
-          username: ${{ secrets.XE_DOCKER_USER }}
-          password: ${{ secrets.XE_DOCKER_PASS }}
+          username: ${{ secrets.E2E_TEST_DOCKER_HUB_ID }}
+          password: ${{ secrets.E2E_TEST_DOCKER_HUB_TOKEN }}
           repository: ximoneighteen/krillbuildbase
           tags: latest
           target: build
