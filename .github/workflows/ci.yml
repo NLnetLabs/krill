@@ -102,8 +102,7 @@ jobs:
         cd -
         cargo test --no-default-features --features hsm,hsm-tests -- --test-threads=1 2>&1
 
-    - name: Dump PyKMIP log on failure
-      if: failure()
+    - name: Dump PyKMIP log
       working-directory: test-resources/pykmip
       run: |
         ls -la
