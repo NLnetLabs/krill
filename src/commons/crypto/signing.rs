@@ -6,6 +6,7 @@ use std::{
     {convert::TryFrom, path::Path},
 };
 
+use bcder::Captured;
 use bytes::Bytes;
 
 use rpki::{
@@ -23,6 +24,9 @@ use rpki::{
     uri,
 };
 
+#[cfg(feature = "hsm")]
+use crate::commons::util::dummysigner::DummySigner;
+
 use crate::{
     commons::{
         api::{IssuedCert, RcvdCert, ReplacedObject, RepoInfo, RequestResourceLimit, ResourceSet},
@@ -36,84 +40,120 @@ use crate::{
 
 //------------ Signer --------------------------------------------------------
 
-// This is an enum in preparation of other supported signer types
 #[derive(Clone, Debug)]
-pub struct KrillSigner {
-    // use a blocking lock to avoid having to be async, for signing operations
-    // this should be fine.
-    signer: Arc<RwLock<OpenSslSigner>>,
+enum SignerProvider {
+    OpenSsl(OpenSslSigner),
+
+    #[cfg(feature = "hsm")]
+    #[allow(dead_code)]
+    Dummy(DummySigner),
 }
 
-impl KrillSigner {
-    pub fn build(work_dir: &Path) -> KrillResult<Self> {
-        let signer = OpenSslSigner::build(work_dir)?;
-        let signer = Arc::new(RwLock::new(signer));
-        Ok(KrillSigner { signer })
-    }
-}
-
-impl KrillSigner {
-    pub fn create_key(&self) -> CryptoResult<KeyIdentifier> {
-        let mut signer = self.signer.write().unwrap();
-        signer.create_key(PublicKeyFormat::Rsa).map_err(crypto::Error::signer)
+impl SignerProvider {
+    pub fn create_key(&mut self) -> CryptoResult<KeyIdentifier> {
+        match self {
+            SignerProvider::OpenSsl(signer) => signer.create_key(PublicKeyFormat::Rsa),
+            #[cfg(feature = "hsm")]
+            SignerProvider::Dummy(signer) => signer.create_key(PublicKeyFormat::Rsa),
+        }
+        .map_err(crypto::Error::signer)
     }
 
-    pub fn destroy_key(&self, key_id: &KeyIdentifier) -> CryptoResult<()> {
-        let mut signer = self.signer.write().unwrap();
-        signer.destroy_key(key_id).map_err(crypto::Error::key_error)
+    pub fn destroy_key(&mut self, key_id: &KeyIdentifier) -> CryptoResult<()> {
+        match self {
+            SignerProvider::OpenSsl(signer) => signer.destroy_key(key_id),
+            #[cfg(feature = "hsm")]
+            SignerProvider::Dummy(signer) => signer.destroy_key(key_id),
+        }
+        .map_err(crypto::Error::key_error)
     }
 
     pub fn get_key_info(&self, key_id: &KeyIdentifier) -> CryptoResult<PublicKey> {
-        self.signer
-            .read()
-            .unwrap()
-            .get_key_info(key_id)
-            .map_err(crypto::Error::key_error)
+        match self {
+            SignerProvider::OpenSsl(signer) => signer.get_key_info(key_id),
+            #[cfg(feature = "hsm")]
+            SignerProvider::Dummy(signer) => signer.get_key_info(key_id),
+        }
+        .map_err(crypto::Error::key_error)
     }
 
     pub fn random_serial(&self) -> CryptoResult<Serial> {
-        let signer = self.signer.read().unwrap();
-        Serial::random(signer.deref()).map_err(crypto::Error::signer)
+        match self {
+            SignerProvider::OpenSsl(signer) => Serial::random(signer.deref()),
+            #[cfg(feature = "hsm")]
+            SignerProvider::Dummy(signer) => Serial::random(signer.deref()),
+        }
+        .map_err(crypto::Error::signer)
     }
 
-    pub fn sign<D: AsRef<[u8]> + ?Sized>(&self, key_id: &KeyIdentifier, data: &D) -> CryptoResult<Signature> {
-        self.signer
-            .read()
-            .unwrap()
-            .sign(key_id, SignatureAlgorithm::default(), data)
-            .map_err(crypto::Error::signing)
+    pub fn sign<D: AsRef<[u8]> + ?Sized>(
+        &self,
+        key_id: &KeyIdentifier,
+        sig_alg: SignatureAlgorithm,
+        data: &D,
+    ) -> CryptoResult<Signature> {
+        match self {
+            SignerProvider::OpenSsl(signer) => signer.sign(key_id, sig_alg, data),
+            #[cfg(feature = "hsm")]
+            SignerProvider::Dummy(signer) => signer.sign(key_id, sig_alg, data),
+        }
+        .map_err(crypto::Error::signing)
     }
 
-    pub fn sign_one_off<D: AsRef<[u8]> + ?Sized>(&self, data: &D) -> CryptoResult<(Signature, PublicKey)> {
-        self.signer
-            .read()
-            .unwrap()
-            .sign_one_off(SignatureAlgorithm::default(), data)
-            .map_err(crypto::Error::signer)
+    pub fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
+        &self,
+        sig_alg: SignatureAlgorithm,
+        data: &D,
+    ) -> CryptoResult<(Signature, PublicKey)> {
+        match self {
+            SignerProvider::OpenSsl(signer) => signer.sign_one_off(sig_alg, data),
+            #[cfg(feature = "hsm")]
+            SignerProvider::Dummy(signer) => signer.sign_one_off(sig_alg, data),
+        }
+        .map_err(crypto::Error::signer)
     }
 
     pub fn sign_csr(&self, base_repo: &RepoInfo, name_space: &str, key: &KeyIdentifier) -> CryptoResult<Csr> {
-        let signer = self.signer.read().unwrap();
-        let pub_key = signer.get_key_info(key).map_err(crypto::Error::key_error)?;
-        let enc = Csr::construct(
-            signer.deref(),
-            key,
-            &base_repo.ca_repository(name_space).join(&[]).unwrap(), // force trailing slash
-            &base_repo.rpki_manifest(name_space, &pub_key.key_identifier()),
-            Some(&base_repo.rpki_notify()),
-        )
-        .map_err(crypto::Error::signing)?;
+        fn func<T>(signer: &T, base_repo: &RepoInfo, name_space: &str, key: &KeyIdentifier) -> CryptoResult<Captured>
+        where
+            T: Signer<KeyId = KeyIdentifier>,
+        {
+            let pub_key = signer.get_key_info(key).map_err(crypto::Error::key_error)?;
+            Csr::construct(
+                signer.deref(),
+                key,
+                &base_repo.ca_repository(name_space).join(&[]).unwrap(), // force trailing slash
+                &base_repo.rpki_manifest(name_space, &pub_key.key_identifier()),
+                Some(&base_repo.rpki_notify()),
+            )
+            .map_err(crypto::Error::signing)
+        }
+
+        let enc = match self {
+            SignerProvider::OpenSsl(signer) => func(signer.deref(), base_repo, name_space, key),
+            #[cfg(feature = "hsm")]
+            SignerProvider::Dummy(signer) => func(signer.deref(), base_repo, name_space, key),
+        }?;
+
         Ok(Csr::decode(enc.as_slice())?)
     }
 
     pub fn sign_cert(&self, tbs: TbsCert, key_id: &KeyIdentifier) -> CryptoResult<Cert> {
-        let signer = self.signer.read().unwrap();
-        tbs.into_cert(signer.deref(), key_id).map_err(crypto::Error::signing)
+        match self {
+            SignerProvider::OpenSsl(signer) => tbs.into_cert(signer.deref(), key_id),
+            #[cfg(feature = "hsm")]
+            SignerProvider::Dummy(signer) => tbs.into_cert(signer.deref(), key_id),
+        }
+        .map_err(crypto::Error::signing)
     }
 
     pub fn sign_crl(&self, tbs: TbsCertList<Vec<CrlEntry>>, key_id: &KeyIdentifier) -> CryptoResult<Crl> {
-        let signer = self.signer.read().unwrap();
-        tbs.into_crl(signer.deref(), key_id).map_err(crypto::Error::signing)
+        match self {
+            SignerProvider::OpenSsl(signer) => tbs.into_crl(signer.deref(), key_id),
+            #[cfg(feature = "hsm")]
+            SignerProvider::Dummy(signer) => tbs.into_crl(signer.deref(), key_id),
+        }
+        .map_err(crypto::Error::signing)
     }
 
     pub fn sign_manifest(
@@ -122,10 +162,12 @@ impl KrillSigner {
         builder: SignedObjectBuilder,
         key_id: &KeyIdentifier,
     ) -> CryptoResult<Manifest> {
-        let signer = self.signer.read().unwrap();
-        content
-            .into_manifest(builder, signer.deref(), key_id)
-            .map_err(crypto::Error::signing)
+        match self {
+            SignerProvider::OpenSsl(signer) => content.into_manifest(builder, signer.deref(), key_id),
+            #[cfg(feature = "hsm")]
+            SignerProvider::Dummy(signer) => content.into_manifest(builder, signer.deref(), key_id),
+        }
+        .map_err(crypto::Error::signing)
     }
 
     pub fn sign_roa(
@@ -134,19 +176,136 @@ impl KrillSigner {
         object_builder: SignedObjectBuilder,
         key_id: &KeyIdentifier,
     ) -> CryptoResult<Roa> {
-        let signer = self.signer.read().unwrap();
-        roa_builder
-            .finalize(object_builder, signer.deref(), key_id)
-            .map_err(crypto::Error::signing)
+        match self {
+            SignerProvider::OpenSsl(signer) => roa_builder.finalize(object_builder, signer.deref(), key_id),
+            #[cfg(feature = "hsm")]
+            SignerProvider::Dummy(signer) => roa_builder.finalize(object_builder, signer.deref(), key_id),
+        }
+        .map_err(crypto::Error::signing)
     }
 
     pub fn sign_rta(&self, rta_builder: &mut rta::RtaBuilder, ee: Cert) -> CryptoResult<()> {
-        let signer = self.signer.read().unwrap();
         let key = ee.subject_key_identifier();
         rta_builder.push_cert(ee);
-        rta_builder
-            .sign(signer.deref(), &key, None, None)
-            .map_err(crypto::Error::signing)
+
+        match self {
+            SignerProvider::OpenSsl(signer) => rta_builder.sign(signer.deref(), &key, None, None),
+            #[cfg(feature = "hsm")]
+            SignerProvider::Dummy(signer) => rta_builder.sign(signer.deref(), &key, None, None),
+        }
+        .map_err(crypto::Error::signing)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct KrillSigner {
+    // KrillSigner chooses which signer to use when. The noise of handling the enum based dispatch is handled by the
+    // SignerProvider type defined above, patterned after the existing AuthProvider enum based approach.
+    //
+    // Use Arc references so that we can use refer to the same signer instance more than once if that signer should be
+    // used for multiple purposes, e.g. as both general_signer and one_off_signer in this case.
+    //
+    // Use an RwLock because the Signer trait from the rpki-rs crate uses &mut self for create_key() and destroy_key()
+    // operations. In future we might move the responsibility for locking into the signer so that it can lock only what
+    // actually needs to be locked raet
+
+    // The general signer is used for all signing operations except one off signing.
+    general_signer: Arc<RwLock<SignerProvider>>,
+
+    // As the security of a HSM isn't needed for one off keys, and HSMs are slow, by default this should be an instance
+    // of OpenSslSigner. However, if users think the perceived extra security is warranted let them use a different
+    // Signer for one off keys if that's what they want.
+    one_off_signer: Arc<RwLock<SignerProvider>>,
+}
+
+impl KrillSigner {
+    pub fn build(work_dir: &Path) -> KrillResult<Self> {
+        // The types of signer to initialize, the details needed to initialize them and the intended purpose for each
+        // signer (e.g. signer for past keys, currently used signer, signer to use for a key roll, etc.) should come
+        // from the configuration file. KrillSigner should combine that input its own rules, e.g. to dispatch a signing
+        // request to the correct signer we will need to determine which signer possesses the signing key, and the
+        // signer to use to create a new key depends on whether the key is one-off or not and whether or not it is
+        // being created for a key roll. For now the capability for different signers for different purposes exists but
+        // is not yet used.
+
+        let openssl_signer = OpenSslSigner::build(work_dir)?;
+        let openssl_signer = Arc::new(RwLock::new(SignerProvider::OpenSsl(openssl_signer)));
+        let general_signer = openssl_signer.clone();
+        let one_off_signer = openssl_signer;
+        Ok(KrillSigner {
+            general_signer,
+            one_off_signer,
+        })
+    }
+
+    pub fn create_key(&self) -> CryptoResult<KeyIdentifier> {
+        self.general_signer.write().unwrap().create_key()
+    }
+
+    pub fn destroy_key(&self, key_id: &KeyIdentifier) -> CryptoResult<()> {
+        self.general_signer.write().unwrap().destroy_key(key_id)
+    }
+
+    pub fn get_key_info(&self, key_id: &KeyIdentifier) -> CryptoResult<PublicKey> {
+        self.general_signer.read().unwrap().get_key_info(key_id)
+    }
+
+    pub fn random_serial(&self) -> CryptoResult<Serial> {
+        self.general_signer.read().unwrap().random_serial()
+    }
+
+    pub fn sign<D: AsRef<[u8]> + ?Sized>(&self, key_id: &KeyIdentifier, data: &D) -> CryptoResult<Signature> {
+        self.general_signer
+            .read()
+            .unwrap()
+            .sign(key_id, SignatureAlgorithm::default(), data)
+    }
+
+    pub fn sign_one_off<D: AsRef<[u8]> + ?Sized>(&self, data: &D) -> CryptoResult<(Signature, PublicKey)> {
+        self.one_off_signer
+            .read()
+            .unwrap()
+            .sign_one_off(SignatureAlgorithm::default(), data)
+    }
+
+    pub fn sign_csr(&self, base_repo: &RepoInfo, name_space: &str, key: &KeyIdentifier) -> CryptoResult<Csr> {
+        self.general_signer.read().unwrap().sign_csr(base_repo, name_space, key)
+    }
+
+    pub fn sign_cert(&self, tbs: TbsCert, key_id: &KeyIdentifier) -> CryptoResult<Cert> {
+        self.general_signer.read().unwrap().sign_cert(tbs, key_id)
+    }
+
+    pub fn sign_crl(&self, tbs: TbsCertList<Vec<CrlEntry>>, key_id: &KeyIdentifier) -> CryptoResult<Crl> {
+        self.general_signer.read().unwrap().sign_crl(tbs, key_id)
+    }
+
+    pub fn sign_manifest(
+        &self,
+        content: ManifestContent,
+        builder: SignedObjectBuilder,
+        key_id: &KeyIdentifier,
+    ) -> CryptoResult<Manifest> {
+        self.general_signer
+            .read()
+            .unwrap()
+            .sign_manifest(content, builder, key_id)
+    }
+
+    pub fn sign_roa(
+        &self,
+        roa_builder: RoaBuilder,
+        object_builder: SignedObjectBuilder,
+        key_id: &KeyIdentifier,
+    ) -> CryptoResult<Roa> {
+        self.general_signer
+            .read()
+            .unwrap()
+            .sign_roa(roa_builder, object_builder, key_id)
+    }
+
+    pub fn sign_rta(&self, rta_builder: &mut rta::RtaBuilder, ee: Cert) -> CryptoResult<()> {
+        self.general_signer.read().unwrap().sign_rta(rta_builder, ee)
     }
 }
 
