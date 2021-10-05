@@ -1,6 +1,7 @@
 //! Support for signing mft, crl, certificates, roas..
 //! Common objects for TAs and CAs
 use std::{
+    ops::Deref,
     sync::{Arc, RwLock},
     {convert::TryFrom, path::Path},
 };
@@ -11,7 +12,10 @@ use rpki::{
     repository::{
         cert::{Cert, KeyUsage, Overclaim, TbsCert},
         crl::{Crl, CrlEntry, TbsCertList},
-        crypto::{DigestAlgorithm, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer},
+        crypto::{
+            signer::KeyError, DigestAlgorithm, KeyIdentifier, PublicKey, PublicKeyFormat, Signature,
+            SignatureAlgorithm, Signer, SigningError,
+        },
         csr::Csr,
         manifest::{FileAndHash, Manifest, ManifestContent},
         roa::{Roa, RoaBuilder},
@@ -40,8 +44,11 @@ use crate::{
 #[cfg(feature = "hsm")]
 use crate::commons::crypto::signers::kmip::KmipSigner;
 
-//------------ Signer --------------------------------------------------------
+//------------ SignerProvider ------------------------------------------------
 
+/// Dispatchers Signer requests to a particular implementation of the Signer trait.
+///
+/// Named and modelled after the similar AuthProvider concept that already exists in Krill.
 #[allow(dead_code)] // Needed as we currently only ever construct one variant
 #[derive(Clone, Debug)]
 enum SignerProvider {
@@ -49,6 +56,16 @@ enum SignerProvider {
 
     #[cfg(feature = "hsm")]
     Kmip(KmipSigner),
+}
+
+impl SignerProvider {
+    pub fn supports_random(&self) -> bool {
+        match self {
+            SignerProvider::OpenSsl(signer) => signer.supports_random(),
+            #[cfg(feature = "hsm")]
+            SignerProvider::Kmip(signer) => signer.supports_random(),
+        }
+    }
 }
 
 impl Signer for SignerProvider {
@@ -64,10 +81,7 @@ impl Signer for SignerProvider {
         }
     }
 
-    fn get_key_info(
-        &self,
-        key: &Self::KeyId,
-    ) -> Result<PublicKey, rpki::repository::crypto::signer::KeyError<Self::Error>> {
+    fn get_key_info(&self, key: &Self::KeyId) -> Result<PublicKey, KeyError<Self::Error>> {
         match self {
             SignerProvider::OpenSsl(signer) => signer.get_key_info(key),
             #[cfg(feature = "hsm")]
@@ -75,10 +89,7 @@ impl Signer for SignerProvider {
         }
     }
 
-    fn destroy_key(
-        &mut self,
-        key: &Self::KeyId,
-    ) -> Result<(), rpki::repository::crypto::signer::KeyError<Self::Error>> {
+    fn destroy_key(&mut self, key: &Self::KeyId) -> Result<(), KeyError<Self::Error>> {
         match self {
             SignerProvider::OpenSsl(signer) => signer.destroy_key(key),
             #[cfg(feature = "hsm")]
@@ -91,7 +102,7 @@ impl Signer for SignerProvider {
         key: &Self::KeyId,
         algorithm: SignatureAlgorithm,
         data: &D,
-    ) -> Result<Signature, rpki::repository::crypto::SigningError<Self::Error>> {
+    ) -> Result<Signature, SigningError<Self::Error>> {
         match self {
             SignerProvider::OpenSsl(signer) => signer.sign(key, algorithm, data),
             #[cfg(feature = "hsm")]
@@ -120,87 +131,11 @@ impl Signer for SignerProvider {
     }
 }
 
-impl SignerProvider {
-    pub fn supports_random(&self) -> bool {
-        match self {
-            SignerProvider::OpenSsl(signer) => signer.supports_random(),
-            #[cfg(feature = "hsm")]
-            SignerProvider::Kmip(signer) => signer.supports_random(),
-        }
-    }
+//------------ SignerRouter --------------------------------------------------
 
-    pub fn random_serial(&self) -> CryptoResult<Serial> {
-        Serial::random(self).map_err(crypto::Error::signer)
-    }
-
-    pub fn sign_csr(&self, base_repo: &RepoInfo, name_space: &str, key: &KeyIdentifier) -> CryptoResult<Csr> {
-        let pub_key = match self {
-            SignerProvider::OpenSsl(signer) => signer.get_key_info(key).map_err(crypto::Error::key_error)?,
-            #[cfg(feature = "hsm")]
-            SignerProvider::Kmip(signer) => signer.get_key_info(key).map_err(crypto::Error::key_error)?,
-        };
-
-        let enc = Csr::construct(
-            self,
-            key,
-            &base_repo.ca_repository(name_space).join(&[]).unwrap(), // force trailing slash
-            &base_repo.rpki_manifest(name_space, &pub_key.key_identifier()),
-            Some(&base_repo.rpki_notify()),
-        )
-        .map_err(crypto::Error::signing)?;
-
-        Ok(Csr::decode(enc.as_slice())?)
-    }
-
-    pub fn sign_cert(&self, tbs: TbsCert, key_id: &KeyIdentifier) -> CryptoResult<Cert> {
-        tbs.into_cert(self, key_id).map_err(crypto::Error::signing)
-    }
-
-    pub fn sign_crl(&self, tbs: TbsCertList<Vec<CrlEntry>>, key_id: &KeyIdentifier) -> CryptoResult<Crl> {
-        tbs.into_crl(self, key_id).map_err(crypto::Error::signing)
-    }
-
-    pub fn sign_manifest(
-        &self,
-        content: ManifestContent,
-        builder: SignedObjectBuilder,
-        key_id: &KeyIdentifier,
-    ) -> CryptoResult<Manifest> {
-        content
-            .into_manifest(builder, self, key_id)
-            .map_err(crypto::Error::signing)
-    }
-
-    pub fn sign_roa(
-        &self,
-        roa_builder: RoaBuilder,
-        object_builder: SignedObjectBuilder,
-        key_id: &KeyIdentifier,
-    ) -> CryptoResult<Roa> {
-        roa_builder
-            .finalize(object_builder, self, key_id)
-            .map_err(crypto::Error::signing)
-    }
-
-    pub fn sign_rta(&self, rta_builder: &mut rta::RtaBuilder, ee: Cert) -> CryptoResult<()> {
-        let key = ee.subject_key_identifier();
-        rta_builder.push_cert(ee);
-        rta_builder.sign(self, &key, None, None).map_err(crypto::Error::signing)
-    }
-}
-
+/// Manages multiple Signers and decides which Signer should handle which request.
 #[derive(Clone, Debug)]
-pub struct KrillSigner {
-    // KrillSigner chooses which signer to use when. The noise of handling the enum based dispatch is handled by the
-    // SignerProvider type defined above, patterned after the existing AuthProvider enum based approach.
-    //
-    // Use Arc references so that we can use refer to the same signer instance more than once if that signer should be
-    // used for multiple purposes, e.g. as both general_signer and one_off_signer in this case.
-    //
-    // Use an RwLock because the Signer trait from the rpki-rs crate uses &mut self for create_key() and destroy_key()
-    // operations. In future we might move the responsibility for locking into the signer so that it can lock only what
-    // actually needs to be locked raet
-
+struct SignerRouter {
     // The general signer is used for all signing operations except one-off signing.
     general_signer: Arc<RwLock<SignerProvider>>,
 
@@ -213,11 +148,11 @@ pub struct KrillSigner {
     rand_fallback_signer: Arc<RwLock<SignerProvider>>,
 }
 
-impl KrillSigner {
+impl SignerRouter {
     pub fn build(work_dir: &Path) -> KrillResult<Self> {
         // The types of signer to initialize, the details needed to initialize them and the intended purpose for each
         // signer (e.g. signer for past keys, currently used signer, signer to use for a key roll, etc.) should come
-        // from the configuration file. KrillSigner should combine that input its own rules, e.g. to dispatch a signing
+        // from the configuration file. SignerRouter combines that input with its own rules, e.g. to dispatch a signing
         // request to the correct signer we will need to determine which signer possesses the signing key, and the
         // signer to use to create a new key depends on whether the key is one-off or not and whether or not it is
         // being created for a key roll. For now the capability for different signers for different purposes exists but
@@ -236,7 +171,7 @@ impl KrillSigner {
         #[cfg(not(feature = "hsm"))]
         {
             // For backward compatibility with currently released Krill, use OpenSSL for everything.
-            Ok(KrillSigner {
+            Ok(SignerRouter {
                 general_signer: openssl_signer.clone(),
                 one_off_signer: openssl_signer.clone(),
                 rand_fallback_signer: openssl_signer,
@@ -247,17 +182,8 @@ impl KrillSigner {
         {
             // Currently the behaviour is the same with the hsm-tests feature enabled or disabled. This is because with
             // it disabled the Krill 'functional' test fails with error 'Krill failed to start: Signing issue: Could
-            // not find key'.
-            //
-            // For some reason a long lived signing key is created with the KMIP signer and then that key is used with
-            // one of the KrillSigner functions that takes a `SignedObjectBuilder` argument. These functions dispatch
-            // to the configured one-off signer (because ultimately their code paths invoke `sign_one_off` on the
-            // Signer) which in the commented out configuration below is NOT the KMIP signer but instead is the OpenSSL
-            // signer. The OpenSSL signer didn't create the key and so cannot find a key with the given KeyIdentifier.
-            //
-            // Either this logic is wrong, or this will be solved once we have a mapping of KeyIdentifier to Signer so
-            // that we ensure that we invoke the signer that created the key. Implementing that mapping is beyond the
-            // scope of the current task and so this has for now been commented out.
+            // not find key'. Implementing the mapping of keys to signers is beyond the scope of the current task and
+            // so this has for now been commented out.
             compile_error!("The 'hsm' feature can only be used in combination with the 'hsm-tests' feature at present");
             unreachable!();
             // // When the HSM feature is activated but we are not in test mode:
@@ -266,7 +192,7 @@ impl KrillSigner {
             // //   - Use the OpenSSL signer for one-off keys.
             // let kmip_signer = Arc::new(RwLock::new(SignerProvider::Kmip(KmipSigner::build()?)));
 
-            // Ok(KrillSigner {
+            // Ok(SignerRouter {
             //     general_signer: kmip_signer.clone(),
             //     one_off_signer: openssl_signer.clone(),
             //     rand_fallback_signer: openssl_signer,
@@ -280,73 +206,141 @@ impl KrillSigner {
             //   - Fallback to OpenSSL for random number generation if the HSM doesn't support it.
             let kmip_signer = Arc::new(RwLock::new(SignerProvider::Kmip(KmipSigner::build()?)));
 
-            Ok(KrillSigner {
+            Ok(SignerRouter {
                 general_signer: kmip_signer.clone(),
                 one_off_signer: kmip_signer.clone(),
                 rand_fallback_signer: openssl_signer,
             })
         }
     }
+}
+
+impl Signer for SignerRouter {
+    type KeyId = KeyIdentifier;
+    type Error = SignerError;
+
+    fn create_key(&mut self, algorithm: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
+        self.general_signer.write().unwrap().create_key(algorithm)
+    }
+
+    fn get_key_info(&self, key_id: &KeyIdentifier) -> Result<PublicKey, KeyError<Self::Error>> {
+        self.general_signer.read().unwrap().get_key_info(key_id)
+    }
+
+    fn destroy_key(&mut self, key_id: &KeyIdentifier) -> Result<(), KeyError<Self::Error>> {
+        self.general_signer.write().unwrap().destroy_key(key_id)
+    }
+
+    fn sign<D: AsRef<[u8]> + ?Sized>(
+        &self,
+        key_id: &KeyIdentifier,
+        algorithm: SignatureAlgorithm,
+        data: &D,
+    ) -> Result<Signature, SigningError<Self::Error>> {
+        self.general_signer.read().unwrap().sign(key_id, algorithm, data)
+    }
+
+    fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
+        &self,
+        algorithm: SignatureAlgorithm,
+        data: &D,
+    ) -> Result<(Signature, PublicKey), Self::Error> {
+        self.one_off_signer.read().unwrap().sign_one_off(algorithm, data)
+    }
+
+    fn rand(&self, target: &mut [u8]) -> Result<(), Self::Error> {
+        let signer = self.general_signer.read().unwrap();
+        if signer.supports_random() {
+            signer.rand(target)
+        } else {
+            self.rand_fallback_signer.read().unwrap().rand(target)
+        }
+    }
+}
+
+//------------ KrillSigner ---------------------------------------------------
+
+/// High level signing interface between Krill and the Signer backends.
+///
+/// KrillSigner:
+///   - Is configured via the Krill configuration file.
+///   - Maps Result<SignerError> to KrillResult.
+///   - Directs signers to use the RPKI standard key format (RSA).
+///   - Directs signers to use the RPKI standard signature algorithm (RSA PKCS #1 v1.5 with SHA-256).
+///   - Offers a higher level interface than the Signer trait.
+#[derive(Clone, Debug)]
+pub struct KrillSigner {
+    dispatcher: Arc<RwLock<SignerRouter>>,
+}
+
+impl KrillSigner {
+    pub fn build(work_dir: &Path) -> KrillResult<Self> {
+        Ok(KrillSigner {
+            dispatcher: Arc::new(RwLock::new(SignerRouter::build(work_dir)?)),
+        })
+    }
 
     pub fn create_key(&self) -> CryptoResult<KeyIdentifier> {
-        self.general_signer
-            .write()
-            .unwrap()
-            .create_key(PublicKeyFormat::Rsa)
-            .map_err(crate::commons::crypto::error::Error::signer)
+        let mut signer = self.dispatcher.write().unwrap();
+        signer.create_key(PublicKeyFormat::Rsa).map_err(crypto::Error::signer)
     }
 
     pub fn destroy_key(&self, key_id: &KeyIdentifier) -> CryptoResult<()> {
-        self.general_signer
-            .write()
-            .unwrap()
-            .destroy_key(key_id)
-            .map_err(crate::commons::crypto::error::Error::signer)
+        let mut signer = self.dispatcher.write().unwrap();
+        signer.destroy_key(key_id).map_err(crypto::Error::key_error)
     }
 
     pub fn get_key_info(&self, key_id: &KeyIdentifier) -> CryptoResult<PublicKey> {
-        self.general_signer
+        self.dispatcher
             .read()
             .unwrap()
             .get_key_info(key_id)
-            .map_err(crate::commons::crypto::error::Error::signer)
+            .map_err(crypto::Error::key_error)
     }
 
     pub fn random_serial(&self) -> CryptoResult<Serial> {
-        let signer = self.general_signer.read().unwrap();
-        if signer.supports_random() {
-            signer.random_serial()
-        } else {
-            self.rand_fallback_signer.read().unwrap().random_serial()
-        }
+        let signer = self.dispatcher.read().unwrap();
+        Serial::random(signer.deref()).map_err(crypto::Error::signer)
     }
 
     pub fn sign<D: AsRef<[u8]> + ?Sized>(&self, key_id: &KeyIdentifier, data: &D) -> CryptoResult<Signature> {
-        self.general_signer
+        self.dispatcher
             .read()
             .unwrap()
             .sign(key_id, SignatureAlgorithm::default(), data)
-            .map_err(crate::commons::crypto::error::Error::signer)
+            .map_err(crypto::Error::signing)
     }
 
     pub fn sign_one_off<D: AsRef<[u8]> + ?Sized>(&self, data: &D) -> CryptoResult<(Signature, PublicKey)> {
-        self.one_off_signer
+        self.dispatcher
             .read()
             .unwrap()
             .sign_one_off(SignatureAlgorithm::default(), data)
-            .map_err(crate::commons::crypto::error::Error::signer)
+            .map_err(crypto::Error::signer)
     }
 
     pub fn sign_csr(&self, base_repo: &RepoInfo, name_space: &str, key: &KeyIdentifier) -> CryptoResult<Csr> {
-        self.general_signer.read().unwrap().sign_csr(base_repo, name_space, key)
+        let signer = self.dispatcher.read().unwrap();
+        let pub_key = signer.get_key_info(key).map_err(crypto::Error::key_error)?;
+        let enc = Csr::construct(
+            signer.deref(),
+            key,
+            &base_repo.ca_repository(name_space).join(&[]).unwrap(), // force trailing slash
+            &base_repo.rpki_manifest(name_space, &pub_key.key_identifier()),
+            Some(&base_repo.rpki_notify()),
+        )
+        .map_err(crypto::Error::signing)?;
+        Ok(Csr::decode(enc.as_slice())?)
     }
 
     pub fn sign_cert(&self, tbs: TbsCert, key_id: &KeyIdentifier) -> CryptoResult<Cert> {
-        self.general_signer.read().unwrap().sign_cert(tbs, key_id)
+        let signer = self.dispatcher.read().unwrap();
+        tbs.into_cert(signer.deref(), key_id).map_err(crypto::Error::signing)
     }
 
     pub fn sign_crl(&self, tbs: TbsCertList<Vec<CrlEntry>>, key_id: &KeyIdentifier) -> CryptoResult<Crl> {
-        self.general_signer.read().unwrap().sign_crl(tbs, key_id)
+        let signer = self.dispatcher.read().unwrap();
+        tbs.into_crl(signer.deref(), key_id).map_err(crypto::Error::signing)
     }
 
     pub fn sign_manifest(
@@ -355,10 +349,10 @@ impl KrillSigner {
         builder: SignedObjectBuilder,
         key_id: &KeyIdentifier,
     ) -> CryptoResult<Manifest> {
-        self.one_off_signer
-            .read()
-            .unwrap()
-            .sign_manifest(content, builder, key_id)
+        let signer = self.dispatcher.read().unwrap();
+        content
+            .into_manifest(builder, signer.deref(), key_id)
+            .map_err(crypto::Error::signing)
     }
 
     pub fn sign_roa(
@@ -367,21 +361,21 @@ impl KrillSigner {
         object_builder: SignedObjectBuilder,
         key_id: &KeyIdentifier,
     ) -> CryptoResult<Roa> {
-        self.one_off_signer
-            .read()
-            .unwrap()
-            .sign_roa(roa_builder, object_builder, key_id)
+        let signer = self.dispatcher.read().unwrap();
+        roa_builder
+            .finalize(object_builder, signer.deref(), key_id)
+            .map_err(crypto::Error::signing)
     }
 
     pub fn sign_rta(&self, rta_builder: &mut rta::RtaBuilder, ee: Cert) -> CryptoResult<()> {
-        self.one_off_signer.read().unwrap().sign_rta(rta_builder, ee)
+        let signer = self.dispatcher.read().unwrap();
+        let key = ee.subject_key_identifier();
+        rta_builder.push_cert(ee);
+        rta_builder
+            .sign(signer.deref(), &key, None, None)
+            .map_err(crypto::Error::signing)
     }
 }
-
-// //------------ Signer --------------------------------------------------------
-//
-// pub trait Signer: crypto::Signer<KeyId = KeyIdentifier> + Clone + Sized + Sync + Send + 'static {}
-// impl<T: crypto::Signer<KeyId = KeyIdentifier> + Clone + Sized + Sync + Send + 'static> Signer for T {}
 
 //------------ CsrInfo -------------------------------------------------------
 
@@ -622,3 +616,43 @@ impl ManifestEntry for Crl {
         self.to_captured().into_bytes()
     }
 }
+
+// // ----
+
+// impl From<SignerError> for crypto::error::Error {
+//     fn from(err: SignerError) -> Self {
+//         crypto::error::Error::from(err)
+//     }
+// }
+
+// fn transform_key_error(err: KeyError<SignerError>) -> KeyError<crypto::error::Error> {
+//     match err {
+//         KeyError::KeyNotFound => crypto::error::Error::KeyNotFound,
+//         KeyError::Signer(err) => crypto::error::Error::from(err),
+//     }
+//     .into()
+// }
+
+// fn transform_signing_error(err: SigningError<SignerError>) -> SigningError<crypto::error::Error> {
+//     match err {
+//         SigningError::KeyNotFound => crypto::error::Error::KeyNotFound,
+//         SigningError::IncompatibleKey => crypto::error::Error::KeyError("Incompatible key".into()),
+//         SigningError::Signer(err) => crypto::error::Error::from(err),
+//     }
+//     .into()
+// }
+
+// pub fn unwrap_key_error(err: KeyError<crypto::error::Error>) -> crypto::error::Error {
+//     match err {
+//         KeyError::KeyNotFound => crypto::error::Error::KeyNotFound,
+//         KeyError::Signer(err) => crypto::error::Error::from(err),
+//     }
+// }
+
+// pub fn unwrap_signing_error(err: SigningError<crypto::error::Error>) -> crypto::error::Error {
+//     match err {
+//         SigningError::KeyNotFound => crypto::error::Error::KeyNotFound,
+//         SigningError::IncompatibleKey => crypto::error::Error::KeyError("Incompatible key".into()),
+//         SigningError::Signer(err) => crypto::error::Error::from(err),
+//     }
+// }

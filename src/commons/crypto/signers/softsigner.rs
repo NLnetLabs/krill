@@ -149,7 +149,7 @@ impl Signer for OpenSslSigner {
         &self,
         _algorithm: SignatureAlgorithm,
         data: &D,
-    ) -> Result<(Signature, PublicKey), SignerError> {
+    ) -> Result<(Signature, PublicKey), Self::Error> {
         let kp = OpenSslKeyPair::build()?;
 
         let signature = Self::sign_with_key(kp.pkey.as_ref(), data)?;
@@ -159,7 +159,7 @@ impl Signer for OpenSslSigner {
         Ok((signature, key))
     }
 
-    fn rand(&self, target: &mut [u8]) -> Result<(), SignerError> {
+    fn rand(&self, target: &mut [u8]) -> Result<(), Self::Error> {
         openssl::rand::rand_bytes(target).map_err(SignerError::OpenSslError)
     }
 }
