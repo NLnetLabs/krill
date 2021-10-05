@@ -157,14 +157,16 @@ impl ProbingServerConnector {
     /// Marks now as the last probe attempt timestamp.
     ///
     /// Calling this function while not in the Probing state will result in a panic.
-    pub fn mark(&self) {
+    pub fn mark(&self) -> Result<(), SignerError> {
         match self {
-            ProbingServerConnector::Probing {
-                mut last_probe_time, ..
-            } => {
+            #[rustfmt::skip]
+            ProbingServerConnector::Probing { mut last_probe_time, .. } => {
                 last_probe_time.replace(Instant::now());
+                Ok(())
             }
-            _ => unreachable!(),
+            _ => Err(SignerError::KmipError(
+                "Internal error: cannot mark last probe time as probing has already finished.".into(),
+            )),
         }
     }
 
@@ -190,13 +192,6 @@ impl ProbingServerConnector {
             _ => unreachable!(),
         }
     }
-}
-
-/// The result of a successful attempt to probe if a KMIP server is usable or not.
-#[derive(Clone, Debug)]
-struct SuccessfulProbeResult {
-    identification: String,
-    supported_operations: Vec<Operation>,
 }
 
 /// The details needed to interact with a usable KMIP server.
@@ -266,21 +261,25 @@ impl KmipSigner {
         let status = self.server.read().expect("KMIP status lock is poisoned");
         get_server_if_usable(status).unwrap_or_else(|| {
             self.probe_server()
-                .and_then(|probe_result| self.use_server(probe_result))
                 .and_then(|_| Ok(self.server.read().expect("KMIP status lock is poisoned")))
                 .map_err(|err| SignerError::KmipError(format!("KMIP server is not yet available: {}", err)))
         })
     }
 
     /// Verify if the configured KMIP server is contactable and supports the required capabilities.
-    fn probe_server(&self) -> Result<SuccessfulProbeResult, SignerError> {
+    fn probe_server(&self) -> Result<(), SignerError> {
         // Hold a write lock for the duration of our attempt to verify the KMIP server so that no other attempt occurs
-        // at the same time.
-        let mut status = self.server.write().expect("KMIP status lock is poisoned");
+        // at the same time. Bail out if another thread is performing a probe and has the lock. This is the same result
+        // as when attempting to use the KMIP server between probe retries.
+        let mut status = self
+            .server
+            .try_write()
+            .map_err(|_| SignerError::KmipError("KMIP server is not yet available".into()))?;
 
         // Update the timestamp of our last attempt to contact the KMIP server. This is used above to know when we have
-        // waited long enough before attempting to contact the server again.
-        status.mark();
+        // waited long enough before attempting to contact the server again. This also guards against attempts to probe
+        // when probing has already finished as mark() will fail in that case.
+        status.mark()?;
 
         let conn_settings = status.conn_settings();
         debug!("Probing server at {}:{}", conn_settings.host, conn_settings.port);
@@ -353,15 +352,10 @@ impl KmipSigner {
             }
         }
 
-        Ok(SuccessfulProbeResult {
-            identification: server_properties.vendor_identification.unwrap_or("Unknown".into()),
-            supported_operations,
-        })
-    }
+        // Switch from probing the server to using it.
+        // -------------------------------------------
 
-    /// Switch from probing the server to using it.
-    fn use_server(&self, probe_result: SuccessfulProbeResult) -> Result<(), SignerError> {
-        let mut status = self.server.write().expect("KMIP status lock is poisoned");
+        let server_identification = server_properties.vendor_identification.unwrap_or("Unknown".into());
 
         // Take the ConnectionSettings out of the Probing status so that we can move it to the Usable status. (we
         // could clone it but it potentially contains a lot of certificate and key byte data and is about to get
@@ -372,10 +366,10 @@ impl KmipSigner {
         // Success! We can use this server. Announce it and switch our status to KmipSignerStatus::Usable.
         info!(
             "Using KMIP server '{}' at {}:{}",
-            probe_result.identification, conn_settings.host, conn_settings.port
+            server_identification, conn_settings.host, conn_settings.port
         );
 
-        let supports_rng_retrieve = probe_result.supported_operations.contains(&Operation::RNGRetrieve);
+        let supports_rng_retrieve = supported_operations.contains(&Operation::RNGRetrieve);
         let pool = ConnectionManager::create_connection_pool(conn_settings, MAX_CONCURRENT_SERVER_CONNECTIONS)?;
         let state = UsableServerState::new(pool, supports_rng_retrieve);
 
