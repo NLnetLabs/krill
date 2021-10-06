@@ -1,7 +1,6 @@
 //! Support for signing mft, crl, certificates, roas..
 //! Common objects for TAs and CAs
 use std::{
-    ops::Deref,
     sync::{Arc, RwLock},
     {convert::TryFrom, path::Path},
 };
@@ -215,6 +214,20 @@ impl SignerRouter {
     }
 }
 
+// Variants of the `Signer` trait functions that take `&mut` arguments and so must be locked to use them, but for which
+// we don't want the caller to have to lock the entire `SignerRouter`, only the single `Signer` being used. Ideally the
+// `Signer` trait wouldn't use `&mut` at all and rather require the implementation to use the interior mutability
+// pattern with as much or as little locking internally at the finest level of granularity possible.
+impl SignerRouter {
+    fn create_key_minimally_locking(&self, algorithm: PublicKeyFormat) -> Result<KeyIdentifier, SignerError> {
+        self.general_signer.write().unwrap().create_key(algorithm)
+    }
+
+    fn destroy_key_minimally_locking(&self, key_id: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
+        self.general_signer.write().unwrap().destroy_key(key_id)
+    }
+}
+
 impl Signer for SignerRouter {
     type KeyId = KeyIdentifier;
     type Error = SignerError;
@@ -270,60 +283,50 @@ impl Signer for SignerRouter {
 ///   - Offers a higher level interface than the Signer trait.
 #[derive(Clone, Debug)]
 pub struct KrillSigner {
-    dispatcher: Arc<RwLock<SignerRouter>>,
+    router: SignerRouter,
 }
 
 impl KrillSigner {
     pub fn build(work_dir: &Path) -> KrillResult<Self> {
         Ok(KrillSigner {
-            dispatcher: Arc::new(RwLock::new(SignerRouter::build(work_dir)?)),
+            router: SignerRouter::build(work_dir)?,
         })
     }
 
     pub fn create_key(&self) -> CryptoResult<KeyIdentifier> {
-        let mut signer = self.dispatcher.write().unwrap();
-        signer.create_key(PublicKeyFormat::Rsa).map_err(crypto::Error::signer)
+        self.router
+            .create_key_minimally_locking(PublicKeyFormat::Rsa)
+            .map_err(crypto::Error::signer)
     }
 
     pub fn destroy_key(&self, key_id: &KeyIdentifier) -> CryptoResult<()> {
-        let mut signer = self.dispatcher.write().unwrap();
-        signer.destroy_key(key_id).map_err(crypto::Error::key_error)
+        self.router.destroy_key_minimally_locking(key_id).map_err(crypto::Error::key_error)
     }
 
     pub fn get_key_info(&self, key_id: &KeyIdentifier) -> CryptoResult<PublicKey> {
-        self.dispatcher
-            .read()
-            .unwrap()
-            .get_key_info(key_id)
-            .map_err(crypto::Error::key_error)
+        self.router.get_key_info(key_id).map_err(crypto::Error::key_error)
     }
 
     pub fn random_serial(&self) -> CryptoResult<Serial> {
-        let signer = self.dispatcher.read().unwrap();
-        Serial::random(signer.deref()).map_err(crypto::Error::signer)
+        Serial::random(&self.router).map_err(crypto::Error::signer)
     }
 
     pub fn sign<D: AsRef<[u8]> + ?Sized>(&self, key_id: &KeyIdentifier, data: &D) -> CryptoResult<Signature> {
-        self.dispatcher
-            .read()
-            .unwrap()
+        self.router
             .sign(key_id, SignatureAlgorithm::default(), data)
             .map_err(crypto::Error::signing)
     }
 
     pub fn sign_one_off<D: AsRef<[u8]> + ?Sized>(&self, data: &D) -> CryptoResult<(Signature, PublicKey)> {
-        self.dispatcher
-            .read()
-            .unwrap()
+        self.router
             .sign_one_off(SignatureAlgorithm::default(), data)
             .map_err(crypto::Error::signer)
     }
 
     pub fn sign_csr(&self, base_repo: &RepoInfo, name_space: &str, key: &KeyIdentifier) -> CryptoResult<Csr> {
-        let signer = self.dispatcher.read().unwrap();
-        let pub_key = signer.get_key_info(key).map_err(crypto::Error::key_error)?;
+        let pub_key = self.router.get_key_info(key).map_err(crypto::Error::key_error)?;
         let enc = Csr::construct(
-            signer.deref(),
+            &self.router,
             key,
             &base_repo.ca_repository(name_space).join(&[]).unwrap(), // force trailing slash
             &base_repo.rpki_manifest(name_space, &pub_key.key_identifier()),
@@ -334,13 +337,11 @@ impl KrillSigner {
     }
 
     pub fn sign_cert(&self, tbs: TbsCert, key_id: &KeyIdentifier) -> CryptoResult<Cert> {
-        let signer = self.dispatcher.read().unwrap();
-        tbs.into_cert(signer.deref(), key_id).map_err(crypto::Error::signing)
+        tbs.into_cert(&self.router, key_id).map_err(crypto::Error::signing)
     }
 
     pub fn sign_crl(&self, tbs: TbsCertList<Vec<CrlEntry>>, key_id: &KeyIdentifier) -> CryptoResult<Crl> {
-        let signer = self.dispatcher.read().unwrap();
-        tbs.into_crl(signer.deref(), key_id).map_err(crypto::Error::signing)
+        tbs.into_crl(&self.router, key_id).map_err(crypto::Error::signing)
     }
 
     pub fn sign_manifest(
@@ -349,9 +350,8 @@ impl KrillSigner {
         builder: SignedObjectBuilder,
         key_id: &KeyIdentifier,
     ) -> CryptoResult<Manifest> {
-        let signer = self.dispatcher.read().unwrap();
         content
-            .into_manifest(builder, signer.deref(), key_id)
+            .into_manifest(builder, &self.router, key_id)
             .map_err(crypto::Error::signing)
     }
 
@@ -361,18 +361,16 @@ impl KrillSigner {
         object_builder: SignedObjectBuilder,
         key_id: &KeyIdentifier,
     ) -> CryptoResult<Roa> {
-        let signer = self.dispatcher.read().unwrap();
         roa_builder
-            .finalize(object_builder, signer.deref(), key_id)
+            .finalize(object_builder, &self.router, key_id)
             .map_err(crypto::Error::signing)
     }
 
     pub fn sign_rta(&self, rta_builder: &mut rta::RtaBuilder, ee: Cert) -> CryptoResult<()> {
-        let signer = self.dispatcher.read().unwrap();
         let key = ee.subject_key_identifier();
         rta_builder.push_cert(ee);
         rta_builder
-            .sign(signer.deref(), &key, None, None)
+            .sign(&self.router, &key, None, None)
             .map_err(crypto::Error::signing)
     }
 }
