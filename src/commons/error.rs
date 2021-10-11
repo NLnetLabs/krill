@@ -25,6 +25,12 @@ use crate::{
     daemon::{ca::RouteAuthorization, http::tls_keys},
 };
 
+use super::api::{AspaCustomer, AspaProvider};
+
+//------------ RoaDeltaError -----------------------------------------------
+
+/// This type contains a detailed error report for a ROA delta
+/// that could not be applied.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RoaDeltaError {
     duplicates: Vec<RoaDefinition>,
@@ -112,6 +118,97 @@ impl fmt::Display for RoaDeltaError {
     }
 }
 
+//------------ AspaProviderUpdateError -------------------------------------
+
+/// This type contains a detailed error report for an ASPA
+/// that could not be applied.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AspaProviderUpdateError {
+    notheld: Option<AspaCustomer>,
+    v4_duplicates: Vec<AspaProvider>,
+    v6_duplicates: Vec<AspaProvider>,
+    v4_unknowns: Vec<AspaProvider>,
+    v6_unknowns: Vec<AspaProvider>,
+}
+
+impl AspaProviderUpdateError {
+    pub fn add_notheld(&mut self, customer: AspaCustomer) {
+        self.notheld = Some(customer);
+    }
+
+    pub fn add_v4_duplicate(&mut self, provider: AspaProvider) {
+        self.v4_duplicates.push(provider);
+    }
+
+    pub fn add_v6_duplicate(&mut self, provider: AspaProvider) {
+        self.v6_duplicates.push(provider);
+    }
+
+    pub fn add_v4_unknown(&mut self, provider: AspaProvider) {
+        self.v4_unknowns.push(provider);
+    }
+
+    pub fn add_v6_unknown(&mut self, provider: AspaProvider) {
+        self.v6_unknowns.push(provider);
+    }
+}
+
+impl Default for AspaProviderUpdateError {
+    fn default() -> Self {
+        Self {
+            notheld: None,
+            v4_duplicates: vec![],
+            v6_duplicates: vec![],
+            v4_unknowns: vec![],
+            v6_unknowns: vec![],
+        }
+    }
+}
+
+impl fmt::Display for AspaProviderUpdateError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(customer_as_not_held) = self.notheld.as_ref() {
+            writeln!(
+                f,
+                "The ASPA customer ASN ({}) is not on your certificate",
+                customer_as_not_held
+            )?;
+        }
+
+        if !self.v4_duplicates.is_empty() {
+            writeln!(f, "Cannot add the following duplicate provider(s) for IPv4: ")?;
+            for dup in &self.v4_duplicates {
+                writeln!(f, "  {}", dup)?;
+            }
+        }
+
+        if !self.v6_duplicates.is_empty() {
+            writeln!(f, "Cannot add the following duplicate provider(s) for IPv6: ")?;
+            for dup in &self.v6_duplicates {
+                writeln!(f, "  {}", dup)?;
+            }
+        }
+
+        if !self.v4_unknowns.is_empty() {
+            writeln!(f, "Cannot remove the following unknown provider(s) for IPv4: ")?;
+            for dup in &self.v4_unknowns {
+                writeln!(f, "  {}", dup)?;
+            }
+        }
+
+        if !self.v6_unknowns.is_empty() {
+            writeln!(f, "Cannot remove the following unknown provider(s) for IPv4: ")?;
+            for dup in &self.v6_unknowns {
+                writeln!(f, "  {}", dup)?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+//------------ ApiAuthError ------------------------------------------------
+
 // ApiAuthError is *also* implemented as a separate enum,
 // so that we don't have to implement the Clone trait for
 // all of the Error enum.
@@ -154,6 +251,8 @@ impl From<Error> for ApiAuthError {
         }
     }
 }
+
+//------------ Error -------------------------------------------------------
 
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
@@ -264,6 +363,11 @@ pub enum Error {
     CaAuthorizationInvalidMaxLength(Handle, RouteAuthorization),
     CaAuthorizationNotEntitled(Handle, RouteAuthorization),
     RoaDeltaError(RoaDeltaError),
+
+    //-----------------------------------------------------------------
+    // Autonomous System Provider Authorization - ASPA
+    //-----------------------------------------------------------------
+    AspaProviderUpdateError(AspaProviderUpdateError),
 
     //-----------------------------------------------------------------
     // Key Usage Issues
@@ -424,6 +528,11 @@ impl fmt::Display for Error {
             Error::CaAuthorizationInvalidMaxLength(_ca, roa) => write!(f, "Invalid max length in ROA: '{}'", roa),
             Error::CaAuthorizationNotEntitled(_ca, roa) => write!(f, "Prefix in ROA '{}' not held by you", roa),
             Error::RoaDeltaError(e) => write!(f, "ROA delta rejected:\n\n'{}' ", e),
+
+            //-----------------------------------------------------------------
+            // Autonomous System Provider Authorization - ASPAs
+            //-----------------------------------------------------------------
+            Error::AspaProviderUpdateError(e) => write!(f, "ASPA delta rejected:\n\n'{}'", e),
 
             //-----------------------------------------------------------------
             // Key Usage Issues
@@ -790,6 +899,14 @@ impl Error {
             Error::RoaDeltaError(roa_delta_error) => {
                 ErrorResponse::new("ca-roa-delta-error", "Delta rejected, see included json")
                     .with_roa_delta_error(roa_delta_error)
+            }
+
+            //-----------------------------------------------------------------
+            // Autonomous System Provider Authorization - ASPA
+            //-----------------------------------------------------------------
+            Error::AspaProviderUpdateError(delta_error) => {
+                ErrorResponse::new("ca-aspa-delta-error", "Delta rejected, see included json")
+                    .with_aspa_delta_error(delta_error)
             }
 
             //-----------------------------------------------------------------

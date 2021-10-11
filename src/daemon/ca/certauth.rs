@@ -31,15 +31,13 @@ use crate::{
     constants::test_mode_enabled,
     daemon::{
         ca::{
-            events::ChildCertificateUpdates, ta_handle, CaEvt, CaEvtDet, ChildDetails, Cmd, CmdDet, Ini, PreparedRta,
-            ResourceClass, ResourceTaggedAttestation, RouteAuthorization, RouteAuthorizationUpdates, Routes,
-            RtaContentRequest, RtaPrepareRequest, Rtas, SignedRta,
+            events::ChildCertificateUpdates, ta_handle, AspaDefinitions, CaEvt, CaEvtDet, ChildDetails, Cmd, CmdDet,
+            DropReason, Ini, PreparedRta, ResourceClass, ResourceTaggedAttestation, RouteAuthorization,
+            RouteAuthorizationUpdates, Routes, RtaContentRequest, RtaPrepareRequest, Rtas, SignedRta,
         },
         config::{Config, IssuanceTimingConfig},
     },
 };
-
-use super::DropReason;
 
 //------------ Rfc8183Id ---------------------------------------------------
 
@@ -107,6 +105,12 @@ pub struct CertAuth {
     #[serde(skip_serializing_if = "Rtas::is_empty", default = "Rtas::default")]
     rtas: Rtas,
 
+    #[serde(
+        skip_serializing_if = "AspaDefinitions::is_empty",
+        default = "AspaDefinitions::default"
+    )]
+    aspas: AspaDefinitions,
+
     #[serde(skip_serializing, default = "CertAuthStatus::default")]
     status: CertAuthStatus,
 }
@@ -128,6 +132,7 @@ impl Aggregate for CertAuth {
         let children = HashMap::new();
         let routes = Routes::default();
         let rtas = Rtas::default();
+        let aspas = AspaDefinitions::default();
         let repository = None;
 
         Ok(CertAuth {
@@ -146,6 +151,7 @@ impl Aggregate for CertAuth {
 
             routes,
             rtas,
+            aspas,
             status: CertAuthStatus::Active,
         })
     }
@@ -443,6 +449,11 @@ impl Aggregate for CertAuth {
                 self.route_authorizations_update(updates, &config, signer)
             }
             CmdDet::RouteAuthorizationsRenew(config, signer) => self.route_authorizations_renew(&config, &signer),
+
+            // ASPA
+            CmdDet::AspaUpdate(_, _, _) => todo!("#685"),
+            CmdDet::AspaRemove(_) => todo!("#685"),
+            CmdDet::AspaRenew(_, _) => todo!("#685"),
 
             // Republish
             CmdDet::RepoUpdate(contact, signer) => self.update_repo(contact, &signer),

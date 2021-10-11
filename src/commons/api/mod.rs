@@ -3,6 +3,9 @@
 mod admin;
 pub use self::admin::*;
 
+mod aspa;
+pub use self::aspa::*;
+
 mod ca;
 pub use self::ca::*;
 
@@ -31,6 +34,8 @@ use crate::{
     commons::{error::RoaDeltaError, util::sha256},
     daemon::ca::RouteAuthorization,
 };
+
+use super::error::AspaProviderUpdateError;
 
 // Some syntactic sugar to help this old coder's brain deal with the mess of Strings
 pub type Message = String;
@@ -222,6 +227,8 @@ pub struct ErrorResponse {
     args: HashMap<String, String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     delta_error: Option<RoaDeltaError>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    aspa_delta_error: Option<AspaProviderUpdateError>,
 }
 
 impl ErrorResponse {
@@ -231,6 +238,7 @@ impl ErrorResponse {
             msg: msg.to_string(),
             args: HashMap::new(),
             delta_error: None,
+            aspa_delta_error: None,
         }
     }
 
@@ -283,6 +291,11 @@ impl ErrorResponse {
 
     pub fn with_roa_delta_error(mut self, roa_delta_error: &RoaDeltaError) -> Self {
         self.delta_error = Some(roa_delta_error.clone());
+        self
+    }
+
+    pub fn with_aspa_delta_error(mut self, aspa_delta_error: &AspaProviderUpdateError) -> Self {
+        self.aspa_delta_error = Some(aspa_delta_error.clone());
         self
     }
 

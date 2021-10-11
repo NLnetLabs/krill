@@ -28,6 +28,7 @@ pub const MIGRATION_SCOPE: &str = "migration";
 //------------ UpgradeError --------------------------------------------------
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum UpgradeError {
     AggregateStoreError(AggregateStoreError),
     KeyStoreError(KeyValueError),

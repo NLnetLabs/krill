@@ -8,9 +8,9 @@ use crate::{
     commons::{
         actor::Actor,
         api::{
-            ChildHandle, Entitlements, Handle, IssuanceRequest, ParentCaContact, ParentHandle, RcvdCert,
-            RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse, RtaName,
-            StorableCaCommand, StorableRcEntitlement,
+            AspaCustomer, AspaProviderUpdates, ChildHandle, Entitlements, Handle, IssuanceRequest, ParentCaContact,
+            ParentHandle, RcvdCert, RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest,
+            RevocationResponse, RtaName, StorableCaCommand, StorableRcEntitlement,
         },
         crypto::{IdCert, KrillSigner},
         eventsourcing::{self, StoredCommand},
@@ -142,8 +142,24 @@ pub enum CmdDet {
     // Re-issue any and all ROA objects which would otherwise expire in
     // some time (default 4 weeks, configurable). Note that this command
     // is intended to be sent by the scheduler - once a day is fine - and
-    // will only be stored if there any updates to be done.
+    // will only be stored if there are any updates to be done.
     RouteAuthorizationsRenew(Arc<Config>, Arc<KrillSigner>),
+
+    // ------------------------------------------------------------
+    // ASPA Support
+    // ------------------------------------------------------------
+
+    // Adds or updates the existing AspaProviders for the given AspaCustomer
+    AspaUpdate(AspaProviderUpdates, Arc<Config>, Arc<KrillSigner>),
+
+    // Remove the entry for the given AspaCustomer
+    AspaRemove(AspaCustomer),
+
+    // Re-issue any and all ASPA objects which would otherwise expire in
+    // some time (default 4 weeks, configurable). Note that this command
+    // is intended to be sent by the scheduler - once a day is fine - and
+    // will only be stored if there are any updates to be done.
+    AspaRenew(Arc<Config>, Arc<KrillSigner>),
 
     // ------------------------------------------------------------
     // Publishing
@@ -269,6 +285,13 @@ impl From<CmdDet> for StorableCaCommand {
                 updates: updates.into(),
             },
             CmdDet::RouteAuthorizationsRenew(_, _) => StorableCaCommand::ReissueBeforeExpiring,
+
+            // ------------------------------------------------------------
+            // ASPA Support
+            // ------------------------------------------------------------
+            CmdDet::AspaUpdate(updates, _, _) => StorableCaCommand::AspaUpdate { updates },
+            CmdDet::AspaRemove(customer) => StorableCaCommand::AspaRemove { customer },
+            CmdDet::AspaRenew(_, _) => StorableCaCommand::ReissueBeforeExpiring,
 
             // ------------------------------------------------------------
             // Publishing

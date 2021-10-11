@@ -16,6 +16,8 @@ use crate::{
     daemon::ca::{self, DropReason},
 };
 
+use super::{AspaCustomer, AspaProviderUpdates};
+
 //------------ CaCommandDetails ----------------------------------------------
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CaCommandDetails {
@@ -469,6 +471,12 @@ pub enum StorableCaCommand {
         updates: RoaDefinitionUpdates,
     },
     ReissueBeforeExpiring,
+    AspaUpdate {
+        updates: AspaProviderUpdates,
+    },
+    AspaRemove {
+        customer: AspaCustomer,
+    },
     RepoUpdate {
         service_uri: ServiceUri,
     },
@@ -569,6 +577,8 @@ impl WithStorableDetails for StorableCaCommand {
             StorableCaCommand::RoaDefinitionUpdates { updates } => CommandSummary::new("cmd-ca-roas-updated", &self)
                 .with_added(updates.added().len())
                 .with_removed(updates.removed().len()),
+            StorableCaCommand::AspaUpdate { .. } => CommandSummary::new("cmd-ca-aspa-update", &self),
+            StorableCaCommand::AspaRemove { .. } => CommandSummary::new("cmd-ca-aspa-remove", &self),
             StorableCaCommand::RepoUpdate { service_uri } => {
                 CommandSummary::new("cmd-ca-repo-update", &self).with_service_uri(service_uri)
             }
@@ -718,6 +728,16 @@ impl fmt::Display for StorableCaCommand {
             }
             StorableCaCommand::ReissueBeforeExpiring => {
                 write!(f, "Automatically re-issue objects before they would expire")
+            }
+
+            // ------------------------------------------------------------
+            // ASPA Support
+            // ------------------------------------------------------------
+            StorableCaCommand::AspaUpdate { updates } => {
+                write!(f, "{}", updates)
+            }
+            StorableCaCommand::AspaRemove { customer } => {
+                write!(f, "Remove ASPA for customer ASN: {}", customer)
             }
 
             // ------------------------------------------------------------
