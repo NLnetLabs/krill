@@ -71,6 +71,9 @@ jobs:
   hsmtest:
     name: hsmtest
     runs-on: ubuntu-18.04
+    strategy:
+      matrix:
+        features: ["hsm", "hsm,hsm-tests"]
     steps:
     - name: Checkout repository
       uses: actions/checkout@v1
@@ -91,7 +94,7 @@ jobs:
 
     - name: Compile the tests
       run: |
-        cargo build --tests --no-default-features --features hsm,hsm-tests
+        cargo build --tests --no-default-features --features ${{ matrix.features }}
 
     - name: Run the tests against the PyKMIP server
       run: |
