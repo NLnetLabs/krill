@@ -1867,8 +1867,8 @@ impl Timestamp {
         self + Duration::minutes(minutes)
     }
 
-    pub fn to_rfc3339(&self) -> String {
-        Time::from(*self).to_rfc3339()
+    pub fn to_rfc3339(self) -> String {
+        Time::from(self).to_rfc3339()
     }
 }
 
