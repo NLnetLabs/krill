@@ -22,7 +22,9 @@ use crate::{
             RoaDefinition, RtaList, RtaName, RtaPrepResponse, SigningCert, StorableCaCommand, TaCertDetails,
             TrustAnchorLocator,
         },
-        crypto::{CsrInfo, IdCert, IdCertBuilder, KrillSigner, ProtocolCms, ProtocolCmsBuilder},
+        crypto::{
+            dispatch::krillsigner::KrillSigner, misc::CsrInfo, IdCert, IdCertBuilder, ProtocolCms, ProtocolCmsBuilder,
+        },
         error::{Error, RoaDeltaError},
         eventsourcing::{Aggregate, StoredEvent},
         remote::{rfc6492, rfc8183},

@@ -23,7 +23,7 @@ use crate::{
             Handle, HexEncodedHash, ListReply, PublicationServerUris, PublishDelta, PublisherHandle, RepoInfo,
             StorableRepositoryCommand,
         },
-        crypto::{IdCert, KrillSigner, ProtocolCms, ProtocolCmsBuilder},
+        crypto::{dispatch::krillsigner::KrillSigner, IdCert, ProtocolCms, ProtocolCmsBuilder},
         error::{Error, KrillIoError},
         eventsourcing::{Aggregate, AggregateStore, KeyStoreKey, KeyValueStore},
         remote::rfc8183,

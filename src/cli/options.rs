@@ -24,7 +24,7 @@ use crate::{
             ParentHandle, PublicationServerUris, PublisherHandle, RepositoryContact, ResourceSet, ResourceSetError,
             RoaDefinition, RoaDefinitionUpdates, RtaName, Token, UpdateChildRequest,
         },
-        crypto::{IdCert, SignSupport},
+        crypto::{misc::SignSupport, IdCert},
         error::KrillIoError,
         remote::rfc8183,
         util::file,

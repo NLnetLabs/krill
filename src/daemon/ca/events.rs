@@ -9,7 +9,7 @@ use crate::{
             ParentResourceClassName, RcvdCert, RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest,
             RevokedObject, RoaAggregateKey, RtaName, SuspendedCert, TaCertDetails, UnsuspendedCert,
         },
-        crypto::{IdCert, KrillSigner},
+        crypto::{dispatch::krillsigner::KrillSigner, IdCert},
         eventsourcing::StoredEvent,
         KrillResult,
     },

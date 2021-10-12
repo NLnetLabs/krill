@@ -8,7 +8,7 @@ use crate::{
             rrdp::{Delta, DeltaElements, Notification, Snapshot},
             Handle, PublisherHandle,
         },
-        crypto::{IdCert, IdCertBuilder, KrillSigner},
+        crypto::{dispatch::krillsigner::KrillSigner, IdCert, IdCertBuilder},
         error::Error,
         eventsourcing::StoredEvent,
         KrillResult,

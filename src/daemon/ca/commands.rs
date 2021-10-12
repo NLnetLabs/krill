@@ -12,7 +12,7 @@ use crate::{
             RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse, RtaName,
             StorableCaCommand, StorableRcEntitlement,
         },
-        crypto::{IdCert, KrillSigner},
+        crypto::{dispatch::krillsigner::KrillSigner, IdCert},
         eventsourcing::{self, StoredCommand},
     },
     daemon::{

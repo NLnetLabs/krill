@@ -27,7 +27,7 @@ use crate::{
 };
 
 #[cfg(feature = "hsm")]
-use crate::commons::{api::Handle, crypto::signers::signerinfo::SignerMapper};
+use crate::commons::{api::Handle, crypto::dispatch::signerinfo::SignerMapper};
 
 //------------ OpenSslSigner -------------------------------------------------
 

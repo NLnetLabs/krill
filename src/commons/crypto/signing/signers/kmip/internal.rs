@@ -23,11 +23,13 @@ use rpki::repository::crypto::{
 
 use crate::commons::{
     api::{Handle, Timestamp},
-    crypto::signers::{
-        error::SignerError,
-        kmip::{connpool::ConnectionManager, keymap::KmipKeyPairIds},
-        signerinfo::SignerMapper,
-        util,
+    crypto::{
+        dispatch::signerinfo::SignerMapper,
+        signers::{
+            error::SignerError,
+            kmip::{connpool::ConnectionManager, keymap::KmipKeyPairIds},
+            util,
+        },
     },
 };
 
@@ -135,11 +137,11 @@ impl KmipSigner {
     // TODO: Remove me once we support passing configuration in to `fn build()`.
     fn get_test_connection_settings() -> ConnectionSettings {
         let client_cert = ClientCertificate::SeparatePem {
-            cert_bytes: include_bytes!("../../../../../test-resources/pykmip/server.crt").to_vec(),
-            key_bytes: Some(include_bytes!("../../../../../test-resources/pykmip/server.key").to_vec()),
+            cert_bytes: include_bytes!("../../../../../../test-resources/pykmip/server.crt").to_vec(),
+            key_bytes: Some(include_bytes!("../../../../../../test-resources/pykmip/server.key").to_vec()),
         };
-        let server_cert = include_bytes!("../../../../../test-resources/pykmip/server.crt").to_vec();
-        let ca_cert = include_bytes!("../../../../../test-resources/pykmip/ca.crt").to_vec();
+        let server_cert = include_bytes!("../../../../../../test-resources/pykmip/server.crt").to_vec();
+        let ca_cert = include_bytes!("../../../../../../test-resources/pykmip/ca.crt").to_vec();
 
         ConnectionSettings {
             host: "127.0.0.1".to_string(),

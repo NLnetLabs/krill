@@ -14,7 +14,7 @@ use crate::{
             RepoInfo, RepositoryContact, ResourceClassName, ResourceSet, Revocation, RevocationRequest, Revocations,
             RoaAggregateKey, StorableCaCommand, StoredEffect, TaCertDetails,
         },
-        crypto::{IdCert, KrillSigner},
+        crypto::{dispatch::krillsigner::KrillSigner, IdCert},
         eventsourcing::{Aggregate, AggregateStore, CommandKey, KeyStoreKey, KeyValueStore, StoredValueInfo},
         remote::rfc8183,
         util::KrillVersion,

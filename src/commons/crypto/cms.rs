@@ -17,7 +17,9 @@ use rpki::repository::{
     x509::{update_once, Name, SignedData, Time, ValidationError},
 };
 
-use crate::commons::crypto::{CryptoResult, IdCert, IdCertBuilder, KrillSigner, SignedAttributes};
+use crate::commons::crypto::{
+    dispatch::krillsigner::KrillSigner, CryptoResult, IdCert, IdCertBuilder, SignedAttributes,
+};
 
 //------------ ProtocolCmsBuilder ------------------------------------------
 

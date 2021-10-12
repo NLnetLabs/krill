@@ -9,7 +9,7 @@ use serde::de::DeserializeOwned;
 use crate::{
     commons::{
         api::Handle,
-        crypto::KrillSigner,
+        crypto::dispatch::krillsigner::KrillSigner,
         error::KrillIoError,
         eventsourcing::{AggregateStoreError, CommandKey, KeyStoreKey, KeyValueError, KeyValueStore},
         util::{file, KrillVersion},

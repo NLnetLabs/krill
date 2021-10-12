@@ -11,7 +11,7 @@ use crate::{
             RcvdCert, RepoInfo, RequestResourceLimit, ResourceClassKeysInfo, ResourceClassName, ResourceSet,
             RevocationRequest, RollNewInfo, RollOldInfo, RollPendingInfo,
         },
-        crypto::KrillSigner,
+        crypto::dispatch::krillsigner::KrillSigner,
         error::Error,
         KrillResult,
     },
