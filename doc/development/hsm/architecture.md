@@ -151,10 +151,6 @@ If we were to also drop signers from the active set when they are unreachable we
 a live HSM to a cold spare (assuming the spare has most of the data from the live HSM, in particular the "registration"
 key that we created).
 
-If a malicious actor attempts to substitute a rogue signer for the actual signer that should be used changing the
-configuration or taking over the IP address will not work unless they were also able to obtain the private
-"registration" key and install it in the rogue signer. Without that they cannot provide their identity to us.
-
 No connection details or secrets are stored in the `SignerInfo` store. If later the `AggregateStore` mechanism is
 upgraded to work with some central key value store service used between multiple Krill instances then each Krill
 instance could have its own connection details and secrets and connect to separate HSMs in a cluster and both
