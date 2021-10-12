@@ -33,11 +33,23 @@ use crate::commons::{
 ///     which is owned by a particular [Signer] instance, or because the kind of request dictates the kind of [Signer]
 ///     that should handle it (e.g. one-off signing or random number generation may be handled by a different [Signer]
 ///     than handles new key creation).
+///
+/// To avoid the complexities of dynamic dispatch in Rust we use enum based dispatch instead, as we know at compile time
+/// which implementations of the [Signer] trait exist. The code noise caused by doing enum based dispatch is wrapped up
+/// in the [SignerProvider] struct so we can focus on the business logic here instead.
+///
+/// [SignerProvider] instances are wrapped in [Arc] so that we can "assign" the same signer to multiple different
+/// "roles", e.g. one-off signer, rand signer, keyroll signer, etc.
+/// 
+/// Additional complexity is introduced by the need to wrap the [Signer]s in a lock due to the use of `&mut` by the
+/// [Signer] trait on the `create_key()` and `destroy_key()` functions. The latest, not yet released, version of the
+/// `rpki-rs` crate which defines the [Signer] trait removes the `&mut` from the trait and so we will be able to remove
+/// these locks and instead use interior mutability inside the [Signer] implementations as appropriate/necessary rather
+/// than lock the entire [Signer]. Even if that is released we will not make those changes in the current code however
+/// as that will introduce too many changes in one PR. See https://github.com/NLnetLabs/rpki-rs/issues/161 and
+/// https://github.com/NLnetLabs/rpki-rs/pull/162 for more information.
 #[derive(Debug)]
 pub struct SignerRouter {
-    // TODO: Remove the [RwLock] around the [SignerProvider] once the [Signer] trait is modified to delegate locking to
-    // the implementation and is thus able to drop use of the `&mut self` argument which is what causes us to need the
-    // `RwLock`. See: https://github.com/NLnetLabs/rpki-rs/issues/161
     /// The signer to use for creating new keys and generating random numbers.
     ///
     /// Exceptions:
@@ -56,10 +68,25 @@ pub struct SignerRouter {
     /// The signer to use when a configured signer doesn't support generation of random numbers.
     rand_fallback_signer: Arc<RwLock<SignerProvider>>,
 
+    /// A mechanism for identifying the signer [Handle] that owns the key with a particular [KeyIdentifier].
+    ///
+    /// Used to route requests to the signer that possesses the key. If a key was created using a signer that is no
+    /// longer present in the config file then the [SignerMapper] may return a [Handle] which is not present in the
+    /// `active_signers` set (see below) and thus for which we thus have no way of using the key.
+    ///
+    /// Conversely, if a key was deleted from the signer/HSM by an external entity without our knowledge then the
+    /// [SignerMapper] may return a [Handle] for a signer which no longer possesses the key.
+    /// 
+    /// A reference to the [SignerMapper] is also given to each [Signer] so that it can register the mapping of newly
+    /// created keys by their [KeyIdentifier] to their [Signer] implementation specific internal key identifier, and
+    /// in reverse to lookup the internal key identifier from A given [KeyIdentifier].
+    #[cfg(feature = "hsm")]
+    signer_mapper: Arc<SignerMapper>,
+
     /// A lookup table for resolving a signer [Handle] to its associated [SignerProvider] instance.
     ///
     /// Used for any operation which must be routed to the signer that owns the key, e.g. key deletion and signing
-    /// (except one-off signing).
+    /// (except one-off signing). First the []
     ///
     /// If a signer was used in the past to create a key but that signer is no longer present in the Krill config file
     /// it will not be present in this map and will thus not be usable. While we could keep a record of connection
@@ -73,28 +100,25 @@ pub struct SignerRouter {
     /// node in another subnet).
     ///
     /// This lookup table includes at least the default, one off and rand fallback signers and may also include other
-    /// signers defined in the config file which were used to create keys in the past. Note: a signer can be "defined"
-    /// by the configuration without being explicitly present in the config file, e.g. if it is the default for a
-    /// setting which was not set in the config file.
+    /// signers defined in the config file which were used to create keys in the past which are still in use. Note: a
+    /// signer can be "defined" by the configuration without being explicitly present in the config file, e.g. if it is
+    /// the default for a setting which was not set in the config file (i.e. if the [OpenSslSigner] is used as a
+    /// fallback for a signer that doesn't support generating random numbers).
     ///
     /// NOTE: Currently we're still using hard-coded signers, we don't yet have support for being configured from the
     /// config file.
+    /// 
+    /// [SignerProvider] instances are moved to this set from the `pending_signers` set once we are able to confirm that
+    /// we can connect to them and can identify the correct signer [Handle] used by the [SignerMapper] to associate with
+    /// keys created by that signer.
     #[cfg(feature = "hsm")]
-    signers_by_handle: RwLock<HashMap<Handle, Arc<RwLock<SignerProvider>>>>,
+    active_signers: RwLock<HashMap<Handle, Arc<RwLock<SignerProvider>>>>,
 
+    /// The set of [SignerProvider] instances that are configured but not yet confirmed to be usable. All signers start
+    /// off in this set and are moved to the `active_signers` set as soon as we are able to confirm them. See
+    /// `active_signers` above.
     #[cfg(feature = "hsm")]
-    signers_without_handle: RwLock<Vec<Arc<RwLock<SignerProvider>>>>,
-
-    /// A mechanism for identifying the signer [Handle] that created a particular [KeyIdentifier]].
-    ///
-    /// Used to route requests to the signer that possesses the key. If a key was created using a signer that is no
-    /// longer present in the config file then the [SignerMapper] may return a [Handle] which is not present in
-    /// `configured_signers` and thus for which we thus have no way of using the key.
-    ///
-    /// Conversely, if a key was deleted from the signer/HSM by an external entity without our knowledge then the
-    /// [SignerMapper] may return a [Handle] for a signer which no longer possesses the key.
-    #[cfg(feature = "hsm")]
-    signer_mapper: Arc<SignerMapper>,
+    pending_signers: RwLock<Vec<Arc<RwLock<SignerProvider>>>>,
 }
 
 #[cfg(feature = "hsm")]
@@ -104,6 +128,8 @@ struct SignerRoleAssignments {
     rand_fallback_signer: Arc<RwLock<SignerProvider>>,
 }
 
+/// Before HSM support was added we used a single OpenSSL based "soft" signer for all key management and signing
+/// operations.
 #[cfg(not(feature = "hsm"))]
 impl SignerRouter {
     pub fn build(work_dir: &Path) -> KrillResult<Self> {
@@ -121,6 +147,7 @@ impl SignerRouter {
     }
 }
 
+/// With HSM support we are able to use different and even multiple signer implementations at once in Krill.
 #[cfg(feature = "hsm")]
 impl SignerRouter {
     pub fn build(work_dir: &Path) -> KrillResult<Self> {
@@ -160,8 +187,8 @@ impl SignerRouter {
             default_signer: roles.default_signer,
             one_off_signer: roles.one_off_signer,
             rand_fallback_signer: roles.rand_fallback_signer,
-            signers_by_handle,
-            signers_without_handle,
+            active_signers: signers_by_handle,
+            pending_signers: signers_without_handle,
             signer_mapper,
         })
     }
@@ -301,7 +328,7 @@ impl SignerRouter {
     }
 
     fn get_signer_for_handle(&self, signer_handle: &Handle) -> Option<Arc<RwLock<SignerProvider>>> {
-        self.signers_by_handle.read().unwrap().get(signer_handle).cloned()
+        self.active_signers.read().unwrap().get(signer_handle).cloned()
     }
 }
 
@@ -330,9 +357,9 @@ impl SignerRouter {
     fn register_pending_signers(&self) -> Result<(), SignerError> {
         use std::str::FromStr;
 
-        let has_unmapped_signers = !self.signers_without_handle.read().unwrap().is_empty();
+        let has_pending_signers = !self.pending_signers.read().unwrap().is_empty();
 
-        if has_unmapped_signers {
+        if has_pending_signers {
             // For each unmapped signer in the store attempt to lookup its handle "key" in this signer to see if this
             // signer is the owner of that key and is thus an interface to the signer that created the keys attributed
             // to that signer in the store.
@@ -353,7 +380,7 @@ impl SignerRouter {
 
             // Are any of the given handles the string representations of a key id of a key that we own? If so then that
             // must be our signer handle.
-            self.signers_without_handle.write().unwrap().retain(|signer_provider| {
+            self.pending_signers.write().unwrap().retain(|signer_provider| {
                 //TODO: handle me
                 let (signer_handle, signer_name) = {
                     let sp = signer_provider.read().unwrap(); //TODO: handle me
@@ -409,7 +436,7 @@ impl SignerRouter {
                                             .change_signer_info(candidate_handle, &signer_info)
                                             .unwrap(); //TODO: handle me
                                         sp.set_handle(candidate_handle.clone()); //TODO: handle me
-                                        self.signers_by_handle
+                                        self.active_signers
                                             .write()
                                             .unwrap()
                                             .insert(candidate_handle.clone(), signer_provider.clone()); //TODO: handle me
@@ -446,7 +473,7 @@ impl SignerRouter {
                                 .add_signer(&new_signer_handle, &signer_name, &signer_info, public_key_ref)
                                 .unwrap(); // TODO: handle me
                             sp.set_handle(new_signer_handle.clone());
-                            self.signers_by_handle
+                            self.active_signers
                                 .write()
                                 .unwrap()
                                 .insert(new_signer_handle.clone(), signer_provider.clone());
