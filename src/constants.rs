@@ -39,6 +39,9 @@ pub fn test_announcements_enabled() -> bool {
     std::env::var(KRILL_ENV_TEST_ANN).is_ok()
 }
 
+pub const KEYS_DIR: &str = "keys";
+pub const SIGNERS_DIR: &str = "signers";
+
 pub const CASERVER_DIR: &str = "cas";
 pub const CA_OBJECTS_DIR: &str = "ca_objects";
 
