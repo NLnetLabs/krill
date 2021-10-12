@@ -164,13 +164,13 @@ impl CommandDetails for SignerInfoCommandDetails {
 
 impl SignerInfoCommand {
     pub fn add_key(id: &Handle, version: Option<u64>, key_id: &KeyIdentifier, internal_key_id: &str) -> Self {
-        let details = SignerInfoCommandDetails::AddKey(key_id.clone(), internal_key_id.to_string());
+        let details = SignerInfoCommandDetails::AddKey(*key_id, internal_key_id.to_string());
         let actor = Actor::test_from_def(ACTOR_DEF_KRILL);
         Self::new(id, version, details, &actor)
     }
 
     pub fn remove_key(id: &Handle, version: Option<u64>, key_id: &KeyIdentifier) -> Self {
-        let details = SignerInfoCommandDetails::RemoveKey(key_id.clone());
+        let details = SignerInfoCommandDetails::RemoveKey(*key_id);
         let actor = Actor::test_from_def(ACTOR_DEF_KRILL);
         Self::new(id, version, details, &actor)
     }
@@ -381,7 +381,7 @@ impl SignerMapper {
             .keys
             .get(key_id)
             .cloned()
-            .ok_or(Error::SignerError(format!("Key with key id '{}' not found", key_id)))
+            .ok_or_else(|| Error::SignerError(format!("Key with key id '{}' not found", key_id)))
     }
 
     pub fn get_any_key(&self, signer_handle: &Handle) -> KrillResult<String> {
@@ -391,7 +391,7 @@ impl SignerMapper {
             .values()
             .next()
             .cloned()
-            .ok_or(Error::SignerError(format!("Signer does not have any keys")))
+            .ok_or_else(|| Error::SignerError("Signer does not have any keys".to_string()))
     }
 
     pub fn has_signer(&self, signer_handle: &Handle) -> KrillResult<bool> {
