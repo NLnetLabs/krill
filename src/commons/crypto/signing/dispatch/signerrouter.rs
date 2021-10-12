@@ -33,7 +33,7 @@ use crate::commons::{
 ///     which is owned by a particular [Signer] instance, or because the kind of request dictates the kind of [Signer]
 ///     that should handle it (e.g. one-off signing or random number generation may be handled by a different [Signer]
 ///     than handles new key creation).
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct SignerRouter {
     // TODO: Remove the [RwLock] around the [SignerProvider] once the [Signer] trait is modified to delegate locking to
     // the implementation and is thus able to drop use of the `&mut self` argument which is what causes us to need the
@@ -80,10 +80,10 @@ pub struct SignerRouter {
     /// NOTE: Currently we're still using hard-coded signers, we don't yet have support for being configured from the
     /// config file.
     #[cfg(feature = "hsm")]
-    signers_by_handle: Arc<RwLock<HashMap<Handle, Arc<RwLock<SignerProvider>>>>>,
+    signers_by_handle: RwLock<HashMap<Handle, Arc<RwLock<SignerProvider>>>>,
 
     #[cfg(feature = "hsm")]
-    signers_without_handle: Arc<RwLock<Vec<Arc<RwLock<SignerProvider>>>>>,
+    signers_without_handle: RwLock<Vec<Arc<RwLock<SignerProvider>>>>,
 
     /// A mechanism for identifying the signer [Handle] that created a particular [KeyIdentifier]].
     ///
@@ -140,17 +140,17 @@ impl SignerRouter {
         // We don't know the signer handles yet. The signer implementations have to work out their own signer handle
         // when they are ready. Signers are moved from the signer collection to the map once while running when asked
         // they by that point have determined their own handle.
-        let signers_by_handle = Arc::new(RwLock::new(HashMap::new()));
+        let signers_by_handle = RwLock::new(HashMap::new());
 
-        let roles = Self::build_signers(work_dir, signer_mapper.clone(), signers_by_handle.clone())?;
+        let roles = Self::build_signers(work_dir, signer_mapper.clone())?;
 
         // Having the same signer multiple times in this vector is less efficient but the impact is negligible and it
         // doesn't break anything if there are duplicates.
-        let signers_without_handle = Arc::new(RwLock::new(vec![
+        let signers_without_handle = RwLock::new(vec![
             roles.default_signer.clone(),
             roles.one_off_signer.clone(),
             roles.rand_fallback_signer.clone(),
-        ]));
+        ]);
 
         // TODO: Once we can configure ourselves from the configuration file, we also need to create any signers that
         // are defined in the config but which don't have an active role, i.e. only exist to work with keys created by
@@ -167,11 +167,7 @@ impl SignerRouter {
     }
 
     #[cfg(not(feature = "hsm-tests"))]
-    fn build_signers(
-        work_dir: &Path,
-        signer_mapper: Arc<SignerMapper>,
-        _signers_by_handle: Arc<RwLock<HashMap<Handle, Arc<RwLock<SignerProvider>>>>>,
-    ) -> KrillResult<SignerRoleAssignments> {
+    fn build_signers(work_dir: &Path, signer_mapper: Arc<SignerMapper>) -> KrillResult<SignerRoleAssignments> {
         // When the HSM feature is activated and we are not in test mode:
         //   - Use the HSM for key creation, signing, deletion, except for one-off keys.
         //   - Use the HSM for random number generation, if supported, else use the OpenSSL signer.
@@ -270,11 +266,7 @@ impl SignerRouter {
 
     // TODO: Delete me once setup from Krill configuration is supported.
     #[cfg(feature = "hsm-tests")]
-    fn build_signers(
-        work_dir: &Path,
-        signer_mapper: Arc<SignerMapper>,
-        _signers_by_handle: Arc<RwLock<HashMap<Handle, Arc<RwLock<SignerProvider>>>>>,
-    ) -> KrillResult<SignerRoleAssignments> {
+    fn build_signers(work_dir: &Path, signer_mapper: Arc<SignerMapper>) -> KrillResult<SignerRoleAssignments> {
         // When the HSM feature is activated AND test mode is activated:
         //   - Use the HSM for as much as possible to depend on it as broadly as possible in the Krill test suite..
         //   - Fallback to OpenSSL for random number generation if the HSM doesn't support it.

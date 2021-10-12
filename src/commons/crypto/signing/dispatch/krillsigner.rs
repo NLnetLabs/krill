@@ -36,7 +36,7 @@ use crate::commons::{
 /// We _could_ implement the [Signer] trait in [KrillSigner] but then we would implement two almost identical but
 /// subtly different interfaces in the same struct AND implement management of signers and dispatch to the correct
 /// signer all in one place, and that quickly becomes harder to read, understand and maintain.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct KrillSigner {
     router: SignerRouter,
 }
