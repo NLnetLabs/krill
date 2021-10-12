@@ -18,16 +18,24 @@ use crate::commons::{
     KrillResult,
 };
 
-//------------ KrillSigner ---------------------------------------------------
-
-/// High level signing interface between Krill and the Signer backends.
+/// High level signing interface between Krill and the [SignerRouter].
 ///
 /// KrillSigner:
-///   - Is configured via the Krill configuration file.
+///   - Delegates Signer management and dispatch to [SignerRouter].
 ///   - Maps Result<SignerError> to KrillResult.
 ///   - Directs signers to use the RPKI standard key format (RSA).
 ///   - Directs signers to use the RPKI standard signature algorithm (RSA PKCS #1 v1.5 with SHA-256).
-///   - Offers a higher level interface than the Signer trait.
+///   - Offers additional high level functions compared to the [Signer] trait.
+/// 
+/// We delegate to [SignerRouter] because our interface differs to that of the [Signer] trait and because the code is
+/// easier to read if we separate out responsibilities.
+/// 
+/// We need dispatch to the correct [Signer] to be done by a Struct that implements the [Signer] trait itself because
+/// otherwise functions elsewhere in Krill that take a [Signer] trait as input will not invoke the correct [Signer].
+/// 
+/// We _could_ implement the [Signer] trait in [KrillSigner] but then we would implement two almost identical but
+/// subtly different interfaces in the same struct AND implement management of signers and dispatch to the correct
+/// signer all in one place, and that quickly becomes harder to read, understand and maintain.
 #[derive(Clone, Debug)]
 pub struct KrillSigner {
     router: SignerRouter,

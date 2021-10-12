@@ -24,13 +24,19 @@ use crate::commons::{
     crypto::{dispatch::signerinfo::SignerMapper, signers::kmip::KmipSigner},
 };
 
-//------------ SignerRouter --------------------------------------------------
-
 /// Manages multiple Signers and routes requests to the appropriate Signer.
+///
+/// SignerRouter:
+///   - Creates the appropriate [Signer] implementations according to configuration.
+///   - Handles registration of [Signer] instances with the [SignerMapper].
+///   - Dispatches requests to the correct [Signer] instance, either because the request specified a [KeyIdentifier]
+///     which is owned by a particular [Signer] instance, or because the kind of request dictates the kind of [Signer]
+///     that should handle it (e.g. one-off signing or random number generation may be handled by a different [Signer]
+///     than handles new key creation).
 #[derive(Clone, Debug)]
 pub struct SignerRouter {
     // TODO: Remove the [RwLock] around the [SignerProvider] once the [Signer] trait is modified to delegate locking to
-    // the implementation and is thus able to drop use of the `&mut self` argument which is what cause us to need the
+    // the implementation and is thus able to drop use of the `&mut self` argument which is what causes us to need the
     // `RwLock`. See: https://github.com/NLnetLabs/rpki-rs/issues/161
     /// The signer to use for creating new keys and generating random numbers.
     ///
@@ -40,7 +46,7 @@ pub struct SignerRouter {
     ///     below.
     default_signer: Arc<RwLock<SignerProvider>>,
 
-    /// The signer to create, sign with an destroy a one-off key.
+    /// The signer to create, sign with and destroy a one-off key.
     ///
     /// As the security of a HSM isn't needed for one-off keys, and HSMs are slow, by default this should be an instance
     /// of [OpenSslSigner]. However, if users think the perceived extra security is warranted let them use a different
