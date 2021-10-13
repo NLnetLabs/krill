@@ -25,11 +25,8 @@ use crate::commons::{
     api::{Handle, Timestamp},
     crypto::{
         dispatch::signerinfo::SignerMapper,
-        signers::{
-            error::SignerError,
-            kmip::{connpool::ConnectionManager, keymap::KmipKeyPairIds},
-            util,
-        },
+        signers::{kmip::connpool::ConnectionManager, util},
+        SignerError,
     },
 };
 
@@ -493,6 +490,11 @@ pub(super) enum KeyStatus {
 
     /// The key was activated.
     Active,
+}
+
+pub(super) struct KmipKeyPairIds {
+    pub public_key_id: String,
+    pub private_key_id: String,
 }
 
 // High level helper functions for use by the public Signer interface implementation

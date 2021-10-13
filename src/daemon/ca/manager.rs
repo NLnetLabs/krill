@@ -20,7 +20,7 @@ use crate::{
             StoredEffect, UpdateChildRequest,
         },
         api::{rrdp::PublishElement, Timestamp},
-        crypto::{dispatch::krillsigner::KrillSigner, IdCert, ProtocolCms, ProtocolCmsBuilder},
+        crypto::{IdCert, KrillSigner, ProtocolCms, ProtocolCmsBuilder},
         error::Error,
         eventsourcing::{Aggregate, AggregateStore, Command, CommandKey},
         remote::cmslogger::CmsLogger,

@@ -2550,7 +2550,7 @@ mod test {
     use bytes::Bytes;
     use rpki::repository::crypto::{PublicKeyFormat, Signer};
 
-    use crate::{commons::crypto::signers::softsigner::OpenSslSigner, test};
+    use crate::{commons::crypto::OpenSslSigner, test};
 
     use super::*;
 

@@ -18,7 +18,7 @@ use crate::{
             Timestamp, UpdateChildRequest,
         },
         bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion},
-        crypto::dispatch::krillsigner::KrillSigner,
+        crypto::KrillSigner,
         eventsourcing::CommandKey,
         remote::rfc8183,
         KrillEmptyResult, KrillResult,

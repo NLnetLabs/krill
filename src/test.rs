@@ -31,7 +31,7 @@ use crate::{
             RoaDefinition, RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, TypedPrefix, UpdateChildRequest,
         },
         bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion},
-        crypto::misc::SignSupport,
+        crypto::SignSupport,
         remote::rfc8183,
         remote::rfc8183::{ChildRequest, RepositoryResponse},
         util::httpclient,

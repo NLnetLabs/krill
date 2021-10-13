@@ -18,7 +18,7 @@ use rpki::{
 use crate::{
     commons::{
         api::{IssuedCert, RcvdCert, ReplacedObject, RequestResourceLimit, ResourceSet},
-        crypto::dispatch::krillsigner::KrillSigner,
+        crypto::KrillSigner,
         error::Error,
         util::AllowedUri,
         KrillResult,

@@ -14,7 +14,7 @@ use rpki::repository::{
 };
 
 use crate::{
-    commons::crypto::{signing::dispatch::krillsigner::KrillSigner, CryptoResult},
+    commons::crypto::{CryptoResult, KrillSigner},
     constants::ID_CERTIFICATE_VALIDITY_YEARS,
 };
 

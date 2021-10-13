@@ -14,10 +14,7 @@ use crate::{
             ReplacedObject, RepoInfo, RequestResourceLimit, ResourceClassInfo, ResourceClassName, ResourceSet,
             Revocation, RevocationRequest, SuspendedCert, UnsuspendedCert,
         },
-        crypto::{
-            dispatch::krillsigner::KrillSigner,
-            misc::{CsrInfo, SignSupport},
-        },
+        crypto::{CsrInfo, KrillSigner, SignSupport},
         error::Error,
         KrillResult,
     },

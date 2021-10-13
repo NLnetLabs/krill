@@ -15,7 +15,7 @@ use rpki::{
 use crate::{
     commons::{
         api::{ObjectName, ResourceSet, RoaAggregateKey, RoaDefinition, RoaDefinitionUpdates},
-        crypto::{dispatch::krillsigner::KrillSigner, misc::SignSupport},
+        crypto::{KrillSigner, SignSupport},
         error::Error,
         KrillResult,
     },

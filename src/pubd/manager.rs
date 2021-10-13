@@ -6,7 +6,7 @@ use crate::{
     commons::{
         actor::Actor,
         api::{ListReply, PublicationServerUris, PublishDelta, PublisherDetails, PublisherHandle, RepoInfo},
-        crypto::dispatch::krillsigner::KrillSigner,
+        crypto::KrillSigner,
         error::Error,
         remote::cmslogger::CmsLogger,
         remote::rfc8181,

@@ -27,7 +27,7 @@ use crate::{
             rrdp::PublishElement, Base64, Handle, IssuedCert, ObjectName, RcvdCert, RepositoryContact,
             ResourceClassName, Revocation, Revocations,
         },
-        crypto::dispatch::krillsigner::KrillSigner,
+        crypto::KrillSigner,
         error::Error,
         eventsourcing::{KeyStoreKey, KeyValueStore, PreSaveEventListener},
         KrillResult,

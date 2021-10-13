@@ -1,5 +1,11 @@
-pub mod dispatch;
+pub(super) mod dispatch;
 
-pub mod signers;
+pub(super) mod signers;
 
-pub mod misc;
+mod misc;
+
+pub use dispatch::krillsigner::KrillSigner;
+pub use signers::error::SignerError;
+pub use signers::softsigner::OpenSslSigner;
+
+pub use misc::*;
