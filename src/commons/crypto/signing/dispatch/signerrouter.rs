@@ -40,7 +40,7 @@ use crate::commons::{
 ///
 /// [SignerProvider] instances are wrapped in [Arc] so that we can "assign" the same signer to multiple different
 /// "roles", e.g. one-off signer, rand signer, keyroll signer, etc.
-/// 
+///
 /// Additional complexity is introduced by the need to wrap the [Signer]s in a lock due to the use of `&mut` by the
 /// [Signer] trait on the `create_key()` and `destroy_key()` functions. The latest, not yet released, version of the
 /// `rpki-rs` crate which defines the [Signer] trait removes the `&mut` from the trait and so we will be able to remove
@@ -76,7 +76,7 @@ pub struct SignerRouter {
     ///
     /// Conversely, if a key was deleted from the signer/HSM by an external entity without our knowledge then the
     /// [SignerMapper] may return a [Handle] for a signer which no longer possesses the key.
-    /// 
+    ///
     /// A reference to the [SignerMapper] is also given to each [Signer] so that it can register the mapping of newly
     /// created keys by their [KeyIdentifier] to their [Signer] implementation specific internal key identifier, and
     /// in reverse to lookup the internal key identifier from A given [KeyIdentifier].
@@ -107,7 +107,7 @@ pub struct SignerRouter {
     ///
     /// NOTE: Currently we're still using hard-coded signers, we don't yet have support for being configured from the
     /// config file.
-    /// 
+    ///
     /// [SignerProvider] instances are moved to this set from the `pending_signers` set once we are able to confirm that
     /// we can connect to them and can identify the correct signer [Handle] used by the [SignerMapper] to associate with
     /// keys created by that signer.

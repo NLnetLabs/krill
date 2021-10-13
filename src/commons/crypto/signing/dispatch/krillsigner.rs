@@ -26,13 +26,13 @@ use crate::commons::{
 ///   - Directs signers to use the RPKI standard key format (RSA).
 ///   - Directs signers to use the RPKI standard signature algorithm (RSA PKCS #1 v1.5 with SHA-256).
 ///   - Offers additional high level functions compared to the [Signer] trait.
-/// 
+///
 /// We delegate to [SignerRouter] because our interface differs to that of the [Signer] trait and because the code is
 /// easier to read if we separate out responsibilities.
-/// 
+///
 /// We need dispatch to the correct [Signer] to be done by a Struct that implements the [Signer] trait itself because
 /// otherwise functions elsewhere in Krill that take a [Signer] trait as input will not invoke the correct [Signer].
-/// 
+///
 /// We _could_ implement the [Signer] trait in [KrillSigner] but then we would implement two almost identical but
 /// subtly different interfaces in the same struct AND implement management of signers and dispatch to the correct
 /// signer all in one place, and that quickly becomes harder to read, understand and maintain.
