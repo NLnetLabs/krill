@@ -504,6 +504,19 @@ impl CmdDet {
     }
 
     //-------------------------------------------------------------------------------
+    // Autonomous System Provider Authorization
+    //-------------------------------------------------------------------------------
+    pub fn aspas_update(
+        ca: &Handle,
+        update: AspaProviderUpdates,
+        config: Arc<Config>,
+        signer: Arc<KrillSigner>,
+        actor: &Actor,
+    ) -> Cmd {
+        eventsourcing::SentCommand::new(ca, None, CmdDet::AspaUpdate(update, config, signer), actor)
+    }
+
+    //-------------------------------------------------------------------------------
     // Resource Tagged Attestations
     //-------------------------------------------------------------------------------
     pub fn rta_sign(

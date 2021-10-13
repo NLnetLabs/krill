@@ -13,6 +13,7 @@ use std::{
 };
 
 use bytes::Bytes;
+use rpki::repository::resources::AsId;
 use serde::Serialize;
 
 use futures::TryFutureExt;
@@ -1078,6 +1079,7 @@ async fn api_cas(req: Request, path: &mut RequestPath) -> RoutingResult {
                     Method::DELETE => api_ca_delete(req, ca).await,
                     _ => render_unknown_method(),
                 },
+                Some("aspas") => api_ca_aspas(req, path, ca).await,
                 Some("children") => api_ca_children(req, path, ca).await,
                 Some("history") => api_ca_history(req, path, ca).await,
 
@@ -1486,6 +1488,34 @@ async fn api_ca_my_parent_statuses(req: Request, ca: Handle) -> RoutingResult {
     )
 }
 
+async fn api_ca_aspas(req: Request, path: &mut RequestPath, ca: Handle) -> RoutingResult {
+    match path.next() {
+        None => match *req.method() {
+            Method::GET => todo!("#685 List all ASPA definitions"),
+            _ => render_unknown_method(),
+        },
+        // We may need other functions in future, such as 'analyze' or 'try'.
+        // So keep the base namespace clean and use '/api/v1/aspas/as/<asn>/..'
+        // for functions on specific ASPA definitions for the given (customer)
+        // ASN.
+        Some("as") => {
+            // get as path parameter, or error
+            // - get (specific definition)
+            // - delete
+            // - update? (definition includes the ASN so this can be in the base path)
+            match path.path_arg() {
+                Some(customer) => match *req.method() {
+                    Method::POST => api_ca_aspas_update(req, ca).await,
+                    Method::DELETE => api_ca_aspas_delete(req, ca, customer).await,
+                    _ => render_unknown_method(),
+                },
+                None => render_unknown_method(),
+            }
+        }
+        _ => render_unknown_method(),
+    }
+}
+
 async fn api_ca_children(req: Request, path: &mut RequestPath, ca: Handle) -> RoutingResult {
     match path.path_arg() {
         Some(child) => match path.next() {
@@ -1752,6 +1782,26 @@ async fn api_ca_kr_activate(req: Request, ca: Handle) -> RoutingResult {
         let actor = req.actor();
         render_empty_res(req.state().ca_keyroll_activate(ca, &actor).await)
     })
+}
+
+// -- ASPA functions
+
+/// Add or update the ASPA definition for a CA based on the update in the POST
+async fn api_ca_aspas_update(req: Request, ca: Handle) -> RoutingResult {
+    aa!(req, Permission::ASPAS_UPDATE, ca.clone(), {
+        let actor = req.actor();
+        let state = req.state().clone();
+
+        match req.json().await {
+            Err(e) => render_error(e),
+            Ok(updates) => render_empty_res(state.ca_aspas_update(ca, updates, &actor).await),
+        }
+    })
+}
+
+/// Delete the ASPA definition for the given CA and customer ASN
+async fn api_ca_aspas_delete(req: Request, ca: Handle, customer: AsId) -> RoutingResult {
+    todo!()
 }
 
 /// Update the route authorizations for this CA
