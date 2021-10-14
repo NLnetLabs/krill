@@ -13,7 +13,7 @@ use crate::commons::{api::Handle, crypto::signers::kmip::KmipSigner};
 ///
 /// Named and modelled after the similar AuthProvider concept that already exists in Krill.
 #[allow(dead_code)] // Needed as we currently only ever construct one variant
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum SignerProvider {
     OpenSsl(OpenSslSigner),
 
@@ -31,7 +31,7 @@ impl SignerProvider {
     }
 
     #[cfg(feature = "hsm")]
-    pub fn create_registration_key(&mut self) -> Result<(PublicKey, String), SignerError> {
+    pub fn create_registration_key(&self) -> Result<(PublicKey, String), SignerError> {
         match self {
             SignerProvider::OpenSsl(signer) => signer.create_registration_key(),
             #[cfg(feature = "hsm")]
@@ -53,7 +53,7 @@ impl SignerProvider {
     }
 
     #[cfg(feature = "hsm")]
-    pub fn set_handle(&mut self, handle: Handle) {
+    pub fn set_handle(&self, handle: Handle) {
         match self {
             SignerProvider::OpenSsl(signer) => signer.set_handle(handle),
             #[cfg(feature = "hsm")]

@@ -27,12 +27,15 @@ use crate::{
 };
 
 #[cfg(feature = "hsm")]
+use std::sync::RwLock;
+
+#[cfg(feature = "hsm")]
 use crate::commons::{api::Handle, crypto::dispatch::signerinfo::SignerMapper};
 
 //------------ OpenSslSigner -------------------------------------------------
 
 /// An openssl based signer.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct OpenSslSigner {
     keys_dir: Arc<Path>,
 
@@ -40,7 +43,7 @@ pub struct OpenSslSigner {
     name: String,
 
     #[cfg(feature = "hsm")]
-    handle: Option<Handle>,
+    handle: RwLock<Option<Handle>>,
 
     #[cfg(feature = "hsm")]
     info: Option<String>,
@@ -74,7 +77,7 @@ impl OpenSslSigner {
                 openssl::version::version(),
                 keys_dir.as_path().display()
             )),
-            handle: None, // will be set later
+            handle: RwLock::new(None), // will be set later
             mapper: mapper.clone(),
             keys_dir: keys_dir.into(),
         };
@@ -88,11 +91,12 @@ impl OpenSslSigner {
     }
 
     #[cfg(feature = "hsm")]
-    pub fn set_handle(&mut self, handle: Handle) {
-        if self.handle.is_some() {
+    pub fn set_handle(&self, handle: Handle) {
+        let mut writable_handle = self.handle.write().unwrap();
+        if writable_handle.is_some() {
             panic!("Cannot set signer handle as handle is already set");
         }
-        self.handle = Some(handle);
+        *writable_handle = Some(handle);
     }
 
     #[cfg(feature = "hsm")]
@@ -110,7 +114,7 @@ impl OpenSslSigner {
     }
 
     #[cfg(feature = "hsm")]
-    pub fn create_registration_key(&mut self) -> Result<(PublicKey, String), SignerError> {
+    pub fn create_registration_key(&self) -> Result<(PublicKey, String), SignerError> {
         // For the OpenSslSigner we use the KeyIdentifier as the internal key id so the two are the same.
         let key_id = self.build_key()?;
         let internal_key_id = key_id.to_string();
@@ -215,8 +219,12 @@ impl OpenSslSigner {
         // doesn't need a mapper to map from KeyIdentifier to internal key id as the internal key id IS the
         // KeyIdentifier.
         if let Some(mapper) = &self.mapper {
+            let readable_handle = self.handle.read().unwrap();
+            let signer_handle = readable_handle.as_ref().ok_or(SignerError::Other(
+                "Failed to record signer key: Signer handle not set".to_string(),
+            ))?;
             mapper
-                .add_key(self.handle.as_ref().unwrap(), key_id, &format!("{}", key_id))
+                .add_key(signer_handle, key_id, &format!("{}", key_id))
                 .map_err(|err| SignerError::Other(format!("Failed to record signer key: {}", err)))
         } else {
             Ok(())
