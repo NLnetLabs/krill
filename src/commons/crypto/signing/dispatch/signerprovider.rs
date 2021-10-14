@@ -42,22 +42,13 @@ impl SignerProvider {
     #[cfg(feature = "hsm")]
     pub fn sign_registration_challenge<D: AsRef<[u8]> + ?Sized>(
         &self,
-        internal_key_id: String,
+        signer_private_key_id: &str,
         challenge: &D,
     ) -> Result<Signature, SignerError> {
         match self {
-            SignerProvider::OpenSsl(signer) => signer.sign_registration_challenge(internal_key_id, challenge),
+            SignerProvider::OpenSsl(signer) => signer.sign_registration_challenge(signer_private_key_id, challenge),
             #[cfg(feature = "hsm")]
-            SignerProvider::Kmip(signer) => signer.sign_registration_challenge(internal_key_id, challenge),
-        }
-    }
-
-    #[cfg(feature = "hsm")]
-    pub fn get_handle(&self) -> Option<Handle> {
-        match self {
-            SignerProvider::OpenSsl(signer) => signer.get_handle(),
-            #[cfg(feature = "hsm")]
-            SignerProvider::Kmip(signer) => signer.get_handle(),
+            SignerProvider::Kmip(signer) => signer.sign_registration_challenge(signer_private_key_id, challenge),
         }
     }
 

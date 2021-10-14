@@ -16,13 +16,19 @@ use crate::commons::{
 };
 
 #[cfg(feature = "hsm")]
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 
 #[cfg(feature = "hsm")]
 use crate::commons::{
     api::Handle,
-    crypto::{dispatch::signerinfo::SignerMapper, signers::kmip::KmipSigner},
+    crypto::{
+        dispatch::{error::ErrorString, signerinfo::SignerMapper},
+        signers::kmip::KmipSigner,
+    },
 };
+
+#[cfg(feature = "hsm")]
+const ENCODED_SIGNER_HANDLE_SEPARATOR: char = '-';
 
 /// Manages multiple Signers and routes requests to the appropriate Signer.
 ///
@@ -33,6 +39,10 @@ use crate::commons::{
 ///     which is owned by a particular [Signer] instance, or because the kind of request dictates the kind of [Signer]
 ///     that should handle it (e.g. one-off signing or random number generation may be handled by a different [Signer]
 ///     than handles new key creation).
+///
+/// Note: If the `hsm` feature is not enabled all requests are routed to an instance of the [OpenSslSigner] for
+/// backward compatibility with the behaviour of Krill before the introduction of the feature and the [SignerMapper] is
+/// not created.
 ///
 /// To avoid the complexities of dynamic dispatch in Rust we use enum based dispatch instead, as we know at compile time
 /// which implementations of the [Signer] trait exist. The code noise caused by doing enum based dispatch is wrapped up
@@ -48,6 +58,11 @@ use crate::commons::{
 /// than lock the entire [Signer]. Even if that is released we will not make those changes in the current code however
 /// as that will introduce too many changes in one PR. See https://github.com/NLnetLabs/rpki-rs/issues/161 and
 /// https://github.com/NLnetLabs/rpki-rs/pull/162 for more information.
+///
+/// Further, a signer may not be available at the time we wish to use it, perhaps it is down or being slow or a network
+/// or configuration issue prevents us connecting to it at that time. Signers are therefore maintained in two distinct
+/// sets: pending and active. Signers start in the pending set and are promoted to the active set once we are able to
+/// verify that we can connect to and use them and determine which [SignerMapper] [Handle] they should be assigned.
 #[derive(Debug)]
 pub struct SignerRouter {
     /// The signer to use for creating new keys and generating random numbers.
@@ -173,11 +188,16 @@ impl SignerRouter {
 
         // Having the same signer multiple times in this vector is less efficient but the impact is negligible and it
         // doesn't break anything if there are duplicates.
-        let signers_without_handle = RwLock::new(vec![
+        let mut unique_signers = vec![
             roles.default_signer.clone(),
             roles.one_off_signer.clone(),
             roles.rand_fallback_signer.clone(),
-        ]);
+        ];
+
+        unique_signers.sort_by_key(|k| k.read().unwrap().get_name().to_string());
+        unique_signers.dedup_by_key(|k| k.read().unwrap().get_name().to_string());
+
+        let unique_signers = RwLock::new(unique_signers);
 
         // TODO: Once we can configure ourselves from the configuration file, we also need to create any signers that
         // are defined in the config but which don't have an active role, i.e. only exist to work with keys created by
@@ -188,7 +208,7 @@ impl SignerRouter {
             one_off_signer: roles.one_off_signer,
             rand_fallback_signer: roles.rand_fallback_signer,
             active_signers: signers_by_handle,
-            pending_signers: signers_without_handle,
+            pending_signers: unique_signers,
             signer_mapper,
         })
     }
@@ -199,80 +219,6 @@ impl SignerRouter {
         //   - Use the HSM for key creation, signing, deletion, except for one-off keys.
         //   - Use the HSM for random number generation, if supported, else use the OpenSSL signer.
         //   - Use the OpenSSL signer for one-off keys.
-
-        // TODO: When configuration file based setup is added the operator should choose the signer handle themselves
-        // or else we need a way to generate handle for a given signer config block that remains stable across changes
-        // to the configuration file settings.
-        //
-        // Keys created by the signer are associated with the signer handle. When later the key needs to be used we
-        // need to locate the owning signer by the KeyIdentifier. This lookup will result in a handle which we can then
-        // map back to the SignerProvider instance that we created for that handle when processing the configuration
-        // file.
-        //
-        // If the name given by the operator to the signer in the configuration file is deemed to be undesirable or
-        // worse factually incorrect and/or misleading (e.g. naming a signer OpenSSL when it is in fact a PKCS#11
-        // powered connection to an AWS Cloud HSM) then the operator may want to change the "name" used for the signer
-        // (the need for this depends a bit on where we will show this name, presumably it will/could appear in logs,
-        // API, krillc and/or UI). If the Signer has a separate name to its handle we can permit the name to be
-        // changed without changing the handle and thus keys owned by the signer can still be found.
-        //
-        // TODO: We could record the "type" (e.g. OpenSSL, PKCS#11 or KMIP) of the Signer in the Signer history then
-        // when we create the Signer if it already exists but with a different "type" we could log a warning.
-        //
-        // TODO: If we find the KeyIdentifier but the found signer handle doesn't match any configured signer, should
-        // we see if any of the configured signers exactly match a configured signer (which has a different name or
-        // handle or perhaps no handle at all if we can make that work?). That require persisting key characteristics
-        // of each configured signer that can be later matched against the config to determine that it is the same
-        // actual signer. The name may be volatile, but so also may the PKCS#11 library path, server IP address or
-        // FQDN, and access credentials too. What does that leave that we can use to determine that a given signer
-        // matches the one in the configuration file? One option might be if the backend is able to report a unique
-        // identifier for itself irrespective of its IP address or FQDN etc. We could store that in the signer history
-        // and match a changed signer configuration block to the same actual signer by fetching this value from the
-        // backend and using it (or an equivalent value) as the signer handle. The KMIP 1.0 specification defines the
-        // Query operation which MUST return a "Vendor Identification" text string that "uniquely identifies the
-        // vendor", but it could be a different HSM by the same vendor. It also defines a "Server Information" value
-        // that MAY be returne by the Query operation but whose format and content is vendor specific and is optional
-        // for the server to return, so we can't use that either. Even if we could "fingerprint" the server we don't
-        // have much information to go on and it can all legally change (e.g. IP address, port number, supported
-        // protocol versions or operations or object types, the former things could legally change as part of cluster
-        // expansion or deployment or fail over or restore from backup etc, and the latter things could legally change
-        // as part of a HSM upgrade).
-        //
-        // TODO: A different idea could be to MARK the server so that we can identify it again later. We could do this
-        // by creating a key that we don't use for anything except to identify that this is the same signer backend
-        // that we were talking to before. In fact we don't even care that it is the same signer backend, only that it
-        // has the keys that we are looking for. We *do* care that we don't maliciously get directed to use a bad
-        // backend in place of the good backend but we leave that to things like TLS certificate checks and operators
-        // to manage, though maybe we could warn about any detected changes in the server compared to what we earlier
-        // recorded. For this to work we would have to be able to lookup the marking key by an expected name. For KMIP
-        // we rename the key after creation to give it a meaningful identifier for the KMIP server operator in case the
-        // server is not only used by Krill to make it clear which were created by Krill. In the Krill HSM prototype
-        // the PKCS#11 signer is not similarly able to name the keys after creation, instead it sets the CKA_ID byte
-        // array to a random value and remembers it for retrieving the key later based on that value. For OpenSSL the
-        // KeyIdentifier is the unique identifier for using the key, we can remember that as the signer ID. The act of
-        // "marking" the signer can also serve as a way to verify that the signer functions correctly, we could even
-        // use the new key for signing and verify that the signed output is correct.
-        //
-        // The signer would try to find a key whose name/CKA_ID is the Krill mark identifier, or create it if missing.
-        // It would then add itself to the SignerMapper using the KeyIdentifier of the created mark key as the handle
-        // of the signer to create if not already present. When the SignerRouter is asked to sign using a key it would
-        // ask the SignerMapper for the handle of the owning signer and then lookup that handle in its own map of
-        // Handle to SignerProvider. If not map entry is found it would try to ask any unmapped signers for their
-        // handle and see if it matches the one we just got from the SignerMapper and if so establish that mapping for
-        // future use by this Krill process. The OpenSslSigner has no notion of key metadata, a key is just a
-        // KeyIdentifier. The mark should not be a Krill constant identifier but an identifier created for this Krill
-        // instance, otherwise connecting to a HSM already previously used by a different/earlier Krill instance would
-        // leave us thinking it has the keys are looking for when it doesn't.
-        //
-        // So, maybe better yet, if this is about making sure keys are found as expected, generate any key and use its
-        // key identifier + persistent HSM id as the signer handle (use both to differentiate between two signers who
-        // both just number their HSM ids from 1 onwards, for example). Then just lookup the signer handles in the HSM
-        // and see which one we can find.
-        //
-        // We could even go further and store the public half of the created key pair in the Signer store and use it to
-        // verify data that we ask the signer to sign with its "handle" key to verify that it is indeed the correct
-        // signer to use.
-
         let openssl_signer = Arc::new(RwLock::new(SignerProvider::OpenSsl(OpenSslSigner::build(
             work_dir,
             "OpenSslSigner - No config file name available yet",
@@ -315,6 +261,11 @@ impl SignerRouter {
         })
     }
 
+    /// Locate the [SignerProvider] that owns a given [KeyIdentifier], if the signer is active.
+    ///
+    /// If the signer that owns the key has not yet been promoted from the pending set to the active set or if no
+    /// the key was not created by us or was not registered with the [SignerMapper] then this lookup will fail with
+    /// [SignerError::KeyNotFound].
     fn get_signer_for_key(&self, key_id: &KeyIdentifier) -> Result<Arc<RwLock<SignerProvider>>, SignerError> {
         // Get the signer handle for the key
         let signer_handle = self
@@ -322,173 +273,382 @@ impl SignerRouter {
             .get_signer_for_key(key_id)
             .map_err(|_| SignerError::KeyNotFound)?;
 
-        let signer = self.get_signer_for_handle(&signer_handle);
+        // Get the SignerProvider for the handle, if the signer is active
+        let signer = self.active_signers.read().unwrap().get(&signer_handle).cloned();
 
         signer.ok_or(SignerError::KeyNotFound)
     }
-
-    fn get_signer_for_handle(&self, signer_handle: &Handle) -> Option<Arc<RwLock<SignerProvider>>> {
-        self.active_signers.read().unwrap().get(signer_handle).cloned()
-    }
 }
 
-// Variants of the `Signer` trait functions that take `&mut` arguments and so must be locked to use them, but for which
-// we don't want the caller to have to lock the entire `SignerRouter`, only the single `Signer` being used. Ideally the
-// `Signer` trait wouldn't use `&mut` at all and rather require the implementation to use the interior mutability
-// pattern with as much or as little locking internally at the finest level of granularity possible.
-// Update: https://github.com/NLnetLabs/rpki-rs/pull/162 removes the &mut.
+/// Variants of the `Signer` trait functions that take `&mut` arguments and so must be locked to use them, but for which
+/// we don't want the caller to have to lock the entire `SignerRouter`, only the single `Signer` being used. Ideally the
+/// `Signer` trait wouldn't use `&mut` at all and rather require the implementation to use the interior mutability
+/// pattern with as much or as little locking internally at the finest level of granularity possible.
+/// Update: https://github.com/NLnetLabs/rpki-rs/pull/162 removes the &mut.
 impl SignerRouter {
     pub fn create_key_minimally_locking(&self, algorithm: PublicKeyFormat) -> Result<KeyIdentifier, SignerError> {
-        self.register_pending_signers()?;
+        self.bind_ready_signers();
         self.default_signer.write().unwrap().create_key(algorithm)
     }
 
     pub fn destroy_key_minimally_locking(&self, key_id: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
-        self.register_pending_signers()?;
+        self.bind_ready_signers();
         self.get_signer_for_key(key_id)?.write().unwrap().destroy_key(key_id)
     }
+}
 
-    #[cfg(not(feature = "hsm"))]
-    fn register_pending_signers(&self) -> Result<(), SignerError> {
-        Ok(())
+/// When the "hsm" feature is enabled we can no longer assume that signers are immediately and always available as was
+/// the case without the "hsm" feature when only the OpenSslSigner was supported. We therefore keep created signers on
+/// standby in a "pending" set until we can verify that they are reachable and usable and can determine which
+/// [SignerMapper] [Handle] to assign to them.
+///
+/// The Krill configuration file (TODO) defines named signers with a type (openssl, kmip or pkcs#11) and type specific
+/// settings (key dir path, hostname, port number, TLS certificate paths, username, password, slot id, etc) and assigns
+/// signers a role (default signer, one-off signer, rand signer, keyroll signer, etc) either explicitly or by default.
+///
+/// Keys created using signers in a previous Krill process MUST have been registered by the signer with the
+/// [SignerMapper] to indicate that the signer owns/possesses the key, and how to map from the [KeyIdentifier] to any
+/// internal signer specific key id. When a new Krill process starts it will need to know for any given [KeyIdentifier]
+/// which signer that was created should be used to work with the key. Rather than rely on operator supplied signer
+/// names being stable or requiring operators to also maintain a stable signer id in the config, we instead "bind" the
+/// signer backend to the signer handle that owns the set of keys stored in the [SignerMapper].
+///
+/// Binding is done by asking the signer on first use to create a new key pair for which we save the public key and the
+/// signer specific internal private key identifier and combine them into a unique [Handle] for use by the signer with
+/// the [SignerMapper]. We also store some metadata about the signer backend with the [Handle] in the [SignerMapper]
+/// which allows us to see if the configuration and/or backend properties change over time.
+///
+/// On subsequent bindings we determine which signer maps to which [SignerMapper] [Handle] by extracting the private key
+/// signer specific internal id from the [Handle] and asking each signer to sign a challenge using that key. We then
+/// verify the signature using the saved public key. If the signer doesn't know the internal private key id or produces
+/// an incorrect signature we know that the signer doesn't possess the binding key and thus likely isn't the signer we
+/// should go to for the keys mapped to the [SignerMapper] [Handle] corresponding to the binding key.
+///
+/// By binding this way we both verify that the signer is usable (at least for key pair creation and signing) and that
+/// we are using a signer that should have the keys we expect it to possess.
+///
+#[cfg(feature = "hsm")]
+enum IdentifyResult {
+    Unavailable,
+    Corrupt,
+    Identified(Handle),
+    Unusable,
+    Unidentified,
+}
+
+#[cfg(feature = "hsm")]
+enum RegisterResult {
+    NotReady,
+    ReadyVerified(Handle),
+    ReadyUnusable,
+}
+
+#[cfg(not(feature = "hsm"))]
+impl SignerRouter {
+    fn bind_ready_signers(&self) {}
+}
+
+#[cfg(feature = "hsm")]
+impl SignerRouter {
+    fn bind_ready_signers(&self) {
+        if let Err(err) = self.do_ready_signer_binding() {
+            error!("Internal error: Unable to bind ready signers: {}", err);
+        }
     }
 
-    #[cfg(feature = "hsm")]
-    fn register_pending_signers(&self) -> Result<(), SignerError> {
-        use std::str::FromStr;
+    fn do_ready_signer_binding(&self) -> Result<(), String> {
+        if self.has_pending_signers() {
+            // Fetch the handle of every signer previously created in the [SignerMapper] to see if any of the pending
+            // signers is actually one of these or is a new signer that we haven't seen before.
+            let candidate_handles = self.get_candidate_signer_handles()?;
 
-        let has_pending_signers = !self.pending_signers.read().unwrap().is_empty();
+            // Block until we can get a write lock on the set of pending_signers as we will hopefully remove one or
+            // more items from the set. Standard practice in Krill is to panic if a lock cannot be obtained.
+            let mut pending_signers = self.pending_signers.write().unwrap();
 
-        if has_pending_signers {
-            // For each unmapped signer in the store attempt to lookup its handle "key" in this signer to see if this
-            // signer is the owner of that key and is thus an interface to the signer that created the keys attributed
-            // to that signer in the store.
+            let mut abort_flag = false;
 
-            // Each signer has a handle which is actually a combination of a public key KeyIdentifier and an internal
-            // HSM specific private key identifier. These can be matched to a signer backend to show that it really is
-            // the owner of the set of keys associated with the signer. When we attempt to identify which key set a
-            // given signer backend owns we try using each of the signer handles in turn to see if the signer backend
-            // matches. One side-effect of checking all signer handles, not just those that are mapped, is that if the
-            // config defines two signers, and one is a near continuous replica of the other, then when Krill starts it
-            // will use whichever one it can connect to and verify. It's not deliberate however and so if the one it
-            // uses later dies while Krill is running Krill won't then switch to the other one as it has no logic at
-            // present for removing a signer from the active set.
-            let candidate_handles = self
-                .signer_mapper
-                .get_signer_handles()
-                .map_err(|err| SignerError::Custom(err.to_string()))?;
-
-            // Are any of the given handles the string representations of a key id of a key that we own? If so then that
-            // must be our signer handle.
-            self.pending_signers.write().unwrap().retain(|signer_provider| {
-                //TODO: handle me
-                let (signer_handle, signer_name) = {
-                    let sp = signer_provider.read().unwrap(); //TODO: handle me
-                    let signer_handle = sp.get_handle();
-                    let signer_name = sp.get_name().to_string();
-                    (signer_handle, signer_name)
-                };
-
-                // Does the signer provider really have no handle? or did we assign one to it below?
-                if signer_handle.is_some() {
-                    // Do NOT retain this signer in the vec as it is NOT lacking a handle
-                    return false;
+            // For each pending signer see if we can verify it and if so move it from the pending set to the active set.
+            pending_signers.retain(|signer_provider| -> bool {
+                if abort_flag {
+                    return true;
                 }
 
-                debug!("Checking if signer '{}' is ready and known", signer_name);
+                let signer_name = signer_provider.read().unwrap().get_name().to_string();
 
-                for candidate_handle in &candidate_handles {
-                    // The signer handle is a combination of KeyIdentifier and internal key id
-                    let candidate_handle_bytes = hex::decode(candidate_handle).unwrap(); //TODO: handle me
-                    let candidate_handle_str = String::from_utf8(candidate_handle_bytes).unwrap(); //TODO: handle me
-                    let (wanted_key_id, internal_key_id) = candidate_handle_str.split_once('-').unwrap(); //TODO: handle me
-
-                    if let Ok(wanted_key_id) = KeyIdentifier::from_str(wanted_key_id) {
-                        let public_key_hex_str = self
-                            .signer_mapper
-                            .get_signer_public_key(candidate_handle)
-                            .unwrap() //TODO: handle me
-                            .unwrap(); //TODO: handle me
-
-                        if let Ok(public_key_bytes) = hex::decode(public_key_hex_str) {
-                            let public_key = PublicKey::decode(&*public_key_bytes).unwrap(); //TODO: handle me
-                            let found_key_id = public_key.key_identifier();
-
-                            if found_key_id == wanted_key_id {
-                                let challenge = "Krill signer verification challenge".as_bytes();
-                                let signature = {
-                                    signer_provider
-                                        .read()
-                                        .unwrap() //TODO: handle me
-                                        .sign_registration_challenge(internal_key_id.to_string(), challenge)
-                                };
-
-                                if let Ok(signature) = signature {
-                                    if public_key.verify(challenge, &signature).is_ok() {
-                                        debug!("Signer '{}' is ready and known, binding", signer_name);
-
-                                        let mut sp = signer_provider.write().unwrap();
-                                        let signer_info = sp.get_info().unwrap_or("No signer info".to_string());
-                                        self.signer_mapper
-                                            .change_signer_name(candidate_handle, &signer_name)
-                                            .unwrap(); //TODO: handle me
-                                        self.signer_mapper
-                                            .change_signer_info(candidate_handle, &signer_info)
-                                            .unwrap(); //TODO: handle me
-                                        sp.set_handle(candidate_handle.clone()); //TODO: handle me
-                                        self.active_signers
-                                            .write()
-                                            .unwrap()
-                                            .insert(candidate_handle.clone(), signer_provider.clone()); //TODO: handle me
-
-                                        debug!("Signer '{}' binding complete", signer_name);
-                                        return false;
-                                    }
-                                }
-                            }
+                // See if this is a known signer that whose signature matches the public key stored in the
+                // [SignerMapper] for the signer.
+                self.identify_signer(signer_provider, &candidate_handles)
+                    .and_then(|verify_result| match verify_result {
+                        IdentifyResult::Unavailable => {
+                            // Signer isn't ready yet, leave it in the pending set and try again next time.
+                            Ok(true)
                         }
-                    }
-                }
-
-                let mut sp = signer_provider.write().unwrap();
-                let create_result = sp.create_registration_key(); //TODO: handle me
-                if let Ok((public_key, internal_key_id)) = create_result {
-                    let challenge = "Krill signer verification challenge".as_bytes();
-                    let signature = sp.sign_registration_challenge(internal_key_id.to_string(), challenge);
-
-                    if let Ok(signature) = signature {
-                        if public_key.verify(challenge, &signature).is_ok() {
-                            debug!("Signer '{}' is ready and new, binding", signer_name);
-
-                            let key_id = public_key.key_identifier();
-                            let new_signer_handle = format!("{}-{}", key_id, internal_key_id);
-                            let new_signer_handle = hex::encode(new_signer_handle);
-                            let new_signer_handle = Handle::from_str(&new_signer_handle).unwrap(); // TODO: handle me
-                            let signer_info = sp.get_info().unwrap_or("No signer info".to_string());
-                            let public_key_bytes = public_key.to_info_bytes();
-                            let public_key = Some(hex::encode(public_key_bytes));
-                            let public_key_ref = public_key.as_ref().map(|v| v.as_str());
-
-                            self.signer_mapper
-                                .add_signer(&new_signer_handle, &signer_name, &signer_info, public_key_ref)
-                                .unwrap(); // TODO: handle me
-                            sp.set_handle(new_signer_handle.clone());
+                        IdentifyResult::Identified(signer_handle) => {
+                            // Signer is ready and verified, add it to the active set.
                             self.active_signers
                                 .write()
                                 .unwrap()
-                                .insert(new_signer_handle.clone(), signer_provider.clone());
-
-                            debug!("Signer '{}' binding complete", signer_name);
-                            return false;
+                                .insert(signer_handle, signer_provider.clone());
+                            info!("Signer '{}' is ready for use", signer_name);
+                            // And remove it from the pending set
+                            Ok(false)
                         }
-                    }
-                }
-
-                true
+                        IdentifyResult::Unidentified => {
+                            // Signer is ready and new, register it and move it to the active set
+                            self.register_new_signer(signer_provider).and_then(
+                                |register_result| match register_result {
+                                    RegisterResult::NotReady => {
+                                        // Strange, it was ready just now when we verified it ... leave it in the
+                                        // pending set and try again next time.
+                                        Ok(true)
+                                    }
+                                    RegisterResult::ReadyVerified(signer_handle) => {
+                                        // Signer is ready and verified, add it to the active set.
+                                        self.active_signers
+                                            .write()
+                                            .unwrap()
+                                            .insert(signer_handle, signer_provider.clone());
+                                        info!("Signer '{}' is ready for use", signer_name);
+                                        // And remove it from the pending set
+                                        Ok(false)
+                                    }
+                                    RegisterResult::ReadyUnusable => {
+                                        // Signer registration failed, remove it from the pending set
+                                        warn!("Signer '{}' is not usable", signer_name);
+                                        Ok(false)
+                                    }
+                                },
+                            )
+                        }
+                        IdentifyResult::Unusable => {
+                            // Signer is ready and unusable, remove it from the pending set
+                            warn!("Signer '{}' is not usable", signer_name);
+                            Ok(false)
+                        }
+                        IdentifyResult::Corrupt => {
+                            // This case should never happen as this variant is handled in the called code
+                            Err(ErrorString::new("Internal error: invalid handle"))
+                        }
+                    })
+                    .unwrap_or_else(|err| {
+                        error!("Signer '{}' could not be bound: {}. Aborting.", signer_name, *err);
+                        abort_flag = true;
+                        true
+                    })
             });
         }
 
         Ok(())
+    }
+
+    fn has_pending_signers(&self) -> bool {
+        !self.pending_signers.read().unwrap().is_empty()
+    }
+
+    fn get_candidate_signer_handles(&self) -> Result<Vec<Handle>, String> {
+        Ok(self
+            .signer_mapper
+            .get_signer_handles()
+            .map_err(|err| format!("Failed to get signer handles: {}", err))?)
+    }
+
+    fn identify_signer(
+        &self,
+        signer_provider: &Arc<RwLock<SignerProvider>>,
+        candidate_handles: &[Handle],
+    ) -> Result<IdentifyResult, ErrorString> {
+        let config_signer_name = signer_provider.read().unwrap().get_name().to_string();
+
+        // First try any candidate handle whose signer name matches the name of the signer provider then fall back to
+        // trying other candidate handles, as perhaps the signer was renamed in the config file and no longer matches by
+        // name but can still be matched by verifying a new signing signature with the stored public key of the other
+        // candidate handles.
+        let mut ordered_candidate_handles = Vec::new();
+        for candidate_handle in candidate_handles {
+            let stored_signer_name = self.signer_mapper.get_signer_name(candidate_handle)?;
+            if stored_signer_name == config_signer_name {
+                ordered_candidate_handles.insert(0, candidate_handle);
+            } else {
+                ordered_candidate_handles.push(candidate_handle);
+            }
+        }
+
+        for candidate_handle in ordered_candidate_handles {
+            let res = self.is_signer_identified_by_handle(signer_provider, candidate_handle)?;
+            match res {
+                IdentifyResult::Unidentified => {
+                    // Signer was contacted and no errors were encountered but it doesn't know the key encoded in the
+                    // given handle. Try again with the next handle.
+                    continue;
+                }
+                IdentifyResult::Corrupt => {
+                    // The candidate handle or signer public key is invalid so no key could be extracted to present to
+                    // the signer. Try again with the next handle.
+                    continue;
+                }
+                IdentifyResult::Unavailable | IdentifyResult::Unusable | IdentifyResult::Identified(_) => {
+                    // No need to try the next candidate key, let the caller process the result.
+                    return Ok(res);
+                }
+            }
+        }
+
+        // No errors occurred while contacting the signer but it doesn't know any of our candidate keys so this must be
+        // a new signer that should be registered.
+        Ok(IdentifyResult::Unidentified)
+    }
+
+    fn is_signer_identified_by_handle(
+        &self,
+        signer_provider: &Arc<RwLock<SignerProvider>>,
+        candidate_handle: &Handle,
+    ) -> Result<IdentifyResult, ErrorString> {
+        let (key_identifier, signer_private_key_id) = match Self::decode_signer_handle(candidate_handle) {
+            Err(err) => {
+                error!(
+                    "Internal error: Signer handle '{}' is invalid: {}",
+                    candidate_handle, *err
+                );
+                return Ok(IdentifyResult::Corrupt);
+            }
+            Ok(res) => res,
+        };
+
+        let handle_name = self.signer_mapper.get_signer_name(candidate_handle)?;
+        let sp_read = signer_provider.read().unwrap();
+        let signer_name = sp_read.get_name().to_string();
+        trace!(
+            "Attempting to identify signer '{}' using identity key stored for signer '{}'",
+            signer_name,
+            handle_name
+        );
+
+        let public_key = match self.signer_mapper.get_signer_public_key(candidate_handle) {
+            Ok(res) => res,
+            Err(err) => {
+                error!(
+                    "Internal error: Identity public key for signer '{}' is invalid: {}",
+                    handle_name, err
+                );
+                return Ok(IdentifyResult::Corrupt);
+            }
+        };
+
+        if public_key.key_identifier() != key_identifier {
+            error!(
+                "Internal error: signer handle '{}' is invalid: key identifier mismatch",
+                candidate_handle
+            );
+            return Ok(IdentifyResult::Corrupt);
+        }
+
+        let challenge = "Krill signer verification challenge".as_bytes();
+        let signature = match sp_read.sign_registration_challenge(&signer_private_key_id, challenge) {
+            Err(SignerError::SignerUnavailable) => {
+                debug!("Signer '{}' could not be contacted", signer_name);
+                return Ok(IdentifyResult::Unavailable);
+            }
+            Err(SignerError::KeyNotFound) => {
+                debug!(
+                    "Signer '{}' not matched: private key id '{}' not found",
+                    signer_name, signer_private_key_id
+                );
+                return Ok(IdentifyResult::Unidentified);
+            }
+            Err(err) => {
+                error!("Signer '{}' is unusable: {}", signer_name, err);
+                return Ok(IdentifyResult::Unusable);
+            }
+            Ok(res) => res,
+        };
+
+        if public_key.verify(challenge, &signature).is_ok() {
+            debug!("Signer '{}' is ready and known, binding", signer_name);
+            let signer_info = sp_read.get_info().unwrap_or("No signer info".to_string());
+
+            // Drop the read lock so that we can acquire a write lock
+            std::mem::drop(sp_read);
+
+            signer_provider.write().unwrap().set_handle(candidate_handle.clone());
+
+            if let Err(err) = self.signer_mapper.change_signer_name(candidate_handle, &signer_name) {
+                // This is unexpected and perhaps indicative of a deeper problem but log and keep going.
+                error!(
+                    "Internal error: Failed to change name of signer to '{}': {}",
+                    signer_name, err
+                );
+            }
+            if let Err(err) = self.signer_mapper.change_signer_info(candidate_handle, &signer_info) {
+                // This is unexpected and perhaps indicative of a deeper problem but log and keep going.
+                error!(
+                    "Internal error: Failed to change info for signer '{}' to '{}': {}",
+                    signer_name, signer_info, err
+                );
+            }
+
+            debug!("Signer '{}' binding complete", signer_name);
+        } else {
+            debug!(
+                "Signer '{}' not matched: incorrect signature created with private key '{}'",
+                signer_name, signer_private_key_id
+            );
+        }
+
+        Ok(IdentifyResult::Identified(candidate_handle.clone()))
+    }
+
+    fn register_new_signer(
+        &self,
+        signer_provider: &Arc<RwLock<SignerProvider>>,
+    ) -> Result<RegisterResult, ErrorString> {
+        let mut sp_write = signer_provider.write().unwrap();
+        let signer_name = sp_write.get_name().to_string();
+
+        let (public_key, signer_private_key_id) = match sp_write.create_registration_key() {
+            Err(SignerError::SignerUnavailable) => return Ok(RegisterResult::NotReady),
+            Err(_) => return Ok(RegisterResult::ReadyUnusable),
+            Ok(res) => res,
+        };
+
+        let challenge = "Krill signer verification challenge".as_bytes();
+        let signature = match sp_write.sign_registration_challenge(&signer_private_key_id, challenge) {
+            Err(SignerError::SignerUnavailable) => return Ok(RegisterResult::NotReady),
+            Err(_) => return Ok(RegisterResult::ReadyUnusable),
+            Ok(res) => res,
+        };
+
+        if !public_key.verify(challenge, &signature).is_ok() {
+            error!("Signer '{}' challenge signature is invalid", signer_name);
+            return Ok(RegisterResult::ReadyUnusable);
+        }
+
+        debug!("Signer '{}' is ready and new, binding", signer_name);
+
+        let new_signer_handle = Self::encode_signer_handle(public_key.key_identifier(), &signer_private_key_id)?;
+        let signer_info = sp_write.get_info().unwrap_or("No signer info".to_string());
+
+        sp_write.set_handle(new_signer_handle.clone());
+        self.signer_mapper
+            .add_signer(&new_signer_handle, &signer_name, &signer_info, &public_key)
+            .unwrap(); // TODO: handle me
+
+        debug!("Signer '{}' binding complete", signer_name);
+        Ok(RegisterResult::ReadyVerified(new_signer_handle))
+    }
+
+    fn encode_signer_handle(key_id: KeyIdentifier, signer_private_key_id: &str) -> Result<Handle, ErrorString> {
+        Ok(Handle::from_str(&hex::encode(format!(
+            "{}{}{}",
+            key_id, ENCODED_SIGNER_HANDLE_SEPARATOR, signer_private_key_id
+        )))?)
+    }
+
+    fn decode_signer_handle(handle: &Handle) -> Result<(KeyIdentifier, String), ErrorString> {
+        String::from_utf8(hex::decode(handle)?)?
+            .split_once(ENCODED_SIGNER_HANDLE_SEPARATOR)
+            .ok_or(ErrorString::new("Invalid handle: missing separator"))
+            .and_then(|(kid_str, pkey_id)| Ok((KeyIdentifier::from_str(kid_str)?, pkey_id.to_string())))
     }
 }
 
@@ -497,17 +657,17 @@ impl Signer for SignerRouter {
     type Error = SignerError;
 
     fn create_key(&mut self, algorithm: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
-        self.register_pending_signers()?;
+        self.bind_ready_signers();
         self.default_signer.write().unwrap().create_key(algorithm)
     }
 
     fn get_key_info(&self, key_id: &KeyIdentifier) -> Result<PublicKey, KeyError<Self::Error>> {
-        self.register_pending_signers()?;
+        self.bind_ready_signers();
         self.get_signer_for_key(key_id)?.read().unwrap().get_key_info(key_id)
     }
 
     fn destroy_key(&mut self, key_id: &KeyIdentifier) -> Result<(), KeyError<Self::Error>> {
-        self.register_pending_signers()?;
+        self.bind_ready_signers();
         self.get_signer_for_key(key_id)?.write().unwrap().destroy_key(key_id)
     }
 
@@ -517,7 +677,7 @@ impl Signer for SignerRouter {
         algorithm: SignatureAlgorithm,
         data: &D,
     ) -> Result<Signature, SigningError<Self::Error>> {
-        self.register_pending_signers()?;
+        self.bind_ready_signers();
         self.get_signer_for_key(key_id)?
             .read()
             .unwrap()
@@ -529,12 +689,12 @@ impl Signer for SignerRouter {
         algorithm: SignatureAlgorithm,
         data: &D,
     ) -> Result<(Signature, PublicKey), Self::Error> {
-        self.register_pending_signers()?;
+        self.bind_ready_signers();
         self.one_off_signer.read().unwrap().sign_one_off(algorithm, data)
     }
 
     fn rand(&self, target: &mut [u8]) -> Result<(), Self::Error> {
-        self.register_pending_signers()?;
+        self.bind_ready_signers();
         let signer = self.default_signer.read().unwrap();
         if signer.supports_random() {
             signer.rand(target)

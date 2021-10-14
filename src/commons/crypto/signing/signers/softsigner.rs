@@ -88,11 +88,6 @@ impl OpenSslSigner {
     }
 
     #[cfg(feature = "hsm")]
-    pub fn get_handle(&self) -> Option<Handle> {
-        self.handle.clone()
-    }
-
-    #[cfg(feature = "hsm")]
     pub fn set_handle(&mut self, handle: Handle) {
         if self.handle.is_some() {
             panic!("Cannot set signer handle as handle is already set");
@@ -103,12 +98,12 @@ impl OpenSslSigner {
     #[cfg(feature = "hsm")]
     pub fn sign_registration_challenge<D: AsRef<[u8]> + ?Sized>(
         &self,
-        internal_key_id: String,
+        signer_private_key_id: &str,
         challenge: &D,
     ) -> Result<Signature, SignerError> {
         use std::str::FromStr;
 
-        let key_id = KeyIdentifier::from_str(&internal_key_id).map_err(|_| SignerError::KeyNotFound)?;
+        let key_id = KeyIdentifier::from_str(signer_private_key_id).map_err(|_| SignerError::KeyNotFound)?;
         let key_pair = self.load_key(&key_id)?;
         let signature = Self::sign_with_key(key_pair.pkey.as_ref(), challenge)?;
         Ok(signature)
@@ -222,7 +217,7 @@ impl OpenSslSigner {
         if let Some(mapper) = &self.mapper {
             mapper
                 .add_key(self.handle.as_ref().unwrap(), key_id, &format!("{}", key_id))
-                .map_err(|err| SignerError::Custom(format!("Failed to record signer key: {}", err)))
+                .map_err(|err| SignerError::Other(format!("Failed to record signer key: {}", err)))
         } else {
             Ok(())
         }

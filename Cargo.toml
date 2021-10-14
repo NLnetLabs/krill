@@ -36,7 +36,7 @@ hex                   = "^0.4"
 hyper                 = { version = "^0.14", features = ["server"] }
 intervaltree          = "0.2.6"
 jmespatch             = { version = "^0.3", features = ["sync"], optional = true }
-kmip                  = { version = "0.3.1", package = "kmip-protocol", features = ["tls-with-openssl"], optional = true }
+kmip                  = { version = "0.3.3-dev", package = "kmip-protocol", features = ["tls-with-openssl"], optional = true }
 libflate              = "^1"
 log                   = "^0.4"
 openidconnect         = { version = "^2.0.0", optional = true, default_features = false }
@@ -67,13 +67,17 @@ rustc_version   = "0.2.3"
 
 [features]
 default = [ "multi-user" ]
-rta = []
-multi-user = [ "basic-cookies", "jmespatch/sync", "regex", "oso", "openidconnect", "rpassword", "scrypt", "unicode-normalization", "urlparse" ]
-ui-tests = []
 extra-debug = [ "rpki/extra-debug" ]
+multi-user = [ "basic-cookies", "jmespatch/sync", "regex", "oso", "openidconnect", "rpassword", "scrypt", "unicode-normalization", "urlparse" ]
 static-openssl = [ "openssl/vendored" ]
-all-except-ui-tests = [ "multi-user", "rta", "static-openssl" ]
+
+# Preview features - not ready for production use
+rta = []
 hsm = ["backoff", "kmip", "r2d2"]
+
+# Internal features - not for external use
+all-except-ui-tests = [ "multi-user", "rta", "static-openssl" ]
+ui-tests = []
 hsm-tests = []
 
 # Make sure that Krill crashes on panics, rather than losing threads and
@@ -82,7 +86,7 @@ hsm-tests = []
 panic = "abort"
 
 [dev-dependencies]
-# for user management
+# For user management
 tiny_http = { version = "^0.8", features = ["ssl"] }
 ctrlc = "^3.1"
 
@@ -178,7 +182,7 @@ assets = [
 post_install_script = "/usr/share/krill/rpm/postinst $*"
 post_uninstall_script = "/usr/share/krill/rpm/postrm $*"
 
-# ensure that the useradd tool is present by depending on its package
+# Ensure that the useradd tool is present by depending on its package
 [package.metadata.generate-rpm.requires]
 shadow-utils = "*"
 
@@ -188,3 +192,4 @@ shadow-utils = "*"
 [patch.crates-io]
 bcder = { git = 'https://github.com/NLnetLabs/bcder' }
 rpki = { git = 'https://github.com/ximon18/rpki-rs', branch = '0.12.3-unsigned-from-slice' }
+kmip = { path = '../krill-kmip-protocol', package = "kmip-protocol" }

@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt, path::Path};
 
-use rpki::repository::crypto::KeyIdentifier;
+use rpki::repository::crypto::{KeyIdentifier, PublicKey};
 
 use crate::{
     commons::{
@@ -17,14 +17,16 @@ use crate::{
 type InitSignerInfoEvent = StoredEvent<InitSignerInfoDetails>;
 
 impl InitSignerInfoEvent {
-    pub fn init(id: &Handle, signer_name: &str, signer_info: &str, public_key: Option<&str>) -> Self {
+    pub fn init(id: &Handle, signer_name: &str, signer_info: &str, public_key: &PublicKey) -> Self {
+        let public_key = hex::encode(public_key.to_info_bytes());
+
         StoredEvent::new(
             id,
             0,
             InitSignerInfoDetails {
                 signer_name: signer_name.to_string(),
                 signer_info: signer_info.to_string(),
-                public_key: public_key.map(|v| v.to_string()),
+                public_key,
             },
         )
     }
@@ -34,7 +36,7 @@ impl InitSignerInfoEvent {
 struct InitSignerInfoDetails {
     pub signer_name: String,
     pub signer_info: String,
-    pub public_key: Option<String>,
+    pub public_key: String,
 }
 
 impl fmt::Display for InitSignerInfoDetails {
@@ -217,7 +219,7 @@ struct SignerInfo {
     /// The hex encoded bytes of an X.509 Subject Public Key Info
     /// public key that can be used to verify the identity of the
     /// signer. Should match the KeyIdentifier used in the id.
-    public_key: Option<String>,
+    public_key: String,
 
     /// The keys that the signer possesses identified by their
     /// Krill KeyIdentifier and their corresponding signer specific
@@ -327,7 +329,7 @@ impl SignerMapper {
         signer_handle: &Handle,
         signer_name: &str,
         signer_info: &str,
-        public_key: Option<&str>,
+        public_key: &PublicKey,
     ) -> KrillResult<()> {
         let init = InitSignerInfoEvent::init(signer_handle, signer_name, signer_info, public_key);
         self.store.add(init)?;
@@ -350,8 +352,11 @@ impl SignerMapper {
         Ok(())
     }
 
-    pub fn get_signer_public_key(&self, signer_handle: &Handle) -> KrillResult<Option<String>> {
-        Ok(self.store.get_latest(signer_handle)?.public_key.clone())
+    pub fn get_signer_public_key(&self, signer_handle: &Handle) -> KrillResult<PublicKey> {
+        let public_key_hex_str = self.store.get_latest(signer_handle)?.public_key.clone();
+        let public_key_bytes = hex::decode(public_key_hex_str).map_err(Error::signer)?;
+        let public_key = PublicKey::decode(&*public_key_bytes).map_err(Error::signer)?;
+        Ok(public_key)
     }
 
     pub fn change_signer_info(&self, signer_handle: &Handle, signer_info: &str) -> KrillResult<()> {
