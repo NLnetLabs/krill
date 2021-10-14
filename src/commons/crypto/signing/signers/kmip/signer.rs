@@ -11,7 +11,7 @@ impl Signer for KmipSigner {
     type KeyId = KeyIdentifier;
     type Error = SignerError;
 
-    fn create_key(&mut self, algorithm: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
+    fn create_key(&self, algorithm: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
         let (key, kmip_key_pair_ids) = self.build_key(algorithm)?;
         let key_id = key.key_identifier();
         self.remember_kmip_key_ids(&key_id, kmip_key_pair_ids)?;
@@ -24,7 +24,7 @@ impl Signer for KmipSigner {
             .map_err(|err| KeyError::Signer(err))
     }
 
-    fn destroy_key(&mut self, key_id: &Self::KeyId) -> Result<(), KeyError<Self::Error>> {
+    fn destroy_key(&self, key_id: &Self::KeyId) -> Result<(), KeyError<Self::Error>> {
         let kmip_key_pair_ids = self.lookup_kmip_key_ids(key_id)?;
         match self.destroy_key_pair(&kmip_key_pair_ids, KeyStatus::Active)? {
             true => Ok(()),

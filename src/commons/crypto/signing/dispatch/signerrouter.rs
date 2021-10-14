@@ -280,23 +280,6 @@ impl SignerRouter {
     }
 }
 
-/// Variants of the `Signer` trait functions that take `&mut` arguments and so must be locked to use them, but for which
-/// we don't want the caller to have to lock the entire `SignerRouter`, only the single `Signer` being used. Ideally the
-/// `Signer` trait wouldn't use `&mut` at all and rather require the implementation to use the interior mutability
-/// pattern with as much or as little locking internally at the finest level of granularity possible.
-/// Update: https://github.com/NLnetLabs/rpki-rs/pull/162 removes the &mut.
-impl SignerRouter {
-    pub fn create_key_minimally_locking(&self, algorithm: PublicKeyFormat) -> Result<KeyIdentifier, SignerError> {
-        self.bind_ready_signers();
-        self.default_signer.write().unwrap().create_key(algorithm)
-    }
-
-    pub fn destroy_key_minimally_locking(&self, key_id: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
-        self.bind_ready_signers();
-        self.get_signer_for_key(key_id)?.write().unwrap().destroy_key(key_id)
-    }
-}
-
 /// When the "hsm" feature is enabled we can no longer assume that signers are immediately and always available as was
 /// the case without the "hsm" feature when only the OpenSslSigner was supported. We therefore keep created signers on
 /// standby in a "pending" set until we can verify that they are reachable and usable and can determine which

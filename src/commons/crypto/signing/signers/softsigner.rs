@@ -346,10 +346,10 @@ pub mod tests {
     fn should_return_subject_public_key_info() {
         test::test_under_tmp(|d| {
             #[cfg(not(feature = "hsm"))]
-            let mut s = OpenSslSigner::build(&d).unwrap();
+            let s = OpenSslSigner::build(&d).unwrap();
 
             #[cfg(feature = "hsm")]
-            let mut s = OpenSslSigner::build(&d, "dummy", None).unwrap();
+            let s = OpenSslSigner::build(&d, "dummy", None).unwrap();
 
             let ki = s.create_key(PublicKeyFormat::Rsa).unwrap();
             s.get_key_info(&ki).unwrap();
