@@ -656,7 +656,7 @@ impl Signer for SignerRouter {
     type KeyId = KeyIdentifier;
     type Error = SignerError;
 
-    fn create_key(&mut self, algorithm: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
+    fn create_key(&self, algorithm: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
         self.bind_ready_signers();
         self.default_signer.write().unwrap().create_key(algorithm)
     }
@@ -666,7 +666,7 @@ impl Signer for SignerRouter {
         self.get_signer_for_key(key_id)?.read().unwrap().get_key_info(key_id)
     }
 
-    fn destroy_key(&mut self, key_id: &KeyIdentifier) -> Result<(), KeyError<Self::Error>> {
+    fn destroy_key(&self, key_id: &KeyIdentifier) -> Result<(), KeyError<Self::Error>> {
         self.bind_ready_signers();
         self.get_signer_for_key(key_id)?.write().unwrap().destroy_key(key_id)
     }
