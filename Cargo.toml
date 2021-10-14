@@ -36,7 +36,7 @@ hex                   = "^0.4"
 hyper                 = { version = "^0.14", features = ["server"] }
 intervaltree          = "0.2.6"
 jmespatch             = { version = "^0.3", features = ["sync"], optional = true }
-kmip                  = { version = "0.3.3-dev", package = "kmip-protocol", features = ["tls-with-openssl"], optional = true }
+kmip                  = { version = "0.4.0", package = "kmip-protocol", features = ["tls-with-openssl"], optional = true }
 libflate              = "^1"
 log                   = "^0.4"
 openidconnect         = { version = "^2.0.0", optional = true, default_features = false }
@@ -192,4 +192,3 @@ shadow-utils = "*"
 [patch.crates-io]
 bcder = { git = 'https://github.com/NLnetLabs/bcder' }
 rpki = { git = 'https://github.com/ximon18/rpki-rs', branch = '0.12.3-unsigned-from-slice' }
-kmip = { path = '../krill-kmip-protocol', package = "kmip-protocol" }
