@@ -1627,8 +1627,7 @@ dependencies = [
 
 [[package]]
 name = "rpki"
-version = "0.12.3"
-source = "git+https://github.com/ximon18/rpki-rs?branch=0.12.3-unsigned-from-slice#643e9e14dcf19de136e280989ae96c00144f5be5"
+version = "0.12.3-dev"
 dependencies = [
  "base64 0.13.0",
  "bcder",
