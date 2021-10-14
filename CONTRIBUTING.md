@@ -73,7 +73,7 @@ language and then compiled into a static website/offline document using the open
 source [Sphinx](http://www.sphinx-doc.org) and
 [ReadTheDocs](https://readthedocs.org/) tools. You can contribute to the
 Krill user manual by sending patches via pull requests on the
-[routinator-manual](https://github.com/NLnetLabs/krill-manual) GitHub
+[krill-manual](https://github.com/NLnetLabs/krill-manual) GitHub
 source repository. 
 
 You can contribute to the [man
