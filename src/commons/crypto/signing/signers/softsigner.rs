@@ -17,9 +17,7 @@ use openssl::{
     rsa::Rsa,
 };
 
-use rpki::repository::crypto::{
-    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
-};
+use rpki::repository::crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError, signer::{KeyError, Sign, SignWithKey}};
 
 use crate::{
     commons::{crypto::signers::error::SignerError, error::KrillIoError},
@@ -109,7 +107,7 @@ impl OpenSslSigner {
 
         let key_id = KeyIdentifier::from_str(signer_private_key_id).map_err(|_| SignerError::KeyNotFound)?;
         let key_pair = self.load_key(&key_id)?;
-        let signature = Self::sign_with_key(key_pair.pkey.as_ref(), challenge)?;
+        let signature = Self::sign_with_key_internal(key_pair.pkey.as_ref(), challenge)?;
         Ok(signature)
     }
 
@@ -180,13 +178,23 @@ impl OpenSslSigner {
         Ok(key_id)
     }
 
-    fn sign_with_key<D: AsRef<[u8]> + ?Sized>(pkey: &PKeyRef<Private>, data: &D) -> Result<Signature, SignerError> {
+    fn sign_with_key_internal<D: AsRef<[u8]> + ?Sized>(pkey: &PKeyRef<Private>, data: &D) -> Result<Signature, SignerError> {
         let mut signer = ::openssl::sign::Signer::new(MessageDigest::sha256(), pkey)?;
         signer.update(data.as_ref())?;
 
         let signature = Signature::new(SignatureAlgorithm::default(), Bytes::from(signer.sign_to_vec()?));
 
         Ok(signature)
+    }
+
+    pub async fn sign_with_key<What: SignWithKey>(
+        &self, key_id: &KeyIdentifier, what: What
+    ) -> Result<<What::Sign as Sign>::Final, SignerError> {
+        let key_pair = self.load_key(key_id)?;
+        let info = key_pair.subject_public_key_info()?;
+        let what = what.set_key(&info).map_err(|err| SignerError::Other(err.to_string()))?;
+        let signature = Self::sign_with_key_internal(key_pair.pkey.as_ref(), what.signed_data())?;
+        Ok(what.sign(signature))
     }
 
     fn load_key(&self, id: &KeyIdentifier) -> Result<OpenSslKeyPair, SignerError> {
@@ -267,7 +275,7 @@ impl Signer for OpenSslSigner {
         data: &D,
     ) -> Result<Signature, SigningError<Self::Error>> {
         let key_pair = self.load_key(key_id)?;
-        Self::sign_with_key(key_pair.pkey.as_ref(), data).map_err(SigningError::Signer)
+        Self::sign_with_key_internal(key_pair.pkey.as_ref(), data).map_err(SigningError::Signer)
     }
 
     fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
@@ -277,7 +285,7 @@ impl Signer for OpenSslSigner {
     ) -> Result<(Signature, PublicKey), Self::Error> {
         let kp = OpenSslKeyPair::build()?;
 
-        let signature = Self::sign_with_key(kp.pkey.as_ref(), data)?;
+        let signature = Self::sign_with_key_internal(kp.pkey.as_ref(), data)?;
 
         let key = kp.subject_public_key_info()?;
 

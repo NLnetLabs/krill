@@ -560,7 +560,7 @@ impl ResourceClass {
     ///
     /// Note that this certificate still needs to be added to this RC by
     /// calling the update_certs function.
-    pub fn issue_cert(
+    pub async fn issue_cert(
         &self,
         csr: CsrInfo,
         child_resources: &ResourceSet,
@@ -581,12 +581,12 @@ impl ResourceClass {
             signing_key,
             issuance_timing.timing_child_certificate_valid_weeks,
             signer,
-        )?;
+        ).await?;
 
         Ok(issued)
     }
 
-    fn re_issue(
+    async fn re_issue(
         &self,
         previous: &IssuedCert,
         updated_resources: Option<ResourceSet>,
@@ -608,7 +608,7 @@ impl ResourceClass {
             signing_key,
             issuance_timing.timing_child_certificate_valid_weeks,
             signer,
-        )?;
+        ).await?;
 
         Ok(re_issued)
     }

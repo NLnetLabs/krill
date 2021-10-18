@@ -1,6 +1,4 @@
-use rpki::repository::crypto::{
-    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
-};
+use rpki::repository::crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError, signer::{KeyError, Sign, SignWithKey}};
 
 use crate::commons::crypto::signers::{error::SignerError, softsigner::OpenSslSigner};
 
@@ -139,6 +137,18 @@ impl Signer for SignerProvider {
             SignerProvider::OpenSsl(signer) => signer.rand(target),
             #[cfg(feature = "hsm")]
             SignerProvider::Kmip(signer) => signer.rand(target),
+        }
+    }
+}
+
+impl SignerProvider {
+    pub async fn sign_with_key<What: SignWithKey>(
+        &self, key_id: &KeyIdentifier, what: What
+    ) -> Result<<What::Sign as Sign>::Final, SignerError> {
+        match self {
+            SignerProvider::OpenSsl(signer) => signer.sign_with_key(key_id, what).await,
+            #[cfg(feature = "hsm")]
+            SignerProvider::Kmip(_signer) => todo!(),
         }
     }
 }

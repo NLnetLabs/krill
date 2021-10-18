@@ -3,7 +3,7 @@ use std::path::Path;
 use rpki::repository::{
     cert::TbsCert,
     crl::{CrlEntry, TbsCertList},
-    crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer},
+    crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError},
     manifest::ManifestContent,
     roa::RoaBuilder,
     rta,
@@ -14,7 +14,7 @@ use rpki::repository::{
 
 use crate::commons::{
     api::RepoInfo,
-    crypto::{self, dispatch::signerrouter::SignerRouter, CryptoResult},
+    crypto::{self, dispatch::signerrouter::SignerRouter, CryptoResult, SignerError},
     KrillResult,
 };
 
@@ -91,11 +91,16 @@ impl KrillSigner {
         Ok(Csr::decode(enc.as_slice())?)
     }
 
-    pub fn sign_cert(&self, tbs: TbsCert, key_id: &KeyIdentifier) -> CryptoResult<Cert> {
-        tbs.into_cert(&self.router, key_id).map_err(crypto::Error::signing)
+    pub async fn sign_cert(&self, tbs: TbsCert, key_id: &KeyIdentifier) -> CryptoResult<Cert> {
+        //tbs.into_cert(&self.router, key_id).map_err(crypto::Error::signing)
+        self.router
+            .sign_with_key(key_id, tbs.sign())
+            .await
+            .map_err(crypto::Error::signing)
     }
 
     pub fn sign_crl(&self, tbs: TbsCertList<Vec<CrlEntry>>, key_id: &KeyIdentifier) -> CryptoResult<Crl> {
+        // TODO: Update to use self.router.sign_with_key() once Crl has been extended with Sign and SignWithKey support
         tbs.into_crl(&self.router, key_id).map_err(crypto::Error::signing)
     }
 
@@ -108,6 +113,96 @@ impl KrillSigner {
         content
             .into_manifest(builder, &self.router, key_id)
             .map_err(crypto::Error::signing)
+
+        // TODO: Revisit this code once we have a way to do SignedObjectBuilder::finalize() without passing a Signer
+        // or can reproduce what finalize() does without needing access to its internal private fields, in particular
+        // SignedAttrs::new() is currently private and thus inaccessible and does a lot of work rather than being an
+        // easily replicated dumb factory function.
+        // use crate::bcder::encode::Values;
+        // use bcder::{Mode, OctetString, Oid};
+        // use bytes::Bytes;
+        // use rpki::repository::{
+        //     cert::{KeyUsage, Overclaim},
+        //     oid,
+        //     sigobj::{SignedAttrs, SignedObject},
+        // };
+
+        // fn into_manifest(
+        //     mut sigobj: SignedObjectBuilder,
+        //     content: ManifestContent,
+        //     signer: &SignerRouter,
+        //     issuer_key: &KeyIdentifier,
+        // ) -> Result<Manifest, SigningError<SignerError>> {
+        //     sigobj.set_v4_resources_inherit();
+        //     sigobj.set_v6_resources_inherit();
+        //     sigobj.set_as_resources_inherit();
+        //     let signed = sigobj_finalize(
+        //         sigobj,
+        //         Oid(oid::CT_RPKI_MANIFEST.0.into()),
+        //         content.encode_ref().to_captured(Mode::Der).into_bytes(),
+        //         signer,
+        //         issuer_key,
+        //     )?;
+        //     Ok(Manifest { signed, content })
+        // }
+
+        // fn sigobj_finalize(
+        //     sigobj: SignedObjectBuilder,
+        //     content_type: Oid<Bytes>,
+        //     content: Bytes,
+        //     signer: &SignerRouter,
+        //     issuer_key: &KeyIdentifier,
+        // ) -> Result<SignedObject, SigningError<SignerError>> {
+        //     let issuer_pub = signer.get_key_info(issuer_key)?;
+
+        //     // Produce signed attributes.
+        //     let message_digest = sigobj.digest_algorithm().digest(&content).into();
+        //     let signed_attrs = SignedAttrs::new(
+        //         &content_type,
+        //         &message_digest,
+        //         sigobj.signing_time(),
+        //         sigobj.binary_signing_time(),
+        //     );
+
+        //     // Sign signed attributes with a one-off key.
+        //     let (signature, key_info) =
+        //         signer.sign_one_off(SignatureAlgorithm::default(), &signed_attrs.encode_verify())?;
+        //     let sid = KeyIdentifier::from_public_key(&key_info);
+
+        //     // Make the certificate.
+        //     let mut cert = TbsCert::new(
+        //         sigobj.serial_number,
+        //         sigobj.issuer.unwrap_or_else(|| issuer_pub.to_subject_name()),
+        //         sigobj.validity,
+        //         sigobj.subject,
+        //         key_info,
+        //         KeyUsage::Ee,
+        //         Overclaim::Refuse,
+        //     );
+        //     cert.set_authority_key_identifier(Some(issuer_pub.key_identifier()));
+        //     cert.set_crl_uri(Some(sigobj.crl_uri));
+        //     cert.set_ca_issuer(Some(sigobj.ca_issuer));
+        //     cert.set_signed_object(Some(sigobj.signed_object));
+        //     cert.set_v4_resources(sigobj.v4_resources);
+        //     cert.set_v6_resources(sigobj.v6_resources);
+        //     cert.set_as_resources(sigobj.as_resources);
+        //     let cert = cert.into_cert(signer, issuer_key)?;
+
+        //     Ok(SignedObject {
+        //         digest_algorithm: sigobj.digest_algorithm,
+        //         content_type,
+        //         content: OctetString::new(content),
+        //         cert,
+        //         sid,
+        //         signed_attrs,
+        //         signature,
+        //         message_digest,
+        //         signing_time: sigobj.signing_time,
+        //         binary_signing_time: sigobj.binary_signing_time,
+        //     })
+        // }
+
+        // into_manifest(builder, content, key_id, &self.router).map_err(crypto::Error::signing)
     }
 
     pub fn sign_roa(
