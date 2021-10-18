@@ -2,10 +2,7 @@ use rpki::repository::crypto::{
     signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
 };
 
-use crate::commons::crypto::SignerError;
-
-#[derive(Debug)]
-pub struct Pkcs11Signer {}
+use crate::commons::crypto::{signers::pkcs11::Pkcs11Signer, SignerError};
 
 impl Signer for Pkcs11Signer {
     type KeyId = KeyIdentifier;
@@ -42,36 +39,6 @@ impl Signer for Pkcs11Signer {
     }
 
     fn rand(&self, _target: &mut [u8]) -> Result<(), Self::Error> {
-        todo!()
-    }
-}
-
-impl Pkcs11Signer {
-    pub fn supports_random(&self) -> bool {
-        todo!()
-    }
-
-    pub fn create_registration_key(&self) -> Result<(PublicKey, String), SignerError> {
-        todo!()
-    }
-
-    pub fn sign_registration_challenge<D: AsRef<[u8]> + ?Sized>(
-        &self,
-        _signer_private_key_id: &str,
-        _challenge: &D,
-    ) -> Result<Signature, SignerError> {
-        todo!()
-    }
-
-    pub fn set_handle(&self, _handle: crate::commons::api::Handle) {
-        todo!()
-    }
-
-    pub fn get_name(&self) -> &str {
-        todo!()
-    }
-
-    pub fn get_info(&self) -> Option<String> {
         todo!()
     }
 }

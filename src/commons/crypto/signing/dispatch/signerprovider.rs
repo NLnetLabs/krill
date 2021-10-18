@@ -5,7 +5,10 @@ use rpki::repository::crypto::{
 use crate::commons::crypto::signers::{error::SignerError, softsigner::OpenSslSigner};
 
 #[cfg(feature = "hsm")]
-use crate::commons::{api::Handle, crypto::signers::{kmip::KmipSigner, pkcs11::Pkcs11Signer}};
+use crate::commons::{
+    api::Handle,
+    crypto::signers::{kmip::KmipSigner, pkcs11::Pkcs11Signer},
+};
 
 //------------ SignerProvider ------------------------------------------------
 
