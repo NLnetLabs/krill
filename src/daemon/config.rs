@@ -162,6 +162,10 @@ impl ConfigDefaults {
         24
     }
 
+    fn timing_publish_next_jitter_hours() -> i64 {
+        4
+    }
+
     fn timing_publish_hours_before_next() -> i64 {
         8
     }
@@ -298,7 +302,9 @@ pub struct Config {
 #[derive(Clone, Debug, Deserialize)]
 pub struct IssuanceTimingConfig {
     #[serde(default = "ConfigDefaults::timing_publish_next_hours")]
-    pub timing_publish_next_hours: i64,
+    timing_publish_next_hours: i64,
+    #[serde(default = "ConfigDefaults::timing_publish_next_jitter_hours")]
+    timing_publish_next_jitter_hours: i64,
     #[serde(default = "ConfigDefaults::timing_publish_hours_before_next")]
     pub timing_publish_hours_before_next: i64,
     #[serde(default = "ConfigDefaults::timing_child_certificate_valid_weeks")]
@@ -309,6 +315,19 @@ pub struct IssuanceTimingConfig {
     pub timing_roa_valid_weeks: i64,
     #[serde(default = "ConfigDefaults::timing_roa_reissue_weeks_before")]
     pub timing_roa_reissue_weeks_before: i64,
+}
+
+impl IssuanceTimingConfig {
+    /// Returns the next update time in hours based on configuration:
+    ///
+    /// timing_publish_next_hours + random(0..timing_publish_next_jitter_hours)
+    /// defaults: 24 + (0-4) hours -> to minutes
+    pub fn publish_next_minutes(&self) -> i64 {
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+        let random_mins_per_hour: i64 = rng.gen_range(0..3600);
+        (self.timing_publish_next_hours * 3600) + (self.timing_publish_next_jitter_hours * random_mins_per_hour)
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -544,6 +563,7 @@ impl Config {
         let roa_deaggregate_threshold = 2;
 
         let timing_publish_next_hours = ConfigDefaults::timing_publish_next_hours();
+        let timing_publish_next_jitter_hours = ConfigDefaults::timing_publish_next_jitter_hours();
         let timing_publish_hours_before_next = ConfigDefaults::timing_publish_hours_before_next();
         let timing_child_certificate_valid_weeks = ConfigDefaults::timing_child_certificate_valid_weeks();
         let timing_child_certificate_reissue_weeks_before =
@@ -553,6 +573,7 @@ impl Config {
 
         let issuance_timing = IssuanceTimingConfig {
             timing_publish_next_hours,
+            timing_publish_next_jitter_hours,
             timing_publish_hours_before_next,
             timing_child_certificate_valid_weeks,
             timing_child_certificate_reissue_weeks_before,
@@ -726,6 +747,19 @@ impl Config {
 
         if self.issuance_timing.timing_publish_next_hours < 2 {
             return Err(ConfigError::other("timing_publish_next_hours must be at least 2"));
+        }
+
+        if self.issuance_timing.timing_publish_next_jitter_hours < 0 {
+            return Err(ConfigError::other(
+                "timing_publish_next_jitter_hours must be at least 0",
+            ));
+        }
+
+        if self.issuance_timing.timing_publish_next_jitter_hours > (self.issuance_timing.timing_publish_next_hours / 2)
+        {
+            return Err(ConfigError::other(
+                "timing_publish_next_jitter_hours must be at most timing_publish_next_hours divided by 2",
+            ));
         }
 
         if self.issuance_timing.timing_publish_hours_before_next < 1 {

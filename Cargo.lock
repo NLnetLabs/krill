@@ -793,6 +793,7 @@ dependencies = [
  "openidconnect",
  "openssl",
  "oso",
+ "rand 0.8.4",
  "regex",
  "reqwest",
  "rpassword",

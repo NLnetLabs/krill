@@ -884,7 +884,7 @@ impl CurrentKeyObjectSet {
         self.revocations.purge();
 
         self.crl = self.reissue_crl(&self.revocations, timing, signer)?;
-        self.manifest = self.reissue_mft(&self.crl, timing, signer)?;
+        self.manifest = self.reissue_mft(&self.crl, signer)?;
         self.number = self.next();
 
         Ok(())
@@ -903,7 +903,7 @@ impl CurrentKeyObjectSet {
         revocations.purge();
 
         let crl = self.basic.reissue_crl(&revocations, timing, signer)?;
-        let manifest = self.basic.reissue_mft(&crl, timing, signer)?;
+        let manifest = self.basic.reissue_mft(&crl, signer)?;
 
         Ok(BasicKeyObjectSet {
             signing_cert: self.signing_cert.clone(),
@@ -915,14 +915,9 @@ impl CurrentKeyObjectSet {
         })
     }
 
-    fn reissue_mft(
-        &self,
-        new_crl: &PublishedCrl,
-        timing: &IssuanceTimingConfig,
-        signer: &KrillSigner,
-    ) -> KrillResult<PublishedManifest> {
+    fn reissue_mft(&self, new_crl: &PublishedCrl, signer: &KrillSigner) -> KrillResult<PublishedManifest> {
         ManifestBuilder::with_objects(new_crl, &self.roas, &self.certs)
-            .build_new_mft(&self.signing_cert, self.next(), timing, signer)
+            .build_new_mft(&self.signing_cert, self.next(), signer)
             .map(|m| m.into())
     }
 }
@@ -1075,12 +1070,12 @@ impl BasicKeyObjectSet {
         let issuer = signing_cert.subject().clone();
         let revocations = Revocations::default();
         let number = 1;
-        let next_hours = timing.timing_publish_next_hours;
+        let next_mins = timing.publish_next_minutes();
 
-        let crl = CrlBuilder::build(signing_key, issuer, &revocations, number, next_hours, signer)?;
+        let crl = CrlBuilder::build(signing_key, issuer, &revocations, number, next_mins, signer)?;
 
         let manifest = ManifestBuilder::with_crl_only(&crl)
-            .build_new_mft(&signing_cert, number, timing, signer)
+            .build_new_mft(&signing_cert, number, signer)
             .map(|m| m.into())?;
 
         Ok(BasicKeyObjectSet::new(signing_cert, number, revocations, manifest, crl))
@@ -1113,7 +1108,7 @@ impl BasicKeyObjectSet {
         revocations.purge();
 
         let crl = self.reissue_crl(&revocations, timing, signer)?;
-        let manifest = self.reissue_mft(&crl, timing, signer)?;
+        let manifest = self.reissue_mft(&crl, signer)?;
 
         Ok(BasicKeyObjectSet {
             signing_cert: self.signing_cert.clone(),
@@ -1135,19 +1130,14 @@ impl BasicKeyObjectSet {
         let issuer = self.crl.issuer().clone();
         let number = self.next();
 
-        let next_hours = timing.timing_publish_next_hours;
+        let next_mins = timing.publish_next_minutes();
 
-        CrlBuilder::build(signing_key, issuer, revocations, number, next_hours, signer)
+        CrlBuilder::build(signing_key, issuer, revocations, number, next_mins, signer)
     }
 
-    fn reissue_mft(
-        &self,
-        new_crl: &PublishedCrl,
-        timing: &IssuanceTimingConfig,
-        signer: &KrillSigner,
-    ) -> KrillResult<PublishedManifest> {
+    fn reissue_mft(&self, new_crl: &PublishedCrl, signer: &KrillSigner) -> KrillResult<PublishedManifest> {
         ManifestBuilder::with_crl_only(new_crl)
-            .build_new_mft(&self.signing_cert, self.next(), timing, signer)
+            .build_new_mft(&self.signing_cert, self.next(), signer)
             .map(|m| m.into())
     }
 
@@ -1292,6 +1282,14 @@ impl PublishedCrl {
         self.0.to_captured().into_bytes()
     }
 
+    pub fn this_update(&self) -> Time {
+        self.0.this_update()
+    }
+
+    pub fn next_update(&self) -> Time {
+        self.0.next_update()
+    }
+
     pub fn name(&self) -> ObjectName {
         ObjectName::from(&self.0)
     }
@@ -1333,13 +1331,13 @@ impl CrlBuilder {
         issuer: Name,
         revocations: &Revocations,
         number: u64,
-        next_hours: i64,
+        next_mins: i64,
         signer: &KrillSigner,
     ) -> KrillResult<PublishedCrl> {
         let aki = KeyIdentifier::from_public_key(signing_key);
 
         let this_update = Time::five_minutes_ago();
-        let next_update = Time::now() + Duration::hours(next_hours);
+        let next_update = Time::now() + Duration::minutes(next_mins);
         let serial_number = Serial::from(number);
 
         let crl = TbsCertList::new(
@@ -1360,6 +1358,8 @@ impl CrlBuilder {
 
 #[allow(clippy::mutable_key_type)]
 pub struct ManifestBuilder {
+    this_update: Time,
+    next_update: Time,
     entries: HashMap<Bytes, Bytes>,
 }
 
@@ -1387,23 +1387,25 @@ impl ManifestBuilder {
             entries.insert(name.clone().into(), hash);
         }
 
-        ManifestBuilder { entries }
+        ManifestBuilder {
+            this_update: crl.this_update(),
+            next_update: crl.next_update(),
+            entries,
+        }
     }
 
     #[allow(clippy::mutable_key_type)]
     pub fn with_crl_only(crl: &PublishedCrl) -> Self {
         let mut entries: HashMap<Bytes, Bytes> = HashMap::new();
         entries.insert(crl.name().into(), crl.mft_hash());
-        ManifestBuilder { entries }
+        ManifestBuilder {
+            this_update: crl.this_update(),
+            next_update: crl.next_update(),
+            entries,
+        }
     }
 
-    fn build_new_mft(
-        self,
-        signing_cert: &RcvdCert,
-        number: u64,
-        issuance_timing: &IssuanceTimingConfig,
-        signer: &KrillSigner,
-    ) -> KrillResult<Manifest> {
+    fn build_new_mft(self, signing_cert: &RcvdCert, number: u64, signer: &KrillSigner) -> KrillResult<Manifest> {
         let signing_key = signing_cert.cert().subject_public_key_info();
 
         let mft_uri = signing_cert.mft_uri();
@@ -1413,29 +1415,25 @@ impl ManifestBuilder {
         let aki = KeyIdentifier::from_public_key(signing_key);
         let serial_number = Serial::from(number);
 
-        let this_update = Time::five_minutes_ago();
-        let now = Time::now();
-        let next_update = Time::now() + Duration::hours(issuance_timing.timing_publish_next_hours);
-
         let entries = self.entries.iter().map(|(k, v)| FileAndHash::new(k, v));
 
         let manifest: Manifest = {
             let mft_content = ManifestContent::new(
                 serial_number,
-                this_update,
-                next_update,
+                self.this_update,
+                self.next_update,
                 DigestAlgorithm::default(),
                 entries,
             );
             let mut object_builder = SignedObjectBuilder::new(
                 signer.random_serial()?,
-                Validity::new(this_update, next_update),
+                Validity::new(self.this_update, self.next_update),
                 crl_uri,
                 aia.clone(),
                 mft_uri,
             );
             object_builder.set_issuer(Some(signing_cert.cert().subject().clone()));
-            object_builder.set_signing_time(Some(now));
+            object_builder.set_signing_time(Some(Time::now()));
 
             signer.sign_manifest(mft_content, object_builder, &aki)?
         };
