@@ -10,9 +10,9 @@ use rpki::repository::{
 use crate::{
     commons::{
         api::{
-            EntitlementClass, Handle, HexEncodedHash, IssuanceRequest, IssuedCert, ParentHandle, RcvdCert,
-            ReplacedObject, RepoInfo, RequestResourceLimit, ResourceClassInfo, ResourceClassName, ResourceSet,
-            Revocation, RevocationRequest, SuspendedCert, UnsuspendedCert,
+            AspaConfiguration, EntitlementClass, Handle, HexEncodedHash, IssuanceRequest, IssuedCert, ParentHandle,
+            RcvdCert, ReplacedObject, RepoInfo, RequestResourceLimit, ResourceClassInfo, ResourceClassName,
+            ResourceSet, Revocation, RevocationRequest, SuspendedCert, UnsuspendedCert,
         },
         crypto::{CsrInfo, KrillSigner, SignSupport},
         error::Error,
@@ -21,8 +21,8 @@ use crate::{
     daemon::{
         ca::events::{ChildCertificateUpdates, RoaUpdates},
         ca::{
-            self, ta_handle, CaEvtDet, CertifiedKey, ChildCertificates, CurrentKey, KeyState, NewKey, OldKey,
-            PendingKey, Roas, Routes,
+            self, ta_handle, AspaObjects, AspaObjectsUpdates, CaEvtDet, CertifiedKey, ChildCertificates, CurrentKey,
+            KeyState, NewKey, OldKey, PendingKey, Roas, Routes,
         },
         config::{Config, IssuanceTimingConfig},
     },
@@ -50,6 +50,7 @@ pub struct ResourceClass {
     parent_rc_name: ResourceClassName,
 
     roas: Roas,
+    aspas: AspaObjects,
     certificates: ChildCertificates,
 
     last_key_change: Time,
@@ -73,6 +74,7 @@ impl ResourceClass {
             parent_handle,
             parent_rc_name,
             roas: Roas::default(),
+            aspas: AspaObjects::default(),
             certificates: ChildCertificates::default(),
             last_key_change: Time::now(),
             key_state: KeyState::create(pending_key),
@@ -86,6 +88,7 @@ impl ResourceClass {
             parent_handle: ta_handle(),
             parent_rc_name,
             roas: Roas::default(),
+            aspas: AspaObjects::default(),
             certificates: ChildCertificates::default(),
             last_key_change: Time::now(),
             key_state: KeyState::create(pending_key),
@@ -680,6 +683,34 @@ impl ResourceClass {
     /// Marks the ROAs as updated from a RoaUpdated event.
     pub fn roas_updated(&mut self, updates: RoaUpdates) {
         self.roas.updated(updates);
+    }
+}
+
+/// # Autonomous System Provider Authorization
+///
+impl ResourceClass {
+    /// Create a new ASPA object if this RC holds the customer ASN.
+    /// Returns `Ok(None)` if the RC does not contain the customer ASN.
+    pub fn add_aspa(
+        &self,
+        aspa: &AspaConfiguration,
+        config: &Config,
+        signer: &KrillSigner,
+    ) -> KrillResult<Option<AspaObjectsUpdates>> {
+        if let Some(resources) = self.current_resources() {
+            if resources.contains_asn(aspa.customer()) {
+                todo!("make the object")
+            } else {
+                Ok(None)
+            }
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Apply ASPA object changes from events
+    pub fn aspa_objects_updated(&mut self, updates: AspaObjectsUpdates) {
+        todo!()
     }
 }
 

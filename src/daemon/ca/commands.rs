@@ -8,9 +8,9 @@ use crate::{
     commons::{
         actor::Actor,
         api::{
-            AspaCustomer, AspaProviderUpdates, ChildHandle, Entitlements, Handle, IssuanceRequest, ParentCaContact,
-            ParentHandle, RcvdCert, RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest,
-            RevocationResponse, RtaName, StorableCaCommand, StorableRcEntitlement,
+            AspaConfiguration, AspaCustomer, ChildHandle, Entitlements, Handle, IssuanceRequest, ParentCaContact,
+            ParentHandle, ProviderAsUpdates, RcvdCert, RepositoryContact, ResourceClassName, ResourceSet,
+            RevocationRequest, RevocationResponse, RtaName, StorableCaCommand, StorableRcEntitlement,
         },
         crypto::{IdCert, KrillSigner},
         eventsourcing::{self, StoredCommand},
@@ -149,8 +149,11 @@ pub enum CmdDet {
     // ASPA Support
     // ------------------------------------------------------------
 
-    // Adds or updates the existing AspaProviders for the given AspaCustomer
-    AspaUpdate(AspaProviderUpdates, Arc<Config>, Arc<KrillSigner>),
+    // Updates an existing AspaProviders for the given AspaCustomer
+    AspaAdd(AspaConfiguration, Arc<Config>, Arc<KrillSigner>),
+
+    // Updates an existing AspaProviders for the given AspaCustomer
+    AspaUpdate(ProviderAsUpdates, Arc<Config>, Arc<KrillSigner>),
 
     // Remove the entry for the given AspaCustomer
     AspaRemove(AspaCustomer),
@@ -289,6 +292,7 @@ impl From<CmdDet> for StorableCaCommand {
             // ------------------------------------------------------------
             // ASPA Support
             // ------------------------------------------------------------
+            CmdDet::AspaAdd(addition, _, _) => StorableCaCommand::AspaAdd { addition },
             CmdDet::AspaUpdate(updates, _, _) => StorableCaCommand::AspaUpdate { updates },
             CmdDet::AspaRemove(customer) => StorableCaCommand::AspaRemove { customer },
             CmdDet::AspaRenew(_, _) => StorableCaCommand::ReissueBeforeExpiring,
@@ -506,9 +510,19 @@ impl CmdDet {
     //-------------------------------------------------------------------------------
     // Autonomous System Provider Authorization
     //-------------------------------------------------------------------------------
+    pub fn aspas_add(
+        ca: &Handle,
+        aspa: AspaConfiguration,
+        config: Arc<Config>,
+        signer: Arc<KrillSigner>,
+        actor: &Actor,
+    ) -> Cmd {
+        eventsourcing::SentCommand::new(ca, None, CmdDet::AspaAdd(aspa, config, signer), actor)
+    }
+
     pub fn aspas_update(
         ca: &Handle,
-        update: AspaProviderUpdates,
+        update: ProviderAsUpdates,
         config: Arc<Config>,
         signer: Arc<KrillSigner>,
         actor: &Actor,

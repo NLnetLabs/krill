@@ -26,6 +26,7 @@ pub mod rrdp;
 use std::{collections::HashMap, fmt, sync::Arc};
 
 use bytes::Bytes;
+use rpki::repository::resources::AsId;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use rpki::repository::{cert::Cert, crl::Crl, crypto::KeyIdentifier, manifest::Manifest, roa::Roa};
@@ -34,8 +35,6 @@ use crate::{
     commons::{error::RoaDeltaError, util::sha256},
     daemon::ca::RouteAuthorization,
 };
-
-use super::error::AspaProviderUpdateError;
 
 // Some syntactic sugar to help this old coder's brain deal with the mess of Strings
 pub type Message = String;
@@ -228,7 +227,7 @@ pub struct ErrorResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     delta_error: Option<RoaDeltaError>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    aspa_delta_error: Option<AspaProviderUpdateError>,
+    aspa_delta_error: Option<ProviderAsUpdateConflict>,
 }
 
 impl ErrorResponse {
@@ -289,12 +288,16 @@ impl ErrorResponse {
         res
     }
 
+    pub fn with_asn(self, asn: AsId) -> Self {
+        self.with_arg("asn", asn)
+    }
+
     pub fn with_roa_delta_error(mut self, roa_delta_error: &RoaDeltaError) -> Self {
         self.delta_error = Some(roa_delta_error.clone());
         self
     }
 
-    pub fn with_aspa_delta_error(mut self, aspa_delta_error: &AspaProviderUpdateError) -> Self {
+    pub fn with_aspa_delta_error(mut self, aspa_delta_error: &ProviderAsUpdateConflict) -> Self {
         self.aspa_delta_error = Some(aspa_delta_error.clone());
         self
     }

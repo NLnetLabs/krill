@@ -16,11 +16,11 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            self, CertAuthInfo, ChildHandle, EntitlementClass, Entitlements, Handle, IdCertPem, IssuanceRequest,
-            IssuedCert, ObjectName, ParentCaContact, ParentHandle, RcvdCert, RepoInfo, RepositoryContact,
-            RequestResourceLimit, ResourceClassName, ResourceSet, Revocation, RevocationRequest, RevocationResponse,
-            RoaDefinition, RtaList, RtaName, RtaPrepResponse, SigningCert, StorableCaCommand, TaCertDetails,
-            TrustAnchorLocator,
+            self, AspaConfiguration, CertAuthInfo, ChildHandle, EntitlementClass, Entitlements, Handle, IdCertPem,
+            IssuanceRequest, IssuedCert, ObjectName, ParentCaContact, ParentHandle, ProviderAsUpdates, RcvdCert,
+            RepoInfo, RepositoryContact, RequestResourceLimit, ResourceClassName, ResourceSet, Revocation,
+            RevocationRequest, RevocationResponse, RoaDefinition, RtaList, RtaName, RtaPrepResponse, SigningCert,
+            StorableCaCommand, TaCertDetails, TrustAnchorLocator,
         },
         crypto::{CsrInfo, IdCert, IdCertBuilder, KrillSigner, ProtocolCms, ProtocolCmsBuilder},
         error::{Error, RoaDeltaError},
@@ -378,6 +378,14 @@ impl Aggregate for CertAuth {
                 .roas_updated(updates),
 
             //-----------------------------------------------------------------------
+            // Autonomous System Provider Authorization
+            //-----------------------------------------------------------------------
+            CaEvtDet::AspaConfigAdded { .. } => todo!(),
+            CaEvtDet::AspaConfigUpdated { .. } => todo!(),
+            CaEvtDet::AspaConfigRemoved { .. } => todo!(),
+            CaEvtDet::AspaObjectsUpdated { .. } => todo!(),
+
+            //-----------------------------------------------------------------------
             // Publication
             //-----------------------------------------------------------------------
             CaEvtDet::RepoUpdated { contact } => {
@@ -451,7 +459,8 @@ impl Aggregate for CertAuth {
             CmdDet::RouteAuthorizationsRenew(config, signer) => self.route_authorizations_renew(&config, &signer),
 
             // ASPA
-            CmdDet::AspaUpdate(_, _, _) => todo!("#685"),
+            CmdDet::AspaAdd(addition, config, signer) => self.aspas_add(addition, &config, &signer),
+            CmdDet::AspaUpdate(updates, config, signer) => self.aspas_update(updates, &config, &signer),
             CmdDet::AspaRemove(_) => todo!("#685"),
             CmdDet::AspaRenew(_, _) => todo!("#685"),
 
@@ -1705,10 +1714,79 @@ impl CertAuth {
         }
 
         if !delta_errors.is_empty() {
-            Err(Error::RoaDeltaError(delta_errors))
+            Err(Error::RoaDeltaError(self.handle().clone(), delta_errors))
         } else {
             Ok((desired_routes, res))
         }
+    }
+}
+
+/// # Autonomous System Provider Authorizations
+///
+impl CertAuth {
+    pub fn aspas_add(
+        &self,
+        aspa_config: AspaConfiguration,
+        config: &Config,
+        signer: &KrillSigner,
+    ) -> KrillResult<Vec<CaEvt>> {
+        let customer = aspa_config.customer();
+        if self.aspas.has(customer) {
+            return Err(Error::AspaCustomerAlreadyPresent(self.handle().clone(), customer));
+        }
+
+        if !self.all_resources().contains_asn(customer) {
+            return Err(Error::AspaCustomerAsNotEntitled(self.handle().clone(), customer));
+        }
+
+        let mut res = vec![];
+
+        for (rcn, rc) in self.resources.iter() {
+            if let Some(updates) = rc.add_aspa(&aspa_config, config, signer)? {
+                res.push(CaEvtDet::AspaObjectsUpdated {
+                    resource_class_name: rcn.clone(),
+                    updates,
+                });
+            }
+        }
+        res.push(CaEvtDet::AspaConfigAdded { aspa_config });
+
+        Ok(self.events_from_details(res))
+    }
+
+    pub fn aspas_update(
+        &self,
+        updates: ProviderAsUpdates,
+        config: &Config,
+        signer: &KrillSigner,
+    ) -> KrillResult<Vec<CaEvt>> {
+        self.verify_update(&updates)?;
+
+        todo!()
+    }
+
+    /// Verifies whether the update can be applied.
+    fn verify_update(&self, updates: &ProviderAsUpdates) -> KrillResult<()> {
+        let customer_as = updates.customer();
+
+        if updates.is_empty() {
+            return Err(Error::AspaProviderUpdateEmpty(self.handle().clone(), customer_as));
+        }
+
+        if !self.all_resources().contains_asn(customer_as) {
+            return Err(Error::AspaCustomerAsNotEntitled(self.handle().clone(), customer_as));
+        }
+
+        let current = self
+            .aspas
+            .get(customer_as)
+            .ok_or_else(|| Error::AspaCustomerUnknown(self.handle().clone(), customer_as))?;
+
+        current
+            .verify_update(updates)
+            .map_err(|conflict| Error::AspaProviderUpdateConflict(self.handle().clone(), conflict))?;
+
+        Ok(())
     }
 }
 

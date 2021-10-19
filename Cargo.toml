@@ -23,7 +23,8 @@ build = "build.rs"
 [dependencies]
 base64                = "^0.13"
 basic-cookies         = { version = "^0.1", optional = true }
-bcder                 = "^0.6"
+# bcder                 = "^0.6"
+bcder           = { version = "0.6.1-dev", git = "https://github.com/nlnetlabs/bcder", branch="octet_take_opt" }
 bytes                 = "1"
 chrono                = { version = "^0.4", features = ["serde"] }
 clap                  = "^2.33"

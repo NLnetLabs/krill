@@ -5,16 +5,18 @@ use rpki::repository::crypto::KeyIdentifier;
 use crate::{
     commons::{
         api::{
-            ChildHandle, Handle, IssuanceRequest, IssuedCert, ObjectName, ParentCaContact, ParentHandle,
-            ParentResourceClassName, RcvdCert, RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest,
-            RevokedObject, RoaAggregateKey, RtaName, SuspendedCert, TaCertDetails, UnsuspendedCert,
+            AspaConfiguration, AspaCustomer, ChildHandle, Handle, IssuanceRequest, IssuedCert, ObjectName,
+            ParentCaContact, ParentHandle, ParentResourceClassName, ProviderAsUpdates, RcvdCert, RepositoryContact,
+            ResourceClassName, ResourceSet, RevocationRequest, RevokedObject, RoaAggregateKey, RtaName, SuspendedCert,
+            TaCertDetails, UnsuspendedCert,
         },
         crypto::{IdCert, KrillSigner},
         eventsourcing::StoredEvent,
         KrillResult,
     },
     daemon::ca::{
-        AggregateRoaInfo, CertifiedKey, PreparedRta, PublishedRoa, Rfc8183Id, RoaInfo, RouteAuthorization, SignedRta,
+        AggregateRoaInfo, AspaInfo, CertifiedKey, PreparedRta, PublishedRoa, Rfc8183Id, RoaInfo, RouteAuthorization,
+        SignedRta,
     },
 };
 
@@ -368,6 +370,23 @@ impl fmt::Display for RoaUpdates {
     }
 }
 
+//------------ AspaObjectsUpdates ------------------------------------------
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AspaObjectsUpdates {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    updated: Vec<AspaInfo>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    removed: Vec<AspaCustomer>,
+}
+
+impl AspaObjectsUpdates {
+    pub fn is_empty(&self) -> bool {
+        self.updated.is_empty() && self.removed.is_empty()
+    }
+}
+
 //------------ ChildCertificateUpdates -------------------------------------
 
 /// Describes an update to the set of ROAs under a ResourceClass.
@@ -618,6 +637,22 @@ pub enum CaEvtDet {
         // Tracks ROA *objects* which are (re-)issued in a resource class.
         resource_class_name: ResourceClassName,
         updates: RoaUpdates,
+    },
+
+    // ASPA
+    AspaConfigAdded {
+        aspa_config: AspaConfiguration,
+    },
+    AspaConfigUpdated {
+        updates: ProviderAsUpdates,
+    },
+    AspaConfigRemoved {
+        customer: AspaCustomer,
+    },
+    AspaObjectsUpdated {
+        // Tracks ASPA *object* which are (re-)issued in a resource class.
+        resource_class_name: ResourceClassName,
+        updates: AspaObjectsUpdates,
     },
 
     // Publishing
@@ -976,6 +1011,12 @@ impl fmt::Display for CaEvtDet {
                 }
                 Ok(())
             }
+
+            // Autonomous System Provider Authorization
+            CaEvtDet::AspaConfigAdded { aspa_config: addition } => write!(f, "{}", addition),
+            CaEvtDet::AspaConfigUpdated { updates } => write!(f, "{}", updates),
+            CaEvtDet::AspaConfigRemoved { customer } => write!(f, "removed ASPA config for customer ASN: {}", customer),
+            CaEvtDet::AspaObjectsUpdated { .. } => todo!(),
 
             // Publishing
             CaEvtDet::RepoUpdated { contact } => {

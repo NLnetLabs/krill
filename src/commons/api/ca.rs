@@ -10,6 +10,8 @@ use std::{fmt, str};
 
 use bytes::Bytes;
 use chrono::{Duration, TimeZone, Utc};
+use rpki::repository::aspa::Aspa;
+use rpki::repository::resources::{AsBlock, AsBlocksBuilder, AsId};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use rpki::{
@@ -29,9 +31,9 @@ use crate::commons::util::KrillVersion;
 use crate::{
     commons::{
         api::{
-            rrdp::PublishElement, Base64, ChildHandle, EntitlementClass, Entitlements, ErrorResponse, Handle,
-            HexEncodedHash, IssuanceRequest, ParentCaContact, ParentHandle, RepositoryContact, RequestResourceLimit,
-            RoaAggregateKey, RoaDefinition, SigningCert,
+            rrdp::PublishElement, AspaConfiguration, Base64, ChildHandle, EntitlementClass, Entitlements,
+            ErrorResponse, Handle, HexEncodedHash, IssuanceRequest, ParentCaContact, ParentHandle, RepositoryContact,
+            RequestResourceLimit, RoaAggregateKey, RoaDefinition, SigningCert,
         },
         crypto::IdCert,
         remote::rfc8183::ServiceUri,
@@ -260,6 +262,14 @@ impl From<&Roa> for ReplacedObject {
     fn from(roa: &Roa) -> Self {
         let revocation = Revocation::from(roa.cert());
         let hash = HexEncodedHash::from_content(roa.to_captured().as_slice());
+        ReplacedObject { revocation, hash }
+    }
+}
+
+impl From<&Aspa> for ReplacedObject {
+    fn from(aspa: &Aspa) -> Self {
+        let revocation = Revocation::from(aspa.cert());
+        let hash = HexEncodedHash::from_content(aspa.to_captured().as_slice());
         ReplacedObject { revocation, hash }
     }
 }
@@ -665,6 +675,12 @@ impl From<&RoaAggregateKey> for ObjectName {
     }
 }
 
+impl From<&AspaConfiguration> for ObjectName {
+    fn from(aspa: &AspaConfiguration) -> Self {
+        ObjectName(format!("{}.asa", aspa.customer()))
+    }
+}
+
 impl From<&str> for ObjectName {
     fn from(s: &str) -> Self {
         ObjectName(s.to_string())
@@ -969,6 +985,14 @@ impl ResourceSet {
     /// this set.
     pub fn contains(&self, other: &ResourceSet) -> bool {
         self.asn.contains(other.asn()) && self.v4.contains(&other.v4) && self.v6.contains(&other.v6)
+    }
+
+    /// Check if the resource set contains the given AsId
+    pub fn contains_asn(&self, asn: AsId) -> bool {
+        let mut blocks = AsBlocksBuilder::new();
+        blocks.push(AsBlock::Id(asn));
+        let blocks = blocks.finalize();
+        self.asn.contains(&blocks)
     }
 
     /// Returns the union of this ResourceSet and the other. I.e. a new
