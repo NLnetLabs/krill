@@ -325,8 +325,8 @@ impl IssuanceTimingConfig {
     pub fn publish_next_minutes(&self) -> i64 {
         use rand::Rng;
         let mut rng = rand::thread_rng();
-        let random_mins_per_hour: i64 = rng.gen_range(0..3600);
-        (self.timing_publish_next_hours * 3600) + (self.timing_publish_next_jitter_hours * random_mins_per_hour)
+        let random_mins_per_hour: i64 = rng.gen_range(0..60);
+        (self.timing_publish_next_hours * 60) + (self.timing_publish_next_jitter_hours * random_mins_per_hour)
     }
 }
 
