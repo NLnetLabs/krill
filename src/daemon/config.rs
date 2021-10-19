@@ -7,6 +7,7 @@ use std::{
     str::FromStr,
 };
 
+use chrono::Duration;
 use clap::{App, Arg};
 use log::{error, LevelFilter};
 use serde::{de, Deserialize, Deserializer};
@@ -14,7 +15,7 @@ use serde::{de, Deserialize, Deserializer};
 #[cfg(unix)]
 use syslog::Facility;
 
-use rpki::uri;
+use rpki::{repository::x509::Time, uri};
 
 use crate::{
     commons::{
@@ -318,15 +319,16 @@ pub struct IssuanceTimingConfig {
 }
 
 impl IssuanceTimingConfig {
-    /// Returns the next update time in hours based on configuration:
+    /// Returns the next update time based on configuration:
     ///
-    /// timing_publish_next_hours + random(0..timing_publish_next_jitter_hours)
-    /// defaults: 24 + (0-4) hours -> to minutes
-    pub fn publish_next_minutes(&self) -> i64 {
+    /// now + timing_publish_next_hours + random(0..timing_publish_next_jitter_hours)
+    /// defaults: now + 24 hours + 0 to 4 hours
+    pub fn publish_next(&self) -> Time {
         use rand::Rng;
         let mut rng = rand::thread_rng();
         let random_mins_per_hour: i64 = rng.gen_range(0..60);
-        (self.timing_publish_next_hours * 60) + (self.timing_publish_next_jitter_hours * random_mins_per_hour)
+        let minutes = (self.timing_publish_next_hours * 60) + (self.timing_publish_next_jitter_hours * random_mins_per_hour);
+        Time::now() + Duration::minutes(minutes)
     }
 }
 

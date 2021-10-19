@@ -1070,9 +1070,9 @@ impl BasicKeyObjectSet {
         let issuer = signing_cert.subject().clone();
         let revocations = Revocations::default();
         let number = 1;
-        let next_mins = timing.publish_next_minutes();
+        let next_update = timing.publish_next();
 
-        let crl = CrlBuilder::build(signing_key, issuer, &revocations, number, next_mins, signer)?;
+        let crl = CrlBuilder::build(signing_key, issuer, &revocations, number, next_update, signer)?;
 
         let manifest = ManifestBuilder::with_crl_only(&crl)
             .build_new_mft(&signing_cert, number, signer)
@@ -1130,9 +1130,9 @@ impl BasicKeyObjectSet {
         let issuer = self.crl.issuer().clone();
         let number = self.next();
 
-        let next_mins = timing.publish_next_minutes();
+        let next_update = timing.publish_next();
 
-        CrlBuilder::build(signing_key, issuer, revocations, number, next_mins, signer)
+        CrlBuilder::build(signing_key, issuer, revocations, number, next_update, signer)
     }
 
     fn reissue_mft(&self, new_crl: &PublishedCrl, signer: &KrillSigner) -> KrillResult<PublishedManifest> {
@@ -1331,13 +1331,12 @@ impl CrlBuilder {
         issuer: Name,
         revocations: &Revocations,
         number: u64,
-        next_mins: i64,
+        next_update: Time,
         signer: &KrillSigner,
     ) -> KrillResult<PublishedCrl> {
         let aki = KeyIdentifier::from_public_key(signing_key);
 
         let this_update = Time::five_minutes_ago();
-        let next_update = Time::now() + Duration::minutes(next_mins);
         let serial_number = Serial::from(number);
 
         let crl = TbsCertList::new(
