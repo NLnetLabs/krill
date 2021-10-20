@@ -123,7 +123,7 @@ impl KmipSigner {
     /// Returns true if the KMIP server supports generation of random numbers, false otherwise.
     pub fn supports_random(&self) -> bool {
         match self.server() {
-            Ok(status) => status.state().supports_rng_retrieve,
+            Ok(status) => status.state().supports_random_number_generation,
             Err(_) => false,
         }
     }
@@ -245,7 +245,7 @@ struct UsableServerState {
     pool: r2d2::Pool<ConnectionManager>,
 
     /// Does the KMIP server support the RNG Retrieve operation (for generating random values)?
-    supports_rng_retrieve: bool,
+    supports_random_number_generation: bool,
 
     conn_info: String,
 }
@@ -253,12 +253,12 @@ struct UsableServerState {
 impl UsableServerState {
     pub fn new(
         pool: r2d2::Pool<ConnectionManager>,
-        supports_rng_retrieve: bool,
+        supports_random_number_generation: bool,
         conn_info: String,
     ) -> UsableServerState {
         UsableServerState {
             pool,
-            supports_rng_retrieve,
+            supports_random_number_generation,
             conn_info,
         }
     }
