@@ -75,10 +75,10 @@ impl Signer for KmipSigner {
         Ok((signature, key))
     }
 
-    fn rand(&self, data: &mut [u8]) -> Result<(), Self::Error> {
-        let random_bytes = self.get_random_bytes(data.len())?;
+    fn rand(&self, target: &mut [u8]) -> Result<(), Self::Error> {
+        let random_bytes = self.get_random_bytes(target.len())?;
 
-        data.copy_from_slice(&random_bytes);
+        target.copy_from_slice(&random_bytes);
 
         Ok(())
     }
