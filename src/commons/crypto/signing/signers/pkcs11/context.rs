@@ -122,9 +122,3 @@ impl std::ops::Deref for Pkcs11Context {
         self.ctx.as_ref().unwrap()
     }
 }
-
-impl std::ops::DerefMut for Pkcs11Context {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.ctx.as_mut().unwrap()
-    }
-}
