@@ -324,11 +324,13 @@ impl IssuanceTimingConfig {
     /// now + timing_publish_next_hours + random(0..timing_publish_next_jitter_hours)
     /// defaults: now + 24 hours + 0 to 4 hours
     pub fn publish_next(&self) -> Time {
-        use rand::Rng;
-        let mut rng = rand::thread_rng();
-        let random_mins_per_hour: i64 = rng.gen_range(0..60);
-        let minutes = (self.timing_publish_next_hours * 60) + (self.timing_publish_next_jitter_hours * random_mins_per_hour);
-        Time::now() + Duration::minutes(minutes)
+        let regular_mins = self.timing_publish_next_hours * 60;
+        let random_mins = {
+            use rand::Rng;
+            let mut rng = rand::thread_rng();
+            rng.gen_range(0..(60 * self.timing_publish_next_jitter_hours))
+        };
+        Time::now() + Duration::minutes(regular_mins + random_mins)
     }
 }
 
