@@ -9,11 +9,14 @@ impl Signer for Pkcs11Signer {
 
     type Error = SignerError;
 
-    fn create_key(&self, _algorithm: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
-        todo!()
+    fn create_key(&self, algorithm: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
+        let (key, _, _, internal_key_id) = self.build_key(algorithm)?;
+        let key_id = key.key_identifier();
+        self.remember_key_id(&key_id, internal_key_id)?;
+        Ok(key_id)
     }
 
-    fn get_key_info(&self, _key: &Self::KeyId) -> Result<PublicKey, KeyError<Self::Error>> {
+    fn get_key_info(&self, _key_id: &Self::KeyId) -> Result<PublicKey, KeyError<Self::Error>> {
         todo!()
     }
 
@@ -38,7 +41,11 @@ impl Signer for Pkcs11Signer {
         todo!()
     }
 
-    fn rand(&self, _target: &mut [u8]) -> Result<(), Self::Error> {
-        todo!()
+    fn rand(&self, target: &mut [u8]) -> Result<(), Self::Error> {
+        let random_bytes = self.get_random_bytes(target.len())?;
+
+        target.copy_from_slice(&random_bytes);
+
+        Ok(())
     }
 }

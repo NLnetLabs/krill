@@ -39,9 +39,11 @@ jmespatch             = { version = "^0.3", features = ["sync"], optional = true
 kmip                  = { version = "0.4.0", package = "kmip-protocol", features = ["tls-with-openssl"], optional = true }
 libflate              = "^1"
 log                   = "^0.4"
+once_cell             = { version = "^1.7.2", optional = true }
 openidconnect         = { version = "^2.0.0", optional = true, default_features = false }
 openssl               = { version = "^0.10", features = ["v110"] }
 oso                   = { version = "^0.12", optional = true, default_features = false }
+pkcs11                = { version = "^0.5", optional = true }
 r2d2                  = { version = "0.8.9", optional = true }
 regex                 = { version = "^1.4", optional = true, default_features = false, features = ["std"] }
 reqwest               = { version = "0.11", features = ["json"] }
@@ -73,7 +75,7 @@ static-openssl = [ "openssl/vendored" ]
 
 # Preview features - not ready for production use
 rta = []
-hsm = ["backoff", "kmip", "r2d2"]
+hsm = ["backoff", "kmip", "once_cell", "pkcs11", "r2d2"]
 
 # Internal features - not for external use
 all-except-ui-tests = [ "multi-user", "rta", "static-openssl" ]

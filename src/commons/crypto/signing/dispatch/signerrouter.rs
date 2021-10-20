@@ -258,6 +258,32 @@ impl SignerRouter {
         })
     }
 
+    // TODO: Delete me once setup from Krill configuration is supported.
+    #[cfg(feature = "hsm-tests-pkcs11")]
+    fn build_signers(work_dir: &Path, signer_mapper: Arc<SignerMapper>) -> KrillResult<SignerRoleAssignments> {
+        use crate::commons::crypto::signers::pkcs11::Pkcs11Signer;
+
+        // When the HSM feature is activated AND test mode is activated:
+        //   - Use the HSM for as much as possible to depend on it as broadly as possible in the Krill test suite..
+        //   - Fallback to OpenSSL for random number generation if the HSM doesn't support it.
+        let openssl_signer = Arc::new(SignerProvider::OpenSsl(OpenSslSigner::build(
+            work_dir,
+            "OpenSslSigner - No config file name available yet",
+            Some(signer_mapper.clone()),
+        )?));
+
+        let pkcs11_signer = Arc::new(SignerProvider::Pkcs11(Pkcs11Signer::build(
+            "Pkcs11Signer - No config file name available yet",
+            signer_mapper,
+        )?));
+
+        Ok(SignerRoleAssignments {
+            default_signer: pkcs11_signer.clone(),
+            one_off_signer: pkcs11_signer.clone(),
+            rand_fallback_signer: openssl_signer,
+        })
+    }
+
     /// Locate the [SignerProvider] that owns a given [KeyIdentifier], if the signer is active.
     ///
     /// If the signer that owns the key has not yet been promoted from the pending set to the active set or if no
