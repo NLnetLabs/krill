@@ -48,9 +48,9 @@ const RETRY_REQ_UNTIL_MAX: Duration = Duration::from_secs(30);
 /// The maximum number of concurrent connections to the KMIP server to pool.
 const MAX_CONCURRENT_SERVER_CONNECTIONS: u32 = 5;
 
-/// TODO: Make this a configuration setting. For now set it to false because PyKMIP 0.10.0 says it doesn't support the
+/// TODO: Make this a configuration setting. For now set it to true because PyKMIP 0.10.0 says it doesn't support the
 /// `ModifyAttribute` but sending a modify attribute request succeeds.
-const IGNORE_MISSING_CAPABILITIES: bool = false;
+const IGNORE_MISSING_CAPABILITIES: bool = true;
 
 /// A KMIP client that uses a specific TLS and TCP stream implementation. Currently set to [SslStream] from the
 /// [openssl] crate. This will be a different type if we switch to different TCP and/or TLS implementations or to an
@@ -391,7 +391,7 @@ impl KmipSigner {
             // anyway. For example, PyKMIP 0.10.0 does not include the ModifyAttribute operation in the set of
             // supported operations even though it does support it. Without this flag we would not be able to use
             // PyKMIP with Krill!
-            if IGNORE_MISSING_CAPABILITIES {
+            if !IGNORE_MISSING_CAPABILITIES {
                 *status = ProbingServerConnector::Unusable;
                 return Err(SignerError::SignerUnusable);
             }
