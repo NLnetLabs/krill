@@ -693,13 +693,22 @@ impl ResourceClass {
     /// Returns `Ok(None)` if the RC does not contain the customer ASN.
     pub fn add_aspa(
         &self,
-        aspa: &AspaConfiguration,
+        aspa_config: &AspaConfiguration,
         config: &Config,
         signer: &KrillSigner,
     ) -> KrillResult<Option<AspaObjectsUpdates>> {
-        if let Some(resources) = self.current_resources() {
-            if resources.contains_asn(aspa.customer()) {
-                todo!("make the object")
+        if let Some(certified_key) = self.current_key() {
+            if certified_key
+                .incoming_cert()
+                .resources()
+                .contains_asn(aspa_config.customer())
+            {
+                let weeks = config.issuance_timing.timing_aspa_valid_weeks;
+                let new_aspa = self
+                    .aspas
+                    .make_aspa(aspa_config.clone(), certified_key, weeks, signer)?;
+
+                Ok(Some(AspaObjectsUpdates::for_new_aspa_info(new_aspa)))
             } else {
                 Ok(None)
             }

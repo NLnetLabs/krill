@@ -8,13 +8,10 @@
 
 use std::{collections::HashMap, fmt::Debug};
 
-use rpki::{
-    repository::{
-        aspa::{Aspa, AspaBuilder},
-        sigobj::SignedObjectBuilder,
-        x509::Time,
-    },
-    uri,
+use rpki::repository::{
+    aspa::{Aspa, AspaBuilder},
+    sigobj::SignedObjectBuilder,
+    x509::Time,
 };
 
 use crate::{
@@ -30,7 +27,6 @@ use crate::{
 pub fn make_aspa_object(
     aspa_config: AspaConfiguration,
     certified_key: &CertifiedKey,
-    alternate_repo: Option<&uri::Rsync>,
     weeks: i64,
     signer: &KrillSigner,
 ) -> KrillResult<Aspa> {
@@ -38,27 +34,21 @@ pub fn make_aspa_object(
 
     let aspa_builder = {
         let (customer_as, providers) = aspa_config.unpack();
-
         AspaBuilder::new(customer_as, providers).map_err(|e| Error::Custom(format!("Cannot use aspa config: {}", e)))
     }?;
 
     let object_builder = {
         let incoming_cert = certified_key.incoming_cert();
-        let crl_uri = match &alternate_repo {
-            None => incoming_cert.crl_uri(),
-            Some(base_uri) => base_uri.join(incoming_cert.crl_name().as_bytes()).unwrap(),
-        };
 
-        let aspa_uri = match &alternate_repo {
-            None => incoming_cert.uri_for_name(&name),
-            Some(base_uri) => base_uri.join(name.as_bytes()).unwrap(),
-        };
+        let crl_uri = incoming_cert.crl_uri();
+        let aspa_uri = incoming_cert.uri_for_name(&name);
+        let ca_issuer = incoming_cert.uri().clone();
 
         let mut object_builder = SignedObjectBuilder::new(
             signer.random_serial()?,
             SignSupport::sign_validity_weeks(weeks),
             crl_uri,
-            incoming_cert.uri().clone(),
+            ca_issuer,
             aspa_uri,
         );
         object_builder.set_issuer(Some(incoming_cert.cert().subject().clone()));
@@ -116,6 +106,20 @@ impl Default for AspaDefinitions {
 /// ASPA objects held by a resource class in a CA.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AspaObjects(HashMap<AspaCustomer, AspaInfo>);
+
+impl AspaObjects {
+    pub fn make_aspa(
+        &self,
+        aspa_config: AspaConfiguration,
+        certified_key: &CertifiedKey,
+        weeks: i64,
+        signer: &KrillSigner,
+    ) -> KrillResult<AspaInfo> {
+        let customer = aspa_config.customer();
+        let aspa = make_aspa_object(aspa_config, certified_key, weeks, signer)?;
+        Ok(AspaInfo::new_aspa(customer, aspa))
+    }
+}
 
 impl Default for AspaObjects {
     fn default() -> Self {

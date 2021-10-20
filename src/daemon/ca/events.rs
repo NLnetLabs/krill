@@ -382,6 +382,17 @@ pub struct AspaObjectsUpdates {
 }
 
 impl AspaObjectsUpdates {
+    pub fn new(updated: Vec<AspaInfo>, removed: Vec<AspaCustomer>) -> Self {
+        AspaObjectsUpdates { updated, removed }
+    }
+
+    pub fn for_new_aspa_info(new_aspa: AspaInfo) -> Self {
+        AspaObjectsUpdates {
+            updated: vec![new_aspa],
+            removed: vec![],
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.updated.is_empty() && self.removed.is_empty()
     }
