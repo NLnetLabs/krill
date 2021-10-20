@@ -517,7 +517,7 @@ impl KmipSigner {
 
         let readable_handle = self.handle.read().unwrap();
         let signer_handle = readable_handle.as_ref().ok_or(SignerError::Other(
-            "Failed to record signer key: Signer handle not set".to_string(),
+            "KMIP: Failed to record signer key: Signer handle not set".to_string(),
         ))?;
         self.mapper
             .add_key(signer_handle, key_id, &internal_key_id)

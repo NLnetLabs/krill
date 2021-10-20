@@ -221,7 +221,7 @@ impl OpenSslSigner {
         if let Some(mapper) = &self.mapper {
             let readable_handle = self.handle.read().unwrap();
             let signer_handle = readable_handle.as_ref().ok_or(SignerError::Other(
-                "Failed to record signer key: Signer handle not set".to_string(),
+                "OpenSSL: Failed to record signer key: Signer handle not set".to_string(),
             ))?;
             mapper
                 .add_key(signer_handle, key_id, &format!("{}", key_id))
