@@ -74,6 +74,10 @@ pub struct KmipSigner {
 impl KmipSigner {
     /// Creates a new instance of KmipSigner.
     pub fn build(name: &str, mapper: Arc<SignerMapper>) -> Result<Self, SignerError> {
+        // Signer initialization should not block Krill startup. As such we delaying contacting the KMIP server until
+        // first use. The downside of this approach is that we won't detect any issues until that point.
+
+        // TODO: Use the supplied configuration settings instead of hard-coded test settings.
         let conn_settings = Self::get_test_connection_settings();
         let server = Arc::new(RwLock::new(ProbingServerConnector::new(conn_settings)));
 
@@ -499,7 +503,8 @@ pub(super) struct KmipKeyPairIds {
     pub private_key_id: String,
 }
 
-// High level helper functions for use by the public Signer interface implementation
+//------------ High level helper functions for use by the public Signer interface implementation ----------------------
+
 impl KmipSigner {
     /// Remember that the given KMIP public and private key pair IDs correspond to the given KeyIdentifier.
     pub(super) fn remember_kmip_key_ids(
@@ -544,6 +549,10 @@ impl KmipSigner {
 
     /// Create a key pair in the KMIP server in the requested format and make it ready for use by Krill.
     pub(super) fn build_key(&self, algorithm: PublicKeyFormat) -> Result<(PublicKey, KmipKeyPairIds), SignerError> {
+        // https://tools.ietf.org/html/rfc6485#section-3: Asymmetric Key Pair Formats
+        //   "The RSA key pairs used to compute the signatures MUST have a 2048-bit
+        //    modulus and a public exponent (e) of 65,537."
+
         if !matches!(algorithm, PublicKeyFormat::Rsa) {
             return Err(SignerError::KmipError(format!(
                 "Algorithm {:?} not supported while creating key",
