@@ -3,6 +3,8 @@
 name: Security audit
 on:
   push:
+    branches-ignore:
+      - '**'
     paths:
       - 'Cargo.lock'
   schedule:
