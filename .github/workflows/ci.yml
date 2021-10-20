@@ -73,7 +73,7 @@ jobs:
     runs-on: ubuntu-18.04
     strategy:
       matrix:
-        features: ["hsm", "hsm,hsm-tests"]
+        features: ["hsm", "hsm,hsm-tests-kmip"]
     steps:
     - name: Checkout repository
       uses: actions/checkout@v1
@@ -103,7 +103,7 @@ jobs:
         sleep 5s
         openssl s_client -connect 127.0.0.1:5696 || true
         cd -
-        cargo test --no-default-features --features hsm,hsm-tests -- --test-threads=1 2>&1
+        cargo test --no-default-features --features hsm,hsm-tests-kmip -- --test-threads=1 2>&1
 
     - name: Dump PyKMIP log
       working-directory: test-resources/pykmip

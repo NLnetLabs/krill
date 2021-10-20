@@ -78,7 +78,8 @@ hsm = ["backoff", "kmip", "r2d2"]
 # Internal features - not for external use
 all-except-ui-tests = [ "multi-user", "rta", "static-openssl" ]
 ui-tests = []
-hsm-tests = []
+hsm-tests-kmip = []
+hsm-tests-pkcs11 = []
 
 # Make sure that Krill crashes on panics, rather than losing threads and
 # limping on in a bad state.

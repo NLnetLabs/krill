@@ -210,7 +210,7 @@ impl SignerRouter {
         })
     }
 
-    #[cfg(not(feature = "hsm-tests"))]
+    #[cfg(not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11")))]
     fn build_signers(work_dir: &Path, signer_mapper: Arc<SignerMapper>) -> KrillResult<SignerRoleAssignments> {
         // When the HSM feature is activated and we are not in test mode:
         //   - Use the HSM for key creation, signing, deletion, except for one-off keys.
@@ -235,7 +235,7 @@ impl SignerRouter {
     }
 
     // TODO: Delete me once setup from Krill configuration is supported.
-    #[cfg(feature = "hsm-tests")]
+    #[cfg(feature = "hsm-tests-kmip")]
     fn build_signers(work_dir: &Path, signer_mapper: Arc<SignerMapper>) -> KrillResult<SignerRoleAssignments> {
         // When the HSM feature is activated AND test mode is activated:
         //   - Use the HSM for as much as possible to depend on it as broadly as possible in the Krill test suite..
