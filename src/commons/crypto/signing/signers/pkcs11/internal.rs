@@ -9,7 +9,9 @@ use backoff::ExponentialBackoff;
 use bcder::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
 use pkcs11::types::*;
-use rpki::repository::crypto::{PublicKey, PublicKeyFormat, Signature};
+use rpki::repository::crypto::{
+    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm,
+};
 
 use crate::commons::{
     api::Handle,
@@ -25,11 +27,11 @@ use crate::commons::{
 
 //------------ Types and constants ------------------------------------------------------------------------------------
 
-/// The time to wait between attempts to initially connect to the KMIP server to verify our connection settings and the
+/// The time to wait between attempts to initially connect to the PKCS#11 server to verify our connection settings and the
 /// server capabilities.
 const RETRY_INIT_EVERY: Duration = Duration::from_secs(30);
 
-/// The time to wait between an initial and subsequent attempt at sending a request to the KMIP server.
+/// The time to wait between an initial and subsequent attempt at sending a request to the PKCS#11 server.
 const RETRY_REQ_AFTER: Duration = Duration::from_secs(2);
 
 /// How much longer should we wait from one request attempt to the next compared to the previous wait?
@@ -101,7 +103,7 @@ impl Pkcs11Signer {
         // random numbers. In theory the provider can also fail to implement the random functions entirely but the
         // Rust PKCS11 crate `Ctx::new()` function requires these functions to be supported or else it will fail and
         // we would never get to this point.
-        todo!()
+        false // TODO
     }
 
     pub fn create_registration_key(&self) -> Result<(PublicKey, String), SignerError> {
@@ -111,23 +113,33 @@ impl Pkcs11Signer {
 
     pub fn sign_registration_challenge<D: AsRef<[u8]> + ?Sized>(
         &self,
-        _signer_private_key_id: &str,
-        _challenge: &D,
+        key_id: &str,
+        challenge: &D,
     ) -> Result<Signature, SignerError> {
-        // todo!()
-        Err(SignerError::KeyNotFound)
-    }
-
-    pub fn set_handle(&self, _handle: crate::commons::api::Handle) {
-        todo!()
+        let priv_handle = self.find_key(key_id, CKO_PRIVATE_KEY).map_err(|err| match err {
+            KeyError::KeyNotFound => SignerError::KeyNotFound,
+            KeyError::Signer(err) => err,
+        })?;
+        self.sign_with_key(priv_handle, SignatureAlgorithm::default(), challenge.as_ref())
     }
 
     pub fn get_name(&self) -> &str {
         &self.name
     }
 
+    pub fn set_handle(&self, handle: crate::commons::api::Handle) {
+        let mut writable_handle = self.handle.write().unwrap();
+        if writable_handle.is_some() {
+            panic!("Cannot set signer handle as handle is already set");
+        }
+        *writable_handle = Some(handle);
+    }
+
     pub fn get_info(&self) -> Option<String> {
-        todo!()
+        match self.server() {
+            Ok(status) => Some(status.state().conn_info.clone()),
+            Err(_) => None,
+        }
     }
 
     fn get_test_connection_settings() -> Result<ConnectionSettings, SignerError> {
@@ -198,7 +210,7 @@ impl ProbingServerConnector {
                 last_probe_time.replace(Instant::now());
                 Ok(())
             }
-            _ => Err(SignerError::KmipError(
+            _ => Err(SignerError::Pkcs11Error(
                 "Internal error: cannot mark last probe time as probing has already finished.".into(),
             )),
         }
@@ -228,7 +240,7 @@ impl ProbingServerConnector {
     }
 }
 
-/// The details needed to interact with a usable KMIP server.
+/// The details needed to interact with a usable PKCS#11 server.
 #[derive(Debug)]
 struct UsableServerState {
     context: Arc<RwLock<Pkcs11Context>>,
@@ -239,6 +251,14 @@ struct UsableServerState {
     conn_info: String,
 
     slot_id: CK_SLOT_ID,
+
+    /// Section 11.6 "Session management functions" of the PKCS#11 v2.20 specification says:
+    ///   "Call C_Login to log the user into the token. Since all sessions an application has with a token have a
+    ///    shared login state, C_Login only needs to be called for one of the sessions."
+    ///
+    /// Therefore we hold a reference to the login session so that all future sessions are considered logged in.
+    /// The Drop impl for Pkcs11Session will log the session out if logged in.
+    login_session: Pkcs11Session,
 }
 
 impl UsableServerState {
@@ -247,12 +267,14 @@ impl UsableServerState {
         context: Arc<RwLock<Pkcs11Context>>,
         conn_info: String,
         slot_id: CK_SLOT_ID,
+        login_session: Pkcs11Session,
     ) -> UsableServerState {
         UsableServerState {
             context,
             supports_random_number_generation,
             conn_info,
             slot_id,
+            login_session,
         }
     }
 
@@ -313,7 +335,10 @@ impl Pkcs11Signer {
         // Hold a write lock for the duration of our attempt to verify the server so that no other attempt occurs
         // at the same time. Bail out if another thread is performing a probe and has the lock. This is the same result
         // as when attempting to use the server between probe retries.
-        let mut status = self.server.try_write().map_err(|_| SignerError::TemporarilyUnavailable)?;
+        let mut status = self
+            .server
+            .try_write()
+            .map_err(|_| SignerError::TemporarilyUnavailable)?;
 
         // Update the timestamp of our last attempt to contact the server. This is used above to know when we have
         // waited long enough before attempting to contact the server again. This also guards against attempts to probe
@@ -344,7 +369,7 @@ impl Pkcs11Signer {
         // wonder if it might not fail on some customer deployments, but perhaps it checks only for functions required
         // by the PKCS#11 specification...?
 
-        let (cryptoki_info, slot_id, slot_info, token_info, user_pin) = {
+        let (cryptoki_info, slot_id, _slot_info, token_info, user_pin) = {
             let conn_settings = status.conn_settings();
             let readable_ctx = conn_settings.context.read().unwrap();
 
@@ -417,7 +442,7 @@ impl Pkcs11Signer {
 
         // TODO: check for RSA key pair support?
 
-        let mut login_session = Pkcs11Session::new(status.conn_settings().context.clone(), slot_id).map_err(|err| {
+        let login_session = Pkcs11Session::new(status.conn_settings().context.clone(), slot_id).map_err(|err| {
             error!(
                 "Unable to open PKCS#11 session for library '{}' slot {}: {}",
                 lib_name, slot_id, err
@@ -436,31 +461,35 @@ impl Pkcs11Signer {
         // Switch from probing the server to using it.
         // -------------------------------------------
 
-        // let server_identification = server_properties.vendor_identification.unwrap_or("Unknown".into());
+        let conn_settings = status.take_conn_settings();
+        let server_identification = format!(
+            "{} (Cryptoki v{}.{})",
+            cryptoki_info.manufacturerID, cryptoki_info.libraryVersion.major, cryptoki_info.libraryVersion.minor
+        );
 
-        // Take the ConnectionSettings out of the Probing status so that we can move it to the Usable status. (we
-        // could clone it but it potentially contains a lot of certificate and key byte data and is about to get
-        // dropped when we change status which is silly when we still need it, instead take it with us to the new
-        // status)
+        let token_identification = format!(
+            "{} (model: {}, vendor: {})",
+            token_info.label, token_info.model, token_info.manufacturerID
+        );
 
-        // // Success! We can use this server. Announce it and switch our status to KmipSignerStatus::Usable.
-        // info!(
-        //     "Using KMIP server '{}' at {}:{}",
-        //     server_identification, conn_settings.host, conn_settings.port
-        // );
+        info!(
+            "Using PKCS#11 token '{}' in slot {} of server '{}' via library '{}'",
+            token_identification, slot_id, server_identification, lib_name
+        );
 
-        // let supports_rng_retrieve = supported_operations.contains(&Operation::RNGRetrieve);
-        // let conn_info = format!(
-        //     "KMIP Signer [vendor: {}, host: {}, port: {}]",
-        //     server_identification, conn_settings.host, conn_settings.port
-        // );
-        // let pool = ConnectionManager::create_connection_pool(conn_settings, MAX_CONCURRENT_SERVER_CONNECTIONS)?;
-
-        let conn_settings = status.conn_settings();
         let supports_random_number_generation = false;
         let context = conn_settings.context.clone();
-        let server_info = "Some server info".to_string();
-        let state = UsableServerState::new(supports_random_number_generation, context, server_info, slot_id);
+        let server_info = format!(
+            "PKCS#11 Signer [token: {}, slot: {}, server: {}, library: {}]",
+            token_identification, slot_id, server_identification, lib_name
+        );
+        let state = UsableServerState::new(
+            supports_random_number_generation,
+            context,
+            server_info,
+            slot_id,
+            login_session,
+        );
 
         *status = ProbingServerConnector::Usable(state);
 
@@ -477,10 +506,10 @@ impl Pkcs11Signer {
         Ok(conn)
     }
 
-    /// Perform some operation using a KMIP server pool connection.
+    /// Perform some operation using a PKCS#11 connection.
     ///
-    /// Fails if the KMIP server is not [KmipSignerStatus::Usable]. If the operation fails due to a transient
-    /// connection error, retry with backoff upto a defined retry limit.
+    /// Fails if the PKCS#11 server is not [Usable]. If the operation fails due to a transient connection error, retry
+    /// with backoff upto a defined retry limit.
     fn with_conn<T, F>(&self, desc: &str, do_something_with_conn: F) -> Result<T, SignerError>
     where
         F: FnOnce(&Pkcs11Session) -> Result<T, pkcs11::errors::Error> + Copy,
@@ -508,7 +537,7 @@ impl Pkcs11Signer {
             Ok((do_something_with_conn)(&conn).map_err(retry_on_transient_pkcs11_error)?)
         };
 
-        // Don't even bother going round the retry loop if we haven't yet successfully connected to the KMIP server
+        // Don't even bother going round the retry loop if we haven't yet successfully connected to the PKCS#11 server
         // and verified its capabilities:
         let _ = self.server()?;
 
@@ -541,17 +570,17 @@ impl Pkcs11Signer {
         Ok(())
     }
 
-    // pub(super) fn lookup_key_id(&self, key_id: &KeyIdentifier) -> Result<CKA_ID, KeyError<SignerError>> {
-    //     let readable_handle = self.handle.read().unwrap();
-    //     let signer_handle = readable_handle.as_ref().ok_or(KeyError::KeyNotFound)?;
+    pub(super) fn lookup_key_id(&self, key_id: &KeyIdentifier) -> Result<String, KeyError<SignerError>> {
+        let readable_handle = self.handle.read().unwrap();
+        let signer_handle = readable_handle.as_ref().ok_or(KeyError::KeyNotFound)?;
 
-    //     let internal_key_id = self
-    //         .mapper
-    //         .get_key(signer_handle, key_id)
-    //         .map_err(|_| KeyError::KeyNotFound)?;
+        let internal_key_id = self
+            .mapper
+            .get_key(signer_handle, key_id)
+            .map_err(|_| KeyError::KeyNotFound)?;
 
-    //     Ok(internal_key_id)
-    // }
+        Ok(internal_key_id)
+    }
 
     pub(super) fn get_random_bytes(&self, _num_bytes_wanted: usize) -> Result<Vec<u8>, SignerError> {
         if !self.supports_random() {
@@ -609,7 +638,7 @@ impl Pkcs11Signer {
         priv_template.push(CK_ATTRIBUTE::new(CKA_EXTRACTABLE).with_bool(&CK_FALSE));
         priv_template.push(CK_ATTRIBUTE::new(CKA_LABEL).with_string("Krill"));
 
-        let (pub_handle, priv_handle) = self.with_conn("build key", |conn| {
+        let (pub_handle, priv_handle) = self.with_conn("generate key pair", |conn| {
             conn.generate_key_pair(&mech, &pub_template, &priv_template)
         })?;
 
@@ -656,20 +685,89 @@ impl Pkcs11Signer {
         subject_public_key_info
             .write_encoded(bcder::Mode::Der, &mut subject_public_key_info_source)
             .map_err(|err| {
-                SignerError::KmipError(format!(
+                SignerError::Pkcs11Error(format!(
                     "Failed to create DER encoded SubjectPublicKeyInfo from constituent parts: {}",
                     err
                 ))
             })?;
 
         let public_key = PublicKey::decode(subject_public_key_info_source.as_slice()).map_err(|err| {
-            SignerError::KmipError(format!(
+            SignerError::Pkcs11Error(format!(
                 "Failed to create public key from the DER encoded SubjectPublicKeyInfo: {}",
                 err
             ))
         })?;
 
         Ok(public_key)
+    }
+
+    pub(super) fn sign_with_key(
+        &self,
+        private_key_handle: CK_OBJECT_HANDLE,
+        algorithm: SignatureAlgorithm,
+        data: &[u8],
+    ) -> Result<Signature, SignerError> {
+        if algorithm.public_key_format() != PublicKeyFormat::Rsa {
+            return Err(SignerError::KmipError(format!(
+                "Algorithm '{:?}' not supported",
+                algorithm.public_key_format()
+            )));
+        }
+
+        let mechanism = CK_MECHANISM {
+            mechanism: CKM_SHA256_RSA_PKCS,
+            pParameter: std::ptr::null_mut(),
+            ulParameterLen: 0,
+        };
+
+        let signature_data = self.with_conn("sign", |conn| {
+            conn.sign_init(&mechanism, private_key_handle)?;
+            conn.sign(data)
+        })?;
+
+        let sig = Signature::new(SignatureAlgorithm::default(), Bytes::from(signature_data));
+
+        Ok(sig)
+    }
+
+    pub(super) fn find_key(
+        &self,
+        cka_id_hex_str: &str,
+        key_class: CK_OBJECT_CLASS,
+    ) -> Result<CK_OBJECT_HANDLE, KeyError<SignerError>> {
+        let human_key_class = match key_class {
+            CKO_PUBLIC_KEY => "public key",
+            CKO_PRIVATE_KEY => "private key",
+            _ => "key",
+        };
+
+        let cka_id = hex::decode(cka_id_hex_str).map_err(|err| KeyError::Signer(SignerError::DecodeError))?;
+
+        let results = self.with_conn("sign", |conn| {
+            // Find at most two search results that match the given key class (public or private) and the given PKCS#11
+            // CKA_ID bytes.
+            let max_object_count = 2;
+            let mut template: Vec<CK_ATTRIBUTE> = Vec::new();
+            template.push(CK_ATTRIBUTE::new(CKA_CLASS).with_ck_ulong(&key_class));
+            template.push(CK_ATTRIBUTE::new(CKA_ID).with_bytes(cka_id.as_slice()));
+
+            // A PKCS#11 session can have at most one active search operation at a time. A search must be initialized,
+            // results fetched, and then finalized, only then can the session perform another search.
+            conn.find_objects_init(&template)?;
+            let results = conn.find_objects(max_object_count);
+            let _ = conn.find_objects_final();
+
+            results
+        })?;
+
+        match results.len() {
+            0 => Err(KeyError::KeyNotFound),
+            1 => Ok(results[0]),
+            _ => Err(KeyError::Signer(SignerError::Pkcs11Error(format!(
+                "More than one {} found with id {}",
+                &human_key_class, cka_id_hex_str
+            )))),
+        }
     }
 }
 

@@ -6,7 +6,11 @@ use std::{
 
 use once_cell::sync::OnceCell;
 use pkcs11::{
-    types::{CKF_OS_LOCKING_OK, CK_C_INITIALIZE_ARGS},
+    types::{
+        CKF_OS_LOCKING_OK, CK_ATTRIBUTE, CK_BYTE, CK_C_INITIALIZE_ARGS, CK_FLAGS, CK_INFO, CK_MECHANISM, CK_NOTIFY,
+        CK_OBJECT_HANDLE, CK_RV, CK_SESSION_HANDLE, CK_SLOT_ID, CK_SLOT_INFO, CK_TOKEN_INFO, CK_ULONG, CK_USER_TYPE,
+        CK_VOID_PTR,
+    },
     Ctx,
 };
 
@@ -63,6 +67,7 @@ impl Pkcs11Context {
         let ctx_wrapper = locked_contexts
             .entry(lib_file_name)
             .or_insert_with_key(|lib_file_name| {
+                trace!("Loading PKCS#11 library '{:?}'", lib_path);
                 let ctx = match Ctx::new(lib_path) {
                     Ok(ctx) => Some(ctx),
                     Err(err) => {
@@ -105,7 +110,7 @@ impl Pkcs11Context {
             args.UnlockMutex = None;
             args.flags = CKF_OS_LOCKING_OK;
 
-            if let Err(err) = ctx.initialize(Some(args)) {
+            if let Err(err) = self.initialize(Some(args)) {
                 error!("Failed to initialize PKCS#11 library '{}': {}", self.lib_file_name, err);
                 return Err(SignerError::PermanentlyUnusable);
             }
@@ -115,10 +120,159 @@ impl Pkcs11Context {
     }
 }
 
-impl std::ops::Deref for Pkcs11Context {
-    type Target = Ctx;
+// TODO: Is this ever actually called, or does Krill do an immediate unclean shutdown if terminated?
+impl Drop for Pkcs11Context {
+    fn drop(&mut self) {
+        // We don't call C_CloseSession or C_CloseAllSessions because the Pkcs11Session Drop impl will take care of
+        // that for us. The spec says C_Finalize must not be called while other threads are still making Cryptoki
+        // calls but as each Pkcs11Session holds a reference to the Pkcs11Context we cannot be dropped until there
+        // are no longer any session objects and as all Cryptoki calls are made via session objects there thus cannot
+        // any longer be any threads making Cryptoki calls at this point because then we wound't be being Drop'd.
+        let _ = self.finalize();
+    }
+}
 
-    fn deref(&self) -> &Self::Target {
-        self.ctx.as_ref().unwrap()
+//------------ Deref with logging (rather than just impl std::ops::Deref) ---------------------------------------------
+
+impl Pkcs11Context {
+    fn logged_cryptoki_call<F, T>(&self, cryptoki_call_name: &'static str, call: F) -> Result<T, pkcs11::errors::Error>
+    where
+        F: FnOnce(&Ctx) -> Result<T, pkcs11::errors::Error>,
+    {
+        trace!("{}::{}()", self.lib_file_name, cryptoki_call_name);
+        let res = (call)(self.ctx.as_ref().unwrap());
+        if let Err(err) = &res {
+            error!("{}::{}() failed: {}", self.lib_file_name, cryptoki_call_name, err);
+        }
+        res
+    }
+
+    fn logged_cryptoki_call_mut<F, T>(
+        &mut self,
+        cryptoki_call_name: &'static str,
+        call: F,
+    ) -> Result<T, pkcs11::errors::Error>
+    where
+        F: FnOnce(&mut Ctx) -> Result<T, pkcs11::errors::Error>,
+    {
+        trace!("{}::{}()", self.lib_file_name, cryptoki_call_name);
+        let res = (call)(self.ctx.as_mut().unwrap());
+        if let Err(err) = &res {
+            // Warn only as we don't know that this issue really affects Krill thus calling it an error would be a bit
+            // extreme.
+            warn!("{}::{}() failed: {}", self.lib_file_name, cryptoki_call_name, err);
+        }
+        res
+    }
+}
+
+impl Pkcs11Context {
+    fn initialize(&mut self, init_args: Option<CK_C_INITIALIZE_ARGS>) -> Result<(), pkcs11::errors::Error> {
+        self.logged_cryptoki_call_mut("C_Initialize", |cryptoki| cryptoki.initialize(init_args))
+    }
+
+    fn finalize(&mut self) -> Result<(), pkcs11::errors::Error> {
+        self.logged_cryptoki_call_mut("C_Finalize", |cryptoki| cryptoki.finalize())
+    }
+
+    pub fn get_info(&self) -> Result<CK_INFO, pkcs11::errors::Error> {
+        self.logged_cryptoki_call("C_GetInfo", |cryptoki| cryptoki.get_info())
+    }
+
+    pub fn get_slot_list(&self, token_present: bool) -> Result<Vec<CK_SLOT_ID>, pkcs11::errors::Error> {
+        self.logged_cryptoki_call("C_GetSlotList", |cryptoki| cryptoki.get_slot_list(token_present))
+    }
+
+    pub fn get_slot_info(&self, slot_id: CK_SLOT_ID) -> Result<CK_SLOT_INFO, pkcs11::errors::Error> {
+        self.logged_cryptoki_call("C_GetSlotInfo", |cryptoki| cryptoki.get_slot_info(slot_id))
+    }
+
+    pub fn get_token_info(&self, slot_id: CK_SLOT_ID) -> Result<CK_TOKEN_INFO, pkcs11::errors::Error> {
+        self.logged_cryptoki_call("C_GetTokenInfo", |cryptoki| cryptoki.get_token_info(slot_id))
+    }
+
+    pub fn open_session(
+        &self,
+        slot_id: CK_SLOT_ID,
+        flags: CK_FLAGS,
+        application: Option<CK_VOID_PTR>,
+        notify: CK_NOTIFY,
+    ) -> Result<CK_SESSION_HANDLE, pkcs11::errors::Error> {
+        self.logged_cryptoki_call("C_OpenSession", |cryptoki| {
+            cryptoki.open_session(slot_id, flags, application, notify)
+        })
+    }
+
+    pub fn close_session(&self, session: CK_SESSION_HANDLE) -> Result<(), pkcs11::errors::Error> {
+        self.logged_cryptoki_call("C_CloseSession", |cryptoki| cryptoki.close_session(session))
+    }
+
+    pub fn generate_key_pair(
+        &self,
+        session: CK_SESSION_HANDLE,
+        mechanism: &CK_MECHANISM,
+        public_key_template: &[CK_ATTRIBUTE],
+        private_key_template: &[CK_ATTRIBUTE],
+    ) -> Result<(CK_OBJECT_HANDLE, CK_OBJECT_HANDLE), pkcs11::errors::Error> {
+        self.logged_cryptoki_call("C_GenerateKeyPair", |cryptoki| {
+            cryptoki.generate_key_pair(session, mechanism, public_key_template, private_key_template)
+        })
+    }
+
+    pub fn get_attribute_value<'a>(
+        &self,
+        session: CK_SESSION_HANDLE,
+        object: CK_OBJECT_HANDLE,
+        template: &'a mut Vec<CK_ATTRIBUTE>,
+    ) -> Result<(CK_RV, &'a Vec<CK_ATTRIBUTE>), pkcs11::errors::Error> {
+        self.logged_cryptoki_call("C_GetAttributeValue", move |cryptoki| {
+            cryptoki.get_attribute_value(session, object, template)
+        })
+    }
+
+    pub fn login<'a>(
+        &self,
+        session: CK_SESSION_HANDLE,
+        user_type: CK_USER_TYPE,
+        pin: Option<&'a str>,
+    ) -> Result<(), pkcs11::errors::Error> {
+        self.logged_cryptoki_call("C_Login", |cryptoki| cryptoki.login(session, user_type, pin))
+    }
+
+    pub fn sign_init(
+        &self,
+        session: CK_SESSION_HANDLE,
+        mechanism: &CK_MECHANISM,
+        key: CK_OBJECT_HANDLE,
+    ) -> Result<(), pkcs11::errors::Error> {
+        self.logged_cryptoki_call("C_SignInit", |cryptoki| cryptoki.sign_init(session, mechanism, key))
+    }
+
+    pub fn sign(&self, session: CK_SESSION_HANDLE, data: &[CK_BYTE]) -> Result<Vec<CK_BYTE>, pkcs11::errors::Error> {
+        self.logged_cryptoki_call("C_Sign", |cryptoki| cryptoki.sign(session, data))
+    }
+
+    pub fn find_objects_init(
+        &self,
+        session: CK_SESSION_HANDLE,
+        template: &[CK_ATTRIBUTE],
+    ) -> Result<(), pkcs11::errors::Error> {
+        self.logged_cryptoki_call("C_FindObjectsInit", |cryptoki| {
+            cryptoki.find_objects_init(session, template)
+        })
+    }
+
+    pub fn find_objects(
+        &self,
+        session: CK_SESSION_HANDLE,
+        max_object_count: CK_ULONG,
+    ) -> Result<Vec<CK_OBJECT_HANDLE>, pkcs11::errors::Error> {
+        self.logged_cryptoki_call("C_FindObjects", |cryptoki| {
+            cryptoki.find_objects(session, max_object_count)
+        })
+    }
+
+    pub fn find_objects_final(&self, session: CK_SESSION_HANDLE) -> Result<(), pkcs11::errors::Error> {
+        self.logged_cryptoki_call("C_FindObjectsFinal", |cryptoki| cryptoki.find_objects_final(session))
     }
 }
