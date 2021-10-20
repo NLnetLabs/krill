@@ -833,12 +833,9 @@ impl ResourceSetSummary {
 
 impl From<&ResourceSet> for ResourceSetSummary {
     fn from(rs: &ResourceSet) -> Self {
-        let asns: Vec<_> = rs.asn.iter().collect();
-        let asns = asns.len();
-        let ipv4: Vec<_> = rs.v4.iter().collect();
-        let ipv4 = ipv4.len();
-        let ipv6: Vec<_> = rs.v6.iter().collect();
-        let ipv6 = ipv6.len();
+        let asns = rs.asn().iter().count();
+        let ipv4 = rs.v4.iter().count();
+        let ipv6 = rs.v6.iter().count();
         ResourceSetSummary { asns, ipv4, ipv6 }
     }
 }
