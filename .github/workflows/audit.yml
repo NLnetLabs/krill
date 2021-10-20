@@ -1,17 +1,22 @@
 # Based on https://github.com/osohq/oso/blob/main/.github/workflows/audit.yml
 
-name: Security audit
-on:
-  push:
-    paths:
-      - 'Cargo.lock'
-  schedule:
-    - cron: '0 0 * * *'
-jobs:
-  audit:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/audit-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+# Temporarily  disable cargo audit in build until either
+# chrono fixes its CVE (which has no real impact on Krill)
+# or we can change the dependency to the time crate instead.
+# See: https://github.com/chronotope/chrono/issues/602#issuecomment-945893127
+
+# name: Security audit
+# on:
+#   push:
+#     paths:
+#       - 'Cargo.lock'
+#   schedule:
+#     - cron: '0 0 * * *'
+# jobs:
+#   audit:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: actions/checkout@v2
+#       - uses: actions-rs/audit-check@v1
+#         with:
+#           token: ${{ secrets.GITHUB_TOKEN }}
