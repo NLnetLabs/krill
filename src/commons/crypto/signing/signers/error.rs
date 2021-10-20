@@ -13,8 +13,8 @@ pub enum SignerError {
     IoError(KrillIoError),
     KeyNotFound,
     DecodeError,
-    SignerUnavailable,
-    SignerUnusable,
+    TemporarilyUnavailable,
+    PermanentlyUnusable,
     Other(String),
 }
 
@@ -28,8 +28,8 @@ impl fmt::Display for SignerError {
             SignerError::IoError(e) => e.fmt(f),
             SignerError::KeyNotFound => write!(f, "Could not find key"),
             SignerError::DecodeError => write!(f, "Could not decode key"),
-            SignerError::SignerUnavailable => write!(f, "Signer is unavailable"),
-            SignerError::SignerUnusable => write!(f, "Signer is unusable"),
+            SignerError::TemporarilyUnavailable => write!(f, "Signer is unavailable"),
+            SignerError::PermanentlyUnusable => write!(f, "Signer is unusable"),
             SignerError::Other(e) => write!(f, "Signer error: {}", e),
         }
     }

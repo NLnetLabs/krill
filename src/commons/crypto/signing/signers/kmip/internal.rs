@@ -286,7 +286,7 @@ impl KmipSigner {
 
                 ProbingServerConnector::Unusable => {
                     // KMIP server has been confirmed as unusable, fail.
-                    Some(Err(SignerError::SignerUnusable))
+                    Some(Err(SignerError::PermanentlyUnusable))
                 }
 
                 ProbingServerConnector::Probing { last_probe_time, .. } => {
@@ -294,7 +294,7 @@ impl KmipSigner {
                     // haven't tried checking again for a while, then try contacting it again. If we can't establish
                     // whether or not the server is usable, return an error.
                     if !is_time_to_check(RETRY_INIT_EVERY, *last_probe_time) {
-                        Some(Err(SignerError::SignerUnavailable))
+                        Some(Err(SignerError::TemporarilyUnavailable))
                     } else {
                         None
                     }
@@ -307,7 +307,7 @@ impl KmipSigner {
         get_server_if_usable(status).unwrap_or_else(|| {
             self.probe_server()
                 .and_then(|_| Ok(self.server.read().unwrap()))
-                .map_err(|_| SignerError::SignerUnavailable)
+                .map_err(|_| SignerError::TemporarilyUnavailable)
         })
     }
 
@@ -316,7 +316,7 @@ impl KmipSigner {
         // Hold a write lock for the duration of our attempt to verify the KMIP server so that no other attempt occurs
         // at the same time. Bail out if another thread is performing a probe and has the lock. This is the same result
         // as when attempting to use the KMIP server between probe retries.
-        let mut status = self.server.try_write().map_err(|_| SignerError::SignerUnavailable)?;
+        let mut status = self.server.try_write().map_err(|_| SignerError::TemporarilyUnavailable)?;
 
         // Update the timestamp of our last attempt to contact the KMIP server. This is used above to know when we have
         // waited long enough before attempting to contact the server again. This also guards against attempts to probe
@@ -356,7 +356,7 @@ impl KmipSigner {
                 other => error!("Failed to connect KMIP server: Unexpected error: {}", other),
             };
 
-            SignerError::SignerUnavailable
+            SignerError::TemporarilyUnavailable
         })?;
 
         // We managed to establish a TCP+TLS connection to the KMIP server. Send it a Query request to discover how
@@ -393,7 +393,7 @@ impl KmipSigner {
             // PyKMIP with Krill!
             if !IGNORE_MISSING_CAPABILITIES {
                 *status = ProbingServerConnector::Unusable;
-                return Err(SignerError::SignerUnusable);
+                return Err(SignerError::PermanentlyUnusable);
             }
         }
 

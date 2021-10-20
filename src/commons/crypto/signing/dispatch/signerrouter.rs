@@ -524,7 +524,7 @@ impl SignerRouter {
 
         let challenge = "Krill signer verification challenge".as_bytes();
         let signature = match signer_provider.sign_registration_challenge(&signer_private_key_id, challenge) {
-            Err(SignerError::SignerUnavailable) => {
+            Err(SignerError::TemporarilyUnavailable) => {
                 debug!("Signer '{}' could not be contacted", signer_name);
                 return Ok(IdentifyResult::Unavailable);
             }
@@ -581,14 +581,14 @@ impl SignerRouter {
         let signer_name = signer_provider.get_name().to_string();
 
         let (public_key, signer_private_key_id) = match signer_provider.create_registration_key() {
-            Err(SignerError::SignerUnavailable) => return Ok(RegisterResult::NotReady),
+            Err(SignerError::TemporarilyUnavailable) => return Ok(RegisterResult::NotReady),
             Err(_) => return Ok(RegisterResult::ReadyUnusable),
             Ok(res) => res,
         };
 
         let challenge = "Krill signer verification challenge".as_bytes();
         let signature = match signer_provider.sign_registration_challenge(&signer_private_key_id, challenge) {
-            Err(SignerError::SignerUnavailable) => return Ok(RegisterResult::NotReady),
+            Err(SignerError::TemporarilyUnavailable) => return Ok(RegisterResult::NotReady),
             Err(_) => return Ok(RegisterResult::ReadyUnusable),
             Ok(res) => res,
         };
