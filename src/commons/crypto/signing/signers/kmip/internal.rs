@@ -262,6 +262,11 @@ impl UsableServerState {
             conn_info,
         }
     }
+
+    pub fn get_connection(&self) -> Result<PooledConnection<ConnectionManager>, SignerError> {
+        let conn = self.pool.get()?;
+        Ok(conn)
+    }
 }
 
 impl KmipSigner {
@@ -432,7 +437,7 @@ impl KmipSigner {
 impl KmipSigner {
     /// Get a connection to the KMIP server from the pool, if the server is usable.
     fn connect(&self) -> Result<PooledConnection<ConnectionManager>, SignerError> {
-        let conn = self.server()?.state().pool.get()?;
+        let conn = self.server()?.state().get_connection()?;
         Ok(conn)
     }
 
