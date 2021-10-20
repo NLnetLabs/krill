@@ -7,6 +7,7 @@ use std::{
     str::FromStr,
 };
 
+use chrono::Duration;
 use clap::{App, Arg};
 use log::{error, LevelFilter};
 use serde::{de, Deserialize, Deserializer};
@@ -14,7 +15,7 @@ use serde::{de, Deserialize, Deserializer};
 #[cfg(unix)]
 use syslog::Facility;
 
-use rpki::uri;
+use rpki::{repository::x509::Time, uri};
 
 use crate::{
     commons::{
@@ -162,6 +163,10 @@ impl ConfigDefaults {
         24
     }
 
+    fn timing_publish_next_jitter_hours() -> i64 {
+        4
+    }
+
     fn timing_publish_hours_before_next() -> i64 {
         8
     }
@@ -298,7 +303,9 @@ pub struct Config {
 #[derive(Clone, Debug, Deserialize)]
 pub struct IssuanceTimingConfig {
     #[serde(default = "ConfigDefaults::timing_publish_next_hours")]
-    pub timing_publish_next_hours: i64,
+    timing_publish_next_hours: i64,
+    #[serde(default = "ConfigDefaults::timing_publish_next_jitter_hours")]
+    timing_publish_next_jitter_hours: i64,
     #[serde(default = "ConfigDefaults::timing_publish_hours_before_next")]
     pub timing_publish_hours_before_next: i64,
     #[serde(default = "ConfigDefaults::timing_child_certificate_valid_weeks")]
@@ -309,6 +316,22 @@ pub struct IssuanceTimingConfig {
     pub timing_roa_valid_weeks: i64,
     #[serde(default = "ConfigDefaults::timing_roa_reissue_weeks_before")]
     pub timing_roa_reissue_weeks_before: i64,
+}
+
+impl IssuanceTimingConfig {
+    /// Returns the next update time based on configuration:
+    ///
+    /// now + timing_publish_next_hours + random(0..timing_publish_next_jitter_hours)
+    /// defaults: now + 24 hours + 0 to 4 hours
+    pub fn publish_next(&self) -> Time {
+        let regular_mins = self.timing_publish_next_hours * 60;
+        let random_mins = {
+            use rand::Rng;
+            let mut rng = rand::thread_rng();
+            rng.gen_range(0..(60 * self.timing_publish_next_jitter_hours))
+        };
+        Time::now() + Duration::minutes(regular_mins + random_mins)
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -544,6 +567,7 @@ impl Config {
         let roa_deaggregate_threshold = 2;
 
         let timing_publish_next_hours = ConfigDefaults::timing_publish_next_hours();
+        let timing_publish_next_jitter_hours = ConfigDefaults::timing_publish_next_jitter_hours();
         let timing_publish_hours_before_next = ConfigDefaults::timing_publish_hours_before_next();
         let timing_child_certificate_valid_weeks = ConfigDefaults::timing_child_certificate_valid_weeks();
         let timing_child_certificate_reissue_weeks_before =
@@ -553,6 +577,7 @@ impl Config {
 
         let issuance_timing = IssuanceTimingConfig {
             timing_publish_next_hours,
+            timing_publish_next_jitter_hours,
             timing_publish_hours_before_next,
             timing_child_certificate_valid_weeks,
             timing_child_certificate_reissue_weeks_before,
@@ -726,6 +751,19 @@ impl Config {
 
         if self.issuance_timing.timing_publish_next_hours < 2 {
             return Err(ConfigError::other("timing_publish_next_hours must be at least 2"));
+        }
+
+        if self.issuance_timing.timing_publish_next_jitter_hours < 0 {
+            return Err(ConfigError::other(
+                "timing_publish_next_jitter_hours must be at least 0",
+            ));
+        }
+
+        if self.issuance_timing.timing_publish_next_jitter_hours > (self.issuance_timing.timing_publish_next_hours / 2)
+        {
+            return Err(ConfigError::other(
+                "timing_publish_next_jitter_hours must be at most timing_publish_next_hours divided by 2",
+            ));
         }
 
         if self.issuance_timing.timing_publish_hours_before_next < 1 {
