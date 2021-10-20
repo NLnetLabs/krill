@@ -162,7 +162,7 @@ impl SignerRouter {
 /// With HSM support we are able to use different and even multiple signer implementations at once in Krill.
 #[cfg(feature = "hsm")]
 impl SignerRouter {
-    pub fn build(work_dir: &Path) -> KrillResult<Self> {
+    pub fn build(work_dir: &Path, second_signer_hack: bool) -> KrillResult<Self> {
         // The types of signer to initialize, the details needed to initialize them and the intended purpose for each
         // signer (e.g. signer for past keys, currently used signer, signer to use for a key roll, etc.) should come
         // from the configuration file. SignerRouter combines that input with its own rules, e.g. to route a signing
@@ -181,7 +181,7 @@ impl SignerRouter {
         // they by that point have determined their own handle.
         let signers_by_handle = RwLock::new(HashMap::new());
 
-        let roles = Self::build_signers(work_dir, signer_mapper.clone())?;
+        let roles = Self::build_signers(work_dir, signer_mapper.clone(), second_signer_hack)?;
 
         // Having the same signer multiple times in this vector is less efficient but the impact is negligible and it
         // doesn't break anything if there are duplicates.
@@ -210,7 +210,7 @@ impl SignerRouter {
         })
     }
 
-    #[cfg(not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11")))]
+    #[cfg(all(feature = "hsm", not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11"))))]
     fn build_signers(work_dir: &Path, signer_mapper: Arc<SignerMapper>) -> KrillResult<SignerRoleAssignments> {
         // When the HSM feature is activated and we are not in test mode:
         //   - Use the HSM for key creation, signing, deletion, except for one-off keys.
@@ -260,7 +260,7 @@ impl SignerRouter {
 
     // TODO: Delete me once setup from Krill configuration is supported.
     #[cfg(feature = "hsm-tests-pkcs11")]
-    fn build_signers(work_dir: &Path, signer_mapper: Arc<SignerMapper>) -> KrillResult<SignerRoleAssignments> {
+    fn build_signers(work_dir: &Path, signer_mapper: Arc<SignerMapper>, second_signer_hack: bool) -> KrillResult<SignerRoleAssignments> {
         use crate::commons::crypto::signers::pkcs11::Pkcs11Signer;
 
         // When the HSM feature is activated AND test mode is activated:
@@ -272,16 +272,24 @@ impl SignerRouter {
             Some(signer_mapper.clone()),
         )?));
 
-        let pkcs11_signer = Arc::new(SignerProvider::Pkcs11(Pkcs11Signer::build(
-            "Pkcs11Signer - No config file name available yet",
-            signer_mapper,
-        )?));
+        if second_signer_hack {
+            Ok(SignerRoleAssignments {
+                default_signer: openssl_signer.clone(),
+                one_off_signer: openssl_signer.clone(),
+                rand_fallback_signer: openssl_signer,
+            })
+        } else {
+            let pkcs11_signer = Arc::new(SignerProvider::Pkcs11(Pkcs11Signer::build(
+                "Pkcs11Signer - No config file name available yet",
+                signer_mapper,
+            )?));
 
-        Ok(SignerRoleAssignments {
-            default_signer: pkcs11_signer.clone(),
-            one_off_signer: pkcs11_signer.clone(),
-            rand_fallback_signer: openssl_signer,
-        })
+            Ok(SignerRoleAssignments {
+                default_signer: pkcs11_signer.clone(),
+                one_off_signer: pkcs11_signer.clone(),
+                rand_fallback_signer: openssl_signer,
+            })
+        }
     }
 
     /// Locate the [SignerProvider] that owns a given [KeyIdentifier], if the signer is active.

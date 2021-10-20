@@ -186,7 +186,7 @@ fn upgrade_0_9_0(config: Arc<Config>) -> Result<(), UpgradeError> {
     }
 
     if needs_v0_9_0_upgrade(work_dir, "cas") {
-        let signer = Arc::new(KrillSigner::build(work_dir)?);
+        let signer = Arc::new(KrillSigner::build(work_dir, false)?);
         let repo_manager = RepositoryManager::build(config.clone(), signer)?;
 
         CaObjectsMigration::migrate(config, repo_manager)?;

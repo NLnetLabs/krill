@@ -13,6 +13,7 @@ use krill::{
 };
 
 #[tokio::test]
+#[cfg(not(feature = "hsm-tests-pkcs11"))]
 async fn migrate_repository() {
     init_logging();
 

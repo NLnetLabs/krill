@@ -1941,7 +1941,7 @@ mod tests {
     #[test]
     fn generate_id_cert() {
         test::test_under_tmp(|d| {
-            let signer = KrillSigner::build(&d).unwrap();
+            let signer = KrillSigner::build(&d, false).unwrap();
             let id = Rfc8183Id::generate(&signer).unwrap();
             id.cert.validate_ta().unwrap();
         });
