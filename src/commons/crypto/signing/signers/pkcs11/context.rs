@@ -42,6 +42,12 @@ static CONTEXTS: OnceCell<Arc<RwLock<HashMap<String, Arc<RwLock<Pkcs11Context>>>
 pub(super) struct Pkcs11Context {
     lib_file_name: String,
 
+    /// The Rust `pkcs11` Ctx object which gives access to the loaded library functions.
+    /// 
+    /// Some(...) means that the library was successfully loaded and passed the initial checks performed by the
+    /// `pkcs11` crate (at the time of writing it checks that a lot of function pointers are available as expected).
+    /// 
+    /// None means that we tried and failed to load the library.
     ctx: Option<Ctx>,
 }
 
@@ -67,6 +73,7 @@ impl Pkcs11Context {
         let ctx_wrapper = locked_contexts
             .entry(lib_file_name)
             .or_insert_with_key(|lib_file_name| {
+                // Load the library if not already in the HashMap.
                 trace!("Loading PKCS#11 library '{:?}'", lib_path);
                 let ctx = match Ctx::new(lib_path) {
                     Ok(ctx) => Some(ctx),
@@ -75,6 +82,8 @@ impl Pkcs11Context {
                         None
                     }
                 };
+
+                // Make the context object usable in a multi-threaded environment
                 Arc::new(RwLock::new(Pkcs11Context {
                     lib_file_name: lib_file_name.clone(),
                     ctx,
@@ -95,6 +104,8 @@ impl Pkcs11Context {
         self.lib_file_name.clone()
     }
 
+    /// Invoke C_Initialize in the loaded PKCS#11 library, if not already initialized.
+    /// We don't do this at the time of loading the library as we don't want to delay or block Krill startup.
     pub fn initialize_if_not_already(&mut self) -> Result<(), SignerError> {
         let ctx = self.ctx.as_mut().ok_or(SignerError::Pkcs11Error(format!(
             "Failed to initialize library '{}': Library is not loaded yet",
@@ -102,14 +113,15 @@ impl Pkcs11Context {
         )))?;
 
         if !ctx.is_initialized() {
-            // TODO: are these arg values okay?
+            // These are the defaults used by CK_C_INIITIALIZE_ARGS::new() but it's good to state them explicitly here
+            // and gives a place to put the comment about args.pReserved.
             let mut args = CK_C_INITIALIZE_ARGS::new();
             args.CreateMutex = None;
             args.DestroyMutex = None;
             args.LockMutex = None;
             args.UnlockMutex = None;
             args.flags = CKF_OS_LOCKING_OK;
-            // args.pReserved // TODO: permit setting this, e.g. YubiHSM uses it to pass special settings through to the library
+            // args.pReserved // TODO: permit setting this, e.g. YubiHSM uses it to pass settings to the library.
 
             // TODO: add a timeout around the call to initialize?
             if let Err(err) = self.initialize(Some(args)) {
