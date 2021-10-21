@@ -278,4 +278,14 @@ impl Pkcs11Context {
     pub fn find_objects_final(&self, session: CK_SESSION_HANDLE) -> Result<(), pkcs11::errors::Error> {
         self.logged_cryptoki_call("C_FindObjectsFinal", |cryptoki| cryptoki.find_objects_final(session))
     }
+
+    pub fn destroy_object(
+        &self,
+        session: CK_SESSION_HANDLE,
+        object_handle: CK_OBJECT_HANDLE,
+    ) -> Result<(), pkcs11::errors::Error> {
+        self.logged_cryptoki_call("C_DeleteObject", |cryptoki| {
+            cryptoki.destroy_object(session, object_handle)
+        })
+    }
 }

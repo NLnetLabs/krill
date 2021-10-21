@@ -765,7 +765,7 @@ impl Pkcs11Signer {
     }
 
     // TODO: This is almost identical to the equivalent fn in KmipSigner. Factor out the common code.
-    pub(super) fn get_public_key_from_handle(&self, pub_handle: u64) -> Result<PublicKey, SignerError> {
+    pub(super) fn get_public_key_from_handle(&self, pub_handle: CK_OBJECT_HANDLE) -> Result<PublicKey, SignerError> {
         let rsa_public_key_bytes = self.get_rsa_public_key_bytes(pub_handle)?;
 
         let subject_public_key = bcder::BitString::new(0, rsa_public_key_bytes);
@@ -860,6 +860,11 @@ impl Pkcs11Signer {
                 &human_key_class, cka_id_hex_str
             )))),
         }
+    }
+
+    pub(super) fn destroy_key_by_handle(&self, key_handle: CK_OBJECT_HANDLE) -> Result<(), SignerError> {
+        trace!("PKCS#11: Destroying key with PKCS#11 handle {}", key_handle);
+        self.with_conn("destroy", |conn| conn.destroy_object(key_handle))
     }
 }
 

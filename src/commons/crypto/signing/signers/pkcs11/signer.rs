@@ -24,8 +24,24 @@ impl Signer for Pkcs11Signer {
             .map_err(|err| KeyError::Signer(err))
     }
 
-    fn destroy_key(&self, _key: &Self::KeyId) -> Result<(), KeyError<Self::Error>> {
-        Ok(()) //TODO
+    fn destroy_key(&self, key_id: &Self::KeyId) -> Result<(), KeyError<Self::Error>> {
+        debug!("PKCS#11: Deleting key pair with ID {}", key_id);
+        let internal_key_id = self.lookup_key_id(key_id)?;
+        let mut res: Result<(), KeyError<Self::Error>> = Ok(());
+        if let Ok(pub_handle) = self.find_key(&internal_key_id, CKO_PUBLIC_KEY) {
+            res = self.destroy_key_by_handle(pub_handle).map_err(|err| match err {
+                SignerError::KeyNotFound => KeyError::KeyNotFound,
+                _ => KeyError::Signer(err),
+            });
+        }
+        if let Ok(priv_handle) = self.find_key(&internal_key_id, CKO_PRIVATE_KEY) {
+            let res2 = self.destroy_key_by_handle(priv_handle).map_err(|err| match err {
+                SignerError::KeyNotFound => KeyError::KeyNotFound,
+                _ => KeyError::Signer(err),
+            });
+            res = res.and(res2);
+        }
+        res
     }
 
     fn sign<D: AsRef<[u8]> + ?Sized>(
@@ -51,13 +67,14 @@ impl Signer for Pkcs11Signer {
         algorithm: SignatureAlgorithm,
         data: &D,
     ) -> Result<(Signature, PublicKey), Self::Error> {
-        let (key, _, priv_handle, _) = self.build_key(PublicKeyFormat::Rsa)?;
+        let (key, pub_handle, priv_handle, _) = self.build_key(PublicKeyFormat::Rsa)?;
 
         let signature_res = self
             .sign_with_key(priv_handle, algorithm, data.as_ref())
             .map_err(|err| SignerError::Pkcs11Error(format!("One-off signing of data failed: {}", err)));
 
-        // let _ = self.destroy_key_pair(&kmip_key_pair_ids, KeyStatus::Active);
+        let _ = self.destroy_key_by_handle(pub_handle);
+        let _ = self.destroy_key_by_handle(priv_handle);
 
         let signature = signature_res?;
 

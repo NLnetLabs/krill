@@ -114,5 +114,10 @@ impl Pkcs11Session {
         self.context.read().unwrap().find_objects_final(self.session_handle)
     }
 
+    pub fn destroy_object(&self, object_handle: CK_OBJECT_HANDLE) -> Result<(), pkcs11::errors::Error> {
+        self.context
+            .read()
+            .unwrap()
+            .destroy_object(self.session_handle, object_handle)
     }
 }
