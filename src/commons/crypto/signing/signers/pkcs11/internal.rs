@@ -40,16 +40,47 @@ const RETRY_REQ_AFTER_MULTIPLIER: f64 = 1.5;
 /// The maximum amount of time to keep retrying a failed request.
 const RETRY_REQ_UNTIL_MAX: Duration = Duration::from_secs(30);
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LoginMode {
+    // The token can do cryptographic operations such as signing without requiring C_Login to be called first, and so a
+    // user pin is also not required.
+    LoginNotRequired,
+
+    // The token requires that C_Login be called prior to performing any cryptographic operations such as signing. A
+    // correct user pin may be needed for the login to succeed.
+    LoginRequired,
+}
+
 // Placeholder struct
 #[derive(Clone, Debug)]
 struct ConnectionSettings {
     context: Arc<RwLock<Pkcs11Context>>,
 
+    // For some PKCS#11 libraries it is easy, or only possible, to connect by slot ID (rather than slot label). If
+    // `slot_id` is Some then `slot_label` is ignored. One of `slot_id` or `slot_label` must be Some.
     slot_id: Option<CK_SLOT_ID>,
 
+    // Some PKCS#11 libraries support labeling slots for easy identification, others not only support it be make it
+    // necessary to use labelled slots because the slot ID is not so obvious (e.g. with SoftHSMv2 slot 0 has a seemingly
+    // random actual slot ID generated when the slot is initialized) or is dynamic (apparently the OpenDNSSec project
+    // has encountered this). However, not all libraries support labeling of slots, e.g. the YubiHSM PKCS#11 library
+    // uses simple integer slot IDs (slot 0, 1, etc). When `slot_label` is Some and `slot_id` is None then the list of
+    // available slots will be queried via C_GetSlotList and the slot id of the first slot whose label matches the
+    // given Some(slot_label) value will be used to connect to the HSM.
     slot_label: Option<String>,
 
-    user_pin: String,
+    // The user pin is optional, it may be possible to login without it. Quoting the PKCS#11 v2.20 specificiation for
+    // the C_Login operation:
+    //
+    //   "If the token has a “protected authentication path”, as indicated by the CKF_PROTECTED_AUTHENTICATION_PATH
+    //    flag in its CK_TOKEN_INFO being set, then that means that there is some way for a user to be authenticated to
+    //    the token without having the application send a PIN through the Cryptoki library. One such possibility is that
+    //    the user enters a PIN on a PINpad on the token itself, or on the slot device. Or the user might not even use a
+    //    PIN—authentication could be achieved by some fingerprint-reading device, for example. To log into a token with
+    //    a protected authentication path, the pPin parameter to C_Login should be NULL_PTR."
+    user_pin: Option<String>,
+
+    login_mode: LoginMode,
 }
 
 #[derive(Debug)]
@@ -144,14 +175,17 @@ impl Pkcs11Signer {
 
     fn get_test_connection_settings() -> Result<ConnectionSettings, SignerError> {
         let context = Pkcs11Context::get_or_load(Path::new("/usr/lib/x86_64-linux-gnu/softhsm/libsofthsm2.so"))?;
-        let slot_id = None;
+        let slot_id = Option::<CK_SLOT_ID>::None;
         let slot_label = Some("My token 1".to_string());
-        let user_pin = "1234".to_string();
+        let user_pin = Some("1234".to_string());
+        let login_mode = LoginMode::LoginRequired;
+
         Ok(ConnectionSettings {
             context,
             slot_id,
             slot_label,
             user_pin,
+            login_mode,
         })
     }
 }
@@ -252,13 +286,17 @@ struct UsableServerState {
 
     slot_id: CK_SLOT_ID,
 
+    login_mode: LoginMode,
+
+    /// When login_mode is NOT LoginMode::LoginRequired this will be None.
+    /// 
     /// Section 11.6 "Session management functions" of the PKCS#11 v2.20 specification says:
     ///   "Call C_Login to log the user into the token. Since all sessions an application has with a token have a
     ///    shared login state, C_Login only needs to be called for one of the sessions."
     ///
     /// Therefore we hold a reference to the login session so that all future sessions are considered logged in.
     /// The Drop impl for Pkcs11Session will log the session out if logged in.
-    login_session: Pkcs11Session,
+    login_session: Option<Pkcs11Session>,
 }
 
 impl UsableServerState {
@@ -267,13 +305,15 @@ impl UsableServerState {
         context: Arc<RwLock<Pkcs11Context>>,
         conn_info: String,
         slot_id: CK_SLOT_ID,
-        login_session: Pkcs11Session,
+        login_mode: LoginMode,
+        login_session: Option<Pkcs11Session>,
     ) -> UsableServerState {
         UsableServerState {
             context,
             supports_random_number_generation,
             conn_info,
             slot_id,
+            login_mode,
             login_session,
         }
     }
@@ -335,6 +375,8 @@ impl Pkcs11Signer {
         // Hold a write lock for the duration of our attempt to verify the server so that no other attempt occurs
         // at the same time. Bail out if another thread is performing a probe and has the lock. This is the same result
         // as when attempting to use the server between probe retries.
+        let signer_name = &self.name;
+
         let mut status = self
             .server
             .try_write()
@@ -350,7 +392,7 @@ impl Pkcs11Signer {
             let mut writable_ctx = conn_settings.context.write().unwrap();
             let lib_name = writable_ctx.get_lib_file_name();
 
-            debug!("Probing server using library '{}'", lib_name);
+            debug!("[{}] Probing server using library '{}'", signer_name, lib_name);
             let res = writable_ctx.initialize_if_not_already();
 
             (res, lib_name)
@@ -358,7 +400,10 @@ impl Pkcs11Signer {
 
         if let Err(err) = res {
             if matches!(err, SignerError::PermanentlyUnusable) {
-                error!("Unable to initialize PKCS#11 info for library '{}': {}", lib_name, err);
+                error!(
+                    "[{}] Unable to initialize PKCS#11 info for library '{}': {}",
+                    signer_name, lib_name, err
+                );
                 *status = ProbingServerConnector::Unusable;
             }
             return Err(err);
@@ -374,14 +419,20 @@ impl Pkcs11Signer {
             let readable_ctx = conn_settings.context.read().unwrap();
 
             let cryptoki_info = readable_ctx.get_info().map_err(|err| {
-                error!("Unable to read PKCS#11 info for library '{}': {}", lib_name, err);
+                error!(
+                    "[{}] Unable to read PKCS#11 info for library '{}': {}",
+                    signer_name, lib_name, err
+                );
                 SignerError::PermanentlyUnusable
             })?;
+
+            trace!("[{}] C_GetInfo(): {:?}", signer_name, cryptoki_info);
 
             let slot_id = if let Some(slot_id) = conn_settings.slot_id {
                 slot_id
             } else if let Some(slot_label) = &conn_settings.slot_label {
                 fn has_token_label(
+                    signer_name: &str,
                     ctx: &RwLockReadGuard<Pkcs11Context>,
                     slot_id: CK_SLOT_ID,
                     slot_label: &str,
@@ -389,7 +440,10 @@ impl Pkcs11Signer {
                     match ctx.get_token_info(slot_id) {
                         Ok(info) => info.label.to_string() == slot_label,
                         Err(err) => {
-                            warn!("Failed to obtain token info for PKCS#11 slot id '{}': {}", slot_id, err);
+                            warn!(
+                                "[{}] Failed to obtain token info for PKCS#11 slot id '{}': {}",
+                                signer_name, slot_id, err
+                            );
                             false
                         }
                     }
@@ -398,42 +452,52 @@ impl Pkcs11Signer {
                 let slot_id = readable_ctx
                     .get_slot_list(true)
                     .map_err(|err| {
-                        error!("Failed to enumerate PKCS#11 slots for library '{}': {}", lib_name, err);
+                        error!(
+                            "[{}] Failed to enumerate PKCS#11 slots for library '{}': {}",
+                            signer_name, lib_name, err
+                        );
                         SignerError::PermanentlyUnusable
                     })?
                     .into_iter()
-                    .find(|&slot_id| has_token_label(&readable_ctx, slot_id, &slot_label));
+                    .find(|&slot_id| has_token_label(signer_name, &readable_ctx, slot_id, &slot_label));
 
                 match slot_id {
                     Some(slot_id) => slot_id,
                     None => {
                         error!(
-                            "No PKCS#11 slot found for library '{}' with label '{}'",
-                            lib_name, slot_label
+                            "[{}] No PKCS#11 slot found for library '{}' with label '{}'",
+                            signer_name, lib_name, slot_label
                         );
                         return Err(SignerError::PermanentlyUnusable);
                     }
                 }
             } else {
-                error!("No PKCS#11 slot id or label specified for library '{}'", lib_name);
+                error!(
+                    "[{}] No PKCS#11 slot id or label specified for library '{}'",
+                    signer_name, lib_name
+                );
                 return Err(SignerError::PermanentlyUnusable);
             };
 
             let slot_info = readable_ctx.get_slot_info(slot_id).map_err(|err| {
                 error!(
-                    "Unable to read PKCS#11 slot info for library '{}' slot {}: {}",
-                    lib_name, slot_id, err
+                    "[{}] Unable to read PKCS#11 slot info for library '{}' slot {}: {}",
+                    signer_name, lib_name, slot_id, err
                 );
                 SignerError::PermanentlyUnusable
             })?;
 
+            trace!("[{}] C_GetSlotInfo(): {:?}", signer_name, slot_info);
+
             let token_info = readable_ctx.get_token_info(slot_id).map_err(|err| {
                 error!(
-                    "Unable to read PKCS#11 token info for library '{}' slot {}: {}",
-                    lib_name, slot_id, err
+                    "[{}] Unable to read PKCS#11 token info for library '{}' slot {}: {}",
+                    signer_name, lib_name, slot_id, err
                 );
                 SignerError::PermanentlyUnusable
             })?;
+
+            trace!("[{}] C_GetTokenInfo(): {:?}", signer_name, token_info);
 
             let user_pin = conn_settings.user_pin.clone();
 
@@ -442,26 +506,43 @@ impl Pkcs11Signer {
 
         // TODO: check for RSA key pair support?
 
-        let login_session = Pkcs11Session::new(status.conn_settings().context.clone(), slot_id).map_err(|err| {
-            error!(
-                "Unable to open PKCS#11 session for library '{}' slot {}: {}",
-                lib_name, slot_id, err
+        let login_session = if status.conn_settings().login_mode == LoginMode::LoginRequired {
+            let login_session = Pkcs11Session::new(status.conn_settings().context.clone(), slot_id).map_err(|err| {
+                error!(
+                    "[{}] Unable to open PKCS#11 session for library '{}' slot {}: {}",
+                    signer_name, lib_name, slot_id, err
+                );
+                SignerError::PermanentlyUnusable
+            })?;
+            
+            login_session.login(CKU_USER, user_pin.as_deref()).map_err(|err| {
+                error!(
+                    "[{}] Unable to login to PKCS#11 session for library '{}' slot {}: {}",
+                    signer_name, lib_name, slot_id, err
+                );
+                SignerError::PermanentlyUnusable
+            })?;
+            
+            trace!(
+                "[{}] Logged in to PKCS#11 session for library '{}' slot {}",
+                signer_name,
+                lib_name,
+                slot_id,
             );
-            SignerError::PermanentlyUnusable
-        })?;
-        // TODO: make user pin optional?
-        login_session.login(CKU_USER, Some(&user_pin)).map_err(|err| {
-            error!(
-                "Unable to login to PKCS#11 session for library '{}' slot {}: {}",
-                lib_name, slot_id, err
-            );
-            SignerError::PermanentlyUnusable
-        })?;
+            
+            Some(login_session)
+        } else {
+            None
+        };
 
         // Switch from probing the server to using it.
         // -------------------------------------------
 
         let conn_settings = status.take_conn_settings();
+
+        // Note: When Display'd via '{}' with format!() as is done below, the Rust `pkcs11` crate automatically trims
+        // trailing whitespace from Cryptoki padded strings such as the token info label, model and manufacturerID.
+
         let server_identification = format!(
             "{} (Cryptoki v{}.{})",
             cryptoki_info.manufacturerID, cryptoki_info.libraryVersion.major, cryptoki_info.libraryVersion.minor
@@ -483,11 +564,14 @@ impl Pkcs11Signer {
             "PKCS#11 Signer [token: {}, slot: {}, server: {}, library: {}]",
             token_identification, slot_id, server_identification, lib_name
         );
+        let login_mode = conn_settings.login_mode;
+
         let state = UsableServerState::new(
             supports_random_number_generation,
             context,
             server_info,
             slot_id,
+            login_mode,
             login_session,
         );
 
@@ -514,6 +598,8 @@ impl Pkcs11Signer {
     where
         F: FnOnce(&Pkcs11Session) -> Result<T, pkcs11::errors::Error> + Copy,
     {
+        let signer_name = &self.name;
+
         // Define the backoff policy to use
         let backoff_policy = ExponentialBackoff {
             initial_interval: RETRY_REQ_AFTER,
@@ -524,7 +610,13 @@ impl Pkcs11Signer {
 
         // Define a notify callback to customize messages written to the logger
         let notify = |err, next: Duration| {
-            warn!("{} failed, retrying in {} seconds: {}", desc, next.as_secs(), err);
+            warn!(
+                "[{}] {} failed, retrying in {} seconds: {}",
+                signer_name,
+                desc,
+                next.as_secs(),
+                err
+            );
         };
 
         // Define an operation to (re)try
@@ -543,7 +635,7 @@ impl Pkcs11Signer {
 
         // Try (and retry if needed) the requested operation.
         let res = backoff::retry_notify(backoff_policy, op, notify).or_else(|err| {
-            error!("{} failed, retries exhausted: {}", desc, err);
+            error!("[{}] {} failed, retries exhausted: {}", signer_name, desc, err);
             Err(err)
         })?;
 
@@ -741,7 +833,7 @@ impl Pkcs11Signer {
             _ => "key",
         };
 
-        let cka_id = hex::decode(cka_id_hex_str).map_err(|err| KeyError::Signer(SignerError::DecodeError))?;
+        let cka_id = hex::decode(cka_id_hex_str).map_err(|_| KeyError::Signer(SignerError::DecodeError))?;
 
         let results = self.with_conn("sign", |conn| {
             // Find at most two search results that match the given key class (public or private) and the given PKCS#11
@@ -821,6 +913,24 @@ fn is_transient_error(err: &pkcs11::errors::Error) -> bool {
             // Return true only for errors which might succeed very soon after they failed. Errors which are solvable
             // by an operator changing data or configuration in the HSM are not treated as transient errors as they
             // are unlikely to be solved in the immediate future and thus there is no value in retrying.
+            //
+            // Causes of certain errors that might be worth documenting or suggesting as guidance to the user in the
+            // logs:
+            //
+            //   - CKR_FUNCTION_FAILED:   Can happen when the PKCS#11 library doesn't have access to its files, e.g.
+            //                            when `softhsm2-util --init-token` was run as root but Krill is run as a
+            //                            different user.
+            //   - CKR_FUNCTION_FAILED:   Can happen when the PKCS#11 library cannot find its configuration files, e.g.
+            //                            when the YubiHSM PKCS#11 library cannot find `yubihsm_pkcs11.conf` in the
+            //                            current directory and the environment variable `YUBIHSM_PKCS11_CONF` is not
+            //                            set and pointing to the correct location of the file or if the file is not
+            //                            readable by the Krill user.
+            //   - CKR_TOKEN_NOT_PRESENT: Can happen when the YubiHSM PKCS#11 configuration file `connector` setting
+            //                            reers to a URL at which `yubihsm-connector -d` should be listening but the
+            //                            YubiHSM PKCS#11 library fails to connect to (either because the URL is
+            //                            incorrect or it is a HTTPS URL but there is a TLS failure such as invalid
+            //                            certificate or unknown signing CA etc) or some other issue such as a firewall
+            //                            or operating system restriction preventing access.
             match *err {
                 // PKCS#11 v2.20
                 CKR_OK => false, // unreachable!() ?

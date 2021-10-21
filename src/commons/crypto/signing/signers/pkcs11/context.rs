@@ -109,7 +109,9 @@ impl Pkcs11Context {
             args.LockMutex = None;
             args.UnlockMutex = None;
             args.flags = CKF_OS_LOCKING_OK;
+            // args.pReserved // TODO: permit setting this, e.g. YubiHSM uses it to pass special settings through to the library
 
+            // TODO: add a timeout around the call to initialize?
             if let Err(err) = self.initialize(Some(args)) {
                 error!("Failed to initialize PKCS#11 library '{}': {}", self.lib_file_name, err);
                 return Err(SignerError::PermanentlyUnusable);
@@ -134,6 +136,7 @@ impl Drop for Pkcs11Context {
 
 //------------ Deref with logging (rather than just impl std::ops::Deref) ---------------------------------------------
 
+// TODO: add a timeout around Cryptoki calls?
 impl Pkcs11Context {
     fn logged_cryptoki_call<F, T>(&self, cryptoki_call_name: &'static str, call: F) -> Result<T, pkcs11::errors::Error>
     where

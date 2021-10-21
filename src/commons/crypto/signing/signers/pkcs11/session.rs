@@ -75,6 +75,9 @@ impl Pkcs11Session {
         self.context.read().unwrap().login(self.handle, user_type, user_pin)
     }
 
+    // Note: Cryptographic operations can fail if the key has CKA_ALWAYS_AUTHENTICATE set as that requires that we call
+    // C_Login immediately prior to calling C_SignInit, and we don't support that yet (would it ever make sense as this
+    // could for example require an operator to enter a pin code in a key pad on every signing moment?).
     pub fn sign_init(&self, mechanism: &CK_MECHANISM, key: CK_OBJECT_HANDLE) -> Result<(), pkcs11::errors::Error> {
         self.context.read().unwrap().sign_init(self.handle, mechanism, key)
     }

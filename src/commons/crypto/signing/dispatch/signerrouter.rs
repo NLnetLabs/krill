@@ -162,7 +162,18 @@ impl SignerRouter {
 /// With HSM support we are able to use different and even multiple signer implementations at once in Krill.
 #[cfg(feature = "hsm")]
 impl SignerRouter {
-    pub fn build(work_dir: &Path, second_signer_hack: bool) -> KrillResult<Self> {
+    /// The `alternate_config` flag exists to support some tests in the Krill test suite which create a second
+    /// instance of [KrillSigner] in the same process, which normally doesn't happen. When using an OpenSSL signer or
+    /// KMIP signer this isn't a problem, the second KrillSigner instance causes the creation of additional
+    /// OpenSslSigner or KmipSigner instances and these "connect" to the backing store/system and just work. With
+    /// PKCS#11 however this is problematic when using SoftHSMv2 (as is likely in a test scenario) because SoftHSMv2
+    /// doesn't support concurrent logins by the same "user" and only supports a single "normal" user. Once we support
+    /// configuring ourselves from the Krill configuration we can define for those tests that the two KrillSigner
+    /// instances have different configurations and the second one configures an OpenSSL signer rather than a
+    /// conflicting duplicate PKCS#11 signer. Currently however the configuration is hard-coded here and so the
+    /// `alternate_config` flag is used to activate the second hard-coded configuration which configures an OpenSSL
+    /// signer instead of a PKCS#11 signer.
+    pub fn build(work_dir: &Path, alternate_config: bool) -> KrillResult<Self> {
         // The types of signer to initialize, the details needed to initialize them and the intended purpose for each
         // signer (e.g. signer for past keys, currently used signer, signer to use for a key roll, etc.) should come
         // from the configuration file. SignerRouter combines that input with its own rules, e.g. to route a signing
@@ -181,7 +192,7 @@ impl SignerRouter {
         // they by that point have determined their own handle.
         let signers_by_handle = RwLock::new(HashMap::new());
 
-        let roles = Self::build_signers(work_dir, signer_mapper.clone(), second_signer_hack)?;
+        let roles = Self::build_signers(work_dir, signer_mapper.clone(), alternate_config)?;
 
         // Having the same signer multiple times in this vector is less efficient but the impact is negligible and it
         // doesn't break anything if there are duplicates.
@@ -260,7 +271,11 @@ impl SignerRouter {
 
     // TODO: Delete me once setup from Krill configuration is supported.
     #[cfg(feature = "hsm-tests-pkcs11")]
-    fn build_signers(work_dir: &Path, signer_mapper: Arc<SignerMapper>, second_signer_hack: bool) -> KrillResult<SignerRoleAssignments> {
+    fn build_signers(
+        work_dir: &Path,
+        signer_mapper: Arc<SignerMapper>,
+        alternate_config: bool,
+    ) -> KrillResult<SignerRoleAssignments> {
         use crate::commons::crypto::signers::pkcs11::Pkcs11Signer;
 
         // When the HSM feature is activated AND test mode is activated:
@@ -272,7 +287,7 @@ impl SignerRouter {
             Some(signer_mapper.clone()),
         )?));
 
-        if second_signer_hack {
+        if alternate_config {
             Ok(SignerRoleAssignments {
                 default_signer: openssl_signer.clone(),
                 one_off_signer: openssl_signer.clone(),

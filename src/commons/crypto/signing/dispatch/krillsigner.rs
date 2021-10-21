@@ -42,9 +42,9 @@ pub struct KrillSigner {
 }
 
 impl KrillSigner {
-    pub fn build(work_dir: &Path, second_signer_hack: bool) -> KrillResult<Self> {
+    pub fn build(work_dir: &Path, alternate_config: bool) -> KrillResult<Self> {
         Ok(KrillSigner {
-            router: SignerRouter::build(work_dir, second_signer_hack)?,
+            router: SignerRouter::build(work_dir, alternate_config)?,
         })
     }
 
