@@ -289,7 +289,7 @@ struct UsableServerState {
     login_mode: LoginMode,
 
     /// When login_mode is NOT LoginMode::LoginRequired this will be None.
-    /// 
+    ///
     /// Section 11.6 "Session management functions" of the PKCS#11 v2.20 specification says:
     ///   "Call C_Login to log the user into the token. Since all sessions an application has with a token have a
     ///    shared login state, C_Login only needs to be called for one of the sessions."
@@ -514,7 +514,7 @@ impl Pkcs11Signer {
                 );
                 SignerError::PermanentlyUnusable
             })?;
-            
+
             login_session.login(CKU_USER, user_pin.as_deref()).map_err(|err| {
                 error!(
                     "[{}] Unable to login to PKCS#11 session for library '{}' slot {}: {}",
@@ -522,14 +522,14 @@ impl Pkcs11Signer {
                 );
                 SignerError::PermanentlyUnusable
             })?;
-            
+
             trace!(
                 "[{}] Logged in to PKCS#11 session for library '{}' slot {}",
                 signer_name,
                 lib_name,
                 slot_id,
             );
-            
+
             Some(login_session)
         } else {
             None

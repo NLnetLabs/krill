@@ -11,7 +11,7 @@ use crate::commons::crypto::signers::pkcs11::context::Pkcs11Context;
 pub(super) struct Pkcs11Session {
     context: Arc<RwLock<Pkcs11Context>>,
 
-    handle: CK_SESSION_HANDLE,
+    session_handle: CK_SESSION_HANDLE,
 }
 
 impl Pkcs11Session {
@@ -32,18 +32,22 @@ impl Pkcs11Session {
         //
         // In the spirit of not doing anything we don't have to do, we can keep the code simpler by not calling
         // C_Logout because we don't have to.
-        let handle = context
-            .read()
-            .unwrap()
-            .open_session(slot_id, CKF_SERIAL_SESSION | CKF_RW_SESSION, None, None)?;
-        Ok(Pkcs11Session { context, handle })
+        let session_handle =
+            context
+                .read()
+                .unwrap()
+                .open_session(slot_id, CKF_SERIAL_SESSION | CKF_RW_SESSION, None, None)?;
+        Ok(Pkcs11Session {
+            context,
+            session_handle,
+        })
     }
 }
 
 // TODO: Is this ever actually called, or does Krill do an immediate unclean shutdown if terminated?
 impl Drop for Pkcs11Session {
     fn drop(&mut self) {
-        let _ = self.context.read().unwrap().close_session(self.handle);
+        let _ = self.context.read().unwrap().close_session(self.session_handle);
     }
 }
 
@@ -57,7 +61,7 @@ impl Pkcs11Session {
         self.context
             .read()
             .unwrap()
-            .generate_key_pair(self.handle, mechanism, pub_template, priv_template)
+            .generate_key_pair(self.session_handle, mechanism, pub_template, priv_template)
     }
 
     pub fn get_attribute_value<'a>(
@@ -68,33 +72,47 @@ impl Pkcs11Session {
         self.context
             .read()
             .unwrap()
-            .get_attribute_value(self.handle, pub_handle, pub_template)
+            .get_attribute_value(self.session_handle, pub_handle, pub_template)
     }
 
     pub fn login(&self, user_type: CK_USER_TYPE, user_pin: Option<&str>) -> Result<(), pkcs11::errors::Error> {
-        self.context.read().unwrap().login(self.handle, user_type, user_pin)
+        self.context
+            .read()
+            .unwrap()
+            .login(self.session_handle, user_type, user_pin)
     }
 
     // Note: Cryptographic operations can fail if the key has CKA_ALWAYS_AUTHENTICATE set as that requires that we call
     // C_Login immediately prior to calling C_SignInit, and we don't support that yet (would it ever make sense as this
     // could for example require an operator to enter a pin code in a key pad on every signing moment?).
     pub fn sign_init(&self, mechanism: &CK_MECHANISM, key: CK_OBJECT_HANDLE) -> Result<(), pkcs11::errors::Error> {
-        self.context.read().unwrap().sign_init(self.handle, mechanism, key)
+        self.context
+            .read()
+            .unwrap()
+            .sign_init(self.session_handle, mechanism, key)
     }
 
     pub fn sign(&self, data: &[CK_BYTE]) -> Result<Vec<CK_BYTE>, pkcs11::errors::Error> {
-        self.context.read().unwrap().sign(self.handle, data)
+        self.context.read().unwrap().sign(self.session_handle, data)
     }
 
     pub fn find_objects_init(&self, template: &[CK_ATTRIBUTE]) -> Result<(), pkcs11::errors::Error> {
-        self.context.read().unwrap().find_objects_init(self.handle, template)
+        self.context
+            .read()
+            .unwrap()
+            .find_objects_init(self.session_handle, template)
     }
 
     pub fn find_objects(&self, max_object_count: CK_ULONG) -> Result<Vec<CK_OBJECT_HANDLE>, pkcs11::errors::Error> {
-        self.context.read().unwrap().find_objects(self.handle, max_object_count)
+        self.context
+            .read()
+            .unwrap()
+            .find_objects(self.session_handle, max_object_count)
     }
 
     pub fn find_objects_final(&self) -> Result<(), pkcs11::errors::Error> {
-        self.context.read().unwrap().find_objects_final(self.handle)
+        self.context.read().unwrap().find_objects_final(self.session_handle)
+    }
+
     }
 }
