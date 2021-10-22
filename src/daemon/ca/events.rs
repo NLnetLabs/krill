@@ -398,7 +398,7 @@ impl AspaObjectsUpdates {
     }
 
     pub fn add_removed(&mut self, customer: AspaCustomer) {
-        self.removed.retain(|existing| *existing != customer)
+        self.removed.push(customer)
     }
 
     pub fn is_empty(&self) -> bool {

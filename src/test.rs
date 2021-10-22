@@ -425,6 +425,10 @@ pub async fn ca_aspas_update(handle: &Handle, customer: AspaCustomer, update: As
     .await;
 }
 
+pub async fn ca_aspas_remove(handle: &Handle, customer: AspaCustomer) {
+    krill_admin(Command::CertAuth(CaCommand::AspasRemove(handle.clone(), customer))).await;
+}
+
 pub async fn ca_details(handle: &Handle) -> CertAuthInfo {
     match krill_admin(Command::CertAuth(CaCommand::Show(handle.clone()))).await {
         ApiResponse::CertAuthInfo(inf) => inf,

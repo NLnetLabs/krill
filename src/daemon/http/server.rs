@@ -17,12 +17,19 @@ use rpki::repository::resources::AsId;
 use serde::Serialize;
 
 use futures::TryFutureExt;
+use hyper::{
+    header::HeaderName,
+    http::HeaderValue,
+    server::conn::AddrIncoming,
+    service::{make_service_fn, service_fn},
+    Method,
+};
 
 use crate::{
     commons::{
         api::{
-            BgpStats, ChildHandle, CommandHistoryCriteria, Handle, ParentCaContact, ParentCaReq, ParentHandle,
-            PublisherList, RepositoryContact, RoaDefinitionUpdates, RtaName, Token,
+            AspaDefinitionUpdates, BgpStats, ChildHandle, CommandHistoryCriteria, Handle, ParentCaContact, ParentCaReq,
+            ParentHandle, PublisherList, RepositoryContact, RoaDefinitionUpdates, RtaName, Token,
         },
         bgp::BgpAnalysisAdvice,
         error::Error,
@@ -47,13 +54,6 @@ use crate::{
         krillserver::KrillServer,
     },
     upgrades::{pre_start_upgrade, update_storage_version},
-};
-use hyper::{
-    header::HeaderName,
-    http::HeaderValue,
-    server::conn::AddrIncoming,
-    service::{make_service_fn, service_fn},
-    Method,
 };
 
 //------------ State -----------------------------------------------------
@@ -1795,7 +1795,7 @@ async fn api_ca_aspas_definitions_update(req: Request, ca: Handle) -> RoutingRes
 
         match req.json().await {
             Err(e) => render_error(e),
-            Ok(aspa_config) => render_empty_res(state.ca_aspas_definitions_update(ca, aspa_config, &actor).await),
+            Ok(updates) => render_empty_res(state.ca_aspas_definitions_update(ca, updates, &actor).await),
         }
     })
 }
@@ -1815,7 +1815,13 @@ async fn api_ca_aspas_update_aspa(req: Request, ca: Handle, customer: AsId) -> R
 
 /// Delete the ASPA definition for the given CA and customer ASN
 async fn api_ca_aspas_delete(req: Request, ca: Handle, customer: AsId) -> RoutingResult {
-    todo!()
+    aa!(req, Permission::ASPAS_UPDATE, ca.clone(), {
+        let actor = req.actor();
+        let state = req.state().clone();
+
+        let updates = AspaDefinitionUpdates::new(vec![], vec![customer]);
+        render_empty_res(state.ca_aspas_definitions_update(ca, updates, &actor).await)
+    })
 }
 
 /// Update the route authorizations for this CA

@@ -436,8 +436,6 @@ async fn functional() {
     //------------------------------------------------------------------------------------------
     // Test managing ASPAs
     //------------------------------------------------------------------------------------------
-    let aspa_65000 = AspaDefinition::from_str("AS65000 => AS65002, AS65003(v4), AS65005(v6)").unwrap();
-    let aspas = vec![aspa_65000.clone()];
 
     {
         info("##################################################################");
@@ -446,6 +444,9 @@ async fn functional() {
         info("#                                                                #");
         info("##################################################################");
         info("");
+
+        let aspa_65000 = AspaDefinition::from_str("AS65000 => AS65002, AS65003(v4), AS65005(v6)").unwrap();
+        let aspas = vec![aspa_65000.clone()];
         ca_aspas_add(&ca4, aspa_65000).await;
 
         expect_objects_for_ca4(
@@ -473,6 +474,26 @@ async fn functional() {
         ca_aspas_update(&ca4, customer, aspa_update).await;
     }
 
+    {
+        info("##################################################################");
+        info("#                                                                #");
+        info("# Delete an existing ASPA                                        #");
+        info("#                                                                #");
+        info("##################################################################");
+        info("");
+
+        let customer = AspaCustomer::from_str("AS65000").unwrap();
+        ca_aspas_remove(&ca4, customer).await;
+
+        // Expect that the ASPA object is withdrawn
+        expect_objects_for_ca4(
+            "CA4 should now de-aggregate ROAS",
+            &[route_resource_set_10_0_0_0_def_1, route_resource_set_10_1_0_0_def_1],
+            &[],
+        )
+        .await;
+    }
+
     //------------------------------------------------------------------------------------------
     // Test shrinking / growing resources
     //------------------------------------------------------------------------------------------
@@ -495,7 +516,7 @@ async fn functional() {
         expect_objects_for_ca4(
             "CA4 resources are shrunk and we expect only one remaining roa",
             &[route_resource_set_10_1_0_0_def_1],
-            &aspas,
+            &[],
         )
         .await;
     }
@@ -519,7 +540,7 @@ async fn functional() {
         expect_objects_for_ca4(
             "CA4 resources have been extended again, and we expect two roas",
             &[route_resource_set_10_0_0_0_def_1, route_resource_set_10_1_0_0_def_1],
-            &aspas,
+            &[],
         )
         .await;
     }
@@ -613,7 +634,7 @@ async fn functional() {
         expect_roas_for_ca4_re_added(
             "CA4 resources have been extended again, and we expect two roas",
             &[route_resource_set_10_0_0_0_def_1, route_resource_set_10_1_0_0_def_1],
-            &aspas,
+            &[],
         )
         .await;
     }

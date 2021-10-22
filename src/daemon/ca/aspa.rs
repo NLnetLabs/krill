@@ -174,9 +174,12 @@ impl AspaObjects {
             }
         }
 
-        // Remove overclaiming
-        for overclaiming in self.0.keys().filter(|existing| !resources.contains_asn(**existing)) {
-            object_updates.add_removed(*overclaiming);
+        // Check if any currently held ASPA object needs to be removed
+        for customer in self.0.keys() {
+            if !all_aspas.has(*customer) || !resources.contains_asn(*customer) {
+                // definition was removed, or it's overclaiming
+                object_updates.add_removed(*customer);
+            }
         }
 
         Ok(object_updates)

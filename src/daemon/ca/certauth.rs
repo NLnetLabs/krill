@@ -382,7 +382,7 @@ impl Aggregate for CertAuth {
             //-----------------------------------------------------------------------
             CaEvtDet::AspaConfigAdded { aspa_config } => self.aspas.add_or_replace(aspa_config),
             CaEvtDet::AspaConfigUpdated { customer, update } => self.aspas.apply_update(customer, &update),
-            CaEvtDet::AspaConfigRemoved { .. } => todo!(),
+            CaEvtDet::AspaConfigRemoved { customer } => self.aspas.remove(customer),
             CaEvtDet::AspaObjectsUpdated {
                 resource_class_name,
                 updates,
@@ -1760,6 +1760,7 @@ impl CertAuth {
             if !all_aspas.has(customer) {
                 return Err(Error::AspaCustomerUnknown(self.handle().clone(), customer));
             }
+            res.push(CaEvtDet::AspaConfigRemoved { customer });
             all_aspas.remove(customer);
         }
 

@@ -752,6 +752,24 @@ impl Options {
     }
 
     #[cfg(feature = "aspa")]
+    fn make_cas_aspas_remove_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("remove").about("Remove the ASPA for a customer ASN");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+
+        sub = sub.arg(
+            Arg::with_name("customer")
+                .long("customer")
+                .help("Customer ASN for an existing ASPA definition")
+                .value_name("ASN")
+                .required(true),
+        );
+
+        app.subcommand(sub)
+    }
+
+    #[cfg(feature = "aspa")]
     fn make_cas_aspas_update_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("update").about("Update an existing ASPA configuration");
 
@@ -792,6 +810,7 @@ impl Options {
         let mut sub = SubCommand::with_name("aspas").about("Manage ASPAs for a CA (experimental)");
 
         sub = Self::make_cas_aspas_add_sc(sub);
+        sub = Self::make_cas_aspas_remove_sc(sub);
         sub = Self::make_cas_aspas_update_sc(sub);
 
         app.subcommand(sub)
@@ -1792,6 +1811,18 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
+    fn parse_matches_cas_aspas_remove(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+        let customer_str = matches.value_of("customer").unwrap();
+        let customer =
+            AspaCustomer::from_str(customer_str).map_err(|_| Error::InvalidAspaCustomer(customer_str.to_string()))?;
+
+        let command = Command::CertAuth(CaCommand::AspasRemove(my_ca, customer));
+
+        Ok(Options::make(general_args, command))
+    }
+
     fn parse_matches_cas_aspas_update(matches: &ArgMatches) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
@@ -1830,6 +1861,8 @@ impl Options {
     fn parse_matches_cas_aspas(matches: &ArgMatches) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("add") {
             Self::parse_matches_cas_aspas_add(m)
+        } else if let Some(m) = matches.subcommand_matches("remove") {
+            Self::parse_matches_cas_aspas_remove(m)
         } else if let Some(m) = matches.subcommand_matches("update") {
             Self::parse_matches_cas_aspas_update(m)
         } else {
@@ -2309,6 +2342,7 @@ pub enum CaCommand {
     // ASPAs
     AspasAddOrReplace(Handle, AspaDefinition),
     AspasUpdate(Handle, AspaCustomer, AspaConfigurationUpdate),
+    AspasRemove(Handle, AspaCustomer),
 
     // Show details for this CA
     Show(Handle),

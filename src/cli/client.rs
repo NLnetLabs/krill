@@ -339,6 +339,13 @@ impl KrillClient {
                 Ok(ApiResponse::Empty)
             }
 
+            CaCommand::AspasRemove(handle, customer) => {
+                let uri = format!("api/v1/cas/{}/aspas", handle);
+                let updates = AspaDefinitionUpdates::new(vec![], vec![customer]);
+                post_json(&self.server, &self.token, &uri, updates).await?;
+                Ok(ApiResponse::Empty)
+            }
+
             CaCommand::AspasUpdate(handle, customer, update) => {
                 let uri = format!("api/v1/cas/{}/aspas/as/{}", handle, customer);
                 post_json(&self.server, &self.token, &uri, update).await?;
