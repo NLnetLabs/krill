@@ -7,9 +7,9 @@ use rpki::repository::{crypto::KeyIdentifier, x509::Time};
 use crate::{
     commons::{
         api::{
-            ArgKey, ArgVal, AspaCustomer, AspaDefinition, ChildHandle, Handle, Label, Message, ParentHandle,
-            ProviderAsUpdates, PublisherHandle, RequestResourceLimit, ResourceClassName, ResourceSet,
-            RevocationRequest, RoaDefinitionUpdates, RtaName, StorableParentContact,
+            ArgKey, ArgVal, AspaConfigurationUpdate, AspaCustomer, AspaDefinition, ChildHandle, Handle, Label, Message,
+            ParentHandle, PublisherHandle, RequestResourceLimit, ResourceClassName, ResourceSet, RevocationRequest,
+            RoaDefinitionUpdates, RtaName, StorableParentContact,
         },
         eventsourcing::{CommandKey, CommandKeyError, StoredCommand, WithStorableDetails},
         remote::rfc8183::ServiceUri,
@@ -474,7 +474,8 @@ pub enum StorableCaCommand {
         addition: AspaDefinition,
     },
     AspaUpdate {
-        updates: ProviderAsUpdates,
+        customer: AspaCustomer,
+        update: AspaConfigurationUpdate,
     },
     AspaRemove {
         customer: AspaCustomer,
@@ -747,8 +748,8 @@ impl fmt::Display for StorableCaCommand {
             StorableCaCommand::AspaAdd { addition } => {
                 write!(f, "{}", addition)
             }
-            StorableCaCommand::AspaUpdate { updates } => {
-                write!(f, "{}", updates)
+            StorableCaCommand::AspaUpdate { customer, update } => {
+                write!(f, "update ASPA for customer ASN: {} {}", customer, update)
             }
             StorableCaCommand::AspaRemove { customer } => {
                 write!(f, "Remove ASPA for customer ASN: {}", customer)

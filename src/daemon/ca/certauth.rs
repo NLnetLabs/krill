@@ -16,9 +16,9 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            self, AspaDefinition, CertAuthInfo, ChildHandle, EntitlementClass, Entitlements, Handle, IdCertPem,
-            IssuanceRequest, IssuedCert, ObjectName, ParentCaContact, ParentHandle, ProviderAsUpdates, RcvdCert,
-            RepoInfo, RepositoryContact, RequestResourceLimit, ResourceClassName, ResourceSet, Revocation,
+            self, AspaConfigurationUpdate, AspaCustomer, AspaDefinition, CertAuthInfo, ChildHandle, EntitlementClass,
+            Entitlements, Handle, IdCertPem, IssuanceRequest, IssuedCert, ObjectName, ParentCaContact, ParentHandle,
+            RcvdCert, RepoInfo, RepositoryContact, RequestResourceLimit, ResourceClassName, ResourceSet, Revocation,
             RevocationRequest, RevocationResponse, RoaDefinition, RtaList, RtaName, RtaPrepResponse, SigningCert,
             StorableCaCommand, TaCertDetails, TrustAnchorLocator,
         },
@@ -381,7 +381,7 @@ impl Aggregate for CertAuth {
             // Autonomous System Provider Authorization
             //-----------------------------------------------------------------------
             CaEvtDet::AspaConfigAdded { aspa_config } => self.aspas.add(aspa_config),
-            CaEvtDet::AspaConfigUpdated { .. } => todo!(),
+            CaEvtDet::AspaConfigUpdated { customer, update } => self.aspas.apply_update(customer, &update),
             CaEvtDet::AspaConfigRemoved { .. } => todo!(),
             CaEvtDet::AspaObjectsUpdated {
                 resource_class_name,
@@ -467,7 +467,9 @@ impl Aggregate for CertAuth {
 
             // ASPA
             CmdDet::AspaAdd(addition, config, signer) => self.aspas_add(addition, &config, &signer),
-            CmdDet::AspaUpdate(updates, config, signer) => self.aspas_update(updates, &config, &signer),
+            CmdDet::AspaUpdate(customer, update, config, signer) => {
+                self.aspas_update(customer, update, &config, &signer)
+            }
             CmdDet::AspaRemove(_) => todo!("#685"),
             CmdDet::AspaRenew(_, _) => todo!("#685"),
 
@@ -1641,7 +1643,7 @@ impl CertAuth {
 
         // for rc in self.resources
         for (rcn, rc) in self.resources.iter() {
-            let updates = rc.update_roas(&routes, None, config, signer.deref())?;
+            let updates = rc.update_roas(&routes, config, signer.deref())?;
             if updates.contains_changes() {
                 info!("CA '{}' under RC '{}' updated ROAs: {}", self.handle, rcn, updates);
 
@@ -1770,34 +1772,49 @@ impl CertAuth {
 
     pub fn aspas_update(
         &self,
-        updates: ProviderAsUpdates,
+        customer: AspaCustomer,
+        update: AspaConfigurationUpdate,
         config: &Config,
         signer: &KrillSigner,
     ) -> KrillResult<Vec<CaEvt>> {
-        self.verify_update(&updates)?;
+        self.verify_update(customer, &update)?;
 
-        todo!()
+        let mut res = vec![];
+
+        let mut aspas = self.aspas.clone();
+        aspas.apply_update(customer, &update);
+
+        for (rcn, rc) in self.resources.iter() {
+            let updates = rc.update_aspas(&aspas, config, signer)?;
+            if updates.contains_changes() {
+                res.push(CaEvtDet::AspaObjectsUpdated {
+                    resource_class_name: rcn.clone(),
+                    updates,
+                });
+            }
+        }
+        res.push(CaEvtDet::AspaConfigUpdated { customer, update });
+
+        Ok(self.events_from_details(res))
     }
 
     /// Verifies whether the update can be applied.
-    fn verify_update(&self, updates: &ProviderAsUpdates) -> KrillResult<()> {
-        let customer_as = updates.customer();
-
-        if updates.is_empty() {
-            return Err(Error::AspaProviderUpdateEmpty(self.handle().clone(), customer_as));
+    fn verify_update(&self, customer: AspaCustomer, update: &AspaConfigurationUpdate) -> KrillResult<()> {
+        if update.is_empty() {
+            return Err(Error::AspaProviderUpdateEmpty(self.handle().clone(), customer));
         }
 
-        if !self.all_resources().contains_asn(customer_as) {
-            return Err(Error::AspaCustomerAsNotEntitled(self.handle().clone(), customer_as));
+        if !self.all_resources().contains_asn(customer) {
+            return Err(Error::AspaCustomerAsNotEntitled(self.handle().clone(), customer));
         }
 
         let current = self
             .aspas
-            .get(customer_as)
-            .ok_or_else(|| Error::AspaCustomerUnknown(self.handle().clone(), customer_as))?;
+            .get(customer)
+            .ok_or_else(|| Error::AspaCustomerUnknown(self.handle().clone(), customer))?;
 
         current
-            .verify_update(updates)
+            .verify_update(update)
             .map_err(|conflict| Error::AspaProviderUpdateConflict(self.handle().clone(), conflict))?;
 
         Ok(())

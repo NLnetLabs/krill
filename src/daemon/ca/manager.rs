@@ -13,11 +13,11 @@ use crate::{
     commons::{
         actor::Actor,
         api::{
-            self, AddChildRequest, AspaDefinition, Base64, CaCommandDetails, CaCommandResult, CertAuthList,
-            CertAuthSummary, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Entitlements, Handle,
-            IssuanceRequest, IssuanceResponse, ListReply, ParentCaContact, ParentCaReq, ParentHandle,
-            ProviderAsUpdates, PublishDelta, RcvdCert, RepositoryContact, ResourceClassName, ResourceSet,
-            RevocationRequest, RevocationResponse, RtaName, StoredEffect, UpdateChildRequest,
+            self, AddChildRequest, AspaConfigurationUpdate, AspaCustomer, AspaDefinition, Base64, CaCommandDetails,
+            CaCommandResult, CertAuthList, CertAuthSummary, ChildCaInfo, ChildHandle, CommandHistory,
+            CommandHistoryCriteria, Entitlements, Handle, IssuanceRequest, IssuanceResponse, ListReply,
+            ParentCaContact, ParentCaReq, ParentHandle, PublishDelta, RcvdCert, RepositoryContact, ResourceClassName,
+            ResourceSet, RevocationRequest, RevocationResponse, RtaName, StoredEffect, UpdateChildRequest,
         },
         api::{rrdp::PublishElement, Timestamp},
         crypto::{IdCert, KrillSigner, ProtocolCms, ProtocolCmsBuilder},
@@ -1771,9 +1771,16 @@ impl CaManager {
         Ok(())
     }
     /// Update the ASPA definition for this CA and the customer ASN in the update.
-    pub async fn ca_aspas_update(&self, ca: Handle, update: ProviderAsUpdates, actor: &Actor) -> KrillResult<()> {
-        self.send_command(CmdDet::aspas_update(
+    pub async fn ca_aspas_update_aspa(
+        &self,
+        ca: Handle,
+        customer: AspaCustomer,
+        update: AspaConfigurationUpdate,
+        actor: &Actor,
+    ) -> KrillResult<()> {
+        self.send_command(CmdDet::aspas_update_aspa(
             &ca,
+            customer,
             update,
             self.config.clone(),
             self.signer.clone(),

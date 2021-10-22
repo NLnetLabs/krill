@@ -5,8 +5,8 @@ use rpki::repository::crypto::KeyIdentifier;
 use crate::{
     commons::{
         api::{
-            AspaCustomer, AspaDefinition, ChildHandle, Handle, IssuanceRequest, IssuedCert, ObjectName,
-            ParentCaContact, ParentHandle, ParentResourceClassName, ProviderAsUpdates, RcvdCert, RepositoryContact,
+            AspaConfigurationUpdate, AspaCustomer, AspaDefinition, ChildHandle, Handle, IssuanceRequest, IssuedCert,
+            ObjectName, ParentCaContact, ParentHandle, ParentResourceClassName, RcvdCert, RepositoryContact,
             ResourceClassName, ResourceSet, RevocationRequest, RevokedObject, RoaAggregateKey, RtaName, SuspendedCert,
             TaCertDetails, UnsuspendedCert,
         },
@@ -679,7 +679,8 @@ pub enum CaEvtDet {
         aspa_config: AspaDefinition,
     },
     AspaConfigUpdated {
-        updates: ProviderAsUpdates,
+        customer: AspaCustomer,
+        update: AspaConfigurationUpdate,
     },
     AspaConfigRemoved {
         customer: AspaCustomer,
@@ -1049,7 +1050,9 @@ impl fmt::Display for CaEvtDet {
 
             // Autonomous System Provider Authorization
             CaEvtDet::AspaConfigAdded { aspa_config: addition } => write!(f, "{}", addition),
-            CaEvtDet::AspaConfigUpdated { updates } => write!(f, "{}", updates),
+            CaEvtDet::AspaConfigUpdated { customer, update } => {
+                write!(f, "updated ASPA config for customer ASN: {} {}", customer, update)
+            }
             CaEvtDet::AspaConfigRemoved { customer } => write!(f, "removed ASPA config for customer ASN: {}", customer),
             CaEvtDet::AspaObjectsUpdated { .. } => todo!(),
 

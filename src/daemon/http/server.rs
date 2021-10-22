@@ -1506,7 +1506,7 @@ async fn api_ca_aspas(req: Request, path: &mut RequestPath, ca: Handle) -> Routi
             // - update? (definition includes the ASN so this can be in the base path)
             match path.path_arg() {
                 Some(customer) => match *req.method() {
-                    Method::POST => api_ca_aspas_update(req, ca).await,
+                    Method::POST => api_ca_aspas_update_aspa(req, ca, customer).await,
                     Method::DELETE => api_ca_aspas_delete(req, ca, customer).await,
                     _ => render_unknown_method(),
                 },
@@ -1801,14 +1801,14 @@ async fn api_ca_aspas_add(req: Request, ca: Handle) -> RoutingResult {
 }
 
 /// Update an existing ASPA definition for a CA based on the update in the POST
-async fn api_ca_aspas_update(req: Request, ca: Handle) -> RoutingResult {
+async fn api_ca_aspas_update_aspa(req: Request, ca: Handle, customer: AsId) -> RoutingResult {
     aa!(req, Permission::ASPAS_UPDATE, ca.clone(), {
         let actor = req.actor();
         let state = req.state().clone();
 
         match req.json().await {
             Err(e) => render_error(e),
-            Ok(updates) => render_empty_res(state.ca_aspas_update(ca, updates, &actor).await),
+            Ok(update) => render_empty_res(state.ca_aspas_update_aspa(ca, customer, update, &actor).await),
         }
     })
 }

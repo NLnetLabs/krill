@@ -16,7 +16,7 @@ use rpki::repository::{
 
 use crate::{
     commons::{
-        api::{AspaCustomer, AspaDefinition, ObjectName},
+        api::{AspaConfigurationUpdate, AspaCustomer, AspaDefinition, ObjectName},
         crypto::{KrillSigner, SignSupport},
         error::Error,
         KrillResult,
@@ -78,6 +78,13 @@ impl AspaDefinitions {
     pub fn add(&mut self, aspa: AspaDefinition) {
         let customer = aspa.customer();
         self.attestations.insert(customer, aspa);
+    }
+
+    // Applies an update. This assumes that the update was
+    // verified beforehand.
+    pub fn apply_update(&mut self, customer: AspaCustomer, update: &AspaConfigurationUpdate) {
+        let current = self.attestations.get_mut(&customer).unwrap();
+        current.apply_update(update);
     }
 
     pub fn all(&self) -> impl Iterator<Item = &AspaDefinition> {

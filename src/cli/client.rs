@@ -337,6 +337,12 @@ impl KrillClient {
                 Ok(ApiResponse::Empty)
             }
 
+            CaCommand::AspasUpdate(handle, customer, update) => {
+                let uri = format!("api/v1/cas/{}/aspas/as/{}", handle, customer);
+                post_json(&self.server, &self.token, &uri, update).await?;
+                Ok(ApiResponse::Empty)
+            }
+
             CaCommand::Show(handle) => {
                 let uri = format!("api/v1/cas/{}", handle);
                 let ca_info = get_json(&self.server, &self.token, &uri).await?;

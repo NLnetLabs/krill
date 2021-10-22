@@ -12,7 +12,7 @@ use bytes::Bytes;
 use clap::{App, Arg, ArgMatches, SubCommand};
 
 use rpki::{
-    repository::{crypto::KeyIdentifier, x509::Time},
+    repository::{aspa::ProviderAs, crypto::KeyIdentifier, x509::Time},
     uri,
 };
 
@@ -20,10 +20,10 @@ use crate::{
     cli::report::{ReportError, ReportFormat},
     commons::{
         api::{
-            AddChildRequest, AspaConfigurationFormatError, AspaDefinition, AuthorizationFmtError, CertAuthInit,
-            ChildHandle, Handle, ParentCaContact, ParentCaReq, ParentHandle, PublicationServerUris, PublisherHandle,
-            RepositoryContact, ResourceSet, ResourceSetError, RoaDefinition, RoaDefinitionUpdates, RtaName, Token,
-            UpdateChildRequest,
+            AddChildRequest, AspaConfigurationFormatError, AspaConfigurationUpdate, AspaCustomer, AspaDefinition,
+            AuthorizationFmtError, CertAuthInit, ChildHandle, Handle, ParentCaContact, ParentCaReq, ParentHandle,
+            PublicationServerUris, PublisherHandle, RepositoryContact, ResourceSet, ResourceSetError, RoaDefinition,
+            RoaDefinitionUpdates, RtaName, Token, UpdateChildRequest,
         },
         crypto::{IdCert, SignSupport},
         error::KrillIoError,
@@ -752,10 +752,47 @@ impl Options {
     }
 
     #[cfg(feature = "aspa")]
+    fn make_cas_aspas_update_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("update").about("Update an existing ASPA configuration");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+
+        sub = sub.arg(
+            Arg::with_name("customer")
+                .long("customer")
+                .help("Customer ASN for an existing ASPA definition")
+                .value_name("ASN")
+                .required(true),
+        );
+
+        sub = sub.arg(
+            Arg::with_name("add")
+                .long("add")
+                .help("Provider ASNs to add (multiple allowed)")
+                .value_name("<Provider AS>")
+                .multiple(true)
+                .required(false),
+        );
+
+        sub = sub.arg(
+            Arg::with_name("remove")
+                .long("remove")
+                .help("Provider ASNs to remove (multiple allowed)")
+                .value_name("<Provider AS>")
+                .multiple(true)
+                .required(false),
+        );
+
+        app.subcommand(sub)
+    }
+
+    #[cfg(feature = "aspa")]
     fn make_cas_aspas_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("aspas").about("Manage ASPAs for a CA (experimental)");
 
         sub = Self::make_cas_aspas_add_sc(sub);
+        sub = Self::make_cas_aspas_update_sc(sub);
 
         app.subcommand(sub)
     }
@@ -1755,9 +1792,46 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
+    fn parse_matches_cas_aspas_update(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+
+        let mut added = vec![];
+        let mut removed = vec![];
+
+        let customer_str = matches.value_of("customer").unwrap();
+        let customer =
+            AspaCustomer::from_str(customer_str).map_err(|_| Error::InvalidAspaCustomer(customer_str.to_string()))?;
+
+        if let Some(add) = matches.values_of("add") {
+            for provider_str in add {
+                let provider = ProviderAs::from_str(provider_str)?;
+                added.push(provider);
+            }
+        }
+
+        if let Some(remove) = matches.values_of("remove") {
+            for provider_str in remove {
+                let provider = ProviderAs::from_str(provider_str)?;
+                removed.push(provider);
+            }
+        }
+
+        let update = AspaConfigurationUpdate::new(added, removed);
+        if update.is_empty() {
+            return Err(Error::general("You MUST specify at least one of --add or --remove"));
+        }
+
+        let command = Command::CertAuth(CaCommand::AspasUpdate(my_ca, customer, update));
+
+        Ok(Options::make(general_args, command))
+    }
+
     fn parse_matches_cas_aspas(matches: &ArgMatches) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("add") {
             Self::parse_matches_cas_aspas_add(m)
+        } else if let Some(m) = matches.subcommand_matches("update") {
+            Self::parse_matches_cas_aspas_update(m)
         } else {
             Err(Error::UnrecognizedSubCommand)
         }
@@ -2234,6 +2308,7 @@ pub enum CaCommand {
 
     // ASPAs
     AspasAdd(Handle, AspaDefinition),
+    AspasUpdate(Handle, AspaCustomer, AspaConfigurationUpdate),
 
     // Show details for this CA
     Show(Handle),
@@ -2400,6 +2475,8 @@ pub enum Error {
     Rfc8183(rfc8183::Error),
     ResSetErr(ResourceSetError),
     InvalidRouteDelta(AuthorizationFmtError),
+    InvalidAspaCustomer(String),
+    InvalidAspaProvider(rpki::repository::aspa::Error),
     InvalidAspaConfig(AspaConfigurationFormatError),
     InvalidHandle,
     InvalidSeconds,
@@ -2419,6 +2496,8 @@ impl fmt::Display for Error {
             Error::Rfc8183(e) => write!(f, "Invalid RFC8183 XML: {}", e),
             Error::ResSetErr(e) => write!(f, "Invalid resources requested: {}", e),
             Error::InvalidRouteDelta(e) => e.fmt(f),
+            Error::InvalidAspaCustomer(s) => write!(f, "Invalid customer AS. Expected 'AS#', got: {}", s),
+            Error::InvalidAspaProvider(e) => e.fmt(f),
             Error::InvalidAspaConfig(e) => e.fmt(f),
             Error::InvalidHandle => write!(
                 f,
@@ -2487,5 +2566,11 @@ impl From<AuthorizationFmtError> for Error {
 impl From<AspaConfigurationFormatError> for Error {
     fn from(e: AspaConfigurationFormatError) -> Self {
         Error::InvalidAspaConfig(e)
+    }
+}
+
+impl From<rpki::repository::aspa::Error> for Error {
+    fn from(e: rpki::repository::aspa::Error) -> Self {
+        Error::InvalidAspaProvider(e)
     }
 }

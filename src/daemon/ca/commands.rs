@@ -8,8 +8,8 @@ use crate::{
     commons::{
         actor::Actor,
         api::{
-            AspaCustomer, AspaDefinition, ChildHandle, Entitlements, Handle, IssuanceRequest, ParentCaContact,
-            ParentHandle, ProviderAsUpdates, RcvdCert, RepositoryContact, ResourceClassName, ResourceSet,
+            AspaConfigurationUpdate, AspaCustomer, AspaDefinition, ChildHandle, Entitlements, Handle, IssuanceRequest,
+            ParentCaContact, ParentHandle, RcvdCert, RepositoryContact, ResourceClassName, ResourceSet,
             RevocationRequest, RevocationResponse, RtaName, StorableCaCommand, StorableRcEntitlement,
         },
         crypto::{IdCert, KrillSigner},
@@ -153,7 +153,7 @@ pub enum CmdDet {
     AspaAdd(AspaDefinition, Arc<Config>, Arc<KrillSigner>),
 
     // Updates an existing AspaProviders for the given AspaCustomer
-    AspaUpdate(ProviderAsUpdates, Arc<Config>, Arc<KrillSigner>),
+    AspaUpdate(AspaCustomer, AspaConfigurationUpdate, Arc<Config>, Arc<KrillSigner>),
 
     // Remove the entry for the given AspaCustomer
     AspaRemove(AspaCustomer),
@@ -293,7 +293,7 @@ impl From<CmdDet> for StorableCaCommand {
             // ASPA Support
             // ------------------------------------------------------------
             CmdDet::AspaAdd(addition, _, _) => StorableCaCommand::AspaAdd { addition },
-            CmdDet::AspaUpdate(updates, _, _) => StorableCaCommand::AspaUpdate { updates },
+            CmdDet::AspaUpdate(customer, update, _, _) => StorableCaCommand::AspaUpdate { customer, update },
             CmdDet::AspaRemove(customer) => StorableCaCommand::AspaRemove { customer },
             CmdDet::AspaRenew(_, _) => StorableCaCommand::ReissueBeforeExpiring,
 
@@ -520,14 +520,15 @@ impl CmdDet {
         eventsourcing::SentCommand::new(ca, None, CmdDet::AspaAdd(aspa, config, signer), actor)
     }
 
-    pub fn aspas_update(
+    pub fn aspas_update_aspa(
         ca: &Handle,
-        update: ProviderAsUpdates,
+        customer: AspaCustomer,
+        update: AspaConfigurationUpdate,
         config: Arc<Config>,
         signer: Arc<KrillSigner>,
         actor: &Actor,
     ) -> Cmd {
-        eventsourcing::SentCommand::new(ca, None, CmdDet::AspaUpdate(update, config, signer), actor)
+        eventsourcing::SentCommand::new(ca, None, CmdDet::AspaUpdate(customer, update, config, signer), actor)
     }
 
     //-------------------------------------------------------------------------------

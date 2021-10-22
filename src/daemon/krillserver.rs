@@ -10,12 +10,12 @@ use crate::{
     commons::{
         actor::{Actor, ActorDef},
         api::{
-            AddChildRequest, AllCertAuthIssues, AspaDefinition, CaCommandDetails, CaRepoDetails, CertAuthInfo,
-            CertAuthInit, CertAuthIssues, CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle,
-            ChildrenConnectionStats, CommandHistory, CommandHistoryCriteria, Handle, ListReply, ParentCaContact,
-            ParentCaReq, ParentHandle, ProviderAsUpdates, PublicationServerUris, PublishDelta, PublisherDetails,
-            PublisherHandle, RepositoryContact, ResourceSet, RoaDefinition, RoaDefinitionUpdates, RtaList, RtaName,
-            RtaPrepResponse, ServerInfo, TaCertDetails, Timestamp, UpdateChildRequest,
+            AddChildRequest, AllCertAuthIssues, AspaConfigurationUpdate, AspaCustomer, AspaDefinition,
+            CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthInit, CertAuthIssues, CertAuthList, CertAuthStats,
+            ChildCaInfo, ChildHandle, ChildrenConnectionStats, CommandHistory, CommandHistoryCriteria, Handle,
+            ListReply, ParentCaContact, ParentCaReq, ParentHandle, PublicationServerUris, PublishDelta,
+            PublisherDetails, PublisherHandle, RepositoryContact, ResourceSet, RoaDefinition, RoaDefinitionUpdates,
+            RtaList, RtaName, RtaPrepResponse, ServerInfo, TaCertDetails, Timestamp, UpdateChildRequest,
         },
         bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion},
         crypto::KrillSigner,
@@ -643,8 +643,17 @@ impl KrillServer {
         Ok(self.ca_manager.ca_aspas_add(ca, aspa, actor).await?)
     }
 
-    pub async fn ca_aspas_update(&self, ca: Handle, update: ProviderAsUpdates, actor: &Actor) -> KrillEmptyResult {
-        Ok(self.ca_manager.ca_aspas_update(ca, update, actor).await?)
+    pub async fn ca_aspas_update_aspa(
+        &self,
+        ca: Handle,
+        customer: AspaCustomer,
+        update: AspaConfigurationUpdate,
+        actor: &Actor,
+    ) -> KrillEmptyResult {
+        Ok(self
+            .ca_manager
+            .ca_aspas_update_aspa(ca, customer, update, actor)
+            .await?)
     }
 }
 

@@ -692,17 +692,10 @@ impl ResourceClass {
         self.roas.activate_key(key, issuance_timing, signer)
     }
 
-    /// Updates the ROAs in accordance with the current authorizations, and
-    /// the target resources and key determined by the PublishMode.
-    pub fn update_roas(
-        &self,
-        routes: &Routes,
-        new_resources: Option<&ResourceSet>,
-        config: &Config,
-        signer: &KrillSigner,
-    ) -> KrillResult<RoaUpdates> {
+    /// Updates the ROAs in accordance with the current authorizations
+    pub fn update_roas(&self, routes: &Routes, config: &Config, signer: &KrillSigner) -> KrillResult<RoaUpdates> {
         let key = self.get_current_key()?;
-        let resources = new_resources.unwrap_or_else(|| key.incoming_cert().resources());
+        let resources = key.incoming_cert().resources();
         let routes = routes.filter(resources);
         self.roas.update(&routes, key, config, signer)
     }
@@ -741,6 +734,18 @@ impl ResourceClass {
         } else {
             Ok(None)
         }
+    }
+
+    /// Updates the ROAs in accordance with the current authorizations
+    pub fn update_aspas(
+        &self,
+        all_aspas: &AspaDefinitions,
+        config: &Config,
+        signer: &KrillSigner,
+    ) -> KrillResult<AspaObjectsUpdates> {
+        let key = self.get_current_key()?;
+        let resources = key.incoming_cert().resources();
+        self.aspas.update(all_aspas, key, config, signer)
     }
 
     /// Apply ASPA object changes from events

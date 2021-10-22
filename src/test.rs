@@ -25,11 +25,11 @@ use crate::{
     },
     commons::{
         api::{
-            AddChildRequest, AspaDefinition, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ChildHandle, Handle,
-            ObjectName, ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublicationServerUris,
-            PublisherDetails, PublisherHandle, PublisherList, RepositoryContact, ResourceClassKeysInfo,
-            ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse,
-            TypedPrefix, UpdateChildRequest,
+            AddChildRequest, AspaConfigurationUpdate, AspaCustomer, AspaDefinition, CertAuthInfo, CertAuthInit,
+            CertifiedKeyInfo, ChildHandle, Handle, ObjectName, ParentCaContact, ParentCaReq, ParentHandle,
+            ParentStatuses, PublicationServerUris, PublisherDetails, PublisherHandle, PublisherList, RepositoryContact,
+            ResourceClassKeysInfo, ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates, RtaList,
+            RtaName, RtaPrepResponse, TypedPrefix, UpdateChildRequest,
         },
         bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion},
         crypto::SignSupport,
@@ -414,6 +414,15 @@ pub async fn ca_route_authorization_dryrun(handle: &Handle, updates: RoaDefiniti
 
 pub async fn ca_aspas_add(handle: &Handle, aspa: AspaDefinition) {
     krill_admin(Command::CertAuth(CaCommand::AspasAdd(handle.clone(), aspa))).await;
+}
+
+pub async fn ca_aspas_update(handle: &Handle, customer: AspaCustomer, update: AspaConfigurationUpdate) {
+    krill_admin(Command::CertAuth(CaCommand::AspasUpdate(
+        handle.clone(),
+        customer,
+        update,
+    )))
+    .await;
 }
 
 pub async fn ca_details(handle: &Handle) -> CertAuthInfo {

@@ -13,7 +13,14 @@ use rpki::repository::resources::AsId;
 
 pub type AspaCustomer = AsId;
 
-//------------ AspaConfiguration -----------------------------------------
+//------------ AspaDefinitionUpdates -------------------------------------
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AspaDefinitionUpdates {
+    add_or_replace: Vec<AspaDefinition>,
+    remove: Vec<AspaCustomer>,
+}
+
+//------------ AspaDefinition --------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AspaDefinition {
@@ -38,16 +45,20 @@ impl AspaDefinition {
         &self.providers
     }
 
-    pub fn verify_update(&self, updates: &ProviderAsUpdates) -> Result<(), ProviderAsUpdateConflict> {
+    pub fn verify_update(&self, update: &AspaConfigurationUpdate) -> Result<(), ProviderAsUpdateConflict> {
         let mut error = ProviderAsUpdateConflict::default();
-        for provider in updates.removed() {
-            if !self.providers.contains(provider) {
-                error.add_unknown(*provider)
+        for removed in update.removed() {
+            if !self.providers.contains(removed) {
+                error.add_unknown(*removed)
             }
         }
-        for provider in updates.added() {
-            if self.providers.contains(provider) {
-                error.add_duplicate(*provider)
+        for added in update.added() {
+            if self
+                .providers
+                .iter()
+                .any(|existing| existing.provider() == added.provider())
+            {
+                error.add_duplicate(*added)
             }
         }
 
@@ -56,6 +67,17 @@ impl AspaDefinition {
         } else {
             Err(error)
         }
+    }
+
+    /// Applies an update. This assumes that the update was verified.
+    pub fn apply_update(&mut self, update: &AspaConfigurationUpdate) {
+        for removed in update.removed() {
+            self.providers.retain(|provider| provider != removed);
+        }
+        for added in update.added() {
+            self.providers.push(*added);
+        }
+        self.providers.sort_by_key(|p| p.provider());
     }
 }
 
@@ -152,21 +174,21 @@ impl fmt::Display for AspaConfigurationFormatError {
 
 impl std::error::Error for AspaConfigurationFormatError {}
 
-//------------ ProviderAsUpdates -----------------------------------------
+//------------ AspaConfigurationUpdate -----------------------------------
 
-/// This type defines a delta of ProviderAss intended for an
-/// AspaCustomer. I.e. additions and removals.
+/// This type defines an update to an existing AspaConfiguration.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ProviderAsUpdates {
-    customer: AspaCustomer,
+pub struct AspaConfigurationUpdate {
     added: Vec<ProviderAs>,
     removed: Vec<ProviderAs>,
 }
 
-impl ProviderAsUpdates {
-    pub fn empty(customer: AspaCustomer) -> Self {
-        ProviderAsUpdates {
-            customer,
+impl AspaConfigurationUpdate {
+    pub fn new(added: Vec<ProviderAs>, removed: Vec<ProviderAs>) -> Self {
+        AspaConfigurationUpdate { added, removed }
+    }
+    pub fn empty() -> Self {
+        AspaConfigurationUpdate {
             added: vec![],
             removed: vec![],
         }
@@ -185,10 +207,6 @@ impl ProviderAsUpdates {
         self.removed.push(provider);
     }
 
-    pub fn customer(&self) -> AspaCustomer {
-        self.customer
-    }
-
     pub fn added(&self) -> &Vec<ProviderAs> {
         &self.added
     }
@@ -198,22 +216,22 @@ impl ProviderAsUpdates {
     }
 }
 
-impl fmt::Display for ProviderAsUpdates {
+impl fmt::Display for AspaConfigurationUpdate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "updated ASPA config for customer ASN: {}", self.customer)?;
         if !self.added.is_empty() {
-            write!(f, " adding providers:")?;
+            write!(f, "adding providers:")?;
             for added in &self.added {
                 write!(f, " {}", added)?;
             }
+            write!(f, " ")?;
         }
         if !self.removed.is_empty() {
-            write!(f, " removing providers:")?;
+            write!(f, "removing providers:")?;
             for removed in &self.removed {
                 write!(f, " {}", removed)?;
             }
         }
-        writeln!(f)
+        Ok(())
     }
 }
 

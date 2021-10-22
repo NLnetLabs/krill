@@ -7,11 +7,13 @@ use bytes::Bytes;
 
 use krill::{
     commons::api::{
-        AspaDefinition, ObjectName, ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates, RtaList,
+        AspaConfigurationUpdate, AspaCustomer, AspaDefinition, ObjectName, ResourceClassName, ResourceSet,
+        RoaDefinition, RoaDefinitionUpdates, RtaList,
     },
     daemon::ca::ta_handle,
     test::*,
 };
+use rpki::repository::aspa::ProviderAs;
 
 #[tokio::test]
 async fn functional() {
@@ -452,6 +454,23 @@ async fn functional() {
             &aspas,
         )
         .await;
+    }
+
+    {
+        info("##################################################################");
+        info("#                                                                #");
+        info("# Update an existing ASPA                                        #");
+        info("#                                                                #");
+        info("##################################################################");
+        info("");
+
+        let customer = AspaCustomer::from_str("AS65000").unwrap();
+        let aspa_update = AspaConfigurationUpdate::new(
+            vec![ProviderAs::from_str("AS65006").unwrap()],
+            vec![ProviderAs::from_str("AS65002").unwrap()],
+        );
+
+        ca_aspas_update(&ca4, customer, aspa_update).await;
     }
 
     //------------------------------------------------------------------------------------------
