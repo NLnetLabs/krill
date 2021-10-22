@@ -8,7 +8,7 @@ use crate::{
     commons::{
         actor::Actor,
         api::{
-            AspaConfiguration, AspaCustomer, ChildHandle, Entitlements, Handle, IssuanceRequest, ParentCaContact,
+            AspaCustomer, AspaDefinition, ChildHandle, Entitlements, Handle, IssuanceRequest, ParentCaContact,
             ParentHandle, ProviderAsUpdates, RcvdCert, RepositoryContact, ResourceClassName, ResourceSet,
             RevocationRequest, RevocationResponse, RtaName, StorableCaCommand, StorableRcEntitlement,
         },
@@ -150,7 +150,7 @@ pub enum CmdDet {
     // ------------------------------------------------------------
 
     // Updates an existing AspaProviders for the given AspaCustomer
-    AspaAdd(AspaConfiguration, Arc<Config>, Arc<KrillSigner>),
+    AspaAdd(AspaDefinition, Arc<Config>, Arc<KrillSigner>),
 
     // Updates an existing AspaProviders for the given AspaCustomer
     AspaUpdate(ProviderAsUpdates, Arc<Config>, Arc<KrillSigner>),
@@ -512,7 +512,7 @@ impl CmdDet {
     //-------------------------------------------------------------------------------
     pub fn aspas_add(
         ca: &Handle,
-        aspa: AspaConfiguration,
+        aspa: AspaDefinition,
         config: Arc<Config>,
         signer: Arc<KrillSigner>,
         actor: &Actor,

@@ -6,7 +6,9 @@ use std::str::FromStr;
 use bytes::Bytes;
 
 use krill::{
-    commons::api::{ObjectName, ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates, RtaList},
+    commons::api::{
+        AspaDefinition, ObjectName, ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates, RtaList,
+    },
     daemon::ca::ta_handle,
     test::*,
 };
@@ -39,6 +41,7 @@ async fn functional() {
     info("#  * CAs can be set up as parent child using RFC6492             #");
     info("#  * CAs can publish using RFC8181                               #");
     info("#  * CAs can create ROAs                                         #");
+    info("#  * CAs can create ASPAs                                        #");
     info("#  * CA resources can change:                                    #");
     info("#     - ROAs are cleaned up/created accordingly                  #");
     info("#  * CAs can perform key rolls:                                  #");
@@ -60,22 +63,22 @@ async fn functional() {
     let testbed = handle("testbed");
 
     let ca1 = handle("CA1");
-    let ca1_res = resources("10.0.0.0/16");
-    let ca1_res_reduced = resources("10.0.0.0/24");
+    let ca1_res = resources("AS65000", "10.0.0.0/16", "");
+    let ca1_res_reduced = resources("AS65000", "10.0.0.0/24", "");
     let ca1_route_definition = RoaDefinition::from_str("10.0.0.0/16-16 => 65000").unwrap();
 
     let ca2 = handle("CA2");
-    let ca2_res = resources("10.1.0.0/16");
+    let ca2_res = resources("AS65001", "10.1.0.0/16", "");
 
     let ca3 = handle("CA3");
-    let ca3_res_under_ca_1 = resources("10.0.0.0/16");
-    let ca3_res_under_ca_2 = resources("10.1.0.0/24");
-    let ca3_res_combined = resources("10.0.0.0/16, 10.1.0.0/24");
-    let ca3_res_reduced = resources("10.0.0.0/24,10.1.0.0/24");
+    let ca3_res_under_ca_1 = resources("65000", "10.0.0.0/16", "");
+    let ca3_res_under_ca_2 = resources("65001", "10.1.0.0/24", "");
+    let ca3_res_combined = resources("65000-65001", "10.0.0.0/16, 10.1.0.0/24", "");
+    let ca3_res_reduced = resources("65000-65001", "10.0.0.0/24,10.1.0.0/24", "");
 
     let ca4 = handle("CA4");
-    let ca4_res_under_ca_3 = resources("10.0.0.0-10.1.0.255");
-    let ca4_res_reduced = resources("10.0.0.0/24,10.1.0.0/24");
+    let ca4_res_under_ca_3 = resources("65000", "10.0.0.0-10.1.0.255", "");
+    let ca4_res_reduced = resources("65000", "10.0.0.0/24,10.1.0.0/24", "");
 
     let rcn_0 = rcn(0);
     let rcn_1 = rcn(1);
@@ -321,7 +324,7 @@ async fn functional() {
     let route_resource_set_10_1_0_0_def_1 = RoaDefinition::from_str("10.1.0.0/24-24 => 64496").unwrap();
 
     // short hand to expect ROAs under CA4
-    async fn expect_roas_for_ca4(test_msg: &str, roas: &[RoaDefinition]) {
+    async fn expect_objects_for_ca4(test_msg: &str, roas: &[RoaDefinition], aspas: &[AspaDefinition]) {
         let ca4 = handle("CA4");
         let rcn_0 = ResourceClassName::from(0);
         let rcn_1 = ResourceClassName::from(1);
@@ -331,12 +334,15 @@ async fn functional() {
         for roa in roas {
             expected_files.push(ObjectName::from(roa).to_string());
         }
+        for aspa in aspas {
+            expected_files.push(ObjectName::aspa(aspa.customer()).to_string());
+        }
         assert!(will_publish_embedded(test_msg, &ca4, &expected_files).await);
     }
 
     // short hand to expect ROAs under CA4, re-added when parent comes back
     // i.e. it now has RC 2 and 3, but no more 0 and 1
-    async fn expect_roas_for_ca4_re_added(test_msg: &str, roas: &[RoaDefinition]) {
+    async fn expect_roas_for_ca4_re_added(test_msg: &str, roas: &[RoaDefinition], aspas: &[AspaDefinition]) {
         let ca4 = handle("CA4");
         let rcn_2 = ResourceClassName::from(2);
         let rcn_3 = ResourceClassName::from(3);
@@ -345,6 +351,9 @@ async fn functional() {
         expected_files.append(&mut expected_mft_and_crl(&ca4, &rcn_3).await);
         for roa in roas {
             expected_files.push(ObjectName::from(roa).to_string());
+        }
+        for aspa in aspas {
+            expected_files.push(ObjectName::aspa(aspa.customer()).to_string());
         }
         assert!(will_publish_embedded(test_msg, &ca4, &expected_files).await);
     }
@@ -361,13 +370,14 @@ async fn functional() {
         updates.add(route_resource_set_10_0_0_0_def_2);
         updates.add(route_resource_set_10_1_0_0_def_1);
         ca_route_authorizations_update(&ca4, updates).await;
-        expect_roas_for_ca4(
+        expect_objects_for_ca4(
             "CA4 should now have 2 roas in rc0 and 1 in rc1",
             &[
                 route_resource_set_10_0_0_0_def_1,
                 route_resource_set_10_0_0_0_def_2,
                 route_resource_set_10_1_0_0_def_1,
             ],
+            &[],
         )
         .await;
     }
@@ -413,9 +423,33 @@ async fn functional() {
         updates.remove(route_resource_set_10_0_0_0_def_4);
         ca_route_authorizations_update(&ca4, updates).await;
 
-        expect_roas_for_ca4(
+        expect_objects_for_ca4(
             "CA4 should now de-aggregate ROAS",
             &[route_resource_set_10_0_0_0_def_1, route_resource_set_10_1_0_0_def_1],
+            &[],
+        )
+        .await;
+    }
+
+    //------------------------------------------------------------------------------------------
+    // Test managing ASPAs
+    //------------------------------------------------------------------------------------------
+    let aspa_65000 = AspaDefinition::from_str("AS65000 => AS65002, AS65003(v4), AS65005(v6)").unwrap();
+    let aspas = vec![aspa_65000.clone()];
+
+    {
+        info("##################################################################");
+        info("#                                                                #");
+        info("# Add an ASPA under CA4                                          #");
+        info("#                                                                #");
+        info("##################################################################");
+        info("");
+        ca_aspas_add(&ca4, aspa_65000).await;
+
+        expect_objects_for_ca4(
+            "CA4 should now de-aggregate ROAS",
+            &[route_resource_set_10_0_0_0_def_1, route_resource_set_10_1_0_0_def_1],
+            &aspas,
         )
         .await;
     }
@@ -439,9 +473,10 @@ async fn functional() {
         ca_equals_resources(&ca3, &ca3_res_reduced).await;
         ca_equals_resources(&ca4, &ca4_res_reduced).await;
 
-        expect_roas_for_ca4(
+        expect_objects_for_ca4(
             "CA4 resources are shrunk and we expect only one remaining roa",
             &[route_resource_set_10_1_0_0_def_1],
+            &aspas,
         )
         .await;
     }
@@ -462,9 +497,10 @@ async fn functional() {
         ca_equals_resources(&ca4, &ca4_res_under_ca_3).await;
 
         // Expect that the ROA is re-added now that resources are back.
-        expect_roas_for_ca4(
+        expect_objects_for_ca4(
             "CA4 resources have been extended again, and we expect two roas",
             &[route_resource_set_10_0_0_0_def_1, route_resource_set_10_1_0_0_def_1],
+            &aspas,
         )
         .await;
     }
@@ -504,7 +540,7 @@ async fn functional() {
         info("##################################################################");
         info("");
         // combined resources of CA1 and CA2
-        let multi_resources = resources("10.0.0.0/16, 10.1.0.0/16");
+        let multi_resources = ipv4_resources("10.0.0.0/16, 10.1.0.0/16");
         let multi_rta_name = "multi_rta".to_string();
 
         // CA1 prepares, so that CA2 can include its key on the RTA it signs
@@ -558,6 +594,7 @@ async fn functional() {
         expect_roas_for_ca4_re_added(
             "CA4 resources have been extended again, and we expect two roas",
             &[route_resource_set_10_0_0_0_def_1, route_resource_set_10_1_0_0_def_1],
+            &aspas,
         )
         .await;
     }

@@ -331,6 +331,12 @@ impl KrillClient {
                 Ok(ApiResponse::BgpAnalysisSuggestions(suggestions))
             }
 
+            CaCommand::AspasAdd(handle, aspa) => {
+                let uri = format!("api/v1/cas/{}/aspas", handle);
+                post_json(&self.server, &self.token, &uri, aspa).await?;
+                Ok(ApiResponse::Empty)
+            }
+
             CaCommand::Show(handle) => {
                 let uri = format!("api/v1/cas/{}", handle);
                 let ca_info = get_json(&self.server, &self.token, &uri).await?;

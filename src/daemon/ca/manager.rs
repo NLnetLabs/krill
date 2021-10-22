@@ -13,7 +13,7 @@ use crate::{
     commons::{
         actor::Actor,
         api::{
-            self, AddChildRequest, AspaConfiguration, Base64, CaCommandDetails, CaCommandResult, CertAuthList,
+            self, AddChildRequest, AspaDefinition, Base64, CaCommandDetails, CaCommandResult, CertAuthList,
             CertAuthSummary, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Entitlements, Handle,
             IssuanceRequest, IssuanceResponse, ListReply, ParentCaContact, ParentCaReq, ParentHandle,
             ProviderAsUpdates, PublishDelta, RcvdCert, RepositoryContact, ResourceClassName, ResourceSet,
@@ -1759,7 +1759,7 @@ impl CaManager {
 ///
 impl CaManager {
     /// Add a new ASPA definition for this CA and the customer ASN in the update.
-    pub async fn ca_aspas_add(&self, ca: Handle, aspa: AspaConfiguration, actor: &Actor) -> KrillResult<()> {
+    pub async fn ca_aspas_add(&self, ca: Handle, aspa: AspaDefinition, actor: &Actor) -> KrillResult<()> {
         self.send_command(CmdDet::aspas_add(
             &ca,
             aspa,

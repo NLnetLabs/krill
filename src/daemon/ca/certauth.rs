@@ -16,7 +16,7 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            self, AspaConfiguration, CertAuthInfo, ChildHandle, EntitlementClass, Entitlements, Handle, IdCertPem,
+            self, AspaDefinition, CertAuthInfo, ChildHandle, EntitlementClass, Entitlements, Handle, IdCertPem,
             IssuanceRequest, IssuedCert, ObjectName, ParentCaContact, ParentHandle, ProviderAsUpdates, RcvdCert,
             RepoInfo, RepositoryContact, RequestResourceLimit, ResourceClassName, ResourceSet, Revocation,
             RevocationRequest, RevocationResponse, RoaDefinition, RtaList, RtaName, RtaPrepResponse, SigningCert,
@@ -380,10 +380,17 @@ impl Aggregate for CertAuth {
             //-----------------------------------------------------------------------
             // Autonomous System Provider Authorization
             //-----------------------------------------------------------------------
-            CaEvtDet::AspaConfigAdded { .. } => todo!(),
+            CaEvtDet::AspaConfigAdded { aspa_config } => self.aspas.add(aspa_config),
             CaEvtDet::AspaConfigUpdated { .. } => todo!(),
             CaEvtDet::AspaConfigRemoved { .. } => todo!(),
-            CaEvtDet::AspaObjectsUpdated { .. } => todo!(),
+            CaEvtDet::AspaObjectsUpdated {
+                resource_class_name,
+                updates,
+            } => self
+                .resources
+                .get_mut(&resource_class_name)
+                .unwrap()
+                .aspa_objects_updated(updates),
 
             //-----------------------------------------------------------------------
             // Publication
@@ -1436,7 +1443,14 @@ impl CertAuth {
 
         let rc = self.resources.get(&rcn).ok_or(Error::ResourceClassUnknown(rcn))?;
 
-        let evt_details = rc.update_received_cert(self.handle(), rcvd_cert, &self.routes, config, signer.deref())?;
+        let evt_details = rc.update_received_cert(
+            self.handle(),
+            rcvd_cert,
+            &self.routes,
+            &self.aspas,
+            config,
+            signer.deref(),
+        )?;
 
         let mut res = vec![];
         let mut version = self.version;
@@ -1726,7 +1740,7 @@ impl CertAuth {
 impl CertAuth {
     pub fn aspas_add(
         &self,
-        aspa_config: AspaConfiguration,
+        aspa_config: AspaDefinition,
         config: &Config,
         signer: &KrillSigner,
     ) -> KrillResult<Vec<CaEvt>> {

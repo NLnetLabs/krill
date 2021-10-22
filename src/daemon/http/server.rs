@@ -1795,7 +1795,7 @@ async fn api_ca_aspas_add(req: Request, ca: Handle) -> RoutingResult {
 
         match req.json().await {
             Err(e) => render_error(e),
-            Ok(updates) => render_empty_res(state.ca_aspas_update(ca, updates, &actor).await),
+            Ok(aspa_config) => render_empty_res(state.ca_aspas_add(ca, aspa_config, &actor).await),
         }
     })
 }

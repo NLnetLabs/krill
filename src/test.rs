@@ -25,10 +25,11 @@ use crate::{
     },
     commons::{
         api::{
-            AddChildRequest, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ChildHandle, Handle, ObjectName,
-            ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublicationServerUris, PublisherDetails,
-            PublisherHandle, PublisherList, RepositoryContact, ResourceClassKeysInfo, ResourceClassName, ResourceSet,
-            RoaDefinition, RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, TypedPrefix, UpdateChildRequest,
+            AddChildRequest, AspaDefinition, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ChildHandle, Handle,
+            ObjectName, ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublicationServerUris,
+            PublisherDetails, PublisherHandle, PublisherList, RepositoryContact, ResourceClassKeysInfo,
+            ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse,
+            TypedPrefix, UpdateChildRequest,
         },
         bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion},
         crypto::SignSupport,
@@ -411,6 +412,10 @@ pub async fn ca_route_authorization_dryrun(handle: &Handle, updates: RoaDefiniti
     }
 }
 
+pub async fn ca_aspas_add(handle: &Handle, aspa: AspaDefinition) {
+    krill_admin(Command::CertAuth(CaCommand::AspasAdd(handle.clone(), aspa))).await;
+}
+
 pub async fn ca_details(handle: &Handle) -> CertAuthInfo {
     match krill_admin(Command::CertAuth(CaCommand::Show(handle.clone()))).await {
         ApiResponse::CertAuthInfo(inf) => inf,
@@ -607,8 +612,12 @@ pub fn handle(s: &str) -> Handle {
     Handle::from_str(s).unwrap()
 }
 
-pub fn resources(v4: &str) -> ResourceSet {
+pub fn ipv4_resources(v4: &str) -> ResourceSet {
     ResourceSet::from_strs("", v4, "").unwrap()
+}
+
+pub fn resources(asn: &str, v4: &str, v6: &str) -> ResourceSet {
+    ResourceSet::from_strs(asn, v4, v6).unwrap()
 }
 
 pub fn rcn(nr: u32) -> ResourceClassName {

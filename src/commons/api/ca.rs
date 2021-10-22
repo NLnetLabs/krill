@@ -31,8 +31,8 @@ use crate::commons::util::KrillVersion;
 use crate::{
     commons::{
         api::{
-            rrdp::PublishElement, AspaConfiguration, Base64, ChildHandle, EntitlementClass, Entitlements,
-            ErrorResponse, Handle, HexEncodedHash, IssuanceRequest, ParentCaContact, ParentHandle, RepositoryContact,
+            rrdp::PublishElement, AspaDefinition, Base64, ChildHandle, EntitlementClass, Entitlements, ErrorResponse,
+            Handle, HexEncodedHash, IssuanceRequest, ParentCaContact, ParentHandle, RepositoryContact,
             RequestResourceLimit, RoaAggregateKey, RoaDefinition, SigningCert,
         },
         crypto::IdCert,
@@ -634,6 +634,10 @@ impl ObjectName {
     pub fn new(ki: &KeyIdentifier, extension: &str) -> Self {
         ObjectName(format!("{}.{}", ki, extension))
     }
+
+    pub fn aspa(customer: AsId) -> Self {
+        ObjectName(format!("{}.asa", customer))
+    }
 }
 
 impl From<&Cert> for ObjectName {
@@ -675,9 +679,9 @@ impl From<&RoaAggregateKey> for ObjectName {
     }
 }
 
-impl From<&AspaConfiguration> for ObjectName {
-    fn from(aspa: &AspaConfiguration) -> Self {
-        ObjectName(format!("{}.asa", aspa.customer()))
+impl From<&AspaDefinition> for ObjectName {
+    fn from(aspa: &AspaDefinition) -> Self {
+        Self::aspa(aspa.customer())
     }
 }
 
@@ -741,6 +745,12 @@ impl From<&Manifest> for Revocation {
 impl From<&Roa> for Revocation {
     fn from(r: &Roa) -> Self {
         Self::from(r.cert())
+    }
+}
+
+impl From<&Aspa> for Revocation {
+    fn from(aspa: &Aspa) -> Self {
+        Self::from(aspa.cert())
     }
 }
 

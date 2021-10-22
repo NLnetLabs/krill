@@ -26,10 +26,11 @@ pub mod rrdp;
 use std::{collections::HashMap, fmt, sync::Arc};
 
 use bytes::Bytes;
-use rpki::repository::resources::AsId;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use rpki::repository::{cert::Cert, crl::Crl, crypto::KeyIdentifier, manifest::Manifest, roa::Roa};
+use rpki::repository::{
+    aspa::Aspa, cert::Cert, crl::Crl, crypto::KeyIdentifier, manifest::Manifest, resources::AsId, roa::Roa,
+};
 
 use crate::{
     commons::{error::RoaDeltaError, util::sha256},
@@ -96,6 +97,12 @@ impl From<&Cert> for Base64 {
 impl From<&Roa> for Base64 {
     fn from(roa: &Roa) -> Self {
         Base64::from_content(&roa.to_captured().into_bytes())
+    }
+}
+
+impl From<&Aspa> for Base64 {
+    fn from(aspa: &Aspa) -> Self {
+        Base64::from_content(&aspa.to_captured().into_bytes())
     }
 }
 

@@ -10,7 +10,7 @@ use rpki::repository::{
 use crate::{
     commons::{
         api::{
-            AspaConfiguration, EntitlementClass, Handle, HexEncodedHash, IssuanceRequest, IssuedCert, ParentHandle,
+            AspaDefinition, EntitlementClass, Handle, HexEncodedHash, IssuanceRequest, IssuedCert, ParentHandle,
             RcvdCert, ReplacedObject, RepoInfo, RequestResourceLimit, ResourceClassInfo, ResourceClassName,
             ResourceSet, Revocation, RevocationRequest, SuspendedCert, UnsuspendedCert,
         },
@@ -27,6 +27,8 @@ use crate::{
         config::{Config, IssuanceTimingConfig},
     },
 };
+
+use super::AspaDefinitions;
 
 //------------ ResourceClass -----------------------------------------------
 
@@ -183,7 +185,8 @@ impl ResourceClass {
         &self,
         handle: &Handle,
         rcvd_cert: RcvdCert,
-        routes: &Routes,
+        all_routes: &Routes,
+        all_aspas: &AspaDefinitions,
         config: &Config,
         signer: &KrillSigner,
     ) -> KrillResult<Vec<CaEvtDet>> {
@@ -206,17 +209,25 @@ impl ResourceClass {
 
                     let current_key = CertifiedKey::create(rcvd_cert);
 
-                    let updates = self.roas.update(routes, &current_key, config, signer)?;
+                    let roa_updates = self.roas.update(all_routes, &current_key, config, signer)?;
+                    let aspa_updates = self.aspas.update(all_aspas, &current_key, config, signer)?;
 
                     let mut events = vec![CaEvtDet::KeyPendingToActive {
                         resource_class_name: self.name.clone(),
                         current_key,
                     }];
 
-                    if updates.contains_changes() {
+                    if roa_updates.contains_changes() {
                         events.push(CaEvtDet::RoasUpdated {
                             resource_class_name: self.name.clone(),
-                            updates,
+                            updates: roa_updates,
+                        })
+                    }
+
+                    if aspa_updates.contains_changes() {
+                        events.push(CaEvtDet::AspaObjectsUpdated {
+                            resource_class_name: self.name.clone(),
+                            updates: aspa_updates,
                         })
                     }
 
@@ -224,7 +235,7 @@ impl ResourceClass {
                 }
             }
             KeyState::Active(current) => {
-                self.update_rcvd_cert_current(handle, current, rcvd_cert, routes, config, signer)
+                self.update_rcvd_cert_current(handle, current, rcvd_cert, all_routes, all_aspas, config, signer)
             }
             KeyState::RollPending(pending, current) => {
                 if rcvd_cert_ki == pending.key_id() {
@@ -234,7 +245,7 @@ impl ResourceClass {
                         new_key,
                     }])
                 } else {
-                    self.update_rcvd_cert_current(handle, current, rcvd_cert, routes, config, signer)
+                    self.update_rcvd_cert_current(handle, current, rcvd_cert, all_routes, all_aspas, config, signer)
                 }
             }
             KeyState::RollNew(new, current) => {
@@ -245,22 +256,24 @@ impl ResourceClass {
                         rcvd_cert,
                     }])
                 } else {
-                    self.update_rcvd_cert_current(handle, current, rcvd_cert, routes, config, signer)
+                    self.update_rcvd_cert_current(handle, current, rcvd_cert, all_routes, all_aspas, config, signer)
                 }
             }
             KeyState::RollOld(current, _old) => {
                 // We will never request a new certificate for an old key
-                self.update_rcvd_cert_current(handle, current, rcvd_cert, routes, config, signer)
+                self.update_rcvd_cert_current(handle, current, rcvd_cert, all_routes, all_aspas, config, signer)
             }
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn update_rcvd_cert_current(
         &self,
         handle: &Handle,
         current_key: &CurrentKey,
         rcvd_cert: RcvdCert,
         routes: &Routes,
+        aspas: &AspaDefinitions,
         config: &Config,
         signer: &KrillSigner,
     ) -> KrillResult<Vec<CaEvtDet>> {
@@ -320,14 +333,28 @@ impl ResourceClass {
                 });
             }
 
+            let certified_key = CertifiedKey::create(rcvd_cert);
+
             // Check whether ROAs need to be re-issued.
-            let updated_key = CertifiedKey::create(rcvd_cert);
-            let updates = self.roas.update(routes, &updated_key, config, signer)?;
-            if !updates.is_empty() {
-                res.push(CaEvtDet::RoasUpdated {
-                    resource_class_name: self.name.clone(),
-                    updates,
-                });
+            {
+                let updates = self.roas.update(routes, &certified_key, config, signer)?;
+                if !updates.is_empty() {
+                    res.push(CaEvtDet::RoasUpdated {
+                        resource_class_name: self.name.clone(),
+                        updates,
+                    });
+                }
+            }
+
+            // Check whether ASPA objects need to be re-issued
+            {
+                let updates = self.aspas.update(aspas, &certified_key, config, signer)?;
+                if !updates.is_empty() {
+                    res.push(CaEvtDet::AspaObjectsUpdated {
+                        resource_class_name: self.name.clone(),
+                        updates,
+                    })
+                }
             }
         } else {
             info!(
@@ -693,7 +720,7 @@ impl ResourceClass {
     /// Returns `Ok(None)` if the RC does not contain the customer ASN.
     pub fn add_aspa(
         &self,
-        aspa_config: &AspaConfiguration,
+        aspa_config: &AspaDefinition,
         config: &Config,
         signer: &KrillSigner,
     ) -> KrillResult<Option<AspaObjectsUpdates>> {
@@ -703,10 +730,9 @@ impl ResourceClass {
                 .resources()
                 .contains_asn(aspa_config.customer())
             {
-                let weeks = config.issuance_timing.timing_aspa_valid_weeks;
                 let new_aspa = self
                     .aspas
-                    .make_aspa(aspa_config.clone(), certified_key, weeks, signer)?;
+                    .make_aspa(aspa_config.clone(), certified_key, config, signer)?;
 
                 Ok(Some(AspaObjectsUpdates::for_new_aspa_info(new_aspa)))
             } else {
@@ -719,7 +745,7 @@ impl ResourceClass {
 
     /// Apply ASPA object changes from events
     pub fn aspa_objects_updated(&mut self, updates: AspaObjectsUpdates) {
-        todo!()
+        self.aspas.updated(updates)
     }
 }
 

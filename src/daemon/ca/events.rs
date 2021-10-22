@@ -5,7 +5,7 @@ use rpki::repository::crypto::KeyIdentifier;
 use crate::{
     commons::{
         api::{
-            AspaConfiguration, AspaCustomer, ChildHandle, Handle, IssuanceRequest, IssuedCert, ObjectName,
+            AspaCustomer, AspaDefinition, ChildHandle, Handle, IssuanceRequest, IssuedCert, ObjectName,
             ParentCaContact, ParentHandle, ParentResourceClassName, ProviderAsUpdates, RcvdCert, RepositoryContact,
             ResourceClassName, ResourceSet, RevocationRequest, RevokedObject, RoaAggregateKey, RtaName, SuspendedCert,
             TaCertDetails, UnsuspendedCert,
@@ -393,8 +393,32 @@ impl AspaObjectsUpdates {
         }
     }
 
+    pub fn add_updated(&mut self, update: AspaInfo) {
+        self.updated.push(update)
+    }
+
+    pub fn add_removed(&mut self, customer: AspaCustomer) {
+        self.removed.retain(|existing| *existing != customer)
+    }
+
     pub fn is_empty(&self) -> bool {
         self.updated.is_empty() && self.removed.is_empty()
+    }
+
+    pub fn contains_changes(&self) -> bool {
+        !self.is_empty()
+    }
+
+    pub fn unpack(self) -> (Vec<AspaInfo>, Vec<AspaCustomer>) {
+        (self.updated, self.removed)
+    }
+
+    pub fn updated(&self) -> &Vec<AspaInfo> {
+        &self.updated
+    }
+
+    pub fn removed(&self) -> &Vec<AspaCustomer> {
+        &self.removed
     }
 }
 
@@ -652,7 +676,7 @@ pub enum CaEvtDet {
 
     // ASPA
     AspaConfigAdded {
-        aspa_config: AspaConfiguration,
+        aspa_config: AspaDefinition,
     },
     AspaConfigUpdated {
         updates: ProviderAsUpdates,

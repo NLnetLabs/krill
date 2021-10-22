@@ -10,7 +10,7 @@ use crate::{
     commons::{
         actor::{Actor, ActorDef},
         api::{
-            AddChildRequest, AllCertAuthIssues, AspaConfiguration, CaCommandDetails, CaRepoDetails, CertAuthInfo,
+            AddChildRequest, AllCertAuthIssues, AspaDefinition, CaCommandDetails, CaRepoDetails, CertAuthInfo,
             CertAuthInit, CertAuthIssues, CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle,
             ChildrenConnectionStats, CommandHistory, CommandHistoryCriteria, Handle, ListReply, ParentCaContact,
             ParentCaReq, ParentHandle, ProviderAsUpdates, PublicationServerUris, PublishDelta, PublisherDetails,
@@ -639,7 +639,7 @@ impl KrillServer {
 /// # Handle ASPA requests
 ///
 impl KrillServer {
-    pub async fn ca_aspas_add(&self, ca: Handle, aspa: AspaConfiguration, actor: &Actor) -> KrillEmptyResult {
+    pub async fn ca_aspas_add(&self, ca: Handle, aspa: AspaDefinition, actor: &Actor) -> KrillEmptyResult {
         Ok(self.ca_manager.ca_aspas_add(ca, aspa, actor).await?)
     }
 

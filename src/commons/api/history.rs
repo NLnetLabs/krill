@@ -7,7 +7,7 @@ use rpki::repository::{crypto::KeyIdentifier, x509::Time};
 use crate::{
     commons::{
         api::{
-            ArgKey, ArgVal, AspaConfiguration, AspaCustomer, ChildHandle, Handle, Label, Message, ParentHandle,
+            ArgKey, ArgVal, AspaCustomer, AspaDefinition, ChildHandle, Handle, Label, Message, ParentHandle,
             ProviderAsUpdates, PublisherHandle, RequestResourceLimit, ResourceClassName, ResourceSet,
             RevocationRequest, RoaDefinitionUpdates, RtaName, StorableParentContact,
         },
@@ -471,7 +471,7 @@ pub enum StorableCaCommand {
     },
     ReissueBeforeExpiring,
     AspaAdd {
-        addition: AspaConfiguration,
+        addition: AspaDefinition,
     },
     AspaUpdate {
         updates: ProviderAsUpdates,

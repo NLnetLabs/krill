@@ -20,9 +20,10 @@ use crate::{
     cli::report::{ReportError, ReportFormat},
     commons::{
         api::{
-            AddChildRequest, AuthorizationFmtError, CertAuthInit, ChildHandle, Handle, ParentCaContact, ParentCaReq,
-            ParentHandle, PublicationServerUris, PublisherHandle, RepositoryContact, ResourceSet, ResourceSetError,
-            RoaDefinition, RoaDefinitionUpdates, RtaName, Token, UpdateChildRequest,
+            AddChildRequest, AspaConfigurationFormatError, AspaDefinition, AuthorizationFmtError, CertAuthInit,
+            ChildHandle, Handle, ParentCaContact, ParentCaReq, ParentHandle, PublicationServerUris, PublisherHandle,
+            RepositoryContact, ResourceSet, ResourceSetError, RoaDefinition, RoaDefinitionUpdates, RtaName, Token,
+            UpdateChildRequest,
         },
         crypto::{IdCert, SignSupport},
         error::KrillIoError,
@@ -732,6 +733,33 @@ impl Options {
         app.subcommand(sub)
     }
 
+    #[cfg(feature = "aspa")]
+    fn make_cas_aspas_add_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("add").about("Add an ASPA configuration");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+
+        sub = sub.arg(
+            Arg::with_name("aspa")
+                .long("aspa")
+                .help("ASPA formatted like: 65000 => 65001, 65002(v4), 65003(v6)")
+                .value_name("definition")
+                .required(true),
+        );
+
+        app.subcommand(sub)
+    }
+
+    #[cfg(feature = "aspa")]
+    fn make_cas_aspas_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("aspas").about("Manage ASPAs for a CA (experimental)");
+
+        sub = Self::make_cas_aspas_add_sc(sub);
+
+        app.subcommand(sub)
+    }
+
     fn make_cas_repo_request_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("request").about("Show RFC8183 Publisher Request XML");
 
@@ -1161,6 +1189,11 @@ impl Options {
         app = Self::make_cas_repo_sc(app);
         app = Self::make_cas_issues_sc(app);
         app = Self::make_pubserver_sc(app);
+
+        #[cfg(feature = "aspa")]
+        {
+            app = Self::make_cas_aspas_sc(app);
+        }
 
         #[cfg(feature = "rta")]
         {
@@ -1710,6 +1743,26 @@ impl Options {
         }
     }
 
+    fn parse_matches_cas_aspas_add(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+
+        let aspa_config_str = matches.value_of("aspa").unwrap(); // required argument
+        let aspa = AspaDefinition::from_str(aspa_config_str)?;
+
+        let command = Command::CertAuth(CaCommand::AspasAdd(my_ca, aspa));
+
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_cas_aspas(matches: &ArgMatches) -> Result<Options, Error> {
+        if let Some(m) = matches.subcommand_matches("add") {
+            Self::parse_matches_cas_aspas_add(m)
+        } else {
+            Err(Error::UnrecognizedSubCommand)
+        }
+    }
+
     fn parse_matches_cas_repo_request(matches: &ArgMatches) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
@@ -2097,6 +2150,8 @@ impl Options {
             Self::parse_matches_cas_keyroll(m)
         } else if let Some(m) = matches.subcommand_matches("roas") {
             Self::parse_matches_cas_routes(m)
+        } else if let Some(m) = matches.subcommand_matches("aspas") {
+            Self::parse_matches_cas_aspas(m)
         } else if let Some(m) = matches.subcommand_matches("repo") {
             Self::parse_matches_cas_repo(m)
         } else if let Some(m) = matches.subcommand_matches("issues") {
@@ -2176,6 +2231,9 @@ pub enum CaCommand {
     RouteAuthorizationsDryRunUpdate(Handle, RoaDefinitionUpdates),
     BgpAnalysisFull(Handle),
     BgpAnalysisSuggest(Handle, Option<ResourceSet>),
+
+    // ASPAs
+    AspasAdd(Handle, AspaDefinition),
 
     // Show details for this CA
     Show(Handle),
@@ -2342,6 +2400,7 @@ pub enum Error {
     Rfc8183(rfc8183::Error),
     ResSetErr(ResourceSetError),
     InvalidRouteDelta(AuthorizationFmtError),
+    InvalidAspaConfig(AspaConfigurationFormatError),
     InvalidHandle,
     InvalidSeconds,
     MissingArgWithEnv(String, String),
@@ -2360,6 +2419,7 @@ impl fmt::Display for Error {
             Error::Rfc8183(e) => write!(f, "Invalid RFC8183 XML: {}", e),
             Error::ResSetErr(e) => write!(f, "Invalid resources requested: {}", e),
             Error::InvalidRouteDelta(e) => e.fmt(f),
+            Error::InvalidAspaConfig(e) => e.fmt(f),
             Error::InvalidHandle => write!(
                 f,
                 "The publisher handle may only contain -_A-Za-z0-9, (\\ /) see issue #83"
@@ -2421,5 +2481,11 @@ impl From<ResourceSetError> for Error {
 impl From<AuthorizationFmtError> for Error {
     fn from(e: AuthorizationFmtError) -> Self {
         Error::InvalidRouteDelta(e)
+    }
+}
+
+impl From<AspaConfigurationFormatError> for Error {
+    fn from(e: AspaConfigurationFormatError) -> Self {
+        Error::InvalidAspaConfig(e)
     }
 }
