@@ -1492,7 +1492,7 @@ async fn api_ca_aspas(req: Request, path: &mut RequestPath, ca: Handle) -> Routi
     match path.next() {
         None => match *req.method() {
             Method::GET => todo!("#685 List all ASPA definitions"),
-            Method::POST => api_ca_aspas_add(req, ca).await,
+            Method::POST => api_ca_aspas_definitions_update(req, ca).await,
             _ => render_unknown_method(),
         },
         // We may need other functions in future, such as 'analyze' or 'try'.
@@ -1788,14 +1788,14 @@ async fn api_ca_kr_activate(req: Request, ca: Handle) -> RoutingResult {
 // -- ASPA functions
 
 /// Add a new ASPA definition for a CA based on the update in the POST
-async fn api_ca_aspas_add(req: Request, ca: Handle) -> RoutingResult {
+async fn api_ca_aspas_definitions_update(req: Request, ca: Handle) -> RoutingResult {
     aa!(req, Permission::ASPAS_UPDATE, ca.clone(), {
         let actor = req.actor();
         let state = req.state().clone();
 
         match req.json().await {
             Err(e) => render_error(e),
-            Ok(aspa_config) => render_empty_res(state.ca_aspas_add(ca, aspa_config, &actor).await),
+            Ok(aspa_config) => render_empty_res(state.ca_aspas_definitions_update(ca, aspa_config, &actor).await),
         }
     })
 }

@@ -10,9 +10,9 @@ use rpki::repository::{
 use crate::{
     commons::{
         api::{
-            AspaDefinition, EntitlementClass, Handle, HexEncodedHash, IssuanceRequest, IssuedCert, ParentHandle,
-            RcvdCert, ReplacedObject, RepoInfo, RequestResourceLimit, ResourceClassInfo, ResourceClassName,
-            ResourceSet, Revocation, RevocationRequest, SuspendedCert, UnsuspendedCert,
+            EntitlementClass, Handle, HexEncodedHash, IssuanceRequest, IssuedCert, ParentHandle, RcvdCert,
+            ReplacedObject, RepoInfo, RequestResourceLimit, ResourceClassInfo, ResourceClassName, ResourceSet,
+            Revocation, RevocationRequest, SuspendedCert, UnsuspendedCert,
         },
         crypto::{CsrInfo, KrillSigner, SignSupport},
         error::Error,
@@ -709,34 +709,7 @@ impl ResourceClass {
 /// # Autonomous System Provider Authorization
 ///
 impl ResourceClass {
-    /// Create a new ASPA object if this RC holds the customer ASN.
-    /// Returns `Ok(None)` if the RC does not contain the customer ASN.
-    pub fn add_aspa(
-        &self,
-        aspa_config: &AspaDefinition,
-        config: &Config,
-        signer: &KrillSigner,
-    ) -> KrillResult<Option<AspaObjectsUpdates>> {
-        if let Some(certified_key) = self.current_key() {
-            if certified_key
-                .incoming_cert()
-                .resources()
-                .contains_asn(aspa_config.customer())
-            {
-                let new_aspa = self
-                    .aspas
-                    .make_aspa(aspa_config.clone(), certified_key, config, signer)?;
-
-                Ok(Some(AspaObjectsUpdates::for_new_aspa_info(new_aspa)))
-            } else {
-                Ok(None)
-            }
-        } else {
-            Ok(None)
-        }
-    }
-
-    /// Updates the ROAs in accordance with the current authorizations
+    /// Updates the ASPA objects in accordance with the supplied definitions
     pub fn update_aspas(
         &self,
         all_aspas: &AspaDefinitions,
@@ -744,7 +717,6 @@ impl ResourceClass {
         signer: &KrillSigner,
     ) -> KrillResult<AspaObjectsUpdates> {
         let key = self.get_current_key()?;
-        let resources = key.incoming_cert().resources();
         self.aspas.update(all_aspas, key, config, signer)
     }
 

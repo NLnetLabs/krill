@@ -7,8 +7,8 @@ use rpki::repository::{crypto::KeyIdentifier, x509::Time};
 use crate::{
     commons::{
         api::{
-            ArgKey, ArgVal, AspaConfigurationUpdate, AspaCustomer, AspaDefinition, ChildHandle, Handle, Label, Message,
-            ParentHandle, PublisherHandle, RequestResourceLimit, ResourceClassName, ResourceSet, RevocationRequest,
+            ArgKey, ArgVal, AspaConfigurationUpdate, AspaCustomer, ChildHandle, Handle, Label, Message, ParentHandle,
+            PublisherHandle, RequestResourceLimit, ResourceClassName, ResourceSet, RevocationRequest,
             RoaDefinitionUpdates, RtaName, StorableParentContact,
         },
         eventsourcing::{CommandKey, CommandKeyError, StoredCommand, WithStorableDetails},
@@ -16,6 +16,8 @@ use crate::{
     },
     daemon::ca::{self, DropReason},
 };
+
+use super::AspaDefinitionUpdates;
 
 //------------ CaCommandDetails ----------------------------------------------
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -470,10 +472,10 @@ pub enum StorableCaCommand {
         updates: RoaDefinitionUpdates,
     },
     ReissueBeforeExpiring,
-    AspaAdd {
-        addition: AspaDefinition,
+    AspasUpdate {
+        updates: AspaDefinitionUpdates,
     },
-    AspaUpdate {
+    AspasUpdateExisting {
         customer: AspaCustomer,
         update: AspaConfigurationUpdate,
     },
@@ -586,8 +588,8 @@ impl WithStorableDetails for StorableCaCommand {
                 .with_removed(updates.removed().len()),
 
             // ASPA
-            StorableCaCommand::AspaAdd { .. } => CommandSummary::new("cmd-ca-aspa-add", &self),
-            StorableCaCommand::AspaUpdate { .. } => CommandSummary::new("cmd-ca-aspa-update", &self),
+            StorableCaCommand::AspasUpdate { .. } => CommandSummary::new("cmd-ca-aspas-update", &self),
+            StorableCaCommand::AspasUpdateExisting { .. } => CommandSummary::new("cmd-ca-aspas-update-existing", &self),
             StorableCaCommand::AspaRemove { .. } => CommandSummary::new("cmd-ca-aspa-remove", &self),
 
             // REPO
@@ -745,10 +747,10 @@ impl fmt::Display for StorableCaCommand {
             // ------------------------------------------------------------
             // ASPA Support
             // ------------------------------------------------------------
-            StorableCaCommand::AspaAdd { addition } => {
-                write!(f, "{}", addition)
+            StorableCaCommand::AspasUpdate { updates } => {
+                write!(f, "{}", updates)
             }
-            StorableCaCommand::AspaUpdate { customer, update } => {
+            StorableCaCommand::AspasUpdateExisting { customer, update } => {
                 write!(f, "update ASPA for customer ASN: {} {}", customer, update)
             }
             StorableCaCommand::AspaRemove { customer } => {

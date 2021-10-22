@@ -735,7 +735,7 @@ impl Options {
 
     #[cfg(feature = "aspa")]
     fn make_cas_aspas_add_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("add").about("Add an ASPA configuration");
+        let mut sub = SubCommand::with_name("add").about("Add or replace an ASPA configuration");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -1787,7 +1787,7 @@ impl Options {
         let aspa_config_str = matches.value_of("aspa").unwrap(); // required argument
         let aspa = AspaDefinition::from_str(aspa_config_str)?;
 
-        let command = Command::CertAuth(CaCommand::AspasAdd(my_ca, aspa));
+        let command = Command::CertAuth(CaCommand::AspasAddOrReplace(my_ca, aspa));
 
         Ok(Options::make(general_args, command))
     }
@@ -2307,7 +2307,7 @@ pub enum CaCommand {
     BgpAnalysisSuggest(Handle, Option<ResourceSet>),
 
     // ASPAs
-    AspasAdd(Handle, AspaDefinition),
+    AspasAddOrReplace(Handle, AspaDefinition),
     AspasUpdate(Handle, AspaCustomer, AspaConfigurationUpdate),
 
     // Show details for this CA

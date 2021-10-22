@@ -75,13 +75,18 @@ pub struct AspaDefinitions {
 }
 
 impl AspaDefinitions {
-    pub fn add(&mut self, aspa: AspaDefinition) {
+    // Add or replace a new definition
+    pub fn add_or_replace(&mut self, aspa: AspaDefinition) {
         let customer = aspa.customer();
         self.attestations.insert(customer, aspa);
     }
 
-    // Applies an update. This assumes that the update was
-    // verified beforehand.
+    // Remove an existing definition (if it is present)
+    pub fn remove(&mut self, customer: AspaCustomer) {
+        self.attestations.remove(&customer);
+    }
+
+    // Applies an update. This assumes that the update was verified beforehand.
     pub fn apply_update(&mut self, customer: AspaCustomer, update: &AspaConfigurationUpdate) {
         let current = self.attestations.get_mut(&customer).unwrap();
         current.apply_update(update);

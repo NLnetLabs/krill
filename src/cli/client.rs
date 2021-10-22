@@ -11,8 +11,9 @@ use crate::{
     },
     commons::{
         api::{
-            AllCertAuthIssues, CaRepoDetails, CertAuthIssues, ChildCaInfo, ChildrenConnectionStats, ParentCaContact,
-            ParentStatuses, PublisherDetails, PublisherList, RepoStatus, Token,
+            AllCertAuthIssues, AspaDefinitionUpdates, CaRepoDetails, CertAuthIssues, ChildCaInfo,
+            ChildrenConnectionStats, ParentCaContact, ParentStatuses, PublisherDetails, PublisherList, RepoStatus,
+            Token,
         },
         bgp::BgpAnalysisAdvice,
         error::KrillIoError,
@@ -331,9 +332,10 @@ impl KrillClient {
                 Ok(ApiResponse::BgpAnalysisSuggestions(suggestions))
             }
 
-            CaCommand::AspasAdd(handle, aspa) => {
+            CaCommand::AspasAddOrReplace(handle, aspa) => {
                 let uri = format!("api/v1/cas/{}/aspas", handle);
-                post_json(&self.server, &self.token, &uri, aspa).await?;
+                let updates = AspaDefinitionUpdates::new(vec![aspa], vec![]);
+                post_json(&self.server, &self.token, &uri, updates).await?;
                 Ok(ApiResponse::Empty)
             }
 

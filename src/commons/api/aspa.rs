@@ -20,6 +20,35 @@ pub struct AspaDefinitionUpdates {
     remove: Vec<AspaCustomer>,
 }
 
+impl AspaDefinitionUpdates {
+    pub fn new(add_or_replace: Vec<AspaDefinition>, remove: Vec<AspaCustomer>) -> Self {
+        AspaDefinitionUpdates { add_or_replace, remove }
+    }
+    pub fn unpack(self) -> (Vec<AspaDefinition>, Vec<AspaCustomer>) {
+        (self.add_or_replace, self.remove)
+    }
+}
+
+impl fmt::Display for AspaDefinitionUpdates {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Update ASPA definitions: ")?;
+        if !self.add_or_replace.is_empty() {
+            write!(f, " add or replace:")?;
+            for definition in &self.add_or_replace {
+                write!(f, " {}", definition)?;
+            }
+        }
+        if !self.remove.is_empty() {
+            write!(f, " remove where customer ASN is:")?;
+            for as_id in &self.remove {
+                write!(f, " {}", as_id)?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
 //------------ AspaDefinition --------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -196,6 +225,10 @@ impl AspaConfigurationUpdate {
 
     pub fn is_empty(&self) -> bool {
         self.added.is_empty() && self.removed.is_empty()
+    }
+
+    pub fn contains_changes(&self) -> bool {
+        !self.is_empty()
     }
 
     // Add a provider for both v4 and v6

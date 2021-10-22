@@ -413,7 +413,7 @@ pub async fn ca_route_authorization_dryrun(handle: &Handle, updates: RoaDefiniti
 }
 
 pub async fn ca_aspas_add(handle: &Handle, aspa: AspaDefinition) {
-    krill_admin(Command::CertAuth(CaCommand::AspasAdd(handle.clone(), aspa))).await;
+    krill_admin(Command::CertAuth(CaCommand::AspasAddOrReplace(handle.clone(), aspa))).await;
 }
 
 pub async fn ca_aspas_update(handle: &Handle, customer: AspaCustomer, update: AspaConfigurationUpdate) {
