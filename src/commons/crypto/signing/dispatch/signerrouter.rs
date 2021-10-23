@@ -144,7 +144,7 @@ struct SignerRoleAssignments {
 /// operations.
 #[cfg(not(feature = "hsm"))]
 impl SignerRouter {
-    pub fn build(work_dir: &Path) -> KrillResult<Self> {
+    pub fn build(work_dir: &Path, _alternate_config: bool) -> KrillResult<Self> {
         let openssl_signer = Arc::new(SignerProvider::OpenSsl(OpenSslSigner::build(work_dir)?));
 
         Ok(SignerRouter {
