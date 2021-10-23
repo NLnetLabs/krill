@@ -1,6 +1,8 @@
 use std::{path::Path, sync::Arc};
 
-use rpki::repository::crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError, signer::{KeyError, Sign, SignWithKey}};
+use rpki::repository::crypto::{
+    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
+};
 
 use crate::commons::{
     crypto::{
@@ -670,14 +672,5 @@ impl Signer for SignerRouter {
         } else {
             self.rand_fallback_signer.rand(target)
         }
-    }
-}
-
-impl SignerRouter {
-    pub async fn sign_with_key<What: SignWithKey>(
-        &self, key_id: &KeyIdentifier, what: What
-    ) -> Result<<What::Sign as Sign>::Final, SignerError> {
-        self.bind_ready_signers();
-        self.get_signer_for_key(key_id)?.sign_with_key(key_id, what).await
     }
 }

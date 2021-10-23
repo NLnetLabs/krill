@@ -119,7 +119,7 @@ pub struct SignSupport;
 
 impl SignSupport {
     /// Create an IssuedCert
-    pub async fn make_issued_cert(
+    pub fn make_issued_cert(
         csr: CsrInfo,
         resources: &ResourceSet,
         limit: RequestResourceLimit,
@@ -138,7 +138,7 @@ impl SignSupport {
         let request = CertRequest::Ca(csr, validity);
 
         let tbs = Self::make_tbs_cert(&resources, signing_cert, request, signer)?;
-        let cert = signer.sign_cert(tbs, signing_key.key_id()).await?;
+        let cert = signer.sign_cert(tbs, signing_key.key_id())?;
 
         let cert_uri = signing_cert.uri_for_object(&cert);
 
@@ -148,7 +148,7 @@ impl SignSupport {
     /// Create an EE certificate for use in ResourceTaggedAttestations.
     /// Note that for RPKI signed objects such as ROAs and Manifests, the
     /// EE certificate is created by the rpki.rs library instead.
-    pub async fn make_rta_ee_cert(
+    pub fn make_rta_ee_cert(
         resources: &ResourceSet,
         signing_key: &CertifiedKey,
         validity: Validity,
@@ -159,7 +159,7 @@ impl SignSupport {
         let request = CertRequest::Ee(pub_key, validity);
         let tbs = Self::make_tbs_cert(resources, signing_cert, request, signer)?;
 
-        let cert = signer.sign_cert(tbs, signing_key.key_id()).await?;
+        let cert = signer.sign_cert(tbs, signing_key.key_id())?;
         Ok(cert)
     }
 

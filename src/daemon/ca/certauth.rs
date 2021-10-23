@@ -395,7 +395,7 @@ impl Aggregate for CertAuth {
         }
     }
 
-    async fn process_command(&self, command: Cmd) -> KrillResult<Vec<CaEvt>> {
+    fn process_command(&self, command: Cmd) -> KrillResult<Vec<CaEvt>> {
         if log_enabled!(log::Level::Trace) {
             trace!(
                 "Sending command to CA '{}', version: {}: {}",
@@ -407,7 +407,7 @@ impl Aggregate for CertAuth {
 
         match command.into_details() {
             // trust anchor
-            CmdDet::MakeTrustAnchor(uris, rsync_uri, signer) => self.trust_anchor_make(uris, rsync_uri, signer).await,
+            CmdDet::MakeTrustAnchor(uris, rsync_uri, signer) => self.trust_anchor_make(uris, rsync_uri, signer),
 
             // being a parent
             CmdDet::ChildAdd(child, id_cert, resources) => self.child_add(child, id_cert, resources),
@@ -568,7 +568,7 @@ impl CertAuth {
 /// # Being a Trust Anchor
 ///
 impl CertAuth {
-    async fn trust_anchor_make(
+    fn trust_anchor_make(
         &self,
         uris: Vec<uri::Https>,
         rsync_uri: Option<uri::Rsync>,
@@ -612,7 +612,7 @@ impl CertAuth {
             cert.set_v4_resources(resources.to_ip_resources_v4());
             cert.set_v6_resources(resources.to_ip_resources_v6());
 
-            signer.sign_cert(cert, &key).await?
+            signer.sign_cert(cert, &key)?
         };
 
         let tal = TrustAnchorLocator::new(uris, rsync_uri, &cert);
@@ -837,7 +837,7 @@ impl CertAuth {
     }
 
     /// Issue a new child certificate.
-    async fn issue_child_certificate(
+    fn issue_child_certificate(
         &self,
         child: &ChildHandle,
         rcn: ResourceClassName,
@@ -851,7 +851,7 @@ impl CertAuth {
         let child = self.get_child(child)?;
         child.resources().apply_limit(&limit)?;
 
-        my_rc.issue_cert(csr_info, child.resources(), limit, issuance_timing, signer).await
+        my_rc.issue_cert(csr_info, child.resources(), limit, issuance_timing, signer)
     }
 
     /// Updates child Resource entitlements.
