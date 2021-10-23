@@ -68,8 +68,8 @@ jobs:
         path: target/ui/
         if-no-files-found: ignore
 
-  hsmtest:
-    name: hsmtest
+  pykmip-test:
+    name: pykmip-test
     runs-on: ubuntu-18.04
     strategy:
       matrix:
@@ -103,10 +103,45 @@ jobs:
         sleep 5s
         openssl s_client -connect 127.0.0.1:5696 || true
         cd -
-        cargo test --no-default-features --features hsm,hsm-tests-kmip -- --test-threads=1 2>&1
+        cargo test --no-default-features --features ${{ matrix.features }} -- --test-threads=1 2>&1
 
-    - name: Dump PyKMIP log
+    - name: Dump the PyKMIP log
+      if: always()
       working-directory: test-resources/pykmip
       run: |
         ls -la
         cat server.log
+
+  softhsm2-test:
+    name: softhsm2-test
+    runs-on: ubuntu-20.04
+    strategy:
+      matrix:
+        features: ["hsm,hsm-tests-pkcs11"]
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v1
+
+    - name: Install Rust
+      uses: hecrj/setup-rust-action@v1
+      with:
+        rust-version: stable
+
+    - name: Install SoftHSM2
+      run: |
+        apt update
+        apt install -y softhsm2
+        softhsm2-util --init-token --slot 0 --label "My token 1" --pin 1234 --so-pin 1234
+
+    - name: Compile the tests
+      run: |
+        cargo build --tests --no-default-features --features ${{ matrix.features }}
+
+    - name: Run the tests against SoftHSM2
+      run: |
+        cargo test --no-default-features --features ${{ matrix.features }} -- --test-threads=1 2>&1
+
+    - name: Dump the SoftHSM2 log
+      if: always()
+      run: |
+        cat /var/log/syslog
