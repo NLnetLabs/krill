@@ -231,10 +231,6 @@ impl SignerInfo {
     pub fn id(&self) -> &Handle {
         &self.id
     }
-    pub fn _signer_name(&self) -> &String {
-        &self.signer_name
-    }
-    // TODO: more getters?
 }
 
 impl Aggregate for SignerInfo {
