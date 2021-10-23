@@ -129,8 +129,8 @@ jobs:
 
     - name: Install SoftHSM2
       run: |
-        apt update
-        apt install -y softhsm2
+        sudo apt update
+        sudo apt install -y softhsm2
         softhsm2-util --init-token --slot 0 --label "My token 1" --pin 1234 --so-pin 1234
 
     - name: Compile the tests
