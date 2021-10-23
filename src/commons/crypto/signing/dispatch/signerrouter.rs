@@ -222,7 +222,11 @@ impl SignerRouter {
     }
 
     #[cfg(all(feature = "hsm", not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11"))))]
-    fn build_signers(work_dir: &Path, signer_mapper: Arc<SignerMapper>) -> KrillResult<SignerRoleAssignments> {
+    fn build_signers(
+        work_dir: &Path,
+        signer_mapper: Arc<SignerMapper>,
+        _alternate_config: bool,
+    ) -> KrillResult<SignerRoleAssignments> {
         // When the HSM feature is activated and we are not in test mode:
         //   - Use the HSM for key creation, signing, deletion, except for one-off keys.
         //   - Use the HSM for random number generation, if supported, else use the OpenSSL signer.
