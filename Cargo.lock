@@ -1628,6 +1628,7 @@ dependencies = [
 [[package]]
 name = "rpki"
 version = "0.12.3-dev"
+source = "git+https://github.com/ximon18/rpki-rs?branch=reverse-signer#cb4fad5d61c810c76d1fee412339b81d38a625a9"
 dependencies = [
  "base64 0.13.0",
  "bcder",
