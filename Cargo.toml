@@ -194,4 +194,4 @@ shadow-utils = "*"
 
 [patch.crates-io]
 bcder = { git = 'https://github.com/NLnetLabs/bcder' }
-rpki = { path = '../rpki-rs-fork/' }
+rpki = { git = 'https://github.com/ximon18/rpki-rs', branch = 'reverse-signer' }
