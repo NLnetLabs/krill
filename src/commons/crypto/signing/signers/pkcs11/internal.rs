@@ -1,7 +1,7 @@
 use std::{
     path::Path,
     sync::{Arc, RwLock, RwLockReadGuard},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use backoff::ExponentialBackoff;
@@ -19,6 +19,7 @@ use crate::commons::{
         dispatch::signerinfo::SignerMapper,
         signers::{
             pkcs11::{context::Pkcs11Context, session::Pkcs11Session},
+            probe::{ProbeError, ProbeStatus, StatefulProbe},
             util,
         },
         SignerError,
@@ -26,10 +27,6 @@ use crate::commons::{
 };
 
 //------------ Types and constants ------------------------------------------------------------------------------------
-
-/// The time to wait between attempts to initially connect to the PKCS#11 server to verify our connection settings and the
-/// server capabilities.
-const RETRY_INIT_EVERY: Duration = Duration::from_secs(30);
 
 /// The time to wait between an initial and subsequent attempt at sending a request to the PKCS#11 server.
 const RETRY_REQ_AFTER: Duration = Duration::from_secs(2);
@@ -40,7 +37,7 @@ const RETRY_REQ_AFTER_MULTIPLIER: f64 = 1.5;
 /// The maximum amount of time to keep retrying a failed request.
 const RETRY_REQ_UNTIL_MAX: Duration = Duration::from_secs(30);
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum LoginMode {
     // The token can do cryptographic operations such as signing without requiring C_Login to be called first, and so a
     // user pin is also not required.
@@ -92,7 +89,7 @@ pub struct Pkcs11Signer {
     mapper: Arc<SignerMapper>,
 
     /// A probe dependent interface to the PKCS#11 server.
-    server: Arc<RwLock<ProbingServerConnector>>,
+    server: Arc<StatefulProbe<ConnectionSettings, SignerError, UsableServerState>>,
 }
 
 impl Pkcs11Signer {
@@ -115,7 +112,7 @@ impl Pkcs11Signer {
         // TODO: Use the supplied configuration settings instead of hard-coded test settings.
         let conn_settings = Self::get_test_connection_settings()?;
 
-        let server = Arc::new(RwLock::new(ProbingServerConnector::new(conn_settings)));
+        let server = Arc::new(StatefulProbe::new(Arc::new(conn_settings), Duration::from_secs(30)));
 
         let s = Pkcs11Signer {
             name: name.to_string(),
@@ -167,10 +164,12 @@ impl Pkcs11Signer {
     }
 
     pub fn get_info(&self) -> Option<String> {
-        match self.server() {
-            Ok(status) => Some(status.state().conn_info.clone()),
-            Err(_) => None,
+        if let Ok(status) = self.server.status(Self::probe_server) {
+            if let Ok(state) = status.state() {
+                return Some(state.conn_info.clone());
+            }
         }
+        None
     }
 
     fn get_test_connection_settings() -> Result<ConnectionSettings, SignerError> {
@@ -191,88 +190,6 @@ impl Pkcs11Signer {
 }
 
 //------------ Probe based server access ------------------------------------------------------------------------------
-
-/// Probe status based access to the PKCS#11 server.
-///
-/// To avoid blocking Krill startup due to HSM connection timeout or failure we start in a `Pending` status which
-/// signifies that we haven't yet verified that we can connect to the HSM or that it supports the capabilities that we
-/// require.
-///
-/// At some point later once an initial connection has been established the PKCS#11 signer changes status to either
-/// `Usable` or `Unusable` based on what was discovered about the PKCS#11 server.
-#[derive(Debug)]
-enum ProbingServerConnector {
-    /// We haven't yet been able to connect to the HSM. If there was already a failed attempt to connect the timestamp
-    /// of the attempt is remembered so that we can choose to space out connection attempts rather than attempt to
-    /// connect every time Krill tries to use the signer.
-    Probing {
-        // The connection settings are not optional but are stored in an Option so that we can "take" them out when
-        // moving from the Probing status for use in the Usable status.
-        conn_settings: Option<ConnectionSettings>,
-        last_probe_time: Option<Instant>,
-    },
-
-    /// The HSM was successfully probed but found to be lacking required capabilities and is thus unusable by Krill.
-    Unusable,
-
-    /// The HSM was successfully probed and confirmed to have the required capabilities.
-    ///
-    /// Note that this does not mean that the HSM is currently contactable, only that we were able to contact it at
-    /// least once since Krill was started. If the domain name/IP address used to connect to Krill now point to a
-    /// different HSM instance the previously determined conclusion that the HSM is usable may no longer be valid.
-    ///
-    /// In this status we keep state concerning our relationship with the HSM.
-    Usable(UsableServerState),
-}
-
-impl ProbingServerConnector {
-    /// Create a new connector to a server that hasn't been probed yet.
-    pub fn new(conn_settings: ConnectionSettings) -> Self {
-        ProbingServerConnector::Probing {
-            conn_settings: Some(conn_settings),
-            last_probe_time: None,
-        }
-    }
-
-    /// Marks now as the last probe attempt timestamp.
-    ///
-    /// Calling this function while not in the Probing state will result in a panic.
-    pub fn mark(&self) -> Result<(), SignerError> {
-        match self {
-            #[rustfmt::skip]
-            ProbingServerConnector::Probing { mut last_probe_time, .. } => {
-                last_probe_time.replace(Instant::now());
-                Ok(())
-            }
-            _ => Err(SignerError::Pkcs11Error(
-                "Internal error: cannot mark last probe time as probing has already finished.".into(),
-            )),
-        }
-    }
-
-    pub fn conn_settings(&self) -> &ConnectionSettings {
-        match &self {
-            ProbingServerConnector::Probing { conn_settings, .. } => conn_settings.as_ref().unwrap(),
-            _ => unreachable!(),
-        }
-    }
-
-    pub fn take_conn_settings(&mut self) -> ConnectionSettings {
-        match self {
-            ProbingServerConnector::Probing { conn_settings, .. } => conn_settings.take().unwrap(),
-            _ => unreachable!(),
-        }
-    }
-
-    /// Helper function to retrieve the state associated with status Usable. Only called when in status `Usable`.
-    /// Calling this function while in another state will result in a panic.
-    pub fn state(&self) -> &UsableServerState {
-        match self {
-            ProbingServerConnector::Usable(state) => state,
-            _ => unreachable!(),
-        }
-    }
-}
 
 /// The details needed to interact with a usable PKCS#11 server.
 #[derive(Debug)]
@@ -324,71 +241,14 @@ impl UsableServerState {
 }
 
 impl Pkcs11Signer {
-    /// Get a read lock on the Usable server status, if the server is usable.
-    ///
-    /// Returns `Ok` with the status read lock if the server is usable, otherwise returns an `Err` because the
-    /// server is unusable or we haven't yet been able to establish if it is usable or not.
-    ///
-    /// Will try probing again if we didn't already manage to connect to the server and the delay period between probes
-    /// has elapsed.
-    fn server(&self) -> Result<RwLockReadGuard<ProbingServerConnector>, SignerError> {
-        fn get_server_if_usable(
-            status: RwLockReadGuard<ProbingServerConnector>,
-        ) -> Option<Result<RwLockReadGuard<ProbingServerConnector>, SignerError>> {
-            // Check the status through the unlocked read lock
-            match &*status {
-                ProbingServerConnector::Usable(_) => {
-                    // The server has been confirmed as usable, return the read-lock granting access to the current
-                    // status and via it the current state of our relationship with the server.
-                    Some(Ok(status))
-                }
-
-                ProbingServerConnector::Unusable => {
-                    // The server has been confirmed as unusable, fail.
-                    Some(Err(SignerError::PermanentlyUnusable))
-                }
-
-                ProbingServerConnector::Probing { last_probe_time, .. } => {
-                    // We haven't yet established whether the  server is usable or not. If we haven't yet checked or we
-                    // haven't tried checking again for a while, then try contacting it again. If we can't establish
-                    // whether or not the server is usable, return an error.
-                    if !is_time_to_check(RETRY_INIT_EVERY, *last_probe_time) {
-                        Some(Err(SignerError::TemporarilyUnavailable))
-                    } else {
-                        None
-                    }
-                }
-            }
-        }
-
-        // Return the current status or attempt to set it by probing the server
-        let status = self.server.read().unwrap();
-        get_server_if_usable(status).unwrap_or_else(|| {
-            self.probe_server()
-                .and_then(|_| Ok(self.server.read().unwrap()))
-                .map_err(|_| SignerError::TemporarilyUnavailable)
-        })
-    }
-
     /// Verify if the configured server is contactable and supports the required capabilities.
-    fn probe_server(&self) -> Result<(), SignerError> {
-        // Hold a write lock for the duration of our attempt to verify the server so that no other attempt occurs
-        // at the same time. Bail out if another thread is performing a probe and has the lock. This is the same result
-        // as when attempting to use the server between probe retries.
-        let signer_name = &self.name;
-
-        let mut status = self
-            .server
-            .try_write()
-            .map_err(|_| SignerError::TemporarilyUnavailable)?;
-
-        // Update the timestamp of our last attempt to contact the server. This is used above to know when we have
-        // waited long enough before attempting to contact the server again. This also guards against attempts to probe
-        // when probing has already finished as mark() will fail in that case.
-        status.mark()?;
+    fn probe_server(
+        status: &ProbeStatus<ConnectionSettings, SignerError, UsableServerState>,
+    ) -> Result<UsableServerState, ProbeError<SignerError>> {
+        let signer_name = "TODO";
+        let conn_settings = status.config()?;
 
         let (res, lib_name) = {
-            let conn_settings = status.conn_settings();
             let mut writable_ctx = conn_settings.context.write().unwrap();
             let lib_name = writable_ctx.get_lib_file_name();
 
@@ -404,9 +264,8 @@ impl Pkcs11Signer {
                     "[{}] Unable to initialize PKCS#11 info for library '{}': {}",
                     signer_name, lib_name, err
                 );
-                *status = ProbingServerConnector::Unusable;
             }
-            return Err(err);
+            return Err(ProbeError::CompletedUnusable);
         }
 
         // Note: We don't need to check for supported functions because the `pkcs11` Rust crate `fn new()` already
@@ -415,7 +274,6 @@ impl Pkcs11Signer {
         // by the PKCS#11 specification...?
 
         let (cryptoki_info, slot_id, _slot_info, token_info, user_pin) = {
-            let conn_settings = status.conn_settings();
             let readable_ctx = conn_settings.context.read().unwrap();
 
             let cryptoki_info = readable_ctx.get_info().map_err(|err| {
@@ -423,7 +281,7 @@ impl Pkcs11Signer {
                     "[{}] Unable to read PKCS#11 info for library '{}': {}",
                     signer_name, lib_name, err
                 );
-                SignerError::PermanentlyUnusable
+                ProbeError::CompletedUnusable
             })?;
 
             trace!("[{}] C_GetInfo(): {:?}", signer_name, cryptoki_info);
@@ -456,7 +314,7 @@ impl Pkcs11Signer {
                             "[{}] Failed to enumerate PKCS#11 slots for library '{}': {}",
                             signer_name, lib_name, err
                         );
-                        SignerError::PermanentlyUnusable
+                        ProbeError::CompletedUnusable
                     })?
                     .into_iter()
                     .find(|&slot_id| has_token_label(signer_name, &readable_ctx, slot_id, &slot_label));
@@ -468,7 +326,7 @@ impl Pkcs11Signer {
                             "[{}] No PKCS#11 slot found for library '{}' with label '{}'",
                             signer_name, lib_name, slot_label
                         );
-                        return Err(SignerError::PermanentlyUnusable);
+                        return Err(ProbeError::CompletedUnusable);
                     }
                 }
             } else {
@@ -476,7 +334,7 @@ impl Pkcs11Signer {
                     "[{}] No PKCS#11 slot id or label specified for library '{}'",
                     signer_name, lib_name
                 );
-                return Err(SignerError::PermanentlyUnusable);
+                return Err(ProbeError::CompletedUnusable);
             };
 
             let slot_info = readable_ctx.get_slot_info(slot_id).map_err(|err| {
@@ -484,7 +342,7 @@ impl Pkcs11Signer {
                     "[{}] Unable to read PKCS#11 slot info for library '{}' slot {}: {}",
                     signer_name, lib_name, slot_id, err
                 );
-                SignerError::PermanentlyUnusable
+                ProbeError::CompletedUnusable
             })?;
 
             trace!("[{}] C_GetSlotInfo(): {:?}", signer_name, slot_info);
@@ -494,7 +352,7 @@ impl Pkcs11Signer {
                     "[{}] Unable to read PKCS#11 token info for library '{}' slot {}: {}",
                     signer_name, lib_name, slot_id, err
                 );
-                SignerError::PermanentlyUnusable
+                ProbeError::CompletedUnusable
             })?;
 
             trace!("[{}] C_GetTokenInfo(): {:?}", signer_name, token_info);
@@ -506,13 +364,13 @@ impl Pkcs11Signer {
 
         // TODO: check for RSA key pair support?
 
-        let login_session = if status.conn_settings().login_mode == LoginMode::LoginRequired {
-            let login_session = Pkcs11Session::new(status.conn_settings().context.clone(), slot_id).map_err(|err| {
+        let login_session = if conn_settings.login_mode == LoginMode::LoginRequired {
+            let login_session = Pkcs11Session::new(conn_settings.context.clone(), slot_id).map_err(|err| {
                 error!(
                     "[{}] Unable to open PKCS#11 session for library '{}' slot {}: {}",
                     signer_name, lib_name, slot_id, err
                 );
-                SignerError::PermanentlyUnusable
+                ProbeError::CompletedUnusable
             })?;
 
             login_session.login(CKU_USER, user_pin.as_deref()).map_err(|err| {
@@ -520,7 +378,7 @@ impl Pkcs11Signer {
                     "[{}] Unable to login to PKCS#11 session for library '{}' slot {}: {}",
                     signer_name, lib_name, slot_id, err
                 );
-                SignerError::PermanentlyUnusable
+                ProbeError::CompletedUnusable
             })?;
 
             trace!(
@@ -537,8 +395,6 @@ impl Pkcs11Signer {
 
         // Switch from probing the server to using it.
         // -------------------------------------------
-
-        let conn_settings = status.take_conn_settings();
 
         // Note: When Display'd via '{}' with format!() as is done below, the Rust `pkcs11` crate automatically trims
         // trailing whitespace from Cryptoki padded strings such as the token info label, model and manufacturerID.
@@ -575,9 +431,7 @@ impl Pkcs11Signer {
             login_session,
         );
 
-        *status = ProbingServerConnector::Usable(state);
-
-        Ok(())
+        Ok(state)
     }
 }
 
@@ -586,7 +440,7 @@ impl Pkcs11Signer {
 impl Pkcs11Signer {
     /// Get a connection to the server, if the server is usable.
     fn connect(&self) -> Result<Pkcs11Session, SignerError> {
-        let conn = self.server()?.state().get_connection()?;
+        let conn = self.server.status(Self::probe_server)?.state()?.get_connection()?;
         Ok(conn)
     }
 
@@ -631,7 +485,7 @@ impl Pkcs11Signer {
 
         // Don't even bother going round the retry loop if we haven't yet successfully connected to the PKCS#11 server
         // and verified its capabilities:
-        let _ = self.server()?;
+        let _ = self.server.status(Self::probe_server)?;
 
         // Try (and retry if needed) the requested operation.
         let res = backoff::retry_notify(backoff_policy, op, notify).or_else(|err| {
@@ -868,14 +722,6 @@ impl Pkcs11Signer {
     }
 }
 
-// TODO: Refactor duplicate code out of here and kmip/internal.rs:
-fn is_time_to_check(time_between_checks: Duration, possible_lack_check_time: Option<Instant>) -> bool {
-    match possible_lack_check_time {
-        None => true,
-        Some(instant) => Instant::now().saturating_duration_since(instant) > time_between_checks,
-    }
-}
-
 // --------------------------------------------------------------------------------------------------------------------
 // Retry with backoff related helper impls/fns:
 // --------------------------------------------------------------------------------------------------------------------
@@ -1052,5 +898,24 @@ impl From<pkcs11::errors::Error> for SignerError {
         } else {
             SignerError::Pkcs11Error(err.to_string())
         }
+    }
+}
+
+impl From<ProbeError<SignerError>> for SignerError {
+    fn from(err: ProbeError<SignerError>) -> Self {
+        match err {
+            ProbeError::WrongState => {
+                SignerError::Other("Internal error: probe is not in the expected state".to_string())
+            }
+            ProbeError::AwaitingNextProbe => SignerError::TemporarilyUnavailable,
+            ProbeError::CompletedUnusable => SignerError::PermanentlyUnusable,
+            ProbeError::CallbackFailed(err) => err,
+        }
+    }
+}
+
+impl From<SignerError> for ProbeError<SignerError> {
+    fn from(err: SignerError) -> Self {
+        ProbeError::CallbackFailed(err)
     }
 }

@@ -1,8 +1,8 @@
 use std::{
     net::TcpStream,
     ops::Deref,
-    sync::{Arc, RwLock, RwLockReadGuard},
-    time::{Duration, Instant},
+    sync::{Arc, RwLock},
+    time::Duration,
 };
 
 use backoff::ExponentialBackoff;
@@ -18,23 +18,23 @@ use kmip::{
 use openssl::ssl::SslStream;
 use r2d2::PooledConnection;
 use rpki::repository::crypto::{
-    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer,
+    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm,
 };
 
 use crate::commons::{
     api::{Handle, Timestamp},
     crypto::{
         dispatch::signerinfo::SignerMapper,
-        signers::{kmip::connpool::ConnectionManager, util},
+        signers::{
+            kmip::connpool::ConnectionManager,
+            probe::{ProbeError, ProbeStatus, StatefulProbe},
+            util,
+        },
         SignerError,
     },
 };
 
 //------------ Types and constants ------------------------------------------------------------------------------------
-
-/// The time to wait between attempts to initially connect to the KMIP server to verify our connection settings and the
-/// server capabilities.
-const RETRY_INIT_EVERY: Duration = Duration::from_secs(30);
 
 /// The time to wait between an initial and subsequent attempt at sending a request to the KMIP server.
 const RETRY_REQ_AFTER: Duration = Duration::from_secs(2);
@@ -68,7 +68,7 @@ pub struct KmipSigner {
     mapper: Arc<SignerMapper>,
 
     /// A probe dependent interface to the KMIP server.
-    server: Arc<RwLock<ProbingServerConnector>>,
+    server: Arc<StatefulProbe<ConnectionSettings, SignerError, UsableServerState>>,
 }
 
 impl KmipSigner {
@@ -79,7 +79,7 @@ impl KmipSigner {
 
         // TODO: Use the supplied configuration settings instead of hard-coded test settings.
         let conn_settings = Self::get_test_connection_settings();
-        let server = Arc::new(RwLock::new(ProbingServerConnector::new(conn_settings)));
+        let server = Arc::new(StatefulProbe::new(Arc::new(conn_settings), Duration::from_secs(30)));
 
         let s = KmipSigner {
             name: name.to_string(),
@@ -104,10 +104,18 @@ impl KmipSigner {
     }
 
     pub fn get_info(&self) -> Option<String> {
-        match self.server() {
-            Ok(status) => Some(status.state().conn_info.clone()),
-            Err(_) => None,
+        if let Ok(status) = self.server.status(Self::probe_server) {
+            if let Ok(state) = status.state() {
+                return Some(state.conn_info.clone());
+            }
         }
+        None
+    }
+
+    pub fn create_registration_key(&self) -> Result<(PublicKey, String), SignerError> {
+        let (public_key, kmip_key_pair_ids) = self.build_key(PublicKeyFormat::Rsa)?;
+        let internal_key_id = kmip_key_pair_ids.private_key_id.to_string();
+        Ok((public_key, internal_key_id))
     }
 
     pub fn sign_registration_challenge<D: AsRef<[u8]> + ?Sized>(
@@ -118,18 +126,14 @@ impl KmipSigner {
         self.sign_with_key(signer_private_key_id, SignatureAlgorithm::default(), challenge.as_ref())
     }
 
-    pub fn create_registration_key(&self) -> Result<(PublicKey, String), SignerError> {
-        let (public_key, kmip_key_pair_ids) = self.build_key(PublicKeyFormat::Rsa)?;
-        let internal_key_id = kmip_key_pair_ids.private_key_id.to_string();
-        Ok((public_key, internal_key_id))
-    }
-
     /// Returns true if the KMIP server supports generation of random numbers, false otherwise.
     pub fn supports_random(&self) -> bool {
-        match self.server() {
-            Ok(status) => status.state().supports_random_number_generation,
-            Err(_) => false,
+        if let Ok(status) = self.server.status(Self::probe_server) {
+            if let Ok(state) = status.state() {
+                return state.supports_random_number_generation;
+            }
         }
+        false
     }
 
     // TODO: Remove me once we support passing configuration in to `fn build()`.
@@ -159,88 +163,6 @@ impl KmipSigner {
 }
 
 //------------ Probe based server access ------------------------------------------------------------------------------
-
-/// Probe status based access to the KMIP server.
-///
-/// To avoid blocking Krill startup due to HSM connection timeout or failure we start in a `Pending` status which
-/// signifies that we haven't yet verified that we can connect to the HSM or that it supports the capabilities that we
-/// require.
-///
-/// At some point later once an initial connection has been established the KMIP signer changes status to either
-/// `Usable` or `Unusable` based on what was discovered about the KMIP server.
-#[derive(Clone, Debug)]
-enum ProbingServerConnector {
-    /// We haven't yet been able to connect to the HSM using the TCP+TLS+KMIP protocol. If there was already a failed
-    /// attempt to connect the timestamp of the attempt is remembered so that we can choose to space out connection
-    /// attempts rather than attempt to connect every time Krill tries to use the signer.
-    Probing {
-        // The connection settings are not optional but are stored in an Option so that we can "take" them out when
-        // moving from the Probing status for use in the Usable status.
-        conn_settings: Option<ConnectionSettings>,
-        last_probe_time: Option<Instant>,
-    },
-
-    /// The HSM was successfully probed but found to be lacking required capabilities and is thus unusable by Krill.
-    Unusable,
-
-    /// The HSM was successfully probed and confirmed to have the required capabilities.
-    ///
-    /// Note that this does not mean that the HSM is currently contactable, only that we were able to contact it at
-    /// least once since Krill was started. If the domain name/IP address used to connect to Krill now point to a
-    /// different HSM instance the previously determined conclusion that the HSM is usable may no longer be valid.
-    ///
-    /// In this status we keep state concerning our relationship with the HSM.
-    Usable(UsableServerState),
-}
-
-impl ProbingServerConnector {
-    /// Create a new connector to a KMIP server that hasn't been probed yet.
-    pub fn new(conn_settings: ConnectionSettings) -> Self {
-        ProbingServerConnector::Probing {
-            conn_settings: Some(conn_settings),
-            last_probe_time: None,
-        }
-    }
-
-    /// Marks now as the last probe attempt timestamp.
-    ///
-    /// Calling this function while not in the Probing state will result in a panic.
-    pub fn mark(&self) -> Result<(), SignerError> {
-        match self {
-            #[rustfmt::skip]
-            ProbingServerConnector::Probing { mut last_probe_time, .. } => {
-                last_probe_time.replace(Instant::now());
-                Ok(())
-            }
-            _ => Err(SignerError::KmipError(
-                "Internal error: cannot mark last probe time as probing has already finished.".into(),
-            )),
-        }
-    }
-
-    pub fn conn_settings(&self) -> &ConnectionSettings {
-        match self {
-            ProbingServerConnector::Probing { conn_settings, .. } => conn_settings.as_ref().unwrap(),
-            _ => unreachable!(),
-        }
-    }
-
-    pub fn take_conn_settings(&mut self) -> ConnectionSettings {
-        match self {
-            ProbingServerConnector::Probing { conn_settings, .. } => conn_settings.take().unwrap(),
-            _ => unreachable!(),
-        }
-    }
-
-    /// Helper function to retrieve the state associated with status Usable. Only called when in status `Usable`.
-    /// Calling this function while in another state will result in a panic.
-    pub fn state(&self) -> &UsableServerState {
-        match self {
-            ProbingServerConnector::Usable(state) => state,
-            _ => unreachable!(),
-        }
-    }
-}
 
 /// The details needed to interact with a usable KMIP server.
 #[derive(Clone, Debug)]
@@ -274,71 +196,17 @@ impl UsableServerState {
 }
 
 impl KmipSigner {
-    /// Get a read lock on the Usable server status, if the server is usable.
-    ///
-    /// Returns `Ok` with the status read lock if the KMIP server is usable, otherwise returns an `Err` because the
-    /// server is unusable or we haven't yet been able to establish if it is usable or not.
-    ///
-    /// Will try probing again if we didn't already manage to connect to the server and the delay period between probes
-    /// has elapsed.
-    fn server(&self) -> Result<RwLockReadGuard<ProbingServerConnector>, SignerError> {
-        fn get_server_if_usable(
-            status: RwLockReadGuard<ProbingServerConnector>,
-        ) -> Option<Result<RwLockReadGuard<ProbingServerConnector>, SignerError>> {
-            // Check the status through the unlocked read lock
-            match &*status {
-                ProbingServerConnector::Usable(_) => {
-                    // KMIP server has been confirmed as usable, return the read-lock granting access to the current
-                    // status and via it the current state of our relationship with the KMIP server.
-                    Some(Ok(status))
-                }
-
-                ProbingServerConnector::Unusable => {
-                    // KMIP server has been confirmed as unusable, fail.
-                    Some(Err(SignerError::PermanentlyUnusable))
-                }
-
-                ProbingServerConnector::Probing { last_probe_time, .. } => {
-                    // We haven't yet established whether the KMIP server is usable or not. If we haven't yet checked or we
-                    // haven't tried checking again for a while, then try contacting it again. If we can't establish
-                    // whether or not the server is usable, return an error.
-                    if !is_time_to_check(RETRY_INIT_EVERY, *last_probe_time) {
-                        Some(Err(SignerError::TemporarilyUnavailable))
-                    } else {
-                        None
-                    }
-                }
-            }
-        }
-
-        // Return the current status or attempt to set it by probing the server
-        let status = self.server.read().unwrap();
-        get_server_if_usable(status).unwrap_or_else(|| {
-            self.probe_server()
-                .and_then(|_| Ok(self.server.read().unwrap()))
-                .map_err(|_| SignerError::TemporarilyUnavailable)
-        })
-    }
-
     /// Verify if the configured KMIP server is contactable and supports the required capabilities.
-    fn probe_server(&self) -> Result<(), SignerError> {
-        // Hold a write lock for the duration of our attempt to verify the KMIP server so that no other attempt occurs
-        // at the same time. Bail out if another thread is performing a probe and has the lock. This is the same result
-        // as when attempting to use the KMIP server between probe retries.
-        let mut status = self.server.try_write().map_err(|_| SignerError::TemporarilyUnavailable)?;
-
-        // Update the timestamp of our last attempt to contact the KMIP server. This is used above to know when we have
-        // waited long enough before attempting to contact the server again. This also guards against attempts to probe
-        // when probing has already finished as mark() will fail in that case.
-        status.mark()?;
-
-        let conn_settings = status.conn_settings();
+    fn probe_server(
+        status: &ProbeStatus<ConnectionSettings, SignerError, UsableServerState>,
+    ) -> Result<UsableServerState, ProbeError<SignerError>> {
+        let conn_settings = status.config()?;
         debug!("Probing server at {}:{}", conn_settings.host, conn_settings.port);
 
         // Attempt a one-off connection to check if we should abort due to a configuration error (e.g. unusable
         // certificate) that will never work, and to determine the capabilities of the server (which may affect our
         // behaviour).
-        let conn = ConnectionManager::connect_one_off(conn_settings).map_err(|err| {
+        let conn = ConnectionManager::connect_one_off(conn_settings.as_ref()).map_err(|err| {
             match err {
                 // Fatal error
                 kmip::client::Error::ConfigurationError(err) => {
@@ -365,12 +233,14 @@ impl KmipSigner {
                 other => error!("Failed to connect KMIP server: Unexpected error: {}", other),
             };
 
-            SignerError::TemporarilyUnavailable
+            ProbeError::CompletedUnusable
         })?;
 
         // We managed to establish a TCP+TLS connection to the KMIP server. Send it a Query request to discover how
         // it calls itself and which KMIP operations it supports.
-        let server_properties = conn.query().map_err(|err| SignerError::KmipError(err.to_string()))?;
+        let server_properties = conn
+            .query()
+            .map_err(|err| ProbeError::CallbackFailed(SignerError::KmipError(err.to_string())))?;
         let supported_operations = server_properties.operations.unwrap_or_default();
 
         // Check whether or not the KMIP operations that we require are supported by the server
@@ -401,8 +271,7 @@ impl KmipSigner {
             // supported operations even though it does support it. Without this flag we would not be able to use
             // PyKMIP with Krill!
             if !IGNORE_MISSING_CAPABILITIES {
-                *status = ProbingServerConnector::Unusable;
-                return Err(SignerError::PermanentlyUnusable);
+                return Err(ProbeError::CompletedUnusable);
             }
         }
 
@@ -410,12 +279,6 @@ impl KmipSigner {
         // -------------------------------------------
 
         let server_identification = server_properties.vendor_identification.unwrap_or("Unknown".into());
-
-        // Take the ConnectionSettings out of the Probing status so that we can move it to the Usable status. (we
-        // could clone it but it potentially contains a lot of certificate and key byte data and is about to get
-        // dropped when we change status which is silly when we still need it, instead take it with us to the new
-        // status)
-        let conn_settings = status.take_conn_settings();
 
         // Success! We can use this server. Announce it and switch our status to KmipSignerStatus::Usable.
         info!(
@@ -431,8 +294,7 @@ impl KmipSigner {
         let pool = ConnectionManager::create_connection_pool(conn_settings, MAX_CONCURRENT_SERVER_CONNECTIONS)?;
         let state = UsableServerState::new(pool, supports_rng_retrieve, conn_info);
 
-        *status = ProbingServerConnector::Usable(state);
-        Ok(())
+        Ok(state)
     }
 }
 
@@ -441,7 +303,7 @@ impl KmipSigner {
 impl KmipSigner {
     /// Get a connection to the KMIP server from the pool, if the server is usable.
     fn connect(&self) -> Result<PooledConnection<ConnectionManager>, SignerError> {
-        let conn = self.server()?.state().get_connection()?;
+        let conn = self.server.status(Self::probe_server)?.state()?.get_connection()?;
         Ok(conn)
     }
 
@@ -478,7 +340,7 @@ impl KmipSigner {
 
         // Don't even bother going round the retry loop if we haven't yet successfully connected to the KMIP server
         // and verified its capabilities:
-        let _ = self.server()?;
+        let _ = self.server.status(Self::probe_server)?;
 
         // Try (and retry if needed) the requested operation.
         Ok(backoff::retry_notify(backoff_policy, op, notify)?)
@@ -527,10 +389,7 @@ impl KmipSigner {
     }
 
     /// Given a KeyIdentifier lookup the corresponding KMIP public and private key pair IDs.
-    pub(super) fn lookup_kmip_key_ids(
-        &self,
-        key_id: &KeyIdentifier,
-    ) -> Result<KmipKeyPairIds, KeyError<SignerError>> {
+    pub(super) fn lookup_kmip_key_ids(&self, key_id: &KeyIdentifier) -> Result<KmipKeyPairIds, KeyError<SignerError>> {
         let readable_handle = self.handle.read().unwrap();
         let signer_handle = readable_handle.as_ref().ok_or(KeyError::KeyNotFound)?;
 
@@ -785,13 +644,6 @@ impl KmipSigner {
         })?;
 
         Ok(res.data)
-    }
-}
-
-fn is_time_to_check(time_between_checks: Duration, possible_lack_check_time: Option<Instant>) -> bool {
-    match possible_lack_check_time {
-        None => true,
-        Some(instant) => Instant::now().saturating_duration_since(instant) > time_between_checks,
     }
 }
 

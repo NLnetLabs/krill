@@ -5,7 +5,7 @@
 ///    in time.
 ///  - Handle loss of connectivity by re-creating the connection when an existing connection is considered to be
 ///    "broken" at the network level.
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use kmip::client::ConnectionSettings;
 
@@ -18,14 +18,14 @@ use crate::commons::crypto::signers::{error::SignerError, kmip::internal::KmipTl
 /// [r2d2]: https://crates.io/crates/r2d2/
 #[derive(Debug)]
 pub struct ConnectionManager {
-    conn_settings: ConnectionSettings,
+    conn_settings: Arc<ConnectionSettings>,
 }
 
 impl ConnectionManager {
     /// Create a pool of up-to N TCP + TLS connections to the KMIP server.
     #[rustfmt::skip]
     pub fn create_connection_pool(
-        conn_settings: ConnectionSettings,
+        conn_settings: Arc<ConnectionSettings>,
         max_size: u32,
     ) -> Result<r2d2::Pool<ConnectionManager>, SignerError> {
         let pool = r2d2::Pool::builder()

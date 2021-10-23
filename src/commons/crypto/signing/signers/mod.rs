@@ -10,3 +10,6 @@ pub mod softsigner;
 
 #[cfg(feature = "hsm")]
 pub mod util;
+
+#[cfg(feature = "hsm")]
+pub mod probe;
