@@ -247,7 +247,11 @@ impl SignerRouter {
 
     // TODO: Delete me once setup from Krill configuration is supported.
     #[cfg(feature = "hsm-tests-kmip")]
-    fn build_signers(work_dir: &Path, signer_mapper: Arc<SignerMapper>) -> KrillResult<SignerRoleAssignments> {
+    fn build_signers(
+        work_dir: &Path,
+        signer_mapper: Arc<SignerMapper>,
+        _alternate_config: bool,
+    ) -> KrillResult<SignerRoleAssignments> {
         // When the HSM feature is activated AND test mode is activated:
         //   - Use the HSM for as much as possible to depend on it as broadly as possible in the Krill test suite..
         //   - Fallback to OpenSSL for random number generation if the HSM doesn't support it.
