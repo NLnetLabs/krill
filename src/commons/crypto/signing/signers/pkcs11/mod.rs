@@ -1,3 +1,4 @@
+pub mod context;
 /// # Thread safety
 ///
 /// From section 6.7.6 "Capabilities of sessions":
@@ -19,7 +20,7 @@
 /// logical reader that potentially contains a token". However, rather than refer to "tokens" we instead here refer to
 /// the PKCS#11 server. This is because Krill uses the term token to refer to the token used to authenticate with the
 /// Krill API.
-/// 
+///
 /// By using "server" the code is more consistent with the KmipSigner code, we avoid the overlap with the Krill meaning
 /// of "token" and, while it may at first seem misleading because for example the SoftHSMv2 PKCS#11 library communicates
 /// with a local process and not a remote server, this is no worse than the KMIP scenario when the "server" is actually
@@ -27,8 +28,7 @@
 /// representative of the remote cloud server or server cluster nature of the backend being communicated with by the
 /// PKCS#11 library.
 pub mod internal;
-pub mod signer;
-pub mod context;
 pub mod session;
+pub mod signer;
 
 pub use internal::Pkcs11Signer;

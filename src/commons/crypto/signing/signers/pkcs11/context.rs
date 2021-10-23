@@ -43,10 +43,10 @@ pub(super) struct Pkcs11Context {
     lib_file_name: String,
 
     /// The Rust `pkcs11` Ctx object which gives access to the loaded library functions.
-    /// 
+    ///
     /// Some(...) means that the library was successfully loaded and passed the initial checks performed by the
     /// `pkcs11` crate (at the time of writing it checks that a lot of function pointers are available as expected).
-    /// 
+    ///
     /// None means that we tried and failed to load the library.
     ctx: Option<Ctx>,
 }
