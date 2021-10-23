@@ -300,4 +300,14 @@ impl Pkcs11Context {
             cryptoki.destroy_object(session, object_handle)
         })
     }
+
+    pub fn generate_random(
+        &self,
+        session: CK_SESSION_HANDLE,
+        num_bytes_wanted: CK_ULONG,
+    ) -> Result<Vec<u8>, pkcs11::errors::Error> {
+        self.logged_cryptoki_call("C_GenerateRandom", |cryptoki| {
+            cryptoki.generate_random(session, num_bytes_wanted)
+        })
+    }
 }

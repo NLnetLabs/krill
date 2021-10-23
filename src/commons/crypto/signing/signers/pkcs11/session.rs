@@ -120,4 +120,11 @@ impl Pkcs11Session {
             .unwrap()
             .destroy_object(self.session_handle, object_handle)
     }
+
+    pub fn generate_random(&self, num_bytes_wanted: CK_ULONG) -> Result<Vec<u8>, pkcs11::errors::Error> {
+        self.context
+            .read()
+            .unwrap()
+            .generate_random(self.session_handle, num_bytes_wanted)
+    }
 }

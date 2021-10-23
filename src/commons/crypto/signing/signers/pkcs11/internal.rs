@@ -1,4 +1,5 @@
 use std::{
+    convert::TryInto,
     path::Path,
     sync::{Arc, RwLock, RwLockReadGuard},
     time::Duration,
@@ -125,13 +126,12 @@ impl Pkcs11Signer {
     }
 
     pub fn supports_random(&self) -> bool {
-        // The PKCS#11 C_SeedRandom() and C_GenerateRandom() functions are allowed to return CKR_RANDOM_NO_RNG to
-        // indicate "that the specified token doesn’t have a random number generator". The C_SeedRandom() function can
-        // also return CKR_RANDOM_SEED_NOT_SUPPORTED. Thus it is not a given that the provider is able to generate
-        // random numbers. In theory the provider can also fail to implement the random functions entirely but the
-        // Rust PKCS11 crate `Ctx::new()` function requires these functions to be supported or else it will fail and
-        // we would never get to this point.
-        false // TODO
+        if let Ok(status) = self.server.status(Self::probe_server) {
+            if let Ok(state) = status.state() {
+                return state.supports_random_number_generation;
+            }
+        }
+        false
     }
 
     pub fn create_registration_key(&self) -> Result<(PublicKey, String), SignerError> {
@@ -268,11 +268,6 @@ impl Pkcs11Signer {
             return Err(ProbeError::CompletedUnusable);
         }
 
-        // Note: We don't need to check for supported functions because the `pkcs11` Rust crate `fn new()` already
-        // requires that all of the functions that we need are supported. In fact it checks for so many functions I
-        // wonder if it might not fail on some customer deployments, but perhaps it checks only for functions required
-        // by the PKCS#11 specification...?
-
         let (cryptoki_info, slot_id, _slot_info, token_info, user_pin) = {
             let readable_ctx = conn_settings.context.read().unwrap();
 
@@ -364,16 +359,30 @@ impl Pkcs11Signer {
 
         // TODO: check for RSA key pair support?
 
-        let login_session = if conn_settings.login_mode == LoginMode::LoginRequired {
-            let login_session = Pkcs11Session::new(conn_settings.context.clone(), slot_id).map_err(|err| {
-                error!(
-                    "[{}] Unable to open PKCS#11 session for library '{}' slot {}: {}",
-                    signer_name, lib_name, slot_id, err
-                );
-                ProbeError::CompletedUnusable
-            })?;
+        // Note: We don't need to check for supported functions because the `pkcs11` Rust crate `fn new()` already
+        // requires that all of the functions that we need are supported. In fact it checks for so many functions I
+        // wonder if it might not fail on some customer deployments, but perhaps it checks only for functions required
+        // by the PKCS#11 specification...? However, the PKCS#11 C_SeedRandom() and C_GenerateRandom() functions are
+        // allowed to return CKR_RANDOM_NO_RNG to indicate "that the specified token doesn’t have a random number
+        // generator". The C_SeedRandom() function can also return CKR_RANDOM_SEED_NOT_SUPPORTED. Thus it is not a given
+        // that the provider is able to generate random numbers just because it exports the related functions. In theory
+        // the provider can also fail to implement the random functions entirely but the Rust PKCS11 crate `Ctx::new()`
+        // function requires these functions to be supported or else it will fail and we would never get to this point.
+        let session = Pkcs11Session::new(conn_settings.context.clone(), slot_id).map_err(|err| {
+            error!(
+                "[{}] Unable to open PKCS#11 session for library '{}' slot {}: {}",
+                signer_name, lib_name, slot_id, err
+            );
+            ProbeError::CompletedUnusable
+        })?;
 
-            login_session.login(CKU_USER, user_pin.as_deref()).map_err(|err| {
+        let supports_random_number_generation = match session.generate_random(32) {
+            Ok(_) => true,
+            Err(_) => false,
+        };
+
+        let login_session = if conn_settings.login_mode == LoginMode::LoginRequired {
+            session.login(CKU_USER, user_pin.as_deref()).map_err(|err| {
                 error!(
                     "[{}] Unable to login to PKCS#11 session for library '{}' slot {}: {}",
                     signer_name, lib_name, slot_id, err
@@ -388,7 +397,7 @@ impl Pkcs11Signer {
                 slot_id,
             );
 
-            Some(login_session)
+            Some(session)
         } else {
             None
         };
@@ -414,7 +423,6 @@ impl Pkcs11Signer {
             token_identification, slot_id, server_identification, lib_name
         );
 
-        let supports_random_number_generation = false;
         let context = conn_settings.context.clone();
         let server_info = format!(
             "PKCS#11 Signer [token: {}, slot: {}, server: {}, library: {}]",
@@ -528,13 +536,21 @@ impl Pkcs11Signer {
         Ok(internal_key_id)
     }
 
-    pub(super) fn get_random_bytes(&self, _num_bytes_wanted: usize) -> Result<Vec<u8>, SignerError> {
+    pub(super) fn get_random_bytes(&self, num_bytes_wanted: usize) -> Result<Vec<u8>, SignerError> {
         if !self.supports_random() {
             return Err(SignerError::Pkcs11Error(
                 "The PKCS#11 provider does not support random number generation".to_string(),
             ));
         }
-        todo!()
+
+        let num_bytes_wanted: CK_ULONG = num_bytes_wanted.try_into().map_err(|err| {
+            SignerError::Pkcs11Error(format!(
+                "Internal error: number of random bytes wanted is incompatible with PKCS#11: {}",
+                err
+            ))
+        })?;
+
+        self.with_conn("generate random", |conn| conn.generate_random(num_bytes_wanted))
     }
 
     pub(super) fn build_key(
