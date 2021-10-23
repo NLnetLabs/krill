@@ -131,6 +131,8 @@ jobs:
       run: |
         sudo apt update
         sudo apt install -y softhsm2
+        sudo usermod -aG softhsm $(whoami)
+        newgrp softhsm
         softhsm2-util --init-token --slot 0 --label "My token 1" --pin 1234 --so-pin 1234
 
     - name: Compile the tests
@@ -139,6 +141,7 @@ jobs:
 
     - name: Run the tests against SoftHSM2
       run: |
+        newgrp softhsm
         cargo test --no-default-features --features ${{ matrix.features }} -- --test-threads=1 2>&1
 
     - name: Dump the SoftHSM2 log
