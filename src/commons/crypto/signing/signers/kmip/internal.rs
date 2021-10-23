@@ -614,7 +614,7 @@ impl KmipSigner {
         }
 
         if deactivated {
-            // TODO: This can fail if the key is not in the correct state, e.g. one cause can is if the key is not
+            // TODO: This can fail if the key is not in the correct state, e.g. one cause can be if the key is not
             // revoked. We don't expect this because we assume we know whether we activated or revoked the key or not
             // but if for some reason the key exists, we think it does not require revocation but actually it does,
             // then we would fail here. In such a case we could attempt to revoke and retry, but that assumes we can
