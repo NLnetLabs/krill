@@ -125,32 +125,6 @@ impl Pkcs11Signer {
         Ok(s)
     }
 
-    pub fn supports_random(&self) -> bool {
-        if let Ok(status) = self.server.status(Self::probe_server) {
-            if let Ok(state) = status.state() {
-                return state.supports_random_number_generation;
-            }
-        }
-        false
-    }
-
-    pub fn create_registration_key(&self) -> Result<(PublicKey, String), SignerError> {
-        let (public_key, _, _, internal_key_id) = self.build_key(PublicKeyFormat::Rsa)?;
-        Ok((public_key, internal_key_id))
-    }
-
-    pub fn sign_registration_challenge<D: AsRef<[u8]> + ?Sized>(
-        &self,
-        key_id: &str,
-        challenge: &D,
-    ) -> Result<Signature, SignerError> {
-        let priv_handle = self.find_key(key_id, CKO_PRIVATE_KEY).map_err(|err| match err {
-            KeyError::KeyNotFound => SignerError::KeyNotFound,
-            KeyError::Signer(err) => err,
-        })?;
-        self.sign_with_key(priv_handle, SignatureAlgorithm::default(), challenge.as_ref())
-    }
-
     pub fn get_name(&self) -> &str {
         &self.name
     }
@@ -170,6 +144,32 @@ impl Pkcs11Signer {
             }
         }
         None
+    }
+
+    pub fn create_registration_key(&self) -> Result<(PublicKey, String), SignerError> {
+        let (public_key, _, _, internal_key_id) = self.build_key(PublicKeyFormat::Rsa)?;
+        Ok((public_key, internal_key_id))
+    }
+
+    pub fn sign_registration_challenge<D: AsRef<[u8]> + ?Sized>(
+        &self,
+        key_id: &str,
+        challenge: &D,
+    ) -> Result<Signature, SignerError> {
+        let priv_handle = self.find_key(key_id, CKO_PRIVATE_KEY).map_err(|err| match err {
+            KeyError::KeyNotFound => SignerError::KeyNotFound,
+            KeyError::Signer(err) => err,
+        })?;
+        self.sign_with_key(priv_handle, SignatureAlgorithm::default(), challenge.as_ref())
+    }
+
+    pub fn supports_random(&self) -> bool {
+        if let Ok(status) = self.server.status(Self::probe_server) {
+            if let Ok(state) = status.state() {
+                return state.supports_random_number_generation;
+            }
+        }
+        false
     }
 
     fn get_test_connection_settings() -> Result<ConnectionSettings, SignerError> {
