@@ -85,12 +85,10 @@ impl OpenSslSigner {
         Ok(s)
     }
 
-    #[cfg(feature = "hsm")]
     pub fn get_name(&self) -> &str {
         &self.name
     }
 
-    #[cfg(feature = "hsm")]
     pub fn set_handle(&self, handle: Handle) {
         let mut writable_handle = self.handle.write().unwrap();
         if writable_handle.is_some() {
@@ -99,21 +97,10 @@ impl OpenSslSigner {
         *writable_handle = Some(handle);
     }
 
-    #[cfg(feature = "hsm")]
-    pub fn sign_registration_challenge<D: AsRef<[u8]> + ?Sized>(
-        &self,
-        signer_private_key_id: &str,
-        challenge: &D,
-    ) -> Result<Signature, SignerError> {
-        use std::str::FromStr;
-
-        let key_id = KeyIdentifier::from_str(signer_private_key_id).map_err(|_| SignerError::KeyNotFound)?;
-        let key_pair = self.load_key(&key_id)?;
-        let signature = Self::sign_with_key(key_pair.pkey.as_ref(), challenge)?;
-        Ok(signature)
+    pub fn get_info(&self) -> Option<String> {
+        self.info.clone()
     }
 
-    #[cfg(feature = "hsm")]
     pub fn create_registration_key(&self) -> Result<(PublicKey, String), SignerError> {
         // For the OpenSslSigner we use the KeyIdentifier as the internal key id so the two are the same.
         let key_id = self.build_key()?;
@@ -123,9 +110,15 @@ impl OpenSslSigner {
         Ok((public_key, internal_key_id))
     }
 
-    #[cfg(feature = "hsm")]
-    pub fn get_info(&self) -> Option<String> {
-        self.info.clone()
+    pub fn sign_registration_challenge<D: AsRef<[u8]> + ?Sized>(
+        &self,
+        signer_private_key_id: &str,
+        challenge: &D,
+    ) -> Result<Signature, SignerError> {
+        let key_id = KeyIdentifier::from_str(signer_private_key_id).map_err(|_| SignerError::KeyNotFound)?;
+        let key_pair = self.load_key(&key_id)?;
+        let signature = Self::sign_with_key(key_pair.pkey.as_ref(), challenge)?;
+        Ok(signature)
     }
 }
 
