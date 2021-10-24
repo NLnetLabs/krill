@@ -1,3 +1,18 @@
+//! The PKCS#11 "Cryptoki" context.
+//!
+//! The term "context" isn't part of the PKCS#11 specification, it's the name given by the `pkcs11` Rust crate to the
+//! root data structure that represents a loaded PKCS#11 library and gives access to the functions exported by it.
+//!
+//! Each PKCS#11 library must be initialized only once by a single application using it, irrespective of however many
+//! threads there are within the application that use it.
+//!
+//! # Known issues
+//!
+//! There are no timeouts around the calls into the PKCS#11 context and yet we have no idea what the PKCS#11 library
+//! is going to do when invoked. If it uses a TCP/IP connection to a remote service which is itself not that fast even
+//! when operating normally, the invocation could block for quite a while (in computing terms at least). One possible
+//! way to improve this could be to invoke the library in another thread and way a maximum amount of time in the
+//! invoking thread before deciding to give up on the spawned thread that is taking too long.
 use std::{
     collections::HashMap,
     path::Path,
@@ -16,13 +31,6 @@ use pkcs11::{
 
 use crate::commons::crypto::SignerError;
 
-/// The PKCS#11 "Cryptoki" context. This term isn't part of the PKCS#11 specification, it's the name given by the
-/// `pkcs11` Rust crate to the root data structure that represents a loaded PKCS#11 library and gives access to the
-/// functions exported by it.
-///
-/// Each library must be initialized only once by a single application using it, irrespective of however many threads
-/// there are within the application that use it.
-///
 /// To enable use cases such as migrating from one PKCS#11 provider to another we need to support loading more than one
 /// PKCS#11 library at once and so need to distinguish one library from another. Prior to actually initializing the
 /// library the only means we have for differentiating one from another is the file system path which the library is
