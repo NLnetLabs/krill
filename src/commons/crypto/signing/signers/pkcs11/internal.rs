@@ -682,6 +682,22 @@ impl Pkcs11Signer {
             ulParameterLen: 0,
         };
 
+        // Note: The AWS CloudHSM Known Issues for the PKCS#11 Library states:
+        // https://docs.aws.amazon.com/cloudhsm/latest/userguide/ki-pkcs11-sdk.html#ki-pkcs11-7
+        //
+        //   Issue: You could not hash more than 16KB of data
+        //   For larger buffers, only the first 16KB will be hashed and returned. The excess data would have been
+        //   silently ignored.
+        //   Resolution status: Data less than 16KB in size continues to be sent to the HSM for hashing. We have added
+        //   capability to hash locally, in software, data between 16KB and 64KB in size. The client and the SDKs will
+        //   explicitly fail if the data buffer is larger than 64KB. You must update your client and SDK(s) to version
+        //   1.1.1 or higher to benefit from the fix.
+        //
+        // TODO: if data is larger than 16KB we should hash locally and only use the HSM for signing, not for hashing.
+        // Should we enable this behaviour based on detection of an AWS CloudHSM or a config flag or ??? As an example,
+        // Oracle enables an AWS CloudHSM specific workaround by detecting a CLOUDHSM_IGNORE_CKA_MODIFIABLE_FALSE
+        // environment variable.
+
         let signature_data = self.with_conn("sign", |conn| {
             conn.sign_init(&mechanism, private_key_handle)?;
             conn.sign(data)
