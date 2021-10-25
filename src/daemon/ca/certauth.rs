@@ -16,9 +16,9 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            self, AspaConfigurationUpdate, AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates,
-            CertAuthInfo, ChildHandle, EntitlementClass, Entitlements, Handle, IdCertPem, IssuanceRequest, IssuedCert,
-            ObjectName, ParentCaContact, ParentHandle, RcvdCert, RepoInfo, RepositoryContact, RequestResourceLimit,
+            self, AspaConfigurationUpdate, AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates, CertAuthInfo,
+            ChildHandle, EntitlementClass, Entitlements, Handle, IdCertPem, IssuanceRequest, IssuedCert, ObjectName,
+            ParentCaContact, ParentHandle, RcvdCert, RepoInfo, RepositoryContact, RequestResourceLimit,
             ResourceClassName, ResourceSet, Revocation, RevocationRequest, RevocationResponse, RoaDefinition, RtaList,
             RtaName, RtaPrepResponse, SigningCert, StorableCaCommand, TaCertDetails, TrustAnchorLocator,
         },
@@ -470,7 +470,7 @@ impl Aggregate for CertAuth {
             CmdDet::AspasUpdateExisting(customer, update, config, signer) => {
                 self.aspas_update(customer, update, &config, &signer)
             }
-            CmdDet::AspasRenew(_, _) => todo!("#685"),
+            CmdDet::AspasRenew(config, signer) => self.aspas_renew(&config, &signer),
 
             // Republish
             CmdDet::RepoUpdate(contact, signer) => self.update_repo(contact, &signer),
@@ -1827,6 +1827,28 @@ impl CertAuth {
         res.push(CaEvtDet::AspaConfigUpdated { customer, update });
 
         Ok(self.events_from_details(res))
+    }
+
+    /// Renew existing ASPA objects if needed.
+    pub fn aspas_renew(&self, config: &Config, signer: &KrillSigner) -> KrillResult<Vec<CaEvt>> {
+        let mut evt_dets = vec![];
+
+        for (rcn, rc) in self.resources.iter() {
+            let updates = rc.renew_aspas(&config.issuance_timing, signer)?;
+            if updates.contains_changes() {
+                info!(
+                    "CA '{}' reissued ASPAs under RC '{}' before they would expire",
+                    self.handle, rcn
+                );
+
+                evt_dets.push(CaEvtDet::AspaObjectsUpdated {
+                    resource_class_name: rcn.clone(),
+                    updates,
+                });
+            }
+        }
+
+        Ok(self.events_from_details(evt_dets))
     }
 
     fn create_updated_aspa_objects(

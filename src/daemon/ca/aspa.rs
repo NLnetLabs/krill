@@ -8,6 +8,7 @@
 
 use std::{collections::HashMap, fmt::Debug};
 
+use chrono::Duration;
 use rpki::repository::{
     aspa::{Aspa, AspaBuilder},
     sigobj::SignedObjectBuilder,
@@ -23,7 +24,7 @@ use crate::{
     },
     daemon::{
         ca::{AspaObjectsUpdates, CertifiedKey},
-        config::Config,
+        config::{Config, IssuanceTimingConfig},
     },
 };
 
@@ -134,14 +135,14 @@ pub struct AspaObjects(HashMap<AspaCustomer, AspaInfo>);
 impl AspaObjects {
     pub fn make_aspa(
         &self,
-        aspa_config: AspaDefinition,
+        aspa_definition: AspaDefinition,
         certified_key: &CertifiedKey,
-        config: &Config,
+        issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<AspaInfo> {
-        let weeks = config.issuance_timing.timing_aspa_valid_weeks;
-        let aspa = make_aspa_object(aspa_config.clone(), certified_key, weeks, signer)?;
-        Ok(AspaInfo::new_aspa(aspa_config, aspa))
+        let weeks = issuance_timing.timing_aspa_valid_weeks;
+        let aspa = make_aspa_object(aspa_definition.clone(), certified_key, weeks, signer)?;
+        Ok(AspaInfo::new_aspa(aspa_definition, aspa))
     }
 
     /// Issue new ASPA objects based on configuration, and remove
@@ -169,7 +170,8 @@ impl AspaObjects {
                 .unwrap_or(true);
 
             if need_to_issue {
-                let aspa_info = self.make_aspa(relevant_aspa.clone(), certified_key, config, signer)?;
+                let aspa_info =
+                    self.make_aspa(relevant_aspa.clone(), certified_key, &config.issuance_timing, signer)?;
                 object_updates.add_updated(aspa_info);
             }
         }
@@ -183,6 +185,29 @@ impl AspaObjects {
         }
 
         Ok(object_updates)
+    }
+
+    // Re-new ASPAs before they would expire
+    pub fn renew(
+        &self,
+        certified_key: &CertifiedKey,
+        issuance_timing: &IssuanceTimingConfig,
+        signer: &KrillSigner,
+    ) -> KrillResult<AspaObjectsUpdates> {
+        let mut updates = AspaObjectsUpdates::default();
+
+        let renew_threshold = Time::now() + Duration::weeks(issuance_timing.timing_aspa_reissue_weeks_before);
+
+        for aspa in self.0.values() {
+            if aspa.expires() < renew_threshold {
+                let aspa_definition = aspa.definition().clone();
+
+                let new_aspa = self.make_aspa(aspa_definition, certified_key, issuance_timing, signer)?;
+                updates.add_updated(new_aspa);
+            }
+        }
+
+        Ok(updates)
     }
 
     pub fn updated(&mut self, updates: AspaObjectsUpdates) {
@@ -239,6 +264,10 @@ impl AspaInfo {
 
     pub fn since(&self) -> Time {
         self.since
+    }
+
+    pub fn expires(&self) -> Time {
+        self.aspa.cert().validity().not_after()
     }
 }
 

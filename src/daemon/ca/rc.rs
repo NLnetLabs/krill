@@ -709,6 +709,17 @@ impl ResourceClass {
 /// # Autonomous System Provider Authorization
 ///
 impl ResourceClass {
+    /// Renew all ROAs under the current for which the not-after time closer
+    /// than the given number of weeks
+    pub fn renew_aspas(
+        &self,
+        issuance_timing: &IssuanceTimingConfig,
+        signer: &KrillSigner,
+    ) -> KrillResult<AspaObjectsUpdates> {
+        let key = self.get_current_key()?;
+        self.aspas.renew(key, issuance_timing, signer)
+    }
+
     /// Updates the ASPA objects in accordance with the supplied definitions
     pub fn update_aspas(
         &self,
