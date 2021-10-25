@@ -13,11 +13,12 @@ use crate::{
     commons::{
         actor::Actor,
         api::{
-            self, AddChildRequest, AspaConfigurationUpdate, AspaCustomer, AspaDefinitionUpdates, Base64,
-            CaCommandDetails, CaCommandResult, CertAuthList, CertAuthSummary, ChildCaInfo, ChildHandle, CommandHistory,
-            CommandHistoryCriteria, Entitlements, Handle, IssuanceRequest, IssuanceResponse, ListReply,
-            ParentCaContact, ParentCaReq, ParentHandle, PublishDelta, RcvdCert, RepositoryContact, ResourceClassName,
-            ResourceSet, RevocationRequest, RevocationResponse, RtaName, StoredEffect, UpdateChildRequest,
+            self, AddChildRequest, AspaConfigurationUpdate, AspaCustomer, AspaDefinitionList,
+            AspaDefinitionUpdates, Base64, CaCommandDetails, CaCommandResult, CertAuthList, CertAuthSummary,
+            ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Entitlements, Handle, IssuanceRequest,
+            IssuanceResponse, ListReply, ParentCaContact, ParentCaReq, ParentHandle, PublishDelta, RcvdCert,
+            RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse, RtaName,
+            StoredEffect, UpdateChildRequest,
         },
         api::{rrdp::PublishElement, Timestamp},
         crypto::{IdCert, KrillSigner, ProtocolCms, ProtocolCmsBuilder},
@@ -1758,6 +1759,12 @@ impl CaManager {
 /// # Autonomous System Provider Authorization functions
 ///
 impl CaManager {
+    /// Show current ASPA definitions for this CA.
+    pub async fn ca_aspas_definitions_show(&self, ca: Handle) -> KrillResult<AspaDefinitionList> {
+        let ca = self.get_ca(&ca).await?;
+        Ok(ca.aspas_definitions_show())
+    }
+
     /// Add a new ASPA definition for this CA and the customer ASN in the update.
     pub async fn ca_aspas_definitions_update(
         &self,
@@ -1775,6 +1782,7 @@ impl CaManager {
         .await?;
         Ok(())
     }
+
     /// Update the ASPA definition for this CA and the customer ASN in the update.
     pub async fn ca_aspas_update_aspa(
         &self,

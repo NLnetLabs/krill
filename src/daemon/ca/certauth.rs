@@ -16,9 +16,9 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            self, AspaConfigurationUpdate, AspaCustomer, AspaDefinitionUpdates, CertAuthInfo, ChildHandle,
-            EntitlementClass, Entitlements, Handle, IdCertPem, IssuanceRequest, IssuedCert, ObjectName,
-            ParentCaContact, ParentHandle, RcvdCert, RepoInfo, RepositoryContact, RequestResourceLimit,
+            self, AspaConfigurationUpdate, AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates,
+            CertAuthInfo, ChildHandle, EntitlementClass, Entitlements, Handle, IdCertPem, IssuanceRequest, IssuedCert,
+            ObjectName, ParentCaContact, ParentHandle, RcvdCert, RepoInfo, RepositoryContact, RequestResourceLimit,
             ResourceClassName, ResourceSet, Revocation, RevocationRequest, RevocationResponse, RoaDefinition, RtaList,
             RtaName, RtaPrepResponse, SigningCert, StorableCaCommand, TaCertDetails, TrustAnchorLocator,
         },
@@ -1739,6 +1739,11 @@ impl CertAuth {
 /// # Autonomous System Provider Authorizations
 ///
 impl CertAuth {
+    /// Show current AspaDefinitions
+    pub fn aspas_definitions_show(&self) -> AspaDefinitionList {
+        AspaDefinitionList::new(self.aspas.all().cloned().collect())
+    }
+
     /// Process AspaDefinitionUpdates:
     /// - add new aspas
     /// - replace existing

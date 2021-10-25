@@ -7,8 +7,8 @@ use bytes::Bytes;
 
 use krill::{
     commons::api::{
-        AspaConfigurationUpdate, AspaCustomer, AspaDefinition, ObjectName, ResourceClassName, ResourceSet,
-        RoaDefinition, RoaDefinitionUpdates, RtaList,
+        AspaConfigurationUpdate, AspaCustomer, AspaDefinition, AspaDefinitionList, ObjectName, ResourceClassName,
+        ResourceSet, RoaDefinition, RoaDefinitionUpdates, RtaList,
     },
     daemon::ca::ta_handle,
     test::*,
@@ -447,7 +447,9 @@ async fn functional() {
 
         let aspa_65000 = AspaDefinition::from_str("AS65000 => AS65002, AS65003(v4), AS65005(v6)").unwrap();
         let aspas = vec![aspa_65000.clone()];
-        ca_aspas_add(&ca4, aspa_65000).await;
+        ca_aspas_add(&ca4, aspa_65000.clone()).await;
+
+        ca_aspas_expect(&ca4, AspaDefinitionList::new(vec![aspa_65000])).await;
 
         expect_objects_for_ca4(
             "CA4 should now de-aggregate ROAS",
@@ -472,6 +474,9 @@ async fn functional() {
         );
 
         ca_aspas_update(&ca4, customer, aspa_update).await;
+
+        let updated_aspa = AspaDefinition::from_str("AS65000 => AS65003(v4), AS65005(v6), AS65006").unwrap();
+        ca_aspas_expect(&ca4, AspaDefinitionList::new(vec![updated_aspa])).await;
     }
 
     {

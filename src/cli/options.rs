@@ -806,12 +806,23 @@ impl Options {
     }
 
     #[cfg(feature = "aspa")]
+    fn make_cas_aspas_list_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("list").about("Show current ASPA configurations");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+
+        app.subcommand(sub)
+    }
+
+    #[cfg(feature = "aspa")]
     fn make_cas_aspas_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("aspas").about("Manage ASPAs for a CA (experimental)");
 
         sub = Self::make_cas_aspas_add_sc(sub);
         sub = Self::make_cas_aspas_remove_sc(sub);
         sub = Self::make_cas_aspas_update_sc(sub);
+        sub = Self::make_cas_aspas_list_sc(sub);
 
         app.subcommand(sub)
     }
@@ -1858,6 +1869,15 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
+    fn parse_matches_cas_aspas_list(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+
+        let command = Command::CertAuth(CaCommand::AspasList(my_ca));
+
+        Ok(Options::make(general_args, command))
+    }
+
     fn parse_matches_cas_aspas(matches: &ArgMatches) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("add") {
             Self::parse_matches_cas_aspas_add(m)
@@ -1865,6 +1885,8 @@ impl Options {
             Self::parse_matches_cas_aspas_remove(m)
         } else if let Some(m) = matches.subcommand_matches("update") {
             Self::parse_matches_cas_aspas_update(m)
+        } else if let Some(m) = matches.subcommand_matches("list") {
+            Self::parse_matches_cas_aspas_list(m)
         } else {
             Err(Error::UnrecognizedSubCommand)
         }
@@ -2340,6 +2362,7 @@ pub enum CaCommand {
     BgpAnalysisSuggest(Handle, Option<ResourceSet>),
 
     // ASPAs
+    AspasList(Handle),
     AspasAddOrReplace(Handle, AspaDefinition),
     AspasUpdate(Handle, AspaCustomer, AspaConfigurationUpdate),
     AspasRemove(Handle, AspaCustomer),

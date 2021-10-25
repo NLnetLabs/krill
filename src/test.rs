@@ -25,11 +25,11 @@ use crate::{
     },
     commons::{
         api::{
-            AddChildRequest, AspaConfigurationUpdate, AspaCustomer, AspaDefinition, CertAuthInfo, CertAuthInit,
-            CertifiedKeyInfo, ChildHandle, Handle, ObjectName, ParentCaContact, ParentCaReq, ParentHandle,
-            ParentStatuses, PublicationServerUris, PublisherDetails, PublisherHandle, PublisherList, RepositoryContact,
-            ResourceClassKeysInfo, ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates, RtaList,
-            RtaName, RtaPrepResponse, TypedPrefix, UpdateChildRequest,
+            AddChildRequest, AspaConfigurationUpdate, AspaCustomer, AspaDefinition, AspaDefinitionList, CertAuthInfo,
+            CertAuthInit, CertifiedKeyInfo, ChildHandle, Handle, ObjectName, ParentCaContact, ParentCaReq,
+            ParentHandle, ParentStatuses, PublicationServerUris, PublisherDetails, PublisherHandle, PublisherList,
+            RepositoryContact, ResourceClassKeysInfo, ResourceClassName, ResourceSet, RoaDefinition,
+            RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, TypedPrefix, UpdateChildRequest,
         },
         bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion},
         crypto::SignSupport,
@@ -414,6 +414,18 @@ pub async fn ca_route_authorization_dryrun(handle: &Handle, updates: RoaDefiniti
 
 pub async fn ca_aspas_add(handle: &Handle, aspa: AspaDefinition) {
     krill_admin(Command::CertAuth(CaCommand::AspasAddOrReplace(handle.clone(), aspa))).await;
+}
+
+pub async fn ca_aspas_expect(handle: &Handle, expected_aspas: AspaDefinitionList) {
+    let res = krill_admin(Command::CertAuth(CaCommand::AspasList(handle.clone()))).await;
+
+    if let ApiResponse::AspaDefinitions(found_aspas) = res {
+        if expected_aspas != found_aspas {
+            panic!("Expected ASPAs:\n{}, Got ASPAs:\n{}", expected_aspas, found_aspas)
+        }
+    } else {
+        panic!("Expected AspaDefinitionsList")
+    }
 }
 
 pub async fn ca_aspas_update(handle: &Handle, customer: AspaCustomer, update: AspaConfigurationUpdate) {

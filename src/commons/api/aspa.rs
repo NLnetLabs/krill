@@ -49,6 +49,25 @@ impl fmt::Display for AspaDefinitionUpdates {
     }
 }
 
+//------------ AspaDefinitionList ----------------------------------------
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AspaDefinitionList(Vec<AspaDefinition>);
+
+impl AspaDefinitionList {
+    pub fn new(definitions: Vec<AspaDefinition>) -> Self {
+        AspaDefinitionList(definitions)
+    }
+}
+
+impl fmt::Display for AspaDefinitionList {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for def in self.0.iter() {
+            writeln!(f, "{}", def)?;
+        }
+        Ok(())
+    }
+}
+
 //------------ AspaDefinition --------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

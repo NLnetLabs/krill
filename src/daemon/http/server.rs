@@ -1491,7 +1491,7 @@ async fn api_ca_my_parent_statuses(req: Request, ca: Handle) -> RoutingResult {
 async fn api_ca_aspas(req: Request, path: &mut RequestPath, ca: Handle) -> RoutingResult {
     match path.next() {
         None => match *req.method() {
-            Method::GET => todo!("#685 List all ASPA definitions"),
+            Method::GET => api_ca_aspas_definitions_show(req, ca).await,
             Method::POST => api_ca_aspas_definitions_update(req, ca).await,
             _ => render_unknown_method(),
         },
@@ -1786,6 +1786,14 @@ async fn api_ca_kr_activate(req: Request, ca: Handle) -> RoutingResult {
 }
 
 // -- ASPA functions
+
+/// List the current ASPA definitions for a CA
+async fn api_ca_aspas_definitions_show(req: Request, ca: Handle) -> RoutingResult {
+    aa!(req, Permission::ASPAS_READ, ca.clone(), {
+        let state = req.state().clone();
+        render_json_res(state.ca_aspas_definitions_show(ca).await)
+    })
+}
 
 /// Add a new ASPA definition for a CA based on the update in the POST
 async fn api_ca_aspas_definitions_update(req: Request, ca: Handle) -> RoutingResult {

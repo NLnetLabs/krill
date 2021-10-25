@@ -10,12 +10,13 @@ use crate::{
     commons::{
         actor::{Actor, ActorDef},
         api::{
-            AddChildRequest, AllCertAuthIssues, AspaConfigurationUpdate, AspaCustomer, AspaDefinitionUpdates,
-            CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthInit, CertAuthIssues, CertAuthList, CertAuthStats,
-            ChildCaInfo, ChildHandle, ChildrenConnectionStats, CommandHistory, CommandHistoryCriteria, Handle,
-            ListReply, ParentCaContact, ParentCaReq, ParentHandle, PublicationServerUris, PublishDelta,
-            PublisherDetails, PublisherHandle, RepositoryContact, ResourceSet, RoaDefinition, RoaDefinitionUpdates,
-            RtaList, RtaName, RtaPrepResponse, ServerInfo, TaCertDetails, Timestamp, UpdateChildRequest,
+            AddChildRequest, AllCertAuthIssues, AspaConfigurationUpdate, AspaCustomer, AspaDefinitionList,
+            AspaDefinitionUpdates, CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthInit, CertAuthIssues,
+            CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle, ChildrenConnectionStats, CommandHistory,
+            CommandHistoryCriteria, Handle, ListReply, ParentCaContact, ParentCaReq, ParentHandle,
+            PublicationServerUris, PublishDelta, PublisherDetails, PublisherHandle, RepositoryContact, ResourceSet,
+            RoaDefinition, RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, ServerInfo, TaCertDetails,
+            Timestamp, UpdateChildRequest,
         },
         bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion},
         crypto::KrillSigner,
@@ -639,6 +640,10 @@ impl KrillServer {
 /// # Handle ASPA requests
 ///
 impl KrillServer {
+    pub async fn ca_aspas_definitions_show(&self, ca: Handle) -> KrillResult<AspaDefinitionList> {
+        Ok(self.ca_manager.ca_aspas_definitions_show(ca).await?)
+    }
+
     pub async fn ca_aspas_definitions_update(
         &self,
         ca: Handle,
