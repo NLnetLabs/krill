@@ -66,7 +66,7 @@ async fn functional() {
 
     let ca1 = handle("CA1");
     let ca1_res = resources("AS65000", "10.0.0.0/16", "");
-    let ca1_res_reduced = resources("AS65000", "10.0.0.0/24", "");
+    let ca1_res_reduced = resources("", "10.0.0.0/24", "");
     let ca1_route_definition = RoaDefinition::from_str("10.0.0.0/16-16 => 65000").unwrap();
 
     let ca2 = handle("CA2");
@@ -76,11 +76,11 @@ async fn functional() {
     let ca3_res_under_ca_1 = resources("65000", "10.0.0.0/16", "");
     let ca3_res_under_ca_2 = resources("65001", "10.1.0.0/24", "");
     let ca3_res_combined = resources("65000-65001", "10.0.0.0/16, 10.1.0.0/24", "");
-    let ca3_res_reduced = resources("65000-65001", "10.0.0.0/24,10.1.0.0/24", "");
+    let ca3_res_reduced = resources("65001", "10.0.0.0/24,10.1.0.0/24", "");
 
     let ca4 = handle("CA4");
     let ca4_res_under_ca_3 = resources("65000", "10.0.0.0-10.1.0.255", "");
-    let ca4_res_reduced = resources("65000", "10.0.0.0/24,10.1.0.0/24", "");
+    let ca4_res_reduced = resources("", "10.0.0.0/24,10.1.0.0/24", "");
 
     let rcn_0 = rcn(0);
     let rcn_1 = rcn(1);
@@ -437,6 +437,9 @@ async fn functional() {
     // Test managing ASPAs
     //------------------------------------------------------------------------------------------
 
+    let aspa_65000 = AspaDefinition::from_str("AS65000 => AS65002, AS65003(v4), AS65005(v6)").unwrap();
+    let aspas = vec![aspa_65000.clone()];
+
     {
         info("##################################################################");
         info("#                                                                #");
@@ -445,8 +448,6 @@ async fn functional() {
         info("##################################################################");
         info("");
 
-        let aspa_65000 = AspaDefinition::from_str("AS65000 => AS65002, AS65003(v4), AS65005(v6)").unwrap();
-        let aspas = vec![aspa_65000.clone()];
         ca_aspas_add(&ca4, aspa_65000.clone()).await;
 
         ca_aspas_expect(&ca4, AspaDefinitionList::new(vec![aspa_65000])).await;
@@ -479,26 +480,6 @@ async fn functional() {
         ca_aspas_expect(&ca4, AspaDefinitionList::new(vec![updated_aspa])).await;
     }
 
-    {
-        info("##################################################################");
-        info("#                                                                #");
-        info("# Delete an existing ASPA                                        #");
-        info("#                                                                #");
-        info("##################################################################");
-        info("");
-
-        let customer = AspaCustomer::from_str("AS65000").unwrap();
-        ca_aspas_remove(&ca4, customer).await;
-
-        // Expect that the ASPA object is withdrawn
-        expect_objects_for_ca4(
-            "CA4 should now de-aggregate ROAS",
-            &[route_resource_set_10_0_0_0_def_1, route_resource_set_10_1_0_0_def_1],
-            &[],
-        )
-        .await;
-    }
-
     //------------------------------------------------------------------------------------------
     // Test shrinking / growing resources
     //------------------------------------------------------------------------------------------
@@ -509,8 +490,8 @@ async fn functional() {
         info("# When resources are removed higher up in the tree, then any of  #");
         info("# resources delegated to child CAs should also be reduced. When  #");
         info("# resources for ROAs are lost, the ROAs should be removed, but   #");
-        info("# the authorization (config) is kept.                            #");
-        info("#                                                                #");
+        info("# the authorization (config) is kept. Similarly ASPA objects are #");
+        info("# removed, but the configuration is kept.                        #");
         info("##################################################################");
         info("");
         update_child(&testbed, &ca1, &ca1_res_reduced).await;
@@ -518,6 +499,7 @@ async fn functional() {
         ca_equals_resources(&ca3, &ca3_res_reduced).await;
         ca_equals_resources(&ca4, &ca4_res_reduced).await;
 
+        // One ROA gone, and the ASPA object is gone
         expect_objects_for_ca4(
             "CA4 resources are shrunk and we expect only one remaining roa",
             &[route_resource_set_10_1_0_0_def_1],
@@ -532,7 +514,7 @@ async fn functional() {
         info("# When resources are added back higher in the tree, then they    #");
         info("# will also be added to the delegated children again. When       #");
         info("# resources for existing authorizations are re-gained, ROAs      #");
-        info("# will be created again.                                         #");
+        info("# and ASPAs will be created again.                               #");
         info("#                                                                #");
         info("##################################################################");
         info("");
@@ -545,13 +527,37 @@ async fn functional() {
         expect_objects_for_ca4(
             "CA4 resources have been extended again, and we expect two roas",
             &[route_resource_set_10_0_0_0_def_1, route_resource_set_10_1_0_0_def_1],
-            &[],
+            &aspas,
         )
         .await;
     }
 
     let rta_content = include_bytes!("../test-resources/test.tal");
     let rta_content = Bytes::copy_from_slice(rta_content);
+
+    {
+        info("##################################################################");
+        info("#                                                                #");
+        info("# Delete an existing ASPA                                        #");
+        info("#                                                                #");
+        info("##################################################################");
+        info("");
+
+        let customer = AspaCustomer::from_str("AS65000").unwrap();
+        ca_aspas_remove(&ca4, customer).await;
+
+        ca_aspas_expect(&ca4, AspaDefinitionList::new(vec![])).await;
+
+        // Expect that the ASPA object is withdrawn
+        expect_objects_for_ca4(
+            "CA4 should now de-aggregate ROAS",
+            &[route_resource_set_10_0_0_0_def_1, route_resource_set_10_1_0_0_def_1],
+            &[],
+        )
+        .await;
+    }
+
+    // RTA support
 
     {
         info("##################################################################");
@@ -607,6 +613,8 @@ async fn functional() {
 
         let _multi_signed = rta_show(ca1.clone(), multi_rta_name).await;
     }
+
+    // Parent / Child
 
     info("##################################################################");
     info("#                                                                #");
