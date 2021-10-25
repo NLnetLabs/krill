@@ -5,6 +5,7 @@ use std::{
     fs::File,
     io::Write,
     path::{Path, PathBuf},
+    str::FromStr,
     sync::Arc,
 };
 
