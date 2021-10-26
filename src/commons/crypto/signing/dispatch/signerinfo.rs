@@ -1,3 +1,5 @@
+//! An event sourcing aggregate store for capturing information about signer backends and set of keys they possess.
+
 use std::{collections::HashMap, fmt, path::Path};
 
 use rpki::repository::crypto::{KeyIdentifier, PublicKey};
@@ -315,11 +317,38 @@ impl std::fmt::Debug for SignerMapper {
 }
 
 impl SignerMapper {
+    /// Build a SignerMapper that will read/write its data in a subdirectory of the given work dir.
     pub fn build(work_dir: &Path) -> KrillResult<SignerMapper> {
         let store = AggregateStore::<SignerInfo>::disk(work_dir, SIGNERS_DIR)?;
         Ok(SignerMapper { store })
     }
 
+    /// Record the existence of a new signer.
+    /// 
+    /// A signer has several properties, some fixed, some modifiable. The handle and public key are fixed at signer
+    /// creation time while the name and info strings can be changed later.
+    /// 
+    /// - The handle is an unchanging identifier that will uniquely identify the signer in the mapper store. Each signer
+    ///   in the store is required to have a unique handle. The meaning/content of the handle is opaque to the store.
+    ///   Do not use a human readable string as the handle because you may cause confusion if the value has some meaning
+    ///   that is later found to be false or misleading and can then no longer be changed. Instead use the 'name'
+    ///   argument to assign human readable identifier that may need to be changed later.
+    /// 
+    /// - The public key is an unchanging public key that can be used to verify that a given signer in the mapper store
+    ///   corresponds to a particular signer backend. Verification is done by asking the signer backend to sign a
+    ///   challenge and verifying that the produced signature corresponds to the stored public key. If verification is
+    ///   successful it means that we expect the signer backend to possess the keys attributed to it in the signer
+    ///   store.
+    /// 
+    /// - The name is an operator defined string that is expected to come from the Krill configuration file and which
+    ///   is intended to be a useful friendly human readable identifier to be displayed in the UI or in CLI output or
+    ///   included in log or error messages. The name can be changed later by calling `change_signer_name()`.
+    /// 
+    /// - The info string is intended to contain details retrieved from the signer backend that describe useful, 
+    ///   interesting and/or identifying properties of the backend. The info string can be changed later by calling
+    ///   `change_signer_info()`. This could be useful for example if the signer backend retains its content but is
+    ///   upgraded to a newer version, we can then update the info string in the signer store and the upgrade will be
+    ///   visible in the history of the store.
     pub fn add_signer(
         &self,
         signer_handle: &Handle,
@@ -362,6 +391,7 @@ impl SignerMapper {
         Ok(())
     }
 
+    /// Record the owner of a Krill key and its corresponding signer specific internal id.
     pub fn add_key(&self, signer_handle: &Handle, key_id: &KeyIdentifier, internal_key_id: &str) -> KrillResult<()> {
         // TODO: should version be something other than None here?
         let cmd = SignerInfoCommand::add_key(signer_handle, None, key_id, internal_key_id);
@@ -376,6 +406,7 @@ impl SignerMapper {
         Ok(())
     }
 
+    /// Retrieve the signer specific internal id corresponding to the given Krill key.
     pub fn get_key(&self, signer_handle: &Handle, key_id: &KeyIdentifier) -> KrillResult<String> {
         self.store
             .get_latest(signer_handle)?
@@ -385,10 +416,12 @@ impl SignerMapper {
             .ok_or_else(|| Error::SignerError(format!("Key with key id '{}' not found", key_id)))
     }
 
+    /// Get the complete set of known signer handles.
     pub fn get_signer_handles(&self) -> KrillResult<Vec<Handle>> {
         self.store.list().map_err(Error::AggregateStoreError)
     }
 
+    /// Get the handle of the signer that possesses the given Krill key, if any.
     pub fn get_signer_for_key(&self, key_id: &KeyIdentifier) -> KrillResult<Handle> {
         // Look for the key id in the key set of each set. Not very efficient but can be improved upon later if
         // needed, e.g. by creating on startup and maintaining an in-memory map of KeyIdentifier to signer Handles.
