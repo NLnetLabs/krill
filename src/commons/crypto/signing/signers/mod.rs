@@ -13,3 +13,6 @@ pub mod util;
 
 #[cfg(feature = "hsm")]
 pub mod probe;
+
+#[cfg(test)]
+pub mod mocksigner;
