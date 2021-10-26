@@ -231,10 +231,6 @@ impl SignerInfo {
     pub fn id(&self) -> &Handle {
         &self.id
     }
-    pub fn _signer_name(&self) -> &String {
-        &self.signer_name
-    }
-    // TODO: more getters?
 }
 
 impl Aggregate for SignerInfo {
@@ -336,7 +332,7 @@ impl SignerMapper {
         Ok(())
     }
 
-    pub fn remove_signer(&self, signer_handle: &Handle) -> KrillResult<()> {
+    pub fn _remove_signer(&self, signer_handle: &Handle) -> KrillResult<()> {
         self.store.drop_aggregate(signer_handle)?;
         Ok(())
     }
@@ -387,20 +383,6 @@ impl SignerMapper {
             .get(key_id)
             .cloned()
             .ok_or_else(|| Error::SignerError(format!("Key with key id '{}' not found", key_id)))
-    }
-
-    pub fn get_any_key(&self, signer_handle: &Handle) -> KrillResult<String> {
-        self.store
-            .get_latest(signer_handle)?
-            .keys
-            .values()
-            .next()
-            .cloned()
-            .ok_or_else(|| Error::SignerError("Signer does not have any keys".to_string()))
-    }
-
-    pub fn has_signer(&self, signer_handle: &Handle) -> KrillResult<bool> {
-        self.store.has(signer_handle).map_err(Error::AggregateStoreError)
     }
 
     pub fn get_signer_handles(&self) -> KrillResult<Vec<Handle>> {
