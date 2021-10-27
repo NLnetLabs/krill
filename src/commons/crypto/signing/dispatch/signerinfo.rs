@@ -18,7 +18,7 @@ type InitSignerInfoEvent = StoredEvent<InitSignerInfoDetails>;
 
 impl InitSignerInfoEvent {
     pub fn init(id: &Handle, signer_name: &str, signer_info: &str, public_key: &PublicKey) -> Self {
-        let public_key = hex::encode(public_key.to_info_bytes());
+        let public_key = base64::encode(public_key.to_info_bytes());
 
         StoredEvent::new(
             id,
@@ -216,7 +216,7 @@ struct SignerInfo {
     /// Information about the signer backend being used.
     signer_info: String,
 
-    /// The hex encoded bytes of an X.509 Subject Public Key Info
+    /// The base6 encoded bytes of an X.509 Subject Public Key Info
     /// public key that can be used to verify the identity of the
     /// signer. Should match the KeyIdentifier used in the id.
     public_key: String,
@@ -350,7 +350,7 @@ impl SignerMapper {
 
     pub fn get_signer_public_key(&self, signer_handle: &Handle) -> KrillResult<PublicKey> {
         let public_key_hex_str = self.store.get_latest(signer_handle)?.public_key.clone();
-        let public_key_bytes = hex::decode(public_key_hex_str).map_err(Error::signer)?;
+        let public_key_bytes = base64::decode(public_key_hex_str).map_err(Error::signer)?;
         let public_key = PublicKey::decode(&*public_key_bytes).map_err(Error::signer)?;
         Ok(public_key)
     }
