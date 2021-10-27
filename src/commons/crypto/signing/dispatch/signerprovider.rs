@@ -4,7 +4,7 @@ use rpki::repository::crypto::{
 
 use crate::commons::crypto::signers::{error::SignerError, softsigner::OpenSslSigner};
 
-#[cfg(all(test, features = "hsm"))]
+#[cfg(all(test, feature = "hsm"))]
 use crate::commons::crypto::signers::mocksigner::MockSigner;
 
 #[cfg(feature = "hsm")]
@@ -29,7 +29,7 @@ pub(crate) enum SignerProvider {
     #[cfg(feature = "hsm")]
     Pkcs11(Pkcs11Signer),
 
-    #[cfg(all(test, features = "hsm"))]
+    #[cfg(all(test, feature = "hsm"))]
     Mock(MockSigner),
 }
 
@@ -41,7 +41,7 @@ impl SignerProvider {
             SignerProvider::Kmip(signer) => signer.supports_random(),
             #[cfg(feature = "hsm")]
             SignerProvider::Pkcs11(signer) => signer.supports_random(),
-            #[cfg(all(test, features = "hsm"))]
+            #[cfg(all(test, feature = "hsm"))]
             SignerProvider::Mock(signer) => signer.supports_random(),
         }
     }
@@ -54,7 +54,7 @@ impl SignerProvider {
             SignerProvider::Kmip(signer) => signer.create_registration_key(),
             #[cfg(feature = "hsm")]
             SignerProvider::Pkcs11(signer) => signer.create_registration_key(),
-            #[cfg(all(test, features = "hsm"))]
+            #[cfg(all(test, feature = "hsm"))]
             SignerProvider::Mock(signer) => signer.create_registration_key(),
         }
     }
@@ -71,7 +71,7 @@ impl SignerProvider {
             SignerProvider::Kmip(signer) => signer.sign_registration_challenge(signer_private_key_id, challenge),
             #[cfg(feature = "hsm")]
             SignerProvider::Pkcs11(signer) => signer.sign_registration_challenge(signer_private_key_id, challenge),
-            #[cfg(all(test, features = "hsm"))]
+            #[cfg(all(test, feature = "hsm"))]
             SignerProvider::Mock(signer) => signer.sign_registration_challenge(signer_private_key_id, challenge),
         }
     }
@@ -84,7 +84,7 @@ impl SignerProvider {
             SignerProvider::Kmip(signer) => signer.set_handle(handle),
             #[cfg(feature = "hsm")]
             SignerProvider::Pkcs11(signer) => signer.set_handle(handle),
-            #[cfg(all(test, features = "hsm"))]
+            #[cfg(all(test, feature = "hsm"))]
             SignerProvider::Mock(signer) => signer.set_handle(handle),
         }
     }
@@ -97,7 +97,7 @@ impl SignerProvider {
             SignerProvider::Kmip(signer) => signer.get_name(),
             #[cfg(feature = "hsm")]
             SignerProvider::Pkcs11(signer) => signer.get_name(),
-            #[cfg(all(test, features = "hsm"))]
+            #[cfg(all(test, feature = "hsm"))]
             SignerProvider::Mock(signer) => signer.get_name(),
         }
     }
@@ -110,7 +110,7 @@ impl SignerProvider {
             SignerProvider::Kmip(signer) => signer.get_info(),
             #[cfg(feature = "hsm")]
             SignerProvider::Pkcs11(signer) => signer.get_info(),
-            #[cfg(all(test, features = "hsm"))]
+            #[cfg(all(test, feature = "hsm"))]
             SignerProvider::Mock(signer) => signer.get_info(),
         }
     }
@@ -128,7 +128,7 @@ impl Signer for SignerProvider {
             SignerProvider::Kmip(signer) => signer.create_key(algorithm),
             #[cfg(feature = "hsm")]
             SignerProvider::Pkcs11(signer) => signer.create_key(algorithm),
-            #[cfg(all(test, features = "hsm"))]
+            #[cfg(all(test, feature = "hsm"))]
             SignerProvider::Mock(signer) => signer.create_key(algorithm),
         }
     }
@@ -140,7 +140,7 @@ impl Signer for SignerProvider {
             SignerProvider::Kmip(signer) => signer.get_key_info(key),
             #[cfg(feature = "hsm")]
             SignerProvider::Pkcs11(signer) => signer.get_key_info(key),
-            #[cfg(all(test, features = "hsm"))]
+            #[cfg(all(test, feature = "hsm"))]
             SignerProvider::Mock(signer) => signer.get_key_info(key),
         }
     }
@@ -152,7 +152,7 @@ impl Signer for SignerProvider {
             SignerProvider::Kmip(signer) => signer.destroy_key(key),
             #[cfg(feature = "hsm")]
             SignerProvider::Pkcs11(signer) => signer.destroy_key(key),
-            #[cfg(all(test, features = "hsm"))]
+            #[cfg(all(test, feature = "hsm"))]
             SignerProvider::Mock(signer) => signer.destroy_key(key),
         }
     }
@@ -169,7 +169,7 @@ impl Signer for SignerProvider {
             SignerProvider::Kmip(signer) => signer.sign(key, algorithm, data),
             #[cfg(feature = "hsm")]
             SignerProvider::Pkcs11(signer) => signer.sign(key, algorithm, data),
-            #[cfg(all(test, features = "hsm"))]
+            #[cfg(all(test, feature = "hsm"))]
             SignerProvider::Mock(signer) => signer.sign(key, algorithm, data),
         }
     }
@@ -185,7 +185,7 @@ impl Signer for SignerProvider {
             SignerProvider::Kmip(signer) => signer.sign_one_off(algorithm, data),
             #[cfg(feature = "hsm")]
             SignerProvider::Pkcs11(signer) => signer.sign_one_off(algorithm, data),
-            #[cfg(all(test, features = "hsm"))]
+            #[cfg(all(test, feature = "hsm"))]
             SignerProvider::Mock(signer) => signer.sign_one_off(algorithm, data),
         }
     }
@@ -197,7 +197,7 @@ impl Signer for SignerProvider {
             SignerProvider::Kmip(signer) => signer.rand(target),
             #[cfg(feature = "hsm")]
             SignerProvider::Pkcs11(signer) => signer.rand(target),
-            #[cfg(all(test, features = "hsm"))]
+            #[cfg(all(test, feature = "hsm"))]
             SignerProvider::Mock(signer) => signer.rand(target),
         }
     }
