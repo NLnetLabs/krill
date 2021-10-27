@@ -14,5 +14,5 @@ pub mod util;
 #[cfg(feature = "hsm")]
 pub mod probe;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "hsm"))]
 pub mod mocksigner;
