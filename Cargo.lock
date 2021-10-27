@@ -1537,7 +1537,7 @@ dependencies = [
 [[package]]
 name = "rpki"
 version = "0.12.3-dev"
-source = "git+https://github.com/NLnetLabs/rpki-rs.git?branch=aspa-objects#5389b92bdcec983809a9365b5e1b35bb8ed821a9"
+source = "git+https://github.com/NLnetLabs/rpki-rs.git?branch=aspa-objects#81f8c15936626ebe2230c27de294ff90c039d5da"
 dependencies = [
  "base64 0.13.0",
  "bcder",
