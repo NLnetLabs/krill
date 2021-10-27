@@ -712,6 +712,19 @@ pub mod tests {
 
     use super::*;
 
+    fn create_signer_router(signer: Arc<SignerProvider>, signer_mapper: Arc<SignerMapper>) -> SignerRouter {
+        let active_signers = RwLock::new(HashMap::new());
+        let pending_signers = RwLock::new(vec![signer.clone()]);
+        SignerRouter {
+            default_signer: signer.clone(),
+            one_off_signer: signer.clone(),
+            rand_fallback_signer: signer.clone(),
+            signer_mapper: signer_mapper.clone(),
+            active_signers,
+            pending_signers,
+        }
+    }
+
     #[test]
     pub fn verify_that_a_usable_signer_is_registered_and_can_be_used() {
         test::test_under_tmp(|d| {
@@ -719,19 +732,10 @@ pub mod tests {
             let call_counts = Arc::new(MockSignerCallCounts::new());
             let signer_mapper = Arc::new(SignerMapper::build(&d).unwrap());
             let mock_signer = MockSigner::new(signer_mapper.clone(), false, call_counts.clone(), None, None);
+            let mock_signer = Arc::new(SignerProvider::Mock(mock_signer));
 
             // Create a SignerRouter that uses the mock signer with the mock signer starting in the pending signer set.
-            let mock_signer = Arc::new(SignerProvider::Mock(mock_signer));
-            let active_signers = RwLock::new(HashMap::new());
-            let pending_signers = RwLock::new(vec![mock_signer.clone()]);
-            let router = SignerRouter {
-                default_signer: mock_signer.clone(),
-                one_off_signer: mock_signer.clone(),
-                rand_fallback_signer: mock_signer.clone(),
-                signer_mapper: signer_mapper.clone(),
-                active_signers,
-                pending_signers,
-            };
+            let router = create_signer_router(mock_signer.clone(), signer_mapper.clone());
 
             // No signers have been registered with the SignerMapper yet
             assert_eq!(0, signer_mapper.get_signer_handles().unwrap().len());
@@ -787,16 +791,7 @@ pub mod tests {
             // otherwise we will lose its in-memory private key store. Keep the SignerMapper as the mock signer is
             // using it, and because destroying it and recreating it would just be like forcing it to re-read it's saved
             // state from disk (and we're not trying to test the AggregateStore here anyway!).
-            let active_signers = RwLock::new(HashMap::new());
-            let pending_signers = RwLock::new(vec![mock_signer.clone()]);
-            let router = SignerRouter {
-                default_signer: mock_signer.clone(),
-                one_off_signer: mock_signer.clone(),
-                rand_fallback_signer: mock_signer.clone(),
-                signer_mapper: signer_mapper.clone(),
-                active_signers,
-                pending_signers,
-            };
+            let router = create_signer_router(mock_signer.clone(), signer_mapper.clone());
 
             // Try to use the SignerRouter to generate a random value. This time around the SignerMapper should find
             // the existing signer in its records and only ask the signer to sign the registration challenge, but not
@@ -854,16 +849,7 @@ pub mod tests {
             // mock signer will actually increase twice because the SignerRouter will first challenge it to prove that
             // it is the already known signer. Without the identity key however the mock signer fails this identity
             // check and is registered again (and then sign challenged again, hence the double increment).
-            let active_signers = RwLock::new(HashMap::new());
-            let pending_signers = RwLock::new(vec![mock_signer.clone()]);
-            let router = SignerRouter {
-                default_signer: mock_signer.clone(),
-                one_off_signer: mock_signer.clone(),
-                rand_fallback_signer: mock_signer.clone(),
-                signer_mapper: signer_mapper.clone(),
-                active_signers,
-                pending_signers,
-            };
+            let router = create_signer_router(mock_signer.clone(), signer_mapper.clone());
 
             let mut rand_out: [u8; 1] = [0; 1];
             router.rand(&mut rand_out).unwrap();
@@ -875,7 +861,11 @@ pub mod tests {
             assert_eq!(6, call_counts.get(FnIdx::SupportsRandom));
             assert_eq!(6, call_counts.get(FnIdx::Rand));
 
-            // Two signers have been registered with the SignerMapper by this point
+            // Two signers have been registered with the SignerMapper by this point, one of which is now orphaned as
+            // the keys that it knows about refer to a signer backend that is no longer able to prove that it is the
+            // owner of these keys (because its identity key was deleted in the signer backend). Thus the SignerRouter
+            // doesn't know which signer to forward requests to in order to work with the keys owned by the orphaned
+            // signer.
             assert_eq!(2, signer_mapper.get_signer_handles().unwrap().len());
         });
     }
