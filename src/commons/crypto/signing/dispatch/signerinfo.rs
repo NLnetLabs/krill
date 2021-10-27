@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt, path::Path};
+use std::{collections::HashMap, fmt, path::Path, str::FromStr};
 
 use rpki::repository::crypto::{KeyIdentifier, PublicKey};
 
@@ -17,16 +17,23 @@ use crate::{
 type InitSignerInfoEvent = StoredEvent<InitSignerInfoDetails>;
 
 impl InitSignerInfoEvent {
-    pub fn init(id: &Handle, signer_name: &str, signer_info: &str, public_key: &PublicKey) -> Self {
-        let public_key = base64::encode(public_key.to_info_bytes());
-
+    pub fn init(
+        id: &Handle,
+        signer_name: &str,
+        signer_info: &str,
+        public_key: &PublicKey,
+        private_key_internal_id: &str,
+    ) -> Self {
         StoredEvent::new(
             id,
             0,
             InitSignerInfoDetails {
                 signer_name: signer_name.to_string(),
                 signer_info: signer_info.to_string(),
-                public_key,
+                signer_identity: SignerIdentity {
+                    public_key: base64::encode(public_key.to_info_bytes()),
+                    private_key_internal_id: private_key_internal_id.to_string(),
+                },
             },
         )
     }
@@ -36,7 +43,7 @@ impl InitSignerInfoEvent {
 struct InitSignerInfoDetails {
     pub signer_name: String,
     pub signer_info: String,
-    pub public_key: String,
+    pub signer_identity: SignerIdentity,
 }
 
 impl fmt::Display for InitSignerInfoDetails {
@@ -192,22 +199,26 @@ impl SignerInfoCommand {
 
 //------------ SignerInfo -----------------------------------------------------------------------------------------
 
-/// Defines a SignerInfo object. SignerInfos have a name and an age.
+#[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
+struct SignerIdentity {
+    /// The base6 encoded bytes of an X.509 Subject Public Key Info public key that can be used to verify the identity
+    /// of the signer.
+    public_key: String,
+
+    /// The internal signer backend specific identifier for the corresponding private key.
+    private_key_internal_id: String,
+}
+
+/// SignerInfo defines the set of keys created in a particular signer backend and the identity of that backend.
 ///
 #[derive(Clone, Deserialize, Serialize)]
 struct SignerInfo {
-    /// The id is needed when generating events. A string
-    /// representation of the signer registration internal key
-    /// identifier (that can be used to do signing) combined with
-    /// the string representation of the KeyIdentifier of the
-    /// public half of the same key.
+    /// The id is needed when generating events.
     id: Handle,
 
-    /// The version of for this particular SignerInfo. Versions
-    /// are incremented whenever events are applied. They are
-    /// used to store those and apply events in the correct
-    /// sequence, as well as to detect concurrency issues when
-    /// a command is sent.
+    /// The version of for this particular SignerInfo. Versions are incremented whenever events are applied. They are
+    /// used to store those and apply events in the correct sequence, as well as to detect concurrency issues when a
+    /// command is sent.
     version: u64,
 
     /// An operator assigned human readable name for this signer.
@@ -216,14 +227,11 @@ struct SignerInfo {
     /// Information about the signer backend being used.
     signer_info: String,
 
-    /// The base6 encoded bytes of an X.509 Subject Public Key Info
-    /// public key that can be used to verify the identity of the
-    /// signer. Should match the KeyIdentifier used in the id.
-    public_key: String,
+    /// Details needed to confirm the identity of the signer backend.
+    signer_identity: SignerIdentity,
 
-    /// The keys that the signer possesses identified by their
-    /// Krill KeyIdentifier and their corresponding signer specific
-    /// internal identifier.
+    /// The keys that the signer possesses identified by their Krill KeyIdentifier and their corresponding signer
+    /// specific internal identifier.
     keys: HashMap<KeyIdentifier, String>,
 }
 
@@ -247,7 +255,7 @@ impl Aggregate for SignerInfo {
             version: 1,
             signer_name: init.signer_name,
             signer_info: init.signer_info,
-            public_key: init.public_key,
+            signer_identity: init.signer_identity,
             keys: HashMap::new(),
         })
     }
@@ -322,14 +330,27 @@ impl SignerMapper {
 
     pub fn add_signer(
         &self,
-        signer_handle: &Handle,
         signer_name: &str,
         signer_info: &str,
         public_key: &PublicKey,
-    ) -> KrillResult<()> {
-        let init = InitSignerInfoEvent::init(signer_handle, signer_name, signer_info, public_key);
+        private_key_internal_id: &str,
+    ) -> KrillResult<Handle> {
+        let signer_handle = Handle::from_str(&uuid::Uuid::new_v4().to_string()).map_err(|err| {
+            Error::SignerError(format!(
+                "Generated UUID is not a valid signer handle: {}",
+                err.to_string()
+            ))
+        })?;
+
+        let init = InitSignerInfoEvent::init(
+            &signer_handle,
+            signer_name,
+            signer_info,
+            public_key,
+            private_key_internal_id,
+        );
         self.store.add(init)?;
-        Ok(())
+        Ok(signer_handle)
     }
 
     pub fn remove_signer(&self, signer_handle: &Handle) -> KrillResult<()> {
@@ -349,10 +370,19 @@ impl SignerMapper {
     }
 
     pub fn get_signer_public_key(&self, signer_handle: &Handle) -> KrillResult<PublicKey> {
-        let public_key_hex_str = self.store.get_latest(signer_handle)?.public_key.clone();
+        let public_key_hex_str = self.store.get_latest(signer_handle)?.signer_identity.public_key.clone();
         let public_key_bytes = base64::decode(public_key_hex_str).map_err(Error::signer)?;
         let public_key = PublicKey::decode(&*public_key_bytes).map_err(Error::signer)?;
         Ok(public_key)
+    }
+
+    pub fn get_signer_private_key_internal_id(&self, signer_handle: &Handle) -> KrillResult<String> {
+        Ok(self
+            .store
+            .get_latest(signer_handle)?
+            .signer_identity
+            .private_key_internal_id
+            .clone())
     }
 
     pub fn change_signer_info(&self, signer_handle: &Handle, signer_info: &str) -> KrillResult<()> {

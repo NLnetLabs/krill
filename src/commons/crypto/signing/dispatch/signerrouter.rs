@@ -13,7 +13,7 @@ use crate::commons::{
 };
 
 #[cfg(feature = "hsm")]
-use std::{collections::HashMap, str::FromStr, sync::RwLock};
+use std::{collections::HashMap, sync::RwLock};
 
 #[cfg(feature = "hsm")]
 use crate::commons::{
@@ -23,9 +23,6 @@ use crate::commons::{
         signers::kmip::KmipSigner,
     },
 };
-
-#[cfg(feature = "hsm")]
-const ENCODED_SIGNER_HANDLE_SEPARATOR: char = '-';
 
 /// Manages multiple Signers and routes requests to the appropriate Signer.
 ///
@@ -541,17 +538,6 @@ impl SignerRouter {
         signer_provider: &Arc<SignerProvider>,
         candidate_handle: &Handle,
     ) -> Result<IdentifyResult, ErrorString> {
-        let (key_identifier, signer_private_key_id) = match Self::decode_signer_handle(candidate_handle) {
-            Err(err) => {
-                error!(
-                    "Internal error: Signer handle '{}' is invalid: {}",
-                    candidate_handle, *err
-                );
-                return Ok(IdentifyResult::Corrupt);
-            }
-            Ok(res) => res,
-        };
-
         let handle_name = self.signer_mapper.get_signer_name(candidate_handle)?;
         let signer_name = signer_provider.get_name().to_string();
         trace!(
@@ -561,23 +547,22 @@ impl SignerRouter {
         );
 
         let public_key = match self.signer_mapper.get_signer_public_key(candidate_handle) {
-            Ok(res) => res,
-            Err(err) => {
-                error!(
-                    "Internal error: Identity public key for signer '{}' is invalid: {}",
-                    handle_name, err
-                );
-                return Ok(IdentifyResult::Corrupt);
-            }
-        };
+            Ok(res) => Ok(res),
+            Err(err) => match err {
+                crate::commons::error::Error::SignerError(err) => {
+                    error!(
+                        "Internal error: Identity public key for signer '{}' is invalid: {}",
+                        handle_name, err
+                    );
+                    return Ok(IdentifyResult::Corrupt);
+                }
+                err => Err(err),
+            },
+        }?;
 
-        if public_key.key_identifier() != key_identifier {
-            error!(
-                "Internal error: signer handle '{}' is invalid: key identifier mismatch",
-                candidate_handle
-            );
-            return Ok(IdentifyResult::Corrupt);
-        }
+        let signer_private_key_id = self
+            .signer_mapper
+            .get_signer_private_key_internal_id(candidate_handle)?;
 
         let challenge = "Krill signer verification challenge".as_bytes();
         let signature = match signer_provider.sign_registration_challenge(&signer_private_key_id, challenge) {
@@ -657,30 +642,16 @@ impl SignerRouter {
 
         debug!("Signer '{}' is ready and new, binding", signer_name);
 
-        let new_signer_handle = Self::encode_signer_handle(public_key.key_identifier(), &signer_private_key_id)?;
         let signer_info = signer_provider.get_info().unwrap_or("No signer info".to_string());
 
-        signer_provider.set_handle(new_signer_handle.clone());
-        self.signer_mapper
-            .add_signer(&new_signer_handle, &signer_name, &signer_info, &public_key)
-            .unwrap(); // TODO: handle me
+        let signer_handle =
+            self.signer_mapper
+                .add_signer(&signer_name, &signer_info, &public_key, &signer_private_key_id)?;
+
+        signer_provider.set_handle(signer_handle.clone());
 
         debug!("Signer '{}' binding complete", signer_name);
-        Ok(RegisterResult::ReadyVerified(new_signer_handle))
-    }
-
-    fn encode_signer_handle(key_id: KeyIdentifier, signer_private_key_id: &str) -> Result<Handle, ErrorString> {
-        Ok(Handle::from_str(&hex::encode(format!(
-            "{}{}{}",
-            key_id, ENCODED_SIGNER_HANDLE_SEPARATOR, signer_private_key_id
-        )))?)
-    }
-
-    fn decode_signer_handle(handle: &Handle) -> Result<(KeyIdentifier, String), ErrorString> {
-        String::from_utf8(hex::decode(handle)?)?
-            .split_once(ENCODED_SIGNER_HANDLE_SEPARATOR)
-            .ok_or(ErrorString::new("Invalid handle: missing separator"))
-            .and_then(|(kid_str, pkey_id)| Ok((KeyIdentifier::from_str(kid_str)?, pkey_id.to_string())))
+        Ok(RegisterResult::ReadyVerified(signer_handle))
     }
 }
 
