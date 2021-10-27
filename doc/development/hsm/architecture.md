@@ -181,6 +181,34 @@ Krill calling code -> KrillSigner -> SignerRouter
 
 - `SignerProvider` dispatchses requests using enum based dispatching. This approach was chosen over use of Rust traits due to complexities associated with traits (e.g. async traits are not yet officially supported) and the lack of requirement to support an arbitrary number of as yet unseen implementations of some trait. We know exactly how many different signer implementations we need to support: OpenSSL soft signer, PKCS#11 based signer and KMIP based signer.
 
+## Signer mapper stored data example
+
+From `<krill_data_dir>/signers/<signer_uuid>/snapshot.json`:
+```json
+{
+  "id": "a32392f6-da5d-4341-98c1-cecdb0c12416",
+  "version": 9,
+  "signer_name": "Pkcs11Signer - No config file name available yet",
+  "signer_info": "PKCS#11 Signer [token: My token 1 (model: SoftHSM v2, vendor: SoftHSM project), slot: 2146913893, server: SoftHSM (Cryptoki v2.6), library: libsofthsm2.so]",
+  "signer_identity": {
+    "public_key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwbJR0aHy3tFzXhs/lWlCfWpFH7xFk+HRyGA3GYTIsUBwwu2uS9QAZXb8X3NjPLSvw+0Cfcy9n7yHC6B4pQda13bxVSvshC1f4mUc/iXWtMLg4x/F2fJNcTGVW3DbmPWKMXQVeBboFMwF+FZll7EgMsvmiZXn6qeoLm5hfcjihqb88k+HUuMvsGcz939jOIirxv8xP6jT/vJGDxidgoBSIBL3AUSbjh0WEopAzGX8Z+nNvaAPtanhWEB7n0mktyTis4G+GPh1N0pOT5pGxEPf7BnOb1gnPTbb0sTz7M64vkXkxCL69Yxlz3c3MxW4zncwKmGwXo4cmEpN8CTWC5ORbQIDAQAB",
+    "private_key_internal_id": "32b25442dbf26971ffa556d2415810f80e3139d2"
+  },
+  "keys": {
+    "422A26E19291F094B5182FC993DF32B14682D9D2": "b740d70d1e6ad8ebc91d7011753cdb43b76b719b",
+    "87F9B52806A0E7B3812D87DDCC943FF51C8749B6": "03332ef8050c393a42395c4e55aba64c3d64c953",
+    "7858DEB28A517BF21F2B2D540A904FDB22615B76": "d322f65668fc7821c18f037237facce403a331df",
+    "63CDB21953376A88588990E77F423B4832A03F5A": "61f0c63e9288aed063fdfe8ca7482cd62544fc70",
+    "AB41906ECA2F59D7A8DC76DADF46F63062FE765B": "bc49cd8983ddc3177b47a87d19365d75cb4ecfc6",
+    "B83D0D7B9B8264F2170EA21C6CECE54A4D9F4549": "a76440202b5ab2113b4b9cdca199b5b38f23308e",
+    "395B687CB0BCAAE074A299BB08DA82911A83D971": "c0c0b61047dec3514d9f9ce19c0253c0c381bb3a",
+    "05770B676863B9459A19480B283E025DF0AD96BC": "a9a7bd64a9c48a112c639910b5528feede52dff9"
+  }
+}
+```
+
+Here we see an example of a PKCS#11 signer using the SoftHSMv2 PKCS#11 library. The snapshot includes the set of keys created by this signer with both their Krill `KeyIdentifier` and the CKA_ID stored with the key in SoftHSMv2. We also see the identity details needed to confirm that the backend is indeed the owner of these keys.
+
 ## Crate dependencies
 
 - Loading and interfacing with PKCS#11 libraries is handled by the [`pkcs11`](https://crates.io/crates/pkcs11) crate.
