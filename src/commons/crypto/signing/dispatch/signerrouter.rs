@@ -399,7 +399,7 @@ impl SignerRouter {
             // signers is actually one of these or is a new signer that we haven't seen before.
             let candidate_handles = self.get_candidate_signer_handles()?;
             trace!("{} signers were previously registered", candidate_handles.len());
-            
+
             // Block until we can get a write lock on the set of pending_signers as we will hopefully remove one or
             // more items from the set. Standard practice in Krill is to panic if a lock cannot be obtained.
             let mut pending_signers = self.pending_signers.write().unwrap();
