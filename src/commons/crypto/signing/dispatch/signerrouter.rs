@@ -710,22 +710,22 @@ impl Signer for SignerRouter {
 #[cfg(all(test, feature = "hsm"))]
 pub mod tests {
     use crate::{
-        commons::crypto::signers::mocksigner::{FnIdx, MockSigner, MockSignerCallCounts},
+        commons::crypto::signers::mocksigner::{
+            CreateRegistrationKeyErrorCb, FnIdx, MockSigner, MockSignerCallCounts, SignRegistrationChallengeErrorCb,
+        },
         test,
     };
 
     use super::*;
 
-    fn create_signer_router(signer: Arc<SignerProvider>, signer_mapper: Arc<SignerMapper>) -> SignerRouter {
-        let active_signers = RwLock::new(HashMap::new());
-        let pending_signers = RwLock::new(vec![signer.clone()]);
+    fn create_signer_router(all_signers: &[Arc<SignerProvider>], signer_mapper: Arc<SignerMapper>) -> SignerRouter {
         SignerRouter {
-            default_signer: signer.clone(),
-            one_off_signer: signer.clone(),
-            rand_fallback_signer: signer.clone(),
+            default_signer: all_signers[0].clone(),
+            one_off_signer: all_signers[0].clone(),
+            rand_fallback_signer: all_signers[0].clone(),
             signer_mapper: signer_mapper.clone(),
-            active_signers,
-            pending_signers,
+            active_signers: RwLock::new(HashMap::new()),
+            pending_signers: RwLock::new(all_signers.to_vec()),
         }
     }
 
@@ -739,7 +739,7 @@ pub mod tests {
             let mock_signer = Arc::new(SignerProvider::Mock(mock_signer));
 
             // Create a SignerRouter that uses the mock signer with the mock signer starting in the pending signer set.
-            let router = create_signer_router(mock_signer.clone(), signer_mapper.clone());
+            let router = create_signer_router(&[mock_signer.clone()], signer_mapper.clone());
 
             // No signers have been registered with the SignerMapper yet
             assert_eq!(0, signer_mapper.get_signer_handles().unwrap().len());
@@ -795,7 +795,7 @@ pub mod tests {
             // otherwise we will lose its in-memory private key store. Keep the SignerMapper as the mock signer is
             // using it, and because destroying it and recreating it would just be like forcing it to re-read it's saved
             // state from disk (and we're not trying to test the AggregateStore here anyway!).
-            let router = create_signer_router(mock_signer.clone(), signer_mapper.clone());
+            let router = create_signer_router(&[mock_signer.clone()], signer_mapper.clone());
 
             // Try to use the SignerRouter to generate a random value. This time around the SignerMapper should find
             // the existing signer in its records and only ask the signer to sign the registration challenge, but not
@@ -853,7 +853,7 @@ pub mod tests {
             // mock signer will actually increase twice because the SignerRouter will first challenge it to prove that
             // it is the already known signer. Without the identity key however the mock signer fails this identity
             // check and is registered again (and then sign challenged again, hence the double increment).
-            let router = create_signer_router(mock_signer.clone(), signer_mapper.clone());
+            let router = create_signer_router(&[mock_signer.clone()], signer_mapper.clone());
 
             let mut rand_out: [u8; 1] = [0; 1];
             router.rand(&mut rand_out).unwrap();
@@ -871,6 +871,89 @@ pub mod tests {
             // doesn't know which signer to forward requests to in order to work with the keys owned by the orphaned
             // signer.
             assert_eq!(2, signer_mapper.get_signer_handles().unwrap().len());
+        });
+    }
+
+    #[test]
+    pub fn verify_that_unusable_signers_are_not_registered_nor_retried() {
+        fn perm_unusable() -> SignerError {
+            SignerError::PermanentlyUnusable
+        }
+
+        fn internal_error() -> SignerError {
+            SignerError::Other("internal error".to_string())
+        }
+
+        fn temp_unavail() -> SignerError {
+            SignerError::TemporarilyUnavailable
+        }
+
+        fn create_broken_signer(
+            signer_mapper: Arc<SignerMapper>,
+            call_counts: Arc<MockSignerCallCounts>,
+            create_registration_key_error_cb: Option<CreateRegistrationKeyErrorCb>,
+            sign_registration_challenge_error_cb: Option<SignRegistrationChallengeErrorCb>,
+        ) -> Arc<SignerProvider> {
+            Arc::new(SignerProvider::Mock(MockSigner::new(
+                signer_mapper,
+                false,
+                call_counts,
+                create_registration_key_error_cb,
+                sign_registration_challenge_error_cb,
+            )))
+        }
+
+        fn create_broken_signers(sm: Arc<SignerMapper>, cc: Arc<MockSignerCallCounts>) -> Vec<Arc<SignerProvider>> {
+            let mut broken_signers = Vec::new();
+            broken_signers.push(create_broken_signer(sm.clone(), cc.clone(), Some(perm_unusable), None));
+            broken_signers.push(create_broken_signer(sm.clone(), cc.clone(), Some(internal_error), None));
+            broken_signers.push(create_broken_signer(sm.clone(), cc.clone(), Some(temp_unavail), None));
+            broken_signers.push(create_broken_signer(sm.clone(), cc.clone(), None, Some(perm_unusable)));
+            broken_signers.push(create_broken_signer(sm.clone(), cc.clone(), None, Some(internal_error)));
+            broken_signers.push(create_broken_signer(sm.clone(), cc.clone(), None, Some(temp_unavail)));
+            broken_signers
+        }
+
+        test::test_under_tmp(|d| {
+            let call_counts = Arc::new(MockSignerCallCounts::new());
+            let signer_mapper = Arc::new(SignerMapper::build(&d).unwrap());
+            let broken_signers = create_broken_signers(signer_mapper.clone(), call_counts.clone());
+
+            // Create a SignerRouter that uses the mock signer with the mock signer starting in the pending signer set.
+            let router = create_signer_router(broken_signers.as_slice(), signer_mapper.clone());
+
+            // No signers have been registered with the SignerMapper yet
+            assert_eq!(0, signer_mapper.get_signer_handles().unwrap().len());
+
+            let mut rand_out: [u8; 1] = [0; 1];
+
+            // Try to use the SignerRouter to generate a random value. This should cause the SignerRouter to contact
+            // the mock signer, ask it to create a registration key, verify that it can sign correctly with that key,
+            // assign a signer mapper handle to the signer, then check for random number generation support and finally
+            // actually generate the random number.
+            router.rand(&mut rand_out).unwrap();
+
+            // The number of attempts to register a signer should have increased by the number of signers.
+            // Half of the signers should fail at the registration step, the other half at the challenge signing step.
+            // So the number of signers that we succeeded in moving out of hte pending set to the active set and
+            // registering with the signer mapper should be zero.
+            assert_eq!(6, call_counts.get(FnIdx::CreateRegistrationKey));
+            assert_eq!(3, call_counts.get(FnIdx::SignRegistrationChallenge));
+            assert_eq!(0, signer_mapper.get_signer_handles().unwrap().len());
+
+            //
+            // Try again.
+            //
+            router.rand(&mut rand_out).unwrap();
+
+            // The signers that were permanently unusable at registration should not be tried again.
+            assert_eq!(6 + 2, call_counts.get(FnIdx::CreateRegistrationKey));
+
+            // The signers that were permanently unusable at challenge signing should not be tried again.
+            assert_eq!(3 + 1, call_counts.get(FnIdx::SignRegistrationChallenge));
+
+            // And the end result should be that no signers were registered with the signer mapper.
+            assert_eq!(0, signer_mapper.get_signer_handles().unwrap().len());
         });
     }
 }
