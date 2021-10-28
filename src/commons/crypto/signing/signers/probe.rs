@@ -156,10 +156,16 @@ impl<C, E, S> StatefulProbe<C, E, S> {
                     if !is_time_to_check(retry_interval, *last_probe_time) {
                         if let Some(instant) = last_probe_time {
                             let until = retry_interval.saturating_sub(instant.elapsed());
-                            info!("Signer availability checking is cooling off: {:?}s remaining", until.as_secs());
+                            info!(
+                                "Signer availability checking is cooling off: {:?}s remaining",
+                                until.as_secs()
+                            );
                         } else {
                             // This should be unreachable
-                            info!("Signer availability checking is cooling off for {:?}s", retry_interval.as_secs());
+                            info!(
+                                "Signer availability checking is cooling off for {:?}s",
+                                retry_interval.as_secs()
+                            );
                         }
                         Some(Err(ProbeError::AwaitingNextProbe))
                     } else {
