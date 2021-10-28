@@ -146,10 +146,10 @@ impl MockSigner {
 // interface expected by SignerProvider
 impl MockSigner {
     pub fn create_registration_key(&self) -> Result<(PublicKey, String), SignerError> {
+        self.inc_fn_call_count(FnIdx::CreateRegistrationKey);
         if let Some(err_cb) = &self.create_registration_key_error_cb {
             return Err((err_cb)());
         }
-        self.inc_fn_call_count(FnIdx::CreateRegistrationKey);
         let (public_key, _, _, internal_id) = self.build_key().unwrap();
         Ok((public_key, internal_id))
     }
@@ -159,10 +159,10 @@ impl MockSigner {
         signer_private_key_id: &str,
         challenge: &D,
     ) -> Result<Signature, SignerError> {
+        self.inc_fn_call_count(FnIdx::SignRegistrationChallenge);
         if let Some(err_cb) = &self.sign_registration_challenge_error_cb {
             return Err((err_cb)());
         }
-        self.inc_fn_call_count(FnIdx::SignRegistrationChallenge);
         let pkey = self.load_key(signer_private_key_id).ok_or(SignerError::KeyNotFound)?;
 
         // sign the given data using the loaded private key
