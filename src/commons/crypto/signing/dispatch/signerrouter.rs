@@ -391,11 +391,15 @@ impl SignerRouter {
     }
 
     fn do_ready_signer_binding(&self) -> Result<(), String> {
-        if self.has_pending_signers() {
+        let num_pending_signers = self.pending_signers.read().unwrap().len();
+        if num_pending_signers > 0 {
+            trace!("Attempting to bind {} pending signers", num_pending_signers);
+
             // Fetch the handle of every signer previously created in the [SignerMapper] to see if any of the pending
             // signers is actually one of these or is a new signer that we haven't seen before.
             let candidate_handles = self.get_candidate_signer_handles()?;
-
+            trace!("{} signers were previously registered", candidate_handles.len());
+            
             // Block until we can get a write lock on the set of pending_signers as we will hopefully remove one or
             // more items from the set. Standard practice in Krill is to panic if a lock cannot be obtained.
             let mut pending_signers = self.pending_signers.write().unwrap();
@@ -416,6 +420,7 @@ impl SignerRouter {
                     .and_then(|verify_result| match verify_result {
                         IdentifyResult::Unavailable => {
                             // Signer isn't ready yet, leave it in the pending set and try again next time.
+                            trace!("Signer '{}' is unavailable", signer_name);
                             Ok(true)
                         }
                         IdentifyResult::Identified(signer_handle) => {
@@ -435,6 +440,7 @@ impl SignerRouter {
                                     RegisterResult::NotReady => {
                                         // Strange, it was ready just now when we verified it ... leave it in the
                                         // pending set and try again next time.
+                                        trace!("Signer '{}' is not ready", signer_name);
                                         Ok(true)
                                     }
                                     RegisterResult::ReadyVerified(signer_handle) => {
@@ -449,7 +455,7 @@ impl SignerRouter {
                                     }
                                     RegisterResult::ReadyUnusable => {
                                         // Signer registration failed, remove it from the pending set
-                                        warn!("Signer '{}' is not usable", signer_name);
+                                        warn!("Signer '{}' could not be registered: signer is not usable", signer_name);
                                         Ok(false)
                                     }
                                 },
@@ -457,7 +463,7 @@ impl SignerRouter {
                         }
                         IdentifyResult::Unusable => {
                             // Signer is ready and unusable, remove it from the pending set
-                            warn!("Signer '{}' is not usable", signer_name);
+                            warn!("Signer '{}' could not be identified: signer is not usable", signer_name);
                             Ok(false)
                         }
                         IdentifyResult::Corrupt => {
@@ -474,10 +480,6 @@ impl SignerRouter {
         }
 
         Ok(())
-    }
-
-    fn has_pending_signers(&self) -> bool {
-        !self.pending_signers.read().unwrap().is_empty()
     }
 
     fn get_candidate_signer_handles(&self) -> Result<Vec<Handle>, String> {
@@ -621,6 +623,8 @@ impl SignerRouter {
 
     fn register_new_signer(&self, signer_provider: &Arc<SignerProvider>) -> Result<RegisterResult, ErrorString> {
         let signer_name = signer_provider.get_name().to_string();
+
+        trace!("Attempting to register signer '{}'", signer_name);
 
         let (public_key, signer_private_key_id) = match signer_provider.create_registration_key() {
             Err(SignerError::TemporarilyUnavailable) => return Ok(RegisterResult::NotReady),
