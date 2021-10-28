@@ -194,7 +194,7 @@ impl Pkcs11Context {
         self.logged_cryptoki_call_mut("C_Initialize", |cryptoki| cryptoki.initialize(init_args))
     }
 
-    fn finalize(&mut self) -> Result<(), pkcs11::errors::Error> {
+    pub fn finalize(&mut self) -> Result<(), pkcs11::errors::Error> {
         self.logged_cryptoki_call_mut("C_Finalize", |cryptoki| cryptoki.finalize())
     }
 

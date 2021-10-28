@@ -245,6 +245,15 @@ impl Pkcs11Signer {
     fn probe_server(
         status: &ProbeStatus<ConnectionSettings, SignerError, UsableServerState>,
     ) -> Result<UsableServerState, ProbeError<SignerError>> {
+        fn force_cache_flush(readable_ctx: RwLockReadGuard<Pkcs11Context>, context: Arc<RwLock<Pkcs11Context>>) {
+            // Finalize the PKCS#11 library so that we re-initialize it on next use, otherwise it just caches (at
+            // least with SoftHSMv2 and YubiHSM) the token info and doesn't ever report the presence of the token
+            // even when it becomes available.
+            std::mem::drop(readable_ctx);
+            let mut writable_ctx = context.write().unwrap();
+            let _ = writable_ctx.finalize();
+        }
+
         let signer_name = "TODO";
         let conn_settings = status.config()?;
 
@@ -317,11 +326,15 @@ impl Pkcs11Signer {
                 match slot_id {
                     Some(slot_id) => slot_id,
                     None => {
-                        error!(
+                        let err_msg = format!(
                             "[{}] No PKCS#11 slot found for library '{}' with label '{}'",
                             signer_name, lib_name, slot_label
                         );
-                        return Err(ProbeError::CompletedUnusable);
+
+                        // While the slot is not available now, it might be later.
+                        force_cache_flush(readable_ctx, conn_settings.context.clone());
+                        error!("{}", err_msg);
+                        return Err(ProbeError::CallbackFailed(SignerError::Pkcs11Error(err_msg)));
                     }
                 }
             } else {
@@ -333,21 +346,32 @@ impl Pkcs11Signer {
             };
 
             let slot_info = readable_ctx.get_slot_info(slot_id).map_err(|err| {
-                error!(
+                let err_msg = format!(
                     "[{}] Unable to read PKCS#11 slot info for library '{}' slot {}: {}",
                     signer_name, lib_name, slot_id, err
                 );
-                ProbeError::CompletedUnusable
+
+                // While the slot is not available now, it might be later.
+                force_cache_flush(readable_ctx, conn_settings.context.clone());
+                error!("{}", err_msg);
+                ProbeError::CallbackFailed(SignerError::Pkcs11Error(err_msg))
             })?;
 
             trace!("[{}] C_GetSlotInfo(): {:?}", signer_name, slot_info);
 
+            // Need to reacquire this as it may have been dropped by passing it to force_cache_flush().
+            let readable_ctx = conn_settings.context.read().unwrap();
+
             let token_info = readable_ctx.get_token_info(slot_id).map_err(|err| {
-                error!(
+                let err_msg = format!(
                     "[{}] Unable to read PKCS#11 token info for library '{}' slot {}: {}",
                     signer_name, lib_name, slot_id, err
                 );
-                ProbeError::CompletedUnusable
+
+                // While the token is not available now, it might be later.
+                force_cache_flush(readable_ctx, conn_settings.context.clone());
+                error!("{}", err_msg);
+                ProbeError::CallbackFailed(SignerError::Pkcs11Error(err_msg))
             })?;
 
             trace!("[{}] C_GetTokenInfo(): {:?}", signer_name, token_info);
