@@ -154,6 +154,13 @@ impl<C, E, S> StatefulProbe<C, E, S> {
                     // haven't tried checking again for a while, then try contacting it again. If we can't establish
                     // whether or not the server is usable, return an error.
                     if !is_time_to_check(retry_interval, *last_probe_time) {
+                        if let Some(instant) = last_probe_time {
+                            let until = retry_interval.saturating_sub(instant.elapsed());
+                            info!("Signer availability checking is cooling off: {:?}s remaining", until.as_secs());
+                        } else {
+                            // This should be unreachable
+                            info!("Signer availability checking is cooling off for {:?}s", retry_interval.as_secs());
+                        }
                         Some(Err(ProbeError::AwaitingNextProbe))
                     } else {
                         None
