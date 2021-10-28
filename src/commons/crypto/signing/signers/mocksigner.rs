@@ -58,10 +58,9 @@ impl MockSignerCallCounts {
     }
 }
 
-pub type CreateRegistrationKeyErrorCb = fn() -> SignerError;
-pub type SignRegistrationChallengeErrorCb = fn() -> SignerError;
+pub type CreateRegistrationKeyErrorCb = fn(&MockSignerCallCounts) -> Result<(), SignerError>;
+pub type SignRegistrationChallengeErrorCb = fn(&MockSignerCallCounts) -> Result<(), SignerError>;
 
-#[derive(Debug)]
 pub struct MockSigner {
     fn_call_counts: Arc<MockSignerCallCounts>,
     supports_random: bool,
@@ -70,6 +69,12 @@ pub struct MockSigner {
     keys: RwLock<HashMap<String, PKey<Private>>>,
     create_registration_key_error_cb: Option<CreateRegistrationKeyErrorCb>,
     sign_registration_challenge_error_cb: Option<SignRegistrationChallengeErrorCb>,
+}
+
+impl std::fmt::Debug for MockSigner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MockSigner").finish()
+    }
 }
 
 // test interface
@@ -148,7 +153,7 @@ impl MockSigner {
     pub fn create_registration_key(&self) -> Result<(PublicKey, String), SignerError> {
         self.inc_fn_call_count(FnIdx::CreateRegistrationKey);
         if let Some(err_cb) = &self.create_registration_key_error_cb {
-            return Err((err_cb)());
+            let _ = (err_cb)(&self.fn_call_counts)?;
         }
         let (public_key, _, _, internal_id) = self.build_key().unwrap();
         Ok((public_key, internal_id))
@@ -161,7 +166,7 @@ impl MockSigner {
     ) -> Result<Signature, SignerError> {
         self.inc_fn_call_count(FnIdx::SignRegistrationChallenge);
         if let Some(err_cb) = &self.sign_registration_challenge_error_cb {
-            return Err((err_cb)());
+            let _ = (err_cb)(&self.fn_call_counts)?;
         }
         let pkey = self.load_key(signer_private_key_id).ok_or(SignerError::KeyNotFound)?;
 

@@ -876,16 +876,16 @@ pub mod tests {
 
     #[test]
     pub fn verify_that_unusable_signers_are_not_registered_nor_retried() {
-        fn perm_unusable() -> SignerError {
-            SignerError::PermanentlyUnusable
+        fn perm_unusable(_: &MockSignerCallCounts) -> Result<(), SignerError> {
+            Err(SignerError::PermanentlyUnusable)
         }
 
-        fn internal_error() -> SignerError {
-            SignerError::Other("internal error".to_string())
+        fn internal_error(_: &MockSignerCallCounts) -> Result<(), SignerError> {
+            Err(SignerError::Other("internal error".to_string()))
         }
 
-        fn temp_unavail() -> SignerError {
-            SignerError::TemporarilyUnavailable
+        fn temp_unavail(_: &MockSignerCallCounts) -> Result<(), SignerError> {
+            Err(SignerError::TemporarilyUnavailable)
         }
 
         fn create_broken_signer(
@@ -919,7 +919,7 @@ pub mod tests {
             let signer_mapper = Arc::new(SignerMapper::build(&d).unwrap());
             let broken_signers = create_broken_signers(signer_mapper.clone(), call_counts.clone());
 
-            // Create a SignerRouter that uses the mock signer with the mock signer starting in the pending signer set.
+            // Create a SignerRouter that has access to all of the broken signers
             let router = create_signer_router(broken_signers.as_slice(), signer_mapper.clone());
 
             // No signers have been registered with the SignerMapper yet
@@ -928,14 +928,14 @@ pub mod tests {
             let mut rand_out: [u8; 1] = [0; 1];
 
             // Try to use the SignerRouter to generate a random value. This should cause the SignerRouter to contact
-            // the mock signer, ask it to create a registration key, verify that it can sign correctly with that key,
-            // assign a signer mapper handle to the signer, then check for random number generation support and finally
-            // actually generate the random number.
+            // all of the mock signers, asking them to create a registration key, and if that succeeds to then verify
+            // that the signer can sign correctly with that key. None of the broken signers will succeed at these steps
+            // and so the counter of registered signers will remain at zero.
             router.rand(&mut rand_out).unwrap();
 
             // The number of attempts to register a signer should have increased by the number of signers.
             // Half of the signers should fail at the registration step, the other half at the challenge signing step.
-            // So the number of signers that we succeeded in moving out of hte pending set to the active set and
+            // So the number of signers that we succeeded in moving out of the pending set to the active set and
             // registering with the signer mapper should be zero.
             assert_eq!(6, call_counts.get(FnIdx::CreateRegistrationKey));
             assert_eq!(3, call_counts.get(FnIdx::SignRegistrationChallenge));
@@ -954,6 +954,63 @@ pub mod tests {
 
             // And the end result should be that no signers were registered with the signer mapper.
             assert_eq!(0, signer_mapper.get_signer_handles().unwrap().len());
+        });
+    }
+
+    #[test]
+    pub fn verify_that_temporarily_unavailable_signers_are_registered_when_available() {
+        fn temp_unavail(call_counts: &MockSignerCallCounts) -> Result<(), SignerError> {
+            if call_counts.get(FnIdx::CreateRegistrationKey) == 1 {
+                // Fail the first time registration is attempted
+                Err(SignerError::TemporarilyUnavailable)
+            } else {
+                // Succeed on subsequent attempts
+                Ok(())
+            }
+        };
+
+        test::test_under_tmp(|d| {
+            let call_counts = Arc::new(MockSignerCallCounts::new());
+            let signer_mapper = Arc::new(SignerMapper::build(&d).unwrap());
+
+            let temp_unavail_signer = Arc::new(SignerProvider::Mock(MockSigner::new(
+                signer_mapper.clone(),
+                false,
+                call_counts.clone(),
+                Some(temp_unavail),
+                None,
+            )));
+
+            // Create a SignerRouter that uses the mock signer with the mock signer starting in the pending signer set.
+            let router = create_signer_router(&[temp_unavail_signer], signer_mapper.clone());
+
+            // No signers have been registered with the SignerMapper yet
+            assert_eq!(0, signer_mapper.get_signer_handles().unwrap().len());
+
+            let mut rand_out: [u8; 1] = [0; 1];
+
+            // Try to use the SignerRouter to generate a random value. This should cause the SignerRouter to contact
+            // the mock signer, ask it to create a registration key, verify that it can sign correctly with that key,
+            // assign a signer mapper handle to the signer, then check for random number generation support and finally
+            // actually generate the random number. This should fail the first time due to the logic imlpemented by the
+            // temp_avail() function above.
+            router.rand(&mut rand_out).unwrap();
+
+            // The number of attempts to register a signer should have increased by one.
+            assert_eq!(1, call_counts.get(FnIdx::CreateRegistrationKey));
+            assert_eq!(0, call_counts.get(FnIdx::SignRegistrationChallenge));
+            assert_eq!(0, signer_mapper.get_signer_handles().unwrap().len());
+
+            //
+            // Try again. We should succeed the second time due to the logic imlpemented by the temp_avail() function
+            // above.
+            //
+            router.rand(&mut rand_out).unwrap();
+
+            // We should be all green now
+            assert_eq!(2, call_counts.get(FnIdx::CreateRegistrationKey));
+            assert_eq!(1, call_counts.get(FnIdx::SignRegistrationChallenge));
+            assert_eq!(1, signer_mapper.get_signer_handles().unwrap().len());
         });
     }
 }
