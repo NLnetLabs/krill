@@ -1412,17 +1412,17 @@ impl ParentStatus {
         self.last_exchange.as_ref().map(|e| e.to_failure_opt()).flatten()
     }
 
-    fn set_next_exchange_plus_seconds(&mut self, next_seconds: i64) {
-        self.next_exchange_before += Duration::seconds(next_seconds);
+    fn set_next_exchange(&mut self, next_run_seconds: i64) {
+        self.next_exchange_before = Timestamp::now_plus_seconds(next_run_seconds);
     }
 
-    fn set_failure(&mut self, uri: ServiceUri, error: ErrorResponse, next_seconds: i64) {
+    fn set_failure(&mut self, uri: ServiceUri, error: ErrorResponse, next_run_seconds: i64) {
         self.last_exchange = Some(ParentExchange {
             timestamp: Timestamp::now(),
             uri,
             result: ExchangeResult::Failure(error),
         });
-        self.set_next_exchange_plus_seconds(next_seconds);
+        self.set_next_exchange(next_run_seconds);
     }
 
     fn set_entitlements(&mut self, uri: ServiceUri, entitlements: &Entitlements, next_run_seconds: i64) {
@@ -1444,7 +1444,7 @@ impl ParentStatus {
         }
 
         self.all_resources = all_resources;
-        self.set_next_exchange_plus_seconds(next_run_seconds);
+        self.set_next_exchange(next_run_seconds);
     }
 
     fn set_last_updated(&mut self, uri: ServiceUri, next_run_seconds: i64) {
@@ -1455,7 +1455,7 @@ impl ParentStatus {
             result: ExchangeResult::Success,
         });
         self.last_success = Some(timestamp);
-        self.set_next_exchange_plus_seconds(next_run_seconds);
+        self.set_next_exchange(next_run_seconds);
     }
 }
 
@@ -1844,18 +1844,11 @@ impl Timestamp {
         Timestamp::now().minus_hours(hours)
     }
 
-    pub fn now_minus_seconds(seconds: i64) -> Self {
-        Timestamp::now().minus_seconds(seconds)
-    }
-
+    
     pub fn minus_hours(self, hours: i64) -> Self {
         self - Duration::hours(hours)
     }
-
-    pub fn minus_seconds(self, seconds: i64) -> Self {
-        self - Duration::seconds(seconds)
-    }
-
+    
     pub fn now_plus_minutes(minutes: i64) -> Self {
         Timestamp::now().plus_minutes(minutes)
     }
@@ -1863,6 +1856,23 @@ impl Timestamp {
     pub fn plus_minutes(self, minutes: i64) -> Self {
         self + Duration::minutes(minutes)
     }
+
+    pub fn minus_seconds(self, seconds: i64) -> Self {
+        self - Duration::seconds(seconds)
+    }
+
+    pub fn plus_seconds(self, seconds: i64) -> Self {
+        self - Duration::seconds(seconds)
+    }
+    
+    pub fn now_minus_seconds(seconds: i64) -> Self {
+        Timestamp::now().minus_seconds(seconds)
+    }
+
+    pub fn now_plus_seconds(seconds: i64) -> Self {
+        Timestamp::now().plus_seconds(seconds)
+    }
+    
 
     pub fn to_rfc3339(&self) -> String {
         Time::from(*self).to_rfc3339()
