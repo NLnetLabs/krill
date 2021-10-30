@@ -1,5 +1,16 @@
 # Change Log
 
+## 0.9.3 (RC1) 'The Thundering Herd'
+
+This release adds a (configurable) extra random 'jitter' time between 0 and 240 minutes,
+by default, for scheduled re-issuing of manifest and CRLs. The reason for this change is
+that with many Krill CAs publishing at a Publication Server every 10 minutes we frequently
+see that many CAs re-publish at exactly the same time of day. With this change this load
+should be spread out.
+
+Note that this does not affect publishing changes to content, such as ROAs. Such changes
+are still published immediately.
+
 ## 0.9.2 'Motive and Opportunity'
 
 This release includes two features aimed at users who run a Krill CA to maintain ROAs:
