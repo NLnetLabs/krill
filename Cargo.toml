@@ -60,6 +60,13 @@ urlparse              = { version = "^0.7", optional = true }
 uuid                  = { version = "^0.8", features = [ "v4"] }
 xml-rs                = "^0.8"
 
+# Disable compiler optimizations for the pkcs11 crate because otherwise with a release build the
+# `pReserved = ptr::null_mut()` assignment done by `CK_C_INITIALIZE_ARGS::default()` appears to be optimized out. This
+# causes SoftHSMv2 to fail with error CKR_ARGUMENTS_BAD and to log to syslog "SoftHSM.cpp(436): pReserved must be set to
+# NULL_PTR". Disabling optimizations for the pkcs11 crate "solves" this problem.
+[profile.release.package.pkcs11]
+opt-level = 0
+
 [target.'cfg(unix)'.dependencies]
 libc            = "^0.2"
 syslog          = "^4.0"
