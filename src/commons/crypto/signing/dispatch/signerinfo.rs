@@ -1,6 +1,6 @@
 //! An event sourcing aggregate store for capturing information about signer backends and set of keys they possess.
 
-use std::{collections::HashMap, fmt, path::Path};
+use std::{collections::HashMap, fmt, path::Path, str::FromStr};
 
 use rpki::repository::crypto::{KeyIdentifier, PublicKey};
 
