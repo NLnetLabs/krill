@@ -14,7 +14,7 @@
 //! way to improve this could be to invoke the library in another thread and way a maximum amount of time in the
 //! invoking thread before deciding to give up on the spawned thread that is taking too long.
 use std::{
-    collections::HashMap,
+    collections::{hash_map::Entry, HashMap},
     path::Path,
     sync::{Arc, RwLock},
 };
@@ -78,25 +78,37 @@ impl Pkcs11Context {
 
         let mut locked_contexts = contexts.write().unwrap();
 
-        let ctx_wrapper = locked_contexts
-            .entry(lib_file_name)
-            .or_insert_with_key(|lib_file_name| {
-                // Load the library if not already in the HashMap.
-                trace!("Loading PKCS#11 library '{:?}'", lib_path);
-                let ctx = match Ctx::new(lib_path) {
-                    Ok(ctx) => Some(ctx),
-                    Err(err) => {
-                        error!("Failed to load PKCS#11 library '{:?}': {}", lib_path, err);
-                        None
-                    }
-                };
+        // Entry::or_insert_with_key() isn't available until Rust 1.50
+        fn or_insert_with_key<'a, F: FnOnce(&String) -> Arc<RwLock<Pkcs11Context>>>(
+            e: Entry<'a, String, Arc<RwLock<Pkcs11Context>>>,
+            default: F,
+        ) -> &'a mut Arc<RwLock<Pkcs11Context>> {
+            match e {
+                Entry::Occupied(entry) => entry.into_mut(),
+                Entry::Vacant(entry) => {
+                    let value = default(entry.key());
+                    entry.insert(value)
+                }
+            }
+        }
 
-                // Make the context object usable in a multi-threaded environment
-                Arc::new(RwLock::new(Pkcs11Context {
-                    lib_file_name: lib_file_name.clone(),
-                    ctx,
-                }))
-            });
+        let ctx_wrapper = or_insert_with_key(locked_contexts.entry(lib_file_name), |lib_file_name| {
+            // Load the library if not already in the HashMap.
+            trace!("Loading PKCS#11 library '{:?}'", lib_path);
+            let ctx = match Ctx::new(lib_path) {
+                Ok(ctx) => Some(ctx),
+                Err(err) => {
+                    error!("Failed to load PKCS#11 library '{:?}': {}", lib_path, err);
+                    None
+                }
+            };
+
+            // Make the context object usable in a multi-threaded environment
+            Arc::new(RwLock::new(Pkcs11Context {
+                lib_file_name: lib_file_name.clone(),
+                ctx,
+            }))
+        });
 
         if ctx_wrapper.read().unwrap().ctx.is_none() {
             return Err(SignerError::Pkcs11Error(format!(

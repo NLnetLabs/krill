@@ -390,6 +390,12 @@ impl KmipSigner {
 
     /// Given a KeyIdentifier lookup the corresponding KMIP public and private key pair IDs.
     pub(super) fn lookup_kmip_key_ids(&self, key_id: &KeyIdentifier) -> Result<KmipKeyPairIds, KeyError<SignerError>> {
+        // split_once isn't available until Rust 1.52
+        pub fn split_once<'a>(s: &'a str, delimiter: char) -> Option<(&'a str, &'a str)> {
+            let (start, end) = s.split_at(s.find(delimiter)?);
+            Some((&start[..=(start.len()-1)], &end[1..]))
+        }
+
         let readable_handle = self.handle.read().unwrap();
         let signer_handle = readable_handle.as_ref().ok_or(KeyError::KeyNotFound)?;
 
@@ -398,7 +404,7 @@ impl KmipSigner {
             .get_key(signer_handle, key_id)
             .map_err(|_| KeyError::KeyNotFound)?;
 
-        let (public_key_id, private_key_id) = internal_key_id.split_once(':').unwrap();
+        let (public_key_id, private_key_id) = split_once(&internal_key_id, ':').unwrap();
 
         Ok(KmipKeyPairIds {
             public_key_id: public_key_id.to_string(),

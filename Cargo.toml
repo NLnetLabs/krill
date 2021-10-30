@@ -36,7 +36,7 @@ hex                   = "^0.4"
 hyper                 = { version = "^0.14", features = ["server"] }
 intervaltree          = "0.2.6"
 jmespatch             = { version = "^0.3", features = ["sync"], optional = true }
-kmip                  = { version = "0.4.0", package = "kmip-protocol", features = ["tls-with-openssl"], optional = true }
+kmip                  = { version = "0.4.1", package = "kmip-protocol", features = ["tls-with-openssl"], optional = true }
 libflate              = "^1"
 log                   = "^0.4"
 once_cell             = { version = "^1.7.2", optional = true }
