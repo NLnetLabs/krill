@@ -846,7 +846,7 @@ dependencies = [
 
 [[package]]
 name = "krill"
-version = "0.9.2"
+version = "0.9.3-rc1"
 dependencies = [
  "backoff",
  "base64 0.13.0",
@@ -874,6 +874,7 @@ dependencies = [
  "oso",
  "pkcs11",
  "r2d2",
+ "rand 0.8.4",
  "regex",
  "reqwest",
  "rpassword",
