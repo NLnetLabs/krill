@@ -173,7 +173,7 @@ impl Pkcs11Signer {
     }
 
     fn get_test_connection_settings() -> Result<ConnectionSettings, SignerError> {
-        let context = Pkcs11Context::get_or_load(Path::new("/usr/lib/x86_64-linux-gnu/softhsm/libsofthsm2.so"))?;
+        let context = Pkcs11Context::get_or_load(Path::new("/usr/lib/softhsm/libsofthsm2.so"))?;
         let slot_id = Option::<CK_SLOT_ID>::None;
         let slot_label = Some("My token 1".to_string());
         let user_pin = Some("1234".to_string());
