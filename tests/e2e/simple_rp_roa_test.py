@@ -46,7 +46,7 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
         return krill_other_api.is_authorized()
 
     @retry(
-        stop_max_attempt_number=3,
+        stop_max_attempt_number=5,
         wait_exponential_multiplier=1000,
         wait_exponential_max=10000,
         retry_on_result=retry_if_not,
@@ -58,7 +58,7 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
         return [ca for ca in cas if matcher_func(ca)]
 
     @retry(
-        stop_max_attempt_number=3,
+        stop_max_attempt_number=5,
         wait_exponential_multiplier=1000,
         wait_exponential_max=10000,
         retry_on_result=retry_if_not,
@@ -69,7 +69,7 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
         return f(ca)
 
     @retry(
-        stop_max_attempt_number=3,
+        stop_max_attempt_number=5,
         wait_exponential_multiplier=1000,
         wait_exponential_max=10000,
         retry_on_result=retry_if_not,
