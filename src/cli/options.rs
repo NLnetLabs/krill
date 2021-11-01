@@ -1851,10 +1851,15 @@ impl Options {
         }
 
         if let Some(remove) = matches.values_of("remove") {
-            for provider_str in remove {
-                let provider = ProviderAs::from_str(provider_str)
-                    .map_err(|_| Error::invalid_asn(provider_str))?;
-                removed.push(provider);
+            for provider_as_str in remove {
+                let provider_as = ProviderAs::from_str(provider_as_str)
+                    .map_err(|_| Error::invalid_asn(provider_as_str))?;
+
+                if added.iter().any(|added| added.provider() == provider_as.provider()) {
+                    return Err(Error::general("Do not add and remove the same AS in a single update."));
+                }
+                
+                removed.push(provider_as);
             }
         }
 
