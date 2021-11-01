@@ -296,7 +296,7 @@ class TestKrillWithRelyingParties:
                 logging.info(f'Connecting RTR client to {docker_host_fqdn}:{service.rtr_port}')
                 received_roas = set(rtr_fetch_one(docker_host_fqdn, service.rtr_port, service.rtr_timeout_seconds))
                 rtr_elapsed_time = int(time()) - rtr_start_time
-    
+
                 # r is now a list of PFXRecord
                 # see: https://python-rtrlib.readthedocs.io/en/latest/api.html#rtrlib.records.PFXRecord
                 logging.info(f'Received {len(received_roas)} ROAs via RTR from {service.name} in {rtr_elapsed_time} seconds')
@@ -304,10 +304,10 @@ class TestKrillWithRelyingParties:
                 if len(received_roas) == 0:
                     # retry, maybe the ROAs are not available yet
                     raise UpdateWasEmpty()
-    
+
                 # are each of the TEST_ROAS items in r?
                 # i.e. is the intersection of the two sets equal to that of the TEST_ROAS set?
-    
+
                 logging.info(f'Comparing {len(received_roas)} received ROAs to {len(TEST_ROAS)} expected ROAs...')
                 expected_roas = set([roa_to_roa_string(r) for r in TEST_ROAS])
                 assert received_roas == expected_roas
@@ -318,7 +318,7 @@ class TestKrillWithRelyingParties:
                         logging.error(f'{service.name} is not ready')
                 except Exception as innerE:
                     logging.error(f'Unable to determine if {service.name} is ready: {innerE}')
-    
+
                 raise e
 
         fetch_from_rtr_server()
