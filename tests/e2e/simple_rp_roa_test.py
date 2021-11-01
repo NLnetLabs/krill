@@ -1,9 +1,7 @@
 import logging
-import pkcs11
 import pytest
 import rtrlib
 
-from pkcs11.constants import Attribute, ObjectClass
 from retrying import retry, RetryError
 from time import time
 from operator import attrgetter
@@ -17,6 +15,9 @@ from tests.util.rtr import rtr_fetch_one, roa_to_roa_string
 from tests.util.relyingparties import *
 
 from data import *
+
+PKCS11_LIB_PATH = '/usr/lib/softhsm/libsofthsm2.so'
+PKCS11_USER_PIN = 1234
 
 
 # Test classes that use this fixture will cause Krill and its dependencies to
@@ -141,21 +142,6 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
     #
 
     try:
-        # Verify that the PKCS#11 SoftHSMv2 token exists but has no keys at this point
-        logging.info('Report any existing private keys in the SoftHSMv2 token (it should be empty)')
-        pkcs11_lib = pkcs11.lib('/usr/lib/softhsm/libsofthsm2.so')
-        pkcs11_token = pkcs11_lib.get_token(token_label='My token 1')
-        keys_found = 0
-        with pkcs11_token.open(user_pin='1234') as session:
-            for obj in session.get_objects({
-                Attribute.CLASS: ObjectClass.PRIVATE_KEY,
-            }):
-                logging.info(f'SoftHSMv2 private key: {obj}')
-                keys_found = keys_found + 1
-
-        if keys_found > 0:
-            pytest.fail('Expected SoftHSMv2 token to be empty but at least one private key was found')
-
         # Bring up Krill and its dependencies
         krill.select_krill_config_file(docker_project, 'krill.conf')
         class_service_manager.start_services_with_dependencies(docker_project, ['krill'])
@@ -237,18 +223,10 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
 
         logging.info('Krill configuration complete')
 
-        logging.info('Report any existing private keys in the SoftHSMv2 token (it should no longer be empty)')
-        
-        pkcs11_lib.reinitialize()
-        pkcs11_token = pkcs11_lib.get_token(token_label='My token 1')
-        keys_found = 0
-        with pkcs11_token.open(user_pin='1234') as session:
-            for obj in session.get_objects({ Attribute.CLASS: ObjectClass.PRIVATE_KEY }):
-                logging.info(f'SoftHSMv2 private key: {obj}')
-                keys_found = keys_found + 1
-
-        if keys_found == 0:
-            pytest.fail('Expected to find at least one private key owned by the SoftHSMv2 token but none were found')
+        logging.info('Report any existing objects in the SoftHSMv2 token (it should no longer be empty)')
+        (exit_code, output) = run_command(docker_project, 'krill', f'pkcs11-tool --module {PKCS11_LIB_PATH} --pin {PKCS11_USER_PIN} --list-objects')
+        output = output.decode('utf-8').strip()
+        logging.info(f"Command exit code={exit_code}, output={output}")
 
     except RetryError as e:
         if e.last_attempt.has_exception:
