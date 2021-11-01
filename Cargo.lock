@@ -1662,8 +1662,9 @@ dependencies = [
 
 [[package]]
 name = "rpki"
-version = "0.12.3-dev"
-source = "git+https://github.com/ximon18/rpki-rs?branch=reverse-signer#cb4fad5d61c810c76d1fee412339b81d38a625a9"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3ee4c0626a16c808bb6b557298def266e8cd1078515b5ea07b382f2a0b75375c"
 dependencies = [
  "base64 0.13.0",
  "bcder",
