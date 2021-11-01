@@ -36,7 +36,6 @@ on:
   pull_request:
     branches: 
       - main
-      - v0.8.1-bis
 
 jobs:
   krill_e2e_test:

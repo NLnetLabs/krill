@@ -610,7 +610,7 @@ impl SignerRouter {
                 );
             }
 
-            debug!("Signer '{}' binding complete", signer_name);
+            debug!("Signer '{}' bound to signer mapper handle '{}'", signer_name, candidate_handle);
         } else {
             debug!(
                 "Signer '{}' not matched: incorrect signature created with private key '{}'",
