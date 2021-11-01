@@ -21,23 +21,10 @@ use rpki::repository::{
     x509::{Name, Serial, Time, Validity},
 };
 
-use crate::{
-    commons::{
-        api::{
-            rrdp::PublishElement, Base64, Handle, IssuedCert, ObjectName, RcvdCert, RepositoryContact,
-            ResourceClassName, Revocation, Revocations,
-        },
-        crypto::KrillSigner,
-        error::Error,
-        eventsourcing::{KeyStoreKey, KeyValueStore, PreSaveEventListener},
-        KrillResult,
-    },
-    constants::CA_OBJECTS_DIR,
-    daemon::{
+use crate::{commons::{KrillResult, api::{Base64, Handle, IssuedCert, ObjectName, RcvdCert, RepositoryContact, ResourceClassName, Revocation, Revocations, Timestamp, rrdp::PublishElement}, crypto::KrillSigner, error::Error, eventsourcing::{KeyStoreKey, KeyValueStore, PreSaveEventListener}}, constants::CA_OBJECTS_DIR, daemon::{
         ca::{CaEvt, CertAuth, CertifiedKey, ChildCertificateUpdates, RoaUpdates},
         config::{Config, IssuanceTimingConfig},
-    },
-};
+    }};
 
 //------------ CaObjectsStore ----------------------------------------------
 
@@ -357,6 +344,24 @@ impl CaObjects {
         all_elements
     }
 
+    /// Returns the closest next update time from among manifests held by this CA
+    pub fn closest_next_update(&self) -> Option<Timestamp> {
+        let mut closest = None;
+
+        for rco in self.classes.values() {
+            let rco_time = Timestamp::from(rco.next_update_time());
+            if let Some(current_closest) = closest {
+                if current_closest > rco_time {
+                    closest = Some(rco_time);
+                }
+            } else {
+                closest = Some(rco_time);
+            }
+        }
+
+        closest
+    }
+
     pub fn deprecated_repos(&self) -> &Vec<DeprecatedRepository> {
         &self.deprecated_repos
     }
@@ -642,6 +647,14 @@ impl ResourceClassObjects {
             ResourceClassKeyState::Staging(state) => {
                 state.staging_set.requires_reissuance(hours) || state.current_set.requires_reissuance(hours)
             }
+        }
+    }
+    
+    fn next_update_time(&self) -> Time {
+        match &self.keys {
+            ResourceClassKeyState::Current(state) => state.current_set.next_update_time(),
+            ResourceClassKeyState::Old(state) => state.current_set.next_update_time(),
+            ResourceClassKeyState::Staging(state) => state.current_set.next_update_time()
         }
     }
 
@@ -1084,6 +1097,10 @@ impl BasicKeyObjectSet {
     pub fn requires_reissuance(&self, hours: i64) -> bool {
         Time::now() + Duration::hours(hours) > self.manifest.next_update()
             || Some(self.signing_cert.uri()) != self.manifest.cert().ca_issuer()
+    }
+
+    pub fn next_update_time(&self) -> Time {
+        self.manifest.next_update()
     }
 
     fn next(&self) -> u64 {

@@ -5,7 +5,7 @@ use tokio::sync::RwLock;
 use crate::commons::{
     api::{
         rrdp::PublishElement, ChildConnectionStats, ChildHandle, ChildStatus, ChildrenConnectionStats, Entitlements,
-        ErrorResponse, Handle, ParentHandle, ParentStatuses, RepoStatus,
+        ErrorResponse, Handle, ParentHandle, ParentStatuses, RepoStatus, Timestamp,
     },
     error::Error,
     eventsourcing::{KeyStoreKey, KeyValueStore},
@@ -227,8 +227,13 @@ impl StatusStore {
             .await
     }
 
-    pub async fn set_status_repo_success(&self, ca: &Handle, uri: ServiceUri, next_hours: i64) -> KrillResult<()> {
-        self.update_ca_status(ca, |status| status.repo.set_last_updated(uri, next_hours))
+    pub async fn set_status_repo_success(
+        &self,
+        ca: &Handle,
+        uri: ServiceUri,
+        next_update: Timestamp,
+    ) -> KrillResult<()> {
+        self.update_ca_status(ca, |status| status.repo.set_last_updated(uri, next_update))
             .await
     }
 
@@ -237,9 +242,9 @@ impl StatusStore {
         ca: &Handle,
         uri: ServiceUri,
         published: Vec<PublishElement>,
-        next_hours: i64,
+        next_update: Timestamp,
     ) -> KrillResult<()> {
-        self.update_ca_status(ca, |status| status.repo.set_published(uri, published, next_hours))
+        self.update_ca_status(ca, |status| status.repo.set_published(uri, published, next_update))
             .await
     }
 
