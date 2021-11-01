@@ -97,7 +97,7 @@ impl Signer for OpenSslSigner {
     type KeyId = KeyIdentifier;
     type Error = SignerError;
 
-    fn create_key(&mut self, _algorithm: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
+    fn create_key(&self, _algorithm: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
         let kp = OpenSslKeyPair::build()?;
 
         let pk = &kp.subject_public_key_info()?;
@@ -119,7 +119,7 @@ impl Signer for OpenSslSigner {
         Ok(key_pair.subject_public_key_info()?)
     }
 
-    fn destroy_key(&mut self, key_id: &Self::KeyId) -> Result<(), KeyError<Self::Error>> {
+    fn destroy_key(&self, key_id: &Self::KeyId) -> Result<(), KeyError<Self::Error>> {
         let path = self.key_path(key_id);
         if path.exists() {
             fs::remove_file(&path).map_err(|e| {
@@ -268,7 +268,7 @@ pub mod tests {
     #[test]
     fn should_return_subject_public_key_info() {
         test::test_under_tmp(|d| {
-            let mut s = OpenSslSigner::build(&d).unwrap();
+            let s = OpenSslSigner::build(&d).unwrap();
             let ki = s.create_key(PublicKeyFormat::Rsa).unwrap();
             s.get_key_info(&ki).unwrap();
             s.destroy_key(&ki).unwrap();

@@ -122,8 +122,9 @@ dependencies = [
 
 [[package]]
 name = "bcder"
-version = "0.6.1-dev"
-source = "git+https://github.com/nlnetlabs/bcder?branch=octet_take_opt#b02f59a308bf31f5b501b6edd049639d803b5210"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52e7c3bae57b01ec5b1b028af1f77b7d41dd2bd97a41bab7968739b5329c0e39"
 dependencies = [
  "backtrace",
  "bytes",
@@ -1537,7 +1538,7 @@ dependencies = [
 [[package]]
 name = "rpki"
 version = "0.12.3-dev"
-source = "git+https://github.com/NLnetLabs/rpki-rs.git?branch=aspa-objects#81f8c15936626ebe2230c27de294ff90c039d5da"
+source = "git+https://github.com/NLnetLabs/rpki-rs.git?branch=support-aspa#e291604d44fae5ca419b20fffba7879e27deec3c"
 dependencies = [
  "base64 0.13.0",
  "bcder",
