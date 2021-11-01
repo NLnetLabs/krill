@@ -38,7 +38,7 @@ pub enum ApiResponse {
     BgpAnalysisFull(BgpAnalysisReport),
     BgpAnalysisSuggestions(BgpAnalysisSuggestion),
 
-    // ASPA
+    // ASPA related
     AspaDefinitions(AspaDefinitionList),
 
     ParentCaContact(ParentCaContact),
