@@ -11,10 +11,7 @@ use std::{
 use bytes::Bytes;
 use clap::{App, Arg, ArgMatches, SubCommand};
 
-use rpki::{
-    repository::{aspa::ProviderAs, crypto::KeyIdentifier, x509::Time},
-    uri,
-};
+use rpki::{repository::{aspa::{DuplicateProviderAs, ProviderAs}, crypto::KeyIdentifier, x509::Time}, uri};
 
 use crate::{
     cli::report::{ReportError, ReportFormat},
@@ -1827,7 +1824,7 @@ impl Options {
         let my_ca = Self::parse_my_ca(matches)?;
         let customer_str = matches.value_of("customer").unwrap();
         let customer =
-            AspaCustomer::from_str(customer_str).map_err(|_| Error::InvalidAspaCustomer(customer_str.to_string()))?;
+            AspaCustomer::from_str(customer_str).map_err(|_| Error::invalid_asn(customer_str))?;
 
         let command = Command::CertAuth(CaCommand::AspasRemove(my_ca, customer));
 
@@ -1843,18 +1840,20 @@ impl Options {
 
         let customer_str = matches.value_of("customer").unwrap();
         let customer =
-            AspaCustomer::from_str(customer_str).map_err(|_| Error::InvalidAspaCustomer(customer_str.to_string()))?;
+            AspaCustomer::from_str(customer_str).map_err(|_| Error::invalid_asn(customer_str))?;
 
         if let Some(add) = matches.values_of("add") {
             for provider_str in add {
-                let provider = ProviderAs::from_str(provider_str)?;
+                let provider = ProviderAs::from_str(provider_str)
+                    .map_err(|_| Error::invalid_asn(provider_str))?;
                 added.push(provider);
             }
         }
 
         if let Some(remove) = matches.values_of("remove") {
             for provider_str in remove {
-                let provider = ProviderAs::from_str(provider_str)?;
+                let provider = ProviderAs::from_str(provider_str)
+                    .map_err(|_| Error::invalid_asn(provider_str))?;
                 removed.push(provider);
             }
         }
@@ -2532,8 +2531,8 @@ pub enum Error {
     Rfc8183(rfc8183::Error),
     ResSetErr(ResourceSetError),
     InvalidRouteDelta(AuthorizationFmtError),
-    InvalidAspaCustomer(String),
-    InvalidAspaProvider(rpki::repository::aspa::Error),
+    InvalidAsn(String),
+    DuplicateAspaProvider(DuplicateProviderAs),
     InvalidAspaConfig(AspaConfigurationFormatError),
     InvalidHandle,
     InvalidSeconds,
@@ -2542,6 +2541,12 @@ pub enum Error {
     InvalidChildIdCert,
     UnrecognizedSubCommand,
     GeneralArgumentError(String),
+}
+
+impl Error {
+    fn invalid_asn(asn: &str) -> Self {
+        Error::InvalidAsn(asn.to_string())
+    }
 }
 
 impl fmt::Display for Error {
@@ -2553,8 +2558,8 @@ impl fmt::Display for Error {
             Error::Rfc8183(e) => write!(f, "Invalid RFC8183 XML: {}", e),
             Error::ResSetErr(e) => write!(f, "Invalid resources requested: {}", e),
             Error::InvalidRouteDelta(e) => e.fmt(f),
-            Error::InvalidAspaCustomer(s) => write!(f, "Invalid customer AS. Expected 'AS#', got: {}", s),
-            Error::InvalidAspaProvider(e) => e.fmt(f),
+            Error::InvalidAsn(s) => write!(f, "Invalid ASN format. Expected 'AS#', got: {}", s),
+            Error::DuplicateAspaProvider(e) => e.fmt(f),
             Error::InvalidAspaConfig(e) => e.fmt(f),
             Error::InvalidHandle => write!(
                 f,
@@ -2626,8 +2631,8 @@ impl From<AspaConfigurationFormatError> for Error {
     }
 }
 
-impl From<rpki::repository::aspa::Error> for Error {
-    fn from(e: rpki::repository::aspa::Error) -> Self {
-        Error::InvalidAspaProvider(e)
+impl From<DuplicateProviderAs> for Error {
+    fn from(e: DuplicateProviderAs) -> Self {
+        Error::DuplicateAspaProvider(e)
     }
 }
