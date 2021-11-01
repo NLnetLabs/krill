@@ -16,9 +16,6 @@ from tests.util.relyingparties import *
 
 from data import *
 
-PKCS11_LIB_PATH = '/usr/lib/softhsm/libsofthsm2.so'
-PKCS11_USER_PIN = 1234
-
 
 # Test classes that use this fixture will cause Krill and its dependencies to
 # be started (and torn down at the end of all tests in the class), and to be
@@ -222,11 +219,6 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
                 update_roas()
 
         logging.info('Krill configuration complete')
-
-        logging.info('Report any existing objects in the SoftHSMv2 token (it should no longer be empty)')
-        (exit_code, output) = run_command(docker_project, 'krill', f'pkcs11-tool --module {PKCS11_LIB_PATH} --pin {PKCS11_USER_PIN} --list-objects')
-        output = output.decode('utf-8').strip()
-        logging.info(f"Command exit code={exit_code}, output={output}")
 
     except RetryError as e:
         if e.last_attempt.has_exception:
