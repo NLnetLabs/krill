@@ -8,6 +8,7 @@ ARG BASE_IMG=alpine:3.13
 # -- stage 1: build krill and krillc
 #
 FROM ${BASE_IMG} AS build
+ARG CARGO_ARGS=
 
 RUN apk add rust cargo openssl-dev
 
@@ -18,7 +19,8 @@ COPY . .
 # multiplexing. This seems to help with various "spurious network error"
 # warnings when Cargo attempts to fetch from crates.io when building this
 # image on Docker Hub and GitHub Actions build machines. 
-RUN CARGO_HTTP_MULTIPLEXING=false cargo build --target x86_64-alpine-linux-musl --release --locked
+RUN echo "CARGO_ARGS=${CARGO_ARGS}"
+RUN CARGO_HTTP_MULTIPLEXING=false cargo build --target x86_64-alpine-linux-musl --release --locked $CARGO_ARGS
 
 #
 # -- stage 2: create an image containing just the binaries, configs &
