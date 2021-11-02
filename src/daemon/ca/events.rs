@@ -1032,17 +1032,23 @@ impl fmt::Display for CaEvtDet {
                 resource_class_name,
                 updates,
             } => {
-                write!(f, "updated ROAs under resource class '{}'", resource_class_name)?;
-                if !updates.updated.is_empty() {
+                write!(f, "updated ROA objects under resource class '{}'", resource_class_name)?;
+                if !updates.updated.is_empty() || !updates.aggregate_updated.is_empty() {
                     write!(f, " added: ")?;
                     for auth in updates.updated.keys() {
-                        write!(f, "{} ", auth)?;
+                        write!(f, "{} ", ObjectName::from(auth))?;
+                    }
+                    for agg_key in updates.aggregate_updated.keys() {
+                        write!(f, "{} ", ObjectName::from(agg_key))?;
                     }
                 }
-                if !updates.removed.is_empty() {
+                if !updates.removed.is_empty() || !updates.aggregate_removed.is_empty() {
                     write!(f, " removed: ")?;
                     for auth in updates.removed.keys() {
-                        write!(f, "{} ", auth)?;
+                        write!(f, "{} ", ObjectName::from(auth))?;
+                    }
+                    for agg_key in updates.aggregate_removed.keys() {
+                        write!(f, "{} ", ObjectName::from(agg_key))?;
                     }
                 }
                 Ok(())
@@ -1054,7 +1060,25 @@ impl fmt::Display for CaEvtDet {
                 write!(f, "updated ASPA config for customer ASN: {} {}", customer, update)
             }
             CaEvtDet::AspaConfigRemoved { customer } => write!(f, "removed ASPA config for customer ASN: {}", customer),
-            CaEvtDet::AspaObjectsUpdated { .. } => todo!(),
+            CaEvtDet::AspaObjectsUpdated {
+                resource_class_name,
+                updates,
+            } => {
+                write!(f, "updated ASPA objects under resource class '{}'", resource_class_name)?;
+                if !updates.updated().is_empty() {
+                    write!(f, " updated:")?;
+                    for upd in updates.updated() {
+                        write!(f, " {}", ObjectName::aspa(upd.customer()))?;
+                    }
+                }
+                if !updates.removed().is_empty() {
+                    write!(f, " removed:")?;
+                    for rem in updates.removed() {
+                        write!(f, " {}", ObjectName::aspa(*rem))?;
+                    }
+                }
+                Ok(())
+            }
 
             // Publishing
             CaEvtDet::RepoUpdated { contact } => {
