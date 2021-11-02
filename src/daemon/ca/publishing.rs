@@ -21,10 +21,23 @@ use rpki::repository::{
     x509::{Name, Serial, Time, Validity},
 };
 
-use crate::{commons::{KrillResult, api::{Base64, Handle, IssuedCert, ObjectName, RcvdCert, RepositoryContact, ResourceClassName, Revocation, Revocations, Timestamp, rrdp::PublishElement}, crypto::KrillSigner, error::Error, eventsourcing::{KeyStoreKey, KeyValueStore, PreSaveEventListener}}, constants::CA_OBJECTS_DIR, daemon::{
+use crate::{
+    commons::{
+        api::{
+            rrdp::PublishElement, Base64, Handle, IssuedCert, ObjectName, RcvdCert, RepositoryContact,
+            ResourceClassName, Revocation, Revocations, Timestamp,
+        },
+        crypto::KrillSigner,
+        error::Error,
+        eventsourcing::{KeyStoreKey, KeyValueStore, PreSaveEventListener},
+        KrillResult,
+    },
+    constants::CA_OBJECTS_DIR,
+    daemon::{
         ca::{CaEvt, CertAuth, CertifiedKey, ChildCertificateUpdates, RoaUpdates},
         config::{Config, IssuanceTimingConfig},
-    }};
+    },
+};
 
 //------------ CaObjectsStore ----------------------------------------------
 
@@ -649,12 +662,12 @@ impl ResourceClassObjects {
             }
         }
     }
-    
+
     fn next_update_time(&self) -> Time {
         match &self.keys {
             ResourceClassKeyState::Current(state) => state.current_set.next_update_time(),
             ResourceClassKeyState::Old(state) => state.current_set.next_update_time(),
-            ResourceClassKeyState::Staging(state) => state.current_set.next_update_time()
+            ResourceClassKeyState::Staging(state) => state.current_set.next_update_time(),
         }
     }
 
