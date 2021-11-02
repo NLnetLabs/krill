@@ -463,7 +463,12 @@ impl Aggregate for CertAuth {
             CmdDet::RouteAuthorizationsUpdate(updates, config, signer) => {
                 self.route_authorizations_update(updates, &config, signer)
             }
-            CmdDet::RouteAuthorizationsRenew(config, signer) => self.route_authorizations_renew(&config, &signer),
+            CmdDet::RouteAuthorizationsRenew(config, signer) => {
+                self.route_authorizations_renew(false, &config, &signer)
+            }
+            CmdDet::RouteAuthorizationsForceRenew(config, signer) => {
+                self.route_authorizations_renew(true, &config, &signer)
+            }
 
             // ASPA
             CmdDet::AspasUpdate(updates, config, signer) => self.aspas_definitions_update(updates, &config, &signer),
@@ -1657,16 +1662,25 @@ impl CertAuth {
     }
 
     /// Renew existing ROA objects if needed.
-    pub fn route_authorizations_renew(&self, config: &Config, signer: &KrillSigner) -> KrillResult<Vec<CaEvt>> {
+    pub fn route_authorizations_renew(
+        &self,
+        force: bool,
+        config: &Config,
+        signer: &KrillSigner,
+    ) -> KrillResult<Vec<CaEvt>> {
         let mut evt_dets = vec![];
 
         for (rcn, rc) in self.resources.iter() {
-            let updates = rc.renew_roas(&config.issuance_timing, signer)?;
+            let updates = rc.renew_roas(force, &config.issuance_timing, signer)?;
             if updates.contains_changes() {
-                info!(
-                    "CA '{}' reissued ROAs under RC '{}' before they would expire: {}",
-                    self.handle, rcn, updates
-                );
+                if force {
+                    info!("CA '{}' reissued all ROAs under RC '{}'", self.handle, rcn);
+                } else {
+                    info!(
+                        "CA '{}' reissued ROAs under RC '{}' before they would expire: {}",
+                        self.handle, rcn, updates
+                    );
+                }
 
                 evt_dets.push(CaEvtDet::RoasUpdated {
                     resource_class_name: rcn.clone(),

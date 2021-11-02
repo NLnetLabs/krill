@@ -343,7 +343,7 @@ impl RoaUpdates {
 impl fmt::Display for RoaUpdates {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if !self.updated.is_empty() {
-            write!(f, "Added single VRP ROAs: ")?;
+            write!(f, "Updated single VRP ROAs: ")?;
             for roa in self.updated.keys() {
                 write!(f, "{} ", ObjectName::from(roa))?;
             }
@@ -355,7 +355,7 @@ impl fmt::Display for RoaUpdates {
             }
         }
         if !self.aggregate_updated.is_empty() {
-            write!(f, "Added ASN aggregated ROAs: ")?;
+            write!(f, "Updated ASN aggregated ROAs: ")?;
             for roa in self.aggregate_updated.keys() {
                 write!(f, "{} ", ObjectName::from(roa))?;
             }

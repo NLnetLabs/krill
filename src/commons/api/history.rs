@@ -472,6 +472,7 @@ pub enum StorableCaCommand {
         updates: RoaDefinitionUpdates,
     },
     ReissueBeforeExpiring,
+    ForceReissue,
     AspasUpdate {
         updates: AspaDefinitionUpdates,
     },
@@ -598,6 +599,7 @@ impl WithStorableDetails for StorableCaCommand {
             }
 
             StorableCaCommand::ReissueBeforeExpiring => CommandSummary::new("cmd-ca-reissue-before-expiring", &self),
+            StorableCaCommand::ForceReissue => CommandSummary::new("cmd-ca-force-reissue", &self),
 
             // RTA
             StorableCaCommand::RtaPrepare { name } => {
@@ -742,6 +744,9 @@ impl fmt::Display for StorableCaCommand {
             }
             StorableCaCommand::ReissueBeforeExpiring => {
                 write!(f, "Automatically re-issue objects before they would expire")
+            }
+            StorableCaCommand::ForceReissue => {
+                write!(f, "Force re-issuance of objects")
             }
 
             // ------------------------------------------------------------

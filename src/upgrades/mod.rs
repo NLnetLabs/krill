@@ -14,7 +14,7 @@ use crate::{
         eventsourcing::{AggregateStoreError, CommandKey, KeyStoreKey, KeyValueError, KeyValueStore},
         util::{file, KrillVersion},
     },
-    daemon::config::Config,
+    daemon::{config::Config, krillserver::KrillServer},
     pubd::RepositoryManager,
     upgrades::v0_9_0::{CaObjectsMigration, PubdObjectsMigration},
 };
@@ -35,7 +35,6 @@ pub enum UpgradeError {
     IoError(KrillIoError),
     Unrecognised(String),
     CannotLoadAggregate(Handle),
-    KrillError(crate::commons::error::Error),
     Custom(String),
 }
 
@@ -47,7 +46,6 @@ impl fmt::Display for UpgradeError {
             UpgradeError::IoError(e) => e.fmt(f),
             UpgradeError::Unrecognised(s) => write!(f, "Unrecognised command summary: {}", s),
             UpgradeError::CannotLoadAggregate(handle) => write!(f, "Cannot load: {}", handle),
-            UpgradeError::KrillError(e) => e.fmt(f),
             UpgradeError::Custom(s) => s.fmt(f),
         }
     }
@@ -82,7 +80,7 @@ impl From<KrillIoError> for UpgradeError {
 
 impl From<crate::commons::error::Error> for UpgradeError {
     fn from(e: crate::commons::error::Error) -> Self {
-        UpgradeError::KrillError(e)
+        UpgradeError::Custom(e.to_string())
     }
 }
 
@@ -161,7 +159,18 @@ pub trait UpgradeStore {
 
 /// Should be called when Krill starts, before the KrillServer is initiated
 pub fn pre_start_upgrade(config: Arc<Config>) -> Result<(), UpgradeError> {
-    upgrade_0_9_0(config)
+    upgrade_data_to_0_9_0(config)
+}
+
+/// Should be called when the KrillServer is initiated, before the webserver is started
+/// and operators can make changes.
+pub async fn post_start_upgrade(config: &Config, server: &KrillServer) -> Result<(), UpgradeError> {
+    if needs_upgrade(&config.data_dir, "cas", KrillVersion::candidate(0, 9, 3, 2)) {
+        info!("Reissue ROAs on upgrade to force short EE certificate subjects in the objects");
+        server.force_renew_roas().await.map_err(|e| e.into())
+    } else {
+        Ok(())
+    }
 }
 
 pub async fn update_storage_version(work_dir: &Path) -> Result<(), UpgradeError> {
@@ -180,7 +189,7 @@ pub async fn update_storage_version(work_dir: &Path) -> Result<(), UpgradeError>
     Ok(())
 }
 
-fn upgrade_0_9_0(config: Arc<Config>) -> Result<(), UpgradeError> {
+fn upgrade_data_to_0_9_0(config: Arc<Config>) -> Result<(), UpgradeError> {
     let work_dir = &config.data_dir;
     if needs_v0_9_0_upgrade(work_dir, "pubd") {
         PubdObjectsMigration::migrate(config.clone())?;
@@ -197,11 +206,15 @@ fn upgrade_0_9_0(config: Arc<Config>) -> Result<(), UpgradeError> {
 }
 
 fn needs_v0_9_0_upgrade(work_dir: &Path, ns: &str) -> bool {
+    needs_upgrade(work_dir, ns, KrillVersion::release(0, 9, 0))
+}
+
+fn needs_upgrade(work_dir: &Path, ns: &str, before: KrillVersion) -> bool {
     let keystore_path = work_dir.join(ns);
     if keystore_path.exists() {
         let version_path = keystore_path.join("version");
         let version_found = file::load_json(&version_path).unwrap_or_else(|_| KrillVersion::v0_5_0_or_before());
-        version_found < KrillVersion::release(0, 9, 0)
+        version_found < before
     } else {
         false
     }
@@ -228,7 +241,7 @@ mod tests {
         let config = Arc::new(Config::test(&work_dir, false, false, false));
         let _ = config.init_logging();
 
-        upgrade_0_9_0(config).unwrap();
+        upgrade_data_to_0_9_0(config).unwrap();
 
         let _ = fs::remove_dir_all(work_dir);
     }
@@ -242,7 +255,7 @@ mod tests {
         let config = Arc::new(Config::test(&work_dir, false, false, false));
         let _ = config.init_logging();
 
-        upgrade_0_9_0(config).unwrap();
+        upgrade_data_to_0_9_0(config).unwrap();
 
         let _ = fs::remove_dir_all(work_dir);
     }

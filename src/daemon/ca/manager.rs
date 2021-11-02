@@ -451,9 +451,7 @@ impl CaManager {
     pub async fn ca_history(&self, handle: &Handle, crit: CommandHistoryCriteria) -> KrillResult<CommandHistory> {
         let ca_lock = self.locks.ca(handle).await;
         let _lock = ca_lock.read().await;
-        self.ca_store
-            .command_history(handle, crit)
-            .map_err(|_| Error::CaUnknown(handle.clone()))
+        Ok(self.ca_store.command_history(handle, crit)?)
     }
 
     /// Shows the details for a CA command.
@@ -1863,6 +1861,24 @@ impl CaManager {
                 &ca,
                 None,
                 CmdDet::AspasRenew(self.config.clone(), self.signer.clone()),
+                actor,
+            );
+            self.send_command(cmd).await?;
+        }
+        Ok(())
+    }
+
+    /// Force the reissuance of all ROAs in all CAs. This function was added
+    /// because we need to re-issue ROAs in Krill 0.9.3 to force that a short
+    /// subject CN is used for the EE certificate: i.e. the SKI rather than the
+    /// full public key. But there may also be other cases in future where
+    /// forcing to re-issue ROAs may be useful.
+    pub async fn force_renew_roas_all(&self, actor: &Actor) -> KrillResult<()> {
+        for ca in self.ca_store.list()? {
+            let cmd = Cmd::new(
+                &ca,
+                None,
+                CmdDet::RouteAuthorizationsForceRenew(self.config.clone(), self.signer.clone()),
                 actor,
             );
             self.send_command(cmd).await?;

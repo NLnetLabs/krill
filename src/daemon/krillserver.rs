@@ -572,13 +572,9 @@ impl KrillServer {
         ca.parent(parent).map(|p| p.clone())
     }
 
-    /// Returns the history for a CA, or NONE in case of issues (i.e. it does not exist).
-    pub async fn ca_history(
-        &self,
-        handle: &Handle,
-        crit: CommandHistoryCriteria,
-    ) -> KrillResult<Option<CommandHistory>> {
-        Ok(self.ca_manager.ca_history(handle, crit).await.ok())
+    /// Returns the history for a CA.
+    pub async fn ca_history(&self, handle: &Handle, crit: CommandHistoryCriteria) -> KrillResult<CommandHistory> {
+        self.ca_manager.ca_history(handle, crit).await
     }
 
     pub fn ca_command_details(&self, handle: &Handle, command: CommandKey) -> KrillResult<CaCommandDetails> {
@@ -729,6 +725,11 @@ impl KrillServer {
             .bgp_analyser
             .suggest(definitions.as_slice(), &resources_held, limit)
             .await)
+    }
+
+    /// Re-issue ROA objects so that they will use short subjects (see issue #700)
+    pub async fn force_renew_roas(&self) -> KrillResult<()> {
+        self.ca_manager.force_renew_roas_all(self.system_actor()).await
     }
 }
 

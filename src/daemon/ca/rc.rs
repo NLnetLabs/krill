@@ -677,9 +677,14 @@ impl ResourceClass {
 impl ResourceClass {
     /// Renew all ROAs under the current for which the not-after time closer
     /// than the given number of weeks
-    pub fn renew_roas(&self, issuance_timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<RoaUpdates> {
+    pub fn renew_roas(
+        &self,
+        force: bool,
+        issuance_timing: &IssuanceTimingConfig,
+        signer: &KrillSigner,
+    ) -> KrillResult<RoaUpdates> {
         let key = self.get_current_key()?;
-        self.roas.renew(key, issuance_timing, signer)
+        self.roas.renew(force, key, issuance_timing, signer)
     }
 
     /// Publish all ROAs under the new key
