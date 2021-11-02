@@ -344,7 +344,7 @@ async fn functional() {
 
     // short hand to expect ROAs under CA4, re-added when parent comes back
     // i.e. it now has RC 2 and 3, but no more 0 and 1
-    async fn expect_roas_for_ca4_re_added(test_msg: &str, roas: &[RoaDefinition], aspas: &[AspaDefinition]) {
+    async fn expect_objects_for_ca4_re_added(test_msg: &str, roas: &[RoaDefinition], aspas: &[AspaDefinition]) {
         let ca4 = handle("CA4");
         let rcn_2 = ResourceClassName::from(2);
         let rcn_3 = ResourceClassName::from(3);
@@ -644,7 +644,7 @@ async fn functional() {
         set_up_ca_under_parent_with_resources(&ca4, &ca3, &ca4_res_under_ca_3).await;
 
         // Expect that the ROAs are published again when parent and resources are back.
-        expect_roas_for_ca4_re_added(
+        expect_objects_for_ca4_re_added(
             "CA4 resources have been extended again, and we expect two roas",
             &[route_resource_set_10_0_0_0_def_1, route_resource_set_10_1_0_0_def_1],
             &[],
