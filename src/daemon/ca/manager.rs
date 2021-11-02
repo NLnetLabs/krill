@@ -451,9 +451,7 @@ impl CaManager {
     pub async fn ca_history(&self, handle: &Handle, crit: CommandHistoryCriteria) -> KrillResult<CommandHistory> {
         let ca_lock = self.locks.ca(handle).await;
         let _lock = ca_lock.read().await;
-        self.ca_store
-            .command_history(handle, crit)
-            .map_err(|_| Error::CaUnknown(handle.clone()))
+        Ok(self.ca_store.command_history(handle, crit)?)
     }
 
     /// Shows the details for a CA command.
