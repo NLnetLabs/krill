@@ -181,7 +181,7 @@ impl FromStr for AspaDefinition {
 
             if providers.len() > 1 {
                 for i in 1..providers.len() {
-                    let next = providers.get(i).unwrap(); // safe i goes until .len()
+                    let next = providers.get(i).unwrap(); // safe i max == .len() - 1
                     if next.provider() == last_seen.provider() {
                         return Err(AspaConfigurationFormatError::ProviderDuplicateAs(*last_seen, *next));
                     }
