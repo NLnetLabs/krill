@@ -161,7 +161,8 @@ pub fn pre_start_upgrade(config: Arc<Config>) -> Result<(), UpgradeError> {
     upgrade_data_to_0_9_0(config)
 }
 
-/// Should be called when Krill starts, before the KrillServer is initiated
+/// Should be called when the KrillServer is initiated, before the webserver is started
+/// and operators can make changes.
 pub async fn post_start_upgrade(config: &Config, server: &KrillServer) -> Result<(), UpgradeError> {
     if needs_upgrade(&config.data_dir, "cas", KrillVersion::candidate(0, 9, 3, 2)) {
         info!("Reissue ROAs on upgrade to force short EE certificate subjects in the objects");
