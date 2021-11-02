@@ -1592,12 +1592,18 @@ impl CaManager {
             Ok(reply) => reply,
         };
 
+        let next_update = self
+            .ca_objects_store
+            .ca_objects(ca_handle)?
+            .closest_next_update()
+            .unwrap_or_else(|| Timestamp::now_plus_hours(self.config.republish_hours()));
+
         match reply {
             rfc8181::ReplyMessage::ListReply(list_reply) => {
                 self.status_store
                     .lock()
                     .await
-                    .set_status_repo_success(ca_handle, uri.clone(), self.config.republish_hours())
+                    .set_status_repo_success(ca_handle, uri.clone(), next_update)
                     .await?;
                 Ok(list_reply)
             }
@@ -1652,12 +1658,16 @@ impl CaManager {
                 // TODO: reflect the status for each REPO in the API / UI?
                 // We probably should.. though it should be extremely rare and short-lived to
                 // have more than one repository.
-                let published = self.ca_objects_store.ca_objects(ca_handle)?.all_publish_elements();
+                let ca_objects = self.ca_objects_store.ca_objects(ca_handle)?;
+                let published = ca_objects.all_publish_elements();
+                let next_update = ca_objects
+                    .closest_next_update()
+                    .unwrap_or_else(|| Timestamp::now_plus_hours(self.config.republish_hours()));
 
                 self.status_store
                     .lock()
                     .await
-                    .set_status_repo_published(ca_handle, uri.clone(), published, self.config.republish_hours())
+                    .set_status_repo_published(ca_handle, uri.clone(), published, next_update)
                     .await?;
                 Ok(())
             }
