@@ -145,6 +145,9 @@ pub enum CmdDet {
     // will only be stored if there any updates to be done.
     RouteAuthorizationsRenew(Arc<Config>, Arc<KrillSigner>),
 
+    // Re-issue all ROA objects regardless of their expiration time.
+    RouteAuthorizationsForceRenew(Arc<Config>, Arc<KrillSigner>),
+
     // ------------------------------------------------------------
     // Publishing
     // ------------------------------------------------------------
@@ -269,6 +272,7 @@ impl From<CmdDet> for StorableCaCommand {
                 updates: updates.into(),
             },
             CmdDet::RouteAuthorizationsRenew(_, _) => StorableCaCommand::ReissueBeforeExpiring,
+            CmdDet::RouteAuthorizationsForceRenew(_, _) => StorableCaCommand::ForceReissue,
 
             // ------------------------------------------------------------
             // Publishing

@@ -657,6 +657,7 @@ impl Roas {
     /// Re-new ROAs before they would expire
     pub fn renew(
         &self,
+        force: bool,
         certified_key: &CertifiedKey,
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
@@ -667,7 +668,7 @@ impl Roas {
 
         for (auth, roa_info) in self.simple.iter() {
             let name = ObjectName::from(auth);
-            if roa_info.expires() < renew_threshold {
+            if force || roa_info.expires() < renew_threshold {
                 let roa = Self::make_roa(
                     &[*auth],
                     &name,
@@ -684,7 +685,7 @@ impl Roas {
         for (roa_key, aggregate) in self.aggregate.iter() {
             let roa_info = aggregate.roa_info();
 
-            if roa_info.expires() < renew_threshold {
+            if force || roa_info.expires() < renew_threshold {
                 let authorizations = aggregate.authorizations().clone();
                 let name = ObjectName::from(roa_key);
                 let new_roa = Self::make_roa(
