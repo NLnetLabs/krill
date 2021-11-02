@@ -1895,7 +1895,7 @@ impl Timestamp {
     }
 
     pub fn plus_seconds(self, seconds: i64) -> Self {
-        self - Duration::seconds(seconds)
+        self + Duration::seconds(seconds)
     }
 
     pub fn now_minus_seconds(seconds: i64) -> Self {
