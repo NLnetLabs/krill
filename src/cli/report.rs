@@ -6,10 +6,9 @@ use serde::Serialize;
 use crate::{
     commons::{
         api::{
-            AllCertAuthIssues, AspaDefinitionList, CaCommandDetails, CaRepoDetails, CertAuthInfo,
-            CertAuthIssues, CertAuthList, ChildCaInfo, ChildrenConnectionStats, CommandHistory, ParentCaContact,
-            ParentStatuses, PublisherDetails, PublisherList, RepoStatus, RoaDefinitions, RtaList, RtaPrepResponse,
-            ServerInfo,
+            AllCertAuthIssues, AspaDefinitionList, CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthIssues,
+            CertAuthList, ChildCaInfo, ChildrenConnectionStats, CommandHistory, ParentCaContact, ParentStatuses,
+            PublisherDetails, PublisherList, RepoStatus, RoaDefinitions, RtaList, RtaPrepResponse, ServerInfo,
         },
         bgp::{BgpAnalysisAdvice, BgpAnalysisReport, BgpAnalysisSuggestion},
         remote::{api::ClientInfos, rfc8183},

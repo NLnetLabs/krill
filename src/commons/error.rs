@@ -1208,7 +1208,7 @@ mod tests {
         let not_held = definition("10.128.0.0/9 => 1");
         let invalid_length = definition("10.0.1.0/25 => 1");
         let unknown = definition("192.168.0.0/16 => 1");
-        
+
         error.add_duplicate(duplicate);
         error.add_notheld(not_held);
         error.add_invalid_length(invalid_length);

@@ -11,7 +11,14 @@ use std::{
 use bytes::Bytes;
 use clap::{App, Arg, ArgMatches, SubCommand};
 
-use rpki::{repository::{aspa::{DuplicateProviderAs, ProviderAs}, crypto::KeyIdentifier, x509::Time}, uri};
+use rpki::{
+    repository::{
+        aspa::{DuplicateProviderAs, ProviderAs},
+        crypto::KeyIdentifier,
+        x509::Time,
+    },
+    uri,
+};
 
 use crate::{
     cli::report::{ReportError, ReportFormat},
@@ -1823,8 +1830,7 @@ impl Options {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
         let customer_str = matches.value_of("customer").unwrap();
-        let customer =
-            AspaCustomer::from_str(customer_str).map_err(|_| Error::invalid_asn(customer_str))?;
+        let customer = AspaCustomer::from_str(customer_str).map_err(|_| Error::invalid_asn(customer_str))?;
 
         let command = Command::CertAuth(CaCommand::AspasRemove(my_ca, customer));
 
@@ -1839,26 +1845,24 @@ impl Options {
         let mut removed = vec![];
 
         let customer_str = matches.value_of("customer").unwrap();
-        let customer =
-            AspaCustomer::from_str(customer_str).map_err(|_| Error::invalid_asn(customer_str))?;
+        let customer = AspaCustomer::from_str(customer_str).map_err(|_| Error::invalid_asn(customer_str))?;
 
         if let Some(add) = matches.values_of("add") {
             for provider_str in add {
-                let provider = ProviderAs::from_str(provider_str)
-                    .map_err(|_| Error::invalid_asn(provider_str))?;
+                let provider = ProviderAs::from_str(provider_str).map_err(|_| Error::invalid_asn(provider_str))?;
                 added.push(provider);
             }
         }
 
         if let Some(remove) = matches.values_of("remove") {
             for provider_as_str in remove {
-                let provider_as = ProviderAs::from_str(provider_as_str)
-                    .map_err(|_| Error::invalid_asn(provider_as_str))?;
+                let provider_as =
+                    ProviderAs::from_str(provider_as_str).map_err(|_| Error::invalid_asn(provider_as_str))?;
 
                 if added.iter().any(|added| added.provider() == provider_as.provider()) {
                     return Err(Error::general("Do not add and remove the same AS in a single update."));
                 }
-                
+
                 removed.push(provider_as);
             }
         }
