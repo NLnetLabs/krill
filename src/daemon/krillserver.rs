@@ -699,6 +699,11 @@ impl KrillServer {
             .suggest(definitions.as_slice(), &resources_held, limit)
             .await)
     }
+
+    /// Re-issue ROA objects so that they will use short subjects (see issue #700)
+    pub async fn force_renew_roas(&self) -> KrillResult<()> {
+        self.ca_manager.force_renew_roas_all(self.system_actor()).await
+    }
 }
 
 /// # Handle publication requests

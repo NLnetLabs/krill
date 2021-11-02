@@ -1809,6 +1809,24 @@ impl CaManager {
         }
         Ok(())
     }
+
+    /// Force the reissuance of all ROAs in all CAs. This function was added
+    /// because we need to re-issue ROAs in Krill 0.9.3 to force that a short
+    /// subject CN is used for the EE certificate: i.e. the SKI rather than the
+    /// full public key. But there may also be other cases in future where
+    /// forcing to re-issue ROAs may be useful.
+    pub async fn force_renew_roas_all(&self, actor: &Actor) -> KrillResult<()> {
+        for ca in self.ca_store.list()? {
+            let cmd = Cmd::new(
+                &ca,
+                None,
+                CmdDet::RouteAuthorizationsForceRenew(self.config.clone(), self.signer.clone()),
+                actor,
+            );
+            self.send_command(cmd).await?;
+        }
+        Ok(())
+    }
 }
 
 /// # Resource Tagged Attestation functions
