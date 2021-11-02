@@ -5,7 +5,7 @@ use rpki::repository::crypto::KeyIdentifier;
 use crate::{
     commons::{
         api::{
-            AspaConfigurationUpdate, AspaCustomer, AspaDefinition, ChildHandle, Handle, IssuanceRequest, IssuedCert,
+            AspaCustomer, AspaDefinition, AspaProvidersUpdate, ChildHandle, Handle, IssuanceRequest, IssuedCert,
             ObjectName, ParentCaContact, ParentHandle, ParentResourceClassName, RcvdCert, RepositoryContact,
             ResourceClassName, ResourceSet, RevocationRequest, RevokedObject, RoaAggregateKey, RtaName, SuspendedCert,
             TaCertDetails, UnsuspendedCert,
@@ -680,7 +680,7 @@ pub enum CaEvtDet {
     },
     AspaConfigUpdated {
         customer: AspaCustomer,
-        update: AspaConfigurationUpdate,
+        update: AspaProvidersUpdate,
     },
     AspaConfigRemoved {
         customer: AspaCustomer,

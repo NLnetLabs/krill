@@ -25,7 +25,7 @@ use crate::{
     },
     commons::{
         api::{
-            AddChildRequest, AspaConfigurationUpdate, AspaCustomer, AspaDefinition, AspaDefinitionList, CertAuthInfo,
+            AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, CertAuthInfo,
             CertAuthInit, CertifiedKeyInfo, ChildHandle, Handle, ObjectName, ParentCaContact, ParentCaReq,
             ParentHandle, ParentStatuses, PublicationServerUris, PublisherDetails, PublisherHandle, PublisherList,
             RepositoryContact, ResourceClassKeysInfo, ResourceClassName, ResourceSet, RoaDefinition,
@@ -428,7 +428,7 @@ pub async fn ca_aspas_expect(handle: &Handle, expected_aspas: AspaDefinitionList
     }
 }
 
-pub async fn ca_aspas_update(handle: &Handle, customer: AspaCustomer, update: AspaConfigurationUpdate) {
+pub async fn ca_aspas_update(handle: &Handle, customer: AspaCustomer, update: AspaProvidersUpdate) {
     krill_admin(Command::CertAuth(CaCommand::AspasUpdate(
         handle.clone(),
         customer,

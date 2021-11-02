@@ -234,7 +234,7 @@ pub struct ErrorResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     delta_error: Option<RoaDeltaError>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    aspa_delta_error: Option<ProviderAsUpdateConflict>,
+    aspa_delta_error: Option<AspaProvidersUpdateConflict>,
 }
 
 impl ErrorResponse {
@@ -304,7 +304,7 @@ impl ErrorResponse {
         self
     }
 
-    pub fn with_aspa_delta_error(mut self, aspa_delta_error: &ProviderAsUpdateConflict) -> Self {
+    pub fn with_aspa_delta_error(mut self, aspa_delta_error: &AspaProvidersUpdateConflict) -> Self {
         self.aspa_delta_error = Some(aspa_delta_error.clone());
         self
     }

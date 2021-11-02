@@ -93,8 +93,8 @@ impl AspaDefinition {
         &self.providers
     }
 
-    pub fn verify_update(&self, update: &AspaConfigurationUpdate) -> Result<(), ProviderAsUpdateConflict> {
-        let mut error = ProviderAsUpdateConflict::default();
+    pub fn verify_update(&self, update: &AspaProvidersUpdate) -> Result<(), AspaProvidersUpdateConflict> {
+        let mut error = AspaProvidersUpdateConflict::default();
         for removed in update.removed() {
             if !self.providers.contains(removed) {
                 error.add_unknown(*removed)
@@ -118,7 +118,7 @@ impl AspaDefinition {
     }
 
     /// Applies an update. This assumes that the update was verified.
-    pub fn apply_update(&mut self, update: &AspaConfigurationUpdate) {
+    pub fn apply_update(&mut self, update: &AspaProvidersUpdate) {
         for removed in update.removed() {
             self.providers.retain(|provider| provider != removed);
         }
@@ -144,25 +144,25 @@ impl fmt::Display for AspaDefinition {
 }
 
 impl FromStr for AspaDefinition {
-    type Err = AspaConfigurationFormatError;
+    type Err = AspaDefinitionFormatError;
 
     // example: 65000 => 65001, 65002(v4), 65003(v6)
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut parts = s.split("=>");
 
         let customer = {
-            let customer_str = parts.next().ok_or(AspaConfigurationFormatError::CustomerMissing)?;
+            let customer_str = parts.next().ok_or(AspaDefinitionFormatError::CustomerAsMissing)?;
             AspaCustomer::from_str(customer_str.trim())
-                .map_err(|_| AspaConfigurationFormatError::CustomerInvalid(customer_str.trim().to_string()))?
+                .map_err(|_| AspaDefinitionFormatError::CustomerAsInvalid(customer_str.trim().to_string()))?
         };
 
         let mut providers = {
             let mut providers = vec![];
-            let providers_str = parts.next().ok_or(AspaConfigurationFormatError::ProvidersMissing)?;
+            let providers_str = parts.next().ok_or(AspaDefinitionFormatError::ProviderAsMissing)?;
             let provider_parts = providers_str.split(',');
             for provider_part in provider_parts {
                 let provider = ProviderAs::from_str(provider_part.trim())
-                    .map_err(|_| AspaConfigurationFormatError::ProviderInvalid(provider_part.trim().to_string()))?;
+                    .map_err(|_| AspaDefinitionFormatError::ProviderAsInvalid(provider_part.trim().to_string()))?;
                 providers.push(provider);
             }
             providers
@@ -170,20 +170,18 @@ impl FromStr for AspaDefinition {
 
         // unexpected extra bits are not acceptable
         if parts.next().is_some() {
-            Err(AspaConfigurationFormatError::ExtraParts)
+            Err(AspaDefinitionFormatError::ExtraParts)
         } else {
             // Ensure that the providers are sorted, there is at least one, and there are no duplicates
             providers.sort_by_key(|p| p.provider());
 
-            let mut last_seen = providers
-                .first()
-                .ok_or(AspaConfigurationFormatError::ProvidersMissing)?;
+            let mut last_seen = providers.first().ok_or(AspaDefinitionFormatError::ProviderAsMissing)?;
 
             if providers.len() > 1 {
                 for i in 1..providers.len() {
                     let next = providers.get(i).unwrap(); // safe i max == .len() - 1
                     if next.provider() == last_seen.provider() {
-                        return Err(AspaConfigurationFormatError::ProviderDuplicateAs(*last_seen, *next));
+                        return Err(AspaDefinitionFormatError::ProviderAsDuplicate(*last_seen, *next));
                     }
                     last_seen = next;
                 }
@@ -194,49 +192,52 @@ impl FromStr for AspaDefinition {
     }
 }
 
+//------------ AspaDefinitionFormatError ---------------------------------
+
 #[derive(Clone, Debug)]
-pub enum AspaConfigurationFormatError {
-    CustomerMissing,
-    CustomerInvalid(String),
-    ProvidersMissing,
-    ProviderInvalid(String),
-    ProviderDuplicateAs(ProviderAs, ProviderAs),
+pub enum AspaDefinitionFormatError {
+    CustomerAsMissing,
+    CustomerAsInvalid(String),
+    ProviderAsMissing,
+    ProviderAsInvalid(String),
+    ProviderAsDuplicate(ProviderAs, ProviderAs),
     ExtraParts,
 }
 
-impl fmt::Display for AspaConfigurationFormatError {
+impl fmt::Display for AspaDefinitionFormatError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "ASPA configuration format invalid: ")?;
         match self {
-            AspaConfigurationFormatError::CustomerMissing => write!(f, "customer AS missing"),
-            AspaConfigurationFormatError::CustomerInvalid(s) => write!(f, "cannot parse customer AS: {}", s),
-            AspaConfigurationFormatError::ProvidersMissing => write!(f, "providers missing"),
-            AspaConfigurationFormatError::ProviderInvalid(s) => write!(f, "cannot parse provider AS: {}", s),
-            AspaConfigurationFormatError::ProviderDuplicateAs(l, r) => {
+            AspaDefinitionFormatError::CustomerAsMissing => write!(f, "customer AS missing"),
+            AspaDefinitionFormatError::CustomerAsInvalid(s) => write!(f, "cannot parse customer AS: {}", s),
+            AspaDefinitionFormatError::ProviderAsMissing => write!(f, "providers missing"),
+            AspaDefinitionFormatError::ProviderAsInvalid(s) => write!(f, "cannot parse provider AS: {}", s),
+            AspaDefinitionFormatError::ProviderAsDuplicate(l, r) => {
                 write!(f, "duplicate AS in provider list. Found {} and {}", l, r)
             }
-            AspaConfigurationFormatError::ExtraParts => write!(f, "found more than one '=>'"),
+            AspaDefinitionFormatError::ExtraParts => write!(f, "found more than one '=>'"),
         }
     }
 }
 
-impl std::error::Error for AspaConfigurationFormatError {}
+impl std::error::Error for AspaDefinitionFormatError {}
 
-//------------ AspaConfigurationUpdate -----------------------------------
+//------------ AspaProvidersUpdate ---------------------------------------
 
-/// This type defines an update to an existing AspaConfiguration.
+/// This type defines an update of ProviderAs entries for an existing
+/// AspaDefinition.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct AspaConfigurationUpdate {
+pub struct AspaProvidersUpdate {
     added: Vec<ProviderAs>,
     removed: Vec<ProviderAs>,
 }
 
-impl AspaConfigurationUpdate {
+impl AspaProvidersUpdate {
     pub fn new(added: Vec<ProviderAs>, removed: Vec<ProviderAs>) -> Self {
-        AspaConfigurationUpdate { added, removed }
+        AspaProvidersUpdate { added, removed }
     }
     pub fn empty() -> Self {
-        AspaConfigurationUpdate {
+        AspaProvidersUpdate {
             added: vec![],
             removed: vec![],
         }
@@ -268,7 +269,7 @@ impl AspaConfigurationUpdate {
     }
 }
 
-impl fmt::Display for AspaConfigurationUpdate {
+impl fmt::Display for AspaProvidersUpdate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if !self.added.is_empty() {
             write!(f, "adding providers:")?;
@@ -287,17 +288,17 @@ impl fmt::Display for AspaConfigurationUpdate {
     }
 }
 
-//------------ ProviderAsUpdateConflict ----------------------------------
+//------------ AspaProvidersUpdateConflict -------------------------------
 
-/// This type contains a detailed error report for an ASPA
-/// that could not be applied.
+/// This type contains details on AspaProvidersUpdate entries which
+/// could not be applied.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ProviderAsUpdateConflict {
+pub struct AspaProvidersUpdateConflict {
     duplicates: Vec<ProviderAs>,
     unknowns: Vec<ProviderAs>,
 }
 
-impl ProviderAsUpdateConflict {
+impl AspaProvidersUpdateConflict {
     pub fn add_duplicate(&mut self, provider: ProviderAs) {
         self.duplicates.push(provider);
     }
@@ -311,7 +312,7 @@ impl ProviderAsUpdateConflict {
     }
 }
 
-impl Default for ProviderAsUpdateConflict {
+impl Default for AspaProvidersUpdateConflict {
     fn default() -> Self {
         Self {
             duplicates: vec![],
@@ -320,7 +321,7 @@ impl Default for ProviderAsUpdateConflict {
     }
 }
 
-impl fmt::Display for ProviderAsUpdateConflict {
+impl fmt::Display for AspaProvidersUpdateConflict {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if !self.duplicates.is_empty() {
             writeln!(f, "Cannot add the following duplicate provider(s): ")?;

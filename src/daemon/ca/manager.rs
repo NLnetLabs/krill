@@ -13,7 +13,7 @@ use crate::{
     commons::{
         actor::Actor,
         api::{
-            self, AddChildRequest, AspaConfigurationUpdate, AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates,
+            self, AddChildRequest, AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate,
             Base64, CaCommandDetails, CaCommandResult, CertAuthList, CertAuthSummary, ChildCaInfo, ChildHandle,
             CommandHistory, CommandHistoryCriteria, Entitlements, Handle, IssuanceRequest, IssuanceResponse, ListReply,
             ParentCaContact, ParentCaReq, ParentHandle, PublishDelta, RcvdCert, RepositoryContact, ResourceClassName,
@@ -1787,7 +1787,7 @@ impl CaManager {
         &self,
         ca: Handle,
         customer: AspaCustomer,
-        update: AspaConfigurationUpdate,
+        update: AspaProvidersUpdate,
         actor: &Actor,
     ) -> KrillResult<()> {
         self.send_command(CmdDet::aspas_update_aspa(

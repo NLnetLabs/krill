@@ -7,7 +7,7 @@ use bytes::Bytes;
 
 use krill::{
     commons::api::{
-        AspaConfigurationUpdate, AspaCustomer, AspaDefinition, AspaDefinitionList, ObjectName, ResourceClassName,
+        AspaCustomer, AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, ObjectName, ResourceClassName,
         ResourceSet, RoaDefinition, RoaDefinitionUpdates, RtaList,
     },
     daemon::ca::ta_handle,
@@ -469,7 +469,7 @@ async fn functional() {
         info("");
 
         let customer = AspaCustomer::from_str("AS65000").unwrap();
-        let aspa_update = AspaConfigurationUpdate::new(
+        let aspa_update = AspaProvidersUpdate::new(
             vec![ProviderAs::from_str("AS65006").unwrap()],
             vec![ProviderAs::from_str("AS65002").unwrap()],
         );

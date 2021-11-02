@@ -16,7 +16,7 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            self, AspaConfigurationUpdate, AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates, CertAuthInfo,
+            self, AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate, CertAuthInfo,
             ChildHandle, EntitlementClass, Entitlements, Handle, IdCertPem, IssuanceRequest, IssuedCert, ObjectName,
             ParentCaContact, ParentHandle, RcvdCert, RepoInfo, RepositoryContact, RequestResourceLimit,
             ResourceClassName, ResourceSet, Revocation, RevocationRequest, RevocationResponse, RoaDefinition, RtaList,
@@ -1797,7 +1797,7 @@ impl CertAuth {
                         .copied()
                         .collect();
 
-                    let update = AspaConfigurationUpdate::new(added, removed);
+                    let update = AspaProvidersUpdate::new(added, removed);
 
                     if update.contains_changes() {
                         res.push(CaEvtDet::AspaConfigUpdated { customer, update })
@@ -1814,7 +1814,7 @@ impl CertAuth {
     pub fn aspas_update(
         &self,
         customer: AspaCustomer,
-        update: AspaConfigurationUpdate,
+        update: AspaProvidersUpdate,
         config: &Config,
         signer: &KrillSigner,
     ) -> KrillResult<Vec<CaEvt>> {
@@ -1872,7 +1872,7 @@ impl CertAuth {
     }
 
     /// Verifies whether the update can be applied.
-    fn verify_update(&self, customer: AspaCustomer, update: &AspaConfigurationUpdate) -> KrillResult<()> {
+    fn verify_update(&self, customer: AspaCustomer, update: &AspaProvidersUpdate) -> KrillResult<()> {
         if update.is_empty() {
             return Err(Error::AspaProviderUpdateEmpty(self.handle().clone(), customer));
         }

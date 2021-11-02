@@ -8,7 +8,7 @@ use crate::{
     commons::{
         actor::Actor,
         api::{
-            AspaConfigurationUpdate, AspaCustomer, AspaDefinitionUpdates, ChildHandle, Entitlements, Handle,
+            AspaCustomer, AspaDefinitionUpdates, AspaProvidersUpdate, ChildHandle, Entitlements, Handle,
             IssuanceRequest, ParentCaContact, ParentHandle, RcvdCert, RepositoryContact, ResourceClassName,
             ResourceSet, RevocationRequest, RevocationResponse, RtaName, StorableCaCommand, StorableRcEntitlement,
         },
@@ -154,7 +154,7 @@ pub enum CmdDet {
     AspasUpdate(AspaDefinitionUpdates, Arc<Config>, Arc<KrillSigner>),
 
     // Updates an existing AspaProviders for the given AspaCustomer
-    AspasUpdateExisting(AspaCustomer, AspaConfigurationUpdate, Arc<Config>, Arc<KrillSigner>),
+    AspasUpdateExisting(AspaCustomer, AspaProvidersUpdate, Arc<Config>, Arc<KrillSigner>),
 
     // Re-issue any and all ASPA objects which would otherwise expire in
     // some time (default 4 weeks, configurable). Note that this command
@@ -522,7 +522,7 @@ impl CmdDet {
     pub fn aspas_update_aspa(
         ca: &Handle,
         customer: AspaCustomer,
-        update: AspaConfigurationUpdate,
+        update: AspaProvidersUpdate,
         config: Arc<Config>,
         signer: Arc<KrillSigner>,
         actor: &Actor,

@@ -12,8 +12,8 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            rrdp::PublicationDeltaError, AspaCustomer, ChildHandle, ErrorResponse, Handle, ParentHandle,
-            ProviderAsUpdateConflict, PublisherHandle, ResourceClassName, ResourceSetError, RoaDefinition,
+            rrdp::PublicationDeltaError, AspaCustomer, AspaProvidersUpdateConflict, ChildHandle, ErrorResponse, Handle,
+            ParentHandle, PublisherHandle, ResourceClassName, ResourceSetError, RoaDefinition,
         },
         eventsourcing::{AggregateStoreError, KeyValueError},
         remote::{
@@ -280,7 +280,7 @@ pub enum Error {
     AspaCustomerAlreadyPresent(Handle, AspaCustomer),
     AspaCustomerUnknown(Handle, AspaCustomer),
     AspaProviderUpdateEmpty(Handle, AspaCustomer),
-    AspaProviderUpdateConflict(Handle, ProviderAsUpdateConflict),
+    AspaProviderUpdateConflict(Handle, AspaProvidersUpdateConflict),
 
     //-----------------------------------------------------------------
     // Key Usage Issues
@@ -445,10 +445,10 @@ impl fmt::Display for Error {
             //-----------------------------------------------------------------
             // Autonomous System Provider Authorization - ASPAs
             //-----------------------------------------------------------------
-            Error::AspaCustomerAsNotEntitled(_ca, asn) => write!(f, "Customer ASN '{}' is not held by you", asn),
-            Error::AspaCustomerAlreadyPresent(_ca, asn) => write!(f, "ASPA already exists for customer ASN '{}'", asn),
-            Error::AspaCustomerUnknown(_ca, asn) => write!(f, "No current ASPA exists for customer ASN '{}'", asn),
-            Error::AspaProviderUpdateEmpty(_ca, asn) => write!(f, "Received empty update for ASPA for customer ASN '{}'", asn),
+            Error::AspaCustomerAsNotEntitled(_ca, asn) => write!(f, "Customer AS '{}' is not held by you", asn),
+            Error::AspaCustomerAlreadyPresent(_ca, asn) => write!(f, "ASPA already exists for customer AS '{}'", asn),
+            Error::AspaCustomerUnknown(_ca, asn) => write!(f, "No current ASPA exists for customer AS '{}'", asn),
+            Error::AspaProviderUpdateEmpty(_ca, asn) => write!(f, "Received empty update for ASPA for customer AS '{}'", asn),
             Error::AspaProviderUpdateConflict(_ca, e) => write!(f, "ASPA delta rejected:\n\n'{}'", e),
 
             //-----------------------------------------------------------------

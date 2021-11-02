@@ -10,8 +10,8 @@ use crate::{
     commons::{
         actor::{Actor, ActorDef},
         api::{
-            AddChildRequest, AllCertAuthIssues, AspaConfigurationUpdate, AspaCustomer, AspaDefinitionList,
-            AspaDefinitionUpdates, CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthInit, CertAuthIssues,
+            AddChildRequest, AllCertAuthIssues, AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates,
+            AspaProvidersUpdate, CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthInit, CertAuthIssues,
             CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle, ChildrenConnectionStats, CommandHistory,
             CommandHistoryCriteria, Handle, ListReply, ParentCaContact, ParentCaReq, ParentHandle,
             PublicationServerUris, PublishDelta, PublisherDetails, PublisherHandle, RepositoryContact, ResourceSet,
@@ -657,7 +657,7 @@ impl KrillServer {
         &self,
         ca: Handle,
         customer: AspaCustomer,
-        update: AspaConfigurationUpdate,
+        update: AspaProvidersUpdate,
         actor: &Actor,
     ) -> KrillEmptyResult {
         Ok(self

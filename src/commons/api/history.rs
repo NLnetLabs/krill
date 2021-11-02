@@ -7,7 +7,7 @@ use rpki::repository::{crypto::KeyIdentifier, x509::Time};
 use crate::{
     commons::{
         api::{
-            ArgKey, ArgVal, AspaConfigurationUpdate, AspaCustomer, ChildHandle, Handle, Label, Message, ParentHandle,
+            ArgKey, ArgVal, AspaCustomer, AspaProvidersUpdate, ChildHandle, Handle, Label, Message, ParentHandle,
             PublisherHandle, RequestResourceLimit, ResourceClassName, ResourceSet, RevocationRequest,
             RoaDefinitionUpdates, RtaName, StorableParentContact,
         },
@@ -477,7 +477,7 @@ pub enum StorableCaCommand {
     },
     AspasUpdateExisting {
         customer: AspaCustomer,
-        update: AspaConfigurationUpdate,
+        update: AspaProvidersUpdate,
     },
     AspaRemove {
         customer: AspaCustomer,
@@ -590,7 +590,7 @@ impl WithStorableDetails for StorableCaCommand {
             // ASPA
             StorableCaCommand::AspasUpdate { .. } => CommandSummary::new("cmd-ca-aspas-update", &self),
             StorableCaCommand::AspasUpdateExisting { .. } => CommandSummary::new("cmd-ca-aspas-update-existing", &self),
-            StorableCaCommand::AspaRemove { .. } => CommandSummary::new("cmd-ca-aspa-remove", &self),
+            StorableCaCommand::AspaRemove { .. } => CommandSummary::new("cmd-ca-aspas-remove", &self),
 
             // REPO
             StorableCaCommand::RepoUpdate { service_uri } => {
@@ -751,10 +751,10 @@ impl fmt::Display for StorableCaCommand {
                 write!(f, "{}", updates)
             }
             StorableCaCommand::AspasUpdateExisting { customer, update } => {
-                write!(f, "update ASPA for customer ASN: {} {}", customer, update)
+                write!(f, "update ASPA for customer AS: {} {}", customer, update)
             }
             StorableCaCommand::AspaRemove { customer } => {
-                write!(f, "Remove ASPA for customer ASN: {}", customer)
+                write!(f, "Remove ASPA for customer AS: {}", customer)
             }
 
             // ------------------------------------------------------------

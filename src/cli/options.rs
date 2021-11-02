@@ -24,7 +24,7 @@ use crate::{
     cli::report::{ReportError, ReportFormat},
     commons::{
         api::{
-            AddChildRequest, AspaConfigurationFormatError, AspaConfigurationUpdate, AspaCustomer, AspaDefinition,
+            AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionFormatError, AspaProvidersUpdate,
             AuthorizationFmtError, CertAuthInit, ChildHandle, Handle, ParentCaContact, ParentCaReq, ParentHandle,
             PublicationServerUris, PublisherHandle, RepositoryContact, ResourceSet, ResourceSetError, RoaDefinition,
             RoaDefinitionUpdates, RtaName, Token, UpdateChildRequest,
@@ -1867,7 +1867,7 @@ impl Options {
             }
         }
 
-        let update = AspaConfigurationUpdate::new(added, removed);
+        let update = AspaProvidersUpdate::new(added, removed);
         if update.is_empty() {
             return Err(Error::general("You MUST specify at least one of --add or --remove"));
         }
@@ -2372,7 +2372,7 @@ pub enum CaCommand {
     // ASPAs
     AspasList(Handle),
     AspasAddOrReplace(Handle, AspaDefinition),
-    AspasUpdate(Handle, AspaCustomer, AspaConfigurationUpdate),
+    AspasUpdate(Handle, AspaCustomer, AspaProvidersUpdate),
     AspasRemove(Handle, AspaCustomer),
 
     // Show details for this CA
@@ -2542,7 +2542,7 @@ pub enum Error {
     InvalidRouteDelta(AuthorizationFmtError),
     InvalidAsn(String),
     DuplicateAspaProvider(DuplicateProviderAs),
-    InvalidAspaConfig(AspaConfigurationFormatError),
+    InvalidAspaConfig(AspaDefinitionFormatError),
     InvalidHandle,
     InvalidSeconds,
     MissingArgWithEnv(String, String),
@@ -2634,8 +2634,8 @@ impl From<AuthorizationFmtError> for Error {
     }
 }
 
-impl From<AspaConfigurationFormatError> for Error {
-    fn from(e: AspaConfigurationFormatError) -> Self {
+impl From<AspaDefinitionFormatError> for Error {
+    fn from(e: AspaDefinitionFormatError) -> Self {
         Error::InvalidAspaConfig(e)
     }
 }
