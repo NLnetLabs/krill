@@ -11,8 +11,9 @@ use crate::{
     },
     commons::{
         api::{
-            AllCertAuthIssues, CaRepoDetails, CertAuthIssues, ChildCaInfo, ChildrenConnectionStats, ParentCaContact,
-            ParentStatuses, PublisherDetails, PublisherList, RepoStatus, Token,
+            AllCertAuthIssues, AspaDefinitionUpdates, CaRepoDetails, CertAuthIssues, ChildCaInfo,
+            ChildrenConnectionStats, ParentCaContact, ParentStatuses, PublisherDetails, PublisherList, RepoStatus,
+            Token,
         },
         bgp::BgpAnalysisAdvice,
         error::KrillIoError,
@@ -329,6 +330,32 @@ impl KrillClient {
                 };
 
                 Ok(ApiResponse::BgpAnalysisSuggestions(suggestions))
+            }
+
+            CaCommand::AspasList(handle) => {
+                let uri = format!("api/v1/cas/{}/aspas", handle);
+                let aspas = get_json(&self.server, &self.token, &uri).await?;
+                Ok(ApiResponse::AspaDefinitions(aspas))
+            }
+
+            CaCommand::AspasAddOrReplace(handle, aspa) => {
+                let uri = format!("api/v1/cas/{}/aspas", handle);
+                let updates = AspaDefinitionUpdates::new(vec![aspa], vec![]);
+                post_json(&self.server, &self.token, &uri, updates).await?;
+                Ok(ApiResponse::Empty)
+            }
+
+            CaCommand::AspasRemove(handle, customer) => {
+                let uri = format!("api/v1/cas/{}/aspas", handle);
+                let updates = AspaDefinitionUpdates::new(vec![], vec![customer]);
+                post_json(&self.server, &self.token, &uri, updates).await?;
+                Ok(ApiResponse::Empty)
+            }
+
+            CaCommand::AspasUpdate(handle, customer, update) => {
+                let uri = format!("api/v1/cas/{}/aspas/as/{}", handle, customer);
+                post_json(&self.server, &self.token, &uri, update).await?;
+                Ok(ApiResponse::Empty)
             }
 
             CaCommand::Show(handle) => {

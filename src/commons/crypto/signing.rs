@@ -11,6 +11,7 @@ use bytes::Bytes;
 
 use rpki::{
     repository::{
+        aspa::{Aspa, AspaBuilder},
         cert::{Cert, KeyUsage, Overclaim, TbsCert},
         crl::{Crl, CrlEntry, TbsCertList},
         crypto::{DigestAlgorithm, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer},
@@ -184,6 +185,20 @@ impl SignerProvider {
         .map_err(crypto::Error::signing)
     }
 
+    pub fn sign_aspa(
+        &self,
+        aspa_builder: AspaBuilder,
+        object_builder: SignedObjectBuilder,
+        key_id: &KeyIdentifier,
+    ) -> CryptoResult<Aspa> {
+        match self {
+            SignerProvider::OpenSsl(signer) => aspa_builder.finalize(object_builder, signer.deref(), key_id),
+            #[cfg(feature = "hsm")]
+            SignerProvider::Dummy(signer) => aspa_builder.finalize(object_builder, signer.deref(), key_id),
+        }
+        .map_err(crypto::Error::signing)
+    }
+
     pub fn sign_rta(&self, rta_builder: &mut rta::RtaBuilder, ee: Cert) -> CryptoResult<()> {
         let key = ee.subject_key_identifier();
         rta_builder.push_cert(ee);
@@ -302,6 +317,18 @@ impl KrillSigner {
             .read()
             .unwrap()
             .sign_roa(roa_builder, object_builder, key_id)
+    }
+
+    pub fn sign_aspa(
+        &self,
+        aspa_builder: AspaBuilder,
+        object_builder: SignedObjectBuilder,
+        key_id: &KeyIdentifier,
+    ) -> CryptoResult<Aspa> {
+        self.general_signer
+            .read()
+            .unwrap()
+            .sign_aspa(aspa_builder, object_builder, key_id)
     }
 
     pub fn sign_rta(&self, rta_builder: &mut rta::RtaBuilder, ee: Cert) -> CryptoResult<()> {

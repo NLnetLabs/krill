@@ -6,9 +6,9 @@ use serde::Serialize;
 use crate::{
     commons::{
         api::{
-            AllCertAuthIssues, CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthIssues, CertAuthList,
-            ChildCaInfo, ChildrenConnectionStats, CommandHistory, ParentCaContact, ParentStatuses, PublisherDetails,
-            PublisherList, RepoStatus, RoaDefinitions, RtaList, RtaPrepResponse, ServerInfo,
+            AllCertAuthIssues, AspaDefinitionList, CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthIssues,
+            CertAuthList, ChildCaInfo, ChildrenConnectionStats, CommandHistory, ParentCaContact, ParentStatuses,
+            PublisherDetails, PublisherList, RepoStatus, RoaDefinitions, RtaList, RtaPrepResponse, ServerInfo,
         },
         bgp::{BgpAnalysisAdvice, BgpAnalysisReport, BgpAnalysisSuggestion},
         remote::{api::ClientInfos, rfc8183},
@@ -30,10 +30,15 @@ pub enum ApiResponse {
     CertAuthHistory(CommandHistory),
     CertAuthAction(CaCommandDetails),
     CertAuths(CertAuthList),
+
+    // ROA related
     RouteAuthorizations(RoaDefinitions),
     BgpAnalysisAdvice(BgpAnalysisAdvice),
     BgpAnalysisFull(BgpAnalysisReport),
     BgpAnalysisSuggestions(BgpAnalysisSuggestion),
+
+    // ASPA related
+    AspaDefinitions(AspaDefinitionList),
 
     ParentCaContact(ParentCaContact),
     ParentStatuses(ParentStatuses),
@@ -82,6 +87,7 @@ impl ApiResponse {
                 ApiResponse::BgpAnalysisAdvice(analysis) => Ok(Some(analysis.report(fmt)?)),
                 ApiResponse::BgpAnalysisFull(table) => Ok(Some(table.report(fmt)?)),
                 ApiResponse::BgpAnalysisSuggestions(suggestions) => Ok(Some(suggestions.report(fmt)?)),
+                ApiResponse::AspaDefinitions(definitions) => Ok(Some(definitions.report(fmt)?)),
                 ApiResponse::ParentCaContact(contact) => Ok(Some(contact.report(fmt)?)),
                 ApiResponse::ParentStatuses(statuses) => Ok(Some(statuses.report(fmt)?)),
                 ApiResponse::ChildInfo(info) => Ok(Some(info.report(fmt)?)),
@@ -197,6 +203,8 @@ impl Report for RoaDefinitions {}
 impl Report for BgpAnalysisAdvice {}
 impl Report for BgpAnalysisReport {}
 impl Report for BgpAnalysisSuggestion {}
+
+impl Report for AspaDefinitionList {}
 
 impl Report for CaRepoDetails {}
 impl Report for RepoStatus {}

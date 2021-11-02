@@ -13,11 +13,11 @@ use crate::{
     commons::{
         actor::Actor,
         api::{
-            self, AddChildRequest, Base64, CaCommandDetails, CaCommandResult, CertAuthList, CertAuthSummary,
-            ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Entitlements, Handle, IssuanceRequest,
-            IssuanceResponse, ListReply, ParentCaContact, ParentCaReq, ParentHandle, PublishDelta, RcvdCert,
-            RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse, RtaName,
-            StoredEffect, UpdateChildRequest,
+            self, AddChildRequest, AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate,
+            Base64, CaCommandDetails, CaCommandResult, CertAuthList, CertAuthSummary, ChildCaInfo, ChildHandle,
+            CommandHistory, CommandHistoryCriteria, Entitlements, Handle, IssuanceRequest, IssuanceResponse, ListReply,
+            ParentCaContact, ParentCaReq, ParentHandle, PublishDelta, RcvdCert, RepositoryContact, ResourceClassName,
+            ResourceSet, RevocationRequest, RevocationResponse, RtaName, StoredEffect, UpdateChildRequest,
         },
         api::{rrdp::PublishElement, Timestamp},
         crypto::{IdCert, KrillSigner, ProtocolCms, ProtocolCmsBuilder},
@@ -1763,6 +1763,54 @@ impl CaManager {
     }
 }
 
+/// # Autonomous System Provider Authorization functions
+///
+impl CaManager {
+    /// Show current ASPA definitions for this CA.
+    pub async fn ca_aspas_definitions_show(&self, ca: Handle) -> KrillResult<AspaDefinitionList> {
+        let ca = self.get_ca(&ca).await?;
+        Ok(ca.aspas_definitions_show())
+    }
+
+    /// Add a new ASPA definition for this CA and the customer ASN in the update.
+    pub async fn ca_aspas_definitions_update(
+        &self,
+        ca: Handle,
+        updates: AspaDefinitionUpdates,
+        actor: &Actor,
+    ) -> KrillResult<()> {
+        self.send_command(CmdDet::aspas_definitions_update(
+            &ca,
+            updates,
+            self.config.clone(),
+            self.signer.clone(),
+            actor,
+        ))
+        .await?;
+        Ok(())
+    }
+
+    /// Update the ASPA definition for this CA and the customer ASN in the update.
+    pub async fn ca_aspas_update_aspa(
+        &self,
+        ca: Handle,
+        customer: AspaCustomer,
+        update: AspaProvidersUpdate,
+        actor: &Actor,
+    ) -> KrillResult<()> {
+        self.send_command(CmdDet::aspas_update_aspa(
+            &ca,
+            customer,
+            update,
+            self.config.clone(),
+            self.signer.clone(),
+            actor,
+        ))
+        .await?;
+        Ok(())
+    }
+}
+
 /// # Route Authorization functions
 ///
 impl CaManager {
@@ -1791,16 +1839,28 @@ impl CaManager {
         Ok(())
     }
 
-    /// Re-issue about to expire ROAs in all CAs. This is a no-op in case
-    /// ROAs do not need re-issuance. If new ROAs are created they will also
+    /// Re-issue about to expire objects in all CAs. This is a no-op in case
+    /// ROAs do not need re-issuance. If new objects are created they will also
     /// be published (event will trigger that MFT and CRL are also made, and
     /// and the CA in question synchronizes with its repository).
-    pub async fn renew_roas_all(&self, actor: &Actor) -> KrillResult<()> {
+    ///
+    /// Note: this does not re-issue delegated CA certificates, because child
+    /// CAs are expected to note extended validity eligibility and request
+    /// updated certificates themselves.
+    pub async fn renew_objects_all(&self, actor: &Actor) -> KrillResult<()> {
         for ca in self.ca_store.list()? {
             let cmd = Cmd::new(
                 &ca,
                 None,
                 CmdDet::RouteAuthorizationsRenew(self.config.clone(), self.signer.clone()),
+                actor,
+            );
+            self.send_command(cmd).await?;
+
+            let cmd = Cmd::new(
+                &ca,
+                None,
+                CmdDet::AspasRenew(self.config.clone(), self.signer.clone()),
                 actor,
             );
             self.send_command(cmd).await?;

@@ -8,9 +8,9 @@ use crate::{
     commons::{
         actor::Actor,
         api::{
-            ChildHandle, Entitlements, Handle, IssuanceRequest, ParentCaContact, ParentHandle, RcvdCert,
-            RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse, RtaName,
-            StorableCaCommand, StorableRcEntitlement,
+            AspaCustomer, AspaDefinitionUpdates, AspaProvidersUpdate, ChildHandle, Entitlements, Handle,
+            IssuanceRequest, ParentCaContact, ParentHandle, RcvdCert, RepositoryContact, ResourceClassName,
+            ResourceSet, RevocationRequest, RevocationResponse, RtaName, StorableCaCommand, StorableRcEntitlement,
         },
         crypto::{IdCert, KrillSigner},
         eventsourcing::{self, StoredCommand},
@@ -142,11 +142,28 @@ pub enum CmdDet {
     // Re-issue any and all ROA objects which would otherwise expire in
     // some time (default 4 weeks, configurable). Note that this command
     // is intended to be sent by the scheduler - once a day is fine - and
-    // will only be stored if there any updates to be done.
+    // will only be stored if there are any updates to be done.
     RouteAuthorizationsRenew(Arc<Config>, Arc<KrillSigner>),
 
     // Re-issue all ROA objects regardless of their expiration time.
     RouteAuthorizationsForceRenew(Arc<Config>, Arc<KrillSigner>),
+
+    // ------------------------------------------------------------
+    // ASPA Support
+    // ------------------------------------------------------------
+
+    // Update AspaDefinitions, adding new, replacing existing, or
+    // removing surplus.
+    AspasUpdate(AspaDefinitionUpdates, Arc<Config>, Arc<KrillSigner>),
+
+    // Updates an existing AspaProviders for the given AspaCustomer
+    AspasUpdateExisting(AspaCustomer, AspaProvidersUpdate, Arc<Config>, Arc<KrillSigner>),
+
+    // Re-issue any and all ASPA objects which would otherwise expire in
+    // some time (default 4 weeks, configurable). Note that this command
+    // is intended to be sent by the scheduler - once a day is fine - and
+    // will only be stored if there are any updates to be done.
+    AspasRenew(Arc<Config>, Arc<KrillSigner>),
 
     // ------------------------------------------------------------
     // Publishing
@@ -273,6 +290,15 @@ impl From<CmdDet> for StorableCaCommand {
             },
             CmdDet::RouteAuthorizationsRenew(_, _) => StorableCaCommand::ReissueBeforeExpiring,
             CmdDet::RouteAuthorizationsForceRenew(_, _) => StorableCaCommand::ForceReissue,
+
+            // ------------------------------------------------------------
+            // ASPA Support
+            // ------------------------------------------------------------
+            CmdDet::AspasUpdate(updates, _, _) => StorableCaCommand::AspasUpdate { updates },
+            CmdDet::AspasUpdateExisting(customer, update, _, _) => {
+                StorableCaCommand::AspasUpdateExisting { customer, update }
+            }
+            CmdDet::AspasRenew(_, _) => StorableCaCommand::ReissueBeforeExpiring,
 
             // ------------------------------------------------------------
             // Publishing
@@ -480,6 +506,35 @@ impl CmdDet {
             handle,
             None,
             CmdDet::RouteAuthorizationsUpdate(updates, config, signer),
+            actor,
+        )
+    }
+
+    //-------------------------------------------------------------------------------
+    // Autonomous System Provider Authorization
+    //-------------------------------------------------------------------------------
+    pub fn aspas_definitions_update(
+        ca: &Handle,
+        updates: AspaDefinitionUpdates,
+        config: Arc<Config>,
+        signer: Arc<KrillSigner>,
+        actor: &Actor,
+    ) -> Cmd {
+        eventsourcing::SentCommand::new(ca, None, CmdDet::AspasUpdate(updates, config, signer), actor)
+    }
+
+    pub fn aspas_update_aspa(
+        ca: &Handle,
+        customer: AspaCustomer,
+        update: AspaProvidersUpdate,
+        config: Arc<Config>,
+        signer: Arc<KrillSigner>,
+        actor: &Actor,
+    ) -> Cmd {
+        eventsourcing::SentCommand::new(
+            ca,
+            None,
+            CmdDet::AspasUpdateExisting(customer, update, config, signer),
             actor,
         )
     }
