@@ -709,8 +709,8 @@ impl ResourceClass {
 /// # Autonomous System Provider Authorization
 ///
 impl ResourceClass {
-    /// Renew all ROAs under the current for which the not-after time closer
-    /// than the given number of weeks
+    /// Renew all ASPA objects under the current for which the not-after time
+    /// is closer than the given number of weeks
     pub fn renew_aspas(
         &self,
         issuance_timing: &IssuanceTimingConfig,
