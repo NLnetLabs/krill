@@ -279,8 +279,8 @@ pub enum Error {
     AspaCustomerAsNotEntitled(Handle, AspaCustomer),
     AspaCustomerAlreadyPresent(Handle, AspaCustomer),
     AspaCustomerUnknown(Handle, AspaCustomer),
-    AspaProviderUpdateEmpty(Handle, AspaCustomer),
-    AspaProviderUpdateConflict(Handle, AspaProvidersUpdateConflict),
+    AspaProvidersUpdateEmpty(Handle, AspaCustomer),
+    AspaProvidersUpdateConflict(Handle, AspaProvidersUpdateConflict),
 
     //-----------------------------------------------------------------
     // Key Usage Issues
@@ -448,8 +448,8 @@ impl fmt::Display for Error {
             Error::AspaCustomerAsNotEntitled(_ca, asn) => write!(f, "Customer AS '{}' is not held by you", asn),
             Error::AspaCustomerAlreadyPresent(_ca, asn) => write!(f, "ASPA already exists for customer AS '{}'", asn),
             Error::AspaCustomerUnknown(_ca, asn) => write!(f, "No current ASPA exists for customer AS '{}'", asn),
-            Error::AspaProviderUpdateEmpty(_ca, asn) => write!(f, "Received empty update for ASPA for customer AS '{}'", asn),
-            Error::AspaProviderUpdateConflict(_ca, e) => write!(f, "ASPA delta rejected:\n\n'{}'", e),
+            Error::AspaProvidersUpdateEmpty(_ca, asn) => write!(f, "Received empty update for ASPA for customer AS '{}'", asn),
+            Error::AspaProvidersUpdateConflict(_ca, e) => write!(f, "ASPA delta rejected:\n\n'{}'", e),
 
             //-----------------------------------------------------------------
             // Key Usage Issues
@@ -828,12 +828,12 @@ impl Error {
             Error::AspaCustomerUnknown(ca, asn) => ErrorResponse::new("ca-aspa-unknown-customer-as", &self)
                 .with_ca(ca)
                 .with_asn(*asn),
-            Error::AspaProviderUpdateEmpty(ca, asn) => ErrorResponse::new("ca-aspa-delta-empty", &self)
+            Error::AspaProvidersUpdateEmpty(ca, asn) => ErrorResponse::new("ca-aspa-delta-empty", &self)
                 .with_ca(ca)
                 .with_asn(*asn),
-            Error::AspaProviderUpdateConflict(ca, delta_error) => ErrorResponse::new("ca-aspa-delta-error", &self)
+            Error::AspaProvidersUpdateConflict(ca, conflict) => ErrorResponse::new("ca-aspa-delta-error", &self)
                 .with_ca(ca)
-                .with_aspa_delta_error(delta_error),
+                .with_aspa_providers_conflict(conflict),
 
             //-----------------------------------------------------------------
             // Key Usage Issues (key-*)

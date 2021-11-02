@@ -1874,7 +1874,7 @@ impl CertAuth {
     /// Verifies whether the update can be applied.
     fn verify_update(&self, customer: AspaCustomer, update: &AspaProvidersUpdate) -> KrillResult<()> {
         if update.is_empty() {
-            return Err(Error::AspaProviderUpdateEmpty(self.handle().clone(), customer));
+            return Err(Error::AspaProvidersUpdateEmpty(self.handle().clone(), customer));
         }
 
         if !self.all_resources().contains_asn(customer) {
@@ -1888,7 +1888,7 @@ impl CertAuth {
 
         current
             .verify_update(update)
-            .map_err(|conflict| Error::AspaProviderUpdateConflict(self.handle().clone(), conflict))?;
+            .map_err(|conflict| Error::AspaProvidersUpdateConflict(self.handle().clone(), conflict))?;
 
         Ok(())
     }
