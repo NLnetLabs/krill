@@ -335,10 +335,10 @@ impl CaObjects {
         if let Some(repo) = &self.repo {
             res.insert(repo.clone(), vec![]);
 
-            for rco in self.classes.values() {
+            for resource_class_objects in self.classes.values() {
                 // Note the map 'res' will get entries for other (old) repositories
                 // if there are any keys with such repositories.
-                rco.add_elements(&mut res, repo);
+                resource_class_objects.add_elements(&mut res, repo);
             }
         }
 
@@ -361,8 +361,8 @@ impl CaObjects {
     pub fn closest_next_update(&self) -> Option<Timestamp> {
         let mut closest = None;
 
-        for rco in self.classes.values() {
-            let rco_time = Timestamp::from(rco.next_update_time());
+        for resource_class_objects in self.classes.values() {
+            let rco_time = Timestamp::from(resource_class_objects.next_update_time());
             if let Some(current_closest) = closest {
                 if current_closest > rco_time {
                     closest = Some(rco_time);
@@ -438,8 +438,7 @@ impl CaObjects {
         timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<()> {
-        let rco = self.get_class_mut(rcn)?;
-        rco.keyroll_stage(key, timing, signer)
+        self.get_class_mut(rcn)?.keyroll_stage(key, timing, signer)
     }
 
     // Activates the keyset by retiring the current set, and promoting
@@ -450,17 +449,16 @@ impl CaObjects {
         timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<()> {
-        let rco = self.get_class_mut(rcn)?;
-        rco.keyroll_activate(timing, signer)
+        self.get_class_mut(rcn)?.keyroll_activate(timing, signer)
     }
 
     // Finish a keyroll
     fn keyroll_finish(&mut self, rcn: &ResourceClassName) -> KrillResult<()> {
-        let rco = self.get_class_mut(rcn)?;
+        let resource_class_objects = self.get_class_mut(rcn)?;
 
-        // finish the key roll for this rco. This will remove the old key, and return
-        // an old_repo if there was one.
-        if let Some(old_repo) = rco.keyroll_finish()? {
+        // finish the key roll for this resource class objects. This will remove the old
+        // key, and return an old_repo if there was one.
+        if let Some(old_repo) = resource_class_objects.keyroll_finish()? {
             self.deprecate_repo_if_no_longer_used(old_repo);
         }
 
@@ -475,8 +473,7 @@ impl CaObjects {
         timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<()> {
-        let rco = self.get_class_mut(rcn)?;
-        rco.update_roas(roa_updates, timing, signer)
+        self.get_class_mut(rcn)?.update_roas(roa_updates, timing, signer)
     }
 
     // Update the delegated certificates in the current set
@@ -487,14 +484,12 @@ impl CaObjects {
         timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<()> {
-        let rco = self.get_class_mut(rcn)?;
-        rco.update_certs(cert_updates, timing, signer)
+        self.get_class_mut(rcn)?.update_certs(cert_updates, timing, signer)
     }
 
     // Update the received certificate.
     fn update_received_cert(&mut self, rcn: &ResourceClassName, cert: &RcvdCert) -> KrillResult<()> {
-        let rco = self.get_class_mut(rcn)?;
-        rco.update_received_cert(cert)
+        self.get_class_mut(rcn)?.update_received_cert(cert)
     }
 
     /// Reissue the MFT and CRL in this set if needed, i.e. if it's close to the next
@@ -504,10 +499,10 @@ impl CaObjects {
         let hours = timing.timing_publish_hours_before_next;
         let mut required = false;
 
-        for (_, rco) in self.classes.iter_mut() {
-            if rco.requires_re_issuance(hours) {
+        for (_, resource_class_objects) in self.classes.iter_mut() {
+            if resource_class_objects.requires_re_issuance(hours) {
                 required = true;
-                rco.reissue(timing, signer)?;
+                resource_class_objects.reissue(timing, signer)?;
             }
         }
 
@@ -521,8 +516,8 @@ impl CaObjects {
     // existing keys.
     fn update_repo(&mut self, repo: &RepositoryContact) {
         if let Some(old) = &self.repo {
-            for rco in self.classes.values_mut() {
-                rco.set_old_repo(old);
+            for resource_class_objects in self.classes.values_mut() {
+                resource_class_objects.set_old_repo(old);
             }
         }
         self.repo = Some(repo.clone());
