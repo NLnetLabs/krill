@@ -16,11 +16,11 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            self, CertAuthInfo, ChildHandle, EntitlementClass, Entitlements, Handle, IdCertPem, IssuanceRequest,
-            IssuedCert, ObjectName, ParentCaContact, ParentHandle, RcvdCert, RepoInfo, RepositoryContact,
-            RequestResourceLimit, ResourceClassName, ResourceSet, Revocation, RevocationRequest, RevocationResponse,
-            RoaDefinition, RtaList, RtaName, RtaPrepResponse, SigningCert, StorableCaCommand, TaCertDetails,
-            TrustAnchorLocator,
+            self, AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate, CertAuthInfo,
+            ChildHandle, EntitlementClass, Entitlements, Handle, IdCertPem, IssuanceRequest, IssuedCert, ObjectName,
+            ParentCaContact, ParentHandle, RcvdCert, RepoInfo, RepositoryContact, RequestResourceLimit,
+            ResourceClassName, ResourceSet, Revocation, RevocationRequest, RevocationResponse, RoaDefinition, RtaList,
+            RtaName, RtaPrepResponse, SigningCert, StorableCaCommand, TaCertDetails, TrustAnchorLocator,
         },
         crypto::{CsrInfo, IdCert, IdCertBuilder, KrillSigner, ProtocolCms, ProtocolCmsBuilder},
         error::{Error, RoaDeltaError},
@@ -31,15 +31,13 @@ use crate::{
     constants::test_mode_enabled,
     daemon::{
         ca::{
-            events::ChildCertificateUpdates, ta_handle, CaEvt, CaEvtDet, ChildDetails, Cmd, CmdDet, Ini, PreparedRta,
-            ResourceClass, ResourceTaggedAttestation, RouteAuthorization, RouteAuthorizationUpdates, Routes,
-            RtaContentRequest, RtaPrepareRequest, Rtas, SignedRta,
+            events::ChildCertificateUpdates, ta_handle, AspaDefinitions, CaEvt, CaEvtDet, ChildDetails, Cmd, CmdDet,
+            DropReason, Ini, PreparedRta, ResourceClass, ResourceTaggedAttestation, RouteAuthorization,
+            RouteAuthorizationUpdates, Routes, RtaContentRequest, RtaPrepareRequest, Rtas, SignedRta,
         },
         config::{Config, IssuanceTimingConfig},
     },
 };
-
-use super::DropReason;
 
 //------------ Rfc8183Id ---------------------------------------------------
 
@@ -107,6 +105,12 @@ pub struct CertAuth {
     #[serde(skip_serializing_if = "Rtas::is_empty", default = "Rtas::default")]
     rtas: Rtas,
 
+    #[serde(
+        skip_serializing_if = "AspaDefinitions::is_empty",
+        default = "AspaDefinitions::default"
+    )]
+    aspas: AspaDefinitions,
+
     #[serde(skip_serializing, default = "CertAuthStatus::default")]
     status: CertAuthStatus,
 }
@@ -128,6 +132,7 @@ impl Aggregate for CertAuth {
         let children = HashMap::new();
         let routes = Routes::default();
         let rtas = Rtas::default();
+        let aspas = AspaDefinitions::default();
         let repository = None;
 
         Ok(CertAuth {
@@ -146,6 +151,7 @@ impl Aggregate for CertAuth {
 
             routes,
             rtas,
+            aspas,
             status: CertAuthStatus::Active,
         })
     }
@@ -372,6 +378,21 @@ impl Aggregate for CertAuth {
                 .roas_updated(updates),
 
             //-----------------------------------------------------------------------
+            // Autonomous System Provider Authorization
+            //-----------------------------------------------------------------------
+            CaEvtDet::AspaConfigAdded { aspa_config } => self.aspas.add_or_replace(aspa_config),
+            CaEvtDet::AspaConfigUpdated { customer, update } => self.aspas.apply_update(customer, &update),
+            CaEvtDet::AspaConfigRemoved { customer } => self.aspas.remove(customer),
+            CaEvtDet::AspaObjectsUpdated {
+                resource_class_name,
+                updates,
+            } => self
+                .resources
+                .get_mut(&resource_class_name)
+                .unwrap()
+                .aspa_objects_updated(updates),
+
+            //-----------------------------------------------------------------------
             // Publication
             //-----------------------------------------------------------------------
             CaEvtDet::RepoUpdated { contact } => {
@@ -448,6 +469,13 @@ impl Aggregate for CertAuth {
             CmdDet::RouteAuthorizationsForceRenew(config, signer) => {
                 self.route_authorizations_renew(true, &config, &signer)
             }
+
+            // ASPA
+            CmdDet::AspasUpdate(updates, config, signer) => self.aspas_definitions_update(updates, &config, &signer),
+            CmdDet::AspasUpdateExisting(customer, update, config, signer) => {
+                self.aspas_update(customer, update, &config, &signer)
+            }
+            CmdDet::AspasRenew(config, signer) => self.aspas_renew(&config, &signer),
 
             // Republish
             CmdDet::RepoUpdate(contact, signer) => self.update_repo(contact, &signer),
@@ -1421,7 +1449,14 @@ impl CertAuth {
 
         let rc = self.resources.get(&rcn).ok_or(Error::ResourceClassUnknown(rcn))?;
 
-        let evt_details = rc.update_received_cert(self.handle(), rcvd_cert, &self.routes, config, signer.deref())?;
+        let evt_details = rc.update_received_cert(
+            self.handle(),
+            rcvd_cert,
+            &self.routes,
+            &self.aspas,
+            config,
+            signer.deref(),
+        )?;
 
         let mut res = vec![];
         let mut version = self.version;
@@ -1612,7 +1647,7 @@ impl CertAuth {
 
         // for rc in self.resources
         for (rcn, rc) in self.resources.iter() {
-            let updates = rc.update_roas(&routes, None, config, signer.deref())?;
+            let updates = rc.update_roas(&routes, config, signer.deref())?;
             if updates.contains_changes() {
                 info!("CA '{}' under RC '{}' updated ROAs: {}", self.handle, rcn, updates);
 
@@ -1708,10 +1743,168 @@ impl CertAuth {
         }
 
         if !delta_errors.is_empty() {
-            Err(Error::RoaDeltaError(delta_errors))
+            Err(Error::RoaDeltaError(self.handle().clone(), delta_errors))
         } else {
             Ok((desired_routes, res))
         }
+    }
+}
+
+/// # Autonomous System Provider Authorizations
+///
+impl CertAuth {
+    /// Show current AspaDefinitions
+    pub fn aspas_definitions_show(&self) -> AspaDefinitionList {
+        AspaDefinitionList::new(self.aspas.all().cloned().collect())
+    }
+
+    /// Process AspaDefinitionUpdates:
+    /// - add new aspas
+    /// - replace existing
+    /// - remove aspas to be removed
+    pub fn aspas_definitions_update(
+        &self,
+        updates: AspaDefinitionUpdates,
+        config: &Config,
+        signer: &KrillSigner,
+    ) -> KrillResult<Vec<CaEvt>> {
+        let mut res = vec![];
+
+        let (add_or_replace, remove) = updates.unpack();
+
+        // Keep track of a copy of the AspaDefinitions so we can use to update ASPA objects
+        let mut all_aspas = self.aspas.clone();
+
+        for customer in remove {
+            if !all_aspas.has(customer) {
+                return Err(Error::AspaCustomerUnknown(self.handle().clone(), customer));
+            }
+            res.push(CaEvtDet::AspaConfigRemoved { customer });
+            all_aspas.remove(customer);
+        }
+
+        for aspa_config in add_or_replace {
+            let customer = aspa_config.customer();
+
+            if !self.all_resources().contains_asn(customer) {
+                return Err(Error::AspaCustomerAsNotEntitled(self.handle().clone(), customer));
+            }
+
+            // Update the aspas copy so we can update ASPA objects for the events
+            all_aspas.add_or_replace(aspa_config.clone());
+
+            match self.aspas.get(customer) {
+                None => res.push(CaEvtDet::AspaConfigAdded { aspa_config }),
+                Some(existing) => {
+                    // Determine the update from existing to (new) aspa_config
+                    let added = aspa_config
+                        .providers()
+                        .iter()
+                        .filter(|new_provider| !existing.providers().contains(new_provider))
+                        .copied()
+                        .collect();
+
+                    let removed = existing
+                        .providers()
+                        .iter()
+                        .filter(|existing| !aspa_config.providers().contains(existing))
+                        .copied()
+                        .collect();
+
+                    let update = AspaProvidersUpdate::new(added, removed);
+
+                    if update.contains_changes() {
+                        res.push(CaEvtDet::AspaConfigUpdated { customer, update })
+                    }
+                }
+            }
+        }
+
+        res.append(&mut self.create_updated_aspa_objects(&all_aspas, config, signer)?);
+
+        Ok(self.events_from_details(res))
+    }
+
+    pub fn aspas_update(
+        &self,
+        customer: AspaCustomer,
+        update: AspaProvidersUpdate,
+        config: &Config,
+        signer: &KrillSigner,
+    ) -> KrillResult<Vec<CaEvt>> {
+        self.verify_update(customer, &update)?;
+
+        let mut all_aspas = self.aspas.clone();
+        all_aspas.apply_update(customer, &update);
+
+        let mut res = self.create_updated_aspa_objects(&all_aspas, config, signer)?;
+        res.push(CaEvtDet::AspaConfigUpdated { customer, update });
+
+        Ok(self.events_from_details(res))
+    }
+
+    /// Renew existing ASPA objects if needed.
+    pub fn aspas_renew(&self, config: &Config, signer: &KrillSigner) -> KrillResult<Vec<CaEvt>> {
+        let mut evt_dets = vec![];
+
+        for (rcn, rc) in self.resources.iter() {
+            let updates = rc.renew_aspas(&config.issuance_timing, signer)?;
+            if updates.contains_changes() {
+                info!(
+                    "CA '{}' reissued ASPAs under RC '{}' before they would expire",
+                    self.handle, rcn
+                );
+
+                evt_dets.push(CaEvtDet::AspaObjectsUpdated {
+                    resource_class_name: rcn.clone(),
+                    updates,
+                });
+            }
+        }
+
+        Ok(self.events_from_details(evt_dets))
+    }
+
+    fn create_updated_aspa_objects(
+        &self,
+        all_aspas: &AspaDefinitions,
+        config: &Config,
+        signer: &KrillSigner,
+    ) -> KrillResult<Vec<CaEvtDet>> {
+        let mut update_events = vec![];
+
+        for (rcn, rc) in self.resources.iter() {
+            let updates = rc.update_aspas(all_aspas, config, signer)?;
+            if updates.contains_changes() {
+                update_events.push(CaEvtDet::AspaObjectsUpdated {
+                    resource_class_name: rcn.clone(),
+                    updates,
+                });
+            }
+        }
+        Ok(update_events)
+    }
+
+    /// Verifies whether the update can be applied.
+    fn verify_update(&self, customer: AspaCustomer, update: &AspaProvidersUpdate) -> KrillResult<()> {
+        if update.is_empty() {
+            return Err(Error::AspaProvidersUpdateEmpty(self.handle().clone(), customer));
+        }
+
+        if !self.all_resources().contains_asn(customer) {
+            return Err(Error::AspaCustomerAsNotEntitled(self.handle().clone(), customer));
+        }
+
+        let current = self
+            .aspas
+            .get(customer)
+            .ok_or_else(|| Error::AspaCustomerUnknown(self.handle().clone(), customer))?;
+
+        current
+            .verify_update(update)
+            .map_err(|conflict| Error::AspaProvidersUpdateConflict(self.handle().clone(), conflict))?;
+
+        Ok(())
     }
 }
 

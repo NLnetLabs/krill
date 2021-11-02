@@ -10,6 +10,8 @@ use std::{fmt, str};
 
 use bytes::Bytes;
 use chrono::{Duration, TimeZone, Utc};
+use rpki::repository::aspa::Aspa;
+use rpki::repository::resources::{AsBlock, AsBlocksBuilder, AsId};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use rpki::{
@@ -29,9 +31,9 @@ use crate::commons::util::KrillVersion;
 use crate::{
     commons::{
         api::{
-            rrdp::PublishElement, Base64, ChildHandle, EntitlementClass, Entitlements, ErrorResponse, Handle,
-            HexEncodedHash, IssuanceRequest, ParentCaContact, ParentHandle, RepositoryContact, RequestResourceLimit,
-            RoaAggregateKey, RoaDefinition, SigningCert,
+            rrdp::PublishElement, AspaDefinition, Base64, ChildHandle, EntitlementClass, Entitlements, ErrorResponse,
+            Handle, HexEncodedHash, IssuanceRequest, ParentCaContact, ParentHandle, RepositoryContact,
+            RequestResourceLimit, RoaAggregateKey, RoaDefinition, SigningCert,
         },
         crypto::IdCert,
         remote::rfc8183::ServiceUri,
@@ -260,6 +262,14 @@ impl From<&Roa> for ReplacedObject {
     fn from(roa: &Roa) -> Self {
         let revocation = Revocation::from(roa.cert());
         let hash = HexEncodedHash::from_content(roa.to_captured().as_slice());
+        ReplacedObject { revocation, hash }
+    }
+}
+
+impl From<&Aspa> for ReplacedObject {
+    fn from(aspa: &Aspa) -> Self {
+        let revocation = Revocation::from(aspa.cert());
+        let hash = HexEncodedHash::from_content(aspa.to_captured().as_slice());
         ReplacedObject { revocation, hash }
     }
 }
@@ -624,6 +634,10 @@ impl ObjectName {
     pub fn new(ki: &KeyIdentifier, extension: &str) -> Self {
         ObjectName(format!("{}.{}", ki, extension))
     }
+
+    pub fn aspa(customer: AsId) -> Self {
+        ObjectName(format!("{}.asa", customer))
+    }
 }
 
 impl From<&Cert> for ObjectName {
@@ -662,6 +676,12 @@ impl From<&RoaAggregateKey> for ObjectName {
             None => format!("AS{}.roa", roa_group.asn()),
             Some(number) => format!("AS{}-{}.roa", roa_group.asn(), number),
         })
+    }
+}
+
+impl From<&AspaDefinition> for ObjectName {
+    fn from(aspa: &AspaDefinition) -> Self {
+        Self::aspa(aspa.customer())
     }
 }
 
@@ -725,6 +745,12 @@ impl From<&Manifest> for Revocation {
 impl From<&Roa> for Revocation {
     fn from(r: &Roa) -> Self {
         Self::from(r.cert())
+    }
+}
+
+impl From<&Aspa> for Revocation {
+    fn from(aspa: &Aspa) -> Self {
+        Self::from(aspa.cert())
     }
 }
 
@@ -966,6 +992,14 @@ impl ResourceSet {
     /// this set.
     pub fn contains(&self, other: &ResourceSet) -> bool {
         self.asn.contains(other.asn()) && self.v4.contains(&other.v4) && self.v6.contains(&other.v6)
+    }
+
+    /// Check if the resource set contains the given AsId
+    pub fn contains_asn(&self, asn: AsId) -> bool {
+        let mut blocks = AsBlocksBuilder::new();
+        blocks.push(AsBlock::Id(asn));
+        let blocks = blocks.finalize();
+        self.asn.contains(&blocks)
     }
 
     /// Returns the union of this ResourceSet and the other. I.e. a new
@@ -2600,7 +2634,7 @@ mod test {
     #[test]
     fn mft_uri() {
         test::test_under_tmp(|d| {
-            let mut signer = OpenSslSigner::build(&d).unwrap();
+            let signer = OpenSslSigner::build(&d).unwrap();
             let key_id = signer.create_key(PublicKeyFormat::Rsa).unwrap();
             let pub_key = signer.get_key_info(&key_id).unwrap();
 

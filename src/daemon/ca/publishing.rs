@@ -12,6 +12,7 @@ use bytes::Bytes;
 use chrono::Duration;
 
 use rpki::repository::{
+    aspa::Aspa,
     cert::Cert,
     crl::{Crl, TbsCertList},
     crypto::{DigestAlgorithm, KeyIdentifier, PublicKey},
@@ -38,6 +39,8 @@ use crate::{
         config::{Config, IssuanceTimingConfig},
     },
 };
+
+use super::AspaObjectsUpdates;
 
 //------------ CaObjectsStore ----------------------------------------------
 
@@ -86,6 +89,12 @@ impl PreSaveEventListener<CertAuth> for CaObjectsStore {
                         updates,
                     } => {
                         objects.update_roas(resource_class_name, updates, timing, signer)?;
+                    }
+                    super::CaEvtDet::AspaObjectsUpdated {
+                        resource_class_name,
+                        updates,
+                    } => {
+                        objects.update_aspas(resource_class_name, updates, timing, signer)?;
                     }
                     super::CaEvtDet::ChildCertificatesUpdated {
                         resource_class_name,
@@ -476,6 +485,18 @@ impl CaObjects {
         self.get_class_mut(rcn)?.update_roas(roa_updates, timing, signer)
     }
 
+    // Update the ASPAs in the current set
+    fn update_aspas(
+        &mut self,
+        rcn: &ResourceClassName,
+        updates: &AspaObjectsUpdates,
+        timing: &IssuanceTimingConfig,
+        signer: &KrillSigner,
+    ) -> KrillResult<()> {
+        let rco = self.get_class_mut(rcn)?;
+        rco.update_aspas(updates, timing, signer)
+    }
+
     // Update the delegated certificates in the current set
     fn update_certs(
         &mut self,
@@ -630,6 +651,19 @@ impl ResourceClassObjects {
             ResourceClassKeyState::Current(state) => state.current_set.update_roas(roa_updates, timing, signer),
             ResourceClassKeyState::Staging(state) => state.current_set.update_roas(roa_updates, timing, signer),
             ResourceClassKeyState::Old(state) => state.current_set.update_roas(roa_updates, timing, signer),
+        }
+    }
+
+    fn update_aspas(
+        &mut self,
+        updates: &AspaObjectsUpdates,
+        timing: &IssuanceTimingConfig,
+        signer: &KrillSigner,
+    ) -> KrillResult<()> {
+        match self.keys.borrow_mut() {
+            ResourceClassKeyState::Current(state) => state.current_set.update_aspas(updates, timing, signer),
+            ResourceClassKeyState::Staging(state) => state.current_set.update_aspas(updates, timing, signer),
+            ResourceClassKeyState::Old(state) => state.current_set.update_aspas(updates, timing, signer),
         }
     }
 
@@ -788,29 +822,25 @@ pub struct CurrentKeyObjectSet {
     basic: BasicKeyObjectSet,
     #[serde(with = "objects_to_roas_serde")]
     roas: HashMap<ObjectName, PublishedRoa>,
+    #[serde(with = "objects_to_aspas_serde", skip_serializing_if = "HashMap::is_empty", default)]
+    aspas: HashMap<ObjectName, PublishedAspa>,
     #[serde(with = "objects_to_certs_serde")]
     certs: HashMap<ObjectName, PublishedCert>,
 }
 
 impl CurrentKeyObjectSet {
     pub fn new(
-        signing_cert: RcvdCert,
-        number: u64,
-        revocations: Revocations,
-        manifest: PublishedManifest,
-        crl: PublishedCrl,
+        basic: BasicKeyObjectSet,
         roas: HashMap<ObjectName, PublishedRoa>,
+        aspas: HashMap<ObjectName, PublishedAspa>,
         certs: HashMap<ObjectName, PublishedCert>,
     ) -> Self {
-        let basic = BasicKeyObjectSet {
-            signing_cert,
-            number,
-            revocations,
-            manifest,
-            crl,
-            old_repo: None,
-        };
-        CurrentKeyObjectSet { basic, roas, certs }
+        CurrentKeyObjectSet {
+            basic,
+            roas,
+            aspas,
+            certs,
+        }
     }
 
     /// Adds all the elements for this set to the map which is passed on. It will use
@@ -831,6 +861,13 @@ impl CurrentKeyObjectSet {
         for (name, roa) in &self.roas {
             elements.push(PublishElement::new(
                 Base64::from(&roa.0),
+                base_uri.join(name.as_bytes()).unwrap(),
+            ));
+        }
+
+        for (name, aspa) in &self.aspas {
+            elements.push(PublishElement::new(
+                Base64::from(&aspa.0),
                 base_uri.join(name.as_bytes()).unwrap(),
             ));
         }
@@ -856,6 +893,29 @@ impl CurrentKeyObjectSet {
         }
         for name in roa_updates.removed_roas() {
             if let Some(old) = self.roas.remove(&name) {
+                self.revocations.add(Revocation::from(&old));
+            }
+        }
+
+        self.reissue(timing, signer)
+    }
+
+    fn update_aspas(
+        &mut self,
+        updates: &AspaObjectsUpdates,
+        timing: &IssuanceTimingConfig,
+        signer: &KrillSigner,
+    ) -> KrillResult<()> {
+        for aspa_info in updates.updated() {
+            let name = ObjectName::aspa(aspa_info.customer());
+            let aspa = PublishedAspa::new(aspa_info.aspa().clone());
+            if let Some(old) = self.aspas.insert(name, aspa) {
+                self.revocations.add(Revocation::from(&old));
+            }
+        }
+        for removed in updates.removed() {
+            let name = ObjectName::aspa(*removed);
+            if let Some(old) = self.aspas.remove(&name) {
                 self.revocations.add(Revocation::from(&old));
             }
         }
@@ -937,7 +997,7 @@ impl CurrentKeyObjectSet {
     }
 
     fn reissue_mft(&self, new_crl: &PublishedCrl, signer: &KrillSigner) -> KrillResult<PublishedManifest> {
-        ManifestBuilder::with_objects(new_crl, &self.roas, &self.certs)
+        ManifestBuilder::with_objects(new_crl, &self.roas, &self.aspas, &self.certs)
             .build_new_mft(&self.signing_cert, self.next(), signer)
             .map(|m| m.into())
     }
@@ -948,6 +1008,7 @@ impl From<BasicKeyObjectSet> for CurrentKeyObjectSet {
         CurrentKeyObjectSet {
             basic,
             roas: HashMap::new(),
+            aspas: HashMap::new(),
             certs: HashMap::new(),
         }
     }
@@ -998,6 +1059,42 @@ mod objects_to_roas_serde {
         let mut map = HashMap::new();
         for item in Vec::<NameRoaItem>::deserialize(deserializer)? {
             map.insert(item.name, item.roa);
+        }
+        Ok(map)
+    }
+}
+
+mod objects_to_aspas_serde {
+    use super::*;
+
+    use serde::de::{Deserialize, Deserializer};
+    use serde::ser::Serializer;
+    #[derive(Debug, Deserialize)]
+    struct NameRoaItem {
+        name: ObjectName,
+        aspa: PublishedAspa,
+    }
+
+    #[derive(Debug, Serialize)]
+    struct NameRoaItemRef<'a> {
+        name: &'a ObjectName,
+        aspa: &'a PublishedAspa,
+    }
+
+    pub fn serialize<S>(map: &HashMap<ObjectName, PublishedAspa>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.collect_seq(map.iter().map(|(name, aspa)| NameRoaItemRef { name, aspa }))
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<ObjectName, PublishedAspa>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let mut map = HashMap::new();
+        for item in Vec::<NameRoaItem>::deserialize(deserializer)? {
+            map.insert(item.name, item.aspa);
         }
         Ok(map)
     }
@@ -1256,6 +1353,47 @@ impl PartialEq for PublishedRoa {
 
 impl Eq for PublishedRoa {}
 
+//------------ PublishedAspa ----------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PublishedAspa(Aspa);
+
+impl PublishedAspa {
+    pub fn new(aspa: Aspa) -> Self {
+        PublishedAspa(aspa)
+    }
+
+    pub fn to_bytes(&self) -> Bytes {
+        self.0.to_captured().into_bytes()
+    }
+
+    pub fn mft_hash(&self) -> Bytes {
+        mft_hash(self.to_bytes().as_ref())
+    }
+}
+
+impl From<&PublishedAspa> for Revocation {
+    fn from(aspa: &PublishedAspa) -> Self {
+        Revocation::from(&aspa.0)
+    }
+}
+
+impl Deref for PublishedAspa {
+    type Target = Aspa;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl PartialEq for PublishedAspa {
+    fn eq(&self, other: &Self) -> bool {
+        self.to_bytes() == other.to_bytes()
+    }
+}
+
+impl Eq for PublishedAspa {}
+
 //------------ PublishedManifest ------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -1392,6 +1530,7 @@ impl ManifestBuilder {
     pub fn with_objects(
         crl: &PublishedCrl,
         roas: &HashMap<ObjectName, PublishedRoa>,
+        aspas: &HashMap<ObjectName, PublishedAspa>,
         certs: &HashMap<ObjectName, PublishedCert>,
     ) -> Self {
         let mut entries: HashMap<Bytes, Bytes> = HashMap::new();
@@ -1402,6 +1541,12 @@ impl ManifestBuilder {
         // Add ROAs
         for (name, roa) in roas {
             let hash = roa.mft_hash();
+            entries.insert(name.clone().into(), hash);
+        }
+
+        // Add ASPAs
+        for (name, aspa) in aspas {
+            let hash = aspa.mft_hash();
             entries.insert(name.clone().into(), hash);
         }
 
