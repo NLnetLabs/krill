@@ -23,6 +23,7 @@ use crate::{
         util::{httpclient, softsigner::SignerError},
     },
     daemon::{ca::RouteAuthorization, http::tls_keys},
+    upgrades::UpgradeError,
 };
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -168,6 +169,7 @@ pub enum Error {
     HttpsSetup(String),
     HttpClientError(httpclient::Error),
     ConfigError(String),
+    UpgradeError(UpgradeError),
 
     //-----------------------------------------------------------------
     // General API Client Issues
@@ -315,6 +317,7 @@ impl fmt::Display for Error {
             Error::HttpsSetup(e) => write!(f, "Cannot set up HTTPS: {}", e),
             Error::HttpClientError(e) => write!(f, "HTTP client error: {}", e),
             Error::ConfigError(e) => write!(f, "Configuration error: {}", e),
+            Error::UpgradeError(e) => write!(f, "Could not upgrade Krill: {}", e),
 
             //-----------------------------------------------------------------
             // General API Client Issues
@@ -542,6 +545,12 @@ impl From<PublicationDeltaError> for Error {
     }
 }
 
+impl From<UpgradeError> for Error {
+    fn from(e: UpgradeError) -> Self {
+        Error::UpgradeError(e)
+    }
+}
+
 impl Error {
     pub fn signer(e: impl Display) -> Self {
         Error::SignerError(e.to_string())
@@ -621,6 +630,9 @@ impl Error {
 
             // internal configuration error
             Error::ConfigError(e) => ErrorResponse::new("sys-config", &self).with_cause(e),
+
+            // upgrade error
+            Error::UpgradeError(e) => ErrorResponse::new("sys-upgrade", &self).with_cause(e),
 
             //-----------------------------------------------------------------
             // General API Client Issues (label: api-*)
