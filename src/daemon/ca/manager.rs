@@ -819,8 +819,12 @@ impl CaManager {
 
     /// Refresh a single CA with its parents, and possibly suspend inactive children.
     pub async fn cas_refresh_single(&self, ca_handle: Handle, started: Timestamp, actor: &Actor) {
-        let mut updates = vec![];
+        self.ca_sync_parents(&ca_handle, actor).await;
+        self.ca_suspend_inactive_children(&ca_handle, started, actor).await;
+    }
 
+    /// Suspend child CAs
+    async fn ca_suspend_inactive_children(&self, ca_handle: &Handle, started: Timestamp, actor: &Actor) {
         // Set threshold hours if it was configured AND this server has been started
         // longer ago than the hours specified. Otherwise we risk that *all* children
         // without prior recorded status are suspended on upgrade, or that *all* children
@@ -830,7 +834,47 @@ impl CaManager {
             .suspend_child_after_inactive_seconds()
             .filter(|secs| started < Timestamp::now_minus_seconds(*secs));
 
-        if let Ok(ca) = self.get_ca(&ca_handle).await {
+        // suspend inactive children, if so configured
+        if let Some(threshold_seconds) = threshold_seconds {
+            if let Ok(ca_status) = self.get_ca_status(ca_handle).await {
+                let connections = ca_status.get_children_connection_stats();
+
+                for child in connections.suspension_candidates(threshold_seconds) {
+                    let threshold_string = if threshold_seconds >= 3600 {
+                        format!("{} hours", threshold_seconds / 3600)
+                    } else {
+                        format!("{} seconds", threshold_seconds)
+                    };
+
+                    info!(
+                        "Child '{}' under CA '{}' was inactive for more than {}. Will suspend it.",
+                        child, ca_handle, threshold_string
+                    );
+                    if let Err(e) = self
+                        .status_store
+                        .lock()
+                        .await
+                        .set_child_suspended(ca_handle, &child)
+                        .await
+                    {
+                        panic!("System level error encountered while updating ca status: {}", e);
+                    }
+
+                    let req = UpdateChildRequest::suspend();
+                    if let Err(e) = self.ca_child_update(ca_handle, child, req, actor).await {
+                        error!("Could not suspend inactive child, error: {}", e);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Synchronizes a CA with its parents - up to the configures batch size.
+    /// Remaining parents will be done in a future run.
+    async fn ca_sync_parents(&self, ca_handle: &Handle, actor: &Actor) {
+        let mut updates = vec![];
+
+        if let Ok(ca) = self.get_ca(ca_handle).await {
             // get updates from parents
             {
                 if ca.nr_parents() <= self.config.ca_refresh_parents_batch_size {
@@ -839,28 +883,17 @@ impl CaManager {
                         updates.push(self.ca_sync_parent_infallible(ca_handle.clone(), parent.clone(), actor.clone()));
                     }
                 } else {
-                    // more parents than the batch size exist, so sort them:
-                    // - take the ones with no last exchanges first
-                    // - then sort by last exchange, minute grade granularity - oldest first
-                    //    - where failures come before success within the same minute
-                    // - then take the first N parents for this batch
-                    match self.status_store.lock().await.get_ca_status(&ca_handle).await {
+                    // more parents than the batch size exist, so get candidates based on
+                    // the known parent statuses for this CA.
+                    match self.status_store.lock().await.get_ca_status(ca_handle).await {
                         Err(e) => {
                             panic!("System level error encountered while updating ca status: {}", e);
                         }
                         Ok(status) => {
-                            let mut parents = vec![];
-                            let mut parents_by_last_exchange = status.parents().sorted_by_last_exchange();
-
-                            for parent in ca.parents() {
-                                if !parents_by_last_exchange.contains(&parent) {
-                                    parents.push(parent);
-                                }
-                            }
-                            parents.append(&mut parents_by_last_exchange);
-                            parents.truncate(self.config.ca_refresh_parents_batch_size);
-
-                            for parent in parents {
+                            for parent in status
+                                .parents()
+                                .sync_candidates(ca.parents().collect(), self.config.ca_refresh_parents_batch_size)
+                            {
                                 updates.push(self.ca_sync_parent_infallible(
                                     ca_handle.clone(),
                                     parent.clone(),
@@ -871,43 +904,8 @@ impl CaManager {
                     };
                 }
             }
-
-            // suspend inactive children, if so configured
-            if let Some(threshold_seconds) = threshold_seconds {
-                if let Ok(ca_status) = self.get_ca_status(&ca_handle).await {
-                    let connections = ca_status.get_children_connection_stats();
-
-                    for child in connections.suspension_candidates(threshold_seconds) {
-                        let threshold_string = if threshold_seconds >= 3600 {
-                            format!("{} hours", threshold_seconds / 3600)
-                        } else {
-                            format!("{} seconds", threshold_seconds)
-                        };
-
-                        info!(
-                            "Child '{}' under CA '{}' was inactive for more than {}. Will suspend it.",
-                            child, ca_handle, threshold_string
-                        );
-                        if let Err(e) = self
-                            .status_store
-                            .lock()
-                            .await
-                            .set_child_suspended(&ca_handle, &child)
-                            .await
-                        {
-                            panic!("System level error encountered while updating ca status: {}", e);
-                        }
-
-                        let req = UpdateChildRequest::suspend();
-                        if let Err(e) = self.ca_child_update(&ca_handle, child, req, actor).await {
-                            error!("Could not suspend inactive child, error: {}", e);
-                        }
-                    }
-                }
-            }
+            join_all(updates).await;
         }
-
-        join_all(updates).await;
     }
 
     /// Synchronizes a CA with a parent, logging failures.
