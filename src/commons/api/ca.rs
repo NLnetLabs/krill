@@ -1262,6 +1262,33 @@ impl ParentStatuses {
         self.0.iter()
     }
 
+    // Return the parents sorted by last exchange, i.e. let the parents
+    // without an exchange be first, and then from longest ago to most recent.
+    // Uses minute grade granularity and in cases where the exchanges happened in
+    // the same minute failures take precedence (come before) successful exchanges.
+    pub fn sorted_by_last_exchange(&self) -> Vec<&ParentHandle> {
+        let mut sorted_parents: Vec<(&ParentHandle, &ParentStatus)> = self.iter().collect();
+        sorted_parents.sort_by(|a, b| {
+            // we can map the 'no last exchange' case to 1970..
+            let a_last_exchange = a.1.last_exchange.as_ref();
+            let b_last_exchange = b.1.last_exchange.as_ref();
+
+            let a_last_exchange_time = a_last_exchange.map(|e| i64::from(e.timestamp)).unwrap_or(0) / 60;
+            let b_last_exchange_time = b_last_exchange.map(|e| i64::from(e.timestamp)).unwrap_or(0) / 60;
+
+            if a_last_exchange_time == b_last_exchange_time {
+                // compare success / failure
+                let a_last_exchange_res = a_last_exchange.map(|e| e.result().was_success()).unwrap_or(false);
+                let b_last_exchange_res = b_last_exchange.map(|e| e.result().was_success()).unwrap_or(false);
+                a_last_exchange_res.cmp(&b_last_exchange_res)
+            } else {
+                a_last_exchange_time.cmp(&b_last_exchange_time)
+            }
+        });
+
+        sorted_parents.into_iter().map(|(handle, _)| handle).collect()
+    }
+
     pub fn set_failure(&mut self, parent: &ParentHandle, uri: &ServiceUri, error: ErrorResponse, next_seconds: i64) {
         self.get_mut_status(parent)
             .set_failure(uri.clone(), error, next_seconds);
@@ -1920,6 +1947,12 @@ impl From<Timestamp> for Time {
 impl From<Time> for Timestamp {
     fn from(time: Time) -> Self {
         Timestamp(time.timestamp())
+    }
+}
+
+impl From<Timestamp> for i64 {
+    fn from(t: Timestamp) -> Self {
+        t.0
     }
 }
 

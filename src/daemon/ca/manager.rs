@@ -831,10 +831,48 @@ impl CaManager {
             .filter(|secs| started < Timestamp::now_minus_seconds(*secs));
 
         if let Ok(ca) = self.get_ca(&ca_handle).await {
-            for parent in ca.parents() {
-                updates.push(self.ca_sync_parent_infallible(ca_handle.clone(), parent.clone(), actor.clone()));
+            // get updates from parents
+            {
+                if ca.nr_parents() <= self.config.ca_refresh_parents_batch_size {
+                    // Nr of parents is below batch size, so just process all of them
+                    for parent in ca.parents() {
+                        updates.push(self.ca_sync_parent_infallible(ca_handle.clone(), parent.clone(), actor.clone()));
+                    }
+                } else {
+                    // more parents than the batch size exist, so sort them:
+                    // - take the ones with no last exchanges first
+                    // - then sort by last exchange, minute grade granularity - oldest first
+                    //    - where failures come before success within the same minute
+                    // - then take the first N parents for this batch
+                    match self.status_store.lock().await.get_ca_status(&ca_handle).await {
+                        Err(e) => {
+                            panic!("System level error encountered while updating ca status: {}", e);
+                        }
+                        Ok(status) => {
+                            let mut parents = vec![];
+                            let mut parents_by_last_exchange = status.parents().sorted_by_last_exchange();
+
+                            for parent in ca.parents() {
+                                if !parents_by_last_exchange.contains(&parent) {
+                                    parents.push(parent);
+                                }
+                            }
+                            parents.append(&mut parents_by_last_exchange);
+                            parents.truncate(self.config.ca_refresh_parents_batch_size);
+
+                            for parent in parents {
+                                updates.push(self.ca_sync_parent_infallible(
+                                    ca_handle.clone(),
+                                    parent.clone(),
+                                    actor.clone(),
+                                ));
+                            }
+                        }
+                    };
+                }
             }
 
+            // suspend inactive children, if so configured
             if let Some(threshold_seconds) = threshold_seconds {
                 if let Ok(ca_status) = self.get_ca_status(&ca_handle).await {
                     let connections = ca_status.get_children_connection_stats();
