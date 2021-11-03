@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use rpki::repository::{
+    aspa::{Aspa, AspaBuilder},
     cert::TbsCert,
     crl::{CrlEntry, TbsCertList},
     crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer},
@@ -117,6 +118,17 @@ impl KrillSigner {
         key_id: &KeyIdentifier,
     ) -> CryptoResult<Roa> {
         roa_builder
+            .finalize(object_builder, &self.router, key_id)
+            .map_err(crypto::Error::signing)
+    }
+
+    pub fn sign_aspa(
+        &self,
+        aspa_builder: AspaBuilder,
+        object_builder: SignedObjectBuilder,
+        key_id: &KeyIdentifier,
+    ) -> CryptoResult<Aspa> {
+        aspa_builder
             .finalize(object_builder, &self.router, key_id)
             .map_err(crypto::Error::signing)
     }
