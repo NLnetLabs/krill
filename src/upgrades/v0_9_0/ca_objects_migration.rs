@@ -727,34 +727,27 @@ impl OldResourceClass {
         roas: HashMap<ObjectName, PublishedRoa>,
         certs: HashMap<ObjectName, PublishedCert>,
     ) -> CurrentKeyObjectSet {
-        let current_set = key.current_set.clone();
-
-        let mft = Manifest::decode(current_set.manifest_info.current.content().to_bytes(), true).unwrap();
-        let crl = Crl::decode(current_set.crl_info.current.content().to_bytes()).unwrap();
-
-        CurrentKeyObjectSet::new(
-            key.incoming_cert.clone(),
-            current_set.number,
-            current_set.revocations,
-            mft.into(),
-            crl.into(),
-            roas,
-            certs,
-        )
+        let basic = Self::object_set_for_certified_key(key);
+        CurrentKeyObjectSet::new(basic, roas, HashMap::new(), certs)
     }
 
     fn object_set_for_certified_key(key: &OldCertifiedKey) -> BasicKeyObjectSet {
         let current_set = key.current_set.clone();
 
-        let mft = Manifest::decode(current_set.manifest_info.current.content().to_bytes(), true).unwrap();
-        let crl = Crl::decode(current_set.crl_info.current.content().to_bytes()).unwrap();
+        let manifest = Manifest::decode(current_set.manifest_info.current.content().to_bytes(), true)
+            .unwrap()
+            .into();
+
+        let crl = Crl::decode(current_set.crl_info.current.content().to_bytes())
+            .unwrap()
+            .into();
 
         BasicKeyObjectSet::new(
             key.incoming_cert.clone(),
             current_set.number,
             current_set.revocations,
-            mft.into(),
-            crl.into(),
+            manifest,
+            crl,
         )
     }
 

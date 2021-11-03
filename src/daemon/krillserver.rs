@@ -10,9 +10,10 @@ use crate::{
     commons::{
         actor::{Actor, ActorDef},
         api::{
-            AddChildRequest, AllCertAuthIssues, CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthInit,
-            CertAuthIssues, CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle, ChildrenConnectionStats,
-            CommandHistory, CommandHistoryCriteria, Handle, ListReply, ParentCaContact, ParentCaReq, ParentHandle,
+            AddChildRequest, AllCertAuthIssues, AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates,
+            AspaProvidersUpdate, CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthInit, CertAuthIssues,
+            CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle, ChildrenConnectionStats, CommandHistory,
+            CommandHistoryCriteria, Handle, ListReply, ParentCaContact, ParentCaReq, ParentHandle,
             PublicationServerUris, PublishDelta, PublisherDetails, PublisherHandle, RepositoryContact, ResourceSet,
             RoaDefinition, RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, ServerInfo, TaCertDetails,
             Timestamp, UpdateChildRequest,
@@ -571,13 +572,9 @@ impl KrillServer {
         ca.parent(parent).map(|p| p.clone())
     }
 
-    /// Returns the history for a CA, or NONE in case of issues (i.e. it does not exist).
-    pub async fn ca_history(
-        &self,
-        handle: &Handle,
-        crit: CommandHistoryCriteria,
-    ) -> KrillResult<Option<CommandHistory>> {
-        Ok(self.ca_manager.ca_history(handle, crit).await.ok())
+    /// Returns the history for a CA.
+    pub async fn ca_history(&self, handle: &Handle, crit: CommandHistoryCriteria) -> KrillResult<CommandHistory> {
+        self.ca_manager.ca_history(handle, crit).await
     }
 
     pub fn ca_command_details(&self, handle: &Handle, command: CommandKey) -> KrillResult<CaCommandDetails> {
@@ -633,6 +630,36 @@ impl KrillServer {
         actor: &Actor,
     ) -> KrillResult<Bytes> {
         Ok(self.ca_manager.rfc6492(&handle, msg_bytes, user_agent, actor).await?)
+    }
+}
+
+/// # Handle ASPA requests
+///
+impl KrillServer {
+    pub async fn ca_aspas_definitions_show(&self, ca: Handle) -> KrillResult<AspaDefinitionList> {
+        Ok(self.ca_manager.ca_aspas_definitions_show(ca).await?)
+    }
+
+    pub async fn ca_aspas_definitions_update(
+        &self,
+        ca: Handle,
+        updates: AspaDefinitionUpdates,
+        actor: &Actor,
+    ) -> KrillEmptyResult {
+        Ok(self.ca_manager.ca_aspas_definitions_update(ca, updates, actor).await?)
+    }
+
+    pub async fn ca_aspas_update_aspa(
+        &self,
+        ca: Handle,
+        customer: AspaCustomer,
+        update: AspaProvidersUpdate,
+        actor: &Actor,
+    ) -> KrillEmptyResult {
+        Ok(self
+            .ca_manager
+            .ca_aspas_update_aspa(ca, customer, update, actor)
+            .await?)
     }
 }
 
@@ -698,6 +725,11 @@ impl KrillServer {
             .bgp_analyser
             .suggest(definitions.as_slice(), &resources_held, limit)
             .await)
+    }
+
+    /// Re-issue ROA objects so that they will use short subjects (see issue #700)
+    pub async fn force_renew_roas(&self) -> KrillResult<()> {
+        self.ca_manager.force_renew_roas_all(self.system_actor()).await
     }
 }
 

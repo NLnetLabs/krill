@@ -7,14 +7,17 @@ use rpki::repository::{crypto::KeyIdentifier, x509::Time};
 use crate::{
     commons::{
         api::{
-            ArgKey, ArgVal, ChildHandle, Handle, Label, Message, ParentHandle, PublisherHandle, RequestResourceLimit,
-            ResourceClassName, ResourceSet, RevocationRequest, RoaDefinitionUpdates, RtaName, StorableParentContact,
+            ArgKey, ArgVal, AspaCustomer, AspaProvidersUpdate, ChildHandle, Handle, Label, Message, ParentHandle,
+            PublisherHandle, RequestResourceLimit, ResourceClassName, ResourceSet, RevocationRequest,
+            RoaDefinitionUpdates, RtaName, StorableParentContact,
         },
         eventsourcing::{CommandKey, CommandKeyError, StoredCommand, WithStorableDetails},
         remote::rfc8183::ServiceUri,
     },
     daemon::ca::{self, DropReason},
 };
+
+use super::AspaDefinitionUpdates;
 
 //------------ CaCommandDetails ----------------------------------------------
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -469,6 +472,17 @@ pub enum StorableCaCommand {
         updates: RoaDefinitionUpdates,
     },
     ReissueBeforeExpiring,
+    ForceReissue,
+    AspasUpdate {
+        updates: AspaDefinitionUpdates,
+    },
+    AspasUpdateExisting {
+        customer: AspaCustomer,
+        update: AspaProvidersUpdate,
+    },
+    AspaRemove {
+        customer: AspaCustomer,
+    },
     RepoUpdate {
         service_uri: ServiceUri,
     },
@@ -557,6 +571,8 @@ impl WithStorableDetails for StorableCaCommand {
             } => CommandSummary::new("cmd-ca-rc-drop", &self)
                 .with_rcn(resource_class_name)
                 .with_arg("reason", reason),
+
+            // Key rolls
             StorableCaCommand::KeyRollInitiate { older_than_seconds } => {
                 CommandSummary::new("cmd-ca-keyroll-init", &self).with_seconds(*older_than_seconds)
             }
@@ -566,14 +582,24 @@ impl WithStorableDetails for StorableCaCommand {
             StorableCaCommand::KeyRollFinish { resource_class_name } => {
                 CommandSummary::new("cmd-ca-keyroll-finish", &self).with_rcn(resource_class_name)
             }
+
+            // ROA
             StorableCaCommand::RoaDefinitionUpdates { updates } => CommandSummary::new("cmd-ca-roas-updated", &self)
                 .with_added(updates.added().len())
                 .with_removed(updates.removed().len()),
+
+            // ASPA
+            StorableCaCommand::AspasUpdate { .. } => CommandSummary::new("cmd-ca-aspas-update", &self),
+            StorableCaCommand::AspasUpdateExisting { .. } => CommandSummary::new("cmd-ca-aspas-update-existing", &self),
+            StorableCaCommand::AspaRemove { .. } => CommandSummary::new("cmd-ca-aspas-remove", &self),
+
+            // REPO
             StorableCaCommand::RepoUpdate { service_uri } => {
                 CommandSummary::new("cmd-ca-repo-update", &self).with_service_uri(service_uri)
             }
 
             StorableCaCommand::ReissueBeforeExpiring => CommandSummary::new("cmd-ca-reissue-before-expiring", &self),
+            StorableCaCommand::ForceReissue => CommandSummary::new("cmd-ca-force-reissue", &self),
 
             // RTA
             StorableCaCommand::RtaPrepare { name } => {
@@ -718,6 +744,22 @@ impl fmt::Display for StorableCaCommand {
             }
             StorableCaCommand::ReissueBeforeExpiring => {
                 write!(f, "Automatically re-issue objects before they would expire")
+            }
+            StorableCaCommand::ForceReissue => {
+                write!(f, "Force re-issuance of objects")
+            }
+
+            // ------------------------------------------------------------
+            // ASPA Support
+            // ------------------------------------------------------------
+            StorableCaCommand::AspasUpdate { updates } => {
+                write!(f, "{}", updates)
+            }
+            StorableCaCommand::AspasUpdateExisting { customer, update } => {
+                write!(f, "update ASPA for customer AS: {} {}", customer, update)
+            }
+            StorableCaCommand::AspaRemove { customer } => {
+                write!(f, "Remove ASPA for customer AS: {}", customer)
             }
 
             // ------------------------------------------------------------

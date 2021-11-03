@@ -12,8 +12,8 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            rrdp::PublicationDeltaError, ChildHandle, ErrorResponse, Handle, ParentHandle, PublisherHandle,
-            ResourceClassName, ResourceSetError, RoaDefinition,
+            rrdp::PublicationDeltaError, AspaCustomer, AspaProvidersUpdateConflict, ChildHandle, ErrorResponse, Handle,
+            ParentHandle, PublisherHandle, ResourceClassName, ResourceSetError, RoaDefinition,
         },
         crypto::SignerError,
         eventsourcing::{AggregateStoreError, KeyValueError},
@@ -24,8 +24,13 @@ use crate::{
         util::httpclient,
     },
     daemon::{ca::RouteAuthorization, http::tls_keys},
+    upgrades::UpgradeError,
 };
 
+//------------ RoaDeltaError -----------------------------------------------
+
+/// This type contains a detailed error report for a ROA delta
+/// that could not be applied.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RoaDeltaError {
     duplicates: Vec<RoaDefinition>,
@@ -113,6 +118,8 @@ impl fmt::Display for RoaDeltaError {
     }
 }
 
+//------------ ApiAuthError ------------------------------------------------
+
 // ApiAuthError is *also* implemented as a separate enum,
 // so that we don't have to implement the Clone trait for
 // all of the Error enum.
@@ -156,6 +163,8 @@ impl From<Error> for ApiAuthError {
     }
 }
 
+//------------ Error -------------------------------------------------------
+
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum Error {
@@ -169,6 +178,7 @@ pub enum Error {
     HttpsSetup(String),
     HttpClientError(httpclient::Error),
     ConfigError(String),
+    UpgradeError(UpgradeError),
 
     //-----------------------------------------------------------------
     // General API Client Issues
@@ -264,7 +274,16 @@ pub enum Error {
     CaAuthorizationDuplicate(Handle, RouteAuthorization),
     CaAuthorizationInvalidMaxLength(Handle, RouteAuthorization),
     CaAuthorizationNotEntitled(Handle, RouteAuthorization),
-    RoaDeltaError(RoaDeltaError),
+    RoaDeltaError(Handle, RoaDeltaError),
+
+    //-----------------------------------------------------------------
+    // Autonomous System Provider Authorization - ASPA
+    //-----------------------------------------------------------------
+    AspaCustomerAsNotEntitled(Handle, AspaCustomer),
+    AspaCustomerAlreadyPresent(Handle, AspaCustomer),
+    AspaCustomerUnknown(Handle, AspaCustomer),
+    AspaProvidersUpdateEmpty(Handle, AspaCustomer),
+    AspaProvidersUpdateConflict(Handle, AspaProvidersUpdateConflict),
 
     //-----------------------------------------------------------------
     // Key Usage Issues
@@ -316,6 +335,7 @@ impl fmt::Display for Error {
             Error::HttpsSetup(e) => write!(f, "Cannot set up HTTPS: {}", e),
             Error::HttpClientError(e) => write!(f, "HTTP client error: {}", e),
             Error::ConfigError(e) => write!(f, "Configuration error: {}", e),
+            Error::UpgradeError(e) => write!(f, "Could not upgrade Krill: {}", e),
 
             //-----------------------------------------------------------------
             // General API Client Issues
@@ -424,7 +444,16 @@ impl fmt::Display for Error {
             Error::CaAuthorizationDuplicate(_ca, roa) => write!(f, "ROA '{}' already present", roa),
             Error::CaAuthorizationInvalidMaxLength(_ca, roa) => write!(f, "Invalid max length in ROA: '{}'", roa),
             Error::CaAuthorizationNotEntitled(_ca, roa) => write!(f, "Prefix in ROA '{}' not held by you", roa),
-            Error::RoaDeltaError(e) => write!(f, "ROA delta rejected:\n\n'{}' ", e),
+            Error::RoaDeltaError(_ca, e) => write!(f, "ROA delta rejected:\n\n'{}' ", e),
+
+            //-----------------------------------------------------------------
+            // Autonomous System Provider Authorization - ASPAs
+            //-----------------------------------------------------------------
+            Error::AspaCustomerAsNotEntitled(_ca, asn) => write!(f, "Customer AS '{}' is not held by you", asn),
+            Error::AspaCustomerAlreadyPresent(_ca, asn) => write!(f, "ASPA already exists for customer AS '{}'", asn),
+            Error::AspaCustomerUnknown(_ca, asn) => write!(f, "No current ASPA exists for customer AS '{}'", asn),
+            Error::AspaProvidersUpdateEmpty(_ca, asn) => write!(f, "Received empty update for ASPA for customer AS '{}'", asn),
+            Error::AspaProvidersUpdateConflict(_ca, e) => write!(f, "ASPA delta rejected:\n\n'{}'", e),
 
             //-----------------------------------------------------------------
             // Key Usage Issues
@@ -543,6 +572,12 @@ impl From<PublicationDeltaError> for Error {
     }
 }
 
+impl From<UpgradeError> for Error {
+    fn from(e: UpgradeError) -> Self {
+        Error::UpgradeError(e)
+    }
+}
+
 impl Error {
     pub fn signer(e: impl Display) -> Self {
         Error::SignerError(e.to_string())
@@ -622,6 +657,9 @@ impl Error {
 
             // internal configuration error
             Error::ConfigError(e) => ErrorResponse::new("sys-config", &self).with_cause(e),
+
+            // upgrade error
+            Error::UpgradeError(e) => ErrorResponse::new("sys-upgrade", &self).with_cause(e),
 
             //-----------------------------------------------------------------
             // General API Client Issues (label: api-*)
@@ -775,7 +813,6 @@ impl Error {
             Error::CaAuthorizationUnknown(ca, auth) => {
                 ErrorResponse::new("ca-roa-unknown", &self).with_ca(ca).with_auth(auth)
             }
-
             Error::CaAuthorizationDuplicate(ca, auth) => ErrorResponse::new("ca-roa-duplicate", &self)
                 .with_ca(ca)
                 .with_auth(auth),
@@ -788,10 +825,28 @@ impl Error {
                 .with_ca(ca)
                 .with_auth(auth),
 
-            Error::RoaDeltaError(roa_delta_error) => {
-                ErrorResponse::new("ca-roa-delta-error", "Delta rejected, see included json")
-                    .with_roa_delta_error(roa_delta_error)
-            }
+            Error::RoaDeltaError(ca, roa_delta_error) => ErrorResponse::new("ca-roa-delta-error", &self)
+                .with_ca(ca)
+                .with_roa_delta_error(roa_delta_error),
+
+            //-----------------------------------------------------------------
+            // Autonomous System Provider Authorization - ASPA
+            //-----------------------------------------------------------------
+            Error::AspaCustomerAsNotEntitled(ca, asn) => ErrorResponse::new("ca-aspa-not-entitled", &self)
+                .with_ca(ca)
+                .with_asn(*asn),
+            Error::AspaCustomerAlreadyPresent(ca, asn) => ErrorResponse::new("ca-aspa-customer-as-duplicate", &self)
+                .with_ca(ca)
+                .with_asn(*asn),
+            Error::AspaCustomerUnknown(ca, asn) => ErrorResponse::new("ca-aspa-unknown-customer-as", &self)
+                .with_ca(ca)
+                .with_asn(*asn),
+            Error::AspaProvidersUpdateEmpty(ca, asn) => ErrorResponse::new("ca-aspa-delta-empty", &self)
+                .with_ca(ca)
+                .with_asn(*asn),
+            Error::AspaProvidersUpdateConflict(ca, conflict) => ErrorResponse::new("ca-aspa-delta-error", &self)
+                .with_ca(ca)
+                .with_aspa_providers_conflict(conflict),
 
             //-----------------------------------------------------------------
             // Key Usage Issues (key-*)
@@ -803,6 +858,7 @@ impl Error {
             Error::KeyUseNoIssuedCert => ErrorResponse::new("key-no-cert", &self),
             Error::KeyUseNoMatch(ki) => ErrorResponse::new("key-no-match", &self).with_key_identifier(ki),
             Error::KeyRollNotAllowed => ErrorResponse::new("key-roll-disallowed", &self),
+
             //-----------------------------------------------------------------
             // Resource Issues (label: rc-*)
             //-----------------------------------------------------------------
@@ -1171,14 +1227,13 @@ mod tests {
         error.add_invalid_length(invalid_length);
         error.add_unknown(unknown);
 
-        // println!(
-        //     "{}",
-        //     serde_json::to_string_pretty(&Error::RoaDeltaError(error).to_error_response()).unwrap()
-        // );
+        let ca = Handle::from_str("ca").unwrap();
+
+        let error = Error::RoaDeltaError(ca, error);
 
         verify(
             include_str!("../../test-resources/errors/ca-roa-delta-error.json"),
-            Error::RoaDeltaError(error),
+            error,
         );
     }
 }
