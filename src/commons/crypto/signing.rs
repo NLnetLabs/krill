@@ -72,7 +72,7 @@ impl Signer for SignerProvider {
 
     type Error = SignerError;
 
-    fn create_key(&mut self, algorithm: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
+    fn create_key(&self, algorithm: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
         match self {
             SignerProvider::OpenSsl(signer) => signer.create_key(algorithm),
             #[cfg(feature = "hsm")]
@@ -88,7 +88,7 @@ impl Signer for SignerProvider {
         }
     }
 
-    fn destroy_key(&mut self, key: &Self::KeyId) -> Result<(), KeyError<Self::Error>> {
+    fn destroy_key(&self, key: &Self::KeyId) -> Result<(), KeyError<Self::Error>> {
         match self {
             SignerProvider::OpenSsl(signer) => signer.destroy_key(key),
             #[cfg(feature = "hsm")]
@@ -214,25 +214,11 @@ impl SignerRouter {
     }
 }
 
-// Variants of the `Signer` trait functions that take `&mut` arguments and so must be locked to use them, but for which
-// we don't want the caller to have to lock the entire `SignerRouter`, only the single `Signer` being used. Ideally the
-// `Signer` trait wouldn't use `&mut` at all and rather require the implementation to use the interior mutability
-// pattern with as much or as little locking internally at the finest level of granularity possible.
-impl SignerRouter {
-    fn create_key_minimally_locking(&self, algorithm: PublicKeyFormat) -> Result<KeyIdentifier, SignerError> {
-        self.general_signer.write().unwrap().create_key(algorithm)
-    }
-
-    fn destroy_key_minimally_locking(&self, key_id: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
-        self.general_signer.write().unwrap().destroy_key(key_id)
-    }
-}
-
 impl Signer for SignerRouter {
     type KeyId = KeyIdentifier;
     type Error = SignerError;
 
-    fn create_key(&mut self, algorithm: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
+    fn create_key(&self, algorithm: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
         self.general_signer.write().unwrap().create_key(algorithm)
     }
 
@@ -240,7 +226,7 @@ impl Signer for SignerRouter {
         self.general_signer.read().unwrap().get_key_info(key_id)
     }
 
-    fn destroy_key(&mut self, key_id: &KeyIdentifier) -> Result<(), KeyError<Self::Error>> {
+    fn destroy_key(&self, key_id: &KeyIdentifier) -> Result<(), KeyError<Self::Error>> {
         self.general_signer.write().unwrap().destroy_key(key_id)
     }
 
@@ -295,12 +281,12 @@ impl KrillSigner {
 
     pub fn create_key(&self) -> CryptoResult<KeyIdentifier> {
         self.router
-            .create_key_minimally_locking(PublicKeyFormat::Rsa)
+            .create_key(PublicKeyFormat::Rsa)
             .map_err(crypto::Error::signer)
     }
 
     pub fn destroy_key(&self, key_id: &KeyIdentifier) -> CryptoResult<()> {
-        self.router.destroy_key_minimally_locking(key_id).map_err(crypto::Error::key_error)
+        self.router.destroy_key(key_id).map_err(crypto::Error::key_error)
     }
 
     pub fn get_key_info(&self, key_id: &KeyIdentifier) -> CryptoResult<PublicKey> {
