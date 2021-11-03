@@ -27,12 +27,15 @@ use crate::{
 };
 
 #[cfg(feature = "hsm")]
+use std::sync::RwLock;
+
+#[cfg(feature = "hsm")]
 use crate::commons::{api::Handle, crypto::dispatch::signerinfo::SignerMapper};
 
 //------------ OpenSslSigner -------------------------------------------------
 
 /// An openssl based signer.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct OpenSslSigner {
     keys_dir: Arc<Path>,
 
@@ -40,7 +43,7 @@ pub struct OpenSslSigner {
     name: String,
 
     #[cfg(feature = "hsm")]
-    handle: Option<Handle>,
+    handle: RwLock<Option<Handle>>,
 
     #[cfg(feature = "hsm")]
     info: Option<String>,
@@ -74,7 +77,7 @@ impl OpenSslSigner {
                 openssl::version::version(),
                 keys_dir.as_path().display()
             )),
-            handle: None, // will be set later
+            handle: RwLock::new(None), // will be set later
             mapper: mapper.clone(),
             keys_dir: keys_dir.into(),
         };
@@ -88,11 +91,12 @@ impl OpenSslSigner {
     }
 
     #[cfg(feature = "hsm")]
-    pub fn set_handle(&mut self, handle: Handle) {
-        if self.handle.is_some() {
+    pub fn set_handle(&self, handle: Handle) {
+        let mut writable_handle = self.handle.write().unwrap();
+        if writable_handle.is_some() {
             panic!("Cannot set signer handle as handle is already set");
         }
-        self.handle = Some(handle);
+        *writable_handle = Some(handle);
     }
 
     #[cfg(feature = "hsm")]
@@ -110,7 +114,7 @@ impl OpenSslSigner {
     }
 
     #[cfg(feature = "hsm")]
-    pub fn create_registration_key(&mut self) -> Result<(PublicKey, String), SignerError> {
+    pub fn create_registration_key(&self) -> Result<(PublicKey, String), SignerError> {
         // For the OpenSslSigner we use the KeyIdentifier as the internal key id so the two are the same.
         let key_id = self.build_key()?;
         let internal_key_id = key_id.to_string();
@@ -159,7 +163,7 @@ impl OpenSslSigner {
         }
     }
 
-    fn build_key(&mut self) -> Result<KeyIdentifier, SignerError> {
+    fn build_key(&self) -> Result<KeyIdentifier, SignerError> {
         let kp = OpenSslKeyPair::build()?;
 
         let pk = &kp.subject_public_key_info()?;
@@ -215,8 +219,12 @@ impl OpenSslSigner {
         // doesn't need a mapper to map from KeyIdentifier to internal key id as the internal key id IS the
         // KeyIdentifier.
         if let Some(mapper) = &self.mapper {
+            let readable_handle = self.handle.read().unwrap();
+            let signer_handle = readable_handle.as_ref().ok_or(SignerError::Other(
+                "Failed to record signer key: Signer handle not set".to_string(),
+            ))?;
             mapper
-                .add_key(self.handle.as_ref().unwrap(), key_id, &format!("{}", key_id))
+                .add_key(signer_handle, key_id, &format!("{}", key_id))
                 .map_err(|err| SignerError::Other(format!("Failed to record signer key: {}", err)))
         } else {
             Ok(())
@@ -228,7 +236,7 @@ impl Signer for OpenSslSigner {
     type KeyId = KeyIdentifier;
     type Error = SignerError;
 
-    fn create_key(&mut self, _algorithm: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
+    fn create_key(&self, _algorithm: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
         let key_id = self.build_key()?;
         self.remember_key_id(&key_id)?;
         Ok(key_id)
@@ -239,7 +247,7 @@ impl Signer for OpenSslSigner {
         Ok(key_pair.subject_public_key_info()?)
     }
 
-    fn destroy_key(&mut self, key_id: &Self::KeyId) -> Result<(), KeyError<Self::Error>> {
+    fn destroy_key(&self, key_id: &Self::KeyId) -> Result<(), KeyError<Self::Error>> {
         let path = self.key_path(key_id);
         if path.exists() {
             fs::remove_file(&path).map_err(|e| {
@@ -346,10 +354,10 @@ pub mod tests {
     fn should_return_subject_public_key_info() {
         test::test_under_tmp(|d| {
             #[cfg(not(feature = "hsm"))]
-            let mut s = OpenSslSigner::build(&d).unwrap();
+            let s = OpenSslSigner::build(&d).unwrap();
 
             #[cfg(feature = "hsm")]
-            let mut s = OpenSslSigner::build(&d, "dummy", None).unwrap();
+            let s = OpenSslSigner::build(&d, "dummy", None).unwrap();
 
             let ki = s.create_key(PublicKeyFormat::Rsa).unwrap();
             s.get_key_info(&ki).unwrap();

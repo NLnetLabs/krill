@@ -59,11 +59,11 @@ pub type KmipTlsClient = Client<SslStream<TcpStream>>;
 
 //------------ The KMIP signer management interface -------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct KmipSigner {
     name: String,
 
-    handle: Option<Handle>,
+    handle: RwLock<Option<Handle>>,
 
     mapper: Arc<SignerMapper>,
 
@@ -79,7 +79,7 @@ impl KmipSigner {
 
         let s = KmipSigner {
             name: name.to_string(),
-            handle: None,
+            handle: RwLock::new(None),
             mapper: mapper.clone(),
             server,
         };
@@ -91,11 +91,12 @@ impl KmipSigner {
         &self.name
     }
 
-    pub fn set_handle(&mut self, handle: Handle) {
-        if self.handle.is_some() {
+    pub fn set_handle(&self, handle: Handle) {
+        let mut writable_handle = self.handle.write().unwrap();
+        if writable_handle.is_some() {
             panic!("Cannot set signer handle as handle is already set");
         }
-        self.handle = Some(handle);
+        *writable_handle = Some(handle);
     }
 
     pub fn get_info(&self) -> Option<String> {
@@ -113,7 +114,7 @@ impl KmipSigner {
         self.sign_with_key(signer_private_key_id, SignatureAlgorithm::default(), challenge.as_ref())
     }
 
-    pub fn create_registration_key(&mut self) -> Result<(PublicKey, String), SignerError> {
+    pub fn create_registration_key(&self) -> Result<(PublicKey, String), SignerError> {
         let (public_key, kmip_key_pair_ids) = self.build_key(PublicKeyFormat::Rsa)?;
         let internal_key_id = kmip_key_pair_ids.private_key_id.to_string();
         Ok((public_key, internal_key_id))
@@ -504,8 +505,12 @@ impl KmipSigner {
         // TODO: Don't assume colons cannot appear in HSM key ids.
         let internal_key_id = format!("{}:{}", kmip_key_ids.public_key_id, kmip_key_ids.private_key_id);
 
+        let readable_handle = self.handle.read().unwrap();
+        let signer_handle = readable_handle.as_ref().ok_or(SignerError::Other(
+            "Failed to record signer key: Signer handle not set".to_string(),
+        ))?;
         self.mapper
-            .add_key(self.handle.as_ref().unwrap(), key_id, &internal_key_id)
+            .add_key(signer_handle, key_id, &internal_key_id)
             .map_err(|err| SignerError::KmipError(format!("Failed to record signer key: {}", err)))?;
 
         Ok(())
@@ -516,7 +521,8 @@ impl KmipSigner {
         &self,
         key_id: &KeyIdentifier,
     ) -> Result<KmipKeyPairIds, KeyError<<KmipSigner as Signer>::Error>> {
-        let signer_handle = self.handle.as_ref().ok_or(KeyError::KeyNotFound)?;
+        let readable_handle = self.handle.read().unwrap();
+        let signer_handle = readable_handle.as_ref().ok_or(KeyError::KeyNotFound)?;
 
         let internal_key_id = self
             .mapper

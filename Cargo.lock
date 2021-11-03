@@ -133,8 +133,9 @@ dependencies = [
 
 [[package]]
 name = "bcder"
-version = "0.6.1-dev"
-source = "git+https://github.com/NLnetLabs/bcder#0e0ef26d23afe18603768b7f6757df997b87568b"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52e7c3bae57b01ec5b1b028af1f77b7d41dd2bd97a41bab7968739b5329c0e39"
 dependencies = [
  "backtrace",
  "bytes",
@@ -1628,8 +1629,9 @@ dependencies = [
 
 [[package]]
 name = "rpki"
-version = "0.12.3"
-source = "git+https://github.com/ximon18/rpki-rs?branch=0.12.3-unsigned-from-slice#643e9e14dcf19de136e280989ae96c00144f5be5"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3ee4c0626a16c808bb6b557298def266e8cd1078515b5ea07b382f2a0b75375c"
 dependencies = [
  "base64 0.13.0",
  "bcder",

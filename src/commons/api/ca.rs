@@ -2585,10 +2585,10 @@ mod test {
     fn mft_uri() {
         test::test_under_tmp(|d| {
             #[cfg(not(feature = "hsm"))]
-            let mut signer = OpenSslSigner::build(&d).unwrap();
+            let signer = OpenSslSigner::build(&d).unwrap();
 
             #[cfg(feature = "hsm")]
-            let mut signer = OpenSslSigner::build(&d, "dummy", None).unwrap();
+            let signer = OpenSslSigner::build(&d, "dummy", None).unwrap();
 
             let key_id = signer.create_key(PublicKeyFormat::Rsa).unwrap();
             let pub_key = signer.get_key_info(&key_id).unwrap();

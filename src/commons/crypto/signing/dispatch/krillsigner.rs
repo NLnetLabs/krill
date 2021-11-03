@@ -50,14 +50,12 @@ impl KrillSigner {
 
     pub fn create_key(&self) -> CryptoResult<KeyIdentifier> {
         self.router
-            .create_key_minimally_locking(PublicKeyFormat::Rsa)
+            .create_key(PublicKeyFormat::Rsa)
             .map_err(crypto::Error::signer)
     }
 
     pub fn destroy_key(&self, key_id: &KeyIdentifier) -> CryptoResult<()> {
-        self.router
-            .destroy_key_minimally_locking(key_id)
-            .map_err(crypto::Error::key_error)
+        self.router.destroy_key(key_id).map_err(crypto::Error::key_error)
     }
 
     pub fn get_key_info(&self, key_id: &KeyIdentifier) -> CryptoResult<PublicKey> {
