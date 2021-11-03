@@ -657,7 +657,7 @@ impl SignerRouter {
 
         signer_provider.set_handle(signer_handle.clone());
 
-        debug!("Signer '{}' binding complete", signer_name);
+        debug!("Signer '{}' bound to signer handle '{}'", signer_name, signer_handle);
         Ok(RegisterResult::ReadyVerified(signer_handle))
     }
 }
