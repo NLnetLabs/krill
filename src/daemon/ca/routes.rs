@@ -3,13 +3,10 @@ use std::{cmp::Ordering, collections::HashMap, fmt, ops::Deref, str::FromStr};
 use chrono::Duration;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
-use rpki::{
-    repository::{
-        roa::{Roa, RoaBuilder},
-        sigobj::SignedObjectBuilder,
-        x509::Time,
-    },
-    uri,
+use rpki::repository::{
+    roa::{Roa, RoaBuilder},
+    sigobj::SignedObjectBuilder,
+    x509::Time,
 };
 
 use crate::{
@@ -507,7 +504,6 @@ impl Roas {
                 let roa = Self::make_roa(
                     &[*auth],
                     &name,
-                    None,
                     certified_key,
                     issuance_timing.timing_roa_valid_weeks,
                     signer,
@@ -657,6 +653,7 @@ impl Roas {
     /// Re-new ROAs before they would expire
     pub fn renew(
         &self,
+        force: bool,
         certified_key: &CertifiedKey,
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
@@ -667,11 +664,10 @@ impl Roas {
 
         for (auth, roa_info) in self.simple.iter() {
             let name = ObjectName::from(auth);
-            if roa_info.expires() < renew_threshold {
+            if force || roa_info.expires() < renew_threshold {
                 let roa = Self::make_roa(
                     &[*auth],
                     &name,
-                    None,
                     certified_key,
                     issuance_timing.timing_roa_valid_weeks,
                     signer,
@@ -684,13 +680,12 @@ impl Roas {
         for (roa_key, aggregate) in self.aggregate.iter() {
             let roa_info = aggregate.roa_info();
 
-            if roa_info.expires() < renew_threshold {
+            if force || roa_info.expires() < renew_threshold {
                 let authorizations = aggregate.authorizations().clone();
                 let name = ObjectName::from(roa_key);
                 let new_roa = Self::make_roa(
                     authorizations.as_slice(),
                     &name,
-                    None,
                     certified_key,
                     issuance_timing.timing_roa_valid_weeks,
                     signer,
@@ -719,7 +714,6 @@ impl Roas {
             let new_roa = Self::make_roa(
                 &[*auth],
                 &name,
-                None,
                 certified_key,
                 issuance_timing.timing_roa_valid_weeks,
                 signer,
@@ -736,7 +730,6 @@ impl Roas {
             let new_roa = Self::make_roa(
                 authorizations.as_slice(),
                 &name,
-                None,
                 certified_key,
                 issuance_timing.timing_roa_valid_weeks,
                 signer,
@@ -761,25 +754,16 @@ impl Roas {
     pub fn make_roa(
         authorizations: &[RouteAuthorization],
         name: &ObjectName,
-        new_repo: Option<&uri::Rsync>,
         certified_key: &CertifiedKey,
         weeks: i64,
         signer: &KrillSigner,
     ) -> KrillResult<Roa> {
         let incoming_cert = certified_key.incoming_cert();
-        let crl_uri = match &new_repo {
-            None => incoming_cert.crl_uri(),
-            Some(base_uri) => base_uri.join(incoming_cert.crl_name().as_bytes()).unwrap(),
-        };
-
-        let roa_uri = match &new_repo {
-            None => incoming_cert.uri_for_name(name),
-            Some(base_uri) => base_uri.join(name.as_bytes()).unwrap(),
-        };
-
-        let aia = incoming_cert.uri();
-
         let signing_key = certified_key.key_id();
+
+        let crl_uri = incoming_cert.crl_uri();
+        let roa_uri = incoming_cert.uri_for_name(name);
+        let aia = incoming_cert.uri();
 
         let asn = authorizations
             .first()
@@ -825,7 +809,6 @@ impl Roas {
         let roa = Self::make_roa(
             authorizations.as_slice(),
             &name,
-            None,
             certified_key,
             issuance_timing.timing_roa_valid_weeks,
             signer,

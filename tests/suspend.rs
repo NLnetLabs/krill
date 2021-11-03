@@ -27,7 +27,7 @@ async fn test_suspension() {
 
     let testbed = handle("testbed");
     let ca = handle("CA");
-    let ca_res = resources("10.0.0.0/16");
+    let ca_res = ipv4_resources("10.0.0.0/16");
 
     async fn expect_not_suspended(ca: &Handle, child: &ChildHandle) {
         let rcn_0 = rcn(0);

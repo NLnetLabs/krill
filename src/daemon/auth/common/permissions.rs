@@ -67,6 +67,9 @@ iterable_enum! {
         ROUTES_READ,
         ROUTES_UPDATE,
         ROUTES_ANALYSIS,
+        ASPAS_READ,
+        ASPAS_UPDATE,
+        ASPAS_ANALYSIS,
         RTA_LIST,
         RTA_READ,
         RTA_UPDATE

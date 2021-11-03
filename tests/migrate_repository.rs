@@ -42,7 +42,7 @@ async fn migrate_repository() {
     let testbed = handle("testbed");
 
     let ca1 = handle("CA1");
-    let ca1_res = resources("10.0.0.0/16");
+    let ca1_res = ipv4_resources("10.0.0.0/16");
     let ca1_route_definition = RoaDefinition::from_str("10.0.0.0/16-16 => 65000").unwrap();
 
     let rcn_0 = ResourceClassName::from(0);

@@ -43,7 +43,7 @@ pub struct Scheduler {
 
     /// Responsible for periodically reissuing ROAs before they would expire.
     #[allow(dead_code)] // just need to keep this in scope
-    cas_roas_renew: ScheduleHandle,
+    cas_objects_renew: ScheduleHandle,
 
     /// Responsible for letting CA check with their parents whether their resource
     /// entitlements have changed *and* for the shrinking of issued certificates, if
@@ -73,7 +73,7 @@ impl Scheduler {
         let cas_event_triggers = make_cas_event_triggers(event_queue.clone(), ca_manager.clone(), actor.clone());
 
         let cas_republish = make_cas_republish(ca_manager.clone(), event_queue);
-        let cas_roas_renew = make_cas_roa_renew(ca_manager.clone(), actor.clone());
+        let cas_objects_renew = make_cas_objects_renew(ca_manager.clone(), actor.clone());
         let cas_refresh = make_cas_refresh(ca_manager, config.ca_refresh_seconds, actor.clone());
 
         let announcements_refresh = make_announcements_refresh(bgp_analyser);
@@ -84,7 +84,7 @@ impl Scheduler {
         Scheduler {
             cas_event_triggers,
             cas_republish,
-            cas_roas_renew,
+            cas_objects_renew,
             cas_refresh,
             announcements_refresh,
             #[cfg(feature = "multi-user")]
@@ -242,15 +242,15 @@ fn make_cas_republish(ca_server: Arc<CaManager>, event_queue: Arc<MessageQueue>)
     )
 }
 
-fn make_cas_roa_renew(ca_server: Arc<CaManager>, actor: Actor) -> ScheduleHandle {
+fn make_cas_objects_renew(ca_server: Arc<CaManager>, actor: Actor) -> ScheduleHandle {
     SkippingScheduler::run(SCHEDULER_INTERVAL_SECONDS_ROA_RENEW, "CA ROA renewal", move || {
         let rt = Runtime::new().unwrap();
         rt.block_on(async {
             debug!(
-                "Triggering background renewal for about to expire ROAs issued by all CAs, note this may be a no-op"
+                "Triggering background renewal for about to expire objects issued by all CAs, note this may be a no-op"
             );
-            if let Err(e) = ca_server.renew_roas_all(&actor).await {
-                error!("Background re-issuing of about to expire ROAs failed: {}", e);
+            if let Err(e) = ca_server.renew_objects_all(&actor).await {
+                error!("Background re-issuing of about to expire objects failed: {}", e);
             }
         })
     })

@@ -9,6 +9,7 @@ use bytes::Bytes;
 
 use rpki::{
     repository::{
+        aspa::{Aspa, AspaBuilder},
         cert::{Cert, KeyUsage, Overclaim, TbsCert},
         crl::{Crl, CrlEntry, TbsCertList},
         crypto::{
@@ -348,6 +349,17 @@ impl KrillSigner {
         key_id: &KeyIdentifier,
     ) -> CryptoResult<Roa> {
         roa_builder
+            .finalize(object_builder, &self.router, key_id)
+            .map_err(crypto::Error::signing)
+    }
+
+    pub fn sign_aspa(
+        &self,
+        aspa_builder: AspaBuilder,
+        object_builder: SignedObjectBuilder,
+        key_id: &KeyIdentifier,
+    ) -> CryptoResult<Aspa> {
+        self.aspa_builder
             .finalize(object_builder, &self.router, key_id)
             .map_err(crypto::Error::signing)
     }

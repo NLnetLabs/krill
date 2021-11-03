@@ -1,7 +1,9 @@
 {
   "label": "ca-roa-delta-error",
-  "msg": "Delta rejected, see included json",
-  "args": {},
+  "msg": "ROA delta rejected:\n\n'Cannot add the following duplicate ROAs:\n  10.0.0.0/20-24 => 1\nCannot add the following ROAs with prefixes not on any of your certificates:\n  10.128.0.0/9 => 1\nCannot remove the following unknown ROAs:\n  192.168.0.0/16 => 1\nThe following ROAs have a max length which is invalid for the prefix:\n  10.0.1.0/25 => 1\n' ",
+  "args": {
+    "ca": "ca"
+  },
   "delta_error": {
     "duplicates": [
       {

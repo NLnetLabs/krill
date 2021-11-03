@@ -10,6 +10,8 @@ use std::{fmt, str};
 
 use bytes::Bytes;
 use chrono::{Duration, TimeZone, Utc};
+use rpki::repository::aspa::Aspa;
+use rpki::repository::resources::{AsBlock, AsBlocksBuilder, AsId};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use rpki::{
@@ -29,9 +31,9 @@ use crate::commons::util::KrillVersion;
 use crate::{
     commons::{
         api::{
-            rrdp::PublishElement, Base64, ChildHandle, EntitlementClass, Entitlements, ErrorResponse, Handle,
-            HexEncodedHash, IssuanceRequest, ParentCaContact, ParentHandle, RepositoryContact, RequestResourceLimit,
-            RoaAggregateKey, RoaDefinition, SigningCert,
+            rrdp::PublishElement, AspaDefinition, Base64, ChildHandle, EntitlementClass, Entitlements, ErrorResponse,
+            Handle, HexEncodedHash, IssuanceRequest, ParentCaContact, ParentHandle, RepositoryContact,
+            RequestResourceLimit, RoaAggregateKey, RoaDefinition, SigningCert,
         },
         crypto::IdCert,
         remote::rfc8183::ServiceUri,
@@ -260,6 +262,14 @@ impl From<&Roa> for ReplacedObject {
     fn from(roa: &Roa) -> Self {
         let revocation = Revocation::from(roa.cert());
         let hash = HexEncodedHash::from_content(roa.to_captured().as_slice());
+        ReplacedObject { revocation, hash }
+    }
+}
+
+impl From<&Aspa> for ReplacedObject {
+    fn from(aspa: &Aspa) -> Self {
+        let revocation = Revocation::from(aspa.cert());
+        let hash = HexEncodedHash::from_content(aspa.to_captured().as_slice());
         ReplacedObject { revocation, hash }
     }
 }
@@ -624,6 +634,10 @@ impl ObjectName {
     pub fn new(ki: &KeyIdentifier, extension: &str) -> Self {
         ObjectName(format!("{}.{}", ki, extension))
     }
+
+    pub fn aspa(customer: AsId) -> Self {
+        ObjectName(format!("{}.asa", customer))
+    }
 }
 
 impl From<&Cert> for ObjectName {
@@ -662,6 +676,12 @@ impl From<&RoaAggregateKey> for ObjectName {
             None => format!("AS{}.roa", roa_group.asn()),
             Some(number) => format!("AS{}-{}.roa", roa_group.asn(), number),
         })
+    }
+}
+
+impl From<&AspaDefinition> for ObjectName {
+    fn from(aspa: &AspaDefinition) -> Self {
+        Self::aspa(aspa.customer())
     }
 }
 
@@ -725,6 +745,12 @@ impl From<&Manifest> for Revocation {
 impl From<&Roa> for Revocation {
     fn from(r: &Roa) -> Self {
         Self::from(r.cert())
+    }
+}
+
+impl From<&Aspa> for Revocation {
+    fn from(aspa: &Aspa) -> Self {
+        Self::from(aspa.cert())
     }
 }
 
@@ -966,6 +992,14 @@ impl ResourceSet {
     /// this set.
     pub fn contains(&self, other: &ResourceSet) -> bool {
         self.asn.contains(other.asn()) && self.v4.contains(&other.v4) && self.v6.contains(&other.v6)
+    }
+
+    /// Check if the resource set contains the given AsId
+    pub fn contains_asn(&self, asn: AsId) -> bool {
+        let mut blocks = AsBlocksBuilder::new();
+        blocks.push(AsBlock::Id(asn));
+        let blocks = blocks.finalize();
+        self.asn.contains(&blocks)
     }
 
     /// Returns the union of this ResourceSet and the other. I.e. a new
@@ -1412,17 +1446,17 @@ impl ParentStatus {
         self.last_exchange.as_ref().map(|e| e.to_failure_opt()).flatten()
     }
 
-    fn set_next_exchange_plus_seconds(&mut self, next_seconds: i64) {
-        self.next_exchange_before += Duration::seconds(next_seconds);
+    fn set_next_exchange(&mut self, next_run_seconds: i64) {
+        self.next_exchange_before = Timestamp::now_plus_seconds(next_run_seconds);
     }
 
-    fn set_failure(&mut self, uri: ServiceUri, error: ErrorResponse, next_seconds: i64) {
+    fn set_failure(&mut self, uri: ServiceUri, error: ErrorResponse, next_run_seconds: i64) {
         self.last_exchange = Some(ParentExchange {
             timestamp: Timestamp::now(),
             uri,
             result: ExchangeResult::Failure(error),
         });
-        self.set_next_exchange_plus_seconds(next_seconds);
+        self.set_next_exchange(next_run_seconds);
     }
 
     fn set_entitlements(&mut self, uri: ServiceUri, entitlements: &Entitlements, next_run_seconds: i64) {
@@ -1444,7 +1478,7 @@ impl ParentStatus {
         }
 
         self.all_resources = all_resources;
-        self.set_next_exchange_plus_seconds(next_run_seconds);
+        self.set_next_exchange(next_run_seconds);
     }
 
     fn set_last_updated(&mut self, uri: ServiceUri, next_run_seconds: i64) {
@@ -1455,7 +1489,7 @@ impl ParentStatus {
             result: ExchangeResult::Success,
         });
         self.last_success = Some(timestamp);
-        self.set_next_exchange_plus_seconds(next_run_seconds);
+        self.set_next_exchange(next_run_seconds);
     }
 }
 
@@ -1521,7 +1555,7 @@ impl RepoStatus {
         self.next_exchange_before = timestamp.plus_minutes(5);
     }
 
-    pub fn set_published(&mut self, uri: ServiceUri, published: Vec<PublishElement>, next_hours: i64) {
+    pub fn set_published(&mut self, uri: ServiceUri, published: Vec<PublishElement>, next_update: Timestamp) {
         let timestamp = Timestamp::now();
         self.last_exchange = Some(ParentExchange {
             timestamp,
@@ -1530,10 +1564,10 @@ impl RepoStatus {
         });
         self.published = published;
         self.last_success = Some(timestamp);
-        self.next_exchange_before = timestamp.plus_hours(next_hours);
+        self.next_exchange_before = next_update;
     }
 
-    pub fn set_last_updated(&mut self, uri: ServiceUri, next_hours: i64) {
+    pub fn set_last_updated(&mut self, uri: ServiceUri, next_update: Timestamp) {
         let timestamp = Timestamp::now();
         self.last_exchange = Some(ParentExchange {
             timestamp,
@@ -1541,7 +1575,7 @@ impl RepoStatus {
             result: ExchangeResult::Success,
         });
         self.last_success = Some(timestamp);
-        self.next_exchange_before = timestamp.plus_hours(next_hours);
+        self.next_exchange_before = next_update;
     }
 }
 
@@ -1844,16 +1878,8 @@ impl Timestamp {
         Timestamp::now().minus_hours(hours)
     }
 
-    pub fn now_minus_seconds(seconds: i64) -> Self {
-        Timestamp::now().minus_seconds(seconds)
-    }
-
     pub fn minus_hours(self, hours: i64) -> Self {
         self - Duration::hours(hours)
-    }
-
-    pub fn minus_seconds(self, seconds: i64) -> Self {
-        self - Duration::seconds(seconds)
     }
 
     pub fn now_plus_minutes(minutes: i64) -> Self {
@@ -1864,14 +1890,36 @@ impl Timestamp {
         self + Duration::minutes(minutes)
     }
 
-    pub fn to_rfc3339(&self) -> String {
-        Time::from(*self).to_rfc3339()
+    pub fn minus_seconds(self, seconds: i64) -> Self {
+        self - Duration::seconds(seconds)
+    }
+
+    pub fn plus_seconds(self, seconds: i64) -> Self {
+        self + Duration::seconds(seconds)
+    }
+
+    pub fn now_minus_seconds(seconds: i64) -> Self {
+        Timestamp::now().minus_seconds(seconds)
+    }
+
+    pub fn now_plus_seconds(seconds: i64) -> Self {
+        Timestamp::now().plus_seconds(seconds)
+    }
+
+    pub fn to_rfc3339(self) -> String {
+        Time::from(self).to_rfc3339()
     }
 }
 
 impl From<Timestamp> for Time {
     fn from(timestamp: Timestamp) -> Self {
         Time::new(Utc.timestamp(timestamp.0, 0))
+    }
+}
+
+impl From<Time> for Timestamp {
+    fn from(time: Time) -> Self {
+        Timestamp(time.timestamp())
     }
 }
 

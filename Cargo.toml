@@ -69,11 +69,12 @@ rustc_version   = "0.2.3"
 [features]
 default = [ "multi-user" ]
 rta = []
+aspa = []
 multi-user = [ "basic-cookies", "jmespatch/sync", "regex", "oso", "openidconnect", "rpassword", "scrypt", "unicode-normalization", "urlparse" ]
 ui-tests = []
 extra-debug = [ "rpki/extra-debug" ]
 static-openssl = [ "openssl/vendored" ]
-all-except-ui-tests = [ "multi-user", "rta", "static-openssl" ]
+all-except-ui-tests = [ "multi-user", "rta", "static-openssl", "aspa" ]
 hsm = ["backoff", "kmip", "r2d2"]
 hsm-tests = []
 
