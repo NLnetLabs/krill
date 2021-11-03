@@ -9,6 +9,7 @@ use backoff::ExponentialBackoff;
 
 use bcder::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
+use pkcs11::errors::Error as Pkcs11Error;
 use pkcs11::types::*;
 use rpki::repository::crypto::{
     signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm,
@@ -19,7 +20,10 @@ use crate::commons::{
     crypto::{
         dispatch::signerinfo::SignerMapper,
         signers::{
-            pkcs11::{context::Pkcs11Context, session::Pkcs11Session},
+            pkcs11::{
+                context::{Pkcs11Context, ThreadSafePkcs11Context},
+                session::Pkcs11Session,
+            },
             probe::{ProbeError, ProbeStatus, StatefulProbe},
             util,
         },
@@ -52,7 +56,7 @@ pub enum LoginMode {
 // Placeholder struct
 #[derive(Clone, Debug)]
 struct ConnectionSettings {
-    context: Arc<RwLock<Pkcs11Context>>,
+    context: ThreadSafePkcs11Context,
 
     // For some PKCS#11 libraries it is easy, or only possible, to connect by slot ID (rather than slot label). If
     // `slot_id` is Some then `slot_label` is ignored. One of `slot_id` or `slot_label` must be Some.
@@ -173,7 +177,7 @@ impl Pkcs11Signer {
     }
 
     fn get_test_connection_settings() -> Result<ConnectionSettings, SignerError> {
-        let context = Pkcs11Context::get_or_load(Path::new("/usr/lib/softhsm/libsofthsm2.so"))?;
+        let context = Pkcs11Context::get_or_load(Path::new("/usr/lib/softhsm/libsofthsm2.so"));
         let slot_id = Option::<CK_SLOT_ID>::None;
         let slot_label = Some("My token 1".to_string());
         let user_pin = Some("1234".to_string());
@@ -194,7 +198,7 @@ impl Pkcs11Signer {
 /// The details needed to interact with a usable PKCS#11 server.
 #[derive(Debug)]
 struct UsableServerState {
-    context: Arc<RwLock<Pkcs11Context>>,
+    context: ThreadSafePkcs11Context,
 
     /// Does the server support generation of random numbers?
     supports_random_number_generation: bool,
@@ -219,7 +223,7 @@ struct UsableServerState {
 impl UsableServerState {
     pub fn new(
         supports_random_number_generation: bool,
-        context: Arc<RwLock<Pkcs11Context>>,
+        context: ThreadSafePkcs11Context,
         conn_info: String,
         slot_id: CK_SLOT_ID,
         login_mode: LoginMode,
@@ -235,7 +239,7 @@ impl UsableServerState {
         }
     }
 
-    pub fn get_connection(&self) -> Result<Pkcs11Session, pkcs11::errors::Error> {
+    pub fn get_connection(&self) -> Result<Pkcs11Session, Pkcs11Error> {
         Pkcs11Session::new(self.context.clone(), self.slot_id)
     }
 }
@@ -245,7 +249,7 @@ impl Pkcs11Signer {
     fn probe_server(
         status: &ProbeStatus<ConnectionSettings, SignerError, UsableServerState>,
     ) -> Result<UsableServerState, ProbeError<SignerError>> {
-        fn force_cache_flush(readable_ctx: RwLockReadGuard<Pkcs11Context>, context: Arc<RwLock<Pkcs11Context>>) {
+        fn force_cache_flush(readable_ctx: RwLockReadGuard<Pkcs11Context>, context: ThreadSafePkcs11Context) {
             // Finalize the PKCS#11 library so that we re-initialize it on next use, otherwise it just caches (at
             // least with SoftHSMv2 and YubiHSM) the token info and doesn't ever report the presence of the token
             // even when it becomes available.
@@ -482,7 +486,7 @@ impl Pkcs11Signer {
     /// with backoff upto a defined retry limit.
     fn with_conn<T, F>(&self, desc: &str, do_something_with_conn: F) -> Result<T, SignerError>
     where
-        F: FnOnce(&Pkcs11Session) -> Result<T, pkcs11::errors::Error> + Copy,
+        F: FnOnce(&Pkcs11Session) -> Result<T, Pkcs11Error> + Copy,
     {
         let signer_name = &self.name;
 
@@ -782,7 +786,7 @@ impl Pkcs11Signer {
 // Retry with backoff related helper impls/fns:
 // --------------------------------------------------------------------------------------------------------------------
 
-fn retry_on_transient_pkcs11_error(err: pkcs11::errors::Error) -> backoff::Error<SignerError> {
+fn retry_on_transient_pkcs11_error(err: Pkcs11Error) -> backoff::Error<SignerError> {
     if is_transient_error(&err) {
         backoff::Error::Transient(err.into())
     } else {
@@ -797,24 +801,24 @@ fn retry_on_transient_signer_error(err: SignerError) -> backoff::Error<SignerErr
     }
 }
 
-fn is_transient_error(err: &pkcs11::errors::Error) -> bool {
+fn is_transient_error(err: &Pkcs11Error) -> bool {
     match err {
-        pkcs11::errors::Error::Io(_) => {
+        Pkcs11Error::Io(_) => {
             // The Rust `pkcs11` crate encountered an I/O error. I assume this can only occur when trying and
             // failing to open the PKCS#11 library file that we asked it to use.
             false
         }
-        pkcs11::errors::Error::Module(_) => {
+        Pkcs11Error::Module(_) => {
             // The Rust `pkcs11` crate had a serious problem such as the loaded library not exporting a required
             // function or that it was asked to initialize an already initialized library.
             false
         }
-        pkcs11::errors::Error::InvalidInput(_) => {
+        Pkcs11Error::InvalidInput(_) => {
             // The Rust `pkcs11` crate was unable to use an input it was given, e.g. a PIN contained a nul byte
             // or was not set or unset as expected.
             false
         }
-        pkcs11::errors::Error::Pkcs11(err) => {
+        Pkcs11Error::Pkcs11(err) => {
             // Error codes were taken from the `types` module of the Rust `pkcs11` crate.
             // See section 11.1 of the PKCS#11 v2.20 specification for an explanation of each value.
             // Return true only for errors which might succeed very soon after they failed. Errors which are solvable
@@ -942,12 +946,12 @@ fn is_transient_error(err: &pkcs11::errors::Error) -> bool {
                 _ => false,
             }
         }
-        pkcs11::errors::Error::UnavailableInformation => false,
+        Pkcs11Error::UnavailableInformation => false,
     }
 }
 
-impl From<pkcs11::errors::Error> for SignerError {
-    fn from(err: pkcs11::errors::Error) -> Self {
+impl From<Pkcs11Error> for SignerError {
+    fn from(err: Pkcs11Error) -> Self {
         if is_transient_error(&err) {
             error!("PKCS#11 signer unavailable: {}", err);
             SignerError::TemporarilyUnavailable

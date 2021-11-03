@@ -1,24 +1,21 @@
-use std::sync::{Arc, RwLock};
-
 use pkcs11::types::{
     CKF_RW_SESSION, CKF_SERIAL_SESSION, CK_ATTRIBUTE, CK_BYTE, CK_MECHANISM, CK_OBJECT_HANDLE, CK_RV,
     CK_SESSION_HANDLE, CK_SLOT_ID, CK_ULONG, CK_USER_TYPE,
 };
 
-use crate::commons::crypto::signers::pkcs11::context::Pkcs11Context;
+use pkcs11::errors::Error as Pkcs11Error;
+
+use crate::commons::crypto::signers::pkcs11::context::ThreadSafePkcs11Context;
 
 #[derive(Debug)]
 pub(super) struct Pkcs11Session {
-    context: Arc<RwLock<Pkcs11Context>>,
+    context: ThreadSafePkcs11Context,
 
     session_handle: CK_SESSION_HANDLE,
 }
 
 impl Pkcs11Session {
-    pub fn new(
-        context: Arc<RwLock<Pkcs11Context>>,
-        slot_id: CK_SLOT_ID,
-    ) -> Result<Pkcs11Session, pkcs11::errors::Error> {
+    pub fn new(context: ThreadSafePkcs11Context, slot_id: CK_SLOT_ID) -> Result<Pkcs11Session, Pkcs11Error> {
         // Section 11.6 "Session management functions" under "C_OpenSession" says:
         //    "For legacy reasons, the CKF_SERIAL_SESSION bit must always be set; if a call to C_OpenSession does not
         //     have this bit set, the call should return unsuccessfully with the error code
@@ -57,7 +54,7 @@ impl Pkcs11Session {
         mechanism: &CK_MECHANISM,
         pub_template: &[CK_ATTRIBUTE],
         priv_template: &[CK_ATTRIBUTE],
-    ) -> Result<(u64, u64), pkcs11::errors::Error> {
+    ) -> Result<(u64, u64), Pkcs11Error> {
         self.context
             .read()
             .unwrap()
@@ -68,14 +65,14 @@ impl Pkcs11Session {
         &self,
         pub_handle: u64,
         pub_template: &'a mut Vec<CK_ATTRIBUTE>,
-    ) -> Result<(CK_RV, &'a Vec<CK_ATTRIBUTE>), pkcs11::errors::Error> {
+    ) -> Result<(CK_RV, &'a Vec<CK_ATTRIBUTE>), Pkcs11Error> {
         self.context
             .read()
             .unwrap()
             .get_attribute_value(self.session_handle, pub_handle, pub_template)
     }
 
-    pub fn login(&self, user_type: CK_USER_TYPE, user_pin: Option<&str>) -> Result<(), pkcs11::errors::Error> {
+    pub fn login(&self, user_type: CK_USER_TYPE, user_pin: Option<&str>) -> Result<(), Pkcs11Error> {
         self.context
             .read()
             .unwrap()
@@ -85,43 +82,43 @@ impl Pkcs11Session {
     // Note: Cryptographic operations can fail if the key has CKA_ALWAYS_AUTHENTICATE set as that requires that we call
     // C_Login immediately prior to calling C_SignInit, and we don't support that yet (would it ever make sense as this
     // could for example require an operator to enter a pin code in a key pad on every signing moment?).
-    pub fn sign_init(&self, mechanism: &CK_MECHANISM, key: CK_OBJECT_HANDLE) -> Result<(), pkcs11::errors::Error> {
+    pub fn sign_init(&self, mechanism: &CK_MECHANISM, key: CK_OBJECT_HANDLE) -> Result<(), Pkcs11Error> {
         self.context
             .read()
             .unwrap()
             .sign_init(self.session_handle, mechanism, key)
     }
 
-    pub fn sign(&self, data: &[CK_BYTE]) -> Result<Vec<CK_BYTE>, pkcs11::errors::Error> {
+    pub fn sign(&self, data: &[CK_BYTE]) -> Result<Vec<CK_BYTE>, Pkcs11Error> {
         self.context.read().unwrap().sign(self.session_handle, data)
     }
 
-    pub fn find_objects_init(&self, template: &[CK_ATTRIBUTE]) -> Result<(), pkcs11::errors::Error> {
+    pub fn find_objects_init(&self, template: &[CK_ATTRIBUTE]) -> Result<(), Pkcs11Error> {
         self.context
             .read()
             .unwrap()
             .find_objects_init(self.session_handle, template)
     }
 
-    pub fn find_objects(&self, max_object_count: CK_ULONG) -> Result<Vec<CK_OBJECT_HANDLE>, pkcs11::errors::Error> {
+    pub fn find_objects(&self, max_object_count: CK_ULONG) -> Result<Vec<CK_OBJECT_HANDLE>, Pkcs11Error> {
         self.context
             .read()
             .unwrap()
             .find_objects(self.session_handle, max_object_count)
     }
 
-    pub fn find_objects_final(&self) -> Result<(), pkcs11::errors::Error> {
+    pub fn find_objects_final(&self) -> Result<(), Pkcs11Error> {
         self.context.read().unwrap().find_objects_final(self.session_handle)
     }
 
-    pub fn destroy_object(&self, object_handle: CK_OBJECT_HANDLE) -> Result<(), pkcs11::errors::Error> {
+    pub fn destroy_object(&self, object_handle: CK_OBJECT_HANDLE) -> Result<(), Pkcs11Error> {
         self.context
             .read()
             .unwrap()
             .destroy_object(self.session_handle, object_handle)
     }
 
-    pub fn generate_random(&self, num_bytes_wanted: CK_ULONG) -> Result<Vec<u8>, pkcs11::errors::Error> {
+    pub fn generate_random(&self, num_bytes_wanted: CK_ULONG) -> Result<Vec<u8>, Pkcs11Error> {
         self.context
             .read()
             .unwrap()
