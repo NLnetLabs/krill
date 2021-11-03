@@ -186,6 +186,14 @@ impl ConfigDefaults {
     fn timing_roa_reissue_weeks_before() -> i64 {
         4
     }
+
+    fn timing_aspa_valid_weeks() -> i64 {
+        52
+    }
+
+    fn timing_aspa_reissue_weeks_before() -> i64 {
+        4
+    }
 }
 
 //------------ Config --------------------------------------------------------
@@ -316,6 +324,10 @@ pub struct IssuanceTimingConfig {
     pub timing_roa_valid_weeks: i64,
     #[serde(default = "ConfigDefaults::timing_roa_reissue_weeks_before")]
     pub timing_roa_reissue_weeks_before: i64,
+    #[serde(default = "ConfigDefaults::timing_aspa_valid_weeks")]
+    pub timing_aspa_valid_weeks: i64,
+    #[serde(default = "ConfigDefaults::timing_aspa_reissue_weeks_before")]
+    pub timing_aspa_reissue_weeks_before: i64,
 }
 
 impl IssuanceTimingConfig {
@@ -574,6 +586,8 @@ impl Config {
             ConfigDefaults::timing_child_certificate_reissue_weeks_before();
         let timing_roa_valid_weeks = ConfigDefaults::timing_roa_valid_weeks();
         let timing_roa_reissue_weeks_before = ConfigDefaults::timing_roa_reissue_weeks_before();
+        let timing_aspa_valid_weeks = ConfigDefaults::timing_aspa_valid_weeks();
+        let timing_aspa_reissue_weeks_before = ConfigDefaults::timing_aspa_reissue_weeks_before();
 
         let issuance_timing = IssuanceTimingConfig {
             timing_publish_next_hours,
@@ -583,6 +597,8 @@ impl Config {
             timing_child_certificate_reissue_weeks_before,
             timing_roa_valid_weeks,
             timing_roa_reissue_weeks_before,
+            timing_aspa_valid_weeks,
+            timing_aspa_reissue_weeks_before,
         };
 
         let repository_retention = RepositoryRetentionConfig {

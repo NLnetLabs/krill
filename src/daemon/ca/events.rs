@@ -5,16 +5,18 @@ use rpki::repository::crypto::KeyIdentifier;
 use crate::{
     commons::{
         api::{
-            ChildHandle, Handle, IssuanceRequest, IssuedCert, ObjectName, ParentCaContact, ParentHandle,
-            ParentResourceClassName, RcvdCert, RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest,
-            RevokedObject, RoaAggregateKey, RtaName, SuspendedCert, TaCertDetails, UnsuspendedCert,
+            AspaCustomer, AspaDefinition, AspaProvidersUpdate, ChildHandle, Handle, IssuanceRequest, IssuedCert,
+            ObjectName, ParentCaContact, ParentHandle, ParentResourceClassName, RcvdCert, RepositoryContact,
+            ResourceClassName, ResourceSet, RevocationRequest, RevokedObject, RoaAggregateKey, RtaName, SuspendedCert,
+            TaCertDetails, UnsuspendedCert,
         },
         crypto::{IdCert, KrillSigner},
         eventsourcing::StoredEvent,
         KrillResult,
     },
     daemon::ca::{
-        AggregateRoaInfo, CertifiedKey, PreparedRta, PublishedRoa, Rfc8183Id, RoaInfo, RouteAuthorization, SignedRta,
+        AggregateRoaInfo, AspaInfo, CertifiedKey, PreparedRta, PublishedRoa, Rfc8183Id, RoaInfo, RouteAuthorization,
+        SignedRta,
     },
 };
 
@@ -341,7 +343,7 @@ impl RoaUpdates {
 impl fmt::Display for RoaUpdates {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if !self.updated.is_empty() {
-            write!(f, "Added single VRP ROAs: ")?;
+            write!(f, "Updated single VRP ROAs: ")?;
             for roa in self.updated.keys() {
                 write!(f, "{} ", ObjectName::from(roa))?;
             }
@@ -353,7 +355,7 @@ impl fmt::Display for RoaUpdates {
             }
         }
         if !self.aggregate_updated.is_empty() {
-            write!(f, "Added ASN aggregated ROAs: ")?;
+            write!(f, "Updated ASN aggregated ROAs: ")?;
             for roa in self.aggregate_updated.keys() {
                 write!(f, "{} ", ObjectName::from(roa))?;
             }
@@ -365,6 +367,58 @@ impl fmt::Display for RoaUpdates {
             }
         }
         Ok(())
+    }
+}
+
+//------------ AspaObjectsUpdates ------------------------------------------
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AspaObjectsUpdates {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    updated: Vec<AspaInfo>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    removed: Vec<AspaCustomer>,
+}
+
+impl AspaObjectsUpdates {
+    pub fn new(updated: Vec<AspaInfo>, removed: Vec<AspaCustomer>) -> Self {
+        AspaObjectsUpdates { updated, removed }
+    }
+
+    pub fn for_new_aspa_info(new_aspa: AspaInfo) -> Self {
+        AspaObjectsUpdates {
+            updated: vec![new_aspa],
+            removed: vec![],
+        }
+    }
+
+    pub fn add_updated(&mut self, update: AspaInfo) {
+        self.updated.push(update)
+    }
+
+    pub fn add_removed(&mut self, customer: AspaCustomer) {
+        self.removed.push(customer)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.updated.is_empty() && self.removed.is_empty()
+    }
+
+    pub fn contains_changes(&self) -> bool {
+        !self.is_empty()
+    }
+
+    pub fn unpack(self) -> (Vec<AspaInfo>, Vec<AspaCustomer>) {
+        (self.updated, self.removed)
+    }
+
+    pub fn updated(&self) -> &Vec<AspaInfo> {
+        &self.updated
+    }
+
+    pub fn removed(&self) -> &Vec<AspaCustomer> {
+        &self.removed
     }
 }
 
@@ -618,6 +672,23 @@ pub enum CaEvtDet {
         // Tracks ROA *objects* which are (re-)issued in a resource class.
         resource_class_name: ResourceClassName,
         updates: RoaUpdates,
+    },
+
+    // ASPA
+    AspaConfigAdded {
+        aspa_config: AspaDefinition,
+    },
+    AspaConfigUpdated {
+        customer: AspaCustomer,
+        update: AspaProvidersUpdate,
+    },
+    AspaConfigRemoved {
+        customer: AspaCustomer,
+    },
+    AspaObjectsUpdated {
+        // Tracks ASPA *object* which are (re-)issued in a resource class.
+        resource_class_name: ResourceClassName,
+        updates: AspaObjectsUpdates,
     },
 
     // Publishing
@@ -961,17 +1032,49 @@ impl fmt::Display for CaEvtDet {
                 resource_class_name,
                 updates,
             } => {
-                write!(f, "updated ROAs under resource class '{}'", resource_class_name)?;
-                if !updates.updated.is_empty() {
+                write!(f, "updated ROA objects under resource class '{}'", resource_class_name)?;
+                if !updates.updated.is_empty() || !updates.aggregate_updated.is_empty() {
                     write!(f, " added: ")?;
                     for auth in updates.updated.keys() {
-                        write!(f, "{} ", auth)?;
+                        write!(f, "{} ", ObjectName::from(auth))?;
+                    }
+                    for agg_key in updates.aggregate_updated.keys() {
+                        write!(f, "{} ", ObjectName::from(agg_key))?;
                     }
                 }
-                if !updates.removed.is_empty() {
+                if !updates.removed.is_empty() || !updates.aggregate_removed.is_empty() {
                     write!(f, " removed: ")?;
                     for auth in updates.removed.keys() {
-                        write!(f, "{} ", auth)?;
+                        write!(f, "{} ", ObjectName::from(auth))?;
+                    }
+                    for agg_key in updates.aggregate_removed.keys() {
+                        write!(f, "{} ", ObjectName::from(agg_key))?;
+                    }
+                }
+                Ok(())
+            }
+
+            // Autonomous System Provider Authorization
+            CaEvtDet::AspaConfigAdded { aspa_config: addition } => write!(f, "{}", addition),
+            CaEvtDet::AspaConfigUpdated { customer, update } => {
+                write!(f, "updated ASPA config for customer ASN: {} {}", customer, update)
+            }
+            CaEvtDet::AspaConfigRemoved { customer } => write!(f, "removed ASPA config for customer ASN: {}", customer),
+            CaEvtDet::AspaObjectsUpdated {
+                resource_class_name,
+                updates,
+            } => {
+                write!(f, "updated ASPA objects under resource class '{}'", resource_class_name)?;
+                if !updates.updated().is_empty() {
+                    write!(f, " updated:")?;
+                    for upd in updates.updated() {
+                        write!(f, " {}", ObjectName::aspa(upd.customer()))?;
+                    }
+                }
+                if !updates.removed().is_empty() {
+                    write!(f, " removed:")?;
+                    for rem in updates.removed() {
+                        write!(f, " {}", ObjectName::aspa(*rem))?;
                     }
                 }
                 Ok(())

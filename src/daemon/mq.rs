@@ -155,6 +155,7 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for MessageQueue {
 
             match event.details() {
                 CaEvtDet::RoasUpdated { .. }
+                | CaEvtDet::AspaObjectsUpdated { .. }
                 | CaEvtDet::ChildCertificatesUpdated { .. }
                 | CaEvtDet::ChildKeyRevoked { .. }
                 | CaEvtDet::KeyPendingToNew { .. }

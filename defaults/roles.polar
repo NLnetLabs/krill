@@ -67,7 +67,11 @@ role_allow("readonly", action: Permission) if
         PUB_LIST,
         PUB_READ,
         ROUTES_READ,
-        ROUTES_ANALYSIS
+        ROUTES_ANALYSIS,
+        ASPAS_READ,
+        ASPAS_ANALYSIS,
+        RTA_LIST,
+        RTA_READ
     ];
 
 ### TEST: [
@@ -93,7 +97,13 @@ role_allow("readwrite", action: Permission) if
         PUB_DELETE,
         ROUTES_READ,
         ROUTES_ANALYSIS,
-        ROUTES_UPDATE
+        ROUTES_UPDATE,
+        ASPAS_READ,
+        ASPAS_UPDATE,
+        ASPAS_ANALYSIS,
+        RTA_LIST,
+        RTA_READ,
+        RTA_UPDATE
     ];
 
 ### TEST: [
