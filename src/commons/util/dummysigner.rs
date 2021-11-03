@@ -10,7 +10,7 @@ impl Signer for DummySigner {
     type KeyId = KeyIdentifier;
     type Error = SignerError;
 
-    fn create_key(&mut self, _: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
+    fn create_key(&self, _: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
         unreachable!()
     }
 
@@ -21,7 +21,7 @@ impl Signer for DummySigner {
         unreachable!()
     }
 
-    fn destroy_key(&mut self, _: &Self::KeyId) -> Result<(), rpki::repository::crypto::signer::KeyError<Self::Error>> {
+    fn destroy_key(&self, _: &Self::KeyId) -> Result<(), rpki::repository::crypto::signer::KeyError<Self::Error>> {
         unreachable!()
     }
 
