@@ -359,7 +359,7 @@ impl KrillSigner {
         object_builder: SignedObjectBuilder,
         key_id: &KeyIdentifier,
     ) -> CryptoResult<Aspa> {
-        self.aspa_builder
+        aspa_builder
             .finalize(object_builder, &self.router, key_id)
             .map_err(crypto::Error::signing)
     }
