@@ -73,11 +73,12 @@ multi-user = [ "basic-cookies", "jmespatch/sync", "regex", "oso", "openidconnect
 static-openssl = [ "openssl/vendored" ]
 
 # Preview features - not ready for production use
+aspa = []
 rta = []
 hsm = ["backoff", "kmip", "r2d2"]
 
 # Internal features - not for external use
-all-except-ui-tests = [ "multi-user", "rta", "static-openssl" ]
+all-except-ui-tests = [ "multi-user", "rta", "static-openssl", "aspa" ]
 ui-tests = []
 hsm-tests = []
 

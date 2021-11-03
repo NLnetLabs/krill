@@ -3,6 +3,9 @@
 mod admin;
 pub use self::admin::*;
 
+mod aspa;
+pub use self::aspa::*;
+
 mod ca;
 pub use self::ca::*;
 
@@ -25,7 +28,9 @@ use std::{collections::HashMap, fmt, sync::Arc};
 use bytes::Bytes;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use rpki::repository::{cert::Cert, crl::Crl, crypto::KeyIdentifier, manifest::Manifest, roa::Roa};
+use rpki::repository::{
+    aspa::Aspa, cert::Cert, crl::Crl, crypto::KeyIdentifier, manifest::Manifest, resources::AsId, roa::Roa,
+};
 
 use crate::{
     commons::{error::RoaDeltaError, util::sha256},
@@ -92,6 +97,12 @@ impl From<&Cert> for Base64 {
 impl From<&Roa> for Base64 {
     fn from(roa: &Roa) -> Self {
         Base64::from_content(&roa.to_captured().into_bytes())
+    }
+}
+
+impl From<&Aspa> for Base64 {
+    fn from(aspa: &Aspa) -> Self {
+        Base64::from_content(&aspa.to_captured().into_bytes())
     }
 }
 
@@ -222,6 +233,8 @@ pub struct ErrorResponse {
     args: HashMap<String, String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     delta_error: Option<RoaDeltaError>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    aspa_providers_update_conflict: Option<AspaProvidersUpdateConflict>,
 }
 
 impl ErrorResponse {
@@ -231,6 +244,7 @@ impl ErrorResponse {
             msg: msg.to_string(),
             args: HashMap::new(),
             delta_error: None,
+            aspa_providers_update_conflict: None,
         }
     }
 
@@ -281,8 +295,17 @@ impl ErrorResponse {
         res
     }
 
+    pub fn with_asn(self, asn: AsId) -> Self {
+        self.with_arg("asn", asn)
+    }
+
     pub fn with_roa_delta_error(mut self, roa_delta_error: &RoaDeltaError) -> Self {
         self.delta_error = Some(roa_delta_error.clone());
+        self
+    }
+
+    pub fn with_aspa_providers_conflict(mut self, conflict: &AspaProvidersUpdateConflict) -> Self {
+        self.aspa_providers_update_conflict = Some(conflict.clone());
         self
     }
 
