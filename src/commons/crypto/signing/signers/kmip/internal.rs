@@ -393,7 +393,7 @@ impl KmipSigner {
         // split_once isn't available until Rust 1.52
         pub fn split_once<'a>(s: &'a str, delimiter: char) -> Option<(&'a str, &'a str)> {
             let (start, end) = s.split_at(s.find(delimiter)?);
-            Some((&start[..=(start.len()-1)], &end[1..]))
+            Some((&start[..=(start.len() - 1)], &end[1..]))
         }
 
         let readable_handle = self.handle.read().unwrap();

@@ -610,7 +610,10 @@ impl SignerRouter {
                 );
             }
 
-            debug!("Signer '{}' bound to signer mapper handle '{}'", signer_name, candidate_handle);
+            debug!(
+                "Signer '{}' bound to signer mapper handle '{}'",
+                signer_name, candidate_handle
+            );
         } else {
             debug!(
                 "Signer '{}' not matched: incorrect signature created with private key '{}'",
@@ -967,7 +970,7 @@ pub mod tests {
                 // Succeed on subsequent attempts
                 Ok(())
             }
-        };
+        }
 
         test::test_under_tmp(|d| {
             let call_counts = Arc::new(MockSignerCallCounts::new());
