@@ -133,11 +133,15 @@ impl fmt::Display for AspaDefinition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // example: 65000 => 65001, 65002(v4), 65003(v6)
         write!(f, "{} => ", self.customer)?;
-        for i in 0..self.providers.len() {
-            if i > 0 {
-                write!(f, ", ")?;
+        if self.providers.is_empty() {
+            write!(f, "<none>")?;
+        } else {
+            for i in 0..self.providers.len() {
+                if i > 0 {
+                    write!(f, ", ")?;
+                }
+                write!(f, "{}", self.providers[i])?;
             }
-            write!(f, "{}", self.providers[i])?;
         }
         Ok(())
     }
@@ -147,6 +151,7 @@ impl FromStr for AspaDefinition {
     type Err = AspaDefinitionFormatError;
 
     // example: 65000 => 65001, 65002(v4), 65003(v6)
+    // example: 65000 => <none>
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut parts = s.split("=>");
 
@@ -158,13 +163,17 @@ impl FromStr for AspaDefinition {
 
         let mut providers = {
             let mut providers = vec![];
-            let providers_str = parts.next().ok_or(AspaDefinitionFormatError::ProviderAsMissing)?;
-            let provider_parts = providers_str.split(',');
-            for provider_part in provider_parts {
-                let provider = ProviderAs::from_str(provider_part.trim())
-                    .map_err(|_| AspaDefinitionFormatError::ProviderAsInvalid(provider_part.trim().to_string()))?;
-                providers.push(provider);
+            let providers_str = parts.next().unwrap_or("<none>");
+
+            if providers_str.trim() != "<none>" {
+                let provider_parts = providers_str.split(',');
+                for provider_part in provider_parts {
+                    let provider = ProviderAs::from_str(provider_part.trim())
+                        .map_err(|_| AspaDefinitionFormatError::ProviderAsInvalid(provider_part.trim().to_string()))?;
+                    providers.push(provider);
+                }
             }
+
             providers
         };
 
@@ -172,12 +181,11 @@ impl FromStr for AspaDefinition {
         if parts.next().is_some() {
             Err(AspaDefinitionFormatError::ExtraParts)
         } else {
-            // Ensure that the providers are sorted, there is at least one, and there are no duplicates
+            // Ensure that the providers are sorted,  and there are no duplicates
             providers.sort_by_key(|p| p.provider());
 
-            let mut last_seen = providers.first().ok_or(AspaDefinitionFormatError::ProviderAsMissing)?;
-
             if providers.len() > 1 {
+                let mut last_seen = providers.first().unwrap();
                 for i in 1..providers.len() {
                     let next = providers.get(i).unwrap(); // safe i max == .len() - 1
                     if next.provider() == last_seen.provider() {
@@ -198,7 +206,6 @@ impl FromStr for AspaDefinition {
 pub enum AspaDefinitionFormatError {
     CustomerAsMissing,
     CustomerAsInvalid(String),
-    ProviderAsMissing,
     ProviderAsInvalid(String),
     ProviderAsDuplicate(ProviderAs, ProviderAs),
     ExtraParts,
@@ -210,7 +217,6 @@ impl fmt::Display for AspaDefinitionFormatError {
         match self {
             AspaDefinitionFormatError::CustomerAsMissing => write!(f, "customer AS missing"),
             AspaDefinitionFormatError::CustomerAsInvalid(s) => write!(f, "cannot parse customer AS: {}", s),
-            AspaDefinitionFormatError::ProviderAsMissing => write!(f, "providers missing"),
             AspaDefinitionFormatError::ProviderAsInvalid(s) => write!(f, "cannot parse provider AS: {}", s),
             AspaDefinitionFormatError::ProviderAsDuplicate(l, r) => {
                 write!(f, "duplicate AS in provider list. Found {} and {}", l, r)
@@ -361,6 +367,18 @@ mod tests {
             vec![provider("AS65001"), provider("AS65002(v4)"), provider("AS65003(v6)")],
         );
         let config_str = "AS65000 => AS65001, AS65002(v4), AS65003(v6)";
+
+        let to_str = config.to_string();
+        assert_eq!(config_str, to_str.as_str());
+
+        let from_str = AspaDefinition::from_str(config_str).unwrap();
+        assert_eq!(config, from_str);
+    }
+
+    #[test]
+    fn aspa_configuration_empty_providers_from_str() {
+        let config = AspaDefinition::new(customer("AS65000"), vec![]);
+        let config_str = "AS65000 => <none>";
 
         let to_str = config.to_string();
         assert_eq!(config_str, to_str.as_str());
