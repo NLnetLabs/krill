@@ -1176,6 +1176,10 @@ impl CertAuth {
         self.parents.keys()
     }
 
+    pub fn nr_parents(&self) -> usize {
+        self.parents.len()
+    }
+
     pub fn parent_known(&self, parent: &ParentHandle) -> bool {
         self.parents.contains_key(parent)
     }
