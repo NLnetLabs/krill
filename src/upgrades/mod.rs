@@ -9,7 +9,7 @@ use serde::de::DeserializeOwned;
 use crate::{
     commons::{
         api::Handle,
-        crypto::KrillSigner,
+        crypto::{KrillSigner, KrillSignerConfig},
         error::KrillIoError,
         eventsourcing::{AggregateStoreError, CommandKey, KeyStoreKey, KeyValueError, KeyValueStore},
         util::{file, KrillVersion},
@@ -196,10 +196,12 @@ fn upgrade_data_to_0_9_0(config: Arc<Config>) -> Result<(), UpgradeError> {
     }
 
     if needs_v0_9_0_upgrade(work_dir, "cas") {
-        let signer = Arc::new(KrillSigner::build(work_dir, false)?);
-        let repo_manager = RepositoryManager::build(config.clone(), signer)?;
+        // TODO: should we use the configured signers here or an OpenSSL signer?
+        // Will any signing actually be done using these signers?
+        let signer = Arc::new(KrillSigner::build(work_dir, config.clone().into())?);
+        let repo_manager = RepositoryManager::build(config.clone(), signer.clone())?;
 
-        CaObjectsMigration::migrate(config, repo_manager)?;
+        CaObjectsMigration::migrate(config, repo_manager, signer.clone())?;
     }
 
     Ok(())
@@ -238,7 +240,7 @@ mod tests {
         let source = PathBuf::from("test-resources/migrations/v0_8_1/");
         file::backup_dir(&source, &work_dir).unwrap();
 
-        let config = Arc::new(Config::test(&work_dir, false, false, false));
+        let config = Arc::new(Config::test(&work_dir, false, false, false, false));
         let _ = config.init_logging();
 
         upgrade_data_to_0_9_0(config).unwrap();
@@ -252,7 +254,7 @@ mod tests {
         let source = PathBuf::from("test-resources/migrations/v0_6_0/");
         file::backup_dir(&source, &work_dir).unwrap();
 
-        let config = Arc::new(Config::test(&work_dir, false, false, false));
+        let config = Arc::new(Config::test(&work_dir, false, false, false, false));
         let _ = config.init_logging();
 
         upgrade_data_to_0_9_0(config).unwrap();

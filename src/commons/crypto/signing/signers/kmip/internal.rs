@@ -1,6 +1,8 @@
 use std::{
+    convert::{TryFrom, TryInto},
     net::TcpStream,
     ops::Deref,
+    path::PathBuf,
     sync::{Arc, RwLock},
     time::Duration,
 };
@@ -32,6 +34,7 @@ use crate::commons::{
         },
         SignerError,
     },
+    error::KrillIoError,
 };
 
 //------------ Types and constants ------------------------------------------------------------------------------------
@@ -57,6 +60,98 @@ const IGNORE_MISSING_CAPABILITIES: bool = true;
 /// async implementation, but the client interface will remain the same.
 pub type KmipTlsClient = Client<SslStream<TcpStream>>;
 
+fn default_kmip_port() -> u16 {
+    // From: http://docs.oasis-open.org/kmip/profiles/v1.1/os/kmip-profiles-v1.1-os.html#_Toc332820682
+    //   "KMIP servers using the Basic Authentication Suite SHOULD use TCP port number 5696, as assigned by IANA, to
+    //    receive and send KMIP messages. KMIP clients using the Basic Authentication Suite MAY use the same 5696 TCP
+    //    port number."
+    5696
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct KmipSignerConfig {
+    pub host: String,
+
+    #[serde(default = "default_kmip_port")]
+    pub port: u16,
+
+    #[serde(default)]
+    pub insecure: bool,
+
+    #[serde(default)]
+    pub server_cert_path: Option<PathBuf>,
+
+    #[serde(default)]
+    pub server_ca_cert_path: Option<PathBuf>,
+
+    #[serde(default)]
+    pub client_cert_path: Option<PathBuf>,
+
+    #[serde(default)]
+    pub client_cert_private_key_path: Option<PathBuf>,
+
+    #[serde(default)]
+    pub username: Option<String>,
+
+    #[serde(default)]
+    pub password: Option<String>,
+}
+
+impl TryFrom<&KmipSignerConfig> for ConnectionSettings {
+    type Error = SignerError;
+
+    fn try_from(conf: &KmipSignerConfig) -> Result<Self, Self::Error> {
+        let host = conf.host.clone();
+        let port = conf.port;
+        let username = conf.username.clone();
+        let password = conf.password.clone();
+        let insecure = conf.insecure;
+
+        let client_cert = match &conf.client_cert_path {
+            Some(cert_path) => {
+                let cert_bytes = read_binary_file(cert_path)?;
+                let key_bytes = match &conf.client_cert_private_key_path {
+                    Some(key_path) => Some(read_binary_file(key_path)?),
+                    None => None,
+                };
+                Some(ClientCertificate::SeparatePem { cert_bytes, key_bytes })
+            }
+            None => None,
+        };
+
+        let server_cert = match &conf.server_cert_path {
+            Some(cert_path) => Some(read_binary_file(cert_path)?),
+            None => None,
+        };
+
+        let ca_cert = match &conf.server_ca_cert_path {
+            Some(cert_path) => Some(read_binary_file(cert_path)?),
+            None => None,
+        };
+
+        Ok(ConnectionSettings {
+            host,
+            port,
+            username,
+            password,
+            insecure,
+            client_cert,
+            server_cert,
+            ca_cert,
+            connect_timeout: Some(Duration::from_secs(5)),
+            read_timeout: Some(Duration::from_secs(5)),
+            write_timeout: Some(Duration::from_secs(5)),
+            max_response_bytes: Some(64 * 1024),
+        })
+    }
+}
+
+fn read_binary_file(file_path: &PathBuf) -> Result<Vec<u8>, SignerError> {
+    Ok(std::fs::read(file_path).map_err(|err| {
+        SignerError::IoError(KrillIoError::new(format!("Failed to read file '{:?}'", file_path), err))
+    })?)
+}
+
 //------------ The KMIP signer management interface -------------------------------------------------------------------
 
 #[derive(Debug)]
@@ -73,13 +168,11 @@ pub struct KmipSigner {
 
 impl KmipSigner {
     /// Creates a new instance of KmipSigner.
-    pub fn build(name: &str, mapper: Arc<SignerMapper>) -> Result<Self, SignerError> {
+    pub fn build(name: &str, conf: &KmipSignerConfig, mapper: Arc<SignerMapper>) -> Result<Self, SignerError> {
         // Signer initialization should not block Krill startup. As such we delaying contacting the KMIP server until
         // first use. The downside of this approach is that we won't detect any issues until that point.
 
-        // TODO: Use the supplied configuration settings instead of hard-coded test settings.
-        let conn_settings = Self::get_test_connection_settings();
-        let server = Arc::new(StatefulProbe::new(Arc::new(conn_settings), Duration::from_secs(30)));
+        let server = Arc::new(StatefulProbe::new(Arc::new(conf.try_into()?), Duration::from_secs(30)));
 
         let s = KmipSigner {
             name: name.to_string(),
@@ -135,31 +228,6 @@ impl KmipSigner {
         }
         false
     }
-
-    // TODO: Remove me once we support passing configuration in to `fn build()`.
-    fn get_test_connection_settings() -> ConnectionSettings {
-        let client_cert = ClientCertificate::SeparatePem {
-            cert_bytes: include_bytes!("../../../../../../test-resources/pykmip/server.crt").to_vec(),
-            key_bytes: Some(include_bytes!("../../../../../../test-resources/pykmip/server.key").to_vec()),
-        };
-        let server_cert = include_bytes!("../../../../../../test-resources/pykmip/server.crt").to_vec();
-        let ca_cert = include_bytes!("../../../../../../test-resources/pykmip/ca.crt").to_vec();
-
-        ConnectionSettings {
-            host: "127.0.0.1".to_string(),
-            port: 5696,
-            username: None,
-            password: None,
-            insecure: true,
-            client_cert: Some(client_cert),
-            server_cert: Some(server_cert),
-            ca_cert: Some(ca_cert),
-            connect_timeout: Some(Duration::from_secs(5)),
-            read_timeout: Some(Duration::from_secs(5)),
-            write_timeout: Some(Duration::from_secs(5)),
-            max_response_bytes: Some(64 * 1024),
-        }
-    }
 }
 
 //------------ Probe based server access ------------------------------------------------------------------------------
@@ -210,13 +278,15 @@ impl KmipSigner {
             match err {
                 // Fatal error
                 kmip::client::Error::ConfigurationError(err) => {
-                    error!("Failed to connect KMIP server: Configuration error: {}", err)
+                    error!("Failed to connect KMIP server: Configuration error: {}", err);
+                    ProbeError::CompletedUnusable
                 }
 
                 // I/O error attempting to contact the server or a problem on an internal problem at the server, not
                 // necessarily fatal or a reason to abort creating the pool.
                 kmip::client::Error::ServerError(err) => {
-                    error!("Failed to connect KMIP server: Server error: {}", err)
+                    error!("Failed to connect KMIP server: Server error: {}", err);
+                    ProbeError::CallbackFailed(SignerError::KmipError(format!("Failed to connect to server: {}", err)))
                 }
 
                 // Impossible errors: we didn't yet try to send a request or receive a response
@@ -227,13 +297,15 @@ impl KmipSigner {
                 | kmip::client::Error::InternalError(err)
                 | kmip::client::Error::Unknown(err)
                 | kmip::client::Error::ItemNotFound(err) => {
-                    error!("Failed to connect KMIP server: Unexpected error: {}", err)
+                    error!("Failed to connect KMIP server: Unexpected error: {}", err);
+                    ProbeError::CompletedUnusable
                 }
 
-                other => error!("Failed to connect KMIP server: Unexpected error: {}", other),
-            };
-
-            ProbeError::CompletedUnusable
+                other => {
+                    error!("Failed to connect KMIP server: Unexpected error: {}", other);
+                    ProbeError::CompletedUnusable
+                }
+            }
         })?;
 
         // We managed to establish a TCP+TLS connection to the KMIP server. Send it a Query request to discover how
@@ -393,7 +465,7 @@ impl KmipSigner {
         // split_once isn't available until Rust 1.52
         pub fn split_once<'a>(s: &'a str, delimiter: char) -> Option<(&'a str, &'a str)> {
             let (start, end) = s.split_at(s.find(delimiter)?);
-            Some((&start[..=(start.len()-1)], &end[1..]))
+            Some((&start[..=(start.len() - 1)], &end[1..]))
         }
 
         let readable_handle = self.handle.read().unwrap();

@@ -30,6 +30,9 @@ use crate::{
 #[cfg(feature = "multi-user")]
 use crate::daemon::auth::providers::{config_file::config::ConfigAuthUsers, openid_connect::ConfigAuthOpenIDConnect};
 
+#[cfg(feature = "hsm")]
+use crate::commons::crypto::{KmipSignerConfig, OpenSslSignerConfig, Pkcs11SignerConfig};
+
 //------------ ConfigDefaults ------------------------------------------------
 
 pub struct ConfigDefaults;
@@ -103,6 +106,11 @@ impl ConfigDefaults {
     #[cfg(feature = "multi-user")]
     fn auth_private_attributes() -> Vec<String> {
         vec![]
+    }
+
+    #[cfg(feature = "hsm")]
+    fn signers() -> Vec<SignerConfig> {
+        vec![SignerConfig::default()]
     }
 
     fn ca_refresh_seconds() -> u32 {
@@ -258,6 +266,10 @@ pub struct Config {
 
     #[cfg(feature = "multi-user")]
     pub auth_openidconnect: Option<ConfigAuthOpenIDConnect>,
+
+    #[cfg(feature = "hsm")]
+    #[serde(default = "ConfigDefaults::signers")]
+    pub signers: Vec<SignerConfig>,
 
     #[serde(default = "ConfigDefaults::ca_refresh_seconds", alias = "ca_refresh")]
     pub ca_refresh_seconds: u32,
@@ -530,7 +542,14 @@ impl Config {
 
 /// # Create
 impl Config {
-    fn test_config(data_dir: &Path, enable_testbed: bool, enable_ca_refresh: bool, enable_suspend: bool) -> Self {
+    fn test_config(
+        data_dir: &Path,
+        enable_testbed: bool,
+        enable_ca_refresh: bool,
+        enable_suspend: bool,
+        #[cfg(not(feature = "hsm"))] _second_signer: bool,
+        #[cfg(feature = "hsm")] second_signer: bool,
+    ) -> Self {
         use crate::test;
 
         let ip = ConfigDefaults::ip();
@@ -556,6 +575,14 @@ impl Config {
         let auth_users = None;
         #[cfg(feature = "multi-user")]
         let auth_openidconnect = None;
+        #[cfg(feature = "hsm")]
+        let signers = match second_signer {
+            false => vec![SignerConfig::default()],
+            true => vec![SignerConfig::new(
+                Some("Second Signer".to_string()),
+                SignerType::OpenSsl(OpenSslSignerConfig::default()),
+            )],
+        };
         let ca_refresh_seconds = if enable_ca_refresh { 1 } else { 86400 };
         let post_limit_api = ConfigDefaults::post_limit_api();
         let post_limit_rfc8181 = ConfigDefaults::post_limit_rfc8181();
@@ -652,6 +679,8 @@ impl Config {
             auth_users,
             #[cfg(feature = "multi-user")]
             auth_openidconnect,
+            #[cfg(feature = "hsm")]
+            signers,
             ca_refresh_seconds,
             suspend_child_after_inactive_seconds,
             suspend_child_after_inactive_hours: None,
@@ -672,12 +701,24 @@ impl Config {
         }
     }
 
-    pub fn test(data_dir: &Path, enable_testbed: bool, enable_ca_refresh: bool, enable_suspend: bool) -> Self {
-        Self::test_config(data_dir, enable_testbed, enable_ca_refresh, enable_suspend)
+    pub fn test(
+        data_dir: &Path,
+        enable_testbed: bool,
+        enable_ca_refresh: bool,
+        enable_suspend: bool,
+        second_signer: bool,
+    ) -> Self {
+        Self::test_config(
+            data_dir,
+            enable_testbed,
+            enable_ca_refresh,
+            enable_suspend,
+            second_signer,
+        )
     }
 
     pub fn pubd_test(data_dir: &Path) -> Self {
-        let mut config = Self::test_config(data_dir, false, false, false);
+        let mut config = Self::test_config(data_dir, false, false, false, false);
         config.port = 3001;
         config
     }
@@ -1100,6 +1141,117 @@ impl<'de> Deserialize<'de> for AuthType {
                 );
                 Err(de::Error::custom(msg))
             }
+        }
+    }
+}
+
+//------------ Signers -----------------------------------------------------
+
+// Supports TOML such as:
+//
+//   [[signers]]
+//   name = "My PKCS#11 signer"
+//   type = "PKCS#11"
+//   lib_path = "/path/to/pkcs11.so"
+//   ...
+//
+//   [[signers]]
+//   name = "My OpenSSL Signer"
+//   type = "OpenSSL"
+//   default = true
+//
+//   [[signers]]
+//   name = "My KMIP Signer"
+//   type = "KMIP"
+//   host = "example.com"
+//   ...
+//
+//   # Multiple signers of the same type are supported
+//   [[signers]]
+//   name = "My Other KMIP Signer"
+//   type = "KMIP"
+//   ...
+
+#[cfg(feature = "hsm")]
+#[derive(Clone, Debug, Deserialize)]
+pub struct SignerConfig {
+    /// If not specified a name for the signer will be generated.
+    pub name: Option<String>,
+
+    /// By default, create keys with this signer.
+    #[serde(default)]
+    pub default: bool,
+
+    /// Create one-off keys with this signer, otherwise with the default.
+    #[serde(default)]
+    pub oneoff: bool,
+
+    /// If initiating a keyroll, create the new key with this signer.
+    #[serde(default)]
+    pub keyroll: bool,
+
+    /// Generate random numbers with this signer if the default signer
+    /// lacks the capability to do so.
+    #[serde(default)]
+    pub random: bool,
+
+    /// Signer specific configuration settings.
+    #[serde(flatten)]
+    pub signer_type: SignerType,
+}
+
+#[cfg(feature = "hsm")]
+#[derive(Clone, Debug, Deserialize)]
+#[serde(tag = "type")]
+pub enum SignerType {
+    #[serde(alias = "OpenSSL")]
+    OpenSsl(OpenSslSignerConfig),
+    #[serde(alias = "PKCS#11")]
+    Pkcs11(Pkcs11SignerConfig),
+    #[serde(alias = "KMIP")]
+    Kmip(KmipSignerConfig),
+}
+
+#[cfg(feature = "hsm")]
+impl Default for SignerConfig {
+    fn default() -> Self {
+        #[cfg(not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11")))]
+        let signer_type = SignerType::OpenSsl(OpenSslSignerConfig::default());
+
+        #[cfg(feature = "hsm-tests-kmip")]
+        let signer_type = SignerType::Kmip(KmipSignerConfig {});
+
+        #[cfg(feature = "hsm-tests-pkcs11")]
+        let signer_type = SignerType::Pkcs11(Pkcs11SignerConfig {
+            lib_path: "/usr/lib/softhsm/libsofthsm2.so".to_string(),
+            user_pin: Some("1234".to_string()),
+            slot_label: Some("My token 1".to_string()),
+            slot_id: None,
+            login: true,
+        });
+
+        SignerConfig::new(None, signer_type)
+    }
+}
+
+#[cfg(feature = "hsm")]
+impl SignerConfig {
+    pub fn new(name: Option<String>, signer_type: SignerType) -> SignerConfig {
+        Self {
+            name,
+            default: true,
+            oneoff: true,
+            keyroll: true,
+            random: true,
+            signer_type,
+        }
+    }
+
+    pub fn generate_name(&self) -> String {
+        match self.signer_type {
+            SignerType::OpenSsl(_) => "OpenSSL".to_string(),
+            SignerType::Pkcs11(_) => "PKCS#11".to_string(),
+            SignerType::Kmip(_) => "KMIP".to_string(),
         }
     }
 }

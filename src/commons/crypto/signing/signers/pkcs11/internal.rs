@@ -1,5 +1,5 @@
 use std::{
-    convert::TryInto,
+    convert::{TryFrom, TryInto},
     path::Path,
     sync::{Arc, RwLock, RwLockReadGuard},
     time::Duration,
@@ -28,6 +28,28 @@ use crate::commons::{
 };
 
 //------------ Types and constants ------------------------------------------------------------------------------------
+
+use serde::Deserialize;
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct Pkcs11SignerConfig {
+    pub lib_path: String,
+
+    pub user_pin: Option<String>,
+
+    pub slot_label: Option<String>,
+
+    pub slot_id: Option<CK_SLOT_ID>,
+
+    #[serde(default = "Pkcs11SignerConfig::login_default")]
+    pub login: bool,
+}
+
+impl Pkcs11SignerConfig {
+    pub fn login_default() -> bool {
+        true
+    }
+}
 
 /// The time to wait between an initial and subsequent attempt at sending a request to the PKCS#11 server.
 const RETRY_REQ_AFTER: Duration = Duration::from_secs(2);
@@ -81,6 +103,29 @@ struct ConnectionSettings {
     login_mode: LoginMode,
 }
 
+impl TryFrom<&Pkcs11SignerConfig> for ConnectionSettings {
+    type Error = SignerError;
+
+    fn try_from(conf: &Pkcs11SignerConfig) -> Result<Self, Self::Error> {
+        let context = Pkcs11Context::get_or_load(Path::new(&conf.lib_path))?;
+        let slot_id = conf.slot_id.clone();
+        let slot_label = conf.slot_label.clone();
+        let user_pin = conf.user_pin.clone();
+        let login_mode = match conf.login {
+            true => LoginMode::LoginRequired,
+            false => LoginMode::LoginNotRequired,
+        };
+
+        Ok(ConnectionSettings {
+            context,
+            slot_id,
+            slot_label,
+            user_pin,
+            login_mode,
+        })
+    }
+}
+
 #[derive(Debug)]
 pub struct Pkcs11Signer {
     name: String,
@@ -95,7 +140,7 @@ pub struct Pkcs11Signer {
 
 impl Pkcs11Signer {
     /// Creates a new instance of Pkcs11Signer.
-    pub fn build(name: &str, mapper: Arc<SignerMapper>) -> Result<Self, SignerError> {
+    pub fn build(name: &str, conf: &Pkcs11SignerConfig, mapper: Arc<SignerMapper>) -> Result<Self, SignerError> {
         // Signer initialization should not block Krill startup. As such we verify that we are able to load the PKCS#11
         // library don't we initialize the PKCS#11 interface yet because we don't know what it's code will do. If it
         // were to block while trying to connect to a remote server it would block Krill from starting up completely.
@@ -110,10 +155,7 @@ impl Pkcs11Signer {
         // AWS CloudHSM library, presumably they both need initlaizing within the same instance of the Krill
         // "application".
 
-        // TODO: Use the supplied configuration settings instead of hard-coded test settings.
-        let conn_settings = Self::get_test_connection_settings()?;
-
-        let server = Arc::new(StatefulProbe::new(Arc::new(conn_settings), Duration::from_secs(30)));
+        let server = Arc::new(StatefulProbe::new(Arc::new(conf.try_into()?), Duration::from_secs(30)));
 
         let s = Pkcs11Signer {
             name: name.to_string(),
@@ -170,22 +212,6 @@ impl Pkcs11Signer {
             }
         }
         false
-    }
-
-    fn get_test_connection_settings() -> Result<ConnectionSettings, SignerError> {
-        let context = Pkcs11Context::get_or_load(Path::new("/usr/lib/softhsm/libsofthsm2.so"))?;
-        let slot_id = Option::<CK_SLOT_ID>::None;
-        let slot_label = Some("My token 1".to_string());
-        let user_pin = Some("1234".to_string());
-        let login_mode = LoginMode::LoginRequired;
-
-        Ok(ConnectionSettings {
-            context,
-            slot_id,
-            slot_label,
-            user_pin,
-            login_mode,
-        })
     }
 }
 
@@ -405,25 +431,29 @@ impl Pkcs11Signer {
             Err(_) => false,
         };
 
-        let login_session = if conn_settings.login_mode == LoginMode::LoginRequired {
-            session.login(CKU_USER, user_pin.as_deref()).map_err(|err| {
-                error!(
-                    "[{}] Unable to login to PKCS#11 session for library '{}' slot {}: {}",
-                    signer_name, lib_name, slot_id, err
+        let login_session = match conn_settings.login_mode {
+            LoginMode::LoginNotRequired => {
+                // Nothing to do
+                None
+            }
+            LoginMode::LoginRequired => {
+                session.login(CKU_USER, user_pin.as_deref()).map_err(|err| {
+                    error!(
+                        "[{}] Unable to login to PKCS#11 session for library '{}' slot {}: {}",
+                        signer_name, lib_name, slot_id, err
+                    );
+                    ProbeError::CompletedUnusable
+                })?;
+
+                trace!(
+                    "[{}] Logged in to PKCS#11 session for library '{}' slot {}",
+                    signer_name,
+                    lib_name,
+                    slot_id,
                 );
-                ProbeError::CompletedUnusable
-            })?;
 
-            trace!(
-                "[{}] Logged in to PKCS#11 session for library '{}' slot {}",
-                signer_name,
-                lib_name,
-                slot_id,
-            );
-
-            Some(session)
-        } else {
-            None
+                Some(session)
+            }
         };
 
         // Switch from probing the server to using it.

@@ -14,7 +14,7 @@ use crate::{
             RepoInfo, RepositoryContact, ResourceClassName, ResourceSet, Revocation, RevocationRequest, Revocations,
             RoaAggregateKey, StorableCaCommand, StoredEffect, TaCertDetails,
         },
-        crypto::{IdCert, KrillSigner},
+        crypto::{IdCert, KrillSigner, KrillSignerConfig},
         eventsourcing::{Aggregate, AggregateStore, CommandKey, KeyStoreKey, KeyValueStore, StoredValueInfo},
         remote::rfc8183,
         util::KrillVersion,
@@ -37,12 +37,10 @@ use crate::{
 pub struct CaObjectsMigration;
 
 impl CaObjectsMigration {
-    pub fn migrate(config: Arc<Config>, repo_manager: RepositoryManager) -> UpgradeResult<()> {
+    pub fn migrate(config: Arc<Config>, repo_manager: RepositoryManager, signer: Arc<KrillSigner>) -> UpgradeResult<()> {
         let repo_manager = Arc::new(repo_manager);
         let store = KeyValueStore::disk(&config.data_dir, CASERVER_DIR)?;
         let ca_store = AggregateStore::<ca::CertAuth>::disk(&config.data_dir, CASERVER_DIR)?;
-
-        let signer = Arc::new(KrillSigner::build(&config.data_dir, false)?);
 
         if store.version_is_before(KrillVersion::release(0, 6, 0))? {
             Err(UpgradeError::custom("Cannot upgrade Krill installations from before version 0.6.0. Please upgrade to any version ranging from 0.6.0 to 0.8.1 first, and then upgrade to this version."))

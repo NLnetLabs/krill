@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{path::Path, sync::Arc};
 
 use rpki::repository::{
     aspa::{Aspa, AspaBuilder},
@@ -13,11 +13,55 @@ use rpki::repository::{
     Cert, Crl, Csr, Manifest, Roa,
 };
 
-use crate::commons::{
-    api::RepoInfo,
-    crypto::{self, dispatch::signerrouter::SignerRouter, CryptoResult},
-    KrillResult,
+use crate::{
+    commons::{
+        api::RepoInfo,
+        crypto::{self, dispatch::signerrouter::SignerRouter, CryptoResult},
+        KrillResult,
+    },
+    daemon::config::Config,
 };
+
+#[cfg(feature = "hsm")]
+use crate::daemon::config::{SignerConfig, SignerType};
+
+#[derive(Debug)]
+pub struct KrillSignerConfig {
+    #[cfg(feature = "hsm")]
+    pub signer_configs: Vec<SignerConfig>,
+}
+
+impl Default for KrillSignerConfig {
+    fn default() -> Self {
+        Self {
+            #[cfg(feature = "hsm")]
+            signer_configs: vec![SignerConfig::default()],
+        }
+    }
+}
+
+#[cfg(feature = "hsm")]
+impl KrillSignerConfig {
+    pub fn single_signer(name: Option<String>, signer_type: SignerType) -> Self {
+        KrillSignerConfig {
+            signer_configs: vec![SignerConfig::new(name, signer_type)],
+        }
+    }
+}
+
+impl From<Arc<Config>> for KrillSignerConfig {
+    #[cfg(not(feature = "hsm"))]
+    fn from(_: Arc<Config>) -> Self {
+        KrillSignerConfig::default()
+    }
+
+    #[cfg(feature = "hsm")]
+    fn from(config: Arc<Config>) -> Self {
+        KrillSignerConfig {
+            signer_configs: config.signers.clone(),
+        }
+    }
+}
 
 /// High level signing interface between Krill and the [SignerRouter].
 ///
@@ -43,10 +87,16 @@ pub struct KrillSigner {
 }
 
 impl KrillSigner {
-    pub fn build(work_dir: &Path, alternate_config: bool) -> KrillResult<Self> {
-        Ok(KrillSigner {
-            router: SignerRouter::build(work_dir, alternate_config)?,
-        })
+    #[cfg(not(feature = "hsm"))]
+    pub fn build(work_dir: &Path, _: KrillSignerConfig) -> KrillResult<Self> {
+        let router = SignerRouter::build(work_dir)?;
+        Ok(KrillSigner { router })
+    }
+
+    #[cfg(feature = "hsm")]
+    pub fn build(work_dir: &Path, config: KrillSignerConfig) -> KrillResult<Self> {
+        let router = SignerRouter::build(work_dir, &config.signer_configs)?;
+        Ok(KrillSigner { router })
     }
 
     pub fn create_key(&self) -> CryptoResult<KeyIdentifier> {

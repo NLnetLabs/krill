@@ -5,7 +5,6 @@ use std::{
     fs::File,
     io::Write,
     path::{Path, PathBuf},
-    str::FromStr,
     sync::Arc,
 };
 
@@ -28,12 +27,32 @@ use crate::{
 };
 
 #[cfg(feature = "hsm")]
-use std::sync::RwLock;
+use std::{str::FromStr, sync::RwLock};
 
 #[cfg(feature = "hsm")]
 use crate::commons::{api::Handle, crypto::dispatch::signerinfo::SignerMapper};
 
 //------------ OpenSslSigner -------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Hash)]
+pub struct OpenSslSignerConfig {
+    #[serde(default)]
+    pub keys_path: Option<PathBuf>,
+}
+
+impl OpenSslSignerConfig {
+    pub fn new(path: &Path) -> Self {
+        Self {
+            keys_path: Some(path.into()),
+        }
+    }
+}
+
+impl Default for OpenSslSignerConfig {
+    fn default() -> Self {
+        Self { keys_path: None }
+    }
+}
 
 /// An openssl based signer.
 #[derive(Debug)]

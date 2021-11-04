@@ -208,7 +208,10 @@ mod tests {
 
     use rpki::uri;
 
-    use crate::{constants::*, pubd::RrdpServer};
+    use crate::{commons::crypto::KrillSignerConfig, constants::*, pubd::RrdpServer};
+
+    #[cfg(feature = "hsm")]
+    use crate::{commons::crypto::OpenSslSignerConfig, daemon::config::SignerType};
 
     use super::*;
 
@@ -224,7 +227,20 @@ mod tests {
     };
 
     fn publisher_alice(work_dir: &Path) -> Publisher {
-        let signer = KrillSigner::build(work_dir, true).unwrap();
+        #[cfg(not(feature = "hsm"))]
+        let signer = KrillSigner::build(work_dir, KrillSignerConfig::default()).unwrap();
+
+        // When the "hsm" feature is enabled we could be running the tests with PKCS#11 as the default signer type.
+        // In that case, if the backend signer is SoftHSMv2, attempting to create a second instance of KrillSigner in
+        // the same process will fail because it will attempt to login to SoftHSMv2 a second time which SoftHSMv2 does
+        // not support. To work around this issue we therefore explicitly request that the second KrillSigner instance
+        // that we create here uses OpenSSL as its backend signer.
+        #[cfg(feature = "hsm")]
+        let signer = {
+            let signer_type = SignerType::OpenSsl(OpenSslSignerConfig::default());
+            let krill_signer_config = KrillSignerConfig::single_signer(Some("Alice".to_string()), signer_type);
+            KrillSigner::build(work_dir, krill_signer_config).unwrap()
+        };
 
         let key = signer.create_key().unwrap();
         let id_cert = IdCertBuilder::new_ta_id_cert(&key, &signer).unwrap();
@@ -241,10 +257,10 @@ mod tests {
 
     fn make_server(work_dir: &Path) -> RepositoryManager {
         enable_test_mode();
-        let config = Arc::new(Config::test(work_dir, true, false, false));
+        let config = Arc::new(Config::test(work_dir, true, false, false, false));
         init_config(&config);
 
-        let signer = KrillSigner::build(work_dir, false).unwrap();
+        let signer = KrillSigner::build(work_dir, KrillSignerConfig::default()).unwrap();
         let signer = Arc::new(signer);
 
         let repository_manager = RepositoryManager::build(config, signer).unwrap();

@@ -102,7 +102,7 @@ impl KrillServer {
         let mut repo_dir = work_dir.clone();
         repo_dir.push("repo");
 
-        let signer = Arc::new(KrillSigner::build(work_dir, false)?);
+        let signer = Arc::new(KrillSigner::build(work_dir, config.clone().into())?);
 
         #[cfg(feature = "multi-user")]
         let login_session_cache = Arc::new(LoginSessionCache::new());

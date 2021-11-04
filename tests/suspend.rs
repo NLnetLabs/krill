@@ -23,7 +23,7 @@ async fn test_suspension() {
     //  testbed enabled
     //  ca_refresh disabled (we will trigger individual CA refreshes manually)
     //  suspend enabled
-    let krill_dir = start_krill_with_default_test_config(true, false, true).await;
+    let krill_dir = start_krill_with_default_test_config(true, false, true, false).await;
 
     let testbed = handle("testbed");
     let ca = handle("CA");
