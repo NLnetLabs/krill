@@ -184,15 +184,13 @@ impl FromStr for AspaDefinition {
             // Ensure that the providers are sorted,  and there are no duplicates
             providers.sort_by_key(|p| p.provider());
 
-            for adjacent_pair in providers.windows(2) {
-                let left = adjacent_pair[0];
-                let right = adjacent_pair[1];
-                if left.provider() == right.provider() {
-                    return Err(AspaDefinitionFormatError::ProviderAsDuplicate(left, right));
-                }
+            match providers
+                .windows(2)
+                .find(|pair| pair[0].provider() == pair[1].provider())
+            {
+                Some(dup) => Err(AspaDefinitionFormatError::ProviderAsDuplicate(dup[0], dup[1])),
+                None => Ok(AspaDefinition::new(customer, providers)),
             }
-
-            Ok(AspaDefinition::new(customer, providers))
         }
     }
 }
