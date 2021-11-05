@@ -184,14 +184,11 @@ impl FromStr for AspaDefinition {
             // Ensure that the providers are sorted,  and there are no duplicates
             providers.sort_by_key(|p| p.provider());
 
-            if providers.len() > 1 {
-                let mut last_seen = providers.first().unwrap();
-                for i in 1..providers.len() {
-                    let next = providers.get(i).unwrap(); // safe i max == .len() - 1
-                    if next.provider() == last_seen.provider() {
-                        return Err(AspaDefinitionFormatError::ProviderAsDuplicate(*last_seen, *next));
-                    }
-                    last_seen = next;
+            for adjacent_pair in providers.windows(2) {
+                let left = adjacent_pair[0];
+                let right = adjacent_pair[1];
+                if left.provider() == right.provider() {
+                    return Err(AspaDefinitionFormatError::ProviderAsDuplicate(left, right));
                 }
             }
 
