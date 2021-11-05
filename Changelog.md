@@ -1,15 +1,22 @@
 # Change Log
 
-## 0.9.3 (RC1) 'The Thundering Herd'
+## 0.9.3 (RC2) 'The Thundering Herd'
 
-This release adds a (configurable) extra random 'jitter' time between 0 and 240 minutes,
-by default, for scheduled re-issuing of manifest and CRLs. The reason for this change is
-that with many Krill CAs publishing at a Publication Server every 10 minutes we frequently
-see that many CAs re-publish at exactly the same time of day. With this change this load
-should be spread out.
+This release adds the following features and fixes:
+- Prevent a thundering herd of hosted CAs publishing at the same time (#692) 
+- Re-issue ROAs to ensure that short EE subject names are used (#700)
+- Handle rate limits when updating parents (#680)
+- Support experimental ASPA objects through CLI (#685)
 
-Note that this does not affect publishing changes to content, such as ROAs. Such changes
-are still published immediately.
+Note that ASPA objects are not intended for use in production environments just yet.
+We have added experimental support for this to support the development of the ASPA
+standards in the IETF. Information on how to use Krill to manage ASPA objects can
+be found here:
+https://krill.docs.nlnetlabs.nl/en/prototype-aspa-support/manage-aspas.html
+
+The full list of changes can be found here:
+https://github.com/NLnetLabs/krill/projects/18
+
 
 ## 0.9.2 'Motive and Opportunity'
 
