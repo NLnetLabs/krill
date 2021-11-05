@@ -753,13 +753,30 @@ impl CertAuth {
         let child_keys = child.issued(rcn);
 
         let mut issued_certs = vec![];
-        let mut not_after = Time::now();
+
+        // Check current issued certificates, so we may lie a tiny bit here.. i.e. we want to avoid that
+        // child CAs feel the urge to request new certificates all the time - so we will only tell them
+        // about the normal - longer - not after time if their current certificate(s) will expire within
+        // the configured number of weeks. I.e. using defaults:
+        //  - they would be eligible to a not-after of 52 weeks
+        //  - we only tell them 4 weeks before their old cert would expire
+        //
+        // Note that a child may have multiple keys and issued certificates if they are doing a keyroll.
+        // Typically these certificates will have almost the same expiration time, but even if they don't
+        // and one of them is about to expire, while the other is still valid for a while.. then telling
+        // the child that they are eligible to the not after time of the other is still fine - it would
+        // still trigger them to request a replacement for the first which was about to expire.
+        let mut not_after = Time::now() + Duration::weeks(issuance_timing.timing_child_certificate_valid_weeks);
+        let threshold = Time::now() + Duration::weeks(issuance_timing.timing_child_certificate_reissue_weeks_before);
+
         for ki in child_keys {
             if let Some(issued) = my_rc.issued(&ki) {
                 issued_certs.push(issued.clone());
-                let eligible_not_after = Self::child_cert_eligible_not_after(issued, issuance_timing);
-                if eligible_not_after > not_after {
-                    not_after = eligible_not_after
+
+                let expires = issued.validity().not_after();
+
+                if expires > threshold {
+                    not_after = expires;
                 }
             }
         }
@@ -771,17 +788,6 @@ impl CertAuth {
             not_after,
             issued_certs,
         ))
-    }
-
-    fn child_cert_eligible_not_after(issued: &IssuedCert, issuance_timing: &IssuanceTimingConfig) -> Time {
-        let expiration_time = issued.validity().not_after();
-        if expiration_time
-            > Time::now() + chrono::Duration::weeks(issuance_timing.timing_child_certificate_reissue_weeks_before)
-        {
-            expiration_time
-        } else {
-            Time::now() + chrono::Duration::weeks(issuance_timing.timing_child_certificate_valid_weeks)
-        }
     }
 
     /// Returns a child, or an error if the child is unknown.
