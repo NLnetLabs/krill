@@ -754,8 +754,6 @@ impl CertAuth {
 
         let mut issued_certs = vec![];
 
-        let mut not_after = Time::now() + Duration::weeks(issuance_timing.timing_child_certificate_valid_weeks);
-
         // Check current issued certificates, so we may lie a tiny bit here.. i.e. we want to avoid that
         // child CAs feel the urge to request new certificates all the time - so we will only tell them
         // about the normal - longer - not after time if their current certificate(s) will expire within
@@ -768,15 +766,16 @@ impl CertAuth {
         // and one of them is about to expire, while the other is still valid for a while.. then telling
         // the child that they are eligible to the not after time of the other is still fine - it would
         // still trigger them to request a replacement for the first which was about to expire.
+        let mut not_after = Time::now() + Duration::weeks(issuance_timing.timing_child_certificate_valid_weeks);
+        let threshold = Time::now() + Duration::weeks(issuance_timing.timing_child_certificate_reissue_weeks_before);
+
         for ki in child_keys {
             if let Some(issued) = my_rc.issued(&ki) {
                 issued_certs.push(issued.clone());
 
                 let expires = issued.validity().not_after();
-                let warn_threshold = Time::now()
-                    + chrono::Duration::weeks(issuance_timing.timing_child_certificate_reissue_weeks_before);
 
-                if expires > warn_threshold {
+                if expires > threshold {
                     not_after = expires;
                 }
             }
