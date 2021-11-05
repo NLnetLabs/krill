@@ -372,7 +372,7 @@ impl fmt::Display for Error {
             //-----------------------------------------------------------------
             // Repository Server Issues
             //-----------------------------------------------------------------
-            Error::RepositoryServerNotInitialized => write!(f, "Publication Server not initialized"),
+            Error::RepositoryServerNotInitialized => write!(f, "Publication Server not initialized, see 'krillc pubserver server init --help'"),
             Error::RepositoryServerHasPublishers => write!(f, "Publication Server cannot be removed, still has publishers"),
             Error::RepositoryServerAlreadyInitialized => write!(f, "Publication Server already initialized"),
 
