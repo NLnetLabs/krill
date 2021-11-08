@@ -253,7 +253,13 @@ impl SignerRouter {
         }
 
         let default_signer = default_signer
-            .or_else(|| (signers.len() == 1).then(|| signers[0].clone()))
+            .or_else(|| {
+                if signers.len() == 1 {
+                    Some(signers[0].clone())
+                } else {
+                    None
+                }
+            })
             .ok_or(Error::ConfigError(
                 "One signer must be set as the default signer".to_string(),
             ))?;
