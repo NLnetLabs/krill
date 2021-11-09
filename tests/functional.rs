@@ -480,6 +480,29 @@ async fn functional() {
         ca_aspas_expect(&ca4, AspaDefinitionList::new(vec![updated_aspa])).await;
     }
 
+    {
+        info("##################################################################");
+        info("#                                                                #");
+        info("# Update ASPA to have no providers (explicit empty list)         #");
+        info("#                                                                #");
+        info("##################################################################");
+
+        let customer = AspaCustomer::from_str("AS65000").unwrap();
+        let aspa_update = AspaProvidersUpdate::new(
+            vec![],
+            vec![
+                ProviderAs::from_str("AS65003(v4)").unwrap(),
+                ProviderAs::from_str("AS65005(v6)").unwrap(),
+                ProviderAs::from_str("AS65006").unwrap(),
+            ],
+        );
+
+        ca_aspas_update(&ca4, customer, aspa_update).await;
+
+        let updated_aspa = AspaDefinition::from_str("AS65000 => <none>").unwrap();
+        ca_aspas_expect(&ca4, AspaDefinitionList::new(vec![updated_aspa])).await;
+    }
+
     //------------------------------------------------------------------------------------------
     // Test shrinking / growing resources
     //------------------------------------------------------------------------------------------
@@ -550,7 +573,7 @@ async fn functional() {
 
         // Expect that the ASPA object is withdrawn
         expect_objects_for_ca4(
-            "CA4 should now de-aggregate ROAS",
+            "CA4 should now remove ASPA",
             &[route_resource_set_10_0_0_0_def_1, route_resource_set_10_1_0_0_def_1],
             &[],
         )

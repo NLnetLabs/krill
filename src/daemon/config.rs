@@ -117,6 +117,10 @@ impl ConfigDefaults {
         600
     }
 
+    fn ca_refresh_parents_batch_size() -> usize {
+        25
+    }
+
     fn post_limit_api() -> u64 {
         256 * 1024 // 256kB
     }
@@ -273,6 +277,9 @@ pub struct Config {
 
     #[serde(default = "ConfigDefaults::ca_refresh_seconds", alias = "ca_refresh")]
     pub ca_refresh_seconds: u32,
+
+    #[serde(default = "ConfigDefaults::ca_refresh_parents_batch_size")]
+    pub ca_refresh_parents_batch_size: usize,
 
     #[serde(skip)]
     suspend_child_after_inactive_seconds: Option<i64>,
@@ -584,6 +591,7 @@ impl Config {
             )],
         };
         let ca_refresh_seconds = if enable_ca_refresh { 1 } else { 86400 };
+        let ca_refresh_parents_batch_size = 10;
         let post_limit_api = ConfigDefaults::post_limit_api();
         let post_limit_rfc8181 = ConfigDefaults::post_limit_rfc8181();
         let rfc8181_log_dir = {
@@ -682,6 +690,7 @@ impl Config {
             #[cfg(feature = "hsm")]
             signers,
             ca_refresh_seconds,
+            ca_refresh_parents_batch_size,
             suspend_child_after_inactive_seconds,
             suspend_child_after_inactive_hours: None,
             post_limit_api,
