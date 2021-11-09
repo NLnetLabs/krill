@@ -172,7 +172,11 @@ impl KmipSigner {
         // Signer initialization should not block Krill startup. As such we delaying contacting the KMIP server until
         // first use. The downside of this approach is that we won't detect any issues until that point.
 
-        let server = Arc::new(StatefulProbe::new(Arc::new(conf.try_into()?), Duration::from_secs(30)));
+        let server = Arc::new(StatefulProbe::new(
+            name.to_string(),
+            Arc::new(conf.try_into()?),
+            Duration::from_secs(30),
+        ));
 
         let s = KmipSigner {
             name: name.to_string(),
@@ -266,6 +270,7 @@ impl UsableServerState {
 impl KmipSigner {
     /// Verify if the configured KMIP server is contactable and supports the required capabilities.
     fn probe_server(
+        _name: String,
         status: &ProbeStatus<ConnectionSettings, SignerError, UsableServerState>,
     ) -> Result<UsableServerState, ProbeError<SignerError>> {
         let conn_settings = status.config()?;

@@ -22,6 +22,8 @@ pub enum ProbeError<E> {
 /// `Usable` or `Unusable` based on what was discovered about the PKCS#11 server.
 #[derive(Debug)]
 pub struct StatefulProbe<C, E, S> {
+    name: String,
+
     status: RwLock<ProbeStatus<C, E, S>>,
 
     probe_interval: Duration,
@@ -102,13 +104,17 @@ impl<C, E, S> ProbeStatus<C, E, S> {
 
 impl<C, E, S> StatefulProbe<C, E, S> {
     /// Create a new connector to a server that hasn't been probed yet.
-    pub fn new(config: Arc<C>, probe_interval: Duration) -> Self {
+    pub fn new(name: String, config: Arc<C>, probe_interval: Duration) -> Self {
         let status = RwLock::new(ProbeStatus::Probing {
             config,
             last_probe_time: None,
             phantom: PhantomData,
         });
-        StatefulProbe { status, probe_interval }
+        StatefulProbe {
+            name,
+            status,
+            probe_interval,
+        }
     }
 
     #[cfg(test)]
@@ -125,7 +131,7 @@ impl<C, E, S> StatefulProbe<C, E, S> {
     /// has elapsed.
     pub fn status<F>(&self, probe: F) -> Result<RwLockReadGuard<ProbeStatus<C, E, S>>, ProbeError<E>>
     where
-        F: Fn(&ProbeStatus<C, E, S>) -> Result<S, ProbeError<E>>,
+        F: Fn(String, &ProbeStatus<C, E, S>) -> Result<S, ProbeError<E>>,
     {
         fn is_time_to_check(time_between_probes: Duration, last_probe_time: Option<Instant>) -> bool {
             match last_probe_time {
@@ -135,6 +141,7 @@ impl<C, E, S> StatefulProbe<C, E, S> {
         }
 
         fn get_if_usable<C, E, S>(
+            name: String,
             status: RwLockReadGuard<ProbeStatus<C, E, S>>,
             retry_interval: Duration,
         ) -> Option<Result<RwLockReadGuard<ProbeStatus<C, E, S>>, ProbeError<E>>> {
@@ -159,13 +166,15 @@ impl<C, E, S> StatefulProbe<C, E, S> {
                         if let Some(instant) = last_probe_time {
                             let until = retry_interval.checked_sub(instant.elapsed()).unwrap(); // TODO
                             info!(
-                                "Signer availability checking is cooling off: {:?}s remaining",
+                                "Signer '{}' is currently unavailable. {:?}s until next check.",
+                                name,
                                 until.as_secs()
                             );
                         } else {
                             // This should be unreachable
                             info!(
-                                "Signer availability checking is cooling off for {:?}s",
+                                "Signer '{}' is currently unavailable. Checking every {:?}s",
+                                name,
                                 retry_interval.as_secs()
                             );
                         }
@@ -180,7 +189,7 @@ impl<C, E, S> StatefulProbe<C, E, S> {
         /// Verify if the configured server is contactable and supports the required capabilities.
         fn send_probe<C, E, F, S>(probe: &StatefulProbe<C, E, S>, probe_cb: F) -> Result<(), ProbeError<E>>
         where
-            F: Fn(&ProbeStatus<C, E, S>) -> Result<S, ProbeError<E>>,
+            F: Fn(String, &ProbeStatus<C, E, S>) -> Result<S, ProbeError<E>>,
         {
             // Hold a write lock for the duration of our attempt to verify the server so that no other attempt occurs
             // at the same time. Bail out if another thread is performing a probe and has the lock. This is the same result
@@ -192,7 +201,7 @@ impl<C, E, S> StatefulProbe<C, E, S> {
             // when probing has already finished as mark() will fail in that case.
             status.mark()?;
 
-            match (probe_cb)(&*status) {
+            match (probe_cb)(probe.name.clone(), &*status) {
                 Ok(usable_state) => {
                     *status = ProbeStatus::Usable(usable_state);
                     Ok(())
@@ -208,7 +217,7 @@ impl<C, E, S> StatefulProbe<C, E, S> {
 
         // Return the current status or attempt to set it by probing the server
         let status = self.status.read().unwrap();
-        get_if_usable(status, self.probe_interval).unwrap_or_else(|| {
+        get_if_usable(self.name.clone(), status, self.probe_interval).unwrap_or_else(|| {
             send_probe(self, probe)
                 .and_then(|_| Ok(self.status.read().unwrap()))
                 .map_err(|err| match err {
@@ -248,15 +257,18 @@ pub mod tests {
         SomeErrorCode,
     }
 
-    fn probe_func(_status: &ProbeStatus<Config, SomeError, State>) -> Result<State, ProbeError<SomeError>> {
+    fn probe_func(
+        _name: String,
+        _status: &ProbeStatus<Config, SomeError, State>,
+    ) -> Result<State, ProbeError<SomeError>> {
         Err(ProbeError::CompletedUnusable)
     }
 
     #[test]
     fn probe_should_be_permanently_unavailable_with_closure() {
         let config = Arc::new(Config::default());
-        let conn = StatefulProbe::<_, SomeError, State>::new(config, Duration::from_secs(0));
-        let res = conn.status(|_| Err(ProbeError::CompletedUnusable));
+        let conn = StatefulProbe::<_, SomeError, State>::new("dummy".to_string(), config, Duration::from_secs(0));
+        let res = conn.status(|_, _| Err(ProbeError::CompletedUnusable));
         match res {
             Err(ProbeError::CompletedUnusable) => {}
             other => panic!("Expected Err(ProbeError::PermanentlyUnusable) but got {:?}", other),
@@ -266,7 +278,7 @@ pub mod tests {
     #[test]
     fn probe_should_be_permanently_unavailable_with_fn() {
         let config = Arc::new(Config::default());
-        let conn = StatefulProbe::<_, SomeError, State>::new(config, Duration::from_secs(0));
+        let conn = StatefulProbe::<_, SomeError, State>::new("dummy".to_string(), config, Duration::from_secs(0));
         let res = conn.status(probe_func);
         match res {
             Err(ProbeError::CompletedUnusable) => {}
@@ -277,8 +289,8 @@ pub mod tests {
     #[test]
     fn probe_should_be_permanently_unavailable() {
         let config = Arc::new(Config::default());
-        let conn = StatefulProbe::<_, SomeError, State>::new(config, Duration::from_secs(0));
-        let res = conn.status(|_| Err(ProbeError::CompletedUnusable));
+        let conn = StatefulProbe::<_, SomeError, State>::new("dummy".to_string(), config, Duration::from_secs(0));
+        let res = conn.status(|_, _| Err(ProbeError::CompletedUnusable));
         match res {
             Err(ProbeError::CompletedUnusable) => {}
             other => panic!("Expected Err(ProbeError::PermanentlyUnusable) but got {:?}", other),
@@ -288,8 +300,8 @@ pub mod tests {
     #[test]
     fn probe_should_be_temporarily_unavailable() {
         let config = Arc::new(Config::default());
-        let conn = StatefulProbe::<_, SomeError, State>::new(config, Duration::from_secs(0));
-        let res = conn.status(|_| Err(ProbeError::AwaitingNextProbe));
+        let conn = StatefulProbe::<_, SomeError, State>::new("dummy".to_string(), config, Duration::from_secs(0));
+        let res = conn.status(|_, _| Err(ProbeError::AwaitingNextProbe));
         match res {
             Err(ProbeError::AwaitingNextProbe) => {}
             other => panic!("Expected Err(ProbeError::AwaitingNextProbe) but got {:?}", other),
@@ -299,8 +311,8 @@ pub mod tests {
     #[test]
     fn probe_should_be_temporarily_unavailable_on_custom_error() {
         let config = Arc::new(Config::default());
-        let conn = StatefulProbe::<_, SomeError, State>::new(config, Duration::from_secs(0));
-        let res = conn.status(|_| Err(ProbeError::CallbackFailed(SomeError::SomeErrorCode)));
+        let conn = StatefulProbe::<_, SomeError, State>::new("dummy".to_string(), config, Duration::from_secs(0));
+        let res = conn.status(|_, _| Err(ProbeError::CallbackFailed(SomeError::SomeErrorCode)));
         match res {
             Err(ProbeError::AwaitingNextProbe) => {}
             other => panic!("Expected Err(ProbeError::AwaitingNextProbe) but got {:?}", other),
@@ -312,23 +324,23 @@ pub mod tests {
         let config = Arc::new(Config::default());
 
         // Probing is only done when .get() is called
-        let conn = StatefulProbe::<_, SomeError, State>::new(config, Duration::from_millis(100));
+        let conn = StatefulProbe::<_, SomeError, State>::new("dummy".to_string(), config, Duration::from_millis(100));
         assert_eq!(None, conn.last_probe_time()?);
 
         // The first call to .get() should trigger a probe
-        let _ = conn.status(|_| Err(ProbeError::AwaitingNextProbe));
+        let _ = conn.status(|_, _| Err(ProbeError::AwaitingNextProbe));
         let t1 = conn.last_probe_time()?;
         assert!(t1.is_some());
 
         // A call to .get() before the next probe interval should NOT result in an updated last probe time
         std::thread::sleep(Duration::from_millis(10));
-        let _ = conn.status(|_| Err(ProbeError::AwaitingNextProbe));
+        let _ = conn.status(|_, _| Err(ProbeError::AwaitingNextProbe));
         let t2 = conn.last_probe_time()?;
         assert!(t2 == t1);
 
         // A call to .get() after the next probe interval SHOULD result in an updated last probe time
         std::thread::sleep(Duration::from_millis(200));
-        let _ = conn.status(|_| Err(ProbeError::AwaitingNextProbe));
+        let _ = conn.status(|_, _| Err(ProbeError::AwaitingNextProbe));
         let t3 = conn.last_probe_time()?;
         assert!(t3 > t1);
 
@@ -341,8 +353,8 @@ pub mod tests {
         let new_state = State { some_state: 1 };
 
         // Probing only happens when .get() is called
-        let conn = StatefulProbe::<_, SomeError, State>::new(config, Duration::from_millis(0));
-        let new_status = conn.status(|_| Ok(new_state))?;
+        let conn = StatefulProbe::<_, SomeError, State>::new("dummy".to_string(), config, Duration::from_millis(0));
+        let new_status = conn.status(|_, _| Ok(new_state))?;
         assert_eq!(1, new_status.state()?.some_state);
         assert_eq!(1, new_status.state()?.some_func());
 
