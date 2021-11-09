@@ -10,16 +10,16 @@ use rpki::repository::{
 use crate::{
     commons::{
         api::{
-            EntitlementClass, Handle, HexEncodedHash, IssuanceRequest, IssuedCert, ParentHandle, RcvdCert,
-            ReplacedObject, RepoInfo, RequestResourceLimit, ResourceClassInfo, ResourceClassName, ResourceSet,
-            Revocation, RevocationRequest, SuspendedCert, UnsuspendedCert,
+            EntitlementClass, Handle, IssuanceRequest, IssuedCert, ParentHandle, RcvdCert, ReplacedObject, RepoInfo,
+            RequestResourceLimit, ResourceClassInfo, ResourceClassName, ResourceSet, RevocationRequest, SuspendedCert,
+            UnsuspendedCert,
         },
         crypto::{CsrInfo, KrillSigner, SignSupport},
         error::Error,
         KrillResult,
     },
     daemon::{
-        ca::events::{ChildCertificateUpdates, RoaUpdates},
+        ca::events::RoaUpdates,
         ca::{
             self, ta_handle, AspaObjects, AspaObjectsUpdates, CaEvtDet, CertifiedKey, ChildCertificates, CurrentKey,
             KeyState, NewKey, OldKey, PendingKey, Roas, Routes,
@@ -301,39 +301,19 @@ impl ResourceClass {
                 rcvd_cert.validity().not_after().to_rfc3339()
             );
 
+            // Prep certified key for updated received certificate
+            let certified_key = CertifiedKey::create(rcvd_cert);
+
             // Check whether child certificates should be shrunk
-            //
-            // NOTE: We need to pro-actively shrink child certificates to avoid invalidating them.
-            //       But, if we gain additional resources it is up to child to request a new certificate
-            //       with those resources.
-            //
-            let mut updates = ChildCertificateUpdates::default();
-            for issued in self.certificates.overclaiming(rcvd_resources) {
-                let remaining_resources = issued.resource_set().intersection(rcvd_resources);
-                if remaining_resources.is_empty() {
-                    // revoke
-                    updates.remove(issued.subject_key_identifier());
-                } else {
-                    // re-issue
-                    let re_issued = self.re_issue(
-                        issued,
-                        Some(remaining_resources),
-                        current_key,
-                        None,
-                        &config.issuance_timing,
-                        signer,
-                    )?;
-                    updates.issue(re_issued);
-                }
-            }
+            let updates = self
+                .certificates
+                .shrink_overclaiming(&certified_key, &config.issuance_timing, signer)?;
             if !updates.is_empty() {
                 res.push(CaEvtDet::ChildCertificatesUpdated {
                     resource_class_name: self.name.clone(),
                     updates,
                 });
             }
-
-            let certified_key = CertifiedKey::create(rcvd_cert);
 
             // Check whether ROAs need to be re-issued.
             {
@@ -546,7 +526,6 @@ impl ResourceClass {
                 let mut events = vec![key_activated];
 
                 let roa_updates = self.roas.activate_key(new_key, issuance_timing, signer)?;
-
                 if !roa_updates.is_empty() {
                     let roas_updated = CaEvtDet::RoasUpdated {
                         resource_class_name: self.name.clone(),
@@ -555,14 +534,16 @@ impl ResourceClass {
                     events.push(roas_updated);
                 }
 
-                // let aspa_updates = self.aspas.activate_key(new_key, issuance_timing, signer)?;
-
-                let mut cert_updates = ChildCertificateUpdates::default();
-                for issued in self.certificates.iter() {
-                    // re-issue
-                    let re_issued = self.re_issue(issued, None, new_key, None, issuance_timing, signer)?;
-                    cert_updates.issue(re_issued);
+                let aspa_updates = self.aspas.renew(new_key, None, issuance_timing, signer)?;
+                if !aspa_updates.is_empty() {
+                    let aspas_updated = CaEvtDet::AspaObjectsUpdated {
+                        resource_class_name: self.name.clone(),
+                        updates: aspa_updates,
+                    };
+                    events.push(aspas_updated);
                 }
+
+                let cert_updates = self.certificates.activate_key(new_key, issuance_timing, signer)?;
                 if !cert_updates.is_empty() {
                     let certs_updated = CaEvtDet::ChildCertificatesUpdated {
                         resource_class_name: self.name.clone(),
@@ -625,33 +606,6 @@ impl ResourceClass {
         )?;
 
         Ok(issued)
-    }
-
-    fn re_issue(
-        &self,
-        previous: &IssuedCert,
-        updated_resources: Option<ResourceSet>,
-        signing_key: &CertifiedKey,
-        csr_info_opt: Option<CsrInfo>,
-        issuance_timing: &IssuanceTimingConfig,
-        signer: &KrillSigner,
-    ) -> KrillResult<IssuedCert> {
-        let (_uri, limit, resource_set, cert) = previous.clone().unpack();
-        let csr = csr_info_opt.unwrap_or_else(|| CsrInfo::from(&cert));
-        let resource_set = updated_resources.unwrap_or(resource_set);
-        let replaced = ReplacedObject::new(Revocation::from(&cert), HexEncodedHash::from(&cert));
-
-        let re_issued = SignSupport::make_issued_cert(
-            csr,
-            &resource_set,
-            limit,
-            Some(replaced),
-            signing_key,
-            issuance_timing.timing_child_certificate_valid_weeks,
-            signer,
-        )?;
-
-        Ok(re_issued)
     }
 
     /// Stores an [IssuedCert](krill_commons.api.ca.IssuedCert)
@@ -733,7 +687,8 @@ impl ResourceClass {
         signer: &KrillSigner,
     ) -> KrillResult<AspaObjectsUpdates> {
         let key = self.get_current_key()?;
-        self.aspas.renew(key, issuance_timing, signer)
+        let renew_threshold = Some(Time::now() + Duration::weeks(issuance_timing.timing_aspa_reissue_weeks_before));
+        self.aspas.renew(key, renew_threshold, issuance_timing, signer)
     }
 
     /// Updates the ASPA objects in accordance with the supplied definitions

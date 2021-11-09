@@ -7,14 +7,17 @@ use rpki::repository::{crypto::KeyIdentifier, x509::Time};
 use crate::{
     commons::{
         api::{
-            ChildCaInfo, ChildHandle, ChildState, IssuedCert, ResourceClassName, ResourceSet, SuspendedCert,
-            UnsuspendedCert,
+            ChildCaInfo, ChildHandle, ChildState, HexEncodedHash, IssuedCert, ReplacedObject, ResourceClassName,
+            ResourceSet, Revocation, SuspendedCert, UnsuspendedCert,
         },
-        crypto::IdCert,
+        crypto::{CsrInfo, IdCert, KrillSigner, SignSupport},
         error::Error,
         KrillResult,
     },
-    daemon::config::IssuanceTimingConfig,
+    daemon::{
+        ca::{CertifiedKey, ChildCertificateUpdates},
+        config::IssuanceTimingConfig,
+    },
 };
 
 //------------ UsedKeyState ------------------------------------------------
@@ -184,6 +187,111 @@ impl ChildCertificates {
         self.issued.values()
     }
 
+    /// Re-issue everything when activating a new key
+    pub fn activate_key(
+        &self,
+        new_key: &CertifiedKey,
+        issuance_timing: &IssuanceTimingConfig,
+        signer: &KrillSigner,
+    ) -> KrillResult<ChildCertificateUpdates> {
+        let mut updates = ChildCertificateUpdates::default();
+        for issued in self.issued.values() {
+            updates.issue(self.re_issue(issued, None, new_key, issuance_timing, signer)?);
+        }
+        // Also re-issue suspended certificates, they may yet become unsuspended at some point
+        for suspended in self.suspended.values() {
+            updates.suspend(self.re_issue(suspended, None, new_key, issuance_timing, signer)?);
+        }
+        Ok(updates)
+    }
+
+    /// Shrink any overclaiming certificates.
+    ///
+    /// NOTE: We need to pro-actively shrink child certificates to avoid invalidating them.
+    ///       But, if we gain additional resources it is up to child to request a new certificate
+    ///       with those resources.
+    pub fn shrink_overclaiming(
+        &self,
+        certified_key: &CertifiedKey,
+        issuance_timing: &IssuanceTimingConfig,
+        signer: &KrillSigner,
+    ) -> KrillResult<ChildCertificateUpdates> {
+        let mut updates = ChildCertificateUpdates::default();
+
+        let received_resources = certified_key.incoming_cert().resources();
+
+        for issued in self.issued.values() {
+            if let Some(remaining_resources) = issued.remaining_resources(received_resources) {
+                if remaining_resources.is_empty() {
+                    // revoke
+                    updates.remove(issued.subject_key_identifier());
+                } else {
+                    // re-issue
+                    updates.issue(self.re_issue(
+                        issued,
+                        Some(remaining_resources),
+                        certified_key,
+                        issuance_timing,
+                        signer,
+                    )?);
+                }
+            }
+        }
+
+        // Also shrink suspended, in case they would come back
+        for suspended in self.issued.values() {
+            if let Some(remaining_resources) = suspended.remaining_resources(received_resources) {
+                if remaining_resources.is_empty() {
+                    // revoke
+                    updates.remove(suspended.subject_key_identifier());
+                } else {
+                    // re-issue shrunk suspended
+                    //
+                    // Note: this will not be published yet, but remain suspended
+                    //       until the child contacts us again, or is manually
+                    //       un-suspended.
+                    updates.suspend(self.re_issue(
+                        suspended,
+                        Some(remaining_resources),
+                        certified_key,
+                        issuance_timing,
+                        signer,
+                    )?);
+                }
+            }
+        }
+
+        Ok(updates)
+    }
+
+    /// Re-issue a delegated certificate to replace an earlier
+    /// one which is about to be outdated or has changed resources.
+    fn re_issue(
+        &self,
+        previous: &IssuedCert,
+        updated_resources: Option<ResourceSet>,
+        signing_key: &CertifiedKey,
+        issuance_timing: &IssuanceTimingConfig,
+        signer: &KrillSigner,
+    ) -> KrillResult<IssuedCert> {
+        let (_uri, limit, resource_set, cert) = previous.clone().unpack();
+        let csr = CsrInfo::from(&cert);
+        let resource_set = updated_resources.unwrap_or(resource_set);
+        let replaced = ReplacedObject::new(Revocation::from(&cert), HexEncodedHash::from(&cert));
+
+        let re_issued = SignSupport::make_issued_cert(
+            csr,
+            &resource_set,
+            limit,
+            Some(replaced),
+            signing_key,
+            issuance_timing.timing_child_certificate_valid_weeks,
+            signer,
+        )?;
+
+        Ok(re_issued)
+    }
+
     pub fn expiring(&self, issuance_timing: &IssuanceTimingConfig) -> Vec<&IssuedCert> {
         self.issued
             .values()
@@ -199,10 +307,6 @@ impl ChildCertificates {
             .values()
             .filter(|issued| !resources.contains(issued.resource_set()))
             .collect()
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = &IssuedCert> {
-        self.issued.values()
     }
 }
 

@@ -335,6 +335,18 @@ impl IssuedCert {
     pub fn replaces(&self) -> Option<&ReplacedObject> {
         self.replaces.as_ref()
     }
+
+    /// Returns a (possibly empty) set of remaining resources which
+    /// is the intersection of the encompassing resources and this
+    /// certificate's current resources. Returns None if the current
+    /// resource set is not overclaiming.
+    pub fn remaining_resources(&self, encompassing: &ResourceSet) -> Option<ResourceSet> {
+        if encompassing.contains(&self.resource_set) {
+            None
+        } else {
+            Some(encompassing.intersection(&self.resource_set))
+        }
+    }
 }
 
 impl PartialEq for IssuedCert {
