@@ -543,11 +543,19 @@ impl ResourceClass {
                     self.key_state
                         .keyroll_activate(self.name.clone(), self.parent_rc_name.clone(), signer)?;
 
+                let mut events = vec![key_activated];
+
                 let roa_updates = self.roas.activate_key(new_key, issuance_timing, signer)?;
-                let roas_updated = CaEvtDet::RoasUpdated {
-                    resource_class_name: self.name.clone(),
-                    updates: roa_updates,
-                };
+
+                if !roa_updates.is_empty() {
+                    let roas_updated = CaEvtDet::RoasUpdated {
+                        resource_class_name: self.name.clone(),
+                        updates: roa_updates,
+                    };
+                    events.push(roas_updated);
+                }
+
+                // let aspa_updates = self.aspas.activate_key(new_key, issuance_timing, signer)?;
 
                 let mut cert_updates = ChildCertificateUpdates::default();
                 for issued in self.certificates.iter() {
@@ -555,12 +563,15 @@ impl ResourceClass {
                     let re_issued = self.re_issue(issued, None, new_key, None, issuance_timing, signer)?;
                     cert_updates.issue(re_issued);
                 }
-                let certs_updated = CaEvtDet::ChildCertificatesUpdated {
-                    resource_class_name: self.name.clone(),
-                    updates: cert_updates,
-                };
+                if !cert_updates.is_empty() {
+                    let certs_updated = CaEvtDet::ChildCertificatesUpdated {
+                        resource_class_name: self.name.clone(),
+                        updates: cert_updates,
+                    };
+                    events.push(certs_updated);
+                }
 
-                Ok(vec![key_activated, roas_updated, certs_updated])
+                Ok(events)
             }
         } else {
             Ok(vec![])
