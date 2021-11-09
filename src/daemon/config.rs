@@ -1186,10 +1186,6 @@ pub struct SignerConfig {
     #[serde(default)]
     pub oneoff: bool,
 
-    /// If initiating a keyroll, create the new key with this signer.
-    #[serde(default)]
-    pub keyroll: bool,
-
     /// Generate random numbers with this signer if the default signer
     /// lacks the capability to do so.
     #[serde(default)]
@@ -1241,7 +1237,6 @@ impl SignerConfig {
             name,
             default: true,
             oneoff: true,
-            keyroll: true,
             random: true,
             signer_type,
         }

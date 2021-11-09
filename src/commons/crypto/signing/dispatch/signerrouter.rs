@@ -36,7 +36,7 @@ use crate::{
 ///   - Handles registration of [Signer] instances with the [SignerMapper].
 ///   - Dispatches requests to the correct [Signer] instance, either because the request specified a [KeyIdentifier]
 ///     which is owned by a particular [Signer] instance, or because the kind of request dictates the kind of [Signer]
-///     that should handle it (e.g. one-off signing or random number generation may be handled by a different [Signer]
+///     that should handle it (e.g. one-off signing and/or random number generation may be handled by a different [Signer]
 ///     than handles new key creation).
 ///
 /// Note: If the `hsm` feature is not enabled all requests are routed to an instance of the [OpenSslSigner] for
@@ -48,7 +48,7 @@ use crate::{
 /// in the [SignerProvider] struct so we can focus on the business logic here instead.
 ///
 /// [SignerProvider] instances are wrapped in [Arc] so that we can "assign" the same signer to multiple different
-/// "roles", e.g. one-off signer, rand signer, keyroll signer, etc.
+/// "roles" (default signer, one-off signer and/or fallback random number generating signer).
 ///
 /// Additional complexity is introduced by the need to wrap the [Signer]s in a lock due to the use of `&mut` by the
 /// [Signer] trait on the `create_key()` and `destroy_key()` functions. The latest, not yet released, version of the
@@ -141,9 +141,6 @@ struct SignerRoleAssignments {
 
     one_off_signer: Arc<SignerProvider>,
 
-    #[allow(dead_code)]
-    keyroll_signer: Arc<SignerProvider>, // TODO: See #583
-
     random_signer: Arc<SignerProvider>,
 }
 
@@ -190,10 +187,6 @@ impl SignerRouter {
         let (roles, signers) = Self::build_signers(work_dir, signer_mapper.clone(), signer_configs)?;
         let signers = RwLock::new(signers);
 
-        // TODO: Once we can configure ourselves from the configuration file, we also need to create any signers that
-        // are defined in the config but which don't have an active role, i.e. only exist to work with keys created by
-        // a still active signer but not one that we create new keys with.
-
         Ok(SignerRouter {
             default_signer: roles.default_signer,
             one_off_signer: roles.one_off_signer,
@@ -213,7 +206,6 @@ impl SignerRouter {
 
         let mut default_signer: Option<Arc<SignerProvider>> = None;
         let mut one_off_signer: Option<Arc<SignerProvider>> = None;
-        let mut keyroll_signer: Option<Arc<SignerProvider>> = None;
         let mut random_signer: Option<Arc<SignerProvider>> = None;
         let mut openssl_signer: Option<Arc<SignerProvider>> = None;
 
@@ -235,16 +227,13 @@ impl SignerRouter {
                 openssl_signer.get_or_insert(new_signer.clone());
             }
 
-            set_only_once(&mut default_signer, config.default, || new_signer.clone())
+            Self::set_only_once(&mut default_signer, config.default, || new_signer.clone())
                 .map_err(|_| Error::ConfigError("Only one signer can be set as the default signer".to_string()))?;
 
-            set_only_once(&mut one_off_signer, config.oneoff, || new_signer.clone())
+            Self::set_only_once(&mut one_off_signer, config.oneoff, || new_signer.clone())
                 .map_err(|_| Error::ConfigError("Only one signer can be set as the one-off signer".to_string()))?;
 
-            set_only_once(&mut keyroll_signer, config.keyroll, || new_signer.clone())
-                .map_err(|_| Error::ConfigError("Only one signer can be set as the keyroll signer".to_string()))?;
-
-            set_only_once(&mut random_signer, config.random, || new_signer.clone())
+            Self::set_only_once(&mut random_signer, config.random, || new_signer.clone())
                 .map_err(|_| Error::ConfigError("Only one signer can be set as the random signer".to_string()))?;
 
             signers.push(new_signer);
@@ -252,27 +241,29 @@ impl SignerRouter {
             info!("Initialized signer '{}'", name);
         }
 
-        let default_signer = default_signer
-            .or_else(|| {
-                if signers.len() == 1 {
-                    Some(signers[0].clone())
-                } else {
-                    None
-                }
-            })
-            .ok_or(Error::ConfigError(
-                "One signer must be set as the default signer".to_string(),
-            ))?;
+        let default_signer = Self::set_only_once(&mut default_signer, signers.len() == 1, || signers[0].clone())
+            .map_err(|_| Error::ConfigError("One signer must be set as the default signer".to_string()))?;
 
-        let random_signer = match random_signer.or(openssl_signer) {
-            Some(signer) => signer,
-            None => Self::build_openssl_signer(work_dir, &OpenSslSignerConfig::default(), "OpenSSL (fallback random number generator)", mapper.clone())?,
+        let random_signer = match (random_signer, openssl_signer) {
+            // Use the designated random fallback signer
+            (Some(signer), _) => signer,
+
+            // Use the already created OpenSSL signer as the random fallback signer
+            (None, Some(signer)) => signer,
+
+            // Create a new OpenSSL signer to use as the random fallback signer
+            (None, None) => {
+                let name = "OpenSSL (fallback random number generator)";
+                let signer =
+                    Self::build_openssl_signer(work_dir, &OpenSslSignerConfig::default(), name, mapper.clone())?;
+                info!("Initialized signer '{}'", name);
+                signer
+            }
         };
 
         let roles = SignerRoleAssignments {
             default_signer: default_signer.clone(),
             one_off_signer: one_off_signer.unwrap_or(default_signer.clone()),
-            keyroll_signer: keyroll_signer.unwrap_or(default_signer.clone()),
             random_signer,
         };
 
@@ -345,20 +336,32 @@ impl SignerRouter {
 
         signer.ok_or(SignerError::KeyNotFound)
     }
-}
 
-fn set_only_once<F>(to_be_set: &mut Option<Arc<SignerProvider>>, set: bool, new_value_fn: F) -> Result<(), ()>
-where
-    F: FnOnce() -> Arc<SignerProvider>,
-{
-    match (set, &to_be_set) {
-        (false, _) => Ok(()),
-        (true, None) => {
-            let new_value = (new_value_fn)();
-            to_be_set.replace(new_value);
-            Ok(())
-        }
-        (true, Some(_)) => Err(()),
+    fn set_only_once<F>(
+        to_be_set: &mut Option<Arc<SignerProvider>>,
+        set_flag: bool,
+        new_value_fn: F,
+    ) -> Result<Arc<SignerProvider>, ()>
+    where
+        F: FnOnce() -> Arc<SignerProvider>,
+    {
+        match (set_flag, &to_be_set) {
+            // Flag is not true, do nothing
+            (false, _) => Ok(()),
+
+            // Flag is true, no value yet so generate and store a value
+            (true, None) => {
+                let new_value = (new_value_fn)();
+                to_be_set.replace(new_value);
+                Ok(())
+            }
+
+            // Flag is true but value is already set, error!
+            (true, Some(_)) => Err(()),
+        }?;
+
+        // Return a ref-counted reference to the set value
+        Ok(to_be_set.as_ref().unwrap().clone())
     }
 }
 
@@ -369,7 +372,8 @@ where
 ///
 /// The Krill configuration file (TODO) defines named signers with a type (openssl, kmip or pkcs#11) and type specific
 /// settings (key dir path, hostname, port number, TLS certificate paths, username, password, slot id, etc) and assigns
-/// signers a role (default signer, one-off signer, rand signer, keyroll signer, etc) either explicitly or by default.
+/// signers a role (default signer, one-off signer or fallback random value generating signer) either explicitly or by
+/// default.
 ///
 /// Keys created using signers in a previous Krill process MUST have been registered by the signer with the
 /// [SignerMapper] to indicate that the signer owns/possesses the key, and how to map from the [KeyIdentifier] to any
