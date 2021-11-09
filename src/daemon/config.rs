@@ -1208,25 +1208,49 @@ pub enum SignerType {
     Kmip(KmipSignerConfig),
 }
 
+// In test mode we use different default signer configurations based on the enabled Rust feature flags. This allows us
+// to validate the PKCS#11 and KMIP signers with the normal Krill test suite as well as the historical default OpenSSL
+// based testing.
 #[cfg(feature = "hsm")]
 impl Default for SignerConfig {
     fn default() -> Self {
         #[cfg(not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11")))]
-        let signer_type = SignerType::OpenSsl(OpenSslSignerConfig::default());
+        {
+            let signer_type = SignerType::OpenSsl(OpenSslSignerConfig::default());
+            SignerConfig::new(None, signer_type)
+        }
 
         #[cfg(feature = "hsm-tests-kmip")]
-        let signer_type = SignerType::Kmip(KmipSignerConfig {});
+        {
+            let signer_type = SignerType::Kmip(KmipSignerConfig {
+                host: "127.0.0.1".to_string(),
+                port: 5696,
+                username: None,
+                password: None,
+                insecure: true,
+                client_cert_path: Some(PathBuf::from_str("test-resources/pykmip/server.crt").unwrap()),
+                client_cert_private_key_path: Some(PathBuf::from_str("test-resources/pykmip/server.key").unwrap()),
+                server_cert_path: Some(PathBuf::from_str("test-resources/pykmip/server.crt").unwrap()),
+                server_ca_cert_path: Some(PathBuf::from_str("test-resources/pykmip/ca.crt").unwrap()),
+            });
+
+            // PyKMIP doesn't support random number generation so set the random flag to false in the created signer config
+            let mut signer_config = SignerConfig::new(None, signer_type);
+            signer_config.random = false;
+            signer_config
+        }
 
         #[cfg(feature = "hsm-tests-pkcs11")]
-        let signer_type = SignerType::Pkcs11(Pkcs11SignerConfig {
-            lib_path: "/usr/lib/softhsm/libsofthsm2.so".to_string(),
-            user_pin: Some("1234".to_string()),
-            slot_label: Some("My token 1".to_string()),
-            slot_id: None,
-            login: true,
-        });
-
-        SignerConfig::new(None, signer_type)
+        {
+            let signer_type = SignerType::Pkcs11(Pkcs11SignerConfig {
+                lib_path: "/usr/lib/softhsm/libsofthsm2.so".to_string(),
+                user_pin: Some("1234".to_string()),
+                slot_label: Some("My token 1".to_string()),
+                slot_id: None,
+                login: true,
+            });
+            SignerConfig::new(None, signer_type)
+        }
     }
 }
 

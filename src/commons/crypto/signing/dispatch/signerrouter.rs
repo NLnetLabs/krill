@@ -227,13 +227,13 @@ impl SignerRouter {
                 openssl_signer.get_or_insert(new_signer.clone());
             }
 
-            Self::set_only_once(&mut default_signer, config.default, || new_signer.clone())
+            Self::set_at_most_once(&mut default_signer, config.default, || new_signer.clone())
                 .map_err(|_| Error::ConfigError("Only one signer can be set as the default signer".to_string()))?;
 
-            Self::set_only_once(&mut one_off_signer, config.oneoff, || new_signer.clone())
+            Self::set_at_most_once(&mut one_off_signer, config.oneoff, || new_signer.clone())
                 .map_err(|_| Error::ConfigError("Only one signer can be set as the one-off signer".to_string()))?;
 
-            Self::set_only_once(&mut random_signer, config.random, || new_signer.clone())
+            Self::set_at_most_once(&mut random_signer, config.random, || new_signer.clone())
                 .map_err(|_| Error::ConfigError("Only one signer can be set as the random signer".to_string()))?;
 
             signers.push(new_signer);
@@ -241,7 +241,7 @@ impl SignerRouter {
             info!("Initialized signer '{}'", name);
         }
 
-        let default_signer = Self::set_only_once(&mut default_signer, signers.len() == 1, || signers[0].clone())
+        let default_signer = Self::set_once(&mut default_signer, signers.len() == 1, || signers[0].clone())
             .map_err(|_| Error::ConfigError("One signer must be set as the default signer".to_string()))?;
 
         let random_signer = match (random_signer, openssl_signer) {
@@ -337,7 +337,21 @@ impl SignerRouter {
         signer.ok_or(SignerError::KeyNotFound)
     }
 
-    fn set_only_once<F>(
+    fn set_at_most_once<F>(
+        to_be_set: &mut Option<Arc<SignerProvider>>,
+        set_flag: bool,
+        new_value_fn: F,
+    ) -> Result<(), ()>
+    where
+        F: FnOnce() -> Arc<SignerProvider>,
+    {
+        if set_flag {
+            let _ = Self::set_once(to_be_set, true, new_value_fn)?;
+        }
+        Ok(())
+    }
+
+    fn set_once<F>(
         to_be_set: &mut Option<Arc<SignerProvider>>,
         set_flag: bool,
         new_value_fn: F,
@@ -346,8 +360,11 @@ impl SignerRouter {
         F: FnOnce() -> Arc<SignerProvider>,
     {
         match (set_flag, &to_be_set) {
-            // Flag is not true, do nothing
-            (false, _) => Ok(()),
+            // Flag is not true and value is already set, do nothing
+            (false, Some(_)) => Ok(()),
+
+            // Flag is not true and value is NOT set, error!
+            (false, None) => Err(()),
 
             // Flag is true, no value yet so generate and store a value
             (true, None) => {
@@ -356,8 +373,8 @@ impl SignerRouter {
                 Ok(())
             }
 
-            // Flag is true but value is already set, error!
-            (true, Some(_)) => Err(()),
+            // Flag is true but value is already set, use the existing value
+            (true, Some(_)) => Ok(()),
         }?;
 
         // Return a ref-counted reference to the set value
