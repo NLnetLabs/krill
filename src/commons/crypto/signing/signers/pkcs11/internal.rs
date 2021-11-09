@@ -110,7 +110,7 @@ impl TryFrom<&Pkcs11SignerConfig> for ConnectionSettings {
     type Error = SignerError;
 
     fn try_from(conf: &Pkcs11SignerConfig) -> Result<Self, Self::Error> {
-        let context = Pkcs11Context::get_or_load(Path::new(&conf.lib_path))?;
+        let context = Pkcs11Context::get_or_load(Path::new(&conf.lib_path));
         let slot_id = conf.slot_id.clone();
         let slot_label = conf.slot_label.clone();
         let user_pin = conf.user_pin.clone();
