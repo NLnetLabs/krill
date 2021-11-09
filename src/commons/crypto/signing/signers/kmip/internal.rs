@@ -11,7 +11,7 @@ use backoff::ExponentialBackoff;
 use bcder::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
 use kmip::{
-    client::{Client, ClientCertificate, ConnectionSettings},
+    client::{Client, ClientCertificate},
     types::{
         common::{KeyMaterial, ObjectType, Operation},
         response::{ManagedObject, RNGRetrieveResponsePayload},
@@ -51,10 +51,6 @@ const RETRY_REQ_UNTIL_MAX: Duration = Duration::from_secs(30);
 /// The maximum number of concurrent connections to the KMIP server to pool.
 const MAX_CONCURRENT_SERVER_CONNECTIONS: u32 = 5;
 
-/// TODO: Make this a configuration setting. For now set it to true because PyKMIP 0.10.0 says it doesn't support the
-/// `ModifyAttribute` but sending a modify attribute request succeeds.
-const IGNORE_MISSING_CAPABILITIES: bool = true;
-
 /// A KMIP client that uses a specific TLS and TCP stream implementation. Currently set to [SslStream] from the
 /// [openssl] crate. This will be a different type if we switch to different TCP and/or TLS implementations or to an
 /// async implementation, but the client interface will remain the same.
@@ -79,6 +75,9 @@ pub struct KmipSignerConfig {
     pub insecure: bool,
 
     #[serde(default)]
+    pub deficient: bool,
+
+    #[serde(default)]
     pub server_cert_path: Option<PathBuf>,
 
     #[serde(default)]
@@ -95,6 +94,13 @@ pub struct KmipSignerConfig {
 
     #[serde(default)]
     pub password: Option<String>,
+}
+
+#[derive(Debug)]
+struct ConnectionSettings {
+    client: kmip::client::ConnectionSettings,
+
+    deficient: bool,
 }
 
 impl TryFrom<&KmipSignerConfig> for ConnectionSettings {
@@ -129,7 +135,7 @@ impl TryFrom<&KmipSignerConfig> for ConnectionSettings {
             None => None,
         };
 
-        Ok(ConnectionSettings {
+        let client_conn_settings = kmip::client::ConnectionSettings {
             host,
             port,
             username,
@@ -142,6 +148,11 @@ impl TryFrom<&KmipSignerConfig> for ConnectionSettings {
             read_timeout: Some(Duration::from_secs(5)),
             write_timeout: Some(Duration::from_secs(5)),
             max_response_bytes: Some(64 * 1024),
+        };
+
+        Ok(ConnectionSettings {
+            client: client_conn_settings,
+            deficient: conf.deficient,
         })
     }
 }
@@ -270,28 +281,32 @@ impl UsableServerState {
 impl KmipSigner {
     /// Verify if the configured KMIP server is contactable and supports the required capabilities.
     fn probe_server(
-        _name: String,
+        name: String,
         status: &ProbeStatus<ConnectionSettings, SignerError, UsableServerState>,
     ) -> Result<UsableServerState, ProbeError<SignerError>> {
         let conn_settings = status.config()?;
-        debug!("Probing server at {}:{}", conn_settings.host, conn_settings.port);
+        debug!(
+            "[{}] Probing server at {}:{}",
+            name, conn_settings.client.host, conn_settings.client.port
+        );
 
         // Attempt a one-off connection to check if we should abort due to a configuration error (e.g. unusable
         // certificate) that will never work, and to determine the capabilities of the server (which may affect our
         // behaviour).
-        let conn = ConnectionManager::connect_one_off(conn_settings.as_ref()).map_err(|err| {
+        let conn = ConnectionManager::connect_one_off(&conn_settings.client).map_err(|err| {
             match err {
                 // Fatal error
                 kmip::client::Error::ConfigurationError(err) => {
-                    error!("Failed to connect KMIP server: Configuration error: {}", err);
+                    error!("[{}] Failed to connect KMIP server: Configuration error: {}", name, err);
                     ProbeError::CompletedUnusable
                 }
 
                 // I/O error attempting to contact the server or a problem on an internal problem at the server, not
                 // necessarily fatal or a reason to abort creating the pool.
                 kmip::client::Error::ServerError(err) => {
-                    error!("Failed to connect KMIP server: Server error: {}", err);
-                    ProbeError::CallbackFailed(SignerError::KmipError(format!("Failed to connect to server: {}", err)))
+                    let err_msg = format!("[{}] Failed to connect to server: Server error: {}", name, err);
+                    error!("{}", err_msg);
+                    ProbeError::CallbackFailed(SignerError::KmipError(err_msg))
                 }
 
                 // Impossible errors: we didn't yet try to send a request or receive a response
@@ -302,12 +317,12 @@ impl KmipSigner {
                 | kmip::client::Error::InternalError(err)
                 | kmip::client::Error::Unknown(err)
                 | kmip::client::Error::ItemNotFound(err) => {
-                    error!("Failed to connect KMIP server: Unexpected error: {}", err);
+                    error!("[{}] Failed to connect KMIP server: Unexpected error: {}", name, err);
                     ProbeError::CompletedUnusable
                 }
 
                 other => {
-                    error!("Failed to connect KMIP server: Unexpected error: {}", other);
+                    error!("[{}] Failed to connect KMIP server: Unexpected error: {}", name, other);
                     ProbeError::CompletedUnusable
                 }
             }
@@ -338,16 +353,22 @@ impl KmipSigner {
 
         // Warn about and (optionally) fail due to the lack of any unsupported operations.
         if !unsupported_operations.is_empty() {
-            warn!(
-                "KMIP server lacks support for one or more required operations: {}",
-                unsupported_operations.join(",")
-            );
-
             // Hard fail due to unsupported operations, unless our configuration tells us to try using this server
             // anyway. For example, PyKMIP 0.10.0 does not include the ModifyAttribute operation in the set of
             // supported operations even though it does support it. Without this flag we would not be able to use
             // PyKMIP with Krill!
-            if !IGNORE_MISSING_CAPABILITIES {
+            if conn_settings.deficient {
+                warn!(
+                    "[{}] Ignoring KMIP server lacking support for one or more required operations: {}",
+                    name,
+                    unsupported_operations.join(",")
+                );
+            } else {
+                error!(
+                    "[{}] KMIP server lacks support for one or more required operations: {}",
+                    name,
+                    unsupported_operations.join(",")
+                );
                 return Err(ProbeError::CompletedUnusable);
             }
         }
@@ -359,16 +380,16 @@ impl KmipSigner {
 
         // Success! We can use this server. Announce it and switch our status to KmipSignerStatus::Usable.
         info!(
-            "Using KMIP server '{}' at {}:{}",
-            server_identification, conn_settings.host, conn_settings.port
+            "[{}] Using KMIP server '{}' at {}:{}",
+            name, server_identification, conn_settings.client.host, conn_settings.client.port
         );
 
         let supports_rng_retrieve = supported_operations.contains(&Operation::RNGRetrieve);
         let conn_info = format!(
             "KMIP Signer [vendor: {}, host: {}, port: {}]",
-            server_identification, conn_settings.host, conn_settings.port
+            server_identification, conn_settings.client.host, conn_settings.client.port
         );
-        let pool = ConnectionManager::create_connection_pool(conn_settings, MAX_CONCURRENT_SERVER_CONNECTIONS)?;
+        let pool = ConnectionManager::create_connection_pool(Arc::new(conn_settings.client.clone()), MAX_CONCURRENT_SERVER_CONNECTIONS)?;
         let state = UsableServerState::new(pool, supports_rng_retrieve, conn_info);
 
         Ok(state)

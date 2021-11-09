@@ -75,7 +75,6 @@ pub enum LoginMode {
     LoginRequired,
 }
 
-// Placeholder struct
 #[derive(Clone, Debug)]
 struct ConnectionSettings {
     context: ThreadSafePkcs11Context,
