@@ -1262,6 +1262,59 @@ impl ParentStatuses {
         self.0.iter()
     }
 
+    /// Get the first synchronization candidates based on the following:
+    /// - take the given ca_parents for which no current status exists first
+    /// - then sort by last exchange, minute grade granularity - oldest first
+    ///    - where failures come before success within the same minute
+    /// - then take the first N parents for this batch
+    pub fn sync_candidates(&self, ca_parents: Vec<&ParentHandle>, batch: usize) -> Vec<ParentHandle> {
+        let mut parents = vec![];
+
+        // Add any parent for which no current status is known to the candidate list first.
+        for parent in ca_parents {
+            if !self.0.contains_key(parent) {
+                parents.push(parent.clone());
+            }
+        }
+
+        // Then add the ones for which we do have a status, sorted by their
+        // last exchange.
+        let mut parents_by_last_exchange = self.sorted_by_last_exchange();
+        parents.append(&mut parents_by_last_exchange);
+
+        // But truncate to the specified batch size
+        parents.truncate(batch);
+
+        parents
+    }
+
+    // Return the parents sorted by last exchange, i.e. let the parents
+    // without an exchange be first, and then from longest ago to most recent.
+    // Uses minute grade granularity and in cases where the exchanges happened in
+    // the same minute failures take precedence (come before) successful exchanges.
+    pub fn sorted_by_last_exchange(&self) -> Vec<ParentHandle> {
+        let mut sorted_parents: Vec<(&ParentHandle, &ParentStatus)> = self.iter().collect();
+        sorted_parents.sort_by(|a, b| {
+            // we can map the 'no last exchange' case to 1970..
+            let a_last_exchange = a.1.last_exchange.as_ref();
+            let b_last_exchange = b.1.last_exchange.as_ref();
+
+            let a_last_exchange_time = a_last_exchange.map(|e| i64::from(e.timestamp)).unwrap_or(0) / 60;
+            let b_last_exchange_time = b_last_exchange.map(|e| i64::from(e.timestamp)).unwrap_or(0) / 60;
+
+            if a_last_exchange_time == b_last_exchange_time {
+                // compare success / failure
+                let a_last_exchange_res = a_last_exchange.map(|e| e.result().was_success()).unwrap_or(false);
+                let b_last_exchange_res = b_last_exchange.map(|e| e.result().was_success()).unwrap_or(false);
+                a_last_exchange_res.cmp(&b_last_exchange_res)
+            } else {
+                a_last_exchange_time.cmp(&b_last_exchange_time)
+            }
+        });
+
+        sorted_parents.into_iter().map(|(handle, _)| handle).cloned().collect()
+    }
+
     pub fn set_failure(&mut self, parent: &ParentHandle, uri: &ServiceUri, error: ErrorResponse, next_seconds: i64) {
         self.get_mut_status(parent)
             .set_failure(uri.clone(), error, next_seconds);
@@ -1920,6 +1973,12 @@ impl From<Timestamp> for Time {
 impl From<Time> for Timestamp {
     fn from(time: Time) -> Self {
         Timestamp(time.timestamp())
+    }
+}
+
+impl From<Timestamp> for i64 {
+    fn from(t: Timestamp) -> Self {
+        t.0
     }
 }
 
@@ -2906,5 +2965,100 @@ mod test {
         assert!(!old_no_agent.is_suspension_candidate(threshold_seconds));
 
         assert!(old_krill_post_0_9_1.is_suspension_candidate(threshold_seconds));
+    }
+
+    #[test]
+    fn find_sync_candidates() {
+        let uri = ServiceUri::try_from("https://example.com/rfc6492/child/".to_string()).unwrap();
+
+        let in_five_seconds = Timestamp::now_plus_seconds(5);
+        let five_seconds_ago = Timestamp::now_minus_seconds(5);
+        let five_mins_ago = Timestamp::now_minus_seconds(300);
+
+        let p1_new_parent = ParentHandle::from_str("p1").unwrap();
+        let p2_new_parent = ParentHandle::from_str("p2").unwrap();
+        let p3_no_exchange = ParentHandle::from_str("p3").unwrap();
+        let p4_success = ParentHandle::from_str("p4").unwrap();
+        let p5_failure = ParentHandle::from_str("p5").unwrap();
+        let p6_success_long_ago = ParentHandle::from_str("p6").unwrap();
+
+        let p3_status_no_exchange = ParentStatus {
+            last_exchange: None,
+            last_success: None,
+            next_exchange_before: in_five_seconds,
+            all_resources: ResourceSet::default(),
+            entitlements: HashMap::new(),
+        };
+
+        let p4_status_success = ParentStatus {
+            last_exchange: Some(ParentExchange {
+                timestamp: five_seconds_ago,
+                uri: uri.clone(),
+                result: ExchangeResult::Success,
+            }),
+            last_success: None,
+            next_exchange_before: in_five_seconds,
+            all_resources: ResourceSet::default(),
+            entitlements: HashMap::new(),
+        };
+
+        let p5_status_failure = ParentStatus {
+            last_exchange: Some(ParentExchange {
+                timestamp: five_seconds_ago,
+                uri: uri.clone(),
+                result: ExchangeResult::Failure(ErrorResponse::new("err", "err!")),
+            }),
+            last_success: None,
+            next_exchange_before: in_five_seconds,
+            all_resources: ResourceSet::default(),
+            entitlements: HashMap::new(),
+        };
+
+        let p6_status_success_long_ago = ParentStatus {
+            last_exchange: Some(ParentExchange {
+                timestamp: five_mins_ago,
+                uri: uri.clone(),
+                result: ExchangeResult::Success,
+            }),
+            last_success: None,
+            next_exchange_before: in_five_seconds,
+            all_resources: ResourceSet::default(),
+            entitlements: HashMap::new(),
+        };
+
+        let mut inner_statuses = HashMap::new();
+        inner_statuses.insert(p3_no_exchange.clone(), p3_status_no_exchange);
+        inner_statuses.insert(p4_success.clone(), p4_status_success);
+        inner_statuses.insert(p5_failure.clone(), p5_status_failure);
+        inner_statuses.insert(p6_success_long_ago.clone(), p6_status_success_long_ago);
+
+        let parent_statuses = ParentStatuses(inner_statuses);
+
+        let ca_parents = vec![
+            &p1_new_parent,
+            &p2_new_parent,
+            &p3_no_exchange,
+            &p4_success,
+            &p5_failure,
+            &p6_success_long_ago,
+        ];
+
+        let candidates = parent_statuses.sync_candidates(ca_parents.clone(), 10);
+
+        let expected = vec![
+            p1_new_parent.clone(),
+            p2_new_parent.clone(),
+            p3_no_exchange.clone(),
+            p6_success_long_ago.clone(),
+            p5_failure.clone(),
+            p4_success.clone(),
+        ];
+
+        assert_eq!(candidates, expected);
+
+        let candidates_trimmed = parent_statuses.sync_candidates(ca_parents, 1);
+        let expected_trimmed = vec![p1_new_parent];
+
+        assert_eq!(candidates_trimmed, expected_trimmed);
     }
 }

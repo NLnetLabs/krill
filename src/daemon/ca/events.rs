@@ -374,10 +374,10 @@ impl fmt::Display for RoaUpdates {
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AspaObjectsUpdates {
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     updated: Vec<AspaInfo>,
 
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     removed: Vec<AspaCustomer>,
 }
 
