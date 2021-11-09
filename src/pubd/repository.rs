@@ -985,9 +985,13 @@ impl RepositoryAccessProxy {
     }
 
     fn read(&self) -> KrillResult<Arc<RepositoryAccess>> {
-        self.store
-            .get_latest(&self.key)
-            .map_err(|e| Error::custom(format!("Publication Server data missing: {}", e)))
+        if !self.initialized()? {
+            Err(Error::RepositoryServerNotInitialized)
+        } else {
+            self.store
+                .get_latest(&self.key)
+                .map_err(|e| Error::custom(format!("Publication Server data issue: {}", e)))
+        }
     }
 
     pub fn publishers(&self) -> KrillResult<Vec<PublisherHandle>> {
@@ -999,16 +1003,20 @@ impl RepositoryAccessProxy {
     }
 
     pub fn add_publisher(&self, req: rfc8183::PublisherRequest, actor: &Actor) -> KrillResult<()> {
-        let base_uri = self.read()?.base_uri_for(req.publisher_handle())?;
+        let base_uri = self.read()?.base_uri_for(req.publisher_handle())?; // will verify that server was initialized
         let cmd = RepoAccessCmdDet::add_publisher(&self.key, req, base_uri, actor);
         self.store.command(cmd)?;
         Ok(())
     }
 
     pub fn remove_publisher(&self, name: PublisherHandle, actor: &Actor) -> KrillResult<()> {
-        let cmd = RepoAccessCmdDet::remove_publisher(&self.key, name, actor);
-        self.store.command(cmd)?;
-        Ok(())
+        if !self.initialized()? {
+            Err(Error::RepositoryServerNotInitialized)
+        } else {
+            let cmd = RepoAccessCmdDet::remove_publisher(&self.key, name, actor);
+            self.store.command(cmd)?;
+            Ok(())
+        }
     }
 
     /// Returns the repository URI information for a publisher.
