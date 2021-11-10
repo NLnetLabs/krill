@@ -8,7 +8,6 @@
 
 use std::{collections::HashMap, fmt::Debug};
 
-use chrono::Duration;
 use rpki::repository::{
     aspa::{Aspa, AspaBuilder},
     sigobj::SignedObjectBuilder,
@@ -190,19 +189,24 @@ impl AspaObjects {
         Ok(object_updates)
     }
 
-    // Re-new ASPAs before they would expire
+    // Re-new ASPAs, if the renew_threshold is specified, then
+    // only objects which will expire before that time will be
+    // renewed.
     pub fn renew(
         &self,
         certified_key: &CertifiedKey,
+        renew_threshold: Option<Time>,
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<AspaObjectsUpdates> {
         let mut updates = AspaObjectsUpdates::default();
 
-        let renew_threshold = Time::now() + Duration::weeks(issuance_timing.timing_aspa_reissue_weeks_before);
-
         for aspa in self.0.values() {
-            if aspa.expires() < renew_threshold {
+            let renew = renew_threshold
+                .map(|threshold| aspa.expires() < threshold)
+                .unwrap_or(true); // always renew if no threshold is specified
+
+            if renew {
                 let aspa_definition = aspa.definition().clone();
 
                 let new_aspa = self.make_aspa(aspa_definition, certified_key, issuance_timing, signer)?;
