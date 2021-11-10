@@ -365,8 +365,7 @@ mod tests {
         let _ = fs::remove_dir_all(work_dir);
     }
 
-    #[cfg(feature = "hsm")]
-    fn unmapped_keys_test_core(do_upgrade: bool) {
+    #[cfg(all(feature = "hsm", not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11"))))]    fn unmapped_keys_test_core(do_upgrade: bool) {
         let expected_key_id = KeyIdentifier::from_str("5CBCAB14B810C864F3EEA8FD102B79F4E53FCC70").unwrap();
 
         // Create a naked OpenSSL signer (i.e. not accessed via KrillSigner) and create a key.
@@ -404,13 +403,13 @@ mod tests {
         let _ = fs::remove_dir_all(work_dir);
     }
 
-    #[cfg(feature = "hsm")]
+    #[cfg(all(feature = "hsm", not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11"))))]
     #[test]
     fn test_without_upgrade_with_unmapped_keys() {
         unmapped_keys_test_core(false);
     }
 
-    #[cfg(feature = "hsm")]
+    #[cfg(all(feature = "hsm", not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11"))))]
     #[test]
     fn test_upgrade_with_unmapped_keys() {
         unmapped_keys_test_core(true);
