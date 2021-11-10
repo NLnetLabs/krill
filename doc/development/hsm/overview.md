@@ -21,13 +21,12 @@ The feature adds (or will add) the following to Krill:
 
   - Random value generation fallback support:
     - Not all PKCS#11 or KMIP compatible devices support generating random values.
-    - Fallback in such cases to the OpenSSL signer (or to a user specified signer?)
+    - Fallback in such cases to the OpenSSL signer (or to a user specified signer).
 
   - The concept of signing with specific signers for specific purposes:
-    - Signer for one-time keys (avoid slow HSMs for keys that don't need the security guarantees an HSM provides)
+    - Signer for one-off keys (avoid slow HSMs for keys that don't need the security guarantees an HSM provides)
     - Signer for new keys
     - Signer for existing keys (based on key tracking as mentioned above)
-    - Signer for key rollover
     - Signer for fallback random value generation
 
 The feature also adds two new Rust crates for KMIP support:
@@ -42,4 +41,5 @@ The feature also adds two new Rust crates for KMIP support:
 The feature only lightly touches the core RPKI related code in Krill in order to dispatch signing
 related requests to the correct signer. The main source code components impacted by this feature are:
 
-  - ``src/daemon/crypto/signing.rs``
+  - ``src/daemon/crypto/signing/``
+  - ``src/daemon/config.rs``

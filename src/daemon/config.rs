@@ -20,6 +20,7 @@ use rpki::{repository::x509::Time, uri};
 use crate::{
     commons::{
         api::{PublicationServerUris, PublisherHandle, Token},
+        crypto::OpenSslSignerConfig,
         error::KrillIoError,
         util::ext_serde,
     },
@@ -31,7 +32,7 @@ use crate::{
 use crate::daemon::auth::providers::{config_file::config::ConfigAuthUsers, openid_connect::ConfigAuthOpenIDConnect};
 
 #[cfg(feature = "hsm")]
-use crate::commons::crypto::{KmipSignerConfig, OpenSslSignerConfig, Pkcs11SignerConfig};
+use crate::commons::crypto::{KmipSignerConfig, Pkcs11SignerConfig};
 
 //------------ ConfigDefaults ------------------------------------------------
 
@@ -106,11 +107,6 @@ impl ConfigDefaults {
     #[cfg(feature = "multi-user")]
     fn auth_private_attributes() -> Vec<String> {
         vec![]
-    }
-
-    #[cfg(feature = "hsm")]
-    fn signers() -> Vec<SignerConfig> {
-        vec![SignerConfig::default()]
     }
 
     fn ca_refresh_seconds() -> u32 {
@@ -272,7 +268,7 @@ pub struct Config {
     pub auth_openidconnect: Option<ConfigAuthOpenIDConnect>,
 
     #[cfg(feature = "hsm")]
-    #[serde(default = "ConfigDefaults::signers")]
+    #[serde(default)]
     pub signers: Vec<SignerConfig>,
 
     #[serde(default = "ConfigDefaults::ca_refresh_seconds", alias = "ca_refresh")]
@@ -545,6 +541,16 @@ impl Config {
     pub fn testbed(&self) -> Option<&TestBed> {
         self.testbed.as_ref()
     }
+
+    #[cfg(not(feature = "hsm"))]
+    pub fn signers(&self) -> &[SignerConfig] {
+        &[]
+    }
+
+    #[cfg(feature = "hsm")]
+    pub fn signers(&self) -> &[SignerConfig] {
+        &self.signers
+    }
 }
 
 /// # Create
@@ -584,8 +590,8 @@ impl Config {
         let auth_openidconnect = None;
         #[cfg(feature = "hsm")]
         let signers = match second_signer {
-            false => vec![SignerConfig::default()],
-            true => vec![SignerConfig::new(
+            false => vec![],
+            true => vec![SignerConfig::all(
                 Some("Second Signer".to_string()),
                 SignerType::OpenSsl(OpenSslSignerConfig::default()),
             )],
@@ -1181,6 +1187,10 @@ impl<'de> Deserialize<'de> for AuthType {
 //   type = "KMIP"
 //   ...
 
+// Dummy type to permit compilation to succeed.
+#[cfg(not(feature = "hsm"))]
+pub struct SignerConfig;
+
 #[cfg(feature = "hsm")]
 #[derive(Clone, Debug, Deserialize)]
 pub struct SignerConfig {
@@ -1205,72 +1215,53 @@ pub struct SignerConfig {
     pub signer_type: SignerType,
 }
 
-#[cfg(feature = "hsm")]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(tag = "type")]
 pub enum SignerType {
     #[serde(alias = "OpenSSL")]
     OpenSsl(OpenSslSignerConfig),
+
+    #[cfg(feature = "hsm")]
     #[serde(alias = "PKCS#11")]
     Pkcs11(Pkcs11SignerConfig),
+
+    #[cfg(feature = "hsm")]
     #[serde(alias = "KMIP")]
     Kmip(KmipSignerConfig),
 }
 
-// In test mode we use different default signer configurations based on the enabled Rust feature flags. This allows us
-// to validate the PKCS#11 and KMIP signers with the normal Krill test suite as well as the historical default OpenSSL
-// based testing.
-#[cfg(feature = "hsm")]
-impl Default for SignerConfig {
-    fn default() -> Self {
-        #[cfg(not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11")))]
-        {
-            let signer_type = SignerType::OpenSsl(OpenSslSignerConfig::default());
-            SignerConfig::new(None, signer_type)
-        }
+impl std::fmt::Display for SignerType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SignerType::OpenSsl(_) => f.write_str("OpenSSL"),
 
-        #[cfg(feature = "hsm-tests-kmip")]
-        {
-            let signer_type = SignerType::Kmip(KmipSignerConfig {
-                host: "127.0.0.1".to_string(),
-                port: 5696,
-                username: None,
-                password: None,
-                insecure: true,
-                client_cert_path: Some(PathBuf::from_str("test-resources/pykmip/server.crt").unwrap()),
-                client_cert_private_key_path: Some(PathBuf::from_str("test-resources/pykmip/server.key").unwrap()),
-                server_cert_path: Some(PathBuf::from_str("test-resources/pykmip/server.crt").unwrap()),
-                server_ca_cert_path: Some(PathBuf::from_str("test-resources/pykmip/ca.crt").unwrap()),
-            });
+            #[cfg(feature = "hsm")]
+            SignerType::Pkcs11(_) => f.write_str("PKCS#11"),
 
-            // PyKMIP doesn't support random number generation so set the random flag to false in the created signer config
-            let mut signer_config = SignerConfig::new(None, signer_type);
-            signer_config.random = false;
-            signer_config
-        }
-
-        #[cfg(feature = "hsm-tests-pkcs11")]
-        {
-            let signer_type = SignerType::Pkcs11(Pkcs11SignerConfig {
-                lib_path: "/usr/lib/softhsm/libsofthsm2.so".to_string(),
-                user_pin: Some("1234".to_string()),
-                slot_label: Some("My token 1".to_string()),
-                slot_id: None,
-                login: true,
-            });
-            SignerConfig::new(None, signer_type)
+            #[cfg(feature = "hsm")]
+            SignerType::Kmip(_) => f.write_str("KMIP"),
         }
     }
 }
 
 #[cfg(feature = "hsm")]
 impl SignerConfig {
-    pub fn new(name: Option<String>, signer_type: SignerType) -> SignerConfig {
+    pub fn all(name: Option<String>, signer_type: SignerType) -> SignerConfig {
         Self {
             name,
             default: true,
             oneoff: true,
             random: true,
+            signer_type,
+        }
+    }
+
+    pub fn default_only(name: Option<String>, signer_type: SignerType) -> SignerConfig {
+        Self {
+            name,
+            default: true,
+            oneoff: false,
+            random: false,
             signer_type,
         }
     }

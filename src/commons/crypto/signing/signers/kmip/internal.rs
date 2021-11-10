@@ -3,6 +3,7 @@ use std::{
     net::TcpStream,
     ops::Deref,
     path::PathBuf,
+    str::FromStr,
     sync::{Arc, RwLock},
     time::Duration,
 };
@@ -94,6 +95,24 @@ pub struct KmipSignerConfig {
 
     #[serde(default)]
     pub password: Option<String>,
+}
+
+// For testing.
+impl Default for KmipSignerConfig {
+    fn default() -> Self {
+        Self {
+            host: "127.0.0.1".to_string(),
+            port: 5696,
+            username: None,
+            password: None,
+            insecure: true,
+            deficient: true,
+            client_cert_path: Some(PathBuf::from_str("test-resources/pykmip/server.crt").unwrap()),
+            client_cert_private_key_path: Some(PathBuf::from_str("test-resources/pykmip/server.key").unwrap()),
+            server_cert_path: Some(PathBuf::from_str("test-resources/pykmip/server.crt").unwrap()),
+            server_ca_cert_path: Some(PathBuf::from_str("test-resources/pykmip/ca.crt").unwrap()),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -389,7 +408,10 @@ impl KmipSigner {
             "KMIP Signer [vendor: {}, host: {}, port: {}]",
             server_identification, conn_settings.client.host, conn_settings.client.port
         );
-        let pool = ConnectionManager::create_connection_pool(Arc::new(conn_settings.client.clone()), MAX_CONCURRENT_SERVER_CONNECTIONS)?;
+        let pool = ConnectionManager::create_connection_pool(
+            Arc::new(conn_settings.client.clone()),
+            MAX_CONCURRENT_SERVER_CONNECTIONS,
+        )?;
         let state = UsableServerState::new(pool, supports_rng_retrieve, conn_info);
 
         Ok(state)

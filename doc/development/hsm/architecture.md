@@ -2,15 +2,15 @@
 
 ## Terminology
 
-- `Signer` trait: A trait defined by the `rpki` Rust crate, used by functions offered by the `rpki` Rust crate, and implemented by the Krill. Defines an interface for creation and deletion of key pairs, lookup of and signing of data by a key known to the `Signer`, and generation of random byte sequences.
+- `Signer` trait: A trait defined by the `rpki` Rust crate, used by functions offered by the `rpki` Rust crate, and implemented by Krill. Defines an interface for creation and deletion of key pairs, lookup of and signing of data by a key known to the `Signer`, and generation of random byte sequences.
 
 - `Signer` implementation: Until now Krill had a single implementation, `OpenSslSigner`. The `HSM` feature adds two new signers to Krill: `Pkcs11Signer` and `KmipSigner`.
 
-- `Signer`: An instance of an implementation of the `Signer` trait. Krill can be configured to create multiple instances of the same `Signer` trait each using a different configuration. When referring to a Signer this is what is usually being referred to.
+- `Signer`: An instance of an implementation of the `Signer` trait. Krill can be configured to create multiple instances of the same `Signer` trait implementation, each using a different configuration. When referring to a Signer this is what is usually being referred to.
 
 - `Signer` backend: 3rd party logic and storage, usually running outside Krill either on the same host or remotely, that works with keys on behalf of Krill. The backend details vary per signer implementation and configuration.
 
-- `KeyIdentifier`: This is the SHA-1 hash of the bits of the binary DER encoding of the `SubjectPublicKey` field of the X.509 ASN.1 `SubjectPublicKeyInfo` data structure. It uniquely (or the likelyhood of collisions is sufficiently low that it can be considered unique) identifies a public/private key pair, e.g. the private key that was used to sign a certificate.
+- `KeyIdentifier`: The SHA-1 hash of the bits of the binary DER encoding of the `SubjectPublicKey` field of the X.509 ASN.1 `SubjectPublicKeyInfo` data structure. It uniquely (or the likelyhood of collisions is sufficiently low that it can be considered unique) identifies a public/private key pair, e.g. the private key that was used to sign a certificate.
 
 ## Signer backends
 
@@ -117,9 +117,9 @@ References:
   
   - Rollover to a new signer (creation of new keys with the new signer while continued use of keys created by the previous signer).
 
-  - Fallback to the OpenSSL signer for random number generation when the chosen doesn't support this capability.
+  - Fallback to the OpenSSL signer for random number generation when the chosen signer doesn't support this capability.
 
-  - Generation of one-time keys using OpenSSL even when using a separate signer for creation of other keys, as doing this with an HSM can require multiple potentially slow requests (create, activate, sign, deactivate, destroy, potentially each being a network round trip plus relatively slow execution of operations compared to local OpenSSL) and because the security benefits of an HSM are not thought to be necessary for one-time signing keys.
+  - Generation of one-off keys using OpenSSL even when using a separate signer for creation of other keys, as doing this with an HSM can require multiple potentially slow requests (create, activate, sign, deactivate, destroy, potentially each being a network round trip plus relatively slow execution of operations compared to local OpenSSL) and because the security benefits of an HSM are not thought to be necessary for one-off signing keys.
 
 - Maintain mappings of Krill `KeyIdentifier` to signer identifier (so that we can dispatch signing requests to the
   correct signer) and `KeyIdentifier` to signer specific key identifiers (so that we can instruct the signer to work with the correct key).
@@ -156,8 +156,9 @@ Krill calling code -> KrillSigner -> OpenSslSigner
 New: With the addition of HSM support there may be multiple concurrently active Signers and the control flow becomes this:
 
 ```
-                                       + Pending Signers: [SignerProvider, SignerProvider, ...]
-                                       |
+                    Parses config &
+                    creates signers    + Pending Signers: [SignerProvider, SignerProvider, ...]
+                           :           |
 Krill calling code -> KrillSigner -> SignerRouter
                                        |
   where:                               + Ready Signers:   [SignerProvider, SignerProvider, ...]
@@ -167,15 +168,15 @@ Krill calling code -> KrillSigner -> SignerRouter
       - Pkcs11Signer                           + AggregateStore<SignerInfo>
 ```
 
-- `KrillSigner` remains the central interface between Krill and the signer backends,, handling conversion of error types and providing some higher level functions that make use of the underlying signers. `KrillSigner` delegates signer setup and dispatch to `SignerRouter`.
+- `KrillSigner` remains the central interface between Krill and the signer backends,, handling config file parsing and initial signer creation, conversion of error types and providing higher level functions that make use of the underlying signers. `KrillSigner` delegates signer registration and dispatch to `SignerRouter`.
   
 - `SignerRouter` uses an instance of `SignerMapper` to record which signer backends exist and which keys they possess. Signers use the same `SignerMapper` instance to register the keys as their own and to register the mapping between Krill `KeyIdentifier` and signer backend specific internal identifier(s).
   
-- `SignerRouter` creates, registers/binds and dispatches to signers. Signers start in the pending set and are not yet usable. Registration and binding are the process of probing a singer backend to establish if we can connect to it and if so if it is usable. New signers are registered by creating an identity key inside it and recording it in the `SignerMapper`. Later invocations of Krill will verify the identity of the signer (and thus which `SignerMapper` ID relates to it and which keys it possesses) using this identity key. A signer is moved to the ready set once it has been successfully probed and registered/bound and its `SignerMapper` ID has been determined and communicated to it. Signers that fail to be probed or are discovered to be unusable are dropped from the pending set without being added to the ready set.
+- `SignerRouter` registers/binds and dispatches to signers. Signers start in the pending set and are not yet usable. Registration and binding are the process of probing a singer backend to establish if we can connect to it and if so if it is usable. New signers are registered by creating an identity key inside it and recording it in the `SignerMapper`. Later invocations of Krill will verify the identity of the signer (and thus which `SignerMapper` ID relates to it and which keys it possesses) using this identity key. A signer is moved to the ready set once it has been successfully probed and registered/bound and its `SignerMapper` ID has been determined and communicated to it. Signers that fail to be probed or are discovered to be unusable are dropped from the pending set without being added to the ready set.
 
 - `SignerRouter` identifies the appropriate signer for a given request. Signer selection happens in one of two ways:
   - For requests relating to an existing key the request is routed to the signer that owns the key, as identified by the `SignerMapper`. 
-  - For all other requests a signer is selected based on its assigned roles, e.g. rollover signer, one-off signer or random generator signer roles can be assigned to specific signers.
+  - For all other requests a signer is selected based on its assigned roles, e.g. one-off signer or random generator signer roles can be assigned to specific signers, as defined by its `SignerFlags`.
  
   Actual dispatch is delegated to an instance of `SignerProvider` because enum based dispatch is noisy and the "Provider" enum dispatch pattern was alrady established in the multi-user auth code.
 
