@@ -1,6 +1,10 @@
 # Change Log
 
-## 0.9.3 (RC2) 'The Thundering Herd'
+## 0.9.3 (RC3) 'The Thundering Herd'
+
+RC3 fixes the following issues in RC2:
+- Use the, now official, ASPA OID (#700)
+- Re-issue ASPA objects on key rolls (717)
 
 This release adds the following features and fixes:
 - Prevent a thundering herd of hosted CAs publishing at the same time (#692) 
