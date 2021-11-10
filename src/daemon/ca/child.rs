@@ -212,36 +212,30 @@ impl ChildCertificates {
     ///       with those resources.
     pub fn shrink_overclaiming(
         &self,
-        certified_key: &CertifiedKey,
+        updated_key: &CertifiedKey,
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<ChildCertificateUpdates> {
         let mut updates = ChildCertificateUpdates::default();
 
-        let received_resources = certified_key.incoming_cert().resources();
+        let updated_resources = updated_key.incoming_cert().resources();
 
         for issued in self.issued.values() {
-            if let Some(remaining_resources) = issued.remaining_resources(received_resources) {
-                if remaining_resources.is_empty() {
+            if let Some(reduced_set) = issued.reduced_applicable_resources(updated_resources) {
+                if reduced_set.is_empty() {
                     // revoke
                     updates.remove(issued.subject_key_identifier());
                 } else {
                     // re-issue
-                    updates.issue(self.re_issue(
-                        issued,
-                        Some(remaining_resources),
-                        certified_key,
-                        issuance_timing,
-                        signer,
-                    )?);
+                    updates.issue(self.re_issue(issued, Some(reduced_set), updated_key, issuance_timing, signer)?);
                 }
             }
         }
 
         // Also shrink suspended, in case they would come back
-        for suspended in self.issued.values() {
-            if let Some(remaining_resources) = suspended.remaining_resources(received_resources) {
-                if remaining_resources.is_empty() {
+        for suspended in self.suspended.values() {
+            if let Some(reduced_set) = suspended.reduced_applicable_resources(updated_resources) {
+                if reduced_set.is_empty() {
                     // revoke
                     updates.remove(suspended.subject_key_identifier());
                 } else {
@@ -252,8 +246,8 @@ impl ChildCertificates {
                     //       un-suspended.
                     updates.suspend(self.re_issue(
                         suspended,
-                        Some(remaining_resources),
-                        certified_key,
+                        Some(reduced_set),
+                        updated_key,
                         issuance_timing,
                         signer,
                     )?);

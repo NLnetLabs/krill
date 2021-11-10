@@ -302,12 +302,12 @@ impl ResourceClass {
             );
 
             // Prep certified key for updated received certificate
-            let certified_key = CertifiedKey::create(rcvd_cert);
+            let updated_key = CertifiedKey::create(rcvd_cert);
 
-            // Check whether child certificates should be shrunk
+            // Shrink any overclaiming child certificates
             let updates = self
                 .certificates
-                .shrink_overclaiming(&certified_key, &config.issuance_timing, signer)?;
+                .shrink_overclaiming(&updated_key, &config.issuance_timing, signer)?;
             if !updates.is_empty() {
                 res.push(CaEvtDet::ChildCertificatesUpdated {
                     resource_class_name: self.name.clone(),
@@ -315,9 +315,10 @@ impl ResourceClass {
                 });
             }
 
-            // Check whether ROAs need to be re-issued.
+            // Re-issue ROAs based on updated resources.
+            // Note that route definitions will not have changed in this case, but the decision logic is all the same.
             {
-                let updates = self.roas.update(routes, &certified_key, config, signer)?;
+                let updates = self.roas.update(routes, &updated_key, config, signer)?;
                 if !updates.is_empty() {
                     res.push(CaEvtDet::RoasUpdated {
                         resource_class_name: self.name.clone(),
@@ -326,9 +327,10 @@ impl ResourceClass {
                 }
             }
 
-            // Check whether ASPA objects need to be re-issued
+            // Re-issue ASPA objects based on updated resources.
+            // Note that aspa definitions will not have changed in this case, but the decision logic is all the same.
             {
-                let updates = self.aspas.update(aspas, &certified_key, config, signer)?;
+                let updates = self.aspas.update(aspas, &updated_key, config, signer)?;
                 if !updates.is_empty() {
                     res.push(CaEvtDet::AspaObjectsUpdated {
                         resource_class_name: self.name.clone(),
@@ -525,7 +527,7 @@ impl ResourceClass {
 
                 let mut events = vec![key_activated];
 
-                let roa_updates = self.roas.activate_key(new_key, issuance_timing, signer)?;
+                let roa_updates = self.roas.renew(true, new_key, issuance_timing, signer)?;
                 if !roa_updates.is_empty() {
                     let roas_updated = CaEvtDet::RoasUpdated {
                         resource_class_name: self.name.clone(),
@@ -659,7 +661,7 @@ impl ResourceClass {
         signer: &KrillSigner,
     ) -> KrillResult<RoaUpdates> {
         let key = self.get_new_key()?;
-        self.roas.activate_key(key, issuance_timing, signer)
+        self.roas.renew(true, key, issuance_timing, signer)
     }
 
     /// Updates the ROAs in accordance with the current authorizations
