@@ -34,6 +34,7 @@ pub(crate) struct SignerFlags {
     pub is_rand_fallback_signer: bool,
 }
 
+#[cfg(feature = "hsm")]
 impl std::fmt::Display for SignerFlags {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!(

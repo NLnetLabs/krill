@@ -20,6 +20,7 @@ use rpki::{repository::x509::Time, uri};
 use crate::{
     commons::{
         api::{PublicationServerUris, PublisherHandle, Token},
+        crypto::OpenSslSignerConfig,
         error::KrillIoError,
         util::ext_serde,
     },
@@ -31,7 +32,7 @@ use crate::{
 use crate::daemon::auth::providers::{config_file::config::ConfigAuthUsers, openid_connect::ConfigAuthOpenIDConnect};
 
 #[cfg(feature = "hsm")]
-use crate::commons::crypto::{KmipSignerConfig, OpenSslSignerConfig, Pkcs11SignerConfig};
+use crate::commons::crypto::{KmipSignerConfig, Pkcs11SignerConfig};
 
 //------------ ConfigDefaults ------------------------------------------------
 
@@ -1214,14 +1215,17 @@ pub struct SignerConfig {
     pub signer_type: SignerType,
 }
 
-#[cfg(feature = "hsm")]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(tag = "type")]
 pub enum SignerType {
     #[serde(alias = "OpenSSL")]
     OpenSsl(OpenSslSignerConfig),
+
+    #[cfg(feature = "hsm")]
     #[serde(alias = "PKCS#11")]
     Pkcs11(Pkcs11SignerConfig),
+
+    #[cfg(feature = "hsm")]
     #[serde(alias = "KMIP")]
     Kmip(KmipSignerConfig),
 }
@@ -1230,7 +1234,11 @@ impl std::fmt::Display for SignerType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             SignerType::OpenSsl(_) => f.write_str("OpenSSL"),
+
+            #[cfg(feature = "hsm")]
             SignerType::Pkcs11(_) => f.write_str("PKCS#11"),
+
+            #[cfg(feature = "hsm")]
             SignerType::Kmip(_) => f.write_str("KMIP"),
         }
     }
