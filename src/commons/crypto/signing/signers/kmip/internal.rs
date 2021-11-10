@@ -3,6 +3,7 @@ use std::{
     net::TcpStream,
     ops::Deref,
     path::PathBuf,
+    str::FromStr,
     sync::{Arc, RwLock},
     time::Duration,
 };
@@ -95,6 +96,23 @@ pub struct KmipSignerConfig {
 
     #[serde(default)]
     pub password: Option<String>,
+}
+
+// For testing.
+impl Default for KmipSignerConfig {
+    fn default() -> Self {
+        Self {
+            host: "127.0.0.1".to_string(),
+            port: 5696,
+            username: None,
+            password: None,
+            insecure: true,
+            client_cert_path: Some(PathBuf::from_str("test-resources/pykmip/server.crt").unwrap()),
+            client_cert_private_key_path: Some(PathBuf::from_str("test-resources/pykmip/server.key").unwrap()),
+            server_cert_path: Some(PathBuf::from_str("test-resources/pykmip/server.crt").unwrap()),
+            server_ca_cert_path: Some(PathBuf::from_str("test-resources/pykmip/ca.crt").unwrap()),
+        }
+    }
 }
 
 impl TryFrom<&KmipSignerConfig> for ConnectionSettings {

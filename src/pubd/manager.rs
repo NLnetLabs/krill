@@ -208,7 +208,7 @@ mod tests {
 
     use rpki::uri;
 
-    use crate::{commons::crypto::KrillSignerConfig, constants::*, pubd::RrdpServer};
+    use crate::{constants::*, daemon::config::SignerConfig, pubd::RrdpServer};
 
     #[cfg(feature = "hsm")]
     use crate::{commons::crypto::OpenSslSignerConfig, daemon::config::SignerType};
@@ -228,7 +228,7 @@ mod tests {
 
     fn publisher_alice(work_dir: &Path) -> Publisher {
         #[cfg(not(feature = "hsm"))]
-        let signer = KrillSigner::build(work_dir, KrillSignerConfig::default()).unwrap();
+        let signer = KrillSigner::build(work_dir, &[]).unwrap();
 
         // When the "hsm" feature is enabled we could be running the tests with PKCS#11 as the default signer type.
         // In that case, if the backend signer is SoftHSMv2, attempting to create a second instance of KrillSigner in
@@ -238,8 +238,8 @@ mod tests {
         #[cfg(feature = "hsm")]
         let signer = {
             let signer_type = SignerType::OpenSsl(OpenSslSignerConfig::default());
-            let krill_signer_config = KrillSignerConfig::single_signer(Some("Alice".to_string()), signer_type);
-            KrillSigner::build(work_dir, krill_signer_config).unwrap()
+            let signer_config = SignerConfig::all(Some("Alice".to_string()), signer_type);
+            KrillSigner::build(work_dir, &[signer_config]).unwrap()
         };
 
         let key = signer.create_key().unwrap();
@@ -260,7 +260,7 @@ mod tests {
         let config = Arc::new(Config::test(work_dir, true, false, false, false));
         init_config(&config);
 
-        let signer = KrillSigner::build(work_dir, KrillSignerConfig::default()).unwrap();
+        let signer = KrillSigner::build(work_dir, &[]).unwrap();
         let signer = Arc::new(signer);
 
         let repository_manager = RepositoryManager::build(config, signer).unwrap();

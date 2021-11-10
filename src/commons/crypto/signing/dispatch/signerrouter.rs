@@ -1,14 +1,11 @@
-use std::{path::Path, sync::Arc};
+use std::sync::Arc;
 
 use rpki::repository::crypto::{
     signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
 };
 
 use crate::commons::{
-    crypto::{
-        dispatch::signerprovider::SignerProvider,
-        signers::{error::SignerError, softsigner::OpenSslSigner},
-    },
+    crypto::{dispatch::signerprovider::SignerProvider, signers::error::SignerError},
     KrillResult,
 };
 
@@ -16,17 +13,10 @@ use crate::commons::{
 use std::{collections::HashMap, sync::RwLock};
 
 #[cfg(feature = "hsm")]
-use crate::{
-    commons::{
-        api::Handle,
-        crypto::{
-            dispatch::{error::ErrorString, signerinfo::SignerMapper},
-            signers::{kmip::KmipSigner, pkcs11::Pkcs11Signer},
-            KmipSignerConfig, OpenSslSignerConfig, Pkcs11SignerConfig,
-        },
-        error::Error,
-    },
-    daemon::config::{SignerConfig, SignerType},
+use crate::commons::{
+    api::Handle,
+    crypto::dispatch::{error::ErrorString, signerinfo::SignerMapper},
+    error::Error,
 };
 
 /// Manages multiple Signers and routes requests to the appropriate Signer.
@@ -135,26 +125,14 @@ pub struct SignerRouter {
     pending_signers: RwLock<Vec<Arc<SignerProvider>>>,
 }
 
-#[cfg(feature = "hsm")]
-struct SignerRoleAssignments {
-    default_signer: Arc<SignerProvider>,
-
-    one_off_signer: Arc<SignerProvider>,
-
-    random_signer: Arc<SignerProvider>,
-}
-
-/// Before HSM support was added we used a single OpenSSL based "soft" signer for all key management and signing
-/// operations.
+/// Before HSM support was added we used a single signer for all key management and signing operations.
 #[cfg(not(feature = "hsm"))]
 impl SignerRouter {
-    pub fn build(work_dir: &Path) -> KrillResult<Self> {
-        let openssl_signer = Arc::new(SignerProvider::OpenSsl(OpenSslSigner::build(work_dir)?));
-
+    pub(crate) fn build(signer: Arc<SignerProvider>) -> KrillResult<Self> {
         Ok(SignerRouter {
-            default_signer: openssl_signer.clone(),
-            one_off_signer: openssl_signer.clone(),
-            random_signer: openssl_signer,
+            default_signer: signer.clone(),
+            one_off_signer: signer.clone(),
+            random_signer: signer,
         })
     }
 
@@ -166,157 +144,50 @@ impl SignerRouter {
 /// With HSM support we are able to use different and even multiple signer implementations at once in Krill.
 #[cfg(feature = "hsm")]
 impl SignerRouter {
-    pub fn build(work_dir: &Path, signer_configs: &[SignerConfig]) -> KrillResult<Self> {
-        if signer_configs.is_empty() {
-            return Err(Error::ConfigError("Missing signer configuration".to_string()));
-        }
+    pub(crate) fn build(signer_mapper: Arc<SignerMapper>, mut signers: Vec<SignerProvider>) -> KrillResult<Self> {
+        // Keep a mapping of signer mapper handle to signer provider. Fill it in as and when signers become ready at
+        // which point their signer mapper handle will be known.
+        let active_signers = RwLock::new(HashMap::new());
 
-        // The types of signer to initialize, the details needed to initialize them and the intended purpose for each
-        // signer (e.g. signer for past keys, currently used signer, signer to use for a key roll, etc.) should come
-        // from the configuration file. SignerRouter combines that input with its own rules, e.g. to route a signing
-        // request to the correct signer we will need to determine which signer possesses the signing key, and the
-        // signer to use to create a new key depends on whether the key is one-off or not and whether or not it is
-        // being created for a key roll.
-        let signer_mapper = Arc::new(SignerMapper::build(work_dir)?);
-
-        // We don't know the signer handles yet. The signer implementations have to work out their own signer handle
-        // when they are ready. Signers are moved from the signer collection to the map once while running when asked
-        // they by that point have determined their own handle.
-        let signers_by_handle = RwLock::new(HashMap::new());
-
-        let (roles, signers) = Self::build_signers(work_dir, signer_mapper.clone(), signer_configs)?;
-        let signers = RwLock::new(signers);
-
-        Ok(SignerRouter {
-            default_signer: roles.default_signer,
-            one_off_signer: roles.one_off_signer,
-            random_signer: roles.random_signer,
-            active_signers: signers_by_handle,
-            pending_signers: signers,
-            signer_mapper,
-        })
-    }
-
-    fn build_signers(
-        work_dir: &Path,
-        mapper: Arc<SignerMapper>,
-        configs: &[SignerConfig],
-    ) -> KrillResult<(SignerRoleAssignments, Vec<Arc<SignerProvider>>)> {
-        let mut signers: Vec<Arc<SignerProvider>> = Vec::new();
-
+        // One and only one signer should be the default. The default signer is used for operations that don't concern
+        // an existing key, i.e. key creation, one-off signing and random number generation. The latter two may be
+        // delegated below to other signers instead of the default signer.
+        // Create the signers
         let mut default_signer: Option<Arc<SignerProvider>> = None;
         let mut one_off_signer: Option<Arc<SignerProvider>> = None;
-        let mut random_signer: Option<Arc<SignerProvider>> = None;
-        let mut openssl_signer: Option<Arc<SignerProvider>> = None;
+        let mut rand_falback_signer: Option<Arc<SignerProvider>> = None;
+        let mut all_signers = Vec::new();
 
-        for config in configs {
-            let name = Self::get_or_generate_signer_name(config);
-            debug!(
-                "Processing signer configuration for name '{}'{}",
-                name,
-                if config.name.is_none() { " (generated)" } else { "" }
-            );
-
-            let new_signer = match &config.signer_type {
-                SignerType::OpenSsl(conf) => Self::build_openssl_signer(work_dir, conf, &name, mapper.clone())?,
-                SignerType::Pkcs11(conf) => Self::build_pkcs11_signer(work_dir, conf, &name, mapper.clone())?,
-                SignerType::Kmip(conf) => Self::build_kmip_signer(work_dir, conf, &name, mapper.clone())?,
-            };
-
-            if matches!(&config.signer_type, SignerType::OpenSsl(_)) {
-                openssl_signer.get_or_insert(new_signer.clone());
+        for signer in signers.drain(..) {
+            let signer = Arc::new(signer);
+            if signer.is_default_signer() {
+                Self::set_once(&mut default_signer, signer.clone())
+                    .map_err(|_| Error::ConfigError("There must only be one default signer".to_string()))?;
+            } else {
+                if signer.is_one_off_signer() {
+                    Self::set_once(&mut one_off_signer, signer.clone())
+                        .map_err(|_| Error::ConfigError("There must only be one one-off signer".to_string()))?;
+                }
+                if signer.is_rand_fallback_signer() {
+                    Self::set_once(&mut rand_falback_signer, signer.clone()).map_err(|_| {
+                        Error::ConfigError("There must only be one fallback random number generator signer".to_string())
+                    })?;
+                }
             }
-
-            Self::set_at_most_once(&mut default_signer, config.default, || new_signer.clone())
-                .map_err(|_| Error::ConfigError("Only one signer can be set as the default signer".to_string()))?;
-
-            Self::set_at_most_once(&mut one_off_signer, config.oneoff, || new_signer.clone())
-                .map_err(|_| Error::ConfigError("Only one signer can be set as the one-off signer".to_string()))?;
-
-            Self::set_at_most_once(&mut random_signer, config.random, || new_signer.clone())
-                .map_err(|_| Error::ConfigError("Only one signer can be set as the random signer".to_string()))?;
-
-            signers.push(new_signer);
-
-            info!("Initialized signer '{}'", name);
+            all_signers.push(signer.clone());
         }
 
-        let default_signer = Self::set_once(&mut default_signer, signers.len() == 1, || signers[0].clone())
-            .map_err(|_| Error::ConfigError("One signer must be set as the default signer".to_string()))?;
+        let default_signer = default_signer.unwrap();
+        let pending_signers = RwLock::new(all_signers);
 
-        let random_signer = match (random_signer, openssl_signer) {
-            // Use the designated random fallback signer
-            (Some(signer), _) => signer,
-
-            // Use the already created OpenSSL signer as the random fallback signer
-            (None, Some(signer)) => signer,
-
-            // Create a new OpenSSL signer to use as the random fallback signer
-            (None, None) => {
-                let name = "OpenSSL (fallback random number generator)";
-                let signer =
-                    Self::build_openssl_signer(work_dir, &OpenSslSignerConfig::default(), name, mapper.clone())?;
-                info!("Initialized signer '{}'", name);
-                signer
-            }
-        };
-
-        let roles = SignerRoleAssignments {
+        Ok(SignerRouter {
             default_signer: default_signer.clone(),
-            one_off_signer: one_off_signer.unwrap_or(default_signer.clone()),
-            random_signer,
-        };
-
-        Ok((roles, signers))
-    }
-
-    fn build_openssl_signer(
-        work_dir: &Path,
-        conf: &OpenSslSignerConfig,
-        name: &str,
-        mapper: Arc<SignerMapper>,
-    ) -> Result<Arc<SignerProvider>, Error> {
-        info!("Initializing OpenSSL signer '{}'", name);
-
-        let data_dir = if let Some(ref path) = conf.keys_path {
-            path.as_path()
-        } else {
-            work_dir
-        };
-
-        let signer = OpenSslSigner::build(data_dir, name, Some(mapper))?;
-
-        Ok(Arc::new(SignerProvider::OpenSsl(signer)))
-    }
-
-    fn build_pkcs11_signer(
-        _work_dir: &Path,
-        conf: &Pkcs11SignerConfig,
-        name: &str,
-        mapper: Arc<SignerMapper>,
-    ) -> Result<Arc<SignerProvider>, Error> {
-        info!("Initializing PKCS#11 signer '{}'", name);
-        let signer = Pkcs11Signer::build(name, conf, mapper)?;
-        Ok(Arc::new(SignerProvider::Pkcs11(signer)))
-    }
-
-    fn build_kmip_signer(
-        _work_dir: &Path,
-        conf: &KmipSignerConfig,
-        name: &str,
-        mapper: Arc<SignerMapper>,
-    ) -> Result<Arc<SignerProvider>, Error> {
-        info!("Initializing KMIP signer '{}'", name);
-        let signer = KmipSigner::build(name, conf, mapper)?;
-        Ok(Arc::new(SignerProvider::Kmip(signer)))
-    }
-
-    fn get_or_generate_signer_name(config: &SignerConfig) -> String {
-        if let Some(name) = &config.name {
-            name.clone()
-        } else {
-            config.generate_name()
-        }
+            one_off_signer: one_off_signer.unwrap_or_else(|| default_signer.clone()),
+            random_signer: rand_falback_signer.unwrap_or_else(|| default_signer.clone()),
+            active_signers,
+            pending_signers,
+            signer_mapper,
+        })
     }
 
     /// Locate the [SignerProvider] that owns a given [KeyIdentifier], if the signer is active.
@@ -337,48 +208,13 @@ impl SignerRouter {
         signer.ok_or(SignerError::KeyNotFound)
     }
 
-    fn set_at_most_once<F>(
-        to_be_set: &mut Option<Arc<SignerProvider>>,
-        set_flag: bool,
-        new_value_fn: F,
-    ) -> Result<(), ()>
-    where
-        F: FnOnce() -> Arc<SignerProvider>,
-    {
-        if set_flag {
-            let _ = Self::set_once(to_be_set, true, new_value_fn)?;
+    fn set_once(to_be_set: &mut Option<Arc<SignerProvider>>, new_value: Arc<SignerProvider>) -> Result<(), ()> {
+        let old_value = to_be_set.replace(new_value);
+        if old_value.is_some() {
+            Err(())
+        } else {
+            Ok(())
         }
-        Ok(())
-    }
-
-    fn set_once<F>(
-        to_be_set: &mut Option<Arc<SignerProvider>>,
-        set_flag: bool,
-        new_value_fn: F,
-    ) -> Result<Arc<SignerProvider>, ()>
-    where
-        F: FnOnce() -> Arc<SignerProvider>,
-    {
-        match (set_flag, &to_be_set) {
-            // Flag is not true and value is already set, do nothing
-            (false, Some(_)) => Ok(()),
-
-            // Flag is not true and value is NOT set, error!
-            (false, None) => Err(()),
-
-            // Flag is true, no value yet so generate and store a value
-            (true, None) => {
-                let new_value = (new_value_fn)();
-                to_be_set.replace(new_value);
-                Ok(())
-            }
-
-            // Flag is true but value is already set, use the existing value
-            (true, Some(_)) => Ok(()),
-        }?;
-
-        // Return a ref-counted reference to the set value
-        Ok(to_be_set.as_ref().unwrap().clone())
     }
 }
 
@@ -765,8 +601,11 @@ impl Signer for SignerRouter {
 #[cfg(all(test, feature = "hsm"))]
 pub mod tests {
     use crate::{
-        commons::crypto::signers::mocksigner::{
-            CreateRegistrationKeyErrorCb, FnIdx, MockSigner, MockSignerCallCounts, SignRegistrationChallengeErrorCb,
+        commons::crypto::{
+            dispatch::signerprovider::SignerFlags,
+            signers::mocksigner::{
+                CreateRegistrationKeyErrorCb, FnIdx, MockSigner, MockSignerCallCounts, SignRegistrationChallengeErrorCb,
+            },
         },
         test,
     };
@@ -791,7 +630,7 @@ pub mod tests {
             let call_counts = Arc::new(MockSignerCallCounts::new());
             let signer_mapper = Arc::new(SignerMapper::build(&d).unwrap());
             let mock_signer = MockSigner::new(signer_mapper.clone(), false, call_counts.clone(), None, None);
-            let mock_signer = Arc::new(SignerProvider::Mock(mock_signer));
+            let mock_signer = Arc::new(SignerProvider::Mock(SignerFlags::default(), mock_signer));
 
             // Create a SignerRouter that uses the mock signer with the mock signer starting in the pending signer set.
             let router = create_signer_router(&[mock_signer.clone()], signer_mapper.clone());
@@ -949,13 +788,16 @@ pub mod tests {
             create_registration_key_error_cb: Option<CreateRegistrationKeyErrorCb>,
             sign_registration_challenge_error_cb: Option<SignRegistrationChallengeErrorCb>,
         ) -> Arc<SignerProvider> {
-            Arc::new(SignerProvider::Mock(MockSigner::new(
-                signer_mapper,
-                false,
-                call_counts,
-                create_registration_key_error_cb,
-                sign_registration_challenge_error_cb,
-            )))
+            Arc::new(SignerProvider::Mock(
+                SignerFlags::default(),
+                MockSigner::new(
+                    signer_mapper,
+                    false,
+                    call_counts,
+                    create_registration_key_error_cb,
+                    sign_registration_challenge_error_cb,
+                ),
+            ))
         }
 
         fn create_broken_signers(sm: Arc<SignerMapper>, cc: Arc<MockSignerCallCounts>) -> Vec<Arc<SignerProvider>> {
@@ -1028,13 +870,16 @@ pub mod tests {
             let call_counts = Arc::new(MockSignerCallCounts::new());
             let signer_mapper = Arc::new(SignerMapper::build(&d).unwrap());
 
-            let temp_unavail_signer = Arc::new(SignerProvider::Mock(MockSigner::new(
-                signer_mapper.clone(),
-                false,
-                call_counts.clone(),
-                Some(temp_unavail),
-                None,
-            )));
+            let temp_unavail_signer = Arc::new(SignerProvider::Mock(
+                SignerFlags::default(),
+                MockSigner::new(
+                    signer_mapper.clone(),
+                    false,
+                    call_counts.clone(),
+                    Some(temp_unavail),
+                    None,
+                ),
+            ));
 
             // Create a SignerRouter that uses the mock signer with the mock signer starting in the pending signer set.
             let router = create_signer_router(&[temp_unavail_signer], signer_mapper.clone());

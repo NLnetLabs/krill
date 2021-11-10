@@ -198,10 +198,10 @@ fn upgrade_data_to_0_9_0(config: Arc<Config>) -> Result<(), UpgradeError> {
     if needs_v0_9_0_upgrade(work_dir, "cas") {
         // TODO: should we use the configured signers here or an OpenSSL signer?
         // Will any signing actually be done using these signers?
-        let signer = Arc::new(KrillSigner::build(work_dir, config.clone().into())?);
+        let signer = Arc::new(KrillSigner::build(work_dir, config.signers())?);
         let repo_manager = RepositoryManager::build(config.clone(), signer.clone())?;
 
-        CaObjectsMigration::migrate(config, repo_manager, signer.clone())?;
+        CaObjectsMigration::migrate(config, repo_manager, signer)?;
     }
 
     Ok(())
