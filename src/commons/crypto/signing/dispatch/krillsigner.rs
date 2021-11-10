@@ -32,6 +32,7 @@ use crate::{
 #[cfg(feature = "hsm")]
 use crate::{
     commons::{
+        api::Handle,
         crypto::{
             dispatch::signerinfo::SignerMapper,
             signers::{kmip::KmipSigner, pkcs11::Pkcs11Signer},
@@ -41,6 +42,9 @@ use crate::{
     },
     daemon::config::SignerType,
 };
+
+#[cfg(feature = "hsm")]
+use std::collections::HashMap;
 
 /// High level signing interface between Krill and the [SignerRouter].
 ///
@@ -82,6 +86,16 @@ impl KrillSigner {
         let signers = Self::build_signers(work_dir, signer_mapper.clone(), signer_configs)?;
         let router = SignerRouter::build(signer_mapper, signers)?;
         Ok(KrillSigner { router })
+    }
+
+    #[cfg(feature = "hsm")]
+    pub fn get_mapper(&self) -> Arc<SignerMapper> {
+        self.router.get_mapper()
+    }
+
+    #[cfg(feature = "hsm")]
+    pub(crate) fn get_active_signers(&self) -> HashMap<Handle, Arc<SignerProvider>> {
+        self.router.get_active_signers()
     }
 
     pub fn create_key(&self) -> CryptoResult<KeyIdentifier> {

@@ -190,6 +190,20 @@ impl SignerRouter {
         })
     }
 
+    pub(crate) fn get_mapper(&self) -> Arc<SignerMapper> {
+        self.signer_mapper.clone()
+    }
+
+    pub(crate) fn get_active_signers(&self) -> HashMap<Handle, Arc<SignerProvider>> {
+        // TODO: Would self.active_signers.read().unwrap().clone() work instead of doing a manual copy?
+        let src = self.active_signers.read().unwrap();
+        let mut copy = HashMap::with_capacity(src.len());
+        for (k, v) in src.iter() {
+            copy.insert(k.clone(), v.clone());
+        }
+        copy
+    }
+
     /// Locate the [SignerProvider] that owns a given [KeyIdentifier], if the signer is active.
     ///
     /// If the signer that owns the key has not yet been promoted from the pending set to the active set or if no

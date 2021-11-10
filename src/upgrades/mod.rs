@@ -14,10 +14,17 @@ use crate::{
         eventsourcing::{AggregateStoreError, CommandKey, KeyStoreKey, KeyValueError, KeyValueStore},
         util::{file, KrillVersion},
     },
+    constants::{CASERVER_DIR, PUBSERVER_DIR},
     daemon::{config::Config, krillserver::KrillServer},
     pubd::RepositoryManager,
     upgrades::v0_9_0::{CaObjectsMigration, PubdObjectsMigration},
 };
+
+#[cfg(feature = "hsm")]
+use rpki::repository::crypto::{KeyIdentifier, Signer};
+
+#[cfg(feature = "hsm")]
+use crate::constants::{KEYS_DIR, SIGNERS_DIR};
 
 pub mod v0_9_0;
 
@@ -159,13 +166,109 @@ pub trait UpgradeStore {
 
 /// Should be called when Krill starts, before the KrillServer is initiated
 pub fn pre_start_upgrade(config: Arc<Config>) -> Result<(), UpgradeError> {
-    upgrade_data_to_0_9_0(config)
+    upgrade_data_to_0_9_0(config.clone())?;
+
+    #[cfg(feature = "hsm")]
+    record_preexisting_openssl_keys_in_signer_mapper(config.clone())?;
+
+    Ok(())
+}
+
+/// Prior to Krill having HSM support there was no signer mapper as it wasn't needed, keys were just created by OpenSSL
+/// and stored in files on disk in KEYS_DIR named by the string form of their Krill KeyIdentifier. If Krill had created
+/// such keys and then the operator upgrades to a version of Krill with HSM support, the keys will become unusable
+/// because Krill will not be able to find a mapping from KeyIdentifier to signer as the mappings for the keys were
+/// never created. So we detect the case that the signer store SIGNERS_DIR directory has not yet been created, i.e. no
+/// signers have been registered and no key mappings have been recorded, and then walk KEYS_DIR adding the keys one by
+/// one to the mapping in the signer store.
+#[cfg(feature = "hsm")]
+fn record_preexisting_openssl_keys_in_signer_mapper(config: Arc<Config>) -> Result<(), UpgradeError> {
+    if !config.data_dir.join(SIGNERS_DIR).exists() {
+        let mut num_recorded_keys = 0;
+        let keys_dir = config.data_dir.join(KEYS_DIR);
+
+        info!(
+            "Scanning for not yet mapped OpenSSL signer keys in {} to record in the signer store",
+            keys_dir.to_string_lossy()
+        );
+
+        // For every file (key) in the legacy OpenSSL signer keys directory
+        if let Ok(dir_iter) = keys_dir.read_dir() {
+            let mut krill_signer: Option<KrillSigner> = None;
+            let mut signer_handle: Option<Handle> = None;
+
+            for entry in dir_iter {
+                let entry = entry.map_err(|err| {
+                    UpgradeError::IoError(KrillIoError::new(
+                        format!(
+                            "I/O error while looking for signer keys to register in: {}",
+                            keys_dir.to_string_lossy()
+                        ),
+                        err,
+                    ))
+                })?;
+
+                if entry.path().is_file() {
+                    // Is it a key identifier?
+                    if let Ok(key_id) = KeyIdentifier::from_str(&entry.file_name().to_string_lossy()) {
+                        if krill_signer.is_none() {
+                            // Create the KrillSigner which will in turn create the actual signers defined in the
+                            // users Krill configuration file. If the keys in the legacy OpenSSL signer keys directory
+                            // are actively being used by Krill the config must cause KrillSigner to instantiate the
+                            // corresponding OpenSSL signer that owns those keys.
+                            krill_signer = Some(KrillSigner::build(&config.data_dir, config.signers())?);
+                        }
+
+                        if let Some(krill_signer) = &krill_signer {
+                            // Is the key already recorded in the mapper? It shouldn't be, but asking will cause the
+                            // initial registration of the OpenSSL signer to occur and for it to be assigned a handle.
+                            // We need the handle so that we can register keys with the mapper.
+                            if !krill_signer.get_key_info(&key_id).is_ok() {
+                                // No, record it
+
+                                // Do we already know the handle of the OpenSSL signer? If not, find it. It should be
+                                // possible to find the key via the OpenSSL signer because it shoud look for it in the
+                                // same directory and file name as we are now processing. Finding it confirms for us
+                                // that we have the correct signer handle (unless someone migrated the keys into another
+                                // signer and registered them there and then manually deleted the signer store directory
+                                // ... but then if they go behind Krill's back there are limits to what we can cope with)
+                                if signer_handle.is_none() {
+                                    // No, find it by asking each of the active signers if they have the key because
+                                    // one of them must have it and it should be the OpenSSL signer.
+                                    let active_signers = krill_signer.get_active_signers();
+
+                                    for (a_signer_handle, a_signer) in active_signers.iter() {
+                                        if a_signer.get_key_info(&key_id).is_ok() {
+                                            signer_handle = Some(a_signer_handle.clone());
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                // Record the key in the signer mapper as being owned by the found signer handle
+                                if let Some(signer_handle) = &signer_handle {
+                                    let internal_key_id = key_id.to_string();
+                                    let mapper = krill_signer.get_mapper();
+                                    mapper.add_key(&signer_handle, &key_id, &internal_key_id)?;
+                                    num_recorded_keys += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        info!("Recorded {} key identifiers in the signer store", num_recorded_keys);
+    }
+
+    Ok(())
 }
 
 /// Should be called when the KrillServer is initiated, before the webserver is started
 /// and operators can make changes.
 pub async fn post_start_upgrade(config: &Config, server: &KrillServer) -> Result<(), UpgradeError> {
-    if needs_upgrade(&config.data_dir, "cas", KrillVersion::candidate(0, 9, 3, 2)) {
+    if needs_upgrade(&config.data_dir, CASERVER_DIR, KrillVersion::candidate(0, 9, 3, 2)) {
         info!("Reissue ROAs on upgrade to force short EE certificate subjects in the objects");
         server.force_renew_roas().await.map_err(|e| e.into())
     } else {
@@ -176,12 +279,12 @@ pub async fn post_start_upgrade(config: &Config, server: &KrillServer) -> Result
 pub async fn update_storage_version(work_dir: &Path) -> Result<(), UpgradeError> {
     let current = KrillVersion::current();
 
-    if needs_v0_9_0_upgrade(work_dir, "cas") {
+    if needs_v0_9_0_upgrade(work_dir, CASERVER_DIR) {
         debug!("Updating version file for cas");
         file::save_json(&current, &work_dir.join("cas/version"))?;
     }
 
-    if needs_v0_9_0_upgrade(work_dir, "pubd") {
+    if needs_v0_9_0_upgrade(work_dir, PUBSERVER_DIR) {
         debug!("Updating version file for pubd");
         file::save_json(&current, &work_dir.join("pubd/version"))?;
     }
@@ -191,11 +294,11 @@ pub async fn update_storage_version(work_dir: &Path) -> Result<(), UpgradeError>
 
 fn upgrade_data_to_0_9_0(config: Arc<Config>) -> Result<(), UpgradeError> {
     let work_dir = &config.data_dir;
-    if needs_v0_9_0_upgrade(work_dir, "pubd") {
+    if needs_v0_9_0_upgrade(work_dir, PUBSERVER_DIR) {
         PubdObjectsMigration::migrate(config.clone())?;
     }
 
-    if needs_v0_9_0_upgrade(work_dir, "cas") {
+    if needs_v0_9_0_upgrade(work_dir, CASERVER_DIR) {
         // TODO: should we use the configured signers here or an OpenSSL signer?
         // Will any signing actually be done using these signers?
         let signer = Arc::new(KrillSigner::build(work_dir, config.signers())?);
@@ -260,5 +363,56 @@ mod tests {
         upgrade_data_to_0_9_0(config).unwrap();
 
         let _ = fs::remove_dir_all(work_dir);
+    }
+
+    #[cfg(feature = "hsm")]
+    fn unmapped_keys_test_core(do_upgrade: bool) {
+        let expected_key_id = KeyIdentifier::from_str("5CBCAB14B810C864F3EEA8FD102B79F4E53FCC70").unwrap();
+
+        // Create a naked OpenSSL signer (i.e. not accessed via KrillSigner) and create a key.
+        // The key should be stored on disk in the KEYS_DIR under the Krill data dir.
+        // Then run the upgrade. It should find the key and add it to the mapper.
+        let work_dir = tmp_dir();
+        let source = PathBuf::from("test-resources/migrations/unmapped_keys/");
+        file::backup_dir(&source, &work_dir).unwrap();
+
+        let config = Arc::new(Config::test(&work_dir, false, false, false, false));
+        let _ = config.init_logging();
+
+        if do_upgrade {
+            record_preexisting_openssl_keys_in_signer_mapper(config).unwrap();
+        }
+
+        let krill_signer = KrillSigner::build(&work_dir, &[]).unwrap();
+
+        // Trigger the signer to be bound to the one the migration just registered in the mapper
+        krill_signer.random_serial().unwrap();
+
+        // Verify that the mapper has a single registered signer
+        let mapper = krill_signer.get_mapper();
+        let signer_handles = mapper.get_signer_handles().unwrap();
+        assert_eq!(1, signer_handles.len());
+
+        if do_upgrade {
+            // Verify that the mapper has a record of the test key belonging to the signer
+            mapper.get_signer_for_key(&expected_key_id).unwrap();
+        } else {
+            // Verify that the mapper does NOT have a record of the test key belonging to the signer
+            assert!(mapper.get_signer_for_key(&expected_key_id).is_err());
+        }
+
+        let _ = fs::remove_dir_all(work_dir);
+    }
+
+    #[cfg(feature = "hsm")]
+    #[test]
+    fn test_without_upgrade_with_unmapped_keys() {
+        unmapped_keys_test_core(false);
+    }
+
+    #[cfg(feature = "hsm")]
+    #[test]
+    fn test_upgrade_with_unmapped_keys() {
+        unmapped_keys_test_core(true);
     }
 }
