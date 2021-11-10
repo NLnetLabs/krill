@@ -650,7 +650,9 @@ impl Roas {
         }
     }
 
-    /// Re-new ROAs before they would expire
+    /// Re-new ROAs before they would expire, or when forced e.g. in case
+    /// ROAs need to be reissued because of a keyroll, or because of a change
+    /// in encoding (like forcing shorter subject names, see issue #700)
     pub fn renew(
         &self,
         force: bool,
@@ -698,57 +700,6 @@ impl Roas {
         }
 
         Ok(updates)
-    }
-
-    /// Re-generate all ROAs when a new key is being activated
-    pub fn activate_key(
-        &self,
-        certified_key: &CertifiedKey,
-        issuance_timing: &IssuanceTimingConfig,
-        signer: &KrillSigner,
-    ) -> KrillResult<RoaUpdates> {
-        let mut updates = RoaUpdates::default();
-
-        for (auth, roa) in self.simple.iter() {
-            let name = ObjectName::from(auth);
-            let new_roa = Self::make_roa(
-                &[*auth],
-                &name,
-                certified_key,
-                issuance_timing.timing_roa_valid_weeks,
-                signer,
-            )?;
-            let new_roa_info = RoaInfo::updated_roa(roa, new_roa);
-            updates.update(*auth, new_roa_info);
-        }
-
-        for (roa_key, aggregate) in self.aggregate.iter() {
-            let roa = aggregate.roa_info();
-
-            let authorizations = aggregate.authorizations().clone();
-            let name = ObjectName::from(roa_key);
-            let new_roa = Self::make_roa(
-                authorizations.as_slice(),
-                &name,
-                certified_key,
-                issuance_timing.timing_roa_valid_weeks,
-                signer,
-            )?;
-            let new_roa_info = RoaInfo::updated_roa(roa, new_roa);
-            let aggregate = AggregateRoaInfo::new(authorizations, new_roa_info);
-
-            updates.update_aggregate(*roa_key, aggregate);
-        }
-
-        Ok(updates)
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (&RouteAuthorization, &RoaInfo)> {
-        self.simple.iter()
-    }
-
-    pub fn authorizations(&self) -> impl Iterator<Item = &RouteAuthorization> {
-        self.simple.keys()
     }
 
     pub fn make_roa(
