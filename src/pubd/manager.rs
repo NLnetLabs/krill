@@ -208,10 +208,13 @@ mod tests {
 
     use rpki::uri;
 
-    use crate::{constants::*, daemon::config::SignerConfig, pubd::RrdpServer};
+    use crate::{constants::*, pubd::RrdpServer};
 
     #[cfg(feature = "hsm")]
-    use crate::{commons::crypto::OpenSslSignerConfig, daemon::config::SignerType};
+    use crate::{
+        commons::crypto::OpenSslSignerConfig,
+        daemon::config::{SignerConfig, SignerType},
+    };
 
     use super::*;
 
