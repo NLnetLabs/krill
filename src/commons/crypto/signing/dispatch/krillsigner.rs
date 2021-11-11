@@ -367,7 +367,7 @@ fn signer_builder(
     }
 }
 
-#[cfg(all(test, feature = "hsm"))]
+#[cfg(all(test, feature = "hsm", not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11"))))]
 pub mod tests {
     use std::path::PathBuf;
 
