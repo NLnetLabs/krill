@@ -62,6 +62,8 @@ pub type CreateRegistrationKeyErrorCb = fn(&MockSignerCallCounts) -> Result<(), 
 pub type SignRegistrationChallengeErrorCb = fn(&MockSignerCallCounts) -> Result<(), SignerError>;
 
 pub struct MockSigner {
+    name: String,
+    info: Option<String>,
     fn_call_counts: Arc<MockSignerCallCounts>,
     supports_random: bool,
     handle: RwLock<Option<Handle>>,
@@ -80,6 +82,7 @@ impl std::fmt::Debug for MockSigner {
 // test interface
 impl MockSigner {
     pub fn new(
+        name: &str,
         signer_mapper: Arc<SignerMapper>,
         supports_random: bool,
         fn_call_counts: Arc<MockSignerCallCounts>,
@@ -87,6 +90,8 @@ impl MockSigner {
         sign_registration_challenge_error_cb: Option<SignRegistrationChallengeErrorCb>,
     ) -> Self {
         Self {
+            name: name.to_string(),
+            info: None,
             fn_call_counts,
             supports_random,
             handle: RwLock::new(None),
@@ -99,6 +104,10 @@ impl MockSigner {
 
     fn inc_fn_call_count(&self, fn_idx: FnIdx) {
         self.fn_call_counts.inc(fn_idx)
+    }
+
+    pub fn set_info(&mut self, info: &str) {
+        self.info = Some(info.to_string());
     }
 
     pub fn supports_random(&self) -> bool {
@@ -186,12 +195,12 @@ impl MockSigner {
 
     pub fn get_name(&self) -> &str {
         self.inc_fn_call_count(FnIdx::GetName);
-        "mock signer"
+        &self.name
     }
 
     pub fn get_info(&self) -> Option<String> {
         self.inc_fn_call_count(FnIdx::GetInfo);
-        None
+        self.info.clone()
     }
 }
 

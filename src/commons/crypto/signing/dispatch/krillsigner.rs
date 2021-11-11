@@ -330,3 +330,56 @@ fn signer_builder(
     }
 }
 
+#[cfg(all(test, feature = "hsm"))]
+pub mod tests {
+    use crate::{
+        commons::crypto::signers::mocksigner::{MockSigner, MockSignerCallCounts},
+        daemon::config::Config,
+        test,
+    };
+
+    use super::*;
+
+    /// A signer builder fn that builds MockSigner instances instead of real signer instances.
+    /// Used to test KrillSigner::build_signers().
+    fn mock_signer_builder(
+        r#type: &SignerType,
+        flags: SignerFlags,
+        _: &Path,
+        name: &str,
+        mapper: Arc<SignerMapper>,
+    ) -> KrillResult<SignerProvider> {
+        let call_counts = Arc::new(MockSignerCallCounts::new());
+        let mut mock_signer = MockSigner::new(name, mapper.clone(), false, call_counts.clone(), None, None);
+        mock_signer.set_info(&format!("mock {} signer", r#type));
+        Ok(SignerProvider::Mock(flags, mock_signer))
+    }
+
+    /// Create a Krill Config object from a Krill config file text fragment.
+    fn config_fragment_to_config_object(fragment: &str) -> Result<Config, toml::de::Error> {
+        let mut config_str = r#"admin_token = "***""#.to_string();
+        config_str.push_str(fragment);
+        toml::from_str(&config_str)
+    }
+
+    /// Prior to the addition of HSM support Krill had no notion of configurable signers. Instead it always created a
+    /// single OpenSSL signer that was used for all signing related operations (i.e. key creation, deletion, signing,
+    /// one-off signing and random number generation). With HSM support enabled, if no signers are defined in the Krill
+    /// configuration file the behaviour should be the same as it was before HSM support was added.
+    #[test]
+    pub fn test_backward_compatibility() {
+        test::test_under_tmp(|d| {
+            let mapper = Arc::new(SignerMapper::build(&d).unwrap());
+            let config = config_fragment_to_config_object("").unwrap();
+            let signers = KrillSigner::build_signers(mock_signer_builder, &d, mapper, config.signers()).unwrap();
+            assert_eq!(signers.len(), 1);
+            let signer = &signers[0];
+            assert_eq!(signer.get_name(), "default");
+            assert_eq!(signer.get_info().unwrap(), "mock OpenSSL signer");
+            assert!(signer.is_default_signer());
+            assert!(signer.is_one_off_signer());
+            assert!(signer.is_rand_fallback_signer());
+        });
+    }
+
+}
