@@ -207,23 +207,38 @@ impl KrillSigner {
         // an existing key, i.e. key creation, one-off signing and random number generation. The latter two are
         // delegated by default to an OpenSSL signer as the security benefit is minimal and the incurred delay can be
         // significant when communicating with an HSM.
-        let num_default_signers = configs.iter().filter(|c| c.default).count();
+        let mut num_default_signers = configs.iter().filter(|c| c.default).count();
         let num_one_off_signers = configs.iter().filter(|c| c.oneoff).count();
         let num_rand_fallback_signers = configs.iter().filter(|c| c.random).count();
+
+        if configs.len() == 1 {
+            configs[0].default = true;
+            num_default_signers = 1;
+        }
 
         #[rustfmt::skip]
         match (num_default_signers, num_one_off_signers, num_rand_fallback_signers) {
             (1, 1, 1) => Ok(()),
             (1, o, r) if o == 0 || r == 0 => {
+                let oneoff = o == 0;
+                let random = r == 0;
+
                 // We need an OpenSSL signer to act as one-off and/or fallback random number generating signer.
-                let config = SignerConfig {
-                    name: Some("Fallback OpenSSL signer".to_string()),
-                    default: false,
-                    oneoff: o == 0,
-                    random: r == 0,
-                    signer_type: SignerType::OpenSsl(OpenSslSignerConfig::default()),
-                };
-                configs.push(config);
+                if let Some(openssl_signer) = configs.iter_mut().find(|c| matches!(c.signer_type, SignerType::OpenSsl(_))) {
+                    // Use an existing OpenSSL signer
+                    openssl_signer.oneoff = oneoff;
+                    openssl_signer.random = random;
+                } else {
+                    // Create a new OpenSSL signer
+                    let config = SignerConfig {
+                        name: Some("Fallback OpenSSL signer".to_string()),
+                        default: false,
+                        oneoff,
+                        random,
+                        signer_type: SignerType::OpenSsl(OpenSslSignerConfig::default()),
+                    };
+                    configs.push(config);
+                }
                 Ok(())
             }
             (0, _, _) => Err(Error::ConfigError("One signer must be set as the default signer".to_string())),
