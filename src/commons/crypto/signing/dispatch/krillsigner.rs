@@ -66,6 +66,10 @@ use crate::commons::crypto::Pkcs11SignerConfig;
 /// We _could_ implement the [Signer] trait in [KrillSigner] but then we would implement two almost identical but
 /// subtly different interfaces in the same struct AND implement management of signers and dispatch to the correct
 /// signer all in one place, and that quickly becomes harder to read, understand and maintain.
+
+#[cfg(feature = "hsm")]
+type SignerBuilderFn = fn(&SignerType, SignerFlags, &Path, &str, Arc<SignerMapper>) -> KrillResult<SignerProvider>;
+
 #[derive(Debug)]
 pub struct KrillSigner {
     router: SignerRouter,
@@ -85,7 +89,7 @@ impl KrillSigner {
     #[cfg(feature = "hsm")]
     pub fn build(work_dir: &Path, signer_configs: &[SignerConfig]) -> KrillResult<Self> {
         let signer_mapper = Arc::new(SignerMapper::build(work_dir)?);
-        let signers = Self::build_signers(work_dir, signer_mapper.clone(), signer_configs)?;
+        let signers = Self::build_signers(signer_builder, work_dir, signer_mapper.clone(), signer_configs)?;
         let router = SignerRouter::build(signer_mapper, signers)?;
         Ok(KrillSigner { router })
     }
@@ -186,6 +190,7 @@ impl KrillSigner {
 #[cfg(feature = "hsm")]
 impl KrillSigner {
     fn build_signers(
+        signer_builder: SignerBuilderFn,
         work_dir: &Path,
         mapper: Arc<SignerMapper>,
         configs: &[SignerConfig],
@@ -239,17 +244,7 @@ impl KrillSigner {
                 name, config.signer_type, flags
             );
 
-            let signer = match &config.signer_type {
-                SignerType::OpenSsl(type_conf) => {
-                    Self::build_openssl_signer(flags, work_dir, type_conf, &name, mapper.clone())?
-                }
-                SignerType::Pkcs11(type_conf) => {
-                    Self::build_pkcs11_signer(flags, work_dir, type_conf, &name, mapper.clone())?
-                }
-                SignerType::Kmip(type_conf) => {
-                    Self::build_kmip_signer(flags, work_dir, type_conf, &name, mapper.clone())?
-                }
-            };
+            let signer = (signer_builder)(&config.signer_type, flags, work_dir, &name, mapper.clone())?;
 
             signers.push(signer);
         }
@@ -263,46 +258,6 @@ impl KrillSigner {
         } else {
             config.generate_name()
         }
-    }
-
-    fn build_openssl_signer(
-        flags: SignerFlags,
-        work_dir: &Path,
-        conf: &OpenSslSignerConfig,
-        name: &str,
-        mapper: Arc<SignerMapper>,
-    ) -> KrillResult<SignerProvider> {
-        let data_dir = if let Some(ref path) = conf.keys_path {
-            path.as_path()
-        } else {
-            work_dir
-        };
-
-        let signer = OpenSslSigner::build(data_dir, name, Some(mapper))?;
-
-        Ok(SignerProvider::OpenSsl(flags, signer))
-    }
-
-    fn build_pkcs11_signer(
-        flags: SignerFlags,
-        _work_dir: &Path,
-        conf: &Pkcs11SignerConfig,
-        name: &str,
-        mapper: Arc<SignerMapper>,
-    ) -> KrillResult<SignerProvider> {
-        let signer = Pkcs11Signer::build(name, conf, mapper)?;
-        Ok(SignerProvider::Pkcs11(flags, signer))
-    }
-
-    fn build_kmip_signer(
-        flags: SignerFlags,
-        _work_dir: &Path,
-        conf: &KmipSignerConfig,
-        name: &str,
-        mapper: Arc<SignerMapper>,
-    ) -> KrillResult<SignerProvider> {
-        let signer = KmipSigner::build(name, conf, mapper)?;
-        Ok(SignerProvider::Kmip(flags, signer))
     }
 
     fn get_default_signer_config() -> KrillResult<SignerConfig> {
@@ -343,3 +298,35 @@ impl KrillSigner {
         }
     }
 }
+
+#[cfg(feature = "hsm")]
+fn signer_builder(
+    r#type: &SignerType,
+    flags: SignerFlags,
+    work_dir: &Path,
+    name: &str,
+    mapper: Arc<SignerMapper>,
+) -> KrillResult<SignerProvider> {
+    match r#type {
+        SignerType::OpenSsl(conf) => {
+            let data_dir = if let Some(ref path) = conf.keys_path {
+                path.as_path()
+            } else {
+                work_dir
+            };
+
+            let signer = OpenSslSigner::build(data_dir, name, Some(mapper))?;
+
+            Ok(SignerProvider::OpenSsl(flags, signer))
+        }
+        SignerType::Pkcs11(conf) => {
+            let signer = Pkcs11Signer::build(name, &conf, mapper)?;
+            Ok(SignerProvider::Pkcs11(flags, signer))
+        }
+        SignerType::Kmip(conf) => {
+            let signer = KmipSigner::build(name, &conf, mapper)?;
+            Ok(SignerProvider::Kmip(flags, signer))
+        }
+    }
+}
+
