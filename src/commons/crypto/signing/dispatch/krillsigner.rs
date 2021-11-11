@@ -382,4 +382,51 @@ pub mod tests {
         });
     }
 
+    /// To make it easier for the operator we don't want them to have to manually remember to mark a single signer
+    /// configuration as the default one, it should just automatically be the default signer and should in fact be used
+    /// for all signing related operations, i.e. one-off signing and random number generation as well as the key
+    /// creation, deletion and signing operations handled by the default signer.
+    #[test]
+    pub fn test_single_signer_is_made_the_default_all_signer() {
+        test::test_under_tmp(|d| {
+            let mapper = Arc::new(SignerMapper::build(&d).unwrap());
+            let signers_config_fragment = r#"
+                [[signers]]
+                type = "OpenSSL"
+"#;
+            let config = config_fragment_to_config_object(signers_config_fragment).unwrap();
+            let signers = KrillSigner::build_signers(mock_signer_builder, &d, mapper, config.signers()).unwrap();
+            assert_eq!(signers.len(), 1);
+            let signer = &signers[0];
+            assert_eq!(signer.get_name(), "OpenSSL");
+            assert_eq!(signer.get_info().unwrap(), "mock OpenSSL signer");
+            assert!(signer.is_default_signer());
+            assert!(signer.is_one_off_signer());
+            assert!(signer.is_rand_fallback_signer());
+        });
+    }
+
+    /// When there is only a single signer with explicit roles assigned those roles should not be overridden.
+    #[test]
+    pub fn test_single_signer_is_forced_to_be_the_default_all_signer() {
+        test::test_under_tmp(|d| {
+            let mapper = Arc::new(SignerMapper::build(&d).unwrap());
+            let signers_config_fragment = r#"
+                [[signers]]
+                type = "OpenSSL"
+                default = false
+                oneoff = false
+                random = false
+"#;
+            let config = config_fragment_to_config_object(signers_config_fragment).unwrap();
+            let signers = KrillSigner::build_signers(mock_signer_builder, &d, mapper, config.signers()).unwrap();
+            assert_eq!(signers.len(), 1);
+            let signer = &signers[0];
+            assert_eq!(signer.get_name(), "OpenSSL");
+            assert_eq!(signer.get_info().unwrap(), "mock OpenSSL signer");
+            assert!(!signer.is_default_signer());
+            assert!(!signer.is_one_off_signer());
+            assert!(!signer.is_rand_fallback_signer());
+        });
+    }
 }
