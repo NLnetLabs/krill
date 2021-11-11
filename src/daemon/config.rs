@@ -1199,16 +1199,16 @@ pub struct SignerConfig {
 
     /// By default, create keys with this signer.
     #[serde(default)]
-    pub default: bool,
+    pub default: Option<bool>,
 
     /// Create one-off keys with this signer, otherwise with the default.
     #[serde(default)]
-    pub oneoff: bool,
+    pub oneoff: Option<bool>,
 
     /// Generate random numbers with this signer if the default signer
     /// lacks the capability to do so.
     #[serde(default)]
-    pub random: bool,
+    pub random: Option<bool>,
 
     /// Signer specific configuration settings.
     #[serde(flatten)]
@@ -1249,9 +1249,9 @@ impl SignerConfig {
     pub fn all(name: Option<String>, signer_type: SignerType) -> SignerConfig {
         Self {
             name,
-            default: true,
-            oneoff: true,
-            random: true,
+            default: Some(true),
+            oneoff: Some(true),
+            random: Some(true),
             signer_type,
         }
     }
@@ -1259,9 +1259,9 @@ impl SignerConfig {
     pub fn default_only(name: Option<String>, signer_type: SignerType) -> SignerConfig {
         Self {
             name,
-            default: true,
-            oneoff: false,
-            random: false,
+            default: Some(true),
+            oneoff: Some(false),
+            random: Some(false),
             signer_type,
         }
     }
