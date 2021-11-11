@@ -629,7 +629,14 @@ pub mod tests {
             // Build a mock signer that is contactable and usable for the SignerRouter
             let call_counts = Arc::new(MockSignerCallCounts::new());
             let signer_mapper = Arc::new(SignerMapper::build(&d).unwrap());
-            let mock_signer = MockSigner::new(signer_mapper.clone(), false, call_counts.clone(), None, None);
+            let mock_signer = MockSigner::new(
+                "mock signer",
+                signer_mapper.clone(),
+                false,
+                call_counts.clone(),
+                None,
+                None,
+            );
             let mock_signer = Arc::new(SignerProvider::Mock(SignerFlags::default(), mock_signer));
 
             // Create a SignerRouter that uses the mock signer with the mock signer starting in the pending signer set.
@@ -791,6 +798,7 @@ pub mod tests {
             Arc::new(SignerProvider::Mock(
                 SignerFlags::default(),
                 MockSigner::new(
+                    "broken mock signer",
                     signer_mapper,
                     false,
                     call_counts,
@@ -873,6 +881,7 @@ pub mod tests {
             let temp_unavail_signer = Arc::new(SignerProvider::Mock(
                 SignerFlags::default(),
                 MockSigner::new(
+                    "mock temporararily unavailable signer",
                     signer_mapper.clone(),
                     false,
                     call_counts.clone(),
