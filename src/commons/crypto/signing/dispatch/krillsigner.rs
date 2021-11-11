@@ -35,12 +35,18 @@ use crate::{
         crypto::{
             dispatch::signerinfo::SignerMapper,
             signers::{kmip::KmipSigner, pkcs11::Pkcs11Signer},
-            KmipSignerConfig, OpenSslSignerConfig, Pkcs11SignerConfig,
+            OpenSslSignerConfig,
         },
         error::Error,
     },
     daemon::config::SignerType,
 };
+
+#[cfg(feature = "hsm-tests-kmip")]
+use crate::commons::crypto::KmipSignerConfig;
+
+#[cfg(feature = "hsm-tests-pkcs11")]
+use crate::commons::crypto::Pkcs11SignerConfig;
 
 /// High level signing interface between Krill and the [SignerRouter].
 ///
