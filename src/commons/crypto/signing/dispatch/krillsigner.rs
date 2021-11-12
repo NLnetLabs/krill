@@ -473,7 +473,7 @@ pub mod tests {
                 [[signers]]
                 type = "OpenSSL"
                 name = "Some test name"
-"#;
+            "#;
             let signers = build_krill_signer_from_config(signers_config_fragment, &d, mapper).unwrap();
             assert_eq!(signers.len(), 1);
             let signer = &signers[0];
@@ -491,7 +491,7 @@ pub mod tests {
             let signers_config_fragment = r#"
                 [[signers]]
                 type = "OpenSSL"
-"#;
+            "#;
             let signers = build_krill_signer_from_config(signers_config_fragment, &d, mapper.clone()).unwrap();
             assert_eq!(signers.len(), 1);
             assert_signer_name_and_type(&signers[0], "OpenSSL");
@@ -502,7 +502,7 @@ pub mod tests {
                 [[signers]]
                 type = "PKCS#11"
                 lib_path = "dummy path"
-"#;
+            "#;
             let signers = build_krill_signer_from_config(signers_config_fragment, &d, mapper.clone()).unwrap();
             assert_eq!(signers.len(), 1);
             assert_signer_name_and_type(&signers[0], "PKCS#11");
@@ -513,7 +513,7 @@ pub mod tests {
                 [[signers]]
                 type = "KMIP"
                 host = "dummy host"
-"#;
+            "#;
             let signers = build_krill_signer_from_config(signers_config_fragment, &d, mapper).unwrap();
             assert_eq!(signers.len(), 1);
             assert_signer_name_and_type(&signers[0], "KMIP");
@@ -531,7 +531,7 @@ pub mod tests {
             let signers_config_fragment = r#"
                 [[signers]]
                 type = "OpenSSL"
-"#;
+            "#;
             let signers = build_krill_signer_from_config(signers_config_fragment, &d, mapper).unwrap();
             assert_eq!(signers.len(), 1);
             let signer = &signers[0];
@@ -549,7 +549,7 @@ pub mod tests {
                 [[signers]]
                 type = "OpenSSL"
                 default = false
-"#;
+            "#;
             let err = build_krill_signer_from_config(signers_config_fragment, &d, mapper).unwrap_err();
             assert!(matches!(err, Error::ConfigError(_)));
         });
@@ -567,7 +567,7 @@ pub mod tests {
                 type = "OpenSSL"
                 default = true
                 oneoff = false
-"#;
+            "#;
             let err = build_krill_signer_from_config(signers_config_fragment_disallow_oneoff, &d, mapper.clone())
                 .unwrap_err();
             assert!(matches!(err, Error::ConfigError(_)));
@@ -579,7 +579,7 @@ pub mod tests {
                 type = "OpenSSL"
                 default = true
                 random = false
-"#;
+            "#;
             let err = build_krill_signer_from_config(signers_config_fragment_disallow_random, &d, mapper.clone())
                 .unwrap_err();
             assert!(matches!(err, Error::ConfigError(_)));
@@ -592,7 +592,7 @@ pub mod tests {
                 default = true
                 oneoff = false
                 random = false
-"#;
+            "#;
             let err = build_krill_signer_from_config(signers_config_fragment_disallow_oneoff_and_random, &d, mapper)
                 .unwrap_err();
             assert!(matches!(err, Error::ConfigError(_)));
@@ -610,7 +610,7 @@ pub mod tests {
                 lib_path = "dummy"
                 default = true
                 oneoff = false
-"#;
+            "#;
             let signers =
                 build_krill_signer_from_config(signers_config_fragment_needs_fallback_oneoff, &d, mapper.clone())
                     .unwrap();
@@ -633,7 +633,7 @@ pub mod tests {
                 lib_path = "dummy"
                 default = true
                 random = false
-"#;
+            "#;
             let signers =
                 build_krill_signer_from_config(signers_config_fragment_needs_fallback_random, &d, mapper.clone())
                     .unwrap();
@@ -657,7 +657,7 @@ pub mod tests {
                 default = true
                 oneoff = false
                 random = false
-"#;
+            "#;
             let signers =
                 build_krill_signer_from_config(signers_config_fragment_needs_fallback_both, &d, mapper).unwrap();
             assert_eq!(signers.len(), 2);
