@@ -1,5 +1,5 @@
 use rpki::repository::crypto::{
-    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
+    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError,
 };
 
 use crate::commons::crypto::signers::{
@@ -7,24 +7,21 @@ use crate::commons::crypto::signers::{
     kmip::{internal::KeyStatus, KmipSigner},
 };
 
-impl Signer for KmipSigner {
-    type KeyId = KeyIdentifier;
-    type Error = SignerError;
-
-    fn create_key(&self, algorithm: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
+impl KmipSigner {
+    pub fn create_key(&self, algorithm: PublicKeyFormat) -> Result<KeyIdentifier, SignerError> {
         let (key, kmip_key_pair_ids) = self.build_key(algorithm)?;
         let key_id = key.key_identifier();
         self.remember_kmip_key_ids(&key_id, kmip_key_pair_ids)?;
         Ok(key_id)
     }
 
-    fn get_key_info(&self, key_id: &Self::KeyId) -> Result<PublicKey, KeyError<Self::Error>> {
+    pub fn get_key_info(&self, key_id: &KeyIdentifier) -> Result<PublicKey, KeyError<SignerError>> {
         let kmip_key_pair_ids = self.lookup_kmip_key_ids(key_id)?;
         self.get_public_key_from_id(&kmip_key_pair_ids.public_key_id)
             .map_err(|err| KeyError::Signer(err))
     }
 
-    fn destroy_key(&self, key_id: &Self::KeyId) -> Result<(), KeyError<Self::Error>> {
+    pub fn destroy_key(&self, key_id: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
         let kmip_key_pair_ids = self.lookup_kmip_key_ids(key_id)?;
         match self.destroy_key_pair(&kmip_key_pair_ids, KeyStatus::Active)? {
             true => Ok(()),
@@ -35,12 +32,12 @@ impl Signer for KmipSigner {
         }
     }
 
-    fn sign<D: AsRef<[u8]> + ?Sized>(
+    pub fn sign<D: AsRef<[u8]> + ?Sized>(
         &self,
-        key_id: &Self::KeyId,
+        key_id: &KeyIdentifier,
         algorithm: SignatureAlgorithm,
         data: &D,
-    ) -> Result<Signature, SigningError<Self::Error>> {
+    ) -> Result<Signature, SigningError<SignerError>> {
         let kmip_key_pair_ids = self.lookup_kmip_key_ids(key_id)?;
 
         let signature = self
@@ -55,11 +52,11 @@ impl Signer for KmipSigner {
         Ok(signature)
     }
 
-    fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
+    pub fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
         &self,
         algorithm: SignatureAlgorithm,
         data: &D,
-    ) -> Result<(Signature, PublicKey), Self::Error> {
+    ) -> Result<(Signature, PublicKey), SignerError> {
         // TODO: Is it possible to use a KMIP batch request to implement the create, activate, sign, deactivate, delete
         // in one round-trip to the server?
         let (key, kmip_key_pair_ids) = self.build_key(PublicKeyFormat::Rsa)?;
@@ -75,7 +72,7 @@ impl Signer for KmipSigner {
         Ok((signature, key))
     }
 
-    fn rand(&self, data: &mut [u8]) -> Result<(), Self::Error> {
+    pub fn rand(&self, data: &mut [u8]) -> Result<(), SignerError> {
         let random_bytes = self.get_random_bytes(data.len())?;
 
         data.copy_from_slice(&random_bytes);
