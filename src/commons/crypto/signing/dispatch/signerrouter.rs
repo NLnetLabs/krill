@@ -384,12 +384,28 @@ impl SignerRouter {
 
 #[cfg(feature = "hsm")]
 impl SignerRouter {
+    /// Check for and bind any ready signers.
+    /// 
+    /// This function should return as quickly as possible. Newly bound signers will be moved from the pending set to
+    /// the active set and be available immediately for use by the caller.
+    /// 
+    /// This function should be invoked prior to attempting a signing operation so that the required signer is ready to
+    /// handle the request. On error we log but do not return an error to the caller because the signer required by the
+    /// caller may have been previously bound and this binding error may relate to a different signer. There's also
+    /// nothing the caller can do if a binding failure occurs so receiving an error wouldn't be useful.
+    /// 
+    /// If all signers have either already been bound or deemed to be permanently broken then this function will return
+    /// immediately. In cases of temporary connectivity issues the signer handling code may deem it worth trying again
+    /// but in such cases should implement retry and backoff such that not every attempt to use the signer is blocked
+    /// trying to connect to the backend. Instead most attempts to use a temporarily unavailable signer should fail
+    /// very quickly because the signer handling code is "sleeping" between binding attempts.
     fn bind_ready_signers(&self) {
         if let Err(err) = self.do_ready_signer_binding() {
             error!("Internal error: Unable to bind ready signers: {}", err);
         }
     }
 
+    /// Attempt to bind pending signers.
     fn do_ready_signer_binding(&self) -> Result<(), String> {
         let num_pending_signers = self.pending_signers.read().unwrap().len();
         if num_pending_signers > 0 {
@@ -482,13 +498,16 @@ impl SignerRouter {
         Ok(())
     }
 
+    /// Retrieves the set of signer handles known to the signer mapper.
     fn get_candidate_signer_handles(&self) -> Result<Vec<Handle>, String> {
+        // TODO: Filter out already bound signers?
         Ok(self
             .signer_mapper
             .get_signer_handles()
             .map_err(|err| format!("Failed to get signer handles: {}", err))?)
     }
 
+    /// Checks if the signer identity can be shown to match one of the known signer public keys.
     fn identify_signer(
         &self,
         signer_provider: &Arc<SignerProvider>,
@@ -535,6 +554,11 @@ impl SignerRouter {
         Ok(IdentifyResult::Unidentified)
     }
 
+    /// Checks if the signer identity matches the signer public key associated with a given signer handle.
+    /// 
+    /// To match the signer backend must have access to a key whose signer internal key ID matches one we stored when
+    /// the signer was previously registered, and when used to sign a challenge the signature must match the public
+    /// key we have on record (also stored when the signer was previously registered).
     fn is_signer_identified_by_handle(
         &self,
         signer_provider: &Arc<SignerProvider>,
@@ -590,9 +614,6 @@ impl SignerRouter {
             debug!("Signer '{}' is ready and known, binding", signer_name);
             let signer_info = signer_provider.get_info().unwrap_or("No signer info".to_string());
 
-            // Drop the read lock so that we can acquire a write lock
-            std::mem::drop(signer_provider);
-
             signer_provider.set_handle(candidate_handle.clone());
 
             if let Err(err) = self.signer_mapper.change_signer_name(candidate_handle, &signer_name) {
@@ -624,6 +645,11 @@ impl SignerRouter {
         Ok(IdentifyResult::Identified(candidate_handle.clone()))
     }
 
+    /// Register a signer backend so that we can identify it later.
+    /// 
+    /// Registration creates a key pair in the signer backend and stores the signer specific internal ID of the created
+    /// private key and the content of the created public key. Registration also verifies that the signer is able to
+    /// sign using the newly created private key such that the created signature matches the created public key.
     fn register_new_signer(&self, signer_provider: &Arc<SignerProvider>) -> Result<RegisterResult, ErrorString> {
         let signer_name = signer_provider.get_name().to_string();
 
