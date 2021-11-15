@@ -18,7 +18,7 @@ use openssl::{
 };
 
 use rpki::repository::crypto::{
-    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
+    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError,
 };
 
 use crate::commons::{crypto::signers::error::SignerError, error::KrillIoError};
@@ -96,11 +96,10 @@ impl OpenSslSigner {
     }
 }
 
-impl Signer for OpenSslSigner {
-    type KeyId = KeyIdentifier;
-    type Error = SignerError;
-
-    fn create_key(&self, _algorithm: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
+// Implement the functions defined by the `Signer` trait because `SignerProvider` expects to invoke them, but as the
+// dispatching is not trait based we don't actually have to implement the `Signer` trait.
+impl OpenSslSigner {
+    pub fn create_key(&self, _algorithm: PublicKeyFormat) -> Result<KeyIdentifier, SignerError> {
         let kp = OpenSslKeyPair::build()?;
 
         let pk = &kp.subject_public_key_info()?;
@@ -117,12 +116,12 @@ impl Signer for OpenSslSigner {
         Ok(key_id)
     }
 
-    fn get_key_info(&self, key_id: &Self::KeyId) -> Result<PublicKey, KeyError<Self::Error>> {
+    pub fn get_key_info(&self, key_id: &KeyIdentifier) -> Result<PublicKey, KeyError<SignerError>> {
         let key_pair = self.load_key(key_id)?;
         Ok(key_pair.subject_public_key_info()?)
     }
 
-    fn destroy_key(&self, key_id: &Self::KeyId) -> Result<(), KeyError<Self::Error>> {
+    pub fn destroy_key(&self, key_id: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
         let path = self.key_path(key_id);
         if path.exists() {
             fs::remove_file(&path).map_err(|e| {
@@ -135,21 +134,21 @@ impl Signer for OpenSslSigner {
         Ok(())
     }
 
-    fn sign<D: AsRef<[u8]> + ?Sized>(
+    pub fn sign<D: AsRef<[u8]> + ?Sized>(
         &self,
-        key_id: &Self::KeyId,
+        key_id: &KeyIdentifier,
         _algorithm: SignatureAlgorithm,
         data: &D,
-    ) -> Result<Signature, SigningError<Self::Error>> {
+    ) -> Result<Signature, SigningError<SignerError>> {
         let key_pair = self.load_key(key_id)?;
         Self::sign_with_key(key_pair.pkey.as_ref(), data).map_err(SigningError::Signer)
     }
 
-    fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
+    pub fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
         &self,
         _algorithm: SignatureAlgorithm,
         data: &D,
-    ) -> Result<(Signature, PublicKey), Self::Error> {
+    ) -> Result<(Signature, PublicKey), SignerError> {
         let kp = OpenSslKeyPair::build()?;
 
         let signature = Self::sign_with_key(kp.pkey.as_ref(), data)?;
@@ -159,7 +158,7 @@ impl Signer for OpenSslSigner {
         Ok((signature, key))
     }
 
-    fn rand(&self, target: &mut [u8]) -> Result<(), Self::Error> {
+    pub fn rand(&self, target: &mut [u8]) -> Result<(), SignerError> {
         openssl::rand::rand_bytes(target).map_err(SignerError::OpenSslError)
     }
 }
