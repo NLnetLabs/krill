@@ -68,12 +68,10 @@ impl SignerProvider {
     }
 }
 
-impl Signer for SignerProvider {
-    type KeyId = KeyIdentifier;
-
-    type Error = SignerError;
-
-    fn create_key(&self, algorithm: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
+// Implement the functions defined by the `Signer` trait because `SignerRouter` expects to invoke them, but as the
+// dispatching is not trait based we don't actually have to implement the `Signer` trait.
+impl SignerProvider {
+    fn create_key(&self, algorithm: PublicKeyFormat) -> Result<KeyIdentifier, SignerError> {
         match self {
             SignerProvider::OpenSsl(signer) => signer.create_key(algorithm),
             #[cfg(feature = "hsm")]
@@ -81,7 +79,7 @@ impl Signer for SignerProvider {
         }
     }
 
-    fn get_key_info(&self, key: &Self::KeyId) -> Result<PublicKey, KeyError<Self::Error>> {
+    fn get_key_info(&self, key: &KeyIdentifier) -> Result<PublicKey, KeyError<SignerError>> {
         match self {
             SignerProvider::OpenSsl(signer) => signer.get_key_info(key),
             #[cfg(feature = "hsm")]
@@ -89,7 +87,7 @@ impl Signer for SignerProvider {
         }
     }
 
-    fn destroy_key(&self, key: &Self::KeyId) -> Result<(), KeyError<Self::Error>> {
+    fn destroy_key(&self, key: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
         match self {
             SignerProvider::OpenSsl(signer) => signer.destroy_key(key),
             #[cfg(feature = "hsm")]
@@ -99,10 +97,10 @@ impl Signer for SignerProvider {
 
     fn sign<D: AsRef<[u8]> + ?Sized>(
         &self,
-        key: &Self::KeyId,
+        key: &KeyIdentifier,
         algorithm: SignatureAlgorithm,
         data: &D,
-    ) -> Result<Signature, SigningError<Self::Error>> {
+    ) -> Result<Signature, SigningError<SignerError>> {
         match self {
             SignerProvider::OpenSsl(signer) => signer.sign(key, algorithm, data),
             #[cfg(feature = "hsm")]
@@ -114,7 +112,7 @@ impl Signer for SignerProvider {
         &self,
         algorithm: SignatureAlgorithm,
         data: &D,
-    ) -> Result<(Signature, PublicKey), Self::Error> {
+    ) -> Result<(Signature, PublicKey), SignerError> {
         match self {
             SignerProvider::OpenSsl(signer) => signer.sign_one_off(algorithm, data),
             #[cfg(feature = "hsm")]
@@ -122,7 +120,7 @@ impl Signer for SignerProvider {
         }
     }
 
-    fn rand(&self, target: &mut [u8]) -> Result<(), Self::Error> {
+    fn rand(&self, target: &mut [u8]) -> Result<(), SignerError> {
         match self {
             SignerProvider::OpenSsl(signer) => signer.rand(target),
             #[cfg(feature = "hsm")]
@@ -219,15 +217,15 @@ impl Signer for SignerRouter {
     type KeyId = KeyIdentifier;
     type Error = SignerError;
 
-    fn create_key(&self, algorithm: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
+    fn create_key(&self, algorithm: PublicKeyFormat) -> Result<KeyIdentifier, SignerError> {
         self.general_signer.write().unwrap().create_key(algorithm)
     }
 
-    fn get_key_info(&self, key_id: &KeyIdentifier) -> Result<PublicKey, KeyError<Self::Error>> {
+    fn get_key_info(&self, key_id: &KeyIdentifier) -> Result<PublicKey, KeyError<SignerError>> {
         self.general_signer.read().unwrap().get_key_info(key_id)
     }
 
-    fn destroy_key(&self, key_id: &KeyIdentifier) -> Result<(), KeyError<Self::Error>> {
+    fn destroy_key(&self, key_id: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
         self.general_signer.write().unwrap().destroy_key(key_id)
     }
 
@@ -236,7 +234,7 @@ impl Signer for SignerRouter {
         key_id: &KeyIdentifier,
         algorithm: SignatureAlgorithm,
         data: &D,
-    ) -> Result<Signature, SigningError<Self::Error>> {
+    ) -> Result<Signature, SigningError<SignerError>> {
         self.general_signer.read().unwrap().sign(key_id, algorithm, data)
     }
 
@@ -244,11 +242,11 @@ impl Signer for SignerRouter {
         &self,
         algorithm: SignatureAlgorithm,
         data: &D,
-    ) -> Result<(Signature, PublicKey), Self::Error> {
+    ) -> Result<(Signature, PublicKey), SignerError> {
         self.one_off_signer.read().unwrap().sign_one_off(algorithm, data)
     }
 
-    fn rand(&self, target: &mut [u8]) -> Result<(), Self::Error> {
+    fn rand(&self, target: &mut [u8]) -> Result<(), SignerError> {
         let signer = self.general_signer.read().unwrap();
         if signer.supports_random() {
             signer.rand(target)

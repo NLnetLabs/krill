@@ -7,6 +7,8 @@ use crate::commons::crypto::signers::{
     kmip::{internal::KeyStatus, KmipSigner},
 };
 
+// Implement the functions defined by the `Signer` trait because `SignerProvider` expects to invoke them, but as the
+// dispatching is not trait based we don't actually have to implement the `Signer` trait.
 impl KmipSigner {
     pub fn create_key(&self, algorithm: PublicKeyFormat) -> Result<KeyIdentifier, SignerError> {
         let (key, kmip_key_pair_ids) = self.build_key(algorithm)?;
