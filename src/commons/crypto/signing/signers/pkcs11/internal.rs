@@ -678,11 +678,18 @@ impl Pkcs11Signer {
         priv_template.push(CK_ATTRIBUTE::new(CKA_LABEL).with_string("Krill"));
 
         let (pub_handle, priv_handle) = self.with_conn("generate key pair", |conn| {
+            // The Krill functional test once failed under GitHub Actions with error:
+            //   libsofthsm2.so::C_GenerateKeyPair() failed: PKCS#11: CKR_TEMPLATE_INCONSISTENT (0xd1)
+            // and with the underlying SoftHSM log containing this at the same timestamp:
+            //   ObjectFile.cpp(124): The attribute does not exist: 0x00000002
+            // and where the `pkcs11` Rust crate `types.rs` file defines that attribute as:
+            //   pub const CKA_PRIVATE: CK_ATTRIBUTE_TYPE = 0x00000002;
+            // How can the CKA_PRIVATE attribute not exist?
+            // Is this a real issue or just a transient problem with SoftHSMv2?
             conn.generate_key_pair(&mech, &pub_template, &priv_template)
         })?;
 
         let public_key = self.get_public_key_from_handle(pub_handle)?;
-        // let key_identifier = public_key.key_identifier();
 
         Ok((public_key, pub_handle, priv_handle, hex::encode(cka_id)))
     }
