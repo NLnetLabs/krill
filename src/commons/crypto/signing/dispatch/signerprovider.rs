@@ -1,5 +1,5 @@
 use rpki::repository::crypto::{
-    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
+    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError,
 };
 
 use crate::commons::crypto::signers::{error::SignerError, softsigner::OpenSslSigner};
