@@ -109,9 +109,6 @@ pub struct SignerRouter {
     /// the default for a setting which was not set in the config file (i.e. if the [OpenSslSigner] is used as a
     /// fallback for a signer that doesn't support generating random numbers).
     ///
-    /// NOTE: Currently we're still using hard-coded signers, we don't yet have support for being configured from the
-    /// config file.
-    ///
     /// [SignerProvider] instances are moved to this set from the `pending_signers` set once we are able to confirm that
     /// we can connect to them and can identify the correct signer [Handle] used by the [SignerMapper] to associate with
     /// keys created by that signer.
@@ -223,10 +220,10 @@ impl SignerRouter {
 /// standby in a "pending" set until we can verify that they are reachable and usable and can determine which
 /// [SignerMapper] [Handle] to assign to them.
 ///
-/// The Krill configuration file (TODO) defines named signers with a type (openssl, kmip or pkcs#11) and type specific
+/// The Krill configuration file defines named signers with a type (openssl, kmip or pkcs#11) and type specific
 /// settings (key dir path, hostname, port number, TLS certificate paths, username, password, slot id, etc) and assigns
-/// signers a role (default signer, one-off signer or fallback random value generating signer) either explicitly or by
-/// default.
+/// signers one or more roles (default signer, one-off signer or fallback random value generating signer) either
+/// explicitly or by default.
 ///
 /// Keys created using signers in a previous Krill process MUST have been registered by the signer with the
 /// [SignerMapper] to indicate that the signer owns/possesses the key, and how to map from the [KeyIdentifier] to any
