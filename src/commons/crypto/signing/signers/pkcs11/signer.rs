@@ -1,33 +1,31 @@
 use pkcs11::types::{CKO_PRIVATE_KEY, CKO_PUBLIC_KEY};
 use rpki::repository::crypto::{
-    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
+    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError,
 };
 
 use crate::commons::crypto::{signers::pkcs11::Pkcs11Signer, SignerError};
 
-impl Signer for Pkcs11Signer {
-    type KeyId = KeyIdentifier;
-
-    type Error = SignerError;
-
-    fn create_key(&self, algorithm: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
+// Implement the functions defined by the `Signer` trait because `SignerProvider` expects to invoke them, but as the
+// dispatching is not trait based we don't actually have to implement the `Signer` trait.
+impl Pkcs11Signer {
+    pub fn create_key(&self, algorithm: PublicKeyFormat) -> Result<KeyIdentifier, SignerError> {
         let (key, _, _, internal_key_id) = self.build_key(algorithm)?;
         let key_id = key.key_identifier();
         self.remember_key_id(&key_id, internal_key_id)?;
         Ok(key_id)
     }
 
-    fn get_key_info(&self, key_id: &Self::KeyId) -> Result<PublicKey, KeyError<Self::Error>> {
+    pub fn get_key_info(&self, key_id: &KeyIdentifier) -> Result<PublicKey, KeyError<SignerError>> {
         let internal_key_id = self.lookup_key_id(key_id)?;
         let pub_handle = self.find_key(&internal_key_id, CKO_PUBLIC_KEY)?;
         self.get_public_key_from_handle(pub_handle)
             .map_err(|err| KeyError::Signer(err))
     }
 
-    fn destroy_key(&self, key_id: &Self::KeyId) -> Result<(), KeyError<Self::Error>> {
+    pub fn destroy_key(&self, key_id: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
         debug!("PKCS#11: Deleting key pair with ID {}", key_id);
         let internal_key_id = self.lookup_key_id(key_id)?;
-        let mut res: Result<(), KeyError<Self::Error>> = Ok(());
+        let mut res: Result<(), KeyError<SignerError>> = Ok(());
         if let Ok(pub_handle) = self.find_key(&internal_key_id, CKO_PUBLIC_KEY) {
             res = self.destroy_key_by_handle(pub_handle).map_err(|err| match err {
                 SignerError::KeyNotFound => KeyError::KeyNotFound,
@@ -44,12 +42,12 @@ impl Signer for Pkcs11Signer {
         res
     }
 
-    fn sign<D: AsRef<[u8]> + ?Sized>(
+    pub fn sign<D: AsRef<[u8]> + ?Sized>(
         &self,
-        key_id: &Self::KeyId,
+        key_id: &KeyIdentifier,
         algorithm: SignatureAlgorithm,
         data: &D,
-    ) -> Result<Signature, SigningError<Self::Error>> {
+    ) -> Result<Signature, SigningError<SignerError>> {
         let internal_key_id = self.lookup_key_id(key_id)?;
         let priv_handle = self
             .find_key(&internal_key_id, CKO_PRIVATE_KEY)
@@ -62,11 +60,11 @@ impl Signer for Pkcs11Signer {
             .map_err(|err| SigningError::Signer(err))
     }
 
-    fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
+    pub fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
         &self,
         algorithm: SignatureAlgorithm,
         data: &D,
-    ) -> Result<(Signature, PublicKey), Self::Error> {
+    ) -> Result<(Signature, PublicKey), SignerError> {
         let (key, pub_handle, priv_handle, _) = self.build_key(PublicKeyFormat::Rsa)?;
 
         let signature_res = self
@@ -81,7 +79,7 @@ impl Signer for Pkcs11Signer {
         Ok((signature, key))
     }
 
-    fn rand(&self, target: &mut [u8]) -> Result<(), Self::Error> {
+    pub fn rand(&self, target: &mut [u8]) -> Result<(), SignerError> {
         let random_bytes = self.get_random_bytes(target.len())?;
 
         target.copy_from_slice(&random_bytes);

@@ -10,7 +10,7 @@ use openssl::{
     rsa::Rsa,
 };
 use rpki::repository::crypto::{
-    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
+    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError,
 };
 
 use crate::commons::{
@@ -204,12 +204,10 @@ impl MockSigner {
     }
 }
 
-impl Signer for MockSigner {
-    type KeyId = KeyIdentifier;
-
-    type Error = SignerError;
-
-    fn create_key(&self, _algorithm: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
+// Implement the functions defined by the `Signer` trait because `SignerProvider` expects to invoke them, but as the
+// dispatching is not trait based we don't actually have to implement the `Signer` trait.
+impl MockSigner {
+    pub fn create_key(&self, _algorithm: PublicKeyFormat) -> Result<KeyIdentifier, SignerError> {
         self.inc_fn_call_count(FnIdx::CreateKey);
         let (_, _, key_identifier, internal_id) = self.build_key().unwrap();
 
@@ -223,7 +221,7 @@ impl Signer for MockSigner {
         Ok(key_identifier)
     }
 
-    fn get_key_info(&self, key_identifier: &Self::KeyId) -> Result<PublicKey, KeyError<Self::Error>> {
+    pub fn get_key_info(&self, key_identifier: &KeyIdentifier) -> Result<PublicKey, KeyError<SignerError>> {
         self.inc_fn_call_count(FnIdx::GetKeyInfo);
         let internal_id = self.internal_id_from_key_identifier(key_identifier).unwrap();
         let pkey = self.load_key(&internal_id).ok_or(KeyError::KeyNotFound)?;
@@ -231,7 +229,7 @@ impl Signer for MockSigner {
         Ok(public_key)
     }
 
-    fn destroy_key(&self, key_identifier: &Self::KeyId) -> Result<(), KeyError<Self::Error>> {
+    pub fn destroy_key(&self, key_identifier: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
         self.inc_fn_call_count(FnIdx::DestroyKey);
         let internal_id = self.internal_id_from_key_identifier(key_identifier).unwrap();
         let _ = self.keys.write().unwrap().remove(&internal_id);
@@ -244,23 +242,23 @@ impl Signer for MockSigner {
         Ok(())
     }
 
-    fn sign<D: AsRef<[u8]> + ?Sized>(
+    pub fn sign<D: AsRef<[u8]> + ?Sized>(
         &self,
-        key_identifier: &Self::KeyId,
+        key_identifier: &KeyIdentifier,
         _algorithm: SignatureAlgorithm,
         data: &D,
-    ) -> Result<Signature, SigningError<Self::Error>> {
+    ) -> Result<Signature, SigningError<SignerError>> {
         self.inc_fn_call_count(FnIdx::Sign);
         let internal_id = self.internal_id_from_key_identifier(key_identifier)?;
         let pkey = self.load_key(&internal_id).ok_or(SignerError::KeyNotFound)?;
         Self::sign_with_key(&pkey, data).map_err(|err| SigningError::Signer(err))
     }
 
-    fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
+    pub fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
         &self,
         _algorithm: SignatureAlgorithm,
         data: &D,
-    ) -> Result<(Signature, PublicKey), Self::Error> {
+    ) -> Result<(Signature, PublicKey), SignerError> {
         self.inc_fn_call_count(FnIdx::SignOneOff);
         let (public_key, pkey, _, internal_id) = self.build_key().unwrap();
         let signature = Self::sign_with_key(&pkey, data).unwrap();
@@ -268,7 +266,7 @@ impl Signer for MockSigner {
         Ok((signature, public_key))
     }
 
-    fn rand(&self, target: &mut [u8]) -> Result<(), Self::Error> {
+    pub fn rand(&self, target: &mut [u8]) -> Result<(), SignerError> {
         self.inc_fn_call_count(FnIdx::Rand);
 
         // is this a poison pill?
