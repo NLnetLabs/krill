@@ -608,7 +608,10 @@ impl SignerRouter {
             .add_signer(&new_signer_handle, &signer_name, &signer_info, &public_key)
             .unwrap(); // TODO: handle me
 
-        debug!("Signer '{}' bound to signer handle '{}'", signer_name, new_signer_handle);
+        debug!(
+            "Signer '{}' bound to signer handle '{}'",
+            signer_name, new_signer_handle
+        );
         Ok(RegisterResult::ReadyVerified(new_signer_handle))
     }
 
