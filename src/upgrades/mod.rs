@@ -21,7 +21,7 @@ use crate::{
 };
 
 #[cfg(feature = "hsm")]
-use rpki::repository::crypto::{KeyIdentifier, Signer};
+use rpki::repository::crypto::KeyIdentifier;
 
 #[cfg(feature = "hsm")]
 use crate::constants::{KEYS_DIR, SIGNERS_DIR};
@@ -365,7 +365,8 @@ mod tests {
         let _ = fs::remove_dir_all(work_dir);
     }
 
-    #[cfg(all(feature = "hsm", not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11"))))]    fn unmapped_keys_test_core(do_upgrade: bool) {
+    #[cfg(all(feature = "hsm", not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11"))))]
+    fn unmapped_keys_test_core(do_upgrade: bool) {
         let expected_key_id = KeyIdentifier::from_str("5CBCAB14B810C864F3EEA8FD102B79F4E53FCC70").unwrap();
 
         // Create a naked OpenSSL signer (i.e. not accessed via KrillSigner) and create a key.

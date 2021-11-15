@@ -212,7 +212,7 @@ impl SignerProvider {
 // Implement the functions defined by the `Signer` trait because `SignerRouter` expects to invoke them, but as the
 // dispatching is not trait based we don't actually have to implement the `Signer` trait.
 impl SignerProvider {
-    pub(super) fn create_key(&self, algorithm: PublicKeyFormat) -> Result<KeyIdentifier, SignerError> {
+    pub(crate) fn create_key(&self, algorithm: PublicKeyFormat) -> Result<KeyIdentifier, SignerError> {
         match self {
             SignerProvider::OpenSsl(_, signer) => signer.create_key(algorithm),
             #[cfg(feature = "hsm")]
@@ -224,7 +224,7 @@ impl SignerProvider {
         }
     }
 
-    pub(super) fn get_key_info(&self, key: &KeyIdentifier) -> Result<PublicKey, KeyError<SignerError>> {
+    pub(crate) fn get_key_info(&self, key: &KeyIdentifier) -> Result<PublicKey, KeyError<SignerError>> {
         match self {
             SignerProvider::OpenSsl(_, signer) => signer.get_key_info(key),
             #[cfg(feature = "hsm")]
@@ -236,7 +236,7 @@ impl SignerProvider {
         }
     }
 
-    pub(super) fn destroy_key(&self, key: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
+    pub(crate) fn destroy_key(&self, key: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
         match self {
             SignerProvider::OpenSsl(_, signer) => signer.destroy_key(key),
             #[cfg(feature = "hsm")]
@@ -248,7 +248,7 @@ impl SignerProvider {
         }
     }
 
-    pub(super) fn sign<D: AsRef<[u8]> + ?Sized>(
+    pub(crate) fn sign<D: AsRef<[u8]> + ?Sized>(
         &self,
         key: &KeyIdentifier,
         algorithm: SignatureAlgorithm,
@@ -265,7 +265,7 @@ impl SignerProvider {
         }
     }
 
-    pub(super) fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
+    pub(crate) fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
         &self,
         algorithm: SignatureAlgorithm,
         data: &D,
@@ -281,7 +281,7 @@ impl SignerProvider {
         }
     }
 
-    pub(super) fn rand(&self, target: &mut [u8]) -> Result<(), SignerError> {
+    pub(crate) fn rand(&self, target: &mut [u8]) -> Result<(), SignerError> {
         match self {
             SignerProvider::OpenSsl(_, signer) => signer.rand(target),
             #[cfg(feature = "hsm")]
