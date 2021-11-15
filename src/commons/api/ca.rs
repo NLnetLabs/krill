@@ -2664,7 +2664,7 @@ impl ResourceSetError {
 #[cfg(test)]
 mod test {
     use bytes::Bytes;
-    use rpki::repository::crypto::{PublicKeyFormat, Signer};
+    use rpki::repository::crypto::PublicKeyFormat;
 
     use crate::{commons::crypto::OpenSslSigner, test};
 
