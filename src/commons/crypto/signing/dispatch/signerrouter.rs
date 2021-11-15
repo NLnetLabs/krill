@@ -573,9 +573,6 @@ impl SignerRouter {
             debug!("Signer '{}' is ready and known, binding", signer_name);
             let signer_info = signer_provider.get_info().unwrap_or("No signer info".to_string());
 
-            // Drop the read lock so that we can acquire a write lock
-            std::mem::drop(signer_provider);
-
             signer_provider.set_handle(candidate_handle.clone());
 
             if let Err(err) = self.signer_mapper.change_signer_name(candidate_handle, &signer_name) {
