@@ -80,12 +80,10 @@ impl SignerProvider {
     }
 }
 
-impl Signer for SignerProvider {
-    type KeyId = KeyIdentifier;
-
-    type Error = SignerError;
-
-    fn create_key(&self, algorithm: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
+// Implement the functions defined by the `Signer` trait because `SignerRouter` expects to invoke them, but as the
+// dispatching is not trait based we don't actually have to implement the `Signer` trait.
+impl SignerProvider {
+    pub(super) fn create_key(&self, algorithm: PublicKeyFormat) -> Result<KeyIdentifier, SignerError> {
         match self {
             SignerProvider::OpenSsl(signer) => signer.create_key(algorithm),
             #[cfg(feature = "hsm")]
@@ -93,7 +91,7 @@ impl Signer for SignerProvider {
         }
     }
 
-    fn get_key_info(&self, key: &Self::KeyId) -> Result<PublicKey, KeyError<Self::Error>> {
+    pub(super) fn get_key_info(&self, key: &KeyIdentifier) -> Result<PublicKey, KeyError<SignerError>> {
         match self {
             SignerProvider::OpenSsl(signer) => signer.get_key_info(key),
             #[cfg(feature = "hsm")]
@@ -101,7 +99,7 @@ impl Signer for SignerProvider {
         }
     }
 
-    fn destroy_key(&self, key: &Self::KeyId) -> Result<(), KeyError<Self::Error>> {
+    pub(super) fn destroy_key(&self, key: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
         match self {
             SignerProvider::OpenSsl(signer) => signer.destroy_key(key),
             #[cfg(feature = "hsm")]
@@ -109,12 +107,12 @@ impl Signer for SignerProvider {
         }
     }
 
-    fn sign<D: AsRef<[u8]> + ?Sized>(
+    pub(super) fn sign<D: AsRef<[u8]> + ?Sized>(
         &self,
-        key: &Self::KeyId,
+        key: &KeyIdentifier,
         algorithm: SignatureAlgorithm,
         data: &D,
-    ) -> Result<Signature, SigningError<Self::Error>> {
+    ) -> Result<Signature, SigningError<SignerError>> {
         match self {
             SignerProvider::OpenSsl(signer) => signer.sign(key, algorithm, data),
             #[cfg(feature = "hsm")]
@@ -122,11 +120,11 @@ impl Signer for SignerProvider {
         }
     }
 
-    fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
+    pub(super) fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
         &self,
         algorithm: SignatureAlgorithm,
         data: &D,
-    ) -> Result<(Signature, PublicKey), Self::Error> {
+    ) -> Result<(Signature, PublicKey), SignerError> {
         match self {
             SignerProvider::OpenSsl(signer) => signer.sign_one_off(algorithm, data),
             #[cfg(feature = "hsm")]
@@ -134,7 +132,7 @@ impl Signer for SignerProvider {
         }
     }
 
-    fn rand(&self, target: &mut [u8]) -> Result<(), Self::Error> {
+    pub(super) fn rand(&self, target: &mut [u8]) -> Result<(), SignerError> {
         match self {
             SignerProvider::OpenSsl(signer) => signer.rand(target),
             #[cfg(feature = "hsm")]

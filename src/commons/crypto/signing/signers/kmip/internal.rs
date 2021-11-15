@@ -18,7 +18,7 @@ use kmip::{
 use openssl::ssl::SslStream;
 use r2d2::PooledConnection;
 use rpki::repository::crypto::{
-    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer,
+    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm,
 };
 
 use crate::commons::{
@@ -520,7 +520,7 @@ impl KmipSigner {
     pub(super) fn lookup_kmip_key_ids(
         &self,
         key_id: &KeyIdentifier,
-    ) -> Result<KmipKeyPairIds, KeyError<<KmipSigner as Signer>::Error>> {
+    ) -> Result<KmipKeyPairIds, KeyError<SignerError>> {
         let readable_handle = self.handle.read().unwrap();
         let signer_handle = readable_handle.as_ref().ok_or(KeyError::KeyNotFound)?;
 
@@ -760,7 +760,7 @@ impl KmipSigner {
         Ok(success)
     }
 
-    pub(super) fn get_random_bytes(&self, num_bytes_wanted: usize) -> Result<Vec<u8>, <KmipSigner as Signer>::Error> {
+    pub(super) fn get_random_bytes(&self, num_bytes_wanted: usize) -> Result<Vec<u8>, SignerError> {
         if !self.supports_random() {
             return Err(SignerError::KmipError(
                 "The KMIP server does not support random number generation".to_string(),
