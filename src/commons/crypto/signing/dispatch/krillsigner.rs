@@ -217,13 +217,18 @@ impl KrillSigner {
             configs.push(Self::get_default_signer_config()?);
         }
 
-        // If there is only a single signer defined in the configuration file, don't require the user to specify its
-        // roles, set the signer to be used for all signing functions unless the operator explicitly said otherwise.
+        // If there is only a single signer defined in the configuration file, don't require the user to specify it as
+        // the default signer. Also, for an OpenSSL signer, use it for all signing functions unless the operator
+        // explicitly said otherwise.
         if configs.len() == 1 {
             let config = &mut configs[0];
+
             config.default.get_or_insert(true);
-            config.oneoff.get_or_insert(true);
-            config.random.get_or_insert(true);
+
+            if matches!(config.signer_type, SignerType::OpenSsl(_)) {
+                config.oneoff.get_or_insert(true);
+                config.random.get_or_insert(true);
+            }
         }
 
         // One and only one signer should be the default. The default signer is used for operations that don't concern
@@ -381,7 +386,11 @@ fn signer_builder(
     }
 }
 
-#[cfg(all(test, feature = "hsm", not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11"))))]
+#[cfg(all(
+    test,
+    feature = "hsm",
+    not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11"))
+))]
 pub mod tests {
     use std::path::PathBuf;
 
@@ -493,7 +502,6 @@ pub mod tests {
                 type = "OpenSSL"
             "#;
             let signers = build_krill_signer_from_config(signers_config_fragment, &d, mapper.clone()).unwrap();
-            assert_eq!(signers.len(), 1);
             assert_signer_name_and_type(&signers[0], "OpenSSL");
 
             // ---
@@ -504,7 +512,6 @@ pub mod tests {
                 lib_path = "dummy path"
             "#;
             let signers = build_krill_signer_from_config(signers_config_fragment, &d, mapper.clone()).unwrap();
-            assert_eq!(signers.len(), 1);
             assert_signer_name_and_type(&signers[0], "PKCS#11");
 
             // ---
@@ -515,17 +522,16 @@ pub mod tests {
                 host = "dummy host"
             "#;
             let signers = build_krill_signer_from_config(signers_config_fragment, &d, mapper).unwrap();
-            assert_eq!(signers.len(), 1);
             assert_signer_name_and_type(&signers[0], "KMIP");
         });
     }
 
-    /// To make it easier for the operator we don't want them to have to manually remember to mark a single signer
-    /// configuration as the default one, it should just automatically be the default signer and should in fact be used
-    /// for all signing related operations, i.e. one-off signing and random number generation as well as the key
-    /// creation, deletion and signing operations handled by the default signer.
+    /// To make it easier for the operator we don't want them to have to manually remember to mark a single OpenSSL
+    /// signer configuration as the default one, it should just automatically be the default signer and should in fact
+    /// be used for all signing related operations, i.e. one-off signing and random number generation as well as the
+    /// key creation, deletion and signing operations handled by the default signer.
     #[test]
-    pub fn single_signer_is_made_the_default_all_signer() {
+    pub fn single_openssl_signer_is_made_the_default_all_signer() {
         test::test_under_tmp(|d| {
             let mapper = Arc::new(SignerMapper::build(&d).unwrap());
             let signers_config_fragment = r#"
@@ -604,72 +610,102 @@ pub mod tests {
         test::test_under_tmp(|d| {
             let mapper = Arc::new(SignerMapper::build(&d).unwrap());
 
-            let signers_config_fragment_needs_fallback_oneoff = r#"
+            let mut base_signer_configs = Vec::new();
+            base_signer_configs.push((
+                "KMIP",
+                r#"
+                [[signers]]
+                type = "KMIP"
+                host = "dummy host"
+            "#,
+            ));
+            base_signer_configs.push((
+                "PKCS#11",
+                r#"
                 [[signers]]
                 type = "PKCS#11"
                 lib_path = "dummy"
-                default = true
-                oneoff = false
-            "#;
-            let signers =
-                build_krill_signer_from_config(signers_config_fragment_needs_fallback_oneoff, &d, mapper.clone())
-                    .unwrap();
-            assert_eq!(signers.len(), 2);
+            "#,
+            ));
 
-            let signer = &signers[0];
-            assert_signer_name_and_type(signer, "PKCS#11");
-            assert_signer_flags(signer, true, false, true);
+            for (expected_type, base_signer_config) in base_signer_configs {
+                let minimal_signers_config_fragment = base_signer_config.to_string();
+                let signers =
+                    build_krill_signer_from_config(&minimal_signers_config_fragment, &d, mapper.clone()).unwrap();
+                assert_eq!(signers.len(), 2);
 
-            let signer = &signers[1];
-            assert_signer_name(signer, "Fallback OpenSSL signer");
-            assert_signer_type(signer, "OpenSSL");
-            assert_signer_flags(signer, false, true, false);
+                let signer = &signers[0];
+                assert_signer_name_and_type(signer, expected_type);
+                assert_signer_flags(signer, true, false, false);
 
-            // ---
+                let signer = &signers[1];
+                assert_signer_name(signer, "Fallback OpenSSL signer");
+                assert_signer_type(signer, "OpenSSL");
+                assert_signer_flags(signer, false, true, true);
 
-            let signers_config_fragment_needs_fallback_random = r#"
-                [[signers]]
-                type = "PKCS#11"
-                lib_path = "dummy"
-                default = true
-                random = false
-            "#;
-            let signers =
-                build_krill_signer_from_config(signers_config_fragment_needs_fallback_random, &d, mapper.clone())
-                    .unwrap();
-            assert_eq!(signers.len(), 2);
+                // ---
+                let signers_config_fragment_needs_fallback_oneoff = base_signer_config.to_string()
+                    + r#"
+                    default = true
+                    oneoff = false
+                "#;
+                let signers =
+                    build_krill_signer_from_config(&signers_config_fragment_needs_fallback_oneoff, &d, mapper.clone())
+                        .unwrap();
+                assert_eq!(signers.len(), 2);
 
-            let signer = &signers[0];
-            assert_signer_name_and_type(signer, "PKCS#11");
-            assert_signer_flags(signer, true, true, false);
+                let signer = &signers[0];
+                assert_signer_name_and_type(signer, expected_type);
+                assert_signer_flags(signer, true, false, false);
 
-            let signer = &signers[1];
-            assert_signer_name(signer, "Fallback OpenSSL signer");
-            assert_signer_type(signer, "OpenSSL");
-            assert_signer_flags(signer, false, false, true);
+                let signer = &signers[1];
+                assert_signer_name(signer, "Fallback OpenSSL signer");
+                assert_signer_type(signer, "OpenSSL");
+                assert_signer_flags(signer, false, true, true);
 
-            // ---
+                // ---
 
-            let signers_config_fragment_needs_fallback_both = r#"
-                [[signers]]
-                type = "PKCS#11"
-                lib_path = "dummy"
-                default = true
-                oneoff = false
-                random = false
-            "#;
-            let signers =
-                build_krill_signer_from_config(signers_config_fragment_needs_fallback_both, &d, mapper).unwrap();
-            assert_eq!(signers.len(), 2);
+                let signers_config_fragment_needs_fallback_random = base_signer_config.to_string()
+                    + r#"
+                    default = true
+                    random = false
+                "#;
+                let signers =
+                    build_krill_signer_from_config(&signers_config_fragment_needs_fallback_random, &d, mapper.clone())
+                        .unwrap();
+                assert_eq!(signers.len(), 2);
 
-            let signer = &signers[0];
-            assert_signer_name_and_type(signer, "PKCS#11");
-            assert_signer_flags(signer, true, false, false);
+                let signer = &signers[0];
+                assert_signer_name_and_type(signer, expected_type);
+                assert_signer_flags(signer, true, false, false);
 
-            let signer = &signers[1];
-            assert_signer_name(signer, "Fallback OpenSSL signer");
-            assert_signer_type(signer, "OpenSSL");
-            assert_signer_flags(signer, false, true, true);
+                let signer = &signers[1];
+                assert_signer_name(signer, "Fallback OpenSSL signer");
+                assert_signer_type(signer, "OpenSSL");
+                assert_signer_flags(signer, false, true, true);
+
+                // ---
+
+                let signers_config_fragment_needs_fallback_both = base_signer_config.to_string()
+                    + r#"
+                    default = true
+                    oneoff = false
+                    random = false
+                "#;
+                let signers =
+                    build_krill_signer_from_config(&signers_config_fragment_needs_fallback_both, &d, mapper.clone())
+                        .unwrap();
+                assert_eq!(signers.len(), 2);
+
+                let signer = &signers[0];
+                assert_signer_name_and_type(signer, expected_type);
+                assert_signer_flags(signer, true, false, false);
+
+                let signer = &signers[1];
+                assert_signer_name(signer, "Fallback OpenSSL signer");
+                assert_signer_type(signer, "OpenSSL");
+                assert_signer_flags(signer, false, true, true);
+            }
         });
     }
 }
