@@ -10,6 +10,7 @@ use crate::{
         api::{CommandSummary, Handle},
         error::Error,
         eventsourcing::{Aggregate, AggregateStore, CommandDetails, SentCommand, StoredEvent, WithStorableDetails},
+        util::ext_serde,
         KrillResult,
     },
     constants::{ACTOR_DEF_KRILL, SIGNERS_DIR},
@@ -33,7 +34,7 @@ impl InitSignerInfoEvent {
                 signer_name: signer_name.to_string(),
                 signer_info: signer_info.to_string(),
                 signer_identity: SignerIdentity {
-                    public_key: base64::encode(public_key.to_info_bytes()),
+                    public_key: public_key.clone(),
                     private_key_internal_id: private_key_internal_id.to_string(),
                 },
             },
@@ -203,9 +204,12 @@ impl SignerInfoCommand {
 
 #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
 struct SignerIdentity {
-    /// The base6 encoded bytes of an X.509 Subject Public Key Info public key that can be used to verify the identity
-    /// of the signer.
-    public_key: String,
+    /// An X.509 Subject Public Key Info public key that can be used to verify the identity of the signer.
+    #[serde(
+        deserialize_with = "ext_serde::de_public_key",
+        serialize_with = "ext_serde::ser_public_key"
+    )]
+    public_key: PublicKey,
 
     /// The internal signer backend specific identifier for the corresponding private key.
     private_key_internal_id: String,
@@ -399,10 +403,7 @@ impl SignerMapper {
     }
 
     pub fn get_signer_public_key(&self, signer_handle: &Handle) -> KrillResult<PublicKey> {
-        let public_key_hex_str = self.store.get_latest(signer_handle)?.signer_identity.public_key.clone();
-        let public_key_bytes = base64::decode(public_key_hex_str).map_err(Error::signer)?;
-        let public_key = PublicKey::decode(&*public_key_bytes).map_err(Error::signer)?;
-        Ok(public_key)
+        Ok(self.store.get_latest(signer_handle)?.signer_identity.public_key.clone())
     }
 
     pub fn get_signer_private_key_internal_id(&self, signer_handle: &Handle) -> KrillResult<String> {
