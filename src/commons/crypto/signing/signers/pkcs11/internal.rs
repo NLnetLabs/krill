@@ -452,7 +452,7 @@ impl Pkcs11Signer {
         })?;
 
         let (cryptoki_info, slot_id, _slot_info, token_info, user_pin) =
-            interrogate_token(&conn_settings, name, &lib_name).map_err(|err| {
+            interrogate_token(&conn_settings, &name, &lib_name).map_err(|err| {
                 if matches!(err, ProbeError::CallbackFailed(SignerError::Pkcs11Error(_))) {
                     // While the token is not available now, it might be later.
                     force_cache_flush(conn_settings.context.clone());
@@ -478,7 +478,7 @@ impl Pkcs11Signer {
         let supports_random_number_generation = check_rand_support(&session)?;
 
         // Login if needed
-        let login_session = login(session, conn_settings.login_mode, user_pin, name, &lib_name, slot_id)?;
+        let login_session = login(session, conn_settings.login_mode, user_pin, &name, &lib_name, slot_id)?;
 
         // Switch from probing the server to using it.
         // -------------------------------------------
