@@ -1,5 +1,6 @@
 use std::{
     convert::{TryFrom, TryInto},
+    marker::PhantomData,
     path::Path,
     sync::{Arc, RwLock, RwLockReadGuard},
     time::Duration,
@@ -33,7 +34,7 @@ use crate::commons::{
 
 //------------ Types and constants ------------------------------------------------------------------------------------
 
-use serde::Deserialize;
+use serde::{de::Visitor, Deserialize};
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Pkcs11SignerConfig {
@@ -41,9 +42,8 @@ pub struct Pkcs11SignerConfig {
 
     pub user_pin: Option<String>,
 
-    pub slot_label: Option<String>,
-
-    pub slot_id: Option<CK_SLOT_ID>,
+    #[serde(deserialize_with = "slot_id_or_label")]
+    pub slot: SlotIdOrLabel,
 
     #[serde(default = "Pkcs11SignerConfig::login_default")]
     pub login: bool,
@@ -55,8 +55,7 @@ impl Default for Pkcs11SignerConfig {
         Self {
             lib_path: "/usr/lib/softhsm/libsofthsm2.so".to_string(),
             user_pin: Some("1234".to_string()),
-            slot_label: Some("My token 1".to_string()),
-            slot_id: None,
+            slot: SlotIdOrLabel::Label("My token 1".to_string()),
             login: true,
         }
     }
@@ -88,23 +87,24 @@ pub enum LoginMode {
     LoginRequired,
 }
 
+#[derive(Clone, Debug)]
+pub enum SlotIdOrLabel {
+    Id(CK_SLOT_ID),
+
+    Label(String),
+}
+
 // Placeholder struct
 #[derive(Clone, Debug)]
 struct ConnectionSettings {
     context: ThreadSafePkcs11Context,
 
-    // For some PKCS#11 libraries it is easy, or only possible, to connect by slot ID (rather than slot label). If
-    // `slot_id` is Some then `slot_label` is ignored. One of `slot_id` or `slot_label` must be Some.
-    slot_id: Option<CK_SLOT_ID>,
-
-    // Some PKCS#11 libraries support labeling slots for easy identification, others not only support it be make it
-    // necessary to use labelled slots because the slot ID is not so obvious (e.g. with SoftHSMv2 slot 0 has a seemingly
-    // random actual slot ID generated when the slot is initialized) or is dynamic (apparently the OpenDNSSec project
-    // has encountered this). However, not all libraries support labeling of slots, e.g. the YubiHSM PKCS#11 library
-    // uses simple integer slot IDs (slot 0, 1, etc). When `slot_label` is Some and `slot_id` is None then the list of
-    // available slots will be queried via C_GetSlotList and the slot id of the first slot whose label matches the
-    // given Some(slot_label) value will be used to connect to the HSM.
-    slot_label: Option<String>,
+    // For some PKCS#11 libraries it is easy, or only possible, to connect by slot ID (rather than slot label). With
+    // others using labeled slots is easier (e.g. with SoftHSMv2 slot 0 has a seemingly random actual slot ID generated
+    // when the slot is initialized) or is dynamic (apparently the OpenDNSSec project has encountered this behaviour).
+    // When a slot label is supplied all available slots will be queried via `C_GetSlotList` and the slot id of the
+    // first slot with a matching label will be used to connect to the HSM.
+    slot: SlotIdOrLabel,
 
     // The user pin is optional, it may be possible to login without it. Quoting the PKCS#11 v2.20 specificiation for
     // the C_Login operation:
@@ -125,8 +125,7 @@ impl TryFrom<&Pkcs11SignerConfig> for ConnectionSettings {
 
     fn try_from(conf: &Pkcs11SignerConfig) -> Result<Self, Self::Error> {
         let context = Pkcs11Context::get_or_load(Path::new(&conf.lib_path));
-        let slot_id = conf.slot_id.clone();
-        let slot_label = conf.slot_label.clone();
+        let slot = conf.slot.clone();
         let user_pin = conf.user_pin.clone();
         let login_mode = match conf.login {
             true => LoginMode::LoginRequired,
@@ -135,8 +134,7 @@ impl TryFrom<&Pkcs11SignerConfig> for ConnectionSettings {
 
         Ok(ConnectionSettings {
             context,
-            slot_id,
-            slot_label,
+            slot,
             user_pin,
             login_mode,
         })
@@ -291,39 +289,43 @@ impl Pkcs11Signer {
     fn probe_server(
         status: &ProbeStatus<ConnectionSettings, SignerError, UsableServerState>,
     ) -> Result<UsableServerState, ProbeError<SignerError>> {
-        fn force_cache_flush(readable_ctx: RwLockReadGuard<Pkcs11Context>, context: ThreadSafePkcs11Context) {
+        fn force_cache_flush(context: ThreadSafePkcs11Context) {
             // Finalize the PKCS#11 library so that we re-initialize it on next use, otherwise it just caches (at
             // least with SoftHSMv2 and YubiHSM) the token info and doesn't ever report the presence of the token
             // even when it becomes available.
-            std::mem::drop(readable_ctx);
-            let mut writable_ctx = context.write().unwrap();
-            let _ = writable_ctx.finalize();
+            let _ = context.write().unwrap().finalize();
         }
 
-        let signer_name = "TODO";
-        let conn_settings = status.config()?;
-
-        let (res, lib_name) = {
-            let mut writable_ctx = conn_settings.context.write().unwrap();
-            let lib_name = writable_ctx.get_lib_file_name();
-
-            debug!("[{}] Probing server using library '{}'", signer_name, lib_name);
-            let res = writable_ctx.initialize_if_not_already();
-
-            (res, lib_name)
-        };
-
-        if let Err(err) = res {
-            if matches!(err, SignerError::PermanentlyUnusable) {
-                error!(
-                    "[{}] Unable to initialize PKCS#11 info for library '{}': {}",
-                    signer_name, lib_name, err
-                );
+        fn slot_label_eq(ctx: &RwLockReadGuard<Pkcs11Context>, slot_id: CK_SLOT_ID, slot_label: &str) -> bool {
+            match ctx.get_token_info(slot_id) {
+                Ok(info) => slot_label == info.label.to_string(),
+                Err(err) => {
+                    warn!("Failed to obtain token info for PKCS#11 slot id '{}': {}", slot_id, err);
+                    false
+                }
             }
-            return Err(ProbeError::CompletedUnusable);
         }
 
-        let (cryptoki_info, slot_id, _slot_info, token_info, user_pin) = {
+        fn find_slot_id_by_label(
+            readable_ctx: &RwLockReadGuard<Pkcs11Context>,
+            label: &str,
+        ) -> Result<Option<u64>, Pkcs11Error> {
+            let possible_slot_id = readable_ctx
+                .get_slot_list(true)?
+                .into_iter()
+                .find(|&id| slot_label_eq(readable_ctx, id, label));
+            Ok(possible_slot_id)
+        }
+
+        fn initialize_if_needed(conn_settings: &Arc<ConnectionSettings>) -> Result<(), SignerError> {
+            conn_settings.context.write().unwrap().initialize_if_not_already()
+        }
+
+        fn interrogate_token(
+            conn_settings: &Arc<ConnectionSettings>,
+            signer_name: &str,
+            lib_name: &String,
+        ) -> Result<(CK_INFO, u64, CK_SLOT_INFO, CK_TOKEN_INFO, Option<String>), ProbeError<SignerError>> {
             let readable_ctx = conn_settings.context.read().unwrap();
 
             let cryptoki_info = readable_ctx.get_info().map_err(|err| {
@@ -333,62 +335,32 @@ impl Pkcs11Signer {
                 );
                 ProbeError::CompletedUnusable
             })?;
-
             trace!("[{}] C_GetInfo(): {:?}", signer_name, cryptoki_info);
 
-            let slot_id = if let Some(slot_id) = conn_settings.slot_id {
-                slot_id
-            } else if let Some(slot_label) = &conn_settings.slot_label {
-                fn has_token_label(
-                    signer_name: &str,
-                    ctx: &RwLockReadGuard<Pkcs11Context>,
-                    slot_id: CK_SLOT_ID,
-                    slot_label: &str,
-                ) -> bool {
-                    match ctx.get_token_info(slot_id) {
-                        Ok(info) => info.label.to_string() == slot_label,
-                        Err(err) => {
-                            warn!(
-                                "[{}] Failed to obtain token info for PKCS#11 slot id '{}': {}",
-                                signer_name, slot_id, err
+            let slot_id = match &conn_settings.slot {
+                SlotIdOrLabel::Id(id) => *id,
+                SlotIdOrLabel::Label(label) => {
+                    // No slot id provided, look it up by its label instead
+                    match find_slot_id_by_label(&readable_ctx, &label) {
+                        Ok(Some(id)) => id,
+                        Ok(None) => {
+                            let err_msg = format!(
+                                "[{}] No PKCS#11 slot found for library '{}' with label '{}'",
+                                signer_name, lib_name, label
                             );
-                            false
+
+                            error!("{}", err_msg);
+                            return Err(ProbeError::CallbackFailed(SignerError::Pkcs11Error(err_msg)));
+                        }
+                        Err(err) => {
+                            error!(
+                                "[{}] Failed to enumerate PKCS#11 slots for library '{}': {}",
+                                signer_name, lib_name, err
+                            );
+                            return Err(ProbeError::CompletedUnusable);
                         }
                     }
                 }
-
-                let slot_id = readable_ctx
-                    .get_slot_list(true)
-                    .map_err(|err| {
-                        error!(
-                            "[{}] Failed to enumerate PKCS#11 slots for library '{}': {}",
-                            signer_name, lib_name, err
-                        );
-                        ProbeError::CompletedUnusable
-                    })?
-                    .into_iter()
-                    .find(|&slot_id| has_token_label(signer_name, &readable_ctx, slot_id, &slot_label));
-
-                match slot_id {
-                    Some(slot_id) => slot_id,
-                    None => {
-                        let err_msg = format!(
-                            "[{}] No PKCS#11 slot found for library '{}' with label '{}'",
-                            signer_name, lib_name, slot_label
-                        );
-
-                        // While the slot is not available now, it might be later.
-                        force_cache_flush(readable_ctx, conn_settings.context.clone());
-                        error!("{}", err_msg);
-                        return Err(ProbeError::CallbackFailed(SignerError::Pkcs11Error(err_msg)));
-                    }
-                }
-            } else {
-                error!(
-                    "[{}] No PKCS#11 slot id or label specified for library '{}'",
-                    signer_name, lib_name
-                );
-                return Err(ProbeError::CompletedUnusable);
             };
 
             let slot_info = readable_ctx.get_slot_info(slot_id).map_err(|err| {
@@ -397,16 +369,10 @@ impl Pkcs11Signer {
                     signer_name, lib_name, slot_id, err
                 );
 
-                // While the slot is not available now, it might be later.
-                force_cache_flush(readable_ctx, conn_settings.context.clone());
                 error!("{}", err_msg);
                 ProbeError::CallbackFailed(SignerError::Pkcs11Error(err_msg))
             })?;
-
             trace!("[{}] C_GetSlotInfo(): {:?}", signer_name, slot_info);
-
-            // Need to reacquire this as it may have been dropped by passing it to force_cache_flush().
-            let readable_ctx = conn_settings.context.read().unwrap();
 
             let token_info = readable_ctx.get_token_info(slot_id).map_err(|err| {
                 let err_msg = format!(
@@ -414,30 +380,82 @@ impl Pkcs11Signer {
                     signer_name, lib_name, slot_id, err
                 );
 
-                // While the token is not available now, it might be later.
-                force_cache_flush(readable_ctx, conn_settings.context.clone());
                 error!("{}", err_msg);
                 ProbeError::CallbackFailed(SignerError::Pkcs11Error(err_msg))
             })?;
-
             trace!("[{}] C_GetTokenInfo(): {:?}", signer_name, token_info);
 
             let user_pin = conn_settings.user_pin.clone();
+            Ok((cryptoki_info, slot_id, slot_info, token_info, user_pin))
+        }
 
-            (cryptoki_info, slot_id, slot_info, token_info, user_pin)
-        };
+        fn check_rand_support(session: &Pkcs11Session) -> Result<bool, ProbeError<SignerError>> {
+            // The PKCS#11 C_SeedRandom() and C_GenerateRandom() functions are allowed to return CKR_RANDOM_NO_RNG to
+            // indicate "that the specified token doesn’t have a random number generator". The C_SeedRandom() function
+            // can also return CKR_RANDOM_SEED_NOT_SUPPORTED. Thus it is not a given that the provider is able to
+            // generate random numbers just because it exports the related functions. In theory the provider can also
+            // fail to implement the random functions entirely but the Rust PKCS11 crate `Ctx::new()` function requires
+            // these functions to be supported or else it will fail and we would never get to this point.
+            Ok(session.generate_random(32).is_ok())
+        }
 
-        // TODO: check for RSA key pair support?
+        fn login(
+            session: Pkcs11Session,
+            login_mode: LoginMode,
+            user_pin: Option<String>,
+            signer_name: &str,
+            lib_name: &String,
+            slot_id: u64,
+        ) -> Result<Option<Pkcs11Session>, ProbeError<SignerError>> {
+            match login_mode {
+                LoginMode::LoginNotRequired => {
+                    // Nothing to do
+                    Ok(None)
+                }
+                LoginMode::LoginRequired => {
+                    session.login(CKU_USER, user_pin.as_deref()).map_err(|err| {
+                        error!(
+                            "[{}] Unable to login to PKCS#11 session for library '{}' slot {}: {}",
+                            signer_name, lib_name, slot_id, err
+                        );
+                        ProbeError::CompletedUnusable
+                    })?;
 
-        // Note: We don't need to check for supported functions because the `pkcs11` Rust crate `fn new()` already
-        // requires that all of the functions that we need are supported. In fact it checks for so many functions I
-        // wonder if it might not fail on some customer deployments, but perhaps it checks only for functions required
-        // by the PKCS#11 specification...? However, the PKCS#11 C_SeedRandom() and C_GenerateRandom() functions are
-        // allowed to return CKR_RANDOM_NO_RNG to indicate "that the specified token doesn’t have a random number
-        // generator". The C_SeedRandom() function can also return CKR_RANDOM_SEED_NOT_SUPPORTED. Thus it is not a given
-        // that the provider is able to generate random numbers just because it exports the related functions. In theory
-        // the provider can also fail to implement the random functions entirely but the Rust PKCS11 crate `Ctx::new()`
-        // function requires these functions to be supported or else it will fail and we would never get to this point.
+                    trace!(
+                        "[{}] Logged in to PKCS#11 session for library '{}' slot {}",
+                        signer_name,
+                        lib_name,
+                        slot_id,
+                    );
+
+                    Ok(Some(session))
+                }
+            }
+        }
+
+        let signer_name = "TODO";
+        let conn_settings = status.config()?;
+        let lib_name = conn_settings.context.read().unwrap().get_lib_file_name();
+
+        debug!("[{}] Probing server using library '{}'", signer_name, lib_name);
+
+        initialize_if_needed(&conn_settings).map_err(|err| {
+            error!(
+                "[{}] Unable to initialize PKCS#11 info for library '{}': {}",
+                signer_name, lib_name, err
+            );
+            ProbeError::CompletedUnusable
+        })?;
+
+        let (cryptoki_info, slot_id, _slot_info, token_info, user_pin) =
+            interrogate_token(&conn_settings, signer_name, &lib_name).map_err(|err| {
+                if matches!(err, ProbeError::CallbackFailed(SignerError::Pkcs11Error(_))) {
+                    // While the token is not available now, it might be later.
+                    force_cache_flush(conn_settings.context.clone());
+                }
+                err
+            })?;
+
         let session = Pkcs11Session::new(conn_settings.context.clone(), slot_id).map_err(|err| {
             error!(
                 "[{}] Unable to open PKCS#11 session for library '{}' slot {}: {}",
@@ -446,35 +464,24 @@ impl Pkcs11Signer {
             ProbeError::CompletedUnusable
         })?;
 
-        let supports_random_number_generation = match session.generate_random(32) {
-            Ok(_) => true,
-            Err(_) => false,
-        };
+        // Note: We don't need to check for supported functions because the `pkcs11` Rust crate `fn new()` already
+        // requires that all of the functions that we need are supported. In fact it checks for so many functions I
+        // wonder if it might not fail on some customer deployments, but perhaps it checks only for functions required
+        // by the PKCS#11 specification...?
 
-        let login_session = match conn_settings.login_mode {
-            LoginMode::LoginNotRequired => {
-                // Nothing to do
-                None
-            }
-            LoginMode::LoginRequired => {
-                session.login(CKU_USER, user_pin.as_deref()).map_err(|err| {
-                    error!(
-                        "[{}] Unable to login to PKCS#11 session for library '{}' slot {}: {}",
-                        signer_name, lib_name, slot_id, err
-                    );
-                    ProbeError::CompletedUnusable
-                })?;
+        // TODO: check for RSA key pair support?
 
-                trace!(
-                    "[{}] Logged in to PKCS#11 session for library '{}' slot {}",
-                    signer_name,
-                    lib_name,
-                    slot_id,
-                );
+        let supports_random_number_generation = check_rand_support(&session)?;
 
-                Some(session)
-            }
-        };
+        // Login if needed
+        let login_session = login(
+            session,
+            conn_settings.login_mode,
+            user_pin,
+            signer_name,
+            &lib_name,
+            slot_id,
+        )?;
 
         // Switch from probing the server to using it.
         // -------------------------------------------
@@ -1030,5 +1037,91 @@ impl From<ProbeError<SignerError>> for SignerError {
 impl From<SignerError> for ProbeError<SignerError> {
     fn from(err: SignerError) -> Self {
         ProbeError::CallbackFailed(err)
+    }
+}
+
+macro_rules! integer_to_slot_id {
+    ($deserialize:ident, $type:ident) => {
+        fn $deserialize<E>(self, v: $type) -> Result<SlotIdOrLabel, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(SlotIdOrLabel::Id(u64::try_from(v).map_err(|_| {
+                serde::de::Error::custom("not a valid PKCS#11 slot ID")
+            })?))
+        }
+    };
+}
+
+// Based on https://serde.rs/string-or-struct.html
+fn slot_id_or_label<'de, D>(deserializer: D) -> Result<SlotIdOrLabel, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct UintOrString(PhantomData<fn() -> SlotIdOrLabel>);
+
+    impl<'de> Visitor<'de> for UintOrString {
+        type Value = SlotIdOrLabel;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("PKCS#11 unsigned integer slot ID or string label")
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<SlotIdOrLabel, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(SlotIdOrLabel::Label(value.to_string()))
+        }
+
+        integer_to_slot_id!(visit_u8, u8);
+        integer_to_slot_id!(visit_u16, u16);
+        integer_to_slot_id!(visit_u32, u32);
+        integer_to_slot_id!(visit_u64, u64);
+        integer_to_slot_id!(visit_i8, i8);
+        integer_to_slot_id!(visit_i16, i16);
+        integer_to_slot_id!(visit_i32, i32);
+        integer_to_slot_id!(visit_i64, i64);
+    }
+
+    deserializer.deserialize_any(UintOrString(PhantomData))
+}
+
+#[cfg(test)]
+mod tess {
+    use super::*;
+
+    #[test]
+    fn configure_using_slot_id() {
+        let config_str = r#"
+            lib_path = "dummy path"
+            slot = 1234
+        "#;
+        let config: Pkcs11SignerConfig = toml::from_str(&config_str).unwrap();
+        assert!(matches!(config.slot, SlotIdOrLabel::Id(1234)));
+    }
+
+    #[test]
+    fn configure_using_slot_label() {
+        let config_str = r#"
+            lib_path = "dummy path"
+            slot = "well well well"
+        "#;
+        let config: Pkcs11SignerConfig = toml::from_str(&config_str).unwrap();
+        let expected_label = "well well well".to_string();
+        assert!(matches!(config.slot, SlotIdOrLabel::Label(label) if label == expected_label));
+    }
+
+    #[test]
+    fn configure_using_negative_slot_id() {
+        let config_str = r#"
+            lib_path = "dummy path"
+            slot = -1234
+        "#;
+        let err = toml::from_str::<Pkcs11SignerConfig>(&config_str).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "not a valid PKCS#11 slot ID for key `slot` at line 3 column 20"
+        )
     }
 }
