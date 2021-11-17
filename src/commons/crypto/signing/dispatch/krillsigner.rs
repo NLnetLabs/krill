@@ -496,6 +496,7 @@ pub mod tests {
                 [[signers]]
                 type = "PKCS#11"
                 lib_path = "dummy path"
+                slot = "dummy slot"
 "#;
             let signers = build_krill_signer_from_config(signers_config_fragment, &d, mapper.clone()).unwrap();
             assert_signer_name_and_type(&signers[0], "PKCS#11");
@@ -611,6 +612,7 @@ pub mod tests {
                 [[signers]]
                 type = "PKCS#11"
                 lib_path = "dummy"
+                slot = "dummy slot"
             "#,
             ));
 
