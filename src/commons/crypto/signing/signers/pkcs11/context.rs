@@ -43,20 +43,6 @@ impl std::ops::Deref for ThreadSafePkcs11Context {
 }
 
 impl ThreadSafePkcs11Context {
-    pub fn new_from_bad_path(bad_path: &Path) -> Self {
-        Self(Arc::new(RwLock::new(Pkcs11Context {
-            lib_file_name: bad_path.to_string_lossy().to_string(),
-            ctx: None,
-        })))
-    }
-
-    pub fn new_from_bad_file(file_name: &str) -> Self {
-        Self(Arc::new(RwLock::new(Pkcs11Context {
-            lib_file_name: file_name.to_string(),
-            ctx: None,
-        })))
-    }
-
     pub fn new(file_name: &str, ctx: Ctx) -> Self {
         Self(Arc::new(RwLock::new(Pkcs11Context {
             lib_file_name: file_name.to_string(),
@@ -96,57 +82,38 @@ pub(super) struct Pkcs11Context {
 
 impl Pkcs11Context {
     /// Load the PKCS#11 library.
-    ///
-    /// Infalible as we want to continue using Krill even if we can't initialize a signer correctly. On error the
-    /// returned Pkcs11Context struct will have a None inner `ctx` value, otherwise it will be `Some(Ctx)`.
-    pub fn get_or_load(lib_path: &Path) -> ThreadSafePkcs11Context {
+    pub fn get_or_load(lib_path: &Path) -> Result<ThreadSafePkcs11Context, SignerError> {
         // Initialize the singleton map of PKCS#11 contexts. Failure here should be impossible or else so severe that
         // panicking is all we can do.
         let contexts = CONTEXTS
-            .get_or_try_init(|| -> Result<Pkcs11ContextsByFileName, SignerError> {
-                Ok(Arc::new(RwLock::new(HashMap::new())))
-            })
-            .expect("Internal error: failed to create map of empty PKCS#11 context map");
+            .get_or_try_init(|| -> Result<Pkcs11ContextsByFileName, ()> { Ok(Arc::new(RwLock::new(HashMap::new()))) })
+            .unwrap();
 
         // Use the file name of the library as the key into the map, if the path represents a file.
-        let ctx_wrapper = match lib_path.file_name() {
-            None => {
-                error!(
-                    "Failed to load PKCS#11 library '{:?}': path does not refer to a file",
-                    lib_path
-                );
-                ThreadSafePkcs11Context::new_from_bad_path(lib_path)
-            }
-            Some(lib_file_name) => {
-                // Get a reference to either the already loaded library, or to the result of trying to load it.
-                let lib_file_name = lib_file_name.to_string_lossy().to_string();
-                let mut locked_contexts = contexts.write().unwrap();
+        let lib_file_name = lib_path.file_name().ok_or_else(|| {
+            SignerError::Pkcs11Error(format!(
+                "Failed to load PKCS#11 library '{:?}': path does not refer to a file",
+                lib_path
+            ))
+        })?;
 
-                let ctx_wrapper = Self::or_insert_with_key(locked_contexts.entry(lib_file_name), |file_name| {
-                    // The library isn't yet in the map, so load it.
-                    trace!("Loading PKCS#11 library '{:?}'", lib_path);
+        // Get a reference to either the already loaded library, or to the result of trying to load it.
+        let lib_file_name = lib_file_name.to_string_lossy().to_string();
+        let mut locked_contexts = contexts.write().unwrap();
 
-                    match Ctx::new(lib_path) {
-                        Err(err) => {
-                            error!("Failed to load PKCS#11 library '{:?}': {}", lib_path, err);
-                            ThreadSafePkcs11Context::new_from_bad_file(file_name)
-                        }
-                        Ok(ctx) => {
-                            trace!("Loaded PKCS#11 library '{:?}'", lib_path);
-                            ThreadSafePkcs11Context::new(file_name, ctx)
-                        }
-                    }
-                });
+        let ctx_ref = Self::or_insert_with_key(locked_contexts.entry(lib_file_name), |file_name| {
+            // The library isn't yet in the map, so load it.
+            trace!("Loading PKCS#11 library '{:?}'", lib_path);
 
-                ctx_wrapper.clone()
-            }
-        };
+            let ctx = Ctx::new(lib_path).map_err(|err| {
+                SignerError::Pkcs11Error(format!("Failed to load PKCS#11 library '{:?}': {}", lib_path, err))
+            })?;
 
-        ctx_wrapper
-    }
+            trace!("Loaded PKCS#11 library '{:?}'", lib_path);
+            Ok(ThreadSafePkcs11Context::new(file_name, ctx))
+        })?;
 
-    pub fn get_lib_file_name(&self) -> String {
-        self.lib_file_name.clone()
+        Ok(ctx_ref.clone())
     }
 
     /// Invoke C_Initialize in the loaded PKCS#11 library, if not already initialized.
@@ -179,17 +146,19 @@ impl Pkcs11Context {
     }
 
     // Entry::or_insert_with_key() isn't available until Rust 1.50
-    fn or_insert_with_key<'a, F: FnOnce(&String) -> ThreadSafePkcs11Context>(
+    fn or_insert_with_key<'a, F: FnOnce(&String) -> Result<ThreadSafePkcs11Context, SignerError>>(
         e: Entry<'a, String, ThreadSafePkcs11Context>,
         default: F,
-    ) -> &'a mut ThreadSafePkcs11Context {
-        match e {
+    ) -> Result<&'a mut ThreadSafePkcs11Context, SignerError> {
+        let existing_or_new_value = match e {
             Entry::Occupied(entry) => entry.into_mut(),
             Entry::Vacant(entry) => {
-                let value = default(entry.key());
+                let value = default(entry.key())?;
                 entry.insert(value)
             }
-        }
+        };
+
+        Ok(existing_or_new_value)
     }
 }
 
