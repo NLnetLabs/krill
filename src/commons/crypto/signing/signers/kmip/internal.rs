@@ -21,7 +21,7 @@ use kmip::{
 use openssl::ssl::SslStream;
 use r2d2::PooledConnection;
 use rpki::repository::crypto::{
-    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm,
+    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError,
 };
 
 use crate::commons::{
@@ -714,14 +714,13 @@ impl KmipSigner {
         &self,
         kmip_key_pair_ids: &KmipKeyPairIds,
         mode: KeyStatus,
-    ) -> Result<bool, SignerError> {
-        let mut success = true;
+    ) -> Result<(), SignerError> {
+        let mut res = self.with_conn("destroy key", |conn| conn.destroy_key(&kmip_key_pair_ids.public_key_id));
 
-        if let Err(err) = self.with_conn("destroy key", |conn| conn.destroy_key(&kmip_key_pair_ids.public_key_id)) {
-            success = false;
+        if let Err(err) = &res {
             warn!(
-                "Failed to destroy KMIP public key '{}': {}",
-                &kmip_key_pair_ids.public_key_id, err
+                "[{}] Failed to destroy KMIP public key '{}': {}",
+                self.name, &kmip_key_pair_ids.public_key_id, err
             );
         }
 
@@ -729,14 +728,17 @@ impl KmipSigner {
         if mode == KeyStatus::Active {
             // TODO: it's unclear from the KMIP 1.2 specification if this can fail because the key is already revoked.
             // If that is a possible failure scenario we should not abort here but instead continue to delete the key.
-            if let Err(err) = self.with_conn("revoke key", |conn| conn.revoke_key(&kmip_key_pair_ids.private_key_id)) {
-                success = false;
+            let res2 = self.with_conn("revoke key", |conn| conn.revoke_key(&kmip_key_pair_ids.private_key_id));
+
+            if let Err(err) = &res2 {
                 deactivated = false;
                 warn!(
-                    "Failed to revoke KMIP private key '{}': {}",
-                    &kmip_key_pair_ids.private_key_id, err
+                    "[{}] Failed to revoke KMIP private key '{}': {}",
+                    self.name, &kmip_key_pair_ids.private_key_id, err
                 );
             }
+
+            res = res.and(res2);
         }
 
         if deactivated {
@@ -745,18 +747,21 @@ impl KmipSigner {
             // but if for some reason the key exists, we think it does not require revocation but actually it does,
             // then we would fail here. In such a case we could attempt to revoke and retry, but that assumes we can
             // detect that specific failure scenario.
-            if let Err(err) = self.with_conn("destroy key", |conn| {
+            let res3 = self.with_conn("destroy key", |conn| {
                 conn.destroy_key(&kmip_key_pair_ids.private_key_id)
-            }) {
-                success = false;
+            });
+
+            if let Err(err) = &res3 {
                 warn!(
-                    "Failed to destroy KMIP private key '{}': {}",
-                    &kmip_key_pair_ids.private_key_id, err
+                    "[{}] Failed to destroy KMIP private key '{}': {}",
+                    self.name, &kmip_key_pair_ids.private_key_id, err
                 );
             }
+
+            res = res.and(res3);
         }
 
-        Ok(success)
+        res
     }
 
     pub(super) fn get_random_bytes(&self, num_bytes_wanted: usize) -> Result<Vec<u8>, SignerError> {
@@ -770,6 +775,111 @@ impl KmipSigner {
         })?;
 
         Ok(res.data)
+    }
+}
+
+//------------ Functions required to exist by the `SignerProvider` ----------------------------------------------------
+
+// Implement the functions defined by the `Signer` trait because `SignerProvider` expects to invoke them, but as the
+// dispatching is not trait based we don't actually have to implement the `Signer` trait.
+
+impl KmipSigner {
+    pub fn create_key(&self, algorithm: PublicKeyFormat) -> Result<KeyIdentifier, SignerError> {
+        let (key, kmip_key_pair_ids) = self.build_key(algorithm)?;
+        let key_id = key.key_identifier();
+        self.remember_kmip_key_ids(&key_id, kmip_key_pair_ids)?;
+        Ok(key_id)
+    }
+
+    pub fn get_key_info(&self, key_id: &KeyIdentifier) -> Result<PublicKey, KeyError<SignerError>> {
+        let kmip_key_pair_ids = self.lookup_kmip_key_ids(key_id)?;
+        self.get_public_key_from_id(&kmip_key_pair_ids.public_key_id)
+            .map_err(|err| KeyError::Signer(err))
+    }
+
+    pub fn destroy_key(&self, key_id: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
+        let kmip_key_pair_ids = self.lookup_kmip_key_ids(key_id)?;
+
+        let mut res = self
+            .destroy_key_pair(&kmip_key_pair_ids, KeyStatus::Active)
+            .map_err(|err| match err {
+                SignerError::KeyNotFound => KeyError::KeyNotFound,
+                _ => KeyError::Signer(err),
+            });
+
+        if let Err(err) = &res {
+            warn!(
+                "[{}] Failed to completely destroy KMIP key pair with ID {} (KMIP public key ID: {}, KMIP private key ID: {}): {}",
+                        self.name, key_id, kmip_key_pair_ids.public_key_id, kmip_key_pair_ids.private_key_id, err
+            );
+        }
+
+        // remove the key from the signer mapper as well
+        if let Some(signer_handle) = self.handle.read().unwrap().as_ref() {
+            let res2 = self
+                .mapper
+                .remove_key(signer_handle, key_id)
+                .map_err(|err| KeyError::Signer(SignerError::Other(err.to_string())));
+
+            if let Err(err) = &res2 {
+                warn!(
+                    "[{}] Failed to remove mapping for key with ID {}: {}",
+                    self.name, key_id, err
+                );
+            }
+
+            res = res.and(res2);
+        }
+
+        res
+    }
+
+    pub fn sign<D: AsRef<[u8]> + ?Sized>(
+        &self,
+        key_id: &KeyIdentifier,
+        algorithm: SignatureAlgorithm,
+        data: &D,
+    ) -> Result<Signature, SigningError<SignerError>> {
+        let kmip_key_pair_ids = self.lookup_kmip_key_ids(key_id)?;
+
+        let signature = self
+            .sign_with_key(&kmip_key_pair_ids.private_key_id, algorithm, data.as_ref())
+            .map_err(|err| {
+                SigningError::Signer(SignerError::KmipError(format!(
+                    "Signing data failed for Krill KeyIdentifier '{}' and KMIP private key id '{}': {}",
+                    key_id, kmip_key_pair_ids.private_key_id, err
+                )))
+            })?;
+
+        Ok(signature)
+    }
+
+    pub fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
+        &self,
+        algorithm: SignatureAlgorithm,
+        data: &D,
+    ) -> Result<(Signature, PublicKey), SignerError> {
+        // TODO: Is it possible to use a KMIP batch request to implement the create, activate, sign, deactivate, delete
+        // in one round-trip to the server?
+        let (key, kmip_key_pair_ids) = self.build_key(PublicKeyFormat::Rsa)?;
+
+        let signature_res = self
+            .sign_with_key(&kmip_key_pair_ids.private_key_id, algorithm, data.as_ref())
+            .map_err(|err| SignerError::KmipError(format!("One-off signing of data failed: {}", err)));
+
+        let _ = self.destroy_key_pair(&kmip_key_pair_ids, KeyStatus::Active);
+
+        let signature = signature_res?;
+
+        Ok((signature, key))
+    }
+
+    pub fn rand(&self, target: &mut [u8]) -> Result<(), SignerError> {
+        let random_bytes = self.get_random_bytes(target.len())?;
+
+        target.copy_from_slice(&random_bytes);
+
+        Ok(())
     }
 }
 
