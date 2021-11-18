@@ -12,7 +12,7 @@ use bytes::Bytes;
 use pkcs11::errors::Error as Pkcs11Error;
 use pkcs11::types::*;
 use rpki::repository::crypto::{
-    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm,
+    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError,
 };
 
 use crate::commons::{
@@ -775,8 +775,131 @@ impl Pkcs11Signer {
     }
 
     pub(super) fn destroy_key_by_handle(&self, key_handle: CK_OBJECT_HANDLE) -> Result<(), SignerError> {
-        trace!("PKCS#11: Destroying key with PKCS#11 handle {}", key_handle);
+        trace!("[{}] Destroying key with PKCS#11 handle {}", self.name, key_handle);
         self.with_conn("destroy", |conn| conn.destroy_object(key_handle))
+    }
+}
+
+//------------ Functions required to exist by the `SignerProvider` ----------------------------------------------------
+
+// Implement the functions defined by the `Signer` trait because `SignerProvider` expects to invoke them, but as the
+// dispatching is not trait based we don't actually have to implement the `Signer` trait.
+
+impl Pkcs11Signer {
+    pub fn create_key(&self, algorithm: PublicKeyFormat) -> Result<KeyIdentifier, SignerError> {
+        let (key, _, _, internal_key_id) = self.build_key(algorithm)?;
+        let key_id = key.key_identifier();
+        self.remember_key_id(&key_id, internal_key_id)?;
+        Ok(key_id)
+    }
+
+    pub fn get_key_info(&self, key_id: &KeyIdentifier) -> Result<PublicKey, KeyError<SignerError>> {
+        let internal_key_id = self.lookup_key_id(key_id)?;
+        let pub_handle = self.find_key(&internal_key_id, CKO_PUBLIC_KEY)?;
+        self.get_public_key_from_handle(pub_handle)
+            .map_err(|err| KeyError::Signer(err))
+    }
+
+    pub fn destroy_key(&self, key_id: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
+        debug!("[{}] Destroying key pair with ID {}", self.name, key_id);
+        let internal_key_id = self.lookup_key_id(key_id)?;
+        let mut res: Result<(), KeyError<SignerError>> = Ok(());
+
+        // try deleting the public key
+        if let Ok(pub_handle) = self.find_key(&internal_key_id, CKO_PUBLIC_KEY) {
+            res = self.destroy_key_by_handle(pub_handle).map_err(|err| match err {
+                SignerError::KeyNotFound => KeyError::KeyNotFound,
+                _ => KeyError::Signer(err),
+            });
+
+            if let Err(err) = &res {
+                warn!(
+                    "[{}] Failed to destroy public key with ID {}: {}",
+                    self.name, key_id, err
+                );
+            }
+        }
+
+        // try deleting the private key
+        if let Ok(priv_handle) = self.find_key(&internal_key_id, CKO_PRIVATE_KEY) {
+            let res2 = self.destroy_key_by_handle(priv_handle).map_err(|err| match err {
+                SignerError::KeyNotFound => KeyError::KeyNotFound,
+                _ => KeyError::Signer(err),
+            });
+
+            if let Err(err) = &res2 {
+                warn!(
+                    "[{}] Failed to destroy private key with ID {}: {}",
+                    self.name, key_id, err
+                );
+            }
+
+            res = res.and(res2);
+        }
+
+        // remove the key from the signer mapper as well
+        if let Some(signer_handle) = self.handle.read().unwrap().as_ref() {
+            let res3 = self
+                .mapper
+                .remove_key(signer_handle, key_id)
+                .map_err(|err| KeyError::Signer(SignerError::Other(err.to_string())));
+
+            if let Err(err) = &res3 {
+                warn!(
+                    "[{}] Failed to remove mapping for key with ID {}: {}",
+                    self.name, key_id, err
+                );
+            }
+
+            res = res.and(res3);
+        }
+
+        res
+    }
+
+    pub fn sign<D: AsRef<[u8]> + ?Sized>(
+        &self,
+        key_id: &KeyIdentifier,
+        algorithm: SignatureAlgorithm,
+        data: &D,
+    ) -> Result<Signature, SigningError<SignerError>> {
+        let internal_key_id = self.lookup_key_id(key_id)?;
+        let priv_handle = self
+            .find_key(&internal_key_id, CKO_PRIVATE_KEY)
+            .map_err(|err| match err {
+                KeyError::KeyNotFound => SigningError::KeyNotFound,
+                KeyError::Signer(err) => SigningError::Signer(err),
+            })?;
+
+        self.sign_with_key(priv_handle, algorithm, data.as_ref())
+            .map_err(|err| SigningError::Signer(err))
+    }
+
+    pub fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
+        &self,
+        algorithm: SignatureAlgorithm,
+        data: &D,
+    ) -> Result<(Signature, PublicKey), SignerError> {
+        let (key, pub_handle, priv_handle, _) = self.build_key(PublicKeyFormat::Rsa)?;
+
+        let signature_res = self
+            .sign_with_key(priv_handle, algorithm, data.as_ref())
+            .map_err(|err| SignerError::Pkcs11Error(format!("One-off signing of data failed: {}", err)));
+
+        let _ = self.destroy_key_by_handle(pub_handle);
+        let _ = self.destroy_key_by_handle(priv_handle);
+
+        let signature = signature_res?;
+
+        Ok((signature, key))
+    }
+
+    pub fn rand(&self, target: &mut [u8]) -> Result<(), SignerError> {
+        let random_bytes = self.get_random_bytes(target.len())?;
+
+        target.copy_from_slice(&random_bytes);
+
+        Ok(())
     }
 }
 

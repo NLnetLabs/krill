@@ -430,7 +430,7 @@ impl SignerMapper {
         Ok(())
     }
 
-    pub fn _remove_key(&self, signer_handle: &Handle, key_id: &KeyIdentifier) -> KrillResult<()> {
+    pub fn remove_key(&self, signer_handle: &Handle, key_id: &KeyIdentifier) -> KrillResult<()> {
         // TODO: should version be something other than None here?
         let cmd = SignerInfoCommand::remove_key(signer_handle, None, key_id);
         self.store.command(cmd)?;

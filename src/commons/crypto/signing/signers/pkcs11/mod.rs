@@ -29,6 +29,5 @@ pub mod context;
 /// PKCS#11 library.
 pub mod internal;
 pub mod session;
-pub mod signer;
 
 pub use internal::Pkcs11Signer;

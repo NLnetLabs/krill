@@ -65,7 +65,7 @@ pub struct MockSigner {
     fn_call_counts: Arc<MockSignerCallCounts>,
     supports_random: bool,
     handle: RwLock<Option<Handle>>,
-    signer_mapper: Arc<SignerMapper>,
+    mapper: Arc<SignerMapper>,
     keys: RwLock<HashMap<String, PKey<Private>>>,
     create_registration_key_error_cb: Option<CreateRegistrationKeyErrorCb>,
     sign_registration_challenge_error_cb: Option<SignRegistrationChallengeErrorCb>,
@@ -90,7 +90,7 @@ impl MockSigner {
             fn_call_counts,
             supports_random,
             handle: RwLock::new(None),
-            signer_mapper,
+            mapper: signer_mapper,
             keys: RwLock::new(HashMap::new()),
             create_registration_key_error_cb,
             sign_registration_challenge_error_cb,
@@ -136,7 +136,7 @@ impl MockSigner {
     fn internal_id_from_key_identifier(&self, key_identifier: &KeyIdentifier) -> Result<String, SignerError> {
         let lock = self.handle.read().unwrap();
         let signer_handle = lock.as_ref().unwrap();
-        self.signer_mapper
+        self.mapper
             .get_key(signer_handle, key_identifier)
             .map_err(|_| SignerError::KeyNotFound)
     }
@@ -205,7 +205,7 @@ impl MockSigner {
         // tell the signer mapper we own this key identifier which maps to our "internal id"
         let lock = self.handle.read().unwrap();
         let signer_handle = lock.as_ref().unwrap();
-        self.signer_mapper
+        self.mapper
             .add_key(signer_handle, &key_identifier, &internal_id)
             .unwrap();
 
@@ -220,15 +220,17 @@ impl MockSigner {
         Ok(public_key)
     }
 
-    pub fn destroy_key(&self, key_identifier: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
+    pub fn destroy_key(&self, key_id: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
         self.inc_fn_call_count(FnIdx::DestroyKey);
-        let internal_id = self.internal_id_from_key_identifier(key_identifier).unwrap();
+        let internal_id = self.internal_id_from_key_identifier(key_id).unwrap();
         let _ = self.keys.write().unwrap().remove(&internal_id);
 
         // remove the key from the signer mapper as well
-        let lock = self.handle.read().unwrap();
-        let signer_handle = lock.as_ref().unwrap();
-        self.signer_mapper._remove_key(signer_handle, &key_identifier).unwrap();
+        if let Some(signer_handle) = self.handle.read().unwrap().as_ref() {
+            self.mapper
+                .remove_key(signer_handle, key_id)
+                .map_err(|err| KeyError::Signer(SignerError::Other(err.to_string())))?;
+        }
 
         Ok(())
     }
