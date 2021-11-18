@@ -276,13 +276,11 @@ impl KrillSigner {
     }
 
     fn get_default_signer_config() -> KrillResult<SignerConfig> {
-        let signer_name = "default".to_string();
-
         #[cfg(not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11")))]
         {
             // Use the OpenSSL signer for everything.
             Ok(SignerConfig::all(
-                Some(signer_name),
+                Some("default".to_string()),
                 SignerType::OpenSsl(OpenSslSignerConfig::default()),
             ))
         }
@@ -310,7 +308,7 @@ impl KrillSigner {
             };
 
             Ok(SignerConfig::default_only(
-                Some(signer_name),
+                Some("pykmip testing signer".to_string()),
                 SignerType::Kmip(kmip_config),
             ))
         }
@@ -330,7 +328,10 @@ impl KrillSigner {
                 login: true,
             };
 
-            Ok(SignerConfig::all(Some(signer_name), SignerType::Pkcs11(pkcs11_config)))
+            Ok(SignerConfig::all(
+                Some("softhsm testing signer".to_string()),
+                SignerType::Pkcs11(pkcs11_config),
+            ))
         }
     }
 
