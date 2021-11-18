@@ -275,6 +275,8 @@ impl KrillSigner {
 
         #[cfg(feature = "hsm-tests-kmip")]
         {
+            use std::{path::PathBuf, str::FromStr};
+
             // Use the KMIP signer for one-off signing but not random number generation. Normally we wouldn't use it
             // for one-off signing as it can be slow making round trips to a HSM and for little gain and so we would
             // then use an OpenSSL signer instead, but for testing purposes we exercise the KMIP signer as much as
