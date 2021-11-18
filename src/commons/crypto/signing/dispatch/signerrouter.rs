@@ -284,15 +284,15 @@ impl SignerRouter {
 #[cfg(feature = "hsm")]
 impl SignerRouter {
     /// Check for and bind any ready signers.
-    /// 
+    ///
     /// This function should return as quickly as possible. Newly bound signers will be moved from the pending set to
     /// the active set and be available immediately for use by the caller.
-    /// 
+    ///
     /// This function should be invoked prior to attempting a signing operation so that the required signer is ready to
     /// handle the request. On error we log but do not return an error to the caller because the signer required by the
     /// caller may have been previously bound and this binding error may relate to a different signer. There's also
     /// nothing the caller can do if a binding failure occurs so receiving an error wouldn't be useful.
-    /// 
+    ///
     /// If all signers have either already been bound or deemed to be permanently broken then this function will return
     /// immediately. In cases of temporary connectivity issues the signer handling code may deem it worth trying again
     /// but in such cases should implement retry and backoff such that not every attempt to use the signer is blocked
@@ -454,7 +454,7 @@ impl SignerRouter {
     }
 
     /// Checks if the signer identity matches the signer public key associated with a given signer handle.
-    /// 
+    ///
     /// To match the signer backend must have access to a key whose signer internal key ID matches one we stored when
     /// the signer was previously registered, and when used to sign a challenge the signature must match the public
     /// key we have on record (also stored when the signer was previously registered).
@@ -545,7 +545,7 @@ impl SignerRouter {
     }
 
     /// Register a signer backend so that we can identify it later.
-    /// 
+    ///
     /// Registration creates a key pair in the signer backend and stores the signer specific internal ID of the created
     /// private key and the content of the created public key. Registration also verifies that the signer is able to
     /// sign using the newly created private key such that the created signature matches the created public key.
