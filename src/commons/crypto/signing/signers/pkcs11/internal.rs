@@ -49,18 +49,6 @@ pub struct Pkcs11SignerConfig {
     pub login: bool,
 }
 
-// For testing.
-impl Default for Pkcs11SignerConfig {
-    fn default() -> Self {
-        Self {
-            lib_path: "/usr/lib/softhsm/libsofthsm2.so".to_string(),
-            user_pin: Some("1234".to_string()),
-            slot: SlotIdOrLabel::Label("My token 1".to_string()),
-            login: true,
-        }
-    }
-}
-
 impl Pkcs11SignerConfig {
     pub fn login_default() -> bool {
         true

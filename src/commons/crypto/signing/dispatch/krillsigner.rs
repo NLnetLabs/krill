@@ -46,12 +46,6 @@ use crate::{
 #[cfg(feature = "hsm")]
 use std::collections::HashMap;
 
-#[cfg(feature = "hsm-tests-kmip")]
-use crate::commons::crypto::KmipSignerConfig;
-
-#[cfg(feature = "hsm-tests-pkcs11")]
-use crate::commons::crypto::Pkcs11SignerConfig;
-
 /// High level signing interface between Krill and the [SignerRouter].
 ///
 /// KrillSigner:
@@ -300,22 +294,41 @@ impl KrillSigner {
             // then use an OpenSSL signer instead, but for testing purposes we exercise the KMIP signer as much as
             // possible. We can't do random number generation with it as the tests use PyKMIP which doesn't support
             // generation of random numbers.
+            let kmip_config = crypto::KmipSignerConfig {
+                host: "127.0.0.1".to_string(),
+                port: 5696,
+                username: None,
+                password: None,
+                insecure: true,
+                deficient: true,
+                client_cert_path: Some(PathBuf::from_str("test-resources/pykmip/server.crt").unwrap()),
+                client_cert_private_key_path: Some(PathBuf::from_str("test-resources/pykmip/server.key").unwrap()),
+                server_cert_path: Some(PathBuf::from_str("test-resources/pykmip/server.crt").unwrap()),
+                server_ca_cert_path: Some(PathBuf::from_str("test-resources/pykmip/ca.crt").unwrap()),
+            };
+
             Ok(SignerConfig::default_only(
                 Some(signer_name),
-                SignerType::Kmip(KmipSignerConfig::default()),
+                SignerType::Kmip(kmip_config),
             ))
         }
 
         #[cfg(feature = "hsm-tests-pkcs11")]
         {
+            use crypto::signers::pkcs11::internal::SlotIdOrLabel;
+
             // Use the PKCS#11 signer for everything. Normally we wouldn't use it for one-off signing or random number
             // generation as it can be slow making round trips to a HSM and for little gain and so we would then use an
             // OpenSSL signer as well for those cases, but for testing purposes we exercise the PKCS#11 signer as much
             // as possible.
-            Ok(SignerConfig::all(
-                Some(signer_name),
-                SignerType::Pkcs11(Pkcs11SignerConfig::default()),
-            ))
+            let pkcs11_config = crypto::Pkcs11SignerConfig {
+                lib_path: "/usr/lib/softhsm/libsofthsm2.so".to_string(),
+                user_pin: Some("1234".to_string()),
+                slot: SlotIdOrLabel::Label("My token 1".to_string()),
+                login: true,
+            };
+
+            Ok(SignerConfig::all(Some(signer_name), SignerType::Pkcs11(pkcs11_config)))
         }
     }
 
