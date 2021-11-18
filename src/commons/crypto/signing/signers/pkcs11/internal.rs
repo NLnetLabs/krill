@@ -63,7 +63,7 @@ enum SlotIdOrLabel {
 // Placeholder struct
 #[derive(Clone, Debug)]
 struct ConnectionSettings {
-    context: ThreadSafePkcs11Context,
+    lib_path: String,
 
     // For some PKCS#11 libraries it is easy, or only possible, to connect by slot ID (rather than slot label). With
     // others using labeled slots is easier (e.g. with SoftHSMv2 slot 0 has a seemingly random actual slot ID generated
@@ -104,7 +104,7 @@ impl Pkcs11Signer {
         // Signer initialization should not block Krill startup. As such we verify that we are able to load the PKCS#11
         // library don't we initialize the PKCS#11 interface yet because we don't know what it's code will do. If it
         // were to block while trying to connect to a remote server it would block Krill from starting up completely.
-        // If the remote server is down and the library has logic to  delay and retry, or lacks appropriate timeouts of
+        // If the remote server is down and the library has logic to delay and retry, or lacks appropriate timeouts of
         // connection attempts, we could get stuck for a while. Instead we defer initialization of the library until
         // first use. The downside of this approach is that we won't detect any issues until that point. Another reason
         // not to initialize the PKCS#11 library here is that if there are multiple instances of the Pkcs11Signer only
@@ -116,7 +116,7 @@ impl Pkcs11Signer {
         // "application".
 
         // TODO: Use the supplied configuration settings instead of hard-coded test settings.
-        let conn_settings = Self::get_test_connection_settings()?;
+        let conn_settings = Self::get_test_connection_settings();
 
         let server = Arc::new(StatefulProbe::new(Arc::new(conn_settings), Duration::from_secs(30)));
 
@@ -177,18 +177,18 @@ impl Pkcs11Signer {
         false
     }
 
-    fn get_test_connection_settings() -> Result<ConnectionSettings, SignerError> {
-        let context = Pkcs11Context::get_or_load(Path::new("/usr/lib/softhsm/libsofthsm2.so"));
+    fn get_test_connection_settings() -> ConnectionSettings {
+        let lib_path = "/usr/lib/softhsm/libsofthsm2.so".to_string();
         let slot = SlotIdOrLabel::Label("My token 1".to_string());
         let user_pin = Some("1234".to_string());
         let login_mode = LoginMode::LoginRequired;
 
-        Ok(ConnectionSettings {
-            context,
+        ConnectionSettings {
+            lib_path,
             slot,
             user_pin,
             login_mode,
-        })
+        }
     }
 }
 
@@ -276,16 +276,22 @@ impl Pkcs11Signer {
             Ok(possible_slot_id)
         }
 
-        fn initialize_if_needed(conn_settings: &Arc<ConnectionSettings>) -> Result<(), SignerError> {
-            conn_settings.context.write().unwrap().initialize_if_not_already()
+        fn initialize_if_needed(
+            conn_settings: &Arc<ConnectionSettings>,
+        ) -> Result<ThreadSafePkcs11Context, SignerError> {
+            let lib_path = Path::new(&conn_settings.lib_path);
+            let ctx = Pkcs11Context::get_or_load(&lib_path)?;
+            ctx.write().unwrap().initialize_if_not_already()?;
+            Ok(ctx)
         }
 
         fn interrogate_token(
             conn_settings: &Arc<ConnectionSettings>,
+            ctx: ThreadSafePkcs11Context,
             signer_name: &str,
             lib_name: &String,
         ) -> Result<(CK_INFO, u64, CK_SLOT_INFO, CK_TOKEN_INFO, Option<String>), ProbeError<SignerError>> {
-            let readable_ctx = conn_settings.context.read().unwrap();
+            let readable_ctx = ctx.read().unwrap();
 
             let cryptoki_info = readable_ctx.get_info().map_err(|err| {
                 error!(
@@ -383,11 +389,11 @@ impl Pkcs11Signer {
 
         let signer_name = "TODO";
         let conn_settings = status.config()?;
-        let lib_name = conn_settings.context.read().unwrap().get_lib_file_name();
+        let lib_name = &conn_settings.lib_path;
 
         debug!("[{}] Probing server using library '{}'", signer_name, lib_name);
 
-        initialize_if_needed(&conn_settings).map_err(|err| {
+        let context = initialize_if_needed(&conn_settings).map_err(|err| {
             error!(
                 "[{}] Unable to initialize PKCS#11 info for library '{}': {}",
                 signer_name, lib_name, err
@@ -396,15 +402,15 @@ impl Pkcs11Signer {
         })?;
 
         let (cryptoki_info, slot_id, _slot_info, token_info, user_pin) =
-            interrogate_token(&conn_settings, signer_name, &lib_name).map_err(|err| {
+            interrogate_token(&conn_settings, context.clone(), signer_name, &lib_name).map_err(|err| {
                 if matches!(err, ProbeError::CallbackFailed(SignerError::Pkcs11Error(_))) {
                     // While the token is not available now, it might be later.
-                    force_cache_flush(conn_settings.context.clone());
+                    force_cache_flush(context.clone());
                 }
                 err
             })?;
 
-        let session = Pkcs11Session::new(conn_settings.context.clone(), slot_id).map_err(|err| {
+        let session = Pkcs11Session::new(context.clone(), slot_id).map_err(|err| {
             error!(
                 "[{}] Unable to open PKCS#11 session for library '{}' slot {}: {}",
                 signer_name, lib_name, slot_id, err
@@ -449,7 +455,6 @@ impl Pkcs11Signer {
             token_identification, slot_id, server_identification, lib_name
         );
 
-        let context = conn_settings.context.clone();
         let server_info = format!(
             "PKCS#11 Signer [token: {}, slot: {}, server: {}, library: {}]",
             token_identification, slot_id, server_identification, lib_name
