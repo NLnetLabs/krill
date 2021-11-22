@@ -180,7 +180,7 @@ pub fn pre_start_upgrade(config: Arc<Config>) -> Result<(), UpgradeError> {
 /// because Krill will not be able to find a mapping from KeyIdentifier to signer as the mappings for the keys were
 /// never created. So we detect the case that the signer store SIGNERS_DIR directory has not yet been created, i.e. no
 /// signers have been registered and no key mappings have been recorded, and then walk KEYS_DIR adding the keys one by
-/// one to the mapping in the signer store.
+/// one to the mapping in the signer store, if any.
 #[cfg(feature = "hsm")]
 fn record_preexisting_openssl_keys_in_signer_mapper(config: Arc<Config>) -> Result<(), UpgradeError> {
     if !config.data_dir.join(SIGNERS_DIR).exists() {
@@ -392,13 +392,13 @@ mod tests {
 
     #[cfg(all(feature = "hsm", not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11"))))]
     #[test]
-    fn test_without_upgrade_with_unmapped_keys() {
+    fn test_key_not_found_error_if_unmapped_keys_are_not_mapped_on_upgrade() {
         unmapped_keys_test_core(false);
     }
 
     #[cfg(all(feature = "hsm", not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11"))))]
     #[test]
-    fn test_upgrade_with_unmapped_keys() {
+    fn test_upgrading_with_unmapped_keys() {
         unmapped_keys_test_core(true);
     }
 }
