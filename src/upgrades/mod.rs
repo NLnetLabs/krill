@@ -192,10 +192,11 @@ fn record_preexisting_openssl_keys_in_signer_mapper(config: Arc<Config>) -> Resu
             keys_dir.to_string_lossy()
         );
 
+        let krill_signer = KrillSigner::build(&config.data_dir, config.signers())?;
+
         // For every file (key) in the legacy OpenSSL signer keys directory
         if let Ok(dir_iter) = keys_dir.read_dir() {
-            let mut krill_signer: Option<KrillSigner> = None;
-            let mut signer_handle: Option<Handle> = None;
+            let mut openssl_signer_handle: Option<Handle> = None;
 
             for entry in dir_iter {
                 let entry = entry.map_err(|err| {
@@ -211,47 +212,32 @@ fn record_preexisting_openssl_keys_in_signer_mapper(config: Arc<Config>) -> Resu
                 if entry.path().is_file() {
                     // Is it a key identifier?
                     if let Ok(key_id) = KeyIdentifier::from_str(&entry.file_name().to_string_lossy()) {
-                        if krill_signer.is_none() {
-                            // Create the KrillSigner which will in turn create the actual signers defined in the
-                            // users Krill configuration file. If the keys in the legacy OpenSSL signer keys directory
-                            // are actively being used by Krill the config must cause KrillSigner to instantiate the
-                            // corresponding OpenSSL signer that owns those keys.
-                            krill_signer = Some(KrillSigner::build(&config.data_dir, config.signers())?);
-                        }
+                        // Is the key already recorded in the mapper? It shouldn't be, but asking will cause the initial
+                        // registration of the OpenSSL signer to occur and for it to be assigned a handle. We need the
+                        // handle so that we can register keys with the mapper.
+                        if !krill_signer.get_key_info(&key_id).is_ok() {
+                            // No, record it
 
-                        if let Some(krill_signer) = &krill_signer {
-                            // Is the key already recorded in the mapper? It shouldn't be, but asking will cause the
-                            // initial registration of the OpenSSL signer to occur and for it to be assigned a handle.
-                            // We need the handle so that we can register keys with the mapper.
-                            if !krill_signer.get_key_info(&key_id).is_ok() {
-                                // No, record it
-
-                                // Do we already know the handle of the OpenSSL signer? If not, find it. It should be
-                                // possible to find the key via the OpenSSL signer because it shoud look for it in the
-                                // same directory and file name as we are now processing. Finding it confirms for us
-                                // that we have the correct signer handle (unless someone migrated the keys into another
-                                // signer and registered them there and then manually deleted the signer store directory
-                                // ... but then if they go behind Krill's back there are limits to what we can cope with)
-                                if signer_handle.is_none() {
-                                    // No, find it by asking each of the active signers if they have the key because
-                                    // one of them must have it and it should be the OpenSSL signer.
-                                    let active_signers = krill_signer.get_active_signers();
-
-                                    for (a_signer_handle, a_signer) in active_signers.iter() {
-                                        if a_signer.get_key_info(&key_id).is_ok() {
-                                            signer_handle = Some(a_signer_handle.clone());
-                                            break;
-                                        }
+                            // Find out the handle of the OpenSSL signer used to create this key, if not yet known.
+                            if openssl_signer_handle.is_none() {
+                                // No, find it by asking each of the active signers if they have the key because one of
+                                // them must have it and it should be the one and only OpenSSL signer that Krill was
+                                // using previously. We can't just find and use the only OpenSSL signers as Krill may
+                                // have been configured with more than one each with separate keys directories.
+                                for (a_signer_handle, a_signer) in krill_signer.get_active_signers().iter() {
+                                    if a_signer.get_key_info(&key_id).is_ok() {
+                                        openssl_signer_handle = Some(a_signer_handle.clone());
+                                        break;
                                     }
                                 }
+                            }
 
-                                // Record the key in the signer mapper as being owned by the found signer handle
-                                if let Some(signer_handle) = &signer_handle {
-                                    let internal_key_id = key_id.to_string();
-                                    let mapper = krill_signer.get_mapper();
-                                    mapper.add_key(&signer_handle, &key_id, &internal_key_id)?;
-                                    num_recorded_keys += 1;
-                                }
+                            // Record the key in the signer mapper as being owned by the found signer handle.
+                            if let Some(signer_handle) = &openssl_signer_handle {
+                                let internal_key_id = key_id.to_string();
+                                let mapper = krill_signer.get_mapper();
+                                mapper.add_key(&signer_handle, &key_id, &internal_key_id)?;
+                                num_recorded_keys += 1;
                             }
                         }
                     }
