@@ -15,7 +15,7 @@ use crate::{
             rrdp::PublicationDeltaError, AspaCustomer, AspaProvidersUpdateConflict, ChildHandle, ErrorResponse, Handle,
             ParentHandle, PublisherHandle, ResourceClassName, ResourceSetError, RoaDefinition,
         },
-        crypto::signers::error::SignerError,
+        crypto::SignerError,
         eventsourcing::{AggregateStoreError, KeyValueError},
         remote::{
             rfc6492::{self, NotPerformedResponse},

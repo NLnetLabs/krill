@@ -15,7 +15,6 @@
 //! [PyKMIP]: https://github.com/OpenKMIP/PyKMIP
 pub mod connpool;
 pub mod internal;
-pub mod keymap;
 pub mod signer;
 
 pub use internal::KmipSigner;

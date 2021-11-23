@@ -15,6 +15,10 @@ The feature adds (or will add) the following to Krill:
     - To sign with a key the request must be delegated to the correct signer.
     - Therefore we must keep track of which signer "owns" each key.
 
+  - Signer tracking:
+    - To delegate a request to the correct signer we must know which signer "instance" corresponds to which signer
+      "configuration".
+
   - Random value generation fallback support:
     - Not all PKCS#11 or KMIP compatible devices support generating random values.
     - Fallback in such cases to the OpenSSL signer (or to a user specified signer?)

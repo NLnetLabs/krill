@@ -2664,12 +2664,9 @@ impl ResourceSetError {
 #[cfg(test)]
 mod test {
     use bytes::Bytes;
-
     use rpki::repository::crypto::PublicKeyFormat;
 
-    use crate::commons::crypto::signers::softsigner::OpenSslSigner;
-
-    use crate::test;
+    use crate::{commons::crypto::OpenSslSigner, test};
 
     use super::*;
 
@@ -2706,7 +2703,12 @@ mod test {
     #[test]
     fn mft_uri() {
         test::test_under_tmp(|d| {
+            #[cfg(not(feature = "hsm"))]
             let signer = OpenSslSigner::build(&d).unwrap();
+
+            #[cfg(feature = "hsm")]
+            let signer = OpenSslSigner::build(&d, "dummy", None).unwrap();
+
             let key_id = signer.create_key(PublicKeyFormat::Rsa).unwrap();
             let pub_key = signer.get_key_info(&key_id).unwrap();
 

@@ -812,9 +812,9 @@ dependencies = [
 
 [[package]]
 name = "kmip-protocol"
-version = "0.3.1"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef3e9e144b27f0e12e027f8eae5f174656c5c5fae9a45f3a06c2b866ce6e4f02"
+checksum = "7d14b178aa24791515237541993de1853ec7c91eec10c6ff18255ea9852b9cac"
 dependencies = [
  "cfg-if",
  "enum-display-derive",

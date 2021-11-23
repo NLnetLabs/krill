@@ -22,14 +22,11 @@ use rpki::repository::crypto::{
 };
 
 use crate::commons::{
-    api::Timestamp,
-    crypto::signers::{
-        error::SignerError,
-        kmip::{
-            connpool::ConnectionManager,
-            keymap::{KeyMap, KmipKeyPairIds},
-        },
-        util,
+    api::{Handle, Timestamp},
+    crypto::{
+        dispatch::signerinfo::SignerMapper,
+        signers::{kmip::connpool::ConnectionManager, util},
+        SignerError,
     },
 };
 
@@ -62,18 +59,65 @@ pub type KmipTlsClient = Client<SslStream<TcpStream>>;
 
 //------------ The KMIP signer management interface -------------------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct KmipSigner {
+    name: String,
+
+    handle: RwLock<Option<Handle>>,
+
+    mapper: Arc<SignerMapper>,
+
     /// A probe dependent interface to the KMIP server.
     server: Arc<RwLock<ProbingServerConnector>>,
 }
 
 impl KmipSigner {
     /// Creates a new instance of KmipSigner.
-    pub fn build() -> Result<Self, SignerError> {
+    pub fn build(name: &str, mapper: Arc<SignerMapper>) -> Result<Self, SignerError> {
         let conn_settings = Self::get_test_connection_settings();
         let server = Arc::new(RwLock::new(ProbingServerConnector::new(conn_settings)));
-        Ok(KmipSigner { server })
+
+        let s = KmipSigner {
+            name: name.to_string(),
+            handle: RwLock::new(None),
+            mapper: mapper.clone(),
+            server,
+        };
+
+        Ok(s)
+    }
+
+    pub fn get_name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn set_handle(&self, handle: Handle) {
+        let mut writable_handle = self.handle.write().unwrap();
+        if writable_handle.is_some() {
+            panic!("Cannot set signer handle as handle is already set");
+        }
+        *writable_handle = Some(handle);
+    }
+
+    pub fn get_info(&self) -> Option<String> {
+        match self.server() {
+            Ok(status) => Some(status.state().conn_info.clone()),
+            Err(_) => None,
+        }
+    }
+
+    pub fn sign_registration_challenge<D: AsRef<[u8]> + ?Sized>(
+        &self,
+        signer_private_key_id: &str,
+        challenge: &D,
+    ) -> Result<Signature, SignerError> {
+        self.sign_with_key(signer_private_key_id, SignatureAlgorithm::default(), challenge.as_ref())
+    }
+
+    pub fn create_registration_key(&self) -> Result<(PublicKey, String), SignerError> {
+        let (public_key, kmip_key_pair_ids) = self.build_key(PublicKeyFormat::Rsa)?;
+        let internal_key_id = kmip_key_pair_ids.private_key_id.to_string();
+        Ok((public_key, internal_key_id))
     }
 
     /// Returns true if the KMIP server supports generation of random numbers, false otherwise.
@@ -87,11 +131,11 @@ impl KmipSigner {
     // TODO: Remove me once we support passing configuration in to `fn build()`.
     fn get_test_connection_settings() -> ConnectionSettings {
         let client_cert = ClientCertificate::SeparatePem {
-            cert_bytes: include_bytes!("../../../../../test-resources/pykmip/server.crt").to_vec(),
-            key_bytes: Some(include_bytes!("../../../../../test-resources/pykmip/server.key").to_vec()),
+            cert_bytes: include_bytes!("../../../../../../test-resources/pykmip/server.crt").to_vec(),
+            key_bytes: Some(include_bytes!("../../../../../../test-resources/pykmip/server.key").to_vec()),
         };
-        let server_cert = include_bytes!("../../../../../test-resources/pykmip/server.crt").to_vec();
-        let ca_cert = include_bytes!("../../../../../test-resources/pykmip/ca.crt").to_vec();
+        let server_cert = include_bytes!("../../../../../../test-resources/pykmip/server.crt").to_vec();
+        let ca_cert = include_bytes!("../../../../../../test-resources/pykmip/ca.crt").to_vec();
 
         ConnectionSettings {
             host: "127.0.0.1".to_string(),
@@ -200,21 +244,22 @@ struct UsableServerState {
     /// A pool of TCP + TLS clients for connecting to the KMIP server
     pool: r2d2::Pool<ConnectionManager>,
 
-    /// TODO: Replace me by a persistent mechanism shared by all signers, not just the KMIP signer.
-    key_map: Arc<RwLock<KeyMap>>,
-
     /// Does the KMIP server support the RNG Retrieve operation (for generating random values)?
     supports_rng_retrieve: bool,
+
+    conn_info: String,
 }
 
 impl UsableServerState {
-    pub fn new(pool: r2d2::Pool<ConnectionManager>, supports_rng_retrieve: bool) -> UsableServerState {
-        let key_map = Arc::new(RwLock::new(KeyMap::new()));
-
+    pub fn new(
+        pool: r2d2::Pool<ConnectionManager>,
+        supports_rng_retrieve: bool,
+        conn_info: String,
+    ) -> UsableServerState {
         UsableServerState {
             pool,
-            key_map,
             supports_rng_retrieve,
+            conn_info,
         }
     }
 }
@@ -241,7 +286,7 @@ impl KmipSigner {
 
                 ProbingServerConnector::Unusable => {
                     // KMIP server has been confirmed as unusable, fail.
-                    Some(Err(SignerError::KmipError("KMIP server is unusable".into())))
+                    Some(Err(SignerError::SignerUnusable))
                 }
 
                 ProbingServerConnector::Probing { last_probe_time, .. } => {
@@ -249,7 +294,7 @@ impl KmipSigner {
                     // haven't tried checking again for a while, then try contacting it again. If we can't establish
                     // whether or not the server is usable, return an error.
                     if !is_time_to_check(RETRY_INIT_EVERY, *last_probe_time) {
-                        Some(Err(SignerError::KmipError("KMIP server is not yet available".into())))
+                        Some(Err(SignerError::SignerUnavailable))
                     } else {
                         None
                     }
@@ -258,11 +303,11 @@ impl KmipSigner {
         }
 
         // Return the current status or attempt to set it by probing the server
-        let status = self.server.read().expect("KMIP status lock is poisoned");
+        let status = self.server.read().unwrap();
         get_server_if_usable(status).unwrap_or_else(|| {
             self.probe_server()
-                .and_then(|_| Ok(self.server.read().expect("KMIP status lock is poisoned")))
-                .map_err(|err| SignerError::KmipError(format!("KMIP server is not yet available: {}", err)))
+                .and_then(|_| Ok(self.server.read().unwrap()))
+                .map_err(|_| SignerError::SignerUnavailable)
         })
     }
 
@@ -271,10 +316,7 @@ impl KmipSigner {
         // Hold a write lock for the duration of our attempt to verify the KMIP server so that no other attempt occurs
         // at the same time. Bail out if another thread is performing a probe and has the lock. This is the same result
         // as when attempting to use the KMIP server between probe retries.
-        let mut status = self
-            .server
-            .try_write()
-            .map_err(|_| SignerError::KmipError("KMIP server is not yet available".into()))?;
+        let mut status = self.server.try_write().map_err(|_| SignerError::SignerUnavailable)?;
 
         // Update the timestamp of our last attempt to contact the KMIP server. This is used above to know when we have
         // waited long enough before attempting to contact the server again. This also guards against attempts to probe
@@ -288,10 +330,16 @@ impl KmipSigner {
         // certificate) that will never work, and to determine the capabilities of the server (which may affect our
         // behaviour).
         let conn = ConnectionManager::connect_one_off(conn_settings).map_err(|err| {
-            let reason = match err {
+            match err {
                 // Fatal error
                 kmip::client::Error::ConfigurationError(err) => {
-                    format!("Failed to connect KMIP server: Configuration error: {}", err)
+                    error!("Failed to connect KMIP server: Configuration error: {}", err)
+                }
+
+                // I/O error attempting to contact the server or a problem on an internal problem at the server, not
+                // necessarily fatal or a reason to abort creating the pool.
+                kmip::client::Error::ServerError(err) => {
+                    error!("Failed to connect KMIP server: Server error: {}", err)
                 }
 
                 // Impossible errors: we didn't yet try to send a request or receive a response
@@ -300,18 +348,15 @@ impl KmipSigner {
                 | kmip::client::Error::ResponseReadError(err)
                 | kmip::client::Error::DeserializeError(err)
                 | kmip::client::Error::InternalError(err)
-                | kmip::client::Error::Unknown(err) => {
-                    format!("Failed to connect KMIP server: Unexpected error: {}", err)
+                | kmip::client::Error::Unknown(err)
+                | kmip::client::Error::ItemNotFound(err) => {
+                    error!("Failed to connect KMIP server: Unexpected error: {}", err)
                 }
 
-                // I/O error attempting to contact the server or a problem on an internal problem at the server, not
-                // necessarily fatal or a reason to abort creating the pool.
-                kmip::client::Error::ServerError(err) => {
-                    format!("Failed to connect KMIP server: Server error: {}", err)
-                }
+                other => error!("Failed to connect KMIP server: Unexpected error: {}", other),
             };
 
-            SignerError::KmipError(reason)
+            SignerError::SignerUnavailable
         })?;
 
         // We managed to establish a TCP+TLS connection to the KMIP server. Send it a Query request to discover how
@@ -348,7 +393,7 @@ impl KmipSigner {
             // PyKMIP with Krill!
             if IGNORE_MISSING_CAPABILITIES {
                 *status = ProbingServerConnector::Unusable;
-                return Err(SignerError::KmipError("KMIP server is unusable".to_string()));
+                return Err(SignerError::SignerUnusable);
             }
         }
 
@@ -370,8 +415,12 @@ impl KmipSigner {
         );
 
         let supports_rng_retrieve = supported_operations.contains(&Operation::RNGRetrieve);
+        let conn_info = format!(
+            "KMIP Signer [vendor: {}, host: {}, port: {}]",
+            server_identification, conn_settings.host, conn_settings.port
+        );
         let pool = ConnectionManager::create_connection_pool(conn_settings, MAX_CONCURRENT_SERVER_CONNECTIONS)?;
-        let state = UsableServerState::new(pool, supports_rng_retrieve);
+        let state = UsableServerState::new(pool, supports_rng_retrieve, conn_info);
 
         *status = ProbingServerConnector::Usable(state);
         Ok(())
@@ -432,7 +481,7 @@ impl KmipSigner {
 /// KMIP servers require that a key be activated before it can be used for signing and be inactive (revoked) before it
 /// can be deleted.
 #[derive(Debug, PartialEq)]
-pub enum KeyStatus {
+pub(super) enum KeyStatus {
     /// The key is inactive.
     Inactive,
 
@@ -440,39 +489,53 @@ pub enum KeyStatus {
     Active,
 }
 
+pub(super) struct KmipKeyPairIds {
+    pub public_key_id: String,
+    pub private_key_id: String,
+}
+
 // High level helper functions for use by the public Signer interface implementation
 impl KmipSigner {
     /// Remember that the given KMIP public and private key pair IDs correspond to the given KeyIdentifier.
-    pub fn remember_kmip_key_ids(
+    pub(super) fn remember_kmip_key_ids(
         &self,
         key_id: &KeyIdentifier,
         kmip_key_ids: KmipKeyPairIds,
     ) -> Result<(), SignerError> {
-        let _ = self
-            .server()?
-            .state()
-            .key_map
-            .write()
-            .expect("KMIP key map lock is poisoned")
-            .insert(key_id.clone(), kmip_key_ids);
+        // TODO: Don't assume colons cannot appear in HSM key ids.
+        let internal_key_id = format!("{}:{}", kmip_key_ids.public_key_id, kmip_key_ids.private_key_id);
+
+        let readable_handle = self.handle.read().unwrap();
+        let signer_handle = readable_handle.as_ref().ok_or(SignerError::Other(
+            "Failed to record signer key: Signer handle not set".to_string(),
+        ))?;
+        self.mapper
+            .add_key(signer_handle, key_id, &internal_key_id)
+            .map_err(|err| SignerError::KmipError(format!("Failed to record signer key: {}", err)))?;
+
         Ok(())
     }
 
     /// Given a KeyIdentifier lookup the corresponding KMIP public and private key pair IDs.
-    pub fn lookup_kmip_key_ids(&self, key_id: &KeyIdentifier) -> Result<KmipKeyPairIds, KeyError<SignerError>> {
-        Ok(self
-            .server()?
-            .state()
-            .key_map
-            .read()
-            .expect("KMIP key map lock is poisoned")
-            .get(key_id)
-            .ok_or(KeyError::KeyNotFound)?
-            .clone())
+    pub(super) fn lookup_kmip_key_ids(&self, key_id: &KeyIdentifier) -> Result<KmipKeyPairIds, KeyError<SignerError>> {
+        let readable_handle = self.handle.read().unwrap();
+        let signer_handle = readable_handle.as_ref().ok_or(KeyError::KeyNotFound)?;
+
+        let internal_key_id = self
+            .mapper
+            .get_key(signer_handle, key_id)
+            .map_err(|_| KeyError::KeyNotFound)?;
+
+        let (public_key_id, private_key_id) = internal_key_id.split_once(':').unwrap();
+
+        Ok(KmipKeyPairIds {
+            public_key_id: public_key_id.to_string(),
+            private_key_id: private_key_id.to_string(),
+        })
     }
 
     /// Create a key pair in the KMIP server in the requested format and make it ready for use by Krill.
-    pub fn build_key(&self, algorithm: PublicKeyFormat) -> Result<(PublicKey, KmipKeyPairIds), SignerError> {
+    pub(super) fn build_key(&self, algorithm: PublicKeyFormat) -> Result<(PublicKey, KmipKeyPairIds), SignerError> {
         if !matches!(algorithm, PublicKeyFormat::Rsa) {
             return Err(SignerError::KmipError(format!(
                 "Algorithm {:?} not supported while creating key",
@@ -515,11 +578,9 @@ impl KmipSigner {
         private_key_name: String,
         public_key_name: String,
     ) -> Result<KmipKeyPairIds, SignerError> {
-        let (private_key_id, public_key_id) = self
-            .with_conn("create key pair", |conn| {
-                conn.create_rsa_key_pair(2048, private_key_name.clone(), public_key_name.clone())
-            })
-            .map_err(|err| SignerError::KmipError(format!("Failed to create RSA key pair: {}", err)))?;
+        let (private_key_id, public_key_id) = self.with_conn("create key pair", |conn| {
+            conn.create_rsa_key_pair(2048, private_key_name.clone(), public_key_name.clone())
+        })?;
 
         let kmip_key_ids = KmipKeyPairIds {
             public_key_id,
@@ -551,47 +612,22 @@ impl KmipSigner {
         // Rename the keys to their new names
         self.with_conn("rename key", |conn| {
             conn.rename_key(public_key_id, new_public_key_name.clone())
-        })
-        .map_err(|err| {
-            SignerError::KmipError(format!(
-                "Failed to set name on new public key '{}': {}",
-                public_key_id, err
-            ))
         })?;
 
         self.with_conn("rename key", |conn| {
             conn.rename_key(private_key_id, new_private_key_name.clone())
-        })
-        .map_err(|err| {
-            SignerError::KmipError(format!(
-                "Failed to set name on new private key '{}': {}",
-                private_key_id, err
-            ))
         })?;
 
         // Activate the private key so that it can be used for signing. Do this last otherwise if there is a problem
         // with preparing the key pair for use we have to deactivate the private key before we can destroy it.
-        self.with_conn("activate key", |conn| conn.activate_key(&private_key_id))
-            .map_err(|err| {
-                SignerError::KmipError(format!(
-                    "Failed to activate new private key '{}': {}",
-                    private_key_id, err
-                ))
-            })?;
+        self.with_conn("activate key", |conn| conn.activate_key(&private_key_id))?;
 
         Ok(public_key)
     }
 
     /// Get the RSA public bytes for the given KMIP server public key.
     fn get_rsa_public_key_bytes(&self, public_key_id: &str) -> Result<Bytes, SignerError> {
-        let response_payload = self
-            .with_conn("get key", |conn| conn.get_key(public_key_id))
-            .map_err(|err| {
-                SignerError::KmipError(format!(
-                    "Failed to get key material for public key with ID '{}': {:?}",
-                    public_key_id, err
-                ))
-            })?;
+        let response_payload = self.with_conn("get key", |conn| conn.get_key(public_key_id))?;
 
         if response_payload.object_type != ObjectType::PublicKey {
             return Err(SignerError::KmipError(format!(
@@ -632,7 +668,7 @@ impl KmipSigner {
         Ok(rsa_public_key_bytes)
     }
 
-    pub fn get_public_key_from_id(&self, public_key_id: &str) -> Result<PublicKey, SignerError> {
+    pub(super) fn get_public_key_from_id(&self, public_key_id: &str) -> Result<PublicKey, SignerError> {
         let rsa_public_key_bytes = self.get_rsa_public_key_bytes(public_key_id)?;
 
         let subject_public_key = bcder::BitString::new(0, rsa_public_key_bytes);
@@ -660,7 +696,7 @@ impl KmipSigner {
         Ok(public_key)
     }
 
-    pub fn sign_with_key(
+    pub(super) fn sign_with_key(
         &self,
         private_key_id: &str,
         algorithm: SignatureAlgorithm,
@@ -673,16 +709,18 @@ impl KmipSigner {
             )));
         }
 
-        let signed = self
-            .with_conn("sign", |conn| conn.sign(&private_key_id, data))
-            .map_err(|err| SignerError::KmipError(format!("Signing failed: {}", err)))?;
+        let signed = self.with_conn("sign", |conn| conn.sign(&private_key_id, data))?;
 
         let sig = Signature::new(SignatureAlgorithm::default(), Bytes::from(signed.signature_data));
 
         Ok(sig)
     }
 
-    pub fn destroy_key_pair(&self, kmip_key_pair_ids: &KmipKeyPairIds, mode: KeyStatus) -> Result<bool, SignerError> {
+    pub(super) fn destroy_key_pair(
+        &self,
+        kmip_key_pair_ids: &KmipKeyPairIds,
+        mode: KeyStatus,
+    ) -> Result<bool, SignerError> {
         let mut success = true;
 
         if let Err(err) = self.with_conn("destroy key", |conn| conn.destroy_key(&kmip_key_pair_ids.public_key_id)) {
@@ -727,17 +765,15 @@ impl KmipSigner {
         Ok(success)
     }
 
-    pub fn get_random_bytes(&self, num_bytes_wanted: usize) -> Result<Vec<u8>, SignerError> {
+    pub(super) fn get_random_bytes(&self, num_bytes_wanted: usize) -> Result<Vec<u8>, SignerError> {
         if !self.supports_random() {
             return Err(SignerError::KmipError(
                 "The KMIP server does not support random number generation".to_string(),
             ));
         }
-        let res: RNGRetrieveResponsePayload = self
-            .with_conn("rng retrieve", |conn: &KmipTlsClient| {
-                conn.rng_retrieve(num_bytes_wanted as i32)
-            })
-            .map_err(|err| SignerError::KmipError(format!("Failed to retrieve random bytes: {:?}", err)))?;
+        let res: RNGRetrieveResponsePayload = self.with_conn("rng retrieve", |conn: &KmipTlsClient| {
+            conn.rng_retrieve(num_bytes_wanted as i32)
+        })?;
 
         Ok(res.data)
     }
@@ -756,7 +792,10 @@ fn is_time_to_check(time_between_checks: Duration, possible_lack_check_time: Opt
 
 impl From<kmip::client::Error> for SignerError {
     fn from(err: kmip::client::Error) -> Self {
-        SignerError::KmipError(format!("Client error: {}", err))
+        match err {
+            kmip::client::Error::ItemNotFound(_) => SignerError::KeyNotFound,
+            _ => SignerError::KmipError(format!("Client error: {}", err)),
+        }
     }
 }
 

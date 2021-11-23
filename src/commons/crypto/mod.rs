@@ -10,6 +10,4 @@ pub use self::error::*;
 mod signing;
 pub use self::signing::*;
 
-pub mod signers;
-
 pub type CryptoResult<T> = std::result::Result<T, self::error::Error>;
