@@ -42,7 +42,7 @@ impl CaObjectsMigration {
         let store = KeyValueStore::disk(&config.data_dir, CASERVER_DIR)?;
         let ca_store = AggregateStore::<ca::CertAuth>::disk(&config.data_dir, CASERVER_DIR)?;
 
-        let signer = Arc::new(KrillSigner::build(&config.data_dir)?);
+        let signer = Arc::new(KrillSigner::build(&config.data_dir, false)?);
 
         if store.version_is_before(KrillVersion::release(0, 6, 0))? {
             Err(UpgradeError::custom("Cannot upgrade Krill installations from before version 0.6.0. Please upgrade to any version ranging from 0.6.0 to 0.8.1 first, and then upgrade to this version."))

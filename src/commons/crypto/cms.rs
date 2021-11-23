@@ -545,7 +545,7 @@ mod tests {
     #[test]
     fn should_create_crl_for_protocol() {
         test_under_tmp(|d| {
-            let s = KrillSigner::build(&d).unwrap();
+            let s = KrillSigner::build(&d, false).unwrap();
             let key_id = s.create_key().unwrap();
             let key_info = s.get_key_info(&key_id).unwrap();
 
@@ -557,7 +557,7 @@ mod tests {
     #[test]
     fn should_create_signed_publication_message() {
         test_under_tmp(|d| {
-            let s = KrillSigner::build(&d).unwrap();
+            let s = KrillSigner::build(&d, false).unwrap();
             let key_id = s.create_key().unwrap();
             let id_cert = IdCertBuilder::new_ta_id_cert(&key_id, &s).unwrap();
 

@@ -224,7 +224,7 @@ mod tests {
     };
 
     fn publisher_alice(work_dir: &Path) -> Publisher {
-        let signer = KrillSigner::build(work_dir).unwrap();
+        let signer = KrillSigner::build(work_dir, true).unwrap();
 
         let key = signer.create_key().unwrap();
         let id_cert = IdCertBuilder::new_ta_id_cert(&key, &signer).unwrap();
@@ -244,7 +244,7 @@ mod tests {
         let config = Arc::new(Config::test(work_dir, true, false, false));
         init_config(&config);
 
-        let signer = KrillSigner::build(work_dir).unwrap();
+        let signer = KrillSigner::build(work_dir, false).unwrap();
         let signer = Arc::new(signer);
 
         let repository_manager = RepositoryManager::build(config, signer).unwrap();

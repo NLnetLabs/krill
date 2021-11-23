@@ -14,7 +14,6 @@
 //! [OpenSslSigner]: crate::commons::util::softsigner::OpenSslSigner
 //! [PyKMIP]: https://github.com/OpenKMIP/PyKMIP
 pub mod connpool;
-pub mod internal;
 pub mod signer;
 
-pub use internal::KmipSigner;
+pub use signer::KmipSigner;
