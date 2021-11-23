@@ -9,7 +9,7 @@ use std::{sync::Arc, time::Duration};
 
 use kmip::client::ConnectionSettings;
 
-use crate::commons::crypto::signers::{error::SignerError, kmip::internal::KmipTlsClient};
+use crate::commons::crypto::signers::{error::SignerError, kmip::signer::KmipTlsClient};
 
 /// Manages KMIP TCP + TLS connection creation.
 ///
