@@ -371,7 +371,6 @@ impl SignerMapper {
     }
 
     pub fn change_signer_name(&self, signer_handle: &Handle, signer_name: &str) -> KrillResult<()> {
-        // TODO: should version be something other than None here?
         let cmd = SignerInfoCommand::change_signer_name(signer_handle, None, signer_name);
         self.store.command(cmd)?;
         Ok(())
@@ -385,7 +384,6 @@ impl SignerMapper {
     }
 
     pub fn change_signer_info(&self, signer_handle: &Handle, signer_info: &str) -> KrillResult<()> {
-        // TODO: should version be something other than None here?
         let cmd = SignerInfoCommand::change_signer_info(signer_handle, None, signer_info);
         self.store.command(cmd)?;
         Ok(())
@@ -393,14 +391,12 @@ impl SignerMapper {
 
     /// Record the owner of a Krill key and its corresponding signer specific internal id.
     pub fn add_key(&self, signer_handle: &Handle, key_id: &KeyIdentifier, internal_key_id: &str) -> KrillResult<()> {
-        // TODO: should version be something other than None here?
         let cmd = SignerInfoCommand::add_key(signer_handle, None, key_id, internal_key_id);
         self.store.command(cmd)?;
         Ok(())
     }
 
     pub fn remove_key(&self, signer_handle: &Handle, key_id: &KeyIdentifier) -> KrillResult<()> {
-        // TODO: should version be something other than None here?
         let cmd = SignerInfoCommand::remove_key(signer_handle, None, key_id);
         self.store.command(cmd)?;
         Ok(())
