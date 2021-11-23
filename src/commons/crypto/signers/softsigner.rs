@@ -1,7 +1,7 @@
 //! Support for signing things using software keys (through openssl) and
 //! storing them unencrypted on disk.
 use std::{
-    fmt, fs,
+    fs,
     fs::File,
     io::Write,
     path::{Path, PathBuf},
@@ -12,17 +12,16 @@ use bytes::Bytes;
 use serde::{de, ser, Deserialize, Deserializer, Serialize, Serializer};
 
 use openssl::{
-    error::ErrorStack,
     hash::MessageDigest,
     pkey::{PKey, PKeyRef, Private},
     rsa::Rsa,
 };
 
 use rpki::repository::crypto::{
-    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
+    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError,
 };
 
-use crate::commons::error::KrillIoError;
+use crate::commons::{crypto::signers::error::SignerError, error::KrillIoError};
 
 //------------ OpenSslSigner -------------------------------------------------
 
@@ -62,6 +61,10 @@ impl OpenSslSigner {
             Err(SignerError::InvalidWorkDir(work_dir.to_path_buf()))
         }
     }
+
+    pub fn supports_random(&self) -> bool {
+        true
+    }
 }
 
 impl OpenSslSigner {
@@ -93,11 +96,10 @@ impl OpenSslSigner {
     }
 }
 
-impl Signer for OpenSslSigner {
-    type KeyId = KeyIdentifier;
-    type Error = SignerError;
-
-    fn create_key(&self, _algorithm: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
+// Implement the functions defined by the `Signer` trait because `SignerProvider` expects to invoke them, but as the
+// dispatching is not trait based we don't actually have to implement the `Signer` trait.
+impl OpenSslSigner {
+    pub fn create_key(&self, _algorithm: PublicKeyFormat) -> Result<KeyIdentifier, SignerError> {
         let kp = OpenSslKeyPair::build()?;
 
         let pk = &kp.subject_public_key_info()?;
@@ -114,12 +116,12 @@ impl Signer for OpenSslSigner {
         Ok(key_id)
     }
 
-    fn get_key_info(&self, key_id: &Self::KeyId) -> Result<PublicKey, KeyError<Self::Error>> {
+    pub fn get_key_info(&self, key_id: &KeyIdentifier) -> Result<PublicKey, KeyError<SignerError>> {
         let key_pair = self.load_key(key_id)?;
         Ok(key_pair.subject_public_key_info()?)
     }
 
-    fn destroy_key(&self, key_id: &Self::KeyId) -> Result<(), KeyError<Self::Error>> {
+    pub fn destroy_key(&self, key_id: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
         let path = self.key_path(key_id);
         if path.exists() {
             fs::remove_file(&path).map_err(|e| {
@@ -132,17 +134,17 @@ impl Signer for OpenSslSigner {
         Ok(())
     }
 
-    fn sign<D: AsRef<[u8]> + ?Sized>(
+    pub fn sign<D: AsRef<[u8]> + ?Sized>(
         &self,
-        key_id: &Self::KeyId,
+        key_id: &KeyIdentifier,
         _algorithm: SignatureAlgorithm,
         data: &D,
-    ) -> Result<Signature, SigningError<Self::Error>> {
+    ) -> Result<Signature, SigningError<SignerError>> {
         let key_pair = self.load_key(key_id)?;
         Self::sign_with_key(key_pair.pkey.as_ref(), data).map_err(SigningError::Signer)
     }
 
-    fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
+    pub fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
         &self,
         _algorithm: SignatureAlgorithm,
         data: &D,
@@ -156,7 +158,7 @@ impl Signer for OpenSslSigner {
         Ok((signature, key))
     }
 
-    fn rand(&self, target: &mut [u8]) -> Result<(), SignerError> {
+    pub fn rand(&self, target: &mut [u8]) -> Result<(), SignerError> {
         openssl::rand::rand_bytes(target).map_err(SignerError::OpenSslError)
     }
 }
@@ -211,49 +213,6 @@ impl OpenSslKeyPair {
         // So, there is no way to recover.
         let mut b = Bytes::from(self.pkey.rsa().unwrap().public_key_to_der()?);
         PublicKey::decode(&mut b).map_err(|_| SignerError::DecodeError)
-    }
-}
-
-//------------ OpenSslKeyError -----------------------------------------------
-
-#[derive(Debug)]
-pub enum SignerError {
-    OpenSslError(ErrorStack),
-    JsonError(serde_json::Error),
-    InvalidWorkDir(PathBuf),
-    IoError(KrillIoError),
-    KeyNotFound,
-    DecodeError,
-}
-
-impl fmt::Display for SignerError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            SignerError::OpenSslError(e) => write!(f, "OpenSsl Error: {}", e),
-            SignerError::JsonError(e) => write!(f, "Could not decode public key info: {}", e),
-            SignerError::InvalidWorkDir(path) => write!(f, "Invalid base path: {}", path.to_string_lossy()),
-            SignerError::IoError(e) => e.fmt(f),
-            SignerError::KeyNotFound => write!(f, "Could not find key"),
-            SignerError::DecodeError => write!(f, "Could not decode key"),
-        }
-    }
-}
-
-impl From<ErrorStack> for SignerError {
-    fn from(e: ErrorStack) -> Self {
-        SignerError::OpenSslError(e)
-    }
-}
-
-impl From<serde_json::Error> for SignerError {
-    fn from(e: serde_json::Error) -> Self {
-        SignerError::JsonError(e)
-    }
-}
-
-impl From<KrillIoError> for SignerError {
-    fn from(e: KrillIoError) -> Self {
-        SignerError::IoError(e)
     }
 }
 

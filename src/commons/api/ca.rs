@@ -2665,9 +2665,10 @@ impl ResourceSetError {
 mod test {
     use bytes::Bytes;
 
-    use rpki::repository::crypto::{signer::Signer, PublicKeyFormat};
+    use rpki::repository::crypto::PublicKeyFormat;
 
-    use crate::commons::util::softsigner::OpenSslSigner;
+    use crate::commons::crypto::signers::softsigner::OpenSslSigner;
+
     use crate::test;
 
     use super::*;

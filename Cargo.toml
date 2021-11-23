@@ -21,6 +21,7 @@ exclude = [
 build = "build.rs"
 
 [dependencies]
+backoff               = { version = "0.3.0", optional = true }
 base64                = "^0.13"
 basic-cookies         = { version = "^0.1", optional = true }
 bcder                 = "0.6.1"
@@ -35,11 +36,13 @@ hex                   = "^0.4"
 hyper                 = { version = "^0.14", features = ["server"] }
 intervaltree          = "0.2.6"
 jmespatch             = { version = "^0.3", features = ["sync"], optional = true }
+kmip                  = { version = "0.3.1", package = "kmip-protocol", features = ["tls-with-openssl"], optional = true }
 libflate              = "^1"
 log                   = "^0.4"
 openidconnect         = { version = "^2.0.0", optional = true, default_features = false }
 openssl               = { version = "^0.10", features = ["v110"] }
 oso                   = { version = "^0.12", optional = true, default_features = false }
+r2d2                  = { version = "0.8.9", optional = true }
 rand                  = "^0.8"
 regex                 = { version = "^1.4", optional = true, default_features = false, features = ["std"] }
 reqwest               = { version = "0.11", features = ["json"] }
@@ -73,7 +76,8 @@ ui-tests = []
 extra-debug = [ "rpki/extra-debug" ]
 static-openssl = [ "openssl/vendored" ]
 all-except-ui-tests = [ "multi-user", "rta", "static-openssl", "aspa" ]
-hsm = []
+hsm = ["backoff", "kmip", "r2d2"]
+hsm-tests = []
 
 # Make sure that Krill crashes on panics, rather than losing threads and
 # limping on in a bad state.
