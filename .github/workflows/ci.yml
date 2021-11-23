@@ -73,6 +73,7 @@ jobs:
     runs-on: ubuntu-18.04
     strategy:
       matrix:
+        rust: [1.47.0, stable, beta]
         features: ["hsm", "hsm,hsm-tests-kmip"]
     steps:
     - name: Checkout repository
@@ -81,7 +82,7 @@ jobs:
     - name: Install Rust
       uses: hecrj/setup-rust-action@v1
       with:
-        rust-version: stable
+        rust-version: ${{ matrix.rust }}
 
     - uses: actions/setup-python@v2
       with:
@@ -117,6 +118,7 @@ jobs:
     runs-on: ubuntu-20.04
     strategy:
       matrix:
+        rust: [1.47.0, stable, beta]
         features: ["hsm,hsm-tests-pkcs11"]
     steps:
     - name: Checkout repository
@@ -125,7 +127,7 @@ jobs:
     - name: Install Rust
       uses: hecrj/setup-rust-action@v1
       with:
-        rust-version: stable
+        rust-version: ${{ matrix.rust }}
 
     - name: Install SoftHSM2
       run: |
