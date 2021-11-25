@@ -1644,7 +1644,7 @@ mod tests {
     #[cfg(not(feature = "hsm"))]
     #[test]
     fn should_fail_when_config_defines_signers_but_hsm_support_is_not_enabled() {
-        fn assert_unexpected_setting_err(res: Result<(), ConfigError>, setting_name: &str) {
+        fn assert_unexpected_setting_err(res: Result<Config, ConfigError>, setting_name: &str) {
             let expected_err_msg = format!("This build of Krill lacks support for the '{}' config file setting. Please use a version of Krill that has the 'hsm' feature enabled.", setting_name);
             assert_err_msg(res, &expected_err_msg);
         }
