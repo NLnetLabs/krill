@@ -1067,7 +1067,7 @@ impl Config {
 
         if self.signers.len() > 1 && !self.default_signer.is_named() {
             return Err(ConfigError::other(
-                "'default_signer' must be set when more than one [[signer]] is defined",
+                "'default_signer' must be set when more than one [[signers]] configuration is defined",
             ));
         }
 
@@ -1707,7 +1707,7 @@ mod tests {
         let res = parse_and_process_config_str(config_str);
         assert_err_msg(
             res,
-            "'default_signer' must be set when more than one [[signer]] is defined",
+            "'default_signer' must be set when more than one [[signers]] configured is defined",
         );
     }
 
