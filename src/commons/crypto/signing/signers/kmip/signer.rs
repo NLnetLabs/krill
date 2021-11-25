@@ -541,10 +541,10 @@ impl KmipSigner {
     }
 
     /// Make the given KMIP private and public key pair ready for use by Krill.
-    /// 
+    ///
     /// Note that this function renames the created keys but this is not needed for correct functioning of Krill, it
     /// is rather done to aid the KMIP server operator when administering the HSM.
-    /// 
+    ///
     /// It also activates the private key. Without this the key cannot be used for signing. An alternate approach could
     /// be to set the activation date of the key when creating it thereby avoiding the extra activation step, or to
     /// perform the activation operation as part of a bulk request also containing the create key operation, thereby
