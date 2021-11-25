@@ -5,10 +5,9 @@
 The feature adds (or will add) the following to Krill:
   - Pluggable signers:
     - Three "plugins":
-      - Host file-based OpenSSL key management & signing
-      - [PKCS#11](https://www.cryptsoft.com/pkcs11doc/) dynamic library support
-      - [Key Management Interoperability Protocol (KMIP)](https://www.oasis-open.org/committees/tc_home.php?wg_abbrev=kmip) support
-        - Partial support for KMIP 1.0-1.2 (signing was introduced in 1.2)
+      - Host file-based OpenSSL signer
+      - [PKCS#11](https://www.cryptsoft.com/pkcs11doc/) v2.20+ dynamic library support
+      - [Key Management Interoperability Protocol (KMIP)](https://www.oasis-open.org/committees/tc_home.php?wg_abbrev=kmip) v1.2+ support
         - TTLV over TLS only, no XML/JSON over HTTPS
     
   - Key ownership tracking:
@@ -19,15 +18,10 @@ The feature adds (or will add) the following to Krill:
     - To delegate a request to the correct signer we must know which signer "instance" corresponds to which signer
       "configuration".
 
-  - Random value generation fallback support:
-    - Not all PKCS#11 or KMIP compatible devices support generating random values.
-    - Fallback in such cases to the OpenSSL signer (or to a user specified signer).
-
   - The concept of signing with specific signers for specific purposes:
     - Signer for one-off keys (avoid slow HSMs for keys that don't need the security guarantees an HSM provides)
     - Signer for new keys
     - Signer for existing keys (based on key tracking as mentioned above)
-    - Signer for fallback random value generation
 
 The feature also adds two new Rust crates for KMIP support:
   - https://github.com/NLnetLabs/kmip-protocol (https://crates.io/crates/kmip-protocol)
