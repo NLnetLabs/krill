@@ -75,7 +75,7 @@ pub struct KmipSignerConfig {
     pub insecure: bool,
 
     #[serde(default)]
-    pub deficient: bool,
+    pub force: bool,
 
     #[serde(default)]
     pub server_cert_path: Option<PathBuf>,
@@ -100,7 +100,7 @@ pub struct KmipSignerConfig {
 struct ConnectionSettings {
     client: kmip::client::ConnectionSettings,
 
-    deficient: bool,
+    force: bool,
 }
 
 impl TryFrom<&KmipSignerConfig> for ConnectionSettings {
@@ -152,7 +152,7 @@ impl TryFrom<&KmipSignerConfig> for ConnectionSettings {
 
         Ok(ConnectionSettings {
             client: client_conn_settings,
-            deficient: conf.deficient,
+            force: conf.force,
         })
     }
 }
@@ -357,7 +357,7 @@ impl KmipSigner {
             // anyway. For example, PyKMIP 0.10.0 does not include the ModifyAttribute operation in the set of
             // supported operations even though it does support it. Without this flag we would not be able to use
             // PyKMIP with Krill!
-            if conn_settings.deficient {
+            if conn_settings.force {
                 warn!(
                     "[{}] Ignoring KMIP server lacking support for one or more required operations: {}",
                     name,

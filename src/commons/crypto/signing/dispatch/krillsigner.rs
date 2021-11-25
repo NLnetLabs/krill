@@ -286,7 +286,7 @@ impl KrillSigner {
                 username: None,
                 password: None,
                 insecure: true,
-                deficient: true,
+                force: true,
                 client_cert_path: Some(PathBuf::from_str("test-resources/pykmip/server.crt").unwrap()),
                 client_cert_private_key_path: Some(PathBuf::from_str("test-resources/pykmip/server.key").unwrap()),
                 server_cert_path: Some(PathBuf::from_str("test-resources/pykmip/server.crt").unwrap()),
