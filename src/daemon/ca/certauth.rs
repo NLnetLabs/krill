@@ -2153,13 +2153,13 @@ impl CertAuth {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{daemon::config::ConfigDefaults, test};
+    use crate::{commons::crypto::KrillSignerBuilder, daemon::config::ConfigDefaults, test};
 
     #[test]
     fn generate_id_cert() {
         test::test_under_tmp(|d| {
             let signers = ConfigDefaults::signers();
-            let signer = KrillSigner::build(&d, &signers, &signers[0], &signers[0]).unwrap();
+            let signer = KrillSignerBuilder::new(&d, &signers).build().unwrap();
             let id = Rfc8183Id::generate(&signer).unwrap();
             id.cert.validate_ta().unwrap();
         });

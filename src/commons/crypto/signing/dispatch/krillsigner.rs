@@ -57,12 +57,80 @@ type SignerBuilderFn =
     fn(&SignerType, SignerFlags, &Path, &str, &Option<Arc<SignerMapper>>) -> KrillResult<SignerProvider>;
 
 #[derive(Debug)]
+pub struct KrillSignerBuilder<'a> {
+    work_dir: &'a Path,
+    signer_configs: &'a [SignerConfig],
+    default_signer: Option<&'a SignerConfig>,
+    one_off_signer: Option<&'a SignerConfig>,
+}
+
+impl<'a> KrillSignerBuilder<'a> {
+    pub fn new(work_dir: &'a Path, signer_configs: &'a [SignerConfig]) -> Self {
+        Self {
+            work_dir,
+            signer_configs,
+            default_signer: None,
+            one_off_signer: None,
+        }
+    }
+
+    pub fn with_default_signer(&'a mut self, signer_config: &'a SignerConfig) -> &'a mut Self {
+        self.default_signer = Some(signer_config);
+        self
+    }
+
+    pub fn with_one_off_signer(&'a mut self, signer_config: &'a SignerConfig) -> &'a mut Self {
+        self.one_off_signer = Some(signer_config);
+        self
+    }
+
+    pub fn build(&'a mut self) -> KrillResult<KrillSigner> {
+        if self.signer_configs.is_empty() {
+            return Err(Error::ConfigError("At least one signer must be defined".to_string()));
+        }
+
+        if self.signer_configs.len() == 1 {
+            if self.default_signer.is_none() {
+                self.default_signer = Some(&self.signer_configs[0]);
+            }
+            if self.one_off_signer.is_none() {
+                self.one_off_signer = Some(&self.signer_configs[0]);
+            }
+        }
+
+        if self.default_signer.is_none() {
+            return Err(Error::ConfigError("No default signer is defined".to_string()));
+        }
+        let default_signer = self.default_signer.unwrap();
+
+        if !self.signer_configs.contains(default_signer) {
+            return Err(Error::ConfigError(
+                "The default signer must be one of the defined signers".to_string(),
+            ));
+        }
+
+        if self.one_off_signer.is_none() {
+            return Err(Error::ConfigError("No one-off signer is defined".to_string()));
+        }
+        let one_off_signer = self.one_off_signer.unwrap();
+
+        if !self.signer_configs.contains(one_off_signer) {
+            return Err(Error::ConfigError(
+                "The one-off signer must be one of the defined signers".to_string(),
+            ));
+        }
+
+        KrillSigner::build(self.work_dir, self.signer_configs, default_signer, one_off_signer)
+    }
+}
+
+#[derive(Debug)]
 pub struct KrillSigner {
     router: SignerRouter,
 }
 
 impl KrillSigner {
-    pub fn build(
+    fn build(
         work_dir: &Path,
         signer_configs: &[SignerConfig],
         default_signer: &SignerConfig,

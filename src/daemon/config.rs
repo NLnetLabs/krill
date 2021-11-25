@@ -1707,7 +1707,7 @@ mod tests {
         let res = parse_and_process_config_str(config_str);
         assert_err_msg(
             res,
-            "'default_signer' must be set when more than one [[signers]] configured is defined",
+            "'default_signer' must be set when more than one [[signers]] configuration is defined",
         );
     }
 

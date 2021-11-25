@@ -208,7 +208,7 @@ mod tests {
 
     use rpki::uri;
 
-    use crate::{constants::*, pubd::RrdpServer};
+    use crate::{commons::crypto::KrillSignerBuilder, constants::*, pubd::RrdpServer};
 
     use crate::{
         commons::crypto::OpenSslSignerConfig,
@@ -238,12 +238,11 @@ mod tests {
             let signer_type = SignerType::OpenSsl(OpenSslSignerConfig::default());
             let signer_config = SignerConfig::new("Alice".to_string(), signer_type);
             let signer_configs = &[signer_config];
-            KrillSigner::build(work_dir, signer_configs, &signer_configs[0], &signer_configs[0]).unwrap()
+            KrillSignerBuilder::new(work_dir, signer_configs).build().unwrap()
         };
 
         let key = signer.create_key().unwrap();
         let id_cert = IdCertBuilder::new_ta_id_cert(&key, &signer).unwrap();
-
         let base_uri = uri::Rsync::from_str("rsync://localhost/repo/alice/").unwrap();
 
         Publisher::new(id_cert, base_uri)
@@ -259,13 +258,11 @@ mod tests {
         let mut config = Config::test(work_dir, true, false, false, false);
         init_config(&mut config);
 
-        let signer = KrillSigner::build(
-            work_dir,
-            &config.signers,
-            config.default_signer(),
-            config.one_off_signer(),
-        )
-        .unwrap();
+        let signer = KrillSignerBuilder::new(work_dir, &config.signers)
+            .with_default_signer(config.default_signer())
+            .with_one_off_signer(config.one_off_signer())
+            .build()
+            .unwrap();
 
         let signer = Arc::new(signer);
         let config = Arc::new(config);

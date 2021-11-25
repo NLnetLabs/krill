@@ -9,7 +9,7 @@ use serde::de::DeserializeOwned;
 use crate::{
     commons::{
         api::Handle,
-        crypto::KrillSigner,
+        crypto::KrillSignerBuilder,
         error::KrillIoError,
         eventsourcing::{AggregateStoreError, CommandKey, KeyStoreKey, KeyValueError, KeyValueStore},
         util::{file, KrillVersion},
@@ -198,12 +198,12 @@ fn upgrade_data_to_0_9_0(config: Arc<Config>) -> Result<(), UpgradeError> {
     if needs_v0_9_0_upgrade(work_dir, "cas") {
         // TODO: should we use the configured signers here or an OpenSSL signer?
         // Will any signing actually be done using these signers?
-        let signer = Arc::new(KrillSigner::build(
-            work_dir,
-            &config.signers,
-            config.default_signer(),
-            config.one_off_signer(),
-        )?);
+        let signer = KrillSignerBuilder::new(work_dir, &config.signers)
+            .with_default_signer(config.default_signer())
+            .with_one_off_signer(config.one_off_signer())
+            .build()
+            .unwrap();
+        let signer = Arc::new(signer);
         let repo_manager = RepositoryManager::build(config.clone(), signer.clone())?;
 
         CaObjectsMigration::migrate(config, repo_manager, signer)?;
