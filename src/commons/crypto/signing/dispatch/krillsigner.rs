@@ -301,7 +301,7 @@ impl KrillSigner {
 
         #[cfg(feature = "hsm-tests-pkcs11")]
         {
-            use crypto::signers::pkcs11::internal::SlotIdOrLabel;
+            use crypto::signers::pkcs11::signer::SlotIdOrLabel;
 
             // Use the PKCS#11 signer for everything. Normally we wouldn't use it for one-off signing or random number
             // generation as it can be slow making round trips to a HSM and for little gain and so we would then use an
