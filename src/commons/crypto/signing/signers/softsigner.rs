@@ -5,7 +5,9 @@ use std::{
     fs::File,
     io::Write,
     path::{Path, PathBuf},
+    str::FromStr,
     sync::Arc,
+    sync::RwLock,
 };
 
 use bytes::Bytes;
@@ -22,19 +24,17 @@ use rpki::repository::crypto::{
 };
 
 use crate::{
-    commons::{crypto::signers::error::SignerError, error::KrillIoError},
+    commons::{
+        api::Handle,
+        crypto::{dispatch::signerinfo::SignerMapper, signers::error::SignerError},
+        error::KrillIoError,
+    },
     constants::KEYS_DIR,
 };
 
-#[cfg(feature = "hsm")]
-use std::{str::FromStr, sync::RwLock};
-
-#[cfg(feature = "hsm")]
-use crate::commons::{api::Handle, crypto::dispatch::signerinfo::SignerMapper};
-
 //------------ OpenSslSigner -------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Hash)]
+#[derive(Clone, Debug, Default, Deserialize, Hash, PartialEq, Eq)]
 pub struct OpenSslSignerConfig {
     #[serde(default)]
     pub keys_path: Option<PathBuf>,
@@ -48,41 +48,20 @@ impl OpenSslSignerConfig {
     }
 }
 
-impl Default for OpenSslSignerConfig {
-    fn default() -> Self {
-        Self { keys_path: None }
-    }
-}
-
 /// An openssl based signer.
 #[derive(Debug)]
 pub struct OpenSslSigner {
     keys_dir: Arc<Path>,
 
-    #[cfg(feature = "hsm")]
     name: String,
 
-    #[cfg(feature = "hsm")]
     handle: RwLock<Option<Handle>>,
 
-    #[cfg(feature = "hsm")]
     info: Option<String>,
 
-    #[cfg(feature = "hsm")]
     mapper: Option<Arc<SignerMapper>>,
 }
 
-#[cfg(not(feature = "hsm"))]
-impl OpenSslSigner {
-    pub fn build(work_dir: &Path) -> Result<Self, SignerError> {
-        let keys_dir = Self::init_keys_dir(work_dir)?;
-        Ok(OpenSslSigner {
-            keys_dir: keys_dir.into(),
-        })
-    }
-}
-
-#[cfg(feature = "hsm")]
 impl OpenSslSigner {
     /// The OpenSslSigner can be used with or without a SignerMapper. Without a SignerMapper a caller that needs to
     /// dispatch requests to the Signer that owns a given KeyIdentifier will be unable to do so as the SignerMapper
@@ -139,12 +118,6 @@ impl OpenSslSigner {
         let key_pair = self.load_key(&key_id)?;
         let signature = Self::sign_with_key(key_pair.pkey.as_ref(), challenge)?;
         Ok(signature)
-    }
-}
-
-impl OpenSslSigner {
-    pub fn supports_random(&self) -> bool {
-        true
     }
 }
 
@@ -220,12 +193,6 @@ impl OpenSslSigner {
         path
     }
 
-    #[cfg(not(feature = "hsm"))]
-    fn remember_key_id(&self, _key_id: &KeyIdentifier) -> Result<(), SignerError> {
-        Ok(())
-    }
-
-    #[cfg(feature = "hsm")]
     fn remember_key_id(&self, key_id: &KeyIdentifier) -> Result<(), SignerError> {
         // When testing the OpenSSlSigner in isolation there is no need for a mapper as we don't need to determine
         // which signer to use for a particular KeyIdentifier as there is only one signer, and the OpenSslSigner
@@ -295,10 +262,6 @@ impl OpenSslSigner {
 
         Ok((signature, key))
     }
-
-    pub fn rand(&self, target: &mut [u8]) -> Result<(), SignerError> {
-        openssl::rand::rand_bytes(target).map_err(SignerError::OpenSslError)
-    }
 }
 
 //------------ OpenSslKeyPair ------------------------------------------------
@@ -365,12 +328,7 @@ pub mod tests {
     #[test]
     fn should_return_subject_public_key_info() {
         test::test_under_tmp(|d| {
-            #[cfg(not(feature = "hsm"))]
-            let s = OpenSslSigner::build(&d).unwrap();
-
-            #[cfg(feature = "hsm")]
             let s = OpenSslSigner::build(&d, "dummy", None).unwrap();
-
             let ki = s.create_key(PublicKeyFormat::Rsa).unwrap();
             s.get_key_info(&ki).unwrap();
             s.destroy_key(&ki).unwrap();

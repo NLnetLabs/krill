@@ -14,7 +14,7 @@ use kmip::{
     client::{Client, ClientCertificate},
     types::{
         common::{KeyMaterial, ObjectType, Operation},
-        response::{ManagedObject, RNGRetrieveResponsePayload},
+        response::ManagedObject,
     },
 };
 use openssl::ssl::SslStream;
@@ -64,7 +64,7 @@ fn default_kmip_port() -> u16 {
     5696
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 pub struct KmipSignerConfig {
     pub host: String,
 
@@ -233,16 +233,6 @@ impl KmipSigner {
     ) -> Result<Signature, SignerError> {
         self.sign_with_key(signer_private_key_id, SignatureAlgorithm::default(), challenge.as_ref())
     }
-
-    /// Returns true if the KMIP server supports generation of random numbers, false otherwise.
-    pub fn supports_random(&self) -> bool {
-        if let Ok(status) = self.server.status(Self::probe_server) {
-            if let Ok(state) = status.state() {
-                return state.supports_random_number_generation;
-            }
-        }
-        false
-    }
 }
 
 //------------ Probe based server access ------------------------------------------------------------------------------
@@ -253,23 +243,12 @@ struct UsableServerState {
     /// A pool of TCP + TLS clients for connecting to the KMIP server
     pool: r2d2::Pool<ConnectionManager>,
 
-    /// Does the KMIP server support the RNG Retrieve operation (for generating random values)?
-    supports_random_number_generation: bool,
-
     conn_info: String,
 }
 
 impl UsableServerState {
-    pub fn new(
-        pool: r2d2::Pool<ConnectionManager>,
-        supports_random_number_generation: bool,
-        conn_info: String,
-    ) -> UsableServerState {
-        UsableServerState {
-            pool,
-            supports_random_number_generation,
-            conn_info,
-        }
+    pub fn new(pool: r2d2::Pool<ConnectionManager>, conn_info: String) -> UsableServerState {
+        UsableServerState { pool, conn_info }
     }
 
     pub fn get_connection(&self) -> Result<PooledConnection<ConnectionManager>, SignerError> {
@@ -297,16 +276,15 @@ impl KmipSigner {
             match err {
                 // Fatal error
                 kmip::client::Error::ConfigurationError(err) => {
-                    error!("[{}] Failed to connect KMIP server: Configuration error: {}", name, err);
+                    error!("Failed to connect KMIP server: Configuration error: {}", err);
                     ProbeError::CompletedUnusable
                 }
 
                 // I/O error attempting to contact the server or a problem on an internal problem at the server, not
                 // necessarily fatal or a reason to abort creating the pool.
                 kmip::client::Error::ServerError(err) => {
-                    let err_msg = format!("[{}] Failed to connect to server: Server error: {}", name, err);
-                    error!("{}", err_msg);
-                    ProbeError::CallbackFailed(SignerError::KmipError(err_msg))
+                    error!("Failed to connect KMIP server: Server error: {}", err);
+                    ProbeError::CallbackFailed(SignerError::KmipError(format!("Failed to connect to server: {}", err)))
                 }
 
                 // Impossible errors: we didn't yet try to send a request or receive a response
@@ -317,12 +295,12 @@ impl KmipSigner {
                 | kmip::client::Error::InternalError(err)
                 | kmip::client::Error::Unknown(err)
                 | kmip::client::Error::ItemNotFound(err) => {
-                    error!("[{}] Failed to connect KMIP server: Unexpected error: {}", name, err);
+                    error!("Failed to connect KMIP server: Unexpected error: {}", err);
                     ProbeError::CompletedUnusable
                 }
 
                 other => {
-                    error!("[{}] Failed to connect KMIP server: Unexpected error: {}", name, other);
+                    error!("Failed to connect KMIP server: Unexpected error: {}", other);
                     ProbeError::CompletedUnusable
                 }
             }
@@ -384,7 +362,6 @@ impl KmipSigner {
             name, server_identification, conn_settings.client.host, conn_settings.client.port
         );
 
-        let supports_rng_retrieve = supported_operations.contains(&Operation::RNGRetrieve);
         let conn_info = format!(
             "KMIP Signer [vendor: {}, host: {}, port: {}]",
             server_identification, conn_settings.client.host, conn_settings.client.port
@@ -393,7 +370,7 @@ impl KmipSigner {
             Arc::new(conn_settings.client.clone()),
             MAX_CONCURRENT_SERVER_CONNECTIONS,
         )?;
-        let state = UsableServerState::new(pool, supports_rng_retrieve, conn_info);
+        let state = UsableServerState::new(pool, conn_info);
 
         Ok(state)
     }
@@ -574,6 +551,14 @@ impl KmipSigner {
     }
 
     /// Make the given KMIP private and public key pair ready for use by Krill.
+    ///
+    /// Note that this function renames the created keys but this is not needed for correct functioning of Krill, it
+    /// is rather done to aid the KMIP server operator when administering the HSM.
+    ///
+    /// It also activates the private key. Without this the key cannot be used for signing. An alternate approach could
+    /// be to set the activation date of the key when creating it thereby avoiding the extra activation step, or to
+    /// perform the activation operation as part of a bulk request also containing the create key operation, thereby
+    /// reducing the number of round trips to the server.
     fn prepare_keypair_for_use(&self, private_key_id: &str, public_key_id: &str) -> Result<PublicKey, SignerError> {
         // Create a public key object for the public key
         let public_key = self.get_public_key_from_id(&public_key_id)?;
@@ -744,19 +729,6 @@ impl KmipSigner {
 
         res
     }
-
-    pub(super) fn get_random_bytes(&self, num_bytes_wanted: usize) -> Result<Vec<u8>, SignerError> {
-        if !self.supports_random() {
-            return Err(SignerError::KmipError(
-                "The KMIP server does not support random number generation".to_string(),
-            ));
-        }
-        let res: RNGRetrieveResponsePayload = self.with_conn("rng retrieve", |conn: &KmipTlsClient| {
-            conn.rng_retrieve(num_bytes_wanted as i32)
-        })?;
-
-        Ok(res.data)
-    }
 }
 
 //------------ Functions required to exist by the `SignerProvider` ----------------------------------------------------
@@ -853,14 +825,6 @@ impl KmipSigner {
         let signature = signature_res?;
 
         Ok((signature, key))
-    }
-
-    pub fn rand(&self, target: &mut [u8]) -> Result<(), SignerError> {
-        let random_bytes = self.get_random_bytes(target.len())?;
-
-        target.copy_from_slice(&random_bytes);
-
-        Ok(())
     }
 }
 

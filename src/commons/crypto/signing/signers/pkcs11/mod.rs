@@ -1,4 +1,5 @@
 pub mod context;
+pub mod session;
 /// # Thread safety
 ///
 /// From section 6.7.6 "Capabilities of sessions":
@@ -28,6 +29,5 @@ pub mod context;
 /// representative of the remote cloud server or server cluster nature of the backend being communicated with by the
 /// PKCS#11 library.
 pub mod signer;
-pub mod session;
 
 pub use signer::Pkcs11Signer;

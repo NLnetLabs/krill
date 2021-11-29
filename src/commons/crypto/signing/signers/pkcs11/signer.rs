@@ -36,7 +36,7 @@ use crate::commons::{
 
 use serde::{de::Visitor, Deserialize};
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 pub struct Pkcs11SignerConfig {
     pub lib_path: String,
 
@@ -75,7 +75,7 @@ pub enum LoginMode {
     LoginRequired,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SlotIdOrLabel {
     Id(CK_SLOT_ID),
 
@@ -214,15 +214,6 @@ impl Pkcs11Signer {
         })?;
         self.sign_with_key(priv_handle, SignatureAlgorithm::default(), challenge.as_ref())
     }
-
-    pub fn supports_random(&self) -> bool {
-        if let Ok(status) = self.server.status(Self::probe_server) {
-            if let Ok(state) = status.state() {
-                return state.supports_random_number_generation;
-            }
-        }
-        false
-    }
 }
 
 //------------ Probe based server access ------------------------------------------------------------------------------
@@ -231,9 +222,6 @@ impl Pkcs11Signer {
 #[derive(Debug)]
 struct UsableServerState {
     context: ThreadSafePkcs11Context,
-
-    /// Does the server support generation of random numbers?
-    supports_random_number_generation: bool,
 
     conn_info: String,
 
@@ -254,7 +242,6 @@ struct UsableServerState {
 
 impl UsableServerState {
     pub fn new(
-        supports_random_number_generation: bool,
         context: ThreadSafePkcs11Context,
         conn_info: String,
         slot_id: CK_SLOT_ID,
@@ -263,7 +250,6 @@ impl UsableServerState {
     ) -> UsableServerState {
         UsableServerState {
             context,
-            supports_random_number_generation,
             conn_info,
             slot_id,
             login_mode,
@@ -388,16 +374,6 @@ impl Pkcs11Signer {
             Ok((cryptoki_info, slot_id, slot_info, token_info, user_pin))
         }
 
-        fn check_rand_support(session: &Pkcs11Session) -> Result<bool, ProbeError<SignerError>> {
-            // The PKCS#11 C_SeedRandom() and C_GenerateRandom() functions are allowed to return CKR_RANDOM_NO_RNG to
-            // indicate "that the specified token doesn’t have a random number generator". The C_SeedRandom() function
-            // can also return CKR_RANDOM_SEED_NOT_SUPPORTED. Thus it is not a given that the provider is able to
-            // generate random numbers just because it exports the related functions. In theory the provider can also
-            // fail to implement the random functions entirely but the Rust PKCS11 crate `Ctx::new()` function requires
-            // these functions to be supported or else it will fail and we would never get to this point.
-            Ok(session.generate_random(32).is_ok())
-        }
-
         fn login(
             session: Pkcs11Session,
             login_mode: LoginMode,
@@ -469,8 +445,6 @@ impl Pkcs11Signer {
 
         // TODO: check for RSA key pair support?
 
-        let supports_random_number_generation = check_rand_support(&session)?;
-
         // Login if needed
         let login_session = login(session, conn_settings.login_mode, user_pin, &name, &lib_name, slot_id)?;
 
@@ -501,14 +475,7 @@ impl Pkcs11Signer {
         );
         let login_mode = conn_settings.login_mode;
 
-        let state = UsableServerState::new(
-            supports_random_number_generation,
-            context,
-            server_info,
-            slot_id,
-            login_mode,
-            login_session,
-        );
+        let state = UsableServerState::new(context, server_info, slot_id, login_mode, login_session);
 
         Ok(state)
     }
@@ -605,23 +572,6 @@ impl Pkcs11Signer {
             .map_err(|_| KeyError::KeyNotFound)?;
 
         Ok(internal_key_id)
-    }
-
-    pub(super) fn get_random_bytes(&self, num_bytes_wanted: usize) -> Result<Vec<u8>, SignerError> {
-        if !self.supports_random() {
-            return Err(SignerError::Pkcs11Error(
-                "The PKCS#11 provider does not support random number generation".to_string(),
-            ));
-        }
-
-        let num_bytes_wanted: CK_ULONG = num_bytes_wanted.try_into().map_err(|err| {
-            SignerError::Pkcs11Error(format!(
-                "Internal error: number of random bytes wanted is incompatible with PKCS#11: {}",
-                err
-            ))
-        })?;
-
-        self.with_conn("generate random", |conn| conn.generate_random(num_bytes_wanted))
     }
 
     pub(super) fn build_key(
@@ -944,14 +894,6 @@ impl Pkcs11Signer {
         let signature = signature_res?;
 
         Ok((signature, key))
-    }
-
-    pub fn rand(&self, target: &mut [u8]) -> Result<(), SignerError> {
-        let random_bytes = self.get_random_bytes(target.len())?;
-
-        target.copy_from_slice(&random_bytes);
-
-        Ok(())
     }
 }
 

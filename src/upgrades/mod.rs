@@ -9,7 +9,7 @@ use serde::de::DeserializeOwned;
 use crate::{
     commons::{
         api::Handle,
-        crypto::KrillSigner,
+        crypto::KrillSignerBuilder,
         error::KrillIoError,
         eventsourcing::{AggregateStoreError, CommandKey, KeyStoreKey, KeyValueError, KeyValueStore},
         util::{file, KrillVersion},
@@ -198,7 +198,12 @@ fn upgrade_data_to_0_9_0(config: Arc<Config>) -> Result<(), UpgradeError> {
     if needs_v0_9_0_upgrade(work_dir, "cas") {
         // TODO: should we use the configured signers here or an OpenSSL signer?
         // Will any signing actually be done using these signers?
-        let signer = Arc::new(KrillSigner::build(work_dir, config.signers())?);
+        let signer = KrillSignerBuilder::new(work_dir, &config.signers)
+            .with_default_signer(config.default_signer())
+            .with_one_off_signer(config.one_off_signer())
+            .build()
+            .unwrap();
+        let signer = Arc::new(signer);
         let repo_manager = RepositoryManager::build(config.clone(), signer.clone())?;
 
         CaObjectsMigration::migrate(config, repo_manager, signer)?;
@@ -230,7 +235,7 @@ mod tests {
     use std::{fs, path::PathBuf};
 
     use crate::commons::util::file;
-    use crate::test::tmp_dir;
+    use crate::test::{init_config, tmp_dir};
 
     use super::*;
 
@@ -240,10 +245,10 @@ mod tests {
         let source = PathBuf::from("test-resources/migrations/v0_8_1/");
         file::backup_dir(&source, &work_dir).unwrap();
 
-        let config = Arc::new(Config::test(&work_dir, false, false, false, false));
-        let _ = config.init_logging();
+        let mut config = Config::test(&work_dir, false, false, false, false);
+        init_config(&mut config);
 
-        upgrade_data_to_0_9_0(config).unwrap();
+        upgrade_data_to_0_9_0(Arc::new(config)).unwrap();
 
         let _ = fs::remove_dir_all(work_dir);
     }
@@ -254,10 +259,10 @@ mod tests {
         let source = PathBuf::from("test-resources/migrations/v0_6_0/");
         file::backup_dir(&source, &work_dir).unwrap();
 
-        let config = Arc::new(Config::test(&work_dir, false, false, false, false));
-        let _ = config.init_logging();
+        let mut config = Config::test(&work_dir, false, false, false, false);
+        init_config(&mut config);
 
-        upgrade_data_to_0_9_0(config).unwrap();
+        upgrade_data_to_0_9_0(Arc::new(config)).unwrap();
 
         let _ = fs::remove_dir_all(work_dir);
     }
