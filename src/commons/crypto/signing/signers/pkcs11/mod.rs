@@ -1,4 +1,5 @@
 pub mod context;
+pub mod session;
 /// # Thread safety
 ///
 /// From section 6.7.6 "Capabilities of sessions":
@@ -27,7 +28,6 @@ pub mod context;
 /// a locally running PyKMIP Python process, and in cases such as the AWS CloudHSM PKCS#11 library is actually
 /// representative of the remote cloud server or server cluster nature of the backend being communicated with by the
 /// PKCS#11 library.
-pub mod internal;
-pub mod session;
+pub mod signer;
 
-pub use internal::Pkcs11Signer;
+pub use signer::Pkcs11Signer;

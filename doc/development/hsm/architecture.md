@@ -6,7 +6,7 @@
 
 - `Signer` implementation: Until now Krill had a single implementation, `OpenSslSigner`. The `HSM` feature adds two new signers to Krill: `Pkcs11Signer` and `KmipSigner`.
 
-- `Signer`: An instance of an implementation of the `Signer` trait. Krill can be configured to create multiple instances of the same `Signer` trait implementation, each using a different configuration. When referring to a Signer this is what is usually being referred to.
+- `Signer`: An instance of an implementation of most of the `Signer` trait (everything except random number generation). Krill can be configured to create multiple instances of the same `Signer` trait implementation, each using a different configuration. When referring to a Signer this is what is usually being referred to.
 
 - `Signer` backend: 3rd party logic and storage, usually running outside Krill either on the same host or remotely, that works with keys on behalf of Krill. The backend details vary per signer implementation and configuration.
 
@@ -117,8 +117,6 @@ References:
   
   - Rollover to a new signer (creation of new keys with the new signer while continued use of keys created by the previous signer).
 
-  - Fallback to the OpenSSL signer for random number generation when the chosen signer doesn't support this capability.
-
   - Generation of one-off keys using OpenSSL even when using a separate signer for creation of other keys, as doing this with an HSM can require multiple potentially slow requests (create, activate, sign, deactivate, destroy, potentially each being a network round trip plus relatively slow execution of operations compared to local OpenSSL) and because the security benefits of an HSM are not thought to be necessary for one-off signing keys.
 
 - Maintain mappings of Krill `KeyIdentifier` to signer identifier (so that we can dispatch signing requests to the
@@ -156,8 +154,7 @@ Krill calling code -> KrillSigner -> OpenSslSigner
 New: With the addition of HSM support there may be multiple concurrently active Signers and the control flow becomes this:
 
 ```
-                    Parses config &
-                    creates signers    + Pending Signers: [SignerProvider, SignerProvider, ...]
+                    Creates signers    + Pending Signers: [SignerProvider, SignerProvider, ...]
                            :           |
 Krill calling code -> KrillSigner -> SignerRouter
                                        |
@@ -176,7 +173,7 @@ Krill calling code -> KrillSigner -> SignerRouter
 
 - `SignerRouter` identifies the appropriate signer for a given request. Signer selection happens in one of two ways:
   - For requests relating to an existing key the request is routed to the signer that owns the key, as identified by the `SignerMapper`. 
-  - For all other requests a signer is selected based on its assigned roles, e.g. one-off signer or random generator signer roles can be assigned to specific signers, as defined by its `SignerFlags`.
+  - For all other requests the signer is selected based on its assigned roles, e.g. default signer or one-off signer roles can be assigned to specific signers, as defined by `SignerFlags`.
  
   Actual dispatch is delegated to an instance of `SignerProvider` because enum based dispatch is noisy and the "Provider" enum dispatch pattern was alrady established in the multi-user auth code.
 

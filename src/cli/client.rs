@@ -524,8 +524,8 @@ impl KrillClient {
             config.push_str(hsm_add_on);
         }
 
-        let c: Config = toml::from_slice(config.as_ref()).map_err(Error::init)?;
-        c.verify().map_err(Error::init)?;
+        let mut c: Config = toml::from_slice(config.as_ref()).map_err(Error::init)?;
+        c.process().map_err(Error::init)?;
 
         Ok(ApiResponse::GenericBody(config))
     }

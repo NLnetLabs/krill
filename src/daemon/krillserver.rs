@@ -19,7 +19,7 @@ use crate::{
             Timestamp, UpdateChildRequest,
         },
         bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion},
-        crypto::KrillSigner,
+        crypto::KrillSignerBuilder,
         eventsourcing::CommandKey,
         remote::rfc8183,
         KrillEmptyResult, KrillResult,
@@ -102,7 +102,14 @@ impl KrillServer {
         let mut repo_dir = work_dir.clone();
         repo_dir.push("repo");
 
-        let signer = Arc::new(KrillSigner::build(work_dir, config.signers())?);
+        // Assumes that Config::verify() has already ensured that the signer configuration is valid and that
+        // Config::resolve() has been used to update signer name references to resolve to the corresponding signer
+        // configurations.
+        let signer = KrillSignerBuilder::new(work_dir, &config.signers)
+            .with_default_signer(config.default_signer())
+            .with_one_off_signer(config.one_off_signer())
+            .build()?;
+        let signer = Arc::new(signer);
 
         #[cfg(feature = "multi-user")]
         let login_session_cache = Arc::new(LoginSessionCache::new());

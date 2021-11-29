@@ -9,7 +9,7 @@ use serde::de::DeserializeOwned;
 use crate::{
     commons::{
         api::Handle,
-        crypto::KrillSigner,
+        crypto::KrillSignerBuilder,
         error::KrillIoError,
         eventsourcing::{AggregateStoreError, CommandKey, KeyStoreKey, KeyValueError, KeyValueStore},
         util::{file, KrillVersion},
@@ -192,7 +192,11 @@ fn record_preexisting_openssl_keys_in_signer_mapper(config: Arc<Config>) -> Resu
             keys_dir.to_string_lossy()
         );
 
-        let krill_signer = KrillSigner::build(&config.data_dir, config.signers())?;
+        let krill_signer = KrillSignerBuilder::new(&config.data_dir, &config.signers)
+            .with_default_signer(config.default_signer())
+            .with_one_off_signer(config.one_off_signer())
+            .build()
+            .unwrap();
 
         // For every file (key) in the legacy OpenSSL signer keys directory
         if let Ok(dir_iter) = keys_dir.read_dir() {
@@ -235,9 +239,10 @@ fn record_preexisting_openssl_keys_in_signer_mapper(config: Arc<Config>) -> Resu
                             // Record the key in the signer mapper as being owned by the found signer handle.
                             if let Some(signer_handle) = &openssl_signer_handle {
                                 let internal_key_id = key_id.to_string();
-                                let mapper = krill_signer.get_mapper();
-                                mapper.add_key(&signer_handle, &key_id, &internal_key_id)?;
-                                num_recorded_keys += 1;
+                                if let Some(mapper) = krill_signer.get_mapper() {
+                                    mapper.add_key(&signer_handle, &key_id, &internal_key_id)?;
+                                    num_recorded_keys += 1;
+                                }
                             }
                         }
                     }
@@ -284,10 +289,15 @@ fn upgrade_data_to_0_9_0(config: Arc<Config>) -> Result<(), UpgradeError> {
         PubdObjectsMigration::migrate(config.clone())?;
     }
 
-    if needs_v0_9_0_upgrade(work_dir, CASERVER_DIR) {
+    if needs_v0_9_0_upgrade(work_dir, "cas") {
         // TODO: should we use the configured signers here or an OpenSSL signer?
         // Will any signing actually be done using these signers?
-        let signer = Arc::new(KrillSigner::build(work_dir, config.signers())?);
+        let signer = KrillSignerBuilder::new(work_dir, &config.signers)
+            .with_default_signer(config.default_signer())
+            .with_one_off_signer(config.one_off_signer())
+            .build()
+            .unwrap();
+        let signer = Arc::new(signer);
         let repo_manager = RepositoryManager::build(config.clone(), signer.clone())?;
 
         CaObjectsMigration::migrate(config, repo_manager, signer)?;
@@ -319,7 +329,7 @@ mod tests {
     use std::{fs, path::PathBuf};
 
     use crate::commons::util::file;
-    use crate::test::tmp_dir;
+    use crate::test::{init_config, tmp_dir};
 
     use super::*;
 
@@ -329,10 +339,10 @@ mod tests {
         let source = PathBuf::from("test-resources/migrations/v0_8_1/");
         file::backup_dir(&source, &work_dir).unwrap();
 
-        let config = Arc::new(Config::test(&work_dir, false, false, false, false));
-        let _ = config.init_logging();
+        let mut config = Config::test(&work_dir, false, false, false, false);
+        init_config(&mut config);
 
-        upgrade_data_to_0_9_0(config).unwrap();
+        upgrade_data_to_0_9_0(Arc::new(config)).unwrap();
 
         let _ = fs::remove_dir_all(work_dir);
     }
@@ -343,10 +353,10 @@ mod tests {
         let source = PathBuf::from("test-resources/migrations/v0_6_0/");
         file::backup_dir(&source, &work_dir).unwrap();
 
-        let config = Arc::new(Config::test(&work_dir, false, false, false, false));
-        let _ = config.init_logging();
+        let mut config = Config::test(&work_dir, false, false, false, false);
+        init_config(&mut config);
 
-        upgrade_data_to_0_9_0(config).unwrap();
+        upgrade_data_to_0_9_0(Arc::new(config)).unwrap();
 
         let _ = fs::remove_dir_all(work_dir);
     }
@@ -355,27 +365,35 @@ mod tests {
     fn unmapped_keys_test_core(do_upgrade: bool) {
         let expected_key_id = KeyIdentifier::from_str("5CBCAB14B810C864F3EEA8FD102B79F4E53FCC70").unwrap();
 
-        // Create a naked OpenSSL signer (i.e. not accessed via KrillSigner) and create a key.
-        // The key should be stored on disk in the KEYS_DIR under the Krill data dir.
+        // Place a key previously created by an OpenSSL signer in the KEYS_DIR under the Krill data dir.
         // Then run the upgrade. It should find the key and add it to the mapper.
         let work_dir = tmp_dir();
         let source = PathBuf::from("test-resources/migrations/unmapped_keys/");
         file::backup_dir(&source, &work_dir).unwrap();
 
-        let config = Arc::new(Config::test(&work_dir, false, false, false, false));
+        let mut config = Config::test(&work_dir, false, false, false, false);
         let _ = config.init_logging();
+        config.process().unwrap();
+        let config = Arc::new(config);
 
         if do_upgrade {
-            record_preexisting_openssl_keys_in_signer_mapper(config).unwrap();
+            record_preexisting_openssl_keys_in_signer_mapper(config.clone()).unwrap();
         }
 
-        let krill_signer = KrillSigner::build(&work_dir, &[]).unwrap();
+        // Now test that a newly initialized `KrillSigner` with a default OpenSSL signer
+        // is associated with the newly created mapper store and is thus able to use the
+        // key that we placed on disk.
+        let krill_signer = KrillSignerBuilder::new(&work_dir, &config.signers)
+            .with_default_signer(config.default_signer())
+            .with_one_off_signer(config.one_off_signer())
+            .build()
+            .unwrap();
 
         // Trigger the signer to be bound to the one the migration just registered in the mapper
         krill_signer.random_serial().unwrap();
 
         // Verify that the mapper has a single registered signer
-        let mapper = krill_signer.get_mapper();
+        let mapper = krill_signer.get_mapper().unwrap();
         let signer_handles = mapper.get_signer_handles().unwrap();
         assert_eq!(1, signer_handles.len());
 

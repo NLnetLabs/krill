@@ -114,11 +114,11 @@ pub fn test_config(
     Config::test(dir, enable_testbed, enable_ca_refresh, enable_suspend, second_signer)
 }
 
-pub fn init_config(config: &Config) {
+pub fn init_config(config: &mut Config) {
     if config.init_logging().is_err() {
         trace!("Logging already initialized");
     }
-    config.verify().unwrap();
+    config.process().unwrap();
 }
 
 /// Starts krill server for testing using the given configuration. Creates a random base directory in the 'work' folder,
@@ -144,8 +144,8 @@ pub async fn start_krill_with_default_test_config(
     dir
 }
 
-async fn start_krill(config: Config) {
-    init_config(&config);
+async fn start_krill(mut config: Config) {
+    init_config(&mut config);
     tokio::spawn(start_krill_with_error_trap(Arc::new(config)));
     assert!(krill_server_ready().await);
 }
@@ -161,7 +161,7 @@ async fn start_krill_with_error_trap(config: Arc<Config>) {
 pub async fn start_krill_pubd() -> PathBuf {
     let dir = tmp_dir();
     let mut config = test_config(&dir, false, false, false, true);
-    init_config(&config);
+    init_config(&mut config);
     config.port = 3001;
 
     tokio::spawn(start_krill_with_error_trap(Arc::new(config)));
