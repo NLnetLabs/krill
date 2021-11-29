@@ -1,4 +1,4 @@
-pub(crate) mod dispatch;
+pub mod dispatch;
 
 pub(super) mod signers;
 

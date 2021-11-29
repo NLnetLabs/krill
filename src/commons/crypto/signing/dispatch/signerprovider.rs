@@ -43,7 +43,7 @@ impl Default for SignerFlags {
 }
 
 impl SignerFlags {
-    pub(crate) fn new(is_default_signer: bool, is_one_off_signer: bool) -> Self {
+    pub fn new(is_default_signer: bool, is_one_off_signer: bool) -> Self {
         Self {
             is_default_signer,
             is_one_off_signer,
@@ -170,7 +170,7 @@ impl SignerProvider {
 // Implement the functions defined by the `Signer` trait because `SignerRouter` expects to invoke them, but as the
 // dispatching is not trait based we don't actually have to implement the `Signer` trait.
 impl SignerProvider {
-    pub(crate) fn create_key(&self, algorithm: PublicKeyFormat) -> Result<KeyIdentifier, SignerError> {
+    pub fn create_key(&self, algorithm: PublicKeyFormat) -> Result<KeyIdentifier, SignerError> {
         match self {
             SignerProvider::OpenSsl(_, signer) => signer.create_key(algorithm),
             #[cfg(feature = "hsm")]
@@ -182,7 +182,7 @@ impl SignerProvider {
         }
     }
 
-    pub(crate) fn get_key_info(&self, key: &KeyIdentifier) -> Result<PublicKey, KeyError<SignerError>> {
+    pub fn get_key_info(&self, key: &KeyIdentifier) -> Result<PublicKey, KeyError<SignerError>> {
         match self {
             SignerProvider::OpenSsl(_, signer) => signer.get_key_info(key),
             #[cfg(feature = "hsm")]
@@ -194,7 +194,7 @@ impl SignerProvider {
         }
     }
 
-    pub(crate) fn destroy_key(&self, key: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
+    pub fn destroy_key(&self, key: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
         match self {
             SignerProvider::OpenSsl(_, signer) => signer.destroy_key(key),
             #[cfg(feature = "hsm")]
@@ -206,7 +206,7 @@ impl SignerProvider {
         }
     }
 
-    pub(crate) fn sign<D: AsRef<[u8]> + ?Sized>(
+    pub fn sign<D: AsRef<[u8]> + ?Sized>(
         &self,
         key: &KeyIdentifier,
         algorithm: SignatureAlgorithm,
@@ -223,7 +223,7 @@ impl SignerProvider {
         }
     }
 
-    pub(crate) fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
+    pub fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
         &self,
         algorithm: SignatureAlgorithm,
         data: &D,

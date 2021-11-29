@@ -112,7 +112,7 @@ pub struct SignerRouter {
 }
 
 impl SignerRouter {
-    pub(crate) fn build(
+    pub fn build(
         signer_mapper: Option<Arc<SignerMapper>>,
         mut signers: Vec<SignerProvider>,
     ) -> KrillResult<Self> {
