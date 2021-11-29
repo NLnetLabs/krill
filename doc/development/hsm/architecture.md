@@ -173,7 +173,7 @@ Krill calling code -> KrillSigner -> SignerRouter
 
 - `SignerRouter` identifies the appropriate signer for a given request. Signer selection happens in one of two ways:
   - For requests relating to an existing key the request is routed to the signer that owns the key, as identified by the `SignerMapper`. 
-  - For all other requests the signer with  is selected based on its assigned roles, e.g. default signer or one-off signer roles can be assigned to specific signers, as defined by `SignerFlags`.
+  - For all other requests the signer is selected based on its assigned roles, e.g. default signer or one-off signer roles can be assigned to specific signers, as defined by `SignerFlags`.
  
   Actual dispatch is delegated to an instance of `SignerProvider` because enum based dispatch is noisy and the "Provider" enum dispatch pattern was alrady established in the multi-user auth code.
 

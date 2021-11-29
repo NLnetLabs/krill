@@ -205,22 +205,48 @@ impl ConfigDefaults {
 
     pub fn signers() -> Vec<SignerConfig> {
         #[cfg(not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11")))]
-        return vec![SignerConfig::new(
-            DEFAULT_SIGNER_NAME.to_string(),
-            SignerType::OpenSsl(OpenSslSignerConfig::default()),
-        )];
+        {
+            let signer_config = OpenSslSignerConfig { keys_path: None };
+            vec![SignerConfig::new(
+                DEFAULT_SIGNER_NAME.to_string(),
+                SignerType::OpenSsl(signer_config),
+            )]
+        }
 
         #[cfg(feature = "hsm-tests-kmip")]
-        return vec![SignerConfig::new(
-            DEFAULT_KMIP_SIGNER_NAME.to_string(),
-            SignerType::Kmip(KmipSignerConfig::default()),
-        )];
+        {
+            let signer_config = KmipSignerConfig {
+                host: "127.0.0.1".to_string(),
+                port: 5696,
+                username: None,
+                password: None,
+                insecure: true,
+                force: true,
+                client_cert_path: Some(PathBuf::from_str("test-resources/pykmip/server.crt").unwrap()),
+                client_cert_private_key_path: Some(PathBuf::from_str("test-resources/pykmip/server.key").unwrap()),
+                server_cert_path: Some(PathBuf::from_str("test-resources/pykmip/server.crt").unwrap()),
+                server_ca_cert_path: Some(PathBuf::from_str("test-resources/pykmip/ca.crt").unwrap()),
+            };
+            vec![SignerConfig::new(
+                DEFAULT_KMIP_SIGNER_NAME.to_string(),
+                SignerType::Kmip(signer_config),
+            )]
+        }
 
         #[cfg(feature = "hsm-tests-pkcs11")]
-        return vec![SignerConfig::new(
-            DEFAULT_PKCS11_SIGNER_NAME.to_string(),
-            SignerType::Pkcs11(Pkcs11SignerConfig::default()),
-        )];
+        {
+            use crate::commons::crypto::SlotIdOrLabel;
+            let signer_config = Pkcs11SignerConfig {
+                lib_path: "/usr/lib/softhsm/libsofthsm2.so".to_string(),
+                user_pin: Some("1234".to_string()),
+                slot: SlotIdOrLabel::Label("My token 1".to_string()),
+                login: true,
+            };
+            vec![SignerConfig::new(
+                DEFAULT_PKCS11_SIGNER_NAME.to_string(),
+                SignerType::Pkcs11(signer_config),
+            )]
+        }
     }
 }
 

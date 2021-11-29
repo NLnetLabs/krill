@@ -12,7 +12,7 @@ pub use signers::softsigner::OpenSslSigner;
 pub use signers::kmip::signer::KmipSignerConfig;
 
 #[cfg(feature = "hsm")]
-pub use signers::pkcs11::signer::Pkcs11SignerConfig;
+pub use signers::pkcs11::signer::{Pkcs11SignerConfig, SlotIdOrLabel};
 
 pub use signers::softsigner::OpenSslSignerConfig;
 

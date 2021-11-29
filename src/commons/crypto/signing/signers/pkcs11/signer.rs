@@ -49,18 +49,6 @@ pub struct Pkcs11SignerConfig {
     pub login: bool,
 }
 
-// For testing.
-impl Default for Pkcs11SignerConfig {
-    fn default() -> Self {
-        Self {
-            lib_path: "/usr/lib/softhsm/libsofthsm2.so".to_string(),
-            user_pin: Some("1234".to_string()),
-            slot: SlotIdOrLabel::Label("My token 1".to_string()),
-            login: true,
-        }
-    }
-}
-
 impl Pkcs11SignerConfig {
     pub fn login_default() -> bool {
         true
@@ -173,7 +161,11 @@ impl Pkcs11Signer {
         // AWS CloudHSM library, presumably they both need initlaizing within the same instance of the Krill
         // "application".
 
-        let server = Arc::new(StatefulProbe::new(Arc::new(conf.try_into()?), Duration::from_secs(30)));
+        let server = Arc::new(StatefulProbe::new(
+            name.to_string(),
+            Arc::new(conf.try_into()?),
+            Duration::from_secs(30),
+        ));
 
         let s = Pkcs11Signer {
             name: name.to_string(),
@@ -273,6 +265,7 @@ impl UsableServerState {
 impl Pkcs11Signer {
     /// Verify if the configured server is contactable and supports the required capabilities.
     fn probe_server(
+        name: String,
         status: &ProbeStatus<ConnectionSettings, SignerError, UsableServerState>,
     ) -> Result<UsableServerState, ProbeError<SignerError>> {
         fn force_cache_flush(context: ThreadSafePkcs11Context) {
@@ -315,7 +308,7 @@ impl Pkcs11Signer {
         fn interrogate_token(
             conn_settings: &Arc<ConnectionSettings>,
             ctx: ThreadSafePkcs11Context,
-            signer_name: &str,
+            name: &str,
             lib_name: &String,
         ) -> Result<(CK_INFO, u64, CK_SLOT_INFO, CK_TOKEN_INFO, Option<String>), ProbeError<SignerError>> {
             let readable_ctx = ctx.read().unwrap();
@@ -323,11 +316,11 @@ impl Pkcs11Signer {
             let cryptoki_info = readable_ctx.get_info().map_err(|err| {
                 error!(
                     "[{}] Unable to read PKCS#11 info for library '{}': {}",
-                    signer_name, lib_name, err
+                    name, lib_name, err
                 );
                 ProbeError::CompletedUnusable
             })?;
-            trace!("[{}] C_GetInfo(): {:?}", signer_name, cryptoki_info);
+            trace!("[{}] C_GetInfo(): {:?}", name, cryptoki_info);
 
             let slot_id = match &conn_settings.slot {
                 SlotIdOrLabel::Id(id) => *id,
@@ -338,7 +331,7 @@ impl Pkcs11Signer {
                         Ok(None) => {
                             let err_msg = format!(
                                 "[{}] No PKCS#11 slot found for library '{}' with label '{}'",
-                                signer_name, lib_name, label
+                                name, lib_name, label
                             );
 
                             error!("{}", err_msg);
@@ -347,7 +340,7 @@ impl Pkcs11Signer {
                         Err(err) => {
                             error!(
                                 "[{}] Failed to enumerate PKCS#11 slots for library '{}': {}",
-                                signer_name, lib_name, err
+                                name, lib_name, err
                             );
                             return Err(ProbeError::CompletedUnusable);
                         }
@@ -358,24 +351,24 @@ impl Pkcs11Signer {
             let slot_info = readable_ctx.get_slot_info(slot_id).map_err(|err| {
                 let err_msg = format!(
                     "[{}] Unable to read PKCS#11 slot info for library '{}' slot {}: {}",
-                    signer_name, lib_name, slot_id, err
+                    name, lib_name, slot_id, err
                 );
 
                 error!("{}", err_msg);
                 ProbeError::CallbackFailed(SignerError::Pkcs11Error(err_msg))
             })?;
-            trace!("[{}] C_GetSlotInfo(): {:?}", signer_name, slot_info);
+            trace!("[{}] C_GetSlotInfo(): {:?}", name, slot_info);
 
             let token_info = readable_ctx.get_token_info(slot_id).map_err(|err| {
                 let err_msg = format!(
                     "[{}] Unable to read PKCS#11 token info for library '{}' slot {}: {}",
-                    signer_name, lib_name, slot_id, err
+                    name, lib_name, slot_id, err
                 );
 
                 error!("{}", err_msg);
                 ProbeError::CallbackFailed(SignerError::Pkcs11Error(err_msg))
             })?;
-            trace!("[{}] C_GetTokenInfo(): {:?}", signer_name, token_info);
+            trace!("[{}] C_GetTokenInfo(): {:?}", name, token_info);
 
             let user_pin = conn_settings.user_pin.clone();
             Ok((cryptoki_info, slot_id, slot_info, token_info, user_pin))
@@ -385,7 +378,7 @@ impl Pkcs11Signer {
             session: Pkcs11Session,
             login_mode: LoginMode,
             user_pin: Option<String>,
-            signer_name: &str,
+            name: &str,
             lib_name: &String,
             slot_id: u64,
         ) -> Result<Option<Pkcs11Session>, ProbeError<SignerError>> {
@@ -398,14 +391,14 @@ impl Pkcs11Signer {
                     session.login(CKU_USER, user_pin.as_deref()).map_err(|err| {
                         error!(
                             "[{}] Unable to login to PKCS#11 session for library '{}' slot {}: {}",
-                            signer_name, lib_name, slot_id, err
+                            name, lib_name, slot_id, err
                         );
                         ProbeError::CompletedUnusable
                     })?;
 
                     trace!(
                         "[{}] Logged in to PKCS#11 session for library '{}' slot {}",
-                        signer_name,
+                        name,
                         lib_name,
                         slot_id,
                     );
@@ -415,22 +408,21 @@ impl Pkcs11Signer {
             }
         }
 
-        let signer_name = "TODO";
         let conn_settings = status.config()?;
         let lib_name = &conn_settings.lib_path;
 
-        debug!("[{}] Probing server using library '{}'", signer_name, lib_name);
+        debug!("[{}] Probing server using library '{}'", name, lib_name);
 
         let context = initialize_if_needed(&conn_settings).map_err(|err| {
             error!(
                 "[{}] Unable to initialize PKCS#11 info for library '{}': {}",
-                signer_name, lib_name, err
+                name, lib_name, err
             );
             ProbeError::CompletedUnusable
         })?;
 
         let (cryptoki_info, slot_id, _slot_info, token_info, user_pin) =
-            interrogate_token(&conn_settings, context.clone(), signer_name, &lib_name).map_err(|err| {
+            interrogate_token(&conn_settings, context.clone(), &name, &lib_name).map_err(|err| {
                 if matches!(err, ProbeError::CallbackFailed(SignerError::Pkcs11Error(_))) {
                     // While the token is not available now, it might be later.
                     force_cache_flush(context.clone());
@@ -441,7 +433,7 @@ impl Pkcs11Signer {
         let session = Pkcs11Session::new(context.clone(), slot_id).map_err(|err| {
             error!(
                 "[{}] Unable to open PKCS#11 session for library '{}' slot {}: {}",
-                signer_name, lib_name, slot_id, err
+                name, lib_name, slot_id, err
             );
             ProbeError::CompletedUnusable
         })?;
@@ -454,14 +446,7 @@ impl Pkcs11Signer {
         // TODO: check for RSA key pair support?
 
         // Login if needed
-        let login_session = login(
-            session,
-            conn_settings.login_mode,
-            user_pin,
-            signer_name,
-            &lib_name,
-            slot_id,
-        )?;
+        let login_session = login(session, conn_settings.login_mode, user_pin, &name, &lib_name, slot_id)?;
 
         // Switch from probing the server to using it.
         // -------------------------------------------

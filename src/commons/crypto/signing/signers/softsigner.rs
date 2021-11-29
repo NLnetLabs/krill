@@ -34,7 +34,7 @@ use crate::{
 
 //------------ OpenSslSigner -------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Hash, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Deserialize, Hash, PartialEq, Eq)]
 pub struct OpenSslSignerConfig {
     #[serde(default)]
     pub keys_path: Option<PathBuf>,
@@ -45,12 +45,6 @@ impl OpenSslSignerConfig {
         Self {
             keys_path: Some(path.into()),
         }
-    }
-}
-
-impl Default for OpenSslSignerConfig {
-    fn default() -> Self {
-        Self { keys_path: None }
     }
 }
 
