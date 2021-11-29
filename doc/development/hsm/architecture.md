@@ -154,8 +154,7 @@ Krill calling code -> KrillSigner -> OpenSslSigner
 New: With the addition of HSM support there may be multiple concurrently active Signers and the control flow becomes this:
 
 ```
-                    Parses config &
-                    creates signers    + Pending Signers: [SignerProvider, SignerProvider, ...]
+                    Creates signers    + Pending Signers: [SignerProvider, SignerProvider, ...]
                            :           |
 Krill calling code -> KrillSigner -> SignerRouter
                                        |

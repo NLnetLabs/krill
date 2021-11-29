@@ -10,4 +10,4 @@ Further analysis extended & refined these requirements such that:
   - Krill `Signer` implementations also support random number generation, so possibly support that via HSMs too.
   - PKCS#11 v2.20 is the most widely deployed version thus we should target that.
   - KMIP didn't support signing until v1.2 so target that.
-  - KMIP v1.0 supported only TCP+TLS+TTLV where TTLV is a custom binary wire format defined by the KMIP specification. Signing wasn't supported until v1.2. Later KMIP versions added support for HTTPS, XML and JSON, but only TCP+TLS+TTLV is mandatory for all KMIP servers. Therefore we should support v1.2+ with TCP+TLS+TTLV.
+  - KMIP v1.0 supported only TCP+TLS+TTLV where TTLV is a custom binary wire format defined by the KMIP specification. Later KMIP versions added support for HTTPS, XML and JSON, but only TCP+TLS+TTLV is mandatory for all KMIP servers. Therefore we should support TCP+TLS+TTLV.
