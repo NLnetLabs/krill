@@ -59,7 +59,7 @@ async fn functional() {
     info("#                                                                #");
     info("##################################################################");
     info("");
-    let krill_dir = start_krill_with_default_test_config(true, false, false).await;
+    let krill_dir = start_krill_with_default_test_config(true, false, false, false).await;
 
     let ta = ta_handle();
     let testbed = handle("testbed");

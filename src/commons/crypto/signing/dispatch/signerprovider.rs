@@ -2,18 +2,54 @@ use rpki::repository::crypto::{
     signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError,
 };
 
-use crate::commons::crypto::signers::{error::SignerError, softsigner::OpenSslSigner};
+use crate::commons::{
+    api::Handle,
+    crypto::signers::{error::SignerError, softsigner::OpenSslSigner},
+};
 
 #[cfg(all(test, feature = "hsm"))]
 use crate::commons::crypto::signers::mocksigner::MockSigner;
 
 #[cfg(feature = "hsm")]
-use crate::commons::{
-    api::Handle,
-    crypto::signers::{kmip::KmipSigner, pkcs11::Pkcs11Signer},
-};
+use crate::commons::crypto::signers::{kmip::KmipSigner, pkcs11::Pkcs11Signer};
 
 //------------ SignerProvider ------------------------------------------------
+
+#[derive(Debug)]
+pub(crate) struct SignerFlags {
+    pub is_default_signer: bool,
+    pub is_one_off_signer: bool,
+}
+
+impl std::fmt::Display for SignerFlags {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!(
+            "default: {}, one_off: {}",
+            self.is_default_signer, self.is_one_off_signer
+        ))
+    }
+}
+
+impl Default for SignerFlags {
+    fn default() -> Self {
+        // Making round trips to an HSM to create, sign with and destroy one-off signing keys can be slow, and doesn't
+        // benefit from the protection afforded by storing keys in the HSM. Therefore by default we don't use the
+        // default signer for one-off signing but instead expect an OpenSSL signer to be created for this purpose.
+        Self {
+            is_default_signer: true,
+            is_one_off_signer: false,
+        }
+    }
+}
+
+impl SignerFlags {
+    pub(crate) fn new(is_default_signer: bool, is_one_off_signer: bool) -> Self {
+        Self {
+            is_default_signer,
+            is_one_off_signer,
+        }
+    }
+}
 
 /// Dispatchers Signer requests to a particular implementation of the Signer trait.
 ///
@@ -21,97 +57,112 @@ use crate::commons::{
 #[allow(dead_code)] // Needed as we currently only ever construct one variant
 #[derive(Debug)]
 pub(crate) enum SignerProvider {
-    OpenSsl(OpenSslSigner),
+    OpenSsl(SignerFlags, OpenSslSigner),
 
     #[cfg(feature = "hsm")]
-    Kmip(KmipSigner),
+    Kmip(SignerFlags, KmipSigner),
 
     #[cfg(feature = "hsm")]
-    Pkcs11(Pkcs11Signer),
+    Pkcs11(SignerFlags, Pkcs11Signer),
 
     #[cfg(all(test, feature = "hsm"))]
-    Mock(MockSigner),
+    Mock(SignerFlags, MockSigner),
 }
 
 impl SignerProvider {
-    pub fn supports_random(&self) -> bool {
+    pub fn is_default_signer(&self) -> bool {
         match self {
-            SignerProvider::OpenSsl(signer) => signer.supports_random(),
+            SignerProvider::OpenSsl(flags, _) => flags.is_default_signer,
             #[cfg(feature = "hsm")]
-            SignerProvider::Kmip(signer) => signer.supports_random(),
+            SignerProvider::Kmip(flags, _) => flags.is_default_signer,
             #[cfg(feature = "hsm")]
-            SignerProvider::Pkcs11(signer) => signer.supports_random(),
+            SignerProvider::Pkcs11(flags, _) => flags.is_default_signer,
             #[cfg(all(test, feature = "hsm"))]
-            SignerProvider::Mock(signer) => signer.supports_random(),
+            SignerProvider::Mock(flags, _) => flags.is_default_signer,
         }
     }
 
-    #[cfg(feature = "hsm")]
+    pub fn is_one_off_signer(&self) -> bool {
+        match self {
+            SignerProvider::OpenSsl(flags, _) => flags.is_one_off_signer,
+            #[cfg(feature = "hsm")]
+            SignerProvider::Kmip(flags, _) => flags.is_one_off_signer,
+            #[cfg(feature = "hsm")]
+            SignerProvider::Pkcs11(flags, _) => flags.is_one_off_signer,
+            #[cfg(all(test, feature = "hsm"))]
+            SignerProvider::Mock(flags, _) => flags.is_one_off_signer,
+        }
+    }
+
     pub fn create_registration_key(&self) -> Result<(PublicKey, String), SignerError> {
         match self {
-            SignerProvider::OpenSsl(signer) => signer.create_registration_key(),
+            SignerProvider::OpenSsl(_, signer) => signer.create_registration_key(),
             #[cfg(feature = "hsm")]
-            SignerProvider::Kmip(signer) => signer.create_registration_key(),
+            SignerProvider::Kmip(_, signer) => signer.create_registration_key(),
             #[cfg(feature = "hsm")]
-            SignerProvider::Pkcs11(signer) => signer.create_registration_key(),
+            SignerProvider::Pkcs11(_, signer) => signer.create_registration_key(),
             #[cfg(all(test, feature = "hsm"))]
-            SignerProvider::Mock(signer) => signer.create_registration_key(),
+            SignerProvider::Mock(_, signer) => signer.create_registration_key(),
         }
     }
 
-    #[cfg(feature = "hsm")]
     pub fn sign_registration_challenge<D: AsRef<[u8]> + ?Sized>(
         &self,
         signer_private_key_id: &str,
         challenge: &D,
     ) -> Result<Signature, SignerError> {
         match self {
-            SignerProvider::OpenSsl(signer) => signer.sign_registration_challenge(signer_private_key_id, challenge),
+            SignerProvider::OpenSsl(_, signer) => signer.sign_registration_challenge(signer_private_key_id, challenge),
             #[cfg(feature = "hsm")]
-            SignerProvider::Kmip(signer) => signer.sign_registration_challenge(signer_private_key_id, challenge),
+            SignerProvider::Kmip(_, signer) => signer.sign_registration_challenge(signer_private_key_id, challenge),
             #[cfg(feature = "hsm")]
-            SignerProvider::Pkcs11(signer) => signer.sign_registration_challenge(signer_private_key_id, challenge),
+            SignerProvider::Pkcs11(_, signer) => signer.sign_registration_challenge(signer_private_key_id, challenge),
             #[cfg(all(test, feature = "hsm"))]
-            SignerProvider::Mock(signer) => signer.sign_registration_challenge(signer_private_key_id, challenge),
+            SignerProvider::Mock(_, signer) => signer.sign_registration_challenge(signer_private_key_id, challenge),
         }
     }
 
-    #[cfg(feature = "hsm")]
     pub fn set_handle(&self, handle: Handle) {
         match self {
-            SignerProvider::OpenSsl(signer) => signer.set_handle(handle),
+            SignerProvider::OpenSsl(_, signer) => signer.set_handle(handle),
             #[cfg(feature = "hsm")]
-            SignerProvider::Kmip(signer) => signer.set_handle(handle),
+            SignerProvider::Kmip(_, signer) => signer.set_handle(handle),
             #[cfg(feature = "hsm")]
-            SignerProvider::Pkcs11(signer) => signer.set_handle(handle),
+            SignerProvider::Pkcs11(_, signer) => signer.set_handle(handle),
             #[cfg(all(test, feature = "hsm"))]
-            SignerProvider::Mock(signer) => signer.set_handle(handle),
+            SignerProvider::Mock(_, signer) => signer.set_handle(handle),
         }
     }
 
-    #[cfg(feature = "hsm")]
     pub fn get_name(&self) -> &str {
         match self {
-            SignerProvider::OpenSsl(signer) => signer.get_name(),
+            SignerProvider::OpenSsl(_, signer) => signer.get_name(),
             #[cfg(feature = "hsm")]
-            SignerProvider::Kmip(signer) => signer.get_name(),
+            SignerProvider::Kmip(_, signer) => signer.get_name(),
             #[cfg(feature = "hsm")]
-            SignerProvider::Pkcs11(signer) => signer.get_name(),
+            SignerProvider::Pkcs11(_, signer) => signer.get_name(),
             #[cfg(all(test, feature = "hsm"))]
-            SignerProvider::Mock(signer) => signer.get_name(),
+            SignerProvider::Mock(_, signer) => signer.get_name(),
         }
     }
 
-    #[cfg(feature = "hsm")]
     pub fn get_info(&self) -> Option<String> {
         match self {
-            SignerProvider::OpenSsl(signer) => signer.get_info(),
+            SignerProvider::OpenSsl(_, signer) => signer.get_info(),
             #[cfg(feature = "hsm")]
-            SignerProvider::Kmip(signer) => signer.get_info(),
+            SignerProvider::Kmip(_, signer) => signer.get_info(),
             #[cfg(feature = "hsm")]
-            SignerProvider::Pkcs11(signer) => signer.get_info(),
+            SignerProvider::Pkcs11(_, signer) => signer.get_info(),
             #[cfg(all(test, feature = "hsm"))]
-            SignerProvider::Mock(signer) => signer.get_info(),
+            SignerProvider::Mock(_, signer) => signer.get_info(),
+        }
+    }
+
+    #[cfg(all(test, feature = "hsm"))]
+    pub fn wipe_all_keys(&self) {
+        match self {
+            SignerProvider::Mock(_, signer) => signer.wipe_all_keys(),
+            _ => { /* NOOP */ }
         }
     }
 }
@@ -121,37 +172,37 @@ impl SignerProvider {
 impl SignerProvider {
     pub(super) fn create_key(&self, algorithm: PublicKeyFormat) -> Result<KeyIdentifier, SignerError> {
         match self {
-            SignerProvider::OpenSsl(signer) => signer.create_key(algorithm),
+            SignerProvider::OpenSsl(_, signer) => signer.create_key(algorithm),
             #[cfg(feature = "hsm")]
-            SignerProvider::Kmip(signer) => signer.create_key(algorithm),
+            SignerProvider::Kmip(_, signer) => signer.create_key(algorithm),
             #[cfg(feature = "hsm")]
-            SignerProvider::Pkcs11(signer) => signer.create_key(algorithm),
+            SignerProvider::Pkcs11(_, signer) => signer.create_key(algorithm),
             #[cfg(all(test, feature = "hsm"))]
-            SignerProvider::Mock(signer) => signer.create_key(algorithm),
+            SignerProvider::Mock(_, signer) => signer.create_key(algorithm),
         }
     }
 
     pub(super) fn get_key_info(&self, key: &KeyIdentifier) -> Result<PublicKey, KeyError<SignerError>> {
         match self {
-            SignerProvider::OpenSsl(signer) => signer.get_key_info(key),
+            SignerProvider::OpenSsl(_, signer) => signer.get_key_info(key),
             #[cfg(feature = "hsm")]
-            SignerProvider::Kmip(signer) => signer.get_key_info(key),
+            SignerProvider::Kmip(_, signer) => signer.get_key_info(key),
             #[cfg(feature = "hsm")]
-            SignerProvider::Pkcs11(signer) => signer.get_key_info(key),
+            SignerProvider::Pkcs11(_, signer) => signer.get_key_info(key),
             #[cfg(all(test, feature = "hsm"))]
-            SignerProvider::Mock(signer) => signer.get_key_info(key),
+            SignerProvider::Mock(_, signer) => signer.get_key_info(key),
         }
     }
 
     pub(super) fn destroy_key(&self, key: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
         match self {
-            SignerProvider::OpenSsl(signer) => signer.destroy_key(key),
+            SignerProvider::OpenSsl(_, signer) => signer.destroy_key(key),
             #[cfg(feature = "hsm")]
-            SignerProvider::Kmip(signer) => signer.destroy_key(key),
+            SignerProvider::Kmip(_, signer) => signer.destroy_key(key),
             #[cfg(feature = "hsm")]
-            SignerProvider::Pkcs11(signer) => signer.destroy_key(key),
+            SignerProvider::Pkcs11(_, signer) => signer.destroy_key(key),
             #[cfg(all(test, feature = "hsm"))]
-            SignerProvider::Mock(signer) => signer.destroy_key(key),
+            SignerProvider::Mock(_, signer) => signer.destroy_key(key),
         }
     }
 
@@ -162,13 +213,13 @@ impl SignerProvider {
         data: &D,
     ) -> Result<Signature, SigningError<SignerError>> {
         match self {
-            SignerProvider::OpenSsl(signer) => signer.sign(key, algorithm, data),
+            SignerProvider::OpenSsl(_, signer) => signer.sign(key, algorithm, data),
             #[cfg(feature = "hsm")]
-            SignerProvider::Kmip(signer) => signer.sign(key, algorithm, data),
+            SignerProvider::Kmip(_, signer) => signer.sign(key, algorithm, data),
             #[cfg(feature = "hsm")]
-            SignerProvider::Pkcs11(signer) => signer.sign(key, algorithm, data),
+            SignerProvider::Pkcs11(_, signer) => signer.sign(key, algorithm, data),
             #[cfg(all(test, feature = "hsm"))]
-            SignerProvider::Mock(signer) => signer.sign(key, algorithm, data),
+            SignerProvider::Mock(_, signer) => signer.sign(key, algorithm, data),
         }
     }
 
@@ -178,25 +229,13 @@ impl SignerProvider {
         data: &D,
     ) -> Result<(Signature, PublicKey), SignerError> {
         match self {
-            SignerProvider::OpenSsl(signer) => signer.sign_one_off(algorithm, data),
+            SignerProvider::OpenSsl(_, signer) => signer.sign_one_off(algorithm, data),
             #[cfg(feature = "hsm")]
-            SignerProvider::Kmip(signer) => signer.sign_one_off(algorithm, data),
+            SignerProvider::Kmip(_, signer) => signer.sign_one_off(algorithm, data),
             #[cfg(feature = "hsm")]
-            SignerProvider::Pkcs11(signer) => signer.sign_one_off(algorithm, data),
+            SignerProvider::Pkcs11(_, signer) => signer.sign_one_off(algorithm, data),
             #[cfg(all(test, feature = "hsm"))]
-            SignerProvider::Mock(signer) => signer.sign_one_off(algorithm, data),
-        }
-    }
-
-    pub(super) fn rand(&self, target: &mut [u8]) -> Result<(), SignerError> {
-        match self {
-            SignerProvider::OpenSsl(signer) => signer.rand(target),
-            #[cfg(feature = "hsm")]
-            SignerProvider::Kmip(signer) => signer.rand(target),
-            #[cfg(feature = "hsm")]
-            SignerProvider::Pkcs11(signer) => signer.rand(target),
-            #[cfg(all(test, feature = "hsm"))]
-            SignerProvider::Mock(signer) => signer.rand(target),
+            SignerProvider::Mock(_, signer) => signer.sign_one_off(algorithm, data),
         }
     }
 }

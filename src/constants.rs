@@ -105,3 +105,12 @@ pub const PW_HASH_LOG_N: u8 = 13;
 pub const PW_HASH_R: u32 = 8;
 #[cfg(feature = "multi-user")]
 pub const PW_HASH_P: u32 = 1;
+
+#[cfg(not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11")))]
+pub const DEFAULT_SIGNER_NAME: &str = "Default OpenSSL signer";
+#[cfg(feature = "hsm-tests-kmip")]
+pub const DEFAULT_KMIP_SIGNER_NAME: &str = "(test mode) Default KMIP signer";
+#[cfg(feature = "hsm-tests-pkcs11")]
+pub const DEFAULT_PKCS11_SIGNER_NAME: &str = "(test mode) Default PKCS#11 signer";
+
+pub const OPENSSL_ONE_OFF_SIGNER_NAME: &str = "OpenSSL one-off signer";

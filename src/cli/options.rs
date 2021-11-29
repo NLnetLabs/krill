@@ -2440,6 +2440,7 @@ pub struct KrillInitDetails {
     data_dir: Option<String>,
     log_file: Option<String>,
     multi_user: bool,
+    hsm: bool,
 }
 
 impl KrillInitDetails {
@@ -2448,6 +2449,7 @@ impl KrillInitDetails {
             data_dir: None,
             log_file: None,
             multi_user: true,
+            hsm: false,
         }
     }
 
@@ -2470,6 +2472,10 @@ impl KrillInitDetails {
     pub fn multi_user(&self) -> bool {
         self.multi_user
     }
+
+    pub fn hsm(&self) -> bool {
+        self.hsm
+    }
 }
 
 impl Default for KrillInitDetails {
@@ -2478,6 +2484,7 @@ impl Default for KrillInitDetails {
             data_dir: None,
             log_file: None,
             multi_user: false,
+            hsm: false,
         }
     }
 }

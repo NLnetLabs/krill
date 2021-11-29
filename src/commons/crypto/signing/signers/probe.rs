@@ -82,6 +82,7 @@ impl<C, E, S> ProbeStatus<C, E, S> {
         }
     }
 
+    #[cfg(test)]
     pub fn last_probe_time(&self) -> Result<Option<Instant>, ProbeError<E>> {
         match self {
             ProbeStatus::Probing { last_probe_time, .. } => Ok(last_probe_time.clone()),
@@ -110,6 +111,7 @@ impl<C, E, S> StatefulProbe<C, E, S> {
         StatefulProbe { status, probe_interval }
     }
 
+    #[cfg(test)]
     pub fn last_probe_time(&self) -> Result<Option<Instant>, ProbeError<E>> {
         self.status.read().unwrap().last_probe_time()
     }
