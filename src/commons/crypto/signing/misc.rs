@@ -15,9 +15,6 @@ use rpki::{
     uri,
 };
 
-#[cfg(feature = "hsm")]
-use crate::commons::util::dummysigner::DummySigner;
-
 use crate::{
     commons::{
         api::{IssuedCert, RcvdCert, ReplacedObject, RequestResourceLimit, ResourceSet},
