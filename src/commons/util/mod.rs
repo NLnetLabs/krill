@@ -11,6 +11,8 @@ use rpki::{
 
 use crate::constants::KRILL_VERSION;
 
+#[cfg(feature = "hsm")]
+pub mod dummysigner;
 pub mod ext_serde;
 pub mod file;
 pub mod httpclient;
