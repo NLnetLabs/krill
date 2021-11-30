@@ -67,3 +67,84 @@ jobs:
         name: cypress-ui-test-captures ${{ matrix.os }} ${{ matrix.rust }}
         path: target/ui/
         if-no-files-found: ignore
+
+  pykmip-test:
+    name: pykmip-test
+    runs-on: ubuntu-18.04
+    strategy:
+      matrix:
+        rust: [1.47.0, stable, beta]
+        features: ["hsm", "hsm,hsm-tests-kmip"]
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v1
+
+    - name: Install Rust
+      uses: hecrj/setup-rust-action@v1
+      with:
+        rust-version: ${{ matrix.rust }}
+
+    - uses: actions/setup-python@v2
+      with:
+        python-version: '3.x'
+
+    - name: Install PyKMIP
+      uses: BSFishy/pip-action@v1
+      with:
+        packages: pykmip
+
+    - name: Compile the tests
+      run: |
+        cargo build --tests --no-default-features --features ${{ matrix.features }}
+
+    - name: Run the tests against the PyKMIP server
+      run: |
+        cd test-resources/pykmip
+        python run-server.py &
+        sleep 5s
+        openssl s_client -connect 127.0.0.1:5696 || true
+        cd -
+        cargo test --no-default-features --features ${{ matrix.features }} -- --test-threads=1 2>&1
+
+    - name: Dump the PyKMIP log
+      if: always()
+      working-directory: test-resources/pykmip
+      run: |
+        ls -la
+        cat server.log
+
+  softhsm2-test:
+    name: softhsm2-test
+    runs-on: ubuntu-20.04
+    strategy:
+      matrix:
+        rust: [1.47.0, stable, beta]
+        features: ["hsm,hsm-tests-pkcs11"]
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v1
+
+    - name: Install Rust
+      uses: hecrj/setup-rust-action@v1
+      with:
+        rust-version: ${{ matrix.rust }}
+
+    - name: Install SoftHSM2
+      run: |
+        sudo apt update
+        sudo apt install -y softhsm2
+        sudo usermod -aG softhsm $(whoami)
+        sg softhsm -c "softhsm2-util --init-token --slot 0 --label \"My token 1\" --pin 1234 --so-pin 1234"
+
+    - name: Compile the tests
+      run: |
+        cargo build --tests --no-default-features --features ${{ matrix.features }}
+
+    - name: Run the tests against SoftHSM2
+      run: |
+        sg softhsm -c "cargo test --no-default-features --features ${{ matrix.features }} -- --test-threads=1 2>&1"
+
+    - name: Dump the SoftHSM2 log
+      if: always()
+      run: |
+        cat /var/log/syslog
