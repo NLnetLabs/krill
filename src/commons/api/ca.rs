@@ -10,6 +10,8 @@ use std::{fmt, str};
 
 use bytes::Bytes;
 use chrono::{Duration, TimeZone, Utc};
+use rpki::repository::aspa::Aspa;
+use rpki::repository::resources::{AsBlock, AsBlocksBuilder, AsId};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use rpki::{
@@ -29,9 +31,9 @@ use crate::commons::util::KrillVersion;
 use crate::{
     commons::{
         api::{
-            rrdp::PublishElement, Base64, ChildHandle, EntitlementClass, Entitlements, ErrorResponse, Handle,
-            HexEncodedHash, IssuanceRequest, ParentCaContact, ParentHandle, RepositoryContact, RequestResourceLimit,
-            RoaAggregateKey, RoaDefinition, SigningCert,
+            rrdp::PublishElement, AspaDefinition, Base64, ChildHandle, EntitlementClass, Entitlements, ErrorResponse,
+            Handle, HexEncodedHash, IssuanceRequest, ParentCaContact, ParentHandle, RepositoryContact,
+            RequestResourceLimit, RoaAggregateKey, RoaDefinition, SigningCert,
         },
         crypto::IdCert,
         remote::rfc8183::ServiceUri,
@@ -264,6 +266,14 @@ impl From<&Roa> for ReplacedObject {
     }
 }
 
+impl From<&Aspa> for ReplacedObject {
+    fn from(aspa: &Aspa) -> Self {
+        let revocation = Revocation::from(aspa.cert());
+        let hash = HexEncodedHash::from_content(aspa.to_captured().as_slice());
+        ReplacedObject { revocation, hash }
+    }
+}
+
 //------------ IssuedCert ----------------------------------------------------
 
 /// This type defines an issued certificate, including its publication
@@ -324,6 +334,18 @@ impl IssuedCert {
     }
     pub fn replaces(&self) -> Option<&ReplacedObject> {
         self.replaces.as_ref()
+    }
+
+    /// Returns a (possibly empty) set of reduced applicable resources which is the intersection
+    /// of the encompassing resources and this certificate's current resources.
+    /// Returns None if the current resource set is not overclaiming and does not need to be
+    /// reduced.
+    pub fn reduced_applicable_resources(&self, encompassing: &ResourceSet) -> Option<ResourceSet> {
+        if encompassing.contains(&self.resource_set) {
+            None
+        } else {
+            Some(encompassing.intersection(&self.resource_set))
+        }
     }
 }
 
@@ -624,6 +646,10 @@ impl ObjectName {
     pub fn new(ki: &KeyIdentifier, extension: &str) -> Self {
         ObjectName(format!("{}.{}", ki, extension))
     }
+
+    pub fn aspa(customer: AsId) -> Self {
+        ObjectName(format!("{}.asa", customer))
+    }
 }
 
 impl From<&Cert> for ObjectName {
@@ -662,6 +688,12 @@ impl From<&RoaAggregateKey> for ObjectName {
             None => format!("AS{}.roa", roa_group.asn()),
             Some(number) => format!("AS{}-{}.roa", roa_group.asn(), number),
         })
+    }
+}
+
+impl From<&AspaDefinition> for ObjectName {
+    fn from(aspa: &AspaDefinition) -> Self {
+        Self::aspa(aspa.customer())
     }
 }
 
@@ -725,6 +757,12 @@ impl From<&Manifest> for Revocation {
 impl From<&Roa> for Revocation {
     fn from(r: &Roa) -> Self {
         Self::from(r.cert())
+    }
+}
+
+impl From<&Aspa> for Revocation {
+    fn from(aspa: &Aspa) -> Self {
+        Self::from(aspa.cert())
     }
 }
 
@@ -817,12 +855,9 @@ impl ResourceSetSummary {
 
 impl From<&ResourceSet> for ResourceSetSummary {
     fn from(rs: &ResourceSet) -> Self {
-        let asns: Vec<_> = rs.asn.iter().collect();
-        let asns = asns.len();
-        let ipv4: Vec<_> = rs.v4.iter().collect();
-        let ipv4 = ipv4.len();
-        let ipv6: Vec<_> = rs.v6.iter().collect();
-        let ipv6 = ipv6.len();
+        let asns = rs.asn().iter().count();
+        let ipv4 = rs.v4.iter().count();
+        let ipv6 = rs.v6.iter().count();
         ResourceSetSummary { asns, ipv4, ipv6 }
     }
 }
@@ -969,6 +1004,14 @@ impl ResourceSet {
     /// this set.
     pub fn contains(&self, other: &ResourceSet) -> bool {
         self.asn.contains(other.asn()) && self.v4.contains(&other.v4) && self.v6.contains(&other.v6)
+    }
+
+    /// Check if the resource set contains the given AsId
+    pub fn contains_asn(&self, asn: AsId) -> bool {
+        let mut blocks = AsBlocksBuilder::new();
+        blocks.push(AsBlock::Id(asn));
+        let blocks = blocks.finalize();
+        self.asn.contains(&blocks)
     }
 
     /// Returns the union of this ResourceSet and the other. I.e. a new
@@ -1231,6 +1274,59 @@ impl ParentStatuses {
         self.0.iter()
     }
 
+    /// Get the first synchronization candidates based on the following:
+    /// - take the given ca_parents for which no current status exists first
+    /// - then sort by last exchange, minute grade granularity - oldest first
+    ///    - where failures come before success within the same minute
+    /// - then take the first N parents for this batch
+    pub fn sync_candidates(&self, ca_parents: Vec<&ParentHandle>, batch: usize) -> Vec<ParentHandle> {
+        let mut parents = vec![];
+
+        // Add any parent for which no current status is known to the candidate list first.
+        for parent in ca_parents {
+            if !self.0.contains_key(parent) {
+                parents.push(parent.clone());
+            }
+        }
+
+        // Then add the ones for which we do have a status, sorted by their
+        // last exchange.
+        let mut parents_by_last_exchange = self.sorted_by_last_exchange();
+        parents.append(&mut parents_by_last_exchange);
+
+        // But truncate to the specified batch size
+        parents.truncate(batch);
+
+        parents
+    }
+
+    // Return the parents sorted by last exchange, i.e. let the parents
+    // without an exchange be first, and then from longest ago to most recent.
+    // Uses minute grade granularity and in cases where the exchanges happened in
+    // the same minute failures take precedence (come before) successful exchanges.
+    pub fn sorted_by_last_exchange(&self) -> Vec<ParentHandle> {
+        let mut sorted_parents: Vec<(&ParentHandle, &ParentStatus)> = self.iter().collect();
+        sorted_parents.sort_by(|a, b| {
+            // we can map the 'no last exchange' case to 1970..
+            let a_last_exchange = a.1.last_exchange.as_ref();
+            let b_last_exchange = b.1.last_exchange.as_ref();
+
+            let a_last_exchange_time = a_last_exchange.map(|e| i64::from(e.timestamp)).unwrap_or(0) / 60;
+            let b_last_exchange_time = b_last_exchange.map(|e| i64::from(e.timestamp)).unwrap_or(0) / 60;
+
+            if a_last_exchange_time == b_last_exchange_time {
+                // compare success / failure
+                let a_last_exchange_res = a_last_exchange.map(|e| e.result().was_success()).unwrap_or(false);
+                let b_last_exchange_res = b_last_exchange.map(|e| e.result().was_success()).unwrap_or(false);
+                a_last_exchange_res.cmp(&b_last_exchange_res)
+            } else {
+                a_last_exchange_time.cmp(&b_last_exchange_time)
+            }
+        });
+
+        sorted_parents.into_iter().map(|(handle, _)| handle).cloned().collect()
+    }
+
     pub fn set_failure(&mut self, parent: &ParentHandle, uri: &ServiceUri, error: ErrorResponse, next_seconds: i64) {
         self.get_mut_status(parent)
             .set_failure(uri.clone(), error, next_seconds);
@@ -1415,17 +1511,17 @@ impl ParentStatus {
         self.last_exchange.as_ref().map(|e| e.to_failure_opt()).flatten()
     }
 
-    fn set_next_exchange_plus_seconds(&mut self, next_seconds: i64) {
-        self.next_exchange_before += Duration::seconds(next_seconds);
+    fn set_next_exchange(&mut self, next_run_seconds: i64) {
+        self.next_exchange_before = Timestamp::now_plus_seconds(next_run_seconds);
     }
 
-    fn set_failure(&mut self, uri: ServiceUri, error: ErrorResponse, next_seconds: i64) {
+    fn set_failure(&mut self, uri: ServiceUri, error: ErrorResponse, next_run_seconds: i64) {
         self.last_exchange = Some(ParentExchange {
             timestamp: Timestamp::now(),
             uri,
             result: ExchangeResult::Failure(error),
         });
-        self.set_next_exchange_plus_seconds(next_seconds);
+        self.set_next_exchange(next_run_seconds);
     }
 
     fn set_entitlements(&mut self, uri: ServiceUri, entitlements: &Entitlements, next_run_seconds: i64) {
@@ -1447,7 +1543,7 @@ impl ParentStatus {
         }
 
         self.all_resources = all_resources;
-        self.set_next_exchange_plus_seconds(next_run_seconds);
+        self.set_next_exchange(next_run_seconds);
     }
 
     fn set_last_updated(&mut self, uri: ServiceUri, next_run_seconds: i64) {
@@ -1458,7 +1554,7 @@ impl ParentStatus {
             result: ExchangeResult::Success,
         });
         self.last_success = Some(timestamp);
-        self.set_next_exchange_plus_seconds(next_run_seconds);
+        self.set_next_exchange(next_run_seconds);
     }
 }
 
@@ -1524,7 +1620,7 @@ impl RepoStatus {
         self.next_exchange_before = timestamp.plus_minutes(5);
     }
 
-    pub fn set_published(&mut self, uri: ServiceUri, published: Vec<PublishElement>, next_hours: i64) {
+    pub fn set_published(&mut self, uri: ServiceUri, published: Vec<PublishElement>, next_update: Timestamp) {
         let timestamp = Timestamp::now();
         self.last_exchange = Some(ParentExchange {
             timestamp,
@@ -1533,10 +1629,10 @@ impl RepoStatus {
         });
         self.published = published;
         self.last_success = Some(timestamp);
-        self.next_exchange_before = timestamp.plus_hours(next_hours);
+        self.next_exchange_before = next_update;
     }
 
-    pub fn set_last_updated(&mut self, uri: ServiceUri, next_hours: i64) {
+    pub fn set_last_updated(&mut self, uri: ServiceUri, next_update: Timestamp) {
         let timestamp = Timestamp::now();
         self.last_exchange = Some(ParentExchange {
             timestamp,
@@ -1544,7 +1640,7 @@ impl RepoStatus {
             result: ExchangeResult::Success,
         });
         self.last_success = Some(timestamp);
-        self.next_exchange_before = timestamp.plus_hours(next_hours);
+        self.next_exchange_before = next_update;
     }
 }
 
@@ -1847,16 +1943,8 @@ impl Timestamp {
         Timestamp::now().minus_hours(hours)
     }
 
-    pub fn now_minus_seconds(seconds: i64) -> Self {
-        Timestamp::now().minus_seconds(seconds)
-    }
-
     pub fn minus_hours(self, hours: i64) -> Self {
         self - Duration::hours(hours)
-    }
-
-    pub fn minus_seconds(self, seconds: i64) -> Self {
-        self - Duration::seconds(seconds)
     }
 
     pub fn now_plus_minutes(minutes: i64) -> Self {
@@ -1867,14 +1955,42 @@ impl Timestamp {
         self + Duration::minutes(minutes)
     }
 
-    pub fn to_rfc3339(&self) -> String {
-        Time::from(*self).to_rfc3339()
+    pub fn minus_seconds(self, seconds: i64) -> Self {
+        self - Duration::seconds(seconds)
+    }
+
+    pub fn plus_seconds(self, seconds: i64) -> Self {
+        self + Duration::seconds(seconds)
+    }
+
+    pub fn now_minus_seconds(seconds: i64) -> Self {
+        Timestamp::now().minus_seconds(seconds)
+    }
+
+    pub fn now_plus_seconds(seconds: i64) -> Self {
+        Timestamp::now().plus_seconds(seconds)
+    }
+
+    pub fn to_rfc3339(self) -> String {
+        Time::from(self).to_rfc3339()
     }
 }
 
 impl From<Timestamp> for Time {
     fn from(timestamp: Timestamp) -> Self {
         Time::new(Utc.timestamp(timestamp.0, 0))
+    }
+}
+
+impl From<Time> for Timestamp {
+    fn from(time: Time) -> Self {
+        Timestamp(time.timestamp())
+    }
+}
+
+impl From<Timestamp> for i64 {
+    fn from(t: Timestamp) -> Self {
+        t.0
     }
 }
 
@@ -2548,11 +2664,9 @@ impl ResourceSetError {
 #[cfg(test)]
 mod test {
     use bytes::Bytes;
+    use rpki::repository::crypto::PublicKeyFormat;
 
-    use rpki::repository::crypto::{signer::Signer, PublicKeyFormat};
-
-    use crate::commons::util::softsigner::OpenSslSigner;
-    use crate::test;
+    use crate::{commons::crypto::OpenSslSigner, test};
 
     use super::*;
 
@@ -2589,7 +2703,7 @@ mod test {
     #[test]
     fn mft_uri() {
         test::test_under_tmp(|d| {
-            let mut signer = OpenSslSigner::build(&d).unwrap();
+            let signer = OpenSslSigner::build(&d, "dummy", None).unwrap();
             let key_id = signer.create_key(PublicKeyFormat::Rsa).unwrap();
             let pub_key = signer.get_key_info(&key_id).unwrap();
 
@@ -2860,5 +2974,100 @@ mod test {
         assert!(!old_no_agent.is_suspension_candidate(threshold_seconds));
 
         assert!(old_krill_post_0_9_1.is_suspension_candidate(threshold_seconds));
+    }
+
+    #[test]
+    fn find_sync_candidates() {
+        let uri = ServiceUri::try_from("https://example.com/rfc6492/child/".to_string()).unwrap();
+
+        let in_five_seconds = Timestamp::now_plus_seconds(5);
+        let five_seconds_ago = Timestamp::now_minus_seconds(5);
+        let five_mins_ago = Timestamp::now_minus_seconds(300);
+
+        let p1_new_parent = ParentHandle::from_str("p1").unwrap();
+        let p2_new_parent = ParentHandle::from_str("p2").unwrap();
+        let p3_no_exchange = ParentHandle::from_str("p3").unwrap();
+        let p4_success = ParentHandle::from_str("p4").unwrap();
+        let p5_failure = ParentHandle::from_str("p5").unwrap();
+        let p6_success_long_ago = ParentHandle::from_str("p6").unwrap();
+
+        let p3_status_no_exchange = ParentStatus {
+            last_exchange: None,
+            last_success: None,
+            next_exchange_before: in_five_seconds,
+            all_resources: ResourceSet::default(),
+            entitlements: HashMap::new(),
+        };
+
+        let p4_status_success = ParentStatus {
+            last_exchange: Some(ParentExchange {
+                timestamp: five_seconds_ago,
+                uri: uri.clone(),
+                result: ExchangeResult::Success,
+            }),
+            last_success: None,
+            next_exchange_before: in_five_seconds,
+            all_resources: ResourceSet::default(),
+            entitlements: HashMap::new(),
+        };
+
+        let p5_status_failure = ParentStatus {
+            last_exchange: Some(ParentExchange {
+                timestamp: five_seconds_ago,
+                uri: uri.clone(),
+                result: ExchangeResult::Failure(ErrorResponse::new("err", "err!")),
+            }),
+            last_success: None,
+            next_exchange_before: in_five_seconds,
+            all_resources: ResourceSet::default(),
+            entitlements: HashMap::new(),
+        };
+
+        let p6_status_success_long_ago = ParentStatus {
+            last_exchange: Some(ParentExchange {
+                timestamp: five_mins_ago,
+                uri: uri.clone(),
+                result: ExchangeResult::Success,
+            }),
+            last_success: None,
+            next_exchange_before: in_five_seconds,
+            all_resources: ResourceSet::default(),
+            entitlements: HashMap::new(),
+        };
+
+        let mut inner_statuses = HashMap::new();
+        inner_statuses.insert(p3_no_exchange.clone(), p3_status_no_exchange);
+        inner_statuses.insert(p4_success.clone(), p4_status_success);
+        inner_statuses.insert(p5_failure.clone(), p5_status_failure);
+        inner_statuses.insert(p6_success_long_ago.clone(), p6_status_success_long_ago);
+
+        let parent_statuses = ParentStatuses(inner_statuses);
+
+        let ca_parents = vec![
+            &p1_new_parent,
+            &p2_new_parent,
+            &p3_no_exchange,
+            &p4_success,
+            &p5_failure,
+            &p6_success_long_ago,
+        ];
+
+        let candidates = parent_statuses.sync_candidates(ca_parents.clone(), 10);
+
+        let expected = vec![
+            p1_new_parent.clone(),
+            p2_new_parent.clone(),
+            p3_no_exchange.clone(),
+            p6_success_long_ago.clone(),
+            p5_failure.clone(),
+            p4_success.clone(),
+        ];
+
+        assert_eq!(candidates, expected);
+
+        let candidates_trimmed = parent_statuses.sync_candidates(ca_parents, 1);
+        let expected_trimmed = vec![p1_new_parent];
+
+        assert_eq!(candidates_trimmed, expected_trimmed);
     }
 }

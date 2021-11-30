@@ -13,11 +13,11 @@ use crate::{
     commons::{
         actor::Actor,
         api::{
-            self, AddChildRequest, Base64, CaCommandDetails, CaCommandResult, CertAuthList, CertAuthSummary,
-            ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Entitlements, Handle, IssuanceRequest,
-            IssuanceResponse, ListReply, ParentCaContact, ParentCaReq, ParentHandle, PublishDelta, RcvdCert,
-            RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse, RtaName,
-            StoredEffect, UpdateChildRequest,
+            self, AddChildRequest, AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate,
+            Base64, CaCommandDetails, CaCommandResult, CertAuthList, CertAuthSummary, ChildCaInfo, ChildHandle,
+            CommandHistory, CommandHistoryCriteria, Entitlements, Handle, IssuanceRequest, IssuanceResponse, ListReply,
+            ParentCaContact, ParentCaReq, ParentHandle, PublishDelta, RcvdCert, RepositoryContact, ResourceClassName,
+            ResourceSet, RevocationRequest, RevocationResponse, RtaName, StoredEffect, UpdateChildRequest,
         },
         api::{rrdp::PublishElement, Timestamp},
         crypto::{IdCert, KrillSigner, ProtocolCms, ProtocolCmsBuilder},
@@ -451,9 +451,7 @@ impl CaManager {
     pub async fn ca_history(&self, handle: &Handle, crit: CommandHistoryCriteria) -> KrillResult<CommandHistory> {
         let ca_lock = self.locks.ca(handle).await;
         let _lock = ca_lock.read().await;
-        self.ca_store
-            .command_history(handle, crit)
-            .map_err(|_| Error::CaUnknown(handle.clone()))
+        Ok(self.ca_store.command_history(handle, crit)?)
     }
 
     /// Shows the details for a CA command.
@@ -821,8 +819,12 @@ impl CaManager {
 
     /// Refresh a single CA with its parents, and possibly suspend inactive children.
     pub async fn cas_refresh_single(&self, ca_handle: Handle, started: Timestamp, actor: &Actor) {
-        let mut updates = vec![];
+        self.ca_sync_parents(&ca_handle, actor).await;
+        self.ca_suspend_inactive_children(&ca_handle, started, actor).await;
+    }
 
+    /// Suspend child CAs
+    async fn ca_suspend_inactive_children(&self, ca_handle: &Handle, started: Timestamp, actor: &Actor) {
         // Set threshold hours if it was configured AND this server has been started
         // longer ago than the hours specified. Otherwise we risk that *all* children
         // without prior recorded status are suspended on upgrade, or that *all* children
@@ -832,46 +834,78 @@ impl CaManager {
             .suspend_child_after_inactive_seconds()
             .filter(|secs| started < Timestamp::now_minus_seconds(*secs));
 
-        if let Ok(ca) = self.get_ca(&ca_handle).await {
-            for parent in ca.parents() {
-                updates.push(self.ca_sync_parent_infallible(ca_handle.clone(), parent.clone(), actor.clone()));
-            }
+        // suspend inactive children, if so configured
+        if let Some(threshold_seconds) = threshold_seconds {
+            if let Ok(ca_status) = self.get_ca_status(ca_handle).await {
+                let connections = ca_status.get_children_connection_stats();
 
-            if let Some(threshold_seconds) = threshold_seconds {
-                if let Ok(ca_status) = self.get_ca_status(&ca_handle).await {
-                    let connections = ca_status.get_children_connection_stats();
+                for child in connections.suspension_candidates(threshold_seconds) {
+                    let threshold_string = if threshold_seconds >= 3600 {
+                        format!("{} hours", threshold_seconds / 3600)
+                    } else {
+                        format!("{} seconds", threshold_seconds)
+                    };
 
-                    for child in connections.suspension_candidates(threshold_seconds) {
-                        let threshold_string = if threshold_seconds >= 3600 {
-                            format!("{} hours", threshold_seconds / 3600)
-                        } else {
-                            format!("{} seconds", threshold_seconds)
-                        };
+                    info!(
+                        "Child '{}' under CA '{}' was inactive for more than {}. Will suspend it.",
+                        child, ca_handle, threshold_string
+                    );
+                    if let Err(e) = self
+                        .status_store
+                        .lock()
+                        .await
+                        .set_child_suspended(ca_handle, &child)
+                        .await
+                    {
+                        panic!("System level error encountered while updating ca status: {}", e);
+                    }
 
-                        info!(
-                            "Child '{}' under CA '{}' was inactive for more than {}. Will suspend it.",
-                            child, ca_handle, threshold_string
-                        );
-                        if let Err(e) = self
-                            .status_store
-                            .lock()
-                            .await
-                            .set_child_suspended(&ca_handle, &child)
-                            .await
-                        {
-                            panic!("System level error encountered while updating ca status: {}", e);
-                        }
-
-                        let req = UpdateChildRequest::suspend();
-                        if let Err(e) = self.ca_child_update(&ca_handle, child, req, actor).await {
-                            error!("Could not suspend inactive child, error: {}", e);
-                        }
+                    let req = UpdateChildRequest::suspend();
+                    if let Err(e) = self.ca_child_update(ca_handle, child, req, actor).await {
+                        error!("Could not suspend inactive child, error: {}", e);
                     }
                 }
             }
         }
+    }
 
-        join_all(updates).await;
+    /// Synchronizes a CA with its parents - up to the configures batch size.
+    /// Remaining parents will be done in a future run.
+    async fn ca_sync_parents(&self, ca_handle: &Handle, actor: &Actor) {
+        let mut updates = vec![];
+
+        if let Ok(ca) = self.get_ca(ca_handle).await {
+            // get updates from parents
+            {
+                if ca.nr_parents() <= self.config.ca_refresh_parents_batch_size {
+                    // Nr of parents is below batch size, so just process all of them
+                    for parent in ca.parents() {
+                        updates.push(self.ca_sync_parent_infallible(ca_handle.clone(), parent.clone(), actor.clone()));
+                    }
+                } else {
+                    // more parents than the batch size exist, so get candidates based on
+                    // the known parent statuses for this CA.
+                    match self.status_store.lock().await.get_ca_status(ca_handle).await {
+                        Err(e) => {
+                            panic!("System level error encountered while updating ca status: {}", e);
+                        }
+                        Ok(status) => {
+                            for parent in status
+                                .parents()
+                                .sync_candidates(ca.parents().collect(), self.config.ca_refresh_parents_batch_size)
+                            {
+                                updates.push(self.ca_sync_parent_infallible(
+                                    ca_handle.clone(),
+                                    parent.clone(),
+                                    actor.clone(),
+                                ));
+                            }
+                        }
+                    };
+                }
+            }
+            join_all(updates).await;
+        }
     }
 
     /// Synchronizes a CA with a parent, logging failures.
@@ -1592,12 +1626,18 @@ impl CaManager {
             Ok(reply) => reply,
         };
 
+        let next_update = self
+            .ca_objects_store
+            .ca_objects(ca_handle)?
+            .closest_next_update()
+            .unwrap_or_else(|| Timestamp::now_plus_hours(self.config.republish_hours()));
+
         match reply {
             rfc8181::ReplyMessage::ListReply(list_reply) => {
                 self.status_store
                     .lock()
                     .await
-                    .set_status_repo_success(ca_handle, uri.clone(), self.config.republish_hours())
+                    .set_status_repo_success(ca_handle, uri.clone(), next_update)
                     .await?;
                 Ok(list_reply)
             }
@@ -1652,12 +1692,16 @@ impl CaManager {
                 // TODO: reflect the status for each REPO in the API / UI?
                 // We probably should.. though it should be extremely rare and short-lived to
                 // have more than one repository.
-                let published = self.ca_objects_store.ca_objects(ca_handle)?.all_publish_elements();
+                let ca_objects = self.ca_objects_store.ca_objects(ca_handle)?;
+                let published = ca_objects.all_publish_elements();
+                let next_update = ca_objects
+                    .closest_next_update()
+                    .unwrap_or_else(|| Timestamp::now_plus_hours(self.config.republish_hours()));
 
                 self.status_store
                     .lock()
                     .await
-                    .set_status_repo_published(ca_handle, uri.clone(), published, self.config.republish_hours())
+                    .set_status_repo_published(ca_handle, uri.clone(), published, next_update)
                     .await?;
                 Ok(())
             }
@@ -1755,6 +1799,54 @@ impl CaManager {
     }
 }
 
+/// # Autonomous System Provider Authorization functions
+///
+impl CaManager {
+    /// Show current ASPA definitions for this CA.
+    pub async fn ca_aspas_definitions_show(&self, ca: Handle) -> KrillResult<AspaDefinitionList> {
+        let ca = self.get_ca(&ca).await?;
+        Ok(ca.aspas_definitions_show())
+    }
+
+    /// Add a new ASPA definition for this CA and the customer ASN in the update.
+    pub async fn ca_aspas_definitions_update(
+        &self,
+        ca: Handle,
+        updates: AspaDefinitionUpdates,
+        actor: &Actor,
+    ) -> KrillResult<()> {
+        self.send_command(CmdDet::aspas_definitions_update(
+            &ca,
+            updates,
+            self.config.clone(),
+            self.signer.clone(),
+            actor,
+        ))
+        .await?;
+        Ok(())
+    }
+
+    /// Update the ASPA definition for this CA and the customer ASN in the update.
+    pub async fn ca_aspas_update_aspa(
+        &self,
+        ca: Handle,
+        customer: AspaCustomer,
+        update: AspaProvidersUpdate,
+        actor: &Actor,
+    ) -> KrillResult<()> {
+        self.send_command(CmdDet::aspas_update_aspa(
+            &ca,
+            customer,
+            update,
+            self.config.clone(),
+            self.signer.clone(),
+            actor,
+        ))
+        .await?;
+        Ok(())
+    }
+}
+
 /// # Route Authorization functions
 ///
 impl CaManager {
@@ -1783,16 +1875,46 @@ impl CaManager {
         Ok(())
     }
 
-    /// Re-issue about to expire ROAs in all CAs. This is a no-op in case
-    /// ROAs do not need re-issuance. If new ROAs are created they will also
+    /// Re-issue about to expire objects in all CAs. This is a no-op in case
+    /// ROAs do not need re-issuance. If new objects are created they will also
     /// be published (event will trigger that MFT and CRL are also made, and
     /// and the CA in question synchronizes with its repository).
-    pub async fn renew_roas_all(&self, actor: &Actor) -> KrillResult<()> {
+    ///
+    /// Note: this does not re-issue delegated CA certificates, because child
+    /// CAs are expected to note extended validity eligibility and request
+    /// updated certificates themselves.
+    pub async fn renew_objects_all(&self, actor: &Actor) -> KrillResult<()> {
         for ca in self.ca_store.list()? {
             let cmd = Cmd::new(
                 &ca,
                 None,
                 CmdDet::RouteAuthorizationsRenew(self.config.clone(), self.signer.clone()),
+                actor,
+            );
+            self.send_command(cmd).await?;
+
+            let cmd = Cmd::new(
+                &ca,
+                None,
+                CmdDet::AspasRenew(self.config.clone(), self.signer.clone()),
+                actor,
+            );
+            self.send_command(cmd).await?;
+        }
+        Ok(())
+    }
+
+    /// Force the reissuance of all ROAs in all CAs. This function was added
+    /// because we need to re-issue ROAs in Krill 0.9.3 to force that a short
+    /// subject CN is used for the EE certificate: i.e. the SKI rather than the
+    /// full public key. But there may also be other cases in future where
+    /// forcing to re-issue ROAs may be useful.
+    pub async fn force_renew_roas_all(&self, actor: &Actor) -> KrillResult<()> {
+        for ca in self.ca_store.list()? {
+            let cmd = Cmd::new(
+                &ca,
+                None,
+                CmdDet::RouteAuthorizationsForceRenew(self.config.clone(), self.signer.clone()),
                 actor,
             );
             self.send_command(cmd).await?;

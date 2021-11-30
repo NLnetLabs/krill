@@ -13,15 +13,23 @@ use std::{
 };
 
 use bytes::Bytes;
+use rpki::repository::resources::AsId;
 use serde::Serialize;
 
 use futures::TryFutureExt;
+use hyper::{
+    header::HeaderName,
+    http::HeaderValue,
+    server::conn::AddrIncoming,
+    service::{make_service_fn, service_fn},
+    Method,
+};
 
 use crate::{
     commons::{
         api::{
-            BgpStats, ChildHandle, CommandHistoryCriteria, Handle, ParentCaContact, ParentCaReq, ParentHandle,
-            PublisherList, RepositoryContact, RoaDefinitionUpdates, RtaName, Token,
+            AspaDefinitionUpdates, BgpStats, ChildHandle, CommandHistoryCriteria, Handle, ParentCaContact, ParentCaReq,
+            ParentHandle, PublisherList, RepositoryContact, RoaDefinitionUpdates, RtaName, Token,
         },
         bgp::BgpAnalysisAdvice,
         error::Error,
@@ -45,14 +53,7 @@ use crate::{
         },
         krillserver::KrillServer,
     },
-    upgrades::{pre_start_upgrade, update_storage_version},
-};
-use hyper::{
-    header::HeaderName,
-    http::HeaderValue,
-    server::conn::AddrIncoming,
-    service::{make_service_fn, service_fn},
-    Method,
+    upgrades::{post_start_upgrade, pre_start_upgrade, update_storage_version},
 };
 
 //------------ State -----------------------------------------------------
@@ -115,15 +116,17 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
     test_data_dirs_or_die(&config);
 
     // Call upgrade, this will only do actual work if needed.
-    pre_start_upgrade(config.clone()).map_err(|e| Error::Custom(format!("Could not upgrade Krill: {}", e)))?;
+    pre_start_upgrade(config.clone())?;
 
     // Create the server, this will create the necessary data sub-directories if needed
     let krill = KrillServer::build(config.clone()).await?;
 
+    // Call post-start upgrades to trigger any upgrade related runtime actions, such as
+    // re-issuing ROAs because subject name strategy has changed.
+    post_start_upgrade(&config, &krill).await?;
+
     // Update the version identifiers for the storage dirs
-    update_storage_version(&config.data_dir)
-        .map_err(|e| Error::Custom(format!("Could not upgrade Krill: {}", e)))
-        .await?;
+    update_storage_version(&config.data_dir).await?;
 
     // If the operator wanted to do the upgrade only, now is a good time to report success and stop
     if env::var(KRILL_ENV_UPGRADE_ONLY).is_ok() {
@@ -1078,6 +1081,7 @@ async fn api_cas(req: Request, path: &mut RequestPath) -> RoutingResult {
                     Method::DELETE => api_ca_delete(req, ca).await,
                     _ => render_unknown_method(),
                 },
+                Some("aspas") => api_ca_aspas(req, path, ca).await,
                 Some("children") => api_ca_children(req, path, ca).await,
                 Some("history") => api_ca_history(req, path, ca).await,
 
@@ -1486,6 +1490,35 @@ async fn api_ca_my_parent_statuses(req: Request, ca: Handle) -> RoutingResult {
     )
 }
 
+async fn api_ca_aspas(req: Request, path: &mut RequestPath, ca: Handle) -> RoutingResult {
+    match path.next() {
+        None => match *req.method() {
+            Method::GET => api_ca_aspas_definitions_show(req, ca).await,
+            Method::POST => api_ca_aspas_definitions_update(req, ca).await,
+            _ => render_unknown_method(),
+        },
+        // We may need other functions in future, such as 'analyze' or 'try'.
+        // So keep the base namespace clean and use '/api/v1/aspas/as/<asn>/..'
+        // for functions on specific ASPA definitions for the given (customer)
+        // ASN.
+        Some("as") => {
+            // get as path parameter, or error
+            // - get (specific definition)
+            // - delete
+            // - update? (definition includes the ASN so this can be in the base path)
+            match path.path_arg() {
+                Some(customer) => match *req.method() {
+                    Method::POST => api_ca_aspas_update_aspa(req, ca, customer).await,
+                    Method::DELETE => api_ca_aspas_delete(req, ca, customer).await,
+                    _ => render_unknown_method(),
+                },
+                None => render_unknown_method(),
+            }
+        }
+        _ => render_unknown_method(),
+    }
+}
+
 async fn api_ca_children(req: Request, path: &mut RequestPath, ca: Handle) -> RoutingResult {
     match path.path_arg() {
         Some(child) => match path.next() {
@@ -1754,6 +1787,53 @@ async fn api_ca_kr_activate(req: Request, ca: Handle) -> RoutingResult {
     })
 }
 
+// -- ASPA functions
+
+/// List the current ASPA definitions for a CA
+async fn api_ca_aspas_definitions_show(req: Request, ca: Handle) -> RoutingResult {
+    aa!(req, Permission::ASPAS_READ, ca.clone(), {
+        let state = req.state().clone();
+        render_json_res(state.ca_aspas_definitions_show(ca).await)
+    })
+}
+
+/// Add a new ASPA definition for a CA based on the update in the POST
+async fn api_ca_aspas_definitions_update(req: Request, ca: Handle) -> RoutingResult {
+    aa!(req, Permission::ASPAS_UPDATE, ca.clone(), {
+        let actor = req.actor();
+        let state = req.state().clone();
+
+        match req.json().await {
+            Err(e) => render_error(e),
+            Ok(updates) => render_empty_res(state.ca_aspas_definitions_update(ca, updates, &actor).await),
+        }
+    })
+}
+
+/// Update an existing ASPA definition for a CA based on the update in the POST
+async fn api_ca_aspas_update_aspa(req: Request, ca: Handle, customer: AsId) -> RoutingResult {
+    aa!(req, Permission::ASPAS_UPDATE, ca.clone(), {
+        let actor = req.actor();
+        let state = req.state().clone();
+
+        match req.json().await {
+            Err(e) => render_error(e),
+            Ok(update) => render_empty_res(state.ca_aspas_update_aspa(ca, customer, update, &actor).await),
+        }
+    })
+}
+
+/// Delete the ASPA definition for the given CA and customer ASN
+async fn api_ca_aspas_delete(req: Request, ca: Handle, customer: AsId) -> RoutingResult {
+    aa!(req, Permission::ASPAS_UPDATE, ca.clone(), {
+        let actor = req.actor();
+        let state = req.state().clone();
+
+        let updates = AspaDefinitionUpdates::new(vec![], vec![customer]);
+        render_empty_res(state.ca_aspas_definitions_update(ca, updates, &actor).await)
+    })
+}
+
 /// Update the route authorizations for this CA
 async fn api_ca_routes_update(req: Request, ca: Handle) -> RoutingResult {
     aa!(req, Permission::ROUTES_UPDATE, ca.clone(), {
@@ -1995,7 +2075,7 @@ mod tests {
 
     #[tokio::test]
     async fn start_krill_daemon() {
-        let dir = test::start_krill_with_default_test_config(false, false, false).await;
+        let dir = test::start_krill_with_default_test_config(false, false, false, false).await;
         let _ = fs::remove_dir_all(dir);
     }
 

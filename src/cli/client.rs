@@ -11,8 +11,9 @@ use crate::{
     },
     commons::{
         api::{
-            AllCertAuthIssues, CaRepoDetails, CertAuthIssues, ChildCaInfo, ChildrenConnectionStats, ParentCaContact,
-            ParentStatuses, PublisherDetails, PublisherList, RepoStatus, Token,
+            AllCertAuthIssues, AspaDefinitionUpdates, CaRepoDetails, CertAuthIssues, ChildCaInfo,
+            ChildrenConnectionStats, ParentCaContact, ParentStatuses, PublisherDetails, PublisherList, RepoStatus,
+            Token,
         },
         bgp::BgpAnalysisAdvice,
         error::KrillIoError,
@@ -331,6 +332,32 @@ impl KrillClient {
                 Ok(ApiResponse::BgpAnalysisSuggestions(suggestions))
             }
 
+            CaCommand::AspasList(handle) => {
+                let uri = format!("api/v1/cas/{}/aspas", handle);
+                let aspas = get_json(&self.server, &self.token, &uri).await?;
+                Ok(ApiResponse::AspaDefinitions(aspas))
+            }
+
+            CaCommand::AspasAddOrReplace(handle, aspa) => {
+                let uri = format!("api/v1/cas/{}/aspas", handle);
+                let updates = AspaDefinitionUpdates::new(vec![aspa], vec![]);
+                post_json(&self.server, &self.token, &uri, updates).await?;
+                Ok(ApiResponse::Empty)
+            }
+
+            CaCommand::AspasRemove(handle, customer) => {
+                let uri = format!("api/v1/cas/{}/aspas", handle);
+                let updates = AspaDefinitionUpdates::new(vec![], vec![customer]);
+                post_json(&self.server, &self.token, &uri, updates).await?;
+                Ok(ApiResponse::Empty)
+            }
+
+            CaCommand::AspasUpdate(handle, customer, update) => {
+                let uri = format!("api/v1/cas/{}/aspas/as/{}", handle, customer);
+                post_json(&self.server, &self.token, &uri, update).await?;
+                Ok(ApiResponse::Empty)
+            }
+
             CaCommand::Show(handle) => {
                 let uri = format!("api/v1/cas/{}", handle);
                 let ca_info = get_json(&self.server, &self.token, &uri).await?;
@@ -466,6 +493,7 @@ impl KrillClient {
     fn init_config(&self, details: KrillInitDetails) -> Result<ApiResponse, Error> {
         let defaults = include_str!("../../defaults/krill.conf");
         let multi_add_on = include_str!("../../defaults/krill-multi-user.conf");
+        let hsm_add_on = include_str!("../../defaults/krill-hsm.conf");
 
         let mut config = defaults.to_string();
         config = config.replace("### admin_token =", &format!("admin_token = \"{}\"", self.token));
@@ -491,8 +519,13 @@ impl KrillClient {
             config.push_str(multi_add_on);
         }
 
-        let c: Config = toml::from_slice(config.as_ref()).map_err(Error::init)?;
-        c.verify().map_err(Error::init)?;
+        if details.hsm() {
+            config.push_str("\n\n\n");
+            config.push_str(hsm_add_on);
+        }
+
+        let mut c: Config = toml::from_slice(config.as_ref()).map_err(Error::init)?;
+        c.process().map_err(Error::init)?;
 
         Ok(ApiResponse::GenericBody(config))
     }

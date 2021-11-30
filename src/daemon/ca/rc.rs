@@ -10,23 +10,25 @@ use rpki::repository::{
 use crate::{
     commons::{
         api::{
-            EntitlementClass, Handle, HexEncodedHash, IssuanceRequest, IssuedCert, ParentHandle, RcvdCert,
-            ReplacedObject, RepoInfo, RequestResourceLimit, ResourceClassInfo, ResourceClassName, ResourceSet,
-            Revocation, RevocationRequest, SuspendedCert, UnsuspendedCert,
+            EntitlementClass, Handle, IssuanceRequest, IssuedCert, ParentHandle, RcvdCert, ReplacedObject, RepoInfo,
+            RequestResourceLimit, ResourceClassInfo, ResourceClassName, ResourceSet, RevocationRequest, SuspendedCert,
+            UnsuspendedCert,
         },
         crypto::{CsrInfo, KrillSigner, SignSupport},
         error::Error,
         KrillResult,
     },
     daemon::{
-        ca::events::{ChildCertificateUpdates, RoaUpdates},
+        ca::events::RoaUpdates,
         ca::{
-            self, ta_handle, CaEvtDet, CertifiedKey, ChildCertificates, CurrentKey, KeyState, NewKey, OldKey,
-            PendingKey, Roas, Routes,
+            self, ta_handle, AspaObjects, AspaObjectsUpdates, CaEvtDet, CertifiedKey, ChildCertificates, CurrentKey,
+            KeyState, NewKey, OldKey, PendingKey, Roas, Routes,
         },
         config::{Config, IssuanceTimingConfig},
     },
 };
+
+use super::AspaDefinitions;
 
 //------------ ResourceClass -----------------------------------------------
 
@@ -50,6 +52,7 @@ pub struct ResourceClass {
     parent_rc_name: ResourceClassName,
 
     roas: Roas,
+    aspas: AspaObjects,
     certificates: ChildCertificates,
 
     last_key_change: Time,
@@ -73,6 +76,7 @@ impl ResourceClass {
             parent_handle,
             parent_rc_name,
             roas: Roas::default(),
+            aspas: AspaObjects::default(),
             certificates: ChildCertificates::default(),
             last_key_change: Time::now(),
             key_state: KeyState::create(pending_key),
@@ -86,6 +90,7 @@ impl ResourceClass {
             parent_handle: ta_handle(),
             parent_rc_name,
             roas: Roas::default(),
+            aspas: AspaObjects::default(),
             certificates: ChildCertificates::default(),
             last_key_change: Time::now(),
             key_state: KeyState::create(pending_key),
@@ -180,7 +185,8 @@ impl ResourceClass {
         &self,
         handle: &Handle,
         rcvd_cert: RcvdCert,
-        routes: &Routes,
+        all_routes: &Routes,
+        all_aspas: &AspaDefinitions,
         config: &Config,
         signer: &KrillSigner,
     ) -> KrillResult<Vec<CaEvtDet>> {
@@ -203,17 +209,25 @@ impl ResourceClass {
 
                     let current_key = CertifiedKey::create(rcvd_cert);
 
-                    let updates = self.roas.update(routes, &current_key, config, signer)?;
+                    let roa_updates = self.roas.update(all_routes, &current_key, config, signer)?;
+                    let aspa_updates = self.aspas.update(all_aspas, &current_key, config, signer)?;
 
                     let mut events = vec![CaEvtDet::KeyPendingToActive {
                         resource_class_name: self.name.clone(),
                         current_key,
                     }];
 
-                    if updates.contains_changes() {
+                    if roa_updates.contains_changes() {
                         events.push(CaEvtDet::RoasUpdated {
                             resource_class_name: self.name.clone(),
-                            updates,
+                            updates: roa_updates,
+                        })
+                    }
+
+                    if aspa_updates.contains_changes() {
+                        events.push(CaEvtDet::AspaObjectsUpdated {
+                            resource_class_name: self.name.clone(),
+                            updates: aspa_updates,
                         })
                     }
 
@@ -221,7 +235,7 @@ impl ResourceClass {
                 }
             }
             KeyState::Active(current) => {
-                self.update_rcvd_cert_current(handle, current, rcvd_cert, routes, config, signer)
+                self.update_rcvd_cert_current(handle, current, rcvd_cert, all_routes, all_aspas, config, signer)
             }
             KeyState::RollPending(pending, current) => {
                 if rcvd_cert_ki == pending.key_id() {
@@ -231,7 +245,7 @@ impl ResourceClass {
                         new_key,
                     }])
                 } else {
-                    self.update_rcvd_cert_current(handle, current, rcvd_cert, routes, config, signer)
+                    self.update_rcvd_cert_current(handle, current, rcvd_cert, all_routes, all_aspas, config, signer)
                 }
             }
             KeyState::RollNew(new, current) => {
@@ -242,22 +256,24 @@ impl ResourceClass {
                         rcvd_cert,
                     }])
                 } else {
-                    self.update_rcvd_cert_current(handle, current, rcvd_cert, routes, config, signer)
+                    self.update_rcvd_cert_current(handle, current, rcvd_cert, all_routes, all_aspas, config, signer)
                 }
             }
             KeyState::RollOld(current, _old) => {
                 // We will never request a new certificate for an old key
-                self.update_rcvd_cert_current(handle, current, rcvd_cert, routes, config, signer)
+                self.update_rcvd_cert_current(handle, current, rcvd_cert, all_routes, all_aspas, config, signer)
             }
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn update_rcvd_cert_current(
         &self,
         handle: &Handle,
         current_key: &CurrentKey,
         rcvd_cert: RcvdCert,
         routes: &Routes,
+        aspas: &AspaDefinitions,
         config: &Config,
         signer: &KrillSigner,
     ) -> KrillResult<Vec<CaEvtDet>> {
@@ -285,31 +301,13 @@ impl ResourceClass {
                 rcvd_cert.validity().not_after().to_rfc3339()
             );
 
-            // Check whether child certificates should be shrunk
-            //
-            // NOTE: We need to pro-actively shrink child certificates to avoid invalidating them.
-            //       But, if we gain additional resources it is up to child to request a new certificate
-            //       with those resources.
-            //
-            let mut updates = ChildCertificateUpdates::default();
-            for issued in self.certificates.overclaiming(rcvd_resources) {
-                let remaining_resources = issued.resource_set().intersection(rcvd_resources);
-                if remaining_resources.is_empty() {
-                    // revoke
-                    updates.remove(issued.subject_key_identifier());
-                } else {
-                    // re-issue
-                    let re_issued = self.re_issue(
-                        issued,
-                        Some(remaining_resources),
-                        current_key,
-                        None,
-                        &config.issuance_timing,
-                        signer,
-                    )?;
-                    updates.issue(re_issued);
-                }
-            }
+            // Prep certified key for updated received certificate
+            let updated_key = CertifiedKey::create(rcvd_cert);
+
+            // Shrink any overclaiming child certificates
+            let updates = self
+                .certificates
+                .shrink_overclaiming(&updated_key, &config.issuance_timing, signer)?;
             if !updates.is_empty() {
                 res.push(CaEvtDet::ChildCertificatesUpdated {
                     resource_class_name: self.name.clone(),
@@ -317,14 +315,28 @@ impl ResourceClass {
                 });
             }
 
-            // Check whether ROAs need to be re-issued.
-            let updated_key = CertifiedKey::create(rcvd_cert);
-            let updates = self.roas.update(routes, &updated_key, config, signer)?;
-            if !updates.is_empty() {
-                res.push(CaEvtDet::RoasUpdated {
-                    resource_class_name: self.name.clone(),
-                    updates,
-                });
+            // Re-issue ROAs based on updated resources.
+            // Note that route definitions will not have changed in this case, but the decision logic is all the same.
+            {
+                let updates = self.roas.update(routes, &updated_key, config, signer)?;
+                if !updates.is_empty() {
+                    res.push(CaEvtDet::RoasUpdated {
+                        resource_class_name: self.name.clone(),
+                        updates,
+                    });
+                }
+            }
+
+            // Re-issue ASPA objects based on updated resources.
+            // Note that aspa definitions will not have changed in this case, but the decision logic is all the same.
+            {
+                let updates = self.aspas.update(aspas, &updated_key, config, signer)?;
+                if !updates.is_empty() {
+                    res.push(CaEvtDet::AspaObjectsUpdated {
+                        resource_class_name: self.name.clone(),
+                        updates,
+                    })
+                }
             }
         } else {
             info!(
@@ -513,24 +525,36 @@ impl ResourceClass {
                     self.key_state
                         .keyroll_activate(self.name.clone(), self.parent_rc_name.clone(), signer)?;
 
-                let roa_updates = self.roas.activate_key(new_key, issuance_timing, signer)?;
-                let roas_updated = CaEvtDet::RoasUpdated {
-                    resource_class_name: self.name.clone(),
-                    updates: roa_updates,
-                };
+                let mut events = vec![key_activated];
 
-                let mut cert_updates = ChildCertificateUpdates::default();
-                for issued in self.certificates.iter() {
-                    // re-issue
-                    let re_issued = self.re_issue(issued, None, new_key, None, issuance_timing, signer)?;
-                    cert_updates.issue(re_issued);
+                let roa_updates = self.roas.renew(true, new_key, issuance_timing, signer)?;
+                if !roa_updates.is_empty() {
+                    let roas_updated = CaEvtDet::RoasUpdated {
+                        resource_class_name: self.name.clone(),
+                        updates: roa_updates,
+                    };
+                    events.push(roas_updated);
                 }
-                let certs_updated = CaEvtDet::ChildCertificatesUpdated {
-                    resource_class_name: self.name.clone(),
-                    updates: cert_updates,
-                };
 
-                Ok(vec![key_activated, roas_updated, certs_updated])
+                let aspa_updates = self.aspas.renew(new_key, None, issuance_timing, signer)?;
+                if !aspa_updates.is_empty() {
+                    let aspas_updated = CaEvtDet::AspaObjectsUpdated {
+                        resource_class_name: self.name.clone(),
+                        updates: aspa_updates,
+                    };
+                    events.push(aspas_updated);
+                }
+
+                let cert_updates = self.certificates.activate_key(new_key, issuance_timing, signer)?;
+                if !cert_updates.is_empty() {
+                    let certs_updated = CaEvtDet::ChildCertificatesUpdated {
+                        resource_class_name: self.name.clone(),
+                        updates: cert_updates,
+                    };
+                    events.push(certs_updated);
+                }
+
+                Ok(events)
             }
         } else {
             Ok(vec![])
@@ -586,33 +610,6 @@ impl ResourceClass {
         Ok(issued)
     }
 
-    fn re_issue(
-        &self,
-        previous: &IssuedCert,
-        updated_resources: Option<ResourceSet>,
-        signing_key: &CertifiedKey,
-        csr_info_opt: Option<CsrInfo>,
-        issuance_timing: &IssuanceTimingConfig,
-        signer: &KrillSigner,
-    ) -> KrillResult<IssuedCert> {
-        let (_uri, limit, resource_set, cert) = previous.clone().unpack();
-        let csr = csr_info_opt.unwrap_or_else(|| CsrInfo::from(&cert));
-        let resource_set = updated_resources.unwrap_or(resource_set);
-        let replaced = ReplacedObject::new(Revocation::from(&cert), HexEncodedHash::from(&cert));
-
-        let re_issued = SignSupport::make_issued_cert(
-            csr,
-            &resource_set,
-            limit,
-            Some(replaced),
-            signing_key,
-            issuance_timing.timing_child_certificate_valid_weeks,
-            signer,
-        )?;
-
-        Ok(re_issued)
-    }
-
     /// Stores an [IssuedCert](krill_commons.api.ca.IssuedCert)
     pub fn certificate_issued(&mut self, issued: IssuedCert) {
         self.certificates.certificate_issued(issued);
@@ -647,9 +644,14 @@ impl ResourceClass {
 impl ResourceClass {
     /// Renew all ROAs under the current for which the not-after time closer
     /// than the given number of weeks
-    pub fn renew_roas(&self, issuance_timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<RoaUpdates> {
+    pub fn renew_roas(
+        &self,
+        force: bool,
+        issuance_timing: &IssuanceTimingConfig,
+        signer: &KrillSigner,
+    ) -> KrillResult<RoaUpdates> {
         let key = self.get_current_key()?;
-        self.roas.renew(key, issuance_timing, signer)
+        self.roas.renew(force, key, issuance_timing, signer)
     }
 
     /// Publish all ROAs under the new key
@@ -659,20 +661,13 @@ impl ResourceClass {
         signer: &KrillSigner,
     ) -> KrillResult<RoaUpdates> {
         let key = self.get_new_key()?;
-        self.roas.activate_key(key, issuance_timing, signer)
+        self.roas.renew(true, key, issuance_timing, signer)
     }
 
-    /// Updates the ROAs in accordance with the current authorizations, and
-    /// the target resources and key determined by the PublishMode.
-    pub fn update_roas(
-        &self,
-        routes: &Routes,
-        new_resources: Option<&ResourceSet>,
-        config: &Config,
-        signer: &KrillSigner,
-    ) -> KrillResult<RoaUpdates> {
+    /// Updates the ROAs in accordance with the current authorizations
+    pub fn update_roas(&self, routes: &Routes, config: &Config, signer: &KrillSigner) -> KrillResult<RoaUpdates> {
         let key = self.get_current_key()?;
-        let resources = new_resources.unwrap_or_else(|| key.incoming_cert().resources());
+        let resources = key.incoming_cert().resources();
         let routes = routes.filter(resources);
         self.roas.update(&routes, key, config, signer)
     }
@@ -680,6 +675,38 @@ impl ResourceClass {
     /// Marks the ROAs as updated from a RoaUpdated event.
     pub fn roas_updated(&mut self, updates: RoaUpdates) {
         self.roas.updated(updates);
+    }
+}
+
+/// # Autonomous System Provider Authorization
+///
+impl ResourceClass {
+    /// Renew all ASPA objects under the current for which the not-after time
+    /// is closer than the given number of weeks
+    pub fn renew_aspas(
+        &self,
+        issuance_timing: &IssuanceTimingConfig,
+        signer: &KrillSigner,
+    ) -> KrillResult<AspaObjectsUpdates> {
+        let key = self.get_current_key()?;
+        let renew_threshold = Some(Time::now() + Duration::weeks(issuance_timing.timing_aspa_reissue_weeks_before));
+        self.aspas.renew(key, renew_threshold, issuance_timing, signer)
+    }
+
+    /// Updates the ASPA objects in accordance with the supplied definitions
+    pub fn update_aspas(
+        &self,
+        all_aspas: &AspaDefinitions,
+        config: &Config,
+        signer: &KrillSigner,
+    ) -> KrillResult<AspaObjectsUpdates> {
+        let key = self.get_current_key()?;
+        self.aspas.update(all_aspas, key, config, signer)
+    }
+
+    /// Apply ASPA object changes from events
+    pub fn aspa_objects_updated(&mut self, updates: AspaObjectsUpdates) {
+        self.aspas.updated(updates)
     }
 }
 

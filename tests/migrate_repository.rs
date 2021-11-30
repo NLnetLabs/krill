@@ -28,7 +28,7 @@ async fn migrate_repository() {
     info("#                                                                #");
     info("##################################################################");
     info("");
-    let krill_dir = start_krill_with_default_test_config(true, false, false).await;
+    let krill_dir = start_krill_with_default_test_config(true, false, false, false).await;
 
     info("##################################################################");
     info("#                                                                #");
@@ -42,7 +42,7 @@ async fn migrate_repository() {
     let testbed = handle("testbed");
 
     let ca1 = handle("CA1");
-    let ca1_res = resources("10.0.0.0/16");
+    let ca1_res = ipv4_resources("10.0.0.0/16");
     let ca1_route_definition = RoaDefinition::from_str("10.0.0.0/16-16 => 65000").unwrap();
 
     let rcn_0 = ResourceClassName::from(0);

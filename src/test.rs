@@ -25,10 +25,11 @@ use crate::{
     },
     commons::{
         api::{
-            AddChildRequest, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ChildHandle, Handle, ObjectName,
-            ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublicationServerUris, PublisherDetails,
-            PublisherHandle, PublisherList, RepositoryContact, ResourceClassKeysInfo, ResourceClassName, ResourceSet,
-            RoaDefinition, RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, TypedPrefix, UpdateChildRequest,
+            AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, CertAuthInfo,
+            CertAuthInit, CertifiedKeyInfo, ChildHandle, Handle, ObjectName, ParentCaContact, ParentCaReq,
+            ParentHandle, ParentStatuses, PublicationServerUris, PublisherDetails, PublisherHandle, PublisherList,
+            RepositoryContact, ResourceClassKeysInfo, ResourceClassName, ResourceSet, RoaDefinition,
+            RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, TypedPrefix, UpdateChildRequest,
         },
         bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion},
         crypto::SignSupport,
@@ -52,7 +53,7 @@ pub const KRILL_PUBD_SERVER_URI: &str = "https://localhost:3001/";
 pub fn init_logging() {
     // Just creates a test config so we can initialize logging, then forgets about it
     let d = PathBuf::from(".");
-    let _ = Config::test(&d, false, false, false).init_logging();
+    let _ = Config::test(&d, false, false, false, false).init_logging();
 }
 
 pub fn info(msg: impl std::fmt::Display) {
@@ -99,19 +100,25 @@ pub async fn server_ready(uri: &str) -> bool {
     false
 }
 
-pub fn test_config(dir: &Path, enable_testbed: bool, enable_ca_refresh: bool, enable_suspend: bool) -> Config {
+pub fn test_config(
+    dir: &Path,
+    enable_testbed: bool,
+    enable_ca_refresh: bool,
+    enable_suspend: bool,
+    second_signer: bool,
+) -> Config {
     if enable_testbed {
         crate::constants::enable_test_mode();
         crate::constants::enable_test_announcements();
     }
-    Config::test(dir, enable_testbed, enable_ca_refresh, enable_suspend)
+    Config::test(dir, enable_testbed, enable_ca_refresh, enable_suspend, second_signer)
 }
 
-pub fn init_config(config: &Config) {
+pub fn init_config(config: &mut Config) {
     if config.init_logging().is_err() {
         trace!("Logging already initialized");
     }
-    config.verify().unwrap();
+    config.process().unwrap();
 }
 
 /// Starts krill server for testing using the given configuration. Creates a random base directory in the 'work' folder,
@@ -129,15 +136,16 @@ pub async fn start_krill_with_default_test_config(
     enable_testbed: bool,
     enable_ca_refresh: bool,
     enable_suspend: bool,
+    second_signer: bool,
 ) -> PathBuf {
     let dir = tmp_dir();
-    let config = test_config(&dir, enable_testbed, enable_ca_refresh, enable_suspend);
+    let config = test_config(&dir, enable_testbed, enable_ca_refresh, enable_suspend, second_signer);
     start_krill(config).await;
     dir
 }
 
-async fn start_krill(config: Config) {
-    init_config(&config);
+async fn start_krill(mut config: Config) {
+    init_config(&mut config);
     tokio::spawn(start_krill_with_error_trap(Arc::new(config)));
     assert!(krill_server_ready().await);
 }
@@ -152,8 +160,8 @@ async fn start_krill_with_error_trap(config: Arc<Config>) {
 /// own temp dir for storage.
 pub async fn start_krill_pubd() -> PathBuf {
     let dir = tmp_dir();
-    let mut config = test_config(&dir, false, false, false);
-    init_config(&config);
+    let mut config = test_config(&dir, false, false, false, true);
+    init_config(&mut config);
     config.port = 3001;
 
     tokio::spawn(start_krill_with_error_trap(Arc::new(config)));
@@ -411,6 +419,35 @@ pub async fn ca_route_authorization_dryrun(handle: &Handle, updates: RoaDefiniti
     }
 }
 
+pub async fn ca_aspas_add(handle: &Handle, aspa: AspaDefinition) {
+    krill_admin(Command::CertAuth(CaCommand::AspasAddOrReplace(handle.clone(), aspa))).await;
+}
+
+pub async fn ca_aspas_expect(handle: &Handle, expected_aspas: AspaDefinitionList) {
+    let res = krill_admin(Command::CertAuth(CaCommand::AspasList(handle.clone()))).await;
+
+    if let ApiResponse::AspaDefinitions(found_aspas) = res {
+        if expected_aspas != found_aspas {
+            panic!("Expected ASPAs:\n{}, Got ASPAs:\n{}", expected_aspas, found_aspas)
+        }
+    } else {
+        panic!("Expected AspaDefinitionsList")
+    }
+}
+
+pub async fn ca_aspas_update(handle: &Handle, customer: AspaCustomer, update: AspaProvidersUpdate) {
+    krill_admin(Command::CertAuth(CaCommand::AspasUpdate(
+        handle.clone(),
+        customer,
+        update,
+    )))
+    .await;
+}
+
+pub async fn ca_aspas_remove(handle: &Handle, customer: AspaCustomer) {
+    krill_admin(Command::CertAuth(CaCommand::AspasRemove(handle.clone(), customer))).await;
+}
+
 pub async fn ca_details(handle: &Handle) -> CertAuthInfo {
     match krill_admin(Command::CertAuth(CaCommand::Show(handle.clone()))).await {
         ApiResponse::CertAuthInfo(inf) => inf,
@@ -607,8 +644,12 @@ pub fn handle(s: &str) -> Handle {
     Handle::from_str(s).unwrap()
 }
 
-pub fn resources(v4: &str) -> ResourceSet {
+pub fn ipv4_resources(v4: &str) -> ResourceSet {
     ResourceSet::from_strs("", v4, "").unwrap()
+}
+
+pub fn resources(asn: &str, v4: &str, v6: &str) -> ResourceSet {
+    ResourceSet::from_strs(asn, v4, v6).unwrap()
 }
 
 pub fn rcn(nr: u32) -> ResourceClassName {

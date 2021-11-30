@@ -14,7 +14,6 @@ use crate::constants::KRILL_VERSION;
 pub mod ext_serde;
 pub mod file;
 pub mod httpclient;
-pub mod softsigner;
 pub mod xml;
 
 //------------ KrillVersion --------------------------------------------------

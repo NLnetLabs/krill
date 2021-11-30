@@ -23,11 +23,11 @@ async fn test_suspension() {
     //  testbed enabled
     //  ca_refresh disabled (we will trigger individual CA refreshes manually)
     //  suspend enabled
-    let krill_dir = start_krill_with_default_test_config(true, false, true).await;
+    let krill_dir = start_krill_with_default_test_config(true, false, true, false).await;
 
     let testbed = handle("testbed");
     let ca = handle("CA");
-    let ca_res = resources("10.0.0.0/16");
+    let ca_res = ipv4_resources("10.0.0.0/16");
 
     async fn expect_not_suspended(ca: &Handle, child: &ChildHandle) {
         let rcn_0 = rcn(0);
@@ -71,7 +71,7 @@ async fn test_suspension() {
     // Wait a bit, and then refresh testbed only, it should find that
     // the child 'CA' has not been updating, and will suspend it.
     {
-        sleep_seconds(5).await;
+        sleep_seconds(15).await;
 
         cas_refresh_single(&testbed).await;
         expect_suspended(&testbed, &ca).await;

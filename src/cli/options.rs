@@ -12,7 +12,11 @@ use bytes::Bytes;
 use clap::{App, Arg, ArgMatches, SubCommand};
 
 use rpki::{
-    repository::{crypto::KeyIdentifier, x509::Time},
+    repository::{
+        aspa::{DuplicateProviderAs, ProviderAs},
+        crypto::KeyIdentifier,
+        x509::Time,
+    },
     uri,
 };
 
@@ -20,9 +24,10 @@ use crate::{
     cli::report::{ReportError, ReportFormat},
     commons::{
         api::{
-            AddChildRequest, AuthorizationFmtError, CertAuthInit, ChildHandle, Handle, ParentCaContact, ParentCaReq,
-            ParentHandle, PublicationServerUris, PublisherHandle, RepositoryContact, ResourceSet, ResourceSetError,
-            RoaDefinition, RoaDefinitionUpdates, RtaName, Token, UpdateChildRequest,
+            AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionFormatError, AspaProvidersUpdate,
+            AuthorizationFmtError, CertAuthInit, ChildHandle, Handle, ParentCaContact, ParentCaReq, ParentHandle,
+            PublicationServerUris, PublisherHandle, RepositoryContact, ResourceSet, ResourceSetError, RoaDefinition,
+            RoaDefinitionUpdates, RtaName, Token, UpdateChildRequest,
         },
         crypto::{IdCert, SignSupport},
         error::KrillIoError,
@@ -732,6 +737,100 @@ impl Options {
         app.subcommand(sub)
     }
 
+    #[cfg(feature = "aspa")]
+    fn make_cas_aspas_add_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("add").about("Add or replace an ASPA configuration");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+
+        sub = sub.arg(
+            Arg::with_name("aspa")
+                .long("aspa")
+                .help("ASPA formatted like: 65000 => 65001, 65002(v4), 65003(v6)")
+                .value_name("definition")
+                .required(true),
+        );
+
+        app.subcommand(sub)
+    }
+
+    #[cfg(feature = "aspa")]
+    fn make_cas_aspas_remove_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("remove").about("Remove the ASPA for a customer ASN");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+
+        sub = sub.arg(
+            Arg::with_name("customer")
+                .long("customer")
+                .help("Customer ASN for an existing ASPA definition")
+                .value_name("ASN")
+                .required(true),
+        );
+
+        app.subcommand(sub)
+    }
+
+    #[cfg(feature = "aspa")]
+    fn make_cas_aspas_update_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("update").about("Update an existing ASPA configuration");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+
+        sub = sub.arg(
+            Arg::with_name("customer")
+                .long("customer")
+                .help("Customer ASN for an existing ASPA definition")
+                .value_name("ASN")
+                .required(true),
+        );
+
+        sub = sub.arg(
+            Arg::with_name("add")
+                .long("add")
+                .help("Provider ASNs to add (multiple allowed)")
+                .value_name("<Provider AS>")
+                .multiple(true)
+                .required(false),
+        );
+
+        sub = sub.arg(
+            Arg::with_name("remove")
+                .long("remove")
+                .help("Provider ASNs to remove (multiple allowed)")
+                .value_name("<Provider AS>")
+                .multiple(true)
+                .required(false),
+        );
+
+        app.subcommand(sub)
+    }
+
+    #[cfg(feature = "aspa")]
+    fn make_cas_aspas_list_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("list").about("Show current ASPA configurations");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+
+        app.subcommand(sub)
+    }
+
+    #[cfg(feature = "aspa")]
+    fn make_cas_aspas_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("aspas").about("Manage ASPAs for a CA (experimental)");
+
+        sub = Self::make_cas_aspas_add_sc(sub);
+        sub = Self::make_cas_aspas_remove_sc(sub);
+        sub = Self::make_cas_aspas_update_sc(sub);
+        sub = Self::make_cas_aspas_list_sc(sub);
+
+        app.subcommand(sub)
+    }
+
     fn make_cas_repo_request_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("request").about("Show RFC8183 Publisher Request XML");
 
@@ -1161,6 +1260,11 @@ impl Options {
         app = Self::make_cas_repo_sc(app);
         app = Self::make_cas_issues_sc(app);
         app = Self::make_pubserver_sc(app);
+
+        #[cfg(feature = "aspa")]
+        {
+            app = Self::make_cas_aspas_sc(app);
+        }
 
         #[cfg(feature = "rta")]
         {
@@ -1710,6 +1814,92 @@ impl Options {
         }
     }
 
+    fn parse_matches_cas_aspas_add(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+
+        let aspa_config_str = matches.value_of("aspa").unwrap(); // required argument
+        let aspa = AspaDefinition::from_str(aspa_config_str)?;
+
+        let command = Command::CertAuth(CaCommand::AspasAddOrReplace(my_ca, aspa));
+
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_cas_aspas_remove(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+        let customer_str = matches.value_of("customer").unwrap();
+        let customer = AspaCustomer::from_str(customer_str).map_err(|_| Error::invalid_asn(customer_str))?;
+
+        let command = Command::CertAuth(CaCommand::AspasRemove(my_ca, customer));
+
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_cas_aspas_update(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+
+        let mut added = vec![];
+        let mut removed = vec![];
+
+        let customer_str = matches.value_of("customer").unwrap();
+        let customer = AspaCustomer::from_str(customer_str).map_err(|_| Error::invalid_asn(customer_str))?;
+
+        if let Some(add) = matches.values_of("add") {
+            for provider_str in add {
+                let provider = ProviderAs::from_str(provider_str).map_err(|_| Error::invalid_asn(provider_str))?;
+                added.push(provider);
+            }
+        }
+
+        if let Some(remove) = matches.values_of("remove") {
+            for provider_as_str in remove {
+                let provider_as =
+                    ProviderAs::from_str(provider_as_str).map_err(|_| Error::invalid_asn(provider_as_str))?;
+
+                if added.iter().any(|added| added.provider() == provider_as.provider()) {
+                    return Err(Error::general("Do not add and remove the same AS in a single update."));
+                }
+
+                removed.push(provider_as);
+            }
+        }
+
+        let update = AspaProvidersUpdate::new(added, removed);
+        if update.is_empty() {
+            return Err(Error::general("You MUST specify at least one of --add or --remove"));
+        }
+
+        let command = Command::CertAuth(CaCommand::AspasUpdate(my_ca, customer, update));
+
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_cas_aspas_list(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+
+        let command = Command::CertAuth(CaCommand::AspasList(my_ca));
+
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_cas_aspas(matches: &ArgMatches) -> Result<Options, Error> {
+        if let Some(m) = matches.subcommand_matches("add") {
+            Self::parse_matches_cas_aspas_add(m)
+        } else if let Some(m) = matches.subcommand_matches("remove") {
+            Self::parse_matches_cas_aspas_remove(m)
+        } else if let Some(m) = matches.subcommand_matches("update") {
+            Self::parse_matches_cas_aspas_update(m)
+        } else if let Some(m) = matches.subcommand_matches("list") {
+            Self::parse_matches_cas_aspas_list(m)
+        } else {
+            Err(Error::UnrecognizedSubCommand)
+        }
+    }
+
     fn parse_matches_cas_repo_request(matches: &ArgMatches) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
@@ -2097,6 +2287,8 @@ impl Options {
             Self::parse_matches_cas_keyroll(m)
         } else if let Some(m) = matches.subcommand_matches("roas") {
             Self::parse_matches_cas_routes(m)
+        } else if let Some(m) = matches.subcommand_matches("aspas") {
+            Self::parse_matches_cas_aspas(m)
         } else if let Some(m) = matches.subcommand_matches("repo") {
             Self::parse_matches_cas_repo(m)
         } else if let Some(m) = matches.subcommand_matches("issues") {
@@ -2177,6 +2369,12 @@ pub enum CaCommand {
     BgpAnalysisFull(Handle),
     BgpAnalysisSuggest(Handle, Option<ResourceSet>),
 
+    // ASPAs
+    AspasList(Handle),
+    AspasAddOrReplace(Handle, AspaDefinition),
+    AspasUpdate(Handle, AspaCustomer, AspaProvidersUpdate),
+    AspasRemove(Handle, AspaCustomer),
+
     // Show details for this CA
     Show(Handle),
     ShowHistoryCommands(Handle, HistoryOptions),
@@ -2242,6 +2440,7 @@ pub struct KrillInitDetails {
     data_dir: Option<String>,
     log_file: Option<String>,
     multi_user: bool,
+    hsm: bool,
 }
 
 impl KrillInitDetails {
@@ -2250,6 +2449,7 @@ impl KrillInitDetails {
             data_dir: None,
             log_file: None,
             multi_user: true,
+            hsm: false,
         }
     }
 
@@ -2272,6 +2472,10 @@ impl KrillInitDetails {
     pub fn multi_user(&self) -> bool {
         self.multi_user
     }
+
+    pub fn hsm(&self) -> bool {
+        self.hsm
+    }
 }
 
 impl Default for KrillInitDetails {
@@ -2280,6 +2484,7 @@ impl Default for KrillInitDetails {
             data_dir: None,
             log_file: None,
             multi_user: false,
+            hsm: false,
         }
     }
 }
@@ -2342,6 +2547,9 @@ pub enum Error {
     Rfc8183(rfc8183::Error),
     ResSetErr(ResourceSetError),
     InvalidRouteDelta(AuthorizationFmtError),
+    InvalidAsn(String),
+    DuplicateAspaProvider(DuplicateProviderAs),
+    InvalidAspaConfig(AspaDefinitionFormatError),
     InvalidHandle,
     InvalidSeconds,
     MissingArgWithEnv(String, String),
@@ -2349,6 +2557,12 @@ pub enum Error {
     InvalidChildIdCert,
     UnrecognizedSubCommand,
     GeneralArgumentError(String),
+}
+
+impl Error {
+    fn invalid_asn(asn: &str) -> Self {
+        Error::InvalidAsn(asn.to_string())
+    }
 }
 
 impl fmt::Display for Error {
@@ -2360,6 +2574,9 @@ impl fmt::Display for Error {
             Error::Rfc8183(e) => write!(f, "Invalid RFC8183 XML: {}", e),
             Error::ResSetErr(e) => write!(f, "Invalid resources requested: {}", e),
             Error::InvalidRouteDelta(e) => e.fmt(f),
+            Error::InvalidAsn(s) => write!(f, "Invalid ASN format. Expected 'AS#', got: {}", s),
+            Error::DuplicateAspaProvider(e) => e.fmt(f),
+            Error::InvalidAspaConfig(e) => e.fmt(f),
             Error::InvalidHandle => write!(
                 f,
                 "The publisher handle may only contain -_A-Za-z0-9, (\\ /) see issue #83"
@@ -2421,5 +2638,17 @@ impl From<ResourceSetError> for Error {
 impl From<AuthorizationFmtError> for Error {
     fn from(e: AuthorizationFmtError) -> Self {
         Error::InvalidRouteDelta(e)
+    }
+}
+
+impl From<AspaDefinitionFormatError> for Error {
+    fn from(e: AspaDefinitionFormatError) -> Self {
+        Error::InvalidAspaConfig(e)
+    }
+}
+
+impl From<DuplicateProviderAs> for Error {
+    fn from(e: DuplicateProviderAs) -> Self {
+        Error::DuplicateAspaProvider(e)
     }
 }

@@ -37,12 +37,14 @@ use crate::{
 pub struct CaObjectsMigration;
 
 impl CaObjectsMigration {
-    pub fn migrate(config: Arc<Config>, repo_manager: RepositoryManager) -> UpgradeResult<()> {
+    pub fn migrate(
+        config: Arc<Config>,
+        repo_manager: RepositoryManager,
+        signer: Arc<KrillSigner>,
+    ) -> UpgradeResult<()> {
         let repo_manager = Arc::new(repo_manager);
         let store = KeyValueStore::disk(&config.data_dir, CASERVER_DIR)?;
         let ca_store = AggregateStore::<ca::CertAuth>::disk(&config.data_dir, CASERVER_DIR)?;
-
-        let signer = Arc::new(KrillSigner::build(&config.data_dir)?);
 
         if store.version_is_before(KrillVersion::release(0, 6, 0))? {
             Err(UpgradeError::custom("Cannot upgrade Krill installations from before version 0.6.0. Please upgrade to any version ranging from 0.6.0 to 0.8.1 first, and then upgrade to this version."))
@@ -727,34 +729,27 @@ impl OldResourceClass {
         roas: HashMap<ObjectName, PublishedRoa>,
         certs: HashMap<ObjectName, PublishedCert>,
     ) -> CurrentKeyObjectSet {
-        let current_set = key.current_set.clone();
-
-        let mft = Manifest::decode(current_set.manifest_info.current.content().to_bytes(), true).unwrap();
-        let crl = Crl::decode(current_set.crl_info.current.content().to_bytes()).unwrap();
-
-        CurrentKeyObjectSet::new(
-            key.incoming_cert.clone(),
-            current_set.number,
-            current_set.revocations,
-            mft.into(),
-            crl.into(),
-            roas,
-            certs,
-        )
+        let basic = Self::object_set_for_certified_key(key);
+        CurrentKeyObjectSet::new(basic, roas, HashMap::new(), certs)
     }
 
     fn object_set_for_certified_key(key: &OldCertifiedKey) -> BasicKeyObjectSet {
         let current_set = key.current_set.clone();
 
-        let mft = Manifest::decode(current_set.manifest_info.current.content().to_bytes(), true).unwrap();
-        let crl = Crl::decode(current_set.crl_info.current.content().to_bytes()).unwrap();
+        let manifest = Manifest::decode(current_set.manifest_info.current.content().to_bytes(), true)
+            .unwrap()
+            .into();
+
+        let crl = Crl::decode(current_set.crl_info.current.content().to_bytes())
+            .unwrap()
+            .into();
 
         BasicKeyObjectSet::new(
             key.incoming_cert.clone(),
             current_set.number,
             current_set.revocations,
-            mft.into(),
-            crl.into(),
+            manifest,
+            crl,
         )
     }
 

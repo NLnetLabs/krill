@@ -1,159 +1,30 @@
 //! Support for signing mft, crl, certificates, roas..
 //! Common objects for TAs and CAs
-use std::{
-    ops::Deref,
-    sync::{Arc, RwLock},
-    {convert::TryFrom, path::Path},
-};
+
+use std::convert::TryFrom;
 
 use bytes::Bytes;
-
 use rpki::{
     repository::{
-        cert::{Cert, KeyUsage, Overclaim, TbsCert},
-        crl::{Crl, CrlEntry, TbsCertList},
-        crypto::{DigestAlgorithm, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer},
-        csr::Csr,
-        manifest::{FileAndHash, Manifest, ManifestContent},
-        roa::{Roa, RoaBuilder},
-        rta,
-        sigobj::SignedObjectBuilder,
-        x509::{Name, Serial, Time, Validity},
+        cert::{KeyUsage, Overclaim, TbsCert},
+        crypto::{DigestAlgorithm, KeyIdentifier, PublicKey},
+        manifest::FileAndHash,
+        x509::{Name, Time, Validity},
+        Cert, Crl, Csr,
     },
     uri,
 };
 
 use crate::{
     commons::{
-        api::{IssuedCert, RcvdCert, ReplacedObject, RepoInfo, RequestResourceLimit, ResourceSet},
-        crypto::{self, CryptoResult},
+        api::{IssuedCert, RcvdCert, ReplacedObject, RequestResourceLimit, ResourceSet},
+        crypto::KrillSigner,
         error::Error,
-        util::{softsigner::OpenSslSigner, AllowedUri},
+        util::AllowedUri,
         KrillResult,
     },
     daemon::ca::CertifiedKey,
 };
-
-//------------ Signer --------------------------------------------------------
-
-// This is an enum in preparation of other supported signer types
-#[derive(Clone, Debug)]
-pub struct KrillSigner {
-    // use a blocking lock to avoid having to be async, for signing operations
-    // this should be fine.
-    signer: Arc<RwLock<OpenSslSigner>>,
-}
-
-impl KrillSigner {
-    pub fn build(work_dir: &Path) -> KrillResult<Self> {
-        let signer = OpenSslSigner::build(work_dir)?;
-        let signer = Arc::new(RwLock::new(signer));
-        Ok(KrillSigner { signer })
-    }
-}
-
-impl KrillSigner {
-    pub fn create_key(&self) -> CryptoResult<KeyIdentifier> {
-        let mut signer = self.signer.write().unwrap();
-        signer.create_key(PublicKeyFormat::Rsa).map_err(crypto::Error::signer)
-    }
-
-    pub fn destroy_key(&self, key_id: &KeyIdentifier) -> CryptoResult<()> {
-        let mut signer = self.signer.write().unwrap();
-        signer.destroy_key(key_id).map_err(crypto::Error::key_error)
-    }
-
-    pub fn get_key_info(&self, key_id: &KeyIdentifier) -> CryptoResult<PublicKey> {
-        self.signer
-            .read()
-            .unwrap()
-            .get_key_info(key_id)
-            .map_err(crypto::Error::key_error)
-    }
-
-    pub fn random_serial(&self) -> CryptoResult<Serial> {
-        let signer = self.signer.read().unwrap();
-        Serial::random(signer.deref()).map_err(crypto::Error::signer)
-    }
-
-    pub fn sign<D: AsRef<[u8]> + ?Sized>(&self, key_id: &KeyIdentifier, data: &D) -> CryptoResult<Signature> {
-        self.signer
-            .read()
-            .unwrap()
-            .sign(key_id, SignatureAlgorithm::default(), data)
-            .map_err(crypto::Error::signing)
-    }
-
-    pub fn sign_one_off<D: AsRef<[u8]> + ?Sized>(&self, data: &D) -> CryptoResult<(Signature, PublicKey)> {
-        self.signer
-            .read()
-            .unwrap()
-            .sign_one_off(SignatureAlgorithm::default(), data)
-            .map_err(crypto::Error::signer)
-    }
-
-    pub fn sign_csr(&self, base_repo: &RepoInfo, name_space: &str, key: &KeyIdentifier) -> CryptoResult<Csr> {
-        let signer = self.signer.read().unwrap();
-        let pub_key = signer.get_key_info(key).map_err(crypto::Error::key_error)?;
-        let enc = Csr::construct(
-            signer.deref(),
-            key,
-            &base_repo.ca_repository(name_space).join(&[]).unwrap(), // force trailing slash
-            &base_repo.rpki_manifest(name_space, &pub_key.key_identifier()),
-            Some(&base_repo.rpki_notify()),
-        )
-        .map_err(crypto::Error::signing)?;
-        Ok(Csr::decode(enc.as_slice())?)
-    }
-
-    pub fn sign_cert(&self, tbs: TbsCert, key_id: &KeyIdentifier) -> CryptoResult<Cert> {
-        let signer = self.signer.read().unwrap();
-        tbs.into_cert(signer.deref(), key_id).map_err(crypto::Error::signing)
-    }
-
-    pub fn sign_crl(&self, tbs: TbsCertList<Vec<CrlEntry>>, key_id: &KeyIdentifier) -> CryptoResult<Crl> {
-        let signer = self.signer.read().unwrap();
-        tbs.into_crl(signer.deref(), key_id).map_err(crypto::Error::signing)
-    }
-
-    pub fn sign_manifest(
-        &self,
-        content: ManifestContent,
-        builder: SignedObjectBuilder,
-        key_id: &KeyIdentifier,
-    ) -> CryptoResult<Manifest> {
-        let signer = self.signer.read().unwrap();
-        content
-            .into_manifest(builder, signer.deref(), key_id)
-            .map_err(crypto::Error::signing)
-    }
-
-    pub fn sign_roa(
-        &self,
-        roa_builder: RoaBuilder,
-        object_builder: SignedObjectBuilder,
-        key_id: &KeyIdentifier,
-    ) -> CryptoResult<Roa> {
-        let signer = self.signer.read().unwrap();
-        roa_builder
-            .finalize(object_builder, signer.deref(), key_id)
-            .map_err(crypto::Error::signing)
-    }
-
-    pub fn sign_rta(&self, rta_builder: &mut rta::RtaBuilder, ee: Cert) -> CryptoResult<()> {
-        let signer = self.signer.read().unwrap();
-        let key = ee.subject_key_identifier();
-        rta_builder.push_cert(ee);
-        rta_builder
-            .sign(signer.deref(), &key, None, None)
-            .map_err(crypto::Error::signing)
-    }
-}
-
-// //------------ Signer --------------------------------------------------------
-//
-// pub trait Signer: crypto::Signer<KeyId = KeyIdentifier> + Clone + Sized + Sync + Send + 'static {}
-// impl<T: crypto::Signer<KeyId = KeyIdentifier> + Clone + Sized + Sync + Send + 'static> Signer for T {}
 
 //------------ CsrInfo -------------------------------------------------------
 
