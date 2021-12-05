@@ -39,36 +39,16 @@ use crate::commons::{
 
 //------------ Types and constants ------------------------------------------------------------------------------------
 
-/// The time to wait between an initial and subsequent attempt at sending a request to the KMIP server.
-const RETRY_REQ_AFTER: Duration = Duration::from_secs(2);
-
-/// How much longer should we wait from one request attempt to the next compared to the previous wait?
-const RETRY_REQ_AFTER_MULTIPLIER: f64 = 1.5;
-
-/// The maximum amount of time to keep retrying a failed request.
-const RETRY_REQ_UNTIL_MAX: Duration = Duration::from_secs(30);
-
-/// The maximum number of concurrent connections to the KMIP server to pool.
-const MAX_CONCURRENT_SERVER_CONNECTIONS: u32 = 5;
-
 /// A KMIP client that uses a specific TLS and TCP stream implementation. Currently set to [SslStream] from the
 /// [openssl] crate. This will be a different type if we switch to different TCP and/or TLS implementations or to an
 /// async implementation, but the client interface will remain the same.
 pub type KmipTlsClient = Client<SslStream<TcpStream>>;
 
-fn default_kmip_port() -> u16 {
-    // From: http://docs.oasis-open.org/kmip/profiles/v1.1/os/kmip-profiles-v1.1-os.html#_Toc332820682
-    //   "KMIP servers using the Basic Authentication Suite SHOULD use TCP port number 5696, as assigned by IANA, to
-    //    receive and send KMIP messages. KMIP clients using the Basic Authentication Suite MAY use the same 5696 TCP
-    //    port number."
-    5696
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct KmipSignerConfig {
     pub host: String,
 
-    #[serde(default = "default_kmip_port")]
+    #[serde(default = "KmipSignerConfig::default_kmip_port")]
     pub port: u16,
 
     #[serde(default)]
@@ -94,13 +74,107 @@ pub struct KmipSignerConfig {
 
     #[serde(default)]
     pub password: Option<String>,
+
+    #[serde(default = "KmipSignerConfig::default_retry_seconds")]
+    pub retry_seconds: u64,
+
+    #[serde(default = "KmipSignerConfig::default_backoff_multiplier")]
+    pub backoff_multiplier: f64,
+
+    #[serde(default = "KmipSignerConfig::default_max_retry_seconds")]
+    pub max_retry_seconds: u64,
+
+    #[serde(default = "KmipSignerConfig::default_connect_timeout_seconds")]
+    pub connect_timeout_seconds: u64,
+
+    #[serde(default = "KmipSignerConfig::default_read_timeout_seconds")]
+    pub read_timeout_seconds: u64,
+
+    #[serde(default = "KmipSignerConfig::default_write_timeout_seconds")]
+    pub write_timeout_seconds: u64,
+
+    #[serde(default = "KmipSignerConfig::default_max_lifetime_seconds")]
+    pub max_lifetime_seconds: u64,
+
+    #[serde(default = "KmipSignerConfig::default_max_idle_seconds")]
+    pub max_idle_seconds: u64,
+
+    #[serde(default = "KmipSignerConfig::default_max_connections")]
+    pub max_connections: u32,
+
+    #[serde(default = "KmipSignerConfig::default_max_response_bytes")]
+    pub max_response_bytes: u32,
 }
+
+impl KmipSignerConfig {
+    pub fn default_kmip_port() -> u16 {
+        // From: http://docs.oasis-open.org/kmip/profiles/v1.1/os/kmip-profiles-v1.1-os.html#_Toc332820682
+        //   "KMIP servers using the Basic Authentication Suite SHOULD use TCP port number 5696, as assigned by IANA, to
+        //    receive and send KMIP messages. KMIP clients using the Basic Authentication Suite MAY use the same 5696 TCP
+        //    port number."
+        5696
+    }
+
+    pub fn default_retry_seconds() -> u64 {
+        2
+    }
+
+    pub fn default_backoff_multiplier() -> f64 {
+        1.5
+    }
+
+    pub fn default_max_retry_seconds() -> u64 {
+        30
+    }
+
+    pub fn default_connect_timeout_seconds() -> u64 {
+        5
+    }
+
+    pub fn default_read_timeout_seconds() -> u64 {
+        5
+    }
+
+    pub fn default_write_timeout_seconds() -> u64 {
+        5
+    }
+
+    pub fn default_max_lifetime_seconds() -> u64 {
+        60 * 30
+    }
+
+    pub fn default_max_idle_seconds() -> u64 {
+        60 * 10
+    }
+
+    pub fn default_max_connections() -> u32 {
+        5
+    }
+
+    pub fn default_max_response_bytes() -> u32 {
+        64 * 1024
+    }
+}
+
+impl Eq for KmipSignerConfig {}
 
 #[derive(Debug)]
 struct ConnectionSettings {
     client: kmip::client::ConnectionSettings,
 
     force: bool,
+
+    retry_interval: Duration,
+
+    backoff_multiplier: f64,
+
+    retry_timeout: Duration,
+
+    lifetime_timeout: Duration,
+
+    idle_timeout: Duration,
+
+    max_connections: u32,
 }
 
 impl TryFrom<&KmipSignerConfig> for ConnectionSettings {
@@ -112,6 +186,18 @@ impl TryFrom<&KmipSignerConfig> for ConnectionSettings {
         let username = conf.username.clone();
         let password = conf.password.clone();
         let insecure = conf.insecure;
+        let connect_timeout = Some(Duration::from_secs(conf.connect_timeout_seconds));
+        let read_timeout = Some(Duration::from_secs(conf.read_timeout_seconds));
+        let write_timeout = Some(Duration::from_secs(conf.write_timeout_seconds));
+        let max_response_bytes = Some(conf.max_response_bytes);
+
+        let force = conf.force;
+        let retry_interval = Duration::from_secs(conf.retry_seconds);
+        let backoff_multiplier = conf.backoff_multiplier;
+        let retry_timeout = Duration::from_secs(conf.max_retry_seconds);
+        let lifetime_timeout = Duration::from_secs(conf.max_lifetime_seconds);
+        let idle_timeout = Duration::from_secs(conf.max_idle_seconds);
+        let max_connections = conf.max_connections;
 
         let client_cert = match &conf.client_cert_path {
             Some(cert_path) => {
@@ -135,7 +221,7 @@ impl TryFrom<&KmipSignerConfig> for ConnectionSettings {
             None => None,
         };
 
-        let client_conn_settings = kmip::client::ConnectionSettings {
+        let client = kmip::client::ConnectionSettings {
             host,
             port,
             username,
@@ -144,15 +230,21 @@ impl TryFrom<&KmipSignerConfig> for ConnectionSettings {
             client_cert,
             server_cert,
             ca_cert,
-            connect_timeout: Some(Duration::from_secs(5)),
-            read_timeout: Some(Duration::from_secs(5)),
-            write_timeout: Some(Duration::from_secs(5)),
-            max_response_bytes: Some(64 * 1024),
+            connect_timeout,
+            read_timeout,
+            write_timeout,
+            max_response_bytes,
         };
 
         Ok(ConnectionSettings {
-            client: client_conn_settings,
-            force: conf.force,
+            client,
+            force,
+            retry_interval,
+            backoff_multiplier,
+            retry_timeout,
+            lifetime_timeout,
+            idle_timeout,
+            max_connections,
         })
     }
 }
@@ -179,14 +271,19 @@ pub struct KmipSigner {
 
 impl KmipSigner {
     /// Creates a new instance of KmipSigner.
-    pub fn build(name: &str, conf: &KmipSignerConfig, mapper: Arc<SignerMapper>) -> Result<Self, SignerError> {
+    pub fn build(
+        name: &str,
+        conf: &KmipSignerConfig,
+        probe_interval: Duration,
+        mapper: Arc<SignerMapper>,
+    ) -> Result<Self, SignerError> {
         // Signer initialization should not block Krill startup. As such we delaying contacting the KMIP server until
         // first use. The downside of this approach is that we won't detect any issues until that point.
 
         let server = Arc::new(StatefulProbe::new(
             name.to_string(),
             Arc::new(conf.try_into()?),
-            Duration::from_secs(30),
+            probe_interval,
         ));
 
         let s = KmipSigner {
@@ -244,11 +341,29 @@ struct UsableServerState {
     pool: r2d2::Pool<ConnectionManager>,
 
     conn_info: String,
+
+    retry_interval: Duration,
+
+    backoff_multiplier: f64,
+
+    retry_timeout: Duration,
 }
 
 impl UsableServerState {
-    pub fn new(pool: r2d2::Pool<ConnectionManager>, conn_info: String) -> UsableServerState {
-        UsableServerState { pool, conn_info }
+    pub fn new(
+        pool: r2d2::Pool<ConnectionManager>,
+        conn_info: String,
+        retry_interval: Duration,
+        backoff_multiplier: f64,
+        retry_timeout: Duration,
+    ) -> UsableServerState {
+        UsableServerState {
+            pool,
+            conn_info,
+            retry_interval,
+            backoff_multiplier,
+            retry_timeout,
+        }
     }
 
     pub fn get_connection(&self) -> Result<PooledConnection<ConnectionManager>, SignerError> {
@@ -263,7 +378,7 @@ impl KmipSigner {
         name: String,
         status: &ProbeStatus<ConnectionSettings, SignerError, UsableServerState>,
     ) -> Result<UsableServerState, ProbeError<SignerError>> {
-        let conn_settings = status.config()?;
+        let conn_settings: Arc<ConnectionSettings> = status.config()?;
         debug!(
             "[{}] Probing server at {}:{}",
             name, conn_settings.client.host, conn_settings.client.port
@@ -368,9 +483,17 @@ impl KmipSigner {
         );
         let pool = ConnectionManager::create_connection_pool(
             Arc::new(conn_settings.client.clone()),
-            MAX_CONCURRENT_SERVER_CONNECTIONS,
+            conn_settings.client.max_response_bytes.unwrap(),
+            conn_settings.lifetime_timeout,
+            conn_settings.idle_timeout,
         )?;
-        let state = UsableServerState::new(pool, conn_info);
+        let state = UsableServerState::new(
+            pool,
+            conn_info,
+            conn_settings.retry_interval,
+            conn_settings.backoff_multiplier,
+            conn_settings.retry_timeout,
+        );
 
         Ok(state)
     }
@@ -393,16 +516,8 @@ impl KmipSigner {
     where
         F: FnOnce(&KmipTlsClient) -> Result<T, kmip::client::Error> + Copy,
     {
-        // Define the backoff policy to use
-        let backoff_policy = ExponentialBackoff {
-            initial_interval: RETRY_REQ_AFTER,
-            multiplier: RETRY_REQ_AFTER_MULTIPLIER,
-            max_elapsed_time: Some(RETRY_REQ_UNTIL_MAX),
-            ..Default::default()
-        };
-
         // Define a notify callback to customize messages written to the logger
-        let notify = |err, next: Duration| {
+        let notify = |err, next: std::time::Duration| {
             warn!("{} failed, retrying in {} seconds: {}", desc, next.as_secs(), err);
         };
 
@@ -418,7 +533,16 @@ impl KmipSigner {
 
         // Don't even bother going round the retry loop if we haven't yet successfully connected to the KMIP server
         // and verified its capabilities:
-        let _ = self.server.status(Self::probe_server)?;
+        let status = self.server.status(Self::probe_server)?;
+        let state = status.state()?;
+
+        // Define the backoff policy to use
+        let backoff_policy = ExponentialBackoff {
+            initial_interval: state.retry_interval,
+            multiplier: state.backoff_multiplier,
+            max_elapsed_time: Some(state.retry_timeout),
+            ..Default::default()
+        };
 
         // Try (and retry if needed) the requested operation.
         Ok(backoff::retry_notify(backoff_policy, op, notify)?)

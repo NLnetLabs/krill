@@ -112,10 +112,7 @@ pub struct SignerRouter {
 }
 
 impl SignerRouter {
-    pub fn build(
-        signer_mapper: Option<Arc<SignerMapper>>,
-        mut signers: Vec<SignerProvider>,
-    ) -> KrillResult<Self> {
+    pub fn build(signer_mapper: Option<Arc<SignerMapper>>, mut signers: Vec<SignerProvider>) -> KrillResult<Self> {
         // Keep a mapping of signer mapper handle to signer provider. Fill it in as and when signers become ready at
         // which point their signer mapper handle will be known.
         let active_signers = RwLock::new(HashMap::new());

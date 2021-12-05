@@ -105,7 +105,8 @@ impl KrillServer {
         // Assumes that Config::verify() has already ensured that the signer configuration is valid and that
         // Config::resolve() has been used to update signer name references to resolve to the corresponding signer
         // configurations.
-        let signer = KrillSignerBuilder::new(work_dir, &config.signers)
+        let probe_interval = std::time::Duration::from_secs(config.signer_probe_retry_seconds);
+        let signer = KrillSignerBuilder::new(work_dir, probe_interval, &config.signers)
             .with_default_signer(config.default_signer())
             .with_one_off_signer(config.one_off_signer())
             .build()?;
