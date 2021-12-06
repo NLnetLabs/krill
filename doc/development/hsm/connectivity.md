@@ -45,7 +45,8 @@ the probe will move to either the `Usable` or `Unusable` state.
 When in the `Probing` state a new "probe" will only be sent at most every N seconds. In between
 "probes" a call to `fn status()` will return the last known state of the probe. This is to avoid
 repeated rapid attempts to re-probe the signer backend when it has already been determined that
-it is not yet available/ready but might soon become so.
+it is not yet available/ready but might soon become so. Probes are only "sent" during the probing
+status, they are not sent once the probe moved to the (un)usable status.
 
 A probe in `Unusable` state cannot now or ever be used. It has probed the signer backend and
 found it permanently lacking.
