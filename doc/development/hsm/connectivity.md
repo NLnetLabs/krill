@@ -1,7 +1,8 @@
 # HSM: Connectivity
 
 Unlike the original OpenSSL based signer in Krill, the PKCS#11 and KMIP signers connect to 
-cryptographic token systems that exist outside of Krill which have to be connected to. That connection can fail, either from the start or at some point while Krill is running.
+cryptographic token systems that exist outside of Krill. That connection can fail, either
+from the start or at some point while Krill is running.
 
 As stated this issue is common to the PKCS#11 and KMIP signers. As much as possible the
 overlap in connection handling functionality has been extracted into common code that is
