@@ -25,10 +25,11 @@ backoff strategy if the request fails and the failure is transient rather than p
 logic to decide which types of failure are transient and which are permanent, and the concept
 of what a "connection" is, are specific to each implementation.
 
-## Connection "status"
+## Probe status
 
-Both implementations share the concept of connection "status" and of a "connection" moving
-from one status to another. The code for this **is** factored out to the `StatefulProbe` type
+Both implementations share the concept of probe "status" and of a backend moving
+from one status to another. A backend must be successfully probed before it can be used.
+The code for this **is** factored out to the `StatefulProbe` type
 defined in the  `probe.rs` module. However, a key function defined in the module,
 `fn status(&self, probe: F)`, takes a callback for which the PKCS#11 and KMIP signers each have
 their own specific implementation.
@@ -53,3 +54,6 @@ A probe in `Usable` state carries with it the details necessary to communicate w
 via an established connection and/or to (re)establish connections as necessary, and contains
 some metadata describing the backend being connected to which was determined when moving from
 the `Probing` to the `Usable` state.
+
+Note that probe status never moves backwards in the lifetime of a single Krill process from (un)usable
+to probing.
