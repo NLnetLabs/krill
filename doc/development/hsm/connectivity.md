@@ -48,8 +48,8 @@ repeated rapid attempts to re-probe the signer backend when it has already been 
 it is not yet available/ready but might soon become so. Probes are only "sent" during the probing
 status, they are not sent once the probe moves to the (un)usable status.
 
-A probe in `Unusable` state cannot now or ever be used. It has probed the signer backend and
-found it permanently lacking.
+A probe in `Unusable` state cannot now or ever be used during the lifetime of the Krill process.
+It has probed the signer backend and found it permanently lacking.
 
 A probe in `Usable` state carries with it the details necessary to communicate with the backend
 via an established connection and/or to (re)establish connections as necessary, and contains
