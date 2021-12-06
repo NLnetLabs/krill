@@ -2,7 +2,7 @@
 //! - Updating the format of commands or events
 //! - Export / Import data
 
-use std::{fmt, path::Path, str::FromStr, sync::Arc};
+use std::{fmt, path::Path, str::FromStr, sync::Arc, time::Duration};
 
 use serde::de::DeserializeOwned;
 
@@ -192,7 +192,8 @@ fn record_preexisting_openssl_keys_in_signer_mapper(config: Arc<Config>) -> Resu
             keys_dir.to_string_lossy()
         );
 
-        let krill_signer = KrillSignerBuilder::new(&config.data_dir, &config.signers)
+        let probe_interval = Duration::from_secs(config.signer_probe_retry_seconds);
+        let krill_signer = KrillSignerBuilder::new(&config.data_dir, probe_interval, &config.signers)
             .with_default_signer(config.default_signer())
             .with_one_off_signer(config.one_off_signer())
             .build()
@@ -292,7 +293,8 @@ fn upgrade_data_to_0_9_0(config: Arc<Config>) -> Result<(), UpgradeError> {
     if needs_v0_9_0_upgrade(work_dir, "cas") {
         // TODO: should we use the configured signers here or an OpenSSL signer?
         // Will any signing actually be done using these signers?
-        let signer = KrillSignerBuilder::new(work_dir, &config.signers)
+        let probe_interval = Duration::from_secs(config.signer_probe_retry_seconds);
+        let signer = KrillSignerBuilder::new(work_dir, probe_interval, &config.signers)
             .with_default_signer(config.default_signer())
             .with_one_off_signer(config.one_off_signer())
             .build()
@@ -383,7 +385,8 @@ mod tests {
         // Now test that a newly initialized `KrillSigner` with a default OpenSSL signer
         // is associated with the newly created mapper store and is thus able to use the
         // key that we placed on disk.
-        let krill_signer = KrillSignerBuilder::new(&work_dir, &config.signers)
+        let probe_interval = Duration::from_secs(config.signer_probe_retry_seconds);
+        let krill_signer = KrillSignerBuilder::new(&work_dir, probe_interval, &config.signers)
             .with_default_signer(config.default_signer())
             .with_one_off_signer(config.one_off_signer())
             .build()

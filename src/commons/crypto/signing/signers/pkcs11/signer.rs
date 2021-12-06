@@ -36,7 +36,7 @@ use crate::commons::{
 
 use serde::{de::Visitor, Deserialize};
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct Pkcs11SignerConfig {
     pub lib_path: String,
 
@@ -45,24 +45,38 @@ pub struct Pkcs11SignerConfig {
     #[serde(deserialize_with = "slot_id_or_label")]
     pub slot: SlotIdOrLabel,
 
-    #[serde(default = "Pkcs11SignerConfig::login_default")]
+    #[serde(default = "Pkcs11SignerConfig::default_login")]
     pub login: bool,
+
+    #[serde(default = "Pkcs11SignerConfig::default_retry_seconds")]
+    pub retry_seconds: u64,
+
+    #[serde(default = "Pkcs11SignerConfig::default_backoff_multiplier")]
+    pub backoff_multiplier: f64,
+
+    #[serde(default = "Pkcs11SignerConfig::default_max_retry_seconds")]
+    pub max_retry_seconds: u64,
 }
 
 impl Pkcs11SignerConfig {
-    pub fn login_default() -> bool {
+    pub fn default_login() -> bool {
         true
+    }
+
+    pub fn default_retry_seconds() -> u64 {
+        2
+    }
+
+    pub fn default_backoff_multiplier() -> f64 {
+        1.5
+    }
+
+    pub fn default_max_retry_seconds() -> u64 {
+        30
     }
 }
 
-/// The time to wait between an initial and subsequent attempt at sending a request to the PKCS#11 server.
-const RETRY_REQ_AFTER: Duration = Duration::from_secs(2);
-
-/// How much longer should we wait from one request attempt to the next compared to the previous wait?
-const RETRY_REQ_AFTER_MULTIPLIER: f64 = 1.5;
-
-/// The maximum amount of time to keep retrying a failed request.
-const RETRY_REQ_UNTIL_MAX: Duration = Duration::from_secs(30);
+impl Eq for Pkcs11SignerConfig {}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum LoginMode {
@@ -106,6 +120,12 @@ struct ConnectionSettings {
     user_pin: Option<String>,
 
     login_mode: LoginMode,
+
+    retry_interval: Duration,
+
+    backoff_multiplier: f64,
+
+    retry_timeout: Duration,
 }
 
 impl TryFrom<&Pkcs11SignerConfig> for ConnectionSettings {
@@ -119,12 +139,18 @@ impl TryFrom<&Pkcs11SignerConfig> for ConnectionSettings {
             true => LoginMode::LoginRequired,
             false => LoginMode::LoginNotRequired,
         };
+        let retry_interval = Duration::from_secs(conf.retry_seconds);
+        let backoff_multiplier = conf.backoff_multiplier;
+        let retry_timeout = Duration::from_secs(conf.max_retry_seconds);
 
         Ok(ConnectionSettings {
             lib_path,
             slot,
             user_pin,
             login_mode,
+            retry_interval,
+            backoff_multiplier,
+            retry_timeout,
         })
     }
 }
@@ -146,7 +172,12 @@ impl Pkcs11Signer {
     ///
     /// Warning: invoking this function twice within the same process when testing with SoftHSM can lead to error
     /// CKR_USER_ALREADY_LOGGED_IN. To avoid this tests should be run with `cargo test ... -- --test-threads=1`.
-    pub fn build(name: &str, conf: &Pkcs11SignerConfig, mapper: Arc<SignerMapper>) -> Result<Self, SignerError> {
+    pub fn build(
+        name: &str,
+        conf: &Pkcs11SignerConfig,
+        probe_interval: Duration,
+        mapper: Arc<SignerMapper>,
+    ) -> Result<Self, SignerError> {
         // Signer initialization should not block Krill startup. As such we verify that we are able to load the PKCS#11
         // library don't we initialize the PKCS#11 interface yet because we don't know what it's code will do. If it
         // were to block while trying to connect to a remote server it would block Krill from starting up completely.
@@ -164,7 +195,7 @@ impl Pkcs11Signer {
         let server = Arc::new(StatefulProbe::new(
             name.to_string(),
             Arc::new(conf.try_into()?),
-            Duration::from_secs(30),
+            probe_interval,
         ));
 
         let s = Pkcs11Signer {
@@ -238,6 +269,12 @@ struct UsableServerState {
     /// Therefore we hold a reference to the login session so that all future sessions are considered logged in.
     /// The Drop impl for Pkcs11Session will log the session out if logged in.
     login_session: Option<Pkcs11Session>,
+
+    retry_interval: Duration,
+
+    backoff_multiplier: f64,
+
+    retry_timeout: Duration,
 }
 
 impl UsableServerState {
@@ -247,6 +284,9 @@ impl UsableServerState {
         slot_id: CK_SLOT_ID,
         login_mode: LoginMode,
         login_session: Option<Pkcs11Session>,
+        retry_interval: Duration,
+        backoff_multiplier: f64,
+        retry_timeout: Duration,
     ) -> UsableServerState {
         UsableServerState {
             context,
@@ -254,6 +294,9 @@ impl UsableServerState {
             slot_id,
             login_mode,
             login_session,
+            retry_interval,
+            backoff_multiplier,
+            retry_timeout,
         }
     }
 
@@ -475,7 +518,16 @@ impl Pkcs11Signer {
         );
         let login_mode = conn_settings.login_mode;
 
-        let state = UsableServerState::new(context, server_info, slot_id, login_mode, login_session);
+        let state = UsableServerState::new(
+            context,
+            server_info,
+            slot_id,
+            login_mode,
+            login_session,
+            conn_settings.retry_interval,
+            conn_settings.backoff_multiplier,
+            conn_settings.retry_timeout,
+        );
 
         Ok(state)
     }
@@ -500,14 +552,6 @@ impl Pkcs11Signer {
     {
         let signer_name = &self.name;
 
-        // Define the backoff policy to use
-        let backoff_policy = ExponentialBackoff {
-            initial_interval: RETRY_REQ_AFTER,
-            multiplier: RETRY_REQ_AFTER_MULTIPLIER,
-            max_elapsed_time: Some(RETRY_REQ_UNTIL_MAX),
-            ..Default::default()
-        };
-
         // Define a notify callback to customize messages written to the logger
         let notify = |err, next: Duration| {
             warn!(
@@ -531,7 +575,16 @@ impl Pkcs11Signer {
 
         // Don't even bother going round the retry loop if we haven't yet successfully connected to the PKCS#11 server
         // and verified its capabilities:
-        let _ = self.server.status(Self::probe_server)?;
+        let status = self.server.status(Self::probe_server)?;
+        let state = status.state()?;
+
+        // Define the backoff policy to use
+        let backoff_policy = ExponentialBackoff {
+            initial_interval: state.retry_interval,
+            multiplier: state.backoff_multiplier,
+            max_elapsed_time: Some(state.retry_timeout),
+            ..Default::default()
+        };
 
         // Try (and retry if needed) the requested operation.
         let res = backoff::retry_notify(backoff_policy, op, notify).or_else(|err| {

@@ -1,4 +1,4 @@
-use std::{path::Path, sync::Arc};
+use std::{path::Path, sync::Arc, time::Duration};
 
 use rpki::repository::{
     aspa::{Aspa, AspaBuilder},
@@ -59,21 +59,29 @@ use std::collections::HashMap;
 /// subtly different interfaces in the same struct AND implement management of signers and dispatch to the correct
 /// signer all in one place, and that quickly becomes harder to read, understand and maintain.
 
-type SignerBuilderFn =
-    fn(&SignerType, SignerFlags, &Path, &str, &Option<Arc<SignerMapper>>) -> KrillResult<SignerProvider>;
+type SignerBuilderFn = fn(
+    &SignerType,
+    SignerFlags,
+    &Path,
+    &str,
+    std::time::Duration,
+    &Option<Arc<SignerMapper>>,
+) -> KrillResult<SignerProvider>;
 
 #[derive(Debug)]
 pub struct KrillSignerBuilder<'a> {
     work_dir: &'a Path,
+    probe_interval: Duration,
     signer_configs: &'a [SignerConfig],
     default_signer: Option<&'a SignerConfig>,
     one_off_signer: Option<&'a SignerConfig>,
 }
 
 impl<'a> KrillSignerBuilder<'a> {
-    pub fn new(work_dir: &'a Path, signer_configs: &'a [SignerConfig]) -> Self {
+    pub fn new(work_dir: &'a Path, probe_interval: Duration, signer_configs: &'a [SignerConfig]) -> Self {
         Self {
             work_dir,
+            probe_interval,
             signer_configs,
             default_signer: None,
             one_off_signer: None,
@@ -126,7 +134,13 @@ impl<'a> KrillSignerBuilder<'a> {
             ));
         }
 
-        KrillSigner::build(self.work_dir, self.signer_configs, default_signer, one_off_signer)
+        KrillSigner::build(
+            self.work_dir,
+            self.probe_interval,
+            self.signer_configs,
+            default_signer,
+            one_off_signer,
+        )
     }
 }
 
@@ -138,6 +152,7 @@ pub struct KrillSigner {
 impl KrillSigner {
     fn build(
         work_dir: &Path,
+        probe_interval: Duration,
         signer_configs: &[SignerConfig],
         default_signer: &SignerConfig,
         one_off_signer: &SignerConfig,
@@ -149,6 +164,7 @@ impl KrillSigner {
         let signers = Self::build_signers(
             signer_builder,
             work_dir,
+            probe_interval,
             &signer_mapper,
             signer_configs,
             default_signer,
@@ -265,6 +281,7 @@ impl KrillSigner {
     fn build_signers(
         signer_builder: SignerBuilderFn,
         work_dir: &Path,
+        probe_interval: std::time::Duration,
         mapper: &Option<Arc<SignerMapper>>,
         configs: &[SignerConfig],
         default_signer: &SignerConfig,
@@ -287,7 +304,14 @@ impl KrillSigner {
                 config.name, config.signer_type, flags
             );
 
-            let signer = (signer_builder)(&config.signer_type, flags, work_dir, &config.name, mapper)?;
+            let signer = (signer_builder)(
+                &config.signer_type,
+                flags,
+                work_dir,
+                &config.name,
+                probe_interval,
+                mapper,
+            )?;
 
             signers.push(signer);
         }
@@ -301,6 +325,7 @@ fn signer_builder(
     flags: SignerFlags,
     work_dir: &Path,
     name: &str,
+    probe_interval: Duration,
     mapper: &Option<Arc<SignerMapper>>,
 ) -> KrillResult<SignerProvider> {
     match r#type {
@@ -317,12 +342,12 @@ fn signer_builder(
         }
         #[cfg(feature = "hsm")]
         SignerType::Pkcs11(conf) => {
-            let signer = Pkcs11Signer::build(name, &conf, mapper.as_ref().unwrap().clone())?;
+            let signer = Pkcs11Signer::build(name, &conf, probe_interval, mapper.as_ref().unwrap().clone())?;
             Ok(SignerProvider::Pkcs11(flags, signer))
         }
         #[cfg(feature = "hsm")]
         SignerType::Kmip(conf) => {
-            let signer = KmipSigner::build(name, &conf, mapper.as_ref().unwrap().clone())?;
+            let signer = KmipSigner::build(name, &conf, probe_interval, mapper.as_ref().unwrap().clone())?;
             Ok(SignerProvider::Kmip(flags, signer))
         }
     }
@@ -336,7 +361,7 @@ fn signer_builder(
     not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11"))
 ))]
 pub mod tests {
-    use std::path::PathBuf;
+    use std::{path::PathBuf, time::Duration};
 
     use crate::{
         commons::crypto::signers::mocksigner::{MockSigner, MockSignerCallCounts},
@@ -351,8 +376,9 @@ pub mod tests {
     fn mock_signer_builder(
         r#type: &SignerType,
         flags: SignerFlags,
-        _: &Path,
+        _work_dir: &Path,
         name: &str,
+        _probe_interval: Duration,
         mapper: &Option<Arc<SignerMapper>>,
     ) -> KrillResult<SignerProvider> {
         let call_counts = Arc::new(MockSignerCallCounts::new());
@@ -376,9 +402,11 @@ pub mod tests {
         let mut config = config_fragment_to_config_object(signers_config_fragment).unwrap();
         config.process().map_err(|err| Error::ConfigError(err.to_string()))?;
         let mapper = Some(mapper);
+        let probe_interval = std::time::Duration::from_secs(1);
         KrillSigner::build_signers(
             mock_signer_builder,
             work_dir,
+            probe_interval,
             &mapper,
             &config.signers,
             config.default_signer(),

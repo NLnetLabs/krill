@@ -226,6 +226,16 @@ impl ConfigDefaults {
                 client_cert_private_key_path: Some(PathBuf::from_str("test-resources/pykmip/server.key").unwrap()),
                 server_cert_path: Some(PathBuf::from_str("test-resources/pykmip/server.crt").unwrap()),
                 server_ca_cert_path: Some(PathBuf::from_str("test-resources/pykmip/ca.crt").unwrap()),
+                retry_seconds: KmipSignerConfig::default_retry_seconds(),
+                backoff_multiplier: KmipSignerConfig::default_backoff_multiplier(),
+                max_retry_seconds: KmipSignerConfig::default_max_retry_seconds(),
+                connect_timeout_seconds: KmipSignerConfig::default_connect_timeout_seconds(),
+                read_timeout_seconds: KmipSignerConfig::default_read_timeout_seconds(),
+                write_timeout_seconds: KmipSignerConfig::default_write_timeout_seconds(),
+                max_lifetime_seconds: KmipSignerConfig::default_max_lifetime_seconds(),
+                max_idle_seconds: KmipSignerConfig::default_max_idle_seconds(),
+                max_connections: KmipSignerConfig::default_max_connections(),
+                max_response_bytes: KmipSignerConfig::default_max_response_bytes(),
             };
             vec![SignerConfig::new(
                 DEFAULT_KMIP_SIGNER_NAME.to_string(),
@@ -241,12 +251,19 @@ impl ConfigDefaults {
                 user_pin: Some("1234".to_string()),
                 slot: SlotIdOrLabel::Label("My token 1".to_string()),
                 login: true,
+                retry_seconds: Pkcs11SignerConfig::default_retry_seconds(),
+                backoff_multiplier: Pkcs11SignerConfig::default_backoff_multiplier(),
+                max_retry_seconds: Pkcs11SignerConfig::default_max_retry_seconds(),
             };
             vec![SignerConfig::new(
                 DEFAULT_PKCS11_SIGNER_NAME.to_string(),
                 SignerType::Pkcs11(signer_config),
             )]
         }
+    }
+
+    pub fn signer_probe_retry_seconds() -> u64 {
+        30
     }
 }
 
@@ -372,6 +389,9 @@ pub struct Config {
 
     #[serde(default, deserialize_with = "deserialize_signer_ref")]
     pub one_off_signer: SignerReference,
+
+    #[serde(default = "ConfigDefaults::signer_probe_retry_seconds")]
+    pub signer_probe_retry_seconds: u64,
 
     #[serde(default = "ConfigDefaults::signers")]
     pub signers: Vec<SignerConfig>,
@@ -699,6 +719,7 @@ impl Config {
 
         let default_signer = SignerReference::default();
         let one_off_signer = SignerReference::default();
+        let signer_probe_retry_seconds = ConfigDefaults::signer_probe_retry_seconds();
 
         // Multiple signers are only needed and can only be configured when the "hsm" feature is enabled.
         #[cfg(not(feature = "hsm"))]
@@ -812,6 +833,7 @@ impl Config {
             default_signer,
             one_off_signer,
             signers,
+            signer_probe_retry_seconds,
             ca_refresh_seconds,
             ca_refresh_parents_batch_size,
             suspend_child_after_inactive_seconds,

@@ -26,14 +26,19 @@ impl ConnectionManager {
     #[rustfmt::skip]
     pub fn create_connection_pool(
         conn_settings: Arc<ConnectionSettings>,
-        max_size: u32,
+        max_response_bytes: u32,
+        max_life_time: Duration,
+        max_idle_time: Duration,
     ) -> Result<r2d2::Pool<ConnectionManager>, SignerError> {
+        let max_life_time = Some(max_life_time);
+        let max_idle_time = Some(max_idle_time);
+
         let pool = r2d2::Pool::builder()
             // Don't pre-create idle connections to the KMIP server
             .min_idle(Some(0))
 
             // Create at most this many concurrent connections to the KMIP server
-            .max_size(max_size)
+            .max_size(max_response_bytes)
 
             // Don't verify that a connection is usable when fetching it from the pool (as doing so requires sending a
             // request to the server and we might as well just try the actual request that we want the connection for)
@@ -43,16 +48,16 @@ impl ConnectionManager {
             // users who shouldn't know or care that we use the r2d2 crate.
             .error_handler(Box::new(ErrorLoggingHandler))
 
-            // Don't keep using the same connection for longer than around 30 minutes (unless in use in which case it
+            // Don't keep using the same connection for longer than around N minutes (unless in use in which case it
             // will wait until the connection is returned to the pool before closing it) - maybe long held connections
             // would run into problems with some firewalls.
-            .max_lifetime(Some(Duration::from_secs(60*30)))
+            .max_lifetime(max_life_time)
 
-            // Don't keep connections open that were not used in the last 10 minutes.
-            .idle_timeout(Some(Duration::from_secs(60*10)))
+            // Don't keep connections open that were not used in the last N minutes.
+            .idle_timeout(max_idle_time)
 
-            // Don't wait longer than 30 seconds for a new connection to be established, instead try again to connect.
-            .connection_timeout(Duration::from_secs(30))
+            // Don't wait longer than N seconds for a new connection to be established, instead try again to connect.
+            .connection_timeout(conn_settings.connect_timeout.unwrap_or(Duration::from_secs(30)))
 
             // Use our connection manager to create connections in the pool and to verify their health
             .build(ConnectionManager { conn_settings })?;

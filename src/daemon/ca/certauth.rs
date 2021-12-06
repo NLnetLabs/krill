@@ -2154,12 +2154,15 @@ impl CertAuth {
 mod tests {
     use super::*;
     use crate::{commons::crypto::KrillSignerBuilder, daemon::config::ConfigDefaults, test};
+    use std::time::Duration;
 
     #[test]
     fn generate_id_cert() {
         test::test_under_tmp(|d| {
             let signers = ConfigDefaults::signers();
-            let signer = KrillSignerBuilder::new(&d, &signers).build().unwrap();
+            let signer = KrillSignerBuilder::new(&d, Duration::from_secs(1), &signers)
+                .build()
+                .unwrap();
             let id = Rfc8183Id::generate(&signer).unwrap();
             id.cert.validate_ta().unwrap();
         });
