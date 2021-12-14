@@ -1,16 +1,7 @@
 # Change Log
 
-<<<<<<< HEAD
-## 0.9.3 (RC3) 'The Thundering Herd'
+## 0.9.3 'The Thundering Herd'
 
-RC3 fixes the following issues in RC2:
-- Use the, now official, ASPA OID (#700)
-- Re-issue ASPA objects on key rolls (717)
-
-=======
-## 0.9.3 (RC2) 'The Thundering Herd'
-
->>>>>>> main
 This release adds the following features and fixes:
 - Prevent a thundering herd of hosted CAs publishing at the same time (#692) 
 - Re-issue ROAs to ensure that short EE subject names are used (#700)
@@ -25,7 +16,6 @@ https://krill.docs.nlnetlabs.nl/en/prototype-aspa-support/manage-aspas.html
 
 The full list of changes can be found here:
 https://github.com/NLnetLabs/krill/projects/18
-
 
 ## 0.9.2 'Motive and Opportunity'
 
