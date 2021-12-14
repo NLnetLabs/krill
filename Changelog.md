@@ -3,6 +3,12 @@
 Please see [here](https://github.com/NLnetLabs/krill/projects?query=is%3Aopen+sort%3Aname-asc)
 for planned releases.
 
+## 0.7.5 'Time's Up'
+
+This release is not intended for public use, please upgrade to the latest version - which is
+Krill 0.9.3 'Thundering Herd' - if you can. We introduced this version as a quick fix to
+deal with http client timeouts for publishing CAs.
+
 ## 0.7.4 'Multipass!'
 
 There is no need to upgrade to this version. It was created only so that you can continue
