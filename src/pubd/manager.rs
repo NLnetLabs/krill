@@ -459,15 +459,15 @@ mod tests {
         let session = session_dir(&d);
 
         // Should not include
-        assert!(!session_dir_contains_serial(&session, 0));
+        assert!(!session_dir_contains_serial(&session, RRDP_FIRST_SERIAL));
 
         // Should include
-        assert!(session_dir_contains_serial(&session, 1));
-        assert!(session_dir_contains_delta(&session, 1));
-        assert!(session_dir_contains_snapshot(&session, 1));
-        assert!(session_dir_contains_serial(&session, 2));
-        assert!(session_dir_contains_delta(&session, 2));
-        assert!(session_dir_contains_snapshot(&session, 2));
+        assert!(session_dir_contains_serial(&session, RRDP_FIRST_SERIAL + 1));
+        assert!(session_dir_contains_delta(&session, RRDP_FIRST_SERIAL + 1));
+        assert!(session_dir_contains_snapshot(&session, RRDP_FIRST_SERIAL + 1));
+        assert!(session_dir_contains_serial(&session, RRDP_FIRST_SERIAL + 2));
+        assert!(session_dir_contains_delta(&session, RRDP_FIRST_SERIAL + 2));
+        assert!(session_dir_contains_snapshot(&session, RRDP_FIRST_SERIAL + 2));
 
         sleep(Duration::from_secs(2)).await;
 
@@ -482,39 +482,43 @@ mod tests {
         server.publish(alice_handle.clone(), delta).unwrap();
 
         // Should include new snapshot and delta
-        assert!(session_dir_contains_serial(&session, 3));
-        assert!(session_dir_contains_delta(&session, 3));
-        assert!(session_dir_contains_snapshot(&session, 3));
+        assert!(session_dir_contains_serial(&session, RRDP_FIRST_SERIAL + 3));
+        assert!(session_dir_contains_delta(&session, RRDP_FIRST_SERIAL + 3));
+        assert!(session_dir_contains_snapshot(&session, RRDP_FIRST_SERIAL + 3));
 
-        // Should no longer include serial 0 or 1
-        // the total size exceeds the snapshot, and they
-        // have been retained long enough
-        assert!(!session_dir_contains_serial(&session, 0));
-        assert!(!session_dir_contains_serial(&session, 1));
+        // Should no longer include serial RRDP_FIRST_SERIAL or RRDP_FIRST_SERIAL + 1
+        // the total size exceeds the snapshot, and they have been retained long enough
+        assert!(!session_dir_contains_serial(&session, RRDP_FIRST_SERIAL));
+        assert!(!session_dir_contains_serial(&session, RRDP_FIRST_SERIAL + 1));
 
         // Should still include
-        assert!(session_dir_contains_serial(&session, 2));
-        assert!(session_dir_contains_delta(&session, 2));
-        assert!(session_dir_contains_snapshot(&session, 2));
+        assert!(session_dir_contains_serial(&session, RRDP_FIRST_SERIAL + 2));
+        assert!(session_dir_contains_delta(&session, RRDP_FIRST_SERIAL + 2));
+        assert!(session_dir_contains_snapshot(&session, RRDP_FIRST_SERIAL + 2));
 
-        // Wait a bit to ensure that the notification file for serial 2 will be out of scope
+        // Wait a bit to ensure that the notification file for serial RRDP_FIRST_SERIAL + 2 will be out of scope
         sleep(Duration::from_secs(2)).await;
 
         // Removing the publisher should remove its contents
         server.remove_publisher(alice_handle, &actor).unwrap();
 
         // new snapshot should be published, and should be empty now
-        assert!(session_dir_contains_snapshot(&session, 4));
-        let snapshot_bytes = file::read(&RrdpServer::session_dir_snapshot(&session, 4).unwrap().unwrap()).unwrap();
+        assert!(session_dir_contains_snapshot(&session, RRDP_FIRST_SERIAL + 4));
+        let snapshot_bytes = file::read(
+            &RrdpServer::session_dir_snapshot(&session, RRDP_FIRST_SERIAL + 4)
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
         let snapshot_xml = from_utf8(&snapshot_bytes).unwrap();
         assert!(!snapshot_xml.contains("/alice/"));
 
-        // We expect that the delta for serial 2 is still there because it is still referenced,
+        // We expect that the delta for serial RRDP_FIRST_SERIAL + 2 is still there because it is still referenced,
         // but the snapshot is gone because it is no longer referenced and the notification for
-        // serial 2 is now more than 1 second old (1s is the retention time configured for the test)
-        assert!(session_dir_contains_serial(&session, 2));
-        assert!(session_dir_contains_delta(&session, 2));
-        assert!(!session_dir_contains_snapshot(&session, 2));
+        // serial +2 is now more than 1 second old (1s is the retention time configured for the test)
+        assert!(session_dir_contains_serial(&session, RRDP_FIRST_SERIAL + 2));
+        assert!(session_dir_contains_delta(&session, RRDP_FIRST_SERIAL + 2));
+        assert!(!session_dir_contains_snapshot(&session, RRDP_FIRST_SERIAL + 2));
 
         let _ = fs::remove_dir_all(d);
     }
@@ -565,7 +569,8 @@ mod tests {
         // Find RRDP files on disk
         let stats_before = server.repo_stats().unwrap();
         let session_before = stats_before.session();
-        let snapshot_before_session_reset = find_in_session_and_serial_dir(&d, &session_before, 1, "snapshot.xml");
+        let snapshot_before_session_reset =
+            find_in_session_and_serial_dir(&d, &session_before, RRDP_FIRST_SERIAL + 1, "snapshot.xml");
 
         assert!(snapshot_before_session_reset.is_some());
 
@@ -576,13 +581,15 @@ mod tests {
         let stats_after = server.repo_stats().unwrap();
         let session_after = stats_after.session();
 
-        let snapshot_after_session_reset = find_in_session_and_serial_dir(&d, &session_after, 0, "snapshot.xml");
+        let snapshot_after_session_reset =
+            find_in_session_and_serial_dir(&d, &session_after, RRDP_FIRST_SERIAL, "snapshot.xml");
         assert_ne!(snapshot_before_session_reset, snapshot_after_session_reset);
 
         assert!(snapshot_after_session_reset.is_some());
 
         // and clean up old dir
-        let snapshot_before_session_reset = find_in_session_and_serial_dir(&d, &session_before, 1, "snapshot.xml");
+        let snapshot_before_session_reset =
+            find_in_session_and_serial_dir(&d, &session_before, RRDP_FIRST_SERIAL + 1, "snapshot.xml");
 
         assert!(snapshot_before_session_reset.is_none());
 
