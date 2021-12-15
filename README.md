@@ -28,7 +28,7 @@ This release includes the following bug fix for the Krill Publication Server.
 
 Note: if you are using Krill for RPKI CA functions only, and you had already
 upgraded to version 0.9.3 then there is no immediate need to upgrade to this
-version. If you are running a version from before 0.9.3, then you still
+version. If you are running a version from before 0.9.3, then you are still
 advised to upgrade to this version for the reasons list under version 0.9.3.
 
 ## 0.9.3 'The Thundering Herd'
