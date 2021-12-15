@@ -324,6 +324,12 @@ mod tests {
     async fn should_publish_files() {
         let d = test::tmp_dir();
         let server = make_server(&d);
+        let session = session_dir(&d);
+
+        // Check that the server starts with dir for serial 1 for RRDP
+        // and does not use 0 (RFC 8182)
+        assert!(!session_dir_contains_serial(&session, 0));
+        assert!(session_dir_contains_serial(&session, RRDP_FIRST_SERIAL));
 
         // set up server with default repository, and publisher alice
         let alice = publisher_alice(&d);
@@ -455,8 +461,6 @@ mod tests {
         //------------------------------------------------------
         // Check that old serials are cleaned
         //------------------------------------------------------
-
-        let session = session_dir(&d);
 
         // Should not include
         assert!(!session_dir_contains_serial(&session, RRDP_FIRST_SERIAL));
