@@ -24,7 +24,9 @@ use crate::{
         },
         util::KrillVersion,
     },
-    constants::{KRILL_VERSION, PUBSERVER_CONTENT_DIR, PUBSERVER_DFLT, PUBSERVER_DIR, REPOSITORY_RRDP_DIR},
+    constants::{
+        KRILL_VERSION, PUBSERVER_CONTENT_DIR, PUBSERVER_DFLT, PUBSERVER_DIR, REPOSITORY_RRDP_DIR, RRDP_FIRST_SERIAL,
+    },
     daemon::config::Config,
     pubd::{
         PublisherStats, RepoStats, RepositoryAccess, RepositoryAccessInitDetails, RepositoryContent, RrdpServer,
@@ -402,7 +404,7 @@ impl OldRrdpServer {
 
         let snapshot = OldSnapshot::create(session);
 
-        let serial = 0;
+        let serial = RRDP_FIRST_SERIAL;
         let snapshot_uri = Self::new_snapshot_uri(&rrdp_base_uri, &session, serial);
         let snapshot_path = Self::new_snapshot_path(&rrdp_base_dir, &session, serial);
         let snapshot_hash = HexEncodedHash::from_content(snapshot.xml().as_slice());
