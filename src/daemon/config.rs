@@ -133,6 +133,10 @@ impl ConfigDefaults {
         None
     }
 
+    fn post_protocol_msg_timeout_seconds() -> u64 {
+        240 // 4 minutes by default should be plenty in most cases
+    }
+
     fn bgp_risdumps_enabled() -> bool {
         true
     }
@@ -284,6 +288,9 @@ pub struct Config {
 
     #[serde(default = "ConfigDefaults::post_limit_rfc6492")]
     pub post_limit_rfc6492: u64,
+
+    #[serde(default = "ConfigDefaults::post_protocol_msg_timeout_seconds")]
+    pub post_protocol_msg_timeout_seconds: u64,
 
     #[serde(default = "ConfigDefaults::rfc6492_log_dir")]
     pub rfc6492_log_dir: Option<PathBuf>,
@@ -578,6 +585,7 @@ impl Config {
             dir.push("rfc6492");
             Some(dir)
         };
+        let post_protocol_msg_timeout_seconds = ConfigDefaults::post_protocol_msg_timeout_seconds();
 
         let bgp_risdumps_enabled = false;
         let bgp_risdumps_v4_uri = ConfigDefaults::bgp_risdumps_v4_uri();
@@ -669,6 +677,7 @@ impl Config {
             rfc8181_log_dir,
             post_limit_rfc6492,
             rfc6492_log_dir,
+            post_protocol_msg_timeout_seconds,
             bgp_risdumps_enabled,
             bgp_risdumps_v4_uri,
             bgp_risdumps_v6_uri,
