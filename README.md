@@ -23,10 +23,16 @@ For more information please refer to the [documentation](https://krill.docs.nlne
 
 ## 0.9.4 'One shall be the number thou shalt count from'
 
-This release includes the following bug fix for the Krill Publication Server.
+This release includes the following:
 - RRDP serial should start from 1, not 0 (#741)
+- Allow configuring RFC6492/8181 client timeouts (#743)
 
-Note: if you are using Krill for RPKI CA functions only, and you had already
+The first addresses a non-critical bug found when running Krill as a Publication
+Server. The second addresses an issue seen in Krill 0.7.3 running with 100s of
+CAs in a single Krill instance - timeouts have not been seen in Krill 0.9.x - but
+it does not hurt to give operators control over this configuration.
+
+If you are using Krill for RPKI CA functions only, and you have already
 upgraded to version 0.9.3 then there is no immediate need to upgrade to this
 version. If you are running a version from before 0.9.3, then you are still
 advised to upgrade to this version for the reasons list under version 0.9.3.
