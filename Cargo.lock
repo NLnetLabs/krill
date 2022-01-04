@@ -300,6 +300,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "cryptoki"
+version = "0.3.0"
+source = "git+https://github.com/parallaxsecond/rust-cryptoki/#1eb4b10cf4caf7a325576a68fee6bb5c39c50589"
+dependencies = [
+ "cryptoki-sys",
+ "derivative",
+ "libloading",
+ "log",
+]
+
+[[package]]
+name = "cryptoki-sys"
+version = "0.1.2"
+source = "git+https://github.com/parallaxsecond/rust-cryptoki/#1eb4b10cf4caf7a325576a68fee6bb5c39c50589"
+dependencies = [
+ "libloading",
+ "target-lexicon",
+]
+
+[[package]]
 name = "ctrlc"
 version = "3.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -307,6 +327,17 @@ checksum = "a19c6cedffdc8c03a3346d723eb20bd85a13362bb96dc2ac000842c6381ec7bf"
 dependencies = [
  "nix",
  "winapi",
+]
+
+[[package]]
+name = "derivative"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fcc3dd5e9e9c0b295d6e1e4d811fb6f157d5ffd784b8d202fc62eac8035a770b"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -856,6 +887,7 @@ dependencies = [
  "chrono",
  "clap",
  "clokwerk",
+ "cryptoki",
  "ctrlc",
  "fern",
  "futures",
@@ -872,7 +904,6 @@ dependencies = [
  "openidconnect",
  "openssl",
  "oso",
- "pkcs11",
  "r2d2",
  "rand 0.8.4",
  "regex",
@@ -960,11 +991,11 @@ dependencies = [
 
 [[package]]
 name = "libloading"
-version = "0.5.2"
+version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2b111a074963af1d37a139918ac6d49ad1d0d5e47f72fd55388619691a7d753"
+checksum = "afe203d669ec979b7128619bae5a63b7b42e9203c1b29146079ee05e2f604b52"
 dependencies = [
- "cc",
+ "cfg-if",
  "winapi",
 ]
 
@@ -1115,17 +1146,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f6bb902e437b6d86e03cce10a7e2af662292c5dfef23b65899ea3ac9354ad44"
 dependencies = [
  "winapi",
-]
-
-[[package]]
-name = "num-bigint"
-version = "0.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "090c7f9998ee0ff65aa5b723e4009f7b217707f1fb5ea551329cc4d6231fb304"
-dependencies = [
- "autocfg",
- "num-integer",
- "num-traits",
 ]
 
 [[package]]
@@ -1364,16 +1384,6 @@ name = "pin-utils"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
-
-[[package]]
-name = "pkcs11"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3aca6d67e4c8613bfe455599d0233d00735f85df2001f6bfd9bb7ac0496b10af"
-dependencies = [
- "libloading",
- "num-bigint",
-]
 
 [[package]]
 name = "pkg-config"
@@ -2010,6 +2020,12 @@ dependencies = [
  "log",
  "time",
 ]
+
+[[package]]
+name = "target-lexicon"
+version = "0.12.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d9bffcddbc2458fa3e6058414599e3c838a022abae82e5c67b4f7f80298d5bff"
 
 [[package]]
 name = "tempfile"
