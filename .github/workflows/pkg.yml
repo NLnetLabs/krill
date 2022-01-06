@@ -59,16 +59,6 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v1
 
-    # Install Rust the hard way rather than using a GH Action because the action doesn't work inside a Docker container.
-    - name: Install Rust
-      env:
-        DEBIAN_FRONTEND: noninteractive
-      run: |
-        apt-get update
-        apt-get install -y curl
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --profile minimal -y
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-
     - name: Install cargo cross      
       run: |
         cargo install cross
