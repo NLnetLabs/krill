@@ -79,7 +79,6 @@ jobs:
     env:
       CARGO_DEB_VER: 1.28.0
       CARGO_GENERATE_RPM_VER: 0.4.0
-      CROSS_DOCKER_IN_DOCKER: true
       # A Krill version of the form 'x.y.z-bis' denotes a dev build that is newer than the released x.y.z version but is
       # not yet a new release.
       NEXT_VER_LABEL: bis
