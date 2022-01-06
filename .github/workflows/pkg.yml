@@ -267,7 +267,7 @@ jobs:
             else
               EXTRA_CARGO_DEB_ARGS="--no-build --no-strip --target ${CROSS_TARGET} --output target/debian"
               VARIANT="${OS_NAME}-${OS_REL}-${CROSS_TARGET}"
-              cross --target ${CROSS_TARGET}" --release --locked ${EXTRA_BUILD_ARGS}
+              cross --target ${CROSS_TARGET} --release --locked ${EXTRA_BUILD_ARGS}
             fi
 
             DEB_VER="${PKG_KRILL_VER}-1${OS_REL}"
