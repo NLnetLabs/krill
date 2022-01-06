@@ -142,9 +142,9 @@ jobs:
     - name: Install cross compilation prerequisites
       if: matrix.target != 'x86_64'
       env:
-        TARGET: ${{ matrix.target }}
+        CROSS_TARGET: ${{ matrix.target }}
       run: |
-        rustup target add ${TARGET}
+        rustup target add ${CROSS_TARGET}
         cargo install cross
 
     # Speed up Krill Rust builds by caching unchanged built dependencies.
@@ -200,7 +200,7 @@ jobs:
       env:
         MATRIX_IMAGE: ${{ matrix.image }}
         EXTRA_BUILD_ARGS: ${{ matrix.extra_build_args }}
-        TARGET: ${{ matrix.target }}
+        CROSS_TARGET: ${{ matrix.target }}
       run: |
         # Debian
         # ==============================================================================================================
