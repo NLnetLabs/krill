@@ -354,7 +354,7 @@ jobs:
     - name: Upload package
       uses: actions/upload-artifact@v2
       with:
-        name: ${{ env.OS_NAME }}_${{ env.OS_REL }}
+        name: ${{ env.OS_NAME }}_${{ env.OS_REL }}_${{ matrix.target }}
         path: |
           target/debian/*.deb
           target/generate-rpm/*.rpm
@@ -412,7 +412,7 @@ jobs:
     - name: Download package
       uses: actions/download-artifact@v2
       with:
-        name: ${{ env.OS_NAME }}_${{ env.OS_REL }}
+        name: ${{ env.OS_NAME }}_${{ env.OS_REL }}_${{ matrix.target }}
 
     - name: Add current user to LXD group
       run: |
