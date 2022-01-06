@@ -123,14 +123,6 @@ jobs:
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --profile minimal -y
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
-    - name: Install cross compilation prerequisites
-      if: matrix.target != 'x86_64'
-      env:
-        TARGET: ${{ matrix.target }}
-      run: |
-        rustup target add ${TARGET}
-        cargo install cross
-
     - name: Install compilation and other dependencies
       env:
         DEBIAN_FRONTEND: noninteractive
@@ -146,6 +138,14 @@ jobs:
             yum groupinstall -y "Development Tools"
             ;;
         esac
+
+    - name: Install cross compilation prerequisites
+      if: matrix.target != 'x86_64'
+      env:
+        TARGET: ${{ matrix.target }}
+      run: |
+        rustup target add ${TARGET}
+        cargo install cross
 
     # Speed up Krill Rust builds by caching unchanged built dependencies.
     # See: https://github.com/actions/cache/blob/master/examples.md#rust---cargo
