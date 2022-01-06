@@ -382,6 +382,8 @@ jobs:
         mode:
           - 'fresh-install'
           - 'upgrade-from-published'
+        target:
+          - 'x86_64'
         # if we later add a new O/S or variant we won't have yet ever published
         # the package so can't do a test upgrade over last published version. In
         # that case add lines here like so to disable the upgrade from published
