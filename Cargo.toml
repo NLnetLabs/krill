@@ -151,6 +151,9 @@ depends = "$auto, passwd"
 
 [package.metadata.deb.variants.debian-bullseye]
 
+[package.metadata.deb.variants.debian-bullseye-armv7-unknown-linux-gnueabihf]
+depends = "passwd, libssl1.1"
+
 # END DEBIAN PACKAGING
 # ------------------------------------------------------------------------------
 
