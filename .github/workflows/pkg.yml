@@ -330,6 +330,7 @@ jobs:
       run: |
         case ${OS_NAME} in
           debian|ubuntu)
+            dpkg --info target/debian/*.deb
             lintian -v target/debian/*.deb
             ;;
           centos)
