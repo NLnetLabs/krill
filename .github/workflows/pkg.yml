@@ -67,7 +67,13 @@ jobs:
       env:
         CROSS_TARGET: ${{ matrix.target }}
       run: |
-        cross build --release --no-default-features --features static-openssl --target ${CROSS_TARGET}
+        cross build --locked --release --no-default-features --features static-openssl --target ${CROSS_TARGET}
+
+    - name: Upload built binaries
+      uses: actions/upload-artifact@v2
+      with:
+        name: ${{ matrix.target }}
+        path: target/${{ matrix.target }}/release/krill*
 
   # Use the cargo-deb and cargo-generate-rpm Rust crates to build Debian and RPM packages respectively for installing
   # Krill.
@@ -98,7 +104,6 @@ jobs:
           # Raspbian 11 is based. Disable the multi-user default feature until #751 is fixed.
           - image: 'debian:bullseye'                # Raspbian 11 is based on Debian Bullseye
             target: 'armv7-unknown-linux-gnueabihf' # the Raspberry Pi 4b is armv7
-            extra_build_args: '--no-default-features --features static-openssl'
     env:
       CARGO_DEB_VER: 1.28.0
       CARGO_GENERATE_RPM_VER: 0.4.0
@@ -207,6 +212,13 @@ jobs:
             cargo +1.52.0 install cargo-generate-rpm --version ${CARGO_GENERATE_RPM_VER} --locked
             ;;
         esac
+
+    - name: Download cross compiled binaries
+      if: ${{ matrix.target != 'x86_64' }}
+      id: download
+      uses: actions/download-artifact@v2
+      with:
+        name: ${{ matrix.target }}
 
     # Instruct cargo-deb or cargo-generate-rpm to build the package based on Cargo.toml settings and command line
     # arguments.
