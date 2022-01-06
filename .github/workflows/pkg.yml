@@ -84,9 +84,9 @@ jobs:
       # not yet a new release.
       NEXT_VER_LABEL: bis
     name: pkg
-    runs-on: ubuntu-latest
     # Build on the platform we are targeting in order to avoid https://github.com/rust-lang/rust/issues/57497.
     # Specifying container causes all of the steps in this job to run inside a Docker container.
+    runs-on: ubuntu-latest
     container: ${{ matrix.image }}
 
     steps:
@@ -139,14 +139,6 @@ jobs:
             ;;
         esac
 
-    - name: Install cross compilation prerequisites
-      if: matrix.target != 'x86_64'
-      env:
-        CROSS_TARGET: ${{ matrix.target }}
-      run: |
-        rustup target add ${CROSS_TARGET}
-        cargo install cross
-
     # Speed up Krill Rust builds by caching unchanged built dependencies.
     # See: https://github.com/actions/cache/blob/master/examples.md#rust---cargo
     - name: Cache Dot Cargo
@@ -193,6 +185,14 @@ jobs:
             cargo +1.52.0 install cargo-generate-rpm --version ${CARGO_GENERATE_RPM_VER} --locked
             ;;
         esac
+
+    - name: Cross compile
+      if: matrix.target != 'x86_64'
+      uses: actions-rs/cargo@v1
+      with:
+        use-cross: true
+        command: build
+        args: --target ${{ matrix.target }} --release ${{ matrix.extra_build_args }}
 
     # Instruct cargo-deb or cargo-generate-rpm to build the package based on Cargo.toml settings and command line
     # arguments.
@@ -267,7 +267,6 @@ jobs:
             else
               EXTRA_CARGO_DEB_ARGS="--no-build --no-strip --target ${CROSS_TARGET} --output target/debian"
               VARIANT="${OS_NAME}-${OS_REL}-${CROSS_TARGET}"
-              cross build --target ${CROSS_TARGET} --release --locked ${EXTRA_BUILD_ARGS}
             fi
 
             DEB_VER="${PKG_KRILL_VER}-1${OS_REL}"
