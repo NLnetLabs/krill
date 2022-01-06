@@ -47,12 +47,45 @@ defaults:
     shell: bash --noprofile --norc -eo pipefail -x {0}
 
 jobs:
+  cross:
+    strategy:
+      matrix:
+        target:
+          - 'armv7-unknown-linux-gnueabihf'
+    name: cross
+    runs-on: ubuntu-latest
+    steps:
+    # Git clone the Krill code in the branch we were invoked on.
+    - name: Checkout repository
+      uses: actions/checkout@v1
+
+    # Install Rust the hard way rather than using a GH Action because the action doesn't work inside a Docker container.
+    - name: Install Rust
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        apt-get update
+        apt-get install -y curl
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --profile minimal -y
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+    - name: Install cargo cross      
+      run: |
+        cargo install cross
+
+    - name: Cross compile
+      env:
+        CROSS_TARGET: ${{ matrix.target }}
+      run: |
+        cross build --release --no-default-features --features static-openssl --target ${CROSS_TARGET}
+
   # Use the cargo-deb and cargo-generate-rpm Rust crates to build Debian and RPM packages respectively for installing
   # Krill.
   # See:
   #   - https://github.com/mmstick/cargo-deb
   #   - https://github.com/cat-in-136/cargo-generate-rpm
   pkg:
+    needs: cross
     strategy:
       matrix:
         image: # can't use complex values here, only primitive values are allowed
@@ -83,9 +116,9 @@ jobs:
       # not yet a new release.
       NEXT_VER_LABEL: bis
     name: pkg
+    runs-on: ubuntu-latest
     # Build on the platform we are targeting in order to avoid https://github.com/rust-lang/rust/issues/57497.
     # Specifying container causes all of the steps in this job to run inside a Docker container.
-    runs-on: ubuntu-latest
     container: ${{ matrix.image }}
 
     steps:
@@ -185,14 +218,6 @@ jobs:
             ;;
         esac
 
-    - name: Cross compile
-      if: matrix.target != 'x86_64'
-      uses: actions-rs/cargo@v1
-      with:
-        use-cross: true
-        command: build
-        args: --target ${{ matrix.target }} --release ${{ matrix.extra_build_args }}
-
     # Instruct cargo-deb or cargo-generate-rpm to build the package based on Cargo.toml settings and command line
     # arguments.
     - name: Create the package
@@ -266,6 +291,7 @@ jobs:
             else
               EXTRA_CARGO_DEB_ARGS="--no-build --no-strip --target ${CROSS_TARGET} --output target/debian"
               VARIANT="${OS_NAME}-${OS_REL}-${CROSS_TARGET}"
+              # TODO: fetch the binary built by the 'cross' step
             fi
 
             DEB_VER="${PKG_KRILL_VER}-1${OS_REL}"
