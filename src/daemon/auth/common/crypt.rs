@@ -38,61 +38,10 @@ const POLY1305_TAG_BYTE_LEN: usize = POLY1305_TAG_BIT_LEN / 8;
 const CLEARTEXT_PREFIX_LEN: usize = CHACHA20_NONCE_BYTE_LEN + POLY1305_TAG_BYTE_LEN;
 const UNUSED_AAD: [u8; 0] = [0; 0];
 
-//------------ CrossPlatformDeserializableAtomicU64 -------------------------------------------------------------------
-
-/// This type provides Serde (de)serialization irrespective of target platform, as the Serde crate provided derive
-/// impls only appear to produce code when compiled on x86_64. See: https://github.com/NLnetLabs/krill/issues/751
-#[derive(Debug)]
-struct CrossPlatformDeserializableAtomicU64(AtomicU64);
-
-impl std::ops::Deref for CrossPlatformDeserializableAtomicU64 {
-    type Target = AtomicU64;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for CrossPlatformDeserializableAtomicU64 {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        struct DeserializableAtomicU64Visitor;
-
-        impl<'de> serde::de::Visitor<'de> for DeserializableAtomicU64Visitor {
-            type Value = CrossPlatformDeserializableAtomicU64;
-
-            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                formatter.write_str("an unsigned integer in the range 0..=2^64-1")
-            }
-
-            fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
-            where
-                E: serde::de::Error, {
-                Ok(CrossPlatformDeserializableAtomicU64(AtomicU64::new(v)))
-            }
-        }
-
-        deserializer.deserialize_u64(DeserializableAtomicU64Visitor)
-    }
-}
-
-impl serde::Serialize for CrossPlatformDeserializableAtomicU64 {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_u64(self.0.load(Ordering::SeqCst))
-    }
-}
-
-//------------ NonceState ---------------------------------------------------------------------------------------------
-
 #[derive(Debug, Deserialize, Serialize)]
 pub struct NonceState {
-    sender_unique: [u8; 4],           //   32 bits
-    counter: CrossPlatformDeserializableAtomicU64, // + 64 bits = 96 bits = CHACHA20_NONCE_BIT_LEN
+    sender_unique: [u8; 4], //   32 bits
+    counter: AtomicU64,     // + 64 bits = 96 bits = CHACHA20_NONCE_BIT_LEN
 }
 
 impl NonceState {
@@ -103,7 +52,7 @@ impl NonceState {
 
         Ok(NonceState {
             sender_unique,
-            counter: CrossPlatformDeserializableAtomicU64(AtomicU64::new(0)),
+            counter: AtomicU64::new(0),
         })
     }
 
@@ -119,8 +68,6 @@ impl NonceState {
         nonce
     }
 }
-
-//------------ CryptState ---------------------------------------------------------------------------------------------
 
 pub struct CryptState {
     pub key: [u8; CHACHA20_KEY_BYTE_LEN],
