@@ -69,13 +69,6 @@ jobs:
       run: |
         cross build --locked --release --no-default-features --features static-openssl --target ${CROSS_TARGET}
 
-    # - name: Strip binaries
-    #   env:
-    #     CROSS_TARGET: ${{ matrix.target }}
-    #   run: |
-    #     arm-linux-gnueabihf-strip target/${CROSS_TARGET}/krill
-    #     arm-linux-gnueabihf-strip target/${CROSS_TARGET}/krillc
-
     - name: Upload built binaries
       uses: actions/upload-artifact@v2
       with:
