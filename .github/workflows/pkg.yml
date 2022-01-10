@@ -47,6 +47,14 @@ defaults:
     shell: bash --noprofile --norc -eo pipefail -x {0}
 
 jobs:
+  # Cross-compile packages in a separate job so that we can run it on the GitHub Actions runner host directly rather
+  # than inside a Docker container (as is done by the `pkg` workflow). We do this because we use `cargo cross` to handle
+  # the complexity of using the right compile-time tooling and dependencies for cross compilation to work, and 
+  # `cargo cross` works by launching its own Docker container. Trying to launch a Docker container from within a Docker
+  # container, the so-called Docker-in-Docker scenario, is more difficult for `cargo cross` to handle correctly and
+  # didn't work when I tried it, even with `CROSS_DOCKER_IN_DOCKER=true` set in the environment, hence this approach.
+  #
+  # See: https://github.com/rust-embedded/cross#docker-in-docker
   cross:
     strategy:
       matrix:
