@@ -28,8 +28,6 @@ on:
       - 'tests/e2e/**'
   # Hmm, annoying, do we really have to duplicate this?
   pull_request:
-    branches:
-    - main
     paths-ignore:
       - '.dockerignore'
       - '.github/workflow/pkg.yml'
