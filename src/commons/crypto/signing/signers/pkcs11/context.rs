@@ -195,19 +195,19 @@ impl Pkcs11Context {
 
 impl Pkcs11Context {
     fn initialize(&self, init_args: CInitializeArgs) -> Result<(), Pkcs11Error> {
-        self.logged_cryptoki_call("C_Initialize", |cryptoki| cryptoki.initialize(init_args))
+        self.logged_cryptoki_call("Initialize", |cryptoki| cryptoki.initialize(init_args))
     }
 
     // pub fn finalize(self) -> Result<(), Pkcs11Error> {
-    //     self.logged_cryptoki_call_take("C_Finalize", |cryptoki| Ok(cryptoki.finalize()))
+    //     self.logged_cryptoki_call_take("Finalize", |cryptoki| Ok(cryptoki.finalize()))
     // }
 
     pub fn get_info(&self) -> Result<Info, Pkcs11Error> {
-        self.logged_cryptoki_call("C_GetInfo", |cryptoki| cryptoki.get_library_info())
+        self.logged_cryptoki_call("GetLibraryInfo", |cryptoki| cryptoki.get_library_info())
     }
 
     pub fn get_slot_list(&self, token_present: bool) -> Result<Vec<Slot>, Pkcs11Error> {
-        self.logged_cryptoki_call("C_GetSlotList", |cryptoki| {
+        self.logged_cryptoki_call("GetSlotList", |cryptoki| {
             if token_present {
                 cryptoki.get_slots_with_initialized_token()
             } else {
@@ -217,15 +217,15 @@ impl Pkcs11Context {
     }
 
     pub fn get_slot_info(&self, slot: Slot) -> Result<SlotInfo, Pkcs11Error> {
-        self.logged_cryptoki_call("C_GetSlotInfo", |cryptoki| cryptoki.get_slot_info(slot))
+        self.logged_cryptoki_call("GetSlotInfo", |cryptoki| cryptoki.get_slot_info(slot))
     }
 
     pub fn get_token_info(&self, slot: Slot) -> Result<TokenInfo, Pkcs11Error> {
-        self.logged_cryptoki_call("C_GetTokenInfo", |cryptoki| cryptoki.get_token_info(slot))
+        self.logged_cryptoki_call("GetTokenInfo", |cryptoki| cryptoki.get_token_info(slot))
     }
 
     pub fn open_session(&self, slot: Slot, flags: SessionFlags) -> Result<Session, Pkcs11Error> {
-        self.logged_cryptoki_call("C_OpenSession", |cryptoki| {
+        self.logged_cryptoki_call("OpenSession", |cryptoki| {
             cryptoki.open_session_no_callback(slot, flags)
         })
     }
@@ -237,7 +237,7 @@ impl Pkcs11Context {
         public_key_template: &[Attribute],
         private_key_template: &[Attribute],
     ) -> Result<(ObjectHandle, ObjectHandle), Pkcs11Error> {
-        self.logged_cryptoki_call("C_GenerateKeyPair", |_| {
+        self.logged_cryptoki_call("GenerateKeyPair", |_| {
             session.lock().unwrap().generate_key_pair(mechanism, public_key_template, private_key_template)
         })
     }
@@ -248,11 +248,11 @@ impl Pkcs11Context {
         object: ObjectHandle,
         template: &[AttributeType],
     ) -> Result<Vec<Attribute>, Pkcs11Error> {
-        self.logged_cryptoki_call("C_GetAttributeValue", move |_| session.lock().unwrap().get_attributes(object, template))
+        self.logged_cryptoki_call("GetAttributes", move |_| session.lock().unwrap().get_attributes(object, template))
     }
 
     pub fn login<'a>(&self, session: Arc<Mutex<Session>>, user_type: UserType, pin: Option<&'a str>) -> Result<(), Pkcs11Error> {
-        self.logged_cryptoki_call("C_Login", |_| session.lock().unwrap().login(user_type, pin))
+        self.logged_cryptoki_call("Login", |_| session.lock().unwrap().login(user_type, pin))
     }
 
     pub fn sign(
@@ -262,16 +262,16 @@ impl Pkcs11Context {
         key: ObjectHandle,
         data: &[u8],
     ) -> Result<Vec<u8>, Pkcs11Error> {
-        self.logged_cryptoki_call("C_SignInit & C_Sign", |_| session.lock().unwrap().sign(mechanism, key, data))
+        self.logged_cryptoki_call("Sign", |_| session.lock().unwrap().sign(mechanism, key, data))
     }
 
     pub fn find_objects(&self, session: Arc<Mutex<Session>>, template: &[Attribute]) -> Result<Vec<ObjectHandle>, Pkcs11Error> {
-        self.logged_cryptoki_call("C_FindObjectsInit, C_FindObjects & C_FindObjectsFinal", |_| {
+        self.logged_cryptoki_call("FindObjects", |_| {
             session.lock().unwrap().find_objects(template)
         })
     }
 
     pub fn destroy_object(&self, session: Arc<Mutex<Session>>, object_handle: ObjectHandle) -> Result<(), Pkcs11Error> {
-        self.logged_cryptoki_call("C_DeleteObject", |_| session.lock().unwrap().destroy_object(object_handle))
+        self.logged_cryptoki_call("DestroyObject", |_| session.lock().unwrap().destroy_object(object_handle))
     }
 }
