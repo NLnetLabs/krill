@@ -242,7 +242,7 @@ impl Pkcs11Context {
         })
     }
 
-    pub fn get_attribute_value<'a>(
+    pub fn get_attributes<'a>(
         &self,
         session: Arc<Mutex<Session>>,
         object: ObjectHandle,

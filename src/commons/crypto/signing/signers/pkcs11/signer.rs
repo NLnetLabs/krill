@@ -728,7 +728,7 @@ impl Pkcs11Signer {
 
     fn get_rsa_public_key_bytes(&self, pub_handle: ObjectHandle) -> Result<Bytes, SignerError> {
         let res = self.with_conn("get key pair parts", |conn| {
-            conn.get_attribute_value(pub_handle, &[AttributeType::Modulus, AttributeType::PublicExponent])
+            conn.get_attributes(pub_handle, &[AttributeType::Modulus, AttributeType::PublicExponent])
         })?;
 
         if res.len() == 2 {

@@ -54,7 +54,7 @@ impl Pkcs11Session {
             .generate_key_pair(self.session_handle.clone(), mechanism, pub_template, priv_template)
     }
 
-    pub fn get_attribute_value<'a>(
+    pub fn get_attributes<'a>(
         &self,
         pub_handle: ObjectHandle,
         pub_template: &[AttributeType],
@@ -62,7 +62,7 @@ impl Pkcs11Session {
         self.context
             .read()
             .unwrap()
-            .get_attribute_value(self.session_handle.clone(), pub_handle, pub_template)
+            .get_attributes(self.session_handle.clone(), pub_handle, pub_template)
     }
 
     pub fn login(&self, user_type: UserType, user_pin: Option<&str>) -> Result<(), Pkcs11Error> {
