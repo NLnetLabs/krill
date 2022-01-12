@@ -28,8 +28,6 @@ on:
       - 'tests/e2e/**'
   # Hmm, annoying, do we really have to duplicate this?
   pull_request:
-    branches:
-    - main
     paths-ignore:
       - '.dockerignore'
       - '.github/workflow/pkg.yml'
@@ -146,7 +144,7 @@ jobs:
 
     # Git clone the Krill code in the branch we were invoked on.
     - name: Checkout repository
-      uses: actions/checkout@v1
+      uses: actions/checkout@v2
 
     # Install Rust the hard way rather than using a GH Action because the action doesn't work inside a Docker container.
     - name: Install Rust

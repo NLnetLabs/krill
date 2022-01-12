@@ -1,6 +1,6 @@
-[![GitHub Actions Build Status](https://github.com/NLnetLabs/krill/workflows/CI/badge.svg)](https://github.com/NLnetLabs/krill/actions?query=workflow%3ACI)
+[![GitHub Actions Build Status](https://github.com/NLnetLabs/krill/workflows/CI/badge.svg)](https://github.com/NLnetLabs/krill/actions/workflows/ci.yml)
 [![Rust Crate Status](https://img.shields.io/crates/v/krill.svg?color=brightgreen)](https://crates.io/crates/krill)
-[![Docker Build Status](https://img.shields.io/docker/cloud/build/nlnetlabs/krill.svg)](https://hub.docker.com/r/nlnetlabs/krill)
+[![Docker Build Status](https://github.com/NLnetLabs/krill/actions/workflows/pkg-docker.yml/badge.svg)](https://github.com/NLnetLabs/krill/actions/workflows/pkg-docker.yml)
 [![Documentation Status](https://readthedocs.org/projects/rpki/badge/?version=latest)](https://rpki.readthedocs.io/en/latest/krill/?badge=latest)
 [![E2E Test Status](https://github.com/nlnetlabs/krill/workflows/E2E%20Test/badge.svg)](https://github.com/NLnetLabs/krill/actions?query=workflow%3A%22E2E+Test%22)
 [![](https://img.shields.io/discord/818584154278199396?label=rpki%20on%20discord&logo=discord)](https://discord.gg/8dvKB5Ykhy)
