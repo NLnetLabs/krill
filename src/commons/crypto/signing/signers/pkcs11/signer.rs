@@ -266,8 +266,6 @@ struct UsableServerState {
 
     slot_id: Slot,
 
-    login_mode: LoginMode,
-
     /// When login_mode is NOT LoginMode::LoginRequired this will be None.
     ///
     /// Section 11.6 "Session management functions" of the PKCS#11 v2.20 specification says:
@@ -290,7 +288,6 @@ impl UsableServerState {
         context: ThreadSafePkcs11Context,
         conn_info: String,
         slot_id: Slot,
-        login_mode: LoginMode,
         login_session: Option<Pkcs11Session>,
         retry_interval: Duration,
         backoff_multiplier: f64,
@@ -300,7 +297,6 @@ impl UsableServerState {
             context,
             conn_info,
             slot_id,
-            login_mode,
             login_session,
             retry_interval,
             backoff_multiplier,
@@ -555,13 +551,11 @@ impl Pkcs11Signer {
             "PKCS#11 Signer [token: {}, slot: {}, server: {}, library: {}]",
             token_identification, slot, server_identification, lib_name
         );
-        let login_mode = conn_settings.login_mode;
 
         let state = UsableServerState::new(
             context,
             server_info,
             slot,
-            login_mode,
             login_session,
             conn_settings.retry_interval,
             conn_settings.backoff_multiplier,
