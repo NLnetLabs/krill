@@ -117,7 +117,11 @@ pub struct Actor {
     is_user: bool,
     attributes: Attributes,
     new_auth: Option<Auth>,
+
+    #[cfg_attr(not(feature = "multi-user"), allow(dead_code))]
     policy: Option<AuthPolicy>,
+
+    #[cfg_attr(not(feature = "multi-user"), allow(dead_code))]
     auth_error: Option<ApiAuthError>,
 }
 
