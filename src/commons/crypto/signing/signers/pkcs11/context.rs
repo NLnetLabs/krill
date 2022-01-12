@@ -177,30 +177,12 @@ impl Pkcs11Context {
         }
         res
     }
-
-    // fn logged_cryptoki_call_take<F, T>(self, cryptoki_call_name: &'static str, call: F) -> Result<T, Pkcs11Error>
-    // where
-    //     F: FnOnce(Pkcs11) -> Result<T, Pkcs11Error>,
-    // {
-    //     trace!("{}::{}()", self.lib_file_name, cryptoki_call_name);
-    //     let res = (call)(self.ctx.unwrap());
-    //     if let Err(err) = &res {
-    //         // Warn only as we don't know that this issue really affects Krill thus calling it an error would be a bit
-    //         // extreme.
-    //         warn!("{}::{}() failed: {}", self.lib_file_name, cryptoki_call_name, err);
-    //     }
-    //     res
-    // }
 }
 
 impl Pkcs11Context {
     fn initialize(&self, init_args: CInitializeArgs) -> Result<(), Pkcs11Error> {
         self.logged_cryptoki_call("Initialize", |cryptoki| cryptoki.initialize(init_args))
     }
-
-    // pub fn finalize(self) -> Result<(), Pkcs11Error> {
-    //     self.logged_cryptoki_call_take("Finalize", |cryptoki| Ok(cryptoki.finalize()))
-    // }
 
     pub fn get_info(&self) -> Result<Info, Pkcs11Error> {
         self.logged_cryptoki_call("GetLibraryInfo", |cryptoki| cryptoki.get_library_info())
