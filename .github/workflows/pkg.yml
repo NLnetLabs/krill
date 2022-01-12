@@ -113,14 +113,13 @@ jobs:
             extra_build_args: '--features static-openssl'
 
           # package for the Raspberry Pi 4b as an ARMv7 cross compiled variant of the Debian Bullseye upon which
-          # Raspbian 11 is based. Disable the multi-user default feature until #751 is fixed.
-          - image: 'debian:bullseye'                # Raspbian 11 is based on Debian Bullseye
-            target: 'armv7-unknown-linux-gnueabihf' # the Raspberry Pi 4b is armv7
+          # Raspbian 11 is based.
+          - image: 'debian:bullseye'
+            target: 'armv7-unknown-linux-gnueabihf'
 
-          # package for the ROCK64 as an AARCH64 cross compiled variant of Debian Buster upon which
-          # Armbian 21 is based. Disable the multi-user default feature until #751 is fixed.
-          - image: 'debian:bullseye'                # Raspbian 11 is based on Debian Bullseye
-            target: 'aarch64-unknown-linux-gnu'     # the Raspberry Pi 4b is armv7
+          # package for the ROCK64 as an AARCH64 cross compiled variant of Debian Buster upon which Armbian 21 is based.
+          - image: 'debian:buster'
+            target: 'aarch64-unknown-linux-gnu'
     env:
       CARGO_DEB_VER: 1.28.0
       CARGO_GENERATE_RPM_VER: 0.4.0
