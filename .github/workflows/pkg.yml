@@ -76,7 +76,7 @@ jobs:
       env:
         CROSS_TARGET: ${{ matrix.target }}
       run: |
-        cross build --locked --release --no-default-features --features static-openssl --target ${CROSS_TARGET}
+        cross build --locked --release --features static-openssl --target ${CROSS_TARGET}
 
     - name: Upload built binaries
       uses: actions/upload-artifact@v2
