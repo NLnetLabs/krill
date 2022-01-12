@@ -16,7 +16,7 @@
 use std::{
     collections::{hash_map::Entry, HashMap},
     path::Path,
-    sync::{Arc, RwLock, Mutex},
+    sync::{Arc, Mutex, RwLock},
 };
 
 use cryptoki::error::Error as Pkcs11Error;
@@ -225,9 +225,7 @@ impl Pkcs11Context {
     }
 
     pub fn open_session(&self, slot: Slot, flags: SessionFlags) -> Result<Session, Pkcs11Error> {
-        self.logged_cryptoki_call("OpenSession", |cryptoki| {
-            cryptoki.open_session_no_callback(slot, flags)
-        })
+        self.logged_cryptoki_call("OpenSession", |cryptoki| cryptoki.open_session_no_callback(slot, flags))
     }
 
     pub fn generate_key_pair(
@@ -238,7 +236,10 @@ impl Pkcs11Context {
         private_key_template: &[Attribute],
     ) -> Result<(ObjectHandle, ObjectHandle), Pkcs11Error> {
         self.logged_cryptoki_call("GenerateKeyPair", |_| {
-            session.lock().unwrap().generate_key_pair(mechanism, public_key_template, private_key_template)
+            session
+                .lock()
+                .unwrap()
+                .generate_key_pair(mechanism, public_key_template, private_key_template)
         })
     }
 
@@ -248,10 +249,17 @@ impl Pkcs11Context {
         object: ObjectHandle,
         template: &[AttributeType],
     ) -> Result<Vec<Attribute>, Pkcs11Error> {
-        self.logged_cryptoki_call("GetAttributes", move |_| session.lock().unwrap().get_attributes(object, template))
+        self.logged_cryptoki_call("GetAttributes", move |_| {
+            session.lock().unwrap().get_attributes(object, template)
+        })
     }
 
-    pub fn login<'a>(&self, session: Arc<Mutex<Session>>, user_type: UserType, pin: Option<&'a str>) -> Result<(), Pkcs11Error> {
+    pub fn login<'a>(
+        &self,
+        session: Arc<Mutex<Session>>,
+        user_type: UserType,
+        pin: Option<&'a str>,
+    ) -> Result<(), Pkcs11Error> {
         self.logged_cryptoki_call("Login", |_| session.lock().unwrap().login(user_type, pin))
     }
 
@@ -265,13 +273,17 @@ impl Pkcs11Context {
         self.logged_cryptoki_call("Sign", |_| session.lock().unwrap().sign(mechanism, key, data))
     }
 
-    pub fn find_objects(&self, session: Arc<Mutex<Session>>, template: &[Attribute]) -> Result<Vec<ObjectHandle>, Pkcs11Error> {
-        self.logged_cryptoki_call("FindObjects", |_| {
-            session.lock().unwrap().find_objects(template)
-        })
+    pub fn find_objects(
+        &self,
+        session: Arc<Mutex<Session>>,
+        template: &[Attribute],
+    ) -> Result<Vec<ObjectHandle>, Pkcs11Error> {
+        self.logged_cryptoki_call("FindObjects", |_| session.lock().unwrap().find_objects(template))
     }
 
     pub fn destroy_object(&self, session: Arc<Mutex<Session>>, object_handle: ObjectHandle) -> Result<(), Pkcs11Error> {
-        self.logged_cryptoki_call("DestroyObject", |_| session.lock().unwrap().destroy_object(object_handle))
+        self.logged_cryptoki_call("DestroyObject", |_| {
+            session.lock().unwrap().destroy_object(object_handle)
+        })
     }
 }

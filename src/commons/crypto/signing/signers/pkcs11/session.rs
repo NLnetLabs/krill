@@ -48,10 +48,12 @@ impl Pkcs11Session {
         pub_template: &[Attribute],
         priv_template: &[Attribute],
     ) -> Result<(ObjectHandle, ObjectHandle), Pkcs11Error> {
-        self.context
-            .read()
-            .unwrap()
-            .generate_key_pair(self.session_handle.clone(), mechanism, pub_template, priv_template)
+        self.context.read().unwrap().generate_key_pair(
+            self.session_handle.clone(),
+            mechanism,
+            pub_template,
+            priv_template,
+        )
     }
 
     pub fn get_attributes<'a>(
@@ -76,7 +78,10 @@ impl Pkcs11Session {
     // C_Login immediately prior to calling C_SignInit, and we don't support that yet (would it ever make sense as this
     // could for example require an operator to enter a pin code in a key pad on every signing moment?).
     pub fn sign(&self, mechanism: &Mechanism, key: ObjectHandle, data: &[u8]) -> Result<Vec<u8>, Pkcs11Error> {
-        self.context.read().unwrap().sign(self.session_handle.clone(), mechanism, key, data)
+        self.context
+            .read()
+            .unwrap()
+            .sign(self.session_handle.clone(), mechanism, key, data)
     }
 
     pub fn find_objects(&self, template: &[Attribute]) -> Result<Vec<ObjectHandle>, Pkcs11Error> {
