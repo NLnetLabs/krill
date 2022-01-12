@@ -264,7 +264,7 @@ struct UsableServerState {
 
     conn_info: String,
 
-    slot_id: u64,
+    slot_id: Slot,
 
     login_mode: LoginMode,
 
@@ -289,7 +289,7 @@ impl UsableServerState {
     pub fn new(
         context: ThreadSafePkcs11Context,
         conn_info: String,
-        slot_id: u64,
+        slot_id: Slot,
         login_mode: LoginMode,
         login_session: Option<Pkcs11Session>,
         retry_interval: Duration,
@@ -309,7 +309,7 @@ impl UsableServerState {
     }
 
     pub fn get_connection(&self) -> Result<Pkcs11Session, Pkcs11Error> {
-        Pkcs11Session::new(self.context.clone(), Slot::try_from(self.slot_id).unwrap())
+        Pkcs11Session::new(self.context.clone(), self.slot_id)
     }
 }
 
@@ -560,7 +560,7 @@ impl Pkcs11Signer {
         let state = UsableServerState::new(
             context,
             server_info,
-            slot.id(),
+            slot,
             login_mode,
             login_session,
             conn_settings.retry_interval,
