@@ -14,10 +14,13 @@ use uuid::Uuid;
 
 use rpki::{repository::x509::Time, uri};
 
-use crate::commons::{
-    api::{publication, Base64, HexEncodedHash},
-    error::KrillIoError,
-    util::{file, xml::XmlWriter},
+use crate::{
+    commons::{
+        api::{publication, Base64, HexEncodedHash},
+        error::KrillIoError,
+        util::{file, xml::XmlWriter},
+    },
+    constants::RRDP_FIRST_SERIAL,
 };
 
 const VERSION: &str = "1";
@@ -324,7 +327,7 @@ impl NotificationUpdate {
 
 impl Notification {
     pub fn create(session: RrdpSession, snapshot: SnapshotRef) -> Self {
-        Notification::new(session, 0, snapshot, vec![])
+        Notification::new(session, RRDP_FIRST_SERIAL, snapshot, vec![])
     }
 
     pub fn write_xml(&self, path: &Path) -> Result<(), KrillIoError> {
@@ -634,7 +637,7 @@ impl Snapshot {
         let current_objects = CurrentObjects::default();
         Snapshot {
             session,
-            serial: 0,
+            serial: RRDP_FIRST_SERIAL,
             random: RrdpFileRandom::default(),
             current_objects,
         }
@@ -643,7 +646,7 @@ impl Snapshot {
     pub fn session_reset(&self, session: RrdpSession) -> Self {
         Snapshot {
             session,
-            serial: 0,
+            serial: RRDP_FIRST_SERIAL,
             random: RrdpFileRandom::default(),
             current_objects: self.current_objects.clone(),
         }

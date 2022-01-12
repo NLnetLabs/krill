@@ -32,7 +32,7 @@ use crate::{
     },
     constants::{
         PUBSERVER_CONTENT_DIR, PUBSERVER_DFLT, PUBSERVER_DIR, REPOSITORY_DIR, REPOSITORY_RRDP_ARCHIVE_DIR,
-        REPOSITORY_RRDP_DIR, REPOSITORY_RSYNC_DIR,
+        REPOSITORY_RRDP_DIR, REPOSITORY_RSYNC_DIR, RRDP_FIRST_SERIAL,
     },
     daemon::config::{Config, RepositoryRetentionConfig},
     pubd::{
@@ -551,7 +551,7 @@ impl RrdpServer {
 
         let snapshot = Snapshot::create(session);
 
-        let serial = 0;
+        let serial = RRDP_FIRST_SERIAL;
         let snapshot_uri = snapshot.uri(&rrdp_base_uri);
         let snapshot_path = snapshot.path(&rrdp_base_dir);
         let snapshot_hash = HexEncodedHash::from_content(snapshot.xml().as_slice());

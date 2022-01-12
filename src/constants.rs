@@ -53,6 +53,7 @@ pub const PUBSERVER_BACKUP_DIR: &str = "pubd_bk";
 pub const REPOSITORY_DIR: &str = "repo";
 pub const REPOSITORY_RRDP_DIR: &str = "rrdp";
 pub const REPOSITORY_RRDP_ARCHIVE_DIR: &str = "archive";
+pub const RRDP_FIRST_SERIAL: u64 = 1; // RFC 8182 says we MUST use 1 as the first serial
 pub const REPOSITORY_RSYNC_DIR: &str = "rsync";
 
 pub const STATUS_DIR: &str = "status";
