@@ -262,20 +262,25 @@ jobs:
 
             # Select the correct systemd service unit file for the target operating system
             case ${MATRIX_IMAGE} in
-              ubuntu:xenial|centos:7)   SYSTEMD_SERVICE_UNIT_FILE="krill-ubuntu-xenial.krill.service"   ;;
-              ubuntu:bionic)            SYSTEMD_SERVICE_UNIT_FILE="krill-ubuntu-bionic.krill.service"   ;;
-              ubuntu:focal|centos:8)    SYSTEMD_SERVICE_UNIT_FILE="krill-ubuntu-focal.krill.service"    ;;
-              debian:stretch)           SYSTEMD_SERVICE_UNIT_FILE="krill-debian-stretch.krill.service"  ;;
-              debian:buster)            SYSTEMD_SERVICE_UNIT_FILE="krill-debian-buster.krill.service"   ;;
-              debian:bullseye)          SYSTEMD_SERVICE_UNIT_FILE="krill-debian-bullseye.krill.service" ;;
-              *) echo >&2 "ERROR: Unsupported matrix image value: '${MATRIX_IMAGE}'" ;;
+              centos:7)
+                SYSTEMD_SERVICE_UNIT_FILE="krill-ubuntu-xenial.krill.service"
+                # yum install fails on older CentOS with the default LZMA compression used by cargo generate-rpm since v0.5.0
+                EXTRA_CARGO_GENERATE_RPM_ARGS="--payload-compress gzip"
+                ;;
+              centos:8)
+                SYSTEMD_SERVICE_UNIT_FILE="krill-ubuntu-focal.krill.service"
+                EXTRA_CARGO_GENERATE_RPM_ARGS=""
+                ;;
+              *)
+                echo >&2 "ERROR: Unsupported matrix image value: '${MATRIX_IMAGE}'"
+                ;;
             esac
 
             # Copy the chosen systemd service unit file to where Cargo.toml expects it to be
             mkdir -p target/rpm
             cp pkg/common/${SYSTEMD_SERVICE_UNIT_FILE} target/rpm/krill.service
 
-            cargo generate-rpm
+            cargo generate-rpm ${EXTRA_CARGO_GENERATE_RPM_ARGS}
             ;;
         esac
 
