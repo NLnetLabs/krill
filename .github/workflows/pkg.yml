@@ -240,8 +240,19 @@ jobs:
             echo "  * See: https://github.com/NLnetLabs/krill/releases/tag/v${KRILL_NEW_VER}" >>target/debian/changelog
             echo " -- maintainer ${MAINTAINER}  ${RFC5322_TS}" >>target/debian/changelog
 
+            case ${MATRIX_IMAGE} in
+              ubuntu:xenial)
+                # Disable use of XZ compression on Xenial as Lintian fails with error
+                #   E: krill: malformed-deb-archive newer compressed control.tar.xz
+                EXTRA_CARGO_DEB_ARGS="--fast"
+                ;;
+              *)
+                EXTRA_CARGO_DEB_ARGS=""
+                ;;
+            esac
+
             DEB_VER="${PKG_KRILL_VER}-1${OS_REL}"
-            cargo deb --variant ${OS_NAME}-${OS_REL} --deb-version ${DEB_VER} -v -- --locked ${EXTRA_BUILD_ARGS}
+            cargo deb --variant ${OS_NAME}-${OS_REL} --deb-version ${DEB_VER} -v ${EXTRA_CARGO_DEB_ARGS} -- --locked ${EXTRA_BUILD_ARGS}
             ;;
           centos)
             # Build and strip Krill as cargo generate-rpm doesn't do this for us
