@@ -343,11 +343,11 @@ jobs:
         case ${OS_NAME} in
           debian|ubuntu)
             dpkg --info target/debian/*.deb
-            if [[ "${CROSS_TARGET}" == "x86_64" ]]; then
-              EXTRA_LINTIAN_ARGS=
-            else
-              EXTRA_LINTIAN_ARGS="-x unstripped-binary-or-object"
-            fi
+            #if [[ "${CROSS_TARGET}" == "x86_64" ]]; then
+            EXTRA_LINTIAN_ARGS=
+            #else
+            #  EXTRA_LINTIAN_ARGS="-x unstripped-binary-or-object"
+            #fi
             lintian --version
             lintian -v ${EXTRA_LINTIAN_ARGS} target/debian/*.deb
             ;;
