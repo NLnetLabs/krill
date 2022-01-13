@@ -348,6 +348,7 @@ jobs:
             else
               EXTRA_LINTIAN_ARGS="-x unstripped-binary-or-object"
             fi
+            lintian --version
             lintian -v ${EXTRA_LINTIAN_ARGS} target/debian/*.deb
             ;;
           centos)
