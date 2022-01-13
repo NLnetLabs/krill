@@ -166,6 +166,7 @@ jobs:
               # which then causes Lintian to fail with error:
               #   E: krill: malformed-deb-archive newer compressed control.tar.xz
               # Passing --fast to cargo-deb to disable use of XZ compression didn't help.
+              # See: https://github.com/kornelski/cargo-deb/issues/12
               EXTRA_CARGO_INSTALL_ARGS="--no-default-features"
             else
               EXTRA_CARGO_INSTALL_ARGS=""
@@ -265,6 +266,7 @@ jobs:
               centos:7)
                 SYSTEMD_SERVICE_UNIT_FILE="krill-ubuntu-xenial.krill.service"
                 # yum install fails on older CentOS with the default LZMA compression used by cargo generate-rpm since v0.5.0
+                # see: https://github.com/cat-in-136/cargo-generate-rpm/issues/30
                 EXTRA_CARGO_GENERATE_RPM_ARGS="--payload-compress gzip"
                 ;;
               centos:8)
