@@ -346,7 +346,7 @@ jobs:
             #if [[ "${CROSS_TARGET}" == "x86_64" ]]; then
             EXTRA_LINTIAN_ARGS=
             #else
-            #  EXTRA_LINTIAN_ARGS="-x unstripped-binary-or-object"
+            #  EXTRA_LINTIAN_ARGS="-X unstripped-binary-or-object"
             #fi
             lintian --version
             lintian -v ${EXTRA_LINTIAN_ARGS} target/debian/*.deb
