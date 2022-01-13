@@ -343,7 +343,12 @@ jobs:
         case ${OS_NAME} in
           debian|ubuntu)
             dpkg --info target/debian/*.deb
-            lintian -v target/debian/*.deb
+            if [[ "${CROSS_TARGET}" == "x86_64" ]]; then
+              EXTRA_LINTIAN_ARGS=
+            else
+              EXTRA_LINTIAN_ARGS="-x unstripped-binary-or-object"
+            fi
+            lintian -v ${EXTRA_LINTIAN_ARGS} target/debian/*.deb
             ;;
           centos)
             # cargo generate-rpm creates RPMs that rpmlint considers to have
