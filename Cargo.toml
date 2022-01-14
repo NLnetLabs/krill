@@ -43,7 +43,7 @@ once_cell             = { version = "^1.7.2", optional = true }
 openidconnect         = { version = "^2.0.0", optional = true, default_features = false }
 openssl               = { version = "^0.10", features = ["v110"] }
 oso                   = { version = "^0.12", optional = true, default_features = false }
-pkcs11                = { version = "^0.5", optional = true }
+cryptoki              = { version = "^0.3", optional = true }
 r2d2                  = { version = "0.8.9", optional = true }
 rand                  = "^0.8"
 regex                 = { version = "^1.4", optional = true, default_features = false, features = ["std"] }
@@ -66,8 +66,8 @@ xml-rs                = "^0.8"
 # `pReserved = ptr::null_mut()` assignment done by `CK_C_INITIALIZE_ARGS::default()` appears to be optimized out. This
 # causes SoftHSMv2 to fail with error CKR_ARGUMENTS_BAD and to log to syslog "SoftHSM.cpp(436): pReserved must be set to
 # NULL_PTR". Disabling optimizations for the pkcs11 crate "solves" this problem.
-[profile.release.package.pkcs11]
-opt-level = 0
+# [profile.release.package.pkcs11]
+# opt-level = 0
 
 [target.'cfg(unix)'.dependencies]
 libc            = "^0.2"
@@ -85,7 +85,7 @@ static-openssl = [ "openssl/vendored" ]
 # Preview features - not ready for production use
 aspa = []
 rta = []
-hsm = ["backoff", "kmip", "once_cell", "pkcs11", "r2d2"]
+hsm = ["backoff", "kmip", "once_cell", "cryptoki", "r2d2"]
 
 # Internal features - not for external use
 all-except-ui-tests = [ "multi-user", "rta", "static-openssl", "aspa" ]

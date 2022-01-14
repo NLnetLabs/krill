@@ -10,8 +10,14 @@ use backoff::ExponentialBackoff;
 
 use bcder::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
-use pkcs11::errors::Error as Pkcs11Error;
-use pkcs11::types::*;
+use cryptoki::{
+    context::Info,
+    error::Error as Pkcs11Error,
+    mechanism::Mechanism,
+    object::{Attribute, AttributeType, ObjectClass, ObjectHandle},
+    session::UserType,
+    slot::{Slot, SlotInfo, TokenInfo},
+};
 use rpki::repository::crypto::{
     signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError,
 };
@@ -91,7 +97,7 @@ pub enum LoginMode {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SlotIdOrLabel {
-    Id(CK_SLOT_ID),
+    Id(u64),
 
     Label(String),
 }
@@ -239,10 +245,12 @@ impl Pkcs11Signer {
         key_id: &str,
         challenge: &D,
     ) -> Result<Signature, SignerError> {
-        let priv_handle = self.find_key(key_id, CKO_PRIVATE_KEY).map_err(|err| match err {
-            KeyError::KeyNotFound => SignerError::KeyNotFound,
-            KeyError::Signer(err) => err,
-        })?;
+        let priv_handle = self
+            .find_key(key_id, ObjectClass::PRIVATE_KEY)
+            .map_err(|err| match err {
+                KeyError::KeyNotFound => SignerError::KeyNotFound,
+                KeyError::Signer(err) => err,
+            })?;
         self.sign_with_key(priv_handle, SignatureAlgorithm::default(), challenge.as_ref())
     }
 }
@@ -256,9 +264,7 @@ struct UsableServerState {
 
     conn_info: String,
 
-    slot_id: CK_SLOT_ID,
-
-    login_mode: LoginMode,
+    slot_id: Slot,
 
     /// When login_mode is NOT LoginMode::LoginRequired this will be None.
     ///
@@ -281,8 +287,7 @@ impl UsableServerState {
     pub fn new(
         context: ThreadSafePkcs11Context,
         conn_info: String,
-        slot_id: CK_SLOT_ID,
-        login_mode: LoginMode,
+        slot_id: Slot,
         login_session: Option<Pkcs11Session>,
         retry_interval: Duration,
         backoff_multiplier: f64,
@@ -292,7 +297,6 @@ impl UsableServerState {
             context,
             conn_info,
             slot_id,
-            login_mode,
             login_session,
             retry_interval,
             backoff_multiplier,
@@ -311,27 +315,31 @@ impl Pkcs11Signer {
         name: String,
         status: &ProbeStatus<ConnectionSettings, SignerError, UsableServerState>,
     ) -> Result<UsableServerState, ProbeError<SignerError>> {
-        fn force_cache_flush(context: ThreadSafePkcs11Context) {
-            // Finalize the PKCS#11 library so that we re-initialize it on next use, otherwise it just caches (at
-            // least with SoftHSMv2 and YubiHSM) the token info and doesn't ever report the presence of the token
-            // even when it becomes available.
-            let _ = context.write().unwrap().finalize();
-        }
+        // fn force_cache_flush(context: ThreadSafePkcs11Context) {
+        //     // Finalize the PKCS#11 library so that we re-initialize it on next use, otherwise it just caches (at
+        //     // least with SoftHSMv2 and YubiHSM) the token info and doesn't ever report the presence of the token
+        //     // even when it becomes available.
+        //     let _ = Arc::try_unwrap(context).unwrap().into_inner().unwrap().finalize();
+        // }
 
-        fn slot_label_eq(ctx: &RwLockReadGuard<Pkcs11Context>, slot_id: CK_SLOT_ID, slot_label: &str) -> bool {
-            match ctx.get_token_info(slot_id) {
-                Ok(info) => slot_label == info.label.to_string(),
+        fn slot_label_eq(ctx: &RwLockReadGuard<Pkcs11Context>, slot: Slot, slot_label: &str) -> bool {
+            match ctx.get_token_info(slot) {
+                Ok(info) => String::from_utf8_lossy(&info.label).trim_end() == slot_label,
                 Err(err) => {
-                    warn!("Failed to obtain token info for PKCS#11 slot id '{}': {}", slot_id, err);
+                    warn!(
+                        "Failed to obtain token info for PKCS#11 slot id '{}': {}",
+                        slot.id(),
+                        err
+                    );
                     false
                 }
             }
         }
 
-        fn find_slot_id_by_label(
+        fn find_slot_by_label(
             readable_ctx: &RwLockReadGuard<Pkcs11Context>,
             label: &str,
-        ) -> Result<Option<u64>, Pkcs11Error> {
+        ) -> Result<Option<Slot>, Pkcs11Error> {
             let possible_slot_id = readable_ctx
                 .get_slot_list(true)?
                 .into_iter()
@@ -353,7 +361,7 @@ impl Pkcs11Signer {
             ctx: ThreadSafePkcs11Context,
             name: &str,
             lib_name: &String,
-        ) -> Result<(CK_INFO, u64, CK_SLOT_INFO, CK_TOKEN_INFO, Option<String>), ProbeError<SignerError>> {
+        ) -> Result<(Info, Slot, SlotInfo, TokenInfo, Option<String>), ProbeError<SignerError>> {
             let readable_ctx = ctx.read().unwrap();
 
             let cryptoki_info = readable_ctx.get_info().map_err(|err| {
@@ -365,12 +373,36 @@ impl Pkcs11Signer {
             })?;
             trace!("[{}] C_GetInfo(): {:?}", name, cryptoki_info);
 
-            let slot_id = match &conn_settings.slot {
-                SlotIdOrLabel::Id(id) => *id,
+            let slot = match &conn_settings.slot {
+                SlotIdOrLabel::Id(id) => {
+                    match readable_ctx
+                        .get_slot_list(false)
+                        .map_err(|err| {
+                            error!(
+                                "[{}] Unable to get PKCS#11 slot list for library '{}': {}",
+                                name, lib_name, err
+                            );
+                            ProbeError::CompletedUnusable
+                        })?
+                        .into_iter()
+                        .find(|&slot| slot.id() == *id)
+                    {
+                        Some(slot) => slot,
+                        None => {
+                            let err_msg = format!(
+                                "[{}] No PKCS#11 slot found for library '{}' with id {}",
+                                name, lib_name, id
+                            );
+
+                            error!("{}", err_msg);
+                            return Err(ProbeError::CallbackFailed(SignerError::Pkcs11Error(err_msg)));
+                        }
+                    }
+                }
                 SlotIdOrLabel::Label(label) => {
                     // No slot id provided, look it up by its label instead
-                    match find_slot_id_by_label(&readable_ctx, &label) {
-                        Ok(Some(id)) => id,
+                    match find_slot_by_label(&readable_ctx, &label) {
+                        Ok(Some(slot)) => slot,
                         Ok(None) => {
                             let err_msg = format!(
                                 "[{}] No PKCS#11 slot found for library '{}' with label '{}'",
@@ -391,10 +423,10 @@ impl Pkcs11Signer {
                 }
             };
 
-            let slot_info = readable_ctx.get_slot_info(slot_id).map_err(|err| {
+            let slot_info = readable_ctx.get_slot_info(slot).map_err(|err| {
                 let err_msg = format!(
                     "[{}] Unable to read PKCS#11 slot info for library '{}' slot {}: {}",
-                    name, lib_name, slot_id, err
+                    name, lib_name, slot, err
                 );
 
                 error!("{}", err_msg);
@@ -402,10 +434,10 @@ impl Pkcs11Signer {
             })?;
             trace!("[{}] C_GetSlotInfo(): {:?}", name, slot_info);
 
-            let token_info = readable_ctx.get_token_info(slot_id).map_err(|err| {
+            let token_info = readable_ctx.get_token_info(slot).map_err(|err| {
                 let err_msg = format!(
                     "[{}] Unable to read PKCS#11 token info for library '{}' slot {}: {}",
-                    name, lib_name, slot_id, err
+                    name, lib_name, slot, err
                 );
 
                 error!("{}", err_msg);
@@ -414,7 +446,7 @@ impl Pkcs11Signer {
             trace!("[{}] C_GetTokenInfo(): {:?}", name, token_info);
 
             let user_pin = conn_settings.user_pin.clone();
-            Ok((cryptoki_info, slot_id, slot_info, token_info, user_pin))
+            Ok((cryptoki_info, slot, slot_info, token_info, user_pin))
         }
 
         fn login(
@@ -423,7 +455,7 @@ impl Pkcs11Signer {
             user_pin: Option<String>,
             name: &str,
             lib_name: &String,
-            slot_id: u64,
+            slot: Slot,
         ) -> Result<Option<Pkcs11Session>, ProbeError<SignerError>> {
             match login_mode {
                 LoginMode::LoginNotRequired => {
@@ -431,10 +463,10 @@ impl Pkcs11Signer {
                     Ok(None)
                 }
                 LoginMode::LoginRequired => {
-                    session.login(CKU_USER, user_pin.as_deref()).map_err(|err| {
+                    session.login(UserType::User, user_pin.as_deref()).map_err(|err| {
                         error!(
                             "[{}] Unable to login to PKCS#11 session for library '{}' slot {}: {}",
-                            name, lib_name, slot_id, err
+                            name, lib_name, slot, err
                         );
                         ProbeError::CompletedUnusable
                     })?;
@@ -443,7 +475,7 @@ impl Pkcs11Signer {
                         "[{}] Logged in to PKCS#11 session for library '{}' slot {}",
                         name,
                         lib_name,
-                        slot_id,
+                        slot,
                     );
 
                     Ok(Some(session))
@@ -464,19 +496,19 @@ impl Pkcs11Signer {
             ProbeError::CompletedUnusable
         })?;
 
-        let (cryptoki_info, slot_id, _slot_info, token_info, user_pin) =
+        let (cryptoki_info, slot, _slot_info, token_info, user_pin) =
             interrogate_token(&conn_settings, context.clone(), &name, &lib_name).map_err(|err| {
                 if matches!(err, ProbeError::CallbackFailed(SignerError::Pkcs11Error(_))) {
                     // While the token is not available now, it might be later.
-                    force_cache_flush(context.clone());
+                    // force_cache_flush(context.clone());
                 }
                 err
             })?;
 
-        let session = Pkcs11Session::new(context.clone(), slot_id).map_err(|err| {
+        let session = Pkcs11Session::new(context.clone(), slot).map_err(|err| {
             error!(
                 "[{}] Unable to open PKCS#11 session for library '{}' slot {}: {}",
-                name, lib_name, slot_id, err
+                name, lib_name, slot, err
             );
             ProbeError::CompletedUnusable
         })?;
@@ -489,7 +521,7 @@ impl Pkcs11Signer {
         // TODO: check for RSA key pair support?
 
         // Login if needed
-        let login_session = login(session, conn_settings.login_mode, user_pin, &name, &lib_name, slot_id)?;
+        let login_session = login(session, conn_settings.login_mode, user_pin, &name, &lib_name, slot)?;
 
         // Switch from probing the server to using it.
         // -------------------------------------------
@@ -498,31 +530,32 @@ impl Pkcs11Signer {
         // trailing whitespace from Cryptoki padded strings such as the token info label, model and manufacturerID.
 
         let server_identification = format!(
-            "{} (Cryptoki v{}.{})",
-            cryptoki_info.manufacturerID, cryptoki_info.libraryVersion.major, cryptoki_info.libraryVersion.minor
+            "{} (Cryptoki v{})",
+            cryptoki_info.manufacturer_id(),
+            cryptoki_info.library_version()
         );
 
         let token_identification = format!(
             "{} (model: {}, vendor: {})",
-            token_info.label, token_info.model, token_info.manufacturerID
+            token_info.label(),
+            token_info.model(),
+            token_info.manufacturer_id()
         );
 
         info!(
             "Using PKCS#11 token '{}' in slot {} of server '{}' via library '{}'",
-            token_identification, slot_id, server_identification, lib_name
+            token_identification, slot, server_identification, lib_name
         );
 
         let server_info = format!(
             "PKCS#11 Signer [token: {}, slot: {}, server: {}, library: {}]",
-            token_identification, slot_id, server_identification, lib_name
+            token_identification, slot, server_identification, lib_name
         );
-        let login_mode = conn_settings.login_mode;
 
         let state = UsableServerState::new(
             context,
             server_info,
-            slot_id,
-            login_mode,
+            slot,
             login_session,
             conn_settings.retry_interval,
             conn_settings.backoff_multiplier,
@@ -546,9 +579,9 @@ impl Pkcs11Signer {
     ///
     /// Fails if the PKCS#11 server is not [Usable]. If the operation fails due to a transient connection error, retry
     /// with backoff upto a defined retry limit.
-    fn with_conn<T, F>(&self, desc: &str, do_something_with_conn: F) -> Result<T, SignerError>
+    fn with_conn<T, F>(&self, desc: &str, mut do_something_with_conn: F) -> Result<T, SignerError>
     where
-        F: FnOnce(&Pkcs11Session) -> Result<T, Pkcs11Error> + Copy,
+        F: FnMut(&Pkcs11Session) -> Result<T, Pkcs11Error>,
     {
         let signer_name = &self.name;
 
@@ -630,7 +663,7 @@ impl Pkcs11Signer {
     pub(super) fn build_key(
         &self,
         algorithm: PublicKeyFormat,
-    ) -> Result<(PublicKey, CK_OBJECT_HANDLE, CK_OBJECT_HANDLE, String), SignerError> {
+    ) -> Result<(PublicKey, ObjectHandle, ObjectHandle, String), SignerError> {
         // https://tools.ietf.org/html/rfc6485#section-3: Asymmetric Key Pair Formats
         //   "The RSA key pairs used to compute the signatures MUST have a 2048-bit
         //    modulus and a public exponent (e) of 65,537."
@@ -642,37 +675,33 @@ impl Pkcs11Signer {
             )));
         }
 
-        let mech = CK_MECHANISM {
-            mechanism: CKM_RSA_PKCS_KEY_PAIR_GEN,
-            pParameter: std::ptr::null_mut(),
-            ulParameterLen: 0,
-        };
+        let mech = Mechanism::RsaPkcsKeyPairGen;
 
         let mut cka_id: [u8; 20] = [0; 20];
         openssl::rand::rand_bytes(&mut cka_id)
             .map_err(|_| SignerError::Pkcs11Error("Internal error while generating a random number".to_string()))?;
 
-        let mut pub_template: Vec<CK_ATTRIBUTE> = Vec::new();
-        pub_template.push(CK_ATTRIBUTE::new(CKA_ID).with_bytes(&cka_id));
-        pub_template.push(CK_ATTRIBUTE::new(CKA_VERIFY).with_bool(&CK_TRUE));
-        pub_template.push(CK_ATTRIBUTE::new(CKA_ENCRYPT).with_bool(&CK_FALSE));
-        pub_template.push(CK_ATTRIBUTE::new(CKA_WRAP).with_bool(&CK_FALSE));
-        pub_template.push(CK_ATTRIBUTE::new(CKA_TOKEN).with_bool(&CK_TRUE));
-        pub_template.push(CK_ATTRIBUTE::new(CKA_PRIVATE).with_bool(&CK_TRUE));
-        pub_template.push(CK_ATTRIBUTE::new(CKA_MODULUS_BITS).with_ck_ulong(&2048));
-        pub_template.push(CK_ATTRIBUTE::new(CKA_PUBLIC_EXPONENT).with_bytes(&[0x01, 0x00, 0x01]));
-        pub_template.push(CK_ATTRIBUTE::new(CKA_LABEL).with_string("Krill"));
+        let mut pub_template: Vec<Attribute> = Vec::new();
+        pub_template.push(Attribute::Id(cka_id.to_vec()));
+        pub_template.push(Attribute::Verify(true));
+        pub_template.push(Attribute::Encrypt(false));
+        pub_template.push(Attribute::Wrap(false));
+        pub_template.push(Attribute::Token(true));
+        pub_template.push(Attribute::Private(true));
+        pub_template.push(Attribute::ModulusBits(2048.into()));
+        pub_template.push(Attribute::PublicExponent(vec![0x01, 0x00, 0x01]));
+        pub_template.push(Attribute::Label("Krill".to_string().into_bytes()));
 
-        let mut priv_template: Vec<CK_ATTRIBUTE> = Vec::new();
-        priv_template.push(CK_ATTRIBUTE::new(CKA_ID).with_bytes(&cka_id));
-        priv_template.push(CK_ATTRIBUTE::new(CKA_SIGN).with_bool(&CK_TRUE));
-        priv_template.push(CK_ATTRIBUTE::new(CKA_DECRYPT).with_bool(&CK_FALSE));
-        priv_template.push(CK_ATTRIBUTE::new(CKA_UNWRAP).with_bool(&CK_FALSE));
-        priv_template.push(CK_ATTRIBUTE::new(CKA_SENSITIVE).with_bool(&CK_TRUE));
-        priv_template.push(CK_ATTRIBUTE::new(CKA_TOKEN).with_bool(&CK_TRUE));
-        priv_template.push(CK_ATTRIBUTE::new(CKA_PRIVATE).with_bool(&CK_TRUE));
-        priv_template.push(CK_ATTRIBUTE::new(CKA_EXTRACTABLE).with_bool(&CK_FALSE));
-        priv_template.push(CK_ATTRIBUTE::new(CKA_LABEL).with_string("Krill"));
+        let mut priv_template: Vec<Attribute> = Vec::new();
+        priv_template.push(Attribute::Id(cka_id.to_vec()));
+        priv_template.push(Attribute::Sign(true));
+        priv_template.push(Attribute::Decrypt(false));
+        priv_template.push(Attribute::Unwrap(false));
+        priv_template.push(Attribute::Sensitive(true));
+        priv_template.push(Attribute::Token(true));
+        priv_template.push(Attribute::Private(true));
+        priv_template.push(Attribute::Extractable(false));
+        priv_template.push(Attribute::Label("Krill".to_string().into_bytes()));
 
         let (pub_handle, priv_handle) = self.with_conn("generate key pair", |conn| {
             // The Krill functional test once failed under GitHub Actions with error:
@@ -691,32 +720,25 @@ impl Pkcs11Signer {
         Ok((public_key, pub_handle, priv_handle, hex::encode(cka_id)))
     }
 
-    fn get_rsa_public_key_bytes(&self, pub_handle: u64) -> Result<Bytes, SignerError> {
-        let (modulus_len, pub_exponent_len) = self.with_conn("get key pair part lengths", |conn| {
-            let mut pub_template: Vec<CK_ATTRIBUTE> = Vec::new();
-            pub_template.push(CK_ATTRIBUTE::new(CKA_MODULUS));
-            pub_template.push(CK_ATTRIBUTE::new(CKA_PUBLIC_EXPONENT));
-            let (_, res_vec) = conn.get_attribute_value(pub_handle, &mut pub_template)?;
-            Ok((res_vec[0].ulValueLen as usize, res_vec[1].ulValueLen as usize))
+    fn get_rsa_public_key_bytes(&self, pub_handle: ObjectHandle) -> Result<Bytes, SignerError> {
+        let res = self.with_conn("get key pair parts", |conn| {
+            conn.get_attributes(pub_handle, &[AttributeType::Modulus, AttributeType::PublicExponent])
         })?;
 
-        let (modulus, pub_exponent) = self.with_conn("get key pair parts", |conn| {
-            let mut modulus = Vec::with_capacity(modulus_len);
-            let mut pub_exponent = Vec::with_capacity(pub_exponent_len);
-            modulus.resize(modulus_len, 0);
-            pub_exponent.resize(pub_exponent_len, 0);
-            let mut pub_template: Vec<CK_ATTRIBUTE> = Vec::new();
-            pub_template.push(CK_ATTRIBUTE::new(CKA_MODULUS).with_bytes(modulus.as_mut_slice()));
-            pub_template.push(CK_ATTRIBUTE::new(CKA_PUBLIC_EXPONENT).with_bytes(pub_exponent.as_mut_slice()));
-            conn.get_attribute_value(pub_handle, &mut pub_template)?;
-            Ok((modulus, pub_exponent))
-        })?;
+        if res.len() == 2 {
+            if let (Attribute::Modulus(m), Attribute::PublicExponent(e)) = (&res[0], &res[1]) {
+                return util::rsa_public_key_bytes_from_parts(m, e);
+            }
+        }
 
-        util::rsa_public_key_bytes_from_parts(&modulus, &pub_exponent)
+        Err(SignerError::Pkcs11Error(format!(
+            "Unable to obtain modulus and public exponent for key {:?}",
+            pub_handle
+        )))
     }
 
     // TODO: This is almost identical to the equivalent fn in KmipSigner. Factor out the common code.
-    pub(super) fn get_public_key_from_handle(&self, pub_handle: CK_OBJECT_HANDLE) -> Result<PublicKey, SignerError> {
+    pub(super) fn get_public_key_from_handle(&self, pub_handle: ObjectHandle) -> Result<PublicKey, SignerError> {
         let rsa_public_key_bytes = self.get_rsa_public_key_bytes(pub_handle)?;
 
         let subject_public_key = bcder::BitString::new(0, rsa_public_key_bytes);
@@ -746,7 +768,7 @@ impl Pkcs11Signer {
 
     pub(super) fn sign_with_key(
         &self,
-        private_key_handle: CK_OBJECT_HANDLE,
+        private_key_handle: ObjectHandle,
         algorithm: SignatureAlgorithm,
         data: &[u8],
     ) -> Result<Signature, SignerError> {
@@ -757,11 +779,7 @@ impl Pkcs11Signer {
             )));
         }
 
-        let mechanism = CK_MECHANISM {
-            mechanism: CKM_SHA256_RSA_PKCS,
-            pParameter: std::ptr::null_mut(),
-            ulParameterLen: 0,
-        };
+        let mechanism = Mechanism::Sha256RsaPkcs;
 
         // Note: The AWS CloudHSM Known Issues for the PKCS#11 Library states:
         // https://docs.aws.amazon.com/cloudhsm/latest/userguide/ki-pkcs11-sdk.html#ki-pkcs11-7
@@ -779,10 +797,7 @@ impl Pkcs11Signer {
         // Oracle enables an AWS CloudHSM specific workaround by detecting a CLOUDHSM_IGNORE_CKA_MODIFIABLE_FALSE
         // environment variable.
 
-        let signature_data = self.with_conn("sign", |conn| {
-            conn.sign_init(&mechanism, private_key_handle)?;
-            conn.sign(data)
-        })?;
+        let signature_data = self.with_conn("sign", |conn| conn.sign(&mechanism, private_key_handle, data))?;
 
         let sig = Signature::new(SignatureAlgorithm::default(), Bytes::from(signature_data));
 
@@ -792,31 +807,23 @@ impl Pkcs11Signer {
     pub(super) fn find_key(
         &self,
         cka_id_hex_str: &str,
-        key_class: CK_OBJECT_CLASS,
-    ) -> Result<CK_OBJECT_HANDLE, KeyError<SignerError>> {
+        key_class: ObjectClass,
+    ) -> Result<ObjectHandle, KeyError<SignerError>> {
         let human_key_class = match key_class {
-            CKO_PUBLIC_KEY => "public key",
-            CKO_PRIVATE_KEY => "private key",
+            ObjectClass::PUBLIC_KEY => "public key",
+            ObjectClass::PRIVATE_KEY => "private key",
             _ => "key",
         };
 
         let cka_id = hex::decode(cka_id_hex_str).map_err(|_| KeyError::Signer(SignerError::DecodeError))?;
 
-        let results = self.with_conn("sign", |conn| {
-            // Find at most two search results that match the given key class (public or private) and the given PKCS#11
+        let results = self.with_conn("find key", |conn| {
+            // Find at most one result that matches the given key class (public or private) and the given PKCS#11
             // CKA_ID bytes.
-            let max_object_count = 2;
-            let mut template: Vec<CK_ATTRIBUTE> = Vec::new();
-            template.push(CK_ATTRIBUTE::new(CKA_CLASS).with_ck_ulong(&key_class));
-            template.push(CK_ATTRIBUTE::new(CKA_ID).with_bytes(cka_id.as_slice()));
 
             // A PKCS#11 session can have at most one active search operation at a time. A search must be initialized,
             // results fetched, and then finalized, only then can the session perform another search.
-            conn.find_objects_init(&template)?;
-            let results = conn.find_objects(max_object_count);
-            let _ = conn.find_objects_final();
-
-            results
+            conn.find_objects(&[Attribute::Class(key_class), Attribute::Id(cka_id.clone())])
         })?;
 
         match results.len() {
@@ -829,7 +836,7 @@ impl Pkcs11Signer {
         }
     }
 
-    pub(super) fn destroy_key_by_handle(&self, key_handle: CK_OBJECT_HANDLE) -> Result<(), SignerError> {
+    pub(super) fn destroy_key_by_handle(&self, key_handle: ObjectHandle) -> Result<(), SignerError> {
         trace!("[{}] Destroying key with PKCS#11 handle {}", self.name, key_handle);
         self.with_conn("destroy", |conn| conn.destroy_object(key_handle))
     }
@@ -850,7 +857,7 @@ impl Pkcs11Signer {
 
     pub fn get_key_info(&self, key_id: &KeyIdentifier) -> Result<PublicKey, KeyError<SignerError>> {
         let internal_key_id = self.lookup_key_id(key_id)?;
-        let pub_handle = self.find_key(&internal_key_id, CKO_PUBLIC_KEY)?;
+        let pub_handle = self.find_key(&internal_key_id, ObjectClass::PUBLIC_KEY)?;
         self.get_public_key_from_handle(pub_handle)
             .map_err(|err| KeyError::Signer(err))
     }
@@ -861,7 +868,7 @@ impl Pkcs11Signer {
         let mut res: Result<(), KeyError<SignerError>> = Ok(());
 
         // try deleting the public key
-        if let Ok(pub_handle) = self.find_key(&internal_key_id, CKO_PUBLIC_KEY) {
+        if let Ok(pub_handle) = self.find_key(&internal_key_id, ObjectClass::PUBLIC_KEY) {
             res = self.destroy_key_by_handle(pub_handle).map_err(|err| match err {
                 SignerError::KeyNotFound => KeyError::KeyNotFound,
                 _ => KeyError::Signer(err),
@@ -876,7 +883,7 @@ impl Pkcs11Signer {
         }
 
         // try deleting the private key
-        if let Ok(priv_handle) = self.find_key(&internal_key_id, CKO_PRIVATE_KEY) {
+        if let Ok(priv_handle) = self.find_key(&internal_key_id, ObjectClass::PRIVATE_KEY) {
             let res2 = self.destroy_key_by_handle(priv_handle).map_err(|err| match err {
                 SignerError::KeyNotFound => KeyError::KeyNotFound,
                 _ => KeyError::Signer(err),
@@ -920,7 +927,7 @@ impl Pkcs11Signer {
     ) -> Result<Signature, SigningError<SignerError>> {
         let internal_key_id = self.lookup_key_id(key_id)?;
         let priv_handle = self
-            .find_key(&internal_key_id, CKO_PRIVATE_KEY)
+            .find_key(&internal_key_id, ObjectClass::PRIVATE_KEY)
             .map_err(|err| match err {
                 KeyError::KeyNotFound => SigningError::KeyNotFound,
                 KeyError::Signer(err) => SigningError::Signer(err),
@@ -971,19 +978,16 @@ fn retry_on_transient_signer_error(err: SignerError) -> backoff::Error<SignerErr
 
 fn is_transient_error(err: &Pkcs11Error) -> bool {
     match err {
-        Pkcs11Error::Io(_) => {
-            // The Rust `pkcs11` crate encountered an I/O error. I assume this can only occur when trying and
-            // failing to open the PKCS#11 library file that we asked it to use.
-            false
-        }
-        Pkcs11Error::Module(_) => {
+        Pkcs11Error::NotSupported
+        | Pkcs11Error::NullFunctionPointer
+        | Pkcs11Error::LibraryLoading(_)
+        | Pkcs11Error::TryFromInt(_)
+        | Pkcs11Error::TryFromSlice(_)
+        | Pkcs11Error::NulError(_)
+        | Pkcs11Error::InvalidValue
+        | Pkcs11Error::PinNotSet => {
             // The Rust `pkcs11` crate had a serious problem such as the loaded library not exporting a required
             // function or that it was asked to initialize an already initialized library.
-            false
-        }
-        Pkcs11Error::InvalidInput(_) => {
-            // The Rust `pkcs11` crate was unable to use an input it was given, e.g. a PIN contained a nul byte
-            // or was not set or unset as expected.
             false
         }
         Pkcs11Error::Pkcs11(err) => {
@@ -1010,111 +1014,103 @@ fn is_transient_error(err: &Pkcs11Error) -> bool {
             //                            incorrect or it is a HTTPS URL but there is a TLS failure such as invalid
             //                            certificate or unknown signing CA etc) or some other issue such as a firewall
             //                            or operating system restriction preventing access.
-            match *err {
-                // PKCS#11 v2.20
-                CKR_OK => false, // unreachable!() ?
-                CKR_CANCEL => false,
-                CKR_HOST_MEMORY => true,
-                CKR_SLOT_ID_INVALID => true, // maybe we tried accessing the slot just before it is created?
-                CKR_GENERAL_ERROR => true,
-                CKR_FUNCTION_FAILED => true, // the spec says the situation is not necessarily totally hopeless
-                CKR_ARGUMENTS_BAD => false,  // resubmitting the same bad arguments will just fail again
-                CKR_NO_EVENT => false,
-                CKR_NEED_TO_CREATE_THREADS => false,
-                CKR_CANT_LOCK => false,
-                CKR_ATTRIBUTE_READ_ONLY => false, // for attributes that are always read only retrying will not succeed
-                CKR_ATTRIBUTE_SENSITIVE => false,
-                CKR_ATTRIBUTE_TYPE_INVALID => false,
-                CKR_ATTRIBUTE_VALUE_INVALID => false,
-                CKR_ACTION_PROHIBITED => false,
-                CKR_DATA_INVALID => false,
-                CKR_DATA_LEN_RANGE => false,
-                CKR_DEVICE_ERROR => true, // some error but we don't know what so could be transient
-                CKR_DEVICE_MEMORY => true, // maybe the token frees up some memory such that a retry succeeds?
-                CKR_DEVICE_REMOVED => true, // not present at the time the function was executed but might be later
-                CKR_ENCRYPTED_DATA_INVALID => false,
-                CKR_ENCRYPTED_DATA_LEN_RANGE => false,
-                CKR_FUNCTION_CANCELED => false,
-                CKR_FUNCTION_NOT_PARALLEL => false,
-                CKR_FUNCTION_NOT_SUPPORTED => false,
-                CKR_KEY_HANDLE_INVALID => false,
-                CKR_KEY_SIZE_RANGE => false,
-                CKR_KEY_TYPE_INCONSISTENT => false,
-                CKR_KEY_NOT_NEEDED => false,
-                CKR_KEY_CHANGED => false,
-                CKR_KEY_NEEDED => false,
-                CKR_KEY_INDIGESTIBLE => false,
-                CKR_KEY_FUNCTION_NOT_PERMITTED => false,
-                CKR_KEY_NOT_WRAPPABLE => false,
-                CKR_KEY_UNEXTRACTABLE => false,
-                CKR_MECHANISM_INVALID => false,
-                CKR_MECHANISM_PARAM_INVALID => false,
-                CKR_OBJECT_HANDLE_INVALID => false,
-                CKR_OPERATION_ACTIVE => true, // the active operation might finish thereby permitting a retry to succeed
-                CKR_OPERATION_NOT_INITIALIZED => false,
-                CKR_PIN_INCORRECT => false,
-                CKR_PIN_INVALID => false,
-                CKR_PIN_LEN_RANGE => false,
-                CKR_PIN_EXPIRED => false,
-                CKR_PIN_LOCKED => false,
-                CKR_SESSION_CLOSED => true, // maybe on retry we open a new session and succeed?
-                CKR_SESSION_COUNT => true, // if a session closes it might be possible on retry for a session open to succeed
-                CKR_SESSION_HANDLE_INVALID => false,
-                CKR_SESSION_PARALLEL_NOT_SUPPORTED => false,
-                CKR_SESSION_READ_ONLY => false,
-                CKR_SESSION_EXISTS => false,
-                CKR_SESSION_READ_ONLY_EXISTS => true, // will succeed on retry if the conflicting SO session logs out
-                CKR_SESSION_READ_WRITE_SO_EXISTS => true, // will succeed on retry if the conflicting SO session logs out
-                CKR_SIGNATURE_INVALID => false,
-                CKR_SIGNATURE_LEN_RANGE => false,
-                CKR_TEMPLATE_INCOMPLETE => false,
-                CKR_TEMPLATE_INCONSISTENT => false,
-                CKR_TOKEN_NOT_PRESENT => true, // not present at the time the function was executed but might be later
-                CKR_TOKEN_NOT_RECOGNIZED => false,
-                CKR_TOKEN_WRITE_PROTECTED => true, // maybe the right protection is a transient condition?
-                CKR_UNWRAPPING_KEY_HANDLE_INVALID => false,
-                CKR_UNWRAPPING_KEY_SIZE_RANGE => false,
-                CKR_UNWRAPPING_KEY_TYPE_INCONSISTENT => false,
-                CKR_USER_ALREADY_LOGGED_IN => true, // maybe another client was is busy logging out so try again?
-                CKR_USER_NOT_LOGGED_IN => false,
-                CKR_USER_PIN_NOT_INITIALIZED => false,
-                CKR_USER_TYPE_INVALID => false,
-                CKR_USER_ANOTHER_ALREADY_LOGGED_IN => true,
-                CKR_USER_TOO_MANY_TYPES => true, // maybe some sessions are terminated while retrying permitting us to succeed?
-                CKR_WRAPPED_KEY_INVALID => false,
-                CKR_WRAPPED_KEY_LEN_RANGE => false,
-                CKR_WRAPPING_KEY_HANDLE_INVALID => false,
-                CKR_WRAPPING_KEY_SIZE_RANGE => false,
-                CKR_WRAPPING_KEY_TYPE_INCONSISTENT => false,
-                CKR_RANDOM_SEED_NOT_SUPPORTED => false,
-                CKR_RANDOM_NO_RNG => false,
-                CKR_DOMAIN_PARAMS_INVALID => false,
-                CKR_CURVE_NOT_SUPPORTED => false,
-                CKR_BUFFER_TOO_SMALL => false,
-                CKR_SAVED_STATE_INVALID => false,
-                CKR_INFORMATION_SENSITIVE => false,
-                CKR_STATE_UNSAVEABLE => true, // the spec doesn't seem to rule out this being a temporary condition
-                CKR_CRYPTOKI_NOT_INITIALIZED => false,
-                CKR_CRYPTOKI_ALREADY_INITIALIZED => false,
-                CKR_MUTEX_BAD => false,        // should never happen so consider it fatal?
-                CKR_MUTEX_NOT_LOCKED => false, // should never happen so consider it fatal?
-
-                // PKCS#11 v2.40
-                CKR_NEW_PIN_MODE => false,
-                CKR_NEXT_OTP => false,
-                CKR_EXCEEDED_MAX_ITERATIONS => false,
-                CKR_FIPS_SELF_TEST_FAILED => false,
-                CKR_LIBRARY_LOAD_FAILED => false,
-                CKR_PIN_TOO_WEAK => false,
-                CKR_PUBLIC_KEY_INVALID => false,
-                CKR_FUNCTION_REJECTED => false,
-                CKR_VENDOR_DEFINED => false,
-
-                // Unknown
-                _ => false,
+            match err {
+                cryptoki::error::RvError::ActionProhibited => false,
+                cryptoki::error::RvError::ArgumentsBad => false, // resubmitting the same bad arguments will just fail again
+                cryptoki::error::RvError::AttributeReadOnly => false, // for attributes that are always read only retrying will not succeed
+                cryptoki::error::RvError::AttributeSensitive => false,
+                cryptoki::error::RvError::AttributeTypeInvalid => false,
+                cryptoki::error::RvError::AttributeValueInvalid => false,
+                cryptoki::error::RvError::BufferTooSmall => false,
+                cryptoki::error::RvError::Cancel => false,
+                cryptoki::error::RvError::CantLock => false,
+                cryptoki::error::RvError::CryptokiAlreadyInitialized => false,
+                cryptoki::error::RvError::CryptokiNotInitialized => false,
+                cryptoki::error::RvError::CurveNotSupported => false,
+                cryptoki::error::RvError::DataInvalid => false,
+                cryptoki::error::RvError::DataLenRange => false,
+                cryptoki::error::RvError::DeviceError => true, // some error but we don't know what so could be transient
+                cryptoki::error::RvError::DeviceMemory => true, // maybe the token frees up some memory such that a retry succeeds?
+                cryptoki::error::RvError::DeviceRemoved => true, // not present at the time the function was executed but might be later
+                cryptoki::error::RvError::DomainParamsInvalid => false,
+                cryptoki::error::RvError::EncryptedDataInvalid => false,
+                cryptoki::error::RvError::EncryptedDataLenRange => false,
+                cryptoki::error::RvError::ExceededMaxIterations => false,
+                cryptoki::error::RvError::FipsSelfTestFailed => false,
+                cryptoki::error::RvError::FunctionCanceled => false,
+                cryptoki::error::RvError::FunctionFailed => true, // the spec says the situation is not necessarily totally hopeless
+                cryptoki::error::RvError::FunctionNotParallel => false,
+                cryptoki::error::RvError::FunctionNotSupported => false,
+                cryptoki::error::RvError::FunctionRejected => false,
+                cryptoki::error::RvError::GeneralError => false,
+                cryptoki::error::RvError::HostMemory => true,
+                cryptoki::error::RvError::InformationSensitive => false,
+                cryptoki::error::RvError::KeyChanged => false,
+                cryptoki::error::RvError::KeyFunctionNotPermitted => false,
+                cryptoki::error::RvError::KeyHandleInvalid => false,
+                cryptoki::error::RvError::KeyIndigestible => false,
+                cryptoki::error::RvError::KeyNeeded => false,
+                cryptoki::error::RvError::KeyNotNeeded => false,
+                cryptoki::error::RvError::KeyNotWrappable => false,
+                cryptoki::error::RvError::KeySizeRange => false,
+                cryptoki::error::RvError::KeyTypeInconsistent => false,
+                cryptoki::error::RvError::KeyUnextractable => false,
+                cryptoki::error::RvError::LibraryLoadFailed => false,
+                cryptoki::error::RvError::MechanismInvalid => false,
+                cryptoki::error::RvError::MechanismParamInvalid => false,
+                cryptoki::error::RvError::MutexBad => false, // should never happen so consider it fatal?
+                cryptoki::error::RvError::MutexNotLocked => false, // should never happen so consider it fatal?
+                cryptoki::error::RvError::NeedToCreateThreads => false,
+                cryptoki::error::RvError::NewPinMode => false,
+                cryptoki::error::RvError::NextOtp => false,
+                cryptoki::error::RvError::NoEvent => false,
+                cryptoki::error::RvError::ObjectHandleInvalid => false,
+                cryptoki::error::RvError::OperationActive => true, // the active operation might finish thereby permitting a retry to succeed
+                cryptoki::error::RvError::OperationNotInitialized => false,
+                cryptoki::error::RvError::PinExpired => false,
+                cryptoki::error::RvError::PinIncorrect => false,
+                cryptoki::error::RvError::PinInvalid => false,
+                cryptoki::error::RvError::PinLenRange => false,
+                cryptoki::error::RvError::PinLocked => false,
+                cryptoki::error::RvError::PinTooWeak => false,
+                cryptoki::error::RvError::PublicKeyInvalid => false,
+                cryptoki::error::RvError::RandomNoRng => false,
+                cryptoki::error::RvError::RandomSeedNotSupported => false,
+                cryptoki::error::RvError::SavedStateInvalid => false,
+                cryptoki::error::RvError::SessionClosed => true, // maybe on retry we open a new session and succeed?
+                cryptoki::error::RvError::SessionCount => true, // if a session closes it might be possible on retry for a session open to succeed
+                cryptoki::error::RvError::SessionExists => false,
+                cryptoki::error::RvError::SessionHandleInvalid => false,
+                cryptoki::error::RvError::SessionParallelNotSupported => false,
+                cryptoki::error::RvError::SessionReadOnly => false,
+                cryptoki::error::RvError::SessionReadOnlyExists => true, // will succeed on retry if the conflicting SO session logs out
+                cryptoki::error::RvError::SessionReadWriteSoExists => true, // will succeed on retry if the conflicting SO session logs out
+                cryptoki::error::RvError::SignatureInvalid => false,
+                cryptoki::error::RvError::SignatureLenRange => false,
+                cryptoki::error::RvError::SlotIdInvalid => true, // maybe we tried accessing the slot just before it is created?
+                cryptoki::error::RvError::StateUnsaveable => true, // the spec doesn't seem to rule out this being a temporary condition
+                cryptoki::error::RvError::TemplateIncomplete => false,
+                cryptoki::error::RvError::TemplateInconsistent => false,
+                cryptoki::error::RvError::TokenNotPresent => true, // not present at the time the function was executed but might be later
+                cryptoki::error::RvError::TokenNotRecognized => false,
+                cryptoki::error::RvError::TokenWriteProtected => true, // maybe the right protection is a transient condition?
+                cryptoki::error::RvError::UnwrappingKeyHandleInvalid => false,
+                cryptoki::error::RvError::UnwrappingKeySizeRange => false,
+                cryptoki::error::RvError::UnwrappingKeyTypeInconsistent => false,
+                cryptoki::error::RvError::UserAlreadyLoggedIn => true, // maybe another client was is busy logging out so try again?
+                cryptoki::error::RvError::UserAnotherAlreadyLoggedIn => true,
+                cryptoki::error::RvError::UserNotLoggedIn => false,
+                cryptoki::error::RvError::UserPinNotInitialized => false,
+                cryptoki::error::RvError::UserTooManyTypes => true, // maybe some sessions are terminated while retrying permitting us to succeed?
+                cryptoki::error::RvError::UserTypeInvalid => false,
+                cryptoki::error::RvError::VendorDefined => false,
+                cryptoki::error::RvError::WrappedKeyInvalid => false,
+                cryptoki::error::RvError::WrappedKeyLenRange => false,
+                cryptoki::error::RvError::WrappingKeyHandleInvalid => false,
+                cryptoki::error::RvError::WrappingKeySizeRange => false,
+                cryptoki::error::RvError::WrappingKeyTypeInconsistent => false,
             }
         }
-        Pkcs11Error::UnavailableInformation => false,
     }
 }
 
