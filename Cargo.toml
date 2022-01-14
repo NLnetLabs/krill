@@ -43,7 +43,7 @@ once_cell             = { version = "^1.7.2", optional = true }
 openidconnect         = { version = "^2.0.0", optional = true, default_features = false }
 openssl               = { version = "^0.10", features = ["v110"] }
 oso                   = { version = "^0.12", optional = true, default_features = false }
-cryptoki              = { version = "^0.3", optional = true, git = "https://github.com/parallaxsecond/rust-cryptoki/" }
+cryptoki              = { version = "^0.3", optional = true }
 r2d2                  = { version = "0.8.9", optional = true }
 rand                  = "^0.8"
 regex                 = { version = "^1.4", optional = true, default_features = false, features = ["std"] }
