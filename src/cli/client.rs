@@ -493,6 +493,7 @@ impl KrillClient {
     fn init_config(&self, details: KrillInitDetails) -> Result<ApiResponse, Error> {
         let defaults = include_str!("../../defaults/krill.conf");
         let multi_add_on = include_str!("../../defaults/krill-multi-user.conf");
+        let hsm_add_on = include_str!("../../defaults/krill-hsm.conf");
 
         let mut config = defaults.to_string();
         config = config.replace("### admin_token =", &format!("admin_token = \"{}\"", self.token));
@@ -518,8 +519,13 @@ impl KrillClient {
             config.push_str(multi_add_on);
         }
 
-        let c: Config = toml::from_slice(config.as_ref()).map_err(Error::init)?;
-        c.verify().map_err(Error::init)?;
+        if details.hsm() {
+            config.push_str("\n\n\n");
+            config.push_str(hsm_add_on);
+        }
+
+        let mut c: Config = toml::from_slice(config.as_ref()).map_err(Error::init)?;
+        c.process().map_err(Error::init)?;
 
         Ok(ApiResponse::GenericBody(config))
     }
