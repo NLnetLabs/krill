@@ -316,7 +316,6 @@ jobs:
             else
               EXTRA_CARGO_DEB_ARGS="--no-build --no-strip --target ${CROSS_TARGET} --output target/debian"
               VARIANT="${OS_NAME}-${OS_REL}-${CROSS_TARGET}"
-              # TODO: fetch the binary built by the 'cross' step
             fi
 
             DEB_VER="${PKG_KRILL_VER}-1${OS_REL}"
