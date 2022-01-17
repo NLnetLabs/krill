@@ -21,6 +21,7 @@ exclude = [
 build = "build.rs"
 
 [dependencies]
+backoff               = { version = "0.3.0", optional = true }
 base64                = "^0.13"
 basic-cookies         = { version = "^0.1", optional = true }
 bcder                 = "0.6.1"
@@ -35,11 +36,15 @@ hex                   = "^0.4"
 hyper                 = { version = "^0.14", features = ["server"] }
 intervaltree          = "0.2.6"
 jmespatch             = { version = "^0.3", features = ["sync"], optional = true }
+kmip                  = { version = "0.4.1", package = "kmip-protocol", features = ["tls-with-openssl"], optional = true }
 libflate              = "^1"
 log                   = "^0.4"
+once_cell             = { version = "^1.7.2", optional = true }
 openidconnect         = { version = "^2.0.0", optional = true, default_features = false }
 openssl               = { version = "^0.10", features = ["v110"] }
 oso                   = { version = "^0.12", optional = true, default_features = false }
+cryptoki              = { version = "^0.3", optional = true }
+r2d2                  = { version = "0.8.9", optional = true }
 rand                  = "^0.8"
 regex                 = { version = "^1.4", optional = true, default_features = false, features = ["std"] }
 reqwest               = { version = "0.11", features = ["json"] }
@@ -57,6 +62,13 @@ urlparse              = { version = "^0.7", optional = true }
 uuid                  = { version = "^0.8", features = [ "v4"] }
 xml-rs                = "^0.8"
 
+# Disable compiler optimizations for the pkcs11 crate because otherwise with a release build the
+# `pReserved = ptr::null_mut()` assignment done by `CK_C_INITIALIZE_ARGS::default()` appears to be optimized out. This
+# causes SoftHSMv2 to fail with error CKR_ARGUMENTS_BAD and to log to syslog "SoftHSM.cpp(436): pReserved must be set to
+# NULL_PTR". Disabling optimizations for the pkcs11 crate "solves" this problem.
+# [profile.release.package.pkcs11]
+# opt-level = 0
+
 [target.'cfg(unix)'.dependencies]
 libc            = "^0.2"
 syslog          = "^4.0"
@@ -66,14 +78,20 @@ rustc_version   = "0.2.3"
 
 [features]
 default = [ "multi-user" ]
-rta = []
-aspa = []
-multi-user = [ "basic-cookies", "jmespatch/sync", "regex", "oso", "openidconnect", "rpassword", "scrypt", "unicode-normalization", "urlparse" ]
-ui-tests = []
 extra-debug = [ "rpki/extra-debug" ]
+multi-user = [ "basic-cookies", "jmespatch/sync", "regex", "oso", "openidconnect", "rpassword", "scrypt", "unicode-normalization", "urlparse" ]
 static-openssl = [ "openssl/vendored" ]
+
+# Preview features - not ready for production use
+aspa = []
+rta = []
+hsm = ["backoff", "kmip", "once_cell", "cryptoki", "r2d2"]
+
+# Internal features - not for external use
 all-except-ui-tests = [ "multi-user", "rta", "static-openssl", "aspa" ]
-hsm = []
+ui-tests = []
+hsm-tests-kmip = [ "hsm" ]
+hsm-tests-pkcs11 = [ "hsm" ]
 
 # Make sure that Krill crashes on panics, rather than losing threads and
 # limping on in a bad state.
@@ -81,7 +99,7 @@ hsm = []
 panic = "abort"
 
 [dev-dependencies]
-# for user management
+# For user management
 tiny_http = { version = "^0.8", features = ["ssl"] }
 ctrlc = "^3.1"
 
@@ -183,7 +201,7 @@ assets = [
 post_install_script = "/usr/share/krill/rpm/postinst $*"
 post_uninstall_script = "/usr/share/krill/rpm/postrm $*"
 
-# ensure that the useradd tool is present by depending on its package
+# Ensure that the useradd tool is present by depending on its package
 [package.metadata.generate-rpm.requires]
 shadow-utils = "*"
 

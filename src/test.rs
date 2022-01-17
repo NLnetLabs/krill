@@ -53,7 +53,7 @@ pub const KRILL_PUBD_SERVER_URI: &str = "https://localhost:3001/";
 pub fn init_logging() {
     // Just creates a test config so we can initialize logging, then forgets about it
     let d = PathBuf::from(".");
-    let _ = Config::test(&d, false, false, false).init_logging();
+    let _ = Config::test(&d, false, false, false, false).init_logging();
 }
 
 pub fn info(msg: impl std::fmt::Display) {
@@ -100,19 +100,25 @@ pub async fn server_ready(uri: &str) -> bool {
     false
 }
 
-pub fn test_config(dir: &Path, enable_testbed: bool, enable_ca_refresh: bool, enable_suspend: bool) -> Config {
+pub fn test_config(
+    dir: &Path,
+    enable_testbed: bool,
+    enable_ca_refresh: bool,
+    enable_suspend: bool,
+    second_signer: bool,
+) -> Config {
     if enable_testbed {
         crate::constants::enable_test_mode();
         crate::constants::enable_test_announcements();
     }
-    Config::test(dir, enable_testbed, enable_ca_refresh, enable_suspend)
+    Config::test(dir, enable_testbed, enable_ca_refresh, enable_suspend, second_signer)
 }
 
-pub fn init_config(config: &Config) {
+pub fn init_config(config: &mut Config) {
     if config.init_logging().is_err() {
         trace!("Logging already initialized");
     }
-    config.verify().unwrap();
+    config.process().unwrap();
 }
 
 /// Starts krill server for testing using the given configuration. Creates a random base directory in the 'work' folder,
@@ -130,15 +136,16 @@ pub async fn start_krill_with_default_test_config(
     enable_testbed: bool,
     enable_ca_refresh: bool,
     enable_suspend: bool,
+    second_signer: bool,
 ) -> PathBuf {
     let dir = tmp_dir();
-    let config = test_config(&dir, enable_testbed, enable_ca_refresh, enable_suspend);
+    let config = test_config(&dir, enable_testbed, enable_ca_refresh, enable_suspend, second_signer);
     start_krill(config).await;
     dir
 }
 
-async fn start_krill(config: Config) {
-    init_config(&config);
+async fn start_krill(mut config: Config) {
+    init_config(&mut config);
     tokio::spawn(start_krill_with_error_trap(Arc::new(config)));
     assert!(krill_server_ready().await);
 }
@@ -153,8 +160,8 @@ async fn start_krill_with_error_trap(config: Arc<Config>) {
 /// own temp dir for storage.
 pub async fn start_krill_pubd() -> PathBuf {
     let dir = tmp_dir();
-    let mut config = test_config(&dir, false, false, false);
-    init_config(&config);
+    let mut config = test_config(&dir, false, false, false, true);
+    init_config(&mut config);
     config.port = 3001;
 
     tokio::spawn(start_krill_with_error_trap(Arc::new(config)));

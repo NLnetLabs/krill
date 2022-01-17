@@ -509,10 +509,12 @@ impl CrlNumber {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
+    use std::{str::FromStr, time::Duration};
 
     use crate::commons::api::Handle;
+    use crate::commons::crypto::KrillSignerBuilder;
     use crate::commons::remote::rfc6492::Message;
+    use crate::daemon::config::ConfigDefaults;
     use crate::test::test_under_tmp;
 
     use super::*;
@@ -545,7 +547,10 @@ mod tests {
     #[test]
     fn should_create_crl_for_protocol() {
         test_under_tmp(|d| {
-            let s = KrillSigner::build(&d).unwrap();
+            let signers = ConfigDefaults::signers();
+            let s = KrillSignerBuilder::new(&d, Duration::from_secs(1), &signers)
+                .build()
+                .unwrap();
             let key_id = s.create_key().unwrap();
             let key_info = s.get_key_info(&key_id).unwrap();
 
@@ -557,7 +562,10 @@ mod tests {
     #[test]
     fn should_create_signed_publication_message() {
         test_under_tmp(|d| {
-            let s = KrillSigner::build(&d).unwrap();
+            let signers = ConfigDefaults::signers();
+            let s = KrillSignerBuilder::new(&d, Duration::from_secs(1), &signers)
+                .build()
+                .unwrap();
             let key_id = s.create_key().unwrap();
             let id_cert = IdCertBuilder::new_ta_id_cert(&key_id, &s).unwrap();
 

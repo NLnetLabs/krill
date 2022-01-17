@@ -741,8 +741,9 @@ impl From<&PublicKey> for IdExtensions {
 
 #[cfg(test)]
 pub mod tests {
+    use std::time::Duration;
 
-    use crate::test::*;
+    use crate::{commons::crypto::KrillSignerBuilder, daemon::config::ConfigDefaults, test::*};
 
     use super::*;
 
@@ -756,7 +757,10 @@ pub mod tests {
     #[test]
     fn should_create_self_signed_ta_id_cert() {
         test_under_tmp(|d| {
-            let s = KrillSigner::build(&d).unwrap();
+            let signers = ConfigDefaults::signers();
+            let s = KrillSignerBuilder::new(&d, Duration::from_secs(1), &signers)
+                .build()
+                .unwrap();
             let key_id = s.create_key().unwrap();
 
             let id_cert = IdCertBuilder::new_ta_id_cert(&key_id, &s).unwrap();
