@@ -3,7 +3,7 @@ use std::{
     marker::PhantomData,
     path::Path,
     sync::{Arc, RwLock, RwLockReadGuard},
-    time::Duration,
+    time::Duration, ops::Deref,
 };
 
 use backoff::ExponentialBackoff;
@@ -315,12 +315,12 @@ impl Pkcs11Signer {
         name: String,
         status: &ProbeStatus<ConnectionSettings, SignerError, UsableServerState>,
     ) -> Result<UsableServerState, ProbeError<SignerError>> {
-        // fn force_cache_flush(context: ThreadSafePkcs11Context) {
-        //     // Finalize the PKCS#11 library so that we re-initialize it on next use, otherwise it just caches (at
-        //     // least with SoftHSMv2 and YubiHSM) the token info and doesn't ever report the presence of the token
-        //     // even when it becomes available.
-        //     let _ = Arc::try_unwrap(context).unwrap().into_inner().unwrap().finalize();
-        // }
+        fn force_cache_flush(ctx: ThreadSafePkcs11Context) {
+            // Finalize the PKCS#11 library so that we re-initialize it on next use, otherwise it just caches (at
+            // least with SoftHSMv2 and YubiHSM) the token info and doesn't ever report the presence of the token
+            // even when it becomes available.
+            let _ = ctx.write().unwrap().finalize().ok();
+        }
 
         fn slot_label_eq(ctx: &RwLockReadGuard<Pkcs11Context>, slot: Slot, slot_label: &str) -> bool {
             match ctx.get_token_info(slot) {
@@ -497,73 +497,74 @@ impl Pkcs11Signer {
             ProbeError::CompletedUnusable
         })?;
 
-        let (cryptoki_info, slot, _slot_info, token_info, user_pin) =
-            interrogate_token(&conn_settings, context.clone(), &name, lib_name).map_err(|err| {
+        match interrogate_token(&conn_settings, context.clone(), &name, lib_name) {
+            Ok((cryptoki_info, slot, _slot_info, token_info, user_pin)) => {
+                let session = Pkcs11Session::new(context.clone(), slot).map_err(|err| {
+                    error!(
+                        "[{}] Unable to open PKCS#11 session for library '{}' slot {}: {}",
+                        name, lib_name, slot, err
+                    );
+                    ProbeError::CompletedUnusable
+                })?;
+        
+                // TODO: unlike the `pkcs11` crate, the `cryptoki` crate doesn't require lots of PKCS#11 functions to be
+                // implemented by the loaded library. Do we need to verify therefore for ourselves that the required
+                // functions exist/work? See: https://github.com/parallaxsecond/rust-cryptoki/issues/78
+        
+                // TODO: check for RSA key pair support?
+
+                // Login if needed
+                let login_session = login(session, conn_settings.login_mode, user_pin, &name, lib_name, slot)?;
+        
+                // Switch from probing the server to using it.
+                // -------------------------------------------
+        
+                // Note: When Display'd via '{}' with format!() as is done below, the Rust `cryptoki` crate automatically trims
+                // trailing whitespace from Cryptoki padded strings such as the token info label, model and manufacturerID.
+        
+                let server_identification = format!(
+                    "{} (Cryptoki v{})",
+                    cryptoki_info.manufacturer_id(),
+                    cryptoki_info.library_version()
+                );
+        
+                let token_identification = format!(
+                    "{} (model: {}, vendor: {})",
+                    token_info.label(),
+                    token_info.model(),
+                    token_info.manufacturer_id()
+                );
+        
+                info!(
+                    "Using PKCS#11 token '{}' in slot {} of server '{}' via library '{}'",
+                    token_identification, slot, server_identification, lib_name
+                );
+        
+                let server_info = format!(
+                    "PKCS#11 Signer [token: {}, slot: {}, server: {}, library: {}]",
+                    token_identification, slot, server_identification, lib_name
+                );
+        
+                let state = UsableServerState::new(
+                    context,
+                    server_info,
+                    slot,
+                    login_session,
+                    conn_settings.retry_interval,
+                    conn_settings.backoff_multiplier,
+                    conn_settings.retry_timeout,
+                );
+        
+                Ok(state)
+            }
+            Err(err) => {
                 if matches!(err, ProbeError::CallbackFailed(SignerError::Pkcs11Error(_))) {
                     // While the token is not available now, it might be later.
-                    // force_cache_flush(context.clone());
+                    force_cache_flush(context);
                 }
-                err
-            })?;
-
-        let session = Pkcs11Session::new(context.clone(), slot).map_err(|err| {
-            error!(
-                "[{}] Unable to open PKCS#11 session for library '{}' slot {}: {}",
-                name, lib_name, slot, err
-            );
-            ProbeError::CompletedUnusable
-        })?;
-
-        // Note: We don't need to check for supported functions because the `pkcs11` Rust crate `fn new()` already
-        // requires that all of the functions that we need are supported. In fact it checks for so many functions I
-        // wonder if it might not fail on some customer deployments, but perhaps it checks only for functions required
-        // by the PKCS#11 specification...?
-
-        // TODO: check for RSA key pair support?
-
-        // Login if needed
-        let login_session = login(session, conn_settings.login_mode, user_pin, &name, lib_name, slot)?;
-
-        // Switch from probing the server to using it.
-        // -------------------------------------------
-
-        // Note: When Display'd via '{}' with format!() as is done below, the Rust `pkcs11` crate automatically trims
-        // trailing whitespace from Cryptoki padded strings such as the token info label, model and manufacturerID.
-
-        let server_identification = format!(
-            "{} (Cryptoki v{})",
-            cryptoki_info.manufacturer_id(),
-            cryptoki_info.library_version()
-        );
-
-        let token_identification = format!(
-            "{} (model: {}, vendor: {})",
-            token_info.label(),
-            token_info.model(),
-            token_info.manufacturer_id()
-        );
-
-        info!(
-            "Using PKCS#11 token '{}' in slot {} of server '{}' via library '{}'",
-            token_identification, slot, server_identification, lib_name
-        );
-
-        let server_info = format!(
-            "PKCS#11 Signer [token: {}, slot: {}, server: {}, library: {}]",
-            token_identification, slot, server_identification, lib_name
-        );
-
-        let state = UsableServerState::new(
-            context,
-            server_info,
-            slot,
-            login_session,
-            conn_settings.retry_interval,
-            conn_settings.backoff_multiplier,
-            conn_settings.retry_timeout,
-        );
-
-        Ok(state)
+                Err(err)
+            }
+        }
     }
 }
 

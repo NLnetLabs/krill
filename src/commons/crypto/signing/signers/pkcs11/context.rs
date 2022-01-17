@@ -28,6 +28,7 @@ use cryptoki::{
     session::{Session, SessionFlags, UserType},
     slot::{Slot, SlotInfo, TokenInfo},
 };
+use futures::TryFutureExt;
 use once_cell::sync::OnceCell;
 
 use crate::commons::crypto::SignerError;
@@ -81,6 +82,7 @@ pub(super) struct Pkcs11Context {
     /// None means that we tried and failed to load the library.
     ctx: Option<Pkcs11>,
 
+    // See: https://github.com/parallaxsecond/rust-cryptoki/issues/77
     initialized: bool,
 }
 
@@ -166,11 +168,43 @@ impl Pkcs11Context {
         }
         res
     }
+
+    fn logged_cryptoki_call_take<F, T>(&mut self, cryptoki_call_name: &'static str, call: F) -> Result<T, Pkcs11Error>
+    where
+        F: FnOnce(Pkcs11) -> Result<T, Pkcs11Error>,
+    {
+        trace!("{}::{}()", self.lib_file_name, cryptoki_call_name);
+        let res = (call)(self.ctx.take().unwrap()); // leave a None in the ctx member field
+        if let Err(err) = &res {
+            error!("{}::{}() failed: {}", self.lib_file_name, cryptoki_call_name, err);
+        }
+        res
+    }
 }
 
 impl Pkcs11Context {
     fn initialize(&self, init_args: CInitializeArgs) -> Result<(), Pkcs11Error> {
         self.logged_cryptoki_call("Initialize", |cryptoki| cryptoki.initialize(init_args))
+    }
+
+    pub fn finalize(&mut self) -> Result<(), Pkcs11Error> {
+        self.logged_cryptoki_call_take("Finalize", |cryptoki| {
+            cryptoki.finalize();
+            Ok(())
+        });
+
+        // reflect the fact that finalize() was called
+        self.initialized = false;
+
+        // remove the library we represent from the initialized set (as it
+        // is no longer initialized)
+
+        // note: these unwraps are safe because we must have initialized
+        // CONTEXTS and the entry for our library in order for this function
+        // to be invoked.
+        CONTEXTS.get().unwrap().write().unwrap().remove(&self.lib_file_name);
+
+        Ok(())
     }
 
     pub fn get_info(&self) -> Result<Info, Pkcs11Error> {
