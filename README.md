@@ -516,4 +516,3 @@ Features:
 Known issues:
 * Krill does not handle concurrent updates well. See this [issue](https://github.com/NLnetLabs/krill/issues/64).
 * The UI is very basic and behind the CLI.
-
