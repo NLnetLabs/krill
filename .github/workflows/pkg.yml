@@ -297,6 +297,19 @@ jobs:
               *)            echo 2>&1 "ERROR: Unexpected GitHub Actions event"; exit 1 ;;
             esac
 
+            case ${{ github.event_name }} in
+              pull_request | workflow_dispatch)
+                MAINTAINER="${{ github.event.sender.login }} <pkg@nlnetlabs.nl>"
+                ;;
+              push)
+                MAINTAINER="${{ github.event.pusher.name }} <${{ github.event.pusher.email }}>"
+                ;;
+              *)
+                echo 2>&1 "ERROR: Unexpected GitHub Actions event"
+                exit 1
+                ;;
+            esac
+
             # Generate the RFC 5322 format date by hand instead of using date --rfc-email because that option doesn't exist
             # on Ubuntu 16.04 and Debian 9
             RFC5322_TS=$(LC_TIME=en_US.UTF-8 date +'%a, %d %b %Y %H:%M:%S %z')
