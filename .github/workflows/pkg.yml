@@ -26,18 +26,8 @@ on:
       - 'LICENSE'
       - 'README.md'
       - 'tests/e2e/**'
-  # Hmm, annoying, do we really have to duplicate this?
-  pull_request:
-    paths-ignore:
-      - '.dockerignore'
-      - '.github/workflow/pkg.yml'
-      - 'Changelog.md'
-      - 'Dockerfile'
-      - 'doc/**'
-      - 'docker/**'
-      - 'LICENSE'
-      - 'README.md'
-      - 'tests/e2e/**'
+
+  workflow_dispatch:
 
 defaults:
   run:
