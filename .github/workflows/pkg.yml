@@ -45,12 +45,52 @@ defaults:
     shell: bash --noprofile --norc -eo pipefail -x {0}
 
 jobs:
+  # Cross-compile packages in a separate job so that we can run it on the GitHub Actions runner host directly rather
+  # than inside a Docker container (as is done by the `pkg` workflow). We do this because we use `cargo cross` to handle
+  # the complexity of using the right compile-time tooling and dependencies for cross compilation to work, and 
+  # `cargo cross` works by launching its own Docker container. Trying to launch a Docker container from within a Docker
+  # container, the so-called Docker-in-Docker scenario, is more difficult for `cargo cross` to handle correctly and
+  # didn't work when I tried it, even with `CROSS_DOCKER_IN_DOCKER=true` set in the environment, hence this approach.
+  #
+  # See: https://github.com/rust-embedded/cross#docker-in-docker
+  cross:
+    strategy:
+      matrix:
+        target:
+          - 'armv7-unknown-linux-gnueabihf'
+          - 'aarch64-unknown-linux-gnu'
+    name: cross
+    runs-on: ubuntu-latest
+    steps:
+    # Git clone the Krill code in the branch we were invoked on.
+    - name: Checkout repository
+      uses: actions/checkout@v1
+
+    - name: Install cargo cross      
+      run: |
+        cargo install cross
+
+    - name: Cross compile
+      env:
+        CROSS_TARGET: ${{ matrix.target }}
+      run: |
+        cross build --locked --release --features static-openssl --target ${CROSS_TARGET}
+
+    - name: Upload built binaries
+      uses: actions/upload-artifact@v2
+      with:
+        name: ${{ matrix.target }}
+        path: |
+          target/${{ matrix.target }}/release/krill
+          target/${{ matrix.target }}/release/krillc
+
   # Use the cargo-deb and cargo-generate-rpm Rust crates to build Debian and RPM packages respectively for installing
   # Krill.
   # See:
   #   - https://github.com/mmstick/cargo-deb
   #   - https://github.com/cat-in-136/cargo-generate-rpm
   pkg:
+    needs: cross
     strategy:
       matrix:
         image: # can't use complex values here, only primitive values are allowed
@@ -62,9 +102,22 @@ jobs:
           - 'debian:bullseye' # debian/11
           - 'centos:7'
           - 'centos:8'
+        target:
+          - 'x86_64'
         include:
+          # cargo-generate-rpm doesn't support specifying feature variations in Cargo.toml so we have to do it via
+          # custom build arguments instead.
           - image: 'centos:7'
             extra_build_args: '--features static-openssl'
+
+          # package for the Raspberry Pi 4b as an ARMv7 cross compiled variant of the Debian Bullseye upon which
+          # Raspbian 11 is based.
+          - image: 'debian:bullseye'
+            target: 'armv7-unknown-linux-gnueabihf'
+
+          # package for the ROCK64 as an AARCH64 cross compiled variant of Debian Buster upon which Armbian 21 is based.
+          - image: 'debian:buster'
+            target: 'aarch64-unknown-linux-gnu'
     env:
       CARGO_DEB_VER: 1.34.2
       CARGO_GENERATE_RPM_VER: 0.6.0
@@ -73,7 +126,7 @@ jobs:
       NEXT_VER_LABEL: bis
     name: pkg
     runs-on: ubuntu-latest
-    # Build on the oldest platform we are targeting in order to avoid https://github.com/rust-lang/rust/issues/57497.
+    # Build on the platform we are targeting in order to avoid https://github.com/rust-lang/rust/issues/57497.
     # Specifying container causes all of the steps in this job to run inside a Docker container.
     container: ${{ matrix.image }}
 
@@ -81,13 +134,13 @@ jobs:
     - name: Set vars
       id: setvars
       shell: bash
+      env:
+        MATRIX_IMAGE: ${{ matrix.image }}
       run: |
         # Get the operating system and release name (e.g. ubuntu and xenial) from the image name (e.g. ubuntu:xenial) by
         # extracting only the parts before and after but not including the colon:
         echo "OS_NAME=${MATRIX_IMAGE%:*}" >> $GITHUB_ENV
         echo "OS_REL=${MATRIX_IMAGE#*:}" >> $GITHUB_ENV
-      env:
-        MATRIX_IMAGE: ${{ matrix.image }}
 
     # Git clone the Krill code in the branch we were invoked on.
     - name: Checkout repository
@@ -95,6 +148,8 @@ jobs:
 
     # Install Rust the hard way rather than using a GH Action because the action doesn't work inside a Docker container.
     - name: Install Rust
+      env:
+        DEBIAN_FRONTEND: noninteractive
       run: |
         case ${OS_NAME} in
           debian|ubuntu)
@@ -108,10 +163,10 @@ jobs:
 
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --profile minimal -y
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-      env:
-        DEBIAN_FRONTEND: noninteractive
 
     - name: Install compilation and other dependencies
+      env:
+        DEBIAN_FRONTEND: noninteractive
       run: |
         case ${OS_NAME} in
           debian|ubuntu)
@@ -124,8 +179,6 @@ jobs:
             yum groupinstall -y "Development Tools"
             ;;
         esac
-      env:
-        DEBIAN_FRONTEND: noninteractive
 
     # Speed up Krill Rust builds by caching unchanged built dependencies.
     # See: https://github.com/actions/cache/blob/master/examples.md#rust---cargo
@@ -135,7 +188,7 @@ jobs:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
-        key: ${{ matrix.image }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ matrix.image }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
     # Speed up tooling installation by only re-downloading and re-building dependent crates if we change the version of
     # the tool that we are using.
@@ -182,12 +235,21 @@ jobs:
             ;;
         esac
 
+    - name: Download cross compiled binaries
+      if: ${{ matrix.target != 'x86_64' }}
+      id: download
+      uses: actions/download-artifact@v2
+      with:
+        name: ${{ matrix.target }}
+        path: target/${{ matrix.target }}/release
+
     # Instruct cargo-deb or cargo-generate-rpm to build the package based on Cargo.toml settings and command line
     # arguments.
     - name: Create the package
       env:
         MATRIX_IMAGE: ${{ matrix.image }}
         EXTRA_BUILD_ARGS: ${{ matrix.extra_build_args }}
+        CROSS_TARGET: ${{ matrix.target }}
       run: |
         # Debian
         # ==============================================================================================================
@@ -248,8 +310,16 @@ jobs:
             echo "  * See: https://github.com/NLnetLabs/krill/releases/tag/v${KRILL_NEW_VER}" >>target/debian/changelog
             echo " -- maintainer ${MAINTAINER}  ${RFC5322_TS}" >>target/debian/changelog
 
+            if [[ "${CROSS_TARGET}" == "x86_64" ]]; then
+              EXTRA_CARGO_DEB_ARGS=
+              VARIANT="${OS_NAME}-${OS_REL}"
+            else
+              EXTRA_CARGO_DEB_ARGS="--no-build --no-strip --target ${CROSS_TARGET} --output target/debian"
+              VARIANT="${OS_NAME}-${OS_REL}-${CROSS_TARGET}"
+            fi
+
             DEB_VER="${PKG_KRILL_VER}-1${OS_REL}"
-            cargo deb --variant ${OS_NAME}-${OS_REL} --deb-version ${DEB_VER} -v -- --locked ${EXTRA_BUILD_ARGS}
+            cargo deb --variant ${VARIANT} --deb-version ${DEB_VER} -v ${EXTRA_CARGO_DEB_ARGS} -- --locked ${EXTRA_BUILD_ARGS}
             ;;
           centos)
             # Build and strip Krill as cargo generate-rpm doesn't do this for us
@@ -286,10 +356,19 @@ jobs:
 
     # See what O/S specific linting tools think of our package.
     - name: Verify the package
+      env:
+        CROSS_TARGET: ${{ matrix.target }}
       run: |
         case ${OS_NAME} in
           debian|ubuntu)
-            lintian -v target/debian/*.deb
+            dpkg --info target/debian/*.deb
+            if [[ "${CROSS_TARGET}" == "x86_64" ]]; then
+              EXTRA_LINTIAN_ARGS=
+            else
+              EXTRA_LINTIAN_ARGS="--suppress-tags unstripped-binary-or-object"
+            fi
+            lintian --version
+            lintian -v ${EXTRA_LINTIAN_ARGS} target/debian/*.deb
             ;;
           centos)
             # cargo generate-rpm creates RPMs that rpmlint considers to have
@@ -305,10 +384,22 @@ jobs:
     - name: Upload package
       uses: actions/upload-artifact@v2
       with:
-        name: ${{ env.OS_NAME }}_${{ env.OS_REL }}
+        name: ${{ env.OS_NAME }}_${{ env.OS_REL }}_${{ matrix.target }}
         path: |
           target/debian/*.deb
           target/generate-rpm/*.rpm
+
+    # Delete the temporary artifact that contains binaries produced by the `cross` job that ran before us. All artifacts
+    # existing once the workflow completes are expected by the packages.nlnetlabs.nl scripting to contain DEB or RPM or
+    # other supported package archives, not intermediate artifacts such as binaries to be packaged. Failure to delete
+    # this temporary artifact will cause later publication to packages.nlnetlabs.nl using artifacts from this workflow
+    # run to fail.
+    - name: Delete temporary cross compiled binaries artifact
+      if: ${{ matrix.target != 'x86_64' }}
+      id: delete
+      uses: geekyeggo/delete-artifact@v1
+      with:
+        name: ${{ matrix.target }}
 
   # Download and sanity check on target operating systems the packages created by previous jobs (see above). Don't test
   # on GH runners as they come with lots of software and libraries pre-installed and thus are not representative of the
@@ -333,6 +424,8 @@ jobs:
         mode:
           - 'fresh-install'
           - 'upgrade-from-published'
+        target:
+          - 'x86_64'
         # if we later add a new O/S or variant we won't have yet ever published
         # the package so can't do a test upgrade over last published version. In
         # that case add lines here like so to disable the upgrade from published
@@ -348,6 +441,8 @@ jobs:
     - name: Set vars
       id: setvars
       shell: bash
+      env:
+        MATRIX_IMAGE: ${{ matrix.image }}
       run: |
         # Get the operating system and release name (e.g. ubuntu and xenial) from the image name (e.g. ubuntu:xenial) by
         # extracting only the parts before and after but not including the colon:
@@ -357,13 +452,11 @@ jobs:
         echo "OS_NAME=${OS_NAME}" >> $GITHUB_ENV
         echo "OS_REL=${OS_REL}" >> $GITHUB_ENV
         echo "LXC_IMAGE=images:${OS_NAME}/${OS_REL}/cloud" >> $GITHUB_ENV
-      env:
-        MATRIX_IMAGE: ${{ matrix.image }}
 
     - name: Download package
       uses: actions/download-artifact@v2
       with:
-        name: ${{ env.OS_NAME }}_${{ env.OS_REL }}
+        name: ${{ env.OS_NAME }}_${{ env.OS_REL }}_${{ matrix.target }}
 
     - name: Add current user to LXD group
       run: |
