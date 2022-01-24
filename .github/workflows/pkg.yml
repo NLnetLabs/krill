@@ -149,17 +149,7 @@ jobs:
       run: |
         case ${OS_NAME} in
           debian|ubuntu)
-            if [[ "${OS_REL}" == "xenial" ]]; then
-              # Disable use of the default lzma feature which causes XZ compression to be used
-              # which then causes Lintian to fail with error:
-              #   E: krill: malformed-deb-archive newer compressed control.tar.xz
-              # Passing --fast to cargo-deb to disable use of XZ compression didn't help.
-              # See: https://github.com/kornelski/cargo-deb/issues/12
-              EXTRA_CARGO_INSTALL_ARGS="--no-default-features"
-            else
-              EXTRA_CARGO_INSTALL_ARGS=""
-            fi
-            cargo install cargo-deb --version ${CARGO_DEB_VER} --locked ${EXTRA_CARGO_INSTALL_ARGS}
+            cargo install cargo-deb --version ${CARGO_DEB_VER} --locked
             ;;
         esac
 
@@ -251,8 +241,17 @@ jobs:
             echo "  * See: https://github.com/NLnetLabs/krill/releases/tag/v${KRILL_NEW_VER}" >>target/debian/changelog
             echo " -- maintainer ${MAINTAINER}  ${RFC5322_TS}" >>target/debian/changelog
 
+            if [[ "${OS_REL}" == "xenial" ]]; then
+              # Don't use the cargo-deb internal XZ compression functionality on Xenial as Lintian then fails with error:
+              #   E: krill: malformed-deb-archive newer compressed control.tar.xz
+              # See: https://github.com/kornelski/cargo-deb/issues/12
+              EXTRA_CARGO_DEB_ARGS="--system-xz"
+            else
+              EXTRA_CARGO_DEB_ARGS=""
+            fi
+
             DEB_VER="${PKG_KRILL_VER}-1${OS_REL}"
-            cargo deb --variant ${OS_NAME}-${OS_REL} --deb-version ${DEB_VER} -v -- --locked ${EXTRA_BUILD_ARGS}
+            cargo deb --variant ${OS_NAME}-${OS_REL} --deb-version ${DEB_VER} -v ${EXTRA_CARGO_DEB_ARGS} -- --locked ${EXTRA_BUILD_ARGS}
             ;;
           centos)
             # Build and strip Krill as cargo generate-rpm doesn't do this for us
