@@ -34,7 +34,7 @@ ARG RUN_USER=krill
 ARG RUN_USER_UID=1012
 ARG RUN_USER_GID=1012
 
-RUN apk add bash libgcc openssl tzdata util-linux
+RUN apk --no-cache add bash libgcc openssl tzdata util-linux
 
 RUN addgroup -g ${RUN_USER_GID} ${RUN_USER} && \
     adduser -D -u ${RUN_USER_UID} -G ${RUN_USER} ${RUN_USER}
