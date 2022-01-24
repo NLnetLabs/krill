@@ -220,12 +220,6 @@ jobs:
         case ${OS_NAME} in
           debian|ubuntu)
             case ${{ github.event_name }} in
-              pull_request) MAINTAINER="${{ github.actor }} <unknown@email.address>" ;;
-              push)         MAINTAINER="${{ github.event.pusher.name }} <${{ github.event.pusher.email }}>" ;;
-              *)            echo 2>&1 "ERROR: Unexpected GitHub Actions event"; exit 1 ;;
-            esac
-
-            case ${{ github.event_name }} in
               pull_request | workflow_dispatch)
                 MAINTAINER="${{ github.event.sender.login }} <pkg@nlnetlabs.nl>"
                 ;;
