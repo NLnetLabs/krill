@@ -28,8 +28,16 @@ pub fn sub_dir(base: &Path, name: &str) -> Result<PathBuf, KrillIoError> {
 
 pub fn create_dir(dir: &Path) -> Result<(), KrillIoError> {
     if !dir.is_dir() {
-        fs::create_dir(dir)
+        fs::create_dir_all(dir)
             .map_err(|e| KrillIoError::new(format!("could not create dir: {}", dir.to_string_lossy()), e))?;
+    }
+    Ok(())
+}
+
+pub fn remove_dir_all(dir: &Path) -> Result<(), KrillIoError> {
+    if dir.exists() {
+        fs::remove_dir_all(dir)
+            .map_err(|e| KrillIoError::new(format!("could not remove-all dir: {}", dir.to_string_lossy()), e))?;
     }
     Ok(())
 }

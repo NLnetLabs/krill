@@ -8,7 +8,7 @@ use std::{
 };
 
 use chrono::Duration;
-use clap::{App, Arg};
+use clap::{App, Arg, SubCommand};
 use log::{error, LevelFilter};
 use serde::{de, Deserialize, Deserializer};
 
@@ -202,6 +202,10 @@ impl ConfigDefaults {
     fn timing_aspa_reissue_weeks_before() -> i64 {
         4
     }
+
+    fn prepare_upgrade_only() -> bool {
+        false
+    }
 }
 
 //------------ Config --------------------------------------------------------
@@ -227,6 +231,9 @@ pub struct Config {
 
     #[serde(default = "ConfigDefaults::always_recover_data")]
     pub always_recover_data: bool,
+
+    #[serde(default = "ConfigDefaults::prepare_upgrade_only")]
+    pub prepare_upgrade_only: bool,
 
     pub pid_file: Option<PathBuf>,
 
@@ -540,6 +547,10 @@ impl Config {
     pub fn testbed(&self) -> Option<&TestBed> {
         self.testbed.as_ref()
     }
+
+    pub fn upgrade_data_dir(&self) -> PathBuf {
+        self.data_dir.join("upgrade-data")
+    }
 }
 
 /// # Create
@@ -652,6 +663,7 @@ impl Config {
             https_mode,
             data_dir,
             always_recover_data,
+            prepare_upgrade_only: false,
             pid_file,
             service_uri: None,
             log_level,
@@ -700,7 +712,8 @@ impl Config {
         config
     }
 
-    pub fn get_config_filename() -> String {
+    /// Creates the config (at startup).
+    pub fn create() -> Result<Self, ConfigError> {
         let matches = App::new(KRILL_SERVER_APP)
             .version(KRILL_VERSION)
             .arg(
@@ -711,57 +724,52 @@ impl Config {
                     .help("Override the path to the config file (default: './defaults/krill.conf')")
                     .required(false),
             )
+            .subcommand(SubCommand::with_name("prepare-upgrade")
+                .about("Prepares and tests any data migration that may be needed for an upgrade, reducing time and risk. Leaves the current data unchanged and can run while krill is active.")
+            )
             .get_matches();
 
         let config_file = matches.value_of("config").unwrap_or(KRILL_DEFAULT_CONFIG_FILE);
 
-        config_file.to_string()
+        let mut config = Self::read_config(config_file)?;
+
+        if matches.subcommand_matches("prepare-upgrade").is_some() {
+            config.prepare_upgrade_only = true;
+            config.log_type = LogType::Stderr;
+            config.log_level = LevelFilter::Info;
+        }
+
+        config.init_logging()?;
+
+        if config.prepare_upgrade_only {
+            info!("Prepare and test krill upgrade.")
+        } else {
+            info!("{} uses configuration file: {}", KRILL_SERVER_APP, config_file);
+        }
+
+        config.trim_refresh()?;
+        config.verify()?;
+
+        Ok(config)
     }
 
-    /// Creates the config (at startup). Panics in case of issues.
-    pub fn create() -> Result<Self, ConfigError> {
-        let config_file = Self::get_config_filename();
-
-        let mut config = match Self::read_config(&config_file) {
-            Err(e) => {
-                if config_file == KRILL_DEFAULT_CONFIG_FILE {
-                    Err(ConfigError::other(
-                        "Cannot find config file. Please use --config to specify its location.",
-                    ))
-                } else {
-                    Err(ConfigError::Other(format!(
-                        "Error parsing config file: {}, error: {}",
-                        config_file, e
-                    )))
-                }
-            }
-            Ok(config) => {
-                config.init_logging()?;
-                info!("{} uses configuration file: {}", KRILL_SERVER_APP, config_file);
-                Ok(config)
-            }
-        }?;
-
-        if config.ca_refresh_seconds < CA_REFRESH_SECONDS_MIN {
+    fn trim_refresh(&mut self) -> Result<(), ConfigError> {
+        if self.ca_refresh_seconds < CA_REFRESH_SECONDS_MIN {
             warn!(
                 "The value for 'ca_refresh_seconds' was below the minimum value, changing it to {} seconds",
                 CA_REFRESH_SECONDS_MIN
             );
-            config.ca_refresh_seconds = CA_REFRESH_SECONDS_MIN;
+            self.ca_refresh_seconds = CA_REFRESH_SECONDS_MIN;
         }
 
-        if config.ca_refresh_seconds > CA_REFRESH_SECONDS_MAX {
+        if self.ca_refresh_seconds > CA_REFRESH_SECONDS_MAX {
             warn!(
                 "The value for 'ca_refresh_seconds' was above the maximum value, changing it to {} seconds",
                 CA_REFRESH_SECONDS_MAX
             );
-            config.ca_refresh_seconds = CA_REFRESH_SECONDS_MAX;
+            self.ca_refresh_seconds = CA_REFRESH_SECONDS_MAX;
         }
-
-        config
-            .verify()
-            .map_err(|e| ConfigError::Other(format!("Error parsing config file: {}, error: {}", config_file, e)))?;
-        Ok(config)
+        Ok(())
     }
 
     pub fn verify(&self) -> Result<(), ConfigError> {
@@ -858,13 +866,20 @@ impl Config {
 
     pub fn read_config(file: &str) -> Result<Self, ConfigError> {
         let mut v = Vec::new();
-        let mut f =
-            File::open(file).map_err(|e| KrillIoError::new(format!("Could not read open file '{}'", file), e))?;
+        let mut f = File::open(file).map_err(|e| {
+            KrillIoError::new(
+                format!(
+                    "Could not read config file '{}'. Please use --config to specify its location.",
+                    file
+                ),
+                e,
+            )
+        })?;
         f.read_to_end(&mut v)
             .map_err(|e| KrillIoError::new(format!("Could not read config file '{}'", file), e))?;
 
-        let c: Config = toml::from_slice(v.as_slice())?;
-        Ok(c)
+        toml::from_slice(v.as_slice())
+            .map_err(|e| ConfigError::Other(format!("Error parsing config file: {}, error: {}", file, e)))
     }
 
     pub fn init_logging(&self) -> Result<(), ConfigError> {

@@ -53,7 +53,7 @@ use crate::{
         },
         krillserver::KrillServer,
     },
-    upgrades::{post_start_upgrade, pre_start_upgrade, update_storage_version},
+    upgrades::{finalise_data_migration, post_start_upgrade, prepare_upgrade_data_migrations, UpgradeMode},
 };
 
 //------------ State -----------------------------------------------------
@@ -116,17 +116,19 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
     test_data_dirs_or_die(&config);
 
     // Call upgrade, this will only do actual work if needed.
-    pre_start_upgrade(config.clone())?;
+    let upgrade_versions = prepare_upgrade_data_migrations(UpgradeMode::PrepareThenFinalise, config.clone()).await?;
+    if let Some(upgrade) = &upgrade_versions {
+        finalise_data_migration(upgrade, config.as_ref())?;
+    }
 
     // Create the server, this will create the necessary data sub-directories if needed
     let krill = KrillServer::build(config.clone()).await?;
 
     // Call post-start upgrades to trigger any upgrade related runtime actions, such as
     // re-issuing ROAs because subject name strategy has changed.
-    post_start_upgrade(&config, &krill).await?;
-
-    // Update the version identifiers for the storage dirs
-    update_storage_version(&config.data_dir).await?;
+    if let Some(upgrade_versions) = upgrade_versions {
+        post_start_upgrade(&upgrade_versions, &krill).await?;
+    }
 
     // If the operator wanted to do the upgrade only, now is a good time to report success and stop
     if env::var(KRILL_ENV_UPGRADE_ONLY).is_ok() {

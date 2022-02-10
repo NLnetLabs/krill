@@ -17,7 +17,6 @@ use crate::{
         crypto::{IdCert, KrillSigner},
         eventsourcing::{Aggregate, AggregateStore, CommandKey, KeyStoreKey, KeyValueStore, StoredValueInfo},
         remote::rfc8183,
-        util::KrillVersion,
     },
     constants::{CASERVER_DIR, KRILL_VERSION},
     daemon::{
@@ -30,52 +29,47 @@ use crate::{
     },
     pubd::RepositoryManager,
     upgrades::v0_9_0::{old_commands::*, old_events::*},
-    upgrades::{UpgradeError, UpgradeResult, UpgradeStore, MIGRATION_SCOPE},
+    upgrades::{UpgradeError, UpgradeMode, UpgradeResult, UpgradeStore, MIGRATION_SCOPE},
 };
 
 /// Migrate the current objects for each CA into the CaObjectStore
 pub struct CaObjectsMigration;
 
 impl CaObjectsMigration {
-    pub fn migrate(config: Arc<Config>, repo_manager: RepositoryManager) -> UpgradeResult<()> {
+    pub fn prepare(mode: UpgradeMode, config: Arc<Config>, repo_manager: RepositoryManager) -> UpgradeResult<()> {
         let repo_manager = Arc::new(repo_manager);
-        let store = KeyValueStore::disk(&config.data_dir, CASERVER_DIR)?;
-        let ca_store = AggregateStore::<ca::CertAuth>::disk(&config.data_dir, CASERVER_DIR)?;
+        let current_kv_store = KeyValueStore::disk(&config.data_dir, CASERVER_DIR)?;
+        let new_kv_store = KeyValueStore::disk(&config.upgrade_data_dir(), CASERVER_DIR)?;
+        let new_agg_store = AggregateStore::<ca::CertAuth>::disk(&config.upgrade_data_dir(), CASERVER_DIR)?;
 
         let signer = Arc::new(KrillSigner::build(&config.data_dir)?);
 
-        if store.version_is_before(KrillVersion::release(0, 6, 0))? {
-            Err(UpgradeError::custom("Cannot upgrade Krill installations from before version 0.6.0. Please upgrade to any version ranging from 0.6.0 to 0.8.1 first, and then upgrade to this version."))
-        } else if store.version_is_before(KrillVersion::candidate(0, 9, 0, 1))? {
-            info!("Krill version is older than 0.9.0-RC1, will now upgrade data structures.");
+        info!("Krill version is older than 0.9.0, will now upgrade CA data structures.");
 
-            // Populate object store which will contain all objects produced by CAs, while we are
-            // at it.. return the information we will need in case we need to convert embedded child-parent
-            // CA relationships to use RFC 6492.
-            let derived_embedded_ca_info_map = Self::populate_ca_objects_store(config, repo_manager.clone(), signer)?;
+        // Populate object store which will contain all objects produced by CAs, while we are
+        // at it.. return the information we will need in case we need to convert embedded child-parent
+        // CA relationships to use RFC 6492.
+        let derived_embedded_ca_info_map = Self::prepare_ca_objects_store(config, repo_manager.clone(), signer)?;
 
-            // Migrate existing CAs to the new data structure, commands and events
-            CasStoreMigration {
-                store,
-                ca_store,
-                repo_manager,
-                derived_embedded_ca_info_map,
-            }
-            .migrate()
-        } else {
-            debug!("Krill is up to date, no CA data migration needed.");
-            Ok(())
+        // Migrate existing CAs to the new data structure, commands and events
+        CasStoreMigration {
+            current_kv_store,
+            new_kv_store,
+            new_agg_store,
+            repo_manager,
+            derived_embedded_ca_info_map,
         }
+        .prepare_new_data(mode)
     }
 
-    fn populate_ca_objects_store(
+    fn prepare_ca_objects_store(
         config: Arc<Config>,
         repo_manager: Arc<RepositoryManager>,
         signer: Arc<KrillSigner>,
     ) -> UpgradeResult<HashMap<Handle, DerivedEmbeddedCaMigrationInfo>> {
         // Read all CAS based on snapshots and events, using the pre-0_9_0 data structs
         // which are preserved here.
-        info!("Krill will now populate the CA Objects Store");
+        info!("Populate the CA Objects Store introduced in Krill 0.9.0");
         let store = AggregateStore::<OldCertAuth>::disk(&config.data_dir, CASERVER_DIR)?;
         if store.warm().is_err() {
             // most likely we are dealing with off by one errors in old krill info files. Archive them for migration and try again.
@@ -86,11 +80,15 @@ impl CaObjectsMigration {
             }
         }
 
-        let ca_objects_store = CaObjectsStore::disk(config.clone(), signer)?;
+        let ca_objects_store =
+            CaObjectsStore::disk(&config.upgrade_data_dir(), config.issuance_timing.clone(), signer)?;
 
         let mut res = HashMap::new();
 
-        for ca_handle in store.list()? {
+        let cas = store.list()?;
+        info!("Will migrate data for {} CAs", cas.len());
+
+        for ca_handle in cas {
             let ca = store.get_latest(&ca_handle)?;
             let objects = ca.ca_objects(repo_manager.as_ref())?;
 
@@ -98,6 +96,8 @@ impl CaObjectsMigration {
 
             res.insert(ca_handle, Self::derived_embedded_ca_info(ca, &config));
         }
+
+        info!("Done populating the CA Objects Store");
 
         Ok(res)
     }
@@ -134,8 +134,9 @@ impl CaObjectsMigration {
 
 /// Migrate pre 0.9 commands and events for CAs
 struct CasStoreMigration {
-    store: KeyValueStore,
-    ca_store: AggregateStore<ca::CertAuth>,
+    current_kv_store: KeyValueStore,
+    new_kv_store: KeyValueStore,
+    new_agg_store: AggregateStore<ca::CertAuth>,
     repo_manager: Arc<RepositoryManager>,
     derived_embedded_ca_info_map: HashMap<Handle, DerivedEmbeddedCaMigrationInfo>,
 }
@@ -145,109 +146,102 @@ impl UpgradeStore for CasStoreMigration {
         unreachable!("checked directly on keystore")
     }
 
-    fn migrate(&self) -> Result<(), UpgradeError> {
-        info!("Krill will now reformat existing command and event data, and remove unnecessary data");
+    fn prepare_new_data(&self, mode: UpgradeMode) -> Result<(), UpgradeError> {
+        info!("Upgrade CA command and event data to Krill version {}", KRILL_VERSION);
 
         let dflt_actor = "krill".to_string();
 
         // For each CA:
-        //   - build a new
-        for scope in self.store.scopes()? {
-            // Archive all keys in the scope, then we can write new keys as needed without
-            // overwriting anything when we renumber.
-            for key in self.store.keys(Some(scope.clone()), "")? {
-                self.archive_to_migration_scope(&key)?;
-            }
+        for scope in self.current_kv_store.scopes()? {
+            // Getting the Handle should never fail, but if it does then we should bail out asap.
+            let handle = Handle::from_str(&scope)
+                .map_err(|_| UpgradeError::Custom(format!("Found invalid CA handle '{}'", scope)))?;
 
-            let migration_scope = format!("{}/{}", scope, MIGRATION_SCOPE);
+            // Get the info from the current store to see where we are
+            let mut data_upgrade_info = self.data_upgrade_info(&scope)?;
 
-            let migration_info_key = KeyStoreKey::scoped(migration_scope.clone(), "info.json".to_string());
-            let mut info: StoredValueInfo = match self.store.get(&migration_info_key) {
-                Ok(Some(info)) => info,
-                _ => StoredValueInfo::default(),
-            };
+            // Get the list of commands to prepare, starting with the last_command we got to (may be 0)
+            let old_cmd_keys = self.command_keys(&scope, data_upgrade_info.last_command)?;
 
-            // reset last event and command, we will find the new (higher) versions.
-            info.last_event = 0;
-            info.last_command = 1;
+            // Migrate the initialisation event, if not done in a previous run. This
+            // is a special event that has no command, so we need to do this separately.
+            if data_upgrade_info.last_event == 0 {
+                // Make a new init event.
+                let init_key = Self::event_key(&scope, 0);
 
-            // Find all command keys and sort them by sequence.
-            // Then turn them back into key store keys for further processing.
-            let cmd_keys = self.command_keys(&migration_scope)?;
+                let old_init: OldCaIni = self.get(&init_key)?;
+                let (id, _, old_ini_det) = old_init.unpack();
+                let (rfc_8183_id, repo_opt, ta_opt) = old_ini_det.unpack();
+                let ini = IniDet::new(&id, rfc_8183_id.into());
+                self.new_kv_store.store(&init_key, &ini)?;
 
-            // Get the time to use if we need to inject commands and events for the init
-            // event, based on the first recorded time in command keys.
-            let time_for_init_command = match cmd_keys.first() {
-                Some(first_command) => {
-                    let old_cmd: OldStoredCaCommand = self.get(first_command)?;
-                    old_cmd.time
+                // If the CA was initialized as a trust anchor, then we refuse to upgrade.
+                // This can only happen if this is a very old test system. People will need
+                // to set up a new test system instead.
+                if ta_opt.is_some() {
+                    return Err(UpgradeError::custom(
+                        "This Krill instance is set up as a test system, using a Trust Anchor, which cannot be migrated.",
+                    ));
                 }
-                None => Time::now(),
-            };
 
-            // Migrate the init event.
-            let old_init_key = KeyStoreKey::scoped(migration_scope.clone(), "delta-0.json".to_string());
-            let init_key = KeyStoreKey::scoped(scope.clone(), "delta-0.json".to_string());
+                // If the CA was initialized with an embedded repository, then make sure that
+                // we generate a command + events to update the repository to the 'local' RFC 8181
+                // version of this repository.
+                if repo_opt.is_some() {
+                    debug!("Converting CA '{}' to use local repository using RFC 8181", scope);
 
-            let old_init: OldCaIni = self.get(&old_init_key)?;
-            let (id, _, old_ini_det) = old_init.unpack();
-            let (rfc_8183_id, repo_opt, ta_opt) = old_ini_det.unpack();
-            let ini = IniDet::new(&id, rfc_8183_id.into());
-            debug!("  init: {}", init_key);
-            self.store.store(&init_key, &ini)?;
+                    // Get the time to use if we need to inject commands and events for the init
+                    // event, based on the first recorded time in command keys.
+                    let time_for_init_command = match old_cmd_keys.first() {
+                        Some(first_command) => {
+                            let old_cmd: OldStoredCaCommand = self.get(first_command)?;
+                            old_cmd.time
+                        }
+                        None => Time::now(),
+                    };
 
-            // If the CA was initialized with an embedded repository, then make sure that
-            // we generate a command + events to update the repository to the 'local' RFC 8181
-            // version of this repository.
+                    let repo_response = self.repo_manager.repository_response(&id)?;
 
-            if repo_opt.is_some() {
-                debug!("  +- Generate command and event for initialized repository");
-                let res = self.repo_manager.repository_response(&id)?;
+                    let contact = RepositoryContact::new(repo_response);
+                    let service_uri = contact.service_uri().clone();
 
-                let contact = RepositoryContact::new(res);
-                let service_uri = contact.service_uri().clone();
+                    data_upgrade_info.last_event += 1;
+                    data_upgrade_info.last_command += 1;
 
-                info.last_event += 1;
-                let event = CaEvt::new(&id, info.last_event, CaEvtDet::RepoUpdated { contact });
+                    let event = CaEvt::new(&id, data_upgrade_info.last_event, CaEvtDet::RepoUpdated { contact });
+                    let event_key = Self::event_key(&scope, data_upgrade_info.last_event);
+                    self.new_kv_store.store(&event_key, &event)?;
 
-                let command = StoredCaCommand::new(
-                    dflt_actor.clone(),
-                    time_for_init_command,
-                    id,
-                    info.last_event,
-                    info.last_command,
-                    StorableCaCommand::RepoUpdate { service_uri },
-                    StoredEffect::Success { events: vec![1] },
+                    let cmd = StoredCaCommand::new(
+                        dflt_actor.clone(),
+                        time_for_init_command,
+                        id,
+                        data_upgrade_info.last_event,
+                        data_upgrade_info.last_command,
+                        StorableCaCommand::RepoUpdate { service_uri },
+                        StoredEffect::Success { events: vec![1] },
+                    );
+                    let cmd_key = CommandKey::for_stored(&cmd);
+                    let cmd_keystore_key = KeyStoreKey::scoped(scope.clone(), format!("{}.json", cmd_key));
+
+                    self.new_kv_store.store(&cmd_keystore_key, &cmd)?;
+                }
+            }
+
+            let total_commands = old_cmd_keys.len();
+            if data_upgrade_info.last_command == 0 {
+                info!("Will migrate {} commands for CA '{}'", total_commands, scope);
+            } else {
+                info!(
+                    "Will resume migration of {} remaining commands for CA '{}'",
+                    total_commands, scope
                 );
-
-                info.last_command += 1;
-                info.last_update = time_for_init_command;
-
-                let event_key = Self::event_key(&scope, info.last_event);
-                self.store.store(&event_key, &event)?;
-
-                let cmd_key = CommandKey::for_stored(&command);
-                let key = KeyStoreKey::scoped(scope.clone(), format!("{}.json", cmd_key));
-
-                self.store.store(&key, &command)?;
             }
-
-            // If the CA was initialized as a trust anchor, then we refuse to upgrade.
-            // This can only happen if this is a very old test system. People will need
-            // to set up a new test system instead.
-            if ta_opt.is_some() {
-                return Err(UpgradeError::custom(
-                    "This Krill instance is set up as a test system, using a Trust Anchor, which cannot be migrated.",
-                ));
-            }
-
-            info!("Will migrate {} commands for CA {}", cmd_keys.len(), scope);
 
             let mut total_migrated = 0;
             let time_started = Time::now();
-            let total_commands = cmd_keys.len();
 
-            for cmd_key in cmd_keys {
+            for old_cmd_key in old_cmd_keys {
                 // Do the migration counter first, so that we can just call continue when we need to skip commands
                 total_migrated += 1;
                 if total_migrated % 100 == 0 {
@@ -267,32 +261,45 @@ impl UpgradeStore for CasStoreMigration {
                     );
                 }
 
-                trace!("  command: {}", cmd_key);
-                let mut old_cmd: OldStoredCaCommand = self.get(&cmd_key)?;
+                // Read and parse the old command.
+                let mut old_cmd: OldStoredCaCommand = self.get(&old_cmd_key)?;
 
+                // If the command was a success, then it will have events. Successful commands
+                // that resulted in no changes are simply not recorded. That said, it may turn
+                // out that the event list to migrate is empty - in that case we skip this command
+                // and continue the command loop.
+                //
+                // Note that if the command resulted in an error we do not not get 'Some' empty
+                // vec of events, but we get a None. So such commands will be migrated.
                 if let Some(evt_versions) = old_cmd.effect.events() {
+                    trace!("  command: {}", old_cmd_key);
+
                     let mut events = vec![];
+
                     for v in evt_versions {
-                        let migration_event_key = Self::event_key(&migration_scope, *v);
-                        trace!("  +- event: {}", migration_event_key);
-                        let old_evt: OldCaEvt = self.store.get(&migration_event_key)?.ok_or_else(|| {
-                            UpgradeError::Custom(format!("Cannot parse old event: {}", migration_event_key))
+                        let old_event_key = Self::event_key(&scope, *v);
+                        trace!("  +- event: {}", old_event_key);
+
+                        let old_evt: OldCaEvt = self.current_kv_store.get(&old_event_key)?.ok_or_else(|| {
+                            UpgradeError::Custom(format!("Cannot parse old event: {}", old_event_key))
                         })?;
 
                         if old_evt.needs_migration() {
-                            info.last_event += 1;
+                            // track event number
+                            data_upgrade_info.last_event += 1;
+                            events.push(data_upgrade_info.last_event);
 
-                            events.push(info.last_event);
-
+                            // create and store migrated event
                             let migrated_event = old_evt.into_stored_ca_event(
-                                info.last_event,
+                                data_upgrade_info.last_event,
                                 &self.repo_manager,
                                 &self.derived_embedded_ca_info_map,
                             )?;
-
-                            let event_key =
-                                KeyStoreKey::scoped(scope.clone(), format!("delta-{}.json", info.last_event));
-                            self.store.store(&event_key, &migrated_event)?;
+                            let key = KeyStoreKey::scoped(
+                                scope.to_string(),
+                                format!("delta-{}.json", data_upgrade_info.last_event),
+                            );
+                            self.new_kv_store.store(&key, &migrated_event)?;
                         }
                     }
 
@@ -303,52 +310,82 @@ impl UpgradeStore for CasStoreMigration {
                     old_cmd.set_events(events);
                 }
 
-                old_cmd.version = info.last_event + 1;
-                old_cmd.sequence = info.last_command;
+                // Update the data_upgrade_info for progress tracking
+                data_upgrade_info.last_command += 1;
+                data_upgrade_info.last_update = old_cmd.time;
 
-                info.last_command += 1;
-                info.last_update = old_cmd.time;
+                // Migrate the command
+                {
+                    old_cmd.version = data_upgrade_info.last_event + 1;
+                    old_cmd.sequence = data_upgrade_info.last_command;
 
-                let migrated_cmd = old_cmd.into_ca_command(&self.repo_manager, &self.derived_embedded_ca_info_map)?;
-                let cmd_key = CommandKey::for_stored(&migrated_cmd);
-                let key = KeyStoreKey::scoped(scope.clone(), format!("{}.json", cmd_key));
+                    let migrated_cmd =
+                        old_cmd.into_ca_command(&self.repo_manager, &self.derived_embedded_ca_info_map)?;
+                    let cmd_key = CommandKey::for_stored(&migrated_cmd);
+                    let key = KeyStoreKey::scoped(scope.clone(), format!("{}.json", cmd_key));
 
-                self.store.store(&key, &migrated_cmd)?;
+                    self.new_kv_store.store(&key, &migrated_cmd)?;
+                }
+
+                // Save data_upgrade_info in case the migration is stopped
+                self.update_data_upgrade_info(&scope, &data_upgrade_info)?;
             }
-            info!("Finished migrating commands for CA {}", scope);
 
-            self.archive_snapshots(&scope)?;
+            info!("Finished migrating commands for CA '{}'", scope);
 
-            info.snapshot_version = 0;
-            info.last_command -= 1;
+            // Create a new info file for the new aggregate repository
+            {
+                let info = StoredValueInfo::from(&data_upgrade_info);
+                let info_key = KeyStoreKey::scoped(scope.clone(), "info.json".to_string());
+                self.new_kv_store.store(&info_key, &info)?;
+            }
 
-            let info_key = KeyStoreKey::scoped(scope.clone(), "info.json".to_string());
-            self.store.store(&info_key, &info)?;
+            // Verify migration
+            info!("Will verify the migration by rebuilding CA '{}' events", &scope);
+            let ca = self.new_agg_store.get_latest(&handle).map_err(|e| {
+                UpgradeError::Custom(format!(
+                    "Could not rebuild state after migrating CA '{}'! Error was: {}.",
+                    handle, e
+                ))
+            })?;
+
+            // Store snapshot to avoid having to re-process the deltas again in future
+            self.new_agg_store.store_snapshot(&handle, ca.as_ref()).map_err(|e| {
+                UpgradeError::Custom(format!(
+                    "Could not save snapshot for CA '{}' after migration! Disk full?!? Error was: {}.",
+                    handle, e
+                ))
+            })?;
+
+            info!("Verified migration of CA '{}'", handle);
         }
 
-        // ** Only if all CAs were migrated **
-        //    --> clean up the archived commands and events
-        //    --> restore to previous version of Krill is not supported
-        for scope in self.store.scopes()? {
-            info!("Will rebuild CA '{}' from events and warm up the cache", scope);
+        match mode {
+            UpgradeMode::PrepareOnly => {
+                info!(
+                    "Prepared migrating CAs to Krill version {}. Will save progress for final upgrade when Krill restarts.",
+                    KRILL_VERSION
+                );
+            }
+            UpgradeMode::PrepareThenFinalise => {
+                info!("Prepared migrating CAs to Krill version {}.", KRILL_VERSION);
 
-            let ca =
-                Handle::from_str(&scope).map_err(|e| UpgradeError::Custom(format!("Found invalid ca name: {}", e)))?;
-
-            self.ca_store
-                .warm_aggregate(&ca)
-                .map_err(|e| UpgradeError::Custom(format!("Could not rebuild CA '{}' after migration: {}", ca, e)))?;
-
-            self.drop_migration_scope(&scope)?;
+                // For each CA clean up the saved data upgrade info file.
+                for scope in self.current_kv_store.scopes()? {
+                    self.remove_data_upgrade_info(&scope)?;
+                }
+            }
         }
-
-        info!("Done migration CAs to Krill version {}", KRILL_VERSION);
 
         Ok(())
     }
 
     fn store(&self) -> &KeyValueStore {
-        &self.store
+        &self.current_kv_store
+    }
+
+    fn new_store(&self) -> &KeyValueStore {
+        &self.new_kv_store
     }
 }
 

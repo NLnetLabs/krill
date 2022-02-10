@@ -163,7 +163,7 @@ where
         };
 
         if !existed {
-            store.set_version(&KrillVersion::current())?;
+            store.set_version(&KrillVersion::code_version())?;
         }
 
         Ok(store)
@@ -849,7 +849,7 @@ where
         }
 
         if aggregate_opt.is_none() {
-            warn!("No snapshot found for '{}' will try backup snapshot", id);
+            debug!("No snapshot found for '{}' will try backup snapshot", id);
             let backup_snapshot_key = Self::key_for_backup_snapshot(id);
             match self.kv.get::<A>(&backup_snapshot_key) {
                 Err(e) => {
@@ -879,7 +879,7 @@ where
         }
 
         if aggregate_opt.is_none() {
-            warn!("No snapshots found for '{}' will try from initialization event.", id);
+            debug!("No snapshots found for '{}' will try from initialization event.", id);
             let init_key = Self::key_for_event(id, 0);
             aggregate_opt = match self.kv.get::<A::InitEvent>(&init_key)? {
                 Some(e) => {
@@ -952,8 +952,10 @@ where
         Ok(())
     }
 
-    /// Saves the latest snapshot - overwrites any previous snapshot.
-    fn store_snapshot<V: Aggregate>(&self, id: &Handle, aggregate: &V) -> Result<(), AggregateStoreError> {
+    /// Saves the latest snapshot -backs up previous snapshot, and drops previous backup.
+    /// Uses moves to ensure that files are written entirely before they are made available
+    /// for reading.
+    pub fn store_snapshot<V: Aggregate>(&self, id: &Handle, aggregate: &V) -> Result<(), AggregateStoreError> {
         let snapshot_new = Self::key_for_new_snapshot(id);
         let snapshot_current = Self::key_for_snapshot(id);
         let snapshot_backup = Self::key_for_backup_snapshot(id);

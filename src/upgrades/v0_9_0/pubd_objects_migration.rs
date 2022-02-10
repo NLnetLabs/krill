@@ -36,7 +36,7 @@ use crate::{
         old_commands::{OldStorableRepositoryCommand, OldStoredEffect, OldStoredRepositoryCommand},
         old_events::{OldCurrentObjects, OldPubdEvt, OldPubdEvtDet, OldPubdInit, OldPublisher},
     },
-    upgrades::{UpgradeError, UpgradeResult, UpgradeStore, MIGRATION_SCOPE},
+    upgrades::{UpgradeError, UpgradeMode, UpgradeResult, UpgradeStore},
 };
 
 pub struct PubdObjectsMigration;
@@ -46,28 +46,42 @@ impl PubdObjectsMigration {
         Handle::from_str(PUBSERVER_DFLT).unwrap()
     }
 
-    pub fn migrate(config: Arc<Config>) -> UpgradeResult<()> {
-        let store = KeyValueStore::disk(&config.data_dir, PUBSERVER_DIR)?;
-        let new_store = AggregateStore::disk(&config.data_dir, PUBSERVER_DIR)?;
+    pub fn prepare(mode: UpgradeMode, config: Arc<Config>) -> UpgradeResult<()> {
+        let upgrade_data_dir = config.upgrade_data_dir();
+        let current_kv_store = KeyValueStore::disk(&config.data_dir, PUBSERVER_DIR)?;
+        let new_kv_store = KeyValueStore::disk(&upgrade_data_dir, PUBSERVER_DIR)?;
+        let new_agg_store = AggregateStore::disk(&upgrade_data_dir, PUBSERVER_DIR)?;
 
-        let store_migration = PubdStoreMigration { store, new_store };
+        let store_migration = PubdStoreMigration {
+            current_kv_store,
+            new_kv_store,
+            new_agg_store,
+        };
 
         if store_migration.needs_migrate()? {
-            info!("Krill will now migrate your existing Publication Server data to the 0.9 format");
+            info!("Migrate the existing Publication Server data to the 0.9 format");
             Self::populate_repo_content(config)?;
-            store_migration.migrate()
+            store_migration.prepare_new_data(mode)
         } else {
             Ok(())
         }
     }
 
+    /// Populate the 0.9.x style repository content. Overwrite any existing content if it
+    /// exists - this is expected if the operators used "prepare-upgrade" and we are now
+    /// resuming the migration.
+    ///
+    /// NOTE: this code is not called if the migration to 0.9.x would be complete.
     fn populate_repo_content(config: Arc<Config>) -> UpgradeResult<()> {
+        info!("Populate the repository content based on current state");
         let old_store = AggregateStore::<OldRepository>::disk(&config.data_dir, PUBSERVER_DIR)?;
         if old_store.warm().is_err() {
-            // this is most likely because the info last event is off by one, try deleting the info
+            // This is most likely because the info last event is off by one which affected
+            // some old version. Try archiving the info.json to force that the publication
+            // server is rebuilt from scratch.
             let kv = KeyValueStore::disk(&config.data_dir, PUBSERVER_DIR)?;
             let info = KeyStoreKey::scoped("0".to_string(), "info.json".to_string());
-            kv.archive_to(&info, MIGRATION_SCOPE)?;
+            kv.archive_to(&info, "archived")?;
         }
 
         let old_repo = old_store.get_latest(&Self::repository_handle())?;
@@ -85,80 +99,84 @@ impl PubdObjectsMigration {
             old_repo.stats.clone(),
         );
 
-        let repo_content_store = KeyValueStore::disk(&config.data_dir, PUBSERVER_CONTENT_DIR)?;
+        let upgrade_repo_content_store = KeyValueStore::disk(&config.upgrade_data_dir(), PUBSERVER_CONTENT_DIR)?;
         let dflt_key = KeyStoreKey::simple(format!("{}.json", PUBSERVER_DFLT));
 
-        repo_content_store.store(&dflt_key, &repo_content).unwrap();
+        upgrade_repo_content_store.store(&dflt_key, &repo_content).unwrap();
+
+        info!("Finished populating the repository content");
 
         Ok(())
     }
 }
 
 struct PubdStoreMigration {
-    store: KeyValueStore,
-    new_store: AggregateStore<RepositoryAccess>,
+    current_kv_store: KeyValueStore,
+    new_kv_store: KeyValueStore,
+    new_agg_store: AggregateStore<RepositoryAccess>,
 }
 
 impl UpgradeStore for PubdStoreMigration {
     fn needs_migrate(&self) -> Result<bool, UpgradeError> {
-        if !self.store.has_scope("0".to_string())? {
+        if !self.current_kv_store.has_scope("0".to_string())? {
             Ok(false)
-        } else if Self::version_before(&self.store, KrillVersion::release(0, 6, 0))? {
+        } else if self.version_before(KrillVersion::release(0, 6, 0))? {
             Err(UpgradeError::custom("Cannot upgrade Krill installations from before version 0.6.0. Please upgrade to any version ranging from 0.6.0 to 0.8.1 first, and then upgrade to this version."))
         } else {
-            Self::version_before(&self.store, KrillVersion::candidate(0, 9, 0, 1))
+            self.version_before(KrillVersion::candidate(0, 9, 0, 1))
         }
     }
 
-    fn migrate(&self) -> Result<(), UpgradeError> {
+    fn prepare_new_data(&self, mode: UpgradeMode) -> Result<(), UpgradeError> {
         // we only have 1 pubserver '0'
         let scope = "0";
-        let handle = Handle::from_str(scope).unwrap();
+        let handle = Handle::from_str(scope).unwrap(); // "0" is always safe
 
-        // Archive all keys in the scope, then we can write new keys as needed without
-        // overwriting anything when we renumber.
-        self.store.scope_archive(scope, MIGRATION_SCOPE)?;
+        // Get the info from the current store to see where we are
+        let mut data_upgrade_info = self.data_upgrade_info(scope)?;
 
-        let migration_scope = format!("{}/{}", scope, MIGRATION_SCOPE);
+        // Get the list of commands to prepare, starting with the last_command we got to (may be 0)
+        let old_cmd_keys = self.command_keys(scope, data_upgrade_info.last_command)?;
 
-        let migration_info_key = KeyStoreKey::scoped(migration_scope.clone(), "info.json".to_string());
-        let mut info: StoredValueInfo = match self.store.get(&migration_info_key) {
-            Ok(Some(info)) => info,
-            _ => StoredValueInfo::default(),
-        };
+        // Migrate the initialisation event, if not done in a previous run. This
+        // is a special event that has no command, so we need to do this separately.
+        if data_upgrade_info.last_event == 0 {
+            let init_key = Self::event_key(scope, 0);
 
-        // reset last event and command, we will find the new (higher) versions.
-        info.last_event = 0;
-        info.last_command = 1;
+            let old_init: OldPubdInit = self
+                .current_kv_store
+                .get(&init_key)?
+                .ok_or_else(|| UpgradeError::custom("Cannot read pubd init event"))?;
 
-        // migrate init
-        let old_init_key = Self::event_key(&migration_scope, 0);
-        let init_key = Self::event_key(scope, 0);
-        let old_init: OldPubdInit = self
-            .store
-            .get(&old_init_key)?
-            .ok_or_else(|| UpgradeError::custom("Cannot read pubd init event"))?;
+            let (_, _, old_init) = old_init.unpack();
+            let init: RepositoryAccessInitDetails = old_init.into();
+            let init = StoredEvent::new(&handle, 0, init);
+            self.new_kv_store.store(&init_key, &init)?;
+        }
 
-        let (_, _, old_init) = old_init.unpack();
-        let init: RepositoryAccessInitDetails = old_init.into();
-        let init = StoredEvent::new(&handle, 0, init);
-        self.store.store(&init_key, &init)?;
+        // Report the amount of (remaining) work
+        let total_commands = old_cmd_keys.len();
+        if data_upgrade_info.last_command == 0 {
+            info!("Will migrate {} commands for Publication Server", total_commands);
+        } else {
+            info!(
+                "Will resume migration of {} remaining commands for Publication Server",
+                total_commands
+            );
+        }
 
-        // migrate commands and events
-        let old_cmd_keys = self.command_keys(&migration_scope)?;
-
+        // Track commands migrated and time spent so we can report progress
         let mut total_migrated = 0;
         let time_started = Time::now();
-        let total_commands = old_cmd_keys.len();
-
-        info!("Will migrate {} commands for Publication Server", total_commands);
 
         for old_cmd_key in old_cmd_keys {
             // Do the migration counter first, so that we can just call continue when we need to skip commands
             total_migrated += 1;
+
+            // Report progress and expected time to finish on every 100 commands evaluated.
             if total_migrated % 100 == 0 {
-                // ETA:
-                //  - (total_migrated / (now - started)) * total
+                // expected time: (total_migrated / (now - started)) * total
+
                 let mut time_passed = (Time::now().timestamp() - time_started.timestamp()) as usize;
                 if time_passed == 0 {
                     time_passed = 1; // avoid divide by zero.. we are doing approximate estimates here
@@ -173,31 +191,46 @@ impl UpgradeStore for PubdStoreMigration {
                 );
             }
 
+            // We can skip all publish commands - they are no longer used. State is kept in
+            // the RepositoryObjects structure instead.
             if old_cmd_key.name().contains("pubd-publish.json") {
                 continue; // There is no migration needed for these commands.
             }
 
+            // Read and parse the old command.
             let mut old_cmd: OldStoredRepositoryCommand = self.get(&old_cmd_key)?;
 
+            // If the command was a success, then it will have events. Successful commands
+            // that resulted in no changes are simply not recorded. That said, it may turn
+            // out that the event list to migrate is empty - in that case we skip this command
+            // and continue the command loop.
+            //
+            // Note that if the command resulted in an error we do not not get 'Some' empty
+            // vec of events, but we get a None. So such commands will be migrated.
             if let Some(evt_versions) = old_cmd.effect.events() {
-                debug!("  command: {}", old_cmd_key);
+                trace!("  command: {}", old_cmd_key);
 
                 let mut events = vec![];
                 for v in evt_versions {
-                    let old_event_key = Self::event_key(&migration_scope, *v);
-                    debug!("  +- event: {}", old_event_key);
+                    let old_event_key = Self::event_key(scope, *v);
+                    trace!("  +- event: {}", old_event_key);
                     let old_evt: OldPubdEvt = self
-                        .store
+                        .current_kv_store
                         .get(&old_event_key)?
                         .ok_or_else(|| UpgradeError::Custom(format!("Cannot parse old event: {}", old_event_key)))?;
 
                     if old_evt.needs_migration() {
-                        info.last_event += 1;
+                        // track event number
+                        data_upgrade_info.last_event += 1;
+                        events.push(data_upgrade_info.last_event);
 
-                        events.push(info.last_event);
-                        let migrated_event = old_evt.into_stored_pubd_event(info.last_event)?;
-                        let key = KeyStoreKey::scoped(scope.to_string(), format!("delta-{}.json", info.last_event));
-                        self.store.store(&key, &migrated_event)?;
+                        // create and store migrated event
+                        let migrated_event = old_evt.into_stored_pubd_event(data_upgrade_info.last_event)?;
+                        let key = KeyStoreKey::scoped(
+                            scope.to_string(),
+                            format!("delta-{}.json", data_upgrade_info.last_event),
+                        );
+                        self.new_kv_store.store(&key, &migrated_event)?;
                     }
                 }
 
@@ -208,60 +241,79 @@ impl UpgradeStore for PubdStoreMigration {
                 old_cmd.effect = OldStoredEffect::Events(events);
             }
 
-            old_cmd.version = info.last_event + 1;
-            old_cmd.sequence = info.last_command;
+            // Update the data_upgrade_info for progress tracking
+            data_upgrade_info.last_command += 1;
+            data_upgrade_info.last_update = old_cmd.time;
 
-            info.last_command += 1;
-            info.last_update = old_cmd.time;
+            // Migrate the command
+            {
+                old_cmd.version = data_upgrade_info.last_event + 1;
+                old_cmd.sequence = data_upgrade_info.last_command;
 
-            let migrated_cmd = old_cmd.into_pubd_command();
-            let cmd_key = CommandKey::for_stored(&migrated_cmd);
-            let key = KeyStoreKey::scoped(scope.to_string(), format!("{}.json", cmd_key));
+                let migrated_cmd = old_cmd.into_pubd_command();
+                let cmd_key = CommandKey::for_stored(&migrated_cmd);
+                let key = KeyStoreKey::scoped(scope.to_string(), format!("{}.json", cmd_key));
 
-            self.store.store(&key, &migrated_cmd)?;
+                self.new_kv_store.store(&key, &migrated_cmd)?;
+            }
+
+            // Save data_upgrade_info in case the migration is stopped
+            self.update_data_upgrade_info(scope, &data_upgrade_info)?;
         }
 
         info!("Finished migrating Publication Server commands");
 
-        // move out the snapshots, we will rebuild from events
-        // there will not be too many now that the publication
-        // deltas are no longer done as events
-        self.archive_snapshots(scope)?;
+        // Create a new info file for the new aggregate repository
+        {
+            let info = StoredValueInfo::from(&data_upgrade_info);
+            let info_key = KeyStoreKey::scoped(scope.to_string(), "info.json".to_string());
+            self.new_kv_store.store(&info_key, &info)?;
+        }
 
-        // update the info file
-        info.snapshot_version = 0;
-        info.last_command -= 1;
-        let info_key = KeyStoreKey::scoped(scope.to_string(), "info.json".to_string());
-        self.store.store(&info_key, &info)?;
+        // Verify migration
+        info!("Will verify the migration by rebuilding the Publication Server from events");
+        let repo_access = self.new_agg_store.get_latest(&handle).map_err(|e| {
+            UpgradeError::Custom(format!(
+                "Could not rebuild state after migrating pubd! Error was: {}.",
+                e
+            ))
+        })?;
 
-        // verify that we can now rebuild the 0.9 publication server based on
-        // migrated commands and events.
-        info!("Will rebuild the Publication Server from events and warm up the cache");
-        self.new_store.warm().map_err(|e| UpgradeError::Custom(format!("Could not rebuild state after migrating pubd! Error was: {}. Please report this issue to rpki-team@nlnetlabs.nl. For the time being: restore all files in the 'migration-0.9' directory to their parent directory and revert to the previous version of Krill.", e)))?;
+        // Store snapshot to avoid having to re-process the deltas again in future
+        self.new_agg_store
+            .store_snapshot(&handle, repo_access.as_ref())
+            .map_err(|e| {
+                UpgradeError::Custom(format!(
+                    "Could not save snapshot after migration! Disk full?!? Error was: {}.",
+                    e
+                ))
+            })?;
 
-        // Great, we have migrated everything, now delete the archived
-        // commands and events which are no longer relevant
-        self.drop_migration_scope(scope)?;
-
-        info!(
-            "Done migrating the Publication Server to Krill version {}",
-            KRILL_VERSION
-        );
+        match mode {
+            UpgradeMode::PrepareOnly => {
+                info!(
+                    "Prepared Publication Server data migration to version {}. Will save progress for final upgrade when Krill restarts.",
+                    KRILL_VERSION
+                );
+            }
+            UpgradeMode::PrepareThenFinalise => {
+                info!(
+                    "Prepared Publication Server data migration to version {}.",
+                    KRILL_VERSION
+                );
+                self.remove_data_upgrade_info(scope)?;
+            }
+        }
 
         Ok(())
     }
 
     fn store(&self) -> &KeyValueStore {
-        &self.store
+        &self.current_kv_store
     }
 
-    fn version_before(kv: &KeyValueStore, before: KrillVersion) -> Result<bool, UpgradeError> {
-        let key = KeyStoreKey::simple("version".to_string());
-        match kv.get::<KrillVersion>(&key) {
-            Err(e) => Err(UpgradeError::KeyStoreError(e)),
-            Ok(None) => Ok(true),
-            Ok(Some(current_version)) => Ok(current_version < before),
-        }
+    fn new_store(&self) -> &KeyValueStore {
+        &self.new_kv_store
     }
 }
 
