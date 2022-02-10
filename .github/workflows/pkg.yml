@@ -112,7 +112,7 @@
 #
 # This workflow also uses artifacts internally to pass cross-compiled binares from one workflow job to another.
 #   - Cross-compiled binary artifacts are uploaded to GitHub by the 'cross' job.
-#   - Both the 'pkg' and 'docker-build' jobs download these cross-compiled binary artifacts for inclusion in the
+#   - Both the 'pkg' and 'docker' jobs download these cross-compiled binary artifacts for inclusion in the
 #     packages they create.
 # These cross-compiled binary artifacts are deleted at the end of the workflow as they are no longer needed and their
 # presence attached to the workflow run will cause the separate manual external process for publishing to
@@ -755,12 +755,12 @@ jobs:
         sg lxd -c "lxc exec testcon -- man -P cat krill"
 
   # -------------------------------------------------------------------------------------------------------------------
-  # Job: 'docker-build'
+  # Job: 'docker'
   # -------------------------------------------------------------------------------------------------------------------
   # Build and push architecture specific images (but NOT the main image that is used by end users). Sanity check the
   # image if possible (i.e. if it is x86-64, non-x86-64 architecture images cannot be run by this workflow yet). Logs
   # in to Docker Hub using secrets configured in this GitHub repository.
-  docker-build:
+  docker:
     needs: cross
     runs-on: ubuntu-latest
     strategy:
@@ -871,13 +871,13 @@ jobs:
           docker run --pull always --rm ${{ secrets.DOCKER_HUB_ID }}/${{ steps.meta.outputs.tags }}-manifest-${{ matrix.shortname }} krillc --version
 
   # -------------------------------------------------------------------------------------------------------------------
-  # Job: 'docker-push'
+  # Job: 'docker-multi-arch'
   # -------------------------------------------------------------------------------------------------------------------
   # Create a Docker multi-arch "manifest" referencing the individual already pushed architecture specific images on
   # Docker Hub and push the manifest to Docker Hub as our "main" application image Docker Hub that end users will use.
   # Logs in to Docker Hub using secrets configured in this GitHub repository.
-  docker-push:
-    needs: docker-build
+  docker-multi-arch:
+    needs: docker
     if: contains(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
@@ -908,14 +908,14 @@ jobs:
       - name: Create multi-arch manifest
         run: |
           docker manifest create \
-            ${{ secrets.DOCKER_HUB_ID }}/${{ needs.docker-build.outputs.dockerbasetag }} \
-            --amend ${{ secrets.DOCKER_HUB_ID }}/${{ needs.docker-build.outputs.dockerbasetag }}-amd64 \
-            --amend ${{ secrets.DOCKER_HUB_ID }}/${{ needs.docker-build.outputs.dockerbasetag }}-armv7 \
-            --amend ${{ secrets.DOCKER_HUB_ID }}/${{ needs.docker-build.outputs.dockerbasetag }}-arm64
+            ${{ secrets.DOCKER_HUB_ID }}/${{ needs.docker.outputs.dockerbasetag }} \
+            --amend ${{ secrets.DOCKER_HUB_ID }}/${{ needs.docker.outputs.dockerbasetag }}-amd64 \
+            --amend ${{ secrets.DOCKER_HUB_ID }}/${{ needs.docker.outputs.dockerbasetag }}-armv7 \
+            --amend ${{ secrets.DOCKER_HUB_ID }}/${{ needs.docker.outputs.dockerbasetag }}-arm64
 
       - name: Push multi-arch image to Docker Hub
         run: |
-          docker manifest push ${{ secrets.DOCKER_HUB_ID }}/${{ needs.docker-build.outputs.dockerbasetag }}
+          docker manifest push ${{ secrets.DOCKER_HUB_ID }}/${{ needs.docker.outputs.dockerbasetag }}
 
   # -------------------------------------------------------------------------------------------------------------------
   # Job: 'cleanup'
@@ -923,7 +923,7 @@ jobs:
   # Delete cross-compilation workflow artifacts as they are no longer needed and will break the external manual process
   # for publishing artifacts attached to this workflow to packages.nlnetlabs.nl.
   cleanup:
-    needs: [pkg-test, docker-build]
+    needs: [pkg-test, docker]
     if: always()
     runs-on: ubuntu-latest
     steps:
