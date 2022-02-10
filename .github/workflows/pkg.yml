@@ -47,11 +47,11 @@
 # MUSL based rather than GLIBC based, so cross-compiled binaries (see below) must target MUSL when intending to be
 # used within a Docker container.
 #
-# Images are built using Docker Buildx (officially supported by Docker and used by default by the Docker Build Push
+# Images are built using Docker Buildkit (officially supported by Docker and used by default by the Docker Build Push
 # GitHub Action) which speeds up especially the non-x86-64 architecture case.
 #
 # Per architecture images are built and pushed to Docker Hub with xxx-<arch> tags, and then a Docker Manifest is
-# created which groups these images into a single multiplatform image without the -<arch> extension on the tag. The
+# created which groups these images into a single multi-arch image without the -<arch> extension on the tag. The
 # manifest is then also pushed to Docker Hub.
 #
 # Building of both x86-64 and non-x86-64 architecture images are handled by a single Dockerfile which supports two
@@ -59,7 +59,7 @@
 # artifacts are kept in the final Docker image. In the alternate 'copy' mode Krill binaries are copied into the
 # build container and compilation within the container is skipped.
 #
-# Multiplatform image creation is NOT done using Docker Buildx multiplatform support because (a) that does not support
+# Multi-arch image creation is NOT done using Docker Buildkit multi-arch support because (a) that does not support
 # configuring the different invocations of the Dockerfile differently (e.g. with MODE=copy for the non-x86-64 cases
 # and providing different the binaries to copy in to the image in each case) and (b) because it compiles Krill in
 # parallel for each architecture at once on a single GitHub Actions runner host which is VERY SLOW even for just a
@@ -848,10 +848,10 @@ jobs:
           path: dockerbin/${{ matrix.platform }}
 
       # Build a single architecture specific Docker image with an explicit architecture extension in the Docker
-      # tag value. We have to push it to Docker Hub otherwise we can't make the multi-platform manifest below. If the
+      # tag value. We have to push it to Docker Hub otherwise we can't make the multi-arch manifest below. If the
       # image fails testing (or doesn't work but wasn't caught because it is non-x86-64 which we can't at the moment
       # test here) it will have been pushed to Docker Hub but is NOT the image we expect people to use, that is the
-      # combined multiplatform image that lacks the architecture specific tag value extension and that will ONLY be
+      # combined multi-arch image that lacks the architecture specific tag value extension and that will ONLY be
       # pushed if all architecture specific images build and (where supported) passt he sanity check below.
       - name: Build Docker image
         uses: docker/build-push-action@v2
@@ -874,7 +874,7 @@ jobs:
   # -------------------------------------------------------------------------------------------------------------------
   # Job: 'docker-push'
   # -------------------------------------------------------------------------------------------------------------------
-  # Create a Docker multi-platform "manifest" referencing the individual already pushed architecture specific images on
+  # Create a Docker multi-arch "manifest" referencing the individual already pushed architecture specific images on
   # Docker Hub and push the manifest to Docker Hub as our "main" application image Docker Hub that end users will use.
   # Logs in to Docker Hub using secrets configured in this GitHub repository.
   docker-push:
@@ -905,7 +905,7 @@ jobs:
       #
       # On push to refs/heads/main the Docker tag will be 'unstable' because of:
       #   type=raw,value=unstable,enable=${{ github.ref == 'refs/heads/main' }}
-      - name: Create multi-platform manifest
+      - name: Create multi-arch manifest
         run: |
           docker manifest create \
             ${{ secrets.DOCKER_HUB_ID }}/${{ needs.docker-build.outputs.dockerbasetag }} \
@@ -913,7 +913,7 @@ jobs:
             --amend ${{ secrets.DOCKER_HUB_ID }}/${{ needs.docker-build.outputs.dockerbasetag }}-armv7 \
             --amend ${{ secrets.DOCKER_HUB_ID }}/${{ needs.docker-build.outputs.dockerbasetag }}-arm64
 
-      - name: Push multiplatform image to Docker Hub
+      - name: Push multi-arch image to Docker Hub
         run: |
           docker manifest push ${{ secrets.DOCKER_HUB_ID }}/${{ needs.docker-build.outputs.dockerbasetag }}
 
