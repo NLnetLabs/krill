@@ -762,7 +762,6 @@ jobs:
   # in to Docker Hub using secrets configured in this GitHub repository.
   docker-build:
     needs: cross
-    if: contains(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -804,12 +803,6 @@ jobs:
 
       - uses: docker/setup-buildx-action@v1
 
-      - name: Log into Docker Hub
-        uses: docker/login-action@v1
-        with:
-          username: ${{ secrets.DOCKER_HUB_ID }}
-          password: ${{ secrets.DOCKER_HUB_TOKEN }}
-
       - name: Extract metadata for tagging the Docker image
         id: meta
         uses: docker/metadata-action@v3
@@ -847,6 +840,12 @@ jobs:
           name: cross-binaries-${{ matrix.crosstarget }}
           path: dockerbin/${{ matrix.platform }}
 
+      - name: Log into Docker Hub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKER_HUB_ID }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
       # Build a single architecture specific Docker image with an explicit architecture extension in the Docker
       # tag value. We have to push it to Docker Hub otherwise we can't make the multi-arch manifest below. If the
       # image fails testing (or doesn't work but wasn't caught because it is non-x86-64 which we can't at the moment
@@ -858,7 +857,7 @@ jobs:
         with:
           context: .
           platforms: ${{ matrix.platform }}
-          push: true
+          push: ${{ contains(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' }}
           tags: ${{ secrets.DOCKER_HUB_ID }}/${{ steps.meta.outputs.tags }}-${{ matrix.shortname }}
           build-args: |
             MODE=${{ matrix.mode }}
@@ -879,6 +878,7 @@ jobs:
   # Logs in to Docker Hub using secrets configured in this GitHub repository.
   docker-push:
     needs: docker-build
+    if: contains(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Log into Docker Hub
