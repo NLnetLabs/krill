@@ -822,7 +822,7 @@ jobs:
             type=semver,pattern={{version}},prefix=v
             type=raw,value=unstable,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=latest,enable=${{ github.ref != 'refs/heads/main' && !contains(github.ref, '-') }}
-            type=raw,value=test,enable=${{ !env.PUSH }}
+            type=raw,value=test,enable=${{ env.PUSH == false }}
 
       # NOTE: Unfortunately the wait action appears to be unreliable. The project GH issues include examples of it not
       # working properly and I've had it finish without saying the waited on job completed but instead it just stopped
@@ -860,8 +860,8 @@ jobs:
         with:
           context: .
           platforms: ${{ matrix.platform }}
-          push: ${{ env.PUSH }}
-          load: ${{ !env.PUSH }}
+          push: ${{ env.PUSH == true }}
+          load: ${{ env.PUSH == false }}
           tags: ${{ secrets.DOCKER_HUB_ID }}/${{ steps.meta.outputs.tags }}-${{ matrix.shortname }}
           build-args: |
             MODE=${{ matrix.mode }}
