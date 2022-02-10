@@ -1,21 +1,135 @@
-# GitHub Actions workflow for building and testing Krill O/S packages. Uses GitHub Actions caching to avoid rebuilding
-# Rust cargo-deb , cargo generate-rpm and Krill compiled dependencies on every run.
+# GitHub Actions workflow for building and testing Krill O/S packages.
 #
-# Note: at the time of writing the GH cache contents expire after a week if not used so the next build may be much
-# slower as it will have to re-download/build/install lots of Rust crates.
+# Workflow speed:
+# ===============
+# This workflow uses GitHub Actions caching to avoid rebuilding Rust cargo-deb, cargo generate-rpm and Krill compiled
+# dependencies on every run. At the time of writing the GH cache contents expire after a week if not used so the next
+# build may be much slower as it will have to re-download/build/install lots of Rust crates.
 #
-# Packages are built inside Docker containers as GH Runners have extra libraries and packages installed which can cause
-# package building to succeed but package installation on a real target O/S to fail, due to being built against too
-# recent version of a package such as libssl or glibc.
+# This workflow does NOT use the lewagon/wait-on-check-action GitHub Action to enable individual sub-jobs of a matrix
+# job to wait only for their corresponding "upstream" matrix sub-job (e.g. DEB packaging for x86-64 doesn't need to
+# wait on cross-compilation while DEB packaging for ARMv7 does need to wait but only for the ARMv7 cross-compile but
+# not for the AARCH64 cross-compile). It was tried, it was great, it speeds up the workflow, but it was unreliable.
+# There are known issues with the GitHub Action and having a fragile workflow fail sporadically because the wait
+# wrongly proceeds to the next step before the dependent step completed successfully is not acceptable. Perhaps this
+# will be better later, or an alternative approach exists that has not yet been found.
 #
-# Packages are tested inside LXC/LXD containers because Docker containers don't by default support init managers such as
-# systemd but we want to test systemd service unit installation and activation.
+# DEB/RPM packaging:
+# ==================
+# DEB and RPM packages are built inside Docker containers as GH Runners have extra libraries and packages installed
+# which can cause package building to succeed but package installation on a real target O/S to fail, due to being built
+# against too recent version of a package such as libssl or glibc.
+#
+# Packages are built using the cargo deb and cargo generate-rpm projects, not using official Debian and RedHat tools.
+# This allows us to keep the configuration in `Cargo.toml` but can mean that we sometimes hit limitations of those
+# tools (e.g. we contributed systemd unit activation support to cargo deb to overcome that lacking capability).
+#
+# DEB/RPM testing:
+# ================
+# DEB and RPM packages are tested inside LXC/LXD containers because Docker containers don't by default support init
+# managers such as systemd but we want to test systemd service unit installation and activation.
+#
+# RHEL 8/CentOS 8 support:
+# ========================
+# We were building with the now discontinued CentOS 8. We continue to build them in a CentOS 8 Docker image but install
+# packages from the CentOS 8 vault to work around the forced breakage introduced by RedHat. For testing we were forced
+# to switch to using a Rocky Linux (CentOS 8 compatible) LXC/LXD image because the CentOS 8 LXC/LXD image was pulled
+# from the LXC/LXD image repositories. In future we may want to explicitly build for Rocky Linux instead or as well as
+# CentOS 8.
+#
+# Docker packaging:
+# =================
+# Docker packaging was originally done using Docker Hub but long delays and repeatd spurious failures caused us to
+# migrate Docker packaging to GitHub Actions and which is now part of this workflow.
+#
+# Images use an Alpine base image for reduced image size and thus download time, and also for faster and simpler
+# installation of dependencies (apk add is way faster and simpler than apt install for example). However Alpine is
+# MUSL based rather than GLIBC based, so cross-compiled binaries (see below) must target MUSL when intending to be
+# used within a Docker container.
+#
+# Images are built using Docker Buildx (officially supported by Docker and used by default by the Docker Build Push
+# GitHub Action) which speeds up especially the non-x86-64 architecture case.
+#
+# Per architecture images are built and pushed to Docker Hub with xxx-<arch> tags, and then a Docker Manifest is
+# created which groups these images into a single multiplatform image without the -<arch> extension on the tag. The
+# manifest is then also pushed to Docker Hub.
+#
+# Building of both x86-64 and non-x86-64 architecture images are handled by a single Dockerfile which supports two
+# modes of operation. In the default 'build' mode Krill is compiled within the Docker container and only the final
+# artifacts are kept in the final Docker image. In the alternate 'copy' mode Krill binaries are copied into the
+# build container and compilation within the container is skipped.
+#
+# Multiplatform image creation is NOT done using Docker Buildx multiplatform support because (a) that does not support
+# configuring the different invocations of the Dockerfile differently (e.g. with MODE=copy for the non-x86-64 cases
+# and providing different the binaries to copy in to the image in each case) and (b) because it compiles Krill in
+# parallel for each architecture at once on a single GitHub Actions runner host which is VERY SLOW even for just a
+# couple of architectures. Instead we leverage the GitHub Actions matrix building support to build each image in
+# parallel. This means however that we have to manually invoke the `docker manifest` command as it is not handled
+# automagically for us.
+#
+# Docker authentication:
+# ======================
+# Publication to Docker Hub depends on a Docker Hub username and access token being available in the GitHub secrets
+# available to this workflow.
+#
+# Package publication:
+# ====================
+# Docker packages are published immediately to Docker Hub. DEB and RPM packages are only available to NLnet Labs team
+# members with access to the workflow artifacts. Publication of DEB and RPM packages to packages.nlnetlabs.nl requires
+# that the separate packaging process outside of GitHub be invoked manually.
+#
+# Non-x86-64 packaging:
+# ====================
+# This workflow uses the Rust Tools team Cargo Cross project to cross-compile for architectures other than x86 64, e.g.
+# ARMv7/armhf and ARM64/aarch64.
+#
+# Note: Different tools (rustc, QEmu, Docker, etc) use slightly different names for these targets which can be
+# confusing.
+#
+# Cross-compilation is NOT done using the support built-in to Cargo because this requires for each target architecture
+# that you manually install the appropriate toolchain, set the appropriate environment variables, install the
+# appropriate strip tool, and store with the source code a .cargo/config.toml file telling Cargo which tool paths to
+# use for which architecture. However this comes with a couple of limitations: (a) Cargo Cross itself uses Docker and
+# has known issues running Docker-in-Docker from within a Docker container (which is how what was the main job of this
+# workflow runs), (b) we are "limited" to base images/architectures supported by Cargo Cross (but there are quite
+# a few of these) and (c) if the base Cargo Cross image doesn't include packages or tooling needed by `cargo build`
+# then building will fail. For these reasons cross compilation is done as a pre-job in this workflow (so that it can
+# run on the GitHub runner Host rather than inside a Docker container) and cross-compiled packages enable the Krill
+# `static-openssl` feature.
+#
+# Non-x86-64 testing:
+# ===================
+# Only x86-64 architecture packages are sanity checked. Non-x86-64 architecture packages are built but not tested as
+# the binaries won't run on the x86-64 GitHub runner host, Docker or LXC/LXD containers. It might be possible to use
+# QEmu for this but that is not done at this time.
+#
+# Artifacts:
+# ==========
+# The output of this workflow is two-fold:
+#   - Images pushed directly to Docker Hub.
+#   - Artifacts are uploaded to GitHub on workflow completion and appear as-if attached to the workflow run.
+# The latter are consumed by the separate manual external process for publishing to packages.nlnetlabs.nl.
+#
+# This workflow also uses artifacts internally to pass cross-compiled binares from one workflow job to another.
+#   - Cross-compiled binary artifacts are uploaded to GitHub by the 'cross' job.
+#   - Both the 'pkg' and 'docker-build' jobs download these cross-compiled binary artifacts for inclusion in the
+#     packages they create.
+# These cross-compiled binary artifacts are deleted at the end of the workflow as they are no longer needed and their
+# presence attached to the workflow run will cause the separate manual external process for publishing to
+# packages.nlnetlabs.nl to fail.
+
 
 name: Packaging
 on:
   push:
     branches:
-    - main
+      - main
+
+    # Triggering on tags is used to build and push appropriately tagged Docker images
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-rc[0-9]+'
+
     paths-ignore:
       - '.dockerignore'
       - '.github/workflow/pkg.yml'
@@ -27,6 +141,9 @@ on:
       - 'README.md'
       - 'tests/e2e/**'
 
+  # Triggering on PRs and arbitrary branch pushes is not enabled because most of the time only the CI build should be
+  # triggered, not the packaging build. In cases where you want to test changes to this workflow this trigger enables
+  # you to manually invoke this workflow on an arbitrary branch as needed.
   workflow_dispatch:
 
 defaults:
@@ -35,15 +152,68 @@ defaults:
     shell: bash --noprofile --norc -eo pipefail -x {0}
 
 jobs:
+  # -------------------------------------------------------------------------------------------------------------------
+  # Job: 'cross'
+  # -------------------------------------------------------------------------------------------------------------------
+  # Cross-compiles packages in a separate job so that we can run it on the GitHub Actions runner host directly rather
+  # than inside a Docker container (as is done by the `pkg` job below). We do this because we use `cargo cross` to
+  # handle the complexity of using the right compile-time tooling and dependencies for cross compilation to work, and 
+  # `cargo cross` works by launching its own Docker container. Trying to launch a Docker container from within a Docker
+  # container, the so-called Docker-in-Docker scenario, is more difficult for `cargo cross` to handle correctly and
+  # didn't work when I tried it, even with `CROSS_DOCKER_IN_DOCKER=true` set in the environment, hence this approach.
+  #
+  # See: https://github.com/rust-embedded/cross#docker-in-docker
+  cross:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          # must be one of: https://github.com/cross-rs/cross#supported-targets
+          # use MUSL targets for binaries intended to be included in Docker images
+          # as the Alpine base image we use has MUSL, not GNU LIBC.
+          - 'armv7-unknown-linux-musleabihf'  # for Docker
+          - 'aarch64-unknown-linux-musl'      # for Docker
+
+          # use GNU LIBC targets otherwise as Debian et al use GNU LIBC, not MUSL.
+          - 'armv7-unknown-linux-gnueabihf'   # for DEB
+          - 'aarch64-unknown-linux-gnu'       # for DEB
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v1
+
+    - name: Cross compile
+      uses: actions-rs/cargo@v1
+      with:
+        use-cross: true
+        command: build
+        args: --locked --release --features static-openssl --target ${{ matrix.target }}
+
+    - name: Upload built binaries
+      uses: actions/upload-artifact@v2
+      with:
+        name: cross-binaries-${{ matrix.target }}
+        path: |
+          target/${{ matrix.target }}/release/krill
+          target/${{ matrix.target }}/release/krillc
+
+  # -------------------------------------------------------------------------------------------------------------------
+  # Job: 'pkg'
+  # -------------------------------------------------------------------------------------------------------------------
   # Use the cargo-deb and cargo-generate-rpm Rust crates to build Debian and RPM packages respectively for installing
   # Krill.
   # See:
   #   - https://github.com/mmstick/cargo-deb
   #   - https://github.com/cat-in-136/cargo-generate-rpm
   pkg:
+    needs: cross
+    runs-on: ubuntu-latest
+    # Build on the platform we are targeting in order to avoid https://github.com/rust-lang/rust/issues/57497.
+    # Specifying container causes all of the steps in this job to run inside a Docker container (which is why the
+    # cross-compilation needs to happen above in its own non-containerized job).
+    container: ${{ matrix.image }}
     strategy:
       matrix:
-        image: # can't use complex values here, only primitive values are allowed
+        image:
           - 'ubuntu:xenial'   # ubuntu/16.04
           - 'ubuntu:bionic'   # ubuntu/18.04
           - 'ubuntu:focal'    # ubuntu/20.04
@@ -55,18 +225,22 @@ jobs:
         include:
           - image: 'centos:7'
             extra_build_args: '--features static-openssl'
+
+          # package for the Raspberry Pi 4b as an ARMv7 cross compiled variant of the Debian Bullseye upon which
+          # Raspbian 11 is based.
+          - image: 'debian:bullseye'
+            target: 'armv7-unknown-linux-gnueabihf'
+
+          # package for the ROCK64 as an AARCH64 cross compiled variant of Debian Buster upon which Armbian 21 is
+          # based.
+          - image: 'debian:buster'
+            target: 'aarch64-unknown-linux-gnu'
     env:
       CARGO_DEB_VER: 1.34.2
       CARGO_GENERATE_RPM_VER: 0.6.0
       # A Krill version of the form 'x.y.z-dev' denotes a dev build that is newer than the released x.y.z version but is
       # not yet a new release.
       NEXT_VER_LABEL: dev
-    name: pkg
-    runs-on: ubuntu-latest
-    # Build on the oldest platform we are targeting in order to avoid https://github.com/rust-lang/rust/issues/57497.
-    # Specifying container causes all of the steps in this job to run inside a Docker container.
-    container: ${{ matrix.image }}
-
     steps:
     - name: Set vars
       id: setvars
@@ -79,7 +253,6 @@ jobs:
       env:
         MATRIX_IMAGE: ${{ matrix.image }}
 
-    # Git clone the Krill code in the branch we were invoked on.
     - name: Checkout repository
       uses: actions/checkout@v2
 
@@ -178,6 +351,25 @@ jobs:
             cargo install cargo-generate-rpm --version ${CARGO_GENERATE_RPM_VER} --locked
             ;;
         esac
+
+    # NOTE: Unfortunately the wait action appears to be unreliable. The project GH issues include examples of it not
+    # working properly and I've had it finish without saying the waited on job completed but instead it just stopped
+    # and then the next build stop executed prematurely and failed.
+    # - name: Wait on cross job
+    #   if: ${{ matrix.target != 'x86_64' }}
+    #   # Use v1.0.0 until https://github.com/lewagon/wait-on-check-action/issues/52 is resolved
+    #   uses: lewagon/wait-on-check-action@v1.0.0
+    #   with:
+    #     ref: ${{ github.ref }}
+    #     repo-token: ${{ secrets.GITHUB_TOKEN }}
+    #     check-name: cross (${{ matrix.target }})
+
+    - name: Download cross compiled binaries
+      if: ${{ matrix.target != 'x86_64' }}
+      uses: actions/download-artifact@v2
+      with:
+        name: cross-binaries-${{ matrix.target }}
+        path: target/${{ matrix.target }}/release
 
     # Instruct cargo-deb or cargo-generate-rpm to build the package based on Cargo.toml settings and command line
     # arguments.
@@ -303,18 +495,20 @@ jobs:
           target/debian/*.deb
           target/generate-rpm/*.rpm
 
+  # -------------------------------------------------------------------------------------------------------------------
+  # Job: 'pkg-test'
+  # -------------------------------------------------------------------------------------------------------------------
   # Download and sanity check on target operating systems the packages created by previous jobs (see above). Don't test
   # on GH runners as they come with lots of software and libraries pre-installed and thus are not representative of the
   # actual deployment targets, nor do GH runners support all targets that we want to test. Don't test in Docker
   # containers as they do not support systemd.
   pkg-test:
-    name: pkg-test
     needs: pkg
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        image: # can't use complex values here, only primitive values are allowed
+        image:
           - 'ubuntu:xenial'   # ubuntu/16.04
           - 'ubuntu:bionic'   # ubuntu/18.04
           - 'ubuntu:focal'    # ubuntu/20.04
@@ -360,8 +554,6 @@ jobs:
             echo "LXC_IMAGE=images:${OS_NAME}/${OS_REL}/cloud" >> $GITHUB_ENV
             ;;
         esac
-      env:
-        MATRIX_IMAGE: ${{ matrix.image }}
 
     - name: Download package
       uses: actions/download-artifact@v2
@@ -537,3 +729,186 @@ jobs:
 
         echo -e "\nKRILL MAN PAGE:"
         sg lxd -c "lxc exec testcon -- man -P cat krill"
+
+  # -------------------------------------------------------------------------------------------------------------------
+  # Job: 'docker-build'
+  # -------------------------------------------------------------------------------------------------------------------
+  # Build and push architecture specific images (but NOT the main image that is used by end users). Sanity check the
+  # image if possible (i.e. if it is x86-64, non-x86-64 architecture images cannot be run by this workflow yet). Logs
+  # in to Docker Hub using secrets configured in this GitHub repository.
+  docker-build:
+    needs: cross
+    if: contains(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # matrix field notes:
+        #   platform:    used by Docker to use the right architecture base image.
+        #   shortname:   used by us to tag the architecture specific "manifest" image.
+        #   crosstarget: (optional) used to download the correct cross-compiled binary that was produced earlier by the
+        #                'cross' job above.
+        #   mode:        (optional) set to 'copy' for cross-compiled targets.
+        #   cargo_args:  (optional) can be used when testing, e.g. set to '--no-default-features' to speed up the Krill
+        #                build.
+        include:
+          - platform:    'linux/amd64'
+            shortname:   'amd64'
+            mode:        'build'
+
+          - platform:    'linux/arm/v7'
+            shortname:   'armv7'
+            crosstarget: 'armv7-unknown-linux-musleabihf'
+            mode:        'copy'
+
+          - platform:    'linux/arm64'
+            shortname:   'arm64'
+            crosstarget: 'aarch64-unknown-linux-musl'
+            mode:        'copy'
+    outputs:
+      dockerbasetag: ${{ steps.meta.outputs.tags }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - uses: docker/setup-qemu-action@v1
+        # Don't use QEmu for compiling, it's way too slow on GitHub Actions.
+        # Only use it for making images that will contain prebuilt binaries.
+        if: ${{ matrix.mode == 'copy' }}
+        with:
+          platforms: ${{ matrix.platform }}
+
+      - uses: docker/setup-buildx-action@v1
+
+      - name: Log into Docker Hub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKER_HUB_ID }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+      - name: Extract metadata for tagging the Docker image
+        id: meta
+        uses: docker/metadata-action@v3
+        with:
+          # We don't include the Docker Hub account name prefix in the `images:` value even though the images will be
+          # pushed to that Docker Hub "account" because otherwise GitHub Actions sees that it contains the value that
+          # is stored in ${{ secrets.DOCKER_HUB_ID }} and refuses to allow the `tags` output value of metadata-action
+          # to be used as a job output, showing in the log in the "Complete job" step:
+          #   Warning: Skip output 'dockerbasetag' since it may contain secret.
+          # Instead we prepend the account name further down when invoking Docker.
+          images: krill
+          flavor: |
+            latest=false
+          tags: |
+            type=semver,pattern={{version}},prefix=v
+            type=raw,value=unstable,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=latest,enable=${{ github.ref != 'refs/heads/main' && !contains(github.ref, '-') }}
+
+      # NOTE: Unfortunately the wait action appears to be unreliable. The project GH issues include examples of it not
+      # working properly and I've had it finish without saying the waited on job completed but instead it just stopped
+      # and then the next build stop executed prematurely and failed.
+      # - name: Wait on cross job
+      #   if: ${{ matrix.mode == 'copy' }}
+      #   # Use v1.0.0 until https://github.com/lewagon/wait-on-check-action/issues/52 is resolved
+      #   uses: lewagon/wait-on-check-action@v1.0.0
+      #   with:
+      #     ref: ${{ github.ref }}
+      #     repo-token: ${{ secrets.GITHUB_TOKEN }}
+      #     check-name: cross (${{ matrix.crosstarget }})
+
+      - name: Download cross compiled binary
+        if: ${{ matrix.mode == 'copy' }}
+        uses: actions/download-artifact@v2
+        with:
+          name: cross-binaries-${{ matrix.crosstarget }}
+          path: dockerbin/${{ matrix.platform }}
+
+      # Build a single architecture specific Docker image with an explicit architecture extension in the Docker
+      # tag value. We have to push it to Docker Hub otherwise we can't make the multi-platform manifest below. If the
+      # image fails testing (or doesn't work but wasn't caught because it is non-x86-64 which we can't at the moment
+      # test here) it will have been pushed to Docker Hub but is NOT the image we expect people to use, that is the
+      # combined multiplatform image that lacks the architecture specific tag value extension and that will ONLY be
+      # pushed if all architecture specific images build and (where supported) passt he sanity check below.
+      - name: Build Docker image
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          push: true
+          tags: ${{ secrets.DOCKER_HUB_ID }}/${{ steps.meta.outputs.tags }}-${{ matrix.shortname }}
+          build-args: |
+            MODE=${{ matrix.mode }}
+            CARGO_ARGS=${{ matrix.cargo_args }}
+
+      # Do a basic sanity check of the created image using the test tag to select the image to run, but only if the
+      # image is for the x86-64 architecture as we don't yet have a way to run non-x86-64 architecture images.
+      - name: Sanity check
+        if: ${{ matrix.platform == 'linux/amd64' }}
+        run: |
+          docker run --pull always --rm ${{ secrets.DOCKER_HUB_ID }}/${{ steps.meta.outputs.tags }}-manifest-${{ matrix.shortname }} krillc --version
+
+  # -------------------------------------------------------------------------------------------------------------------
+  # Job: 'docker-push'
+  # -------------------------------------------------------------------------------------------------------------------
+  # Create a Docker multi-platform "manifest" referencing the individual already pushed architecture specific images on
+  # Docker Hub and push the manifest to Docker Hub as our "main" application image Docker Hub that end users will use.
+  # Logs in to Docker Hub using secrets configured in this GitHub repository.
+  docker-push:
+    needs: docker-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log into Docker Hub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKER_HUB_ID }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+      # Push the image and tags to Docker Hub.
+      # The build uses the cached build outputs from the step above so we don't have to wait for the build again.
+      #
+      # On push of a tag to refs/tags/v1.2.3 the Docker tags will be 'v1.2.3' and 'latest' because of:
+      #   type=semver,pattern={{version}},prefix=v
+      #   type=raw,value=latest,enable=${{ github.ref != 'refs/heads/main' && !contains(github.ref, '-') }}
+      #                                    ^^^^^^^^^^^^^ true, not main       ^^^^^^^^^ true, no dash found
+      #
+      #   Note: we don't use semver,pattern={{raw}} because while that preserves the leading v in v1.2.3 it
+      #   discards the leading v in v1.2.3-rc4.
+      #
+      # On push of a tag to refs/tags/v1.2.3-rc1 the Docker tags will be 'v1.2.3' but NOT 'latest' because of:
+      #   type=semver,pattern={{raw}}
+      #   type=raw,value=latest,enable=${{ github.ref != 'refs/heads/main' && !contains(github.ref, '-') }}
+      #                                    ^^^^^^^^^^^^^ true, not main       ^^^^^^^^^ false, dash found
+      #
+      # On push to refs/heads/main the Docker tag will be 'unstable' because of:
+      #   type=raw,value=unstable,enable=${{ github.ref == 'refs/heads/main' }}
+      - name: Create multi-platform manifest
+        run: |
+          docker manifest create \
+            ${{ secrets.DOCKER_HUB_ID }}/${{ needs.docker-build.outputs.dockerbasetag }} \
+            --amend ${{ secrets.DOCKER_HUB_ID }}/${{ needs.docker-build.outputs.dockerbasetag }}-manifest-amd64 \
+            --amend ${{ secrets.DOCKER_HUB_ID }}/${{ needs.docker-build.outputs.dockerbasetag }}-manifest-armv7 \
+            --amend ${{ secrets.DOCKER_HUB_ID }}/${{ needs.docker-build.outputs.dockerbasetag }}-manifest-arm64
+
+      - name: Push multiplatform image to Docker Hub
+        run: |
+          docker manifest push ${{ secrets.DOCKER_HUB_ID }}/${{ needs.docker-build.outputs.dockerbasetag }}
+
+  # -------------------------------------------------------------------------------------------------------------------
+  # Job: 'cleanup'
+  # -------------------------------------------------------------------------------------------------------------------
+  # Delete cross-compilation workflow artifacts as they are no longer needed and will break the external manual process
+  # for publishing artifacts attached to this workflow to packages.nlnetlabs.nl.
+  cleanup:
+    needs: [pkg-test, docker-build]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      # Delete temporary artifacts that contain binaries produced by the `cross` job. All artifacts existing when the
+      # workflow completes are expected by the packages.nlnetlabs.nl scripting to contain DEB or RPM or other supported
+      # package archives, not intermediate artifacts such as binaries to be packaged. Failure to delete this temporary
+      # artifact will cause later publication to packages.nlnetlabs.nl using artifacts from this workflow run to fail.
+      - name: Delete temporary cross compiled binaries artifacts
+        uses: jimschubert/delete-artifacts-action@v1
+        with:
+          log_level: 'debug'
+          pattern: 'cross-binaries-.+'
