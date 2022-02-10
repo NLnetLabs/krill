@@ -873,7 +873,7 @@ jobs:
       - name: Sanity check
         if: ${{ matrix.platform == 'linux/amd64' }}
         run: |
-          docker run --rm ${{ secrets.DOCKER_HUB_ID }}/${{ steps.meta.outputs.tags }}-manifest-${{ matrix.shortname }} krillc --version
+          docker run --rm ${{ secrets.DOCKER_HUB_ID }}/${{ steps.meta.outputs.tags }}-${{ matrix.shortname }} krillc --version
 
   # -------------------------------------------------------------------------------------------------------------------
   # Job: 'docker-multi-arch'
