@@ -909,9 +909,9 @@ jobs:
         run: |
           docker manifest create \
             ${{ secrets.DOCKER_HUB_ID }}/${{ needs.docker-build.outputs.dockerbasetag }} \
-            --amend ${{ secrets.DOCKER_HUB_ID }}/${{ needs.docker-build.outputs.dockerbasetag }}-manifest-amd64 \
-            --amend ${{ secrets.DOCKER_HUB_ID }}/${{ needs.docker-build.outputs.dockerbasetag }}-manifest-armv7 \
-            --amend ${{ secrets.DOCKER_HUB_ID }}/${{ needs.docker-build.outputs.dockerbasetag }}-manifest-arm64
+            --amend ${{ secrets.DOCKER_HUB_ID }}/${{ needs.docker-build.outputs.dockerbasetag }}-amd64 \
+            --amend ${{ secrets.DOCKER_HUB_ID }}/${{ needs.docker-build.outputs.dockerbasetag }}-armv7 \
+            --amend ${{ secrets.DOCKER_HUB_ID }}/${{ needs.docker-build.outputs.dockerbasetag }}-arm64
 
       - name: Push multiplatform image to Docker Hub
         run: |
