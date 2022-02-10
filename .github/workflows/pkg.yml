@@ -790,6 +790,8 @@ jobs:
             mode:        'copy'
     outputs:
       dockerbasetag: ${{ steps.meta.outputs.tags }}
+    env:
+      PUSH: ${{ contains(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
@@ -820,6 +822,7 @@ jobs:
             type=semver,pattern={{version}},prefix=v
             type=raw,value=unstable,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=latest,enable=${{ github.ref != 'refs/heads/main' && !contains(github.ref, '-') }}
+            type=raw,value=test,enable=${{ !env.PUSH }}
 
       # NOTE: Unfortunately the wait action appears to be unreliable. The project GH issues include examples of it not
       # working properly and I've had it finish without saying the waited on job completed but instead it just stopped
@@ -857,7 +860,8 @@ jobs:
         with:
           context: .
           platforms: ${{ matrix.platform }}
-          push: ${{ contains(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' }}
+          push: ${{ env.PUSH }}
+          load: ${{ !env.PUSH }}
           tags: ${{ secrets.DOCKER_HUB_ID }}/${{ steps.meta.outputs.tags }}-${{ matrix.shortname }}
           build-args: |
             MODE=${{ matrix.mode }}
@@ -868,7 +872,7 @@ jobs:
       - name: Sanity check
         if: ${{ matrix.platform == 'linux/amd64' }}
         run: |
-          docker run --pull always --rm ${{ secrets.DOCKER_HUB_ID }}/${{ steps.meta.outputs.tags }}-manifest-${{ matrix.shortname }} krillc --version
+          docker run --rm ${{ secrets.DOCKER_HUB_ID }}/${{ steps.meta.outputs.tags }}-manifest-${{ matrix.shortname }} krillc --version
 
   # -------------------------------------------------------------------------------------------------------------------
   # Job: 'docker-multi-arch'
