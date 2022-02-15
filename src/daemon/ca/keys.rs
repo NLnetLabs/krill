@@ -107,11 +107,11 @@ impl CertifiedKey {
 
         let not_after = self.incoming_cert().cert().validity().not_after();
 
-        let now = Time::now().timestamp_millis();
-        let until_not_after_millis = not_after.timestamp_millis() - now;
-        let until_new_not_after_millis = new_not_after.timestamp_millis() - now;
+        let now = Time::now().timestamp();
+        let until_not_after = not_after.timestamp() - now;
+        let until_new_not_after = new_not_after.timestamp() - now;
 
-        if until_new_not_after_millis < 0 {
+        if until_new_not_after <= 0 {
             // New not after time is in the past!
             //
             // This is rather odd. The parent should just exclude the resource class in the
@@ -124,22 +124,20 @@ impl CertifiedKey {
                 new_not_after.to_rfc3339()
             );
             false
-        } else if until_not_after_millis == until_new_not_after_millis {
+        } else if until_not_after == until_new_not_after {
             debug!(
                 "Will not request new certificate for CA '{}' under RC '{}'. Resources and not after time are unchanged.",
                 handle,
                 rcn,
             );
             false
-        } else if until_new_not_after_millis < until_not_after_millis {
+        } else if until_not_after > 0 && (until_new_not_after as f64 / until_not_after as f64) < 0.9_f64 {
             warn!(
-                "Parent of CA '{}' reduced not after time for certificate under RC '{}'",
+                "Parent of CA '{}' *reduced* not after time for certificate under RC '{}'. This is odd, but.. requesting new certificate.",
                 handle, rcn,
             );
             true
-        } else if until_not_after_millis <= 0
-            || (until_new_not_after_millis as f64 / until_not_after_millis as f64) > 1.1_f64
-        {
+        } else if until_not_after <= 0 || (until_new_not_after as f64 / until_not_after as f64) > 1.1_f64 {
             info!(
                 "Will request new certificate for CA '{}' under RC '{}'. Not after time increased to: {}",
                 handle,
@@ -149,9 +147,10 @@ impl CertifiedKey {
             true
         } else {
             debug!(
-                "Will not request new certificate for CA '{}' under RC '{}'. Not after time increased by less than 10%: {}",
+                "Will not request new certificate for CA '{}' under RC '{}'. Not after time changed by less than 10%. From: {} To: {}",
                 handle,
                 rcn,
+                not_after.to_rfc3339(),
                 new_not_after.to_rfc3339()
             );
             false
