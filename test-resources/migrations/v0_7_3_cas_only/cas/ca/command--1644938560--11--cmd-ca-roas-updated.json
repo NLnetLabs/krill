@@ -1,0 +1,26 @@
+{
+  "actor": "krill",
+  "time": "2022-02-15T15:22:40.023360483Z",
+  "handle": "ca",
+  "version": 24,
+  "sequence": 11,
+  "details": {
+    "roa_definition_updates": {
+      "added": [
+        {
+          "asn": 211321,
+          "prefix": "185.49.142.0/24",
+          "max_length": 24
+        }
+      ],
+      "removed": []
+    }
+  },
+  "effect": {
+    "events": [
+      24,
+      25,
+      26
+    ]
+  }
+}

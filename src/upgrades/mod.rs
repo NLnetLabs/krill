@@ -429,16 +429,20 @@ mod tests {
 
     use super::*;
 
-    #[tokio::test]
-    async fn prepare_then_upgrade_0_8_1() {
+    async fn test_upgrade(source: PathBuf) {
         let work_dir = tmp_dir();
-        let source = PathBuf::from("test-resources/migrations/v0_8_1/");
         file::backup_dir(&source, &work_dir).unwrap();
 
         let config = Config::test(&work_dir, false, false, false);
         let _ = config.init_logging();
 
-        let upgrade = prepare_upgrade_data_migrations(UpgradeMode::PrepareOnly, Arc::new(config.clone()))
+        let _upgrade = prepare_upgrade_data_migrations(UpgradeMode::PrepareOnly, Arc::new(config.clone()))
+            .await
+            .unwrap()
+            .unwrap();
+
+        // and continue - immediately, but still
+        let upgrade = prepare_upgrade_data_migrations(UpgradeMode::PrepareThenFinalise, Arc::new(config.clone()))
             .await
             .unwrap()
             .unwrap();
@@ -446,6 +450,24 @@ mod tests {
         finalise_data_migration(&upgrade, &config).unwrap();
 
         let _ = fs::remove_dir_all(work_dir);
+    }
+
+    #[tokio::test]
+    async fn prepare_then_upgrade_0_8_1() {
+        let source = PathBuf::from("test-resources/migrations/v0_8_1/");
+        test_upgrade(source).await;
+    }
+
+    #[tokio::test]
+    async fn prepare_then_upgrade_0_7_3_cas_only() {
+        let source = PathBuf::from("test-resources/migrations/v0_7_3_cas_only/");
+        test_upgrade(source).await;
+    }
+
+    #[tokio::test]
+    async fn prepare_then_upgrade_0_8_1_pubd_only() {
+        let source = PathBuf::from("test-resources/migrations/v0_8_1_pubd_only/");
+        test_upgrade(source).await;
     }
 
     #[tokio::test]

@@ -1,0 +1,15 @@
+{
+  "actor": "krill",
+  "time": "2022-02-15T15:21:55.202761542Z",
+  "handle": "ca",
+  "version": 2,
+  "sequence": 2,
+  "details": {
+    "repo_update": "https://testbed.krill.cloud/rfc8181/krill-upgrade-07/"
+  },
+  "effect": {
+    "events": [
+      2
+    ]
+  }
+}
