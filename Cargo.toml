@@ -128,29 +128,6 @@ assets = [
 ]
 systemd-units = { unit-name = "krill", unit-scripts = "pkg/common", enable = false }
 
-# Variant of the Debian packaging configuration that:
-#   a) statically links with OpenSSL when building a Debian package because the
-#      newest OpenSSL available on Ubuntu 16.04 at the time of writing is 1.0.2g
-#      (see: https://packages.ubuntu.com/xenial/openssl) while Krill requires
-#      OpenSSL >= 1.1.0.
-#   b) uses a simpler systemd service unit file because Ubuntu 16.04 doesn't
-#      support newer features supported by Ubuntu 18.04 and 20.04.
-[package.metadata.deb.variants.ubuntu-xenial]
-features = [ "static-openssl" ]
-depends = "$auto, passwd"
-
-[package.metadata.deb.variants.ubuntu-bionic]
-
-[package.metadata.deb.variants.ubuntu-focal]
-
-[package.metadata.deb.variants.debian-stretch]
-features = [ "static-openssl" ]
-depends = "$auto, passwd"
-
-[package.metadata.deb.variants.debian-buster]
-
-[package.metadata.deb.variants.debian-bullseye]
-
 # Packaging configuration for the `krillup` binary rather than Krill itself. As
 # we want the built binary to match that built for Krill we want the same
 # dynamic or static OpenSSL linking too. Rather than inherit from
@@ -173,6 +150,29 @@ assets = [
     ["target/release/krillup", "/usr/bin/krillup", "755"],
     ["doc/krillup.1", "/usr/share/man/man1/krillup.1", "644"],
 ]
+
+# Variant of the Debian packaging configuration that:
+#   a) statically links with OpenSSL when building a Debian package because the
+#      newest OpenSSL available on Ubuntu 16.04 at the time of writing is 1.0.2g
+#      (see: https://packages.ubuntu.com/xenial/openssl) while Krill requires
+#      OpenSSL >= 1.1.0.
+#   b) uses a simpler systemd service unit file because Ubuntu 16.04 doesn't
+#      support newer features supported by Ubuntu 18.04 and 20.04.
+[package.metadata.deb.variants.ubuntu-xenial]
+features = [ "static-openssl" ]
+depends = "$auto, passwd"
+
+[package.metadata.deb.variants.ubuntu-bionic]
+
+[package.metadata.deb.variants.ubuntu-focal]
+
+[package.metadata.deb.variants.debian-stretch]
+features = [ "static-openssl" ]
+depends = "$auto, passwd"
+
+[package.metadata.deb.variants.debian-buster]
+
+[package.metadata.deb.variants.debian-bullseye]
 
 # END DEBIAN PACKAGING
 # ------------------------------------------------------------------------------
