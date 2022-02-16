@@ -247,7 +247,7 @@ jobs:
 
             if [ "${MATRIX_PKG}" == "krillup" ]; then
                 # Ugly hack to use an alternate Cargo Deb configuration for krillup.
-                sed -i -e 's/^\[package\.metadata\.deb/[package.metadata.moved-deb/' \
+                sed -i -e 's/^\[package\.metadata\.deb\]/[package.metadata.moved-deb]/' \
                        -e 's/^\[package\.metadata\.krillup-deb/[package.metadata.deb/' Cargo.toml
             fi
 
