@@ -128,7 +128,7 @@ impl Default for AspaDefinitions {
 //------------ AspaObjects -------------------------------------------------
 
 /// ASPA objects held by a resource class in a CA.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AspaObjects(HashMap<AspaCustomer, AspaInfo>);
 
 impl AspaObjects {
@@ -227,11 +227,9 @@ impl AspaObjects {
             self.0.remove(&customer);
         }
     }
-}
 
-impl Default for AspaObjects {
-    fn default() -> Self {
-        Self(HashMap::new())
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 }
 
