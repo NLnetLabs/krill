@@ -1,0 +1,28 @@
+.TH "krillc" "1" "NLnet Labs"
+.SH NAME
+krillc - Command line upgrade assistant for the Krill RPKI daemon
+.SH SYNOPSIS
+krillup [SUBCOMMAND]
+
+krillup help [SUBCOMMAND]
+
+krillup -h, --help
+
+krillup -V, --version
+.SH DESCRIPTION
+Krill is a free, open source RPKI Certificate Authority that lets you run
+delegated RPKI under one or multiple Regional Internet Registries (RIRs). 
+Through its built-in publication server, Krill can publish Route Origin
+Authorizations (ROAs) on your own servers or with a third party.
+
+This manual page documents the krillup command line tool for handling data
+migrations for particularly large deployments or other special cases. Most
+users shouldn't need to use this tool.
+
+For more information visit https://rpki.readthedocs.io/en/latest/krill/.
+
+The command line client also has built-in help which can be accessed like so:
+    krillup help [SUBCOMMAND]
+
+.SH SEE ALSO
+krill(1)

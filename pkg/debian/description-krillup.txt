@@ -1,0 +1,10 @@
+Krill is a free, open source RPKI Certificate Authority that lets you run
+delegated RPKI under one or multiple Regional Internet Registries (RIRs).
+Through its built-in publication server, Krill can publish Route Origin
+Authorisations (ROAs) on your own servers or with a third party.
+
+This package contains the krillup binary for handling data migrations
+for particularly large deployments or other special cases. Most users
+shouldn't need to use this package.
+
+For more information visit https://rpki.readthedocs.io/en/latest/krill/.

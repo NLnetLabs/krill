@@ -26,20 +26,8 @@ on:
       - 'LICENSE'
       - 'README.md'
       - 'tests/e2e/**'
-  # Hmm, annoying, do we really have to duplicate this?
-  pull_request:
-    branches:
-    - main
-    paths-ignore:
-      - '.dockerignore'
-      - '.github/workflow/pkg.yml'
-      - 'Changelog.md'
-      - 'Dockerfile'
-      - 'doc/**'
-      - 'docker/**'
-      - 'LICENSE'
-      - 'README.md'
-      - 'tests/e2e/**'
+
+  workflow_dispatch:
 
 defaults:
   run:
@@ -55,7 +43,10 @@ jobs:
   pkg:
     strategy:
       matrix:
-        image: # can't use complex values here, only primitive values are allowed
+        pkg:
+          - 'krill'
+          - 'krillup'
+        image:
           - 'ubuntu:xenial'   # ubuntu/16.04
           - 'ubuntu:bionic'   # ubuntu/18.04
           - 'ubuntu:focal'    # ubuntu/20.04
@@ -68,11 +59,11 @@ jobs:
           - image: 'centos:7'
             extra_build_args: '--features static-openssl'
     env:
-      CARGO_DEB_VER: 1.28.0
-      CARGO_GENERATE_RPM_VER: 0.4.0
-      # A Krill version of the form 'x.y.z-bis' denotes a dev build that is newer than the released x.y.z version but is
+      CARGO_DEB_VER: 1.34.2
+      CARGO_GENERATE_RPM_VER: 0.6.0
+      # A Krill version of the form 'x.y.z-dev' denotes a dev build that is newer than the released x.y.z version but is
       # not yet a new release.
-      NEXT_VER_LABEL: bis
+      NEXT_VER_LABEL: dev
     name: pkg
     runs-on: ubuntu-latest
     # Build on the oldest platform we are targeting in order to avoid https://github.com/rust-lang/rust/issues/57497.
@@ -93,7 +84,14 @@ jobs:
 
     # Git clone the Krill code in the branch we were invoked on.
     - name: Checkout repository
-      uses: actions/checkout@v1
+      uses: actions/checkout@v2
+
+    # Allow CentOS 8 to continue working now that it is EOL
+    # See: https://stackoverflow.com/a/70930049
+    - name: CentOS 8 EOL workaround
+      if: matrix.image == 'centos:8'
+      run: |
+        sed -i -e 's|mirrorlist=|#mirrorlist=|g' -e 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-Linux-*
 
     # Install Rust the hard way rather than using a GH Action because the action doesn't work inside a Docker container.
     - name: Install Rust
@@ -137,7 +135,7 @@ jobs:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
-        key: ${{ matrix.image }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ matrix.image }}-${{ matrix.pkg }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
     # Speed up tooling installation by only re-downloading and re-building dependent crates if we change the version of
     # the tool that we are using.
@@ -146,14 +144,14 @@ jobs:
       uses: actions/cache@v2
       with:
         path: ~/.cargo/bin/cargo-deb
-        key: ${{ matrix.image }}-cargo-deb-${{ env.CARGO_DEB_VER }}
+        key: ${{ matrix.image }}-${{ matrix.pkg }}-cargo-deb-${{ env.CARGO_DEB_VER }}
 
     - name: Cache Cargo Generate RPM if available
       id: cache-cargo-generate-rpm
       uses: actions/cache@v2
       with:
         path: ~/.cargo/bin/cargo-generate-rpm
-        key: ${{ matrix.image }}-cargo-generate-rpm-${{ env.CARGO_GENERATE_RPM_VER }}
+        key: ${{ matrix.image }}-${{ matrix.pkg }}-cargo-generate-rpm-${{ env.CARGO_GENERATE_RPM_VER }}
 
     # Only install cargo-deb or cargo-generate-rpm if not already fetched from the cache.
     - name: Install Cargo Deb if needed
@@ -161,7 +159,17 @@ jobs:
       run: |
         case ${OS_NAME} in
           debian|ubuntu)
-            cargo install cargo-deb --version ${CARGO_DEB_VER}
+            if [[ "${OS_REL}" == "xenial" ]]; then
+              # Disable use of the default lzma feature which causes XZ compression to be used
+              # which then causes Lintian to fail with error:
+              #   E: krill: malformed-deb-archive newer compressed control.tar.xz
+              # Passing --fast to cargo-deb to disable use of XZ compression didn't help.
+              # See: https://github.com/kornelski/cargo-deb/issues/12
+              EXTRA_CARGO_INSTALL_ARGS="--no-default-features"
+            else
+              EXTRA_CARGO_INSTALL_ARGS=""
+            fi
+            cargo install cargo-deb --version ${CARGO_DEB_VER} --locked ${EXTRA_CARGO_INSTALL_ARGS}
             ;;
         esac
 
@@ -170,9 +178,7 @@ jobs:
       run: |
         case ${OS_NAME} in
           centos)
-            # Temporary workaround for https://github.com/cat-in-136/cargo-generate-rpm/issues/21
-            rustup toolchain install 1.52.0
-            cargo +1.52.0 install cargo-generate-rpm --version ${CARGO_GENERATE_RPM_VER} --locked
+            cargo install cargo-generate-rpm --version ${CARGO_GENERATE_RPM_VER} --locked
             ;;
         esac
 
@@ -180,6 +186,7 @@ jobs:
     # arguments.
     - name: Create the package
       env:
+        MATRIX_PKG: ${{ matrix.pkg }}
         MATRIX_IMAGE: ${{ matrix.image }}
         EXTRA_BUILD_ARGS: ${{ matrix.extra_build_args }}
       run: |
@@ -223,11 +230,7 @@ jobs:
 
         case ${OS_NAME} in
           debian|ubuntu)
-            case ${{ github.event_name }} in
-              pull_request) MAINTAINER="${{ github.actor }} <unknown@email.address>" ;;
-              push)         MAINTAINER="${{ github.event.pusher.name }} <${{ github.event.pusher.email }}>" ;;
-              *)            echo 2>&1 "ERROR: Unexpected GitHub Actions event"; exit 1 ;;
-            esac
+            MAINTAINER="The NLnet Labs RPKI Team <rpki@nlnetlabs.nl>"
 
             # Generate the RFC 5322 format date by hand instead of using date --rfc-email because that option doesn't exist
             # on Ubuntu 16.04 and Debian 9
@@ -238,35 +241,70 @@ jobs:
             if [ ! -d target/debian ]; then
               mkdir -p target/debian
             fi
-            echo "krill (${PKG_KRILL_VER}) unstable; urgency=medium" >target/debian/changelog
+            echo "${MATRIX_PKG} (${PKG_KRILL_VER}) unstable; urgency=medium" >target/debian/changelog
             echo "  * See: https://github.com/NLnetLabs/krill/releases/tag/v${KRILL_NEW_VER}" >>target/debian/changelog
             echo " -- maintainer ${MAINTAINER}  ${RFC5322_TS}" >>target/debian/changelog
+
+            if [ "${MATRIX_PKG}" == "krillup" ]; then
+                # Ugly hack to use an alternate Cargo Deb configuration for krillup.
+                sed -i -e 's/^\[package\.metadata\.deb/[package.metadata.moved-deb/' \
+                       -e 's/^\[package\.metadata\.krillup-deb/[package.metadata.deb/' Cargo.toml
+            fi
 
             DEB_VER="${PKG_KRILL_VER}-1${OS_REL}"
             cargo deb --variant ${OS_NAME}-${OS_REL} --deb-version ${DEB_VER} -v -- --locked ${EXTRA_BUILD_ARGS}
             ;;
           centos)
-            # Build and strip Krill as cargo generate-rpm doesn't do this for us
+            # Build Krill as cargo generate-rpm can't do this yet
             cargo build --release --locked -v ${EXTRA_BUILD_ARGS}
-            strip -s target/release/krill
+
+            # Strip Krill binaries as cargo generate-rpm can't do this yet
+            find target/release -maxdepth 1 -type f -executable | xargs strip -s -v
 
             # Fix the version string to be used for the RPM package
             sed -i -e "s/$KRILL_VER/$PKG_KRILL_VER/" Cargo.toml
 
             # Select the correct systemd service unit file for the target operating system
             case ${MATRIX_IMAGE} in
-              ubuntu:xenial|centos:7)   SYSTEMD_SERVICE_UNIT_FILE="krill-ubuntu-xenial.krill.service"   ;;
-              ubuntu:bionic)            SYSTEMD_SERVICE_UNIT_FILE="krill-ubuntu-bionic.krill.service"   ;;
-              ubuntu:focal|centos:8)    SYSTEMD_SERVICE_UNIT_FILE="krill-ubuntu-focal.krill.service"    ;;
-              debian:stretch)           SYSTEMD_SERVICE_UNIT_FILE="krill-debian-stretch.krill.service"  ;;
-              debian:buster)            SYSTEMD_SERVICE_UNIT_FILE="krill-debian-buster.krill.service"   ;;
-              debian:bullseye)          SYSTEMD_SERVICE_UNIT_FILE="krill-debian-bullseye.krill.service" ;;
-              *) echo >&2 "ERROR: Unsupported matrix image value: '${MATRIX_IMAGE}'" ;;
+              centos:7)
+                SYSTEMD_SERVICE_UNIT_FILE="krill-ubuntu-xenial.krill.service"
+                # yum install fails on older CentOS with the default LZMA compression used by cargo generate-rpm since v0.5.0
+                # see: https://github.com/cat-in-136/cargo-generate-rpm/issues/30
+                EXTRA_CARGO_GENERATE_RPM_ARGS="--payload-compress gzip"
+                ;;
+              centos:8)
+                SYSTEMD_SERVICE_UNIT_FILE="krill-ubuntu-focal.krill.service"
+                EXTRA_CARGO_GENERATE_RPM_ARGS=""
+                ;;
+              *)
+                echo >&2 "ERROR: Unsupported matrix image value: '${MATRIX_IMAGE}'"
+                ;;
             esac
 
-            # Copy the chosen systemd service unit file to where Cargo.toml expects it to be
-            mkdir -p target/rpm
-            cp pkg/common/${SYSTEMD_SERVICE_UNIT_FILE} target/rpm/krill.service
+            case ${MATRIX_PKG} in
+              krill)
+                # Select the correct systemd service unit file for the target operating system
+                case ${MATRIX_IMAGE} in
+                  ubuntu:xenial|centos:7)   SYSTEMD_SERVICE_UNIT_FILE="krill-ubuntu-xenial.krill.service"   ;;
+                  ubuntu:bionic)            SYSTEMD_SERVICE_UNIT_FILE="krill-ubuntu-bionic.krill.service"   ;;
+                  ubuntu:focal|centos:8)    SYSTEMD_SERVICE_UNIT_FILE="krill-ubuntu-focal.krill.service"    ;;
+                  debian:stretch)           SYSTEMD_SERVICE_UNIT_FILE="krill-debian-stretch.krill.service"  ;;
+                  debian:buster)            SYSTEMD_SERVICE_UNIT_FILE="krill-debian-buster.krill.service"   ;;
+                  debian:bullseye)          SYSTEMD_SERVICE_UNIT_FILE="krill-debian-bullseye.krill.service" ;;
+                  *) echo >&2 "ERROR: Unsupported matrix image value: '${MATRIX_IMAGE}'" ;;
+                esac
+
+                # Copy the chosen systemd service unit file to where Cargo.toml expects it to be
+                mkdir -p target/rpm
+                cp pkg/common/${SYSTEMD_SERVICE_UNIT_FILE} target/rpm/krill.service
+                ;;
+              krillup)
+                # Ugly hack to use an alternate configuration as `cargo generate-rpm` doesn't support
+                # the `cargo deb` concept of variants.
+                sed -i -e 's/^\[package\.metadata\.generate-rpm/[package.metadata.moved-generate-rpm/' \
+                       -e 's/^\[package\.metadata\.krillup-generate-rpm/[package.metadata.generate-rpm/' Cargo.toml
+                ;;
+            esac
 
             cargo generate-rpm
             ;;
@@ -293,7 +331,7 @@ jobs:
     - name: Upload package
       uses: actions/upload-artifact@v2
       with:
-        name: ${{ env.OS_NAME }}_${{ env.OS_REL }}
+        name: ${{ matrix.pkg }}_${{ env.OS_NAME }}_${{ env.OS_REL }}
         path: |
           target/debian/*.deb
           target/generate-rpm/*.rpm
@@ -309,7 +347,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: # can't use complex values here, only primitive values are allowed
+        pkg:
+          - 'krill'
+          - 'krillup'
+        image:
           - 'ubuntu:xenial'   # ubuntu/16.04
           - 'ubuntu:bionic'   # ubuntu/18.04
           - 'ubuntu:focal'    # ubuntu/20.04
@@ -327,9 +368,35 @@ jobs:
         # test for that O/S (remember to change debian:bullseye to the correct
         # O/S name!):
         #
+        #
+        # exclude:
+        #   - image: 'debian:bullseye'
+        #     mode: 'upgrade-from-published'
         exclude:
-          - image: 'debian:bullseye'
+          - pkg: 'krillup'
             mode: 'upgrade-from-published'
+            image: 'ubuntu:xenial'   # ubuntu/16.04
+          - pkg: 'krillup'
+            mode: 'upgrade-from-published'
+            image: 'ubuntu:bionic'   # ubuntu/18.04
+          - pkg: 'krillup'
+            mode: 'upgrade-from-published'
+            image: 'ubuntu:focal'    # ubuntu/20.04
+          - pkg: 'krillup'
+            mode: 'upgrade-from-published'
+            image: 'debian:stretch'  # debian/9
+          - pkg: 'krillup'
+            mode: 'upgrade-from-published'
+            image: 'debian:buster'   # debian/10
+          - pkg: 'krillup'
+            mode: 'upgrade-from-published'
+            image: 'debian:bullseye' # debian/11
+          - pkg: 'krillup'
+            mode: 'upgrade-from-published'
+            image: 'centos:7'
+          - pkg: 'krillup'
+            mode: 'upgrade-from-published'
+            image: 'centos:8'
     steps:
     # Set some environment variables that will be available to "run" steps below in this job, and some output variables
     # that will be available in GH Action step definitions below.
@@ -344,14 +411,24 @@ jobs:
 
         echo "OS_NAME=${OS_NAME}" >> $GITHUB_ENV
         echo "OS_REL=${OS_REL}" >> $GITHUB_ENV
-        echo "LXC_IMAGE=images:${OS_NAME}/${OS_REL}/cloud" >> $GITHUB_ENV
+
+        case ${MATRIX_IMAGE} in
+          centos:8)
+            # the CentOS 8 LXD image no longer exists since CentOS 8 hit EOL.
+            # use the Rocky Linux (a CentOS 8 compatible O/S) LXD image instead.
+            echo "LXC_IMAGE=images:rockylinux/8/cloud" >> $GITHUB_ENV
+            ;;
+          *)
+            echo "LXC_IMAGE=images:${OS_NAME}/${OS_REL}/cloud" >> $GITHUB_ENV
+            ;;
+        esac
       env:
         MATRIX_IMAGE: ${{ matrix.image }}
 
     - name: Download package
       uses: actions/download-artifact@v2
       with:
-        name: ${{ env.OS_NAME }}_${{ env.OS_REL }}
+        name: ${{ matrix.pkg }}_${{ env.OS_NAME }}_${{ env.OS_REL }}
 
     - name: Add current user to LXD group
       run: |
@@ -397,6 +474,11 @@ jobs:
             sg lxd -c "lxc exec testcon -- apt-get install -y -o Dpkg::Options::=\"--force-confnew\" apt-transport-https ca-certificates man sudo wget"
             ;;
           centos)
+            if [[ "${MATRIX_IMAGE}" == "centos:8" ]]; then
+              # allow CentOS 8 to continue working now that it is EOL
+              # see: https://stackoverflow.com/a/70930049
+              sg lxd -c "lxc exec testcon -- sed -i -e 's|mirrorlist=|#mirrorlist=|g' -e 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-Linux-*"
+            fi
             sg lxd -c "lxc exec testcon -- yum update -y"
             sg lxd -c "lxc exec testcon -- yum install -y man"
             ;;
@@ -427,7 +509,7 @@ jobs:
             sg lxd -c "lxc exec testcon -- wget -q https://packages.nlnetlabs.nl/aptkey.asc"
             sg lxd -c "lxc exec testcon -- apt-key add ./aptkey.asc"
             sg lxd -c "lxc exec testcon -- apt update"
-            sg lxd -c "lxc exec testcon -- apt install -y krill"
+            sg lxd -c "lxc exec testcon -- apt install -y ${{ matrix.pkg }}"
             ;;
           centos)
             echo '[nlnetlabs]' >$HOME/nlnetlabs.repo
@@ -436,7 +518,7 @@ jobs:
             echo 'enabled=1' >>$HOME/nlnetlabs.repo
             sg lxd -c "lxc file push $HOME/nlnetlabs.repo testcon/etc/yum.repos.d/"
             sg lxd -c "lxc exec testcon -- rpm --import https://packages.nlnetlabs.nl/aptkey.asc"
-            sg lxd -c "lxc exec testcon -- yum install -y krill"
+            sg lxd -c "lxc exec testcon -- yum install -y ${{ matrix.pkg }}"
             ;;
         esac
 
@@ -453,6 +535,7 @@ jobs:
         esac
 
     - name: Test installed packages
+      if: ${{ matrix.pkg == 'krill' }}
       run: |
         echo -e "\nKRILLC VERSION:"
         sg lxd -c "lxc exec testcon -- krillc --version"
@@ -485,6 +568,15 @@ jobs:
         echo -e "\nKRILL MAN PAGE:"
         sg lxd -c "lxc exec testcon -- man -P cat krill"
 
+    - name: Test installed packages
+      if: ${{ matrix.pkg == 'krillup' }}
+      run: |
+        echo -e "\nKRILLUP VERSION:"
+        sg lxd -c "lxc exec testcon -- krillup --version"
+
+        echo -e "\nKRILLUP MAN PAGE:"
+        sg lxd -c "lxc exec testcon -- man -P cat krillup"
+
     - name: Install new package
       if: ${{ matrix.mode == 'upgrade-from-published' }}
       run: |
@@ -498,7 +590,7 @@ jobs:
         esac
 
     - name: Test installed packages
-      if: ${{ matrix.mode == 'upgrade-from-published' }}
+      if: ${{ matrix.mode == 'upgrade-from-published' && matrix.pkg == 'krill' }}
       run: |
         echo -e "\nKRILLC VERSION:"
         sg lxd -c "lxc exec testcon -- krillc --version"
