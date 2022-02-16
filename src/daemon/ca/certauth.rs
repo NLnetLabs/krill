@@ -69,19 +69,6 @@ impl Rfc8183Id {
     }
 }
 
-//------------ CertAuthStatus ----------------------------------------------
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
-enum CertAuthStatus {
-    Active,
-    Deactivated,
-}
-
-impl Default for CertAuthStatus {
-    fn default() -> Self {
-        CertAuthStatus::Active
-    }
-}
-
 //------------ CertAuth ----------------------------------------------------
 
 /// This type defines a Certification Authority at a slightly higher level
@@ -107,9 +94,6 @@ pub struct CertAuth {
 
     #[serde(skip_serializing_if = "AspaDefinitions::is_empty", default)]
     aspas: AspaDefinitions,
-
-    #[serde(skip_serializing, default)]
-    status: CertAuthStatus,
 }
 
 impl Aggregate for CertAuth {
@@ -149,7 +133,6 @@ impl Aggregate for CertAuth {
             routes,
             rtas,
             aspas,
-            status: CertAuthStatus::Active,
         })
     }
 
