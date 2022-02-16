@@ -102,16 +102,13 @@ pub struct CertAuth {
     children: HashMap<ChildHandle, ChildDetails>,
     routes: Routes,
 
-    #[serde(skip_serializing_if = "Rtas::is_empty", default = "Rtas::default")]
+    #[serde(skip_serializing_if = "Rtas::is_empty", default)]
     rtas: Rtas,
 
-    #[serde(
-        skip_serializing_if = "AspaDefinitions::is_empty",
-        default = "AspaDefinitions::default"
-    )]
+    #[serde(skip_serializing_if = "AspaDefinitions::is_empty", default)]
     aspas: AspaDefinitions,
 
-    #[serde(skip_serializing, default = "CertAuthStatus::default")]
+    #[serde(skip_serializing, default)]
     status: CertAuthStatus,
 }
 
