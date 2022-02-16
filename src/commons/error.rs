@@ -978,7 +978,7 @@ mod tests {
         );
         verify(
             include_str!("../../test-resources/errors/sys-http-client.json"),
-            Error::HttpClientError(httpclient::Error::Forbidden),
+            Error::HttpClientError(httpclient::Error::forbidden("https://example.com/")),
         );
 
         //-----------------------------------------------------------------

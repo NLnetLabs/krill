@@ -55,54 +55,64 @@ pub async fn logging_http_client(req: openidconnect::HttpRequest) -> Result<open
 async fn dispatch_openid_request(
     request: openidconnect::HttpRequest,
 ) -> Result<openidconnect::HttpResponse, httpclient::Error> {
-    let request_uri = request.url.as_str();
+    let request_uri = request.url.to_string();
 
     let client = {
         let timeout = openid_connect_provider_timeout();
         let allow_redirects = false; // Following redirects opens the client up to SSRF vulnerabilities.
 
-        httpclient::client_with_tweaks(request_uri, timeout, allow_redirects)
+        httpclient::client_with_tweaks(&request_uri, timeout, allow_redirects)
     }?;
 
     let request = convert_openid_request(request, &client)?;
 
-    let response = client.execute(request).await?;
+    let response = client
+        .execute(request)
+        .await
+        .map_err(|e| httpclient::Error::execute(&request_uri, e))?;
 
-    convert_to_openid_response(response).await
+    convert_to_openid_response(&request_uri, response).await
 }
 
 fn convert_openid_request(
     request: openidconnect::HttpRequest,
     client: &reqwest::Client,
 ) -> Result<reqwest::Request, httpclient::Error> {
-    let request_uri = request.url.as_str();
-    let request_method = reqwest::Method::from_str(request.method.as_str())
-        .map_err(|_| httpclient::Error::InvalidMethod(request.method.to_string()))?;
+    let request_uri = request.url.to_string();
 
-    let mut request_builder = client.request(request_method, request_uri).body(request.body);
+    let request_method = reqwest::Method::from_str(request.method.as_str())
+        .map_err(|_| httpclient::Error::request_build(&request_uri, format!("invalid method: {}", request.method)))?;
+
+    let mut request_builder = client.request(request_method, &request_uri).body(request.body);
 
     // map openid connect headers to the request builder
     for (name, value) in &request.headers {
         request_builder = request_builder.header(name.as_str(), value.as_bytes());
     }
 
-    Ok(request_builder.build()?)
+    request_builder
+        .build()
+        .map_err(|e| httpclient::Error::request_build(&request_uri, e))
 }
 
-async fn convert_to_openid_response(response: Response) -> Result<openidconnect::HttpResponse, httpclient::Error> {
+async fn convert_to_openid_response(
+    uri: &str,
+    response: Response,
+) -> Result<openidconnect::HttpResponse, httpclient::Error> {
     let response_code = response.status().as_u16();
 
     let response_status = openidconnect::http::StatusCode::from_u16(response_code)
-        .map_err(|_| httpclient::Error::InvalidStatusCode(response_code))?;
+        .map_err(|_| httpclient::Error::response(uri, format!("invalid status code: {}", response_code)))?;
 
     let response_headers = {
         let mut headers = openidconnect::http::HeaderMap::new();
         for (name, value) in response.headers() {
             let name = openidconnect::http::header::HeaderName::from_str(name.as_str())
-                .map_err(|_| httpclient::Error::InvalidHeaderName)?;
+                .map_err(|_| httpclient::Error::response(uri, format!("invalid header name: {}", name.as_str())))?;
 
-            let value = openidconnect::http::header::HeaderValue::from_bytes(value.as_bytes())
-                .map_err(|_| httpclient::Error::InvalidHeaderValue)?;
+            let value = openidconnect::http::header::HeaderValue::from_bytes(value.as_bytes()).map_err(|_| {
+                httpclient::Error::response(uri, format!("invalid value for header: {}", name.as_str()))
+            })?;
 
             headers.append(name, value);
         }
@@ -110,7 +120,10 @@ async fn convert_to_openid_response(response: Response) -> Result<openidconnect:
         headers
     };
 
-    let response_body = response.bytes().await?;
+    let response_body = response
+        .bytes()
+        .await
+        .map_err(|e| httpclient::Error::response(uri, format!("could not get response body: {}", e)))?;
 
     Ok(openidconnect::HttpResponse {
         status_code: response_status,

@@ -1,1 +1,7 @@
-{"label":"sys-http-client","msg":"HTTP client error: Access Forbidden","args":{"cause":"Access Forbidden"}}
+{
+    "label": "sys-http-client",
+    "msg": "HTTP client error: Got 'Forbidden' response for uri: https://example.com/",
+    "args": {
+        "cause": "Got 'Forbidden' response for uri: https://example.com/"
+    }
+}
