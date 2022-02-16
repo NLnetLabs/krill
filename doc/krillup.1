@@ -1,6 +1,6 @@
-.TH "krillc" "1" "NLnet Labs"
+.TH "krillup" "1" "NLnet Labs"
 .SH NAME
-krillc - Command line upgrade assistant for the Krill RPKI daemon
+krillup - Krill Upgrade Helper
 .SH SYNOPSIS
 krillup [SUBCOMMAND]
 
@@ -15,9 +15,11 @@ delegated RPKI under one or multiple Regional Internet Registries (RIRs).
 Through its built-in publication server, Krill can publish Route Origin
 Authorizations (ROAs) on your own servers or with a third party.
 
-This manual page documents the krillup command line tool for handling data
-migrations for particularly large deployments or other special cases. Most
-users shouldn't need to use this tool.
+The krillup tool can be used to reduce the risk and time needed for Krill
+upgrades, by preparing and verifying any data migrations that would be
+needed. The data_dir setting from the provided configuration file is used to
+find the data to migrate, and prepared data will be saved under
+'data_dir/upgrade-data'.
 
 For more information visit https://rpki.readthedocs.io/en/latest/krill/.
 

@@ -3,8 +3,8 @@ delegated RPKI under one or multiple Regional Internet Registries (RIRs).
 Through its built-in publication server, Krill can publish Route Origin
 Authorisations (ROAs) on your own servers or with a third party.
 
-This package contains the krillup binary for handling data migrations
-for particularly large deployments or other special cases. Most users
-shouldn't need to use this package.
+This package contains the krillup tool which can be used to reduce the
+risk and time needed for Krill upgrades, by preparing and verifying any
+data migrations that would be needed.
 
 For more information visit https://rpki.readthedocs.io/en/latest/krill/.
