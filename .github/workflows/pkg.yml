@@ -306,7 +306,7 @@ jobs:
                 ;;
             esac
 
-            cargo generate-rpm
+            cargo generate-rpm ${EXTRA_CARGO_GENERATE_RPM_ARGS}
             ;;
         esac
 
