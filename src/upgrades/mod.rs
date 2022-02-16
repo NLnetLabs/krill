@@ -27,21 +27,45 @@ pub type UpgradeResult<T> = Result<T, UpgradeError>;
 
 pub const MIGRATION_SCOPE: &str = "migration";
 
+//------------ KrillUpgradeReport --------------------------------------------
+
+#[derive(Debug)]
+pub struct UpgradeReport {
+    data_migration: bool,
+    versions: UpgradeVersions,
+}
+
+impl UpgradeReport {
+    pub fn new(data_migration: bool, versions: UpgradeVersions) -> Self {
+        UpgradeReport {
+            data_migration,
+            versions,
+        }
+    }
+    pub fn data_migration(&self) -> bool {
+        self.data_migration
+    }
+
+    pub fn versions(&self) -> &UpgradeVersions {
+        &self.versions
+    }
+}
+
 //------------ KrillUpgradeVersions ------------------------------------------
 
 #[derive(Debug)]
-pub struct KrillUpgradeVersions {
+pub struct UpgradeVersions {
     from: KrillVersion,
     to: KrillVersion,
 }
 
-impl KrillUpgradeVersions {
+impl UpgradeVersions {
     /// Returns a KrillUpgradeVersions if the krill code version is newer
     /// than the provided current version.
     pub fn for_current(current: KrillVersion) -> Option<Self> {
         let code_version = KrillVersion::code_version();
         if code_version > current {
-            Some(KrillUpgradeVersions {
+            Some(UpgradeVersions {
                 from: current,
                 to: code_version,
             })
@@ -256,47 +280,41 @@ pub trait UpgradeStore {
 pub async fn prepare_upgrade_data_migrations(
     mode: UpgradeMode,
     config: Arc<Config>,
-) -> UpgradeResult<Option<KrillUpgradeVersions>> {
+) -> UpgradeResult<Option<UpgradeReport>> {
     match upgrade_versions(config.as_ref()) {
         None => Ok(None),
-        Some(upgrade_versions) => {
-            if upgrade_versions.from < KrillVersion::release(0, 6, 0) {
+        Some(versions) => {
+            if versions.from < KrillVersion::release(0, 6, 0) {
                 let msg = "Cannot upgrade Krill installations from before version 0.6.0. Please upgrade to any version ranging from 0.6.0 to 0.8.1 first, and then upgrade to this version.";
                 error!("{}", msg);
                 Err(UpgradeError::custom(msg))
+            } else if versions.from < KrillVersion::release(0, 9, 0) {
+                // We need to prepare pubd first, because if there were any CAs using
+                // an embedded repository then they will need to be updated to use the
+                // RFC 8181 protocol (using localhost) instead, and this can only be
+                // *after* the publication server data is migrated.
+                PubdObjectsMigration::prepare(mode, config.clone())?;
+
+                // We fool a repository manager for the CA migration to use the upgrade
+                // data directory as its base dir. This repository manager will be used
+                // to get the repository response XML for any (if any) CAs that were
+                // using an embedded repository.
+                let mut repo_manager_migration_config = (*config).clone();
+                repo_manager_migration_config.data_dir = config.upgrade_data_dir();
+
+                // We need a signer because it's required by the repo manager, although
+                // we will not actually use it during the migration. Let it use the
+                // config using the upgrade_data_dir as base dir to ensure that it
+                // cannot - even unintendedly - affect any of they keys.
+                let signer = Arc::new(KrillSigner::build(&repo_manager_migration_config.data_dir)?);
+
+                let repo_manager = RepositoryManager::build(Arc::new(repo_manager_migration_config), signer)?;
+
+                CaObjectsMigration::prepare(mode, config, repo_manager)?;
+
+                Ok(Some(UpgradeReport::new(true, versions)))
             } else {
-                if upgrade_versions.from < KrillVersion::release(0, 9, 0) {
-                    // We need to prepare pubd first, because if there were any CAs using
-                    // an embedded repository then they will need to be updated to use the
-                    // RFC 8181 protocol (using localhost) instead, and this can only be
-                    // *after* the publication server data is migrated.
-                    PubdObjectsMigration::prepare(mode, config.clone())?;
-
-                    // We fool a repository manager for the CA migration to use the upgrade
-                    // data directory as its base dir. This repository manager will be used
-                    // to get the repository response XML for any (if any) CAs that were
-                    // using an embedded repository.
-                    let mut repo_manager_migration_config = (*config).clone();
-                    repo_manager_migration_config.data_dir = config.upgrade_data_dir();
-
-                    // We need a signer because it's required by the repo manager, although
-                    // we will not actually use it during the migration. Let it use the
-                    // config using the upgrade_data_dir as base dir to ensure that it
-                    // cannot - even unintendedly - affect any of they keys.
-                    let signer = Arc::new(KrillSigner::build(&repo_manager_migration_config.data_dir)?);
-
-                    let repo_manager = RepositoryManager::build(Arc::new(repo_manager_migration_config), signer)?;
-
-                    CaObjectsMigration::prepare(mode, config, repo_manager)?;
-                } else {
-                    info!(
-                        "No data migration is needed from release {} to {}",
-                        upgrade_versions.from(),
-                        upgrade_versions.to()
-                    )
-                }
-
-                Ok(Some(upgrade_versions))
+                Ok(Some(UpgradeReport::new(false, versions)))
             }
         }
     }
@@ -305,7 +323,7 @@ pub async fn prepare_upgrade_data_migrations(
 /// Finalise the data migration for an upgrade. I.e. move the prepared data and archive
 /// the old data if applicable to this upgrade, and otherwise (in any event) update the
 /// the current versions for the "cas" and "pubd" store where applicable.
-pub fn finalise_data_migration(upgrade: &KrillUpgradeVersions, config: &Config) -> UpgradeResult<()> {
+pub fn finalise_data_migration(upgrade: &UpgradeVersions, config: &Config) -> UpgradeResult<()> {
     // Move directories - if applicable (servers can have cas, repo server or both)
 
     let from = upgrade.from();
@@ -371,10 +389,7 @@ pub fn finalise_data_migration(upgrade: &KrillUpgradeVersions, config: &Config) 
 
 /// Should be called when the KrillServer is initiated, before the web server is started
 /// and operators can make changes.
-pub async fn post_start_upgrade(
-    upgrade_versions: &KrillUpgradeVersions,
-    server: &KrillServer,
-) -> Result<(), UpgradeError> {
+pub async fn post_start_upgrade(upgrade_versions: &UpgradeVersions, server: &KrillServer) -> Result<(), UpgradeError> {
     if upgrade_versions.from() < &KrillVersion::candidate(0, 9, 3, 2) {
         info!("Reissue ROAs on upgrade to force short EE certificate subjects in the objects");
         server.force_renew_roas().await.map_err(|e| e.into())
@@ -389,7 +404,7 @@ pub async fn post_start_upgrade(
 /// highest of the two version is used as the 'current' version. This can only happen
 /// in practice in case one of the two did not have their version updated in the past,
 /// as there can be only one version running.
-fn upgrade_versions(config: &Config) -> Option<KrillUpgradeVersions> {
+fn upgrade_versions(config: &Config) -> Option<UpgradeVersions> {
     let cas_version = upgrade_versions_ns(&config.data_dir, CASERVER_DIR);
     let pubd_version = upgrade_versions_ns(&config.data_dir, PUBSERVER_DIR);
 
@@ -406,12 +421,12 @@ fn upgrade_versions(config: &Config) -> Option<KrillUpgradeVersions> {
     }
 }
 
-fn upgrade_versions_ns(work_dir: &Path, ns: &str) -> Option<KrillUpgradeVersions> {
+fn upgrade_versions_ns(work_dir: &Path, ns: &str) -> Option<UpgradeVersions> {
     let keystore_path = work_dir.join(ns);
     if keystore_path.exists() {
         let version_path = keystore_path.join("version");
         let current = file::load_json(&version_path).unwrap_or_else(|_| KrillVersion::v0_5_0_or_before());
-        KrillUpgradeVersions::for_current(current)
+        UpgradeVersions::for_current(current)
     } else {
         None
     }
@@ -442,12 +457,12 @@ mod tests {
             .unwrap();
 
         // and continue - immediately, but still
-        let upgrade = prepare_upgrade_data_migrations(UpgradeMode::PrepareThenFinalise, Arc::new(config.clone()))
+        let report = prepare_upgrade_data_migrations(UpgradeMode::PrepareThenFinalise, Arc::new(config.clone()))
             .await
             .unwrap()
             .unwrap();
 
-        finalise_data_migration(&upgrade, &config).unwrap();
+        finalise_data_migration(report.versions(), &config).unwrap();
 
         let _ = fs::remove_dir_all(work_dir);
     }
@@ -479,12 +494,12 @@ mod tests {
         let config = Arc::new(Config::test(&work_dir, false, false, false));
         let _ = config.init_logging();
 
-        let upgrade = prepare_upgrade_data_migrations(UpgradeMode::PrepareThenFinalise, config.clone())
+        let report = prepare_upgrade_data_migrations(UpgradeMode::PrepareThenFinalise, config.clone())
             .await
             .unwrap()
             .unwrap();
 
-        finalise_data_migration(&upgrade, &config).unwrap();
+        finalise_data_migration(report.versions(), &config).unwrap();
 
         let _ = fs::remove_dir_all(work_dir);
     }

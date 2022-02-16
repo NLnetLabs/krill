@@ -36,7 +36,6 @@ use crate::{
         eventsourcing::AggregateStoreError,
         remote::rfc8183,
         util::file,
-        KrillResult,
     },
     constants::{
         KRILL_ENV_HTTP_LOG_INFO, KRILL_ENV_UPGRADE_ONLY, KRILL_VERSION_MAJOR, KRILL_VERSION_MINOR, KRILL_VERSION_PATCH,
@@ -59,10 +58,6 @@ use crate::{
 //------------ State -----------------------------------------------------
 
 pub type State = Arc<KrillServer>;
-
-pub fn parse_config() -> KrillResult<Config> {
-    Config::create().map_err(|e| Error::Custom(format!("Could not parse config: {}", e)))
-}
 
 fn print_write_error_hint_and_die(error_msg: String) {
     eprintln!("{}", error_msg);
@@ -116,9 +111,9 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
     test_data_dirs_or_die(&config);
 
     // Call upgrade, this will only do actual work if needed.
-    let upgrade_versions = prepare_upgrade_data_migrations(UpgradeMode::PrepareThenFinalise, config.clone()).await?;
-    if let Some(upgrade) = &upgrade_versions {
-        finalise_data_migration(upgrade, config.as_ref())?;
+    let upgrade_report = prepare_upgrade_data_migrations(UpgradeMode::PrepareThenFinalise, config.clone()).await?;
+    if let Some(report) = &upgrade_report {
+        finalise_data_migration(report.versions(), config.as_ref())?;
     }
 
     // Create the server, this will create the necessary data sub-directories if needed
@@ -126,8 +121,8 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
 
     // Call post-start upgrades to trigger any upgrade related runtime actions, such as
     // re-issuing ROAs because subject name strategy has changed.
-    if let Some(upgrade_versions) = upgrade_versions {
-        post_start_upgrade(&upgrade_versions, &krill).await?;
+    if let Some(report) = upgrade_report {
+        post_start_upgrade(report.versions(), &krill).await?;
     }
 
     // If the operator wanted to do the upgrade only, now is a good time to report success and stop

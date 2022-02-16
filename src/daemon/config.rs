@@ -8,7 +8,6 @@ use std::{
 };
 
 use chrono::Duration;
-use clap::{App, Arg, SubCommand};
 use log::{error, LevelFilter};
 use serde::{de, Deserialize, Deserializer};
 
@@ -202,10 +201,6 @@ impl ConfigDefaults {
     fn timing_aspa_reissue_weeks_before() -> i64 {
         4
     }
-
-    fn prepare_upgrade_only() -> bool {
-        false
-    }
 }
 
 //------------ Config --------------------------------------------------------
@@ -231,9 +226,6 @@ pub struct Config {
 
     #[serde(default = "ConfigDefaults::always_recover_data")]
     pub always_recover_data: bool,
-
-    #[serde(default = "ConfigDefaults::prepare_upgrade_only")]
-    pub prepare_upgrade_only: bool,
 
     pub pid_file: Option<PathBuf>,
 
@@ -663,7 +655,6 @@ impl Config {
             https_mode,
             data_dir,
             always_recover_data,
-            prepare_upgrade_only: false,
             pid_file,
             service_uri: None,
             log_level,
@@ -713,36 +704,24 @@ impl Config {
     }
 
     /// Creates the config (at startup).
-    pub fn create() -> Result<Self, ConfigError> {
-        let matches = App::new(KRILL_SERVER_APP)
-            .version(KRILL_VERSION)
-            .arg(
-                Arg::with_name("config")
-                    .short("c")
-                    .long("config")
-                    .value_name("FILE")
-                    .help("Override the path to the config file (default: './defaults/krill.conf')")
-                    .required(false),
-            )
-            .subcommand(SubCommand::with_name("prepare-upgrade")
-                .about("Prepares and tests any data migration that may be needed for an upgrade, reducing time and risk. Leaves the current data unchanged and can run while krill is active.")
-            )
-            .get_matches();
-
-        let config_file = matches.value_of("config").unwrap_or(KRILL_DEFAULT_CONFIG_FILE);
-
+    pub fn create(config_file: &str, upgrade_only: bool) -> Result<Self, ConfigError> {
         let mut config = Self::read_config(config_file)?;
 
-        if matches.subcommand_matches("prepare-upgrade").is_some() {
-            config.prepare_upgrade_only = true;
+        if upgrade_only {
             config.log_type = LogType::Stderr;
             config.log_level = LevelFilter::Info;
         }
 
         config.init_logging()?;
 
-        if config.prepare_upgrade_only {
-            info!("Prepare and test krill upgrade.")
+        if upgrade_only {
+            info!("Prepare upgrade using configuration file: {}", config_file,);
+            info!("Processing data from: {}", config.data_dir.to_string_lossy());
+            info!(
+                "Saving prepared data to: {}",
+                config.upgrade_data_dir().to_string_lossy()
+            );
+            warn!("*** Kill this process if you have doubts about available disk space! ***");
         } else {
             info!("{} uses configuration file: {}", KRILL_SERVER_APP, config_file);
         }
