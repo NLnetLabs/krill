@@ -295,13 +295,6 @@ jobs:
 
             case ${MATRIX_PKG} in
               krill)
-                # Select the correct systemd service unit file for the target operating system
-                case "${OS_NAME}:${OS_REL}" in
-                  centos:7) SYSTEMD_SERVICE_UNIT_FILE="krill-ubuntu-xenial.krill.service"   ;;
-                  centos:8) SYSTEMD_SERVICE_UNIT_FILE="krill-ubuntu-focal.krill.service"    ;;
-                  *) echo >&2 "ERROR: Unsupported matrix image value: '${OS_NAME}:${OS_REL}'" ;;
-                esac
-
                 # Copy the chosen systemd service unit file to where Cargo.toml expects it to be
                 mkdir -p target/rpm
                 cp pkg/common/${SYSTEMD_SERVICE_UNIT_FILE} target/rpm/krill.service
