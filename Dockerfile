@@ -28,6 +28,7 @@ RUN CARGO_HTTP_MULTIPLEXING=false cargo build --target x86_64-alpine-linux-musl 
 FROM alpine:3.12
 COPY --from=build /tmp/krill/target/x86_64-alpine-linux-musl/release/krill /usr/local/bin/
 COPY --from=build /tmp/krill/target/x86_64-alpine-linux-musl/release/krillc /usr/local/bin/
+COPY --from=build /tmp/krill/target/x86_64-alpine-linux-musl/release/krillup /usr/local/bin/
 
 # Build variables for uid and guid of user to run container
 ARG RUN_USER=krill

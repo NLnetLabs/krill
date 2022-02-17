@@ -18,7 +18,7 @@ use crate::{
     daemon::ca::StoredCaCommand,
     pubd::RepositoryManager,
     upgrades::v0_9_0::old_events::DerivedEmbeddedCaMigrationInfo,
-    upgrades::{UpgradeError, UpgradeResult},
+    upgrades::{PrepareUpgradeError, UpgradeResult},
 };
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -62,7 +62,7 @@ impl OldStoredCaCommand {
                     None => derived_embedded_ca_info_map
                         .get(&child)
                         .ok_or_else(|| {
-                            UpgradeError::Custom(format!(
+                            PrepareUpgradeError::Custom(format!(
                                 "Cannot upgrade CA history for {}, child {} is no longer present",
                                 handle, child
                             ))
