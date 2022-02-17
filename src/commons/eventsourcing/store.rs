@@ -952,7 +952,7 @@ where
         Ok(())
     }
 
-    /// Saves the latest snapshot -backs up previous snapshot, and drops previous backup.
+    /// Saves the latest snapshot - backs up previous snapshot, and drops previous backup.
     /// Uses moves to ensure that files are written entirely before they are made available
     /// for reading.
     pub fn store_snapshot<V: Aggregate>(&self, id: &Handle, aggregate: &V) -> Result<(), AggregateStoreError> {

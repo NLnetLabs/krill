@@ -37,7 +37,7 @@ pub fn create_dir(dir: &Path) -> Result<(), KrillIoError> {
 pub fn remove_dir_all(dir: &Path) -> Result<(), KrillIoError> {
     if dir.exists() {
         fs::remove_dir_all(dir)
-            .map_err(|e| KrillIoError::new(format!("could not remove-all dir: {}", dir.to_string_lossy()), e))?;
+            .map_err(|e| KrillIoError::new(format!("could not remove dir: {}", dir.to_string_lossy()), e))?;
     }
     Ok(())
 }

@@ -848,7 +848,7 @@ impl Config {
         let mut f = File::open(file).map_err(|e| {
             KrillIoError::new(
                 format!(
-                    "Could not read config file '{}'. Please use --config to specify its location.",
+                    "Could not read config file '{}'. Note: you may want to override the default location using --config <path>",
                     file
                 ),
                 e,
