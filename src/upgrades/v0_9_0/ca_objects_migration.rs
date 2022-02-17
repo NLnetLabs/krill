@@ -380,11 +380,11 @@ impl UpgradeStore for CasStoreMigration {
         Ok(())
     }
 
-    fn store(&self) -> &KeyValueStore {
+    fn deployed_store(&self) -> &KeyValueStore {
         &self.current_kv_store
     }
 
-    fn new_store(&self) -> &KeyValueStore {
+    fn preparation_store(&self) -> &KeyValueStore {
         &self.new_kv_store
     }
 }

@@ -208,14 +208,14 @@ pub trait UpgradeStore {
     fn prepare_new_data(&self, mode: UpgradeMode) -> Result<(), PrepareUpgradeError>;
 
     fn version_before(&self, later: KrillVersion) -> Result<bool, PrepareUpgradeError> {
-        self.store()
+        self.deployed_store()
             .version_is_before(later)
             .map_err(PrepareUpgradeError::KeyStoreError)
     }
 
-    fn store(&self) -> &KeyValueStore;
+    fn deployed_store(&self) -> &KeyValueStore;
 
-    fn new_store(&self) -> &KeyValueStore;
+    fn preparation_store(&self) -> &KeyValueStore;
 
     fn data_upgrade_info_key(scope: &str) -> KeyStoreKey {
         KeyStoreKey::scoped(scope.to_string(), "upgrade_info.json".to_string())
@@ -223,7 +223,7 @@ pub trait UpgradeStore {
 
     /// Return the DataUpgradeInfo telling us to where we got to with this migration.
     fn data_upgrade_info(&self, scope: &str) -> UpgradeResult<DataUpgradeInfo> {
-        self.new_store()
+        self.preparation_store()
             .get(&Self::data_upgrade_info_key(scope))
             .map(|opt| match opt {
                 None => DataUpgradeInfo::default(),
@@ -234,14 +234,14 @@ pub trait UpgradeStore {
 
     /// Update the DataUpgradeInfo
     fn update_data_upgrade_info(&self, scope: &str, info: &DataUpgradeInfo) -> UpgradeResult<()> {
-        self.new_store()
+        self.preparation_store()
             .store(&Self::data_upgrade_info_key(scope), info)
             .map_err(PrepareUpgradeError::KeyStoreError)
     }
 
     /// Removed the DataUpgradeInfo
     fn remove_data_upgrade_info(&self, scope: &str) -> UpgradeResult<()> {
-        self.new_store()
+        self.preparation_store()
             .drop_key(&Self::data_upgrade_info_key(scope))
             .map_err(PrepareUpgradeError::KeyStoreError)
     }
@@ -249,7 +249,7 @@ pub trait UpgradeStore {
     // Find all command keys and sort them by sequence.
     // Then turn them back into key store keys for further processing.
     fn command_keys(&self, scope: &str, from: u64) -> Result<Vec<KeyStoreKey>, PrepareUpgradeError> {
-        let store = self.store();
+        let store = self.deployed_store();
         let keys = store.keys(Some(scope.to_string()), "command--")?;
         let mut cmd_keys: Vec<CommandKey> = vec![];
         for key in keys {
@@ -270,7 +270,7 @@ pub trait UpgradeStore {
     }
 
     fn get<V: DeserializeOwned>(&self, key: &KeyStoreKey) -> Result<V, PrepareUpgradeError> {
-        self.store()
+        self.deployed_store()
             .get(key)?
             .ok_or_else(|| PrepareUpgradeError::Custom(format!("Cannot read key: {}", key)))
     }
