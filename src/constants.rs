@@ -5,8 +5,8 @@ pub const KRILL_VERSION_MAJOR: &str = env!("CARGO_PKG_VERSION_MAJOR");
 pub const KRILL_VERSION_MINOR: &str = env!("CARGO_PKG_VERSION_MINOR");
 pub const KRILL_VERSION_PATCH: &str = env!("CARGO_PKG_VERSION_PATCH");
 pub const KRILL_SERVER_APP: &str = "Krill";
+pub const KRILL_UP_APP: &str = "Krill Upgrade Helper";
 pub const KRILL_CLIENT_APP: &str = "Krill Client";
-pub const KRILL_PUBC_CLIENT_APP: &str = "Krill Publication Server Client";
 
 #[cfg(not(feature = "multi-user"))]
 pub const KRILL_DEFAULT_CONFIG_FILE: &str = "./defaults/krill.conf";

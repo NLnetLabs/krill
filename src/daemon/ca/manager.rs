@@ -158,7 +158,11 @@ impl CaManager {
         // Create the `CaObjectStore` that is responsible for maintaining CA objects: the `CaObjects`
         // for a CA gets copies of all ROAs and delegated certificates from the `CertAuth` and is responsible
         // for manifests and CRL generation.
-        let ca_objects_store = Arc::new(CaObjectsStore::disk(config.clone(), signer.clone())?);
+        let ca_objects_store = Arc::new(CaObjectsStore::disk(
+            &config.data_dir,
+            config.issuance_timing.clone(),
+            signer.clone(),
+        )?);
 
         // Register the `CaObjectsStore` as a pre-save listener to the 'ca_store' so that it can update
         // its ROAs and delegated certificates and/or generate manifests and CRLs when relevant changes

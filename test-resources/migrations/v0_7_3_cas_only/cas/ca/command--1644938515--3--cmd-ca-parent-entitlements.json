@@ -1,0 +1,25 @@
+{
+  "actor": "krill",
+  "time": "2022-02-15T15:21:55.673130115Z",
+  "handle": "ca",
+  "version": 3,
+  "sequence": 3,
+  "details": {
+    "update_resource_classes": [
+      "testbed",
+      {
+        "0": {
+          "asn": "AS211321",
+          "v4": "185.49.140.0/22",
+          "v6": "2a04:b900::/29"
+        }
+      }
+    ]
+  },
+  "effect": {
+    "events": [
+      3,
+      4
+    ]
+  }
+}
