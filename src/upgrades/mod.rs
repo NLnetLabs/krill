@@ -246,8 +246,8 @@ pub trait UpgradeStore {
             .map_err(PrepareUpgradeError::KeyStoreError)
     }
 
-    // Find all command keys and sort them by sequence.
-    // Then turn them back into key store keys for further processing.
+    /// Find all command keys for the scope, starting from the provided sequence. Then sort them
+    /// by sequence and turn them back into key store keys for further processing.
     fn command_keys(&self, scope: &str, from: u64) -> Result<Vec<KeyStoreKey>, PrepareUpgradeError> {
         let store = self.deployed_store();
         let keys = store.keys(Some(scope.to_string()), "command--")?;
@@ -285,9 +285,9 @@ pub trait UpgradeStore {
 /// deployed Krill version differs from the code version. Note that the version may
 /// have increased even if there is no data migration needed.
 ///
-/// In case data does not to be migrated, then the this data will be prepared under
+/// In case data needs to be migrated, then new data will be prepared under
 /// the directory returned by `config.data_dir()`. By design, this migration can be
-/// executed while Krill is running as it does not affect any current state. If can
+/// executed while Krill is running as it does not affect any current state. It can
 /// be called multiple times and it will resume the migration from the point it got
 /// to earlier. The idea is that this will allow operators to prepare the work for
 /// a migration and (a) verify that the migration worked, and (b) minimize the downtime
@@ -408,7 +408,7 @@ pub fn finalise_data_migration(upgrade: &UpgradeVersions, config: &Config) -> Kr
     Ok(())
 }
 
-/// Should be called when the KrillServer is initiated, before the web server is started
+/// Should be called after the KrillServer is started, but before the web server is started
 /// and operators can make changes.
 pub async fn post_start_upgrade(
     upgrade_versions: &UpgradeVersions,
@@ -480,7 +480,7 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        // and continue - immediately, but still
+        // and continue - immediately, but still tests that this can pick up again.
         let report = prepare_upgrade_data_migrations(UpgradeMode::PrepareToFinalise, Arc::new(config.clone()))
             .await
             .unwrap()
