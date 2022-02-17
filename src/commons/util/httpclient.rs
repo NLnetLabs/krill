@@ -130,8 +130,7 @@ pub async fn get_ok(uri: &str, token: Option<&Token>) -> Result<(), Error> {
 /// Performs a POST of data that can be serialized into json, and expects
 /// a 200 OK response, without a body.
 pub async fn post_json(uri: &str, data: impl Serialize, token: Option<&Token>) -> Result<(), Error> {
-    let body = serde_json::to_string_pretty(&data)
-        .map_err(|e| Error::request_build(uri, format!("could not serialize type to json: {}", e)))?;
+    let body = serde_json::to_string_pretty(&data).map_err(|e| Error::request_build_json(uri, e))?;
 
     if env::var(KRILL_CLI_API_ENV).is_ok() {
         report_post_and_exit(uri, Some(JSON_CONTENT), token, &body);
@@ -158,7 +157,7 @@ pub async fn post_json_with_response<T: DeserializeOwned>(
     token: Option<&Token>,
 ) -> Result<T, Error> {
     match post_json_with_opt_response(uri, data, token).await? {
-        None => Err(Error::response(uri, "expected json response")),
+        None => Err(Error::response(uri, "expected JSON response")),
         Some(res) => Ok(res),
     }
 }
@@ -171,8 +170,7 @@ pub async fn post_json_with_opt_response<T: DeserializeOwned>(
     data: impl Serialize,
     token: Option<&Token>,
 ) -> Result<Option<T>, Error> {
-    let body = serde_json::to_string_pretty(&data)
-        .map_err(|e| Error::request_build(uri, format!("could not serialize type to json: {}", e)))?;
+    let body = serde_json::to_string_pretty(&data).map_err(|e| Error::request_build_json(uri, e))?;
 
     if env::var(KRILL_CLI_API_ENV).is_ok() {
         report_post_and_exit(uri, Some(JSON_CONTENT), token, &body);
@@ -329,7 +327,7 @@ fn headers(uri: &str, content_type: Option<&str>, token: Option<&Token>) -> Resu
 
 async fn process_json_response<T: DeserializeOwned>(uri: &str, res: Response) -> Result<T, Error> {
     match process_opt_json_response(uri, res).await? {
-        None => Err(Error::response(uri, format!("got empty response body"))),
+        None => Err(Error::response(uri, "got empty response body")),
         Some(res) => Ok(res),
     }
 }
@@ -339,7 +337,7 @@ async fn process_opt_json_response<T: DeserializeOwned>(uri: &str, res: Response
         None => Ok(None),
         Some(s) => {
             let res: T = serde_json::from_str(&s)
-                .map_err(|e| Error::response(uri, format!("could not parse json response: {}", e)))?;
+                .map_err(|e| Error::response(uri, format!("could not parse JSON response: {}", e)))?;
             Ok(Some(res))
         }
     }
@@ -399,21 +397,21 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Error::RequestBuild(uri, msg) => write!(f, "Issue creating request for uri: {}, error: {}", uri, msg),
+            Error::RequestBuild(uri, msg) => write!(f, "Issue creating request for URI: {}, error: {}", uri, msg),
             Error::RequestBuildHttpsCert(path, msg) => {
                 write!(f, "Cannot use configured HTTPS root cert '{}'. Error: {}", path, msg)
             }
 
-            Error::RequestExecute(uri, msg) => write!(f, "Issue accessing uri: {}, error: {}", uri, msg),
+            Error::RequestExecute(uri, msg) => write!(f, "Issue accessing URI: {}, error: {}", uri, msg),
 
-            Error::Response(uri, msg) => write!(f, "Issue processing response from uri: {}, error: {}", uri, msg),
-            Error::Forbidden(uri) => write!(f, "Got 'Forbidden' response for uri: {}", uri),
+            Error::Response(uri, msg) => write!(f, "Issue processing response from URI: {}, error: {}", uri, msg),
+            Error::Forbidden(uri) => write!(f, "Got 'Forbidden' response for URI: {}", uri),
             Error::ErrorResponseWithBody(uri, code, e) => {
-                write!(f, "Error response from uri: {}, Status: {}, Error: {}", uri, code, e)
+                write!(f, "Error response from URI: {}, Status: {}, Error: {}", uri, code, e)
             }
             Error::ErrorResponseWithJson(uri, code, res) => write!(
                 f,
-                "Error response from uri: {}, Status: {}, ErrorResponse: {}",
+                "Error response from URI: {}, Status: {}, ErrorResponse: {}",
                 uri, code, res
             ),
         }
@@ -423,6 +421,10 @@ impl fmt::Display for Error {
 impl Error {
     pub fn request_build(uri: &str, msg: impl fmt::Display) -> Self {
         Error::RequestBuild(uri.to_string(), msg.to_string())
+    }
+
+    pub fn request_build_json(uri: &str, e: impl fmt::Display) -> Self {
+        Error::RequestBuild(uri.to_string(), format!("could not serialize type to JSON: {}", e))
     }
 
     pub fn request_build_https_cert(path: &str, msg: impl fmt::Display) -> Self {
@@ -461,27 +463,4 @@ impl Error {
             _ => Self::response_unexpected_status(uri, status),
         }
     }
-
-    // pub fn https_root_cert_error(e: impl fmt::Display) -> Self {
-    //     Error::HttpsRootCertError(e.to_string())
-    // }
 }
-
-// impl From<reqwest::Error> for Error {
-//     fn from(e: reqwest::Error) -> Self {
-//         Error::RequestError(e)
-//     }
-// }
-
-// impl From<serde_json::Error> for Error {
-//     fn from(e: serde_json::Error) -> Self {
-//         Error::JsonError(e)
-//     }
-// }
-
-// impl From<InvalidHeaderValue> for Error {
-//     fn from(_v: InvalidHeaderValue) -> Self {
-//         // note InvalidHeaderValue is a marker and contains no further information.
-//         Error::InvalidHeaderValue
-//     }
-// }
