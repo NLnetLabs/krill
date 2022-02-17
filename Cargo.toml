@@ -31,6 +31,7 @@ clokwerk              = "^0.3"
 fern                  = { version = "^0.5", features = ["syslog-4"] }
 futures               = "^0.3"
 futures-util          = "^0.3"
+fslock                = "0.2.1"
 hex                   = "^0.4"
 hyper                 = { version = "^0.14", features = ["server"] }
 intervaltree          = "0.2.6"

@@ -307,6 +307,23 @@ pub async fn prepare_upgrade_data_migrations(
                 error!("{}", msg);
                 Err(PrepareUpgradeError::custom(msg))
             } else if versions.from < KrillVersion::release(0, 9, 0) {
+                let upgrade_data_dir = config.upgrade_data_dir();
+                if !upgrade_data_dir.exists() {
+                    file::create_dir(&upgrade_data_dir)?;
+                }
+
+                // Get a lock to ensure that only one process can run this migration
+                // at any one time (for a given config).
+                let _lock = {
+                    // Create upgrade dir if it did not yet exist.
+                    let lock_file_path = upgrade_data_dir.join("upgrade.lock");
+                    fslock::LockFile::open(&lock_file_path).map_err(|_| {
+                        PrepareUpgradeError::custom(
+                            "Cannot get upgrade lock, it seems that another process is running a krill upgrade",
+                        )
+                    })?
+                };
+
                 // We need to prepare pubd first, because if there were any CAs using
                 // an embedded repository then they will need to be updated to use the
                 // RFC 8181 protocol (using localhost) instead, and this can only be
@@ -318,14 +335,13 @@ pub async fn prepare_upgrade_data_migrations(
                 // to get the repository response XML for any (if any) CAs that were
                 // using an embedded repository.
                 let mut repo_manager_migration_config = (*config).clone();
-                repo_manager_migration_config.data_dir = config.upgrade_data_dir();
+                repo_manager_migration_config.data_dir = upgrade_data_dir;
 
                 // We need a signer because it's required by the repo manager, although
                 // we will not actually use it during the migration. Let it use the
                 // config using the upgrade_data_dir as base dir to ensure that it
                 // cannot - even unintendedly - affect any of they keys.
                 let signer = Arc::new(KrillSigner::build(&repo_manager_migration_config.data_dir)?);
-
                 let repo_manager = RepositoryManager::build(Arc::new(repo_manager_migration_config), signer)?;
 
                 CaObjectsMigration::prepare(mode, config, repo_manager)?;
