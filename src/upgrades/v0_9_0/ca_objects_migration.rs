@@ -29,7 +29,7 @@ use crate::{
     },
     pubd::RepositoryManager,
     upgrades::v0_9_0::{old_commands::*, old_events::*},
-    upgrades::{UpgradeError, UpgradeMode, UpgradeResult, UpgradeStore, MIGRATION_SCOPE},
+    upgrades::{PrepareUpgradeError, UpgradeMode, UpgradeResult, UpgradeStore, MIGRATION_SCOPE},
 };
 
 /// Migrate the current objects for each CA into the CaObjectStore
@@ -142,11 +142,11 @@ struct CasStoreMigration {
 }
 
 impl UpgradeStore for CasStoreMigration {
-    fn needs_migrate(&self) -> Result<bool, UpgradeError> {
+    fn needs_migrate(&self) -> Result<bool, PrepareUpgradeError> {
         unreachable!("checked directly on keystore")
     }
 
-    fn prepare_new_data(&self, mode: UpgradeMode) -> Result<(), UpgradeError> {
+    fn prepare_new_data(&self, mode: UpgradeMode) -> Result<(), PrepareUpgradeError> {
         info!("Upgrade CA command and event data to Krill version {}", KRILL_VERSION);
 
         let dflt_actor = "krill".to_string();
@@ -155,7 +155,7 @@ impl UpgradeStore for CasStoreMigration {
         for scope in self.current_kv_store.scopes()? {
             // Getting the Handle should never fail, but if it does then we should bail out asap.
             let handle = Handle::from_str(&scope)
-                .map_err(|_| UpgradeError::Custom(format!("Found invalid CA handle '{}'", scope)))?;
+                .map_err(|_| PrepareUpgradeError::Custom(format!("Found invalid CA handle '{}'", scope)))?;
 
             // Get the info from the current store to see where we are
             let mut data_upgrade_info = self.data_upgrade_info(&scope)?;
@@ -179,7 +179,7 @@ impl UpgradeStore for CasStoreMigration {
                 // This can only happen if this is a very old test system. People will need
                 // to set up a new test system instead.
                 if ta_opt.is_some() {
-                    return Err(UpgradeError::custom(
+                    return Err(PrepareUpgradeError::custom(
                         "This Krill instance is set up as a test system, using a Trust Anchor, which cannot be migrated.",
                     ));
                 }
@@ -281,7 +281,7 @@ impl UpgradeStore for CasStoreMigration {
                         trace!("  +- event: {}", old_event_key);
 
                         let old_evt: OldCaEvt = self.current_kv_store.get(&old_event_key)?.ok_or_else(|| {
-                            UpgradeError::Custom(format!("Cannot parse old event: {}", old_event_key))
+                            PrepareUpgradeError::Custom(format!("Cannot parse old event: {}", old_event_key))
                         })?;
 
                         if old_evt.needs_migration() {
@@ -343,7 +343,7 @@ impl UpgradeStore for CasStoreMigration {
             // Verify migration
             info!("Will verify the migration by rebuilding CA '{}' events", &scope);
             let ca = self.new_agg_store.get_latest(&handle).map_err(|e| {
-                UpgradeError::Custom(format!(
+                PrepareUpgradeError::Custom(format!(
                     "Could not rebuild state after migrating CA '{}'! Error was: {}.",
                     handle, e
                 ))
@@ -351,7 +351,7 @@ impl UpgradeStore for CasStoreMigration {
 
             // Store snapshot to avoid having to re-process the deltas again in future
             self.new_agg_store.store_snapshot(&handle, ca.as_ref()).map_err(|e| {
-                UpgradeError::Custom(format!(
+                PrepareUpgradeError::Custom(format!(
                     "Could not save snapshot for CA '{}' after migration! Disk full?!? Error was: {}.",
                     handle, e
                 ))
@@ -413,7 +413,7 @@ impl Aggregate for OldCertAuth {
     type StorableCommandDetails = OldStorableCaCommand;
     type Event = OldCaEvt;
     type InitEvent = OldCaIni;
-    type Error = UpgradeError;
+    type Error = PrepareUpgradeError;
 
     fn init(event: Self::InitEvent) -> Result<Self, Self::Error> {
         let (handle, _version, details) = event.unpack();
@@ -625,7 +625,7 @@ impl Aggregate for OldCertAuth {
 }
 
 impl OldCertAuth {
-    pub fn ca_objects(&self, repo_manager: &RepositoryManager) -> Result<CaObjects, UpgradeError> {
+    pub fn ca_objects(&self, repo_manager: &RepositoryManager) -> Result<CaObjects, PrepareUpgradeError> {
         let objects = self
             .resources
             .iter()
@@ -740,12 +740,12 @@ impl OldResourceClass {
         }
     }
 
-    pub fn into_added_event(self) -> Result<CaEvtDet, UpgradeError> {
+    pub fn into_added_event(self) -> Result<CaEvtDet, PrepareUpgradeError> {
         let pending_key = match self.key_state {
             OldKeyState::Pending(pending) => Some(pending),
             _ => None,
         }
-        .ok_or_else(|| UpgradeError::custom("Added a resource class which is not in state pending."))?
+        .ok_or_else(|| PrepareUpgradeError::custom("Added a resource class which is not in state pending."))?
         .key_id;
 
         let (resource_class_name, parent, parent_resource_class_name) =

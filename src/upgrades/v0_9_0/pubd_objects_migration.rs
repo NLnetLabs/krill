@@ -36,7 +36,7 @@ use crate::{
         old_commands::{OldStorableRepositoryCommand, OldStoredEffect, OldStoredRepositoryCommand},
         old_events::{OldCurrentObjects, OldPubdEvt, OldPubdEvtDet, OldPubdInit, OldPublisher},
     },
-    upgrades::{UpgradeError, UpgradeMode, UpgradeResult, UpgradeStore},
+    upgrades::{PrepareUpgradeError, UpgradeMode, UpgradeResult, UpgradeStore},
 };
 
 pub struct PubdObjectsMigration;
@@ -117,17 +117,17 @@ struct PubdStoreMigration {
 }
 
 impl UpgradeStore for PubdStoreMigration {
-    fn needs_migrate(&self) -> Result<bool, UpgradeError> {
+    fn needs_migrate(&self) -> Result<bool, PrepareUpgradeError> {
         if !self.current_kv_store.has_scope("0".to_string())? {
             Ok(false)
         } else if self.version_before(KrillVersion::release(0, 6, 0))? {
-            Err(UpgradeError::custom("Cannot upgrade Krill installations from before version 0.6.0. Please upgrade to any version ranging from 0.6.0 to 0.8.1 first, and then upgrade to this version."))
+            Err(PrepareUpgradeError::custom("Cannot upgrade Krill installations from before version 0.6.0. Please upgrade to any version ranging from 0.6.0 to 0.8.1 first, and then upgrade to this version."))
         } else {
             self.version_before(KrillVersion::candidate(0, 9, 0, 1))
         }
     }
 
-    fn prepare_new_data(&self, mode: UpgradeMode) -> Result<(), UpgradeError> {
+    fn prepare_new_data(&self, mode: UpgradeMode) -> Result<(), PrepareUpgradeError> {
         // we only have 1 pubserver '0'
         let scope = "0";
         let handle = Handle::from_str(scope).unwrap(); // "0" is always safe
@@ -146,7 +146,7 @@ impl UpgradeStore for PubdStoreMigration {
             let old_init: OldPubdInit = self
                 .current_kv_store
                 .get(&init_key)?
-                .ok_or_else(|| UpgradeError::custom("Cannot read pubd init event"))?;
+                .ok_or_else(|| PrepareUpgradeError::custom("Cannot read pubd init event"))?;
 
             let (_, _, old_init) = old_init.unpack();
             let init: RepositoryAccessInitDetails = old_init.into();
@@ -214,10 +214,9 @@ impl UpgradeStore for PubdStoreMigration {
                 for v in evt_versions {
                     let old_event_key = Self::event_key(scope, *v);
                     trace!("  +- event: {}", old_event_key);
-                    let old_evt: OldPubdEvt = self
-                        .current_kv_store
-                        .get(&old_event_key)?
-                        .ok_or_else(|| UpgradeError::Custom(format!("Cannot parse old event: {}", old_event_key)))?;
+                    let old_evt: OldPubdEvt = self.current_kv_store.get(&old_event_key)?.ok_or_else(|| {
+                        PrepareUpgradeError::Custom(format!("Cannot parse old event: {}", old_event_key))
+                    })?;
 
                     if old_evt.needs_migration() {
                         // track event number
@@ -273,7 +272,7 @@ impl UpgradeStore for PubdStoreMigration {
         // Verify migration
         info!("Will verify the migration by rebuilding the Publication Server from events");
         let repo_access = self.new_agg_store.get_latest(&handle).map_err(|e| {
-            UpgradeError::Custom(format!(
+            PrepareUpgradeError::Custom(format!(
                 "Could not rebuild state after migrating pubd! Error was: {}.",
                 e
             ))
@@ -283,7 +282,7 @@ impl UpgradeStore for PubdStoreMigration {
         self.new_agg_store
             .store_snapshot(&handle, repo_access.as_ref())
             .map_err(|e| {
-                UpgradeError::Custom(format!(
+                PrepareUpgradeError::Custom(format!(
                     "Could not save snapshot after migration! Disk full?!? Error was: {}.",
                     e
                 ))
@@ -343,7 +342,7 @@ impl Aggregate for OldRepository {
     type StorableCommandDetails = OldStorableRepositoryCommand;
     type Event = OldPubdEvt;
     type InitEvent = OldPubdInit; // no change needed from < 0.9
-    type Error = UpgradeError;
+    type Error = PrepareUpgradeError;
 
     fn init(event: Self::InitEvent) -> Result<Self, Self::Error> {
         let (handle, _version, details) = event.unpack();
@@ -422,10 +421,10 @@ impl OldRepository {
             .apply_delta(update.elements().clone())
     }
 
-    pub fn get_publisher(&self, publisher_handle: &PublisherHandle) -> Result<&OldPublisher, UpgradeError> {
-        self.publishers
-            .get(publisher_handle)
-            .ok_or_else(|| UpgradeError::Custom(format!("Cannot find publisher {} for old event", publisher_handle)))
+    pub fn get_publisher(&self, publisher_handle: &PublisherHandle) -> Result<&OldPublisher, PrepareUpgradeError> {
+        self.publishers.get(publisher_handle).ok_or_else(|| {
+            PrepareUpgradeError::Custom(format!("Cannot find publisher {} for old event", publisher_handle))
+        })
     }
 }
 

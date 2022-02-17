@@ -11,9 +11,10 @@ use crate::{
     commons::{
         api::Handle,
         crypto::KrillSigner,
-        error::KrillIoError,
+        error::{Error, KrillIoError},
         eventsourcing::{AggregateStoreError, CommandKey, KeyStoreKey, KeyValueError, KeyValueStore, StoredValueInfo},
         util::{file, KrillVersion},
+        KrillResult,
     },
     constants::{CASERVER_DIR, CA_OBJECTS_DIR, PUBSERVER_CONTENT_DIR, PUBSERVER_DIR},
     daemon::{config::Config, krillserver::KrillServer},
@@ -23,7 +24,7 @@ use crate::{
 
 pub mod v0_9_0;
 
-pub type UpgradeResult<T> = Result<T, UpgradeError>;
+pub type UpgradeResult<T> = Result<T, PrepareUpgradeError>;
 
 pub const MIGRATION_SCOPE: &str = "migration";
 
@@ -87,7 +88,7 @@ impl UpgradeVersions {
 
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
-pub enum UpgradeError {
+pub enum PrepareUpgradeError {
     AggregateStoreError(AggregateStoreError),
     KeyStoreError(KeyValueError),
     IoError(KrillIoError),
@@ -96,55 +97,72 @@ pub enum UpgradeError {
     Custom(String),
 }
 
-impl fmt::Display for UpgradeError {
+impl fmt::Display for PrepareUpgradeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Upgrade failed. Check your data directory. If you find folders named 'arch-cas-[$version]' or 'arch-pubd-[$version]' there, then rename them to 'cas' and 'pubd' respectively and re-install your old $version of krill. Please contact us and let us know about this error. You can reach us at rpki-team@nlnetlabs.nl. Detailed error: ")?;
+        error!("Upgrade preparation failed: {}", &self);
+
+        write!(f, "Upgrade preparation failed. Your original data is unchanged. If you upgraded 'krill' rather than used 'krillup' for this process, then please downgrade to your previous version.")?;
 
         match self {
-            UpgradeError::AggregateStoreError(e) => e.fmt(f),
-            UpgradeError::KeyStoreError(e) => e.fmt(f),
-            UpgradeError::IoError(e) => e.fmt(f),
-            UpgradeError::Unrecognised(s) => write!(f, "Unrecognised command summary: {}", s),
-            UpgradeError::CannotLoadAggregate(handle) => write!(f, "Cannot load: {}", handle),
-            UpgradeError::Custom(s) => s.fmt(f),
+            PrepareUpgradeError::Unrecognised(s) => {
+                write!(
+                    f,
+                    "Underlying issue was that an unrecognised command summary was found: {}",
+                    s
+                )?;
+                write!(
+                    f,
+                    "Please create an issue here: https://github.com/NLnetLabs/krill/issues",
+                )?;
+            }
+            PrepareUpgradeError::CannotLoadAggregate(handle) => {
+                write!(f, "Underlying issue was that state for {} could not be loaded", handle)?;
+                write!(
+                    f,
+                    "Please create an issue here: https://github.com/NLnetLabs/krill/issues",
+                )?;
+            }
+            _ => {}
         }
+
+        Ok(())
     }
 }
-impl UpgradeError {
+impl PrepareUpgradeError {
     pub fn custom(msg: impl fmt::Display) -> Self {
-        UpgradeError::Custom(msg.to_string())
+        PrepareUpgradeError::Custom(msg.to_string())
     }
 
     pub fn unrecognised(msg: impl fmt::Display) -> Self {
-        UpgradeError::Unrecognised(msg.to_string())
+        PrepareUpgradeError::Unrecognised(msg.to_string())
     }
 }
 
-impl From<AggregateStoreError> for UpgradeError {
+impl From<AggregateStoreError> for PrepareUpgradeError {
     fn from(e: AggregateStoreError) -> Self {
-        UpgradeError::AggregateStoreError(e)
+        PrepareUpgradeError::AggregateStoreError(e)
     }
 }
 
-impl From<KeyValueError> for UpgradeError {
+impl From<KeyValueError> for PrepareUpgradeError {
     fn from(e: KeyValueError) -> Self {
-        UpgradeError::KeyStoreError(e)
+        PrepareUpgradeError::KeyStoreError(e)
     }
 }
 
-impl From<KrillIoError> for UpgradeError {
+impl From<KrillIoError> for PrepareUpgradeError {
     fn from(e: KrillIoError) -> Self {
-        UpgradeError::IoError(e)
+        PrepareUpgradeError::IoError(e)
     }
 }
 
-impl From<crate::commons::error::Error> for UpgradeError {
+impl From<crate::commons::error::Error> for PrepareUpgradeError {
     fn from(e: crate::commons::error::Error) -> Self {
-        UpgradeError::Custom(e.to_string())
+        PrepareUpgradeError::Custom(e.to_string())
     }
 }
 
-impl std::error::Error for UpgradeError {}
+impl std::error::Error for PrepareUpgradeError {}
 
 //------------ DataUpgradeInfo -----------------------------------------------
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -185,14 +203,14 @@ pub enum UpgradeMode {
 
 /// Implement this for automatic upgrades to key stores
 pub trait UpgradeStore {
-    fn needs_migrate(&self) -> Result<bool, UpgradeError>;
+    fn needs_migrate(&self) -> Result<bool, PrepareUpgradeError>;
 
-    fn prepare_new_data(&self, mode: UpgradeMode) -> Result<(), UpgradeError>;
+    fn prepare_new_data(&self, mode: UpgradeMode) -> Result<(), PrepareUpgradeError>;
 
-    fn version_before(&self, later: KrillVersion) -> Result<bool, UpgradeError> {
+    fn version_before(&self, later: KrillVersion) -> Result<bool, PrepareUpgradeError> {
         self.store()
             .version_is_before(later)
-            .map_err(UpgradeError::KeyStoreError)
+            .map_err(PrepareUpgradeError::KeyStoreError)
     }
 
     fn store(&self) -> &KeyValueStore;
@@ -211,32 +229,32 @@ pub trait UpgradeStore {
                 None => DataUpgradeInfo::default(),
                 Some(info) => info,
             })
-            .map_err(UpgradeError::KeyStoreError)
+            .map_err(PrepareUpgradeError::KeyStoreError)
     }
 
     /// Update the DataUpgradeInfo
     fn update_data_upgrade_info(&self, scope: &str, info: &DataUpgradeInfo) -> UpgradeResult<()> {
         self.new_store()
             .store(&Self::data_upgrade_info_key(scope), info)
-            .map_err(UpgradeError::KeyStoreError)
+            .map_err(PrepareUpgradeError::KeyStoreError)
     }
 
     /// Removed the DataUpgradeInfo
     fn remove_data_upgrade_info(&self, scope: &str) -> UpgradeResult<()> {
         self.new_store()
             .drop_key(&Self::data_upgrade_info_key(scope))
-            .map_err(UpgradeError::KeyStoreError)
+            .map_err(PrepareUpgradeError::KeyStoreError)
     }
 
     // Find all command keys and sort them by sequence.
     // Then turn them back into key store keys for further processing.
-    fn command_keys(&self, scope: &str, from: u64) -> Result<Vec<KeyStoreKey>, UpgradeError> {
+    fn command_keys(&self, scope: &str, from: u64) -> Result<Vec<KeyStoreKey>, PrepareUpgradeError> {
         let store = self.store();
         let keys = store.keys(Some(scope.to_string()), "command--")?;
         let mut cmd_keys: Vec<CommandKey> = vec![];
         for key in keys {
             let cmd_key = CommandKey::from_str(key.name()).map_err(|_| {
-                UpgradeError::Custom(format!("Found invalid command key: {} for ca: {}", key.name(), scope))
+                PrepareUpgradeError::Custom(format!("Found invalid command key: {} for ca: {}", key.name(), scope))
             })?;
             if cmd_key.sequence > from {
                 cmd_keys.push(cmd_key);
@@ -251,10 +269,10 @@ pub trait UpgradeStore {
         Ok(cmd_keys)
     }
 
-    fn get<V: DeserializeOwned>(&self, key: &KeyStoreKey) -> Result<V, UpgradeError> {
+    fn get<V: DeserializeOwned>(&self, key: &KeyStoreKey) -> Result<V, PrepareUpgradeError> {
         self.store()
             .get(key)?
-            .ok_or_else(|| UpgradeError::Custom(format!("Cannot read key: {}", key)))
+            .ok_or_else(|| PrepareUpgradeError::Custom(format!("Cannot read key: {}", key)))
     }
 
     fn event_key(scope: &str, nr: u64) -> KeyStoreKey {
@@ -287,7 +305,7 @@ pub async fn prepare_upgrade_data_migrations(
             if versions.from < KrillVersion::release(0, 6, 0) {
                 let msg = "Cannot upgrade Krill installations from before version 0.6.0. Please upgrade to any version ranging from 0.6.0 to 0.8.1 first, and then upgrade to this version.";
                 error!("{}", msg);
-                Err(UpgradeError::custom(msg))
+                Err(PrepareUpgradeError::custom(msg))
             } else if versions.from < KrillVersion::release(0, 9, 0) {
                 // We need to prepare pubd first, because if there were any CAs using
                 // an embedded repository then they will need to be updated to use the
@@ -323,7 +341,7 @@ pub async fn prepare_upgrade_data_migrations(
 /// Finalise the data migration for an upgrade. I.e. move the prepared data and archive
 /// the old data if applicable to this upgrade, and otherwise (in any event) update the
 /// the current versions for the "cas" and "pubd" store where applicable.
-pub fn finalise_data_migration(upgrade: &UpgradeVersions, config: &Config) -> UpgradeResult<()> {
+pub fn finalise_data_migration(upgrade: &UpgradeVersions, config: &Config) -> KrillResult<()> {
     // Move directories - if applicable (servers can have cas, repo server or both)
 
     let from = upgrade.from();
@@ -346,7 +364,8 @@ pub fn finalise_data_migration(upgrade: &UpgradeVersions, config: &Config) -> Up
     move_dir_if_exists(&cas, &cas_arch)?;
     move_dir_if_exists(&cas_upg, &cas)?;
     move_dir_if_exists(&ca_objects_upg, &ca_objects)?;
-    file::save_json(&current, &cas_version)?;
+    file::save_json(&current, &cas_version)
+        .map_err(|e| Error::Custom(format!("Could not update version file: {}", e)))?;
 
     // pubd -> arch-pubd-{old-version}
     // upgrade-data/pubd -> pubd
@@ -363,21 +382,23 @@ pub fn finalise_data_migration(upgrade: &UpgradeVersions, config: &Config) -> Up
     move_dir_if_exists(&pubd, &pubd_arch)?;
     move_dir_if_exists(&pubd_upg, &pubd)?;
     move_dir_if_exists(&pubd_objects_upg, &pubd_objects)?;
-    file::save_json(&current, &pubd_version)?;
+    file::save_json(&current, &pubd_version)
+        .map_err(|e| Error::Custom(format!("Could not update version file: {}", e)))?;
 
     // done, clean out the migration dir
-    file::remove_dir_all(&upgrade_dir)?;
+    file::remove_dir_all(&upgrade_dir)
+        .map_err(|e| Error::Custom(format!("Could not delete migration directory: {}", e)))?;
 
     // move the dirs
-    fn move_dir_if_exists(from: &Path, to: &Path) -> UpgradeResult<()> {
+    fn move_dir_if_exists(from: &Path, to: &Path) -> KrillResult<()> {
         if from.exists() {
             std::fs::rename(from, to).map_err(|e| {
-                UpgradeError::Custom(format!(
-                    "Could not rename directory from: {} to: {}. Error: {}",
+                let context = format!(
+                    "Could not rename directory from: {} to: {}.",
                     from.to_string_lossy(),
-                    to.to_string_lossy(),
-                    e
-                ))
+                    to.to_string_lossy()
+                );
+                Error::IoError(KrillIoError::new(context, e))
             })
         } else {
             Ok(())
@@ -389,7 +410,10 @@ pub fn finalise_data_migration(upgrade: &UpgradeVersions, config: &Config) -> Up
 
 /// Should be called when the KrillServer is initiated, before the web server is started
 /// and operators can make changes.
-pub async fn post_start_upgrade(upgrade_versions: &UpgradeVersions, server: &KrillServer) -> Result<(), UpgradeError> {
+pub async fn post_start_upgrade(
+    upgrade_versions: &UpgradeVersions,
+    server: &KrillServer,
+) -> Result<(), PrepareUpgradeError> {
     if upgrade_versions.from() < &KrillVersion::candidate(0, 9, 3, 2) {
         info!("Reissue ROAs on upgrade to force short EE certificate subjects in the objects");
         server.force_renew_roas().await.map_err(|e| e.into())

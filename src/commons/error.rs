@@ -23,7 +23,7 @@ use crate::{
         util::{httpclient, softsigner::SignerError},
     },
     daemon::{ca::RouteAuthorization, http::tls_keys},
-    upgrades::UpgradeError,
+    upgrades::PrepareUpgradeError,
 };
 
 //------------ RoaDeltaError -----------------------------------------------
@@ -177,7 +177,7 @@ pub enum Error {
     HttpsSetup(String),
     HttpClientError(httpclient::Error),
     ConfigError(String),
-    UpgradeError(UpgradeError),
+    UpgradeError(PrepareUpgradeError),
 
     //-----------------------------------------------------------------
     // General API Client Issues
@@ -571,8 +571,8 @@ impl From<PublicationDeltaError> for Error {
     }
 }
 
-impl From<UpgradeError> for Error {
-    fn from(e: UpgradeError) -> Self {
+impl From<PrepareUpgradeError> for Error {
+    fn from(e: PrepareUpgradeError) -> Self {
         Error::UpgradeError(e)
     }
 }

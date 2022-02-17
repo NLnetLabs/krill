@@ -113,7 +113,16 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
     // Call upgrade, this will only do actual work if needed.
     let upgrade_report = prepare_upgrade_data_migrations(UpgradeMode::PrepareThenFinalise, config.clone()).await?;
     if let Some(report) = &upgrade_report {
-        finalise_data_migration(report.versions(), config.as_ref())?;
+        finalise_data_migration(report.versions(), config.as_ref()).map_err(|e| {
+            Error::Custom(format!(
+                "Finishing prepared migration failed unexpectedly. Please check your data directory {}. If you find folders named 'arch-cas-{}' or 'arch-pubd-{}' there, then rename them to 'cas' and 'pubd' respectively and re-install krill version {}. Underlying error was: {}",
+                config.data_dir.to_string_lossy(),
+                report.versions().from(),
+                report.versions().from(),
+                report.versions().from(),
+                e
+            ))
+        })?;
     }
 
     // Create the server, this will create the necessary data sub-directories if needed
