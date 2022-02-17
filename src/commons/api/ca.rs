@@ -2889,7 +2889,9 @@ mod test {
         use crate::commons::error::Error;
         use crate::commons::util::httpclient;
 
-        issues.add_repo_issue(Error::HttpClientError(httpclient::Error::Forbidden).to_error_response());
+        issues.add_repo_issue(
+            Error::HttpClientError(httpclient::Error::forbidden("https://example.com/")).to_error_response(),
+        );
         issues.add_parent_issue(
             Handle::from_str("parent").unwrap(),
             Error::Rfc6492SignatureInvalid.to_error_response(),

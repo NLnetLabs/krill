@@ -3,7 +3,7 @@ use std::{env, fmt, path::PathBuf, str::FromStr, time::Duration};
 
 use bytes::Bytes;
 use reqwest::{
-    header::{HeaderMap, HeaderValue, InvalidHeaderValue, CONTENT_TYPE, USER_AGENT},
+    header::{HeaderMap, HeaderValue, CONTENT_TYPE, USER_AGENT},
     Response, StatusCode,
 };
 use serde::{de::DeserializeOwned, Serialize};
@@ -78,10 +78,16 @@ pub async fn get_json<T: DeserializeOwned>(uri: &str, token: Option<&Token>) -> 
         report_get_and_exit(uri, token);
     }
 
-    let headers = headers(Some(JSON_CONTENT), token)?;
+    let headers = headers(uri, Some(JSON_CONTENT), token)?;
 
-    let res = client(uri)?.get(uri).headers(headers).send().await?;
-    process_json_response(res).await
+    let res = client(uri)?
+        .get(uri)
+        .headers(headers)
+        .send()
+        .await
+        .map_err(|e| Error::execute(uri, e))?;
+
+    process_json_response(uri, res).await
 }
 
 /// Performs a get request and expects a response that can be turned
@@ -91,12 +97,15 @@ pub async fn get_text(uri: &str, token: Option<&Token>) -> Result<String, Error>
         report_get_and_exit(uri, token);
     }
 
-    let headers = headers(None, token)?;
-    let res = client(uri)?.get(uri).headers(headers).send().await?;
-    match opt_text_response(res).await? {
-        Some(res) => Ok(res),
-        None => Err(Error::EmptyResponse),
-    }
+    let headers = headers(uri, None, token)?;
+    let res = client(uri)?
+        .get(uri)
+        .headers(headers)
+        .send()
+        .await
+        .map_err(|e| Error::execute(uri, e))?;
+
+    text_response(uri, res).await
 }
 
 /// Checks that there is a 200 OK response at the given URI. Discards the
@@ -106,29 +115,37 @@ pub async fn get_ok(uri: &str, token: Option<&Token>) -> Result<(), Error> {
         report_get_and_exit(uri, token);
     }
 
-    let headers = headers(None, token)?;
-    let res = client(uri)?.get(uri).headers(headers).send().await?;
-    opt_text_response(res).await?; // Will return nice errors with possible body.
+    let headers = headers(uri, None, token)?;
+    let res = client(uri)?
+        .get(uri)
+        .headers(headers)
+        .send()
+        .await
+        .map_err(|e| Error::execute(uri, e))?;
+
+    opt_text_response(uri, res).await?; // Will return nice errors with possible body.
     Ok(())
 }
 
 /// Performs a POST of data that can be serialized into json, and expects
 /// a 200 OK response, without a body.
 pub async fn post_json(uri: &str, data: impl Serialize, token: Option<&Token>) -> Result<(), Error> {
+    let body = serde_json::to_string_pretty(&data).map_err(|e| Error::request_build_json(uri, e))?;
+
     if env::var(KRILL_CLI_API_ENV).is_ok() {
-        let body = serde_json::to_string_pretty(&data)?;
         report_post_and_exit(uri, Some(JSON_CONTENT), token, &body);
     }
+    let headers = headers(uri, Some(JSON_CONTENT), token)?;
 
-    let body = serde_json::to_string(&data)?;
-    let headers = headers(Some(JSON_CONTENT), token)?;
+    let res = client(uri)?
+        .post(uri)
+        .headers(headers)
+        .body(body)
+        .send()
+        .await
+        .map_err(|e| Error::execute(uri, e))?;
 
-    let res = client(uri)?.post(uri).headers(headers).body(body).send().await?;
-    if let Some(res) = opt_text_response(res).await? {
-        Err(Error::UnexpectedResponse(res))
-    } else {
-        Ok(())
-    }
+    empty_response(uri, res).await
 }
 
 /// Performs a POST of data that can be serialized into json, and expects
@@ -140,7 +157,7 @@ pub async fn post_json_with_response<T: DeserializeOwned>(
     token: Option<&Token>,
 ) -> Result<T, Error> {
     match post_json_with_opt_response(uri, data, token).await? {
-        None => Err(Error::EmptyResponse),
+        None => Err(Error::response(uri, "expected JSON response")),
         Some(res) => Ok(res),
     }
 }
@@ -153,15 +170,22 @@ pub async fn post_json_with_opt_response<T: DeserializeOwned>(
     data: impl Serialize,
     token: Option<&Token>,
 ) -> Result<Option<T>, Error> {
+    let body = serde_json::to_string_pretty(&data).map_err(|e| Error::request_build_json(uri, e))?;
+
     if env::var(KRILL_CLI_API_ENV).is_ok() {
-        let body = serde_json::to_string_pretty(&data)?;
         report_post_and_exit(uri, Some(JSON_CONTENT), token, &body);
     }
 
-    let body = serde_json::to_string(&data)?;
-    let headers = headers(Some(JSON_CONTENT), token)?;
-    let res = client(uri)?.post(uri).headers(headers).body(body).send().await?;
-    process_opt_json_response(res).await
+    let headers = headers(uri, Some(JSON_CONTENT), token)?;
+    let res = client(uri)?
+        .post(uri)
+        .headers(headers)
+        .body(body)
+        .send()
+        .await
+        .map_err(|e| Error::execute(uri, e))?;
+
+    process_opt_json_response(uri, res).await
 }
 
 /// Performs a POST with no data to the given URI and expects and empty 200 OK response.
@@ -170,13 +194,15 @@ pub async fn post_empty(uri: &str, token: Option<&Token>) -> Result<(), Error> {
         report_post_and_exit(uri, None, token, "<empty>");
     }
 
-    let headers = headers(Some(JSON_CONTENT), token)?;
-    let res = client(uri)?.post(uri).headers(headers).send().await?;
-    if let Some(res) = opt_text_response(res).await? {
-        Err(Error::UnexpectedResponse(res))
-    } else {
-        Ok(())
-    }
+    let headers = headers(uri, Some(JSON_CONTENT), token)?;
+    let res = client(uri)?
+        .post(uri)
+        .headers(headers)
+        .send()
+        .await
+        .map_err(|e| Error::execute(uri, e))?;
+
+    empty_response(uri, res).await
 }
 
 /// Posts binary data, and expects a binary response. Includes the full krill version
@@ -194,23 +220,37 @@ pub async fn post_binary_with_full_ua(
     let body = data.to_vec();
 
     let mut headers = HeaderMap::new();
-    headers.insert(USER_AGENT, HeaderValue::from_str(&format!("krill/{}", KRILL_VERSION))?);
-    headers.insert(CONTENT_TYPE, HeaderValue::from_str(content_type)?);
+
+    let ua_string = format!("krill/{}", KRILL_VERSION);
+    let user_agent_value = HeaderValue::from_str(&ua_string).map_err(|e| Error::request_build(uri, e))?;
+    let content_type_value = HeaderValue::from_str(content_type).map_err(|e| Error::request_build(uri, e))?;
+
+    headers.insert(USER_AGENT, user_agent_value);
+    headers.insert(CONTENT_TYPE, content_type_value);
 
     let client = reqwest::ClientBuilder::new()
         .timeout(Duration::from_secs(timeout))
         .danger_accept_invalid_certs(true)
         .build()
-        .map_err(Error::RequestError)?;
+        .map_err(|e| Error::request_build(uri, e))?;
 
-    let res = client.post(uri).headers(headers).body(body).send().await?;
+    let res = client
+        .post(uri)
+        .headers(headers)
+        .body(body)
+        .send()
+        .await
+        .map_err(|e| Error::execute(uri, e))?;
 
     match res.status() {
         StatusCode::OK => {
-            let bytes = res.bytes().await?;
+            let bytes = res
+                .bytes()
+                .await
+                .map_err(|e| Error::response(uri, format!("cannot get body: {}", e)))?;
             Ok(bytes)
         }
-        _ => Err(Error::from_res(res).await),
+        _ => Err(Error::from_res(uri, res).await),
     }
 }
 
@@ -218,19 +258,24 @@ pub async fn post_binary_with_full_ua(
 pub async fn delete(uri: &str, token: Option<&Token>) -> Result<(), Error> {
     report_delete(uri, None, token);
 
-    let headers = headers(None, token)?;
-    let res = client(uri)?.delete(uri).headers(headers).send().await?;
+    let headers = headers(uri, None, token)?;
+    let res = client(uri)?
+        .delete(uri)
+        .headers(headers)
+        .send()
+        .await
+        .map_err(|e| Error::execute(uri, e))?;
 
     match res.status() {
         StatusCode::OK => Ok(()),
-        _ => Err(Error::from_res(res).await),
+        _ => Err(Error::from_res(uri, res).await),
     }
 }
 
-fn load_root_cert(path: &str) -> Result<reqwest::Certificate, Error> {
-    let path = PathBuf::from_str(path).map_err(Error::https_root_cert_error)?;
-    let file = file::read(&path).map_err(Error::https_root_cert_error)?;
-    reqwest::Certificate::from_pem(file.as_ref()).map_err(Error::https_root_cert_error)
+fn load_root_cert(path_str: &str) -> Result<reqwest::Certificate, Error> {
+    let path = PathBuf::from_str(path_str).map_err(|e| Error::request_build_https_cert(path_str, e))?;
+    let file = file::read(&path).map_err(|e| Error::request_build_https_cert(path_str, e))?;
+    reqwest::Certificate::from_pem(file.as_ref()).map_err(|e| Error::request_build_https_cert(path_str, e))
 }
 
 /// Default client for Krill use cases.
@@ -258,43 +303,61 @@ pub fn client_with_tweaks(uri: &str, timeout: Duration, allow_redirects: bool) -
     } else {
         builder.build()
     }
-    .map_err(Error::RequestError)
+    .map_err(|e| Error::request_build(uri, e))
 }
 
-fn headers(content_type: Option<&str>, token: Option<&Token>) -> Result<HeaderMap, Error> {
+fn headers(uri: &str, content_type: Option<&str>, token: Option<&Token>) -> Result<HeaderMap, Error> {
     let mut headers = HeaderMap::new();
-    headers.insert(USER_AGENT, HeaderValue::from_str("krill")?);
+    headers.insert(USER_AGENT, HeaderValue::from_static("krill"));
+
     if let Some(content_type) = content_type {
-        headers.insert(CONTENT_TYPE, HeaderValue::from_str(content_type)?);
+        headers.insert(
+            CONTENT_TYPE,
+            HeaderValue::from_str(content_type).map_err(|e| Error::request_build(uri, e))?,
+        );
     }
     if let Some(token) = token {
         headers.insert(
             hyper::header::AUTHORIZATION,
-            HeaderValue::from_str(&format!("Bearer {}", token))?,
+            HeaderValue::from_str(&format!("Bearer {}", token)).map_err(|e| Error::request_build(uri, e))?,
         );
     }
     Ok(headers)
 }
 
-async fn process_json_response<T: DeserializeOwned>(res: Response) -> Result<T, Error> {
-    match process_opt_json_response(res).await? {
-        None => Err(Error::EmptyResponse),
+async fn process_json_response<T: DeserializeOwned>(uri: &str, res: Response) -> Result<T, Error> {
+    match process_opt_json_response(uri, res).await? {
+        None => Err(Error::response(uri, "got empty response body")),
         Some(res) => Ok(res),
     }
 }
 
-async fn process_opt_json_response<T: DeserializeOwned>(res: Response) -> Result<Option<T>, Error> {
-    match opt_text_response(res).await {
-        Err(e) => Err(e),
-        Ok(None) => Ok(None),
-        Ok(Some(s)) => {
-            let res: T = serde_json::from_str(&s)?;
+async fn process_opt_json_response<T: DeserializeOwned>(uri: &str, res: Response) -> Result<Option<T>, Error> {
+    match opt_text_response(uri, res).await? {
+        None => Ok(None),
+        Some(s) => {
+            let res: T = serde_json::from_str(&s)
+                .map_err(|e| Error::response(uri, format!("could not parse JSON response: {}", e)))?;
             Ok(Some(res))
         }
     }
 }
 
-async fn opt_text_response(res: Response) -> Result<Option<String>, Error> {
+async fn empty_response(uri: &str, res: Response) -> Result<(), Error> {
+    match opt_text_response(uri, res).await? {
+        None => Ok(()),
+        Some(_) => Err(Error::response(uri, "expected empty response")),
+    }
+}
+
+async fn text_response(uri: &str, res: Response) -> Result<String, Error> {
+    match opt_text_response(uri, res).await? {
+        None => Err(Error::response(uri, "expected response body")),
+        Some(s) => Ok(s),
+    }
+}
+
+async fn opt_text_response(uri: &str, res: Response) -> Result<Option<String>, Error> {
     match res.status() {
         StatusCode::OK => match res.text().await.ok() {
             None => Ok(None),
@@ -306,93 +369,98 @@ async fn opt_text_response(res: Response) -> Result<Option<String>, Error> {
                 }
             }
         },
-        StatusCode::FORBIDDEN => Err(Error::Forbidden),
-        _ => Err(Error::from_res(res).await),
+        StatusCode::FORBIDDEN => Err(Error::Forbidden(uri.to_string())),
+        _ => Err(Error::from_res(uri, res).await),
     }
 }
 
 //------------ Error ---------------------------------------------------------
 
+type ErrorUri = String;
+type RootCertPath = String;
+type ErrorMessage = String;
+
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum Error {
-    RequestError(reqwest::Error),
-    Forbidden,
-    BadStatus(StatusCode),
-    ErrorWithBody(StatusCode, String),
-    ErrorWithJson(StatusCode, ErrorResponse),
-    JsonError(serde_json::Error),
-    InvalidHeaderName,
-    InvalidHeaderValue,
-    InvalidMethod(String),
-    InvalidStatusCode(u16),
-    EmptyResponse,
-    UnexpectedResponse(String),
-    HttpsRootCertError(String),
+    RequestBuild(ErrorUri, ErrorMessage),
+    RequestBuildHttpsCert(RootCertPath, ErrorMessage),
+
+    RequestExecute(ErrorUri, ErrorMessage),
+
+    Response(ErrorUri, ErrorMessage),
+    Forbidden(ErrorUri),
+    ErrorResponseWithBody(ErrorUri, StatusCode, String),
+    ErrorResponseWithJson(ErrorUri, StatusCode, ErrorResponse),
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Error::RequestError(e) => write!(f, "Request Error: {}", e),
-            Error::Forbidden => write!(f, "Access Forbidden"),
-            Error::BadStatus(code) => write!(f, "Received bad status: {}", code),
-            Error::ErrorWithBody(code, e) => write!(f, "Status: {}, Error: {}", code, e),
-            Error::ErrorWithJson(code, res) => write!(f, "Status: {}, ErrorResponse: {}", code, res),
-            Error::JsonError(e) => e.fmt(f),
-            Error::InvalidHeaderName => write!(f, "failed parse header name"),
-            Error::InvalidHeaderValue => write!(f, "failed parse header value"),
-            Error::InvalidMethod(m) => write!(f, "unrecognised method requested: '{}'", m),
-            Error::InvalidStatusCode(code) => write!(f, "unrecognised status code in response: '{}'", code),
-            Error::EmptyResponse => write!(f, "Empty response received from server"),
-            Error::UnexpectedResponse(s) => write!(f, "Unexpected response: {}", s),
-            Error::HttpsRootCertError(e) => write!(
+            Error::RequestBuild(uri, msg) => write!(f, "Issue creating request for URI: {}, error: {}", uri, msg),
+            Error::RequestBuildHttpsCert(path, msg) => {
+                write!(f, "Cannot use configured HTTPS root cert '{}'. Error: {}", path, msg)
+            }
+
+            Error::RequestExecute(uri, msg) => write!(f, "Issue accessing URI: {}, error: {}", uri, msg),
+
+            Error::Response(uri, msg) => write!(f, "Issue processing response from URI: {}, error: {}", uri, msg),
+            Error::Forbidden(uri) => write!(f, "Got 'Forbidden' response for URI: {}", uri),
+            Error::ErrorResponseWithBody(uri, code, e) => {
+                write!(f, "Error response from URI: {}, Status: {}, Error: {}", uri, code, e)
+            }
+            Error::ErrorResponseWithJson(uri, code, res) => write!(
                 f,
-                "HTTPS root cert error, check files under dir defined in KRILL_HTTPS_ROOT_CERTS: {}",
-                e
+                "Error response from URI: {}, Status: {}, ErrorResponse: {}",
+                uri, code, res
             ),
         }
     }
 }
 
 impl Error {
-    async fn from_res(res: Response) -> Error {
+    pub fn request_build(uri: &str, msg: impl fmt::Display) -> Self {
+        Error::RequestBuild(uri.to_string(), msg.to_string())
+    }
+
+    pub fn request_build_json(uri: &str, e: impl fmt::Display) -> Self {
+        Error::RequestBuild(uri.to_string(), format!("could not serialize type to JSON: {}", e))
+    }
+
+    pub fn request_build_https_cert(path: &str, msg: impl fmt::Display) -> Self {
+        Error::RequestBuildHttpsCert(path.to_string(), msg.to_string())
+    }
+
+    pub fn execute(uri: &str, msg: impl fmt::Display) -> Self {
+        Error::RequestExecute(uri.to_string(), msg.to_string())
+    }
+
+    pub fn response(uri: &str, msg: impl fmt::Display) -> Self {
+        Error::Response(uri.to_string(), msg.to_string())
+    }
+
+    pub fn forbidden(uri: &str) -> Self {
+        Error::Forbidden(uri.to_string())
+    }
+
+    pub fn response_unexpected_status(uri: &str, status: StatusCode) -> Self {
+        Error::Response(uri.to_string(), format!("unexpected status code {}", status))
+    }
+
+    async fn from_res(uri: &str, res: Response) -> Error {
         let status = res.status();
         match res.text().await {
             Ok(body) => {
                 if body.is_empty() {
-                    Error::BadStatus(status)
+                    Self::response_unexpected_status(uri, status)
                 } else {
                     match serde_json::from_str::<ErrorResponse>(&body) {
-                        Ok(res) => Error::ErrorWithJson(status, res),
-                        Err(_) => Error::ErrorWithBody(status, body),
+                        Ok(res) => Error::ErrorResponseWithJson(uri.to_string(), status, res),
+                        Err(_) => Error::ErrorResponseWithBody(uri.to_string(), status, body),
                     }
                 }
             }
-            _ => Error::BadStatus(status),
+            _ => Self::response_unexpected_status(uri, status),
         }
-    }
-
-    pub fn https_root_cert_error(e: impl fmt::Display) -> Self {
-        Error::HttpsRootCertError(e.to_string())
-    }
-}
-
-impl From<reqwest::Error> for Error {
-    fn from(e: reqwest::Error) -> Self {
-        Error::RequestError(e)
-    }
-}
-
-impl From<serde_json::Error> for Error {
-    fn from(e: serde_json::Error) -> Self {
-        Error::JsonError(e)
-    }
-}
-
-impl From<InvalidHeaderValue> for Error {
-    fn from(_v: InvalidHeaderValue) -> Self {
-        // note InvalidHeaderValue is a marker and contains no further information.
-        Error::InvalidHeaderValue
     }
 }
