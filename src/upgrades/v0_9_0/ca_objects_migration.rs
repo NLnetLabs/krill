@@ -272,9 +272,17 @@ impl UpgradeStore for CasStoreMigration {
                     OldStoredEffect::Events(evt_versions) => {
                         // Command was a success.
                         //
-                        // Check each of these events and migrate them to 0.9.0 if applicable. In particular, 'ObjectSetUpdated'
-                        // is not handled this way anymore and won't be migrated. Object updates are not stored as events and
-                        // no longer kept in the [`CertAuth`] aggregate - they are kept in the CaObjectStore instead.
+                        // Check each of these events and migrate them to 0.9.0 if applicable.
+                        //
+                        // In particular, 'ObjectSetUpdated' is not handled this way anymore and won't be migrated. Object
+                        // updates are not stored as events and no longer kept in the [`CertAuth`] aggregate. The current set
+                        // of objects is kept in the [`CaObjectsStore`] instead. This component also takes care of regenerating
+                        // a new Manifest and CRL when the time comes to re-publish - without resulting in lots of event history.
+                        //
+                        // Note that delegated certificates and RPKI signed objects such as ROAs are historically important, and
+                        // they *are* tracked through events which are also migrated. In other words.. while the history on
+                        // simple re-publication events without any semantic changes is discarded *by design*, we keep the
+                        // important stuff.
                         trace!("  command: {}", old_cmd_key);
 
                         let mut events = vec![];
