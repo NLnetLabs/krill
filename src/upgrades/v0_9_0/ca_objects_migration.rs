@@ -264,51 +264,56 @@ impl UpgradeStore for CasStoreMigration {
                 // Read and parse the old command.
                 let mut old_cmd: OldStoredCaCommand = self.get(&old_cmd_key)?;
 
-                // If the command was a success, then it will have events. Successful commands
-                // that resulted in no changes are simply not recorded. That said, it may turn
-                // out that the event list to migrate is empty - in that case we skip this command
-                // and continue the command loop.
-                //
-                // Note that if the command resulted in an error we do not not get 'Some' empty
-                // vec of events, but we get a None. So we skip this block. Error commands will
-                // be migrated - we won't call continue as they are expected to have no events.
-                if let Some(evt_versions) = old_cmd.effect.events() {
-                    trace!("  command: {}", old_cmd_key);
+                // Migrate events
+                match &old_cmd.effect {
+                    OldStoredEffect::Error(_) => {
+                        // no events to migrate, but we will migrate the command and effect below.
+                    }
+                    OldStoredEffect::Events(evt_versions) => {
+                        // Command was a success.
+                        //
+                        // Check each of these events and migrate them to 0.9.0 if applicable. In particular, 'ObjectSetUpdated'
+                        // is not handled this way anymore and won't be migrated. Object updates are not stored as events and
+                        // no longer kept in the [`CertAuth`] aggregate - they are kept in the CaObjectStore instead.
+                        trace!("  command: {}", old_cmd_key);
 
-                    let mut events = vec![];
+                        let mut events = vec![];
 
-                    for v in evt_versions {
-                        let old_event_key = Self::event_key(&scope, *v);
-                        trace!("  +- event: {}", old_event_key);
+                        for v in evt_versions {
+                            let old_event_key = Self::event_key(&scope, *v);
+                            trace!("  +- event: {}", old_event_key);
 
-                        let old_evt: OldCaEvt = self.current_kv_store.get(&old_event_key)?.ok_or_else(|| {
-                            PrepareUpgradeError::Custom(format!("Cannot parse old event: {}", old_event_key))
-                        })?;
+                            let old_evt: OldCaEvt = self.current_kv_store.get(&old_event_key)?.ok_or_else(|| {
+                                PrepareUpgradeError::Custom(format!("Cannot parse old event: {}", old_event_key))
+                            })?;
 
-                        if old_evt.needs_migration() {
-                            // track event number
-                            data_upgrade_info.last_event += 1;
-                            events.push(data_upgrade_info.last_event);
+                            if old_evt.needs_migration() {
+                                // track event number
+                                data_upgrade_info.last_event += 1;
+                                events.push(data_upgrade_info.last_event);
 
-                            // create and store migrated event
-                            let migrated_event = old_evt.into_stored_ca_event(
-                                data_upgrade_info.last_event,
-                                &self.repo_manager,
-                                &self.derived_embedded_ca_info_map,
-                            )?;
-                            let key = KeyStoreKey::scoped(
-                                scope.to_string(),
-                                format!("delta-{}.json", data_upgrade_info.last_event),
-                            );
-                            self.new_kv_store.store(&key, &migrated_event)?;
+                                // create and store migrated event
+                                let migrated_event = old_evt.into_stored_ca_event(
+                                    data_upgrade_info.last_event,
+                                    &self.repo_manager,
+                                    &self.derived_embedded_ca_info_map,
+                                )?;
+                                let key = KeyStoreKey::scoped(
+                                    scope.to_string(),
+                                    format!("delta-{}.json", data_upgrade_info.last_event),
+                                );
+                                self.new_kv_store.store(&key, &migrated_event)?;
+                            }
                         }
-                    }
 
-                    if events.is_empty() {
-                        continue; // This command has no relevant events in 0.9, so don't save it.
-                    }
+                        if events.is_empty() {
+                            // This command has become a no-op for Krill 0.9.x and will not be migrated.
+                            // Move on to the next item in the loop.
+                            continue;
+                        }
 
-                    old_cmd.set_events(events);
+                        old_cmd.set_events(events);
+                    }
                 }
 
                 // Update the data_upgrade_info for progress tracking
