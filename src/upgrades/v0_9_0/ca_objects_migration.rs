@@ -270,7 +270,8 @@ impl UpgradeStore for CasStoreMigration {
                 // and continue the command loop.
                 //
                 // Note that if the command resulted in an error we do not not get 'Some' empty
-                // vec of events, but we get a None. So such commands will be migrated.
+                // vec of events, but we get a None. So we skip this block. Error commands will
+                // be migrated - we won't call continue as they are expected to have no events.
                 if let Some(evt_versions) = old_cmd.effect.events() {
                     trace!("  command: {}", old_cmd_key);
 
