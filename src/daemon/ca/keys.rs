@@ -95,15 +95,17 @@ impl CertifiedKey {
             return true;
         }
 
-        // If the validity time eligibility has changed, then we *may* want to ask for a new
-        // certificate, but only if:
-        // a) our current certificate expires *after* the eligible time, because we probably should
-        //    know..
-        // b) the new not after time is significantly better than our current time, because we
-        //    do not want to ask for new certificates every hour if the parent uses a simple
-        //    strategy like: not-after = now + 1 year..
+        // If the remaining validity time eligibility has changed by more than 10% then we will
+        // want to request a new certificate.
         //
-        // See issue #95
+        // We use this 10% margin to avoid ending up in endless request loops - in particular
+        // in cases where the parent uses a simple strategy like: not-after = now + 1 year for
+        // every list request we send. See issue #95.
+        //
+        // As it turns out there can also be timing issues with remaining time *reduction*. This
+        // is rather odd - as the parent is not really expected to reduce the time compared to
+        // what they issued to us before. But if it does happen (on every request like above)
+        // then we still want to avoid ending up in request loops. See issue #775
 
         let not_after = self.incoming_cert().cert().validity().not_after();
 
@@ -112,7 +114,7 @@ impl CertifiedKey {
         let remaining_seconds_on_eligible = new_not_after.timestamp() - now;
 
         if remaining_seconds_on_eligible <= 0 {
-            // New not after time is in the past!
+            // eligible remaining time is in the past!
             //
             // This is rather odd. The parent should just exclude the resource class in the
             // eligible entitlements instead. So, we will essentially just ignore this until
@@ -151,7 +153,7 @@ impl CertifiedKey {
             true
         } else {
             debug!(
-                "Will not request new certificate for CA '{}' under RC '{}'. Not after time changed by less than 10%. From: {} To: {}",
+                "Will not request new certificate for CA '{}' under RC '{}'. Remaining not after time changed by less than 10%. From: {} To: {}",
                 handle,
                 rcn,
                 not_after.to_rfc3339(),
