@@ -44,7 +44,7 @@ impl CaObjectsMigration {
 
         let signer = Arc::new(KrillSigner::build(&config.data_dir)?);
 
-        info!("Krill version is older than 0.9.0, will now upgrade CA data structures.");
+        info!("Prepare upgraded CA data structures.");
 
         // Populate object store which will contain all objects produced by CAs, while we are
         // at it.. return the information we will need in case we need to convert embedded child-parent
