@@ -715,7 +715,7 @@ impl Config {
         config.init_logging()?;
 
         if upgrade_only {
-            info!("Prepare upgrade using configuration file: {}", config_file,);
+            info!("Prepare upgrade using configuration file: {}", config_file);
             info!("Processing data from: {}", config.data_dir.to_string_lossy());
             info!(
                 "Saving prepared data to: {}",
