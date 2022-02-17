@@ -196,7 +196,7 @@ impl From<&DataUpgradeInfo> for StoredValueInfo {
 #[derive(Clone, Copy, Debug)]
 pub enum UpgradeMode {
     PrepareOnly,
-    PrepareThenFinalise,
+    PrepareToFinalise,
 }
 
 //------------ UpgradeStore --------------------------------------------------
@@ -481,7 +481,7 @@ mod tests {
             .unwrap();
 
         // and continue - immediately, but still
-        let report = prepare_upgrade_data_migrations(UpgradeMode::PrepareThenFinalise, Arc::new(config.clone()))
+        let report = prepare_upgrade_data_migrations(UpgradeMode::PrepareToFinalise, Arc::new(config.clone()))
             .await
             .unwrap()
             .unwrap();
@@ -518,7 +518,7 @@ mod tests {
         let config = Arc::new(Config::test(&work_dir, false, false, false));
         let _ = config.init_logging();
 
-        let report = prepare_upgrade_data_migrations(UpgradeMode::PrepareThenFinalise, config.clone())
+        let report = prepare_upgrade_data_migrations(UpgradeMode::PrepareToFinalise, config.clone())
             .await
             .unwrap()
             .unwrap();

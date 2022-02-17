@@ -295,7 +295,7 @@ impl UpgradeStore for PubdStoreMigration {
                     KRILL_VERSION
                 );
             }
-            UpgradeMode::PrepareThenFinalise => {
+            UpgradeMode::PrepareToFinalise => {
                 info!(
                     "Prepared Publication Server data migration to version {}.",
                     KRILL_VERSION

@@ -367,7 +367,7 @@ impl UpgradeStore for CasStoreMigration {
                     KRILL_VERSION
                 );
             }
-            UpgradeMode::PrepareThenFinalise => {
+            UpgradeMode::PrepareToFinalise => {
                 info!("Prepared migrating CAs to Krill version {}.", KRILL_VERSION);
 
                 // For each CA clean up the saved data upgrade info file.

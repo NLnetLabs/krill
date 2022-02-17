@@ -111,7 +111,7 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
     test_data_dirs_or_die(&config);
 
     // Call upgrade, this will only do actual work if needed.
-    let upgrade_report = prepare_upgrade_data_migrations(UpgradeMode::PrepareThenFinalise, config.clone()).await?;
+    let upgrade_report = prepare_upgrade_data_migrations(UpgradeMode::PrepareToFinalise, config.clone()).await?;
     if let Some(report) = &upgrade_report {
         finalise_data_migration(report.versions(), config.as_ref()).map_err(|e| {
             Error::Custom(format!(
