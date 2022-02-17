@@ -21,7 +21,10 @@ async fn main() {
                 .short("c")
                 .long("config")
                 .value_name("FILE")
-                .help("Override the path to the config file (default: './defaults/krill.conf')")
+                .help(&format!(
+                    "Override the path to the config file (default: '{}')",
+                    KRILL_DEFAULT_CONFIG_FILE
+                ))
                 .required(false),
         )
         .get_matches();
