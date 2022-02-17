@@ -485,22 +485,7 @@ jobs:
             ;;
         esac
 
-    - name: Copy package into the LXC container
-      run: |
-        case ${OS_NAME} in
-          debian|ubuntu)
-            DEB_FILE=$(ls -1 debian/*.deb)
-            sg lxd -c "lxc file push ${DEB_FILE} testcon/tmp/"
-            echo "PKG_FILE=$(basename $DEB_FILE)" >> $GITHUB_ENV
-            ;;
-          centos)
-            RPM_FILE=$(ls -1 generate-rpm/*.rpm)
-            sg lxd -c "lxc file push ${RPM_FILE} testcon/tmp/"
-            echo "PKG_FILE=$(basename $RPM_FILE)" >> $GITHUB_ENV
-            ;;
-        esac
-
-    - name: Install previously published package
+    - name: Install previously published ${{ matrix.pkg }} package
       if: ${{ matrix.mode == 'upgrade-from-published' }}
       run: |
         case ${OS_NAME} in
@@ -523,7 +508,22 @@ jobs:
             ;;
         esac
 
-    - name: Install new package
+    - name: Copy newly built ${{ matrix.pkg }} package into the LXC container
+      run: |
+        case ${OS_NAME} in
+          debian|ubuntu)
+            DEB_FILE=$(ls -1 debian/*.deb)
+            sg lxd -c "lxc file push ${DEB_FILE} testcon/tmp/"
+            echo "PKG_FILE=$(basename $DEB_FILE)" >> $GITHUB_ENV
+            ;;
+          centos)
+            RPM_FILE=$(ls -1 generate-rpm/*.rpm)
+            sg lxd -c "lxc file push ${RPM_FILE} testcon/tmp/"
+            echo "PKG_FILE=$(basename $RPM_FILE)" >> $GITHUB_ENV
+            ;;
+        esac
+
+    - name: Install the newly built ${{ matrix.pkg }} package
       if: ${{ matrix.mode == 'fresh-install' }}
       run: |
         case ${OS_NAME} in
@@ -535,7 +535,7 @@ jobs:
             ;;
         esac
 
-    - name: Test installed packages
+    - name: Test the installed krill package
       if: ${{ matrix.pkg == 'krill' }}
       run: |
         echo -e "\nKRILLC VERSION:"
@@ -569,7 +569,7 @@ jobs:
         echo -e "\nKRILL MAN PAGE:"
         sg lxd -c "lxc exec testcon -- man -P cat krill"
 
-    - name: Test installed packages
+    - name: Test the installed krillup package
       if: ${{ matrix.pkg == 'krillup' }}
       run: |
         echo -e "\nKRILLUP VERSION:"
@@ -578,7 +578,7 @@ jobs:
         echo -e "\nKRILLUP MAN PAGE:"
         sg lxd -c "lxc exec testcon -- man -P cat krillup"
 
-    - name: Install new package
+    - name: Upgrade from the published ${{ matrix.pkg }} package to the newly built package
       if: ${{ matrix.mode == 'upgrade-from-published' }}
       run: |
         case ${OS_NAME} in
@@ -590,7 +590,7 @@ jobs:
             ;;
         esac
 
-    - name: Test installed packages
+    - name: Test the upgraded krill package
       if: ${{ matrix.mode == 'upgrade-from-published' && matrix.pkg == 'krill' }}
       run: |
         echo -e "\nKRILLC VERSION:"
