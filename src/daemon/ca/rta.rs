@@ -18,7 +18,7 @@ use crate::commons::{
 
 //------------ Rtas ---------------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Rtas {
     map: HashMap<RtaName, RtaState>,
 }
@@ -58,12 +58,6 @@ impl Rtas {
 
     pub fn add_signed(&mut self, name: RtaName, signed: SignedRta) {
         self.map.insert(name, RtaState::Signed(signed));
-    }
-}
-
-impl Default for Rtas {
-    fn default() -> Self {
-        Rtas { map: HashMap::new() }
     }
 }
 

@@ -52,6 +52,8 @@ pub struct ResourceClass {
     parent_rc_name: ResourceClassName,
 
     roas: Roas,
+
+    #[serde(skip_serializing_if = "AspaObjects::is_empty", default)]
     aspas: AspaObjects,
     certificates: ChildCertificates,
 
