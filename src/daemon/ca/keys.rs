@@ -108,10 +108,10 @@ impl CertifiedKey {
         let not_after = self.incoming_cert().cert().validity().not_after();
 
         let now = Time::now().timestamp();
-        let until_not_after = not_after.timestamp() - now;
-        let until_new_not_after = new_not_after.timestamp() - now;
+        let remaining_seconds_on_current = not_after.timestamp() - now;
+        let remaining_seconds_on_eligible = new_not_after.timestamp() - now;
 
-        if until_new_not_after <= 0 {
+        if remaining_seconds_on_eligible <= 0 {
             // New not after time is in the past!
             //
             // This is rather odd. The parent should just exclude the resource class in the
@@ -124,20 +124,24 @@ impl CertifiedKey {
                 new_not_after.to_rfc3339()
             );
             false
-        } else if until_not_after == until_new_not_after {
+        } else if remaining_seconds_on_current == remaining_seconds_on_eligible {
             debug!(
                 "Will not request new certificate for CA '{}' under RC '{}'. Resources and not after time are unchanged.",
                 handle,
                 rcn,
             );
             false
-        } else if until_not_after > 0 && (until_new_not_after as f64 / until_not_after as f64) < 0.9_f64 {
+        } else if remaining_seconds_on_current > 0
+            && (remaining_seconds_on_eligible as f64 / remaining_seconds_on_current as f64) < 0.9_f64
+        {
             warn!(
                 "Parent of CA '{}' *reduced* not after time for certificate under RC '{}'. This is odd, but.. requesting new certificate.",
                 handle, rcn,
             );
             true
-        } else if until_not_after <= 0 || (until_new_not_after as f64 / until_not_after as f64) > 1.1_f64 {
+        } else if remaining_seconds_on_current <= 0
+            || (remaining_seconds_on_eligible as f64 / remaining_seconds_on_current as f64) > 1.1_f64
+        {
             info!(
                 "Will request new certificate for CA '{}' under RC '{}'. Not after time increased to: {}",
                 handle,
