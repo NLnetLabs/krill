@@ -427,9 +427,16 @@ impl AspaObjectsUpdates {
 /// Describes an update to the set of ROAs under a ResourceClass.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildCertificateUpdates {
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     issued: Vec<IssuedCert>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     removed: Vec<KeyIdentifier>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     suspended: Vec<SuspendedCert>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     unsuspended: Vec<UnsuspendedCert>,
 }
 

@@ -219,15 +219,9 @@ impl fmt::Display for RouteAuthorizationUpdates {
 //------------ Routes ------------------------------------------------------
 
 /// The current authorizations and corresponding meta-information for a CA.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Routes {
     map: HashMap<RouteAuthorization, RouteInfo>,
-}
-
-impl Default for Routes {
-    fn default() -> Self {
-        Routes { map: HashMap::new() }
-    }
 }
 
 impl Routes {
