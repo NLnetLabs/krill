@@ -93,6 +93,13 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v2
 
+    # Allow CentOS 8 to continue working now that it is EOL
+    # See: https://stackoverflow.com/a/70930049
+    - name: CentOS 8 EOL workaround
+      if: matrix.image == 'centos:8'
+      run: |
+        sed -i -e 's|mirrorlist=|#mirrorlist=|g' -e 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-Linux-*
+
     # Install Rust the hard way rather than using a GH Action because the action doesn't work inside a Docker container.
     - name: Install Rust
       run: |
@@ -264,7 +271,7 @@ jobs:
             sed -i -e "s/$KRILL_VER/$PKG_KRILL_VER/" Cargo.toml
 
             # Select the correct systemd service unit file for the target operating system
-            case "${OS_NAME}:${OS_REL}" in
+            case ${MATRIX_IMAGE} in
               centos:7)
                 SYSTEMD_SERVICE_UNIT_FILE="krill-ubuntu-xenial.krill.service"
                 # yum install fails on older CentOS with the default LZMA compression used by cargo generate-rpm since v0.5.0
@@ -276,7 +283,7 @@ jobs:
                 EXTRA_CARGO_GENERATE_RPM_ARGS=""
                 ;;
               *)
-                echo >&2 "ERROR: Unsupported matrix image value: '${OS_NAME}:${OS_REL}'"
+                echo >&2 "ERROR: Unsupported matrix image value: '${MATRIX_IMAGE}'"
                 ;;
             esac
 
@@ -469,6 +476,11 @@ jobs:
             sg lxd -c "lxc exec testcon -- apt-get install -y -o Dpkg::Options::=\"--force-confnew\" apt-transport-https ca-certificates man sudo wget"
             ;;
           centos)
+            if [[ "${MATRIX_IMAGE}" == "centos:8" ]]; then
+              # allow CentOS 8 to continue working now that it is EOL
+              # see: https://stackoverflow.com/a/70930049
+              sg lxd -c "lxc exec testcon -- sed -i -e 's|mirrorlist=|#mirrorlist=|g' -e 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-Linux-*"
+            fi
             sg lxd -c "lxc exec testcon -- yum update -y"
             sg lxd -c "lxc exec testcon -- yum install -y man"
             ;;

@@ -18,7 +18,7 @@ jobs:
         args: ["", "--all-features"]
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v1
+      uses: actions/checkout@v2
       with:
         # at the time of writing workflow_run.head_commit.id appears to be
         # the commit that triggered the CI workflow which then triggered us.
