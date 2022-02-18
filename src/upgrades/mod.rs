@@ -217,6 +217,18 @@ pub trait UpgradeStore {
 
     fn preparation_store(&self) -> &KeyValueStore;
 
+    /// Checks whether the preparation store is set up for the current code
+    /// krill version. If it isn't the store will be wiped so that we can
+    /// start over, and the version will be set to the current code version.
+    fn preparation_store_prepare(&self) -> UpgradeResult<()> {
+        if !self.preparation_store().version_is_current()? {
+            warn!("Found prepared data for a different krill version, will remove it and start from scratch");
+            self.preparation_store().wipe()?;
+            self.preparation_store().version_set_current()?;
+        }
+        Ok(())
+    }
+
     fn data_upgrade_info_key(scope: &str) -> KeyStoreKey {
         KeyStoreKey::scoped(scope.to_string(), "upgrade_info.json".to_string())
     }

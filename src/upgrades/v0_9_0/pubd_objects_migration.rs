@@ -128,6 +128,9 @@ impl UpgradeStore for PubdStoreMigration {
     }
 
     fn prepare_new_data(&self, mode: UpgradeMode) -> Result<(), PrepareUpgradeError> {
+        // check existing version, wipe if needed
+        self.preparation_store_prepare()?;
+
         // we only have 1 pubserver '0'
         let scope = "0";
         let handle = Handle::from_str(scope).unwrap(); // "0" is always safe
