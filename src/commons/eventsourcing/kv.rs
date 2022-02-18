@@ -97,7 +97,7 @@ impl KeyValueStore {
             KeyValueStore::Disk(disk_store) => {
                 // If this is a new store then initialise the disk and set the version
                 if !disk_store.base.exists() {
-                    file::create_dir(&disk_store.base)?;
+                    file::create_dir_all(&disk_store.base)?;
                     store.version_set_current()?;
                 }
             }
@@ -392,7 +392,7 @@ impl KeyValueStoreDiskImpl {
     pub fn wipe(&self) -> Result<(), KeyValueError> {
         if self.base.exists() {
             file::remove_dir_all(&self.base)?;
-            file::create_dir(&self.base)?;
+            file::create_dir_all(&self.base)?;
         }
         Ok(())
     }
