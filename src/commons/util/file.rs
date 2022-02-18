@@ -44,7 +44,7 @@ pub fn remove_dir_all(dir: &Path) -> Result<(), KrillIoError> {
     Ok(())
 }
 
-/// Creates a new File or opens an exiting one. If the file did not exist, the dir dir path
+/// Creates a new File or opens an exiting one. If the file did not exist, the path
 /// will be created if it did not exist yet.
 pub fn create_file_with_path(path: &Path) -> Result<File, KrillIoError> {
     if !path.exists() {
