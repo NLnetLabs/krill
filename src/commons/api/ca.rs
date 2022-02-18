@@ -1169,6 +1169,10 @@ impl fmt::Display for ResourceSetDiff {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthList {
+    // Even though we only have 1 field, we chose not to use a tuple struct here
+    // to allow for future extensions more easily.. we could then just add new
+    // fields and associated JSON members without affecting consumers of the API
+    // too much.
     cas: Vec<CertAuthSummary>,
 }
 
@@ -1189,6 +1193,12 @@ impl fmt::Display for CertAuthList {
         }
 
         Ok(())
+    }
+}
+
+impl AsRef<Vec<CertAuthSummary>> for CertAuthList {
+    fn as_ref(&self) -> &Vec<CertAuthSummary> {
+        &self.cas
     }
 }
 
