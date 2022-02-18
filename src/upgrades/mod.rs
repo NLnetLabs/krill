@@ -16,7 +16,7 @@ use crate::{
         util::{file, KrillVersion},
         KrillResult,
     },
-    constants::{CASERVER_DIR, CA_OBJECTS_DIR, PUBSERVER_CONTENT_DIR, PUBSERVER_DIR},
+    constants::{CASERVER_DIR, CA_OBJECTS_DIR, PUBSERVER_CONTENT_DIR, PUBSERVER_DIR, UPGRADE_REISSUE_ROAS_CAS_LIMIT},
     daemon::{config::Config, krillserver::KrillServer},
     pubd::RepositoryManager,
     upgrades::v0_9_0::{CaObjectsMigration, PubdObjectsMigration},
@@ -426,13 +426,20 @@ pub fn finalise_data_migration(upgrade: &UpgradeVersions, config: &Config) -> Kr
 
 /// Should be called after the KrillServer is started, but before the web server is started
 /// and operators can make changes.
-pub async fn post_start_upgrade(
-    upgrade_versions: &UpgradeVersions,
-    server: &KrillServer,
-) -> Result<(), PrepareUpgradeError> {
+pub async fn post_start_upgrade(upgrade_versions: &UpgradeVersions, server: &KrillServer) -> KrillResult<()> {
     if upgrade_versions.from() < &KrillVersion::candidate(0, 9, 3, 2) {
-        info!("Reissue ROAs on upgrade to force short EE certificate subjects in the objects");
-        server.force_renew_roas().await.map_err(|e| e.into())
+        if server.ca_list(server.system_actor())?.as_ref().len() <= UPGRADE_REISSUE_ROAS_CAS_LIMIT {
+            info!("Reissue ROAs on upgrade to force short EE certificate subjects in the objects");
+            server.force_renew_roas().await
+        } else {
+            // We do not re-issue ROAs to avoid a load spike on the repository. Long ROA subjects
+            // are accepted by all RPs and ROAs will be replaced by the system automatically. Using
+            // default settings that are replaced 4 weeks before expiry and issued with a validity
+            // of 52 weeks -> i.e. 48 weeks after issuance.
+            //
+            // If users want to force the ROAs are re-issued they can do a key roll.
+            Ok(())
+        }
     } else {
         Ok(())
     }
