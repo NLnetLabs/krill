@@ -721,7 +721,6 @@ impl Config {
                 "Saving prepared data to: {}",
                 config.upgrade_data_dir().to_string_lossy()
             );
-            warn!("*** Kill this process if you have doubts about available disk space! ***");
         } else {
             info!("{} uses configuration file: {}", KRILL_SERVER_APP, config_file);
         }

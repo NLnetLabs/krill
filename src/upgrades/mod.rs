@@ -380,10 +380,8 @@ pub fn finalise_data_migration(upgrade: &UpgradeVersions, config: &Config) -> Kr
     // cas -> arch-cas-{old-version}
     // upgrade-data/cas -> cas
     // upgrade-data/ca_objects -> ca_objects
-    // set cas/version
 
     let cas = data_dir.join(CASERVER_DIR);
-    let cas_version = cas.join("version");
     let cas_arch = data_dir.join(format!("arch-{}-{}", CASERVER_DIR, from));
     let cas_upg = upgrade_dir.join(CASERVER_DIR);
     let ca_objects = data_dir.join(CA_OBJECTS_DIR);
@@ -392,16 +390,12 @@ pub fn finalise_data_migration(upgrade: &UpgradeVersions, config: &Config) -> Kr
     move_dir_if_exists(&cas, &cas_arch)?;
     move_dir_if_exists(&cas_upg, &cas)?;
     move_dir_if_exists(&ca_objects_upg, &ca_objects)?;
-    file::save_json(&current, &cas_version)
-        .map_err(|e| Error::Custom(format!("Could not update version file: {}", e)))?;
 
     // pubd -> arch-pubd-{old-version}
     // upgrade-data/pubd -> pubd
     // upgrade-data/pubd_objects -> pubd_objects
-    // set pubd/version
 
     let pubd = data_dir.join(PUBSERVER_DIR);
-    let pubd_version = pubd.join("version");
     let pubd_arch = data_dir.join(format!("arch-{}-{}", PUBSERVER_DIR, from));
     let pubd_upg = upgrade_dir.join(PUBSERVER_DIR);
     let pubd_objects = data_dir.join(PUBSERVER_CONTENT_DIR);
@@ -410,8 +404,6 @@ pub fn finalise_data_migration(upgrade: &UpgradeVersions, config: &Config) -> Kr
     move_dir_if_exists(&pubd, &pubd_arch)?;
     move_dir_if_exists(&pubd_upg, &pubd)?;
     move_dir_if_exists(&pubd_objects_upg, &pubd_objects)?;
-    file::save_json(&current, &pubd_version)
-        .map_err(|e| Error::Custom(format!("Could not update version file: {}", e)))?;
 
     // done, clean out the migration dir
     file::remove_dir_all(&upgrade_dir)
