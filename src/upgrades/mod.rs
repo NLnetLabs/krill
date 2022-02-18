@@ -321,7 +321,7 @@ pub async fn prepare_upgrade_data_migrations(
             } else if versions.from < KrillVersion::release(0, 9, 0) {
                 let upgrade_data_dir = config.upgrade_data_dir();
                 if !upgrade_data_dir.exists() {
-                    file::create_dir(&upgrade_data_dir)?;
+                    file::create_dir_all(&upgrade_data_dir)?;
                 }
 
                 // Get a lock to ensure that only one process can run this migration
