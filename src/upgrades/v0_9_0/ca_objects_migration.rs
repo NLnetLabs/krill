@@ -147,6 +147,9 @@ impl UpgradeStore for CasStoreMigration {
     }
 
     fn prepare_new_data(&self, mode: UpgradeMode) -> Result<(), PrepareUpgradeError> {
+        // check existing version, wipe if needed
+        self.preparation_store_prepare()?;
+
         info!("Upgrade CA command and event data to Krill version {}", KRILL_VERSION);
 
         let dflt_actor = "krill".to_string();
