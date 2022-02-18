@@ -93,6 +93,9 @@ pub const ACTOR_DEF_TESTBED: ActorDef = ActorDef::system("testbed", "testbed");
 pub const SCHEDULER_INTERVAL_SECONDS_REPUBLISH: u32 = 600;
 pub const SCHEDULER_INTERVAL_SECONDS_ROA_RENEW: u32 = 3600;
 
+// If we have more than 50 do not re-issue all ROAs. See issue #772
+pub const UPGRADE_REISSUE_ROAS_CAS_LIMIT: usize = 50;
+
 #[cfg(test)]
 pub const ACTOR_DEF_TEST: ActorDef = ActorDef::system("test", "admin");
 
