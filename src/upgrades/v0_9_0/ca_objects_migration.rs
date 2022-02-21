@@ -29,7 +29,7 @@ use crate::{
     },
     pubd::RepositoryManager,
     upgrades::v0_9_0::{old_commands::*, old_events::*},
-    upgrades::{PrepareUpgradeError, UpgradeMode, UpgradeResult, UpgradeStore, MIGRATION_SCOPE},
+    upgrades::{PrepareUpgradeError, UpgradeMode, UpgradeResult, UpgradeStore},
 };
 
 /// Migrate the current objects for each CA into the CaObjectStore
@@ -71,14 +71,16 @@ impl CaObjectsMigration {
         // which are preserved here.
         info!("Populate the CA Objects Store introduced in Krill 0.9.0");
         let store = AggregateStore::<OldCertAuth>::disk(&config.data_dir, CASERVER_DIR)?;
-        if store.warm().is_err() {
-            // most likely we are dealing with off by one errors in old krill info files. Archive them for migration and try again.
-            let kv = KeyValueStore::disk(&config.data_dir, CASERVER_DIR)?;
-            for c in store.list()? {
-                let info_key = KeyStoreKey::scoped(c.to_string(), "info.json".to_string());
-                kv.archive_to(&info_key, MIGRATION_SCOPE)?;
-            }
-        }
+
+        // for ca in
+
+        // if store.warm().is_err() {
+        //     // most likely we are dealing with off by one errors in old krill info files. Archive them for migration and try again.
+        //     for c in store.list()? {
+        //         let info_key = KeyStoreKey::scoped(c.to_string(), "info.json".to_string());
+        //         kv.drop_key(&info_key)?;
+        //     }
+        // }
 
         let ca_objects_store =
             CaObjectsStore::disk(&config.upgrade_data_dir(), config.issuance_timing.clone(), signer)?;
@@ -89,7 +91,27 @@ impl CaObjectsMigration {
         info!("Will migrate data for {} CAs", cas.len());
 
         for ca_handle in cas {
-            let ca = store.get_latest(&ca_handle)?;
+            let ca = match store.get_latest(&ca_handle) {
+                Ok(ca) => ca,
+                Err(_) => {
+                    // most likely an off by one error in the info.json of early releases
+                    // try to move the info file out of the way and reload.
+                    let kv = KeyValueStore::disk(&config.data_dir, CASERVER_DIR)?;
+                    let info_key = KeyStoreKey::scoped(ca_handle.to_string(), "info.json".to_string());
+                    let tmp_key = KeyStoreKey::scoped(ca_handle.to_string(), "tmp-info.json".to_string());
+                    kv.move_key(&info_key, &tmp_key)?;
+
+                    // Get latest (may still error)
+                    let res = store.get_latest(&ca_handle);
+
+                    // move the key back to leave things as they were
+                    kv.move_key(&tmp_key, &info_key)?;
+
+                    // Get the CA or error out if this failed.
+                    res?
+                }
+            };
+
             let objects = ca.ca_objects(repo_manager.as_ref())?;
 
             ca_objects_store.put_ca_objects(&ca_handle, &objects)?;
@@ -286,13 +308,13 @@ impl UpgradeStore for CasStoreMigration {
                         // they *are* tracked through events which are also migrated. In other words.. while the history on
                         // simple re-publication events without any semantic changes is discarded *by design*, we keep the
                         // important stuff.
-                        trace!("  command: {}", old_cmd_key);
+                        debug!("  command: {}", old_cmd_key);
 
                         let mut events = vec![];
 
                         for v in evt_versions {
                             let old_event_key = Self::event_key(&scope, *v);
-                            trace!("  +- event: {}", old_event_key);
+                            debug!("  +- event: {}", old_event_key);
 
                             let old_evt: OldCaEvt = self.current_kv_store.get(&old_event_key)?.ok_or_else(|| {
                                 PrepareUpgradeError::Custom(format!("Cannot parse old event: {}", old_event_key))
@@ -309,11 +331,16 @@ impl UpgradeStore for CasStoreMigration {
                                     &self.repo_manager,
                                     &self.derived_embedded_ca_info_map,
                                 )?;
+                                debug!("     +- created migrated event");
                                 let key = KeyStoreKey::scoped(
                                     scope.to_string(),
                                     format!("delta-{}.json", data_upgrade_info.last_event),
                                 );
+                                debug!("     +- will save as: {}", key);
                                 self.new_kv_store.store(&key, &migrated_event)?;
+                                debug!("     +- saved");
+                            } else {
+                                debug!("     +- no need to migrate");
                             }
                         }
 

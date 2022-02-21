@@ -176,7 +176,7 @@ pub enum OldCaEvtDet {
     ChildAdded(ChildHandle, OldChildDetails),
     ChildCertificateIssued(ChildHandle, ResourceClassName, KeyIdentifier),
     ChildKeyRevoked(ChildHandle, ResourceClassName, KeyIdentifier),
-    ChildCertificatesUpdated(ResourceClassName, ChildCertificateUpdates),
+    ChildCertificatesUpdated(ResourceClassName, OldChildCertificateUpdates),
     ChildUpdatedIdCert(ChildHandle, IdCert),
     ChildUpdatedResources(ChildHandle, ResourceSet),
     ChildRemoved(ChildHandle),
@@ -329,18 +329,18 @@ impl fmt::Display for OldCaEvtDet {
 
 /// Describes an update to the set of ROAs under a ResourceClass.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ChildCertificateUpdates {
+pub struct OldChildCertificateUpdates {
     issued: Vec<IssuedCert>,
     removed: Vec<KeyIdentifier>,
 }
 
-impl From<ChildCertificateUpdates> for ca::ChildCertificateUpdates {
-    fn from(old: ChildCertificateUpdates) -> Self {
+impl From<OldChildCertificateUpdates> for ca::ChildCertificateUpdates {
+    fn from(old: OldChildCertificateUpdates) -> Self {
         ca::ChildCertificateUpdates::new(old.issued, old.removed, vec![], vec![])
     }
 }
 
-impl ChildCertificateUpdates {
+impl OldChildCertificateUpdates {
     pub fn unpack(self) -> (Vec<IssuedCert>, Vec<KeyIdentifier>) {
         (self.issued, self.removed)
     }
@@ -600,5 +600,18 @@ impl From<OldPubdEvtDet> for RepositoryAccessEventDetails {
             OldPubdEvtDet::PublisherRemoved(name, _) => RepositoryAccessEventDetails::PublisherRemoved { name },
             _ => unreachable!("no need to migrate these old events"),
         }
+    }
+}
+
+//------------ Tests ---------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::OldCaEvt;
+
+    #[test]
+    fn convert_old_child_certificates_updated() {
+        let json = include_str!("../../../test-resources/migrations/delta-26.json");
+        let old_evt: OldCaEvt = serde_json::from_str(json).unwrap();
     }
 }

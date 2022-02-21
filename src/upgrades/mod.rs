@@ -26,8 +26,6 @@ pub mod v0_9_0;
 
 pub type UpgradeResult<T> = Result<T, PrepareUpgradeError>;
 
-pub const MIGRATION_SCOPE: &str = "migration";
-
 //------------ KrillUpgradeReport --------------------------------------------
 
 #[derive(Debug)]
@@ -99,33 +97,16 @@ pub enum PrepareUpgradeError {
 
 impl fmt::Display for PrepareUpgradeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        error!("Upgrade preparation failed: {}", &self);
+        let cause = match &self {
+            PrepareUpgradeError::AggregateStoreError(e) => format!("Aggregate Error: {}", e),
+            PrepareUpgradeError::KeyStoreError(e) => format!("Keystore Error: {}", e),
+            PrepareUpgradeError::IoError(e) => format!("I/O Error: {}", e),
+            PrepareUpgradeError::Unrecognised(s) => format!("Unrecognised: {}", s),
+            PrepareUpgradeError::CannotLoadAggregate(h) => format!("Cannot load: {}", h),
+            PrepareUpgradeError::Custom(s) => s.clone(),
+        };
 
-        write!(f, "Upgrade preparation failed. Your original data is unchanged. If you upgraded 'krill' rather than used 'krillup' for this process, then please downgrade to your previous version.")?;
-
-        match self {
-            PrepareUpgradeError::Unrecognised(s) => {
-                write!(
-                    f,
-                    "Underlying issue was that an unrecognised command summary was found: {}",
-                    s
-                )?;
-                write!(
-                    f,
-                    "Please create an issue here: https://github.com/NLnetLabs/krill/issues",
-                )?;
-            }
-            PrepareUpgradeError::CannotLoadAggregate(handle) => {
-                write!(f, "Underlying issue was that state for {} could not be loaded", handle)?;
-                write!(
-                    f,
-                    "Please create an issue here: https://github.com/NLnetLabs/krill/issues",
-                )?;
-            }
-            _ => {}
-        }
-
-        Ok(())
+        write!(f, "Upgrade preparation failed because of: {}", cause)
     }
 }
 impl PrepareUpgradeError {
