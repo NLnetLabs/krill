@@ -709,7 +709,6 @@ impl Config {
 
         if upgrade_only {
             config.log_type = LogType::Stderr;
-            config.log_level = LevelFilter::Info;
         }
 
         config.init_logging()?;
