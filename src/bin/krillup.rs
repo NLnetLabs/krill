@@ -36,7 +36,8 @@ async fn main() {
             let config = Arc::new(config);
             match prepare_upgrade_data_migrations(UpgradeMode::PrepareOnly, config.clone()).await {
                 Err(e) => {
-                    error!("{}", e);
+                    eprintln!();
+                    eprintln!("*** ERROR *** {}", e);
                     ::std::process::exit(1);
                 }
                 Ok(opt) => match opt {
