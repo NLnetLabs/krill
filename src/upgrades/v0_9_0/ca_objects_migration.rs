@@ -81,26 +81,7 @@ impl CaObjectsMigration {
         info!("Will migrate data for {} CAs", cas.len());
 
         for ca_handle in cas {
-            let ca = match store.get_latest(&ca_handle) {
-                Ok(ca) => ca,
-                Err(_) => {
-                    // most likely an off by one error in the info.json of early releases
-                    // try to move the info file out of the way and reload.
-                    let kv = KeyValueStore::disk(&config.data_dir, CASERVER_DIR)?;
-                    let info_key = KeyStoreKey::scoped(ca_handle.to_string(), "info.json".to_string());
-                    let tmp_key = KeyStoreKey::scoped(ca_handle.to_string(), "tmp-info.json".to_string());
-                    kv.move_key(&info_key, &tmp_key)?;
-
-                    // Get latest (may still error)
-                    let res = store.get_latest(&ca_handle);
-
-                    // move the key back to leave things as they were
-                    kv.move_key(&tmp_key, &info_key)?;
-
-                    // Get the CA or error out if this failed.
-                    res?
-                }
-            };
+            let ca = store.get_latest(&ca_handle)?;
 
             let objects = ca.ca_objects(repo_manager.as_ref())?;
 
