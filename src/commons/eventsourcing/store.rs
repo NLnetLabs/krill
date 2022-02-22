@@ -640,15 +640,8 @@ where
     fn get_latest_no_lock(&self, handle: &Handle) -> StoreResult<Arc<A>> {
         trace!("Trying to load aggregate id: {}", handle);
 
-        let info_key = Self::key_for_info(handle);
-        let limit = self
-            .kv
-            .get::<StoredValueInfo>(&info_key)
-            .map_err(|_| AggregateStoreError::InfoCorrupt(handle.clone()))?
-            .map(|info| info.last_event);
-
         match self.cache_get(handle) {
-            None => match self.get_aggregate(handle, limit)? {
+            None => match self.get_aggregate(handle, None)? {
                 None => {
                     error!("Could not load aggregate with id: {} from disk", handle);
                     Err(AggregateStoreError::UnknownAggregate(handle.clone()))
@@ -663,7 +656,7 @@ where
             Some(mut arc) => {
                 if self.has_updates(handle, &arc)? {
                     let agg = Arc::make_mut(&mut arc);
-                    self.update_aggregate(handle, agg, limit)?;
+                    self.update_aggregate(handle, agg, None)?;
                 }
                 trace!("Loaded aggregate id: {} from memory", handle);
                 Ok(arc)
