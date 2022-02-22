@@ -78,26 +78,7 @@ impl PubdObjectsMigration {
 
         let repo_handle = Self::repository_handle();
 
-        let old_repo = match old_store.get_latest(&repo_handle) {
-            Ok(repo) => repo,
-            Err(_) => {
-                // most likely an off by one error in the info.json of early releases
-                // try to move the info file out of the way and reload.
-                let kv = KeyValueStore::disk(&config.data_dir, PUBSERVER_DIR)?;
-                let info_key = KeyStoreKey::scoped(repo_handle.to_string(), "info.json".to_string());
-                let tmp_key = KeyStoreKey::scoped(repo_handle.to_string(), "tmp-info.json".to_string());
-                kv.move_key(&info_key, &tmp_key)?;
-
-                // Get latest (may still error)
-                let res = old_store.get_latest(&repo_handle);
-
-                // move the key back to leave things as they were
-                kv.move_key(&tmp_key, &info_key)?;
-
-                // Get the repo or error out if this failed.
-                res?
-            }
-        };
+        let old_repo = old_store.get_latest(&repo_handle)?;
 
         let publishers = old_repo
             .publishers

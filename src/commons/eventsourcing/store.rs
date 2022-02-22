@@ -894,51 +894,36 @@ where
 
     fn update_aggregate(&self, id: &Handle, aggregate: &mut A, limit: Option<u64>) -> Result<(), AggregateStoreError> {
         let start = aggregate.version();
-        let limit = if let Some(limit) = limit {
-            debug!("Will attempt to update '{}' using explicit limit", id);
-            limit
-        } else if let Ok(info) = self.get_info(id) {
-            debug!("Will attempt to update '{}' using limit from info", id);
-            info.last_event
+
+        if let Some(limit) = limit {
+            debug!("Will update '{}' from version: {} to: {}", id, start, limit + 1);
         } else {
-            let nr_events = self.kv.keys(Some(id.to_string()), "delta-")?.len();
-            if nr_events < 1 {
-                return Err(AggregateStoreError::InfoMissing(id.clone()));
-            } else {
-                let limit = (nr_events - 1) as u64;
-                debug!("Will attempt to update '{}' from limit based on nr of events", id,);
-                limit
+            debug!("Will update '{}' to latest version", id);
+        }
+
+        // check and apply any applicable events until:
+        // - the limit is reached (if supplied)
+        // - there are no more events
+        // - any event cannot be applied (return an error)
+        loop {
+            let version = aggregate.version();
+            if let Some(limit) = limit {
+                if limit == version - 1 {
+                    debug!("Updated '{}' to: {}", id, version);
+                    break;
+                }
             }
-        };
 
-        if limit == aggregate.version() - 1 {
-            // already at version, done
-            // note that an event has the version of the aggregate it *affects*. So delta 10 results in version 11.
-            debug!("Snapshot for '{}' is up to date", id);
-            return Ok(());
-        }
-
-        debug!(
-            "Will attempt to update '{}' from version: {} to: {}",
-            id,
-            start,
-            limit + 1
-        );
-
-        if start > limit {
-            return Err(AggregateStoreError::ReplayError(id.clone(), limit, start));
-        }
-
-        for version in start..limit + 1 {
-            if let Some(e) = self.get_event(id, version)? {
-                if aggregate.version() != version {
+            if let Some(e) = self.get_event::<A::Event>(id, version)? {
+                if version != e.version() {
                     error!("Trying to apply event to wrong version of aggregate in replay");
-                    return Err(AggregateStoreError::ReplayError(id.clone(), limit, version));
+                    return Err(AggregateStoreError::ReplayError(id.clone(), version, e.version()));
                 }
                 aggregate.apply(e);
                 debug!("Applied event nr {} to aggregate {}", version, id);
             } else {
-                return Err(AggregateStoreError::ReplayError(id.clone(), limit, version));
+                debug!("No more events found. updated '{}' to: {}", id, version);
+                break;
             }
         }
 
@@ -1023,10 +1008,10 @@ impl fmt::Display for AggregateStoreError {
             AggregateStoreError::InitError(handle) => {
                 write!(f, "Init event exists for '{}', but cannot be applied", handle)
             }
-            AggregateStoreError::ReplayError(handle, target_version, fail_version) => write!(
+            AggregateStoreError::ReplayError(handle, version, fail_version) => write!(
                 f,
-                "Cannot reconstruct '{}' to version '{}', failed at version {}",
-                handle, target_version, fail_version
+                "Event for '{}' version '{}' had version '{}'",
+                handle, version, fail_version
             ),
             AggregateStoreError::InfoMissing(handle) => write!(f, "Missing stored value info for '{}'", handle),
             AggregateStoreError::InfoCorrupt(handle) => write!(f, "Corrupt stored value info for '{}'", handle),
