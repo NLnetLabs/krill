@@ -72,16 +72,6 @@ impl CaObjectsMigration {
         info!("Populate the CA Objects Store introduced in Krill 0.9.0");
         let store = AggregateStore::<OldCertAuth>::disk(&config.data_dir, CASERVER_DIR)?;
 
-        // for ca in
-
-        // if store.warm().is_err() {
-        //     // most likely we are dealing with off by one errors in old krill info files. Archive them for migration and try again.
-        //     for c in store.list()? {
-        //         let info_key = KeyStoreKey::scoped(c.to_string(), "info.json".to_string());
-        //         kv.drop_key(&info_key)?;
-        //     }
-        // }
-
         let ca_objects_store =
             CaObjectsStore::disk(&config.upgrade_data_dir(), config.issuance_timing.clone(), signer)?;
 
