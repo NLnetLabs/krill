@@ -773,7 +773,15 @@ pub struct Revocations(Vec<Revocation>);
 
 impl Revocations {
     pub fn to_crl_entries(&self) -> Vec<CrlEntry> {
-        self.0.iter().map(|r| CrlEntry::new(r.serial, r.expires)).collect()
+        // Todo: include the revocation time in ['Revocation'] and use that.
+        //       this will require that we reprocess history to get this
+        //       value. We do know when an object was removed or replaced,
+        //       so we can get it - but it's not entirely trivial.
+        //
+        // See issue #788. This issue was added to the 0.10.0 backlog.
+        // For now we just do a quick hack and use 'now' rather than the
+        // future dated 'expires' time for the CRL entry.
+        self.0.iter().map(|r| CrlEntry::new(r.serial, Time::now())).collect()
     }
 
     /// Purges all expired revocations, and returns them.
