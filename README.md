@@ -21,7 +21,7 @@ For more information please refer to the [documentation](https://krill.docs.nlne
 
 # Changelog
 
-## 0.9.5 RC1 'Have You considered these Upgrades?'
+## 0.9.5 RC2 'Have You considered these Upgrades?'
 
 This release was primarily intended to improve support for migrations of pre-0.9.0
 installations. The upgrade code has been separated more cleanly into a step where
