@@ -408,7 +408,6 @@ impl KrillServer {
     pub async fn ca_stats_child_connections(&self, ca: &Handle) -> KrillResult<ChildrenConnectionStats> {
         self.ca_manager
             .get_ca_status(ca)
-            .await
             .map(|status| status.get_children_connection_stats())
     }
 }
@@ -477,10 +476,10 @@ impl KrillServer {
         Ok(res)
     }
 
-    pub async fn all_ca_issues(&self, actor: &Actor) -> KrillResult<AllCertAuthIssues> {
+    pub fn all_ca_issues(&self, actor: &Actor) -> KrillResult<AllCertAuthIssues> {
         let mut all_issues = AllCertAuthIssues::default();
         for ca in self.ca_list(actor)?.cas() {
-            let issues = self.ca_issues(ca.handle()).await?;
+            let issues = self.ca_issues(ca.handle())?;
             if !issues.is_empty() {
                 all_issues.add(ca.handle().clone(), issues);
             }
@@ -489,10 +488,10 @@ impl KrillServer {
         Ok(all_issues)
     }
 
-    pub async fn ca_issues(&self, ca_handle: &Handle) -> KrillResult<CertAuthIssues> {
+    pub fn ca_issues(&self, ca_handle: &Handle) -> KrillResult<CertAuthIssues> {
         let mut issues = CertAuthIssues::default();
 
-        let ca_status = self.ca_manager.get_ca_status(ca_handle).await?;
+        let ca_status = self.ca_manager.get_ca_status(ca_handle)?;
 
         if let Some(error) = ca_status.repo().to_failure_opt() {
             issues.add_repo_issue(error)
@@ -555,8 +554,8 @@ impl KrillServer {
     }
 
     /// Returns the CA status, or an error if none can be found.
-    pub async fn ca_status(&self, ca: &Handle) -> KrillResult<Arc<CaStatus>> {
-        self.ca_manager.get_ca_status(ca).await
+    pub fn ca_status(&self, ca: &Handle) -> KrillResult<Arc<CaStatus>> {
+        self.ca_manager.get_ca_status(ca)
     }
 
     /// Delete a CA. Let it do best effort revocation requests and withdraw

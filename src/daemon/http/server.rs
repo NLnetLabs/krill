@@ -444,7 +444,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 let mut ca_status_map: HashMap<Handle, Arc<CaStatus>> = HashMap::new();
 
                 for ca in cas_stats.keys() {
-                    if let Ok(ca_status) = server.ca_status(ca).await {
+                    if let Ok(ca_status) = server.ca_status(ca) {
                         ca_status_map.insert(ca.clone(), ca_status);
                     }
                 }
@@ -1069,7 +1069,7 @@ async fn api_authorized(req: Request) -> RoutingResult {
 
 async fn api_bulk(req: Request, path: &mut RequestPath) -> RoutingResult {
     match path.full() {
-        "/api/v1/bulk/cas/issues" => api_all_ca_issues(req).await,
+        "/api/v1/bulk/cas/issues" => api_all_ca_issues(req),
         "/api/v1/bulk/cas/sync/parent" => api_refresh_all(req).await,
         "/api/v1/bulk/cas/sync/repo" => api_resync_all(req).await,
         "/api/v1/bulk/cas/publish" => api_republish_all(req).await,
@@ -1091,7 +1091,7 @@ async fn api_cas(req: Request, path: &mut RequestPath) -> RoutingResult {
                 Some("history") => api_ca_history(req, path, ca).await,
 
                 Some("id") => api_ca_id(req, path, ca).await,
-                Some("issues") => api_ca_issues(req, ca).await,
+                Some("issues") => api_ca_issues(req, ca),
                 Some("keys") => api_ca_keys(req, path, ca).await,
                 Some("parents") => api_ca_parents(req, path, ca).await,
                 Some("repo") => api_ca_repo(req, path, ca).await,
@@ -1404,24 +1404,24 @@ pub async fn api_ca_parent_res_xml(req: Request, ca: Handle, child: ChildHandle)
 
 //------------ Admin: CertAuth -----------------------------------------------
 
-async fn api_all_ca_issues(req: Request) -> RoutingResult {
+fn api_all_ca_issues(req: Request) -> RoutingResult {
     match *req.method() {
         Method::GET => aa!(req, Permission::CA_READ, {
             let actor = req.actor();
-            render_json_res(req.state().all_ca_issues(&actor).await)
+            render_json_res(req.state().all_ca_issues(&actor))
         }),
         _ => render_unknown_method(),
     }
 }
 
 /// Returns the health (state) for a given CA.
-async fn api_ca_issues(req: Request, ca: Handle) -> RoutingResult {
+fn api_ca_issues(req: Request, ca: Handle) -> RoutingResult {
     match *req.method() {
         Method::GET => aa!(
             req,
             Permission::CA_READ,
             ca.clone(),
-            render_json_res(req.state().ca_issues(&ca).await)
+            render_json_res(req.state().ca_issues(&ca))
         ),
         _ => render_unknown_method(),
     }
@@ -1495,7 +1495,7 @@ async fn api_ca_my_parent_statuses(req: Request, ca: Handle) -> RoutingResult {
         req,
         Permission::CA_READ,
         ca.clone(),
-        render_json_res(req.state().ca_status(&ca).await.map(|s| s.parents().clone()))
+        render_json_res(req.state().ca_status(&ca).map(|s| s.parents().clone()))
     )
 }
 
@@ -1685,7 +1685,7 @@ async fn api_ca_repo_status(req: Request, handle: Handle) -> RoutingResult {
             req,
             Permission::CA_READ,
             handle.clone(),
-            render_json_res(req.state().ca_status(&handle).await.map(|status| status.repo().clone()))
+            render_json_res(req.state().ca_status(&handle).map(|status| status.repo().clone()))
         ),
         _ => render_unknown_method(),
     }

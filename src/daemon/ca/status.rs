@@ -1,7 +1,5 @@
 use std::{collections::HashMap, path::Path, str::FromStr, sync::Arc};
 
-use tokio::sync::RwLock;
-
 use crate::commons::{
     api::{
         rrdp::PublishElement, ChildConnectionStats, ChildHandle, ChildStatus, ChildrenConnectionStats, Entitlements,
@@ -65,14 +63,12 @@ impl Default for CaStatus {
 
 pub struct StatusStore {
     store: KeyValueStore,
-    cache: RwLock<HashMap<Handle, Arc<CaStatus>>>,
 }
 
 impl StatusStore {
     pub fn new(work_dir: &Path, namespace: &str) -> KrillResult<Self> {
         let store = KeyValueStore::disk(work_dir, namespace)?;
-        let cache = RwLock::new(HashMap::new());
-        Ok(StatusStore { store, cache })
+        Ok(StatusStore { store })
     }
 
     fn status_key(ca: &Handle) -> KeyStoreKey {
@@ -80,28 +76,18 @@ impl StatusStore {
     }
 
     /// Returns the stored CaStatus for a CA, or a default (empty) status if it can't be found
-    pub async fn get_ca_status(&self, ca: &Handle) -> KrillResult<Arc<CaStatus>> {
-        // Try to get it from cache first
-        {
-            if let Some(status) = self.cache.read().await.get(ca) {
-                return Ok(status.clone());
-            }
-        }
-
+    pub fn get_ca_status(&self, ca: &Handle) -> KrillResult<Arc<CaStatus>> {
         // Try to get it from disk, and if present load the cache
         let status: CaStatus = self.store.get(&Self::status_key(ca))?.unwrap_or_default();
-        let status = Arc::new(status);
-
-        self.cache.write().await.insert(ca.clone(), status.clone());
-        Ok(status)
+        Ok(Arc::new(status))
     }
 
     /// Returns all CAs for which a status exists
-    pub async fn cas(&self) -> KrillResult<HashMap<Handle, Arc<CaStatus>>> {
+    pub fn cas(&self) -> KrillResult<HashMap<Handle, Arc<CaStatus>>> {
         let mut cas = HashMap::new();
         for scope in self.store.scopes()? {
             if let Ok(ca) = Handle::from_str(&scope) {
-                let status = self.get_ca_status(&ca).await?;
+                let status = self.get_ca_status(&ca)?;
                 cas.insert(ca, status);
             }
         }
@@ -124,7 +110,6 @@ impl StatusStore {
                 .parents
                 .set_failure(parent, uri, error_response, next_run_seconds)
         })
-        .await
     }
 
     pub async fn set_parent_last_updated(
@@ -137,10 +122,9 @@ impl StatusStore {
         self.update_ca_status(ca, |status| {
             status.parents.set_last_updated(parent, uri, next_run_seconds)
         })
-        .await
     }
 
-    pub async fn set_parent_entitlements(
+    pub fn set_parent_entitlements(
         &self,
         ca: &Handle,
         parent: &ParentHandle,
@@ -153,24 +137,17 @@ impl StatusStore {
                 .parents
                 .set_entitlements(parent, uri, entitlements, next_run_seconds)
         })
-        .await
     }
 
-    pub async fn remove_parent(&self, ca: &Handle, parent: &ParentHandle) -> KrillResult<()> {
-        self.update_ca_status(ca, |status| status.parents.remove(parent)).await
+    pub fn remove_parent(&self, ca: &Handle, parent: &ParentHandle) -> KrillResult<()> {
+        self.update_ca_status(ca, |status| status.parents.remove(parent))
     }
 
-    pub async fn set_child_success(
-        &self,
-        ca: &Handle,
-        child: &ChildHandle,
-        user_agent: Option<String>,
-    ) -> KrillResult<()> {
+    pub fn set_child_success(&self, ca: &Handle, child: &ChildHandle, user_agent: Option<String>) -> KrillResult<()> {
         self.update_ca_child_status(ca, child, |status| status.set_success(user_agent))
-            .await
     }
 
-    pub async fn set_child_failure(
+    pub fn set_child_failure(
         &self,
         ca: &Handle,
         child: &ChildHandle,
@@ -178,66 +155,48 @@ impl StatusStore {
         error: &Error,
     ) -> KrillResult<()> {
         let error_response = Self::error_to_error_res(error);
-
         self.update_ca_child_status(ca, child, |status| status.set_failure(user_agent, error_response))
-            .await
     }
 
     /// Marks a child as suspended. Note that it will be implicitly unsuspended whenever a new success or
     /// or failure is recorded for the child.
-    pub async fn set_child_suspended(&self, ca: &Handle, child: &ChildHandle) -> KrillResult<()> {
+    pub fn set_child_suspended(&self, ca: &Handle, child: &ChildHandle) -> KrillResult<()> {
         self.update_ca_child_status(ca, child, |status| status.set_suspended())
-            .await
     }
 
     /// Adds a child with default status values if the child is missing
-    pub async fn set_child_default_if_missing(&self, ca: &Handle, child: &ChildHandle) -> KrillResult<()> {
-        self.update_ca_child_status(ca, child, |_status| {}).await
+    pub fn set_child_default_if_missing(&self, ca: &Handle, child: &ChildHandle) -> KrillResult<()> {
+        self.update_ca_child_status(ca, child, |_status| {})
     }
 
     /// Remove a CA from the saved status
     /// This should be called when the CA is removed from Krill, but note that if this is done for a CA which still exists
     /// a new empty default status will be re-generated when it is accessed for this CA.
-    pub async fn remove_ca(&self, ca: &Handle) -> KrillResult<()> {
-        let mut cache = self.cache.write().await;
+    pub fn remove_ca(&self, ca: &Handle) -> KrillResult<()> {
+        let scope = ca.as_str();
 
-        if !cache.contains_key(ca) {
-            Ok(()) // idempotent
-        } else {
-            let scope = ca.as_str();
+        self.store.drop_scope(scope)?; // will fail in case of I/O errors only
 
-            self.store.drop_scope(scope)?; // will fail in case of I/O errors only
-            cache.remove(ca);
-
-            Ok(())
-        }
+        Ok(())
     }
 
     /// Removes a child for the given CA.
-    pub async fn remove_child(&self, ca: &Handle, child: &ChildHandle) -> KrillResult<()> {
+    pub fn remove_child(&self, ca: &Handle, child: &ChildHandle) -> KrillResult<()> {
         self.update_ca_status(ca, |status| {
             status.children.remove(child);
         })
-        .await
     }
 
-    pub async fn set_status_repo_failure(&self, ca: &Handle, uri: ServiceUri, error: &Error) -> KrillResult<()> {
+    pub fn set_status_repo_failure(&self, ca: &Handle, uri: ServiceUri, error: &Error) -> KrillResult<()> {
         let error_response = Self::error_to_error_res(error);
         self.update_ca_status(ca, |status| status.repo.set_failure(uri, error_response))
-            .await
     }
 
-    pub async fn set_status_repo_success(
-        &self,
-        ca: &Handle,
-        uri: ServiceUri,
-        next_update: Timestamp,
-    ) -> KrillResult<()> {
+    pub fn set_status_repo_success(&self, ca: &Handle, uri: ServiceUri, next_update: Timestamp) -> KrillResult<()> {
         self.update_ca_status(ca, |status| status.repo.set_last_updated(uri, next_update))
-            .await
     }
 
-    pub async fn set_status_repo_published(
+    pub fn set_status_repo_published(
         &self,
         ca: &Handle,
         uri: ServiceUri,
@@ -245,26 +204,22 @@ impl StatusStore {
         next_update: Timestamp,
     ) -> KrillResult<()> {
         self.update_ca_status(ca, |status| status.repo.set_published(uri, published, next_update))
-            .await
     }
 
-    async fn update_ca_status<F>(&self, ca: &Handle, op: F) -> KrillResult<()>
+    fn update_ca_status<F>(&self, ca: &Handle, op: F) -> KrillResult<()>
     where
         F: FnOnce(&mut CaStatus),
     {
-        let mut cache = self.cache.write().await;
-
         let mut status: CaStatus = self.store.get(&Self::status_key(ca))?.unwrap_or_default();
 
         op(&mut status);
 
         self.store.store(&Self::status_key(ca), &status)?;
-        cache.insert(ca.clone(), Arc::new(status));
 
         Ok(())
     }
 
-    async fn update_ca_child_status<F>(&self, ca: &Handle, child: &ChildHandle, op: F) -> KrillResult<()>
+    fn update_ca_child_status<F>(&self, ca: &Handle, child: &ChildHandle, op: F) -> KrillResult<()>
     where
         F: FnOnce(&mut ChildStatus),
     {
@@ -278,7 +233,6 @@ impl StatusStore {
             };
             op(&mut child_status)
         })
-        .await
     }
 
     fn error_to_error_res(error: &Error) -> ErrorResponse {
