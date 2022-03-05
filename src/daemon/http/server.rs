@@ -141,9 +141,6 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
         println!("Krill upgrade successful");
     }
 
-    // Reset the RRDP session after a restart.
-    krill.repository_session_reset()?;
-
     let state = Arc::new(krill);
 
     let service = make_service_fn(move |_| {
@@ -1209,6 +1206,10 @@ async fn api_publication_server(req: Request, path: &mut RequestPath) -> Routing
                 }
             }
             Method::DELETE => render_empty_res(req.state.repository_clear()),
+            _ => render_unknown_method(),
+        },
+        Some("session_reset") => match *req.method() {
+            Method::POST => render_empty_res(req.state().repository_session_reset()),
             _ => render_unknown_method(),
         },
         _ => render_unknown_method(),

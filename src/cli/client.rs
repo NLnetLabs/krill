@@ -468,6 +468,11 @@ impl KrillClient {
                 delete(&self.server, &self.token, uri).await?;
                 Ok(ApiResponse::Empty)
             }
+            PubServerCommand::RepositorySessionReset => {
+                let uri = "api/v1/pubd/session_reset";
+                post_empty(&self.server, &self.token, uri).await?;
+                Ok(ApiResponse::Empty)
+            }
             PubServerCommand::AddPublisher(req) => {
                 let res = post_json_with_response(&self.server, &self.token, "api/v1/pubd/publishers", req).await?;
                 Ok(ApiResponse::Rfc8183RepositoryResponse(res))

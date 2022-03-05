@@ -1213,11 +1213,19 @@ impl Options {
         app.subcommand(sub)
     }
 
+    fn make_publication_server_session_reset_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("session-reset").about("Reset the RRDP session");
+        sub = Options::add_general_args(sub);
+
+        app.subcommand(sub)
+    }
+
     fn make_publication_server_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("server").about("Manage the Publication Server (init/stats)");
         sub = Self::make_publication_server_stats_sc(sub);
         sub = Self::make_publication_server_init_sc(sub);
         sub = Self::make_publication_server_clear_sc(sub);
+        sub = Self::make_publication_server_session_reset_sc(sub);
         app.subcommand(sub)
     }
 
@@ -2226,6 +2234,12 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
+    fn parse_matches_publication_server_server_reset(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let command = Command::PubServer(PubServerCommand::RepositorySessionReset);
+        Ok(Options::make(general_args, command))
+    }
+
     fn parse_matches_publication_server(matches: &ArgMatches) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("stats") {
             Self::parse_matches_publication_server_stats(m)
@@ -2233,6 +2247,8 @@ impl Options {
             Self::parse_matches_publication_server_init(m)
         } else if let Some(m) = matches.subcommand_matches("clear") {
             Self::parse_matches_publication_server_clear(m)
+        } else if let Some(m) = matches.subcommand_matches("session-reset") {
+            Self::parse_matches_publication_server_server_reset(m)
         } else {
             Err(Error::UnrecognizedSubCommand)
         }
@@ -2528,6 +2544,7 @@ pub enum PubServerCommand {
     RepositoryStats,
     RepositoryInit(PublicationServerUris),
     RepositoryClear,
+    RepositorySessionReset,
 }
 
 //------------ Error ---------------------------------------------------------
