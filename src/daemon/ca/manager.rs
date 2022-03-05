@@ -1411,6 +1411,12 @@ impl CaManager {
         handle: &Handle,
         parent_res: &rfc8183::ParentResponse,
     ) -> KrillResult<api::Entitlements> {
+        debug!(
+            "Getting entitlements for CA '{}' from parent '{}'",
+            handle,
+            parent_res.parent_handle()
+        );
+
         let child = self.ca_store.get_latest(handle)?;
 
         // create a list request
@@ -1792,8 +1798,6 @@ impl CaManager {
         // (and automated testing) as possible. This also ensures that both sides perform
         // signing and validation same as though they would have been on different servers.
         let res = if let Some(parent) = service_uri.local_parent(&self.config.service_uri()) {
-            debug!("Will send RFC 6492 message to *local* parent '{}'", parent);
-
             self.rfc6492(
                 &parent,
                 signed_msg.clone(),
