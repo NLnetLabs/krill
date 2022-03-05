@@ -137,7 +137,8 @@ impl KrillServer {
         // Used to have a shared queue for the caserver and the background job scheduler.
         let event_queue = Arc::new(MessageQueue::default());
 
-        let ca_manager = Arc::new(ca::CaManager::build(config.clone(), event_queue.clone(), signer).await?);
+        let ca_manager =
+            Arc::new(ca::CaManager::build(config.clone(), event_queue.clone(), signer, system_actor.clone()).await?);
 
         ca_manager.resync_ca_statuses().await?;
 

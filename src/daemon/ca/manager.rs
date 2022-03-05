@@ -127,11 +127,19 @@ pub struct CaManager {
     locks: Arc<CaLocks>,
     config: Arc<Config>,
     signer: Arc<KrillSigner>,
+
+    // System actor
+    system_actor: Actor,
 }
 
 impl CaManager {
     /// Builds a new CaServer. Will return an error if the CA store cannot be initialized.
-    pub async fn build(config: Arc<Config>, mq: Arc<MessageQueue>, signer: Arc<KrillSigner>) -> KrillResult<Self> {
+    pub async fn build(
+        config: Arc<Config>,
+        mq: Arc<MessageQueue>,
+        signer: Arc<KrillSigner>,
+        system_actor: Actor,
+    ) -> KrillResult<Self> {
         // Create the AggregateStore for the event-sourced `CertAuth` structures that handle
         // most CA functions.
         let mut ca_store = AggregateStore::<CertAuth>::disk(&config.data_dir, CASERVER_DIR)?;
@@ -190,6 +198,7 @@ impl CaManager {
             locks,
             config,
             signer,
+            system_actor,
         })
     }
 
@@ -1776,11 +1785,29 @@ impl CaManager {
 
         let uri = service_uri.to_string();
 
-        let timeout = self.config.post_protocol_msg_timeout_seconds;
+        // check if the uri is for a parent ca under this same krill instance and if so send
+        // the request directly. Otherwise post it the request over http (see issue: #791).
+        //
+        // Note that we only do this here to ensure that we have as much code re-use
+        // (and automated testing) as possible. This also ensures that both sides perform
+        // signing and validation same as though they would have been on different servers.
+        let res = if let Some(parent) = service_uri.local_parent(&self.config.service_uri()) {
+            debug!("Will send RFC 6492 message to *local* parent '{}'", parent);
 
-        let res = httpclient::post_binary_with_full_ua(&uri, &signed_msg, content_type, timeout)
-            .await
-            .map_err(Error::HttpClientError)?;
+            self.rfc6492(
+                &parent,
+                signed_msg.clone(),
+                Some("local-child".to_string()),
+                &self.system_actor,
+            )
+            .await?
+        } else {
+            let timeout = self.config.post_protocol_msg_timeout_seconds;
+
+            httpclient::post_binary_with_full_ua(&uri, &signed_msg, content_type, timeout)
+                .await
+                .map_err(Error::HttpClientError)?
+        };
 
         if let Some(logger) = cms_logger {
             logger.sent(&signed_msg)?;

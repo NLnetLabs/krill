@@ -1928,7 +1928,13 @@ impl ChildExchange {
 
     pub fn is_krill_above_0_9_1(&self) -> bool {
         if let Some(agent) = &self.user_agent {
-            if let Some(version) = agent.strip_prefix("krill/") {
+            // local-child is used by local children, it is extremely
+            // unlikely that they would become suspend candidates in
+            // the real world - but.. we have to use these to test the
+            // auto-suspend logic in the high-level "suspend.rs" test
+            if agent == "local-child" {
+                return true;
+            } else if let Some(version) = agent.strip_prefix("krill/") {
                 if let Ok(krill_version) = KrillVersion::from_str(version) {
                     return krill_version > KrillVersion::release(0, 9, 1);
                 }
