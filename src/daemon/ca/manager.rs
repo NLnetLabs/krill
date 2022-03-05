@@ -2,7 +2,6 @@ use std::{collections::HashMap, ops::Deref, sync::Arc};
 
 use api::{Publish, Update, Withdraw};
 use futures::future::join_all;
-use tokio::sync::Mutex;
 
 use bytes::Bytes;
 use chrono::Duration;
@@ -123,7 +122,7 @@ impl CaLocks {
 pub struct CaManager {
     ca_store: Arc<AggregateStore<CertAuth>>,
     ca_objects_store: Arc<CaObjectsStore>,
-    status_store: Arc<Mutex<StatusStore>>,
+    status_store: Arc<StatusStore>,
     locks: Arc<CaLocks>,
     config: Arc<Config>,
     signer: Arc<KrillSigner>,
@@ -194,7 +193,7 @@ impl CaManager {
         Ok(CaManager {
             ca_store: Arc::new(ca_store),
             ca_objects_store,
-            status_store: Arc::new(Mutex::new(status_store)),
+            status_store: Arc::new(status_store),
             locks,
             config,
             signer,
@@ -338,9 +337,9 @@ impl CaManager {
     }
 
     /// Gets current CA status
-    pub async fn get_ca_status(&self, ca: &Handle) -> KrillResult<Arc<CaStatus>> {
+    pub fn get_ca_status(&self, ca: &Handle) -> KrillResult<Arc<CaStatus>> {
         if self.has_ca(ca)? {
-            self.status_store.lock().await.get_ca_status(ca).await
+            self.status_store.get_ca_status(ca)
         } else {
             Err(Error::CaUnknown(ca.clone()))
         }
@@ -394,7 +393,7 @@ impl CaManager {
         }
 
         self.ca_store.drop_aggregate(ca_handle)?;
-        self.status_store.lock().await.remove_ca(ca_handle).await?;
+        self.status_store.remove_ca(ca_handle)?;
 
         self.locks.drop_ca(ca_handle).await;
 
@@ -411,7 +410,7 @@ impl CaManager {
     pub async fn resync_ca_statuses(&self) -> KrillResult<()> {
         let cas = self.ca_store.list()?;
 
-        let mut ca_statuses = self.status_store.lock().await.cas().await?;
+        let mut ca_statuses = self.status_store.cas()?;
 
         // loop over existing CAs and get their status
         for ca_handle in cas {
@@ -420,7 +419,7 @@ impl CaManager {
                 Some(status) => status,
                 None => {
                     // Getting a missing status will ensure that a new empty status is generated.
-                    self.status_store.lock().await.get_ca_status(&ca_handle).await?
+                    self.status_store.get_ca_status(&ca_handle)?
                 }
             };
 
@@ -429,28 +428,20 @@ impl CaManager {
             // add default status for missing children
             for child in ca.children() {
                 if status_children.remove(child).is_none() {
-                    self.status_store
-                        .lock()
-                        .await
-                        .set_child_default_if_missing(&ca_handle, child)
-                        .await?;
+                    self.status_store.set_child_default_if_missing(&ca_handle, child)?;
                 }
             }
 
             // remove surplus children status
             for surplus_child in status_children.keys() {
-                self.status_store
-                    .lock()
-                    .await
-                    .remove_child(&ca_handle, surplus_child)
-                    .await?;
+                self.status_store.remove_child(&ca_handle, surplus_child)?;
             }
         }
 
         // remove the status for any left-over CAs with status
         for surplus_ca in ca_statuses.keys() {
             info!("Removing the cached status for a removed CA: {}", surplus_ca);
-            self.status_store.lock().await.remove_ca(surplus_ca).await?;
+            self.status_store.remove_ca(surplus_ca)?;
         }
 
         Ok(())
@@ -588,7 +579,7 @@ impl CaManager {
     /// Removes a child from this CA. This will also ensure that certificates issued to the child
     /// are revoked and withdrawn.
     pub async fn ca_child_remove(&self, ca: &Handle, child: ChildHandle, actor: &Actor) -> KrillResult<()> {
-        self.status_store.lock().await.remove_child(ca, &child).await?;
+        self.status_store.remove_child(ca, &child)?;
         self.send_command(CmdDet::child_remove(ca, child, actor)).await?;
 
         Ok(())
@@ -678,17 +669,11 @@ impl CaManager {
         match &res {
             Ok(_) => {
                 self.status_store
-                    .lock()
-                    .await
-                    .set_child_success(ca.handle(), &child_handle, user_agent)
-                    .await?;
+                    .set_child_success(ca.handle(), &child_handle, user_agent)?;
             }
             Err(e) => {
                 self.status_store
-                    .lock()
-                    .await
-                    .set_child_failure(ca.handle(), &child_handle, user_agent, e)
-                    .await?;
+                    .set_child_failure(ca.handle(), &child_handle, user_agent, e)?;
             }
         }
 
@@ -794,7 +779,7 @@ impl CaManager {
             );
         }
 
-        self.status_store.lock().await.remove_parent(&handle, &parent).await?;
+        self.status_store.remove_parent(&handle, &parent)?;
 
         let upd = CmdDet::remove_parent(&handle, parent, actor);
         self.send_command(upd).await?;
@@ -849,7 +834,7 @@ impl CaManager {
 
         // suspend inactive children, if so configured
         if let Some(threshold_seconds) = threshold_seconds {
-            if let Ok(ca_status) = self.get_ca_status(ca_handle).await {
+            if let Ok(ca_status) = self.get_ca_status(ca_handle) {
                 let connections = ca_status.get_children_connection_stats();
 
                 for child in connections.suspension_candidates(threshold_seconds) {
@@ -863,13 +848,7 @@ impl CaManager {
                         "Child '{}' under CA '{}' was inactive for more than {}. Will suspend it.",
                         child, ca_handle, threshold_string
                     );
-                    if let Err(e) = self
-                        .status_store
-                        .lock()
-                        .await
-                        .set_child_suspended(ca_handle, &child)
-                        .await
-                    {
+                    if let Err(e) = self.status_store.set_child_suspended(ca_handle, &child) {
                         panic!("System level error encountered while updating ca status: {}", e);
                     }
 
@@ -898,7 +877,7 @@ impl CaManager {
                 } else {
                     // more parents than the batch size exist, so get candidates based on
                     // the known parent statuses for this CA.
-                    match self.status_store.lock().await.get_ca_status(ca_handle).await {
+                    match self.status_store.get_ca_status(ca_handle) {
                         Err(e) => {
                             panic!("System level error encountered while updating ca status: {}", e);
                         }
@@ -1016,16 +995,12 @@ impl CaManager {
                 {
                     Err(e) => {
                         self.status_store
-                            .lock()
-                            .await
                             .set_parent_failure(handle, parent, parent_uri, &e, next_run_seconds)
                             .await?;
                         Err(e)
                     }
                     Ok(res) => {
                         self.status_store
-                            .lock()
-                            .await
                             .set_parent_last_updated(handle, parent, parent_uri, next_run_seconds)
                             .await?;
                         Ok(res)
@@ -1322,8 +1297,6 @@ impl CaManager {
         let uri = parent_res.service_uri();
         if errors.is_empty() {
             self.status_store
-                .lock()
-                .await
                 .set_parent_last_updated(handle, parent, uri, self.config.ca_refresh_seconds as i64)
                 .await?;
 
@@ -1336,8 +1309,6 @@ impl CaManager {
             };
 
             self.status_store
-                .lock()
-                .await
                 .set_parent_failure(handle, parent, uri, &e, REQUEUE_DELAY_SECONDS)
                 .await?;
 
@@ -1387,18 +1358,13 @@ impl CaManager {
                             // otherwise we end up with entries if a new parent is rejected because
                             // of the error.
                             self.status_store
-                                .lock()
-                                .await
                                 .set_parent_failure(ca, parent, uri, error, next_run_seconds)
                                 .await?;
                         }
                     }
                     Ok(entitlements) => {
                         self.status_store
-                            .lock()
-                            .await
-                            .set_parent_entitlements(ca, parent, uri, entitlements, next_run_seconds)
-                            .await?;
+                            .set_parent_entitlements(ca, parent, uri, entitlements, next_run_seconds)?;
                     }
                 }
                 result
@@ -1635,11 +1601,7 @@ impl CaManager {
             .await
         {
             Err(e) => {
-                self.status_store
-                    .lock()
-                    .await
-                    .set_status_repo_failure(ca_handle, uri.clone(), &e)
-                    .await?;
+                self.status_store.set_status_repo_failure(ca_handle, uri.clone(), &e)?;
                 return Err(e);
             }
             Ok(reply) => reply,
@@ -1654,28 +1616,19 @@ impl CaManager {
         match reply {
             rfc8181::ReplyMessage::ListReply(list_reply) => {
                 self.status_store
-                    .lock()
-                    .await
-                    .set_status_repo_success(ca_handle, uri.clone(), next_update)
-                    .await?;
+                    .set_status_repo_success(ca_handle, uri.clone(), next_update)?;
                 Ok(list_reply)
             }
             rfc8181::ReplyMessage::SuccessReply => {
                 let err = Error::custom("Got success reply to list query?!");
                 self.status_store
-                    .lock()
-                    .await
-                    .set_status_repo_failure(ca_handle, uri.clone(), &err)
-                    .await?;
+                    .set_status_repo_failure(ca_handle, uri.clone(), &err)?;
                 Err(err)
             }
             rfc8181::ReplyMessage::ErrorReply(e) => {
                 let err = Error::Custom(format!("Got error reply: {}", e));
                 self.status_store
-                    .lock()
-                    .await
-                    .set_status_repo_failure(ca_handle, uri.clone(), &err)
-                    .await?;
+                    .set_status_repo_failure(ca_handle, uri.clone(), &err)?;
                 Err(err)
             }
         }
@@ -1696,11 +1649,7 @@ impl CaManager {
         {
             Ok(reply) => reply,
             Err(e) => {
-                self.status_store
-                    .lock()
-                    .await
-                    .set_status_repo_failure(ca_handle, uri.clone(), &e)
-                    .await?;
+                self.status_store.set_status_repo_failure(ca_handle, uri.clone(), &e)?;
                 return Err(e);
             }
         };
@@ -1718,28 +1667,19 @@ impl CaManager {
                     .unwrap_or_else(|| Timestamp::now_plus_hours(self.config.republish_hours()));
 
                 self.status_store
-                    .lock()
-                    .await
-                    .set_status_repo_published(ca_handle, uri.clone(), published, next_update)
-                    .await?;
+                    .set_status_repo_published(ca_handle, uri.clone(), published, next_update)?;
                 Ok(())
             }
             rfc8181::ReplyMessage::ErrorReply(e) => {
                 let err = Error::Custom(format!("Got error reply: {}", e));
                 self.status_store
-                    .lock()
-                    .await
-                    .set_status_repo_failure(ca_handle, uri.clone(), &err)
-                    .await?;
+                    .set_status_repo_failure(ca_handle, uri.clone(), &err)?;
                 Err(err)
             }
             rfc8181::ReplyMessage::ListReply(_) => {
                 let err = Error::custom("Got list reply to delta query?!");
                 self.status_store
-                    .lock()
-                    .await
-                    .set_status_repo_failure(ca_handle, uri.clone(), &err)
-                    .await?;
+                    .set_status_repo_failure(ca_handle, uri.clone(), &err)?;
                 Err(err)
             }
         }
