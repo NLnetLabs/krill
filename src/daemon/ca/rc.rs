@@ -652,8 +652,12 @@ impl ResourceClass {
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<RoaUpdates> {
-        let key = self.get_current_key()?;
-        self.roas.renew(force, key, issuance_timing, signer)
+        if let Ok(key) = self.get_current_key() {
+            self.roas.renew(force, key, issuance_timing, signer)
+        } else {
+            debug!("no ROAs to renew - resource class has no current key");
+            Ok(RoaUpdates::default())
+        }
     }
 
     /// Publish all ROAs under the new key
@@ -668,10 +672,14 @@ impl ResourceClass {
 
     /// Updates the ROAs in accordance with the current authorizations
     pub fn update_roas(&self, routes: &Routes, config: &Config, signer: &KrillSigner) -> KrillResult<RoaUpdates> {
-        let key = self.get_current_key()?;
-        let resources = key.incoming_cert().resources();
-        let routes = routes.filter(resources);
-        self.roas.update(&routes, key, config, signer)
+        if let Ok(key) = self.get_current_key() {
+            let resources = key.incoming_cert().resources();
+            let routes = routes.filter(resources);
+            self.roas.update(&routes, key, config, signer)
+        } else {
+            debug!("no ROAs to update - resource class has no current key");
+            Ok(RoaUpdates::default())
+        }
     }
 
     /// Marks the ROAs as updated from a RoaUpdated event.
@@ -690,9 +698,13 @@ impl ResourceClass {
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<AspaObjectsUpdates> {
-        let key = self.get_current_key()?;
-        let renew_threshold = Some(Time::now() + Duration::weeks(issuance_timing.timing_aspa_reissue_weeks_before));
-        self.aspas.renew(key, renew_threshold, issuance_timing, signer)
+        if let Ok(key) = self.get_current_key() {
+            let renew_threshold = Some(Time::now() + Duration::weeks(issuance_timing.timing_aspa_reissue_weeks_before));
+            self.aspas.renew(key, renew_threshold, issuance_timing, signer)
+        } else {
+            debug!("no ASPAs to renew - resource class has no current key");
+            Ok(AspaObjectsUpdates::default())
+        }
     }
 
     /// Updates the ASPA objects in accordance with the supplied definitions
@@ -702,8 +714,12 @@ impl ResourceClass {
         config: &Config,
         signer: &KrillSigner,
     ) -> KrillResult<AspaObjectsUpdates> {
-        let key = self.get_current_key()?;
-        self.aspas.update(all_aspas, key, config, signer)
+        if let Ok(key) = self.get_current_key() {
+            self.aspas.update(all_aspas, key, config, signer)
+        } else {
+            debug!("no ASPAs to update - resource class has no current key");
+            Ok(AspaObjectsUpdates::default())
+        }
     }
 
     /// Apply ASPA object changes from events

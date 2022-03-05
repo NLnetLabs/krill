@@ -1928,7 +1928,10 @@ impl CaManager {
                 CmdDet::RouteAuthorizationsRenew(self.config.clone(), self.signer.clone()),
                 actor,
             );
-            self.send_command(cmd).await?;
+
+            if let Err(e) = self.send_command(cmd).await {
+                error!("Renewing ROAs for CA '{}' failed with error: {}", ca, e);
+            }
 
             let cmd = Cmd::new(
                 &ca,
@@ -1936,7 +1939,10 @@ impl CaManager {
                 CmdDet::AspasRenew(self.config.clone(), self.signer.clone()),
                 actor,
             );
-            self.send_command(cmd).await?;
+
+            if let Err(e) = self.send_command(cmd).await {
+                error!("Renewing ASPAs for CA '{}' failed with error: {}", ca, e);
+            }
         }
         Ok(())
     }
@@ -1954,7 +1960,9 @@ impl CaManager {
                 CmdDet::RouteAuthorizationsForceRenew(self.config.clone(), self.signer.clone()),
                 actor,
             );
-            self.send_command(cmd).await?;
+            if let Err(e) = self.send_command(cmd).await {
+                error!("Renewing ROAs for CA '{}' failed with error: {}", ca, e);
+            }
         }
         Ok(())
     }
