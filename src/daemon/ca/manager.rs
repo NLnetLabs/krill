@@ -599,22 +599,47 @@ impl CaManager {
     ) -> KrillResult<Bytes> {
         let ca = self.get_ca(ca_handle).await?;
 
-        let msg = match ProtocolCms::decode(msg_bytes.as_ref(), false) {
-            Ok(msg) => msg,
-            Err(e) => {
-                let msg = format!(
-                    "Could not decode RFC6492 message for: {}, msg: {}, err: {}",
-                    ca_handle,
-                    Base64::from_content(msg_bytes.as_ref()),
-                    e
-                );
-                return Err(Error::custom(msg));
+        let req_msg = self.rfc6492_unwrap_request(&ca, &msg_bytes)?;
+
+        // Create a logger for CMS (avoid cloning recipient)
+        let cms_logger = CmsLogger::for_rfc6492_rcvd(
+            self.config.rfc6492_log_dir.as_ref(),
+            req_msg.recipient(),
+            req_msg.sender(),
+        );
+
+        let res_msg = self.rfc6492_process_request(&ca, req_msg, user_agent, actor).await;
+
+        match res_msg {
+            Ok(msg) => {
+                let should_log_cms = !msg.is_list_response();
+                let reply_bytes = ca.sign_rfc6492_response(msg, self.signer.deref())?;
+
+                if should_log_cms {
+                    cms_logger.received(&msg_bytes)?;
+                    cms_logger.reply(&reply_bytes)?;
+                }
+
+                Ok(reply_bytes)
             }
-        };
+            Err(e) => {
+                cms_logger.received(&msg_bytes)?;
+                cms_logger.err(&e)?;
 
-        let content = ca.verify_rfc6492(msg)?;
+                Err(e)
+            }
+        }
+    }
 
-        let (child_handle, recipient, content) = content.unpack();
+    /// Process an rfc6492 message and create an unsigned response
+    pub async fn rfc6492_process_request(
+        &self,
+        ca: &CertAuth,
+        req_msg: rfc6492::Message,
+        user_agent: Option<String>,
+        actor: &Actor,
+    ) -> KrillResult<rfc6492::Message> {
+        let (child_handle, recipient, content) = req_msg.unpack();
 
         // If the child was suspended, because it was inactive, then we can now conclude
         // that it's become active again. So unsuspend it first, before processing the request
@@ -623,50 +648,36 @@ impl CaManager {
         if child_ca.is_suspended() {
             info!(
                 "Child '{}' under CA '{}' became active again, will unsuspend it.",
-                child_handle, ca_handle
+                child_handle,
+                ca.handle()
             );
             let req = UpdateChildRequest::unsuspend();
-            self.ca_child_update(ca_handle, child_handle.clone(), req, actor)
+            self.ca_child_update(ca.handle(), child_handle.clone(), req, actor)
                 .await?;
         }
 
-        let cms_logger = CmsLogger::for_rfc6492_rcvd(self.config.rfc6492_log_dir.as_ref(), &recipient, &child_handle);
-
-        let (res, should_log_cms) = match content {
+        let res_msg = match content {
             rfc6492::Content::Qry(rfc6492::Qry::Revoke(req)) => {
-                let res = self.revoke(ca_handle, child_handle.clone(), req, actor).await?;
-                let msg = rfc6492::Message::revoke_response(child_handle.clone(), recipient, res);
-                (self.wrap_rfc6492_response(ca_handle, msg).await, true)
+                let res = self.revoke(ca.handle(), child_handle.clone(), req, actor).await?;
+                Ok(rfc6492::Message::revoke_response(child_handle.clone(), recipient, res))
             }
             rfc6492::Content::Qry(rfc6492::Qry::List) => {
-                let entitlements = self.list(ca_handle, &child_handle).await?;
-                let msg = rfc6492::Message::list_response(child_handle.clone(), recipient, entitlements);
-                (self.wrap_rfc6492_response(ca_handle, msg).await, false)
+                let entitlements = self.list(ca.handle(), &child_handle).await?;
+                Ok(rfc6492::Message::list_response(
+                    child_handle.clone(),
+                    recipient,
+                    entitlements,
+                ))
             }
             rfc6492::Content::Qry(rfc6492::Qry::Issue(req)) => {
-                let res = self.issue(ca_handle, &child_handle, req, actor).await?;
-                let msg = rfc6492::Message::issue_response(child_handle.clone(), recipient, res);
-                (self.wrap_rfc6492_response(ca_handle, msg).await, true)
+                let res = self.issue(ca.handle(), &child_handle, req, actor).await?;
+                Ok(rfc6492::Message::issue_response(child_handle.clone(), recipient, res))
             }
-            _ => (Err(Error::custom("Unsupported RFC6492 message")), true),
+            _ => Err(Error::custom("Unsupported RFC6492 message")),
         };
 
-        // Log CMS messages if needed, and if enabled by config (this is a no-op if it isn't)
-        match &res {
-            Ok(reply_bytes) => {
-                if should_log_cms {
-                    cms_logger.received(&msg_bytes)?;
-                    cms_logger.reply(reply_bytes)?;
-                }
-            }
-            Err(e) => {
-                cms_logger.received(&msg_bytes)?;
-                cms_logger.err(e)?;
-            }
-        }
-
         // Set child status
-        match &res {
+        match &res_msg {
             Ok(_) => {
                 self.status_store
                     .set_child_success(ca.handle(), &child_handle, user_agent)?;
@@ -677,14 +688,19 @@ impl CaManager {
             }
         }
 
-        res
+        res_msg
     }
 
-    async fn wrap_rfc6492_response(&self, handle: &Handle, msg: rfc6492::Message) -> KrillResult<Bytes> {
-        trace!("RFC6492 Response wrapping for {}", handle);
-        self.get_ca(handle)
-            .await?
-            .sign_rfc6492_response(msg, self.signer.deref())
+    /// Unpack and validate a request message
+    fn rfc6492_unwrap_request(&self, ca: &CertAuth, msg_bytes: &Bytes) -> KrillResult<rfc6492::Message> {
+        match ProtocolCms::decode(msg_bytes.as_ref(), false) {
+            Ok(msg) => ca.verify_rfc6492(msg),
+            Err(e) => Err(Error::custom(format!(
+                "Could not decode RFC6492 message for: {}, err: {}",
+                ca.handle(),
+                e
+            ))),
+        }
     }
 
     /// List the entitlements for a child: 3.3.2 of RFC 6492.
@@ -1042,7 +1058,7 @@ impl CaManager {
                 let revoke = rfc6492::Message::revoke(sender, recipient, req.clone());
 
                 let response = self
-                    .send_rfc6492_and_validate_response(signing_key, parent_res, revoke.into_bytes(), Some(&cms_logger))
+                    .send_rfc6492_and_validate_response(signing_key, parent_res, revoke, Some(&cms_logger))
                     .await?;
 
                 match response {
@@ -1108,7 +1124,7 @@ impl CaManager {
         for (rcn, requests) in requests.into_iter() {
             // We could have multiple requests in a single resource class (multiple keys during rollover)
             for req in requests {
-                let msg = rfc6492::Message::issue(sender.clone(), recipient.clone(), req).into_bytes();
+                let msg = rfc6492::Message::issue(sender.clone(), recipient.clone(), req);
 
                 match self
                     .send_rfc6492_and_validate_response(&signing_key, parent_res, msg, cms_logger.as_ref())
@@ -1392,7 +1408,7 @@ impl CaManager {
         let list = rfc6492::Message::list(sender, recipient);
 
         let response = self
-            .send_rfc6492_and_validate_response(&child.id_key(), parent_res, list.into_bytes(), None)
+            .send_rfc6492_and_validate_response(&child.id_key(), parent_res, list, None)
             .await?;
 
         match response {
@@ -1406,24 +1422,32 @@ impl CaManager {
         &self,
         signing_key: &KeyIdentifier,
         parent_res: &rfc8183::ParentResponse,
-        msg: Bytes,
+        msg: rfc6492::Message,
         cms_logger: Option<&CmsLogger>,
     ) -> KrillResult<rfc6492::Res> {
-        let response = self
-            .send_protocol_msg_and_validate(
-                signing_key,
-                parent_res.service_uri(),
-                parent_res.id_cert(),
-                rfc6492::CONTENT_TYPE,
-                msg,
-                cms_logger,
-            )
-            .await?;
+        if let Some(parent) = parent_res.service_uri().local_parent(&self.config.service_uri()) {
+            let parent = self.get_ca(&parent).await?;
+            self.rfc6492_process_request(&parent, msg, Some("local-child".to_string()), &self.system_actor)
+                .await?
+                .into_reply()
+                .map_err(Error::custom)
+        } else {
+            let response = self
+                .send_protocol_msg_and_validate(
+                    signing_key,
+                    parent_res.service_uri(),
+                    parent_res.id_cert(),
+                    rfc6492::CONTENT_TYPE,
+                    msg.into_bytes(),
+                    cms_logger,
+                )
+                .await?;
 
-        rfc6492::Message::from_signed_message(&response)
-            .map_err(Error::custom)?
-            .into_reply()
-            .map_err(Error::custom)
+            rfc6492::Message::from_signed_message(&response)
+                .map_err(Error::custom)?
+                .into_reply()
+                .map_err(Error::custom)
+        }
     }
 }
 
@@ -1731,27 +1755,11 @@ impl CaManager {
 
         let uri = service_uri.to_string();
 
-        // check if the uri is for a parent ca under this same krill instance and if so send
-        // the request directly. Otherwise post it the request over http (see issue: #791).
-        //
-        // Note that we only do this here to ensure that we have as much code re-use
-        // (and automated testing) as possible. This also ensures that both sides perform
-        // signing and validation same as though they would have been on different servers.
-        let res = if let Some(parent) = service_uri.local_parent(&self.config.service_uri()) {
-            self.rfc6492(
-                &parent,
-                signed_msg.clone(),
-                Some("local-child".to_string()),
-                &self.system_actor,
-            )
-            .await?
-        } else {
-            let timeout = self.config.post_protocol_msg_timeout_seconds;
+        let timeout = self.config.post_protocol_msg_timeout_seconds;
 
-            httpclient::post_binary_with_full_ua(&uri, &signed_msg, content_type, timeout)
-                .await
-                .map_err(Error::HttpClientError)?
-        };
+        let res = httpclient::post_binary_with_full_ua(&uri, &signed_msg, content_type, timeout)
+            .await
+            .map_err(Error::HttpClientError)?;
 
         if let Some(logger) = cms_logger {
             logger.sent(&signed_msg)?;
