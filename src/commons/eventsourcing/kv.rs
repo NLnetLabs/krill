@@ -268,7 +268,11 @@ impl KeyValueStoreDiskImpl {
     /// creates a file path, prefixing the name with '.' much like vi
     fn swap_file_path(&self, key: &KeyStoreKey) -> PathBuf {
         let mut path = self.scope_path(key.scope.as_ref());
-        path.push(format!(".{}", key.name()));
+
+        let mut rnd_bytes = [0; 8];
+        openssl::rand::rand_bytes(&mut rnd_bytes).unwrap();
+        path.push(format!("{}-tmp-{}", key.name(), hex::encode(rnd_bytes)));
+
         path
     }
 
