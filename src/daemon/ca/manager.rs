@@ -815,8 +815,8 @@ impl CaManager {
     }
 
     /// Refresh all CAs:
-    /// - process all CAs in parallel
-    /// - process all parents for CAs in parallel
+    /// - process all CAs
+    /// - process all parents for each CAs in parallel
     ///    - send pending requests if present, or
     ///    - ask parent for updates and process if present
     ///
@@ -825,13 +825,19 @@ impl CaManager {
     ///       by 'ca_refresh' in the configuration.
     pub async fn cas_refresh_all(&self, started: Timestamp, actor: &Actor) {
         if let Ok(cas) = self.ca_store.list() {
-            let mut updates = vec![];
+            if self.config.cas_sync_parallel {
+                let mut updates = vec![];
 
-            for ca_handle in cas {
-                updates.push(self.cas_refresh_single(ca_handle, started, actor));
+                for ca_handle in cas {
+                    updates.push(self.cas_refresh_single(ca_handle, started, actor));
+                }
+
+                join_all(updates).await;
+            } else {
+                for ca_handle in cas {
+                    self.cas_refresh_single(ca_handle, started, actor).await;
+                }
             }
-
-            join_all(updates).await;
         }
     }
 
