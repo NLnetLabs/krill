@@ -48,12 +48,12 @@ You can read more about this upgrade process here:
 https://krill.docs.nlnetlabs.nl/en/latest/upgrade.html
 
 In addition to this we added a few other quick fixes in this release:
+- Make RRDP session reset manual option #793
 - Improve http connection error reporting #776
 - Fix deserialization bug for CAs with children #774
 - Connect to local parent directly #791
 - Do not sign/validate RFC6492 messages to/from local parent #797
-- Make RRDP session reset manual option #793
-- Remove cache and locking for CA statuses #795
+- Use per CA locking for CA statuses #795
 
 The full list of changes can be found here:
 https://github.com/NLnetLabs/krill/projects/20
