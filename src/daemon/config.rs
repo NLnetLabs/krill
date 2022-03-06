@@ -201,6 +201,10 @@ impl ConfigDefaults {
     fn timing_aspa_reissue_weeks_before() -> i64 {
         4
     }
+
+    fn cas_sync_parallel() -> bool {
+        false
+    }
 }
 
 //------------ Config --------------------------------------------------------
@@ -319,6 +323,10 @@ pub struct Config {
     pub metrics: MetricsConfig,
 
     pub testbed: Option<TestBed>,
+
+    // Sync CA strategy
+    #[serde(default = "ConfigDefaults::cas_sync_parallel")]
+    pub cas_sync_parallel: bool,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -647,6 +655,8 @@ impl Config {
             None
         };
 
+        let cas_sync_parallel = false;
+
         let suspend_child_after_inactive_seconds = if enable_suspend { Some(3) } else { None };
 
         Config {
@@ -690,6 +700,7 @@ impl Config {
             repository_retention,
             metrics,
             testbed,
+            cas_sync_parallel,
         }
     }
 
