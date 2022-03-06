@@ -21,7 +21,7 @@ For more information please refer to the [documentation](https://krill.docs.nlne
 
 # Changelog
 
-## 0.9.5 RC4 'Have You considered these Upgrades?'
+## 0.9.5 RC5 'Have You considered these Upgrades?'
 
 This release was primarily intended to improve support for migrations of pre-0.9.0
 installations. The upgrade code has been separated more cleanly into a step where
@@ -51,6 +51,7 @@ In addition to this we added a few other quick fixes in this release:
 - Improve http connection error reporting #776
 - Fix deserialization bug for CAs with children #774
 - Connect to local parent directly #791
+- Do not sign/validate RFC6492 messages to/from local parent #797
 - Make RRDP session reset manual option #793
 - Remove cache and locking for CA statuses #795
 
