@@ -3,7 +3,7 @@ extern crate krill;
 use std::sync::Arc;
 
 use clap::{App, Arg};
-use log::{error, info};
+use log::info;
 
 use krill::{
     constants::{KRILL_DEFAULT_CONFIG_FILE, KRILL_UP_APP, KRILL_VERSION},

@@ -1,9 +1,4 @@
-use std::{
-    collections::HashMap,
-    path::Path,
-    str::FromStr,
-    sync::{Arc, RwLock},
-};
+use std::{collections::HashMap, path::Path, str::FromStr, sync::Arc};
 
 use crate::commons::{
     api::{

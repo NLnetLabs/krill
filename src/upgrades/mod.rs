@@ -354,7 +354,6 @@ pub fn finalise_data_migration(upgrade: &UpgradeVersions, config: &Config) -> Kr
     // Move directories - if applicable (servers can have cas, repo server or both)
 
     let from = upgrade.from();
-    let current = upgrade.to();
     let data_dir = &config.data_dir;
     let upgrade_dir = config.upgrade_data_dir();
 
