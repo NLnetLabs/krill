@@ -21,7 +21,7 @@ For more information please refer to the [documentation](https://krill.docs.nlne
 
 # Changelog
 
-## 0.9.5 RC5 'Have You considered these Upgrades?'
+## 0.9.5 RC6 'Have You considered these Upgrades?'
 
 This release was primarily intended to improve support for migrations of pre-0.9.0
 installations. The upgrade code has been separated more cleanly into a step where
@@ -54,6 +54,7 @@ In addition to this we added a few other quick fixes in this release:
 - Connect to local parent directly #791
 - Do not sign/validate RFC6492 messages to/from local parent #797
 - Use per CA locking for CA statuses #795
+- Make CA sync strategy configurable #799
 
 The full list of changes can be found here:
 https://github.com/NLnetLabs/krill/projects/20
