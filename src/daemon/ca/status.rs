@@ -1,4 +1,9 @@
-use std::{collections::HashMap, path::Path, str::FromStr, sync::Arc};
+use std::{
+    collections::HashMap,
+    path::Path,
+    str::FromStr,
+    sync::{Arc, RwLock},
+};
 
 use crate::commons::{
     api::{
@@ -77,8 +82,8 @@ impl StatusStore {
 
     /// Returns the stored CaStatus for a CA, or a default (empty) status if it can't be found
     pub fn get_ca_status(&self, ca: &Handle) -> KrillResult<Arc<CaStatus>> {
-        // Try to get it from disk, and if present load the cache
-        let status: CaStatus = self.store.get(&Self::status_key(ca))?.unwrap_or_default();
+        // Try to get it from disk, if it's missing or corrupt - get a default
+        let status: CaStatus = self.store.get(&Self::status_key(ca)).ok().flatten().unwrap_or_default();
         Ok(Arc::new(status))
     }
 
@@ -224,14 +229,14 @@ impl StatusStore {
         F: FnOnce(&mut ChildStatus),
     {
         self.update_ca_status(ca, |status| {
-            let mut child_status = match status.children.get_mut(child) {
+            let child_status = match status.children.get_mut(child) {
                 Some(child_status) => child_status,
                 None => {
                     status.children.insert(child.clone(), ChildStatus::default());
                     status.children.get_mut(child).unwrap()
                 }
             };
-            op(&mut child_status)
+            op(child_status)
         })
     }
 
