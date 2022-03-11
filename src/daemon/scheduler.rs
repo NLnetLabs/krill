@@ -3,7 +3,7 @@
 
 use std::{
     sync::{Arc, RwLock},
-    time::Duration,
+    time::Duration, collections::HashMap,
 };
 
 use clokwerk::{self, ScheduleHandle, TimeUnits};
@@ -101,7 +101,7 @@ fn make_cas_event_triggers(event_queue: Arc<MessageQueue>, ca_manager: Arc<CaMan
         let rt = Runtime::new().unwrap();
 
         rt.block_on(async {
-            for evt in event_queue.pop_all() {
+            while let Some(evt) = event_queue.pop(Time::now()) {
                 match evt {
                     QueueTask::ServerStarted => {
                         info!("Will re-sync all CAs with their parents and repository after startup");
@@ -110,27 +110,15 @@ fn make_cas_event_triggers(event_queue: Arc<MessageQueue>, ca_manager: Arc<CaMan
                     }
 
                     QueueTask::SyncRepo { ca } => try_sync_repo(&event_queue, ca_manager.clone(), ca).await,
-                    QueueTask::RescheduleSyncRepo { ca, due } => {
-                        if Time::now() > due {
-                            try_sync_repo(&event_queue, ca_manager.clone(), ca).await
-                        } else {
-                            event_queue.reschedule_sync_repo(ca, due);
-                        }
-                    }
+                    
                     QueueTask::SyncParent { ca, parent } => {
                         try_sync_parent(&event_queue, &ca_manager, ca, parent, &actor).await
                     }
-                    QueueTask::RescheduleSyncParent { ca, parent, due } => {
-                        if Time::now() > due {
-                            try_sync_parent(&event_queue, &ca_manager, ca, parent, &actor).await
-                        } else {
-                            event_queue.reschedule_sync_parent(ca, parent, due);
-                        }
-                    }
-
+                    
                     QueueTask::ResourceClassRemoved {
                         ca,
                         parent,
+                        rcn,
                         revocation_requests,
                     } => {
                         info!(
@@ -138,8 +126,11 @@ fn make_cas_event_triggers(event_queue: Arc<MessageQueue>, ca_manager: Arc<CaMan
                             ca, parent
                         );
 
+                        let mut requests = HashMap::new();
+                        requests.insert(rcn, revocation_requests);
+
                         if ca_manager
-                            .send_revoke_requests(&ca, &parent, revocation_requests)
+                            .send_revoke_requests(&ca, &parent, requests)
                             .await
                             .is_err()
                         {
@@ -192,7 +183,7 @@ async fn try_sync_repo(event_queue: &Arc<MessageQueue>, ca_manager: Arc<CaManage
         };
 
         error!("Failed to publish for '{}' will reschedule, error: {}", ca, e);
-        event_queue.reschedule_sync_repo(ca, requeue_time);
+        event_queue.schedule_sync_repo_at(ca, requeue_time);
     }
 }
 
@@ -216,7 +207,18 @@ async fn try_sync_parent(
             "Failed to synchronize CA '{}' with its parent '{}', error: {}",
             ca, parent, e
         );
-        event_queue.reschedule_sync_parent(ca, parent, requeue_time);
+        event_queue.schedule_sync_parent_at(ca, parent, requeue_time);
+    } else {
+        // TODO: Get hours + jitter from config, now hard coding to 24 + 0-12 hours
+        let regular_mins = 24 * 60;
+        let random_mins = {
+            use rand::Rng;
+            let mut rng = rand::thread_rng();
+            rng.gen_range(0..(60 * 12))
+        };
+        let time = Time::now() + chrono::Duration::minutes(regular_mins + random_mins);
+
+        event_queue.schedule_sync_parent_at(ca, parent, time);
     }
 }
 

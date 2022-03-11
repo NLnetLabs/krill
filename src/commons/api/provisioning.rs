@@ -485,7 +485,7 @@ impl fmt::Display for RequestResourceLimit {
 
 /// This type represents a Certificate Revocation Request as
 /// defined in section 3.5.1 of RFC6492.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct RevocationRequest {
     class_name: ResourceClassName,
     key: KeyIdentifier,
