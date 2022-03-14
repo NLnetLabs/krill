@@ -3,10 +3,7 @@
 //! signed material, or asking a newly added parent for resource
 //! entitlements.
 
-use std::{
-    fmt,
-    sync::RwLock,
-};
+use std::{fmt, sync::RwLock};
 
 use priority_queue::PriorityQueue;
 use rpki::repository::x509::Time;
@@ -30,12 +27,12 @@ pub enum QueueTask {
     SyncRepo {
         ca: Handle,
     },
-    
+
     SyncParent {
         ca: Handle,
         parent: ParentHandle,
     },
-    
+
     ResourceClassRemoved {
         ca: Handle,
         parent: ParentHandle,
@@ -75,14 +72,11 @@ impl Default for MessageQueue {
         let mut q = PriorityQueue::new();
         q.push(QueueTask::ServerStarted, Priority::now());
 
-        MessageQueue { 
-            q: RwLock::new(q)
-        }
+        MessageQueue { q: RwLock::new(q) }
     }
 }
 
 impl MessageQueue {
-
     pub fn pop(&self, due_before: Time) -> Option<QueueTask> {
         let mut q = self.q.write().unwrap();
 
@@ -99,14 +93,13 @@ impl MessageQueue {
         }
     }
 
-
     fn schedule(&self, task: QueueTask) {
         self.schedule_at(task, Time::now())
     }
 
     fn schedule_at(&self, task: QueueTask, due: Time) {
         let priority = due.into();
-        
+
         let mut q = self.q.write().unwrap();
 
         if q.change_priority(&task, priority).is_none() {
@@ -123,7 +116,7 @@ impl MessageQueue {
     /// takes a time argument to indicate *when* the resynchronization should be
     /// attempted.
     pub fn schedule_sync_repo_at(&self, ca: Handle, due: Time) {
-        self.schedule_at(QueueTask::SyncRepo { ca }, due );
+        self.schedule_at(QueueTask::SyncRepo { ca }, due);
     }
 
     pub fn schedule_sync_parent(&self, ca: Handle, parent: ParentHandle) {
@@ -131,7 +124,7 @@ impl MessageQueue {
     }
 
     pub fn schedule_sync_parent_at(&self, ca: Handle, parent: ParentHandle, due: Time) {
-        self.schedule_at(QueueTask::SyncParent { ca, parent} , due );
+        self.schedule_at(QueueTask::SyncParent { ca, parent }, due);
     }
 
     fn drop_sync_parent(&self, ca: Handle, parent: ParentHandle) {
@@ -218,8 +211,7 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for MessageQueue {
     }
 }
 
-
-//------------ TimePriority --------------------------------------------------
+//------------ Priority ------------------------------------------------------
 
 /// Can be used as a priority value for [`PriorityQueue`]. Meaning that the
 /// time value which is soonest has the highest priority. So, in short reverse
