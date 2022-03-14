@@ -67,9 +67,8 @@ pub struct KrillServer {
     // Handles the internal TA and/or CAs
     bgp_analyser: Arc<BgpAnalyser>,
 
-    // Responsible for background tasks, e.g. re-publishing
-    #[allow(dead_code)] // just need to keep this in scope
-    scheduler: Scheduler,
+    // Shared message queue
+    mq: Arc<MessageQueue>,
 
     // Time this server was started
     started: Timestamp,
@@ -135,10 +134,10 @@ impl KrillServer {
         let repo_manager = Arc::new(RepositoryManager::build(config.clone(), signer.clone())?);
 
         // Used to have a shared queue for the caserver and the background job scheduler.
-        let event_queue = Arc::new(MessageQueue::default());
+        let mq = Arc::new(MessageQueue::default());
 
         let ca_manager =
-            Arc::new(ca::CaManager::build(config.clone(), event_queue.clone(), signer, system_actor.clone()).await?);
+            Arc::new(ca::CaManager::build(config.clone(), mq.clone(), signer, system_actor.clone()).await?);
 
         ca_manager.resync_ca_statuses().await?;
 
@@ -204,16 +203,6 @@ impl KrillServer {
             &config.bgp_risdumps_v6_uri,
         ));
 
-        let scheduler = Scheduler::build(
-            event_queue,
-            ca_manager.clone(),
-            bgp_analyser.clone(),
-            #[cfg(feature = "multi-user")]
-            login_session_cache.clone(),
-            &config,
-            &system_actor,
-        );
-
         Ok(KrillServer {
             service_uri,
             work_dir: work_dir.clone(),
@@ -221,13 +210,25 @@ impl KrillServer {
             repo_manager,
             ca_manager,
             bgp_analyser,
-            scheduler,
+            mq,
             started: Timestamp::now(),
             #[cfg(feature = "multi-user")]
             login_session_cache,
             system_actor,
             config,
         })
+    }
+
+    pub fn build_scheduler(&self) -> Scheduler {
+        Scheduler::build(
+            self.mq.clone(),
+            self.ca_manager.clone(),
+            self.bgp_analyser.clone(),
+            #[cfg(feature = "multi-user")]
+            self.login_session_cache.clone(),
+            self.config.clone(),
+            self.system_actor.clone(),
+        )
     }
 
     pub fn service_base_uri(&self) -> &uri::Https {

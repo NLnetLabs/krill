@@ -27,7 +27,7 @@ use crate::{
         util::httpclient,
         KrillResult,
     },
-    constants::{CASERVER_DIR, REQUEUE_DELAY_SECONDS, STATUS_DIR},
+    constants::{CASERVER_DIR, SCHEDULER_REQUEUE_DELAY_SECONDS, STATUS_DIR},
     daemon::{
         auth::common::permissions::Permission,
         ca::{
@@ -848,7 +848,7 @@ impl CaManager {
     }
 
     /// Suspend child CAs
-    async fn ca_suspend_inactive_children(&self, ca_handle: &Handle, started: Timestamp, actor: &Actor) {
+    pub async fn ca_suspend_inactive_children(&self, ca_handle: &Handle, started: Timestamp, actor: &Actor) {
         // Set threshold hours if it was configured AND this server has been started
         // longer ago than the hours specified. Otherwise we risk that *all* children
         // without prior recorded status are suspended on upgrade, or that *all* children
@@ -1004,21 +1004,19 @@ impl CaManager {
             ParentCaContact::Rfc6492(parent_res) => {
                 let parent_uri = parent_res.service_uri();
 
-                let next_run_seconds = self.config.ca_refresh_seconds as i64;
-
                 match self
                     .send_revoke_requests_rfc6492(revoke_requests, &child.id_key(), parent_res)
                     .await
                 {
                     Err(e) => {
                         self.status_store
-                            .set_parent_failure(handle, parent, parent_uri, &e, next_run_seconds)
+                            .set_parent_failure(handle, parent, parent_uri, &e)
                             .await?;
                         Err(e)
                     }
                     Ok(res) => {
                         self.status_store
-                            .set_parent_last_updated(handle, parent, parent_uri, next_run_seconds)
+                            .set_parent_last_updated(handle, parent, parent_uri)
                             .await?;
                         Ok(res)
                     }
@@ -1313,9 +1311,7 @@ impl CaManager {
 
         let uri = parent_res.service_uri();
         if errors.is_empty() {
-            self.status_store
-                .set_parent_last_updated(handle, parent, uri, self.config.ca_refresh_seconds as i64)
-                .await?;
+            self.status_store.set_parent_last_updated(handle, parent, uri).await?;
 
             Ok(())
         } else {
@@ -1325,9 +1321,7 @@ impl CaManager {
                 Error::Multiple(errors)
             };
 
-            self.status_store
-                .set_parent_failure(handle, parent, uri, &e, REQUEUE_DELAY_SECONDS)
-                .await?;
+            self.status_store.set_parent_failure(handle, parent, uri, &e).await?;
 
             Err(e)
         }
@@ -1366,7 +1360,6 @@ impl CaManager {
             ParentCaContact::Rfc6492(res) => {
                 let result = self.get_entitlements_rfc6492(ca, res).await;
                 let uri = res.service_uri();
-                let next_run_seconds = self.config.ca_refresh_seconds as i64;
 
                 match &result {
                     Err(error) => {
@@ -1374,14 +1367,12 @@ impl CaManager {
                             // only update the status store with errors for existing parents
                             // otherwise we end up with entries if a new parent is rejected because
                             // of the error.
-                            self.status_store
-                                .set_parent_failure(ca, parent, uri, error, next_run_seconds)
-                                .await?;
+                            self.status_store.set_parent_failure(ca, parent, uri, error).await?;
                         }
                     }
                     Ok(entitlements) => {
                         self.status_store
-                            .set_parent_entitlements(ca, parent, uri, entitlements, next_run_seconds)
+                            .set_parent_entitlements(ca, parent, uri, entitlements)
                             .await?;
                     }
                 }

@@ -33,6 +33,15 @@ pub enum QueueTask {
         parent: ParentHandle,
     },
 
+    CheckSuspendChildren {
+        ca: Handle,
+    },
+
+    RepublishIfNeeded,
+    RenewObjectsIfNeeded,
+
+    AnnouncementInfoRefresh,
+
     ResourceClassRemoved {
         ca: Handle,
         parent: ParentHandle,
@@ -52,6 +61,10 @@ impl fmt::Display for QueueTask {
             QueueTask::ServerStarted => write!(f, "Server just started"),
             QueueTask::SyncRepo { ca } => write!(f, "synchronize repo for '{}'", ca),
             QueueTask::SyncParent { ca, parent } => write!(f, "synchronize CA '{}' with parent '{}'", ca, parent),
+            QueueTask::CheckSuspendChildren { ca } => write!(f, "verify if CA '{}' has children to suspend", ca),
+            QueueTask::RepublishIfNeeded => write!(f, "let CAs republish their mft/crls if needed"),
+            QueueTask::RenewObjectsIfNeeded => write!(f, "let CAs renew their signed objects if needed"),
+            QueueTask::AnnouncementInfoRefresh => write!(f, "check for new announcement info"),
             QueueTask::ResourceClassRemoved { ca, .. } => {
                 write!(f, "resource class removed for '{}' ", ca)
             }
@@ -125,6 +138,22 @@ impl MessageQueue {
 
     pub fn schedule_sync_parent_at(&self, ca: Handle, parent: ParentHandle, due: Time) {
         self.schedule_at(QueueTask::SyncParent { ca, parent }, due);
+    }
+
+    pub fn schedule_check_suspend_children_at(&self, ca: Handle, due: Time) {
+        self.schedule_at(QueueTask::CheckSuspendChildren { ca }, due);
+    }
+
+    pub fn schedule_republish_if_needed_at(&self, due: Time) {
+        self.schedule_at(QueueTask::RepublishIfNeeded, due);
+    }
+
+    pub fn schedule_renew_if_needed_at(&self, due: Time) {
+        self.schedule_at(QueueTask::RenewObjectsIfNeeded, due);
+    }
+
+    pub fn schedule_announcements_info_refresh_at(&self, due: Time) {
+        self.schedule_at(QueueTask::AnnouncementInfoRefresh, due);
     }
 
     fn drop_sync_parent(&self, ca: Handle, parent: ParentHandle) {

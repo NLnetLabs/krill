@@ -24,6 +24,7 @@ use hyper::{
     service::{make_service_fn, service_fn},
     Method,
 };
+use tokio::{join, try_join};
 
 use crate::{
     commons::{
@@ -130,6 +131,9 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
     // Create the server, this will create the necessary data sub-directories if needed
     let krill = KrillServer::build(config.clone()).await?;
 
+    // Get the scheduler
+    let scheduler = krill.build_scheduler();
+
     // Call post-start upgrades to trigger any upgrade related runtime actions, such as
     // re-issuing ROAs because subject name strategy has changed.
     if let Some(report) = upgrade_report {
@@ -172,13 +176,11 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
 
     let server = hyper::Server::builder(acceptor)
         .serve(service)
-        .map_err(|e| eprintln!("Server error: {}", e));
+        .map_err(|e| Error::Custom(format!("Server error: {}", e)));
 
-    if server.await.is_err() {
-        eprintln!("Krill failed to start");
-    }
+    let scheduler_task = scheduler.run();
 
-    Ok(())
+    try_join!(server, scheduler_task).map(|_| ())
 }
 
 struct RequestLogger {
