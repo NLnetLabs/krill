@@ -41,6 +41,8 @@ pub enum Task {
     RenewObjectsIfNeeded,
 
     RefreshAnnouncementsInfo,
+
+    #[cfg(feature = "multi-user")]
     SweepLoginCache,
 
     ResourceClassRemoved {
@@ -66,6 +68,8 @@ impl fmt::Display for Task {
             Task::RepublishIfNeeded => write!(f, "let CAs republish their mft/crls if needed"),
             Task::RenewObjectsIfNeeded => write!(f, "let CAs renew their signed objects if needed"),
             Task::RefreshAnnouncementsInfo => write!(f, "check for new announcement info"),
+
+            #[cfg(feature = "multi-user")]
             Task::SweepLoginCache => write!(f, "sweep up expired logins"),
             Task::ResourceClassRemoved { ca, .. } => {
                 write!(f, "resource class removed for '{}' ", ca)
@@ -142,6 +146,7 @@ impl TaskQueue {
         self.schedule(Task::RefreshAnnouncementsInfo, priority);
     }
 
+    #[cfg(feature = "multi-user")]
     pub fn sweep_login_cache(&self, priority: Priority) {
         self.schedule(Task::SweepLoginCache, priority);
     }
