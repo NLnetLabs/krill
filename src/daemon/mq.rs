@@ -41,6 +41,7 @@ pub enum QueueTask {
     RenewObjectsIfNeeded,
 
     AnnouncementInfoRefresh,
+    SweepLoginCache,
 
     ResourceClassRemoved {
         ca: Handle,
@@ -65,6 +66,7 @@ impl fmt::Display for QueueTask {
             QueueTask::RepublishIfNeeded => write!(f, "let CAs republish their mft/crls if needed"),
             QueueTask::RenewObjectsIfNeeded => write!(f, "let CAs renew their signed objects if needed"),
             QueueTask::AnnouncementInfoRefresh => write!(f, "check for new announcement info"),
+            QueueTask::SweepLoginCache => write!(f, "sweep up expired logins"),
             QueueTask::ResourceClassRemoved { ca, .. } => {
                 write!(f, "resource class removed for '{}' ", ca)
             }
@@ -154,6 +156,10 @@ impl MessageQueue {
 
     pub fn schedule_announcements_info_refresh_at(&self, due: Time) {
         self.schedule_at(QueueTask::AnnouncementInfoRefresh, due);
+    }
+
+    pub fn schedule_sweep_login_cache_at(&self, due: Time) {
+        self.schedule_at(QueueTask::SweepLoginCache, due);
     }
 
     fn drop_sync_parent(&self, ca: Handle, parent: ParentHandle) {

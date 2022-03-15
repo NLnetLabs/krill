@@ -1,14 +1,9 @@
 //! Deal with asynchronous scheduled processes, either triggered by an
 //! event that occurred, or planned (e.g. re-publishing).
 
-use std::{
-    collections::HashMap,
-    sync::{Arc, RwLock},
-    time::Duration,
-};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
-use clokwerk::{self, ScheduleHandle, TimeUnits};
-use tokio::{runtime::Runtime, time::sleep};
+use tokio::time::sleep;
 
 use rpki::repository::x509::Time;
 
@@ -19,11 +14,7 @@ use crate::{
         bgp::BgpAnalyser,
         KrillResult,
     },
-    constants::{
-        test_mode_enabled, SCHEDULER_INTERVAL_RENEW_MINS, SCHEDULER_INTERVAL_REPUBLISH_MINS,
-        SCHEDULER_REQUEUE_DELAY_SECONDS, SCHEDULER_USE_JITTER_CAS_PARENTS_THRESHOLD,
-        SCHEDULER_USE_JITTER_CAS_THRESHOLD,
-    },
+    constants::{SCHEDULER_INTERVAL_RENEW_MINS, SCHEDULER_INTERVAL_REPUBLISH_MINS, SCHEDULER_USE_JITTER_CAS_THRESHOLD},
     daemon::{
         ca::CaManager,
         config::Config,
@@ -39,14 +30,11 @@ pub struct Scheduler {
     ca_manager: Arc<CaManager>,
     bgp_analyser: Arc<BgpAnalyser>,
     #[cfg(feature = "multi-user")]
+    // Responsible for purging expired cached login tokens
     login_session_cache: Arc<LoginSessionCache>,
     config: Arc<Config>,
     system_actor: Actor,
     started: Timestamp,
-    // #[cfg(feature = "multi-user")]
-    // /// Responsible for purging expired cached login tokens
-    // #[allow(dead_code)] // just need to keep this in scope
-    // login_cache_sweeper_sh: ScheduleHandle,
 }
 
 impl Scheduler {
@@ -58,9 +46,6 @@ impl Scheduler {
         config: Arc<Config>,
         system_actor: Actor,
     ) -> Self {
-        // #[cfg(feature = "multi-user")]
-        // let login_cache_sweeper_sh = make_login_cache_sweeper_sh(login_session_cache);
-
         Scheduler {
             mq,
             ca_manager,
@@ -92,6 +77,8 @@ impl Scheduler {
                     QueueTask::RenewObjectsIfNeeded => self.renew_objects_if_needed().await?,
 
                     QueueTask::AnnouncementInfoRefresh => self.announcements_refresh().await,
+
+                    QueueTask::SweepLoginCache => self.sweep_login_cache(),
 
                     QueueTask::ResourceClassRemoved {
                         ca,
@@ -195,11 +182,14 @@ impl Scheduler {
                 self.mq
                     .schedule_check_suspend_children_at(ca.handle().clone(), Time::now())
             }
-
         }
 
         self.mq.schedule_republish_if_needed_at(Time::now());
         self.mq.schedule_announcements_info_refresh_at(Time::now());
+
+        #[cfg(feature = "multi-user")]
+        self.mq
+            .schedule_sweep_login_cache_at(Time::now() + chrono::Duration::minutes(1));
 
         Ok(())
     }
@@ -292,208 +282,14 @@ impl Scheduler {
 
         Ok(())
     }
+
+    #[cfg(feature = "multi-user")]
+    fn sweep_login_cache(&self) {
+        if let Err(e) = self.login_session_cache.sweep() {
+            error!("Background sweep of session decryption cache failed: {}", e);
+        }
+
+        self.mq
+            .schedule_sweep_login_cache_at(Time::now() + chrono::Duration::minutes(1));
+    }
 }
-
-// #[allow(clippy::cognitive_complexity)]
-// fn make_cas_event_triggers(event_queue: Arc<MessageQueue>, ca_manager: Arc<CaManager>, actor: Actor) -> ScheduleHandle {
-//     let started = Timestamp::now();
-
-//     SkippingScheduler::run(1, "scan for queued triggers", move || {
-//         let rt = Runtime::new().unwrap();
-
-//         rt.block_on(async {
-//             while let Some(evt) = event_queue.pop(Time::now()) {
-//                 match evt {
-//                     QueueTask::ServerStarted => {
-//                         info!("Will re-sync all CAs with their parents and repository after startup");
-//                         ca_manager.cas_refresh_all(started, &actor).await;
-//                         ca_manager.cas_repo_sync_all(&actor).await;
-//                     }
-
-//                     QueueTask::SyncRepo { ca } => try_sync_repo(&event_queue, ca_manager.clone(), ca).await,
-
-//                     QueueTask::SyncParent { ca, parent } => {
-//                         try_sync_parent(&event_queue, &ca_manager, ca, parent, &actor).await
-//                     }
-
-//                     QueueTask::ResourceClassRemoved {
-//                         ca,
-//                         parent,
-//                         rcn,
-//                         revocation_requests,
-//                     } => {
-//                         info!(
-//                             "Trigger send revoke requests for removed RC for '{}' under '{}'",
-//                             ca, parent
-//                         );
-
-//                         let mut requests = HashMap::new();
-//                         requests.insert(rcn, revocation_requests);
-
-//                         if ca_manager
-//                             .send_revoke_requests(&ca, &parent, requests)
-//                             .await
-//                             .is_err()
-//                         {
-//                             warn!(
-//                                 "Could not revoke key for removed resource class. This is not \
-//                             an issue, because typically the parent will revoke our keys pro-actively, \
-//                             just before removing the resource class entitlements."
-//                             );
-//                         }
-//                     }
-//                     QueueTask::UnexpectedKey {
-//                         ca,
-//                         rcn,
-//                         revocation_request,
-//                     } => {
-//                         info!(
-//                             "Trigger sending revocation requests for unexpected key with id '{}' in RC '{}'",
-//                             revocation_request.key(),
-//                             rcn
-//                         );
-//                         if let Err(e) = ca_manager
-//                             .send_revoke_unexpected_key(&ca, rcn, revocation_request)
-//                             .await
-//                         {
-//                             error!("Could not revoke unexpected surplus key at parent: {}", e);
-//                         }
-//                     }
-//                 }
-//             }
-//         });
-//     })
-// }
-
-// fn make_cas_objects_renew(ca_server: Arc<CaManager>, actor: Actor) -> ScheduleHandle {
-//     SkippingScheduler::run(SCHEDULER_INTERVAL_SECONDS_ROA_RENEW, "CA ROA renewal", move || {
-//         let rt = Runtime::new().unwrap();
-//         rt.block_on(async {
-//             debug!(
-//                 "Triggering background renewal for about to expire objects issued by all CAs, note this may be a no-op"
-//             );
-//             if let Err(e) = ca_server.renew_objects_all(&actor).await {
-//                 error!("Background re-issuing of about to expire objects failed: {}", e);
-//             }
-//         })
-//     })
-// }
-
-// #[cfg(feature = "multi-user")]
-// fn make_login_cache_sweeper_sh(cache: Arc<LoginSessionCache>) -> ScheduleHandle {
-//     SkippingScheduler::run(60, "sweep session decryption cache", move || {
-//         let rt = Runtime::new().unwrap();
-//         rt.block_on(async {
-//             if let Err(e) = cache.sweep() {
-//                 error!("Background sweep of session decryption cache failed: {}", e);
-//             }
-//         })
-//     })
-// }
-
-// struct SkippingScheduler;
-
-// impl SkippingScheduler {
-//     fn run<F>(seconds: u32, name: &'static str, f: F) -> ScheduleHandle
-//     where
-//         F: FnMut() + Clone + Send + 'static,
-//     {
-//         let lock = RunLock::new();
-
-//         let mut scheduler = clokwerk::Scheduler::new();
-//         scheduler.every(seconds.seconds()).run(move || {
-//             if lock.is_running() {
-//                 warn!(
-//                     "Previous background job '{}' is still running, will skip and try again in {} seconds",
-//                     name, seconds
-//                 )
-//             } else {
-//                 lock.run();
-//                 let mut f = f.clone();
-//                 f();
-//                 lock.done();
-//             }
-//         });
-
-//         scheduler.watch_thread(Duration::from_millis(100))
-//     }
-// }
-
-// struct RunLock {
-//     state: RwLock<RunState>,
-// }
-
-// impl RunLock {
-//     fn new() -> Self {
-//         RunLock {
-//             state: RwLock::new(RunState(false)),
-//         }
-//     }
-
-//     fn run(&self) {
-//         self.state.write().unwrap().run();
-//     }
-
-//     fn done(&self) {
-//         self.state.write().unwrap().done();
-//     }
-
-//     fn is_running(&self) -> bool {
-//         self.state.read().unwrap().is_running()
-//     }
-// }
-
-// struct RunState(bool);
-
-// impl RunState {
-//     fn run(&mut self) {
-//         self.0 = true;
-//     }
-
-//     fn done(&mut self) {
-//         self.0 = false;
-//     }
-
-//     fn is_running(&self) -> bool {
-//         self.0
-//     }
-// }
-
-// mod tests {
-
-//     #[test]
-//     #[ignore = "takes too long, use for testing during development"]
-//     fn test_skip_scheduler() {
-//         use super::*;
-
-//         struct Counter(u32);
-
-//         impl Counter {
-//             fn inc(&mut self) {
-//                 self.0 += 1;
-//             }
-
-//             fn total(&self) -> u32 {
-//                 self.0
-//             }
-//         }
-
-//         let counter: Arc<RwLock<Counter>> = Arc::new(RwLock::new(Counter(0)));
-
-//         let counter_sh = counter.clone();
-
-//         let _schedule_handle = SkippingScheduler::run(1, "CA certificate refresh", move || {
-//             let rt = Runtime::new().unwrap();
-//             rt.block_on(async {
-//                 counter_sh.write().unwrap().inc();
-//                 tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-//             });
-//         });
-
-//         std::thread::sleep(std::time::Duration::from_secs(11));
-
-//         let total = counter.read().unwrap().total();
-
-//         assert_eq!(total, 5);
-//     }
-// }
