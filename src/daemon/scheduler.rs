@@ -58,8 +58,6 @@ impl Scheduler {
         config: Arc<Config>,
         system_actor: Actor,
     ) -> Self {
-        // let cas_objects_renew = make_cas_objects_renew(ca_manager.clone(), actor.clone());
-
         // #[cfg(feature = "multi-user")]
         // let login_cache_sweeper_sh = make_login_cache_sweeper_sh(login_session_cache);
 
@@ -198,10 +196,10 @@ impl Scheduler {
                     .schedule_check_suspend_children_at(ca.handle().clone(), Time::now())
             }
 
-            self.mq.schedule_republish_if_needed_at(Time::now());
-
-            self.mq.schedule_announcements_info_refresh_at(Time::now());
         }
+
+        self.mq.schedule_republish_if_needed_at(Time::now());
+        self.mq.schedule_announcements_info_refresh_at(Time::now());
 
         Ok(())
     }
