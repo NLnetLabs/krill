@@ -207,10 +207,6 @@ impl ConfigDefaults {
     fn timing_aspa_reissue_weeks_before() -> i64 {
         4
     }
-
-    fn cas_sync_parallel() -> bool {
-        false
-    }
 }
 
 //------------ Config --------------------------------------------------------
@@ -332,10 +328,6 @@ pub struct Config {
     pub metrics: MetricsConfig,
 
     pub testbed: Option<TestBed>,
-
-    // Sync CA strategy
-    #[serde(default = "ConfigDefaults::cas_sync_parallel")]
-    pub cas_sync_parallel: bool,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -560,6 +552,9 @@ impl Config {
             in_seconds(SCHEDULER_REQUEUE_DELAY_SECONDS)
         }
     }
+
+    /// Get the priority for the next CA refresh based on the configured
+    /// ca_refresh_seconds (1 day), and jitter (12 hours)
     pub fn ca_refresh_next(&self) -> Priority {
         Self::ca_refresh_next_from(self.ca_refresh_seconds, self.ca_refresh_jitter_seconds)
     }
@@ -694,8 +689,6 @@ impl Config {
             None
         };
 
-        let cas_sync_parallel = false;
-
         let suspend_child_after_inactive_seconds = if enable_suspend { Some(3) } else { None };
 
         Config {
@@ -740,7 +733,6 @@ impl Config {
             repository_retention,
             metrics,
             testbed,
-            cas_sync_parallel,
         }
     }
 

@@ -1,7 +1,6 @@
 use std::{collections::HashMap, ops::Deref, sync::Arc};
 
 use api::{Publish, Update, Withdraw};
-use futures::future::join_all;
 
 use bytes::Bytes;
 use chrono::Duration;
@@ -35,7 +34,7 @@ use crate::{
             ResourceTaggedAttestation, RouteAuthorizationUpdates, RtaContentRequest, RtaPrepareRequest, StatusStore,
         },
         config::Config,
-        mq::TaskQueue,
+        mq::{now, TaskQueue},
     },
     pubd::RepositoryManager,
 };
@@ -124,6 +123,13 @@ pub struct CaManager {
     ca_objects_store: Arc<CaObjectsStore>,
     status_store: Arc<StatusStore>,
     locks: Arc<CaLocks>,
+
+    // shared task queue:
+    // - listens for events in the ca_store
+    // - processed by the Scheduler
+    // - can be used here to schedule tasks through the api
+    tasks: Arc<TaskQueue>,
+
     config: Arc<Config>,
     signer: Arc<KrillSigner>,
 
@@ -135,7 +141,7 @@ impl CaManager {
     /// Builds a new CaServer. Will return an error if the CA store cannot be initialized.
     pub async fn build(
         config: Arc<Config>,
-        task_queue: Arc<TaskQueue>,
+        tasks: Arc<TaskQueue>,
         signer: Arc<KrillSigner>,
         system_actor: Actor,
     ) -> KrillResult<Self> {
@@ -179,7 +185,7 @@ impl CaManager {
         // Register the `MessageQueue` as a post-save listener to 'ca_store' so that relevant changes in
         // a `CertAuth` can trigger follow up actions. Most importantly: synchronize with a parent CA or
         // the RPKI repository.
-        ca_store.add_post_save_listener(task_queue);
+        ca_store.add_post_save_listener(tasks.clone());
 
         // Create the status store which will maintain the last known connection status between each CA
         // and their parent(s) and repository.
@@ -195,6 +201,7 @@ impl CaManager {
             ca_objects_store,
             status_store: Arc::new(status_store),
             locks,
+            tasks,
             config,
             signer,
             system_actor,
@@ -814,37 +821,22 @@ impl CaManager {
         Ok(())
     }
 
-    /// Refresh all CAs:
-    /// - process all CAs
-    /// - process all parents for each CAs in parallel
-    ///    - send pending requests if present, or
-    ///    - ask parent for updates and process if present
+    /// Schedule refreshing all CAs asap:
     ///
-    /// Note: this function can be called manually through the API, but is normally
-    ///       triggered in the background, every 10 mins by default, or as configured
-    ///       by 'ca_refresh' in the configuration.
-    pub async fn cas_refresh_all(&self, started: Timestamp, actor: &Actor) {
+    /// Note: this function can be called manually through the API, but normally the
+    ///       CA refresh process is replanned on the taskqueue automatically.
+    pub async fn cas_schedule_refresh_all(&self, actor: &Actor) {
         if let Ok(cas) = self.ca_store.list() {
-            if self.config.cas_sync_parallel {
-                let mut updates = vec![];
-
-                for ca_handle in cas {
-                    updates.push(self.cas_refresh_single(ca_handle, started, actor));
-                }
-
-                join_all(updates).await;
-            } else {
-                for ca_handle in cas {
-                    self.cas_refresh_single(ca_handle, started, actor).await;
-                }
+            for ca_handle in cas {
+                self.cas_schedule_refresh_single(ca_handle, actor).await;
             }
         }
     }
 
     /// Refresh a single CA with its parents, and possibly suspend inactive children.
-    pub async fn cas_refresh_single(&self, ca_handle: Handle, started: Timestamp, actor: &Actor) {
-        self.ca_sync_parents(&ca_handle, actor).await;
-        self.ca_suspend_inactive_children(&ca_handle, started, actor).await;
+    pub async fn cas_schedule_refresh_single(&self, ca_handle: Handle, actor: &Actor) {
+        self.ca_schedule_sync_parents(&ca_handle, actor).await;
+        self.tasks.suspend_children(ca_handle, now());
     }
 
     /// Suspend child CAs
@@ -889,16 +881,14 @@ impl CaManager {
 
     /// Synchronizes a CA with its parents - up to the configures batch size.
     /// Remaining parents will be done in a future run.
-    async fn ca_sync_parents(&self, ca_handle: &Handle, actor: &Actor) {
-        let mut updates = vec![];
-
+    async fn ca_schedule_sync_parents(&self, ca_handle: &Handle, actor: &Actor) {
         if let Ok(ca) = self.get_ca(ca_handle).await {
             // get updates from parents
             {
                 if ca.nr_parents() <= self.config.ca_refresh_parents_batch_size {
                     // Nr of parents is below batch size, so just process all of them
                     for parent in ca.parents() {
-                        updates.push(self.ca_sync_parent_infallible(ca_handle.clone(), parent.clone(), actor.clone()));
+                        self.tasks.sync_parent(ca_handle.clone(), parent.clone(), now());
                     }
                 } else {
                     // more parents than the batch size exist, so get candidates based on
@@ -909,21 +899,10 @@ impl CaManager {
                         .parents()
                         .sync_candidates(ca.parents().collect(), self.config.ca_refresh_parents_batch_size)
                     {
-                        updates.push(self.ca_sync_parent_infallible(ca_handle.clone(), parent.clone(), actor.clone()));
+                        self.tasks.sync_parent(ca_handle.clone(), parent, now());
                     }
                 }
             }
-            join_all(updates).await;
-        }
-    }
-
-    /// Synchronizes a CA with a parent, logging failures.
-    async fn ca_sync_parent_infallible(&self, ca: Handle, parent: ParentHandle, actor: Actor) {
-        if let Err(e) = self.ca_sync_parent(&ca, &parent, &actor).await {
-            error!(
-                "Failed to synchronize CA '{}' with parent '{}'. Error was: {}",
-                ca, parent, e
-            );
         }
     }
 
