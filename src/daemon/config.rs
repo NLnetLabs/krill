@@ -789,6 +789,14 @@ impl Config {
             );
             self.ca_refresh_seconds = CA_REFRESH_SECONDS_MAX;
         }
+
+        let half_refresh = self.ca_refresh_seconds / 2;
+
+        if self.ca_refresh_jitter_seconds > half_refresh {
+            warn!("The value for 'ca_refresh_jitter_seconds' exceeded 50% of 'ca_refresh_seconds'. Changing it to {} seconds", half_refresh);
+            self.ca_refresh_jitter_seconds = half_refresh;
+        }
+
         Ok(())
     }
 

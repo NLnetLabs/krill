@@ -68,8 +68,8 @@ pub const KRILL_CLI_API_ENV: &str = "KRILL_CLI_API";
 pub const KRILL_CLI_MY_CA_ARG: &str = "ca";
 pub const KRILL_CLI_MY_CA_ENV: &str = "KRILL_CLI_MY_CA";
 
-pub const CA_REFRESH_SECONDS_MIN: i64 = 600;
-pub const CA_REFRESH_SECONDS_MAX: i64 = 1 * 24 * 3600; // 1 day
+pub const CA_REFRESH_SECONDS_MIN: i64 = 3600;
+pub const CA_REFRESH_SECONDS_MAX: i64 = 3 * 24 * 3600; // 3 days
 pub const CA_SUSPEND_MIN_HOURS: i64 = 48; // at least 2 days
 pub const SCHEDULER_REQUEUE_DELAY_SECONDS: i64 = 300;
 pub const SCHEDULER_USE_JITTER_CAS_THRESHOLD: usize = 50;
