@@ -1925,6 +1925,10 @@ impl ChildExchange {
 pub struct Timestamp(i64);
 
 impl Timestamp {
+    pub fn new(ts: i64) -> Self {
+        Timestamp(ts)
+    }
+
     pub fn now() -> Self {
         Timestamp(Time::now().timestamp())
     }
@@ -2982,7 +2986,6 @@ mod test {
     fn find_sync_candidates() {
         let uri = ServiceUri::try_from("https://example.com/rfc6492/child/".to_string()).unwrap();
 
-        let in_five_seconds = Timestamp::now_plus_seconds(5);
         let five_seconds_ago = Timestamp::now_minus_seconds(5);
         let five_mins_ago = Timestamp::now_minus_seconds(300);
 

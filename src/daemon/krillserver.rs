@@ -33,7 +33,7 @@ use crate::{
         },
         config::{AuthType, Config},
         http::HttpResponse,
-        mq::MessageQueue,
+        mq::TaskQueue,
         scheduler::Scheduler,
     },
     pubd::{RepoStats, RepositoryManager},
@@ -68,7 +68,7 @@ pub struct KrillServer {
     bgp_analyser: Arc<BgpAnalyser>,
 
     // Shared message queue
-    mq: Arc<MessageQueue>,
+    mq: Arc<TaskQueue>,
 
     // Time this server was started
     started: Timestamp,
@@ -134,7 +134,7 @@ impl KrillServer {
         let repo_manager = Arc::new(RepositoryManager::build(config.clone(), signer.clone())?);
 
         // Used to have a shared queue for the caserver and the background job scheduler.
-        let mq = Arc::new(MessageQueue::default());
+        let mq = Arc::new(TaskQueue::default());
 
         let ca_manager =
             Arc::new(ca::CaManager::build(config.clone(), mq.clone(), signer, system_actor.clone()).await?);

@@ -29,6 +29,8 @@ use crate::{
 #[cfg(feature = "multi-user")]
 use crate::daemon::auth::providers::{config_file::config::ConfigAuthUsers, openid_connect::ConfigAuthOpenIDConnect};
 
+use super::mq::{in_seconds, Priority};
+
 //------------ ConfigDefaults ------------------------------------------------
 
 pub struct ConfigDefaults;
@@ -551,24 +553,24 @@ impl Config {
         }
     }
 
-    pub fn requeue_remote_failed(&self) -> Time {
+    pub fn requeue_remote_failed(&self) -> Priority {
         if test_mode_enabled() {
-            Time::now() + chrono::Duration::seconds(5)
+            in_seconds(5)
         } else {
-            Time::now() + chrono::Duration::seconds(SCHEDULER_REQUEUE_DELAY_SECONDS)
+            in_seconds(SCHEDULER_REQUEUE_DELAY_SECONDS)
         }
     }
-    pub fn ca_refresh_next(&self) -> Time {
+    pub fn ca_refresh_next(&self) -> Priority {
         Self::ca_refresh_next_from(self.ca_refresh_seconds, self.ca_refresh_jitter_seconds)
     }
 
-    pub fn ca_refresh_start_up(&self, use_jitter: bool) -> Time {
+    pub fn ca_refresh_start_up(&self, use_jitter: bool) -> Priority {
         let jitter_seconds = if use_jitter { self.ca_refresh_jitter_seconds } else { 0 };
 
         Self::ca_refresh_next_from(0, jitter_seconds)
     }
 
-    fn ca_refresh_next_from(regular_seconds: i64, jitter_seconds: i64) -> Time {
+    fn ca_refresh_next_from(regular_seconds: i64, jitter_seconds: i64) -> Priority {
         let random_seconds = if jitter_seconds == 0 {
             0
         } else {
@@ -577,7 +579,7 @@ impl Config {
             rng.gen_range(0..jitter_seconds)
         };
 
-        Time::now() + chrono::Duration::seconds(regular_seconds + random_seconds)
+        in_seconds(regular_seconds + random_seconds)
     }
 
     pub fn testbed(&self) -> Option<&TestBed> {

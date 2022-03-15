@@ -27,7 +27,7 @@ use crate::{
         util::httpclient,
         KrillResult,
     },
-    constants::{CASERVER_DIR, SCHEDULER_REQUEUE_DELAY_SECONDS, STATUS_DIR},
+    constants::{CASERVER_DIR, STATUS_DIR},
     daemon::{
         auth::common::permissions::Permission,
         ca::{
@@ -35,7 +35,7 @@ use crate::{
             ResourceTaggedAttestation, RouteAuthorizationUpdates, RtaContentRequest, RtaPrepareRequest, StatusStore,
         },
         config::Config,
-        mq::MessageQueue,
+        mq::TaskQueue,
     },
     pubd::RepositoryManager,
 };
@@ -135,7 +135,7 @@ impl CaManager {
     /// Builds a new CaServer. Will return an error if the CA store cannot be initialized.
     pub async fn build(
         config: Arc<Config>,
-        mq: Arc<MessageQueue>,
+        task_queue: Arc<TaskQueue>,
         signer: Arc<KrillSigner>,
         system_actor: Actor,
     ) -> KrillResult<Self> {
@@ -179,7 +179,7 @@ impl CaManager {
         // Register the `MessageQueue` as a post-save listener to 'ca_store' so that relevant changes in
         // a `CertAuth` can trigger follow up actions. Most importantly: synchronize with a parent CA or
         // the RPKI repository.
-        ca_store.add_post_save_listener(mq);
+        ca_store.add_post_save_listener(task_queue);
 
         // Create the status store which will maintain the last known connection status between each CA
         // and their parent(s) and repository.

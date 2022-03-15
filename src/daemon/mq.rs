@@ -16,12 +16,12 @@ use crate::{
     daemon::ca::{CaEvt, CaEvtDet, CertAuth},
 };
 
-//------------ QueueTask ----------------------------------------------------
+//------------ Task ---------------------------------------------------------
 
 /// This type contains tasks with the details needed for triggered processing.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[allow(clippy::large_enum_variant)]
-pub enum QueueTask {
+pub enum Task {
     ServerStarted,
 
     SyncRepo {
@@ -40,7 +40,7 @@ pub enum QueueTask {
     RepublishIfNeeded,
     RenewObjectsIfNeeded,
 
-    AnnouncementInfoRefresh,
+    RefreshAnnouncementsInfo,
     SweepLoginCache,
 
     ResourceClassRemoved {
@@ -56,47 +56,49 @@ pub enum QueueTask {
     },
 }
 
-impl fmt::Display for QueueTask {
+impl fmt::Display for Task {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            QueueTask::ServerStarted => write!(f, "Server just started"),
-            QueueTask::SyncRepo { ca } => write!(f, "synchronize repo for '{}'", ca),
-            QueueTask::SyncParent { ca, parent } => write!(f, "synchronize CA '{}' with parent '{}'", ca, parent),
-            QueueTask::CheckSuspendChildren { ca } => write!(f, "verify if CA '{}' has children to suspend", ca),
-            QueueTask::RepublishIfNeeded => write!(f, "let CAs republish their mft/crls if needed"),
-            QueueTask::RenewObjectsIfNeeded => write!(f, "let CAs renew their signed objects if needed"),
-            QueueTask::AnnouncementInfoRefresh => write!(f, "check for new announcement info"),
-            QueueTask::SweepLoginCache => write!(f, "sweep up expired logins"),
-            QueueTask::ResourceClassRemoved { ca, .. } => {
+            Task::ServerStarted => write!(f, "Server just started"),
+            Task::SyncRepo { ca } => write!(f, "synchronize repo for '{}'", ca),
+            Task::SyncParent { ca, parent } => write!(f, "synchronize CA '{}' with parent '{}'", ca, parent),
+            Task::CheckSuspendChildren { ca } => write!(f, "verify if CA '{}' has children to suspend", ca),
+            Task::RepublishIfNeeded => write!(f, "let CAs republish their mft/crls if needed"),
+            Task::RenewObjectsIfNeeded => write!(f, "let CAs renew their signed objects if needed"),
+            Task::RefreshAnnouncementsInfo => write!(f, "check for new announcement info"),
+            Task::SweepLoginCache => write!(f, "sweep up expired logins"),
+            Task::ResourceClassRemoved { ca, .. } => {
                 write!(f, "resource class removed for '{}' ", ca)
             }
-            QueueTask::UnexpectedKey { ca, rcn, .. } => {
+            Task::UnexpectedKey { ca, rcn, .. } => {
                 write!(f, "unexpected key found for '{}' resource class: '{}'", ca, rcn)
             }
         }
     }
 }
 
+//------------ TaskQueue ----------------------------------------------------
+
 #[derive(Debug)]
-pub struct MessageQueue {
-    q: RwLock<PriorityQueue<QueueTask, Priority>>,
+pub struct TaskQueue {
+    q: RwLock<PriorityQueue<Task, Priority>>,
 }
 
-impl Default for MessageQueue {
+impl Default for TaskQueue {
     fn default() -> Self {
         let mut q = PriorityQueue::new();
-        q.push(QueueTask::ServerStarted, Priority::now());
+        q.push(Task::ServerStarted, now());
 
-        MessageQueue { q: RwLock::new(q) }
+        TaskQueue { q: RwLock::new(q) }
     }
 }
 
-impl MessageQueue {
-    pub fn pop(&self, due_before: Time) -> Option<QueueTask> {
+impl TaskQueue {
+    pub fn pop(&self, due_before: Priority) -> Option<Task> {
         let mut q = self.q.write().unwrap();
 
         let has_item = if let Some((_, priority)) = q.peek() {
-            priority > &due_before.into()
+            priority > &due_before
         } else {
             false
         };
@@ -108,13 +110,7 @@ impl MessageQueue {
         }
     }
 
-    fn schedule(&self, task: QueueTask) {
-        self.schedule_at(task, Time::now())
-    }
-
-    fn schedule_at(&self, task: QueueTask, due: Time) {
-        let priority = due.into();
-
+    fn schedule(&self, task: Task, priority: Priority) {
         let mut q = self.q.write().unwrap();
 
         if q.change_priority(&task, priority).is_none() {
@@ -122,55 +118,43 @@ impl MessageQueue {
         }
     }
 
-    /// Schedules that a CA synchronizes with its repositories.
-    pub fn schedule_sync_repo(&self, ca: Handle) {
-        self.schedule(QueueTask::SyncRepo { ca });
+    pub fn sync_repo(&self, ca: Handle, priority: Priority) {
+        self.schedule(Task::SyncRepo { ca }, priority);
     }
 
-    /// RE-Schedules that a CA synchronizes with its repositories. This function
-    /// takes a time argument to indicate *when* the resynchronization should be
-    /// attempted.
-    pub fn schedule_sync_repo_at(&self, ca: Handle, due: Time) {
-        self.schedule_at(QueueTask::SyncRepo { ca }, due);
+    pub fn sync_parent(&self, ca: Handle, parent: ParentHandle, priority: Priority) {
+        self.schedule(Task::SyncParent { ca, parent }, priority);
     }
 
-    pub fn schedule_sync_parent(&self, ca: Handle, parent: ParentHandle) {
-        self.schedule(QueueTask::SyncParent { ca, parent });
+    pub fn suspend_children(&self, ca: Handle, priority: Priority) {
+        self.schedule(Task::CheckSuspendChildren { ca }, priority);
     }
 
-    pub fn schedule_sync_parent_at(&self, ca: Handle, parent: ParentHandle, due: Time) {
-        self.schedule_at(QueueTask::SyncParent { ca, parent }, due);
+    pub fn republish_if_needed(&self, priority: Priority) {
+        self.schedule(Task::RepublishIfNeeded, priority);
     }
 
-    pub fn schedule_check_suspend_children_at(&self, ca: Handle, due: Time) {
-        self.schedule_at(QueueTask::CheckSuspendChildren { ca }, due);
+    pub fn renew_if_needed(&self, priority: Priority) {
+        self.schedule(Task::RenewObjectsIfNeeded, priority);
     }
 
-    pub fn schedule_republish_if_needed_at(&self, due: Time) {
-        self.schedule_at(QueueTask::RepublishIfNeeded, due);
+    pub fn refresh_announcements_info(&self, priority: Priority) {
+        self.schedule(Task::RefreshAnnouncementsInfo, priority);
     }
 
-    pub fn schedule_renew_if_needed_at(&self, due: Time) {
-        self.schedule_at(QueueTask::RenewObjectsIfNeeded, due);
-    }
-
-    pub fn schedule_announcements_info_refresh_at(&self, due: Time) {
-        self.schedule_at(QueueTask::AnnouncementInfoRefresh, due);
-    }
-
-    pub fn schedule_sweep_login_cache_at(&self, due: Time) {
-        self.schedule_at(QueueTask::SweepLoginCache, due);
+    pub fn sweep_login_cache(&self, priority: Priority) {
+        self.schedule(Task::SweepLoginCache, priority);
     }
 
     fn drop_sync_parent(&self, ca: Handle, parent: ParentHandle) {
         let mut q = self.q.write().unwrap();
-        let sync = QueueTask::SyncParent { ca, parent };
+        let sync = Task::SyncParent { ca, parent };
         q.remove(&sync);
     }
 }
 
 /// Implement listening for CertAuth Published events.
-impl eventsourcing::PostSaveEventListener<CertAuth> for MessageQueue {
+impl eventsourcing::PostSaveEventListener<CertAuth> for TaskQueue {
     fn listen(&self, ca: &CertAuth, events: &[CaEvt]) {
         for event in events {
             trace!("Seen CertAuth event '{}'", event);
@@ -184,20 +168,20 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for MessageQueue {
                 | CaEvtDet::ChildKeyRevoked { .. }
                 | CaEvtDet::KeyPendingToNew { .. }
                 | CaEvtDet::KeyPendingToActive { .. }
-                | CaEvtDet::KeyRollFinished { .. } => self.schedule_sync_repo(handle.clone()),
+                | CaEvtDet::KeyRollFinished { .. } => self.sync_repo(handle.clone(), now()),
 
                 CaEvtDet::KeyRollActivated {
                     resource_class_name, ..
                 } => {
                     if let Ok(parent) = ca.parent_for_rc(resource_class_name) {
-                        self.schedule_sync_parent(handle.clone(), parent.clone());
+                        self.sync_parent(handle.clone(), parent.clone(), now());
                     }
-                    self.schedule_sync_repo(handle.clone());
+                    self.sync_repo(handle.clone(), now());
                 }
 
                 CaEvtDet::ParentRemoved { parent } => {
                     self.drop_sync_parent(handle.clone(), parent.clone());
-                    self.schedule_sync_repo(handle.clone());
+                    self.sync_repo(handle.clone(), now());
                 }
 
                 CaEvtDet::ResourceClassRemoved {
@@ -205,38 +189,44 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for MessageQueue {
                     parent,
                     revoke_requests,
                 } => {
-                    self.schedule_sync_repo(handle.clone());
+                    self.sync_repo(handle.clone(), now());
 
-                    self.schedule(QueueTask::ResourceClassRemoved {
-                        ca: handle.clone(),
-                        parent: parent.clone(),
-                        rcn: resource_class_name.clone(),
-                        revocation_requests: revoke_requests.clone(),
-                    })
+                    self.schedule(
+                        Task::ResourceClassRemoved {
+                            ca: handle.clone(),
+                            parent: parent.clone(),
+                            rcn: resource_class_name.clone(),
+                            revocation_requests: revoke_requests.clone(),
+                        },
+                        now(),
+                    )
                 }
 
                 CaEvtDet::UnexpectedKeyFound {
                     resource_class_name,
                     revoke_req,
-                } => self.schedule(QueueTask::UnexpectedKey {
-                    ca: handle.clone(),
-                    rcn: resource_class_name.clone(),
-                    revocation_request: revoke_req.clone(),
-                }),
+                } => self.schedule(
+                    Task::UnexpectedKey {
+                        ca: handle.clone(),
+                        rcn: resource_class_name.clone(),
+                        revocation_request: revoke_req.clone(),
+                    },
+                    now(),
+                ),
 
                 CaEvtDet::ParentAdded { parent, .. } => {
-                    self.schedule_sync_parent(handle.clone(), parent.clone());
+                    self.sync_parent(handle.clone(), parent.clone(), now());
                 }
                 CaEvtDet::RepoUpdated { .. } => {
                     for parent in ca.parents() {
-                        self.schedule_sync_parent(handle.clone(), parent.clone());
+                        self.sync_parent(handle.clone(), parent.clone(), now());
                     }
                 }
                 CaEvtDet::CertificateRequested {
                     resource_class_name, ..
                 } => {
                     if let Ok(parent) = ca.parent_for_rc(resource_class_name) {
-                        self.schedule_sync_parent(handle.clone(), parent.clone());
+                        self.sync_parent(handle.clone(), parent.clone(), now());
                     }
                 }
 
@@ -252,12 +242,22 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for MessageQueue {
 /// time value which is soonest has the highest priority. So, in short reverse
 /// order.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-struct Priority(i64);
+pub struct Priority(i64);
 
-impl Priority {
-    fn now() -> Self {
-        Time::now().into()
-    }
+pub fn now() -> Priority {
+    Time::now().into()
+}
+
+pub fn in_seconds(secs: i64) -> Priority {
+    (Time::now() + chrono::Duration::seconds(secs)).into()
+}
+
+pub fn in_minutes(mins: i64) -> Priority {
+    (Time::now() + chrono::Duration::minutes(mins)).into()
+}
+
+pub fn in_hours(hours: i64) -> Priority {
+    (Time::now() + chrono::Duration::hours(hours)).into()
 }
 
 impl Ord for Priority {
@@ -269,6 +269,18 @@ impl Ord for Priority {
 impl PartialOrd for Priority {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         other.0.partial_cmp(&self.0) // is reverse cmp of inner 0
+    }
+}
+
+impl fmt::Display for Priority {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        Timestamp::from(self).to_rfc3339().fmt(f)
+    }
+}
+
+impl From<&Priority> for Timestamp {
+    fn from(p: &Priority) -> Self {
+        Timestamp::new(p.0)
     }
 }
 

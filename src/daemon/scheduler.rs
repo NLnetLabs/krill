@@ -5,8 +5,6 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use tokio::time::sleep;
 
-use rpki::repository::x509::Time;
-
 use crate::{
     commons::{
         actor::Actor,
@@ -18,7 +16,7 @@ use crate::{
     daemon::{
         ca::CaManager,
         config::Config,
-        mq::{MessageQueue, QueueTask},
+        mq::{in_hours, in_minutes, now, Task, TaskQueue},
     },
 };
 
@@ -26,7 +24,7 @@ use crate::{
 use crate::daemon::auth::common::session::LoginSessionCache;
 
 pub struct Scheduler {
-    mq: Arc<MessageQueue>,
+    tasks: Arc<TaskQueue>,
     ca_manager: Arc<CaManager>,
     bgp_analyser: Arc<BgpAnalyser>,
     #[cfg(feature = "multi-user")]
@@ -39,7 +37,7 @@ pub struct Scheduler {
 
 impl Scheduler {
     pub fn build(
-        mq: Arc<MessageQueue>,
+        tasks: Arc<TaskQueue>,
         ca_manager: Arc<CaManager>,
         bgp_analyser: Arc<BgpAnalyser>,
         #[cfg(feature = "multi-user")] login_session_cache: Arc<LoginSessionCache>,
@@ -47,7 +45,7 @@ impl Scheduler {
         system_actor: Actor,
     ) -> Self {
         Scheduler {
-            mq,
+            tasks,
             ca_manager,
             bgp_analyser,
             #[cfg(feature = "multi-user")]
@@ -62,25 +60,25 @@ impl Scheduler {
     /// and re-schedule new tasks as needed.
     pub async fn run(&self) -> KrillResult<()> {
         loop {
-            while let Some(evt) = self.mq.pop(Time::now()) {
+            while let Some(evt) = self.tasks.pop(now()) {
                 match evt {
-                    QueueTask::ServerStarted => self.queue_start_tasks().await?, // return error and stop server on failure
+                    Task::ServerStarted => self.queue_start_tasks().await?, // return error and stop server on failure
 
-                    QueueTask::SyncRepo { ca } => self.try_sync_repo(ca).await,
+                    Task::SyncRepo { ca } => self.try_sync_repo(ca).await,
 
-                    QueueTask::SyncParent { ca, parent } => self.try_sync_parent(ca, parent).await,
+                    Task::SyncParent { ca, parent } => self.try_sync_parent(ca, parent).await,
 
-                    QueueTask::CheckSuspendChildren { ca } => self.suspend_children(ca).await,
+                    Task::CheckSuspendChildren { ca } => self.suspend_children(ca).await,
 
-                    QueueTask::RepublishIfNeeded => self.republish_if_needed().await?,
+                    Task::RepublishIfNeeded => self.republish_if_needed().await?,
 
-                    QueueTask::RenewObjectsIfNeeded => self.renew_objects_if_needed().await?,
+                    Task::RenewObjectsIfNeeded => self.renew_objects_if_needed().await?,
 
-                    QueueTask::AnnouncementInfoRefresh => self.announcements_refresh().await,
+                    Task::RefreshAnnouncementsInfo => self.announcements_refresh().await,
 
-                    QueueTask::SweepLoginCache => self.sweep_login_cache(),
+                    Task::SweepLoginCache => self.sweep_login_cache(),
 
-                    QueueTask::ResourceClassRemoved {
+                    Task::ResourceClassRemoved {
                         ca,
                         parent,
                         rcn,
@@ -107,7 +105,7 @@ impl Scheduler {
                             );
                         }
                     }
-                    QueueTask::UnexpectedKey {
+                    Task::UnexpectedKey {
                         ca,
                         rcn,
                         revocation_request,
@@ -157,7 +155,7 @@ impl Scheduler {
             // a handful of CAs/parents, this 'ca_refresh_start_up' will be 'now'.
             // Note: users can override using the 'bulk' functions.
             for parent in ca.parents() {
-                self.mq.schedule_sync_parent_at(
+                self.tasks.sync_parent(
                     ca.handle().clone(),
                     parent.clone(),
                     self.config.ca_refresh_start_up(use_jitter),
@@ -170,8 +168,8 @@ impl Scheduler {
             // Note: if circumstances dictate a sync before it's planned, e.g.
             // because ROAs are changed, then it will be rescheduled accordingly.
             // Note: users can override using the 'bulk' functions.
-            self.mq
-                .schedule_sync_repo_at(ca.handle().clone(), self.config.ca_refresh_start_up(use_jitter));
+            self.tasks
+                .sync_repo(ca.handle().clone(), self.config.ca_refresh_start_up(use_jitter));
 
             // If suspension is enabled then plan a task for it. Since this is
             // a cheap no-op in most cases, we do not need jitter. If we do not
@@ -179,17 +177,15 @@ impl Scheduler {
             // importantly.. by adding this task we ensure that it will keep being
             // re-scheduled when it's done.
             if self.config.suspend_child_after_inactive_seconds().is_some() {
-                self.mq
-                    .schedule_check_suspend_children_at(ca.handle().clone(), Time::now())
+                self.tasks.suspend_children(ca.handle().clone(), now())
             }
         }
 
-        self.mq.schedule_republish_if_needed_at(Time::now());
-        self.mq.schedule_announcements_info_refresh_at(Time::now());
+        self.tasks.republish_if_needed(now());
+        self.tasks.refresh_announcements_info(now());
 
         #[cfg(feature = "multi-user")]
-        self.mq
-            .schedule_sweep_login_cache_at(Time::now() + chrono::Duration::minutes(1));
+        self.tasks.sweep_login_cache(in_minutes(1));
 
         Ok(())
     }
@@ -202,12 +198,10 @@ impl Scheduler {
 
             error!(
                 "Failed to publish for '{}'. Will reschedule to: '{}'. Error: {}",
-                ca,
-                next.to_rfc3339(),
-                e
+                ca, next, e
             );
 
-            self.mq.schedule_sync_repo_at(ca, next);
+            self.tasks.sync_repo(ca, next);
         }
     }
 
@@ -219,15 +213,12 @@ impl Scheduler {
 
             error!(
                 "Failed to synchronize CA '{}' with its parent '{}'. Will reschedule to: '{}'. Error: {}",
-                ca,
-                parent,
-                next.to_rfc3339(),
-                e
+                ca, parent, next, e
             );
-            self.mq.schedule_sync_parent_at(ca, parent, next);
+            self.tasks.sync_parent(ca, parent, next);
         } else {
             let next = self.config.ca_refresh_next();
-            self.mq.schedule_sync_parent_at(ca, parent, next);
+            self.tasks.sync_parent(ca, parent, next);
         }
     }
 
@@ -238,8 +229,7 @@ impl Scheduler {
             .ca_suspend_inactive_children(&ca_handle, self.started, &self.system_actor)
             .await;
 
-        self.mq
-            .schedule_check_suspend_children_at(ca_handle, Time::now() + chrono::Duration::hours(1));
+        self.tasks.suspend_children(ca_handle, in_hours(1));
     }
 
     /// Let CAs that need it republish their CRL/MFT
@@ -248,14 +238,13 @@ impl Scheduler {
 
         for ca in cas {
             info!("Re-issued MFT and CRL for CA: {}", ca);
-            self.mq.schedule_sync_repo(ca);
+            self.tasks.sync_repo(ca, now());
         }
 
         // check again in a short while.. no jitter needed as this is a cheap operation
         // which is often a no-op.
-        self.mq.schedule_republish_if_needed_at(
-            Time::now() + chrono::Duration::minutes(SCHEDULER_INTERVAL_REPUBLISH_MINS),
-        );
+        self.tasks
+            .republish_if_needed(in_minutes(SCHEDULER_INTERVAL_REPUBLISH_MINS));
 
         Ok(())
     }
@@ -268,8 +257,7 @@ impl Scheduler {
 
         // check again in 10 minutes, note.. this is a no-op in case the actual update was less
         // then 1 hour ago. See BGP_RIS_REFRESH_MINUTES constant.
-        self.mq
-            .schedule_announcements_info_refresh_at(Time::now() + chrono::Duration::minutes(10))
+        self.tasks.refresh_announcements_info(in_minutes(10))
     }
 
     /// Let CAs that need it re-issue signed objects
@@ -277,8 +265,7 @@ impl Scheduler {
         self.ca_manager.renew_objects_all(&self.system_actor).await?; // only fails on fatal errors
 
         // check again in a short while.. note that this is usually a cheap no-op
-        self.mq
-            .schedule_renew_if_needed_at(Time::now() + chrono::Duration::minutes(SCHEDULER_INTERVAL_RENEW_MINS));
+        self.tasks.renew_if_needed(in_minutes(SCHEDULER_INTERVAL_RENEW_MINS));
 
         Ok(())
     }
@@ -289,7 +276,6 @@ impl Scheduler {
             error!("Background sweep of session decryption cache failed: {}", e);
         }
 
-        self.mq
-            .schedule_sweep_login_cache_at(Time::now() + chrono::Duration::minutes(1));
+        self.tasks.sweep_login_cache(in_minutes(1));
     }
 }

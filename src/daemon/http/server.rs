@@ -24,7 +24,7 @@ use hyper::{
     service::{make_service_fn, service_fn},
     Method,
 };
-use tokio::{join, try_join};
+use tokio::try_join;
 
 use crate::{
     commons::{
