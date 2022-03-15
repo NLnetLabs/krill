@@ -6,7 +6,6 @@ extern crate bcder;
 extern crate bytes;
 extern crate chrono;
 extern crate clap;
-extern crate clokwerk;
 extern crate futures;
 extern crate futures_util;
 extern crate hex;

@@ -215,15 +215,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "clokwerk"
-version = "0.3.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a99373edf782eec8fde0d52bd2f60e4ae5eaca31f1d2cf5aec68243849a37a9"
-dependencies = [
- "chrono",
-]
-
-[[package]]
 name = "core-foundation"
 version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -775,7 +766,6 @@ dependencies = [
  "bytes",
  "chrono",
  "clap",
- "clokwerk",
  "ctrlc",
  "fern",
  "fslock",

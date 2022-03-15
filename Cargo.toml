@@ -27,7 +27,6 @@ bcder                 = "0.6.1"
 bytes                 = "1"
 chrono                = { version = "^0.4", features = ["serde"] }
 clap                  = "^2.33"
-clokwerk              = "^0.3"
 fern                  = { version = "^0.5", features = ["syslog-4"] }
 futures               = "^0.3"
 futures-util          = "^0.3"
