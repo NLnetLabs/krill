@@ -76,6 +76,7 @@ impl Scheduler {
 
                     Task::RefreshAnnouncementsInfo => self.announcements_refresh().await,
 
+                    #[cfg(feature = "multi-user")]
                     Task::SweepLoginCache => self.sweep_login_cache(),
 
                     Task::ResourceClassRemoved {
