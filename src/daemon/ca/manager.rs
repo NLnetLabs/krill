@@ -1426,28 +1426,21 @@ impl CaManager {
 /// # Publishing
 ///
 impl CaManager {
-    /// Synchronize all CAs with their repositories. Meant to be called by the background
-    /// schedular. This will log issues, but will not fail on errors with individual CAs -
-    /// because otherwise this would prevent other CAs from syncing. Note however, that the
-    /// repository status is tracked per CA and can be monitored.
-    ///
-    /// This function can still fail on internal errors, e.g. I/O issues when saving state
-    /// changes to the repo status structure.
-    pub async fn cas_repo_sync_all(&self, actor: &Actor) {
+    /// Schedule synchronizing all CAs with their repositories.
+    pub fn cas_schedule_repo_sync_all(&self, actor: &Actor) {
         match self.ca_list(actor) {
             Ok(ca_list) => {
                 for ca in ca_list.cas() {
-                    let ca_handle = ca.handle();
-                    if let Err(e) = self.cas_repo_sync_single(ca_handle).await {
-                        error!(
-                            "Could not synchronize CA '{}' with its repository/-ies. Error: {}",
-                            ca_handle, e
-                        );
-                    }
+                    self.cas_schedule_repo_sync(ca.handle().clone());
                 }
             }
             Err(e) => error!("Could not get CA list! {}", e),
         }
+    }
+
+    /// Schedule synchronizing all CAs with their repositories.
+    pub fn cas_schedule_repo_sync(&self, ca: Handle) {
+        self.tasks.sync_repo(ca, now());
     }
 
     /// Synchronize a CA with its repositories.

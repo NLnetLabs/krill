@@ -64,9 +64,9 @@ impl Scheduler {
                 match evt {
                     Task::ServerStarted => self.queue_start_tasks().await?, // return error and stop server on failure
 
-                    Task::SyncRepo { ca } => self.try_sync_repo(ca).await,
+                    Task::SyncRepo { ca } => self.sync_repo(ca).await,
 
-                    Task::SyncParent { ca, parent } => self.try_sync_parent(ca, parent).await,
+                    Task::SyncParent { ca, parent } => self.sync_parent(ca, parent).await,
 
                     Task::CheckSuspendChildren { ca } => self.suspend_children(ca).await,
 
@@ -190,7 +190,7 @@ impl Scheduler {
         Ok(())
     }
 
-    async fn try_sync_repo(&self, ca: Handle) {
+    async fn sync_repo(&self, ca: Handle) {
         debug!("Synchronize CA {} with repository", ca);
 
         if let Err(e) = self.ca_manager.cas_repo_sync_single(&ca).await {
@@ -206,7 +206,7 @@ impl Scheduler {
     }
 
     /// Try to synchronize a CA with a specific parent, reschedule if this fails
-    async fn try_sync_parent(&self, ca: Handle, parent: ParentHandle) {
+    async fn sync_parent(&self, ca: Handle, parent: ParentHandle) {
         info!("Synchronize CA '{}' with its parent '{}'", ca, parent);
         if let Err(e) = self.ca_manager.ca_sync_parent(&ca, &parent, &self.system_actor).await {
             let next = self.config.requeue_remote_failed();

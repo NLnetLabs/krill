@@ -519,14 +519,14 @@ impl KrillServer {
     }
 
     /// Re-sync all CAs with their repositories
-    pub async fn cas_repo_sync_all(&self, actor: &Actor) -> KrillEmptyResult {
-        self.ca_manager.cas_repo_sync_all(actor).await;
+    pub fn cas_repo_sync_all(&self, actor: &Actor) -> KrillEmptyResult {
+        self.ca_manager.cas_schedule_repo_sync_all(actor);
         Ok(())
     }
 
     /// Re-sync a specific CA with its repository
-    pub async fn cas_repo_sync_single(&self, ca: &Handle) -> KrillEmptyResult {
-        self.ca_manager.cas_repo_sync_single(ca).await?;
+    pub fn cas_repo_sync_single(&self, ca: &Handle) -> KrillEmptyResult {
+        self.ca_manager.cas_schedule_repo_sync(ca.clone());
         Ok(())
     }
 

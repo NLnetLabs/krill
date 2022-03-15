@@ -1186,7 +1186,7 @@ async fn api_ca_sync(req: Request, path: &mut RequestPath, ca: Handle) -> Routin
             let actor = req.actor();
             match path.next() {
                 Some("parents") => render_empty_res(req.state().cas_refresh_single(ca, &actor).await),
-                Some("repo") => render_empty_res(req.state().cas_repo_sync_single(&ca).await),
+                Some("repo") => render_empty_res(req.state().cas_repo_sync_single(&ca)),
                 _ => render_unknown_method(),
             }
         } else {
@@ -1953,7 +1953,7 @@ async fn api_resync_all(req: Request) -> RoutingResult {
     match *req.method() {
         Method::POST => aa!(req, Permission::CA_ADMIN, {
             let actor = req.actor();
-            render_empty_res(req.state().cas_repo_sync_all(&actor).await)
+            render_empty_res(req.state().cas_repo_sync_all(&actor))
         }),
         _ => render_unknown_method(),
     }
