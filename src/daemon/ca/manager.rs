@@ -825,17 +825,17 @@ impl CaManager {
     ///
     /// Note: this function can be called manually through the API, but normally the
     ///       CA refresh process is replanned on the taskqueue automatically.
-    pub async fn cas_schedule_refresh_all(&self, actor: &Actor) {
+    pub async fn cas_schedule_refresh_all(&self) {
         if let Ok(cas) = self.ca_store.list() {
             for ca_handle in cas {
-                self.cas_schedule_refresh_single(ca_handle, actor).await;
+                self.cas_schedule_refresh_single(ca_handle).await;
             }
         }
     }
 
     /// Refresh a single CA with its parents, and possibly suspend inactive children.
-    pub async fn cas_schedule_refresh_single(&self, ca_handle: Handle, actor: &Actor) {
-        self.ca_schedule_sync_parents(&ca_handle, actor).await;
+    pub async fn cas_schedule_refresh_single(&self, ca_handle: Handle) {
+        self.ca_schedule_sync_parents(&ca_handle).await;
         self.tasks.suspend_children(ca_handle, now());
     }
 
@@ -881,7 +881,7 @@ impl CaManager {
 
     /// Synchronizes a CA with its parents - up to the configures batch size.
     /// Remaining parents will be done in a future run.
-    async fn ca_schedule_sync_parents(&self, ca_handle: &Handle, actor: &Actor) {
+    async fn ca_schedule_sync_parents(&self, ca_handle: &Handle) {
         if let Ok(ca) = self.get_ca(ca_handle).await {
             // get updates from parents
             {

@@ -1183,9 +1183,8 @@ async fn api_ca_stats(req: Request, path: &mut RequestPath, ca: Handle) -> Routi
 async fn api_ca_sync(req: Request, path: &mut RequestPath, ca: Handle) -> RoutingResult {
     aa!(req, Permission::CA_UPDATE, ca.clone(), {
         if req.is_post() {
-            let actor = req.actor();
             match path.next() {
-                Some("parents") => render_empty_res(req.state().cas_refresh_single(ca, &actor).await),
+                Some("parents") => render_empty_res(req.state().cas_refresh_single(ca).await),
                 Some("repo") => render_empty_res(req.state().cas_repo_sync_single(&ca)),
                 _ => render_unknown_method(),
             }
@@ -1963,8 +1962,7 @@ async fn api_resync_all(req: Request) -> RoutingResult {
 async fn api_refresh_all(req: Request) -> RoutingResult {
     match *req.method() {
         Method::POST => aa!(req, Permission::CA_ADMIN, {
-            let actor = req.actor();
-            render_empty_res(req.state().cas_refresh_all(&actor).await)
+            render_empty_res(req.state().cas_refresh_all().await)
         }),
         _ => render_unknown_method(),
     }

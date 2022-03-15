@@ -531,14 +531,14 @@ impl KrillServer {
     }
 
     /// Refresh all CAs: ask for updates and shrink as needed.
-    pub async fn cas_refresh_all(&self, actor: &Actor) -> KrillEmptyResult {
-        self.ca_manager.cas_schedule_refresh_all(actor).await;
+    pub async fn cas_refresh_all(&self) -> KrillEmptyResult {
+        self.ca_manager.cas_schedule_refresh_all().await;
         Ok(())
     }
 
     /// Refresh a specific CA with its parents
-    pub async fn cas_refresh_single(&self, ca_handle: Handle, actor: &Actor) -> KrillEmptyResult {
-        self.ca_manager.cas_schedule_refresh_single(ca_handle, actor).await;
+    pub async fn cas_refresh_single(&self, ca_handle: Handle) -> KrillEmptyResult {
+        self.ca_manager.cas_schedule_refresh_single(ca_handle).await;
         Ok(())
     }
 }
