@@ -422,15 +422,16 @@ where
 
         let stored_command_builder = StoredCommandBuilder::new(&cmd, latest.version(), info.last_command);
 
-        let res = match latest.process_command(cmd) {
+        match latest.process_command(cmd) {
             Err(e) => {
                 let stored_command = stored_command_builder.finish_with_error(&e);
                 self.store_command(stored_command)?;
+                self.save_info(&handle, &info)?; // last_command was updated
                 Err(e)
             }
             Ok(events) => {
                 if events.is_empty() {
-                    return Ok(latest); // otherwise the version info will be updated
+                    Ok(latest) // note: no-op no version info will be updated
                 } else {
                     let agg = Arc::make_mut(&mut latest);
 
@@ -506,6 +507,9 @@ where
 
                     cache.insert(handle.clone(), Arc::new(agg.clone()));
 
+                    // Save the info so that the aggregate can be loaded properly by the listeners.
+                    self.save_info(&handle, &info)?;
+
                     // Now send the events to the 'post-save' listeners.
                     for listener in &self.post_save_listeners {
                         listener.as_ref().listen(agg, events.as_slice());
@@ -514,11 +518,7 @@ where
                     Ok(latest)
                 }
             }
-        };
-
-        self.save_info(&handle, &info)?;
-
-        res
+        }
     }
 
     /// Returns true if an instance exists for the id
