@@ -114,41 +114,57 @@ impl TaskQueue {
         }
     }
 
-    fn schedule(&self, task: Task, priority: Priority) {
+    fn schedule_or_re_schedule(&self, task: Task, priority: Priority) {
+        self.schedule(task, priority, true);
+    }
+
+    fn schedule(&self, task: Task, priority: Priority, reschedule: bool) {
         let mut q = self.q.write().unwrap();
 
-        if q.change_priority(&task, priority).is_none() {
+        if reschedule {
+            if q.change_priority(&task, priority).is_none() {
+                debug!("Adding task: {}, with priority: {}", task, priority);
+                q.push(task, priority);
+            } else {
+                debug!("Updated task: {} to priority: {}", task, priority);
+            }
+        } else if q.get(&task).is_none() {
+            debug!("Adding task: {}, with priority: {}", task, priority);
             q.push(task, priority);
         }
     }
 
     pub fn sync_repo(&self, ca: Handle, priority: Priority) {
-        self.schedule(Task::SyncRepo { ca }, priority);
+        self.schedule_or_re_schedule(Task::SyncRepo { ca }, priority);
     }
 
     pub fn sync_parent(&self, ca: Handle, parent: ParentHandle, priority: Priority) {
-        self.schedule(Task::SyncParent { ca, parent }, priority);
+        self.schedule_or_re_schedule(Task::SyncParent { ca, parent }, priority);
+    }
+
+    pub fn sync_parent_if_missing(&self, ca: Handle, parent: ParentHandle, priority: Priority) {
+        self.schedule(Task::SyncParent { ca, parent }, priority, false);
     }
 
     pub fn suspend_children(&self, ca: Handle, priority: Priority) {
-        self.schedule(Task::CheckSuspendChildren { ca }, priority);
+        self.schedule_or_re_schedule(Task::CheckSuspendChildren { ca }, priority);
     }
 
     pub fn republish_if_needed(&self, priority: Priority) {
-        self.schedule(Task::RepublishIfNeeded, priority);
+        self.schedule_or_re_schedule(Task::RepublishIfNeeded, priority);
     }
 
     pub fn renew_if_needed(&self, priority: Priority) {
-        self.schedule(Task::RenewObjectsIfNeeded, priority);
+        self.schedule_or_re_schedule(Task::RenewObjectsIfNeeded, priority);
     }
 
     pub fn refresh_announcements_info(&self, priority: Priority) {
-        self.schedule(Task::RefreshAnnouncementsInfo, priority);
+        self.schedule_or_re_schedule(Task::RefreshAnnouncementsInfo, priority);
     }
 
     #[cfg(feature = "multi-user")]
     pub fn sweep_login_cache(&self, priority: Priority) {
-        self.schedule(Task::SweepLoginCache, priority);
+        self.schedule_or_re_schedule(Task::SweepLoginCache, priority);
     }
 
     fn drop_sync_parent(&self, ca: Handle, parent: ParentHandle) {
@@ -196,7 +212,7 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for TaskQueue {
                 } => {
                     self.sync_repo(handle.clone(), now());
 
-                    self.schedule(
+                    self.schedule_or_re_schedule(
                         Task::ResourceClassRemoved {
                             ca: handle.clone(),
                             parent: parent.clone(),
@@ -210,7 +226,7 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for TaskQueue {
                 CaEvtDet::UnexpectedKeyFound {
                     resource_class_name,
                     revoke_req,
-                } => self.schedule(
+                } => self.schedule_or_re_schedule(
                     Task::UnexpectedKey {
                         ca: handle.clone(),
                         rcn: resource_class_name.clone(),
@@ -220,6 +236,7 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for TaskQueue {
                 ),
 
                 CaEvtDet::ParentAdded { parent, .. } => {
+                    debug!("Parent {} added to CA {}, scheduling sync", parent, handle);
                     self.sync_parent(handle.clone(), parent.clone(), now());
                 }
                 CaEvtDet::RepoUpdated { .. } => {
@@ -230,7 +247,9 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for TaskQueue {
                 CaEvtDet::CertificateRequested {
                     resource_class_name, ..
                 } => {
+                    debug!("CA {} requested certificate for RC {}", handle, resource_class_name);
                     if let Ok(parent) = ca.parent_for_rc(resource_class_name) {
+                        debug!("CA {} will schedule sync for parent {}", handle, parent);
                         self.sync_parent(handle.clone(), parent.clone(), now());
                     }
                 }

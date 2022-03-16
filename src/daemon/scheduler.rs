@@ -144,12 +144,16 @@ impl Scheduler {
         let ca_list = self.ca_manager.ca_list(&self.system_actor)?;
         let cas = ca_list.cas();
 
+        debug!("Adding tasks at start up");
+
         let mut use_jitter = cas.len() >= SCHEDULER_USE_JITTER_CAS_THRESHOLD;
 
         for summary in cas {
             let ca = self.ca_manager.get_ca(summary.handle()).await?;
 
             use_jitter = use_jitter || ca.nr_parents() >= self.config.ca_refresh_parents_batch_size;
+
+            debug!("Adding tasks for CA {}, using jitter: {}", ca.handle(), use_jitter);
 
             // Plan a regular sync for each parent. Spread these out if there
             // are too many CAs or parents for a CA. In cases where there are only
@@ -218,8 +222,13 @@ impl Scheduler {
             );
             self.tasks.sync_parent(ca, parent, next);
         } else {
+            // Sync was okay.. good. We may need to schedule another sync for
+            // the next refresh interval UNLESS the above sync already triggered
+            // a new sync - i.e. new resource entitlements were found and a
+            // a new certificate was requested. In that case we do not want to
+            // delay (reschedule) that request.
             let next = self.config.ca_refresh_next();
-            self.tasks.sync_parent(ca, parent, next);
+            self.tasks.sync_parent_if_missing(ca, parent, next);
         }
     }
 
