@@ -114,57 +114,68 @@ impl TaskQueue {
         }
     }
 
-    fn schedule_or_re_schedule(&self, task: Task, priority: Priority) {
-        self.schedule(task, priority, true);
-    }
-
-    fn schedule(&self, task: Task, priority: Priority, reschedule: bool) {
+    /// Schedules a task for the given priority. If the equivalent task
+    /// was already present, then it will get the highest of the two
+    /// priorities.
+    ///
+    /// Many tasks are planned with a high priority - e.g. if they are
+    /// triggered through CA events. Other tasks may be planned for the
+    /// future (e.g. sync with parent tomorrow). The latter can be moved
+    /// forward when circumstances dictate.
+    ///
+    /// Recurring tasks will typically be re-added by the Scheduler when
+    /// needed (and can then be moved forward if needed).
+    fn schedule(&self, task: Task, priority: Priority) {
         let mut q = self.q.write().unwrap();
 
-        if reschedule {
-            if q.change_priority(&task, priority).is_none() {
+        let prio_opt = q.get_priority(&task).copied();
+
+        match prio_opt {
+            None => {
                 debug!("Adding task: {}, with priority: {}", task, priority);
                 q.push(task, priority);
-            } else {
-                debug!("Updated task: {} to priority: {}", task, priority);
             }
-        } else if q.get(&task).is_none() {
-            debug!("Adding task: {}, with priority: {}", task, priority);
-            q.push(task, priority);
+            Some(existing_priority) => {
+                if existing_priority < priority {
+                    debug!(
+                        "Re-prioritising task: {} from: {} to: {}",
+                        task, existing_priority, priority
+                    );
+                    q.change_priority(&task, priority);
+                } else {
+                    debug!("Keeping existing task: {} with higher priority: {}", task, priority);
+                }
+            }
         }
     }
 
     pub fn sync_repo(&self, ca: Handle, priority: Priority) {
-        self.schedule_or_re_schedule(Task::SyncRepo { ca }, priority);
+        self.schedule(Task::SyncRepo { ca }, priority);
     }
 
     pub fn sync_parent(&self, ca: Handle, parent: ParentHandle, priority: Priority) {
-        self.schedule_or_re_schedule(Task::SyncParent { ca, parent }, priority);
-    }
-
-    pub fn sync_parent_if_missing(&self, ca: Handle, parent: ParentHandle, priority: Priority) {
-        self.schedule(Task::SyncParent { ca, parent }, priority, false);
+        self.schedule(Task::SyncParent { ca, parent }, priority);
     }
 
     pub fn suspend_children(&self, ca: Handle, priority: Priority) {
-        self.schedule_or_re_schedule(Task::CheckSuspendChildren { ca }, priority);
+        self.schedule(Task::CheckSuspendChildren { ca }, priority);
     }
 
     pub fn republish_if_needed(&self, priority: Priority) {
-        self.schedule_or_re_schedule(Task::RepublishIfNeeded, priority);
+        self.schedule(Task::RepublishIfNeeded, priority);
     }
 
     pub fn renew_if_needed(&self, priority: Priority) {
-        self.schedule_or_re_schedule(Task::RenewObjectsIfNeeded, priority);
+        self.schedule(Task::RenewObjectsIfNeeded, priority);
     }
 
     pub fn refresh_announcements_info(&self, priority: Priority) {
-        self.schedule_or_re_schedule(Task::RefreshAnnouncementsInfo, priority);
+        self.schedule(Task::RefreshAnnouncementsInfo, priority);
     }
 
     #[cfg(feature = "multi-user")]
     pub fn sweep_login_cache(&self, priority: Priority) {
-        self.schedule_or_re_schedule(Task::SweepLoginCache, priority);
+        self.schedule(Task::SweepLoginCache, priority);
     }
 
     fn drop_sync_parent(&self, ca: Handle, parent: ParentHandle) {
@@ -212,7 +223,7 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for TaskQueue {
                 } => {
                     self.sync_repo(handle.clone(), now());
 
-                    self.schedule_or_re_schedule(
+                    self.schedule(
                         Task::ResourceClassRemoved {
                             ca: handle.clone(),
                             parent: parent.clone(),
@@ -226,7 +237,7 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for TaskQueue {
                 CaEvtDet::UnexpectedKeyFound {
                     resource_class_name,
                     revoke_req,
-                } => self.schedule_or_re_schedule(
+                } => self.schedule(
                     Task::UnexpectedKey {
                         ca: handle.clone(),
                         rcn: resource_class_name.clone(),

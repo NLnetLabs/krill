@@ -222,13 +222,8 @@ impl Scheduler {
             );
             self.tasks.sync_parent(ca, parent, next);
         } else {
-            // Sync was okay.. good. We may need to schedule another sync for
-            // the next refresh interval UNLESS the above sync already triggered
-            // a new sync - i.e. new resource entitlements were found and a
-            // a new certificate was requested. In that case we do not want to
-            // delay (reschedule) that request.
             let next = self.config.ca_refresh_next();
-            self.tasks.sync_parent_if_missing(ca, parent, next);
+            self.tasks.sync_parent(ca, parent, next);
         }
     }
 
