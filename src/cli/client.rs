@@ -688,6 +688,8 @@ mod tests {
 
         match res {
             ApiResponse::GenericBody(body) => {
+                // Use the following to regenerate the test config file in case of text - not LOGIC - changes.
+                // file::save(body.as_bytes(), &std::path::PathBuf::from("test-resources/krill-init.conf")).unwrap();
                 let expected = include_str!("../../test-resources/krill-init.conf");
                 assert_eq!(expected, &body)
             }
@@ -710,6 +712,8 @@ mod tests {
 
         match res {
             ApiResponse::GenericBody(body) => {
+                // Use the following to regenerate the test config file in case of text - not LOGIC - changes.
+                // file::save(body.as_bytes(), &std::path::PathBuf::from("test-resources/krill-init-multi-user.conf")).unwrap();
                 let expected = include_str!("../../test-resources/krill-init-multi-user.conf");
                 assert_eq!(expected, &body)
             }
