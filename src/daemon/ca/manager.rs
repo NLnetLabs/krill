@@ -821,10 +821,10 @@ impl CaManager {
         Ok(())
     }
 
-    /// Schedule refreshing all CAs asap:
+    /// Schedule refreshing all CAs as soon as possible:
     ///
     /// Note: this function can be called manually through the API, but normally the
-    ///       CA refresh process is replanned on the taskqueue automatically.
+    ///       CA refresh process is replanned on the task queue automatically.
     pub async fn cas_schedule_refresh_all(&self) {
         if let Ok(cas) = self.ca_store.list() {
             for ca_handle in cas {
