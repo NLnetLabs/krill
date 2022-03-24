@@ -22,7 +22,7 @@ use crate::{
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 #[allow(clippy::large_enum_variant)]
 pub enum Task {
-    ServerStarted,
+    QueueStartTasks,
 
     SyncRepo {
         ca: Handle,
@@ -33,7 +33,7 @@ pub enum Task {
         parent: ParentHandle,
     },
 
-    CheckSuspendChildren {
+    SuspendChildrenIfNeeded {
         ca: Handle,
     },
 
@@ -61,10 +61,10 @@ pub enum Task {
 impl fmt::Display for Task {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Task::ServerStarted => write!(f, "Server just started"),
+            Task::QueueStartTasks => write!(f, "Server just started"),
             Task::SyncRepo { ca } => write!(f, "synchronize repo for '{}'", ca),
             Task::SyncParent { ca, parent } => write!(f, "synchronize CA '{}' with parent '{}'", ca, parent),
-            Task::CheckSuspendChildren { ca } => write!(f, "verify if CA '{}' has children to suspend", ca),
+            Task::SuspendChildrenIfNeeded { ca } => write!(f, "verify if CA '{}' has children to suspend", ca),
             Task::RepublishIfNeeded => write!(f, "let CAs republish their mft/crls if needed"),
             Task::RenewObjectsIfNeeded => write!(f, "let CAs renew their signed objects if needed"),
             Task::RefreshAnnouncementsInfo => write!(f, "check for new announcement info"),
@@ -91,7 +91,7 @@ pub struct TaskQueue {
 impl Default for TaskQueue {
     fn default() -> Self {
         let mut q = PriorityQueue::new();
-        q.push(Task::ServerStarted, now());
+        q.push(Task::QueueStartTasks, now());
 
         TaskQueue { q: RwLock::new(q) }
     }
@@ -158,7 +158,7 @@ impl TaskQueue {
     }
 
     pub fn suspend_children(&self, ca: Handle, priority: Priority) {
-        self.schedule(Task::CheckSuspendChildren { ca }, priority);
+        self.schedule(Task::SuspendChildrenIfNeeded { ca }, priority);
     }
 
     pub fn republish_if_needed(&self, priority: Priority) {

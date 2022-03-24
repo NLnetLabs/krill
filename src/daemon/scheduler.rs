@@ -62,13 +62,13 @@ impl Scheduler {
         loop {
             while let Some(evt) = self.tasks.pop(now()) {
                 match evt {
-                    Task::ServerStarted => self.queue_start_tasks().await?, // return error and stop server on failure
+                    Task::QueueStartTasks => self.queue_start_tasks().await?, // return error and stop server on failure
 
                     Task::SyncRepo { ca } => self.sync_repo(ca).await,
 
                     Task::SyncParent { ca, parent } => self.sync_parent(ca, parent).await,
 
-                    Task::CheckSuspendChildren { ca } => self.suspend_children(ca).await,
+                    Task::SuspendChildrenIfNeeded { ca } => self.suspend_children_if_needed(ca).await,
 
                     Task::RepublishIfNeeded => self.republish_if_needed().await?,
 
@@ -106,6 +106,7 @@ impl Scheduler {
                             );
                         }
                     }
+
                     Task::UnexpectedKey {
                         ca,
                         rcn,
@@ -236,7 +237,7 @@ impl Scheduler {
     }
 
     /// Try to suspend children for a CA
-    async fn suspend_children(&self, ca_handle: Handle) {
+    async fn suspend_children_if_needed(&self, ca_handle: Handle) {
         debug!("Verify if CA '{}' has children that need to be suspended", ca_handle);
         self.ca_manager
             .ca_suspend_inactive_children(&ca_handle, self.started, &self.system_actor)
