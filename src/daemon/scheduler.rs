@@ -56,7 +56,7 @@ impl Scheduler {
         }
     }
 
-    /// Run the schedular in the background. It will sweep the message queue for tasks
+    /// Run the scheduler in the background. It will sweep the message queue for tasks
     /// and re-schedule new tasks as needed.
     pub async fn run(&self) -> KrillResult<()> {
         loop {
@@ -137,7 +137,7 @@ impl Scheduler {
         // will just want to re-sync them with their parents and repository
         // on start up.
         //
-        // If there are many, then will apply some random delays (jitter)
+        // If there are many, then we apply some random delays (jitter)
         // to avoid a thundering herd. Note that the operator can always
         // choose to run bulk operations manually if they know that they
         // cannot wait.
@@ -156,7 +156,8 @@ impl Scheduler {
             // Plan a regular sync for each parent. Spread these out if there
             // are too many CAs or parents for a CA. In cases where there are only
             // a handful of CAs/parents, this 'ca_refresh_start_up' will be 'now'.
-            // Note: users can override using the 'bulk' functions.
+            //
+            // Note: users can change the priority to 'now' by using the 'bulk' functions.
             let too_many_parents = ca.nr_parents() >= self.config.ca_refresh_parents_batch_size;
             if !use_jitter && too_many_parents {
                 debug!(

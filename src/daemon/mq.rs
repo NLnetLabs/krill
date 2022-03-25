@@ -274,8 +274,7 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for TaskQueue {
 //------------ Priority ------------------------------------------------------
 
 /// Can be used as a priority value for [`PriorityQueue`]. Meaning that the
-/// time value which is soonest has the highest priority. So, in short reverse
-/// order.
+/// time value which is soonest has the highest priority.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Priority(i64);
 
