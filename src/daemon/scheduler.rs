@@ -90,8 +90,7 @@ impl Scheduler {
                             ca, parent
                         );
 
-                        let mut requests = HashMap::new();
-                        requests.insert(rcn, revocation_requests);
+                        let requests = HashMap::from([(rcn, revocation_requests)]);
 
                         if self
                             .ca_manager
