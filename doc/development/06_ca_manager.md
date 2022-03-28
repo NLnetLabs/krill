@@ -135,8 +135,12 @@ priority. The `Task` enum is explained below and contains the various background
 tasks that may be scheduled. They are scheduled or re-scheduled with an appropriate
 priority. Generally speaking:
 - we use 'now' for triggered tasks - such as sync with repo
-- we use 5 minutes for rescheduling failed syncs with parent/repo
-- we use a configurable interval for scheduling any recurring tasks
+- we use 'now' pus 5 minutes for rescheduling failed syncs with parent/repo
+- we use 'now' plus a configurable interval for scheduling any recurring tasks
+
+Furthermore, it should be noted that if a task is already present on the `TaskQueue`,
+then scheduling it again will result in a single task being scheduled using the
+highest priority between 'new' and 'existing'.
 
 A Krill instance only has a single (singleton) `CaManager` and `RepositoryManager`, which
 are kept as `Arc<CaManager>` and `Arc<RepositoryManager>` so that they (well the reference)
