@@ -836,7 +836,6 @@ impl CaManager {
     /// Refresh a single CA with its parents, and possibly suspend inactive children.
     pub async fn cas_schedule_refresh_single(&self, ca_handle: Handle) {
         self.ca_schedule_sync_parents(&ca_handle).await;
-        self.tasks.suspend_children(ca_handle, now());
     }
 
     /// Suspend child CAs
