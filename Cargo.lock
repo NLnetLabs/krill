@@ -215,15 +215,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "clokwerk"
-version = "0.3.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a99373edf782eec8fde0d52bd2f60e4ae5eaca31f1d2cf5aec68243849a37a9"
-dependencies = [
- "chrono",
-]
-
-[[package]]
 name = "core-foundation"
 version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -767,7 +758,7 @@ dependencies = [
 
 [[package]]
 name = "krill"
-version = "0.9.5-rc6"
+version = "0.9.5-rc7"
 dependencies = [
  "base64",
  "basic-cookies",
@@ -775,7 +766,6 @@ dependencies = [
  "bytes",
  "chrono",
  "clap",
- "clokwerk",
  "ctrlc",
  "fern",
  "fslock",
@@ -791,6 +781,7 @@ dependencies = [
  "openidconnect",
  "openssl",
  "oso",
+ "priority-queue",
  "rand",
  "regex",
  "reqwest",
@@ -1297,6 +1288,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "925383efa346730478fb4838dbe9137d2a47675ad789c546d150a6e1dd4ab31c"
 
 [[package]]
+name = "priority-queue"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "00ba480ac08d3cfc40dea10fd466fd2c14dee3ea6fc7873bc4079eda2727caf0"
+dependencies = [
+ "autocfg",
+ "indexmap",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1374,9 +1375,9 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "1.5.4"
+version = "1.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d07a8629359eb56f1e2fb1652bb04212c072a87ba68546a04065d525673ac461"
+checksum = "1a11647b6b25ff05a515cb92c365cec08801e83423a235b51e231e1808747286"
 dependencies = [
  "aho-corasick",
  "memchr",

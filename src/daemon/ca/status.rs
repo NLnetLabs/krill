@@ -113,16 +113,11 @@ impl StatusStore {
         parent: &ParentHandle,
         uri: &ServiceUri,
         error: &Error,
-        next_run_seconds: i64,
     ) -> KrillResult<()> {
         let error_response = Self::error_to_error_res(error);
 
-        self.update_ca_status(ca, |status| {
-            status
-                .parents
-                .set_failure(parent, uri, error_response, next_run_seconds)
-        })
-        .await
+        self.update_ca_status(ca, |status| status.parents.set_failure(parent, uri, error_response))
+            .await
     }
 
     pub async fn set_parent_last_updated(
@@ -130,12 +125,9 @@ impl StatusStore {
         ca: &Handle,
         parent: &ParentHandle,
         uri: &ServiceUri,
-        next_run_seconds: i64,
     ) -> KrillResult<()> {
-        self.update_ca_status(ca, |status| {
-            status.parents.set_last_updated(parent, uri, next_run_seconds)
-        })
-        .await
+        self.update_ca_status(ca, |status| status.parents.set_last_updated(parent, uri))
+            .await
     }
 
     pub async fn set_parent_entitlements(
@@ -144,14 +136,9 @@ impl StatusStore {
         parent: &ParentHandle,
         uri: &ServiceUri,
         entitlements: &Entitlements,
-        next_run_seconds: i64,
     ) -> KrillResult<()> {
-        self.update_ca_status(ca, |status| {
-            status
-                .parents
-                .set_entitlements(parent, uri, entitlements, next_run_seconds)
-        })
-        .await
+        self.update_ca_status(ca, |status| status.parents.set_entitlements(parent, uri, entitlements))
+            .await
     }
 
     pub async fn remove_parent(&self, ca: &Handle, parent: &ParentHandle) -> KrillResult<()> {

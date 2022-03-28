@@ -29,6 +29,8 @@ use crate::{
 #[cfg(feature = "multi-user")]
 use crate::daemon::auth::providers::{config_file::config::ConfigAuthUsers, openid_connect::ConfigAuthOpenIDConnect};
 
+use super::mq::{in_seconds, Priority};
+
 //------------ ConfigDefaults ------------------------------------------------
 
 pub struct ConfigDefaults;
@@ -104,8 +106,12 @@ impl ConfigDefaults {
         vec![]
     }
 
-    fn ca_refresh_seconds() -> u32 {
-        600
+    fn ca_refresh_seconds() -> i64 {
+        24 * 3600 // 24 hours
+    }
+
+    fn ca_refresh_jitter_seconds() -> i64 {
+        12 * 3600 // 12 hours
     }
 
     fn ca_refresh_parents_batch_size() -> usize {
@@ -201,10 +207,6 @@ impl ConfigDefaults {
     fn timing_aspa_reissue_weeks_before() -> i64 {
         4
     }
-
-    fn cas_sync_parallel() -> bool {
-        false
-    }
 }
 
 //------------ Config --------------------------------------------------------
@@ -271,7 +273,10 @@ pub struct Config {
     pub auth_openidconnect: Option<ConfigAuthOpenIDConnect>,
 
     #[serde(default = "ConfigDefaults::ca_refresh_seconds", alias = "ca_refresh")]
-    pub ca_refresh_seconds: u32,
+    ca_refresh_seconds: i64,
+
+    #[serde(default = "ConfigDefaults::ca_refresh_jitter_seconds")]
+    ca_refresh_jitter_seconds: i64,
 
     #[serde(default = "ConfigDefaults::ca_refresh_parents_batch_size")]
     pub ca_refresh_parents_batch_size: usize,
@@ -323,10 +328,6 @@ pub struct Config {
     pub metrics: MetricsConfig,
 
     pub testbed: Option<TestBed>,
-
-    // Sync CA strategy
-    #[serde(default = "ConfigDefaults::cas_sync_parallel")]
-    pub cas_sync_parallel: bool,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -544,6 +545,38 @@ impl Config {
         }
     }
 
+    pub fn requeue_remote_failed(&self) -> Priority {
+        if test_mode_enabled() {
+            in_seconds(5)
+        } else {
+            in_seconds(SCHEDULER_REQUEUE_DELAY_SECONDS)
+        }
+    }
+
+    /// Get the priority for the next CA refresh based on the configured
+    /// ca_refresh_seconds (1 day), and jitter (12 hours)
+    pub fn ca_refresh_next(&self) -> Priority {
+        Self::ca_refresh_next_from(self.ca_refresh_seconds, self.ca_refresh_jitter_seconds)
+    }
+
+    pub fn ca_refresh_start_up(&self, use_jitter: bool) -> Priority {
+        let jitter_seconds = if use_jitter { self.ca_refresh_jitter_seconds } else { 0 };
+
+        Self::ca_refresh_next_from(0, jitter_seconds)
+    }
+
+    fn ca_refresh_next_from(regular_seconds: i64, jitter_seconds: i64) -> Priority {
+        let random_seconds = if jitter_seconds == 0 {
+            0
+        } else {
+            use rand::Rng;
+            let mut rng = rand::thread_rng();
+            rng.gen_range(0..jitter_seconds)
+        };
+
+        in_seconds(regular_seconds + random_seconds)
+    }
+
     pub fn testbed(&self) -> Option<&TestBed> {
         self.testbed.as_ref()
     }
@@ -582,6 +615,7 @@ impl Config {
         #[cfg(feature = "multi-user")]
         let auth_openidconnect = None;
         let ca_refresh_seconds = if enable_ca_refresh { 1 } else { 86400 };
+        let ca_refresh_jitter_seconds = if enable_ca_refresh { 0 } else { 86400 }; // no jitter in testing
         let ca_refresh_parents_batch_size = 10;
         let post_limit_api = ConfigDefaults::post_limit_api();
         let post_limit_rfc8181 = ConfigDefaults::post_limit_rfc8181();
@@ -655,8 +689,6 @@ impl Config {
             None
         };
 
-        let cas_sync_parallel = false;
-
         let suspend_child_after_inactive_seconds = if enable_suspend { Some(3) } else { None };
 
         Config {
@@ -682,6 +714,7 @@ impl Config {
             #[cfg(feature = "multi-user")]
             auth_openidconnect,
             ca_refresh_seconds,
+            ca_refresh_jitter_seconds,
             ca_refresh_parents_batch_size,
             suspend_child_after_inactive_seconds,
             suspend_child_after_inactive_hours: None,
@@ -700,7 +733,6 @@ impl Config {
             repository_retention,
             metrics,
             testbed,
-            cas_sync_parallel,
         }
     }
 
@@ -757,6 +789,14 @@ impl Config {
             );
             self.ca_refresh_seconds = CA_REFRESH_SECONDS_MAX;
         }
+
+        let half_refresh = self.ca_refresh_seconds / 2;
+
+        if self.ca_refresh_jitter_seconds > half_refresh {
+            warn!("The value for 'ca_refresh_jitter_seconds' exceeded 50% of 'ca_refresh_seconds'. Changing it to {} seconds", half_refresh);
+            self.ca_refresh_jitter_seconds = half_refresh;
+        }
+
         Ok(())
     }
 

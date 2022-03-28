@@ -2449,6 +2449,7 @@ pub enum BulkCaCommand {
     Refresh,
     Publish,
     Sync,
+    Suspend,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

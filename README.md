@@ -21,7 +21,7 @@ For more information please refer to the [documentation](https://krill.docs.nlne
 
 # Changelog
 
-## 0.9.5 RC6 'Have You considered these Upgrades?'
+## 0.9.5 RC7 'Have You considered these Upgrades?'
 
 This release was primarily intended to improve support for migrations of pre-0.9.0
 installations. The upgrade code has been separated more cleanly into a step where
@@ -44,6 +44,21 @@ This has the following advantages:
 - The downtime for data migrations is reduced for servers with lots of data
 - If the preparation fails, there is no need to revert a krill update
 
+In addition to this we have also made some changes to the CA parent refresh logic.
+Krill CAs were checking their entitlements with their parents every 10 minutes,
+and this causes too much load on parent CAs with many children. There should be
+no need to check this often. CAs will now check every 24 to 36 hours, using a
+random spread. This will decrease the load on parent CAs significantly.
+
+Note that you can always force a 'parent refresh' sooner through the UI or command
+line (krillc bulk refresh). You may want to use this if your parent informs you
+through other channels that your resources have changed - e.g. you were allocated
+a new prefix.
+
+Secondly, because the next synchronisation time is now difficult to predict in the
+code that reports the parent status - it is now no longer shown in the UI/API.
+We may add this back in a future release. See issue #807.
+
 You can read more about this upgrade process here:
 https://krill.docs.nlnetlabs.nl/en/latest/upgrade.html
 
@@ -54,7 +69,7 @@ In addition to this we added a few other quick fixes in this release:
 - Connect to local parent directly #791
 - Do not sign/validate RFC6492 messages to/from local parent #797
 - Use per CA locking for CA statuses #795
-- Make CA sync strategy configurable #799
+- Decrease CA update frequency and use jitter to spread load #802
 
 The full list of changes can be found here:
 https://github.com/NLnetLabs/krill/projects/20

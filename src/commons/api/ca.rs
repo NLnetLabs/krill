@@ -1345,24 +1345,16 @@ impl ParentStatuses {
         sorted_parents.into_iter().map(|(handle, _)| handle).cloned().collect()
     }
 
-    pub fn set_failure(&mut self, parent: &ParentHandle, uri: &ServiceUri, error: ErrorResponse, next_seconds: i64) {
-        self.get_mut_status(parent)
-            .set_failure(uri.clone(), error, next_seconds);
+    pub fn set_failure(&mut self, parent: &ParentHandle, uri: &ServiceUri, error: ErrorResponse) {
+        self.get_mut_status(parent).set_failure(uri.clone(), error);
     }
 
-    pub fn set_entitlements(
-        &mut self,
-        parent: &ParentHandle,
-        uri: &ServiceUri,
-        entitlements: &Entitlements,
-        next_seconds: i64,
-    ) {
-        self.get_mut_status(parent)
-            .set_entitlements(uri.clone(), entitlements, next_seconds);
+    pub fn set_entitlements(&mut self, parent: &ParentHandle, uri: &ServiceUri, entitlements: &Entitlements) {
+        self.get_mut_status(parent).set_entitlements(uri.clone(), entitlements);
     }
 
-    pub fn set_last_updated(&mut self, parent: &ParentHandle, uri: &ServiceUri, next_seconds: i64) {
-        self.get_mut_status(parent).set_last_updated(uri.clone(), next_seconds);
+    pub fn set_last_updated(&mut self, parent: &ParentHandle, uri: &ServiceUri) {
+        self.get_mut_status(parent).set_last_updated(uri.clone());
     }
 
     fn get_mut_status(&mut self, parent: &ParentHandle) -> &mut ParentStatus {
@@ -1403,11 +1395,6 @@ impl fmt::Display for ParentStatuses {
                     writeln!(f, "URI: {}", exchange.uri)?;
                     writeln!(f, "Status: {}", exchange.result)?;
                     writeln!(f, "Last contacted: {}", exchange.timestamp().to_rfc3339())?;
-                    writeln!(
-                        f,
-                        "Next contact on or before: {}",
-                        status.next_exchange_before().to_rfc3339()
-                    )?;
 
                     if exchange.was_success() {
                         write!(f, "Resource Entitlements:")?;
@@ -1503,16 +1490,11 @@ impl From<&IssuedCert> for ParentStatusCert {
 pub struct ParentStatus {
     last_exchange: Option<ParentExchange>,
     last_success: Option<Timestamp>,
-    next_exchange_before: Timestamp,
     all_resources: ResourceSet,
     entitlements: HashMap<ResourceClassName, KnownEntitlement>,
 }
 
 impl ParentStatus {
-    fn next_exchange_before(&self) -> Timestamp {
-        self.next_exchange_before
-    }
-
     pub fn last_success(&self) -> Option<Timestamp> {
         self.last_success
     }
@@ -1529,21 +1511,16 @@ impl ParentStatus {
         self.last_exchange.as_ref().map(|e| e.to_failure_opt()).flatten()
     }
 
-    fn set_next_exchange(&mut self, next_run_seconds: i64) {
-        self.next_exchange_before = Timestamp::now_plus_seconds(next_run_seconds);
-    }
-
-    fn set_failure(&mut self, uri: ServiceUri, error: ErrorResponse, next_run_seconds: i64) {
+    fn set_failure(&mut self, uri: ServiceUri, error: ErrorResponse) {
         self.last_exchange = Some(ParentExchange {
             timestamp: Timestamp::now(),
             uri,
             result: ExchangeResult::Failure(error),
         });
-        self.set_next_exchange(next_run_seconds);
     }
 
-    fn set_entitlements(&mut self, uri: ServiceUri, entitlements: &Entitlements, next_run_seconds: i64) {
-        self.set_last_updated(uri, next_run_seconds);
+    fn set_entitlements(&mut self, uri: ServiceUri, entitlements: &Entitlements) {
+        self.set_last_updated(uri);
 
         self.entitlements = entitlements
             .classes()
@@ -1561,10 +1538,9 @@ impl ParentStatus {
         }
 
         self.all_resources = all_resources;
-        self.set_next_exchange(next_run_seconds);
     }
 
-    fn set_last_updated(&mut self, uri: ServiceUri, next_run_seconds: i64) {
+    fn set_last_updated(&mut self, uri: ServiceUri) {
         let timestamp = Timestamp::now();
         self.last_exchange = Some(ParentExchange {
             timestamp,
@@ -1572,7 +1548,6 @@ impl ParentStatus {
             result: ExchangeResult::Success,
         });
         self.last_success = Some(timestamp);
-        self.set_next_exchange(next_run_seconds);
     }
 }
 
@@ -1582,7 +1557,6 @@ impl Default for ParentStatus {
             last_exchange: None,
             last_success: None,
             all_resources: ResourceSet::default(),
-            next_exchange_before: Timestamp::now() + Duration::hours(1),
             entitlements: HashMap::new(),
         }
     }
@@ -1951,6 +1925,10 @@ impl ChildExchange {
 pub struct Timestamp(i64);
 
 impl Timestamp {
+    pub fn new(ts: i64) -> Self {
+        Timestamp(ts)
+    }
+
     pub fn now() -> Self {
         Timestamp(Time::now().timestamp())
     }
@@ -3008,7 +2986,6 @@ mod test {
     fn find_sync_candidates() {
         let uri = ServiceUri::try_from("https://example.com/rfc6492/child/".to_string()).unwrap();
 
-        let in_five_seconds = Timestamp::now_plus_seconds(5);
         let five_seconds_ago = Timestamp::now_minus_seconds(5);
         let five_mins_ago = Timestamp::now_minus_seconds(300);
 
@@ -3022,7 +2999,6 @@ mod test {
         let p3_status_no_exchange = ParentStatus {
             last_exchange: None,
             last_success: None,
-            next_exchange_before: in_five_seconds,
             all_resources: ResourceSet::default(),
             entitlements: HashMap::new(),
         };
@@ -3034,7 +3010,6 @@ mod test {
                 result: ExchangeResult::Success,
             }),
             last_success: None,
-            next_exchange_before: in_five_seconds,
             all_resources: ResourceSet::default(),
             entitlements: HashMap::new(),
         };
@@ -3046,7 +3021,6 @@ mod test {
                 result: ExchangeResult::Failure(ErrorResponse::new("err", "err!")),
             }),
             last_success: None,
-            next_exchange_before: in_five_seconds,
             all_resources: ResourceSet::default(),
             entitlements: HashMap::new(),
         };
@@ -3058,7 +3032,6 @@ mod test {
                 result: ExchangeResult::Success,
             }),
             last_success: None,
-            next_exchange_before: in_five_seconds,
             all_resources: ResourceSet::default(),
             entitlements: HashMap::new(),
         };
