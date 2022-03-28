@@ -273,14 +273,14 @@ We may want to change this behaviour in future to just have specific tasks
 for reissuing specific objects instead. This would allow us to report these
 things more clearly.
 
-But it will require that perform checks at startup time and/or have a
+But it will require that we perform checks at startup time and/or have a
 persistent queue - to ensure that the tasks are not lost (typically they
-would be around a 1 year into future on every issuance). Plus we would
+would be around 1 year into the future on every issuance). Plus we would
 need logic to clean up tasks for removed objects - so this needs some thought.
 
 ### Task::RefreshAnnouncementsInfo
 
-This task checks whether the time has come to try an re-fetch RIS Whois
+This task checks whether the time has come to try and re-fetch RIS Whois
 BGP information and update the `Arc<BgpAnalyser>`.
 
 ### Task::SweepLoginCache
