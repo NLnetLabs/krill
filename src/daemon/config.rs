@@ -29,7 +29,7 @@ use crate::{
 #[cfg(feature = "multi-user")]
 use crate::daemon::auth::providers::{config_file::config::ConfigAuthUsers, openid_connect::ConfigAuthOpenIDConnect};
 
-use super::mq::{in_hours, in_seconds, Priority};
+use super::mq::{in_seconds, Priority};
 
 //------------ ConfigDefaults ------------------------------------------------
 
@@ -550,16 +550,6 @@ impl Config {
             in_seconds(5)
         } else {
             in_seconds(SCHEDULER_REQUEUE_DELAY_SECONDS)
-        }
-    }
-
-    /// Returns the next suspend children priority, taking into account whether
-    /// we are currently in testmode
-    pub fn ca_suspend_children_next(&self) -> Priority {
-        if test_mode_enabled() {
-            in_seconds(5)
-        } else {
-            in_hours(1)
         }
     }
 

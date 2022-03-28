@@ -243,9 +243,7 @@ impl Scheduler {
             .ca_suspend_inactive_children(&ca_handle, self.started, &self.system_actor)
             .await;
 
-        let next = self.config.ca_suspend_children_next();
-
-        self.tasks.suspend_children(ca_handle, next);
+        self.tasks.suspend_children(ca_handle, in_hours(1));
     }
 
     /// Let CAs that need it republish their CRL/MFT

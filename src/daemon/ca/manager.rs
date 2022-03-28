@@ -838,6 +838,20 @@ impl CaManager {
         self.ca_schedule_sync_parents(&ca_handle).await;
     }
 
+    /// Schedule check suspending any children under all CAs as soon as possible:
+    ///
+    /// Note: this function can be called manually through the API, but normally this
+    ///       is replanned on the task queue automatically IF suspension is enabled.
+    pub fn cas_schedule_suspend_all(&self) {
+        if self.config.suspend_child_after_inactive_seconds().is_some() {
+            if let Ok(cas) = self.ca_store.list() {
+                for ca_handle in cas {
+                    self.tasks.suspend_children(ca_handle, now());
+                }
+            }
+        }
+    }
+
     /// Suspend child CAs
     pub async fn ca_suspend_inactive_children(&self, ca_handle: &Handle, started: Timestamp, actor: &Actor) {
         // Set threshold hours if it was configured AND this server has been started

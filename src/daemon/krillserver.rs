@@ -541,6 +541,12 @@ impl KrillServer {
         self.ca_manager.cas_schedule_refresh_single(ca_handle).await;
         Ok(())
     }
+
+    /// Schedule check suspend children for all CAs
+    pub fn cas_schedule_suspend_all(&self) -> KrillEmptyResult {
+        self.ca_manager.cas_schedule_suspend_all();
+        Ok(())
+    }
 }
 
 /// # Admin CAS

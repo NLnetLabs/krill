@@ -1075,6 +1075,7 @@ async fn api_bulk(req: Request, path: &mut RequestPath) -> RoutingResult {
         "/api/v1/bulk/cas/sync/parent" => api_refresh_all(req).await,
         "/api/v1/bulk/cas/sync/repo" => api_resync_all(req).await,
         "/api/v1/bulk/cas/publish" => api_republish_all(req).await,
+        "/api/v1/bulk/cas/suspend" => api_suspend_all(req).await,
         _ => render_unknown_method(),
     }
 }
@@ -1963,6 +1964,16 @@ async fn api_refresh_all(req: Request) -> RoutingResult {
     match *req.method() {
         Method::POST => aa!(req, Permission::CA_ADMIN, {
             render_empty_res(req.state().cas_refresh_all().await)
+        }),
+        _ => render_unknown_method(),
+    }
+}
+
+/// Schedule check suspend for all CAs
+async fn api_suspend_all(req: Request) -> RoutingResult {
+    match *req.method() {
+        Method::POST => aa!(req, Permission::CA_ADMIN, {
+            render_empty_res(req.state().cas_schedule_suspend_all())
         }),
         _ => render_unknown_method(),
     }

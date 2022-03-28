@@ -213,6 +213,10 @@ pub async fn cas_refresh_single(ca: &Handle) {
     krill_admin(Command::CertAuth(CaCommand::Refresh(ca.clone()))).await;
 }
 
+pub async fn cas_suspend_all() {
+    krill_admin(Command::Bulk(BulkCaCommand::Suspend)).await;
+}
+
 pub async fn ca_suspend_child(ca: &Handle, child: &ChildHandle) {
     krill_admin(Command::CertAuth(CaCommand::ChildUpdate(
         ca.clone(),

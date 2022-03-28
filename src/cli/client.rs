@@ -159,6 +159,10 @@ impl KrillClient {
                 post_empty(&self.server, &self.token, "api/v1/bulk/cas/sync/repo").await?;
                 Ok(ApiResponse::Empty)
             }
+            BulkCaCommand::Suspend => {
+                post_empty(&self.server, &self.token, "api/v1/bulk/cas/suspend").await?;
+                Ok(ApiResponse::Empty)
+            }
         }
     }
 
