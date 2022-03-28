@@ -54,7 +54,7 @@ then explain a bit more below.
 ```rust
 impl CaManager {
     /// Builds a new CaServer. Will return an error if the CA store cannot be initialized.
-    pub async fn build(config: Arc<Config>, mq: Arc<MessageQueue>, signer: Arc<KrillSigner>) -> KrillResult<Self> {
+    pub async fn build(config: Arc<Config>, mq: Arc<TaskQueue>, signer: Arc<KrillSigner>) -> KrillResult<Self> {
         // Create the AggregateStore for the event-sourced `CertAuth` structures that handle
         // most CA functions.
         let mut ca_store = AggregateStore::<CertAuth>::disk(&config.data_dir, CASERVER_DIR)?;
@@ -88,7 +88,7 @@ impl CaManager {
         // occur in a `CertAuth`.
         ca_store.add_pre_save_listener(ca_objects_store.clone());
 
-        // Register the `MessageQueue` as a post-save listener to 'ca_store' so that relevant changes in
+        // Register the `TaskQueue` as a post-save listener to 'ca_store' so that relevant changes in
         // a `CertAuth` can trigger follow up actions. Most importantly: synchronize with a parent CA or
         // the RPKI repository.
         ca_store.add_post_save_listener(mq);
@@ -118,23 +118,29 @@ To illustrate how the event listening is used here: If a `CaEvtDet::RoasUpdated`
 then this will trigger:
 1. (pre-save) that the `CaObjectsStore` updates the ROAs held by the CA,
    and generates a new CRL and manifest; and
-2. (post-save) that the `MessageQueue` notices, and schedules a task to
+2. (post-save) that the `TaskQueue` notices, and schedules a task to
    synchronize the contents of the `CaObjects` with the CA's repository.
 
 
 Asynchronous Actions
 --------------------
 
-The aforementioned `MessageQueue` is shared with the `Scheduler` which is owned
-by `KrillServer`. The `Scheduler` uses the `clokwerk.rs` library to schedule several
-background jobs in Krill. One of these jobs watches the `MessageQueue` for queued
-tasks, added here because of events that occurred.
+The aforementioned `TaskQueue` is shared with the `Scheduler` which is owned
+by `KrillServer`. The `Scheduler` runs as a separate async function and is started
+and watches the `TaskQueue` for queued tasks.
+
+The `TaskQueue` use a `PriorityQueue` ordering `Task`-s by `Priority`. The `Priority`
+is based on timestamps - where the lowest timestamp value results in the highest
+priority. The `Task` enum is explained below and contains the various background
+tasks that may be scheduled. They are scheduled or re-scheduled with an appropriate
+priority. Generally speaking:
+- we use 'now' for triggered tasks - such as sync with repo
+- we use 5 minutes for rescheduling failed syncs with parent/repo
+- we use a configurable interval for scheduling any recurring tasks
 
 A Krill instance only has a single (singleton) `CaManager` and `RepositoryManager`, which
 are kept as `Arc<CaManager>` and `Arc<RepositoryManager>` so that they (well the reference)
-can easily be shared and cloned.
-
-This background job has access to these, allowing it for example to get the latest objects
+can easily be shared with the `Scheduler`, allowing it for example to get the latest objects
 for a CA, or to get a CA to sign an RFC 8181 or RFC 6492 message. Furthermore, it also
 allows this background job to send new triggered commands to a CA, e.g.: update a received
 certificate under a parent.
@@ -147,36 +153,61 @@ the task can be rescheduled.
 The following tasks are defined:
 
 ```rust
-pub enum QueueTask {
+pub enum Task {
     ServerStarted,
 
-    SyncRepo(Handle),
-    RescheduleSyncRepo(Handle, Time),
+    SyncRepo {
+        ca: Handle,
+    },
 
-    SyncParent(Handle, ParentHandle),
-    RescheduleSyncParent(Handle, ParentHandle, Time),
+    SyncParent {
+        ca: Handle,
+        parent: ParentHandle,
+    },
 
-    ResourceClassRemoved(Handle, ParentHandle, HashMap<ResourceClassName, Vec<RevocationRequest>>),
-    UnexpectedKey(Handle, ResourceClassName, RevocationRequest),
+    CheckSuspendChildren {
+        ca: Handle,
+    },
+
+    RepublishIfNeeded,
+    RenewObjectsIfNeeded,
+
+    RefreshAnnouncementsInfo,
+
+    #[cfg(feature = "multi-user")]
+    SweepLoginCache,
+
+    ResourceClassRemoved {
+        ca: Handle,
+        parent: ParentHandle,
+        rcn: ResourceClassName,
+        revocation_requests: Vec<RevocationRequest>,
+    },
+    UnexpectedKey {
+        ca: Handle,
+        rcn: ResourceClassName,
+        revocation_request: RevocationRequest,
+    },
 }
 ```
 
-### QueueTask::ServerStarted
+### Task::ServerStarted
 
-With this task Krill schedules that all Krill CAs perform a full synchronization
-with their parents and repositories after every restart.
+This task is added during startup and triggers that other tasks are properly
+scheduled. We could just add all relevant other tasks instead but this would
+cause a minor delay when booting. We may change this later though if people
+think it would be better or more clear..
 
-### QueueTask::SyncRepo/RescheduleSyncRepo
+### Task::SyncRepo
 
 These tasks are used to trigger that a CA synchronizes with its repository. All
 objects that need to be published have already been created, so this is just about
-synchronizing the content. If a `SyncRepo` task fails, then a `RescheduleSyncRepo`
-will be added. The latter keeps track of the time when a synchronization should
-be attempted again.
+synchronizing the content. If a `SyncRepo` task fails, then it will be rescheduled
+with a new priority 5 minutes into future (const: `SCHEDULER_REQUEUE_DELAY_SECONDS`).
 
 Successes and failures will be tracked in the `StatusStore` held by the `CaManager`.
 
-### QueueTask::SyncParent/RescheduleSyncParent
+### Task::SyncParent
 
 These tasks are used to trigger that a CA synchronizes with a specific parent.
 
@@ -211,7 +242,53 @@ But, if there are changes then it will result in appropriate new events, such
 as generation of new certificate request. That will then trigger that the
 parent synchronization is scheduled again.
 
-### QueueTask::ResourceClassRemoved
+If the task was successful, then a new `Task::SyncParent` is scheduled using
+the appropriate (variable) interval returned by `config.ca_refresh_next()`.
+If the task was a failure (hard communication error), then it will be rescheduled
+with a new priority 5 minutes into future (const: `SCHEDULER_REQUEUE_DELAY_SECONDS`).
+
+### Task::CheckSuspendChildren
+
+This task triggers that inactive children are suspended IFF this non-default
+behaviour is enabled in config.
+
+### Task::RepublishIfNeeded
+
+This task triggers that all CAs check whether any manifest or CRL need to be
+re-issued, and if so do that re-issuance. Any such re-issuance will result
+in events that the listener will pick up, which in turn will ensure that
+the appropriate `Task::SyncRepo` is scheduled.
+
+Note: we may change this behaviour in future to just schedule the specific
+republish for a known CA and resource class based on last issuance instead.
+This would save scanning, and would allow reporting the planned re-issuance
+more easily.
+
+### Task::RenewObjectsIfNeeded
+
+This tasks triggers that all CAs check whether any signed objects need
+to be re-issued.
+
+We may want to change this behaviour in future to just have specific tasks
+for reissuing specific objects instead. This would allow us to report these
+things more clearly.
+
+But it will require that perform checks at startup time and/or have a
+persistent queue - to ensure that the tasks are not lost (typically they
+would be around a 1 year into future on every issuance). Plus we would
+need logic to clean up tasks for removed objects - so this needs some thought.
+
+### Task::RefreshAnnouncementsInfo
+
+This task checks whether the time has come to try an re-fetch RIS Whois
+BGP information and update the `Arc<BgpAnalyser>`.
+
+### Task::SweepLoginCache
+
+This task triggers that expired logins are removed from the cache in
+case the `multi-user` feature is enabled.
+
+### Task::ResourceClassRemoved
 
 This task is planned when a resource class is removed, and it triggers
 that any remaining keys are requested to be revoked by the parent. A resource
@@ -224,7 +301,7 @@ revocation requests for all its keys first, remove *all* resource classes
 under a parent so that objects will be withdrawn, and then remove the
 actual parent altogether.
 
-### QueueTask::UnexpectedKey
+### Task::UnexpectedKey
 
 > NOTE: This case has never been observed in the wild.
 
@@ -366,7 +443,7 @@ impl CaManager {
 This will result in a `CmdDet::RepoUpdate` to be sent to the `CertAuth`. 
 
 If there was no repository defined, then this will result in a `CaEvtDet::RepoUpdated` event.
-This event will then be picked up by the `MessageQueue` as post-save event listener and
+This event will then be picked up by the `TaskQueue` as post-save event listener and
 trigger that the CA synchronizes with its parents, because now that it has somewhere
 to publish it can actually request certificates.
 
@@ -425,7 +502,7 @@ detects that an update is needed before the time for the 'next update' is drawin
 See the following code in `scheduler.rs`:
 
 ```rust
-fn make_cas_republish(ca_server: Arc<CaManager>, event_queue: Arc<MessageQueue>) -> ScheduleHandle {
+fn make_cas_republish(ca_server: Arc<CaManager>, event_queue: Arc<TaskQueue>) -> ScheduleHandle {
     SkippingScheduler::run(
         SCHEDULER_INTERVAL_SECONDS_REPUBLISH,
         "CA certificate republish",
@@ -454,25 +531,35 @@ We also have a function to RE-schedule this synchronization which is called in c
 failed:
 
 ```rust
-impl MessageQueue {
+impl TaskQueue {
     /// Schedules that a CA synchronizes with its repositories.
     pub fn schedule_sync_repo(&self, ca: Handle) {
-        self.schedule(QueueTask::SyncRepo(ca));
+        self.schedule(Task::SyncRepo(ca));
     }
 
     /// RE-Schedules that a CA synchronizes with its repositories. This function
     /// takes a time argument to indicate *when* the resynchronization should be
     /// attempted.
     pub fn reschedule_sync_repo(&self, ca: Handle, time: Time) {
-        self.schedule(QueueTask::RescheduleSyncRepo(ca, time));
+        self.schedule(Task::RescheduleSyncRepo(ca, time));
     }
 }
 ```
 
 ### CA Repository Synchronization
 
-We have the following function in `CaManager` that triggers CAs to synchronize with
-their Repository/-ies:
+We have the following function in `CaManager` that triggers that tasks
+are scheduled to synchronize each CA with their Repository.
+
+```rust
+impl CaManager {
+    /// Schedule synchronizing all CAs with their repositories.
+    pub fn cas_schedule_repo_sync_all(&self, actor: &Actor) { ... }
+}
+```
+
+The above results in `Task::SyncRepo` tasks to be added to the `TaskQueue`,
+monitored by the `Scheduler`, which will then trigger a call this function:
 
 ```rust
 impl CaManager {
@@ -489,25 +576,7 @@ impl CaManager {
     /// fail. When there have been 5 failed attempts, then the old repository
     /// is assumed to be unreachable and it will be dropped - i.e. the CA will
     /// no longer try to clean up objects.
-    pub async fn ca_repo_sync_all(&self, ca_handle: &Handle) -> KrillResult<()> { ... }
-}
-```
-
-The above function is called by the scheduler which looks for pending `QueueTask::SyncRepo`
-and `QueueTask::RescheduleSyncRepo` tasks. Furthermore synchronization for all CAs is done
-whenever Krill starts up, and it can be triggered through the API - both paths call the
-following function:
-
-```rust
-impl CaManager {
-    /// Synchronize all CAs with their repositories. Meant to be called by the background
-    /// schedular. This will log issues, but will not fail on errors with individual CAs -
-    /// because otherwise this would prevent other CAs from syncing. Note however, that the
-    /// repository status is tracked per CA and can be monitored.
-    ///
-    /// This function can still fail on internal errors, e.g. I/O issues when saving state
-    /// changes to the repo status structure.
-    pub async fn cas_repo_sync_all(&self, actor: &Actor) { ... }
+    pub async fn cas_repo_sync_single(&self, ca_handle: &Handle) -> KrillResult<()> { ... }
 }
 ```
 
@@ -554,22 +623,22 @@ impl CaManager {
     /// Returns the parent statuses for this CA
     pub async fn ca_parent_statuses(&self, ca: &Handle) -> KrillResult<ParentStatuses> { ... }
 
-    /// Refresh all CAs:
-    /// - process all CAs in parallel
-    /// - process all parents for CAs in parallel
-    ///    - send pending requests if present, or
-    ///    - ask parent for updates and process if present
-    pub async fn cas_refresh_all(&self, actor: &Actor) { ... }
-
-    /// Synchronizes a CA with one of its parents:
-    ///   - send pending requests if present; otherwise
-    ///   - get and process updated entitlements
+    /// Schedule refreshing all CAs as soon as possible:
     ///
-    /// Note: if new request events are generated as a result of processing updated entitlements
-    ///       then they will trigger that this synchronization is called again so that the pending
-    ///       requests can be sent.
-    pub async fn ca_sync_parent(&self, handle: &Handle, parent: &ParentHandle, actor: &Actor) -> KrillResult<()> { ... }
-}
+    /// Note: this function can be called manually through the API, but normally the
+    ///       CA refresh process is replanned on the task queue automatically.
+    pub async fn cas_schedule_refresh_all(&self) {
+        if let Ok(cas) = self.ca_store.list() {
+            for ca_handle in cas {
+                self.cas_schedule_refresh_single(ca_handle).await;
+            }
+        }
+    }
+
+    /// Refresh a single CA with its parents, and possibly suspend inactive children.
+    pub async fn cas_schedule_refresh_single(&self, ca_handle: Handle) {
+        self.ca_schedule_sync_parents(&ca_handle).await;
+    }
 ```
 
 
