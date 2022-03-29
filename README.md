@@ -21,7 +21,7 @@ For more information please refer to the [documentation](https://krill.docs.nlne
 
 # Changelog
 
-## 0.9.5 RC7 'Have You considered these Upgrades?'
+## 0.9.5 RC8 'Have You considered these Upgrades?'
 
 This release was primarily intended to improve support for migrations of pre-0.9.0
 installations. The upgrade code has been separated more cleanly into a step where
@@ -70,6 +70,7 @@ In addition to this we added a few other quick fixes in this release:
 - Do not sign/validate RFC6492 messages to/from local parent #797
 - Use per CA locking for CA statuses #795
 - Decrease CA update frequency and use jitter to spread load #802
+- Accept missing tag in RFC8181 Error Response #809
 
 The full list of changes can be found here:
 https://github.com/NLnetLabs/krill/projects/20
