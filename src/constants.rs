@@ -5,8 +5,8 @@ pub const KRILL_VERSION_MAJOR: &str = env!("CARGO_PKG_VERSION_MAJOR");
 pub const KRILL_VERSION_MINOR: &str = env!("CARGO_PKG_VERSION_MINOR");
 pub const KRILL_VERSION_PATCH: &str = env!("CARGO_PKG_VERSION_PATCH");
 pub const KRILL_SERVER_APP: &str = "Krill";
+pub const KRILL_UP_APP: &str = "Krill Upgrade Helper";
 pub const KRILL_CLIENT_APP: &str = "Krill Client";
-pub const KRILL_PUBC_CLIENT_APP: &str = "Krill Publication Server Client";
 
 #[cfg(not(feature = "multi-user"))]
 pub const KRILL_DEFAULT_CONFIG_FILE: &str = "./defaults/krill.conf";
@@ -71,10 +71,14 @@ pub const KRILL_CLI_API_ENV: &str = "KRILL_CLI_API";
 pub const KRILL_CLI_MY_CA_ARG: &str = "ca";
 pub const KRILL_CLI_MY_CA_ENV: &str = "KRILL_CLI_MY_CA";
 
-pub const REQUEUE_DELAY_SECONDS: i64 = 300;
-pub const CA_REFRESH_SECONDS_MIN: u32 = 600;
-pub const CA_REFRESH_SECONDS_MAX: u32 = 3600;
-pub const CA_SUSPEND_MIN_HOURS: i64 = 2;
+pub const CA_REFRESH_SECONDS_MIN: i64 = 3600;
+pub const CA_REFRESH_SECONDS_MAX: i64 = 3 * 24 * 3600; // 3 days
+pub const CA_SUSPEND_MIN_HOURS: i64 = 48; // at least 2 days
+pub const SCHEDULER_REQUEUE_DELAY_SECONDS: i64 = 300;
+pub const SCHEDULER_USE_JITTER_CAS_THRESHOLD: usize = 50;
+pub const SCHEDULER_USE_JITTER_CAS_PARENTS_THRESHOLD: usize = 5;
+pub const SCHEDULER_INTERVAL_REPUBLISH_MINS: i64 = 5;
+pub const SCHEDULER_INTERVAL_RENEW_MINS: i64 = 60;
 
 pub const KRILL_HTTPS_ROOT_CERTS_ENV: &str = "KRILL_HTTPS_ROOT_CERTS";
 
@@ -93,8 +97,8 @@ pub const ACTOR_DEF_ANON: ActorDef = ActorDef::anonymous();
 pub const ACTOR_DEF_ADMIN_TOKEN: ActorDef = ActorDef::system("admin-token", "admin");
 pub const ACTOR_DEF_TESTBED: ActorDef = ActorDef::system("testbed", "testbed");
 
-pub const SCHEDULER_INTERVAL_SECONDS_REPUBLISH: u32 = 600;
-pub const SCHEDULER_INTERVAL_SECONDS_ROA_RENEW: u32 = 3600;
+// If we have more than 50 do not re-issue all ROAs. See issue #772
+pub const UPGRADE_REISSUE_ROAS_CAS_LIMIT: usize = 50;
 
 #[cfg(test)]
 pub const ACTOR_DEF_TEST: ActorDef = ActorDef::system("test", "admin");

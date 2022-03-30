@@ -24,6 +24,7 @@ use hyper::{
     service::{make_service_fn, service_fn},
     Method,
 };
+use tokio::try_join;
 
 use crate::{
     commons::{
@@ -36,7 +37,6 @@ use crate::{
         eventsourcing::AggregateStoreError,
         remote::rfc8183,
         util::file,
-        KrillResult,
     },
     constants::{
         KRILL_ENV_HTTP_LOG_INFO, KRILL_ENV_UPGRADE_ONLY, KRILL_VERSION_MAJOR, KRILL_VERSION_MINOR, KRILL_VERSION_PATCH,
@@ -53,16 +53,12 @@ use crate::{
         },
         krillserver::KrillServer,
     },
-    upgrades::{post_start_upgrade, pre_start_upgrade, update_storage_version},
+    upgrades::{finalise_data_migration, post_start_upgrade, prepare_upgrade_data_migrations, UpgradeMode},
 };
 
 //------------ State -----------------------------------------------------
 
 pub type State = Arc<KrillServer>;
-
-pub fn parse_config() -> KrillResult<Config> {
-    Config::create().map_err(|e| Error::Custom(format!("Could not parse config: {}", e)))
-}
 
 fn print_write_error_hint_and_die(error_msg: String) {
     eprintln!("{}", error_msg);
@@ -116,25 +112,38 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
     test_data_dirs_or_die(&config);
 
     // Call upgrade, this will only do actual work if needed.
-    pre_start_upgrade(config.clone())?;
+    let upgrade_report = prepare_upgrade_data_migrations(UpgradeMode::PrepareToFinalise, config.clone()).await?;
+    if let Some(report) = &upgrade_report {
+        if report.data_migration() {
+            finalise_data_migration(report.versions(), config.as_ref()).map_err(|e| {
+                Error::Custom(format!(
+                    "Finishing prepared migration failed unexpectedly. Please check your data directory {}. If you find folders named 'arch-cas-{}' or 'arch-pubd-{}' there, then rename them to 'cas' and 'pubd' respectively and re-install krill version {}. Underlying error was: {}",
+                    config.data_dir.to_string_lossy(),
+                    report.versions().from(),
+                    report.versions().from(),
+                    report.versions().from(),
+                    e
+                ))
+            })?;
+        }
+    }
 
     // Create the server, this will create the necessary data sub-directories if needed
     let krill = KrillServer::build(config.clone()).await?;
 
+    // Get the scheduler
+    let scheduler = krill.build_scheduler();
+
     // Call post-start upgrades to trigger any upgrade related runtime actions, such as
     // re-issuing ROAs because subject name strategy has changed.
-    post_start_upgrade(&config, &krill).await?;
-
-    // Update the version identifiers for the storage dirs
-    update_storage_version(&config.data_dir).await?;
+    if let Some(report) = upgrade_report {
+        post_start_upgrade(report.versions(), &krill).await?;
+    }
 
     // If the operator wanted to do the upgrade only, now is a good time to report success and stop
     if env::var(KRILL_ENV_UPGRADE_ONLY).is_ok() {
         println!("Krill upgrade successful");
     }
-
-    // Reset the RRDP session after a restart.
-    krill.repository_session_reset()?;
 
     let state = Arc::new(krill);
 
@@ -167,13 +176,11 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
 
     let server = hyper::Server::builder(acceptor)
         .serve(service)
-        .map_err(|e| eprintln!("Server error: {}", e));
+        .map_err(|e| Error::Custom(format!("Server error: {}", e)));
 
-    if server.await.is_err() {
-        eprintln!("Krill failed to start");
-    }
+    let scheduler_task = scheduler.run();
 
-    Ok(())
+    try_join!(server, scheduler_task).map(|_| ())
 }
 
 struct RequestLogger {
@@ -1068,6 +1075,7 @@ async fn api_bulk(req: Request, path: &mut RequestPath) -> RoutingResult {
         "/api/v1/bulk/cas/sync/parent" => api_refresh_all(req).await,
         "/api/v1/bulk/cas/sync/repo" => api_resync_all(req).await,
         "/api/v1/bulk/cas/publish" => api_republish_all(req).await,
+        "/api/v1/bulk/cas/suspend" => api_suspend_all(req).await,
         _ => render_unknown_method(),
     }
 }
@@ -1176,10 +1184,9 @@ async fn api_ca_stats(req: Request, path: &mut RequestPath, ca: Handle) -> Routi
 async fn api_ca_sync(req: Request, path: &mut RequestPath, ca: Handle) -> RoutingResult {
     aa!(req, Permission::CA_UPDATE, ca.clone(), {
         if req.is_post() {
-            let actor = req.actor();
             match path.next() {
-                Some("parents") => render_empty_res(req.state().cas_refresh_single(ca, &actor).await),
-                Some("repo") => render_empty_res(req.state().cas_repo_sync_single(&ca).await),
+                Some("parents") => render_empty_res(req.state().cas_refresh_single(ca).await),
+                Some("repo") => render_empty_res(req.state().cas_repo_sync_single(&ca)),
                 _ => render_unknown_method(),
             }
         } else {
@@ -1201,6 +1208,10 @@ async fn api_publication_server(req: Request, path: &mut RequestPath) -> Routing
                 }
             }
             Method::DELETE => render_empty_res(req.state.repository_clear()),
+            _ => render_unknown_method(),
+        },
+        Some("session_reset") => match *req.method() {
+            Method::POST => render_empty_res(req.state().repository_session_reset()),
             _ => render_unknown_method(),
         },
         _ => render_unknown_method(),
@@ -1942,7 +1953,7 @@ async fn api_resync_all(req: Request) -> RoutingResult {
     match *req.method() {
         Method::POST => aa!(req, Permission::CA_ADMIN, {
             let actor = req.actor();
-            render_empty_res(req.state().cas_repo_sync_all(&actor).await)
+            render_empty_res(req.state().cas_repo_sync_all(&actor))
         }),
         _ => render_unknown_method(),
     }
@@ -1952,8 +1963,17 @@ async fn api_resync_all(req: Request) -> RoutingResult {
 async fn api_refresh_all(req: Request) -> RoutingResult {
     match *req.method() {
         Method::POST => aa!(req, Permission::CA_ADMIN, {
-            let actor = req.actor();
-            render_empty_res(req.state().cas_refresh_all(&actor).await)
+            render_empty_res(req.state().cas_refresh_all().await)
+        }),
+        _ => render_unknown_method(),
+    }
+}
+
+/// Schedule check suspend for all CAs
+async fn api_suspend_all(req: Request) -> RoutingResult {
+    match *req.method() {
+        Method::POST => aa!(req, Permission::CA_ADMIN, {
+            render_empty_res(req.state().cas_schedule_suspend_all())
         }),
         _ => render_unknown_method(),
     }

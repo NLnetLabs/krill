@@ -474,7 +474,7 @@ impl ErrorReply {
                 match t.name.as_ref() {
                     "report_error" => {
                         let error_code = ReportErrorCode::from_str(a.take_req("error_code")?.as_ref())?;
-                        let tag = a.take_req("tag")?;
+                        let tag = a.take_opt("tag").unwrap_or_else(|| "".to_string());
                         let mut error_text: Option<String> = None;
                         let mut failed_pdu: Option<PublishDeltaElement> = None;
 

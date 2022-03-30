@@ -31,7 +31,7 @@ use crate::{
         Publisher, RepositoryAccessEvent, RepositoryAccessEventDetails, RepositoryAccessInitDetails, RepositoryManager,
         RrdpSessionReset, RrdpUpdate,
     },
-    upgrades::UpgradeError,
+    upgrades::PrepareUpgradeError,
 };
 
 use super::*;
@@ -41,7 +41,7 @@ pub type OldPubdInit = StoredEvent<OldPubdIniDet>;
 pub type OldCaEvt = StoredEvent<OldCaEvtDet>;
 
 impl OldPubdEvt {
-    pub fn into_stored_pubd_event(self, version: u64) -> Result<RepositoryAccessEvent, UpgradeError> {
+    pub fn into_stored_pubd_event(self, version: u64) -> Result<RepositoryAccessEvent, PrepareUpgradeError> {
         let (id, _, details) = self.unpack();
         Ok(RepositoryAccessEvent::new(&id, version, details.into()))
     }
@@ -96,7 +96,7 @@ impl OldCaEvt {
         version: u64,
         repo_manager: &RepositoryManager,
         derived_embedded_ca_info_map: &HashMap<Handle, DerivedEmbeddedCaMigrationInfo>,
-    ) -> Result<CaEvt, UpgradeError> {
+    ) -> Result<CaEvt, PrepareUpgradeError> {
         let (id, _, details) = self.unpack();
 
         let event = match details {
@@ -116,12 +116,12 @@ impl OldCaEvt {
                     OldParentCaContact::Ta(details) => ParentCaContact::Ta(details),
                     OldParentCaContact::Embedded => match derived_embedded_ca_info_map.get(&parent) {
                         Some(info) => {
-                            let res = info.parent_responses.get(&id).ok_or_else(|| UpgradeError::Custom(
+                            let res = info.parent_responses.get(&id).ok_or_else(|| PrepareUpgradeError::Custom(
                                 format!("Cannot upgrade CA '{}' using embedded parent '{}' which no longer has this CA as a child", id, parent)))?;
                             ParentCaContact::for_rfc6492(res.clone())
                         }
                         None => {
-                            return Err(UpgradeError::Custom(format!(
+                            return Err(PrepareUpgradeError::Custom(format!(
                                 "Cannot upgrade CA '{}' using embedded parent '{}' which is no longer present",
                                 id, parent
                             )))
@@ -137,7 +137,7 @@ impl OldCaEvt {
                     Some(id_cert) => id_cert,
                     None => {
                         let child_info = derived_embedded_ca_info_map.get(&child).ok_or_else(|| {
-                            UpgradeError::Custom(format!(
+                            PrepareUpgradeError::Custom(format!(
                                 "Cannot upgrade CA {}, embedded child {} is no longer present",
                                 id, child
                             ))
@@ -176,7 +176,7 @@ pub enum OldCaEvtDet {
     ChildAdded(ChildHandle, OldChildDetails),
     ChildCertificateIssued(ChildHandle, ResourceClassName, KeyIdentifier),
     ChildKeyRevoked(ChildHandle, ResourceClassName, KeyIdentifier),
-    ChildCertificatesUpdated(ResourceClassName, ChildCertificateUpdates),
+    ChildCertificatesUpdated(ResourceClassName, OldChildCertificateUpdates),
     ChildUpdatedIdCert(ChildHandle, IdCert),
     ChildUpdatedResources(ChildHandle, ResourceSet),
     ChildRemoved(ChildHandle),
@@ -216,7 +216,7 @@ pub enum OldCaEvtDet {
 }
 
 impl TryFrom<OldCaEvtDet> for CaEvtDet {
-    type Error = UpgradeError;
+    type Error = PrepareUpgradeError;
 
     fn try_from(old: OldCaEvtDet) -> Result<Self, Self::Error> {
         let evt = match old {
@@ -329,18 +329,18 @@ impl fmt::Display for OldCaEvtDet {
 
 /// Describes an update to the set of ROAs under a ResourceClass.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ChildCertificateUpdates {
+pub struct OldChildCertificateUpdates {
     issued: Vec<IssuedCert>,
     removed: Vec<KeyIdentifier>,
 }
 
-impl From<ChildCertificateUpdates> for ca::ChildCertificateUpdates {
-    fn from(old: ChildCertificateUpdates) -> Self {
+impl From<OldChildCertificateUpdates> for ca::ChildCertificateUpdates {
+    fn from(old: OldChildCertificateUpdates) -> Self {
         ca::ChildCertificateUpdates::new(old.issued, old.removed, vec![], vec![])
     }
 }
 
-impl ChildCertificateUpdates {
+impl OldChildCertificateUpdates {
     pub fn unpack(self) -> (Vec<IssuedCert>, Vec<KeyIdentifier>) {
         (self.issued, self.removed)
     }
@@ -399,9 +399,9 @@ pub struct RoaUpdates {
 }
 
 impl TryFrom<RoaUpdates> for ca::RoaUpdates {
-    type Error = UpgradeError;
+    type Error = PrepareUpgradeError;
 
-    fn try_from(old: RoaUpdates) -> Result<Self, UpgradeError> {
+    fn try_from(old: RoaUpdates) -> Result<Self, PrepareUpgradeError> {
         let mut updates = ca::RoaUpdates::default();
         for (auth, info) in old.updated {
             let roa = info.roa()?;
@@ -457,8 +457,9 @@ pub struct RoaInfo {
 }
 
 impl RoaInfo {
-    pub fn roa(&self) -> Result<Roa, UpgradeError> {
-        Roa::decode(self.object.content.to_bytes(), true).map_err(|_| UpgradeError::custom("Cannot parse existing ROA"))
+    pub fn roa(&self) -> Result<Roa, PrepareUpgradeError> {
+        Roa::decode(self.object.content.to_bytes(), true)
+            .map_err(|_| PrepareUpgradeError::custom("Cannot parse existing ROA"))
     }
 }
 
@@ -599,5 +600,18 @@ impl From<OldPubdEvtDet> for RepositoryAccessEventDetails {
             OldPubdEvtDet::PublisherRemoved(name, _) => RepositoryAccessEventDetails::PublisherRemoved { name },
             _ => unreachable!("no need to migrate these old events"),
         }
+    }
+}
+
+//------------ Tests ---------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::OldCaEvt;
+
+    #[test]
+    fn convert_old_child_certificates_updated() {
+        let json = include_str!("../../../test-resources/migrations/delta-26.json");
+        let old_evt: OldCaEvt = serde_json::from_str(json).unwrap();
     }
 }

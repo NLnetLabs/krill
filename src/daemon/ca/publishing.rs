@@ -4,6 +4,7 @@ use std::{
     borrow::BorrowMut,
     collections::HashMap,
     ops::{Deref, DerefMut},
+    path::Path,
     str::FromStr,
     sync::{Arc, RwLock},
 };
@@ -36,7 +37,7 @@ use crate::{
     constants::CA_OBJECTS_DIR,
     daemon::{
         ca::{CaEvt, CertAuth, CertifiedKey, ChildCertificateUpdates, RoaUpdates},
-        config::{Config, IssuanceTimingConfig},
+        config::IssuanceTimingConfig,
     },
 };
 
@@ -59,16 +60,19 @@ use super::AspaObjectsUpdates;
 pub struct CaObjectsStore {
     store: Arc<RwLock<KeyValueStore>>,
     signer: Arc<KrillSigner>,
-    config: Arc<Config>,
+    issuance_timing: IssuanceTimingConfig,
 }
 
 /// # Construct
 impl CaObjectsStore {
-    pub fn disk(config: Arc<Config>, signer: Arc<KrillSigner>) -> KrillResult<Self> {
-        let work_dir = &config.data_dir;
+    pub fn disk(work_dir: &Path, issuance_timing: IssuanceTimingConfig, signer: Arc<KrillSigner>) -> KrillResult<Self> {
         let store = KeyValueStore::disk(work_dir, CA_OBJECTS_DIR)?;
         let store = Arc::new(RwLock::new(store));
-        Ok(CaObjectsStore { store, signer, config })
+        Ok(CaObjectsStore {
+            store,
+            signer,
+            issuance_timing,
+        })
     }
 }
 
@@ -78,7 +82,7 @@ impl PreSaveEventListener<CertAuth> for CaObjectsStore {
         // Note that the `CertAuth` which is passed in has already been
         // updated with the state changes contained in the event.
 
-        let timing = &self.config.issuance_timing;
+        let timing = &self.issuance_timing;
         let signer = &self.signer;
 
         self.with_ca_objects(ca.handle(), |objects| {
@@ -129,7 +133,7 @@ impl PreSaveEventListener<CertAuth> for CaObjectsStore {
                     } => {
                         // Update the received certificate if needed. If the URIs changed we may need to re-issue things
                         objects.update_received_cert(resource_class_name, rcvd_cert)?;
-                        objects.re_issue_if_required(&self.config.issuance_timing, &self.signer)?;
+                        objects.re_issue_if_required(&self.issuance_timing, &self.signer)?;
                     }
                     super::CaEvtDet::ResourceClassRemoved {
                         resource_class_name, ..
@@ -217,13 +221,12 @@ impl CaObjectsStore {
             .map_err(Error::KeyValueError)
     }
 
-    // Re-issue MFT and CRL for all CAs *if needed*, returns all CAs which were
-    // updated.
+    // Re-issue MFT and CRL for all CAs *if needed*, returns all CAs which were updated.
     pub fn reissue_all(&self) -> KrillResult<Vec<Handle>> {
         let mut res = vec![];
         for ca in self.cas()? {
             self.with_ca_objects(&ca, |objects| {
-                if objects.re_issue_if_required(&self.config.issuance_timing, &self.signer)? {
+                if objects.re_issue_if_required(&self.issuance_timing, &self.signer)? {
                     res.push(ca.clone())
                 }
                 Ok(())

@@ -69,7 +69,7 @@ pub fn make_aspa_object(
 /// the [`AspaCustomer`] ASN will be held in a single [`ResourceClass`] only,
 /// but at least in theory the CA could issue ASPA objects in each RC that
 /// holds the ASN.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AspaDefinitions {
     attestations: HashMap<AspaCustomer, AspaDefinition>,
 }
@@ -117,18 +117,10 @@ impl AspaDefinitions {
     }
 }
 
-impl Default for AspaDefinitions {
-    fn default() -> AspaDefinitions {
-        AspaDefinitions {
-            attestations: HashMap::new(),
-        }
-    }
-}
-
 //------------ AspaObjects -------------------------------------------------
 
 /// ASPA objects held by a resource class in a CA.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AspaObjects(HashMap<AspaCustomer, AspaInfo>);
 
 impl AspaObjects {
@@ -227,11 +219,9 @@ impl AspaObjects {
             self.0.remove(&customer);
         }
     }
-}
 
-impl Default for AspaObjects {
-    fn default() -> Self {
-        Self(HashMap::new())
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 }
 

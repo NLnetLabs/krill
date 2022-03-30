@@ -1,7 +1,5 @@
 use std::{collections::HashMap, path::Path, str::FromStr, sync::Arc};
 
-use tokio::sync::RwLock;
-
 use crate::commons::{
     api::{
         rrdp::PublishElement, ChildConnectionStats, ChildHandle, ChildStatus, ChildrenConnectionStats, Entitlements,
@@ -13,6 +11,8 @@ use crate::commons::{
     util::httpclient,
     KrillResult,
 };
+
+use super::manager::CaLocks;
 
 //------------ CaStatus ------------------------------------------------------
 
@@ -65,14 +65,18 @@ impl Default for CaStatus {
 
 pub struct StatusStore {
     store: KeyValueStore,
-    cache: RwLock<HashMap<Handle, Arc<CaStatus>>>,
+    locks: Arc<CaLocks>,
 }
 
 impl StatusStore {
     pub fn new(work_dir: &Path, namespace: &str) -> KrillResult<Self> {
         let store = KeyValueStore::disk(work_dir, namespace)?;
-        let cache = RwLock::new(HashMap::new());
-        Ok(StatusStore { store, cache })
+
+        // Create the per-CA lock structure so that we can guarantee safe access to each CA, while allowing
+        // multiple CAs in a single Krill instance to interact: e.g. a child can talk to its parent and they
+        // are locked individually.
+        let locks = Arc::new(CaLocks::default());
+        Ok(StatusStore { store, locks })
     }
 
     fn status_key(ca: &Handle) -> KeyStoreKey {
@@ -80,20 +84,14 @@ impl StatusStore {
     }
 
     /// Returns the stored CaStatus for a CA, or a default (empty) status if it can't be found
-    pub async fn get_ca_status(&self, ca: &Handle) -> KrillResult<Arc<CaStatus>> {
-        // Try to get it from cache first
-        {
-            if let Some(status) = self.cache.read().await.get(ca) {
-                return Ok(status.clone());
-            }
-        }
+    pub async fn get_ca_status(&self, ca: &Handle) -> Arc<CaStatus> {
+        // Try to get it from disk, if it's missing or corrupt - get a default
+        let lock = self.locks.ca(ca).await;
+        let _ = lock.read().await;
 
-        // Try to get it from disk, and if present load the cache
-        let status: CaStatus = self.store.get(&Self::status_key(ca))?.unwrap_or_default();
-        let status = Arc::new(status);
+        let status: CaStatus = self.store.get(&Self::status_key(ca)).ok().flatten().unwrap_or_default();
 
-        self.cache.write().await.insert(ca.clone(), status.clone());
-        Ok(status)
+        Arc::new(status)
     }
 
     /// Returns all CAs for which a status exists
@@ -101,7 +99,7 @@ impl StatusStore {
         let mut cas = HashMap::new();
         for scope in self.store.scopes()? {
             if let Ok(ca) = Handle::from_str(&scope) {
-                let status = self.get_ca_status(&ca).await?;
+                let status = self.get_ca_status(&ca).await;
                 cas.insert(ca, status);
             }
         }
@@ -115,16 +113,11 @@ impl StatusStore {
         parent: &ParentHandle,
         uri: &ServiceUri,
         error: &Error,
-        next_run_seconds: i64,
     ) -> KrillResult<()> {
         let error_response = Self::error_to_error_res(error);
 
-        self.update_ca_status(ca, |status| {
-            status
-                .parents
-                .set_failure(parent, uri, error_response, next_run_seconds)
-        })
-        .await
+        self.update_ca_status(ca, |status| status.parents.set_failure(parent, uri, error_response))
+            .await
     }
 
     pub async fn set_parent_last_updated(
@@ -132,12 +125,9 @@ impl StatusStore {
         ca: &Handle,
         parent: &ParentHandle,
         uri: &ServiceUri,
-        next_run_seconds: i64,
     ) -> KrillResult<()> {
-        self.update_ca_status(ca, |status| {
-            status.parents.set_last_updated(parent, uri, next_run_seconds)
-        })
-        .await
+        self.update_ca_status(ca, |status| status.parents.set_last_updated(parent, uri))
+            .await
     }
 
     pub async fn set_parent_entitlements(
@@ -146,14 +136,9 @@ impl StatusStore {
         parent: &ParentHandle,
         uri: &ServiceUri,
         entitlements: &Entitlements,
-        next_run_seconds: i64,
     ) -> KrillResult<()> {
-        self.update_ca_status(ca, |status| {
-            status
-                .parents
-                .set_entitlements(parent, uri, entitlements, next_run_seconds)
-        })
-        .await
+        self.update_ca_status(ca, |status| status.parents.set_entitlements(parent, uri, entitlements))
+            .await
     }
 
     pub async fn remove_parent(&self, ca: &Handle, parent: &ParentHandle) -> KrillResult<()> {
@@ -178,7 +163,6 @@ impl StatusStore {
         error: &Error,
     ) -> KrillResult<()> {
         let error_response = Self::error_to_error_res(error);
-
         self.update_ca_child_status(ca, child, |status| status.set_failure(user_agent, error_response))
             .await
     }
@@ -199,18 +183,14 @@ impl StatusStore {
     /// This should be called when the CA is removed from Krill, but note that if this is done for a CA which still exists
     /// a new empty default status will be re-generated when it is accessed for this CA.
     pub async fn remove_ca(&self, ca: &Handle) -> KrillResult<()> {
-        let mut cache = self.cache.write().await;
+        let lock = self.locks.ca(ca).await;
+        let _ = lock.write().await;
 
-        if !cache.contains_key(ca) {
-            Ok(()) // idempotent
-        } else {
-            let scope = ca.as_str();
+        let scope = ca.as_str();
 
-            self.store.drop_scope(scope)?; // will fail in case of I/O errors only
-            cache.remove(ca);
+        self.store.drop_scope(scope)?; // will fail in case of I/O errors only
 
-            Ok(())
-        }
+        Ok(())
     }
 
     /// Removes a child for the given CA.
@@ -252,14 +232,14 @@ impl StatusStore {
     where
         F: FnOnce(&mut CaStatus),
     {
-        let mut cache = self.cache.write().await;
+        let lock = self.locks.ca(ca).await;
+        let _ = lock.write().await;
 
-        let mut status: CaStatus = self.store.get(&Self::status_key(ca))?.unwrap_or_default();
+        let mut status: CaStatus = self.store.get(&Self::status_key(ca)).ok().flatten().unwrap_or_default();
 
         op(&mut status);
 
         self.store.store(&Self::status_key(ca), &status)?;
-        cache.insert(ca.clone(), Arc::new(status));
 
         Ok(())
     }
@@ -269,21 +249,21 @@ impl StatusStore {
         F: FnOnce(&mut ChildStatus),
     {
         self.update_ca_status(ca, |status| {
-            let mut child_status = match status.children.get_mut(child) {
+            let child_status = match status.children.get_mut(child) {
                 Some(child_status) => child_status,
                 None => {
                     status.children.insert(child.clone(), ChildStatus::default());
                     status.children.get_mut(child).unwrap()
                 }
             };
-            op(&mut child_status)
+            op(child_status)
         })
         .await
     }
 
     fn error_to_error_res(error: &Error) -> ErrorResponse {
         match error {
-            Error::HttpClientError(httpclient::Error::ErrorWithJson(_, res)) => res.clone(),
+            Error::HttpClientError(httpclient::Error::ErrorResponseWithJson(_, _, res)) => res.clone(),
             _ => error.to_error_response(),
         }
     }

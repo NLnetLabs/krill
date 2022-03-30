@@ -22,18 +22,30 @@ use crate::commons::{
 pub fn sub_dir(base: &Path, name: &str) -> Result<PathBuf, KrillIoError> {
     let mut full_path = base.to_path_buf();
     full_path.push(name);
-    create_dir(&full_path)?;
+    create_dir_all(&full_path)?;
     Ok(full_path)
 }
 
-pub fn create_dir(dir: &Path) -> Result<(), KrillIoError> {
+/// Creates a dir and any parent dirs which were missing.
+pub fn create_dir_all(dir: &Path) -> Result<(), KrillIoError> {
     if !dir.is_dir() {
-        fs::create_dir(dir)
+        fs::create_dir_all(dir)
             .map_err(|e| KrillIoError::new(format!("could not create dir: {}", dir.to_string_lossy()), e))?;
     }
     Ok(())
 }
 
+/// Removes a dir and all its content.
+pub fn remove_dir_all(dir: &Path) -> Result<(), KrillIoError> {
+    if dir.exists() {
+        fs::remove_dir_all(dir)
+            .map_err(|e| KrillIoError::new(format!("could not remove dir: {}", dir.to_string_lossy()), e))?;
+    }
+    Ok(())
+}
+
+/// Creates a new File or opens an exiting one. If the file did not exist, the path
+/// will be created if it did not exist yet.
 pub fn create_file_with_path(path: &Path) -> Result<File, KrillIoError> {
     if !path.exists() {
         if let Some(parent) = path.parent() {

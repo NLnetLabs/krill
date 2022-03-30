@@ -8,7 +8,6 @@ use std::{
 };
 
 use chrono::Duration;
-use clap::{App, Arg};
 use log::{error, LevelFilter};
 use serde::{de, Deserialize, Deserializer};
 
@@ -26,6 +25,7 @@ use crate::{
     },
     constants::*,
     daemon::http::tls_keys,
+    daemon::mq::{in_seconds, Priority},
 };
 
 #[cfg(feature = "multi-user")]
@@ -109,8 +109,12 @@ impl ConfigDefaults {
         vec![]
     }
 
-    fn ca_refresh_seconds() -> u32 {
-        600
+    fn ca_refresh_seconds() -> i64 {
+        24 * 3600 // 24 hours
+    }
+
+    fn ca_refresh_jitter_seconds() -> i64 {
+        12 * 3600 // 12 hours
     }
 
     fn ca_refresh_parents_batch_size() -> usize {
@@ -401,7 +405,10 @@ pub struct Config {
     pub signers: Vec<SignerConfig>,
 
     #[serde(default = "ConfigDefaults::ca_refresh_seconds", alias = "ca_refresh")]
-    pub ca_refresh_seconds: u32,
+    ca_refresh_seconds: i64,
+
+    #[serde(default = "ConfigDefaults::ca_refresh_jitter_seconds")]
+    ca_refresh_jitter_seconds: i64,
 
     #[serde(default = "ConfigDefaults::ca_refresh_parents_batch_size")]
     pub ca_refresh_parents_batch_size: usize,
@@ -670,6 +677,38 @@ impl Config {
         }
     }
 
+    pub fn requeue_remote_failed(&self) -> Priority {
+        if test_mode_enabled() {
+            in_seconds(5)
+        } else {
+            in_seconds(SCHEDULER_REQUEUE_DELAY_SECONDS)
+        }
+    }
+
+    /// Get the priority for the next CA refresh based on the configured
+    /// ca_refresh_seconds (1 day), and jitter (12 hours)
+    pub fn ca_refresh_next(&self) -> Priority {
+        Self::ca_refresh_next_from(self.ca_refresh_seconds, self.ca_refresh_jitter_seconds)
+    }
+
+    pub fn ca_refresh_start_up(&self, use_jitter: bool) -> Priority {
+        let jitter_seconds = if use_jitter { self.ca_refresh_jitter_seconds } else { 0 };
+
+        Self::ca_refresh_next_from(0, jitter_seconds)
+    }
+
+    fn ca_refresh_next_from(regular_seconds: i64, jitter_seconds: i64) -> Priority {
+        let random_seconds = if jitter_seconds == 0 {
+            0
+        } else {
+            use rand::Rng;
+            let mut rng = rand::thread_rng();
+            rng.gen_range(0..jitter_seconds)
+        };
+
+        in_seconds(regular_seconds + random_seconds)
+    }
+
     pub fn testbed(&self) -> Option<&TestBed> {
         self.testbed.as_ref()
     }
@@ -686,6 +725,10 @@ impl Config {
     /// Assumes that the configuration is valid. Will panic otherwise.
     pub fn one_off_signer(&self) -> &SignerConfig {
         &self.signers[self.one_off_signer.idx()]
+    }
+
+    pub fn upgrade_data_dir(&self) -> PathBuf {
+        self.data_dir.join("upgrade-data")
     }
 }
 
@@ -741,6 +784,7 @@ impl Config {
         };
 
         let ca_refresh_seconds = if enable_ca_refresh { 1 } else { 86400 };
+        let ca_refresh_jitter_seconds = if enable_ca_refresh { 0 } else { 86400 }; // no jitter in testing
         let ca_refresh_parents_batch_size = 10;
         let post_limit_api = ConfigDefaults::post_limit_api();
         let post_limit_rfc8181 = ConfigDefaults::post_limit_rfc8181();
@@ -843,6 +887,7 @@ impl Config {
             signers,
             signer_probe_retry_seconds,
             ca_refresh_seconds,
+            ca_refresh_jitter_seconds,
             ca_refresh_parents_batch_size,
             suspend_child_after_inactive_seconds,
             suspend_child_after_inactive_hours: None,
@@ -871,13 +916,15 @@ impl Config {
         enable_suspend: bool,
         second_signer: bool,
     ) -> Self {
-        Self::test_config(
+        let mut cfg = Self::test_config(
             data_dir,
             enable_testbed,
             enable_ca_refresh,
             enable_suspend,
             second_signer,
-        )
+        );
+        cfg.process().unwrap();
+        cfg
     }
 
     pub fn pubd_test(data_dir: &Path) -> Self {
@@ -886,47 +933,26 @@ impl Config {
         config
     }
 
-    pub fn get_config_filename() -> String {
-        let matches = App::new(KRILL_SERVER_APP)
-            .version(KRILL_VERSION)
-            .arg(
-                Arg::with_name("config")
-                    .short("c")
-                    .long("config")
-                    .value_name("FILE")
-                    .help("Override the path to the config file (default: './defaults/krill.conf')")
-                    .required(false),
-            )
-            .get_matches();
+    /// Creates the config (at startup).
+    pub fn create(config_file: &str, upgrade_only: bool) -> Result<Self, ConfigError> {
+        let mut config = Self::read_config(config_file)?;
 
-        let config_file = matches.value_of("config").unwrap_or(KRILL_DEFAULT_CONFIG_FILE);
+        if upgrade_only {
+            config.log_type = LogType::Stderr;
+        }
 
-        config_file.to_string()
-    }
+        config.init_logging()?;
 
-    /// Creates the config (at startup). Panics in case of issues.
-    pub fn create() -> Result<Self, ConfigError> {
-        let config_file = Self::get_config_filename();
-
-        let mut config = match Self::read_config(&config_file) {
-            Err(e) => {
-                if config_file == KRILL_DEFAULT_CONFIG_FILE {
-                    Err(ConfigError::other(
-                        "Cannot find config file. Please use --config to specify its location.",
-                    ))
-                } else {
-                    Err(ConfigError::Other(format!(
-                        "Error parsing config file: {}, error: {}",
-                        config_file, e
-                    )))
-                }
-            }
-            Ok(config) => {
-                config.init_logging()?;
-                info!("{} uses configuration file: {}", KRILL_SERVER_APP, config_file);
-                Ok(config)
-            }
-        }?;
+        if upgrade_only {
+            info!("Prepare upgrade using configuration file: {}", config_file);
+            info!("Processing data from: {}", config.data_dir.to_string_lossy());
+            info!(
+                "Saving prepared data to: {}",
+                config.upgrade_data_dir().to_string_lossy()
+            );
+        } else {
+            info!("{} uses configuration file: {}", KRILL_SERVER_APP, config_file);
+        }
 
         config
             .process()
@@ -957,6 +983,13 @@ impl Config {
                 CA_REFRESH_SECONDS_MAX
             );
             self.ca_refresh_seconds = CA_REFRESH_SECONDS_MAX;
+        }
+
+        let half_refresh = self.ca_refresh_seconds / 2;
+
+        if self.ca_refresh_jitter_seconds > half_refresh {
+            warn!("The value for 'ca_refresh_jitter_seconds' exceeded 50% of 'ca_refresh_seconds'. Changing it to {} seconds", half_refresh);
+            self.ca_refresh_jitter_seconds = half_refresh;
         }
     }
 
@@ -1152,13 +1185,20 @@ impl Config {
 
     pub fn read_config(file: &str) -> Result<Self, ConfigError> {
         let mut v = Vec::new();
-        let mut f =
-            File::open(file).map_err(|e| KrillIoError::new(format!("Could not read open file '{}'", file), e))?;
+        let mut f = File::open(file).map_err(|e| {
+            KrillIoError::new(
+                format!(
+                    "Could not read config file '{}'. Note: you may want to override the default location using --config <path>",
+                    file
+                ),
+                e,
+            )
+        })?;
         f.read_to_end(&mut v)
             .map_err(|e| KrillIoError::new(format!("Could not read config file '{}'", file), e))?;
 
-        let c: Config = toml::from_slice(v.as_slice())?;
-        Ok(c)
+        toml::from_slice(v.as_slice())
+            .map_err(|e| ConfigError::Other(format!("Error parsing config file: {}, error: {}", file, e)))
     }
 
     pub fn init_logging(&self) -> Result<(), ConfigError> {

@@ -74,12 +74,18 @@ async fn test_suspension() {
         sleep_seconds(15).await;
 
         cas_refresh_single(&testbed).await;
+
+        // schedule check suspension bg job to now
+        cas_suspend_all().await;
         expect_suspended(&testbed, &ca).await;
     }
 
     // Let "CA" refresh with testbed, this should 'un-suspend' it.
     {
         cas_refresh_single(&ca).await;
+
+        // schedule check suspension bg job to now
+        cas_suspend_all().await;
         expect_not_suspended(&testbed, &ca).await;
     }
 

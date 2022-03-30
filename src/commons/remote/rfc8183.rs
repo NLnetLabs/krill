@@ -18,7 +18,7 @@ use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use rpki::{repository::x509, uri};
 
 use crate::commons::{
-    api::{Handle, PublisherHandle, RepoInfo},
+    api::{Handle, ParentHandle, PublisherHandle, RepoInfo},
     crypto::IdCert,
     error::KrillIoError,
     util::{
@@ -685,11 +685,34 @@ impl fmt::Display for RepositoryResponse {
 }
 //------------ ServiceUri ----------------------------------------------------
 
-/// The service URI where a child or publisher needs to send its
+/// The service URI where a child or publisher needs to send RFC 6492 or 8181 messages
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ServiceUri {
     Https(uri::Https),
     Http(String),
+}
+
+impl ServiceUri {
+    /// Returns the handle of the local parent for this specific ServiceUri, and the
+    /// configured base (service) uri. Provided that this indeed maps back to this
+    /// same server and it is an rfc6492 style krill uri.
+    pub fn local_parent(&self, base_uri: &uri::Https) -> Option<ParentHandle> {
+        match &self {
+            Self::Http(_) => None,
+            Self::Https(service_uri) => {
+                let service_uri = service_uri.as_str();
+                let base_uri = base_uri.as_str();
+
+                if let Some(path) = service_uri.strip_prefix(base_uri) {
+                    if let Some(ca_name) = path.strip_prefix("rfc6492/") {
+                        return ParentHandle::from_str(ca_name).ok();
+                    }
+                }
+
+                None
+            }
+        }
+    }
 }
 
 impl TryFrom<String> for ServiceUri {
@@ -953,5 +976,14 @@ mod tests {
     fn apnic_repository_response() {
         let xml = include_str!("../../../test-resources/oob/apnic/repository.response.xml");
         RepositoryResponse::validate_at(xml.as_bytes(), apnic_oob_time()).unwrap();
+    }
+
+    #[test]
+    fn derive_local_parent_from_service_uri() {
+        let service_uri = ServiceUri::Https(uri::Https::from_str("https://localhost/rfc6492/PARENT-ID").unwrap());
+        let base_uri = uri::Https::from_str("https://localhost/").unwrap();
+
+        let parent = service_uri.local_parent(&base_uri).unwrap();
+        assert_eq!(parent, ParentHandle::from_str("PARENT-ID").unwrap())
     }
 }

@@ -73,6 +73,10 @@ impl Message {
     pub fn content(&self) -> &Content {
         &self.content
     }
+
+    pub fn is_list_response(&self) -> bool {
+        matches!(&self.content, Content::Res(Res::List(_)))
+    }
 }
 
 /// # Convenience accessors

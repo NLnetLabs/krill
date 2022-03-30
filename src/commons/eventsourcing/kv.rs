@@ -91,11 +91,19 @@ impl KeyValueStore {
         let mut base = work_dir.to_path_buf();
         base.push(name_space);
 
-        if !base.exists() {
-            file::create_dir(&base)?;
+        let store = KeyValueStore::Disk(KeyValueStoreDiskImpl { base });
+
+        match &store {
+            KeyValueStore::Disk(disk_store) => {
+                // If this is a new store then initialise the disk and set the version
+                if !disk_store.base.exists() {
+                    file::create_dir_all(&disk_store.base)?;
+                    store.version_set_current()?;
+                }
+            }
         }
 
-        Ok(KeyValueStore::Disk(KeyValueStoreDiskImpl { base }))
+        Ok(store)
     }
 
     /// Stores a key value pair, serialized as json, overwrite existing
@@ -138,6 +146,13 @@ impl KeyValueStore {
     pub fn drop_scope(&self, scope: &str) -> Result<(), KeyValueError> {
         match self {
             KeyValueStore::Disk(disk_store) => disk_store.drop_scope(scope),
+        }
+    }
+
+    /// Wipe the complete store. Needless to say perhaps.. use with care..
+    pub fn wipe(&self) -> Result<(), KeyValueError> {
+        match self {
+            KeyValueStore::Disk(disk_store) => disk_store.wipe(),
         }
     }
 
@@ -205,8 +220,7 @@ impl KeyValueStore {
     /// is assumed that the version was from before Krill 0.6.0. An error is returned if the key
     /// is present, but the value is corrupt or not recognized.
     pub fn version(&self) -> Result<KrillVersion, KeyValueError> {
-        let key = KeyStoreKey::simple("version".to_string());
-        self.get(&key)
+        self.get(&Self::version_key())
             .map(|version_opt| version_opt.unwrap_or_else(KrillVersion::v0_5_0_or_before))
     }
 
@@ -217,6 +231,21 @@ impl KeyValueStore {
     pub fn version_is_before(&self, later: KrillVersion) -> Result<bool, KeyValueError> {
         let version = self.version()?;
         Ok(version < later)
+    }
+
+    /// Returns whether the version of the deployed keystore matches that of the
+    /// currently deployed code.
+    pub fn version_is_current(&self) -> Result<bool, KeyValueError> {
+        self.version().map(|deployed| deployed == KrillVersion::code_version())
+    }
+
+    /// Sets the version of this key store to the currently deployed code
+    pub fn version_set_current(&self) -> Result<(), KeyValueError> {
+        self.store(&Self::version_key(), &KrillVersion::code_version())
+    }
+
+    fn version_key() -> KeyStoreKey {
+        KeyStoreKey::simple("version".to_string())
     }
 }
 
@@ -239,7 +268,11 @@ impl KeyValueStoreDiskImpl {
     /// creates a file path, prefixing the name with '.' much like vi
     fn swap_file_path(&self, key: &KeyStoreKey) -> PathBuf {
         let mut path = self.scope_path(key.scope.as_ref());
-        path.push(format!(".{}", key.name()));
+
+        let mut rnd_bytes = [0; 8];
+        openssl::rand::rand_bytes(&mut rnd_bytes).unwrap();
+        path.push(format!("{}-tmp-{}", key.name(), hex::encode(rnd_bytes)));
+
         path
     }
 
@@ -356,6 +389,14 @@ impl KeyValueStoreDiskImpl {
                     e,
                 )
             })?;
+        }
+        Ok(())
+    }
+
+    pub fn wipe(&self) -> Result<(), KeyValueError> {
+        if self.base.exists() {
+            file::remove_dir_all(&self.base)?;
+            file::create_dir_all(&self.base)?;
         }
         Ok(())
     }

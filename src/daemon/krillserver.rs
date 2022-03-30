@@ -33,7 +33,7 @@ use crate::{
         },
         config::{AuthType, Config},
         http::HttpResponse,
-        mq::MessageQueue,
+        mq::TaskQueue,
         scheduler::Scheduler,
     },
     pubd::{RepoStats, RepositoryManager},
@@ -67,9 +67,8 @@ pub struct KrillServer {
     // Handles the internal TA and/or CAs
     bgp_analyser: Arc<BgpAnalyser>,
 
-    // Responsible for background tasks, e.g. re-publishing
-    #[allow(dead_code)] // just need to keep this in scope
-    scheduler: Scheduler,
+    // Shared message queue
+    mq: Arc<TaskQueue>,
 
     // Time this server was started
     started: Timestamp,
@@ -143,9 +142,10 @@ impl KrillServer {
         let repo_manager = Arc::new(RepositoryManager::build(config.clone(), signer.clone())?);
 
         // Used to have a shared queue for the caserver and the background job scheduler.
-        let event_queue = Arc::new(MessageQueue::default());
+        let mq = Arc::new(TaskQueue::default());
 
-        let ca_manager = Arc::new(ca::CaManager::build(config.clone(), event_queue.clone(), signer).await?);
+        let ca_manager =
+            Arc::new(ca::CaManager::build(config.clone(), mq.clone(), signer, system_actor.clone()).await?);
 
         ca_manager.resync_ca_statuses().await?;
 
@@ -211,16 +211,6 @@ impl KrillServer {
             &config.bgp_risdumps_v6_uri,
         ));
 
-        let scheduler = Scheduler::build(
-            event_queue,
-            ca_manager.clone(),
-            bgp_analyser.clone(),
-            #[cfg(feature = "multi-user")]
-            login_session_cache.clone(),
-            &config,
-            &system_actor,
-        );
-
         Ok(KrillServer {
             service_uri,
             work_dir: work_dir.clone(),
@@ -228,13 +218,25 @@ impl KrillServer {
             repo_manager,
             ca_manager,
             bgp_analyser,
-            scheduler,
+            mq,
             started: Timestamp::now(),
             #[cfg(feature = "multi-user")]
             login_session_cache,
             system_actor,
             config,
         })
+    }
+
+    pub fn build_scheduler(&self) -> Scheduler {
+        Scheduler::build(
+            self.mq.clone(),
+            self.ca_manager.clone(),
+            self.bgp_analyser.clone(),
+            #[cfg(feature = "multi-user")]
+            self.login_session_cache.clone(),
+            self.config.clone(),
+            self.system_actor.clone(),
+        )
     }
 
     pub fn service_base_uri(&self) -> &uri::Https {
@@ -525,26 +527,32 @@ impl KrillServer {
     }
 
     /// Re-sync all CAs with their repositories
-    pub async fn cas_repo_sync_all(&self, actor: &Actor) -> KrillEmptyResult {
-        self.ca_manager.cas_repo_sync_all(actor).await;
+    pub fn cas_repo_sync_all(&self, actor: &Actor) -> KrillEmptyResult {
+        self.ca_manager.cas_schedule_repo_sync_all(actor);
         Ok(())
     }
 
     /// Re-sync a specific CA with its repository
-    pub async fn cas_repo_sync_single(&self, ca: &Handle) -> KrillEmptyResult {
-        self.ca_manager.cas_repo_sync_single(ca).await?;
+    pub fn cas_repo_sync_single(&self, ca: &Handle) -> KrillEmptyResult {
+        self.ca_manager.cas_schedule_repo_sync(ca.clone());
         Ok(())
     }
 
     /// Refresh all CAs: ask for updates and shrink as needed.
-    pub async fn cas_refresh_all(&self, actor: &Actor) -> KrillEmptyResult {
-        self.ca_manager.cas_refresh_all(self.started, actor).await;
+    pub async fn cas_refresh_all(&self) -> KrillEmptyResult {
+        self.ca_manager.cas_schedule_refresh_all().await;
         Ok(())
     }
 
     /// Refresh a specific CA with its parents
-    pub async fn cas_refresh_single(&self, ca_handle: Handle, actor: &Actor) -> KrillEmptyResult {
-        self.ca_manager.cas_refresh_single(ca_handle, self.started, actor).await;
+    pub async fn cas_refresh_single(&self, ca_handle: Handle) -> KrillEmptyResult {
+        self.ca_manager.cas_schedule_refresh_single(ca_handle).await;
+        Ok(())
+    }
+
+    /// Schedule check suspend children for all CAs
+    pub fn cas_schedule_suspend_all(&self) -> KrillEmptyResult {
+        self.ca_manager.cas_schedule_suspend_all();
         Ok(())
     }
 }

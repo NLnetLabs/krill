@@ -8,6 +8,7 @@ KRILL_GROUP=${KRILL_USER}
 KRILL_HOME_DIR="/var/lib/krill"
 KRILL_HOME_DIR_PERMS=700
 KRILL_CONF="/etc/krill.conf"
+KRILL_CONF_PERMS=640
 KRILL_DATA="${KRILL_HOME_DIR}/data/"
 
 if [ $EUID -ne 0 ]; then
@@ -55,6 +56,12 @@ create_first_time_configuration() {
             --token "${ADMIN_TOKEN}" |
             sed -e "s|^\(### log_type.\+\)|\1\nlog_type = \"syslog\"|" \
                 > "${KRILL_CONF}"
+
+        # Ensure that the config file has the correct ownership
+        chown ${KRILL_USER}:${KRILL_GROUP} ${KRILL_CONF}
+        
+        # Ensure that the config file has the correct permissions
+        chmod ${KRILL_CONF_PERMS} ${KRILL_CONF}
     fi
 }
 

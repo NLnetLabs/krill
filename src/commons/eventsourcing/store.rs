@@ -163,7 +163,7 @@ where
         };
 
         if !existed {
-            store.set_version(&KrillVersion::current())?;
+            store.set_version(&KrillVersion::code_version())?;
         }
 
         Ok(store)
@@ -422,15 +422,16 @@ where
 
         let stored_command_builder = StoredCommandBuilder::new(&cmd, latest.version(), info.last_command);
 
-        let res = match latest.process_command(cmd) {
+        match latest.process_command(cmd) {
             Err(e) => {
                 let stored_command = stored_command_builder.finish_with_error(&e);
                 self.store_command(stored_command)?;
+                self.save_info(&handle, &info)?; // last_command was updated
                 Err(e)
             }
             Ok(events) => {
                 if events.is_empty() {
-                    return Ok(latest); // otherwise the version info will be updated
+                    Ok(latest) // note: no-op no version info will be updated
                 } else {
                     let agg = Arc::make_mut(&mut latest);
 
@@ -506,6 +507,9 @@ where
 
                     cache.insert(handle.clone(), Arc::new(agg.clone()));
 
+                    // Save the info so that the aggregate can be loaded properly by the listeners.
+                    self.save_info(&handle, &info)?;
+
                     // Now send the events to the 'post-save' listeners.
                     for listener in &self.post_save_listeners {
                         listener.as_ref().listen(agg, events.as_slice());
@@ -514,11 +518,7 @@ where
                     Ok(latest)
                 }
             }
-        };
-
-        self.save_info(&handle, &info)?;
-
-        res
+        }
     }
 
     /// Returns true if an instance exists for the id
@@ -640,15 +640,8 @@ where
     fn get_latest_no_lock(&self, handle: &Handle) -> StoreResult<Arc<A>> {
         trace!("Trying to load aggregate id: {}", handle);
 
-        let info_key = Self::key_for_info(handle);
-        let limit = self
-            .kv
-            .get::<StoredValueInfo>(&info_key)
-            .map_err(|_| AggregateStoreError::InfoCorrupt(handle.clone()))?
-            .map(|info| info.last_event);
-
         match self.cache_get(handle) {
-            None => match self.get_aggregate(handle, limit)? {
+            None => match self.get_aggregate(handle, None)? {
                 None => {
                     error!("Could not load aggregate with id: {} from disk", handle);
                     Err(AggregateStoreError::UnknownAggregate(handle.clone()))
@@ -663,7 +656,7 @@ where
             Some(mut arc) => {
                 if self.has_updates(handle, &arc)? {
                     let agg = Arc::make_mut(&mut arc);
-                    self.update_aggregate(handle, agg, limit)?;
+                    self.update_aggregate(handle, agg, None)?;
                 }
                 trace!("Loaded aggregate id: {} from memory", handle);
                 Ok(arc)
@@ -849,7 +842,7 @@ where
         }
 
         if aggregate_opt.is_none() {
-            warn!("No snapshot found for '{}' will try backup snapshot", id);
+            debug!("No snapshot found for '{}' will try backup snapshot", id);
             let backup_snapshot_key = Self::key_for_backup_snapshot(id);
             match self.kv.get::<A>(&backup_snapshot_key) {
                 Err(e) => {
@@ -879,7 +872,7 @@ where
         }
 
         if aggregate_opt.is_none() {
-            warn!("No snapshots found for '{}' will try from initialization event.", id);
+            debug!("No snapshots found for '{}' will try from initialization event.", id);
             let init_key = Self::key_for_event(id, 0);
             aggregate_opt = match self.kv.get::<A::InitEvent>(&init_key)? {
                 Some(e) => {
@@ -901,59 +894,46 @@ where
 
     fn update_aggregate(&self, id: &Handle, aggregate: &mut A, limit: Option<u64>) -> Result<(), AggregateStoreError> {
         let start = aggregate.version();
-        let limit = if let Some(limit) = limit {
-            debug!("Will attempt to update '{}' using explicit limit", id);
-            limit
-        } else if let Ok(info) = self.get_info(id) {
-            debug!("Will attempt to update '{}' using limit from info", id);
-            info.last_event
+
+        if let Some(limit) = limit {
+            debug!("Will update '{}' from version: {} to: {}", id, start, limit + 1);
         } else {
-            let nr_events = self.kv.keys(Some(id.to_string()), "delta-")?.len();
-            if nr_events < 1 {
-                return Err(AggregateStoreError::InfoMissing(id.clone()));
-            } else {
-                let limit = (nr_events - 1) as u64;
-                debug!("Will attempt to update '{}' from limit based on nr of events", id,);
-                limit
+            debug!("Will update '{}' to latest version", id);
+        }
+
+        // check and apply any applicable events until:
+        // - the limit is reached (if supplied)
+        // - there are no more events
+        // - any event cannot be applied (return an error)
+        loop {
+            let version = aggregate.version();
+            if let Some(limit) = limit {
+                if limit == version - 1 {
+                    debug!("Updated '{}' to: {}", id, version);
+                    break;
+                }
             }
-        };
 
-        if limit == aggregate.version() - 1 {
-            // already at version, done
-            // note that an event has the version of the aggregate it *affects*. So delta 10 results in version 11.
-            debug!("Snapshot for '{}' is up to date", id);
-            return Ok(());
-        }
-
-        debug!(
-            "Will attempt to update '{}' from version: {} to: {}",
-            id,
-            start,
-            limit + 1
-        );
-
-        if start > limit {
-            return Err(AggregateStoreError::ReplayError(id.clone(), limit, start));
-        }
-
-        for version in start..limit + 1 {
-            if let Some(e) = self.get_event(id, version)? {
-                if aggregate.version() != version {
+            if let Some(e) = self.get_event::<A::Event>(id, version)? {
+                if version != e.version() {
                     error!("Trying to apply event to wrong version of aggregate in replay");
-                    return Err(AggregateStoreError::ReplayError(id.clone(), limit, version));
+                    return Err(AggregateStoreError::ReplayError(id.clone(), version, e.version()));
                 }
                 aggregate.apply(e);
                 debug!("Applied event nr {} to aggregate {}", version, id);
             } else {
-                return Err(AggregateStoreError::ReplayError(id.clone(), limit, version));
+                debug!("No more events found. updated '{}' to: {}", id, version);
+                break;
             }
         }
 
         Ok(())
     }
 
-    /// Saves the latest snapshot - overwrites any previous snapshot.
-    fn store_snapshot<V: Aggregate>(&self, id: &Handle, aggregate: &V) -> Result<(), AggregateStoreError> {
+    /// Saves the latest snapshot - backs up previous snapshot, and drops previous backup.
+    /// Uses moves to ensure that files are written entirely before they are made available
+    /// for reading.
+    pub fn store_snapshot<V: Aggregate>(&self, id: &Handle, aggregate: &V) -> Result<(), AggregateStoreError> {
         let snapshot_new = Self::key_for_new_snapshot(id);
         let snapshot_current = Self::key_for_snapshot(id);
         let snapshot_backup = Self::key_for_backup_snapshot(id);
@@ -1028,10 +1008,10 @@ impl fmt::Display for AggregateStoreError {
             AggregateStoreError::InitError(handle) => {
                 write!(f, "Init event exists for '{}', but cannot be applied", handle)
             }
-            AggregateStoreError::ReplayError(handle, target_version, fail_version) => write!(
+            AggregateStoreError::ReplayError(handle, version, fail_version) => write!(
                 f,
-                "Cannot reconstruct '{}' to version '{}', failed at version {}",
-                handle, target_version, fail_version
+                "Event for '{}' version '{}' had version '{}'",
+                handle, version, fail_version
             ),
             AggregateStoreError::InfoMissing(handle) => write!(f, "Missing stored value info for '{}'", handle),
             AggregateStoreError::InfoCorrupt(handle) => write!(f, "Corrupt stored value info for '{}'", handle),

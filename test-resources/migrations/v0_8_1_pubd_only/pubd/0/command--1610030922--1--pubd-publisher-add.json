@@ -1,0 +1,18 @@
+{
+  "actor": "krill",
+  "time": "2021-01-07T14:48:42.319174Z",
+  "handle": "0",
+  "version": 1,
+  "sequence": 1,
+  "details": {
+    "add_publisher": [
+      "ta",
+      "D272D0F1E7F20EBE4F3038F29ACFA9774590E835"
+    ]
+  },
+  "effect": {
+    "events": [
+      1
+    ]
+  }
+}

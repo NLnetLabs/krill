@@ -255,18 +255,20 @@ impl LoginSessionCache {
             .map_err(|err| Error::Custom(format!("Unable to purge session cache: {}", err)))?;
 
         let size_before = cache.len();
-        let now = Self::time_now_secs_since_epoch()?;
 
         // Only retain cache items that have been cached for less than the
         // maximum time allowed.
+        let now = Self::time_now_secs_since_epoch()?;
         cache.retain(|_, v| v.evict_after > now);
 
-        let size_after = size_before - cache.len();
+        let size_after = cache.len();
 
-        debug!(
-            "Login session cache purge: size before={}, size after={}",
-            size_before, size_after
-        );
+        if size_after != size_before {
+            debug!(
+                "Login session cache purge: size before={}, size after={}",
+                size_before, size_after
+            );
+        }
 
         Ok(())
     }

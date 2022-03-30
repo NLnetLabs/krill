@@ -1,0 +1,18 @@
+{
+  "id": "ca",
+  "version": 2,
+  "details": {
+    "repo_updated": {
+      "rfc8181": {
+        "tag": null,
+        "publisher_handle": "krill-upgrade-07",
+        "id_cert": "MIIDNDCCAhygAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEygyNEI3QUMyREE5OTAyMzM2NTdFQ0E5MTZGOTYyOEREQTEyNDY4RDU5MB4XDTIxMTEyNTEwMjUxNVoXDTM2MTEyNTEwMzAxNVowMzExMC8GA1UEAxMoMjRCN0FDMkRBOTkwMjMzNjU3RUNBOTE2Rjk2MjhEREExMjQ2OEQ1OTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAOk2+4MzVtTGLNYZT/TE/2ulAyEKE3rSxNKB0YyqXjYGr5i0d+1By2P+DgbUTD9nG41XqtlDl58XGE/Q2Kw9Aj1iIMcqhtQ71Tb1ZtEtc+AmK/2ffCtDmWgGHXbs7peytJUYfxGRcU9fmnL8EzcazgKA/Vj4wtkJ6Flc+W4aIY0qzzvkTlzZCE5L8mOmSaXGk+jkNNDm8IxewzwVanqVigdWSkyRCzYw26fuf+IlwSmSpvM2EQHYbujb+5RIVwWPeGdI3djjaDWBDyb7Ngd32dDt5F+xuRbYNJXjqCttTk8dN0WCTJGP7HiCewttfOYnucbB8xVzFLl2KSMBPIuRCEkCAwEAAaNTMFEwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQUJLesLamQIzZX7KkW+WKN2hJGjVkwHwYDVR0jBBgwFoAUJLesLamQIzZX7KkW+WKN2hJGjVkwDQYJKoZIhvcNAQELBQADggEBAN7WZ0qc51KSdhnRX1kDMNbRYdu5/q9dK+Y6NCdiXSTsDSKkKPCXOkKqmim3f0wk1wS9AjT8IhWOraQyPQkasJfa2hGu9V550kA8G/BuwfBs5Q1wNLudgPjjSdb8dT3z47S8A59eVlIFZeQhD+gFCloHejkdVDm3I/AFBo8rPvmwqnBUos+lrY7R0PaLkQ3mhmZI+2LTqaGH8fmcQy2NTvTEtHY6fMVxCQuIflH/lgPEmd26OmSMl0tAdHx3ADNUOiiA1h+PdEFaAd5r2+jN48/DDAMN9ncvzc/7+akMYNP4ygUUrvNBF1gWmorG7DRei4/0zqkQLBm9Dim/s1lKS4o=",
+        "service_uri": "https://testbed.krill.cloud/rfc8181/krill-upgrade-07/",
+        "repo_info": {
+          "base_uri": "rsync://testbed.krill.cloud/repo/krill-upgrade-07/",
+          "rpki_notify": "https://testbed.krill.cloud/rrdp/notification.xml"
+        }
+      }
+    }
+  }
+}

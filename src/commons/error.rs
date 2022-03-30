@@ -24,7 +24,7 @@ use crate::{
         util::httpclient,
     },
     daemon::{ca::RouteAuthorization, http::tls_keys},
-    upgrades::UpgradeError,
+    upgrades::PrepareUpgradeError,
 };
 
 //------------ RoaDeltaError -----------------------------------------------
@@ -178,7 +178,7 @@ pub enum Error {
     HttpsSetup(String),
     HttpClientError(httpclient::Error),
     ConfigError(String),
-    UpgradeError(UpgradeError),
+    UpgradeError(PrepareUpgradeError),
 
     //-----------------------------------------------------------------
     // General API Client Issues
@@ -572,8 +572,8 @@ impl From<PublicationDeltaError> for Error {
     }
 }
 
-impl From<UpgradeError> for Error {
-    fn from(e: UpgradeError) -> Self {
+impl From<PrepareUpgradeError> for Error {
+    fn from(e: PrepareUpgradeError) -> Self {
         Error::UpgradeError(e)
     }
 }
@@ -979,7 +979,7 @@ mod tests {
         );
         verify(
             include_str!("../../test-resources/errors/sys-http-client.json"),
-            Error::HttpClientError(httpclient::Error::Forbidden),
+            Error::HttpClientError(httpclient::Error::forbidden("https://example.com/")),
         );
 
         //-----------------------------------------------------------------

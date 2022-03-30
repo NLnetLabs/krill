@@ -2,6 +2,7 @@
 set -e
 
 KRILL_CONF="/etc/krill.conf"
+KRILL_CONF_PERMS=640
 KRILL_HOME="/var/lib/krill/"
 KRILL_DATA="${KRILL_HOME}data/"
 KRILL_USER="krill"
@@ -34,6 +35,12 @@ create_first_time_configuration() {
             --token "${ADMIN_TOKEN}" |
             sed -e "s|^\(### log_type.\+\)|\1\nlog_type = \"syslog\"|" \
                 > "${KRILL_CONF}"
+
+        # Ensure that the config file has the correct ownership
+        chown ${KRILL_USER}:${KRILL_USER} ${KRILL_CONF}
+        
+        # Ensure that the config file has the correct permissions
+        chmod ${KRILL_CONF_PERMS} ${KRILL_CONF}
     fi
 }
 

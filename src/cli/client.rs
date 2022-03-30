@@ -159,6 +159,10 @@ impl KrillClient {
                 post_empty(&self.server, &self.token, "api/v1/bulk/cas/sync/repo").await?;
                 Ok(ApiResponse::Empty)
             }
+            BulkCaCommand::Suspend => {
+                post_empty(&self.server, &self.token, "api/v1/bulk/cas/suspend").await?;
+                Ok(ApiResponse::Empty)
+            }
         }
     }
 
@@ -468,6 +472,11 @@ impl KrillClient {
                 delete(&self.server, &self.token, uri).await?;
                 Ok(ApiResponse::Empty)
             }
+            PubServerCommand::RepositorySessionReset => {
+                let uri = "api/v1/pubd/session_reset";
+                post_empty(&self.server, &self.token, uri).await?;
+                Ok(ApiResponse::Empty)
+            }
             PubServerCommand::AddPublisher(req) => {
                 let res = post_json_with_response(&self.server, &self.token, "api/v1/pubd/publishers", req).await?;
                 Ok(ApiResponse::Rfc8183RepositoryResponse(res))
@@ -689,6 +698,8 @@ mod tests {
 
         match res {
             ApiResponse::GenericBody(body) => {
+                // Use the following to regenerate the test config file in case of text - not LOGIC - changes.
+                // file::save(body.as_bytes(), &std::path::PathBuf::from("test-resources/krill-init.conf")).unwrap();
                 let expected = include_str!("../../test-resources/krill-init.conf");
                 assert_eq!(expected, &body)
             }
@@ -711,6 +722,8 @@ mod tests {
 
         match res {
             ApiResponse::GenericBody(body) => {
+                // Use the following to regenerate the test config file in case of text - not LOGIC - changes.
+                // file::save(body.as_bytes(), &std::path::PathBuf::from("test-resources/krill-init-multi-user.conf")).unwrap();
                 let expected = include_str!("../../test-resources/krill-init-multi-user.conf");
                 assert_eq!(expected, &body)
             }

@@ -29,7 +29,7 @@ pub struct KrillVersion {
 }
 
 impl KrillVersion {
-    pub fn current() -> Self {
+    pub fn code_version() -> Self {
         // Note: we have a unit test to ensure that the KRILL_VERSION constant
         // which is derived from the Cargo.toml version can be parsed.
         Self::from_str(KRILL_VERSION).unwrap()
@@ -297,7 +297,7 @@ mod tests {
 
     #[test]
     fn krill_version_from_current_cargo_version() {
-        KrillVersion::current();
+        KrillVersion::code_version();
     }
 
     #[test]
