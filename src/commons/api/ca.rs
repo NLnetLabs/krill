@@ -1345,19 +1345,7 @@ impl ParentStatuses {
         sorted_parents.into_iter().map(|(handle, _)| handle).cloned().collect()
     }
 
-    pub fn set_failure(&mut self, parent: &ParentHandle, uri: &ServiceUri, error: ErrorResponse) {
-        self.get_mut_status(parent).set_failure(uri.clone(), error);
-    }
-
-    pub fn set_entitlements(&mut self, parent: &ParentHandle, uri: &ServiceUri, entitlements: &Entitlements) {
-        self.get_mut_status(parent).set_entitlements(uri.clone(), entitlements);
-    }
-
-    pub fn set_last_updated(&mut self, parent: &ParentHandle, uri: &ServiceUri) {
-        self.get_mut_status(parent).set_last_updated(uri.clone());
-    }
-
-    fn get_mut_status(&mut self, parent: &ParentHandle) -> &mut ParentStatus {
+    pub fn get_mut_status(&mut self, parent: &ParentHandle) -> &mut ParentStatus {
         if !self.0.contains_key(parent) {
             self.0.insert(parent.clone(), ParentStatus::default());
         }
@@ -1367,6 +1355,10 @@ impl ParentStatuses {
 
     pub fn remove(&mut self, parent: &ParentHandle) {
         self.0.remove(parent);
+    }
+
+    pub fn add(&mut self, parent: ParentHandle, status: ParentStatus) {
+        self.0.insert(parent, status);
     }
 }
 
@@ -1511,7 +1503,7 @@ impl ParentStatus {
         self.last_exchange.as_ref().map(|e| e.to_failure_opt()).flatten()
     }
 
-    fn set_failure(&mut self, uri: ServiceUri, error: ErrorResponse) {
+    pub fn set_failure(&mut self, uri: ServiceUri, error: ErrorResponse) {
         self.last_exchange = Some(ParentExchange {
             timestamp: Timestamp::now(),
             uri,
@@ -1519,7 +1511,7 @@ impl ParentStatus {
         });
     }
 
-    fn set_entitlements(&mut self, uri: ServiceUri, entitlements: &Entitlements) {
+    pub fn set_entitlements(&mut self, uri: ServiceUri, entitlements: &Entitlements) {
         self.set_last_updated(uri);
 
         self.entitlements = entitlements
@@ -1540,7 +1532,7 @@ impl ParentStatus {
         self.all_resources = all_resources;
     }
 
-    fn set_last_updated(&mut self, uri: ServiceUri) {
+    pub fn set_last_updated(&mut self, uri: ServiceUri) {
         let timestamp = Timestamp::now();
         self.last_exchange = Some(ParentExchange {
             timestamp,
