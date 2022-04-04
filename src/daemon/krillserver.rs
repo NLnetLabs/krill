@@ -141,6 +141,8 @@ impl KrillServer {
 
         ca_manager.resync_ca_statuses().await?;
 
+        todo!("Did it work yet?");
+
         if let Some(testbed) = config.testbed() {
             let uris = testbed.publication_server_uris();
 

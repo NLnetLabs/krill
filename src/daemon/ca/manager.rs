@@ -1,4 +1,8 @@
-use std::{collections::HashMap, ops::Deref, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    ops::Deref,
+    sync::Arc,
+};
 
 use api::{Publish, Update, Withdraw};
 
@@ -415,42 +419,49 @@ impl CaManager {
     ///    - remove surplus from status
     ///    - add missing
     pub async fn resync_ca_statuses(&self) -> KrillResult<()> {
+        debug!("Re-sync CA statuses");
         let cas = self.ca_store.list()?;
 
         let mut ca_statuses = self.status_store.cas().await?;
 
         // loop over existing CAs and get their status
-        for ca_handle in cas {
+        for ca_handle in &cas {
+            debug!("Re-sync CA status for CA {}", ca_handle);
+
             let ca = self.get_ca(&ca_handle).await?;
             let status = match ca_statuses.remove(&ca_handle) {
                 Some(status) => status,
                 None => {
                     // Getting a missing status will ensure that a new empty status is generated.
+                    info!("No recorded status found for CA {}, start with empty status", ca_handle);
                     self.status_store.get_ca_status(&ca_handle).await
                 }
             };
 
-            let mut status_children = status.children().clone();
-
-            // add default status for missing children
-            for child in ca.children() {
-                if status_children.remove(child).is_none() {
-                    self.status_store
-                        .set_child_default_if_missing(&ca_handle, child)
-                        .await?;
-                }
-            }
+            let status_children = status.children().clone();
+            let ca_children: HashSet<&ChildHandle> = ca.children().collect();
 
             // remove surplus children status
-            for surplus_child in status_children.keys() {
-                self.status_store.remove_child(&ca_handle, surplus_child).await?;
+            for status_child in status_children.keys() {
+                if !ca_children.contains(&status_child) {
+                    info!(
+                        "Remove status for child {} no longer held by CA {}",
+                        status_child, ca_handle,
+                    );
+                    self.status_store.remove_child(&ca_handle, status_child).await?;
+                }
             }
         }
 
+        use std::iter::FromIterator;
+        let cas: HashSet<Handle> = HashSet::from_iter(cas.into_iter());
+
         // remove the status for any left-over CAs with status
-        for surplus_ca in ca_statuses.keys() {
-            info!("Removing the cached status for a removed CA: {}", surplus_ca);
-            self.status_store.remove_ca(surplus_ca).await?;
+        for ca in ca_statuses.keys() {
+            if !cas.contains(&ca) {
+                info!("Removing the cached status for a removed CA: {}", ca);
+                self.status_store.remove_ca(ca).await?;
+            }
         }
 
         Ok(())

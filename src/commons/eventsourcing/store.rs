@@ -175,6 +175,7 @@ where
         for handle in self.list()? {
             self.warm_aggregate(&handle)?;
         }
+        info!("Cache for CAs has been warmed.");
         Ok(())
     }
 
@@ -186,6 +187,8 @@ where
     /// assumed that an incomplete transaction took place. The surplus entries will be archived
     /// and warnings will be reported.
     pub fn warm_aggregate(&self, handle: &Handle) -> StoreResult<()> {
+        info!("Warming the cache for CA: '{}'", handle);
+
         let agg = self
             .get_latest(handle)
             .map_err(|e| AggregateStoreError::WarmupFailed(handle.clone(), e.to_string()))?;
@@ -222,8 +225,11 @@ where
 
         // Save the snapshot if it does not yet match the latest state
         if info.snapshot_version != agg.version() {
-            info!("Updating snapshot for '{}', to decrease future load times.", handle);
             self.store_snapshot(handle, agg.as_ref())?;
+            debug!(
+                "Saved updated snapshot for '{}', to decrease future load times.",
+                handle
+            );
         }
 
         Ok(())
@@ -830,7 +836,7 @@ where
                     if limit >= agg.version() - 1 {
                         aggregate_opt = Some(agg)
                     } else {
-                        trace!("Discarding snapshot after limit '{}'", id);
+                        warn!("Snapshot for '{}' is after version '{}', archiving it", id, limit);
                         self.kv.archive_surplus(&snapshot_key)?;
                     }
                 } else {
@@ -842,7 +848,7 @@ where
         }
 
         if aggregate_opt.is_none() {
-            debug!("No snapshot found for '{}' will try backup snapshot", id);
+            warn!("No suitable snapshot found for '{}' will try backup snapshot", id);
             let backup_snapshot_key = Self::key_for_backup_snapshot(id);
             match self.kv.get::<A>(&backup_snapshot_key) {
                 Err(e) => {
@@ -859,7 +865,10 @@ where
                         if limit >= agg.version() - 1 {
                             aggregate_opt = Some(agg)
                         } else {
-                            trace!("Discarding backup snapshot after limit '{}'", id);
+                            warn!(
+                                "Backup snapshot for '{}' is after version '{}', archiving it",
+                                id, limit
+                            );
                             self.kv.archive_surplus(&backup_snapshot_key)?;
                         }
                     } else {
@@ -872,7 +881,7 @@ where
         }
 
         if aggregate_opt.is_none() {
-            debug!("No snapshots found for '{}' will try from initialization event.", id);
+            warn!("No suitable snapshot for '{}' will rebuild state from events.", id);
             let init_key = Self::key_for_event(id, 0);
             aggregate_opt = match self.kv.get::<A::InitEvent>(&init_key)? {
                 Some(e) => {
