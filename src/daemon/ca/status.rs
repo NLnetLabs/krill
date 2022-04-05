@@ -106,13 +106,15 @@ impl StatusStore {
         let mut parents = ParentStatuses::default();
         for parent_key in self.store.keys(Some(ca.to_string()), "parents-")? {
             let parent = parent_key.name().strip_prefix("parents-").unwrap();
-            if let Ok(parent) = ParentHandle::from_str(parent) {
-                let status: ParentStatus = self
-                    .store
-                    .get(&Self::parent_status_key(ca, &parent))?
-                    .unwrap_or_default();
+            if let Some(parent) = parent.strip_suffix(".json") {
+                if let Ok(parent) = ParentHandle::from_str(parent) {
+                    let status: ParentStatus = self
+                        .store
+                        .get(&Self::parent_status_key(ca, &parent))?
+                        .unwrap_or_default();
 
-                parents.add(parent, status);
+                    parents.add(parent, status);
+                }
             }
         }
 
@@ -120,10 +122,12 @@ impl StatusStore {
         let mut children = HashMap::new();
         for child_key in self.store.keys(Some(ca.to_string()), "children-")? {
             let child = child_key.name().strip_prefix("children-").unwrap();
-            if let Ok(child) = ChildHandle::from_str(child) {
-                let status: ChildStatus = self.store.get(&Self::child_status_key(ca, &child))?.unwrap_or_default();
+            if let Some(child) = child.strip_suffix(".json") {
+                if let Ok(child) = ChildHandle::from_str(child) {
+                    let status: ChildStatus = self.store.get(&Self::child_status_key(ca, &child))?.unwrap_or_default();
 
-                children.insert(child, status);
+                    children.insert(child, status);
+                }
             }
         }
 
@@ -442,11 +446,18 @@ mod tests {
             let target = d.join("status");
             file::backup_dir(&source, &target).unwrap();
 
-            let store = StatusStore::new(&d, "status").unwrap();
+            let status_testbed_before_migration =
+                include_str!("../../../test-resources/status_store/migration-0.9.5/testbed/status.json");
 
+            let status_testbed_before_migration: CaStatus =
+                serde_json::from_str(status_testbed_before_migration).unwrap();
+
+            let store = StatusStore::new(&d, "status").unwrap();
             let testbed = Handle::from_str("testbed").unwrap();
 
-            let testbed_status_migrated = store.get_ca_status(&testbed);
+            let status_testbed_migrated = store.get_ca_status(&testbed);
+
+            assert_eq!(&status_testbed_before_migration, status_testbed_migrated.as_ref());
         });
     }
 }
