@@ -97,6 +97,8 @@ jobs:
           - 'debian:bullseye' # debian/11
           - 'centos:7'
           - 'rockylinux:8'    # compatible with EOL centos:8
+        target:
+          - 'x86_64'
         include:
           # For CentOS 7 we want to statically link with OpenSSL, but `cargo generate-rpm` doesn't build the code for
           # unlike `cargo deb` so we have to control the feature set used for building ourselves rather than in
@@ -204,7 +206,7 @@ jobs:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
-        key: ${{ matrix.image }}-${{ matrix.pkg }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ matrix.image }}-${{ matrix.target }}-${{ matrix.pkg }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
     # Speed up tooling installation by only re-downloading and re-building dependent crates if we change the version of
     # the tool that we are using.
@@ -322,6 +324,14 @@ jobs:
             echo "  * See: https://github.com/NLnetLabs/krill/releases/tag/v${KRILL_NEW_VER}" >>target/debian/changelog
             echo " -- maintainer ${MAINTAINER}  ${RFC5322_TS}" >>target/debian/changelog
 
+            if [[ "${CROSS_TARGET}" == "x86_64" ]]; then
+              EXTRA_CARGO_DEB_ARGS=
+              VARIANT="${OS_NAME}-${OS_REL}"
+            else
+              EXTRA_CARGO_DEB_ARGS="--no-build --no-strip --target ${CROSS_TARGET} --output target/debian"
+              VARIANT="${OS_NAME}-${OS_REL}-${CROSS_TARGET}"
+            fi
+
             if [ "${MATRIX_PKG}" == "krillup" ]; then
                 # Ugly hack to use an alternate Cargo Deb configuration for krillup.
                 sed -i -e 's/^\[package\.metadata\.deb\]/[package.metadata.moved-deb]/' \
@@ -406,7 +416,7 @@ jobs:
     - name: Upload package
       uses: actions/upload-artifact@v2
       with:
-        name: ${{ matrix.pkg }}_${{ env.OS_NAME }}_${{ env.OS_REL }}
+        name: ${{ matrix.pkg }}_${{ env.OS_NAME }}_${{ env.OS_REL }}_${{ matrix.target }}
         path: |
           target/debian/*.deb
           target/generate-rpm/*.rpm
@@ -517,7 +527,7 @@ jobs:
     - name: Download package
       uses: actions/download-artifact@v2
       with:
-        name: ${{ matrix.pkg }}_${{ env.OS_NAME }}_${{ env.OS_REL }}
+        name: ${{ matrix.pkg }}_${{ env.OS_NAME }}_${{ env.OS_REL }}_${{ matrix.target }}
 
     - name: Add current user to LXD group
       run: |
