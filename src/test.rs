@@ -420,7 +420,7 @@ pub async fn ca_aspas_add(handle: &Handle, aspa: AspaDefinition) {
     krill_admin(Command::CertAuth(CaCommand::AspasAddOrReplace(handle.clone(), aspa))).await;
 }
 
-pub async fn ca_aspas_expect(handle: &Handle, expected_aspas: AspaDefinitionList) {
+pub async fn expect_aspa_definitions(handle: &Handle, expected_aspas: AspaDefinitionList) {
     let res = krill_admin(Command::CertAuth(CaCommand::AspasList(handle.clone()))).await;
 
     if let ApiResponse::AspaDefinitions(found_aspas) = res {
