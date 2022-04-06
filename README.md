@@ -23,14 +23,6 @@ For more information please refer to the [documentation](https://krill.docs.nlne
 
 ## 0.9.5 RC9 'Have You considered these Upgrades?'
 
-NOTE: We found an issue with a test under Rust 1.59. We believe this issue may be
-related to the tokio library, rust 1.59 and the size of this test. The issue does
-not occur with Rust 1.58.1 and earlier and was not introduced by any of our recent
-changes; e.g. it was present in Krill 0.9.1 and Rust 1.59 and 0.9.1 has been running
-in production without issues. All that said, we plan to test this issue some more
-before finalising the 0.9.5 release.
-
-
 This release was primarily intended to improve support for migrations of pre-0.9.0
 installations. The upgrade code has been separated more cleanly into a step where
 the new 0.9.0 data structures are prepared in a new directory first, and a second
