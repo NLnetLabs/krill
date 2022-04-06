@@ -224,10 +224,6 @@ impl StatusStore {
         error: &Error,
     ) -> KrillResult<()> {
         let error_response = Self::error_to_error_res(error);
-
-        // self.update_ca_status(ca, |status| status.parents.set_failure(parent, uri, error_response))
-        //     .await
-
         self.update_ca_parent_status(ca, parent, |status| status.set_failure(uri.clone(), error_response))
     }
 
