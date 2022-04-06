@@ -167,6 +167,8 @@ depends = "$auto, passwd"
 
 [package.metadata.deb.variants.ubuntu-focal]
 
+[package.metadata.deb.variants.ubuntu-jammy]
+
 [package.metadata.deb.variants.debian-stretch]
 features = [ "static-openssl" ]
 depends = "$auto, passwd"
