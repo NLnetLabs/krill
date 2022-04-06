@@ -344,7 +344,7 @@ impl CaManager {
     }
 
     /// Gets current CA status
-    pub async fn get_ca_status(&self, ca: &Handle) -> KrillResult<Arc<CaStatus>> {
+    pub async fn get_ca_status(&self, ca: &Handle) -> KrillResult<CaStatus> {
         if self.has_ca(ca)? {
             Ok(self.status_store.get_ca_status(ca))
         } else {

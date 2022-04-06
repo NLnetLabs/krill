@@ -1,9 +1,4 @@
-use std::{
-    collections::HashMap,
-    path::Path,
-    str::FromStr,
-    sync::{Arc, RwLock},
-};
+use std::{collections::HashMap, path::Path, str::FromStr, sync::RwLock};
 
 use crate::commons::{
     api::{
@@ -72,7 +67,7 @@ impl Default for CaStatus {
 
 pub struct StatusStore {
     store: KeyValueStore,
-    cache: RwLock<HashMap<Handle, Arc<CaStatus>>>,
+    cache: RwLock<HashMap<Handle, CaStatus>>,
 }
 
 impl StatusStore {
@@ -162,7 +157,7 @@ impl StatusStore {
         // Update the cache. Note that this is what we will use at runtime.
         // Changes go directly in to the cached object. We will save smaller
         // JSON files as well but we only do this full parsing on startup.
-        self.cache.write().unwrap().insert(ca.clone(), Arc::new(status));
+        self.cache.write().unwrap().insert(ca.clone(), status);
 
         Ok(())
     }
@@ -207,13 +202,13 @@ impl StatusStore {
     }
 
     /// Returns the stored CaStatus for a CA, or a default (empty) status if it can't be found
-    pub fn get_ca_status(&self, ca: &Handle) -> Arc<CaStatus> {
+    pub fn get_ca_status(&self, ca: &Handle) -> CaStatus {
         self.cache
             .read()
             .unwrap()
             .get(ca)
             .cloned()
-            .unwrap_or_else(|| Arc::new(CaStatus::default()))
+            .unwrap_or_else(|| CaStatus::default())
     }
 
     pub fn set_parent_failure(
@@ -244,9 +239,7 @@ impl StatusStore {
     pub fn remove_parent(&self, ca: &Handle, parent: &ParentHandle) -> KrillResult<()> {
         let mut cache = self.cache.write().unwrap();
 
-        if let Some(mut ca_status) = cache.get_mut(ca) {
-            let ca_status = Arc::make_mut(&mut ca_status);
-
+        if let Some(ca_status) = cache.get_mut(ca) {
             ca_status.parents.remove(parent);
             self.store.drop_key(&Self::parent_status_key(ca, parent))?;
         }
@@ -291,9 +284,7 @@ impl StatusStore {
         let mut cache = self.cache.write().unwrap();
 
         if let Some(ca_status) = cache.get_mut(ca) {
-            let ca_status = Arc::make_mut(ca_status);
             ca_status.children.remove(child);
-
             self.store.drop_key(&Self::child_status_key(ca, child))?;
         }
 
@@ -326,13 +317,12 @@ impl StatusStore {
         let mut cache = self.cache.write().unwrap();
 
         if !cache.contains_key(ca) {
-            cache.insert(ca.clone(), Arc::new(CaStatus::default()));
+            cache.insert(ca.clone(), CaStatus::default());
         }
 
-        let mut ca_status = cache.get_mut(ca).unwrap(); // safe, we just set it if missing
-        let ca_status = Arc::make_mut(&mut ca_status);
-
+        let ca_status = cache.get_mut(ca).unwrap(); // safe, we just set it if missing
         op(&mut ca_status.repo);
+
         self.store.store(&Self::repo_status_key(ca), ca_status.repo())?;
 
         Ok(())
@@ -346,18 +336,17 @@ impl StatusStore {
             let mut cache = self.cache.write().unwrap();
 
             if !cache.contains_key(ca) {
-                cache.insert(ca.clone(), Arc::new(CaStatus::default()));
+                cache.insert(ca.clone(), CaStatus::default());
             }
 
-            let mut ca_status = cache.get_mut(ca).unwrap(); // safe, we just set it if missing
-            let ca_status = Arc::make_mut(&mut ca_status);
+            let ca_status = cache.get_mut(ca).unwrap(); // safe, we just set it if missing
 
             if !ca_status.children.contains_key(child) {
                 ca_status.children.insert(child.clone(), ChildStatus::default());
             }
 
-            let mut child_status = ca_status.children.get_mut(child).unwrap();
-            op(&mut child_status);
+            let child_status = ca_status.children.get_mut(child).unwrap();
+            op(child_status);
 
             child_status.clone()
         };
@@ -375,14 +364,13 @@ impl StatusStore {
             let mut cache = self.cache.write().unwrap();
 
             if !cache.contains_key(ca) {
-                cache.insert(ca.clone(), Arc::new(CaStatus::default()));
+                cache.insert(ca.clone(), CaStatus::default());
             }
 
-            let mut ca_status = cache.get_mut(ca).unwrap(); // safe, we just set it if missing
-            let ca_status = Arc::make_mut(&mut ca_status);
+            let ca_status = cache.get_mut(ca).unwrap(); // safe, we just set it if missing
 
-            let mut parent_status = ca_status.parents.get_mut_status(parent);
-            op(&mut parent_status);
+            let parent_status = ca_status.parents.get_mut_status(parent);
+            op(parent_status);
             parent_status.clone()
         };
 
@@ -427,7 +415,7 @@ mod tests {
 
             let status_testbed_migrated = store.get_ca_status(&testbed);
 
-            assert_eq!(&status_testbed_before_migration, status_testbed_migrated.as_ref());
+            assert_eq!(status_testbed_before_migration, status_testbed_migrated);
         });
     }
 }

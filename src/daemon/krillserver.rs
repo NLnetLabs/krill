@@ -560,7 +560,7 @@ impl KrillServer {
     }
 
     /// Returns the CA status, or an error if none can be found.
-    pub async fn ca_status(&self, ca: &Handle) -> KrillResult<Arc<CaStatus>> {
+    pub async fn ca_status(&self, ca: &Handle) -> KrillResult<CaStatus> {
         self.ca_manager.get_ca_status(ca).await
     }
 
