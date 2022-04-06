@@ -290,10 +290,10 @@ impl StatusStore {
     pub fn remove_child(&self, ca: &Handle, child: &ChildHandle) -> KrillResult<()> {
         let mut cache = self.cache.write().unwrap();
 
-        if let Some(mut ca_status) = cache.get_mut(ca) {
-            let ca_status = Arc::make_mut(&mut ca_status);
-
+        if let Some(ca_status) = cache.get_mut(ca) {
+            let ca_status = Arc::make_mut(ca_status);
             ca_status.children.remove(child);
+
             self.store.drop_key(&Self::child_status_key(ca, child))?;
         }
 
@@ -386,67 +386,10 @@ impl StatusStore {
             parent_status.clone()
         };
 
-        // let status = ca_status.parents.get(parent).unwrap();
         self.store.store(&Self::parent_status_key(ca, parent), &status)?;
 
         Ok(())
     }
-
-    //  async fn update_ca_child_status<F>(&self, ca: &Handle, child: &ChildHandle, op: F) -> KrillResult<()>
-    // where
-    //     F: FnOnce(&mut ChildStatus),
-    // {
-    //     self.update_ca_status(ca, |status| {
-    //         let child_status = match status.children.get_mut(child) {
-    //             Some(child_status) => child_status,
-    //             None => {
-    //                 status.children.insert(child.clone(), ChildStatus::default());
-    //                 status.children.get_mut(child).unwrap()
-    //             }
-    //         };
-    //         op(child_status)
-    //     })
-    //     .await
-    // }
-
-    // fn update_status<F>(&self, ca: &Handle, op: F) -> KrillResult<()>
-    // where
-    //     F: FnOnce(&mut CaStatus) -> KrillResult<()>,
-    // {
-    //     let cache = self.cache.write().unwrap();
-
-    //     if !cache.contains_key(ca) {
-    //         cache.insert(ca.clone(), Arc::new(CaStatus::default()));
-    //     }
-
-    //     let mut ca_status = cache.get_mut(ca).unwrap(); // safe, we just set it if missing
-    //     let mut_status = Arc::make_mut(&mut ca_status);
-
-    //     op(&mut mut_status)?;
-
-    //     Ok(())
-    // }
-
-    // async fn update_ca_status<F>(&self, ca: &Handle, op: F) -> KrillResult<()>
-    // where
-    //     F: FnOnce(&mut CaStatus),
-    // {
-    //     let lock = self.locks.ca(ca).await;
-    //     let _ = lock.write().await;
-
-    //     let mut status: CaStatus = self
-    //         .store
-    //         .get(&Self::full_status_key(ca))
-    //         .ok()
-    //         .flatten()
-    //         .unwrap_or_default();
-
-    //     op(&mut status);
-
-    //     self.store.store(&Self::full_status_key(ca), &status)?;
-
-    //     Ok(())
-    // }
 
     fn error_to_error_res(error: &Error) -> ErrorResponse {
         match error {
