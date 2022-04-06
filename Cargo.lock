@@ -758,7 +758,7 @@ dependencies = [
 
 [[package]]
 name = "krill"
-version = "0.9.5-rc8"
+version = "0.9.5-rc9"
 dependencies = [
  "base64",
  "basic-cookies",

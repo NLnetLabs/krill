@@ -74,6 +74,7 @@ impl RepositoryContentProxy {
             info!("Warming the repository content cache, this can take a minute for large repositories.");
             let content = key_store_read.get(&self.key)?.unwrap();
             self.cache.write().unwrap().replace(content);
+            info!("Repository content cache has been warmed.");
         }
 
         Ok(())

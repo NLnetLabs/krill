@@ -139,8 +139,6 @@ impl KrillServer {
         let ca_manager =
             Arc::new(ca::CaManager::build(config.clone(), mq.clone(), signer, system_actor.clone()).await?);
 
-        ca_manager.resync_ca_statuses().await?;
-
         if let Some(testbed) = config.testbed() {
             let uris = testbed.publication_server_uris();
 
@@ -562,7 +560,7 @@ impl KrillServer {
     }
 
     /// Returns the CA status, or an error if none can be found.
-    pub async fn ca_status(&self, ca: &Handle) -> KrillResult<Arc<CaStatus>> {
+    pub async fn ca_status(&self, ca: &Handle) -> KrillResult<CaStatus> {
         self.ca_manager.get_ca_status(ca).await
     }
 
