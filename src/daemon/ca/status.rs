@@ -95,39 +95,61 @@ impl StatusStore {
         Ok(())
     }
 
-    /// Load current status from disk, to be used when starting up. Iif there are any
+    /// Load current status from disk, to be used when starting up. If there are any
     /// issues parsing data then default values are used - this data is not critical
     /// so any missing, corrupted, or no longer supported data format - can be ignored.
     /// It will get updated with new status values as Krill is running.
     fn load_full_status(&self, ca: &Handle) -> KrillResult<()> {
         let repo: RepoStatus = self.store.get(&Self::repo_status_key(ca))?.unwrap_or_default();
 
+        // We use the following mapping for keystore keys to parents/children:
+        //  parents-{parent-handle}.json
+        //  children-{child-handle}.json
+
+        let parents_prefix = "parents-";
+        let children_prefix = "children-";
+        let suffix = ".json";
+
         // parents
         let mut parents = ParentStatuses::default();
-        for parent_key in self.store.keys(Some(ca.to_string()), "parents-")? {
-            let parent = parent_key.name().strip_prefix("parents-").unwrap();
-            if let Some(parent) = parent.strip_suffix(".json") {
-                if let Ok(parent) = ParentHandle::from_str(parent) {
-                    let status: ParentStatus = self
-                        .store
-                        .get(&Self::parent_status_key(ca, &parent))?
-                        .unwrap_or_default();
+        for parent_key in self.store.keys(Some(ca.to_string()), parents_prefix)? {
+            // Try to parse the key to get a parent handle
+            if let Some(parent) = parent_key
+                .name()
+                .strip_prefix(parents_prefix)
+                .and_then(|pfx_stripped| pfx_stripped.strip_suffix(suffix))
+                .and_then(|handle_str| ParentHandle::from_str(handle_str).ok())
+            {
+                // try to read the status, if there is any issue, e.g. because
+                // the format changed in a new version, then just fall back to
+                // an empty default value. We will get a new connection status
+                // value soon enough as Krill is running.
+                let status: ParentStatus = self
+                    .store
+                    .get(&Self::parent_status_key(ca, &parent))?
+                    .unwrap_or_default();
 
-                    parents.add(parent, status);
-                }
+                parents.add(parent, status);
             }
         }
 
         // children
         let mut children = HashMap::new();
-        for child_key in self.store.keys(Some(ca.to_string()), "children-")? {
-            let child = child_key.name().strip_prefix("children-").unwrap();
-            if let Some(child) = child.strip_suffix(".json") {
-                if let Ok(child) = ChildHandle::from_str(child) {
-                    let status: ChildStatus = self.store.get(&Self::child_status_key(ca, &child))?.unwrap_or_default();
+        for child_key in self.store.keys(Some(ca.to_string()), children_prefix)? {
+            // Try to parse the key to get a child handle
+            if let Some(child) = child_key
+                .name()
+                .strip_prefix(children_prefix)
+                .and_then(|pfx_stripped| pfx_stripped.strip_suffix(suffix))
+                .and_then(|handle_str| ChildHandle::from_str(handle_str).ok())
+            {
+                // try to read the status, if there is any issue, e.g. because
+                // the format changed in a new version, then just fall back to
+                // an empty default value. We will get a new connection status
+                // value soon enough as Krill is running.
+                let status: ChildStatus = self.store.get(&Self::child_status_key(ca, &child))?.unwrap_or_default();
 
-                    children.insert(child, status);
-                }
+                children.insert(child, status);
             }
         }
 
@@ -137,6 +159,9 @@ impl StatusStore {
             children,
         };
 
+        // Update the cache. Note that this is what we will use at runtime.
+        // Changes go directly in to the cached object. We will save smaller
+        // JSON files as well but we only do this full parsing on startup.
         self.cache.write().unwrap().insert(ca.clone(), Arc::new(status));
 
         Ok(())
