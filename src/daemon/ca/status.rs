@@ -17,6 +17,10 @@ use crate::commons::{
     KrillResult,
 };
 
+const PARENTS_PREFIX: &str = "parents-";
+const CHILDREN_PREFIX: &str = "children-";
+const JSON_SUFFIX: &str = ".json";
+
 //------------ CaStatus ------------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -106,18 +110,14 @@ impl StatusStore {
         //  parents-{parent-handle}.json
         //  children-{child-handle}.json
 
-        let parents_prefix = "parents-";
-        let children_prefix = "children-";
-        let suffix = ".json";
-
         // parents
         let mut parents = ParentStatuses::default();
-        for parent_key in self.store.keys(Some(ca.to_string()), parents_prefix)? {
+        for parent_key in self.store.keys(Some(ca.to_string()), PARENTS_PREFIX)? {
             // Try to parse the key to get a parent handle
             if let Some(parent) = parent_key
                 .name()
-                .strip_prefix(parents_prefix)
-                .and_then(|pfx_stripped| pfx_stripped.strip_suffix(suffix))
+                .strip_prefix(PARENTS_PREFIX)
+                .and_then(|pfx_stripped| pfx_stripped.strip_suffix(JSON_SUFFIX))
                 .and_then(|handle_str| ParentHandle::from_str(handle_str).ok())
             {
                 // try to read the status, if there is any issue, e.g. because
@@ -135,12 +135,12 @@ impl StatusStore {
 
         // children
         let mut children = HashMap::new();
-        for child_key in self.store.keys(Some(ca.to_string()), children_prefix)? {
+        for child_key in self.store.keys(Some(ca.to_string()), CHILDREN_PREFIX)? {
             // Try to parse the key to get a child handle
             if let Some(child) = child_key
                 .name()
-                .strip_prefix(children_prefix)
-                .and_then(|pfx_stripped| pfx_stripped.strip_suffix(suffix))
+                .strip_prefix(CHILDREN_PREFIX)
+                .and_then(|pfx_stripped| pfx_stripped.strip_suffix(JSON_SUFFIX))
                 .and_then(|handle_str| ChildHandle::from_str(handle_str).ok())
             {
                 // try to read the status, if there is any issue, e.g. because
@@ -199,11 +199,11 @@ impl StatusStore {
     }
 
     fn parent_status_key(ca: &Handle, parent: &ParentHandle) -> KeyStoreKey {
-        KeyStoreKey::scoped(ca.to_string(), format!("parents-{}.json", parent))
+        KeyStoreKey::scoped(ca.to_string(), format!("{}{}{}", PARENTS_PREFIX, parent, JSON_SUFFIX))
     }
 
     fn child_status_key(ca: &Handle, child: &ChildHandle) -> KeyStoreKey {
-        KeyStoreKey::scoped(ca.to_string(), format!("children-{}.json", child))
+        KeyStoreKey::scoped(ca.to_string(), format!("{}{}{}", CHILDREN_PREFIX, child, JSON_SUFFIX))
     }
 
     /// Returns the stored CaStatus for a CA, or a default (empty) status if it can't be found
