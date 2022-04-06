@@ -50,6 +50,7 @@ jobs:
           - 'ubuntu:xenial'   # ubuntu/16.04
           - 'ubuntu:bionic'   # ubuntu/18.04
           - 'ubuntu:focal'    # ubuntu/20.04
+          - 'ubuntu:jammy'    # ubuntu/22.04
           - 'debian:stretch'  # debian/9
           - 'debian:buster'   # debian/10
           - 'debian:bullseye' # debian/11
@@ -355,6 +356,7 @@ jobs:
           - 'ubuntu:xenial'   # ubuntu/16.04
           - 'ubuntu:bionic'   # ubuntu/18.04
           - 'ubuntu:focal'    # ubuntu/20.04
+          - 'ubuntu:jammy'    # ubuntu/22.04
           - 'debian:stretch'  # debian/9
           - 'debian:buster'   # debian/10
           - 'debian:bullseye' # debian/11
@@ -383,6 +385,9 @@ jobs:
           - pkg: 'krillup'
             mode: 'upgrade-from-published'
             image: 'ubuntu:focal'    # ubuntu/20.04
+          - pkg: 'krillup'
+            mode: 'upgrade-from-published'
+            image: 'ubuntu:jammy'    # ubuntu/22.04
           - pkg: 'krillup'
             mode: 'upgrade-from-published'
             image: 'debian:stretch'  # debian/9
