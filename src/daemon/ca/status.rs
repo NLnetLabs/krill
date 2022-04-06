@@ -97,7 +97,7 @@ impl StatusStore {
 
     /// Load current status from disk, to be used when starting up. Iif there are any
     /// issues parsing data then default values are used - this data is not critical
-    /// so any missing, corrupted, or no longer support data format - can be ignored.
+    /// so any missing, corrupted, or no longer supported data format - can be ignored.
     /// It will get updated with new status values as krill is running.
     fn load_full_status(&self, ca: &Handle) -> KrillResult<()> {
         let repo: RepoStatus = self.store.get(&Self::repo_status_key(ca))?.unwrap_or_default();
