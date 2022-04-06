@@ -145,20 +145,25 @@ impl StatusStore {
     fn convert_pre_0_9_5_full_status_if_present(&self, ca: &Handle) -> KrillResult<()> {
         let key = KeyStoreKey::scoped(ca.to_string(), "status.json".to_string());
         if let Some(full_status) = self.store.get::<CaStatus>(&key).ok().flatten() {
+            info!(
+                "Migrating pre 0.9.5 connection status file for CA '{}' to new format",
+                ca
+            );
             // repo status
-            self.store.store(&Self::repo_status_key(&ca), full_status.repo())?;
+            self.store.store(&Self::repo_status_key(ca), full_status.repo())?;
 
             // parents
             for (parent, status) in full_status.parents().iter() {
-                self.store.store(&Self::parent_status_key(&ca, parent), status)?;
+                self.store.store(&Self::parent_status_key(ca, parent), status)?;
             }
 
             // children
             for (child, status) in full_status.children.iter() {
-                self.store.store(&Self::child_status_key(&ca, child), status)?;
+                self.store.store(&Self::child_status_key(ca, child), status)?;
             }
 
             self.store.drop_key(&key)?;
+            info!("Done migrating pre 0.9.5 connection status file");
         }
         Ok(())
     }
@@ -430,6 +435,7 @@ impl StatusStore {
     }
 }
 
+#[cfg(test)]
 mod tests {
 
     use super::*;
