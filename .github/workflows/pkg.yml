@@ -371,11 +371,16 @@ jobs:
         # test for that O/S (remember to change debian:bullseye to the correct
         # O/S name!):
         #
-        #
         # exclude:
         #   - image: 'debian:bullseye'
         #     mode: 'upgrade-from-published'
         exclude:
+          - pkg: 'krill'
+            mode: 'upgrade-from-published'
+            image: 'ubuntu:jammy'    # ubuntu/22.04 - not yet published
+        
+        # Exclude all krillup packages from upgrade testing as no krillup package
+        # has yet been published.
           - pkg: 'krillup'
             mode: 'upgrade-from-published'
             image: 'ubuntu:xenial'   # ubuntu/16.04
