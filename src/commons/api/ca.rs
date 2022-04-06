@@ -1357,7 +1357,7 @@ impl ParentStatuses {
         self.0.remove(parent);
     }
 
-    pub fn add(&mut self, parent: ParentHandle, status: ParentStatus) {
+    pub fn insert(&mut self, parent: ParentHandle, status: ParentStatus) {
         self.0.insert(parent, status);
     }
 }

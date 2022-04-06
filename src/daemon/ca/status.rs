@@ -129,7 +129,7 @@ impl StatusStore {
                     .get(&Self::parent_status_key(ca, &parent))?
                     .unwrap_or_default();
 
-                parents.add(parent, status);
+                parents.insert(parent, status);
             }
         }
 
