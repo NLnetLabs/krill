@@ -881,7 +881,10 @@ where
         }
 
         if aggregate_opt.is_none() {
-            warn!("No suitable snapshot for '{}' will rebuild state from events.", id);
+            warn!(
+                "No suitable snapshot for '{}' will rebuild state from events. This can take some time.",
+                id
+            );
             let init_key = Self::key_for_event(id, 0);
             aggregate_opt = match self.kv.get::<A::InitEvent>(&init_key)? {
                 Some(e) => {
