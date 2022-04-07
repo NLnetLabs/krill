@@ -137,7 +137,7 @@ pub async fn start_krill_with_default_test_config(
     dir
 }
 
-async fn start_krill(config: Config) {
+pub async fn start_krill(config: Config) {
     init_config(&config);
     tokio::spawn(start_krill_with_error_trap(Arc::new(config)));
     assert!(krill_server_ready().await);
@@ -545,7 +545,7 @@ pub async fn rc_is_removed(handle: &Handle) -> bool {
             return true;
         }
         cas_refresh_all().await;
-        sleep_seconds(100).await
+        sleep_seconds(1).await
     }
     false
 }
@@ -562,6 +562,18 @@ pub async fn ca_current_resources(handle: &Handle) -> ResourceSet {
     }
 
     res
+}
+
+pub async fn wait_for_nr_cas_under_testbed(nr: usize) -> bool {
+    let testbed = handle("testbed");
+    for _ in 0..300 {
+        let ca = ca_details(&testbed).await;
+        if ca.children().len() == nr {
+            return true;
+        }
+        sleep_seconds(1).await
+    }
+    false
 }
 
 pub async fn list_publishers() -> PublisherList {

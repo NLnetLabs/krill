@@ -87,6 +87,14 @@ impl FromStr for Handle {
     }
 }
 
+impl From<usize> for Handle {
+    fn from(nr: usize) -> Self {
+        Handle {
+            name: nr.to_string().into(),
+        }
+    }
+}
+
 impl AsRef<str> for Handle {
     fn as_ref(&self) -> &str {
         &self.name

@@ -241,7 +241,7 @@ pub struct Config {
         default = "ConfigDefaults::log_level",
         deserialize_with = "ext_serde::de_level_filter"
     )]
-    log_level: LevelFilter,
+    pub log_level: LevelFilter,
 
     #[serde(default = "ConfigDefaults::log_type")]
     log_type: LogType,
@@ -328,6 +328,8 @@ pub struct Config {
     pub metrics: MetricsConfig,
 
     pub testbed: Option<TestBed>,
+
+    pub benchmark: Option<Benchmark>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -472,6 +474,12 @@ impl TestBed {
     pub fn publication_server_uris(&self) -> PublicationServerUris {
         PublicationServerUris::new(self.rrdp_base_uri.clone(), self.rsync_jail.clone())
     }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Benchmark {
+    pub cas: usize,
+    pub ca_roas: usize,
 }
 
 /// # Accessors
@@ -733,6 +741,7 @@ impl Config {
             repository_retention,
             metrics,
             testbed,
+            benchmark: None,
         }
     }
 
@@ -886,6 +895,18 @@ impl Config {
                     "suspend_child_after_inactive_hours must be {} or higher (or not set at all)",
                     CA_SUSPEND_MIN_HOURS
                 )));
+            }
+        }
+
+        if let Some(benchmark) = &self.benchmark {
+            if self.testbed.is_none() {
+                return Err(ConfigError::other("[benchmark] section requires [testbed] config"));
+            }
+            if benchmark.cas > 65535 {
+                return Err(ConfigError::other("[benchmark] allows only up to 65536 CAs"));
+            }
+            if benchmark.ca_roas > 100 {
+                return Err(ConfigError::other("[benchmark] allows only up to 100 ROAs per CA"));
             }
         }
 
