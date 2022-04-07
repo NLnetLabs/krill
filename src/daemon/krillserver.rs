@@ -201,6 +201,8 @@ impl KrillServer {
             &config.bgp_risdumps_v6_uri,
         ));
 
+        mq.server_started();
+
         Ok(KrillServer {
             service_uri,
             work_dir: work_dir.clone(),
