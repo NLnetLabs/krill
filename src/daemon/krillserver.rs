@@ -24,7 +24,6 @@ use crate::{
         error::Error,
         eventsourcing::CommandKey,
         remote::rfc8183,
-        util::file,
         KrillEmptyResult, KrillResult,
     },
     constants::*,
@@ -104,38 +103,17 @@ impl KrillServer {
         }
 
         if let Some(benchmark) = config.benchmark.as_ref() {
-            info!("Enabling BENCHMARK mode - ONLY USE THIS FOR TESTING!");
-
-            let cas_dir = work_dir.join("cas");
-            let pubd_dir = work_dir.join("pubd");
-
-            let benchmark_file = work_dir.join("benchmark.json");
-
-            let content_dirs = ["ca_objects", "cas", "keys"].map(|dir| work_dir.join(dir));
-
-            // Check that it is safe to run benchmark mode
-            if (cas_dir.exists() || pubd_dir.exists()) && !benchmark_file.exists() {
+            if work_dir.join("cas").exists() {
                 return Err(Error::Custom(format!(
-                    "Cannot start benchmark mode - found existing data under data_dir: {}",
+                    "Cannot start BENCHMARK. Data dir '{}' MUST be empty!",
                     work_dir.to_string_lossy()
                 )));
+            } else {
+                info!("Enabling BENCHMARK mode - ONLY USE THIS FOR TESTING!");
             }
-
-            // Safe to start, wipe dirs if they existed - we start from scratch
-            if cas_dir.exists() {
-                file::remove_dir_all(&cas_dir)?;
-            }
-            if pubd_dir.exists() {
-                file::remove_dir_all(&pubd_dir)?;
-            }
-
-            // Save the benchmark config for convenient reference AND to make sure
-            // that we can restart krill in benchmark mode.
-            file::save_json(benchmark, &benchmark_file)?;
         }
 
-        let mut repo_dir = work_dir.clone();
-        repo_dir.push("repo");
+        let repo_dir = work_dir.join("repo");
 
         let signer = Arc::new(KrillSigner::build(work_dir)?);
 
