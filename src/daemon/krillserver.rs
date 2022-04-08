@@ -102,7 +102,7 @@ impl KrillServer {
             info!("Enabling TESTBED mode - ONLY USE THIS FOR TESTING AND TRAINING!");
         }
 
-        if let Some(benchmark) = config.benchmark.as_ref() {
+        if config.benchmark.is_some() {
             if work_dir.join("cas").exists() {
                 return Err(Error::Custom(format!(
                     "Cannot start BENCHMARK. Data dir '{}' MUST be empty!",
