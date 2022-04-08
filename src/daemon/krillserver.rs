@@ -4,6 +4,7 @@ use std::{collections::HashMap, path::PathBuf, str::FromStr, sync::Arc};
 use bytes::Bytes;
 use chrono::Duration;
 
+use futures::future::join_all;
 use rpki::{repository::cert::Cert, uri};
 
 use crate::{
@@ -46,6 +47,8 @@ use crate::daemon::auth::{
     common::session::LoginSessionCache,
     providers::{ConfigFileAuthProvider, OpenIDConnectAuthProvider},
 };
+
+use super::ca::CaManager;
 
 //------------ KrillServer ---------------------------------------------------
 
@@ -105,7 +108,10 @@ impl KrillServer {
 
             let cas_dir = work_dir.join("cas");
             let pubd_dir = work_dir.join("pubd");
+
             let benchmark_file = work_dir.join("benchmark.json");
+
+            let content_dirs = ["ca_objects", "cas", "keys"].map(|dir| work_dir.join(dir));
 
             // Check that it is safe to run benchmark mode
             if (cas_dir.exists() || pubd_dir.exists()) && !benchmark_file.exists() {
@@ -188,54 +194,21 @@ impl KrillServer {
                     .init_ta(ta_aia, vec![ta_uri], &repo_manager, &system_actor)
                     .await?;
 
-                let testbed_ca_handle = testbed_ca_handle();
-                if !ca_manager.has_ca(&testbed_ca_handle)? {
-                    info!("Creating embedded Testbed CA");
+                let testbed = testbed_ca_handle();
+                let service_uri = Arc::new(service_uri.clone());
+                let actor = Arc::new(system_actor.clone());
 
-                    // Add the new testbed CA
-                    ca_manager.init_ca(&testbed_ca_handle)?;
-                    let testbed_ca = ca_manager.get_ca(&testbed_ca_handle).await?;
-
-                    // Add the new testbed publisher
-                    let pub_req =
-                        rfc8183::PublisherRequest::new(None, testbed_ca_handle.clone(), testbed_ca.id_cert().clone());
-                    repo_manager.create_publisher(pub_req, &system_actor)?;
-
-                    let repo_response = repo_manager.repository_response(&testbed_ca_handle)?;
-                    let repo_contact = RepositoryContact::new(repo_response);
-                    ca_manager
-                        .update_repo(testbed_ca_handle.clone(), repo_contact, false, &system_actor)
-                        .await?;
-
-                    // Establish the TA (parent) <-> testbed CA (child) relationship
-                    let testbed_ca_resources = ResourceSet::all_resources();
-
-                    let (_, _, child_id_cert) = testbed_ca.child_request().unpack();
-
-                    let child_req =
-                        AddChildRequest::new(testbed_ca_handle.clone(), testbed_ca_resources, child_id_cert);
-                    let parent_ca_contact = ca_manager
-                        .ca_add_child(&ta_handle, child_req, &service_uri, &system_actor)
-                        .await?;
-                    let parent_req = ParentCaReq::new(ta_handle.clone(), parent_ca_contact);
-                    ca_manager
-                        .ca_parent_add_or_update(testbed_ca_handle.clone(), parent_req, &system_actor)
-                        .await?;
-
-                    // The task queue is not available yet, so force synchronising the testbed
-                    // with its parent now.
-
-                    // First sync will inform testbed of its entitlements and trigger that
-                    // CSR is created.
-                    ca_manager
-                        .ca_sync_parent(&testbed_ca_handle, &ta_handle, &system_actor)
-                        .await?;
-
-                    // Second sync will send that CSR to the parent (ta)
-                    ca_manager
-                        .ca_sync_parent(&testbed_ca_handle, &ta_handle, &system_actor)
-                        .await?;
-                }
+                // Add testbed CA (if it did not exist)
+                Self::setup_test_ca(
+                    &testbed,
+                    &ta_handle,
+                    ResourceSet::all_resources(),
+                    ca_manager.clone(),
+                    repo_manager.clone(),
+                    service_uri,
+                    actor,
+                )
+                .await?;
             }
         }
 
@@ -247,85 +220,23 @@ impl KrillServer {
             );
 
             let testbed = testbed_ca_handle();
+            let service_uri = Arc::new(service_uri.clone());
+            let actor = Arc::new(system_actor.clone());
 
+            let mut setup_benchmark_ca_fns = vec![];
             for nr in 0..benchmark.cas {
-                // Add the CA
-                let child_handle = ChildHandle::from(nr);
-                ca_manager.init_ca(&child_handle)?;
-                let child = ca_manager.get_ca(&child_handle).await?;
-
-                info!("  -> creating CA {}", nr);
-
-                // Set it up as a publisher
-                let pub_req = rfc8183::PublisherRequest::new(None, child_handle.clone(), child.id_cert().clone());
-                repo_manager.create_publisher(pub_req, &system_actor)?;
-
-                let repo_response = repo_manager.repository_response(&child_handle)?;
-                let repo_contact = RepositoryContact::new(repo_response);
-                ca_manager
-                    .update_repo(child_handle.clone(), repo_contact, false, &system_actor)
-                    .await?;
-
-                // Set it up as a child under testbed
-
-                // We can do a pretty naive approach to give up to 65536 CAs
-                // as /24 out of 10.0.0.0/8. And then let them create ROAs for
-                // that prefix with private space ASNs (unless we need too many..)
-                //
-                // Config::verify() will ensure that we have at most 65535 CAs
-                // and no more than 100 ROAs per CA.
-                //
-                // For now this should be fine - we can always come up with
-                // more complicated setups in future (e.g. feed NRO stats and
-                // BGP announcement info to generate some real world like hierarchy)
-
-                let byte_2_ipv4 = nr / 256;
-                let byte_3_ipv4 = nr % 256;
-
-                let prefix_str = format!("10.{}.{}.0/24", byte_2_ipv4, byte_3_ipv4);
-                let resources = ResourceSet::from_strs("", &prefix_str, "")?;
-
-                let (_, _, child_id_cert) = child.child_request().unpack();
-
-                let child_req = AddChildRequest::new(child_handle.clone(), resources, child_id_cert);
-                let parent_ca_contact = ca_manager
-                    .ca_add_child(&testbed, child_req, &service_uri, &system_actor)
-                    .await?;
-
-                let parent_req = ParentCaReq::new(testbed.clone(), parent_ca_contact);
-
-                ca_manager
-                    .ca_parent_add_or_update(child_handle.clone(), parent_req, &system_actor)
-                    .await?;
-
-                // The task queue is not available yet, so force synchronising the testbed
-                // with its parent now.
-
-                // First sync will inform testbed of its entitlements and trigger that
-                // CSR is created.
-                ca_manager
-                    .ca_sync_parent(&child_handle, &testbed, &system_actor)
-                    .await?;
-
-                // Second sync will send that CSR to the parent (ta)
-                ca_manager
-                    .ca_sync_parent(&child_handle, &testbed, &system_actor)
-                    .await?;
-
-                // Now we can create ROAs
-
-                let mut added: Vec<RouteAuthorization> = vec![];
-                let asn_range_start = 64512;
-                for asn in asn_range_start..asn_range_start + benchmark.ca_roas {
-                    let def = RoaDefinition::from_str(&format!("{} => {}", prefix_str, asn)).unwrap();
-                    added.push(def.into());
-                }
-                let updates = RouteAuthorizationUpdates::new(added, vec![]);
-
-                ca_manager
-                    .ca_routes_update(child_handle, updates, &system_actor)
-                    .await?;
+                setup_benchmark_ca_fns.push(Self::setup_benchmark_ca(
+                    nr,
+                    benchmark.ca_roas,
+                    &testbed,
+                    ca_manager.clone(),
+                    repo_manager.clone(),
+                    service_uri.clone(),
+                    actor.clone(),
+                ));
             }
+
+            join_all(setup_benchmark_ca_fns).await;
         }
 
         let bgp_analyser = Arc::new(BgpAnalyser::new(
@@ -370,6 +281,126 @@ impl KrillServer {
 
     pub fn server_info(&self) -> ServerInfo {
         ServerInfo::new(KRILL_VERSION, self.started)
+    }
+}
+
+/// # Support CA set up for testbed and benchmarking
+///
+impl KrillServer {
+    /// Setup a benchmark CA
+    ///
+    async fn setup_benchmark_ca(
+        nr: usize,
+        nr_roas: usize,
+        testbed: &ParentHandle,
+        ca_manager: Arc<CaManager>,
+        repo_manager: Arc<RepositoryManager>,
+        service_uri: Arc<uri::Https>,
+        system_actor: Arc<Actor>,
+    ) -> KrillResult<()> {
+        // Set it up as a child under testbed
+
+        // We can do a pretty naive approach to give up to 65536 CAs
+        // as /24 out of 10.0.0.0/8. And then let them create ROAs for
+        // that prefix with private space ASNs (unless we need too many..)
+        //
+        // Config::verify() will ensure that we have at most 65535 CAs
+        // and no more than 100 ROAs per CA.
+        //
+        // For now this should be fine - we can always come up with
+        // more complicated setups in future (e.g. feed NRO stats and
+        // BGP announcement info to generate some real world like hierarchy)
+
+        let child_handle = ChildHandle::from(nr);
+
+        let byte_2_ipv4 = nr / 256;
+        let byte_3_ipv4 = nr % 256;
+
+        let prefix_str = format!("10.{}.{}.0/24", byte_2_ipv4, byte_3_ipv4);
+        let resources = ResourceSet::from_strs("", &prefix_str, "")?;
+
+        Self::setup_test_ca(
+            &child_handle,
+            &testbed,
+            resources,
+            ca_manager.clone(),
+            repo_manager.clone(),
+            service_uri.clone(),
+            system_actor.clone(),
+        )
+        .await?;
+
+        // Now we can create ROAs
+
+        let mut added: Vec<RouteAuthorization> = vec![];
+        let asn_range_start = 64512;
+        for asn in asn_range_start..asn_range_start + nr_roas {
+            let def = RoaDefinition::from_str(&format!("{} => {}", prefix_str, asn)).unwrap();
+            added.push(def.into());
+        }
+        let updates = RouteAuthorizationUpdates::new(added, vec![]);
+
+        ca_manager
+            .ca_routes_update(child_handle, updates, &system_actor)
+            .await?;
+
+        Ok(())
+    }
+
+    /// Sets up a CA for the testbed, or benchmark.
+    async fn setup_test_ca(
+        ca_handle: &Handle,
+        parent_handle: &ParentHandle,
+        resources: ResourceSet,
+        ca_manager: Arc<CaManager>,
+        repo_manager: Arc<RepositoryManager>,
+        service_uri: Arc<uri::Https>,
+        system_actor: Arc<Actor>,
+    ) -> KrillResult<()> {
+        if !ca_manager.has_ca(ca_handle)? {
+            info!("Setup CA {}", ca_handle);
+
+            // Add the new testbed CA
+            ca_manager.init_ca(ca_handle)?;
+            let ca = ca_manager.get_ca(ca_handle).await?;
+
+            // Add the new testbed publisher
+            let pub_req = rfc8183::PublisherRequest::new(None, ca_handle.clone(), ca.id_cert().clone());
+            repo_manager.create_publisher(pub_req, &system_actor)?;
+
+            let repo_response = repo_manager.repository_response(ca_handle)?;
+            let repo_contact = RepositoryContact::new(repo_response);
+            ca_manager
+                .update_repo(ca_handle.clone(), repo_contact, false, &system_actor)
+                .await?;
+
+            // Establish the Parent <-> CA relationship
+            let (_, _, child_id_cert) = ca.child_request().unpack();
+
+            let child_req = AddChildRequest::new(ca_handle.clone(), resources, child_id_cert);
+            let parent_ca_contact = ca_manager
+                .ca_add_child(parent_handle, child_req, &service_uri, &system_actor)
+                .await?;
+            let parent_req = ParentCaReq::new(parent_handle.clone(), parent_ca_contact);
+            ca_manager
+                .ca_parent_add_or_update(ca_handle.clone(), parent_req, &system_actor)
+                .await?;
+
+            // The task queue is not available yet, so force synchronising the testbed
+            // with its parent now.
+
+            // First sync will inform testbed of its entitlements and trigger that
+            // CSR is created.
+            ca_manager
+                .ca_sync_parent(ca_handle, parent_handle, &system_actor)
+                .await?;
+
+            // Second sync will send that CSR to the parent
+            ca_manager
+                .ca_sync_parent(ca_handle, parent_handle, &system_actor)
+                .await?;
+        }
+        Ok(())
     }
 }
 
