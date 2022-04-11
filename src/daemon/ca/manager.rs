@@ -1448,8 +1448,10 @@ impl CaManager {
         repo_contact: &RepositoryContact,
         publish_elements: Vec<PublishElement>,
     ) -> KrillResult<()> {
+        debug!("CA '{}' sends list query to repo", ca_handle);
         let list_reply = self.send_rfc8181_list(ca_handle, repo_contact.response()).await?;
 
+        debug!("CA '{}' calculates delta", ca_handle);
         #[allow(clippy::mutable_key_type)]
         let delta = {
             let elements: HashMap<_, _> = list_reply.into_elements().into_iter().map(|el| el.unpack()).collect();
@@ -1476,8 +1478,14 @@ impl CaManager {
             PublishDelta::new(publishes, updates, withdraws)
         };
 
-        self.send_rfc8181_delta(ca_handle, repo_contact.response(), delta)
-            .await?;
+        if !delta.is_empty() {
+            debug!("CA '{}' sends delta", ca_handle);
+            self.send_rfc8181_delta(ca_handle, repo_contact.response(), delta)
+                .await?;
+            debug!("CA '{}' sent delta", ca_handle);
+        } else {
+            debug!("CA '{}' empty delta - nothing to publish", ca_handle);
+        }
 
         Ok(())
     }
