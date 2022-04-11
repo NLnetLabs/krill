@@ -79,7 +79,7 @@ pub async fn krill_pubd_ready() -> bool {
 pub async fn server_ready(uri: &str) -> bool {
     let health = format!("{}health", uri);
 
-    for _ in 0..300 {
+    for _ in 0..30000 {
         match httpclient::client(&health) {
             Ok(client) => {
                 let res = timeout(Duration::from_millis(100), client.get(&health).send()).await;

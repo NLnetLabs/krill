@@ -5,7 +5,7 @@ use std::fs;
 use krill::{daemon::config::Benchmark, test::*};
 use log::LevelFilter;
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn benchmark() {
     let dir = tmp_dir();
 

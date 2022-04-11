@@ -113,8 +113,6 @@ impl KrillServer {
             }
         }
 
-        let repo_dir = work_dir.join("repo");
-
         let signer = Arc::new(KrillSigner::build(work_dir)?);
 
         #[cfg(feature = "multi-user")]
@@ -197,23 +195,20 @@ impl KrillServer {
                 benchmark.cas, benchmark.ca_roas
             );
 
-            let testbed = testbed_ca_handle();
             let service_uri = Arc::new(service_uri.clone());
             let actor = Arc::new(system_actor.clone());
 
             let mut setup_benchmark_ca_fns = vec![];
             for nr in 0..benchmark.cas {
-                setup_benchmark_ca_fns.push(Self::setup_benchmark_ca(
+                setup_benchmark_ca_fns.push(tokio::spawn(Self::setup_benchmark_ca(
                     nr,
                     benchmark.ca_roas,
-                    &testbed,
                     ca_manager.clone(),
                     repo_manager.clone(),
                     service_uri.clone(),
                     actor.clone(),
-                ));
+                )));
             }
-
             join_all(setup_benchmark_ca_fns).await;
         }
 
@@ -270,13 +265,13 @@ impl KrillServer {
     async fn setup_benchmark_ca(
         nr: usize,
         nr_roas: usize,
-        testbed: &ParentHandle,
         ca_manager: Arc<CaManager>,
         repo_manager: Arc<RepositoryManager>,
         service_uri: Arc<uri::Https>,
         system_actor: Arc<Actor>,
     ) -> KrillResult<()> {
         // Set it up as a child under testbed
+        let testbed = testbed_ca_handle();
 
         // We can do a pretty naive approach to give up to 65536 CAs
         // as /24 out of 10.0.0.0/8. And then let them create ROAs for
