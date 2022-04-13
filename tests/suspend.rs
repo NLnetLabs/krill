@@ -9,8 +9,6 @@ use krill::{
 
 #[tokio::test]
 async fn test_suspension() {
-    init_logging();
-
     //  Uses the following lay-out:
     //
     //                  TA

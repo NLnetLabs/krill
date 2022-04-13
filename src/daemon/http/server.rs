@@ -443,7 +443,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
             if !server.config.metrics.metrics_hide_ca_details {
                 // Show per CA details
 
-                let mut ca_status_map: HashMap<Handle, Arc<CaStatus>> = HashMap::new();
+                let mut ca_status_map: HashMap<Handle, CaStatus> = HashMap::new();
 
                 for ca in cas_stats.keys() {
                     if let Ok(ca_status) = server.ca_status(ca).await {

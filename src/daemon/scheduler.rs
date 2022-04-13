@@ -12,7 +12,10 @@ use crate::{
         bgp::BgpAnalyser,
         KrillResult,
     },
-    constants::{SCHEDULER_INTERVAL_RENEW_MINS, SCHEDULER_INTERVAL_REPUBLISH_MINS, SCHEDULER_USE_JITTER_CAS_THRESHOLD},
+    constants::{
+        SCHEDULER_INTERVAL_RENEW_MINS, SCHEDULER_INTERVAL_REPUBLISH_MINS, SCHEDULER_RESYNC_REPO_CAS_THRESHOLD,
+        SCHEDULER_USE_JITTER_CAS_THRESHOLD,
+    },
     daemon::{
         ca::CaManager,
         config::Config,
@@ -146,20 +149,28 @@ impl Scheduler {
 
         debug!("Adding tasks at start up");
 
-        let use_jitter = cas.len() >= SCHEDULER_USE_JITTER_CAS_THRESHOLD;
+        let too_many_cas_resync_parent = cas.len() >= SCHEDULER_USE_JITTER_CAS_THRESHOLD;
+        let too_many_cas_resync_repo = cas.len() >= SCHEDULER_RESYNC_REPO_CAS_THRESHOLD;
 
         for summary in cas {
             let ca = self.ca_manager.get_ca(summary.handle()).await?;
 
-            debug!("Adding tasks for CA {}, using jitter: {}", ca.handle(), use_jitter);
+            let too_many_parents = ca.nr_parents() >= self.config.ca_refresh_parents_batch_size;
 
             // Plan a regular sync for each parent. Spread these out if there
             // are too many CAs or parents for a CA. In cases where there are only
             // a handful of CAs/parents, this 'ca_refresh_start_up' will be 'now'.
             //
             // Note: users can change the priority to 'now' by using the 'bulk' functions.
-            let too_many_parents = ca.nr_parents() >= self.config.ca_refresh_parents_batch_size;
-            if !use_jitter && too_many_parents {
+            let use_parent_sync_jitter = too_many_cas_resync_parent || too_many_parents;
+
+            debug!(
+                "Adding tasks for CA {}, using jitter: {}",
+                ca.handle(),
+                use_parent_sync_jitter
+            );
+
+            if !too_many_cas_resync_parent && too_many_parents {
                 debug!(
                     "Will force jitter for sync between CA {} and parents. Nr of parents ({}) exceeds batch size ({})",
                     ca.handle(),
@@ -172,18 +183,19 @@ impl Scheduler {
                 self.tasks.sync_parent(
                     ca.handle().clone(),
                     parent.clone(),
-                    self.config.ca_refresh_start_up(use_jitter || too_many_parents),
+                    self.config.ca_refresh_start_up(use_parent_sync_jitter),
                 );
             }
 
-            // Plan a sync with the repo. In case we only have a handful of CAs
-            // then the result is that the sync is scheduled asap. Otherwise
-            // spread the load.
-            // Note: if circumstances dictate a sync before it's planned, e.g.
-            // because ROAs are changed, then it will be rescheduled accordingly.
-            // Note: users can override using the 'bulk' functions.
-            self.tasks
-                .sync_repo(ca.handle().clone(), self.config.ca_refresh_start_up(use_jitter));
+            // Plan a sync with the repo. But only in case we only have a handful
+            // of CAs.
+            //
+            // Note: if circumstances dictate a sync e.g. because ROAs are changed,
+            // then it will be scheduled accordingly. Furthermore, users can use the
+            // 'bulk' function to explicitly force schedule a sync.
+            if !too_many_cas_resync_repo {
+                self.tasks.sync_repo(ca.handle().clone(), now());
+            }
 
             // If suspension is enabled then plan a task for it. Since this is
             // a cheap no-op in most cases, we do not need jitter. If we do not
