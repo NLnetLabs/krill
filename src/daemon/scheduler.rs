@@ -149,21 +149,28 @@ impl Scheduler {
 
         debug!("Adding tasks at start up");
 
-        let too_many_cas = cas.len() >= SCHEDULER_USE_JITTER_CAS_THRESHOLD;
+        let too_many_cas_resync_parent = cas.len() >= SCHEDULER_USE_JITTER_CAS_THRESHOLD;
         let too_many_cas_resync_repo = cas.len() >= SCHEDULER_RESYNC_REPO_CAS_THRESHOLD;
 
         for summary in cas {
             let ca = self.ca_manager.get_ca(summary.handle()).await?;
 
-            debug!("Adding tasks for CA {}, using jitter: {}", ca.handle(), too_many_cas);
+            let too_many_parents = ca.nr_parents() >= self.config.ca_refresh_parents_batch_size;
 
             // Plan a regular sync for each parent. Spread these out if there
             // are too many CAs or parents for a CA. In cases where there are only
             // a handful of CAs/parents, this 'ca_refresh_start_up' will be 'now'.
             //
             // Note: users can change the priority to 'now' by using the 'bulk' functions.
-            let too_many_parents = ca.nr_parents() >= self.config.ca_refresh_parents_batch_size;
-            if !too_many_cas && too_many_parents {
+            let use_parent_sync_jitter = too_many_cas_resync_parent || too_many_parents;
+
+            debug!(
+                "Adding tasks for CA {}, using jitter: {}",
+                ca.handle(),
+                use_parent_sync_jitter
+            );
+
+            if !too_many_cas_resync_parent && too_many_parents {
                 debug!(
                     "Will force jitter for sync between CA {} and parents. Nr of parents ({}) exceeds batch size ({})",
                     ca.handle(),
@@ -176,7 +183,7 @@ impl Scheduler {
                 self.tasks.sync_parent(
                     ca.handle().clone(),
                     parent.clone(),
-                    self.config.ca_refresh_start_up(too_many_cas || too_many_parents),
+                    self.config.ca_refresh_start_up(use_parent_sync_jitter),
                 );
             }
 
