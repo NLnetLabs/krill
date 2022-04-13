@@ -72,6 +72,7 @@ In addition to this we added a few other quick fixes in this release:
 - Decrease CA update frequency and use jitter to spread load #802
 - Accept missing tag in RFC8181 Error Response #809
 - Improve efficiency of connection status tracking #811
+- Do not resync CAs with repo on startup if there are too many #818
 
 
 The full list of changes can be found here:
