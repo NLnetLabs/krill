@@ -184,8 +184,8 @@ impl Scheduler {
             // of CAs.
             //
             // Note: if circumstances dictate a sync e.g. because ROAs are changed,
-            // then it will be scheduled accordingly. Furthermore, users can the 'bulk'
-            // function to explicitly force scheduling a sync.
+            // then it will be scheduled accordingly. Furthermore, users can use the
+            // 'bulk' function to explicitly force schedule a sync.
             if !too_many_cas_resync_repo {
                 self.tasks.sync_repo(ca.handle().clone(), now());
             }
