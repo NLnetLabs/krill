@@ -9,9 +9,9 @@ use std::fmt;
 use std::str::FromStr;
 
 use rpki::repository::aspa::*;
-use rpki::repository::resources::AsId;
+use rpki::repository::resources::Asn;
 
-pub type AspaCustomer = AsId;
+pub type AspaCustomer = Asn;
 
 //------------ AspaDefinitionUpdates -------------------------------------
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -347,8 +347,8 @@ mod tests {
 
     use super::*;
 
-    fn customer(s: &str) -> AsId {
-        AsId::from_str(s).unwrap()
+    fn customer(s: &str) -> Asn {
+        Asn::from_str(s).unwrap()
     }
 
     fn provider(s: &str) -> ProviderAs {

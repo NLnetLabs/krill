@@ -13,7 +13,7 @@ use std::{
 };
 
 use bytes::Bytes;
-use rpki::repository::resources::AsId;
+use rpki::repository::resources::Asn;
 use serde::Serialize;
 
 use futures::TryFutureExt;
@@ -1822,7 +1822,7 @@ async fn api_ca_aspas_definitions_update(req: Request, ca: Handle) -> RoutingRes
 }
 
 /// Update an existing ASPA definition for a CA based on the update in the POST
-async fn api_ca_aspas_update_aspa(req: Request, ca: Handle, customer: AsId) -> RoutingResult {
+async fn api_ca_aspas_update_aspa(req: Request, ca: Handle, customer: Asn) -> RoutingResult {
     aa!(req, Permission::ASPAS_UPDATE, ca.clone(), {
         let actor = req.actor();
         let state = req.state().clone();
@@ -1835,7 +1835,7 @@ async fn api_ca_aspas_update_aspa(req: Request, ca: Handle, customer: AsId) -> R
 }
 
 /// Delete the ASPA definition for the given CA and customer ASN
-async fn api_ca_aspas_delete(req: Request, ca: Handle, customer: AsId) -> RoutingResult {
+async fn api_ca_aspas_delete(req: Request, ca: Handle, customer: Asn) -> RoutingResult {
     aa!(req, Permission::ASPAS_UPDATE, ca.clone(), {
         let actor = req.actor();
         let state = req.state().clone();

@@ -348,7 +348,7 @@ impl ProtocolSignerInfoBuilder {
 
         let (signature, key) = signed_attributes.sign(signer)?;
 
-        let key_id = KeyIdentifier::from_public_key(&key);
+        let key_id = key.key_identifier();
         let signature = OctetString::new(signature.value().clone());
 
         Ok(ProtocolSignerInfo {

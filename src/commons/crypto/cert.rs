@@ -691,12 +691,12 @@ impl IdExtensions {
 ///
 impl IdExtensions {
     /// Creates extensions to be used on a self-signed TA IdCert
-    pub fn for_id_ta_cert(key: &PublicKey) -> Self {
-        let ki = KeyIdentifier::from_public_key(key);
+    pub fn for_id_ta_cert(pub_key: &PublicKey) -> Self {
+        let subject_key_id = pub_key.key_identifier();
         IdExtensions {
             basic_ca: Some(true),
-            subject_key_id: ki,
-            authority_key_id: Some(ki),
+            subject_key_id,
+            authority_key_id: Some(subject_key_id),
         }
     }
 
@@ -704,8 +704,8 @@ impl IdExtensions {
     pub fn for_id_ee_cert(subject_key: &PublicKey, issuing_key: &PublicKey) -> Self {
         IdExtensions {
             basic_ca: None,
-            subject_key_id: KeyIdentifier::from_public_key(subject_key),
-            authority_key_id: Some(KeyIdentifier::from_public_key(issuing_key)),
+            subject_key_id: subject_key.key_identifier(),
+            authority_key_id: Some(issuing_key.key_identifier()),
         }
     }
 }
@@ -723,11 +723,10 @@ impl IdExtensions {
 }
 
 impl From<&PublicKey> for IdExtensions {
-    fn from(pk: &PublicKey) -> Self {
+    fn from(pub_key: &PublicKey) -> Self {
         let basic_ca = Some(true);
-        let ki = KeyIdentifier::from_public_key(pk);
-        let subject_key_id = ki;
-        let authority_key_id = Some(ki);
+        let subject_key_id = pub_key.key_identifier();
+        let authority_key_id = Some(subject_key_id);
 
         IdExtensions {
             basic_ca,

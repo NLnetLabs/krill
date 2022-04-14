@@ -1500,7 +1500,7 @@ impl CrlBuilder {
         next_update: Time,
         signer: &KrillSigner,
     ) -> KrillResult<PublishedCrl> {
-        let aki = KeyIdentifier::from_public_key(signing_key);
+        let aki = signing_key.key_identifier();
 
         let this_update = Time::five_minutes_ago();
         let serial_number = Serial::from(number);
@@ -1584,7 +1584,7 @@ impl ManifestBuilder {
         let crl_uri = signing_cert.crl_uri();
 
         let aia = signing_cert.uri();
-        let aki = KeyIdentifier::from_public_key(signing_key);
+        let aki = signing_key.key_identifier();
         let serial_number = Serial::from(number);
 
         let entries = self.entries.iter().map(|(k, v)| FileAndHash::new(k, v));

@@ -610,6 +610,7 @@ mod tests {
     use super::OldCaEvt;
 
     #[test]
+    #[ignore = "see issue #819"]
     fn convert_old_child_certificates_updated() {
         let json = include_str!("../../../test-resources/migrations/delta-26.json");
         let old_evt: OldCaEvt = serde_json::from_str(json).unwrap();

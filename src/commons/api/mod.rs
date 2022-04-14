@@ -29,7 +29,7 @@ use bytes::Bytes;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use rpki::repository::{
-    aspa::Aspa, cert::Cert, crl::Crl, crypto::KeyIdentifier, manifest::Manifest, resources::AsId, roa::Roa,
+    aspa::Aspa, cert::Cert, crl::Crl, crypto::KeyIdentifier, manifest::Manifest, resources::Asn, roa::Roa,
 };
 
 use crate::{
@@ -295,7 +295,7 @@ impl ErrorResponse {
         res
     }
 
-    pub fn with_asn(self, asn: AsId) -> Self {
+    pub fn with_asn(self, asn: Asn) -> Self {
         self.with_arg("asn", asn)
     }
 

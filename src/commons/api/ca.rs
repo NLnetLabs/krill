@@ -11,7 +11,7 @@ use std::{fmt, str};
 use bytes::Bytes;
 use chrono::{Duration, TimeZone, Utc};
 use rpki::repository::aspa::Aspa;
-use rpki::repository::resources::{AsBlock, AsBlocksBuilder, AsId};
+use rpki::repository::resources::{AsBlock, AsBlocksBuilder, Asn};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use rpki::{
@@ -647,7 +647,7 @@ impl ObjectName {
         ObjectName(format!("{}.{}", ki, extension))
     }
 
-    pub fn aspa(customer: AsId) -> Self {
+    pub fn aspa(customer: Asn) -> Self {
         ObjectName(format!("{}.asa", customer))
     }
 }
@@ -1014,8 +1014,8 @@ impl ResourceSet {
         self.asn.contains(other.asn()) && self.v4.contains(&other.v4) && self.v6.contains(&other.v6)
     }
 
-    /// Check if the resource set contains the given AsId
-    pub fn contains_asn(&self, asn: AsId) -> bool {
+    /// Check if the resource set contains the given Asn
+    pub fn contains_asn(&self, asn: Asn) -> bool {
         let mut blocks = AsBlocksBuilder::new();
         blocks.push(AsBlock::Id(asn));
         let blocks = blocks.finalize();

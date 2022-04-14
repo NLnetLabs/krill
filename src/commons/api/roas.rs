@@ -3,7 +3,7 @@ use std::{cmp::Ordering, fmt, net::IpAddr, ops::Deref, str::FromStr};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 use rpki::repository::{
-    resources::{AsBlocks, AsId, IpBlocks, IpBlocksBuilder, Prefix},
+    resources::{AsBlocks, Asn, IpBlocks, IpBlocksBuilder, Prefix},
     roa::RoaIpAddress,
 };
 
@@ -619,9 +619,9 @@ impl AsNumber {
     }
 }
 
-impl From<AsNumber> for AsId {
+impl From<AsNumber> for Asn {
     fn from(asn: AsNumber) -> Self {
-        AsId::from(asn.0)
+        Asn::from(asn.0)
     }
 }
 
