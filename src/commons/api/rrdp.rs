@@ -429,14 +429,8 @@ impl AsRef<FileRef> for DeltaRef {
 // b) The publish element as it appears in an RFC8182 snapshot.xml includes
 // the uri and the base64, but not the hash. So keeping the actual elements
 // around means we can be more efficient in producing that output.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CurrentObjects(HashMap<Hash, PublishElement>);
-
-impl Default for CurrentObjects {
-    fn default() -> Self {
-        CurrentObjects(HashMap::new())
-    }
-}
 
 impl CurrentObjects {
     pub fn new(map: HashMap<Hash, PublishElement>) -> Self {
@@ -538,7 +532,7 @@ impl CurrentObjects {
             .0
             .iter()
             .map(|el| {
-                let hash = el.0.clone();
+                let hash = *el.0;
                 let uri = el.1.uri().clone();
                 publication::ListElement::new(uri, hash)
             })

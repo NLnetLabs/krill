@@ -5,7 +5,6 @@ use chrono::Duration;
 
 use rpki::{
     ca::{
-        idcert::IdCert,
         idexchange::{self, ServiceUri},
         idexchange::{ChildHandle, Handle, ParentHandle},
         provisioning,
@@ -24,13 +23,13 @@ use rpki::{
 use crate::{
     commons::{
         actor::Actor,
+        api::{rrdp::PublishElement, Timestamp},
         api::{
-            self, AddChildRequest, AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate,
+            AddChildRequest, AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate,
             CaCommandDetails, CaCommandResult, CertAuthList, CertAuthSummary, ChildCaInfo, CommandHistory,
             CommandHistoryCriteria, ParentCaContact, ParentCaReq, RcvdCert, RepositoryContact, RtaName, StoredEffect,
             UpdateChildRequest,
         },
-        api::{rrdp::PublishElement, Timestamp},
         crypto::KrillSigner,
         error::Error,
         eventsourcing::{Aggregate, AggregateStore, Command, CommandKey},
@@ -53,6 +52,7 @@ use crate::{
 
 //------------ CaLocks ------------------------------------------------------
 
+#[derive(Debug, Default)]
 pub struct CaLockMap(HashMap<Handle, tokio::sync::RwLock<()>>);
 
 impl CaLockMap {
@@ -66,12 +66,6 @@ impl CaLockMap {
 
     fn drop_ca_lock(&mut self, ca: &Handle) {
         self.0.remove(ca);
-    }
-}
-
-impl Default for CaLockMap {
-    fn default() -> Self {
-        CaLockMap(HashMap::new())
     }
 }
 
@@ -506,7 +500,7 @@ impl CaManager {
         service_uri: &uri::Https,
     ) -> KrillResult<idexchange::ParentResponse> {
         let ca = self.get_ca(ca).await?;
-        let service_uri = format!("{}rfc6492/{}", service_uri.to_string(), ca.handle());
+        let service_uri = format!("{}rfc6492/{}", service_uri, ca.handle());
         let service_uri = uri::Https::from_string(service_uri).unwrap();
         let service_uri = idexchange::ServiceUri::Https(service_uri);
 
@@ -691,7 +685,7 @@ impl CaManager {
     /// List the entitlements for a child: 3.3.2 of RFC 6492.
     async fn list(&self, ca: &Handle, child: &Handle) -> KrillResult<ResourceClassListResponse> {
         let ca = self.get_ca(ca).await?;
-        Ok(ca.list(child, &self.config.issuance_timing)?)
+        ca.list(child, &self.config.issuance_timing)
     }
 
     /// Issue a Certificate in response to an RFC 6492 Certificate Issuance request sent by a child.
@@ -1551,6 +1545,7 @@ impl CaManager {
         Ok(())
     }
 
+    #[allow(clippy::mutable_key_type)]
     async fn ca_repo_sync(
         &self,
         ca_handle: &Handle,

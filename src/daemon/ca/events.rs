@@ -65,7 +65,7 @@ impl fmt::Display for IniDet {
 //------------ RoaUpdates --------------------------------------------------
 
 /// Describes an update to the set of ROAs under a ResourceClass.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RoaUpdates {
     #[serde(
         skip_serializing_if = "HashMap::is_empty",
@@ -253,17 +253,6 @@ mod aggregate_removed_sorted_map {
             map.insert(item.agg, item.removed);
         }
         Ok(map)
-    }
-}
-
-impl Default for RoaUpdates {
-    fn default() -> Self {
-        RoaUpdates {
-            updated: HashMap::new(),
-            removed: HashMap::new(),
-            aggregate_updated: HashMap::new(),
-            aggregate_removed: HashMap::new(),
-        }
     }
 }
 

@@ -31,23 +31,12 @@ use crate::{
 
 /// This type contains a detailed error report for a ROA delta
 /// that could not be applied.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RoaDeltaError {
     duplicates: Vec<RoaDefinition>,
     notheld: Vec<RoaDefinition>,
     unknowns: Vec<RoaDefinition>,
     invalid_length: Vec<RoaDefinition>,
-}
-
-impl Default for RoaDeltaError {
-    fn default() -> Self {
-        RoaDeltaError {
-            duplicates: vec![],
-            notheld: vec![],
-            unknowns: vec![],
-            invalid_length: vec![],
-        }
-    }
 }
 
 impl RoaDeltaError {

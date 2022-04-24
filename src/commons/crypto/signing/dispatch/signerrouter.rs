@@ -132,11 +132,9 @@ impl SignerRouter {
             if signer.is_default_signer() {
                 Self::set_once(&mut default_signer, signer.clone())
                     .map_err(|_| Error::ConfigError("There must only be one default signer".to_string()))?;
-            } else {
-                if signer.is_one_off_signer() {
-                    Self::set_once(&mut one_off_signer, signer.clone())
-                        .map_err(|_| Error::ConfigError("There must only be one one-off signer".to_string()))?;
-                }
+            } else if signer.is_one_off_signer() {
+                Self::set_once(&mut one_off_signer, signer.clone())
+                    .map_err(|_| Error::ConfigError("There must only be one one-off signer".to_string()))?;
             }
             all_signers.push(signer.clone());
         }

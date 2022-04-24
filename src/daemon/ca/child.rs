@@ -5,14 +5,11 @@ use chrono::Duration;
 use rpki::{
     ca::{idcert::IdCert, idexchange::ChildHandle, provisioning::ResourceClassName, resourceset::ResourceSet},
     repository::{crypto::KeyIdentifier, x509::Time},
-    rrdp::Hash,
 };
 
 use crate::{
     commons::{
-        api::{
-            ChildCaInfo, ChildState, DelegatedCertificate, ReplacedObject, Revocation, SuspendedCert, UnsuspendedCert,
-        },
+        api::{ChildCaInfo, ChildState, DelegatedCertificate, SuspendedCert, UnsuspendedCert},
         crypto::{CsrInfo, KrillSigner, SignSupport},
         error::Error,
         KrillResult,
@@ -146,7 +143,7 @@ pub struct Children {
 //------------ ChildCertificates -------------------------------------------
 
 /// The collection of certificates issued under a [ResourceClass](ca.ResourceClass).
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildCertificates {
     #[serde(alias = "inner")] // Note: we cannot remove this unless we migrate existing json on upgrade.
     issued: HashMap<KeyIdentifier, DelegatedCertificate>,
@@ -302,14 +299,5 @@ impl ChildCertificates {
             .values()
             .filter(|issued| !resources.contains(issued.resource_set()))
             .collect()
-    }
-}
-
-impl Default for ChildCertificates {
-    fn default() -> Self {
-        ChildCertificates {
-            issued: HashMap::new(),
-            suspended: HashMap::new(),
-        }
     }
 }

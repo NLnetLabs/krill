@@ -293,7 +293,7 @@ impl fmt::Display for AspaProvidersUpdate {
 
 /// This type contains details on AspaProvidersUpdate entries which
 /// could not be applied.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AspaProvidersUpdateConflict {
     duplicates: Vec<ProviderAs>,
     unknowns: Vec<ProviderAs>,
@@ -310,15 +310,6 @@ impl AspaProvidersUpdateConflict {
 
     pub fn is_empty(&self) -> bool {
         self.duplicates.is_empty() && self.unknowns.is_empty()
-    }
-}
-
-impl Default for AspaProvidersUpdateConflict {
-    fn default() -> Self {
-        Self {
-            duplicates: vec![],
-            unknowns: vec![],
-        }
     }
 }
 

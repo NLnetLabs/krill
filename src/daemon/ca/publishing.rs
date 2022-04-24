@@ -18,7 +18,7 @@ use rpki::{
         aspa::Aspa,
         cert::Cert,
         crl::{Crl, TbsCertList},
-        crypto::{DigestAlgorithm, KeyIdentifier, PublicKey},
+        crypto::{DigestAlgorithm, PublicKey},
         manifest::{FileAndHash, Manifest, ManifestContent},
         roa::Roa,
         sigobj::SignedObjectBuilder,
@@ -424,12 +424,7 @@ impl CaObjects {
     }
 
     fn remove_class(&mut self, class_name: &ResourceClassName) {
-        let old_repo_opt = self
-            .classes
-            .get(class_name)
-            .map(|rco| rco.old_repo())
-            .flatten()
-            .cloned();
+        let old_repo_opt = self.classes.get(class_name).and_then(|rco| rco.old_repo()).cloned();
 
         self.classes.remove(class_name);
 

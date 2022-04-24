@@ -18,7 +18,7 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::{DelegatedCertificate, RcvdCert, ReplacedObject, ResourceClassInfo, SuspendedCert, UnsuspendedCert},
+        api::{DelegatedCertificate, RcvdCert, ResourceClassInfo, SuspendedCert, UnsuspendedCert},
         crypto::{CsrInfo, KrillSigner, SignSupport},
         error::Error,
         KrillResult,

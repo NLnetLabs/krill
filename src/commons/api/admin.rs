@@ -1,16 +1,8 @@
 //! Support for admin tasks, such as managing publishers and RFC8181 clients
 
-use std::{
-    convert::TryFrom,
-    fmt,
-    path::PathBuf,
-    str::{from_utf8_unchecked, FromStr},
-    sync::Arc,
-};
+use std::fmt;
 
-use serde::{
-    de, {Deserialize, Deserializer, Serialize, Serializer},
-};
+use serde::{Deserialize, Serialize};
 
 use rpki::{
     ca::{
@@ -181,7 +173,7 @@ impl fmt::Display for PublisherDetails {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "handle: {}", self.handle())?;
         writeln!(f, "id: {}", self.id_cert().ski_hex())?;
-        writeln!(f, "base uri: {}", self.base_uri().to_string())?;
+        writeln!(f, "base uri: {}", self.base_uri())?;
         writeln!(f, "objects:")?;
         for e in &self.current_files {
             writeln!(f, "  {}", e.uri())?;
@@ -555,6 +547,10 @@ impl fmt::Display for ServerInfo {
 
 #[cfg(test)]
 mod tests {
+
+    use std::convert::TryFrom;
+    use std::path::PathBuf;
+    use std::str::FromStr;
 
     use super::*;
 

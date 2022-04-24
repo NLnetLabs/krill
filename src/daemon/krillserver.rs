@@ -451,15 +451,15 @@ impl KrillServer {
             .get_entitlements_from_contact(&ca, parent, contact, false)
             .await?;
 
-        Ok(self.ca_manager.ca_parent_add_or_update(ca, parent_req, actor).await?)
+        self.ca_manager.ca_parent_add_or_update(ca, parent_req, actor).await
     }
 
     pub async fn ca_parent_remove(&self, handle: Handle, parent: ParentHandle, actor: &Actor) -> KrillEmptyResult {
-        Ok(self.ca_manager.ca_parent_remove(handle, parent, actor).await?)
+        self.ca_manager.ca_parent_remove(handle, parent, actor).await
     }
 
     pub async fn ca_parent_revoke(&self, handle: &Handle, parent: &ParentHandle) -> KrillEmptyResult {
-        Ok(self.ca_manager.ca_parent_revoke(handle, parent).await?)
+        self.ca_manager.ca_parent_revoke(handle, parent).await
     }
 }
 
@@ -625,25 +625,23 @@ impl KrillServer {
 
     /// Update the repository for a CA, or return an error. (see `CertAuth::repo_update`)
     pub async fn ca_repo_update(&self, handle: Handle, contact: RepositoryContact, actor: &Actor) -> KrillEmptyResult {
-        Ok(self.ca_manager.update_repo(handle, contact, true, actor).await?)
+        self.ca_manager.update_repo(handle, contact, true, actor).await
     }
 
     pub async fn ca_update_id(&self, handle: Handle, actor: &Actor) -> KrillEmptyResult {
-        Ok(self.ca_manager.ca_update_id(handle, actor).await?)
+        self.ca_manager.ca_update_id(handle, actor).await
     }
 
     pub async fn ca_keyroll_init(&self, handle: Handle, actor: &Actor) -> KrillEmptyResult {
-        Ok(self
-            .ca_manager
+        self.ca_manager
             .ca_keyroll_init(handle, Duration::seconds(0), actor)
-            .await?)
+            .await
     }
 
     pub async fn ca_keyroll_activate(&self, handle: Handle, actor: &Actor) -> KrillEmptyResult {
-        Ok(self
-            .ca_manager
+        self.ca_manager
             .ca_keyroll_activate(handle, Duration::seconds(0), actor)
-            .await?)
+            .await
     }
 
     pub async fn rfc6492(
@@ -653,7 +651,7 @@ impl KrillServer {
         user_agent: Option<String>,
         actor: &Actor,
     ) -> KrillResult<Bytes> {
-        Ok(self.ca_manager.rfc6492(&handle, msg_bytes, user_agent, actor).await?)
+        self.ca_manager.rfc6492(&handle, msg_bytes, user_agent, actor).await
     }
 }
 
@@ -661,7 +659,7 @@ impl KrillServer {
 ///
 impl KrillServer {
     pub async fn ca_aspas_definitions_show(&self, ca: Handle) -> KrillResult<AspaDefinitionList> {
-        Ok(self.ca_manager.ca_aspas_definitions_show(ca).await?)
+        self.ca_manager.ca_aspas_definitions_show(ca).await
     }
 
     pub async fn ca_aspas_definitions_update(
@@ -670,7 +668,7 @@ impl KrillServer {
         updates: AspaDefinitionUpdates,
         actor: &Actor,
     ) -> KrillEmptyResult {
-        Ok(self.ca_manager.ca_aspas_definitions_update(ca, updates, actor).await?)
+        self.ca_manager.ca_aspas_definitions_update(ca, updates, actor).await
     }
 
     pub async fn ca_aspas_update_aspa(
@@ -680,10 +678,7 @@ impl KrillServer {
         update: AspaProvidersUpdate,
         actor: &Actor,
     ) -> KrillEmptyResult {
-        Ok(self
-            .ca_manager
-            .ca_aspas_update_aspa(ca, customer, update, actor)
-            .await?)
+        self.ca_manager.ca_aspas_update_aspa(ca, customer, update, actor).await
     }
 }
 
@@ -696,7 +691,7 @@ impl KrillServer {
         updates: RoaDefinitionUpdates,
         actor: &Actor,
     ) -> KrillEmptyResult {
-        Ok(self.ca_manager.ca_routes_update(handle, updates.into(), actor).await?)
+        self.ca_manager.ca_routes_update(handle, updates.into(), actor).await
     }
 
     pub async fn ca_routes_show(&self, handle: &Handle) -> KrillResult<Vec<RoaDefinition>> {

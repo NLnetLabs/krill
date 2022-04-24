@@ -5,7 +5,7 @@ use rpki::{
         idcert::IdCert,
         idexchange::{Handle, PublisherHandle},
     },
-    repository::x509::{Time, Validity},
+    repository::x509::Time,
     uri,
 };
 
@@ -13,11 +13,9 @@ use crate::{
     commons::{
         api::rrdp::{Delta, DeltaElements, Notification, Snapshot},
         crypto::KrillSigner,
-        error::Error,
         eventsourcing::StoredEvent,
         KrillResult,
     },
-    constants::ID_CERTIFICATE_VALIDITY_YEARS,
     pubd::Publisher,
 };
 

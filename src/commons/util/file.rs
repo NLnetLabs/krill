@@ -220,7 +220,7 @@ fn derive_uri(base_path: &Path, path: &Path, rsync_base: Option<&uri::Rsync>) ->
     let rel_string = rel.to_string_lossy().to_string();
 
     let uri_string = match rsync_base {
-        Some(rsync_base) => format!("{}{}", rsync_base.to_string(), rel_string),
+        Some(rsync_base) => format!("{}{}", rsync_base, rel_string),
         None => format!("rsync://{}", rel_string),
     };
 
@@ -365,14 +365,14 @@ impl CurrentFile {
         let tag = None;
         let uri = self.uri.clone();
         let content = self.content.clone();
-        let hash = old_hash.clone();
+        let hash = *old_hash;
         Update::new(tag, uri, content, hash)
     }
 
     pub fn as_withdraw(&self) -> Withdraw {
         let tag = None;
         let uri = self.uri.clone();
-        let hash = self.hash.clone();
+        let hash = self.hash;
         Withdraw::new(tag, uri, hash)
     }
 

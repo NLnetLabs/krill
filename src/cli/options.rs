@@ -1444,14 +1444,12 @@ impl Options {
         let mut options = HistoryOptions::default();
 
         if let Some(offset) = matches.value_of("offset") {
-            let offset =
-                u64::from_str(offset).map_err(|e| Error::general(&format!("invalid number: {}", e.to_string())))?;
+            let offset = u64::from_str(offset).map_err(|e| Error::general(&format!("invalid number: {}", e)))?;
             options.offset = offset
         }
 
         if let Some(rows) = matches.value_of("rows") {
-            let rows =
-                u64::from_str(rows).map_err(|e| Error::general(&format!("invalid number: {}", e.to_string())))?;
+            let rows = u64::from_str(rows).map_err(|e| Error::general(&format!("invalid number: {}", e)))?;
             if rows > 250 {
                 return Err(Error::general("No more than 250 rows allowed in history"));
             }
@@ -1459,14 +1457,12 @@ impl Options {
         }
 
         if let Some(after) = matches.value_of("after") {
-            let time = Time::from_str(after)
-                .map_err(|e| Error::general(&format!("invalid date format: {}", e.to_string())))?;
+            let time = Time::from_str(after).map_err(|e| Error::general(&format!("invalid date format: {}", e)))?;
             options.after = Some(time);
         }
 
         if let Some(after) = matches.value_of("before") {
-            let time = Time::from_str(after)
-                .map_err(|e| Error::general(&format!("invalid date format: {}", e.to_string())))?;
+            let time = Time::from_str(after).map_err(|e| Error::general(&format!("invalid date format: {}", e)))?;
             options.before = Some(time);
         }
 
@@ -2017,11 +2013,7 @@ impl Options {
             .map_err(|_| Error::GeneralArgumentError(format!("Invalid filename: {}", in_file)))?;
 
         let content = file::read(&in_file).map_err(|e| {
-            Error::GeneralArgumentError(format!(
-                "Can't read file '{}', error: {}",
-                in_file.to_string_lossy().to_string(),
-                e,
-            ))
+            Error::GeneralArgumentError(format!("Can't read file '{}', error: {}", in_file.to_string_lossy(), e,))
         })?;
 
         let name = matches.value_of("name").unwrap().to_string();
@@ -2057,11 +2049,7 @@ impl Options {
             .map_err(|_| Error::GeneralArgumentError(format!("Invalid filename: {}", in_file)))?;
 
         let content = file::read(&in_file).map_err(|e| {
-            Error::GeneralArgumentError(format!(
-                "Can't read file '{}', error: {}",
-                in_file.to_string_lossy().to_string(),
-                e,
-            ))
+            Error::GeneralArgumentError(format!("Can't read file '{}', error: {}", in_file.to_string_lossy(), e,))
         })?;
 
         let rta = ResourceTaggedAttestation::new(content);
@@ -2456,7 +2444,7 @@ pub enum BulkCaCommand {
     Suspend,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct KrillInitDetails {
     data_dir: Option<String>,
     log_file: Option<String>,
@@ -2499,19 +2487,8 @@ impl KrillInitDetails {
     }
 }
 
-impl Default for KrillInitDetails {
-    fn default() -> Self {
-        KrillInitDetails {
-            data_dir: None,
-            log_file: None,
-            multi_user: false,
-            hsm: false,
-        }
-    }
-}
-
 #[cfg(feature = "multi-user")]
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct KrillUserDetails {
     id: String,
     attrs: HashMap<String, String>,
@@ -2531,16 +2508,6 @@ impl KrillUserDetails {
 
     pub fn attrs(&self) -> HashMap<String, String> {
         self.attrs.clone()
-    }
-}
-
-#[cfg(feature = "multi-user")]
-impl Default for KrillUserDetails {
-    fn default() -> Self {
-        KrillUserDetails {
-            id: String::new(),
-            attrs: HashMap::new(),
-        }
     }
 }
 

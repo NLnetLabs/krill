@@ -324,10 +324,7 @@ impl SignerReference {
     }
 
     pub fn is_named(&self) -> bool {
-        match self {
-            SignerReference::Name(Some(_)) => true,
-            _ => false,
-        }
+        matches!(self, SignerReference::Name(Some(_)))
     }
 }
 
@@ -1019,8 +1016,7 @@ impl Config {
     fn add_openssl_signer(&mut self, name: &str) -> usize {
         let signer_config = SignerConfig::new(name.to_string(), SignerType::OpenSsl(OpenSslSignerConfig::default()));
         self.signers.push(signer_config);
-        let idx = self.signers.len() - 1;
-        idx
+        self.signers.len() - 1
     }
 
     fn find_signer_reference(&self, signer_ref: &SignerReference) -> Option<usize> {
@@ -1171,13 +1167,11 @@ impl Config {
         } else {
         }
 
-        if self.one_off_signer.is_named() {
-            if self.find_signer_reference(&self.one_off_signer).is_none() {
-                return Err(ConfigError::other(&format!(
-                    "'{}' cannot be used as the 'one_off_signer' as no signer with that name is defined",
-                    self.one_off_signer.name()
-                )));
-            }
+        if self.one_off_signer.is_named() && self.find_signer_reference(&self.one_off_signer).is_none() {
+            return Err(ConfigError::other(&format!(
+                "'{}' cannot be used as the 'one_off_signer' as no signer with that name is defined",
+                self.one_off_signer.name()
+            )));
         }
 
         Ok(())

@@ -79,7 +79,7 @@ impl OpenSslSigner {
                 keys_dir.as_path().display()
             )),
             handle: RwLock::new(None), // will be set later
-            mapper: mapper.clone(),
+            mapper,
             keys_dir: keys_dir.into(),
         };
 
@@ -202,9 +202,9 @@ impl OpenSslSigner {
         // KeyIdentifier.
         if let Some(mapper) = &self.mapper {
             let readable_handle = self.handle.read().unwrap();
-            let signer_handle = readable_handle.as_ref().ok_or(SignerError::Other(
-                "OpenSSL: Failed to record signer key: Signer handle not set".to_string(),
-            ))?;
+            let signer_handle = readable_handle.as_ref().ok_or_else(|| {
+                SignerError::Other("OpenSSL: Failed to record signer key: Signer handle not set".to_string())
+            })?;
             mapper
                 .add_key(signer_handle, key_id, &format!("{}", key_id))
                 .map_err(|err| SignerError::Other(format!("Failed to record signer key: {}", err)))

@@ -2,20 +2,18 @@
 //! can have access without needing to depend on the full krill_ca module.
 
 use std::collections::HashMap;
-use std::convert::TryFrom;
 use std::ops::{self, Deref};
 use std::str::FromStr;
-use std::sync::Arc;
 use std::{fmt, str};
 
 use bytes::Bytes;
 use chrono::{Duration, TimeZone, Utc};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 
 use rpki::{
     ca::{
         idcert::IdCert,
-        idexchange::{ChildHandle, Handle, ParentHandle, RepoInfo, RepositoryResponse, ServiceUri},
+        idexchange::{ChildHandle, Handle, ParentHandle, RepoInfo, ServiceUri},
         provisioning::{
             IssuanceRequest, IssuedCert, RequestResourceLimit, ResourceClassEntitlements, ResourceClassListResponse,
             ResourceClassName, SigningCert,
@@ -29,8 +27,8 @@ use rpki::{
         crl::{Crl, CrlEntry},
         crypto::KeyIdentifier,
         manifest::Manifest,
-        resources::{AsBlock, AsBlocks, AsBlocksBuilder, AsResources, Asn, IpBlocks, IpBlocksForFamily, IpResources},
-        roa::{Roa, RoaIpAddress},
+        resources::Asn,
+        roa::Roa,
         x509::{Serial, Time},
     },
     rrdp::Hash,
@@ -645,7 +643,7 @@ impl From<&Aspa> for Revocation {
 
 //------------ Revocations ---------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Revocations(Vec<Revocation>);
 
 impl Revocations {
@@ -684,27 +682,12 @@ impl Revocations {
     }
 }
 
-impl Default for Revocations {
-    fn default() -> Self {
-        Revocations(vec![])
-    }
-}
-
 //------------ RevocationsDelta ----------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RevocationsDelta {
     added: Vec<Revocation>,
     dropped: Vec<Revocation>,
-}
-
-impl Default for RevocationsDelta {
-    fn default() -> Self {
-        RevocationsDelta {
-            added: vec![],
-            dropped: vec![],
-        }
-    }
 }
 
 impl RevocationsDelta {
@@ -856,7 +839,7 @@ impl fmt::Display for ParentInfo {
 
 //------------ ParentStatuses ------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParentStatuses(HashMap<ParentHandle, ParentStatus>);
 
 impl ParentStatuses {
@@ -955,12 +938,6 @@ impl IntoIterator for ParentStatuses {
     }
 }
 
-impl Default for ParentStatuses {
-    fn default() -> Self {
-        ParentStatuses(HashMap::new())
-    }
-}
-
 impl fmt::Display for ParentStatuses {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for (parent, status) in self.0.iter() {
@@ -1042,12 +1019,12 @@ impl From<&IssuedCert> for ParentStatusCert {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParentStatus {
     last_exchange: Option<ParentExchange>,
     last_success: Option<Timestamp>,
     all_resources: ResourceSet,
-    
+
     // The struct changed - we did not record classes in 0.9.5 and below.
     // Just default to an empty vec in case this field is missing, and
     // ignore the 'entitlements' field that used to be there. This will
@@ -1070,7 +1047,7 @@ impl ParentStatus {
     }
 
     pub fn to_failure_opt(&self) -> Option<ErrorResponse> {
-        self.last_exchange.as_ref().map(|e| e.to_failure_opt()).flatten()
+        self.last_exchange.as_ref().and_then(|e| e.to_failure_opt())
     }
 
     pub fn set_failure(&mut self, uri: ServiceUri, error: ErrorResponse) {
@@ -1088,7 +1065,7 @@ impl ParentStatus {
 
         let mut all_resources = ResourceSet::default();
         for class in &self.classes {
-            all_resources = all_resources.union(&class.resource_set())
+            all_resources = all_resources.union(class.resource_set())
         }
 
         self.all_resources = all_resources;
@@ -1102,17 +1079,6 @@ impl ParentStatus {
             result: ExchangeResult::Success,
         });
         self.last_success = Some(timestamp);
-    }
-}
-
-impl Default for ParentStatus {
-    fn default() -> Self {
-        ParentStatus {
-            last_exchange: None,
-            last_success: None,
-            all_resources: ResourceSet::default(),
-            classes: vec![],
-        }
     }
 }
 
@@ -1151,7 +1117,7 @@ impl RepoStatus {
     }
 
     pub fn to_failure_opt(&self) -> Option<ErrorResponse> {
-        self.last_exchange.as_ref().map(|e| e.to_failure_opt()).flatten()
+        self.last_exchange.as_ref().and_then(|e| e.to_failure_opt())
     }
 }
 
@@ -1359,7 +1325,7 @@ impl ChildConnectionStats {
 
 //------------ ChildStatus ---------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildStatus {
     last_exchange: Option<ChildExchange>,
     last_success: Option<Timestamp>,
@@ -1408,16 +1374,6 @@ impl ChildStatus {
             ChildState::Active
         } else {
             ChildState::Suspended
-        }
-    }
-}
-
-impl Default for ChildStatus {
-    fn default() -> Self {
-        ChildStatus {
-            last_exchange: None,
-            last_success: None,
-            suspended: None,
         }
     }
 }
@@ -1902,15 +1858,9 @@ impl fmt::Display for CaRepoDetails {
 
 //------------ AllCertAuthIssues ---------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AllCertAuthIssues {
     cas: HashMap<Handle, CertAuthIssues>,
-}
-
-impl Default for AllCertAuthIssues {
-    fn default() -> Self {
-        AllCertAuthIssues { cas: HashMap::new() }
-    }
 }
 
 impl AllCertAuthIssues {
@@ -1953,7 +1903,7 @@ impl fmt::Display for AllCertAuthIssues {
 
 //------------ CertAuthIssues ------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthIssues {
     repo_issue: Option<ErrorResponse>,
     parent_issues: Vec<CertAuthParentIssue>,
@@ -1963,15 +1913,6 @@ pub struct CertAuthIssues {
 pub struct CertAuthParentIssue {
     pub parent: ParentHandle,
     pub issue: ErrorResponse,
-}
-
-impl Default for CertAuthIssues {
-    fn default() -> Self {
-        CertAuthIssues {
-            repo_issue: None,
-            parent_issues: vec![],
-        }
-    }
 }
 
 impl CertAuthIssues {
@@ -2049,7 +1990,7 @@ impl CertAuthStats {
 
 //------------ BgpStats ------------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BgpStats {
     pub announcements_valid: usize,
     pub announcements_invalid_asn: usize,
@@ -2062,24 +2003,6 @@ pub struct BgpStats {
     pub roas_disallowing: usize,
     pub roas_not_held: usize,
     pub roas_total: usize,
-}
-
-impl Default for BgpStats {
-    fn default() -> Self {
-        BgpStats {
-            announcements_valid: 0,
-            announcements_invalid_asn: 0,
-            announcements_invalid_length: 0,
-            announcements_disallowed: 0,
-            announcements_not_found: 0,
-            roas_too_permissive: 0,
-            roas_redundant: 0,
-            roas_stale: 0,
-            roas_disallowing: 0,
-            roas_not_held: 0,
-            roas_total: 0,
-        }
-    }
 }
 
 impl BgpStats {
@@ -2172,50 +2095,6 @@ impl fmt::Display for RtaPrepResponse {
         Ok(())
     }
 }
-
-// //------------ ResSetErr -----------------------------------------------------
-
-// #[derive(Clone, Debug, Eq, PartialEq)]
-// pub enum ResourceSetError {
-//     Asn(String),
-//     V4(String),
-//     V6(String),
-//     Mix,
-//     InheritOnCaCert,
-//     Limit,
-//     FromString,
-// }
-
-// impl fmt::Display for ResourceSetError {
-//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-//         match self {
-//             ResourceSetError::Asn(s) => write!(f, "Cannot parse ASN resource: {}", s),
-//             ResourceSetError::V4(s) => write!(f, "Cannot parse IPv4 resource: {}", s),
-//             ResourceSetError::V6(s) => write!(f, "Cannot parse IPv6 resource: {}", s),
-//             ResourceSetError::Mix => write!(f, "Mixed Address Families in configured resource set"),
-//             ResourceSetError::InheritOnCaCert => write!(f, "Found inherited resources on CA certificate"),
-//             ResourceSetError::Limit => write!(f, "Limit in CSR exceeds resource entitlements."),
-//             ResourceSetError::FromString => write!(
-//                 f,
-//                 "Cannot parse resource set string, expected: 'asn: <ASNs>, ipv4: <IPv4s>, ipv6: <IPv6s>'."
-//             ),
-//         }
-//     }
-// }
-
-// impl ResourceSetError {
-//     fn asn(asn: impl fmt::Display) -> Self {
-//         ResourceSetError::Asn(asn.to_string())
-//     }
-
-//     fn v4(v4: impl fmt::Display) -> Self {
-//         ResourceSetError::V4(v4.to_string())
-//     }
-
-//     fn v6(v6: impl fmt::Display) -> Self {
-//         ResourceSetError::V6(v6.to_string())
-//     }
-// }
 
 //============ Tests =========================================================
 

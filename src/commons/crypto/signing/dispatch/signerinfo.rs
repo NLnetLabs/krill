@@ -371,12 +371,8 @@ impl SignerMapper {
         public_key: &PublicKey,
         private_key_internal_id: &str,
     ) -> KrillResult<Handle> {
-        let signer_handle = Handle::from_str(&uuid::Uuid::new_v4().to_string()).map_err(|err| {
-            Error::SignerError(format!(
-                "Generated UUID is not a valid signer handle: {}",
-                err.to_string()
-            ))
-        })?;
+        let signer_handle = Handle::from_str(&uuid::Uuid::new_v4().to_string())
+            .map_err(|err| Error::SignerError(format!("Generated UUID is not a valid signer handle: {}", err)))?;
 
         let init = InitSignerInfoEvent::init(
             &signer_handle,

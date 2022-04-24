@@ -484,7 +484,7 @@ impl OpenIDConnectAuthProvider {
             .map_err(|err| {
                 RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension(format!(
                     "Unexpected error while preparing to revoke token: {}",
-                    err.to_string()
+                    err
                 )))
             })?
             .request_async(logging_http_client)
@@ -505,14 +505,12 @@ impl OpenIDConnectAuthProvider {
                 openidconnect::RequestTokenError::Request(r) => {
                     self.on_connection_issue(lock_guard);
                     Err(RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension(
-                        format!("Network failure while revoking token: {}", r.to_string()),
+                        format!("Network failure while revoking token: {}", r),
                     )))
                 }
-                openidconnect::RequestTokenError::Parse(r, _) => {
-                    Err(RevocationErrorResponseType::Basic(CoreErrorResponseType::Extension(
-                        format!("Error while parsing token revocation response: {}", r.to_string()),
-                    )))
-                }
+                openidconnect::RequestTokenError::Parse(r, _) => Err(RevocationErrorResponseType::Basic(
+                    CoreErrorResponseType::Extension(format!("Error while parsing token revocation response: {}", r)),
+                )),
                 openidconnect::RequestTokenError::Other(err_string) => match err_string.as_str() {
                     "temporarily_unavailable" | "server_error" => {
                         self.on_connection_issue(lock_guard);
@@ -591,12 +589,12 @@ impl OpenIDConnectAuthProvider {
                         self.on_connection_issue(lock_guard);
                         Err(CoreErrorResponseType::Extension(format!(
                             "Network failure while refreshing token: {}",
-                            r.to_string()
+                            r
                         )))
                     }
                     openidconnect::RequestTokenError::Parse(r, _) => Err(CoreErrorResponseType::Extension(format!(
                         "Error while parsing refreshed token: {}",
-                        r.to_string()
+                        r
                     ))),
                     openidconnect::RequestTokenError::Other(err_string) => match err_string.as_str() {
                         "temporarily_unavailable" | "server_error" => {
@@ -953,7 +951,7 @@ impl OpenIDConnectAuthProvider {
             .claims(&id_token_verifier, &nonce_hash)
             .map_err(|e| {
                 OpenIDConnectAuthProvider::internal_error(
-                    format!("OpenID Connect: ID token verification failed: {}", e.to_string()),
+                    format!("OpenID Connect: ID token verification failed: {}", e),
                     Some(stringify_cause_chain(e)),
                 )
             })?;

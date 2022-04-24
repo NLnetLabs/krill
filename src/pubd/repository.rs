@@ -6,8 +6,6 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use bytes::Bytes;
-
 use rpki::{
     ca::{
         idcert::IdCert,
@@ -1225,23 +1223,12 @@ impl RepositoryAccess {
 
 //------------ RepoStats -----------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RepoStats {
     publishers: HashMap<PublisherHandle, PublisherStats>,
     session: RrdpSession,
     serial: u64,
     last_update: Option<Time>,
-}
-
-impl Default for RepoStats {
-    fn default() -> Self {
-        RepoStats {
-            publishers: HashMap::new(),
-            session: RrdpSession::default(),
-            serial: 0,
-            last_update: None,
-        }
-    }
 }
 
 impl RepoStats {
@@ -1340,7 +1327,7 @@ impl fmt::Display for RepoStats {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublisherStats {
     objects: usize,
     size: usize,
@@ -1376,16 +1363,6 @@ impl From<&CurrentObjects> for PublisherStats {
         PublisherStats {
             objects: objects.len(),
             size: objects.size(),
-            last_update: None,
-        }
-    }
-}
-
-impl Default for PublisherStats {
-    fn default() -> Self {
-        PublisherStats {
-            objects: 0,
-            size: 0,
             last_update: None,
         }
     }

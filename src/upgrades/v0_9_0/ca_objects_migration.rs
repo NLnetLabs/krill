@@ -105,7 +105,7 @@ impl CaObjectsMigration {
     }
 
     fn derived_embedded_ca_info(ca: Arc<OldCertAuth>, config: &Config) -> DerivedEmbeddedCaMigrationInfo {
-        let service_uri = format!("{}rfc6492/{}", config.service_uri().to_string(), ca.handle);
+        let service_uri = format!("{}rfc6492/{}", config.service_uri(), ca.handle);
         let service_uri = uri::Https::from_string(service_uri).unwrap();
         let service_uri = idexchange::ServiceUri::Https(service_uri);
 
@@ -918,22 +918,13 @@ impl OldResourceClass {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldRoas {
     #[serde(alias = "inner", skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
     simple: HashMap<RouteAuthorization, RoaInfo>,
 
     #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
     aggregate: HashMap<RoaAggregateKey, AggregateRoaInfo>,
-}
-
-impl Default for OldRoas {
-    fn default() -> Self {
-        OldRoas {
-            simple: HashMap::new(),
-            aggregate: HashMap::new(),
-        }
-    }
 }
 
 impl OldRoas {
@@ -1037,7 +1028,7 @@ pub enum OldLastResponse {
     Revoked,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldRoutes {
     map: HashMap<RouteAuthorization, RouteInfo>,
 }
@@ -1051,12 +1042,6 @@ impl OldRoutes {
     /// Removes an authorization
     pub fn remove(&mut self, auth: &RouteAuthorization) -> bool {
         self.map.remove(auth).is_some()
-    }
-}
-
-impl Default for OldRoutes {
-    fn default() -> Self {
-        OldRoutes { map: HashMap::new() }
     }
 }
 

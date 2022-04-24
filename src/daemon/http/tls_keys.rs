@@ -2,6 +2,7 @@
 //! in case they are not provided
 use std::{fmt, path::Path, path::PathBuf};
 
+use bcder::decode;
 use bytes::Bytes;
 
 use openssl::{
@@ -10,17 +11,11 @@ use openssl::{
     rsa::Rsa,
 };
 
-use bcder::{
-    decode,
-    encode::{self, Constructed, PrimitiveContent, Values},
-    BitString, Mode, Tag,
-};
-
 use rpki::{
     ca::idcert::IdCert,
     repository::{
         crypto::{KeyIdentifier, PublicKey, Signature, SignatureAlgorithm},
-        x509::{Name, Time, Validity},
+        x509::{Time, Validity},
     },
 };
 
@@ -79,7 +74,7 @@ impl rpki::repository::crypto::Signer for HttpsSigner {
     type KeyId = KeyIdentifier;
     type Error = Error;
 
-    fn create_key(&self, algorithm: rpki::repository::crypto::PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
+    fn create_key(&self, _algorithm: rpki::repository::crypto::PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
         unimplemented!("not needed in this context")
     }
 
@@ -91,7 +86,7 @@ impl rpki::repository::crypto::Signer for HttpsSigner {
             .map_err(rpki::repository::crypto::signer::KeyError::Signer)
     }
 
-    fn destroy_key(&self, key: &Self::KeyId) -> Result<(), rpki::repository::crypto::signer::KeyError<Self::Error>> {
+    fn destroy_key(&self, _key: &Self::KeyId) -> Result<(), rpki::repository::crypto::signer::KeyError<Self::Error>> {
         unimplemented!("not needed in this context")
     }
 
@@ -106,13 +101,13 @@ impl rpki::repository::crypto::Signer for HttpsSigner {
 
     fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
         &self,
-        algorithm: SignatureAlgorithm,
-        data: &D,
+        _algorithm: SignatureAlgorithm,
+        _data: &D,
     ) -> Result<(Signature, PublicKey), Self::Error> {
         unimplemented!("not needed in this context")
     }
 
-    fn rand(&self, target: &mut [u8]) -> Result<(), Self::Error> {
+    fn rand(&self, _target: &mut [u8]) -> Result<(), Self::Error> {
         unimplemented!("not needed in this context")
     }
 }

@@ -60,7 +60,7 @@ impl fmt::Display for CaCommandDetails {
             CaCommandResult::Events(events) => {
                 writeln!(f, "Changes:")?;
                 for evt in events {
-                    writeln!(f, "  {}", evt.details().to_string())?;
+                    writeln!(f, "  {}", evt.details())?;
                 }
             }
         }

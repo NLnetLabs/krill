@@ -61,7 +61,7 @@ impl fmt::Display for BgpAnalysisAdvice {
 
 //------------ BgpAnalysisSuggestion ---------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct BgpAnalysisSuggestion {
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
     stale: Vec<RoaDefinition>,
@@ -146,24 +146,6 @@ impl From<BgpAnalysisSuggestion> for RoaDefinitionUpdates {
         }
 
         RoaDefinitionUpdates::new(added, removed)
-    }
-}
-
-impl Default for BgpAnalysisSuggestion {
-    fn default() -> Self {
-        BgpAnalysisSuggestion {
-            stale: vec![],
-            not_found: vec![],
-            invalid_asn: vec![],
-            invalid_length: vec![],
-            too_permissive: vec![],
-            disallowing: vec![],
-            redundant: vec![],
-            not_held: vec![],
-            keep: vec![],
-            as0_redundant: vec![],
-            keep_disallowing: vec![],
-        }
     }
 }
 

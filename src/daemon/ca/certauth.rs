@@ -7,7 +7,7 @@ use rpki::{
     ca::{
         idcert::IdCert,
         idexchange,
-        idexchange::{ChildHandle, Handle, ParentHandle, RepoInfo},
+        idexchange::{ChildHandle, Handle, ParentHandle},
         provisioning,
         provisioning::{
             IssuanceRequest, IssuanceResponse, ProvisioningCms, RequestResourceLimit, ResourceClassEntitlements,
@@ -27,7 +27,7 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            self, AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate, CertAuthInfo,
+            AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate, CertAuthInfo,
             DelegatedCertificate, IdCertPem, ObjectName, ParentCaContact, RcvdCert, RepositoryContact, Revocation,
             RoaDefinition, RtaList, RtaName, RtaPrepResponse, StorableCaCommand, TaCertDetails, TrustAnchorLocator,
         },
@@ -1295,7 +1295,7 @@ impl CertAuth {
         signer: &KrillSigner,
     ) -> KrillResult<Vec<CaEvtDet>> {
         let repo = self.repository_contact()?;
-        rc.make_entitlement_events(self.handle(), entitlement, &repo.repo_info(), signer)
+        rc.make_entitlement_events(self.handle(), entitlement, repo.repo_info(), signer)
     }
 
     /// Returns the open revocation requests for the given parent.
@@ -1501,7 +1501,7 @@ impl CertAuth {
         for (rcn, rc) in self.resources.iter() {
             let mut started = false;
             let repo = self.repository_contact()?;
-            for details in rc.keyroll_initiate(&repo.repo_info(), duration, &signer)?.into_iter() {
+            for details in rc.keyroll_initiate(repo.repo_info(), duration, &signer)?.into_iter() {
                 started = true;
                 res.push(StoredEvent::new(self.handle(), version, details));
                 version += 1;

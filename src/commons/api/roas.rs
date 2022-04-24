@@ -317,7 +317,7 @@ impl fmt::Display for RoaDefinitions {
 /// Multiple updates are sent as a single delta, because it's important that
 /// all authorizations for a given prefix are published together in order to
 /// avoid invalidating announcements.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RoaDefinitionUpdates {
     added: Vec<RoaDefinition>,
     removed: Vec<RoaDefinition>,
@@ -356,15 +356,6 @@ impl RoaDefinitionUpdates {
 
     pub fn remove(&mut self, rem: RoaDefinition) {
         self.removed.push(rem);
-    }
-}
-
-impl Default for RoaDefinitionUpdates {
-    fn default() -> Self {
-        RoaDefinitionUpdates {
-            added: vec![],
-            removed: vec![],
-        }
     }
 }
 

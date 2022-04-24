@@ -18,7 +18,7 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::{DelegatedCertificate, RcvdCert, ReplacedObject},
+        api::{DelegatedCertificate, RcvdCert},
         crypto::KrillSigner,
         error::Error,
         util::AllowedUri,

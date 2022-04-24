@@ -22,7 +22,7 @@ const JSON_SUFFIX: &str = ".json";
 
 //------------ CaStatus ------------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CaStatus {
     repo: RepoStatus,
     parents: ParentStatuses,
@@ -54,16 +54,6 @@ impl CaStatus {
 
     pub fn children(&self) -> &HashMap<ChildHandle, ChildStatus> {
         &self.children
-    }
-}
-
-impl Default for CaStatus {
-    fn default() -> Self {
-        CaStatus {
-            repo: RepoStatus::default(),
-            parents: ParentStatuses::default(),
-            children: HashMap::new(),
-        }
     }
 }
 
@@ -212,7 +202,7 @@ impl StatusStore {
             .unwrap()
             .get(ca)
             .cloned()
-            .unwrap_or_else(|| CaStatus::default())
+            .unwrap_or_default()
     }
 
     pub fn set_parent_failure(

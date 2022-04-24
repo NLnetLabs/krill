@@ -579,6 +579,6 @@ impl RequestPath {
     where
         T: FromStr,
     {
-        self.next().map(|s| T::from_str(s).ok()).flatten()
+        self.next().and_then(|s| T::from_str(s).ok())
     }
 }

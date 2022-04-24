@@ -10,7 +10,7 @@ use rpki::{ca::idexchange::Handle, repository::x509::Time};
 
 use crate::{
     commons::{
-        crypto::{KrillSigner, KrillSignerBuilder},
+        crypto::KrillSignerBuilder,
         error::{Error, KrillIoError},
         eventsourcing::{AggregateStoreError, CommandKey, KeyStoreKey, KeyValueError, KeyValueStore, StoredValueInfo},
         util::{file, KrillVersion},
@@ -421,16 +421,6 @@ pub fn finalise_data_migration(upgrade: &UpgradeVersions, config: &Config) -> Kr
 
     Ok(())
 }
-
-// /// Should be called when Krill starts, before the KrillServer is initiated
-// pub fn pre_start_upgrade(config: Arc<Config>) -> Result<(), UpgradeError> {
-//     upgrade_data_to_0_9_0(config.clone())?;
-
-//     #[cfg(feature = "hsm")]
-//     record_preexisting_openssl_keys_in_signer_mapper(config.clone())?;
-
-//     Ok(())
-// }
 
 /// Prior to Krill having HSM support there was no signer mapper as it wasn't needed, keys were just created by OpenSSL
 /// and stored in files on disk in KEYS_DIR named by the string form of their Krill KeyIdentifier. If Krill had created
