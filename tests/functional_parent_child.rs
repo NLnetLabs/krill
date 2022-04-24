@@ -2,7 +2,9 @@
 //!
 use std::fs;
 
-use krill::{commons::api::ResourceSet, daemon::ca::ta_handle, test::*};
+use rpki::ca::resourceset::ResourceSet;
+
+use krill::{daemon::ca::ta_handle, test::*};
 
 #[tokio::test]
 async fn functional_parent_child() {
@@ -61,7 +63,7 @@ async fn functional_parent_child() {
     info("#                                                                #");
     info("##################################################################");
     info("");
-    assert!(ca_contains_resources(&testbed, &ResourceSet::all_resources()).await);
+    assert!(ca_contains_resources(&testbed, &ResourceSet::all()).await);
 
     // Verify that the TA published expected objects
     {

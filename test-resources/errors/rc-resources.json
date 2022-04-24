@@ -1,1 +1,1 @@
-{"label":"rc-resources","msg":"Mixed Address Families in configured resource set","args":{"cause":"Mixed Address Families in configured resource set"}}
+{"label":"rc-resources","msg":"cannot parse resource set","args":{"cause":"cannot parse resource set"}}

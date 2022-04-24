@@ -6,25 +6,31 @@ use std::{
 };
 
 use rpki::{
+    ca::{
+        idcert::IdCert,
+        idexchange,
+        idexchange::{ChildHandle, Handle, ParentHandle, PublisherHandle, RepoInfo},
+        provisioning::{IssuanceRequest, ResourceClassName, RevocationRequest},
+        publication::Base64,
+        resourceset::ResourceSet,
+    },
     repository::{
         crypto::KeyIdentifier,
         roa::Roa,
         x509::{Serial, Time},
     },
+    rrdp::Hash,
     uri,
 };
 
 use crate::{
     commons::{
+        api::rrdp::{CurrentObjects, DeltaElements, PublishElement, RrdpSession},
         api::{
-            rrdp::{CurrentObjects, DeltaElements, PublishElement, RrdpSession},
-            Base64, ChildHandle, Handle, HexEncodedHash, IssuanceRequest, IssuedCert, ObjectName, ParentCaContact,
-            ParentHandle, PublisherHandle, RcvdCert, RepoInfo, RepositoryContact, ResourceClassName, ResourceSet,
-            RevocationRequest, RevocationsDelta, RevokedObject, RoaAggregateKey, RtaName, TaCertDetails,
+            DelegatedCertificate, ObjectName, ParentCaContact, RcvdCert, RepositoryContact, RevocationsDelta,
+            RevokedObject, RoaAggregateKey, RtaName, TaCertDetails,
         },
-        crypto::IdCert,
         eventsourcing::StoredEvent,
-        remote::rfc8183,
     },
     daemon::ca::{self, CaEvt, CaEvtDet, PreparedRta, RouteAuthorization, SignedRta},
     pubd::{
@@ -86,8 +92,8 @@ impl From<OldPubdIniDet> for RepositoryAccessInitDetails {
 }
 
 pub struct DerivedEmbeddedCaMigrationInfo {
-    pub child_request: rfc8183::ChildRequest,
-    pub parent_responses: HashMap<ChildHandle, rfc8183::ParentResponse>,
+    pub child_request: idexchange::ChildRequest,
+    pub parent_responses: HashMap<ChildHandle, idexchange::ParentResponse>,
 }
 
 impl OldCaEvt {
@@ -330,7 +336,7 @@ impl fmt::Display for OldCaEvtDet {
 /// Describes an update to the set of ROAs under a ResourceClass.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldChildCertificateUpdates {
-    issued: Vec<IssuedCert>,
+    issued: Vec<DelegatedCertificate>,
     removed: Vec<KeyIdentifier>,
 }
 
@@ -341,7 +347,7 @@ impl From<OldChildCertificateUpdates> for ca::ChildCertificateUpdates {
 }
 
 impl OldChildCertificateUpdates {
-    pub fn unpack(self) -> (Vec<IssuedCert>, Vec<KeyIdentifier>) {
+    pub fn unpack(self) -> (Vec<DelegatedCertificate>, Vec<KeyIdentifier>) {
         (self.issued, self.removed)
     }
 }
@@ -364,13 +370,13 @@ pub struct AddedObject {
 pub struct UpdatedObject {
     name: ObjectName,
     object: CurrentObject,
-    old: HexEncodedHash,
+    old: Hash,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WithdrawnObject {
     name: ObjectName,
-    hash: HexEncodedHash,
+    hash: Hash,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -557,24 +563,24 @@ impl From<OldPublisher> for Publisher {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct OldCurrentObjects(HashMap<HexEncodedHash, PublishElement>);
+pub struct OldCurrentObjects(HashMap<Hash, PublishElement>);
 
 impl OldCurrentObjects {
-    pub fn new(map: HashMap<HexEncodedHash, PublishElement>) -> Self {
+    pub fn new(map: HashMap<Hash, PublishElement>) -> Self {
         OldCurrentObjects(map)
     }
     pub fn apply_delta(&mut self, delta: DeltaElements) {
         let (publishes, updates, withdraws) = delta.unpack();
 
         for p in publishes {
-            let hash = p.base64().to_encoded_hash();
+            let hash = p.base64().to_hash();
             self.0.insert(hash, p);
         }
 
         for u in updates {
             self.0.remove(u.hash());
             let p: PublishElement = u.into();
-            let hash = p.base64().to_encoded_hash();
+            let hash = p.base64().to_hash();
             self.0.insert(hash, p);
         }
 

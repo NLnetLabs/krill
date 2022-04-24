@@ -8,131 +8,22 @@ use std::{
     sync::Arc,
 };
 
-use rfc8183::ServiceUri;
 use serde::{
     de, {Deserialize, Deserializer, Serialize, Serializer},
 };
 
-use rpki::{repository::cert::Cert, uri};
-
-use crate::commons::{
-    api::{
-        ca::{ResourceSet, TrustAnchorLocator},
-        rrdp::PublishElement,
-        RepoInfo, Timestamp,
+use rpki::{
+    ca::{
+        idcert::IdCert,
+        idexchange,
+        idexchange::{Handle, ParentHandle, PublisherHandle, RepoInfo},
+        resourceset::ResourceSet,
     },
-    crypto::IdCert,
-    remote::rfc8183,
+    repository::cert::Cert,
+    uri,
 };
 
-//------------ Handle --------------------------------------------------------
-
-// Some type aliases that help make the use of Handles more explicit.
-pub type ParentHandle = Handle;
-pub type ChildHandle = Handle;
-pub type PublisherHandle = Handle;
-pub type RepositoryHandle = Handle;
-
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct Handle {
-    name: Arc<str>,
-}
-
-impl Handle {
-    pub fn as_str(&self) -> &str {
-        self.as_ref()
-    }
-
-    /// We replace "/" with "+" and "\" with "=" to make file system
-    /// safe names.
-    pub fn to_path_buf(&self) -> PathBuf {
-        let s = self.to_string();
-        let s = s.replace("/", "+");
-        let s = s.replace("\\", "=");
-        PathBuf::from(s)
-    }
-}
-
-impl TryFrom<&PathBuf> for Handle {
-    type Error = InvalidHandle;
-
-    fn try_from(path: &PathBuf) -> Result<Self, Self::Error> {
-        if let Some(path) = path.file_name() {
-            let s = path.to_string_lossy().to_string();
-            let s = s.replace("+", "/");
-            let s = s.replace("=", "\\");
-            Self::from_str(&s)
-        } else {
-            Err(InvalidHandle)
-        }
-    }
-}
-
-impl FromStr for Handle {
-    type Err = InvalidHandle;
-
-    /// Accepted pattern: [-_A-Za-z0-9/]{1,255}
-    /// See Appendix A of RFC8183.
-    ///
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'/' || b == b'\\')
-            && !s.is_empty()
-            && s.len() < 256
-        {
-            Ok(Handle { name: s.into() })
-        } else {
-            Err(InvalidHandle)
-        }
-    }
-}
-
-impl AsRef<str> for Handle {
-    fn as_ref(&self) -> &str {
-        &self.name
-    }
-}
-
-impl AsRef<[u8]> for Handle {
-    fn as_ref(&self) -> &[u8] {
-        self.name.as_bytes()
-    }
-}
-
-impl fmt::Display for Handle {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
-}
-
-impl Serialize for Handle {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        self.to_string().serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for Handle {
-    fn deserialize<D>(deserializer: D) -> Result<Handle, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let string = String::deserialize(deserializer)?;
-        let handle = Handle::from_str(&string).map_err(de::Error::custom)?;
-        Ok(handle)
-    }
-}
-
-#[derive(Debug)]
-pub struct InvalidHandle;
-
-impl fmt::Display for InvalidHandle {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Handle MUST have pattern: [-_A-Za-z0-9/]{{1,255}}")
-    }
-}
+use crate::commons::api::{ca::TrustAnchorLocator, rrdp::PublishElement, Timestamp};
 
 //------------ Token ------------------------------------------------------
 
@@ -305,11 +196,11 @@ impl fmt::Display for PublisherDetails {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[allow(clippy::large_enum_variant)]
 pub struct RepositoryContact {
-    repository_response: rfc8183::RepositoryResponse,
+    repository_response: idexchange::RepositoryResponse,
 }
 
 impl RepositoryContact {
-    pub fn new(repository_response: rfc8183::RepositoryResponse) -> Self {
+    pub fn new(repository_response: idexchange::RepositoryResponse) -> Self {
         RepositoryContact { repository_response }
     }
 
@@ -317,7 +208,7 @@ impl RepositoryContact {
         self.repository_response.service_uri().to_string()
     }
 
-    pub fn response(&self) -> &rfc8183::RepositoryResponse {
+    pub fn response(&self) -> &idexchange::RepositoryResponse {
         &self.repository_response
     }
 
@@ -325,18 +216,14 @@ impl RepositoryContact {
         self.repository_response.repo_info()
     }
 
-    pub fn service_uri(&self) -> &ServiceUri {
+    pub fn service_uri(&self) -> &idexchange::ServiceUri {
         self.repository_response.service_uri()
     }
 }
 
 impl fmt::Display for RepositoryContact {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "remote publication server at {}",
-            self.repository_response.service_uri()
-        )
+        write!(f, "publication server at {}", self.repository_response.service_uri())
     }
 }
 
@@ -434,11 +321,11 @@ impl Eq for TaCertDetails {}
 #[serde(tag = "type")]
 pub enum ParentCaContact {
     Ta(TaCertDetails),
-    Rfc6492(rfc8183::ParentResponse),
+    Rfc6492(idexchange::ParentResponse),
 }
 
 impl ParentCaContact {
-    pub fn for_rfc6492(response: rfc8183::ParentResponse) -> Self {
+    pub fn for_rfc6492(response: idexchange::ParentResponse) -> Self {
         ParentCaContact::Rfc6492(response)
     }
 
@@ -446,7 +333,7 @@ impl ParentCaContact {
         ParentCaContact::Ta(ta_cert_details)
     }
 
-    pub fn parent_response(&self) -> Option<&rfc8183::ParentResponse> {
+    pub fn parent_response(&self) -> Option<&idexchange::ParentResponse> {
         match &self {
             ParentCaContact::Ta(_) => None,
             ParentCaContact::Rfc6492(res) => Some(res),
@@ -464,7 +351,7 @@ impl ParentCaContact {
         matches!(*self, ParentCaContact::Ta(_))
     }
 
-    pub fn parent_uri(&self) -> Option<&ServiceUri> {
+    pub fn parent_uri(&self) -> Option<&idexchange::ServiceUri> {
         match &self {
             ParentCaContact::Ta(_) => None,
             ParentCaContact::Rfc6492(parent) => Some(parent.service_uri()),
@@ -475,12 +362,8 @@ impl ParentCaContact {
 impl fmt::Display for ParentCaContact {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ParentCaContact::Ta(details) => write!(f, "{}", details.tal()),
-            ParentCaContact::Rfc6492(response) => {
-                let bytes = response.encode_vec();
-                let xml = unsafe { from_utf8_unchecked(&bytes) };
-                write!(f, "{}", xml)
-            }
+            ParentCaContact::Ta(details) => details.tal().fmt(f),
+            ParentCaContact::Rfc6492(response) => response.fmt(f),
         }
     }
 }

@@ -3,11 +3,10 @@
 use std::fs;
 use std::str::FromStr;
 
+use rpki::ca::{idexchange::Handle, provisioning::ResourceClassName, resourceset::ResourceSet};
+
 use krill::{
-    commons::api::{
-        AspaCustomer, AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, Handle, ObjectName, ResourceClassName,
-        ResourceSet,
-    },
+    commons::api::{AspaCustomer, AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, ObjectName},
     daemon::ca::ta_handle,
     test::*,
 };
@@ -48,7 +47,7 @@ async fn functional_aspa() {
     info("#                                                                #");
     info("##################################################################");
     info("");
-    assert!(ca_contains_resources(&testbed, &ResourceSet::all_resources()).await);
+    assert!(ca_contains_resources(&testbed, &ResourceSet::all()).await);
 
     // Verify that the TA published expected objects
     {

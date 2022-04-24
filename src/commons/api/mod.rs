@@ -12,12 +12,6 @@ pub use self::ca::*;
 mod history;
 pub use self::history::*;
 
-mod provisioning;
-pub use self::provisioning::*;
-
-mod publication;
-pub use self::publication::*;
-
 mod roas;
 pub use self::roas::*;
 
@@ -26,10 +20,15 @@ pub mod rrdp;
 use std::{collections::HashMap, fmt, sync::Arc};
 
 use bytes::Bytes;
+use rpki::ca::provisioning::ResourceClassName;
+use rpki::ca::publication::Base64;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use rpki::repository::{
-    aspa::Aspa, cert::Cert, crl::Crl, crypto::KeyIdentifier, manifest::Manifest, resources::Asn, roa::Roa,
+use rpki::{
+    ca::idexchange::{ChildHandle, Handle, ParentHandle, PublisherHandle},
+    repository::{
+        aspa::Aspa, cert::Cert, crl::Crl, crypto::KeyIdentifier, manifest::Manifest, resources::Asn, roa::Roa,
+    },
 };
 
 use crate::{
@@ -43,184 +42,194 @@ pub type Label = String;
 pub type ArgKey = String;
 pub type ArgVal = String;
 
-//------------ Base64 --------------------------------------------------------
+// //------------ Base64 --------------------------------------------------------
 
-/// This type contains a base64 encoded structure. The publication protocol
-/// deals with objects in their base64 encoded form.
-///
-/// Note that we store this in a Bytes to make it cheap to clone this.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Base64(Bytes);
+// /// This type contains a base64 encoded structure. The publication protocol
+// /// deals with objects in their base64 encoded form.
+// ///
+// /// Note that we store this in a Bytes to make it cheap to clone this.
+// #[derive(Clone, Debug, Eq, PartialEq)]
+// pub struct Base64(Bytes);
 
-impl Base64 {
-    pub fn from_content(content: &[u8]) -> Self {
-        Base64::from(base64::encode(content))
-    }
+// impl Base64 {
+//     pub fn from_content(content: &[u8]) -> Self {
+//         Base64::from(base64::encode(content))
+//     }
 
-    /// Decodes into bytes (e.g. for saving to disk for rsync)
-    pub fn to_bytes(&self) -> Bytes {
-        Bytes::from(base64::decode(&self.0).unwrap())
-    }
+//     /// Decodes into bytes (e.g. for saving to disk for rsync)
+//     pub fn to_bytes(&self) -> Bytes {
+//         Bytes::from(base64::decode(&self.0).unwrap())
+//     }
 
-    pub fn to_hex_hash(&self) -> String {
-        hex::encode(sha256(&self.to_bytes()))
-    }
+//     pub fn to_hex_hash(&self) -> String {
+//         hex::encode(sha256(&self.to_bytes()))
+//     }
 
-    pub fn to_encoded_hash(&self) -> HexEncodedHash {
-        HexEncodedHash::from(self.to_hex_hash())
-    }
+//     pub fn to_hex_encoded_hash(&self) -> HexEncodedHash {
+//         HexEncodedHash::from(self.to_hex_hash())
+//     }
 
-    pub fn size(&self) -> usize {
-        self.0.len()
-    }
-}
+//     pub fn to_rrdp_hash(&self) -> rpki::rrdp::Hash {
+//         rpki::rrdp::Hash::from_data(&self.to_bytes())
+//     }
 
-impl AsRef<str> for Base64 {
-    fn as_ref(&self) -> &str {
-        use std::str;
-        str::from_utf8(&self.0).unwrap()
-    }
-}
+//     pub fn size(&self) -> usize {
+//         self.0.len()
+//     }
+// }
 
-impl From<String> for Base64 {
-    fn from(s: String) -> Self {
-        Base64(Bytes::from(s))
-    }
-}
+// impl AsRef<str> for Base64 {
+//     fn as_ref(&self) -> &str {
+//         use std::str;
+//         str::from_utf8(&self.0).unwrap()
+//     }
+// }
 
-impl From<&Cert> for Base64 {
-    fn from(cert: &Cert) -> Self {
-        Base64::from_content(&cert.to_captured().into_bytes())
-    }
-}
+// impl From<String> for Base64 {
+//     fn from(s: String) -> Self {
+//         Base64(Bytes::from(s))
+//     }
+// }
 
-impl From<&Roa> for Base64 {
-    fn from(roa: &Roa) -> Self {
-        Base64::from_content(&roa.to_captured().into_bytes())
-    }
-}
+// impl From<&Cert> for Base64 {
+//     fn from(cert: &Cert) -> Self {
+//         Base64::from_content(&cert.to_captured().into_bytes())
+//     }
+// }
 
-impl From<&Aspa> for Base64 {
-    fn from(aspa: &Aspa) -> Self {
-        Base64::from_content(&aspa.to_captured().into_bytes())
-    }
-}
+// impl From<&Roa> for Base64 {
+//     fn from(roa: &Roa) -> Self {
+//         Base64::from_content(&roa.to_captured().into_bytes())
+//     }
+// }
 
-impl From<&Manifest> for Base64 {
-    fn from(mft: &Manifest) -> Self {
-        Base64::from_content(&mft.to_captured().into_bytes())
-    }
-}
+// impl From<&Aspa> for Base64 {
+//     fn from(aspa: &Aspa) -> Self {
+//         Base64::from_content(&aspa.to_captured().into_bytes())
+//     }
+// }
 
-impl From<&Crl> for Base64 {
-    fn from(crl: &Crl) -> Self {
-        Base64::from_content(&crl.to_captured().into_bytes())
-    }
-}
+// impl From<&Manifest> for Base64 {
+//     fn from(mft: &Manifest) -> Self {
+//         Base64::from_content(&mft.to_captured().into_bytes())
+//     }
+// }
 
-impl fmt::Display for Base64 {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", unsafe { std::str::from_utf8_unchecked(self.0.as_ref()) })
-    }
-}
+// impl From<&Crl> for Base64 {
+//     fn from(crl: &Crl) -> Self {
+//         Base64::from_content(&crl.to_captured().into_bytes())
+//     }
+// }
 
-impl Serialize for Base64 {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        self.to_string().serialize(serializer)
-    }
-}
+// impl fmt::Display for Base64 {
+//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+//         write!(f, "{}", unsafe { std::str::from_utf8_unchecked(self.0.as_ref()) })
+//     }
+// }
 
-impl<'de> Deserialize<'de> for Base64 {
-    fn deserialize<D>(deserializer: D) -> Result<Base64, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let string = String::deserialize(deserializer)?;
-        Ok(Base64::from(string))
-    }
-}
+// impl Serialize for Base64 {
+//     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+//     where
+//         S: Serializer,
+//     {
+//         self.to_string().serialize(serializer)
+//     }
+// }
 
-//------------ HexEncodedHash ------------------------------------------------
+// impl<'de> Deserialize<'de> for Base64 {
+//     fn deserialize<D>(deserializer: D) -> Result<Base64, D::Error>
+//     where
+//         D: Deserializer<'de>,
+//     {
+//         let string = String::deserialize(deserializer)?;
+//         Ok(Base64::from(string))
+//     }
+// }
 
-/// This type contains a hex encoded sha256 hash.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct HexEncodedHash(Arc<str>);
+// //------------ HexEncodedHash ------------------------------------------------
 
-impl HexEncodedHash {
-    pub fn from_content(content: &[u8]) -> Self {
-        let sha256 = sha256(content);
-        let hex = hex::encode(sha256);
-        HexEncodedHash(hex.into())
-    }
+// /// This type contains a hex encoded sha256 hash.
+// #[derive(Clone, Debug, Eq, Hash, PartialEq)]
+// pub struct HexEncodedHash(Arc<str>);
 
-    pub fn as_bytes(&self) -> Bytes {
-        Bytes::from(self.to_string())
-    }
-}
+// impl HexEncodedHash {
+//     pub fn from_content(content: &[u8]) -> Self {
+//         let sha256 = sha256(content);
+//         let hex = hex::encode(sha256);
+//         HexEncodedHash(hex.into())
+//     }
 
-impl AsRef<str> for HexEncodedHash {
-    fn as_ref(&self) -> &str {
-        &self.0
-    }
-}
+//     pub fn as_bytes(&self) -> Bytes {
+//         Bytes::from(self.to_string())
+//     }
+// }
 
-impl AsRef<[u8]> for HexEncodedHash {
-    fn as_ref(&self) -> &[u8] {
-        self.0.as_bytes()
-    }
-}
+// impl AsRef<str> for HexEncodedHash {
+//     fn as_ref(&self) -> &str {
+//         &self.0
+//     }
+// }
 
-impl From<&Crl> for HexEncodedHash {
-    fn from(crl: &Crl) -> Self {
-        Self::from_content(crl.to_captured().as_slice())
-    }
-}
+// impl AsRef<[u8]> for HexEncodedHash {
+//     fn as_ref(&self) -> &[u8] {
+//         self.0.as_bytes()
+//     }
+// }
 
-impl From<&Manifest> for HexEncodedHash {
-    fn from(mft: &Manifest) -> Self {
-        Self::from_content(mft.to_captured().as_slice())
-    }
-}
+// impl From<&Crl> for HexEncodedHash {
+//     fn from(crl: &Crl) -> Self {
+//         Self::from_content(crl.to_captured().as_slice())
+//     }
+// }
 
-impl From<&Cert> for HexEncodedHash {
-    fn from(cert: &Cert) -> Self {
-        Self::from_content(cert.to_captured().as_slice())
-    }
-}
+// impl From<&Manifest> for HexEncodedHash {
+//     fn from(mft: &Manifest) -> Self {
+//         Self::from_content(mft.to_captured().as_slice())
+//     }
+// }
 
-impl From<String> for HexEncodedHash {
-    fn from(s: String) -> Self {
-        HexEncodedHash(s.into())
-    }
-}
+// impl From<&Cert> for HexEncodedHash {
+//     fn from(cert: &Cert) -> Self {
+//         Self::from_content(cert.to_captured().as_slice())
+//     }
+// }
 
-impl Serialize for HexEncodedHash {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        self.0.serialize(serializer)
-    }
-}
+// impl From<&Base64> for HexEncodedHash {
+//     fn from(base64: &Base64) -> Self {
+//         Self::from_content(&base64.to_bytes())
+//     }
+// }
 
-impl<'de> Deserialize<'de> for HexEncodedHash {
-    fn deserialize<D>(deserializer: D) -> Result<HexEncodedHash, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let string = String::deserialize(deserializer)?;
-        Ok(HexEncodedHash(string.into()))
-    }
-}
+// impl From<String> for HexEncodedHash {
+//     fn from(s: String) -> Self {
+//         HexEncodedHash(s.into())
+//     }
+// }
 
-impl fmt::Display for HexEncodedHash {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
+// impl Serialize for HexEncodedHash {
+//     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+//     where
+//         S: Serializer,
+//     {
+//         self.0.serialize(serializer)
+//     }
+// }
+
+// impl<'de> Deserialize<'de> for HexEncodedHash {
+//     fn deserialize<D>(deserializer: D) -> Result<HexEncodedHash, D::Error>
+//     where
+//         D: Deserializer<'de>,
+//     {
+//         let string = String::deserialize(deserializer)?;
+//         Ok(HexEncodedHash(string.into()))
+//     }
+// }
+
+// impl fmt::Display for HexEncodedHash {
+//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+//         write!(f, "{}", self.0)
+//     }
+// }
 
 //------------ ErrorResponse --------------------------------------------------
 

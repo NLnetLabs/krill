@@ -1,13 +1,17 @@
 use std::{collections::HashMap, path::Path, str::FromStr, sync::RwLock};
 
+use rpki::ca::{
+    idexchange::{ChildHandle, Handle, ParentHandle, ServiceUri},
+    provisioning::ResourceClassListResponse as Entitlements,
+};
+
 use crate::commons::{
     api::{
-        rrdp::PublishElement, ChildConnectionStats, ChildHandle, ChildStatus, ChildrenConnectionStats, Entitlements,
-        ErrorResponse, Handle, ParentHandle, ParentStatus, ParentStatuses, RepoStatus, Timestamp,
+        rrdp::PublishElement, ChildConnectionStats, ChildStatus, ChildrenConnectionStats, ErrorResponse, ParentStatus,
+        ParentStatuses, RepoStatus, Timestamp,
     },
     error::Error,
     eventsourcing::{KeyStoreKey, KeyValueStore},
-    remote::rfc8183::ServiceUri,
     util::httpclient,
     KrillResult,
 };

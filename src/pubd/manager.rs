@@ -2,15 +2,20 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 
+use rpki::ca::{
+    idexchange,
+    idexchange::{PublisherHandle, RepoInfo},
+    publication,
+    publication::{ListReply, PublishDelta},
+};
+
 use crate::{
     commons::{
         actor::Actor,
-        api::{ListReply, PublicationServerUris, PublishDelta, PublisherDetails, PublisherHandle, RepoInfo},
+        api::{PublicationServerUris, PublisherDetails},
         crypto::KrillSigner,
         error::Error,
         remote::cmslogger::CmsLogger,
-        remote::rfc8181,
-        remote::rfc8183,
         KrillResult,
     },
     daemon::config::Config,
@@ -83,30 +88,30 @@ impl RepositoryManager {
     pub fn rfc8181(&self, publisher_handle: PublisherHandle, msg_bytes: Bytes) -> KrillResult<Bytes> {
         let cms_logger = CmsLogger::for_rfc8181_rcvd(self.config.rfc8181_log_dir.as_ref(), &publisher_handle);
 
-        let msg = self.access.validate(&publisher_handle, msg_bytes.clone())?;
-        let content = rfc8181::Message::from_signed_message(&msg)?;
-        let query = content.into_query()?;
+        let cms = self.access.decode_and_validate(&publisher_handle, &msg_bytes)?;
+        let message = cms.into_message();
+        let query = message.as_query()?;
 
         let (response, should_log_cms) = match query {
-            rfc8181::QueryMessage::ListQuery => {
+            publication::QueryMessage::ListQuery => {
                 let list_reply = self.list(&publisher_handle)?;
-                (rfc8181::Message::list_reply(list_reply), false)
+                (publication::Message::list_reply(list_reply), false)
             }
-            rfc8181::QueryMessage::PublishDelta(delta) => match self.publish(publisher_handle.clone(), delta) {
-                Ok(()) => (rfc8181::Message::success_reply(), true),
+            publication::QueryMessage::Delta(delta) => match self.publish(publisher_handle.clone(), delta) {
+                Ok(()) => (publication::Message::success(), true),
                 Err(e) => {
                     warn!("Rejecting delta sent by: {}. Error was: {}", publisher_handle, e);
 
                     let error_code = e.to_rfc8181_error_code();
-                    let report_error = rfc8181::ReportError::reply(error_code, None);
-                    let mut builder = rfc8181::ErrorReply::build_with_capacity(1);
-                    builder.add(report_error);
-                    (builder.build_message(), true)
+                    let report_error = publication::ReportError::with_code(error_code);
+                    let error_reply = publication::ErrorReply::for_error(report_error);
+
+                    (publication::Message::error(error_reply), true)
                 }
             },
         };
 
-        let response_bytes = self.access.respond(response.into_bytes(), &self.signer)?;
+        let response_bytes = self.access.respond(response, &self.signer)?.to_bytes();
 
         if should_log_cms {
             cms_logger.received(&msg_bytes)?;
@@ -158,13 +163,13 @@ impl RepositoryManager {
     }
 
     /// Returns the RFC8183 Repository Response for the publisher.
-    pub fn repository_response(&self, publisher: &PublisherHandle) -> KrillResult<rfc8183::RepositoryResponse> {
+    pub fn repository_response(&self, publisher: &PublisherHandle) -> KrillResult<idexchange::RepositoryResponse> {
         let rfc8181_uri = self.config.rfc8181_uri(publisher);
         self.access.repository_response(rfc8181_uri, publisher)
     }
 
     /// Adds a publisher. This will fail if a publisher already exists for the handle in the request.
-    pub fn create_publisher(&self, req: rfc8183::PublisherRequest, actor: &Actor) -> KrillResult<()> {
+    pub fn create_publisher(&self, req: idexchange::PublisherRequest, actor: &Actor) -> KrillResult<()> {
         let name = req.publisher_handle().clone();
 
         self.access.add_publisher(req, actor)?;
@@ -206,13 +211,15 @@ mod tests {
     use bytes::Bytes;
     use tokio::time::sleep;
 
-    use rpki::uri;
-
-    use crate::{commons::crypto::KrillSignerBuilder, constants::*, pubd::RrdpServer};
-
-    use crate::{
-        commons::crypto::OpenSslSignerConfig,
-        daemon::config::{SignerConfig, SignerType},
+    use rpki::{
+        ca::{
+            idcert::IdCert,
+            idexchange::Handle,
+            publication::{ListElement, PublishDelta},
+        },
+        repository::x509::{Time, Validity},
+        rrdp::Delta,
+        uri,
     };
 
     use super::*;
@@ -220,11 +227,13 @@ mod tests {
     use crate::{
         commons::{
             api::rrdp::{PublicationDeltaError, RrdpSession},
-            api::{Handle, ListElement, PublishDeltaBuilder},
-            crypto::{IdCert, IdCertBuilder},
+            crypto::{KrillSignerBuilder, OpenSslSignerConfig},
             util::file::{self, CurrentFile},
         },
+        constants::*,
+        daemon::config::{SignerConfig, SignerType},
         pubd::Publisher,
+        pubd::RrdpServer,
         test::{self, https, init_config, rsync},
     };
 
@@ -243,16 +252,15 @@ mod tests {
                 .unwrap()
         };
 
-        let key = signer.create_key().unwrap();
-        let id_cert = IdCertBuilder::new_ta_id_cert(&key, &signer).unwrap();
+        let id_cert = signer.create_self_signed_id_cert().unwrap();
         let base_uri = uri::Rsync::from_str("rsync://localhost/repo/alice/").unwrap();
 
         Publisher::new(id_cert, base_uri)
     }
 
-    fn make_publisher_req(handle: &str, id_cert: &IdCert) -> rfc8183::PublisherRequest {
+    fn make_publisher_req(handle: &str, id_cert: &IdCert) -> idexchange::PublisherRequest {
         let handle = Handle::from_str(handle).unwrap();
-        rfc8183::PublisherRequest::new(None, handle, id_cert.clone())
+        idexchange::PublisherRequest::new(id_cert.clone(), handle, None)
     }
 
     fn make_server(work_dir: &Path) -> RepositoryManager {
@@ -377,10 +385,9 @@ mod tests {
             &Bytes::from("example content 2"),
         );
 
-        let mut builder = PublishDeltaBuilder::new();
-        builder.add_publish(file1.as_publish());
-        builder.add_publish(file2.as_publish());
-        let delta = builder.finish();
+        let mut delta = PublishDelta::empty();
+        delta.add_publish(file1.as_publish());
+        delta.add_publish(file2.as_publish());
 
         server.publish(alice_handle.clone(), delta).unwrap();
 
@@ -408,11 +415,10 @@ mod tests {
             &Bytes::from_static(big_file_3),
         );
 
-        let mut builder = PublishDeltaBuilder::new();
-        builder.add_update(file1_update.as_update(file1.hash()));
-        builder.add_withdraw(file2.as_withdraw());
-        builder.add_publish(file3.as_publish());
-        let delta = builder.finish();
+        let mut delta = PublishDelta::empty();
+        delta.add_update(file1_update.as_update(file1.hash()));
+        delta.add_withdraw(file2.as_withdraw());
+        delta.add_publish(file3.as_publish());
 
         server.publish(alice_handle.clone(), delta).unwrap();
 
@@ -434,9 +440,8 @@ mod tests {
             test::rsync("rsync://localhost/repo/bob/file.txt"),
             &Bytes::from("irrelevant"),
         );
-        let mut builder = PublishDeltaBuilder::new();
-        builder.add_publish(file_outside.as_publish());
-        let delta = builder.finish();
+        let mut delta = PublishDelta::empty();
+        delta.add_publish(file_outside.as_publish());
 
         match server.publish(alice_handle.clone(), delta) {
             Err(Error::Rfc8181Delta(PublicationDeltaError::UriOutsideJail(_, _))) => {} // ok
@@ -448,9 +453,8 @@ mod tests {
             test::rsync("rsync://localhost/repo/alice/file2.txt"),
             &Bytes::from("example content 2 updated"),
         ); // file2 was removed
-        let mut builder = PublishDeltaBuilder::new();
-        builder.add_update(file2_update.as_update(file2.hash()));
-        let delta = builder.finish();
+        let mut delta = PublishDelta::empty();
+        delta.add_update(file2_update.as_update(file2.hash()));
 
         match server.publish(alice_handle.clone(), delta) {
             Err(Error::Rfc8181Delta(PublicationDeltaError::NoObjectForHashAndOrUri(_))) => {}
@@ -458,9 +462,8 @@ mod tests {
         }
 
         // should reject withdraw for file that does not exist
-        let mut builder = PublishDeltaBuilder::new();
-        builder.add_withdraw(file2.as_withdraw());
-        let delta = builder.finish();
+        let mut delta = PublishDelta::empty();
+        delta.add_withdraw(file2.as_withdraw());
 
         match server.publish(alice_handle.clone(), delta) {
             Err(Error::Rfc8181Delta(PublicationDeltaError::NoObjectForHashAndOrUri(_))) => {} // ok
@@ -468,9 +471,8 @@ mod tests {
         }
 
         // should reject publish for file that does exist
-        let mut builder = PublishDeltaBuilder::new();
-        builder.add_publish(file3.as_publish());
-        let delta = builder.finish();
+        let mut delta = PublishDelta::empty();
+        delta.add_publish(file3.as_publish());
 
         match server.publish(alice_handle.clone(), delta) {
             Err(Error::Rfc8181Delta(PublicationDeltaError::ObjectAlreadyPresent(uri))) => {
@@ -500,9 +502,8 @@ mod tests {
         //
         let file4 = CurrentFile::new(test::rsync("rsync://localhost/repo/alice/file4.txt"), &Bytes::from("4"));
 
-        let mut builder = PublishDeltaBuilder::new();
-        builder.add_publish(file4.as_publish());
-        let delta = builder.finish();
+        let mut delta = PublishDelta::empty();
+        delta.add_publish(file4.as_publish());
 
         server.publish(alice_handle.clone(), delta).unwrap();
 
@@ -578,10 +579,9 @@ mod tests {
             &Bytes::from("example content 2"),
         );
 
-        let mut builder = PublishDeltaBuilder::new();
-        builder.add_publish(file1.as_publish());
-        builder.add_publish(file2.as_publish());
-        let delta = builder.finish();
+        let mut delta = PublishDelta::empty();
+        delta.add_publish(file1.as_publish());
+        delta.add_publish(file2.as_publish());
 
         server.publish(alice_handle.clone(), delta).unwrap();
 

@@ -15,7 +15,16 @@ use bytes::Bytes;
 use hyper::StatusCode;
 use tokio::time::{sleep, timeout};
 
-use rpki::{repository::crypto::KeyIdentifier, uri};
+use rpki::{
+    ca::{
+        idexchange,
+        idexchange::{ChildHandle, Handle, ParentHandle, PublisherHandle},
+        provisioning::ResourceClassName,
+        resourceset::ResourceSet,
+    },
+    repository::crypto::KeyIdentifier,
+    uri,
+};
 
 use crate::{
     cli::{
@@ -26,15 +35,12 @@ use crate::{
     commons::{
         api::{
             AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, CertAuthInfo,
-            CertAuthInit, CertifiedKeyInfo, ChildHandle, Handle, ObjectName, ParentCaContact, ParentCaReq,
-            ParentHandle, ParentStatuses, PublicationServerUris, PublisherDetails, PublisherHandle, PublisherList,
-            RepositoryContact, ResourceClassKeysInfo, ResourceClassName, ResourceSet, RoaDefinition,
-            RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, TypedPrefix, UpdateChildRequest,
+            CertAuthInit, CertifiedKeyInfo, ObjectName, ParentCaContact, ParentCaReq, ParentStatuses,
+            PublicationServerUris, PublisherDetails, PublisherList, RepositoryContact, ResourceClassKeysInfo,
+            RoaDefinition, RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, TypedPrefix, UpdateChildRequest,
         },
         bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion},
         crypto::SignSupport,
-        remote::rfc8183,
-        remote::rfc8183::{ChildRequest, RepositoryResponse},
         util::httpclient,
     },
     daemon::{
@@ -45,7 +51,7 @@ use crate::{
 };
 
 #[cfg(test)]
-use crate::commons::crypto::IdCert;
+use rpki::ca::idcert::IdCert;
 
 pub const KRILL_SERVER_URI: &str = "https://localhost:3000/";
 pub const KRILL_PUBD_SERVER_URI: &str = "https://localhost:3001/";
@@ -250,7 +256,7 @@ pub async fn delete_ca(ca: &Handle) {
     krill_admin(Command::CertAuth(CaCommand::Delete(ca.clone()))).await;
 }
 
-pub async fn ca_repo_update_rfc8181(handle: &Handle, response: RepositoryResponse) {
+pub async fn ca_repo_update_rfc8181(handle: &Handle, response: idexchange::RepositoryResponse) {
     krill_admin(Command::CertAuth(CaCommand::RepoUpdate(
         handle.clone(),
         RepositoryContact::new(response),
@@ -270,11 +276,11 @@ pub async fn parent_contact(handle: &Handle, child: &ChildHandle) -> ParentCaCon
     .await
     {
         ApiResponse::ParentCaContact(contact) => contact,
-        _ => panic!("Expected RFC8183 parent response"),
+        _ => panic!("Expected idexchange:: parent response"),
     }
 }
 
-pub async fn request(handle: &Handle) -> rfc8183::ChildRequest {
+pub async fn request(handle: &Handle) -> idexchange::ChildRequest {
     match krill_admin(Command::CertAuth(CaCommand::ChildRequest(handle.clone()))).await {
         ApiResponse::Rfc8183ChildRequest(req) => req,
         _ => panic!("Expected child request"),
@@ -283,10 +289,10 @@ pub async fn request(handle: &Handle) -> rfc8183::ChildRequest {
 
 pub async fn add_child_to_ta_rfc6492(
     handle: &Handle,
-    child_request: rfc8183::ChildRequest,
+    child_request: idexchange::ChildRequest,
     resources: ResourceSet,
 ) -> ParentCaContact {
-    let (_, _, id_cert) = child_request.unpack();
+    let (id_cert, _, _) = child_request.unpack();
     let req = AddChildRequest::new(handle.clone(), resources, id_cert);
     let res = krill_admin(Command::CertAuth(CaCommand::ChildAdd(ta_handle(), req))).await;
 
@@ -299,10 +305,10 @@ pub async fn add_child_to_ta_rfc6492(
 pub async fn add_child_rfc6492(
     parent: &ParentHandle,
     child: &ChildHandle,
-    child_request: rfc8183::ChildRequest,
+    child_request: idexchange::ChildRequest,
     resources: ResourceSet,
 ) -> ParentCaContact {
-    let (_, _, id_cert) = child_request.unpack();
+    let (id_cert, _, _) = child_request.unpack();
 
     let add_child_request = AddChildRequest::new(child.clone(), resources, id_cert);
 
@@ -322,8 +328,8 @@ pub async fn update_child(ca: &Handle, child: &ChildHandle, resources: &Resource
     send_child_request(ca, child, req).await
 }
 
-pub async fn update_child_id(ca: &Handle, child: &ChildHandle, req: ChildRequest) {
-    let (_, _, id) = req.unpack();
+pub async fn update_child_id(ca: &Handle, child: &ChildHandle, req: idexchange::ChildRequest) {
+    let (id, _, _) = req.unpack();
     let req = UpdateChildRequest::id_cert(id);
     send_child_request(ca, child, req).await
 }
@@ -592,7 +598,7 @@ pub async fn dedicated_repo_publisher_details(publisher: &PublisherHandle) -> Pu
     }
 }
 
-pub async fn publisher_request(handle: &Handle) -> rfc8183::PublisherRequest {
+pub async fn publisher_request(handle: &Handle) -> idexchange::PublisherRequest {
     match krill_admin(Command::CertAuth(CaCommand::RepoPublisherRequest(handle.clone()))).await {
         ApiResponse::Rfc8183PublisherRequest(req) => req,
         _ => panic!("Expected publisher request"),
@@ -691,7 +697,7 @@ pub async fn repo_update(ca: &Handle, contact: RepositoryContact) {
     krill_admin(command).await;
 }
 
-pub async fn embedded_repository_response(publisher: &PublisherHandle) -> rfc8183::RepositoryResponse {
+pub async fn embedded_repository_response(publisher: &PublisherHandle) -> idexchange::RepositoryResponse {
     let command = PubServerCommand::RepositoryResponse(publisher.clone());
     match krill_embedded_pubd_admin(command).await {
         ApiResponse::Rfc8183RepositoryResponse(response) => response,
@@ -699,12 +705,12 @@ pub async fn embedded_repository_response(publisher: &PublisherHandle) -> rfc818
     }
 }
 
-pub async fn embedded_repo_add_publisher(req: rfc8183::PublisherRequest) {
+pub async fn embedded_repo_add_publisher(req: idexchange::PublisherRequest) {
     let command = PubServerCommand::AddPublisher(req);
     krill_embedded_pubd_admin(command).await;
 }
 
-pub async fn dedicated_repository_response(publisher: &PublisherHandle) -> rfc8183::RepositoryResponse {
+pub async fn dedicated_repository_response(publisher: &PublisherHandle) -> idexchange::RepositoryResponse {
     let command = PubServerCommand::RepositoryResponse(publisher.clone());
     match krill_dedicated_pubd_admin(command).await {
         ApiResponse::Rfc8183RepositoryResponse(response) => response,
@@ -712,7 +718,7 @@ pub async fn dedicated_repository_response(publisher: &PublisherHandle) -> rfc81
     }
 }
 
-pub async fn dedicated_repo_add_publisher(req: rfc8183::PublisherRequest) {
+pub async fn dedicated_repo_add_publisher(req: idexchange::PublisherRequest) {
     let command = PubServerCommand::AddPublisher(req);
     krill_dedicated_pubd_admin(command).await;
 }

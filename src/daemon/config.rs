@@ -14,11 +14,11 @@ use serde::{de, Deserialize, Deserializer};
 #[cfg(unix)]
 use syslog::Facility;
 
-use rpki::{repository::x509::Time, uri};
+use rpki::{ca::idexchange::PublisherHandle, repository::x509::Time, uri};
 
 use crate::{
     commons::{
-        api::{PublicationServerUris, PublisherHandle, Token},
+        api::{PublicationServerUris, Token},
         crypto::OpenSslSignerConfig,
         error::KrillIoError,
         util::ext_serde,

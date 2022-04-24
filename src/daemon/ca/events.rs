@@ -1,16 +1,23 @@
 use std::{collections::HashMap, fmt};
 
-use rpki::repository::crypto::KeyIdentifier;
+use rpki::{
+    ca::{
+        idcert::IdCert,
+        idexchange::{ChildHandle, Handle, ParentHandle},
+        provisioning::{IssuanceRequest, ParentResourceClassName, ResourceClassName, RevocationRequest},
+        resourceset::ResourceSet,
+    },
+    repository::crypto::KeyIdentifier,
+};
 
 use crate::{
     commons::{
         api::{
-            AspaCustomer, AspaDefinition, AspaProvidersUpdate, ChildHandle, Handle, IssuanceRequest, IssuedCert,
-            ObjectName, ParentCaContact, ParentHandle, ParentResourceClassName, RcvdCert, RepositoryContact,
-            ResourceClassName, ResourceSet, RevocationRequest, RevokedObject, RoaAggregateKey, RtaName, SuspendedCert,
-            TaCertDetails, UnsuspendedCert,
+            AspaCustomer, AspaDefinition, AspaProvidersUpdate, DelegatedCertificate, ObjectName, ParentCaContact,
+            RcvdCert, RepositoryContact, RevokedObject, RoaAggregateKey, RtaName, SuspendedCert, TaCertDetails,
+            UnsuspendedCert,
         },
-        crypto::{IdCert, KrillSigner},
+        crypto::KrillSigner,
         eventsourcing::StoredEvent,
         KrillResult,
     },
@@ -428,7 +435,7 @@ impl AspaObjectsUpdates {
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildCertificateUpdates {
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    issued: Vec<IssuedCert>,
+    issued: Vec<DelegatedCertificate>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     removed: Vec<KeyIdentifier>,
@@ -442,7 +449,7 @@ pub struct ChildCertificateUpdates {
 
 impl ChildCertificateUpdates {
     pub fn new(
-        issued: Vec<IssuedCert>,
+        issued: Vec<DelegatedCertificate>,
         removed: Vec<KeyIdentifier>,
         suspended: Vec<SuspendedCert>,
         unsuspended: Vec<UnsuspendedCert>,
@@ -463,7 +470,7 @@ impl ChildCertificateUpdates {
     /// Note that this is typically a newly issued certificate, but it can
     /// also be a previously issued certificate which had been suspended and
     /// is now unsuspended.
-    pub fn issue(&mut self, new: IssuedCert) {
+    pub fn issue(&mut self, new: DelegatedCertificate) {
         self.issued.push(new);
     }
 
@@ -474,7 +481,7 @@ impl ChildCertificateUpdates {
     }
 
     /// List all currently issued (not suspended) certificates.
-    pub fn issued(&self) -> &Vec<IssuedCert> {
+    pub fn issued(&self) -> &Vec<DelegatedCertificate> {
         &self.issued
     }
 
@@ -506,7 +513,7 @@ impl ChildCertificateUpdates {
     pub fn unpack(
         self,
     ) -> (
-        Vec<IssuedCert>,
+        Vec<DelegatedCertificate>,
         Vec<KeyIdentifier>,
         Vec<SuspendedCert>,
         Vec<UnsuspendedCert>,

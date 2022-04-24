@@ -5,22 +5,22 @@ use std::{fmt, fmt::Display, io};
 use hyper::StatusCode;
 
 use rpki::{
+    ca::{
+        idexchange::{ChildHandle, Handle, ParentHandle, PublisherHandle},
+        provisioning,
+        provisioning::ResourceClassName,
+        publication,
+        resourceset::Error as ResourceSetError,
+    },
     repository::{crypto::KeyIdentifier, x509::ValidationError},
     uri,
 };
 
 use crate::{
     commons::{
-        api::{
-            rrdp::PublicationDeltaError, AspaCustomer, AspaProvidersUpdateConflict, ChildHandle, ErrorResponse, Handle,
-            ParentHandle, PublisherHandle, ResourceClassName, ResourceSetError, RoaDefinition,
-        },
+        api::{rrdp::PublicationDeltaError, AspaCustomer, AspaProvidersUpdateConflict, ErrorResponse, RoaDefinition},
         crypto::SignerError,
         eventsourcing::{AggregateStoreError, KeyValueError},
-        remote::{
-            rfc6492::{self, NotPerformedResponse},
-            rfc8181::{self, ReportErrorCode},
-        },
         util::httpclient,
     },
     daemon::{ca::RouteAuthorization, http::tls_keys},
@@ -224,7 +224,7 @@ pub enum Error {
     //-----------------------------------------------------------------
     Rfc8181Validation(ValidationError),
     Rfc8181Decode(String),
-    Rfc8181MessageError(rfc8181::MessageError),
+    Rfc8181(publication::Error),
     Rfc8181Delta(PublicationDeltaError),
     PublishingObjects(String),
 
@@ -253,8 +253,8 @@ pub enum Error {
     //-----------------------------------------------------------------
     // RFC6492 (requesting resources)
     //-----------------------------------------------------------------
-    Rfc6492(rfc6492::Error),
-    Rfc6492NotPerformed(NotPerformedResponse),
+    Rfc6492(provisioning::Error),
+    Rfc6492NotPerformed(provisioning::NotPerformedResponse),
     Rfc6492InvalidCsrSent(String),
     Rfc6492SignatureInvalid,
 
@@ -382,7 +382,7 @@ impl fmt::Display for Error {
             //-----------------------------------------------------------------
             Error::Rfc8181Validation(req) => write!(f, "Issue with RFC8181 request: {}", req),
             Error::Rfc8181Decode(req) => write!(f, "Issue with decoding RFC8181 request: {}", req),
-            Error::Rfc8181MessageError(e) => e.fmt(f),
+            Error::Rfc8181(e) => e.fmt(f),
             Error::Rfc8181Delta(e) => e.fmt(f),
             Error::PublishingObjects(msg) => write!(f, "Issue generating repository objects: '{}'", msg),
 
@@ -523,15 +523,15 @@ impl From<SignerError> for Error {
     }
 }
 
-impl From<rfc6492::Error> for Error {
-    fn from(e: rfc6492::Error) -> Self {
+impl From<provisioning::Error> for Error {
+    fn from(e: provisioning::Error) -> Self {
         Error::Rfc6492(e)
     }
 }
 
-impl From<rfc8181::MessageError> for Error {
-    fn from(e: rfc8181::MessageError) -> Self {
-        Error::Rfc8181MessageError(e)
+impl From<publication::Error> for Error {
+    fn from(e: publication::Error) -> Self {
+        Error::Rfc8181(e)
     }
 }
 
@@ -727,7 +727,7 @@ impl Error {
             //-----------------------------------------------------------------
             Error::Rfc8181Validation(e) => ErrorResponse::new("rfc8181-validation", &self).with_cause(e),
             Error::Rfc8181Decode(e) => ErrorResponse::new("rfc8181-decode", &self).with_cause(e),
-            Error::Rfc8181MessageError(e) => ErrorResponse::new("rfc8181-protocol-message", &self).with_cause(e),
+            Error::Rfc8181(e) => ErrorResponse::new("rfc8181-protocol-message", &self).with_cause(e),
             Error::Rfc8181Delta(e) => ErrorResponse::new("rfc8181-delta", &self).with_cause(e),
             Error::PublishingObjects(msg) => {
                 ErrorResponse::new("publishing-generate-repository-objects", &self).with_cause(msg)
@@ -886,16 +886,16 @@ impl Error {
         }
     }
 
-    pub fn to_rfc8181_error_code(&self) -> ReportErrorCode {
+    pub fn to_rfc8181_error_code(&self) -> publication::ReportErrorCode {
         match self {
-            Error::Rfc8181Validation(_) | Error::PublisherUnknown(_) => ReportErrorCode::PermissionFailure,
-            Error::Rfc8181MessageError(_) => ReportErrorCode::XmlError,
+            Error::Rfc8181Validation(_) | Error::PublisherUnknown(_) => publication::ReportErrorCode::PermissionFailure,
+            Error::Rfc8181(_) => publication::ReportErrorCode::XmlError,
             Error::Rfc8181Delta(e) => match e {
-                PublicationDeltaError::UriOutsideJail(_, _) => ReportErrorCode::PermissionFailure,
-                PublicationDeltaError::NoObjectForHashAndOrUri(_) => ReportErrorCode::NoObjectPresent,
-                PublicationDeltaError::ObjectAlreadyPresent(_) => ReportErrorCode::ObjectAlreadyPresent,
+                PublicationDeltaError::UriOutsideJail(_, _) => publication::ReportErrorCode::PermissionFailure,
+                PublicationDeltaError::NoObjectForHashAndOrUri(_) => publication::ReportErrorCode::NoObjectPresent,
+                PublicationDeltaError::ObjectAlreadyPresent(_) => publication::ReportErrorCode::ObjectAlreadyPresent,
             },
-            _ => ReportErrorCode::OtherError,
+            _ => publication::ReportErrorCode::OtherError,
         }
     }
 }
@@ -1044,7 +1044,7 @@ mod tests {
         );
         verify(
             include_str!("../../test-resources/errors/rfc8181-protocol-message.json"),
-            Error::Rfc8181MessageError(rfc8181::MessageError::InvalidVersion),
+            Error::Rfc8181(publication::Error::InvalidVersion),
         );
         verify(
             include_str!("../../test-resources/errors/rfc8181-delta.json"),
@@ -1105,7 +1105,7 @@ mod tests {
 
         verify(
             include_str!("../../test-resources/errors/rfc6492-protocol.json"),
-            Error::Rfc6492(rfc6492::Error::InvalidVersion),
+            Error::Rfc6492(provisioning::Error::InvalidVersion),
         );
         verify(
             include_str!("../../test-resources/errors/rfc6492-invalid-csr.json"),
@@ -1187,7 +1187,7 @@ mod tests {
         );
         verify(
             include_str!("../../test-resources/errors/rc-resources.json"),
-            Error::ResourceSetError(ResourceSetError::Mix),
+            Error::ResourceSetError(ResourceSetError::parse()),
         );
         verify(
             include_str!("../../test-resources/errors/rc-missing-resources.json"),

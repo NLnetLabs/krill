@@ -2,12 +2,15 @@
 
 use std::{collections::HashMap, fmt, path::Path, str::FromStr};
 
-use rpki::repository::crypto::{KeyIdentifier, PublicKey};
+use rpki::{
+    ca::idexchange::Handle,
+    repository::crypto::{KeyIdentifier, PublicKey},
+};
 
 use crate::{
     commons::{
         actor::Actor,
-        api::{CommandSummary, Handle},
+        api::CommandSummary,
         error::Error,
         eventsourcing::{Aggregate, AggregateStore, CommandDetails, SentCommand, StoredEvent, WithStorableDetails},
         util::ext_serde,

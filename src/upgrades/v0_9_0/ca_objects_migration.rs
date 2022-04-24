@@ -3,20 +3,26 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 use chrono::Duration;
 
 use rpki::{
+    ca::{
+        idcert::IdCert,
+        idexchange,
+        idexchange::{ChildHandle, Handle, ParentHandle, RepoInfo},
+        provisioning::{IssuanceRequest, ResourceClassName, RevocationRequest},
+        resourceset::ResourceSet,
+    },
     repository::{crl::Crl, crypto::KeyIdentifier, manifest::Manifest, x509::Time},
+    rrdp::Hash,
     uri,
 };
 
 use crate::{
     commons::{
         api::{
-            ChildHandle, Handle, HexEncodedHash, IssuanceRequest, IssuedCert, ObjectName, ParentHandle, RcvdCert,
-            RepoInfo, RepositoryContact, ResourceClassName, ResourceSet, Revocation, RevocationRequest, Revocations,
-            RoaAggregateKey, StorableCaCommand, StoredEffect, TaCertDetails,
+            DelegatedCertificate, ObjectName, RcvdCert, RepositoryContact, Revocation, Revocations, RoaAggregateKey,
+            StorableCaCommand, StoredEffect, TaCertDetails,
         },
-        crypto::{IdCert, KrillSigner},
+        crypto::KrillSigner,
         eventsourcing::{Aggregate, AggregateStore, CommandKey, KeyStoreKey, KeyValueStore, StoredValueInfo},
-        remote::rfc8183,
     },
     constants::{CASERVER_DIR, KRILL_VERSION},
     daemon::{
@@ -101,21 +107,21 @@ impl CaObjectsMigration {
     fn derived_embedded_ca_info(ca: Arc<OldCertAuth>, config: &Config) -> DerivedEmbeddedCaMigrationInfo {
         let service_uri = format!("{}rfc6492/{}", config.service_uri().to_string(), ca.handle);
         let service_uri = uri::Https::from_string(service_uri).unwrap();
-        let service_uri = rfc8183::ServiceUri::Https(service_uri);
+        let service_uri = idexchange::ServiceUri::Https(service_uri);
 
-        let child_request = rfc8183::ChildRequest::new(ca.handle.clone(), ca.id.cert.clone());
+        let child_request = idexchange::ChildRequest::new(ca.id.cert.clone(), ca.handle.clone());
         let parent_responses = ca
             .children
             .keys()
             .map(|child_handle| {
                 (
                     child_handle.clone(),
-                    rfc8183::ParentResponse::new(
-                        None,
+                    idexchange::ParentResponse::new(
                         ca.id.cert.clone(),
                         ca.handle.clone(),
                         child_handle.clone(),
                         service_uri.clone(),
+                        None,
                     ),
                 )
             })
@@ -685,7 +691,7 @@ impl From<Rfc8183Id> for ca::Rfc8183Id {
 #[serde(rename_all = "snake_case")]
 pub enum OldRepositoryContact {
     Embedded(RepoInfo),
-    Rfc8181(rfc8183::RepositoryResponse),
+    Rfc8181(idexchange::RepositoryResponse),
 }
 
 impl OldRepositoryContact {
@@ -699,7 +705,7 @@ impl OldRepositoryContact {
 pub enum OldParentCaContact {
     Ta(TaCertDetails),
     Embedded,
-    Rfc6492(rfc8183::ParentResponse),
+    Rfc6492(idexchange::ParentResponse),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -819,7 +825,7 @@ impl OldResourceClass {
         self.certificates.key_revoked(key);
     }
 
-    pub fn certificate_issued(&mut self, issued: IssuedCert) {
+    pub fn certificate_issued(&mut self, issued: DelegatedCertificate) {
         self.certificates.certificate_issued(issued);
     }
 
@@ -976,12 +982,12 @@ impl OldRoas {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldReplacedObject {
     revocation: Revocation,
-    hash: HexEncodedHash,
+    hash: Hash,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldChildCertificates {
-    inner: HashMap<KeyIdentifier, IssuedCert>,
+    inner: HashMap<KeyIdentifier, DelegatedCertificate>,
 }
 
 impl OldChildCertificates {
@@ -989,7 +995,7 @@ impl OldChildCertificates {
         self.inner.remove(key);
     }
 
-    pub fn certificate_issued(&mut self, issued: IssuedCert) {
+    pub fn certificate_issued(&mut self, issued: DelegatedCertificate) {
         self.inner.insert(issued.cert().subject_key_identifier(), issued);
     }
 }
@@ -1213,12 +1219,12 @@ pub struct OldManifestInfo {
     name: ObjectName,
     current: CurrentObject,
     next_update: Time,
-    old: Option<HexEncodedHash>,
+    old: Option<Hash>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldCrlInfo {
     name: ObjectName, // can be derived from CRL, but keeping in mem saves cpu
     current: CurrentObject,
-    old: Option<HexEncodedHash>,
+    old: Option<Hash>,
 }

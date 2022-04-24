@@ -4,10 +4,11 @@ use std::{fs, str::FromStr, time::Duration};
 
 use tokio::time::sleep;
 
+use rpki::ca::provisioning::ResourceClassName;
+use rpki::ca::resourceset::ResourceSet;
+
 use krill::{
-    commons::api::{
-        ObjectName, RepositoryContact, ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates,
-    },
+    commons::api::{ObjectName, RepositoryContact, RoaDefinition, RoaDefinitionUpdates},
     daemon::ca::ta_handle,
     test::*,
 };
@@ -55,7 +56,7 @@ async fn migrate_repository() {
     info("#                                                                #");
     info("##################################################################");
     info("");
-    assert!(ca_contains_resources(&testbed, &ResourceSet::all_resources()).await);
+    assert!(ca_contains_resources(&testbed, &ResourceSet::all()).await);
 
     // Verify that the TA published expected objects
     {

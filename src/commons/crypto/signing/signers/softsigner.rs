@@ -19,13 +19,15 @@ use openssl::{
     rsa::Rsa,
 };
 
-use rpki::repository::crypto::{
-    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError,
+use rpki::{
+    ca::idexchange::Handle,
+    repository::crypto::{
+        signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError,
+    },
 };
 
 use crate::{
     commons::{
-        api::Handle,
         crypto::{dispatch::signerinfo::SignerMapper, signers::error::SignerError},
         error::KrillIoError,
     },

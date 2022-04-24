@@ -2,14 +2,22 @@ use std::ops::{Deref, DerefMut};
 
 use serde::{Deserialize, Serialize};
 
-use rpki::repository::{crypto::KeyIdentifier, x509::Time};
+use rpki::{
+    ca::{
+        idexchange::{Handle, RepoInfo},
+        provisioning::{
+            IssuanceRequest, RequestResourceLimit, ResourceClassEntitlements, ResourceClassName, RevocationRequest,
+        },
+        resourceset::ResourceSet,
+    },
+    repository::{crypto::KeyIdentifier, x509::Time},
+};
 
 use crate::{
     commons::{
         api::{
-            ActiveInfo, CertifiedKeyInfo, EntitlementClass, Handle, IssuanceRequest, PendingInfo, PendingKeyInfo,
-            RcvdCert, RepoInfo, RequestResourceLimit, ResourceClassKeysInfo, ResourceClassName, ResourceSet,
-            RevocationRequest, RollNewInfo, RollOldInfo, RollPendingInfo,
+            ActiveInfo, CertifiedKeyInfo, PendingInfo, PendingKeyInfo, RcvdCert, ResourceClassKeysInfo, RollNewInfo,
+            RollOldInfo, RollPendingInfo,
         },
         crypto::KrillSigner,
         error::Error,
@@ -73,8 +81,8 @@ impl CertifiedKey {
         self.request = Some(req)
     }
 
-    pub fn set_old_repo(&mut self, repo: &RepoInfo) {
-        self.old_repo = Some(repo.clone())
+    pub fn set_old_repo(&mut self, repo: RepoInfo) {
+        self.old_repo = Some(repo)
     }
 
     pub fn wants_update(
@@ -323,7 +331,7 @@ impl KeyState {
         &self,
         handle: &Handle,
         rcn: ResourceClassName,
-        entitlement: &EntitlementClass,
+        entitlement: &ResourceClassEntitlements,
         base_repo: &RepoInfo,
         name_space: &str,
         signer: &KrillSigner,
@@ -382,7 +390,11 @@ impl KeyState {
             });
         }
 
-        for key in entitlement.issued().iter().map(|c| c.subject_key_identifier()) {
+        for key in entitlement
+            .issued_certs()
+            .iter()
+            .map(|c| c.cert().subject_key_identifier())
+        {
             if !self.knows_key(key) {
                 let revoke_req = RevocationRequest::new(entitlement.class_name().clone(), key);
                 res.push(CaEvtDet::UnexpectedKeyFound {
@@ -591,7 +603,7 @@ impl KeyState {
 impl KeyState {
     /// Mark an old_repo for the current key, so that a new repo can be introduced in a pending
     /// key and a keyroll can be done.
-    pub fn set_old_repo_if_in_active_state(&mut self, repo: &RepoInfo) {
+    pub fn set_old_repo_if_in_active_state(&mut self, repo: RepoInfo) {
         if let KeyState::Active(current) = self {
             current.set_old_repo(repo);
         }

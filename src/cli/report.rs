@@ -3,6 +3,8 @@ use std::str::FromStr;
 
 use serde::Serialize;
 
+use rpki::ca::idexchange;
+
 use crate::{
     commons::{
         api::{
@@ -11,7 +13,7 @@ use crate::{
             PublisherDetails, PublisherList, RepoStatus, RoaDefinitions, RtaList, RtaPrepResponse, ServerInfo,
         },
         bgp::{BgpAnalysisAdvice, BgpAnalysisReport, BgpAnalysisSuggestion},
-        remote::{api::ClientInfos, rfc8183},
+        remote::api::ClientInfos,
     },
     daemon::ca::ResourceTaggedAttestation,
     pubd::RepoStats,
@@ -51,9 +53,9 @@ pub enum ApiResponse {
     RepoStats(RepoStats),
 
     Rfc8181ClientList(ClientInfos),
-    Rfc8183RepositoryResponse(rfc8183::RepositoryResponse),
-    Rfc8183ChildRequest(rfc8183::ChildRequest),
-    Rfc8183PublisherRequest(rfc8183::PublisherRequest),
+    Rfc8183RepositoryResponse(idexchange::RepositoryResponse),
+    Rfc8183ChildRequest(idexchange::ChildRequest),
+    Rfc8183PublisherRequest(idexchange::PublisherRequest),
 
     RepoDetails(CaRepoDetails),
     RepoStatus(RepoStatus),
@@ -194,9 +196,9 @@ impl Report for PublisherDetails {}
 
 impl Report for ClientInfos {}
 
-impl Report for rfc8183::RepositoryResponse {}
-impl Report for rfc8183::ChildRequest {}
-impl Report for rfc8183::PublisherRequest {}
+impl Report for idexchange::RepositoryResponse {}
+impl Report for idexchange::ChildRequest {}
+impl Report for idexchange::PublisherRequest {}
 
 impl Report for RoaDefinitions {}
 

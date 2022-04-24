@@ -5,6 +5,7 @@ use std::convert::TryFrom;
 
 use bytes::Bytes;
 use rpki::{
+    ca::{provisioning::RequestResourceLimit, resourceset::ResourceSet},
     repository::{
         cert::{KeyUsage, Overclaim, TbsCert},
         crypto::{DigestAlgorithm, KeyIdentifier, PublicKey},
@@ -17,7 +18,7 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::{IssuedCert, RcvdCert, ReplacedObject, RequestResourceLimit, ResourceSet},
+        api::{DelegatedCertificate, RcvdCert, ReplacedObject},
         crypto::KrillSigner,
         error::Error,
         util::AllowedUri,
@@ -123,13 +124,12 @@ impl SignSupport {
         csr: CsrInfo,
         resources: &ResourceSet,
         limit: RequestResourceLimit,
-        replaces: Option<ReplacedObject>,
         signing_key: &CertifiedKey,
         weeks: i64,
         signer: &KrillSigner,
-    ) -> KrillResult<IssuedCert> {
+    ) -> KrillResult<DelegatedCertificate> {
         let signing_cert = signing_key.incoming_cert();
-        let resources = resources.apply_limit(&limit)?;
+        let resources = limit.apply_to(resources)?;
         if !signing_cert.resources().contains(&resources) {
             return Err(Error::MissingResources);
         }
@@ -142,7 +142,7 @@ impl SignSupport {
 
         let cert_uri = signing_cert.uri_for_object(&cert);
 
-        Ok(IssuedCert::new(cert_uri, limit, resources, cert, replaces))
+        Ok(DelegatedCertificate::new(cert_uri, limit, resources, cert))
     }
 
     /// Create an EE certificate for use in ResourceTaggedAttestations.

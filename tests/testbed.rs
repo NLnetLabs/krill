@@ -8,8 +8,12 @@ async fn add_and_remove_certificate_authority() {
     use std::matches;
     use std::str::FromStr;
 
+    use rpki::ca::{
+        idexchange::{Handle, PublisherRequest, RepositoryResponse},
+        resourceset::ResourceSet,
+    };
+
     use krill::commons::api::*;
-    use krill::commons::remote::rfc8183::{PublisherRequest, RepositoryResponse};
     use krill::commons::util::httpclient::*;
     use krill::daemon::ca::testbed_ca_handle;
     use krill::test::*;
@@ -55,7 +59,7 @@ async fn add_and_remove_certificate_authority() {
     // that an API client (such as the testbed web UI) would do.
     // <child_request/>   --> testbed
     // <parent_response/> <-- testbed
-    let (_, _, child_id_cert) = rfc8183_child_request.unpack();
+    let (child_id_cert, _, _) = rfc8183_child_request.unpack();
     let add_child_response: ParentCaContact = post_json_with_response(
         &format!("{}testbed/children", KRILL_SERVER_URI),
         &AddChildRequest::new(
@@ -90,7 +94,8 @@ async fn add_and_remove_certificate_authority() {
     )
     .await
     .unwrap();
-    assert!(parent_response_xml.starts_with("<parent_response "));
+
+    assert!(parent_response_xml.starts_with("\n<parent_response "));
     assert!(xml::reader::EventReader::from_str(&parent_response_xml).next().is_ok());
 
     // complete the RFC 8183 child registration process on the "client" side
@@ -132,9 +137,9 @@ async fn add_and_remove_certificate_authority() {
     let repository_response: RepositoryResponse = post_json_with_response(
         &format!("{}testbed/publishers", KRILL_SERVER_URI),
         &PublisherRequest::new(
-            None, // no tag
-            dummy_ca_handle.clone(),
             id_cert,
+            dummy_ca_handle.clone(),
+            None, // no tag
         ),
         None, // no token, the testbed API should be open
     )

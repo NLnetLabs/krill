@@ -4,7 +4,16 @@ use std::{collections::HashMap, path::PathBuf, sync::Arc};
 use bytes::Bytes;
 use chrono::Duration;
 
-use rpki::{repository::cert::Cert, uri};
+use rpki::{
+    ca::{
+        idexchange,
+        idexchange::{ChildHandle, Handle, ParentHandle, PublisherHandle},
+        publication::{ListReply, PublishDelta},
+        resourceset::ResourceSet,
+    },
+    repository::cert::Cert,
+    uri,
+};
 
 use crate::{
     commons::{
@@ -12,16 +21,14 @@ use crate::{
         api::{
             AddChildRequest, AllCertAuthIssues, AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates,
             AspaProvidersUpdate, CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthInit, CertAuthIssues,
-            CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle, ChildrenConnectionStats, CommandHistory,
-            CommandHistoryCriteria, Handle, ListReply, ParentCaContact, ParentCaReq, ParentHandle,
-            PublicationServerUris, PublishDelta, PublisherDetails, PublisherHandle, RepositoryContact, ResourceSet,
-            RoaDefinition, RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, ServerInfo, TaCertDetails,
-            Timestamp, UpdateChildRequest,
+            CertAuthList, CertAuthStats, ChildCaInfo, ChildrenConnectionStats, CommandHistory, CommandHistoryCriteria,
+            ParentCaContact, ParentCaReq, PublicationServerUris, PublisherDetails, RepositoryContact, RoaDefinition,
+            RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, ServerInfo, TaCertDetails, Timestamp,
+            UpdateChildRequest,
         },
         bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion},
         crypto::KrillSignerBuilder,
         eventsourcing::CommandKey,
-        remote::rfc8183,
         KrillEmptyResult, KrillResult,
     },
     constants::*,
@@ -175,8 +182,11 @@ impl KrillServer {
                     let testbed_ca = ca_manager.get_ca(&testbed_ca_handle).await?;
 
                     // Add the new testbed publisher
-                    let pub_req =
-                        rfc8183::PublisherRequest::new(None, testbed_ca_handle.clone(), testbed_ca.id_cert().clone());
+                    let pub_req = idexchange::PublisherRequest::new(
+                        testbed_ca.id_cert().clone(),
+                        testbed_ca_handle.clone(),
+                        None,
+                    );
                     repo_manager.create_publisher(pub_req, &system_actor)?;
 
                     let repo_response = repo_manager.repository_response(&testbed_ca_handle)?;
@@ -186,9 +196,9 @@ impl KrillServer {
                         .await?;
 
                     // Establish the TA (parent) <-> testbed CA (child) relationship
-                    let testbed_ca_resources = ResourceSet::all_resources();
+                    let testbed_ca_resources = ResourceSet::all();
 
-                    let (_, _, child_id_cert) = testbed_ca.child_request().unpack();
+                    let (child_id_cert, _, _) = testbed_ca.child_request().unpack();
 
                     let child_req =
                         AddChildRequest::new(testbed_ca_handle.clone(), testbed_ca_resources, child_id_cert);
@@ -297,9 +307,9 @@ impl KrillServer {
     /// Adds the publishers, blows up if it already existed.
     pub fn add_publisher(
         &self,
-        req: rfc8183::PublisherRequest,
+        req: idexchange::PublisherRequest,
         actor: &Actor,
-    ) -> KrillResult<rfc8183::RepositoryResponse> {
+    ) -> KrillResult<idexchange::RepositoryResponse> {
         let publisher_handle = req.publisher_handle().clone();
         self.repo_manager.create_publisher(req, actor)?;
         self.repository_response(&publisher_handle)
@@ -325,7 +335,7 @@ impl KrillServer {
 /// # Manage RFC8181 clients
 ///
 impl KrillServer {
-    pub fn repository_response(&self, publisher: &PublisherHandle) -> KrillResult<rfc8183::RepositoryResponse> {
+    pub fn repository_response(&self, publisher: &PublisherHandle) -> KrillResult<idexchange::RepositoryResponse> {
         self.repo_manager.repository_response(publisher)
     }
 
@@ -379,7 +389,7 @@ impl KrillServer {
         &self,
         parent: &ParentHandle,
         child: ChildHandle,
-    ) -> KrillResult<rfc8183::ParentResponse> {
+    ) -> KrillResult<idexchange::ParentResponse> {
         let contact = self
             .ca_manager
             .ca_parent_response(parent, child, &self.service_uri)
@@ -424,7 +434,7 @@ impl KrillServer {
 ///
 impl KrillServer {
     /// Returns the child request for a CA, or NONE if the CA cannot be found.
-    pub async fn ca_child_req(&self, handle: &Handle) -> KrillResult<rfc8183::ChildRequest> {
+    pub async fn ca_child_req(&self, handle: &Handle) -> KrillResult<idexchange::ChildRequest> {
         self.ca_manager.get_ca(handle).await.map(|ca| ca.child_request())
     }
 
@@ -596,7 +606,7 @@ impl KrillServer {
     }
 
     /// Returns the publisher request for a CA, or NONE of the CA cannot be found.
-    pub async fn ca_publisher_req(&self, handle: &Handle) -> KrillResult<rfc8183::PublisherRequest> {
+    pub async fn ca_publisher_req(&self, handle: &Handle) -> KrillResult<idexchange::PublisherRequest> {
         self.ca_manager.get_ca(handle).await.map(|ca| ca.publisher_request())
     }
 

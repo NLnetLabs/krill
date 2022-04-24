@@ -1,11 +1,12 @@
-use std::{io::Read, str::FromStr, sync::Arc};
+use std::{fmt, io::Read, str::FromStr, sync::Arc};
 
 use oso::{Oso, PolarClass, PolarValue, ToPolar};
+
+use rpki::ca::idexchange::{Handle, InvalidHandle};
 
 use crate::{
     commons::{
         actor::Actor,
-        api::Handle,
         error::{Error, KrillIoError},
         KrillResult,
     },
@@ -33,10 +34,10 @@ impl AuthPolicy {
     pub fn new(config: Arc<Config>) -> KrillResult<Self> {
         let mut oso = Oso::new();
         oso.register_class(Actor::get_polar_class()).unwrap();
-        oso.register_class(Handle::get_polar_class()).unwrap();
+        oso.register_class(PolarHandle::get_polar_class()).unwrap();
 
         // Register both the Permission enum as a Polar class and its variants as Polar constants. The former is useful
-        // for writing Polar rules that only match on actual Krill Permissions, not on artibrary strings, e.g.
+        // for writing Polar rules that only match on actual Krill Permissions, not on arbitrary strings, e.g.
         // `allow(actor, action: Permission, resource)`. The latter is useful when writing rules that depend on a
         // specific permission, e.g. `if action = CA_READ`. Without the variants as constants we would have to create a
         // new Permission each time, converting from a string to the Permission type, e.g.
@@ -139,7 +140,7 @@ impl AuthPolicy {
     }
 }
 
-// Allow our "no resource" type to match the "nil" in Oso policy rules by making it convertable to the Rust type Oso
+// Allow our "no resource" type to match the "nil" in Oso policy rules by making it convertible to the Rust type Oso
 // uses when registering the nil constant. We can't use Option::<PolarValue>::None directly as it doesn't implement
 // the Display trait which we depend on in non-trace level logging in `fn Actor::is_allowed()`.
 //
@@ -192,12 +193,43 @@ impl PolarClass for Actor {
     }
 }
 
-impl PolarClass for Handle {
+/// Wrapper type so we can use rpki::ca::idexchange::Handle with
+/// the PolarClass trait.
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq)]
+pub struct PolarHandle(Handle);
+
+impl fmt::Display for PolarHandle {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl From<&Handle> for PolarHandle {
+    fn from(h: &Handle) -> Self {
+        PolarHandle(h.clone())
+    }
+}
+
+impl FromStr for PolarHandle {
+    type Err = InvalidHandle;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Handle::from_str(s).map(PolarHandle)
+    }
+}
+
+impl AsRef<Handle> for PolarHandle {
+    fn as_ref(&self) -> &Handle {
+        &self.0
+    }
+}
+
+impl PolarClass for PolarHandle {
     fn get_polar_class() -> oso::Class {
         Self::get_polar_class_builder()
-            .set_constructor(|name: String| Handle::from_str(&name).unwrap())
-            .set_equality_check(|left: &Handle, right: &Handle| left == right)
-            .add_attribute_getter("name", |instance| instance.as_str().to_string())
+            .set_constructor(|name: String| PolarHandle::from_str(&name).unwrap())
+            .set_equality_check(|left: &PolarHandle, right: &PolarHandle| left == right)
+            .add_attribute_getter("name", |instance| instance.to_string())
             .build()
     }
 

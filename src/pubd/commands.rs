@@ -1,13 +1,14 @@
 use std::fmt;
 
-use rpki::uri;
+use rpki::{ca::idexchange, uri};
+
+use rpki::ca::idexchange::{PublisherHandle, RepositoryHandle};
 
 use crate::{
     commons::{
         actor::Actor,
-        api::{PublisherHandle, RepositoryHandle, StorableRepositoryCommand},
+        api::StorableRepositoryCommand,
         eventsourcing::{CommandDetails, SentCommand},
-        remote::rfc8183,
     },
     pubd::RepositoryAccessEvent,
 };
@@ -21,7 +22,7 @@ pub type RepoAccessCmd = SentCommand<RepoAccessCmdDet>;
 #[serde(rename_all = "snake_case", tag = "type")]
 pub enum RepoAccessCmdDet {
     AddPublisher {
-        request: rfc8183::PublisherRequest,
+        request: idexchange::PublisherRequest,
         base_uri: uri::Rsync,
     },
     RemovePublisher {
@@ -41,7 +42,7 @@ impl CommandDetails for RepoAccessCmdDet {
 impl RepoAccessCmdDet {
     pub fn add_publisher(
         handle: &RepositoryHandle,
-        request: rfc8183::PublisherRequest,
+        request: idexchange::PublisherRequest,
         base_uri: uri::Rsync,
         actor: &Actor,
     ) -> RepoAccessCmd {

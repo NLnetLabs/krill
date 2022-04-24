@@ -5,15 +5,19 @@ use std::{
     fmt,
 };
 
+use rpki::ca::{
+    idexchange::{ChildHandle, Handle, ParentHandle, PublisherHandle, ServiceUri},
+    provisioning::{RequestResourceLimit, ResourceClassName, RevocationRequest},
+    resourceset::ResourceSet,
+};
+
 use crate::{
     commons::{
         api::{
-            ChildHandle, Handle, ParentHandle, PublisherHandle, RequestResourceLimit, ResourceClassName, ResourceSet,
-            RevocationRequest, RoaDefinitionUpdates, RtaName, StorableCaCommand, StorableParentContact,
-            StorableRcEntitlement, StorableRepositoryCommand, StoredEffect,
+            RoaDefinitionUpdates, RtaName, StorableCaCommand, StorableParentContact, StorableRcEntitlement,
+            StorableRepositoryCommand, StoredEffect,
         },
         eventsourcing::{Command, StoredCommand, WithStorableDetails},
-        remote::rfc8183::ServiceUri,
     },
     daemon::ca::StoredCaCommand,
     pubd::RepositoryManager,

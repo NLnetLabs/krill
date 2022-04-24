@@ -1,6 +1,4 @@
-use rpki::uri;
-
-use crate::commons::crypto::IdCert;
+use rpki::{ca::idcert::IdCert, uri};
 
 //------------ Publisher -----------------------------------------------------
 

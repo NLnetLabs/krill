@@ -1,12 +1,15 @@
 use std::sync::Arc;
 use std::{collections::HashMap, sync::RwLock};
 
-use rpki::repository::crypto::{
-    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
+use rpki::{
+    ca::idexchange::Handle,
+    repository::crypto::{
+        signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer,
+        SigningError,
+    },
 };
 
 use crate::commons::{
-    api::Handle,
     crypto::{
         dispatch::{signerinfo::SignerMapper, signerprovider::SignerProvider},
         signers::error::SignerError,

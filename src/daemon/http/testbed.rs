@@ -1,7 +1,8 @@
 use hyper::Method;
 
+use rpki::ca::idexchange::Handle;
+
 use crate::{
-    commons::api::Handle,
     constants::ACTOR_DEF_TESTBED,
     daemon::{
         ca::{ta_handle, testbed_ca_handle},

@@ -8,17 +8,18 @@ use std::{
 
 use chrono::Duration;
 use rpki::{
+    ca::{
+        idcert::IdCert,
+        idexchange::{Handle, PublisherHandle, RepositoryHandle},
+    },
     repository::{crypto::KeyIdentifier, x509::Time},
+    rrdp::Hash,
     uri,
 };
 
 use crate::{
     commons::{
-        api::{
-            rrdp::{Delta, Notification, PublishElement, RrdpSession, Snapshot, SnapshotRef},
-            Handle, HexEncodedHash, PublisherHandle, RepositoryHandle,
-        },
-        crypto::IdCert,
+        api::rrdp::{Delta, Notification, PublishElement, RrdpSession, Snapshot, SnapshotRef},
         eventsourcing::{
             Aggregate, AggregateStore, CommandKey, KeyStoreKey, KeyValueStore, StoredEvent, StoredValueInfo,
         },
@@ -455,7 +456,7 @@ impl OldRrdpServer {
         let serial = RRDP_FIRST_SERIAL;
         let snapshot_uri = Self::new_snapshot_uri(&rrdp_base_uri, &session, serial);
         let snapshot_path = Self::new_snapshot_path(&rrdp_base_dir, &session, serial);
-        let snapshot_hash = HexEncodedHash::from_content(snapshot.xml().as_slice());
+        let snapshot_hash = Hash::from_data(snapshot.xml().as_slice());
 
         let snapshot_ref = SnapshotRef::new(snapshot_uri, snapshot_path, snapshot_hash);
 
@@ -592,10 +593,10 @@ impl From<Snapshot> for OldSnapshot {
     fn from(snap: Snapshot) -> Self {
         let (session, serial, current_objects) = snap.unpack();
 
-        let map: HashMap<HexEncodedHash, PublishElement> = current_objects
+        let map: HashMap<Hash, PublishElement> = current_objects
             .elements()
             .into_iter()
-            .map(|p| (p.base64().to_encoded_hash(), p.clone()))
+            .map(|p| (p.base64().to_hash(), p.clone()))
             .collect();
 
         let current_objects = OldCurrentObjects::new(map);

@@ -3,8 +3,10 @@
 use std::fs;
 use std::str::FromStr;
 
+use rpki::ca::{idexchange::Handle, provisioning::ResourceClassName, resourceset::ResourceSet};
+
 use krill::{
-    commons::api::{Handle, ObjectName, ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates},
+    commons::api::{ObjectName, RoaDefinition, RoaDefinitionUpdates},
     daemon::ca::ta_handle,
     test::*,
 };
@@ -53,7 +55,7 @@ async fn functional_roas() {
     info("#                                                                #");
     info("##################################################################");
     info("");
-    assert!(ca_contains_resources(&testbed, &ResourceSet::all_resources()).await);
+    assert!(ca_contains_resources(&testbed, &ResourceSet::all()).await);
 
     // Verify that the TA published expected objects
     {

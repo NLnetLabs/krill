@@ -19,12 +19,15 @@ use kmip::{
 };
 use openssl::ssl::SslStream;
 use r2d2::PooledConnection;
-use rpki::repository::crypto::{
-    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError,
+
+use rpki::{
+    ca::idexchange::Handle,
+    repository::crypto::signer::KeyError,
+    repository::crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError},
 };
 
 use crate::commons::{
-    api::{Handle, Timestamp},
+    api::Timestamp,
     crypto::{
         dispatch::signerinfo::SignerMapper,
         signers::{

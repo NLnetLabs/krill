@@ -2,12 +2,15 @@ use std::{cmp::Ordering, fmt, net::IpAddr, ops::Deref, str::FromStr};
 
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
-use rpki::repository::{
-    resources::{AsBlocks, Asn, IpBlocks, IpBlocksBuilder, Prefix},
-    roa::RoaIpAddress,
+use rpki::{
+    ca::resourceset::ResourceSet,
+    repository::{
+        resources::{AsBlocks, Asn, IpBlocks, IpBlocksBuilder, Prefix},
+        roa::RoaIpAddress,
+    },
 };
 
-use crate::{commons::api::ResourceSet, daemon::ca::RouteAuthorizationUpdates};
+use crate::daemon::ca::RouteAuthorizationUpdates;
 
 //------------ RoaAggregateKey ---------------------------------------------
 
@@ -547,14 +550,14 @@ impl From<TypedPrefix> for ResourceSet {
                 builder.push(v4.0);
                 let blocks = builder.finalize();
 
-                ResourceSet::new(AsBlocks::empty(), blocks, IpBlocks::empty())
+                ResourceSet::new(AsBlocks::empty(), blocks.into(), IpBlocks::empty().into())
             }
             TypedPrefix::V6(v6) => {
                 let mut builder = IpBlocksBuilder::new();
                 builder.push(v6.0);
                 let blocks = builder.finalize();
 
-                ResourceSet::new(AsBlocks::empty(), IpBlocks::empty(), blocks)
+                ResourceSet::new(AsBlocks::empty(), IpBlocks::empty().into(), blocks.into())
             }
         }
     }

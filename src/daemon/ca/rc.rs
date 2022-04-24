@@ -1,19 +1,24 @@
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
 
-use rpki::repository::{
-    cert::Cert,
-    crypto::KeyIdentifier,
-    x509::{Time, Validity},
+use rpki::{
+    ca::{
+        idexchange::{Handle, ParentHandle, RepoInfo},
+        provisioning::{
+            IssuanceRequest, RequestResourceLimit, ResourceClassEntitlements, ResourceClassName, RevocationRequest,
+        },
+        resourceset::ResourceSet,
+    },
+    repository::{
+        cert::Cert,
+        crypto::KeyIdentifier,
+        x509::{Time, Validity},
+    },
 };
 
 use crate::{
     commons::{
-        api::{
-            EntitlementClass, Handle, IssuanceRequest, IssuedCert, ParentHandle, RcvdCert, ReplacedObject, RepoInfo,
-            RequestResourceLimit, ResourceClassInfo, ResourceClassName, ResourceSet, RevocationRequest, SuspendedCert,
-            UnsuspendedCert,
-        },
+        api::{DelegatedCertificate, RcvdCert, ReplacedObject, ResourceClassInfo, SuspendedCert, UnsuspendedCert},
         crypto::{CsrInfo, KrillSigner, SignSupport},
         error::Error,
         KrillResult,
@@ -174,7 +179,7 @@ impl ResourceClass {
 /// # Support repository migrations
 ///
 impl ResourceClass {
-    pub fn set_old_repo(&mut self, repo: &RepoInfo) {
+    pub fn set_old_repo(&mut self, repo: RepoInfo) {
         self.key_state.set_old_repo_if_in_active_state(repo);
     }
 }
@@ -361,7 +366,7 @@ impl ResourceClass {
     pub fn make_entitlement_events(
         &self,
         handle: &Handle,
-        entitlement: &EntitlementClass,
+        entitlement: &ResourceClassEntitlements,
         base_repo: &RepoInfo,
         signer: &KrillSigner,
     ) -> KrillResult<Vec<CaEvtDet>> {
@@ -593,17 +598,15 @@ impl ResourceClass {
         limit: RequestResourceLimit,
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
-    ) -> KrillResult<IssuedCert> {
+    ) -> KrillResult<DelegatedCertificate> {
         let signing_key = self.get_current_key()?;
         let parent_resources = signing_key.incoming_cert().resources();
         let resources = parent_resources.intersection(child_resources);
-        let replaces = self.certificates.get_issued(&csr.key_id()).map(ReplacedObject::from);
 
         let issued = SignSupport::make_issued_cert(
             csr,
             &resources,
             limit,
-            replaces,
             signing_key,
             issuance_timing.timing_child_certificate_valid_weeks,
             signer,
@@ -613,7 +616,7 @@ impl ResourceClass {
     }
 
     /// Stores an [IssuedCert](krill_commons.api.ca.IssuedCert)
-    pub fn certificate_issued(&mut self, issued: IssuedCert) {
+    pub fn certificate_issued(&mut self, issued: DelegatedCertificate) {
         self.certificates.certificate_issued(issued);
     }
 
@@ -626,7 +629,7 @@ impl ResourceClass {
     }
 
     /// Returns an issued certificate for a key, if it exists
-    pub fn issued(&self, ki: &KeyIdentifier) -> Option<&IssuedCert> {
+    pub fn issued(&self, ki: &KeyIdentifier) -> Option<&DelegatedCertificate> {
         self.certificates.get_issued(ki)
     }
 

@@ -1,6 +1,6 @@
-use crate::commons::api::Handle;
-
 use std::fmt;
+
+use rpki::ca::idexchange::Handle;
 
 use super::Storable;
 

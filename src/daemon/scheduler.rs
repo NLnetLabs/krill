@@ -5,13 +5,10 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use tokio::time::sleep;
 
+use rpki::ca::idexchange::{Handle, ParentHandle};
+
 use crate::{
-    commons::{
-        actor::Actor,
-        api::{Handle, ParentHandle, Timestamp},
-        bgp::BgpAnalyser,
-        KrillResult,
-    },
+    commons::{actor::Actor, api::Timestamp, bgp::BgpAnalyser, KrillResult},
     constants::{
         SCHEDULER_INTERVAL_RENEW_MINS, SCHEDULER_INTERVAL_REPUBLISH_MINS, SCHEDULER_RESYNC_REPO_CAS_THRESHOLD,
         SCHEDULER_USE_JITTER_CAS_THRESHOLD,

@@ -9,14 +9,14 @@ use openssl::{
     pkey::{PKey, Private},
     rsa::Rsa,
 };
-use rpki::repository::crypto::{
-    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError,
+
+use rpki::{
+    ca::idexchange::Handle,
+    repository::crypto::signer::KeyError,
+    repository::crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError},
 };
 
-use crate::commons::{
-    api::Handle,
-    crypto::{dispatch::signerinfo::SignerMapper, SignerError},
-};
+use crate::commons::crypto::{dispatch::signerinfo::SignerMapper, SignerError};
 
 pub enum FnIdx {
     CreateRegistrationKey,

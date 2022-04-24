@@ -34,11 +34,13 @@ mod tests {
 
     use serde::Serialize;
 
+    use rpki::ca::idexchange::Handle;
+
     use crate::test;
     use crate::{
         commons::{
             actor::Actor,
-            api::{CommandHistoryCriteria, CommandSummary, Handle},
+            api::{CommandHistoryCriteria, CommandSummary},
         },
         constants::ACTOR_DEF_TEST,
     };

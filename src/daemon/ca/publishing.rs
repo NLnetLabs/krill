@@ -12,22 +12,25 @@ use std::{
 use bytes::Bytes;
 use chrono::Duration;
 
-use rpki::repository::{
-    aspa::Aspa,
-    cert::Cert,
-    crl::{Crl, TbsCertList},
-    crypto::{DigestAlgorithm, KeyIdentifier, PublicKey},
-    manifest::{FileAndHash, Manifest, ManifestContent},
-    roa::Roa,
-    sigobj::SignedObjectBuilder,
-    x509::{Name, Serial, Time, Validity},
+use rpki::{
+    ca::{idexchange::Handle, provisioning::ResourceClassName, publication::Base64},
+    repository::{
+        aspa::Aspa,
+        cert::Cert,
+        crl::{Crl, TbsCertList},
+        crypto::{DigestAlgorithm, KeyIdentifier, PublicKey},
+        manifest::{FileAndHash, Manifest, ManifestContent},
+        roa::Roa,
+        sigobj::SignedObjectBuilder,
+        x509::{Name, Serial, Time, Validity},
+    },
 };
 
 use crate::{
     commons::{
         api::{
-            rrdp::PublishElement, Base64, Handle, IssuedCert, ObjectName, RcvdCert, RepositoryContact,
-            ResourceClassName, Revocation, Revocations, Timestamp,
+            rrdp::PublishElement, DelegatedCertificate, ObjectName, RcvdCert, RepositoryContact, Revocation,
+            Revocations, Timestamp,
         },
         crypto::KrillSigner,
         error::Error,
@@ -1277,7 +1280,7 @@ impl BasicKeyObjectSet {
 
 //------------ PublishedCert -----------------------------------------------
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct PublishedCert(IssuedCert);
+pub struct PublishedCert(DelegatedCertificate);
 
 impl PublishedCert {
     pub fn to_bytes(&self) -> Bytes {
@@ -1289,8 +1292,8 @@ impl PublishedCert {
     }
 }
 
-impl From<IssuedCert> for PublishedCert {
-    fn from(issued: IssuedCert) -> Self {
+impl From<DelegatedCertificate> for PublishedCert {
+    fn from(issued: DelegatedCertificate) -> Self {
         PublishedCert(issued)
     }
 }
@@ -1302,7 +1305,7 @@ impl From<&PublishedCert> for Revocation {
 }
 
 impl Deref for PublishedCert {
-    type Target = IssuedCert;
+    type Target = DelegatedCertificate;
 
     fn deref(&self) -> &Self::Target {
         &self.0

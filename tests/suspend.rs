@@ -2,10 +2,10 @@
 
 use std::fs;
 
-use krill::{
-    commons::api::{ChildHandle, Handle, ResourceSet},
-    test::*,
-};
+use krill::test::*;
+use rpki::ca::idexchange::ChildHandle;
+use rpki::ca::idexchange::Handle;
+use rpki::ca::resourceset::ResourceSet;
 
 #[tokio::test]
 async fn test_suspension() {
@@ -52,7 +52,7 @@ async fn test_suspension() {
 
     // Wait for testbed to come up
     {
-        assert!(ca_contains_resources(&testbed, &ResourceSet::all_resources()).await);
+        assert!(ca_contains_resources(&testbed, &ResourceSet::all()).await);
     }
 
     // Set up CA under testbed and verify that the certificate is published

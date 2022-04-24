@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-use rpki::uri;
-
-use crate::commons::{api::Handle, crypto::IdCert, remote::rfc8183::ServiceUri};
+use rpki::{
+    ca::{idcert::IdCert, idexchange::Handle, idexchange::ServiceUri},
+    uri,
+};
 
 //------------ ParentInfo ----------------------------------------------------
 

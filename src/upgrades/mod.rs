@@ -4,12 +4,12 @@
 
 use std::{fmt, path::Path, str::FromStr, sync::Arc, time::Duration};
 
-use rpki::repository::x509::Time;
 use serde::de::DeserializeOwned;
+
+use rpki::{ca::idexchange::Handle, repository::x509::Time};
 
 use crate::{
     commons::{
-        api::Handle,
         crypto::{KrillSigner, KrillSignerBuilder},
         error::{Error, KrillIoError},
         eventsourcing::{AggregateStoreError, CommandKey, KeyStoreKey, KeyValueError, KeyValueStore, StoredValueInfo},
@@ -463,7 +463,7 @@ fn record_preexisting_openssl_keys_in_signer_mapper(config: Arc<Config>) -> Resu
 
             for entry in dir_iter {
                 let entry = entry.map_err(|err| {
-                    UpgradeError::IoError(KrillIoError::new(
+                    PrepareUpgradeError::IoError(KrillIoError::new(
                         format!(
                             "I/O error while looking for signer keys to register in: {}",
                             keys_dir.to_string_lossy()

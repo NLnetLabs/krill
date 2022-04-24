@@ -12,6 +12,12 @@ use bytes::Bytes;
 use clap::{App, Arg, ArgMatches, SubCommand};
 
 use rpki::{
+    ca::{
+        idcert::IdCert,
+        idexchange,
+        idexchange::{ChildHandle, Handle, ParentHandle, PublisherHandle},
+        resourceset::{Error as ResourceSetError, ResourceSet},
+    },
     repository::{
         aspa::{DuplicateProviderAs, ProviderAs},
         crypto::KeyIdentifier,
@@ -25,13 +31,11 @@ use crate::{
     commons::{
         api::{
             AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionFormatError, AspaProvidersUpdate,
-            AuthorizationFmtError, CertAuthInit, ChildHandle, Handle, ParentCaContact, ParentCaReq, ParentHandle,
-            PublicationServerUris, PublisherHandle, RepositoryContact, ResourceSet, ResourceSetError, RoaDefinition,
-            RoaDefinitionUpdates, RtaName, Token, UpdateChildRequest,
+            AuthorizationFmtError, CertAuthInit, ParentCaContact, ParentCaReq, PublicationServerUris,
+            RepositoryContact, RoaDefinition, RoaDefinitionUpdates, RtaName, Token, UpdateChildRequest,
         },
-        crypto::{IdCert, SignSupport},
+        crypto::SignSupport,
         error::KrillIoError,
-        remote::rfc8183,
         util::file,
     },
     constants::*,
@@ -420,7 +424,7 @@ impl Options {
             Arg::with_name("request")
                 .long("request")
                 .short("r")
-                .help("The location of the RFC8183 Child Request XML file")
+                .help("The location of the idexchange:: Child Request XML file")
                 .value_name("<XML file>")
                 .required(true),
         );
@@ -447,7 +451,7 @@ impl Options {
     }
 
     fn make_cas_children_response_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("response").about("Show the RFC8183 Parent Response XML");
+        let mut sub = SubCommand::with_name("response").about("Show the idexchange:: Parent Response XML");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -522,7 +526,7 @@ impl Options {
     }
 
     fn make_cas_parents_request_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("request").about("Show RFC8183 Child Request XML");
+        let mut sub = SubCommand::with_name("request").about("Show idexchange:: Child Request XML");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -540,7 +544,7 @@ impl Options {
             Arg::with_name("response")
                 .long("response")
                 .short("r")
-                .help("The location of the RFC8183 Parent Response XML file")
+                .help("The location of the idexchange:: Parent Response XML file")
                 .value_name("<XML file>")
                 .required(true),
         );
@@ -832,7 +836,7 @@ impl Options {
     }
 
     fn make_cas_repo_request_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("request").about("Show RFC8183 Publisher Request XML");
+        let mut sub = SubCommand::with_name("request").about("Show idexchange:: Publisher Request XML");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -868,7 +872,7 @@ impl Options {
                 .value_name("file")
                 .long("response")
                 .short("r")
-                .help("The location of the RFC8183 Publisher Response XML file")
+                .help("The location of the idexchange:: Publisher Response XML file")
                 .required(true),
         );
 
@@ -1155,7 +1159,7 @@ impl Options {
                     .value_name("file")
                     .long("request")
                     .short("r")
-                    .help("The location of the RFC8183 Publisher Request XML file")
+                    .help("The location of the idexchange:: Publisher Request XML file")
                     .required(true),
             )
             .arg(
@@ -1185,7 +1189,7 @@ impl Options {
     }
 
     fn make_publishers_response_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("response").about("Show RFC8183 Repository Response XML");
+        let mut sub = SubCommand::with_name("response").about("Show idexchange:: Repository Response XML");
         sub = Options::add_general_args(sub);
         sub = Self::add_publisher_arg(sub);
         app.subcommand(sub)
@@ -1483,7 +1487,7 @@ impl Options {
     fn parse_matches_cas_children_add(matches: &ArgMatches) -> Result<Options, Error> {
         let path = matches.value_of("request").unwrap();
         let bytes = Self::read_file_arg(path)?;
-        let child_request = rfc8183::ChildRequest::validate(bytes.as_ref())?;
+        let child_request = idexchange::ChildRequest::validate(bytes.as_ref())?;
 
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
@@ -1493,7 +1497,7 @@ impl Options {
 
         let resources = Self::parse_resource_args(matches)?.ok_or(Error::MissingResources)?;
 
-        let (_, _, id_cert) = child_request.unpack();
+        let (id_cert, _, _) = child_request.unpack();
         let add_child_request = AddChildRequest::new(child, resources, id_cert);
         let command = Command::CertAuth(CaCommand::ChildAdd(my_ca, add_child_request));
         Ok(Options::make(general_args, command))
@@ -1624,7 +1628,7 @@ impl Options {
     fn parse_matches_cas_parents_add(matches: &ArgMatches) -> Result<Options, Error> {
         let path = matches.value_of("response").unwrap();
         let bytes = Self::read_file_arg(path)?;
-        let response = rfc8183::ParentResponse::validate(bytes.as_ref())?;
+        let response = idexchange::ParentResponse::validate(bytes.as_ref())?;
 
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
@@ -1941,7 +1945,7 @@ impl Options {
 
         let path = matches.value_of("response").unwrap();
         let bytes = Self::read_file_arg(path)?;
-        let response = rfc8183::RepositoryResponse::validate(bytes.as_ref())?;
+        let response = idexchange::RepositoryResponse::validate(bytes.as_ref())?;
 
         let repo_contact = RepositoryContact::new(response);
         let command = Command::CertAuth(CaCommand::RepoUpdate(my_ca, repo_contact));
@@ -2163,12 +2167,12 @@ impl Options {
         let path = matches.value_of("request").unwrap();
         let path = PathBuf::from(path);
         let bytes = file::read(&path)?;
-        let mut req = rfc8183::PublisherRequest::validate(bytes.as_ref())?;
+        let mut req = idexchange::PublisherRequest::validate(bytes.as_ref())?;
 
         if let Some(publisher_str) = matches.value_of("publisher") {
             let publisher = PublisherHandle::from_str(publisher_str).map_err(|_| Error::InvalidHandle)?;
             let (tag, _, cert) = req.unpack();
-            req = rfc8183::PublisherRequest::new(tag, publisher, cert);
+            req = idexchange::PublisherRequest::new(tag, publisher, cert);
         }
 
         let command = Command::PubServer(PubServerCommand::AddPublisher(req));
@@ -2352,13 +2356,13 @@ pub enum CaCommand {
     Delete(Handle),     // Delete the CA -> let it withdraw and request revocation as well
 
     // Publishing
-    RepoPublisherRequest(Handle), // Get the RFC8183 publisher request
+    RepoPublisherRequest(Handle), // Get the idexchange:: publisher request
     RepoDetails(Handle),
     RepoUpdate(Handle, RepositoryContact),
     RepoStatus(Handle),
 
     // Parents (to this CA)
-    ChildRequest(Handle), // Get the RFC8183 child request
+    ChildRequest(Handle), // Get the idexchange:: child request
     AddParent(Handle, ParentCaReq),
     MyParentCaContact(Handle, ParentHandle),
     ParentStatuses(Handle),
@@ -2366,7 +2370,7 @@ pub enum CaCommand {
     Refresh(Handle), // Refresh with all parents
 
     // Children
-    ParentResponse(Handle, ChildHandle), // Get an RFC8183 parent response for a child
+    ParentResponse(Handle, ChildHandle), // Get an idexchange:: parent response for a child
     ChildInfo(Handle, ChildHandle),
     ChildAdd(Handle, AddChildRequest),
     ChildUpdate(Handle, ChildHandle, UpdateChildRequest),
@@ -2543,7 +2547,7 @@ impl Default for KrillUserDetails {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(clippy::large_enum_variant)]
 pub enum PubServerCommand {
-    AddPublisher(rfc8183::PublisherRequest),
+    AddPublisher(idexchange::PublisherRequest),
     ShowPublisher(PublisherHandle),
     RemovePublisher(PublisherHandle),
     RepositoryResponse(PublisherHandle),
@@ -2562,7 +2566,7 @@ pub enum Error {
     UriError(uri::Error),
     IoError(KrillIoError),
     ReportError(ReportError),
-    Rfc8183(rfc8183::Error),
+    Rfc8183(idexchange::Error),
     ResSetErr(ResourceSetError),
     InvalidRouteDelta(AuthorizationFmtError),
     InvalidAsn(String),
@@ -2589,7 +2593,7 @@ impl fmt::Display for Error {
             Error::UriError(e) => e.fmt(f),
             Error::IoError(e) => e.fmt(f),
             Error::ReportError(e) => e.fmt(f),
-            Error::Rfc8183(e) => write!(f, "Invalid RFC8183 XML: {}", e),
+            Error::Rfc8183(e) => write!(f, "Invalid RFC 8183 XML: {}", e),
             Error::ResSetErr(e) => write!(f, "Invalid resources requested: {}", e),
             Error::InvalidRouteDelta(e) => e.fmt(f),
             Error::InvalidAsn(s) => write!(f, "Invalid ASN format. Expected 'AS#', got: {}", s),
@@ -2623,8 +2627,8 @@ impl Error {
     }
 }
 
-impl From<rfc8183::Error> for Error {
-    fn from(e: rfc8183::Error) -> Self {
+impl From<idexchange::Error> for Error {
+    fn from(e: idexchange::Error) -> Self {
         Error::Rfc8183(e)
     }
 }

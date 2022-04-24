@@ -1,10 +1,10 @@
 use std::fmt;
 
-use rpki::repository::x509::Time;
+use rpki::{ca::idexchange::Handle, repository::x509::Time};
 
 use crate::commons::{
     actor::Actor,
-    api::{CommandHistoryRecord, CommandSummary, Handle, StoredEffect},
+    api::{CommandHistoryRecord, CommandSummary, StoredEffect},
     eventsourcing::{
         store::CommandKey,
         {Event, Storable},

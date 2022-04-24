@@ -8,7 +8,7 @@ use std::{
 
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-use rpki::repository::x509::Time;
+use rpki::{ca::idexchange::Handle, repository::x509::Time};
 
 use crate::commons::eventsourcing::{
     cmd::{Command, StoredCommandBuilder},
@@ -16,7 +16,7 @@ use crate::commons::eventsourcing::{
     WithStorableDetails,
 };
 use crate::commons::{
-    api::{CommandHistory, CommandHistoryCriteria, CommandHistoryRecord, Handle, Label},
+    api::{CommandHistory, CommandHistoryCriteria, CommandHistoryRecord, Label},
     error::KrillIoError,
     util::KrillVersion,
 };

@@ -6,11 +6,18 @@
 use std::{fmt, sync::RwLock};
 
 use priority_queue::PriorityQueue;
-use rpki::repository::x509::Time;
+
+use rpki::{
+    ca::{
+        idexchange::{Handle, ParentHandle},
+        provisioning::{ResourceClassName, RevocationRequest},
+    },
+    repository::x509::Time,
+};
 
 use crate::{
     commons::{
-        api::{Handle, ParentHandle, ResourceClassName, RevocationRequest, Timestamp},
+        api::Timestamp,
         eventsourcing::{self, Event},
     },
     daemon::ca::{CaEvt, CaEvtDet, CertAuth},

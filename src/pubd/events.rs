@@ -1,18 +1,23 @@
 use std::fmt;
 
-use rpki::{repository::x509::Time, uri};
+use rpki::{
+    ca::{
+        idcert::IdCert,
+        idexchange::{Handle, PublisherHandle},
+    },
+    repository::x509::{Time, Validity},
+    uri,
+};
 
 use crate::{
     commons::{
-        api::{
-            rrdp::{Delta, DeltaElements, Notification, Snapshot},
-            Handle, PublisherHandle,
-        },
-        crypto::{IdCert, IdCertBuilder, KrillSigner},
+        api::rrdp::{Delta, DeltaElements, Notification, Snapshot},
+        crypto::KrillSigner,
         error::Error,
         eventsourcing::StoredEvent,
         KrillResult,
     },
+    constants::ID_CERTIFICATE_VALIDITY_YEARS,
     pubd::Publisher,
 };
 
@@ -48,9 +53,7 @@ impl RepositoryAccessInitDetails {
         rrdp_base_uri: uri::Https,
         signer: &KrillSigner,
     ) -> KrillResult<RepositoryAccessIni> {
-        let key = signer.create_key()?;
-
-        let id_cert = IdCertBuilder::new_ta_id_cert(&key, signer).map_err(Error::signer)?;
+        let id_cert = signer.create_self_signed_id_cert()?;
 
         Ok(StoredEvent::new(
             handle,

@@ -1,6 +1,7 @@
 //! Certificate Authority related code.
 //!
-use crate::commons::api::Handle;
+use rpki::ca::idexchange::Handle;
+
 use crate::commons::error::Error;
 
 mod aspa;

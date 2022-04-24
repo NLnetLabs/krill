@@ -10,106 +10,44 @@ use std::{fmt, str};
 
 use bytes::Bytes;
 use chrono::{Duration, TimeZone, Utc};
-use rpki::repository::aspa::Aspa;
-use rpki::repository::resources::{AsBlock, AsBlocksBuilder, Asn};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use rpki::{
+    ca::{
+        idcert::IdCert,
+        idexchange::{ChildHandle, Handle, ParentHandle, RepoInfo, RepositoryResponse, ServiceUri},
+        provisioning::{
+            IssuanceRequest, IssuedCert, RequestResourceLimit, ResourceClassEntitlements, ResourceClassListResponse,
+            ResourceClassName, SigningCert,
+        },
+        publication::Base64,
+        resourceset::ResourceSet,
+    },
     repository::{
+        aspa::Aspa,
         cert::Cert,
         crl::{Crl, CrlEntry},
         crypto::KeyIdentifier,
         manifest::Manifest,
-        resources::{AsBlocks, AsResources, IpBlocks, IpBlocksForFamily, IpResources},
+        resources::{AsBlock, AsBlocks, AsBlocksBuilder, AsResources, Asn, IpBlocks, IpBlocksForFamily, IpResources},
         roa::{Roa, RoaIpAddress},
         x509::{Serial, Time},
     },
+    rrdp::Hash,
     uri,
 };
 
-use crate::commons::util::KrillVersion;
 use crate::{
     commons::{
         api::{
-            rrdp::PublishElement, AspaDefinition, Base64, ChildHandle, EntitlementClass, Entitlements, ErrorResponse,
-            Handle, HexEncodedHash, IssuanceRequest, ParentCaContact, ParentHandle, RepositoryContact,
-            RequestResourceLimit, RoaAggregateKey, RoaDefinition, SigningCert,
+            rrdp::PublishElement, AspaDefinition, ErrorResponse, ParentCaContact, RepositoryContact, RoaAggregateKey,
+            RoaDefinition,
         },
-        crypto::IdCert,
-        remote::rfc8183::ServiceUri,
         util::ext_serde,
+        util::KrillVersion,
     },
     daemon::ca::RouteAuthorization,
 };
-
-//------------ ResourceClassName -------------------------------------------
-
-/// This type represents a resource class name, as used in RFC6492. The protocol
-/// allows for any arbitrary set of utf8 characters to be used as the name, though
-/// in practice names can be expected to be short and plain ascii or even numbers.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialOrd, PartialEq)]
-pub struct ResourceClassName {
-    name: Arc<str>,
-}
-
-pub type ParentResourceClassName = ResourceClassName;
-
-impl Default for ResourceClassName {
-    fn default() -> ResourceClassName {
-        ResourceClassName::from(0)
-    }
-}
-
-impl AsRef<str> for ResourceClassName {
-    fn as_ref(&self) -> &str {
-        &self.name
-    }
-}
-
-impl From<u32> for ResourceClassName {
-    fn from(nr: u32) -> ResourceClassName {
-        ResourceClassName {
-            name: format!("{}", nr).into(),
-        }
-    }
-}
-
-impl From<&str> for ResourceClassName {
-    fn from(s: &str) -> ResourceClassName {
-        ResourceClassName { name: s.into() }
-    }
-}
-
-impl From<String> for ResourceClassName {
-    fn from(s: String) -> ResourceClassName {
-        ResourceClassName { name: s.into() }
-    }
-}
-
-impl fmt::Display for ResourceClassName {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.name)
-    }
-}
-
-impl Serialize for ResourceClassName {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        self.to_string().serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for ResourceClassName {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<ResourceClassName, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let string = String::deserialize(deserializer)?;
-        Ok(ResourceClassName::from(string))
-    }
-}
 
 //------------ IdCertPem -----------------------------------------------------
 
@@ -117,7 +55,7 @@ impl<'de> Deserialize<'de> for ResourceClassName {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct IdCertPem {
     pem: String,
-    hash: HexEncodedHash,
+    hash: Hash,
 }
 
 impl IdCertPem {
@@ -125,7 +63,7 @@ impl IdCertPem {
         &self.pem
     }
 
-    pub fn hash(&self) -> &HexEncodedHash {
+    pub fn hash(&self) -> &Hash {
         &self.hash
     }
 }
@@ -146,7 +84,7 @@ impl From<&IdCert> for IdCertPem {
 
         pem.push_str("-----END CERTIFICATE-----\n");
 
-        let hash = HexEncodedHash::from_content(&cer.to_bytes());
+        let hash = Hash::from_data(&cer.to_bytes());
 
         IdCertPem { pem, hash }
     }
@@ -227,11 +165,11 @@ pub type RevokedObject = ReplacedObject;
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ReplacedObject {
     revocation: Revocation,
-    hash: HexEncodedHash,
+    hash: Hash,
 }
 
 impl ReplacedObject {
-    pub fn new(revocation: Revocation, hash: HexEncodedHash) -> Self {
+    pub fn new(revocation: Revocation, hash: Hash) -> Self {
         ReplacedObject { revocation, hash }
     }
 
@@ -239,7 +177,7 @@ impl ReplacedObject {
         self.revocation
     }
 
-    pub fn hash(&self) -> &HexEncodedHash {
+    pub fn hash(&self) -> &Hash {
         &self.hash
     }
 }
@@ -247,13 +185,13 @@ impl ReplacedObject {
 impl From<&Cert> for ReplacedObject {
     fn from(c: &Cert) -> Self {
         let revocation = Revocation::from(c);
-        let hash = HexEncodedHash::from_content(c.to_captured().as_slice());
+        let hash = Hash::from_data(c.to_captured().as_slice());
         ReplacedObject { revocation, hash }
     }
 }
 
-impl From<&IssuedCert> for ReplacedObject {
-    fn from(issued: &IssuedCert) -> Self {
+impl From<&DelegatedCertificate> for ReplacedObject {
+    fn from(issued: &DelegatedCertificate) -> Self {
         Self::from(issued.cert())
     }
 }
@@ -261,7 +199,7 @@ impl From<&IssuedCert> for ReplacedObject {
 impl From<&Roa> for ReplacedObject {
     fn from(roa: &Roa) -> Self {
         let revocation = Revocation::from(roa.cert());
-        let hash = HexEncodedHash::from_content(roa.to_captured().as_slice());
+        let hash = Hash::from_data(roa.to_captured().as_slice());
         ReplacedObject { revocation, hash }
     }
 }
@@ -269,50 +207,37 @@ impl From<&Roa> for ReplacedObject {
 impl From<&Aspa> for ReplacedObject {
     fn from(aspa: &Aspa) -> Self {
         let revocation = Revocation::from(aspa.cert());
-        let hash = HexEncodedHash::from_content(aspa.to_captured().as_slice());
+        let hash = Hash::from_data(aspa.to_captured().as_slice());
         ReplacedObject { revocation, hash }
     }
 }
 
-//------------ IssuedCert ----------------------------------------------------
+//------------ DelegatedCertificate ------------------------------------------
 
-/// This type defines an issued certificate, including its publication
-/// point and resource set. Intended for use in list responses defined
-/// in RFC6492, section 3.3.2.
-///
-// Note that [`Cert`] includes the resources extensions, but only
-// exposes these when it's coerced into a [`ResourceCert`], which
-// can only be done through validation. The latter type cannot be
-// deserialized. Therefore opting for some duplication in this case,
-// which should actually also help with readability and debug-ability
-// of the stored json structures.
+/// This type defines a certificate issued to a child. It differs
+/// from [`rpki::ca::provisioning::IssuedCert`] in that it supplies
+/// convenience access to an explicit ResourceSet - which cannot use
+/// inherit. And.. this gives us a safeguard wrt to changes in the
+/// rpki library which would affect (de-)serialization of this type
+/// which is kept in event history and snapshots.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct IssuedCert {
+pub struct DelegatedCertificate {
     uri: uri::Rsync,             // where this cert is published
     limit: RequestResourceLimit, // the limit on the request
     resource_set: ResourceSet,
     cert: Cert,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    replaces: Option<ReplacedObject>,
 }
 
-pub type SuspendedCert = IssuedCert;
-pub type UnsuspendedCert = IssuedCert;
+pub type SuspendedCert = DelegatedCertificate;
+pub type UnsuspendedCert = DelegatedCertificate;
 
-impl IssuedCert {
-    pub fn new(
-        uri: uri::Rsync,
-        limit: RequestResourceLimit,
-        resource_set: ResourceSet,
-        cert: Cert,
-        replaces: Option<ReplacedObject>,
-    ) -> Self {
-        IssuedCert {
+impl DelegatedCertificate {
+    pub fn new(uri: uri::Rsync, limit: RequestResourceLimit, resource_set: ResourceSet, cert: Cert) -> Self {
+        DelegatedCertificate {
             uri,
             limit,
             resource_set,
             cert,
-            replaces,
         }
     }
 
@@ -332,9 +257,6 @@ impl IssuedCert {
     pub fn cert(&self) -> &Cert {
         &self.cert
     }
-    pub fn replaces(&self) -> Option<&ReplacedObject> {
-        self.replaces.as_ref()
-    }
 
     /// Returns a (possibly empty) set of reduced applicable resources which is the intersection
     /// of the encompassing resources and this certificate's current resources.
@@ -349,8 +271,8 @@ impl IssuedCert {
     }
 }
 
-impl PartialEq for IssuedCert {
-    fn eq(&self, other: &IssuedCert) -> bool {
+impl PartialEq for DelegatedCertificate {
+    fn eq(&self, other: &DelegatedCertificate) -> bool {
         self.uri == other.uri
             && self.limit == other.limit
             && self.resource_set == other.resource_set
@@ -358,13 +280,23 @@ impl PartialEq for IssuedCert {
     }
 }
 
-impl Eq for IssuedCert {}
+impl Eq for DelegatedCertificate {}
 
-impl Deref for IssuedCert {
+impl Deref for DelegatedCertificate {
     type Target = Cert;
 
     fn deref(&self) -> &Self::Target {
         &self.cert
+    }
+}
+
+impl From<&DelegatedCertificate> for IssuedCert {
+    fn from(krill_issued: &DelegatedCertificate) -> Self {
+        IssuedCert::new(
+            krill_issued.uri.clone(),
+            krill_issued.limit.clone(),
+            krill_issued.cert.clone(),
+        )
     }
 }
 
@@ -436,12 +368,12 @@ impl RcvdCert {
     }
 }
 
-impl From<IssuedCert> for RcvdCert {
-    fn from(issued: IssuedCert) -> Self {
+impl From<DelegatedCertificate> for RcvdCert {
+    fn from(delegated: DelegatedCertificate) -> Self {
         RcvdCert {
-            cert: issued.cert,
-            uri: issued.uri,
-            resources: issued.resource_set,
+            cert: delegated.cert,
+            uri: delegated.uri,
+            resources: delegated.resource_set,
         }
     }
 }
@@ -524,73 +456,6 @@ impl fmt::Display for TrustAnchorLocator {
     }
 }
 
-//------------ RepoInfo ------------------------------------------------------
-
-/// Contains the rsync and RRDP base URIs for a repository,
-/// or publisher inside a repository.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct RepoInfo {
-    base_uri: uri::Rsync,
-    rpki_notify: uri::Https,
-}
-
-impl RepoInfo {
-    pub fn new(base_uri: uri::Rsync, rpki_notify: uri::Https) -> Self {
-        RepoInfo { base_uri, rpki_notify }
-    }
-
-    pub fn base_uri(&self) -> &uri::Rsync {
-        &self.base_uri
-    }
-
-    /// Returns the ca repository uri for this RepoInfo and a given namespace.
-    /// If the namespace is an empty str, it is omitted from the path.
-    pub fn ca_repository(&self, name_space: &str) -> uri::Rsync {
-        match name_space {
-            "" => self.base_uri.clone(),
-            _ => self.base_uri.join(name_space.as_ref()).unwrap(),
-        }
-    }
-
-    /// Returns the rpki manifest uri for this RepoInfo and a given namespace.
-    /// If the namespace is an empty str, it is omitted from the path.
-    pub fn rpki_manifest(&self, name_space: &str, signing_key: &KeyIdentifier) -> uri::Rsync {
-        self.resolve(name_space, &Self::mft_name(signing_key))
-    }
-
-    /// Returns the CRL Distribution Point (rsync URI) for this RepoInfo, given the
-    /// namespace and signing key.
-    pub fn crl_distribution_point(&self, name_space: &str, signing_key: &KeyIdentifier) -> uri::Rsync {
-        self.resolve(name_space, &Self::crl_name(signing_key))
-    }
-
-    /// Returns the rpki notify uri.
-    /// (Note that this is the same for all namespaces).
-    pub fn rpki_notify(&self) -> uri::Https {
-        self.rpki_notify.clone()
-    }
-
-    pub fn resolve(&self, name_space: &str, file_name: &str) -> uri::Rsync {
-        self.ca_repository(name_space).join(file_name.as_ref()).unwrap()
-    }
-
-    pub fn mft_name(signing_key: &KeyIdentifier) -> ObjectName {
-        ObjectName::new(signing_key, "mft")
-    }
-
-    pub fn crl_name(signing_key: &KeyIdentifier) -> ObjectName {
-        ObjectName::new(signing_key, "crl")
-    }
-}
-
-impl PartialEq for RepoInfo {
-    fn eq(&self, other: &RepoInfo) -> bool {
-        self.base_uri == other.base_uri && self.rpki_notify.as_str() == other.rpki_notify.as_str()
-    }
-}
-
-impl Eq for RepoInfo {}
-
 //------------ PendingKeyInfo ------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -647,6 +512,18 @@ impl ObjectName {
         ObjectName(format!("{}.{}", ki, extension))
     }
 
+    pub fn cer_for_key(ki: &KeyIdentifier) -> Self {
+        ObjectName::new(ki, "cer")
+    }
+
+    pub fn mft_for_key(ki: &KeyIdentifier) -> Self {
+        ObjectName::new(ki, "mft")
+    }
+
+    pub fn crl_for_key(ki: &KeyIdentifier) -> Self {
+        ObjectName::new(ki, "crl")
+    }
+
     pub fn aspa(customer: Asn) -> Self {
         ObjectName(format!("{}.asa", customer))
     }
@@ -654,19 +531,19 @@ impl ObjectName {
 
 impl From<&Cert> for ObjectName {
     fn from(c: &Cert) -> Self {
-        Self::new(&c.subject_key_identifier(), "cer")
+        Self::cer_for_key(&c.subject_key_identifier())
     }
 }
 
 impl From<&Manifest> for ObjectName {
     fn from(m: &Manifest) -> Self {
-        Self::new(&m.cert().authority_key_identifier().unwrap(), "mft")
+        Self::mft_for_key(&m.cert().authority_key_identifier().unwrap())
     }
 }
 
 impl From<&Crl> for ObjectName {
     fn from(c: &Crl) -> Self {
-        Self::new(c.authority_key_identifier(), "crl")
+        Self::crl_for_key(c.authority_key_identifier())
     }
 }
 
@@ -864,8 +741,8 @@ impl ResourceSetSummary {
 impl From<&ResourceSet> for ResourceSetSummary {
     fn from(rs: &ResourceSet) -> Self {
         let asns = rs.asn().iter().count();
-        let ipv4 = rs.v4.iter().count();
-        let ipv6 = rs.v6.iter().count();
+        let ipv4 = rs.ipv4().iter().count();
+        let ipv6 = rs.ipv6().iter().count();
         ResourceSetSummary { asns, ipv4, ipv6 }
     }
 }
@@ -877,299 +754,6 @@ impl fmt::Display for ResourceSetSummary {
             "asn: {} blocks, v4: {} blocks, v6: {} blocks",
             self.asns, self.ipv4, self.ipv6
         )
-    }
-}
-
-//------------ ResourceSet ---------------------------------------------------
-
-/// This type defines a set of Internet Number Resources.
-///
-/// This type supports conversions to and from string representations,
-/// and is (de)serializable.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ResourceSet {
-    asn: AsBlocks,
-
-    #[serde(
-        deserialize_with = "ext_serde::de_ip_blocks_4",
-        serialize_with = "ext_serde::ser_ip_blocks_4"
-    )]
-    v4: IpBlocks,
-
-    #[serde(
-        deserialize_with = "ext_serde::de_ip_blocks_6",
-        serialize_with = "ext_serde::ser_ip_blocks_6"
-    )]
-    v6: IpBlocks,
-}
-
-impl ResourceSet {
-    pub fn new(asn: AsBlocks, v4: IpBlocks, v6: IpBlocks) -> Self {
-        ResourceSet { asn, v4, v6 }
-    }
-
-    pub fn from_strs(asn: &str, v4: &str, v6: &str) -> Result<Self, ResourceSetError> {
-        let asn = AsBlocks::from_str(asn).map_err(|_| ResourceSetError::asn(asn))?;
-        if v4.contains(':') || v6.contains('.') {
-            return Err(ResourceSetError::Mix);
-        }
-        let v4 = IpBlocks::from_str(v4).map_err(|_| ResourceSetError::v4(v4))?;
-        let v6 = IpBlocks::from_str(v6).map_err(|_| ResourceSetError::v6(v6))?;
-        Ok(ResourceSet { asn, v4, v6 })
-    }
-
-    pub fn all_resources() -> Self {
-        let asns = "AS0-AS4294967295";
-        let v4 = "0.0.0.0/0";
-        let v6 = "::/0";
-        ResourceSet::from_strs(asns, v4, v6).unwrap()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self == &ResourceSet::default()
-    }
-
-    pub fn summary(&self) -> ResourceSetSummary {
-        ResourceSetSummary::from(self)
-    }
-
-    pub fn asn(&self) -> &AsBlocks {
-        &self.asn
-    }
-
-    pub fn v4(&self) -> IpBlocksForFamily {
-        self.v4.as_v4()
-    }
-
-    pub fn v6(&self) -> IpBlocksForFamily {
-        self.v6.as_v6()
-    }
-
-    pub fn to_as_resources(&self) -> AsResources {
-        AsResources::blocks(self.asn.clone())
-    }
-
-    pub fn to_ip_resources_v4(&self) -> IpResources {
-        IpResources::blocks(self.v4.clone())
-    }
-
-    pub fn to_ip_resources_v6(&self) -> IpResources {
-        IpResources::blocks(self.v6.clone())
-    }
-
-    /// Apply a limit to this set, will return an error in case the limit
-    /// exceeds the set.
-    pub fn apply_limit(&self, limit: &RequestResourceLimit) -> Result<Self, ResourceSetError> {
-        if limit.is_empty() {
-            return Ok(self.clone());
-        }
-
-        let asn = {
-            match limit.asn() {
-                None => self.asn.clone(),
-                Some(asn) => {
-                    if self.asn.contains(asn) {
-                        asn.clone()
-                    } else {
-                        return Err(ResourceSetError::Limit);
-                    }
-                }
-            }
-        };
-
-        let v4 = {
-            match limit.v4() {
-                None => self.v4.clone(),
-                Some(v4) => {
-                    if self.v4.contains(v4) {
-                        v4.clone()
-                    } else {
-                        return Err(ResourceSetError::Limit);
-                    }
-                }
-            }
-        };
-
-        let v6 = {
-            match limit.v6() {
-                None => self.v6.clone(),
-                Some(v6) => {
-                    if self.v6.contains(v6) {
-                        v6.clone()
-                    } else {
-                        return Err(ResourceSetError::Limit);
-                    }
-                }
-            }
-        };
-
-        Ok(ResourceSet { asn, v4, v6 })
-    }
-
-    /// Check of the other set is contained by this set. If this set
-    /// contains inherited resources, then any explicit corresponding
-    /// resources in the other set will be considered to fall outside of
-    /// this set.
-    pub fn contains(&self, other: &ResourceSet) -> bool {
-        self.asn.contains(other.asn()) && self.v4.contains(&other.v4) && self.v6.contains(&other.v6)
-    }
-
-    /// Check if the resource set contains the given Asn
-    pub fn contains_asn(&self, asn: Asn) -> bool {
-        let mut blocks = AsBlocksBuilder::new();
-        blocks.push(AsBlock::Id(asn));
-        let blocks = blocks.finalize();
-        self.asn.contains(&blocks)
-    }
-
-    /// Returns the union of this ResourceSet and the other. I.e. a new
-    /// ResourceSet containing all resources found in one or both.
-    pub fn union(&self, other: &ResourceSet) -> Self {
-        let asn = self.asn.union(&other.asn);
-        let v4 = self.v4.union(&other.v4);
-        let v6 = self.v6.union(&other.v6);
-        ResourceSet { asn, v4, v6 }
-    }
-
-    /// Returns the intersection of this ResourceSet and the other. I.e. a new
-    /// ResourceSet containing all resources found in both sets.
-    pub fn intersection(&self, other: &ResourceSet) -> Self {
-        let asn = self.asn.intersection(&other.asn);
-        let v4 = self.v4.intersection(&other.v4);
-        let v6 = self.v6.intersection(&other.v6);
-        ResourceSet { asn, v4, v6 }
-    }
-
-    /// Returns the difference from another ResourceSet towards `self`.
-    pub fn difference(&self, other: &ResourceSet) -> ResourceSetDiff {
-        let added = ResourceSet {
-            asn: self.asn.difference(&other.asn),
-            v4: self.v4.difference(&other.v4),
-            v6: self.v6.difference(&other.v6),
-        };
-        let removed = ResourceSet {
-            asn: other.asn.difference(&self.asn),
-            v4: other.v4.difference(&self.v4),
-            v6: other.v6.difference(&self.v6),
-        };
-        ResourceSetDiff { added, removed }
-    }
-
-    pub fn contains_roa_address(&self, roa_address: &RoaIpAddress) -> bool {
-        self.v4.contains_roa(roa_address) || self.v6.contains_roa(roa_address)
-    }
-}
-
-impl Default for ResourceSet {
-    fn default() -> Self {
-        ResourceSet {
-            asn: AsBlocks::empty(),
-            v4: IpBlocks::empty(),
-            v6: IpBlocks::empty(),
-        }
-    }
-}
-
-impl FromStr for ResourceSet {
-    type Err = ResourceSetError;
-
-    // Expects formatting like we use in Display, i.e.:
-    // asn: AS1-2, v4: 10.0.0.0/16, v6: ::0/128
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // min len for empty set is 12: 'asn: , v4: ,v6: '
-        if s.len() < 16 || !s.starts_with("asn: ") {
-            return Err(ResourceSetError::FromString);
-        }
-        let v4_start = s.find(", v4: ").ok_or(ResourceSetError::FromString)?;
-        let v6_start = s.find(", v6: ").ok_or(ResourceSetError::FromString)?;
-
-        let asn = &s[5..v4_start];
-        let v4 = &s[v4_start + 6..v6_start];
-        let v6 = &s[v6_start + 6..];
-
-        ResourceSet::from_strs(asn, v4, v6)
-    }
-}
-
-impl TryFrom<&Cert> for ResourceSet {
-    type Error = ResourceSetError;
-
-    fn try_from(cert: &Cert) -> Result<Self, Self::Error> {
-        let asn = match cert.as_resources().to_blocks() {
-            Ok(as_blocks) => as_blocks,
-            Err(_) => return Err(ResourceSetError::InheritOnCaCert),
-        };
-
-        let v4 = match cert.v4_resources().to_blocks() {
-            Ok(blocks) => blocks,
-            Err(_) => return Err(ResourceSetError::InheritOnCaCert),
-        };
-
-        let v6 = match cert.v6_resources().to_blocks() {
-            Ok(blocks) => blocks,
-            Err(_) => return Err(ResourceSetError::InheritOnCaCert),
-        };
-
-        Ok(ResourceSet { asn, v4, v6 })
-    }
-}
-
-impl fmt::Display for ResourceSet {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "asn: {}, v4: {}, v6: {}", self.asn, self.v4(), self.v6())
-    }
-}
-
-//------------ ResourceSetDiff -----------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ResourceSetDiff {
-    added: ResourceSet,
-    removed: ResourceSet,
-}
-
-impl ResourceSetDiff {
-    pub fn is_empty(&self) -> bool {
-        self.added.is_empty() && self.removed.is_empty()
-    }
-}
-
-impl fmt::Display for ResourceSetDiff {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.is_empty() {
-            write!(f, "<no changes in resources>")?;
-        }
-        if !self.added.is_empty() {
-            write!(f, "Added:")?;
-            if !self.added.asn.is_empty() {
-                write!(f, " asn: {}", self.added.asn)?;
-            }
-            if !self.added.v4.is_empty() {
-                write!(f, " ipv4: {}", self.added.v4())?;
-            }
-            if !self.added.v6.is_empty() {
-                write!(f, " ipv6: {}", self.added.v6())?;
-            }
-
-            if !self.removed.is_empty() {
-                write!(f, " ")?;
-            }
-        }
-        if !self.removed.is_empty() {
-            write!(f, "Removed:")?;
-
-            if !self.removed.asn.is_empty() {
-                write!(f, " asn: {}", self.removed.asn)?;
-            }
-            if !self.removed.v4.is_empty() {
-                write!(f, " ipv4: {}", self.removed.v4())?;
-            }
-            if !self.removed.v6.is_empty() {
-                write!(f, " ipv6: {}", self.removed.v6())?;
-            }
-        }
-
-        Ok(())
     }
 }
 
@@ -1394,18 +978,25 @@ impl fmt::Display for ParentStatuses {
                         write!(f, "LAST KNOWN Resource Entitlements:")?;
                     }
 
-                    if status.entitlements.is_empty() {
+                    if status.classes.is_empty() {
                         writeln!(f, " None")?;
                     } else {
                         writeln!(f, " {}", status.all_resources)?;
-                        for (rc, set) in status.entitlements.iter() {
-                            writeln!(f, "  resource class: {}", rc)?;
-                            writeln!(f, "  issuing cert uri: {}", set.parent_cert.uri)?;
+                        for class in &status.classes {
+                            writeln!(f, "  resource class:     {}", class.class_name())?;
+                            writeln!(f, "  entitled resources: {}", class.resource_set())?;
+                            writeln!(f, "  entitled not after: {}", class.not_after().to_rfc3339())?;
+
+                            let parent_cert: ParentStatusIssuingCert = class.signing_cert().into();
+                            writeln!(f, "  issuing cert uri: {}", parent_cert.uri)?;
+                            writeln!(f, "  issuing cert PEM:\n\n{}\n", parent_cert.cert_pem)?;
+
                             writeln!(f, "  received certificate(s):")?;
-                            for rcvd in set.received.iter() {
-                                writeln!(f, "    published at: {}", rcvd.uri)?;
-                                writeln!(f, "    resources:    {}", rcvd.resources)?;
-                                writeln!(f, "    cert PEM:\n\n{}\n", rcvd.cert_pem)?;
+                            for issued in class.issued_certs().iter() {
+                                let issued: ParentStatusCert = issued.into();
+
+                                writeln!(f, "    published at: {}", issued.uri)?;
+                                writeln!(f, "    cert PEM:\n\n{}\n", issued.cert_pem)?;
                             }
                         }
                     }
@@ -1413,31 +1004,6 @@ impl fmt::Display for ParentStatuses {
             }
         }
         Ok(())
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct KnownEntitlement {
-    parent_cert: ParentStatusIssuingCert,
-    received: Vec<ParentStatusCert>,
-}
-
-impl KnownEntitlement {
-    fn resource_set(&self) -> ResourceSet {
-        let mut resources = ResourceSet::default();
-        for rcvd in &self.received {
-            resources = resources.union(&rcvd.resources)
-        }
-        resources
-    }
-}
-
-impl From<&EntitlementClass> for KnownEntitlement {
-    fn from(entitlement: &EntitlementClass) -> Self {
-        let parent_cert = entitlement.issuer().into();
-        let received = entitlement.issued().iter().map(|issued| issued.into()).collect();
-
-        KnownEntitlement { parent_cert, received }
     }
 }
 
@@ -1453,7 +1019,7 @@ impl From<&SigningCert> for ParentStatusIssuingCert {
         let cert_pem = format!("-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n", cert);
 
         ParentStatusIssuingCert {
-            uri: signing.uri().clone(),
+            uri: signing.url().clone(),
             cert_pem,
         }
     }
@@ -1462,17 +1028,15 @@ impl From<&SigningCert> for ParentStatusIssuingCert {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParentStatusCert {
     uri: uri::Rsync,
-    resources: ResourceSet,
     cert_pem: String,
 }
 
 impl From<&IssuedCert> for ParentStatusCert {
     fn from(issued: &IssuedCert) -> Self {
-        let cert = base64::encode(issued.cert.to_captured().as_slice());
+        let cert = base64::encode(issued.cert().to_captured().as_slice());
         let cert_pem = format!("-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n", cert);
         ParentStatusCert {
             uri: issued.uri().clone(),
-            resources: issued.resource_set().clone(),
             cert_pem,
         }
     }
@@ -1483,7 +1047,13 @@ pub struct ParentStatus {
     last_exchange: Option<ParentExchange>,
     last_success: Option<Timestamp>,
     all_resources: ResourceSet,
-    entitlements: HashMap<ResourceClassName, KnownEntitlement>,
+    
+    // The struct changed - we did not record classes in 0.9.5 and below.
+    // Just default to an empty vec in case this field is missing, and
+    // ignore the 'entitlements' field that used to be there. This will
+    // be updated as soon as the CA synchronizes with its parent again.
+    #[serde(default)]
+    classes: Vec<ResourceClassEntitlements>,
 }
 
 impl ParentStatus {
@@ -1495,8 +1065,8 @@ impl ParentStatus {
         self.last_exchange.as_ref()
     }
 
-    pub fn entitlements(&self) -> &HashMap<ResourceClassName, KnownEntitlement> {
-        &self.entitlements
+    pub fn classes(&self) -> &Vec<ResourceClassEntitlements> {
+        &self.classes
     }
 
     pub fn to_failure_opt(&self) -> Option<ErrorResponse> {
@@ -1511,22 +1081,14 @@ impl ParentStatus {
         });
     }
 
-    pub fn set_entitlements(&mut self, uri: ServiceUri, entitlements: &Entitlements) {
+    pub fn set_entitlements(&mut self, uri: ServiceUri, entitlements: &ResourceClassListResponse) {
         self.set_last_updated(uri);
 
-        self.entitlements = entitlements
-            .classes()
-            .iter()
-            .map(|rc| {
-                let resource_class_name = rc.class_name().clone();
-                let known_entitlements = rc.into();
-                (resource_class_name, known_entitlements)
-            })
-            .collect();
+        self.classes = entitlements.classes().clone();
 
         let mut all_resources = ResourceSet::default();
-        for entitlement in self.entitlements.values() {
-            all_resources = all_resources.union(&entitlement.resource_set())
+        for class in &self.classes {
+            all_resources = all_resources.union(&class.resource_set())
         }
 
         self.all_resources = all_resources;
@@ -1549,7 +1111,7 @@ impl Default for ParentStatus {
             last_exchange: None,
             last_success: None,
             all_resources: ResourceSet::default(),
-            entitlements: HashMap::new(),
+            classes: vec![],
         }
     }
 }
@@ -2117,7 +1679,8 @@ impl fmt::Display for CertAuthInfo {
 
         if let Some(repo_info) = self.repo_info() {
             let base_uri = repo_info.base_uri();
-            let rrdp_uri = repo_info.rpki_notify();
+            let rrdp_uri = repo_info.rpki_notify().map(|uri| uri.as_str()).unwrap_or("<none>");
+
             writeln!(f, "Base uri: {}", base_uri)?;
             writeln!(f, "RRDP uri: {}", rrdp_uri)?;
         } else {
@@ -2135,8 +1698,8 @@ impl fmt::Display for CertAuthInfo {
         } else {
             writeln!(f, "Total resources:")?;
             writeln!(f, "    ASNs: {}", resources.asn())?;
-            writeln!(f, "    IPv4: {}", resources.v4())?;
-            writeln!(f, "    IPv6: {}", resources.v6())?;
+            writeln!(f, "    IPv4: {}", resources.ipv4())?;
+            writeln!(f, "    IPv6: {}", resources.ipv6())?;
         }
         writeln!(f)?;
 
@@ -2298,8 +1861,8 @@ impl fmt::Display for ResourceClassKeysInfo {
             let resources = key.incoming_cert().resources();
             res.push_str("    Resources:\n");
             res.push_str(&format!("    ASNs: {}\n", resources.asn()));
-            res.push_str(&format!("    IPv4: {}\n", resources.v4()));
-            res.push_str(&format!("    IPv6: {}\n", resources.v6()));
+            res.push_str(&format!("    IPv4: {}\n", resources.ipv4()));
+            res.push_str(&format!("    IPv6: {}\n", resources.ipv6()));
         }
 
         res.fmt(f)
@@ -2328,8 +1891,9 @@ impl fmt::Display for CaRepoDetails {
         writeln!(f, "Repository Details:")?;
         writeln!(f, "  service uri: {}", self.contact.service_uri())?;
         let repo_info = self.contact.repo_info();
+        let rrdp_uri = repo_info.rpki_notify().map(|uri| uri.as_str()).unwrap_or("<none>");
         writeln!(f, "  base_uri:    {}", repo_info.base_uri())?;
-        writeln!(f, "  rpki_notify: {}", repo_info.rpki_notify())?;
+        writeln!(f, "  rpki_notify: {}", rrdp_uri)?;
         writeln!(f)?;
 
         Ok(())
@@ -2609,49 +2173,49 @@ impl fmt::Display for RtaPrepResponse {
     }
 }
 
-//------------ ResSetErr -----------------------------------------------------
+// //------------ ResSetErr -----------------------------------------------------
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ResourceSetError {
-    Asn(String),
-    V4(String),
-    V6(String),
-    Mix,
-    InheritOnCaCert,
-    Limit,
-    FromString,
-}
+// #[derive(Clone, Debug, Eq, PartialEq)]
+// pub enum ResourceSetError {
+//     Asn(String),
+//     V4(String),
+//     V6(String),
+//     Mix,
+//     InheritOnCaCert,
+//     Limit,
+//     FromString,
+// }
 
-impl fmt::Display for ResourceSetError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            ResourceSetError::Asn(s) => write!(f, "Cannot parse ASN resource: {}", s),
-            ResourceSetError::V4(s) => write!(f, "Cannot parse IPv4 resource: {}", s),
-            ResourceSetError::V6(s) => write!(f, "Cannot parse IPv6 resource: {}", s),
-            ResourceSetError::Mix => write!(f, "Mixed Address Families in configured resource set"),
-            ResourceSetError::InheritOnCaCert => write!(f, "Found inherited resources on CA certificate"),
-            ResourceSetError::Limit => write!(f, "Limit in CSR exceeds resource entitlements."),
-            ResourceSetError::FromString => write!(
-                f,
-                "Cannot parse resource set string, expected: 'asn: <ASNs>, ipv4: <IPv4s>, ipv6: <IPv6s>'."
-            ),
-        }
-    }
-}
+// impl fmt::Display for ResourceSetError {
+//     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+//         match self {
+//             ResourceSetError::Asn(s) => write!(f, "Cannot parse ASN resource: {}", s),
+//             ResourceSetError::V4(s) => write!(f, "Cannot parse IPv4 resource: {}", s),
+//             ResourceSetError::V6(s) => write!(f, "Cannot parse IPv6 resource: {}", s),
+//             ResourceSetError::Mix => write!(f, "Mixed Address Families in configured resource set"),
+//             ResourceSetError::InheritOnCaCert => write!(f, "Found inherited resources on CA certificate"),
+//             ResourceSetError::Limit => write!(f, "Limit in CSR exceeds resource entitlements."),
+//             ResourceSetError::FromString => write!(
+//                 f,
+//                 "Cannot parse resource set string, expected: 'asn: <ASNs>, ipv4: <IPv4s>, ipv6: <IPv6s>'."
+//             ),
+//         }
+//     }
+// }
 
-impl ResourceSetError {
-    fn asn(asn: impl fmt::Display) -> Self {
-        ResourceSetError::Asn(asn.to_string())
-    }
+// impl ResourceSetError {
+//     fn asn(asn: impl fmt::Display) -> Self {
+//         ResourceSetError::Asn(asn.to_string())
+//     }
 
-    fn v4(v4: impl fmt::Display) -> Self {
-        ResourceSetError::V4(v4.to_string())
-    }
+//     fn v4(v4: impl fmt::Display) -> Self {
+//         ResourceSetError::V4(v4.to_string())
+//     }
 
-    fn v6(v6: impl fmt::Display) -> Self {
-        ResourceSetError::V6(v6.to_string())
-    }
-}
+//     fn v6(v6: impl fmt::Display) -> Self {
+//         ResourceSetError::V6(v6.to_string())
+//     }
+// }
 
 //============ Tests =========================================================
 
@@ -2673,19 +2237,7 @@ mod test {
     }
 
     fn info() -> RepoInfo {
-        RepoInfo {
-            base_uri: base_uri(),
-            rpki_notify: rrdp_uri(),
-        }
-    }
-
-    #[test]
-    fn all_resources() {
-        let asns = "0-4294967295";
-        let v4 = "0.0.0.0-255.255.255.255";
-        let v6 = "::0/0";
-
-        let _set = ResourceSet::from_strs(asns, v4, v6).unwrap();
+        RepoInfo::new(base_uri(), Some(rrdp_uri()))
     }
 
     #[test]
@@ -2701,7 +2253,7 @@ mod test {
             let key_id = signer.create_key(PublicKeyFormat::Rsa).unwrap();
             let pub_key = signer.get_key_info(&key_id).unwrap();
 
-            let mft_uri = info().rpki_manifest("", &pub_key.key_identifier());
+            let mft_uri = info().resolve("", ObjectName::mft_for_key(&pub_key.key_identifier()).as_str());
 
             let mft_path = mft_uri.relative_to(&base_uri()).unwrap();
 
@@ -2720,24 +2272,10 @@ mod test {
     }
 
     #[test]
-    fn serialize_deserialize_resource_set() {
-        let asns = "AS65000-AS65003, AS65005";
-        let ipv4s = "10.0.0.0/8, 192.168.0.0";
-        let ipv6s = "::1, 2001:db8::/32";
-
-        let set = ResourceSet::from_strs(asns, ipv4s, ipv6s).unwrap();
-
-        let json = serde_json::to_string(&set).unwrap();
-        let deser_set = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(set, deser_set);
-    }
-
-    #[test]
     fn serialize_deserialize_repo_info() {
         let info = RepoInfo::new(
             test::rsync("rsync://some/module/folder/"),
-            test::https("https://host/notification.xml"),
+            Some(test::https("https://host/notification.xml")),
         );
 
         let json = serde_json::to_string(&info).unwrap();
@@ -2762,47 +2300,6 @@ mod test {
     }
 
     #[test]
-    fn resource_set_eq() {
-        let asns = "AS65000-AS65003, AS65005";
-        let ipv4s = "10.0.0.0/8, 192.168.0.0";
-        let ipv6s = "::1, 2001:db8::/32";
-
-        let resource_set = ResourceSet::from_strs(asns, ipv4s, ipv6s).unwrap();
-
-        let asns_2 = "AS65000-AS65003";
-        let ipv4s_2 = "192.168.0.0";
-        let ipv6s_2 = "2001:db8::/32";
-
-        let resource_set_asn_differs = ResourceSet::from_strs(asns_2, ipv4s, ipv6s).unwrap();
-        let resource_set_v4_differs = ResourceSet::from_strs(asns, ipv4s_2, ipv6s).unwrap();
-        let resource_set_v6_differs = ResourceSet::from_strs(asns, ipv4s, ipv6s_2).unwrap();
-        let resource_set_2 = ResourceSet::from_strs(asns_2, ipv4s_2, ipv6s_2).unwrap();
-
-        assert_ne!(resource_set, resource_set_asn_differs);
-        assert_ne!(resource_set, resource_set_v4_differs);
-        assert_ne!(resource_set, resource_set_v6_differs);
-        assert_ne!(resource_set, resource_set_2);
-
-        let default_set = ResourceSet::default();
-        let certified =
-            ResourceSet::from_strs("", "10.0.0.0/16, 192.168.0.0/16", "2001:db8::/32, 2000:db8::/32").unwrap();
-        assert_ne!(default_set, certified);
-        assert_ne!(resource_set, certified);
-    }
-
-    #[test]
-    fn resource_set_equivalent() {
-        let set: ResourceSet =
-            serde_json::from_str(include_str!("../../../test-resources/resources/parent_resources.json")).unwrap();
-        let equivalent: ResourceSet = serde_json::from_str(include_str!(
-            "../../../test-resources/resources/parent_resources_reordered.json"
-        ))
-        .unwrap();
-
-        assert_eq!(set, equivalent);
-    }
-
-    #[test]
     fn id_cert_pem_match_openssl() {
         let ncc_id = {
             let bytes = include_bytes!("../../../test-resources/remote/ncc-id.der");
@@ -2813,65 +2310,6 @@ mod test {
         let ncc_id_pem = IdCertPem::from(&ncc_id);
 
         assert_eq!(ncc_id_pem.pem(), ncc_id_openssl_pem);
-    }
-
-    #[test]
-    fn test_resource_set_intersection() {
-        let child_resources_json = include_str!("../../../test-resources/resources/child_resources.json");
-        let child_resources: ResourceSet = serde_json::from_str(child_resources_json).unwrap();
-
-        let parent_resources_json = include_str!("../../../test-resources/resources/parent_resources.json");
-        let parent_resources: ResourceSet = serde_json::from_str(parent_resources_json).unwrap();
-
-        let intersection = parent_resources.intersection(&child_resources);
-
-        assert_eq!(intersection, child_resources);
-    }
-
-    #[test]
-    fn resource_set_to_from_string() {
-        let asns = "AS65000-AS65003, AS65005";
-        let ipv4s = "10.0.0.0/8, 192.168.0.0";
-        let ipv6s = "::1, 2001:db8::/32";
-
-        let set_string = format!("asn: {}, v4: {}, v6: {}", asns, ipv4s, ipv6s);
-
-        let set = ResourceSet::from_str(set_string.as_str()).unwrap();
-        let to_string = set.to_string();
-        assert_eq!(set_string, to_string);
-
-        let empty_set = ResourceSet::default();
-        let empty_set_string = empty_set.to_string();
-        let empty_set_from_string = ResourceSet::from_str(&empty_set_string).unwrap();
-        assert_eq!(empty_set, empty_set_from_string);
-    }
-
-    #[test]
-    fn resource_set_difference() {
-        let set1_asns = "AS65000-AS65003, AS65005";
-        let set2_asns = "AS65000, AS65003, AS65005";
-        let asn_added = "AS65001-AS65002";
-
-        let set1_ipv4s = "10.0.0.0-10.4.5.6, 192.168.0.0";
-        let set2_ipv4s = "10.0.0.0/8, 192.168.0.0";
-        let ipv4_removed = "10.4.5.7-10.255.255.255";
-
-        let set1_ipv6s = "::1, 2001:db8::/32";
-        let set2_ipv6s = "::1, 2001:db8::/56";
-        let ipv6_added = "2001:db8:0:100::-2001:db8:ffff:ffff:ffff:ffff:ffff:ffff";
-
-        let set1 = ResourceSet::from_strs(set1_asns, set1_ipv4s, set1_ipv6s).unwrap();
-        let set2 = ResourceSet::from_strs(set2_asns, set2_ipv4s, set2_ipv6s).unwrap();
-
-        let diff = set1.difference(&set2);
-
-        let expected_diff = ResourceSetDiff {
-            added: ResourceSet::from_strs(asn_added, "", ipv6_added).unwrap(),
-            removed: ResourceSet::from_strs("", ipv4_removed, "").unwrap(),
-        };
-
-        assert!(!diff.is_empty());
-        assert_eq!(expected_diff, diff);
     }
 
     #[test]
@@ -2990,7 +2428,7 @@ mod test {
             last_exchange: None,
             last_success: None,
             all_resources: ResourceSet::default(),
-            entitlements: HashMap::new(),
+            classes: vec![],
         };
 
         let p4_status_success = ParentStatus {
@@ -3001,7 +2439,7 @@ mod test {
             }),
             last_success: None,
             all_resources: ResourceSet::default(),
-            entitlements: HashMap::new(),
+            classes: vec![],
         };
 
         let p5_status_failure = ParentStatus {
@@ -3012,7 +2450,7 @@ mod test {
             }),
             last_success: None,
             all_resources: ResourceSet::default(),
-            entitlements: HashMap::new(),
+            classes: vec![],
         };
 
         let p6_status_success_long_ago = ParentStatus {
@@ -3023,7 +2461,7 @@ mod test {
             }),
             last_success: None,
             all_resources: ResourceSet::default(),
-            entitlements: HashMap::new(),
+            classes: vec![],
         };
 
         let mut inner_statuses = HashMap::new();

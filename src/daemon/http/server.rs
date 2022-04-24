@@ -26,16 +26,20 @@ use hyper::{
 };
 use tokio::try_join;
 
+use rpki::ca::{
+    idexchange,
+    idexchange::{ChildHandle, Handle, ParentHandle},
+};
+
 use crate::{
     commons::{
         api::{
-            AspaDefinitionUpdates, BgpStats, ChildHandle, CommandHistoryCriteria, Handle, ParentCaContact, ParentCaReq,
-            ParentHandle, PublisherList, RepositoryContact, RoaDefinitionUpdates, RtaName, Token,
+            AspaDefinitionUpdates, BgpStats, CommandHistoryCriteria, ParentCaContact, ParentCaReq, PublisherList,
+            RepositoryContact, RoaDefinitionUpdates, RtaName, Token,
         },
         bgp::BgpAnalysisAdvice,
         error::Error,
         eventsourcing::AggregateStoreError,
-        remote::rfc8183,
         util::file,
     },
     constants::{
@@ -43,8 +47,8 @@ use crate::{
         NO_RESOURCE,
     },
     daemon::{
-        auth::common::permissions::Permission,
         auth::Auth,
+        auth::{common::permissions::Permission, policy::PolarHandle},
         ca::{CaStatus, RouteAuthorizationUpdates, TA_NAME},
         config::Config,
         http::{
@@ -1082,7 +1086,7 @@ async fn api_bulk(req: Request, path: &mut RequestPath) -> RoutingResult {
 
 async fn api_cas(req: Request, path: &mut RequestPath) -> RoutingResult {
     match path.path_arg::<Handle>() {
-        Some(ca) => aa!(req, Permission::CA_READ, ca.clone(), {
+        Some(ca) => aa!(req, Permission::CA_READ, PolarHandle::from(&ca), {
             match path.next() {
                 None => match *req.method() {
                     Method::GET => api_ca_info(req, ca).await,
@@ -1182,7 +1186,7 @@ async fn api_ca_stats(req: Request, path: &mut RequestPath, ca: Handle) -> Routi
 }
 
 async fn api_ca_sync(req: Request, path: &mut RequestPath, ca: Handle) -> RoutingResult {
-    aa!(req, Permission::CA_UPDATE, ca.clone(), {
+    aa!(req, Permission::CA_UPDATE, PolarHandle::from(&ca), {
         if req.is_post() {
             match path.next() {
                 Some("parents") => render_empty_res(req.state().cas_refresh_single(ca).await),
@@ -1287,7 +1291,7 @@ pub async fn api_add_pbl(req: Request) -> RoutingResult {
 /// that's just fine.
 #[allow(clippy::redundant_clone)] // false positive
 pub async fn api_remove_pbl(req: Request, publisher: Handle) -> RoutingResult {
-    aa!(req, Permission::PUB_DELETE, publisher.clone(), {
+    aa!(req, Permission::PUB_DELETE, PolarHandle::from(&publisher), {
         let actor = req.actor();
         render_empty_res(req.state().remove_publisher(publisher, &actor))
     })
@@ -1299,7 +1303,7 @@ pub async fn api_show_pbl(req: Request, publisher: Handle) -> RoutingResult {
     aa!(
         req,
         Permission::PUB_READ,
-        publisher.clone(),
+        PolarHandle::from(&publisher),
         render_json_res(req.state().get_publisher(&publisher))
     )
 }
@@ -1308,9 +1312,9 @@ pub async fn api_show_pbl(req: Request, publisher: Handle) -> RoutingResult {
 
 #[allow(clippy::redundant_clone)] // false positive
 pub async fn api_repository_response_xml(req: Request, publisher: Handle) -> RoutingResult {
-    aa!(req, Permission::PUB_READ, publisher.clone(), {
+    aa!(req, Permission::PUB_READ, PolarHandle::from(&publisher), {
         match repository_response(&req, &publisher).await {
-            Ok(res) => Ok(HttpResponse::xml(res.encode_vec())),
+            Ok(repository_response) => Ok(HttpResponse::xml(repository_response.to_xml_vec())),
             Err(e) => render_error(e),
         }
     })
@@ -1318,7 +1322,7 @@ pub async fn api_repository_response_xml(req: Request, publisher: Handle) -> Rou
 
 #[allow(clippy::redundant_clone)] // false positive
 pub async fn api_repository_response_json(req: Request, publisher: Handle) -> RoutingResult {
-    aa!(req, Permission::PUB_READ, publisher.clone(), {
+    aa!(req, Permission::PUB_READ, PolarHandle::from(&publisher), {
         match repository_response(&req, &publisher).await {
             Ok(res) => render_json(res),
             Err(e) => render_error(e),
@@ -1326,12 +1330,12 @@ pub async fn api_repository_response_json(req: Request, publisher: Handle) -> Ro
     })
 }
 
-async fn repository_response(req: &Request, publisher: &Handle) -> Result<rfc8183::RepositoryResponse, Error> {
+async fn repository_response(req: &Request, publisher: &Handle) -> Result<idexchange::RepositoryResponse, Error> {
     req.state().repository_response(publisher)
 }
 
 pub async fn api_ca_add_child(req: Request, parent: ParentHandle) -> RoutingResult {
-    aa!(req, Permission::CA_UPDATE, parent.clone(), {
+    aa!(req, Permission::CA_UPDATE, PolarHandle::from(&parent), {
         let actor = req.actor();
         let server = req.state().clone();
         match req.json().await {
@@ -1342,7 +1346,7 @@ pub async fn api_ca_add_child(req: Request, parent: ParentHandle) -> RoutingResu
 }
 
 async fn api_ca_child_update(req: Request, ca: Handle, child: ChildHandle) -> RoutingResult {
-    aa!(req, Permission::CA_UPDATE, child.clone(), {
+    aa!(req, Permission::CA_UPDATE, PolarHandle::from(&child), {
         let actor = req.actor();
         let server = req.state().clone();
         match req.json().await {
@@ -1353,7 +1357,7 @@ async fn api_ca_child_update(req: Request, ca: Handle, child: ChildHandle) -> Ro
 }
 
 pub async fn api_ca_child_remove(req: Request, ca: Handle, child: ChildHandle) -> RoutingResult {
-    aa!(req, Permission::CA_UPDATE, ca.clone(), {
+    aa!(req, Permission::CA_UPDATE, PolarHandle::from(&ca), {
         let actor = req.actor();
         render_empty_res(req.state().ca_child_remove(&ca, child, &actor).await)
     })
@@ -1363,7 +1367,7 @@ async fn api_ca_child_show(req: Request, ca: Handle, child: ChildHandle) -> Rout
     aa!(
         req,
         Permission::CA_READ,
-        ca.clone(),
+        PolarHandle::from(&ca),
         render_json_res(req.state().ca_child_show(&ca, &child).await)
     )
 }
@@ -1372,7 +1376,7 @@ async fn api_ca_stats_child_connections(req: Request, ca: Handle) -> RoutingResu
     aa!(
         req,
         Permission::CA_READ,
-        ca.clone(),
+        PolarHandle::from(&ca),
         render_json_res(req.state().ca_stats_child_connections(&ca).await)
     )
 }
@@ -1381,7 +1385,7 @@ async fn api_ca_parent_contact(req: Request, ca: Handle, child: ChildHandle) -> 
     aa!(
         req,
         Permission::CA_READ,
-        ca.clone(),
+        PolarHandle::from(&ca),
         render_json_res(req.state().ca_parent_contact(&ca, child.clone()).await)
     )
 }
@@ -1390,15 +1394,15 @@ async fn api_ca_parent_res_json(req: Request, ca: Handle, child: ChildHandle) ->
     aa!(
         req,
         Permission::CA_READ,
-        ca.clone(),
+        PolarHandle::from(&ca),
         render_json_res(req.state().ca_parent_response(&ca, child.clone()).await)
     )
 }
 
 pub async fn api_ca_parent_res_xml(req: Request, ca: Handle, child: ChildHandle) -> RoutingResult {
-    aa!(req, Permission::CA_READ, ca.clone(), {
+    aa!(req, Permission::CA_READ, PolarHandle::from(&ca), {
         match req.state().ca_parent_response(&ca, child.clone()).await {
-            Ok(res) => Ok(HttpResponse::xml(res.encode_vec())),
+            Ok(res) => Ok(HttpResponse::xml(res.to_xml_vec())),
             Err(e) => render_error(e),
         }
     })
@@ -1422,7 +1426,7 @@ async fn api_ca_issues(req: Request, ca: Handle) -> RoutingResult {
         Method::GET => aa!(
             req,
             Permission::CA_READ,
-            ca.clone(),
+            PolarHandle::from(&ca),
             render_json_res(req.state().ca_issues(&ca).await)
         ),
         _ => render_unknown_method(),
@@ -1449,7 +1453,7 @@ pub async fn api_ca_init(req: Request) -> RoutingResult {
 
 async fn api_ca_id(req: Request, path: &mut RequestPath, ca: Handle) -> RoutingResult {
     match *req.method() {
-        Method::POST => aa!(req, Permission::CA_UPDATE, ca.clone(), {
+        Method::POST => aa!(req, Permission::CA_UPDATE, PolarHandle::from(&ca), {
             let actor = req.actor();
             render_empty_res(req.state().ca_update_id(ca, &actor).await)
         }),
@@ -1468,7 +1472,7 @@ async fn api_ca_info(req: Request, handle: Handle) -> RoutingResult {
     aa!(
         req,
         Permission::CA_READ,
-        handle.clone(),
+        PolarHandle::from(&handle),
         render_json_res(req.state().ca_info(&handle).await)
     )
 }
@@ -1478,7 +1482,7 @@ async fn api_ca_delete(req: Request, handle: Handle) -> RoutingResult {
     aa!(
         req,
         Permission::CA_DELETE,
-        handle.clone(),
+        PolarHandle::from(&handle),
         render_json_res(req.state().ca_delete(&handle, &actor).await)
     )
 }
@@ -1487,7 +1491,7 @@ async fn api_ca_my_parent_contact(req: Request, ca: Handle, parent: ParentHandle
     aa!(
         req,
         Permission::CA_READ,
-        ca.clone(),
+        PolarHandle::from(&ca),
         render_json_res(req.state().ca_my_parent_contact(&ca, &parent).await)
     )
 }
@@ -1496,7 +1500,7 @@ async fn api_ca_my_parent_statuses(req: Request, ca: Handle) -> RoutingResult {
     aa!(
         req,
         Permission::CA_READ,
-        ca.clone(),
+        PolarHandle::from(&ca),
         render_json_res(req.state().ca_status(&ca).await.map(|s| s.parents().clone()))
     )
 }
@@ -1553,7 +1557,7 @@ async fn api_ca_children(req: Request, path: &mut RequestPath, ca: Handle) -> Ro
 
 async fn api_ca_history_commands(req: Request, path: &mut RequestPath, handle: Handle) -> RoutingResult {
     match *req.method() {
-        Method::GET => aa!(req, Permission::CA_READ, handle.clone(), {
+        Method::GET => aa!(req, Permission::CA_READ, PolarHandle::from(&handle), {
             // /api/v1/cas/{ca}/history/commands  /<rows>/<offset>/<after>/<before>
             let mut crit = CommandHistoryCriteria::default();
 
@@ -1594,7 +1598,7 @@ async fn api_ca_command_details(req: Request, path: &mut RequestPath, handle: Ha
     // /api/v1/cas/{ca}/command/<command-key>
     match path.path_arg() {
         Some(key) => match *req.method() {
-            Method::GET => aa!(req, Permission::CA_READ, handle.clone(), {
+            Method::GET => aa!(req, Permission::CA_READ, PolarHandle::from(&handle), {
                 match req.state().ca_command_details(&handle, key) {
                     Ok(details) => render_json(details),
                     Err(e) => match e {
@@ -1616,9 +1620,9 @@ async fn api_ca_child_req_xml(req: Request, handle: Handle) -> RoutingResult {
         Method::GET => aa!(
             req,
             Permission::CA_READ,
-            handle.clone(),
+            PolarHandle::from(&handle),
             match ca_child_req(&req, &handle).await {
-                Ok(req) => Ok(HttpResponse::xml(req.encode_vec())),
+                Ok(child_request) => Ok(HttpResponse::xml(child_request.to_xml_vec())),
                 Err(e) => render_error(e),
             }
         ),
@@ -1631,7 +1635,7 @@ async fn api_ca_child_req_json(req: Request, handle: Handle) -> RoutingResult {
         Method::GET => aa!(
             req,
             Permission::CA_READ,
-            handle.clone(),
+            PolarHandle::from(&handle),
             match ca_child_req(&req, &handle).await {
                 Ok(req) => render_json(req),
                 Err(e) => render_error(e),
@@ -1641,7 +1645,7 @@ async fn api_ca_child_req_json(req: Request, handle: Handle) -> RoutingResult {
     }
 }
 
-async fn ca_child_req(req: &Request, handle: &Handle) -> Result<rfc8183::ChildRequest, Error> {
+async fn ca_child_req(req: &Request, handle: &Handle) -> Result<idexchange::ChildRequest, Error> {
     req.state().ca_child_req(handle).await
 }
 
@@ -1650,7 +1654,7 @@ async fn api_ca_publisher_req_json(req: Request, handle: Handle) -> RoutingResul
         Method::GET => aa!(
             req,
             Permission::CA_READ,
-            handle.clone(),
+            PolarHandle::from(&handle),
             render_json_res(req.state().ca_publisher_req(&handle).await)
         ),
         _ => render_unknown_method(),
@@ -1662,9 +1666,9 @@ async fn api_ca_publisher_req_xml(req: Request, handle: Handle) -> RoutingResult
         Method::GET => aa!(
             req,
             Permission::CA_READ,
-            handle.clone(),
+            PolarHandle::from(&handle),
             match req.state().ca_publisher_req(&handle).await {
-                Ok(res) => Ok(HttpResponse::xml(res.encode_vec())),
+                Ok(publisher_request) => Ok(HttpResponse::xml(publisher_request.to_xml_vec())),
                 Err(e) => render_error(e),
             }
         ),
@@ -1676,7 +1680,7 @@ async fn api_ca_repo_details(req: Request, handle: Handle) -> RoutingResult {
     aa!(
         req,
         Permission::CA_READ,
-        handle.clone(),
+        PolarHandle::from(&handle),
         render_json_res(req.state().ca_repo_details(&handle).await)
     )
 }
@@ -1686,7 +1690,7 @@ async fn api_ca_repo_status(req: Request, handle: Handle) -> RoutingResult {
         Method::GET => aa!(
             req,
             Permission::CA_READ,
-            handle.clone(),
+            PolarHandle::from(&handle),
             render_json_res(req.state().ca_status(&handle).await.map(|status| status.repo().clone()))
         ),
         _ => render_unknown_method(),
@@ -1701,7 +1705,7 @@ fn extract_repository_contact(handle: &Handle, bytes: Bytes) -> Result<Repositor
         if string.contains("<parent_response") {
             Err(Error::CaRepoResponseWrongXml(handle.clone()))
         } else {
-            let response = rfc8183::RepositoryResponse::validate(string.as_bytes())
+            let response = idexchange::RepositoryResponse::validate(string.as_bytes())
                 .map_err(|e| Error::CaRepoResponseInvalidXml(handle.clone(), e.to_string()))?;
             Ok(RepositoryContact::new(response))
         }
@@ -1711,7 +1715,7 @@ fn extract_repository_contact(handle: &Handle, bytes: Bytes) -> Result<Repositor
 }
 
 async fn api_ca_repo_update(req: Request, handle: Handle) -> RoutingResult {
-    aa!(req, Permission::CA_UPDATE, handle.clone(), {
+    aa!(req, Permission::CA_UPDATE, PolarHandle::from(&handle), {
         let actor = req.actor();
         let server = req.state().clone();
 
@@ -1727,7 +1731,7 @@ async fn api_ca_repo_update(req: Request, handle: Handle) -> RoutingResult {
 }
 
 async fn api_ca_parent_add_or_update(req: Request, ca: Handle, parent_override: Option<Handle>) -> RoutingResult {
-    aa!(req, Permission::CA_UPDATE, ca.clone(), {
+    aa!(req, Permission::CA_UPDATE, PolarHandle::from(&ca), {
         let actor = req.actor();
         let server = req.state().clone();
 
@@ -1751,7 +1755,7 @@ fn extract_parent_ca_req(ca: &Handle, bytes: Bytes, parent_override: Option<Hand
         if string.starts_with("<repository") {
             return Err(Error::CaParentResponseWrongXml(ca.clone()));
         } else {
-            let res = rfc8183::ParentResponse::validate(string.as_bytes())
+            let res = idexchange::ParentResponse::validate(string.as_bytes())
                 .map_err(|e| Error::CaParentResponseInvalidXml(ca.clone(), e.to_string()))?;
 
             let parent_name = parent_override.unwrap_or_else(|| res.parent_handle().clone());
@@ -1776,7 +1780,7 @@ fn extract_parent_ca_req(ca: &Handle, bytes: Bytes, parent_override: Option<Hand
 }
 
 async fn api_ca_remove_parent(req: Request, ca: Handle, parent: Handle) -> RoutingResult {
-    aa!(req, Permission::CA_UPDATE, ca.clone(), {
+    aa!(req, Permission::CA_UPDATE, PolarHandle::from(&ca), {
         let actor = req.actor();
         render_empty_res(req.state().ca_parent_remove(ca, parent, &actor).await)
     })
@@ -1784,7 +1788,7 @@ async fn api_ca_remove_parent(req: Request, ca: Handle, parent: Handle) -> Routi
 
 /// Force a key roll for a CA, i.e. use a max key age of 0 seconds.
 async fn api_ca_kr_init(req: Request, ca: Handle) -> RoutingResult {
-    aa!(req, Permission::CA_UPDATE, ca.clone(), {
+    aa!(req, Permission::CA_UPDATE, PolarHandle::from(&ca), {
         let actor = req.actor();
         render_empty_res(req.state().ca_keyroll_init(ca, &actor).await)
     })
@@ -1792,7 +1796,7 @@ async fn api_ca_kr_init(req: Request, ca: Handle) -> RoutingResult {
 
 /// Force key activation for all new keys, i.e. use a staging period of 0 seconds.
 async fn api_ca_kr_activate(req: Request, ca: Handle) -> RoutingResult {
-    aa!(req, Permission::CA_UPDATE, ca.clone(), {
+    aa!(req, Permission::CA_UPDATE, PolarHandle::from(&ca), {
         let actor = req.actor();
         render_empty_res(req.state().ca_keyroll_activate(ca, &actor).await)
     })
@@ -1802,7 +1806,7 @@ async fn api_ca_kr_activate(req: Request, ca: Handle) -> RoutingResult {
 
 /// List the current ASPA definitions for a CA
 async fn api_ca_aspas_definitions_show(req: Request, ca: Handle) -> RoutingResult {
-    aa!(req, Permission::ASPAS_READ, ca.clone(), {
+    aa!(req, Permission::ASPAS_READ, PolarHandle::from(&ca), {
         let state = req.state().clone();
         render_json_res(state.ca_aspas_definitions_show(ca).await)
     })
@@ -1810,7 +1814,7 @@ async fn api_ca_aspas_definitions_show(req: Request, ca: Handle) -> RoutingResul
 
 /// Add a new ASPA definition for a CA based on the update in the POST
 async fn api_ca_aspas_definitions_update(req: Request, ca: Handle) -> RoutingResult {
-    aa!(req, Permission::ASPAS_UPDATE, ca.clone(), {
+    aa!(req, Permission::ASPAS_UPDATE, PolarHandle::from(&ca), {
         let actor = req.actor();
         let state = req.state().clone();
 
@@ -1823,7 +1827,7 @@ async fn api_ca_aspas_definitions_update(req: Request, ca: Handle) -> RoutingRes
 
 /// Update an existing ASPA definition for a CA based on the update in the POST
 async fn api_ca_aspas_update_aspa(req: Request, ca: Handle, customer: Asn) -> RoutingResult {
-    aa!(req, Permission::ASPAS_UPDATE, ca.clone(), {
+    aa!(req, Permission::ASPAS_UPDATE, PolarHandle::from(&ca), {
         let actor = req.actor();
         let state = req.state().clone();
 
@@ -1836,7 +1840,7 @@ async fn api_ca_aspas_update_aspa(req: Request, ca: Handle, customer: Asn) -> Ro
 
 /// Delete the ASPA definition for the given CA and customer ASN
 async fn api_ca_aspas_delete(req: Request, ca: Handle, customer: Asn) -> RoutingResult {
-    aa!(req, Permission::ASPAS_UPDATE, ca.clone(), {
+    aa!(req, Permission::ASPAS_UPDATE, PolarHandle::from(&ca), {
         let actor = req.actor();
         let state = req.state().clone();
 
@@ -1847,7 +1851,7 @@ async fn api_ca_aspas_delete(req: Request, ca: Handle, customer: Asn) -> Routing
 
 /// Update the route authorizations for this CA
 async fn api_ca_routes_update(req: Request, ca: Handle) -> RoutingResult {
-    aa!(req, Permission::ROUTES_UPDATE, ca.clone(), {
+    aa!(req, Permission::ROUTES_UPDATE, PolarHandle::from(&ca), {
         let actor = req.actor();
         let state = req.state().clone();
 
@@ -1862,7 +1866,7 @@ async fn api_ca_routes_update(req: Request, ca: Handle) -> RoutingResult {
 /// for the resources in the update have no remaining invalids, apply it. Otherwise
 /// return the analysis and a suggestion.
 async fn api_ca_routes_try_update(req: Request, ca: Handle) -> RoutingResult {
-    aa!(req, Permission::ROUTES_UPDATE, ca.clone(), {
+    aa!(req, Permission::ROUTES_UPDATE, PolarHandle::from(&ca), {
         let actor = req.actor();
         let state = req.state().clone();
 
@@ -1899,7 +1903,7 @@ async fn api_ca_routes_try_update(req: Request, ca: Handle) -> RoutingResult {
 
 /// show the route authorizations for this CA
 async fn api_ca_routes_show(req: Request, ca: Handle) -> RoutingResult {
-    aa!(req, Permission::ROUTES_READ, ca.clone(), {
+    aa!(req, Permission::ROUTES_READ, PolarHandle::from(&ca), {
         match req.state().ca_routes_show(&ca).await {
             Ok(roas) => render_json(roas),
             Err(_) => render_unknown_resource(),
@@ -1909,7 +1913,7 @@ async fn api_ca_routes_show(req: Request, ca: Handle) -> RoutingResult {
 
 /// Show the state of ROAs vs BGP for this CA
 async fn api_ca_routes_analysis(req: Request, path: &mut RequestPath, ca: Handle) -> RoutingResult {
-    aa!(req, Permission::ROUTES_ANALYSIS, ca.clone(), {
+    aa!(req, Permission::ROUTES_ANALYSIS, PolarHandle::from(&ca), {
         match path.next() {
             Some("full") => render_json_res(req.state().ca_routes_bgp_analysis(&ca).await),
             Some("dryrun") => match *req.method() {
@@ -2036,7 +2040,7 @@ async fn api_ca_rta_list(req: Request, ca: Handle) -> RoutingResult {
     aa!(
         req,
         Permission::RTA_LIST,
-        ca.clone(),
+        PolarHandle::from(&ca),
         render_json_res(req.state().rta_list(ca).await)
     )
 }
@@ -2045,13 +2049,13 @@ async fn api_ca_rta_show(req: Request, ca: Handle, name: RtaName) -> RoutingResu
     aa!(
         req,
         Permission::RTA_READ,
-        ca.clone(),
+        PolarHandle::from(&ca),
         render_json_res(req.state().rta_show(ca, name).await)
     )
 }
 
 async fn api_ca_rta_sign(req: Request, ca: Handle, name: RtaName) -> RoutingResult {
-    aa!(req, Permission::RTA_UPDATE, ca.clone(), {
+    aa!(req, Permission::RTA_UPDATE, PolarHandle::from(&ca), {
         let actor = req.actor();
         let state = req.state().clone();
         match req.json().await {
@@ -2062,7 +2066,7 @@ async fn api_ca_rta_sign(req: Request, ca: Handle, name: RtaName) -> RoutingResu
 }
 
 async fn api_ca_rta_multi_prep(req: Request, ca: Handle, name: RtaName) -> RoutingResult {
-    aa!(req, Permission::RTA_UPDATE, ca.clone(), {
+    aa!(req, Permission::RTA_UPDATE, PolarHandle::from(&ca), {
         let actor = req.actor();
         let state = req.state().clone();
 
@@ -2074,7 +2078,7 @@ async fn api_ca_rta_multi_prep(req: Request, ca: Handle, name: RtaName) -> Routi
 }
 
 async fn api_ca_rta_multi_sign(req: Request, ca: Handle, name: RtaName) -> RoutingResult {
-    aa!(req, Permission::RTA_UPDATE, ca.clone(), {
+    aa!(req, Permission::RTA_UPDATE, PolarHandle::from(&ca), {
         let actor = req.actor();
         let state = req.state().clone();
         match req.json().await {

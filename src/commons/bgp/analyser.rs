@@ -3,11 +3,11 @@ use std::fmt;
 use chrono::Duration;
 use tokio::sync::RwLock;
 
-use rpki::repository::x509::Time;
+use rpki::{ca::resourceset::ResourceSet, repository::x509::Time};
 
 use crate::{
     commons::{
-        api::{AsNumber, ResourceSet, RoaDefinition},
+        api::{AsNumber, RoaDefinition},
         bgp::{
             make_roa_tree, make_validated_announcement_tree, Announcement, AnnouncementValidity, Announcements,
             BgpAnalysisEntry, BgpAnalysisReport, BgpAnalysisState, BgpAnalysisSuggestion, IpRange, RisDumpError,
