@@ -1663,18 +1663,18 @@ impl CaManager {
             .unwrap_or_else(|| Timestamp::now_plus_hours(self.config.republish_hours()));
 
         match reply {
-            publication::ReplyMessage::ListReply(list_reply) => {
+            publication::Reply::List(list_reply) => {
                 self.status_store
                     .set_status_repo_success(ca_handle, uri.clone(), next_update)?;
                 Ok(list_reply)
             }
-            publication::ReplyMessage::Success => {
+            publication::Reply::Success => {
                 let err = Error::custom("Got success reply to list query?!");
                 self.status_store
                     .set_status_repo_failure(ca_handle, uri.clone(), &err)?;
                 Err(err)
             }
-            publication::ReplyMessage::ErrorReply(e) => {
+            publication::Reply::ErrorReply(e) => {
                 let err = Error::Custom(format!("Got error reply: {}", e));
                 self.status_store
                     .set_status_repo_failure(ca_handle, uri.clone(), &err)?;
@@ -1707,7 +1707,7 @@ impl CaManager {
         };
 
         match reply {
-            publication::ReplyMessage::Success => {
+            publication::Reply::Success => {
                 // Get all the currently published elements in ALL REPOS.
                 // TODO: reflect the status for each REPO in the API / UI?
                 // We probably should.. though it should be extremely rare and short-lived to
@@ -1722,13 +1722,13 @@ impl CaManager {
                     .set_status_repo_published(ca_handle, uri.clone(), published, next_update)?;
                 Ok(())
             }
-            publication::ReplyMessage::ErrorReply(e) => {
+            publication::Reply::ErrorReply(e) => {
                 let err = Error::Custom(format!("Got error reply: {}", e));
                 self.status_store
                     .set_status_repo_failure(ca_handle, uri.clone(), &err)?;
                 Err(err)
             }
-            publication::ReplyMessage::ListReply(_) => {
+            publication::Reply::List(_) => {
                 let err = Error::custom("Got list reply to delta query?!");
                 self.status_store
                     .set_status_repo_failure(ca_handle, uri.clone(), &err)?;
@@ -1743,7 +1743,7 @@ impl CaManager {
         repo_response: &idexchange::RepositoryResponse,
         ca_handle: &Handle,
         signing_key: &KeyIdentifier,
-    ) -> KrillResult<publication::ReplyMessage> {
+    ) -> KrillResult<publication::Reply> {
         // TODO: support local repository without http calls, but this CaManager does not
         //       have access to the repository, so this is a bit more complicated than the
         //       rfc6492 case..

@@ -57,7 +57,7 @@ impl IniDet {
 
 impl fmt::Display for IniDet {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Initialized with ID key hash: {}", self.id.key_hash())?;
+        write!(f, "Initialized with ID key hash: {}", self.id.key_id())?;
         Ok(())
     }
 }
@@ -857,7 +857,7 @@ impl fmt::Display for CaEvtDet {
                     "added child '{}' with resources '{}, id (hash): {}",
                     child,
                     resources,
-                    id_cert.ski_hex()
+                    id_cert.subject_key_identifier()
                 )
             }
             CaEvtDet::ChildCertificateIssued {
@@ -919,7 +919,7 @@ impl fmt::Display for CaEvtDet {
                 child, resource_class_name, ki
             ),
             CaEvtDet::ChildUpdatedIdCert { child, id_cert } => {
-                write!(f, "updated child '{}' id (hash) '{}'", child, id_cert.ski_hex())
+                write!(f, "updated child '{}' id (hash) '{}'", child, id_cert.subject_key_identifier())
             }
             CaEvtDet::ChildUpdatedResources { child, resources } => {
                 write!(f, "updated child '{}' resources to '{}'", child, resources)
@@ -929,7 +929,7 @@ impl fmt::Display for CaEvtDet {
             CaEvtDet::ChildUnsuspended { child } => write!(f, "unsuspended child '{}'", child),
 
             // Being a child Events
-            CaEvtDet::IdUpdated { id } => write!(f, "updated RFC8183 id to key '{}'", id.key_hash()),
+            CaEvtDet::IdUpdated { id } => write!(f, "updated RFC8183 id to key '{}'", id.key_id()),
             CaEvtDet::ParentAdded { parent, contact } => {
                 let contact_str = match contact {
                     ParentCaContact::Ta(_) => "TA proxy",

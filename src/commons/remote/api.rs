@@ -59,7 +59,7 @@ impl fmt::Display for ClientInfos {
         for client in self.0.iter() {
             let handle = client.handle();
             let auth = client.auth();
-            let ski = auth.cert().ski_hex();
+            let ski = auth.cert().subject_key_identifier();
 
             writeln!(f, "   Handle: {}, Cert (ski): {}\n", handle, ski)?;
         }

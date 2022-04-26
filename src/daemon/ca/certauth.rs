@@ -66,10 +66,6 @@ impl Rfc8183Id {
 }
 
 impl Rfc8183Id {
-    pub fn key_hash(&self) -> String {
-        self.cert.ski_hex()
-    }
-
     pub fn key_id(&self) -> KeyIdentifier {
         self.cert.subject_public_key_info().key_identifier()
     }

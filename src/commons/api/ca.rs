@@ -2100,7 +2100,9 @@ impl fmt::Display for RtaPrepResponse {
 
 #[cfg(test)]
 mod test {
+    use std::convert::TryFrom;
     use bytes::Bytes;
+    
     use rpki::repository::crypto::PublicKeyFormat;
 
     use crate::{commons::crypto::OpenSslSigner, test};

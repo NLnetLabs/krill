@@ -93,11 +93,11 @@ impl RepositoryManager {
         let query = message.as_query()?;
 
         let (response, should_log_cms) = match query {
-            publication::QueryMessage::ListQuery => {
+            publication::Query::List => {
                 let list_reply = self.list(&publisher_handle)?;
                 (publication::Message::list_reply(list_reply), false)
             }
-            publication::QueryMessage::Delta(delta) => match self.publish(publisher_handle.clone(), delta) {
+            publication::Query::Delta(delta) => match self.publish(publisher_handle.clone(), delta) {
                 Ok(()) => (publication::Message::success(), true),
                 Err(e) => {
                     warn!("Rejecting delta sent by: {}. Error was: {}", publisher_handle, e);

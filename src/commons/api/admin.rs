@@ -172,7 +172,7 @@ impl PublisherDetails {
 impl fmt::Display for PublisherDetails {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "handle: {}", self.handle())?;
-        writeln!(f, "id: {}", self.id_cert().ski_hex())?;
+        writeln!(f, "id: {}", self.id_cert().subject_key_id())?;
         writeln!(f, "base uri: {}", self.base_uri())?;
         writeln!(f, "objects:")?;
         for e in &self.current_files {

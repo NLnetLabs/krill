@@ -223,7 +223,7 @@ impl From<CmdDet> for StorableCaCommand {
             // ------------------------------------------------------------
             CmdDet::ChildAdd(child, id_cert, resources) => StorableCaCommand::ChildAdd {
                 child,
-                ski: id_cert.ski_hex(),
+                ski: id_cert.subject_key_identifier().to_string(),
                 resources,
             },
             CmdDet::ChildUpdateResources(child, resources) => {
@@ -231,7 +231,7 @@ impl From<CmdDet> for StorableCaCommand {
             }
             CmdDet::ChildUpdateId(child, id) => StorableCaCommand::ChildUpdateId {
                 child,
-                ski: id.ski_hex(),
+                ski: id.subject_key_identifier().to_string(),
             },
             CmdDet::ChildCertify(child, req, _, _) => {
                 let (resource_class_name, limit, csr) = req.unpack();

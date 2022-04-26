@@ -73,7 +73,8 @@ impl OldStoredCaCommand {
                         })?
                         .child_request
                         .id_cert()
-                        .ski_hex(),
+                        .subject_key_identifier()
+                        .to_string(),
                 };
 
                 StorableCaCommand::ChildAdd { child, ski, resources }
