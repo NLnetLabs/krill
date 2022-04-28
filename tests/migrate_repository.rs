@@ -5,7 +5,7 @@ use std::{fs, str::FromStr, time::Duration};
 use tokio::time::sleep;
 
 use rpki::ca::provisioning::ResourceClassName;
-use rpki::ca::resourceset::ResourceSet;
+use rpki::repository::resources::ResourceSet;
 
 use krill::{
     commons::api::{ObjectName, RepositoryContact, RoaDefinition, RoaDefinitionUpdates},

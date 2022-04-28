@@ -9,9 +9,9 @@ use rpki::{
         idcert::IdCert,
         idexchange,
         idexchange::{Handle, ParentHandle, PublisherHandle, RepoInfo},
-        resourceset::ResourceSet,
     },
     repository::cert::Cert,
+    repository::resources::ResourceSet,
     uri,
 };
 

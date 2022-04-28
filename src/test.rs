@@ -20,9 +20,8 @@ use rpki::{
         idexchange,
         idexchange::{ChildHandle, Handle, ParentHandle, PublisherHandle},
         provisioning::ResourceClassName,
-        resourceset::ResourceSet,
     },
-    repository::crypto::KeyIdentifier,
+    repository::{crypto::KeyIdentifier, resources::ResourceSet},
     uri,
 };
 

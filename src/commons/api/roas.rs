@@ -2,12 +2,9 @@ use std::{cmp::Ordering, fmt, net::IpAddr, ops::Deref, str::FromStr};
 
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
-use rpki::{
-    ca::resourceset::ResourceSet,
-    repository::{
-        resources::{AsBlocks, Asn, IpBlocks, IpBlocksBuilder, Prefix},
-        roa::RoaIpAddress,
-    },
+use rpki::repository::{
+    resources::{AsBlocks, Asn, IpBlocks, IpBlocksBuilder, Prefix, ResourceSet},
+    roa::RoaIpAddress,
 };
 
 use crate::daemon::ca::RouteAuthorizationUpdates;

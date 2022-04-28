@@ -3,9 +3,10 @@ use std::{collections::HashMap, fmt};
 use bytes::Bytes;
 
 use rpki::{
-    ca::{provisioning::ResourceClassName, publication::Base64, resourceset::ResourceSet},
+    ca::{provisioning::ResourceClassName, publication::Base64},
     repository::{
         crypto::{DigestAlgorithm, KeyIdentifier},
+        resources::ResourceSet,
         rta,
         sigobj::MessageDigest,
         x509::Validity,

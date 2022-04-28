@@ -16,11 +16,11 @@ use rpki::{
         idcert::IdCert,
         idexchange,
         idexchange::{ChildHandle, Handle, ParentHandle, PublisherHandle},
-        resourceset::{Error as ResourceSetError, ResourceSet},
     },
     repository::{
         aspa::{DuplicateProviderAs, ProviderAs},
         crypto::KeyIdentifier,
+        resources::ResourceSet,
         x509::Time,
     },
     uri,
@@ -1327,7 +1327,9 @@ impl Options {
             let v4 = v4.unwrap_or("");
             let v6 = v6.unwrap_or("");
 
-            Ok(Some(ResourceSet::from_strs(asn, v4, v6)?))
+            ResourceSet::from_strs(asn, v4, v6)
+                .map(Some)
+                .map_err(|e| Error::ResourceSetError(e.to_string()))
         } else {
             Ok(None)
         }
@@ -2534,7 +2536,7 @@ pub enum Error {
     IoError(KrillIoError),
     ReportError(ReportError),
     Rfc8183(idexchange::Error),
-    ResSetErr(ResourceSetError),
+    ResourceSetError(String),
     InvalidRouteDelta(AuthorizationFmtError),
     InvalidAsn(String),
     DuplicateAspaProvider(DuplicateProviderAs),
@@ -2561,7 +2563,7 @@ impl fmt::Display for Error {
             Error::IoError(e) => e.fmt(f),
             Error::ReportError(e) => e.fmt(f),
             Error::Rfc8183(e) => write!(f, "Invalid RFC 8183 XML: {}", e),
-            Error::ResSetErr(e) => write!(f, "Invalid resources requested: {}", e),
+            Error::ResourceSetError(e) => write!(f, "Invalid resources requested: {}", e),
             Error::InvalidRouteDelta(e) => e.fmt(f),
             Error::InvalidAsn(s) => write!(f, "Invalid ASN format. Expected 'AS#', got: {}", s),
             Error::DuplicateAspaProvider(e) => e.fmt(f),
@@ -2615,12 +2617,6 @@ impl From<KrillIoError> for Error {
 impl From<ReportError> for Error {
     fn from(e: ReportError) -> Self {
         Error::ReportError(e)
-    }
-}
-
-impl From<ResourceSetError> for Error {
-    fn from(e: ResourceSetError) -> Self {
-        Error::ResSetErr(e)
     }
 }
 

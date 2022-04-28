@@ -19,7 +19,6 @@ use rpki::{
             ResourceClassName, SigningCert,
         },
         publication::Base64,
-        resourceset::ResourceSet,
     },
     repository::{
         aspa::Aspa,
@@ -27,7 +26,7 @@ use rpki::{
         crl::{Crl, CrlEntry},
         crypto::KeyIdentifier,
         manifest::Manifest,
-        resources::Asn,
+        resources::{Asn, ResourceSet},
         roa::Roa,
         x509::{Serial, Time},
     },
@@ -2100,9 +2099,9 @@ impl fmt::Display for RtaPrepResponse {
 
 #[cfg(test)]
 mod test {
-    use std::convert::TryFrom;
     use bytes::Bytes;
-    
+    use std::convert::TryFrom;
+
     use rpki::repository::crypto::PublicKeyFormat;
 
     use crate::{commons::crypto::OpenSslSigner, test};

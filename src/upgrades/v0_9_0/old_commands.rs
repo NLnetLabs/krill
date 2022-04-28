@@ -5,10 +5,12 @@ use std::{
     fmt,
 };
 
-use rpki::ca::{
-    idexchange::{ChildHandle, Handle, ParentHandle, PublisherHandle, ServiceUri},
-    provisioning::{RequestResourceLimit, ResourceClassName, RevocationRequest},
-    resourceset::ResourceSet,
+use rpki::{
+    ca::{
+        idexchange::{ChildHandle, Handle, ParentHandle, PublisherHandle, ServiceUri},
+        provisioning::{RequestResourceLimit, ResourceClassName, RevocationRequest},
+    },
+    repository::resources::ResourceSet,
 };
 
 use crate::{

@@ -3,7 +3,10 @@
 use std::fs;
 use std::str::FromStr;
 
-use rpki::ca::{idexchange::Handle, provisioning::ResourceClassName, resourceset::ResourceSet};
+use rpki::{
+    ca::{idexchange::Handle, provisioning::ResourceClassName},
+    repository::resources::ResourceSet,
+};
 
 use krill::{
     commons::api::{AspaCustomer, AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, ObjectName},

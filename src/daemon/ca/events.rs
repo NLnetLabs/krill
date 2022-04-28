@@ -5,9 +5,8 @@ use rpki::{
         idcert::IdCert,
         idexchange::{ChildHandle, Handle, ParentHandle},
         provisioning::{IssuanceRequest, ParentResourceClassName, ResourceClassName, RevocationRequest},
-        resourceset::ResourceSet,
     },
-    repository::crypto::KeyIdentifier,
+    repository::{crypto::KeyIdentifier, resources::ResourceSet},
 };
 
 use crate::{
@@ -919,7 +918,12 @@ impl fmt::Display for CaEvtDet {
                 child, resource_class_name, ki
             ),
             CaEvtDet::ChildUpdatedIdCert { child, id_cert } => {
-                write!(f, "updated child '{}' id (hash) '{}'", child, id_cert.subject_key_identifier())
+                write!(
+                    f,
+                    "updated child '{}' id (hash) '{}'",
+                    child,
+                    id_cert.subject_key_identifier()
+                )
             }
             CaEvtDet::ChildUpdatedResources { child, resources } => {
                 write!(f, "updated child '{}' resources to '{}'", child, resources)

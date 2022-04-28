@@ -10,7 +10,6 @@ use rpki::{
         provisioning,
         provisioning::ResourceClassName,
         publication,
-        resourceset::Error as ResourceSetError,
     },
     repository::{crypto::KeyIdentifier, x509::ValidationError},
     uri,
@@ -289,7 +288,7 @@ pub enum Error {
     // Resource Issues
     //-----------------------------------------------------------------
     ResourceClassUnknown(ResourceClassName),
-    ResourceSetError(ResourceSetError),
+    ResourceSetError(String),
     MissingResources,
 
     //-----------------------------------------------------------------
@@ -521,12 +520,6 @@ impl From<provisioning::Error> for Error {
 impl From<publication::Error> for Error {
     fn from(e: publication::Error) -> Self {
         Error::Rfc8181(e)
-    }
-}
-
-impl From<ResourceSetError> for Error {
-    fn from(e: ResourceSetError) -> Self {
-        Error::ResourceSetError(e)
     }
 }
 
@@ -1173,10 +1166,6 @@ mod tests {
         verify(
             include_str!("../../test-resources/errors/rc-unknown.json"),
             Error::ResourceClassUnknown(ResourceClassName::from("RC0")),
-        );
-        verify(
-            include_str!("../../test-resources/errors/rc-resources.json"),
-            Error::ResourceSetError(ResourceSetError::parse()),
         );
         verify(
             include_str!("../../test-resources/errors/rc-missing-resources.json"),

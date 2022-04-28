@@ -5,7 +5,7 @@ use std::fs;
 use krill::test::*;
 use rpki::ca::idexchange::ChildHandle;
 use rpki::ca::idexchange::Handle;
-use rpki::ca::resourceset::ResourceSet;
+use rpki::repository::resources::ResourceSet;
 
 #[tokio::test]
 async fn test_suspension() {

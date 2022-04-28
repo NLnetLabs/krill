@@ -9,9 +9,8 @@ use rpki::{
         idexchange,
         idexchange::{ChildHandle, Handle, ParentHandle, PublisherHandle},
         publication::{ListReply, PublishDelta},
-        resourceset::ResourceSet,
     },
-    repository::cert::Cert,
+    repository::{cert::Cert, resources::ResourceSet},
     uri,
 };
 

@@ -8,9 +8,9 @@ async fn add_and_remove_certificate_authority() {
     use std::matches;
     use std::str::FromStr;
 
-    use rpki::ca::{
-        idexchange::{Handle, PublisherRequest, RepositoryResponse},
-        resourceset::ResourceSet,
+    use rpki::{
+        ca::idexchange::{Handle, PublisherRequest, RepositoryResponse},
+        repository::resources::ResourceSet,
     };
 
     use krill::commons::api::*;

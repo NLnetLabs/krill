@@ -8,9 +8,8 @@ use rpki::{
         idexchange,
         idexchange::{ChildHandle, Handle, ParentHandle, RepoInfo},
         provisioning::{IssuanceRequest, ResourceClassName, RevocationRequest},
-        resourceset::ResourceSet,
     },
-    repository::{crl::Crl, crypto::KeyIdentifier, manifest::Manifest, x509::Time},
+    repository::{crl::Crl, crypto::KeyIdentifier, manifest::Manifest, resources::ResourceSet, x509::Time},
     rrdp::Hash,
     uri,
 };

@@ -3,7 +3,7 @@ use std::fmt;
 use chrono::Duration;
 use tokio::sync::RwLock;
 
-use rpki::{ca::resourceset::ResourceSet, repository::x509::Time};
+use rpki::{repository::resources::ResourceSet, repository::x509::Time};
 
 use crate::{
     commons::{

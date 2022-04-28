@@ -10,8 +10,8 @@ use rpki::{
             IssuanceRequest, ResourceClassListResponse as Entitlements, ResourceClassName, RevocationRequest,
             RevocationResponse,
         },
-        resourceset::ResourceSet,
     },
+    repository::resources::ResourceSet,
     uri,
 };
 

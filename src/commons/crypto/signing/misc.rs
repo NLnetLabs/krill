@@ -5,11 +5,12 @@ use std::convert::TryFrom;
 
 use bytes::Bytes;
 use rpki::{
-    ca::{provisioning::RequestResourceLimit, resourceset::ResourceSet},
+    ca::provisioning::RequestResourceLimit,
     repository::{
         cert::{KeyUsage, Overclaim, TbsCert},
         crypto::{DigestAlgorithm, KeyIdentifier, PublicKey},
         manifest::FileAndHash,
+        resources::ResourceSet,
         x509::{Name, Time, Validity},
         Cert, Crl, Csr,
     },

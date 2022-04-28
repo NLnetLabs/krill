@@ -2,7 +2,7 @@ use std::{collections::HashMap, ops::Range};
 
 use intervaltree::IntervalTree;
 
-use rpki::ca::resourceset::ResourceSet;
+use rpki::repository::resources::ResourceSet;
 
 use crate::commons::api::TypedPrefix;
 
@@ -143,7 +143,7 @@ mod tests {
     use std::str::FromStr;
 
     use crate::commons::bgp::Announcement;
-    use rpki::ca::resourceset::ResourceSet;
+    use rpki::repository::resources::ResourceSet;
 
     use super::*;
 

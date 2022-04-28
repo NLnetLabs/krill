@@ -12,10 +12,10 @@ use rpki::{
         idexchange::{ChildHandle, Handle, ParentHandle, PublisherHandle, RepoInfo},
         provisioning::{IssuanceRequest, ResourceClassName, RevocationRequest},
         publication::Base64,
-        resourceset::ResourceSet,
     },
     repository::{
         crypto::KeyIdentifier,
+        resources::ResourceSet,
         roa::Roa,
         x509::{Serial, Time},
     },

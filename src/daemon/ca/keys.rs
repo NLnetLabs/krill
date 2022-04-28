@@ -8,9 +8,8 @@ use rpki::{
         provisioning::{
             IssuanceRequest, RequestResourceLimit, ResourceClassEntitlements, ResourceClassName, RevocationRequest,
         },
-        resourceset::ResourceSet,
     },
-    repository::{crypto::KeyIdentifier, x509::Time},
+    repository::{crypto::KeyIdentifier, resources::ResourceSet, x509::Time},
 };
 
 use crate::{

@@ -7,11 +7,11 @@ use rpki::{
         provisioning::{
             IssuanceRequest, RequestResourceLimit, ResourceClassEntitlements, ResourceClassName, RevocationRequest,
         },
-        resourceset::ResourceSet,
     },
     repository::{
         cert::Cert,
         crypto::KeyIdentifier,
+        resources::ResourceSet,
         x509::{Time, Validity},
     },
 };

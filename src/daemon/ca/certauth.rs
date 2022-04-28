@@ -13,11 +13,11 @@ use rpki::{
             IssuanceRequest, IssuanceResponse, ProvisioningCms, RequestResourceLimit, ResourceClassEntitlements,
             ResourceClassListResponse, ResourceClassName, RevocationRequest, RevocationResponse, SigningCert,
         },
-        resourceset::ResourceSet,
     },
     repository::{
         cert::{Cert, KeyUsage, Overclaim, TbsCert},
         crypto::{KeyIdentifier, PublicKey},
+        resources::ResourceSet,
         rta::RtaBuilder,
         x509::{Serial, Time, Validity},
     },

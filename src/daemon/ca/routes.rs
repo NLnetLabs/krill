@@ -3,13 +3,11 @@ use std::{cmp::Ordering, collections::HashMap, fmt, ops::Deref, str::FromStr};
 use chrono::Duration;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
-use rpki::{
-    ca::resourceset::ResourceSet,
-    repository::{
-        roa::{Roa, RoaBuilder},
-        sigobj::SignedObjectBuilder,
-        x509::Time,
-    },
+use rpki::repository::{
+    resources::ResourceSet,
+    roa::{Roa, RoaBuilder},
+    sigobj::SignedObjectBuilder,
+    x509::Time,
 };
 
 use crate::{

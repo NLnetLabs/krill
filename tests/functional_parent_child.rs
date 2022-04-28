@@ -2,7 +2,7 @@
 //!
 use std::fs;
 
-use rpki::ca::resourceset::ResourceSet;
+use rpki::repository::resources::ResourceSet;
 
 use krill::{daemon::ca::ta_handle, test::*};
 

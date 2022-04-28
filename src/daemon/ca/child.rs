@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use chrono::Duration;
 
 use rpki::{
-    ca::{idcert::IdCert, idexchange::ChildHandle, provisioning::ResourceClassName, resourceset::ResourceSet},
-    repository::{crypto::KeyIdentifier, x509::Time},
+    ca::{idcert::IdCert, idexchange::ChildHandle, provisioning::ResourceClassName},
+    repository::{crypto::KeyIdentifier, resources::ResourceSet, x509::Time},
 };
 
 use crate::{

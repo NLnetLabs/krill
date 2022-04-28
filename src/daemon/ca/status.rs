@@ -197,12 +197,7 @@ impl StatusStore {
 
     /// Returns the stored CaStatus for a CA, or a default (empty) status if it can't be found
     pub fn get_ca_status(&self, ca: &Handle) -> CaStatus {
-        self.cache
-            .read()
-            .unwrap()
-            .get(ca)
-            .cloned()
-            .unwrap_or_default()
+        self.cache.read().unwrap().get(ca).cloned().unwrap_or_default()
     }
 
     pub fn set_parent_failure(
