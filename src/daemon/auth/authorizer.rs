@@ -295,45 +295,48 @@ impl Auth {
     }
 }
 
-//------------ PolarHandle ---------------------------------------------------
+//------------ Handle --------------------------------------------------------
 
-/// Wrapper type so we can use rpki::ca::idexchange::Handle with
-/// the PolarClass trait.
+/// Handle for Authorization purposes.
+// This type is a wrapper so the we can implement the PolarClass trait which
+// is required when multi-user is enabled. We always need to pass the handle
+// into the authorization macro, even if multi-user is not enabled. So we need
+// this type even then.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq)]
-pub struct PolarHandle(MyHandle);
+pub struct Handle(MyHandle);
 
-impl fmt::Display for PolarHandle {
+impl fmt::Display for Handle {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.0.fmt(f)
     }
 }
 
-impl From<&MyHandle> for PolarHandle {
+impl From<&MyHandle> for Handle {
     fn from(h: &MyHandle) -> Self {
-        PolarHandle(h.clone())
+        Handle(h.clone())
     }
 }
 
-impl FromStr for PolarHandle {
+impl FromStr for Handle {
     type Err = InvalidHandle;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        MyHandle::from_str(s).map(PolarHandle)
+        MyHandle::from_str(s).map(Handle)
     }
 }
 
-impl AsRef<MyHandle> for PolarHandle {
+impl AsRef<MyHandle> for Handle {
     fn as_ref(&self) -> &MyHandle {
         &self.0
     }
 }
 
 #[cfg(feature = "multi-user")]
-impl oso::PolarClass for PolarHandle {
+impl oso::PolarClass for Handle {
     fn get_polar_class() -> oso::Class {
         Self::get_polar_class_builder()
-            .set_constructor(|name: String| PolarHandle::from_str(&name).unwrap())
-            .set_equality_check(|left: &PolarHandle, right: &PolarHandle| left == right)
+            .set_constructor(|name: String| Handle::from_str(&name).unwrap())
+            .set_equality_check(|left: &Handle, right: &Handle| left == right)
             .add_attribute_getter("name", |instance| instance.to_string())
             .build()
     }

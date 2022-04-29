@@ -38,7 +38,7 @@ use crate::{
     constants::{CASERVER_DIR, STATUS_DIR},
     daemon::{
         auth::common::permissions::Permission,
-        auth::PolarHandle,
+        auth::Handle,
         ca::{
             self, ta_handle, CaObjectsStore, CaStatus, CertAuth, Cmd, CmdDet, DeprecatedRepository, IniDet,
             ResourceTaggedAttestation, RouteAuthorizationUpdates, RtaContentRequest, RtaPrepareRequest, StatusStore,
@@ -329,7 +329,7 @@ impl CaManager {
                 .into_iter()
                 .filter(|handle| {
                     matches!(
-                        actor.is_allowed(Permission::CA_READ, PolarHandle::from(handle)),
+                        actor.is_allowed(Permission::CA_READ, Handle::from(handle)),
                         Ok(true)
                     )
                 })

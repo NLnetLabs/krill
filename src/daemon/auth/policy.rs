@@ -12,7 +12,7 @@ use crate::{
     daemon::{
         auth::{
             common::{permissions::Permission, NoResourceType},
-            PolarHandle,
+            Handle,
         },
         config::Config,
     },
@@ -35,7 +35,7 @@ impl AuthPolicy {
     pub fn new(config: Arc<Config>) -> KrillResult<Self> {
         let mut oso = Oso::new();
         oso.register_class(Actor::get_polar_class()).unwrap();
-        oso.register_class(PolarHandle::get_polar_class()).unwrap();
+        oso.register_class(Handle::get_polar_class()).unwrap();
 
         // Register both the Permission enum as a Polar class and its variants as Polar constants. The former is useful
         // for writing Polar rules that only match on actual Krill Permissions, not on arbitrary strings, e.g.

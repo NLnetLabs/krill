@@ -49,7 +49,7 @@ actor_has_role(actor: Actor, role) if role in actor.attr("role");
 # default access isn't restricted per CA handle, or because the user is neither
 # explicitly or implicitly denied access to the CA or is explicitly granted
 # access to the CA.
-allow(actor: Actor, action: Permission, ca: PolarHandle) if
+allow(actor: Actor, action: Permission, ca: Handle) if
     not disallow(actor, action, ca) and
     actor_has_role(actor, role) and
     role_allow(role, action) and
@@ -69,7 +69,7 @@ allow(actor: Actor, action: Permission, ca: PolarHandle) if
 #
 # Define a rule that will fail to deny access for any actor for any CA handle.
 # This is the default situation, i.e. all actors have access to all CAs.
-actor_cannot_access_ca(_: Actor, _: PolarHandle) if false;
+actor_cannot_access_ca(_: Actor, _: Handle) if false;
 
 # Next define a rule that will succeed either if:
 #   1.    There is no rule that explicitly blocks access to the specified CA for
@@ -84,7 +84,7 @@ actor_cannot_access_ca(_: Actor, _: PolarHandle) if false;
 #   2bbb. The actor has an "inc_cas" attribute which includes the specified CA
 #         handle (i.e. the CA is included in the set the actor is explicitly
 #         given access to).
-actor_can_access_ca(actor: Actor, ca: PolarHandle) if
+actor_can_access_ca(actor: Actor, ca: Handle) if
     # if an inline rule prevents access to the CA stop processing this rule
     not actor_cannot_access_ca(actor, ca) and
 
@@ -108,29 +108,29 @@ actor_can_access_ca(actor: Actor, ca: PolarHandle) if
 
 ### TEST: [
 # test specific CA access restrictions defined inline using Polar rules
-actor_cannot_access_ca(_actor: Actor{name: "dummy-test-actor2"}, ca: PolarHandle) if
+actor_cannot_access_ca(_actor: Actor{name: "dummy-test-actor2"}, ca: Handle) if
     ca.name in ["dummy-test-ca2"] and cut;
 
-actor_cannot_access_ca(_actor: Actor{name: "dummy-test-actor3"}, ca: PolarHandle) if
+actor_cannot_access_ca(_actor: Actor{name: "dummy-test-actor3"}, ca: Handle) if
     ca.name in ["dummy-test-ca3"] and cut;
 
-?= not actor_cannot_access_ca(new Actor("dummy-test-actor1", {}), new PolarHandle("dummy-test-ca1"));
-?= not actor_cannot_access_ca(new Actor("dummy-test-actor1", {}), new PolarHandle("dummy-test-ca2"));
-?= not actor_cannot_access_ca(new Actor("dummy-test-actor1", {}), new PolarHandle("dummy-test-ca3"));
+?= not actor_cannot_access_ca(new Actor("dummy-test-actor1", {}), new Handle("dummy-test-ca1"));
+?= not actor_cannot_access_ca(new Actor("dummy-test-actor1", {}), new Handle("dummy-test-ca2"));
+?= not actor_cannot_access_ca(new Actor("dummy-test-actor1", {}), new Handle("dummy-test-ca3"));
 
-?= not actor_cannot_access_ca(new Actor("dummy-test-actor2", {}), new PolarHandle("dummy-test-ca1"));
-?= actor_cannot_access_ca(new Actor("dummy-test-actor2", {}), new PolarHandle("dummy-test-ca2"));
-?= not actor_cannot_access_ca(new Actor("dummy-test-actor2", {}), new PolarHandle("dummy-test-ca3"));
+?= not actor_cannot_access_ca(new Actor("dummy-test-actor2", {}), new Handle("dummy-test-ca1"));
+?= actor_cannot_access_ca(new Actor("dummy-test-actor2", {}), new Handle("dummy-test-ca2"));
+?= not actor_cannot_access_ca(new Actor("dummy-test-actor2", {}), new Handle("dummy-test-ca3"));
 
-?= not actor_cannot_access_ca(new Actor("dummy-test-actor3", {}), new PolarHandle("dummy-test-ca1"));
-?= not actor_cannot_access_ca(new Actor("dummy-test-actor3", {}), new PolarHandle("dummy-test-ca2"));
-?= actor_cannot_access_ca(new Actor("dummy-test-actor3", {}), new PolarHandle("dummy-test-ca3"));
+?= not actor_cannot_access_ca(new Actor("dummy-test-actor3", {}), new Handle("dummy-test-ca1"));
+?= not actor_cannot_access_ca(new Actor("dummy-test-actor3", {}), new Handle("dummy-test-ca2"));
+?= actor_cannot_access_ca(new Actor("dummy-test-actor3", {}), new Handle("dummy-test-ca3"));
 
 # test CA access restrictions based on actor attribute values
-?= actor_can_access_ca(new Actor("a", {}), new PolarHandle("ca1"));
-?= actor_can_access_ca(new Actor("a", {inc_cas: "ca1"}), new PolarHandle("ca1"));
-?= not actor_can_access_ca(new Actor("a", {inc_cas: "ca1"}), new PolarHandle("ca2"));
-?= not actor_can_access_ca(new Actor("a", {exc_cas: "ca1"}), new PolarHandle("ca1"));
-?= actor_can_access_ca(new Actor("a", {exc_cas: "ca1"}), new PolarHandle("ca2"));
+?= actor_can_access_ca(new Actor("a", {}), new Handle("ca1"));
+?= actor_can_access_ca(new Actor("a", {inc_cas: "ca1"}), new Handle("ca1"));
+?= not actor_can_access_ca(new Actor("a", {inc_cas: "ca1"}), new Handle("ca2"));
+?= not actor_can_access_ca(new Actor("a", {exc_cas: "ca1"}), new Handle("ca1"));
+?= actor_can_access_ca(new Actor("a", {exc_cas: "ca1"}), new Handle("ca2"));
 
 ### ]
