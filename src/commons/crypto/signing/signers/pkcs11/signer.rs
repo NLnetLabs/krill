@@ -20,7 +20,6 @@ use cryptoki::{
 };
 
 use rpki::{
-    ca::idexchange::Handle,
     repository::crypto::signer::KeyError,
     repository::crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError},
 };
@@ -35,7 +34,7 @@ use crate::commons::crypto::{
         probe::{ProbeError, ProbeStatus, StatefulProbe},
         util,
     },
-    SignerError,
+    SignerError, SignerHandle,
 };
 
 //------------ Types and constants ------------------------------------------------------------------------------------
@@ -165,7 +164,7 @@ impl TryFrom<&Pkcs11SignerConfig> for ConnectionSettings {
 pub struct Pkcs11Signer {
     name: String,
 
-    handle: RwLock<Option<Handle>>,
+    handle: RwLock<Option<SignerHandle>>,
 
     mapper: Arc<SignerMapper>,
 
@@ -218,7 +217,7 @@ impl Pkcs11Signer {
         &self.name
     }
 
-    pub fn set_handle(&self, handle: Handle) {
+    pub fn set_handle(&self, handle: SignerHandle) {
         let mut writable_handle = self.handle.write().unwrap();
         if writable_handle.is_some() {
             panic!("Cannot set signer handle as handle is already set");

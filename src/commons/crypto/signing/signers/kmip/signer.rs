@@ -21,7 +21,6 @@ use openssl::ssl::SslStream;
 use r2d2::PooledConnection;
 
 use rpki::{
-    ca::idexchange::Handle,
     repository::crypto::signer::KeyError,
     repository::crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError},
 };
@@ -35,7 +34,7 @@ use crate::commons::{
             probe::{ProbeError, ProbeStatus, StatefulProbe},
             util,
         },
-        SignerError,
+        SignerError, SignerHandle,
     },
     error::KrillIoError,
 };
@@ -264,7 +263,7 @@ fn read_binary_file(file_path: &PathBuf) -> Result<Vec<u8>, SignerError> {
 pub struct KmipSigner {
     name: String,
 
-    handle: RwLock<Option<Handle>>,
+    handle: RwLock<Option<SignerHandle>>,
 
     mapper: Arc<SignerMapper>,
 
@@ -303,7 +302,7 @@ impl KmipSigner {
         &self.name
     }
 
-    pub fn set_handle(&self, handle: Handle) {
+    pub fn set_handle(&self, handle: SignerHandle) {
         let mut writable_handle = self.handle.write().unwrap();
         if writable_handle.is_some() {
             panic!("Cannot set signer handle as handle is already set");

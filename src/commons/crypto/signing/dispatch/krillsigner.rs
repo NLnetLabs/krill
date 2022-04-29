@@ -39,10 +39,10 @@ use crate::{
 use std::collections::HashMap;
 
 #[cfg(feature = "hsm")]
-use rpki::ca::idexchange::Handle;
-
-#[cfg(feature = "hsm")]
-use crate::commons::crypto::signers::{kmip::KmipSigner, pkcs11::Pkcs11Signer};
+use crate::commons::crypto::{
+    signers::{kmip::KmipSigner, pkcs11::Pkcs11Signer},
+    SignerHandle,
+};
 
 /// High level signing interface between Krill and the [SignerRouter].
 ///
@@ -184,7 +184,7 @@ impl KrillSigner {
     }
 
     #[cfg(feature = "hsm")]
-    pub fn get_active_signers(&self) -> HashMap<Handle, Arc<SignerProvider>> {
+    pub fn get_active_signers(&self) -> HashMap<SignerHandle, Arc<SignerProvider>> {
         self.router.get_active_signers()
     }
 

@@ -26,7 +26,10 @@ use crate::{
 use rpki::repository::crypto::KeyIdentifier;
 
 #[cfg(feature = "hsm")]
-use crate::constants::{KEYS_DIR, SIGNERS_DIR};
+use crate::{
+    commons::crypto::SignerHandle,
+    constants::{KEYS_DIR, SIGNERS_DIR}
+};
 
 pub mod v0_9_0;
 
@@ -449,7 +452,7 @@ fn record_preexisting_openssl_keys_in_signer_mapper(config: Arc<Config>) -> Resu
 
         // For every file (key) in the legacy OpenSSL signer keys directory
         if let Ok(dir_iter) = keys_dir.read_dir() {
-            let mut openssl_signer_handle: Option<Handle> = None;
+            let mut openssl_signer_handle: Option<SignerHandle> = None;
 
             for entry in dir_iter {
                 let entry = entry.map_err(|err| {

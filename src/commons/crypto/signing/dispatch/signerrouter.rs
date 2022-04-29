@@ -222,7 +222,7 @@ impl SignerRouter {
 enum IdentifyResult {
     Unavailable,
     Corrupt,
-    Identified(Handle),
+    Identified(SignerHandle),
     Unusable,
     Unidentified,
 }
@@ -230,7 +230,7 @@ enum IdentifyResult {
 #[cfg(feature = "hsm")]
 enum RegisterResult {
     NotReady,
-    ReadyVerified(Handle),
+    ReadyVerified(SignerHandle),
     ReadyUnusable,
 }
 
@@ -356,7 +356,7 @@ impl SignerRouter {
     }
 
     /// Retrieves the set of signer handles known to the signer mapper.
-    fn get_candidate_signer_handles(&self) -> Result<Vec<Handle>, String> {
+    fn get_candidate_signer_handles(&self) -> Result<Vec<SignerHandle>, String> {
         // TODO: Filter out already bound signers?
         Ok(self
             .signer_mapper
@@ -370,7 +370,7 @@ impl SignerRouter {
     fn identify_signer(
         &self,
         signer_provider: &Arc<SignerProvider>,
-        candidate_handles: &[Handle],
+        candidate_handles: &[SignerHandle],
     ) -> Result<IdentifyResult, ErrorString> {
         let config_signer_name = signer_provider.get_name().to_string();
 
@@ -421,7 +421,7 @@ impl SignerRouter {
     fn is_signer_identified_by_handle(
         &self,
         signer_provider: &Arc<SignerProvider>,
-        candidate_handle: &Handle,
+        candidate_handle: &SignerHandle,
     ) -> Result<IdentifyResult, ErrorString> {
         let handle_name = self.signer_mapper.as_ref().unwrap().get_signer_name(candidate_handle)?;
         let signer_name = signer_provider.get_name().to_string();
