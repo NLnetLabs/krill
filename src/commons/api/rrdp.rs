@@ -94,11 +94,13 @@ impl PublishElement {
     pub fn base64(&self) -> &Base64 {
         &self.base64
     }
+    
     pub fn uri(&self) -> &uri::Rsync {
         &self.uri
     }
-    pub fn size(&self) -> usize {
-        self.base64.to_bytes().len()
+    
+    pub fn size_approx(&self) -> usize {
+        self.base64.size_approx()
     }
 
     pub fn as_withdraw(&self) -> WithdrawElement {
@@ -144,7 +146,7 @@ impl UpdateElement {
         &self.base64
     }
     pub fn size(&self) -> usize {
-        self.base64.to_bytes().len()
+        self.base64.size_approx()
     }
 }
 
@@ -520,7 +522,7 @@ impl CurrentObjects {
     }
 
     pub fn size(&self) -> usize {
-        self.0.values().fold(0, |tot, el| tot + el.size())
+        self.0.values().fold(0, |tot, el| tot + el.size_approx())
     }
 
     pub fn is_empty(&self) -> bool {
@@ -663,7 +665,7 @@ impl Snapshot {
     }
 
     pub fn size(&self) -> usize {
-        self.current_objects.elements().iter().fold(0, |sum, p| sum + p.size())
+        self.current_objects.elements().iter().fold(0, |sum, p| sum + p.size_approx())
     }
 
     fn rel_path(&self) -> String {
@@ -736,7 +738,7 @@ impl DeltaElements {
     }
 
     pub fn size(&self) -> usize {
-        let sum_publishes = self.publishes.iter().fold(0, |sum, p| sum + p.size());
+        let sum_publishes = self.publishes.iter().fold(0, |sum, p| sum + p.size_approx());
         let sum_updates = self.updates.iter().fold(0, |sum, u| sum + u.size());
 
         sum_publishes + sum_updates
