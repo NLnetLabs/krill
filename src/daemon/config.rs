@@ -245,7 +245,7 @@ impl ConfigDefaults {
                 max_connections: KmipSignerConfig::default_max_connections(),
                 max_response_bytes: KmipSignerConfig::default_max_response_bytes(),
             };
-            vec![SignerConfig::new(
+            return vec![SignerConfig::new(
                 DEFAULT_KMIP_SIGNER_NAME.to_string(),
                 SignerType::Kmip(signer_config),
             )]
