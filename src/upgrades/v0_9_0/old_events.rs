@@ -9,7 +9,7 @@ use rpki::{
     ca::{
         idcert::IdCert,
         idexchange,
-        idexchange::{ChildHandle, Handle, ParentHandle, PublisherHandle, RepoInfo},
+        idexchange::{CaHandle, ChildHandle, ParentHandle, PublisherHandle, RepoInfo},
         provisioning::{IssuanceRequest, ResourceClassName, RevocationRequest},
         publication::Base64,
     },
@@ -101,7 +101,7 @@ impl OldCaEvt {
         self,
         version: u64,
         repo_manager: &RepositoryManager,
-        derived_embedded_ca_info_map: &HashMap<Handle, DerivedEmbeddedCaMigrationInfo>,
+        derived_embedded_ca_info_map: &HashMap<CaHandle, DerivedEmbeddedCaMigrationInfo>,
     ) -> Result<CaEvt, PrepareUpgradeError> {
         let (id, _, details) = self.unpack();
 
@@ -110,7 +110,7 @@ impl OldCaEvt {
                 let contact = match contact {
                     OldRepositoryContact::Rfc8181(res) => RepositoryContact::new(res),
                     OldRepositoryContact::Embedded(_) => {
-                        let res = repo_manager.repository_response(&id)?;
+                        let res = repo_manager.repository_response(&id.convert())?;
                         RepositoryContact::new(res)
                     }
                 };
@@ -120,9 +120,9 @@ impl OldCaEvt {
                 let contact = match old_contact {
                     OldParentCaContact::Rfc6492(res) => ParentCaContact::for_rfc6492(res),
                     OldParentCaContact::Ta(details) => ParentCaContact::Ta(details),
-                    OldParentCaContact::Embedded => match derived_embedded_ca_info_map.get(&parent) {
+                    OldParentCaContact::Embedded => match derived_embedded_ca_info_map.get(&parent.convert()) {
                         Some(info) => {
-                            let res = info.parent_responses.get(&id).ok_or_else(|| PrepareUpgradeError::Custom(
+                            let res = info.parent_responses.get(&id.convert()).ok_or_else(|| PrepareUpgradeError::Custom(
                                 format!("Cannot upgrade CA '{}' using embedded parent '{}' which no longer has this CA as a child", id, parent)))?;
                             ParentCaContact::for_rfc6492(res.clone())
                         }
@@ -142,7 +142,7 @@ impl OldCaEvt {
                 let id_cert = match id_cert_opt {
                     Some(id_cert) => id_cert,
                     None => {
-                        let child_info = derived_embedded_ca_info_map.get(&child).ok_or_else(|| {
+                        let child_info = derived_embedded_ca_info_map.get(&child.convert()).ok_or_else(|| {
                             PrepareUpgradeError::Custom(format!(
                                 "Cannot upgrade CA {}, embedded child {} is no longer present",
                                 id, child
@@ -619,6 +619,6 @@ mod tests {
     #[ignore = "see issue #819"]
     fn convert_old_child_certificates_updated() {
         let json = include_str!("../../../test-resources/migrations/delta-26.json");
-        let old_evt: OldCaEvt = serde_json::from_str(json).unwrap();
+        let _old_evt: OldCaEvt = serde_json::from_str(json).unwrap();
     }
 }

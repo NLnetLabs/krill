@@ -15,7 +15,7 @@ use crate::{
         api::{PublicationServerUris, PublisherDetails},
         crypto::KrillSigner,
         error::Error,
-        remote::cmslogger::CmsLogger,
+        util::cmslogger::CmsLogger,
         KrillResult,
     },
     daemon::config::Config,
@@ -217,8 +217,6 @@ mod tests {
             idexchange::Handle,
             publication::{ListElement, PublishDelta},
         },
-        repository::x509::{Time, Validity},
-        rrdp::Delta,
         uri,
     };
 

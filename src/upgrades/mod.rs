@@ -6,7 +6,7 @@ use std::{fmt, path::Path, str::FromStr, sync::Arc, time::Duration};
 
 use serde::de::DeserializeOwned;
 
-use rpki::{ca::idexchange::Handle, repository::x509::Time};
+use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
 
 use crate::{
     commons::{
@@ -97,7 +97,7 @@ pub enum PrepareUpgradeError {
     KeyStoreError(KeyValueError),
     IoError(KrillIoError),
     Unrecognised(String),
-    CannotLoadAggregate(Handle),
+    CannotLoadAggregate(MyHandle),
     Custom(String),
 }
 
@@ -568,7 +568,7 @@ mod tests {
     use std::{fs, path::PathBuf};
 
     use crate::commons::util::file;
-    use crate::test::{init_config, tmp_dir};
+    use crate::test::tmp_dir;
 
     use super::*;
 

@@ -6,7 +6,7 @@ use rpki::{
     ca::{
         idcert::IdCert,
         idexchange,
-        idexchange::{ChildHandle, Handle, ParentHandle, RepoInfo},
+        idexchange::{CaHandle, ChildHandle, ParentHandle, RepoInfo},
         provisioning::{IssuanceRequest, ResourceClassName, RevocationRequest},
     },
     repository::{crl::Crl, crypto::KeyIdentifier, manifest::Manifest, resources::ResourceSet, x509::Time},
@@ -74,7 +74,7 @@ impl CaObjectsMigration {
         config: Arc<Config>,
         repo_manager: Arc<RepositoryManager>,
         signer: Arc<KrillSigner>,
-    ) -> UpgradeResult<HashMap<Handle, DerivedEmbeddedCaMigrationInfo>> {
+    ) -> UpgradeResult<HashMap<CaHandle, DerivedEmbeddedCaMigrationInfo>> {
         // Read all CAS based on snapshots and events, using the pre-0_9_0 data structs
         // which are preserved here.
         info!("Populate the CA Objects Store introduced in Krill 0.9.0");
@@ -108,7 +108,7 @@ impl CaObjectsMigration {
         let service_uri = uri::Https::from_string(service_uri).unwrap();
         let service_uri = idexchange::ServiceUri::Https(service_uri);
 
-        let child_request = idexchange::ChildRequest::new(ca.id.cert.clone(), ca.handle.clone());
+        let child_request = idexchange::ChildRequest::new(ca.id.cert.clone(), ca.handle.convert());
         let parent_responses = ca
             .children
             .keys()
@@ -117,7 +117,7 @@ impl CaObjectsMigration {
                     child_handle.clone(),
                     idexchange::ParentResponse::new(
                         ca.id.cert.clone(),
-                        ca.handle.clone(),
+                        ca.handle.convert(),
                         child_handle.clone(),
                         service_uri.clone(),
                         None,
@@ -139,7 +139,7 @@ struct CasStoreMigration {
     new_kv_store: KeyValueStore,
     new_agg_store: AggregateStore<ca::CertAuth>,
     repo_manager: Arc<RepositoryManager>,
-    derived_embedded_ca_info_map: HashMap<Handle, DerivedEmbeddedCaMigrationInfo>,
+    derived_embedded_ca_info_map: HashMap<CaHandle, DerivedEmbeddedCaMigrationInfo>,
 }
 
 impl UpgradeStore for CasStoreMigration {
@@ -158,7 +158,7 @@ impl UpgradeStore for CasStoreMigration {
         // For each CA:
         for scope in self.current_kv_store.scopes()? {
             // Getting the Handle should never fail, but if it does then we should bail out asap.
-            let handle = Handle::from_str(&scope)
+            let handle = CaHandle::from_str(&scope)
                 .map_err(|_| PrepareUpgradeError::Custom(format!("Found invalid CA handle '{}'", scope)))?;
 
             // Get the info from the current store to see where we are
@@ -204,7 +204,7 @@ impl UpgradeStore for CasStoreMigration {
                         None => Time::now(),
                     };
 
-                    let repo_response = self.repo_manager.repository_response(&id)?;
+                    let repo_response = self.repo_manager.repository_response(&id.convert())?;
 
                     let contact = RepositoryContact::new(repo_response);
                     let service_uri = contact.service_uri().clone();
@@ -414,7 +414,7 @@ impl UpgradeStore for CasStoreMigration {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct OldCertAuth {
-    handle: Handle,
+    handle: CaHandle,
     version: u64,
 
     id: Rfc8183Id, // Used for RFC 6492 (up-down) and RFC 8181 (publication)
@@ -451,7 +451,7 @@ impl Aggregate for OldCertAuth {
 
         if let Some(ta_details) = ta_opt {
             let key_id = ta_details.cert().subject_key_identifier();
-            parents.insert(ta_handle(), OldParentCaContact::Ta(ta_details));
+            parents.insert(ta_handle().into_converted(), OldParentCaContact::Ta(ta_details));
 
             let rcn = ResourceClassName::from(next_class_name);
             next_class_name += 1;
@@ -492,7 +492,8 @@ impl Aggregate for OldCertAuth {
             //-----------------------------------------------------------------------
             OldCaEvtDet::TrustAnchorMade(details) => {
                 let key_id = details.cert().subject_key_identifier();
-                self.parents.insert(ta_handle(), OldParentCaContact::Ta(details));
+                self.parents
+                    .insert(ta_handle().into_converted(), OldParentCaContact::Ta(details));
                 let rcn = ResourceClassName::from(self.next_class_name);
                 self.next_class_name += 1;
                 self.resources
@@ -662,7 +663,7 @@ impl OldCertAuth {
             None => None,
             Some(old) => match old {
                 OldRepositoryContact::Embedded(_) => {
-                    let res = repo_manager.repository_response(&self.handle)?;
+                    let res = repo_manager.repository_response(&self.handle.convert())?;
                     Some(RepositoryContact::new(res))
                 }
                 OldRepositoryContact::Rfc8181(res) => Some(RepositoryContact::new(res.clone())),
@@ -727,7 +728,7 @@ impl OldResourceClass {
         OldResourceClass {
             name: parent_rc_name.clone(),
             name_space: parent_rc_name.to_string(),
-            parent_handle: ta_handle(),
+            parent_handle: ta_handle().into_converted(),
             parent_rc_name,
             roas: OldRoas::default(),
             certificates: OldChildCertificates::default(),

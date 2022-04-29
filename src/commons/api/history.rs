@@ -4,7 +4,7 @@ use chrono::{DateTime, NaiveDateTime, SecondsFormat, Utc};
 
 use rpki::{
     ca::{
-        idexchange::{ChildHandle, Handle, ParentHandle, PublisherHandle, ServiceUri},
+        idexchange::{ChildHandle, MyHandle, ParentHandle, PublisherHandle, ServiceUri},
         provisioning::{RequestResourceLimit, ResourceClassName, RevocationRequest},
     },
     repository::{crypto::KeyIdentifier, resources::ResourceSet, x509::Time},
@@ -147,7 +147,7 @@ pub struct CommandHistoryRecord {
     pub key: String,
     pub actor: String,
     pub timestamp: i64,
-    pub handle: Handle,
+    pub handle: MyHandle,
     pub version: u64,
     pub sequence: u64,
     pub summary: CommandSummary,

@@ -1,6 +1,6 @@
 use hyper::Method;
 
-use rpki::ca::idexchange::Handle;
+use rpki::ca::idexchange::PublisherHandle;
 
 use crate::{
     constants::ACTOR_DEF_TESTBED,
@@ -104,8 +104,8 @@ async fn testbed_publishers(req: Request, path: &mut RequestPath) -> RoutingResu
 }
 
 // Prevent deletion of the built-in TA and testbed repositories.
-async fn testbed_remove_pbl(req: Request, publisher: Handle) -> RoutingResult {
-    if publisher == ta_handle() || publisher == testbed_ca_handle() {
+async fn testbed_remove_pbl(req: Request, publisher: PublisherHandle) -> RoutingResult {
+    if publisher.as_str() == ta_handle().as_str() || publisher.as_str() == testbed_ca_handle().as_str() {
         Ok(HttpResponse::forbidden(format!(
             "Publisher '{}' cannot be removed",
             publisher

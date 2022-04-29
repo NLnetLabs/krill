@@ -9,7 +9,7 @@ use priority_queue::PriorityQueue;
 
 use rpki::{
     ca::{
-        idexchange::{Handle, ParentHandle},
+        idexchange::{CaHandle, ParentHandle},
         provisioning::{ResourceClassName, RevocationRequest},
     },
     repository::x509::Time,
@@ -32,16 +32,16 @@ pub enum Task {
     QueueStartTasks,
 
     SyncRepo {
-        ca: Handle,
+        ca: CaHandle,
     },
 
     SyncParent {
-        ca: Handle,
+        ca: CaHandle,
         parent: ParentHandle,
     },
 
     SuspendChildrenIfNeeded {
-        ca: Handle,
+        ca: CaHandle,
     },
 
     RepublishIfNeeded,
@@ -53,13 +53,13 @@ pub enum Task {
     SweepLoginCache,
 
     ResourceClassRemoved {
-        ca: Handle,
+        ca: CaHandle,
         parent: ParentHandle,
         rcn: ResourceClassName,
         revocation_requests: Vec<RevocationRequest>,
     },
     UnexpectedKey {
-        ca: Handle,
+        ca: CaHandle,
         rcn: ResourceClassName,
         revocation_request: RevocationRequest,
     },
@@ -156,15 +156,15 @@ impl TaskQueue {
         }
     }
 
-    pub fn sync_repo(&self, ca: Handle, priority: Priority) {
+    pub fn sync_repo(&self, ca: CaHandle, priority: Priority) {
         self.schedule(Task::SyncRepo { ca }, priority);
     }
 
-    pub fn sync_parent(&self, ca: Handle, parent: ParentHandle, priority: Priority) {
+    pub fn sync_parent(&self, ca: CaHandle, parent: ParentHandle, priority: Priority) {
         self.schedule(Task::SyncParent { ca, parent }, priority);
     }
 
-    pub fn suspend_children(&self, ca: Handle, priority: Priority) {
+    pub fn suspend_children(&self, ca: CaHandle, priority: Priority) {
         self.schedule(Task::SuspendChildrenIfNeeded { ca }, priority);
     }
 
@@ -185,7 +185,7 @@ impl TaskQueue {
         self.schedule(Task::SweepLoginCache, priority);
     }
 
-    fn drop_sync_parent(&self, ca: Handle, parent: ParentHandle) {
+    fn drop_sync_parent(&self, ca: CaHandle, parent: ParentHandle) {
         let mut q = self.q.write().unwrap();
         let sync = Task::SyncParent { ca, parent };
         q.remove(&sync);

@@ -19,16 +19,13 @@ use openssl::{
     rsa::Rsa,
 };
 
-use rpki::{
-    ca::idexchange::Handle,
-    repository::crypto::{
-        signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError,
-    },
+use rpki::repository::crypto::{
+    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError,
 };
 
 use crate::{
     commons::{
-        crypto::{dispatch::signerinfo::SignerMapper, signers::error::SignerError},
+        crypto::{dispatch::signerinfo::SignerMapper, signers::error::SignerError, SignerHandle},
         error::KrillIoError,
     },
     constants::KEYS_DIR,
@@ -57,7 +54,7 @@ pub struct OpenSslSigner {
 
     name: String,
 
-    handle: RwLock<Option<Handle>>,
+    handle: RwLock<Option<SignerHandle>>,
 
     info: Option<String>,
 
@@ -90,7 +87,7 @@ impl OpenSslSigner {
         &self.name
     }
 
-    pub fn set_handle(&self, handle: Handle) {
+    pub fn set_handle(&self, handle: SignerHandle) {
         let mut writable_handle = self.handle.write().unwrap();
         if writable_handle.is_some() {
             panic!("Cannot set signer handle as handle is already set");

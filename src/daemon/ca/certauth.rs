@@ -7,7 +7,7 @@ use rpki::{
     ca::{
         idcert::IdCert,
         idexchange,
-        idexchange::{ChildHandle, Handle, ParentHandle},
+        idexchange::{CaHandle, ChildHandle, ParentHandle},
         provisioning,
         provisioning::{
             IssuanceRequest, IssuanceResponse, ProvisioningCms, RequestResourceLimit, ResourceClassEntitlements,
@@ -77,7 +77,7 @@ impl Rfc8183Id {
 /// than one might expect.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct CertAuth {
-    handle: Handle,
+    handle: CaHandle,
     version: u64,
 
     id: Rfc8183Id, // Used for RFC 6492 (up-down) and RFC 8181 (publication)
@@ -150,7 +150,8 @@ impl Aggregate for CertAuth {
             //-----------------------------------------------------------------------
             CaEvtDet::TrustAnchorMade { ta_cert_details } => {
                 let key_id = ta_cert_details.cert().subject_key_identifier();
-                self.parents.insert(ta_handle(), ParentCaContact::Ta(ta_cert_details));
+                self.parents
+                    .insert(ta_handle().into_converted(), ParentCaContact::Ta(ta_cert_details));
                 let rcn = ResourceClassName::from(self.next_class_name);
                 self.next_class_name += 1;
                 self.resources.insert(rcn.clone(), ResourceClass::for_ta(rcn, key_id));
@@ -535,13 +536,13 @@ impl CertAuth {
     /// Returns an RFC 8183 Child Request - which can be represented as XML to a
     /// parent of this `CertAuth`
     pub fn child_request(&self) -> idexchange::ChildRequest {
-        idexchange::ChildRequest::new(self.id.cert.clone(), self.handle.clone())
+        idexchange::ChildRequest::new(self.id.cert.clone(), self.handle.convert())
     }
 
     /// Returns an RFC 8183 Publisher Request - which can be represented as XML to a
     /// repository for this `CertAuth`
     pub fn publisher_request(&self) -> idexchange::PublisherRequest {
-        idexchange::PublisherRequest::new(self.id_cert().clone(), self.handle.clone(), None)
+        idexchange::PublisherRequest::new(self.id_cert().clone(), self.handle.convert(), None)
     }
 
     pub fn id_cert(&self) -> &IdCert {
@@ -551,7 +552,8 @@ impl CertAuth {
     pub fn id_key(&self) -> KeyIdentifier {
         self.id.cert.subject_public_key_info().key_identifier()
     }
-    pub fn handle(&self) -> &Handle {
+
+    pub fn handle(&self) -> &CaHandle {
         &self.handle
     }
 
@@ -646,8 +648,8 @@ impl CertAuth {
 ///
 impl CertAuth {
     pub fn verify_rfc6492(&self, cms: ProvisioningCms) -> KrillResult<provisioning::Message> {
-        let child_handle = cms.message().sender();
-        let child = self.get_child(child_handle)?;
+        let child_handle = cms.message().sender().convert();
+        let child = self.get_child(&child_handle)?;
 
         cms.validate(child.id_cert())
             .map_err(|_| Error::Rfc6492SignatureInvalid)?;
@@ -666,7 +668,7 @@ impl CertAuth {
     /// the child is not authorized -- or unknown etc.
     pub fn list(
         &self,
-        child_handle: &Handle,
+        child_handle: &ChildHandle,
         issuance_timing: &IssuanceTimingConfig,
     ) -> KrillResult<ResourceClassListResponse> {
         let mut classes = vec![];
@@ -684,7 +686,7 @@ impl CertAuth {
     /// class name and public key for the issued certificate.
     pub fn issuance_response(
         &self,
-        child_handle: &Handle,
+        child_handle: &ChildHandle,
         class_name: &ResourceClassName,
         pub_key: &PublicKey,
         issuance_timing: &IssuanceTimingConfig,
@@ -701,7 +703,7 @@ impl CertAuth {
     /// Returns the ResourceClassEntitlements for this child for the given class name.
     fn entitlement_class(
         &self,
-        child_handle: &Handle,
+        child_handle: &ChildHandle,
         rcn: &ResourceClassName,
         issuance_timing: &IssuanceTimingConfig,
     ) -> Option<ResourceClassEntitlements> {
@@ -769,7 +771,7 @@ impl CertAuth {
     }
 
     /// Returns a child, or an error if the child is unknown.
-    pub fn get_child(&self, child: &Handle) -> KrillResult<&ChildDetails> {
+    pub fn get_child(&self, child: &ChildHandle) -> KrillResult<&ChildDetails> {
         match self.children.get(child) {
             None => Err(Error::CaChildUnknown(self.handle.clone(), child.clone())),
             Some(child) => Ok(child),
@@ -814,7 +816,7 @@ impl CertAuth {
     /// = the signer throws up..
     fn child_certify(
         &self,
-        child: Handle,
+        child: ChildHandle,
         request: IssuanceRequest,
         config: &Config,
         signer: Arc<KrillSigner>,
@@ -875,7 +877,7 @@ impl CertAuth {
     ///
     /// This does not yet revoke / reissue / republish anything.
     /// Also, this is a no-op if the child already has these resources.
-    fn child_update_resources(&self, child_handle: &Handle, resources: ResourceSet) -> KrillResult<Vec<CaEvt>> {
+    fn child_update_resources(&self, child_handle: &ChildHandle, resources: ResourceSet) -> KrillResult<Vec<CaEvt>> {
         if !self.all_resources().contains(&resources) {
             Err(Error::CaChildExtraResources(self.handle.clone(), child_handle.clone()))
         } else {
@@ -909,7 +911,7 @@ impl CertAuth {
     }
 
     /// Updates child IdCert
-    fn child_update_id(&self, child_handle: &Handle, id_cert: IdCert) -> KrillResult<Vec<CaEvt>> {
+    fn child_update_id(&self, child_handle: &ChildHandle, id_cert: IdCert) -> KrillResult<Vec<CaEvt>> {
         let child = self.get_child(child_handle)?;
 
         if &id_cert != child.id_cert() {
@@ -1135,7 +1137,7 @@ impl CertAuth {
     }
 
     /// Returns `true` if the child is known, `false` otherwise. No errors.
-    fn has_child(&self, child_handle: &Handle) -> bool {
+    fn has_child(&self, child_handle: &ChildHandle) -> bool {
         self.children.contains_key(child_handle)
     }
 }
@@ -1208,7 +1210,7 @@ impl CertAuth {
     /// Adds a parent. This method will return an error in case a parent
     /// by this name (handle) is already known. Or in case the same response
     /// is used for more than one parent.
-    fn add_parent(&self, parent: Handle, info: ParentCaContact) -> KrillResult<Vec<CaEvt>> {
+    fn add_parent(&self, parent: ParentHandle, info: ParentCaContact) -> KrillResult<Vec<CaEvt>> {
         if self.parent_known(&parent) {
             Err(Error::CaParentDuplicateName(self.handle.clone(), parent))
         } else if let Some(other) = self.parent_for_info(&info) {
@@ -1222,7 +1224,7 @@ impl CertAuth {
     }
 
     /// Removes a parent. Returns an error if it doesn't exist.
-    fn remove_parent(&self, parent: Handle) -> KrillResult<Vec<CaEvt>> {
+    fn remove_parent(&self, parent: ParentHandle) -> KrillResult<Vec<CaEvt>> {
         if !self.parent_known(&parent) {
             Err(Error::CaParentUnknown(self.handle.clone(), parent))
         } else {
@@ -1248,7 +1250,7 @@ impl CertAuth {
 
     /// Updates an existing parent's contact. This will return an error if
     /// the parent is not known.
-    fn update_parent(&self, parent: Handle, info: ParentCaContact) -> KrillResult<Vec<CaEvt>> {
+    fn update_parent(&self, parent: ParentHandle, info: ParentCaContact) -> KrillResult<Vec<CaEvt>> {
         if !self.parent_known(&parent) {
             Err(Error::CaParentUnknown(self.handle.clone(), parent))
         } else if self.is_ta() {
@@ -1337,7 +1339,7 @@ impl CertAuth {
     /// and shrink/revoke child certificates and ROAs as needed.
     fn update_entitlements(
         &self,
-        parent_handle: Handle,
+        parent_handle: ParentHandle,
         entitlements: ResourceClassListResponse,
         signer: Arc<KrillSigner>,
     ) -> KrillResult<Vec<CaEvt>> {

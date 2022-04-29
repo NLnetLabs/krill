@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use rpki::{
     ca::{
-        idexchange::{Handle, RepoInfo},
+        idexchange::{CaHandle, RepoInfo},
         provisioning::{
             IssuanceRequest, RequestResourceLimit, ResourceClassEntitlements, ResourceClassName, RevocationRequest,
         },
@@ -86,7 +86,7 @@ impl CertifiedKey {
 
     pub fn wants_update(
         &self,
-        handle: &Handle,
+        handle: &CaHandle,
         rcn: &ResourceClassName,
         new_resources: &ResourceSet,
         new_not_after: Time,
@@ -328,7 +328,7 @@ impl KeyState {
 
     pub fn make_entitlement_events(
         &self,
-        handle: &Handle,
+        handle: &CaHandle,
         rcn: ResourceClassName,
         entitlement: &ResourceClassEntitlements,
         base_repo: &RepoInfo,

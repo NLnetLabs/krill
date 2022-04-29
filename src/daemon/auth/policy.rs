@@ -2,7 +2,7 @@ use std::{fmt, io::Read, str::FromStr, sync::Arc};
 
 use oso::{Oso, PolarClass, PolarValue, ToPolar};
 
-use rpki::ca::idexchange::{Handle, InvalidHandle};
+use rpki::ca::idexchange::{InvalidHandle, MyHandle};
 
 use crate::{
     commons::{
@@ -196,7 +196,7 @@ impl PolarClass for Actor {
 /// Wrapper type so we can use rpki::ca::idexchange::Handle with
 /// the PolarClass trait.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq)]
-pub struct PolarHandle(Handle);
+pub struct PolarHandle(MyHandle);
 
 impl fmt::Display for PolarHandle {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -204,8 +204,8 @@ impl fmt::Display for PolarHandle {
     }
 }
 
-impl From<&Handle> for PolarHandle {
-    fn from(h: &Handle) -> Self {
+impl From<&MyHandle> for PolarHandle {
+    fn from(h: &MyHandle) -> Self {
         PolarHandle(h.clone())
     }
 }
@@ -214,12 +214,12 @@ impl FromStr for PolarHandle {
     type Err = InvalidHandle;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Handle::from_str(s).map(PolarHandle)
+        MyHandle::from_str(s).map(PolarHandle)
     }
 }
 
-impl AsRef<Handle> for PolarHandle {
-    fn as_ref(&self) -> &Handle {
+impl AsRef<MyHandle> for PolarHandle {
+    fn as_ref(&self) -> &MyHandle {
         &self.0
     }
 }

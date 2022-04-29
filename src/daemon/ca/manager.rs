@@ -6,7 +6,7 @@ use chrono::Duration;
 use rpki::{
     ca::{
         idexchange::{self, ServiceUri},
-        idexchange::{ChildHandle, Handle, ParentHandle},
+        idexchange::{CaHandle, ChildHandle, ParentHandle},
         provisioning,
         provisioning::{
             IssuanceRequest, IssuanceResponse, ProvisioningCms, ResourceClassListResponse, ResourceClassName,
@@ -32,8 +32,7 @@ use crate::{
         crypto::KrillSigner,
         error::Error,
         eventsourcing::{Aggregate, AggregateStore, Command, CommandKey},
-        remote::cmslogger::CmsLogger,
-        util::httpclient,
+        util::{cmslogger::CmsLogger, httpclient},
         KrillResult,
     },
     constants::{CASERVER_DIR, STATUS_DIR},
@@ -52,25 +51,25 @@ use crate::{
 //------------ CaLocks ------------------------------------------------------
 
 #[derive(Debug, Default)]
-pub struct CaLockMap(HashMap<Handle, tokio::sync::RwLock<()>>);
+pub struct CaLockMap(HashMap<CaHandle, tokio::sync::RwLock<()>>);
 
 impl CaLockMap {
-    fn create_ca_lock(&mut self, ca: &Handle) {
+    fn create_ca_lock(&mut self, ca: &CaHandle) {
         self.0.insert(ca.clone(), tokio::sync::RwLock::new(()));
     }
 
-    fn has_ca(&self, ca: &Handle) -> bool {
+    fn has_ca(&self, ca: &CaHandle) -> bool {
         self.0.contains_key(ca)
     }
 
-    fn drop_ca_lock(&mut self, ca: &Handle) {
+    fn drop_ca_lock(&mut self, ca: &CaHandle) {
         self.0.remove(ca);
     }
 }
 
 pub struct CaLock<'a> {
     map: tokio::sync::RwLockReadGuard<'a, CaLockMap>,
-    ca: Handle,
+    ca: CaHandle,
 }
 
 impl CaLock<'_> {
@@ -96,7 +95,7 @@ impl Default for CaLocks {
 }
 
 impl CaLocks {
-    pub async fn ca(&self, ca: &Handle) -> CaLock<'_> {
+    pub async fn ca(&self, ca: &CaHandle) -> CaLock<'_> {
         // self.create_lock_if_needed(ca).await;
         {
             let map = self.locks.read().await;
@@ -114,7 +113,7 @@ impl CaLocks {
         CaLock { map, ca: ca.clone() }
     }
 
-    async fn drop_ca(&self, ca: &Handle) {
+    async fn drop_ca(&self, ca: &CaHandle) {
         let mut map = self.locks.write().await;
         map.drop_ca_lock(ca);
     }
@@ -247,7 +246,7 @@ impl CaManager {
             let ta = self.get_trust_anchor().await?;
             let pub_req = ta.publisher_request();
             repo_manager.create_publisher(pub_req, actor)?;
-            let repository_response = repo_manager.repository_response(&ta_handle)?;
+            let repository_response = repo_manager.repository_response(&ta_handle.convert())?;
             let contact = RepositoryContact::new(repository_response);
 
             let upd_repo_cmd = CmdDet::update_repo(&ta_handle, contact, self.signer.clone(), actor);
@@ -259,7 +258,7 @@ impl CaManager {
             let ta = self.ca_store.command(make_ta_cmd)?;
 
             // receive the self signed cert (now as child of self)
-            let ta_cert = ta.parent(&ta_handle).unwrap().to_ta_cert();
+            let ta_cert = ta.parent(&ta_handle.convert()).unwrap().to_ta_cert();
             let rcvd_cert = RcvdCert::new(ta_cert.clone(), ta_aia, ResourceSet::all());
 
             let rcv_cert = CmdDet::upd_received_cert(
@@ -285,7 +284,7 @@ impl CaManager {
 
     /// Republish the embedded TA and CAs if needed, i.e. if they are close
     /// to their next update time.
-    pub async fn republish_all(&self) -> KrillResult<Vec<Handle>> {
+    pub async fn republish_all(&self) -> KrillResult<Vec<CaHandle>> {
         self.ca_objects_store.reissue_all()
     }
 }
@@ -294,7 +293,7 @@ impl CaManager {
 ///
 impl CaManager {
     /// Initializes a CA without a repo, no parents, no children, no nothing
-    pub fn init_ca(&self, handle: &Handle) -> KrillResult<()> {
+    pub fn init_ca(&self, handle: &CaHandle) -> KrillResult<()> {
         if handle == &ta_handle() || handle.as_str() == "version" {
             Err(Error::TaNameReserved)
         } else if self.ca_store.has(handle)? {
@@ -315,7 +314,7 @@ impl CaManager {
     /// that a new ID key pair and certificate is generated, and has functions to update
     /// this for a parent, a child, a repo and a publisher, but other implementations may
     /// not support that identities are updated after initialization.
-    pub async fn ca_update_id(&self, handle: Handle, actor: &Actor) -> KrillResult<()> {
+    pub async fn ca_update_id(&self, handle: CaHandle, actor: &Actor) -> KrillResult<()> {
         let cmd = CmdDet::update_id(&handle, self.signer.clone(), actor);
         self.send_command(cmd).await?;
         Ok(())
@@ -340,7 +339,7 @@ impl CaManager {
 
     /// Gets a CA by the given handle, returns an `Err(ServerError::UnknownCA)` if it
     /// does not exist.
-    pub async fn get_ca(&self, handle: &Handle) -> KrillResult<Arc<CertAuth>> {
+    pub async fn get_ca(&self, handle: &CaHandle) -> KrillResult<Arc<CertAuth>> {
         let lock = self.locks.ca(handle).await;
         let _ = lock.read().await;
         self.ca_store
@@ -349,12 +348,12 @@ impl CaManager {
     }
 
     /// Checks whether a CA by the given handle exists.
-    pub fn has_ca(&self, handle: &Handle) -> KrillResult<bool> {
+    pub fn has_ca(&self, handle: &CaHandle) -> KrillResult<bool> {
         self.ca_store.has(handle).map_err(Error::AggregateStoreError)
     }
 
     /// Gets current CA status
-    pub async fn get_ca_status(&self, ca: &Handle) -> KrillResult<CaStatus> {
+    pub async fn get_ca_status(&self, ca: &CaHandle) -> KrillResult<CaStatus> {
         if self.has_ca(ca)? {
             Ok(self.status_store.get_ca_status(ca))
         } else {
@@ -366,7 +365,7 @@ impl CaManager {
     /// all its objects first. Note that any children of this CA will be left
     /// orphaned, and they will only learn of this sad fact when they choose
     /// to call home.
-    pub async fn delete_ca(&self, ca_handle: &Handle, actor: &Actor) -> KrillResult<()> {
+    pub async fn delete_ca(&self, ca_handle: &CaHandle, actor: &Actor) -> KrillResult<()> {
         warn!("Deleting CA '{}' as requested by: {}", ca_handle, actor);
 
         let ca = self.get_ca(ca_handle).await?;
@@ -422,14 +421,14 @@ impl CaManager {
 ///
 impl CaManager {
     /// Gets the history for a CA.
-    pub async fn ca_history(&self, handle: &Handle, crit: CommandHistoryCriteria) -> KrillResult<CommandHistory> {
+    pub async fn ca_history(&self, handle: &CaHandle, crit: CommandHistoryCriteria) -> KrillResult<CommandHistory> {
         let ca_lock = self.locks.ca(handle).await;
         let _lock = ca_lock.read().await;
         Ok(self.ca_store.command_history(handle, crit)?)
     }
 
     /// Shows the details for a CA command.
-    pub fn ca_command_details(&self, handle: &Handle, command: CommandKey) -> KrillResult<CaCommandDetails> {
+    pub fn ca_command_details(&self, handle: &CaHandle, command: CommandKey) -> KrillResult<CaCommandDetails> {
         let command = self.ca_store.get_command(handle, &command)?;
 
         let effect = command.effect().clone();
@@ -459,7 +458,7 @@ impl CaManager {
     /// is returned.
     pub async fn ca_add_child(
         &self,
-        ca: &Handle,
+        ca: &CaHandle,
         req: AddChildRequest,
         service_uri: &uri::Https,
         actor: &Actor,
@@ -474,7 +473,7 @@ impl CaManager {
     }
 
     /// Show details for a child under the CA.
-    pub async fn ca_show_child(&self, ca: &Handle, child: &ChildHandle) -> KrillResult<ChildCaInfo> {
+    pub async fn ca_show_child(&self, ca: &CaHandle, child: &ChildHandle) -> KrillResult<ChildCaInfo> {
         trace!("Finding details for CA: {} under parent: {}", child, ca);
         let ca = self.get_ca(ca).await?;
         ca.get_child(child).map(|details| details.clone().into())
@@ -483,7 +482,7 @@ impl CaManager {
     /// Show a contact for a child.
     pub async fn ca_parent_contact(
         &self,
-        ca_handle: &Handle,
+        ca_handle: &CaHandle,
         child_handle: ChildHandle,
         service_uri: &uri::Https,
     ) -> KrillResult<ParentCaContact> {
@@ -494,7 +493,7 @@ impl CaManager {
     /// Gets an RFC8183 Parent Response for the child.
     pub async fn ca_parent_response(
         &self,
-        ca: &Handle,
+        ca: &CaHandle,
         child_handle: ChildHandle,
         service_uri: &uri::Https,
     ) -> KrillResult<idexchange::ParentResponse> {
@@ -505,7 +504,7 @@ impl CaManager {
 
         Ok(idexchange::ParentResponse::new(
             ca.id_cert().clone(),
-            ca.handle().clone(),
+            ca.handle().convert(),
             child_handle,
             service_uri,
             None,
@@ -520,7 +519,7 @@ impl CaManager {
     /// an `Error::CaChildExtraResources`.
     pub async fn ca_child_update(
         &self,
-        ca: &Handle,
+        ca: &CaHandle,
         child: ChildHandle,
         req: UpdateChildRequest,
         actor: &Actor,
@@ -548,7 +547,7 @@ impl CaManager {
 
     /// Removes a child from this CA. This will also ensure that certificates issued to the child
     /// are revoked and withdrawn.
-    pub async fn ca_child_remove(&self, ca: &Handle, child: ChildHandle, actor: &Actor) -> KrillResult<()> {
+    pub async fn ca_child_remove(&self, ca: &CaHandle, child: ChildHandle, actor: &Actor) -> KrillResult<()> {
         self.status_store.remove_child(ca, &child)?;
         self.send_command(CmdDet::child_remove(ca, child, actor)).await?;
 
@@ -562,7 +561,7 @@ impl CaManager {
     /// - signs a response and returns the bytes
     pub async fn rfc6492(
         &self,
-        ca_handle: &Handle,
+        ca_handle: &CaHandle,
         msg_bytes: Bytes,
         user_agent: Option<String>,
         actor: &Actor,
@@ -609,7 +608,9 @@ impl CaManager {
         user_agent: Option<String>,
         actor: &Actor,
     ) -> KrillResult<provisioning::Message> {
-        let (child_handle, recipient, payload) = req_msg.unpack();
+        let (sender, recipient, payload) = req_msg.unpack();
+
+        let child_handle = sender.convert();
 
         // If the child was suspended, because it was inactive, then we can now conclude
         // that it's become active again. So unsuspend it first, before processing the request
@@ -629,27 +630,15 @@ impl CaManager {
         let res_msg = match payload {
             provisioning::Payload::Revoke(req) => {
                 let res = self.revoke(ca.handle(), child_handle.clone(), req, actor).await?;
-                Ok(provisioning::Message::revoke_response(
-                    child_handle.clone(),
-                    recipient,
-                    res,
-                ))
+                Ok(provisioning::Message::revoke_response(sender, recipient, res))
             }
             provisioning::Payload::List => {
                 let entitlements = self.list(ca.handle(), &child_handle).await?;
-                Ok(provisioning::Message::list_response(
-                    child_handle.clone(),
-                    recipient,
-                    entitlements,
-                ))
+                Ok(provisioning::Message::list_response(sender, recipient, entitlements))
             }
             provisioning::Payload::Issue(req) => {
                 let res = self.issue(ca.handle(), &child_handle, req, actor).await?;
-                Ok(provisioning::Message::issue_response(
-                    child_handle.clone(),
-                    recipient,
-                    res,
-                ))
+                Ok(provisioning::Message::issue_response(sender, recipient, res))
             }
             _ => Err(Error::custom("Unsupported RFC6492 message")),
         };
@@ -682,7 +671,7 @@ impl CaManager {
     }
 
     /// List the entitlements for a child: 3.3.2 of RFC 6492.
-    async fn list(&self, ca: &Handle, child: &Handle) -> KrillResult<ResourceClassListResponse> {
+    async fn list(&self, ca: &CaHandle, child: &ChildHandle) -> KrillResult<ResourceClassListResponse> {
         let ca = self.get_ca(ca).await?;
         ca.list(child, &self.config.issuance_timing)
     }
@@ -692,7 +681,7 @@ impl CaManager {
     /// See: https://tools.ietf.org/html/rfc6492#section3.4.1-2
     async fn issue(
         &self,
-        ca: &Handle,
+        ca: &CaHandle,
         child: &ChildHandle,
         issue_req: IssuanceRequest,
         actor: &Actor,
@@ -721,7 +710,7 @@ impl CaManager {
     /// See: https://tools.ietf.org/html/rfc6492#section3.5.1-2
     async fn revoke(
         &self,
-        ca_handle: &Handle,
+        ca_handle: &CaHandle,
         child: ChildHandle,
         revoke_request: RevocationRequest,
         actor: &Actor,
@@ -743,7 +732,7 @@ impl CaManager {
     /// class(es) under it, and request certificate(s).
     pub async fn ca_parent_add_or_update(
         &self,
-        handle: Handle,
+        handle: CaHandle,
         parent_req: ParentCaReq,
         actor: &Actor,
     ) -> KrillResult<()> {
@@ -764,7 +753,7 @@ impl CaManager {
     /// Removes a parent from a CA, this will trigger that best effort revocations of existing
     /// keys under this parent are requested. Any resource classes under the parent will be removed
     /// and all relevant content will be withdrawn from the repository.
-    pub async fn ca_parent_remove(&self, handle: Handle, parent: ParentHandle, actor: &Actor) -> KrillResult<()> {
+    pub async fn ca_parent_remove(&self, handle: CaHandle, parent: ParentHandle, actor: &Actor) -> KrillResult<()> {
         // best effort, request revocations for any remaining keys under this parent.
         if let Err(e) = self.ca_parent_revoke(&handle, &parent).await {
             warn!(
@@ -781,7 +770,7 @@ impl CaManager {
     }
 
     /// Send revocation requests for a parent of a CA when the parent is removed.
-    pub async fn ca_parent_revoke(&self, handle: &Handle, parent: &ParentHandle) -> KrillResult<()> {
+    pub async fn ca_parent_revoke(&self, handle: &CaHandle, parent: &ParentHandle) -> KrillResult<()> {
         let ca = self.get_ca(handle).await?;
         let revoke_requests = ca.revoke_under_parent(parent, &self.signer)?;
         self.send_revoke_requests(handle, parent, revoke_requests).await?;
@@ -801,7 +790,7 @@ impl CaManager {
     }
 
     /// Refresh a single CA with its parents, and possibly suspend inactive children.
-    pub async fn cas_schedule_refresh_single(&self, ca_handle: Handle) {
+    pub async fn cas_schedule_refresh_single(&self, ca_handle: CaHandle) {
         self.ca_schedule_sync_parents(&ca_handle).await;
     }
 
@@ -820,7 +809,7 @@ impl CaManager {
     }
 
     /// Suspend child CAs
-    pub async fn ca_suspend_inactive_children(&self, ca_handle: &Handle, started: Timestamp, actor: &Actor) {
+    pub async fn ca_suspend_inactive_children(&self, ca_handle: &CaHandle, started: Timestamp, actor: &Actor) {
         // Set threshold hours if it was configured AND this server has been started
         // longer ago than the hours specified. Otherwise we risk that *all* children
         // without prior recorded status are suspended on upgrade, or that *all* children
@@ -861,7 +850,7 @@ impl CaManager {
 
     /// Synchronizes a CA with its parents - up to the configures batch size.
     /// Remaining parents will be done in a future run.
-    async fn ca_schedule_sync_parents(&self, ca_handle: &Handle) {
+    async fn ca_schedule_sync_parents(&self, ca_handle: &CaHandle) {
         if let Ok(ca) = self.get_ca(ca_handle).await {
             // get updates from parents
             {
@@ -893,7 +882,7 @@ impl CaManager {
     /// Note: if new request events are generated as a result of processing updated entitlements
     ///       then they will trigger that this synchronization is called again so that the pending
     ///       requests can be sent.
-    pub async fn ca_sync_parent(&self, handle: &Handle, parent: &ParentHandle, actor: &Actor) -> KrillResult<()> {
+    pub async fn ca_sync_parent(&self, handle: &CaHandle, parent: &ParentHandle, actor: &Actor) -> KrillResult<()> {
         let ca = self.get_ca(handle).await?;
 
         if ca.has_pending_requests(parent) {
@@ -904,7 +893,12 @@ impl CaManager {
     }
 
     /// Try to get updates from a specific parent of a CA.
-    async fn get_updates_from_parent(&self, handle: &Handle, parent: &ParentHandle, actor: &Actor) -> KrillResult<()> {
+    async fn get_updates_from_parent(
+        &self,
+        handle: &CaHandle,
+        parent: &ParentHandle,
+        actor: &Actor,
+    ) -> KrillResult<()> {
         if handle != &ta_handle() {
             let ca = self.get_ca(handle).await?;
 
@@ -923,7 +917,7 @@ impl CaManager {
     }
 
     /// Sends requests to a specific parent for the CA matching handle.
-    async fn send_requests(&self, handle: &Handle, parent: &ParentHandle, actor: &Actor) -> KrillResult<()> {
+    async fn send_requests(&self, handle: &CaHandle, parent: &ParentHandle, actor: &Actor) -> KrillResult<()> {
         self.send_revoke_requests_handle_responses(handle, parent, actor)
             .await?;
         self.send_cert_requests_handle_responses(handle, parent, actor).await
@@ -931,7 +925,7 @@ impl CaManager {
 
     async fn send_revoke_requests_handle_responses(
         &self,
-        handle: &Handle,
+        handle: &CaHandle,
         parent: &ParentHandle,
         actor: &Actor,
     ) -> KrillResult<()> {
@@ -952,7 +946,7 @@ impl CaManager {
 
     pub async fn send_revoke_requests(
         &self,
-        handle: &Handle,
+        handle: &CaHandle,
         parent: &ParentHandle,
         revoke_requests: HashMap<ResourceClassName, Vec<RevocationRequest>>,
     ) -> KrillResult<HashMap<ResourceClassName, Vec<RevocationResponse>>> {
@@ -982,7 +976,7 @@ impl CaManager {
 
     pub async fn send_revoke_unexpected_key(
         &self,
-        handle: &Handle,
+        handle: &CaHandle,
         rcn: ResourceClassName,
         revocation: RevocationRequest,
     ) -> KrillResult<HashMap<ResourceClassName, Vec<RevocationResponse>>> {
@@ -1005,8 +999,8 @@ impl CaManager {
         for (rcn, revoke_requests) in revoke_requests.into_iter() {
             let mut revocations = vec![];
             for req in revoke_requests.into_iter() {
-                let sender = parent_res.child_handle().clone();
-                let recipient = parent_res.parent_handle().clone();
+                let sender = parent_res.child_handle().convert();
+                let recipient = parent_res.parent_handle().convert();
 
                 let revoke = provisioning::Message::revoke(sender, recipient, req.clone());
 
@@ -1055,7 +1049,7 @@ impl CaManager {
 
     async fn send_cert_requests_handle_responses(
         &self,
-        handle: &Handle,
+        handle: &CaHandle,
         parent: &ParentHandle,
         actor: &Actor,
     ) -> KrillResult<()> {
@@ -1076,8 +1070,8 @@ impl CaManager {
         for (rcn, requests) in requests.into_iter() {
             // We could have multiple requests in a single resource class (multiple keys during rollover)
             for req in requests {
-                let sender = parent_res.child_handle().clone();
-                let recipient = parent_res.parent_handle().clone();
+                let sender = parent_res.child_handle().convert();
+                let recipient = parent_res.parent_handle().convert();
 
                 let msg = provisioning::Message::issue(sender, recipient, req);
 
@@ -1309,15 +1303,15 @@ impl CaManager {
     /// for the parent CA.
     async fn update_entitlements(
         &self,
-        handle: &Handle,
+        ca: &CaHandle,
         parent: ParentHandle,
         entitlements: ResourceClassListResponse,
         actor: &Actor,
     ) -> KrillResult<bool> {
-        let current_version = self.get_ca(handle).await?.version();
+        let current_version = self.get_ca(ca).await?.version();
 
         let update_entitlements_command =
-            CmdDet::update_entitlements(handle, parent, entitlements, self.signer.clone(), actor);
+            CmdDet::update_entitlements(ca, parent, entitlements, self.signer.clone(), actor);
 
         let new_version = self.send_command(update_entitlements_command).await?.version();
 
@@ -1326,7 +1320,7 @@ impl CaManager {
 
     pub async fn get_entitlements_from_contact(
         &self,
-        ca: &Handle,
+        ca: &CaHandle,
         parent: &ParentHandle,
         contact: &ParentCaContact,
         existing_parent: bool,
@@ -1358,7 +1352,7 @@ impl CaManager {
 
     async fn get_entitlements_rfc6492(
         &self,
-        handle: &Handle,
+        handle: &CaHandle,
         parent_res: &idexchange::ParentResponse,
     ) -> KrillResult<ResourceClassListResponse> {
         debug!(
@@ -1370,8 +1364,8 @@ impl CaManager {
         let child = self.ca_store.get_latest(handle)?;
 
         // create a list request
-        let sender = parent_res.child_handle().clone();
-        let recipient = parent_res.parent_handle().clone();
+        let sender = parent_res.child_handle().convert();
+        let recipient = parent_res.parent_handle().convert();
 
         let list = provisioning::Message::list(sender, recipient);
 
@@ -1400,7 +1394,8 @@ impl CaManager {
     ) -> KrillResult<provisioning::Message> {
         let service_uri = parent_res.service_uri();
         if let Some(parent) = Self::local_parent(service_uri, &self.config.service_uri()) {
-            let parent = self.get_ca(&parent).await?;
+            let parent_handle = CaHandle::new(parent.into_name());
+            let parent = self.get_ca(&parent_handle).await?;
             let user_agent = Some("local-child".to_string());
 
             self.rfc6492_process_request(&parent, message, user_agent, &self.system_actor)
@@ -1498,7 +1493,7 @@ impl CaManager {
     }
 
     /// Schedule synchronizing all CAs with their repositories.
-    pub fn cas_schedule_repo_sync(&self, ca: Handle) {
+    pub fn cas_schedule_repo_sync(&self, ca: CaHandle) {
         self.tasks.sync_repo(ca, now());
     }
 
@@ -1515,7 +1510,7 @@ impl CaManager {
     /// fail. When there have been 5 failed attempts, then the old repository
     /// is assumed to be unreachable and it will be dropped - i.e. the CA will
     /// no longer try to clean up objects.
-    pub async fn cas_repo_sync_single(&self, ca_handle: &Handle) -> KrillResult<()> {
+    pub async fn cas_repo_sync_single(&self, ca_handle: &CaHandle) -> KrillResult<()> {
         // Note that this is a no-op for new CAs which do not yet have any repository configured.
         for (repo_contact, ca_elements) in self.ca_repo_elements(ca_handle).await? {
             self.ca_repo_sync(ca_handle, &repo_contact, ca_elements).await?;
@@ -1547,7 +1542,7 @@ impl CaManager {
     #[allow(clippy::mutable_key_type)]
     async fn ca_repo_sync(
         &self,
-        ca_handle: &Handle,
+        ca_handle: &CaHandle,
         repo_contact: &RepositoryContact,
         publish_elements: Vec<PublishElement>,
     ) -> KrillResult<()> {
@@ -1585,17 +1580,20 @@ impl CaManager {
     /// Notes:
     /// - typically a CA will use only one repository, but during migrations there may be multiple.
     /// - these object may not have been published (yet) - check `ca_repo_status`.
-    pub async fn ca_repo_elements(&self, ca: &Handle) -> KrillResult<HashMap<RepositoryContact, Vec<PublishElement>>> {
+    pub async fn ca_repo_elements(
+        &self,
+        ca: &CaHandle,
+    ) -> KrillResult<HashMap<RepositoryContact, Vec<PublishElement>>> {
         Ok(self.ca_objects_store.ca_objects(ca)?.repo_elements_map())
     }
 
     /// Get deprecated repositories so that they can be cleaned.
-    pub fn ca_deprecated_repos(&self, ca: &Handle) -> KrillResult<Vec<DeprecatedRepository>> {
+    pub fn ca_deprecated_repos(&self, ca: &CaHandle) -> KrillResult<Vec<DeprecatedRepository>> {
         Ok(self.ca_objects_store.ca_objects(ca)?.deprecated_repos().clone())
     }
 
     /// Remove a deprecated repo
-    pub fn ca_deprecated_repo_remove(&self, ca: &Handle, to_remove: &RepositoryContact) -> KrillResult<()> {
+    pub fn ca_deprecated_repo_remove(&self, ca: &CaHandle, to_remove: &RepositoryContact) -> KrillResult<()> {
         self.ca_objects_store.with_ca_objects(ca, |objects| {
             objects.deprecated_repo_remove(to_remove);
             Ok(())
@@ -1605,7 +1603,7 @@ impl CaManager {
     /// Increase the clean attempt counter for a deprecated repository
     pub fn ca_deprecated_repo_increment_clean_attempts(
         &self,
-        ca: &Handle,
+        ca: &CaHandle,
         contact: &RepositoryContact,
     ) -> KrillResult<()> {
         self.ca_objects_store.with_ca_objects(ca, |objects| {
@@ -1617,25 +1615,25 @@ impl CaManager {
     /// Update repository where a CA publishes.
     pub async fn update_repo(
         &self,
-        handle: Handle,
+        ca: CaHandle,
         new_contact: RepositoryContact,
         check_repo: bool,
         actor: &Actor,
     ) -> KrillResult<()> {
         if check_repo {
             // First verify that this repository can be reached and responds to a list request.
-            self.send_rfc8181_list(&handle, new_contact.response())
+            self.send_rfc8181_list(&ca, new_contact.response())
                 .await
-                .map_err(|e| Error::CaRepoIssue(handle.clone(), e.to_string()))?;
+                .map_err(|e| Error::CaRepoIssue(ca.clone(), e.to_string()))?;
         }
-        let cmd = CmdDet::update_repo(&handle, new_contact, self.signer.clone(), actor);
+        let cmd = CmdDet::update_repo(&ca, new_contact, self.signer.clone(), actor);
         self.send_command(cmd).await?;
         Ok(())
     }
 
     async fn send_rfc8181_list(
         &self,
-        ca_handle: &Handle,
+        ca_handle: &CaHandle,
         repo_response: &idexchange::RepositoryResponse,
     ) -> KrillResult<ListReply> {
         let uri = repo_response.service_uri();
@@ -1684,7 +1682,7 @@ impl CaManager {
 
     pub async fn send_rfc8181_delta(
         &self,
-        ca_handle: &Handle,
+        ca_handle: &CaHandle,
         repo_response: &idexchange::RepositoryResponse,
         delta: PublishDelta,
     ) -> KrillResult<()> {
@@ -1740,7 +1738,7 @@ impl CaManager {
         &self,
         message: publication::Message,
         repo_response: &idexchange::RepositoryResponse,
-        ca_handle: &Handle,
+        ca_handle: &CaHandle,
         signing_key: &KeyIdentifier,
     ) -> KrillResult<publication::Reply> {
         // TODO: support local repository without http calls, but this CaManager does not
@@ -1779,7 +1777,7 @@ impl CaManager {
 ///
 impl CaManager {
     /// Show current ASPA definitions for this CA.
-    pub async fn ca_aspas_definitions_show(&self, ca: Handle) -> KrillResult<AspaDefinitionList> {
+    pub async fn ca_aspas_definitions_show(&self, ca: CaHandle) -> KrillResult<AspaDefinitionList> {
         let ca = self.get_ca(&ca).await?;
         Ok(ca.aspas_definitions_show())
     }
@@ -1787,7 +1785,7 @@ impl CaManager {
     /// Add a new ASPA definition for this CA and the customer ASN in the update.
     pub async fn ca_aspas_definitions_update(
         &self,
-        ca: Handle,
+        ca: CaHandle,
         updates: AspaDefinitionUpdates,
         actor: &Actor,
     ) -> KrillResult<()> {
@@ -1805,7 +1803,7 @@ impl CaManager {
     /// Update the ASPA definition for this CA and the customer ASN in the update.
     pub async fn ca_aspas_update_aspa(
         &self,
-        ca: Handle,
+        ca: CaHandle,
         customer: AspaCustomer,
         update: AspaProvidersUpdate,
         actor: &Actor,
@@ -1836,7 +1834,7 @@ impl CaManager {
     /// by ASN based on the defaults or values configured.
     pub async fn ca_routes_update(
         &self,
-        ca: Handle,
+        ca: CaHandle,
         updates: RouteAuthorizationUpdates,
         actor: &Actor,
     ) -> KrillResult<()> {
@@ -1913,7 +1911,7 @@ impl CaManager {
     /// Sign a one-off single-signed RTA
     pub async fn rta_sign(
         &self,
-        ca: Handle,
+        ca: CaHandle,
         name: RtaName,
         request: RtaContentRequest,
         actor: &Actor,
@@ -1926,7 +1924,7 @@ impl CaManager {
     /// Prepare a multi-singed RTA
     pub async fn rta_multi_prep(
         &self,
-        ca: &Handle,
+        ca: &CaHandle,
         name: RtaName,
         request: RtaPrepareRequest,
         actor: &Actor,
@@ -1939,7 +1937,7 @@ impl CaManager {
     /// Co-sign an existing RTA
     pub async fn rta_multi_cosign(
         &self,
-        ca: Handle,
+        ca: CaHandle,
         name: RtaName,
         rta: ResourceTaggedAttestation,
         actor: &Actor,
@@ -1954,7 +1952,7 @@ impl CaManager {
 ///
 impl CaManager {
     /// Initiate an RFC 6489 key roll for all active keys in a CA older than the specified duration.
-    pub async fn ca_keyroll_init(&self, handle: Handle, max_age: Duration, actor: &Actor) -> KrillResult<()> {
+    pub async fn ca_keyroll_init(&self, handle: CaHandle, max_age: Duration, actor: &Actor) -> KrillResult<()> {
         let init_key_roll = CmdDet::key_roll_init(&handle, max_age, self.signer.clone(), actor);
         self.send_command(init_key_roll).await?;
         Ok(())
@@ -1964,7 +1962,7 @@ impl CaManager {
     /// have an age equal to or greater than the staging period are promoted. The RFC mandates
     /// a staging period of 24 hours, but we may use a shorter period for testing and/or emergency
     /// manual key rolls.
-    pub async fn ca_keyroll_activate(&self, handle: Handle, staging: Duration, actor: &Actor) -> KrillResult<()> {
+    pub async fn ca_keyroll_activate(&self, handle: CaHandle, staging: Duration, actor: &Actor) -> KrillResult<()> {
         let activate_cmd = CmdDet::key_roll_activate(&handle, staging, self.config.clone(), self.signer.clone(), actor);
         self.send_command(activate_cmd).await?;
         Ok(())

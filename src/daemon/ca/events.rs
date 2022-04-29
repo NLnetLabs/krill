@@ -3,7 +3,7 @@ use std::{collections::HashMap, fmt};
 use rpki::{
     ca::{
         idcert::IdCert,
-        idexchange::{ChildHandle, Handle, ParentHandle},
+        idexchange::{CaHandle, ChildHandle, ParentHandle},
         provisioning::{IssuanceRequest, ParentResourceClassName, ResourceClassName, RevocationRequest},
     },
     repository::{crypto::KeyIdentifier, resources::ResourceSet},
@@ -44,11 +44,11 @@ impl IniDet {
 }
 
 impl IniDet {
-    pub fn new(handle: &Handle, id: Rfc8183Id) -> Ini {
+    pub fn new(handle: &CaHandle, id: Rfc8183Id) -> Ini {
         Ini::new(handle, 0, IniDet { id })
     }
 
-    pub fn init(handle: &Handle, signer: &KrillSigner) -> KrillResult<Ini> {
+    pub fn init(handle: &CaHandle, signer: &KrillSigner) -> KrillResult<Ini> {
         let id = Rfc8183Id::generate(signer)?;
         Ok(Self::new(handle, id))
     }
@@ -720,18 +720,23 @@ pub enum CaEvtDet {
 
 impl CaEvtDet {
     /// This marks the RFC8183Id as updated
-    pub(super) fn id_updated(handle: &Handle, version: u64, id: Rfc8183Id) -> CaEvt {
+    pub(super) fn id_updated(handle: &CaHandle, version: u64, id: Rfc8183Id) -> CaEvt {
         StoredEvent::new(handle, version, CaEvtDet::IdUpdated { id })
     }
 
     /// This marks a parent as added to the CA.
-    pub(super) fn parent_added(handle: &Handle, version: u64, parent: ParentHandle, contact: ParentCaContact) -> CaEvt {
+    pub(super) fn parent_added(
+        handle: &CaHandle,
+        version: u64,
+        parent: ParentHandle,
+        contact: ParentCaContact,
+    ) -> CaEvt {
         StoredEvent::new(handle, version, CaEvtDet::ParentAdded { parent, contact })
     }
 
     /// This marks a parent contact as updated
     pub(super) fn parent_updated(
-        handle: &Handle,
+        handle: &CaHandle,
         version: u64,
         parent: ParentHandle,
         contact: ParentCaContact,
@@ -740,7 +745,7 @@ impl CaEvtDet {
     }
 
     pub(super) fn child_added(
-        handle: &Handle,
+        handle: &CaHandle,
         version: u64,
         child: ChildHandle,
         id_cert: IdCert,
@@ -757,12 +762,12 @@ impl CaEvtDet {
         )
     }
 
-    pub(super) fn child_updated_cert(handle: &Handle, version: u64, child: ChildHandle, id_cert: IdCert) -> CaEvt {
+    pub(super) fn child_updated_cert(handle: &CaHandle, version: u64, child: ChildHandle, id_cert: IdCert) -> CaEvt {
         StoredEvent::new(handle, version, CaEvtDet::ChildUpdatedIdCert { child, id_cert })
     }
 
     pub(super) fn child_updated_resources(
-        handle: &Handle,
+        handle: &CaHandle,
         version: u64,
         child: ChildHandle,
         resources: ResourceSet,
@@ -771,7 +776,7 @@ impl CaEvtDet {
     }
 
     pub(super) fn child_certificate_issued(
-        handle: &Handle,
+        handle: &CaHandle,
         version: u64,
         child: ChildHandle,
         resource_class_name: ResourceClassName,
@@ -789,7 +794,7 @@ impl CaEvtDet {
     }
 
     pub(super) fn child_revoke_key(
-        handle: &Handle,
+        handle: &CaHandle,
         version: u64,
         child: ChildHandle,
         resource_class_name: ResourceClassName,
@@ -807,7 +812,7 @@ impl CaEvtDet {
     }
 
     pub(super) fn child_certificates_updated(
-        handle: &Handle,
+        handle: &CaHandle,
         version: u64,
         resource_class_name: ResourceClassName,
         updates: ChildCertificateUpdates,
@@ -822,15 +827,15 @@ impl CaEvtDet {
         )
     }
 
-    pub(super) fn child_removed(handle: &Handle, version: u64, child: ChildHandle) -> CaEvt {
+    pub(super) fn child_removed(handle: &CaHandle, version: u64, child: ChildHandle) -> CaEvt {
         StoredEvent::new(handle, version, CaEvtDet::ChildRemoved { child })
     }
 
-    pub(super) fn child_suspended(handle: &Handle, version: u64, child: ChildHandle) -> CaEvt {
+    pub(super) fn child_suspended(handle: &CaHandle, version: u64, child: ChildHandle) -> CaEvt {
         StoredEvent::new(handle, version, CaEvtDet::ChildSuspended { child })
     }
 
-    pub(super) fn child_unsuspended(handle: &Handle, version: u64, child: ChildHandle) -> CaEvt {
+    pub(super) fn child_unsuspended(handle: &CaHandle, version: u64, child: ChildHandle) -> CaEvt {
         StoredEvent::new(handle, version, CaEvtDet::ChildUnsuspended { child })
     }
 }

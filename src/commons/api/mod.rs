@@ -23,7 +23,7 @@ use rpki::ca::provisioning::ResourceClassName;
 use serde::{Deserialize, Serialize};
 
 use rpki::{
-    ca::idexchange::{ChildHandle, Handle, ParentHandle, PublisherHandle},
+    ca::idexchange::{CaHandle, ChildHandle, ParentHandle, PublisherHandle},
     repository::{crypto::KeyIdentifier, resources::Asn},
 };
 
@@ -86,7 +86,7 @@ impl ErrorResponse {
         self.with_arg("base_uri", base_uri)
     }
 
-    pub fn with_ca(self, ca: &Handle) -> Self {
+    pub fn with_ca(self, ca: &CaHandle) -> Self {
         self.with_arg("ca", ca)
     }
 

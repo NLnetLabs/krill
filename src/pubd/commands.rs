@@ -2,7 +2,7 @@ use std::fmt;
 
 use rpki::{ca::idexchange, uri};
 
-use rpki::ca::idexchange::{PublisherHandle, RepositoryHandle};
+use rpki::ca::idexchange::{MyHandle, PublisherHandle};
 
 use crate::{
     commons::{
@@ -41,7 +41,7 @@ impl CommandDetails for RepoAccessCmdDet {
 
 impl RepoAccessCmdDet {
     pub fn add_publisher(
-        handle: &RepositoryHandle,
+        handle: &MyHandle,
         request: idexchange::PublisherRequest,
         base_uri: uri::Rsync,
         actor: &Actor,
@@ -54,7 +54,7 @@ impl RepoAccessCmdDet {
         )
     }
 
-    pub fn remove_publisher(handle: &RepositoryHandle, name: PublisherHandle, actor: &Actor) -> RepoAccessCmd {
+    pub fn remove_publisher(handle: &MyHandle, name: PublisherHandle, actor: &Actor) -> RepoAccessCmd {
         SentCommand::new(handle, None, RepoAccessCmdDet::RemovePublisher { name }, actor)
     }
 }

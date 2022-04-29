@@ -40,9 +40,9 @@ async fn migrate_repository() {
     let pubd_dir = start_krill_pubd().await;
 
     let ta = ta_handle();
-    let testbed = handle("testbed");
+    let testbed = ca_handle("testbed");
 
-    let ca1 = handle("CA1");
+    let ca1 = ca_handle("CA1");
     let ca1_res = ipv4_resources("10.0.0.0/16");
     let ca1_route_definition = RoaDefinition::from_str("10.0.0.0/16-16 => 65000").unwrap();
 

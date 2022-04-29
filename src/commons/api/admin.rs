@@ -8,7 +8,7 @@ use rpki::{
     ca::{
         idcert::IdCert,
         idexchange,
-        idexchange::{Handle, ParentHandle, PublisherHandle, RepoInfo},
+        idexchange::{CaHandle, ChildHandle, ParentHandle, PublisherHandle, RepoInfo},
     },
     repository::cert::Cert,
     repository::resources::ResourceSet,
@@ -91,8 +91,8 @@ impl PublisherSummary {
     }
 }
 
-impl From<&Handle> for PublisherSummary {
-    fn from(h: &Handle) -> Self {
+impl From<&PublisherHandle> for PublisherSummary {
+    fn from(h: &PublisherHandle) -> Self {
         PublisherSummary { handle: h.clone() }
     }
 }
@@ -106,7 +106,7 @@ pub struct PublisherList {
 }
 
 impl PublisherList {
-    pub fn build(publishers: &[Handle]) -> PublisherList {
+    pub fn build(publishers: &[PublisherHandle]) -> PublisherList {
         let publishers: Vec<PublisherSummary> = publishers.iter().map(|p| p.into()).collect();
 
         PublisherList { publishers }
@@ -139,14 +139,19 @@ impl fmt::Display for PublisherList {
 /// /api/v1/publishers/{handle}
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublisherDetails {
-    handle: Handle,
+    handle: PublisherHandle,
     id_cert: IdCert,
     base_uri: uri::Rsync,
     current_files: Vec<PublishElement>,
 }
 
 impl PublisherDetails {
-    pub fn new(handle: &Handle, id_cert: IdCert, base_uri: uri::Rsync, current_files: Vec<PublishElement>) -> Self {
+    pub fn new(
+        handle: &PublisherHandle,
+        id_cert: IdCert,
+        base_uri: uri::Rsync,
+        current_files: Vec<PublishElement>,
+    ) -> Self {
         PublisherDetails {
             handle: handle.clone(),
             id_cert,
@@ -155,7 +160,7 @@ impl PublisherDetails {
         }
     }
 
-    pub fn handle(&self) -> &Handle {
+    pub fn handle(&self) -> &PublisherHandle {
         &self.handle
     }
     pub fn id_cert(&self) -> &IdCert {
@@ -249,7 +254,7 @@ impl fmt::Display for ParentCaReq {
 }
 
 impl ParentCaReq {
-    pub fn new(handle: Handle, contact: ParentCaContact) -> Self {
+    pub fn new(handle: ParentHandle, contact: ParentCaContact) -> Self {
         ParentCaReq { handle, contact }
     }
 
@@ -261,7 +266,7 @@ impl ParentCaReq {
         &self.contact
     }
 
-    pub fn unpack(self) -> (Handle, ParentCaContact) {
+    pub fn unpack(self) -> (ParentHandle, ParentCaContact) {
         (self.handle, self.contact)
     }
 }
@@ -390,7 +395,7 @@ impl From<ParentCaContact> for StorableParentContact {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthInit {
-    handle: Handle,
+    handle: CaHandle,
 }
 
 impl fmt::Display for CertAuthInit {
@@ -400,11 +405,11 @@ impl fmt::Display for CertAuthInit {
 }
 
 impl CertAuthInit {
-    pub fn new(handle: Handle) -> Self {
+    pub fn new(handle: CaHandle) -> Self {
         CertAuthInit { handle }
     }
 
-    pub fn unpack(self) -> Handle {
+    pub fn unpack(self) -> CaHandle {
         self.handle
     }
 }
@@ -413,7 +418,7 @@ impl CertAuthInit {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AddChildRequest {
-    handle: Handle,
+    handle: ChildHandle,
     resources: ResourceSet,
     id_cert: IdCert,
 }
@@ -425,7 +430,7 @@ impl fmt::Display for AddChildRequest {
 }
 
 impl AddChildRequest {
-    pub fn new(handle: Handle, resources: ResourceSet, id_cert: IdCert) -> Self {
+    pub fn new(handle: ChildHandle, resources: ResourceSet, id_cert: IdCert) -> Self {
         AddChildRequest {
             handle,
             resources,
@@ -433,7 +438,7 @@ impl AddChildRequest {
         }
     }
 
-    pub fn unpack(self) -> (Handle, ResourceSet, IdCert) {
+    pub fn unpack(self) -> (ChildHandle, ResourceSet, IdCert) {
         (self.handle, self.resources, self.id_cert)
     }
 }
@@ -558,19 +563,19 @@ mod tests {
     fn should_accept_rfc8183_handle() {
         // See appendix A of RFC8183
         // handle  = xsd:string { maxLength="255" pattern="[\-_A-Za-z0-9/]*" }
-        Handle::from_str("abcDEF012/\\-_").unwrap();
+        CaHandle::from_str("abcDEF012/\\-_").unwrap();
     }
 
     #[test]
     fn should_reject_invalid_handle() {
         // See appendix A of RFC8183
         // handle  = xsd:string { maxLength="255" pattern="[\-_A-Za-z0-9/]*" }
-        assert!(Handle::from_str("&").is_err());
+        assert!(CaHandle::from_str("&").is_err());
     }
 
     #[test]
     fn should_make_file_system_safe() {
-        let handle = Handle::from_str("abcDEF012/\\-_").unwrap();
+        let handle = CaHandle::from_str("abcDEF012/\\-_").unwrap();
         let expected_path_buf = PathBuf::from("abcDEF012+=-_");
         assert_eq!(handle.to_path_buf(), expected_path_buf);
     }
@@ -578,8 +583,8 @@ mod tests {
     #[test]
     fn should_make_handle_from_dir() {
         let path = PathBuf::from("a/b/abcDEF012+=-_");
-        let handle = Handle::try_from(&path).unwrap();
-        let expected_handle = Handle::from_str("abcDEF012/\\-_").unwrap();
+        let handle = CaHandle::try_from(&path).unwrap();
+        let expected_handle = CaHandle::from_str("abcDEF012/\\-_").unwrap();
         assert_eq!(handle, expected_handle);
     }
 }

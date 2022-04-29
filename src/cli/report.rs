@@ -13,7 +13,6 @@ use crate::{
             PublisherDetails, PublisherList, RepoStatus, RoaDefinitions, RtaList, RtaPrepResponse, ServerInfo,
         },
         bgp::{BgpAnalysisAdvice, BgpAnalysisReport, BgpAnalysisSuggestion},
-        remote::api::ClientInfos,
     },
     daemon::ca::ResourceTaggedAttestation,
     pubd::RepoStats,
@@ -52,7 +51,6 @@ pub enum ApiResponse {
     PublisherList(PublisherList),
     RepoStats(RepoStats),
 
-    Rfc8181ClientList(ClientInfos),
     Rfc8183RepositoryResponse(idexchange::RepositoryResponse),
     Rfc8183ChildRequest(idexchange::ChildRequest),
     Rfc8183PublisherRequest(idexchange::PublisherRequest),
@@ -97,7 +95,6 @@ impl ApiResponse {
                 ApiResponse::PublisherList(list) => Ok(Some(list.report(fmt)?)),
                 ApiResponse::PublisherDetails(details) => Ok(Some(details.report(fmt)?)),
                 ApiResponse::RepoStats(stats) => Ok(Some(stats.report(fmt)?)),
-                ApiResponse::Rfc8181ClientList(list) => Ok(Some(list.report(fmt)?)),
                 ApiResponse::Rfc8183ChildRequest(req) => Ok(Some(req.report(fmt)?)),
                 ApiResponse::Rfc8183PublisherRequest(req) => Ok(Some(req.report(fmt)?)),
                 ApiResponse::Rfc8183RepositoryResponse(res) => Ok(Some(res.report(fmt)?)),
@@ -193,8 +190,6 @@ impl Report for RepoStats {}
 impl Report for ChildrenConnectionStats {}
 
 impl Report for PublisherDetails {}
-
-impl Report for ClientInfos {}
 
 impl Report for idexchange::RepositoryResponse {}
 impl Report for idexchange::ChildRequest {}

@@ -10,7 +10,7 @@ use chrono::Duration;
 use rpki::{
     ca::{
         idcert::IdCert,
-        idexchange::{Handle, PublisherHandle, RepositoryHandle},
+        idexchange::{MyHandle, PublisherHandle},
     },
     repository::{crypto::KeyIdentifier, x509::Time},
     rrdp::Hash,
@@ -43,8 +43,8 @@ use crate::{
 pub struct PubdObjectsMigration;
 
 impl PubdObjectsMigration {
-    fn repository_handle() -> RepositoryHandle {
-        Handle::from_str(PUBSERVER_DFLT).unwrap()
+    fn repository_handle() -> MyHandle {
+        MyHandle::from_str(PUBSERVER_DFLT).unwrap()
     }
 
     pub fn prepare(mode: UpgradeMode, config: Arc<Config>) -> UpgradeResult<()> {
@@ -128,7 +128,7 @@ impl UpgradeStore for PubdStoreMigration {
 
         // we only have 1 pubserver '0'
         let scope = "0";
-        let handle = Handle::from_str(scope).unwrap(); // "0" is always safe
+        let handle = MyHandle::from_str(scope).unwrap(); // "0" is always safe
 
         // Get the info from the current store to see where we are
         let mut data_upgrade_info = self.data_upgrade_info(scope)?;
@@ -320,7 +320,7 @@ impl UpgradeStore for PubdStoreMigration {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct OldRepository {
     // Event sourcing support
-    handle: Handle,
+    handle: MyHandle,
     version: u64,
 
     id_cert: IdCert,

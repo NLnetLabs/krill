@@ -3,7 +3,7 @@ use std::fmt;
 use rpki::{
     ca::{
         idcert::IdCert,
-        idexchange::{Handle, PublisherHandle},
+        idexchange::{MyHandle, PublisherHandle},
     },
     repository::x509::Time,
     uri,
@@ -46,7 +46,7 @@ impl RepositoryAccessInitDetails {
 
 impl RepositoryAccessInitDetails {
     pub fn init(
-        handle: &Handle,
+        handle: &MyHandle,
         rsync_jail: uri::Rsync,
         rrdp_base_uri: uri::Https,
         signer: &KrillSigner,
@@ -155,19 +155,19 @@ impl fmt::Display for RepositoryAccessEventDetails {
 
 impl RepositoryAccessEventDetails {
     pub(super) fn publisher_added(
-        handle: &Handle,
+        me: &MyHandle,
         version: u64,
         name: PublisherHandle,
         publisher: Publisher,
     ) -> RepositoryAccessEvent {
         StoredEvent::new(
-            handle,
+            me,
             version,
             RepositoryAccessEventDetails::PublisherAdded { name, publisher },
         )
     }
 
-    pub(super) fn publisher_removed(handle: &Handle, version: u64, name: PublisherHandle) -> RepositoryAccessEvent {
-        StoredEvent::new(handle, version, RepositoryAccessEventDetails::PublisherRemoved { name })
+    pub(super) fn publisher_removed(me: &MyHandle, version: u64, name: PublisherHandle) -> RepositoryAccessEvent {
+        StoredEvent::new(me, version, RepositoryAccessEventDetails::PublisherRemoved { name })
     }
 }

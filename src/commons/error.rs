@@ -6,7 +6,7 @@ use hyper::StatusCode;
 
 use rpki::{
     ca::{
-        idexchange::{ChildHandle, Handle, ParentHandle, PublisherHandle},
+        idexchange::{CaHandle, ChildHandle, ParentHandle, PublisherHandle},
         provisioning,
         provisioning::ResourceClassName,
         publication,
@@ -219,24 +219,24 @@ pub enum Error {
     //-----------------------------------------------------------------
     // CA Issues
     //-----------------------------------------------------------------
-    CaDuplicate(Handle),
-    CaUnknown(Handle),
+    CaDuplicate(CaHandle),
+    CaUnknown(CaHandle),
 
     // CA Repo Issues
-    CaRepoInUse(Handle),
-    CaRepoIssue(Handle, String),
-    CaRepoResponseInvalidXml(Handle, String),
-    CaRepoResponseWrongXml(Handle),
+    CaRepoInUse(CaHandle),
+    CaRepoIssue(CaHandle, String),
+    CaRepoResponseInvalidXml(CaHandle, String),
+    CaRepoResponseWrongXml(CaHandle),
 
     // CA Parent Issues
-    CaParentDuplicateName(Handle, ParentHandle),
-    CaParentDuplicateInfo(Handle, ParentHandle),
-    CaParentUnknown(Handle, ParentHandle),
-    CaParentIssue(Handle, ParentHandle, String),
-    CaParentResponseInvalidXml(Handle, String),
-    CaParentResponseWrongXml(Handle),
-    CaParentAddNotResponsive(Handle, ParentHandle),
-    CaParentSyncError(Handle, ParentHandle, ResourceClassName, String),
+    CaParentDuplicateName(CaHandle, ParentHandle),
+    CaParentDuplicateInfo(CaHandle, ParentHandle),
+    CaParentUnknown(CaHandle, ParentHandle),
+    CaParentIssue(CaHandle, ParentHandle, String),
+    CaParentResponseInvalidXml(CaHandle, String),
+    CaParentResponseWrongXml(CaHandle),
+    CaParentAddNotResponsive(CaHandle, ParentHandle),
+    CaParentSyncError(CaHandle, ParentHandle, ResourceClassName, String),
 
     //-----------------------------------------------------------------
     // RFC6492 (requesting resources)
@@ -249,29 +249,29 @@ pub enum Error {
     //-----------------------------------------------------------------
     // CA Child Issues
     //-----------------------------------------------------------------
-    CaChildDuplicate(Handle, ChildHandle),
-    CaChildUnknown(Handle, ChildHandle),
-    CaChildMustHaveResources(Handle, ChildHandle),
-    CaChildExtraResources(Handle, ChildHandle),
-    CaChildUnauthorized(Handle, ChildHandle),
+    CaChildDuplicate(CaHandle, ChildHandle),
+    CaChildUnknown(CaHandle, ChildHandle),
+    CaChildMustHaveResources(CaHandle, ChildHandle),
+    CaChildExtraResources(CaHandle, ChildHandle),
+    CaChildUnauthorized(CaHandle, ChildHandle),
 
     //-----------------------------------------------------------------
     // RouteAuthorizations - ROAs
     //-----------------------------------------------------------------
-    CaAuthorizationUnknown(Handle, RouteAuthorization),
-    CaAuthorizationDuplicate(Handle, RouteAuthorization),
-    CaAuthorizationInvalidMaxLength(Handle, RouteAuthorization),
-    CaAuthorizationNotEntitled(Handle, RouteAuthorization),
-    RoaDeltaError(Handle, RoaDeltaError),
+    CaAuthorizationUnknown(CaHandle, RouteAuthorization),
+    CaAuthorizationDuplicate(CaHandle, RouteAuthorization),
+    CaAuthorizationInvalidMaxLength(CaHandle, RouteAuthorization),
+    CaAuthorizationNotEntitled(CaHandle, RouteAuthorization),
+    RoaDeltaError(CaHandle, RoaDeltaError),
 
     //-----------------------------------------------------------------
     // Autonomous System Provider Authorization - ASPA
     //-----------------------------------------------------------------
-    AspaCustomerAsNotEntitled(Handle, AspaCustomer),
-    AspaCustomerAlreadyPresent(Handle, AspaCustomer),
-    AspaCustomerUnknown(Handle, AspaCustomer),
-    AspaProvidersUpdateEmpty(Handle, AspaCustomer),
-    AspaProvidersUpdateConflict(Handle, AspaProvidersUpdateConflict),
+    AspaCustomerAsNotEntitled(CaHandle, AspaCustomer),
+    AspaCustomerAlreadyPresent(CaHandle, AspaCustomer),
+    AspaCustomerUnknown(CaHandle, AspaCustomer),
+    AspaProvidersUpdateEmpty(CaHandle, AspaCustomer),
+    AspaProvidersUpdateConflict(CaHandle, AspaProvidersUpdateConflict),
 
     //-----------------------------------------------------------------
     // Key Usage Issues
@@ -926,7 +926,7 @@ mod tests {
 
     #[test]
     fn error_response_json_regression() {
-        let ca = Handle::from_str("ca").unwrap();
+        let ca = CaHandle::from_str("ca").unwrap();
         let parent = ParentHandle::from_str("parent").unwrap();
         let child = ChildHandle::from_str("child").unwrap();
         let publisher = PublisherHandle::from_str("publisher").unwrap();
@@ -1205,7 +1205,7 @@ mod tests {
         error.add_invalid_length(invalid_length);
         error.add_unknown(unknown);
 
-        let ca = Handle::from_str("ca").unwrap();
+        let ca = CaHandle::from_str("ca").unwrap();
 
         let error = Error::RoaDeltaError(ca, error);
 

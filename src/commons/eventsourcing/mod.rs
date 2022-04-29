@@ -34,7 +34,7 @@ mod tests {
 
     use serde::Serialize;
 
-    use rpki::ca::idexchange::Handle;
+    use rpki::ca::idexchange::MyHandle;
 
     use crate::test;
     use crate::{
@@ -57,7 +57,7 @@ mod tests {
     type InitPersonEvent = StoredEvent<InitPersonDetails>;
 
     impl InitPersonEvent {
-        pub fn init(id: &Handle, name: &str) -> Self {
+        pub fn init(id: &MyHandle, name: &str) -> Self {
             StoredEvent::new(id, 0, InitPersonDetails { name: name.to_string() })
         }
     }
@@ -164,12 +164,12 @@ mod tests {
     }
 
     impl PersonCommand {
-        pub fn go_around_sun(id: &Handle, version: Option<u64>) -> Self {
+        pub fn go_around_sun(id: &MyHandle, version: Option<u64>) -> Self {
             let actor = Actor::test_from_def(ACTOR_DEF_TEST);
             Self::new(id, version, PersonCommandDetails::GoAroundTheSun, &actor)
         }
 
-        pub fn change_name(id: &Handle, version: Option<u64>, s: &str) -> Self {
+        pub fn change_name(id: &MyHandle, version: Option<u64>, s: &str) -> Self {
             let details = PersonCommandDetails::ChangeName(s.to_string());
             let actor = Actor::test_from_def(ACTOR_DEF_TEST);
             Self::new(id, version, details, &actor)
@@ -216,7 +216,7 @@ mod tests {
     #[derive(Clone, Deserialize, Serialize)]
     struct Person {
         /// The id is needed when generating events.
-        id: Handle,
+        id: MyHandle,
 
         /// The version of for this particular Person. Versions
         /// are incremented whenever events are applied. They are
@@ -230,7 +230,7 @@ mod tests {
     }
 
     impl Person {
-        pub fn id(&self) -> &Handle {
+        pub fn id(&self) -> &MyHandle {
             &self.id
         }
         pub fn name(&self) -> &String {
@@ -296,7 +296,7 @@ mod tests {
         let mut manager = AggregateStore::<Person>::disk(&d, "person").unwrap();
         manager.add_post_save_listener(counter.clone());
 
-        let id_alice = Handle::from_str("alice").unwrap();
+        let id_alice = MyHandle::from_str("alice").unwrap();
         let alice_init = InitPersonEvent::init(&id_alice, "alice smith");
 
         manager.add(alice_init).unwrap();

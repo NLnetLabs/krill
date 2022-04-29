@@ -1,6 +1,6 @@
 use std::fmt;
 
-use rpki::ca::idexchange::Handle;
+use rpki::ca::idexchange::MyHandle;
 
 use super::Storable;
 
@@ -10,7 +10,7 @@ pub trait InitEvent: fmt::Display + Eq + PartialEq + Send + Sync + Storable + 's
 
 pub trait Event: fmt::Display + Eq + PartialEq + Send + Sync + Storable + 'static {
     /// Identifies the aggregate, useful when storing and retrieving the event.
-    fn handle(&self) -> &Handle;
+    fn handle(&self) -> &MyHandle;
 
     /// The version of the aggregate that this event updates. An aggregate that
     /// is currently at version x, will get version x + 1, when the event for
@@ -20,14 +20,14 @@ pub trait Event: fmt::Display + Eq + PartialEq + Send + Sync + Storable + 'stati
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct StoredEvent<E: fmt::Display + Eq + PartialEq + Storable + 'static> {
-    id: Handle,
+    id: MyHandle,
     version: u64,
     #[serde(deserialize_with = "E::deserialize")]
     details: E,
 }
 
 impl<E: fmt::Display + Eq + PartialEq + Storable + Send + Sync + 'static> StoredEvent<E> {
-    pub fn new(id: &Handle, version: u64, event: E) -> Self {
+    pub fn new(id: &MyHandle, version: u64, event: E) -> Self {
         StoredEvent {
             id: id.clone(),
             version,
@@ -44,13 +44,13 @@ impl<E: fmt::Display + Eq + PartialEq + Storable + Send + Sync + 'static> Stored
     }
 
     /// Return the parts of this event.
-    pub fn unpack(self) -> (Handle, u64, E) {
+    pub fn unpack(self) -> (MyHandle, u64, E) {
         (self.id, self.version, self.details)
     }
 }
 
 impl<E: fmt::Display + Eq + PartialEq + Storable + Send + Sync + 'static> Event for StoredEvent<E> {
-    fn handle(&self) -> &Handle {
+    fn handle(&self) -> &MyHandle {
         &self.id
     }
 

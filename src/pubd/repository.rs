@@ -10,7 +10,7 @@ use rpki::{
     ca::{
         idcert::IdCert,
         idexchange,
-        idexchange::{Handle, PublisherHandle, RepoInfo},
+        idexchange::{MyHandle, PublisherHandle, RepoInfo},
         publication,
         publication::{ListReply, PublicationCms, PublishDelta},
     },
@@ -298,7 +298,7 @@ impl RepositoryContent {
     }
 
     /// Gets a list reply containing all objects for this publisher.
-    pub fn list_reply(&self, publisher: &Handle) -> KrillResult<ListReply> {
+    pub fn list_reply(&self, publisher: &PublisherHandle) -> KrillResult<ListReply> {
         self.objects_for_publisher(publisher).map(|o| o.to_list_reply())
     }
 
@@ -935,13 +935,13 @@ impl RrdpServer {
 /// this so that callers don't need to worry about storage details.
 pub struct RepositoryAccessProxy {
     store: AggregateStore<RepositoryAccess>,
-    key: Handle,
+    key: MyHandle,
 }
 
 impl RepositoryAccessProxy {
     pub fn disk(config: &Config) -> KrillResult<Self> {
         let store = AggregateStore::<RepositoryAccess>::disk(&config.data_dir, PUBSERVER_DIR)?;
-        let key = Handle::from_str(PUBSERVER_DFLT).unwrap();
+        let key = MyHandle::from_str(PUBSERVER_DFLT).unwrap();
 
         if store.has(&key)? {
             if config.always_recover_data {
@@ -1066,7 +1066,7 @@ impl RepositoryAccessProxy {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RepositoryAccess {
     // Event sourcing support
-    handle: Handle,
+    handle: MyHandle,
     version: u64,
 
     id_cert: IdCert,

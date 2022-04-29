@@ -1,6 +1,6 @@
 use std::fmt;
 
-use rpki::{ca::idexchange::Handle, repository::x509::Time};
+use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
 
 use crate::commons::{
     actor::Actor,
@@ -36,7 +36,7 @@ pub trait Command: fmt::Display + Send + Sync {
     type StorableDetails: WithStorableDetails;
 
     /// Identifies the aggregate, useful when storing and retrieving the event.
-    fn handle(&self) -> &Handle;
+    fn handle(&self) -> &MyHandle;
 
     /// The version of the aggregate that this command updates. If this
     /// command should update whatever the latest version happens to be, then
@@ -58,7 +58,7 @@ pub trait Command: fmt::Display + Send + Sync {
 /// ['CommandDetails'] and leave the id and version boilerplate.
 #[derive(Clone)]
 pub struct SentCommand<C: CommandDetails> {
-    handle: Handle,
+    handle: MyHandle,
     version: Option<u64>,
     details: C,
     actor: String,
@@ -67,7 +67,7 @@ pub struct SentCommand<C: CommandDetails> {
 impl<C: CommandDetails> Command for SentCommand<C> {
     type StorableDetails = C::StorableDetails;
 
-    fn handle(&self) -> &Handle {
+    fn handle(&self) -> &MyHandle {
         &self.handle
     }
 
@@ -85,7 +85,7 @@ impl<C: CommandDetails> Command for SentCommand<C> {
 }
 
 impl<C: CommandDetails> SentCommand<C> {
-    pub fn new(id: &Handle, version: Option<u64>, details: C, actor: &Actor) -> Self {
+    pub fn new(id: &MyHandle, version: Option<u64>, details: C, actor: &Actor) -> Self {
         let actor_name = if actor.is_user() {
             format!("user:{}", actor.name())
         } else {
@@ -140,7 +140,7 @@ pub trait CommandDetails: fmt::Display + Send + Sync + 'static {
 pub struct StoredCommand<S: WithStorableDetails> {
     actor: String,
     time: Time,
-    handle: Handle,
+    handle: MyHandle,
     version: u64,  // version of aggregate this was applied to (successful or not)
     sequence: u64, // command sequence (i.e. also incremented for failed commands)
     #[serde(deserialize_with = "S::deserialize")]
@@ -152,7 +152,7 @@ impl<S: WithStorableDetails> StoredCommand<S> {
     pub fn new(
         actor: String,
         time: Time,
-        handle: Handle,
+        handle: MyHandle,
         version: u64,
         sequence: u64,
         details: S,
@@ -173,7 +173,7 @@ impl<S: WithStorableDetails> StoredCommand<S> {
         self.time
     }
 
-    pub fn handle(&self) -> &Handle {
+    pub fn handle(&self) -> &MyHandle {
         &self.handle
     }
 
@@ -214,7 +214,7 @@ impl<S: WithStorableDetails> From<StoredCommand<S>> for CommandHistoryRecord {
 pub struct StoredCommandBuilder<C: Command> {
     actor: String,
     time: Time,
-    handle: Handle,
+    handle: MyHandle,
     version: u64,
     sequence: u64,
     details: C::StorableDetails,

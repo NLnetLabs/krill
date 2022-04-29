@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use rpki::{
     ca::{
         idcert::IdCert,
-        idexchange::{ChildHandle, Handle, ParentHandle, RepoInfo, ServiceUri},
+        idexchange::{CaHandle, ChildHandle, ParentHandle, RepoInfo, ServiceUri},
         provisioning::{
             IssuanceRequest, IssuedCert, RequestResourceLimit, ResourceClassEntitlements, ResourceClassListResponse,
             ResourceClassName, SigningCert,
@@ -780,15 +780,15 @@ impl AsRef<Vec<CertAuthSummary>> for CertAuthList {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthSummary {
-    handle: Handle,
+    handle: CaHandle,
 }
 
 impl CertAuthSummary {
-    pub fn new(name: Handle) -> Self {
+    pub fn new(name: CaHandle) -> Self {
         CertAuthSummary { handle: name }
     }
 
-    pub fn handle(&self) -> &Handle {
+    pub fn handle(&self) -> &CaHandle {
         &self.handle
     }
 }
@@ -1551,7 +1551,7 @@ impl ops::SubAssign<Duration> for Timestamp {
 /// to be exposed through the API/CLI/UI
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthInfo {
-    handle: Handle,
+    handle: CaHandle,
     id_cert: IdCertPem,
     repo_info: Option<RepoInfo>,
     parents: Vec<ParentInfo>,
@@ -1563,7 +1563,7 @@ pub struct CertAuthInfo {
 
 impl CertAuthInfo {
     pub fn new(
-        handle: Handle,
+        handle: CaHandle,
         id_cert: IdCertPem,
         repo_info: Option<RepoInfo>,
         parents: HashMap<ParentHandle, ParentCaContact>,
@@ -1594,7 +1594,7 @@ impl CertAuthInfo {
         }
     }
 
-    pub fn handle(&self) -> &Handle {
+    pub fn handle(&self) -> &CaHandle {
         &self.handle
     }
 
@@ -1859,15 +1859,15 @@ impl fmt::Display for CaRepoDetails {
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AllCertAuthIssues {
-    cas: HashMap<Handle, CertAuthIssues>,
+    cas: HashMap<CaHandle, CertAuthIssues>,
 }
 
 impl AllCertAuthIssues {
-    pub fn add(&mut self, ca: Handle, ca_issues: CertAuthIssues) {
+    pub fn add(&mut self, ca: CaHandle, ca_issues: CertAuthIssues) {
         self.cas.insert(ca, ca_issues);
     }
 
-    pub fn cas(&self) -> &HashMap<Handle, CertAuthIssues> {
+    pub fn cas(&self) -> &HashMap<CaHandle, CertAuthIssues> {
         &self.cas
     }
 }
@@ -2203,7 +2203,7 @@ mod test {
             Error::HttpClientError(httpclient::Error::forbidden("https://example.com/")).to_error_response(),
         );
         issues.add_parent_issue(
-            Handle::from_str("parent").unwrap(),
+            ParentHandle::from_str("parent").unwrap(),
             Error::Rfc6492SignatureInvalid.to_error_response(),
         );
 
@@ -2216,7 +2216,7 @@ mod test {
 
     #[test]
     fn recognize_suspension_candidate() {
-        let handle = Handle::from_str("ca").unwrap();
+        let ca_handle = CaHandle::from_str("ca").unwrap();
 
         let threshold_seconds = 4 * 3600;
 
@@ -2248,33 +2248,33 @@ mod test {
             }
         }
 
-        fn ca_stats_active_no_exchange(handle: &Handle) -> ChildConnectionStats {
+        fn ca_stats_active_no_exchange(child: &CaHandle) -> ChildConnectionStats {
             ChildConnectionStats {
-                handle: handle.clone(),
+                handle: child.convert(),
                 last_exchange: None,
                 state: ChildState::Active,
             }
         }
 
-        fn ca_stats_active(handle: &Handle, exchange: ChildExchange) -> ChildConnectionStats {
+        fn ca_stats_active(child: &CaHandle, exchange: ChildExchange) -> ChildConnectionStats {
             ChildConnectionStats {
-                handle: handle.clone(),
+                handle: child.convert(),
                 last_exchange: Some(exchange),
                 state: ChildState::Active,
             }
         }
 
-        let new_ca = ca_stats_active_no_exchange(&handle);
+        let new_ca = ca_stats_active_no_exchange(&ca_handle.clone());
 
-        let recent_krill_pre_0_9_2 = ca_stats_active(&handle, new_exchange("krill"));
-        let recent_krill_post_0_9_1 = ca_stats_active(&handle, new_exchange("krill/0.9.2-rc2"));
-        let recent_other_agent = ca_stats_active(&handle, new_exchange("other"));
-        let recent_no_agent = ca_stats_active(&handle, new_exchange(""));
+        let recent_krill_pre_0_9_2 = ca_stats_active(&ca_handle, new_exchange("krill"));
+        let recent_krill_post_0_9_1 = ca_stats_active(&ca_handle, new_exchange("krill/0.9.2-rc2"));
+        let recent_other_agent = ca_stats_active(&ca_handle, new_exchange("other"));
+        let recent_no_agent = ca_stats_active(&ca_handle, new_exchange(""));
 
-        let old_krill_pre_0_9_2 = ca_stats_active(&handle, old_exchange("krill"));
-        let old_krill_post_0_9_1 = ca_stats_active(&handle, old_exchange("krill/0.9.2-rc2"));
-        let old_other_agent = ca_stats_active(&handle, old_exchange("other"));
-        let old_no_agent = ca_stats_active(&handle, old_exchange(""));
+        let old_krill_pre_0_9_2 = ca_stats_active(&ca_handle, old_exchange("krill"));
+        let old_krill_post_0_9_1 = ca_stats_active(&ca_handle, old_exchange("krill/0.9.2-rc2"));
+        let old_other_agent = ca_stats_active(&ca_handle, old_exchange("other"));
+        let old_no_agent = ca_stats_active(&ca_handle, old_exchange(""));
 
         assert!(!new_ca.is_suspension_candidate(threshold_seconds));
 

@@ -7,7 +7,7 @@ use std::{
 
 use rpki::{
     ca::{
-        idexchange::{ChildHandle, Handle, ParentHandle, PublisherHandle, ServiceUri},
+        idexchange::{CaHandle, ChildHandle, MyHandle, ParentHandle, PublisherHandle, ServiceUri},
         provisioning::{RequestResourceLimit, ResourceClassName, RevocationRequest},
     },
     repository::resources::ResourceSet,
@@ -31,7 +31,7 @@ use crate::{
 pub struct OldStoredCaCommand {
     pub actor: String,
     pub time: Time,
-    pub handle: Handle,
+    pub handle: CaHandle,
     pub version: u64,  // version of aggregate this was applied to (successful or not)
     pub sequence: u64, // command sequence (i.e. also incremented for failed commands)
     pub details: OldStorableCaCommand,
@@ -42,7 +42,7 @@ impl OldStoredCaCommand {
     pub fn into_ca_command(
         self,
         repo_manager: &RepositoryManager,
-        derived_embedded_ca_info_map: &HashMap<Handle, DerivedEmbeddedCaMigrationInfo>,
+        derived_embedded_ca_info_map: &HashMap<CaHandle, DerivedEmbeddedCaMigrationInfo>,
     ) -> UpgradeResult<StoredCaCommand> {
         let (actor, time, handle, version, sequence, details, effect) = (
             self.actor,
@@ -58,7 +58,10 @@ impl OldStoredCaCommand {
             OldStorableCaCommand::RepoUpdate(service_uri_opt) => {
                 let service_uri = match service_uri_opt {
                     Some(service_uri) => service_uri,
-                    None => repo_manager.repository_response(&handle)?.service_uri().clone(),
+                    None => repo_manager
+                        .repository_response(&handle.convert())?
+                        .service_uri()
+                        .clone(),
                 };
                 StorableCaCommand::RepoUpdate { service_uri }
             }
@@ -66,7 +69,7 @@ impl OldStoredCaCommand {
                 let ski = match id_ski_opt {
                     Some(ski) => ski,
                     None => derived_embedded_ca_info_map
-                        .get(&child)
+                        .get(&child.convert())
                         .ok_or_else(|| {
                             PrepareUpgradeError::Custom(format!(
                                 "Cannot upgrade CA history for {}, child {} is no longer present",
@@ -104,7 +107,7 @@ impl fmt::Display for OldStoredCaCommand {
 impl Command for OldStoredCaCommand {
     type StorableDetails = OldStorableCaCommand;
 
-    fn handle(&self) -> &Handle {
+    fn handle(&self) -> &CaHandle {
         &self.handle
     }
 
@@ -261,7 +264,7 @@ impl From<OldStorableCaCommand> for StorableCaCommand {
 pub struct OldStoredRepositoryCommand {
     pub actor: String,
     pub time: Time,
-    pub handle: Handle,
+    pub handle: MyHandle,
     pub version: u64,  // version of aggregate this was applied to (successful or not)
     pub sequence: u64, // command sequence (i.e. also incremented for failed commands)
     pub details: OldStorableRepositoryCommand,
@@ -291,7 +294,7 @@ impl fmt::Display for OldStoredRepositoryCommand {
 impl Command for OldStoredRepositoryCommand {
     type StorableDetails = OldStorableRepositoryCommand;
 
-    fn handle(&self) -> &Handle {
+    fn handle(&self) -> &MyHandle {
         &self.handle
     }
 

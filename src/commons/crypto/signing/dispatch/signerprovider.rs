@@ -1,11 +1,11 @@
-use rpki::{
-    ca::idexchange::Handle,
-    repository::crypto::{
-        signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError,
-    },
+use rpki::repository::crypto::{
+    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError,
 };
 
-use crate::commons::crypto::signers::{error::SignerError, softsigner::OpenSslSigner};
+use crate::commons::crypto::{
+    signers::{error::SignerError, softsigner::OpenSslSigner},
+    SignerHandle,
+};
 
 #[cfg(all(test, feature = "hsm"))]
 use crate::commons::crypto::signers::mocksigner::MockSigner;
@@ -122,7 +122,7 @@ impl SignerProvider {
         }
     }
 
-    pub fn set_handle(&self, handle: Handle) {
+    pub fn set_handle(&self, handle: SignerHandle) {
         match self {
             SignerProvider::OpenSsl(_, signer) => signer.set_handle(handle),
             #[cfg(feature = "hsm")]

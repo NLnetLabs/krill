@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use rpki::{
     ca::{
-        idexchange::{Handle, ParentHandle, RepoInfo},
+        idexchange::{CaHandle, ParentHandle, RepoInfo},
         provisioning::{
             IssuanceRequest, RequestResourceLimit, ResourceClassEntitlements, ResourceClassName, RevocationRequest,
         },
@@ -94,7 +94,7 @@ impl ResourceClass {
         ResourceClass {
             name: parent_rc_name.clone(),
             name_space: parent_rc_name.to_string(),
-            parent_handle: ta_handle(),
+            parent_handle: ta_handle().into_converted(),
             parent_rc_name,
             roas: Roas::default(),
             aspas: AspaObjects::default(),
@@ -190,7 +190,7 @@ impl ResourceClass {
     /// Returns event details for receiving the certificate.
     pub fn update_received_cert(
         &self,
-        handle: &Handle,
+        handle: &CaHandle,
         rcvd_cert: RcvdCert,
         all_routes: &Routes,
         all_aspas: &AspaDefinitions,
@@ -276,7 +276,7 @@ impl ResourceClass {
     #[allow(clippy::too_many_arguments)]
     fn update_rcvd_cert_current(
         &self,
-        handle: &Handle,
+        handle: &CaHandle,
         current_key: &CurrentKey,
         rcvd_cert: RcvdCert,
         routes: &Routes,
@@ -365,7 +365,7 @@ impl ResourceClass {
     /// ARIN - Krill is sometimes told to just drop all resources.
     pub fn make_entitlement_events(
         &self,
-        handle: &Handle,
+        handle: &CaHandle,
         entitlement: &ResourceClassEntitlements,
         base_repo: &RepoInfo,
         signer: &KrillSigner,

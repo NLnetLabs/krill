@@ -1,6 +1,6 @@
 //! Certificate Authority related code.
 //!
-use rpki::ca::idexchange::Handle;
+use rpki::ca::idexchange::CaHandle;
 
 use crate::commons::error::Error;
 
@@ -44,12 +44,12 @@ pub use self::status::*;
 pub const TA_NAME: &str = "ta"; // reserved for TA
 pub const TESTBED_CA_NAME: &str = "testbed"; // reserved for testbed mode
 
-pub fn ta_handle() -> Handle {
+pub fn ta_handle() -> CaHandle {
     use std::str::FromStr;
-    Handle::from_str(TA_NAME).unwrap()
+    CaHandle::from_str(TA_NAME).unwrap()
 }
 
-pub fn testbed_ca_handle() -> Handle {
+pub fn testbed_ca_handle() -> CaHandle {
     use std::str::FromStr;
-    Handle::from_str(TESTBED_CA_NAME).unwrap()
+    CaHandle::from_str(TESTBED_CA_NAME).unwrap()
 }

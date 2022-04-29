@@ -1,18 +1,15 @@
 use std::sync::Arc;
 use std::{collections::HashMap, sync::RwLock};
 
-use rpki::{
-    ca::idexchange::Handle,
-    repository::crypto::{
-        signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer,
-        SigningError,
-    },
+use rpki::repository::crypto::{
+    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
 };
 
 use crate::commons::{
     crypto::{
         dispatch::{signerinfo::SignerMapper, signerprovider::SignerProvider},
         signers::error::SignerError,
+        SignerHandle,
     },
     error::Error,
     KrillResult,
@@ -106,7 +103,7 @@ pub struct SignerRouter {
     /// [SignerProvider] instances are moved to this set from the `pending_signers` set once we are able to confirm that
     /// we can connect to them and can identify the correct signer [Handle] used by the [SignerMapper] to associate with
     /// keys created by that signer.
-    active_signers: RwLock<HashMap<Handle, Arc<SignerProvider>>>,
+    active_signers: RwLock<HashMap<SignerHandle, Arc<SignerProvider>>>,
 
     /// The set of [SignerProvider] instances that are configured but not yet confirmed to be usable. All signers start
     /// off in this set and are moved to the `active_signers` set as soon as we are able to confirm them. See
@@ -155,7 +152,7 @@ impl SignerRouter {
         self.signer_mapper.clone()
     }
 
-    pub fn get_active_signers(&self) -> HashMap<Handle, Arc<SignerProvider>> {
+    pub fn get_active_signers(&self) -> HashMap<SignerHandle, Arc<SignerProvider>> {
         self.active_signers.read().unwrap().clone()
     }
 

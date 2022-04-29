@@ -3,8 +3,7 @@
 use std::fs;
 
 use krill::test::*;
-use rpki::ca::idexchange::ChildHandle;
-use rpki::ca::idexchange::Handle;
+use rpki::ca::idexchange::CaHandle;
 use rpki::repository::resources::ResourceSet;
 
 #[tokio::test]
@@ -23,31 +22,33 @@ async fn test_suspension() {
     //  suspend enabled
     let krill_dir = start_krill_with_default_test_config(true, false, true, false).await;
 
-    let testbed = handle("testbed");
-    let ca = handle("CA");
+    let testbed = ca_handle("testbed");
+    let ca = ca_handle("CA");
     let ca_res = ipv4_resources("10.0.0.0/16");
 
-    async fn expect_not_suspended(ca: &Handle, child: &ChildHandle) {
+    async fn expect_not_suspended(ca: &CaHandle, child: &CaHandle) {
         let rcn_0 = rcn(0);
+        let child_handle = child.convert();
 
         let mut expected_files = expected_mft_and_crl(ca, &rcn_0).await;
-        expected_files.push(expected_issued_cer(child, &rcn_0).await);
+        expected_files.push(expected_issued_cer(&child.convert(), &rcn_0).await);
         assert!(will_publish_embedded("CA should have mft, crl and cert for child", ca, &expected_files).await);
 
         let ca_info = ca_details(ca).await;
-        assert!(ca_info.children().contains(child));
-        assert!(!ca_info.suspended_children().contains(child));
+        assert!(ca_info.children().contains(&child_handle));
+        assert!(!ca_info.suspended_children().contains(&child_handle));
     }
 
-    async fn expect_suspended(ca: &Handle, child: &ChildHandle) {
+    async fn expect_suspended(ca: &CaHandle, child: &CaHandle) {
         let rcn_0 = rcn(0);
+        let child_handle = child.convert();
 
         let expected_files = expected_mft_and_crl(ca, &rcn_0).await;
         assert!(will_publish_embedded("CA should have mft, crl only", ca, &expected_files).await);
 
         let ca_info = ca_details(ca).await;
-        assert!(ca_info.children().contains(child));
-        assert!(ca_info.suspended_children().contains(child));
+        assert!(ca_info.children().contains(&child_handle));
+        assert!(ca_info.suspended_children().contains(&child_handle));
     }
 
     // Wait for testbed to come up

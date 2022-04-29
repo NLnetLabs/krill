@@ -4,7 +4,7 @@ use std::fs;
 use std::str::FromStr;
 
 use rpki::{
-    ca::{idexchange::Handle, provisioning::ResourceClassName},
+    ca::{idexchange::CaHandle, provisioning::ResourceClassName},
     repository::resources::ResourceSet,
 };
 
@@ -36,8 +36,8 @@ async fn functional_aspa() {
     info("");
 
     let ta = ta_handle();
-    let testbed = handle("testbed");
-    let ca = handle("CA");
+    let testbed = ca_handle("testbed");
+    let ca = ca_handle("CA");
     let ca_res = resources("AS65000", "10.0.0.0/16", "");
 
     let rcn_0 = rcn(0);
@@ -78,7 +78,7 @@ async fn functional_aspa() {
     }
 
     // short hand to expect ASPAs under CA
-    async fn expect_aspa_objects(ca: &Handle, aspas: &[AspaDefinition]) {
+    async fn expect_aspa_objects(ca: &CaHandle, aspas: &[AspaDefinition]) {
         let rcn_0 = ResourceClassName::from(0);
 
         let mut expected_files = expected_mft_and_crl(ca, &rcn_0).await;

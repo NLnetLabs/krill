@@ -15,7 +15,7 @@ use rpki::{
     ca::{
         idcert::IdCert,
         idexchange,
-        idexchange::{ChildHandle, Handle, ParentHandle, PublisherHandle},
+        idexchange::{CaHandle, ChildHandle, ParentHandle, PublisherHandle},
     },
     repository::{
         aspa::{DuplicateProviderAs, ProviderAs},
@@ -1299,16 +1299,16 @@ impl Options {
         file::read(&path).map_err(Error::IoError)
     }
 
-    fn parse_my_ca(matches: &ArgMatches) -> Result<Handle, Error> {
+    fn parse_my_ca(matches: &ArgMatches) -> Result<CaHandle, Error> {
         let my_ca = {
             let mut my_ca = None;
 
             if let Ok(my_ca_env) = env::var(KRILL_CLI_MY_CA_ENV) {
-                my_ca = Some(Handle::from_str(&my_ca_env).map_err(|_| Error::InvalidHandle)?);
+                my_ca = Some(CaHandle::from_str(&my_ca_env).map_err(|_| Error::InvalidHandle)?);
             }
 
             if let Some(my_ca_str) = matches.value_of(KRILL_CLI_MY_CA_ARG) {
-                my_ca = Some(Handle::from_str(my_ca_str).map_err(|_| Error::InvalidHandle)?);
+                my_ca = Some(CaHandle::from_str(my_ca_str).map_err(|_| Error::InvalidHandle)?);
             }
 
             my_ca.ok_or_else(|| Error::missing_arg_with_env(KRILL_CLI_MY_CA_ARG, KRILL_CLI_MY_CA_ENV))?
@@ -1491,7 +1491,7 @@ impl Options {
         let my_ca = Self::parse_my_ca(matches)?;
 
         let child = matches.value_of("child").unwrap();
-        let child = Handle::from_str(child).map_err(|_| Error::InvalidHandle)?;
+        let child = ChildHandle::from_str(child).map_err(|_| Error::InvalidHandle)?;
 
         let resources = Self::parse_resource_args(matches)?.ok_or(Error::MissingResources)?;
 
@@ -1506,7 +1506,7 @@ impl Options {
         let my_ca = Self::parse_my_ca(matches)?;
 
         let child = matches.value_of("child").unwrap();
-        let child = Handle::from_str(child).map_err(|_| Error::InvalidHandle)?;
+        let child = ChildHandle::from_str(child).map_err(|_| Error::InvalidHandle)?;
 
         let id_cert = {
             if let Some(path) = matches.value_of("idcert") {
@@ -1530,7 +1530,7 @@ impl Options {
         let my_ca = Self::parse_my_ca(matches)?;
 
         let child = matches.value_of("child").unwrap();
-        let child = Handle::from_str(child).map_err(|_| Error::InvalidHandle)?;
+        let child = ChildHandle::from_str(child).map_err(|_| Error::InvalidHandle)?;
 
         let command = Command::CertAuth(CaCommand::ChildInfo(my_ca, child));
         Ok(Options::make(general_args, command))
@@ -1541,7 +1541,7 @@ impl Options {
         let my_ca = Self::parse_my_ca(matches)?;
 
         let child = matches.value_of("child").unwrap();
-        let child = Handle::from_str(child).map_err(|_| Error::InvalidHandle)?;
+        let child = ChildHandle::from_str(child).map_err(|_| Error::InvalidHandle)?;
 
         let command = Command::CertAuth(CaCommand::ParentResponse(my_ca, child));
         Ok(Options::make(general_args, command))
@@ -1552,7 +1552,7 @@ impl Options {
         let my_ca = Self::parse_my_ca(matches)?;
 
         let child = matches.value_of("child").unwrap();
-        let child = Handle::from_str(child).map_err(|_| Error::InvalidHandle)?;
+        let child = ChildHandle::from_str(child).map_err(|_| Error::InvalidHandle)?;
 
         let command = Command::CertAuth(CaCommand::ChildDelete(my_ca, child));
         Ok(Options::make(general_args, command))
@@ -1571,7 +1571,7 @@ impl Options {
         let my_ca = Self::parse_my_ca(matches)?;
 
         let child = matches.value_of("child").unwrap();
-        let child = Handle::from_str(child).map_err(|_| Error::InvalidHandle)?;
+        let child = ChildHandle::from_str(child).map_err(|_| Error::InvalidHandle)?;
 
         let update = UpdateChildRequest::suspend();
 
@@ -1584,7 +1584,7 @@ impl Options {
         let my_ca = Self::parse_my_ca(matches)?;
 
         let child = matches.value_of("child").unwrap();
-        let child = Handle::from_str(child).map_err(|_| Error::InvalidHandle)?;
+        let child = ChildHandle::from_str(child).map_err(|_| Error::InvalidHandle)?;
 
         let update = UpdateChildRequest::unsuspend();
 
@@ -1632,7 +1632,7 @@ impl Options {
         let my_ca = Self::parse_my_ca(matches)?;
 
         let parent = matches.value_of("parent").unwrap();
-        let parent = Handle::from_str(parent).map_err(|_| Error::InvalidHandle)?;
+        let parent = ParentHandle::from_str(parent).map_err(|_| Error::InvalidHandle)?;
         let contact = ParentCaContact::for_rfc6492(response);
         let parent_req = ParentCaReq::new(parent, contact);
 
@@ -1644,7 +1644,7 @@ impl Options {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
         let parent = matches.value_of("parent").unwrap();
-        let parent = Handle::from_str(parent).map_err(|_| Error::InvalidHandle)?;
+        let parent = ParentHandle::from_str(parent).map_err(|_| Error::InvalidHandle)?;
 
         let command = Command::CertAuth(CaCommand::MyParentCaContact(my_ca, parent));
         Ok(Options::make(general_args, command))
@@ -1662,7 +1662,7 @@ impl Options {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
         let parent = matches.value_of("parent").unwrap();
-        let parent = Handle::from_str(parent).map_err(|_| Error::InvalidHandle)?;
+        let parent = ParentHandle::from_str(parent).map_err(|_| Error::InvalidHandle)?;
 
         let command = Command::CertAuth(CaCommand::RemoveParent(my_ca, parent));
         Ok(Options::make(general_args, command))
@@ -2342,61 +2342,61 @@ pub enum Command {
 #[allow(clippy::large_enum_variant)]
 pub enum CaCommand {
     Init(CertAuthInit), // Initialize a CA
-    UpdateId(Handle),   // Update CA id
-    Delete(Handle),     // Delete the CA -> let it withdraw and request revocation as well
+    UpdateId(CaHandle), // Update CA id
+    Delete(CaHandle),   // Delete the CA -> let it withdraw and request revocation as well
 
     // Publishing
-    RepoPublisherRequest(Handle), // Get the idexchange:: publisher request
-    RepoDetails(Handle),
-    RepoUpdate(Handle, RepositoryContact),
-    RepoStatus(Handle),
+    RepoPublisherRequest(CaHandle), // Get the idexchange:: publisher request
+    RepoDetails(CaHandle),
+    RepoUpdate(CaHandle, RepositoryContact),
+    RepoStatus(CaHandle),
 
     // Parents (to this CA)
-    ChildRequest(Handle), // Get the idexchange:: child request
-    AddParent(Handle, ParentCaReq),
-    MyParentCaContact(Handle, ParentHandle),
-    ParentStatuses(Handle),
-    RemoveParent(Handle, ParentHandle),
-    Refresh(Handle), // Refresh with all parents
+    ChildRequest(CaHandle), // Get the idexchange:: child request
+    AddParent(CaHandle, ParentCaReq),
+    MyParentCaContact(CaHandle, ParentHandle),
+    ParentStatuses(CaHandle),
+    RemoveParent(CaHandle, ParentHandle),
+    Refresh(CaHandle), // Refresh with all parents
 
     // Children
-    ParentResponse(Handle, ChildHandle), // Get an idexchange:: parent response for a child
-    ChildInfo(Handle, ChildHandle),
-    ChildAdd(Handle, AddChildRequest),
-    ChildUpdate(Handle, ChildHandle, UpdateChildRequest),
-    ChildDelete(Handle, ChildHandle),
-    ChildConnections(Handle),
+    ParentResponse(CaHandle, ChildHandle), // Get an idexchange:: parent response for a child
+    ChildInfo(CaHandle, ChildHandle),
+    ChildAdd(CaHandle, AddChildRequest),
+    ChildUpdate(CaHandle, ChildHandle, UpdateChildRequest),
+    ChildDelete(CaHandle, ChildHandle),
+    ChildConnections(CaHandle),
 
     // Key Management
-    KeyRollInit(Handle),
-    KeyRollActivate(Handle),
+    KeyRollInit(CaHandle),
+    KeyRollActivate(CaHandle),
 
     // Authorizations
-    RouteAuthorizationsList(Handle),
-    RouteAuthorizationsUpdate(Handle, RoaDefinitionUpdates),
-    RouteAuthorizationsTryUpdate(Handle, RoaDefinitionUpdates),
-    RouteAuthorizationsDryRunUpdate(Handle, RoaDefinitionUpdates),
-    BgpAnalysisFull(Handle),
-    BgpAnalysisSuggest(Handle, Option<ResourceSet>),
+    RouteAuthorizationsList(CaHandle),
+    RouteAuthorizationsUpdate(CaHandle, RoaDefinitionUpdates),
+    RouteAuthorizationsTryUpdate(CaHandle, RoaDefinitionUpdates),
+    RouteAuthorizationsDryRunUpdate(CaHandle, RoaDefinitionUpdates),
+    BgpAnalysisFull(CaHandle),
+    BgpAnalysisSuggest(CaHandle, Option<ResourceSet>),
 
     // ASPAs
-    AspasList(Handle),
-    AspasAddOrReplace(Handle, AspaDefinition),
-    AspasUpdate(Handle, AspaCustomer, AspaProvidersUpdate),
-    AspasRemove(Handle, AspaCustomer),
+    AspasList(CaHandle),
+    AspasAddOrReplace(CaHandle, AspaDefinition),
+    AspasUpdate(CaHandle, AspaCustomer, AspaProvidersUpdate),
+    AspasRemove(CaHandle, AspaCustomer),
 
     // Show details for this CA
-    Show(Handle),
-    ShowHistoryCommands(Handle, HistoryOptions),
-    ShowHistoryDetails(Handle, String),
-    Issues(Option<Handle>),
+    Show(CaHandle),
+    ShowHistoryCommands(CaHandle, HistoryOptions),
+    ShowHistoryDetails(CaHandle, String),
+    Issues(Option<CaHandle>),
 
     // RTA
-    RtaList(Handle),
-    RtaShow(Handle, RtaName, Option<PathBuf>),
-    RtaSign(Handle, RtaName, RtaContentRequest),
-    RtaMultiPrep(Handle, RtaName, RtaPrepareRequest),
-    RtaMultiCoSign(Handle, RtaName, ResourceTaggedAttestation),
+    RtaList(CaHandle),
+    RtaShow(CaHandle, RtaName, Option<PathBuf>),
+    RtaSign(CaHandle, RtaName, RtaContentRequest),
+    RtaMultiPrep(CaHandle, RtaName, RtaPrepareRequest),
+    RtaMultiCoSign(CaHandle, RtaName, ResourceTaggedAttestation),
 
     // List all CAs
     List,
