@@ -868,7 +868,7 @@ impl CertAuth {
         let my_rc = self.resources.get(&rcn).ok_or(Error::ResourceClassUnknown(rcn))?;
         let child = self.get_child(child)?;
 
-        // note this will ultimately return an error of the requested limit exceeds
+        // note this will ultimately return an error if the requested limit exceeds
         // the child's resources.
         my_rc.issue_cert(csr_info, child.resources(), limit, issuance_timing, signer)
     }

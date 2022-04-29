@@ -1457,8 +1457,8 @@ impl CaManager {
     }
 
     /// Returns the handle of the local parent for this specific ServiceUri, and the
-    /// configured base (service) uri. Provided that this indeed maps back to this
-    /// same server and it is an rfc6492 style krill uri.
+    /// configured base (service) URI. Provided that this indeed maps back to this
+    /// same server and it is an RFC 6492 style Krill URI.
     pub fn local_parent(service_uri: &ServiceUri, base_uri: &uri::Https) -> Option<ParentHandle> {
         match &service_uri {
             ServiceUri::Http(_) => None,
