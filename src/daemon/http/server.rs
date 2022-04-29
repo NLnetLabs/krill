@@ -47,8 +47,8 @@ use crate::{
         NO_RESOURCE,
     },
     daemon::{
-        auth::Auth,
-        auth::{common::permissions::Permission, policy::PolarHandle},
+        auth::common::permissions::Permission,
+        auth::{Auth, PolarHandle},
         ca::{CaStatus, RouteAuthorizationUpdates, TA_NAME},
         config::Config,
         http::{

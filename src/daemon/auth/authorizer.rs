@@ -1,6 +1,8 @@
 //! Authorization for the API
 
-use std::{any::Any, collections::HashMap, sync::Arc};
+use std::{any::Any, collections::HashMap, fmt, str::FromStr, sync::Arc};
+
+use rpki::ca::idexchange::{InvalidHandle, MyHandle};
 
 use crate::{
     commons::{
@@ -290,5 +292,53 @@ impl Auth {
 
     pub fn id_and_password_hash(id: String, password_hash: Token) -> Self {
         Auth::IdAndPasswordHash { id, password_hash }
+    }
+}
+
+//------------ PolarHandle ---------------------------------------------------
+
+/// Wrapper type so we can use rpki::ca::idexchange::Handle with
+/// the PolarClass trait.
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq)]
+pub struct PolarHandle(MyHandle);
+
+impl fmt::Display for PolarHandle {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl From<&MyHandle> for PolarHandle {
+    fn from(h: &MyHandle) -> Self {
+        PolarHandle(h.clone())
+    }
+}
+
+impl FromStr for PolarHandle {
+    type Err = InvalidHandle;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        MyHandle::from_str(s).map(PolarHandle)
+    }
+}
+
+impl AsRef<MyHandle> for PolarHandle {
+    fn as_ref(&self) -> &MyHandle {
+        &self.0
+    }
+}
+
+#[cfg(feature = "multi-user")]
+impl oso::PolarClass for PolarHandle {
+    fn get_polar_class() -> oso::Class {
+        Self::get_polar_class_builder()
+            .set_constructor(|name: String| PolarHandle::from_str(&name).unwrap())
+            .set_equality_check(|left: &PolarHandle, right: &PolarHandle| left == right)
+            .add_attribute_getter("name", |instance| instance.to_string())
+            .build()
+    }
+
+    fn get_polar_class_builder() -> oso::ClassBuilder<Self> {
+        oso::Class::builder()
     }
 }

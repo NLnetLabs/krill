@@ -248,7 +248,7 @@ impl ConfigDefaults {
             return vec![SignerConfig::new(
                 DEFAULT_KMIP_SIGNER_NAME.to_string(),
                 SignerType::Kmip(signer_config),
-            )]
+            )];
         }
 
         #[cfg(feature = "hsm-tests-pkcs11")]

@@ -28,7 +28,7 @@ use rpki::repository::crypto::KeyIdentifier;
 #[cfg(feature = "hsm")]
 use crate::{
     commons::crypto::SignerHandle,
-    constants::{KEYS_DIR, SIGNERS_DIR}
+    constants::{KEYS_DIR, SIGNERS_DIR},
 };
 
 pub mod v0_9_0;

@@ -37,7 +37,8 @@ use crate::{
     },
     constants::{CASERVER_DIR, STATUS_DIR},
     daemon::{
-        auth::{common::permissions::Permission, policy::PolarHandle},
+        auth::common::permissions::Permission,
+        auth::PolarHandle,
         ca::{
             self, ta_handle, CaObjectsStore, CaStatus, CertAuth, Cmd, CmdDet, DeprecatedRepository, IniDet,
             ResourceTaggedAttestation, RouteAuthorizationUpdates, RtaContentRequest, RtaPrepareRequest, StatusStore,
