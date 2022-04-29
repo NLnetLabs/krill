@@ -424,7 +424,7 @@ impl Options {
             Arg::with_name("request")
                 .long("request")
                 .short("r")
-                .help("The location of the idexchange:: Child Request XML file")
+                .help("The location of the RFC 8183 Child Request XML file")
                 .value_name("<XML file>")
                 .required(true),
         );
@@ -451,7 +451,7 @@ impl Options {
     }
 
     fn make_cas_children_response_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("response").about("Show the idexchange:: Parent Response XML");
+        let mut sub = SubCommand::with_name("response").about("Show the RFC 8183 Parent Response XML");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -526,7 +526,7 @@ impl Options {
     }
 
     fn make_cas_parents_request_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("request").about("Show idexchange:: Child Request XML");
+        let mut sub = SubCommand::with_name("request").about("Show RFC 8183 Child Request XML");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -544,7 +544,7 @@ impl Options {
             Arg::with_name("response")
                 .long("response")
                 .short("r")
-                .help("The location of the idexchange:: Parent Response XML file")
+                .help("The location of the RFC 8183 Parent Response XML file")
                 .value_name("<XML file>")
                 .required(true),
         );
@@ -836,7 +836,7 @@ impl Options {
     }
 
     fn make_cas_repo_request_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("request").about("Show idexchange:: Publisher Request XML");
+        let mut sub = SubCommand::with_name("request").about("Show RFC 8183 Publisher Request XML");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -872,7 +872,7 @@ impl Options {
                 .value_name("file")
                 .long("response")
                 .short("r")
-                .help("The location of the idexchange:: Publisher Response XML file")
+                .help("The location of the RFC 8183 Publisher Response XML file")
                 .required(true),
         );
 
@@ -1159,7 +1159,7 @@ impl Options {
                     .value_name("file")
                     .long("request")
                     .short("r")
-                    .help("The location of the idexchange:: Publisher Request XML file")
+                    .help("The location of the RFC 8183 Publisher Request XML file")
                     .required(true),
             )
             .arg(
@@ -1189,7 +1189,7 @@ impl Options {
     }
 
     fn make_publishers_response_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("response").about("Show idexchange:: Repository Response XML");
+        let mut sub = SubCommand::with_name("response").about("Show RFC 8183 Repository Response XML");
         sub = Options::add_general_args(sub);
         sub = Self::add_publisher_arg(sub);
         app.subcommand(sub)
@@ -2346,13 +2346,13 @@ pub enum CaCommand {
     Delete(CaHandle),   // Delete the CA -> let it withdraw and request revocation as well
 
     // Publishing
-    RepoPublisherRequest(CaHandle), // Get the idexchange:: publisher request
+    RepoPublisherRequest(CaHandle), // Get the RFC 8183 Publisher Request
     RepoDetails(CaHandle),
     RepoUpdate(CaHandle, RepositoryContact),
     RepoStatus(CaHandle),
 
     // Parents (to this CA)
-    ChildRequest(CaHandle), // Get the idexchange:: child request
+    ChildRequest(CaHandle), // Get the RFC 8183 Child Request
     AddParent(CaHandle, ParentCaReq),
     MyParentCaContact(CaHandle, ParentHandle),
     ParentStatuses(CaHandle),
@@ -2360,7 +2360,7 @@ pub enum CaCommand {
     Refresh(CaHandle), // Refresh with all parents
 
     // Children
-    ParentResponse(CaHandle, ChildHandle), // Get an idexchange:: parent response for a child
+    ParentResponse(CaHandle, ChildHandle), // Get an RFC 8183 Parent Response for a child
     ChildInfo(CaHandle, ChildHandle),
     ChildAdd(CaHandle, AddChildRequest),
     ChildUpdate(CaHandle, ChildHandle, UpdateChildRequest),

@@ -272,14 +272,14 @@ pub async fn generate_new_id(ca: &CaHandle) {
 pub async fn parent_contact(ca: &CaHandle, child: &ChildHandle) -> ParentCaContact {
     match krill_admin(Command::CertAuth(CaCommand::ParentResponse(ca.clone(), child.clone()))).await {
         ApiResponse::ParentCaContact(contact) => contact,
-        _ => panic!("Expected idexchange:: parent response"),
+        _ => panic!("Expected RFC 8183 Parent Response"),
     }
 }
 
 pub async fn request(ca: &CaHandle) -> idexchange::ChildRequest {
     match krill_admin(Command::CertAuth(CaCommand::ChildRequest(ca.clone()))).await {
         ApiResponse::Rfc8183ChildRequest(req) => req,
-        _ => panic!("Expected child request"),
+        _ => panic!("Expected RFC 8183 Child Request"),
     }
 }
 
