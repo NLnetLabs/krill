@@ -11,12 +11,11 @@ use openssl::{
 };
 
 use rpki::{
-    ca::idexchange::Handle,
     repository::crypto::signer::KeyError,
     repository::crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError},
 };
 
-use crate::commons::crypto::{dispatch::signerinfo::SignerMapper, SignerError};
+use crate::commons::crypto::{dispatch::signerinfo::SignerMapper, SignerError, SignerHandle};
 
 pub enum FnIdx {
     CreateRegistrationKey,
@@ -63,7 +62,7 @@ pub struct MockSigner {
     name: String,
     info: Option<String>,
     fn_call_counts: Arc<MockSignerCallCounts>,
-    handle: RwLock<Option<Handle>>,
+    handle: RwLock<Option<SignerHandle>>,
     mapper: Arc<SignerMapper>,
     keys: RwLock<HashMap<String, PKey<Private>>>,
     create_registration_key_error_cb: Option<CreateRegistrationKeyErrorCb>,
@@ -176,7 +175,7 @@ impl MockSigner {
         Ok(signature)
     }
 
-    pub fn set_handle(&self, handle: Handle) {
+    pub fn set_handle(&self, handle: SignerHandle) {
         self.inc_fn_call_count(FnIdx::SetHandle);
         // remember the handle that has been generated for us so that we can use it when registering keys with the
         // signer mapper
