@@ -326,6 +326,14 @@ impl SignerReference {
     pub fn is_named(&self) -> bool {
         matches!(self, SignerReference::Name(Some(_)))
     }
+
+    pub fn is_set(&self) -> bool {
+        match self {
+            SignerReference::Name(None) => false,
+            SignerReference::Name(Some(_)) => true,
+            SignerReference::Index(_) => true,
+        }
+    }
 }
 
 /// Global configuration for the Krill Server.
@@ -1020,9 +1028,10 @@ impl Config {
     }
 
     fn find_signer_reference(&self, signer_ref: &SignerReference) -> Option<usize> {
-        match signer_ref.is_named() {
-            true => self.signers.iter().position(|s| &s.name == signer_ref.name()),
-            false => None,
+        match signer_ref {
+            SignerReference::Name(None) => None,
+            SignerReference::Name(Some(name)) => self.signers.iter().position(|s| &s.name == name),
+            SignerReference::Index(idx) => Some(*idx),
         }
     }
 
@@ -1151,7 +1160,7 @@ impl Config {
             }
         }
 
-        if self.signers.len() > 1 && !self.default_signer.is_named() {
+        if self.signers.len() > 1 && !self.default_signer.is_set() {
             return Err(ConfigError::other(
                 "'default_signer' must be set when more than one [[signers]] configuration is defined",
             ));
