@@ -648,11 +648,7 @@ mod tests {
         let config = Arc::new(config);
 
         if do_upgrade {
-            let report = prepare_upgrade_data_migrations(UpgradeMode::PrepareToFinalise, config.clone())
-                .unwrap()
-                .unwrap();
-
-            finalise_data_migration(report.versions(), &config).unwrap();
+            record_preexisting_openssl_keys_in_signer_mapper(config.clone()).unwrap();
         }
 
         // Now test that a newly initialized `KrillSigner` with a default OpenSSL signer
