@@ -648,7 +648,11 @@ mod tests {
         let config = Arc::new(config);
 
         if do_upgrade {
-            record_preexisting_openssl_keys_in_signer_mapper(config.clone()).unwrap();
+            let report = prepare_upgrade_data_migrations(UpgradeMode::PrepareToFinalise, config.clone())
+                .unwrap()
+                .unwrap();
+
+            finalise_data_migration(report.versions(), &config).unwrap();
         }
 
         // Now test that a newly initialized `KrillSigner` with a default OpenSSL signer
@@ -676,11 +680,6 @@ mod tests {
             // Verify that the mapper does NOT have a record of the test key belonging to the signer
             assert!(mapper.get_signer_for_key(&expected_key_id).is_err());
         }
-        let report = prepare_upgrade_data_migrations(UpgradeMode::PrepareToFinalise, config.clone())
-            .unwrap()
-            .unwrap();
-
-        finalise_data_migration(report.versions(), &config).unwrap();
 
         let _ = fs::remove_dir_all(work_dir);
     }
