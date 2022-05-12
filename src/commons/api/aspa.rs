@@ -9,9 +9,9 @@ use std::fmt;
 use std::str::FromStr;
 
 use rpki::repository::aspa::*;
-use rpki::repository::resources::AsId;
+use rpki::repository::resources::Asn;
 
-pub type AspaCustomer = AsId;
+pub type AspaCustomer = Asn;
 
 //------------ AspaDefinitionUpdates -------------------------------------
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -293,7 +293,7 @@ impl fmt::Display for AspaProvidersUpdate {
 
 /// This type contains details on AspaProvidersUpdate entries which
 /// could not be applied.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AspaProvidersUpdateConflict {
     duplicates: Vec<ProviderAs>,
     unknowns: Vec<ProviderAs>,
@@ -310,15 +310,6 @@ impl AspaProvidersUpdateConflict {
 
     pub fn is_empty(&self) -> bool {
         self.duplicates.is_empty() && self.unknowns.is_empty()
-    }
-}
-
-impl Default for AspaProvidersUpdateConflict {
-    fn default() -> Self {
-        Self {
-            duplicates: vec![],
-            unknowns: vec![],
-        }
     }
 }
 
@@ -347,8 +338,8 @@ mod tests {
 
     use super::*;
 
-    fn customer(s: &str) -> AsId {
-        AsId::from_str(s).unwrap()
+    fn customer(s: &str) -> Asn {
+        Asn::from_str(s).unwrap()
     }
 
     fn provider(s: &str) -> ProviderAs {

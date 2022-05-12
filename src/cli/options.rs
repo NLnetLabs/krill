@@ -12,9 +12,15 @@ use bytes::Bytes;
 use clap::{App, Arg, ArgMatches, SubCommand};
 
 use rpki::{
+    ca::{
+        idcert::IdCert,
+        idexchange,
+        idexchange::{CaHandle, ChildHandle, ParentHandle, PublisherHandle},
+    },
     repository::{
         aspa::{DuplicateProviderAs, ProviderAs},
         crypto::KeyIdentifier,
+        resources::ResourceSet,
         x509::Time,
     },
     uri,
@@ -25,13 +31,11 @@ use crate::{
     commons::{
         api::{
             AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionFormatError, AspaProvidersUpdate,
-            AuthorizationFmtError, CertAuthInit, ChildHandle, Handle, ParentCaContact, ParentCaReq, ParentHandle,
-            PublicationServerUris, PublisherHandle, RepositoryContact, ResourceSet, ResourceSetError, RoaDefinition,
-            RoaDefinitionUpdates, RtaName, Token, UpdateChildRequest,
+            AuthorizationFmtError, CertAuthInit, ParentCaContact, ParentCaReq, PublicationServerUris,
+            RepositoryContact, RoaDefinition, RoaDefinitionUpdates, RtaName, Token, UpdateChildRequest,
         },
-        crypto::{IdCert, SignSupport},
+        crypto::SignSupport,
         error::KrillIoError,
-        remote::rfc8183,
         util::file,
     },
     constants::*,
@@ -420,7 +424,7 @@ impl Options {
             Arg::with_name("request")
                 .long("request")
                 .short("r")
-                .help("The location of the RFC8183 Child Request XML file")
+                .help("The location of the RFC 8183 Child Request XML file")
                 .value_name("<XML file>")
                 .required(true),
         );
@@ -447,7 +451,7 @@ impl Options {
     }
 
     fn make_cas_children_response_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("response").about("Show the RFC8183 Parent Response XML");
+        let mut sub = SubCommand::with_name("response").about("Show the RFC 8183 Parent Response XML");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -522,7 +526,7 @@ impl Options {
     }
 
     fn make_cas_parents_request_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("request").about("Show RFC8183 Child Request XML");
+        let mut sub = SubCommand::with_name("request").about("Show RFC 8183 Child Request XML");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -540,7 +544,7 @@ impl Options {
             Arg::with_name("response")
                 .long("response")
                 .short("r")
-                .help("The location of the RFC8183 Parent Response XML file")
+                .help("The location of the RFC 8183 Parent Response XML file")
                 .value_name("<XML file>")
                 .required(true),
         );
@@ -832,7 +836,7 @@ impl Options {
     }
 
     fn make_cas_repo_request_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("request").about("Show RFC8183 Publisher Request XML");
+        let mut sub = SubCommand::with_name("request").about("Show RFC 8183 Publisher Request XML");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -868,7 +872,7 @@ impl Options {
                 .value_name("file")
                 .long("response")
                 .short("r")
-                .help("The location of the RFC8183 Publisher Response XML file")
+                .help("The location of the RFC 8183 Publisher Response XML file")
                 .required(true),
         );
 
@@ -1155,7 +1159,7 @@ impl Options {
                     .value_name("file")
                     .long("request")
                     .short("r")
-                    .help("The location of the RFC8183 Publisher Request XML file")
+                    .help("The location of the RFC 8183 Publisher Request XML file")
                     .required(true),
             )
             .arg(
@@ -1185,7 +1189,7 @@ impl Options {
     }
 
     fn make_publishers_response_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("response").about("Show RFC8183 Repository Response XML");
+        let mut sub = SubCommand::with_name("response").about("Show RFC 8183 Repository Response XML");
         sub = Options::add_general_args(sub);
         sub = Self::add_publisher_arg(sub);
         app.subcommand(sub)
@@ -1295,16 +1299,16 @@ impl Options {
         file::read(&path).map_err(Error::IoError)
     }
 
-    fn parse_my_ca(matches: &ArgMatches) -> Result<Handle, Error> {
+    fn parse_my_ca(matches: &ArgMatches) -> Result<CaHandle, Error> {
         let my_ca = {
             let mut my_ca = None;
 
             if let Ok(my_ca_env) = env::var(KRILL_CLI_MY_CA_ENV) {
-                my_ca = Some(Handle::from_str(&my_ca_env).map_err(|_| Error::InvalidHandle)?);
+                my_ca = Some(CaHandle::from_str(&my_ca_env).map_err(|_| Error::InvalidHandle)?);
             }
 
             if let Some(my_ca_str) = matches.value_of(KRILL_CLI_MY_CA_ARG) {
-                my_ca = Some(Handle::from_str(my_ca_str).map_err(|_| Error::InvalidHandle)?);
+                my_ca = Some(CaHandle::from_str(my_ca_str).map_err(|_| Error::InvalidHandle)?);
             }
 
             my_ca.ok_or_else(|| Error::missing_arg_with_env(KRILL_CLI_MY_CA_ARG, KRILL_CLI_MY_CA_ENV))?
@@ -1323,7 +1327,9 @@ impl Options {
             let v4 = v4.unwrap_or("");
             let v6 = v6.unwrap_or("");
 
-            Ok(Some(ResourceSet::from_strs(asn, v4, v6)?))
+            ResourceSet::from_strs(asn, v4, v6)
+                .map(Some)
+                .map_err(|e| Error::ResourceSetError(e.to_string()))
         } else {
             Ok(None)
         }
@@ -1440,14 +1446,12 @@ impl Options {
         let mut options = HistoryOptions::default();
 
         if let Some(offset) = matches.value_of("offset") {
-            let offset =
-                u64::from_str(offset).map_err(|e| Error::general(&format!("invalid number: {}", e.to_string())))?;
+            let offset = u64::from_str(offset).map_err(|e| Error::general(&format!("invalid number: {}", e)))?;
             options.offset = offset
         }
 
         if let Some(rows) = matches.value_of("rows") {
-            let rows =
-                u64::from_str(rows).map_err(|e| Error::general(&format!("invalid number: {}", e.to_string())))?;
+            let rows = u64::from_str(rows).map_err(|e| Error::general(&format!("invalid number: {}", e)))?;
             if rows > 250 {
                 return Err(Error::general("No more than 250 rows allowed in history"));
             }
@@ -1455,14 +1459,12 @@ impl Options {
         }
 
         if let Some(after) = matches.value_of("after") {
-            let time = Time::from_str(after)
-                .map_err(|e| Error::general(&format!("invalid date format: {}", e.to_string())))?;
+            let time = Time::from_str(after).map_err(|e| Error::general(&format!("invalid date format: {}", e)))?;
             options.after = Some(time);
         }
 
         if let Some(after) = matches.value_of("before") {
-            let time = Time::from_str(after)
-                .map_err(|e| Error::general(&format!("invalid date format: {}", e.to_string())))?;
+            let time = Time::from_str(after).map_err(|e| Error::general(&format!("invalid date format: {}", e)))?;
             options.before = Some(time);
         }
 
@@ -1483,17 +1485,17 @@ impl Options {
     fn parse_matches_cas_children_add(matches: &ArgMatches) -> Result<Options, Error> {
         let path = matches.value_of("request").unwrap();
         let bytes = Self::read_file_arg(path)?;
-        let child_request = rfc8183::ChildRequest::validate(bytes.as_ref())?;
+        let child_request = idexchange::ChildRequest::validate(bytes.as_ref())?;
 
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
         let child = matches.value_of("child").unwrap();
-        let child = Handle::from_str(child).map_err(|_| Error::InvalidHandle)?;
+        let child = ChildHandle::from_str(child).map_err(|_| Error::InvalidHandle)?;
 
         let resources = Self::parse_resource_args(matches)?.ok_or(Error::MissingResources)?;
 
-        let (_, _, id_cert) = child_request.unpack();
+        let (id_cert, _, _) = child_request.unpack();
         let add_child_request = AddChildRequest::new(child, resources, id_cert);
         let command = Command::CertAuth(CaCommand::ChildAdd(my_ca, add_child_request));
         Ok(Options::make(general_args, command))
@@ -1504,7 +1506,7 @@ impl Options {
         let my_ca = Self::parse_my_ca(matches)?;
 
         let child = matches.value_of("child").unwrap();
-        let child = Handle::from_str(child).map_err(|_| Error::InvalidHandle)?;
+        let child = ChildHandle::from_str(child).map_err(|_| Error::InvalidHandle)?;
 
         let id_cert = {
             if let Some(path) = matches.value_of("idcert") {
@@ -1528,7 +1530,7 @@ impl Options {
         let my_ca = Self::parse_my_ca(matches)?;
 
         let child = matches.value_of("child").unwrap();
-        let child = Handle::from_str(child).map_err(|_| Error::InvalidHandle)?;
+        let child = ChildHandle::from_str(child).map_err(|_| Error::InvalidHandle)?;
 
         let command = Command::CertAuth(CaCommand::ChildInfo(my_ca, child));
         Ok(Options::make(general_args, command))
@@ -1539,7 +1541,7 @@ impl Options {
         let my_ca = Self::parse_my_ca(matches)?;
 
         let child = matches.value_of("child").unwrap();
-        let child = Handle::from_str(child).map_err(|_| Error::InvalidHandle)?;
+        let child = ChildHandle::from_str(child).map_err(|_| Error::InvalidHandle)?;
 
         let command = Command::CertAuth(CaCommand::ParentResponse(my_ca, child));
         Ok(Options::make(general_args, command))
@@ -1550,7 +1552,7 @@ impl Options {
         let my_ca = Self::parse_my_ca(matches)?;
 
         let child = matches.value_of("child").unwrap();
-        let child = Handle::from_str(child).map_err(|_| Error::InvalidHandle)?;
+        let child = ChildHandle::from_str(child).map_err(|_| Error::InvalidHandle)?;
 
         let command = Command::CertAuth(CaCommand::ChildDelete(my_ca, child));
         Ok(Options::make(general_args, command))
@@ -1569,7 +1571,7 @@ impl Options {
         let my_ca = Self::parse_my_ca(matches)?;
 
         let child = matches.value_of("child").unwrap();
-        let child = Handle::from_str(child).map_err(|_| Error::InvalidHandle)?;
+        let child = ChildHandle::from_str(child).map_err(|_| Error::InvalidHandle)?;
 
         let update = UpdateChildRequest::suspend();
 
@@ -1582,7 +1584,7 @@ impl Options {
         let my_ca = Self::parse_my_ca(matches)?;
 
         let child = matches.value_of("child").unwrap();
-        let child = Handle::from_str(child).map_err(|_| Error::InvalidHandle)?;
+        let child = ChildHandle::from_str(child).map_err(|_| Error::InvalidHandle)?;
 
         let update = UpdateChildRequest::unsuspend();
 
@@ -1624,13 +1626,13 @@ impl Options {
     fn parse_matches_cas_parents_add(matches: &ArgMatches) -> Result<Options, Error> {
         let path = matches.value_of("response").unwrap();
         let bytes = Self::read_file_arg(path)?;
-        let response = rfc8183::ParentResponse::validate(bytes.as_ref())?;
+        let response = idexchange::ParentResponse::validate(bytes.as_ref())?;
 
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
         let parent = matches.value_of("parent").unwrap();
-        let parent = Handle::from_str(parent).map_err(|_| Error::InvalidHandle)?;
+        let parent = ParentHandle::from_str(parent).map_err(|_| Error::InvalidHandle)?;
         let contact = ParentCaContact::for_rfc6492(response);
         let parent_req = ParentCaReq::new(parent, contact);
 
@@ -1642,7 +1644,7 @@ impl Options {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
         let parent = matches.value_of("parent").unwrap();
-        let parent = Handle::from_str(parent).map_err(|_| Error::InvalidHandle)?;
+        let parent = ParentHandle::from_str(parent).map_err(|_| Error::InvalidHandle)?;
 
         let command = Command::CertAuth(CaCommand::MyParentCaContact(my_ca, parent));
         Ok(Options::make(general_args, command))
@@ -1660,7 +1662,7 @@ impl Options {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
         let parent = matches.value_of("parent").unwrap();
-        let parent = Handle::from_str(parent).map_err(|_| Error::InvalidHandle)?;
+        let parent = ParentHandle::from_str(parent).map_err(|_| Error::InvalidHandle)?;
 
         let command = Command::CertAuth(CaCommand::RemoveParent(my_ca, parent));
         Ok(Options::make(general_args, command))
@@ -1941,7 +1943,7 @@ impl Options {
 
         let path = matches.value_of("response").unwrap();
         let bytes = Self::read_file_arg(path)?;
-        let response = rfc8183::RepositoryResponse::validate(bytes.as_ref())?;
+        let response = idexchange::RepositoryResponse::validate(bytes.as_ref())?;
 
         let repo_contact = RepositoryContact::new(response);
         let command = Command::CertAuth(CaCommand::RepoUpdate(my_ca, repo_contact));
@@ -2013,11 +2015,7 @@ impl Options {
             .map_err(|_| Error::GeneralArgumentError(format!("Invalid filename: {}", in_file)))?;
 
         let content = file::read(&in_file).map_err(|e| {
-            Error::GeneralArgumentError(format!(
-                "Can't read file '{}', error: {}",
-                in_file.to_string_lossy().to_string(),
-                e,
-            ))
+            Error::GeneralArgumentError(format!("Can't read file '{}', error: {}", in_file.to_string_lossy(), e,))
         })?;
 
         let name = matches.value_of("name").unwrap().to_string();
@@ -2053,11 +2051,7 @@ impl Options {
             .map_err(|_| Error::GeneralArgumentError(format!("Invalid filename: {}", in_file)))?;
 
         let content = file::read(&in_file).map_err(|e| {
-            Error::GeneralArgumentError(format!(
-                "Can't read file '{}', error: {}",
-                in_file.to_string_lossy().to_string(),
-                e,
-            ))
+            Error::GeneralArgumentError(format!("Can't read file '{}', error: {}", in_file.to_string_lossy(), e,))
         })?;
 
         let rta = ResourceTaggedAttestation::new(content);
@@ -2163,12 +2157,12 @@ impl Options {
         let path = matches.value_of("request").unwrap();
         let path = PathBuf::from(path);
         let bytes = file::read(&path)?;
-        let mut req = rfc8183::PublisherRequest::validate(bytes.as_ref())?;
+        let mut req = idexchange::PublisherRequest::validate(bytes.as_ref())?;
 
         if let Some(publisher_str) = matches.value_of("publisher") {
             let publisher = PublisherHandle::from_str(publisher_str).map_err(|_| Error::InvalidHandle)?;
             let (tag, _, cert) = req.unpack();
-            req = rfc8183::PublisherRequest::new(tag, publisher, cert);
+            req = idexchange::PublisherRequest::new(tag, publisher, cert);
         }
 
         let command = Command::PubServer(PubServerCommand::AddPublisher(req));
@@ -2348,61 +2342,61 @@ pub enum Command {
 #[allow(clippy::large_enum_variant)]
 pub enum CaCommand {
     Init(CertAuthInit), // Initialize a CA
-    UpdateId(Handle),   // Update CA id
-    Delete(Handle),     // Delete the CA -> let it withdraw and request revocation as well
+    UpdateId(CaHandle), // Update CA id
+    Delete(CaHandle),   // Delete the CA -> let it withdraw and request revocation as well
 
     // Publishing
-    RepoPublisherRequest(Handle), // Get the RFC8183 publisher request
-    RepoDetails(Handle),
-    RepoUpdate(Handle, RepositoryContact),
-    RepoStatus(Handle),
+    RepoPublisherRequest(CaHandle), // Get the RFC 8183 Publisher Request
+    RepoDetails(CaHandle),
+    RepoUpdate(CaHandle, RepositoryContact),
+    RepoStatus(CaHandle),
 
     // Parents (to this CA)
-    ChildRequest(Handle), // Get the RFC8183 child request
-    AddParent(Handle, ParentCaReq),
-    MyParentCaContact(Handle, ParentHandle),
-    ParentStatuses(Handle),
-    RemoveParent(Handle, ParentHandle),
-    Refresh(Handle), // Refresh with all parents
+    ChildRequest(CaHandle), // Get the RFC 8183 Child Request
+    AddParent(CaHandle, ParentCaReq),
+    MyParentCaContact(CaHandle, ParentHandle),
+    ParentStatuses(CaHandle),
+    RemoveParent(CaHandle, ParentHandle),
+    Refresh(CaHandle), // Refresh with all parents
 
     // Children
-    ParentResponse(Handle, ChildHandle), // Get an RFC8183 parent response for a child
-    ChildInfo(Handle, ChildHandle),
-    ChildAdd(Handle, AddChildRequest),
-    ChildUpdate(Handle, ChildHandle, UpdateChildRequest),
-    ChildDelete(Handle, ChildHandle),
-    ChildConnections(Handle),
+    ParentResponse(CaHandle, ChildHandle), // Get an RFC 8183 Parent Response for a child
+    ChildInfo(CaHandle, ChildHandle),
+    ChildAdd(CaHandle, AddChildRequest),
+    ChildUpdate(CaHandle, ChildHandle, UpdateChildRequest),
+    ChildDelete(CaHandle, ChildHandle),
+    ChildConnections(CaHandle),
 
     // Key Management
-    KeyRollInit(Handle),
-    KeyRollActivate(Handle),
+    KeyRollInit(CaHandle),
+    KeyRollActivate(CaHandle),
 
     // Authorizations
-    RouteAuthorizationsList(Handle),
-    RouteAuthorizationsUpdate(Handle, RoaDefinitionUpdates),
-    RouteAuthorizationsTryUpdate(Handle, RoaDefinitionUpdates),
-    RouteAuthorizationsDryRunUpdate(Handle, RoaDefinitionUpdates),
-    BgpAnalysisFull(Handle),
-    BgpAnalysisSuggest(Handle, Option<ResourceSet>),
+    RouteAuthorizationsList(CaHandle),
+    RouteAuthorizationsUpdate(CaHandle, RoaDefinitionUpdates),
+    RouteAuthorizationsTryUpdate(CaHandle, RoaDefinitionUpdates),
+    RouteAuthorizationsDryRunUpdate(CaHandle, RoaDefinitionUpdates),
+    BgpAnalysisFull(CaHandle),
+    BgpAnalysisSuggest(CaHandle, Option<ResourceSet>),
 
     // ASPAs
-    AspasList(Handle),
-    AspasAddOrReplace(Handle, AspaDefinition),
-    AspasUpdate(Handle, AspaCustomer, AspaProvidersUpdate),
-    AspasRemove(Handle, AspaCustomer),
+    AspasList(CaHandle),
+    AspasAddOrReplace(CaHandle, AspaDefinition),
+    AspasUpdate(CaHandle, AspaCustomer, AspaProvidersUpdate),
+    AspasRemove(CaHandle, AspaCustomer),
 
     // Show details for this CA
-    Show(Handle),
-    ShowHistoryCommands(Handle, HistoryOptions),
-    ShowHistoryDetails(Handle, String),
-    Issues(Option<Handle>),
+    Show(CaHandle),
+    ShowHistoryCommands(CaHandle, HistoryOptions),
+    ShowHistoryDetails(CaHandle, String),
+    Issues(Option<CaHandle>),
 
     // RTA
-    RtaList(Handle),
-    RtaShow(Handle, RtaName, Option<PathBuf>),
-    RtaSign(Handle, RtaName, RtaContentRequest),
-    RtaMultiPrep(Handle, RtaName, RtaPrepareRequest),
-    RtaMultiCoSign(Handle, RtaName, ResourceTaggedAttestation),
+    RtaList(CaHandle),
+    RtaShow(CaHandle, RtaName, Option<PathBuf>),
+    RtaSign(CaHandle, RtaName, RtaContentRequest),
+    RtaMultiPrep(CaHandle, RtaName, RtaPrepareRequest),
+    RtaMultiCoSign(CaHandle, RtaName, ResourceTaggedAttestation),
 
     // List all CAs
     List,
@@ -2452,7 +2446,7 @@ pub enum BulkCaCommand {
     Suspend,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct KrillInitDetails {
     data_dir: Option<String>,
     log_file: Option<String>,
@@ -2495,19 +2489,8 @@ impl KrillInitDetails {
     }
 }
 
-impl Default for KrillInitDetails {
-    fn default() -> Self {
-        KrillInitDetails {
-            data_dir: None,
-            log_file: None,
-            multi_user: false,
-            hsm: false,
-        }
-    }
-}
-
 #[cfg(feature = "multi-user")]
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct KrillUserDetails {
     id: String,
     attrs: HashMap<String, String>,
@@ -2530,20 +2513,10 @@ impl KrillUserDetails {
     }
 }
 
-#[cfg(feature = "multi-user")]
-impl Default for KrillUserDetails {
-    fn default() -> Self {
-        KrillUserDetails {
-            id: String::new(),
-            attrs: HashMap::new(),
-        }
-    }
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(clippy::large_enum_variant)]
 pub enum PubServerCommand {
-    AddPublisher(rfc8183::PublisherRequest),
+    AddPublisher(idexchange::PublisherRequest),
     ShowPublisher(PublisherHandle),
     RemovePublisher(PublisherHandle),
     RepositoryResponse(PublisherHandle),
@@ -2562,8 +2535,8 @@ pub enum Error {
     UriError(uri::Error),
     IoError(KrillIoError),
     ReportError(ReportError),
-    Rfc8183(rfc8183::Error),
-    ResSetErr(ResourceSetError),
+    Rfc8183(idexchange::Error),
+    ResourceSetError(String),
     InvalidRouteDelta(AuthorizationFmtError),
     InvalidAsn(String),
     DuplicateAspaProvider(DuplicateProviderAs),
@@ -2589,8 +2562,8 @@ impl fmt::Display for Error {
             Error::UriError(e) => e.fmt(f),
             Error::IoError(e) => e.fmt(f),
             Error::ReportError(e) => e.fmt(f),
-            Error::Rfc8183(e) => write!(f, "Invalid RFC8183 XML: {}", e),
-            Error::ResSetErr(e) => write!(f, "Invalid resources requested: {}", e),
+            Error::Rfc8183(e) => write!(f, "Invalid RFC 8183 XML: {}", e),
+            Error::ResourceSetError(e) => write!(f, "Invalid resources requested: {}", e),
             Error::InvalidRouteDelta(e) => e.fmt(f),
             Error::InvalidAsn(s) => write!(f, "Invalid ASN format. Expected 'AS#', got: {}", s),
             Error::DuplicateAspaProvider(e) => e.fmt(f),
@@ -2623,8 +2596,8 @@ impl Error {
     }
 }
 
-impl From<rfc8183::Error> for Error {
-    fn from(e: rfc8183::Error) -> Self {
+impl From<idexchange::Error> for Error {
+    fn from(e: idexchange::Error) -> Self {
         Error::Rfc8183(e)
     }
 }
@@ -2644,12 +2617,6 @@ impl From<KrillIoError> for Error {
 impl From<ReportError> for Error {
     fn from(e: ReportError) -> Self {
         Error::ReportError(e)
-    }
-}
-
-impl From<ResourceSetError> for Error {
-    fn from(e: ResourceSetError) -> Self {
-        Error::ResSetErr(e)
     }
 }
 

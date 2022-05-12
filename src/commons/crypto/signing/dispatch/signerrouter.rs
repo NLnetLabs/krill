@@ -6,10 +6,10 @@ use rpki::repository::crypto::{
 };
 
 use crate::commons::{
-    api::Handle,
     crypto::{
         dispatch::{signerinfo::SignerMapper, signerprovider::SignerProvider},
         signers::error::SignerError,
+        SignerHandle,
     },
     error::Error,
     KrillResult,
@@ -103,7 +103,7 @@ pub struct SignerRouter {
     /// [SignerProvider] instances are moved to this set from the `pending_signers` set once we are able to confirm that
     /// we can connect to them and can identify the correct signer [Handle] used by the [SignerMapper] to associate with
     /// keys created by that signer.
-    active_signers: RwLock<HashMap<Handle, Arc<SignerProvider>>>,
+    active_signers: RwLock<HashMap<SignerHandle, Arc<SignerProvider>>>,
 
     /// The set of [SignerProvider] instances that are configured but not yet confirmed to be usable. All signers start
     /// off in this set and are moved to the `active_signers` set as soon as we are able to confirm them. See
@@ -129,11 +129,9 @@ impl SignerRouter {
             if signer.is_default_signer() {
                 Self::set_once(&mut default_signer, signer.clone())
                     .map_err(|_| Error::ConfigError("There must only be one default signer".to_string()))?;
-            } else {
-                if signer.is_one_off_signer() {
-                    Self::set_once(&mut one_off_signer, signer.clone())
-                        .map_err(|_| Error::ConfigError("There must only be one one-off signer".to_string()))?;
-                }
+            } else if signer.is_one_off_signer() {
+                Self::set_once(&mut one_off_signer, signer.clone())
+                    .map_err(|_| Error::ConfigError("There must only be one one-off signer".to_string()))?;
             }
             all_signers.push(signer.clone());
         }
@@ -154,7 +152,7 @@ impl SignerRouter {
         self.signer_mapper.clone()
     }
 
-    pub fn get_active_signers(&self) -> HashMap<Handle, Arc<SignerProvider>> {
+    pub fn get_active_signers(&self) -> HashMap<SignerHandle, Arc<SignerProvider>> {
         self.active_signers.read().unwrap().clone()
     }
 
@@ -224,7 +222,7 @@ impl SignerRouter {
 enum IdentifyResult {
     Unavailable,
     Corrupt,
-    Identified(Handle),
+    Identified(SignerHandle),
     Unusable,
     Unidentified,
 }
@@ -232,7 +230,7 @@ enum IdentifyResult {
 #[cfg(feature = "hsm")]
 enum RegisterResult {
     NotReady,
-    ReadyVerified(Handle),
+    ReadyVerified(SignerHandle),
     ReadyUnusable,
 }
 
@@ -358,7 +356,7 @@ impl SignerRouter {
     }
 
     /// Retrieves the set of signer handles known to the signer mapper.
-    fn get_candidate_signer_handles(&self) -> Result<Vec<Handle>, String> {
+    fn get_candidate_signer_handles(&self) -> Result<Vec<SignerHandle>, String> {
         // TODO: Filter out already bound signers?
         Ok(self
             .signer_mapper
@@ -372,7 +370,7 @@ impl SignerRouter {
     fn identify_signer(
         &self,
         signer_provider: &Arc<SignerProvider>,
-        candidate_handles: &[Handle],
+        candidate_handles: &[SignerHandle],
     ) -> Result<IdentifyResult, ErrorString> {
         let config_signer_name = signer_provider.get_name().to_string();
 
@@ -423,7 +421,7 @@ impl SignerRouter {
     fn is_signer_identified_by_handle(
         &self,
         signer_provider: &Arc<SignerProvider>,
-        candidate_handle: &Handle,
+        candidate_handle: &SignerHandle,
     ) -> Result<IdentifyResult, ErrorString> {
         let handle_name = self.signer_mapper.as_ref().unwrap().get_signer_name(candidate_handle)?;
         let signer_name = signer_provider.get_name().to_string();

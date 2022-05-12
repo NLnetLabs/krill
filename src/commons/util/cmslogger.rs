@@ -1,13 +1,13 @@
 use std::{fmt, path::PathBuf};
 
 use bytes::Bytes;
-use rpki::repository::x509::Time;
 
-use crate::commons::{
-    api::{Handle, PublisherHandle},
-    error::KrillIoError,
-    util::file,
+use rpki::{
+    ca::idexchange::{CaHandle, PublisherHandle, RecipientHandle, SenderHandle},
+    repository::x509::Time,
 };
+
+use crate::commons::{error::KrillIoError, util::file};
 
 /// This type helps to log CMS (RFC8181 and RFC6492) protocol messages
 /// for auditing purposes.
@@ -24,10 +24,10 @@ impl CmsLogger {
         }
     }
 
-    pub fn for_rfc6492_rcvd(log_dir: Option<&PathBuf>, ca: &Handle, sender: &Handle) -> Self {
+    pub fn for_rfc6492_rcvd(log_dir: Option<&PathBuf>, recipient: &RecipientHandle, sender: &SenderHandle) -> Self {
         let path = log_dir.map(|dir| {
             let mut path = dir.clone();
-            path.push(ca.as_str());
+            path.push(recipient.as_str());
             path.push("rcvd");
             path.push(sender.as_str());
             path
@@ -36,10 +36,10 @@ impl CmsLogger {
         Self::new(path)
     }
 
-    pub fn for_rfc6492_sent(log_dir: Option<&PathBuf>, ca: &Handle, recipient: &Handle) -> Self {
+    pub fn for_rfc6492_sent(log_dir: Option<&PathBuf>, sender: &SenderHandle, recipient: &RecipientHandle) -> Self {
         let path = log_dir.map(|dir| {
             let mut path = dir.clone();
-            path.push(ca.as_str());
+            path.push(sender.as_str());
             path.push("sent");
             path.push(recipient.as_str());
             path
@@ -48,7 +48,7 @@ impl CmsLogger {
         Self::new(path)
     }
 
-    pub fn for_rfc8181_sent(log_dir: Option<&PathBuf>, ca: &Handle) -> Self {
+    pub fn for_rfc8181_sent(log_dir: Option<&PathBuf>, ca: &CaHandle) -> Self {
         let path = log_dir.map(|dir| {
             let mut path = dir.clone();
             path.push(ca.as_str());

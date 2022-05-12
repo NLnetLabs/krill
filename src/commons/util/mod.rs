@@ -11,6 +11,7 @@ use rpki::{
 
 use crate::constants::KRILL_VERSION;
 
+pub mod cmslogger;
 pub mod ext_serde;
 pub mod file;
 pub mod httpclient;

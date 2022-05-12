@@ -5,13 +5,10 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use tokio::time::sleep;
 
+use rpki::ca::idexchange::{CaHandle, ParentHandle};
+
 use crate::{
-    commons::{
-        actor::Actor,
-        api::{Handle, ParentHandle, Timestamp},
-        bgp::BgpAnalyser,
-        KrillResult,
-    },
+    commons::{actor::Actor, api::Timestamp, bgp::BgpAnalyser, KrillResult},
     constants::{
         SCHEDULER_INTERVAL_RENEW_MINS, SCHEDULER_INTERVAL_REPUBLISH_MINS, SCHEDULER_RESYNC_REPO_CAS_THRESHOLD,
         SCHEDULER_USE_JITTER_CAS_THRESHOLD,
@@ -216,7 +213,7 @@ impl Scheduler {
         Ok(())
     }
 
-    async fn sync_repo(&self, ca: Handle) {
+    async fn sync_repo(&self, ca: CaHandle) {
         debug!("Synchronize CA {} with repository", ca);
 
         if let Err(e) = self.ca_manager.cas_repo_sync_single(&ca).await {
@@ -232,7 +229,7 @@ impl Scheduler {
     }
 
     /// Try to synchronize a CA with a specific parent, reschedule if this fails
-    async fn sync_parent(&self, ca: Handle, parent: ParentHandle) {
+    async fn sync_parent(&self, ca: CaHandle, parent: ParentHandle) {
         info!("Synchronize CA '{}' with its parent '{}'", ca, parent);
         if let Err(e) = self.ca_manager.ca_sync_parent(&ca, &parent, &self.system_actor).await {
             let next = self.config.requeue_remote_failed();
@@ -249,7 +246,7 @@ impl Scheduler {
     }
 
     /// Try to suspend children for a CA
-    async fn suspend_children_if_needed(&self, ca_handle: Handle) {
+    async fn suspend_children_if_needed(&self, ca_handle: CaHandle) {
         debug!("Verify if CA '{}' has children that need to be suspended", ca_handle);
         self.ca_manager
             .ca_suspend_inactive_children(&ca_handle, self.started, &self.system_actor)

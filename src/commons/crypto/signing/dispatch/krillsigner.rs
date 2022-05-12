@@ -1,21 +1,24 @@
 use std::{path::Path, sync::Arc, time::Duration};
 
-use rpki::repository::{
-    aspa::{Aspa, AspaBuilder},
-    cert::TbsCert,
-    crl::{CrlEntry, TbsCertList},
-    crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer},
-    manifest::ManifestContent,
-    roa::RoaBuilder,
-    rta,
-    sigobj::SignedObjectBuilder,
-    x509::Serial,
-    Cert, Crl, Csr, Manifest, Roa,
+use rpki::{
+    ca::{idcert::IdCert, idexchange::RepoInfo, provisioning, publication},
+    repository::{
+        aspa::{Aspa, AspaBuilder},
+        cert::TbsCert,
+        crl::{CrlEntry, TbsCertList},
+        crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer},
+        manifest::ManifestContent,
+        roa::RoaBuilder,
+        rta,
+        sigobj::SignedObjectBuilder,
+        x509::{Serial, Time, Validity},
+        Cert, Crl, Csr, Manifest, Roa,
+    },
 };
 
 use crate::{
     commons::{
-        api::RepoInfo,
+        api::ObjectName,
         crypto::{
             self,
             dispatch::{
@@ -28,17 +31,18 @@ use crate::{
         error::Error,
         KrillResult,
     },
+    constants::ID_CERTIFICATE_VALIDITY_YEARS,
     daemon::config::{SignerConfig, SignerType},
 };
 
 #[cfg(feature = "hsm")]
-use crate::commons::{
-    api::Handle,
-    crypto::signers::{kmip::KmipSigner, pkcs11::Pkcs11Signer},
-};
+use std::collections::HashMap;
 
 #[cfg(feature = "hsm")]
-use std::collections::HashMap;
+use crate::commons::crypto::{
+    signers::{kmip::KmipSigner, pkcs11::Pkcs11Signer},
+    SignerHandle,
+};
 
 /// High level signing interface between Krill and the [SignerRouter].
 ///
@@ -180,7 +184,7 @@ impl KrillSigner {
     }
 
     #[cfg(feature = "hsm")]
-    pub fn get_active_signers(&self) -> HashMap<Handle, Arc<SignerProvider>> {
+    pub fn get_active_signers(&self) -> HashMap<SignerHandle, Arc<SignerProvider>> {
         self.router.get_active_signers()
     }
 
@@ -188,6 +192,17 @@ impl KrillSigner {
         self.router
             .create_key(PublicKeyFormat::Rsa)
             .map_err(crypto::Error::signer)
+    }
+
+    /// Creates a new self-signed (TA) IdCert
+    pub fn create_self_signed_id_cert(&self) -> CryptoResult<IdCert> {
+        let key = self.create_key()?;
+        let validity = Validity::new(
+            Time::five_minutes_ago(),
+            Time::years_from_now(ID_CERTIFICATE_VALIDITY_YEARS),
+        );
+
+        IdCert::new_ta(validity, &key, &self.router).map_err(crypto::Error::signer)
     }
 
     pub fn destroy_key(&self, key_id: &KeyIdentifier) -> CryptoResult<()> {
@@ -216,12 +231,13 @@ impl KrillSigner {
 
     pub fn sign_csr(&self, base_repo: &RepoInfo, name_space: &str, key: &KeyIdentifier) -> CryptoResult<Csr> {
         let pub_key = self.router.get_key_info(key).map_err(crypto::Error::key_error)?;
+        let mft_file_name = ObjectName::mft_for_key(&pub_key.key_identifier());
         let enc = Csr::construct(
             &self.router,
             key,
             &base_repo.ca_repository(name_space).join(&[]).unwrap(), // force trailing slash
-            &base_repo.rpki_manifest(name_space, &pub_key.key_identifier()),
-            Some(&base_repo.rpki_notify()),
+            &base_repo.resolve(name_space, mft_file_name.as_str()),
+            base_repo.rpki_notify(),
         )
         .map_err(crypto::Error::signing)?;
         Ok(Csr::decode(enc.as_slice())?)
@@ -274,6 +290,22 @@ impl KrillSigner {
         rta_builder
             .sign(&self.router, &key, None, None)
             .map_err(crypto::Error::signing)
+    }
+
+    pub fn create_rfc6492_cms(
+        &self,
+        message: provisioning::Message,
+        signing_key: &KeyIdentifier,
+    ) -> CryptoResult<provisioning::ProvisioningCms> {
+        provisioning::ProvisioningCms::create(message, signing_key, &self.router).map_err(crypto::Error::signing)
+    }
+
+    pub fn create_rfc8181_cms(
+        &self,
+        message: publication::Message,
+        signing_key: &KeyIdentifier,
+    ) -> CryptoResult<publication::PublicationCms> {
+        publication::PublicationCms::create(message, signing_key, &self.router).map_err(crypto::Error::signing)
     }
 }
 

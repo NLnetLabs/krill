@@ -321,7 +321,7 @@ impl KeyValueStoreDiskImpl {
                 KrillIoError::new(
                     format!(
                         "Could not store value for key '{}' in file '{}'",
-                        key.to_string(),
+                        key,
                         path.to_string_lossy()
                     ),
                     e,
@@ -338,11 +338,7 @@ impl KeyValueStoreDiskImpl {
         if path.exists() {
             let f = File::open(path).map_err(|e| {
                 KrillIoError::new(
-                    format!(
-                        "Could not read value for key '{}' from file '{}'",
-                        key.to_string(),
-                        path_str
-                    ),
+                    format!("Could not read value for key '{}' from file '{}'", key, path_str),
                     e,
                 )
             })?;
@@ -366,7 +362,7 @@ impl KeyValueStoreDiskImpl {
                 KrillIoError::new(
                     format!(
                         "Could not drop key '{}', removing file '{}' failed",
-                        key.to_string(),
+                        key,
                         path.to_string_lossy()
                     ),
                     e,

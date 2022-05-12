@@ -25,8 +25,7 @@ use rpki::repository::crypto::{
 
 use crate::{
     commons::{
-        api::Handle,
-        crypto::{dispatch::signerinfo::SignerMapper, signers::error::SignerError},
+        crypto::{dispatch::signerinfo::SignerMapper, signers::error::SignerError, SignerHandle},
         error::KrillIoError,
     },
     constants::KEYS_DIR,
@@ -55,7 +54,7 @@ pub struct OpenSslSigner {
 
     name: String,
 
-    handle: RwLock<Option<Handle>>,
+    handle: RwLock<Option<SignerHandle>>,
 
     info: Option<String>,
 
@@ -77,7 +76,7 @@ impl OpenSslSigner {
                 keys_dir.as_path().display()
             )),
             handle: RwLock::new(None), // will be set later
-            mapper: mapper.clone(),
+            mapper,
             keys_dir: keys_dir.into(),
         };
 
@@ -88,7 +87,7 @@ impl OpenSslSigner {
         &self.name
     }
 
-    pub fn set_handle(&self, handle: Handle) {
+    pub fn set_handle(&self, handle: SignerHandle) {
         let mut writable_handle = self.handle.write().unwrap();
         if writable_handle.is_some() {
             panic!("Cannot set signer handle as handle is already set");
@@ -200,9 +199,9 @@ impl OpenSslSigner {
         // KeyIdentifier.
         if let Some(mapper) = &self.mapper {
             let readable_handle = self.handle.read().unwrap();
-            let signer_handle = readable_handle.as_ref().ok_or(SignerError::Other(
-                "OpenSSL: Failed to record signer key: Signer handle not set".to_string(),
-            ))?;
+            let signer_handle = readable_handle.as_ref().ok_or_else(|| {
+                SignerError::Other("OpenSSL: Failed to record signer key: Signer handle not set".to_string())
+            })?;
             mapper
                 .add_key(signer_handle, key_id, &format!("{}", key_id))
                 .map_err(|err| SignerError::Other(format!("Failed to record signer key: {}", err)))

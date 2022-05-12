@@ -3,11 +3,8 @@
 use std::fs;
 
 use bytes::Bytes;
-use krill::{
-    commons::api::{ResourceSet, RtaList},
-    daemon::ca::ta_handle,
-    test::*,
-};
+use krill::{commons::api::RtaList, daemon::ca::ta_handle, test::*};
+use rpki::repository::resources::ResourceSet;
 
 #[tokio::test]
 async fn functional_rtas() {
@@ -32,12 +29,12 @@ async fn functional_rtas() {
     info("");
 
     let ta = ta_handle();
-    let testbed = handle("testbed");
+    let testbed = ca_handle("testbed");
 
-    let ca1 = handle("CA1");
+    let ca1 = ca_handle("CA1");
     let ca1_res = resources("", "10.0.0.0/16", "");
 
-    let ca2 = handle("CA2");
+    let ca2 = ca_handle("CA2");
     let ca2_res = resources("", "10.1.0.0/16", "");
 
     let rcn_0 = rcn(0);
@@ -50,7 +47,7 @@ async fn functional_rtas() {
     info("#                                                                #");
     info("##################################################################");
     info("");
-    assert!(ca_contains_resources(&testbed, &ResourceSet::all_resources()).await);
+    assert!(ca_contains_resources(&testbed, &ResourceSet::all()).await);
 
     // Verify that the TA published expected objects
     {

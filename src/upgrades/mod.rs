@@ -4,13 +4,13 @@
 
 use std::{fmt, path::Path, str::FromStr, sync::Arc, time::Duration};
 
-use rpki::repository::x509::Time;
 use serde::de::DeserializeOwned;
+
+use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
 
 use crate::{
     commons::{
-        api::Handle,
-        crypto::{KrillSigner, KrillSignerBuilder},
+        crypto::KrillSignerBuilder,
         error::{Error, KrillIoError},
         eventsourcing::{AggregateStoreError, CommandKey, KeyStoreKey, KeyValueError, KeyValueStore, StoredValueInfo},
         util::{file, KrillVersion},
@@ -26,7 +26,10 @@ use crate::{
 use rpki::repository::crypto::KeyIdentifier;
 
 #[cfg(feature = "hsm")]
-use crate::constants::{KEYS_DIR, SIGNERS_DIR};
+use crate::{
+    commons::crypto::SignerHandle,
+    constants::{KEYS_DIR, SIGNERS_DIR},
+};
 
 pub mod v0_9_0;
 
@@ -97,7 +100,7 @@ pub enum PrepareUpgradeError {
     KeyStoreError(KeyValueError),
     IoError(KrillIoError),
     Unrecognised(String),
-    CannotLoadAggregate(Handle),
+    CannotLoadAggregate(MyHandle),
     Custom(String),
 }
 
@@ -294,7 +297,7 @@ pub trait UpgradeStore {
 /// started, it will call this again - to do the final preparation for a migration -
 /// knowing that no changes are added to the event history at this time. After this,
 /// the migration will be finalised.
-pub async fn prepare_upgrade_data_migrations(
+pub fn prepare_upgrade_data_migrations(
     mode: UpgradeMode,
     config: Arc<Config>,
 ) -> UpgradeResult<Option<UpgradeReport>> {
@@ -422,16 +425,6 @@ pub fn finalise_data_migration(upgrade: &UpgradeVersions, config: &Config) -> Kr
     Ok(())
 }
 
-// /// Should be called when Krill starts, before the KrillServer is initiated
-// pub fn pre_start_upgrade(config: Arc<Config>) -> Result<(), UpgradeError> {
-//     upgrade_data_to_0_9_0(config.clone())?;
-
-//     #[cfg(feature = "hsm")]
-//     record_preexisting_openssl_keys_in_signer_mapper(config.clone())?;
-
-//     Ok(())
-// }
-
 /// Prior to Krill having HSM support there was no signer mapper as it wasn't needed, keys were just created by OpenSSL
 /// and stored in files on disk in KEYS_DIR named by the string form of their Krill KeyIdentifier. If Krill had created
 /// such keys and then the operator upgrades to a version of Krill with HSM support, the keys will become unusable
@@ -459,11 +452,11 @@ fn record_preexisting_openssl_keys_in_signer_mapper(config: Arc<Config>) -> Resu
 
         // For every file (key) in the legacy OpenSSL signer keys directory
         if let Ok(dir_iter) = keys_dir.read_dir() {
-            let mut openssl_signer_handle: Option<Handle> = None;
+            let mut openssl_signer_handle: Option<SignerHandle> = None;
 
             for entry in dir_iter {
                 let entry = entry.map_err(|err| {
-                    UpgradeError::IoError(KrillIoError::new(
+                    PrepareUpgradeError::IoError(KrillIoError::new(
                         format!(
                             "I/O error while looking for signer keys to register in: {}",
                             keys_dir.to_string_lossy()
@@ -578,7 +571,7 @@ mod tests {
     use std::{fs, path::PathBuf};
 
     use crate::commons::util::file;
-    use crate::test::{init_config, tmp_dir};
+    use crate::test::tmp_dir;
 
     use super::*;
 
@@ -590,13 +583,11 @@ mod tests {
         let _ = config.init_logging();
 
         let _upgrade = prepare_upgrade_data_migrations(UpgradeMode::PrepareOnly, Arc::new(config.clone()))
-            .await
             .unwrap()
             .unwrap();
 
         // and continue - immediately, but still tests that this can pick up again.
         let report = prepare_upgrade_data_migrations(UpgradeMode::PrepareToFinalise, Arc::new(config.clone()))
-            .await
             .unwrap()
             .unwrap();
 
@@ -633,7 +624,6 @@ mod tests {
         let _ = config.init_logging();
 
         let report = prepare_upgrade_data_migrations(UpgradeMode::PrepareToFinalise, config.clone())
-            .await
             .unwrap()
             .unwrap();
 
@@ -686,12 +676,6 @@ mod tests {
             // Verify that the mapper does NOT have a record of the test key belonging to the signer
             assert!(mapper.get_signer_for_key(&expected_key_id).is_err());
         }
-        let report = prepare_upgrade_data_migrations(UpgradeMode::PrepareToFinalise, config.clone())
-            .await
-            .unwrap()
-            .unwrap();
-
-        finalise_data_migration(report.versions(), &config).unwrap();
 
         let _ = fs::remove_dir_all(work_dir);
     }

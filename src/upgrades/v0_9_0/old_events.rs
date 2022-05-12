@@ -6,25 +6,31 @@ use std::{
 };
 
 use rpki::{
+    ca::{
+        idcert::IdCert,
+        idexchange,
+        idexchange::{CaHandle, ChildHandle, ParentHandle, PublisherHandle, RepoInfo},
+        provisioning::{IssuanceRequest, ResourceClassName, RevocationRequest},
+        publication::Base64,
+    },
     repository::{
         crypto::KeyIdentifier,
+        resources::ResourceSet,
         roa::Roa,
         x509::{Serial, Time},
     },
+    rrdp::Hash,
     uri,
 };
 
 use crate::{
     commons::{
+        api::rrdp::{CurrentObjects, DeltaElements, PublishElement, RrdpSession},
         api::{
-            rrdp::{CurrentObjects, DeltaElements, PublishElement, RrdpSession},
-            Base64, ChildHandle, Handle, HexEncodedHash, IssuanceRequest, IssuedCert, ObjectName, ParentCaContact,
-            ParentHandle, PublisherHandle, RcvdCert, RepoInfo, RepositoryContact, ResourceClassName, ResourceSet,
-            RevocationRequest, RevocationsDelta, RevokedObject, RoaAggregateKey, RtaName, TaCertDetails,
+            DelegatedCertificate, ObjectName, ParentCaContact, RcvdCert, RepositoryContact, RevocationsDelta,
+            RevokedObject, RoaAggregateKey, RtaName, TaCertDetails,
         },
-        crypto::IdCert,
         eventsourcing::StoredEvent,
-        remote::rfc8183,
     },
     daemon::ca::{self, CaEvt, CaEvtDet, PreparedRta, RouteAuthorization, SignedRta},
     pubd::{
@@ -86,8 +92,8 @@ impl From<OldPubdIniDet> for RepositoryAccessInitDetails {
 }
 
 pub struct DerivedEmbeddedCaMigrationInfo {
-    pub child_request: rfc8183::ChildRequest,
-    pub parent_responses: HashMap<ChildHandle, rfc8183::ParentResponse>,
+    pub child_request: idexchange::ChildRequest,
+    pub parent_responses: HashMap<ChildHandle, idexchange::ParentResponse>,
 }
 
 impl OldCaEvt {
@@ -95,7 +101,7 @@ impl OldCaEvt {
         self,
         version: u64,
         repo_manager: &RepositoryManager,
-        derived_embedded_ca_info_map: &HashMap<Handle, DerivedEmbeddedCaMigrationInfo>,
+        derived_embedded_ca_info_map: &HashMap<CaHandle, DerivedEmbeddedCaMigrationInfo>,
     ) -> Result<CaEvt, PrepareUpgradeError> {
         let (id, _, details) = self.unpack();
 
@@ -104,7 +110,7 @@ impl OldCaEvt {
                 let contact = match contact {
                     OldRepositoryContact::Rfc8181(res) => RepositoryContact::new(res),
                     OldRepositoryContact::Embedded(_) => {
-                        let res = repo_manager.repository_response(&id)?;
+                        let res = repo_manager.repository_response(&id.convert())?;
                         RepositoryContact::new(res)
                     }
                 };
@@ -114,9 +120,9 @@ impl OldCaEvt {
                 let contact = match old_contact {
                     OldParentCaContact::Rfc6492(res) => ParentCaContact::for_rfc6492(res),
                     OldParentCaContact::Ta(details) => ParentCaContact::Ta(details),
-                    OldParentCaContact::Embedded => match derived_embedded_ca_info_map.get(&parent) {
+                    OldParentCaContact::Embedded => match derived_embedded_ca_info_map.get(&parent.convert()) {
                         Some(info) => {
-                            let res = info.parent_responses.get(&id).ok_or_else(|| PrepareUpgradeError::Custom(
+                            let res = info.parent_responses.get(&id.convert()).ok_or_else(|| PrepareUpgradeError::Custom(
                                 format!("Cannot upgrade CA '{}' using embedded parent '{}' which no longer has this CA as a child", id, parent)))?;
                             ParentCaContact::for_rfc6492(res.clone())
                         }
@@ -136,7 +142,7 @@ impl OldCaEvt {
                 let id_cert = match id_cert_opt {
                     Some(id_cert) => id_cert,
                     None => {
-                        let child_info = derived_embedded_ca_info_map.get(&child).ok_or_else(|| {
+                        let child_info = derived_embedded_ca_info_map.get(&child.convert()).ok_or_else(|| {
                             PrepareUpgradeError::Custom(format!(
                                 "Cannot upgrade CA {}, embedded child {} is no longer present",
                                 id, child
@@ -330,7 +336,7 @@ impl fmt::Display for OldCaEvtDet {
 /// Describes an update to the set of ROAs under a ResourceClass.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldChildCertificateUpdates {
-    issued: Vec<IssuedCert>,
+    issued: Vec<DelegatedCertificate>,
     removed: Vec<KeyIdentifier>,
 }
 
@@ -341,7 +347,7 @@ impl From<OldChildCertificateUpdates> for ca::ChildCertificateUpdates {
 }
 
 impl OldChildCertificateUpdates {
-    pub fn unpack(self) -> (Vec<IssuedCert>, Vec<KeyIdentifier>) {
+    pub fn unpack(self) -> (Vec<DelegatedCertificate>, Vec<KeyIdentifier>) {
         (self.issued, self.removed)
     }
 }
@@ -364,13 +370,13 @@ pub struct AddedObject {
 pub struct UpdatedObject {
     name: ObjectName,
     object: CurrentObject,
-    old: HexEncodedHash,
+    old: Hash,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WithdrawnObject {
     name: ObjectName,
-    hash: HexEncodedHash,
+    hash: Hash,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -557,24 +563,24 @@ impl From<OldPublisher> for Publisher {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct OldCurrentObjects(HashMap<HexEncodedHash, PublishElement>);
+pub struct OldCurrentObjects(HashMap<Hash, PublishElement>);
 
 impl OldCurrentObjects {
-    pub fn new(map: HashMap<HexEncodedHash, PublishElement>) -> Self {
+    pub fn new(map: HashMap<Hash, PublishElement>) -> Self {
         OldCurrentObjects(map)
     }
     pub fn apply_delta(&mut self, delta: DeltaElements) {
         let (publishes, updates, withdraws) = delta.unpack();
 
         for p in publishes {
-            let hash = p.base64().to_encoded_hash();
+            let hash = p.base64().to_hash();
             self.0.insert(hash, p);
         }
 
         for u in updates {
             self.0.remove(u.hash());
             let p: PublishElement = u.into();
-            let hash = p.base64().to_encoded_hash();
+            let hash = p.base64().to_hash();
             self.0.insert(hash, p);
         }
 
@@ -610,8 +616,9 @@ mod tests {
     use super::OldCaEvt;
 
     #[test]
+    #[ignore = "see issue #819"]
     fn convert_old_child_certificates_updated() {
         let json = include_str!("../../../test-resources/migrations/delta-26.json");
-        let old_evt: OldCaEvt = serde_json::from_str(json).unwrap();
+        let _old_evt: OldCaEvt = serde_json::from_str(json).unwrap();
     }
 }

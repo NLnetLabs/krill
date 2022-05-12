@@ -8,17 +8,18 @@ use std::{
 
 use chrono::Duration;
 use rpki::{
+    ca::{
+        idcert::IdCert,
+        idexchange::{MyHandle, PublisherHandle},
+    },
     repository::{crypto::KeyIdentifier, x509::Time},
+    rrdp::Hash,
     uri,
 };
 
 use crate::{
     commons::{
-        api::{
-            rrdp::{Delta, Notification, PublishElement, RrdpSession, Snapshot, SnapshotRef},
-            Handle, HexEncodedHash, PublisherHandle, RepositoryHandle,
-        },
-        crypto::IdCert,
+        api::rrdp::{Delta, Notification, PublishElement, RrdpSession, Snapshot, SnapshotRef},
         eventsourcing::{
             Aggregate, AggregateStore, CommandKey, KeyStoreKey, KeyValueStore, StoredEvent, StoredValueInfo,
         },
@@ -42,8 +43,8 @@ use crate::{
 pub struct PubdObjectsMigration;
 
 impl PubdObjectsMigration {
-    fn repository_handle() -> RepositoryHandle {
-        Handle::from_str(PUBSERVER_DFLT).unwrap()
+    fn repository_handle() -> MyHandle {
+        MyHandle::from_str(PUBSERVER_DFLT).unwrap()
     }
 
     pub fn prepare(mode: UpgradeMode, config: Arc<Config>) -> UpgradeResult<()> {
@@ -127,7 +128,7 @@ impl UpgradeStore for PubdStoreMigration {
 
         // we only have 1 pubserver '0'
         let scope = "0";
-        let handle = Handle::from_str(scope).unwrap(); // "0" is always safe
+        let handle = MyHandle::from_str(scope).unwrap(); // "0" is always safe
 
         // Get the info from the current store to see where we are
         let mut data_upgrade_info = self.data_upgrade_info(scope)?;
@@ -319,7 +320,7 @@ impl UpgradeStore for PubdStoreMigration {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct OldRepository {
     // Event sourcing support
-    handle: Handle,
+    handle: MyHandle,
     version: u64,
 
     id_cert: IdCert,
@@ -455,7 +456,7 @@ impl OldRrdpServer {
         let serial = RRDP_FIRST_SERIAL;
         let snapshot_uri = Self::new_snapshot_uri(&rrdp_base_uri, &session, serial);
         let snapshot_path = Self::new_snapshot_path(&rrdp_base_dir, &session, serial);
-        let snapshot_hash = HexEncodedHash::from_content(snapshot.xml().as_slice());
+        let snapshot_hash = Hash::from_data(snapshot.xml().as_slice());
 
         let snapshot_ref = SnapshotRef::new(snapshot_uri, snapshot_path, snapshot_hash);
 
@@ -592,10 +593,10 @@ impl From<Snapshot> for OldSnapshot {
     fn from(snap: Snapshot) -> Self {
         let (session, serial, current_objects) = snap.unpack();
 
-        let map: HashMap<HexEncodedHash, PublishElement> = current_objects
+        let map: HashMap<Hash, PublishElement> = current_objects
             .elements()
             .into_iter()
-            .map(|p| (p.base64().to_encoded_hash(), p.clone()))
+            .map(|p| (p.base64().to_hash(), p.clone()))
             .collect();
 
         let current_objects = OldCurrentObjects::new(map);

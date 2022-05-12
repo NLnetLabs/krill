@@ -18,24 +18,23 @@ use cryptoki::{
     session::UserType,
     slot::{Slot, SlotInfo, TokenInfo},
 };
-use rpki::repository::crypto::{
-    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError,
+
+use rpki::{
+    repository::crypto::signer::KeyError,
+    repository::crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError},
 };
 
-use crate::commons::{
-    api::Handle,
-    crypto::{
-        dispatch::signerinfo::SignerMapper,
-        signers::{
-            pkcs11::{
-                context::{Pkcs11Context, ThreadSafePkcs11Context},
-                session::Pkcs11Session,
-            },
-            probe::{ProbeError, ProbeStatus, StatefulProbe},
-            util,
+use crate::commons::crypto::{
+    dispatch::signerinfo::SignerMapper,
+    signers::{
+        pkcs11::{
+            context::{Pkcs11Context, ThreadSafePkcs11Context},
+            session::Pkcs11Session,
         },
-        SignerError,
+        probe::{ProbeError, ProbeStatus, StatefulProbe},
+        util,
     },
+    SignerError, SignerHandle,
 };
 
 //------------ Types and constants ------------------------------------------------------------------------------------
@@ -165,7 +164,7 @@ impl TryFrom<&Pkcs11SignerConfig> for ConnectionSettings {
 pub struct Pkcs11Signer {
     name: String,
 
-    handle: RwLock<Option<Handle>>,
+    handle: RwLock<Option<SignerHandle>>,
 
     mapper: Arc<SignerMapper>,
 
@@ -195,7 +194,7 @@ impl Pkcs11Signer {
         // that "Note that exactly one call to C_Initialize should be made for each application (as opposed to one call
         // for every thread, for example)". At least, for the same PKCS#11 library that is. If two instances of
         // Pkcs11Signer each use a different PKCS#11 library, e.g. one uses the SoftHSMv2 library and the other uses the
-        // AWS CloudHSM library, presumably they both need initlaizing within the same instance of the Krill
+        // AWS CloudHSM library, presumably they both need initializing within the same instance of the Krill
         // "application".
 
         let server = Arc::new(StatefulProbe::new(
@@ -218,7 +217,7 @@ impl Pkcs11Signer {
         &self.name
     }
 
-    pub fn set_handle(&self, handle: crate::commons::api::Handle) {
+    pub fn set_handle(&self, handle: SignerHandle) {
         let mut writable_handle = self.handle.write().unwrap();
         if writable_handle.is_some() {
             panic!("Cannot set signer handle as handle is already set");

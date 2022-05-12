@@ -2,22 +2,26 @@ use std::{collections::BTreeMap, fmt, str::FromStr};
 
 use chrono::{DateTime, NaiveDateTime, SecondsFormat, Utc};
 
-use rpki::repository::{crypto::KeyIdentifier, x509::Time};
+use rpki::{
+    ca::{
+        idexchange::{ChildHandle, MyHandle, ParentHandle, PublisherHandle, ServiceUri},
+        provisioning::{RequestResourceLimit, ResourceClassName, RevocationRequest},
+    },
+    repository::{crypto::KeyIdentifier, resources::ResourceSet, x509::Time},
+};
 
 use crate::{
     commons::{
         api::{
-            ArgKey, ArgVal, AspaCustomer, AspaProvidersUpdate, ChildHandle, Handle, Label, Message, ParentHandle,
-            PublisherHandle, RequestResourceLimit, ResourceClassName, ResourceSet, RevocationRequest,
-            RoaDefinitionUpdates, RtaName, StorableParentContact,
+            ArgKey, ArgVal, AspaCustomer, AspaProvidersUpdate, Label, Message, RoaDefinitionUpdates, RtaName,
+            StorableParentContact,
         },
         eventsourcing::{CommandKey, CommandKeyError, StoredCommand, WithStorableDetails},
-        remote::rfc8183::ServiceUri,
     },
     daemon::ca::{self, DropReason},
 };
 
-use super::AspaDefinitionUpdates;
+use super::{AspaDefinitionUpdates, ResourceSetSummary};
 
 //------------ CaCommandDetails ----------------------------------------------
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -55,7 +59,7 @@ impl fmt::Display for CaCommandDetails {
             CaCommandResult::Events(events) => {
                 writeln!(f, "Changes:")?;
                 for evt in events {
-                    writeln!(f, "  {}", evt.details().to_string())?;
+                    writeln!(f, "  {}", evt.details())?;
                 }
             }
         }
@@ -143,7 +147,7 @@ pub struct CommandHistoryRecord {
     pub key: String,
     pub actor: String,
     pub timestamp: i64,
-    pub handle: Handle,
+    pub handle: MyHandle,
     pub version: u64,
     pub sequence: u64,
     pub summary: CommandSummary,
@@ -241,7 +245,7 @@ impl CommandSummary {
     }
 
     pub fn with_resources(self, resources: &ResourceSet) -> Self {
-        let summary = resources.summary();
+        let summary = ResourceSetSummary::from(resources);
         self.with_arg("resources", resources)
             .with_arg("asn_blocks", summary.asn_blocks())
             .with_arg("ipv4_blocks", summary.ipv4_blocks())
@@ -252,7 +256,7 @@ impl CommandSummary {
         self.with_arg("class_name", rcn)
     }
 
-    pub fn with_key(self, ki: &KeyIdentifier) -> Self {
+    pub fn with_key(self, ki: KeyIdentifier) -> Self {
         self.with_arg("key", ki)
     }
 
@@ -528,7 +532,7 @@ impl WithStorableDetails for StorableCaCommand {
             } => CommandSummary::new("cmd-ca-child-certify", &self)
                 .with_child(child)
                 .with_rcn(resource_class_name)
-                .with_key(ki),
+                .with_key(*ki),
             StorableCaCommand::ChildRemove { child } => {
                 CommandSummary::new("cmd-ca-child-remove", &self).with_child(child)
             }
@@ -627,15 +631,17 @@ impl fmt::Display for StorableCaCommand {
             // ------------------------------------------------------------
             // Being a parent
             // ------------------------------------------------------------
-            StorableCaCommand::ChildAdd { child, ski, resources } => write!(
-                f,
-                "Add child '{}' with RFC8183 key '{}' and resources '{}'",
-                child,
-                ski,
-                resources.summary()
-            ),
+            StorableCaCommand::ChildAdd { child, ski, resources } => {
+                let summary = ResourceSetSummary::from(resources);
+                write!(
+                    f,
+                    "Add child '{}' with RFC8183 key '{}' and resources '{}'",
+                    child, ski, summary
+                )
+            }
             StorableCaCommand::ChildUpdateResources { child, resources } => {
-                write!(f, "Update resources for child '{}' to: {}", child, resources.summary())
+                let summary = ResourceSetSummary::from(resources);
+                write!(f, "Update resources for child '{}' to: {}", child, summary)
             }
             StorableCaCommand::ChildUpdateId { child, ski } => {
                 write!(f, "Update child '{}' RFC 8183 key '{}'", child, ski)
@@ -686,12 +692,14 @@ impl fmt::Display for StorableCaCommand {
             StorableCaCommand::UpdateRcvdCert {
                 resource_class_name,
                 resources,
-            } => write!(
-                f,
-                "Update received cert in RC '{}', with resources '{}'",
-                resource_class_name,
-                resources.summary()
-            ),
+            } => {
+                let summary = ResourceSetSummary::from(resources);
+                write!(
+                    f,
+                    "Update received cert in RC '{}', with resources '{}'",
+                    resource_class_name, summary
+                )
+            }
             StorableCaCommand::DropResourceClass {
                 resource_class_name,
                 reason,

@@ -14,11 +14,11 @@ use serde::{de, Deserialize, Deserializer};
 #[cfg(unix)]
 use syslog::Facility;
 
-use rpki::{repository::x509::Time, uri};
+use rpki::{ca::idexchange::PublisherHandle, repository::x509::Time, uri};
 
 use crate::{
     commons::{
-        api::{PublicationServerUris, PublisherHandle, Token},
+        api::{PublicationServerUris, Token},
         crypto::OpenSslSignerConfig,
         error::KrillIoError,
         util::ext_serde,
@@ -245,10 +245,10 @@ impl ConfigDefaults {
                 max_connections: KmipSignerConfig::default_max_connections(),
                 max_response_bytes: KmipSignerConfig::default_max_response_bytes(),
             };
-            vec![SignerConfig::new(
+            return vec![SignerConfig::new(
                 DEFAULT_KMIP_SIGNER_NAME.to_string(),
                 SignerType::Kmip(signer_config),
-            )]
+            )];
         }
 
         #[cfg(feature = "hsm-tests-pkcs11")]
@@ -324,9 +324,14 @@ impl SignerReference {
     }
 
     pub fn is_named(&self) -> bool {
+        matches!(self, SignerReference::Name(Some(_)))
+    }
+
+    pub fn is_set(&self) -> bool {
         match self {
+            SignerReference::Name(None) => false,
             SignerReference::Name(Some(_)) => true,
-            _ => false,
+            SignerReference::Index(_) => true,
         }
     }
 }
@@ -1019,14 +1024,14 @@ impl Config {
     fn add_openssl_signer(&mut self, name: &str) -> usize {
         let signer_config = SignerConfig::new(name.to_string(), SignerType::OpenSsl(OpenSslSignerConfig::default()));
         self.signers.push(signer_config);
-        let idx = self.signers.len() - 1;
-        idx
+        self.signers.len() - 1
     }
 
     fn find_signer_reference(&self, signer_ref: &SignerReference) -> Option<usize> {
-        match signer_ref.is_named() {
-            true => self.signers.iter().position(|s| &s.name == signer_ref.name()),
-            false => None,
+        match signer_ref {
+            SignerReference::Name(None) => None,
+            SignerReference::Name(Some(name)) => self.signers.iter().position(|s| &s.name == name),
+            SignerReference::Index(idx) => Some(*idx),
         }
     }
 
@@ -1155,7 +1160,7 @@ impl Config {
             }
         }
 
-        if self.signers.len() > 1 && !self.default_signer.is_named() {
+        if self.signers.len() > 1 && !self.default_signer.is_set() {
             return Err(ConfigError::other(
                 "'default_signer' must be set when more than one [[signers]] configuration is defined",
             ));
@@ -1171,13 +1176,11 @@ impl Config {
         } else {
         }
 
-        if self.one_off_signer.is_named() {
-            if self.find_signer_reference(&self.one_off_signer).is_none() {
-                return Err(ConfigError::other(&format!(
-                    "'{}' cannot be used as the 'one_off_signer' as no signer with that name is defined",
-                    self.one_off_signer.name()
-                )));
-            }
+        if self.one_off_signer.is_named() && self.find_signer_reference(&self.one_off_signer).is_none() {
+            return Err(ConfigError::other(&format!(
+                "'{}' cannot be used as the 'one_off_signer' as no signer with that name is defined",
+                self.one_off_signer.name()
+            )));
         }
 
         Ok(())

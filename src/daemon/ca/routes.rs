@@ -4,6 +4,7 @@ use chrono::Duration;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 use rpki::repository::{
+    resources::ResourceSet,
     roa::{Roa, RoaBuilder},
     sigobj::SignedObjectBuilder,
     x509::Time,
@@ -11,7 +12,7 @@ use rpki::repository::{
 
 use crate::{
     commons::{
-        api::{ObjectName, ResourceSet, RoaAggregateKey, RoaDefinition, RoaDefinitionUpdates},
+        api::{ObjectName, RoaAggregateKey, RoaDefinition, RoaDefinitionUpdates},
         crypto::{KrillSigner, SignSupport},
         error::Error,
         KrillResult,
@@ -112,19 +113,10 @@ impl From<RouteAuthorization> for RoaDefinition {
 //------------ RouteAuthorizationUpdates -----------------------------------
 
 ///
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RouteAuthorizationUpdates {
     added: Vec<RouteAuthorization>,
     removed: Vec<RouteAuthorization>,
-}
-
-impl Default for RouteAuthorizationUpdates {
-    fn default() -> Self {
-        RouteAuthorizationUpdates {
-            added: vec![],
-            removed: vec![],
-        }
-    }
 }
 
 impl RouteAuthorizationUpdates {
@@ -402,22 +394,13 @@ enum RoaMode {
 //------------ Roas --------------------------------------------------------
 
 /// ROAs held by a resource class in a CA.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Roas {
     #[serde(alias = "inner", skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
     simple: HashMap<RouteAuthorization, RoaInfo>,
 
     #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
     aggregate: HashMap<RoaAggregateKey, AggregateRoaInfo>,
-}
-
-impl Default for Roas {
-    fn default() -> Self {
-        Roas {
-            simple: HashMap::new(),
-            aggregate: HashMap::new(),
-        }
-    }
 }
 
 impl Roas {

@@ -11,9 +11,15 @@ async fn multi_user_config_file_with_ta_test() {
         str::FromStr,
     };
 
-    use krill::cli::options::{CaCommand, Command, HistoryOptions};
-    use krill::commons::api::Handle;
-    use krill::{cli::report::ApiResponse, test::*};
+    use rpki::ca::idexchange::Handle;
+
+    use krill::{
+        cli::{
+            options::{CaCommand, Command, HistoryOptions},
+            report::ApiResponse,
+        },
+        test::*,
+    };
 
     ui::run_krill_ui_test(
         "multi_user_config_file_with_ta",

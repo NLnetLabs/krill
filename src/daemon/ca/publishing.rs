@@ -12,22 +12,25 @@ use std::{
 use bytes::Bytes;
 use chrono::Duration;
 
-use rpki::repository::{
-    aspa::Aspa,
-    cert::Cert,
-    crl::{Crl, TbsCertList},
-    crypto::{DigestAlgorithm, KeyIdentifier, PublicKey},
-    manifest::{FileAndHash, Manifest, ManifestContent},
-    roa::Roa,
-    sigobj::SignedObjectBuilder,
-    x509::{Name, Serial, Time, Validity},
+use rpki::{
+    ca::{idexchange::CaHandle, provisioning::ResourceClassName, publication::Base64},
+    repository::{
+        aspa::Aspa,
+        cert::Cert,
+        crl::{Crl, TbsCertList},
+        crypto::{DigestAlgorithm, PublicKey},
+        manifest::{FileAndHash, Manifest, ManifestContent},
+        roa::Roa,
+        sigobj::SignedObjectBuilder,
+        x509::{Name, Serial, Time, Validity},
+    },
 };
 
 use crate::{
     commons::{
         api::{
-            rrdp::PublishElement, Base64, Handle, IssuedCert, ObjectName, RcvdCert, RepositoryContact,
-            ResourceClassName, Revocation, Revocations, Timestamp,
+            rrdp::PublishElement, DelegatedCertificate, ObjectName, RcvdCert, RepositoryContact, Revocation,
+            Revocations, Timestamp,
         },
         crypto::KrillSigner,
         error::Error,
@@ -152,11 +155,11 @@ impl PreSaveEventListener<CertAuth> for CaObjectsStore {
 }
 
 impl CaObjectsStore {
-    fn key(ca: &Handle) -> KeyStoreKey {
+    fn key(ca: &CaHandle) -> KeyStoreKey {
         KeyStoreKey::simple(format!("{}.json", ca))
     }
 
-    fn cas(&self) -> KrillResult<Vec<Handle>> {
+    fn cas(&self) -> KrillResult<Vec<CaHandle>> {
         let cas = self
             .store
             .read()
@@ -167,7 +170,7 @@ impl CaObjectsStore {
                 // Only add entries that end with .json AND for which the first part can be parsed as a handle
                 let mut res = None;
                 if let Some(name) = k.name().strip_suffix(".json") {
-                    if let Ok(handle) = Handle::from_str(name) {
+                    if let Ok(handle) = CaHandle::from_str(name) {
                         res = Some(handle)
                     }
                 }
@@ -178,7 +181,7 @@ impl CaObjectsStore {
     }
 
     /// Get objects for this CA, create a new empty CaObjects if there is none.
-    pub fn ca_objects(&self, ca: &Handle) -> KrillResult<CaObjects> {
+    pub fn ca_objects(&self, ca: &CaHandle) -> KrillResult<CaObjects> {
         let key = Self::key(ca);
 
         match self.store.read().unwrap().get(&key).map_err(Error::KeyValueError)? {
@@ -193,7 +196,7 @@ impl CaObjectsStore {
     /// Perform an action (closure) on a mutable instance of the CaObjects for a
     /// CA. If the CA did not have any CaObjects yet, one will be created. The
     /// closure is executed within a write lock.
-    pub fn with_ca_objects<F>(&self, ca: &Handle, op: F) -> KrillResult<()>
+    pub fn with_ca_objects<F>(&self, ca: &CaHandle, op: F) -> KrillResult<()>
     where
         F: FnOnce(&mut CaObjects) -> KrillResult<()>,
     {
@@ -213,7 +216,7 @@ impl CaObjectsStore {
         Ok(())
     }
 
-    pub fn put_ca_objects(&self, ca: &Handle, objects: &CaObjects) -> KrillResult<()> {
+    pub fn put_ca_objects(&self, ca: &CaHandle, objects: &CaObjects) -> KrillResult<()> {
         self.store
             .write()
             .unwrap()
@@ -222,7 +225,7 @@ impl CaObjectsStore {
     }
 
     // Re-issue MFT and CRL for all CAs *if needed*, returns all CAs which were updated.
-    pub fn reissue_all(&self) -> KrillResult<Vec<Handle>> {
+    pub fn reissue_all(&self) -> KrillResult<Vec<CaHandle>> {
         let mut res = vec![];
         for ca in self.cas()? {
             self.with_ca_objects(&ca, |objects| {
@@ -238,7 +241,7 @@ impl CaObjectsStore {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CaObjects {
-    ca: Handle,
+    ca: CaHandle,
     repo: Option<RepositoryContact>,
 
     #[serde(with = "ca_objects_classes_serde")]
@@ -326,7 +329,7 @@ mod ca_objects_classes_serde {
 
 impl CaObjects {
     pub fn new(
-        ca: Handle,
+        ca: CaHandle,
         repo: Option<RepositoryContact>,
         classes: HashMap<ResourceClassName, ResourceClassObjects>,
     ) -> Self {
@@ -421,12 +424,7 @@ impl CaObjects {
     }
 
     fn remove_class(&mut self, class_name: &ResourceClassName) {
-        let old_repo_opt = self
-            .classes
-            .get(class_name)
-            .map(|rco| rco.old_repo())
-            .flatten()
-            .cloned();
+        let old_repo_opt = self.classes.get(class_name).and_then(|rco| rco.old_repo()).cloned();
 
         self.classes.remove(class_name);
 
@@ -1277,7 +1275,7 @@ impl BasicKeyObjectSet {
 
 //------------ PublishedCert -----------------------------------------------
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct PublishedCert(IssuedCert);
+pub struct PublishedCert(DelegatedCertificate);
 
 impl PublishedCert {
     pub fn to_bytes(&self) -> Bytes {
@@ -1289,8 +1287,8 @@ impl PublishedCert {
     }
 }
 
-impl From<IssuedCert> for PublishedCert {
-    fn from(issued: IssuedCert) -> Self {
+impl From<DelegatedCertificate> for PublishedCert {
+    fn from(issued: DelegatedCertificate) -> Self {
         PublishedCert(issued)
     }
 }
@@ -1302,7 +1300,7 @@ impl From<&PublishedCert> for Revocation {
 }
 
 impl Deref for PublishedCert {
-    type Target = IssuedCert;
+    type Target = DelegatedCertificate;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -1500,7 +1498,7 @@ impl CrlBuilder {
         next_update: Time,
         signer: &KrillSigner,
     ) -> KrillResult<PublishedCrl> {
-        let aki = KeyIdentifier::from_public_key(signing_key);
+        let aki = signing_key.key_identifier();
 
         let this_update = Time::five_minutes_ago();
         let serial_number = Serial::from(number);
@@ -1584,7 +1582,7 @@ impl ManifestBuilder {
         let crl_uri = signing_cert.crl_uri();
 
         let aia = signing_cert.uri();
-        let aki = KeyIdentifier::from_public_key(signing_key);
+        let aki = signing_key.key_identifier();
         let serial_number = Serial::from(number);
 
         let entries = self.entries.iter().map(|(k, v)| FileAndHash::new(k, v));

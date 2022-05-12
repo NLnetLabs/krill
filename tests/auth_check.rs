@@ -1,8 +1,10 @@
 //! Rust integration test to verify that invoking the restricted create CA REST API requires a valid bearer token.
 use std::str::FromStr;
 
+use rpki::ca::idexchange::Handle;
+
 use krill::{
-    commons::api::{Handle, Token},
+    commons::api::Token,
     test::{init_ca, start_krill_with_custom_config, test_config, tmp_dir},
 };
 

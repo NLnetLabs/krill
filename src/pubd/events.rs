@@ -1,15 +1,18 @@
 use std::fmt;
 
-use rpki::{repository::x509::Time, uri};
+use rpki::{
+    ca::{
+        idcert::IdCert,
+        idexchange::{MyHandle, PublisherHandle},
+    },
+    repository::x509::Time,
+    uri,
+};
 
 use crate::{
     commons::{
-        api::{
-            rrdp::{Delta, DeltaElements, Notification, Snapshot},
-            Handle, PublisherHandle,
-        },
-        crypto::{IdCert, IdCertBuilder, KrillSigner},
-        error::Error,
+        api::rrdp::{Delta, DeltaElements, Notification, Snapshot},
+        crypto::KrillSigner,
         eventsourcing::StoredEvent,
         KrillResult,
     },
@@ -43,14 +46,12 @@ impl RepositoryAccessInitDetails {
 
 impl RepositoryAccessInitDetails {
     pub fn init(
-        handle: &Handle,
+        handle: &MyHandle,
         rsync_jail: uri::Rsync,
         rrdp_base_uri: uri::Https,
         signer: &KrillSigner,
     ) -> KrillResult<RepositoryAccessIni> {
-        let key = signer.create_key()?;
-
-        let id_cert = IdCertBuilder::new_ta_id_cert(&key, signer).map_err(Error::signer)?;
+        let id_cert = signer.create_self_signed_id_cert()?;
 
         Ok(StoredEvent::new(
             handle,
@@ -154,19 +155,19 @@ impl fmt::Display for RepositoryAccessEventDetails {
 
 impl RepositoryAccessEventDetails {
     pub(super) fn publisher_added(
-        handle: &Handle,
+        me: &MyHandle,
         version: u64,
         name: PublisherHandle,
         publisher: Publisher,
     ) -> RepositoryAccessEvent {
         StoredEvent::new(
-            handle,
+            me,
             version,
             RepositoryAccessEventDetails::PublisherAdded { name, publisher },
         )
     }
 
-    pub(super) fn publisher_removed(handle: &Handle, version: u64, name: PublisherHandle) -> RepositoryAccessEvent {
-        StoredEvent::new(handle, version, RepositoryAccessEventDetails::PublisherRemoved { name })
+    pub(super) fn publisher_removed(me: &MyHandle, version: u64, name: PublisherHandle) -> RepositoryAccessEvent {
+        StoredEvent::new(me, version, RepositoryAccessEventDetails::PublisherRemoved { name })
     }
 }

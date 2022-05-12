@@ -1603,6 +1603,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3582f63211428f83597b51b2ddb88e2a91a9d52d12831f9d08f5e624e8977422"
 
 [[package]]
+name = "routecore"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe765d4ebcd1b76cdc7b23cbf3f747841861293bc885e47e0fae1095232f1089"
+dependencies = [
+ "bcder",
+ "serde",
+]
+
+[[package]]
 name = "rpassword"
 version = "5.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1614,9 +1624,8 @@ dependencies = [
 
 [[package]]
 name = "rpki"
-version = "0.13.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "40a214169723a938e1984779b8b9c5d4fddce9c3812e786c8a1b5c4a69a96786"
+version = "0.14.3-dev"
+source = "git+https://github.com/NLnetLabs/rpki-rs/#61ce3bf5817d5c62eb38267b4bcdd1a7112d1f38"
 dependencies = [
  "base64",
  "bcder",
@@ -1625,6 +1634,7 @@ dependencies = [
  "log",
  "quick-xml",
  "ring",
+ "routecore",
  "serde",
  "untrusted",
  "uuid",

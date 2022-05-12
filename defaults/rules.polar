@@ -64,7 +64,7 @@ allow(actor: Actor, action: Permission, ca: Handle) if
 # ------------------------------------------------------------------------
 # Attribute values are expected to be comma-separated value strings where each
 # value is a CA handle. Excludes override includes. Excludes exclude one or more
-# CA handles. Includes include one or more CA handls and consequently exclude
+# CA handles. Includes include one or more CA handles and consequently exclude
 # (deny access to) all other CA handles.
 #
 # Define a rule that will fail to deny access for any actor for any CA handle.
@@ -82,7 +82,7 @@ actor_cannot_access_ca(_: Actor, _: Handle) if false;
 #   2bba. The actor does not have an "inc_cas" attribute (i.e. the actor is not
 #         restricted to certain CAs), _OR_
 #   2bbb. The actor has an "inc_cas" attribute which includes the specified CA
-#         handle (i.e. the CA is included in the set the actor is expicitly
+#         handle (i.e. the CA is included in the set the actor is explicitly
 #         given access to).
 actor_can_access_ca(actor: Actor, ca: Handle) if
     # if an inline rule prevents access to the CA stop processing this rule

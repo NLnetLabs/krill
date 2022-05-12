@@ -6,10 +6,16 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use bytes::Bytes;
-
 use rpki::{
+    ca::{
+        idcert::IdCert,
+        idexchange,
+        idexchange::{MyHandle, PublisherHandle, RepoInfo},
+        publication,
+        publication::{ListReply, PublicationCms, PublishDelta},
+    },
     repository::{crypto::KeyIdentifier, x509::Time},
+    rrdp::Hash,
     uri,
 };
 
@@ -19,14 +25,10 @@ use crate::{
         api::rrdp::{
             CurrentObjects, Delta, DeltaElements, DeltaRef, FileRef, Notification, RrdpSession, Snapshot, SnapshotRef,
         },
-        api::{
-            Handle, HexEncodedHash, ListReply, PublicationServerUris, PublishDelta, PublisherHandle, RepoInfo,
-            StorableRepositoryCommand,
-        },
-        crypto::{IdCert, KrillSigner, ProtocolCms, ProtocolCmsBuilder},
+        api::{PublicationServerUris, StorableRepositoryCommand},
+        crypto::KrillSigner,
         error::{Error, KrillIoError},
         eventsourcing::{Aggregate, AggregateStore, KeyStoreKey, KeyValueStore},
-        remote::rfc8183,
         util::file,
         KrillResult,
     },
@@ -296,7 +298,7 @@ impl RepositoryContent {
     }
 
     /// Gets a list reply containing all objects for this publisher.
-    pub fn list_reply(&self, publisher: &Handle) -> KrillResult<ListReply> {
+    pub fn list_reply(&self, publisher: &PublisherHandle) -> KrillResult<ListReply> {
         self.objects_for_publisher(publisher).map(|o| o.to_list_reply())
     }
 
@@ -555,7 +557,7 @@ impl RrdpServer {
         let serial = RRDP_FIRST_SERIAL;
         let snapshot_uri = snapshot.uri(&rrdp_base_uri);
         let snapshot_path = snapshot.path(&rrdp_base_dir);
-        let snapshot_hash = HexEncodedHash::from_content(snapshot.xml().as_slice());
+        let snapshot_hash = Hash::from_data(snapshot.xml().as_slice());
 
         let snapshot_ref = SnapshotRef::new(snapshot_uri, snapshot_path, snapshot_hash);
 
@@ -596,7 +598,7 @@ impl RrdpServer {
 
         let snapshot_uri = snapshot.uri(&self.rrdp_base_uri);
         let snapshot_path = snapshot.path(&self.rrdp_base_dir);
-        let snapshot_hash = HexEncodedHash::from_content(snapshot.xml().as_slice());
+        let snapshot_hash = Hash::from_data(snapshot.xml().as_slice());
 
         let snapshot_ref = SnapshotRef::new(snapshot_uri, snapshot_path, snapshot_hash);
 
@@ -683,7 +685,7 @@ impl RrdpServer {
             let snapshot_uri = self.snapshot.uri(&self.rrdp_base_uri);
             let snapshot_path = self.snapshot.path(&self.rrdp_base_dir);
             let snapshot_xml = self.snapshot.xml();
-            let snapshot_hash = HexEncodedHash::from_content(snapshot_xml.as_slice());
+            let snapshot_hash = Hash::from_data(snapshot_xml.as_slice());
             SnapshotRef::new(snapshot_uri, snapshot_path, snapshot_hash)
         };
 
@@ -693,7 +695,7 @@ impl RrdpServer {
             .map(|delta| {
                 let serial = delta.serial();
                 let xml = delta.xml();
-                let hash = HexEncodedHash::from_content(xml.as_slice());
+                let hash = Hash::from_data(xml.as_slice());
 
                 let delta_uri = delta.uri(&self.rrdp_base_uri);
                 let delta_path = delta.path(&self.rrdp_base_dir);
@@ -933,13 +935,13 @@ impl RrdpServer {
 /// this so that callers don't need to worry about storage details.
 pub struct RepositoryAccessProxy {
     store: AggregateStore<RepositoryAccess>,
-    key: Handle,
+    key: MyHandle,
 }
 
 impl RepositoryAccessProxy {
     pub fn disk(config: &Config) -> KrillResult<Self> {
         let store = AggregateStore::<RepositoryAccess>::disk(&config.data_dir, PUBSERVER_DIR)?;
-        let key = Handle::from_str(PUBSERVER_DFLT).unwrap();
+        let key = MyHandle::from_str(PUBSERVER_DFLT).unwrap();
 
         if store.has(&key)? {
             if config.always_recover_data {
@@ -1003,7 +1005,7 @@ impl RepositoryAccessProxy {
         self.read()?.get_publisher(name).map(|p| p.clone())
     }
 
-    pub fn add_publisher(&self, req: rfc8183::PublisherRequest, actor: &Actor) -> KrillResult<()> {
+    pub fn add_publisher(&self, req: idexchange::PublisherRequest, actor: &Actor) -> KrillResult<()> {
         let base_uri = self.read()?.base_uri_for(req.publisher_handle())?; // will verify that server was initialized
         let cmd = RepoAccessCmdDet::add_publisher(&self.key, req, base_uri, actor);
         self.store.command(cmd)?;
@@ -1030,34 +1032,41 @@ impl RepositoryAccessProxy {
         &self,
         rfc8181_uri: uri::Https,
         publisher: &PublisherHandle,
-    ) -> KrillResult<rfc8183::RepositoryResponse> {
+    ) -> KrillResult<idexchange::RepositoryResponse> {
         self.read()?.repository_response(rfc8181_uri, publisher)
     }
 
     /// Parse submitted bytes by a Publisher as an RFC8181 ProtocolCms object, and validates it.
-    pub fn validate(&self, publisher: &PublisherHandle, msg: Bytes) -> KrillResult<ProtocolCms> {
+    pub fn decode_and_validate(
+        &self,
+        publisher: &PublisherHandle,
+        bytes: &[u8],
+    ) -> KrillResult<publication::PublicationCms> {
         let publisher = self.get_publisher(publisher)?;
-        let msg = ProtocolCms::decode(msg, false).map_err(|e| Error::Rfc8181Decode(e.to_string()))?;
-        msg.validate(publisher.id_cert()).map_err(Error::Rfc8181Validation)?;
+        let msg = PublicationCms::decode(bytes).map_err(Error::Rfc8181)?;
+        msg.validate(publisher.id_cert()).map_err(Error::Rfc8181)?;
         Ok(msg)
     }
 
-    /// Creates and signs an RFC8181 CMS response.
-    pub fn respond(&self, message: Bytes, signer: &KrillSigner) -> KrillResult<Bytes> {
+    // /// Creates and signs an RFC8181 CMS response.
+    pub fn respond(
+        &self,
+        message: publication::Message,
+        signer: &KrillSigner,
+    ) -> KrillResult<publication::PublicationCms> {
         let key_id = self.read()?.key_id();
-        let response_builder = ProtocolCmsBuilder::create(&key_id, signer, message).map_err(Error::signer)?;
-        Ok(response_builder.as_bytes())
+        signer.create_rfc8181_cms(message, &key_id).map_err(Error::signer)
     }
 }
 
 //------------ RepositoryAccess --------------------------------------------
 
-/// An RFC8183 Repository server, capable of handling Publishers (both embedded, and
-/// remote RFC8183), and publishing to RRDP and disk, and signing responses.
+/// An RFC8181 Repository server, capable of handling Publishers (both embedded, and
+/// remote RFC8181), and publishing to RRDP and disk, and signing responses.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RepositoryAccess {
     // Event sourcing support
-    handle: Handle,
+    handle: MyHandle,
     version: u64,
 
     id_cert: IdCert,
@@ -1131,10 +1140,10 @@ impl RepositoryAccess {
     /// Adds a publisher with access to the repository
     fn add_publisher(
         &self,
-        publisher_request: rfc8183::PublisherRequest,
+        publisher_request: idexchange::PublisherRequest,
         base_uri: uri::Rsync,
     ) -> Result<Vec<RepositoryAccessEvent>, Error> {
-        let (_tag, name, id_cert) = publisher_request.unpack();
+        let (id_cert, name, _tag) = publisher_request.unpack();
 
         if self.publishers.contains_key(&name) {
             Err(Error::PublisherDuplicate(name))
@@ -1175,26 +1184,25 @@ impl RepositoryAccess {
     /// Returns the repository URI information for a publisher.
     pub fn repo_info_for(&self, name: &PublisherHandle) -> KrillResult<RepoInfo> {
         let rsync_base = self.base_uri_for(name)?;
-        Ok(RepoInfo::new(rsync_base, self.notification_uri()))
+        Ok(RepoInfo::new(rsync_base, Some(self.notification_uri())))
     }
 
     pub fn repository_response(
         &self,
         rfc8181_uri: uri::Https,
         publisher_handle: &PublisherHandle,
-    ) -> Result<rfc8183::RepositoryResponse, Error> {
+    ) -> Result<idexchange::RepositoryResponse, Error> {
         let publisher = self.get_publisher(publisher_handle)?;
         let rsync_base = publisher.base_uri();
-        let service_uri = rfc8183::ServiceUri::Https(rfc8181_uri);
+        let service_uri = idexchange::ServiceUri::Https(rfc8181_uri);
 
-        let repo_info = RepoInfo::new(rsync_base.clone(), self.notification_uri());
-
-        Ok(rfc8183::RepositoryResponse::new(
-            None,
-            publisher_handle.clone(),
+        Ok(idexchange::RepositoryResponse::new(
             self.id_cert.clone(),
+            publisher_handle.clone(),
             service_uri,
-            repo_info,
+            rsync_base.clone(),
+            Some(self.notification_uri()),
+            None,
         ))
     }
 
@@ -1215,23 +1223,12 @@ impl RepositoryAccess {
 
 //------------ RepoStats -----------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RepoStats {
     publishers: HashMap<PublisherHandle, PublisherStats>,
     session: RrdpSession,
     serial: u64,
     last_update: Option<Time>,
-}
-
-impl Default for RepoStats {
-    fn default() -> Self {
-        RepoStats {
-            publishers: HashMap::new(),
-            session: RrdpSession::default(),
-            serial: 0,
-            last_update: None,
-        }
-    }
 }
 
 impl RepoStats {
@@ -1330,7 +1327,7 @@ impl fmt::Display for RepoStats {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublisherStats {
     objects: usize,
     size: usize,
@@ -1366,16 +1363,6 @@ impl From<&CurrentObjects> for PublisherStats {
         PublisherStats {
             objects: objects.len(),
             size: objects.size(),
-            last_update: None,
-        }
-    }
-}
-
-impl Default for PublisherStats {
-    fn default() -> Self {
-        PublisherStats {
-            objects: 0,
-            size: 0,
             last_update: None,
         }
     }
