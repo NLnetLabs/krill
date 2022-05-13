@@ -3,20 +3,25 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 use chrono::Duration;
 
 use rpki::{
-    repository::{crl::Crl, crypto::KeyIdentifier, manifest::Manifest, x509::Time},
+    ca::{
+        idcert::IdCert,
+        idexchange,
+        idexchange::{CaHandle, ChildHandle, ParentHandle, RepoInfo},
+        provisioning::{IssuanceRequest, ResourceClassName, RevocationRequest},
+    },
+    repository::{crl::Crl, crypto::KeyIdentifier, manifest::Manifest, resources::ResourceSet, x509::Time},
+    rrdp::Hash,
     uri,
 };
 
 use crate::{
     commons::{
         api::{
-            ChildHandle, Handle, HexEncodedHash, IssuanceRequest, IssuedCert, ObjectName, ParentHandle, RcvdCert,
-            RepoInfo, RepositoryContact, ResourceClassName, ResourceSet, Revocation, RevocationRequest, Revocations,
-            RoaAggregateKey, StorableCaCommand, StoredEffect, TaCertDetails,
+            DelegatedCertificate, ObjectName, RcvdCert, RepositoryContact, Revocation, Revocations, RoaAggregateKey,
+            StorableCaCommand, StoredEffect, TaCertDetails,
         },
-        crypto::{IdCert, KrillSigner},
+        crypto::KrillSigner,
         eventsourcing::{Aggregate, AggregateStore, CommandKey, KeyStoreKey, KeyValueStore, StoredValueInfo},
-        remote::rfc8183,
     },
     constants::{CASERVER_DIR, KRILL_VERSION},
     daemon::{
@@ -36,13 +41,16 @@ use crate::{
 pub struct CaObjectsMigration;
 
 impl CaObjectsMigration {
-    pub fn prepare(mode: UpgradeMode, config: Arc<Config>, repo_manager: RepositoryManager) -> UpgradeResult<()> {
+    pub fn prepare(
+        mode: UpgradeMode,
+        config: Arc<Config>,
+        repo_manager: RepositoryManager,
+        signer: Arc<KrillSigner>,
+    ) -> UpgradeResult<()> {
         let repo_manager = Arc::new(repo_manager);
         let current_kv_store = KeyValueStore::disk(&config.data_dir, CASERVER_DIR)?;
         let new_kv_store = KeyValueStore::disk(&config.upgrade_data_dir(), CASERVER_DIR)?;
         let new_agg_store = AggregateStore::<ca::CertAuth>::disk(&config.upgrade_data_dir(), CASERVER_DIR)?;
-
-        let signer = Arc::new(KrillSigner::build(&config.data_dir)?);
 
         info!("Prepare upgraded CA data structures.");
 
@@ -66,7 +74,7 @@ impl CaObjectsMigration {
         config: Arc<Config>,
         repo_manager: Arc<RepositoryManager>,
         signer: Arc<KrillSigner>,
-    ) -> UpgradeResult<HashMap<Handle, DerivedEmbeddedCaMigrationInfo>> {
+    ) -> UpgradeResult<HashMap<CaHandle, DerivedEmbeddedCaMigrationInfo>> {
         // Read all CAS based on snapshots and events, using the pre-0_9_0 data structs
         // which are preserved here.
         info!("Populate the CA Objects Store introduced in Krill 0.9.0");
@@ -96,23 +104,23 @@ impl CaObjectsMigration {
     }
 
     fn derived_embedded_ca_info(ca: Arc<OldCertAuth>, config: &Config) -> DerivedEmbeddedCaMigrationInfo {
-        let service_uri = format!("{}rfc6492/{}", config.service_uri().to_string(), ca.handle);
+        let service_uri = format!("{}rfc6492/{}", config.service_uri(), ca.handle);
         let service_uri = uri::Https::from_string(service_uri).unwrap();
-        let service_uri = rfc8183::ServiceUri::Https(service_uri);
+        let service_uri = idexchange::ServiceUri::Https(service_uri);
 
-        let child_request = rfc8183::ChildRequest::new(ca.handle.clone(), ca.id.cert.clone());
+        let child_request = idexchange::ChildRequest::new(ca.id.cert.clone(), ca.handle.convert());
         let parent_responses = ca
             .children
             .keys()
             .map(|child_handle| {
                 (
                     child_handle.clone(),
-                    rfc8183::ParentResponse::new(
-                        None,
+                    idexchange::ParentResponse::new(
                         ca.id.cert.clone(),
-                        ca.handle.clone(),
+                        ca.handle.convert(),
                         child_handle.clone(),
                         service_uri.clone(),
+                        None,
                     ),
                 )
             })
@@ -131,7 +139,7 @@ struct CasStoreMigration {
     new_kv_store: KeyValueStore,
     new_agg_store: AggregateStore<ca::CertAuth>,
     repo_manager: Arc<RepositoryManager>,
-    derived_embedded_ca_info_map: HashMap<Handle, DerivedEmbeddedCaMigrationInfo>,
+    derived_embedded_ca_info_map: HashMap<CaHandle, DerivedEmbeddedCaMigrationInfo>,
 }
 
 impl UpgradeStore for CasStoreMigration {
@@ -150,7 +158,7 @@ impl UpgradeStore for CasStoreMigration {
         // For each CA:
         for scope in self.current_kv_store.scopes()? {
             // Getting the Handle should never fail, but if it does then we should bail out asap.
-            let handle = Handle::from_str(&scope)
+            let handle = CaHandle::from_str(&scope)
                 .map_err(|_| PrepareUpgradeError::Custom(format!("Found invalid CA handle '{}'", scope)))?;
 
             // Get the info from the current store to see where we are
@@ -196,7 +204,7 @@ impl UpgradeStore for CasStoreMigration {
                         None => Time::now(),
                     };
 
-                    let repo_response = self.repo_manager.repository_response(&id)?;
+                    let repo_response = self.repo_manager.repository_response(&id.convert())?;
 
                     let contact = RepositoryContact::new(repo_response);
                     let service_uri = contact.service_uri().clone();
@@ -406,7 +414,7 @@ impl UpgradeStore for CasStoreMigration {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct OldCertAuth {
-    handle: Handle,
+    handle: CaHandle,
     version: u64,
 
     id: Rfc8183Id, // Used for RFC 6492 (up-down) and RFC 8181 (publication)
@@ -443,7 +451,7 @@ impl Aggregate for OldCertAuth {
 
         if let Some(ta_details) = ta_opt {
             let key_id = ta_details.cert().subject_key_identifier();
-            parents.insert(ta_handle(), OldParentCaContact::Ta(ta_details));
+            parents.insert(ta_handle().into_converted(), OldParentCaContact::Ta(ta_details));
 
             let rcn = ResourceClassName::from(next_class_name);
             next_class_name += 1;
@@ -484,7 +492,8 @@ impl Aggregate for OldCertAuth {
             //-----------------------------------------------------------------------
             OldCaEvtDet::TrustAnchorMade(details) => {
                 let key_id = details.cert().subject_key_identifier();
-                self.parents.insert(ta_handle(), OldParentCaContact::Ta(details));
+                self.parents
+                    .insert(ta_handle().into_converted(), OldParentCaContact::Ta(details));
                 let rcn = ResourceClassName::from(self.next_class_name);
                 self.next_class_name += 1;
                 self.resources
@@ -654,7 +663,7 @@ impl OldCertAuth {
             None => None,
             Some(old) => match old {
                 OldRepositoryContact::Embedded(_) => {
-                    let res = repo_manager.repository_response(&self.handle)?;
+                    let res = repo_manager.repository_response(&self.handle.convert())?;
                     Some(RepositoryContact::new(res))
                 }
                 OldRepositoryContact::Rfc8181(res) => Some(RepositoryContact::new(res.clone())),
@@ -682,7 +691,7 @@ impl From<Rfc8183Id> for ca::Rfc8183Id {
 #[serde(rename_all = "snake_case")]
 pub enum OldRepositoryContact {
     Embedded(RepoInfo),
-    Rfc8181(rfc8183::RepositoryResponse),
+    Rfc8181(idexchange::RepositoryResponse),
 }
 
 impl OldRepositoryContact {
@@ -696,7 +705,7 @@ impl OldRepositoryContact {
 pub enum OldParentCaContact {
     Ta(TaCertDetails),
     Embedded,
-    Rfc6492(rfc8183::ParentResponse),
+    Rfc6492(idexchange::ParentResponse),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -719,7 +728,7 @@ impl OldResourceClass {
         OldResourceClass {
             name: parent_rc_name.clone(),
             name_space: parent_rc_name.to_string(),
-            parent_handle: ta_handle(),
+            parent_handle: ta_handle().into_converted(),
             parent_rc_name,
             roas: OldRoas::default(),
             certificates: OldChildCertificates::default(),
@@ -816,7 +825,7 @@ impl OldResourceClass {
         self.certificates.key_revoked(key);
     }
 
-    pub fn certificate_issued(&mut self, issued: IssuedCert) {
+    pub fn certificate_issued(&mut self, issued: DelegatedCertificate) {
         self.certificates.certificate_issued(issued);
     }
 
@@ -909,22 +918,13 @@ impl OldResourceClass {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldRoas {
     #[serde(alias = "inner", skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
     simple: HashMap<RouteAuthorization, RoaInfo>,
 
     #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
     aggregate: HashMap<RoaAggregateKey, AggregateRoaInfo>,
-}
-
-impl Default for OldRoas {
-    fn default() -> Self {
-        OldRoas {
-            simple: HashMap::new(),
-            aggregate: HashMap::new(),
-        }
-    }
 }
 
 impl OldRoas {
@@ -973,12 +973,12 @@ impl OldRoas {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldReplacedObject {
     revocation: Revocation,
-    hash: HexEncodedHash,
+    hash: Hash,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldChildCertificates {
-    inner: HashMap<KeyIdentifier, IssuedCert>,
+    inner: HashMap<KeyIdentifier, DelegatedCertificate>,
 }
 
 impl OldChildCertificates {
@@ -986,7 +986,7 @@ impl OldChildCertificates {
         self.inner.remove(key);
     }
 
-    pub fn certificate_issued(&mut self, issued: IssuedCert) {
+    pub fn certificate_issued(&mut self, issued: DelegatedCertificate) {
         self.inner.insert(issued.cert().subject_key_identifier(), issued);
     }
 }
@@ -1028,7 +1028,7 @@ pub enum OldLastResponse {
     Revoked,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldRoutes {
     map: HashMap<RouteAuthorization, RouteInfo>,
 }
@@ -1042,12 +1042,6 @@ impl OldRoutes {
     /// Removes an authorization
     pub fn remove(&mut self, auth: &RouteAuthorization) -> bool {
         self.map.remove(auth).is_some()
-    }
-}
-
-impl Default for OldRoutes {
-    fn default() -> Self {
-        OldRoutes { map: HashMap::new() }
     }
 }
 
@@ -1210,12 +1204,12 @@ pub struct OldManifestInfo {
     name: ObjectName,
     current: CurrentObject,
     next_update: Time,
-    old: Option<HexEncodedHash>,
+    old: Option<Hash>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldCrlInfo {
     name: ObjectName, // can be derived from CRL, but keeping in mem saves cpu
     current: CurrentObject,
-    old: Option<HexEncodedHash>,
+    old: Option<Hash>,
 }

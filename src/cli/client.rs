@@ -2,7 +2,7 @@ use std::{env, fmt};
 
 use serde::{de::DeserializeOwned, Serialize};
 
-use rpki::uri;
+use rpki::{ca::idexchange, uri};
 
 use crate::{
     cli::{
@@ -17,7 +17,6 @@ use crate::{
         },
         bgp::BgpAnalysisAdvice,
         error::KrillIoError,
-        remote::rfc8183,
         util::{file, httpclient},
     },
     constants::KRILL_CLI_API_ENV,
@@ -200,7 +199,7 @@ impl KrillClient {
 
             CaCommand::RepoPublisherRequest(handle) => {
                 let uri = format!("api/v1/cas/{}/id/publisher_request.json", handle);
-                let req: rfc8183::PublisherRequest = get_json(&self.server, &self.token, &uri).await?;
+                let req: idexchange::PublisherRequest = get_json(&self.server, &self.token, &uri).await?;
                 Ok(ApiResponse::Rfc8183PublisherRequest(req))
             }
 
@@ -502,6 +501,7 @@ impl KrillClient {
     fn init_config(&self, details: KrillInitDetails) -> Result<ApiResponse, Error> {
         let defaults = include_str!("../../defaults/krill.conf");
         let multi_add_on = include_str!("../../defaults/krill-multi-user.conf");
+        let hsm_add_on = include_str!("../../defaults/krill-hsm.conf");
 
         let mut config = defaults.to_string();
         config = config.replace("### admin_token =", &format!("admin_token = \"{}\"", self.token));
@@ -527,8 +527,13 @@ impl KrillClient {
             config.push_str(multi_add_on);
         }
 
-        let c: Config = toml::from_slice(config.as_ref()).map_err(Error::init)?;
-        c.verify().map_err(Error::init)?;
+        if details.hsm() {
+            config.push_str("\n\n\n");
+            config.push_str(hsm_add_on);
+        }
+
+        let mut c: Config = toml::from_slice(config.as_ref()).map_err(Error::init)?;
+        c.process().map_err(Error::init)?;
 
         Ok(ApiResponse::GenericBody(config))
     }
@@ -617,7 +622,7 @@ pub enum Error {
     ReportError(ReportError),
     IoError(KrillIoError),
     EmptyResponse,
-    Rfc8183(rfc8183::Error),
+    Rfc8183(idexchange::Error),
     InitError(String),
     InputError(String),
 }
@@ -662,8 +667,8 @@ impl From<ReportError> for Error {
     }
 }
 
-impl From<rfc8183::Error> for Error {
-    fn from(e: rfc8183::Error) -> Error {
+impl From<idexchange::Error> for Error {
+    fn from(e: idexchange::Error) -> Error {
         Error::Rfc8183(e)
     }
 }

@@ -3,11 +3,13 @@
 use std::fs;
 use std::str::FromStr;
 
+use rpki::{
+    ca::{idexchange::CaHandle, provisioning::ResourceClassName},
+    repository::resources::ResourceSet,
+};
+
 use krill::{
-    commons::api::{
-        AspaCustomer, AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, Handle, ObjectName, ResourceClassName,
-        ResourceSet,
-    },
+    commons::api::{AspaCustomer, AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, ObjectName},
     daemon::ca::ta_handle,
     test::*,
 };
@@ -15,7 +17,7 @@ use rpki::repository::aspa::ProviderAs;
 
 #[tokio::test]
 async fn functional_aspa() {
-    let krill_dir = start_krill_with_default_test_config(true, false, false).await;
+    let krill_dir = start_krill_with_default_test_config(true, false, false, false).await;
 
     info("##################################################################");
     info("#                                                                #");
@@ -34,8 +36,8 @@ async fn functional_aspa() {
     info("");
 
     let ta = ta_handle();
-    let testbed = handle("testbed");
-    let ca = handle("CA");
+    let testbed = ca_handle("testbed");
+    let ca = ca_handle("CA");
     let ca_res = resources("AS65000", "10.0.0.0/16", "");
 
     let rcn_0 = rcn(0);
@@ -48,7 +50,7 @@ async fn functional_aspa() {
     info("#                                                                #");
     info("##################################################################");
     info("");
-    assert!(ca_contains_resources(&testbed, &ResourceSet::all_resources()).await);
+    assert!(ca_contains_resources(&testbed, &ResourceSet::all()).await);
 
     // Verify that the TA published expected objects
     {
@@ -76,7 +78,7 @@ async fn functional_aspa() {
     }
 
     // short hand to expect ASPAs under CA
-    async fn expect_aspa_objects(ca: &Handle, aspas: &[AspaDefinition]) {
+    async fn expect_aspa_objects(ca: &CaHandle, aspas: &[AspaDefinition]) {
         let rcn_0 = ResourceClassName::from(0);
 
         let mut expected_files = expected_mft_and_crl(ca, &rcn_0).await;

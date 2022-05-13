@@ -1,8 +1,10 @@
 //! Rust integration test to verify that invoking the restricted create CA REST API requires a valid bearer token.
 use std::str::FromStr;
 
+use rpki::ca::idexchange::Handle;
+
 use krill::{
-    commons::api::{Handle, Token},
+    commons::api::Token,
     test::{init_ca, start_krill_with_custom_config, test_config, tmp_dir},
 };
 
@@ -15,7 +17,7 @@ async fn auth_check() {
     // bearer token sent by the test suite support functions not to match and thus be rejected which in turn should
     // cause a Rust panic.
     let dir = tmp_dir();
-    let mut config = test_config(&dir, false, false, false);
+    let mut config = test_config(&dir, false, false, false, false);
     config.admin_token = Token::from("wrong secret");
 
     // Start Krill with the customized config

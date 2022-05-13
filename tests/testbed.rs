@@ -8,13 +8,17 @@ async fn add_and_remove_certificate_authority() {
     use std::matches;
     use std::str::FromStr;
 
+    use rpki::{
+        ca::idexchange::{Handle, PublisherRequest, RepositoryResponse},
+        repository::resources::ResourceSet,
+    };
+
     use krill::commons::api::*;
-    use krill::commons::remote::rfc8183::{PublisherRequest, RepositoryResponse};
     use krill::commons::util::httpclient::*;
     use krill::daemon::ca::testbed_ca_handle;
     use krill::test::*;
 
-    let dir = start_krill_with_default_test_config(true, true, false).await;
+    let dir = start_krill_with_default_test_config(true, true, false, false).await;
 
     // -------------------------------------------------------------------------
     // establish/verify starting conditions
@@ -29,7 +33,10 @@ async fn add_and_remove_certificate_authority() {
     assert!(ca_contains_resources(&testbed_ca_handle, &expected_resources).await);
 
     // verify that the testbed publisher has been created
-    assert_eq!(&testbed_ca_handle, publisher_details(&testbed_ca_handle).await.handle());
+    assert_eq!(
+        testbed_ca_handle,
+        publisher_details(testbed_ca_handle.convert()).await.handle().convert()
+    );
 
     // verify that the testbed REST API is enabled
     assert!(get_ok(&format!("{}testbed/enabled", KRILL_SERVER_URI), None)
@@ -55,11 +62,11 @@ async fn add_and_remove_certificate_authority() {
     // that an API client (such as the testbed web UI) would do.
     // <child_request/>   --> testbed
     // <parent_response/> <-- testbed
-    let (_, _, child_id_cert) = rfc8183_child_request.unpack();
+    let (child_id_cert, _, _) = rfc8183_child_request.unpack();
     let add_child_response: ParentCaContact = post_json_with_response(
         &format!("{}testbed/children", KRILL_SERVER_URI),
         &AddChildRequest::new(
-            dummy_ca_handle.clone(),
+            dummy_ca_handle.convert(),
             ResourceSet::from_strs("AS1", "", "").unwrap(),
             child_id_cert,
         ),
@@ -74,7 +81,7 @@ async fn add_and_remove_certificate_authority() {
     let testbed_ca = ca_details(&testbed_ca_handle).await;
     let testbed_children = testbed_ca.children();
     assert_eq!(1, testbed_children.len());
-    assert_eq!(dummy_ca_handle, testbed_children[0]);
+    assert_eq!(dummy_ca_handle, testbed_children[0].convert());
 
     // verify that the child CA still doesn't have a parent
     assert_eq!(0, ca_details(&dummy_ca_handle).await.parents().len());
@@ -90,17 +97,18 @@ async fn add_and_remove_certificate_authority() {
     )
     .await
     .unwrap();
-    assert!(parent_response_xml.starts_with("<parent_response "));
+
+    assert!(parent_response_xml.starts_with("\n<parent_response "));
     assert!(xml::reader::EventReader::from_str(&parent_response_xml).next().is_ok());
 
     // complete the RFC 8183 child registration process on the "client" side
-    let parent_ca_req = ParentCaReq::new(testbed_ca_handle.clone(), add_child_response.clone());
+    let parent_ca_req = ParentCaReq::new(testbed_ca_handle.convert(), add_child_response.clone());
     add_parent_to_ca(&dummy_ca_handle, parent_ca_req).await;
 
     // verify that the child CA now has the correct parent
     let dummy_ca = ca_details(&dummy_ca_handle).await;
     let dummy_ca_parents = dummy_ca.parents();
-    let expected_parent_info = ParentInfo::new(testbed_ca_handle.clone(), add_child_response);
+    let expected_parent_info = ParentInfo::new(testbed_ca_handle.convert(), add_child_response);
     let actual_parent_info = &dummy_ca_parents[0];
     assert_eq!(1, dummy_ca_parents.len());
     assert_eq!(&expected_parent_info, actual_parent_info);
@@ -117,7 +125,7 @@ async fn add_and_remove_certificate_authority() {
     let publisher_found = publishers
         .publishers()
         .iter()
-        .any(|ps: &PublisherSummary| ps.handle() == &dummy_ca_handle);
+        .any(|ps: &PublisherSummary| ps.handle().as_str() == dummy_ca_handle.as_str());
     assert!(!publisher_found);
 
     // get the CA's publisher request details just like testbed web UI would
@@ -132,9 +140,9 @@ async fn add_and_remove_certificate_authority() {
     let repository_response: RepositoryResponse = post_json_with_response(
         &format!("{}testbed/publishers", KRILL_SERVER_URI),
         &PublisherRequest::new(
-            None, // no tag
-            dummy_ca_handle.clone(),
             id_cert,
+            dummy_ca_handle.convert(),
+            None, // no tag
         ),
         None, // no token, the testbed API should be open
     )
@@ -146,7 +154,8 @@ async fn add_and_remove_certificate_authority() {
     let publisher_found = publishers
         .publishers()
         .iter()
-        .any(|ps: &PublisherSummary| ps.handle() == &dummy_ca_handle);
+        .any(|ps: &PublisherSummary| ps.handle().as_str() == dummy_ca_handle.as_str());
+
     assert!(publisher_found);
 
     // verify that the child CA still isn't configured to publish to a repository
@@ -175,7 +184,7 @@ async fn add_and_remove_certificate_authority() {
     let publisher_found = publishers
         .publishers()
         .iter()
-        .any(|ps: &PublisherSummary| ps.handle() == &dummy_ca_handle);
+        .any(|ps: &PublisherSummary| ps.handle().as_str() == dummy_ca_handle.as_str());
     assert!(!publisher_found);
 
     // unregister the child CA with the testbed

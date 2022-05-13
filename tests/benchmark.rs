@@ -12,7 +12,7 @@ async fn benchmark() {
     let cas = 10;
     let ca_roas = 10;
 
-    let mut config = test_config(&dir, true, false, false);
+    let mut config = test_config(&dir, true, false, false, true);
     config.benchmark = Some(Benchmark { cas, ca_roas });
     config.log_level = LevelFilter::Info;
     start_krill(config).await;

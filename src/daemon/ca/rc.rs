@@ -1,19 +1,24 @@
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
 
-use rpki::repository::{
-    cert::Cert,
-    crypto::KeyIdentifier,
-    x509::{Time, Validity},
+use rpki::{
+    ca::{
+        idexchange::{CaHandle, ParentHandle, RepoInfo},
+        provisioning::{
+            IssuanceRequest, RequestResourceLimit, ResourceClassEntitlements, ResourceClassName, RevocationRequest,
+        },
+    },
+    repository::{
+        cert::Cert,
+        crypto::KeyIdentifier,
+        resources::ResourceSet,
+        x509::{Time, Validity},
+    },
 };
 
 use crate::{
     commons::{
-        api::{
-            EntitlementClass, Handle, IssuanceRequest, IssuedCert, ParentHandle, RcvdCert, ReplacedObject, RepoInfo,
-            RequestResourceLimit, ResourceClassInfo, ResourceClassName, ResourceSet, RevocationRequest, SuspendedCert,
-            UnsuspendedCert,
-        },
+        api::{DelegatedCertificate, RcvdCert, ResourceClassInfo, SuspendedCert, UnsuspendedCert},
         crypto::{CsrInfo, KrillSigner, SignSupport},
         error::Error,
         KrillResult,
@@ -89,7 +94,7 @@ impl ResourceClass {
         ResourceClass {
             name: parent_rc_name.clone(),
             name_space: parent_rc_name.to_string(),
-            parent_handle: ta_handle(),
+            parent_handle: ta_handle().into_converted(),
             parent_rc_name,
             roas: Roas::default(),
             aspas: AspaObjects::default(),
@@ -174,7 +179,7 @@ impl ResourceClass {
 /// # Support repository migrations
 ///
 impl ResourceClass {
-    pub fn set_old_repo(&mut self, repo: &RepoInfo) {
+    pub fn set_old_repo(&mut self, repo: RepoInfo) {
         self.key_state.set_old_repo_if_in_active_state(repo);
     }
 }
@@ -185,7 +190,7 @@ impl ResourceClass {
     /// Returns event details for receiving the certificate.
     pub fn update_received_cert(
         &self,
-        handle: &Handle,
+        handle: &CaHandle,
         rcvd_cert: RcvdCert,
         all_routes: &Routes,
         all_aspas: &AspaDefinitions,
@@ -271,7 +276,7 @@ impl ResourceClass {
     #[allow(clippy::too_many_arguments)]
     fn update_rcvd_cert_current(
         &self,
-        handle: &Handle,
+        handle: &CaHandle,
         current_key: &CurrentKey,
         rcvd_cert: RcvdCert,
         routes: &Routes,
@@ -360,8 +365,8 @@ impl ResourceClass {
     /// ARIN - Krill is sometimes told to just drop all resources.
     pub fn make_entitlement_events(
         &self,
-        handle: &Handle,
-        entitlement: &EntitlementClass,
+        handle: &CaHandle,
+        entitlement: &ResourceClassEntitlements,
         base_repo: &RepoInfo,
         signer: &KrillSigner,
     ) -> KrillResult<Vec<CaEvtDet>> {
@@ -593,17 +598,15 @@ impl ResourceClass {
         limit: RequestResourceLimit,
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
-    ) -> KrillResult<IssuedCert> {
+    ) -> KrillResult<DelegatedCertificate> {
         let signing_key = self.get_current_key()?;
         let parent_resources = signing_key.incoming_cert().resources();
         let resources = parent_resources.intersection(child_resources);
-        let replaces = self.certificates.get_issued(&csr.key_id()).map(ReplacedObject::from);
 
         let issued = SignSupport::make_issued_cert(
             csr,
             &resources,
             limit,
-            replaces,
             signing_key,
             issuance_timing.timing_child_certificate_valid_weeks,
             signer,
@@ -613,7 +616,7 @@ impl ResourceClass {
     }
 
     /// Stores an [IssuedCert](krill_commons.api.ca.IssuedCert)
-    pub fn certificate_issued(&mut self, issued: IssuedCert) {
+    pub fn certificate_issued(&mut self, issued: DelegatedCertificate) {
         self.certificates.certificate_issued(issued);
     }
 
@@ -626,7 +629,7 @@ impl ResourceClass {
     }
 
     /// Returns an issued certificate for a key, if it exists
-    pub fn issued(&self, ki: &KeyIdentifier) -> Option<&IssuedCert> {
+    pub fn issued(&self, ki: &KeyIdentifier) -> Option<&DelegatedCertificate> {
         self.certificates.get_issued(ki)
     }
 

@@ -2,6 +2,7 @@
 //! in case they are not provided
 use std::{fmt, path::Path, path::PathBuf};
 
+use bcder::decode;
 use bytes::Bytes;
 
 use openssl::{
@@ -10,18 +11,15 @@ use openssl::{
     rsa::Rsa,
 };
 
-use bcder::{
-    decode,
-    encode::{self, Constructed, PrimitiveContent, Values},
-    BitString, Mode, Tag,
+use rpki::{
+    ca::idcert::IdCert,
+    repository::{
+        crypto::{KeyIdentifier, PublicKey, Signature, SignatureAlgorithm},
+        x509::{Time, Validity},
+    },
 };
 
-use rpki::repository::{
-    crypto::{PublicKey, Signature, SignatureAlgorithm},
-    x509::{Name, Validity},
-};
-
-use crate::commons::{crypto::IdExtensions, error::KrillIoError, util::file};
+use crate::commons::{api::IdCertPem, error::KrillIoError, util::file};
 
 const KEY_SIZE: u32 = 2048;
 pub const HTTPS_SUB_DIR: &str = "ssl";
@@ -72,6 +70,48 @@ struct HttpsSigner {
     private: PKey<Private>,
 }
 
+impl rpki::repository::crypto::Signer for HttpsSigner {
+    type KeyId = KeyIdentifier;
+    type Error = Error;
+
+    fn create_key(&self, _algorithm: rpki::repository::crypto::PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
+        unimplemented!("not needed in this context")
+    }
+
+    fn get_key_info(
+        &self,
+        _key: &Self::KeyId,
+    ) -> Result<PublicKey, rpki::repository::crypto::signer::KeyError<Self::Error>> {
+        self.public_key_info()
+            .map_err(rpki::repository::crypto::signer::KeyError::Signer)
+    }
+
+    fn destroy_key(&self, _key: &Self::KeyId) -> Result<(), rpki::repository::crypto::signer::KeyError<Self::Error>> {
+        unimplemented!("not needed in this context")
+    }
+
+    fn sign<D: AsRef<[u8]> + ?Sized>(
+        &self,
+        _key: &Self::KeyId,
+        _algorithm: SignatureAlgorithm,
+        data: &D,
+    ) -> Result<Signature, rpki::repository::crypto::SigningError<Self::Error>> {
+        self.sign(data).map_err(rpki::repository::crypto::SigningError::Signer)
+    }
+
+    fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
+        &self,
+        _algorithm: SignatureAlgorithm,
+        _data: &D,
+    ) -> Result<(Signature, PublicKey), Self::Error> {
+        unimplemented!("not needed in this context")
+    }
+
+    fn rand(&self, _target: &mut [u8]) -> Result<(), Self::Error> {
+        unimplemented!("not needed in this context")
+    }
+}
+
 impl HttpsSigner {
     fn build() -> Result<Self, Error> {
         let rsa = Rsa::generate(KEY_SIZE)?;
@@ -99,117 +139,28 @@ impl HttpsSigner {
         Ok(pk)
     }
 
-    fn sign(&self, data: &Bytes) -> Result<Signature, Error> {
+    // See OpenSslSigner::sign_with_key for reference.
+    fn sign<D: AsRef<[u8]> + ?Sized>(&self, data: &D) -> Result<Signature, Error> {
         let mut signer = ::openssl::sign::Signer::new(MessageDigest::sha256(), &self.private)?;
-
         signer.update(data.as_ref())?;
 
-        let signature_bytes = signer.sign_to_vec()?;
-
-        let signature = Signature::new(SignatureAlgorithm::default(), Bytes::from(signature_bytes));
+        let signature = Signature::new(SignatureAlgorithm::default(), Bytes::from(signer.sign_to_vec()?));
         Ok(signature)
     }
 
     /// Saves a self-signed certificate so that hyper can use it.
     fn save_certificate(&mut self, data_dir: &Path) -> Result<(), Error> {
+        let validity = Validity::new(Time::five_minutes_ago(), Time::years_from_now(100));
         let pub_key = self.public_key_info()?;
-        let tbs_cert = TbsHttpsCertificate::from(&pub_key);
 
-        let encoded_tbs = tbs_cert.encode().to_captured(Mode::Der);
-        let (_, signature) = self.sign(encoded_tbs.as_ref())?.unwrap();
-
-        let signature = BitString::new(0, signature);
-
-        let encoded_cert = encode::sequence((
-            encoded_tbs,
-            SignatureAlgorithm::default().x509_encode(),
-            signature.encode(),
-        ))
-        .to_captured(Mode::Der);
-
-        let cert_pem = base64::encode(&encoded_cert);
+        let id_cert = IdCert::new_ta(validity, &pub_key.key_identifier(), self).map_err(Error::signer)?;
+        let id_cert_pem = IdCertPem::from(&id_cert);
 
         let path = cert_file_path(data_dir);
-        let pem_file = format!("-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n", cert_pem);
-        let bytes: Bytes = Bytes::from(pem_file);
-        file::save(&bytes, &path)?;
+
+        file::save(id_cert_pem.pem().as_bytes(), &path)?;
 
         Ok(())
-    }
-}
-
-struct TbsHttpsCertificate {
-    // The General structure is documented in section 4.1 or RFC5280
-    //
-    //    TBSCertificate  ::=  SEQUENCE  {
-    //        version         [0]  EXPLICIT Version DEFAULT v1,
-    //        serialNumber         CertificateSerialNumber,
-    //        signature            AlgorithmIdentifier,
-    //        issuer               Name,
-    //        validity             Validity,
-    //        subject              Name,
-    //        subjectPublicKeyInfo SubjectPublicKeyInfo,
-    //        issuerUniqueID  [1]  IMPLICIT UniqueIdentifier OPTIONAL,
-    //                             -- If present, version MUST be v2 or v3
-    //        subjectUniqueID [2]  IMPLICIT UniqueIdentifier OPTIONAL,
-    //                             -- If present, version MUST be v2 or v3
-    //        extensions      [3]  EXPLICIT Extensions OPTIONAL
-    //                             -- If present, version MUST be v3
-    //        }
-
-    // version is always 3
-    // serial_number is always 1
-    // signature is always Sha256WithRsaEncryption
-    issuer: Name,
-    validity: Validity,
-    subject: Name,
-    subject_public_key_info: PublicKey,
-    // issuerUniqueID is not used
-    // subjectUniqueID is not used
-    extensions: IdExtensions,
-}
-
-impl From<&PublicKey> for TbsHttpsCertificate {
-    fn from(pk: &PublicKey) -> Self {
-        let issuer = Name::from_pub_key(pk);
-        let validity = {
-            let dur = ::chrono::Duration::weeks(52000);
-            Validity::from_duration(dur)
-        };
-        let subject = issuer.clone();
-        let subject_public_key_info = pk.clone();
-        let extensions = IdExtensions::from(pk);
-
-        TbsHttpsCertificate {
-            issuer,
-            validity,
-            subject,
-            subject_public_key_info,
-            extensions,
-        }
-    }
-}
-
-impl TbsHttpsCertificate {
-    #[allow(clippy::needless_lifetimes)]
-    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
-        encode::sequence((
-            (
-                Constructed::new(
-                    Tag::CTX_0,
-                    2_i32.encode(), // Version 3 is encoded as 2
-                ),
-                1_i32.encode(),
-                SignatureAlgorithm::default().x509_encode(),
-                self.issuer.encode_ref(),
-            ),
-            (
-                self.validity.encode(),
-                self.subject.encode_ref(),
-                self.subject_public_key_info.clone().encode(),
-                self.extensions.encode(),
-            ),
-        ))
     }
 }
 
@@ -224,6 +175,13 @@ pub enum Error {
     EmptyCertStack,
     Pkcs12(String),
     Connection(String),
+    SignerError(String),
+}
+
+impl Error {
+    pub fn signer(e: impl fmt::Display) -> Self {
+        Error::SignerError(e.to_string())
+    }
 }
 
 impl fmt::Display for Error {
@@ -236,6 +194,7 @@ impl fmt::Display for Error {
             Error::EmptyCertStack => write!(f, "Certificate PEM file contains no certificates"),
             Error::Pkcs12(e) => write!(f, "Cannot create PKCS12 Identity: {}", e),
             Error::Connection(e) => write!(f, "Connection error: {}", e),
+            Error::SignerError(e) => write!(f, "Error signing self-signed HTTPS certificate: {}", e),
         }
     }
 }

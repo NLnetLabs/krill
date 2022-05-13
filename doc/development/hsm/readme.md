@@ -12,3 +12,4 @@ Further reading:
 - [Overview](./overview.md)
 - [Requirements](./requirements.md)
 - [Architecture](./architecture.md)
+- [Connectivity](./connectivity.md)
