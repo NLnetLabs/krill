@@ -327,12 +327,7 @@ impl CaManager {
             self.ca_store
                 .list()?
                 .into_iter()
-                .filter(|handle| {
-                    matches!(
-                        actor.is_allowed(Permission::CA_READ, Handle::from(handle)),
-                        Ok(true)
-                    )
-                })
+                .filter(|handle| matches!(actor.is_allowed(Permission::CA_READ, Handle::from(handle)), Ok(true)))
                 .map(CertAuthSummary::new)
                 .collect(),
         ))
@@ -1547,6 +1542,7 @@ impl CaManager {
         repo_contact: &RepositoryContact,
         publish_elements: Vec<PublishElement>,
     ) -> KrillResult<()> {
+        debug!("CA '{}' sends list query to repo", ca_handle);
         let list_reply = self.send_rfc8181_list(ca_handle, repo_contact.response()).await?;
 
         let elements: HashMap<_, _> = list_reply.into_elements().into_iter().map(|el| el.unpack()).collect();
@@ -1570,8 +1566,14 @@ impl CaManager {
             delta.add_publish(Publish::new(None, uri, base64));
         }
 
-        self.send_rfc8181_delta(ca_handle, repo_contact.response(), delta)
-            .await?;
+        if !delta.is_empty() {
+            debug!("CA '{}' sends delta", ca_handle);
+            self.send_rfc8181_delta(ca_handle, repo_contact.response(), delta)
+                .await?;
+            debug!("CA '{}' sent delta", ca_handle);
+        } else {
+            debug!("CA '{}' empty delta - nothing to publish", ca_handle);
+        }
 
         Ok(())
     }

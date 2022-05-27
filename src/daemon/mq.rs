@@ -97,10 +97,9 @@ pub struct TaskQueue {
 
 impl Default for TaskQueue {
     fn default() -> Self {
-        let mut q = PriorityQueue::new();
-        q.push(Task::QueueStartTasks, now());
-
-        TaskQueue { q: RwLock::new(q) }
+        TaskQueue {
+            q: RwLock::new(PriorityQueue::new()),
+        }
     }
 }
 
@@ -154,6 +153,10 @@ impl TaskQueue {
                 }
             }
         }
+    }
+
+    pub fn server_started(&self) {
+        self.schedule(Task::QueueStartTasks, now());
     }
 
     pub fn sync_repo(&self, ca: CaHandle, priority: Priority) {

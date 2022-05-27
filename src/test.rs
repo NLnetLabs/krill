@@ -84,7 +84,7 @@ pub async fn krill_pubd_ready() -> bool {
 pub async fn server_ready(uri: &str) -> bool {
     let health = format!("{}health", uri);
 
-    for _ in 0..300 {
+    for _ in 0..30000 {
         match httpclient::client(&health) {
             Ok(client) => {
                 let res = timeout(Duration::from_millis(100), client.get(&health).send()).await;
@@ -149,7 +149,7 @@ pub async fn start_krill_with_default_test_config(
     dir
 }
 
-async fn start_krill(mut config: Config) {
+pub async fn start_krill(mut config: Config) {
     init_config(&mut config);
     tokio::spawn(start_krill_with_error_trap(Arc::new(config)));
     assert!(krill_server_ready().await);
@@ -547,7 +547,7 @@ pub async fn rc_is_removed(ca: &CaHandle) -> bool {
             return true;
         }
         cas_refresh_all().await;
-        sleep_seconds(100).await
+        sleep_seconds(1).await
     }
     false
 }
@@ -564,6 +564,18 @@ pub async fn ca_current_resources(ca: &CaHandle) -> ResourceSet {
     }
 
     res
+}
+
+pub async fn wait_for_nr_cas_under_testbed(nr: usize) -> bool {
+    let testbed = ca_handle("testbed");
+    for _ in 0..300 {
+        let ca = ca_details(&testbed).await;
+        if ca.children().len() == nr {
+            return true;
+        }
+        sleep_seconds(1).await
+    }
+    false
 }
 
 pub async fn list_publishers() -> PublisherList {
