@@ -24,7 +24,7 @@ use hyper::{
     service::{make_service_fn, service_fn},
     Method,
 };
-use tokio::try_join;
+use tokio::{signal::unix::SignalKind, try_join};
 
 use rpki::ca::{
     idexchange,
@@ -40,7 +40,7 @@ use crate::{
         bgp::BgpAnalysisAdvice,
         error::Error,
         eventsourcing::AggregateStoreError,
-        util::file,
+        util::file, KrillResult,
     },
     constants::{
         KRILL_ENV_HTTP_LOG_INFO, KRILL_ENV_UPGRADE_ONLY, KRILL_VERSION_MAJOR, KRILL_VERSION_MINOR, KRILL_VERSION_PATCH,
@@ -112,6 +112,8 @@ fn test_data_dirs_or_die(config: &Config) {
 }
 
 pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
+    let lock = KrillLock::create(&config);
+
     write_pid_file_or_die(&config);
     test_data_dirs_or_die(&config);
 
@@ -184,7 +186,13 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
 
     let scheduler_task = scheduler.run();
 
-    try_join!(server, scheduler_task).map(|_| ())
+    try_join!(
+        server,
+        scheduler_task,
+        lock.handle_ctrl_c(),
+        #[cfg(unix)]
+        lock.handle_sig_term()
+    ).map(|_| ())
 }
 
 struct RequestLogger {
@@ -2098,6 +2106,53 @@ async fn api_ca_rta_multi_sign(req: Request, ca: CaHandle, name: RtaName) -> Rou
     })
 }
 
+
+/// A naive lock implementation used to prevent that two Krill instances
+/// access the same krill data directory simultaneously.
+struct KrillLock(PathBuf);
+
+impl KrillLock {
+    fn create(config: &Config) -> Self {
+        let lock_file_path = config.data_dir.join("krill.lock");
+
+        if lock_file_path.exists() {
+            error!("Cannot start Krill: existing lock file found at: {}", lock_file_path.to_string_lossy());
+            ::std::process::exit(1);
+        }
+        
+        if let Err(e) = file::save(b"lock", &lock_file_path) {
+            error!("Cannot start Krill: cannot create lock file at: {}. Error: {}", lock_file_path.to_string_lossy(), e);
+            ::std::process::exit(1);
+        }
+
+        KrillLock(lock_file_path)
+    }
+
+    fn clean(&self) {
+        // best effort clean up
+        let _ = std::fs::remove_file(&self.0);
+    }
+
+    async fn handle_ctrl_c(&self) -> KrillResult<()> {
+        tokio::signal::ctrl_c().await.unwrap();
+        self.clean();
+        std::process::exit(0)
+    }
+    
+    #[cfg(unix)]
+    async fn handle_sig_term(&self) -> KrillResult<()> {
+        tokio::signal::unix::signal(SignalKind::terminate()).unwrap().recv().await;
+        self.clean();
+        std::process::exit(0)
+    }
+}
+
+impl Drop for KrillLock {
+    fn drop(&mut self) {
+        self.clean()
+    }
+}
+
 //------------ Tests ---------------------------------------------------------
 #[cfg(test)]
 mod tests {
@@ -2119,3 +2174,4 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 }
+
