@@ -2116,12 +2116,12 @@ impl KrillLock {
         let lock_file_path = config.data_dir.join("krill.lock");
 
         if lock_file_path.exists() {
-            error!("Cannot start Krill: existing lock file found at: {}", lock_file_path.to_string_lossy());
+            error!("Cannot start Krill: existing lock file found at: {}", lock_file_path.display());
             ::std::process::exit(1);
         }
         
         if let Err(e) = file::save(b"lock", &lock_file_path) {
-            error!("Cannot start Krill: cannot create lock file at: {}. Error: {}", lock_file_path.to_string_lossy(), e);
+            error!("Cannot start Krill: cannot create lock file at: {}. Error: {}", lock_file_path.display(), e);
             ::std::process::exit(1);
         }
 
