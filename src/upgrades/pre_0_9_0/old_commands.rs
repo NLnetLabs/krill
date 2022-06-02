@@ -23,7 +23,7 @@ use crate::{
     },
     daemon::ca::StoredCaCommand,
     pubd::RepositoryManager,
-    upgrades::v0_9_0::old_events::DerivedEmbeddedCaMigrationInfo,
+    upgrades::pre_0_9_0::old_events::DerivedEmbeddedCaMigrationInfo,
     upgrades::{PrepareUpgradeError, UpgradeResult},
 };
 

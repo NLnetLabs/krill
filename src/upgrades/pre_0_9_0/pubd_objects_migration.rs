@@ -33,7 +33,7 @@ use crate::{
         PublisherStats, RepoStats, RepositoryAccess, RepositoryAccessInitDetails, RepositoryContent, RrdpServer,
         RrdpSessionReset, RrdpUpdate, RsyncdStore,
     },
-    upgrades::v0_9_0::{
+    upgrades::pre_0_9_0::{
         old_commands::{OldStorableRepositoryCommand, OldStoredEffect, OldStoredRepositoryCommand},
         old_events::{OldCurrentObjects, OldPubdEvt, OldPubdEvtDet, OldPubdInit, OldPublisher},
     },

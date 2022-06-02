@@ -1,0 +1,10 @@
+{
+  "id": "testbed",
+  "version": 10,
+  "details": {
+    "type": "child_certificate_issued",
+    "child": "IDNIC-TEST",
+    "resource_class_name": "0",
+    "ki": "A1099682DA18AB97153662C104B342CD17D713A7"
+  }
+}

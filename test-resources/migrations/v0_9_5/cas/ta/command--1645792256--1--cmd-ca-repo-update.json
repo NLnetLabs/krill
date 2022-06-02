@@ -1,0 +1,17 @@
+{
+  "actor": "krill",
+  "time": "2022-02-25T12:30:56.405477897Z",
+  "handle": "ta",
+  "version": 1,
+  "sequence": 1,
+  "details": {
+    "type": "repo_update",
+    "service_uri": "https://testbed.krill.cloud/rfc8181/ta/"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      1
+    ]
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2022-03-15T05:45:03.052448099Z",
+  "handle": "testbed",
+  "version": 15,
+  "sequence": 13,
+  "details": {
+    "type": "child_remove",
+    "child": "Publisher"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      15
+    ]
+  }
+}

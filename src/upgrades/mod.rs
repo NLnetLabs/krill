@@ -19,7 +19,6 @@ use crate::{
     constants::{CASERVER_DIR, CA_OBJECTS_DIR, PUBSERVER_CONTENT_DIR, PUBSERVER_DIR, UPGRADE_REISSUE_ROAS_CAS_LIMIT},
     daemon::{config::Config, krillserver::KrillServer},
     pubd::RepositoryManager,
-    upgrades::v0_9_0::{CaObjectsMigration, PubdObjectsMigration},
 };
 
 #[cfg(feature = "hsm")]
@@ -31,7 +30,7 @@ use crate::{
     constants::{KEYS_DIR, SIGNERS_DIR},
 };
 
-pub mod v0_9_0;
+pub mod pre_0_9_0;
 
 pub type UpgradeResult<T> = Result<T, PrepareUpgradeError>;
 
@@ -297,10 +296,7 @@ pub trait UpgradeStore {
 /// started, it will call this again - to do the final preparation for a migration -
 /// knowing that no changes are added to the event history at this time. After this,
 /// the migration will be finalised.
-pub fn prepare_upgrade_data_migrations(
-    mode: UpgradeMode,
-    config: Arc<Config>,
-) -> UpgradeResult<Option<UpgradeReport>> {
+pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -> UpgradeResult<Option<UpgradeReport>> {
     match upgrade_versions(config.as_ref()) {
         None => Ok(None),
         Some(versions) => {
@@ -308,7 +304,7 @@ pub fn prepare_upgrade_data_migrations(
                 let msg = "Cannot upgrade Krill installations from before version 0.6.0. Please upgrade to any version ranging from 0.6.0 to 0.8.1 first, and then upgrade to this version.";
                 error!("{}", msg);
                 Err(PrepareUpgradeError::custom(msg))
-            } else if versions.from < KrillVersion::release(0, 9, 0) {
+            } else if versions.from < KrillVersion::release(0, 10, 0) {
                 let upgrade_data_dir = config.upgrade_data_dir();
                 if !upgrade_data_dir.exists() {
                     file::create_dir_all(&upgrade_data_dir)?;
@@ -326,35 +322,52 @@ pub fn prepare_upgrade_data_migrations(
                     })?
                 };
 
-                #[cfg(feature = "hsm")]
-                record_preexisting_openssl_keys_in_signer_mapper(config.clone())?;
+                if versions.from < KrillVersion::release(0, 9, 0) {
+                    // We will need an extensive migration because starting with 0.9.0
+                    // we no longer use events for:
+                    // - republishing manifests/CRLs in CAs
+                    // - publishing objects for publishers in the repository
+                    //
+                    // Unfortunately this resulted in too many events and excessive disk
+                    // space usage. So, now we use a hybrid event sourcing model where
+                    // all other changes are tracked through events, but these high-churn
+                    // publication changes are kept in dedicated stateful objects:
+                    // - pubd_objects for objects published in a repository server
+                    // - ca_objects for published objects for a CA.
 
-                // We need to prepare pubd first, because if there were any CAs using
-                // an embedded repository then they will need to be updated to use the
-                // RFC 8181 protocol (using localhost) instead, and this can only be
-                // *after* the publication server data is migrated.
-                PubdObjectsMigration::prepare(mode, config.clone())?;
+                    #[cfg(feature = "hsm")]
+                    record_preexisting_openssl_keys_in_signer_mapper(config.clone())?;
 
-                // We need a signer because it's required by the repo manager, although
-                // we will not actually use it during the migration.
-                let probe_interval = Duration::from_secs(config.signer_probe_retry_seconds);
-                let signer = KrillSignerBuilder::new(&upgrade_data_dir, probe_interval, &config.signers)
-                    .with_default_signer(config.default_signer())
-                    .with_one_off_signer(config.one_off_signer())
-                    .build()
-                    .unwrap();
-                let signer = Arc::new(signer);
+                    // We need to prepare pubd first, because if there were any CAs using
+                    // an embedded repository then they will need to be updated to use the
+                    // RFC 8181 protocol (using localhost) instead, and this can only be
+                    // *after* the publication server data is migrated.
+                    pre_0_9_0::PubdObjectsMigration::prepare(mode, config.clone())?;
 
-                // We fool a repository manager for the CA migration to use the upgrade
-                // data directory as its base dir. This repository manager will be used
-                // to get the repository response XML for any (if any) CAs that were
-                // using an embedded repository.
-                let mut repo_manager_migration_config = (*config).clone();
-                repo_manager_migration_config.data_dir = upgrade_data_dir;
+                    // We need a signer because it's required by the repo manager, although
+                    // we will not actually use it during the migration.
+                    let probe_interval = Duration::from_secs(config.signer_probe_retry_seconds);
+                    let signer = KrillSignerBuilder::new(&upgrade_data_dir, probe_interval, &config.signers)
+                        .with_default_signer(config.default_signer())
+                        .with_one_off_signer(config.one_off_signer())
+                        .build()
+                        .unwrap();
+                    let signer = Arc::new(signer);
 
-                let repo_manager = RepositoryManager::build(Arc::new(repo_manager_migration_config), signer.clone())?;
+                    // We fool a repository manager for the CA migration to use the upgrade
+                    // data directory as its base dir. This repository manager will be used
+                    // to get the repository response XML for any (if any) CAs that were
+                    // using an embedded repository.
+                    let mut repo_manager_migration_config = (*config).clone();
+                    repo_manager_migration_config.data_dir = upgrade_data_dir;
 
-                CaObjectsMigration::prepare(mode, config, repo_manager, signer)?;
+                    let repo_manager =
+                        RepositoryManager::build(Arc::new(repo_manager_migration_config), signer.clone())?;
+
+                    pre_0_9_0::CaObjectsMigration::prepare(mode, config, repo_manager, signer)?;
+                } else {
+                    todo!("Implement migration from 0.9.x to 0.10.x")
+                }
 
                 Ok(Some(UpgradeReport::new(true, versions)))
             } else {
@@ -594,6 +607,12 @@ mod tests {
         finalise_data_migration(report.versions(), &config).unwrap();
 
         let _ = fs::remove_dir_all(work_dir);
+    }
+
+    #[tokio::test]
+    async fn prepare_then_upgrade_0_9_5() {
+        let source = PathBuf::from("test-resources/migrations/v0_9_5/");
+        test_upgrade(source).await;
     }
 
     #[tokio::test]

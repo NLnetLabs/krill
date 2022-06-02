@@ -1,0 +1,17 @@
+{
+  "actor": "admin-token",
+  "time": "2022-06-02T09:50:03.054764298Z",
+  "handle": "local-testbed-child",
+  "version": 2,
+  "sequence": 2,
+  "details": {
+    "type": "repo_update",
+    "service_uri": "https://testbed.krill.cloud/rfc8181/local-testbed-child/"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      2
+    ]
+  }
+}

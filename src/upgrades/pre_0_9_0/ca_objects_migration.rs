@@ -33,7 +33,7 @@ use crate::{
         config::Config,
     },
     pubd::RepositoryManager,
-    upgrades::v0_9_0::{old_commands::*, old_events::*},
+    upgrades::pre_0_9_0::{old_commands::*, old_events::*},
     upgrades::{PrepareUpgradeError, UpgradeMode, UpgradeResult, UpgradeStore},
 };
 

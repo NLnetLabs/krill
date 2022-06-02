@@ -1,0 +1,21 @@
+{
+  "actor": "testbed",
+  "time": "2022-05-10T11:23:24.398719960Z",
+  "handle": "testbed",
+  "version": 39,
+  "sequence": 29,
+  "details": {
+    "type": "child_add",
+    "child": "TOP",
+    "ski": "DE448EA98CADE0EC16A49B7FEE79495FD7F0BDD1",
+    "resources": {
+      "asn": "AS1",
+      "v4": "192.168.0.0/16",
+      "v6": ""
+    }
+  },
+  "effect": {
+    "result": "error",
+    "msg": "CA 'testbed' already has a child named 'TOP'"
+  }
+}
