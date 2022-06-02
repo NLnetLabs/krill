@@ -17,9 +17,9 @@ use rpki::{
         idexchange,
         idexchange::{CaHandle, ChildHandle, ParentHandle, PublisherHandle},
     },
+    crypto::KeyIdentifier,
     repository::{
         aspa::{DuplicateProviderAs, ProviderAs},
-        crypto::KeyIdentifier,
         resources::ResourceSet,
         x509::Time,
     },

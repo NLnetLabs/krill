@@ -21,7 +21,8 @@ use rpki::{
         idexchange::{CaHandle, ChildHandle, ParentHandle, PublisherHandle},
         provisioning::ResourceClassName,
     },
-    repository::{crypto::KeyIdentifier, resources::ResourceSet},
+    crypto::KeyIdentifier,
+    repository::resources::ResourceSet,
     uri,
 };
 

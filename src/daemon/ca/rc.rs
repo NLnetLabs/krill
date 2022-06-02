@@ -8,9 +8,9 @@ use rpki::{
             IssuanceRequest, RequestResourceLimit, ResourceClassEntitlements, ResourceClassName, RevocationRequest,
         },
     },
+    crypto::KeyIdentifier,
     repository::{
         cert::Cert,
-        crypto::KeyIdentifier,
         resources::ResourceSet,
         x509::{Time, Validity},
     },

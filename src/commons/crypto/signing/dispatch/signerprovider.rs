@@ -1,5 +1,6 @@
-use rpki::repository::crypto::{
-    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError,
+use rpki::crypto::{
+    signer::{KeyError, SigningAlgorithm},
+    KeyIdentifier, PublicKey, PublicKeyFormat, RpkiSignature, Signature, SignatureAlgorithm, SigningError,
 };
 
 use crate::commons::crypto::{
@@ -110,7 +111,7 @@ impl SignerProvider {
         &self,
         signer_private_key_id: &str,
         challenge: &D,
-    ) -> Result<Signature, SignerError> {
+    ) -> Result<RpkiSignature, SignerError> {
         match self {
             SignerProvider::OpenSsl(_, signer) => signer.sign_registration_challenge(signer_private_key_id, challenge),
             #[cfg(feature = "hsm")]
@@ -206,12 +207,17 @@ impl SignerProvider {
         }
     }
 
-    pub fn sign<D: AsRef<[u8]> + ?Sized>(
+    pub fn sign<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
         &self,
         key: &KeyIdentifier,
-        algorithm: SignatureAlgorithm,
+        algorithm: Alg,
         data: &D,
-    ) -> Result<Signature, SigningError<SignerError>> {
+    ) -> Result<Signature<Alg>, SigningError<SignerError>> {
+        let signing_algorithm = algorithm.signing_algorithm();
+        if !matches!(signing_algorithm, SigningAlgorithm::RsaSha256) {
+            return Err(SignerError::UnsupportedSigningAlg(signing_algorithm).into());
+        }
+
         match self {
             SignerProvider::OpenSsl(_, signer) => signer.sign(key, algorithm, data),
             #[cfg(feature = "hsm")]
@@ -223,11 +229,16 @@ impl SignerProvider {
         }
     }
 
-    pub fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
+    pub fn sign_one_off<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
         &self,
-        algorithm: SignatureAlgorithm,
+        algorithm: Alg,
         data: &D,
-    ) -> Result<(Signature, PublicKey), SignerError> {
+    ) -> Result<(Signature<Alg>, PublicKey), SignerError> {
+        let signing_algorithm = algorithm.signing_algorithm();
+        if !matches!(signing_algorithm, SigningAlgorithm::RsaSha256) {
+            return Err(SignerError::UnsupportedSigningAlg(signing_algorithm).into());
+        }
+
         match self {
             SignerProvider::OpenSsl(_, signer) => signer.sign_one_off(algorithm, data),
             #[cfg(feature = "hsm")]

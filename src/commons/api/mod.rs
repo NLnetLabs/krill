@@ -24,7 +24,8 @@ use serde::{Deserialize, Serialize};
 
 use rpki::{
     ca::idexchange::{CaHandle, ChildHandle, ParentHandle, PublisherHandle},
-    repository::{crypto::KeyIdentifier, resources::Asn},
+    crypto::KeyIdentifier,
+    repository::resources::Asn,
 };
 
 use crate::{commons::error::RoaDeltaError, daemon::ca::RouteAuthorization};

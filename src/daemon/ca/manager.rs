@@ -15,7 +15,8 @@ use rpki::{
         publication,
         publication::{ListReply, Publish, PublishDelta, Update, Withdraw},
     },
-    repository::{crypto::KeyIdentifier, resources::ResourceSet},
+    crypto::KeyIdentifier,
+    repository::resources::ResourceSet,
     uri,
 };
 

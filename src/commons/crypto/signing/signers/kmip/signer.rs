@@ -21,6 +21,7 @@ use openssl::ssl::SslStream;
 use r2d2::PooledConnection;
 
 use rpki::{
+    crypto::SignatureAlgorithm,
     repository::crypto::signer::KeyError,
     repository::crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError},
 };
@@ -782,10 +783,10 @@ impl KmipSigner {
         Ok(public_key)
     }
 
-    pub(super) fn sign_with_key(
+    pub(super) fn sign_with_key<Alg: SignatureAlgorithm>(
         &self,
         private_key_id: &str,
-        algorithm: SignatureAlgorithm,
+        algorithm: Alg,
         data: &[u8],
     ) -> Result<Signature, SignerError> {
         if algorithm.public_key_format() != PublicKeyFormat::Rsa {
@@ -797,7 +798,7 @@ impl KmipSigner {
 
         let signed = self.with_conn("sign", |conn| conn.sign(&private_key_id, data))?;
 
-        let sig = Signature::new(SignatureAlgorithm::default(), Bytes::from(signed.signature_data));
+        let sig = Signature::new(algorithm, Bytes::from(signed.signature_data));
 
         Ok(sig)
     }
@@ -913,10 +914,10 @@ impl KmipSigner {
         res
     }
 
-    pub fn sign<D: AsRef<[u8]> + ?Sized>(
+    pub fn sign<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
         &self,
         key_id: &KeyIdentifier,
-        algorithm: SignatureAlgorithm,
+        algorithm: Alg,
         data: &D,
     ) -> Result<Signature, SigningError<SignerError>> {
         let kmip_key_pair_ids = self.lookup_kmip_key_ids(key_id)?;
@@ -933,9 +934,9 @@ impl KmipSigner {
         Ok(signature)
     }
 
-    pub fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
+    pub fn sign_one_off<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
         &self,
-        algorithm: SignatureAlgorithm,
+        algorithm: Alg,
         data: &D,
     ) -> Result<(Signature, PublicKey), SignerError> {
         // TODO: Is it possible to use a KMIP batch request to implement the create, activate, sign, deactivate, delete

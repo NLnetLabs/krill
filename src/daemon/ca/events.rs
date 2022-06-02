@@ -6,7 +6,8 @@ use rpki::{
         idexchange::{CaHandle, ChildHandle, ParentHandle},
         provisioning::{IssuanceRequest, ParentResourceClassName, ResourceClassName, RevocationRequest},
     },
-    repository::{crypto::KeyIdentifier, resources::ResourceSet},
+    crypto::KeyIdentifier,
+    repository::resources::ResourceSet,
 };
 
 use crate::{

@@ -9,9 +9,9 @@ use log::LevelFilter;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use syslog::Facility;
 
-use rpki::repository::{
+use rpki::{
     crypto::PublicKey,
-    resources::{AsBlocks, IpBlocks},
+    repository::resources::{AsBlocks, IpBlocks},
 };
 
 //------------ Bytes ---------------------------------------------------------

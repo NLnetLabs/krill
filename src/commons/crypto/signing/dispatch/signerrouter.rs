@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::{collections::HashMap, sync::RwLock};
 
-use rpki::repository::crypto::{
+use rpki::crypto::{
     signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
 };
 
@@ -586,21 +586,21 @@ impl Signer for SignerRouter {
         self.get_signer_for_key(key_id)?.destroy_key(key_id)
     }
 
-    fn sign<D: AsRef<[u8]> + ?Sized>(
+    fn sign<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
         &self,
         key_id: &KeyIdentifier,
-        algorithm: SignatureAlgorithm,
+        algorithm: Alg,
         data: &D,
-    ) -> Result<Signature, SigningError<Self::Error>> {
+    ) -> Result<Signature<Alg>, SigningError<Self::Error>> {
         self.bind_ready_signers();
         self.get_signer_for_key(key_id)?.sign(key_id, algorithm, data)
     }
 
-    fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
+    fn sign_one_off<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
         &self,
-        algorithm: SignatureAlgorithm,
+        algorithm: Alg,
         data: &D,
-    ) -> Result<(Signature, PublicKey), Self::Error> {
+    ) -> Result<(Signature<Alg>, PublicKey), Self::Error> {
         self.bind_ready_signers();
         self.one_off_signer.sign_one_off(algorithm, data)
     }

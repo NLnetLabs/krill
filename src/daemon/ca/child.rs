@@ -4,7 +4,8 @@ use chrono::Duration;
 
 use rpki::{
     ca::{idcert::IdCert, idexchange::ChildHandle, provisioning::ResourceClassName},
-    repository::{crypto::KeyIdentifier, resources::ResourceSet, x509::Time},
+    crypto::KeyIdentifier,
+    repository::{resources::ResourceSet, x509::Time},
 };
 
 use crate::{

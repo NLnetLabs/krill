@@ -11,7 +11,8 @@ use rpki::{
         provisioning::ResourceClassName,
         publication,
     },
-    repository::{crypto::KeyIdentifier, x509::ValidationError},
+    crypto::KeyIdentifier,
+    repository::x509::ValidationError,
     uri,
 };
 

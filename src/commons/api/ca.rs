@@ -20,11 +20,11 @@ use rpki::{
         },
         publication::Base64,
     },
+    crypto::KeyIdentifier,
     repository::{
         aspa::Aspa,
         cert::Cert,
         crl::{Crl, CrlEntry},
-        crypto::KeyIdentifier,
         manifest::Manifest,
         resources::{Asn, ResourceSet},
         roa::Roa,
@@ -2102,7 +2102,7 @@ mod test {
     use bytes::Bytes;
     use std::convert::TryFrom;
 
-    use rpki::repository::crypto::PublicKeyFormat;
+    use rpki::crypto::PublicKeyFormat;
 
     use crate::{commons::crypto::OpenSslSigner, test};
 

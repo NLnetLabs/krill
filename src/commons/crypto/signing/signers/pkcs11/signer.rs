@@ -918,10 +918,10 @@ impl Pkcs11Signer {
         res
     }
 
-    pub fn sign<D: AsRef<[u8]> + ?Sized>(
+    pub fn sign<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
         &self,
         key_id: &KeyIdentifier,
-        algorithm: SignatureAlgorithm,
+        algorithm: Alg,
         data: &D,
     ) -> Result<Signature, SigningError<SignerError>> {
         let internal_key_id = self.lookup_key_id(key_id)?;
@@ -936,9 +936,9 @@ impl Pkcs11Signer {
             .map_err(|err| SigningError::Signer(err))
     }
 
-    pub fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
+    pub fn sign_one_off<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
         &self,
-        algorithm: SignatureAlgorithm,
+        algorithm: Alg,
         data: &D,
     ) -> Result<(Signature, PublicKey), SignerError> {
         let (key, pub_handle, priv_handle, _) = self.build_key(PublicKeyFormat::Rsa)?;

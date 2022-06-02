@@ -14,9 +14,9 @@ use rpki::{
             ResourceClassListResponse, ResourceClassName, RevocationRequest, RevocationResponse, SigningCert,
         },
     },
+    crypto::{KeyIdentifier, PublicKey},
     repository::{
         cert::{Cert, KeyUsage, Overclaim, TbsCert},
-        crypto::{KeyIdentifier, PublicKey},
         resources::ResourceSet,
         rta::RtaBuilder,
         x509::{Serial, Time, Validity},

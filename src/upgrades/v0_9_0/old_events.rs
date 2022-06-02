@@ -13,8 +13,8 @@ use rpki::{
         provisioning::{IssuanceRequest, ResourceClassName, RevocationRequest},
         publication::Base64,
     },
+    crypto::KeyIdentifier,
     repository::{
-        crypto::KeyIdentifier,
         resources::ResourceSet,
         roa::Roa,
         x509::{Serial, Time},
