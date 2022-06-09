@@ -33,7 +33,7 @@ use crate::{
     },
 };
 
-use super::AspaDefinitions;
+use super::{AspaDefinitions, BgpSecDefinitions};
 
 //------------ ResourceClass -----------------------------------------------
 
@@ -728,6 +728,21 @@ impl ResourceClass {
     /// Apply ASPA object changes from events
     pub fn aspa_objects_updated(&mut self, updates: AspaObjectsUpdates) {
         self.aspas.updated(updates)
+    }
+}
+
+/// # BGPSec
+///
+impl ResourceClass {
+    /// Updates the BGPSec certificates in accordance with the supplied definitions
+    /// and the resources (still) held in this resource class
+    pub fn update_bgpsec_certs(
+        &self,
+        all_definitions: &BgpSecDefinitions,
+        config: &Config,
+        signer: &KrillSigner,
+    ) -> KrillResult<()> {
+        Ok(())
     }
 }
 

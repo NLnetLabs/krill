@@ -27,9 +27,10 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate, CertAuthInfo,
-            DelegatedCertificate, IdCertPem, ObjectName, ParentCaContact, RcvdCert, RepositoryContact, Revocation,
-            RoaDefinition, RtaList, RtaName, RtaPrepResponse, StorableCaCommand, TaCertDetails, TrustAnchorLocator,
+            AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate, BgpSecAsnKey,
+            BgpSecDefinitionUpdates, CertAuthInfo, DelegatedCertificate, IdCertPem, ObjectName, ParentCaContact,
+            RcvdCert, RepositoryContact, Revocation, RoaDefinition, RtaList, RtaName, RtaPrepResponse,
+            StorableCaCommand, TaCertDetails, TrustAnchorLocator,
         },
         crypto::{CsrInfo, KrillSigner},
         error::{Error, RoaDeltaError},
@@ -41,11 +42,13 @@ use crate::{
         ca::{
             events::ChildCertificateUpdates, ta_handle, AspaDefinitions, CaEvt, CaEvtDet, ChildDetails, Cmd, CmdDet,
             DropReason, Ini, PreparedRta, ResourceClass, ResourceTaggedAttestation, RouteAuthorization,
-            RouteAuthorizationUpdates, Routes, RtaContentRequest, RtaPrepareRequest, Rtas, SignedRta,
+            RouteAuthorizationUpdates, Routes, RtaContentRequest, RtaPrepareRequest, Rtas, SignedRta, StoredBgpSecCsr,
         },
         config::{Config, IssuanceTimingConfig},
     },
 };
+
+use super::BgpSecDefinitions;
 
 //------------ Rfc8183Id ---------------------------------------------------
 
@@ -96,6 +99,9 @@ pub struct CertAuth {
 
     #[serde(skip_serializing_if = "AspaDefinitions::is_empty", default)]
     aspas: AspaDefinitions,
+
+    #[serde(skip_serializing_if = "BgpSecDefinitions::is_empty", default)]
+    bgpsec_defs: BgpSecDefinitions,
 }
 
 impl Aggregate for CertAuth {
@@ -109,14 +115,18 @@ impl Aggregate for CertAuth {
         let (handle, _version, details) = event.unpack();
         let id = details.unpack();
 
+        let repository = None;
         let parents = HashMap::new();
-        let resources = HashMap::new();
+
         let next_class_name = 0;
+        let resources = HashMap::new();
+
         let children = HashMap::new();
+
         let routes = Routes::default();
         let rtas = Rtas::default();
         let aspas = AspaDefinitions::default();
-        let repository = None;
+        let bgpsec_defs = BgpSecDefinitions::default();
 
         Ok(CertAuth {
             handle,
@@ -135,6 +145,7 @@ impl Aggregate for CertAuth {
             routes,
             rtas,
             aspas,
+            bgpsec_defs,
         })
     }
 
@@ -376,6 +387,15 @@ impl Aggregate for CertAuth {
                 .aspa_objects_updated(updates),
 
             //-----------------------------------------------------------------------
+            // BGPSec
+            //-----------------------------------------------------------------------
+            CaEvtDet::BgpSecDefinitionAdded { key, csr } => self.bgpsec_defs.add_or_replace(key, csr),
+            CaEvtDet::BgpSecDefinitionUpdated { key, csr } => self.bgpsec_defs.add_or_replace(key, csr),
+            CaEvtDet::BgpSecDefinitionRemoved { key } => {
+                self.bgpsec_defs.remove(&key);
+            }
+
+            //-----------------------------------------------------------------------
             // Publication
             //-----------------------------------------------------------------------
             CaEvtDet::RepoUpdated { contact } => {
@@ -459,6 +479,10 @@ impl Aggregate for CertAuth {
                 self.aspas_update(customer, update, &config, &signer)
             }
             CmdDet::AspasRenew(config, signer) => self.aspas_renew(&config, &signer),
+
+            // BGPSec
+            CmdDet::BgpSecUpdate(updates, config, signer) => self.bgpsec_definitions_update(updates, &config, &signer),
+            CmdDet::BgpSecRenew(config, signer) => self.bgpsec_renew(&config, &signer),
 
             // Republish
             CmdDet::RepoUpdate(contact, signer) => self.update_repo(contact, &signer),
@@ -1895,6 +1919,87 @@ impl CertAuth {
             .map_err(|conflict| Error::AspaProvidersUpdateConflict(self.handle().clone(), conflict))?;
 
         Ok(())
+    }
+}
+
+/// # BGPSec
+///
+impl CertAuth {
+    /// Process BGPSec Definition updates
+    pub fn bgpsec_definitions_update(
+        &self,
+        updates: BgpSecDefinitionUpdates,
+        config: &Config,
+        signer: &KrillSigner,
+    ) -> KrillResult<Vec<CaEvt>> {
+        let mut res = vec![];
+
+        let (additions, removals) = updates.unpack();
+
+        // We keep a copy of the definitions so that we can:
+        // a. remove and then re-add definitions
+        // b. use the updated definitions to generate objects in
+        //    applicable RCs
+        //
+        // (note: actual modifications of self are done when the events are applied)
+        let mut definitions = self.bgpsec_defs.clone();
+
+        for key in removals {
+            if !definitions.remove(&key) {
+                return Err(Error::BgpSecDefinitionUnknown(self.handle.clone(), key));
+            } else {
+                res.push(CaEvtDet::BgpSecDefinitionRemoved { key })
+            }
+        }
+
+        // Verify that the CSR in each 'addition' is valid. Then either add
+        // a new or update an existing definition.
+        for definition in additions {
+            // ensure the CSR is validly signed
+            definition
+                .csr()
+                .validate()
+                .map_err(|_| Error::BgpSecDefinitionInvalidlySigned(self.handle.clone(), definition.clone()))?;
+
+            let key = BgpSecAsnKey::from(&definition);
+            let csr = StoredBgpSecCsr::from(definition.csr());
+
+            // ensure this CA holds the AS
+            if !self.all_resources().contains_asn(key.asn()) {
+                return Err(Error::BgpSecDefinitionNotEntitled(self.handle.clone(), key));
+            }
+
+            if let Some(stored_csr) = definitions.get_stored_csr(&key) {
+                if stored_csr != &csr {
+                    res.push(CaEvtDet::BgpSecDefinitionUpdated { key, csr: csr.clone() });
+                    definitions.add_or_replace(key, csr);
+                }
+            } else {
+                res.push(CaEvtDet::BgpSecDefinitionAdded { key, csr: csr.clone() });
+                definitions.add_or_replace(key, csr);
+            }
+        }
+
+        if res.is_empty() {
+            // This was a no-op. No errors, but no changes either.
+            // Perhaps the user submitted the same ASN and CSR again.
+            return Ok(vec![]);
+        }
+
+        // Process the updated BGPSec definitions in each RC and add/remove
+        // BGPSec certificates as needed.
+        for (rcn, rc) in self.resources.iter() {
+            
+        }
+
+        todo!("#827");
+
+        Ok(self.events_from_details(res))
+    }
+
+    /// Renew any BGPSec certificates if needed.
+    pub fn bgpsec_renew(&self, config: &Config, signer: &KrillSigner) -> KrillResult<Vec<CaEvt>> {
+        todo!("#827")
     }
 }
 

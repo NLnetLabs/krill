@@ -488,6 +488,7 @@ pub enum StorableCaCommand {
     AspaRemove {
         customer: AspaCustomer,
     },
+    BgpSecDefinitionUpdates, // details in events
     RepoUpdate {
         service_uri: ServiceUri,
     },
@@ -597,6 +598,9 @@ impl WithStorableDetails for StorableCaCommand {
             StorableCaCommand::AspasUpdate { .. } => CommandSummary::new("cmd-ca-aspas-update", &self),
             StorableCaCommand::AspasUpdateExisting { .. } => CommandSummary::new("cmd-ca-aspas-update-existing", &self),
             StorableCaCommand::AspaRemove { .. } => CommandSummary::new("cmd-ca-aspas-remove", &self),
+
+            // BGPSec
+            StorableCaCommand::BgpSecDefinitionUpdates => CommandSummary::new("cmd-bgpsec-update", &self),
 
             // REPO
             StorableCaCommand::RepoUpdate { service_uri } => {
@@ -770,6 +774,11 @@ impl fmt::Display for StorableCaCommand {
             StorableCaCommand::AspaRemove { customer } => {
                 write!(f, "Remove ASPA for customer AS: {}", customer)
             }
+
+            // ------------------------------------------------------------
+            // BGPSec Support
+            // ------------------------------------------------------------
+            StorableCaCommand::BgpSecDefinitionUpdates => write!(f, "Update BGPSec definitions"),
 
             // ------------------------------------------------------------
             // Publishing

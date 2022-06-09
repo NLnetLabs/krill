@@ -46,6 +46,8 @@ use crate::{
     daemon::ca::RouteAuthorization,
 };
 
+use super::BgpSecAsnKey;
+
 //------------ IdCertPem -----------------------------------------------------
 
 /// A PEM encoded IdCert and sha256 of the encoding, for easier
@@ -523,6 +525,10 @@ impl ObjectName {
 
     pub fn aspa(customer: Asn) -> Self {
         ObjectName(format!("{}.asa", customer))
+    }
+
+    pub fn bgpsec(key: &BgpSecAsnKey) -> Self {
+        ObjectName(format!("{}.cer", key))
     }
 }
 

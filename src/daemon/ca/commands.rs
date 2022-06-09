@@ -19,8 +19,8 @@ use crate::{
     commons::{
         actor::Actor,
         api::{
-            AspaCustomer, AspaDefinitionUpdates, AspaProvidersUpdate, ParentCaContact, RcvdCert, RepositoryContact,
-            RtaName, StorableCaCommand, StorableRcEntitlement,
+            AspaCustomer, AspaDefinitionUpdates, AspaProvidersUpdate, BgpSecDefinitionUpdates, ParentCaContact,
+            RcvdCert, RepositoryContact, RtaName, StorableCaCommand, StorableRcEntitlement,
         },
         crypto::KrillSigner,
         eventsourcing::{self, StoredCommand},
@@ -176,8 +176,20 @@ pub enum CmdDet {
     AspasRenew(Arc<Config>, Arc<KrillSigner>),
 
     // ------------------------------------------------------------
+    // BGPSec Support
+    // ------------------------------------------------------------
+
+    // Update BgpSecDefinitions
+    BgpSecUpdate(BgpSecDefinitionUpdates, Arc<Config>, Arc<KrillSigner>),
+
+    // Re-issue any and all BgpSec certificates which would otherwise
+    // expire in some time.
+    BgpSecRenew(Arc<Config>, Arc<KrillSigner>),
+
+    // ------------------------------------------------------------
     // Publishing
     // ------------------------------------------------------------
+
     // Update the repository where this CA publishes
     RepoUpdate(RepositoryContact, Arc<KrillSigner>),
 
@@ -309,6 +321,12 @@ impl From<CmdDet> for StorableCaCommand {
                 StorableCaCommand::AspasUpdateExisting { customer, update }
             }
             CmdDet::AspasRenew(_, _) => StorableCaCommand::ReissueBeforeExpiring,
+
+            // ------------------------------------------------------------
+            // BGPSec Support
+            // ------------------------------------------------------------
+            CmdDet::BgpSecUpdate(_, _, _) => StorableCaCommand::BgpSecDefinitionUpdates,
+            CmdDet::BgpSecRenew(_, _) => StorableCaCommand::ReissueBeforeExpiring,
 
             // ------------------------------------------------------------
             // Publishing
