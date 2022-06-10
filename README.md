@@ -27,7 +27,9 @@ This release fixes an issue introduced in 0.9.5 where the background job to
 automatically renew ROAs was not added to Krill's task queue on startup. Thanks
 to Alberto Leiva for finding this issue!
 
-All users who upgraded to 0.9.5 are advised to upgrade to this version.
+All users who upgraded to 0.9.5 are advised to upgrade to this version as soon
+as possible. Not doing so can lead to ROAs expiring and becoming invalid. If you
+did not upgrade to 0.9.5 you are not affected by this issue.
 
 This release contains no other changes.
 
