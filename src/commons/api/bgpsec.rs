@@ -1,6 +1,10 @@
 use std::fmt;
 
-use rpki::{ca::csr::BgpsecCsr, crypto::KeyIdentifier, repository::resources::Asn};
+use rpki::{
+    ca::{csr::BgpsecCsr, publication::Base64},
+    crypto::KeyIdentifier,
+    repository::resources::Asn,
+};
 
 //------------ BgpSecDefinition --------------------------------------------
 
@@ -81,5 +85,32 @@ impl BgpSecDefinitionUpdates {
 
     pub fn unpack(self) -> (Vec<BgpSecDefinition>, Vec<BgpSecAsnKey>) {
         (self.add, self.remove)
+    }
+}
+
+/// This type is shown through the API
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct BgpSecCsrInfo {
+    asn: Asn,
+    key_identifier: KeyIdentifier,
+    csr: Base64,
+}
+
+impl BgpSecCsrInfo {
+    pub fn new(asn: Asn, key_identifier: KeyIdentifier, csr: Base64) -> Self {
+        BgpSecCsrInfo {
+            asn,
+            key_identifier,
+            csr,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct BgpSecCsrInfoList(Vec<BgpSecCsrInfo>);
+
+impl BgpSecCsrInfoList {
+    pub fn new(list: Vec<BgpSecCsrInfo>) -> Self {
+        BgpSecCsrInfoList(list)
     }
 }

@@ -34,6 +34,7 @@ use rpki::{
     uri,
 };
 
+use crate::daemon::ca::BgpSecCertInfo;
 use crate::{
     commons::{
         api::{
@@ -527,8 +528,8 @@ impl ObjectName {
         ObjectName(format!("{}.asa", customer))
     }
 
-    pub fn bgpsec(key: &BgpSecAsnKey) -> Self {
-        ObjectName(format!("{}.cer", key))
+    pub fn bgpsec(asn: Asn, key: KeyIdentifier) -> Self {
+        ObjectName(format!("ROUTER-{:x}-{}.cer", asn.into_u32(), key))
     }
 }
 
@@ -574,6 +575,18 @@ impl From<&RoaAggregateKey> for ObjectName {
 impl From<&AspaDefinition> for ObjectName {
     fn from(aspa: &AspaDefinition) -> Self {
         Self::aspa(aspa.customer())
+    }
+}
+
+impl From<&BgpSecCertInfo> for ObjectName {
+    fn from(info: &BgpSecCertInfo) -> Self {
+        Self::bgpsec(info.asn(), info.public_key().key_identifier())
+    }
+}
+
+impl From<&BgpSecAsnKey> for ObjectName {
+    fn from(asn_key: &BgpSecAsnKey) -> Self {
+        Self::bgpsec(asn_key.asn(), asn_key.key_identifier())
     }
 }
 
@@ -643,6 +656,15 @@ impl From<&Roa> for Revocation {
 impl From<&Aspa> for Revocation {
     fn from(aspa: &Aspa) -> Self {
         Self::from(aspa.cert())
+    }
+}
+
+impl From<&BgpSecCertInfo> for Revocation {
+    fn from(info: &BgpSecCertInfo) -> Self {
+        Revocation {
+            serial: info.serial(),
+            expires: info.expires(),
+        }
     }
 }
 

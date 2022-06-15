@@ -180,7 +180,7 @@ pub enum CmdDet {
     // ------------------------------------------------------------
 
     // Update BgpSecDefinitions
-    BgpSecUpdate(BgpSecDefinitionUpdates, Arc<Config>, Arc<KrillSigner>),
+    BgpSecUpdateDefinitions(BgpSecDefinitionUpdates, Arc<Config>, Arc<KrillSigner>),
 
     // Re-issue any and all BgpSec certificates which would otherwise
     // expire in some time.
@@ -325,7 +325,7 @@ impl From<CmdDet> for StorableCaCommand {
             // ------------------------------------------------------------
             // BGPSec Support
             // ------------------------------------------------------------
-            CmdDet::BgpSecUpdate(_, _, _) => StorableCaCommand::BgpSecDefinitionUpdates,
+            CmdDet::BgpSecUpdateDefinitions(_, _, _) => StorableCaCommand::BgpSecDefinitionUpdates,
             CmdDet::BgpSecRenew(_, _) => StorableCaCommand::ReissueBeforeExpiring,
 
             // ------------------------------------------------------------
@@ -563,6 +563,24 @@ impl CmdDet {
             ca,
             None,
             CmdDet::AspasUpdateExisting(customer, update, config, signer),
+            actor,
+        )
+    }
+
+    //-------------------------------------------------------------------------------
+    // BGPSec
+    //-------------------------------------------------------------------------------
+    pub fn bgpsec_update_definitions(
+        ca: &CaHandle,
+        updates: BgpSecDefinitionUpdates,
+        config: Arc<Config>,
+        signer: Arc<KrillSigner>,
+        actor: &Actor,
+    ) -> Cmd {
+        eventsourcing::SentCommand::new(
+            ca,
+            None,
+            CmdDet::BgpSecUpdateDefinitions(updates, config, signer),
             actor,
         )
     }

@@ -28,8 +28,8 @@ use crate::{
     commons::{
         api::{
             AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate, BgpSecAsnKey,
-            BgpSecDefinitionUpdates, CertAuthInfo, DelegatedCertificate, IdCertPem, ObjectName, ParentCaContact,
-            RcvdCert, RepositoryContact, Revocation, RoaDefinition, RtaList, RtaName, RtaPrepResponse,
+            BgpSecCsrInfoList, BgpSecDefinitionUpdates, CertAuthInfo, DelegatedCertificate, IdCertPem, ObjectName,
+            ParentCaContact, RcvdCert, RepositoryContact, Revocation, RoaDefinition, RtaList, RtaName, RtaPrepResponse,
             StorableCaCommand, TaCertDetails, TrustAnchorLocator,
         },
         crypto::{CsrInfo, KrillSigner},
@@ -394,6 +394,13 @@ impl Aggregate for CertAuth {
             CaEvtDet::BgpSecDefinitionRemoved { key } => {
                 self.bgpsec_defs.remove(&key);
             }
+            CaEvtDet::BgpSecCertificatesUpdated {
+                resource_class_name,
+                updates,
+            } => {
+                let rc = self.resources.get_mut(&resource_class_name).unwrap();
+                rc.bgpsec_certificates_updated(updates);
+            }
 
             //-----------------------------------------------------------------------
             // Publication
@@ -481,7 +488,9 @@ impl Aggregate for CertAuth {
             CmdDet::AspasRenew(config, signer) => self.aspas_renew(&config, &signer),
 
             // BGPSec
-            CmdDet::BgpSecUpdate(updates, config, signer) => self.bgpsec_definitions_update(updates, &config, &signer),
+            CmdDet::BgpSecUpdateDefinitions(updates, config, signer) => {
+                self.bgpsec_definitions_update(updates, &config, &signer)
+            }
             CmdDet::BgpSecRenew(config, signer) => self.bgpsec_renew(&config, &signer),
 
             // Republish
@@ -1468,6 +1477,7 @@ impl CertAuth {
             rcvd_cert,
             &self.routes,
             &self.aspas,
+            &self.bgpsec_defs,
             config,
             signer.deref(),
         )?;
@@ -1925,6 +1935,10 @@ impl CertAuth {
 /// # BGPSec
 ///
 impl CertAuth {
+    pub fn bgpsec_definitions_show(&self) -> BgpSecCsrInfoList {
+        self.bgpsec_defs.info_list()
+    }
+
     /// Process BGPSec Definition updates
     pub fn bgpsec_definitions_update(
         &self,
@@ -1989,17 +2003,39 @@ impl CertAuth {
         // Process the updated BGPSec definitions in each RC and add/remove
         // BGPSec certificates as needed.
         for (rcn, rc) in self.resources.iter() {
-            
+            let updates = rc.update_bgpsec_certs(&self.bgpsec_defs, config, signer)?;
+            if !updates.is_empty() {
+                res.push(CaEvtDet::BgpSecCertificatesUpdated {
+                    resource_class_name: rcn.clone(),
+                    updates,
+                });
+            }
         }
-
-        todo!("#827");
 
         Ok(self.events_from_details(res))
     }
 
     /// Renew any BGPSec certificates if needed.
     pub fn bgpsec_renew(&self, config: &Config, signer: &KrillSigner) -> KrillResult<Vec<CaEvt>> {
-        todo!("#827")
+        let mut evt_dets = vec![];
+
+        for (rcn, rc) in self.resources.iter() {
+            let updates = rc.renew_bgpsec_certs(&config.issuance_timing, signer)?;
+
+            if updates.contains_changes() {
+                info!(
+                    "CA '{}' reissued BGPSec certificates under RC '{}' before they would expire",
+                    self.handle, rcn
+                );
+
+                evt_dets.push(CaEvtDet::BgpSecCertificatesUpdated {
+                    resource_class_name: rcn.clone(),
+                    updates,
+                });
+            }
+        }
+
+        Ok(self.events_from_details(evt_dets))
     }
 }
 

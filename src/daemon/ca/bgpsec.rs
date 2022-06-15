@@ -13,7 +13,7 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::BgpSecAsnKey,
+        api::{BgpSecAsnKey, BgpSecCsrInfo, BgpSecCsrInfoList},
         crypto::{KrillSigner, SignSupport},
         KrillResult,
     },
@@ -22,52 +22,19 @@ use crate::{
 
 use super::{BgpSecCertificateUpdates, CertifiedKey};
 
-//------------ BgpSecObjects -----------------------------------------------
+//------------ BgpSecCertificates ------------------------------------------
 
 /// The issued BGPSec certificates under a resource class in a CA.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-pub struct BgpSecObjects(HashMap<BgpSecAsnKey, BgpSecCertInfo>);
+pub struct BgpSecCertificates(HashMap<BgpSecAsnKey, BgpSecCertInfo>);
 
-impl BgpSecObjects {
-    fn make_bgpsec_cert(
-        &self,
-        asn: Asn,
-        csr: &StoredBgpSecCsr,
-        certified_key: &CertifiedKey,
-        issuance_timing: &IssuanceTimingConfig,
-        signer: &KrillSigner,
-    ) -> KrillResult<BgpSecCertInfo> {
-        let serial_number = signer.random_serial()?;
+impl BgpSecCertificates {
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 
-        let incoming_cert = certified_key.incoming_cert();
-        let issuer = incoming_cert.subject().clone();
-        let crl_uri = incoming_cert.crl_uri();
-        let aki = incoming_cert.subject_public_key_info().key_identifier();
-        let aia = incoming_cert.uri().clone();
-
-        let validity = SignSupport::sign_validity_weeks(issuance_timing.timing_bgpsec_valid_weeks);
-
-        let mut router_cert = TbsCert::new(
-            serial_number,
-            issuer,
-            validity,
-            None,
-            csr.key.clone(),
-            KeyUsage::Ee,
-            Overclaim::Refuse,
-        );
-
-        router_cert.set_extended_key_usage(Some(ExtendedKeyUsage::create_router()));
-        router_cert.set_authority_key_identifier(Some(aki));
-        router_cert.set_ca_issuer(Some(aia));
-        router_cert.set_crl_uri(Some(crl_uri));
-        router_cert.build_as_resource_blocks(|b| b.push(asn));
-
-        let signing_key = certified_key.key_id();
-
-        let cert = signer.sign_cert(router_cert, signing_key)?;
-
-        Ok(BgpSecCertInfo::new(asn, cert))
+    pub fn len(&self) -> usize {
+        self.0.len()
     }
 
     /// Update issued BGPSec certificates
@@ -99,7 +66,7 @@ impl BgpSecObjects {
             .filter(|(k, _)| !self.0.contains_key(k) && resources.contains_asn(k.asn()))
         {
             // resource held here, but BGPSec certificate was not yet issued.
-            let cert = self.make_bgpsec_cert(key.asn(), csr, certified_key, issuance_timing, signer)?;
+            let cert = self.make_bgpsec_cert(key.asn(), csr.key().clone(), certified_key, issuance_timing, signer)?;
             updates.add_updated(cert);
         }
 
@@ -121,17 +88,71 @@ impl BgpSecObjects {
         &self,
         certified_key: &CertifiedKey,
         renew_threshold: Option<Time>,
-        config: &Config,
+        issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<BgpSecCertificateUpdates> {
         let mut updates = BgpSecCertificateUpdates::default();
+
+        for cert in self.0.values().filter(|cert| {
+            renew_threshold
+                .map(|threshold| cert.expires() < threshold) // will expire
+                .unwrap_or(true) // always renew if no renew_threshold was given
+        }) {
+            let asn = cert.asn();
+            let public_key = cert.public_key().clone();
+            let cert = self.make_bgpsec_cert(asn, public_key, certified_key, issuance_timing, signer)?;
+            updates.add_updated(cert);
+        }
+
+        Ok(updates)
+    }
+
+    fn make_bgpsec_cert(
+        &self,
+        asn: Asn,
+        public_key: PublicKey,
+        certified_key: &CertifiedKey,
+        issuance_timing: &IssuanceTimingConfig,
+        signer: &KrillSigner,
+    ) -> KrillResult<BgpSecCertInfo> {
+        let serial_number = signer.random_serial()?;
+
+        let incoming_cert = certified_key.incoming_cert();
+        let issuer = incoming_cert.subject().clone();
+        let crl_uri = incoming_cert.crl_uri();
+        let aki = incoming_cert.subject_public_key_info().key_identifier();
+        let aia = incoming_cert.uri().clone();
+
+        let validity = SignSupport::sign_validity_weeks(issuance_timing.timing_bgpsec_valid_weeks);
+
+        let mut router_cert = TbsCert::new(
+            serial_number,
+            issuer,
+            validity,
+            None,
+            public_key,
+            KeyUsage::Ee,
+            Overclaim::Refuse,
+        );
+
+        router_cert.set_extended_key_usage(Some(ExtendedKeyUsage::create_router()));
+        router_cert.set_authority_key_identifier(Some(aki));
+        router_cert.set_ca_issuer(Some(aia));
+        router_cert.set_crl_uri(Some(crl_uri));
+        router_cert.build_as_resource_blocks(|b| b.push(asn));
+
+        let signing_key = certified_key.key_id();
+
+        let cert = signer.sign_cert(router_cert, signing_key)?;
+
+        Ok(BgpSecCertInfo::new(asn, cert))
     }
 
     /// Applies updates from an event.
     pub fn updated(&mut self, updates: BgpSecCertificateUpdates) {
         let (updated, removed) = updates.unpack();
         for info in updated {
-            let key = info.asn_key;
+            let key = info.asn_key();
             self.0.insert(key, info);
         }
         for key in removed {
@@ -145,27 +166,51 @@ impl BgpSecObjects {
 /// An issued BGPSec certificate under a resource class
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BgpSecCertInfo {
-    #[serde(flatten)]
-    asn_key: BgpSecAsnKey,
+    asn: Asn,
+    public_key: PublicKey,
     serial: Serial,
     expires: Time,
-    binary: Base64,
+    cert: Base64,
 }
 
 impl BgpSecCertInfo {
     fn new(asn: Asn, cert: Cert) -> Self {
-        let pub_key = cert.subject_public_key_info();
-        let asn_key = BgpSecAsnKey::new(asn, pub_key.key_identifier());
+        let public_key = cert.subject_public_key_info().clone();
         let serial = cert.serial_number();
         let expires = cert.validity().not_after();
-        let binary = Base64::from(&cert);
+        let cert = Base64::from(&cert);
 
         BgpSecCertInfo {
-            asn_key,
+            asn,
+            public_key,
             serial,
             expires,
-            binary,
+            cert,
         }
+    }
+
+    pub fn asn_key(&self) -> BgpSecAsnKey {
+        BgpSecAsnKey::new(self.asn, self.public_key.key_identifier())
+    }
+
+    pub fn asn(&self) -> Asn {
+        self.asn
+    }
+
+    pub fn public_key(&self) -> &PublicKey {
+        &self.public_key
+    }
+
+    pub fn serial(&self) -> Serial {
+        self.serial
+    }
+
+    pub fn expires(&self) -> Time {
+        self.expires
+    }
+
+    pub fn cert(&self) -> &Base64 {
+        &self.cert
     }
 }
 
@@ -190,6 +235,15 @@ impl BgpSecDefinitions {
 
     pub fn iter(&self) -> impl Iterator<Item = (&BgpSecAsnKey, &StoredBgpSecCsr)> {
         self.0.iter()
+    }
+
+    pub fn info_list(&self) -> BgpSecCsrInfoList {
+        BgpSecCsrInfoList::new(
+            self.0
+                .iter()
+                .map(|(key, csr)| BgpSecCsrInfo::new(key.asn(), key.key_identifier(), csr.csr().clone()))
+                .collect(),
+        )
     }
 
     pub fn get_stored_csr(&self, key: &BgpSecAsnKey) -> Option<&StoredBgpSecCsr> {
@@ -222,7 +276,17 @@ impl BgpSecDefinitions {
 pub struct StoredBgpSecCsr {
     since: Time,
     key: PublicKey,
-    binary: Base64,
+    csr: Base64,
+}
+
+impl StoredBgpSecCsr {
+    pub fn key(&self) -> &PublicKey {
+        &self.key
+    }
+
+    pub fn csr(&self) -> &Base64 {
+        &self.csr
+    }
 }
 
 impl From<&BgpsecCsr> for StoredBgpSecCsr {
@@ -230,6 +294,10 @@ impl From<&BgpsecCsr> for StoredBgpSecCsr {
         let since = Time::now();
         let key = csr.public_key().clone();
         let binary = Base64::from_content(csr.to_captured().as_slice());
-        StoredBgpSecCsr { since, key, binary }
+        StoredBgpSecCsr {
+            since,
+            key,
+            csr: binary,
+        }
     }
 }

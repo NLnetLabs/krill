@@ -154,6 +154,10 @@ pub struct ChildCertificates {
 }
 
 impl ChildCertificates {
+    pub fn is_empty(&self) -> bool {
+        self.issued.is_empty() && self.suspended.is_empty()
+    }
+
     pub fn certificate_issued(&mut self, issued: DelegatedCertificate) {
         let ki = issued.cert().subject_key_identifier();
         self.issued.insert(ki, issued);

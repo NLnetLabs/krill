@@ -23,7 +23,7 @@ use rpki::{
 use crate::{
     commons::{
         actor::Actor,
-        api::{rrdp::PublishElement, Timestamp},
+        api::{rrdp::PublishElement, BgpSecCsrInfoList, BgpSecDefinitionUpdates, Timestamp},
         api::{
             AddChildRequest, AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate,
             CaCommandDetails, CaCommandResult, CertAuthList, CertAuthSummary, ChildCaInfo, CommandHistory,
@@ -1825,6 +1825,32 @@ impl CaManager {
     }
 }
 
+/// # BGPSec functions
+///
+impl CaManager {
+    pub async fn ca_bgpsec_definitions_show(&self, ca: CaHandle) -> KrillResult<BgpSecCsrInfoList> {
+        let ca = self.get_ca(&ca).await?;
+        Ok(ca.bgpsec_definitions_show())
+    }
+
+    pub async fn ca_bgpsec_definitions_update(
+        &self,
+        ca: CaHandle,
+        updates: BgpSecDefinitionUpdates,
+        actor: &Actor,
+    ) -> KrillResult<()> {
+        self.send_command(CmdDet::bgpsec_update_definitions(
+            &ca,
+            updates,
+            self.config.clone(),
+            self.signer.clone(),
+            actor,
+        ))
+        .await?;
+        Ok(())
+    }
+}
+
 /// # Route Authorization functions
 ///
 impl CaManager {
@@ -1884,11 +1910,22 @@ impl CaManager {
             if let Err(e) = self.send_command(cmd).await {
                 error!("Renewing ASPAs for CA '{}' failed with error: {}", ca, e);
             }
+
+            let cmd = Cmd::new(
+                &ca,
+                None,
+                CmdDet::BgpSecRenew(self.config.clone(), self.signer.clone()),
+                actor,
+            );
+
+            if let Err(e) = self.send_command(cmd).await {
+                error!("Renewing BGPSec certificates for CA '{}' failed with error: {}", ca, e);
+            }
         }
         Ok(())
     }
 
-    /// Force the reissuance of all ROAs in all CAs. This function was added
+    /// Force the re-issuance of all ROAs in all CAs. This function was added
     /// because we need to re-issue ROAs in Krill 0.9.3 to force that a short
     /// subject CN is used for the EE certificate: i.e. the SKI rather than the
     /// full public key. But there may also be other cases in future where

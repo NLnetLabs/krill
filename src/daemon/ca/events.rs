@@ -431,6 +431,26 @@ pub struct BgpSecCertificateUpdates {
 }
 
 impl BgpSecCertificateUpdates {
+    pub fn is_empty(&self) -> bool {
+        self.updated.is_empty() && self.removed.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.updated.len() + self.removed.len()
+    }
+
+    pub fn contains_changes(&self) -> bool {
+        !self.is_empty()
+    }
+
+    pub fn updated(&self) -> &Vec<BgpSecCertInfo> {
+        &self.updated
+    }
+
+    pub fn removed(&self) -> &Vec<BgpSecAsnKey> {
+        &self.removed
+    }
+
     pub fn unpack(self) -> (Vec<BgpSecCertInfo>, Vec<BgpSecAsnKey>) {
         (self.updated, self.removed)
     }
@@ -731,6 +751,11 @@ pub enum CaEvtDet {
     },
     BgpSecDefinitionRemoved {
         key: BgpSecAsnKey,
+    },
+    BgpSecCertificatesUpdated {
+        // Tracks the actual BGPSec certificates (re-)issued in a resource class
+        resource_class_name: ResourceClassName,
+        updates: BgpSecCertificateUpdates,
     },
 
     // Publishing
@@ -1156,6 +1181,31 @@ impl fmt::Display for CaEvtDet {
                     key.asn(),
                     key.key_identifier()
                 )
+            }
+            CaEvtDet::BgpSecCertificatesUpdated {
+                resource_class_name,
+                updates,
+            } => {
+                write!(
+                    f,
+                    "updated BGPSec certificates under resource class '{}'",
+                    resource_class_name
+                )?;
+                let updated = updates.updated();
+                if !updated.is_empty() {
+                    write!(f, " added: ")?;
+                    for cert in updated {
+                        write!(f, "{} ", ObjectName::from(cert))?;
+                    }
+                }
+                let removed = updates.removed();
+                if !removed.is_empty() {
+                    write!(f, " removed: ")?;
+                    for key in removed {
+                        write!(f, "{} ", ObjectName::from(key))?;
+                    }
+                }
+                Ok(())
             }
 
             // Publishing

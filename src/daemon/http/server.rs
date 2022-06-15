@@ -40,7 +40,8 @@ use crate::{
         bgp::BgpAnalysisAdvice,
         error::Error,
         eventsourcing::AggregateStoreError,
-        util::file, KrillResult,
+        util::file,
+        KrillResult,
     },
     constants::{
         KRILL_ENV_HTTP_LOG_INFO, KRILL_ENV_UPGRADE_ONLY, KRILL_VERSION_MAJOR, KRILL_VERSION_MINOR, KRILL_VERSION_PATCH,
@@ -192,7 +193,8 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
         lock.handle_ctrl_c(),
         #[cfg(unix)]
         lock.handle_sig_term()
-    ).map(|_| ())
+    )
+    .map(|_| ())
 }
 
 struct RequestLogger {
@@ -1102,6 +1104,7 @@ async fn api_cas(req: Request, path: &mut RequestPath) -> RoutingResult {
                     _ => render_unknown_method(),
                 },
                 Some("aspas") => api_ca_aspas(req, path, ca).await,
+                Some("bgpsec") => api_ca_bgpsec(req, path, ca).await,
                 Some("children") => api_ca_children(req, path, ca).await,
                 Some("history") => api_ca_history(req, path, ca).await,
 
@@ -1542,6 +1545,38 @@ async fn api_ca_aspas(req: Request, path: &mut RequestPath, ca: CaHandle) -> Rou
         }
         _ => render_unknown_method(),
     }
+}
+
+async fn api_ca_bgpsec(req: Request, path: &mut RequestPath, ca: CaHandle) -> RoutingResult {
+    // Handles /api/v1/bgpsec/:
+    //    GET  /api/v1/bgpsec/ -> List BGPSec Definitions
+    //    POST /api/v1/bgpsec/ -> Send BgpSecDefinitionUpdates
+    //    GET  /api/v1/bgpsec/objects -> List asn_key -> *cert (for each RC)
+    match path.next() {
+        None => match *req.method() {
+            Method::GET => api_ca_bgpsec_definitions_show(req, ca).await,
+            Method::POST => api_ca_bgpsec_definitions_update(req, ca).await,
+            _ => render_unknown_method(),
+        },
+        _ => render_unknown_method(),
+    }
+}
+
+async fn api_ca_bgpsec_definitions_show(req: Request, ca: CaHandle) -> RoutingResult {
+    aa!(req, Permission::BGPSEC_READ, Handle::from(&ca), {
+        render_json_res(req.state().ca_bgpsec_definitions_show(ca).await)
+    })
+}
+
+async fn api_ca_bgpsec_definitions_update(req: Request, ca: CaHandle) -> RoutingResult {
+    aa!(req, Permission::BGPSEC_UPDATE, Handle::from(&ca), {
+        let actor = req.actor();
+        let server = req.state().clone();
+        match req.json().await {
+            Ok(updates) => render_empty_res(server.ca_bgpsec_definitions_update(ca, updates, &actor).await),
+            Err(e) => render_error(e),
+        }
+    })
 }
 
 async fn api_ca_children(req: Request, path: &mut RequestPath, ca: CaHandle) -> RoutingResult {
@@ -2106,7 +2141,6 @@ async fn api_ca_rta_multi_sign(req: Request, ca: CaHandle, name: RtaName) -> Rou
     })
 }
 
-
 /// A naive lock implementation used to prevent that two Krill instances
 /// access the same krill data directory simultaneously.
 struct KrillLock(PathBuf);
@@ -2116,12 +2150,19 @@ impl KrillLock {
         let lock_file_path = config.data_dir.join("krill.lock");
 
         if lock_file_path.exists() {
-            error!("Cannot start Krill: existing lock file found at: {}", lock_file_path.display());
+            error!(
+                "Cannot start Krill: existing lock file found at: {}",
+                lock_file_path.display()
+            );
             ::std::process::exit(1);
         }
-        
+
         if let Err(e) = file::save(b"lock", &lock_file_path) {
-            error!("Cannot start Krill: cannot create lock file at: {}. Error: {}", lock_file_path.display(), e);
+            error!(
+                "Cannot start Krill: cannot create lock file at: {}. Error: {}",
+                lock_file_path.display(),
+                e
+            );
             ::std::process::exit(1);
         }
 
@@ -2138,10 +2179,13 @@ impl KrillLock {
         self.clean();
         std::process::exit(0)
     }
-    
+
     #[cfg(unix)]
     async fn handle_sig_term(&self) -> KrillResult<()> {
-        tokio::signal::unix::signal(SignalKind::terminate()).unwrap().recv().await;
+        tokio::signal::unix::signal(SignalKind::terminate())
+            .unwrap()
+            .recv()
+            .await;
         self.clean();
         std::process::exit(0)
     }
@@ -2174,4 +2218,3 @@ mod tests {
         let _ = fs::remove_dir_all(dir);
     }
 }
-

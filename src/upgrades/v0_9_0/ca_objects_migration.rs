@@ -790,7 +790,7 @@ impl OldResourceClass {
         certs: HashMap<ObjectName, PublishedCert>,
     ) -> CurrentKeyObjectSet {
         let basic = Self::object_set_for_certified_key(key);
-        CurrentKeyObjectSet::new(basic, roas, HashMap::new(), certs)
+        CurrentKeyObjectSet::new(basic, roas, HashMap::new(), HashMap::new(), certs)
     }
 
     fn object_set_for_certified_key(key: &OldCertifiedKey) -> BasicKeyObjectSet {
