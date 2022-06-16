@@ -1962,7 +1962,8 @@ impl CertAuth {
             if !definitions.remove(&key) {
                 return Err(Error::BgpSecDefinitionUnknown(self.handle.clone(), key));
             } else {
-                res.push(CaEvtDet::BgpSecDefinitionRemoved { key })
+                definitions.remove(&key);
+                res.push(CaEvtDet::BgpSecDefinitionRemoved { key });
             }
         }
 
@@ -1994,16 +1995,10 @@ impl CertAuth {
             }
         }
 
-        if res.is_empty() {
-            // This was a no-op. No errors, but no changes either.
-            // Perhaps the user submitted the same ASN and CSR again.
-            return Ok(vec![]);
-        }
-
         // Process the updated BGPSec definitions in each RC and add/remove
         // BGPSec certificates as needed.
         for (rcn, rc) in self.resources.iter() {
-            let updates = rc.update_bgpsec_certs(&self.bgpsec_defs, config, signer)?;
+            let updates = rc.update_bgpsec_certs(&definitions, config, signer)?;
             if !updates.is_empty() {
                 res.push(CaEvtDet::BgpSecCertificatesUpdated {
                     resource_class_name: rcn.clone(),

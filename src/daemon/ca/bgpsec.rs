@@ -39,11 +39,13 @@ impl BgpSecCertificates {
 
     /// Update issued BGPSec certificates
     ///
-    /// Will issued new BGPSec certificates for definitions using the resources of
+    /// Will issue new BGPSec certificates for definitions using the resources of
     /// this certified key which did not yet exist.
     ///
-    /// Will remove any existing BGPSec certificates for which the certified key no
-    /// longer holds the asn.
+    /// Will remove any existing BGPSec certificates which:
+    /// - are no longer present in the definitions; or
+    /// - for which the certified key no longer holds the asn.
+    ///
     ///
     /// Note that we pass in ALL BGPSec definitions, including definitions that may only
     /// be eligible under another owning RC.
@@ -70,8 +72,14 @@ impl BgpSecCertificates {
             updates.add_updated(cert);
         }
 
-        // Remove any BGPSec certificates for resources no longer held.
-        for (key, _) in self.0.iter().filter(|(k, _)| !resources.contains_asn(k.asn())) {
+        // Will remove any existing BGPSec certificates which:
+        // - are no longer present in the definitions; or
+        // - for which the certified key no longer holds the asn.
+        for (key, _) in self
+            .0
+            .iter()
+            .filter(|(k, _)| !definitions.has(k) || !resources.contains_asn(k.asn()))
+        {
             updates.add_removed(*key);
         }
 

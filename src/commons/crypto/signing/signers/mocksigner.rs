@@ -11,8 +11,8 @@ use openssl::{
 };
 
 use rpki::{
-    repository::crypto::signer::KeyError,
-    repository::crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError},
+    crypto::signer::KeyError,
+    crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError},
 };
 
 use crate::commons::crypto::{dispatch::signerinfo::SignerMapper, SignerError, SignerHandle};

@@ -261,9 +261,16 @@ impl ResourceClass {
                     Ok(events)
                 }
             }
-            KeyState::Active(current) => {
-                self.update_rcvd_cert_current(handle, current, rcvd_cert, all_routes, all_aspas, config, signer)
-            }
+            KeyState::Active(current) => self.update_rcvd_cert_current(
+                handle,
+                current,
+                rcvd_cert,
+                all_routes,
+                all_aspas,
+                all_bgpsecs,
+                config,
+                signer,
+            ),
             KeyState::RollPending(pending, current) => {
                 if rcvd_cert_ki == pending.key_id() {
                     let new_key = CertifiedKey::create(rcvd_cert);
@@ -272,7 +279,16 @@ impl ResourceClass {
                         new_key,
                     }])
                 } else {
-                    self.update_rcvd_cert_current(handle, current, rcvd_cert, all_routes, all_aspas, config, signer)
+                    self.update_rcvd_cert_current(
+                        handle,
+                        current,
+                        rcvd_cert,
+                        all_routes,
+                        all_aspas,
+                        all_bgpsecs,
+                        config,
+                        signer,
+                    )
                 }
             }
             KeyState::RollNew(new, current) => {
@@ -283,12 +299,30 @@ impl ResourceClass {
                         rcvd_cert,
                     }])
                 } else {
-                    self.update_rcvd_cert_current(handle, current, rcvd_cert, all_routes, all_aspas, config, signer)
+                    self.update_rcvd_cert_current(
+                        handle,
+                        current,
+                        rcvd_cert,
+                        all_routes,
+                        all_aspas,
+                        all_bgpsecs,
+                        config,
+                        signer,
+                    )
                 }
             }
             KeyState::RollOld(current, _old) => {
                 // We will never request a new certificate for an old key
-                self.update_rcvd_cert_current(handle, current, rcvd_cert, all_routes, all_aspas, config, signer)
+                self.update_rcvd_cert_current(
+                    handle,
+                    current,
+                    rcvd_cert,
+                    all_routes,
+                    all_aspas,
+                    all_bgpsecs,
+                    config,
+                    signer,
+                )
             }
         }
     }
@@ -299,8 +333,9 @@ impl ResourceClass {
         handle: &CaHandle,
         current_key: &CurrentKey,
         rcvd_cert: RcvdCert,
-        routes: &Routes,
-        aspas: &AspaDefinitions,
+        all_routes: &Routes,
+        all_aspas: &AspaDefinitions,
+        all_bgpsecs: &BgpSecDefinitions,
         config: &Config,
         signer: &KrillSigner,
     ) -> KrillResult<Vec<CaEvtDet>> {
@@ -345,7 +380,7 @@ impl ResourceClass {
             // Re-issue ROAs based on updated resources.
             // Note that route definitions will not have changed in this case, but the decision logic is all the same.
             {
-                let updates = self.roas.update(routes, &updated_key, config, signer)?;
+                let updates = self.roas.update(all_routes, &updated_key, config, signer)?;
                 if !updates.is_empty() {
                     res.push(CaEvtDet::RoasUpdated {
                         resource_class_name: self.name.clone(),
@@ -357,9 +392,23 @@ impl ResourceClass {
             // Re-issue ASPA objects based on updated resources.
             // Note that aspa definitions will not have changed in this case, but the decision logic is all the same.
             {
-                let updates = self.aspas.update(aspas, &updated_key, config, signer)?;
+                let updates = self.aspas.update(all_aspas, &updated_key, config, signer)?;
                 if !updates.is_empty() {
                     res.push(CaEvtDet::AspaObjectsUpdated {
+                        resource_class_name: self.name.clone(),
+                        updates,
+                    })
+                }
+            }
+
+            // Re-issue BGPSec certificates based on updated resources.
+            // Note that definitions will not have changed in this case, but the decision logic is all the same.
+            {
+                let updates = self
+                    .bgpsec_certificates
+                    .update(all_bgpsecs, &updated_key, config, signer)?;
+                if !updates.is_empty() {
+                    res.push(CaEvtDet::BgpSecCertificatesUpdated {
                         resource_class_name: self.name.clone(),
                         updates,
                     })

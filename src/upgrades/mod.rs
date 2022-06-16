@@ -23,7 +23,7 @@ use crate::{
 };
 
 #[cfg(feature = "hsm")]
-use rpki::repository::crypto::KeyIdentifier;
+use rpki::crypto::KeyIdentifier;
 
 #[cfg(feature = "hsm")]
 use crate::{
@@ -297,10 +297,7 @@ pub trait UpgradeStore {
 /// started, it will call this again - to do the final preparation for a migration -
 /// knowing that no changes are added to the event history at this time. After this,
 /// the migration will be finalised.
-pub fn prepare_upgrade_data_migrations(
-    mode: UpgradeMode,
-    config: Arc<Config>,
-) -> UpgradeResult<Option<UpgradeReport>> {
+pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -> UpgradeResult<Option<UpgradeReport>> {
     match upgrade_versions(config.as_ref()) {
         None => Ok(None),
         Some(versions) => {

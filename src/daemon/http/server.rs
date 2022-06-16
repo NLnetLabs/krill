@@ -1548,10 +1548,9 @@ async fn api_ca_aspas(req: Request, path: &mut RequestPath, ca: CaHandle) -> Rou
 }
 
 async fn api_ca_bgpsec(req: Request, path: &mut RequestPath, ca: CaHandle) -> RoutingResult {
-    // Handles /api/v1/bgpsec/:
-    //    GET  /api/v1/bgpsec/ -> List BGPSec Definitions
-    //    POST /api/v1/bgpsec/ -> Send BgpSecDefinitionUpdates
-    //    GET  /api/v1/bgpsec/objects -> List asn_key -> *cert (for each RC)
+    // Handles /api/v1/cas/{ca}/bgpsec/:
+    //    GET  /api/v1/cas/{ca}/bgpsec/ -> List BGPSec Definitions
+    //    POST /api/v1/cas/{ca}/bgpsec/ -> Send BgpSecDefinitionUpdates
     match path.next() {
         None => match *req.method() {
             Method::GET => api_ca_bgpsec_definitions_show(req, ca).await,

@@ -21,9 +21,8 @@ use openssl::ssl::SslStream;
 use r2d2::PooledConnection;
 
 use rpki::{
-    crypto::SignatureAlgorithm,
-    repository::crypto::signer::KeyError,
-    repository::crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError},
+    crypto::signer::KeyError,
+    crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError},
 };
 
 use crate::commons::{

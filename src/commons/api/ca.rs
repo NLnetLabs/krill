@@ -529,7 +529,7 @@ impl ObjectName {
     }
 
     pub fn bgpsec(asn: Asn, key: KeyIdentifier) -> Self {
-        ObjectName(format!("ROUTER-{:x}-{}.cer", asn.into_u32(), key))
+        ObjectName(format!("ROUTER-{:08X}-{}.cer", asn.into_u32(), key))
     }
 }
 

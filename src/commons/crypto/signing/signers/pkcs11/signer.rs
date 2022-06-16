@@ -20,8 +20,8 @@ use cryptoki::{
 };
 
 use rpki::{
-    repository::crypto::signer::KeyError,
-    repository::crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError},
+    crypto::signer::KeyError,
+    crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError},
 };
 
 use crate::commons::crypto::{
@@ -633,7 +633,7 @@ impl Pkcs11Signer {
 impl Pkcs11Signer {
     pub(super) fn remember_key_id(
         &self,
-        key_id: &rpki::repository::crypto::KeyIdentifier,
+        key_id: &rpki::crypto::KeyIdentifier,
         internal_key_id: String,
     ) -> Result<(), SignerError> {
         let readable_handle = self.handle.read().unwrap();

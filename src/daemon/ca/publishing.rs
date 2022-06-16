@@ -1067,7 +1067,7 @@ impl CurrentKeyObjectSet {
     }
 
     fn reissue_mft(&self, new_crl: &PublishedCrl, signer: &KrillSigner) -> KrillResult<PublishedManifest> {
-        ManifestBuilder::with_objects(new_crl, &self.roas, &self.aspas, &self.certs)
+        ManifestBuilder::with_objects(new_crl, &self.roas, &self.aspas, &self.certs, &self.bgpsec_certs)
             .build_new_mft(&self.signing_cert, self.next(), signer)
             .map(|m| m.into())
     }
@@ -1639,6 +1639,7 @@ impl ManifestBuilder {
         roas: &HashMap<ObjectName, PublishedRoa>,
         aspas: &HashMap<ObjectName, PublishedAspa>,
         certs: &HashMap<ObjectName, PublishedCert>,
+        bgpsec_certs: &HashMap<ObjectName, BgpSecCertInfo>,
     ) -> Self {
         let mut entries: HashMap<Bytes, Bytes> = HashMap::new();
 
@@ -1661,6 +1662,13 @@ impl ManifestBuilder {
         for (name, cert) in certs {
             let hash = cert.mft_hash();
             entries.insert(name.clone().into(), hash);
+        }
+
+        // Add all bgpsec certs
+        for (name, info) in bgpsec_certs {
+            let hash = info.cert().to_hash();
+            let hash_bytes = Bytes::copy_from_slice(hash.as_slice());
+            entries.insert(name.clone().into(), hash_bytes);
         }
 
         ManifestBuilder {

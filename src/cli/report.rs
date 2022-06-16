@@ -8,9 +8,10 @@ use rpki::ca::idexchange;
 use crate::{
     commons::{
         api::{
-            AllCertAuthIssues, AspaDefinitionList, CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthIssues,
-            CertAuthList, ChildCaInfo, ChildrenConnectionStats, CommandHistory, ParentCaContact, ParentStatuses,
-            PublisherDetails, PublisherList, RepoStatus, RoaDefinitions, RtaList, RtaPrepResponse, ServerInfo,
+            AllCertAuthIssues, AspaDefinitionList, BgpSecCsrInfoList, CaCommandDetails, CaRepoDetails, CertAuthInfo,
+            CertAuthIssues, CertAuthList, ChildCaInfo, ChildrenConnectionStats, CommandHistory, ParentCaContact,
+            ParentStatuses, PublisherDetails, PublisherList, RepoStatus, RoaDefinitions, RtaList, RtaPrepResponse,
+            ServerInfo,
         },
         bgp::{BgpAnalysisAdvice, BgpAnalysisReport, BgpAnalysisSuggestion},
     },
@@ -40,6 +41,9 @@ pub enum ApiResponse {
 
     // ASPA related
     AspaDefinitions(AspaDefinitionList),
+
+    // BGPSec related
+    BgpSecDefinitions(BgpSecCsrInfoList),
 
     ParentCaContact(ParentCaContact),
     ParentStatuses(ParentStatuses),
@@ -88,6 +92,7 @@ impl ApiResponse {
                 ApiResponse::BgpAnalysisFull(table) => Ok(Some(table.report(fmt)?)),
                 ApiResponse::BgpAnalysisSuggestions(suggestions) => Ok(Some(suggestions.report(fmt)?)),
                 ApiResponse::AspaDefinitions(definitions) => Ok(Some(definitions.report(fmt)?)),
+                ApiResponse::BgpSecDefinitions(definitions) => Ok(Some(definitions.report(fmt)?)),
                 ApiResponse::ParentCaContact(contact) => Ok(Some(contact.report(fmt)?)),
                 ApiResponse::ParentStatuses(statuses) => Ok(Some(statuses.report(fmt)?)),
                 ApiResponse::ChildInfo(info) => Ok(Some(info.report(fmt)?)),
@@ -202,6 +207,8 @@ impl Report for BgpAnalysisReport {}
 impl Report for BgpAnalysisSuggestion {}
 
 impl Report for AspaDefinitionList {}
+
+impl Report for BgpSecCsrInfoList {}
 
 impl Report for CaRepoDetails {}
 impl Report for RepoStatus {}
