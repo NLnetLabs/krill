@@ -22,7 +22,10 @@ use r2d2::PooledConnection;
 
 use rpki::{
     crypto::signer::KeyError,
-    crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError},
+    crypto::{
+        KeyIdentifier, PublicKey, PublicKeyFormat, RpkiSignature, RpkiSignatureAlgorithm, Signature,
+        SignatureAlgorithm, SigningError,
+    },
 };
 
 use crate::commons::{
@@ -329,8 +332,12 @@ impl KmipSigner {
         &self,
         signer_private_key_id: &str,
         challenge: &D,
-    ) -> Result<Signature, SignerError> {
-        self.sign_with_key(signer_private_key_id, SignatureAlgorithm::default(), challenge.as_ref())
+    ) -> Result<RpkiSignature, SignerError> {
+        self.sign_with_key(
+            signer_private_key_id,
+            RpkiSignatureAlgorithm::default(),
+            challenge.as_ref(),
+        )
     }
 }
 
@@ -787,7 +794,7 @@ impl KmipSigner {
         private_key_id: &str,
         algorithm: Alg,
         data: &[u8],
-    ) -> Result<Signature, SignerError> {
+    ) -> Result<Signature<Alg>, SignerError> {
         if algorithm.public_key_format() != PublicKeyFormat::Rsa {
             return Err(SignerError::KmipError(format!(
                 "Algorithm '{:?}' not supported",
@@ -918,7 +925,7 @@ impl KmipSigner {
         key_id: &KeyIdentifier,
         algorithm: Alg,
         data: &D,
-    ) -> Result<Signature, SigningError<SignerError>> {
+    ) -> Result<Signature<Alg>, SigningError<SignerError>> {
         let kmip_key_pair_ids = self.lookup_kmip_key_ids(key_id)?;
 
         let signature = self
@@ -937,7 +944,7 @@ impl KmipSigner {
         &self,
         algorithm: Alg,
         data: &D,
-    ) -> Result<(Signature, PublicKey), SignerError> {
+    ) -> Result<(Signature<Alg>, PublicKey), SignerError> {
         // TODO: Is it possible to use a KMIP batch request to implement the create, activate, sign, deactivate, delete
         // in one round-trip to the server?
         let (key, kmip_key_pair_ids) = self.build_key(PublicKeyFormat::Rsa)?;

@@ -12,7 +12,7 @@ use openssl::{
 
 use rpki::{
     crypto::signer::KeyError,
-    crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError},
+    crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, RpkiSignature, Signature, SignatureAlgorithm, SigningError},
 };
 
 use crate::commons::crypto::{dispatch::signerinfo::SignerMapper, SignerError, SignerHandle};
@@ -119,7 +119,10 @@ impl MockSigner {
         Ok((public_key, pkey, key_identifier, internal_id))
     }
 
-    fn sign_with_key<D: AsRef<[u8]> + ?Sized>(pkey: &PKey<Private>, challenge: &D) -> Result<Signature, SignerError> {
+    fn sign_with_key<D: AsRef<[u8]> + ?Sized>(
+        pkey: &PKey<Private>,
+        challenge: &D,
+    ) -> Result<RpkiSignature, SignerError> {
         let mut signer = ::openssl::sign::Signer::new(MessageDigest::sha256(), &pkey)?;
         signer.update(challenge.as_ref())?;
         let signature = Signature::new(SignatureAlgorithm::default(), Bytes::from(signer.sign_to_vec()?));
@@ -161,7 +164,7 @@ impl MockSigner {
         &self,
         signer_private_key_id: &str,
         challenge: &D,
-    ) -> Result<Signature, SignerError> {
+    ) -> Result<RpkiSignature, SignerError> {
         self.inc_fn_call_count(FnIdx::SignRegistrationChallenge);
         if let Some(err_cb) = &self.sign_registration_challenge_error_cb {
             let _ = (err_cb)(&self.fn_call_counts)?;
