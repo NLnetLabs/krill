@@ -236,7 +236,7 @@ impl SignerProvider {
     ) -> Result<(Signature<Alg>, PublicKey), SignerError> {
         let signing_algorithm = algorithm.signing_algorithm();
         if !matches!(signing_algorithm, SigningAlgorithm::RsaSha256) {
-            return Err(SignerError::UnsupportedSigningAlg(signing_algorithm).into());
+            return Err(SignerError::UnsupportedSigningAlg(signing_algorithm));
         }
 
         match self {
