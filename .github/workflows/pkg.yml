@@ -458,6 +458,9 @@ jobs:
         #   - image: 'debian:bullseye'
         #     mode: 'upgrade-from-published'
         exclude:
+          - pkg: 'krill'
+            mode: 'upgrade-from-published'
+            image: 'ubuntu:jammy'
           - pkg: 'krillup'
             mode: 'upgrade-from-published'
             image: 'ubuntu:xenial'   # ubuntu/16.04
