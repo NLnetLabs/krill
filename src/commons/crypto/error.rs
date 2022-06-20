@@ -1,15 +1,13 @@
 use std::fmt;
 use std::fmt::Display;
 
-use bcder::decode;
-
 #[derive(Debug)]
 pub enum Error {
     KeyError(String),
     SigningError(String),
     KeyNotFound,
     SignerError(String),
-    DecodeError(decode::Error),
+    DecodeError(String),
 }
 
 impl fmt::Display for Error {
@@ -36,10 +34,8 @@ impl Error {
     pub fn signer(e: impl Display) -> Self {
         Error::SignerError(e.to_string())
     }
-}
 
-impl From<decode::Error> for Error {
-    fn from(e: decode::Error) -> Self {
-        Error::DecodeError(e)
+    pub fn decode(e: impl Display) -> Self {
+        Error::DecodeError(e.to_string())
     }
 }

@@ -245,7 +245,8 @@ impl KrillSigner {
             base_repo.rpki_notify(),
         )
         .map_err(crypto::Error::signing)?;
-        Ok(RpkiCaCsr::decode(enc.as_slice())?)
+
+        RpkiCaCsr::decode(enc.as_slice()).map_err(crypto::Error::decode)
     }
 
     pub fn sign_cert(&self, tbs: TbsCert, key_id: &KeyIdentifier) -> CryptoResult<Cert> {

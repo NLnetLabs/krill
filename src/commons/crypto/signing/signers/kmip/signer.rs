@@ -8,7 +8,6 @@ use std::{
 };
 
 use backoff::ExponentialBackoff;
-use bcder::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
 use kmip::{
     client::{Client, ClientCertificate},
@@ -35,7 +34,6 @@ use crate::commons::{
         signers::{
             kmip::connpool::ConnectionManager,
             probe::{ProbeError, ProbeStatus, StatefulProbe},
-            util,
         },
         SignerError, SignerHandle,
     },
@@ -718,8 +716,7 @@ impl KmipSigner {
         Ok(public_key)
     }
 
-    /// Get the RSA public bytes for the given KMIP server public key.
-    fn get_rsa_public_key_bytes(&self, public_key_id: &str) -> Result<Bytes, SignerError> {
+    pub(super) fn get_public_key_from_id(&self, public_key_id: &str) -> Result<PublicKey, SignerError> {
         let response_payload = self.with_conn("get key", |conn| conn.get_key(public_key_id))?;
 
         if response_payload.object_type != ObjectType::PublicKey {
@@ -737,56 +734,38 @@ impl KmipSigner {
             }
         };
 
-        let rsa_public_key_bytes = match key_material {
-            KeyMaterial::Bytes(bytes) => bytes::Bytes::from(bytes),
+        match key_material {
+            KeyMaterial::Bytes(bytes) => {
+                Ok(PublicKey::rsa_from_public_key_bytes(bytes::Bytes::from(bytes)))
+            }
             KeyMaterial::TransparentRSAPublicKey(pub_key) => {
-                util::rsa_public_key_bytes_from_parts(&pub_key.modulus, &pub_key.public_exponent)?
+                PublicKey::rsa_from_components(&pub_key.modulus, &pub_key.public_exponent).map_err(|e| {
+                    SignerError::KmipError(format!(
+                        "Failed to construct RSA Public for key with ID '{}'. Error: {}",
+                        public_key_id, e
+                    ))
+                })
             }
             KeyMaterial::TransparentRSAPrivateKey(priv_key) => {
                 if let Some(public_exponent) = priv_key.public_exponent {
-                    util::rsa_public_key_bytes_from_parts(&priv_key.modulus, &public_exponent)?
+                    PublicKey::rsa_from_components(&priv_key.modulus, &public_exponent).map_err(|e| {
+                        SignerError::KmipError(format!(
+                            "Failed to construct RSA Public for key with ID '{}'. Error: {}",
+                            public_key_id, e
+                        ))
+                    })
                 } else {
-                    return Err(SignerError::KmipError(format!(
+                    Err(SignerError::KmipError(format!(
                         "Failed to get key material: missing exponent in transparent RSA private key returned by KMIP Get operation for public key with ID '{}'",
-                        public_key_id)));
+                        public_key_id)))
                 }
             }
             _ => {
-                return Err(SignerError::KmipError(format!(
+                Err(SignerError::KmipError(format!(
                     "Failed to get key material: unsupported key material type {:?} returned by KMIP Get operation for public key with ID '{}'",
-                    key_material, public_key_id)));
+                    key_material, public_key_id)))
             }
-        };
-
-        Ok(rsa_public_key_bytes)
-    }
-
-    pub(super) fn get_public_key_from_id(&self, public_key_id: &str) -> Result<PublicKey, SignerError> {
-        let rsa_public_key_bytes = self.get_rsa_public_key_bytes(public_key_id)?;
-
-        let subject_public_key = bcder::BitString::new(0, rsa_public_key_bytes);
-
-        let subject_public_key_info =
-            bcder::encode::sequence((PublicKeyFormat::Rsa.encode(), subject_public_key.encode()));
-
-        let mut subject_public_key_info_source: Vec<u8> = Vec::new();
-        subject_public_key_info
-            .write_encoded(bcder::Mode::Der, &mut subject_public_key_info_source)
-            .map_err(|err| {
-                SignerError::KmipError(format!(
-                    "Failed to create DER encoded SubjectPublicKeyInfo from constituent parts: {}",
-                    err
-                ))
-            })?;
-
-        let public_key = PublicKey::decode(subject_public_key_info_source.as_slice()).map_err(|err| {
-            SignerError::KmipError(format!(
-                "Failed to create public key from the DER encoded SubjectPublicKeyInfo: {}",
-                err
-            ))
-        })?;
-
-        Ok(public_key)
+        }
     }
 
     pub(super) fn sign_with_key<Alg: SignatureAlgorithm>(
