@@ -502,8 +502,6 @@ jobs:
             echo "LXC_IMAGE=images:${OS_NAME}/${OS_REL}/cloud" >> $GITHUB_ENV
             ;;
         esac
-      env:
-        MATRIX_IMAGE: ${{ matrix.image }}
 
     - name: Download package
       uses: actions/download-artifact@v2
