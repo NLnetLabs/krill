@@ -96,6 +96,8 @@ jobs:
           - 'debian:bullseye' # debian/11
           - 'centos:7'
           - 'rockylinux:8'    # compatible with EOL centos:8
+        target:
+          - 'x86_64'
         include:
           # For CentOS 7 we want to statically link with OpenSSL, but `cargo generate-rpm` doesn't build the code for
           # unlike `cargo deb` so we have to control the feature set used for building ourselves rather than in
