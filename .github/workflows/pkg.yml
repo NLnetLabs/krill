@@ -132,6 +132,7 @@ jobs:
       shell: bash
       env:
         MATRIX_IMAGE: ${{ matrix.image }}
+        MATRIX_OS: ${{ matrix.os }}
       run: |
         # Get the operating system and release name (e.g. ubuntu and xenial) from the image name (e.g. ubuntu:xenial) by
         # extracting only the parts before and after but not including the colon:
@@ -141,9 +142,6 @@ jobs:
         fi
         echo "OS_NAME=${IMAGE%:*}" >> $GITHUB_ENV
         echo "OS_REL=${IMAGE#*:}" >> $GITHUB_ENV
-      env:
-        MATRIX_IMAGE: ${{ matrix.image }}
-        MATRIX_OS: ${{ matrix.os }}
 
     # Git clone the Krill code in the branch we were invoked on.
     - name: Checkout repository
