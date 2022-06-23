@@ -21,11 +21,11 @@ use crate::{
         actor::{Actor, ActorDef},
         api::{
             AddChildRequest, AllCertAuthIssues, AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates,
-            AspaProvidersUpdate, CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthInit, CertAuthIssues,
-            CertAuthList, CertAuthStats, ChildCaInfo, ChildrenConnectionStats, CommandHistory, CommandHistoryCriteria,
-            ParentCaContact, ParentCaReq, PublicationServerUris, PublisherDetails, RepositoryContact, RoaDefinition,
-            RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, ServerInfo, TaCertDetails, Timestamp,
-            UpdateChildRequest,
+            AspaProvidersUpdate, BgpSecCsrInfoList, BgpSecDefinitionUpdates, CaCommandDetails, CaRepoDetails,
+            CertAuthInfo, CertAuthInit, CertAuthIssues, CertAuthList, CertAuthStats, ChildCaInfo,
+            ChildrenConnectionStats, CommandHistory, CommandHistoryCriteria, ParentCaContact, ParentCaReq,
+            PublicationServerUris, PublisherDetails, RepositoryContact, RoaDefinition, RoaDefinitionUpdates, RtaList,
+            RtaName, RtaPrepResponse, ServerInfo, TaCertDetails, Timestamp, UpdateChildRequest,
         },
         bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion},
         crypto::KrillSignerBuilder,
@@ -847,6 +847,23 @@ impl KrillServer {
         actor: &Actor,
     ) -> KrillEmptyResult {
         self.ca_manager.ca_aspas_update_aspa(ca, customer, update, actor).await
+    }
+}
+
+/// # Handle BGPSec requests
+///
+impl KrillServer {
+    pub async fn ca_bgpsec_definitions_show(&self, ca: CaHandle) -> KrillResult<BgpSecCsrInfoList> {
+        self.ca_manager.ca_bgpsec_definitions_show(ca).await
+    }
+
+    pub async fn ca_bgpsec_definitions_update(
+        &self,
+        ca: CaHandle,
+        updates: BgpSecDefinitionUpdates,
+        actor: &Actor,
+    ) -> KrillResult<()> {
+        self.ca_manager.ca_bgpsec_definitions_update(ca, updates, actor).await
     }
 }
 

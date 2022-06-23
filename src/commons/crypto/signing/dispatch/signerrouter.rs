@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::{collections::HashMap, sync::RwLock};
 
-use rpki::repository::crypto::{
+use rpki::crypto::{
     signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
 };
 
@@ -586,21 +586,21 @@ impl Signer for SignerRouter {
         self.get_signer_for_key(key_id)?.destroy_key(key_id)
     }
 
-    fn sign<D: AsRef<[u8]> + ?Sized>(
+    fn sign<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
         &self,
         key_id: &KeyIdentifier,
-        algorithm: SignatureAlgorithm,
+        algorithm: Alg,
         data: &D,
-    ) -> Result<Signature, SigningError<Self::Error>> {
+    ) -> Result<Signature<Alg>, SigningError<Self::Error>> {
         self.bind_ready_signers();
         self.get_signer_for_key(key_id)?.sign(key_id, algorithm, data)
     }
 
-    fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
+    fn sign_one_off<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
         &self,
-        algorithm: SignatureAlgorithm,
+        algorithm: Alg,
         data: &D,
-    ) -> Result<(Signature, PublicKey), Self::Error> {
+    ) -> Result<(Signature<Alg>, PublicKey), Self::Error> {
         self.bind_ready_signers();
         self.one_off_signer.sign_one_off(algorithm, data)
     }
@@ -613,6 +613,8 @@ impl Signer for SignerRouter {
 
 #[cfg(all(test, feature = "hsm"))]
 pub mod tests {
+    use rpki::crypto::RpkiSignatureAlgorithm;
+
     use crate::{
         commons::crypto::{
             dispatch::signerprovider::SignerFlags,
@@ -639,7 +641,7 @@ pub mod tests {
     pub fn verify_that_a_usable_signer_is_registered_and_can_be_used() {
         test::test_under_tmp(|d| {
             #[allow(non_snake_case)]
-            let DEF_SIG_ALG = SignatureAlgorithm::default();
+            let DEF_SIG_ALG = RpkiSignatureAlgorithm::default();
 
             // Build a mock signer that is contactable and usable for the SignerRouter
             let call_counts = Arc::new(MockSignerCallCounts::new());
@@ -712,7 +714,7 @@ pub mod tests {
             router.destroy_key(&key_identifier).unwrap();
             assert_eq!(1, call_counts.get(FnIdx::DestroyKey));
 
-            let err = router.sign(&key_identifier, SignatureAlgorithm::default(), &out_buf);
+            let err = router.sign(&key_identifier, RpkiSignatureAlgorithm::default(), &out_buf);
             // TODO: Should this error from the SignerRouter actually be SigningError::KeyNotFound instead of
             // SigningError::Signer(SignerError::KeyNotFound)?
             assert!(matches!(err, Err(SigningError::Signer(SignerError::KeyNotFound))));

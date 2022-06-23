@@ -13,14 +13,15 @@ use clap::{App, Arg, ArgMatches, SubCommand};
 
 use rpki::{
     ca::{
+        csr::BgpsecCsr,
         idcert::IdCert,
         idexchange,
         idexchange::{CaHandle, ChildHandle, ParentHandle, PublisherHandle},
     },
+    crypto::KeyIdentifier,
     repository::{
         aspa::{DuplicateProviderAs, ProviderAs},
-        crypto::KeyIdentifier,
-        resources::ResourceSet,
+        resources::{Asn, ResourceSet},
         x509::Time,
     },
     uri,
@@ -31,8 +32,9 @@ use crate::{
     commons::{
         api::{
             AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionFormatError, AspaProvidersUpdate,
-            AuthorizationFmtError, CertAuthInit, ParentCaContact, ParentCaReq, PublicationServerUris,
-            RepositoryContact, RoaDefinition, RoaDefinitionUpdates, RtaName, Token, UpdateChildRequest,
+            AuthorizationFmtError, BgpSecAsnKey, BgpSecDefinition, CertAuthInit, ParentCaContact, ParentCaReq,
+            PublicationServerUris, RepositoryContact, RoaDefinition, RoaDefinitionUpdates, RtaName, Token,
+            UpdateChildRequest,
         },
         crypto::SignSupport,
         error::KrillIoError,
@@ -741,6 +743,77 @@ impl Options {
         app.subcommand(sub)
     }
 
+    fn make_cas_bgpsec_list_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("list").about("Show current BGPSec configurations");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+
+        app.subcommand(sub)
+    }
+
+    fn make_cas_bgpsec_add_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("add").about("Add BGPSec configurations");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+
+        sub = sub
+            .arg(
+                Arg::with_name("asn")
+                    .short("a")
+                    .long("asn")
+                    .value_name("ASN")
+                    .help("The ASN of the router for the key used in the CSR")
+                    .required(true),
+            )
+            .arg(
+                Arg::with_name("csr")
+                    .long("csr")
+                    .value_name("CSR")
+                    .help("The file containing the DER encoded Certificate Sign Request")
+                    .required(true),
+            );
+
+        app.subcommand(sub)
+    }
+
+    fn make_cas_bgpsec_remove_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("remove").about("Remove a BGPSec definition");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+
+        sub = sub
+            .arg(
+                Arg::with_name("asn")
+                    .short("a")
+                    .long("asn")
+                    .value_name("ASN")
+                    .help("The ASN used in the BGPSec definition")
+                    .required(true),
+            )
+            .arg(
+                Arg::with_name("key")
+                    .long("key")
+                    .value_name("key")
+                    .help("The hexencoded key identifier used in the BGPSec definition")
+                    .required(true),
+            );
+
+        app.subcommand(sub)
+    }
+
+    fn make_cas_bgpsec_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("bgpsec").about("Manage BGPSec certificates");
+
+        sub = Self::make_cas_bgpsec_list_sc(sub);
+        sub = Self::make_cas_bgpsec_add_sc(sub);
+        sub = Self::make_cas_bgpsec_remove_sc(sub);
+
+        app.subcommand(sub)
+    }
+
     #[cfg(feature = "aspa")]
     fn make_cas_aspas_add_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("add").about("Add or replace an ASPA configuration");
@@ -1269,6 +1342,7 @@ impl Options {
         app = Self::make_cas_parents_sc(app);
         app = Self::make_cas_keyroll_sc(app);
         app = Self::make_cas_routes_sc(app);
+        app = Self::make_cas_bgpsec_sc(app);
         app = Self::make_cas_repo_sc(app);
         app = Self::make_cas_issues_sc(app);
         app = Self::make_pubserver_sc(app);
@@ -1824,6 +1898,69 @@ impl Options {
         }
     }
 
+    fn parse_matches_cas_bgpsec_list(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+
+        let command = Command::CertAuth(CaCommand::BgpSecList(my_ca));
+
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_cas_bgpsec_add(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+
+        let asn_str = matches.value_of("asn").unwrap();
+        let asn = Asn::from_str(asn_str).map_err(|_| Error::invalid_asn(asn_str))?;
+
+        let csr_file = matches.value_of("csr").unwrap();
+        let csr_file_path = PathBuf::from(csr_file);
+
+        let bytes = file::read(&csr_file_path)
+            .map_err(|e| Error::GeneralArgumentError(format!("Cannot read file '{}', error: {}", csr_file, e,)))?;
+        let csr = BgpsecCsr::decode(bytes.as_ref())
+            .map_err(|e| Error::GeneralArgumentError(format!("Cannot parse CSR file '{}', error: {}", csr_file, e)))?;
+
+        csr.validate()
+            .map_err(|_| Error::GeneralArgumentError(format!("CSR in file '{}' is not valid", csr_file)))?;
+
+        let definition = BgpSecDefinition::new(asn, csr);
+
+        let command = Command::CertAuth(CaCommand::BgpSecAdd(my_ca, definition));
+
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_cas_bgpsec_remove(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+
+        let asn_str = matches.value_of("asn").unwrap();
+        let asn = Asn::from_str(asn_str).map_err(|_| Error::invalid_asn(asn_str))?;
+
+        let key_str = matches.value_of("key").unwrap();
+        let key = KeyIdentifier::from_str(key_str).map_err(|_| Error::general("Cannot parse key identifier"))?;
+
+        let definition = BgpSecAsnKey::new(asn, key);
+
+        let command = Command::CertAuth(CaCommand::BgpSecRemove(my_ca, definition));
+
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_cas_bgpsec(matches: &ArgMatches) -> Result<Options, Error> {
+        if let Some(m) = matches.subcommand_matches("list") {
+            Self::parse_matches_cas_bgpsec_list(m)
+        } else if let Some(m) = matches.subcommand_matches("add") {
+            Self::parse_matches_cas_bgpsec_add(m)
+        } else if let Some(m) = matches.subcommand_matches("remove") {
+            Self::parse_matches_cas_bgpsec_remove(m)
+        } else {
+            Err(Error::UnrecognizedSubCommand)
+        }
+    }
+
     fn parse_matches_cas_aspas_add(matches: &ArgMatches) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
@@ -2297,6 +2434,8 @@ impl Options {
             Self::parse_matches_cas_keyroll(m)
         } else if let Some(m) = matches.subcommand_matches("roas") {
             Self::parse_matches_cas_routes(m)
+        } else if let Some(m) = matches.subcommand_matches("bgpsec") {
+            Self::parse_matches_cas_bgpsec(m)
         } else if let Some(m) = matches.subcommand_matches("aspas") {
             Self::parse_matches_cas_aspas(m)
         } else if let Some(m) = matches.subcommand_matches("repo") {
@@ -2384,6 +2523,11 @@ pub enum CaCommand {
     AspasAddOrReplace(CaHandle, AspaDefinition),
     AspasUpdate(CaHandle, AspaCustomer, AspaProvidersUpdate),
     AspasRemove(CaHandle, AspaCustomer),
+
+    // BGPSec
+    BgpSecList(CaHandle),
+    BgpSecAdd(CaHandle, BgpSecDefinition),
+    BgpSecRemove(CaHandle, BgpSecAsnKey),
 
     // Show details for this CA
     Show(CaHandle),

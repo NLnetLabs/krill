@@ -1,18 +1,23 @@
 use std::{path::Path, sync::Arc, time::Duration};
 
 use rpki::{
-    ca::{idcert::IdCert, idexchange::RepoInfo, provisioning, publication},
+    ca::{
+        csr::{Csr, RpkiCaCsr},
+        idcert::IdCert,
+        idexchange::RepoInfo,
+        provisioning, publication,
+    },
+    crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, RpkiSignature, RpkiSignatureAlgorithm, Signer},
     repository::{
         aspa::{Aspa, AspaBuilder},
         cert::TbsCert,
         crl::{CrlEntry, TbsCertList},
-        crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer},
         manifest::ManifestContent,
         roa::RoaBuilder,
         rta,
         sigobj::SignedObjectBuilder,
         x509::{Serial, Time, Validity},
-        Cert, Crl, Csr, Manifest, Roa,
+        Cert, Crl, Manifest, Roa,
     },
 };
 
@@ -217,22 +222,22 @@ impl KrillSigner {
         Serial::random(&self.router).map_err(crypto::Error::signer)
     }
 
-    pub fn sign<D: AsRef<[u8]> + ?Sized>(&self, key_id: &KeyIdentifier, data: &D) -> CryptoResult<Signature> {
+    pub fn sign<D: AsRef<[u8]> + ?Sized>(&self, key_id: &KeyIdentifier, data: &D) -> CryptoResult<RpkiSignature> {
         self.router
-            .sign(key_id, SignatureAlgorithm::default(), data)
+            .sign(key_id, RpkiSignatureAlgorithm::default(), data)
             .map_err(crypto::Error::signing)
     }
 
-    pub fn sign_one_off<D: AsRef<[u8]> + ?Sized>(&self, data: &D) -> CryptoResult<(Signature, PublicKey)> {
+    pub fn sign_one_off<D: AsRef<[u8]> + ?Sized>(&self, data: &D) -> CryptoResult<(RpkiSignature, PublicKey)> {
         self.router
-            .sign_one_off(SignatureAlgorithm::default(), data)
+            .sign_one_off(RpkiSignatureAlgorithm::default(), data)
             .map_err(crypto::Error::signer)
     }
 
-    pub fn sign_csr(&self, base_repo: &RepoInfo, name_space: &str, key: &KeyIdentifier) -> CryptoResult<Csr> {
+    pub fn sign_csr(&self, base_repo: &RepoInfo, name_space: &str, key: &KeyIdentifier) -> CryptoResult<RpkiCaCsr> {
         let pub_key = self.router.get_key_info(key).map_err(crypto::Error::key_error)?;
         let mft_file_name = ObjectName::mft_for_key(&pub_key.key_identifier());
-        let enc = Csr::construct(
+        let enc = Csr::construct_rpki_ca(
             &self.router,
             key,
             &base_repo.ca_repository(name_space).join(&[]).unwrap(), // force trailing slash
@@ -240,7 +245,7 @@ impl KrillSigner {
             base_repo.rpki_notify(),
         )
         .map_err(crypto::Error::signing)?;
-        Ok(Csr::decode(enc.as_slice())?)
+        Ok(RpkiCaCsr::decode(enc.as_slice())?)
     }
 
     pub fn sign_cert(&self, tbs: TbsCert, key_id: &KeyIdentifier) -> CryptoResult<Cert> {

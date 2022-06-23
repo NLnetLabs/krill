@@ -14,11 +14,11 @@ use chrono::Duration;
 
 use rpki::{
     ca::{idexchange::CaHandle, provisioning::ResourceClassName, publication::Base64},
+    crypto::{DigestAlgorithm, PublicKey},
     repository::{
         aspa::Aspa,
         cert::Cert,
         crl::{Crl, TbsCertList},
-        crypto::{DigestAlgorithm, PublicKey},
         manifest::{FileAndHash, Manifest, ManifestContent},
         roa::Roa,
         sigobj::SignedObjectBuilder,
@@ -44,7 +44,7 @@ use crate::{
     },
 };
 
-use super::AspaObjectsUpdates;
+use super::{AspaObjectsUpdates, BgpSecCertInfo, BgpSecCertificateUpdates};
 
 //------------ CaObjectsStore ----------------------------------------------
 
@@ -102,6 +102,12 @@ impl PreSaveEventListener<CertAuth> for CaObjectsStore {
                         updates,
                     } => {
                         objects.update_aspas(resource_class_name, updates, timing, signer)?;
+                    }
+                    super::CaEvtDet::BgpSecCertificatesUpdated {
+                        resource_class_name,
+                        updates,
+                    } => {
+                        objects.update_bgpsec_certs(resource_class_name, updates, timing, signer)?;
                     }
                     super::CaEvtDet::ChildCertificatesUpdated {
                         resource_class_name,
@@ -498,6 +504,18 @@ impl CaObjects {
         rco.update_aspas(updates, timing, signer)
     }
 
+    // Update the BGPSec certificates in the current set
+    fn update_bgpsec_certs(
+        &mut self,
+        rcn: &ResourceClassName,
+        updates: &BgpSecCertificateUpdates,
+        timing: &IssuanceTimingConfig,
+        signer: &KrillSigner,
+    ) -> KrillResult<()> {
+        let rco = self.get_class_mut(rcn)?;
+        rco.update_bgpsec_certs(updates, timing, signer)
+    }
+
     // Update the delegated certificates in the current set
     fn update_certs(
         &mut self,
@@ -668,6 +686,19 @@ impl ResourceClassObjects {
         }
     }
 
+    fn update_bgpsec_certs(
+        &mut self,
+        updates: &BgpSecCertificateUpdates,
+        timing: &IssuanceTimingConfig,
+        signer: &KrillSigner,
+    ) -> KrillResult<()> {
+        match self.keys.borrow_mut() {
+            ResourceClassKeyState::Current(state) => state.current_set.update_bgpsec_certs(updates, timing, signer),
+            ResourceClassKeyState::Staging(state) => state.current_set.update_bgpsec_certs(updates, timing, signer),
+            ResourceClassKeyState::Old(state) => state.current_set.update_bgpsec_certs(updates, timing, signer),
+        }
+    }
+
     fn update_certs(
         &mut self,
         cert_updates: &ChildCertificateUpdates,
@@ -825,6 +856,12 @@ pub struct CurrentKeyObjectSet {
     roas: HashMap<ObjectName, PublishedRoa>,
     #[serde(with = "objects_to_aspas_serde", skip_serializing_if = "HashMap::is_empty", default)]
     aspas: HashMap<ObjectName, PublishedAspa>,
+    #[serde(
+        with = "objects_to_bgpsec_certs_serde",
+        skip_serializing_if = "HashMap::is_empty",
+        default
+    )]
+    bgpsec_certs: HashMap<ObjectName, BgpSecCertInfo>,
     #[serde(with = "objects_to_certs_serde")]
     certs: HashMap<ObjectName, PublishedCert>,
 }
@@ -834,12 +871,14 @@ impl CurrentKeyObjectSet {
         basic: BasicKeyObjectSet,
         roas: HashMap<ObjectName, PublishedRoa>,
         aspas: HashMap<ObjectName, PublishedAspa>,
+        bgpsec_certs: HashMap<ObjectName, BgpSecCertInfo>,
         certs: HashMap<ObjectName, PublishedCert>,
     ) -> Self {
         CurrentKeyObjectSet {
             basic,
             roas,
             aspas,
+            bgpsec_certs,
             certs,
         }
     }
@@ -869,6 +908,13 @@ impl CurrentKeyObjectSet {
         for (name, aspa) in &self.aspas {
             elements.push(PublishElement::new(
                 Base64::from(&aspa.0),
+                base_uri.join(name.as_bytes()).unwrap(),
+            ));
+        }
+
+        for (name, bgpsec_cert) in &self.bgpsec_certs {
+            elements.push(PublishElement::new(
+                bgpsec_cert.cert().clone(),
                 base_uri.join(name.as_bytes()).unwrap(),
             ));
         }
@@ -917,6 +963,29 @@ impl CurrentKeyObjectSet {
         for removed in updates.removed() {
             let name = ObjectName::aspa(*removed);
             if let Some(old) = self.aspas.remove(&name) {
+                self.revocations.add(Revocation::from(&old));
+            }
+        }
+
+        self.reissue(timing, signer)
+    }
+
+    fn update_bgpsec_certs(
+        &mut self,
+        updates: &BgpSecCertificateUpdates,
+        timing: &IssuanceTimingConfig,
+        signer: &KrillSigner,
+    ) -> KrillResult<()> {
+        for bgpsec_cert in updates.updated() {
+            let name = ObjectName::from(bgpsec_cert);
+            if let Some(old) = self.bgpsec_certs.insert(name, bgpsec_cert.clone()) {
+                self.revocations.add(Revocation::from(&old));
+            }
+        }
+
+        for removed in updates.removed() {
+            let name = ObjectName::from(removed);
+            if let Some(old) = self.bgpsec_certs.remove(&name) {
                 self.revocations.add(Revocation::from(&old));
             }
         }
@@ -998,7 +1067,7 @@ impl CurrentKeyObjectSet {
     }
 
     fn reissue_mft(&self, new_crl: &PublishedCrl, signer: &KrillSigner) -> KrillResult<PublishedManifest> {
-        ManifestBuilder::with_objects(new_crl, &self.roas, &self.aspas, &self.certs)
+        ManifestBuilder::with_objects(new_crl, &self.roas, &self.aspas, &self.certs, &self.bgpsec_certs)
             .build_new_mft(&self.signing_cert, self.next(), signer)
             .map(|m| m.into())
     }
@@ -1010,6 +1079,7 @@ impl From<BasicKeyObjectSet> for CurrentKeyObjectSet {
             basic,
             roas: HashMap::new(),
             aspas: HashMap::new(),
+            bgpsec_certs: HashMap::new(),
             certs: HashMap::new(),
         }
     }
@@ -1071,13 +1141,13 @@ mod objects_to_aspas_serde {
     use serde::de::{Deserialize, Deserializer};
     use serde::ser::Serializer;
     #[derive(Debug, Deserialize)]
-    struct NameRoaItem {
+    struct NameItem {
         name: ObjectName,
         aspa: PublishedAspa,
     }
 
     #[derive(Debug, Serialize)]
-    struct NameRoaItemRef<'a> {
+    struct NameItemRef<'a> {
         name: &'a ObjectName,
         aspa: &'a PublishedAspa,
     }
@@ -1086,7 +1156,7 @@ mod objects_to_aspas_serde {
     where
         S: Serializer,
     {
-        serializer.collect_seq(map.iter().map(|(name, aspa)| NameRoaItemRef { name, aspa }))
+        serializer.collect_seq(map.iter().map(|(name, aspa)| NameItemRef { name, aspa }))
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<ObjectName, PublishedAspa>, D::Error>
@@ -1094,8 +1164,44 @@ mod objects_to_aspas_serde {
         D: Deserializer<'de>,
     {
         let mut map = HashMap::new();
-        for item in Vec::<NameRoaItem>::deserialize(deserializer)? {
+        for item in Vec::<NameItem>::deserialize(deserializer)? {
             map.insert(item.name, item.aspa);
+        }
+        Ok(map)
+    }
+}
+
+mod objects_to_bgpsec_certs_serde {
+    use super::*;
+
+    use serde::de::{Deserialize, Deserializer};
+    use serde::ser::Serializer;
+    #[derive(Debug, Deserialize)]
+    struct NameItem {
+        name: ObjectName,
+        bgpsec_cert: BgpSecCertInfo,
+    }
+
+    #[derive(Debug, Serialize)]
+    struct NameItemRef<'a> {
+        name: &'a ObjectName,
+        bgpsec_cert: &'a BgpSecCertInfo,
+    }
+
+    pub fn serialize<S>(map: &HashMap<ObjectName, BgpSecCertInfo>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.collect_seq(map.iter().map(|(name, bgpsec_cert)| NameItemRef { name, bgpsec_cert }))
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<ObjectName, BgpSecCertInfo>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let mut map = HashMap::new();
+        for item in Vec::<NameItem>::deserialize(deserializer)? {
+            map.insert(item.name, item.bgpsec_cert);
         }
         Ok(map)
     }
@@ -1533,6 +1639,7 @@ impl ManifestBuilder {
         roas: &HashMap<ObjectName, PublishedRoa>,
         aspas: &HashMap<ObjectName, PublishedAspa>,
         certs: &HashMap<ObjectName, PublishedCert>,
+        bgpsec_certs: &HashMap<ObjectName, BgpSecCertInfo>,
     ) -> Self {
         let mut entries: HashMap<Bytes, Bytes> = HashMap::new();
 
@@ -1555,6 +1662,13 @@ impl ManifestBuilder {
         for (name, cert) in certs {
             let hash = cert.mft_hash();
             entries.insert(name.clone().into(), hash);
+        }
+
+        // Add all bgpsec certs
+        for (name, info) in bgpsec_certs {
+            let hash = info.cert().to_hash();
+            let hash_bytes = Bytes::copy_from_slice(hash.as_slice());
+            entries.insert(name.clone().into(), hash_bytes);
         }
 
         ManifestBuilder {

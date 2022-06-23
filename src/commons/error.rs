@@ -11,7 +11,8 @@ use rpki::{
         provisioning::ResourceClassName,
         publication,
     },
-    repository::{crypto::KeyIdentifier, x509::ValidationError},
+    crypto::KeyIdentifier,
+    repository::x509::ValidationError,
     uri,
 };
 
@@ -25,6 +26,8 @@ use crate::{
     daemon::{ca::RouteAuthorization, http::tls_keys},
     upgrades::PrepareUpgradeError,
 };
+
+use super::api::{BgpSecAsnKey, BgpSecDefinition};
 
 //------------ RoaDeltaError -----------------------------------------------
 
@@ -274,6 +277,13 @@ pub enum Error {
     AspaProvidersUpdateConflict(CaHandle, AspaProvidersUpdateConflict),
 
     //-----------------------------------------------------------------
+    // BGP Sec
+    //-----------------------------------------------------------------
+    BgpSecDefinitionUnknown(CaHandle, BgpSecAsnKey),
+    BgpSecDefinitionInvalidlySigned(CaHandle, BgpSecDefinition),
+    BgpSecDefinitionNotEntitled(CaHandle, BgpSecAsnKey),
+
+    //-----------------------------------------------------------------
     // Key Usage Issues
     //-----------------------------------------------------------------
     KeyUseAttemptReuse,
@@ -442,6 +452,14 @@ impl fmt::Display for Error {
             Error::AspaCustomerUnknown(_ca, asn) => write!(f, "No current ASPA exists for customer AS '{}'", asn),
             Error::AspaProvidersUpdateEmpty(_ca, asn) => write!(f, "Received empty update for ASPA for customer AS '{}'", asn),
             Error::AspaProvidersUpdateConflict(_ca, e) => write!(f, "ASPA delta rejected:\n\n'{}'", e),
+            
+            //-----------------------------------------------------------------
+            // BGPSec
+            //-----------------------------------------------------------------
+            Error::BgpSecDefinitionUnknown(_ca, key) => write!(f, "Cannot remove BGPSec CSR for unknown combination of ASN '{}' and key '{}'", key.asn(), key.key_identifier()),
+            Error::BgpSecDefinitionInvalidlySigned(_ca, def) => write!(f, "Invalidly signed BGPSec CSR remove BGPSec CSR for ASN '{}' and key '{}'", def.asn(), def.csr().public_key().key_identifier()),
+            Error::BgpSecDefinitionNotEntitled(_ca, key) => write!(f, "AS '{}' is not held by you", key.asn()),
+
 
             //-----------------------------------------------------------------
             // Key Usage Issues
@@ -829,6 +847,22 @@ impl Error {
             Error::AspaProvidersUpdateConflict(ca, conflict) => ErrorResponse::new("ca-aspa-delta-error", &self)
                 .with_ca(ca)
                 .with_aspa_providers_conflict(conflict),
+
+            //-----------------------------------------------------------------
+            // BGP Sec
+            //-----------------------------------------------------------------
+            Error::BgpSecDefinitionUnknown(ca, key) => ErrorResponse::new("ca-bgpsec-unknown", &self)
+                .with_ca(ca)
+                .with_asn(key.asn())
+                .with_key_identifier(&key.key_identifier()),
+            Error::BgpSecDefinitionInvalidlySigned(ca, def) => ErrorResponse::new("ca-bgpsec-invalidly-signed", &self)
+                .with_ca(ca)
+                .with_asn(def.asn())
+                .with_key_identifier(&def.csr().public_key().key_identifier())
+                .with_bgpsec_csr(def.csr()),
+            Error::BgpSecDefinitionNotEntitled(ca, key) => ErrorResponse::new("ca-bgpsec-not-entitled", &self)
+                .with_ca(ca)
+                .with_asn(key.asn()),
 
             //-----------------------------------------------------------------
             // Key Usage Issues (key-*)

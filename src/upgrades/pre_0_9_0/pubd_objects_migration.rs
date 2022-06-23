@@ -12,7 +12,8 @@ use rpki::{
         idcert::IdCert,
         idexchange::{MyHandle, PublisherHandle},
     },
-    repository::{crypto::KeyIdentifier, x509::Time},
+    crypto::KeyIdentifier,
+    repository::x509::Time,
     rrdp::Hash,
     uri,
 };

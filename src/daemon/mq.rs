@@ -207,6 +207,7 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for TaskQueue {
                 CaEvtDet::RoasUpdated { .. }
                 | CaEvtDet::AspaObjectsUpdated { .. }
                 | CaEvtDet::ChildCertificatesUpdated { .. }
+                | CaEvtDet::BgpSecCertificatesUpdated { .. }
                 | CaEvtDet::ChildKeyRevoked { .. }
                 | CaEvtDet::KeyPendingToNew { .. }
                 | CaEvtDet::KeyPendingToActive { .. }

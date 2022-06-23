@@ -22,7 +22,7 @@ use crate::{
 };
 
 #[cfg(feature = "hsm")]
-use rpki::repository::crypto::KeyIdentifier;
+use rpki::crypto::KeyIdentifier;
 
 #[cfg(feature = "hsm")]
 use crate::{

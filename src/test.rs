@@ -21,7 +21,8 @@ use rpki::{
         idexchange::{CaHandle, ChildHandle, ParentHandle, PublisherHandle},
         provisioning::ResourceClassName,
     },
-    repository::{crypto::KeyIdentifier, resources::ResourceSet},
+    crypto::KeyIdentifier,
+    repository::resources::ResourceSet,
     uri,
 };
 
@@ -33,10 +34,11 @@ use crate::{
     },
     commons::{
         api::{
-            AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, CertAuthInfo,
-            CertAuthInit, CertifiedKeyInfo, ObjectName, ParentCaContact, ParentCaReq, ParentStatuses,
-            PublicationServerUris, PublisherDetails, PublisherList, RepositoryContact, ResourceClassKeysInfo,
-            RoaDefinition, RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, TypedPrefix, UpdateChildRequest,
+            AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, BgpSecAsnKey,
+            BgpSecCsrInfoList, BgpSecDefinition, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ObjectName,
+            ParentCaContact, ParentCaReq, ParentStatuses, PublicationServerUris, PublisherDetails, PublisherList,
+            RepositoryContact, ResourceClassKeysInfo, RoaDefinition, RoaDefinitionUpdates, RtaList, RtaName,
+            RtaPrepResponse, TypedPrefix, UpdateChildRequest,
         },
         bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion},
         crypto::SignSupport,
@@ -420,6 +422,26 @@ pub async fn ca_route_authorization_dryrun(ca: &CaHandle, updates: RoaDefinition
     {
         ApiResponse::BgpAnalysisFull(report) => report,
         _ => panic!("Expected BGP analysis report"),
+    }
+}
+
+pub async fn ca_bgpsec_add(ca: &CaHandle, definition: BgpSecDefinition) {
+    krill_admin(Command::CertAuth(CaCommand::BgpSecAdd(ca.clone(), definition))).await;
+}
+
+pub async fn ca_bgpsec_add_expect_error(ca: &CaHandle, definition: BgpSecDefinition) {
+    krill_admin_expect_error(Command::CertAuth(CaCommand::BgpSecAdd(ca.clone(), definition))).await;
+}
+
+pub async fn ca_bgpsec_remove(ca: &CaHandle, key: BgpSecAsnKey) {
+    krill_admin(Command::CertAuth(CaCommand::BgpSecRemove(ca.clone(), key))).await;
+}
+
+pub async fn ca_bgpsec_list(ca: &CaHandle) -> BgpSecCsrInfoList {
+    let res = krill_admin(Command::CertAuth(CaCommand::BgpSecList(ca.clone()))).await;
+    match res {
+        ApiResponse::BgpSecDefinitions(list) => list,
+        _ => panic!("Expected BGPSec definitions"),
     }
 }
 

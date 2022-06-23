@@ -6,15 +6,16 @@ use rpki::{
         idexchange::{CaHandle, ChildHandle, ParentHandle},
         provisioning::{IssuanceRequest, ParentResourceClassName, ResourceClassName, RevocationRequest},
     },
-    repository::{crypto::KeyIdentifier, resources::ResourceSet},
+    crypto::KeyIdentifier,
+    repository::resources::ResourceSet,
 };
 
 use crate::{
     commons::{
         api::{
-            AspaCustomer, AspaDefinition, AspaProvidersUpdate, DelegatedCertificate, ObjectName, ParentCaContact,
-            RcvdCert, RepositoryContact, RevokedObject, RoaAggregateKey, RtaName, SuspendedCert, TaCertDetails,
-            UnsuspendedCert,
+            AspaCustomer, AspaDefinition, AspaProvidersUpdate, BgpSecAsnKey, DelegatedCertificate, ObjectName,
+            ParentCaContact, RcvdCert, RepositoryContact, RevokedObject, RoaAggregateKey, RtaName, SuspendedCert,
+            TaCertDetails, UnsuspendedCert,
         },
         crypto::KrillSigner,
         eventsourcing::StoredEvent,
@@ -25,6 +26,8 @@ use crate::{
         SignedRta,
     },
 };
+
+use super::{BgpSecCertInfo, StoredBgpSecCsr};
 
 //------------ Ini -----------------------------------------------------------
 
@@ -417,6 +420,50 @@ impl AspaObjectsUpdates {
     }
 }
 
+//------------ BgpSecCertificateUpdates ------------------------------------
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct BgpSecCertificateUpdates {
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    updated: Vec<BgpSecCertInfo>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    removed: Vec<BgpSecAsnKey>,
+}
+
+impl BgpSecCertificateUpdates {
+    pub fn is_empty(&self) -> bool {
+        self.updated.is_empty() && self.removed.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.updated.len() + self.removed.len()
+    }
+
+    pub fn contains_changes(&self) -> bool {
+        !self.is_empty()
+    }
+
+    pub fn updated(&self) -> &Vec<BgpSecCertInfo> {
+        &self.updated
+    }
+
+    pub fn removed(&self) -> &Vec<BgpSecAsnKey> {
+        &self.removed
+    }
+
+    pub fn unpack(self) -> (Vec<BgpSecCertInfo>, Vec<BgpSecAsnKey>) {
+        (self.updated, self.removed)
+    }
+
+    pub fn add_updated(&mut self, update: BgpSecCertInfo) {
+        self.updated.push(update);
+    }
+
+    pub fn add_removed(&mut self, remove: BgpSecAsnKey) {
+        self.removed.push(remove);
+    }
+}
+
 //------------ ChildCertificateUpdates -------------------------------------
 
 /// Describes an update to the set of ROAs under a ResourceClass.
@@ -691,6 +738,24 @@ pub enum CaEvtDet {
         // Tracks ASPA *object* which are (re-)issued in a resource class.
         resource_class_name: ResourceClassName,
         updates: AspaObjectsUpdates,
+    },
+
+    // BGPSec
+    BgpSecDefinitionAdded {
+        key: BgpSecAsnKey,
+        csr: StoredBgpSecCsr,
+    },
+    BgpSecDefinitionUpdated {
+        key: BgpSecAsnKey,
+        csr: StoredBgpSecCsr,
+    },
+    BgpSecDefinitionRemoved {
+        key: BgpSecAsnKey,
+    },
+    BgpSecCertificatesUpdated {
+        // Tracks the actual BGPSec certificates (re-)issued in a resource class
+        resource_class_name: ResourceClassName,
+        updates: BgpSecCertificateUpdates,
     },
 
     // Publishing
@@ -1087,6 +1152,57 @@ impl fmt::Display for CaEvtDet {
                     write!(f, " removed:")?;
                     for rem in updates.removed() {
                         write!(f, " {}", ObjectName::aspa(*rem))?;
+                    }
+                }
+                Ok(())
+            }
+
+            // BGPSec
+            CaEvtDet::BgpSecDefinitionAdded { key, .. } => {
+                write!(
+                    f,
+                    "added BGPSec config for ASN: {} and key id: {}",
+                    key.asn(),
+                    key.key_identifier()
+                )
+            }
+            CaEvtDet::BgpSecDefinitionUpdated { key, .. } => {
+                write!(
+                    f,
+                    "updated CSR for BGPSec config for ASN: {} and key id: {}",
+                    key.asn(),
+                    key.key_identifier()
+                )
+            }
+            CaEvtDet::BgpSecDefinitionRemoved { key } => {
+                write!(
+                    f,
+                    "removed BGPSec config for ASN: {} and key id: {}",
+                    key.asn(),
+                    key.key_identifier()
+                )
+            }
+            CaEvtDet::BgpSecCertificatesUpdated {
+                resource_class_name,
+                updates,
+            } => {
+                write!(
+                    f,
+                    "updated BGPSec certificates under resource class '{}'",
+                    resource_class_name
+                )?;
+                let updated = updates.updated();
+                if !updated.is_empty() {
+                    write!(f, " added: ")?;
+                    for cert in updated {
+                        write!(f, "{} ", ObjectName::from(cert))?;
+                    }
+                }
+                let removed = updates.removed();
+                if !removed.is_empty() {
+                    write!(f, " removed: ")?;
+                    for key in removed {
+                        write!(f, "{} ", ObjectName::from(key))?;
                     }
                 }
                 Ok(())

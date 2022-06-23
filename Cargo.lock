@@ -1624,8 +1624,7 @@ dependencies = [
 
 [[package]]
 name = "rpki"
-version = "0.14.3-dev"
-source = "git+https://github.com/NLnetLabs/rpki-rs/?branch=compat#5555620ad2a21c12edf1c93163ed252110e56dde"
+version = "0.15.0-dev"
 dependencies = [
  "base64",
  "bcder",
@@ -1883,6 +1882,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "signal-hook-registry"
+version = "1.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e51e73328dc4ac0c7ccbda3a494dfa03df1de2f46018127f60c693f2648455b0"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "siphasher"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2101,7 +2109,9 @@ dependencies = [
  "memchr",
  "mio",
  "num_cpus",
+ "once_cell",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2",
  "tokio-macros",
  "winapi",

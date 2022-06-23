@@ -404,6 +404,10 @@ pub struct Roas {
 }
 
 impl Roas {
+    pub fn is_empty(&self) -> bool {
+        self.simple.is_empty() && self.aggregate.is_empty()
+    }
+
     pub fn get(&self, auth: &RouteAuthorization) -> Option<&RoaInfo> {
         self.simple.get(auth)
     }

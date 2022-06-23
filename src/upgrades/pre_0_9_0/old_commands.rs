@@ -1,5 +1,3 @@
-use rpki::repository::{crypto::KeyIdentifier, x509::Time};
-
 use std::{
     collections::{BTreeMap, HashMap},
     fmt,
@@ -10,7 +8,8 @@ use rpki::{
         idexchange::{CaHandle, ChildHandle, MyHandle, ParentHandle, PublisherHandle, ServiceUri},
         provisioning::{RequestResourceLimit, ResourceClassName, RevocationRequest},
     },
-    repository::resources::ResourceSet,
+    crypto::KeyIdentifier,
+    repository::{resources::ResourceSet, x509::Time},
 };
 
 use crate::{

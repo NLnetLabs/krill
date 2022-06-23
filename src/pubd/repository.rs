@@ -14,7 +14,8 @@ use rpki::{
         publication,
         publication::{ListReply, PublicationCms, PublishDelta},
     },
-    repository::{crypto::KeyIdentifier, x509::Time},
+    crypto::KeyIdentifier,
+    repository::x509::Time,
     rrdp::Hash,
     uri,
 };

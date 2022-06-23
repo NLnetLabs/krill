@@ -5,7 +5,7 @@ use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 use bytes::Bytes;
 use rpki::{
-    repository::crypto::DigestAlgorithm,
+    crypto::DigestAlgorithm,
     uri::{Https, Rsync},
 };
 
