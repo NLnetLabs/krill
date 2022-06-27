@@ -27,8 +27,8 @@ use crate::{
     commons::{
         api::rrdp::{CurrentObjects, DeltaElements, PublishElement, RrdpSession},
         api::{
-            DelegatedCertificate, ObjectName, ParentCaContact, RcvdCert, RepositoryContact, RevocationsDelta,
-            RevokedObject, RoaAggregateKey, RtaName, TaCertDetails,
+            DelegatedCertificate, IdCertInfo, ObjectName, ParentCaContact, RcvdCert, RepositoryContact,
+            RevocationsDelta, RevokedObject, RoaAggregateKey, RtaName, TaCertDetails,
         },
         eventsourcing::StoredEvent,
     },
@@ -87,12 +87,12 @@ impl fmt::Display for OldPubdIniDet {
 
 impl From<OldPubdIniDet> for RepositoryAccessInitDetails {
     fn from(old: OldPubdIniDet) -> Self {
-        RepositoryAccessInitDetails::new(old.id_cert, old.rrdp_base_uri, old.rsync_jail)
+        RepositoryAccessInitDetails::new(old.id_cert.into(), old.rrdp_base_uri, old.rsync_jail)
     }
 }
 
 pub struct DerivedEmbeddedCaMigrationInfo {
-    pub child_request: idexchange::ChildRequest,
+    pub child_id: IdCertInfo,
     pub parent_responses: HashMap<ChildHandle, idexchange::ParentResponse>,
 }
 
@@ -108,23 +108,23 @@ impl OldCaEvt {
         let event = match details {
             OldCaEvtDet::RepoUpdated(contact) => {
                 let contact = match contact {
-                    OldRepositoryContact::Rfc8181(res) => RepositoryContact::new(res),
+                    OldRepositoryContact::Rfc8181(res) => RepositoryContact::for_response(res),
                     OldRepositoryContact::Embedded(_) => {
                         let res = repo_manager.repository_response(&id.convert())?;
-                        RepositoryContact::new(res)
+                        RepositoryContact::for_response(res)
                     }
-                };
+                }?;
                 CaEvtDet::RepoUpdated { contact }
             }
             OldCaEvtDet::ParentAdded(parent, old_contact) => {
                 let contact = match old_contact {
-                    OldParentCaContact::Rfc6492(res) => ParentCaContact::for_rfc6492(res),
+                    OldParentCaContact::Rfc6492(res) => ParentCaContact::for_rfc8183_parent_response(res)?,
                     OldParentCaContact::Ta(details) => ParentCaContact::Ta(details),
                     OldParentCaContact::Embedded => match derived_embedded_ca_info_map.get(&parent.convert()) {
                         Some(info) => {
                             let res = info.parent_responses.get(&id.convert()).ok_or_else(|| PrepareUpgradeError::Custom(
                                 format!("Cannot upgrade CA '{}' using embedded parent '{}' which no longer has this CA as a child", id, parent)))?;
-                            ParentCaContact::for_rfc6492(res.clone())
+                            ParentCaContact::for_rfc8183_parent_response(res.clone())?
                         }
                         None => {
                             return Err(PrepareUpgradeError::Custom(format!(
@@ -140,7 +140,6 @@ impl OldCaEvt {
                 let (resources, id_cert_opt) = (old_details.resources, old_details.id_cert);
 
                 let id_cert = match id_cert_opt {
-                    Some(id_cert) => id_cert,
                     None => {
                         let child_info = derived_embedded_ca_info_map.get(&child.convert()).ok_or_else(|| {
                             PrepareUpgradeError::Custom(format!(
@@ -149,8 +148,9 @@ impl OldCaEvt {
                             ))
                         })?;
 
-                        child_info.child_request.id_cert().clone()
+                        child_info.child_id.clone()
                     }
+                    Some(id_cert) => id_cert.into(),
                 };
 
                 CaEvtDet::ChildAdded {
@@ -188,7 +188,7 @@ pub enum OldCaEvtDet {
     ChildRemoved(ChildHandle),
 
     // Being a child Events
-    IdUpdated(Rfc8183Id),
+    IdUpdated(OldRfc8183Id),
     ParentAdded(ParentHandle, OldParentCaContact),
     ParentUpdated(ParentHandle, OldParentCaContact),
     ParentRemoved(ParentHandle, Vec<ObjectsDelta>),
@@ -246,7 +246,10 @@ impl TryFrom<OldCaEvtDet> for CaEvtDet {
                     updates: cert_updates.into(),
                 }
             }
-            OldCaEvtDet::ChildUpdatedIdCert(child, id_cert) => CaEvtDet::ChildUpdatedIdCert { child, id_cert },
+            OldCaEvtDet::ChildUpdatedIdCert(child, id_cert) => CaEvtDet::ChildUpdatedIdCert {
+                child,
+                id_cert: id_cert.into(),
+            },
             OldCaEvtDet::ChildUpdatedResources(child, resources) => {
                 CaEvtDet::ChildUpdatedResources { child, resources }
             }
@@ -481,7 +484,7 @@ pub type OldCaIni = StoredEvent<OldCaIniDet>;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldCaIniDet {
-    id: Rfc8183Id,
+    id: OldRfc8183Id,
 
     // The following two fields need to be kept to maintain data compatibility
     // with Krill 0.4.2 installations.
@@ -496,7 +499,7 @@ pub struct OldCaIniDet {
 }
 
 impl OldCaIniDet {
-    pub fn unpack(self) -> (Rfc8183Id, Option<RepoInfo>, Option<TaCertDetails>) {
+    pub fn unpack(self) -> (OldRfc8183Id, Option<RepoInfo>, Option<TaCertDetails>) {
         (self.id, self.info, self.ta_details)
     }
 }
@@ -558,7 +561,7 @@ impl fmt::Display for OldPubdEvtDet {
 
 impl From<OldPublisher> for Publisher {
     fn from(old: OldPublisher) -> Self {
-        Publisher::new(old.id_cert, old.base_uri)
+        Publisher::new(old.id_cert.into(), old.base_uri)
     }
 }
 

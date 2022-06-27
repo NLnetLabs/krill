@@ -1,10 +1,7 @@
 use std::fmt;
 
 use rpki::{
-    ca::{
-        idcert::IdCert,
-        idexchange::{MyHandle, PublisherHandle},
-    },
+    ca::idexchange::{MyHandle, PublisherHandle},
     repository::x509::Time,
     uri,
 };
@@ -12,6 +9,7 @@ use rpki::{
 use crate::{
     commons::{
         api::rrdp::{Delta, DeltaElements, Notification, Snapshot},
+        api::IdCertInfo,
         crypto::KrillSigner,
         eventsourcing::StoredEvent,
         KrillResult,
@@ -25,13 +23,13 @@ pub type RepositoryAccessIni = StoredEvent<RepositoryAccessInitDetails>;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RepositoryAccessInitDetails {
-    id_cert: IdCert,
+    id_cert: IdCertInfo,
     rrdp_base_uri: uri::Https,
     rsync_jail: uri::Rsync,
 }
 
 impl RepositoryAccessInitDetails {
-    pub fn new(id_cert: IdCert, rrdp_base_uri: uri::Https, rsync_jail: uri::Rsync) -> Self {
+    pub fn new(id_cert: IdCertInfo, rrdp_base_uri: uri::Https, rsync_jail: uri::Rsync) -> Self {
         RepositoryAccessInitDetails {
             id_cert,
             rrdp_base_uri,
@@ -39,7 +37,7 @@ impl RepositoryAccessInitDetails {
         }
     }
 
-    pub fn unpack(self) -> (IdCert, uri::Https, uri::Rsync) {
+    pub fn unpack(self) -> (IdCertInfo, uri::Https, uri::Rsync) {
         (self.id_cert, self.rrdp_base_uri, self.rsync_jail)
     }
 }
@@ -51,7 +49,7 @@ impl RepositoryAccessInitDetails {
         rrdp_base_uri: uri::Https,
         signer: &KrillSigner,
     ) -> KrillResult<RepositoryAccessIni> {
-        let id_cert = signer.create_self_signed_id_cert()?;
+        let id_cert = signer.create_self_signed_id_cert()?.into();
 
         Ok(StoredEvent::new(
             handle,

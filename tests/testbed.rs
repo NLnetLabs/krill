@@ -62,7 +62,7 @@ async fn add_and_remove_certificate_authority() {
     // that an API client (such as the testbed web UI) would do.
     // <child_request/>   --> testbed
     // <parent_response/> <-- testbed
-    let (child_id_cert, _, _) = rfc8183_child_request.unpack();
+    let child_id_cert = rfc8183_child_request.validate().unwrap();
     let add_child_response: ParentCaContact = post_json_with_response(
         &format!("{}testbed/children", KRILL_SERVER_URI),
         &AddChildRequest::new(

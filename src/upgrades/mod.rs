@@ -30,6 +30,7 @@ use crate::{
     constants::{KEYS_DIR, SIGNERS_DIR},
 };
 
+pub mod pre_0_10_0;
 pub mod pre_0_9_0;
 
 pub type UpgradeResult<T> = Result<T, PrepareUpgradeError>;
@@ -100,6 +101,7 @@ pub enum PrepareUpgradeError {
     IoError(KrillIoError),
     Unrecognised(String),
     CannotLoadAggregate(MyHandle),
+    IdExchange(String),
     Custom(String),
 }
 
@@ -111,6 +113,7 @@ impl fmt::Display for PrepareUpgradeError {
             PrepareUpgradeError::IoError(e) => format!("I/O Error: {}", e),
             PrepareUpgradeError::Unrecognised(s) => format!("Unrecognised: {}", s),
             PrepareUpgradeError::CannotLoadAggregate(h) => format!("Cannot load: {}", h),
+            PrepareUpgradeError::IdExchange(s) => format!("Could not use exchanged id info: {}", s),
             PrepareUpgradeError::Custom(s) => s.clone(),
         };
 
@@ -148,6 +151,12 @@ impl From<KrillIoError> for PrepareUpgradeError {
 impl From<crate::commons::error::Error> for PrepareUpgradeError {
     fn from(e: crate::commons::error::Error) -> Self {
         PrepareUpgradeError::Custom(e.to_string())
+    }
+}
+
+impl From<rpki::ca::idexchange::Error> for PrepareUpgradeError {
+    fn from(e: rpki::ca::idexchange::Error) -> Self {
+        PrepareUpgradeError::IdExchange(e.to_string())
     }
 }
 
@@ -304,7 +313,7 @@ pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -
                 let msg = "Cannot upgrade Krill installations from before version 0.6.0. Please upgrade to any version ranging from 0.6.0 to 0.8.1 first, and then upgrade to this version.";
                 error!("{}", msg);
                 Err(PrepareUpgradeError::custom(msg))
-            } else if versions.from < KrillVersion::release(0, 10, 0) {
+            } else if versions.from < KrillVersion::candidate(0, 10, 0, 1) {
                 let upgrade_data_dir = config.upgrade_data_dir();
                 if !upgrade_data_dir.exists() {
                     file::create_dir_all(&upgrade_data_dir)?;
@@ -366,7 +375,8 @@ pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -
 
                     pre_0_9_0::CaObjectsMigration::prepare(mode, config, repo_manager, signer)?;
                 } else {
-                    todo!("Implement migration from 0.9.x to 0.10.x")
+                    pre_0_10_0::CasStoreMigration::prepare(mode, &config)?;
+                    pre_0_10_0::PubdStoreMigration::prepare(mode, &config)?;
                 }
 
                 Ok(Some(UpgradeReport::new(true, versions)))

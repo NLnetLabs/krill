@@ -262,7 +262,7 @@ pub async fn delete_ca(ca: &CaHandle) {
 pub async fn ca_repo_update_rfc8181(ca: &CaHandle, response: idexchange::RepositoryResponse) {
     krill_admin(Command::CertAuth(CaCommand::RepoUpdate(
         ca.clone(),
-        RepositoryContact::new(response),
+        RepositoryContact::for_response(response).unwrap(),
     )))
     .await;
 }
@@ -290,8 +290,8 @@ pub async fn add_child_to_ta_rfc6492(
     child_request: idexchange::ChildRequest,
     resources: ResourceSet,
 ) -> ParentCaContact {
-    let (id_cert, _, _) = child_request.unpack();
-    let req = AddChildRequest::new(child.clone(), resources, id_cert);
+    let id_cert = child_request.validate().unwrap();
+    let req = AddChildRequest::new(child.clone(), resources, id_cert.into());
     let res = krill_admin(Command::CertAuth(CaCommand::ChildAdd(ta_handle(), req))).await;
 
     match res {
@@ -306,9 +306,9 @@ pub async fn add_child_rfc6492(
     child_request: idexchange::ChildRequest,
     resources: ResourceSet,
 ) -> ParentCaContact {
-    let (id_cert, _, _) = child_request.unpack();
+    let id_cert = child_request.validate().unwrap();
 
-    let add_child_request = AddChildRequest::new(child, resources, id_cert);
+    let add_child_request = AddChildRequest::new(child, resources, id_cert.into());
 
     match krill_admin(Command::CertAuth(CaCommand::ChildAdd(ca, add_child_request))).await {
         ApiResponse::ParentCaContact(info) => info,
@@ -324,8 +324,8 @@ pub async fn update_child(ca: &CaHandle, child: &CaHandle, resources: &ResourceS
 
 pub async fn update_child_id(ca: &CaHandle, child: &CaHandle, req: idexchange::ChildRequest) {
     let child_handle = child.convert();
-    let (id, _, _) = req.unpack();
-    let req = UpdateChildRequest::id_cert(id);
+    let id_cert = req.validate().unwrap();
+    let req = UpdateChildRequest::id_cert(id_cert);
     send_child_request(ca, &child_handle, req).await
 }
 
@@ -758,7 +758,7 @@ pub async fn set_up_ca_with_repo(ca: &CaHandle) {
     let response = embedded_repository_response(ca.convert()).await;
 
     // Update the repo for the child
-    let contact = RepositoryContact::new(response);
+    let contact = RepositoryContact::for_response(response).unwrap();
     repo_update(ca, contact).await;
 }
 

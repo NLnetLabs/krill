@@ -1,4 +1,6 @@
-use rpki::{ca::idcert::IdCert, uri};
+use rpki::uri;
+
+use crate::commons::api::IdCertInfo;
 
 //------------ Publisher -----------------------------------------------------
 
@@ -6,7 +8,7 @@ use rpki::{ca::idcert::IdCert, uri};
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Publisher {
     /// Used by remote RFC8181 publishers
-    id_cert: IdCert,
+    id_cert: IdCertInfo,
 
     /// Publication jail for this publisher
     base_uri: uri::Rsync,
@@ -14,7 +16,7 @@ pub struct Publisher {
 
 /// # Accessors
 impl Publisher {
-    pub fn id_cert(&self) -> &IdCert {
+    pub fn id_cert(&self) -> &IdCertInfo {
         &self.id_cert
     }
     pub fn base_uri(&self) -> &uri::Rsync {
@@ -25,7 +27,7 @@ impl Publisher {
 /// # Life cycle
 ///
 impl Publisher {
-    pub fn new(id_cert: IdCert, base_uri: uri::Rsync) -> Self {
+    pub fn new(id_cert: IdCertInfo, base_uri: uri::Rsync) -> Self {
         Publisher { id_cert, base_uri }
     }
 }

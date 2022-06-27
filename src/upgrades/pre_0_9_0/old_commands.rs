@@ -75,9 +75,9 @@ impl OldStoredCaCommand {
                                 handle, child
                             ))
                         })?
-                        .child_request
-                        .id_cert()
-                        .subject_key_identifier()
+                        .child_id
+                        .public_key()
+                        .key_identifier()
                         .to_string(),
                 };
 

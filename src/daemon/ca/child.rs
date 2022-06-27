@@ -3,14 +3,14 @@ use std::collections::HashMap;
 use chrono::Duration;
 
 use rpki::{
-    ca::{idcert::IdCert, idexchange::ChildHandle, provisioning::ResourceClassName},
+    ca::{idexchange::ChildHandle, provisioning::ResourceClassName},
     crypto::KeyIdentifier,
     repository::{resources::ResourceSet, x509::Time},
 };
 
 use crate::{
     commons::{
-        api::{ChildCaInfo, ChildState, DelegatedCertificate, SuspendedCert, UnsuspendedCert},
+        api::{ChildCaInfo, ChildState, DelegatedCertificate, IdCertInfo, SuspendedCert, UnsuspendedCert},
         crypto::{CsrInfo, KrillSigner, SignSupport},
         error::Error,
         KrillResult,
@@ -43,13 +43,13 @@ pub enum UsedKeyState {
 pub struct ChildDetails {
     #[serde(default)]
     state: ChildState,
-    id_cert: IdCert,
+    id_cert: IdCertInfo,
     resources: ResourceSet,
     used_keys: HashMap<KeyIdentifier, UsedKeyState>,
 }
 
 impl ChildDetails {
-    pub fn new(id_cert: IdCert, resources: ResourceSet) -> Self {
+    pub fn new(id_cert: IdCertInfo, resources: ResourceSet) -> Self {
         ChildDetails {
             state: ChildState::Active,
             id_cert,
@@ -70,11 +70,11 @@ impl ChildDetails {
         self.state = ChildState::Active;
     }
 
-    pub fn id_cert(&self) -> &IdCert {
+    pub fn id_cert(&self) -> &IdCertInfo {
         &self.id_cert
     }
 
-    pub fn set_id_cert(&mut self, id_cert: IdCert) {
+    pub fn set_id_cert(&mut self, id_cert: IdCertInfo) {
         self.id_cert = id_cert;
     }
 
@@ -129,7 +129,7 @@ impl ChildDetails {
 
 impl From<ChildDetails> for ChildCaInfo {
     fn from(details: ChildDetails) -> Self {
-        ChildCaInfo::new(details.state, (&details.id_cert).into(), details.resources)
+        ChildCaInfo::new(details.state, details.id_cert, details.resources)
     }
 }
 

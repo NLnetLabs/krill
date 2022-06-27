@@ -2,7 +2,6 @@ use std::{collections::HashMap, fmt};
 
 use rpki::{
     ca::{
-        idcert::IdCert,
         idexchange::{CaHandle, ChildHandle, ParentHandle},
         provisioning::{IssuanceRequest, ParentResourceClassName, ResourceClassName, RevocationRequest},
     },
@@ -13,21 +12,43 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            AspaCustomer, AspaDefinition, AspaProvidersUpdate, BgpSecAsnKey, DelegatedCertificate, ObjectName,
-            ParentCaContact, RcvdCert, RepositoryContact, RevokedObject, RoaAggregateKey, RtaName, SuspendedCert,
-            TaCertDetails, UnsuspendedCert,
+            AspaCustomer, AspaDefinition, AspaProvidersUpdate, BgpSecAsnKey, DelegatedCertificate, IdCertInfo,
+            ObjectName, ParentCaContact, RcvdCert, RepositoryContact, RevokedObject, RoaAggregateKey, RtaName,
+            SuspendedCert, TaCertDetails, UnsuspendedCert,
         },
         crypto::KrillSigner,
         eventsourcing::StoredEvent,
         KrillResult,
     },
     daemon::ca::{
-        AggregateRoaInfo, AspaInfo, CertifiedKey, PreparedRta, PublishedRoa, Rfc8183Id, RoaInfo, RouteAuthorization,
-        SignedRta,
+        AggregateRoaInfo, AspaInfo, CertifiedKey, PreparedRta, PublishedRoa, RoaInfo, RouteAuthorization, SignedRta,
     },
 };
 
 use super::{BgpSecCertInfo, StoredBgpSecCsr};
+
+//------------ Rfc8183Id ---------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct Rfc8183Id {
+    cert: IdCertInfo,
+}
+
+impl Rfc8183Id {
+    pub fn new(cert: IdCertInfo) -> Self {
+        Rfc8183Id { cert }
+    }
+
+    pub fn generate(signer: &KrillSigner) -> KrillResult<Self> {
+        let cert = signer.create_self_signed_id_cert()?;
+        let cert = IdCertInfo::from(&cert);
+        Ok(Rfc8183Id { cert })
+    }
+
+    pub fn cert(&self) -> &IdCertInfo {
+        &self.cert
+    }
+}
 
 //------------ Ini -----------------------------------------------------------
 
@@ -59,7 +80,11 @@ impl IniDet {
 
 impl fmt::Display for IniDet {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Initialized with ID key hash: {}", self.id.key_id())?;
+        write!(
+            f,
+            "Initialized with ID key hash: {}",
+            self.id.cert().public_key().key_identifier()
+        )?;
         Ok(())
     }
 }
@@ -577,7 +602,7 @@ pub enum CaEvtDet {
     /// A child was added to this (parent) CA
     ChildAdded {
         child: ChildHandle,
-        id_cert: IdCert,
+        id_cert: IdCertInfo,
         resources: ResourceSet,
     },
 
@@ -604,7 +629,7 @@ pub enum CaEvtDet {
     },
     ChildUpdatedIdCert {
         child: ChildHandle,
-        id_cert: IdCert,
+        id_cert: IdCertInfo,
     },
     ChildUpdatedResources {
         child: ChildHandle,
@@ -813,7 +838,7 @@ impl CaEvtDet {
         handle: &CaHandle,
         version: u64,
         child: ChildHandle,
-        id_cert: IdCert,
+        id_cert: IdCertInfo,
         resources: ResourceSet,
     ) -> CaEvt {
         StoredEvent::new(
@@ -827,7 +852,12 @@ impl CaEvtDet {
         )
     }
 
-    pub(super) fn child_updated_cert(handle: &CaHandle, version: u64, child: ChildHandle, id_cert: IdCert) -> CaEvt {
+    pub(super) fn child_updated_cert(
+        handle: &CaHandle,
+        version: u64,
+        child: ChildHandle,
+        id_cert: IdCertInfo,
+    ) -> CaEvt {
         StoredEvent::new(handle, version, CaEvtDet::ChildUpdatedIdCert { child, id_cert })
     }
 
@@ -926,7 +956,7 @@ impl fmt::Display for CaEvtDet {
                     "added child '{}' with resources '{}, id (hash): {}",
                     child,
                     resources,
-                    id_cert.subject_key_identifier()
+                    id_cert.public_key().key_identifier()
                 )
             }
             CaEvtDet::ChildCertificateIssued {
@@ -992,7 +1022,7 @@ impl fmt::Display for CaEvtDet {
                     f,
                     "updated child '{}' id (hash) '{}'",
                     child,
-                    id_cert.subject_key_identifier()
+                    id_cert.public_key().key_identifier()
                 )
             }
             CaEvtDet::ChildUpdatedResources { child, resources } => {
@@ -1003,7 +1033,11 @@ impl fmt::Display for CaEvtDet {
             CaEvtDet::ChildUnsuspended { child } => write!(f, "unsuspended child '{}'", child),
 
             // Being a child Events
-            CaEvtDet::IdUpdated { id } => write!(f, "updated RFC8183 id to key '{}'", id.key_id()),
+            CaEvtDet::IdUpdated { id } => write!(
+                f,
+                "updated RFC8183 id to key '{}'",
+                id.cert().public_key().key_identifier()
+            ),
             CaEvtDet::ParentAdded { parent, contact } => {
                 let contact_str = match contact {
                     ParentCaContact::Ta(_) => "TA proxy",
@@ -1210,7 +1244,11 @@ impl fmt::Display for CaEvtDet {
 
             // Publishing
             CaEvtDet::RepoUpdated { contact } => {
-                write!(f, "updated repository to remote server: {}", contact.service_uri())
+                write!(
+                    f,
+                    "updated repository to remote server: {}",
+                    contact.server_info().service_uri()
+                )
             }
 
             // Rta

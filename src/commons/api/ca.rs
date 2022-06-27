@@ -20,7 +20,7 @@ use rpki::{
         },
         publication::Base64,
     },
-    crypto::KeyIdentifier,
+    crypto::{KeyIdentifier, PublicKey},
     repository::{
         aspa::Aspa,
         cert::Cert,
@@ -49,32 +49,36 @@ use crate::{
 
 use super::BgpSecAsnKey;
 
-//------------ IdCertPem -----------------------------------------------------
+//------------ IdCertInfo ----------------------------------------------------
 
 /// A PEM encoded IdCert and sha256 of the encoding, for easier
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct IdCertPem {
-    pem: String,
+pub struct IdCertInfo {
+    public_key: PublicKey,
+    base64: Base64,
     hash: Hash,
 }
 
-impl IdCertPem {
-    pub fn pem(&self) -> &str {
-        &self.pem
+impl IdCertInfo {
+    pub fn public_key(&self) -> &PublicKey {
+        &self.public_key
+    }
+
+    pub fn base64(&self) -> &Base64 {
+        &self.base64
     }
 
     pub fn hash(&self) -> &Hash {
         &self.hash
     }
-}
 
-impl From<&IdCert> for IdCertPem {
-    fn from(cer: &IdCert) -> Self {
-        let base64 = base64::encode(&cer.to_bytes());
+    pub fn pem(&self) -> String {
         let mut pem = "-----BEGIN CERTIFICATE-----\n".to_string();
 
-        for line in base64
-            .as_bytes()
+        for line in self
+            .base64
+            .as_str()
+            .as_bytes() // so we can use chunks
             .chunks(64)
             .map(|b| unsafe { std::str::from_utf8_unchecked(b) })
         {
@@ -84,9 +88,29 @@ impl From<&IdCert> for IdCertPem {
 
         pem.push_str("-----END CERTIFICATE-----\n");
 
-        let hash = Hash::from_data(&cer.to_bytes());
+        pem
+    }
+}
 
-        IdCertPem { pem, hash }
+impl From<&IdCert> for IdCertInfo {
+    fn from(cer: &IdCert) -> Self {
+        let bytes = cer.to_bytes();
+
+        let public_key = cer.public_key().clone();
+        let base64 = Base64::from_content(&bytes);
+        let hash = Hash::from_data(&bytes);
+
+        IdCertInfo {
+            public_key,
+            base64,
+            hash,
+        }
+    }
+}
+
+impl From<IdCert> for IdCertInfo {
+    fn from(cer: IdCert) -> Self {
+        Self::from(&cer) // we need to encode anyhow, we can't move any data
     }
 }
 
@@ -121,12 +145,12 @@ impl fmt::Display for ChildState {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildCaInfo {
     state: ChildState,
-    id_cert: IdCertPem,
+    id_cert: IdCertInfo,
     entitled_resources: ResourceSet,
 }
 
 impl ChildCaInfo {
-    pub fn new(state: ChildState, id_cert: IdCertPem, entitled_resources: ResourceSet) -> Self {
+    pub fn new(state: ChildState, id_cert: IdCertInfo, entitled_resources: ResourceSet) -> Self {
         ChildCaInfo {
             state,
             id_cert,
@@ -138,7 +162,7 @@ impl ChildCaInfo {
         self.state
     }
 
-    pub fn id_cert(&self) -> &IdCertPem {
+    pub fn id_cert(&self) -> &IdCertInfo {
         &self.id_cert
     }
 
@@ -1580,7 +1604,7 @@ impl ops::SubAssign<Duration> for Timestamp {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthInfo {
     handle: CaHandle,
-    id_cert: IdCertPem,
+    id_cert: IdCertInfo,
     repo_info: Option<RepoInfo>,
     parents: Vec<ParentInfo>,
     resources: ResourceSet,
@@ -1592,7 +1616,7 @@ pub struct CertAuthInfo {
 impl CertAuthInfo {
     pub fn new(
         handle: CaHandle,
-        id_cert: IdCertPem,
+        id_cert: IdCertInfo,
         repo_info: Option<RepoInfo>,
         parents: HashMap<ParentHandle, ParentCaContact>,
         resource_classes: HashMap<ResourceClassName, ResourceClassInfo>,
@@ -1626,7 +1650,7 @@ impl CertAuthInfo {
         &self.handle
     }
 
-    pub fn id_cert(&self) -> &IdCertPem {
+    pub fn id_cert(&self) -> &IdCertInfo {
         &self.id_cert
     }
 
@@ -1871,12 +1895,15 @@ impl CaRepoDetails {
 
 impl fmt::Display for CaRepoDetails {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "Repository Details:")?;
-        writeln!(f, "  service uri: {}", self.contact.service_uri())?;
         let repo_info = self.contact.repo_info();
+        let server_info = self.contact.server_info();
         let rrdp_uri = repo_info.rpki_notify().map(|uri| uri.as_str()).unwrap_or("<none>");
-        writeln!(f, "  base_uri:    {}", repo_info.base_uri())?;
-        writeln!(f, "  rpki_notify: {}", rrdp_uri)?;
+
+        writeln!(f, "Repository Details:")?;
+        writeln!(f, "  service uri:    {}", server_info.service_uri())?;
+        writeln!(f, "  key identifier: {}", server_info.public_key().key_identifier())?;
+        writeln!(f, "  base_uri:       {}", repo_info.base_uri())?;
+        writeln!(f, "  rpki_notify:    {}", rrdp_uri)?;
         writeln!(f)?;
 
         Ok(())
@@ -2215,7 +2242,7 @@ mod test {
         };
 
         let ncc_id_openssl_pem = include_str!("../../../test-resources/remote/ncc-id.pem");
-        let ncc_id_pem = IdCertPem::from(&ncc_id);
+        let ncc_id_pem = IdCertInfo::from(&ncc_id);
 
         assert_eq!(ncc_id_pem.pem(), ncc_id_openssl_pem);
     }

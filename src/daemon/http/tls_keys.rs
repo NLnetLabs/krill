@@ -17,7 +17,7 @@ use rpki::{
     repository::x509::{Time, Validity},
 };
 
-use crate::commons::{api::IdCertPem, error::KrillIoError, util::file};
+use crate::commons::{api::IdCertInfo, error::KrillIoError, util::file};
 
 const KEY_SIZE: u32 = 2048;
 pub const HTTPS_SUB_DIR: &str = "ssl";
@@ -157,7 +157,7 @@ impl HttpsSigner {
         let pub_key = self.public_key_info()?;
 
         let id_cert = IdCert::new_ta(validity, &pub_key.key_identifier(), self).map_err(Error::signer)?;
-        let id_cert_pem = IdCertPem::from(&id_cert);
+        let id_cert_pem = IdCertInfo::from(&id_cert);
 
         let path = cert_file_path(data_dir);
 

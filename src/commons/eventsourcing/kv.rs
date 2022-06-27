@@ -233,6 +233,11 @@ impl KeyValueStore {
         Ok(version < later)
     }
 
+    pub fn version_is_after(&self, earlier: KrillVersion) -> Result<bool, KeyValueError> {
+        let version = self.version()?;
+        Ok(version > earlier)
+    }
+
     /// Returns whether the version of the deployed keystore matches that of the
     /// currently deployed code.
     pub fn version_is_current(&self) -> Result<bool, KeyValueError> {

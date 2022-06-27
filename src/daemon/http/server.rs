@@ -1749,9 +1749,11 @@ fn extract_repository_contact(ca: &CaHandle, bytes: Bytes) -> Result<RepositoryC
         if string.contains("<parent_response") {
             Err(Error::CaRepoResponseWrongXml(ca.clone()))
         } else {
-            let response = idexchange::RepositoryResponse::validate(string.as_bytes())
+            let response = idexchange::RepositoryResponse::parse(string.as_bytes())
                 .map_err(|e| Error::CaRepoResponseInvalidXml(ca.clone(), e.to_string()))?;
-            Ok(RepositoryContact::new(response))
+
+            RepositoryContact::for_response(response)
+                .map_err(|e| Error::CaRepoResponseInvalidXml(ca.clone(), e.to_string()))
         }
     } else {
         serde_json::from_str(&string).map_err(Error::JsonError)
@@ -1807,11 +1809,13 @@ fn extract_parent_ca_req(
         if string.starts_with("<repository") {
             return Err(Error::CaParentResponseWrongXml(ca.clone()));
         } else {
-            let res = idexchange::ParentResponse::validate(string.as_bytes())
+            let res = idexchange::ParentResponse::parse(string.as_bytes())
                 .map_err(|e| Error::CaParentResponseInvalidXml(ca.clone(), e.to_string()))?;
 
             let parent_name = parent_override.unwrap_or_else(|| res.parent_handle().clone());
-            let contact = ParentCaContact::for_rfc6492(res);
+            let contact = ParentCaContact::for_rfc8183_parent_response(res)
+                .map_err(|e| Error::CaParentResponseInvalidXml(ca.clone(), e.to_string()))?;
+
             ParentCaReq::new(parent_name, contact)
         }
     } else {

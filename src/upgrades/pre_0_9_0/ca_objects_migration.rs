@@ -8,6 +8,7 @@ use rpki::{
         idexchange,
         idexchange::{CaHandle, ChildHandle, ParentHandle, RepoInfo},
         provisioning::{IssuanceRequest, ResourceClassName, RevocationRequest},
+        publication::Base64,
     },
     crypto::KeyIdentifier,
     repository::{crl::Crl, manifest::Manifest, resources::ResourceSet, x509::Time},
@@ -18,8 +19,8 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            DelegatedCertificate, ObjectName, RcvdCert, RepositoryContact, Revocation, Revocations, RoaAggregateKey,
-            StorableCaCommand, StoredEffect, TaCertDetails,
+            DelegatedCertificate, IdCertInfo, ObjectName, RcvdCert, RepositoryContact, Revocation, Revocations,
+            RoaAggregateKey, StorableCaCommand, StoredEffect, TaCertDetails,
         },
         crypto::KrillSigner,
         eventsourcing::{Aggregate, AggregateStore, CommandKey, KeyStoreKey, KeyValueStore, StoredValueInfo},
@@ -109,7 +110,9 @@ impl CaObjectsMigration {
         let service_uri = uri::Https::from_string(service_uri).unwrap();
         let service_uri = idexchange::ServiceUri::Https(service_uri);
 
-        let child_request = idexchange::ChildRequest::new(ca.id.cert.clone(), ca.handle.convert());
+        let child_id = IdCertInfo::from(&ca.id.cert);
+        let id_cert_base64 = Base64::from_content(&ca.id.cert.to_bytes());
+
         let parent_responses = ca
             .children
             .keys()
@@ -117,7 +120,7 @@ impl CaObjectsMigration {
                 (
                     child_handle.clone(),
                     idexchange::ParentResponse::new(
-                        ca.id.cert.clone(),
+                        id_cert_base64.clone(),
                         ca.handle.convert(),
                         child_handle.clone(),
                         service_uri.clone(),
@@ -128,7 +131,7 @@ impl CaObjectsMigration {
             .collect();
 
         DerivedEmbeddedCaMigrationInfo {
-            child_request,
+            child_id,
             parent_responses,
         }
     }
@@ -152,7 +155,10 @@ impl UpgradeStore for CasStoreMigration {
         // check existing version, wipe if needed
         self.preparation_store_prepare()?;
 
-        info!("Upgrade CA command and event data to Krill version {}", KRILL_VERSION);
+        info!(
+            "Prepare upgrading CA command and event data to Krill version {}",
+            KRILL_VERSION
+        );
 
         let dflt_actor = "krill".to_string();
 
@@ -207,8 +213,10 @@ impl UpgradeStore for CasStoreMigration {
 
                     let repo_response = self.repo_manager.repository_response(&id.convert())?;
 
-                    let contact = RepositoryContact::new(repo_response);
-                    let service_uri = contact.service_uri().clone();
+                    let contact = RepositoryContact::for_response(repo_response).map_err(|e| {
+                        PrepareUpgradeError::custom(format!("Invalid repository response found: {}", e))
+                    })?;
+                    let service_uri = contact.server_info().service_uri().clone();
 
                     data_upgrade_info.last_event += 1;
                     data_upgrade_info.last_command += 1;
@@ -418,7 +426,7 @@ struct OldCertAuth {
     handle: CaHandle,
     version: u64,
 
-    id: Rfc8183Id, // Used for RFC 6492 (up-down) and RFC 8181 (publication)
+    id: OldRfc8183Id, // Used for RFC 6492 (up-down) and RFC 8181 (publication)
 
     repository: Option<OldRepositoryContact>,
     repository_pending_withdraw: Option<OldRepositoryContact>,
@@ -665,9 +673,13 @@ impl OldCertAuth {
             Some(old) => match old {
                 OldRepositoryContact::Embedded(_) => {
                     let res = repo_manager.repository_response(&self.handle.convert())?;
-                    Some(RepositoryContact::new(res))
+                    let contact = RepositoryContact::for_response(res)?;
+                    Some(contact)
                 }
-                OldRepositoryContact::Rfc8181(res) => Some(RepositoryContact::new(res.clone())),
+                OldRepositoryContact::Rfc8181(res) => {
+                    let contact = RepositoryContact::for_response(res.clone())?;
+                    Some(contact)
+                }
             },
         };
 
@@ -676,14 +688,14 @@ impl OldCertAuth {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct Rfc8183Id {
+pub struct OldRfc8183Id {
     key: KeyIdentifier, // convenient (and efficient) access
     cert: IdCert,
 }
 
-impl From<Rfc8183Id> for ca::Rfc8183Id {
-    fn from(old: Rfc8183Id) -> Self {
-        ca::Rfc8183Id::new(old.cert)
+impl From<OldRfc8183Id> for ca::Rfc8183Id {
+    fn from(old: OldRfc8183Id) -> Self {
+        ca::Rfc8183Id::new(old.cert.into())
     }
 }
 
