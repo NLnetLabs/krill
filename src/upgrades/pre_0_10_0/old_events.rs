@@ -3,7 +3,7 @@ use std::{collections::HashMap, fmt};
 use rpki::{
     ca::{
         idcert::IdCert,
-        idexchange::{self, ChildHandle, ParentHandle, PublisherHandle, RepoInfo, ServiceUri},
+        idexchange::{ChildHandle, ParentHandle, PublisherHandle, RepoInfo, ServiceUri},
         provisioning::{
             IssuanceRequest, ParentResourceClassName, RequestResourceLimit, ResourceClassName, RevocationRequest,
         },
@@ -16,12 +16,16 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            AspaCustomer, AspaDefinition, AspaProvidersUpdate, BgpSecAsnKey, IdCertInfo, RevokedObject,
-            RoaAggregateKey, RtaName, TrustAnchorLocator,
+            AspaCustomer, AspaDefinition, AspaProvidersUpdate, DelegatedCertificate, ParentCaContact, ParentServerInfo,
+            PublicationServerInfo, RcvdCert, RepositoryContact, RevokedObject, RoaAggregateKey, RtaName, SuspendedCert,
+            TaCertDetails, TrustAnchorLocator, UnsuspendedCert,
         },
         eventsourcing::StoredEvent,
     },
-    daemon::ca::{self, BgpSecCertificateUpdates, PreparedRta, RouteAuthorization, SignedRta, StoredBgpSecCsr},
+    daemon::ca::{
+        self, AggregateRoaInfo, AspaInfo, AspaObjectsUpdates, CaEvt, CaEvtDet, CertifiedKey, ChildCertificateUpdates,
+        PreparedRta, RoaInfo, RoaUpdates, RouteAuthorization, SignedRta,
+    },
     pubd::{Publisher, RepositoryAccessEvent, RepositoryAccessEventDetails, RepositoryAccessInitDetails},
 };
 
@@ -63,6 +67,12 @@ impl OldTaCertDetails {
     }
 }
 
+impl From<OldTaCertDetails> for TaCertDetails {
+    fn from(old: OldTaCertDetails) -> Self {
+        TaCertDetails::new(old.cert, old.resources, old.tal)
+    }
+}
+
 impl PartialEq for OldTaCertDetails {
     fn eq(&self, other: &Self) -> bool {
         self.tal == other.tal
@@ -91,6 +101,15 @@ pub struct OldChildCertificateUpdates {
     unsuspended: Vec<OldUnsuspendedCert>,
 }
 
+impl From<OldChildCertificateUpdates> for ChildCertificateUpdates {
+    fn from(old: OldChildCertificateUpdates) -> Self {
+        let issued: Vec<DelegatedCertificate> = old.issued.into_iter().map(|old| old.into()).collect();
+        let suspended: Vec<SuspendedCert> = old.suspended.into_iter().map(|old| old.into()).collect();
+        let unsuspended: Vec<UnsuspendedCert> = old.unsuspended.into_iter().map(|old| old.into()).collect();
+        ChildCertificateUpdates::new(issued, old.removed, suspended, unsuspended)
+    }
+}
+
 //------------ OldDelegatedCertificate ------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -115,6 +134,12 @@ impl Eq for OldDelegatedCertificate {}
 pub type OldSuspendedCert = OldDelegatedCertificate;
 pub type OldUnsuspendedCert = OldDelegatedCertificate;
 
+impl From<OldDelegatedCertificate> for DelegatedCertificate {
+    fn from(old: OldDelegatedCertificate) -> Self {
+        DelegatedCertificate::new(old.uri, old.limit, old.resource_set, old.cert)
+    }
+}
+
 //------------ OldRcvdCert ------------------------------------------------------
 
 /// Contains a CA Certificate that has been issued to this CA, for some key.
@@ -135,6 +160,12 @@ impl PartialEq for OldRcvdCert {
 
 impl Eq for OldRcvdCert {}
 
+impl From<OldRcvdCert> for RcvdCert {
+    fn from(old: OldRcvdCert) -> Self {
+        RcvdCert::new(old.cert, old.uri, old.resources)
+    }
+}
+
 //------------ OldCertifiedKey --------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -148,6 +179,12 @@ pub struct OldCertifiedKey {
     old_repo: Option<RepoInfo>,
 }
 
+impl From<OldCertifiedKey> for CertifiedKey {
+    fn from(old: OldCertifiedKey) -> Self {
+        CertifiedKey::new(old.key_id, old.incoming_cert.into(), old.request, old.old_repo)
+    }
+}
+
 //------------ OldParentCaContact -----------------------------------------------
 
 /// This type contains the information needed to contact the parent ca
@@ -158,7 +195,48 @@ pub struct OldCertifiedKey {
 #[serde(tag = "type")]
 pub enum OldParentCaContact {
     Ta(OldTaCertDetails),
-    Rfc6492(idexchange::ParentResponse),
+    Rfc6492(OldParentResponse),
+}
+
+impl From<OldParentCaContact> for ParentCaContact {
+    fn from(old: OldParentCaContact) -> Self {
+        match old {
+            OldParentCaContact::Ta(old) => ParentCaContact::Ta(old.into()),
+            OldParentCaContact::Rfc6492(old) => ParentCaContact::Rfc6492(old.into()),
+        }
+    }
+}
+
+//------------ OldParentResponse ---------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OldParentResponse {
+    /// The parent CA's IdCert
+    id_cert: IdCert,
+
+    /// The handle of the parent CA.
+    parent_handle: ParentHandle,
+
+    /// The handle chosen for the child CA. Note that this may not be the
+    /// same as the handle the CA asked for.
+    child_handle: ChildHandle,
+
+    /// The URI where the CA needs to send its RFC6492 messages
+    service_uri: ServiceUri,
+
+    /// The optional 'tag' identifier used like a session identifier
+    tag: Option<String>,
+}
+
+impl From<OldParentResponse> for ParentServerInfo {
+    fn from(old: OldParentResponse) -> Self {
+        ParentServerInfo::new(
+            old.service_uri,
+            old.id_cert.public_key().clone(),
+            old.parent_handle,
+            old.child_handle,
+        )
+    }
 }
 
 //------------ OldRepositoryContact ---------------------------------------------
@@ -166,7 +244,17 @@ pub enum OldParentCaContact {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 pub struct OldRepositoryContact {
-    repository_response: idexchange::RepositoryResponse,
+    repository_response: OldRepositoryResponse,
+}
+
+impl From<OldRepositoryContact> for RepositoryContact {
+    fn from(old: OldRepositoryContact) -> Self {
+        let repo_info = old.repository_response.repo_info;
+        let public_key = old.repository_response.id_cert.public_key().clone();
+        let service_uri = old.repository_response.service_uri;
+
+        RepositoryContact::new(repo_info, PublicationServerInfo::new(public_key, service_uri))
+    }
 }
 
 //------------ OldRoaInfo -----------------------------------------------------
@@ -175,6 +263,12 @@ pub struct OldRepositoryContact {
 pub struct OldRoaInfo {
     roa: Roa,
     since: Time, // first ROA in RC created
+}
+
+impl From<OldRoaInfo> for RoaInfo {
+    fn from(old: OldRoaInfo) -> Self {
+        RoaInfo::new(old.roa, old.since)
+    }
 }
 
 impl PartialEq for OldRoaInfo {
@@ -193,6 +287,12 @@ pub struct OldAggregateRoaInfo {
 
     #[serde(flatten)]
     roa: OldRoaInfo,
+}
+
+impl From<OldAggregateRoaInfo> for AggregateRoaInfo {
+    fn from(old: OldAggregateRoaInfo) -> Self {
+        AggregateRoaInfo::new(old.authorizations, old.roa.into())
+    }
 }
 
 //------------ OldRoaUpdates --------------------------------------------------
@@ -227,6 +327,27 @@ pub struct OldRoaUpdates {
         with = "aggregate_removed_sorted_map"
     )]
     aggregate_removed: HashMap<RoaAggregateKey, RevokedObject>,
+}
+
+impl From<OldRoaUpdates> for RoaUpdates {
+    fn from(old: OldRoaUpdates) -> Self {
+        let updated: HashMap<RouteAuthorization, RoaInfo> = old
+            .updated
+            .into_iter()
+            .map(|(auth, info)| (auth, info.into()))
+            .collect();
+
+        let aggregate_updated: HashMap<RoaAggregateKey, AggregateRoaInfo> = old
+            .aggregate_updated
+            .into_iter()
+            .map(|(auth, info)| (auth, info.into()))
+            .collect();
+
+        let removed = old.removed;
+        let aggregate_removed = old.aggregate_removed;
+
+        RoaUpdates::new(updated, removed, aggregate_updated, aggregate_removed)
+    }
 }
 
 mod updated_sorted_map {
@@ -406,6 +527,12 @@ impl PartialEq for OldAspaInfo {
 
 impl Eq for OldAspaInfo {}
 
+impl From<OldAspaInfo> for AspaInfo {
+    fn from(old: OldAspaInfo) -> Self {
+        AspaInfo::new(old.definition, old.aspa, old.since)
+    }
+}
+
 //------------ OldAspaObjectsUpdates ------------------------------------------
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -417,13 +544,20 @@ pub struct OldAspaObjectsUpdates {
     removed: Vec<AspaCustomer>,
 }
 
+impl From<OldAspaObjectsUpdates> for AspaObjectsUpdates {
+    fn from(old: OldAspaObjectsUpdates) -> Self {
+        let updated = old.updated.into_iter().map(|old| old.into()).collect();
+        AspaObjectsUpdates::new(updated, old.removed)
+    }
+}
+
 //------------ OldRepositoryResponse --------------------------------------------
 
 /// pre rpki-0.15.0 <repository_response/>
 #[derive(Clone, Debug, Deserialize, Eq, Serialize, PartialEq)]
 pub struct OldRepositoryResponse {
     /// The Publication Server Identity Certificate
-    id_cert: IdCertInfo,
+    id_cert: IdCert,
 
     /// The name the publication server decided to call the CA by.
     /// Note that this may not be the same as the handle the CA asked for.
@@ -472,6 +606,13 @@ impl fmt::Display for OldCaIniDet {
 
 pub type OldCaEvt = StoredEvent<OldCaEvtDet>;
 
+impl From<OldCaEvt> for CaEvt {
+    fn from(old: OldCaEvt) -> Self {
+        let (id, version, details) = old.unpack();
+        CaEvt::new(&id, version, details.into())
+    }
+}
+
 //------------ EvtDet -------------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -488,7 +629,7 @@ pub enum OldCaEvtDet {
     /// A child was added to this (parent) CA
     ChildAdded {
         child: ChildHandle,
-        id_cert: IdCertInfo,
+        id_cert: IdCert,
         resources: ResourceSet,
     },
 
@@ -515,7 +656,7 @@ pub enum OldCaEvtDet {
     },
     ChildUpdatedIdCert {
         child: ChildHandle,
-        id_cert: IdCertInfo,
+        id_cert: IdCert,
     },
     ChildUpdatedResources {
         child: ChildHandle,
@@ -651,23 +792,7 @@ pub enum OldCaEvtDet {
         updates: OldAspaObjectsUpdates,
     },
 
-    // BGPSec
-    BgpSecDefinitionAdded {
-        key: BgpSecAsnKey,
-        csr: StoredBgpSecCsr,
-    },
-    BgpSecDefinitionUpdated {
-        key: BgpSecAsnKey,
-        csr: StoredBgpSecCsr,
-    },
-    BgpSecDefinitionRemoved {
-        key: BgpSecAsnKey,
-    },
-    BgpSecCertificatesUpdated {
-        // Tracks the actual BGPSec certificates (re-)issued in a resource class
-        resource_class_name: ResourceClassName,
-        updates: BgpSecCertificateUpdates,
-    },
+    // BGPSec - not present before 0.10.0
 
     // Publishing
     RepoUpdated {
@@ -692,6 +817,174 @@ pub enum OldCaEvtDet {
         name: RtaName,
         prepared: PreparedRta,
     },
+}
+
+impl From<OldCaEvtDet> for CaEvtDet {
+    fn from(old: OldCaEvtDet) -> Self {
+        match old {
+            OldCaEvtDet::TrustAnchorMade { ta_cert_details } => CaEvtDet::TrustAnchorMade {
+                ta_cert_details: ta_cert_details.into(),
+            },
+            OldCaEvtDet::ChildAdded {
+                child,
+                id_cert,
+                resources,
+            } => CaEvtDet::ChildAdded {
+                child,
+                id_cert: id_cert.into(),
+                resources,
+            },
+            OldCaEvtDet::ChildCertificateIssued {
+                child,
+                resource_class_name,
+                ki,
+            } => CaEvtDet::ChildCertificateIssued {
+                child,
+                resource_class_name,
+                ki,
+            },
+            OldCaEvtDet::ChildKeyRevoked {
+                child,
+                resource_class_name,
+                ki,
+            } => CaEvtDet::ChildKeyRevoked {
+                child,
+                resource_class_name,
+                ki,
+            },
+            OldCaEvtDet::ChildCertificatesUpdated {
+                resource_class_name,
+                updates,
+            } => CaEvtDet::ChildCertificatesUpdated {
+                resource_class_name,
+                updates: updates.into(),
+            },
+            OldCaEvtDet::ChildUpdatedIdCert { child, id_cert } => CaEvtDet::ChildUpdatedIdCert {
+                child,
+                id_cert: id_cert.into(),
+            },
+            OldCaEvtDet::ChildUpdatedResources { child, resources } => {
+                CaEvtDet::ChildUpdatedResources { child, resources }
+            }
+            OldCaEvtDet::ChildRemoved { child } => CaEvtDet::ChildRemoved { child },
+            OldCaEvtDet::ChildSuspended { child } => CaEvtDet::ChildSuspended { child },
+            OldCaEvtDet::ChildUnsuspended { child } => CaEvtDet::ChildUnsuspended { child },
+            OldCaEvtDet::IdUpdated { id } => CaEvtDet::IdUpdated { id: id.into() },
+            OldCaEvtDet::ParentAdded { parent, contact } => CaEvtDet::ParentAdded {
+                parent,
+                contact: contact.into(),
+            },
+            OldCaEvtDet::ParentUpdated { parent, contact } => CaEvtDet::ParentUpdated {
+                parent,
+                contact: contact.into(),
+            },
+            OldCaEvtDet::ParentRemoved { parent } => CaEvtDet::ParentRemoved { parent },
+            OldCaEvtDet::ResourceClassAdded {
+                resource_class_name,
+                parent,
+                parent_resource_class_name,
+                pending_key,
+            } => CaEvtDet::ResourceClassAdded {
+                resource_class_name,
+                parent,
+                parent_resource_class_name,
+                pending_key,
+            },
+            OldCaEvtDet::ResourceClassRemoved {
+                resource_class_name,
+                parent,
+                revoke_requests,
+            } => CaEvtDet::ResourceClassRemoved {
+                resource_class_name,
+                parent,
+                revoke_requests,
+            },
+            OldCaEvtDet::CertificateRequested {
+                resource_class_name,
+                req,
+                ki,
+            } => CaEvtDet::CertificateRequested {
+                resource_class_name,
+                req,
+                ki,
+            },
+            OldCaEvtDet::CertificateReceived {
+                resource_class_name,
+                rcvd_cert,
+                ki,
+            } => CaEvtDet::CertificateReceived {
+                resource_class_name,
+                rcvd_cert: rcvd_cert.into(),
+                ki,
+            },
+            OldCaEvtDet::KeyRollPendingKeyAdded {
+                resource_class_name,
+                pending_key_id,
+            } => CaEvtDet::KeyRollPendingKeyAdded {
+                resource_class_name,
+                pending_key_id,
+            },
+            OldCaEvtDet::KeyPendingToNew {
+                resource_class_name,
+                new_key,
+            } => CaEvtDet::KeyPendingToNew {
+                resource_class_name,
+                new_key: new_key.into(),
+            },
+            OldCaEvtDet::KeyPendingToActive {
+                resource_class_name,
+                current_key,
+            } => CaEvtDet::KeyPendingToActive {
+                resource_class_name,
+                current_key: current_key.into(),
+            },
+            OldCaEvtDet::KeyRollActivated {
+                resource_class_name,
+                revoke_req,
+            } => CaEvtDet::KeyRollActivated {
+                resource_class_name,
+                revoke_req,
+            },
+            OldCaEvtDet::KeyRollFinished { resource_class_name } => CaEvtDet::KeyRollFinished { resource_class_name },
+            OldCaEvtDet::UnexpectedKeyFound {
+                resource_class_name,
+                revoke_req,
+            } => CaEvtDet::UnexpectedKeyFound {
+                resource_class_name,
+                revoke_req,
+            },
+            OldCaEvtDet::RouteAuthorizationAdded { auth } => CaEvtDet::RouteAuthorizationAdded { auth },
+            OldCaEvtDet::RouteAuthorizationRemoved { auth } => CaEvtDet::RouteAuthorizationRemoved { auth },
+            OldCaEvtDet::RoasUpdated {
+                resource_class_name,
+                updates,
+            } => CaEvtDet::RoasUpdated {
+                resource_class_name,
+                updates: updates.into(),
+            },
+            OldCaEvtDet::AspaConfigAdded { aspa_config } => CaEvtDet::AspaConfigAdded { aspa_config },
+            OldCaEvtDet::AspaConfigUpdated { customer, update } => CaEvtDet::AspaConfigUpdated { customer, update },
+            OldCaEvtDet::AspaConfigRemoved { customer } => CaEvtDet::AspaConfigRemoved { customer },
+            OldCaEvtDet::AspaObjectsUpdated {
+                resource_class_name,
+                updates,
+            } => CaEvtDet::AspaObjectsUpdated {
+                resource_class_name,
+                updates: updates.into(),
+            },
+            OldCaEvtDet::RepoUpdated { contact } => CaEvtDet::RepoUpdated {
+                contact: contact.into(),
+            },
+            OldCaEvtDet::RtaSigned { name, rta } => CaEvtDet::RtaSigned { name, rta },
+            OldCaEvtDet::RtaPrepared { name, prepared } => CaEvtDet::RtaPrepared { name, prepared },
+        }
+    }
+}
+
+impl fmt::Display for OldCaEvtDet {
+    fn fmt(&self, _f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        unimplemented!("not used for migration")
+    }
 }
 
 // Repository
@@ -764,7 +1057,7 @@ impl From<OldRepositoryAccessEventDetails> for RepositoryAccessEventDetails {
 }
 
 impl fmt::Display for OldRepositoryAccessEventDetails {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, _f: &mut fmt::Formatter) -> fmt::Result {
         unimplemented!("not used for migration")
     }
 }

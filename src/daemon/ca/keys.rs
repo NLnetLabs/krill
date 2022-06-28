@@ -40,12 +40,17 @@ pub struct CertifiedKey {
 }
 
 impl CertifiedKey {
-    pub fn new(key_id: KeyIdentifier, incoming_cert: RcvdCert, request: Option<IssuanceRequest>) -> Self {
+    pub fn new(
+        key_id: KeyIdentifier,
+        incoming_cert: RcvdCert,
+        request: Option<IssuanceRequest>,
+        old_repo: Option<RepoInfo>,
+    ) -> Self {
         CertifiedKey {
             key_id,
             incoming_cert,
             request,
-            old_repo: None,
+            old_repo,
         }
     }
 

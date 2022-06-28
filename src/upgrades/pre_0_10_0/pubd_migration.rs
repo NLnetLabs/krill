@@ -94,27 +94,6 @@ impl UpgradeStore for PubdStoreMigration {
         let time_started = Time::now();
 
         for cmd_key in old_cmd_keys {
-            // Do the migration counter first, so that we can just call continue when we need to skip commands
-            total_migrated += 1;
-
-            // Report progress and expected time to finish on every 100 commands evaluated.
-            if total_migrated % 100 == 0 {
-                // expected time: (total_migrated / (now - started)) * total
-
-                let mut time_passed = (Time::now().timestamp() - time_started.timestamp()) as usize;
-                if time_passed == 0 {
-                    time_passed = 1; // avoid divide by zero.. we are doing approximate estimates here
-                }
-                let migrated_per_second: f64 = total_migrated as f64 / time_passed as f64;
-                let expected_seconds = (total_commands as f64 / migrated_per_second) as i64;
-                let eta = time_started + Duration::seconds(expected_seconds);
-                info!(
-                    "  migrated {} commands, expect to finish: {}",
-                    total_migrated,
-                    eta.to_rfc3339()
-                );
-            }
-
             // Read and parse the command. There is no need to change the command itself,
             // but we need to save it again and get the events from here.
             let cmd: StoredCommand<StorableRepositoryCommand> = self.get(&cmd_key)?;
@@ -144,6 +123,25 @@ impl UpgradeStore for PubdStoreMigration {
             data_upgrade_info.last_command += 1;
             data_upgrade_info.last_update = cmd.time();
             self.update_data_upgrade_info(scope, &data_upgrade_info)?;
+
+            // Report progress and expected time to finish on every 100 commands evaluated.
+            total_migrated += 1;
+            if total_migrated % 100 == 0 {
+                // expected time: (total_migrated / (now - started)) * total
+
+                let mut time_passed = (Time::now().timestamp() - time_started.timestamp()) as usize;
+                if time_passed == 0 {
+                    time_passed = 1; // avoid divide by zero.. we are doing approximate estimates here
+                }
+                let migrated_per_second: f64 = total_migrated as f64 / time_passed as f64;
+                let expected_seconds = (total_commands as f64 / migrated_per_second) as i64;
+                let eta = time_started + Duration::seconds(expected_seconds);
+                info!(
+                    "  migrated {} commands, expect to finish: {}",
+                    total_migrated,
+                    eta.to_rfc3339()
+                );
+            }
         }
 
         info!("Finished migrating Publication Server commands");

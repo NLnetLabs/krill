@@ -284,6 +284,20 @@ mod aggregate_removed_sorted_map {
 }
 
 impl RoaUpdates {
+    pub fn new(
+        updated: HashMap<RouteAuthorization, RoaInfo>,
+        removed: HashMap<RouteAuthorization, RevokedObject>,
+        aggregate_updated: HashMap<RoaAggregateKey, AggregateRoaInfo>,
+        aggregate_removed: HashMap<RoaAggregateKey, RevokedObject>,
+    ) -> Self {
+        RoaUpdates {
+            updated,
+            removed,
+            aggregate_updated,
+            aggregate_removed,
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.updated.is_empty()
             && self.removed.is_empty()

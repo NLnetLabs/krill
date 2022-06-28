@@ -202,6 +202,12 @@ pub struct PublicationServerInfo {
 }
 
 impl PublicationServerInfo {
+    pub fn new(public_key: PublicKey, service_uri: ServiceUri) -> Self {
+        PublicationServerInfo {
+            public_key,
+            service_uri,
+        }
+    }
     pub fn public_key(&self) -> &PublicKey {
         &self.public_key
     }
@@ -220,6 +226,10 @@ pub struct RepositoryContact {
 }
 
 impl RepositoryContact {
+    pub fn new(repo_info: RepoInfo, server_info: PublicationServerInfo) -> Self {
+        RepositoryContact { repo_info, server_info }
+    }
+
     pub fn for_response(repository_response: idexchange::RepositoryResponse) -> KrillResult<Self> {
         let id_cert = repository_response.validate().map_err(Error::rfc8183)?;
         let public_key = id_cert.public_key().clone();

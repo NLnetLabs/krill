@@ -1176,7 +1176,7 @@ pub struct OldCertifiedKey {
 
 impl From<OldCertifiedKey> for ca::CertifiedKey {
     fn from(old: OldCertifiedKey) -> Self {
-        ca::CertifiedKey::new(old.key_id, old.incoming_cert, old.request)
+        ca::CertifiedKey::new(old.key_id, old.incoming_cert, old.request, None)
     }
 }
 
