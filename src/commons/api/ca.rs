@@ -2319,7 +2319,7 @@ mod test {
             }
         }
 
-        let new_ca = ca_stats_active_no_exchange(&ca_handle.clone());
+        let new_ca = ca_stats_active_no_exchange(&ca_handle);
 
         let recent_krill_pre_0_9_2 = ca_stats_active(&ca_handle, new_exchange("krill"));
         let recent_krill_post_0_9_1 = ca_stats_active(&ca_handle, new_exchange("krill/0.9.2-rc2"));
@@ -2391,7 +2391,7 @@ mod test {
         let p6_status_success_long_ago = ParentStatus {
             last_exchange: Some(ParentExchange {
                 timestamp: five_mins_ago,
-                uri: uri.clone(),
+                uri,
                 result: ExchangeResult::Success,
             }),
             last_success: None,

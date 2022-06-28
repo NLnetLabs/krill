@@ -1555,6 +1555,7 @@ impl CaManager {
         Ok(())
     }
 
+    #[allow(clippy::mutable_key_type)]
     async fn ca_repo_sync(
         &self,
         ca_handle: &CaHandle,

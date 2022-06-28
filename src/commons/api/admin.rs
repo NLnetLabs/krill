@@ -213,7 +213,7 @@ impl PublicationServerInfo {
 
 //------------ RepositoryContact ---------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RepositoryContact {
     repo_info: RepoInfo,
     server_info: PublicationServerInfo,
@@ -254,6 +254,14 @@ impl std::hash::Hash for RepositoryContact {
         self.server_info.service_uri.as_str().hash(state); // unique for each repo contact
     }
 }
+
+impl PartialEq for RepositoryContact {
+    fn eq(&self, other: &Self) -> bool {
+        self.repo_info == other.repo_info && self.server_info == other.server_info
+    }
+}
+
+impl Eq for RepositoryContact {}
 
 //------------ ParentCaReq ---------------------------------------------------
 

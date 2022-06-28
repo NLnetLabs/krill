@@ -213,7 +213,6 @@ mod tests {
 
     use rpki::{
         ca::{
-            idcert::IdCert,
             idexchange::Handle,
             publication::{ListElement, PublishDelta},
         },

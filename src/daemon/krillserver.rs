@@ -213,7 +213,7 @@ impl KrillServer {
                     let child_id_cert = testbed_ca.child_request().validate().map_err(Error::rfc8183)?;
 
                     let child_req =
-                        AddChildRequest::new(testbed_ca_handle.convert(), testbed_ca_resources, child_id_cert.into());
+                        AddChildRequest::new(testbed_ca_handle.convert(), testbed_ca_resources, child_id_cert);
 
                     let parent_ca_contact = ca_manager
                         .ca_add_child(&ta_handle, child_req, &service_uri, &system_actor)
@@ -405,7 +405,7 @@ impl KrillServer {
 
             // Establish the Parent <-> CA relationship
             let child_id_cert = ca.child_request().validate().map_err(Error::rfc8183)?;
-            let child_req = AddChildRequest::new(ca_handle.convert(), resources, child_id_cert.into());
+            let child_req = AddChildRequest::new(ca_handle.convert(), resources, child_id_cert);
 
             let parent_ca_contact = ca_manager
                 .ca_add_child(&parent_handle.convert(), child_req, &service_uri, &system_actor)

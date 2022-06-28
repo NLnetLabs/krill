@@ -21,9 +21,7 @@ use crate::{
         },
         eventsourcing::StoredEvent,
     },
-    daemon::ca::{
-        self, BgpSecCertificateUpdates, PreparedRta, Rfc8183Id, RouteAuthorization, SignedRta, StoredBgpSecCsr,
-    },
+    daemon::ca::{self, BgpSecCertificateUpdates, PreparedRta, RouteAuthorization, SignedRta, StoredBgpSecCsr},
     pubd::{Publisher, RepositoryAccessEvent, RepositoryAccessEventDetails, RepositoryAccessInitDetails},
 };
 
