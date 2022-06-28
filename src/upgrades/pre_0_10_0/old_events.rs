@@ -24,7 +24,7 @@ use crate::{
     daemon::ca::{
         self, BgpSecCertificateUpdates, PreparedRta, Rfc8183Id, RouteAuthorization, SignedRta, StoredBgpSecCsr,
     },
-    pubd::RepositoryAccessInitDetails,
+    pubd::{Publisher, RepositoryAccessEvent, RepositoryAccessEventDetails, RepositoryAccessInitDetails},
 };
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -722,5 +722,69 @@ impl fmt::Display for OldRepositoryAccessInitDetails {
             "Initialized publication server. RRDP base uri: {}, Rsync Jail: {}",
             self.rrdp_base_uri, self.rsync_jail
         )
+    }
+}
+
+//------------ OldRepositoryAccessEvent -----------------------------------------
+
+pub type OldRepositoryAccessEvent = StoredEvent<OldRepositoryAccessEventDetails>;
+
+impl From<OldRepositoryAccessEvent> for RepositoryAccessEvent {
+    fn from(old: OldRepositoryAccessEvent) -> Self {
+        let (id, version, details) = old.unpack();
+        RepositoryAccessEvent::new(&id, version, details.into())
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[allow(clippy::large_enum_variant)]
+#[serde(rename_all = "snake_case", tag = "type")]
+pub enum OldRepositoryAccessEventDetails {
+    PublisherAdded {
+        name: PublisherHandle,
+        publisher: OldPublisher,
+    },
+    PublisherRemoved {
+        name: PublisherHandle,
+    },
+}
+
+impl From<OldRepositoryAccessEventDetails> for RepositoryAccessEventDetails {
+    fn from(old: OldRepositoryAccessEventDetails) -> Self {
+        match old {
+            OldRepositoryAccessEventDetails::PublisherAdded { name, publisher } => {
+                RepositoryAccessEventDetails::PublisherAdded {
+                    name,
+                    publisher: publisher.into(),
+                }
+            }
+            OldRepositoryAccessEventDetails::PublisherRemoved { name } => {
+                RepositoryAccessEventDetails::PublisherRemoved { name }
+            }
+        }
+    }
+}
+
+impl fmt::Display for OldRepositoryAccessEventDetails {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        unimplemented!("not used for migration")
+    }
+}
+
+//------------ Publisher -----------------------------------------------------
+
+/// This type defines Publisher CAs that are allowed to publish.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OldPublisher {
+    /// Used by remote RFC8181 publishers
+    id_cert: IdCert,
+
+    /// Publication jail for this publisher
+    base_uri: uri::Rsync,
+}
+
+impl From<OldPublisher> for Publisher {
+    fn from(old: OldPublisher) -> Self {
+        Publisher::new(old.id_cert.into(), old.base_uri)
     }
 }
