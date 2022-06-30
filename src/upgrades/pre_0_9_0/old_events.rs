@@ -10,7 +10,7 @@ use rpki::{
         idcert::IdCert,
         idexchange,
         idexchange::{CaHandle, ChildHandle, ParentHandle, PublisherHandle, RepoInfo},
-        provisioning::{IssuanceRequest, ResourceClassName, RevocationRequest},
+        provisioning::{IssuanceRequest, RequestResourceLimit, ResourceClassName, RevocationRequest},
         publication::Base64,
     },
     crypto::KeyIdentifier,
@@ -18,6 +18,7 @@ use rpki::{
         resources::ResourceSet,
         roa::Roa,
         x509::{Serial, Time},
+        Cert,
     },
     rrdp::Hash,
     uri,
@@ -27,7 +28,7 @@ use crate::{
     commons::{
         api::rrdp::{CurrentObjects, DeltaElements, PublishElement, RrdpSession},
         api::{
-            DelegatedCertificate, IdCertInfo, ObjectName, ParentCaContact, RcvdCert, RepositoryContact,
+            CertInfo, DelegatedCertificate, IdCertInfo, ObjectName, ParentCaContact, RcvdCert, RepositoryContact,
             RevocationsDelta, RevokedObject, RoaAggregateKey, RtaName, TaCertDetails,
         },
         eventsourcing::StoredEvent,
@@ -196,7 +197,7 @@ pub enum OldCaEvtDet {
     ResourceClassAdded(ResourceClassName, OldResourceClass),
     ResourceClassRemoved(ResourceClassName, ObjectsDelta, ParentHandle, Vec<RevocationRequest>),
     CertificateRequested(ResourceClassName, IssuanceRequest, KeyIdentifier),
-    CertificateReceived(ResourceClassName, KeyIdentifier, RcvdCert),
+    CertificateReceived(ResourceClassName, KeyIdentifier, OldRcvdCert),
 
     // Key life cycle
     KeyRollPendingKeyAdded(ResourceClassName, KeyIdentifier),
@@ -225,7 +226,7 @@ impl TryFrom<OldCaEvtDet> for CaEvtDet {
     type Error = PrepareUpgradeError;
 
     fn try_from(old: OldCaEvtDet) -> Result<Self, Self::Error> {
-        let evt = match old {
+        Ok(match old {
             OldCaEvtDet::TrustAnchorMade(ta_cert_details) => CaEvtDet::TrustAnchorMade { ta_cert_details },
             OldCaEvtDet::ChildAdded(_child, _details) => {
                 unreachable!("Add child must be converted with embedded children in mind")
@@ -243,7 +244,7 @@ impl TryFrom<OldCaEvtDet> for CaEvtDet {
             OldCaEvtDet::ChildCertificatesUpdated(resource_class_name, cert_updates) => {
                 CaEvtDet::ChildCertificatesUpdated {
                     resource_class_name,
-                    updates: cert_updates.into(),
+                    updates: cert_updates.try_into()?,
                 }
             }
             OldCaEvtDet::ChildUpdatedIdCert(child, id_cert) => CaEvtDet::ChildUpdatedIdCert {
@@ -280,7 +281,7 @@ impl TryFrom<OldCaEvtDet> for CaEvtDet {
             OldCaEvtDet::CertificateReceived(resource_class_name, ki, rcvd_cert) => CaEvtDet::CertificateReceived {
                 resource_class_name,
                 ki,
-                rcvd_cert,
+                rcvd_cert: rcvd_cert.try_into()?,
             },
 
             OldCaEvtDet::KeyRollPendingKeyAdded(resource_class_name, pending_key_id) => {
@@ -291,11 +292,11 @@ impl TryFrom<OldCaEvtDet> for CaEvtDet {
             }
             OldCaEvtDet::KeyPendingToNew(resource_class_name, new_key, _delta) => CaEvtDet::KeyPendingToNew {
                 resource_class_name,
-                new_key: new_key.into(),
+                new_key: new_key.try_into()?,
             },
             OldCaEvtDet::KeyPendingToActive(resource_class_name, current_key, _delta) => CaEvtDet::KeyPendingToActive {
                 resource_class_name,
-                current_key: current_key.into(),
+                current_key: current_key.try_into()?,
             },
             OldCaEvtDet::KeyRollActivated(resource_class_name, revoke_req) => CaEvtDet::KeyRollActivated {
                 resource_class_name,
@@ -325,8 +326,7 @@ impl TryFrom<OldCaEvtDet> for CaEvtDet {
 
             OldCaEvtDet::RtaPrepared(name, prepared) => CaEvtDet::RtaPrepared { name, prepared },
             OldCaEvtDet::RtaSigned(name, rta) => CaEvtDet::RtaSigned { name, rta },
-        };
-        Ok(evt)
+        })
     }
 }
 
@@ -339,18 +339,26 @@ impl fmt::Display for OldCaEvtDet {
 /// Describes an update to the set of ROAs under a ResourceClass.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldChildCertificateUpdates {
-    issued: Vec<DelegatedCertificate>,
+    issued: Vec<OldDelegatedCertificate>,
     removed: Vec<KeyIdentifier>,
 }
 
-impl From<OldChildCertificateUpdates> for ca::ChildCertificateUpdates {
-    fn from(old: OldChildCertificateUpdates) -> Self {
-        ca::ChildCertificateUpdates::new(old.issued, old.removed, vec![], vec![])
+impl TryFrom<OldChildCertificateUpdates> for ca::ChildCertificateUpdates {
+    type Error = PrepareUpgradeError;
+
+    fn try_from(old: OldChildCertificateUpdates) -> Result<Self, Self::Error> {
+        let mut issued = vec![];
+
+        for delegated in old.issued.into_iter() {
+            issued.push(delegated.try_into()?);
+        }
+
+        Ok(ca::ChildCertificateUpdates::new(issued, old.removed, vec![], vec![]))
     }
 }
 
 impl OldChildCertificateUpdates {
-    pub fn unpack(self) -> (Vec<DelegatedCertificate>, Vec<KeyIdentifier>) {
+    pub fn unpack(self) -> (Vec<OldDelegatedCertificate>, Vec<KeyIdentifier>) {
         (self.issued, self.removed)
     }
 }
@@ -609,6 +617,80 @@ impl From<OldPubdEvtDet> for RepositoryAccessEventDetails {
             OldPubdEvtDet::PublisherRemoved(name, _) => RepositoryAccessEventDetails::PublisherRemoved { name },
             _ => unreachable!("no need to migrate these old events"),
         }
+    }
+}
+
+//------------ OldDelegatedCertificate ------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct OldDelegatedCertificate {
+    uri: uri::Rsync, // where this cert is published
+    #[serde(default)]
+    limit: RequestResourceLimit, // the limit on the request
+    resource_set: ResourceSet,
+    cert: Cert,
+}
+
+impl OldDelegatedCertificate {
+    pub fn key_identifier(&self) -> KeyIdentifier {
+        self.cert.subject_key_identifier()
+    }
+
+    pub fn cert(&self) -> &Cert {
+        &self.cert
+    }
+}
+
+impl PartialEq for OldDelegatedCertificate {
+    fn eq(&self, other: &OldDelegatedCertificate) -> bool {
+        self.uri == other.uri
+            && self.limit == other.limit
+            && self.resource_set == other.resource_set
+            && self.cert.to_captured().as_slice() == other.cert.to_captured().as_slice()
+    }
+}
+
+impl Eq for OldDelegatedCertificate {}
+
+pub type OldSuspendedCert = OldDelegatedCertificate;
+pub type OldUnsuspendedCert = OldDelegatedCertificate;
+pub type OldPublishedCert = OldDelegatedCertificate;
+
+impl<T> TryFrom<OldDelegatedCertificate> for CertInfo<T> {
+    type Error = PrepareUpgradeError;
+
+    fn try_from(old: OldDelegatedCertificate) -> Result<Self, Self::Error> {
+        CertInfo::create(old.cert, old.uri, old.resource_set, old.limit)
+            .map_err(|e| PrepareUpgradeError::Custom(format!("cannot convert certificate: {}", e)))
+    }
+}
+
+//------------ OldRcvdCert ------------------------------------------------------
+
+/// Contains a CA Certificate that has been issued to this CA, for some key.
+///
+/// Note, this may be a self-signed TA Certificate.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct OldRcvdCert {
+    cert: Cert,
+    uri: uri::Rsync,
+    resources: ResourceSet,
+}
+
+impl PartialEq for OldRcvdCert {
+    fn eq(&self, other: &OldRcvdCert) -> bool {
+        self.cert.to_captured().into_bytes() == other.cert.to_captured().into_bytes() && self.uri == other.uri
+    }
+}
+
+impl Eq for OldRcvdCert {}
+
+impl TryFrom<OldRcvdCert> for RcvdCert {
+    type Error = PrepareUpgradeError;
+
+    fn try_from(old: OldRcvdCert) -> Result<Self, Self::Error> {
+        RcvdCert::create(old.cert, old.uri, old.resources, RequestResourceLimit::default())
+            .map_err(|e| PrepareUpgradeError::Custom(format!("cannot convert certificate: {}", e)))
     }
 }
 

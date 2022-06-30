@@ -1,4 +1,8 @@
-use std::{collections::HashMap, fmt};
+use std::{
+    collections::HashMap,
+    convert::{TryFrom, TryInto},
+    fmt,
+};
 
 use rpki::{
     ca::{
@@ -16,9 +20,9 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            AspaCustomer, AspaDefinition, AspaProvidersUpdate, DelegatedCertificate, ParentCaContact, ParentServerInfo,
-            PublicationServerInfo, RcvdCert, RepositoryContact, RevokedObject, RoaAggregateKey, RtaName, SuspendedCert,
-            TaCertDetails, TrustAnchorLocator, UnsuspendedCert,
+            AspaCustomer, AspaDefinition, AspaProvidersUpdate, CertInfo, DelegatedCertificate, ParentCaContact,
+            ParentServerInfo, PublicationServerInfo, RcvdCert, RepositoryContact, RevokedObject, RoaAggregateKey,
+            RtaName, SuspendedCert, TaCertDetails, TrustAnchorLocator, UnsuspendedCert,
         },
         eventsourcing::StoredEvent,
     },
@@ -27,6 +31,7 @@ use crate::{
         PreparedRta, RoaInfo, RoaUpdates, RouteAuthorization, SignedRta,
     },
     pubd::{Publisher, RepositoryAccessEvent, RepositoryAccessEventDetails, RepositoryAccessInitDetails},
+    upgrades::PrepareUpgradeError,
 };
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -101,12 +106,32 @@ pub struct OldChildCertificateUpdates {
     unsuspended: Vec<OldUnsuspendedCert>,
 }
 
-impl From<OldChildCertificateUpdates> for ChildCertificateUpdates {
-    fn from(old: OldChildCertificateUpdates) -> Self {
-        let issued: Vec<DelegatedCertificate> = old.issued.into_iter().map(|old| old.into()).collect();
-        let suspended: Vec<SuspendedCert> = old.suspended.into_iter().map(|old| old.into()).collect();
-        let unsuspended: Vec<UnsuspendedCert> = old.unsuspended.into_iter().map(|old| old.into()).collect();
-        ChildCertificateUpdates::new(issued, old.removed, suspended, unsuspended)
+impl TryFrom<OldChildCertificateUpdates> for ChildCertificateUpdates {
+    type Error = PrepareUpgradeError;
+
+    fn try_from(old: OldChildCertificateUpdates) -> Result<Self, PrepareUpgradeError> {
+        let mut issued: Vec<DelegatedCertificate> = vec![];
+        let mut suspended: Vec<SuspendedCert> = vec![];
+        let mut unsuspended: Vec<UnsuspendedCert> = vec![];
+
+        for old_delegated in old.issued.into_iter() {
+            issued.push(old_delegated.try_into()?);
+        }
+
+        for old_suspended in old.suspended.into_iter() {
+            suspended.push(old_suspended.try_into()?);
+        }
+
+        for old_unsuspended in old.unsuspended.into_iter() {
+            unsuspended.push(old_unsuspended.try_into()?);
+        }
+
+        Ok(ChildCertificateUpdates::new(
+            issued,
+            old.removed,
+            suspended,
+            unsuspended,
+        ))
     }
 }
 
@@ -134,9 +159,12 @@ impl Eq for OldDelegatedCertificate {}
 pub type OldSuspendedCert = OldDelegatedCertificate;
 pub type OldUnsuspendedCert = OldDelegatedCertificate;
 
-impl From<OldDelegatedCertificate> for DelegatedCertificate {
-    fn from(old: OldDelegatedCertificate) -> Self {
-        DelegatedCertificate::new(old.uri, old.limit, old.resource_set, old.cert)
+impl<T> TryFrom<OldDelegatedCertificate> for CertInfo<T> {
+    type Error = PrepareUpgradeError;
+
+    fn try_from(old: OldDelegatedCertificate) -> Result<Self, Self::Error> {
+        CertInfo::create(old.cert, old.uri, old.resource_set, old.limit)
+            .map_err(|e| PrepareUpgradeError::Custom(format!("cannot convert certificate: {}", e)))
     }
 }
 
@@ -160,9 +188,12 @@ impl PartialEq for OldRcvdCert {
 
 impl Eq for OldRcvdCert {}
 
-impl From<OldRcvdCert> for RcvdCert {
-    fn from(old: OldRcvdCert) -> Self {
-        RcvdCert::new(old.cert, old.uri, old.resources)
+impl TryFrom<OldRcvdCert> for RcvdCert {
+    type Error = PrepareUpgradeError;
+
+    fn try_from(old: OldRcvdCert) -> Result<Self, Self::Error> {
+        RcvdCert::create(old.cert, old.uri, old.resources, RequestResourceLimit::default())
+            .map_err(|e| PrepareUpgradeError::Custom(format!("cannot convert certificate: {}", e)))
     }
 }
 
@@ -179,9 +210,16 @@ pub struct OldCertifiedKey {
     old_repo: Option<RepoInfo>,
 }
 
-impl From<OldCertifiedKey> for CertifiedKey {
-    fn from(old: OldCertifiedKey) -> Self {
-        CertifiedKey::new(old.key_id, old.incoming_cert.into(), old.request, old.old_repo)
+impl TryFrom<OldCertifiedKey> for CertifiedKey {
+    type Error = PrepareUpgradeError;
+
+    fn try_from(old: OldCertifiedKey) -> Result<Self, Self::Error> {
+        Ok(CertifiedKey::new(
+            old.key_id,
+            old.incoming_cert.try_into()?,
+            old.request,
+            old.old_repo,
+        ))
     }
 }
 
@@ -606,10 +644,12 @@ impl fmt::Display for OldCaIniDet {
 
 pub type OldCaEvt = StoredEvent<OldCaEvtDet>;
 
-impl From<OldCaEvt> for CaEvt {
-    fn from(old: OldCaEvt) -> Self {
+impl TryFrom<OldCaEvt> for CaEvt {
+    type Error = PrepareUpgradeError;
+
+    fn try_from(old: OldCaEvt) -> Result<Self, Self::Error> {
         let (id, version, details) = old.unpack();
-        CaEvt::new(&id, version, details.into())
+        Ok(CaEvt::new(&id, version, details.try_into()?))
     }
 }
 
@@ -819,9 +859,11 @@ pub enum OldCaEvtDet {
     },
 }
 
-impl From<OldCaEvtDet> for CaEvtDet {
-    fn from(old: OldCaEvtDet) -> Self {
-        match old {
+impl TryFrom<OldCaEvtDet> for CaEvtDet {
+    type Error = PrepareUpgradeError;
+
+    fn try_from(old: OldCaEvtDet) -> Result<Self, Self::Error> {
+        Ok(match old {
             OldCaEvtDet::TrustAnchorMade { ta_cert_details } => CaEvtDet::TrustAnchorMade {
                 ta_cert_details: ta_cert_details.into(),
             },
@@ -857,7 +899,7 @@ impl From<OldCaEvtDet> for CaEvtDet {
                 updates,
             } => CaEvtDet::ChildCertificatesUpdated {
                 resource_class_name,
-                updates: updates.into(),
+                updates: updates.try_into()?,
             },
             OldCaEvtDet::ChildUpdatedIdCert { child, id_cert } => CaEvtDet::ChildUpdatedIdCert {
                 child,
@@ -914,7 +956,7 @@ impl From<OldCaEvtDet> for CaEvtDet {
                 ki,
             } => CaEvtDet::CertificateReceived {
                 resource_class_name,
-                rcvd_cert: rcvd_cert.into(),
+                rcvd_cert: rcvd_cert.try_into()?,
                 ki,
             },
             OldCaEvtDet::KeyRollPendingKeyAdded {
@@ -929,14 +971,14 @@ impl From<OldCaEvtDet> for CaEvtDet {
                 new_key,
             } => CaEvtDet::KeyPendingToNew {
                 resource_class_name,
-                new_key: new_key.into(),
+                new_key: new_key.try_into()?,
             },
             OldCaEvtDet::KeyPendingToActive {
                 resource_class_name,
                 current_key,
             } => CaEvtDet::KeyPendingToActive {
                 resource_class_name,
-                current_key: current_key.into(),
+                current_key: current_key.try_into()?,
             },
             OldCaEvtDet::KeyRollActivated {
                 resource_class_name,
@@ -977,7 +1019,7 @@ impl From<OldCaEvtDet> for CaEvtDet {
             },
             OldCaEvtDet::RtaSigned { name, rta } => CaEvtDet::RtaSigned { name, rta },
             OldCaEvtDet::RtaPrepared { name, prepared } => CaEvtDet::RtaPrepared { name, prepared },
-        }
+        })
     }
 }
 

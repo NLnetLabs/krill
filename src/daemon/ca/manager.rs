@@ -9,8 +9,8 @@ use rpki::{
         idexchange::{CaHandle, ChildHandle, ParentHandle},
         provisioning,
         provisioning::{
-            IssuanceRequest, IssuanceResponse, ProvisioningCms, ResourceClassListResponse, ResourceClassName,
-            RevocationRequest, RevocationResponse,
+            IssuanceRequest, IssuanceResponse, ProvisioningCms, RequestResourceLimit, ResourceClassListResponse,
+            ResourceClassName, RevocationRequest, RevocationResponse,
         },
         publication,
         publication::{ListReply, Publish, PublishDelta, Update, Withdraw},
@@ -264,7 +264,13 @@ impl CaManager {
 
             // receive the self signed cert (now as child of self)
             let ta_cert = ta.parent(&ta_handle.convert()).unwrap().to_ta_cert();
-            let rcvd_cert = RcvdCert::new(ta_cert.clone(), ta_aia, ResourceSet::all());
+            let rcvd_cert = RcvdCert::create(
+                ta_cert.clone(),
+                ta_aia,
+                ResourceSet::all(),
+                RequestResourceLimit::default(),
+            )
+            .unwrap();
 
             let rcv_cert = CmdDet::upd_received_cert(
                 &ta_handle,
@@ -1121,7 +1127,7 @@ impl CaManager {
                                 // *unlikely* failure would still trigger an appropriate response at
                                 // the resource class level in the next loop iteration below.
                                 let issued = response.into_issued();
-                                let (uri, _limit, cert) = issued.unpack();
+                                let (uri, limit, cert) = issued.unpack();
 
                                 match ResourceSet::try_from(&cert) {
                                     Err(e) => {
@@ -1145,49 +1151,61 @@ impl CaManager {
                                         break;
                                     }
                                     Ok(resources) => {
-                                        let rcvd_cert = RcvdCert::new(cert, uri, resources);
+                                        match RcvdCert::create(cert, uri, resources, limit) {
+                                            Err(e) => {
+                                                errors.push(Error::CaParentSyncError(
+                                                    ca_handle.clone(),
+                                                    parent.clone(),
+                                                    rcn.clone(),
+                                                    format!("cannot use issued certificate, error: {}", e),
+                                                ));
+                                                break;
+                                            }
+                                            Ok(rcvd_cert) => {
+                                                if let Err(e) = self
+                                                    .send_command(CmdDet::upd_received_cert(
+                                                        ca_handle,
+                                                        rcn.clone(),
+                                                        rcvd_cert,
+                                                        self.config.clone(),
+                                                        self.signer.clone(),
+                                                        actor,
+                                                    ))
+                                                    .await
+                                                {
+                                                    // Note that sending the command to update a received certificate
+                                                    // cannot fail unless there are bigger issues like this being the wrong
+                                                    // response for this resource class. This would be extremely odd because
+                                                    // we only just asked the resource class which request to send. Still, in
+                                                    // order to handle this the most graceful way we can, we should just drop
+                                                    // this resource class and report an error. If there are are still resource
+                                                    // entitlements under the parent for this resource class, then a new class
+                                                    // will be automatically created when we synchronize the entitlements again.
 
-                                        if let Err(e) = self
-                                            .send_command(CmdDet::upd_received_cert(
-                                                ca_handle,
-                                                rcn.clone(),
-                                                rcvd_cert,
-                                                self.config.clone(),
-                                                self.signer.clone(),
-                                                actor,
-                                            ))
-                                            .await
-                                        {
-                                            // Note that sending the command to update a received certificate
-                                            // cannot fail unless there are bigger issues like this being the wrong
-                                            // response for this resource class. This would be extremely odd because
-                                            // we only just asked the resource class which request to send. Still, in
-                                            // order to handle this the most graceful way we can, we should just drop
-                                            // this resource class and report an error. If there are are still resource
-                                            // entitlements under the parent for this resource class, then a new class
-                                            // will be automatically created when we synchronize the entitlements again.
+                                                    let reason =
+                                                        format!("received certificate cannot be added, error: {}", e);
 
-                                            let reason = format!("received certificate cannot be added, error: {}", e);
+                                                    self.send_command(CmdDet::drop_resource_class(
+                                                        ca_handle,
+                                                        rcn.clone(),
+                                                        reason.clone(),
+                                                        self.signer.clone(),
+                                                        actor,
+                                                    ))
+                                                    .await?;
 
-                                            self.send_command(CmdDet::drop_resource_class(
-                                                ca_handle,
-                                                rcn.clone(),
-                                                reason.clone(),
-                                                self.signer.clone(),
-                                                actor,
-                                            ))
-                                            .await?;
-
-                                            // push the error for reporting, this will also trigger that the CA will
-                                            // sync with its parent again - and then it will just find revocation
-                                            // requests for this RC - which are sent on a best effort basis
-                                            errors.push(Error::CaParentSyncError(
-                                                ca_handle.clone(),
-                                                parent.clone(),
-                                                rcn.clone(),
-                                                reason,
-                                            ));
-                                            break;
+                                                    // push the error for reporting, this will also trigger that the CA will
+                                                    // sync with its parent again - and then it will just find revocation
+                                                    // requests for this RC - which are sent on a best effort basis
+                                                    errors.push(Error::CaParentSyncError(
+                                                        ca_handle.clone(),
+                                                        parent.clone(),
+                                                        rcn.clone(),
+                                                        reason,
+                                                    ));
+                                                    break;
+                                                }
+                                            }
                                         }
                                     }
                                 }

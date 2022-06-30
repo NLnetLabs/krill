@@ -14,10 +14,9 @@ use chrono::Duration;
 
 use rpki::{
     ca::{idexchange::CaHandle, provisioning::ResourceClassName, publication::Base64},
-    crypto::{DigestAlgorithm, PublicKey},
+    crypto::{DigestAlgorithm, KeyIdentifier},
     repository::{
         aspa::Aspa,
-        cert::Cert,
         crl::{Crl, TbsCertList},
         manifest::{FileAndHash, Manifest, ManifestContent},
         roa::Roa,
@@ -914,14 +913,14 @@ impl CurrentKeyObjectSet {
 
         for (name, bgpsec_cert) in &self.bgpsec_certs {
             elements.push(PublishElement::new(
-                bgpsec_cert.cert().clone(),
+                bgpsec_cert.base64().clone(),
                 base_uri.join(name.as_bytes()).unwrap(),
             ));
         }
 
         for (name, cert) in &self.certs {
             elements.push(PublishElement::new(
-                Base64::from(cert.as_ref()),
+                cert.base64().clone(),
                 base_uri.join(name.as_bytes()).unwrap(),
             ));
         }
@@ -1002,30 +1001,27 @@ impl CurrentKeyObjectSet {
         for removed in cert_updates.removed() {
             let name = ObjectName::new(removed, "cer");
             if let Some(old) = self.certs.remove(&name) {
-                self.revocations.add(Revocation::from(&old));
+                self.revocations.add(old.revoke());
             }
         }
 
         for issued in cert_updates.issued() {
-            let name = ObjectName::from(issued.cert());
-            if let Some(old) = self.certs.insert(name, issued.clone().into()) {
-                self.revocations.add(Revocation::from(&old));
+            if let Some(old) = self.certs.insert(issued.name(), issued.clone().into()) {
+                self.revocations.add(old.revoke());
             }
         }
 
         for cert in cert_updates.unsuspended() {
-            let name = ObjectName::from(cert.cert());
-            self.revocations.remove(&Revocation::from(cert.cert()));
-            if let Some(old) = self.certs.insert(name, cert.clone().into()) {
+            self.revocations.remove(&cert.revoke());
+            if let Some(old) = self.certs.insert(cert.name(), cert.convert()) {
                 // this should not happen, but just to be safe.
-                self.revocations.add(Revocation::from(&old));
+                self.revocations.add(old.revoke());
             }
         }
 
         for suspended in cert_updates.suspended() {
-            let name = ObjectName::from(suspended.cert());
-            self.certs.remove(&name);
-            self.revocations.add(Revocation::from(suspended.cert()));
+            self.certs.remove(&suspended.name());
+            self.revocations.add(suspended.revoke());
         }
 
         self.reissue(timing, signer)
@@ -1048,7 +1044,7 @@ impl CurrentKeyObjectSet {
         }
 
         for cert in self.certs.values() {
-            revocations.add(cert.into())
+            revocations.add(cert.revoke())
         }
 
         revocations.purge();
@@ -1291,7 +1287,7 @@ impl BasicKeyObjectSet {
     fn create(key: &CertifiedKey, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<Self> {
         let signing_cert = key.incoming_cert().clone();
 
-        let signing_key = signing_cert.subject_public_key_info();
+        let signing_key = signing_cert.key_identifier();
         let issuer = signing_cert.subject().clone();
         let revocations = Revocations::default();
         let number = 1;
@@ -1321,13 +1317,13 @@ impl BasicKeyObjectSet {
 
     // Returns an error in case the KeyIdentifiers don't match.
     fn update_signing_cert(&mut self, cert: &RcvdCert) -> KrillResult<()> {
-        if self.signing_cert.subject_key_identifier() == cert.subject_key_identifier() {
+        if self.signing_cert.key_identifier() == cert.key_identifier() {
             self.signing_cert = cert.clone();
             Ok(())
         } else {
             Err(Error::PublishingObjects(format!(
                 "received new cert for unknown key id: {}",
-                cert.subject_key_identifier()
+                cert.key_identifier()
             )))
         }
     }
@@ -1355,7 +1351,7 @@ impl BasicKeyObjectSet {
         timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<PublishedCrl> {
-        let signing_key = self.signing_cert.subject_public_key_info();
+        let signing_key = self.signing_cert.key_identifier();
         let issuer = self.crl.issuer().clone();
         let number = self.next();
 
@@ -1380,44 +1376,7 @@ impl BasicKeyObjectSet {
 }
 
 //------------ PublishedCert -----------------------------------------------
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct PublishedCert(DelegatedCertificate);
-
-impl PublishedCert {
-    pub fn to_bytes(&self) -> Bytes {
-        self.0.to_captured().into_bytes()
-    }
-
-    pub fn mft_hash(&self) -> Bytes {
-        mft_hash(self.to_bytes().as_ref())
-    }
-}
-
-impl From<DelegatedCertificate> for PublishedCert {
-    fn from(issued: DelegatedCertificate) -> Self {
-        PublishedCert(issued)
-    }
-}
-
-impl From<&PublishedCert> for Revocation {
-    fn from(c: &PublishedCert) -> Self {
-        Revocation::from(c.0.cert())
-    }
-}
-
-impl Deref for PublishedCert {
-    type Target = DelegatedCertificate;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl AsRef<Cert> for PublishedCert {
-    fn as_ref(&self) -> &Cert {
-        self.0.as_ref()
-    }
-}
+pub type PublishedCert = DelegatedCertificate;
 
 //------------ PublishedRoa -----------------------------------------------
 
@@ -1597,15 +1556,13 @@ pub struct CrlBuilder {}
 
 impl CrlBuilder {
     pub fn build(
-        signing_key: &PublicKey,
+        aki: KeyIdentifier,
         issuer: Name,
         revocations: &Revocations,
         number: u64,
         next_update: Time,
         signer: &KrillSigner,
     ) -> KrillResult<PublishedCrl> {
-        let aki = signing_key.key_identifier();
-
         let this_update = Time::five_minutes_ago();
         let serial_number = Serial::from(number);
 
@@ -1660,13 +1617,14 @@ impl ManifestBuilder {
 
         // Add all issued certs
         for (name, cert) in certs {
-            let hash = cert.mft_hash();
-            entries.insert(name.clone().into(), hash);
+            let hash = cert.hash();
+            let hash_bytes = Bytes::copy_from_slice(hash.as_slice());
+            entries.insert(name.clone().into(), hash_bytes);
         }
 
         // Add all bgpsec certs
         for (name, info) in bgpsec_certs {
-            let hash = info.cert().to_hash();
+            let hash = info.base64().to_hash();
             let hash_bytes = Bytes::copy_from_slice(hash.as_slice());
             entries.insert(name.clone().into(), hash_bytes);
         }
@@ -1690,13 +1648,11 @@ impl ManifestBuilder {
     }
 
     fn build_new_mft(self, signing_cert: &RcvdCert, number: u64, signer: &KrillSigner) -> KrillResult<Manifest> {
-        let signing_key = signing_cert.cert().subject_public_key_info();
-
         let mft_uri = signing_cert.mft_uri();
         let crl_uri = signing_cert.crl_uri();
 
         let aia = signing_cert.uri();
-        let aki = signing_key.key_identifier();
+        let aki = signing_cert.key_identifier();
         let serial_number = Serial::from(number);
 
         let entries = self.entries.iter().map(|(k, v)| FileAndHash::new(k, v));
@@ -1716,7 +1672,7 @@ impl ManifestBuilder {
                 aia.clone(),
                 mft_uri,
             );
-            object_builder.set_issuer(Some(signing_cert.cert().subject().clone()));
+            object_builder.set_issuer(Some(signing_cert.subject().clone()));
             object_builder.set_signing_time(Some(Time::now()));
 
             signer.sign_manifest(mft_content, object_builder, &aki)?

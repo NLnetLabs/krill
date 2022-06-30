@@ -11,7 +11,7 @@ use rpki::{
 use crate::{
     commons::{
         api::{ChildCaInfo, ChildState, DelegatedCertificate, IdCertInfo, SuspendedCert, UnsuspendedCert},
-        crypto::{CsrInfo, KrillSigner, SignSupport},
+        crypto::{KrillSigner, SignSupport},
         error::Error,
         KrillResult,
     },
@@ -159,18 +159,18 @@ impl ChildCertificates {
     }
 
     pub fn certificate_issued(&mut self, issued: DelegatedCertificate) {
-        let ki = issued.cert().subject_key_identifier();
+        let ki = issued.key_identifier();
         self.issued.insert(ki, issued);
     }
 
-    pub fn certificate_unsuspended(&mut self, issued: UnsuspendedCert) {
-        let ki = issued.cert().subject_key_identifier();
+    pub fn certificate_unsuspended(&mut self, unsuspended: UnsuspendedCert) {
+        let ki = unsuspended.key_identifier();
         self.suspended.remove(&ki);
-        self.issued.insert(ki, issued);
+        self.issued.insert(ki, unsuspended.into_converted());
     }
 
     pub fn certificate_suspended(&mut self, suspended: SuspendedCert) {
-        let ki = suspended.cert().subject_key_identifier();
+        let ki = suspended.key_identifier();
         self.issued.remove(&ki);
         self.suspended.insert(ki, suspended);
     }
@@ -205,7 +205,10 @@ impl ChildCertificates {
         }
         // Also re-issue suspended certificates, they may yet become unsuspended at some point
         for suspended in self.suspended.values() {
-            updates.suspend(self.re_issue(suspended, None, new_key, issuance_timing, signer)?);
+            updates.suspend(
+                self.re_issue(&suspended.convert(), None, new_key, issuance_timing, signer)?
+                    .into_converted(),
+            );
         }
         Ok(updates)
     }
@@ -229,7 +232,7 @@ impl ChildCertificates {
             if let Some(reduced_set) = issued.reduced_applicable_resources(updated_resources) {
                 if reduced_set.is_empty() {
                     // revoke
-                    updates.remove(issued.subject_key_identifier());
+                    updates.remove(issued.key_identifier());
                 } else {
                     // re-issue
                     updates.issue(self.re_issue(issued, Some(reduced_set), updated_key, issuance_timing, signer)?);
@@ -242,20 +245,23 @@ impl ChildCertificates {
             if let Some(reduced_set) = suspended.reduced_applicable_resources(updated_resources) {
                 if reduced_set.is_empty() {
                     // revoke
-                    updates.remove(suspended.subject_key_identifier());
+                    updates.remove(suspended.key_identifier());
                 } else {
                     // re-issue shrunk suspended
                     //
                     // Note: this will not be published yet, but remain suspended
                     //       until the child contacts us again, or is manually
                     //       un-suspended.
-                    updates.suspend(self.re_issue(
-                        suspended,
-                        Some(reduced_set),
-                        updated_key,
-                        issuance_timing,
-                        signer,
-                    )?);
+                    updates.suspend(
+                        self.re_issue(
+                            &suspended.convert(),
+                            Some(reduced_set),
+                            updated_key,
+                            issuance_timing,
+                            signer,
+                        )?
+                        .into_converted(),
+                    );
                 }
             }
         }
@@ -273,12 +279,13 @@ impl ChildCertificates {
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<DelegatedCertificate> {
-        let (_uri, limit, resource_set, cert) = previous.clone().unpack();
-        let csr = CsrInfo::from(&cert);
-        let resource_set = updated_resources.unwrap_or(resource_set);
+        // let (_uri, limit, resource_set, cert) = previous.clone().unpack();
+        let csr_info = previous.csr_info().clone();
+        let resource_set = updated_resources.unwrap_or(previous.resources().clone());
+        let limit = previous.limit().clone();
 
         let re_issued = SignSupport::make_issued_cert(
-            csr,
+            csr_info,
             &resource_set,
             limit,
             signing_key,
@@ -302,7 +309,7 @@ impl ChildCertificates {
     pub fn overclaiming(&self, resources: &ResourceSet) -> Vec<&DelegatedCertificate> {
         self.issued
             .values()
-            .filter(|issued| !resources.contains(issued.resource_set()))
+            .filter(|issued| !resources.contains(issued.resources()))
             .collect()
     }
 }

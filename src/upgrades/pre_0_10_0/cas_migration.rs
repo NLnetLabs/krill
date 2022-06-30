@@ -1,3 +1,4 @@
+use std::convert::TryInto;
 use std::str::FromStr;
 
 use chrono::Duration;
@@ -113,7 +114,7 @@ impl UpgradeStore for CasStoreMigration {
                         })?;
 
                         // Migrate into the current event type and save
-                        let evt: CaEvt = evt.into();
+                        let evt: CaEvt = evt.try_into()?;
                         self.new_kv_store.store(&event_key, &evt)?;
                     }
                 }

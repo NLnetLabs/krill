@@ -778,7 +778,7 @@ pub async fn expected_new_key_mft_and_crl(ca: &CaHandle, rcn: &ResourceClassName
 
 pub async fn expected_issued_cer(ca: &CaHandle, rcn: &ResourceClassName) -> String {
     let rc_key = ca_key_for_rcn(ca, rcn).await;
-    ObjectName::from(rc_key.incoming_cert().cert()).to_string()
+    ObjectName::new(rc_key.key_id(), ".cer").to_string()
 }
 
 pub async fn will_publish_embedded(test_msg: &str, ca: &CaHandle, files: &[String]) -> bool {

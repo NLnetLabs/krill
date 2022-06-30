@@ -677,7 +677,7 @@ impl CertAuth {
         let mut classes = vec![];
 
         for rcn in self.resources.keys() {
-            if let Some(class) = self.entitlement_class(child_handle, rcn, issuance_timing) {
+            if let Some(class) = self.entitlement_class(child_handle, rcn, issuance_timing)? {
                 classes.push(class);
             }
         }
@@ -695,7 +695,7 @@ impl CertAuth {
         issuance_timing: &IssuanceTimingConfig,
     ) -> KrillResult<IssuanceResponse> {
         let entitlement_class = self
-            .entitlement_class(child_handle, class_name, issuance_timing)
+            .entitlement_class(child_handle, class_name, issuance_timing)?
             .ok_or(Error::KeyUseNoIssuedCert)?;
 
         entitlement_class
@@ -709,28 +709,36 @@ impl CertAuth {
         child_handle: &ChildHandle,
         rcn: &ResourceClassName,
         issuance_timing: &IssuanceTimingConfig,
-    ) -> Option<ResourceClassEntitlements> {
+    ) -> KrillResult<Option<ResourceClassEntitlements>> {
         let my_rc = match self.resources.get(rcn) {
             Some(rc) => rc,
-            None => return None,
+            None => return Ok(None),
         };
 
         let my_current_key = match my_rc.current_key() {
             Some(key) => key,
-            None => return None,
+            None => return Ok(None),
         };
 
         let my_rcvd_cert = my_current_key.incoming_cert();
-        let signing_cert = SigningCert::new(my_rcvd_cert.uri().clone(), my_rcvd_cert.cert().clone());
+        let my_cert = my_rcvd_cert.to_cert().map_err(|e| {
+            Error::Custom(format!(
+                "Issue with certificate held by CA '{}', error: {} ",
+                self.handle(),
+                e
+            ))
+        })?;
+
+        let signing_cert = SigningCert::new(my_rcvd_cert.uri().clone(), my_cert);
 
         let child = match self.get_child(child_handle) {
             Ok(child) => child,
-            Err(_) => return None,
+            Err(_) => return Ok(None),
         };
 
         let child_resources = my_rcvd_cert.resources().intersection(child.resources());
         if child_resources.is_empty() {
-            return None;
+            return Ok(None);
         }
 
         let child_keys = child.issued(rcn);
@@ -753,10 +761,18 @@ impl CertAuth {
         let threshold = Time::now() + Duration::weeks(issuance_timing.timing_child_certificate_reissue_weeks_before);
 
         for ki in child_keys {
-            if let Some(issued) = my_rc.issued(&ki) {
-                issued_certs.push(issued.into());
+            if let Some(delegated) = my_rc.delegated(&ki) {
+                issued_certs.push(delegated.to_issued_cert().map_err(|e| {
+                    // This should never happen, unless our current delegated certificate can no longer be parsed
+                    Error::Custom(format!(
+                        "Issue with delegated certificate held by CA '{}', published at '{}', error: {} ",
+                        self.handle(),
+                        delegated.uri(),
+                        e
+                    ))
+                })?);
 
-                let expires = issued.validity().not_after();
+                let expires = delegated.validity().not_after();
 
                 if expires > threshold {
                     not_after = expires;
@@ -764,13 +780,13 @@ impl CertAuth {
             }
         }
 
-        Some(ResourceClassEntitlements::new(
+        Ok(Some(ResourceClassEntitlements::new(
             rcn.clone(),
             child_resources,
             not_after,
             issued_certs,
             signing_cert,
-        ))
+        )))
     }
 
     /// Returns a child, or an error if the child is unknown.
@@ -836,19 +852,15 @@ impl CertAuth {
         let issued =
             self.issue_child_certificate(&child, rcn.clone(), csr_info, limit, &config.issuance_timing, &signer)?;
 
-        let cert_name = ObjectName::from(issued.cert());
+        let cert_name = ObjectName::new(&issued.key_identifier(), ".cer");
+
         info!(
             "CA '{}' issued certificate '{}' to child '{}'",
             self.handle, cert_name, child
         );
 
-        let issued_event = CaEvtDet::child_certificate_issued(
-            &self.handle,
-            self.version,
-            child,
-            rcn.clone(),
-            issued.subject_key_identifier(),
-        );
+        let issued_event =
+            CaEvtDet::child_certificate_issued(&self.handle, self.version, child, rcn.clone(), issued.key_identifier());
 
         let mut cert_updates = ChildCertificateUpdates::default();
         cert_updates.issue(issued);
@@ -988,19 +1000,20 @@ impl CertAuth {
 
             let mut issued_certs = vec![];
             for key in certified_keys {
-                if let Some(issued) = rc.issued(&key) {
+                if let Some(issued) = rc.delegated(&key) {
                     issued_certs.push(issued);
                 }
             }
 
             let mut cert_updates = ChildCertificateUpdates::default();
             for issued in issued_certs {
-                let cert_name = ObjectName::from(issued.cert());
                 info!(
                     "CA '{}' revoked certificate '{}' for child '{}'",
-                    handle, cert_name, child_handle
+                    handle,
+                    issued.name(),
+                    child_handle
                 );
-                cert_updates.remove(issued.subject_key_identifier())
+                cert_updates.remove(issued.key_identifier())
             }
             res.push(CaEvtDet::child_certificates_updated(
                 handle,
@@ -1047,8 +1060,8 @@ impl CertAuth {
             let mut cert_updates = ChildCertificateUpdates::default();
 
             for key in certified_keys {
-                if let Some(issued) = rc.issued(&key) {
-                    cert_updates.suspend(issued.clone());
+                if let Some(delegated) = rc.delegated(&key) {
+                    cert_updates.suspend(delegated.convert());
                 }
             }
 
@@ -1108,18 +1121,18 @@ impl CertAuth {
             let mut cert_updates = ChildCertificateUpdates::default();
 
             for key in certified_keys {
-                if let Some(cert) = rc.suspended(&key) {
+                if let Some(suspended) = rc.suspended(&key) {
                     // check that the cert is actually not expired or about to expire and not overclaiming
-                    if cert.validity().not_after() > Time::now() + Duration::days(1)
-                        && child.resources().contains(cert.resource_set())
+                    if suspended.validity().not_after() > Time::now() + Duration::days(1)
+                        && child.resources().contains(suspended.resources())
                     {
                         // certificate is still fit for publication, so move it back to issued
-                        cert_updates.unsuspend(cert.clone());
+                        cert_updates.unsuspend(suspended.convert());
                     } else {
                         // certificate should not be published as is. Remove it and the child will request
                         // a new certificate because the resources and or validity entitlements will have
                         // changed.
-                        cert_updates.remove(cert.subject_key_identifier());
+                        cert_updates.remove(suspended.key_identifier());
                     }
                 }
             }

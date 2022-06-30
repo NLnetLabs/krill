@@ -723,7 +723,7 @@ impl Roas {
             aia.clone(),
             roa_uri,
         );
-        object_builder.set_issuer(Some(incoming_cert.cert().subject().clone()));
+        object_builder.set_issuer(Some(incoming_cert.subject().clone()));
         object_builder.set_signing_time(Some(Time::now()));
 
         Ok(signer.sign_roa(roa_builder, object_builder, signing_key)?)

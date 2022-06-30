@@ -1,4 +1,9 @@
-use std::{collections::HashMap, str::FromStr, sync::Arc};
+use std::{
+    collections::HashMap,
+    convert::{TryFrom, TryInto},
+    str::FromStr,
+    sync::Arc,
+};
 
 use chrono::Duration;
 
@@ -19,8 +24,8 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            DelegatedCertificate, IdCertInfo, ObjectName, RcvdCert, RepositoryContact, Revocation, Revocations,
-            RoaAggregateKey, StorableCaCommand, StoredEffect, TaCertDetails,
+            IdCertInfo, ObjectName, RepositoryContact, Revocation, Revocations, RoaAggregateKey, StorableCaCommand,
+            StoredEffect, TaCertDetails,
         },
         crypto::KrillSigner,
         eventsourcing::{Aggregate, AggregateStore, CommandKey, KeyStoreKey, KeyValueStore, StoredValueInfo},
@@ -659,14 +664,13 @@ impl Aggregate for OldCertAuth {
 
 impl OldCertAuth {
     pub fn ca_objects(&self, repo_manager: &RepositoryManager) -> Result<CaObjects, PrepareUpgradeError> {
-        let objects = self
-            .resources
-            .iter()
-            .flat_map(|(rcn, rc)| {
-                rc.resource_class_state()
-                    .map(|state| (rcn.clone(), ResourceClassObjects::new(state)))
-            })
-            .collect();
+        let mut objects: HashMap<ResourceClassName, ResourceClassObjects> = HashMap::new();
+
+        for (rcn, rc) in self.resources.iter() {
+            if let Some(state) = rc.resource_class_state()? {
+                objects.insert(rcn.clone(), ResourceClassObjects::new(state));
+            }
+        }
 
         let repo = match &self.repository {
             None => None,
@@ -750,31 +754,32 @@ impl OldResourceClass {
         }
     }
 
-    pub fn resource_class_state(&self) -> Option<ResourceClassKeyState> {
+    pub fn resource_class_state(&self) -> Result<Option<ResourceClassKeyState>, PrepareUpgradeError> {
         let roas = self.roas.roa_objects();
-        let certs: HashMap<ObjectName, PublishedCert> = self
-            .certificates
-            .inner
-            .values()
-            .map(|i| (ObjectName::from(i.cert()), i.clone().into()))
-            .collect();
+        let mut certs: HashMap<ObjectName, PublishedCert> = HashMap::new();
 
-        match &self.key_state {
+        for old_delegated in self.certificates.inner.values() {
+            let name = ObjectName::from(old_delegated.cert());
+            let published: PublishedCert = old_delegated.clone().try_into()?;
+            certs.insert(name, published);
+        }
+
+        Ok(match &self.key_state {
             OldKeyState::Pending(_) => None,
 
             OldKeyState::Active(current) | OldKeyState::RollPending(_, current) => Some(
-                ResourceClassKeyState::current(Self::object_set_for_current(current, roas, certs)),
+                ResourceClassKeyState::current(Self::object_set_for_current(current, roas, certs)?),
             ),
             OldKeyState::RollNew(new, current) => Some(ResourceClassKeyState::staging(
-                Self::object_set_for_certified_key(new),
-                Self::object_set_for_current(current, roas, certs),
+                Self::object_set_for_certified_key(new)?,
+                Self::object_set_for_current(current, roas, certs)?,
             )),
 
             OldKeyState::RollOld(current, old) => Some(ResourceClassKeyState::old(
-                Self::object_set_for_current(current, roas, certs),
-                Self::object_set_for_certified_key(&old.key),
+                Self::object_set_for_current(current, roas, certs)?,
+                Self::object_set_for_certified_key(&old.key)?,
             )),
-        }
+        })
     }
 
     pub fn into_added_event(self) -> Result<CaEvtDet, PrepareUpgradeError> {
@@ -800,12 +805,19 @@ impl OldResourceClass {
         key: &OldCertifiedKey,
         roas: HashMap<ObjectName, PublishedRoa>,
         certs: HashMap<ObjectName, PublishedCert>,
-    ) -> CurrentKeyObjectSet {
-        let basic = Self::object_set_for_certified_key(key);
-        CurrentKeyObjectSet::new(basic, roas, HashMap::new(), HashMap::new(), certs)
+    ) -> Result<CurrentKeyObjectSet, PrepareUpgradeError> {
+        let basic = Self::object_set_for_certified_key(key)?;
+
+        Ok(CurrentKeyObjectSet::new(
+            basic,
+            roas,
+            HashMap::new(),
+            HashMap::new(),
+            certs,
+        ))
     }
 
-    fn object_set_for_certified_key(key: &OldCertifiedKey) -> BasicKeyObjectSet {
+    fn object_set_for_certified_key(key: &OldCertifiedKey) -> Result<BasicKeyObjectSet, PrepareUpgradeError> {
         let current_set = key.current_set.clone();
 
         let manifest = Manifest::decode(current_set.manifest_info.current.content().to_bytes(), true)
@@ -816,13 +828,13 @@ impl OldResourceClass {
             .unwrap()
             .into();
 
-        BasicKeyObjectSet::new(
-            key.incoming_cert.clone(),
+        Ok(BasicKeyObjectSet::new(
+            key.incoming_cert.clone().try_into()?,
             current_set.number,
             current_set.revocations,
             manifest,
             crl,
-        )
+        ))
     }
 
     pub fn apply_delta(&mut self, delta: CurrentObjectSetDelta, key_id: KeyIdentifier) {
@@ -838,7 +850,7 @@ impl OldResourceClass {
         self.certificates.key_revoked(key);
     }
 
-    pub fn certificate_issued(&mut self, issued: DelegatedCertificate) {
+    pub fn certificate_issued(&mut self, issued: OldDelegatedCertificate) {
         self.certificates.certificate_issued(issued);
     }
 
@@ -848,7 +860,7 @@ impl OldResourceClass {
     }
 
     /// This function marks a certificate as received.
-    pub fn received_cert(&mut self, key_id: KeyIdentifier, cert: RcvdCert) {
+    pub fn received_cert(&mut self, key_id: KeyIdentifier, cert: OldRcvdCert) {
         // if there is a pending key, then we need to do some promotions..
         match &mut self.key_state {
             OldKeyState::Pending(_pending) => panic!("Would have received KeyPendingToActive event"),
@@ -991,7 +1003,7 @@ pub struct OldReplacedObject {
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldChildCertificates {
-    inner: HashMap<KeyIdentifier, DelegatedCertificate>,
+    inner: HashMap<KeyIdentifier, OldDelegatedCertificate>,
 }
 
 impl OldChildCertificates {
@@ -999,8 +1011,8 @@ impl OldChildCertificates {
         self.inner.remove(key);
     }
 
-    pub fn certificate_issued(&mut self, issued: DelegatedCertificate) {
-        self.inner.insert(issued.cert().subject_key_identifier(), issued);
+    pub fn certificate_issued(&mut self, issued: OldDelegatedCertificate) {
+        self.inner.insert(issued.key_identifier(), issued);
     }
 }
 
@@ -1169,19 +1181,26 @@ type CurrentKey = OldCertifiedKey;
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldCertifiedKey {
     key_id: KeyIdentifier,
-    incoming_cert: RcvdCert,
+    incoming_cert: OldRcvdCert,
     current_set: OldCurrentObjectSet,
     request: Option<IssuanceRequest>,
 }
 
-impl From<OldCertifiedKey> for ca::CertifiedKey {
-    fn from(old: OldCertifiedKey) -> Self {
-        ca::CertifiedKey::new(old.key_id, old.incoming_cert, old.request, None)
+impl TryFrom<OldCertifiedKey> for ca::CertifiedKey {
+    type Error = PrepareUpgradeError;
+
+    fn try_from(old: OldCertifiedKey) -> Result<Self, Self::Error> {
+        Ok(ca::CertifiedKey::new(
+            old.key_id,
+            old.incoming_cert.try_into()?,
+            old.request,
+            None,
+        ))
     }
 }
 
 impl OldCertifiedKey {
-    pub fn set_incoming_cert(&mut self, incoming_cert: RcvdCert) {
+    pub fn set_incoming_cert(&mut self, incoming_cert: OldRcvdCert) {
         self.request = None;
         self.incoming_cert = incoming_cert;
     }

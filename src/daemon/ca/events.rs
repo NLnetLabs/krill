@@ -995,7 +995,7 @@ impl fmt::Display for CaEvtDet {
                 if !issued.is_empty() {
                     write!(f, " issued keys: ")?;
                     for iss in issued {
-                        write!(f, " {}", iss.subject_key_identifier())?;
+                        write!(f, " {}", iss.key_identifier())?;
                     }
                 }
                 let revoked = updates.removed();
@@ -1009,14 +1009,14 @@ impl fmt::Display for CaEvtDet {
                 if !suspended.is_empty() {
                     write!(f, " suspended keys: ")?;
                     for cert in suspended {
-                        write!(f, " {}", cert.subject_key_identifier())?;
+                        write!(f, " {}", cert.key_identifier())?;
                     }
                 }
                 let unsuspended = updates.unsuspended();
                 if !unsuspended.is_empty() {
                     write!(f, " unsuspended keys: ")?;
                     for cert in unsuspended {
-                        write!(f, " {}", cert.subject_key_identifier())?;
+                        write!(f, " {}", cert.key_identifier())?;
                     }
                 }
 

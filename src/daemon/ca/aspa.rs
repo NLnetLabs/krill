@@ -54,7 +54,7 @@ pub fn make_aspa_object(
             ca_issuer,
             aspa_uri,
         );
-        object_builder.set_issuer(Some(incoming_cert.cert().subject().clone()));
+        object_builder.set_issuer(Some(incoming_cert.subject().clone()));
         object_builder.set_signing_time(Some(Time::now()));
 
         object_builder

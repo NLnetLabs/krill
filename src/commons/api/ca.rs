@@ -8,6 +8,7 @@ use std::{fmt, str};
 
 use bytes::Bytes;
 use chrono::{Duration, TimeZone, Utc};
+use rpki::repository::x509::{Name, Validity};
 use serde::{Deserialize, Serialize};
 
 use rpki::{
@@ -34,6 +35,7 @@ use rpki::{
     uri,
 };
 
+use crate::commons::crypto::CsrInfo;
 use crate::daemon::ca::BgpSecCertInfo;
 use crate::{
     commons::{
@@ -216,7 +218,7 @@ impl From<&Cert> for ReplacedObject {
 
 impl From<&DelegatedCertificate> for ReplacedObject {
     fn from(issued: &DelegatedCertificate) -> Self {
-        Self::from(issued.cert())
+        issued.replace()
     }
 }
 
@@ -236,50 +238,287 @@ impl From<&Aspa> for ReplacedObject {
     }
 }
 
+// //------------ DelegatedCertificate ------------------------------------------
+
+// /// This type defines a certificate issued to a child. It differs
+// /// from [`rpki::ca::provisioning::IssuedCert`] in that it supplies
+// /// convenience access to an explicit ResourceSet - which cannot use
+// /// inherit. And.. this gives us a safeguard wrt to changes in the
+// /// rpki library which would affect (de-)serialization of this type
+// /// which is kept in event history and snapshots.
+// #[derive(Clone, Debug, Deserialize, Serialize)]
+// pub struct DelegatedCertificate {
+//     uri: uri::Rsync,             // where this cert is published
+//     limit: RequestResourceLimit, // the limit on the request
+//     resource_set: ResourceSet,
+//     cert: Cert,
+// }
+
+// pub type SuspendedCert = DelegatedCertificate;
+// pub type UnsuspendedCert = DelegatedCertificate;
+
+// impl DelegatedCertificate {
+//     pub fn new(uri: uri::Rsync, limit: RequestResourceLimit, resource_set: ResourceSet, cert: Cert) -> Self {
+//         DelegatedCertificate {
+//             uri,
+//             limit,
+//             resource_set,
+//             cert,
+//         }
+//     }
+
+//     pub fn unpack(self) -> (uri::Rsync, RequestResourceLimit, ResourceSet, Cert) {
+//         (self.uri, self.limit, self.resource_set, self.cert)
+//     }
+
+//     pub fn uri(&self) -> &uri::Rsync {
+//         &self.uri
+//     }
+//     pub fn limit(&self) -> &RequestResourceLimit {
+//         &self.limit
+//     }
+//     pub fn resource_set(&self) -> &ResourceSet {
+//         &self.resource_set
+//     }
+//     pub fn cert(&self) -> &Cert {
+//         &self.cert
+//     }
+
+//     /// Returns a (possibly empty) set of reduced applicable resources which is the intersection
+//     /// of the encompassing resources and this certificate's current resources.
+//     /// Returns None if the current resource set is not overclaiming and does not need to be
+//     /// reduced.
+//     pub fn reduced_applicable_resources(&self, encompassing: &ResourceSet) -> Option<ResourceSet> {
+//         if encompassing.contains(&self.resource_set) {
+//             None
+//         } else {
+//             Some(encompassing.intersection(&self.resource_set))
+//         }
+//     }
+// }
+
+// impl PartialEq for DelegatedCertificate {
+//     fn eq(&self, other: &DelegatedCertificate) -> bool {
+//         self.uri == other.uri
+//             && self.limit == other.limit
+//             && self.resource_set == other.resource_set
+//             && self.cert.to_captured().as_slice() == other.cert.to_captured().as_slice()
+//     }
+// }
+
+// impl Eq for DelegatedCertificate {}
+
+// impl Deref for DelegatedCertificate {
+//     type Target = Cert;
+
+//     fn deref(&self) -> &Self::Target {
+//         &self.cert
+//     }
+// }
+
+// impl From<&DelegatedCertificate> for IssuedCert {
+//     fn from(krill_issued: &DelegatedCertificate) -> Self {
+//         IssuedCert::new(
+//             krill_issued.uri.clone(),
+//             krill_issued.limit.clone(),
+//             krill_issued.cert.clone(),
+//         )
+//     }
+// }
+
+//------------ RcvdCert ------------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct Received;
+
+/// A certificate which was received from a parent CA.
+pub type RcvdCert = CertInfo<Received>;
+
 //------------ DelegatedCertificate ------------------------------------------
 
-/// This type defines a certificate issued to a child. It differs
-/// from [`rpki::ca::provisioning::IssuedCert`] in that it supplies
-/// convenience access to an explicit ResourceSet - which cannot use
-/// inherit. And.. this gives us a safeguard wrt to changes in the
-/// rpki library which would affect (de-)serialization of this type
-/// which is kept in event history and snapshots.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct DelegatedCertificate {
-    uri: uri::Rsync,             // where this cert is published
-    limit: RequestResourceLimit, // the limit on the request
-    resource_set: ResourceSet,
-    cert: Cert,
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct Delegated;
+
+/// A certificate which has been issued to a delegated (child) CA
+pub type DelegatedCertificate = CertInfo<Delegated>;
+
+//------------ SuspendedCertificate ------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct Suspended;
+
+/// A delegated certificate which has been (temporarily) suspended because the child is inactive.
+pub type SuspendedCert = CertInfo<Suspended>;
+
+//------------ UnsuspendedCertificate ----------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct Unsuspended;
+
+/// A suspended certificate which is to be re-activated.
+pub type UnsuspendedCert = CertInfo<Unsuspended>;
+
+//------------ CertInfo ------------------------------------------------------
+
+/// Contains all relevant info about an RPKI certificate.
+///
+/// Note that while it would be tempting to keep the actual rpki-rs Cert, unfortunately
+/// this causes fragility with regards to keeping these objects in history and stricter
+/// parsing and validation in future. See issue #819.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CertInfo<T> {
+    // Where this certificate is published by the parent
+    uri: uri::Rsync,
+
+    // Resources contained
+    resources: ResourceSet,
+
+    // the limit on the request (default limit is no limits)
+    limit: RequestResourceLimit,
+
+    // The subject chosen by the parent. Note that Krill will
+    // derive the subject from the public key, but other parents
+    // may use a different strategy.
+    subject: Name,
+
+    // The validity time for this certificate.
+    validity: Validity,
+
+    // The serial number of this certificate (needed for revocation)
+    serial: Serial,
+
+    // Contains the public key and SIA
+    #[serde(flatten)]
+    csr_info: CsrInfo,
+
+    // The actual certificate in base64 format.
+    base64: Base64,
+
+    // The certificate's hash
+    hash: Hash,
+
+    // So that we can have different types based on the same structure.
+    marker: std::marker::PhantomData<T>,
 }
 
-pub type SuspendedCert = DelegatedCertificate;
-pub type UnsuspendedCert = DelegatedCertificate;
+impl<T> CertInfo<T> {
+    pub fn create(
+        cert: Cert,
+        uri: uri::Rsync,
+        resources: ResourceSet,
+        limit: RequestResourceLimit,
+    ) -> Result<Self, InvalidCert> {
+        let key = cert.subject_public_key_info().clone();
+        let ca_repository = cert.ca_repository().ok_or(InvalidCert::CaRepositoryMissing)?.clone();
+        let rpki_manifest = cert.rpki_manifest().ok_or(InvalidCert::RpkiManifestMissing)?.clone();
+        let rpki_notify = cert.rpki_notify().cloned();
 
-impl DelegatedCertificate {
-    pub fn new(uri: uri::Rsync, limit: RequestResourceLimit, resource_set: ResourceSet, cert: Cert) -> Self {
-        DelegatedCertificate {
+        let csr_info = CsrInfo::new(ca_repository, rpki_manifest, rpki_notify, key);
+
+        let subject = cert.subject().clone();
+        let validity = cert.validity().clone();
+        let serial = cert.serial_number();
+        let base64 = Base64::from(&cert);
+        let hash = base64.to_hash();
+
+        base64.to_hash();
+        Ok(CertInfo {
             uri,
+            resources,
             limit,
-            resource_set,
-            cert,
-        }
-    }
-
-    pub fn unpack(self) -> (uri::Rsync, RequestResourceLimit, ResourceSet, Cert) {
-        (self.uri, self.limit, self.resource_set, self.cert)
+            subject,
+            validity,
+            serial,
+            csr_info,
+            base64,
+            hash,
+            marker: std::marker::PhantomData,
+        })
     }
 
     pub fn uri(&self) -> &uri::Rsync {
         &self.uri
     }
+
+    pub fn resources(&self) -> &ResourceSet {
+        &self.resources
+    }
+
     pub fn limit(&self) -> &RequestResourceLimit {
         &self.limit
     }
-    pub fn resource_set(&self) -> &ResourceSet {
-        &self.resource_set
+
+    pub fn subject(&self) -> &Name {
+        &self.subject
     }
-    pub fn cert(&self) -> &Cert {
-        &self.cert
+
+    pub fn validity(&self) -> &Validity {
+        &self.validity
+    }
+
+    pub fn serial(&self) -> Serial {
+        self.serial
+    }
+
+    pub fn csr_info(&self) -> &CsrInfo {
+        &self.csr_info
+    }
+
+    pub fn key_identifier(&self) -> KeyIdentifier {
+        self.csr_info.key_id()
+    }
+
+    pub fn base64(&self) -> &Base64 {
+        &self.base64
+    }
+
+    pub fn hash(&self) -> Hash {
+        self.hash
+    }
+
+    pub fn to_cert(&self) -> Result<Cert, InvalidCert> {
+        Cert::decode(self.to_bytes().as_ref()).map_err(|e| InvalidCert::CannotDecode(e.to_string()))
+    }
+
+    pub fn to_issued_cert(&self) -> Result<IssuedCert, InvalidCert> {
+        let cert = self.to_cert()?;
+        Ok(IssuedCert::new(self.uri.clone(), self.limit.clone(), cert))
+    }
+
+    pub fn to_bytes(&self) -> Bytes {
+        self.base64.to_bytes()
+    }
+
+    /// Clones and then converts this into a certificate of another type.
+    pub fn convert<Y>(&self) -> CertInfo<Y> {
+        CertInfo {
+            uri: self.uri.clone(),
+            resources: self.resources.clone(),
+            limit: self.limit.clone(),
+            subject: self.subject.clone(),
+            validity: self.validity,
+            serial: self.serial,
+            csr_info: self.csr_info.clone(),
+            base64: self.base64.clone(),
+            hash: self.hash,
+            marker: std::marker::PhantomData,
+        }
+    }
+
+    /// Converts this into a certificate of another type.
+    pub fn into_converted<Y>(self) -> CertInfo<Y> {
+        CertInfo {
+            uri: self.uri,
+            resources: self.resources,
+            limit: self.limit,
+            subject: self.subject,
+            validity: self.validity,
+            serial: self.serial,
+            csr_info: self.csr_info,
+            base64: self.base64,
+            hash: self.hash,
+            marker: std::marker::PhantomData,
+        }
     }
 
     /// Returns a (possibly empty) set of reduced applicable resources which is the intersection
@@ -287,70 +526,21 @@ impl DelegatedCertificate {
     /// Returns None if the current resource set is not overclaiming and does not need to be
     /// reduced.
     pub fn reduced_applicable_resources(&self, encompassing: &ResourceSet) -> Option<ResourceSet> {
-        if encompassing.contains(&self.resource_set) {
+        if encompassing.contains(&self.resources) {
             None
         } else {
-            Some(encompassing.intersection(&self.resource_set))
+            Some(encompassing.intersection(&self.resources))
         }
     }
-}
 
-impl PartialEq for DelegatedCertificate {
-    fn eq(&self, other: &DelegatedCertificate) -> bool {
-        self.uri == other.uri
-            && self.limit == other.limit
-            && self.resource_set == other.resource_set
-            && self.cert.to_captured().as_slice() == other.cert.to_captured().as_slice()
-    }
-}
-
-impl Eq for DelegatedCertificate {}
-
-impl Deref for DelegatedCertificate {
-    type Target = Cert;
-
-    fn deref(&self) -> &Self::Target {
-        &self.cert
-    }
-}
-
-impl From<&DelegatedCertificate> for IssuedCert {
-    fn from(krill_issued: &DelegatedCertificate) -> Self {
-        IssuedCert::new(
-            krill_issued.uri.clone(),
-            krill_issued.limit.clone(),
-            krill_issued.cert.clone(),
-        )
-    }
-}
-
-//------------ RcvdCert ------------------------------------------------------
-
-/// Contains a CA Certificate that has been issued to this CA, for some key.
-///
-/// Note, this may be a self-signed TA Certificate.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct RcvdCert {
-    cert: Cert,
-    uri: uri::Rsync,
-    resources: ResourceSet,
-}
-
-impl RcvdCert {
-    pub fn new(cert: Cert, uri: uri::Rsync, resources: ResourceSet) -> Self {
-        RcvdCert { cert, uri, resources }
-    }
-
-    pub fn cert(&self) -> &Cert {
-        &self.cert
-    }
-    pub fn uri(&self) -> &uri::Rsync {
-        &self.uri
+    /// The name for this certificate as derived from its URI
+    pub fn name(&self) -> ObjectName {
+        ObjectName::from(&self.uri)
     }
 
     /// The name of the CRL published by THIS certificate.
     pub fn crl_name(&self) -> ObjectName {
-        ObjectName::new(&self.cert.subject_key_identifier(), "crl")
+        ObjectName::new(&self.key_identifier(), "crl")
     }
 
     /// The URI of the CRL published BY THIS certificate, i.e. the uri to use
@@ -361,12 +551,12 @@ impl RcvdCert {
 
     /// The name of the MFT published by THIS certificate.
     pub fn mft_name(&self) -> ObjectName {
-        ObjectName::new(&self.cert.subject_key_identifier(), "mft")
+        ObjectName::new(&self.key_identifier(), "mft")
     }
 
     /// Return the CA repository URI where this certificate publishes.
     pub fn ca_repository(&self) -> &uri::Rsync {
-        self.cert.ca_repository().unwrap()
+        self.csr_info.ca_repository()
     }
 
     /// The URI of the MFT published by THIS certificate.
@@ -380,49 +570,44 @@ impl RcvdCert {
 
     pub fn uri_for_name(&self, name: &ObjectName) -> uri::Rsync {
         // unwraps here are safe
-        self.cert.ca_repository().unwrap().join(name.as_bytes()).unwrap()
+        self.ca_repository().join(name.as_bytes()).unwrap()
     }
 
-    pub fn resources(&self) -> &ResourceSet {
-        &self.resources
+    /// Returns a Revocation for this certificate
+    pub fn revoke(&self) -> Revocation {
+        Revocation {
+            serial: self.serial,
+            expires: self.validity.not_after(),
+        }
     }
 
-    pub fn der_encoded(&self) -> Bytes {
-        self.cert.to_captured().into_bytes()
-    }
-}
-
-impl From<DelegatedCertificate> for RcvdCert {
-    fn from(delegated: DelegatedCertificate) -> Self {
-        RcvdCert {
-            cert: delegated.cert,
-            uri: delegated.uri,
-            resources: delegated.resource_set,
+    /// Returns a ReplacedObject for this certificate
+    pub fn replace(&self) -> ReplacedObject {
+        ReplacedObject {
+            revocation: self.revoke(),
+            hash: self.base64.to_hash(),
         }
     }
 }
 
-impl AsRef<Cert> for RcvdCert {
-    fn as_ref(&self) -> &Cert {
-        &self.cert
+#[derive(Clone, Debug)]
+pub enum InvalidCert {
+    CaRepositoryMissing,
+    RpkiManifestMissing,
+    CannotDecode(String),
+}
+
+impl fmt::Display for InvalidCert {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            InvalidCert::CaRepositoryMissing => write!(f, "CA certificate lacks ca repository"),
+            InvalidCert::RpkiManifestMissing => write!(f, "CA certificate lacks manifest uri"),
+            InvalidCert::CannotDecode(s) => write!(f, "Cannot decode binary certificate: {}", s),
+        }
     }
 }
 
-impl Deref for RcvdCert {
-    type Target = Cert;
-
-    fn deref(&self) -> &Self::Target {
-        &self.cert
-    }
-}
-
-impl PartialEq for RcvdCert {
-    fn eq(&self, other: &RcvdCert) -> bool {
-        self.cert.to_captured().into_bytes() == other.cert.to_captured().into_bytes() && self.uri == other.uri
-    }
-}
-
-impl Eq for RcvdCert {}
+impl std::error::Error for InvalidCert {}
 
 //------------ TrustAnchorLocator --------------------------------------------
 
@@ -554,6 +739,18 @@ impl ObjectName {
 
     pub fn bgpsec(asn: Asn, key: KeyIdentifier) -> Self {
         ObjectName(format!("ROUTER-{:08X}-{}.cer", asn.into_u32(), key))
+    }
+}
+
+impl From<&uri::Rsync> for ObjectName {
+    fn from(uri: &uri::Rsync) -> Self {
+        let path = uri.path();
+        if path.is_empty() {
+            ObjectName("".to_string())
+        } else {
+            let idx = path.rfind('/').unwrap_or(0);
+            ObjectName(path[idx..].to_string())
+        }
     }
 }
 
