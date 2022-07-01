@@ -23,6 +23,7 @@ use rpki::{
         sigobj::SignedObjectBuilder,
         x509::{Name, Serial, Time, Validity},
     },
+    uri,
 };
 
 use crate::{
@@ -249,7 +250,6 @@ pub struct CaObjects {
     ca: CaHandle,
     repo: Option<RepositoryContact>,
 
-    #[serde(with = "ca_objects_classes_serde")]
     classes: HashMap<ResourceClassName, ResourceClassObjects>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
@@ -286,49 +286,6 @@ impl DeprecatedRepository {
 impl From<DeprecatedRepository> for RepositoryContact {
     fn from(deprecated: DeprecatedRepository) -> Self {
         deprecated.contact
-    }
-}
-
-mod ca_objects_classes_serde {
-
-    use super::*;
-
-    use serde::de::{Deserialize, Deserializer};
-    use serde::ser::Serializer;
-    #[derive(Debug, Deserialize)]
-    struct ClassesItem {
-        class_name: ResourceClassName,
-        objects: ResourceClassObjects,
-    }
-
-    #[derive(Debug, Serialize)]
-    struct ClassesItemRef<'a> {
-        class_name: &'a ResourceClassName,
-        objects: &'a ResourceClassObjects,
-    }
-
-    pub fn serialize<S>(
-        map: &HashMap<ResourceClassName, ResourceClassObjects>,
-        serializer: S,
-    ) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.collect_seq(
-            map.iter()
-                .map(|(class_name, objects)| ClassesItemRef { class_name, objects }),
-        )
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<ResourceClassName, ResourceClassObjects>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let mut map = HashMap::new();
-        for item in Vec::<ClassesItem>::deserialize(deserializer)? {
-            map.insert(item.class_name, item.objects);
-        }
-        Ok(map)
     }
 }
 
@@ -912,11 +869,10 @@ impl CurrentKeyObjectSet {
         let repo = self.old_repo.as_ref().unwrap_or(dflt_repo);
 
         let base_uri = self.signing_cert.ca_repository();
-        let mft_uri = base_uri.join(self.manifest.name().as_bytes()).unwrap();
         let crl_uri = base_uri.join(self.crl.name().as_bytes()).unwrap();
 
         let elements = map.entry(repo.clone()).or_insert_with(Vec::new);
-        elements.push(PublishElement::new(Base64::from(&self.manifest.0), mft_uri));
+        elements.push(self.manifest.publish_element().clone());
         elements.push(PublishElement::new(Base64::from(&self.crl.0), crl_uri));
 
         for (name, roa) in &self.roas {
@@ -1299,11 +1255,10 @@ impl BasicKeyObjectSet {
         let repo = self.old_repo.as_ref().unwrap_or(dflt_repo);
 
         let base_uri = self.signing_cert.ca_repository();
-        let mft_uri = base_uri.join(self.manifest.name().as_bytes()).unwrap();
         let crl_uri = base_uri.join(self.crl.name().as_bytes()).unwrap();
 
         let elements = map.entry(repo.clone()).or_insert_with(Vec::new);
-        elements.push(PublishElement::new(Base64::from(&self.manifest.0), mft_uri));
+        elements.push(self.manifest.publish_element().clone());
         elements.push(PublishElement::new(Base64::from(&self.crl.0), crl_uri));
     }
 
@@ -1334,7 +1289,7 @@ impl BasicKeyObjectSet {
 
     pub fn requires_reissuance(&self, hours: i64) -> bool {
         Time::now() + Duration::hours(hours) > self.manifest.next_update()
-            || Some(self.signing_cert.uri()) != self.manifest.cert().ca_issuer()
+            || self.signing_cert.uri() != self.manifest.aia()
     }
 
     pub fn next_update_time(&self) -> Time {
@@ -1492,46 +1447,43 @@ impl Eq for PublishedAspa {}
 
 //------------ PublishedManifest ------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct PublishedManifest(Manifest);
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PublishedManifest {
+    publish_element: PublishElement,
+    next_update: Time,
+    aia: uri::Rsync, // URI of issuing certificate
+}
 
 impl PublishedManifest {
-    pub fn new(mft: Manifest) -> Self {
-        PublishedManifest(mft)
+    pub fn publish_element(&self) -> &PublishElement {
+        &self.publish_element
     }
 
-    pub fn to_bytes(&self) -> Bytes {
-        self.0.to_captured().into_bytes()
-    }
-
-    pub fn name(&self) -> ObjectName {
-        ObjectName::from(&self.0)
+    /// Authority Information Access (aia)
+    ///
+    /// The URI of the issuing certificate for this manifest.
+    pub fn aia(&self) -> &uri::Rsync {
+        &self.aia
     }
 
     pub fn next_update(&self) -> Time {
-        self.0.next_update()
+        self.next_update
     }
 }
-
-impl PartialEq for PublishedManifest {
-    fn eq(&self, other: &Self) -> bool {
-        self.to_bytes() == other.to_bytes()
-    }
-}
-
-impl Eq for PublishedManifest {}
 
 impl From<Manifest> for PublishedManifest {
     fn from(mft: Manifest) -> Self {
-        PublishedManifest(mft)
-    }
-}
+        let base64 = Base64::from(&mft);
+        let uri = mft.cert().signed_object().unwrap().clone(); // Safe for our manifests
+        let publish_element = PublishElement::new(base64, uri);
+        let next_update = mft.next_update();
+        let aia = mft.cert().ca_issuer().unwrap().clone(); // Safe for our own manifests
 
-impl Deref for PublishedManifest {
-    type Target = Manifest;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
+        PublishedManifest {
+            publish_element,
+            next_update,
+            aia,
+        }
     }
 }
 

@@ -1430,7 +1430,7 @@ pub struct OldPublishedManifest(Manifest);
 
 impl From<OldPublishedManifest> for ca::PublishedManifest {
     fn from(old: OldPublishedManifest) -> Self {
-        ca::PublishedManifest::new(old.0)
+        old.0.into()
     }
 }
 
