@@ -229,7 +229,16 @@ impl ConfigDefaults {
             )]
         }
 
-        #[cfg(feature = "hsm-tests-kmip")]
+        #[cfg(all(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11"))]
+        {
+            let signer_config = OpenSslSignerConfig { keys_path: None };
+            vec![SignerConfig::new(
+                DEFAULT_SIGNER_NAME.to_string(),
+                SignerType::OpenSsl(signer_config),
+            )]
+        }
+
+        #[cfg(all(feature = "hsm-tests-kmip", not(feature = "hsm-tests-pkcs11")))]
         {
             let signer_config = KmipSignerConfig {
                 host: "127.0.0.1".to_string(),
@@ -259,7 +268,7 @@ impl ConfigDefaults {
             )];
         }
 
-        #[cfg(feature = "hsm-tests-pkcs11")]
+        #[cfg(all(feature = "hsm-tests-pkcs11", not(feature = "hsm-tests-kmip")))]
         {
             use crate::commons::crypto::SlotIdOrLabel;
             let signer_config = Pkcs11SignerConfig {
