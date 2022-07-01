@@ -745,11 +745,11 @@ impl ObjectName {
 impl From<&uri::Rsync> for ObjectName {
     fn from(uri: &uri::Rsync) -> Self {
         let path = uri.path();
-        if path.is_empty() {
+        let after_last_slash = path.rfind('/').unwrap_or(0) + 1;
+        if path.len() < after_last_slash + 1 {
             ObjectName("".to_string())
         } else {
-            let idx = path.rfind('/').unwrap_or(0);
-            ObjectName(path[idx..].to_string())
+            ObjectName(path[after_last_slash..].to_string())
         }
     }
 }
