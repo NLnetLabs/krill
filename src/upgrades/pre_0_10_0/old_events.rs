@@ -7,28 +7,28 @@ use std::{
 use rpki::{
     ca::{
         idcert::IdCert,
-        idexchange::{ChildHandle, ParentHandle, PublisherHandle, RepoInfo, ServiceUri},
+        idexchange::{CaHandle, ChildHandle, ParentHandle, PublisherHandle, RepoInfo, ServiceUri},
         provisioning::{
             IssuanceRequest, ParentResourceClassName, RequestResourceLimit, ResourceClassName, RevocationRequest,
         },
     },
     crypto::KeyIdentifier,
-    repository::{aspa::Aspa, resources::ResourceSet, x509::Time, Cert, Roa},
+    repository::{aspa::Aspa, resources::ResourceSet, x509::Time, Cert, Crl, Manifest, Roa},
     uri,
 };
 
 use crate::{
     commons::{
         api::{
-            AspaCustomer, AspaDefinition, AspaProvidersUpdate, CertInfo, DelegatedCertificate, ParentCaContact,
-            ParentServerInfo, PublicationServerInfo, RcvdCert, RepositoryContact, RevokedObject, RoaAggregateKey,
-            RtaName, SuspendedCert, TaCertDetails, TrustAnchorLocator, UnsuspendedCert,
+            AspaCustomer, AspaDefinition, AspaProvidersUpdate, CertInfo, DelegatedCertificate, ObjectName,
+            ParentCaContact, ParentServerInfo, PublicationServerInfo, RcvdCert, RepositoryContact, Revocations,
+            RevokedObject, RoaAggregateKey, RtaName, SuspendedCert, TaCertDetails, TrustAnchorLocator, UnsuspendedCert,
         },
         eventsourcing::StoredEvent,
     },
     daemon::ca::{
-        self, AggregateRoaInfo, AspaInfo, AspaObjectsUpdates, CaEvt, CaEvtDet, CertifiedKey, ChildCertificateUpdates,
-        PreparedRta, RoaInfo, RoaUpdates, RouteAuthorization, SignedRta,
+        self, AggregateRoaInfo, AspaInfo, AspaObjectsUpdates, CaEvt, CaEvtDet, CaObjects, CertifiedKey,
+        ChildCertificateUpdates, PreparedRta, RoaInfo, RoaUpdates, RouteAuthorization, SignedRta,
     },
     pubd::{Publisher, RepositoryAccessEvent, RepositoryAccessEventDetails, RepositoryAccessInitDetails},
     upgrades::PrepareUpgradeError,
@@ -1028,6 +1028,436 @@ impl fmt::Display for OldCaEvtDet {
         unimplemented!("not used for migration")
     }
 }
+
+//-------------------------------------------------------------------------------
+//------------------------- CaObjects -------------------------------------------
+//-------------------------------------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OldCaObjects {
+    ca: CaHandle,
+    repo: Option<OldRepositoryContact>,
+
+    #[serde(with = "old_ca_objects_classes_serde")]
+    classes: HashMap<ResourceClassName, OldResourceClassObjects>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    deprecated_repos: Vec<OldDeprecatedRepository>,
+}
+
+impl TryFrom<OldCaObjects> for ca::CaObjects {
+    type Error = PrepareUpgradeError;
+
+    fn try_from(old: OldCaObjects) -> Result<Self, Self::Error> {
+        let ca = old.ca;
+
+        let repo = old.repo.map(|contact| contact.into());
+
+        let mut classes: HashMap<ResourceClassName, ca::ResourceClassObjects> = HashMap::new();
+        for (rcn, old_objects) in old.classes.into_iter() {
+            classes.insert(rcn, old_objects.try_into()?);
+        }
+
+        let deprecated_repos = old
+            .deprecated_repos
+            .into_iter()
+            .map(|deprecated| deprecated.into())
+            .collect();
+
+        Ok(CaObjects::new(ca, repo, classes, deprecated_repos))
+    }
+}
+
+mod old_ca_objects_classes_serde {
+
+    use super::*;
+
+    use serde::de::{Deserialize, Deserializer};
+    use serde::ser::Serializer;
+    #[derive(Debug, Deserialize)]
+    struct ClassesItem {
+        class_name: ResourceClassName,
+        objects: OldResourceClassObjects,
+    }
+
+    #[derive(Debug, Serialize)]
+    struct ClassesItemRef<'a> {
+        class_name: &'a ResourceClassName,
+        objects: &'a OldResourceClassObjects,
+    }
+
+    pub fn serialize<S>(
+        map: &HashMap<ResourceClassName, OldResourceClassObjects>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.collect_seq(
+            map.iter()
+                .map(|(class_name, objects)| ClassesItemRef { class_name, objects }),
+        )
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<ResourceClassName, OldResourceClassObjects>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let mut map = HashMap::new();
+        for item in Vec::<ClassesItem>::deserialize(deserializer)? {
+            map.insert(item.class_name, item.objects);
+        }
+        Ok(map)
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OldDeprecatedRepository {
+    contact: OldRepositoryContact,
+    clean_attempts: usize,
+}
+
+impl From<OldDeprecatedRepository> for ca::DeprecatedRepository {
+    fn from(old: OldDeprecatedRepository) -> Self {
+        ca::DeprecatedRepository::new(old.contact.into(), old.clean_attempts)
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OldResourceClassObjects {
+    keys: OldResourceClassKeyState,
+}
+
+impl TryFrom<OldResourceClassObjects> for ca::ResourceClassObjects {
+    type Error = PrepareUpgradeError;
+
+    fn try_from(old: OldResourceClassObjects) -> Result<Self, Self::Error> {
+        old.keys.try_into().map(|keys| ca::ResourceClassObjects::new(keys))
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum OldResourceClassKeyState {
+    Current(OldCurrentKeyState),
+    Staging(OldStagingKeyState),
+    Old(OldOldKeyState),
+}
+
+impl TryFrom<OldResourceClassKeyState> for ca::ResourceClassKeyState {
+    type Error = PrepareUpgradeError;
+
+    fn try_from(old: OldResourceClassKeyState) -> Result<Self, Self::Error> {
+        Ok(match old {
+            OldResourceClassKeyState::Current(state) => ca::ResourceClassKeyState::Current(state.try_into()?),
+            OldResourceClassKeyState::Staging(state) => ca::ResourceClassKeyState::Staging(state.try_into()?),
+            OldResourceClassKeyState::Old(state) => ca::ResourceClassKeyState::Old(state.try_into()?),
+        })
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OldCurrentKeyState {
+    current_set: OldCurrentKeyObjectSet,
+}
+
+impl TryFrom<OldCurrentKeyState> for ca::CurrentKeyState {
+    type Error = PrepareUpgradeError;
+
+    fn try_from(old: OldCurrentKeyState) -> Result<Self, Self::Error> {
+        Ok(ca::CurrentKeyState::new(old.current_set.try_into()?))
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OldStagingKeyState {
+    staging_set: OldBasicKeyObjectSet,
+    current_set: OldCurrentKeyObjectSet,
+}
+
+impl TryFrom<OldStagingKeyState> for ca::StagingKeyState {
+    type Error = PrepareUpgradeError;
+
+    fn try_from(old: OldStagingKeyState) -> Result<Self, Self::Error> {
+        Ok(ca::StagingKeyState::new(
+            old.staging_set.try_into()?,
+            old.current_set.try_into()?,
+        ))
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OldOldKeyState {
+    current_set: OldCurrentKeyObjectSet,
+    old_set: OldBasicKeyObjectSet,
+}
+
+impl TryFrom<OldOldKeyState> for ca::OldKeyState {
+    type Error = PrepareUpgradeError;
+
+    fn try_from(old: OldOldKeyState) -> Result<Self, Self::Error> {
+        Ok(ca::OldKeyState::new(
+            old.current_set.try_into()?,
+            old.old_set.try_into()?,
+        ))
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OldCurrentKeyObjectSet {
+    #[serde(flatten)]
+    basic: OldBasicKeyObjectSet,
+
+    #[serde(with = "objects_to_roas_serde")]
+    roas: HashMap<ObjectName, OldPublishedRoa>,
+
+    #[serde(with = "objects_to_aspas_serde", skip_serializing_if = "HashMap::is_empty", default)]
+    aspas: HashMap<ObjectName, OldPublishedAspa>,
+
+    #[serde(with = "objects_to_certs_serde")]
+    certs: HashMap<ObjectName, OldPublishedCert>,
+}
+
+impl TryFrom<OldCurrentKeyObjectSet> for ca::CurrentKeyObjectSet {
+    type Error = PrepareUpgradeError;
+
+    fn try_from(old: OldCurrentKeyObjectSet) -> Result<Self, Self::Error> {
+        let basic = old.basic.try_into()?;
+
+        let mut roas = HashMap::new();
+        for (name, old_roa) in old.roas.into_iter() {
+            roas.insert(name, old_roa.into());
+        }
+
+        let mut aspas = HashMap::new();
+        for (name, old_aspa) in old.aspas.into_iter() {
+            aspas.insert(name, old_aspa.into());
+        }
+
+        let mut certs = HashMap::new();
+        for (name, old_cert) in old.certs.into_iter() {
+            certs.insert(name, old_cert.try_into()?);
+        }
+
+        let bgpsec_certs = HashMap::new();
+
+        Ok(ca::CurrentKeyObjectSet::new(basic, roas, aspas, bgpsec_certs, certs))
+    }
+}
+
+mod objects_to_roas_serde {
+    use super::*;
+
+    use serde::de::{Deserialize, Deserializer};
+    use serde::ser::Serializer;
+    #[derive(Debug, Deserialize)]
+    struct NameRoaItem {
+        name: ObjectName,
+        roa: OldPublishedRoa,
+    }
+
+    #[derive(Debug, Serialize)]
+    struct NameRoaItemRef<'a> {
+        name: &'a ObjectName,
+        roa: &'a OldPublishedRoa,
+    }
+
+    pub fn serialize<S>(map: &HashMap<ObjectName, OldPublishedRoa>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.collect_seq(map.iter().map(|(name, roa)| NameRoaItemRef { name, roa }))
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<ObjectName, OldPublishedRoa>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let mut map = HashMap::new();
+        for item in Vec::<NameRoaItem>::deserialize(deserializer)? {
+            map.insert(item.name, item.roa);
+        }
+        Ok(map)
+    }
+}
+
+mod objects_to_aspas_serde {
+    use super::*;
+
+    use serde::de::{Deserialize, Deserializer};
+    use serde::ser::Serializer;
+    #[derive(Debug, Deserialize)]
+    struct NameItem {
+        name: ObjectName,
+        aspa: OldPublishedAspa,
+    }
+
+    #[derive(Debug, Serialize)]
+    struct NameItemRef<'a> {
+        name: &'a ObjectName,
+        aspa: &'a OldPublishedAspa,
+    }
+
+    pub fn serialize<S>(map: &HashMap<ObjectName, OldPublishedAspa>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.collect_seq(map.iter().map(|(name, aspa)| NameItemRef { name, aspa }))
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<ObjectName, OldPublishedAspa>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let mut map = HashMap::new();
+        for item in Vec::<NameItem>::deserialize(deserializer)? {
+            map.insert(item.name, item.aspa);
+        }
+        Ok(map)
+    }
+}
+
+mod objects_to_certs_serde {
+    use super::*;
+
+    use serde::de::{Deserialize, Deserializer};
+    use serde::ser::Serializer;
+    #[derive(Debug, Deserialize)]
+    struct NameCertItem {
+        name: ObjectName,
+        issued: OldPublishedCert,
+    }
+
+    #[derive(Debug, Serialize)]
+    struct NameCertItemRef<'a> {
+        name: &'a ObjectName,
+        issued: &'a OldPublishedCert,
+    }
+
+    pub fn serialize<S>(map: &HashMap<ObjectName, OldPublishedCert>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.collect_seq(map.iter().map(|(name, issued)| NameCertItemRef { name, issued }))
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<ObjectName, OldPublishedCert>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let mut map = HashMap::new();
+        for item in Vec::<NameCertItem>::deserialize(deserializer)? {
+            map.insert(item.name, item.issued);
+        }
+        Ok(map)
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OldBasicKeyObjectSet {
+    signing_cert: OldRcvdCert,
+    number: u64,
+    revocations: Revocations,
+    manifest: OldPublishedManifest,
+    crl: OldPublishedCrl,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    old_repo: Option<OldRepositoryContact>,
+}
+
+impl TryFrom<OldBasicKeyObjectSet> for ca::BasicKeyObjectSet {
+    type Error = PrepareUpgradeError;
+
+    fn try_from(old: OldBasicKeyObjectSet) -> Result<Self, Self::Error> {
+        let signing_cert = old.signing_cert.try_into()?;
+        let number = old.number;
+        let revocations = old.revocations;
+        let manifest = old.manifest.into();
+        let crl = old.crl.into();
+        let old_repo = old.old_repo.map(|repo| repo.into());
+
+        Ok(ca::BasicKeyObjectSet::new(
+            signing_cert,
+            number,
+            revocations,
+            manifest,
+            crl,
+            old_repo,
+        ))
+    }
+}
+
+//------------ PublishedCert -----------------------------------------------
+pub type OldPublishedCert = OldDelegatedCertificate;
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct OldPublishedRoa(Roa);
+
+impl From<OldPublishedRoa> for ca::PublishedRoa {
+    fn from(old: OldPublishedRoa) -> Self {
+        ca::PublishedRoa::new(old.0)
+    }
+}
+
+impl PartialEq for OldPublishedRoa {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.to_captured().into_bytes() == other.0.to_captured().into_bytes()
+    }
+}
+
+impl Eq for OldPublishedRoa {}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct OldPublishedAspa(Aspa);
+
+impl From<OldPublishedAspa> for ca::PublishedAspa {
+    fn from(old: OldPublishedAspa) -> Self {
+        ca::PublishedAspa::new(old.0)
+    }
+}
+
+impl PartialEq for OldPublishedAspa {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.to_captured().into_bytes() == other.0.to_captured().into_bytes()
+    }
+}
+
+impl Eq for OldPublishedAspa {}
+
+//------------ PublishedManifest ------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct OldPublishedManifest(Manifest);
+
+impl From<OldPublishedManifest> for ca::PublishedManifest {
+    fn from(old: OldPublishedManifest) -> Self {
+        ca::PublishedManifest::new(old.0)
+    }
+}
+
+impl PartialEq for OldPublishedManifest {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.to_captured().into_bytes() == other.0.to_captured().into_bytes()
+    }
+}
+
+impl Eq for OldPublishedManifest {}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct OldPublishedCrl(Crl);
+
+impl From<OldPublishedCrl> for ca::PublishedCrl {
+    fn from(old: OldPublishedCrl) -> Self {
+        ca::PublishedCrl::new(old.0)
+    }
+}
+
+impl PartialEq for OldPublishedCrl {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.to_captured().into_bytes() == other.0.to_captured().into_bytes()
+    }
+}
+
+impl Eq for OldPublishedCrl {}
 
 // Repository
 

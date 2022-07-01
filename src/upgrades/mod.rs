@@ -397,33 +397,51 @@ pub fn finalise_data_migration(upgrade: &UpgradeVersions, config: &Config) -> Kr
     let data_dir = &config.data_dir;
     let upgrade_dir = config.upgrade_data_dir();
 
-    // cas -> arch-cas-{old-version}
-    // upgrade-data/cas -> cas
-    // upgrade-data/ca_objects -> ca_objects
-
     let cas = data_dir.join(CASERVER_DIR);
     let cas_arch = data_dir.join(format!("arch-{}-{}", CASERVER_DIR, from));
     let cas_upg = upgrade_dir.join(CASERVER_DIR);
     let ca_objects = data_dir.join(CA_OBJECTS_DIR);
+    let ca_objects_arch = data_dir.join(format!("arch-{}-{}", CA_OBJECTS_DIR, from));
     let ca_objects_upg = upgrade_dir.join(CA_OBJECTS_DIR);
 
-    move_dir_if_exists(&cas, &cas_arch)?;
-    move_dir_if_exists(&cas_upg, &cas)?;
-    move_dir_if_exists(&ca_objects_upg, &ca_objects)?;
+    // upgrade-data/cas exists
+    if cas_upg.exists() {
+        // cas -> arch-cas-{old-version}
+        // upgrade-data/cas -> cas
+        move_dir_if_exists(&cas, &cas_arch)?;
+        move_dir_if_exists(&cas_upg, &cas)?;
+    }
 
-    // pubd -> arch-pubd-{old-version}
-    // upgrade-data/pubd -> pubd
-    // upgrade-data/pubd_objects -> pubd_objects
+    // upgrade-data/ca_objects exists
+    if ca_objects_upg.exists() {
+        // ca_objects -> arch-ca_objects-{old-version}
+        // upgrade-data/ca_objects -> ca_objects
+        move_dir_if_exists(&ca_objects, &ca_objects_arch)?;
+        move_dir_if_exists(&ca_objects_upg, &ca_objects)?;
+    }
 
     let pubd = data_dir.join(PUBSERVER_DIR);
     let pubd_arch = data_dir.join(format!("arch-{}-{}", PUBSERVER_DIR, from));
     let pubd_upg = upgrade_dir.join(PUBSERVER_DIR);
     let pubd_objects = data_dir.join(PUBSERVER_CONTENT_DIR);
+    let pubd_objects_arch = data_dir.join(format!("arch-{}-{}", PUBSERVER_CONTENT_DIR, from));
     let pubd_objects_upg = upgrade_dir.join(PUBSERVER_CONTENT_DIR);
 
-    move_dir_if_exists(&pubd, &pubd_arch)?;
-    move_dir_if_exists(&pubd_upg, &pubd)?;
-    move_dir_if_exists(&pubd_objects_upg, &pubd_objects)?;
+    // upgrade-data/pubd exists
+    if pubd_upg.exists() {
+        // pubd -> arch-pubd-{old-version}
+        // upgrade-data/pubd -> pubd
+        move_dir_if_exists(&pubd, &pubd_arch)?;
+        move_dir_if_exists(&pubd_upg, &pubd)?
+    }
+
+    // upgrade-data/pubd_objects exists
+    if pubd_objects_upg.exists() {
+        // pubd_objects -> arch-pubd_objects-{old-version}
+        // upgrade-data/pubd_objects -> pubd_objects
+        move_dir_if_exists(&pubd_objects, &pubd_objects_arch)?;
+        move_dir_if_exists(&pubd_objects_upg, &pubd_objects)?;
+    }
 
     // done, clean out the migration dir
     file::remove_dir_all(&upgrade_dir)

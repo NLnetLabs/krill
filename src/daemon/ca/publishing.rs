@@ -191,7 +191,7 @@ impl CaObjectsStore {
 
         match self.store.read().unwrap().get(&key).map_err(Error::KeyValueError)? {
             None => {
-                let objects = CaObjects::new(ca.clone(), None, HashMap::new());
+                let objects = CaObjects::new(ca.clone(), None, HashMap::new(), vec![]);
                 Ok(objects)
             }
             Some(objects) => Ok(objects),
@@ -212,7 +212,7 @@ impl CaObjectsStore {
         let mut objects = lock
             .get(&key)
             .map_err(Error::KeyValueError)?
-            .unwrap_or_else(|| CaObjects::new(ca.clone(), None, HashMap::new()));
+            .unwrap_or_else(|| CaObjects::new(ca.clone(), None, HashMap::new(), vec![]));
 
         op(&mut objects)?;
 
@@ -337,12 +337,13 @@ impl CaObjects {
         ca: CaHandle,
         repo: Option<RepositoryContact>,
         classes: HashMap<ResourceClassName, ResourceClassObjects>,
+        deprecated_repos: Vec<DeprecatedRepository>,
     ) -> Self {
         CaObjects {
             ca,
             repo,
             classes,
-            deprecated_repos: vec![],
+            deprecated_repos,
         }
     }
 
@@ -835,16 +836,37 @@ pub struct CurrentKeyState {
     current_set: CurrentKeyObjectSet,
 }
 
+impl CurrentKeyState {
+    pub fn new(current_set: CurrentKeyObjectSet) -> Self {
+        CurrentKeyState { current_set }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct StagingKeyState {
     staging_set: BasicKeyObjectSet,
     current_set: CurrentKeyObjectSet,
 }
 
+impl StagingKeyState {
+    pub fn new(staging_set: BasicKeyObjectSet, current_set: CurrentKeyObjectSet) -> Self {
+        StagingKeyState {
+            staging_set,
+            current_set,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldKeyState {
     current_set: CurrentKeyObjectSet,
     old_set: BasicKeyObjectSet,
+}
+
+impl OldKeyState {
+    pub fn new(current_set: CurrentKeyObjectSet, old_set: BasicKeyObjectSet) -> Self {
+        OldKeyState { current_set, old_set }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1257,6 +1279,7 @@ impl BasicKeyObjectSet {
         revocations: Revocations,
         manifest: PublishedManifest,
         crl: PublishedCrl,
+        old_repo: Option<RepositoryContact>,
     ) -> Self {
         BasicKeyObjectSet {
             signing_cert,
@@ -1299,7 +1322,14 @@ impl BasicKeyObjectSet {
             .build_new_mft(&signing_cert, number, signer)
             .map(|m| m.into())?;
 
-        Ok(BasicKeyObjectSet::new(signing_cert, number, revocations, manifest, crl))
+        Ok(BasicKeyObjectSet::new(
+            signing_cert,
+            number,
+            revocations,
+            manifest,
+            crl,
+            None,
+        ))
     }
 
     pub fn requires_reissuance(&self, hours: i64) -> bool {
@@ -1466,6 +1496,10 @@ impl Eq for PublishedAspa {}
 pub struct PublishedManifest(Manifest);
 
 impl PublishedManifest {
+    pub fn new(mft: Manifest) -> Self {
+        PublishedManifest(mft)
+    }
+
     pub fn to_bytes(&self) -> Bytes {
         self.0.to_captured().into_bytes()
     }
@@ -1507,6 +1541,10 @@ impl Deref for PublishedManifest {
 pub struct PublishedCrl(Crl);
 
 impl PublishedCrl {
+    pub fn new(crl: Crl) -> Self {
+        PublishedCrl(crl)
+    }
+
     pub fn to_bytes(&self) -> Bytes {
         self.0.to_captured().into_bytes()
     }
@@ -1685,22 +1723,4 @@ impl ManifestBuilder {
 fn mft_hash(bytes: &[u8]) -> Bytes {
     let digest = DigestAlgorithm::default().digest(bytes);
     Bytes::copy_from_slice(digest.as_ref())
-}
-
-#[cfg(test)]
-mod test {
-
-    use super::*;
-
-    #[test]
-    pub fn ca_objects_ser_de() {
-        let json = include_str!("../../../test-resources/ca_objects_store/ca_objects.json");
-        let ca_objects: CaObjects = serde_json::from_str(json).unwrap();
-
-        let serialized = serde_json::to_string(&ca_objects).unwrap();
-
-        let ca_objects_again: CaObjects = serde_json::from_str(&serialized).unwrap();
-
-        assert_eq!(ca_objects, ca_objects_again);
-    }
 }

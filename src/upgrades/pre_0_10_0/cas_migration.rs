@@ -4,13 +4,14 @@ use std::str::FromStr;
 use chrono::Duration;
 use rpki::{ca::idexchange::CaHandle, repository::x509::Time};
 
+use crate::daemon::ca::CaObjects;
 use crate::{
     commons::{
         api::StorableCaCommand,
         eventsourcing::{AggregateStore, KeyStoreKey, KeyValueStore, StoredCommand, StoredValueInfo},
         util::KrillVersion,
     },
-    constants::{CASERVER_DIR, KRILL_VERSION},
+    constants::{CASERVER_DIR, CA_OBJECTS_DIR, KRILL_VERSION},
     daemon::{
         ca::{CaEvt, CertAuth, IniDet},
         config::Config,
@@ -21,10 +22,43 @@ use crate::{
     },
 };
 
+use super::OldCaObjects;
+
+struct CaObjectsMigration {
+    current_store: KeyValueStore,
+    new_store: KeyValueStore,
+}
+
+impl CaObjectsMigration {
+    fn create(config: &Config) -> Result<Self, PrepareUpgradeError> {
+        let current_store = KeyValueStore::disk(&config.data_dir, CA_OBJECTS_DIR)?;
+        let new_store = KeyValueStore::disk(&config.upgrade_data_dir(), CA_OBJECTS_DIR)?;
+        Ok(CaObjectsMigration {
+            current_store,
+            new_store,
+        })
+    }
+
+    fn prepare_new_data_for(&self, ca: &CaHandle) -> Result<(), PrepareUpgradeError> {
+        let key = KeyStoreKey::simple(format!("{}.json", ca));
+        let old_objects: OldCaObjects = self
+            .current_store
+            .get(&key)?
+            .ok_or_else(|| PrepareUpgradeError::Custom(format!("Cannot find current objects for CA {}", ca)))?;
+
+        let converted: CaObjects = old_objects.try_into()?;
+
+        self.new_store.store(&key, &converted)?;
+
+        Ok(())
+    }
+}
+
 pub struct CasStoreMigration {
     current_kv_store: KeyValueStore,
     new_kv_store: KeyValueStore,
     new_agg_store: AggregateStore<CertAuth>,
+    ca_objects_migration: CaObjectsMigration,
 }
 
 impl CasStoreMigration {
@@ -32,11 +66,13 @@ impl CasStoreMigration {
         let current_kv_store = KeyValueStore::disk(&config.data_dir, CASERVER_DIR)?;
         let new_kv_store = KeyValueStore::disk(&config.upgrade_data_dir(), CASERVER_DIR)?;
         let new_agg_store = AggregateStore::<CertAuth>::disk(&config.upgrade_data_dir(), CASERVER_DIR)?;
+        let ca_objects_migration = CaObjectsMigration::create(config)?;
 
         CasStoreMigration {
             current_kv_store,
             new_kv_store,
             new_agg_store,
+            ca_objects_migration,
         }
         .prepare_new_data(mode)
     }
@@ -59,7 +95,7 @@ impl UpgradeStore for CasStoreMigration {
             KRILL_VERSION
         );
 
-        // For each CA:
+        // Migrate the event sourced data for each CA and create new snapshots
         for scope in self.current_kv_store.scopes()? {
             // Getting the Handle should never fail, but if it does then we should bail out asap.
             let handle = CaHandle::from_str(&scope)
@@ -172,6 +208,10 @@ impl UpgradeStore for CasStoreMigration {
                     handle, e
                 ))
             })?;
+
+            // Load the CaObjects for this CA and convert it.
+            info!("Will migrate the current repository objects for CA '{}'", handle);
+            self.ca_objects_migration.prepare_new_data_for(&handle)?;
 
             info!("Verified migration of CA '{}'", handle);
         }

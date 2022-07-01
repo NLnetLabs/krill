@@ -687,7 +687,7 @@ impl OldCertAuth {
             },
         };
 
-        Ok(CaObjects::new(self.handle.clone(), repo, objects))
+        Ok(CaObjects::new(self.handle.clone(), repo, objects, vec![]))
     }
 }
 
@@ -834,6 +834,7 @@ impl OldResourceClass {
             current_set.revocations,
             manifest,
             crl,
+            None,
         ))
     }
 

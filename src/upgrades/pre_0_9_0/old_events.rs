@@ -28,8 +28,8 @@ use crate::{
     commons::{
         api::rrdp::{CurrentObjects, DeltaElements, PublishElement, RrdpSession},
         api::{
-            CertInfo, DelegatedCertificate, IdCertInfo, ObjectName, ParentCaContact, RcvdCert, RepositoryContact,
-            RevocationsDelta, RevokedObject, RoaAggregateKey, RtaName, TaCertDetails,
+            CertInfo, IdCertInfo, ObjectName, ParentCaContact, RcvdCert, RepositoryContact, RevocationsDelta,
+            RevokedObject, RoaAggregateKey, RtaName, TaCertDetails,
         },
         eventsourcing::StoredEvent,
     },
