@@ -23,7 +23,6 @@ use rpki::{
         sigobj::SignedObjectBuilder,
         x509::{Name, Serial, Time, Validity},
     },
-    uri,
 };
 
 use crate::{
@@ -1289,7 +1288,6 @@ impl BasicKeyObjectSet {
 
     pub fn requires_reissuance(&self, hours: i64) -> bool {
         Time::now() + Duration::hours(hours) > self.manifest.next_update()
-            || self.signing_cert.uri() != self.manifest.aia()
     }
 
     pub fn next_update_time(&self) -> Time {
@@ -1451,19 +1449,11 @@ impl Eq for PublishedAspa {}
 pub struct PublishedManifest {
     publish_element: PublishElement,
     next_update: Time,
-    aia: uri::Rsync, // URI of issuing certificate
 }
 
 impl PublishedManifest {
     pub fn publish_element(&self) -> &PublishElement {
         &self.publish_element
-    }
-
-    /// Authority Information Access (aia)
-    ///
-    /// The URI of the issuing certificate for this manifest.
-    pub fn aia(&self) -> &uri::Rsync {
-        &self.aia
     }
 
     pub fn next_update(&self) -> Time {
@@ -1477,12 +1467,10 @@ impl From<Manifest> for PublishedManifest {
         let uri = mft.cert().signed_object().unwrap().clone(); // Safe for our manifests
         let publish_element = PublishElement::new(base64, uri);
         let next_update = mft.next_update();
-        let aia = mft.cert().ca_issuer().unwrap().clone(); // Safe for our own manifests
 
         PublishedManifest {
             publish_element,
             next_update,
-            aia,
         }
     }
 }
