@@ -28,7 +28,7 @@ use crate::{
     },
     daemon::ca::{
         self, AggregateRoaInfo, AspaInfo, AspaObjectsUpdates, CaEvt, CaEvtDet, CaObjects, CertifiedKey,
-        ChildCertificateUpdates, PreparedRta, RoaInfo, RoaUpdates, RouteAuthorization, SignedRta,
+        ChildCertificateUpdates, ObjectSetRevision, PreparedRta, RoaInfo, RoaUpdates, RouteAuthorization, SignedRta,
     },
     pubd::{Publisher, RepositoryAccessEvent, RepositoryAccessEventDetails, RepositoryAccessInitDetails},
     upgrades::PrepareUpgradeError,
@@ -1369,7 +1369,13 @@ impl TryFrom<OldBasicKeyObjectSet> for ca::BasicKeyObjectSet {
 
     fn try_from(old: OldBasicKeyObjectSet) -> Result<Self, Self::Error> {
         let signing_cert = old.signing_cert.try_into()?;
+
         let number = old.number;
+        let this_update = old.manifest.this_update();
+        let next_update = old.manifest.next_update();
+
+        let revision = ObjectSetRevision::new(number, this_update, next_update);
+
         let revocations = old.revocations;
         let manifest = old.manifest.into();
         let crl = old.crl.into();
@@ -1377,7 +1383,7 @@ impl TryFrom<OldBasicKeyObjectSet> for ca::BasicKeyObjectSet {
 
         Ok(ca::BasicKeyObjectSet::new(
             signing_cert,
-            number,
+            revision,
             revocations,
             manifest,
             crl,
@@ -1427,6 +1433,16 @@ impl Eq for OldPublishedAspa {}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct OldPublishedManifest(Manifest);
+
+impl OldPublishedManifest {
+    pub fn this_update(&self) -> Time {
+        self.0.this_update()
+    }
+
+    pub fn next_update(&self) -> Time {
+        self.0.next_update()
+    }
+}
 
 impl From<OldPublishedManifest> for ca::PublishedManifest {
     fn from(old: OldPublishedManifest) -> Self {

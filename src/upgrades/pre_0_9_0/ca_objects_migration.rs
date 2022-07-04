@@ -34,8 +34,8 @@ use crate::{
     daemon::{
         ca::{
             self, ta_handle, BasicKeyObjectSet, CaEvt, CaEvtDet, CaObjects, CaObjectsStore, CurrentKeyObjectSet,
-            IniDet, PublishedCert, PublishedRoa, ResourceClassKeyState, ResourceClassObjects, RouteAuthorization,
-            StoredCaCommand,
+            IniDet, ObjectSetRevision, PublishedCert, PublishedRoa, ResourceClassKeyState, ResourceClassObjects,
+            RouteAuthorization, StoredCaCommand,
         },
         config::Config,
     },
@@ -820,9 +820,9 @@ impl OldResourceClass {
     fn object_set_for_certified_key(key: &OldCertifiedKey) -> Result<BasicKeyObjectSet, PrepareUpgradeError> {
         let current_set = key.current_set.clone();
 
-        let manifest = Manifest::decode(current_set.manifest_info.current.content().to_bytes(), true)
-            .unwrap()
-            .into();
+        let manifest = Manifest::decode(current_set.manifest_info.current.content().to_bytes(), true).unwrap();
+
+        let revision = ObjectSetRevision::new(current_set.number, manifest.this_update(), manifest.next_update());
 
         let crl = Crl::decode(current_set.crl_info.current.content().to_bytes())
             .unwrap()
@@ -830,9 +830,9 @@ impl OldResourceClass {
 
         Ok(BasicKeyObjectSet::new(
             key.incoming_cert.clone().try_into()?,
-            current_set.number,
+            revision,
             current_set.revocations,
-            manifest,
+            manifest.into(),
             crl,
             None,
         ))

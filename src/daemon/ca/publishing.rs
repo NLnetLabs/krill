@@ -682,9 +682,9 @@ impl ResourceClassObjects {
 
     fn next_update_time(&self) -> Time {
         match &self.keys {
-            ResourceClassKeyState::Current(state) => state.current_set.next_update_time(),
-            ResourceClassKeyState::Old(state) => state.current_set.next_update_time(),
-            ResourceClassKeyState::Staging(state) => state.current_set.next_update_time(),
+            ResourceClassKeyState::Current(state) => state.current_set.next_update(),
+            ResourceClassKeyState::Old(state) => state.current_set.next_update(),
+            ResourceClassKeyState::Staging(state) => state.current_set.next_update(),
         }
     }
 
@@ -1005,17 +1005,17 @@ impl CurrentKeyObjectSet {
     }
 
     fn reissue(&mut self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<()> {
-        self.revocations.purge();
-
-        self.crl = self.reissue_crl(&self.revocations, timing, signer)?;
-        self.manifest = self.reissue_mft(&self.crl, signer)?;
-        self.number = self.next();
+        self.revision.next(timing);
+        self.reissue_crl(signer)?;
+        self.reissue_mft(&self.crl, signer)?;
 
         Ok(())
     }
 
+    /// Turns this into a BasicObjectSet, revoking and retiring all signed objects.
     fn retire(&self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<BasicKeyObjectSet> {
         let mut revocations = self.revocations.clone();
+
         for roa in self.roas.values() {
             revocations.add(roa.into());
         }
@@ -1023,25 +1023,19 @@ impl CurrentKeyObjectSet {
         for cert in self.certs.values() {
             revocations.add(cert.revoke())
         }
-
         revocations.purge();
 
-        let crl = self.basic.reissue_crl(&revocations, timing, signer)?;
-        let manifest = self.basic.reissue_mft(&crl, signer)?;
+        let mut basic = self.basic.clone();
+        basic.revocations = revocations;
+        basic.reissue(timing, signer)?;
 
-        Ok(BasicKeyObjectSet {
-            signing_cert: self.signing_cert.clone(),
-            number: self.next(),
-            revocations,
-            manifest,
-            crl,
-            old_repo: self.old_repo.clone(),
-        })
+        Ok(basic)
     }
 
     fn reissue_mft(&self, new_crl: &PublishedCrl, signer: &KrillSigner) -> KrillResult<PublishedManifest> {
-        ManifestBuilder::with_objects(new_crl, &self.roas, &self.aspas, &self.certs, &self.bgpsec_certs)
-            .build_new_mft(&self.signing_cert, self.next(), signer)
+        ManifestBuilder::new(self.revision)
+            .with_objects(new_crl, &self.roas, &self.aspas, &self.certs, &self.bgpsec_certs)
+            .build_new_mft(&self.signing_cert, signer)
             .map(|m| m.into())
     }
 }
@@ -1219,7 +1213,7 @@ mod objects_to_certs_serde {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BasicKeyObjectSet {
     signing_cert: RcvdCert,
-    number: u64,
+    revision: ObjectSetRevision,
     revocations: Revocations,
     manifest: PublishedManifest,
     crl: PublishedCrl,
@@ -1230,7 +1224,7 @@ pub struct BasicKeyObjectSet {
 impl BasicKeyObjectSet {
     pub fn new(
         signing_cert: RcvdCert,
-        number: u64,
+        revision: ObjectSetRevision,
         revocations: Revocations,
         manifest: PublishedManifest,
         crl: PublishedCrl,
@@ -1238,11 +1232,11 @@ impl BasicKeyObjectSet {
     ) -> Self {
         BasicKeyObjectSet {
             signing_cert,
-            number,
+            revision,
             revocations,
             manifest,
             crl,
-            old_repo: None,
+            old_repo,
         }
     }
 
@@ -1267,18 +1261,18 @@ impl BasicKeyObjectSet {
         let signing_key = signing_cert.key_identifier();
         let issuer = signing_cert.subject().clone();
         let revocations = Revocations::default();
-        let number = 1;
-        let next_update = timing.publish_next();
+        let revision = ObjectSetRevision::create(timing);
 
-        let crl = CrlBuilder::build(signing_key, issuer, &revocations, number, next_update, signer)?;
+        let crl = CrlBuilder::build(signing_key, issuer, &revocations, revision, signer)?;
 
-        let manifest = ManifestBuilder::with_crl_only(&crl)
-            .build_new_mft(&signing_cert, number, signer)
+        let manifest = ManifestBuilder::new(revision)
+            .with_crl_only(&crl)
+            .build_new_mft(&signing_cert, signer)
             .map(|m| m.into())?;
 
         Ok(BasicKeyObjectSet::new(
             signing_cert,
-            number,
+            revision,
             revocations,
             manifest,
             crl,
@@ -1287,15 +1281,11 @@ impl BasicKeyObjectSet {
     }
 
     pub fn requires_reissuance(&self, hours: i64) -> bool {
-        Time::now() + Duration::hours(hours) > self.manifest.next_update()
+        Time::now() + Duration::hours(hours) > self.next_update()
     }
 
-    pub fn next_update_time(&self) -> Time {
-        self.manifest.next_update()
-    }
-
-    fn next(&self) -> u64 {
-        self.number + 1
+    pub fn next_update(&self) -> Time {
+        self.revision.next_update
     }
 
     // Returns an error in case the KeyIdentifiers don't match.
@@ -1311,42 +1301,32 @@ impl BasicKeyObjectSet {
         }
     }
 
-    fn reissue(&self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<Self> {
-        let mut revocations = self.revocations.clone();
-        revocations.purge();
+    fn reissue(&mut self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<()> {
+        self.revision.next(timing);
 
-        let crl = self.reissue_crl(&revocations, timing, signer)?;
-        let manifest = self.reissue_mft(&crl, signer)?;
+        self.reissue_crl(signer)?;
+        self.reissue_mft(signer)?;
 
-        Ok(BasicKeyObjectSet {
-            signing_cert: self.signing_cert.clone(),
-            number: self.next(),
-            revocations,
-            manifest,
-            crl,
-            old_repo: self.old_repo.clone(),
-        })
+        Ok(())
     }
 
-    fn reissue_crl(
-        &self,
-        revocations: &Revocations,
-        timing: &IssuanceTimingConfig,
-        signer: &KrillSigner,
-    ) -> KrillResult<PublishedCrl> {
+    fn reissue_crl(&mut self, signer: &KrillSigner) -> KrillResult<()> {
+        self.revocations.purge();
         let signing_key = self.signing_cert.key_identifier();
         let issuer = self.crl.issuer().clone();
-        let number = self.next();
 
-        let next_update = timing.publish_next();
+        self.crl = CrlBuilder::build(signing_key, issuer, &self.revocations, self.revision, signer)?;
 
-        CrlBuilder::build(signing_key, issuer, revocations, number, next_update, signer)
+        Ok(())
     }
 
-    fn reissue_mft(&self, new_crl: &PublishedCrl, signer: &KrillSigner) -> KrillResult<PublishedManifest> {
-        ManifestBuilder::with_crl_only(new_crl)
-            .build_new_mft(&self.signing_cert, self.next(), signer)
-            .map(|m| m.into())
+    fn reissue_mft(&mut self, signer: &KrillSigner) -> KrillResult<()> {
+        self.manifest = ManifestBuilder::new(self.revision)
+            .with_crl_only(&self.crl)
+            .build_new_mft(&self.signing_cert, signer)
+            .map(|m| m.into())?;
+
+        Ok(())
     }
 
     fn set_old_repo(&mut self, repo: &RepositoryContact) {
@@ -1355,6 +1335,36 @@ impl BasicKeyObjectSet {
 
     fn old_repo(&self) -> Option<&RepositoryContact> {
         self.old_repo.as_ref()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ObjectSetRevision {
+    number: u64,
+    this_update: Time, // backdated 5 minutes to tolerate some clock skew
+    next_update: Time,
+}
+
+impl ObjectSetRevision {
+    pub fn new(number: u64, this_update: Time, next_update: Time) -> Self {
+        ObjectSetRevision {
+            number,
+            this_update,
+            next_update,
+        }
+    }
+    fn create(timing: &IssuanceTimingConfig) -> Self {
+        ObjectSetRevision {
+            number: 1,
+            this_update: Time::five_minutes_ago(),
+            next_update: timing.publish_next(),
+        }
+    }
+
+    fn next(&mut self, timing: &IssuanceTimingConfig) {
+        self.number += 1;
+        self.this_update = Time::five_minutes_ago();
+        self.next_update = timing.publish_next();
     }
 }
 
@@ -1448,16 +1458,11 @@ impl Eq for PublishedAspa {}
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublishedManifest {
     publish_element: PublishElement,
-    next_update: Time,
 }
 
 impl PublishedManifest {
     pub fn publish_element(&self) -> &PublishElement {
         &self.publish_element
-    }
-
-    pub fn next_update(&self) -> Time {
-        self.next_update
     }
 }
 
@@ -1466,12 +1471,8 @@ impl From<Manifest> for PublishedManifest {
         let base64 = Base64::from(&mft);
         let uri = mft.cert().signed_object().unwrap().clone(); // Safe for our manifests
         let publish_element = PublishElement::new(base64, uri);
-        let next_update = mft.next_update();
 
-        PublishedManifest {
-            publish_element,
-            next_update,
-        }
+        PublishedManifest { publish_element }
     }
 }
 
@@ -1537,18 +1538,16 @@ impl CrlBuilder {
         aki: KeyIdentifier,
         issuer: Name,
         revocations: &Revocations,
-        number: u64,
-        next_update: Time,
+        revision: ObjectSetRevision,
         signer: &KrillSigner,
     ) -> KrillResult<PublishedCrl> {
-        let this_update = Time::five_minutes_ago();
-        let serial_number = Serial::from(number);
+        let serial_number = Serial::from(revision.number);
 
         let crl = TbsCertList::new(
             Default::default(),
             issuer,
-            this_update,
-            next_update,
+            revision.this_update,
+            revision.next_update,
             revocations.to_crl_entries(),
             aki,
             serial_number,
@@ -1562,90 +1561,86 @@ impl CrlBuilder {
 
 #[allow(clippy::mutable_key_type)]
 pub struct ManifestBuilder {
-    this_update: Time,
-    next_update: Time,
+    revision: ObjectSetRevision,
     entries: HashMap<Bytes, Bytes>,
 }
 
 impl ManifestBuilder {
+    pub fn new(revision: ObjectSetRevision) -> Self {
+        ManifestBuilder {
+            revision,
+            entries: HashMap::new(),
+        }
+    }
+
     #[allow(clippy::mutable_key_type)]
     pub fn with_objects(
+        mut self,
         crl: &PublishedCrl,
         roas: &HashMap<ObjectName, PublishedRoa>,
         aspas: &HashMap<ObjectName, PublishedAspa>,
         certs: &HashMap<ObjectName, PublishedCert>,
         bgpsec_certs: &HashMap<ObjectName, BgpSecCertInfo>,
     ) -> Self {
-        let mut entries: HashMap<Bytes, Bytes> = HashMap::new();
-
         // Add entry for CRL
-        entries.insert(crl.name().into(), crl.mft_hash());
+        self.entries.insert(crl.name().into(), crl.mft_hash());
 
         // Add ROAs
         for (name, roa) in roas {
             let hash = roa.mft_hash();
-            entries.insert(name.clone().into(), hash);
+            self.entries.insert(name.clone().into(), hash);
         }
 
         // Add ASPAs
         for (name, aspa) in aspas {
             let hash = aspa.mft_hash();
-            entries.insert(name.clone().into(), hash);
+            self.entries.insert(name.clone().into(), hash);
         }
 
         // Add all issued certs
         for (name, cert) in certs {
             let hash = cert.hash();
             let hash_bytes = Bytes::copy_from_slice(hash.as_slice());
-            entries.insert(name.clone().into(), hash_bytes);
+            self.entries.insert(name.clone().into(), hash_bytes);
         }
 
         // Add all bgpsec certs
         for (name, info) in bgpsec_certs {
             let hash = info.base64().to_hash();
             let hash_bytes = Bytes::copy_from_slice(hash.as_slice());
-            entries.insert(name.clone().into(), hash_bytes);
+            self.entries.insert(name.clone().into(), hash_bytes);
         }
 
-        ManifestBuilder {
-            this_update: crl.this_update(),
-            next_update: crl.next_update(),
-            entries,
-        }
+        self
     }
 
     #[allow(clippy::mutable_key_type)]
-    pub fn with_crl_only(crl: &PublishedCrl) -> Self {
-        let mut entries: HashMap<Bytes, Bytes> = HashMap::new();
-        entries.insert(crl.name().into(), crl.mft_hash());
-        ManifestBuilder {
-            this_update: crl.this_update(),
-            next_update: crl.next_update(),
-            entries,
-        }
+    pub fn with_crl_only(mut self, crl: &PublishedCrl) -> Self {
+        self.entries.insert(crl.name().into(), crl.mft_hash());
+        self
     }
 
-    fn build_new_mft(self, signing_cert: &RcvdCert, number: u64, signer: &KrillSigner) -> KrillResult<Manifest> {
+    fn build_new_mft(self, signing_cert: &RcvdCert, signer: &KrillSigner) -> KrillResult<Manifest> {
         let mft_uri = signing_cert.mft_uri();
         let crl_uri = signing_cert.crl_uri();
 
         let aia = signing_cert.uri();
         let aki = signing_cert.key_identifier();
-        let serial_number = Serial::from(number);
+        let serial_number = Serial::from(self.revision.number);
 
         let entries = self.entries.iter().map(|(k, v)| FileAndHash::new(k, v));
 
         let manifest: Manifest = {
             let mft_content = ManifestContent::new(
                 serial_number,
-                self.this_update,
-                self.next_update,
+                self.revision.this_update,
+                self.revision.next_update,
                 DigestAlgorithm::default(),
                 entries,
             );
             let mut object_builder = SignedObjectBuilder::new(
                 signer.random_serial()?,
-                Validity::new(self.this_update, self.next_update),
+                Validity::new(self.revision.this_update, self.revision.next_update),
                 crl_uri,
                 aia.clone(),
                 mft_uri,
