@@ -23,6 +23,7 @@ use rpki::{
         sigobj::SignedObjectBuilder,
         x509::{Name, Serial, Time, Validity},
     },
+    rrdp::Hash,
 };
 
 use crate::{
@@ -868,10 +869,12 @@ impl CurrentKeyObjectSet {
         let repo = self.old_repo.as_ref().unwrap_or(dflt_repo);
 
         let base_uri = self.signing_cert.ca_repository();
-        let crl_uri = base_uri.join(self.crl.name().as_bytes()).unwrap();
+        let crl_uri = self.signing_cert.crl_uri();
+        let mft_uri = self.signing_cert.mft_uri();
 
         let elements = map.entry(repo.clone()).or_insert_with(Vec::new);
-        elements.push(self.manifest.publish_element().clone());
+
+        elements.push(PublishElement::new(self.manifest.base64.clone(), mft_uri));
         elements.push(PublishElement::new(Base64::from(&self.crl.0), crl_uri));
 
         for (name, roa) in &self.roas {
@@ -1247,11 +1250,12 @@ impl BasicKeyObjectSet {
     fn add_elements(&self, map: &mut HashMap<RepositoryContact, Vec<PublishElement>>, dflt_repo: &RepositoryContact) {
         let repo = self.old_repo.as_ref().unwrap_or(dflt_repo);
 
-        let base_uri = self.signing_cert.ca_repository();
-        let crl_uri = base_uri.join(self.crl.name().as_bytes()).unwrap();
+        let crl_uri = self.signing_cert.crl_uri();
+        let mft_uri = self.signing_cert.crl_uri();
 
         let elements = map.entry(repo.clone()).or_insert_with(Vec::new);
-        elements.push(self.manifest.publish_element().clone());
+
+        elements.push(PublishElement::new(self.manifest.base64.clone(), mft_uri));
         elements.push(PublishElement::new(Base64::from(&self.crl.0), crl_uri));
     }
 
@@ -1453,26 +1457,34 @@ impl PartialEq for PublishedAspa {
 
 impl Eq for PublishedAspa {}
 
+//------------ PublishedItem ----------------------------------------------
+
+/// Any item published in the repository.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PublishedItem<T> {
+    base64: Base64,
+    hash: Hash,
+
+    // So that we can have different types based on the same structure.
+    marker: std::marker::PhantomData<T>,
+}
+
 //------------ PublishedManifest ------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct PublishedManifest {
-    publish_element: PublishElement,
-}
-
-impl PublishedManifest {
-    pub fn publish_element(&self) -> &PublishElement {
-        &self.publish_element
-    }
-}
+pub struct PublishedItemManifest;
+pub type PublishedManifest = PublishedItem<PublishedItemManifest>;
 
 impl From<Manifest> for PublishedManifest {
     fn from(mft: Manifest) -> Self {
         let base64 = Base64::from(&mft);
-        let uri = mft.cert().signed_object().unwrap().clone(); // Safe for our manifests
-        let publish_element = PublishElement::new(base64, uri);
+        let hash = base64.to_hash();
 
-        PublishedManifest { publish_element }
+        PublishedItem {
+            base64,
+            hash,
+            marker: std::marker::PhantomData,
+        }
     }
 }
 
