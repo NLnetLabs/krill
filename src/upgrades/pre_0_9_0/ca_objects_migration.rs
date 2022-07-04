@@ -34,8 +34,8 @@ use crate::{
     daemon::{
         ca::{
             self, ta_handle, BasicKeyObjectSet, CaEvt, CaEvtDet, CaObjects, CaObjectsStore, CurrentKeyObjectSet,
-            IniDet, ObjectSetRevision, PublishedCert, PublishedRoa, ResourceClassKeyState, ResourceClassObjects,
-            RouteAuthorization, StoredCaCommand,
+            IniDet, ObjectSetRevision, PublishedCert, PublishedObject, ResourceClassKeyState, ResourceClassObjects,
+            RoaInfo, RouteAuthorization, StoredCaCommand,
         },
         config::Config,
     },
@@ -803,14 +803,20 @@ impl OldResourceClass {
 
     fn object_set_for_current(
         key: &OldCertifiedKey,
-        roas: HashMap<ObjectName, PublishedRoa>,
+        roas: HashMap<ObjectName, RoaInfo>,
         certs: HashMap<ObjectName, PublishedCert>,
     ) -> Result<CurrentKeyObjectSet, PrepareUpgradeError> {
         let basic = Self::object_set_for_certified_key(key)?;
 
+        let mut published_objects = HashMap::new();
+        for (name, roa_info) in roas.into_iter() {
+            let published_object = PublishedObject::for_roa(name.clone(), &roa_info);
+            published_objects.insert(name, published_object);
+        }
+
         Ok(CurrentKeyObjectSet::new(
             basic,
-            roas,
+            published_objects,
             HashMap::new(),
             HashMap::new(),
             certs,
@@ -843,7 +849,7 @@ impl OldResourceClass {
     }
 
     /// Marks the ROAs as updated from a RoaUpdated event.
-    pub fn roas_updated(&mut self, updates: RoaUpdates) {
+    pub fn roas_updated(&mut self, updates: OldRoaUpdates) {
         self.roas.updated(updates);
     }
 
@@ -947,14 +953,14 @@ impl OldResourceClass {
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldRoas {
     #[serde(alias = "inner", skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
-    simple: HashMap<RouteAuthorization, RoaInfo>,
+    simple: HashMap<RouteAuthorization, OldRoaInfo>,
 
     #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
-    aggregate: HashMap<RoaAggregateKey, AggregateRoaInfo>,
+    aggregate: HashMap<RoaAggregateKey, OldAggregateRoaInfo>,
 }
 
 impl OldRoas {
-    pub fn updated(&mut self, updates: RoaUpdates) {
+    pub fn updated(&mut self, updates: OldRoaUpdates) {
         let (updated, removed, aggregate_updated, aggregate_removed) = updates.unpack();
 
         for (auth, info) in updated.into_iter() {
@@ -974,22 +980,23 @@ impl OldRoas {
         }
     }
 
-    pub fn roa_objects(&self) -> HashMap<ObjectName, PublishedRoa> {
+    pub fn roa_objects(&self) -> HashMap<ObjectName, RoaInfo> {
         let mut res = HashMap::new();
 
-        for (key, roa_info) in &self.simple {
-            let name = ObjectName::from(key);
+        for (auth, roa_info) in &self.simple {
+            let name = ObjectName::from(auth);
             let roa = roa_info.roa().unwrap();
 
-            res.insert(name, PublishedRoa::new(roa));
+            res.insert(name, RoaInfo::new(vec![*auth], roa));
         }
 
-        for (key, agg) in &self.aggregate {
+        for (key, old_info) in &self.aggregate {
             let name = ObjectName::from(key);
-            let roa_info = &agg.roa;
+            let roa_info = &old_info.roa;
+            let authorizations = old_info.authorizations.clone();
             let roa = roa_info.roa().unwrap();
 
-            res.insert(name, PublishedRoa::new(roa));
+            res.insert(name, RoaInfo::new(authorizations, roa));
         }
 
         res

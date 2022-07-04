@@ -13,16 +13,14 @@ use crate::{
     commons::{
         api::{
             AspaCustomer, AspaDefinition, AspaProvidersUpdate, BgpSecAsnKey, DelegatedCertificate, IdCertInfo,
-            ObjectName, ParentCaContact, RcvdCert, RepositoryContact, RevokedObject, RoaAggregateKey, RtaName,
-            SuspendedCert, TaCertDetails, UnsuspendedCert,
+            ObjectName, ParentCaContact, RcvdCert, RepositoryContact, RoaAggregateKey, RtaName, SuspendedCert,
+            TaCertDetails, UnsuspendedCert,
         },
         crypto::KrillSigner,
         eventsourcing::StoredEvent,
         KrillResult,
     },
-    daemon::ca::{
-        AggregateRoaInfo, AspaInfo, CertifiedKey, PreparedRta, PublishedRoa, RoaInfo, RouteAuthorization, SignedRta,
-    },
+    daemon::ca::{AspaInfo, CertifiedKey, PreparedRta, RoaInfo, RouteAuthorization, SignedRta},
 };
 
 use super::{BgpSecCertInfo, StoredBgpSecCsr};
@@ -94,201 +92,25 @@ impl fmt::Display for IniDet {
 /// Describes an update to the set of ROAs under a ResourceClass.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RoaUpdates {
-    #[serde(
-        skip_serializing_if = "HashMap::is_empty",
-        default = "HashMap::new",
-        with = "updated_sorted_map"
-    )]
+    #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
     updated: HashMap<RouteAuthorization, RoaInfo>,
 
-    #[serde(
-        skip_serializing_if = "HashMap::is_empty",
-        default = "HashMap::new",
-        with = "removed_sorted_map"
-    )]
-    removed: HashMap<RouteAuthorization, RevokedObject>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
+    removed: Vec<RouteAuthorization>,
 
-    #[serde(
-        skip_serializing_if = "HashMap::is_empty",
-        default = "HashMap::new",
-        with = "aggregate_updated_sorted_map"
-    )]
-    aggregate_updated: HashMap<RoaAggregateKey, AggregateRoaInfo>,
+    #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
+    aggregate_updated: HashMap<RoaAggregateKey, RoaInfo>,
 
-    #[serde(
-        skip_serializing_if = "HashMap::is_empty",
-        default = "HashMap::new",
-        with = "aggregate_removed_sorted_map"
-    )]
-    aggregate_removed: HashMap<RoaAggregateKey, RevokedObject>,
-}
-
-mod updated_sorted_map {
-    use super::*;
-
-    use serde::de::{Deserialize, Deserializer};
-    use serde::ser::Serializer;
-
-    #[derive(Debug, Deserialize)]
-    struct Item {
-        auth: RouteAuthorization,
-        roa: RoaInfo,
-    }
-
-    #[derive(Debug, Serialize)]
-    struct ItemRef<'a> {
-        auth: &'a RouteAuthorization,
-        roa: &'a RoaInfo,
-    }
-
-    pub fn serialize<S>(map: &HashMap<RouteAuthorization, RoaInfo>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut sorted_vec: Vec<ItemRef> = map.iter().map(|(auth, roa)| ItemRef { auth, roa }).collect();
-        sorted_vec.sort_by_key(|el| el.auth);
-
-        serializer.collect_seq(sorted_vec)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<RouteAuthorization, RoaInfo>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let mut map = HashMap::new();
-        for item in Vec::<Item>::deserialize(deserializer)? {
-            map.insert(item.auth, item.roa);
-        }
-        Ok(map)
-    }
-}
-
-mod aggregate_updated_sorted_map {
-    use super::*;
-
-    use serde::de::{Deserialize, Deserializer};
-    use serde::ser::Serializer;
-
-    #[derive(Debug, Deserialize)]
-    struct Item {
-        agg: RoaAggregateKey,
-        roa: AggregateRoaInfo,
-    }
-
-    #[derive(Debug, Serialize)]
-    struct ItemRef<'a> {
-        agg: &'a RoaAggregateKey,
-        roa: &'a AggregateRoaInfo,
-    }
-
-    pub fn serialize<S>(map: &HashMap<RoaAggregateKey, AggregateRoaInfo>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut sorted_vec: Vec<ItemRef> = map.iter().map(|(agg, roa)| ItemRef { agg, roa }).collect();
-        sorted_vec.sort_by_key(|el| el.agg);
-
-        serializer.collect_seq(sorted_vec)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<RoaAggregateKey, AggregateRoaInfo>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let mut map = HashMap::new();
-        for item in Vec::<Item>::deserialize(deserializer)? {
-            map.insert(item.agg, item.roa);
-        }
-        Ok(map)
-    }
-}
-
-mod removed_sorted_map {
-    use super::*;
-
-    use serde::de::{Deserialize, Deserializer};
-    use serde::ser::Serializer;
-
-    #[derive(Debug, Deserialize)]
-    struct Item {
-        auth: RouteAuthorization,
-        removed: RevokedObject,
-    }
-
-    #[derive(Debug, Serialize)]
-    struct ItemRef<'a> {
-        auth: &'a RouteAuthorization,
-        removed: &'a RevokedObject,
-    }
-
-    pub fn serialize<S>(map: &HashMap<RouteAuthorization, RevokedObject>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut sorted_vec: Vec<ItemRef> = map.iter().map(|(auth, removed)| ItemRef { auth, removed }).collect();
-        sorted_vec.sort_by_key(|el| el.auth);
-
-        serializer.collect_seq(sorted_vec)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<RouteAuthorization, RevokedObject>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let mut map = HashMap::new();
-        for item in Vec::<Item>::deserialize(deserializer)? {
-            map.insert(item.auth, item.removed);
-        }
-        Ok(map)
-    }
-}
-
-mod aggregate_removed_sorted_map {
-    use super::*;
-
-    use serde::de::{Deserialize, Deserializer};
-    use serde::ser::Serializer;
-
-    #[derive(Debug, Deserialize)]
-    struct Item {
-        agg: RoaAggregateKey,
-        removed: RevokedObject,
-    }
-
-    #[derive(Debug, Serialize)]
-    struct ItemRef<'a> {
-        agg: &'a RoaAggregateKey,
-        removed: &'a RevokedObject,
-    }
-
-    pub fn serialize<S>(map: &HashMap<RoaAggregateKey, RevokedObject>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let mut sorted_vec: Vec<ItemRef> = map.iter().map(|(agg, removed)| ItemRef { agg, removed }).collect();
-        sorted_vec.sort_by_key(|el| el.agg);
-
-        serializer.collect_seq(sorted_vec)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<RoaAggregateKey, RevokedObject>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let mut map = HashMap::new();
-        for item in Vec::<Item>::deserialize(deserializer)? {
-            map.insert(item.agg, item.removed);
-        }
-        Ok(map)
-    }
+    #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
+    aggregate_removed: Vec<RoaAggregateKey>,
 }
 
 impl RoaUpdates {
     pub fn new(
         updated: HashMap<RouteAuthorization, RoaInfo>,
-        removed: HashMap<RouteAuthorization, RevokedObject>,
-        aggregate_updated: HashMap<RoaAggregateKey, AggregateRoaInfo>,
-        aggregate_removed: HashMap<RoaAggregateKey, RevokedObject>,
+        removed: Vec<RouteAuthorization>,
+        aggregate_updated: HashMap<RoaAggregateKey, RoaInfo>,
+        aggregate_removed: Vec<RoaAggregateKey>,
     ) -> Self {
         RoaUpdates {
             updated,
@@ -313,33 +135,29 @@ impl RoaUpdates {
         self.updated.insert(auth, roa);
     }
 
-    pub fn remove(&mut self, auth: RouteAuthorization, revoke: RevokedObject) {
-        self.removed.insert(auth, revoke);
+    pub fn remove(&mut self, auth: RouteAuthorization) {
+        self.removed.push(auth);
     }
 
-    pub fn remove_aggregate(&mut self, key: RoaAggregateKey, revoke: RevokedObject) {
-        self.aggregate_removed.insert(key, revoke);
+    pub fn remove_aggregate(&mut self, key: RoaAggregateKey) {
+        self.aggregate_removed.push(key);
     }
 
-    pub fn update_aggregate(&mut self, key: RoaAggregateKey, aggregate: AggregateRoaInfo) {
-        self.aggregate_updated.insert(key, aggregate);
+    pub fn update_aggregate(&mut self, key: RoaAggregateKey, info: RoaInfo) {
+        self.aggregate_updated.insert(key, info);
     }
 
-    pub fn added_roas(&self) -> KrillResult<HashMap<ObjectName, PublishedRoa>> {
+    pub fn added_roas(&self) -> KrillResult<HashMap<ObjectName, RoaInfo>> {
         let mut res = HashMap::new();
 
-        for (auth, simple) in &self.updated {
-            let roa = simple.roa().clone();
+        for (auth, info) in &self.updated {
             let name = ObjectName::from(auth);
-
-            res.insert(name, PublishedRoa::new(roa));
+            res.insert(name, info.clone());
         }
 
-        for (agg_key, agg_info) in &self.aggregate_updated {
-            let roa = agg_info.roa_info().roa().clone();
+        for (agg_key, info) in &self.aggregate_updated {
             let name = ObjectName::from(agg_key);
-
-            res.insert(name, PublishedRoa::new(roa));
+            res.insert(name, info.clone());
         }
 
         Ok(res)
@@ -348,11 +166,11 @@ impl RoaUpdates {
     pub fn removed_roas(&self) -> Vec<ObjectName> {
         let mut res = vec![];
 
-        for simple in self.removed.keys() {
+        for simple in &self.removed {
             res.push(ObjectName::from(simple))
         }
 
-        for agg in self.aggregate_removed.keys() {
+        for agg in &self.aggregate_removed {
             res.push(ObjectName::from(agg))
         }
 
@@ -364,9 +182,9 @@ impl RoaUpdates {
         self,
     ) -> (
         HashMap<RouteAuthorization, RoaInfo>,
-        HashMap<RouteAuthorization, RevokedObject>,
-        HashMap<RoaAggregateKey, AggregateRoaInfo>,
-        HashMap<RoaAggregateKey, RevokedObject>,
+        Vec<RouteAuthorization>,
+        HashMap<RoaAggregateKey, RoaInfo>,
+        Vec<RoaAggregateKey>,
     ) {
         (
             self.updated,
@@ -387,7 +205,7 @@ impl fmt::Display for RoaUpdates {
         }
         if !self.removed.is_empty() {
             write!(f, "Removed single VRP ROAs: ")?;
-            for roa in self.removed.keys() {
+            for roa in &self.removed {
                 write!(f, "{} ", ObjectName::from(roa))?;
             }
         }
@@ -399,7 +217,7 @@ impl fmt::Display for RoaUpdates {
         }
         if !self.aggregate_removed.is_empty() {
             write!(f, "Removed ASN aggregated ROAs: ")?;
-            for roa in self.aggregate_removed.keys() {
+            for roa in &self.aggregate_removed {
                 write!(f, "{} ", ObjectName::from(roa))?;
             }
         }
@@ -1169,10 +987,10 @@ impl fmt::Display for CaEvtDet {
                 }
                 if !updates.removed.is_empty() || !updates.aggregate_removed.is_empty() {
                     write!(f, " removed: ")?;
-                    for auth in updates.removed.keys() {
+                    for auth in &updates.removed {
                         write!(f, "{} ", ObjectName::from(auth))?;
                     }
-                    for agg_key in updates.aggregate_removed.keys() {
+                    for agg_key in &updates.aggregate_removed {
                         write!(f, "{} ", ObjectName::from(agg_key))?;
                     }
                 }

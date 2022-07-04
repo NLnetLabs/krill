@@ -849,6 +849,12 @@ pub struct Revocation {
     expires: Time,
 }
 
+impl Revocation {
+    pub fn new(serial: Serial, expires: Time) -> Self {
+        Revocation { serial, expires }
+    }
+}
+
 impl From<&Cert> for Revocation {
     fn from(cer: &Cert) -> Self {
         Revocation {

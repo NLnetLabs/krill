@@ -19,7 +19,6 @@ use rpki::{
         aspa::Aspa,
         crl::{Crl, TbsCertList},
         manifest::{FileAndHash, Manifest, ManifestContent},
-        roa::Roa,
         sigobj::SignedObjectBuilder,
         x509::{Name, Serial, Time, Validity},
     },
@@ -45,7 +44,7 @@ use crate::{
     },
 };
 
-use super::{AspaObjectsUpdates, BgpSecCertInfo, BgpSecCertificateUpdates};
+use super::{AspaObjectsUpdates, BgpSecCertInfo, BgpSecCertificateUpdates, RoaInfo};
 
 //------------ CaObjectsStore ----------------------------------------------
 
@@ -831,8 +830,10 @@ impl OldKeyState {
 pub struct CurrentKeyObjectSet {
     #[serde(flatten)]
     basic: BasicKeyObjectSet,
-    #[serde(with = "objects_to_roas_serde")]
-    roas: HashMap<ObjectName, PublishedRoa>,
+
+    #[serde(skip_serializing_if = "HashMap::is_empty", default)]
+    published_objects: HashMap<ObjectName, PublishedObject>,
+
     #[serde(with = "objects_to_aspas_serde", skip_serializing_if = "HashMap::is_empty", default)]
     aspas: HashMap<ObjectName, PublishedAspa>,
     #[serde(
@@ -848,14 +849,14 @@ pub struct CurrentKeyObjectSet {
 impl CurrentKeyObjectSet {
     pub fn new(
         basic: BasicKeyObjectSet,
-        roas: HashMap<ObjectName, PublishedRoa>,
+        published_objects: HashMap<ObjectName, PublishedObject>,
         aspas: HashMap<ObjectName, PublishedAspa>,
         bgpsec_certs: HashMap<ObjectName, BgpSecCertInfo>,
         certs: HashMap<ObjectName, PublishedCert>,
     ) -> Self {
         CurrentKeyObjectSet {
             basic,
-            roas,
+            published_objects,
             aspas,
             bgpsec_certs,
             certs,
@@ -878,10 +879,10 @@ impl CurrentKeyObjectSet {
         elements.push(self.manifest.publish_element(mft_uri));
         elements.push(self.crl.publish_element(crl_uri));
 
-        for (name, roa) in &self.roas {
+        for (name, object) in &self.published_objects {
             elements.push(PublishElement::new(
-                Base64::from(&roa.0),
-                base_uri.join(name.as_ref()).unwrap(),
+                object.base64.clone(),
+                self.signing_cert.uri_for_name(&name),
             ));
         }
 
@@ -913,14 +914,15 @@ impl CurrentKeyObjectSet {
         timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<()> {
-        for (name, roa) in roa_updates.added_roas()? {
-            if let Some(old) = self.roas.insert(name, roa) {
-                self.revocations.add(Revocation::from(&old));
+        for (name, roa_info) in roa_updates.added_roas()? {
+            let published_object = PublishedObject::for_roa(name.clone(), &roa_info);
+            if let Some(old) = self.published_objects.insert(name, published_object) {
+                self.revocations.add(old.revoke());
             }
         }
         for name in roa_updates.removed_roas() {
-            if let Some(old) = self.roas.remove(&name) {
-                self.revocations.add(Revocation::from(&old));
+            if let Some(old) = self.published_objects.remove(&name) {
+                self.revocations.add(old.revoke());
             }
         }
 
@@ -1020,8 +1022,8 @@ impl CurrentKeyObjectSet {
     fn retire(&self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<BasicKeyObjectSet> {
         let mut revocations = self.revocations.clone();
 
-        for roa in self.roas.values() {
-            revocations.add(roa.into());
+        for object in self.published_objects.values() {
+            revocations.add(object.revoke());
         }
 
         for cert in self.certs.values() {
@@ -1038,7 +1040,13 @@ impl CurrentKeyObjectSet {
 
     fn reissue_mft(&self, new_crl: &PublishedCrl, signer: &KrillSigner) -> KrillResult<PublishedManifest> {
         ManifestBuilder::new(self.revision)
-            .with_objects(new_crl, &self.roas, &self.aspas, &self.certs, &self.bgpsec_certs)
+            .with_objects(
+                new_crl,
+                &self.published_objects,
+                &self.aspas,
+                &self.certs,
+                &self.bgpsec_certs,
+            )
             .build_new_mft(&self.signing_cert, signer)
             .map(|m| m.into())
     }
@@ -1048,7 +1056,7 @@ impl From<BasicKeyObjectSet> for CurrentKeyObjectSet {
     fn from(basic: BasicKeyObjectSet) -> Self {
         CurrentKeyObjectSet {
             basic,
-            roas: HashMap::new(),
+            published_objects: HashMap::new(),
             aspas: HashMap::new(),
             bgpsec_certs: HashMap::new(),
             certs: HashMap::new(),
@@ -1067,42 +1075,6 @@ impl Deref for CurrentKeyObjectSet {
 impl DerefMut for CurrentKeyObjectSet {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.basic
-    }
-}
-
-mod objects_to_roas_serde {
-    use super::*;
-
-    use serde::de::{Deserialize, Deserializer};
-    use serde::ser::Serializer;
-    #[derive(Debug, Deserialize)]
-    struct NameRoaItem {
-        name: ObjectName,
-        roa: PublishedRoa,
-    }
-
-    #[derive(Debug, Serialize)]
-    struct NameRoaItemRef<'a> {
-        name: &'a ObjectName,
-        roa: &'a PublishedRoa,
-    }
-
-    pub fn serialize<S>(map: &HashMap<ObjectName, PublishedRoa>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.collect_seq(map.iter().map(|(name, roa)| NameRoaItemRef { name, roa }))
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<ObjectName, PublishedRoa>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let mut map = HashMap::new();
-        for item in Vec::<NameRoaItem>::deserialize(deserializer)? {
-            map.insert(item.name, item.roa);
-        }
-        Ok(map)
     }
 }
 
@@ -1376,47 +1348,6 @@ impl ObjectSetRevision {
 //------------ PublishedCert -----------------------------------------------
 pub type PublishedCert = DelegatedCertificate;
 
-//------------ PublishedRoa -----------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct PublishedRoa(Roa);
-
-impl PublishedRoa {
-    pub fn new(roa: Roa) -> Self {
-        PublishedRoa(roa)
-    }
-
-    pub fn to_bytes(&self) -> Bytes {
-        self.0.to_captured().into_bytes()
-    }
-
-    pub fn mft_hash(&self) -> Hash {
-        Hash::from_data(&self.to_bytes())
-    }
-}
-
-impl From<&PublishedRoa> for Revocation {
-    fn from(r: &PublishedRoa) -> Self {
-        Revocation::from(&r.0)
-    }
-}
-
-impl Deref for PublishedRoa {
-    type Target = Roa;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl PartialEq for PublishedRoa {
-    fn eq(&self, other: &Self) -> bool {
-        self.to_bytes() == other.to_bytes()
-    }
-}
-
-impl Eq for PublishedRoa {}
-
 //------------ PublishedAspa ----------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -1467,23 +1398,33 @@ pub struct PublishedItem<T> {
     base64: Base64,
     hash: Hash, // derived from base64 but kept for faster access
 
+    serial: Serial,
+    expires: Time,
+
     // So that we can have different types based on the same structure.
     marker: std::marker::PhantomData<T>,
 }
 
 impl<T> PublishedItem<T> {
-    pub fn new(name: ObjectName, base64: Base64) -> Self {
+    pub fn new(name: ObjectName, base64: Base64, serial: Serial, expires: Time) -> Self {
         let hash = base64.to_hash();
 
         PublishedItem {
             name,
             base64,
             hash,
+            serial,
+            expires,
             marker: std::marker::PhantomData,
         }
     }
+
     pub fn publish_element(&self, uri: uri::Rsync) -> PublishElement {
         PublishElement::new(self.base64.clone(), uri)
+    }
+
+    pub fn revoke(&self) -> Revocation {
+        Revocation::new(self.serial, self.expires)
     }
 }
 
@@ -1495,7 +1436,12 @@ pub type PublishedManifest = PublishedItem<PublishedItemManifest>;
 
 impl From<Manifest> for PublishedManifest {
     fn from(mft: Manifest) -> Self {
-        PublishedItem::new(ObjectName::from(&mft), Base64::from(&mft))
+        PublishedItem::new(
+            ObjectName::from(&mft),
+            Base64::from(&mft),
+            mft.cert().serial_number(),
+            mft.next_update(),
+        )
     }
 }
 
@@ -1507,7 +1453,24 @@ pub type PublishedCrl = PublishedItem<PublishedItemCrl>;
 
 impl From<Crl> for PublishedCrl {
     fn from(crl: Crl) -> Self {
-        PublishedItem::new(ObjectName::from(&crl), Base64::from(&crl))
+        PublishedItem::new(
+            ObjectName::from(&crl),
+            Base64::from(&crl),
+            crl.crl_number(), // Just use this, we won't actually revoke CRLs
+            crl.next_update(),
+        )
+    }
+}
+
+//------------ PublishedObject ---------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PublishedItemOther;
+pub type PublishedObject = PublishedItem<PublishedItemOther>;
+
+impl PublishedObject {
+    pub fn for_roa(name: ObjectName, roa_info: &RoaInfo) -> Self {
+        PublishedObject::new(name, roa_info.base64().clone(), roa_info.serial(), roa_info.expires())
     }
 }
 
@@ -1559,7 +1522,7 @@ impl ManifestBuilder {
     pub fn with_objects(
         mut self,
         crl: &PublishedCrl,
-        roas: &HashMap<ObjectName, PublishedRoa>,
+        published_objects: &HashMap<ObjectName, PublishedObject>,
         aspas: &HashMap<ObjectName, PublishedAspa>,
         certs: &HashMap<ObjectName, PublishedCert>,
         bgpsec_certs: &HashMap<ObjectName, BgpSecCertInfo>,
@@ -1567,10 +1530,9 @@ impl ManifestBuilder {
         // Add entry for CRL
         self.entries.insert(crl.name.clone(), crl.hash);
 
-        // Add ROAs
-        for (name, roa) in roas {
-            let hash = roa.mft_hash();
-            self.entries.insert(name.clone(), hash);
+        // Add other objects
+        for (name, object) in published_objects {
+            self.entries.insert(name.clone(), object.hash);
         }
 
         // Add ASPAs

@@ -3,16 +3,14 @@
 
 use std::convert::TryFrom;
 
-use bytes::Bytes;
 use rpki::{
     ca::{csr::RpkiCaCsr, provisioning::RequestResourceLimit},
-    crypto::{DigestAlgorithm, KeyIdentifier, PublicKey},
+    crypto::{KeyIdentifier, PublicKey},
     repository::{
         cert::{KeyUsage, Overclaim, TbsCert},
-        manifest::FileAndHash,
         resources::ResourceSet,
         x509::{Name, Time, Validity},
-        Cert, Crl,
+        Cert,
     },
     uri,
 };
@@ -245,21 +243,4 @@ impl SignSupport {
 enum CertRequest {
     Ca(CsrInfo, Validity),
     Ee(PublicKey, Validity),
-}
-
-trait ManifestEntry {
-    fn mft_bytes(&self) -> Bytes;
-    fn mft_hash(&self) -> Bytes {
-        let digest = DigestAlgorithm::default().digest(self.mft_bytes().as_ref());
-        Bytes::copy_from_slice(digest.as_ref())
-    }
-    fn mft_entry(&self, name: &str) -> FileAndHash<Bytes, Bytes> {
-        FileAndHash::new(Bytes::copy_from_slice(name.as_bytes()), self.mft_hash())
-    }
-}
-
-impl ManifestEntry for Crl {
-    fn mft_bytes(&self) -> Bytes {
-        self.to_captured().into_bytes()
-    }
 }

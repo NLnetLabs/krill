@@ -11,6 +11,7 @@ use rpki::{
         provisioning::{
             IssuanceRequest, ParentResourceClassName, RequestResourceLimit, ResourceClassName, RevocationRequest,
         },
+        publication::Base64,
     },
     crypto::KeyIdentifier,
     repository::{aspa::Aspa, resources::ResourceSet, x509::Time, Cert, Crl, Manifest, Roa},
@@ -27,8 +28,8 @@ use crate::{
         eventsourcing::StoredEvent,
     },
     daemon::ca::{
-        self, AggregateRoaInfo, AspaInfo, AspaObjectsUpdates, CaEvt, CaEvtDet, CaObjects, CertifiedKey,
-        ChildCertificateUpdates, ObjectSetRevision, PreparedRta, RoaInfo, RoaUpdates, RouteAuthorization, SignedRta,
+        self, AspaInfo, AspaObjectsUpdates, CaEvt, CaEvtDet, CaObjects, CertifiedKey, ChildCertificateUpdates,
+        ObjectSetRevision, PreparedRta, PublishedObject, RoaInfo, RoaUpdates, RouteAuthorization, SignedRta,
     },
     pubd::{Publisher, RepositoryAccessEvent, RepositoryAccessEventDetails, RepositoryAccessInitDetails},
     upgrades::PrepareUpgradeError,
@@ -303,12 +304,6 @@ pub struct OldRoaInfo {
     since: Time, // first ROA in RC created
 }
 
-impl From<OldRoaInfo> for RoaInfo {
-    fn from(old: OldRoaInfo) -> Self {
-        RoaInfo::new(old.roa, old.since)
-    }
-}
-
 impl PartialEq for OldRoaInfo {
     fn eq(&self, other: &Self) -> bool {
         self.roa.to_captured().as_slice() == other.roa.to_captured().as_slice()
@@ -327,9 +322,9 @@ pub struct OldAggregateRoaInfo {
     roa: OldRoaInfo,
 }
 
-impl From<OldAggregateRoaInfo> for AggregateRoaInfo {
+impl From<OldAggregateRoaInfo> for RoaInfo {
     fn from(old: OldAggregateRoaInfo) -> Self {
-        AggregateRoaInfo::new(old.authorizations, old.roa.into())
+        RoaInfo::new(old.authorizations, old.roa.roa)
     }
 }
 
@@ -372,17 +367,17 @@ impl From<OldRoaUpdates> for RoaUpdates {
         let updated: HashMap<RouteAuthorization, RoaInfo> = old
             .updated
             .into_iter()
-            .map(|(auth, info)| (auth, info.into()))
+            .map(|(auth, old_info)| (auth, RoaInfo::new(vec![auth], old_info.roa)))
             .collect();
 
-        let aggregate_updated: HashMap<RoaAggregateKey, AggregateRoaInfo> = old
+        let aggregate_updated: HashMap<RoaAggregateKey, RoaInfo> = old
             .aggregate_updated
             .into_iter()
-            .map(|(auth, info)| (auth, info.into()))
+            .map(|(auth, old_info)| (auth, old_info.into()))
             .collect();
 
-        let removed = old.removed;
-        let aggregate_removed = old.aggregate_removed;
+        let removed = old.removed.into_keys().collect();
+        let aggregate_removed = old.aggregate_removed.into_keys().collect();
 
         RoaUpdates::new(updated, removed, aggregate_updated, aggregate_removed)
     }
@@ -1224,9 +1219,13 @@ impl TryFrom<OldCurrentKeyObjectSet> for ca::CurrentKeyObjectSet {
     fn try_from(old: OldCurrentKeyObjectSet) -> Result<Self, Self::Error> {
         let basic = old.basic.try_into()?;
 
-        let mut roas = HashMap::new();
+        let mut published_objects = HashMap::new();
         for (name, old_roa) in old.roas.into_iter() {
-            roas.insert(name, old_roa.into());
+            let base64 = Base64::from(&old_roa.0);
+            let serial = old_roa.0.cert().serial_number();
+            let expires = old_roa.0.cert().validity().not_after();
+            let published_object = PublishedObject::new(name.clone(), base64, serial, expires);
+            published_objects.insert(name, published_object);
         }
 
         let mut aspas = HashMap::new();
@@ -1241,7 +1240,13 @@ impl TryFrom<OldCurrentKeyObjectSet> for ca::CurrentKeyObjectSet {
 
         let bgpsec_certs = HashMap::new();
 
-        Ok(ca::CurrentKeyObjectSet::new(basic, roas, aspas, bgpsec_certs, certs))
+        Ok(ca::CurrentKeyObjectSet::new(
+            basic,
+            published_objects,
+            aspas,
+            bgpsec_certs,
+            certs,
+        ))
     }
 }
 
@@ -1397,12 +1402,6 @@ pub type OldPublishedCert = OldDelegatedCertificate;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct OldPublishedRoa(Roa);
-
-impl From<OldPublishedRoa> for ca::PublishedRoa {
-    fn from(old: OldPublishedRoa) -> Self {
-        ca::PublishedRoa::new(old.0)
-    }
-}
 
 impl PartialEq for OldPublishedRoa {
     fn eq(&self, other: &Self) -> bool {

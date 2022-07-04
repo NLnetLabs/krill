@@ -210,7 +210,7 @@ pub enum OldCaEvtDet {
     // Route Authorizations
     RouteAuthorizationAdded(RouteAuthorization),
     RouteAuthorizationRemoved(RouteAuthorization),
-    RoasUpdated(ResourceClassName, RoaUpdates),
+    RoasUpdated(ResourceClassName, OldRoaUpdates),
 
     // Publishing
     ObjectSetUpdated(ResourceClassName, HashMap<KeyIdentifier, CurrentObjectSetDelta>),
@@ -401,59 +401,58 @@ pub struct CurrentObjectSetDelta {
 
 // Describes an update to the set of ROAs under a ResourceClass.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RoaUpdates {
+pub struct OldRoaUpdates {
     #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
-    updated: HashMap<RouteAuthorization, RoaInfo>,
+    updated: HashMap<RouteAuthorization, OldRoaInfo>,
 
     #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
     removed: HashMap<RouteAuthorization, RevokedObject>,
 
     #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
-    aggregate_updated: HashMap<RoaAggregateKey, AggregateRoaInfo>,
+    aggregate_updated: HashMap<RoaAggregateKey, OldAggregateRoaInfo>,
 
     #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
     aggregate_removed: HashMap<RoaAggregateKey, RevokedObject>,
 }
 
-impl TryFrom<RoaUpdates> for ca::RoaUpdates {
+impl TryFrom<OldRoaUpdates> for ca::RoaUpdates {
     type Error = PrepareUpgradeError;
 
-    fn try_from(old: RoaUpdates) -> Result<Self, PrepareUpgradeError> {
+    fn try_from(old: OldRoaUpdates) -> Result<Self, PrepareUpgradeError> {
         let mut updates = ca::RoaUpdates::default();
         for (auth, info) in old.updated {
             let roa = info.roa()?;
-            let roa_info = ca::RoaInfo::new(roa, info.since);
+            let roa_info = ca::RoaInfo::new(vec![auth], roa);
             updates.update(auth, roa_info);
         }
 
-        for (auth, revoke) in old.removed {
-            updates.remove(auth, revoke)
+        for (auth, _revoke) in old.removed {
+            updates.remove(auth);
         }
 
         for (agg_key, agg_info) in old.aggregate_updated {
-            let roa = agg_info.roa.roa()?;
-            let roa_info = ca::RoaInfo::new(roa, agg_info.roa.since);
             let authorizations = agg_info.authorizations;
-            let agg = ca::AggregateRoaInfo::new(authorizations, roa_info);
-            updates.update_aggregate(agg_key, agg);
+            let roa = agg_info.roa.roa()?;
+            let roa_info = ca::RoaInfo::new(authorizations, roa);
+            updates.update_aggregate(agg_key, roa_info);
         }
 
-        for (agg_key, revoke) in old.aggregate_removed {
-            updates.remove_aggregate(agg_key, revoke);
+        for (agg_key, _revoke) in old.aggregate_removed {
+            updates.remove_aggregate(agg_key);
         }
 
         Ok(updates)
     }
 }
 
-impl RoaUpdates {
+impl OldRoaUpdates {
     #[allow(clippy::type_complexity)]
     pub fn unpack(
         self,
     ) -> (
-        HashMap<RouteAuthorization, RoaInfo>,
+        HashMap<RouteAuthorization, OldRoaInfo>,
         HashMap<RouteAuthorization, RevokedObject>,
-        HashMap<RoaAggregateKey, AggregateRoaInfo>,
+        HashMap<RoaAggregateKey, OldAggregateRoaInfo>,
         HashMap<RoaAggregateKey, RevokedObject>,
     ) {
         (
@@ -466,14 +465,14 @@ impl RoaUpdates {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RoaInfo {
+pub struct OldRoaInfo {
     pub object: CurrentObject,           // actual ROA
     name: ObjectName,                    // Name for object in repo
     since: Time,                         // first ROA in RC created
     replaces: Option<OldReplacedObject>, // for revoking when renewing
 }
 
-impl RoaInfo {
+impl OldRoaInfo {
     pub fn roa(&self) -> Result<Roa, PrepareUpgradeError> {
         Roa::decode(self.object.content.to_bytes(), true)
             .map_err(|_| PrepareUpgradeError::custom("Cannot parse existing ROA"))
@@ -481,11 +480,11 @@ impl RoaInfo {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct AggregateRoaInfo {
+pub struct OldAggregateRoaInfo {
     pub authorizations: Vec<RouteAuthorization>,
 
     #[serde(flatten)]
-    pub roa: RoaInfo,
+    pub roa: OldRoaInfo,
 }
 
 pub type OldCaIni = StoredEvent<OldCaIniDet>;
