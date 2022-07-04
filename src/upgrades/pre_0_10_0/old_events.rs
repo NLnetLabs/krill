@@ -1463,7 +1463,7 @@ pub struct OldPublishedCrl(Crl);
 
 impl From<OldPublishedCrl> for ca::PublishedCrl {
     fn from(old: OldPublishedCrl) -> Self {
-        ca::PublishedCrl::new(old.0)
+        old.0.into()
     }
 }
 

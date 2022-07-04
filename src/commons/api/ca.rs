@@ -2,8 +2,9 @@
 //! can have access without needing to depend on the full krill_ca module.
 
 use std::collections::HashMap;
-use std::ops::{self, Deref};
+use std::ops::{self};
 use std::str::FromStr;
+use std::sync::Arc;
 use std::{fmt, str};
 
 use bytes::Bytes;
@@ -570,7 +571,7 @@ impl<T> CertInfo<T> {
 
     pub fn uri_for_name(&self, name: &ObjectName) -> uri::Rsync {
         // unwraps here are safe
-        self.ca_repository().join(name.as_bytes()).unwrap()
+        self.ca_repository().join(name.as_ref()).unwrap()
     }
 
     /// Returns a Revocation for this certificate
@@ -714,11 +715,11 @@ impl CertifiedKeyInfo {
 /// This type is used to represent the (deterministic) file names for
 /// RPKI repository objects.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub struct ObjectName(String);
+pub struct ObjectName(Arc<str>);
 
 impl ObjectName {
     pub fn new(ki: &KeyIdentifier, extension: &str) -> Self {
-        ObjectName(format!("{}.{}", ki, extension))
+        ObjectName(format!("{}.{}", ki, extension).into())
     }
 
     pub fn cer_for_key(ki: &KeyIdentifier) -> Self {
@@ -734,11 +735,11 @@ impl ObjectName {
     }
 
     pub fn aspa(customer: Asn) -> Self {
-        ObjectName(format!("{}.asa", customer))
+        ObjectName(format!("{}.asa", customer).into())
     }
 
     pub fn bgpsec(asn: Asn, key: KeyIdentifier) -> Self {
-        ObjectName(format!("ROUTER-{:08X}-{}.cer", asn.into_u32(), key))
+        ObjectName(format!("ROUTER-{:08X}-{}.cer", asn.into_u32(), key).into())
     }
 }
 
@@ -747,9 +748,9 @@ impl From<&uri::Rsync> for ObjectName {
         let path = uri.path();
         let after_last_slash = path.rfind('/').unwrap_or(0) + 1;
         if path.len() < after_last_slash + 1 {
-            ObjectName("".to_string())
+            ObjectName("".into())
         } else {
-            ObjectName(path[after_last_slash..].to_string())
+            ObjectName(path[after_last_slash..].into())
         }
     }
 }
@@ -774,22 +775,25 @@ impl From<&Crl> for ObjectName {
 
 impl From<&RouteAuthorization> for ObjectName {
     fn from(auth: &RouteAuthorization) -> Self {
-        ObjectName(format!("{}.roa", hex::encode(auth.to_string())))
+        ObjectName(format!("{}.roa", hex::encode(auth.to_string())).into())
     }
 }
 
 impl From<&RoaDefinition> for ObjectName {
     fn from(def: &RoaDefinition) -> Self {
-        ObjectName(format!("{}.roa", hex::encode(def.to_string())))
+        ObjectName(format!("{}.roa", hex::encode(def.to_string())).into())
     }
 }
 
 impl From<&RoaAggregateKey> for ObjectName {
     fn from(roa_group: &RoaAggregateKey) -> Self {
-        ObjectName(match roa_group.group() {
-            None => format!("AS{}.roa", roa_group.asn()),
-            Some(number) => format!("AS{}-{}.roa", roa_group.asn(), number),
-        })
+        ObjectName(
+            match roa_group.group() {
+                None => format!("AS{}.roa", roa_group.asn()),
+                Some(number) => format!("AS{}-{}.roa", roa_group.asn(), number),
+            }
+            .into(),
+        )
     }
 }
 
@@ -813,13 +817,7 @@ impl From<&BgpSecAsnKey> for ObjectName {
 
 impl From<&str> for ObjectName {
     fn from(s: &str) -> Self {
-        ObjectName(s.to_string())
-    }
-}
-
-impl From<ObjectName> for Bytes {
-    fn from(object_name: ObjectName) -> Self {
-        Bytes::from(object_name.0)
+        ObjectName(s.into())
     }
 }
 
@@ -829,17 +827,15 @@ impl AsRef<str> for ObjectName {
     }
 }
 
-impl fmt::Display for ObjectName {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.0.fmt(f)
+impl AsRef<[u8]> for ObjectName {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_bytes()
     }
 }
 
-impl Deref for ObjectName {
-    type Target = String;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
+impl fmt::Display for ObjectName {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
     }
 }
 
@@ -2385,7 +2381,7 @@ mod test {
             let key_id = signer.create_key(PublicKeyFormat::Rsa).unwrap();
             let pub_key = signer.get_key_info(&key_id).unwrap();
 
-            let mft_uri = info().resolve("", ObjectName::mft_for_key(&pub_key.key_identifier()).as_str());
+            let mft_uri = info().resolve("", ObjectName::mft_for_key(&pub_key.key_identifier()).as_ref());
 
             let mft_path = mft_uri.relative_to(&base_uri()).unwrap();
 

@@ -24,6 +24,7 @@ use rpki::{
         x509::{Name, Serial, Time, Validity},
     },
     rrdp::Hash,
+    uri,
 };
 
 use crate::{
@@ -874,34 +875,34 @@ impl CurrentKeyObjectSet {
 
         let elements = map.entry(repo.clone()).or_insert_with(Vec::new);
 
-        elements.push(PublishElement::new(self.manifest.base64.clone(), mft_uri));
-        elements.push(PublishElement::new(Base64::from(&self.crl.0), crl_uri));
+        elements.push(self.manifest.publish_element(mft_uri));
+        elements.push(self.crl.publish_element(crl_uri));
 
         for (name, roa) in &self.roas {
             elements.push(PublishElement::new(
                 Base64::from(&roa.0),
-                base_uri.join(name.as_bytes()).unwrap(),
+                base_uri.join(name.as_ref()).unwrap(),
             ));
         }
 
         for (name, aspa) in &self.aspas {
             elements.push(PublishElement::new(
                 Base64::from(&aspa.0),
-                base_uri.join(name.as_bytes()).unwrap(),
+                base_uri.join(name.as_ref()).unwrap(),
             ));
         }
 
         for (name, bgpsec_cert) in &self.bgpsec_certs {
             elements.push(PublishElement::new(
                 bgpsec_cert.base64().clone(),
-                base_uri.join(name.as_bytes()).unwrap(),
+                base_uri.join(name.as_ref()).unwrap(),
             ));
         }
 
         for (name, cert) in &self.certs {
             elements.push(PublishElement::new(
                 cert.base64().clone(),
-                base_uri.join(name.as_bytes()).unwrap(),
+                base_uri.join(name.as_ref()).unwrap(),
             ));
         }
     }
@@ -1251,12 +1252,12 @@ impl BasicKeyObjectSet {
         let repo = self.old_repo.as_ref().unwrap_or(dflt_repo);
 
         let crl_uri = self.signing_cert.crl_uri();
-        let mft_uri = self.signing_cert.crl_uri();
+        let mft_uri = self.signing_cert.mft_uri();
 
         let elements = map.entry(repo.clone()).or_insert_with(Vec::new);
 
-        elements.push(PublishElement::new(self.manifest.base64.clone(), mft_uri));
-        elements.push(PublishElement::new(Base64::from(&self.crl.0), crl_uri));
+        elements.push(self.manifest.publish_element(mft_uri));
+        elements.push(self.crl.publish_element(crl_uri));
     }
 
     fn create(key: &CertifiedKey, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<Self> {
@@ -1317,7 +1318,7 @@ impl BasicKeyObjectSet {
     fn reissue_crl(&mut self, signer: &KrillSigner) -> KrillResult<()> {
         self.revocations.purge();
         let signing_key = self.signing_cert.key_identifier();
-        let issuer = self.crl.issuer().clone();
+        let issuer = self.signing_cert.subject().clone();
 
         self.crl = CrlBuilder::build(signing_key, issuer, &self.revocations, self.revision, signer)?;
 
@@ -1389,8 +1390,8 @@ impl PublishedRoa {
         self.0.to_captured().into_bytes()
     }
 
-    pub fn mft_hash(&self) -> Bytes {
-        mft_hash(self.to_bytes().as_ref())
+    pub fn mft_hash(&self) -> Hash {
+        Hash::from_data(&self.to_bytes())
     }
 }
 
@@ -1430,8 +1431,8 @@ impl PublishedAspa {
         self.0.to_captured().into_bytes()
     }
 
-    pub fn mft_hash(&self) -> Bytes {
-        mft_hash(self.to_bytes().as_ref())
+    pub fn mft_hash(&self) -> Hash {
+        Hash::from_data(&self.to_bytes())
     }
 }
 
@@ -1462,11 +1463,28 @@ impl Eq for PublishedAspa {}
 /// Any item published in the repository.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublishedItem<T> {
+    name: ObjectName,
     base64: Base64,
-    hash: Hash,
+    hash: Hash, // derived from base64 but kept for faster access
 
     // So that we can have different types based on the same structure.
     marker: std::marker::PhantomData<T>,
+}
+
+impl<T> PublishedItem<T> {
+    pub fn new(name: ObjectName, base64: Base64) -> Self {
+        let hash = base64.to_hash();
+
+        PublishedItem {
+            name,
+            base64,
+            hash,
+            marker: std::marker::PhantomData,
+        }
+    }
+    pub fn publish_element(&self, uri: uri::Rsync) -> PublishElement {
+        PublishElement::new(self.base64.clone(), uri)
+    }
 }
 
 //------------ PublishedManifest ------------------------------------------
@@ -1477,67 +1495,19 @@ pub type PublishedManifest = PublishedItem<PublishedItemManifest>;
 
 impl From<Manifest> for PublishedManifest {
     fn from(mft: Manifest) -> Self {
-        let base64 = Base64::from(&mft);
-        let hash = base64.to_hash();
-
-        PublishedItem {
-            base64,
-            hash,
-            marker: std::marker::PhantomData,
-        }
+        PublishedItem::new(ObjectName::from(&mft), Base64::from(&mft))
     }
 }
 
 //------------ PublishedCrl ------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct PublishedCrl(Crl);
-
-impl PublishedCrl {
-    pub fn new(crl: Crl) -> Self {
-        PublishedCrl(crl)
-    }
-
-    pub fn to_bytes(&self) -> Bytes {
-        self.0.to_captured().into_bytes()
-    }
-
-    pub fn this_update(&self) -> Time {
-        self.0.this_update()
-    }
-
-    pub fn next_update(&self) -> Time {
-        self.0.next_update()
-    }
-
-    pub fn name(&self) -> ObjectName {
-        ObjectName::from(&self.0)
-    }
-
-    pub fn mft_hash(&self) -> Bytes {
-        mft_hash(self.to_bytes().as_ref())
-    }
-}
-
-impl PartialEq for PublishedCrl {
-    fn eq(&self, other: &Self) -> bool {
-        self.to_bytes() == other.to_bytes()
-    }
-}
-
-impl Eq for PublishedCrl {}
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PublishedItemCrl;
+pub type PublishedCrl = PublishedItem<PublishedItemCrl>;
 
 impl From<Crl> for PublishedCrl {
     fn from(crl: Crl) -> Self {
-        PublishedCrl(crl)
-    }
-}
-
-impl Deref for PublishedCrl {
-    type Target = Crl;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
+        PublishedItem::new(ObjectName::from(&crl), Base64::from(&crl))
     }
 }
 
@@ -1574,7 +1544,7 @@ impl CrlBuilder {
 #[allow(clippy::mutable_key_type)]
 pub struct ManifestBuilder {
     revision: ObjectSetRevision,
-    entries: HashMap<Bytes, Bytes>,
+    entries: HashMap<ObjectName, Hash>,
 }
 
 impl ManifestBuilder {
@@ -1595,32 +1565,29 @@ impl ManifestBuilder {
         bgpsec_certs: &HashMap<ObjectName, BgpSecCertInfo>,
     ) -> Self {
         // Add entry for CRL
-        self.entries.insert(crl.name().into(), crl.mft_hash());
+        self.entries.insert(crl.name.clone(), crl.hash);
 
         // Add ROAs
         for (name, roa) in roas {
             let hash = roa.mft_hash();
-            self.entries.insert(name.clone().into(), hash);
+            self.entries.insert(name.clone(), hash);
         }
 
         // Add ASPAs
         for (name, aspa) in aspas {
             let hash = aspa.mft_hash();
-            self.entries.insert(name.clone().into(), hash);
+            self.entries.insert(name.clone(), hash);
         }
 
         // Add all issued certs
         for (name, cert) in certs {
-            let hash = cert.hash();
-            let hash_bytes = Bytes::copy_from_slice(hash.as_slice());
-            self.entries.insert(name.clone().into(), hash_bytes);
+            self.entries.insert(name.clone(), cert.hash());
         }
 
         // Add all bgpsec certs
         for (name, info) in bgpsec_certs {
             let hash = info.base64().to_hash();
-            let hash_bytes = Bytes::copy_from_slice(hash.as_slice());
-            self.entries.insert(name.clone().into(), hash_bytes);
+            self.entries.insert(name.clone(), hash);
         }
 
         self
@@ -1628,7 +1595,7 @@ impl ManifestBuilder {
 
     #[allow(clippy::mutable_key_type)]
     pub fn with_crl_only(mut self, crl: &PublishedCrl) -> Self {
-        self.entries.insert(crl.name().into(), crl.mft_hash());
+        self.entries.insert(crl.name.clone(), crl.hash);
         self
     }
 
@@ -1665,9 +1632,4 @@ impl ManifestBuilder {
 
         Ok(manifest)
     }
-}
-
-fn mft_hash(bytes: &[u8]) -> Bytes {
-    let digest = DigestAlgorithm::default().digest(bytes);
-    Bytes::copy_from_slice(digest.as_ref())
 }

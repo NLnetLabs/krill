@@ -622,7 +622,7 @@ impl CertAuth {
 
             cert.set_ca_repository(Some(repo_info.ca_repository(&ns)));
             cert.set_rpki_manifest(Some(
-                repo_info.resolve(&ns, ObjectName::mft_for_key(&pub_key.key_identifier()).as_str()),
+                repo_info.resolve(&ns, ObjectName::mft_for_key(&pub_key.key_identifier()).as_ref()),
             ));
             cert.set_rpki_notify(repo_info.rpki_notify().cloned());
 
