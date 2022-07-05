@@ -100,8 +100,7 @@ impl Default for CaLocks {
 }
 
 impl CaLocks {
-    pub async fn ca(&self, ca: &CaHandle) -> CaLock<'_> {
-        // self.create_lock_if_needed(ca).await;
+    pub async fn ca<'a>(&'a self, ca: &CaHandle) -> CaLock<'a> {
         {
             let map = self.locks.read().await;
             if map.has_ca(ca) {
