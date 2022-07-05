@@ -183,62 +183,6 @@ impl fmt::Display for ChildCaInfo {
     }
 }
 
-//------------ RevokedObject -------------------------------------------------
-
-pub type RevokedObject = ReplacedObject;
-
-//------------ ReplacedObject ------------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ReplacedObject {
-    revocation: Revocation,
-    hash: Hash,
-}
-
-impl ReplacedObject {
-    pub fn new(revocation: Revocation, hash: Hash) -> Self {
-        ReplacedObject { revocation, hash }
-    }
-
-    pub fn revocation(&self) -> Revocation {
-        self.revocation
-    }
-
-    pub fn hash(&self) -> &Hash {
-        &self.hash
-    }
-}
-
-impl From<&Cert> for ReplacedObject {
-    fn from(c: &Cert) -> Self {
-        let revocation = Revocation::from(c);
-        let hash = Hash::from_data(c.to_captured().as_slice());
-        ReplacedObject { revocation, hash }
-    }
-}
-
-impl From<&DelegatedCertificate> for ReplacedObject {
-    fn from(issued: &DelegatedCertificate) -> Self {
-        issued.replace()
-    }
-}
-
-impl From<&Roa> for ReplacedObject {
-    fn from(roa: &Roa) -> Self {
-        let revocation = Revocation::from(roa.cert());
-        let hash = Hash::from_data(roa.to_captured().as_slice());
-        ReplacedObject { revocation, hash }
-    }
-}
-
-impl From<&Aspa> for ReplacedObject {
-    fn from(aspa: &Aspa) -> Self {
-        let revocation = Revocation::from(aspa.cert());
-        let hash = Hash::from_data(aspa.to_captured().as_slice());
-        ReplacedObject { revocation, hash }
-    }
-}
-
 // //------------ DelegatedCertificate ------------------------------------------
 
 // /// This type defines a certificate issued to a child. It differs
@@ -579,14 +523,6 @@ impl<T> CertInfo<T> {
         Revocation {
             serial: self.serial,
             expires: self.validity.not_after(),
-        }
-    }
-
-    /// Returns a ReplacedObject for this certificate
-    pub fn replace(&self) -> ReplacedObject {
-        ReplacedObject {
-            revocation: self.revoke(),
-            hash: self.base64.to_hash(),
         }
     }
 }

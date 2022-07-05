@@ -15,15 +15,15 @@ use rpki::{
     },
     crypto::KeyIdentifier,
     repository::{aspa::Aspa, resources::ResourceSet, x509::Time, Cert, Crl, Manifest, Roa},
-    uri,
+    rrdp, uri,
 };
 
 use crate::{
     commons::{
         api::{
             AspaCustomer, AspaDefinition, AspaProvidersUpdate, CertInfo, DelegatedCertificate, ObjectName,
-            ParentCaContact, ParentServerInfo, PublicationServerInfo, RcvdCert, RepositoryContact, Revocations,
-            RevokedObject, RoaAggregateKey, RtaName, SuspendedCert, TaCertDetails, TrustAnchorLocator, UnsuspendedCert,
+            ParentCaContact, ParentServerInfo, PublicationServerInfo, RcvdCert, RepositoryContact, Revocation,
+            Revocations, RoaAggregateKey, RtaName, SuspendedCert, TaCertDetails, TrustAnchorLocator, UnsuspendedCert,
         },
         eventsourcing::StoredEvent,
     },
@@ -345,7 +345,7 @@ pub struct OldRoaUpdates {
         default = "HashMap::new",
         with = "removed_sorted_map"
     )]
-    removed: HashMap<RouteAuthorization, RevokedObject>,
+    removed: HashMap<RouteAuthorization, OldRevokedObject>,
 
     #[serde(
         skip_serializing_if = "HashMap::is_empty",
@@ -359,7 +359,7 @@ pub struct OldRoaUpdates {
         default = "HashMap::new",
         with = "aggregate_removed_sorted_map"
     )]
-    aggregate_removed: HashMap<RoaAggregateKey, RevokedObject>,
+    aggregate_removed: HashMap<RoaAggregateKey, OldRevokedObject>,
 }
 
 impl From<OldRoaUpdates> for RoaUpdates {
@@ -381,6 +381,12 @@ impl From<OldRoaUpdates> for RoaUpdates {
 
         RoaUpdates::new(updated, removed, aggregate_updated, aggregate_removed)
     }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OldRevokedObject {
+    revocation: Revocation,
+    hash: rrdp::Hash,
 }
 
 mod updated_sorted_map {
@@ -472,16 +478,16 @@ mod removed_sorted_map {
     #[derive(Debug, Deserialize)]
     struct Item {
         auth: RouteAuthorization,
-        removed: RevokedObject,
+        removed: OldRevokedObject,
     }
 
     #[derive(Debug, Serialize)]
     struct ItemRef<'a> {
         auth: &'a RouteAuthorization,
-        removed: &'a RevokedObject,
+        removed: &'a OldRevokedObject,
     }
 
-    pub fn serialize<S>(map: &HashMap<RouteAuthorization, RevokedObject>, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(map: &HashMap<RouteAuthorization, OldRevokedObject>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -491,7 +497,7 @@ mod removed_sorted_map {
         serializer.collect_seq(sorted_vec)
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<RouteAuthorization, RevokedObject>, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<RouteAuthorization, OldRevokedObject>, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -512,16 +518,16 @@ mod aggregate_removed_sorted_map {
     #[derive(Debug, Deserialize)]
     struct Item {
         agg: RoaAggregateKey,
-        removed: RevokedObject,
+        removed: OldRevokedObject,
     }
 
     #[derive(Debug, Serialize)]
     struct ItemRef<'a> {
         agg: &'a RoaAggregateKey,
-        removed: &'a RevokedObject,
+        removed: &'a OldRevokedObject,
     }
 
-    pub fn serialize<S>(map: &HashMap<RoaAggregateKey, RevokedObject>, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(map: &HashMap<RoaAggregateKey, OldRevokedObject>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -531,7 +537,7 @@ mod aggregate_removed_sorted_map {
         serializer.collect_seq(sorted_vec)
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<RoaAggregateKey, RevokedObject>, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<RoaAggregateKey, OldRevokedObject>, D::Error>
     where
         D: Deserializer<'de>,
     {

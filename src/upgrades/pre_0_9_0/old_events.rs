@@ -20,7 +20,7 @@ use rpki::{
         x509::{Serial, Time},
         Cert,
     },
-    rrdp::Hash,
+    rrdp::{self, Hash},
     uri,
 };
 
@@ -28,8 +28,8 @@ use crate::{
     commons::{
         api::rrdp::{CurrentObjects, DeltaElements, PublishElement, RrdpSession},
         api::{
-            CertInfo, IdCertInfo, ObjectName, ParentCaContact, RcvdCert, RepositoryContact, RevocationsDelta,
-            RevokedObject, RoaAggregateKey, RtaName, TaCertDetails,
+            CertInfo, IdCertInfo, ObjectName, ParentCaContact, RcvdCert, RepositoryContact, Revocation,
+            RevocationsDelta, RoaAggregateKey, RtaName, TaCertDetails,
         },
         eventsourcing::StoredEvent,
     },
@@ -406,13 +406,19 @@ pub struct OldRoaUpdates {
     updated: HashMap<RouteAuthorization, OldRoaInfo>,
 
     #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
-    removed: HashMap<RouteAuthorization, RevokedObject>,
+    removed: HashMap<RouteAuthorization, OldRevokedObject>,
 
     #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
     aggregate_updated: HashMap<RoaAggregateKey, OldAggregateRoaInfo>,
 
     #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
-    aggregate_removed: HashMap<RoaAggregateKey, RevokedObject>,
+    aggregate_removed: HashMap<RoaAggregateKey, OldRevokedObject>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OldRevokedObject {
+    revocation: Revocation,
+    hash: rrdp::Hash,
 }
 
 impl TryFrom<OldRoaUpdates> for ca::RoaUpdates {
@@ -451,9 +457,9 @@ impl OldRoaUpdates {
         self,
     ) -> (
         HashMap<RouteAuthorization, OldRoaInfo>,
-        HashMap<RouteAuthorization, RevokedObject>,
+        HashMap<RouteAuthorization, OldRevokedObject>,
         HashMap<RoaAggregateKey, OldAggregateRoaInfo>,
-        HashMap<RoaAggregateKey, RevokedObject>,
+        HashMap<RoaAggregateKey, OldRevokedObject>,
     ) {
         (
             self.updated,
