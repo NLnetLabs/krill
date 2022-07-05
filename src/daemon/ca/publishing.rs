@@ -831,13 +831,6 @@ pub struct CurrentKeyObjectSet {
 
     #[serde(skip_serializing_if = "HashMap::is_empty", default)]
     published_objects: HashMap<ObjectName, PublishedObject>,
-
-    #[serde(
-        with = "objects_to_bgpsec_certs_serde",
-        skip_serializing_if = "HashMap::is_empty",
-        default
-    )]
-    bgpsec_certs: HashMap<ObjectName, BgpSecCertInfo>,
 }
 
 impl CurrentKeyObjectSet {
@@ -849,7 +842,6 @@ impl CurrentKeyObjectSet {
         CurrentKeyObjectSet {
             basic,
             published_objects,
-            bgpsec_certs,
         }
     }
 
@@ -873,13 +865,6 @@ impl CurrentKeyObjectSet {
             elements.push(PublishElement::new(
                 object.base64.clone(),
                 self.signing_cert.uri_for_name(&name),
-            ));
-        }
-
-        for (name, bgpsec_cert) in &self.bgpsec_certs {
-            elements.push(PublishElement::new(
-                bgpsec_cert.base64().clone(),
-                base_uri.join(name.as_ref()).unwrap(),
             ));
         }
     }
@@ -934,17 +919,17 @@ impl CurrentKeyObjectSet {
         timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<()> {
-        for bgpsec_cert in updates.updated() {
-            let name = ObjectName::from(bgpsec_cert);
-            if let Some(old) = self.bgpsec_certs.insert(name, bgpsec_cert.clone()) {
-                self.revocations.add(Revocation::from(&old));
+        for bgpsec_cert_info in updates.updated() {
+            let published_object = PublishedObject::for_bgpsec_cert_info(bgpsec_cert_info);
+            if let Some(old) = self.published_objects.insert(bgpsec_cert_info.name(), published_object) {
+                self.revocations.add(old.revoke());
             }
         }
 
         for removed in updates.removed() {
             let name = ObjectName::from(removed);
-            if let Some(old) = self.bgpsec_certs.remove(&name) {
-                self.revocations.add(Revocation::from(&old));
+            if let Some(old) = self.published_objects.remove(&name) {
+                self.revocations.add(old.revoke());
             }
         }
 
@@ -1016,7 +1001,7 @@ impl CurrentKeyObjectSet {
 
     fn reissue_mft(&self, new_crl: &PublishedCrl, signer: &KrillSigner) -> KrillResult<PublishedManifest> {
         ManifestBuilder::new(self.revision)
-            .with_objects(new_crl, &self.published_objects, &self.bgpsec_certs)
+            .with_objects(new_crl, &self.published_objects)
             .build_new_mft(&self.signing_cert, signer)
             .map(|m| m.into())
     }
@@ -1027,7 +1012,6 @@ impl From<BasicKeyObjectSet> for CurrentKeyObjectSet {
         CurrentKeyObjectSet {
             basic,
             published_objects: HashMap::new(),
-            bgpsec_certs: HashMap::new(),
         }
     }
 }
@@ -1376,6 +1360,10 @@ impl PublishedObject {
     pub fn for_cert_info<T>(cert: &CertInfo<T>) -> Self {
         PublishedObject::new(cert.name(), cert.base64().clone(), cert.serial(), cert.expires())
     }
+
+    pub fn for_bgpsec_cert_info(cert: &BgpSecCertInfo) -> Self {
+        PublishedObject::new(cert.name(), cert.base64().clone(), cert.serial(), cert.expires())
+    }
 }
 
 //------------ CrlBuilder --------------------------------------------------
@@ -1427,7 +1415,6 @@ impl ManifestBuilder {
         mut self,
         crl: &PublishedCrl,
         published_objects: &HashMap<ObjectName, PublishedObject>,
-        bgpsec_certs: &HashMap<ObjectName, BgpSecCertInfo>,
     ) -> Self {
         // Add entry for CRL
         self.entries.insert(crl.name.clone(), crl.hash);
@@ -1435,12 +1422,6 @@ impl ManifestBuilder {
         // Add other objects
         for (name, object) in published_objects {
             self.entries.insert(name.clone(), object.hash);
-        }
-
-        // Add all bgpsec certs
-        for (name, info) in bgpsec_certs {
-            let hash = info.base64().to_hash();
-            self.entries.insert(name.clone(), hash);
         }
 
         self

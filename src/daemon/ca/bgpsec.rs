@@ -13,7 +13,7 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::{BgpSecAsnKey, BgpSecCsrInfo, BgpSecCsrInfoList},
+        api::{BgpSecAsnKey, BgpSecCsrInfo, BgpSecCsrInfoList, ObjectName},
         crypto::{KrillSigner, SignSupport},
         KrillResult,
     },
@@ -219,6 +219,10 @@ impl BgpSecCertInfo {
 
     pub fn base64(&self) -> &Base64 {
         &self.base64
+    }
+
+    pub fn name(&self) -> ObjectName {
+        ObjectName::bgpsec(self.asn, self.public_key.key_identifier())
     }
 }
 
