@@ -768,15 +768,15 @@ impl OldResourceClass {
             OldKeyState::Pending(_) => None,
 
             OldKeyState::Active(current) | OldKeyState::RollPending(_, current) => Some(
-                ResourceClassKeyState::current(Self::object_set_for_current(current, roas, certs)?),
+                ResourceClassKeyState::current(Self::object_set_for_current(current, roas)?),
             ),
             OldKeyState::RollNew(new, current) => Some(ResourceClassKeyState::staging(
                 Self::object_set_for_certified_key(new)?,
-                Self::object_set_for_current(current, roas, certs)?,
+                Self::object_set_for_current(current, roas)?,
             )),
 
             OldKeyState::RollOld(current, old) => Some(ResourceClassKeyState::old(
-                Self::object_set_for_current(current, roas, certs)?,
+                Self::object_set_for_current(current, roas)?,
                 Self::object_set_for_certified_key(&old.key)?,
             )),
         })
@@ -804,7 +804,6 @@ impl OldResourceClass {
     fn object_set_for_current(
         key: &OldCertifiedKey,
         roas: HashMap<ObjectName, RoaInfo>,
-        certs: HashMap<ObjectName, PublishedCert>,
     ) -> Result<CurrentKeyObjectSet, PrepareUpgradeError> {
         let basic = Self::object_set_for_certified_key(key)?;
 
@@ -814,12 +813,7 @@ impl OldResourceClass {
             published_objects.insert(name, published_object);
         }
 
-        Ok(CurrentKeyObjectSet::new(
-            basic,
-            published_objects,
-            HashMap::new(),
-            certs,
-        ))
+        Ok(CurrentKeyObjectSet::new(basic, published_objects, HashMap::new()))
     }
 
     fn object_set_for_certified_key(key: &OldCertifiedKey) -> Result<BasicKeyObjectSet, PrepareUpgradeError> {

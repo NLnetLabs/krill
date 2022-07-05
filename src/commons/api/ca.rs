@@ -401,6 +401,10 @@ impl<T> CertInfo<T> {
         &self.validity
     }
 
+    pub fn expires(&self) -> Time {
+        self.validity.not_after()
+    }
+
     pub fn serial(&self) -> Serial {
         self.serial
     }

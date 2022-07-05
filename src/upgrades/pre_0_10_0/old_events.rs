@@ -1242,19 +1242,17 @@ impl TryFrom<OldCurrentKeyObjectSet> for ca::CurrentKeyObjectSet {
             published_objects.insert(name, published_object);
         }
 
-        let mut certs = HashMap::new();
         for (name, old_cert) in old.certs.into_iter() {
-            certs.insert(name, old_cert.try_into()?);
+            let base64 = Base64::from(&old_cert.cert);
+            let serial = old_cert.cert.serial_number();
+            let expires = old_cert.cert.validity().not_after();
+            let published_object = PublishedObject::new(name.clone(), base64, serial, expires);
+            published_objects.insert(name, published_object);
         }
 
         let bgpsec_certs = HashMap::new();
 
-        Ok(ca::CurrentKeyObjectSet::new(
-            basic,
-            published_objects,
-            bgpsec_certs,
-            certs,
-        ))
+        Ok(ca::CurrentKeyObjectSet::new(basic, published_objects, bgpsec_certs))
     }
 }
 
