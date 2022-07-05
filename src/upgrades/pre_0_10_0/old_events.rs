@@ -562,7 +562,7 @@ impl Eq for OldAspaInfo {}
 
 impl From<OldAspaInfo> for AspaInfo {
     fn from(old: OldAspaInfo) -> Self {
-        AspaInfo::new(old.definition, old.aspa, old.since)
+        AspaInfo::new(old.definition, old.aspa)
     }
 }
 
@@ -1228,9 +1228,12 @@ impl TryFrom<OldCurrentKeyObjectSet> for ca::CurrentKeyObjectSet {
             published_objects.insert(name, published_object);
         }
 
-        let mut aspas = HashMap::new();
         for (name, old_aspa) in old.aspas.into_iter() {
-            aspas.insert(name, old_aspa.into());
+            let base64 = Base64::from(&old_aspa.0);
+            let serial = old_aspa.0.cert().serial_number();
+            let expires = old_aspa.0.cert().validity().not_after();
+            let published_object = PublishedObject::new(name.clone(), base64, serial, expires);
+            published_objects.insert(name, published_object);
         }
 
         let mut certs = HashMap::new();
@@ -1243,7 +1246,6 @@ impl TryFrom<OldCurrentKeyObjectSet> for ca::CurrentKeyObjectSet {
         Ok(ca::CurrentKeyObjectSet::new(
             basic,
             published_objects,
-            aspas,
             bgpsec_certs,
             certs,
         ))
@@ -1413,12 +1415,6 @@ impl Eq for OldPublishedRoa {}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct OldPublishedAspa(Aspa);
-
-impl From<OldPublishedAspa> for ca::PublishedAspa {
-    fn from(old: OldPublishedAspa) -> Self {
-        ca::PublishedAspa::new(old.0)
-    }
-}
 
 impl PartialEq for OldPublishedAspa {
     fn eq(&self, other: &Self) -> bool {

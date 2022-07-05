@@ -818,7 +818,6 @@ impl OldResourceClass {
             basic,
             published_objects,
             HashMap::new(),
-            HashMap::new(),
             certs,
         ))
     }

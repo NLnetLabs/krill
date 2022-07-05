@@ -9,14 +9,12 @@ use std::{
     sync::{Arc, RwLock},
 };
 
-use bytes::Bytes;
 use chrono::Duration;
 
 use rpki::{
     ca::{idexchange::CaHandle, provisioning::ResourceClassName, publication::Base64},
     crypto::{DigestAlgorithm, KeyIdentifier},
     repository::{
-        aspa::Aspa,
         crl::{Crl, TbsCertList},
         manifest::{FileAndHash, Manifest, ManifestContent},
         sigobj::SignedObjectBuilder,
@@ -44,7 +42,7 @@ use crate::{
     },
 };
 
-use super::{AspaObjectsUpdates, BgpSecCertInfo, BgpSecCertificateUpdates, RoaInfo};
+use super::{AspaInfo, AspaObjectsUpdates, BgpSecCertInfo, BgpSecCertificateUpdates, RoaInfo};
 
 //------------ CaObjectsStore ----------------------------------------------
 
@@ -834,8 +832,6 @@ pub struct CurrentKeyObjectSet {
     #[serde(skip_serializing_if = "HashMap::is_empty", default)]
     published_objects: HashMap<ObjectName, PublishedObject>,
 
-    #[serde(with = "objects_to_aspas_serde", skip_serializing_if = "HashMap::is_empty", default)]
-    aspas: HashMap<ObjectName, PublishedAspa>,
     #[serde(
         with = "objects_to_bgpsec_certs_serde",
         skip_serializing_if = "HashMap::is_empty",
@@ -850,14 +846,12 @@ impl CurrentKeyObjectSet {
     pub fn new(
         basic: BasicKeyObjectSet,
         published_objects: HashMap<ObjectName, PublishedObject>,
-        aspas: HashMap<ObjectName, PublishedAspa>,
         bgpsec_certs: HashMap<ObjectName, BgpSecCertInfo>,
         certs: HashMap<ObjectName, PublishedCert>,
     ) -> Self {
         CurrentKeyObjectSet {
             basic,
             published_objects,
-            aspas,
             bgpsec_certs,
             certs,
         }
@@ -883,13 +877,6 @@ impl CurrentKeyObjectSet {
             elements.push(PublishElement::new(
                 object.base64.clone(),
                 self.signing_cert.uri_for_name(&name),
-            ));
-        }
-
-        for (name, aspa) in &self.aspas {
-            elements.push(PublishElement::new(
-                Base64::from(&aspa.0),
-                base_uri.join(name.as_ref()).unwrap(),
             ));
         }
 
@@ -937,15 +924,15 @@ impl CurrentKeyObjectSet {
     ) -> KrillResult<()> {
         for aspa_info in updates.updated() {
             let name = ObjectName::aspa(aspa_info.customer());
-            let aspa = PublishedAspa::new(aspa_info.aspa().clone());
-            if let Some(old) = self.aspas.insert(name, aspa) {
-                self.revocations.add(Revocation::from(&old));
+            let published_object = PublishedObject::for_aspa(name.clone(), aspa_info);
+            if let Some(old) = self.published_objects.insert(name, published_object) {
+                self.revocations.add(old.revoke());
             }
         }
         for removed in updates.removed() {
             let name = ObjectName::aspa(*removed);
-            if let Some(old) = self.aspas.remove(&name) {
-                self.revocations.add(Revocation::from(&old));
+            if let Some(old) = self.published_objects.remove(&name) {
+                self.revocations.add(old.revoke());
             }
         }
 
@@ -1040,13 +1027,7 @@ impl CurrentKeyObjectSet {
 
     fn reissue_mft(&self, new_crl: &PublishedCrl, signer: &KrillSigner) -> KrillResult<PublishedManifest> {
         ManifestBuilder::new(self.revision)
-            .with_objects(
-                new_crl,
-                &self.published_objects,
-                &self.aspas,
-                &self.certs,
-                &self.bgpsec_certs,
-            )
+            .with_objects(new_crl, &self.published_objects, &self.certs, &self.bgpsec_certs)
             .build_new_mft(&self.signing_cert, signer)
             .map(|m| m.into())
     }
@@ -1057,7 +1038,6 @@ impl From<BasicKeyObjectSet> for CurrentKeyObjectSet {
         CurrentKeyObjectSet {
             basic,
             published_objects: HashMap::new(),
-            aspas: HashMap::new(),
             bgpsec_certs: HashMap::new(),
             certs: HashMap::new(),
         }
@@ -1075,42 +1055,6 @@ impl Deref for CurrentKeyObjectSet {
 impl DerefMut for CurrentKeyObjectSet {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.basic
-    }
-}
-
-mod objects_to_aspas_serde {
-    use super::*;
-
-    use serde::de::{Deserialize, Deserializer};
-    use serde::ser::Serializer;
-    #[derive(Debug, Deserialize)]
-    struct NameItem {
-        name: ObjectName,
-        aspa: PublishedAspa,
-    }
-
-    #[derive(Debug, Serialize)]
-    struct NameItemRef<'a> {
-        name: &'a ObjectName,
-        aspa: &'a PublishedAspa,
-    }
-
-    pub fn serialize<S>(map: &HashMap<ObjectName, PublishedAspa>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.collect_seq(map.iter().map(|(name, aspa)| NameItemRef { name, aspa }))
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<ObjectName, PublishedAspa>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let mut map = HashMap::new();
-        for item in Vec::<NameItem>::deserialize(deserializer)? {
-            map.insert(item.name, item.aspa);
-        }
-        Ok(map)
     }
 }
 
@@ -1348,47 +1292,6 @@ impl ObjectSetRevision {
 //------------ PublishedCert -----------------------------------------------
 pub type PublishedCert = DelegatedCertificate;
 
-//------------ PublishedAspa ----------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct PublishedAspa(Aspa);
-
-impl PublishedAspa {
-    pub fn new(aspa: Aspa) -> Self {
-        PublishedAspa(aspa)
-    }
-
-    pub fn to_bytes(&self) -> Bytes {
-        self.0.to_captured().into_bytes()
-    }
-
-    pub fn mft_hash(&self) -> Hash {
-        Hash::from_data(&self.to_bytes())
-    }
-}
-
-impl From<&PublishedAspa> for Revocation {
-    fn from(aspa: &PublishedAspa) -> Self {
-        Revocation::from(&aspa.0)
-    }
-}
-
-impl Deref for PublishedAspa {
-    type Target = Aspa;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl PartialEq for PublishedAspa {
-    fn eq(&self, other: &Self) -> bool {
-        self.to_bytes() == other.to_bytes()
-    }
-}
-
-impl Eq for PublishedAspa {}
-
 //------------ PublishedItem ----------------------------------------------
 
 /// Any item published in the repository.
@@ -1472,6 +1375,15 @@ impl PublishedObject {
     pub fn for_roa(name: ObjectName, roa_info: &RoaInfo) -> Self {
         PublishedObject::new(name, roa_info.base64().clone(), roa_info.serial(), roa_info.expires())
     }
+
+    pub fn for_aspa(name: ObjectName, aspa_info: &AspaInfo) -> Self {
+        PublishedObject::new(
+            name,
+            aspa_info.base64().clone(),
+            aspa_info.serial(),
+            aspa_info.expires(),
+        )
+    }
 }
 
 //------------ CrlBuilder --------------------------------------------------
@@ -1523,7 +1435,6 @@ impl ManifestBuilder {
         mut self,
         crl: &PublishedCrl,
         published_objects: &HashMap<ObjectName, PublishedObject>,
-        aspas: &HashMap<ObjectName, PublishedAspa>,
         certs: &HashMap<ObjectName, PublishedCert>,
         bgpsec_certs: &HashMap<ObjectName, BgpSecCertInfo>,
     ) -> Self {
@@ -1533,12 +1444,6 @@ impl ManifestBuilder {
         // Add other objects
         for (name, object) in published_objects {
             self.entries.insert(name.clone(), object.hash);
-        }
-
-        // Add ASPAs
-        for (name, aspa) in aspas {
-            let hash = aspa.mft_hash();
-            self.entries.insert(name.clone(), hash);
         }
 
         // Add all issued certs
