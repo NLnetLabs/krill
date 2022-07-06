@@ -91,7 +91,7 @@ impl BgpSecCertificates {
     /// Used to renew certificates which would expire, in which case the renew_threshold
     /// should be specified. Or, to re-issue all existing certificates during a key rollover
     /// activation of a new certified_key - in which case the renew_threshold is expected to
-    /// be None, and the certified_key is expected to have have changed.
+    /// be None, and the certified_key is expected to have changed.
     pub fn renew(
         &self,
         certified_key: &CertifiedKey,
