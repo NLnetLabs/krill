@@ -12,7 +12,7 @@ use rpki::{
         idexchange::{CaHandle, ChildHandle, ParentHandle, PublisherHandle},
         publication::{ListReply, PublishDelta},
     },
-    repository::{cert::Cert, resources::ResourceSet},
+    repository::resources::ResourceSet,
     uri,
 };
 
@@ -24,8 +24,8 @@ use crate::{
             AspaProvidersUpdate, BgpSecCsrInfoList, BgpSecDefinitionUpdates, CaCommandDetails, CaRepoDetails,
             CertAuthInfo, CertAuthInit, CertAuthIssues, CertAuthList, CertAuthStats, ChildCaInfo,
             ChildrenConnectionStats, CommandHistory, CommandHistoryCriteria, ParentCaContact, ParentCaReq,
-            PublicationServerUris, PublisherDetails, RepositoryContact, RoaDefinition, RoaDefinitionUpdates, RtaList,
-            RtaName, RtaPrepResponse, ServerInfo, TaCertDetails, Timestamp, UpdateChildRequest,
+            PublicationServerUris, PublisherDetails, RcvdCert, RepositoryContact, RoaDefinition, RoaDefinitionUpdates,
+            RtaList, RtaName, RtaPrepResponse, ServerInfo, TaCertDetails, Timestamp, UpdateChildRequest,
         },
         bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion},
         crypto::KrillSignerBuilder,
@@ -537,7 +537,7 @@ impl KrillServer {
         }
     }
 
-    pub async fn trust_anchor_cert(&self) -> Option<Cert> {
+    pub async fn trust_anchor_cert(&self) -> Option<RcvdCert> {
         self.ta().await.ok().map(|details| details.cert().clone())
     }
 

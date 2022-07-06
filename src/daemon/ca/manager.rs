@@ -9,8 +9,8 @@ use rpki::{
         idexchange::{CaHandle, ChildHandle, ParentHandle},
         provisioning,
         provisioning::{
-            IssuanceRequest, IssuanceResponse, ProvisioningCms, RequestResourceLimit, ResourceClassListResponse,
-            ResourceClassName, RevocationRequest, RevocationResponse,
+            IssuanceRequest, IssuanceResponse, ProvisioningCms, ResourceClassListResponse, ResourceClassName,
+            RevocationRequest, RevocationResponse,
         },
         publication,
         publication::{ListReply, Publish, PublishDelta, Update, Withdraw},
@@ -59,8 +59,8 @@ use crate::{
 pub struct CaLockMap(HashMap<CaHandle, tokio::sync::RwLock<()>>);
 
 impl CaLockMap {
-    fn create_ca_lock(&mut self, ca: &CaHandle) {
-        self.0.insert(ca.clone(), tokio::sync::RwLock::new(()));
+    fn create_ca_lock(&mut self, ca: CaHandle) {
+        self.0.insert(ca, tokio::sync::RwLock::new(()));
     }
 
     fn has_ca(&self, ca: &CaHandle) -> bool {
@@ -100,21 +100,21 @@ impl Default for CaLocks {
 }
 
 impl CaLocks {
-    pub async fn ca<'a>(&'a self, ca: &CaHandle) -> CaLock<'a> {
+    pub async fn ca<'a>(&'a self, ca: CaHandle) -> CaLock<'a> {
         {
             let map = self.locks.read().await;
-            if map.has_ca(ca) {
-                return CaLock { map, ca: ca.clone() };
+            if map.has_ca(&ca) {
+                return CaLock { map, ca };
             }
         }
 
         {
             let mut lock = self.locks.write().await;
-            lock.create_ca_lock(ca);
+            lock.create_ca_lock(ca.clone());
         }
 
         let map = self.locks.read().await;
-        CaLock { map, ca: ca.clone() }
+        CaLock { map, ca }
     }
 
     async fn drop_ca(&self, ca: &CaHandle) {
@@ -223,7 +223,7 @@ impl CaManager {
     /// Gets the TrustAnchor, if present. Returns an error if the TA is uninitialized.
     pub async fn get_trust_anchor(&self) -> KrillResult<Arc<CertAuth>> {
         let ta_handle = ca::ta_handle();
-        let lock = self.locks.ca(&ta_handle).await;
+        let lock = self.locks.ca(ta_handle.clone()).await;
         let _ = lock.read().await;
         self.ca_store.get_latest(&ta_handle).map_err(Error::AggregateStoreError)
     }
@@ -237,7 +237,7 @@ impl CaManager {
         actor: &Actor,
     ) -> KrillResult<()> {
         let ta_handle = ca::ta_handle();
-        let lock = self.locks.ca(&ta_handle).await;
+        let lock = self.locks.ca(ta_handle.clone()).await;
         let _ = lock.write().await;
         if self.ca_store.has(&ta_handle)? {
             Err(Error::TaAlreadyInitialized)
@@ -258,18 +258,11 @@ impl CaManager {
 
             // make trust anchor
             let make_ta_cmd =
-                CmdDet::make_trust_anchor(&ta_handle, ta_uris, Some(ta_aia.clone()), self.signer.clone(), actor);
+                CmdDet::make_trust_anchor(&ta_handle, ta_uris, ta_aia.clone(), self.signer.clone(), actor);
             let ta = self.ca_store.command(make_ta_cmd)?;
 
             // receive the self signed cert (now as child of self)
-            let ta_cert = ta.parent(&ta_handle.convert()).unwrap().to_ta_cert();
-            let rcvd_cert = RcvdCert::create(
-                ta_cert.clone(),
-                ta_aia,
-                ResourceSet::all(),
-                RequestResourceLimit::default(),
-            )
-            .unwrap();
+            let rcvd_cert = ta.parent(&ta_handle.convert()).unwrap().to_ta_cert().clone();
 
             let rcv_cert = CmdDet::upd_received_cert(
                 &ta_handle,
@@ -287,7 +280,7 @@ impl CaManager {
 
     /// Send a command to a CA
     async fn send_command(&self, cmd: Cmd) -> KrillResult<Arc<CertAuth>> {
-        let lock = self.locks.ca(cmd.handle()).await;
+        let lock = self.locks.ca(cmd.handle().clone()).await;
         let _ = lock.write().await;
         self.ca_store.command(cmd)
     }
@@ -345,7 +338,7 @@ impl CaManager {
     /// Gets a CA by the given handle, returns an `Err(ServerError::UnknownCA)` if it
     /// does not exist.
     pub async fn get_ca(&self, handle: &CaHandle) -> KrillResult<Arc<CertAuth>> {
-        let lock = self.locks.ca(handle).await;
+        let lock = self.locks.ca(handle.clone()).await;
         let _ = lock.read().await;
         self.ca_store
             .get_latest(handle)
@@ -427,7 +420,7 @@ impl CaManager {
 impl CaManager {
     /// Gets the history for a CA.
     pub async fn ca_history(&self, handle: &CaHandle, crit: CommandHistoryCriteria) -> KrillResult<CommandHistory> {
-        let ca_lock = self.locks.ca(handle).await;
+        let ca_lock = self.locks.ca(handle.clone()).await;
         let _lock = ca_lock.read().await;
         Ok(self.ca_store.command_history(handle, crit)?)
     }

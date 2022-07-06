@@ -120,7 +120,7 @@ impl OldCaEvt {
             OldCaEvtDet::ParentAdded(parent, old_contact) => {
                 let contact = match old_contact {
                     OldParentCaContact::Rfc6492(res) => ParentCaContact::for_rfc8183_parent_response(res)?,
-                    OldParentCaContact::Ta(details) => ParentCaContact::Ta(details),
+                    OldParentCaContact::Ta(details) => ParentCaContact::Ta(details.try_into()?),
                     OldParentCaContact::Embedded => match derived_embedded_ca_info_map.get(&parent.convert()) {
                         Some(info) => {
                             let res = info.parent_responses.get(&id.convert()).ok_or_else(|| PrepareUpgradeError::Custom(
@@ -177,7 +177,7 @@ impl OldCaEvt {
 #[serde(rename_all = "snake_case")]
 pub enum OldCaEvtDet {
     // Being a Trust Anchor
-    TrustAnchorMade(TaCertDetails),
+    TrustAnchorMade(OldTaCertDetails),
 
     // Being a parent Events
     ChildAdded(ChildHandle, OldChildDetails),
@@ -227,7 +227,9 @@ impl TryFrom<OldCaEvtDet> for CaEvtDet {
 
     fn try_from(old: OldCaEvtDet) -> Result<Self, Self::Error> {
         Ok(match old {
-            OldCaEvtDet::TrustAnchorMade(ta_cert_details) => CaEvtDet::TrustAnchorMade { ta_cert_details },
+            OldCaEvtDet::TrustAnchorMade(ta_cert_details) => CaEvtDet::TrustAnchorMade {
+                ta_cert_details: ta_cert_details.try_into()?,
+            },
             OldCaEvtDet::ChildAdded(_child, _details) => {
                 unreachable!("Add child must be converted with embedded children in mind")
             }
@@ -508,11 +510,11 @@ pub struct OldCaIniDet {
     #[serde(skip_serializing_if = "Option::is_none")]
     info: Option<RepoInfo>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    ta_details: Option<TaCertDetails>,
+    ta_details: Option<OldTaCertDetails>,
 }
 
 impl OldCaIniDet {
-    pub fn unpack(self) -> (OldRfc8183Id, Option<RepoInfo>, Option<TaCertDetails>) {
+    pub fn unpack(self) -> (OldRfc8183Id, Option<RepoInfo>, Option<OldTaCertDetails>) {
         (self.id, self.info, self.ta_details)
     }
 }

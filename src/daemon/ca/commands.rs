@@ -48,7 +48,7 @@ pub enum CmdDet {
     // ------------------------------------------------------------
     // Being a TA
     // ------------------------------------------------------------
-    MakeTrustAnchor(Vec<uri::Https>, Option<uri::Rsync>, Arc<KrillSigner>),
+    MakeTrustAnchor(Vec<uri::Https>, uri::Rsync, Arc<KrillSigner>),
 
     // ------------------------------------------------------------
     // Being a parent
@@ -349,7 +349,7 @@ impl CmdDet {
     pub fn make_trust_anchor(
         handle: &CaHandle,
         uris: Vec<uri::Https>,
-        rsync_uri: Option<uri::Rsync>,
+        rsync_uri: uri::Rsync,
         signer: Arc<KrillSigner>,
         actor: &Actor,
     ) -> Cmd {

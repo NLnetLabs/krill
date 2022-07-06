@@ -834,11 +834,7 @@ pub struct CurrentKeyObjectSet {
 }
 
 impl CurrentKeyObjectSet {
-    pub fn new(
-        basic: BasicKeyObjectSet,
-        published_objects: HashMap<ObjectName, PublishedObject>,
-        bgpsec_certs: HashMap<ObjectName, BgpSecCertInfo>,
-    ) -> Self {
+    pub fn new(basic: BasicKeyObjectSet, published_objects: HashMap<ObjectName, PublishedObject>) -> Self {
         CurrentKeyObjectSet {
             basic,
             published_objects,
@@ -852,7 +848,6 @@ impl CurrentKeyObjectSet {
     fn add_elements(&self, map: &mut HashMap<RepositoryContact, Vec<PublishElement>>, dflt_repo: &RepositoryContact) {
         let repo = self.old_repo.as_ref().unwrap_or(dflt_repo);
 
-        let base_uri = self.signing_cert.ca_repository();
         let crl_uri = self.signing_cert.crl_uri();
         let mft_uri = self.signing_cert.mft_uri();
 

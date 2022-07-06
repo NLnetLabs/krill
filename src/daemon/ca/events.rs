@@ -774,7 +774,7 @@ impl fmt::Display for CaEvtDet {
             CaEvtDet::TrustAnchorMade { ta_cert_details } => write!(
                 f,
                 "turn into TA with key (hash) {}",
-                ta_cert_details.cert().subject_key_identifier()
+                ta_cert_details.cert().key_identifier()
             ),
 
             // Being a parent Events

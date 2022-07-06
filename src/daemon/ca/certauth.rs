@@ -134,7 +134,7 @@ impl Aggregate for CertAuth {
             // Being a trust anchor
             //-----------------------------------------------------------------------
             CaEvtDet::TrustAnchorMade { ta_cert_details } => {
-                let key_id = ta_cert_details.cert().subject_key_identifier();
+                let key_id = ta_cert_details.cert().key_identifier();
                 self.parents
                     .insert(ta_handle().into_converted(), ParentCaContact::Ta(ta_cert_details));
                 let rcn = ResourceClassName::from(self.next_class_name);
@@ -587,7 +587,7 @@ impl CertAuth {
     fn trust_anchor_make(
         &self,
         uris: Vec<uri::Https>,
-        rsync_uri: Option<uri::Rsync>,
+        rsync_uri: uri::Rsync,
         signer: Arc<KrillSigner>,
     ) -> KrillResult<Vec<CaEvt>> {
         if !self.resources.is_empty() {
@@ -633,9 +633,12 @@ impl CertAuth {
             signer.sign_cert(cert, &key)?
         };
 
-        let tal = TrustAnchorLocator::new(uris, rsync_uri, &cert);
+        let tal = TrustAnchorLocator::new(uris, rsync_uri.clone(), cert.subject_public_key_info());
 
-        let ta_cert_details = TaCertDetails::new(cert, resources, tal);
+        let rcvd_cert =
+            RcvdCert::create(cert, rsync_uri, resources, RequestResourceLimit::default()).map_err(Error::custom)?;
+
+        let ta_cert_details = TaCertDetails::new(rcvd_cert, tal);
 
         info!("Created Trust Anchor");
 

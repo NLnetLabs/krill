@@ -44,7 +44,6 @@ use crate::{
             rrdp::PublishElement, AspaDefinition, ErrorResponse, ParentCaContact, RepositoryContact, RoaAggregateKey,
             RoaDefinition,
         },
-        util::ext_serde,
         util::KrillVersion,
     },
     daemon::ca::RouteAuthorization,
@@ -182,94 +181,6 @@ impl fmt::Display for ChildCaInfo {
         writeln!(f, "state: {}", self.state)
     }
 }
-
-// //------------ DelegatedCertificate ------------------------------------------
-
-// /// This type defines a certificate issued to a child. It differs
-// /// from [`rpki::ca::provisioning::IssuedCert`] in that it supplies
-// /// convenience access to an explicit ResourceSet - which cannot use
-// /// inherit. And.. this gives us a safeguard wrt to changes in the
-// /// rpki library which would affect (de-)serialization of this type
-// /// which is kept in event history and snapshots.
-// #[derive(Clone, Debug, Deserialize, Serialize)]
-// pub struct DelegatedCertificate {
-//     uri: uri::Rsync,             // where this cert is published
-//     limit: RequestResourceLimit, // the limit on the request
-//     resource_set: ResourceSet,
-//     cert: Cert,
-// }
-
-// pub type SuspendedCert = DelegatedCertificate;
-// pub type UnsuspendedCert = DelegatedCertificate;
-
-// impl DelegatedCertificate {
-//     pub fn new(uri: uri::Rsync, limit: RequestResourceLimit, resource_set: ResourceSet, cert: Cert) -> Self {
-//         DelegatedCertificate {
-//             uri,
-//             limit,
-//             resource_set,
-//             cert,
-//         }
-//     }
-
-//     pub fn unpack(self) -> (uri::Rsync, RequestResourceLimit, ResourceSet, Cert) {
-//         (self.uri, self.limit, self.resource_set, self.cert)
-//     }
-
-//     pub fn uri(&self) -> &uri::Rsync {
-//         &self.uri
-//     }
-//     pub fn limit(&self) -> &RequestResourceLimit {
-//         &self.limit
-//     }
-//     pub fn resource_set(&self) -> &ResourceSet {
-//         &self.resource_set
-//     }
-//     pub fn cert(&self) -> &Cert {
-//         &self.cert
-//     }
-
-//     /// Returns a (possibly empty) set of reduced applicable resources which is the intersection
-//     /// of the encompassing resources and this certificate's current resources.
-//     /// Returns None if the current resource set is not overclaiming and does not need to be
-//     /// reduced.
-//     pub fn reduced_applicable_resources(&self, encompassing: &ResourceSet) -> Option<ResourceSet> {
-//         if encompassing.contains(&self.resource_set) {
-//             None
-//         } else {
-//             Some(encompassing.intersection(&self.resource_set))
-//         }
-//     }
-// }
-
-// impl PartialEq for DelegatedCertificate {
-//     fn eq(&self, other: &DelegatedCertificate) -> bool {
-//         self.uri == other.uri
-//             && self.limit == other.limit
-//             && self.resource_set == other.resource_set
-//             && self.cert.to_captured().as_slice() == other.cert.to_captured().as_slice()
-//     }
-// }
-
-// impl Eq for DelegatedCertificate {}
-
-// impl Deref for DelegatedCertificate {
-//     type Target = Cert;
-
-//     fn deref(&self) -> &Self::Target {
-//         &self.cert
-//     }
-// }
-
-// impl From<&DelegatedCertificate> for IssuedCert {
-//     fn from(krill_issued: &DelegatedCertificate) -> Self {
-//         IssuedCert::new(
-//             krill_issued.uri.clone(),
-//             krill_issued.limit.clone(),
-//             krill_issued.cert.clone(),
-//         )
-//     }
-// }
 
 //------------ RcvdCert ------------------------------------------------------
 
@@ -555,24 +466,18 @@ impl std::error::Error for InvalidCert {}
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TrustAnchorLocator {
     uris: Vec<uri::Https>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    rsync_uri: Option<uri::Rsync>,
-
-    #[serde(deserialize_with = "ext_serde::de_bytes", serialize_with = "ext_serde::ser_bytes")]
-    encoded_ski: Bytes,
+    rsync_uri: uri::Rsync,
+    encoded_ski: Base64,
 }
 
 impl TrustAnchorLocator {
     /// Creates a new TAL, panics when the provided Cert is not a TA cert.
-    pub fn new(uris: Vec<uri::Https>, rsync_uri: Option<uri::Rsync>, cert: &Cert) -> Self {
-        if cert.authority_key_identifier().is_some() {
-            panic!("Trying to create TAL for a non-TA certificate.")
-        }
-        let encoded_ski = cert.subject_public_key_info().to_info_bytes();
+    pub fn new(uris: Vec<uri::Https>, rsync_uri: uri::Rsync, public_key: &PublicKey) -> Self {
+        let encoded_ski = Base64::from_content(&public_key.to_info_bytes());
+
         TrustAnchorLocator {
             uris,
-            rsync_uri,
+            rsync_uri: rsync_uri,
             encoded_ski,
         }
     }
@@ -580,25 +485,23 @@ impl TrustAnchorLocator {
 
 impl fmt::Display for TrustAnchorLocator {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let base64 = Base64::from_content(&self.encoded_ski).to_string();
+        let base64_string = self.encoded_ski.to_string();
 
         for uri in self.uris.iter() {
             writeln!(f, "{}", uri)?;
         }
-        if let Some(rsync_uri) = &self.rsync_uri {
-            writeln!(f, "{}", rsync_uri)?;
-        }
+        writeln!(f, "{}", self.rsync_uri)?;
 
         writeln!(f)?;
 
-        let len = base64.len();
+        let len = base64_string.len();
         let wrap = 64;
 
         for i in 0..=(len / wrap) {
             if (i * wrap + wrap) < len {
-                writeln!(f, "{}", &base64[i * wrap..i * wrap + wrap])?;
+                writeln!(f, "{}", &base64_string[i * wrap..i * wrap + wrap])?;
             } else {
-                write!(f, "{}", &base64[i * wrap..])?;
+                write!(f, "{}", &base64_string[i * wrap..])?;
             }
         }
 
@@ -2363,9 +2266,9 @@ mod test {
         let der = include_bytes!("../../../test-resources/ta.cer");
         let cert = Cert::decode(Bytes::from_static(der)).unwrap();
         let uri = test::https("https://localhost/ta.cer");
-        let rsync_uri = Some(test::rsync("rsync://localhost/ta/ta.cer"));
+        let rsync_uri = test::rsync("rsync://localhost/ta/ta.cer");
 
-        let tal = TrustAnchorLocator::new(vec![uri], rsync_uri, &cert);
+        let tal = TrustAnchorLocator::new(vec![uri], rsync_uri, cert.subject_public_key_info());
 
         let expected_tal = include_str!("../../../test-resources/test.tal");
         let found_tal = tal.to_string();

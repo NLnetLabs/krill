@@ -5,6 +5,7 @@ use std::{
     sync::Arc,
 };
 
+use bytes::Bytes;
 use chrono::Duration;
 
 use rpki::{
@@ -12,11 +13,11 @@ use rpki::{
         idcert::IdCert,
         idexchange,
         idexchange::{CaHandle, ChildHandle, ParentHandle, RepoInfo},
-        provisioning::{IssuanceRequest, ResourceClassName, RevocationRequest},
+        provisioning::{IssuanceRequest, RequestResourceLimit, ResourceClassName, RevocationRequest},
         publication::Base64,
     },
     crypto::KeyIdentifier,
-    repository::{crl::Crl, manifest::Manifest, resources::ResourceSet, x509::Time},
+    repository::{crl::Crl, manifest::Manifest, resources::ResourceSet, x509::Time, Cert},
     rrdp::Hash,
     uri,
 };
@@ -24,11 +25,12 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            IdCertInfo, ObjectName, RepositoryContact, Revocation, Revocations, RoaAggregateKey, StorableCaCommand,
-            StoredEffect, TaCertDetails,
+            IdCertInfo, ObjectName, RcvdCert, RepositoryContact, Revocation, Revocations, RoaAggregateKey,
+            StorableCaCommand, StoredEffect, TaCertDetails, TrustAnchorLocator,
         },
         crypto::KrillSigner,
         eventsourcing::{Aggregate, AggregateStore, CommandKey, KeyStoreKey, KeyValueStore, StoredValueInfo},
+        util::ext_serde,
     },
     constants::{CASERVER_DIR, KRILL_VERSION},
     daemon::{
@@ -464,7 +466,7 @@ impl Aggregate for OldCertAuth {
         let routes = OldRoutes::default();
 
         if let Some(ta_details) = ta_opt {
-            let key_id = ta_details.cert().subject_key_identifier();
+            let key_id = ta_details.cert.subject_key_identifier();
             parents.insert(ta_handle().into_converted(), OldParentCaContact::Ta(ta_details));
 
             let rcn = ResourceClassName::from(next_class_name);
@@ -505,7 +507,7 @@ impl Aggregate for OldCertAuth {
             // Being a trust anchor
             //-----------------------------------------------------------------------
             OldCaEvtDet::TrustAnchorMade(details) => {
-                let key_id = details.cert().subject_key_identifier();
+                let key_id = details.cert.subject_public_key_info().key_identifier();
                 self.parents
                     .insert(ta_handle().into_converted(), OldParentCaContact::Ta(details));
                 let rcn = ResourceClassName::from(self.next_class_name);
@@ -720,7 +722,7 @@ impl OldRepositoryContact {
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
 pub enum OldParentCaContact {
-    Ta(TaCertDetails),
+    Ta(OldTaCertDetails),
     Embedded,
     Rfc6492(idexchange::ParentResponse),
 }
@@ -813,7 +815,7 @@ impl OldResourceClass {
             published_objects.insert(name, published_object);
         }
 
-        Ok(CurrentKeyObjectSet::new(basic, published_objects, HashMap::new()))
+        Ok(CurrentKeyObjectSet::new(basic, published_objects))
     }
 
     fn object_set_for_certified_key(key: &OldCertifiedKey) -> Result<BasicKeyObjectSet, PrepareUpgradeError> {
@@ -1070,6 +1072,74 @@ impl OldRoutes {
         self.map.remove(auth).is_some()
     }
 }
+
+//------------ OldTaCertDetails -------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct OldTaCertDetails {
+    cert: Cert,
+    resources: ResourceSet,
+    tal: OldTrustAnchorLocator,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OldTrustAnchorLocator {
+    uris: Vec<uri::Https>,
+    rsync_uri: Option<uri::Rsync>,
+    #[serde(deserialize_with = "ext_serde::de_bytes", serialize_with = "ext_serde::ser_bytes")]
+    encoded_ski: Bytes,
+}
+
+impl TryFrom<OldTaCertDetails> for TaCertDetails {
+    type Error = PrepareUpgradeError;
+
+    fn try_from(old: OldTaCertDetails) -> Result<Self, Self::Error> {
+        let cert = old.cert;
+        let resources = old.resources;
+        let tal = old.tal;
+
+        let rsync_uri = match tal.rsync_uri {
+            Some(uri) => uri,
+            None => {
+                // Early krill testbeds did not have a usable rsync URI for the TA certificate
+                // That said, we can kind of make one up because this is only used in a test
+                // context anyhow. And otherwise we would not be able to upgrade.
+
+                // So, we will just take the
+                cert.rpki_manifest()
+                    .ok_or_else(|| {
+                        PrepareUpgradeError::custom(
+                            "Cannot migrate TA, rsync URI is missing and TA cert does not have a manifest URI?!",
+                        )
+                    })?
+                    .parent()
+                    .unwrap()
+                    .join(b"ta.cer")
+                    .unwrap()
+            }
+        };
+
+        let limit = RequestResourceLimit::default();
+
+        let public_key = cert.subject_public_key_info().clone();
+        let rvcd_cert = RcvdCert::create(cert, rsync_uri.clone(), resources, limit)
+            .map_err(|e| PrepareUpgradeError::Custom(format!("Could not convert old TA details: {}", e)))?;
+
+        let tal = TrustAnchorLocator::new(tal.uris, rsync_uri, &public_key);
+
+        Ok(TaCertDetails::new(rvcd_cert, tal))
+    }
+}
+
+impl PartialEq for OldTaCertDetails {
+    fn eq(&self, other: &Self) -> bool {
+        self.tal == other.tal
+            && self.resources == other.resources
+            && self.cert.to_captured().as_slice() == other.cert.to_captured().as_slice()
+    }
+}
+
+impl Eq for OldTaCertDetails {}
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RouteInfo {

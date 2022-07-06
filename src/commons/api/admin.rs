@@ -11,7 +11,6 @@ use rpki::{
         idexchange::{CaHandle, ChildHandle, ParentHandle, PublisherHandle, RepoInfo},
     },
     crypto::PublicKey,
-    repository::cert::Cert,
     repository::resources::ResourceSet,
     uri,
 };
@@ -21,6 +20,8 @@ use crate::commons::{
     error::Error,
     KrillResult,
 };
+
+use super::RcvdCert;
 
 //------------ Token ------------------------------------------------------
 
@@ -308,40 +309,29 @@ impl ParentCaReq {
 
 //------------ TaCertDetails -------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TaCertDetails {
-    cert: Cert,
-    resources: ResourceSet,
+    cert: RcvdCert,
     tal: TrustAnchorLocator,
 }
 
 impl TaCertDetails {
-    pub fn new(cert: Cert, resources: ResourceSet, tal: TrustAnchorLocator) -> Self {
-        TaCertDetails { cert, resources, tal }
+    pub fn new(cert: RcvdCert, tal: TrustAnchorLocator) -> Self {
+        TaCertDetails { cert, tal }
     }
 
-    pub fn cert(&self) -> &Cert {
+    pub fn cert(&self) -> &RcvdCert {
         &self.cert
     }
 
     pub fn resources(&self) -> &ResourceSet {
-        &self.resources
+        self.cert.resources()
     }
 
     pub fn tal(&self) -> &TrustAnchorLocator {
         &self.tal
     }
 }
-
-impl PartialEq for TaCertDetails {
-    fn eq(&self, other: &Self) -> bool {
-        self.tal == other.tal
-            && self.resources == other.resources
-            && self.cert.to_captured().as_slice() == other.cert.to_captured().as_slice()
-    }
-}
-
-impl Eq for TaCertDetails {}
 
 //------------ ParentServerInfo ----------------------------------------------
 
@@ -447,7 +437,7 @@ impl ParentCaContact {
         }
     }
 
-    pub fn to_ta_cert(&self) -> &Cert {
+    pub fn to_ta_cert(&self) -> &RcvdCert {
         match &self {
             ParentCaContact::Ta(details) => details.cert(),
             _ => panic!("Not a TA parent"),

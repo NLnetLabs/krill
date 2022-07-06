@@ -4,6 +4,7 @@ use std::{
     fmt,
 };
 
+use bytes::Bytes;
 use rpki::{
     ca::{
         idcert::IdCert,
@@ -26,6 +27,7 @@ use crate::{
             Revocations, RoaAggregateKey, RtaName, SuspendedCert, TaCertDetails, TrustAnchorLocator, UnsuspendedCert,
         },
         eventsourcing::StoredEvent,
+        util::ext_serde,
     },
     daemon::ca::{
         self, AspaInfo, AspaObjectsUpdates, CaEvt, CaEvtDet, CaObjects, CertifiedKey, ChildCertificateUpdates,
@@ -52,30 +54,54 @@ impl From<OldRfc8183Id> for ca::Rfc8183Id {
 pub struct OldTaCertDetails {
     cert: Cert,
     resources: ResourceSet,
-    tal: TrustAnchorLocator,
+    tal: OldTrustAnchorLocator,
 }
 
-impl OldTaCertDetails {
-    pub fn new(cert: Cert, resources: ResourceSet, tal: TrustAnchorLocator) -> Self {
-        OldTaCertDetails { cert, resources, tal }
-    }
-
-    pub fn cert(&self) -> &Cert {
-        &self.cert
-    }
-
-    pub fn resources(&self) -> &ResourceSet {
-        &self.resources
-    }
-
-    pub fn tal(&self) -> &TrustAnchorLocator {
-        &self.tal
-    }
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OldTrustAnchorLocator {
+    uris: Vec<uri::Https>,
+    rsync_uri: Option<uri::Rsync>,
+    #[serde(deserialize_with = "ext_serde::de_bytes", serialize_with = "ext_serde::ser_bytes")]
+    encoded_ski: Bytes,
 }
 
-impl From<OldTaCertDetails> for TaCertDetails {
-    fn from(old: OldTaCertDetails) -> Self {
-        TaCertDetails::new(old.cert, old.resources, old.tal)
+impl TryFrom<OldTaCertDetails> for TaCertDetails {
+    type Error = PrepareUpgradeError;
+
+    fn try_from(old: OldTaCertDetails) -> Result<Self, Self::Error> {
+        let cert = old.cert;
+        let resources = old.resources;
+        let tal = old.tal;
+
+        let rsync_uri = match tal.rsync_uri {
+            Some(uri) => uri,
+            None => {
+                // Early krill testbeds did not have a usable rsync URI for the TA certificate
+                // That said, we can kind of make one up because this is only used in a test
+                // context anyhow. And otherwise we would not be able to upgrade.
+
+                // So, we will just take the
+                cert.rpki_manifest()
+                    .ok_or_else(|| {
+                        PrepareUpgradeError::custom(
+                            "Cannot migrate TA, rsync URI is missing and TA cert does not have a manifest URI?!",
+                        )
+                    })?
+                    .parent()
+                    .unwrap()
+                    .join(b"ta.cer")
+                    .unwrap()
+            }
+        };
+        let limit = RequestResourceLimit::default();
+
+        let public_key = cert.subject_public_key_info().clone();
+        let rvcd_cert = RcvdCert::create(cert, rsync_uri.clone(), resources, limit)
+            .map_err(|e| PrepareUpgradeError::Custom(format!("Could not convert old TA details: {}", e)))?;
+
+        let tal = TrustAnchorLocator::new(tal.uris, rsync_uri, &public_key);
+
+        Ok(TaCertDetails::new(rvcd_cert, tal))
     }
 }
 
@@ -237,12 +263,14 @@ pub enum OldParentCaContact {
     Rfc6492(OldParentResponse),
 }
 
-impl From<OldParentCaContact> for ParentCaContact {
-    fn from(old: OldParentCaContact) -> Self {
-        match old {
-            OldParentCaContact::Ta(old) => ParentCaContact::Ta(old.into()),
+impl TryFrom<OldParentCaContact> for ParentCaContact {
+    type Error = PrepareUpgradeError;
+
+    fn try_from(old: OldParentCaContact) -> Result<Self, Self::Error> {
+        Ok(match old {
+            OldParentCaContact::Ta(old) => ParentCaContact::Ta(old.try_into()?),
             OldParentCaContact::Rfc6492(old) => ParentCaContact::Rfc6492(old.into()),
-        }
+        })
     }
 }
 
@@ -866,7 +894,7 @@ impl TryFrom<OldCaEvtDet> for CaEvtDet {
     fn try_from(old: OldCaEvtDet) -> Result<Self, Self::Error> {
         Ok(match old {
             OldCaEvtDet::TrustAnchorMade { ta_cert_details } => CaEvtDet::TrustAnchorMade {
-                ta_cert_details: ta_cert_details.into(),
+                ta_cert_details: ta_cert_details.try_into()?,
             },
             OldCaEvtDet::ChildAdded {
                 child,
@@ -915,11 +943,11 @@ impl TryFrom<OldCaEvtDet> for CaEvtDet {
             OldCaEvtDet::IdUpdated { id } => CaEvtDet::IdUpdated { id: id.into() },
             OldCaEvtDet::ParentAdded { parent, contact } => CaEvtDet::ParentAdded {
                 parent,
-                contact: contact.into(),
+                contact: contact.try_into()?,
             },
             OldCaEvtDet::ParentUpdated { parent, contact } => CaEvtDet::ParentUpdated {
                 parent,
-                contact: contact.into(),
+                contact: contact.try_into()?,
             },
             OldCaEvtDet::ParentRemoved { parent } => CaEvtDet::ParentRemoved { parent },
             OldCaEvtDet::ResourceClassAdded {
@@ -1250,9 +1278,7 @@ impl TryFrom<OldCurrentKeyObjectSet> for ca::CurrentKeyObjectSet {
             published_objects.insert(name, published_object);
         }
 
-        let bgpsec_certs = HashMap::new();
-
-        Ok(ca::CurrentKeyObjectSet::new(basic, published_objects, bgpsec_certs))
+        Ok(ca::CurrentKeyObjectSet::new(basic, published_objects))
     }
 }
 

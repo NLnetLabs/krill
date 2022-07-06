@@ -885,7 +885,7 @@ pub async fn tal(req: Request) -> RoutingResult {
 
 pub async fn ta_cer(req: Request) -> RoutingResult {
     match req.state().trust_anchor_cert().await {
-        Some(cert) => Ok(HttpResponse::cert(cert.to_captured().to_vec())),
+        Some(cert) => Ok(HttpResponse::cert(cert.to_bytes().to_vec())),
         None => render_unknown_resource(),
     }
 }
