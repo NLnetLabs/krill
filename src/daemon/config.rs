@@ -1886,6 +1886,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "see issue #821"]
     fn should_use_the_expected_default_signer() {
         let config_str = r#"
             auth_token = "secret"
