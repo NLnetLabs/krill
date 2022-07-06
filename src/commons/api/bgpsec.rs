@@ -64,6 +64,8 @@ impl BgpSecAsnKey {
 
 impl fmt::Display for BgpSecAsnKey {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // We use a format similar to the recommendation for the router
+        // certificate subject from section 3.1.1 in RFC 8209.
         write!(f, "ROUTER-{:08X}-{}", self.asn.into_u32(), self.key)
     }
 }

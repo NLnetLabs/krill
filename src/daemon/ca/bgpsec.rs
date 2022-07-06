@@ -133,11 +133,18 @@ impl BgpSecCertificates {
 
         let validity = SignSupport::sign_validity_weeks(issuance_timing.timing_bgpsec_valid_weeks);
 
+        // Perhaps implement recommendation of 3.1.1 RFC 8209 somehow. However, it is
+        // not at all clear how/why this is relevant. RPs will typically discard this
+        // information and the subject is not communicated to routers. If this is for
+        // debugging purposes then using a sensible file name (like we do) is more
+        // important.
+        let subject = None;
+
         let mut router_cert = TbsCert::new(
             serial_number,
             issuer,
             validity,
-            None,
+            subject,
             public_key,
             KeyUsage::Ee,
             Overclaim::Refuse,
