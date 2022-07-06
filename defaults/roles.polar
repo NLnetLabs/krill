@@ -70,6 +70,7 @@ role_allow("readonly", action: Permission) if
         ROUTES_ANALYSIS,
         ASPAS_READ,
         ASPAS_ANALYSIS,
+        BGPSEC_READ,
         RTA_LIST,
         RTA_READ
     ];
