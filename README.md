@@ -21,6 +21,11 @@ For more information please refer to the [documentation](https://krill.docs.nlne
 
 # Changelog
 
+## 0.10.0
+
+In this release we introduce the following feature:
+- BGPSec Router Certificate Signing (CLI/API only)
+
 ## 0.9.6 'Newer ROAs Please'
 
 This release fixes an issue introduced in 0.9.5 where the background job to
