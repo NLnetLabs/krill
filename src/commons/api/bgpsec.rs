@@ -112,12 +112,12 @@ impl fmt::Display for BgpSecAsnKeyFmtError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "invalid BGPSec ASN and Key format. Expected: ROUTER-<hex-encoded-asn>-<hex-encoded-key-identifier>"
+            "Invalid BGPSec ASN and Key format. Expected: ROUTER-<hex-encoded-asn>-<hex-encoded-key-identifier>"
         )
     }
 }
 
-/// We use BgpSecAsnKey as (json) map keys and therefore we need it
+/// We use BgpSecAsnKey as (JSON) map keys and therefore we need it
 /// to be serializable to a single simple string.
 impl Serialize for BgpSecAsnKey {
     fn serialize<S>(&self, s: S) -> Result<S::Ok, S::Error>
@@ -128,7 +128,7 @@ impl Serialize for BgpSecAsnKey {
     }
 }
 
-/// We use BgpSecAsnKey as (json) map keys and therefore we need it
+/// We use BgpSecAsnKey as (JSON) map keys and therefore we need it
 /// to be deserializable from a single simple string.
 impl<'de> Deserialize<'de> for BgpSecAsnKey {
     fn deserialize<D>(d: D) -> Result<BgpSecAsnKey, D::Error>
@@ -208,7 +208,7 @@ impl BgpSecCsrInfoList {
 
 impl fmt::Display for BgpSecCsrInfoList {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "asn, key identifier, csr base64")?;
+        writeln!(f, "ASN, key identifier, CSR base64")?;
         for info in self.0.iter() {
             writeln!(f, "{}, {}, {}", info.asn, info.key_identifier, info.csr)?;
         }
