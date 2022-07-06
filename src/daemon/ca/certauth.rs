@@ -1962,7 +1962,6 @@ impl CertAuth {
             if !definitions.remove(&key) {
                 return Err(Error::BgpSecDefinitionUnknown(self.handle.clone(), key));
             } else {
-                definitions.remove(&key);
                 res.push(CaEvtDet::BgpSecDefinitionRemoved { key });
             }
         }
