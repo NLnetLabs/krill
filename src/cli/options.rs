@@ -764,7 +764,7 @@ impl Options {
                     .short("a")
                     .long("asn")
                     .value_name("ASN")
-                    .help("The ASN of the router for the key used in the CSR")
+                    .help("The ASN of the router for the key used in the CSR. E.g. AS65000")
                     .required(true),
             )
             .arg(
@@ -790,14 +790,14 @@ impl Options {
                     .short("a")
                     .long("asn")
                     .value_name("ASN")
-                    .help("The ASN used in the BGPSec definition")
+                    .help("The ASN used in the BGPSec definition. E.g. AS65000")
                     .required(true),
             )
             .arg(
                 Arg::with_name("key")
                     .long("key")
                     .value_name("key")
-                    .help("The hexencoded key identifier used in the BGPSec definition")
+                    .help("The hex encoded key identifier used in the BGPSec definition")
                     .required(true),
             );
 
