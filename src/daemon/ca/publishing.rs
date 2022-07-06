@@ -1061,42 +1061,6 @@ mod objects_to_bgpsec_certs_serde {
     }
 }
 
-mod objects_to_certs_serde {
-    use super::*;
-
-    use serde::de::{Deserialize, Deserializer};
-    use serde::ser::Serializer;
-    #[derive(Debug, Deserialize)]
-    struct NameCertItem {
-        name: ObjectName,
-        issued: PublishedCert,
-    }
-
-    #[derive(Debug, Serialize)]
-    struct NameCertItemRef<'a> {
-        name: &'a ObjectName,
-        issued: &'a PublishedCert,
-    }
-
-    pub fn serialize<S>(map: &HashMap<ObjectName, PublishedCert>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.collect_seq(map.iter().map(|(name, issued)| NameCertItemRef { name, issued }))
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<ObjectName, PublishedCert>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let mut map = HashMap::new();
-        for item in Vec::<NameCertItem>::deserialize(deserializer)? {
-            map.insert(item.name, item.issued);
-        }
-        Ok(map)
-    }
-}
-
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BasicKeyObjectSet {
     signing_cert: RcvdCert,
