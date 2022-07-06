@@ -840,7 +840,7 @@ impl ResourceClass {
             self.bgpsec_certificates
                 .renew(key, renew_threshold, issuance_timing, signer)
         } else {
-            debug!("no ASPAs to renew - resource class has no current key");
+            debug!("no BGPSec certificates to renew - resource class has no current key");
             Ok(BgpSecCertificateUpdates::default())
         }
     }
