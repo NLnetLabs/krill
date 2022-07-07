@@ -70,6 +70,7 @@ role_allow("readonly", action: Permission) if
         ROUTES_ANALYSIS,
         ASPAS_READ,
         ASPAS_ANALYSIS,
+        BGPSEC_READ,
         RTA_LIST,
         RTA_READ
     ];
@@ -101,6 +102,8 @@ role_allow("readwrite", action: Permission) if
         ASPAS_READ,
         ASPAS_UPDATE,
         ASPAS_ANALYSIS,
+        BGPSEC_READ,
+        BGPSEC_UPDATE,
         RTA_LIST,
         RTA_READ,
         RTA_UPDATE

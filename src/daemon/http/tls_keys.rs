@@ -13,10 +13,8 @@ use openssl::{
 
 use rpki::{
     ca::idcert::IdCert,
-    repository::{
-        crypto::{KeyIdentifier, PublicKey, Signature, SignatureAlgorithm},
-        x509::{Time, Validity},
-    },
+    crypto::{signer::SigningAlgorithm, KeyIdentifier, PublicKey, Signature, SignatureAlgorithm},
+    repository::x509::{Time, Validity},
 };
 
 use crate::commons::{api::IdCertPem, error::KrillIoError, util::file};
@@ -70,40 +68,36 @@ struct HttpsSigner {
     private: PKey<Private>,
 }
 
-impl rpki::repository::crypto::Signer for HttpsSigner {
+impl rpki::crypto::Signer for HttpsSigner {
     type KeyId = KeyIdentifier;
     type Error = Error;
 
-    fn create_key(&self, _algorithm: rpki::repository::crypto::PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
+    fn create_key(&self, _algorithm: rpki::crypto::PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
         unimplemented!("not needed in this context")
     }
 
-    fn get_key_info(
-        &self,
-        _key: &Self::KeyId,
-    ) -> Result<PublicKey, rpki::repository::crypto::signer::KeyError<Self::Error>> {
-        self.public_key_info()
-            .map_err(rpki::repository::crypto::signer::KeyError::Signer)
+    fn get_key_info(&self, _key: &Self::KeyId) -> Result<PublicKey, rpki::crypto::signer::KeyError<Self::Error>> {
+        self.public_key_info().map_err(rpki::crypto::signer::KeyError::Signer)
     }
 
-    fn destroy_key(&self, _key: &Self::KeyId) -> Result<(), rpki::repository::crypto::signer::KeyError<Self::Error>> {
+    fn destroy_key(&self, _key: &Self::KeyId) -> Result<(), rpki::crypto::signer::KeyError<Self::Error>> {
         unimplemented!("not needed in this context")
     }
 
-    fn sign<D: AsRef<[u8]> + ?Sized>(
+    fn sign<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
         &self,
         _key: &Self::KeyId,
-        _algorithm: SignatureAlgorithm,
+        algorithm: Alg,
         data: &D,
-    ) -> Result<Signature, rpki::repository::crypto::SigningError<Self::Error>> {
-        self.sign(data).map_err(rpki::repository::crypto::SigningError::Signer)
+    ) -> Result<Signature<Alg>, rpki::crypto::SigningError<Self::Error>> {
+        self.sign(algorithm, data).map_err(rpki::crypto::SigningError::Signer)
     }
 
-    fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
+    fn sign_one_off<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
         &self,
-        _algorithm: SignatureAlgorithm,
+        _algorithm: Alg,
         _data: &D,
-    ) -> Result<(Signature, PublicKey), Self::Error> {
+    ) -> Result<(Signature<Alg>, PublicKey), Self::Error> {
         unimplemented!("not needed in this context")
     }
 
@@ -140,11 +134,20 @@ impl HttpsSigner {
     }
 
     // See OpenSslSigner::sign_with_key for reference.
-    fn sign<D: AsRef<[u8]> + ?Sized>(&self, data: &D) -> Result<Signature, Error> {
+    fn sign<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
+        &self,
+        algorithm: Alg,
+        data: &D,
+    ) -> Result<Signature<Alg>, Error> {
+        let signing_algorithm = algorithm.signing_algorithm();
+        if !matches!(signing_algorithm, SigningAlgorithm::RsaSha256) {
+            return Err(Error::SignerError("Only RSA SHA256 signing is supported.".to_string()));
+        }
+
         let mut signer = ::openssl::sign::Signer::new(MessageDigest::sha256(), &self.private)?;
         signer.update(data.as_ref())?;
 
-        let signature = Signature::new(SignatureAlgorithm::default(), Bytes::from(signer.sign_to_vec()?));
+        let signature = Signature::new(algorithm, Bytes::from(signer.sign_to_vec()?));
         Ok(signature)
     }
 

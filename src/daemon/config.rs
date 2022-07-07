@@ -211,6 +211,14 @@ impl ConfigDefaults {
         4
     }
 
+    fn timing_bgpsec_valid_weeks() -> i64 {
+        52
+    }
+
+    fn timing_bgpsec_reissue_weeks_before() -> i64 {
+        4
+    }
+
     pub fn signers() -> Vec<SignerConfig> {
         #[cfg(not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11")))]
         {
@@ -489,6 +497,10 @@ pub struct IssuanceTimingConfig {
     pub timing_aspa_valid_weeks: i64,
     #[serde(default = "ConfigDefaults::timing_aspa_reissue_weeks_before")]
     pub timing_aspa_reissue_weeks_before: i64,
+    #[serde(default = "ConfigDefaults::timing_bgpsec_valid_weeks")]
+    pub timing_bgpsec_valid_weeks: i64,
+    #[serde(default = "ConfigDefaults::timing_bgpsec_reissue_weeks_before")]
+    pub timing_bgpsec_reissue_weeks_before: i64,
 }
 
 impl IssuanceTimingConfig {
@@ -831,6 +843,8 @@ impl Config {
         let timing_roa_reissue_weeks_before = ConfigDefaults::timing_roa_reissue_weeks_before();
         let timing_aspa_valid_weeks = ConfigDefaults::timing_aspa_valid_weeks();
         let timing_aspa_reissue_weeks_before = ConfigDefaults::timing_aspa_reissue_weeks_before();
+        let timing_bgpsec_valid_weeks = ConfigDefaults::timing_bgpsec_valid_weeks();
+        let timing_bgpsec_reissue_weeks_before = ConfigDefaults::timing_bgpsec_reissue_weeks_before();
 
         let issuance_timing = IssuanceTimingConfig {
             timing_publish_next_hours,
@@ -842,6 +856,8 @@ impl Config {
             timing_roa_reissue_weeks_before,
             timing_aspa_valid_weeks,
             timing_aspa_reissue_weeks_before,
+            timing_bgpsec_valid_weeks,
+            timing_bgpsec_reissue_weeks_before,
         };
 
         let repository_retention = RepositoryRetentionConfig {

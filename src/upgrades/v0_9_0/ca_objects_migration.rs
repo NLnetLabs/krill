@@ -9,7 +9,8 @@ use rpki::{
         idexchange::{CaHandle, ChildHandle, ParentHandle, RepoInfo},
         provisioning::{IssuanceRequest, ResourceClassName, RevocationRequest},
     },
-    repository::{crl::Crl, crypto::KeyIdentifier, manifest::Manifest, resources::ResourceSet, x509::Time},
+    crypto::KeyIdentifier,
+    repository::{crl::Crl, manifest::Manifest, resources::ResourceSet, x509::Time},
     rrdp::Hash,
     uri,
 };
@@ -789,7 +790,7 @@ impl OldResourceClass {
         certs: HashMap<ObjectName, PublishedCert>,
     ) -> CurrentKeyObjectSet {
         let basic = Self::object_set_for_certified_key(key);
-        CurrentKeyObjectSet::new(basic, roas, HashMap::new(), certs)
+        CurrentKeyObjectSet::new(basic, roas, HashMap::new(), HashMap::new(), certs)
     }
 
     fn object_set_for_certified_key(key: &OldCertifiedKey) -> BasicKeyObjectSet {

@@ -11,9 +11,9 @@ use crate::{
     },
     commons::{
         api::{
-            AllCertAuthIssues, AspaDefinitionUpdates, CaRepoDetails, CertAuthIssues, ChildCaInfo,
-            ChildrenConnectionStats, ParentCaContact, ParentStatuses, PublisherDetails, PublisherList, RepoStatus,
-            Token,
+            AllCertAuthIssues, AspaDefinitionUpdates, BgpSecDefinitionUpdates, CaRepoDetails, CertAuthIssues,
+            ChildCaInfo, ChildrenConnectionStats, ParentCaContact, ParentStatuses, PublisherDetails, PublisherList,
+            RepoStatus, Token,
         },
         bgp::BgpAnalysisAdvice,
         error::KrillIoError,
@@ -333,6 +333,26 @@ impl KrillClient {
                 };
 
                 Ok(ApiResponse::BgpAnalysisSuggestions(suggestions))
+            }
+
+            CaCommand::BgpSecList(handle) => {
+                let uri = format!("api/v1/cas/{}/bgpsec", handle);
+                let bgpsec_list = get_json(&self.server, &self.token, &uri).await?;
+                Ok(ApiResponse::BgpSecDefinitions(bgpsec_list))
+            }
+
+            CaCommand::BgpSecAdd(handle, addition) => {
+                let uri = format!("api/v1/cas/{}/bgpsec", handle);
+                let update = BgpSecDefinitionUpdates::new(vec![addition], vec![]);
+                post_json(&self.server, &self.token, &uri, update).await?;
+                Ok(ApiResponse::Empty)
+            }
+
+            CaCommand::BgpSecRemove(handle, removal) => {
+                let uri = format!("api/v1/cas/{}/bgpsec", handle);
+                let update = BgpSecDefinitionUpdates::new(vec![], vec![removal]);
+                post_json(&self.server, &self.token, &uri, update).await?;
+                Ok(ApiResponse::Empty)
             }
 
             CaCommand::AspasList(handle) => {

@@ -7,6 +7,9 @@ use crate::commons::error::Error;
 mod aspa;
 pub use self::aspa::*;
 
+mod bgpsec;
+pub use self::bgpsec::*;
+
 mod certauth;
 pub use self::certauth::CertAuth;
 pub use self::certauth::Rfc8183Id;

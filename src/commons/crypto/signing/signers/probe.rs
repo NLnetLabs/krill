@@ -328,19 +328,19 @@ pub mod tests {
         assert_eq!(None, conn.last_probe_time()?);
 
         // The first call to .get() should trigger a probe
-        let _ = conn.status(|_, _| Err(ProbeError::AwaitingNextProbe));
+        let _probe1 = conn.status(|_, _| Err(ProbeError::AwaitingNextProbe));
         let t1 = conn.last_probe_time()?;
         assert!(t1.is_some());
 
         // A call to .get() before the next probe interval should NOT result in an updated last probe time
         std::thread::sleep(Duration::from_millis(10));
-        let _ = conn.status(|_, _| Err(ProbeError::AwaitingNextProbe));
+        let _probe2 = conn.status(|_, _| Err(ProbeError::AwaitingNextProbe));
         let t2 = conn.last_probe_time()?;
         assert!(t2 == t1);
 
         // A call to .get() after the next probe interval SHOULD result in an updated last probe time
         std::thread::sleep(Duration::from_millis(200));
-        let _ = conn.status(|_, _| Err(ProbeError::AwaitingNextProbe));
+        let _probe3 = conn.status(|_, _| Err(ProbeError::AwaitingNextProbe));
         let t3 = conn.last_probe_time()?;
         assert!(t3 > t1);
 

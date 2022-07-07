@@ -2,7 +2,7 @@
 
 use std::{collections::HashMap, fmt, path::Path, str::FromStr};
 
-use rpki::repository::crypto::{KeyIdentifier, PublicKey};
+use rpki::crypto::{KeyIdentifier, PublicKey};
 
 use crate::{
     commons::{

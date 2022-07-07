@@ -4,13 +4,8 @@ use bytes::Bytes;
 
 use rpki::{
     ca::{provisioning::ResourceClassName, publication::Base64},
-    repository::{
-        crypto::{DigestAlgorithm, KeyIdentifier},
-        resources::ResourceSet,
-        rta,
-        sigobj::MessageDigest,
-        x509::Validity,
-    },
+    crypto::{DigestAlgorithm, KeyIdentifier},
+    repository::{resources::ResourceSet, rta, sigobj::MessageDigest, x509::Validity},
 };
 
 use crate::commons::{

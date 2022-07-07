@@ -6,6 +6,9 @@ pub use self::admin::*;
 mod aspa;
 pub use self::aspa::*;
 
+mod bgpsec;
+pub use self::bgpsec::*;
+
 mod ca;
 pub use self::ca::*;
 
@@ -19,12 +22,15 @@ pub mod rrdp;
 
 use std::{collections::HashMap, fmt};
 
+use rpki::ca::csr::BgpsecCsr;
 use rpki::ca::provisioning::ResourceClassName;
+use rpki::ca::publication::Base64;
 use serde::{Deserialize, Serialize};
 
 use rpki::{
     ca::idexchange::{CaHandle, ChildHandle, ParentHandle, PublisherHandle},
-    repository::{crypto::KeyIdentifier, resources::Asn},
+    crypto::KeyIdentifier,
+    repository::resources::Asn,
 };
 
 use crate::{commons::error::RoaDeltaError, daemon::ca::RouteAuthorization};
@@ -110,6 +116,11 @@ impl ErrorResponse {
 
     pub fn with_asn(self, asn: Asn) -> Self {
         self.with_arg("asn", asn)
+    }
+
+    pub fn with_bgpsec_csr(self, csr: &BgpsecCsr) -> Self {
+        let base64 = Base64::from_content(csr.to_captured().as_slice());
+        self.with_arg("bgpsec_csr", base64)
     }
 
     pub fn with_roa_delta_error(mut self, roa_delta_error: &RoaDeltaError) -> Self {

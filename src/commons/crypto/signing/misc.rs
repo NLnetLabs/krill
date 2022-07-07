@@ -5,14 +5,14 @@ use std::convert::TryFrom;
 
 use bytes::Bytes;
 use rpki::{
-    ca::provisioning::RequestResourceLimit,
+    ca::{csr::RpkiCaCsr, provisioning::RequestResourceLimit},
+    crypto::{DigestAlgorithm, KeyIdentifier, PublicKey},
     repository::{
         cert::{KeyUsage, Overclaim, TbsCert},
-        crypto::{DigestAlgorithm, KeyIdentifier, PublicKey},
         manifest::FileAndHash,
         resources::ResourceSet,
         x509::{Name, Time, Validity},
-        Cert, Crl, Csr,
+        Cert, Crl,
     },
     uri,
 };
@@ -75,10 +75,10 @@ impl CsrInfo {
     }
 }
 
-impl TryFrom<&Csr> for CsrInfo {
+impl TryFrom<&RpkiCaCsr> for CsrInfo {
     type Error = Error;
 
-    fn try_from(csr: &Csr) -> KrillResult<CsrInfo> {
+    fn try_from(csr: &RpkiCaCsr) -> KrillResult<CsrInfo> {
         csr.validate().map_err(|_| Error::invalid_csr("invalid signature"))?;
         let ca_repository = csr
             .ca_repository()

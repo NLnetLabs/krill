@@ -21,6 +21,23 @@ For more information please refer to the [documentation](https://krill.docs.nlne
 
 # Changelog
 
+## 0.10.0
+
+In this release we introduce the following feature:
+- BGPSec Router Certificate Signing (CLI/API only)
+
+## 0.9.6 'Newer ROAs Please'
+
+This release fixes an issue introduced in 0.9.5 where the background job to
+automatically renew ROAs was not added to Krill's task queue on startup. Thanks
+to Alberto Leiva for finding this issue!
+
+All users who upgraded to 0.9.5 are advised to upgrade to this version as soon
+as possible. Not doing so can lead to ROAs expiring and becoming invalid. If you
+did not upgrade to 0.9.5 you are not affected by this issue.
+
+This release contains no other changes.
+
 ## 0.9.5 'Have You considered these Upgrades?'
 
 This release is primarily intended to improve support for migrations of pre-0.9.0

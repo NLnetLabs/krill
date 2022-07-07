@@ -205,6 +205,7 @@ impl Scheduler {
         }
 
         self.tasks.republish_if_needed(now());
+        self.tasks.renew_if_needed(now());
         self.tasks.refresh_announcements_info(now());
 
         #[cfg(feature = "multi-user")]

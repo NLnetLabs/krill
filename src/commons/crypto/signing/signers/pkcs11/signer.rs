@@ -20,8 +20,11 @@ use cryptoki::{
 };
 
 use rpki::{
-    repository::crypto::signer::KeyError,
-    repository::crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError},
+    crypto::signer::KeyError,
+    crypto::{
+        KeyIdentifier, PublicKey, PublicKeyFormat, RpkiSignature, RpkiSignatureAlgorithm, Signature,
+        SignatureAlgorithm, SigningError,
+    },
 };
 
 use crate::commons::crypto::{
@@ -243,14 +246,14 @@ impl Pkcs11Signer {
         &self,
         key_id: &str,
         challenge: &D,
-    ) -> Result<Signature, SignerError> {
+    ) -> Result<RpkiSignature, SignerError> {
         let priv_handle = self
             .find_key(key_id, ObjectClass::PRIVATE_KEY)
             .map_err(|err| match err {
                 KeyError::KeyNotFound => SignerError::KeyNotFound,
                 KeyError::Signer(err) => err,
             })?;
-        self.sign_with_key(priv_handle, SignatureAlgorithm::default(), challenge.as_ref())
+        self.sign_with_key(priv_handle, RpkiSignatureAlgorithm::default(), challenge.as_ref())
     }
 }
 
@@ -633,7 +636,7 @@ impl Pkcs11Signer {
 impl Pkcs11Signer {
     pub(super) fn remember_key_id(
         &self,
-        key_id: &rpki::repository::crypto::KeyIdentifier,
+        key_id: &rpki::crypto::KeyIdentifier,
         internal_key_id: String,
     ) -> Result<(), SignerError> {
         let readable_handle = self.handle.read().unwrap();
@@ -765,12 +768,12 @@ impl Pkcs11Signer {
         Ok(public_key)
     }
 
-    pub(super) fn sign_with_key(
+    pub(super) fn sign_with_key<Alg: SignatureAlgorithm>(
         &self,
         private_key_handle: ObjectHandle,
-        algorithm: SignatureAlgorithm,
+        algorithm: Alg,
         data: &[u8],
-    ) -> Result<Signature, SignerError> {
+    ) -> Result<Signature<Alg>, SignerError> {
         if algorithm.public_key_format() != PublicKeyFormat::Rsa {
             return Err(SignerError::KmipError(format!(
                 "Algorithm '{:?}' not supported",
@@ -798,7 +801,7 @@ impl Pkcs11Signer {
 
         let signature_data = self.with_conn("sign", |conn| conn.sign(&mechanism, private_key_handle, data))?;
 
-        let sig = Signature::new(SignatureAlgorithm::default(), Bytes::from(signature_data));
+        let sig = Signature::new(algorithm, Bytes::from(signature_data));
 
         Ok(sig)
     }
@@ -918,12 +921,12 @@ impl Pkcs11Signer {
         res
     }
 
-    pub fn sign<D: AsRef<[u8]> + ?Sized>(
+    pub fn sign<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
         &self,
         key_id: &KeyIdentifier,
-        algorithm: SignatureAlgorithm,
+        algorithm: Alg,
         data: &D,
-    ) -> Result<Signature, SigningError<SignerError>> {
+    ) -> Result<Signature<Alg>, SigningError<SignerError>> {
         let internal_key_id = self.lookup_key_id(key_id)?;
         let priv_handle = self
             .find_key(&internal_key_id, ObjectClass::PRIVATE_KEY)
@@ -936,11 +939,11 @@ impl Pkcs11Signer {
             .map_err(|err| SigningError::Signer(err))
     }
 
-    pub fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
+    pub fn sign_one_off<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
         &self,
-        algorithm: SignatureAlgorithm,
+        algorithm: Alg,
         data: &D,
-    ) -> Result<(Signature, PublicKey), SignerError> {
+    ) -> Result<(Signature<Alg>, PublicKey), SignerError> {
         let (key, pub_handle, priv_handle, _) = self.build_key(PublicKeyFormat::Rsa)?;
 
         let signature_res = self

@@ -4,7 +4,8 @@ use chrono::Duration;
 
 use rpki::{
     ca::{idcert::IdCert, idexchange::ChildHandle, provisioning::ResourceClassName},
-    repository::{crypto::KeyIdentifier, resources::ResourceSet, x509::Time},
+    crypto::KeyIdentifier,
+    repository::{resources::ResourceSet, x509::Time},
 };
 
 use crate::{
@@ -153,6 +154,10 @@ pub struct ChildCertificates {
 }
 
 impl ChildCertificates {
+    pub fn is_empty(&self) -> bool {
+        self.issued.is_empty() && self.suspended.is_empty()
+    }
+
     pub fn certificate_issued(&mut self, issued: DelegatedCertificate) {
         let ki = issued.cert().subject_key_identifier();
         self.issued.insert(ki, issued);

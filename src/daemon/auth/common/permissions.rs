@@ -70,6 +70,8 @@ iterable_enum! {
         ASPAS_READ,
         ASPAS_UPDATE,
         ASPAS_ANALYSIS,
+        BGPSEC_READ,
+        BGPSEC_UPDATE,
         RTA_LIST,
         RTA_READ,
         RTA_UPDATE
