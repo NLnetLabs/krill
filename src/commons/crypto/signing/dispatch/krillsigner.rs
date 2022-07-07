@@ -235,9 +235,11 @@ impl KrillSigner {
     }
 
     pub fn sign_csr(&self, base_repo: &RepoInfo, name_space: &str, key: &KeyIdentifier) -> CryptoResult<RpkiCaCsr> {
-        let pub_key = self.router.get_key_info(key).map_err(crypto::Error::key_error)?;
-        let mft_file_name = ObjectName::mft_for_key(&pub_key.key_identifier());
-        let enc = Csr::construct_rpki_ca(
+        let signing_key_id = self.router.get_key_info(key).map_err(crypto::Error::key_error)?;
+        let mft_file_name = ObjectName::mft_for_key(&signing_key_id.key_identifier());
+
+        // The rpki-rs library returns a signed and encoded CSR for a CA certificate.
+        let signed_and_encoded_csr = Csr::construct_rpki_ca(
             &self.router,
             key,
             &base_repo.ca_repository(name_space).join(&[]).unwrap(), // force trailing slash
@@ -245,7 +247,9 @@ impl KrillSigner {
             base_repo.rpki_notify(),
         )
         .map_err(crypto::Error::signing)?;
-        Ok(RpkiCaCsr::decode(enc.as_slice())?)
+
+        // Decode the encoded CSR again to get a typed RpkiCaCsr
+        Ok(RpkiCaCsr::decode(signed_and_encoded_csr.as_slice())?)
     }
 
     pub fn sign_cert(&self, tbs: TbsCert, key_id: &KeyIdentifier) -> CryptoResult<Cert> {
