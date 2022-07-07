@@ -91,7 +91,7 @@ impl BgpSecCertificates {
     /// Used to renew certificates which would expire, in which case the renew_threshold
     /// should be specified. Or, to re-issue all existing certificates during a key rollover
     /// activation of a new certified_key - in which case the renew_threshold is expected to
-    /// be None, and the certified_key is expected to have have changed.
+    /// be None, and the certified_key is expected to have changed.
     pub fn renew(
         &self,
         certified_key: &CertifiedKey,
@@ -133,11 +133,18 @@ impl BgpSecCertificates {
 
         let validity = SignSupport::sign_validity_weeks(issuance_timing.timing_bgpsec_valid_weeks);
 
+        // Perhaps implement recommendation of 3.1.1 RFC 8209 somehow. However, it is
+        // not at all clear how/why this is relevant. RPs will typically discard this
+        // information and the subject is not communicated to routers. If this is for
+        // debugging purposes then using a sensible file name (like we do) is more
+        // important.
+        let subject = None;
+
         let mut router_cert = TbsCert::new(
             serial_number,
             issuer,
             validity,
-            None,
+            subject,
             public_key,
             KeyUsage::Ee,
             Overclaim::Refuse,

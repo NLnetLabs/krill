@@ -1027,7 +1027,7 @@ impl fmt::Display for CaEvtDet {
             CaEvtDet::BgpSecDefinitionAdded { key, .. } => {
                 write!(
                     f,
-                    "added BGPSec config for ASN: {} and key id: {}",
+                    "added BGPSec definition for ASN: {} and key id: {}",
                     key.asn(),
                     key.key_identifier()
                 )
@@ -1035,7 +1035,7 @@ impl fmt::Display for CaEvtDet {
             CaEvtDet::BgpSecDefinitionUpdated { key, .. } => {
                 write!(
                     f,
-                    "updated CSR for BGPSec config for ASN: {} and key id: {}",
+                    "updated CSR for BGPSec definition for ASN: {} and key id: {}",
                     key.asn(),
                     key.key_identifier()
                 )
@@ -1043,7 +1043,7 @@ impl fmt::Display for CaEvtDet {
             CaEvtDet::BgpSecDefinitionRemoved { key } => {
                 write!(
                     f,
-                    "removed BGPSec config for ASN: {} and key id: {}",
+                    "removed BGPSec definition for ASN: {} and key id: {}",
                     key.asn(),
                     key.key_identifier()
                 )

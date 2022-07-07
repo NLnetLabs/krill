@@ -141,7 +141,7 @@ impl HttpsSigner {
     ) -> Result<Signature<Alg>, Error> {
         let signing_algorithm = algorithm.signing_algorithm();
         if !matches!(signing_algorithm, SigningAlgorithm::RsaSha256) {
-            return Err(Error::SignerError("Only RSA SHA256 signing is support.".to_string()));
+            return Err(Error::SignerError("Only RSA SHA256 signing is supported.".to_string()));
         }
 
         let mut signer = ::openssl::sign::Signer::new(MessageDigest::sha256(), &self.private)?;

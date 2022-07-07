@@ -36,8 +36,8 @@ impl fmt::Display for SignerError {
             SignerError::Pkcs11Error(e) => write!(f, "PKCS#11 Error: {}", e),
             SignerError::TemporarilyUnavailable => write!(f, "Signer is unavailable"),
             SignerError::UnsupportedSigningAlg(key_format) => match key_format {
-                SigningAlgorithm::RsaSha256 => write!(f, "Signing with RSA not supported by signer"),
-                SigningAlgorithm::EcdsaP256Sha256 => write!(f, "Signing with EcdsaP256 not supported by signer"),
+                SigningAlgorithm::RsaSha256 => write!(f, "Signing with RSA not supported"),
+                SigningAlgorithm::EcdsaP256Sha256 => write!(f, "Signing with EcdsaP256 not supported"),
             },
         }
     }
