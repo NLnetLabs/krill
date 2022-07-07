@@ -56,7 +56,6 @@ pub struct ResourceClass {
     parent_handle: ParentHandle,
     parent_rc_name: ResourceClassName,
 
-    #[serde(skip_serializing_if = "Roas::is_empty", default)]
     roas: Roas,
 
     #[serde(skip_serializing_if = "AspaObjects::is_empty", default)]
