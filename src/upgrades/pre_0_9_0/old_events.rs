@@ -29,7 +29,7 @@ use crate::{
         api::rrdp::{CurrentObjects, DeltaElements, PublishElement, RrdpSession},
         api::{
             CertInfo, IdCertInfo, ObjectName, ParentCaContact, RcvdCert, RepositoryContact, Revocation,
-            RevocationsDelta, RoaAggregateKey, RtaName, TaCertDetails,
+            RevocationsDelta, RoaAggregateKey, RtaName,
         },
         eventsourcing::StoredEvent,
     },
