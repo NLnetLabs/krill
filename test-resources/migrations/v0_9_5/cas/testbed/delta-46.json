@@ -1,0 +1,10 @@
+{
+  "id": "testbed",
+  "version": 46,
+  "details": {
+    "type": "child_certificate_issued",
+    "child": "local-testbed-child",
+    "resource_class_name": "0",
+    "ki": "4F07E0CCBFC023419467B3B4A5D828225BECBD83"
+  }
+}

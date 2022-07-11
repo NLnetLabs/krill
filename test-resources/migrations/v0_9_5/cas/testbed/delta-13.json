@@ -1,0 +1,8 @@
+{
+  "id": "testbed",
+  "version": 13,
+  "details": {
+    "type": "child_removed",
+    "child": "Publisher"
+  }
+}

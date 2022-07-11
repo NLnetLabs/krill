@@ -213,7 +213,6 @@ mod tests {
 
     use rpki::{
         ca::{
-            idcert::IdCert,
             idexchange::Handle,
             publication::{ListElement, PublishDelta},
         },
@@ -224,7 +223,10 @@ mod tests {
 
     use crate::{
         commons::{
-            api::rrdp::{PublicationDeltaError, RrdpSession},
+            api::{
+                rrdp::{PublicationDeltaError, RrdpSession},
+                IdCertInfo,
+            },
             crypto::{KrillSignerBuilder, OpenSslSignerConfig},
             util::file::{self, CurrentFile},
         },
@@ -253,12 +255,12 @@ mod tests {
         let id_cert = signer.create_self_signed_id_cert().unwrap();
         let base_uri = uri::Rsync::from_str("rsync://localhost/repo/alice/").unwrap();
 
-        Publisher::new(id_cert, base_uri)
+        Publisher::new(id_cert.into(), base_uri)
     }
 
-    fn make_publisher_req(handle: &str, id_cert: &IdCert) -> idexchange::PublisherRequest {
+    fn make_publisher_req(handle: &str, id_cert: &IdCertInfo) -> idexchange::PublisherRequest {
         let handle = Handle::from_str(handle).unwrap();
-        idexchange::PublisherRequest::new(id_cert.clone(), handle, None)
+        idexchange::PublisherRequest::new(id_cert.base64().clone(), handle, None)
     }
 
     fn make_server(work_dir: &Path) -> RepositoryManager {

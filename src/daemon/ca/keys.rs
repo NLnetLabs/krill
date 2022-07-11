@@ -40,17 +40,22 @@ pub struct CertifiedKey {
 }
 
 impl CertifiedKey {
-    pub fn new(key_id: KeyIdentifier, incoming_cert: RcvdCert, request: Option<IssuanceRequest>) -> Self {
+    pub fn new(
+        key_id: KeyIdentifier,
+        incoming_cert: RcvdCert,
+        request: Option<IssuanceRequest>,
+        old_repo: Option<RepoInfo>,
+    ) -> Self {
         CertifiedKey {
             key_id,
             incoming_cert,
             request,
-            old_repo: None,
+            old_repo,
         }
     }
 
     pub fn create(incoming_cert: RcvdCert) -> Self {
-        let key_id = incoming_cert.subject_key_identifier();
+        let key_id = incoming_cert.key_identifier();
         CertifiedKey {
             key_id,
             incoming_cert,
@@ -115,7 +120,7 @@ impl CertifiedKey {
         // what they issued to us before. But if it does happen (on every request like above)
         // then we still want to avoid ending up in request loops. See issue #775
 
-        let not_after = self.incoming_cert().cert().validity().not_after();
+        let not_after = self.incoming_cert().validity().not_after();
 
         let now = Time::now().timestamp();
         let remaining_seconds_on_current = not_after.timestamp() - now;

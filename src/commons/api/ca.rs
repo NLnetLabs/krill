@@ -2,12 +2,14 @@
 //! can have access without needing to depend on the full krill_ca module.
 
 use std::collections::HashMap;
-use std::ops::{self, Deref};
+use std::ops::{self};
 use std::str::FromStr;
+use std::sync::Arc;
 use std::{fmt, str};
 
 use bytes::Bytes;
 use chrono::{Duration, TimeZone, Utc};
+use rpki::repository::x509::{Name, Validity};
 use serde::{Deserialize, Serialize};
 
 use rpki::{
@@ -20,7 +22,7 @@ use rpki::{
         },
         publication::Base64,
     },
-    crypto::KeyIdentifier,
+    crypto::{KeyIdentifier, PublicKey},
     repository::{
         aspa::Aspa,
         cert::Cert,
@@ -34,6 +36,7 @@ use rpki::{
     uri,
 };
 
+use crate::commons::crypto::CsrInfo;
 use crate::daemon::ca::BgpSecCertInfo;
 use crate::{
     commons::{
@@ -41,7 +44,6 @@ use crate::{
             rrdp::PublishElement, AspaDefinition, ErrorResponse, ParentCaContact, RepositoryContact, RoaAggregateKey,
             RoaDefinition,
         },
-        util::ext_serde,
         util::KrillVersion,
     },
     daemon::ca::RouteAuthorization,
@@ -49,32 +51,36 @@ use crate::{
 
 use super::BgpSecAsnKey;
 
-//------------ IdCertPem -----------------------------------------------------
+//------------ IdCertInfo ----------------------------------------------------
 
 /// A PEM encoded IdCert and sha256 of the encoding, for easier
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct IdCertPem {
-    pem: String,
+pub struct IdCertInfo {
+    public_key: PublicKey,
+    base64: Base64,
     hash: Hash,
 }
 
-impl IdCertPem {
-    pub fn pem(&self) -> &str {
-        &self.pem
+impl IdCertInfo {
+    pub fn public_key(&self) -> &PublicKey {
+        &self.public_key
+    }
+
+    pub fn base64(&self) -> &Base64 {
+        &self.base64
     }
 
     pub fn hash(&self) -> &Hash {
         &self.hash
     }
-}
 
-impl From<&IdCert> for IdCertPem {
-    fn from(cer: &IdCert) -> Self {
-        let base64 = base64::encode(&cer.to_bytes());
+    pub fn pem(&self) -> String {
         let mut pem = "-----BEGIN CERTIFICATE-----\n".to_string();
 
-        for line in base64
-            .as_bytes()
+        for line in self
+            .base64
+            .as_str()
+            .as_bytes() // so we can use chunks
             .chunks(64)
             .map(|b| unsafe { std::str::from_utf8_unchecked(b) })
         {
@@ -84,9 +90,29 @@ impl From<&IdCert> for IdCertPem {
 
         pem.push_str("-----END CERTIFICATE-----\n");
 
-        let hash = Hash::from_data(&cer.to_bytes());
+        pem
+    }
+}
 
-        IdCertPem { pem, hash }
+impl From<&IdCert> for IdCertInfo {
+    fn from(cer: &IdCert) -> Self {
+        let bytes = cer.to_bytes();
+
+        let public_key = cer.public_key().clone();
+        let base64 = Base64::from_content(&bytes);
+        let hash = Hash::from_data(&bytes);
+
+        IdCertInfo {
+            public_key,
+            base64,
+            hash,
+        }
+    }
+}
+
+impl From<IdCert> for IdCertInfo {
+    fn from(cer: IdCert) -> Self {
+        Self::from(&cer) // we need to encode anyhow, we can't move any data
     }
 }
 
@@ -121,12 +147,12 @@ impl fmt::Display for ChildState {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildCaInfo {
     state: ChildState,
-    id_cert: IdCertPem,
+    id_cert: IdCertInfo,
     entitled_resources: ResourceSet,
 }
 
 impl ChildCaInfo {
-    pub fn new(state: ChildState, id_cert: IdCertPem, entitled_resources: ResourceSet) -> Self {
+    pub fn new(state: ChildState, id_cert: IdCertInfo, entitled_resources: ResourceSet) -> Self {
         ChildCaInfo {
             state,
             id_cert,
@@ -138,7 +164,7 @@ impl ChildCaInfo {
         self.state
     }
 
-    pub fn id_cert(&self) -> &IdCertPem {
+    pub fn id_cert(&self) -> &IdCertInfo {
         &self.id_cert
     }
 
@@ -156,106 +182,203 @@ impl fmt::Display for ChildCaInfo {
     }
 }
 
-//------------ RevokedObject -------------------------------------------------
+//------------ RcvdCert ------------------------------------------------------
 
-pub type RevokedObject = ReplacedObject;
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct Received;
 
-//------------ ReplacedObject ------------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ReplacedObject {
-    revocation: Revocation,
-    hash: Hash,
-}
-
-impl ReplacedObject {
-    pub fn new(revocation: Revocation, hash: Hash) -> Self {
-        ReplacedObject { revocation, hash }
-    }
-
-    pub fn revocation(&self) -> Revocation {
-        self.revocation
-    }
-
-    pub fn hash(&self) -> &Hash {
-        &self.hash
-    }
-}
-
-impl From<&Cert> for ReplacedObject {
-    fn from(c: &Cert) -> Self {
-        let revocation = Revocation::from(c);
-        let hash = Hash::from_data(c.to_captured().as_slice());
-        ReplacedObject { revocation, hash }
-    }
-}
-
-impl From<&DelegatedCertificate> for ReplacedObject {
-    fn from(issued: &DelegatedCertificate) -> Self {
-        Self::from(issued.cert())
-    }
-}
-
-impl From<&Roa> for ReplacedObject {
-    fn from(roa: &Roa) -> Self {
-        let revocation = Revocation::from(roa.cert());
-        let hash = Hash::from_data(roa.to_captured().as_slice());
-        ReplacedObject { revocation, hash }
-    }
-}
-
-impl From<&Aspa> for ReplacedObject {
-    fn from(aspa: &Aspa) -> Self {
-        let revocation = Revocation::from(aspa.cert());
-        let hash = Hash::from_data(aspa.to_captured().as_slice());
-        ReplacedObject { revocation, hash }
-    }
-}
+/// A certificate which was received from a parent CA.
+pub type RcvdCert = CertInfo<Received>;
 
 //------------ DelegatedCertificate ------------------------------------------
 
-/// This type defines a certificate issued to a child. It differs
-/// from [`rpki::ca::provisioning::IssuedCert`] in that it supplies
-/// convenience access to an explicit ResourceSet - which cannot use
-/// inherit. And.. this gives us a safeguard wrt to changes in the
-/// rpki library which would affect (de-)serialization of this type
-/// which is kept in event history and snapshots.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct DelegatedCertificate {
-    uri: uri::Rsync,             // where this cert is published
-    limit: RequestResourceLimit, // the limit on the request
-    resource_set: ResourceSet,
-    cert: Cert,
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct Delegated;
+
+/// A certificate which has been issued to a delegated (child) CA
+pub type DelegatedCertificate = CertInfo<Delegated>;
+
+//------------ SuspendedCertificate ------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct Suspended;
+
+/// A delegated certificate which has been (temporarily) suspended because the child is inactive.
+pub type SuspendedCert = CertInfo<Suspended>;
+
+//------------ UnsuspendedCertificate ----------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct Unsuspended;
+
+/// A suspended certificate which is to be re-activated.
+pub type UnsuspendedCert = CertInfo<Unsuspended>;
+
+//------------ CertInfo ------------------------------------------------------
+
+/// Contains all relevant info about an RPKI certificate.
+///
+/// Note that while it would be tempting to keep the actual rpki-rs Cert, unfortunately
+/// this causes fragility with regards to keeping these objects in history and stricter
+/// parsing and validation in future. See issue #819.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CertInfo<T> {
+    // Where this certificate is published by the parent
+    uri: uri::Rsync,
+
+    // Resources contained
+    resources: ResourceSet,
+
+    // the limit on the request (default limit is no limits)
+    limit: RequestResourceLimit,
+
+    // The subject chosen by the parent. Note that Krill will
+    // derive the subject from the public key, but other parents
+    // may use a different strategy.
+    subject: Name,
+
+    // The validity time for this certificate.
+    validity: Validity,
+
+    // The serial number of this certificate (needed for revocation)
+    serial: Serial,
+
+    // Contains the public key and SIA
+    #[serde(flatten)]
+    csr_info: CsrInfo,
+
+    // The actual certificate in base64 format.
+    base64: Base64,
+
+    // The certificate's hash
+    hash: Hash,
+
+    // So that we can have different types based on the same structure.
+    marker: std::marker::PhantomData<T>,
 }
 
-pub type SuspendedCert = DelegatedCertificate;
-pub type UnsuspendedCert = DelegatedCertificate;
+impl<T> CertInfo<T> {
+    pub fn create(
+        cert: Cert,
+        uri: uri::Rsync,
+        resources: ResourceSet,
+        limit: RequestResourceLimit,
+    ) -> Result<Self, InvalidCert> {
+        let key = cert.subject_public_key_info().clone();
+        let ca_repository = cert.ca_repository().ok_or(InvalidCert::CaRepositoryMissing)?.clone();
+        let rpki_manifest = cert.rpki_manifest().ok_or(InvalidCert::RpkiManifestMissing)?.clone();
+        let rpki_notify = cert.rpki_notify().cloned();
 
-impl DelegatedCertificate {
-    pub fn new(uri: uri::Rsync, limit: RequestResourceLimit, resource_set: ResourceSet, cert: Cert) -> Self {
-        DelegatedCertificate {
+        let csr_info = CsrInfo::new(ca_repository, rpki_manifest, rpki_notify, key);
+
+        let subject = cert.subject().clone();
+        let validity = cert.validity().clone();
+        let serial = cert.serial_number();
+        let base64 = Base64::from(&cert);
+        let hash = base64.to_hash();
+
+        base64.to_hash();
+        Ok(CertInfo {
             uri,
+            resources,
             limit,
-            resource_set,
-            cert,
-        }
-    }
-
-    pub fn unpack(self) -> (uri::Rsync, RequestResourceLimit, ResourceSet, Cert) {
-        (self.uri, self.limit, self.resource_set, self.cert)
+            subject,
+            validity,
+            serial,
+            csr_info,
+            base64,
+            hash,
+            marker: std::marker::PhantomData,
+        })
     }
 
     pub fn uri(&self) -> &uri::Rsync {
         &self.uri
     }
+
+    pub fn resources(&self) -> &ResourceSet {
+        &self.resources
+    }
+
     pub fn limit(&self) -> &RequestResourceLimit {
         &self.limit
     }
-    pub fn resource_set(&self) -> &ResourceSet {
-        &self.resource_set
+
+    pub fn subject(&self) -> &Name {
+        &self.subject
     }
-    pub fn cert(&self) -> &Cert {
-        &self.cert
+
+    pub fn validity(&self) -> &Validity {
+        &self.validity
+    }
+
+    pub fn expires(&self) -> Time {
+        self.validity.not_after()
+    }
+
+    pub fn serial(&self) -> Serial {
+        self.serial
+    }
+
+    pub fn csr_info(&self) -> &CsrInfo {
+        &self.csr_info
+    }
+
+    pub fn key_identifier(&self) -> KeyIdentifier {
+        self.csr_info.key_id()
+    }
+
+    pub fn base64(&self) -> &Base64 {
+        &self.base64
+    }
+
+    pub fn hash(&self) -> Hash {
+        self.hash
+    }
+
+    pub fn to_cert(&self) -> Result<Cert, InvalidCert> {
+        Cert::decode(self.to_bytes().as_ref()).map_err(|e| InvalidCert::CannotDecode(e.to_string()))
+    }
+
+    pub fn to_issued_cert(&self) -> Result<IssuedCert, InvalidCert> {
+        let cert = self.to_cert()?;
+        Ok(IssuedCert::new(self.uri.clone(), self.limit.clone(), cert))
+    }
+
+    pub fn to_bytes(&self) -> Bytes {
+        self.base64.to_bytes()
+    }
+
+    /// Clones and then converts this into a certificate of another type.
+    pub fn convert<Y>(&self) -> CertInfo<Y> {
+        CertInfo {
+            uri: self.uri.clone(),
+            resources: self.resources.clone(),
+            limit: self.limit.clone(),
+            subject: self.subject.clone(),
+            validity: self.validity,
+            serial: self.serial,
+            csr_info: self.csr_info.clone(),
+            base64: self.base64.clone(),
+            hash: self.hash,
+            marker: std::marker::PhantomData,
+        }
+    }
+
+    /// Converts this into a certificate of another type.
+    pub fn into_converted<Y>(self) -> CertInfo<Y> {
+        CertInfo {
+            uri: self.uri,
+            resources: self.resources,
+            limit: self.limit,
+            subject: self.subject,
+            validity: self.validity,
+            serial: self.serial,
+            csr_info: self.csr_info,
+            base64: self.base64,
+            hash: self.hash,
+            marker: std::marker::PhantomData,
+        }
     }
 
     /// Returns a (possibly empty) set of reduced applicable resources which is the intersection
@@ -263,70 +386,21 @@ impl DelegatedCertificate {
     /// Returns None if the current resource set is not overclaiming and does not need to be
     /// reduced.
     pub fn reduced_applicable_resources(&self, encompassing: &ResourceSet) -> Option<ResourceSet> {
-        if encompassing.contains(&self.resource_set) {
+        if encompassing.contains(&self.resources) {
             None
         } else {
-            Some(encompassing.intersection(&self.resource_set))
+            Some(encompassing.intersection(&self.resources))
         }
     }
-}
 
-impl PartialEq for DelegatedCertificate {
-    fn eq(&self, other: &DelegatedCertificate) -> bool {
-        self.uri == other.uri
-            && self.limit == other.limit
-            && self.resource_set == other.resource_set
-            && self.cert.to_captured().as_slice() == other.cert.to_captured().as_slice()
-    }
-}
-
-impl Eq for DelegatedCertificate {}
-
-impl Deref for DelegatedCertificate {
-    type Target = Cert;
-
-    fn deref(&self) -> &Self::Target {
-        &self.cert
-    }
-}
-
-impl From<&DelegatedCertificate> for IssuedCert {
-    fn from(krill_issued: &DelegatedCertificate) -> Self {
-        IssuedCert::new(
-            krill_issued.uri.clone(),
-            krill_issued.limit.clone(),
-            krill_issued.cert.clone(),
-        )
-    }
-}
-
-//------------ RcvdCert ------------------------------------------------------
-
-/// Contains a CA Certificate that has been issued to this CA, for some key.
-///
-/// Note, this may be a self-signed TA Certificate.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct RcvdCert {
-    cert: Cert,
-    uri: uri::Rsync,
-    resources: ResourceSet,
-}
-
-impl RcvdCert {
-    pub fn new(cert: Cert, uri: uri::Rsync, resources: ResourceSet) -> Self {
-        RcvdCert { cert, uri, resources }
-    }
-
-    pub fn cert(&self) -> &Cert {
-        &self.cert
-    }
-    pub fn uri(&self) -> &uri::Rsync {
-        &self.uri
+    /// The name for this certificate as derived from its URI
+    pub fn name(&self) -> ObjectName {
+        ObjectName::from(&self.uri)
     }
 
     /// The name of the CRL published by THIS certificate.
     pub fn crl_name(&self) -> ObjectName {
-        ObjectName::new(&self.cert.subject_key_identifier(), "crl")
+        ObjectName::new(&self.key_identifier(), "crl")
     }
 
     /// The URI of the CRL published BY THIS certificate, i.e. the uri to use
@@ -337,12 +411,12 @@ impl RcvdCert {
 
     /// The name of the MFT published by THIS certificate.
     pub fn mft_name(&self) -> ObjectName {
-        ObjectName::new(&self.cert.subject_key_identifier(), "mft")
+        ObjectName::new(&self.key_identifier(), "mft")
     }
 
     /// Return the CA repository URI where this certificate publishes.
     pub fn ca_repository(&self) -> &uri::Rsync {
-        self.cert.ca_repository().unwrap()
+        self.csr_info.ca_repository()
     }
 
     /// The URI of the MFT published by THIS certificate.
@@ -356,70 +430,51 @@ impl RcvdCert {
 
     pub fn uri_for_name(&self, name: &ObjectName) -> uri::Rsync {
         // unwraps here are safe
-        self.cert.ca_repository().unwrap().join(name.as_bytes()).unwrap()
+        self.ca_repository().join(name.as_ref()).unwrap()
     }
 
-    pub fn resources(&self) -> &ResourceSet {
-        &self.resources
-    }
-
-    pub fn der_encoded(&self) -> Bytes {
-        self.cert.to_captured().into_bytes()
-    }
-}
-
-impl From<DelegatedCertificate> for RcvdCert {
-    fn from(delegated: DelegatedCertificate) -> Self {
-        RcvdCert {
-            cert: delegated.cert,
-            uri: delegated.uri,
-            resources: delegated.resource_set,
+    /// Returns a Revocation for this certificate
+    pub fn revoke(&self) -> Revocation {
+        Revocation {
+            serial: self.serial,
+            expires: self.validity.not_after(),
         }
     }
 }
 
-impl AsRef<Cert> for RcvdCert {
-    fn as_ref(&self) -> &Cert {
-        &self.cert
+#[derive(Clone, Debug)]
+pub enum InvalidCert {
+    CaRepositoryMissing,
+    RpkiManifestMissing,
+    CannotDecode(String),
+}
+
+impl fmt::Display for InvalidCert {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            InvalidCert::CaRepositoryMissing => write!(f, "CA certificate lacks ca repository"),
+            InvalidCert::RpkiManifestMissing => write!(f, "CA certificate lacks manifest uri"),
+            InvalidCert::CannotDecode(s) => write!(f, "Cannot decode binary certificate: {}", s),
+        }
     }
 }
 
-impl Deref for RcvdCert {
-    type Target = Cert;
-
-    fn deref(&self) -> &Self::Target {
-        &self.cert
-    }
-}
-
-impl PartialEq for RcvdCert {
-    fn eq(&self, other: &RcvdCert) -> bool {
-        self.cert.to_captured().into_bytes() == other.cert.to_captured().into_bytes() && self.uri == other.uri
-    }
-}
-
-impl Eq for RcvdCert {}
+impl std::error::Error for InvalidCert {}
 
 //------------ TrustAnchorLocator --------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TrustAnchorLocator {
     uris: Vec<uri::Https>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    rsync_uri: Option<uri::Rsync>,
-
-    #[serde(deserialize_with = "ext_serde::de_bytes", serialize_with = "ext_serde::ser_bytes")]
-    encoded_ski: Bytes,
+    rsync_uri: uri::Rsync,
+    encoded_ski: Base64,
 }
 
 impl TrustAnchorLocator {
     /// Creates a new TAL, panics when the provided Cert is not a TA cert.
-    pub fn new(uris: Vec<uri::Https>, rsync_uri: Option<uri::Rsync>, cert: &Cert) -> Self {
-        if cert.authority_key_identifier().is_some() {
-            panic!("Trying to create TAL for a non-TA certificate.")
-        }
-        let encoded_ski = cert.subject_public_key_info().to_info_bytes();
+    pub fn new(uris: Vec<uri::Https>, rsync_uri: uri::Rsync, public_key: &PublicKey) -> Self {
+        let encoded_ski = Base64::from_content(&public_key.to_info_bytes());
+
         TrustAnchorLocator {
             uris,
             rsync_uri,
@@ -430,25 +485,23 @@ impl TrustAnchorLocator {
 
 impl fmt::Display for TrustAnchorLocator {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let base64 = Base64::from_content(&self.encoded_ski).to_string();
+        let base64_string = self.encoded_ski.to_string();
 
         for uri in self.uris.iter() {
             writeln!(f, "{}", uri)?;
         }
-        if let Some(rsync_uri) = &self.rsync_uri {
-            writeln!(f, "{}", rsync_uri)?;
-        }
+        writeln!(f, "{}", self.rsync_uri)?;
 
         writeln!(f)?;
 
-        let len = base64.len();
+        let len = base64_string.len();
         let wrap = 64;
 
         for i in 0..=(len / wrap) {
             if (i * wrap + wrap) < len {
-                writeln!(f, "{}", &base64[i * wrap..i * wrap + wrap])?;
+                writeln!(f, "{}", &base64_string[i * wrap..i * wrap + wrap])?;
             } else {
-                write!(f, "{}", &base64[i * wrap..])?;
+                write!(f, "{}", &base64_string[i * wrap..])?;
             }
         }
 
@@ -505,11 +558,11 @@ impl CertifiedKeyInfo {
 /// This type is used to represent the (deterministic) file names for
 /// RPKI repository objects.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub struct ObjectName(String);
+pub struct ObjectName(Arc<str>);
 
 impl ObjectName {
     pub fn new(ki: &KeyIdentifier, extension: &str) -> Self {
-        ObjectName(format!("{}.{}", ki, extension))
+        ObjectName(format!("{}.{}", ki, extension).into())
     }
 
     pub fn cer_for_key(ki: &KeyIdentifier) -> Self {
@@ -525,11 +578,23 @@ impl ObjectName {
     }
 
     pub fn aspa(customer: Asn) -> Self {
-        ObjectName(format!("{}.asa", customer))
+        ObjectName(format!("{}.asa", customer).into())
     }
 
     pub fn bgpsec(asn: Asn, key: KeyIdentifier) -> Self {
-        ObjectName(format!("ROUTER-{:08X}-{}.cer", asn.into_u32(), key))
+        ObjectName(format!("ROUTER-{:08X}-{}.cer", asn.into_u32(), key).into())
+    }
+}
+
+impl From<&uri::Rsync> for ObjectName {
+    fn from(uri: &uri::Rsync) -> Self {
+        let path = uri.path();
+        let after_last_slash = path.rfind('/').unwrap_or(0) + 1;
+        if path.len() < after_last_slash + 1 {
+            ObjectName("".into())
+        } else {
+            ObjectName(path[after_last_slash..].into())
+        }
     }
 }
 
@@ -553,22 +618,25 @@ impl From<&Crl> for ObjectName {
 
 impl From<&RouteAuthorization> for ObjectName {
     fn from(auth: &RouteAuthorization) -> Self {
-        ObjectName(format!("{}.roa", hex::encode(auth.to_string())))
+        ObjectName(format!("{}.roa", hex::encode(auth.to_string())).into())
     }
 }
 
 impl From<&RoaDefinition> for ObjectName {
     fn from(def: &RoaDefinition) -> Self {
-        ObjectName(format!("{}.roa", hex::encode(def.to_string())))
+        ObjectName(format!("{}.roa", hex::encode(def.to_string())).into())
     }
 }
 
 impl From<&RoaAggregateKey> for ObjectName {
     fn from(roa_group: &RoaAggregateKey) -> Self {
-        ObjectName(match roa_group.group() {
-            None => format!("AS{}.roa", roa_group.asn()),
-            Some(number) => format!("AS{}-{}.roa", roa_group.asn(), number),
-        })
+        ObjectName(
+            match roa_group.group() {
+                None => format!("AS{}.roa", roa_group.asn()),
+                Some(number) => format!("AS{}-{}.roa", roa_group.asn(), number),
+            }
+            .into(),
+        )
     }
 }
 
@@ -592,13 +660,7 @@ impl From<&BgpSecAsnKey> for ObjectName {
 
 impl From<&str> for ObjectName {
     fn from(s: &str) -> Self {
-        ObjectName(s.to_string())
-    }
-}
-
-impl From<ObjectName> for Bytes {
-    fn from(object_name: ObjectName) -> Self {
-        Bytes::from(object_name.0)
+        ObjectName(s.into())
     }
 }
 
@@ -608,17 +670,15 @@ impl AsRef<str> for ObjectName {
     }
 }
 
-impl fmt::Display for ObjectName {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.0.fmt(f)
+impl AsRef<[u8]> for ObjectName {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_bytes()
     }
 }
 
-impl Deref for ObjectName {
-    type Target = String;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
+impl fmt::Display for ObjectName {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
     }
 }
 
@@ -630,6 +690,12 @@ impl Deref for ObjectName {
 pub struct Revocation {
     serial: Serial,
     expires: Time,
+}
+
+impl Revocation {
+    pub fn new(serial: Serial, expires: Time) -> Self {
+        Revocation { serial, expires }
+    }
 }
 
 impl From<&Cert> for Revocation {
@@ -1580,7 +1646,7 @@ impl ops::SubAssign<Duration> for Timestamp {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthInfo {
     handle: CaHandle,
-    id_cert: IdCertPem,
+    id_cert: IdCertInfo,
     repo_info: Option<RepoInfo>,
     parents: Vec<ParentInfo>,
     resources: ResourceSet,
@@ -1592,7 +1658,7 @@ pub struct CertAuthInfo {
 impl CertAuthInfo {
     pub fn new(
         handle: CaHandle,
-        id_cert: IdCertPem,
+        id_cert: IdCertInfo,
         repo_info: Option<RepoInfo>,
         parents: HashMap<ParentHandle, ParentCaContact>,
         resource_classes: HashMap<ResourceClassName, ResourceClassInfo>,
@@ -1626,7 +1692,7 @@ impl CertAuthInfo {
         &self.handle
     }
 
-    pub fn id_cert(&self) -> &IdCertPem {
+    pub fn id_cert(&self) -> &IdCertInfo {
         &self.id_cert
     }
 
@@ -1871,12 +1937,15 @@ impl CaRepoDetails {
 
 impl fmt::Display for CaRepoDetails {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "Repository Details:")?;
-        writeln!(f, "  service uri: {}", self.contact.service_uri())?;
         let repo_info = self.contact.repo_info();
+        let server_info = self.contact.server_info();
         let rrdp_uri = repo_info.rpki_notify().map(|uri| uri.as_str()).unwrap_or("<none>");
-        writeln!(f, "  base_uri:    {}", repo_info.base_uri())?;
-        writeln!(f, "  rpki_notify: {}", rrdp_uri)?;
+
+        writeln!(f, "Repository Details:")?;
+        writeln!(f, "  service uri:    {}", server_info.service_uri())?;
+        writeln!(f, "  key identifier: {}", server_info.public_key().key_identifier())?;
+        writeln!(f, "  base_uri:       {}", repo_info.base_uri())?;
+        writeln!(f, "  rpki_notify:    {}", rrdp_uri)?;
         writeln!(f)?;
 
         Ok(())
@@ -2161,7 +2230,7 @@ mod test {
             let key_id = signer.create_key(PublicKeyFormat::Rsa).unwrap();
             let pub_key = signer.get_key_info(&key_id).unwrap();
 
-            let mft_uri = info().resolve("", ObjectName::mft_for_key(&pub_key.key_identifier()).as_str());
+            let mft_uri = info().resolve("", ObjectName::mft_for_key(&pub_key.key_identifier()).as_ref());
 
             let mft_path = mft_uri.relative_to(&base_uri()).unwrap();
 
@@ -2197,9 +2266,9 @@ mod test {
         let der = include_bytes!("../../../test-resources/ta.cer");
         let cert = Cert::decode(Bytes::from_static(der)).unwrap();
         let uri = test::https("https://localhost/ta.cer");
-        let rsync_uri = Some(test::rsync("rsync://localhost/ta/ta.cer"));
+        let rsync_uri = test::rsync("rsync://localhost/ta/ta.cer");
 
-        let tal = TrustAnchorLocator::new(vec![uri], rsync_uri, &cert);
+        let tal = TrustAnchorLocator::new(vec![uri], rsync_uri, cert.subject_public_key_info());
 
         let expected_tal = include_str!("../../../test-resources/test.tal");
         let found_tal = tal.to_string();
@@ -2215,7 +2284,7 @@ mod test {
         };
 
         let ncc_id_openssl_pem = include_str!("../../../test-resources/remote/ncc-id.pem");
-        let ncc_id_pem = IdCertPem::from(&ncc_id);
+        let ncc_id_pem = IdCertInfo::from(&ncc_id);
 
         assert_eq!(ncc_id_pem.pem(), ncc_id_openssl_pem);
     }
@@ -2292,7 +2361,7 @@ mod test {
             }
         }
 
-        let new_ca = ca_stats_active_no_exchange(&ca_handle.clone());
+        let new_ca = ca_stats_active_no_exchange(&ca_handle);
 
         let recent_krill_pre_0_9_2 = ca_stats_active(&ca_handle, new_exchange("krill"));
         let recent_krill_post_0_9_1 = ca_stats_active(&ca_handle, new_exchange("krill/0.9.2-rc2"));
@@ -2364,7 +2433,7 @@ mod test {
         let p6_status_success_long_ago = ParentStatus {
             last_exchange: Some(ParentExchange {
                 timestamp: five_mins_ago,
-                uri: uri.clone(),
+                uri,
                 result: ExchangeResult::Success,
             }),
             last_success: None,

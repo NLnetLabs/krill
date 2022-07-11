@@ -12,7 +12,7 @@ use rpki::{
         idexchange::{CaHandle, ChildHandle, ParentHandle, PublisherHandle},
         publication::{ListReply, PublishDelta},
     },
-    repository::{cert::Cert, resources::ResourceSet},
+    repository::resources::ResourceSet,
     uri,
 };
 
@@ -24,8 +24,8 @@ use crate::{
             AspaProvidersUpdate, BgpSecCsrInfoList, BgpSecDefinitionUpdates, CaCommandDetails, CaRepoDetails,
             CertAuthInfo, CertAuthInit, CertAuthIssues, CertAuthList, CertAuthStats, ChildCaInfo,
             ChildrenConnectionStats, CommandHistory, CommandHistoryCriteria, ParentCaContact, ParentCaReq,
-            PublicationServerUris, PublisherDetails, RepositoryContact, RoaDefinition, RoaDefinitionUpdates, RtaList,
-            RtaName, RtaPrepResponse, ServerInfo, TaCertDetails, Timestamp, UpdateChildRequest,
+            PublicationServerUris, PublisherDetails, RcvdCert, RepositoryContact, RoaDefinition, RoaDefinitionUpdates,
+            RtaList, RtaName, RtaPrepResponse, ServerInfo, TaCertDetails, Timestamp, UpdateChildRequest,
         },
         bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion},
         crypto::KrillSignerBuilder,
@@ -195,14 +195,14 @@ impl KrillServer {
 
                     // Add the new testbed publisher
                     let pub_req = idexchange::PublisherRequest::new(
-                        testbed_ca.id_cert().clone(),
+                        testbed_ca.id_cert().base64().clone(),
                         testbed_ca_handle.convert(),
                         None,
                     );
                     repo_manager.create_publisher(pub_req, &system_actor)?;
 
                     let repo_response = repo_manager.repository_response(&testbed_ca_handle.convert())?;
-                    let repo_contact = RepositoryContact::new(repo_response);
+                    let repo_contact = RepositoryContact::for_response(repo_response).map_err(Error::rfc8183)?;
                     ca_manager
                         .update_repo(testbed_ca_handle.clone(), repo_contact, false, &system_actor)
                         .await?;
@@ -210,10 +210,11 @@ impl KrillServer {
                     // Establish the TA (parent) <-> testbed CA (child) relationship
                     let testbed_ca_resources = ResourceSet::all();
 
-                    let (child_id_cert, _, _) = testbed_ca.child_request().unpack();
+                    let child_id_cert = testbed_ca.child_request().validate().map_err(Error::rfc8183)?;
 
                     let child_req =
                         AddChildRequest::new(testbed_ca_handle.convert(), testbed_ca_resources, child_id_cert);
+
                     let parent_ca_contact = ca_manager
                         .ca_add_child(&ta_handle, child_req, &service_uri, &system_actor)
                         .await?;
@@ -392,19 +393,20 @@ impl KrillServer {
             let ca = ca_manager.get_ca(ca_handle).await?;
 
             // Add the new testbed publisher
-            let pub_req = idexchange::PublisherRequest::new(ca.id_cert().clone(), ca_handle.convert(), None);
+            let pub_req = idexchange::PublisherRequest::new(ca.id_cert().base64().clone(), ca_handle.convert(), None);
             repo_manager.create_publisher(pub_req, &system_actor)?;
 
             let repo_response = repo_manager.repository_response(&ca_handle.convert())?;
-            let repo_contact = RepositoryContact::new(repo_response);
+            let repo_contact = RepositoryContact::for_response(repo_response).map_err(Error::rfc8183)?;
+
             ca_manager
                 .update_repo(ca_handle.clone(), repo_contact, false, &system_actor)
                 .await?;
 
             // Establish the Parent <-> CA relationship
-            let (child_id_cert, _, _) = ca.child_request().unpack();
-
+            let child_id_cert = ca.child_request().validate().map_err(Error::rfc8183)?;
             let child_req = AddChildRequest::new(ca_handle.convert(), resources, child_id_cert);
+
             let parent_ca_contact = ca_manager
                 .ca_add_child(&parent_handle.convert(), child_req, &service_uri, &system_actor)
                 .await?;
@@ -535,7 +537,7 @@ impl KrillServer {
         }
     }
 
-    pub async fn trust_anchor_cert(&self) -> Option<Cert> {
+    pub async fn trust_anchor_cert(&self) -> Option<RcvdCert> {
         self.ta().await.ok().map(|details| details.cert().clone())
     }
 
@@ -699,8 +701,12 @@ impl KrillServer {
 ///
 impl KrillServer {
     /// Republish all CAs that need it.
-    pub async fn republish_all(&self) -> KrillEmptyResult {
-        self.ca_manager.republish_all().await?;
+    pub async fn republish_all(&self, force: bool) -> KrillEmptyResult {
+        let cas = self.ca_manager.republish_all(force).await?;
+        for ca in cas {
+            self.cas_repo_sync_single(&ca)?;
+        }
+
         Ok(())
     }
 

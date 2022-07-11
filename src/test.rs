@@ -219,6 +219,10 @@ pub async fn krill_admin_expect_error(command: Command) -> Error {
     }
 }
 
+pub async fn cas_force_publish_all() {
+    krill_admin(Command::Bulk(BulkCaCommand::ForcePublish)).await;
+}
+
 pub async fn cas_refresh_all() {
     krill_admin(Command::Bulk(BulkCaCommand::Refresh)).await;
 }
@@ -262,7 +266,7 @@ pub async fn delete_ca(ca: &CaHandle) {
 pub async fn ca_repo_update_rfc8181(ca: &CaHandle, response: idexchange::RepositoryResponse) {
     krill_admin(Command::CertAuth(CaCommand::RepoUpdate(
         ca.clone(),
-        RepositoryContact::new(response),
+        RepositoryContact::for_response(response).unwrap(),
     )))
     .await;
 }
@@ -290,7 +294,7 @@ pub async fn add_child_to_ta_rfc6492(
     child_request: idexchange::ChildRequest,
     resources: ResourceSet,
 ) -> ParentCaContact {
-    let (id_cert, _, _) = child_request.unpack();
+    let id_cert = child_request.validate().unwrap();
     let req = AddChildRequest::new(child.clone(), resources, id_cert);
     let res = krill_admin(Command::CertAuth(CaCommand::ChildAdd(ta_handle(), req))).await;
 
@@ -306,7 +310,7 @@ pub async fn add_child_rfc6492(
     child_request: idexchange::ChildRequest,
     resources: ResourceSet,
 ) -> ParentCaContact {
-    let (id_cert, _, _) = child_request.unpack();
+    let id_cert = child_request.validate().unwrap();
 
     let add_child_request = AddChildRequest::new(child, resources, id_cert);
 
@@ -324,8 +328,8 @@ pub async fn update_child(ca: &CaHandle, child: &CaHandle, resources: &ResourceS
 
 pub async fn update_child_id(ca: &CaHandle, child: &CaHandle, req: idexchange::ChildRequest) {
     let child_handle = child.convert();
-    let (id, _, _) = req.unpack();
-    let req = UpdateChildRequest::id_cert(id);
+    let id_cert = req.validate().unwrap();
+    let req = UpdateChildRequest::id_cert(id_cert);
     send_child_request(ca, &child_handle, req).await
 }
 
@@ -758,7 +762,7 @@ pub async fn set_up_ca_with_repo(ca: &CaHandle) {
     let response = embedded_repository_response(ca.convert()).await;
 
     // Update the repo for the child
-    let contact = RepositoryContact::new(response);
+    let contact = RepositoryContact::for_response(response).unwrap();
     repo_update(ca, contact).await;
 }
 
@@ -778,7 +782,7 @@ pub async fn expected_new_key_mft_and_crl(ca: &CaHandle, rcn: &ResourceClassName
 
 pub async fn expected_issued_cer(ca: &CaHandle, rcn: &ResourceClassName) -> String {
     let rc_key = ca_key_for_rcn(ca, rcn).await;
-    ObjectName::from(rc_key.incoming_cert().cert()).to_string()
+    ObjectName::new(rc_key.key_id(), "cer").to_string()
 }
 
 pub async fn will_publish_embedded(test_msg: &str, ca: &CaHandle, files: &[String]) -> bool {
@@ -795,6 +799,7 @@ enum PubServer {
 }
 
 async fn will_publish(test_msg: &str, ca: &CaHandle, files: &[String], server: PubServer) -> bool {
+    debug!("Expecting CA '{}' to publish: {:?}", ca, files);
     let objects: Vec<_> = files.iter().map(|s| s.as_str()).collect();
     for _ in 0..6000 {
         let details = {

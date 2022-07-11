@@ -1,0 +1,25 @@
+{
+  "actor": "anonymous",
+  "time": "2022-03-22T07:21:33.530764538Z",
+  "handle": "testbed",
+  "version": 28,
+  "sequence": 21,
+  "details": {
+    "type": "child_certify",
+    "child": "Publisher",
+    "resource_class_name": "0",
+    "limit": {
+      "asn": "none",
+      "v4": "none",
+      "v6": "none"
+    },
+    "ki": "FCE245E90D1F4B7A23788682DDAEACD648A79001"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      28,
+      29
+    ]
+  }
+}

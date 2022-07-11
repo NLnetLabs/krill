@@ -1,9 +1,10 @@
 use std::fmt;
 
-use rpki::{ca::idexchange, uri};
+use rpki::uri;
 
 use rpki::ca::idexchange::{MyHandle, PublisherHandle};
 
+use crate::commons::api::IdCertInfo;
 use crate::{
     commons::{
         actor::Actor,
@@ -22,7 +23,8 @@ pub type RepoAccessCmd = SentCommand<RepoAccessCmdDet>;
 #[serde(rename_all = "snake_case", tag = "type")]
 pub enum RepoAccessCmdDet {
     AddPublisher {
-        request: idexchange::PublisherRequest,
+        id_cert: IdCertInfo,
+        name: PublisherHandle,
         base_uri: uri::Rsync,
     },
     RemovePublisher {
@@ -42,14 +44,19 @@ impl CommandDetails for RepoAccessCmdDet {
 impl RepoAccessCmdDet {
     pub fn add_publisher(
         handle: &MyHandle,
-        request: idexchange::PublisherRequest,
+        id_cert: IdCertInfo,
+        name: PublisherHandle,
         base_uri: uri::Rsync,
         actor: &Actor,
     ) -> RepoAccessCmd {
         SentCommand::new(
             handle,
             None,
-            RepoAccessCmdDet::AddPublisher { request, base_uri },
+            RepoAccessCmdDet::AddPublisher {
+                id_cert,
+                name,
+                base_uri,
+            },
             actor,
         )
     }
@@ -68,10 +75,7 @@ impl fmt::Display for RepoAccessCmdDet {
 impl From<RepoAccessCmdDet> for StorableRepositoryCommand {
     fn from(d: RepoAccessCmdDet) -> Self {
         match d {
-            RepoAccessCmdDet::AddPublisher { request, .. } => {
-                let (_, name, _) = request.unpack();
-                StorableRepositoryCommand::AddPublisher { name }
-            }
+            RepoAccessCmdDet::AddPublisher { name, .. } => StorableRepositoryCommand::AddPublisher { name },
             RepoAccessCmdDet::RemovePublisher { name } => StorableRepositoryCommand::RemovePublisher { name },
         }
     }

@@ -8,7 +8,6 @@ use std::{
 
 use rpki::{
     ca::{
-        idcert::IdCert,
         idexchange,
         idexchange::{MyHandle, PublisherHandle, RepoInfo},
         publication,
@@ -23,8 +22,12 @@ use rpki::{
 use crate::{
     commons::{
         actor::Actor,
-        api::rrdp::{
-            CurrentObjects, Delta, DeltaElements, DeltaRef, FileRef, Notification, RrdpSession, Snapshot, SnapshotRef,
+        api::{
+            rrdp::{
+                CurrentObjects, Delta, DeltaElements, DeltaRef, FileRef, Notification, RrdpSession, Snapshot,
+                SnapshotRef,
+            },
+            IdCertInfo,
         },
         api::{PublicationServerUris, StorableRepositoryCommand},
         crypto::KrillSigner,
@@ -1007,8 +1010,11 @@ impl RepositoryAccessProxy {
     }
 
     pub fn add_publisher(&self, req: idexchange::PublisherRequest, actor: &Actor) -> KrillResult<()> {
-        let base_uri = self.read()?.base_uri_for(req.publisher_handle())?; // will verify that server was initialized
-        let cmd = RepoAccessCmdDet::add_publisher(&self.key, req, base_uri, actor);
+        let name = req.publisher_handle().clone();
+        let id_cert = req.validate().map_err(Error::rfc8183)?;
+        let base_uri = self.read()?.base_uri_for(&name)?;
+
+        let cmd = RepoAccessCmdDet::add_publisher(&self.key, id_cert.into(), name, base_uri, actor);
         self.store.command(cmd)?;
         Ok(())
     }
@@ -1045,7 +1051,7 @@ impl RepositoryAccessProxy {
     ) -> KrillResult<publication::PublicationCms> {
         let publisher = self.get_publisher(publisher)?;
         let msg = PublicationCms::decode(bytes).map_err(Error::Rfc8181)?;
-        msg.validate(publisher.id_cert()).map_err(Error::Rfc8181)?;
+        msg.validate(publisher.id_cert().public_key()).map_err(Error::Rfc8181)?;
         Ok(msg)
     }
 
@@ -1070,7 +1076,7 @@ pub struct RepositoryAccess {
     handle: MyHandle,
     version: u64,
 
-    id_cert: IdCert,
+    id_cert: IdCertInfo,
     publishers: HashMap<PublisherHandle, Publisher>,
 
     rsync_base: uri::Rsync,
@@ -1079,7 +1085,7 @@ pub struct RepositoryAccess {
 
 impl RepositoryAccess {
     pub fn key_id(&self) -> KeyIdentifier {
-        self.id_cert.subject_public_key_info().key_identifier()
+        self.id_cert.public_key().key_identifier()
     }
 }
 
@@ -1129,7 +1135,11 @@ impl Aggregate for RepositoryAccess {
         );
 
         match command.into_details() {
-            RepoAccessCmdDet::AddPublisher { request, base_uri } => self.add_publisher(request, base_uri),
+            RepoAccessCmdDet::AddPublisher {
+                id_cert,
+                name,
+                base_uri,
+            } => self.add_publisher(id_cert, name, base_uri),
             RepoAccessCmdDet::RemovePublisher { name } => self.remove_publisher(name),
         }
     }
@@ -1141,11 +1151,10 @@ impl RepositoryAccess {
     /// Adds a publisher with access to the repository
     fn add_publisher(
         &self,
-        publisher_request: idexchange::PublisherRequest,
+        id_cert: IdCertInfo,
+        name: PublisherHandle,
         base_uri: uri::Rsync,
     ) -> Result<Vec<RepositoryAccessEvent>, Error> {
-        let (id_cert, name, _tag) = publisher_request.unpack();
-
         if self.publishers.contains_key(&name) {
             Err(Error::PublisherDuplicate(name))
         } else {
@@ -1198,7 +1207,7 @@ impl RepositoryAccess {
         let service_uri = idexchange::ServiceUri::Https(rfc8181_uri);
 
         Ok(idexchange::RepositoryResponse::new(
-            self.id_cert.clone(),
+            self.id_cert.base64().clone(),
             publisher_handle.clone(),
             service_uri,
             rsync_base.clone(),

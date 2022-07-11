@@ -4,7 +4,6 @@ use chrono::Duration;
 
 use rpki::{
     ca::{
-        idcert::IdCert,
         idexchange::{CaHandle, ChildHandle, ParentHandle},
         provisioning::{
             IssuanceRequest, ResourceClassListResponse as Entitlements, ResourceClassName, RevocationRequest,
@@ -19,8 +18,8 @@ use crate::{
     commons::{
         actor::Actor,
         api::{
-            AspaCustomer, AspaDefinitionUpdates, AspaProvidersUpdate, BgpSecDefinitionUpdates, ParentCaContact,
-            RcvdCert, RepositoryContact, RtaName, StorableCaCommand, StorableRcEntitlement,
+            AspaCustomer, AspaDefinitionUpdates, AspaProvidersUpdate, BgpSecDefinitionUpdates, IdCertInfo,
+            ParentCaContact, RcvdCert, RepositoryContact, RtaName, StorableCaCommand, StorableRcEntitlement,
         },
         crypto::KrillSigner,
         eventsourcing::{self, StoredCommand},
@@ -49,21 +48,21 @@ pub enum CmdDet {
     // ------------------------------------------------------------
     // Being a TA
     // ------------------------------------------------------------
-    MakeTrustAnchor(Vec<uri::Https>, Option<uri::Rsync>, Arc<KrillSigner>),
+    MakeTrustAnchor(Vec<uri::Https>, uri::Rsync, Arc<KrillSigner>),
 
     // ------------------------------------------------------------
     // Being a parent
     // ------------------------------------------------------------
 
     // Add a new child under this parent CA
-    ChildAdd(ChildHandle, IdCert, ResourceSet),
+    ChildAdd(ChildHandle, IdCertInfo, ResourceSet),
 
     // Update the resource entitlements for an existing child.
     ChildUpdateResources(ChildHandle, ResourceSet),
 
     // Update the IdCert used by the child for the RFC 6492 RPKI
     // provisioning protocol.
-    ChildUpdateId(ChildHandle, IdCert),
+    ChildUpdateId(ChildHandle, IdCertInfo),
 
     // Process an issuance request sent by an existing child.
     ChildCertify(ChildHandle, IssuanceRequest, Arc<Config>, Arc<KrillSigner>),
@@ -235,15 +234,15 @@ impl From<CmdDet> for StorableCaCommand {
             // ------------------------------------------------------------
             CmdDet::ChildAdd(child, id_cert, resources) => StorableCaCommand::ChildAdd {
                 child,
-                ski: id_cert.subject_key_identifier().to_string(),
+                ski: id_cert.public_key().key_identifier().to_string(),
                 resources,
             },
             CmdDet::ChildUpdateResources(child, resources) => {
                 StorableCaCommand::ChildUpdateResources { child, resources }
             }
-            CmdDet::ChildUpdateId(child, id) => StorableCaCommand::ChildUpdateId {
+            CmdDet::ChildUpdateId(child, id_cert) => StorableCaCommand::ChildUpdateId {
                 child,
-                ski: id.subject_key_identifier().to_string(),
+                ski: id_cert.public_key().key_identifier().to_string(),
             },
             CmdDet::ChildCertify(child, req, _, _) => {
                 let (resource_class_name, limit, csr) = req.unpack();
@@ -332,7 +331,7 @@ impl From<CmdDet> for StorableCaCommand {
             // Publishing
             // ------------------------------------------------------------
             CmdDet::RepoUpdate(contact, _) => StorableCaCommand::RepoUpdate {
-                service_uri: contact.service_uri().clone(),
+                service_uri: contact.server_info().service_uri().clone(),
             },
 
             // ------------------------------------------------------------
@@ -350,7 +349,7 @@ impl CmdDet {
     pub fn make_trust_anchor(
         handle: &CaHandle,
         uris: Vec<uri::Https>,
-        rsync_uri: Option<uri::Rsync>,
+        rsync_uri: uri::Rsync,
         signer: Arc<KrillSigner>,
         actor: &Actor,
     ) -> Cmd {
@@ -362,16 +361,11 @@ impl CmdDet {
     pub fn child_add(
         handle: &CaHandle,
         child_handle: ChildHandle,
-        child_id_cert: IdCert,
-        child_resources: ResourceSet,
+        id_cert: IdCertInfo,
+        resources: ResourceSet,
         actor: &Actor,
     ) -> Cmd {
-        eventsourcing::SentCommand::new(
-            handle,
-            None,
-            CmdDet::ChildAdd(child_handle, child_id_cert, child_resources),
-            actor,
-        )
+        eventsourcing::SentCommand::new(handle, None, CmdDet::ChildAdd(child_handle, id_cert, resources), actor)
     }
 
     pub fn child_update_resources(
@@ -388,8 +382,8 @@ impl CmdDet {
         )
     }
 
-    pub fn child_update_id(handle: &CaHandle, child_handle: ChildHandle, id: IdCert, actor: &Actor) -> Cmd {
-        eventsourcing::SentCommand::new(handle, None, CmdDet::ChildUpdateId(child_handle, id), actor)
+    pub fn child_update_id(handle: &CaHandle, child_handle: ChildHandle, id_cert: IdCertInfo, actor: &Actor) -> Cmd {
+        eventsourcing::SentCommand::new(handle, None, CmdDet::ChildUpdateId(child_handle, id_cert), actor)
     }
 
     /// Certify a child. Will return an error in case the child is

@@ -242,6 +242,11 @@ pub enum Error {
     CaParentSyncError(CaHandle, ParentHandle, ResourceClassName, String),
 
     //-----------------------------------------------------------------
+    // RFC8183 (exchanging id XML)
+    //-----------------------------------------------------------------
+    Rfc8183(String),
+
+    //-----------------------------------------------------------------
     // RFC6492 (requesting resources)
     //-----------------------------------------------------------------
     Rfc6492(provisioning::Error),
@@ -417,6 +422,10 @@ impl fmt::Display for Error {
                 )
             }
 
+            //-----------------------------------------------------------------
+            // RFC8183 (exchanging id XML)
+            //-----------------------------------------------------------------
+            Error::Rfc8183(e) => write!(f, "RFC 8183 XML issue: {}", e),
 
             //-----------------------------------------------------------------
             // RFC6492 (requesting resources)
@@ -593,6 +602,10 @@ impl Error {
 
     pub fn publishing(msg: impl fmt::Display) -> Self {
         Error::PublishingObjects(msg.to_string())
+    }
+
+    pub fn rfc8183(e: impl Display) -> Self {
+        Error::Rfc8183(e.to_string())
     }
 
     pub fn custom(msg: impl fmt::Display) -> Self {
@@ -783,6 +796,11 @@ impl Error {
                 .with_ca(ca)
                 .with_parent(parent)
                 .with_resource_class(rcn),
+
+            //-----------------------------------------------------------------
+            // RFC8183 (exchanging id XML)
+            //-----------------------------------------------------------------
+            Error::Rfc8183(e) => ErrorResponse::new("rfc-8183-xml", &self).with_cause(e),
 
             //-----------------------------------------------------------------
             // RFC6492 (requesting resources, not on JSON api)

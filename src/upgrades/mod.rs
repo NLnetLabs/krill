@@ -19,7 +19,6 @@ use crate::{
     constants::{CASERVER_DIR, CA_OBJECTS_DIR, PUBSERVER_CONTENT_DIR, PUBSERVER_DIR, UPGRADE_REISSUE_ROAS_CAS_LIMIT},
     daemon::{config::Config, krillserver::KrillServer},
     pubd::RepositoryManager,
-    upgrades::v0_9_0::{CaObjectsMigration, PubdObjectsMigration},
 };
 
 #[cfg(feature = "hsm")]
@@ -31,7 +30,8 @@ use crate::{
     constants::{KEYS_DIR, SIGNERS_DIR},
 };
 
-pub mod v0_9_0;
+pub mod pre_0_10_0;
+pub mod pre_0_9_0;
 
 pub type UpgradeResult<T> = Result<T, PrepareUpgradeError>;
 
@@ -101,6 +101,7 @@ pub enum PrepareUpgradeError {
     IoError(KrillIoError),
     Unrecognised(String),
     CannotLoadAggregate(MyHandle),
+    IdExchange(String),
     Custom(String),
 }
 
@@ -112,6 +113,7 @@ impl fmt::Display for PrepareUpgradeError {
             PrepareUpgradeError::IoError(e) => format!("I/O Error: {}", e),
             PrepareUpgradeError::Unrecognised(s) => format!("Unrecognised: {}", s),
             PrepareUpgradeError::CannotLoadAggregate(h) => format!("Cannot load: {}", h),
+            PrepareUpgradeError::IdExchange(s) => format!("Could not use exchanged id info: {}", s),
             PrepareUpgradeError::Custom(s) => s.clone(),
         };
 
@@ -149,6 +151,12 @@ impl From<KrillIoError> for PrepareUpgradeError {
 impl From<crate::commons::error::Error> for PrepareUpgradeError {
     fn from(e: crate::commons::error::Error) -> Self {
         PrepareUpgradeError::Custom(e.to_string())
+    }
+}
+
+impl From<rpki::ca::idexchange::Error> for PrepareUpgradeError {
+    fn from(e: rpki::ca::idexchange::Error) -> Self {
+        PrepareUpgradeError::IdExchange(e.to_string())
     }
 }
 
@@ -305,7 +313,7 @@ pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -
                 let msg = "Cannot upgrade Krill installations from before version 0.6.0. Please upgrade to any version ranging from 0.6.0 to 0.8.1 first, and then upgrade to this version.";
                 error!("{}", msg);
                 Err(PrepareUpgradeError::custom(msg))
-            } else if versions.from < KrillVersion::release(0, 9, 0) {
+            } else if versions.from < KrillVersion::candidate(0, 10, 0, 1) {
                 let upgrade_data_dir = config.upgrade_data_dir();
                 if !upgrade_data_dir.exists() {
                     file::create_dir_all(&upgrade_data_dir)?;
@@ -323,35 +331,53 @@ pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -
                     })?
                 };
 
-                #[cfg(feature = "hsm")]
-                record_preexisting_openssl_keys_in_signer_mapper(config.clone())?;
+                if versions.from < KrillVersion::release(0, 9, 0) {
+                    // We will need an extensive migration because starting with 0.9.0
+                    // we no longer use events for:
+                    // - republishing manifests/CRLs in CAs
+                    // - publishing objects for publishers in the repository
+                    //
+                    // Unfortunately this resulted in too many events and excessive disk
+                    // space usage. So, now we use a hybrid event sourcing model where
+                    // all other changes are tracked through events, but these high-churn
+                    // publication changes are kept in dedicated stateful objects:
+                    // - pubd_objects for objects published in a repository server
+                    // - ca_objects for published objects for a CA.
 
-                // We need to prepare pubd first, because if there were any CAs using
-                // an embedded repository then they will need to be updated to use the
-                // RFC 8181 protocol (using localhost) instead, and this can only be
-                // *after* the publication server data is migrated.
-                PubdObjectsMigration::prepare(mode, config.clone())?;
+                    #[cfg(feature = "hsm")]
+                    record_preexisting_openssl_keys_in_signer_mapper(config.clone())?;
 
-                // We need a signer because it's required by the repo manager, although
-                // we will not actually use it during the migration.
-                let probe_interval = Duration::from_secs(config.signer_probe_retry_seconds);
-                let signer = KrillSignerBuilder::new(&upgrade_data_dir, probe_interval, &config.signers)
-                    .with_default_signer(config.default_signer())
-                    .with_one_off_signer(config.one_off_signer())
-                    .build()
-                    .unwrap();
-                let signer = Arc::new(signer);
+                    // We need to prepare pubd first, because if there were any CAs using
+                    // an embedded repository then they will need to be updated to use the
+                    // RFC 8181 protocol (using localhost) instead, and this can only be
+                    // *after* the publication server data is migrated.
+                    pre_0_9_0::PubdObjectsMigration::prepare(mode, config.clone())?;
 
-                // We fool a repository manager for the CA migration to use the upgrade
-                // data directory as its base dir. This repository manager will be used
-                // to get the repository response XML for any (if any) CAs that were
-                // using an embedded repository.
-                let mut repo_manager_migration_config = (*config).clone();
-                repo_manager_migration_config.data_dir = upgrade_data_dir;
+                    // We need a signer because it's required by the repo manager, although
+                    // we will not actually use it during the migration.
+                    let probe_interval = Duration::from_secs(config.signer_probe_retry_seconds);
+                    let signer = KrillSignerBuilder::new(&upgrade_data_dir, probe_interval, &config.signers)
+                        .with_default_signer(config.default_signer())
+                        .with_one_off_signer(config.one_off_signer())
+                        .build()
+                        .unwrap();
+                    let signer = Arc::new(signer);
 
-                let repo_manager = RepositoryManager::build(Arc::new(repo_manager_migration_config), signer.clone())?;
+                    // We fool a repository manager for the CA migration to use the upgrade
+                    // data directory as its base dir. This repository manager will be used
+                    // to get the repository response XML for any (if any) CAs that were
+                    // using an embedded repository.
+                    let mut repo_manager_migration_config = (*config).clone();
+                    repo_manager_migration_config.data_dir = upgrade_data_dir;
 
-                CaObjectsMigration::prepare(mode, config, repo_manager, signer)?;
+                    let repo_manager =
+                        RepositoryManager::build(Arc::new(repo_manager_migration_config), signer.clone())?;
+
+                    pre_0_9_0::CaObjectsMigration::prepare(mode, config, repo_manager, signer)?;
+                } else {
+                    pre_0_10_0::CasStoreMigration::prepare(mode, &config)?;
+                    pre_0_10_0::PubdStoreMigration::prepare(mode, &config)?;
+                }
 
                 Ok(Some(UpgradeReport::new(true, versions)))
             } else {
@@ -371,33 +397,51 @@ pub fn finalise_data_migration(upgrade: &UpgradeVersions, config: &Config) -> Kr
     let data_dir = &config.data_dir;
     let upgrade_dir = config.upgrade_data_dir();
 
-    // cas -> arch-cas-{old-version}
-    // upgrade-data/cas -> cas
-    // upgrade-data/ca_objects -> ca_objects
-
     let cas = data_dir.join(CASERVER_DIR);
     let cas_arch = data_dir.join(format!("arch-{}-{}", CASERVER_DIR, from));
     let cas_upg = upgrade_dir.join(CASERVER_DIR);
     let ca_objects = data_dir.join(CA_OBJECTS_DIR);
+    let ca_objects_arch = data_dir.join(format!("arch-{}-{}", CA_OBJECTS_DIR, from));
     let ca_objects_upg = upgrade_dir.join(CA_OBJECTS_DIR);
 
-    move_dir_if_exists(&cas, &cas_arch)?;
-    move_dir_if_exists(&cas_upg, &cas)?;
-    move_dir_if_exists(&ca_objects_upg, &ca_objects)?;
+    // upgrade-data/cas exists
+    if cas_upg.exists() {
+        // cas -> arch-cas-{old-version}
+        // upgrade-data/cas -> cas
+        move_dir_if_exists(&cas, &cas_arch)?;
+        move_dir_if_exists(&cas_upg, &cas)?;
+    }
 
-    // pubd -> arch-pubd-{old-version}
-    // upgrade-data/pubd -> pubd
-    // upgrade-data/pubd_objects -> pubd_objects
+    // upgrade-data/ca_objects exists
+    if ca_objects_upg.exists() {
+        // ca_objects -> arch-ca_objects-{old-version}
+        // upgrade-data/ca_objects -> ca_objects
+        move_dir_if_exists(&ca_objects, &ca_objects_arch)?;
+        move_dir_if_exists(&ca_objects_upg, &ca_objects)?;
+    }
 
     let pubd = data_dir.join(PUBSERVER_DIR);
     let pubd_arch = data_dir.join(format!("arch-{}-{}", PUBSERVER_DIR, from));
     let pubd_upg = upgrade_dir.join(PUBSERVER_DIR);
     let pubd_objects = data_dir.join(PUBSERVER_CONTENT_DIR);
+    let pubd_objects_arch = data_dir.join(format!("arch-{}-{}", PUBSERVER_CONTENT_DIR, from));
     let pubd_objects_upg = upgrade_dir.join(PUBSERVER_CONTENT_DIR);
 
-    move_dir_if_exists(&pubd, &pubd_arch)?;
-    move_dir_if_exists(&pubd_upg, &pubd)?;
-    move_dir_if_exists(&pubd_objects_upg, &pubd_objects)?;
+    // upgrade-data/pubd exists
+    if pubd_upg.exists() {
+        // pubd -> arch-pubd-{old-version}
+        // upgrade-data/pubd -> pubd
+        move_dir_if_exists(&pubd, &pubd_arch)?;
+        move_dir_if_exists(&pubd_upg, &pubd)?
+    }
+
+    // upgrade-data/pubd_objects exists
+    if pubd_objects_upg.exists() {
+        // pubd_objects -> arch-pubd_objects-{old-version}
+        // upgrade-data/pubd_objects -> pubd_objects
+        move_dir_if_exists(&pubd_objects, &pubd_objects_arch)?;
+        move_dir_if_exists(&pubd_objects_upg, &pubd_objects)?;
+    }
 
     // done, clean out the migration dir
     file::remove_dir_all(&upgrade_dir)
@@ -591,6 +635,12 @@ mod tests {
         finalise_data_migration(report.versions(), &config).unwrap();
 
         let _ = fs::remove_dir_all(work_dir);
+    }
+
+    #[tokio::test]
+    async fn prepare_then_upgrade_0_9_5() {
+        let source = PathBuf::from("test-resources/migrations/v0_9_5/");
+        test_upgrade(source).await;
     }
 
     #[tokio::test]

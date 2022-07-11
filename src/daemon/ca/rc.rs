@@ -209,7 +209,7 @@ impl ResourceClass {
     ) -> KrillResult<Vec<CaEvtDet>> {
         // If this is for a pending key, then we need to promote this key
 
-        let rcvd_cert_ki = rcvd_cert.cert().subject_key_identifier();
+        let rcvd_cert_ki = rcvd_cert.key_identifier();
 
         match &self.key_state {
             KeyState::Pending(pending) => {
@@ -339,7 +339,7 @@ impl ResourceClass {
         config: &Config,
         signer: &KrillSigner,
     ) -> KrillResult<Vec<CaEvtDet>> {
-        let ki = rcvd_cert.cert().subject_key_identifier();
+        let ki = rcvd_cert.key_identifier();
         if ki != current_key.key_id() {
             return Err(ca::Error::KeyUseNoMatch(ki));
         }
@@ -706,7 +706,7 @@ impl ResourceClass {
     }
 
     /// Returns an issued certificate for a key, if it exists
-    pub fn issued(&self, ki: &KeyIdentifier) -> Option<&DelegatedCertificate> {
+    pub fn delegated(&self, ki: &KeyIdentifier) -> Option<&DelegatedCertificate> {
         self.certificates.get_issued(ki)
     }
 
@@ -840,7 +840,7 @@ impl ResourceClass {
             self.bgpsec_certificates
                 .renew(key, renew_threshold, issuance_timing, signer)
         } else {
-            debug!("no ASPAs to renew - resource class has no current key");
+            debug!("no BGPSec certificates to renew - resource class has no current key");
             Ok(BgpSecCertificateUpdates::default())
         }
     }

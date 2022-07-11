@@ -1,7 +1,6 @@
 //! Perform functional tests on a Krill instance, using the API
 //!
 use std::fs;
-use std::str::FromStr;
 
 use bytes::Bytes;
 use rpki::{
@@ -10,14 +9,10 @@ use rpki::{
 };
 
 use krill::{
-    commons::api::{
-        AspaCustomer, AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, BgpSecAsnKey, BgpSecCsrInfo,
-        BgpSecDefinition, ObjectName,
-    },
+    commons::api::{BgpSecAsnKey, BgpSecCsrInfo, BgpSecDefinition},
     daemon::ca::ta_handle,
     test::*,
 };
-use rpki::repository::aspa::ProviderAs;
 
 #[tokio::test]
 async fn functional_bgpsec() {

@@ -1,0 +1,33 @@
+{
+  "id": "testbed",
+  "version": 34,
+  "details": {
+    "type": "child_certificates_updated",
+    "resource_class_name": "0",
+    "updates": {
+      "issued": [
+        {
+          "uri": "rsync://testbed.krill.cloud/repo/testbed/0/FCE245E90D1F4B7A23788682DDAEACD648A79001.cer",
+          "limit": {
+            "asn": "none",
+            "v4": "none",
+            "v6": "none"
+          },
+          "resource_set": {
+            "asn": "AS1",
+            "v4": "10.0.0.0/8",
+            "v6": ""
+          },
+          "cert": "MIIFjjCCBHagAwIBAgIUbVG52qbJmLuhas9FtCn+GXDtpUIwDQYJKoZIhvcNAQELBQAwMzExMC8GA1UEAxMoNjJCQzg4NDUzRTc4NDI0RjdGODg2NzEyQTRCOTA0QTA3Qjk4QkVFNzAeFw0yMjAzMjQxMjE1NTBaFw0yMzAzMjMxMjIwNTBaMDMxMTAvBgNVBAMTKEZDRTI0NUU5MEQxRjRCN0EyMzc4ODY4MkREQUVBQ0Q2NDhBNzkwMDEwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCaWnHJpEV7561XPaCkIWDfxOJB0yUBv4HqHYds42MSBbMPctRatdXRxSgFf45SRQZWSjRLjE7dpRY9no5U2RishWRrh5DlBsScIZF0r4ghc6UnfpOUWFA7kCQeZ0xAUtGLiXyyG/Qki5oGYljGrO8FYdCynFwnTP9T5Hutlnva3sa5WWi5RMG6o0JjkJ88uY1SXLvUdxDgXJts/F6fNP8q6Bumg6Pt/vb4jr0DOJU/mHUl1y+yU+JqkX9rVafoJBVRfoQ6Oe1GF83WDEfteuRbvzq8cvJ/obyZWmgrwtoFKXp5SdGpK2KBLw8Tj9wLCvYvRtgGweArfyZ+3V8YER8vAgMBAAGjggKYMIIClDAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBT84kXpDR9LeiN4hoLdrqzWSKeQATAfBgNVHSMEGDAWgBRivIhFPnhCT3+IZxKkuQSge5i+5zAOBgNVHQ8BAf8EBAMCAQYwaAYDVR0fBGEwXzBdoFugWYZXcnN5bmM6Ly90ZXN0YmVkLmtyaWxsLmNsb3VkL3JlcG8vdGVzdGJlZC8wLzYyQkM4ODQ1M0U3ODQyNEY3Rjg4NjcxMkE0QjkwNEEwN0I5OEJFRTcuY3JsMG4GCCsGAQUFBwEBBGIwYDBeBggrBgEFBQcwAoZScnN5bmM6Ly90ZXN0YmVkLmtyaWxsLmNsb3VkL3JlcG8vdGEvMC82MkJDODg0NTNFNzg0MjRGN0Y4ODY3MTJBNEI5MDRBMDdCOThCRUU3LmNlcjCCAQIGCCsGAQUFBwELBIH1MIHyMD4GCCsGAQUFBzAFhjJyc3luYzovL3Rlc3RiZWQucnBraS5ubG5ldGxhYnMubmwvcmVwby9QdWJsaXNoZXIvMDBrBggrBgEFBQcwCoZfcnN5bmM6Ly90ZXN0YmVkLnJwa2kubmxuZXRsYWJzLm5sL3JlcG8vUHVibGlzaGVyLzAvRkNFMjQ1RTkwRDFGNEI3QTIzNzg4NjgyRERBRUFDRDY0OEE3OTAwMS5tZnQwQwYIKwYBBQUHMA2GN2h0dHBzOi8vdGVzdGJlZC5ycGtpLm5sbmV0bGFicy5ubC9ycmRwL25vdGlmaWNhdGlvbi54bWwwGAYDVR0gAQH/BA4wDDAKBggrBgEFBQcOAjAdBggrBgEFBQcBBwEB/wQOMAwwCgQCAAEwBAMCAAowGAYIKwYBBQUHAQgBAf8ECTAHoAUwAwIBATANBgkqhkiG9w0BAQsFAAOCAQEAq/512ybrstz8c45XdgN7RQBe+ul5eHpi4qITEroxdTMrtgKQa2WwqRFRbYS2SdYo4s9Ldg4VDDc7j5p2B+1AcWnvZdDzHMUULW5D2zoEFROtVN80coJ+PMbr61ldk8V/DlwzW4CZ9aJGlTVeG6hvYB2ehv/TS/laJ6X5zYYZ7DZI3LFwvo7TiqLqdCyXCXGf27axZ3eDD1FREqQMzpQndXIjAd/H3Ow6Eli5IVCRbOGnu/OX2d5Dxs3Z6+N/8OqGb4Dklif6LiUfy1/QwMHD3akiIc/9IjUV7ziSnVdpLVURCWeRgEV7tB/iIjqzXwBGYpORkk6AgTHt7SdvfJaxDg==",
+          "replaces": {
+            "revocation": {
+              "serial": "177969432728545736790616225352904788668679814954",
+              "expires": "2023-03-21T08:09:14.789687769Z"
+            },
+            "hash": "708a05a418d4d331f40d149db393e191b2bd869f7ca03fed91800d57396f4d13"
+          }
+        }
+      ]
+    }
+  }
+}

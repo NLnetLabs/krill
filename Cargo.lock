@@ -1624,7 +1624,7 @@ dependencies = [
 [[package]]
 name = "rpki"
 version = "0.15.0-dev"
-source = "git+https://github.com/NLnetLabs/rpki-rs/?branch=rsa-pub-key-from-parts#d9bf40de9d46424a83c479cd213ced4a6603e67e"
+source = "git+https://github.com/NLnetLabs/rpki-rs/#8fd637f32097cb1f56419d274c4e192991bc3865"
 dependencies = [
  "base64",
  "bcder",

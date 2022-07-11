@@ -13,7 +13,7 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::{BgpSecAsnKey, BgpSecCsrInfo, BgpSecCsrInfoList},
+        api::{BgpSecAsnKey, BgpSecCsrInfo, BgpSecCsrInfoList, ObjectName},
         crypto::{KrillSigner, SignSupport},
         KrillResult,
     },
@@ -91,7 +91,7 @@ impl BgpSecCertificates {
     /// Used to renew certificates which would expire, in which case the renew_threshold
     /// should be specified. Or, to re-issue all existing certificates during a key rollover
     /// activation of a new certified_key - in which case the renew_threshold is expected to
-    /// be None, and the certified_key is expected to have have changed.
+    /// be None, and the certified_key is expected to have changed.
     pub fn renew(
         &self,
         certified_key: &CertifiedKey,
@@ -128,16 +128,23 @@ impl BgpSecCertificates {
         let incoming_cert = certified_key.incoming_cert();
         let issuer = incoming_cert.subject().clone();
         let crl_uri = incoming_cert.crl_uri();
-        let aki = incoming_cert.subject_public_key_info().key_identifier();
+        let aki = incoming_cert.key_identifier();
         let aia = incoming_cert.uri().clone();
 
         let validity = SignSupport::sign_validity_weeks(issuance_timing.timing_bgpsec_valid_weeks);
+
+        // Perhaps implement recommendation of 3.1.1 RFC 8209 somehow. However, it is
+        // not at all clear how/why this is relevant. RPs will typically discard this
+        // information and the subject is not communicated to routers. If this is for
+        // debugging purposes then using a sensible file name (like we do) is more
+        // important.
+        let subject = None;
 
         let mut router_cert = TbsCert::new(
             serial_number,
             issuer,
             validity,
-            None,
+            subject,
             public_key,
             KeyUsage::Ee,
             Overclaim::Refuse,
@@ -178,7 +185,7 @@ pub struct BgpSecCertInfo {
     public_key: PublicKey,
     serial: Serial,
     expires: Time,
-    cert: Base64,
+    base64: Base64,
 }
 
 impl BgpSecCertInfo {
@@ -186,14 +193,14 @@ impl BgpSecCertInfo {
         let public_key = cert.subject_public_key_info().clone();
         let serial = cert.serial_number();
         let expires = cert.validity().not_after();
-        let cert = Base64::from(&cert);
+        let base64 = Base64::from(&cert);
 
         BgpSecCertInfo {
             asn,
             public_key,
             serial,
             expires,
-            cert,
+            base64,
         }
     }
 
@@ -217,8 +224,12 @@ impl BgpSecCertInfo {
         self.expires
     }
 
-    pub fn cert(&self) -> &Base64 {
-        &self.cert
+    pub fn base64(&self) -> &Base64 {
+        &self.base64
+    }
+
+    pub fn name(&self) -> ObjectName {
+        ObjectName::bgpsec(self.asn, self.public_key.key_identifier())
     }
 }
 

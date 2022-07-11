@@ -764,7 +764,7 @@ impl Options {
                     .short("a")
                     .long("asn")
                     .value_name("ASN")
-                    .help("The ASN of the router for the key used in the CSR")
+                    .help("The ASN of the router for the key used in the CSR. E.g. AS65000")
                     .required(true),
             )
             .arg(
@@ -790,14 +790,14 @@ impl Options {
                     .short("a")
                     .long("asn")
                     .value_name("ASN")
-                    .help("The ASN used in the BGPSec definition")
+                    .help("The ASN used in the BGPSec definition. E.g. AS65000")
                     .required(true),
             )
             .arg(
                 Arg::with_name("key")
                     .long("key")
                     .value_name("key")
-                    .help("The hexencoded key identifier used in the BGPSec definition")
+                    .help("The hex encoded key identifier used in the BGPSec definition")
                     .required(true),
             );
 
@@ -1559,7 +1559,7 @@ impl Options {
     fn parse_matches_cas_children_add(matches: &ArgMatches) -> Result<Options, Error> {
         let path = matches.value_of("request").unwrap();
         let bytes = Self::read_file_arg(path)?;
-        let child_request = idexchange::ChildRequest::validate(bytes.as_ref())?;
+        let child_request = idexchange::ChildRequest::parse(bytes.as_ref())?;
 
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
@@ -1569,7 +1569,7 @@ impl Options {
 
         let resources = Self::parse_resource_args(matches)?.ok_or(Error::MissingResources)?;
 
-        let (id_cert, _, _) = child_request.unpack();
+        let id_cert = child_request.validate()?;
         let add_child_request = AddChildRequest::new(child, resources, id_cert);
         let command = Command::CertAuth(CaCommand::ChildAdd(my_ca, add_child_request));
         Ok(Options::make(general_args, command))
@@ -1700,14 +1700,14 @@ impl Options {
     fn parse_matches_cas_parents_add(matches: &ArgMatches) -> Result<Options, Error> {
         let path = matches.value_of("response").unwrap();
         let bytes = Self::read_file_arg(path)?;
-        let response = idexchange::ParentResponse::validate(bytes.as_ref())?;
+        let response = idexchange::ParentResponse::parse(bytes.as_ref())?;
 
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
         let parent = matches.value_of("parent").unwrap();
         let parent = ParentHandle::from_str(parent).map_err(|_| Error::InvalidHandle)?;
-        let contact = ParentCaContact::for_rfc6492(response);
+        let contact = ParentCaContact::for_rfc8183_parent_response(response)?;
         let parent_req = ParentCaReq::new(parent, contact);
 
         let command = Command::CertAuth(CaCommand::AddParent(my_ca, parent_req));
@@ -2080,9 +2080,15 @@ impl Options {
 
         let path = matches.value_of("response").unwrap();
         let bytes = Self::read_file_arg(path)?;
-        let response = idexchange::RepositoryResponse::validate(bytes.as_ref())?;
+        let response = idexchange::RepositoryResponse::parse(bytes.as_ref())?;
 
-        let repo_contact = RepositoryContact::new(response);
+        let repo_contact = RepositoryContact::for_response(response).map_err(|e| {
+            Error::GeneralArgumentError(format!(
+                "Could not validate certificate in Repository Response XML: {}",
+                e
+            ))
+        })?;
+
         let command = Command::CertAuth(CaCommand::RepoUpdate(my_ca, repo_contact));
         Ok(Options::make(general_args, command))
     }
@@ -2294,12 +2300,14 @@ impl Options {
         let path = matches.value_of("request").unwrap();
         let path = PathBuf::from(path);
         let bytes = file::read(&path)?;
-        let mut req = idexchange::PublisherRequest::validate(bytes.as_ref())?;
+        let mut req = idexchange::PublisherRequest::parse(bytes.as_ref())?;
+        req.validate()
+            .map_err(|e| Error::GeneralArgumentError(format!("Invalid certificate in Publisher Request XML: {}", e)))?;
 
         if let Some(publisher_str) = matches.value_of("publisher") {
-            let publisher = PublisherHandle::from_str(publisher_str).map_err(|_| Error::InvalidHandle)?;
-            let (tag, _, cert) = req.unpack();
-            req = idexchange::PublisherRequest::new(tag, publisher, cert);
+            let publisher_handle = PublisherHandle::from_str(publisher_str).map_err(|_| Error::InvalidHandle)?;
+            let (id_cert, _handle, tag) = req.unpack();
+            req = idexchange::PublisherRequest::new(id_cert, publisher_handle, tag);
         }
 
         let command = Command::PubServer(PubServerCommand::AddPublisher(req));
@@ -2585,7 +2593,8 @@ impl HistoryOptions {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum BulkCaCommand {
     Refresh,
-    Publish,
+    Publish,      // re-publish mft/crl before they would expire
+    ForcePublish, // force republish all mft/crls
     Sync,
     Suspend,
 }
