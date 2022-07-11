@@ -736,7 +736,12 @@ impl KmipSigner {
 
         match key_material {
             KeyMaterial::Bytes(bytes) => {
-                Ok(PublicKey::rsa_from_public_key_bytes(bytes::Bytes::from(bytes)))
+                PublicKey::rsa_from_bits_bytes(bytes::Bytes::from(bytes)).map_err(|e| {
+                    SignerError::KmipError(format!(
+                        "Failed to construct RSA Public for key with ID '{}'. Error: {}",
+                        public_key_id, e
+                    ))
+                })
             }
             KeyMaterial::TransparentRSAPublicKey(pub_key) => {
                 PublicKey::rsa_from_components(&pub_key.modulus, &pub_key.public_exponent).map_err(|e| {
