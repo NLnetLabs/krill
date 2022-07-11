@@ -219,6 +219,10 @@ pub async fn krill_admin_expect_error(command: Command) -> Error {
     }
 }
 
+pub async fn cas_force_publish_all() {
+    krill_admin(Command::Bulk(BulkCaCommand::ForcePublish)).await;
+}
+
 pub async fn cas_refresh_all() {
     krill_admin(Command::Bulk(BulkCaCommand::Refresh)).await;
 }

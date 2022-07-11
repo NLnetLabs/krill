@@ -87,31 +87,37 @@ impl PreSaveEventListener<CertAuth> for CaObjectsStore {
         let signer = &self.signer;
 
         self.with_ca_objects(ca.handle(), |objects| {
+            let mut force_reissue = false;
+
             for event in events {
                 match event.details() {
                     super::CaEvtDet::RoasUpdated {
                         resource_class_name,
                         updates,
                     } => {
-                        objects.update_roas(resource_class_name, updates, timing, signer)?;
+                        objects.update_roas(resource_class_name, updates)?;
+                        force_reissue = true;
                     }
                     super::CaEvtDet::AspaObjectsUpdated {
                         resource_class_name,
                         updates,
                     } => {
-                        objects.update_aspas(resource_class_name, updates, timing, signer)?;
+                        objects.update_aspas(resource_class_name, updates)?;
+                        force_reissue = true;
                     }
                     super::CaEvtDet::BgpSecCertificatesUpdated {
                         resource_class_name,
                         updates,
                     } => {
-                        objects.update_bgpsec_certs(resource_class_name, updates, timing, signer)?;
+                        objects.update_bgpsec_certs(resource_class_name, updates)?;
+                        force_reissue = true;
                     }
                     super::CaEvtDet::ChildCertificatesUpdated {
                         resource_class_name,
                         updates,
                     } => {
-                        objects.update_certs(resource_class_name, updates, timing, signer)?;
+                        objects.update_certs(resource_class_name, updates)?;
+                        force_reissue = true;
                     }
                     super::CaEvtDet::KeyPendingToActive {
                         resource_class_name,
@@ -128,31 +134,35 @@ impl PreSaveEventListener<CertAuth> for CaObjectsStore {
                     super::CaEvtDet::KeyRollActivated {
                         resource_class_name, ..
                     } => {
-                        objects.keyroll_activate(resource_class_name, timing, signer)?;
+                        objects.keyroll_activate(resource_class_name)?;
+                        force_reissue = true;
                     }
                     super::CaEvtDet::KeyRollFinished { resource_class_name } => {
                         objects.keyroll_finish(resource_class_name)?;
+                        force_reissue = true;
                     }
                     super::CaEvtDet::CertificateReceived {
                         resource_class_name,
                         rcvd_cert,
                         ..
                     } => {
-                        // Update the received certificate if needed. If the URIs changed we may need to re-issue things
                         objects.update_received_cert(resource_class_name, rcvd_cert)?;
-                        objects.re_issue_if_required(&self.issuance_timing, &self.signer)?;
+                        // no need to force re-issuance
                     }
                     super::CaEvtDet::ResourceClassRemoved {
                         resource_class_name, ..
                     } => {
                         objects.remove_class(resource_class_name);
+                        force_reissue = true;
                     }
                     super::CaEvtDet::RepoUpdated { contact } => {
                         objects.update_repo(contact);
+                        force_reissue = true;
                     }
                     _ => {}
                 }
             }
+            objects.re_issue(force_reissue, timing, signer)?;
             Ok(())
         })
     }
@@ -229,11 +239,11 @@ impl CaObjectsStore {
     }
 
     // Re-issue MFT and CRL for all CAs *if needed*, returns all CAs which were updated.
-    pub fn reissue_all(&self) -> KrillResult<Vec<CaHandle>> {
+    pub fn reissue_all(&self, force: bool) -> KrillResult<Vec<CaHandle>> {
         let mut res = vec![];
         for ca in self.cas()? {
             self.with_ca_objects(&ca, |objects| {
-                if objects.re_issue_if_required(&self.issuance_timing, &self.signer)? {
+                if objects.re_issue(force, &self.issuance_timing, &self.signer)? {
                     res.push(ca.clone())
                 }
                 Ok(())
@@ -414,13 +424,8 @@ impl CaObjects {
 
     // Activates the keyset by retiring the current set, and promoting
     // the staging set to current.
-    fn keyroll_activate(
-        &mut self,
-        rcn: &ResourceClassName,
-        timing: &IssuanceTimingConfig,
-        signer: &KrillSigner,
-    ) -> KrillResult<()> {
-        self.get_class_mut(rcn)?.keyroll_activate(timing, signer)
+    fn keyroll_activate(&mut self, rcn: &ResourceClassName) -> KrillResult<()> {
+        self.get_class_mut(rcn)?.keyroll_activate()
     }
 
     // Finish a keyroll
@@ -437,49 +442,23 @@ impl CaObjects {
     }
 
     // Update the ROAs in the current set
-    fn update_roas(
-        &mut self,
-        rcn: &ResourceClassName,
-        roa_updates: &RoaUpdates,
-        timing: &IssuanceTimingConfig,
-        signer: &KrillSigner,
-    ) -> KrillResult<()> {
-        self.get_class_mut(rcn)?.update_roas(roa_updates, timing, signer)
+    fn update_roas(&mut self, rcn: &ResourceClassName, roa_updates: &RoaUpdates) -> KrillResult<()> {
+        self.get_class_mut(rcn).map(|rco| rco.update_roas(roa_updates))
     }
 
     // Update the ASPAs in the current set
-    fn update_aspas(
-        &mut self,
-        rcn: &ResourceClassName,
-        updates: &AspaObjectsUpdates,
-        timing: &IssuanceTimingConfig,
-        signer: &KrillSigner,
-    ) -> KrillResult<()> {
-        let rco = self.get_class_mut(rcn)?;
-        rco.update_aspas(updates, timing, signer)
+    fn update_aspas(&mut self, rcn: &ResourceClassName, updates: &AspaObjectsUpdates) -> KrillResult<()> {
+        self.get_class_mut(rcn).map(|rco| rco.update_aspas(updates))
     }
 
     // Update the BGPSec certificates in the current set
-    fn update_bgpsec_certs(
-        &mut self,
-        rcn: &ResourceClassName,
-        updates: &BgpSecCertificateUpdates,
-        timing: &IssuanceTimingConfig,
-        signer: &KrillSigner,
-    ) -> KrillResult<()> {
-        let rco = self.get_class_mut(rcn)?;
-        rco.update_bgpsec_certs(updates, timing, signer)
+    fn update_bgpsec_certs(&mut self, rcn: &ResourceClassName, updates: &BgpSecCertificateUpdates) -> KrillResult<()> {
+        self.get_class_mut(rcn).map(|rco| rco.update_bgpsec_certs(updates))
     }
 
     // Update the delegated certificates in the current set
-    fn update_certs(
-        &mut self,
-        rcn: &ResourceClassName,
-        cert_updates: &ChildCertificateUpdates,
-        timing: &IssuanceTimingConfig,
-        signer: &KrillSigner,
-    ) -> KrillResult<()> {
-        self.get_class_mut(rcn)?.update_certs(cert_updates, timing, signer)
+    fn update_certs(&mut self, rcn: &ResourceClassName, cert_updates: &ChildCertificateUpdates) -> KrillResult<()> {
+        self.get_class_mut(rcn).map(|rco| rco.update_certs(cert_updates))
     }
 
     // Update the received certificate.
@@ -487,15 +466,18 @@ impl CaObjects {
         self.get_class_mut(rcn)?.update_received_cert(cert)
     }
 
-    /// Reissue the MFT and CRL in this set if needed, i.e. if it's close to the next
-    /// update time, or in case the AIA has changed.. the latter really should not happen,
-    /// but ultimately we have no control over this, so better safe.
-    fn re_issue_if_required(&mut self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<bool> {
+    /// Reissue the MFT and CRL
+    ///
+    /// If force is true, then re-issuance will always be done. I.e. this is to be used
+    /// in case any of the content changed. Otherwise re-issuance will only happen if it's
+    /// close to the next update time, or the AIA has changed.. the latter may happen if
+    /// the parent migrated repositories.
+    fn re_issue(&mut self, force: bool, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<bool> {
         let hours = timing.timing_publish_hours_before_next;
         let mut required = false;
 
         for (_, resource_class_objects) in self.classes.iter_mut() {
-            if resource_class_objects.requires_re_issuance(hours) {
+            if force || resource_class_objects.requires_re_issuance(hours) {
                 required = true;
                 resource_class_objects.reissue(timing, signer)?;
             }
@@ -587,11 +569,12 @@ impl ResourceClassObjects {
         Ok(())
     }
 
-    fn keyroll_activate(&mut self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<()> {
+    fn keyroll_activate(&mut self) -> KrillResult<()> {
         self.keys = match &self.keys {
             ResourceClassKeyState::Staging(state) => {
-                let old_set = state.current_set.retire(timing, signer)?;
+                let old_set = state.current_set.retire()?;
                 let current_set = state.staging_set.clone().into();
+
                 ResourceClassKeyState::Old(OldKeyState { current_set, old_set })
             }
             _ => return Err(Error::publishing("published resource class in the wrong key state")),
@@ -615,55 +598,35 @@ impl ResourceClassObjects {
         self.keys.update_received_cert(updated_cert)
     }
 
-    fn update_roas(
-        &mut self,
-        roa_updates: &RoaUpdates,
-        timing: &IssuanceTimingConfig,
-        signer: &KrillSigner,
-    ) -> KrillResult<()> {
+    fn update_roas(&mut self, roa_updates: &RoaUpdates) {
         match self.keys.borrow_mut() {
-            ResourceClassKeyState::Current(state) => state.current_set.update_roas(roa_updates, timing, signer),
-            ResourceClassKeyState::Staging(state) => state.current_set.update_roas(roa_updates, timing, signer),
-            ResourceClassKeyState::Old(state) => state.current_set.update_roas(roa_updates, timing, signer),
+            ResourceClassKeyState::Current(state) => state.current_set.update_roas(roa_updates),
+            ResourceClassKeyState::Staging(state) => state.current_set.update_roas(roa_updates),
+            ResourceClassKeyState::Old(state) => state.current_set.update_roas(roa_updates),
         }
     }
 
-    fn update_aspas(
-        &mut self,
-        updates: &AspaObjectsUpdates,
-        timing: &IssuanceTimingConfig,
-        signer: &KrillSigner,
-    ) -> KrillResult<()> {
+    fn update_aspas(&mut self, updates: &AspaObjectsUpdates) {
         match self.keys.borrow_mut() {
-            ResourceClassKeyState::Current(state) => state.current_set.update_aspas(updates, timing, signer),
-            ResourceClassKeyState::Staging(state) => state.current_set.update_aspas(updates, timing, signer),
-            ResourceClassKeyState::Old(state) => state.current_set.update_aspas(updates, timing, signer),
+            ResourceClassKeyState::Current(state) => state.current_set.update_aspas(updates),
+            ResourceClassKeyState::Staging(state) => state.current_set.update_aspas(updates),
+            ResourceClassKeyState::Old(state) => state.current_set.update_aspas(updates),
         }
     }
 
-    fn update_bgpsec_certs(
-        &mut self,
-        updates: &BgpSecCertificateUpdates,
-        timing: &IssuanceTimingConfig,
-        signer: &KrillSigner,
-    ) -> KrillResult<()> {
+    fn update_bgpsec_certs(&mut self, updates: &BgpSecCertificateUpdates) {
         match self.keys.borrow_mut() {
-            ResourceClassKeyState::Current(state) => state.current_set.update_bgpsec_certs(updates, timing, signer),
-            ResourceClassKeyState::Staging(state) => state.current_set.update_bgpsec_certs(updates, timing, signer),
-            ResourceClassKeyState::Old(state) => state.current_set.update_bgpsec_certs(updates, timing, signer),
+            ResourceClassKeyState::Current(state) => state.current_set.update_bgpsec_certs(updates),
+            ResourceClassKeyState::Staging(state) => state.current_set.update_bgpsec_certs(updates),
+            ResourceClassKeyState::Old(state) => state.current_set.update_bgpsec_certs(updates),
         }
     }
 
-    fn update_certs(
-        &mut self,
-        cert_updates: &ChildCertificateUpdates,
-        timing: &IssuanceTimingConfig,
-        signer: &KrillSigner,
-    ) -> KrillResult<()> {
+    fn update_certs(&mut self, cert_updates: &ChildCertificateUpdates) {
         match self.keys.borrow_mut() {
-            ResourceClassKeyState::Current(state) => state.current_set.update_certs(cert_updates, timing, signer),
-            ResourceClassKeyState::Staging(state) => state.current_set.update_certs(cert_updates, timing, signer),
-            ResourceClassKeyState::Old(state) => state.current_set.update_certs(cert_updates, timing, signer),
+            ResourceClassKeyState::Current(state) => state.current_set.update_certs(cert_updates),
+            ResourceClassKeyState::Staging(state) => state.current_set.update_certs(cert_updates),
+            ResourceClassKeyState::Old(state) => state.current_set.update_certs(cert_updates),
         }
     }
 
@@ -689,14 +652,14 @@ impl ResourceClassObjects {
 
     fn reissue(&mut self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<()> {
         match self.keys.borrow_mut() {
-            ResourceClassKeyState::Current(state) => state.current_set.reissue(timing, signer),
+            ResourceClassKeyState::Current(state) => state.current_set.reissue_set(timing, signer),
             ResourceClassKeyState::Staging(state) => {
-                state.staging_set.reissue(timing, signer)?;
-                state.current_set.reissue(timing, signer)
+                state.staging_set.reissue_set(timing, signer)?;
+                state.current_set.reissue_set(timing, signer)
             }
             ResourceClassKeyState::Old(state) => {
-                state.old_set.reissue(timing, signer)?;
-                state.current_set.reissue(timing, signer)
+                state.old_set.reissue_set(timing, signer)?;
+                state.current_set.reissue_set(timing, signer)
             }
         }
     }
@@ -864,13 +827,8 @@ impl CurrentKeyObjectSet {
         }
     }
 
-    fn update_roas(
-        &mut self,
-        roa_updates: &RoaUpdates,
-        timing: &IssuanceTimingConfig,
-        signer: &KrillSigner,
-    ) -> KrillResult<()> {
-        for (name, roa_info) in roa_updates.added_roas()? {
+    fn update_roas(&mut self, roa_updates: &RoaUpdates) {
+        for (name, roa_info) in roa_updates.added_roas() {
             let published_object = PublishedObject::for_roa(name.clone(), &roa_info);
             if let Some(old) = self.published_objects.insert(name, published_object) {
                 self.revocations.add(old.revoke());
@@ -881,16 +839,9 @@ impl CurrentKeyObjectSet {
                 self.revocations.add(old.revoke());
             }
         }
-
-        self.reissue(timing, signer)
     }
 
-    fn update_aspas(
-        &mut self,
-        updates: &AspaObjectsUpdates,
-        timing: &IssuanceTimingConfig,
-        signer: &KrillSigner,
-    ) -> KrillResult<()> {
+    fn update_aspas(&mut self, updates: &AspaObjectsUpdates) {
         for aspa_info in updates.updated() {
             let name = ObjectName::aspa(aspa_info.customer());
             let published_object = PublishedObject::for_aspa(name.clone(), aspa_info);
@@ -904,16 +855,9 @@ impl CurrentKeyObjectSet {
                 self.revocations.add(old.revoke());
             }
         }
-
-        self.reissue(timing, signer)
     }
 
-    fn update_bgpsec_certs(
-        &mut self,
-        updates: &BgpSecCertificateUpdates,
-        timing: &IssuanceTimingConfig,
-        signer: &KrillSigner,
-    ) -> KrillResult<()> {
+    fn update_bgpsec_certs(&mut self, updates: &BgpSecCertificateUpdates) {
         for bgpsec_cert_info in updates.updated() {
             let published_object = PublishedObject::for_bgpsec_cert_info(bgpsec_cert_info);
             if let Some(old) = self.published_objects.insert(bgpsec_cert_info.name(), published_object) {
@@ -927,16 +871,9 @@ impl CurrentKeyObjectSet {
                 self.revocations.add(old.revoke());
             }
         }
-
-        self.reissue(timing, signer)
     }
 
-    fn update_certs(
-        &mut self,
-        cert_updates: &ChildCertificateUpdates,
-        timing: &IssuanceTimingConfig,
-        signer: &KrillSigner,
-    ) -> KrillResult<()> {
+    fn update_certs(&mut self, cert_updates: &ChildCertificateUpdates) {
         for removed in cert_updates.removed() {
             let name = ObjectName::new(removed, "cer");
             if let Some(old) = self.published_objects.remove(&name) {
@@ -965,20 +902,27 @@ impl CurrentKeyObjectSet {
                 self.revocations.add(old.revoke());
             }
         }
-
-        self.reissue(timing, signer)
     }
 
-    fn reissue(&mut self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<()> {
+    fn reissue_set(&mut self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<()> {
         self.revision.next(timing);
-        self.reissue_crl(signer)?;
-        self.reissue_mft(&self.crl, signer)?;
+
+        self.revocations.purge();
+        let signing_key = self.signing_cert.key_identifier();
+        let issuer = self.signing_cert.subject().clone();
+
+        self.crl = CrlBuilder::build(signing_key, issuer, &self.revocations, self.revision, signer)?;
+
+        self.manifest = ManifestBuilder::new(self.revision)
+            .with_objects(&self.crl, &self.published_objects)
+            .build_new_mft(&self.signing_cert, signer)
+            .map(|m| m.into())?;
 
         Ok(())
     }
 
     /// Turns this into a BasicObjectSet, revoking and retiring all signed objects.
-    fn retire(&self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<BasicKeyObjectSet> {
+    fn retire(&self) -> KrillResult<BasicKeyObjectSet> {
         let mut revocations = self.revocations.clone();
 
         for object in self.published_objects.values() {
@@ -989,16 +933,8 @@ impl CurrentKeyObjectSet {
 
         let mut basic = self.basic.clone();
         basic.revocations = revocations;
-        basic.reissue(timing, signer)?;
 
         Ok(basic)
-    }
-
-    fn reissue_mft(&self, new_crl: &PublishedCrl, signer: &KrillSigner) -> KrillResult<PublishedManifest> {
-        ManifestBuilder::new(self.revision)
-            .with_objects(new_crl, &self.published_objects)
-            .build_new_mft(&self.signing_cert, signer)
-            .map(|m| m.into())
     }
 }
 
@@ -1022,42 +958,6 @@ impl Deref for CurrentKeyObjectSet {
 impl DerefMut for CurrentKeyObjectSet {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.basic
-    }
-}
-
-mod objects_to_bgpsec_certs_serde {
-    use super::*;
-
-    use serde::de::{Deserialize, Deserializer};
-    use serde::ser::Serializer;
-    #[derive(Debug, Deserialize)]
-    struct NameItem {
-        name: ObjectName,
-        bgpsec_cert: BgpSecCertInfo,
-    }
-
-    #[derive(Debug, Serialize)]
-    struct NameItemRef<'a> {
-        name: &'a ObjectName,
-        bgpsec_cert: &'a BgpSecCertInfo,
-    }
-
-    pub fn serialize<S>(map: &HashMap<ObjectName, BgpSecCertInfo>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.collect_seq(map.iter().map(|(name, bgpsec_cert)| NameItemRef { name, bgpsec_cert }))
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<ObjectName, BgpSecCertInfo>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let mut map = HashMap::new();
-        for item in Vec::<NameItem>::deserialize(deserializer)? {
-            map.insert(item.name, item.bgpsec_cert);
-        }
-        Ok(map)
     }
 }
 
@@ -1153,26 +1053,15 @@ impl BasicKeyObjectSet {
         }
     }
 
-    fn reissue(&mut self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<()> {
+    fn reissue_set(&mut self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<()> {
         self.revision.next(timing);
 
-        self.reissue_crl(signer)?;
-        self.reissue_mft(signer)?;
-
-        Ok(())
-    }
-
-    fn reissue_crl(&mut self, signer: &KrillSigner) -> KrillResult<()> {
         self.revocations.purge();
         let signing_key = self.signing_cert.key_identifier();
         let issuer = self.signing_cert.subject().clone();
 
         self.crl = CrlBuilder::build(signing_key, issuer, &self.revocations, self.revision, signer)?;
 
-        Ok(())
-    }
-
-    fn reissue_mft(&mut self, signer: &KrillSigner) -> KrillResult<()> {
         self.manifest = ManifestBuilder::new(self.revision)
             .with_crl_only(&self.crl)
             .build_new_mft(&self.signing_cert, signer)

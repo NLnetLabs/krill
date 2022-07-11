@@ -258,7 +258,7 @@ impl Scheduler {
 
     /// Let CAs that need it republish their CRL/MFT
     async fn republish_if_needed(&self) -> KrillResult<()> {
-        let cas = self.ca_manager.republish_all().await?; // can only fail on critical errors
+        let cas = self.ca_manager.republish_all(false).await?; // can only fail on critical errors
 
         for ca in cas {
             info!("Re-issued MFT and CRL for CA: {}", ca);

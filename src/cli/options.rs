@@ -2593,7 +2593,8 @@ impl HistoryOptions {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum BulkCaCommand {
     Refresh,
-    Publish,
+    Publish,      // re-publish mft/crl before they would expire
+    ForcePublish, // force republish all mft/crls
     Sync,
     Suspend,
 }

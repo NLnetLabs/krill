@@ -287,8 +287,8 @@ impl CaManager {
 
     /// Republish the embedded TA and CAs if needed, i.e. if they are close
     /// to their next update time.
-    pub async fn republish_all(&self) -> KrillResult<Vec<CaHandle>> {
-        self.ca_objects_store.reissue_all()
+    pub async fn republish_all(&self, force: bool) -> KrillResult<Vec<CaHandle>> {
+        self.ca_objects_store.reissue_all(force)
     }
 }
 

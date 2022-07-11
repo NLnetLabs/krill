@@ -477,7 +477,7 @@ impl TrustAnchorLocator {
 
         TrustAnchorLocator {
             uris,
-            rsync_uri: rsync_uri,
+            rsync_uri,
             encoded_ski,
         }
     }
