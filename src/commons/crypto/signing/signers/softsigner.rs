@@ -320,8 +320,8 @@ impl OpenSslKeyPair {
     fn subject_public_key_info(&self) -> Result<PublicKey, SignerError> {
         // Issues unwrapping this indicate a bug in the openssl library.
         // So, there is no way to recover.
-        let mut b = Bytes::from(self.pkey.rsa().unwrap().public_key_to_der()?);
-        PublicKey::decode(&mut b).map_err(|_| SignerError::DecodeError)
+        let bytes = Bytes::from(self.pkey.rsa().unwrap().public_key_to_der()?);
+        PublicKey::rsa_from_bits_bytes(bytes).map_err(SignerError::other)
     }
 }
 

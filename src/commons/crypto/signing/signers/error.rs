@@ -21,6 +21,12 @@ pub enum SignerError {
     UnsupportedSigningAlg(SigningAlgorithm),
 }
 
+impl SignerError {
+    pub fn other(msg: impl fmt::Display) -> Self {
+        SignerError::Other(msg.to_string())
+    }
+}
+
 impl fmt::Display for SignerError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
