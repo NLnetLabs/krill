@@ -2,7 +2,6 @@
 //! in case they are not provided
 use std::{fmt, path::Path, path::PathBuf};
 
-use bcder::decode;
 use bytes::Bytes;
 
 use openssl::{
@@ -172,7 +171,7 @@ impl HttpsSigner {
 pub enum Error {
     IoError(KrillIoError),
     OpenSslError(openssl::error::ErrorStack),
-    DecodeError(decode::Error),
+    DecodeError(String),
     BuildError,
     EmptyCertStack,
     Pkcs12(String),
@@ -183,6 +182,10 @@ pub enum Error {
 impl Error {
     pub fn signer(e: impl fmt::Display) -> Self {
         Error::SignerError(e.to_string())
+    }
+
+    pub fn decode(e: impl fmt::Display) -> Self {
+        Error::DecodeError(e.to_string())
     }
 }
 

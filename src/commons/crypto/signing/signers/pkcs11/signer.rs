@@ -8,7 +8,6 @@ use std::{
 
 use backoff::ExponentialBackoff;
 
-use bcder::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
 use cryptoki::{
     context::Info,
@@ -35,7 +34,6 @@ use crate::commons::crypto::{
             session::Pkcs11Session,
         },
         probe::{ProbeError, ProbeStatus, StatefulProbe},
-        util,
     },
     SignerError, SignerHandle,
 };
@@ -722,50 +720,33 @@ impl Pkcs11Signer {
         Ok((public_key, pub_handle, priv_handle, hex::encode(cka_id)))
     }
 
-    fn get_rsa_public_key_bytes(&self, pub_handle: ObjectHandle) -> Result<Bytes, SignerError> {
+    pub(super) fn get_public_key_from_handle(&self, pub_handle: ObjectHandle) -> Result<PublicKey, SignerError> {
         let res = self.with_conn("get key pair parts", |conn| {
             conn.get_attributes(pub_handle, &[AttributeType::Modulus, AttributeType::PublicExponent])
         })?;
 
         if res.len() == 2 {
             if let (Attribute::Modulus(m), Attribute::PublicExponent(e)) = (&res[0], &res[1]) {
-                return util::rsa_public_key_bytes_from_parts(m, e);
+                PublicKey::rsa_from_components(m, e).map_err(|e| {
+                    SignerError::Pkcs11Error(format!(
+                        "Failed to construct RSA Public for key '{:?}'. Error: {}",
+                        pub_handle, e
+                    ))
+                })
+            } else {
+                Err(SignerError::Pkcs11Error(format!(
+                    "Unable to obtain modulus and public exponent for key {:?}. Got two different attribute types: {} and {}",
+                    pub_handle,
+                    res[0].attribute_type(),
+                    res[1].attribute_type(),
+                )))
             }
+        } else {
+            Err(SignerError::Pkcs11Error(format!(
+                "Unable to obtain modulus and public exponent attributes for key {:?}",
+                pub_handle
+            )))
         }
-
-        Err(SignerError::Pkcs11Error(format!(
-            "Unable to obtain modulus and public exponent for key {:?}",
-            pub_handle
-        )))
-    }
-
-    // TODO: This is almost identical to the equivalent fn in KmipSigner. Factor out the common code.
-    pub(super) fn get_public_key_from_handle(&self, pub_handle: ObjectHandle) -> Result<PublicKey, SignerError> {
-        let rsa_public_key_bytes = self.get_rsa_public_key_bytes(pub_handle)?;
-
-        let subject_public_key = bcder::BitString::new(0, rsa_public_key_bytes);
-
-        let subject_public_key_info =
-            bcder::encode::sequence((PublicKeyFormat::Rsa.encode(), subject_public_key.encode()));
-
-        let mut subject_public_key_info_source: Vec<u8> = Vec::new();
-        subject_public_key_info
-            .write_encoded(bcder::Mode::Der, &mut subject_public_key_info_source)
-            .map_err(|err| {
-                SignerError::Pkcs11Error(format!(
-                    "Failed to create DER encoded SubjectPublicKeyInfo from constituent parts: {}",
-                    err
-                ))
-            })?;
-
-        let public_key = PublicKey::decode(subject_public_key_info_source.as_slice()).map_err(|err| {
-            SignerError::Pkcs11Error(format!(
-                "Failed to create public key from the DER encoded SubjectPublicKeyInfo: {}",
-                err
-            ))
-        })?;
-
-        Ok(public_key)
     }
 
     pub(super) fn sign_with_key<Alg: SignatureAlgorithm>(

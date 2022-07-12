@@ -9,9 +9,6 @@ pub mod pkcs11;
 pub mod softsigner;
 
 #[cfg(feature = "hsm")]
-pub mod util;
-
-#[cfg(feature = "hsm")]
 pub mod probe;
 
 #[cfg(all(test, feature = "hsm"))]

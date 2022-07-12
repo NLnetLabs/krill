@@ -118,16 +118,6 @@ dependencies = [
 
 [[package]]
 name = "bcder"
-version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52e7c3bae57b01ec5b1b028af1f77b7d41dd2bd97a41bab7968739b5329c0e39"
-dependencies = [
- "bytes",
- "smallvec",
-]
-
-[[package]]
-name = "bcder"
 version = "0.7.0-dev"
 source = "git+https://github.com/NLnetLabs/bcder.git?branch=error-redesign#b7895fd8013d7fecfa82e260aff62506abeee96a"
 dependencies = [
@@ -871,7 +861,6 @@ dependencies = [
  "backoff",
  "base64",
  "basic-cookies",
- "bcder 0.6.1",
  "bytes",
  "chrono",
  "clap",
@@ -1615,7 +1604,7 @@ name = "routecore"
 version = "0.1.2-dev"
 source = "git+https://github.com/NLnetLabs/routecore.git?branch=better-bcder-errors#2db173c8b6a9081a72ad2d91613105f8cc56e0c6"
 dependencies = [
- "bcder 0.7.0-dev",
+ "bcder",
  "serde",
 ]
 
@@ -1635,7 +1624,7 @@ version = "0.15.0-dev"
 source = "git+https://github.com/NLnetLabs/rpki-rs/?branch=better-errors#023a97f3936ef82ebb478860763e5ad9cb937c04"
 dependencies = [
  "base64",
- "bcder 0.7.0-dev",
+ "bcder",
  "bytes",
  "chrono",
  "log",
