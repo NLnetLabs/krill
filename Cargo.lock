@@ -1621,7 +1621,7 @@ dependencies = [
 [[package]]
 name = "rpki"
 version = "0.15.0-dev"
-source = "git+https://github.com/NLnetLabs/rpki-rs/?branch=better-errors#023a97f3936ef82ebb478860763e5ad9cb937c04"
+source = "git+https://github.com/NLnetLabs/rpki-rs/?branch=better-errors#a699efe07647412908d7a08997a388a709fb082b"
 dependencies = [
  "base64",
  "bcder",

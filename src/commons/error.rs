@@ -1067,10 +1067,6 @@ mod tests {
         // RFC 8181
         //-----------------------------------------------------------------
         verify(
-            include_str!("../../test-resources/errors/rfc8181-validation.json"),
-            Error::Rfc8181Validation(ValidationError),
-        );
-        verify(
             include_str!("../../test-resources/errors/rfc8181-decode.json"),
             Error::Rfc8181Decode("could not parse CMS".to_string()),
         );
@@ -1142,10 +1138,6 @@ mod tests {
         verify(
             include_str!("../../test-resources/errors/rfc6492-invalid-csr.json"),
             Error::Rfc6492InvalidCsrSent("invalid signature".to_string()),
-        );
-        verify(
-            include_str!("../../test-resources/errors/rfc6492-invalid-signature.json"),
-            Error::Rfc6492SignatureInvalid,
         );
 
         verify(
