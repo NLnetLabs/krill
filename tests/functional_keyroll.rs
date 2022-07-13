@@ -143,7 +143,7 @@ async fn functional_keyroll() {
         manifest_number_current_key("Testbed should update manifest when publishing ROA", &testbed, 3).await;
 
         ca_aspas_add(&testbed, aspa_def.clone()).await;
-        manifest_number_current_key("Testbed should update manifest when publishing aspa", &testbed, 4).await;
+        manifest_number_current_key("Testbed should update manifest when publishing ASPA", &testbed, 4).await;
 
         ca_bgpsec_add(&testbed, bgpsec_def).await;
         manifest_number_current_key(
