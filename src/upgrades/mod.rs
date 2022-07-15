@@ -332,15 +332,14 @@ pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -
                 };
 
                 if versions.from < KrillVersion::release(0, 9, 0) {
-                    // We will need an extensive migration because starting with 0.9.0
-                    // we no longer use events for:
-                    // - republishing manifests/CRLs in CAs
-                    // - publishing objects for publishers in the repository
+                    // We will need an extensive migration because we found that the
+                    // number of events related to (1) republishing manifests/CRLs in CAs,
+                    // and (2) publishing objects for publishers in the repository resulted
+                    // in excessive disk space usage.
                     //
-                    // Unfortunately this resulted in too many events and excessive disk
-                    // space usage. So, now we use a hybrid event sourcing model where
-                    // all other changes are tracked through events, but these high-churn
-                    // publication changes are kept in dedicated stateful objects:
+                    // So, now we use a hybrid event sourcing model where all *other* changes
+                    // are still tracked through events, but these high-churn publication
+                    // changes are kept in dedicated stateful objects:
                     // - pubd_objects for objects published in a repository server
                     // - ca_objects for published objects for a CA.
 
