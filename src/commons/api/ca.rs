@@ -452,8 +452,14 @@ pub enum InvalidCert {
 impl fmt::Display for InvalidCert {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            InvalidCert::CaRepositoryMissing => write!(f, "CA certificate lacks ca repository"),
-            InvalidCert::RpkiManifestMissing => write!(f, "CA certificate lacks manifest uri"),
+            InvalidCert::CaRepositoryMissing => write!(
+                f,
+                "CA certificate lacks id-ad-caRepository (see section 4.8.8.1 of RFC 6487)"
+            ),
+            InvalidCert::RpkiManifestMissing => write!(
+                f,
+                "CA certificate lacks id-ad-rpkiManifest (see section 4.8.8.1 of RFC 6487)"
+            ),
             InvalidCert::CannotDecode(s) => write!(f, "Cannot decode binary certificate: {}", s),
         }
     }
