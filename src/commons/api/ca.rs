@@ -272,7 +272,7 @@ impl<T> CertInfo<T> {
         let csr_info = CsrInfo::new(ca_repository, rpki_manifest, rpki_notify, key);
 
         let subject = cert.subject().clone();
-        let validity = cert.validity().clone();
+        let validity = cert.validity();
         let serial = cert.serial_number();
         let base64 = Base64::from(&cert);
         let hash = base64.to_hash();
