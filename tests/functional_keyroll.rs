@@ -227,10 +227,10 @@ async fn functional_keyroll() {
 
         // We now expect that the old key has become the current key and its mft, crl
         // and all objects are published as a single update. So, we could be forgiven
-        // to expect that the serial for this manifest will become 2.
+        // to expect that the serial for this manifest will become 3.
         //
         // However.. the child will drop the old key, and ask for its revocation. This
-        // is a separate publication event. So, the testbed mft serial number will be 3.
+        // is a separate publication event. So, the testbed mft serial number will be 4.
         manifest_number_current_key(
             "testbed should issue new mft under promoted key, with all objects, as a single update. Then publish updated CRL and mft for revoked child certificate for old key.",
             &testbed,
