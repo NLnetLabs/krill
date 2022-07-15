@@ -654,14 +654,14 @@ impl ResourceClassObjects {
 
     fn reissue(&mut self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<()> {
         match self.keys.borrow_mut() {
-            ResourceClassKeyState::Current(state) => state.current_set.reissue_set(timing, signer),
+            ResourceClassKeyState::Current(state) => state.current_set.reissue(timing, signer),
             ResourceClassKeyState::Staging(state) => {
                 state.staging_set.reissue_set(timing, signer)?;
-                state.current_set.reissue_set(timing, signer)
+                state.current_set.reissue(timing, signer)
             }
             ResourceClassKeyState::Old(state) => {
                 state.old_set.reissue_set(timing, signer)?;
-                state.current_set.reissue_set(timing, signer)
+                state.current_set.reissue(timing, signer)
             }
         }
     }
@@ -906,7 +906,7 @@ impl CurrentKeyObjectSet {
         }
     }
 
-    fn reissue_set(&mut self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<()> {
+    fn reissue(&mut self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<()> {
         self.revision.next(timing);
 
         self.revocations.purge();
