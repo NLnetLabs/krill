@@ -375,8 +375,8 @@ pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -
 
                     pre_0_9_0::CaObjectsMigration::prepare(mode, config, repo_manager, signer)?;
                 } else {
-                    pre_0_10_0::CasStoreMigration::prepare(mode, &config)?;
-                    pre_0_10_0::PubdStoreMigration::prepare(mode, &config)?;
+                    pre_0_10_0::CasMigration::prepare(mode, &config)?;
+                    pre_0_10_0::PublicationServerMigration::prepare(mode, &config)?;
                 }
 
                 Ok(Some(UpgradeReport::new(true, versions)))
