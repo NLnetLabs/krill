@@ -279,7 +279,6 @@ impl ChildCertificates {
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<DelegatedCertificate> {
-        // let (_uri, limit, resource_set, cert) = previous.clone().unpack();
         let csr_info = previous.csr_info().clone();
         let resource_set = updated_resources.unwrap_or(previous.resources().clone());
         let limit = previous.limit().clone();
