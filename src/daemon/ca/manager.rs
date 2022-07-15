@@ -1175,7 +1175,7 @@ impl CaManager {
                                                     // will be automatically created when we synchronize the entitlements again.
 
                                                     let reason =
-                                                        format!("received certificate cannot be added, error: {}", e);
+                                                        format!("cannot process received certificate! error: {}", e);
 
                                                     self.send_command(CmdDet::drop_resource_class(
                                                         ca_handle,
