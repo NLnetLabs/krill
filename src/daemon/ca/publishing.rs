@@ -889,7 +889,7 @@ impl CurrentKeyObjectSet {
         }
 
         for cert in cert_updates.unsuspended() {
-            self.revocations.remove(&cert.revoke());
+            self.revocations.remove(&cert.revocation());
             let published_object = PublishedObject::for_cert_info(cert);
             if let Some(old) = self.published_objects.insert(cert.name(), published_object) {
                 // this should not happen, but just to be safe.

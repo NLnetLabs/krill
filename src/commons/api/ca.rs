@@ -434,7 +434,7 @@ impl<T> CertInfo<T> {
     }
 
     /// Returns a Revocation for this certificate
-    pub fn revoke(&self) -> Revocation {
+    pub fn revocation(&self) -> Revocation {
         Revocation {
             serial: self.serial,
             expires: self.validity.not_after(),
