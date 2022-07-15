@@ -86,7 +86,7 @@ async fn functional_keyroll() {
             .await
         );
 
-        manifest_number_current_key("Publish a new empty manifest with serial 1", &testbed, 1).await;
+        assert_manifest_number_current_key("Publish a new empty manifest with serial 1", &testbed, 1).await;
     }
 
     {
@@ -120,7 +120,7 @@ async fn functional_keyroll() {
 
         // The testbed CA should have re-issued a manifest when the certificate
         // was published.
-        manifest_number_current_key(
+        assert_manifest_number_current_key(
             "Testbed should update manifest when publishing cert for child",
             &testbed,
             2,
@@ -140,13 +140,13 @@ async fn functional_keyroll() {
         let mut updates = RoaDefinitionUpdates::empty();
         updates.add(roa_def);
         ca_route_authorizations_update(&testbed, updates).await;
-        manifest_number_current_key("Testbed should update manifest when publishing ROA", &testbed, 3).await;
+        assert_manifest_number_current_key("Testbed should update manifest when publishing ROA", &testbed, 3).await;
 
         ca_aspas_add(&testbed, aspa_def.clone()).await;
-        manifest_number_current_key("Testbed should update manifest when publishing ASPA", &testbed, 4).await;
+        assert_manifest_number_current_key("Testbed should update manifest when publishing ASPA", &testbed, 4).await;
 
         ca_bgpsec_add(&testbed, bgpsec_def).await;
-        manifest_number_current_key(
+        assert_manifest_number_current_key(
             "Testbed should update manifest when publishing bgpsec cert",
             &testbed,
             5,
@@ -180,11 +180,12 @@ async fn functional_keyroll() {
         );
 
         // The testbed CA should issue an empty mft for the new key, with serial 1
-        manifest_number_new_key("testbed should issue empty mft for new key", &testbed, 1).await;
+        assert_manifest_number_new_key("testbed should issue empty mft for new key", &testbed, 1).await;
 
         // Even though there are no changes for the current key, we still re-issue
         // manifests and CRLs for all keys together.
-        manifest_number_current_key("no need to update the current mft when new key is added", &testbed, 5).await;
+        assert_manifest_number_current_key("no need to update the current mft when new key is added", &testbed, 5)
+            .await;
     }
 
     {
@@ -196,8 +197,8 @@ async fn functional_keyroll() {
         info("");
 
         cas_force_publish_all().await;
-        manifest_number_current_key("testbed should re-issue mft for current key", &testbed, 6).await;
-        manifest_number_new_key("testbed should re-issue mft for new key", &testbed, 2).await;
+        assert_manifest_number_current_key("testbed should re-issue mft for current key", &testbed, 6).await;
+        assert_manifest_number_new_key("testbed should re-issue mft for new key", &testbed, 2).await;
     }
 
     {
@@ -231,7 +232,7 @@ async fn functional_keyroll() {
         //
         // However.. the child will drop the old key, and ask for its revocation. This
         // is a separate publication event. So, the testbed mft serial number will be 4.
-        manifest_number_current_key(
+        assert_manifest_number_current_key(
             "testbed should issue new mft under promoted key, with all objects, as a single update. Then publish updated CRL and mft for revoked child certificate for old key.",
             &testbed,
             4,
@@ -242,17 +243,17 @@ async fn functional_keyroll() {
     let _ = fs::remove_dir_all(krill_dir);
 }
 
-async fn manifest_number_current_key(msg: &str, ca: &CaHandle, nr: u64) {
+async fn assert_manifest_number_current_key(msg: &str, ca: &CaHandle, nr: u64) {
     let current_key = ca_key_for_rcn(ca, &rcn(0)).await;
-    manifest_number_key(msg, ca, current_key.incoming_cert(), nr).await
+    assert_manifest_number_key(msg, ca, current_key.incoming_cert(), nr).await
 }
 
-async fn manifest_number_new_key(msg: &str, ca: &CaHandle, nr: u64) {
+async fn assert_manifest_number_new_key(msg: &str, ca: &CaHandle, nr: u64) {
     let new_key = ca_new_key_for_rcn(ca, &rcn(0)).await;
-    manifest_number_key(msg, ca, new_key.incoming_cert(), nr).await
+    assert_manifest_number_key(msg, ca, new_key.incoming_cert(), nr).await
 }
 
-async fn manifest_number_key(msg: &str, ca: &CaHandle, incoming: &RcvdCert, nr: u64) {
+async fn assert_manifest_number_key(msg: &str, ca: &CaHandle, incoming: &RcvdCert, nr: u64) {
     let mut number_found = Serial::from(0_u64); // will be overwritten
     for _ in 0..10 {
         let published = publisher_details(ca.convert()).await;
