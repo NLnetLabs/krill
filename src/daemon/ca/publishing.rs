@@ -146,7 +146,10 @@ impl PreSaveEventListener<CertAuth> for CaObjectsStore {
                         ..
                     } => {
                         objects.update_received_cert(resource_class_name, rcvd_cert)?;
-                        // no need to force re-issuance
+                        // this in itself constitutes no need to force re-issuance
+                        // if the new certificate triggered that the set of objects changed,
+                        // e.g. because a ROA became overclaiming, then we would see another
+                        // event for that which *will* result in forcing re-issuance.
                     }
                     super::CaEvtDet::ResourceClassRemoved {
                         resource_class_name, ..
