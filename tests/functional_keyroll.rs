@@ -210,6 +210,11 @@ async fn functional_keyroll() {
         info("");
 
         ca_roll_activate(&testbed).await;
+
+        // We now expect that the old key has become the current key and its mft, crl
+        // and all objects are published as a single update.
+        //
+        // The old key will be revoked and its mft and crl will no longer be published.
         assert!(state_becomes_active(&testbed).await);
 
         let mut expected_files = expected_mft_and_crl(&testbed, &dflt_rc_name).await;
@@ -226,16 +231,10 @@ async fn functional_keyroll() {
             .await
         );
 
-        // We now expect that the old key has become the current key and its mft, crl
-        // and all objects are published as a single update. So, we could be forgiven
-        // to expect that the serial for this manifest will become 3.
-        //
-        // However.. the child will drop the old key, and ask for its revocation. This
-        // is a separate publication event. So, the testbed mft serial number will be 4.
         assert_manifest_number_current_key(
-            "testbed should issue new mft under promoted key, with all objects, as a single update. Then publish updated CRL and mft for revoked child certificate for old key.",
+            "testbed should issue new mft under promoted key, with all objects, as a single update.",
             &testbed,
-            4,
+            3,
         )
         .await;
     }

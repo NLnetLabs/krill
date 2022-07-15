@@ -139,7 +139,6 @@ impl PreSaveEventListener<CertAuth> for CaObjectsStore {
                     }
                     super::CaEvtDet::KeyRollFinished { resource_class_name } => {
                         objects.keyroll_finish(resource_class_name)?;
-                        force_reissue = true;
                     }
                     super::CaEvtDet::CertificateReceived {
                         resource_class_name,
