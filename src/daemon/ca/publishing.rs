@@ -883,7 +883,7 @@ impl CurrentKeyObjectSet {
 
         for issued in cert_updates.issued() {
             let published_object = PublishedObject::for_cert_info(issued);
-            if let Some(old) = self.published_objects.insert(issued.name(), published_object) {
+            if let Some(old) = self.published_objects.insert(issued.name().clone(), published_object) {
                 self.revocations.add(old.revoke());
             }
         }
@@ -891,7 +891,7 @@ impl CurrentKeyObjectSet {
         for cert in cert_updates.unsuspended() {
             self.revocations.remove(&cert.revocation());
             let published_object = PublishedObject::for_cert_info(cert);
-            if let Some(old) = self.published_objects.insert(cert.name(), published_object) {
+            if let Some(old) = self.published_objects.insert(cert.name().clone(), published_object) {
                 // this should not happen, but just to be safe.
                 self.revocations.add(old.revoke());
             }
@@ -1206,11 +1206,21 @@ impl PublishedObject {
     }
 
     pub fn for_cert_info<T>(cert: &CertInfo<T>) -> Self {
-        PublishedObject::new(cert.name(), cert.base64().clone(), cert.serial(), cert.expires())
+        PublishedObject::new(
+            cert.name().clone(),
+            cert.base64().clone(),
+            cert.serial(),
+            cert.expires(),
+        )
     }
 
     pub fn for_bgpsec_cert_info(cert: &BgpSecCertInfo) -> Self {
-        PublishedObject::new(cert.name(), cert.base64().clone(), cert.serial(), cert.expires())
+        PublishedObject::new(
+            cert.name().clone(),
+            cert.base64().clone(),
+            cert.serial(),
+            cert.expires(),
+        )
     }
 }
 
