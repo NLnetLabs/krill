@@ -280,7 +280,7 @@ impl ChildCertificates {
         signer: &KrillSigner,
     ) -> KrillResult<DelegatedCertificate> {
         let csr_info = previous.csr_info().clone();
-        let resource_set = updated_resources.unwrap_or(previous.resources().clone());
+        let resource_set = updated_resources.unwrap_or_else(|| previous.resources().clone());
         let limit = previous.limit().clone();
 
         let re_issued = SignSupport::make_issued_cert(
