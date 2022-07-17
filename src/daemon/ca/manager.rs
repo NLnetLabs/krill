@@ -287,8 +287,8 @@ impl CaManager {
 
     /// Republish the embedded TA and CAs if needed, i.e. if they are close
     /// to their next update time.
-    pub async fn republish_all(&self) -> KrillResult<Vec<CaHandle>> {
-        self.ca_objects_store.reissue_all()
+    pub async fn republish_all(&self, force: bool) -> KrillResult<Vec<CaHandle>> {
+        self.ca_objects_store.reissue_all(force)
     }
 }
 
@@ -1175,7 +1175,7 @@ impl CaManager {
                                                     // will be automatically created when we synchronize the entitlements again.
 
                                                     let reason =
-                                                        format!("received certificate cannot be added, error: {}", e);
+                                                        format!("cannot process received certificate! error: {}", e);
 
                                                     self.send_command(CmdDet::drop_resource_class(
                                                         ca_handle,

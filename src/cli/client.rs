@@ -154,6 +154,10 @@ impl KrillClient {
                 post_empty(&self.server, &self.token, "api/v1/bulk/cas/publish").await?;
                 Ok(ApiResponse::Empty)
             }
+            BulkCaCommand::ForcePublish => {
+                post_empty(&self.server, &self.token, "api/v1/bulk/cas/force_publish").await?;
+                Ok(ApiResponse::Empty)
+            }
             BulkCaCommand::Sync => {
                 post_empty(&self.server, &self.token, "api/v1/bulk/cas/sync/repo").await?;
                 Ok(ApiResponse::Empty)

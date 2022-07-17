@@ -147,7 +147,7 @@ impl RoaUpdates {
         self.aggregate_updated.insert(key, info);
     }
 
-    pub fn added_roas(&self) -> KrillResult<HashMap<ObjectName, RoaInfo>> {
+    pub fn added_roas(&self) -> HashMap<ObjectName, RoaInfo> {
         let mut res = HashMap::new();
 
         for (auth, info) in &self.updated {
@@ -160,7 +160,7 @@ impl RoaUpdates {
             res.insert(name, info.clone());
         }
 
-        Ok(res)
+        res
     }
 
     pub fn removed_roas(&self) -> Vec<ObjectName> {

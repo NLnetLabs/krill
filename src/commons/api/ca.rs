@@ -226,6 +226,9 @@ pub struct CertInfo<T> {
     // Where this certificate is published by the parent
     uri: uri::Rsync,
 
+    // The name of this certificate as used on a manifest
+    name: ObjectName,
+
     // Resources contained
     resources: ResourceSet,
 
@@ -264,6 +267,19 @@ impl<T> CertInfo<T> {
         resources: ResourceSet,
         limit: RequestResourceLimit,
     ) -> Result<Self, InvalidCert> {
+        let name = {
+            let path = uri.path();
+            let after_last_slash = path.rfind('/').unwrap_or(0) + 1;
+            // certificate file names must end with .cer and have at least
+            // one more character before the .cer filename extension - i.e. we
+            // expect 5 characters after the last slash.
+            if !path.ends_with(".cer") || path.len() < after_last_slash + 5 {
+                Err(InvalidCert::Uri(uri.clone()))
+            } else {
+                Ok(ObjectName(path[after_last_slash..].into()))
+            }
+        }?;
+
         let key = cert.subject_public_key_info().clone();
         let ca_repository = cert.ca_repository().ok_or(InvalidCert::CaRepositoryMissing)?.clone();
         let rpki_manifest = cert.rpki_manifest().ok_or(InvalidCert::RpkiManifestMissing)?.clone();
@@ -272,7 +288,7 @@ impl<T> CertInfo<T> {
         let csr_info = CsrInfo::new(ca_repository, rpki_manifest, rpki_notify, key);
 
         let subject = cert.subject().clone();
-        let validity = cert.validity().clone();
+        let validity = cert.validity();
         let serial = cert.serial_number();
         let base64 = Base64::from(&cert);
         let hash = base64.to_hash();
@@ -280,6 +296,7 @@ impl<T> CertInfo<T> {
         base64.to_hash();
         Ok(CertInfo {
             uri,
+            name,
             resources,
             limit,
             subject,
@@ -353,6 +370,7 @@ impl<T> CertInfo<T> {
     pub fn convert<Y>(&self) -> CertInfo<Y> {
         CertInfo {
             uri: self.uri.clone(),
+            name: self.name.clone(),
             resources: self.resources.clone(),
             limit: self.limit.clone(),
             subject: self.subject.clone(),
@@ -369,6 +387,7 @@ impl<T> CertInfo<T> {
     pub fn into_converted<Y>(self) -> CertInfo<Y> {
         CertInfo {
             uri: self.uri,
+            name: self.name,
             resources: self.resources,
             limit: self.limit,
             subject: self.subject,
@@ -393,9 +412,9 @@ impl<T> CertInfo<T> {
         }
     }
 
-    /// The name for this certificate as derived from its URI
-    pub fn name(&self) -> ObjectName {
-        ObjectName::from(&self.uri)
+    /// The name for this certificate
+    pub fn name(&self) -> &ObjectName {
+        &self.name
     }
 
     /// The name of the CRL published by THIS certificate.
@@ -434,7 +453,7 @@ impl<T> CertInfo<T> {
     }
 
     /// Returns a Revocation for this certificate
-    pub fn revoke(&self) -> Revocation {
+    pub fn revocation(&self) -> Revocation {
         Revocation::new(self.serial, self.validity.not_after())
     }
 }
@@ -443,14 +462,22 @@ impl<T> CertInfo<T> {
 pub enum InvalidCert {
     CaRepositoryMissing,
     RpkiManifestMissing,
+    Uri(uri::Rsync),
     CannotDecode(String),
 }
 
 impl fmt::Display for InvalidCert {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            InvalidCert::CaRepositoryMissing => write!(f, "CA certificate lacks ca repository"),
-            InvalidCert::RpkiManifestMissing => write!(f, "CA certificate lacks manifest uri"),
+            InvalidCert::CaRepositoryMissing => write!(
+                f,
+                "CA certificate lacks id-ad-caRepository (see section 4.8.8.1 of RFC 6487)"
+            ),
+            InvalidCert::RpkiManifestMissing => write!(
+                f,
+                "CA certificate lacks id-ad-rpkiManifest (see section 4.8.8.1 of RFC 6487)"
+            ),
+            InvalidCert::Uri(s) => write!(f, "Cannot derive filename from URI: {}", s),
             InvalidCert::CannotDecode(s) => write!(f, "Cannot decode binary certificate: {}", s),
         }
     }
@@ -474,7 +501,7 @@ impl TrustAnchorLocator {
 
         TrustAnchorLocator {
             uris,
-            rsync_uri: rsync_uri,
+            rsync_uri,
             encoded_ski,
         }
     }
@@ -580,18 +607,6 @@ impl ObjectName {
 
     pub fn bgpsec(asn: Asn, key: KeyIdentifier) -> Self {
         ObjectName(format!("ROUTER-{:08X}-{}.cer", asn.into_u32(), key).into())
-    }
-}
-
-impl From<&uri::Rsync> for ObjectName {
-    fn from(uri: &uri::Rsync) -> Self {
-        let path = uri.path();
-        let after_last_slash = path.rfind('/').unwrap_or(0) + 1;
-        if path.len() < after_last_slash + 1 {
-            ObjectName("".into())
-        } else {
-            ObjectName(path[after_last_slash..].into())
-        }
     }
 }
 

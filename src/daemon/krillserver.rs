@@ -701,8 +701,12 @@ impl KrillServer {
 ///
 impl KrillServer {
     /// Republish all CAs that need it.
-    pub async fn republish_all(&self) -> KrillEmptyResult {
-        self.ca_manager.republish_all().await?;
+    pub async fn republish_all(&self, force: bool) -> KrillEmptyResult {
+        let cas = self.ca_manager.republish_all(force).await?;
+        for ca in cas {
+            self.cas_repo_sync_single(&ca)?;
+        }
+
         Ok(())
     }
 
