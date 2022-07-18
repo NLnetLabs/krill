@@ -190,20 +190,20 @@ pub struct Received;
 /// A certificate which was received from a parent CA.
 pub type ReceivedCert = CertInfo<Received>;
 
-//------------ DelegatedCertificate ------------------------------------------
+//------------ IssuedCertificate ---------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub struct Delegated;
+pub struct Issued;
 
 /// A certificate which has been issued to a delegated (child) CA
-pub type DelegatedCertificate = CertInfo<Delegated>;
+pub type IssuedCertificate = CertInfo<Issued>;
 
 //------------ SuspendedCertificate ------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct Suspended;
 
-/// A delegated certificate which has been (temporarily) suspended because the child is inactive.
+/// An issued certificate which has been (temporarily) suspended because the child is inactive.
 pub type SuspendedCert = CertInfo<Suspended>;
 
 //------------ UnsuspendedCertificate ----------------------------------------
@@ -357,7 +357,8 @@ impl<T> CertInfo<T> {
         Cert::decode(self.to_bytes().as_ref()).map_err(|e| InvalidCert::CannotDecode(e.to_string()))
     }
 
-    pub fn to_issued_cert(&self) -> Result<IssuedCert, InvalidCert> {
+    /// Represent as an RFC 6492 IssuedCert
+    pub fn to_rfc6492_issued_cert(&self) -> Result<IssuedCert, InvalidCert> {
         let cert = self.to_cert()?;
         Ok(IssuedCert::new(self.uri.clone(), self.limit.clone(), cert))
     }

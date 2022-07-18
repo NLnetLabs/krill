@@ -351,8 +351,8 @@ impl TryFrom<OldChildCertificateUpdates> for ca::ChildCertificateUpdates {
     fn try_from(old: OldChildCertificateUpdates) -> Result<Self, Self::Error> {
         let mut issued = vec![];
 
-        for delegated in old.issued.into_iter() {
-            issued.push(delegated.try_into()?);
+        for old_delegated in old.issued.into_iter() {
+            issued.push(old_delegated.try_into()?);
         }
 
         Ok(ca::ChildCertificateUpdates::new(issued, old.removed, vec![], vec![]))
@@ -658,10 +658,6 @@ impl PartialEq for OldDelegatedCertificate {
 }
 
 impl Eq for OldDelegatedCertificate {}
-
-pub type OldSuspendedCert = OldDelegatedCertificate;
-pub type OldUnsuspendedCert = OldDelegatedCertificate;
-pub type OldPublishedCert = OldDelegatedCertificate;
 
 impl<T> TryFrom<OldDelegatedCertificate> for CertInfo<T> {
     type Error = PrepareUpgradeError;

@@ -12,9 +12,9 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            AspaCustomer, AspaDefinition, AspaProvidersUpdate, BgpSecAsnKey, DelegatedCertificate, IdCertInfo,
-            ObjectName, ParentCaContact, ReceivedCert, RepositoryContact, RoaAggregateKey, RtaName, SuspendedCert,
-            TaCertDetails, UnsuspendedCert,
+            AspaCustomer, AspaDefinition, AspaProvidersUpdate, BgpSecAsnKey, IdCertInfo, IssuedCertificate, ObjectName,
+            ParentCaContact, ReceivedCert, RepositoryContact, RoaAggregateKey, RtaName, SuspendedCert, TaCertDetails,
+            UnsuspendedCert,
         },
         crypto::KrillSigner,
         eventsourcing::StoredEvent,
@@ -327,7 +327,7 @@ impl BgpSecCertificateUpdates {
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildCertificateUpdates {
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    issued: Vec<DelegatedCertificate>,
+    issued: Vec<IssuedCertificate>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     removed: Vec<KeyIdentifier>,
@@ -341,7 +341,7 @@ pub struct ChildCertificateUpdates {
 
 impl ChildCertificateUpdates {
     pub fn new(
-        issued: Vec<DelegatedCertificate>,
+        issued: Vec<IssuedCertificate>,
         removed: Vec<KeyIdentifier>,
         suspended: Vec<SuspendedCert>,
         unsuspended: Vec<UnsuspendedCert>,
@@ -362,7 +362,7 @@ impl ChildCertificateUpdates {
     /// Note that this is typically a newly issued certificate, but it can
     /// also be a previously issued certificate which had been suspended and
     /// is now unsuspended.
-    pub fn issue(&mut self, new: DelegatedCertificate) {
+    pub fn issue(&mut self, new: IssuedCertificate) {
         self.issued.push(new);
     }
 
@@ -373,7 +373,7 @@ impl ChildCertificateUpdates {
     }
 
     /// List all currently issued (not suspended) certificates.
-    pub fn issued(&self) -> &Vec<DelegatedCertificate> {
+    pub fn issued(&self) -> &Vec<IssuedCertificate> {
         &self.issued
     }
 
@@ -405,7 +405,7 @@ impl ChildCertificateUpdates {
     pub fn unpack(
         self,
     ) -> (
-        Vec<DelegatedCertificate>,
+        Vec<IssuedCertificate>,
         Vec<KeyIdentifier>,
         Vec<SuspendedCert>,
         Vec<UnsuspendedCert>,
@@ -543,7 +543,7 @@ pub enum CaEvtDet {
     KeyRollActivated {
         // When a 'new' key is activated (becomes current), the previous current key will be
         // marked as old and we will request its revocation. Note that any current ROAs and/or
-        // delegated certificates will also be re-issued under the new 'current' key. These changes
+        // issued certificates will also be re-issued under the new 'current' key. These changes
         // are tracked in separate `RoasUpdated` and `ChildCertificatesUpdated` events.
         resource_class_name: ResourceClassName,
         revoke_req: RevocationRequest,

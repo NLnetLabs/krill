@@ -22,7 +22,7 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            AspaCustomer, AspaDefinition, AspaProvidersUpdate, CertInfo, DelegatedCertificate, ObjectName,
+            AspaCustomer, AspaDefinition, AspaProvidersUpdate, CertInfo, IssuedCertificate, ObjectName,
             ParentCaContact, ParentServerInfo, PublicationServerInfo, ReceivedCert, RepositoryContact, Revocation,
             Revocations, RoaAggregateKey, RtaName, SuspendedCert, TaCertDetails, TrustAnchorLocator, UnsuspendedCert,
         },
@@ -137,7 +137,7 @@ impl TryFrom<OldChildCertificateUpdates> for ChildCertificateUpdates {
     type Error = PrepareUpgradeError;
 
     fn try_from(old: OldChildCertificateUpdates) -> Result<Self, PrepareUpgradeError> {
-        let mut issued: Vec<DelegatedCertificate> = vec![];
+        let mut issued: Vec<IssuedCertificate> = vec![];
         let mut suspended: Vec<SuspendedCert> = vec![];
         let mut unsuspended: Vec<UnsuspendedCert> = vec![];
 

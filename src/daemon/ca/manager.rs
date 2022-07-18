@@ -177,7 +177,7 @@ impl CaManager {
         }
 
         // Create the `CaObjectStore` that is responsible for maintaining CA objects: the `CaObjects`
-        // for a CA gets copies of all ROAs and delegated certificates from the `CertAuth` and is responsible
+        // for a CA gets copies of all ROAs and issued certificates from the `CertAuth` and is responsible
         // for manifests and CRL generation.
         let ca_objects_store = Arc::new(CaObjectsStore::disk(
             &config.data_dir,
@@ -186,7 +186,7 @@ impl CaManager {
         )?);
 
         // Register the `CaObjectsStore` as a pre-save listener to the 'ca_store' so that it can update
-        // its ROAs and delegated certificates and/or generate manifests and CRLs when relevant changes
+        // its ROAs and issued certificates and/or generate manifests and CRLs when relevant changes
         // occur in a `CertAuth`.
         ca_store.add_pre_save_listener(ca_objects_store.clone());
 
@@ -1913,7 +1913,7 @@ impl CaManager {
     /// be published (event will trigger that MFT and CRL are also made, and
     /// and the CA in question synchronizes with its repository).
     ///
-    /// Note: this does not re-issue delegated CA certificates, because child
+    /// Note: this does not re-issue issued CA certificates, because child
     /// CAs are expected to note extended validity eligibility and request
     /// updated certificates themselves.
     pub async fn renew_objects_all(&self, actor: &Actor) -> KrillResult<()> {

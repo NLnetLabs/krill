@@ -18,7 +18,7 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::{DelegatedCertificate, ReceivedCert, ResourceClassInfo, SuspendedCert, UnsuspendedCert},
+        api::{IssuedCertificate, ReceivedCert, ResourceClassInfo, SuspendedCert, UnsuspendedCert},
         crypto::{CsrInfo, KrillSigner, SignSupport},
         error::Error,
         KrillResult,
@@ -675,7 +675,7 @@ impl ResourceClass {
         limit: RequestResourceLimit,
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
-    ) -> KrillResult<DelegatedCertificate> {
+    ) -> KrillResult<IssuedCertificate> {
         let signing_key = self.get_current_key()?;
         let parent_resources = signing_key.incoming_cert().resources();
         let resources = parent_resources.intersection(child_resources);
@@ -693,7 +693,7 @@ impl ResourceClass {
     }
 
     /// Stores an [IssuedCert](krill_commons.api.ca.IssuedCert)
-    pub fn certificate_issued(&mut self, issued: DelegatedCertificate) {
+    pub fn certificate_issued(&mut self, issued: IssuedCertificate) {
         self.certificates.certificate_issued(issued);
     }
 
@@ -706,7 +706,7 @@ impl ResourceClass {
     }
 
     /// Returns an issued certificate for a key, if it exists
-    pub fn delegated(&self, ki: &KeyIdentifier) -> Option<&DelegatedCertificate> {
+    pub fn issued(&self, ki: &KeyIdentifier) -> Option<&IssuedCertificate> {
         self.certificates.get_issued(ki)
     }
 

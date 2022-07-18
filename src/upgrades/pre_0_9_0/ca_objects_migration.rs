@@ -299,7 +299,7 @@ impl UpgradeStore for CasStoreMigration {
                         // of objects is kept in the [`CaObjectsStore`] instead. This component also takes care of regenerating
                         // a new Manifest and CRL when the time comes to re-publish - without resulting in lots of event history.
                         //
-                        // Note that delegated certificates and RPKI signed objects such as ROAs are historically important, and
+                        // Note that issued certificates and RPKI signed objects such as ROAs are historically important, and
                         // they *are* tracked through events which are also migrated. In other words.. while the history on
                         // simple re-publication events without any semantic changes is discarded *by design*, we keep the
                         // important stuff.

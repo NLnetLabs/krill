@@ -27,8 +27,8 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            rrdp::PublishElement, CertInfo, DelegatedCertificate, ObjectName, ReceivedCert, RepositoryContact,
-            Revocation, Revocations, Timestamp,
+            rrdp::PublishElement, CertInfo, IssuedCertificate, ObjectName, ReceivedCert, RepositoryContact, Revocation,
+            Revocations, Timestamp,
         },
         crypto::KrillSigner,
         error::Error,
@@ -458,7 +458,7 @@ impl CaObjects {
         self.get_class_mut(rcn).map(|rco| rco.update_bgpsec_certs(updates))
     }
 
-    // Update the delegated certificates in the current set
+    // Update the issued certificates in the current set
     fn update_certs(&mut self, rcn: &ResourceClassName, cert_updates: &ChildCertificateUpdates) -> KrillResult<()> {
         self.get_class_mut(rcn).map(|rco| rco.update_certs(cert_updates))
     }
@@ -1112,7 +1112,7 @@ impl ObjectSetRevision {
 }
 
 //------------ PublishedCert -----------------------------------------------
-pub type PublishedCert = DelegatedCertificate;
+pub type PublishedCert = IssuedCertificate;
 
 //------------ PublishedItem ----------------------------------------------
 

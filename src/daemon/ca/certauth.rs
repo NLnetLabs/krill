@@ -27,7 +27,7 @@ use crate::{
     commons::{
         api::{
             AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate, BgpSecAsnKey,
-            BgpSecCsrInfoList, BgpSecDefinitionUpdates, CertAuthInfo, DelegatedCertificate, IdCertInfo, ObjectName,
+            BgpSecCsrInfoList, BgpSecDefinitionUpdates, CertAuthInfo, IdCertInfo, IssuedCertificate, ObjectName,
             ParentCaContact, ReceivedCert, RepositoryContact, Revocation, RoaDefinition, RtaList, RtaName,
             RtaPrepResponse, StorableCaCommand, TaCertDetails, TrustAnchorLocator,
         },
@@ -764,18 +764,18 @@ impl CertAuth {
         let threshold = Time::now() + Duration::weeks(issuance_timing.timing_child_certificate_reissue_weeks_before);
 
         for ki in child_keys {
-            if let Some(delegated) = my_rc.delegated(&ki) {
-                issued_certs.push(delegated.to_issued_cert().map_err(|e| {
-                    // This should never happen, unless our current delegated certificate can no longer be parsed
+            if let Some(issued) = my_rc.issued(&ki) {
+                issued_certs.push(issued.to_rfc6492_issued_cert().map_err(|e| {
+                    // This should never happen, unless our current issued certificate can no longer be parsed
                     Error::Custom(format!(
-                        "Issue with delegated certificate held by CA '{}', published at '{}', error: {} ",
+                        "Issue with issued certificate held by CA '{}', published at '{}', error: {} ",
                         self.handle(),
-                        delegated.uri(),
+                        issued.uri(),
                         e
                     ))
                 })?);
 
-                let expires = delegated.validity().not_after();
+                let expires = issued.validity().not_after();
 
                 if expires > threshold {
                     not_after = expires;
@@ -882,7 +882,7 @@ impl CertAuth {
         limit: RequestResourceLimit,
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
-    ) -> KrillResult<DelegatedCertificate> {
+    ) -> KrillResult<IssuedCertificate> {
         let my_rc = self.resources.get(&rcn).ok_or(Error::ResourceClassUnknown(rcn))?;
         let child = self.get_child(child)?;
 
@@ -1003,7 +1003,7 @@ impl CertAuth {
 
             let mut issued_certs = vec![];
             for key in certified_keys {
-                if let Some(issued) = rc.delegated(&key) {
+                if let Some(issued) = rc.issued(&key) {
                     issued_certs.push(issued);
                 }
             }
@@ -1063,8 +1063,8 @@ impl CertAuth {
             let mut cert_updates = ChildCertificateUpdates::default();
 
             for key in certified_keys {
-                if let Some(delegated) = rc.delegated(&key) {
-                    cert_updates.suspend(delegated.convert());
+                if let Some(issued) = rc.issued(&key) {
+                    cert_updates.suspend(issued.convert());
                 }
             }
 
@@ -1445,8 +1445,8 @@ impl CertAuth {
     /// publication event for the matching key if publication is needed.
     ///
     /// This will also generate appropriate events for changes affecting
-    /// issued ROAs and delegated certificates - if because resources were
-    /// lost and ROAs/Certs would be become invalid.
+    /// issued ROAs and certificates - if those would become invalid
+    /// because resources were lost.
     fn update_received_cert(
         &self,
         rcn: ResourceClassName,
