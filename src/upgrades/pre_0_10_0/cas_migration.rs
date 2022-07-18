@@ -127,11 +127,11 @@ impl UpgradeStore for CasMigration {
             // Report the amount of (remaining) work
             let total_commands = old_cmd_keys.len();
             if data_upgrade_info.last_command == 0 {
-                info!("Will migrate {} commands for Publication Server", total_commands);
+                info!("Will migrate {} commands for CA '{}'", total_commands, handle);
             } else {
                 info!(
-                    "Will resume migration of {} remaining commands for Publication Server",
-                    total_commands
+                    "Will resume migration of {} remaining commands for CA '{}'",
+                    total_commands, handle
                 );
             }
 

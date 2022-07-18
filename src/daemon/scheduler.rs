@@ -133,7 +133,7 @@ impl Scheduler {
 
     /// Queues tasks for background jobs when the server is started
     async fn queue_start_tasks(&self) -> KrillResult<()> {
-        // If there are only a few CAs in this krill instance, then we
+        // If there are only a few CAs in this Krill instance, then we
         // will just want to re-sync them with their parents and repository
         // on start up.
         //

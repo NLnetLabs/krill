@@ -220,7 +220,7 @@ pub trait UpgradeStore {
     /// start over, and the version will be set to the current code version.
     fn preparation_store_prepare(&self) -> UpgradeResult<()> {
         if !self.preparation_store().version_is_current()? {
-            warn!("Found prepared data for a different krill version, will remove it and start from scratch");
+            warn!("Found prepared data for a different Krill version, will remove it and start from scratch");
             self.preparation_store().wipe()?;
             self.preparation_store().version_set_current()?;
         }
@@ -326,7 +326,7 @@ pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -
                     let lock_file_path = upgrade_data_dir.join("upgrade.lock");
                     fslock::LockFile::open(&lock_file_path).map_err(|_| {
                         PrepareUpgradeError::custom(
-                            "Cannot get upgrade lock, it seems that another process is running a krill upgrade",
+                            "Cannot get upgrade lock, it seems that another process is running a Krill upgrade",
                         )
                     })?
                 };

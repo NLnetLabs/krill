@@ -59,7 +59,7 @@ use super::ca::CaManager;
 
 //------------ KrillServer ---------------------------------------------------
 
-/// This is the krill server that is doing all the orchestration for all components.
+/// This is the Krill server that is doing all the orchestration for all components.
 pub struct KrillServer {
     // The base URI for this service
     service_uri: uri::Https,

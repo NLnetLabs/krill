@@ -72,7 +72,7 @@ impl UpgradeStore for PublicationServerMigration {
             let old_init: OldRepositoryAccessIni = self
                 .current_kv_store
                 .get(&init_key)?
-                .ok_or_else(|| PrepareUpgradeError::custom("Cannot read pubd init event"))?;
+                .ok_or_else(|| PrepareUpgradeError::custom("Cannot read Publication Server init event"))?;
 
             let (_, _, old_init) = old_init.unpack();
             let init: RepositoryAccessInitDetails = old_init.into();
@@ -159,7 +159,7 @@ impl UpgradeStore for PublicationServerMigration {
         info!("Will verify the migration by rebuilding the Publication Server from events");
         let repo_access = self.new_agg_store.get_latest(&handle).map_err(|e| {
             PrepareUpgradeError::Custom(format!(
-                "Could not rebuild state after migrating pubd! Error was: {}.",
+                "Could not rebuild state after migrating Publication Server! Error was: {}.",
                 e
             ))
         })?;

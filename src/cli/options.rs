@@ -153,7 +153,7 @@ impl Options {
                 .short("s")
                 .long(KRILL_CLI_SERVER_ARG)
                 .value_name("URI")
-                .help("The full URI to the krill server. Or set env: KRILL_CLI_SERVER")
+                .help("The full URI to the Krill server. Or set env: KRILL_CLI_SERVER")
                 .required(false),
         )
         .arg(
@@ -161,7 +161,7 @@ impl Options {
                 .short("t")
                 .long(KRILL_CLI_ADMIN_TOKEN_ARG)
                 .value_name("string")
-                .help("The secret token for the krill server. Or set env: KRILL_CLI_TOKEN")
+                .help("The secret token for the Krill server. Or set env: KRILL_CLI_TOKEN")
                 .required(false),
         )
         .arg(
@@ -241,7 +241,7 @@ impl Options {
 
     fn make_config_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut config_sub =
-            SubCommand::with_name("config").about("Creates a configuration file for krill and prints it to STDOUT");
+            SubCommand::with_name("config").about("Creates a configuration file for Krill and prints it to STDOUT");
 
         fn add_data_dir_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
             app.arg(
