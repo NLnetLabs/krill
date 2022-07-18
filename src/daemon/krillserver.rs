@@ -24,8 +24,9 @@ use crate::{
             AspaProvidersUpdate, BgpSecCsrInfoList, BgpSecDefinitionUpdates, CaCommandDetails, CaRepoDetails,
             CertAuthInfo, CertAuthInit, CertAuthIssues, CertAuthList, CertAuthStats, ChildCaInfo,
             ChildrenConnectionStats, CommandHistory, CommandHistoryCriteria, ParentCaContact, ParentCaReq,
-            PublicationServerUris, PublisherDetails, RcvdCert, RepositoryContact, RoaDefinition, RoaDefinitionUpdates,
-            RtaList, RtaName, RtaPrepResponse, ServerInfo, TaCertDetails, Timestamp, UpdateChildRequest,
+            PublicationServerUris, PublisherDetails, ReceivedCert, RepositoryContact, RoaDefinition,
+            RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, ServerInfo, TaCertDetails, Timestamp,
+            UpdateChildRequest,
         },
         bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion},
         crypto::KrillSignerBuilder,
@@ -58,7 +59,7 @@ use super::ca::CaManager;
 
 //------------ KrillServer ---------------------------------------------------
 
-/// This is the krill server that is doing all the orchestration for all components.
+/// This is the Krill server that is doing all the orchestration for all components.
 pub struct KrillServer {
     // The base URI for this service
     service_uri: uri::Https,
@@ -537,7 +538,7 @@ impl KrillServer {
         }
     }
 
-    pub async fn trust_anchor_cert(&self) -> Option<RcvdCert> {
+    pub async fn trust_anchor_cert(&self) -> Option<ReceivedCert> {
         self.ta().await.ok().map(|details| details.cert().clone())
     }
 

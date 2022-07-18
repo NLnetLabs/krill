@@ -16,8 +16,8 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            ActiveInfo, CertifiedKeyInfo, PendingInfo, PendingKeyInfo, RcvdCert, ResourceClassKeysInfo, RollNewInfo,
-            RollOldInfo, RollPendingInfo,
+            ActiveInfo, CertifiedKeyInfo, PendingInfo, PendingKeyInfo, ReceivedCert, ResourceClassKeysInfo,
+            RollNewInfo, RollOldInfo, RollPendingInfo,
         },
         crypto::KrillSigner,
         error::Error,
@@ -33,7 +33,7 @@ use crate::{
 /// and has at least a MFT and CRL.
 pub struct CertifiedKey {
     key_id: KeyIdentifier,
-    incoming_cert: RcvdCert,
+    incoming_cert: ReceivedCert,
     request: Option<IssuanceRequest>,
     #[serde(skip_serializing_if = "Option::is_none")]
     old_repo: Option<RepoInfo>,
@@ -42,7 +42,7 @@ pub struct CertifiedKey {
 impl CertifiedKey {
     pub fn new(
         key_id: KeyIdentifier,
-        incoming_cert: RcvdCert,
+        incoming_cert: ReceivedCert,
         request: Option<IssuanceRequest>,
         old_repo: Option<RepoInfo>,
     ) -> Self {
@@ -54,7 +54,7 @@ impl CertifiedKey {
         }
     }
 
-    pub fn create(incoming_cert: RcvdCert) -> Self {
+    pub fn create(incoming_cert: ReceivedCert) -> Self {
         let key_id = incoming_cert.key_identifier();
         CertifiedKey {
             key_id,
@@ -71,10 +71,10 @@ impl CertifiedKey {
     pub fn key_id(&self) -> &KeyIdentifier {
         &self.key_id
     }
-    pub fn incoming_cert(&self) -> &RcvdCert {
+    pub fn incoming_cert(&self) -> &ReceivedCert {
         &self.incoming_cert
     }
-    pub fn set_incoming_cert(&mut self, incoming_cert: RcvdCert) {
+    pub fn set_incoming_cert(&mut self, incoming_cert: ReceivedCert) {
         self.request = None;
         self.incoming_cert = incoming_cert;
     }

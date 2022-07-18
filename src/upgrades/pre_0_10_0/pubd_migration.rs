@@ -17,13 +17,15 @@ use crate::{
 
 use super::OldRepositoryAccessIni;
 
-pub struct PubdStoreMigration {
+/// Migrates the events, snapshots and info for the event-sourced RepositoryAccess.
+/// There is no need to migrate the mutable RepositoryContent structure for this migration.
+pub struct PublicationServerMigration {
     current_kv_store: KeyValueStore,
     new_kv_store: KeyValueStore,
     new_agg_store: AggregateStore<RepositoryAccess>,
 }
 
-impl PubdStoreMigration {
+impl PublicationServerMigration {
     pub fn prepare(mode: UpgradeMode, config: &Config) -> UpgradeResult<()> {
         let upgrade_data_dir = config.upgrade_data_dir();
 
@@ -31,7 +33,7 @@ impl PubdStoreMigration {
         let new_kv_store = KeyValueStore::disk(&upgrade_data_dir, PUBSERVER_DIR)?;
         let new_agg_store = AggregateStore::disk(&upgrade_data_dir, PUBSERVER_DIR)?;
 
-        PubdStoreMigration {
+        PublicationServerMigration {
             current_kv_store,
             new_kv_store,
             new_agg_store,
@@ -40,7 +42,7 @@ impl PubdStoreMigration {
     }
 }
 
-impl UpgradeStore for PubdStoreMigration {
+impl UpgradeStore for PublicationServerMigration {
     fn needs_migrate(&self) -> Result<bool, crate::upgrades::PrepareUpgradeError> {
         Ok(self.current_kv_store.version_is_after(KrillVersion::release(0, 9, 0))?
             && self
@@ -70,7 +72,7 @@ impl UpgradeStore for PubdStoreMigration {
             let old_init: OldRepositoryAccessIni = self
                 .current_kv_store
                 .get(&init_key)?
-                .ok_or_else(|| PrepareUpgradeError::custom("Cannot read pubd init event"))?;
+                .ok_or_else(|| PrepareUpgradeError::custom("Cannot read Publication Server init event"))?;
 
             let (_, _, old_init) = old_init.unpack();
             let init: RepositoryAccessInitDetails = old_init.into();
@@ -157,7 +159,7 @@ impl UpgradeStore for PubdStoreMigration {
         info!("Will verify the migration by rebuilding the Publication Server from events");
         let repo_access = self.new_agg_store.get_latest(&handle).map_err(|e| {
             PrepareUpgradeError::Custom(format!(
-                "Could not rebuild state after migrating pubd! Error was: {}.",
+                "Could not rebuild state after migrating Publication Server! Error was: {}.",
                 e
             ))
         })?;

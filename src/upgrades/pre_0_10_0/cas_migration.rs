@@ -24,6 +24,9 @@ use crate::{
 
 use super::OldCaObjects;
 
+/// Migrates the CaObjects for a given CA.
+///
+/// i.e. the CA content which is NOT event-sourced.
 struct CaObjectsMigration {
     current_store: KeyValueStore,
     new_store: KeyValueStore,
@@ -54,21 +57,24 @@ impl CaObjectsMigration {
     }
 }
 
-pub struct CasStoreMigration {
+/// Migrates the CAs:
+/// - The events, snapshots and info in the AggregateStore
+/// - The mutable CaObjects structure
+pub struct CasMigration {
     current_kv_store: KeyValueStore,
     new_kv_store: KeyValueStore,
     new_agg_store: AggregateStore<CertAuth>,
     ca_objects_migration: CaObjectsMigration,
 }
 
-impl CasStoreMigration {
+impl CasMigration {
     pub fn prepare(mode: UpgradeMode, config: &Config) -> UpgradeResult<()> {
         let current_kv_store = KeyValueStore::disk(&config.data_dir, CASERVER_DIR)?;
         let new_kv_store = KeyValueStore::disk(&config.upgrade_data_dir(), CASERVER_DIR)?;
         let new_agg_store = AggregateStore::<CertAuth>::disk(&config.upgrade_data_dir(), CASERVER_DIR)?;
         let ca_objects_migration = CaObjectsMigration::create(config)?;
 
-        CasStoreMigration {
+        CasMigration {
             current_kv_store,
             new_kv_store,
             new_agg_store,
@@ -78,7 +84,7 @@ impl CasStoreMigration {
     }
 }
 
-impl UpgradeStore for CasStoreMigration {
+impl UpgradeStore for CasMigration {
     fn needs_migrate(&self) -> Result<bool, PrepareUpgradeError> {
         Ok(self.current_kv_store.version_is_after(KrillVersion::release(0, 9, 0))?
             && self
@@ -121,11 +127,11 @@ impl UpgradeStore for CasStoreMigration {
             // Report the amount of (remaining) work
             let total_commands = old_cmd_keys.len();
             if data_upgrade_info.last_command == 0 {
-                info!("Will migrate {} commands for Publication Server", total_commands);
+                info!("Will migrate {} commands for CA '{}'", total_commands, handle);
             } else {
                 info!(
-                    "Will resume migration of {} remaining commands for Publication Server",
-                    total_commands
+                    "Will resume migration of {} remaining commands for CA '{}'",
+                    total_commands, handle
                 );
             }
 

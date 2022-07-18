@@ -19,7 +19,7 @@ use crate::{
         actor::Actor,
         api::{
             AspaCustomer, AspaDefinitionUpdates, AspaProvidersUpdate, BgpSecDefinitionUpdates, IdCertInfo,
-            ParentCaContact, RcvdCert, RepositoryContact, RtaName, StorableCaCommand, StorableRcEntitlement,
+            ParentCaContact, ReceivedCert, RepositoryContact, RtaName, StorableCaCommand, StorableRcEntitlement,
         },
         crypto::KrillSigner,
         eventsourcing::{self, StoredCommand},
@@ -109,7 +109,7 @@ pub enum CmdDet {
     UpdateEntitlements(ParentHandle, Entitlements, Arc<KrillSigner>),
 
     // Process a new certificate received from a parent.
-    UpdateRcvdCert(ResourceClassName, RcvdCert, Arc<Config>, Arc<KrillSigner>),
+    UpdateRcvdCert(ResourceClassName, ReceivedCert, Arc<Config>, Arc<KrillSigner>),
 
     // Drop a resource class under a parent because of issues
     // obtaining a certificate for it.
@@ -460,7 +460,7 @@ impl CmdDet {
     pub fn upd_received_cert(
         handle: &CaHandle,
         class_name: ResourceClassName,
-        cert: RcvdCert,
+        cert: ReceivedCert,
         config: Arc<Config>,
         signer: Arc<KrillSigner>,
         actor: &Actor,
