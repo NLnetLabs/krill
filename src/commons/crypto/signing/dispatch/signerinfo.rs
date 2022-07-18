@@ -11,7 +11,6 @@ use crate::{
         crypto::SignerHandle,
         error::Error,
         eventsourcing::{Aggregate, AggregateStore, CommandDetails, SentCommand, StoredEvent, WithStorableDetails},
-        util::ext_serde,
         KrillResult,
     },
     constants::{ACTOR_DEF_KRILL, SIGNERS_DIR},
@@ -206,10 +205,6 @@ impl SignerInfoCommand {
 #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
 struct SignerIdentity {
     /// An X.509 Subject Public Key Info public key that can be used to verify the identity of the signer.
-    #[serde(
-        deserialize_with = "ext_serde::de_public_key",
-        serialize_with = "ext_serde::ser_public_key"
-    )]
     public_key: PublicKey,
 
     /// The internal signer backend specific identifier for the corresponding private key.

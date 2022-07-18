@@ -658,7 +658,7 @@ impl CertAuth {
         let child = self.get_child(&child_handle)?;
 
         cms.validate(child.id_cert().public_key())
-            .map_err(|_| Error::Rfc6492SignatureInvalid)?;
+            .map_err(|e| Error::Rfc6492(e))?;
 
         Ok(cms.into_message())
     }
@@ -1956,10 +1956,9 @@ impl CertAuth {
         // a new or update an existing definition.
         for definition in additions {
             // ensure the CSR is validly signed
-            definition
-                .csr()
-                .validate()
-                .map_err(|_| Error::BgpSecDefinitionInvalidlySigned(self.handle.clone(), definition.clone()))?;
+            definition.csr().validate().map_err(|e| {
+                Error::BgpSecDefinitionInvalidlySigned(self.handle.clone(), definition.clone(), e.to_string())
+            })?;
 
             let key = BgpSecAsnKey::from(&definition);
             let csr = StoredBgpSecCsr::from(definition.csr());

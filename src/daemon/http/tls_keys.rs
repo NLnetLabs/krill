@@ -121,7 +121,7 @@ impl HttpsSigner {
     }
 
     fn public_key_info(&self) -> Result<PublicKey, Error> {
-        let mut b = Bytes::from(
+        let bytes = Bytes::from(
             self.private
                 .rsa()
                 .unwrap()
@@ -129,7 +129,7 @@ impl HttpsSigner {
                 .map_err(Error::OpenSslError)?,
         );
 
-        PublicKey::decode(&mut b).map_err(Error::decode)
+        PublicKey::decode(bytes).map_err(Error::decode)
     }
 
     // See OpenSslSigner::sign_with_key for reference.

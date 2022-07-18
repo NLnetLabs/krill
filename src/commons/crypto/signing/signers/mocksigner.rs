@@ -139,8 +139,8 @@ impl MockSigner {
     }
 
     fn public_key_from_pkey(pkey: &PKey<Private>) -> Result<PublicKey, SignerError> {
-        let mut b = Bytes::from(pkey.rsa().unwrap().public_key_to_der().unwrap());
-        PublicKey::decode(&mut b).map_err(|_| SignerError::DecodeError)
+        let bytes = Bytes::from(pkey.rsa().unwrap().public_key_to_der().unwrap());
+        PublicKey::decode(bytes).map_err(|_| SignerError::DecodeError)
     }
 
     fn internal_id_from_key_identifier(&self, key_identifier: &KeyIdentifier) -> Result<String, SignerError> {

@@ -252,7 +252,6 @@ pub enum Error {
     Rfc6492(provisioning::Error),
     Rfc6492NotPerformed(provisioning::NotPerformedResponse),
     Rfc6492InvalidCsrSent(String),
-    Rfc6492SignatureInvalid,
 
     //-----------------------------------------------------------------
     // CA Child Issues
@@ -285,7 +284,7 @@ pub enum Error {
     // BGP Sec
     //-----------------------------------------------------------------
     BgpSecDefinitionUnknown(CaHandle, BgpSecAsnKey),
-    BgpSecDefinitionInvalidlySigned(CaHandle, BgpSecDefinition),
+    BgpSecDefinitionInvalidlySigned(CaHandle, BgpSecDefinition, String),
     BgpSecDefinitionNotEntitled(CaHandle, BgpSecAsnKey),
 
     //-----------------------------------------------------------------
@@ -433,7 +432,6 @@ impl fmt::Display for Error {
             Error::Rfc6492(e) => write!(f, "RFC 6492 Issue: {}", e),
             Error::Rfc6492NotPerformed(not) => write!(f, "RFC 6492 Not Performed: {}", not),
             Error::Rfc6492InvalidCsrSent(e) => write!(f, "Invalid CSR received: {}", e),
-            Error::Rfc6492SignatureInvalid => write!(f, "Invalidly signed RFC 6492 CMS"),
 
             //-----------------------------------------------------------------
             // CA Child Issues
@@ -466,7 +464,7 @@ impl fmt::Display for Error {
             // BGPSec
             //-----------------------------------------------------------------
             Error::BgpSecDefinitionUnknown(_ca, key) => write!(f, "Cannot remove BGPSec CSR for unknown combination of ASN '{}' and key '{}'", key.asn(), key.key_identifier()),
-            Error::BgpSecDefinitionInvalidlySigned(_ca, def) => write!(f, "Invalidly signed BGPSec CSR remove BGPSec CSR for ASN '{}' and key '{}'", def.asn(), def.csr().public_key().key_identifier()),
+            Error::BgpSecDefinitionInvalidlySigned(_ca, def, msg) => write!(f, "Invalidly signed BGPSec CSR remove BGPSec CSR for ASN '{}' and key '{}', error: {}", def.asn(), def.csr().public_key().key_identifier(), msg),
             Error::BgpSecDefinitionNotEntitled(_ca, key) => write!(f, "AS '{}' is not held by you", key.asn()),
 
 
@@ -592,7 +590,7 @@ impl Error {
         Error::SignerError(e.to_string())
     }
 
-    pub fn invalid_csr(msg: &str) -> Self {
+    pub fn invalid_csr(msg: impl fmt::Display) -> Self {
         Error::Rfc6492InvalidCsrSent(msg.to_string())
     }
 
@@ -808,7 +806,6 @@ impl Error {
             Error::Rfc6492(e) => ErrorResponse::new("rfc6492-protocol", &self).with_cause(e),
             Error::Rfc6492NotPerformed(e) => ErrorResponse::new("rfc6492-not-performed-response", &self).with_cause(e),
             Error::Rfc6492InvalidCsrSent(e) => ErrorResponse::new("rfc6492-invalid-csr", &self).with_cause(e),
-            Error::Rfc6492SignatureInvalid => ErrorResponse::new("rfc6492-invalid-signature", &self),
 
             // CA Child Issues
             Error::CaChildDuplicate(ca, child) => ErrorResponse::new("ca-child-duplicate", &self)
@@ -873,11 +870,12 @@ impl Error {
                 .with_ca(ca)
                 .with_asn(key.asn())
                 .with_key_identifier(&key.key_identifier()),
-            Error::BgpSecDefinitionInvalidlySigned(ca, def) => ErrorResponse::new("ca-bgpsec-invalidly-signed", &self)
+            Error::BgpSecDefinitionInvalidlySigned(ca, def, msg) => ErrorResponse::new("ca-bgpsec-invalidly-signed", &self)
                 .with_ca(ca)
                 .with_asn(def.asn())
                 .with_key_identifier(&def.csr().public_key().key_identifier())
-                .with_bgpsec_csr(def.csr()),
+                .with_bgpsec_csr(def.csr())
+                .with_cause(msg),
             Error::BgpSecDefinitionNotEntitled(ca, key) => ErrorResponse::new("ca-bgpsec-not-entitled", &self)
                 .with_ca(ca)
                 .with_asn(key.asn()),
@@ -1069,10 +1067,6 @@ mod tests {
         // RFC 8181
         //-----------------------------------------------------------------
         verify(
-            include_str!("../../test-resources/errors/rfc8181-validation.json"),
-            Error::Rfc8181Validation(ValidationError),
-        );
-        verify(
             include_str!("../../test-resources/errors/rfc8181-decode.json"),
             Error::Rfc8181Decode("could not parse CMS".to_string()),
         );
@@ -1144,10 +1138,6 @@ mod tests {
         verify(
             include_str!("../../test-resources/errors/rfc6492-invalid-csr.json"),
             Error::Rfc6492InvalidCsrSent("invalid signature".to_string()),
-        );
-        verify(
-            include_str!("../../test-resources/errors/rfc6492-invalid-signature.json"),
-            Error::Rfc6492SignatureInvalid,
         );
 
         verify(

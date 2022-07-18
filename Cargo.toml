@@ -79,7 +79,6 @@ rustc_version   = "0.2.3"
 
 [features]
 default = [ "multi-user" ]
-extra-debug = [ "rpki/extra-debug" ]
 multi-user = [ "basic-cookies", "jmespatch/sync", "regex", "oso", "openidconnect", "rpassword", "scrypt", "unicode-normalization", "urlparse" ]
 static-openssl = [ "openssl/vendored" ]
 

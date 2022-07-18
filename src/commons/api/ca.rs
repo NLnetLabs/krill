@@ -2316,7 +2316,7 @@ mod test {
         );
         issues.add_parent_issue(
             ParentHandle::from_str("parent").unwrap(),
-            Error::Rfc6492SignatureInvalid.to_error_response(),
+            Error::Rfc6492InvalidCsrSent("invalid csr".to_string()).to_error_response(),
         );
 
         // println!("{}", serde_json::to_string_pretty(&issues).unwrap());
