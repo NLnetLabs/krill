@@ -1,0 +1,10 @@
+{
+  "id": "testbed",
+  "version": 17,
+  "details": {
+    "type": "child_certificate_issued",
+    "child": "Publisher",
+    "resource_class_name": "0",
+    "ki": "FCE245E90D1F4B7A23788682DDAEACD648A79001"
+  }
+}

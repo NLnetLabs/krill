@@ -5,7 +5,6 @@ use chrono::Duration;
 
 use rpki::{
     ca::{
-        idcert::IdCert,
         idexchange,
         idexchange::{CaHandle, ChildHandle, ParentHandle},
         provisioning,
@@ -28,9 +27,9 @@ use crate::{
     commons::{
         api::{
             AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate, BgpSecAsnKey,
-            BgpSecCsrInfoList, BgpSecDefinitionUpdates, CertAuthInfo, DelegatedCertificate, IdCertPem, ObjectName,
-            ParentCaContact, RcvdCert, RepositoryContact, Revocation, RoaDefinition, RtaList, RtaName, RtaPrepResponse,
-            StorableCaCommand, TaCertDetails, TrustAnchorLocator,
+            BgpSecCsrInfoList, BgpSecDefinitionUpdates, CertAuthInfo, IdCertInfo, IssuedCertificate, ObjectName,
+            ParentCaContact, ReceivedCert, RepositoryContact, Revocation, RoaDefinition, RtaList, RtaName,
+            RtaPrepResponse, StorableCaCommand, TaCertDetails, TrustAnchorLocator,
         },
         crypto::{CsrInfo, KrillSigner},
         error::{Error, RoaDeltaError},
@@ -40,39 +39,14 @@ use crate::{
     constants::test_mode_enabled,
     daemon::{
         ca::{
-            events::ChildCertificateUpdates, ta_handle, AspaDefinitions, CaEvt, CaEvtDet, ChildDetails, Cmd, CmdDet,
-            DropReason, Ini, PreparedRta, ResourceClass, ResourceTaggedAttestation, RouteAuthorization,
-            RouteAuthorizationUpdates, Routes, RtaContentRequest, RtaPrepareRequest, Rtas, SignedRta, StoredBgpSecCsr,
+            events::ChildCertificateUpdates, ta_handle, AspaDefinitions, BgpSecDefinitions, CaEvt, CaEvtDet,
+            ChildDetails, Cmd, CmdDet, DropReason, Ini, PreparedRta, ResourceClass, ResourceTaggedAttestation,
+            Rfc8183Id, RouteAuthorization, RouteAuthorizationUpdates, Routes, RtaContentRequest, RtaPrepareRequest,
+            Rtas, SignedRta, StoredBgpSecCsr,
         },
         config::{Config, IssuanceTimingConfig},
     },
 };
-
-use super::BgpSecDefinitions;
-
-//------------ Rfc8183Id ---------------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct Rfc8183Id {
-    cert: IdCert,
-}
-
-impl Rfc8183Id {
-    pub fn new(cert: IdCert) -> Self {
-        Rfc8183Id { cert }
-    }
-
-    pub fn generate(signer: &KrillSigner) -> KrillResult<Self> {
-        let cert = signer.create_self_signed_id_cert()?;
-        Ok(Rfc8183Id { cert })
-    }
-}
-
-impl Rfc8183Id {
-    pub fn key_id(&self) -> KeyIdentifier {
-        self.cert.subject_public_key_info().key_identifier()
-    }
-}
 
 //------------ CertAuth ----------------------------------------------------
 
@@ -160,7 +134,7 @@ impl Aggregate for CertAuth {
             // Being a trust anchor
             //-----------------------------------------------------------------------
             CaEvtDet::TrustAnchorMade { ta_cert_details } => {
-                let key_id = ta_cert_details.cert().subject_key_identifier();
+                let key_id = ta_cert_details.cert().key_identifier();
                 self.parents
                     .insert(ta_handle().into_converted(), ParentCaContact::Ta(ta_cert_details));
                 let rcn = ResourceClassName::from(self.next_class_name);
@@ -443,7 +417,7 @@ impl Aggregate for CertAuth {
             // being a parent
             CmdDet::ChildAdd(child, id_cert, resources) => self.child_add(child, id_cert, resources),
             CmdDet::ChildUpdateResources(child, res) => self.child_update_resources(&child, res),
-            CmdDet::ChildUpdateId(child, id) => self.child_update_id(&child, id),
+            CmdDet::ChildUpdateId(child, id_cert) => self.child_update_id_cert(&child, id_cert),
             CmdDet::ChildCertify(child, request, config, signer) => self.child_certify(child, request, &config, signer),
             CmdDet::ChildRevokeKey(child, request) => self.child_revoke_key(child, request),
             CmdDet::ChildRemove(child) => self.child_remove(&child),
@@ -539,7 +513,7 @@ impl CertAuth {
         }
         let children: Vec<ChildHandle> = self.children.keys().cloned().collect();
 
-        let id_cert_pem = IdCertPem::from(&self.id.cert);
+        let id_cert = self.id.cert().clone();
 
         let suspended_children = self
             .children
@@ -550,7 +524,7 @@ impl CertAuth {
 
         CertAuthInfo::new(
             handle,
-            id_cert_pem,
+            id_cert,
             repo_info,
             parents,
             resources,
@@ -569,21 +543,17 @@ impl CertAuth {
     /// Returns an RFC 8183 Child Request - which can be represented as XML to a
     /// parent of this `CertAuth`
     pub fn child_request(&self) -> idexchange::ChildRequest {
-        idexchange::ChildRequest::new(self.id.cert.clone(), self.handle.convert())
+        idexchange::ChildRequest::new(self.id_cert().base64().clone(), self.handle.convert())
     }
 
     /// Returns an RFC 8183 Publisher Request - which can be represented as XML to a
     /// repository for this `CertAuth`
     pub fn publisher_request(&self) -> idexchange::PublisherRequest {
-        idexchange::PublisherRequest::new(self.id_cert().clone(), self.handle.convert(), None)
+        idexchange::PublisherRequest::new(self.id_cert().base64().clone(), self.handle.convert(), None)
     }
 
-    pub fn id_cert(&self) -> &IdCert {
-        &self.id.cert
-    }
-
-    pub fn id_key(&self) -> KeyIdentifier {
-        self.id.cert.subject_public_key_info().key_identifier()
+    pub fn id_cert(&self) -> &IdCertInfo {
+        self.id.cert()
     }
 
     pub fn handle(&self) -> &CaHandle {
@@ -617,7 +587,7 @@ impl CertAuth {
     fn trust_anchor_make(
         &self,
         uris: Vec<uri::Https>,
-        rsync_uri: Option<uri::Rsync>,
+        rsync_uri: uri::Rsync,
         signer: Arc<KrillSigner>,
     ) -> KrillResult<Vec<CaEvt>> {
         if !self.resources.is_empty() {
@@ -652,7 +622,7 @@ impl CertAuth {
 
             cert.set_ca_repository(Some(repo_info.ca_repository(&ns)));
             cert.set_rpki_manifest(Some(
-                repo_info.resolve(&ns, ObjectName::mft_for_key(&pub_key.key_identifier()).as_str()),
+                repo_info.resolve(&ns, ObjectName::mft_for_key(&pub_key.key_identifier()).as_ref()),
             ));
             cert.set_rpki_notify(repo_info.rpki_notify().cloned());
 
@@ -663,9 +633,12 @@ impl CertAuth {
             signer.sign_cert(cert, &key)?
         };
 
-        let tal = TrustAnchorLocator::new(uris, rsync_uri, &cert);
+        let tal = TrustAnchorLocator::new(uris, rsync_uri.clone(), cert.subject_public_key_info());
 
-        let ta_cert_details = TaCertDetails::new(cert, resources, tal);
+        let rcvd_cert =
+            ReceivedCert::create(cert, rsync_uri, resources, RequestResourceLimit::default()).map_err(Error::custom)?;
+
+        let ta_cert_details = TaCertDetails::new(rcvd_cert, tal);
 
         info!("Created Trust Anchor");
 
@@ -684,7 +657,7 @@ impl CertAuth {
         let child_handle = cms.message().sender().convert();
         let child = self.get_child(&child_handle)?;
 
-        cms.validate(child.id_cert())
+        cms.validate(child.id_cert().public_key())
             .map_err(|_| Error::Rfc6492SignatureInvalid)?;
 
         Ok(cms.into_message())
@@ -692,7 +665,7 @@ impl CertAuth {
 
     pub fn sign_rfc6492_response(&self, message: provisioning::Message, signer: &KrillSigner) -> KrillResult<Bytes> {
         signer
-            .create_rfc6492_cms(message, &self.id.key_id())
+            .create_rfc6492_cms(message, &self.id.cert().public_key().key_identifier())
             .map(|res| res.to_bytes())
             .map_err(Error::signer)
     }
@@ -707,7 +680,7 @@ impl CertAuth {
         let mut classes = vec![];
 
         for rcn in self.resources.keys() {
-            if let Some(class) = self.entitlement_class(child_handle, rcn, issuance_timing) {
+            if let Some(class) = self.entitlement_class(child_handle, rcn, issuance_timing)? {
                 classes.push(class);
             }
         }
@@ -725,7 +698,7 @@ impl CertAuth {
         issuance_timing: &IssuanceTimingConfig,
     ) -> KrillResult<IssuanceResponse> {
         let entitlement_class = self
-            .entitlement_class(child_handle, class_name, issuance_timing)
+            .entitlement_class(child_handle, class_name, issuance_timing)?
             .ok_or(Error::KeyUseNoIssuedCert)?;
 
         entitlement_class
@@ -739,28 +712,36 @@ impl CertAuth {
         child_handle: &ChildHandle,
         rcn: &ResourceClassName,
         issuance_timing: &IssuanceTimingConfig,
-    ) -> Option<ResourceClassEntitlements> {
+    ) -> KrillResult<Option<ResourceClassEntitlements>> {
         let my_rc = match self.resources.get(rcn) {
             Some(rc) => rc,
-            None => return None,
+            None => return Ok(None),
         };
 
         let my_current_key = match my_rc.current_key() {
             Some(key) => key,
-            None => return None,
+            None => return Ok(None),
         };
 
         let my_rcvd_cert = my_current_key.incoming_cert();
-        let signing_cert = SigningCert::new(my_rcvd_cert.uri().clone(), my_rcvd_cert.cert().clone());
+        let my_cert = my_rcvd_cert.to_cert().map_err(|e| {
+            Error::Custom(format!(
+                "Issue with certificate held by CA '{}', error: {} ",
+                self.handle(),
+                e
+            ))
+        })?;
+
+        let signing_cert = SigningCert::new(my_rcvd_cert.uri().clone(), my_cert);
 
         let child = match self.get_child(child_handle) {
             Ok(child) => child,
-            Err(_) => return None,
+            Err(_) => return Ok(None),
         };
 
         let child_resources = my_rcvd_cert.resources().intersection(child.resources());
         if child_resources.is_empty() {
-            return None;
+            return Ok(None);
         }
 
         let child_keys = child.issued(rcn);
@@ -784,7 +765,15 @@ impl CertAuth {
 
         for ki in child_keys {
             if let Some(issued) = my_rc.issued(&ki) {
-                issued_certs.push(issued.into());
+                issued_certs.push(issued.to_rfc6492_issued_cert().map_err(|e| {
+                    // This should never happen, unless our current issued certificate can no longer be parsed
+                    Error::Custom(format!(
+                        "Issue with issued certificate held by CA '{}', published at '{}', error: {} ",
+                        self.handle(),
+                        issued.uri(),
+                        e
+                    ))
+                })?);
 
                 let expires = issued.validity().not_after();
 
@@ -794,13 +783,13 @@ impl CertAuth {
             }
         }
 
-        Some(ResourceClassEntitlements::new(
+        Ok(Some(ResourceClassEntitlements::new(
             rcn.clone(),
             child_resources,
             not_after,
             issued_certs,
             signing_cert,
-        ))
+        )))
     }
 
     /// Returns a child, or an error if the child is unknown.
@@ -818,7 +807,7 @@ impl CertAuth {
 
     /// Adds the child, returns an error if the child is a duplicate,
     /// or if the resources are empty, or not held by this CA.
-    fn child_add(&self, child: ChildHandle, id_cert: IdCert, resources: ResourceSet) -> KrillResult<Vec<CaEvt>> {
+    fn child_add(&self, child: ChildHandle, id_cert: IdCertInfo, resources: ResourceSet) -> KrillResult<Vec<CaEvt>> {
         if resources.is_empty() {
             Err(Error::CaChildMustHaveResources(self.handle.clone(), child))
         } else if !self.all_resources().contains(&resources) {
@@ -866,19 +855,15 @@ impl CertAuth {
         let issued =
             self.issue_child_certificate(&child, rcn.clone(), csr_info, limit, &config.issuance_timing, &signer)?;
 
-        let cert_name = ObjectName::from(issued.cert());
+        let cert_name = ObjectName::new(&issued.key_identifier(), ".cer");
+
         info!(
             "CA '{}' issued certificate '{}' to child '{}'",
             self.handle, cert_name, child
         );
 
-        let issued_event = CaEvtDet::child_certificate_issued(
-            &self.handle,
-            self.version,
-            child,
-            rcn.clone(),
-            issued.subject_key_identifier(),
-        );
+        let issued_event =
+            CaEvtDet::child_certificate_issued(&self.handle, self.version, child, rcn.clone(), issued.key_identifier());
 
         let mut cert_updates = ChildCertificateUpdates::default();
         cert_updates.issue(issued);
@@ -897,7 +882,7 @@ impl CertAuth {
         limit: RequestResourceLimit,
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
-    ) -> KrillResult<DelegatedCertificate> {
+    ) -> KrillResult<IssuedCertificate> {
         let my_rc = self.resources.get(&rcn).ok_or(Error::ResourceClassUnknown(rcn))?;
         let child = self.get_child(child)?;
 
@@ -944,7 +929,7 @@ impl CertAuth {
     }
 
     /// Updates child IdCert
-    fn child_update_id(&self, child_handle: &ChildHandle, id_cert: IdCert) -> KrillResult<Vec<CaEvt>> {
+    fn child_update_id_cert(&self, child_handle: &ChildHandle, id_cert: IdCertInfo) -> KrillResult<Vec<CaEvt>> {
         let child = self.get_child(child_handle)?;
 
         if &id_cert != child.id_cert() {
@@ -952,7 +937,7 @@ impl CertAuth {
                 "CA '{}' updated child '{}' cert. New key id: {}",
                 self.handle,
                 child_handle,
-                id_cert.subject_public_key_info().key_identifier()
+                id_cert.public_key().key_identifier()
             );
 
             Ok(vec![CaEvtDet::child_updated_cert(
@@ -1025,12 +1010,13 @@ impl CertAuth {
 
             let mut cert_updates = ChildCertificateUpdates::default();
             for issued in issued_certs {
-                let cert_name = ObjectName::from(issued.cert());
                 info!(
                     "CA '{}' revoked certificate '{}' for child '{}'",
-                    handle, cert_name, child_handle
+                    handle,
+                    issued.name(),
+                    child_handle
                 );
-                cert_updates.remove(issued.subject_key_identifier())
+                cert_updates.remove(issued.key_identifier())
             }
             res.push(CaEvtDet::child_certificates_updated(
                 handle,
@@ -1078,7 +1064,7 @@ impl CertAuth {
 
             for key in certified_keys {
                 if let Some(issued) = rc.issued(&key) {
-                    cert_updates.suspend(issued.clone());
+                    cert_updates.suspend(issued.convert());
                 }
             }
 
@@ -1138,18 +1124,18 @@ impl CertAuth {
             let mut cert_updates = ChildCertificateUpdates::default();
 
             for key in certified_keys {
-                if let Some(cert) = rc.suspended(&key) {
+                if let Some(suspended) = rc.suspended(&key) {
                     // check that the cert is actually not expired or about to expire and not overclaiming
-                    if cert.validity().not_after() > Time::now() + Duration::days(1)
-                        && child.resources().contains(cert.resource_set())
+                    if suspended.validity().not_after() > Time::now() + Duration::days(1)
+                        && child.resources().contains(suspended.resources())
                     {
                         // certificate is still fit for publication, so move it back to issued
-                        cert_updates.unsuspend(cert.clone());
+                        cert_updates.unsuspend(suspended.convert());
                     } else {
                         // certificate should not be published as is. Remove it and the child will request
                         // a new certificate because the resources and or validity entitlements will have
                         // changed.
-                        cert_updates.remove(cert.subject_key_identifier());
+                        cert_updates.remove(suspended.key_identifier());
                     }
                 }
             }
@@ -1185,7 +1171,7 @@ impl CertAuth {
         info!(
             "CA '{}' generated new ID certificate with key id: {}",
             self.handle,
-            id.key_id()
+            id.cert().public_key().key_identifier()
         );
         Ok(vec![CaEvtDet::id_updated(&self.handle, self.version, id)])
     }
@@ -1459,12 +1445,12 @@ impl CertAuth {
     /// publication event for the matching key if publication is needed.
     ///
     /// This will also generate appropriate events for changes affecting
-    /// issued ROAs and delegated certificates - if because resources were
-    /// lost and ROAs/Certs would be become invalid.
+    /// issued ROAs and certificates - if those would become invalid
+    /// because resources were lost.
     fn update_received_cert(
         &self,
         rcn: ResourceClassName,
-        rcvd_cert: RcvdCert,
+        rcvd_cert: ReceivedCert,
         config: &Config,
         signer: Arc<KrillSigner>,
     ) -> KrillResult<Vec<CaEvt>> {
@@ -1645,7 +1631,7 @@ impl CertAuth {
         info!(
             "CA '{}' updated repository. Service URI will be: {}",
             self.handle,
-            contact.service_uri()
+            contact.server_info().service_uri()
         );
 
         evt_dets.push(CaEvtDet::RepoUpdated { contact });
@@ -2278,8 +2264,9 @@ mod tests {
             let signer = KrillSignerBuilder::new(&d, Duration::from_secs(1), &signers)
                 .build()
                 .unwrap();
-            let id = Rfc8183Id::generate(&signer).unwrap();
-            id.cert.validate_ta().unwrap();
+
+            Rfc8183Id::generate(&signer).unwrap();
+            // Note that ID (TA) certificate generation is tested in rpki-rs
         });
     }
 }

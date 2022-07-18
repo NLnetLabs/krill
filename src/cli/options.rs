@@ -153,7 +153,7 @@ impl Options {
                 .short("s")
                 .long(KRILL_CLI_SERVER_ARG)
                 .value_name("URI")
-                .help("The full URI to the krill server. Or set env: KRILL_CLI_SERVER")
+                .help("The full URI to the Krill server. Or set env: KRILL_CLI_SERVER")
                 .required(false),
         )
         .arg(
@@ -161,7 +161,7 @@ impl Options {
                 .short("t")
                 .long(KRILL_CLI_ADMIN_TOKEN_ARG)
                 .value_name("string")
-                .help("The secret token for the krill server. Or set env: KRILL_CLI_TOKEN")
+                .help("The secret token for the Krill server. Or set env: KRILL_CLI_TOKEN")
                 .required(false),
         )
         .arg(
@@ -241,7 +241,7 @@ impl Options {
 
     fn make_config_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut config_sub =
-            SubCommand::with_name("config").about("Creates a configuration file for krill and prints it to STDOUT");
+            SubCommand::with_name("config").about("Creates a configuration file for Krill and prints it to STDOUT");
 
         fn add_data_dir_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
             app.arg(
@@ -1559,7 +1559,7 @@ impl Options {
     fn parse_matches_cas_children_add(matches: &ArgMatches) -> Result<Options, Error> {
         let path = matches.value_of("request").unwrap();
         let bytes = Self::read_file_arg(path)?;
-        let child_request = idexchange::ChildRequest::validate(bytes.as_ref())?;
+        let child_request = idexchange::ChildRequest::parse(bytes.as_ref())?;
 
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
@@ -1569,7 +1569,7 @@ impl Options {
 
         let resources = Self::parse_resource_args(matches)?.ok_or(Error::MissingResources)?;
 
-        let (id_cert, _, _) = child_request.unpack();
+        let id_cert = child_request.validate()?;
         let add_child_request = AddChildRequest::new(child, resources, id_cert);
         let command = Command::CertAuth(CaCommand::ChildAdd(my_ca, add_child_request));
         Ok(Options::make(general_args, command))
@@ -1700,14 +1700,14 @@ impl Options {
     fn parse_matches_cas_parents_add(matches: &ArgMatches) -> Result<Options, Error> {
         let path = matches.value_of("response").unwrap();
         let bytes = Self::read_file_arg(path)?;
-        let response = idexchange::ParentResponse::validate(bytes.as_ref())?;
+        let response = idexchange::ParentResponse::parse(bytes.as_ref())?;
 
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
         let parent = matches.value_of("parent").unwrap();
         let parent = ParentHandle::from_str(parent).map_err(|_| Error::InvalidHandle)?;
-        let contact = ParentCaContact::for_rfc6492(response);
+        let contact = ParentCaContact::for_rfc8183_parent_response(response)?;
         let parent_req = ParentCaReq::new(parent, contact);
 
         let command = Command::CertAuth(CaCommand::AddParent(my_ca, parent_req));
@@ -2080,9 +2080,15 @@ impl Options {
 
         let path = matches.value_of("response").unwrap();
         let bytes = Self::read_file_arg(path)?;
-        let response = idexchange::RepositoryResponse::validate(bytes.as_ref())?;
+        let response = idexchange::RepositoryResponse::parse(bytes.as_ref())?;
 
-        let repo_contact = RepositoryContact::new(response);
+        let repo_contact = RepositoryContact::for_response(response).map_err(|e| {
+            Error::GeneralArgumentError(format!(
+                "Could not validate certificate in RFC 8183 Repository Response XML: {}",
+                e
+            ))
+        })?;
+
         let command = Command::CertAuth(CaCommand::RepoUpdate(my_ca, repo_contact));
         Ok(Options::make(general_args, command))
     }
@@ -2294,12 +2300,15 @@ impl Options {
         let path = matches.value_of("request").unwrap();
         let path = PathBuf::from(path);
         let bytes = file::read(&path)?;
-        let mut req = idexchange::PublisherRequest::validate(bytes.as_ref())?;
+        let mut req = idexchange::PublisherRequest::parse(bytes.as_ref())?;
+        req.validate().map_err(|e| {
+            Error::GeneralArgumentError(format!("Invalid certificate in RFC 8183 Publisher Request XML: {}", e))
+        })?;
 
         if let Some(publisher_str) = matches.value_of("publisher") {
-            let publisher = PublisherHandle::from_str(publisher_str).map_err(|_| Error::InvalidHandle)?;
-            let (tag, _, cert) = req.unpack();
-            req = idexchange::PublisherRequest::new(tag, publisher, cert);
+            let publisher_handle = PublisherHandle::from_str(publisher_str).map_err(|_| Error::InvalidHandle)?;
+            let (id_cert, _handle, tag) = req.unpack();
+            req = idexchange::PublisherRequest::new(id_cert, publisher_handle, tag);
         }
 
         let command = Command::PubServer(PubServerCommand::AddPublisher(req));
@@ -2585,7 +2594,8 @@ impl HistoryOptions {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum BulkCaCommand {
     Refresh,
-    Publish,
+    Publish,      // re-publish mft/crl before they would expire
+    ForcePublish, // force republish all mft/crls
     Sync,
     Suspend,
 }

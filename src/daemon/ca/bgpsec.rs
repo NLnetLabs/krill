@@ -13,7 +13,7 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::{BgpSecAsnKey, BgpSecCsrInfo, BgpSecCsrInfoList},
+        api::{BgpSecAsnKey, BgpSecCsrInfo, BgpSecCsrInfoList, ObjectName},
         crypto::{KrillSigner, SignSupport},
         KrillResult,
     },
@@ -128,7 +128,7 @@ impl BgpSecCertificates {
         let incoming_cert = certified_key.incoming_cert();
         let issuer = incoming_cert.subject().clone();
         let crl_uri = incoming_cert.crl_uri();
-        let aki = incoming_cert.subject_public_key_info().key_identifier();
+        let aki = incoming_cert.key_identifier();
         let aia = incoming_cert.uri().clone();
 
         let validity = SignSupport::sign_validity_weeks(issuance_timing.timing_bgpsec_valid_weeks);
@@ -185,7 +185,7 @@ pub struct BgpSecCertInfo {
     public_key: PublicKey,
     serial: Serial,
     expires: Time,
-    cert: Base64,
+    base64: Base64,
 }
 
 impl BgpSecCertInfo {
@@ -193,14 +193,14 @@ impl BgpSecCertInfo {
         let public_key = cert.subject_public_key_info().clone();
         let serial = cert.serial_number();
         let expires = cert.validity().not_after();
-        let cert = Base64::from(&cert);
+        let base64 = Base64::from(&cert);
 
         BgpSecCertInfo {
             asn,
             public_key,
             serial,
             expires,
-            cert,
+            base64,
         }
     }
 
@@ -224,8 +224,12 @@ impl BgpSecCertInfo {
         self.expires
     }
 
-    pub fn cert(&self) -> &Base64 {
-        &self.cert
+    pub fn base64(&self) -> &Base64 {
+        &self.base64
+    }
+
+    pub fn name(&self) -> ObjectName {
+        ObjectName::bgpsec(self.asn, self.public_key.key_identifier())
     }
 }
 

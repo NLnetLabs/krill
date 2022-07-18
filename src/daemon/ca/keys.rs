@@ -16,8 +16,8 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            ActiveInfo, CertifiedKeyInfo, PendingInfo, PendingKeyInfo, RcvdCert, ResourceClassKeysInfo, RollNewInfo,
-            RollOldInfo, RollPendingInfo,
+            ActiveInfo, CertifiedKeyInfo, PendingInfo, PendingKeyInfo, ReceivedCert, ResourceClassKeysInfo,
+            RollNewInfo, RollOldInfo, RollPendingInfo,
         },
         crypto::KrillSigner,
         error::Error,
@@ -33,24 +33,29 @@ use crate::{
 /// and has at least a MFT and CRL.
 pub struct CertifiedKey {
     key_id: KeyIdentifier,
-    incoming_cert: RcvdCert,
+    incoming_cert: ReceivedCert,
     request: Option<IssuanceRequest>,
     #[serde(skip_serializing_if = "Option::is_none")]
     old_repo: Option<RepoInfo>,
 }
 
 impl CertifiedKey {
-    pub fn new(key_id: KeyIdentifier, incoming_cert: RcvdCert, request: Option<IssuanceRequest>) -> Self {
+    pub fn new(
+        key_id: KeyIdentifier,
+        incoming_cert: ReceivedCert,
+        request: Option<IssuanceRequest>,
+        old_repo: Option<RepoInfo>,
+    ) -> Self {
         CertifiedKey {
             key_id,
             incoming_cert,
             request,
-            old_repo: None,
+            old_repo,
         }
     }
 
-    pub fn create(incoming_cert: RcvdCert) -> Self {
-        let key_id = incoming_cert.subject_key_identifier();
+    pub fn create(incoming_cert: ReceivedCert) -> Self {
+        let key_id = incoming_cert.key_identifier();
         CertifiedKey {
             key_id,
             incoming_cert,
@@ -66,10 +71,10 @@ impl CertifiedKey {
     pub fn key_id(&self) -> &KeyIdentifier {
         &self.key_id
     }
-    pub fn incoming_cert(&self) -> &RcvdCert {
+    pub fn incoming_cert(&self) -> &ReceivedCert {
         &self.incoming_cert
     }
-    pub fn set_incoming_cert(&mut self, incoming_cert: RcvdCert) {
+    pub fn set_incoming_cert(&mut self, incoming_cert: ReceivedCert) {
         self.request = None;
         self.incoming_cert = incoming_cert;
     }
@@ -115,7 +120,7 @@ impl CertifiedKey {
         // what they issued to us before. But if it does happen (on every request like above)
         // then we still want to avoid ending up in request loops. See issue #775
 
-        let not_after = self.incoming_cert().cert().validity().not_after();
+        let not_after = self.incoming_cert().validity().not_after();
 
         let now = Time::now().timestamp();
         let remaining_seconds_on_current = not_after.timestamp() - now;

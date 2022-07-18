@@ -243,7 +243,7 @@ impl KrillSigner {
             &self.router,
             key,
             &base_repo.ca_repository(name_space).join(&[]).unwrap(), // force trailing slash
-            &base_repo.resolve(name_space, mft_file_name.as_str()),
+            &base_repo.resolve(name_space, mft_file_name.as_ref()),
             base_repo.rpki_notify(),
         )
         .map_err(crypto::Error::signing)?;

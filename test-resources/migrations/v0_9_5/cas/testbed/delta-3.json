@@ -1,0 +1,11 @@
+{
+  "id": "testbed",
+  "version": 3,
+  "details": {
+    "type": "resource_class_added",
+    "resource_class_name": "0",
+    "parent": "ta",
+    "parent_resource_class_name": "0",
+    "pending_key": "62BC88453E78424F7F886712A4B904A07B98BEE7"
+  }
+}

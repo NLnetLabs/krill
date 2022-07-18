@@ -7,15 +7,21 @@ use serde::{Deserialize, Serialize};
 use rpki::{
     ca::{
         idcert::IdCert,
-        idexchange,
+        idexchange::{self, ServiceUri},
         idexchange::{CaHandle, ChildHandle, ParentHandle, PublisherHandle, RepoInfo},
     },
-    repository::cert::Cert,
+    crypto::PublicKey,
     repository::resources::ResourceSet,
     uri,
 };
 
-use crate::commons::api::{ca::TrustAnchorLocator, rrdp::PublishElement, Timestamp};
+use crate::commons::{
+    api::{rrdp::PublishElement, IdCertInfo, Timestamp, TrustAnchorLocator},
+    error::Error,
+    KrillResult,
+};
+
+use super::ReceivedCert;
 
 //------------ Token ------------------------------------------------------
 
@@ -140,7 +146,7 @@ impl fmt::Display for PublisherList {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublisherDetails {
     handle: PublisherHandle,
-    id_cert: IdCert,
+    id_cert: IdCertInfo,
     base_uri: uri::Rsync,
     current_files: Vec<PublishElement>,
 }
@@ -148,7 +154,7 @@ pub struct PublisherDetails {
 impl PublisherDetails {
     pub fn new(
         handle: &PublisherHandle,
-        id_cert: IdCert,
+        id_cert: IdCertInfo,
         base_uri: uri::Rsync,
         current_files: Vec<PublishElement>,
     ) -> Self {
@@ -163,7 +169,7 @@ impl PublisherDetails {
     pub fn handle(&self) -> &PublisherHandle {
         &self.handle
     }
-    pub fn id_cert(&self) -> &IdCert {
+    pub fn id_cert(&self) -> &IdCertInfo {
         &self.id_cert
     }
     pub fn base_uri(&self) -> &uri::Rsync {
@@ -177,7 +183,7 @@ impl PublisherDetails {
 impl fmt::Display for PublisherDetails {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "handle: {}", self.handle())?;
-        writeln!(f, "id: {}", self.id_cert().subject_key_id())?;
+        writeln!(f, "id: {}", self.id_cert.public_key().key_identifier())?;
         writeln!(f, "base uri: {}", self.base_uri())?;
         writeln!(f, "objects:")?;
         for e in &self.current_files {
@@ -188,55 +194,85 @@ impl fmt::Display for PublisherDetails {
     }
 }
 
-//------------ PubServerContact ----------------------------------------------
+//------------ PublicationServerInfo -----------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PublicationServerInfo {
+    public_key: PublicKey,
+    service_uri: ServiceUri,
+}
+
+impl PublicationServerInfo {
+    pub fn new(public_key: PublicKey, service_uri: ServiceUri) -> Self {
+        PublicationServerInfo {
+            public_key,
+            service_uri,
+        }
+    }
+    pub fn public_key(&self) -> &PublicKey {
+        &self.public_key
+    }
+
+    pub fn service_uri(&self) -> &ServiceUri {
+        &self.service_uri
+    }
+}
+
+//------------ RepositoryContact ---------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[allow(clippy::large_enum_variant)]
 pub struct RepositoryContact {
-    repository_response: idexchange::RepositoryResponse,
+    repo_info: RepoInfo,
+    server_info: PublicationServerInfo,
 }
 
 impl RepositoryContact {
-    pub fn new(repository_response: idexchange::RepositoryResponse) -> Self {
-        RepositoryContact { repository_response }
+    pub fn new(repo_info: RepoInfo, server_info: PublicationServerInfo) -> Self {
+        RepositoryContact { repo_info, server_info }
     }
 
-    pub fn uri(&self) -> String {
-        self.repository_response.service_uri().to_string()
-    }
+    pub fn for_response(repository_response: idexchange::RepositoryResponse) -> KrillResult<Self> {
+        let id_cert = repository_response.validate().map_err(Error::rfc8183)?;
+        let public_key = id_cert.public_key().clone();
+        let service_uri = repository_response.service_uri().clone();
 
-    pub fn response(&self) -> &idexchange::RepositoryResponse {
-        &self.repository_response
+        let repo_info = repository_response.repo_info().clone();
+        let server_info = PublicationServerInfo {
+            public_key,
+            service_uri,
+        };
+
+        Ok(RepositoryContact { repo_info, server_info })
     }
 
     pub fn repo_info(&self) -> &RepoInfo {
-        self.repository_response.repo_info()
+        &self.repo_info
     }
 
-    pub fn service_uri(&self) -> &idexchange::ServiceUri {
-        self.repository_response.service_uri()
+    pub fn server_info(&self) -> &PublicationServerInfo {
+        &self.server_info
     }
 }
 
 impl fmt::Display for RepositoryContact {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "publication server at {}", self.repository_response.service_uri())
+        write!(f, "publication server at {}", self.server_info.service_uri)
     }
 }
 
 impl std::hash::Hash for RepositoryContact {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.repository_response.to_string().hash(state)
+        self.server_info.service_uri.as_str().hash(state); // unique for each repo contact
     }
 }
 
-impl std::cmp::PartialEq for RepositoryContact {
+impl PartialEq for RepositoryContact {
     fn eq(&self, other: &Self) -> bool {
-        self.repository_response == other.repository_response
+        self.repo_info == other.repo_info && self.server_info == other.server_info
     }
 }
 
-impl std::cmp::Eq for RepositoryContact {}
+impl Eq for RepositoryContact {}
 
 //------------ ParentCaReq ---------------------------------------------------
 
@@ -273,24 +309,23 @@ impl ParentCaReq {
 
 //------------ TaCertDetails -------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TaCertDetails {
-    cert: Cert,
-    resources: ResourceSet,
+    cert: ReceivedCert,
     tal: TrustAnchorLocator,
 }
 
 impl TaCertDetails {
-    pub fn new(cert: Cert, resources: ResourceSet, tal: TrustAnchorLocator) -> Self {
-        TaCertDetails { cert, resources, tal }
+    pub fn new(cert: ReceivedCert, tal: TrustAnchorLocator) -> Self {
+        TaCertDetails { cert, tal }
     }
 
-    pub fn cert(&self) -> &Cert {
+    pub fn cert(&self) -> &ReceivedCert {
         &self.cert
     }
 
     pub fn resources(&self) -> &ResourceSet {
-        &self.resources
+        self.cert.resources()
     }
 
     pub fn tal(&self) -> &TrustAnchorLocator {
@@ -298,15 +333,63 @@ impl TaCertDetails {
     }
 }
 
-impl PartialEq for TaCertDetails {
-    fn eq(&self, other: &Self) -> bool {
-        self.tal == other.tal
-            && self.resources == other.resources
-            && self.cert.to_captured().as_slice() == other.cert.to_captured().as_slice()
+//------------ ParentServerInfo ----------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ParentServerInfo {
+    /// The URI where the CA needs to send its RFC6492 messages
+    service_uri: ServiceUri,
+
+    /// The parent CA's public key
+    public_key: PublicKey,
+
+    /// The handle the parent CA likes to be called by.
+    parent_handle: ParentHandle,
+
+    /// The handle the parent CA chose for the child CA.
+    child_handle: ChildHandle,
+}
+
+impl ParentServerInfo {
+    pub fn new(
+        service_uri: ServiceUri,
+        public_key: PublicKey,
+        parent_handle: ParentHandle,
+        child_handle: ChildHandle,
+    ) -> Self {
+        ParentServerInfo {
+            service_uri,
+            public_key,
+            parent_handle,
+            child_handle,
+        }
+    }
+
+    pub fn service_uri(&self) -> &ServiceUri {
+        &self.service_uri
+    }
+
+    pub fn public_key(&self) -> &PublicKey {
+        &self.public_key
+    }
+
+    pub fn parent_handle(&self) -> &ParentHandle {
+        &self.parent_handle
+    }
+
+    pub fn child_handle(&self) -> &ChildHandle {
+        &self.child_handle
     }
 }
 
-impl Eq for TaCertDetails {}
+impl fmt::Display for ParentServerInfo {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "service uri:    {}", self.service_uri)?;
+        writeln!(f, "key identifier: {}", self.public_key.key_identifier())?;
+        writeln!(f, "parent handle:  {}", self.parent_handle)?;
+        writeln!(f, "child handle:   {}", self.child_handle)
+    }
+}
 
 //------------ ParentCaContact -----------------------------------------------
 
@@ -318,26 +401,43 @@ impl Eq for TaCertDetails {}
 #[serde(tag = "type")]
 pub enum ParentCaContact {
     Ta(TaCertDetails),
-    Rfc6492(idexchange::ParentResponse),
+    Rfc6492(ParentServerInfo),
 }
 
 impl ParentCaContact {
-    pub fn for_rfc6492(response: idexchange::ParentResponse) -> Self {
-        ParentCaContact::Rfc6492(response)
+    pub fn for_parent_server_info(server_info: ParentServerInfo) -> Self {
+        ParentCaContact::Rfc6492(server_info)
+    }
+
+    pub fn for_rfc8183_parent_response(response: idexchange::ParentResponse) -> Result<Self, idexchange::Error> {
+        let id_cert = response.validate()?;
+
+        let service_uri = response.service_uri().clone();
+        let pub_key = id_cert.public_key().clone();
+
+        let parent_handle = response.parent_handle().clone();
+        let child_handle = response.child_handle().clone();
+
+        Ok(ParentCaContact::Rfc6492(ParentServerInfo {
+            service_uri,
+            public_key: pub_key,
+            parent_handle,
+            child_handle,
+        }))
     }
 
     pub fn for_ta(ta_cert_details: TaCertDetails) -> Self {
         ParentCaContact::Ta(ta_cert_details)
     }
 
-    pub fn parent_response(&self) -> Option<&idexchange::ParentResponse> {
+    pub fn parent_server_info(&self) -> Option<&ParentServerInfo> {
         match &self {
             ParentCaContact::Ta(_) => None,
-            ParentCaContact::Rfc6492(res) => Some(res),
+            ParentCaContact::Rfc6492(info) => Some(info),
         }
     }
 
-    pub fn to_ta_cert(&self) -> &Cert {
+    pub fn to_ta_cert(&self) -> &ReceivedCert {
         match &self {
             ParentCaContact::Ta(details) => details.cert(),
             _ => panic!("Not a TA parent"),

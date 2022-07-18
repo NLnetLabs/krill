@@ -1,0 +1,23 @@
+{
+  "actor": "testbed",
+  "time": "2022-05-10T11:23:24.628069285Z",
+  "handle": "testbed",
+  "version": 39,
+  "sequence": 30,
+  "details": {
+    "type": "child_add",
+    "child": "TOP1652181696090",
+    "ski": "DE448EA98CADE0EC16A49B7FEE79495FD7F0BDD1",
+    "resources": {
+      "asn": "AS1",
+      "v4": "192.168.0.0/16",
+      "v6": ""
+    }
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      39
+    ]
+  }
+}
