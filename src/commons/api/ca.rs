@@ -455,10 +455,7 @@ impl<T> CertInfo<T> {
 
     /// Returns a Revocation for this certificate
     pub fn revocation(&self) -> Revocation {
-        Revocation {
-            serial: self.serial,
-            expires: self.validity.not_after(),
-        }
+        Revocation::new(self.serial, self.validity.not_after())
     }
 }
 
@@ -700,26 +697,36 @@ impl fmt::Display for ObjectName {
 
 //------------ Revocation ----------------------------------------------------
 
-/// A Crl Revocation. Note that this type differs from CrlEntry in
-/// that it implements De/Serialize and Eq/PartialEq
+/// This type represents an entry to be used on a Certificate Revocation List (CRL).
+///
+/// The "revocation_date" will be used for the "revocationDate" as described in
+/// section 5.1 of RFC 5280. The "expires" time is used to determine when a CRL
+/// entry can be purged (i.e. removed) because the entry is no longer relevant.
+///
+/// The "revocation_date" is set to the time that this object is first created,
+/// but it will be persisted for future use. In other words: there is no support
+/// for future or past dating this time.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Revocation {
     serial: Serial,
+    #[serde(default = "Time::now")]
+    revocation_date: Time,
     expires: Time,
 }
 
 impl Revocation {
     pub fn new(serial: Serial, expires: Time) -> Self {
-        Revocation { serial, expires }
+        Revocation {
+            serial,
+            revocation_date: Time::now(),
+            expires,
+        }
     }
 }
 
 impl From<&Cert> for Revocation {
     fn from(cer: &Cert) -> Self {
-        Revocation {
-            serial: cer.serial_number(),
-            expires: cer.validity().not_after(),
-        }
+        Revocation::new(cer.serial_number(), cer.validity().not_after())
     }
 }
 
@@ -743,10 +750,7 @@ impl From<&Aspa> for Revocation {
 
 impl From<&BgpSecCertInfo> for Revocation {
     fn from(info: &BgpSecCertInfo) -> Self {
-        Revocation {
-            serial: info.serial(),
-            expires: info.expires(),
-        }
+        Revocation::new(info.serial(), info.expires())
     }
 }
 
@@ -757,15 +761,10 @@ pub struct Revocations(Vec<Revocation>);
 
 impl Revocations {
     pub fn to_crl_entries(&self) -> Vec<CrlEntry> {
-        // Todo: include the revocation time in ['Revocation'] and use that.
-        //       this will require that we reprocess history to get this
-        //       value. We do know when an object was removed or replaced,
-        //       so we can get it - but it's not entirely trivial.
-        //
-        // See issue #788. This issue was added to the 0.10.0 backlog.
-        // For now we just do a quick hack and use 'now' rather than the
-        // future dated 'expires' time for the CRL entry.
-        self.0.iter().map(|r| CrlEntry::new(r.serial, Time::now())).collect()
+        self.0
+            .iter()
+            .map(|r| CrlEntry::new(r.serial, r.revocation_date))
+            .collect()
     }
 
     /// Purges all expired revocations, and returns them.
