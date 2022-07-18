@@ -1105,7 +1105,8 @@ impl TryFrom<OldTaCertDetails> for TaCertDetails {
                 // That said, we can kind of make one up because this is only used in a test
                 // context anyhow. And otherwise we would not be able to upgrade.
 
-                // So, we will just take the
+                // So, we will just derive the URI from the manifest URI which MUST have been
+                // included.
                 cert.rpki_manifest()
                     .ok_or_else(|| {
                         PrepareUpgradeError::custom(
