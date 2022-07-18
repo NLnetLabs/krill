@@ -863,7 +863,6 @@ dependencies = [
  "backoff",
  "base64",
  "basic-cookies",
- "bcder",
  "bytes",
  "chrono",
  "clap",

@@ -249,7 +249,7 @@ impl KrillSigner {
         .map_err(crypto::Error::signing)?;
 
         // Decode the encoded CSR again to get a typed RpkiCaCsr
-        Ok(RpkiCaCsr::decode(signed_and_encoded_csr.as_slice())?)
+        RpkiCaCsr::decode(signed_and_encoded_csr.as_slice()).map_err(crypto::Error::signing)
     }
 
     pub fn sign_cert(&self, tbs: TbsCert, key_id: &KeyIdentifier) -> CryptoResult<Cert> {
