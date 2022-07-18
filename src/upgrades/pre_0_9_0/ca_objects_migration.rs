@@ -25,7 +25,7 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            IdCertInfo, ObjectName, RcvdCert, RepositoryContact, Revocation, Revocations, RoaAggregateKey,
+            IdCertInfo, ObjectName, ReceivedCert, RepositoryContact, Revocation, Revocations, RoaAggregateKey,
             StorableCaCommand, StoredEffect, TaCertDetails, TrustAnchorLocator,
         },
         crypto::KrillSigner,
@@ -1122,7 +1122,7 @@ impl TryFrom<OldTaCertDetails> for TaCertDetails {
         let limit = RequestResourceLimit::default();
 
         let public_key = cert.subject_public_key_info().clone();
-        let rvcd_cert = RcvdCert::create(cert, rsync_uri.clone(), resources, limit)
+        let rvcd_cert = ReceivedCert::create(cert, rsync_uri.clone(), resources, limit)
             .map_err(|e| PrepareUpgradeError::Custom(format!("Could not convert old TA details: {}", e)))?;
 
         let tal = TrustAnchorLocator::new(tal.uris, rsync_uri, &public_key);

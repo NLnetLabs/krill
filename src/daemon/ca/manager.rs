@@ -30,8 +30,8 @@ use crate::{
         api::{
             AddChildRequest, AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate,
             CaCommandDetails, CaCommandResult, CertAuthList, CertAuthSummary, ChildCaInfo, CommandHistory,
-            CommandHistoryCriteria, ParentCaContact, ParentCaReq, RcvdCert, RepositoryContact, RtaName, StoredEffect,
-            UpdateChildRequest,
+            CommandHistoryCriteria, ParentCaContact, ParentCaReq, ReceivedCert, RepositoryContact, RtaName,
+            StoredEffect, UpdateChildRequest,
         },
         crypto::KrillSigner,
         error::Error,
@@ -1143,7 +1143,7 @@ impl CaManager {
                                         break;
                                     }
                                     Ok(resources) => {
-                                        match RcvdCert::create(cert, uri, resources, limit) {
+                                        match ReceivedCert::create(cert, uri, resources, limit) {
                                             Err(e) => {
                                                 errors.push(Error::CaParentSyncError(
                                                     ca_handle.clone(),

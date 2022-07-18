@@ -27,8 +27,8 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            rrdp::PublishElement, CertInfo, DelegatedCertificate, ObjectName, RcvdCert, RepositoryContact, Revocation,
-            Revocations, Timestamp,
+            rrdp::PublishElement, CertInfo, DelegatedCertificate, ObjectName, ReceivedCert, RepositoryContact,
+            Revocation, Revocations, Timestamp,
         },
         crypto::KrillSigner,
         error::Error,
@@ -464,7 +464,7 @@ impl CaObjects {
     }
 
     // Update the received certificate.
-    fn update_received_cert(&mut self, rcn: &ResourceClassName, cert: &RcvdCert) -> KrillResult<()> {
+    fn update_received_cert(&mut self, rcn: &ResourceClassName, cert: &ReceivedCert) -> KrillResult<()> {
         self.get_class_mut(rcn)?.update_received_cert(cert)
     }
 
@@ -596,7 +596,7 @@ impl ResourceClassObjects {
         }
     }
 
-    fn update_received_cert(&mut self, updated_cert: &RcvdCert) -> KrillResult<()> {
+    fn update_received_cert(&mut self, updated_cert: &ReceivedCert) -> KrillResult<()> {
         self.keys.update_received_cert(updated_cert)
     }
 
@@ -730,7 +730,7 @@ impl ResourceClassKeyState {
         ResourceClassKeyState::Old(OldKeyState { current_set, old_set })
     }
 
-    fn update_received_cert(&mut self, cert: &RcvdCert) -> KrillResult<()> {
+    fn update_received_cert(&mut self, cert: &ReceivedCert) -> KrillResult<()> {
         match self {
             ResourceClassKeyState::Current(state) => state.current_set.update_signing_cert(cert),
             ResourceClassKeyState::Staging(state) => {
@@ -965,7 +965,7 @@ impl DerefMut for CurrentKeyObjectSet {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BasicKeyObjectSet {
-    signing_cert: RcvdCert,
+    signing_cert: ReceivedCert,
     revision: ObjectSetRevision,
     revocations: Revocations,
     manifest: PublishedManifest,
@@ -976,7 +976,7 @@ pub struct BasicKeyObjectSet {
 
 impl BasicKeyObjectSet {
     pub fn new(
-        signing_cert: RcvdCert,
+        signing_cert: ReceivedCert,
         revision: ObjectSetRevision,
         revocations: Revocations,
         manifest: PublishedManifest,
@@ -1043,7 +1043,7 @@ impl BasicKeyObjectSet {
     }
 
     // Returns an error in case the KeyIdentifiers don't match.
-    fn update_signing_cert(&mut self, cert: &RcvdCert) -> KrillResult<()> {
+    fn update_signing_cert(&mut self, cert: &ReceivedCert) -> KrillResult<()> {
         if self.signing_cert.key_identifier() == cert.key_identifier() {
             self.signing_cert = cert.clone();
             Ok(())
@@ -1293,7 +1293,7 @@ impl ManifestBuilder {
         self
     }
 
-    fn build_new_mft(self, signing_cert: &RcvdCert, signer: &KrillSigner) -> KrillResult<Manifest> {
+    fn build_new_mft(self, signing_cert: &ReceivedCert, signer: &KrillSigner) -> KrillResult<Manifest> {
         let mft_uri = signing_cert.mft_uri();
         let crl_uri = signing_cert.crl_uri();
 

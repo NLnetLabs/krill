@@ -182,13 +182,13 @@ impl fmt::Display for ChildCaInfo {
     }
 }
 
-//------------ RcvdCert ------------------------------------------------------
+//------------ ReceivedCert --------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct Received;
 
 /// A certificate which was received from a parent CA.
-pub type RcvdCert = CertInfo<Received>;
+pub type ReceivedCert = CertInfo<Received>;
 
 //------------ DelegatedCertificate ------------------------------------------
 
@@ -556,12 +556,12 @@ impl PendingKeyInfo {
 /// and has at least a MFT and CRL.
 pub struct CertifiedKeyInfo {
     key_id: KeyIdentifier,
-    incoming_cert: RcvdCert,
+    incoming_cert: ReceivedCert,
     request: Option<IssuanceRequest>,
 }
 
 impl CertifiedKeyInfo {
-    pub fn new(key_id: KeyIdentifier, incoming_cert: RcvdCert) -> Self {
+    pub fn new(key_id: KeyIdentifier, incoming_cert: ReceivedCert) -> Self {
         CertifiedKeyInfo {
             key_id,
             incoming_cert,
@@ -572,7 +572,7 @@ impl CertifiedKeyInfo {
     pub fn key_id(&self) -> &KeyIdentifier {
         &self.key_id
     }
-    pub fn incoming_cert(&self) -> &RcvdCert {
+    pub fn incoming_cert(&self) -> &ReceivedCert {
         &self.incoming_cert
     }
     pub fn request(&self) -> Option<&IssuanceRequest> {

@@ -28,8 +28,8 @@ use crate::{
         api::{
             AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate, BgpSecAsnKey,
             BgpSecCsrInfoList, BgpSecDefinitionUpdates, CertAuthInfo, DelegatedCertificate, IdCertInfo, ObjectName,
-            ParentCaContact, RcvdCert, RepositoryContact, Revocation, RoaDefinition, RtaList, RtaName, RtaPrepResponse,
-            StorableCaCommand, TaCertDetails, TrustAnchorLocator,
+            ParentCaContact, ReceivedCert, RepositoryContact, Revocation, RoaDefinition, RtaList, RtaName,
+            RtaPrepResponse, StorableCaCommand, TaCertDetails, TrustAnchorLocator,
         },
         crypto::{CsrInfo, KrillSigner},
         error::{Error, RoaDeltaError},
@@ -636,7 +636,7 @@ impl CertAuth {
         let tal = TrustAnchorLocator::new(uris, rsync_uri.clone(), cert.subject_public_key_info());
 
         let rcvd_cert =
-            RcvdCert::create(cert, rsync_uri, resources, RequestResourceLimit::default()).map_err(Error::custom)?;
+            ReceivedCert::create(cert, rsync_uri, resources, RequestResourceLimit::default()).map_err(Error::custom)?;
 
         let ta_cert_details = TaCertDetails::new(rcvd_cert, tal);
 
@@ -1450,7 +1450,7 @@ impl CertAuth {
     fn update_received_cert(
         &self,
         rcn: ResourceClassName,
-        rcvd_cert: RcvdCert,
+        rcvd_cert: ReceivedCert,
         config: &Config,
         signer: Arc<KrillSigner>,
     ) -> KrillResult<Vec<CaEvt>> {

@@ -28,7 +28,7 @@ use crate::{
     commons::{
         api::rrdp::{CurrentObjects, DeltaElements, PublishElement, RrdpSession},
         api::{
-            CertInfo, IdCertInfo, ObjectName, ParentCaContact, RcvdCert, RepositoryContact, Revocation,
+            CertInfo, IdCertInfo, ObjectName, ParentCaContact, ReceivedCert, RepositoryContact, Revocation,
             RevocationsDelta, RoaAggregateKey, RtaName,
         },
         eventsourcing::StoredEvent,
@@ -692,11 +692,11 @@ impl PartialEq for OldRcvdCert {
 
 impl Eq for OldRcvdCert {}
 
-impl TryFrom<OldRcvdCert> for RcvdCert {
+impl TryFrom<OldRcvdCert> for ReceivedCert {
     type Error = PrepareUpgradeError;
 
     fn try_from(old: OldRcvdCert) -> Result<Self, Self::Error> {
-        RcvdCert::create(old.cert, old.uri, old.resources, RequestResourceLimit::default())
+        ReceivedCert::create(old.cert, old.uri, old.resources, RequestResourceLimit::default())
             .map_err(|e| PrepareUpgradeError::Custom(format!("cannot convert certificate: {}", e)))
     }
 }

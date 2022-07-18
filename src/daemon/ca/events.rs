@@ -13,7 +13,7 @@ use crate::{
     commons::{
         api::{
             AspaCustomer, AspaDefinition, AspaProvidersUpdate, BgpSecAsnKey, DelegatedCertificate, IdCertInfo,
-            ObjectName, ParentCaContact, RcvdCert, RepositoryContact, RoaAggregateKey, RtaName, SuspendedCert,
+            ObjectName, ParentCaContact, ReceivedCert, RepositoryContact, RoaAggregateKey, RtaName, SuspendedCert,
             TaCertDetails, UnsuspendedCert,
         },
         crypto::KrillSigner,
@@ -512,7 +512,7 @@ pub enum CaEvtDet {
     },
     CertificateReceived {
         resource_class_name: ResourceClassName,
-        rcvd_cert: RcvdCert,
+        rcvd_cert: ReceivedCert,
         ki: KeyIdentifier, // Also in received cert. Drop?
     },
 

@@ -17,7 +17,7 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::{DelegatedCertificate, RcvdCert},
+        api::{DelegatedCertificate, ReceivedCert},
         crypto::KrillSigner,
         error::Error,
         util::AllowedUri,
@@ -161,7 +161,7 @@ impl SignSupport {
 
     fn make_tbs_cert(
         resources: &ResourceSet,
-        signing_cert: &RcvdCert,
+        signing_cert: &ReceivedCert,
         request: CertRequest,
         signer: &KrillSigner,
     ) -> KrillResult<TbsCert> {

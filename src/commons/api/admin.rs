@@ -21,7 +21,7 @@ use crate::commons::{
     KrillResult,
 };
 
-use super::RcvdCert;
+use super::ReceivedCert;
 
 //------------ Token ------------------------------------------------------
 
@@ -311,16 +311,16 @@ impl ParentCaReq {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TaCertDetails {
-    cert: RcvdCert,
+    cert: ReceivedCert,
     tal: TrustAnchorLocator,
 }
 
 impl TaCertDetails {
-    pub fn new(cert: RcvdCert, tal: TrustAnchorLocator) -> Self {
+    pub fn new(cert: ReceivedCert, tal: TrustAnchorLocator) -> Self {
         TaCertDetails { cert, tal }
     }
 
-    pub fn cert(&self) -> &RcvdCert {
+    pub fn cert(&self) -> &ReceivedCert {
         &self.cert
     }
 
@@ -437,7 +437,7 @@ impl ParentCaContact {
         }
     }
 
-    pub fn to_ta_cert(&self) -> &RcvdCert {
+    pub fn to_ta_cert(&self) -> &ReceivedCert {
         match &self {
             ParentCaContact::Ta(details) => details.cert(),
             _ => panic!("Not a TA parent"),

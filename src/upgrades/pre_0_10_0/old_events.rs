@@ -23,7 +23,7 @@ use crate::{
     commons::{
         api::{
             AspaCustomer, AspaDefinition, AspaProvidersUpdate, CertInfo, DelegatedCertificate, ObjectName,
-            ParentCaContact, ParentServerInfo, PublicationServerInfo, RcvdCert, RepositoryContact, Revocation,
+            ParentCaContact, ParentServerInfo, PublicationServerInfo, ReceivedCert, RepositoryContact, Revocation,
             Revocations, RoaAggregateKey, RtaName, SuspendedCert, TaCertDetails, TrustAnchorLocator, UnsuspendedCert,
         },
         eventsourcing::StoredEvent,
@@ -96,7 +96,7 @@ impl TryFrom<OldTaCertDetails> for TaCertDetails {
         let limit = RequestResourceLimit::default();
 
         let public_key = cert.subject_public_key_info().clone();
-        let rvcd_cert = RcvdCert::create(cert, rsync_uri.clone(), resources, limit)
+        let rvcd_cert = ReceivedCert::create(cert, rsync_uri.clone(), resources, limit)
             .map_err(|e| PrepareUpgradeError::Custom(format!("Could not convert old TA details: {}", e)))?;
 
         let tal = TrustAnchorLocator::new(tal.uris, rsync_uri, &public_key);
@@ -215,11 +215,11 @@ impl PartialEq for OldRcvdCert {
 
 impl Eq for OldRcvdCert {}
 
-impl TryFrom<OldRcvdCert> for RcvdCert {
+impl TryFrom<OldRcvdCert> for ReceivedCert {
     type Error = PrepareUpgradeError;
 
     fn try_from(old: OldRcvdCert) -> Result<Self, Self::Error> {
-        RcvdCert::create(old.cert, old.uri, old.resources, RequestResourceLimit::default())
+        ReceivedCert::create(old.cert, old.uri, old.resources, RequestResourceLimit::default())
             .map_err(|e| PrepareUpgradeError::Custom(format!("cannot convert certificate: {}", e)))
     }
 }

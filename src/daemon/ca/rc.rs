@@ -18,7 +18,7 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::{DelegatedCertificate, RcvdCert, ResourceClassInfo, SuspendedCert, UnsuspendedCert},
+        api::{DelegatedCertificate, ReceivedCert, ResourceClassInfo, SuspendedCert, UnsuspendedCert},
         crypto::{CsrInfo, KrillSigner, SignSupport},
         error::Error,
         KrillResult,
@@ -136,7 +136,7 @@ impl ResourceClass {
     }
 
     /// Returns the current certificate, if there is any
-    pub fn current_certificate(&self) -> Option<&RcvdCert> {
+    pub fn current_certificate(&self) -> Option<&ReceivedCert> {
         self.current_key().map(|k| k.incoming_cert())
     }
 
@@ -200,7 +200,7 @@ impl ResourceClass {
     pub fn update_received_cert(
         &self,
         handle: &CaHandle,
-        rcvd_cert: RcvdCert,
+        rcvd_cert: ReceivedCert,
         all_routes: &Routes,
         all_aspas: &AspaDefinitions,
         all_bgpsecs: &BgpSecDefinitions,
@@ -332,7 +332,7 @@ impl ResourceClass {
         &self,
         handle: &CaHandle,
         current_key: &CurrentKey,
-        rcvd_cert: RcvdCert,
+        rcvd_cert: ReceivedCert,
         all_routes: &Routes,
         all_aspas: &AspaDefinitions,
         all_bgpsecs: &BgpSecDefinitions,
@@ -487,7 +487,7 @@ impl ResourceClass {
 ///
 impl ResourceClass {
     /// This function marks a certificate as received.
-    pub fn received_cert(&mut self, key_id: KeyIdentifier, cert: RcvdCert) {
+    pub fn received_cert(&mut self, key_id: KeyIdentifier, cert: ReceivedCert) {
         // if there is a pending key, then we need to do some promotions..
         match &mut self.key_state {
             KeyState::Pending(_pending) => panic!("Would have received KeyPendingToActive event"),

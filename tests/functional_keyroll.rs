@@ -14,7 +14,7 @@ use rpki::{
 };
 
 use krill::{
-    commons::api::{AspaDefinition, BgpSecDefinition, ObjectName, RcvdCert, RoaDefinition, RoaDefinitionUpdates},
+    commons::api::{AspaDefinition, BgpSecDefinition, ObjectName, ReceivedCert, RoaDefinition, RoaDefinitionUpdates},
     daemon::ca::ta_handle,
     test::*,
 };
@@ -252,7 +252,7 @@ async fn assert_manifest_number_new_key(msg: &str, ca: &CaHandle, nr: u64) {
     assert_manifest_number_key(msg, ca, new_key.incoming_cert(), nr).await
 }
 
-async fn assert_manifest_number_key(msg: &str, ca: &CaHandle, incoming: &RcvdCert, nr: u64) {
+async fn assert_manifest_number_key(msg: &str, ca: &CaHandle, incoming: &ReceivedCert, nr: u64) {
     let mut number_found = Serial::from(0_u64); // will be overwritten
     for _ in 0..10 {
         let published = publisher_details(ca.convert()).await;
