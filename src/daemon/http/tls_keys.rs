@@ -128,7 +128,8 @@ impl HttpsSigner {
                 .public_key_to_der()
                 .map_err(Error::OpenSslError)?,
         );
-        PublicKey::decode(bytes).map_err(|e| Error::SignerError(e.to_string()))
+
+        PublicKey::decode(bytes).map_err(Error::decode)
     }
 
     // See OpenSslSigner::sign_with_key for reference.

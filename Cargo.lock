@@ -118,8 +118,9 @@ dependencies = [
 
 [[package]]
 name = "bcder"
-version = "0.7.0-dev"
-source = "git+https://github.com/NLnetLabs/bcder.git?branch=error-redesign#b7895fd8013d7fecfa82e260aff62506abeee96a"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52e7c3bae57b01ec5b1b028af1f77b7d41dd2bd97a41bab7968739b5329c0e39"
 dependencies = [
  "bytes",
  "smallvec",
@@ -1601,8 +1602,9 @@ checksum = "3582f63211428f83597b51b2ddb88e2a91a9d52d12831f9d08f5e624e8977422"
 
 [[package]]
 name = "routecore"
-version = "0.1.2-dev"
-source = "git+https://github.com/NLnetLabs/routecore.git?branch=better-bcder-errors#2db173c8b6a9081a72ad2d91613105f8cc56e0c6"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe765d4ebcd1b76cdc7b23cbf3f747841861293bc885e47e0fae1095232f1089"
 dependencies = [
  "bcder",
  "serde",
@@ -1621,7 +1623,7 @@ dependencies = [
 [[package]]
 name = "rpki"
 version = "0.15.0-dev"
-source = "git+https://github.com/NLnetLabs/rpki-rs/?branch=better-errors#a699efe07647412908d7a08997a388a709fb082b"
+source = "git+https://github.com/NLnetLabs/rpki-rs/#8fd637f32097cb1f56419d274c4e192991bc3865"
 dependencies = [
  "base64",
  "bcder",

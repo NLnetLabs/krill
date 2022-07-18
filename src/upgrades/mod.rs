@@ -220,7 +220,7 @@ pub trait UpgradeStore {
     /// start over, and the version will be set to the current code version.
     fn preparation_store_prepare(&self) -> UpgradeResult<()> {
         if !self.preparation_store().version_is_current()? {
-            warn!("Found prepared data for a different krill version, will remove it and start from scratch");
+            warn!("Found prepared data for a different Krill version, will remove it and start from scratch");
             self.preparation_store().wipe()?;
             self.preparation_store().version_set_current()?;
         }
@@ -326,21 +326,20 @@ pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -
                     let lock_file_path = upgrade_data_dir.join("upgrade.lock");
                     fslock::LockFile::open(&lock_file_path).map_err(|_| {
                         PrepareUpgradeError::custom(
-                            "Cannot get upgrade lock, it seems that another process is running a krill upgrade",
+                            "Cannot get upgrade lock, it seems that another process is running a Krill upgrade",
                         )
                     })?
                 };
 
                 if versions.from < KrillVersion::release(0, 9, 0) {
-                    // We will need an extensive migration because starting with 0.9.0
-                    // we no longer use events for:
-                    // - republishing manifests/CRLs in CAs
-                    // - publishing objects for publishers in the repository
+                    // We will need an extensive migration because we found that the
+                    // number of events related to (1) republishing manifests/CRLs in CAs,
+                    // and (2) publishing objects for publishers in the repository resulted
+                    // in excessive disk space usage.
                     //
-                    // Unfortunately this resulted in too many events and excessive disk
-                    // space usage. So, now we use a hybrid event sourcing model where
-                    // all other changes are tracked through events, but these high-churn
-                    // publication changes are kept in dedicated stateful objects:
+                    // So, now we use a hybrid event sourcing model where all *other* changes
+                    // are still tracked through events, but these high-churn publication
+                    // changes are kept in dedicated stateful objects:
                     // - pubd_objects for objects published in a repository server
                     // - ca_objects for published objects for a CA.
 
@@ -375,8 +374,8 @@ pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -
 
                     pre_0_9_0::CaObjectsMigration::prepare(mode, config, repo_manager, signer)?;
                 } else {
-                    pre_0_10_0::CasStoreMigration::prepare(mode, &config)?;
-                    pre_0_10_0::PubdStoreMigration::prepare(mode, &config)?;
+                    pre_0_10_0::PublicationServerMigration::prepare(mode, &config)?;
+                    pre_0_10_0::CasMigration::prepare(mode, &config)?;
                 }
 
                 Ok(Some(UpgradeReport::new(true, versions)))

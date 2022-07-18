@@ -22,8 +22,8 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            AspaCustomer, AspaDefinition, AspaProvidersUpdate, CertInfo, DelegatedCertificate, ObjectName,
-            ParentCaContact, ParentServerInfo, PublicationServerInfo, RcvdCert, RepositoryContact, Revocation,
+            AspaCustomer, AspaDefinition, AspaProvidersUpdate, CertInfo, IssuedCertificate, ObjectName,
+            ParentCaContact, ParentServerInfo, PublicationServerInfo, ReceivedCert, RepositoryContact, Revocation,
             Revocations, RoaAggregateKey, RtaName, SuspendedCert, TaCertDetails, TrustAnchorLocator, UnsuspendedCert,
         },
         eventsourcing::StoredEvent,
@@ -80,7 +80,8 @@ impl TryFrom<OldTaCertDetails> for TaCertDetails {
                 // That said, we can kind of make one up because this is only used in a test
                 // context anyhow. And otherwise we would not be able to upgrade.
 
-                // So, we will just take the
+                // So, we will just derive the URI from the manifest URI which MUST have been
+                // included.
                 cert.rpki_manifest()
                     .ok_or_else(|| {
                         PrepareUpgradeError::custom(
@@ -96,7 +97,7 @@ impl TryFrom<OldTaCertDetails> for TaCertDetails {
         let limit = RequestResourceLimit::default();
 
         let public_key = cert.subject_public_key_info().clone();
-        let rvcd_cert = RcvdCert::create(cert, rsync_uri.clone(), resources, limit)
+        let rvcd_cert = ReceivedCert::create(cert, rsync_uri.clone(), resources, limit)
             .map_err(|e| PrepareUpgradeError::Custom(format!("Could not convert old TA details: {}", e)))?;
 
         let tal = TrustAnchorLocator::new(tal.uris, rsync_uri, &public_key);
@@ -137,7 +138,7 @@ impl TryFrom<OldChildCertificateUpdates> for ChildCertificateUpdates {
     type Error = PrepareUpgradeError;
 
     fn try_from(old: OldChildCertificateUpdates) -> Result<Self, PrepareUpgradeError> {
-        let mut issued: Vec<DelegatedCertificate> = vec![];
+        let mut issued: Vec<IssuedCertificate> = vec![];
         let mut suspended: Vec<SuspendedCert> = vec![];
         let mut unsuspended: Vec<UnsuspendedCert> = vec![];
 
@@ -215,11 +216,11 @@ impl PartialEq for OldRcvdCert {
 
 impl Eq for OldRcvdCert {}
 
-impl TryFrom<OldRcvdCert> for RcvdCert {
+impl TryFrom<OldRcvdCert> for ReceivedCert {
     type Error = PrepareUpgradeError;
 
     fn try_from(old: OldRcvdCert) -> Result<Self, Self::Error> {
-        RcvdCert::create(old.cert, old.uri, old.resources, RequestResourceLimit::default())
+        ReceivedCert::create(old.cert, old.uri, old.resources, RequestResourceLimit::default())
             .map_err(|e| PrepareUpgradeError::Custom(format!("cannot convert certificate: {}", e)))
     }
 }

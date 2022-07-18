@@ -17,7 +17,7 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::{DelegatedCertificate, RcvdCert},
+        api::{IssuedCertificate, ReceivedCert},
         crypto::KrillSigner,
         error::Error,
         util::AllowedUri,
@@ -82,7 +82,7 @@ impl TryFrom<&RpkiCaCsr> for CsrInfo {
     type Error = Error;
 
     fn try_from(csr: &RpkiCaCsr) -> KrillResult<CsrInfo> {
-        csr.verify_signature().map_err(|e| Error::invalid_csr(e))?;
+        csr.validate().map_err(|e| Error::invalid_csr(e))?;
         let ca_repository = csr
             .ca_repository()
             .cloned()
@@ -116,7 +116,7 @@ impl SignSupport {
         signing_key: &CertifiedKey,
         weeks: i64,
         signer: &KrillSigner,
-    ) -> KrillResult<DelegatedCertificate> {
+    ) -> KrillResult<IssuedCertificate> {
         let signing_cert = signing_key.incoming_cert();
         let resources = limit.apply_to(resources)?;
         if !signing_cert.resources().contains(&resources) {
@@ -137,7 +137,7 @@ impl SignSupport {
         //
         // Still, to to be absolutely sure and future proof it's better to fail with an error
         // than it would be to unwrap and panic.
-        DelegatedCertificate::create(cert, uri, resources, limit)
+        IssuedCertificate::create(cert, uri, resources, limit)
             .map_err(|e| Error::Custom(format!("Signed certificate has issue: {}", e)))
     }
 
@@ -161,7 +161,7 @@ impl SignSupport {
 
     fn make_tbs_cert(
         resources: &ResourceSet,
-        signing_cert: &RcvdCert,
+        signing_cert: &ReceivedCert,
         request: CertRequest,
         signer: &KrillSigner,
     ) -> KrillResult<TbsCert> {

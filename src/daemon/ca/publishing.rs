@@ -27,7 +27,7 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            rrdp::PublishElement, CertInfo, DelegatedCertificate, ObjectName, RcvdCert, RepositoryContact, Revocation,
+            rrdp::PublishElement, CertInfo, IssuedCertificate, ObjectName, ReceivedCert, RepositoryContact, Revocation,
             Revocations, Timestamp,
         },
         crypto::KrillSigner,
@@ -139,7 +139,6 @@ impl PreSaveEventListener<CertAuth> for CaObjectsStore {
                     }
                     super::CaEvtDet::KeyRollFinished { resource_class_name } => {
                         objects.keyroll_finish(resource_class_name)?;
-                        force_reissue = true;
                     }
                     super::CaEvtDet::CertificateReceived {
                         resource_class_name,
@@ -147,7 +146,10 @@ impl PreSaveEventListener<CertAuth> for CaObjectsStore {
                         ..
                     } => {
                         objects.update_received_cert(resource_class_name, rcvd_cert)?;
-                        // no need to force re-issuance
+                        // this in itself constitutes no need to force re-issuance
+                        // if the new certificate triggered that the set of objects changed,
+                        // e.g. because a ROA became overclaiming, then we would see another
+                        // event for that which *will* result in forcing re-issuance.
                     }
                     super::CaEvtDet::ResourceClassRemoved {
                         resource_class_name, ..
@@ -456,13 +458,13 @@ impl CaObjects {
         self.get_class_mut(rcn).map(|rco| rco.update_bgpsec_certs(updates))
     }
 
-    // Update the delegated certificates in the current set
+    // Update the issued certificates in the current set
     fn update_certs(&mut self, rcn: &ResourceClassName, cert_updates: &ChildCertificateUpdates) -> KrillResult<()> {
         self.get_class_mut(rcn).map(|rco| rco.update_certs(cert_updates))
     }
 
     // Update the received certificate.
-    fn update_received_cert(&mut self, rcn: &ResourceClassName, cert: &RcvdCert) -> KrillResult<()> {
+    fn update_received_cert(&mut self, rcn: &ResourceClassName, cert: &ReceivedCert) -> KrillResult<()> {
         self.get_class_mut(rcn)?.update_received_cert(cert)
     }
 
@@ -594,7 +596,7 @@ impl ResourceClassObjects {
         }
     }
 
-    fn update_received_cert(&mut self, updated_cert: &RcvdCert) -> KrillResult<()> {
+    fn update_received_cert(&mut self, updated_cert: &ReceivedCert) -> KrillResult<()> {
         self.keys.update_received_cert(updated_cert)
     }
 
@@ -655,11 +657,11 @@ impl ResourceClassObjects {
             ResourceClassKeyState::Current(state) => state.current_set.reissue_set(timing, signer),
             ResourceClassKeyState::Staging(state) => {
                 state.staging_set.reissue_set(timing, signer)?;
-                state.current_set.reissue_set(timing, signer)
+                state.current_set.reissue(timing, signer)
             }
             ResourceClassKeyState::Old(state) => {
                 state.old_set.reissue_set(timing, signer)?;
-                state.current_set.reissue_set(timing, signer)
+                state.current_set.reissue(timing, signer)
             }
         }
     }
@@ -728,7 +730,7 @@ impl ResourceClassKeyState {
         ResourceClassKeyState::Old(OldKeyState { current_set, old_set })
     }
 
-    fn update_received_cert(&mut self, cert: &RcvdCert) -> KrillResult<()> {
+    fn update_received_cert(&mut self, cert: &ReceivedCert) -> KrillResult<()> {
         match self {
             ResourceClassKeyState::Current(state) => state.current_set.update_signing_cert(cert),
             ResourceClassKeyState::Staging(state) => {
@@ -883,15 +885,15 @@ impl CurrentKeyObjectSet {
 
         for issued in cert_updates.issued() {
             let published_object = PublishedObject::for_cert_info(issued);
-            if let Some(old) = self.published_objects.insert(issued.name(), published_object) {
+            if let Some(old) = self.published_objects.insert(issued.name().clone(), published_object) {
                 self.revocations.add(old.revoke());
             }
         }
 
         for cert in cert_updates.unsuspended() {
-            self.revocations.remove(&cert.revoke());
+            self.revocations.remove(&cert.revocation());
             let published_object = PublishedObject::for_cert_info(cert);
-            if let Some(old) = self.published_objects.insert(cert.name(), published_object) {
+            if let Some(old) = self.published_objects.insert(cert.name().clone(), published_object) {
                 // this should not happen, but just to be safe.
                 self.revocations.add(old.revoke());
             }
@@ -904,7 +906,7 @@ impl CurrentKeyObjectSet {
         }
     }
 
-    fn reissue_set(&mut self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<()> {
+    fn reissue(&mut self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<()> {
         self.revision.next(timing);
 
         self.revocations.purge();
@@ -963,7 +965,7 @@ impl DerefMut for CurrentKeyObjectSet {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BasicKeyObjectSet {
-    signing_cert: RcvdCert,
+    signing_cert: ReceivedCert,
     revision: ObjectSetRevision,
     revocations: Revocations,
     manifest: PublishedManifest,
@@ -974,7 +976,7 @@ pub struct BasicKeyObjectSet {
 
 impl BasicKeyObjectSet {
     pub fn new(
-        signing_cert: RcvdCert,
+        signing_cert: ReceivedCert,
         revision: ObjectSetRevision,
         revocations: Revocations,
         manifest: PublishedManifest,
@@ -1041,7 +1043,7 @@ impl BasicKeyObjectSet {
     }
 
     // Returns an error in case the KeyIdentifiers don't match.
-    fn update_signing_cert(&mut self, cert: &RcvdCert) -> KrillResult<()> {
+    fn update_signing_cert(&mut self, cert: &ReceivedCert) -> KrillResult<()> {
         if self.signing_cert.key_identifier() == cert.key_identifier() {
             self.signing_cert = cert.clone();
             Ok(())
@@ -1110,7 +1112,7 @@ impl ObjectSetRevision {
 }
 
 //------------ PublishedCert -----------------------------------------------
-pub type PublishedCert = DelegatedCertificate;
+pub type PublishedCert = IssuedCertificate;
 
 //------------ PublishedItem ----------------------------------------------
 
@@ -1206,11 +1208,21 @@ impl PublishedObject {
     }
 
     pub fn for_cert_info<T>(cert: &CertInfo<T>) -> Self {
-        PublishedObject::new(cert.name(), cert.base64().clone(), cert.serial(), cert.expires())
+        PublishedObject::new(
+            cert.name().clone(),
+            cert.base64().clone(),
+            cert.serial(),
+            cert.expires(),
+        )
     }
 
     pub fn for_bgpsec_cert_info(cert: &BgpSecCertInfo) -> Self {
-        PublishedObject::new(cert.name(), cert.base64().clone(), cert.serial(), cert.expires())
+        PublishedObject::new(
+            cert.name().clone(),
+            cert.base64().clone(),
+            cert.serial(),
+            cert.expires(),
+        )
     }
 }
 
@@ -1281,7 +1293,7 @@ impl ManifestBuilder {
         self
     }
 
-    fn build_new_mft(self, signing_cert: &RcvdCert, signer: &KrillSigner) -> KrillResult<Manifest> {
+    fn build_new_mft(self, signing_cert: &ReceivedCert, signer: &KrillSigner) -> KrillResult<Manifest> {
         let mft_uri = signing_cert.mft_uri();
         let crl_uri = signing_cert.crl_uri();
 

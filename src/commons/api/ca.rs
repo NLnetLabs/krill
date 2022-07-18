@@ -182,28 +182,28 @@ impl fmt::Display for ChildCaInfo {
     }
 }
 
-//------------ RcvdCert ------------------------------------------------------
+//------------ ReceivedCert --------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct Received;
 
 /// A certificate which was received from a parent CA.
-pub type RcvdCert = CertInfo<Received>;
+pub type ReceivedCert = CertInfo<Received>;
 
-//------------ DelegatedCertificate ------------------------------------------
+//------------ IssuedCertificate ---------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub struct Delegated;
+pub struct Issued;
 
 /// A certificate which has been issued to a delegated (child) CA
-pub type DelegatedCertificate = CertInfo<Delegated>;
+pub type IssuedCertificate = CertInfo<Issued>;
 
 //------------ SuspendedCertificate ------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct Suspended;
 
-/// A delegated certificate which has been (temporarily) suspended because the child is inactive.
+/// An issued certificate which has been (temporarily) suspended because the child is inactive.
 pub type SuspendedCert = CertInfo<Suspended>;
 
 //------------ UnsuspendedCertificate ----------------------------------------
@@ -225,6 +225,9 @@ pub type UnsuspendedCert = CertInfo<Unsuspended>;
 pub struct CertInfo<T> {
     // Where this certificate is published by the parent
     uri: uri::Rsync,
+
+    // The name of this certificate as used on a manifest
+    name: ObjectName,
 
     // Resources contained
     resources: ResourceSet,
@@ -264,6 +267,19 @@ impl<T> CertInfo<T> {
         resources: ResourceSet,
         limit: RequestResourceLimit,
     ) -> Result<Self, InvalidCert> {
+        let name = {
+            let path = uri.path();
+            let after_last_slash = path.rfind('/').unwrap_or(0) + 1;
+            // certificate file names must end with .cer and have at least
+            // one more character before the .cer filename extension - i.e. we
+            // expect 5 characters after the last slash.
+            if !path.ends_with(".cer") || path.len() < after_last_slash + 5 {
+                Err(InvalidCert::Uri(uri.clone()))
+            } else {
+                Ok(ObjectName(path[after_last_slash..].into()))
+            }
+        }?;
+
         let key = cert.subject_public_key_info().clone();
         let ca_repository = cert.ca_repository().ok_or(InvalidCert::CaRepositoryMissing)?.clone();
         let rpki_manifest = cert.rpki_manifest().ok_or(InvalidCert::RpkiManifestMissing)?.clone();
@@ -272,7 +288,7 @@ impl<T> CertInfo<T> {
         let csr_info = CsrInfo::new(ca_repository, rpki_manifest, rpki_notify, key);
 
         let subject = cert.subject().clone();
-        let validity = cert.validity().clone();
+        let validity = cert.validity();
         let serial = cert.serial_number();
         let base64 = Base64::from(&cert);
         let hash = base64.to_hash();
@@ -280,6 +296,7 @@ impl<T> CertInfo<T> {
         base64.to_hash();
         Ok(CertInfo {
             uri,
+            name,
             resources,
             limit,
             subject,
@@ -340,7 +357,8 @@ impl<T> CertInfo<T> {
         Cert::decode(self.to_bytes().as_ref()).map_err(|e| InvalidCert::CannotDecode(e.to_string()))
     }
 
-    pub fn to_issued_cert(&self) -> Result<IssuedCert, InvalidCert> {
+    /// Represent as an RFC 6492 IssuedCert
+    pub fn to_rfc6492_issued_cert(&self) -> Result<IssuedCert, InvalidCert> {
         let cert = self.to_cert()?;
         Ok(IssuedCert::new(self.uri.clone(), self.limit.clone(), cert))
     }
@@ -353,6 +371,7 @@ impl<T> CertInfo<T> {
     pub fn convert<Y>(&self) -> CertInfo<Y> {
         CertInfo {
             uri: self.uri.clone(),
+            name: self.name.clone(),
             resources: self.resources.clone(),
             limit: self.limit.clone(),
             subject: self.subject.clone(),
@@ -369,6 +388,7 @@ impl<T> CertInfo<T> {
     pub fn into_converted<Y>(self) -> CertInfo<Y> {
         CertInfo {
             uri: self.uri,
+            name: self.name,
             resources: self.resources,
             limit: self.limit,
             subject: self.subject,
@@ -393,9 +413,9 @@ impl<T> CertInfo<T> {
         }
     }
 
-    /// The name for this certificate as derived from its URI
-    pub fn name(&self) -> ObjectName {
-        ObjectName::from(&self.uri)
+    /// The name for this certificate
+    pub fn name(&self) -> &ObjectName {
+        &self.name
     }
 
     /// The name of the CRL published by THIS certificate.
@@ -434,11 +454,8 @@ impl<T> CertInfo<T> {
     }
 
     /// Returns a Revocation for this certificate
-    pub fn revoke(&self) -> Revocation {
-        Revocation {
-            serial: self.serial,
-            expires: self.validity.not_after(),
-        }
+    pub fn revocation(&self) -> Revocation {
+        Revocation::new(self.serial, self.validity.not_after())
     }
 }
 
@@ -446,14 +463,22 @@ impl<T> CertInfo<T> {
 pub enum InvalidCert {
     CaRepositoryMissing,
     RpkiManifestMissing,
+    Uri(uri::Rsync),
     CannotDecode(String),
 }
 
 impl fmt::Display for InvalidCert {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            InvalidCert::CaRepositoryMissing => write!(f, "CA certificate lacks ca repository"),
-            InvalidCert::RpkiManifestMissing => write!(f, "CA certificate lacks manifest uri"),
+            InvalidCert::CaRepositoryMissing => write!(
+                f,
+                "CA certificate lacks id-ad-caRepository (see section 4.8.8.1 of RFC 6487)"
+            ),
+            InvalidCert::RpkiManifestMissing => write!(
+                f,
+                "CA certificate lacks id-ad-rpkiManifest (see section 4.8.8.1 of RFC 6487)"
+            ),
+            InvalidCert::Uri(s) => write!(f, "Cannot derive filename from URI: {}", s),
             InvalidCert::CannotDecode(s) => write!(f, "Cannot decode binary certificate: {}", s),
         }
     }
@@ -529,12 +554,12 @@ impl PendingKeyInfo {
 /// and has at least a MFT and CRL.
 pub struct CertifiedKeyInfo {
     key_id: KeyIdentifier,
-    incoming_cert: RcvdCert,
+    incoming_cert: ReceivedCert,
     request: Option<IssuanceRequest>,
 }
 
 impl CertifiedKeyInfo {
-    pub fn new(key_id: KeyIdentifier, incoming_cert: RcvdCert) -> Self {
+    pub fn new(key_id: KeyIdentifier, incoming_cert: ReceivedCert) -> Self {
         CertifiedKeyInfo {
             key_id,
             incoming_cert,
@@ -545,7 +570,7 @@ impl CertifiedKeyInfo {
     pub fn key_id(&self) -> &KeyIdentifier {
         &self.key_id
     }
-    pub fn incoming_cert(&self) -> &RcvdCert {
+    pub fn incoming_cert(&self) -> &ReceivedCert {
         &self.incoming_cert
     }
     pub fn request(&self) -> Option<&IssuanceRequest> {
@@ -583,18 +608,6 @@ impl ObjectName {
 
     pub fn bgpsec(asn: Asn, key: KeyIdentifier) -> Self {
         ObjectName(format!("ROUTER-{:08X}-{}.cer", asn.into_u32(), key).into())
-    }
-}
-
-impl From<&uri::Rsync> for ObjectName {
-    fn from(uri: &uri::Rsync) -> Self {
-        let path = uri.path();
-        let after_last_slash = path.rfind('/').unwrap_or(0) + 1;
-        if path.len() < after_last_slash + 1 {
-            ObjectName("".into())
-        } else {
-            ObjectName(path[after_last_slash..].into())
-        }
     }
 }
 
@@ -684,26 +697,36 @@ impl fmt::Display for ObjectName {
 
 //------------ Revocation ----------------------------------------------------
 
-/// A Crl Revocation. Note that this type differs from CrlEntry in
-/// that it implements De/Serialize and Eq/PartialEq
+/// This type represents an entry to be used on a Certificate Revocation List (CRL).
+///
+/// The "revocation_date" will be used for the "revocationDate" as described in
+/// section 5.1 of RFC 5280. The "expires" time is used to determine when a CRL
+/// entry can be purged (i.e. removed) because the entry is no longer relevant.
+///
+/// The "revocation_date" is set to the time that this object is first created,
+/// but it will be persisted for future use. In other words: there is no support
+/// for future or past dating this time.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Revocation {
     serial: Serial,
+    #[serde(default = "Time::now")]
+    revocation_date: Time,
     expires: Time,
 }
 
 impl Revocation {
     pub fn new(serial: Serial, expires: Time) -> Self {
-        Revocation { serial, expires }
+        Revocation {
+            serial,
+            revocation_date: Time::now(),
+            expires,
+        }
     }
 }
 
 impl From<&Cert> for Revocation {
     fn from(cer: &Cert) -> Self {
-        Revocation {
-            serial: cer.serial_number(),
-            expires: cer.validity().not_after(),
-        }
+        Revocation::new(cer.serial_number(), cer.validity().not_after())
     }
 }
 
@@ -727,10 +750,7 @@ impl From<&Aspa> for Revocation {
 
 impl From<&BgpSecCertInfo> for Revocation {
     fn from(info: &BgpSecCertInfo) -> Self {
-        Revocation {
-            serial: info.serial(),
-            expires: info.expires(),
-        }
+        Revocation::new(info.serial(), info.expires())
     }
 }
 
@@ -741,15 +761,10 @@ pub struct Revocations(Vec<Revocation>);
 
 impl Revocations {
     pub fn to_crl_entries(&self) -> Vec<CrlEntry> {
-        // Todo: include the revocation time in ['Revocation'] and use that.
-        //       this will require that we reprocess history to get this
-        //       value. We do know when an object was removed or replaced,
-        //       so we can get it - but it's not entirely trivial.
-        //
-        // See issue #788. This issue was added to the 0.10.0 backlog.
-        // For now we just do a quick hack and use 'now' rather than the
-        // future dated 'expires' time for the CRL entry.
-        self.0.iter().map(|r| CrlEntry::new(r.serial, Time::now())).collect()
+        self.0
+            .iter()
+            .map(|r| CrlEntry::new(r.serial, r.revocation_date))
+            .collect()
     }
 
     /// Purges all expired revocations, and returns them.

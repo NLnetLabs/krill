@@ -25,7 +25,7 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            IdCertInfo, ObjectName, RcvdCert, RepositoryContact, Revocation, Revocations, RoaAggregateKey,
+            IdCertInfo, ObjectName, ReceivedCert, RepositoryContact, Revocation, Revocations, RoaAggregateKey,
             StorableCaCommand, StoredEffect, TaCertDetails, TrustAnchorLocator,
         },
         crypto::KrillSigner,
@@ -299,7 +299,7 @@ impl UpgradeStore for CasStoreMigration {
                         // of objects is kept in the [`CaObjectsStore`] instead. This component also takes care of regenerating
                         // a new Manifest and CRL when the time comes to re-publish - without resulting in lots of event history.
                         //
-                        // Note that delegated certificates and RPKI signed objects such as ROAs are historically important, and
+                        // Note that issued certificates and RPKI signed objects such as ROAs are historically important, and
                         // they *are* tracked through events which are also migrated. In other words.. while the history on
                         // simple re-publication events without any semantic changes is discarded *by design*, we keep the
                         // important stuff.
@@ -1105,7 +1105,8 @@ impl TryFrom<OldTaCertDetails> for TaCertDetails {
                 // That said, we can kind of make one up because this is only used in a test
                 // context anyhow. And otherwise we would not be able to upgrade.
 
-                // So, we will just take the
+                // So, we will just derive the URI from the manifest URI which MUST have been
+                // included.
                 cert.rpki_manifest()
                     .ok_or_else(|| {
                         PrepareUpgradeError::custom(
@@ -1122,7 +1123,7 @@ impl TryFrom<OldTaCertDetails> for TaCertDetails {
         let limit = RequestResourceLimit::default();
 
         let public_key = cert.subject_public_key_info().clone();
-        let rvcd_cert = RcvdCert::create(cert, rsync_uri.clone(), resources, limit)
+        let rvcd_cert = ReceivedCert::create(cert, rsync_uri.clone(), resources, limit)
             .map_err(|e| PrepareUpgradeError::Custom(format!("Could not convert old TA details: {}", e)))?;
 
         let tal = TrustAnchorLocator::new(tal.uris, rsync_uri, &public_key);

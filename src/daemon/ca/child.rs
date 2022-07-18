@@ -10,7 +10,7 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::{ChildCaInfo, ChildState, DelegatedCertificate, IdCertInfo, SuspendedCert, UnsuspendedCert},
+        api::{ChildCaInfo, ChildState, IdCertInfo, IssuedCertificate, SuspendedCert, UnsuspendedCert},
         crypto::{KrillSigner, SignSupport},
         error::Error,
         KrillResult,
@@ -147,7 +147,7 @@ pub struct Children {
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildCertificates {
     #[serde(alias = "inner")] // Note: we cannot remove this unless we migrate existing json on upgrade.
-    issued: HashMap<KeyIdentifier, DelegatedCertificate>,
+    issued: HashMap<KeyIdentifier, IssuedCertificate>,
 
     #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
     suspended: HashMap<KeyIdentifier, SuspendedCert>,
@@ -158,7 +158,7 @@ impl ChildCertificates {
         self.issued.is_empty() && self.suspended.is_empty()
     }
 
-    pub fn certificate_issued(&mut self, issued: DelegatedCertificate) {
+    pub fn certificate_issued(&mut self, issued: IssuedCertificate) {
         let ki = issued.key_identifier();
         self.issued.insert(ki, issued);
     }
@@ -180,7 +180,7 @@ impl ChildCertificates {
         self.suspended.remove(key);
     }
 
-    pub fn get_issued(&self, ki: &KeyIdentifier) -> Option<&DelegatedCertificate> {
+    pub fn get_issued(&self, ki: &KeyIdentifier) -> Option<&IssuedCertificate> {
         self.issued.get(ki)
     }
 
@@ -188,7 +188,7 @@ impl ChildCertificates {
         self.suspended.get(ki)
     }
 
-    pub fn current(&self) -> impl Iterator<Item = &DelegatedCertificate> {
+    pub fn current(&self) -> impl Iterator<Item = &IssuedCertificate> {
         self.issued.values()
     }
 
@@ -269,19 +269,18 @@ impl ChildCertificates {
         Ok(updates)
     }
 
-    /// Re-issue a delegated certificate to replace an earlier
+    /// Re-issue an issued certificate to replace an earlier
     /// one which is about to be outdated or has changed resources.
     fn re_issue(
         &self,
-        previous: &DelegatedCertificate,
+        previous: &IssuedCertificate,
         updated_resources: Option<ResourceSet>,
         signing_key: &CertifiedKey,
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
-    ) -> KrillResult<DelegatedCertificate> {
-        // let (_uri, limit, resource_set, cert) = previous.clone().unpack();
+    ) -> KrillResult<IssuedCertificate> {
         let csr_info = previous.csr_info().clone();
-        let resource_set = updated_resources.unwrap_or(previous.resources().clone());
+        let resource_set = updated_resources.unwrap_or_else(|| previous.resources().clone());
         let limit = previous.limit().clone();
 
         let re_issued = SignSupport::make_issued_cert(
@@ -296,7 +295,7 @@ impl ChildCertificates {
         Ok(re_issued)
     }
 
-    pub fn expiring(&self, issuance_timing: &IssuanceTimingConfig) -> Vec<&DelegatedCertificate> {
+    pub fn expiring(&self, issuance_timing: &IssuanceTimingConfig) -> Vec<&IssuedCertificate> {
         self.issued
             .values()
             .filter(|issued| {
@@ -306,7 +305,7 @@ impl ChildCertificates {
             .collect()
     }
 
-    pub fn overclaiming(&self, resources: &ResourceSet) -> Vec<&DelegatedCertificate> {
+    pub fn overclaiming(&self, resources: &ResourceSet) -> Vec<&IssuedCertificate> {
         self.issued
             .values()
             .filter(|issued| !resources.contains(issued.resources()))

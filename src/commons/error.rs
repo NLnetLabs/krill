@@ -12,7 +12,7 @@ use rpki::{
         publication,
     },
     crypto::KeyIdentifier,
-    repository::error::ValidationError,
+    repository::x509::ValidationError,
     uri,
 };
 
