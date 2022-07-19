@@ -76,7 +76,7 @@ syslog          = "^4.0"
 rustc_version   = "0.2.3"
 
 [features]
-default = [ "multi-user" ]
+default = [ "multi-user", "hsm" ]
 multi-user = [ "basic-cookies", "jmespatch/sync", "regex", "oso", "openidconnect", "rpassword", "scrypt", "unicode-normalization", "urlparse" ]
 static-openssl = [ "openssl/vendored" ]
 
