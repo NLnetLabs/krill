@@ -308,13 +308,13 @@ impl SignerRouter {
                         }
                         IdentifyResult::Unidentified => {
                             // Signer is ready and new, register it and move it to the active set
-                            self.register_new_signer(signer_provider).and_then(
-                                |register_result| match register_result {
+                            self.register_new_signer(signer_provider)
+                                .map(|register_result| match register_result {
                                     RegisterResult::NotReady => {
                                         // Strange, it was ready just now when we verified it ... leave it in the
                                         // pending set and try again next time.
                                         trace!("Signer '{}' is not ready", signer_name);
-                                        Ok(true)
+                                        true
                                     }
                                     RegisterResult::ReadyVerified(signer_handle) => {
                                         // Signer is ready and verified, add it to the active set.
@@ -324,15 +324,14 @@ impl SignerRouter {
                                             .insert(signer_handle, signer_provider.clone());
                                         info!("Signer '{}' is ready for use", signer_name);
                                         // And remove it from the pending set
-                                        Ok(false)
+                                        false
                                     }
                                     RegisterResult::ReadyUnusable => {
                                         // Signer registration failed, remove it from the pending set
                                         warn!("Signer '{}' could not be registered: signer is not usable", signer_name);
-                                        Ok(false)
+                                        false
                                     }
-                                },
-                            )
+                                })
                         }
                         IdentifyResult::Unusable => {
                             // Signer is ready and unusable, remove it from the pending set
@@ -358,12 +357,11 @@ impl SignerRouter {
     /// Retrieves the set of signer handles known to the signer mapper.
     fn get_candidate_signer_handles(&self) -> Result<Vec<SignerHandle>, String> {
         // TODO: Filter out already bound signers?
-        Ok(self
-            .signer_mapper
+        self.signer_mapper
             .as_ref()
             .unwrap()
             .get_signer_handles()
-            .map_err(|err| format!("Failed to get signer handles: {}", err))?)
+            .map_err(|err| format!("Failed to get signer handles: {}", err))
     }
 
     /// Checks if the signer identity can be shown to match one of the known signer public keys.
@@ -478,7 +476,9 @@ impl SignerRouter {
 
         if public_key.verify(challenge, &signature).is_ok() {
             debug!("Signer '{}' is ready and known, binding", signer_name);
-            let signer_info = signer_provider.get_info().unwrap_or("No signer info".to_string());
+            let signer_info = signer_provider
+                .get_info()
+                .unwrap_or_else(|| "No signer info".to_string());
 
             signer_provider.set_handle(candidate_handle.clone());
 
@@ -544,14 +544,16 @@ impl SignerRouter {
             Ok(res) => res,
         };
 
-        if !public_key.verify(challenge, &signature).is_ok() {
+        if public_key.verify(challenge, &signature).is_err() {
             error!("Signer '{}' challenge signature is invalid", signer_name);
             return Ok(RegisterResult::ReadyUnusable);
         }
 
         debug!("Signer '{}' is ready and new, binding", signer_name);
 
-        let signer_info = signer_provider.get_info().unwrap_or("No signer info".to_string());
+        let signer_info = signer_provider
+            .get_info()
+            .unwrap_or_else(|| "No signer info".to_string());
 
         let signer_handle = self.signer_mapper.as_ref().unwrap().add_signer(
             &signer_name,

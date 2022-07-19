@@ -207,7 +207,7 @@ impl Pkcs11Signer {
         let s = Pkcs11Signer {
             name: name.to_string(),
             handle: RwLock::new(None),
-            mapper: mapper.clone(),
+            mapper,
             server,
         };
 
@@ -274,7 +274,7 @@ struct UsableServerState {
     ///
     /// Therefore we hold a reference to the login session so that all future sessions are considered logged in.
     /// The Drop impl for Pkcs11Session will log the session out if logged in.
-    login_session: Option<Pkcs11Session>,
+    _login_session: Option<Pkcs11Session>,
 
     retry_interval: Duration,
 
@@ -297,7 +297,7 @@ impl UsableServerState {
             context,
             conn_info,
             slot_id,
-            login_session,
+            _login_session: login_session,
             retry_interval,
             backoff_multiplier,
             retry_timeout,
@@ -351,11 +351,12 @@ impl Pkcs11Signer {
             conn_settings: &Arc<ConnectionSettings>,
         ) -> Result<ThreadSafePkcs11Context, SignerError> {
             let lib_path = Path::new(&conn_settings.lib_path);
-            let ctx = Pkcs11Context::get_or_load(&lib_path)?;
+            let ctx = Pkcs11Context::get_or_load(lib_path)?;
             ctx.write().unwrap().initialize_if_not_already()?;
             Ok(ctx)
         }
 
+        #[allow(clippy::type_complexity)]
         fn interrogate_token(
             conn_settings: &Arc<ConnectionSettings>,
             ctx: ThreadSafePkcs11Context,
@@ -401,7 +402,7 @@ impl Pkcs11Signer {
                 }
                 SlotIdOrLabel::Label(label) => {
                     // No slot id provided, look it up by its label instead
-                    match find_slot_by_label(&readable_ctx, &label) {
+                    match find_slot_by_label(&readable_ctx, label) {
                         Ok(Some(slot)) => slot,
                         Ok(None) => {
                             let err_msg = format!(
@@ -497,7 +498,7 @@ impl Pkcs11Signer {
         })?;
 
         let (cryptoki_info, slot, _slot_info, token_info, user_pin) =
-            interrogate_token(&conn_settings, context.clone(), &name, &lib_name).map_err(|err| {
+            interrogate_token(&conn_settings, context.clone(), &name, lib_name).map_err(|err| {
                 if matches!(err, ProbeError::CallbackFailed(SignerError::Pkcs11Error(_))) {
                     // While the token is not available now, it might be later.
                     // force_cache_flush(context.clone());
@@ -521,7 +522,7 @@ impl Pkcs11Signer {
         // TODO: check for RSA key pair support?
 
         // Login if needed
-        let login_session = login(session, conn_settings.login_mode, user_pin, &name, &lib_name, slot)?;
+        let login_session = login(session, conn_settings.login_mode, user_pin, &name, lib_name, slot)?;
 
         // Switch from probing the server to using it.
         // -------------------------------------------
@@ -603,7 +604,7 @@ impl Pkcs11Signer {
 
             // Next, try to execute the callers operation using the connection. If it fails, examine the cause of
             // failure to determine if it should be a hard-fail (no more retries) or if we should try again.
-            Ok((do_something_with_conn)(&conn).map_err(retry_on_transient_pkcs11_error)?)
+            (do_something_with_conn)(&conn).map_err(retry_on_transient_pkcs11_error)
         };
 
         // Don't even bother going round the retry loop if we haven't yet successfully connected to the PKCS#11 server
@@ -620,12 +621,10 @@ impl Pkcs11Signer {
         };
 
         // Try (and retry if needed) the requested operation.
-        let res = backoff::retry_notify(backoff_policy, op, notify).or_else(|err| {
-            error!("[{}] {} failed, retries exhausted: {}", signer_name, desc, err);
-            Err(err)
-        })?;
-
-        Ok(res)
+        backoff::retry_notify(backoff_policy, op, notify).map_err(|e| {
+            error!("[{}] {} failed, retries exhausted: {}", signer_name, desc, e);
+            e.into()
+        })
     }
 }
 
@@ -638,9 +637,9 @@ impl Pkcs11Signer {
         internal_key_id: String,
     ) -> Result<(), SignerError> {
         let readable_handle = self.handle.read().unwrap();
-        let signer_handle = readable_handle.as_ref().ok_or(SignerError::Other(
-            "PKCS#11: Failed to record signer key: Signer handle not set".to_string(),
-        ))?;
+        let signer_handle = readable_handle.as_ref().ok_or_else(|| {
+            SignerError::Other("PKCS#11: Failed to record signer key: Signer handle not set".to_string())
+        })?;
         self.mapper
             .add_key(signer_handle, key_id, &internal_key_id)
             .map_err(|err| SignerError::Pkcs11Error(format!("Failed to record signer key: {}", err)))?;
@@ -681,27 +680,29 @@ impl Pkcs11Signer {
         openssl::rand::rand_bytes(&mut cka_id)
             .map_err(|_| SignerError::Pkcs11Error("Internal error while generating a random number".to_string()))?;
 
-        let mut pub_template: Vec<Attribute> = Vec::new();
-        pub_template.push(Attribute::Id(cka_id.to_vec()));
-        pub_template.push(Attribute::Verify(true));
-        pub_template.push(Attribute::Encrypt(false));
-        pub_template.push(Attribute::Wrap(false));
-        pub_template.push(Attribute::Token(true));
-        pub_template.push(Attribute::Private(true));
-        pub_template.push(Attribute::ModulusBits(2048.into()));
-        pub_template.push(Attribute::PublicExponent(vec![0x01, 0x00, 0x01]));
-        pub_template.push(Attribute::Label("Krill".to_string().into_bytes()));
+        let pub_template = vec![
+            Attribute::Id(cka_id.to_vec()),
+            Attribute::Verify(true),
+            Attribute::Encrypt(false),
+            Attribute::Wrap(false),
+            Attribute::Token(true),
+            Attribute::Private(true),
+            Attribute::ModulusBits(2048.into()),
+            Attribute::PublicExponent(vec![0x01, 0x00, 0x01]),
+            Attribute::Label("Krill".to_string().into_bytes()),
+        ];
 
-        let mut priv_template: Vec<Attribute> = Vec::new();
-        priv_template.push(Attribute::Id(cka_id.to_vec()));
-        priv_template.push(Attribute::Sign(true));
-        priv_template.push(Attribute::Decrypt(false));
-        priv_template.push(Attribute::Unwrap(false));
-        priv_template.push(Attribute::Sensitive(true));
-        priv_template.push(Attribute::Token(true));
-        priv_template.push(Attribute::Private(true));
-        priv_template.push(Attribute::Extractable(false));
-        priv_template.push(Attribute::Label("Krill".to_string().into_bytes()));
+        let priv_template = vec![
+            Attribute::Id(cka_id.to_vec()),
+            Attribute::Sign(true),
+            Attribute::Decrypt(false),
+            Attribute::Unwrap(false),
+            Attribute::Sensitive(true),
+            Attribute::Token(true),
+            Attribute::Private(true),
+            Attribute::Extractable(false),
+            Attribute::Label("Krill".to_string().into_bytes()),
+        ];
 
         let (pub_handle, priv_handle) = self.with_conn("generate key pair", |conn| {
             // The Krill functional test once failed under GitHub Actions with error:
@@ -841,8 +842,7 @@ impl Pkcs11Signer {
     pub fn get_key_info(&self, key_id: &KeyIdentifier) -> Result<PublicKey, KeyError<SignerError>> {
         let internal_key_id = self.lookup_key_id(key_id)?;
         let pub_handle = self.find_key(&internal_key_id, ObjectClass::PUBLIC_KEY)?;
-        self.get_public_key_from_handle(pub_handle)
-            .map_err(|err| KeyError::Signer(err))
+        self.get_public_key_from_handle(pub_handle).map_err(KeyError::Signer)
     }
 
     pub fn destroy_key(&self, key_id: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
@@ -917,7 +917,7 @@ impl Pkcs11Signer {
             })?;
 
         self.sign_with_key(priv_handle, algorithm, data.as_ref())
-            .map_err(|err| SigningError::Signer(err))
+            .map_err(SigningError::Signer)
     }
 
     pub fn sign_one_off<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(

@@ -511,7 +511,7 @@ fn record_preexisting_openssl_keys_in_signer_mapper(config: Arc<Config>) -> Resu
                         // Is the key already recorded in the mapper? It shouldn't be, but asking will cause the initial
                         // registration of the OpenSSL signer to occur and for it to be assigned a handle. We need the
                         // handle so that we can register keys with the mapper.
-                        if !krill_signer.get_key_info(&key_id).is_ok() {
+                        if krill_signer.get_key_info(&key_id).is_err() {
                             // No, record it
 
                             // Find out the handle of the OpenSSL signer used to create this key, if not yet known.
@@ -532,7 +532,7 @@ fn record_preexisting_openssl_keys_in_signer_mapper(config: Arc<Config>) -> Resu
                             if let Some(signer_handle) = &openssl_signer_handle {
                                 let internal_key_id = key_id.to_string();
                                 if let Some(mapper) = krill_signer.get_mapper() {
-                                    mapper.add_key(&signer_handle, &key_id, &internal_key_id)?;
+                                    mapper.add_key(signer_handle, &key_id, &internal_key_id)?;
                                     num_recorded_keys += 1;
                                 }
                             }

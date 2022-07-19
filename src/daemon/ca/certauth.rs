@@ -657,8 +657,7 @@ impl CertAuth {
         let child_handle = cms.message().sender().convert();
         let child = self.get_child(&child_handle)?;
 
-        cms.validate(child.id_cert().public_key())
-            .map_err(|e| Error::Rfc6492(e))?;
+        cms.validate(child.id_cert().public_key()).map_err(Error::Rfc6492)?;
 
         Ok(cms.into_message())
     }

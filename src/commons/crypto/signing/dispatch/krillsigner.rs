@@ -383,12 +383,12 @@ fn signer_builder(
         }
         #[cfg(feature = "hsm")]
         SignerType::Pkcs11(conf) => {
-            let signer = Pkcs11Signer::build(name, &conf, probe_interval, mapper.as_ref().unwrap().clone())?;
+            let signer = Pkcs11Signer::build(name, conf, probe_interval, mapper.as_ref().unwrap().clone())?;
             Ok(SignerProvider::Pkcs11(flags, signer))
         }
         #[cfg(feature = "hsm")]
         SignerType::Kmip(conf) => {
-            let signer = KmipSigner::build(name, &conf, probe_interval, mapper.as_ref().unwrap().clone())?;
+            let signer = KmipSigner::build(name, conf, probe_interval, mapper.as_ref().unwrap().clone())?;
             Ok(SignerProvider::Kmip(flags, signer))
         }
     }

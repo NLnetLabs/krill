@@ -1162,7 +1162,7 @@ impl TryFrom<OldResourceClassObjects> for ca::ResourceClassObjects {
     type Error = PrepareUpgradeError;
 
     fn try_from(old: OldResourceClassObjects) -> Result<Self, Self::Error> {
-        old.keys.try_into().map(|keys| ca::ResourceClassObjects::new(keys))
+        old.keys.try_into().map(ca::ResourceClassObjects::new)
     }
 }
 

@@ -824,7 +824,7 @@ impl CurrentKeyObjectSet {
         for (name, object) in &self.published_objects {
             elements.push(PublishElement::new(
                 object.base64.clone(),
-                self.signing_cert.uri_for_name(&name),
+                self.signing_cert.uri_for_name(name),
             ));
         }
     }
@@ -900,7 +900,7 @@ impl CurrentKeyObjectSet {
         }
 
         for suspended in cert_updates.suspended() {
-            if let Some(old) = self.published_objects.remove(&suspended.name()) {
+            if let Some(old) = self.published_objects.remove(suspended.name()) {
                 self.revocations.add(old.revoke());
             }
         }
@@ -1218,7 +1218,7 @@ impl PublishedObject {
 
     pub fn for_bgpsec_cert_info(cert: &BgpSecCertInfo) -> Self {
         PublishedObject::new(
-            cert.name().clone(),
+            cert.name(),
             cert.base64().clone(),
             cert.serial(),
             cert.expires(),

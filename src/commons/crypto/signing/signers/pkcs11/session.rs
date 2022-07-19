@@ -56,7 +56,7 @@ impl Pkcs11Session {
         )
     }
 
-    pub fn get_attributes<'a>(
+    pub fn get_attributes(
         &self,
         pub_handle: ObjectHandle,
         pub_template: &[AttributeType],

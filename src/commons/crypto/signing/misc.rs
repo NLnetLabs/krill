@@ -82,7 +82,7 @@ impl TryFrom<&RpkiCaCsr> for CsrInfo {
     type Error = Error;
 
     fn try_from(csr: &RpkiCaCsr) -> KrillResult<CsrInfo> {
-        csr.verify_signature().map_err(|e| Error::invalid_csr(e))?;
+        csr.verify_signature().map_err(Error::invalid_csr)?;
         let ca_repository = csr
             .ca_repository()
             .cloned()
