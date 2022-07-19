@@ -21,10 +21,25 @@ For more information please refer to the [documentation](https://krill.docs.nlne
 
 # Changelog
 
-## 0.10.0
+## 0.10.0 RC1 'Hush'
 
-In this release we introduce the following feature:
-- BGPSec Router Certificate Signing (CLI/API only)
+In this release we introduce the following major features:
+- BGPSec Router Certificate Signing
+- Support the use of Hardware Signing Modules (HSMs) for key operations
+
+The documentation for the 'latest' Krill version has more information:
+https://krill.docs.nlnetlabs.nl/en/latest/index.html
+
+Besides these major features we added a number of small improvements
+and bugfixes:
+- CRL revocation dates in the future #788
+- Prevent that two krill instances modify the same data #829
+- Let user force RRDP session reset on restore #828
+- Various code improvements aimed at maintainability
+
+The full list of changes can be found here:
+https://github.com/NLnetLabs/krill/projects/19
+
 
 ## 0.9.6 'Newer ROAs Please'
 
