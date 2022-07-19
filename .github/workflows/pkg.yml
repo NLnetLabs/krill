@@ -463,31 +463,7 @@ jobs:
             image: 'ubuntu:jammy'
           - pkg: 'krillup'
             mode: 'upgrade-from-published'
-            image: 'ubuntu:xenial'   # ubuntu/16.04
-          - pkg: 'krillup'
-            mode: 'upgrade-from-published'
-            image: 'ubuntu:bionic'   # ubuntu/18.04
-          - pkg: 'krillup'
-            mode: 'upgrade-from-published'
-            image: 'ubuntu:focal'    # ubuntu/20.04
-          - pkg: 'krillup'
-            mode: 'upgrade-from-published'
             image: 'ubuntu:jammy'    # ubuntu/22.04
-          - pkg: 'krillup'
-            mode: 'upgrade-from-published'
-            image: 'debian:stretch'  # debian/9
-          - pkg: 'krillup'
-            mode: 'upgrade-from-published'
-            image: 'debian:buster'   # debian/10
-          - pkg: 'krillup'
-            mode: 'upgrade-from-published'
-            image: 'debian:bullseye' # debian/11
-          - pkg: 'krillup'
-            mode: 'upgrade-from-published'
-            image: 'centos:7'
-          - pkg: 'krillup'
-            mode: 'upgrade-from-published'
-            image: 'centos:8'
     steps:
     # Set some environment variables that will be available to "run" steps below in this job, and some output variables
     # that will be available in GH Action step definitions below.
