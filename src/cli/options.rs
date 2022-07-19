@@ -1922,7 +1922,7 @@ impl Options {
         let csr = BgpsecCsr::decode(bytes.as_ref())
             .map_err(|e| Error::GeneralArgumentError(format!("Cannot parse CSR file '{}', error: {}", csr_file, e)))?;
 
-        csr.validate().map_err(|e| {
+        csr.verify_signature().map_err(|e| {
             Error::GeneralArgumentError(format!("CSR in file '{}' is not valid. Error: {}", csr_file, e))
         })?;
 

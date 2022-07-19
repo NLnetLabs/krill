@@ -1956,7 +1956,7 @@ impl CertAuth {
         // a new or update an existing definition.
         for definition in additions {
             // ensure the CSR is validly signed
-            definition.csr().validate().map_err(|e| {
+            definition.csr().verify_signature().map_err(|e| {
                 Error::BgpSecDefinitionInvalidlySigned(self.handle.clone(), definition.clone(), e.to_string())
             })?;
 

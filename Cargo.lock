@@ -118,9 +118,9 @@ dependencies = [
 
 [[package]]
 name = "bcder"
-version = "0.6.1"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52e7c3bae57b01ec5b1b028af1f77b7d41dd2bd97a41bab7968739b5329c0e39"
+checksum = "f007d8acfb8ef7d219911c7164c025a6d3504735120fc5df59c3c479ab84ea51"
 dependencies = [
  "bytes",
  "smallvec",
@@ -901,7 +901,7 @@ dependencies = [
  "toml",
  "unicode-normalization",
  "urlparse",
- "uuid",
+ "uuid 0.8.2",
  "xml-rs",
 ]
 
@@ -1031,9 +1031,9 @@ dependencies = [
 
 [[package]]
 name = "memchr"
-version = "2.4.1"
+version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "308cc39be01b73d0d18f82a0e7b2a3df85245f84af96fdddc5d202d27e47b86a"
+checksum = "2dffe52ecf27772e601905b7522cb4ef790d2cc203488bbd0e2fe85fcb74566d"
 
 [[package]]
 name = "memoffset"
@@ -1432,9 +1432,9 @@ dependencies = [
 
 [[package]]
 name = "quick-xml"
-version = "0.22.0"
+version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8533f14c8382aaad0d592c812ac3b826162128b65662331e1127b45c3d18536b"
+checksum = "9279fbdacaad3baf559d8cabe0acc3d06e30ea14931af31af79578ac0946decc"
 dependencies = [
  "memchr",
 ]
@@ -1602,9 +1602,9 @@ checksum = "3582f63211428f83597b51b2ddb88e2a91a9d52d12831f9d08f5e624e8977422"
 
 [[package]]
 name = "routecore"
-version = "0.1.1"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe765d4ebcd1b76cdc7b23cbf3f747841861293bc885e47e0fae1095232f1089"
+checksum = "9afd872857e85411c0ba7d18dfe650fc4864b292c02cde997e86c511314fdfc3"
 dependencies = [
  "bcder",
  "serde",
@@ -1622,8 +1622,9 @@ dependencies = [
 
 [[package]]
 name = "rpki"
-version = "0.15.0-dev"
-source = "git+https://github.com/NLnetLabs/rpki-rs/#8fd637f32097cb1f56419d274c4e192991bc3865"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "43bd85abb0ba1badf18af3fd23390011bcd95dff583c2b8ce093594db398260c"
 dependencies = [
  "base64",
  "bcder",
@@ -1635,7 +1636,7 @@ dependencies = [
  "routecore",
  "serde",
  "untrusted",
- "uuid",
+ "uuid 1.1.2",
 ]
 
 [[package]]
@@ -2337,6 +2338,12 @@ checksum = "bc5cf98d8186244414c848017f0e2676b3fcb46807f6668a97dfe67359a3c4b7"
 dependencies = [
  "getrandom",
 ]
+
+[[package]]
+name = "uuid"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dd6469f4314d5f1ffec476e05f17cc9a78bc7a27a6a857842170bdf8d6f98d2f"
 
 [[package]]
 name = "valuable"
