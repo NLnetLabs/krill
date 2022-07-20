@@ -40,7 +40,6 @@ and bugfixes:
 The full list of changes can be found here:
 https://github.com/NLnetLabs/krill/projects/19
 
-
 ## 0.9.6 'Newer ROAs Please'
 
 This release fixes an issue introduced in 0.9.5 where the background job to
