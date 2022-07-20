@@ -326,7 +326,7 @@ pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -
                     let lock_file_path = upgrade_data_dir.join("upgrade.lock");
                     fslock::LockFile::open(&lock_file_path).map_err(|_| {
                         PrepareUpgradeError::custom(
-                            "Cannot get upgrade lock, it seems that another process is running a Krill upgrade",
+                            format!("Cannot get upgrade lock. Another process may be running a Krill upgrade. Or, perhaps you ran 'krillup' as root - in that case check the ownership of directory: {}", upgrade_data_dir.to_string_lossy()),
                         )
                     })?
                 };
