@@ -91,6 +91,13 @@ impl UpgradeStore for PublicationServerMigration {
             );
         }
 
+        // Get the old info file. We will only migrate commands in the info file
+        let info_key = KeyStoreKey::scoped(scope.to_string(), "info.json".to_string());
+        let old_info: StoredValueInfo = self
+            .current_kv_store
+            .get(&info_key)?
+            .ok_or_else(|| PrepareUpgradeError::Custom(format!("Cannot parse old info file: {}", info_key)))?;
+
         // Track commands migrated and time spent so we can report progress
         let mut total_migrated = 0;
         let time_started = Time::now();
@@ -99,6 +106,16 @@ impl UpgradeStore for PublicationServerMigration {
             // Read and parse the command. There is no need to change the command itself,
             // but we need to save it again and get the events from here.
             let cmd: StoredCommand<StorableRepositoryCommand> = self.get(&cmd_key)?;
+
+            // If we encounter a command which is not (yet) covered by the old info file,
+            // then we are done for now. This most likely happens in case we are preparing
+            // an upgrade with krillup while krill is running.
+            //
+            // This may also happen in case there was an incomplete transaction, most likely
+            // because the old krill was shutdown in the middle.
+            if cmd.sequence() > old_info.last_command {
+                break;
+            }
 
             // Read and parse all events. Migrate the events that contain changed types.
             // In this case IdCert -> IdCertInfo for added publishers. Then save the event
@@ -115,6 +132,8 @@ impl UpgradeStore for PublicationServerMigration {
                     // Migrate into the current event type and save
                     let evt: RepositoryAccessEvent = evt.into();
                     self.new_kv_store.store(&event_key, &evt)?;
+
+                    data_upgrade_info.last_event = *v;
                 }
             }
 
@@ -148,11 +167,25 @@ impl UpgradeStore for PublicationServerMigration {
 
         info!("Finished migrating Publication Server commands");
 
-        // Create a new info file for the new aggregate repository
         {
-            let info = StoredValueInfo::from(&data_upgrade_info);
-            let info_key = KeyStoreKey::scoped(scope.to_string(), "info.json".to_string());
+            // Store a new info.json
+            let info = StoredValueInfo {
+                snapshot_version: data_upgrade_info.last_event + 1,
+                last_event: data_upgrade_info.last_event,
+                last_command: data_upgrade_info.last_command,
+                last_update: data_upgrade_info.last_update,
+            };
             self.new_kv_store.store(&info_key, &info)?;
+
+            if mode.is_finalise() {
+                // We expect that all commands and events are migrated without exception.
+                // Otherwise there is a bug in our migration code.
+                if info.last_command != old_info.last_command || info.last_event != old_info.last_event {
+                    return Err(PrepareUpgradeError::custom(
+                        "New info.json does not match old info.json when upgrading Publication Server. Please downgrade to the previous version and provide a bug report to rpki-team@nlnetlabs.nl.",
+                    ));
+                }
+            }
         }
 
         // Verify migration

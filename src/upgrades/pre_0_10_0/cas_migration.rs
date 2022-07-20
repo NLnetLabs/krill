@@ -135,6 +135,13 @@ impl UpgradeStore for CasMigration {
                 );
             }
 
+            // Get the old info file. We will only migrate commands in the info file
+            let info_key = KeyStoreKey::scoped(scope.to_string(), "info.json".to_string());
+            let old_info: StoredValueInfo = self
+                .current_kv_store
+                .get(&info_key)?
+                .ok_or_else(|| PrepareUpgradeError::Custom(format!("Cannot parse old info file: {}", info_key)))?;
+
             // Track commands migrated and time spent so we can report progress
             let mut total_migrated = 0;
             let time_started = Time::now();
@@ -158,6 +165,8 @@ impl UpgradeStore for CasMigration {
                         // Migrate into the current event type and save
                         let evt: CaEvt = evt.try_into()?;
                         self.new_kv_store.store(&event_key, &evt)?;
+
+                        data_upgrade_info.last_event = *v;
                     }
                 }
 
@@ -193,9 +202,30 @@ impl UpgradeStore for CasMigration {
 
             // Create a new info file for the new aggregate repository
             {
-                let info = StoredValueInfo::from(&data_upgrade_info);
-                let info_key = KeyStoreKey::scoped(scope.clone(), "info.json".to_string());
+                // Store a new info.json
+                //
+                // It should have been safe to just copy the old info.json, since
+                // we do not exclude commands or event, but this way we can be sure
+                // that it is *always* correct for the commands and events which
+                // were migrated.
+                let info = StoredValueInfo {
+                    snapshot_version: data_upgrade_info.last_event + 1,
+                    last_event: data_upgrade_info.last_event,
+                    last_command: data_upgrade_info.last_command,
+                    last_update: data_upgrade_info.last_update,
+                };
+
                 self.new_kv_store.store(&info_key, &info)?;
+
+                if mode.is_finalise() {
+                    // We expect that all commands and events are migrated without exception.
+                    // Otherwise there is a bug in our migration code.
+                    if info.last_command != old_info.last_command || info.last_event != old_info.last_event {
+                        return Err(PrepareUpgradeError::custom(
+                        format!("New info.json does not match old info.json when upgrading CA '{}'. Please downgrade to the previous version and provide a bug report to rpki-team@nlnetlabs.nl.", handle),
+                    ));
+                    }
+                }
             }
 
             // Verify migration
