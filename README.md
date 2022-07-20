@@ -25,7 +25,7 @@ For more information please refer to the [documentation](https://krill.docs.nlne
 
 In this release we introduce the following major features:
 - BGPSec Router Certificate Signing
-- Support the use of Hardware Signing Modules (HSMs) for key operations
+- Support the use of Hardware Security Modules (HSMs) for key operations
 
 The documentation for the 'latest' Krill version has more information:
 https://krill.docs.nlnetlabs.nl/en/latest/index.html
