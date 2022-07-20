@@ -197,6 +197,16 @@ pub enum UpgradeMode {
     PrepareToFinalise,
 }
 
+impl UpgradeMode {
+    pub fn is_prepare_only(&self) -> bool {
+        matches!(*self, UpgradeMode::PrepareOnly)
+    }
+
+    pub fn is_finalise(&self) -> bool {
+        matches!(*self, UpgradeMode::PrepareToFinalise)
+    }
+}
+
 //------------ UpgradeStore --------------------------------------------------
 
 /// Implement this for automatic upgrades to key stores
