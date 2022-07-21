@@ -143,6 +143,8 @@ References:
 
 - Be robust in case of network delays and errors and problems in external signing services. Retry requests that fail due to issues potentially caused by transient network degradation. Re-use TCP+TLS sessions to avoid costly TCP+TLS setup and teardown costs per request to the signer service.
 
+- Use the `cryptoki` PCKS#11 crate instead of the `pkcs11` crate as the latter was found to be broken on non-x86_64 architectures, because the `cryptoki` crate was specifically created to address issues with the `pkcs11` crate and because the `cryptoki` crate is actively maintained.
+
 ## Design
 
 Old: Prior to the addition of HSM support there was only ever a single Signer and control flow looked like this:
@@ -209,7 +211,7 @@ Here we see an example of a PKCS#11 signer using the SoftHSMv2 PKCS#11 library. 
 
 ## Crate dependencies
 
-- Loading and interfacing with PKCS#11 libraries is handled by the [`pkcs11`](https://crates.io/crates/pkcs11) crate.
+- Loading and interfacing with PKCS#11 libraries is handled by the [`cryptoki`](https://crates.io/crates/pkcs11) crate.
 - Communicating with KMIP servers is handled by the NLnet Labs [`kmip-protocol`](https://crates.io/crates/kmip-protocol) crate.
 - Connection pooling is handled by the [`r2d2`](https://crates.io/crates/r2d2) crate.
 - Retry and backoff is handled by the [`backoff`](https://crates.io/crates/backoff) crate.
