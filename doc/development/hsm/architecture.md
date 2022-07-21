@@ -211,7 +211,7 @@ Here we see an example of a PKCS#11 signer using the SoftHSMv2 PKCS#11 library. 
 
 ## Crate dependencies
 
-- Loading and interfacing with PKCS#11 libraries is handled by the [`cryptoki`](https://crates.io/crates/pkcs11) crate.
+- Loading and interfacing with PKCS#11 libraries is handled by the [`cryptoki`](https://crates.io/crates/cryptoki) crate.
 - Communicating with KMIP servers is handled by the NLnet Labs [`kmip-protocol`](https://crates.io/crates/kmip-protocol) crate.
 - Connection pooling is handled by the [`r2d2`](https://crates.io/crates/r2d2) crate.
 - Retry and backoff is handled by the [`backoff`](https://crates.io/crates/backoff) crate.
