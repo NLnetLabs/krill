@@ -33,21 +33,30 @@ impl PublicationServerMigration {
         let new_kv_store = KeyValueStore::disk(&upgrade_data_dir, PUBSERVER_DIR)?;
         let new_agg_store = AggregateStore::disk(&upgrade_data_dir, PUBSERVER_DIR)?;
 
-        PublicationServerMigration {
+        let store_migration = PublicationServerMigration {
             current_kv_store,
             new_kv_store,
             new_agg_store,
+        };
+
+        if store_migration.needs_migrate()? {
+            store_migration.prepare_new_data(mode)
+        } else {
+            Ok(())
         }
-        .prepare_new_data(mode)
     }
 }
 
 impl UpgradeStore for PublicationServerMigration {
     fn needs_migrate(&self) -> Result<bool, crate::upgrades::PrepareUpgradeError> {
-        Ok(self.current_kv_store.version_is_after(KrillVersion::release(0, 9, 0))?
-            && self
-                .current_kv_store
-                .version_is_before(KrillVersion::candidate(0, 10, 0, 1))?)
+        if !self.current_kv_store.has_scope("0".to_string())? {
+            Ok(false)
+        } else {
+            Ok(self.current_kv_store.version_is_after(KrillVersion::release(0, 9, 0))?
+                && self
+                    .current_kv_store
+                    .version_is_before(KrillVersion::candidate(0, 10, 0, 1))?)
+        }
     }
 
     fn prepare_new_data(&self, mode: crate::upgrades::UpgradeMode) -> Result<(), crate::upgrades::PrepareUpgradeError> {
