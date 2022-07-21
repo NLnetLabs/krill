@@ -10,7 +10,7 @@
 
 - `Signer` backend: 3rd party logic and storage, usually running outside Krill either on the same host or remotely, that works with keys on behalf of Krill. The backend details vary per signer implementation and configuration.
 
-- `KeyIdentifier`: The SHA-1 hash of the bits of the binary DER encoding of the `SubjectPublicKey` field of the X.509 ASN.1 `SubjectPublicKeyInfo` data structure. It uniquely (or the likelyhood of collisions is sufficiently low that it can be considered unique) identifies a public/private key pair, e.g. the private key that was used to sign a certificate.
+- `KeyIdentifier`: The SHA-1 hash of the bits of the binary DER encoding of the `SubjectPublicKey` field of the X.509 ASN.1 `SubjectPublicKeyInfo` data structure. It uniquely (or the likelihood of collisions is sufficiently low that it can be considered unique) identifies a public/private key pair, e.g. the private key that was used to sign a certificate.
 
 ## Signer backends
 
