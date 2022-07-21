@@ -316,6 +316,15 @@ pub trait UpgradeStore {
 /// knowing that no changes are added to the event history at this time. After this,
 /// the migration will be finalised.
 pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -> UpgradeResult<Option<UpgradeReport>> {
+    // First of all ALWAYS check the existing keys if the hsm feature is enabled.
+    // Remember that this feature - although enabled by default from 0.10.x - may be enabled by installing
+    // a new krill binary of the same Krill version as the the previous binary. In other words, we cannot
+    // rely on the KrillVersion to decide whether this is needed. On the other hand.. this is a fairly
+    // cheap operation that we can just do at startup. It is done here, because in effect it *is* a data
+    // migration.
+    #[cfg(feature = "hsm")]
+    record_preexisting_openssl_keys_in_signer_mapper(config.clone())?;
+
     match upgrade_versions(config.as_ref()) {
         None => Ok(None),
         Some(versions) => {
@@ -352,9 +361,6 @@ pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -
                     // changes are kept in dedicated stateful objects:
                     // - pubd_objects for objects published in a repository server
                     // - ca_objects for published objects for a CA.
-
-                    #[cfg(feature = "hsm")]
-                    record_preexisting_openssl_keys_in_signer_mapper(config.clone())?;
 
                     // We need to prepare pubd first, because if there were any CAs using
                     // an embedded repository then they will need to be updated to use the
