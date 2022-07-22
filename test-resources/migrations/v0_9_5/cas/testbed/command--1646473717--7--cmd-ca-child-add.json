@@ -1,0 +1,23 @@
+{
+  "actor": "testbed",
+  "time": "2022-03-05T09:48:37.331023817Z",
+  "handle": "testbed",
+  "version": 9,
+  "sequence": 7,
+  "details": {
+    "type": "child_add",
+    "child": "IDNIC-TEST",
+    "ski": "6E17898AFC96B93E87777A0C465BD16433661AC0",
+    "resources": {
+      "asn": "AS4622-AS4700",
+      "v4": "8.8.8.0/23",
+      "v6": "2406:db0::/32"
+    }
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      9
+    ]
+  }
+}

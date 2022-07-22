@@ -3,15 +3,20 @@
 use std::fs;
 use std::str::FromStr;
 
+use rpki::{
+    ca::{idexchange::CaHandle, provisioning::ResourceClassName},
+    repository::resources::ResourceSet,
+};
+
 use krill::{
-    commons::api::{Handle, ObjectName, ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates},
+    commons::api::{ObjectName, RoaDefinition, RoaDefinitionUpdates},
     daemon::ca::ta_handle,
     test::*,
 };
 
 #[tokio::test]
 async fn functional_roas() {
-    let krill_dir = start_krill_with_default_test_config(true, false, false).await;
+    let krill_dir = start_krill_with_default_test_config(true, false, false, false).await;
 
     info("##################################################################");
     info("#                                                                #");
@@ -30,8 +35,8 @@ async fn functional_roas() {
     info("");
 
     let ta = ta_handle();
-    let testbed = handle("testbed");
-    let ca = handle("CA");
+    let testbed = ca_handle("testbed");
+    let ca = ca_handle("CA");
     let ca_res = resources("AS65000", "10.0.0.0/8", "");
     let ca_res_shrunk = resources("AS65000", "10.0.0.0/16", "");
 
@@ -53,7 +58,7 @@ async fn functional_roas() {
     info("#                                                                #");
     info("##################################################################");
     info("");
-    assert!(ca_contains_resources(&testbed, &ResourceSet::all_resources()).await);
+    assert!(ca_contains_resources(&testbed, &ResourceSet::all()).await);
 
     // Verify that the TA published expected objects
     {
@@ -81,7 +86,7 @@ async fn functional_roas() {
     }
 
     // short hand to expect ROAs under CA
-    async fn expect_roa_objects(ca: &Handle, roas: &[RoaDefinition]) {
+    async fn expect_roa_objects(ca: &CaHandle, roas: &[RoaDefinition]) {
         let rcn_0 = ResourceClassName::from(0);
 
         let mut expected_files = expected_mft_and_crl(ca, &rcn_0).await;
@@ -125,7 +130,7 @@ async fn functional_roas() {
         info("#                                                                #");
         info("##################################################################");
         info("");
-        update_child(&testbed, &ca, &ca_res_shrunk).await;
+        update_child(&testbed, &ca.convert(), &ca_res_shrunk).await;
         ca_equals_resources(&ca, &ca_res_shrunk).await;
 
         expect_roa_objects(

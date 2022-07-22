@@ -1,0 +1,23 @@
+{
+  "actor": "admin-token",
+  "time": "2022-06-02T09:46:33.962450087Z",
+  "handle": "testbed",
+  "version": 45,
+  "sequence": 35,
+  "details": {
+    "type": "child_add",
+    "child": "local-testbed-child",
+    "ski": "DFE7659FD35935FDB0755D42FF5A44CFE4AF5663",
+    "resources": {
+      "asn": "AS211321",
+      "v4": "185.49.140.0/22",
+      "v6": "2a04:b900::/29"
+    }
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      45
+    ]
+  }
+}

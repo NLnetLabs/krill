@@ -1,0 +1,25 @@
+{
+  "actor": "anonymous",
+  "time": "2022-04-14T08:46:31.566116738Z",
+  "handle": "testbed",
+  "version": 36,
+  "sequence": 27,
+  "details": {
+    "type": "child_certify",
+    "child": "nlnetlabs-testbed-client",
+    "resource_class_name": "0",
+    "limit": {
+      "asn": "none",
+      "v4": "none",
+      "v6": "none"
+    },
+    "ki": "B20B39DA1E4B403B6467F037DEEC9D7063757E4B"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      36,
+      37
+    ]
+  }
+}

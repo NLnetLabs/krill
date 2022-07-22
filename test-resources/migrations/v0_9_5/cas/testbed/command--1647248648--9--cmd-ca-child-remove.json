@@ -1,0 +1,15 @@
+{
+  "actor": "testbed",
+  "time": "2022-03-14T09:04:08.940348980Z",
+  "handle": "testbed",
+  "version": 12,
+  "sequence": 9,
+  "details": {
+    "type": "child_remove",
+    "child": "jun_testCA"
+  },
+  "effect": {
+    "result": "error",
+    "msg": "CA 'testbed' does not have a child named 'jun_testCA'"
+  }
+}

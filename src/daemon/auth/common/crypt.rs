@@ -26,6 +26,7 @@ use std::{
 
 use crate::commons::{
     error::{Error, KrillIoError},
+    util::ext_serde,
     KrillResult,
 };
 
@@ -41,7 +42,12 @@ const UNUSED_AAD: [u8; 0] = [0; 0];
 #[derive(Debug, Deserialize, Serialize)]
 pub struct NonceState {
     sender_unique: [u8; 4], //   32 bits
-    counter: AtomicU64,     // + 64 bits = 96 bits = CHACHA20_NONCE_BIT_LEN
+
+    #[serde(
+        deserialize_with = "ext_serde::de_atomicu64",
+        serialize_with = "ext_serde::ser_atomicu64"
+    )]
+    counter: AtomicU64, // + 64 bits = 96 bits = CHACHA20_NONCE_BIT_LEN
 }
 
 impl NonceState {

@@ -74,11 +74,11 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
         wait_exponential_max=10000,
         retry_on_result=retry_if_not,
         wrap_exception=True)
-    def wait_until_ca_has_resources(ca_handle, asn, v4, v6):
+    def wait_until_ca_has_resources(ca_handle, asn, ipv4, ipv6):
         ca = krill_ca_api.get_ca(ca_handle)
         f = attrgetter("resources")
         res = f(ca)
-        return set(res.asn) == set(asn) and set(res.v4) == set(v4) and set(res.v6) == set(v6)
+        return set(res.asn) == set(asn) and set(res.ipv4) == set(ipv4) and set(res.ipv6) == set(ipv6)
 
     #
     # define some helper functions
@@ -132,7 +132,7 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
         wait_until_ca_has(child_ca_handle, 'parents', lambda ca: ca.handle == parent_ca_handle)
 
         logging.info(f'-> Waiting for resources of CA "{child_ca_handle}" to be issued:')
-        wait_until_ca_has_resources(child_ca_handle, resources.asn, resources.v4, resources.v6)
+        wait_until_ca_has_resources(child_ca_handle, resources.asn, resources.ipv4, resources.ipv6)
 
     #
     # Go!
@@ -169,8 +169,8 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
         # Create the desired state inside Krill
         #
 
-        parent_resources = krill_ca_api_lib.Resources(asn=KRILL_PARENT_ASNS, v4=KRILL_PARENT_IPV4S, v6=KRILL_PARENT_IPV6S)
-        child_resources = krill_ca_api_lib.Resources(asn=KRILL_CHILD_ASNS, v4=KRILL_CHILD_IPV4S, v6=KRILL_CHILD_IPV6S)
+        parent_resources = krill_ca_api_lib.Resources(asn=KRILL_PARENT_ASNS, ipv4=KRILL_PARENT_IPV4S, ipv6=KRILL_PARENT_IPV6S)
+        child_resources = krill_ca_api_lib.Resources(asn=KRILL_CHILD_ASNS, ipv4=KRILL_CHILD_IPV4S, ipv6=KRILL_CHILD_IPV6S)
 
         logging.info(f'Checking if Krill has an embedded TA "{ta_handle}"')
         ca_handles = [ca.handle for ca in krill_ca_api.list_cas().cas]
@@ -219,6 +219,7 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
                 update_roas()
 
         logging.info('Krill configuration complete')
+
     except RetryError as e:
         if e.last_attempt.has_exception:
             (ex_type, ex_value, traceback) = e.last_attempt.value
@@ -265,7 +266,7 @@ class TestKrillWithRelyingParties:
                 logging.info(f'Connecting RTR client to {docker_host_fqdn}:{service.rtr_port}')
                 received_roas = set(rtr_fetch_one(docker_host_fqdn, service.rtr_port, service.rtr_timeout_seconds))
                 rtr_elapsed_time = int(time()) - rtr_start_time
-    
+
                 # r is now a list of PFXRecord
                 # see: https://python-rtrlib.readthedocs.io/en/latest/api.html#rtrlib.records.PFXRecord
                 logging.info(f'Received {len(received_roas)} ROAs via RTR from {service.name} in {rtr_elapsed_time} seconds')
@@ -273,10 +274,10 @@ class TestKrillWithRelyingParties:
                 if len(received_roas) == 0:
                     # retry, maybe the ROAs are not available yet
                     raise UpdateWasEmpty()
-    
+
                 # are each of the TEST_ROAS items in r?
                 # i.e. is the intersection of the two sets equal to that of the TEST_ROAS set?
-    
+
                 logging.info(f'Comparing {len(received_roas)} received ROAs to {len(TEST_ROAS)} expected ROAs...')
                 expected_roas = set([roa_to_roa_string(r) for r in TEST_ROAS])
                 assert received_roas == expected_roas
@@ -287,7 +288,7 @@ class TestKrillWithRelyingParties:
                         logging.error(f'{service.name} is not ready')
                 except Exception as innerE:
                     logging.error(f'Unable to determine if {service.name} is ready: {innerE}')
-    
+
                 raise e
 
         fetch_from_rtr_server()

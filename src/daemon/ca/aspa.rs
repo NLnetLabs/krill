@@ -8,10 +8,15 @@
 
 use std::{collections::HashMap, fmt::Debug};
 
-use rpki::repository::{
-    aspa::{Aspa, AspaBuilder},
-    sigobj::SignedObjectBuilder,
-    x509::Time,
+use rpki::{
+    ca::publication::Base64,
+    repository::{
+        aspa::{Aspa, AspaBuilder},
+        sigobj::SignedObjectBuilder,
+        x509::{Serial, Time, Validity},
+    },
+    rrdp::Hash,
+    uri,
 };
 
 use crate::{
@@ -54,7 +59,7 @@ pub fn make_aspa_object(
             ca_issuer,
             aspa_uri,
         );
-        object_builder.set_issuer(Some(incoming_cert.cert().subject().clone()));
+        object_builder.set_issuer(Some(incoming_cert.subject().clone()));
         object_builder.set_signing_time(Some(Time::now()));
 
         object_builder
@@ -227,24 +232,47 @@ impl AspaObjects {
 
 //------------ AspaInfo ----------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AspaInfo {
+    // The customer ASN and all Provider ASNs
     definition: AspaDefinition,
-    aspa: Aspa,
-    since: Time, // Creation time
+
+    // The validity time for this ASPA.
+    validity: Validity,
+
+    // The serial number (needed for revocation)
+    serial: Serial,
+
+    // The URI where this object is expected to be published
+    uri: uri::Rsync,
+
+    // The actual ASPA object in base64 format.
+    base64: Base64,
+
+    // The ASPA object's hash
+    hash: Hash,
 }
 
 impl AspaInfo {
-    pub fn new(definition: AspaDefinition, aspa: Aspa, since: Time) -> Self {
+    pub fn new(definition: AspaDefinition, aspa: Aspa) -> Self {
+        let validity = aspa.cert().validity();
+        let serial = aspa.cert().serial_number();
+        let uri = aspa.cert().signed_object().unwrap().clone(); // safe for our own ROAs
+        let base64 = Base64::from(&aspa);
+        let hash = base64.to_hash();
+
         AspaInfo {
             definition,
-            aspa,
-            since,
+            validity,
+            serial,
+            uri,
+            base64,
+            hash,
         }
     }
 
     pub fn new_aspa(definition: AspaDefinition, aspa: Aspa) -> Self {
-        AspaInfo::new(definition, aspa, Time::now())
+        AspaInfo::new(definition, aspa)
     }
 
     pub fn definition(&self) -> &AspaDefinition {
@@ -255,23 +283,23 @@ impl AspaInfo {
         self.definition.customer()
     }
 
-    pub fn aspa(&self) -> &Aspa {
-        &self.aspa
-    }
-
-    pub fn since(&self) -> Time {
-        self.since
-    }
-
     pub fn expires(&self) -> Time {
-        self.aspa.cert().validity().not_after()
+        self.validity.not_after()
+    }
+
+    pub fn serial(&self) -> Serial {
+        self.serial
+    }
+
+    pub fn uri(&self) -> &uri::Rsync {
+        &self.uri
+    }
+
+    pub fn base64(&self) -> &Base64 {
+        &self.base64
+    }
+
+    pub fn hash(&self) -> Hash {
+        self.hash
     }
 }
-
-impl PartialEq for AspaInfo {
-    fn eq(&self, other: &Self) -> bool {
-        self.aspa.to_captured().as_slice() == other.aspa.to_captured().as_slice()
-    }
-}
-
-impl Eq for AspaInfo {}

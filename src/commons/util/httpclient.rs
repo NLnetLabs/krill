@@ -66,8 +66,7 @@ pub fn get_bearer_token(request: &hyper::Request<hyper::Body>) -> Option<Token> 
         .headers()
         .get(hyper::header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
-        .map(|header_string| header_string.strip_prefix("Bearer ").map(|s| Token::from(s.trim())))
-        .flatten()
+        .and_then(|header_string| header_string.strip_prefix("Bearer ").map(|s| Token::from(s.trim())))
 }
 
 /// Performs a GET request that expects a json response that can be

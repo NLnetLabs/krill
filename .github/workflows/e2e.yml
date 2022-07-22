@@ -154,7 +154,7 @@ jobs:
 
     - name: Dump diagnostics on failure
       if: failure()
-      working-directory: ./rpki-deploy/terraform/krill-e2e-test/run_on_do
+      working-directory: ./rpki-deploy/terraform/krill-e2e-test/run_on_localhost
       run: |
         set -x
         terraform output docker_env_vars

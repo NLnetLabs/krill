@@ -2,17 +2,26 @@ use std::{fmt, sync::Arc};
 
 use chrono::Duration;
 
-use rpki::uri;
+use rpki::{
+    ca::{
+        idexchange::{CaHandle, ChildHandle, ParentHandle},
+        provisioning::{
+            IssuanceRequest, ResourceClassListResponse as Entitlements, ResourceClassName, RevocationRequest,
+            RevocationResponse,
+        },
+    },
+    repository::resources::ResourceSet,
+    uri,
+};
 
 use crate::{
     commons::{
         actor::Actor,
         api::{
-            AspaCustomer, AspaDefinitionUpdates, AspaProvidersUpdate, ChildHandle, Entitlements, Handle,
-            IssuanceRequest, ParentCaContact, ParentHandle, RcvdCert, RepositoryContact, ResourceClassName,
-            ResourceSet, RevocationRequest, RevocationResponse, RtaName, StorableCaCommand, StorableRcEntitlement,
+            AspaCustomer, AspaDefinitionUpdates, AspaProvidersUpdate, BgpSecDefinitionUpdates, IdCertInfo,
+            ParentCaContact, ReceivedCert, RepositoryContact, RtaName, StorableCaCommand, StorableRcEntitlement,
         },
-        crypto::{IdCert, KrillSigner},
+        crypto::KrillSigner,
         eventsourcing::{self, StoredCommand},
     },
     daemon::{
@@ -39,21 +48,21 @@ pub enum CmdDet {
     // ------------------------------------------------------------
     // Being a TA
     // ------------------------------------------------------------
-    MakeTrustAnchor(Vec<uri::Https>, Option<uri::Rsync>, Arc<KrillSigner>),
+    MakeTrustAnchor(Vec<uri::Https>, uri::Rsync, Arc<KrillSigner>),
 
     // ------------------------------------------------------------
     // Being a parent
     // ------------------------------------------------------------
 
     // Add a new child under this parent CA
-    ChildAdd(ChildHandle, IdCert, ResourceSet),
+    ChildAdd(ChildHandle, IdCertInfo, ResourceSet),
 
     // Update the resource entitlements for an existing child.
     ChildUpdateResources(ChildHandle, ResourceSet),
 
     // Update the IdCert used by the child for the RFC 6492 RPKI
     // provisioning protocol.
-    ChildUpdateId(ChildHandle, IdCert),
+    ChildUpdateId(ChildHandle, IdCertInfo),
 
     // Process an issuance request sent by an existing child.
     ChildCertify(ChildHandle, IssuanceRequest, Arc<Config>, Arc<KrillSigner>),
@@ -100,7 +109,7 @@ pub enum CmdDet {
     UpdateEntitlements(ParentHandle, Entitlements, Arc<KrillSigner>),
 
     // Process a new certificate received from a parent.
-    UpdateRcvdCert(ResourceClassName, RcvdCert, Arc<Config>, Arc<KrillSigner>),
+    UpdateRcvdCert(ResourceClassName, ReceivedCert, Arc<Config>, Arc<KrillSigner>),
 
     // Drop a resource class under a parent because of issues
     // obtaining a certificate for it.
@@ -166,8 +175,20 @@ pub enum CmdDet {
     AspasRenew(Arc<Config>, Arc<KrillSigner>),
 
     // ------------------------------------------------------------
+    // BGPSec Support
+    // ------------------------------------------------------------
+
+    // Update BgpSecDefinitions
+    BgpSecUpdateDefinitions(BgpSecDefinitionUpdates, Arc<Config>, Arc<KrillSigner>),
+
+    // Re-issue any and all BgpSec certificates which would otherwise
+    // expire in some time.
+    BgpSecRenew(Arc<Config>, Arc<KrillSigner>),
+
+    // ------------------------------------------------------------
     // Publishing
     // ------------------------------------------------------------
+
     // Update the repository where this CA publishes
     RepoUpdate(RepositoryContact, Arc<KrillSigner>),
 
@@ -213,15 +234,15 @@ impl From<CmdDet> for StorableCaCommand {
             // ------------------------------------------------------------
             CmdDet::ChildAdd(child, id_cert, resources) => StorableCaCommand::ChildAdd {
                 child,
-                ski: id_cert.ski_hex(),
+                ski: id_cert.public_key().key_identifier().to_string(),
                 resources,
             },
             CmdDet::ChildUpdateResources(child, resources) => {
                 StorableCaCommand::ChildUpdateResources { child, resources }
             }
-            CmdDet::ChildUpdateId(child, id) => StorableCaCommand::ChildUpdateId {
+            CmdDet::ChildUpdateId(child, id_cert) => StorableCaCommand::ChildUpdateId {
                 child,
-                ski: id.ski_hex(),
+                ski: id_cert.public_key().key_identifier().to_string(),
             },
             CmdDet::ChildCertify(child, req, _, _) => {
                 let (resource_class_name, limit, csr) = req.unpack();
@@ -301,10 +322,16 @@ impl From<CmdDet> for StorableCaCommand {
             CmdDet::AspasRenew(_, _) => StorableCaCommand::ReissueBeforeExpiring,
 
             // ------------------------------------------------------------
+            // BGPSec Support
+            // ------------------------------------------------------------
+            CmdDet::BgpSecUpdateDefinitions(_, _, _) => StorableCaCommand::BgpSecDefinitionUpdates,
+            CmdDet::BgpSecRenew(_, _) => StorableCaCommand::ReissueBeforeExpiring,
+
+            // ------------------------------------------------------------
             // Publishing
             // ------------------------------------------------------------
             CmdDet::RepoUpdate(contact, _) => StorableCaCommand::RepoUpdate {
-                service_uri: contact.service_uri().clone(),
+                service_uri: contact.server_info().service_uri().clone(),
             },
 
             // ------------------------------------------------------------
@@ -320,9 +347,9 @@ impl From<CmdDet> for StorableCaCommand {
 impl CmdDet {
     /// Turns this CA into a TrustAnchor
     pub fn make_trust_anchor(
-        handle: &Handle,
+        handle: &CaHandle,
         uris: Vec<uri::Https>,
-        rsync_uri: Option<uri::Rsync>,
+        rsync_uri: uri::Rsync,
         signer: Arc<KrillSigner>,
         actor: &Actor,
     ) -> Cmd {
@@ -332,22 +359,17 @@ impl CmdDet {
     /// Adds a child to this CA. Will return an error in case you try
     /// to give the child resources not held by the CA.
     pub fn child_add(
-        handle: &Handle,
-        child_handle: Handle,
-        child_id_cert: IdCert,
-        child_resources: ResourceSet,
+        handle: &CaHandle,
+        child_handle: ChildHandle,
+        id_cert: IdCertInfo,
+        resources: ResourceSet,
         actor: &Actor,
     ) -> Cmd {
-        eventsourcing::SentCommand::new(
-            handle,
-            None,
-            CmdDet::ChildAdd(child_handle, child_id_cert, child_resources),
-            actor,
-        )
+        eventsourcing::SentCommand::new(handle, None, CmdDet::ChildAdd(child_handle, id_cert, resources), actor)
     }
 
     pub fn child_update_resources(
-        handle: &Handle,
+        handle: &CaHandle,
         child_handle: ChildHandle,
         resources: ResourceSet,
         actor: &Actor,
@@ -360,14 +382,14 @@ impl CmdDet {
         )
     }
 
-    pub fn child_update_id(handle: &Handle, child_handle: ChildHandle, id: IdCert, actor: &Actor) -> Cmd {
-        eventsourcing::SentCommand::new(handle, None, CmdDet::ChildUpdateId(child_handle, id), actor)
+    pub fn child_update_id(handle: &CaHandle, child_handle: ChildHandle, id_cert: IdCertInfo, actor: &Actor) -> Cmd {
+        eventsourcing::SentCommand::new(handle, None, CmdDet::ChildUpdateId(child_handle, id_cert), actor)
     }
 
     /// Certify a child. Will return an error in case the child is
     /// unknown, or in case resources are not held by the child.
     pub fn child_certify(
-        handle: &Handle,
+        handle: &CaHandle,
         child_handle: ChildHandle,
         request: IssuanceRequest,
         config: Arc<Config>,
@@ -384,7 +406,7 @@ impl CmdDet {
 
     /// Revoke a key for a child.
     pub fn child_revoke_key(
-        handle: &Handle,
+        handle: &CaHandle,
         child_handle: ChildHandle,
         request: RevocationRequest,
         actor: &Actor,
@@ -392,36 +414,36 @@ impl CmdDet {
         eventsourcing::SentCommand::new(handle, None, CmdDet::ChildRevokeKey(child_handle, request), actor)
     }
 
-    pub fn child_remove(handle: &Handle, child_handle: ChildHandle, actor: &Actor) -> Cmd {
+    pub fn child_remove(handle: &CaHandle, child_handle: ChildHandle, actor: &Actor) -> Cmd {
         eventsourcing::SentCommand::new(handle, None, CmdDet::ChildRemove(child_handle), actor)
     }
 
-    pub fn child_suspend_inactive(handle: &Handle, child_handle: ChildHandle, actor: &Actor) -> Cmd {
+    pub fn child_suspend_inactive(handle: &CaHandle, child_handle: ChildHandle, actor: &Actor) -> Cmd {
         eventsourcing::SentCommand::new(handle, None, CmdDet::ChildSuspendInactive(child_handle), actor)
     }
 
-    pub fn child_unsuspend(handle: &Handle, child_handle: ChildHandle, actor: &Actor) -> Cmd {
+    pub fn child_unsuspend(handle: &CaHandle, child_handle: ChildHandle, actor: &Actor) -> Cmd {
         eventsourcing::SentCommand::new(handle, None, CmdDet::ChildUnsuspend(child_handle), actor)
     }
 
-    pub fn update_id(handle: &Handle, signer: Arc<KrillSigner>, actor: &Actor) -> Cmd {
+    pub fn update_id(handle: &CaHandle, signer: Arc<KrillSigner>, actor: &Actor) -> Cmd {
         eventsourcing::SentCommand::new(handle, None, CmdDet::GenerateNewIdKey(signer), actor)
     }
 
-    pub fn add_parent(handle: &Handle, parent: ParentHandle, info: ParentCaContact, actor: &Actor) -> Cmd {
+    pub fn add_parent(handle: &CaHandle, parent: ParentHandle, info: ParentCaContact, actor: &Actor) -> Cmd {
         eventsourcing::SentCommand::new(handle, None, CmdDet::AddParent(parent, info), actor)
     }
 
-    pub fn update_parent(handle: &Handle, parent: ParentHandle, info: ParentCaContact, actor: &Actor) -> Cmd {
+    pub fn update_parent(handle: &CaHandle, parent: ParentHandle, info: ParentCaContact, actor: &Actor) -> Cmd {
         eventsourcing::SentCommand::new(handle, None, CmdDet::UpdateParentContact(parent, info), actor)
     }
 
-    pub fn remove_parent(handle: &Handle, parent: ParentHandle, actor: &Actor) -> Cmd {
+    pub fn remove_parent(handle: &CaHandle, parent: ParentHandle, actor: &Actor) -> Cmd {
         eventsourcing::SentCommand::new(handle, None, CmdDet::RemoveParent(parent), actor)
     }
 
     pub fn update_entitlements(
-        handle: &Handle,
+        handle: &CaHandle,
         parent: ParentHandle,
         entitlements: Entitlements,
         signer: Arc<KrillSigner>,
@@ -436,9 +458,9 @@ impl CmdDet {
     }
 
     pub fn upd_received_cert(
-        handle: &Handle,
+        handle: &CaHandle,
         class_name: ResourceClassName,
-        cert: RcvdCert,
+        cert: ReceivedCert,
         config: Arc<Config>,
         signer: Arc<KrillSigner>,
         actor: &Actor,
@@ -452,7 +474,7 @@ impl CmdDet {
     }
 
     pub fn drop_resource_class(
-        handle: &Handle,
+        handle: &CaHandle,
         class_name: ResourceClassName,
         reason: DropReason,
         signer: Arc<KrillSigner>,
@@ -470,12 +492,12 @@ impl CmdDet {
     // Key Rolls
     //-------------------------------------------------------------------------------
 
-    pub fn key_roll_init(handle: &Handle, duration: Duration, signer: Arc<KrillSigner>, actor: &Actor) -> Cmd {
+    pub fn key_roll_init(handle: &CaHandle, duration: Duration, signer: Arc<KrillSigner>, actor: &Actor) -> Cmd {
         eventsourcing::SentCommand::new(handle, None, CmdDet::KeyRollInitiate(duration, signer), actor)
     }
 
     pub fn key_roll_activate(
-        handle: &Handle,
+        handle: &CaHandle,
         staging: Duration,
         config: Arc<Config>,
         signer: Arc<KrillSigner>,
@@ -484,11 +506,11 @@ impl CmdDet {
         eventsourcing::SentCommand::new(handle, None, CmdDet::KeyRollActivate(staging, config, signer), actor)
     }
 
-    pub fn key_roll_finish(handle: &Handle, rcn: ResourceClassName, res: RevocationResponse, actor: &Actor) -> Cmd {
+    pub fn key_roll_finish(handle: &CaHandle, rcn: ResourceClassName, res: RevocationResponse, actor: &Actor) -> Cmd {
         eventsourcing::SentCommand::new(handle, None, CmdDet::KeyRollFinish(rcn, res), actor)
     }
 
-    pub fn update_repo(handle: &Handle, contact: RepositoryContact, signer: Arc<KrillSigner>, actor: &Actor) -> Cmd {
+    pub fn update_repo(handle: &CaHandle, contact: RepositoryContact, signer: Arc<KrillSigner>, actor: &Actor) -> Cmd {
         eventsourcing::SentCommand::new(handle, None, CmdDet::RepoUpdate(contact, signer), actor)
     }
 
@@ -496,7 +518,7 @@ impl CmdDet {
     // Route Authorizations
     //-------------------------------------------------------------------------------
     pub fn route_authorizations_update(
-        handle: &Handle,
+        handle: &CaHandle,
         updates: RouteAuthorizationUpdates,
         config: Arc<Config>,
         signer: Arc<KrillSigner>,
@@ -514,7 +536,7 @@ impl CmdDet {
     // Autonomous System Provider Authorization
     //-------------------------------------------------------------------------------
     pub fn aspas_definitions_update(
-        ca: &Handle,
+        ca: &CaHandle,
         updates: AspaDefinitionUpdates,
         config: Arc<Config>,
         signer: Arc<KrillSigner>,
@@ -524,7 +546,7 @@ impl CmdDet {
     }
 
     pub fn aspas_update_aspa(
-        ca: &Handle,
+        ca: &CaHandle,
         customer: AspaCustomer,
         update: AspaProvidersUpdate,
         config: Arc<Config>,
@@ -540,10 +562,28 @@ impl CmdDet {
     }
 
     //-------------------------------------------------------------------------------
+    // BGPSec
+    //-------------------------------------------------------------------------------
+    pub fn bgpsec_update_definitions(
+        ca: &CaHandle,
+        updates: BgpSecDefinitionUpdates,
+        config: Arc<Config>,
+        signer: Arc<KrillSigner>,
+        actor: &Actor,
+    ) -> Cmd {
+        eventsourcing::SentCommand::new(
+            ca,
+            None,
+            CmdDet::BgpSecUpdateDefinitions(updates, config, signer),
+            actor,
+        )
+    }
+
+    //-------------------------------------------------------------------------------
     // Resource Tagged Attestations
     //-------------------------------------------------------------------------------
     pub fn rta_sign(
-        handle: &Handle,
+        handle: &CaHandle,
         name: RtaName,
         request: RtaContentRequest,
         signer: Arc<KrillSigner>,
@@ -553,7 +593,7 @@ impl CmdDet {
     }
 
     pub fn rta_multi_prep(
-        handle: &Handle,
+        handle: &CaHandle,
         name: RtaName,
         request: RtaPrepareRequest,
         signer: Arc<KrillSigner>,
@@ -563,7 +603,7 @@ impl CmdDet {
     }
 
     pub fn rta_multi_sign(
-        handle: &Handle,
+        handle: &CaHandle,
         name: RtaName,
         rta: ResourceTaggedAttestation,
         signer: Arc<KrillSigner>,

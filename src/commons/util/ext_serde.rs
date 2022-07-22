@@ -1,5 +1,8 @@
 //! Defines helper methods for Serializing and Deserializing external types.
-use std::str::FromStr;
+use std::{
+    str::FromStr,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use bytes::Bytes;
 use log::LevelFilter;
@@ -161,4 +164,23 @@ where
 {
     let string = String::deserialize(d)?;
     Facility::from_str(&string).map_err(|_| de::Error::custom(format!("Unsupported syslog_facility: \"{}\"", string)))
+}
+
+//------------- AtomicU64 -----------------------------------------------------
+// Implemented automatically by Serde derive but only for x86_64 architectures,
+// for other architectures (such as armv7 for the Raspberry Pi 4b) it has to be
+// implemented manually.
+
+pub fn de_atomicu64<'de, D>(d: D) -> Result<AtomicU64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(AtomicU64::new(u64::deserialize(d)?))
+}
+
+pub fn ser_atomicu64<S>(v: &AtomicU64, s: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    s.serialize_u64(v.load(Ordering::SeqCst))
 }

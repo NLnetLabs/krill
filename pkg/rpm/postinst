@@ -20,7 +20,7 @@ create_user() {
     # According to the CentOS 7 useradd man page:
     # --user-group causes a group by the same name as the user to be created
     # --create-home should force creation of a home dir even for a system account.
-    useradd --system --home-dir ${KRILL_HOME_DIR} --system --create-home --user-group ${KRILL_USER}
+    useradd --home-dir ${KRILL_HOME_DIR} --system --create-home --user-group ${KRILL_USER}
 
     # Ensure that the home directory has the correct ownership
     chown -R ${KRILL_USER}:${KRILL_GROUP} ${KRILL_HOME_DIR}

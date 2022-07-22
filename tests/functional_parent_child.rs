@@ -2,11 +2,13 @@
 //!
 use std::fs;
 
-use krill::{commons::api::ResourceSet, daemon::ca::ta_handle, test::*};
+use rpki::repository::resources::ResourceSet;
+
+use krill::{daemon::ca::ta_handle, test::*};
 
 #[tokio::test]
 async fn functional_parent_child() {
-    let krill_dir = start_krill_with_default_test_config(true, false, false).await;
+    let krill_dir = start_krill_with_default_test_config(true, false, false, false).await;
 
     info("##################################################################");
     info("#                                                                #");
@@ -35,19 +37,19 @@ async fn functional_parent_child() {
     info("");
 
     let ta = ta_handle();
-    let testbed = handle("testbed");
+    let testbed = ca_handle("testbed");
 
-    let ca1 = handle("CA1");
+    let ca1 = ca_handle("CA1");
     let ca1_res = resources("AS65000", "10.0.0.0/16", "");
 
-    let ca2 = handle("CA2");
+    let ca2 = ca_handle("CA2");
     let ca2_res = resources("AS65001", "10.1.0.0/16", "");
 
-    let ca3 = handle("CA3");
+    let ca3 = ca_handle("CA3");
     let ca3_res_under_ca_1 = resources("65000", "10.0.0.0/16", "");
     let ca3_res_under_ca_2 = resources("65001", "10.1.0.0/24", "");
 
-    let ca4 = handle("CA4");
+    let ca4 = ca_handle("CA4");
     let ca4_res_under_ca_3 = resources("65000", "10.0.0.0-10.1.0.255", "");
 
     let rcn_0 = rcn(0);
@@ -61,7 +63,7 @@ async fn functional_parent_child() {
     info("#                                                                #");
     info("##################################################################");
     info("");
-    assert!(ca_contains_resources(&testbed, &ResourceSet::all_resources()).await);
+    assert!(ca_contains_resources(&testbed, &ResourceSet::all()).await);
 
     // Verify that the TA published expected objects
     {

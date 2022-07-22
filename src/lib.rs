@@ -1,8 +1,5 @@
 #![allow(clippy::upper_case_acronyms)]
 extern crate base64;
-#[macro_use]
-extern crate bcder;
-// #[macro_use]
 extern crate bytes;
 extern crate chrono;
 extern crate clap;
