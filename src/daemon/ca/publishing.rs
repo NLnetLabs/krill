@@ -542,7 +542,7 @@ impl ResourceClassObjects {
     }
 
     fn create(key: &CertifiedKey, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<Self> {
-        let current_set = KeyObjectSet::create(key, timing, signer)?.into();
+        let current_set = KeyObjectSet::create(key, timing, signer)?;
 
         Ok(ResourceClassObjects {
             keys: ResourceClassKeyState::Current(CurrentKeyState { current_set }),
@@ -574,7 +574,7 @@ impl ResourceClassObjects {
         self.keys = match &self.keys {
             ResourceClassKeyState::Staging(state) => {
                 let old_set = state.current_set.retire()?;
-                let current_set = state.staging_set.clone().into();
+                let current_set = state.staging_set.clone();
 
                 ResourceClassKeyState::Old(OldKeyState { current_set, old_set })
             }

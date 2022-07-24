@@ -1752,7 +1752,8 @@ pub fn stringify_cause_chain<F: std::error::Error>(fail: F) -> String {
         if !cause_chain.is_empty() {
             cause_chain.push_str(", ");
         }
-        cause_chain.push_str(&format!("caused by: {}", cause));
+        cause_chain.push_str("caused by: ");
+        cause_chain.push_str(&cause.to_string());
         cur_fail = cause.source();
     }
     cause_chain

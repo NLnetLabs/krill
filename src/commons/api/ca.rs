@@ -1909,27 +1909,25 @@ impl ResourceClassKeysInfo {
 
 impl fmt::Display for ResourceClassKeysInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let mut res = String::new();
-
-        res.push_str("State: ");
+        write!(f, "State: ")?;
 
         match &self {
-            ResourceClassKeysInfo::Pending(_) => res.push_str("pending"),
-            ResourceClassKeysInfo::Active(_) => res.push_str("active"),
-            ResourceClassKeysInfo::RollPending(_) => res.push_str("roll phase 1: pending and active key"),
-            ResourceClassKeysInfo::RollNew(_) => res.push_str("roll phase 2: new and active key"),
-            ResourceClassKeysInfo::RollOld(_) => res.push_str("roll phase 3: active and old key"),
+            ResourceClassKeysInfo::Pending(_) => write!(f, "pending")?,
+            ResourceClassKeysInfo::Active(_) => write!(f, "active")?,
+            ResourceClassKeysInfo::RollPending(_) => write!(f, "roll phase 1: pending and active key")?,
+            ResourceClassKeysInfo::RollNew(_) => write!(f, "roll phase 2: new and active key")?,
+            ResourceClassKeysInfo::RollOld(_) => write!(f, "roll phase 3: active and old key")?,
         }
 
         if let Some(key) = self.current_key() {
             let resources = key.incoming_cert().resources();
-            res.push_str("    Resources:\n");
-            res.push_str(&format!("    ASNs: {}\n", resources.asn()));
-            res.push_str(&format!("    IPv4: {}\n", resources.ipv4()));
-            res.push_str(&format!("    IPv6: {}\n", resources.ipv6()));
+            writeln!(f, "    Resources:")?;
+            writeln!(f, "    ASNs: {}", resources.asn())?;
+            writeln!(f, "    IPv4: {}", resources.ipv4())?;
+            writeln!(f, "    IPv6: {}", resources.ipv6())?;
         }
 
-        res.fmt(f)
+        Ok(())
     }
 }
 
