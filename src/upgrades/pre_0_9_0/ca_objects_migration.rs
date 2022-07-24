@@ -35,9 +35,9 @@ use crate::{
     constants::{CASERVER_DIR, KRILL_VERSION},
     daemon::{
         ca::{
-            self, ta_handle, BasicKeyObjectSet, CaEvt, CaEvtDet, CaObjects, CaObjectsStore, CurrentKeyObjectSet,
-            IniDet, ObjectSetRevision, PublishedCert, PublishedObject, ResourceClassKeyState, ResourceClassObjects,
-            RoaInfo, RouteAuthorization, StoredCaCommand,
+            self, ta_handle, CaEvt, CaEvtDet, CaObjects, CaObjectsStore, IniDet, KeyObjectSet, ObjectSetRevision,
+            PublishedCert, PublishedObject, ResourceClassKeyState, ResourceClassObjects, RoaInfo, RouteAuthorization,
+            StoredCaCommand,
         },
         config::Config,
     },
@@ -758,28 +758,38 @@ impl OldResourceClass {
 
     pub fn resource_class_state(&self) -> Result<Option<ResourceClassKeyState>, PrepareUpgradeError> {
         let roas = self.roas.roa_objects();
-        let mut certs: HashMap<ObjectName, PublishedCert> = HashMap::new();
+
+        // The objects for an active key
+        let mut published_objects = HashMap::new();
+        for (name, roa_info) in roas.into_iter() {
+            let published_object = PublishedObject::for_roa(name.clone(), &roa_info);
+            published_objects.insert(name, published_object);
+        }
 
         for old_delegated in self.certificates.inner.values() {
             let name = ObjectName::from(old_delegated.cert());
-            let published: PublishedCert = old_delegated.clone().try_into()?;
-            certs.insert(name, published);
+            let cert_info: PublishedCert = old_delegated.clone().try_into()?;
+            let published_object = PublishedObject::for_cert_info(&cert_info);
+            published_objects.insert(name, published_object);
         }
+
+        // The objects for an inactive key
+        let empty_objects = HashMap::new();
 
         Ok(match &self.key_state {
             OldKeyState::Pending(_) => None,
 
             OldKeyState::Active(current) | OldKeyState::RollPending(_, current) => Some(
-                ResourceClassKeyState::current(Self::object_set_for_current(current, roas)?),
+                ResourceClassKeyState::current(Self::object_set_for_certified_key(current, published_objects)?),
             ),
             OldKeyState::RollNew(new, current) => Some(ResourceClassKeyState::staging(
-                Self::object_set_for_certified_key(new)?,
-                Self::object_set_for_current(current, roas)?,
+                Self::object_set_for_certified_key(new, empty_objects)?,
+                Self::object_set_for_certified_key(current, published_objects)?,
             )),
 
             OldKeyState::RollOld(current, old) => Some(ResourceClassKeyState::old(
-                Self::object_set_for_current(current, roas)?,
-                Self::object_set_for_certified_key(&old.key)?,
+                Self::object_set_for_certified_key(current, published_objects)?,
+                Self::object_set_for_certified_key(&old.key, empty_objects)?,
             )),
         })
     }
@@ -803,22 +813,10 @@ impl OldResourceClass {
         })
     }
 
-    fn object_set_for_current(
+    fn object_set_for_certified_key(
         key: &OldCertifiedKey,
-        roas: HashMap<ObjectName, RoaInfo>,
-    ) -> Result<CurrentKeyObjectSet, PrepareUpgradeError> {
-        let basic = Self::object_set_for_certified_key(key)?;
-
-        let mut published_objects = HashMap::new();
-        for (name, roa_info) in roas.into_iter() {
-            let published_object = PublishedObject::for_roa(name.clone(), &roa_info);
-            published_objects.insert(name, published_object);
-        }
-
-        Ok(CurrentKeyObjectSet::new(basic, published_objects))
-    }
-
-    fn object_set_for_certified_key(key: &OldCertifiedKey) -> Result<BasicKeyObjectSet, PrepareUpgradeError> {
+        published_objects: HashMap<ObjectName, PublishedObject>,
+    ) -> Result<KeyObjectSet, PrepareUpgradeError> {
         let current_set = key.current_set.clone();
 
         let manifest = Manifest::decode(current_set.manifest_info.current.content().to_bytes(), true).unwrap();
@@ -829,12 +827,13 @@ impl OldResourceClass {
             .unwrap()
             .into();
 
-        Ok(BasicKeyObjectSet::new(
+        Ok(KeyObjectSet::new(
             key.incoming_cert.clone().try_into()?,
             revision,
             current_set.revocations,
             manifest.into(),
             crl,
+            published_objects,
             None,
         ))
     }

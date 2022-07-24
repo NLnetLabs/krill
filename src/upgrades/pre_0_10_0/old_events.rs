@@ -1248,11 +1248,22 @@ pub struct OldCurrentKeyObjectSet {
     certs: HashMap<ObjectName, OldPublishedCert>,
 }
 
-impl TryFrom<OldCurrentKeyObjectSet> for ca::CurrentKeyObjectSet {
+impl TryFrom<OldCurrentKeyObjectSet> for ca::KeyObjectSet {
     type Error = PrepareUpgradeError;
 
     fn try_from(old: OldCurrentKeyObjectSet) -> Result<Self, Self::Error> {
-        let basic = old.basic.try_into()?;
+        let signing_cert = old.basic.signing_cert.try_into()?;
+
+        let number = old.basic.number;
+        let this_update = old.basic.manifest.this_update();
+        let next_update = old.basic.manifest.next_update();
+
+        let revision = ObjectSetRevision::new(number, this_update, next_update);
+
+        let revocations = old.basic.revocations;
+        let manifest = old.basic.manifest.into();
+        let crl = old.basic.crl.into();
+        let old_repo = old.basic.old_repo.map(|repo| repo.into());
 
         let mut published_objects = HashMap::new();
         for (name, old_roa) in old.roas.into_iter() {
@@ -1279,7 +1290,15 @@ impl TryFrom<OldCurrentKeyObjectSet> for ca::CurrentKeyObjectSet {
             published_objects.insert(name, published_object);
         }
 
-        Ok(ca::CurrentKeyObjectSet::new(basic, published_objects))
+        Ok(ca::KeyObjectSet::new(
+            signing_cert,
+            revision,
+            revocations,
+            manifest,
+            crl,
+            published_objects,
+            old_repo,
+        ))
     }
 }
 
@@ -1402,7 +1421,7 @@ pub struct OldBasicKeyObjectSet {
     old_repo: Option<OldRepositoryContact>,
 }
 
-impl TryFrom<OldBasicKeyObjectSet> for ca::BasicKeyObjectSet {
+impl TryFrom<OldBasicKeyObjectSet> for ca::KeyObjectSet {
     type Error = PrepareUpgradeError;
 
     fn try_from(old: OldBasicKeyObjectSet) -> Result<Self, Self::Error> {
@@ -1417,14 +1436,16 @@ impl TryFrom<OldBasicKeyObjectSet> for ca::BasicKeyObjectSet {
         let revocations = old.revocations;
         let manifest = old.manifest.into();
         let crl = old.crl.into();
+        let empty_object_set = HashMap::new();
         let old_repo = old.old_repo.map(|repo| repo.into());
 
-        Ok(ca::BasicKeyObjectSet::new(
+        Ok(ca::KeyObjectSet::new(
             signing_cert,
             revision,
             revocations,
             manifest,
             crl,
+            empty_object_set,
             old_repo,
         ))
     }
