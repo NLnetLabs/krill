@@ -3,7 +3,6 @@
 use std::{
     borrow::BorrowMut,
     collections::HashMap,
-    ops::{Deref, DerefMut},
     path::Path,
     str::FromStr,
     sync::{Arc, RwLock},
@@ -543,7 +542,7 @@ impl ResourceClassObjects {
     }
 
     fn create(key: &CertifiedKey, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<Self> {
-        let current_set = BasicKeyObjectSet::create(key, timing, signer)?.into();
+        let current_set = KeyObjectSet::create(key, timing, signer)?.into();
 
         Ok(ResourceClassObjects {
             keys: ResourceClassKeyState::Current(CurrentKeyState { current_set }),
@@ -561,7 +560,7 @@ impl ResourceClassObjects {
             _ => return Err(Error::publishing("published resource class in the wrong key state")),
         };
 
-        let staging_set = BasicKeyObjectSet::create(key, timing, signer)?;
+        let staging_set = KeyObjectSet::create(key, timing, signer)?;
 
         self.keys = ResourceClassKeyState::Staging(StagingKeyState {
             staging_set,
@@ -654,13 +653,13 @@ impl ResourceClassObjects {
 
     fn reissue(&mut self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<()> {
         match self.keys.borrow_mut() {
-            ResourceClassKeyState::Current(state) => state.current_set.reissue_set(timing, signer),
+            ResourceClassKeyState::Current(state) => state.current_set.reissue(timing, signer),
             ResourceClassKeyState::Staging(state) => {
-                state.staging_set.reissue_set(timing, signer)?;
+                state.staging_set.reissue(timing, signer)?;
                 state.current_set.reissue(timing, signer)
             }
             ResourceClassKeyState::Old(state) => {
-                state.old_set.reissue_set(timing, signer)?;
+                state.old_set.reissue(timing, signer)?;
                 state.current_set.reissue(timing, signer)
             }
         }
@@ -715,18 +714,18 @@ pub enum ResourceClassKeyState {
 }
 
 impl ResourceClassKeyState {
-    pub fn current(current_set: CurrentKeyObjectSet) -> Self {
+    pub fn current(current_set: KeyObjectSet) -> Self {
         ResourceClassKeyState::Current(CurrentKeyState { current_set })
     }
 
-    pub fn staging(staging_set: BasicKeyObjectSet, current_set: CurrentKeyObjectSet) -> Self {
+    pub fn staging(staging_set: KeyObjectSet, current_set: KeyObjectSet) -> Self {
         ResourceClassKeyState::Staging(StagingKeyState {
             staging_set,
             current_set,
         })
     }
 
-    pub fn old(current_set: CurrentKeyObjectSet, old_set: BasicKeyObjectSet) -> Self {
+    pub fn old(current_set: KeyObjectSet, old_set: KeyObjectSet) -> Self {
         ResourceClassKeyState::Old(OldKeyState { current_set, old_set })
     }
 
@@ -753,23 +752,23 @@ impl ResourceClassKeyState {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CurrentKeyState {
-    current_set: CurrentKeyObjectSet,
+    current_set: KeyObjectSet,
 }
 
 impl CurrentKeyState {
-    pub fn new(current_set: CurrentKeyObjectSet) -> Self {
+    pub fn new(current_set: KeyObjectSet) -> Self {
         CurrentKeyState { current_set }
     }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct StagingKeyState {
-    staging_set: BasicKeyObjectSet,
-    current_set: CurrentKeyObjectSet,
+    staging_set: KeyObjectSet,
+    current_set: KeyObjectSet,
 }
 
 impl StagingKeyState {
-    pub fn new(staging_set: BasicKeyObjectSet, current_set: CurrentKeyObjectSet) -> Self {
+    pub fn new(staging_set: KeyObjectSet, current_set: KeyObjectSet) -> Self {
         StagingKeyState {
             staging_set,
             current_set,
@@ -779,31 +778,135 @@ impl StagingKeyState {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldKeyState {
-    current_set: CurrentKeyObjectSet,
-    old_set: BasicKeyObjectSet,
+    current_set: KeyObjectSet,
+    old_set: KeyObjectSet,
 }
 
 impl OldKeyState {
-    pub fn new(current_set: CurrentKeyObjectSet, old_set: BasicKeyObjectSet) -> Self {
+    pub fn new(current_set: KeyObjectSet, old_set: KeyObjectSet) -> Self {
         OldKeyState { current_set, old_set }
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct CurrentKeyObjectSet {
-    #[serde(flatten)]
-    basic: BasicKeyObjectSet,
+//------------ KeyObjectSet ------------------------------------------------
 
+/// Maintains the set of objects published for a key.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct KeyObjectSet {
+    // The latest received certificate for the owning key.
+    //
+    // This is used when signing a new manifest and CRL.
+    signing_cert: ReceivedCert,
+
+    // The revision of the set, meaning its number and the
+    // "this update" and "next update" values used on the
+    // manifest and CRL.
+    revision: ObjectSetRevision,
+
+    // The revocations that need go on the CRL.
+    //
+    // The CRL object has no convenient access to this, so
+    // we keep that immutable. Whenever we re-issue, we create
+    // a new CRL using these revocations.
+    //
+    // When objects are replaced or removed we add a revocation.
+    // When publishing revocations for expired certificates are
+    // purged.
+    revocations: Revocations,
+
+    // The last manifest generated for this set.
+    //
+    // When a set is first created, we will have a manifest and
+    // a CRL, but it will have an empty map of "published_objects".
+    //
+    // A new manifest is generated when we re-issue the set. This
+    // may happen when published objects are added/updated/removed,
+    // or in case, well some time before, the manifest and CRL would
+    // expire.
+    manifest: PublishedManifest,
+
+    // The last CRL generated for this set.
+    //
+    // We always generate the manifest and CRL together. When we
+    // re-issue a set we first generate a new CRL which will revoke
+    // the previous manifest. The CRL (name and hash) is included in
+    // the new manifest.
+    //
+    // Strictly speaking this revocation could be considered redundant,
+    // because the new CRL will not be considered valid (hash mismatch)
+    // under the old manifest. So, a Relying Party will only consider
+    // the CRL when it is using the new manifest.
+    crl: PublishedCrl,
+
+    // Will be empty if the owning key is not "current". I.e. this
+    // is empty when a new KeyObjectSet is created (new staging key for
+    // a key roll, or the first certified key under a new resource class).
+    //
+    // The "current" key will see updates to the published objects.
+    //
+    // When a key becomes "old" - just before it is subsequently removed -
+    // when it is replaced as part of a key roll, then `retire` is called
+    // on the set: all objects are revoked, and then this becomes empty
+    // again.
     #[serde(skip_serializing_if = "HashMap::is_empty", default)]
     published_objects: HashMap<ObjectName, PublishedObject>,
+
+    // We implement repository migration as a key roll where the new
+    // key uses the new (then default) repository. Existing keys will
+    // keep track of the old repository contact using this following
+    // field so that they can continue to publish / withdraw there,
+    // until they (the owning key) are complete removed when the key
+    // rollover is finished.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    old_repo: Option<RepositoryContact>,
 }
 
-impl CurrentKeyObjectSet {
-    pub fn new(basic: BasicKeyObjectSet, published_objects: HashMap<ObjectName, PublishedObject>) -> Self {
-        CurrentKeyObjectSet {
-            basic,
+impl KeyObjectSet {
+    pub fn new(
+        signing_cert: ReceivedCert,
+        revision: ObjectSetRevision,
+        revocations: Revocations,
+        manifest: PublishedManifest,
+        crl: PublishedCrl,
+        published_objects: HashMap<ObjectName, PublishedObject>,
+        old_repo: Option<RepositoryContact>,
+    ) -> Self {
+        KeyObjectSet {
+            signing_cert,
+            revision,
+            revocations,
+            manifest,
+            crl,
             published_objects,
+            old_repo,
         }
+    }
+
+    fn create(key: &CertifiedKey, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<Self> {
+        let signing_cert = key.incoming_cert().clone();
+
+        let signing_key = signing_cert.key_identifier();
+        let issuer = signing_cert.subject().clone();
+        let revocations = Revocations::default();
+        let revision = ObjectSetRevision::create(timing);
+
+        let crl = CrlBuilder::build(signing_key, issuer, &revocations, revision, signer)?;
+        let published_objects = HashMap::new();
+
+        let manifest = ManifestBuilder::new(revision)
+            .with_objects(&crl, &published_objects)
+            .build_new_mft(&signing_cert, signer)
+            .map(|m| m.into())?;
+
+        Ok(KeyObjectSet {
+            signing_cert,
+            revision,
+            revocations,
+            manifest,
+            crl,
+            published_objects,
+            old_repo: None,
+        })
     }
 
     /// Adds all the elements for this set to the map which is passed on. It will use
@@ -826,6 +929,27 @@ impl CurrentKeyObjectSet {
                 object.base64.clone(),
                 self.signing_cert.uri_for_name(name),
             ));
+        }
+    }
+
+    pub fn requires_reissuance(&self, hours: i64) -> bool {
+        Time::now() + Duration::hours(hours) > self.next_update()
+    }
+
+    pub fn next_update(&self) -> Time {
+        self.revision.next_update
+    }
+
+    // Returns an error in case the KeyIdentifiers don't match.
+    fn update_signing_cert(&mut self, cert: &ReceivedCert) -> KrillResult<()> {
+        if self.signing_cert.key_identifier() == cert.key_identifier() {
+            self.signing_cert = cert.clone();
+            Ok(())
+        } else {
+            Err(Error::PublishingObjects(format!(
+                "received new cert for unknown key id: {}",
+                cert.key_identifier()
+            )))
         }
     }
 
@@ -923,153 +1047,25 @@ impl CurrentKeyObjectSet {
         Ok(())
     }
 
-    /// Turns this into a BasicObjectSet, revoking and retiring all signed objects.
-    fn retire(&self) -> KrillResult<BasicKeyObjectSet> {
+    /// Turns this into a retired KeyObjectSet, revoking and retiring all signed objects.
+    fn retire(&self) -> KrillResult<KeyObjectSet> {
         let mut revocations = self.revocations.clone();
-
         for object in self.published_objects.values() {
             revocations.add(object.revoke());
         }
-
         revocations.purge();
 
-        let mut basic = self.basic.clone();
-        basic.revocations = revocations;
-
-        Ok(basic)
-    }
-}
-
-impl From<BasicKeyObjectSet> for CurrentKeyObjectSet {
-    fn from(basic: BasicKeyObjectSet) -> Self {
-        CurrentKeyObjectSet {
-            basic,
+        let retired_set = KeyObjectSet {
+            signing_cert: self.signing_cert.clone(),
+            revision: self.revision,
+            revocations,
+            manifest: self.manifest.clone(),
+            crl: self.crl.clone(),
             published_objects: HashMap::new(),
-        }
-    }
-}
+            old_repo: self.old_repo.clone(),
+        };
 
-impl Deref for CurrentKeyObjectSet {
-    type Target = BasicKeyObjectSet;
-
-    fn deref(&self) -> &Self::Target {
-        &self.basic
-    }
-}
-
-impl DerefMut for CurrentKeyObjectSet {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.basic
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct BasicKeyObjectSet {
-    signing_cert: ReceivedCert,
-    revision: ObjectSetRevision,
-    revocations: Revocations,
-    manifest: PublishedManifest,
-    crl: PublishedCrl,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    old_repo: Option<RepositoryContact>,
-}
-
-impl BasicKeyObjectSet {
-    pub fn new(
-        signing_cert: ReceivedCert,
-        revision: ObjectSetRevision,
-        revocations: Revocations,
-        manifest: PublishedManifest,
-        crl: PublishedCrl,
-        old_repo: Option<RepositoryContact>,
-    ) -> Self {
-        BasicKeyObjectSet {
-            signing_cert,
-            revision,
-            revocations,
-            manifest,
-            crl,
-            old_repo,
-        }
-    }
-
-    /// Adds all the elements for this set to the map which is passed on. It will use
-    /// the default repository unless this key had an old repository set - as part of
-    /// repository migration.
-    #[allow(clippy::mutable_key_type)]
-    fn add_elements(&self, map: &mut HashMap<RepositoryContact, Vec<PublishElement>>, dflt_repo: &RepositoryContact) {
-        let repo = self.old_repo.as_ref().unwrap_or(dflt_repo);
-
-        let crl_uri = self.signing_cert.crl_uri();
-        let mft_uri = self.signing_cert.mft_uri();
-
-        let elements = map.entry(repo.clone()).or_insert_with(Vec::new);
-
-        elements.push(self.manifest.publish_element(mft_uri));
-        elements.push(self.crl.publish_element(crl_uri));
-    }
-
-    fn create(key: &CertifiedKey, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<Self> {
-        let signing_cert = key.incoming_cert().clone();
-
-        let signing_key = signing_cert.key_identifier();
-        let issuer = signing_cert.subject().clone();
-        let revocations = Revocations::default();
-        let revision = ObjectSetRevision::create(timing);
-
-        let crl = CrlBuilder::build(signing_key, issuer, &revocations, revision, signer)?;
-
-        let manifest = ManifestBuilder::new(revision)
-            .with_crl_only(&crl)
-            .build_new_mft(&signing_cert, signer)
-            .map(|m| m.into())?;
-
-        Ok(BasicKeyObjectSet::new(
-            signing_cert,
-            revision,
-            revocations,
-            manifest,
-            crl,
-            None,
-        ))
-    }
-
-    pub fn requires_reissuance(&self, hours: i64) -> bool {
-        Time::now() + Duration::hours(hours) > self.next_update()
-    }
-
-    pub fn next_update(&self) -> Time {
-        self.revision.next_update
-    }
-
-    // Returns an error in case the KeyIdentifiers don't match.
-    fn update_signing_cert(&mut self, cert: &ReceivedCert) -> KrillResult<()> {
-        if self.signing_cert.key_identifier() == cert.key_identifier() {
-            self.signing_cert = cert.clone();
-            Ok(())
-        } else {
-            Err(Error::PublishingObjects(format!(
-                "received new cert for unknown key id: {}",
-                cert.key_identifier()
-            )))
-        }
-    }
-
-    fn reissue_set(&mut self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<()> {
-        self.revision.next(timing);
-
-        self.revocations.purge();
-        let signing_key = self.signing_cert.key_identifier();
-        let issuer = self.signing_cert.subject().clone();
-
-        self.crl = CrlBuilder::build(signing_key, issuer, &self.revocations, self.revision, signer)?;
-
-        self.manifest = ManifestBuilder::new(self.revision)
-            .with_crl_only(&self.crl)
-            .build_new_mft(&self.signing_cert, signer)
-            .map(|m| m.into())?;
-
-        Ok(())
+        Ok(retired_set)
     }
 
     fn set_old_repo(&mut self, repo: &RepositoryContact) {
@@ -1081,6 +1077,9 @@ impl BasicKeyObjectSet {
     }
 }
 
+//------------ ObjectSetRevision -------------------------------------------
+
+/// This keeps track of the current revision information for a KeyObjectSet
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ObjectSetRevision {
     number: u64,
@@ -1217,12 +1216,7 @@ impl PublishedObject {
     }
 
     pub fn for_bgpsec_cert_info(cert: &BgpSecCertInfo) -> Self {
-        PublishedObject::new(
-            cert.name(),
-            cert.base64().clone(),
-            cert.serial(),
-            cert.expires(),
-        )
+        PublishedObject::new(cert.name(), cert.base64().clone(), cert.serial(), cert.expires())
     }
 }
 
@@ -1284,12 +1278,6 @@ impl ManifestBuilder {
             self.entries.insert(name.clone(), object.hash);
         }
 
-        self
-    }
-
-    #[allow(clippy::mutable_key_type)]
-    pub fn with_crl_only(mut self, crl: &PublishedCrl) -> Self {
-        self.entries.insert(crl.name.clone(), crl.hash);
         self
     }
 
