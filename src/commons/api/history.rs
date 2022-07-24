@@ -682,16 +682,13 @@ impl fmt::Display for StorableCaCommand {
             StorableCaCommand::RemoveParent { parent } => write!(f, "Remove parent '{}'", parent),
 
             StorableCaCommand::UpdateResourceEntitlements { parent, entitlements } => {
-                let mut summary = format!("Update entitlements under parent '{}': ", parent);
+                write!(f, "Update entitlements under parent '{}': ", parent)?;
 
                 for entitlement in entitlements.iter() {
-                    summary.push_str(&format!(
-                        "{} => {} ",
-                        entitlement.resource_class_name, entitlement.resources
-                    ))
+                    write!(f, "{} => {} ", entitlement.resource_class_name, entitlement.resources)?;
                 }
 
-                write!(f, "{}", summary)
+                Ok(())
             }
             // Process a new certificate received from a parent.
             StorableCaCommand::UpdateRcvdCert {
