@@ -113,7 +113,11 @@ fn test_data_dirs_or_die(config: &Config) {
 }
 
 pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
-    let lock = KrillLock::create(&config);
+    let optional_lock = if config.data_dir_use_lock {
+        Some(KrillLock::create(&config))
+    } else {
+        None
+    };
 
     write_pid_file_or_die(&config);
     test_data_dirs_or_die(&config);
@@ -187,14 +191,18 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
 
     let scheduler_task = scheduler.run();
 
-    try_join!(
-        server,
-        scheduler_task,
-        lock.handle_ctrl_c(),
-        #[cfg(unix)]
-        lock.handle_sig_term()
-    )
-    .map(|_| ())
+    if let Some(lock) = optional_lock {
+        try_join!(
+            server,
+            scheduler_task,
+            lock.handle_ctrl_c(),
+            #[cfg(unix)]
+            lock.handle_sig_term()
+        )
+        .map(|_| ())
+    } else {
+        try_join!(server, scheduler_task,).map(|_| ())
+    }
 }
 
 struct RequestLogger {
