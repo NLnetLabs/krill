@@ -372,6 +372,9 @@ pub struct Config {
     #[serde(default = "ConfigDefaults::data_dir")]
     pub data_dir: PathBuf,
 
+    #[serde(default)] // default is false
+    pub data_dir_use_lock: bool,
+
     #[serde(default = "ConfigDefaults::always_recover_data")]
     pub always_recover_data: bool,
 
@@ -783,6 +786,7 @@ impl Config {
 
         let https_mode = HttpsMode::Generate;
         let data_dir = data_dir.to_path_buf();
+        let data_dir_use_lock = true; // ensure we touch this in tests
         let always_recover_data = false;
 
         let log_level = LevelFilter::Debug;
@@ -903,6 +907,7 @@ impl Config {
             port,
             https_mode,
             data_dir,
+            data_dir_use_lock,
             always_recover_data,
             pid_file,
             service_uri: None,
