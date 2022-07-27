@@ -522,7 +522,9 @@ impl IssuanceTimingConfig {
     /// defaults: now + 24 hours + 0 to 4 hours
     pub fn publish_next(&self) -> Time {
         let regular_mins = self.timing_publish_next_hours * 60;
-        let random_mins = {
+        let random_mins = if self.timing_publish_next_jitter_hours == 0 {
+            0
+        } else {
             use rand::Rng;
             let mut rng = rand::thread_rng();
             rng.gen_range(0..(60 * self.timing_publish_next_jitter_hours))
