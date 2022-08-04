@@ -28,7 +28,6 @@ use cryptoki::{
     session::{Session, SessionFlags, UserType},
     slot::{Slot, SlotInfo, TokenInfo},
 };
-use futures::TryFutureExt;
 use once_cell::sync::OnceCell;
 
 use crate::commons::crypto::SignerError;

@@ -3,7 +3,7 @@ use std::{
     marker::PhantomData,
     path::Path,
     sync::{Arc, RwLock, RwLockReadGuard},
-    time::Duration, ops::Deref,
+    time::Duration,
 };
 
 use backoff::ExponentialBackoff;
