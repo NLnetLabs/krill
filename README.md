@@ -21,16 +21,17 @@ For more information please refer to the [documentation](https://krill.docs.nlne
 
 # Changelog
 
-## 0.10.0 RC2 'Hush'
+## 0.10.0 RC3 'Hush'
 
-This second release candidate fixes the following issues identified
-in RC1:
+This third release candidate fixes the following issues identified
+in RC1 and RC2:
 - Using a jitter of 0 results in a panic #859
 - Make krill.lock file optional and opt-in #856
 - BGPSec Router Certificate should NOT contain SIA extension #854
 - Manifest of 0.10.0-rc1 includes CRL, but nothing else #853
+- HSM support in v0.10.0-rc2 doesn't compile on FreeBSD 13.1 #861
 
-In this release candidate we introduce the following major features:
+In this release we introduce the following major features:
 - BGPSec Router Certificate Signing
 - Support the use of Hardware Security Modules (HSMs) for key operations
 
