@@ -187,7 +187,8 @@ impl Pkcs11Context {
     }
 
     pub fn finalize(&mut self) -> Result<(), Pkcs11Error> {
-        self.logged_cryptoki_call_take("Finalize", |cryptoki| {
+        // ignore the result because we want to continue even if the call fails.
+        let _ = self.logged_cryptoki_call_take("Finalize", |cryptoki| {
             cryptoki.finalize();
             Ok(())
         });
