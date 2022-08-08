@@ -200,7 +200,7 @@ jobs:
       uses: actions/cache@v2
       with:
         path: ~/.cargo/bin/cargo-deb
-        key: ${{ matrix.image }}-${{ matrix.pkg }}-cargo-deb-${{ env.CARGO_DEB_VER }}
+        key: ${{ matrix.image }}-${{ matrix.pkg }}-cargo-deb-${{ env.CARGO_DEB_VER }}-${{ endsWith(matrix.image, 'xenial')}}
 
     - name: Cache Cargo Generate RPM if available
       id: cache-cargo-generate-rpm
