@@ -843,9 +843,9 @@ dependencies = [
 
 [[package]]
 name = "kmip-protocol"
-version = "0.4.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c232c81ccbf10282ec2830fbd81f7f002e2548e4c169aada86c6b444bcfa89e3"
+checksum = "396744d490b405f4ff293057bae5625e03dcf8be70fd4ba8c6346a54e78fd837"
 dependencies = [
  "cfg-if",
  "enum-display-derive",
@@ -863,9 +863,9 @@ dependencies = [
 
 [[package]]
 name = "kmip-ttlv"
-version = "0.3.2"
+version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99f11aebbf4a381db6ea786b4148d6e03285c0e58bd778d5f407b4b5ef8b57c2"
+checksum = "1aa943fd7166db2cc2deaea17bd5c2862ccf68eef9ce15576bcee9e4b494685c"
 dependencies = [
  "cfg-if",
  "hex",
