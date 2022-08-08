@@ -74,9 +74,6 @@ xml-rs                = "^0.8"
 libc            = "^0.2"
 syslog          = "^4.0"
 
-[build-dependencies]
-rustc_version   = "0.2.3"
-
 [features]
 default = [ "multi-user", "hsm" ]
 multi-user = [ "basic-cookies", "jmespatch/sync", "regex", "oso", "openidconnect", "rpassword", "scrypt", "unicode-normalization", "urlparse" ]
