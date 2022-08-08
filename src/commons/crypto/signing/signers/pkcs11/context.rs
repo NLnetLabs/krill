@@ -150,6 +150,25 @@ impl Pkcs11Context {
             Ok(())
         }
     }
+
+    pub fn uninitialize_if_not_already(&mut self) {
+        if self.initialized {
+            // prevent subsequent attempts to finalize an already finalized library
+            self.initialized = false;
+
+            // ignore the result because we want to continue even if the call fails.
+            let _ = self.finalize();
+
+            // remove the library we represent from the initialized set (as it
+            // is no longer initialized), subsequent attempts to use the library
+            // will cause it to be initialised again.
+
+            // note: these unwraps are safe because we must have initialized
+            // CONTEXTS and the entry for our library in order for this function
+            // to be invoked.
+            CONTEXTS.get().unwrap().write().unwrap().remove(&self.lib_file_name);
+        }
+    }
 }
 
 //------------ Deref with logging (rather than just impl std::ops::Deref) ---------------------------------------------
@@ -168,16 +187,13 @@ impl Pkcs11Context {
         res
     }
 
-    fn logged_cryptoki_call_take<F, T>(&mut self, cryptoki_call_name: &'static str, call: F) -> Result<T, Pkcs11Error>
+    fn logged_cryptoki_call_with_take<F>(&mut self, cryptoki_call_name: &'static str, call: F)
     where
-        F: FnOnce(Pkcs11) -> Result<T, Pkcs11Error>,
+        F: FnOnce(Pkcs11),
     {
         trace!("{}::{}()", self.lib_file_name, cryptoki_call_name);
-        let res = (call)(self.ctx.take().unwrap()); // leave a None in the ctx member field
-        if let Err(err) = &res {
-            error!("{}::{}() failed: {}", self.lib_file_name, cryptoki_call_name, err);
-        }
-        res
+        let ctx = self.ctx.take().unwrap(); // leave a None in the ctx member field
+        (call)(ctx)
     }
 }
 
@@ -186,25 +202,8 @@ impl Pkcs11Context {
         self.logged_cryptoki_call("Initialize", |cryptoki| cryptoki.initialize(init_args))
     }
 
-    pub fn finalize(&mut self) -> Result<(), Pkcs11Error> {
-        // ignore the result because we want to continue even if the call fails.
-        let _ = self.logged_cryptoki_call_take("Finalize", |cryptoki| {
-            cryptoki.finalize();
-            Ok(())
-        });
-
-        // reflect the fact that finalize() was called
-        self.initialized = false;
-
-        // remove the library we represent from the initialized set (as it
-        // is no longer initialized)
-
-        // note: these unwraps are safe because we must have initialized
-        // CONTEXTS and the entry for our library in order for this function
-        // to be invoked.
-        CONTEXTS.get().unwrap().write().unwrap().remove(&self.lib_file_name);
-
-        Ok(())
+    fn finalize(&mut self) {
+        self.logged_cryptoki_call_with_take("Finalize", |cryptoki| cryptoki.finalize())
     }
 
     pub fn get_info(&self) -> Result<Info, Pkcs11Error> {
