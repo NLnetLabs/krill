@@ -19,7 +19,6 @@ exclude = [
   "pkg/*",
   "Dockerfile",
 ]
-build = "build.rs"
 
 [dependencies]
 backoff               = { version = "0.3.0", optional = true }
