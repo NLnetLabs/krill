@@ -81,6 +81,7 @@ pub(super) struct Pkcs11Context {
     /// None means that we tried and failed to load the library.
     ctx: Option<Pkcs11>,
 
+    // See: https://github.com/parallaxsecond/rust-cryptoki/issues/77
     initialized: bool,
 }
 
@@ -149,6 +150,25 @@ impl Pkcs11Context {
             Ok(())
         }
     }
+
+    pub fn uninitialize_if_not_already(&mut self) {
+        if self.initialized {
+            // prevent subsequent attempts to finalize an already finalized library
+            self.initialized = false;
+
+            // ignore the result because we want to continue even if the call fails.
+            let _ = self.finalize();
+
+            // remove the library we represent from the initialized set (as it
+            // is no longer initialized), subsequent attempts to use the library
+            // will cause it to be initialised again.
+
+            // note: these unwraps are safe because we must have initialized
+            // CONTEXTS and the entry for our library in order for this function
+            // to be invoked.
+            CONTEXTS.get().unwrap().write().unwrap().remove(&self.lib_file_name);
+        }
+    }
 }
 
 //------------ Deref with logging (rather than just impl std::ops::Deref) ---------------------------------------------
@@ -166,11 +186,24 @@ impl Pkcs11Context {
         }
         res
     }
+
+    fn logged_cryptoki_call_with_take<F>(&mut self, cryptoki_call_name: &'static str, call: F)
+    where
+        F: FnOnce(Pkcs11),
+    {
+        trace!("{}::{}()", self.lib_file_name, cryptoki_call_name);
+        let ctx = self.ctx.take().unwrap(); // leave a None in the ctx member field
+        (call)(ctx)
+    }
 }
 
 impl Pkcs11Context {
     fn initialize(&self, init_args: CInitializeArgs) -> Result<(), Pkcs11Error> {
         self.logged_cryptoki_call("Initialize", |cryptoki| cryptoki.initialize(init_args))
+    }
+
+    fn finalize(&mut self) {
+        self.logged_cryptoki_call_with_take("Finalize", |cryptoki| cryptoki.finalize())
     }
 
     pub fn get_info(&self) -> Result<Info, Pkcs11Error> {
