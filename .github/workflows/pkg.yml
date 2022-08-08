@@ -252,7 +252,7 @@ jobs:
 
           # package for the Raspberry Pi 4b as an ARMv7 cross compiled variant of the Debian Bullseye upon which
           # Raspbian 11 is based.
-          - pkg: ['krill','krillup']
+          - pkg: 'krill'
             image: 'debian:bullseye'
             target: 'armv7-unknown-linux-gnueabihf'
           - pkg: 'krillup'
