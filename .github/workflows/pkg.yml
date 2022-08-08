@@ -268,8 +268,6 @@ jobs:
     steps:
     - name: Set vars
       id: setvars
-      env:
-        MATRIX_IMAGE: ${{ matrix.image }}
       shell: bash
       env:
         MATRIX_IMAGE: ${{ matrix.image }}
