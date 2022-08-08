@@ -579,7 +579,8 @@ jobs:
   # actual deployment targets, nor do GH runners support all targets that we want to test. Don't test in Docker
   # containers as they do not support systemd.
   pkg-test:
-    needs: Test DEB/RPM Package
+    name: Test DEB/RPM Package
+    needs: pkg
     runs-on: ubuntu-20.04
     strategy:
       fail-fast: false
