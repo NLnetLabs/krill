@@ -19,14 +19,15 @@ use openssl::{
     rsa::Rsa,
 };
 
-use rpki::repository::crypto::{
-    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError,
+use rpki::crypto::{
+    signer::{KeyError, SigningAlgorithm},
+    KeyIdentifier, PublicKey, PublicKeyFormat, RpkiSignature, RpkiSignatureAlgorithm, Signature, SignatureAlgorithm,
+    SigningError,
 };
 
 use crate::{
     commons::{
-        api::Handle,
-        crypto::{dispatch::signerinfo::SignerMapper, signers::error::SignerError},
+        crypto::{dispatch::signerinfo::SignerMapper, signers::error::SignerError, SignerHandle},
         error::KrillIoError,
     },
     constants::KEYS_DIR,
@@ -55,7 +56,7 @@ pub struct OpenSslSigner {
 
     name: String,
 
-    handle: RwLock<Option<Handle>>,
+    handle: RwLock<Option<SignerHandle>>,
 
     info: Option<String>,
 
@@ -77,7 +78,7 @@ impl OpenSslSigner {
                 keys_dir.as_path().display()
             )),
             handle: RwLock::new(None), // will be set later
-            mapper: mapper.clone(),
+            mapper,
             keys_dir: keys_dir.into(),
         };
 
@@ -88,7 +89,7 @@ impl OpenSslSigner {
         &self.name
     }
 
-    pub fn set_handle(&self, handle: Handle) {
+    pub fn set_handle(&self, handle: SignerHandle) {
         let mut writable_handle = self.handle.write().unwrap();
         if writable_handle.is_some() {
             panic!("Cannot set signer handle as handle is already set");
@@ -113,10 +114,10 @@ impl OpenSslSigner {
         &self,
         signer_private_key_id: &str,
         challenge: &D,
-    ) -> Result<Signature, SignerError> {
+    ) -> Result<RpkiSignature, SignerError> {
         let key_id = KeyIdentifier::from_str(signer_private_key_id).map_err(|_| SignerError::KeyNotFound)?;
         let key_pair = self.load_key(&key_id)?;
-        let signature = Self::sign_with_key(key_pair.pkey.as_ref(), challenge)?;
+        let signature = Self::sign_with_key(key_pair.pkey.as_ref(), RpkiSignatureAlgorithm::default(), challenge)?;
         Ok(signature)
     }
 }
@@ -166,11 +167,20 @@ impl OpenSslSigner {
         Ok(key_id)
     }
 
-    fn sign_with_key<D: AsRef<[u8]> + ?Sized>(pkey: &PKeyRef<Private>, data: &D) -> Result<Signature, SignerError> {
+    fn sign_with_key<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
+        pkey: &PKeyRef<Private>,
+        algorithm: Alg,
+        data: &D,
+    ) -> Result<Signature<Alg>, SignerError> {
+        let signing_algorithm = algorithm.signing_algorithm();
+        if !matches!(signing_algorithm, SigningAlgorithm::RsaSha256) {
+            return Err(SignerError::UnsupportedSigningAlg(signing_algorithm));
+        }
+
         let mut signer = ::openssl::sign::Signer::new(MessageDigest::sha256(), pkey)?;
         signer.update(data.as_ref())?;
 
-        let signature = Signature::new(SignatureAlgorithm::default(), Bytes::from(signer.sign_to_vec()?));
+        let signature = Signature::new(algorithm, Bytes::from(signer.sign_to_vec()?));
 
         Ok(signature)
     }
@@ -200,9 +210,9 @@ impl OpenSslSigner {
         // KeyIdentifier.
         if let Some(mapper) = &self.mapper {
             let readable_handle = self.handle.read().unwrap();
-            let signer_handle = readable_handle.as_ref().ok_or(SignerError::Other(
-                "OpenSSL: Failed to record signer key: Signer handle not set".to_string(),
-            ))?;
+            let signer_handle = readable_handle.as_ref().ok_or_else(|| {
+                SignerError::Other("OpenSSL: Failed to record signer key: Signer handle not set".to_string())
+            })?;
             mapper
                 .add_key(signer_handle, key_id, &format!("{}", key_id))
                 .map_err(|err| SignerError::Other(format!("Failed to record signer key: {}", err)))
@@ -239,25 +249,23 @@ impl OpenSslSigner {
         Ok(())
     }
 
-    pub fn sign<D: AsRef<[u8]> + ?Sized>(
+    pub fn sign<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
         &self,
         key_id: &KeyIdentifier,
-        _algorithm: SignatureAlgorithm,
+        algorithm: Alg,
         data: &D,
-    ) -> Result<Signature, SigningError<SignerError>> {
+    ) -> Result<Signature<Alg>, SigningError<SignerError>> {
         let key_pair = self.load_key(key_id)?;
-        Self::sign_with_key(key_pair.pkey.as_ref(), data).map_err(SigningError::Signer)
+        Self::sign_with_key(key_pair.pkey.as_ref(), algorithm, data).map_err(SigningError::Signer)
     }
 
-    pub fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
+    pub fn sign_one_off<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
         &self,
-        _algorithm: SignatureAlgorithm,
+        algorithm: Alg,
         data: &D,
-    ) -> Result<(Signature, PublicKey), SignerError> {
+    ) -> Result<(Signature<Alg>, PublicKey), SignerError> {
         let kp = OpenSslKeyPair::build()?;
-
-        let signature = Self::sign_with_key(kp.pkey.as_ref(), data)?;
-
+        let signature = Self::sign_with_key(kp.pkey.as_ref(), algorithm, data)?;
         let key = kp.subject_public_key_info()?;
 
         Ok((signature, key))
@@ -310,10 +318,10 @@ impl OpenSslKeyPair {
     }
 
     fn subject_public_key_info(&self) -> Result<PublicKey, SignerError> {
-        // Issues unwrapping this indicate a bug in the openssl library.
-        // So, there is no way to recover.
-        let mut b = Bytes::from(self.pkey.rsa().unwrap().public_key_to_der()?);
-        PublicKey::decode(&mut b).map_err(|_| SignerError::DecodeError)
+        let rsa = self.pkey.rsa().map_err(SignerError::other)?;
+        let bytes = Bytes::from(rsa.public_key_to_der().map_err(SignerError::other)?);
+
+        PublicKey::decode(bytes).map_err(SignerError::other)
     }
 }
 

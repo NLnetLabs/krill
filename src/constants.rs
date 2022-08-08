@@ -75,6 +75,7 @@ pub const CA_REFRESH_SECONDS_MIN: i64 = 3600;
 pub const CA_REFRESH_SECONDS_MAX: i64 = 3 * 24 * 3600; // 3 days
 pub const CA_SUSPEND_MIN_HOURS: i64 = 48; // at least 2 days
 pub const SCHEDULER_REQUEUE_DELAY_SECONDS: i64 = 300;
+pub const SCHEDULER_RESYNC_REPO_CAS_THRESHOLD: usize = 5;
 pub const SCHEDULER_USE_JITTER_CAS_THRESHOLD: usize = 50;
 pub const SCHEDULER_USE_JITTER_CAS_PARENTS_THRESHOLD: usize = 5;
 pub const SCHEDULER_INTERVAL_REPUBLISH_MINS: i64 = 5;
@@ -113,9 +114,11 @@ pub const PW_HASH_P: u32 = 1;
 
 #[cfg(not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11")))]
 pub const DEFAULT_SIGNER_NAME: &str = "Default OpenSSL signer";
-#[cfg(feature = "hsm-tests-kmip")]
+#[cfg(all(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11"))]
+pub const DEFAULT_SIGNER_NAME: &str = "Default OpenSSL signer";
+#[cfg(all(feature = "hsm-tests-kmip", not(feature = "hsm-tests-pkcs11")))]
 pub const DEFAULT_KMIP_SIGNER_NAME: &str = "(test mode) Default KMIP signer";
-#[cfg(feature = "hsm-tests-pkcs11")]
+#[cfg(all(feature = "hsm-tests-pkcs11", not(feature = "hsm-tests-kmip")))]
 pub const DEFAULT_PKCS11_SIGNER_NAME: &str = "(test mode) Default PKCS#11 signer";
 
 pub const OPENSSL_ONE_OFF_SIGNER_NAME: &str = "OpenSSL one-off signer";

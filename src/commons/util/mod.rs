@@ -5,12 +5,13 @@ use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 use bytes::Bytes;
 use rpki::{
-    repository::crypto::DigestAlgorithm,
+    crypto::DigestAlgorithm,
     uri::{Https, Rsync},
 };
 
 use crate::constants::KRILL_VERSION;
 
+pub mod cmslogger;
 pub mod ext_serde;
 pub mod file;
 pub mod httpclient;

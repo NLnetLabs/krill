@@ -2,15 +2,15 @@
 
 use std::{collections::HashMap, fmt, path::Path, str::FromStr};
 
-use rpki::repository::crypto::{KeyIdentifier, PublicKey};
+use rpki::crypto::{KeyIdentifier, PublicKey};
 
 use crate::{
     commons::{
         actor::Actor,
-        api::{CommandSummary, Handle},
+        api::CommandSummary,
+        crypto::SignerHandle,
         error::Error,
         eventsourcing::{Aggregate, AggregateStore, CommandDetails, SentCommand, StoredEvent, WithStorableDetails},
-        util::ext_serde,
         KrillResult,
     },
     constants::{ACTOR_DEF_KRILL, SIGNERS_DIR},
@@ -21,7 +21,7 @@ type InitSignerInfoEvent = StoredEvent<InitSignerInfoDetails>;
 
 impl InitSignerInfoEvent {
     pub fn init(
-        id: &Handle,
+        id: &SignerHandle,
         signer_name: &str,
         signer_info: &str,
         public_key: &PublicKey,
@@ -175,25 +175,25 @@ impl CommandDetails for SignerInfoCommandDetails {
 }
 
 impl SignerInfoCommand {
-    pub fn add_key(id: &Handle, version: Option<u64>, key_id: &KeyIdentifier, internal_key_id: &str) -> Self {
+    pub fn add_key(id: &SignerHandle, version: Option<u64>, key_id: &KeyIdentifier, internal_key_id: &str) -> Self {
         let details = SignerInfoCommandDetails::AddKey(*key_id, internal_key_id.to_string());
         let actor = Actor::test_from_def(ACTOR_DEF_KRILL);
         Self::new(id, version, details, &actor)
     }
 
-    pub fn remove_key(id: &Handle, version: Option<u64>, key_id: &KeyIdentifier) -> Self {
+    pub fn remove_key(id: &SignerHandle, version: Option<u64>, key_id: &KeyIdentifier) -> Self {
         let details = SignerInfoCommandDetails::RemoveKey(*key_id);
         let actor = Actor::test_from_def(ACTOR_DEF_KRILL);
         Self::new(id, version, details, &actor)
     }
 
-    pub fn change_signer_name(id: &Handle, version: Option<u64>, signer_name: &str) -> Self {
+    pub fn change_signer_name(id: &SignerHandle, version: Option<u64>, signer_name: &str) -> Self {
         let details = SignerInfoCommandDetails::ChangeSignerName(signer_name.to_string());
         let actor = Actor::test_from_def(ACTOR_DEF_KRILL);
         Self::new(id, version, details, &actor)
     }
 
-    pub fn change_signer_info(id: &Handle, version: Option<u64>, signer_info: &str) -> Self {
+    pub fn change_signer_info(id: &SignerHandle, version: Option<u64>, signer_info: &str) -> Self {
         let details = SignerInfoCommandDetails::ChangeSignerInfo(signer_info.to_string());
         let actor = Actor::test_from_def(ACTOR_DEF_KRILL);
         Self::new(id, version, details, &actor)
@@ -205,10 +205,6 @@ impl SignerInfoCommand {
 #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
 struct SignerIdentity {
     /// An X.509 Subject Public Key Info public key that can be used to verify the identity of the signer.
-    #[serde(
-        deserialize_with = "ext_serde::de_public_key",
-        serialize_with = "ext_serde::ser_public_key"
-    )]
     public_key: PublicKey,
 
     /// The internal signer backend specific identifier for the corresponding private key.
@@ -220,7 +216,7 @@ struct SignerIdentity {
 #[derive(Clone, Deserialize, Serialize)]
 struct SignerInfo {
     /// The id is needed when generating events.
-    id: Handle,
+    id: SignerHandle,
 
     /// The version of for this particular SignerInfo. Versions are incremented whenever events are applied. They are
     /// used to store those and apply events in the correct sequence, as well as to detect concurrency issues when a
@@ -242,7 +238,7 @@ struct SignerInfo {
 }
 
 impl SignerInfo {
-    pub fn id(&self) -> &Handle {
+    pub fn id(&self) -> &SignerHandle {
         &self.id
     }
 }
@@ -367,13 +363,9 @@ impl SignerMapper {
         signer_info: &str,
         public_key: &PublicKey,
         private_key_internal_id: &str,
-    ) -> KrillResult<Handle> {
-        let signer_handle = Handle::from_str(&uuid::Uuid::new_v4().to_string()).map_err(|err| {
-            Error::SignerError(format!(
-                "Generated UUID is not a valid signer handle: {}",
-                err.to_string()
-            ))
-        })?;
+    ) -> KrillResult<SignerHandle> {
+        let signer_handle = SignerHandle::from_str(&uuid::Uuid::new_v4().to_string())
+            .map_err(|err| Error::SignerError(format!("Generated UUID is not a valid signer handle: {}", err)))?;
 
         let init = InitSignerInfoEvent::init(
             &signer_handle,
@@ -386,26 +378,26 @@ impl SignerMapper {
         Ok(signer_handle)
     }
 
-    pub fn _remove_signer(&self, signer_handle: &Handle) -> KrillResult<()> {
+    pub fn _remove_signer(&self, signer_handle: &SignerHandle) -> KrillResult<()> {
         self.store.drop_aggregate(signer_handle)?;
         Ok(())
     }
 
-    pub fn get_signer_name(&self, signer_handle: &Handle) -> KrillResult<String> {
+    pub fn get_signer_name(&self, signer_handle: &SignerHandle) -> KrillResult<String> {
         Ok(self.store.get_latest(signer_handle)?.signer_name.clone())
     }
 
-    pub fn change_signer_name(&self, signer_handle: &Handle, signer_name: &str) -> KrillResult<()> {
+    pub fn change_signer_name(&self, signer_handle: &SignerHandle, signer_name: &str) -> KrillResult<()> {
         let cmd = SignerInfoCommand::change_signer_name(signer_handle, None, signer_name);
         self.store.command(cmd)?;
         Ok(())
     }
 
-    pub fn get_signer_public_key(&self, signer_handle: &Handle) -> KrillResult<PublicKey> {
+    pub fn get_signer_public_key(&self, signer_handle: &SignerHandle) -> KrillResult<PublicKey> {
         Ok(self.store.get_latest(signer_handle)?.signer_identity.public_key.clone())
     }
 
-    pub fn get_signer_private_key_internal_id(&self, signer_handle: &Handle) -> KrillResult<String> {
+    pub fn get_signer_private_key_internal_id(&self, signer_handle: &SignerHandle) -> KrillResult<String> {
         Ok(self
             .store
             .get_latest(signer_handle)?
@@ -414,27 +406,32 @@ impl SignerMapper {
             .clone())
     }
 
-    pub fn change_signer_info(&self, signer_handle: &Handle, signer_info: &str) -> KrillResult<()> {
+    pub fn change_signer_info(&self, signer_handle: &SignerHandle, signer_info: &str) -> KrillResult<()> {
         let cmd = SignerInfoCommand::change_signer_info(signer_handle, None, signer_info);
         self.store.command(cmd)?;
         Ok(())
     }
 
     /// Record the owner of a Krill key and its corresponding signer specific internal id.
-    pub fn add_key(&self, signer_handle: &Handle, key_id: &KeyIdentifier, internal_key_id: &str) -> KrillResult<()> {
+    pub fn add_key(
+        &self,
+        signer_handle: &SignerHandle,
+        key_id: &KeyIdentifier,
+        internal_key_id: &str,
+    ) -> KrillResult<()> {
         let cmd = SignerInfoCommand::add_key(signer_handle, None, key_id, internal_key_id);
         self.store.command(cmd)?;
         Ok(())
     }
 
-    pub fn remove_key(&self, signer_handle: &Handle, key_id: &KeyIdentifier) -> KrillResult<()> {
+    pub fn remove_key(&self, signer_handle: &SignerHandle, key_id: &KeyIdentifier) -> KrillResult<()> {
         let cmd = SignerInfoCommand::remove_key(signer_handle, None, key_id);
         self.store.command(cmd)?;
         Ok(())
     }
 
     /// Retrieve the signer specific internal id corresponding to the given Krill key.
-    pub fn get_key(&self, signer_handle: &Handle, key_id: &KeyIdentifier) -> KrillResult<String> {
+    pub fn get_key(&self, signer_handle: &SignerHandle, key_id: &KeyIdentifier) -> KrillResult<String> {
         self.store
             .get_latest(signer_handle)?
             .keys
@@ -444,12 +441,12 @@ impl SignerMapper {
     }
 
     /// Get the complete set of known signer handles.
-    pub fn get_signer_handles(&self) -> KrillResult<Vec<Handle>> {
+    pub fn get_signer_handles(&self) -> KrillResult<Vec<SignerHandle>> {
         self.store.list().map_err(Error::AggregateStoreError)
     }
 
     /// Get the handle of the signer that possesses the given Krill key, if any.
-    pub fn get_signer_for_key(&self, key_id: &KeyIdentifier) -> KrillResult<Handle> {
+    pub fn get_signer_for_key(&self, key_id: &KeyIdentifier) -> KrillResult<SignerHandle> {
         // Look for the key id in the key set of each set. Not very efficient but can be improved upon later if
         // needed, e.g. by creating on startup and maintaining an in-memory map of KeyIdentifier to signer Handles.
         for signer_handle in self.store.list()? {

@@ -21,9 +21,54 @@ For more information please refer to the [documentation](https://krill.docs.nlne
 
 # Changelog
 
-## 0.9.5 RC8 'Have You considered these Upgrades?'
+## 0.10.0 RC3 'Hush'
 
-This release was primarily intended to improve support for migrations of pre-0.9.0
+This third release candidate fixes the following issues identified
+in RC1 and RC2:
+- Using a jitter of 0 results in a panic #859
+- Make krill.lock file optional and opt-in #856
+- BGPSec Router Certificate should NOT contain SIA extension #854
+- Manifest of 0.10.0-rc1 includes CRL, but nothing else #853
+- Security fixes in KMIP dependencies (HSM support).
+- Handle more PKCS#11 transient failure scenarios (HSM support).
+
+In this release we introduce the following major features:
+- BGPSec Router Certificate Signing
+- Support the use of Hardware Security Modules (HSMs) for key operations
+
+The documentation for the 'latest' Krill version has more information:
+https://krill.docs.nlnetlabs.nl/en/latest/index.html
+
+Specifically, you may want to have a look at the following pages:
+API changes: https://krill.docs.nlnetlabs.nl/en/latest/upgrade.html#v0-10-0
+BGPSec:      https://krill.docs.nlnetlabs.nl/en/latest/cli.html#krillc-bgpsec
+HSM support: https://krill.docs.nlnetlabs.nl/en/latest/hsm.html
+
+Besides these major features we added a number of small improvements
+and bugfixes:
+- CRL revocation dates in the future #788
+- Prevent that two krill instances modify the same data #829
+- Let user force RRDP session reset on restore #828
+- Various code improvements aimed at maintainability
+
+The full list of changes can be found here:
+https://github.com/NLnetLabs/krill/projects/19
+
+## 0.9.6 'Newer ROAs Please'
+
+This release fixes an issue introduced in 0.9.5 where the background job to
+automatically renew ROAs was not added to Krill's task queue on startup. Thanks
+to Alberto Leiva for finding this issue!
+
+All users who upgraded to 0.9.5 are advised to upgrade to this version as soon
+as possible. Not doing so can lead to ROAs expiring and becoming invalid. If you
+did not upgrade to 0.9.5 you are not affected by this issue.
+
+This release contains no other changes.
+
+## 0.9.5 'Have You considered these Upgrades?'
+
+This release is primarily intended to improve support for migrations of pre-0.9.0
 installations. The upgrade code has been separated more cleanly into a step where
 the new 0.9.0 data structures are prepared in a new directory first, and a second
 step where this new data is made active and the old data is archived. Earlier versions
@@ -71,6 +116,8 @@ In addition to this we added a few other quick fixes in this release:
 - Use per CA locking for CA statuses #795
 - Decrease CA update frequency and use jitter to spread load #802
 - Accept missing tag in RFC8181 Error Response #809
+- Improve efficiency of connection status tracking #811
+- Do not resync CAs with repo on startup if there are too many #818
 
 The full list of changes can be found here:
 https://github.com/NLnetLabs/krill/projects/20

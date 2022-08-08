@@ -1,0 +1,17 @@
+{
+  "actor": "testbed",
+  "time": "2022-02-25T13:52:37.451344455Z",
+  "handle": "0",
+  "version": 3,
+  "sequence": 3,
+  "details": {
+    "type": "add_publisher",
+    "name": "krill-testbed-prepdev"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      3
+    ]
+  }
+}

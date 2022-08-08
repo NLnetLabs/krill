@@ -3,11 +3,11 @@ use std::{cmp::Ordering, fmt, net::IpAddr, ops::Deref, str::FromStr};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 use rpki::repository::{
-    resources::{AsBlocks, AsId, IpBlocks, IpBlocksBuilder, Prefix},
+    resources::{AsBlocks, Asn, IpBlocks, IpBlocksBuilder, Prefix, ResourceSet},
     roa::RoaIpAddress,
 };
 
-use crate::{commons::api::ResourceSet, daemon::ca::RouteAuthorizationUpdates};
+use crate::daemon::ca::RouteAuthorizationUpdates;
 
 //------------ RoaAggregateKey ---------------------------------------------
 
@@ -314,7 +314,7 @@ impl fmt::Display for RoaDefinitions {
 /// Multiple updates are sent as a single delta, because it's important that
 /// all authorizations for a given prefix are published together in order to
 /// avoid invalidating announcements.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RoaDefinitionUpdates {
     added: Vec<RoaDefinition>,
     removed: Vec<RoaDefinition>,
@@ -353,15 +353,6 @@ impl RoaDefinitionUpdates {
 
     pub fn remove(&mut self, rem: RoaDefinition) {
         self.removed.push(rem);
-    }
-}
-
-impl Default for RoaDefinitionUpdates {
-    fn default() -> Self {
-        RoaDefinitionUpdates {
-            added: vec![],
-            removed: vec![],
-        }
     }
 }
 
@@ -547,14 +538,14 @@ impl From<TypedPrefix> for ResourceSet {
                 builder.push(v4.0);
                 let blocks = builder.finalize();
 
-                ResourceSet::new(AsBlocks::empty(), blocks, IpBlocks::empty())
+                ResourceSet::new(AsBlocks::empty(), blocks.into(), IpBlocks::empty().into())
             }
             TypedPrefix::V6(v6) => {
                 let mut builder = IpBlocksBuilder::new();
                 builder.push(v6.0);
                 let blocks = builder.finalize();
 
-                ResourceSet::new(AsBlocks::empty(), IpBlocks::empty(), blocks)
+                ResourceSet::new(AsBlocks::empty(), IpBlocks::empty().into(), blocks.into())
             }
         }
     }
@@ -619,9 +610,9 @@ impl AsNumber {
     }
 }
 
-impl From<AsNumber> for AsId {
+impl From<AsNumber> for Asn {
     fn from(asn: AsNumber) -> Self {
-        AsId::from(asn.0)
+        Asn::from(asn.0)
     }
 }
 

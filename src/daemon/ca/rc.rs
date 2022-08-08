@@ -1,19 +1,24 @@
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
 
-use rpki::repository::{
-    cert::Cert,
+use rpki::{
+    ca::{
+        idexchange::{CaHandle, ParentHandle, RepoInfo},
+        provisioning::{
+            IssuanceRequest, RequestResourceLimit, ResourceClassEntitlements, ResourceClassName, RevocationRequest,
+        },
+    },
     crypto::KeyIdentifier,
-    x509::{Time, Validity},
+    repository::{
+        cert::Cert,
+        resources::ResourceSet,
+        x509::{Time, Validity},
+    },
 };
 
 use crate::{
     commons::{
-        api::{
-            EntitlementClass, Handle, IssuanceRequest, IssuedCert, ParentHandle, RcvdCert, ReplacedObject, RepoInfo,
-            RequestResourceLimit, ResourceClassInfo, ResourceClassName, ResourceSet, RevocationRequest, SuspendedCert,
-            UnsuspendedCert,
-        },
+        api::{IssuedCertificate, ReceivedCert, ResourceClassInfo, SuspendedCert, UnsuspendedCert},
         crypto::{CsrInfo, KrillSigner, SignSupport},
         error::Error,
         KrillResult,
@@ -28,7 +33,7 @@ use crate::{
     },
 };
 
-use super::AspaDefinitions;
+use super::{AspaDefinitions, BgpSecCertificateUpdates, BgpSecCertificates, BgpSecDefinitions};
 
 //------------ ResourceClass -----------------------------------------------
 
@@ -51,10 +56,16 @@ pub struct ResourceClass {
     parent_handle: ParentHandle,
     parent_rc_name: ResourceClassName,
 
+    #[serde(skip_serializing_if = "Roas::is_empty", default)]
     roas: Roas,
 
     #[serde(skip_serializing_if = "AspaObjects::is_empty", default)]
     aspas: AspaObjects,
+
+    #[serde(skip_serializing_if = "BgpSecCertificates::is_empty", default)]
+    bgpsec_certificates: BgpSecCertificates,
+
+    #[serde(skip_serializing_if = "ChildCertificates::is_empty", default)]
     certificates: ChildCertificates,
 
     last_key_change: Time,
@@ -80,6 +91,7 @@ impl ResourceClass {
             roas: Roas::default(),
             aspas: AspaObjects::default(),
             certificates: ChildCertificates::default(),
+            bgpsec_certificates: BgpSecCertificates::default(),
             last_key_change: Time::now(),
             key_state: KeyState::create(pending_key),
         }
@@ -89,11 +101,12 @@ impl ResourceClass {
         ResourceClass {
             name: parent_rc_name.clone(),
             name_space: parent_rc_name.to_string(),
-            parent_handle: ta_handle(),
+            parent_handle: ta_handle().into_converted(),
             parent_rc_name,
             roas: Roas::default(),
             aspas: AspaObjects::default(),
             certificates: ChildCertificates::default(),
+            bgpsec_certificates: BgpSecCertificates::default(),
             last_key_change: Time::now(),
             key_state: KeyState::create(pending_key),
         }
@@ -123,7 +136,7 @@ impl ResourceClass {
     }
 
     /// Returns the current certificate, if there is any
-    pub fn current_certificate(&self) -> Option<&RcvdCert> {
+    pub fn current_certificate(&self) -> Option<&ReceivedCert> {
         self.current_key().map(|k| k.incoming_cert())
     }
 
@@ -174,7 +187,7 @@ impl ResourceClass {
 /// # Support repository migrations
 ///
 impl ResourceClass {
-    pub fn set_old_repo(&mut self, repo: &RepoInfo) {
+    pub fn set_old_repo(&mut self, repo: RepoInfo) {
         self.key_state.set_old_repo_if_in_active_state(repo);
     }
 }
@@ -183,18 +196,20 @@ impl ResourceClass {
 ///
 impl ResourceClass {
     /// Returns event details for receiving the certificate.
+    #[allow(clippy::too_many_arguments)]
     pub fn update_received_cert(
         &self,
-        handle: &Handle,
-        rcvd_cert: RcvdCert,
+        handle: &CaHandle,
+        rcvd_cert: ReceivedCert,
         all_routes: &Routes,
         all_aspas: &AspaDefinitions,
+        all_bgpsecs: &BgpSecDefinitions,
         config: &Config,
         signer: &KrillSigner,
     ) -> KrillResult<Vec<CaEvtDet>> {
         // If this is for a pending key, then we need to promote this key
 
-        let rcvd_cert_ki = rcvd_cert.cert().subject_key_identifier();
+        let rcvd_cert_ki = rcvd_cert.key_identifier();
 
         match &self.key_state {
             KeyState::Pending(pending) => {
@@ -213,6 +228,9 @@ impl ResourceClass {
 
                     let roa_updates = self.roas.update(all_routes, &current_key, config, signer)?;
                     let aspa_updates = self.aspas.update(all_aspas, &current_key, config, signer)?;
+                    let bgpsec_updates = self
+                        .bgpsec_certificates
+                        .update(all_bgpsecs, &current_key, config, signer)?;
 
                     let mut events = vec![CaEvtDet::KeyPendingToActive {
                         resource_class_name: self.name.clone(),
@@ -233,12 +251,26 @@ impl ResourceClass {
                         })
                     }
 
+                    if bgpsec_updates.contains_changes() {
+                        events.push(CaEvtDet::BgpSecCertificatesUpdated {
+                            resource_class_name: self.name.clone(),
+                            updates: bgpsec_updates,
+                        })
+                    }
+
                     Ok(events)
                 }
             }
-            KeyState::Active(current) => {
-                self.update_rcvd_cert_current(handle, current, rcvd_cert, all_routes, all_aspas, config, signer)
-            }
+            KeyState::Active(current) => self.update_rcvd_cert_current(
+                handle,
+                current,
+                rcvd_cert,
+                all_routes,
+                all_aspas,
+                all_bgpsecs,
+                config,
+                signer,
+            ),
             KeyState::RollPending(pending, current) => {
                 if rcvd_cert_ki == pending.key_id() {
                     let new_key = CertifiedKey::create(rcvd_cert);
@@ -247,7 +279,16 @@ impl ResourceClass {
                         new_key,
                     }])
                 } else {
-                    self.update_rcvd_cert_current(handle, current, rcvd_cert, all_routes, all_aspas, config, signer)
+                    self.update_rcvd_cert_current(
+                        handle,
+                        current,
+                        rcvd_cert,
+                        all_routes,
+                        all_aspas,
+                        all_bgpsecs,
+                        config,
+                        signer,
+                    )
                 }
             }
             KeyState::RollNew(new, current) => {
@@ -258,12 +299,30 @@ impl ResourceClass {
                         rcvd_cert,
                     }])
                 } else {
-                    self.update_rcvd_cert_current(handle, current, rcvd_cert, all_routes, all_aspas, config, signer)
+                    self.update_rcvd_cert_current(
+                        handle,
+                        current,
+                        rcvd_cert,
+                        all_routes,
+                        all_aspas,
+                        all_bgpsecs,
+                        config,
+                        signer,
+                    )
                 }
             }
             KeyState::RollOld(current, _old) => {
                 // We will never request a new certificate for an old key
-                self.update_rcvd_cert_current(handle, current, rcvd_cert, all_routes, all_aspas, config, signer)
+                self.update_rcvd_cert_current(
+                    handle,
+                    current,
+                    rcvd_cert,
+                    all_routes,
+                    all_aspas,
+                    all_bgpsecs,
+                    config,
+                    signer,
+                )
             }
         }
     }
@@ -271,15 +330,16 @@ impl ResourceClass {
     #[allow(clippy::too_many_arguments)]
     fn update_rcvd_cert_current(
         &self,
-        handle: &Handle,
+        handle: &CaHandle,
         current_key: &CurrentKey,
-        rcvd_cert: RcvdCert,
-        routes: &Routes,
-        aspas: &AspaDefinitions,
+        rcvd_cert: ReceivedCert,
+        all_routes: &Routes,
+        all_aspas: &AspaDefinitions,
+        all_bgpsecs: &BgpSecDefinitions,
         config: &Config,
         signer: &KrillSigner,
     ) -> KrillResult<Vec<CaEvtDet>> {
-        let ki = rcvd_cert.cert().subject_key_identifier();
+        let ki = rcvd_cert.key_identifier();
         if ki != current_key.key_id() {
             return Err(ca::Error::KeyUseNoMatch(ki));
         }
@@ -320,7 +380,7 @@ impl ResourceClass {
             // Re-issue ROAs based on updated resources.
             // Note that route definitions will not have changed in this case, but the decision logic is all the same.
             {
-                let updates = self.roas.update(routes, &updated_key, config, signer)?;
+                let updates = self.roas.update(all_routes, &updated_key, config, signer)?;
                 if !updates.is_empty() {
                     res.push(CaEvtDet::RoasUpdated {
                         resource_class_name: self.name.clone(),
@@ -332,9 +392,23 @@ impl ResourceClass {
             // Re-issue ASPA objects based on updated resources.
             // Note that aspa definitions will not have changed in this case, but the decision logic is all the same.
             {
-                let updates = self.aspas.update(aspas, &updated_key, config, signer)?;
+                let updates = self.aspas.update(all_aspas, &updated_key, config, signer)?;
                 if !updates.is_empty() {
                     res.push(CaEvtDet::AspaObjectsUpdated {
+                        resource_class_name: self.name.clone(),
+                        updates,
+                    })
+                }
+            }
+
+            // Re-issue BGPSec certificates based on updated resources.
+            // Note that definitions will not have changed in this case, but the decision logic is all the same.
+            {
+                let updates = self
+                    .bgpsec_certificates
+                    .update(all_bgpsecs, &updated_key, config, signer)?;
+                if !updates.is_empty() {
+                    res.push(CaEvtDet::BgpSecCertificatesUpdated {
                         resource_class_name: self.name.clone(),
                         updates,
                     })
@@ -360,8 +434,8 @@ impl ResourceClass {
     /// ARIN - Krill is sometimes told to just drop all resources.
     pub fn make_entitlement_events(
         &self,
-        handle: &Handle,
-        entitlement: &EntitlementClass,
+        handle: &CaHandle,
+        entitlement: &ResourceClassEntitlements,
         base_repo: &RepoInfo,
         signer: &KrillSigner,
     ) -> KrillResult<Vec<CaEvtDet>> {
@@ -413,7 +487,7 @@ impl ResourceClass {
 ///
 impl ResourceClass {
     /// This function marks a certificate as received.
-    pub fn received_cert(&mut self, key_id: KeyIdentifier, cert: RcvdCert) {
+    pub fn received_cert(&mut self, key_id: KeyIdentifier, cert: ReceivedCert) {
         // if there is a pending key, then we need to do some promotions..
         match &mut self.key_state {
             KeyState::Pending(_pending) => panic!("Would have received KeyPendingToActive event"),
@@ -556,6 +630,14 @@ impl ResourceClass {
                     events.push(certs_updated);
                 }
 
+                let bgpsec_updates = self.bgpsec_certificates.renew(new_key, None, issuance_timing, signer)?;
+                if !bgpsec_updates.is_empty() {
+                    events.push(CaEvtDet::BgpSecCertificatesUpdated {
+                        resource_class_name: self.name.clone(),
+                        updates: bgpsec_updates,
+                    });
+                }
+
                 Ok(events)
             }
         } else {
@@ -593,17 +675,15 @@ impl ResourceClass {
         limit: RequestResourceLimit,
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
-    ) -> KrillResult<IssuedCert> {
+    ) -> KrillResult<IssuedCertificate> {
         let signing_key = self.get_current_key()?;
         let parent_resources = signing_key.incoming_cert().resources();
         let resources = parent_resources.intersection(child_resources);
-        let replaces = self.certificates.get_issued(&csr.key_id()).map(ReplacedObject::from);
 
         let issued = SignSupport::make_issued_cert(
             csr,
             &resources,
             limit,
-            replaces,
             signing_key,
             issuance_timing.timing_child_certificate_valid_weeks,
             signer,
@@ -613,7 +693,7 @@ impl ResourceClass {
     }
 
     /// Stores an [IssuedCert](krill_commons.api.ca.IssuedCert)
-    pub fn certificate_issued(&mut self, issued: IssuedCert) {
+    pub fn certificate_issued(&mut self, issued: IssuedCertificate) {
         self.certificates.certificate_issued(issued);
     }
 
@@ -626,7 +706,7 @@ impl ResourceClass {
     }
 
     /// Returns an issued certificate for a key, if it exists
-    pub fn issued(&self, ki: &KeyIdentifier) -> Option<&IssuedCert> {
+    pub fn issued(&self, ki: &KeyIdentifier) -> Option<&IssuedCertificate> {
         self.certificates.get_issued(ki)
     }
 
@@ -725,6 +805,49 @@ impl ResourceClass {
     /// Apply ASPA object changes from events
     pub fn aspa_objects_updated(&mut self, updates: AspaObjectsUpdates) {
         self.aspas.updated(updates)
+    }
+}
+
+/// # BGPSec
+///
+impl ResourceClass {
+    /// Updates the BGPSec certificates in accordance with the supplied definitions
+    /// and the resources (still) held in this resource class
+    pub fn update_bgpsec_certs(
+        &self,
+        definitions: &BgpSecDefinitions,
+        config: &Config,
+        signer: &KrillSigner,
+    ) -> KrillResult<BgpSecCertificateUpdates> {
+        if let Ok(key) = self.get_current_key() {
+            self.bgpsec_certificates.update(definitions, key, config, signer)
+        } else {
+            debug!("no BGPSec certificates to update - resource class has no current key");
+            Ok(BgpSecCertificateUpdates::default())
+        }
+    }
+
+    /// Renew BGPSec certificates that would expire otherwise.
+    pub fn renew_bgpsec_certs(
+        &self,
+        issuance_timing: &IssuanceTimingConfig,
+        signer: &KrillSigner,
+    ) -> KrillResult<BgpSecCertificateUpdates> {
+        if let Ok(key) = self.get_current_key() {
+            let renew_threshold =
+                Some(Time::now() + Duration::weeks(issuance_timing.timing_bgpsec_reissue_weeks_before));
+
+            self.bgpsec_certificates
+                .renew(key, renew_threshold, issuance_timing, signer)
+        } else {
+            debug!("no BGPSec certificates to renew - resource class has no current key");
+            Ok(BgpSecCertificateUpdates::default())
+        }
+    }
+
+    /// Apply BGPSec Certificate changes from events
+    pub fn bgpsec_certificates_updated(&mut self, updates: BgpSecCertificateUpdates) {
+        self.bgpsec_certificates.updated(updates)
     }
 }
 

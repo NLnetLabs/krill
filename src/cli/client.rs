@@ -2,7 +2,7 @@ use std::{env, fmt};
 
 use serde::{de::DeserializeOwned, Serialize};
 
-use rpki::uri;
+use rpki::{ca::idexchange, uri};
 
 use crate::{
     cli::{
@@ -11,13 +11,12 @@ use crate::{
     },
     commons::{
         api::{
-            AllCertAuthIssues, AspaDefinitionUpdates, CaRepoDetails, CertAuthIssues, ChildCaInfo,
-            ChildrenConnectionStats, ParentCaContact, ParentStatuses, PublisherDetails, PublisherList, RepoStatus,
-            Token,
+            AllCertAuthIssues, AspaDefinitionUpdates, BgpSecDefinitionUpdates, CaRepoDetails, CertAuthIssues,
+            ChildCaInfo, ChildrenConnectionStats, ParentCaContact, ParentStatuses, PublisherDetails, PublisherList,
+            RepoStatus, Token,
         },
         bgp::BgpAnalysisAdvice,
         error::KrillIoError,
-        remote::rfc8183,
         util::{file, httpclient},
     },
     constants::KRILL_CLI_API_ENV,
@@ -155,6 +154,10 @@ impl KrillClient {
                 post_empty(&self.server, &self.token, "api/v1/bulk/cas/publish").await?;
                 Ok(ApiResponse::Empty)
             }
+            BulkCaCommand::ForcePublish => {
+                post_empty(&self.server, &self.token, "api/v1/bulk/cas/force_publish").await?;
+                Ok(ApiResponse::Empty)
+            }
             BulkCaCommand::Sync => {
                 post_empty(&self.server, &self.token, "api/v1/bulk/cas/sync/repo").await?;
                 Ok(ApiResponse::Empty)
@@ -200,7 +203,7 @@ impl KrillClient {
 
             CaCommand::RepoPublisherRequest(handle) => {
                 let uri = format!("api/v1/cas/{}/id/publisher_request.json", handle);
-                let req: rfc8183::PublisherRequest = get_json(&self.server, &self.token, &uri).await?;
+                let req: idexchange::PublisherRequest = get_json(&self.server, &self.token, &uri).await?;
                 Ok(ApiResponse::Rfc8183PublisherRequest(req))
             }
 
@@ -334,6 +337,26 @@ impl KrillClient {
                 };
 
                 Ok(ApiResponse::BgpAnalysisSuggestions(suggestions))
+            }
+
+            CaCommand::BgpSecList(handle) => {
+                let uri = format!("api/v1/cas/{}/bgpsec", handle);
+                let bgpsec_list = get_json(&self.server, &self.token, &uri).await?;
+                Ok(ApiResponse::BgpSecDefinitions(bgpsec_list))
+            }
+
+            CaCommand::BgpSecAdd(handle, addition) => {
+                let uri = format!("api/v1/cas/{}/bgpsec", handle);
+                let update = BgpSecDefinitionUpdates::new(vec![addition], vec![]);
+                post_json(&self.server, &self.token, &uri, update).await?;
+                Ok(ApiResponse::Empty)
+            }
+
+            CaCommand::BgpSecRemove(handle, removal) => {
+                let uri = format!("api/v1/cas/{}/bgpsec", handle);
+                let update = BgpSecDefinitionUpdates::new(vec![], vec![removal]);
+                post_json(&self.server, &self.token, &uri, update).await?;
+                Ok(ApiResponse::Empty)
             }
 
             CaCommand::AspasList(handle) => {
@@ -623,7 +646,7 @@ pub enum Error {
     ReportError(ReportError),
     IoError(KrillIoError),
     EmptyResponse,
-    Rfc8183(rfc8183::Error),
+    Rfc8183(idexchange::Error),
     InitError(String),
     InputError(String),
 }
@@ -668,8 +691,8 @@ impl From<ReportError> for Error {
     }
 }
 
-impl From<rfc8183::Error> for Error {
-    fn from(e: rfc8183::Error) -> Error {
+impl From<idexchange::Error> for Error {
+    fn from(e: idexchange::Error) -> Error {
         Error::Rfc8183(e)
     }
 }

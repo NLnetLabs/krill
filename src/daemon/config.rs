@@ -14,11 +14,11 @@ use serde::{de, Deserialize, Deserializer};
 #[cfg(unix)]
 use syslog::Facility;
 
-use rpki::{repository::x509::Time, uri};
+use rpki::{ca::idexchange::PublisherHandle, repository::x509::Time, uri};
 
 use crate::{
     commons::{
-        api::{PublicationServerUris, PublisherHandle, Token},
+        api::{PublicationServerUris, Token},
         crypto::OpenSslSignerConfig,
         error::KrillIoError,
         util::ext_serde,
@@ -211,6 +211,14 @@ impl ConfigDefaults {
         4
     }
 
+    fn timing_bgpsec_valid_weeks() -> i64 {
+        52
+    }
+
+    fn timing_bgpsec_reissue_weeks_before() -> i64 {
+        4
+    }
+
     pub fn signers() -> Vec<SignerConfig> {
         #[cfg(not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11")))]
         {
@@ -221,7 +229,16 @@ impl ConfigDefaults {
             )]
         }
 
-        #[cfg(feature = "hsm-tests-kmip")]
+        #[cfg(all(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11"))]
+        {
+            let signer_config = OpenSslSignerConfig { keys_path: None };
+            vec![SignerConfig::new(
+                DEFAULT_SIGNER_NAME.to_string(),
+                SignerType::OpenSsl(signer_config),
+            )]
+        }
+
+        #[cfg(all(feature = "hsm-tests-kmip", not(feature = "hsm-tests-pkcs11")))]
         {
             let signer_config = KmipSignerConfig {
                 host: "127.0.0.1".to_string(),
@@ -245,13 +262,13 @@ impl ConfigDefaults {
                 max_connections: KmipSignerConfig::default_max_connections(),
                 max_response_bytes: KmipSignerConfig::default_max_response_bytes(),
             };
-            vec![SignerConfig::new(
+            return vec![SignerConfig::new(
                 DEFAULT_KMIP_SIGNER_NAME.to_string(),
                 SignerType::Kmip(signer_config),
-            )]
+            )];
         }
 
-        #[cfg(feature = "hsm-tests-pkcs11")]
+        #[cfg(all(feature = "hsm-tests-pkcs11", not(feature = "hsm-tests-kmip")))]
         {
             use crate::commons::crypto::SlotIdOrLabel;
             let signer_config = Pkcs11SignerConfig {
@@ -324,9 +341,14 @@ impl SignerReference {
     }
 
     pub fn is_named(&self) -> bool {
+        matches!(self, SignerReference::Name(Some(_)))
+    }
+
+    pub fn is_set(&self) -> bool {
         match self {
+            SignerReference::Name(None) => false,
             SignerReference::Name(Some(_)) => true,
-            _ => false,
+            SignerReference::Index(_) => true,
         }
     }
 }
@@ -350,6 +372,9 @@ pub struct Config {
     #[serde(default = "ConfigDefaults::data_dir")]
     pub data_dir: PathBuf,
 
+    #[serde(default)] // default is false
+    pub data_dir_use_lock: bool,
+
     #[serde(default = "ConfigDefaults::always_recover_data")]
     pub always_recover_data: bool,
 
@@ -361,7 +386,7 @@ pub struct Config {
         default = "ConfigDefaults::log_level",
         deserialize_with = "ext_serde::de_level_filter"
     )]
-    log_level: LevelFilter,
+    pub log_level: LevelFilter,
 
     #[serde(default = "ConfigDefaults::log_type")]
     log_type: LogType,
@@ -460,6 +485,8 @@ pub struct Config {
     pub metrics: MetricsConfig,
 
     pub testbed: Option<TestBed>,
+
+    pub benchmark: Option<Benchmark>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -482,6 +509,10 @@ pub struct IssuanceTimingConfig {
     pub timing_aspa_valid_weeks: i64,
     #[serde(default = "ConfigDefaults::timing_aspa_reissue_weeks_before")]
     pub timing_aspa_reissue_weeks_before: i64,
+    #[serde(default = "ConfigDefaults::timing_bgpsec_valid_weeks")]
+    pub timing_bgpsec_valid_weeks: i64,
+    #[serde(default = "ConfigDefaults::timing_bgpsec_reissue_weeks_before")]
+    pub timing_bgpsec_reissue_weeks_before: i64,
 }
 
 impl IssuanceTimingConfig {
@@ -491,7 +522,9 @@ impl IssuanceTimingConfig {
     /// defaults: now + 24 hours + 0 to 4 hours
     pub fn publish_next(&self) -> Time {
         let regular_mins = self.timing_publish_next_hours * 60;
-        let random_mins = {
+        let random_mins = if self.timing_publish_next_jitter_hours == 0 {
+            0
+        } else {
             use rand::Rng;
             let mut rng = rand::thread_rng();
             rng.gen_range(0..(60 * self.timing_publish_next_jitter_hours))
@@ -604,6 +637,12 @@ impl TestBed {
     pub fn publication_server_uris(&self) -> PublicationServerUris {
         PublicationServerUris::new(self.rrdp_base_uri.clone(), self.rsync_jail.clone())
     }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Benchmark {
+    pub cas: usize,
+    pub ca_roas: usize,
 }
 
 /// # Accessors
@@ -749,6 +788,7 @@ impl Config {
 
         let https_mode = HttpsMode::Generate;
         let data_dir = data_dir.to_path_buf();
+        let data_dir_use_lock = true; // ensure we touch this in tests
         let always_recover_data = false;
 
         let log_level = LevelFilter::Debug;
@@ -818,6 +858,8 @@ impl Config {
         let timing_roa_reissue_weeks_before = ConfigDefaults::timing_roa_reissue_weeks_before();
         let timing_aspa_valid_weeks = ConfigDefaults::timing_aspa_valid_weeks();
         let timing_aspa_reissue_weeks_before = ConfigDefaults::timing_aspa_reissue_weeks_before();
+        let timing_bgpsec_valid_weeks = ConfigDefaults::timing_bgpsec_valid_weeks();
+        let timing_bgpsec_reissue_weeks_before = ConfigDefaults::timing_bgpsec_reissue_weeks_before();
 
         let issuance_timing = IssuanceTimingConfig {
             timing_publish_next_hours,
@@ -829,6 +871,8 @@ impl Config {
             timing_roa_reissue_weeks_before,
             timing_aspa_valid_weeks,
             timing_aspa_reissue_weeks_before,
+            timing_bgpsec_valid_weeks,
+            timing_bgpsec_reissue_weeks_before,
         };
 
         let repository_retention = RepositoryRetentionConfig {
@@ -865,6 +909,7 @@ impl Config {
             port,
             https_mode,
             data_dir,
+            data_dir_use_lock,
             always_recover_data,
             pid_file,
             service_uri: None,
@@ -906,6 +951,7 @@ impl Config {
             repository_retention,
             metrics,
             testbed,
+            benchmark: None,
         }
     }
 
@@ -1019,14 +1065,14 @@ impl Config {
     fn add_openssl_signer(&mut self, name: &str) -> usize {
         let signer_config = SignerConfig::new(name.to_string(), SignerType::OpenSsl(OpenSslSignerConfig::default()));
         self.signers.push(signer_config);
-        let idx = self.signers.len() - 1;
-        idx
+        self.signers.len() - 1
     }
 
     fn find_signer_reference(&self, signer_ref: &SignerReference) -> Option<usize> {
-        match signer_ref.is_named() {
-            true => self.signers.iter().position(|s| &s.name == signer_ref.name()),
-            false => None,
+        match signer_ref {
+            SignerReference::Name(None) => None,
+            SignerReference::Name(Some(name)) => self.signers.iter().position(|s| &s.name == name),
+            SignerReference::Index(idx) => Some(*idx),
         }
     }
 
@@ -1125,6 +1171,18 @@ impl Config {
             }
         }
 
+        if let Some(benchmark) = &self.benchmark {
+            if self.testbed.is_none() {
+                return Err(ConfigError::other("[benchmark] section requires [testbed] config"));
+            }
+            if benchmark.cas > 65535 {
+                return Err(ConfigError::other("[benchmark] allows only up to 65536 CAs"));
+            }
+            if benchmark.ca_roas > 100 {
+                return Err(ConfigError::other("[benchmark] allows only up to 100 ROAs per CA"));
+            }
+        }
+
         if self.signers.is_empty() {
             // Since Config.signers defaults via Serde to ConfigDefaults::signers() which creates a vector with a
             // single signer, this can only happen if we were invoked on a config object created or modified by test
@@ -1155,7 +1213,7 @@ impl Config {
             }
         }
 
-        if self.signers.len() > 1 && !self.default_signer.is_named() {
+        if self.signers.len() > 1 && !self.default_signer.is_set() {
             return Err(ConfigError::other(
                 "'default_signer' must be set when more than one [[signers]] configuration is defined",
             ));
@@ -1171,13 +1229,11 @@ impl Config {
         } else {
         }
 
-        if self.one_off_signer.is_named() {
-            if self.find_signer_reference(&self.one_off_signer).is_none() {
-                return Err(ConfigError::other(&format!(
-                    "'{}' cannot be used as the 'one_off_signer' as no signer with that name is defined",
-                    self.one_off_signer.name()
-                )));
-            }
+        if self.one_off_signer.is_named() && self.find_signer_reference(&self.one_off_signer).is_none() {
+            return Err(ConfigError::other(&format!(
+                "'{}' cannot be used as the 'one_off_signer' as no signer with that name is defined",
+                self.one_off_signer.name()
+            )));
         }
 
         Ok(())
@@ -1837,6 +1893,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "see issue #821"]
     fn should_use_the_expected_default_signer() {
         let config_str = r#"
             auth_token = "secret"

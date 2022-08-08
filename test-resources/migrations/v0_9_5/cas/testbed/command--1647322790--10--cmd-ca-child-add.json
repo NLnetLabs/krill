@@ -1,0 +1,23 @@
+{
+  "actor": "testbed",
+  "time": "2022-03-15T05:39:50.952375285Z",
+  "handle": "testbed",
+  "version": 12,
+  "sequence": 10,
+  "details": {
+    "type": "child_add",
+    "child": "Publisher",
+    "ski": "0DFA9A63ED8A8AAABE49A9C540B5C19D29DE71E8",
+    "resources": {
+      "asn": "AS0-AS65535",
+      "v4": "0.0.0.0/0",
+      "v6": ""
+    }
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      12
+    ]
+  }
+}

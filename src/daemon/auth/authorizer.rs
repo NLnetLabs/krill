@@ -1,6 +1,8 @@
 //! Authorization for the API
 
-use std::{any::Any, collections::HashMap, sync::Arc};
+use std::{any::Any, collections::HashMap, fmt, str::FromStr, sync::Arc};
+
+use rpki::ca::idexchange::{InvalidHandle, MyHandle};
 
 use crate::{
     commons::{
@@ -290,5 +292,56 @@ impl Auth {
 
     pub fn id_and_password_hash(id: String, password_hash: Token) -> Self {
         Auth::IdAndPasswordHash { id, password_hash }
+    }
+}
+
+//------------ Handle --------------------------------------------------------
+
+/// Handle for Authorization purposes.
+// This type is a wrapper so the we can implement the PolarClass trait which
+// is required when multi-user is enabled. We always need to pass the handle
+// into the authorization macro, even if multi-user is not enabled. So we need
+// this type even then.
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq)]
+pub struct Handle(MyHandle);
+
+impl fmt::Display for Handle {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl From<&MyHandle> for Handle {
+    fn from(h: &MyHandle) -> Self {
+        Handle(h.clone())
+    }
+}
+
+impl FromStr for Handle {
+    type Err = InvalidHandle;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        MyHandle::from_str(s).map(Handle)
+    }
+}
+
+impl AsRef<MyHandle> for Handle {
+    fn as_ref(&self) -> &MyHandle {
+        &self.0
+    }
+}
+
+#[cfg(feature = "multi-user")]
+impl oso::PolarClass for Handle {
+    fn get_polar_class() -> oso::Class {
+        Self::get_polar_class_builder()
+            .set_constructor(|name: String| Handle::from_str(&name).unwrap())
+            .set_equality_check(|left: &Handle, right: &Handle| left == right)
+            .add_attribute_getter("name", |instance| instance.to_string())
+            .build()
+    }
+
+    fn get_polar_class_builder() -> oso::ClassBuilder<Self> {
+        oso::Class::builder()
     }
 }

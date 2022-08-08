@@ -34,7 +34,7 @@ async fn main() {
     match Config::create(config_file, true) {
         Ok(config) => {
             let config = Arc::new(config);
-            match prepare_upgrade_data_migrations(UpgradeMode::PrepareOnly, config.clone()).await {
+            match prepare_upgrade_data_migrations(UpgradeMode::PrepareOnly, config.clone()) {
                 Err(e) => {
                     eprintln!();
                     eprintln!("*** ERROR *** {}", e);

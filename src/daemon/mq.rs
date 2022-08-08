@@ -6,11 +6,18 @@
 use std::{fmt, sync::RwLock};
 
 use priority_queue::PriorityQueue;
-use rpki::repository::x509::Time;
+
+use rpki::{
+    ca::{
+        idexchange::{CaHandle, ParentHandle},
+        provisioning::{ResourceClassName, RevocationRequest},
+    },
+    repository::x509::Time,
+};
 
 use crate::{
     commons::{
-        api::{Handle, ParentHandle, ResourceClassName, RevocationRequest, Timestamp},
+        api::Timestamp,
         eventsourcing::{self, Event},
     },
     daemon::ca::{CaEvt, CaEvtDet, CertAuth},
@@ -25,16 +32,16 @@ pub enum Task {
     QueueStartTasks,
 
     SyncRepo {
-        ca: Handle,
+        ca: CaHandle,
     },
 
     SyncParent {
-        ca: Handle,
+        ca: CaHandle,
         parent: ParentHandle,
     },
 
     SuspendChildrenIfNeeded {
-        ca: Handle,
+        ca: CaHandle,
     },
 
     RepublishIfNeeded,
@@ -46,13 +53,13 @@ pub enum Task {
     SweepLoginCache,
 
     ResourceClassRemoved {
-        ca: Handle,
+        ca: CaHandle,
         parent: ParentHandle,
         rcn: ResourceClassName,
         revocation_requests: Vec<RevocationRequest>,
     },
     UnexpectedKey {
-        ca: Handle,
+        ca: CaHandle,
         rcn: ResourceClassName,
         revocation_request: RevocationRequest,
     },
@@ -90,10 +97,9 @@ pub struct TaskQueue {
 
 impl Default for TaskQueue {
     fn default() -> Self {
-        let mut q = PriorityQueue::new();
-        q.push(Task::QueueStartTasks, now());
-
-        TaskQueue { q: RwLock::new(q) }
+        TaskQueue {
+            q: RwLock::new(PriorityQueue::new()),
+        }
     }
 }
 
@@ -149,15 +155,19 @@ impl TaskQueue {
         }
     }
 
-    pub fn sync_repo(&self, ca: Handle, priority: Priority) {
+    pub fn server_started(&self) {
+        self.schedule(Task::QueueStartTasks, now());
+    }
+
+    pub fn sync_repo(&self, ca: CaHandle, priority: Priority) {
         self.schedule(Task::SyncRepo { ca }, priority);
     }
 
-    pub fn sync_parent(&self, ca: Handle, parent: ParentHandle, priority: Priority) {
+    pub fn sync_parent(&self, ca: CaHandle, parent: ParentHandle, priority: Priority) {
         self.schedule(Task::SyncParent { ca, parent }, priority);
     }
 
-    pub fn suspend_children(&self, ca: Handle, priority: Priority) {
+    pub fn suspend_children(&self, ca: CaHandle, priority: Priority) {
         self.schedule(Task::SuspendChildrenIfNeeded { ca }, priority);
     }
 
@@ -178,7 +188,7 @@ impl TaskQueue {
         self.schedule(Task::SweepLoginCache, priority);
     }
 
-    fn drop_sync_parent(&self, ca: Handle, parent: ParentHandle) {
+    fn drop_sync_parent(&self, ca: CaHandle, parent: ParentHandle) {
         let mut q = self.q.write().unwrap();
         let sync = Task::SyncParent { ca, parent };
         q.remove(&sync);
@@ -197,6 +207,7 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for TaskQueue {
                 CaEvtDet::RoasUpdated { .. }
                 | CaEvtDet::AspaObjectsUpdated { .. }
                 | CaEvtDet::ChildCertificatesUpdated { .. }
+                | CaEvtDet::BgpSecCertificatesUpdated { .. }
                 | CaEvtDet::ChildKeyRevoked { .. }
                 | CaEvtDet::KeyPendingToNew { .. }
                 | CaEvtDet::KeyPendingToActive { .. }

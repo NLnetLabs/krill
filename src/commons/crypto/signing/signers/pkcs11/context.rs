@@ -14,7 +14,7 @@
 //! way to improve this could be to invoke the library in another thread and way a maximum amount of time in the
 //! invoking thread before deciding to give up on the spawned thread that is taking too long.
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::HashMap,
     path::Path,
     sync::{Arc, Mutex, RwLock},
 };
@@ -81,6 +81,7 @@ pub(super) struct Pkcs11Context {
     /// None means that we tried and failed to load the library.
     ctx: Option<Pkcs11>,
 
+    // See: https://github.com/parallaxsecond/rust-cryptoki/issues/77
     initialized: bool,
 }
 
@@ -105,8 +106,9 @@ impl Pkcs11Context {
         let lib_file_name = lib_file_name.to_string_lossy().to_string();
         let mut locked_contexts = contexts.write().unwrap();
 
-        let ctx_ref = Self::or_insert_with_key(locked_contexts.entry(lib_file_name), |file_name| {
-            // The library isn't yet in the map, so load it.
+        // Ensure that library is loaded if it isn't yet in the map.
+        // Note, we cannot use entry and or_insert_with because our fn may fail.
+        if !locked_contexts.contains_key(&lib_file_name) {
             trace!("Loading PKCS#11 library '{:?}'", lib_path);
 
             let ctx = Pkcs11::new(lib_path).map_err(|err| {
@@ -114,8 +116,11 @@ impl Pkcs11Context {
             })?;
 
             trace!("Loaded PKCS#11 library '{:?}'", lib_path);
-            Ok(ThreadSafePkcs11Context::new(file_name, ctx))
-        })?;
+            locked_contexts.insert(lib_file_name.clone(), ThreadSafePkcs11Context::new(&lib_file_name, ctx));
+        }
+
+        // unwrap is now safe
+        let ctx_ref = locked_contexts.get(&lib_file_name).unwrap();
 
         Ok(ctx_ref.clone())
     }
@@ -123,12 +128,12 @@ impl Pkcs11Context {
     /// Invoke C_Initialize in the loaded PKCS#11 library, if not already initialized.
     /// We don't do this at the time of loading the library as we don't want to delay or block Krill startup.
     pub fn initialize_if_not_already(&mut self) -> Result<(), SignerError> {
-        let _ = self.ctx.as_mut().ok_or(SignerError::Pkcs11Error(format!(
-            "Failed to initialize library '{}': Library is not loaded yet",
-            self.lib_file_name
-        )))?;
-
-        if !self.initialized {
+        if self.ctx.is_none() {
+            Err(SignerError::Pkcs11Error(format!(
+                "Failed to initialize library '{}': Library is not loaded yet",
+                self.lib_file_name
+            )))
+        } else if !self.initialized {
             // Note: YubiHSM uses the reserved field of the initialize arguments to pass settings to the library but
             // (the current version of) the `cryptoki` crate doesn't provide a way to set those if we wanted to support
             // this way of configuring the PKCS#11 token.
@@ -136,29 +141,33 @@ impl Pkcs11Context {
             // TODO: add a timeout around the call to initialize?
             if let Err(err) = self.initialize(CInitializeArgs::OsThreads) {
                 error!("Failed to initialize PKCS#11 library '{}': {}", self.lib_file_name, err);
-                return Err(SignerError::PermanentlyUnusable);
+                Err(SignerError::PermanentlyUnusable)
+            } else {
+                self.initialized = true;
+                Ok(())
             }
-
-            self.initialized = true;
+        } else {
+            Ok(())
         }
-
-        Ok(())
     }
 
-    // Entry::or_insert_with_key() isn't available until Rust 1.50
-    fn or_insert_with_key<'a, F: FnOnce(&String) -> Result<ThreadSafePkcs11Context, SignerError>>(
-        e: Entry<'a, String, ThreadSafePkcs11Context>,
-        default: F,
-    ) -> Result<&'a mut ThreadSafePkcs11Context, SignerError> {
-        let existing_or_new_value = match e {
-            Entry::Occupied(entry) => entry.into_mut(),
-            Entry::Vacant(entry) => {
-                let value = default(entry.key())?;
-                entry.insert(value)
-            }
-        };
+    pub fn uninitialize_if_not_already(&mut self) {
+        if self.initialized {
+            // prevent subsequent attempts to finalize an already finalized library
+            self.initialized = false;
 
-        Ok(existing_or_new_value)
+            // ignore the result because we want to continue even if the call fails.
+            let _ = self.finalize();
+
+            // remove the library we represent from the initialized set (as it
+            // is no longer initialized), subsequent attempts to use the library
+            // will cause it to be initialised again.
+
+            // note: these unwraps are safe because we must have initialized
+            // CONTEXTS and the entry for our library in order for this function
+            // to be invoked.
+            CONTEXTS.get().unwrap().write().unwrap().remove(&self.lib_file_name);
+        }
     }
 }
 
@@ -177,11 +186,24 @@ impl Pkcs11Context {
         }
         res
     }
+
+    fn logged_cryptoki_call_with_take<F>(&mut self, cryptoki_call_name: &'static str, call: F)
+    where
+        F: FnOnce(Pkcs11),
+    {
+        trace!("{}::{}()", self.lib_file_name, cryptoki_call_name);
+        let ctx = self.ctx.take().unwrap(); // leave a None in the ctx member field
+        (call)(ctx)
+    }
 }
 
 impl Pkcs11Context {
     fn initialize(&self, init_args: CInitializeArgs) -> Result<(), Pkcs11Error> {
         self.logged_cryptoki_call("Initialize", |cryptoki| cryptoki.initialize(init_args))
+    }
+
+    fn finalize(&mut self) {
+        self.logged_cryptoki_call_with_take("Finalize", |cryptoki| cryptoki.finalize())
     }
 
     pub fn get_info(&self) -> Result<Info, Pkcs11Error> {
@@ -225,7 +247,7 @@ impl Pkcs11Context {
         })
     }
 
-    pub fn get_attributes<'a>(
+    pub fn get_attributes(
         &self,
         session: Arc<Mutex<Session>>,
         object: ObjectHandle,
@@ -236,11 +258,11 @@ impl Pkcs11Context {
         })
     }
 
-    pub fn login<'a>(
+    pub fn login(
         &self,
         session: Arc<Mutex<Session>>,
         user_type: UserType,
-        pin: Option<&'a str>,
+        pin: Option<&str>,
     ) -> Result<(), Pkcs11Error> {
         self.logged_cryptoki_call("Login", |_| session.lock().unwrap().login(user_type, pin))
     }

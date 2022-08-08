@@ -12,11 +12,10 @@ use chrono::Duration;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
 
-use rpki::{repository::x509::Time, uri};
+use rpki::{ca::publication, ca::publication::Base64, repository::x509::Time, rrdp::Hash, uri};
 
 use crate::{
     commons::{
-        api::{publication, Base64, HexEncodedHash},
         error::KrillIoError,
         util::{file, xml::XmlWriter},
     },
@@ -95,17 +94,19 @@ impl PublishElement {
     pub fn base64(&self) -> &Base64 {
         &self.base64
     }
+    
     pub fn uri(&self) -> &uri::Rsync {
         &self.uri
     }
-    pub fn size(&self) -> usize {
-        self.base64.size()
+    
+    pub fn size_approx(&self) -> usize {
+        self.base64.size_approx()
     }
 
     pub fn as_withdraw(&self) -> WithdrawElement {
         WithdrawElement {
             uri: self.uri.clone(),
-            hash: self.base64.to_encoded_hash(),
+            hash: self.base64.to_hash(),
         }
     }
 
@@ -130,7 +131,7 @@ impl From<publication::Publish> for PublishElement {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct UpdateElement {
     uri: uri::Rsync,
-    hash: HexEncodedHash,
+    hash: Hash,
     base64: Base64,
 }
 
@@ -138,20 +139,20 @@ impl UpdateElement {
     pub fn uri(&self) -> &uri::Rsync {
         &self.uri
     }
-    pub fn hash(&self) -> &HexEncodedHash {
+    pub fn hash(&self) -> &Hash {
         &self.hash
     }
     pub fn base64(&self) -> &Base64 {
         &self.base64
     }
     pub fn size(&self) -> usize {
-        self.base64.size()
+        self.base64.size_approx()
     }
 }
 
 impl From<publication::Update> for UpdateElement {
     fn from(u: publication::Update) -> Self {
-        let (_tag, uri, base64, hash) = u.unwrap();
+        let (_tag, uri, base64, hash) = u.unpack();
         UpdateElement { uri, hash, base64 }
     }
 }
@@ -174,21 +175,21 @@ impl From<UpdateElement> for PublishElement {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WithdrawElement {
     uri: uri::Rsync,
-    hash: HexEncodedHash,
+    hash: Hash,
 }
 
 impl WithdrawElement {
     pub fn uri(&self) -> &uri::Rsync {
         &self.uri
     }
-    pub fn hash(&self) -> &HexEncodedHash {
+    pub fn hash(&self) -> &Hash {
         &self.hash
     }
 }
 
 impl From<publication::Withdraw> for WithdrawElement {
     fn from(w: publication::Withdraw) -> Self {
-        let (_tag, uri, hash) = w.unwrap();
+        let (_tag, uri, hash) = w.unpack();
         WithdrawElement { uri, hash }
     }
 }
@@ -346,7 +347,8 @@ impl Notification {
                 {
                     // snapshot ref
                     let uri = self.snapshot.uri.to_string();
-                    let a = [("uri", uri.as_str()), ("hash", self.snapshot.hash.as_ref())];
+                    let hash = self.snapshot.hash.to_string();
+                    let a = [("uri", uri.as_str()), ("hash", hash.as_str())];
                     w.put_element("snapshot", Some(&a), |w| w.empty())?;
                 }
 
@@ -355,10 +357,12 @@ impl Notification {
                     for delta in &self.deltas {
                         let serial = format!("{}", delta.serial);
                         let uri = delta.file_ref.uri.to_string();
+                        let hash = delta.file_ref.hash.to_string();
+
                         let a = [
-                            ("serial", serial.as_ref()),
+                            ("serial", serial.as_str()),
                             ("uri", uri.as_str()),
-                            ("hash", delta.file_ref.hash.as_ref()),
+                            ("hash", hash.as_str()),
                         ];
                         w.put_element("delta", Some(&a), |w| w.empty())?;
                     }
@@ -375,11 +379,11 @@ impl Notification {
 pub struct FileRef {
     uri: uri::Https,
     path: PathBuf,
-    hash: HexEncodedHash,
+    hash: Hash,
 }
 
 impl FileRef {
-    pub fn new(uri: uri::Https, path: PathBuf, hash: HexEncodedHash) -> Self {
+    pub fn new(uri: uri::Https, path: PathBuf, hash: Hash) -> Self {
         FileRef { uri, path, hash }
     }
     pub fn uri(&self) -> &uri::Https {
@@ -388,7 +392,7 @@ impl FileRef {
     pub fn path(&self) -> &PathBuf {
         &self.path
     }
-    pub fn hash(&self) -> &HexEncodedHash {
+    pub fn hash(&self) -> &Hash {
         &self.hash
     }
 }
@@ -427,17 +431,11 @@ impl AsRef<FileRef> for DeltaRef {
 // b) The publish element as it appears in an RFC8182 snapshot.xml includes
 // the uri and the base64, but not the hash. So keeping the actual elements
 // around means we can be more efficient in producing that output.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct CurrentObjects(HashMap<HexEncodedHash, PublishElement>);
-
-impl Default for CurrentObjects {
-    fn default() -> Self {
-        CurrentObjects(HashMap::new())
-    }
-}
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CurrentObjects(HashMap<Hash, PublishElement>);
 
 impl CurrentObjects {
-    pub fn new(map: HashMap<HexEncodedHash, PublishElement>) -> Self {
+    pub fn new(map: HashMap<Hash, PublishElement>) -> Self {
         CurrentObjects(map)
     }
 
@@ -453,7 +451,7 @@ impl CurrentObjects {
         self.0.into_iter().map(|(_, e)| e).collect()
     }
 
-    fn has_match(&self, hash: &HexEncodedHash, uri: &uri::Rsync) -> bool {
+    fn has_match(&self, hash: &Hash, uri: &uri::Rsync) -> bool {
         match self.0.get(hash) {
             Some(el) => el.uri() == uri,
             None => false,
@@ -465,7 +463,7 @@ impl CurrentObjects {
             if !jail.is_parent_of(p.uri()) {
                 return Err(PublicationDeltaError::outside(jail, p.uri()));
             }
-            let hash = p.base64().to_encoded_hash();
+            let hash = p.base64().to_hash();
             if self.0.contains_key(&hash) {
                 return Err(PublicationDeltaError::present(p.uri()));
             }
@@ -501,14 +499,14 @@ impl CurrentObjects {
         let (publishes, updates, withdraws) = delta.unpack();
 
         for p in publishes {
-            let hash = p.base64().to_encoded_hash();
+            let hash = p.base64().to_hash();
             self.0.insert(hash, p);
         }
 
         for u in updates {
             self.0.remove(u.hash());
             let p: PublishElement = u.into();
-            let hash = p.base64().to_encoded_hash();
+            let hash = p.base64().to_hash();
             self.0.insert(hash, p);
         }
 
@@ -524,7 +522,7 @@ impl CurrentObjects {
     }
 
     pub fn size(&self) -> usize {
-        self.0.values().fold(0, |tot, el| tot + el.size())
+        self.0.values().fold(0, |tot, el| tot + el.size_approx())
     }
 
     pub fn is_empty(&self) -> bool {
@@ -536,7 +534,7 @@ impl CurrentObjects {
             .0
             .iter()
             .map(|el| {
-                let hash = el.0.clone();
+                let hash = *el.0;
                 let uri = el.1.uri().clone();
                 publication::ListElement::new(uri, hash)
             })
@@ -667,7 +665,7 @@ impl Snapshot {
     }
 
     pub fn size(&self) -> usize {
-        self.current_objects.elements().iter().fold(0, |sum, p| sum + p.size())
+        self.current_objects.elements().iter().fold(0, |sum, p| sum + p.size_approx())
     }
 
     fn rel_path(&self) -> String {
@@ -703,7 +701,7 @@ impl Snapshot {
                 for el in self.current_objects.elements() {
                     let uri = el.uri.to_string();
                     let atr = [("uri", uri.as_ref())];
-                    w.put_element("publish", Some(&atr), |w| w.put_text(el.base64.as_ref()))
+                    w.put_element("publish", Some(&atr), |w| w.put_text(el.base64.as_str()))
                         .unwrap();
                 }
                 Ok(())
@@ -740,7 +738,7 @@ impl DeltaElements {
     }
 
     pub fn size(&self) -> usize {
-        let sum_publishes = self.publishes.iter().fold(0, |sum, p| sum + p.size());
+        let sum_publishes = self.publishes.iter().fold(0, |sum, p| sum + p.size_approx());
         let sum_updates = self.updates.iter().fold(0, |sum, u| sum + u.size());
 
         sum_publishes + sum_updates
@@ -765,11 +763,17 @@ impl DeltaElements {
 
 impl From<publication::PublishDelta> for DeltaElements {
     fn from(d: publication::PublishDelta) -> Self {
-        let (publishers, updates, withdraws) = d.unwrap();
+        let mut publishes = vec![];
+        let mut updates = vec![];
+        let mut withdraws = vec![];
 
-        let publishes = publishers.into_iter().map(PublishElement::from).collect();
-        let updates = updates.into_iter().map(UpdateElement::from).collect();
-        let withdraws = withdraws.into_iter().map(WithdrawElement::from).collect();
+        for el in d.into_elements() {
+            match el {
+                publication::PublishDeltaElement::Publish(p) => publishes.push(p.into()),
+                publication::PublishDeltaElement::Update(u) => updates.push(u.into()),
+                publication::PublishDeltaElement::Withdraw(w) => withdraws.push(w.into()),
+            }
+        }
 
         DeltaElements {
             publishes,
@@ -886,18 +890,22 @@ impl Delta {
                 for el in &self.elements.publishes {
                     let uri = el.uri.to_string();
                     let atr = [("uri", uri.as_ref())];
-                    w.put_element("publish", Some(&atr), |w| w.put_text(el.base64.as_ref()))?;
+                    w.put_element("publish", Some(&atr), |w| w.put_text(el.base64.as_str()))?;
                 }
 
                 for el in &self.elements.updates {
                     let uri = el.uri.to_string();
-                    let atr = [("uri", uri.as_ref()), ("hash", el.hash.as_ref())];
-                    w.put_element("publish", Some(&atr), |w| w.put_text(el.base64.as_ref()))?;
+                    let hash = el.hash.to_string();
+
+                    let atr = [("uri", uri.as_str()), ("hash", hash.as_str())];
+                    w.put_element("publish", Some(&atr), |w| w.put_text(el.base64.as_str()))?;
                 }
 
                 for el in &self.elements.withdraws {
                     let uri = el.uri.to_string();
-                    let atr = [("uri", uri.as_ref()), ("hash", el.hash.as_ref())];
+                    let hash = el.hash.to_string();
+
+                    let atr = [("uri", uri.as_str()), ("hash", hash.as_str())];
                     w.put_element("withdraw", Some(&atr), |w| w.empty())?;
                 }
 

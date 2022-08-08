@@ -1,0 +1,17 @@
+{
+  "actor": "admin-token",
+  "time": "2022-06-02T09:49:25.289221854Z",
+  "handle": "0",
+  "version": 9,
+  "sequence": 10,
+  "details": {
+    "type": "add_publisher",
+    "name": "local-testbed-child"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      9
+    ]
+  }
+}

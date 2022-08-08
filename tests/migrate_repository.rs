@@ -4,10 +4,11 @@ use std::{fs, str::FromStr, time::Duration};
 
 use tokio::time::sleep;
 
+use rpki::ca::provisioning::ResourceClassName;
+use rpki::repository::resources::ResourceSet;
+
 use krill::{
-    commons::api::{
-        ObjectName, RepositoryContact, ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates,
-    },
+    commons::api::{ObjectName, RepositoryContact, RoaDefinition, RoaDefinitionUpdates},
     daemon::ca::ta_handle,
     test::*,
 };
@@ -39,9 +40,9 @@ async fn migrate_repository() {
     let pubd_dir = start_krill_pubd().await;
 
     let ta = ta_handle();
-    let testbed = handle("testbed");
+    let testbed = ca_handle("testbed");
 
-    let ca1 = handle("CA1");
+    let ca1 = ca_handle("CA1");
     let ca1_res = ipv4_resources("10.0.0.0/16");
     let ca1_route_definition = RoaDefinition::from_str("10.0.0.0/16-16 => 65000").unwrap();
 
@@ -55,7 +56,7 @@ async fn migrate_repository() {
     info("#                                                                #");
     info("##################################################################");
     info("");
-    assert!(ca_contains_resources(&testbed, &ResourceSet::all_resources()).await);
+    assert!(ca_contains_resources(&testbed, &ResourceSet::all()).await);
 
     // Verify that the TA published expected objects
     {
@@ -157,7 +158,7 @@ async fn migrate_repository() {
         sleep(Duration::from_secs(1)).await;
 
         // Update CA1 to use dedicated repo
-        let contact = RepositoryContact::new(response);
+        let contact = RepositoryContact::for_response(response).unwrap();
         repo_update(&ca1, contact).await;
 
         // This should result in a key roll and content published in both repos

@@ -1,15 +1,15 @@
 use std::sync::Arc;
 use std::{collections::HashMap, sync::RwLock};
 
-use rpki::repository::crypto::{
+use rpki::crypto::{
     signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
 };
 
 use crate::commons::{
-    api::Handle,
     crypto::{
         dispatch::{signerinfo::SignerMapper, signerprovider::SignerProvider},
         signers::error::SignerError,
+        SignerHandle,
     },
     error::Error,
     KrillResult,
@@ -103,7 +103,7 @@ pub struct SignerRouter {
     /// [SignerProvider] instances are moved to this set from the `pending_signers` set once we are able to confirm that
     /// we can connect to them and can identify the correct signer [Handle] used by the [SignerMapper] to associate with
     /// keys created by that signer.
-    active_signers: RwLock<HashMap<Handle, Arc<SignerProvider>>>,
+    active_signers: RwLock<HashMap<SignerHandle, Arc<SignerProvider>>>,
 
     /// The set of [SignerProvider] instances that are configured but not yet confirmed to be usable. All signers start
     /// off in this set and are moved to the `active_signers` set as soon as we are able to confirm them. See
@@ -129,11 +129,9 @@ impl SignerRouter {
             if signer.is_default_signer() {
                 Self::set_once(&mut default_signer, signer.clone())
                     .map_err(|_| Error::ConfigError("There must only be one default signer".to_string()))?;
-            } else {
-                if signer.is_one_off_signer() {
-                    Self::set_once(&mut one_off_signer, signer.clone())
-                        .map_err(|_| Error::ConfigError("There must only be one one-off signer".to_string()))?;
-                }
+            } else if signer.is_one_off_signer() {
+                Self::set_once(&mut one_off_signer, signer.clone())
+                    .map_err(|_| Error::ConfigError("There must only be one one-off signer".to_string()))?;
             }
             all_signers.push(signer.clone());
         }
@@ -154,7 +152,7 @@ impl SignerRouter {
         self.signer_mapper.clone()
     }
 
-    pub fn get_active_signers(&self) -> HashMap<Handle, Arc<SignerProvider>> {
+    pub fn get_active_signers(&self) -> HashMap<SignerHandle, Arc<SignerProvider>> {
         self.active_signers.read().unwrap().clone()
     }
 
@@ -224,7 +222,7 @@ impl SignerRouter {
 enum IdentifyResult {
     Unavailable,
     Corrupt,
-    Identified(Handle),
+    Identified(SignerHandle),
     Unusable,
     Unidentified,
 }
@@ -232,7 +230,7 @@ enum IdentifyResult {
 #[cfg(feature = "hsm")]
 enum RegisterResult {
     NotReady,
-    ReadyVerified(Handle),
+    ReadyVerified(SignerHandle),
     ReadyUnusable,
 }
 
@@ -310,13 +308,13 @@ impl SignerRouter {
                         }
                         IdentifyResult::Unidentified => {
                             // Signer is ready and new, register it and move it to the active set
-                            self.register_new_signer(signer_provider).and_then(
-                                |register_result| match register_result {
+                            self.register_new_signer(signer_provider)
+                                .map(|register_result| match register_result {
                                     RegisterResult::NotReady => {
                                         // Strange, it was ready just now when we verified it ... leave it in the
                                         // pending set and try again next time.
                                         trace!("Signer '{}' is not ready", signer_name);
-                                        Ok(true)
+                                        true
                                     }
                                     RegisterResult::ReadyVerified(signer_handle) => {
                                         // Signer is ready and verified, add it to the active set.
@@ -326,15 +324,14 @@ impl SignerRouter {
                                             .insert(signer_handle, signer_provider.clone());
                                         info!("Signer '{}' is ready for use", signer_name);
                                         // And remove it from the pending set
-                                        Ok(false)
+                                        false
                                     }
                                     RegisterResult::ReadyUnusable => {
                                         // Signer registration failed, remove it from the pending set
                                         warn!("Signer '{}' could not be registered: signer is not usable", signer_name);
-                                        Ok(false)
+                                        false
                                     }
-                                },
-                            )
+                                })
                         }
                         IdentifyResult::Unusable => {
                             // Signer is ready and unusable, remove it from the pending set
@@ -358,21 +355,20 @@ impl SignerRouter {
     }
 
     /// Retrieves the set of signer handles known to the signer mapper.
-    fn get_candidate_signer_handles(&self) -> Result<Vec<Handle>, String> {
+    fn get_candidate_signer_handles(&self) -> Result<Vec<SignerHandle>, String> {
         // TODO: Filter out already bound signers?
-        Ok(self
-            .signer_mapper
+        self.signer_mapper
             .as_ref()
             .unwrap()
             .get_signer_handles()
-            .map_err(|err| format!("Failed to get signer handles: {}", err))?)
+            .map_err(|err| format!("Failed to get signer handles: {}", err))
     }
 
     /// Checks if the signer identity can be shown to match one of the known signer public keys.
     fn identify_signer(
         &self,
         signer_provider: &Arc<SignerProvider>,
-        candidate_handles: &[Handle],
+        candidate_handles: &[SignerHandle],
     ) -> Result<IdentifyResult, ErrorString> {
         let config_signer_name = signer_provider.get_name().to_string();
 
@@ -423,7 +419,7 @@ impl SignerRouter {
     fn is_signer_identified_by_handle(
         &self,
         signer_provider: &Arc<SignerProvider>,
-        candidate_handle: &Handle,
+        candidate_handle: &SignerHandle,
     ) -> Result<IdentifyResult, ErrorString> {
         let handle_name = self.signer_mapper.as_ref().unwrap().get_signer_name(candidate_handle)?;
         let signer_name = signer_provider.get_name().to_string();
@@ -480,7 +476,9 @@ impl SignerRouter {
 
         if public_key.verify(challenge, &signature).is_ok() {
             debug!("Signer '{}' is ready and known, binding", signer_name);
-            let signer_info = signer_provider.get_info().unwrap_or("No signer info".to_string());
+            let signer_info = signer_provider
+                .get_info()
+                .unwrap_or_else(|| "No signer info".to_string());
 
             signer_provider.set_handle(candidate_handle.clone());
 
@@ -546,14 +544,16 @@ impl SignerRouter {
             Ok(res) => res,
         };
 
-        if !public_key.verify(challenge, &signature).is_ok() {
+        if public_key.verify(challenge, &signature).is_err() {
             error!("Signer '{}' challenge signature is invalid", signer_name);
             return Ok(RegisterResult::ReadyUnusable);
         }
 
         debug!("Signer '{}' is ready and new, binding", signer_name);
 
-        let signer_info = signer_provider.get_info().unwrap_or("No signer info".to_string());
+        let signer_info = signer_provider
+            .get_info()
+            .unwrap_or_else(|| "No signer info".to_string());
 
         let signer_handle = self.signer_mapper.as_ref().unwrap().add_signer(
             &signer_name,
@@ -588,21 +588,21 @@ impl Signer for SignerRouter {
         self.get_signer_for_key(key_id)?.destroy_key(key_id)
     }
 
-    fn sign<D: AsRef<[u8]> + ?Sized>(
+    fn sign<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
         &self,
         key_id: &KeyIdentifier,
-        algorithm: SignatureAlgorithm,
+        algorithm: Alg,
         data: &D,
-    ) -> Result<Signature, SigningError<Self::Error>> {
+    ) -> Result<Signature<Alg>, SigningError<Self::Error>> {
         self.bind_ready_signers();
         self.get_signer_for_key(key_id)?.sign(key_id, algorithm, data)
     }
 
-    fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
+    fn sign_one_off<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
         &self,
-        algorithm: SignatureAlgorithm,
+        algorithm: Alg,
         data: &D,
-    ) -> Result<(Signature, PublicKey), Self::Error> {
+    ) -> Result<(Signature<Alg>, PublicKey), Self::Error> {
         self.bind_ready_signers();
         self.one_off_signer.sign_one_off(algorithm, data)
     }
@@ -615,6 +615,8 @@ impl Signer for SignerRouter {
 
 #[cfg(all(test, feature = "hsm"))]
 pub mod tests {
+    use rpki::crypto::RpkiSignatureAlgorithm;
+
     use crate::{
         commons::crypto::{
             dispatch::signerprovider::SignerFlags,
@@ -641,7 +643,7 @@ pub mod tests {
     pub fn verify_that_a_usable_signer_is_registered_and_can_be_used() {
         test::test_under_tmp(|d| {
             #[allow(non_snake_case)]
-            let DEF_SIG_ALG = SignatureAlgorithm::default();
+            let DEF_SIG_ALG = RpkiSignatureAlgorithm::default();
 
             // Build a mock signer that is contactable and usable for the SignerRouter
             let call_counts = Arc::new(MockSignerCallCounts::new());
@@ -714,7 +716,7 @@ pub mod tests {
             router.destroy_key(&key_identifier).unwrap();
             assert_eq!(1, call_counts.get(FnIdx::DestroyKey));
 
-            let err = router.sign(&key_identifier, SignatureAlgorithm::default(), &out_buf);
+            let err = router.sign(&key_identifier, RpkiSignatureAlgorithm::default(), &out_buf);
             // TODO: Should this error from the SignerRouter actually be SigningError::KeyNotFound instead of
             // SigningError::Signer(SignerError::KeyNotFound)?
             assert!(matches!(err, Err(SigningError::Signer(SignerError::KeyNotFound))));

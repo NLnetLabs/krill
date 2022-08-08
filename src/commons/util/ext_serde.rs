@@ -1,15 +1,15 @@
 //! Defines helper methods for Serializing and Deserializing external types.
-use std::{str::FromStr, sync::atomic::{AtomicU64, Ordering}};
+use std::{
+    str::FromStr,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use bytes::Bytes;
 use log::LevelFilter;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use syslog::Facility;
 
-use rpki::repository::{
-    crypto::PublicKey,
-    resources::{AsBlocks, IpBlocks},
-};
+use rpki::repository::resources::{AsBlocks, IpBlocks};
 
 //------------ Bytes ---------------------------------------------------------
 
@@ -164,27 +164,6 @@ where
 {
     let string = String::deserialize(d)?;
     Facility::from_str(&string).map_err(|_| de::Error::custom(format!("Unsupported syslog_facility: \"{}\"", string)))
-}
-
-//------------ PublicKey ----------------------------------------------------
-
-pub fn ser_public_key<S>(public_key: &PublicKey, s: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    base64::encode(public_key.to_info_bytes()).serialize(s)
-}
-
-pub fn de_public_key<'de, D>(d: D) -> Result<PublicKey, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let string = String::deserialize(d)?;
-    let public_key_bytes = base64::decode(string)
-        .map_err(|err| de::Error::custom(format!("Invalid public key base64 encoding: {}", err)))?;
-    let public_key = PublicKey::decode(&*public_key_bytes)
-        .map_err(|err| de::Error::custom(format!("Invalid public key bytes: {}", err)))?;
-    Ok(public_key)
 }
 
 //------------- AtomicU64 -----------------------------------------------------

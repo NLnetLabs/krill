@@ -1,0 +1,17 @@
+{
+  "actor": "krill",
+  "time": "2022-02-25T12:30:56.397107227Z",
+  "handle": "0",
+  "version": 1,
+  "sequence": 1,
+  "details": {
+    "type": "add_publisher",
+    "name": "ta"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      1
+    ]
+  }
+}

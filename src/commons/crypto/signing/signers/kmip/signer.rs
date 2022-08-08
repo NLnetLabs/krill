@@ -8,7 +8,6 @@ use std::{
 };
 
 use backoff::ExponentialBackoff;
-use bcder::encode::{PrimitiveContent, Values};
 use bytes::Bytes;
 use kmip::{
     client::{Client, ClientCertificate},
@@ -19,20 +18,24 @@ use kmip::{
 };
 use openssl::ssl::SslStream;
 use r2d2::PooledConnection;
-use rpki::repository::crypto::{
-    signer::KeyError, KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, SigningError,
+
+use rpki::{
+    crypto::signer::KeyError,
+    crypto::{
+        KeyIdentifier, PublicKey, PublicKeyFormat, RpkiSignature, RpkiSignatureAlgorithm, Signature,
+        SignatureAlgorithm, SigningError,
+    },
 };
 
 use crate::commons::{
-    api::{Handle, Timestamp},
+    api::Timestamp,
     crypto::{
         dispatch::signerinfo::SignerMapper,
         signers::{
             kmip::connpool::ConnectionManager,
             probe::{ProbeError, ProbeStatus, StatefulProbe},
-            util,
         },
-        SignerError,
+        SignerError, SignerHandle,
     },
     error::KrillIoError,
 };
@@ -173,8 +176,6 @@ struct ConnectionSettings {
     lifetime_timeout: Duration,
 
     idle_timeout: Duration,
-
-    max_connections: u32,
 }
 
 impl TryFrom<&KmipSignerConfig> for ConnectionSettings {
@@ -197,7 +198,6 @@ impl TryFrom<&KmipSignerConfig> for ConnectionSettings {
         let retry_timeout = Duration::from_secs(conf.max_retry_seconds);
         let lifetime_timeout = Duration::from_secs(conf.max_lifetime_seconds);
         let idle_timeout = Duration::from_secs(conf.max_idle_seconds);
-        let max_connections = conf.max_connections;
 
         let client_cert = match &conf.client_cert_path {
             Some(cert_path) => {
@@ -244,15 +244,13 @@ impl TryFrom<&KmipSignerConfig> for ConnectionSettings {
             retry_timeout,
             lifetime_timeout,
             idle_timeout,
-            max_connections,
         })
     }
 }
 
 fn read_binary_file(file_path: &PathBuf) -> Result<Vec<u8>, SignerError> {
-    Ok(std::fs::read(file_path).map_err(|err| {
-        SignerError::IoError(KrillIoError::new(format!("Failed to read file '{:?}'", file_path), err))
-    })?)
+    std::fs::read(file_path)
+        .map_err(|err| SignerError::IoError(KrillIoError::new(format!("Failed to read file '{:?}'", file_path), err)))
 }
 
 //------------ The KMIP signer management interface -------------------------------------------------------------------
@@ -261,7 +259,7 @@ fn read_binary_file(file_path: &PathBuf) -> Result<Vec<u8>, SignerError> {
 pub struct KmipSigner {
     name: String,
 
-    handle: RwLock<Option<Handle>>,
+    handle: RwLock<Option<SignerHandle>>,
 
     mapper: Arc<SignerMapper>,
 
@@ -286,21 +284,19 @@ impl KmipSigner {
             probe_interval,
         ));
 
-        let s = KmipSigner {
+        Ok(KmipSigner {
             name: name.to_string(),
             handle: RwLock::new(None),
-            mapper: mapper.clone(),
+            mapper,
             server,
-        };
-
-        Ok(s)
+        })
     }
 
     pub fn get_name(&self) -> &str {
         &self.name
     }
 
-    pub fn set_handle(&self, handle: Handle) {
+    pub fn set_handle(&self, handle: SignerHandle) {
         let mut writable_handle = self.handle.write().unwrap();
         if writable_handle.is_some() {
             panic!("Cannot set signer handle as handle is already set");
@@ -319,7 +315,7 @@ impl KmipSigner {
 
     pub fn create_registration_key(&self) -> Result<(PublicKey, String), SignerError> {
         let (public_key, kmip_key_pair_ids) = self.build_key(PublicKeyFormat::Rsa)?;
-        let internal_key_id = kmip_key_pair_ids.private_key_id.to_string();
+        let internal_key_id = kmip_key_pair_ids.private_key_id;
         Ok((public_key, internal_key_id))
     }
 
@@ -327,8 +323,12 @@ impl KmipSigner {
         &self,
         signer_private_key_id: &str,
         challenge: &D,
-    ) -> Result<Signature, SignerError> {
-        self.sign_with_key(signer_private_key_id, SignatureAlgorithm::default(), challenge.as_ref())
+    ) -> Result<RpkiSignature, SignerError> {
+        self.sign_with_key(
+            signer_private_key_id,
+            RpkiSignatureAlgorithm::default(),
+            challenge.as_ref(),
+        )
     }
 }
 
@@ -469,7 +469,9 @@ impl KmipSigner {
         // Switch from probing the server to using it.
         // -------------------------------------------
 
-        let server_identification = server_properties.vendor_identification.unwrap_or("Unknown".into());
+        let server_identification = server_properties
+            .vendor_identification
+            .unwrap_or_else(|| "Unknown".into());
 
         // Success! We can use this server. Announce it and switch our status to KmipSignerStatus::Usable.
         info!(
@@ -528,7 +530,7 @@ impl KmipSigner {
 
             // Next, try to execute the callers operation using the connection. If it fails, examine the cause of
             // failure to determine if it should be a hard-fail (no more retries) or if we should try again.
-            Ok((do_something_with_conn)(conn.deref()).map_err(retry_on_connection_error)?)
+            (do_something_with_conn)(conn.deref()).map_err(retry_on_connection_error)
         };
 
         // Don't even bother going round the retry loop if we haven't yet successfully connected to the KMIP server
@@ -580,9 +582,9 @@ impl KmipSigner {
         let internal_key_id = format!("{}:{}", kmip_key_ids.public_key_id, kmip_key_ids.private_key_id);
 
         let readable_handle = self.handle.read().unwrap();
-        let signer_handle = readable_handle.as_ref().ok_or(SignerError::Other(
-            "KMIP: Failed to record signer key: Signer handle not set".to_string(),
-        ))?;
+        let signer_handle = readable_handle.as_ref().ok_or_else(|| {
+            SignerError::Other("KMIP: Failed to record signer key: Signer handle not set".to_string())
+        })?;
         self.mapper
             .add_key(signer_handle, key_id, &internal_key_id)
             .map_err(|err| SignerError::KmipError(format!("Failed to record signer key: {}", err)))?;
@@ -592,12 +594,6 @@ impl KmipSigner {
 
     /// Given a KeyIdentifier lookup the corresponding KMIP public and private key pair IDs.
     pub(super) fn lookup_kmip_key_ids(&self, key_id: &KeyIdentifier) -> Result<KmipKeyPairIds, KeyError<SignerError>> {
-        // split_once isn't available until Rust 1.52
-        pub fn split_once<'a>(s: &'a str, delimiter: char) -> Option<(&'a str, &'a str)> {
-            let (start, end) = s.split_at(s.find(delimiter)?);
-            Some((&start[..=(start.len() - 1)], &end[1..]))
-        }
-
         let readable_handle = self.handle.read().unwrap();
         let signer_handle = readable_handle.as_ref().ok_or(KeyError::KeyNotFound)?;
 
@@ -606,7 +602,7 @@ impl KmipSigner {
             .get_key(signer_handle, key_id)
             .map_err(|_| KeyError::KeyNotFound)?;
 
-        let (public_key_id, private_key_id) = split_once(&internal_key_id, ':').unwrap();
+        let (public_key_id, private_key_id) = internal_key_id.split_once(':').ok_or(KeyError::KeyNotFound)?;
 
         Ok(KmipKeyPairIds {
             public_key_id: public_key_id.to_string(),
@@ -648,9 +644,9 @@ impl KmipSigner {
         // Prepare the new keys for use, and attempt to destroy them if anything goes wrong
         let public_key = self
             .prepare_keypair_for_use(&kmip_key_pair_ids.private_key_id, &kmip_key_pair_ids.public_key_id)
-            .or_else(|err| {
+            .map_err(|err| {
                 let _ = self.destroy_key_pair(&kmip_key_pair_ids, KeyStatus::Inactive);
-                Err(SignerError::KmipError(err.to_string()))
+                SignerError::KmipError(err.to_string())
             })?;
 
         Ok((public_key, kmip_key_pair_ids))
@@ -685,7 +681,7 @@ impl KmipSigner {
     /// reducing the number of round trips to the server.
     fn prepare_keypair_for_use(&self, private_key_id: &str, public_key_id: &str) -> Result<PublicKey, SignerError> {
         // Create a public key object for the public key
-        let public_key = self.get_public_key_from_id(&public_key_id)?;
+        let public_key = self.get_public_key_from_id(public_key_id)?;
 
         // Determine names for the public and private key that allow them to be related back to their usage in Krill
         // TODO: Give even more helpful names to the keys such as the name of the CA they were created for?
@@ -704,13 +700,12 @@ impl KmipSigner {
 
         // Activate the private key so that it can be used for signing. Do this last otherwise if there is a problem
         // with preparing the key pair for use we have to deactivate the private key before we can destroy it.
-        self.with_conn("activate key", |conn| conn.activate_key(&private_key_id))?;
+        self.with_conn("activate key", |conn| conn.activate_key(private_key_id))?;
 
         Ok(public_key)
     }
 
-    /// Get the RSA public bytes for the given KMIP server public key.
-    fn get_rsa_public_key_bytes(&self, public_key_id: &str) -> Result<Bytes, SignerError> {
+    pub(super) fn get_public_key_from_id(&self, public_key_id: &str) -> Result<PublicKey, SignerError> {
         let response_payload = self.with_conn("get key", |conn| conn.get_key(public_key_id))?;
 
         if response_payload.object_type != ObjectType::PublicKey {
@@ -728,64 +723,51 @@ impl KmipSigner {
             }
         };
 
-        let rsa_public_key_bytes = match key_material {
-            KeyMaterial::Bytes(bytes) => bytes::Bytes::from(bytes),
+        match key_material {
+            KeyMaterial::Bytes(bytes) => {
+                PublicKey::rsa_from_bits_bytes(bytes::Bytes::from(bytes)).map_err(|e| {
+                    SignerError::KmipError(format!(
+                        "Failed to construct RSA Public for key with ID '{}'. Error: {}",
+                        public_key_id, e
+                    ))
+                })
+            }
             KeyMaterial::TransparentRSAPublicKey(pub_key) => {
-                util::rsa_public_key_bytes_from_parts(&pub_key.modulus, &pub_key.public_exponent)?
+                PublicKey::rsa_from_components(&pub_key.modulus, &pub_key.public_exponent).map_err(|e| {
+                    SignerError::KmipError(format!(
+                        "Failed to construct RSA Public for key with ID '{}'. Error: {}",
+                        public_key_id, e
+                    ))
+                })
             }
             KeyMaterial::TransparentRSAPrivateKey(priv_key) => {
                 if let Some(public_exponent) = priv_key.public_exponent {
-                    util::rsa_public_key_bytes_from_parts(&priv_key.modulus, &public_exponent)?
+                    PublicKey::rsa_from_components(&priv_key.modulus, &public_exponent).map_err(|e| {
+                        SignerError::KmipError(format!(
+                            "Failed to construct RSA Public for key with ID '{}'. Error: {}",
+                            public_key_id, e
+                        ))
+                    })
                 } else {
-                    return Err(SignerError::KmipError(format!(
+                    Err(SignerError::KmipError(format!(
                         "Failed to get key material: missing exponent in transparent RSA private key returned by KMIP Get operation for public key with ID '{}'",
-                        public_key_id)));
+                        public_key_id)))
                 }
             }
             _ => {
-                return Err(SignerError::KmipError(format!(
+                Err(SignerError::KmipError(format!(
                     "Failed to get key material: unsupported key material type {:?} returned by KMIP Get operation for public key with ID '{}'",
-                    key_material, public_key_id)));
+                    key_material, public_key_id)))
             }
-        };
-
-        Ok(rsa_public_key_bytes)
+        }
     }
 
-    pub(super) fn get_public_key_from_id(&self, public_key_id: &str) -> Result<PublicKey, SignerError> {
-        let rsa_public_key_bytes = self.get_rsa_public_key_bytes(public_key_id)?;
-
-        let subject_public_key = bcder::BitString::new(0, rsa_public_key_bytes);
-
-        let subject_public_key_info =
-            bcder::encode::sequence((PublicKeyFormat::Rsa.encode(), subject_public_key.encode()));
-
-        let mut subject_public_key_info_source: Vec<u8> = Vec::new();
-        subject_public_key_info
-            .write_encoded(bcder::Mode::Der, &mut subject_public_key_info_source)
-            .map_err(|err| {
-                SignerError::KmipError(format!(
-                    "Failed to create DER encoded SubjectPublicKeyInfo from constituent parts: {}",
-                    err
-                ))
-            })?;
-
-        let public_key = PublicKey::decode(subject_public_key_info_source.as_slice()).map_err(|err| {
-            SignerError::KmipError(format!(
-                "Failed to create public key from the DER encoded SubjectPublicKeyInfo: {}",
-                err
-            ))
-        })?;
-
-        Ok(public_key)
-    }
-
-    pub(super) fn sign_with_key(
+    pub(super) fn sign_with_key<Alg: SignatureAlgorithm>(
         &self,
         private_key_id: &str,
-        algorithm: SignatureAlgorithm,
+        algorithm: Alg,
         data: &[u8],
-    ) -> Result<Signature, SignerError> {
+    ) -> Result<Signature<Alg>, SignerError> {
         if algorithm.public_key_format() != PublicKeyFormat::Rsa {
             return Err(SignerError::KmipError(format!(
                 "Algorithm '{:?}' not supported",
@@ -793,9 +775,9 @@ impl KmipSigner {
             )));
         }
 
-        let signed = self.with_conn("sign", |conn| conn.sign(&private_key_id, data))?;
+        let signed = self.with_conn("sign", |conn| conn.sign(private_key_id, data))?;
 
-        let sig = Signature::new(SignatureAlgorithm::default(), Bytes::from(signed.signature_data));
+        let sig = Signature::new(algorithm, Bytes::from(signed.signature_data));
 
         Ok(sig)
     }
@@ -871,7 +853,7 @@ impl KmipSigner {
     pub fn get_key_info(&self, key_id: &KeyIdentifier) -> Result<PublicKey, KeyError<SignerError>> {
         let kmip_key_pair_ids = self.lookup_kmip_key_ids(key_id)?;
         self.get_public_key_from_id(&kmip_key_pair_ids.public_key_id)
-            .map_err(|err| KeyError::Signer(err))
+            .map_err(KeyError::Signer)
     }
 
     pub fn destroy_key(&self, key_id: &KeyIdentifier) -> Result<(), KeyError<SignerError>> {
@@ -911,12 +893,12 @@ impl KmipSigner {
         res
     }
 
-    pub fn sign<D: AsRef<[u8]> + ?Sized>(
+    pub fn sign<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
         &self,
         key_id: &KeyIdentifier,
-        algorithm: SignatureAlgorithm,
+        algorithm: Alg,
         data: &D,
-    ) -> Result<Signature, SigningError<SignerError>> {
+    ) -> Result<Signature<Alg>, SigningError<SignerError>> {
         let kmip_key_pair_ids = self.lookup_kmip_key_ids(key_id)?;
 
         let signature = self
@@ -931,11 +913,11 @@ impl KmipSigner {
         Ok(signature)
     }
 
-    pub fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
+    pub fn sign_one_off<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
         &self,
-        algorithm: SignatureAlgorithm,
+        algorithm: Alg,
         data: &D,
-    ) -> Result<(Signature, PublicKey), SignerError> {
+    ) -> Result<(Signature<Alg>, PublicKey), SignerError> {
         // TODO: Is it possible to use a KMIP batch request to implement the create, activate, sign, deactivate, delete
         // in one round-trip to the server?
         let (key, kmip_key_pair_ids) = self.build_key(PublicKeyFormat::Rsa)?;

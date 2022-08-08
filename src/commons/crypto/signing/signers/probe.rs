@@ -96,7 +96,7 @@ impl<C, E, S> ProbeStatus<C, E, S> {
     /// Calling this function while in another state will result in a panic.
     pub fn state(&self) -> Result<&S, ProbeError<E>> {
         match self {
-            ProbeStatus::Usable(state) => Ok(&state),
+            ProbeStatus::Usable(state) => Ok(state),
             _ => Err(ProbeError::WrongState),
         }
     }
@@ -140,6 +140,7 @@ impl<C, E, S> StatefulProbe<C, E, S> {
             }
         }
 
+        #[allow(clippy::type_complexity)]
         fn get_if_usable<C, E, S>(
             name: String,
             status: RwLockReadGuard<ProbeStatus<C, E, S>>,
@@ -219,7 +220,7 @@ impl<C, E, S> StatefulProbe<C, E, S> {
         let status = self.status.read().unwrap();
         get_if_usable(self.name.clone(), status, self.probe_interval).unwrap_or_else(|| {
             send_probe(self, probe)
-                .and_then(|_| Ok(self.status.read().unwrap()))
+                .map(|_| self.status.read().unwrap())
                 .map_err(|err| match err {
                     ProbeError::CompletedUnusable => err,
                     _ => ProbeError::AwaitingNextProbe,
@@ -328,19 +329,19 @@ pub mod tests {
         assert_eq!(None, conn.last_probe_time()?);
 
         // The first call to .get() should trigger a probe
-        let _ = conn.status(|_, _| Err(ProbeError::AwaitingNextProbe));
+        let _probe1 = conn.status(|_, _| Err(ProbeError::AwaitingNextProbe));
         let t1 = conn.last_probe_time()?;
         assert!(t1.is_some());
 
         // A call to .get() before the next probe interval should NOT result in an updated last probe time
         std::thread::sleep(Duration::from_millis(10));
-        let _ = conn.status(|_, _| Err(ProbeError::AwaitingNextProbe));
+        let _probe2 = conn.status(|_, _| Err(ProbeError::AwaitingNextProbe));
         let t2 = conn.last_probe_time()?;
         assert!(t2 == t1);
 
         // A call to .get() after the next probe interval SHOULD result in an updated last probe time
         std::thread::sleep(Duration::from_millis(200));
-        let _ = conn.status(|_, _| Err(ProbeError::AwaitingNextProbe));
+        let _probe3 = conn.status(|_, _| Err(ProbeError::AwaitingNextProbe));
         let t3 = conn.last_probe_time()?;
         assert!(t3 > t1);
 

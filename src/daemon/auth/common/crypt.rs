@@ -26,8 +26,8 @@ use std::{
 
 use crate::commons::{
     error::{Error, KrillIoError},
-    KrillResult,
     util::ext_serde,
+    KrillResult,
 };
 
 const CHACHA20_KEY_BIT_LEN: usize = 256;
@@ -47,7 +47,7 @@ pub struct NonceState {
         deserialize_with = "ext_serde::de_atomicu64",
         serialize_with = "ext_serde::ser_atomicu64"
     )]
-    counter: AtomicU64,     // + 64 bits = 96 bits = CHACHA20_NONCE_BIT_LEN
+    counter: AtomicU64, // + 64 bits = 96 bits = CHACHA20_NONCE_BIT_LEN
 }
 
 impl NonceState {

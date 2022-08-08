@@ -3,21 +3,21 @@
 
 use std::convert::TryFrom;
 
-use bytes::Bytes;
 use rpki::{
+    ca::{csr::RpkiCaCsr, provisioning::RequestResourceLimit},
+    crypto::{KeyIdentifier, PublicKey},
     repository::{
         cert::{KeyUsage, Overclaim, TbsCert},
-        crypto::{DigestAlgorithm, KeyIdentifier, PublicKey},
-        manifest::FileAndHash,
+        resources::ResourceSet,
         x509::{Name, Time, Validity},
-        Cert, Crl, Csr,
+        Cert,
     },
     uri,
 };
 
 use crate::{
     commons::{
-        api::{IssuedCert, RcvdCert, ReplacedObject, RequestResourceLimit, ResourceSet},
+        api::{IssuedCertificate, ReceivedCert},
         crypto::KrillSigner,
         error::Error,
         util::AllowedUri,
@@ -32,6 +32,7 @@ pub type CaRepository = uri::Rsync;
 pub type RpkiManifest = uri::Rsync;
 pub type RpkiNotify = uri::Https;
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CsrInfo {
     ca_repository: CaRepository,
     rpki_manifest: RpkiManifest,
@@ -54,6 +55,10 @@ impl CsrInfo {
         }
     }
 
+    pub fn ca_repository(&self) -> &CaRepository {
+        &self.ca_repository
+    }
+
     pub fn global_uris(&self) -> bool {
         self.ca_repository.seems_global_uri()
             && self.rpki_manifest.seems_global_uri()
@@ -73,11 +78,11 @@ impl CsrInfo {
     }
 }
 
-impl TryFrom<&Csr> for CsrInfo {
+impl TryFrom<&RpkiCaCsr> for CsrInfo {
     type Error = Error;
 
-    fn try_from(csr: &Csr) -> KrillResult<CsrInfo> {
-        csr.validate().map_err(|_| Error::invalid_csr("invalid signature"))?;
+    fn try_from(csr: &RpkiCaCsr) -> KrillResult<CsrInfo> {
+        csr.verify_signature().map_err(Error::invalid_csr)?;
         let ca_repository = csr
             .ca_repository()
             .cloned()
@@ -97,21 +102,6 @@ impl TryFrom<&Csr> for CsrInfo {
     }
 }
 
-impl From<&Cert> for CsrInfo {
-    fn from(issued: &Cert) -> Self {
-        let ca_repository = issued.ca_repository().cloned().unwrap();
-        let rpki_manifest = issued.rpki_manifest().cloned().unwrap();
-        let rpki_notify = issued.rpki_notify().cloned();
-        let key = issued.subject_public_key_info().clone();
-        CsrInfo {
-            ca_repository,
-            rpki_manifest,
-            rpki_notify,
-            key,
-        }
-    }
-}
-
 //------------ CaSignSupport -------------------------------------------------
 
 /// Support signing by CAs
@@ -123,13 +113,12 @@ impl SignSupport {
         csr: CsrInfo,
         resources: &ResourceSet,
         limit: RequestResourceLimit,
-        replaces: Option<ReplacedObject>,
         signing_key: &CertifiedKey,
         weeks: i64,
         signer: &KrillSigner,
-    ) -> KrillResult<IssuedCert> {
+    ) -> KrillResult<IssuedCertificate> {
         let signing_cert = signing_key.incoming_cert();
-        let resources = resources.apply_limit(&limit)?;
+        let resources = limit.apply_to(resources)?;
         if !signing_cert.resources().contains(&resources) {
             return Err(Error::MissingResources);
         }
@@ -140,9 +129,16 @@ impl SignSupport {
         let tbs = Self::make_tbs_cert(&resources, signing_cert, request, signer)?;
         let cert = signer.sign_cert(tbs, signing_key.key_id())?;
 
-        let cert_uri = signing_cert.uri_for_object(&cert);
+        let uri = signing_cert.uri_for_object(&cert);
 
-        Ok(IssuedCert::new(cert_uri, limit, resources, cert, replaces))
+        // The following cannot fail in practice, because it can only fail if the certificate that
+        // we just signed did not include ca_repository in its SIA. This cannot happen because it's
+        // guaranteed to be included in the CsrInfo.
+        //
+        // Still, to to be absolutely sure and future proof it's better to fail with an error
+        // than it would be to unwrap and panic.
+        IssuedCertificate::create(cert, uri, resources, limit)
+            .map_err(|e| Error::Custom(format!("Signed certificate has issue: {}", e)))
     }
 
     /// Create an EE certificate for use in ResourceTaggedAttestations.
@@ -165,12 +161,12 @@ impl SignSupport {
 
     fn make_tbs_cert(
         resources: &ResourceSet,
-        signing_cert: &RcvdCert,
+        signing_cert: &ReceivedCert,
         request: CertRequest,
         signer: &KrillSigner,
     ) -> KrillResult<TbsCert> {
         let serial = signer.random_serial()?;
-        let issuer = signing_cert.cert().subject().clone();
+        let issuer = signing_cert.subject().clone();
 
         let validity = match &request {
             CertRequest::Ca(_, validity) => *validity,
@@ -208,7 +204,7 @@ impl SignSupport {
             cert.set_v6_resources(ipv6);
         }
 
-        cert.set_authority_key_identifier(Some(signing_cert.cert().subject_key_identifier()));
+        cert.set_authority_key_identifier(Some(signing_cert.key_identifier()));
         cert.set_ca_issuer(Some(signing_cert.uri().clone()));
         cert.set_crl_uri(Some(signing_cert.crl_uri()));
 
@@ -247,21 +243,4 @@ impl SignSupport {
 enum CertRequest {
     Ca(CsrInfo, Validity),
     Ee(PublicKey, Validity),
-}
-
-trait ManifestEntry {
-    fn mft_bytes(&self) -> Bytes;
-    fn mft_hash(&self) -> Bytes {
-        let digest = DigestAlgorithm::default().digest(self.mft_bytes().as_ref());
-        Bytes::copy_from_slice(digest.as_ref())
-    }
-    fn mft_entry(&self, name: &str) -> FileAndHash<Bytes, Bytes> {
-        FileAndHash::new(Bytes::copy_from_slice(name.as_bytes()), self.mft_hash())
-    }
-}
-
-impl ManifestEntry for Crl {
-    fn mft_bytes(&self) -> Bytes {
-        self.to_captured().into_bytes()
-    }
 }

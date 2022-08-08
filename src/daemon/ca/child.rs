@@ -2,15 +2,16 @@ use std::collections::HashMap;
 
 use chrono::Duration;
 
-use rpki::repository::{crypto::KeyIdentifier, x509::Time};
+use rpki::{
+    ca::{idexchange::ChildHandle, provisioning::ResourceClassName},
+    crypto::KeyIdentifier,
+    repository::{resources::ResourceSet, x509::Time},
+};
 
 use crate::{
     commons::{
-        api::{
-            ChildCaInfo, ChildHandle, ChildState, HexEncodedHash, IssuedCert, ReplacedObject, ResourceClassName,
-            ResourceSet, Revocation, SuspendedCert, UnsuspendedCert,
-        },
-        crypto::{CsrInfo, IdCert, KrillSigner, SignSupport},
+        api::{ChildCaInfo, ChildState, IdCertInfo, IssuedCertificate, SuspendedCert, UnsuspendedCert},
+        crypto::{KrillSigner, SignSupport},
         error::Error,
         KrillResult,
     },
@@ -42,13 +43,13 @@ pub enum UsedKeyState {
 pub struct ChildDetails {
     #[serde(default)]
     state: ChildState,
-    id_cert: IdCert,
+    id_cert: IdCertInfo,
     resources: ResourceSet,
     used_keys: HashMap<KeyIdentifier, UsedKeyState>,
 }
 
 impl ChildDetails {
-    pub fn new(id_cert: IdCert, resources: ResourceSet) -> Self {
+    pub fn new(id_cert: IdCertInfo, resources: ResourceSet) -> Self {
         ChildDetails {
             state: ChildState::Active,
             id_cert,
@@ -69,11 +70,11 @@ impl ChildDetails {
         self.state = ChildState::Active;
     }
 
-    pub fn id_cert(&self) -> &IdCert {
+    pub fn id_cert(&self) -> &IdCertInfo {
         &self.id_cert
     }
 
-    pub fn set_id_cert(&mut self, id_cert: IdCert) {
+    pub fn set_id_cert(&mut self, id_cert: IdCertInfo) {
         self.id_cert = id_cert;
     }
 
@@ -128,7 +129,7 @@ impl ChildDetails {
 
 impl From<ChildDetails> for ChildCaInfo {
     fn from(details: ChildDetails) -> Self {
-        ChildCaInfo::new(details.state, (&details.id_cert).into(), details.resources)
+        ChildCaInfo::new(details.state, details.id_cert, details.resources)
     }
 }
 
@@ -143,29 +144,33 @@ pub struct Children {
 //------------ ChildCertificates -------------------------------------------
 
 /// The collection of certificates issued under a [ResourceClass](ca.ResourceClass).
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildCertificates {
     #[serde(alias = "inner")] // Note: we cannot remove this unless we migrate existing json on upgrade.
-    issued: HashMap<KeyIdentifier, IssuedCert>,
+    issued: HashMap<KeyIdentifier, IssuedCertificate>,
 
     #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
     suspended: HashMap<KeyIdentifier, SuspendedCert>,
 }
 
 impl ChildCertificates {
-    pub fn certificate_issued(&mut self, issued: IssuedCert) {
-        let ki = issued.cert().subject_key_identifier();
+    pub fn is_empty(&self) -> bool {
+        self.issued.is_empty() && self.suspended.is_empty()
+    }
+
+    pub fn certificate_issued(&mut self, issued: IssuedCertificate) {
+        let ki = issued.key_identifier();
         self.issued.insert(ki, issued);
     }
 
-    pub fn certificate_unsuspended(&mut self, issued: UnsuspendedCert) {
-        let ki = issued.cert().subject_key_identifier();
+    pub fn certificate_unsuspended(&mut self, unsuspended: UnsuspendedCert) {
+        let ki = unsuspended.key_identifier();
         self.suspended.remove(&ki);
-        self.issued.insert(ki, issued);
+        self.issued.insert(ki, unsuspended.into_converted());
     }
 
     pub fn certificate_suspended(&mut self, suspended: SuspendedCert) {
-        let ki = suspended.cert().subject_key_identifier();
+        let ki = suspended.key_identifier();
         self.issued.remove(&ki);
         self.suspended.insert(ki, suspended);
     }
@@ -175,7 +180,7 @@ impl ChildCertificates {
         self.suspended.remove(key);
     }
 
-    pub fn get_issued(&self, ki: &KeyIdentifier) -> Option<&IssuedCert> {
+    pub fn get_issued(&self, ki: &KeyIdentifier) -> Option<&IssuedCertificate> {
         self.issued.get(ki)
     }
 
@@ -183,7 +188,7 @@ impl ChildCertificates {
         self.suspended.get(ki)
     }
 
-    pub fn current(&self) -> impl Iterator<Item = &IssuedCert> {
+    pub fn current(&self) -> impl Iterator<Item = &IssuedCertificate> {
         self.issued.values()
     }
 
@@ -200,7 +205,10 @@ impl ChildCertificates {
         }
         // Also re-issue suspended certificates, they may yet become unsuspended at some point
         for suspended in self.suspended.values() {
-            updates.suspend(self.re_issue(suspended, None, new_key, issuance_timing, signer)?);
+            updates.suspend(
+                self.re_issue(&suspended.convert(), None, new_key, issuance_timing, signer)?
+                    .into_converted(),
+            );
         }
         Ok(updates)
     }
@@ -224,7 +232,7 @@ impl ChildCertificates {
             if let Some(reduced_set) = issued.reduced_applicable_resources(updated_resources) {
                 if reduced_set.is_empty() {
                     // revoke
-                    updates.remove(issued.subject_key_identifier());
+                    updates.remove(issued.key_identifier());
                 } else {
                     // re-issue
                     updates.issue(self.re_issue(issued, Some(reduced_set), updated_key, issuance_timing, signer)?);
@@ -237,20 +245,23 @@ impl ChildCertificates {
             if let Some(reduced_set) = suspended.reduced_applicable_resources(updated_resources) {
                 if reduced_set.is_empty() {
                     // revoke
-                    updates.remove(suspended.subject_key_identifier());
+                    updates.remove(suspended.key_identifier());
                 } else {
                     // re-issue shrunk suspended
                     //
                     // Note: this will not be published yet, but remain suspended
                     //       until the child contacts us again, or is manually
                     //       un-suspended.
-                    updates.suspend(self.re_issue(
-                        suspended,
-                        Some(reduced_set),
-                        updated_key,
-                        issuance_timing,
-                        signer,
-                    )?);
+                    updates.suspend(
+                        self.re_issue(
+                            &suspended.convert(),
+                            Some(reduced_set),
+                            updated_key,
+                            issuance_timing,
+                            signer,
+                        )?
+                        .into_converted(),
+                    );
                 }
             }
         }
@@ -258,26 +269,24 @@ impl ChildCertificates {
         Ok(updates)
     }
 
-    /// Re-issue a delegated certificate to replace an earlier
+    /// Re-issue an issued certificate to replace an earlier
     /// one which is about to be outdated or has changed resources.
     fn re_issue(
         &self,
-        previous: &IssuedCert,
+        previous: &IssuedCertificate,
         updated_resources: Option<ResourceSet>,
         signing_key: &CertifiedKey,
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
-    ) -> KrillResult<IssuedCert> {
-        let (_uri, limit, resource_set, cert) = previous.clone().unpack();
-        let csr = CsrInfo::from(&cert);
-        let resource_set = updated_resources.unwrap_or(resource_set);
-        let replaced = ReplacedObject::new(Revocation::from(&cert), HexEncodedHash::from(&cert));
+    ) -> KrillResult<IssuedCertificate> {
+        let csr_info = previous.csr_info().clone();
+        let resource_set = updated_resources.unwrap_or_else(|| previous.resources().clone());
+        let limit = previous.limit().clone();
 
         let re_issued = SignSupport::make_issued_cert(
-            csr,
+            csr_info,
             &resource_set,
             limit,
-            Some(replaced),
             signing_key,
             issuance_timing.timing_child_certificate_valid_weeks,
             signer,
@@ -286,7 +295,7 @@ impl ChildCertificates {
         Ok(re_issued)
     }
 
-    pub fn expiring(&self, issuance_timing: &IssuanceTimingConfig) -> Vec<&IssuedCert> {
+    pub fn expiring(&self, issuance_timing: &IssuanceTimingConfig) -> Vec<&IssuedCertificate> {
         self.issued
             .values()
             .filter(|issued| {
@@ -296,19 +305,10 @@ impl ChildCertificates {
             .collect()
     }
 
-    pub fn overclaiming(&self, resources: &ResourceSet) -> Vec<&IssuedCert> {
+    pub fn overclaiming(&self, resources: &ResourceSet) -> Vec<&IssuedCertificate> {
         self.issued
             .values()
-            .filter(|issued| !resources.contains(issued.resource_set()))
+            .filter(|issued| !resources.contains(issued.resources()))
             .collect()
-    }
-}
-
-impl Default for ChildCertificates {
-    fn default() -> Self {
-        ChildCertificates {
-            issued: HashMap::new(),
-            suspended: HashMap::new(),
-        }
     }
 }
