@@ -19,6 +19,12 @@ Docs](https://rpki.readthedocs.io/en/latest/krill/index.html).
 
 For more information please refer to the [documentation](https://krill.docs.nlnetlabs.nl/en/stable/).
 
+# Public Krill Testbed Service
+
+In case you want to try out Krill, or test new Krill releases, then you may want
+to use our public Krill testbed service. You can read more about this service
+in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
+
 # Changelog
 
 ## 0.10.0 RC2 'Hush'
@@ -325,19 +331,6 @@ a real ASN for those resources should be made. Krill will therefore refuse to ma
 prefixes already covered by a real ASN ROA, and vice versa. Furthermore the presence of an AS0
 ROA implies that announcements for covered prefixes are intentionally RPKI invalid. Therefore
 Krill will not suggest to authorize such announcements.
-
-#### Public Krill Testbed Service
-
-With this release we have also started to operate a Krill testbed service. The testbed offers both
-a parent CA and Repository. As such you can just run a Krill instance, on a laptop even, without
-the need to operate real infrastructure for testing.
- 
-It allows you to register any resources for your Child CA, allowing you to test with your real
-resources. Because this testbed uses its own TEST Trust Anchor - ROAs created here will not end
-up being used by real routers. 
-
-You can find the test service here:
-https://testbed.rpki.nlnetlabs.nl/
 
 #### Open issues before 0.8.0:
 
