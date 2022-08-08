@@ -29,7 +29,9 @@ in RC1 and RC2:
 - Make krill.lock file optional and opt-in #856
 - BGPSec Router Certificate should NOT contain SIA extension #854
 - Manifest of 0.10.0-rc1 includes CRL, but nothing else #853
-- HSM support in v0.10.0-rc2 doesn't compile on FreeBSD 13.1 #861
+- v0.10.0-rc2 doesn't compile on FreeBSD 13.1 #861 (HSM support).
+- Security fixes in KMIP dependencies (HSM support).
+- Handle more PKCS#11 transient failure scenarios (HSM support).
 
 In this release we introduce the following major features:
 - BGPSec Router Certificate Signing
