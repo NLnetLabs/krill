@@ -732,8 +732,7 @@ jobs:
             ;;
         esac
 
-    - name: Copy newly built ${{ matrix.pkg }} package into the LXC container
-      if: ${{ matrix.mode == 'fresh-install' }}
+    - name: Copy the newly built ${{ matrix.pkg }} package into the LXC container
       run: |
         case ${OS_NAME} in
           debian|ubuntu)
