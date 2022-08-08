@@ -1,0 +1,23 @@
+{
+  "actor": "testbed",
+  "time": "2022-04-14T08:45:07.918866401Z",
+  "handle": "testbed",
+  "version": 35,
+  "sequence": 26,
+  "details": {
+    "type": "child_add",
+    "child": "nlnetlabs-testbed-client",
+    "ski": "82CBADCEDE15CA36C9B44C196B62024E5430B7A4",
+    "resources": {
+      "asn": "AS211321",
+      "v4": "185.49.140.0/22",
+      "v6": "2a04:b900::/29"
+    }
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      35
+    ]
+  }
+}

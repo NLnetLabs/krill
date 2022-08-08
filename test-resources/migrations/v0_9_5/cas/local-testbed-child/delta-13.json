@@ -1,0 +1,8 @@
+{
+  "id": "local-testbed-child",
+  "version": 13,
+  "details": {
+    "type": "route_authorization_added",
+    "auth": "185.49.142.0/23-23 => 16509"
+  }
+}

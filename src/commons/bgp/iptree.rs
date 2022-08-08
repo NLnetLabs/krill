@@ -2,7 +2,9 @@ use std::{collections::HashMap, ops::Range};
 
 use intervaltree::IntervalTree;
 
-use crate::commons::api::{ResourceSet, TypedPrefix};
+use rpki::repository::resources::ResourceSet;
+
+use crate::commons::api::TypedPrefix;
 
 //------------ IpRange -----------------------------------------------------
 
@@ -13,25 +15,23 @@ impl IpRange {
     /// Returns the IPv4 (left) and IPv6 (right) ranges as a tuple.
     pub fn for_resource_set(set: &ResourceSet) -> (Vec<IpRange>, Vec<IpRange>) {
         let mut v4_ranges = vec![];
+        for block in set.ipv4().iter() {
+            let min = block.min();
+            let max = block.max();
+            let start = min.to_v4().to_ipv6_mapped().into();
+            let end = max.to_v4().to_ipv6_mapped().into();
+            v4_ranges.push(IpRange(Range { start, end }))
+        }
+
         let mut v6_ranges = vec![];
-        if let Ok(v4) = set.to_ip_resources_v4().to_blocks() {
-            for block in v4.iter() {
-                let min = block.min();
-                let max = block.max();
-                let start = min.to_v4().to_ipv6_mapped().into();
-                let end = max.to_v4().to_ipv6_mapped().into();
-                v4_ranges.push(IpRange(Range { start, end }))
-            }
+        for block in set.ipv6().iter() {
+            let min = block.min();
+            let max = block.max();
+            let start = min.to_v6().into();
+            let end = max.to_v6().into();
+            v6_ranges.push(IpRange(Range { start, end }))
         }
-        if let Ok(v6) = set.to_ip_resources_v6().to_blocks() {
-            for block in v6.iter() {
-                let min = block.min();
-                let max = block.max();
-                let start = min.to_v6().into();
-                let end = max.to_v6().into();
-                v6_ranges.push(IpRange(Range { start, end }))
-            }
-        }
+
         (v4_ranges, v6_ranges)
     }
 
@@ -140,10 +140,12 @@ impl<V: AsRef<TypedPrefix>> Default for TypedPrefixTreeBuilder<V> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::commons::api::ResourceSet;
-    use crate::commons::bgp::Announcement;
     use std::str::FromStr;
+
+    use crate::commons::bgp::Announcement;
+    use rpki::repository::resources::ResourceSet;
+
+    use super::*;
 
     fn ann(s: &str) -> Announcement {
         Announcement::from_str(s).unwrap()

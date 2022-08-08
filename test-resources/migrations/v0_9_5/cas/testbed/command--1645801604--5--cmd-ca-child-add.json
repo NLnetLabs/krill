@@ -1,0 +1,23 @@
+{
+  "actor": "testbed",
+  "time": "2022-02-25T15:06:44.719970033Z",
+  "handle": "testbed",
+  "version": 6,
+  "sequence": 5,
+  "details": {
+    "type": "child_add",
+    "child": "ca",
+    "ski": "E9A993B6A856C84BD702865647A13A7A065CACDC",
+    "resources": {
+      "asn": "AS211321",
+      "v4": "185.49.140.0/22",
+      "v6": "2a04:b900::/29"
+    }
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      6
+    ]
+  }
+}

@@ -5,7 +5,6 @@ pub mod bgp;
 pub mod crypto;
 pub mod error;
 pub mod eventsourcing;
-pub mod remote;
 pub mod util;
 
 //------------ Response Aliases ----------------------------------------------

@@ -195,6 +195,7 @@ jobs:
         path: |
           target/${{ matrix.target }}/release/krill
           target/${{ matrix.target }}/release/krillc
+          target/${{ matrix.target }}/release/krillup
 
   # -------------------------------------------------------------------------------------------------------------------
   # Job: 'pkg'
@@ -213,22 +214,41 @@ jobs:
     container: ${{ matrix.image }}
     strategy:
       matrix:
+        pkg:
+          - 'krill'
+          - 'krillup'
         image:
           - 'ubuntu:xenial'   # ubuntu/16.04
           - 'ubuntu:bionic'   # ubuntu/18.04
           - 'ubuntu:focal'    # ubuntu/20.04
+          - 'ubuntu:jammy'    # ubuntu/22.04
           - 'debian:stretch'  # debian/9
           - 'debian:buster'   # debian/10
           - 'debian:bullseye' # debian/11
           - 'centos:7'
-          - 'centos:8'
+          - 'rockylinux:8'    # compatible with EOL centos:8
         target:
           - 'x86_64'
         include:
           # cargo-generate-rpm doesn't support specifying feature variations in Cargo.toml so we have to do it via
           # custom build arguments instead.
+          # For CentOS 7 we want to statically link with OpenSSL, but `cargo generate-rpm` doesn't build the code for
+          # us unlike `cargo deb`, so we have to control the feature set used for building ourselves rather than in
+          # `Cargo.toml`.
           - image: 'centos:7'
             extra_build_args: '--features static-openssl'
+
+          # CentOS 8 became EOL and is in theory still usable as a build container as there is still a Docker image
+          # available, and package installation can be done by switching the yum config in the container to use packages
+          # from the CentOS 8 vault rather than the now offline actual CentOS 8 repository. However, due to experiencing
+          # lots of timed out connections to the vault we will build the CentOS 8 compatible package in a Rocky Linux
+          # container instead, as Rocky Linux is 100% compatible with CentOS 8. The server at packages.nlnetlabs.nl
+          # however has a repo for CentOS 8, not Rocky Linux, and determines the repo to publish in based on the name of
+          # the archive that we produce below which is in turn based by default on the container image used to build. We
+          # therefore in this case need to specify that the O/S we are building for has a different name than the Docker
+          # image we are building it in.
+          - image: 'rockylinux:8'
+            os: 'centos:8'
 
           # package for the Raspberry Pi 4b as an ARMv7 cross compiled variant of the Debian Bullseye upon which
           # Raspbian 11 is based.
@@ -251,11 +271,18 @@ jobs:
       env:
         MATRIX_IMAGE: ${{ matrix.image }}
       shell: bash
+      env:
+        MATRIX_IMAGE: ${{ matrix.image }}
+        MATRIX_OS: ${{ matrix.os }}
       run: |
         # Get the operating system and release name (e.g. ubuntu and xenial) from the image name (e.g. ubuntu:xenial) by
         # extracting only the parts before and after but not including the colon:
-        echo "OS_NAME=${MATRIX_IMAGE%:*}" >> $GITHUB_ENV
-        echo "OS_REL=${MATRIX_IMAGE#*:}" >> $GITHUB_ENV
+        IMAGE="${MATRIX_IMAGE}"
+        if [ "${MATRIX_OS}" != "" ]; then
+          IMAGE="${MATRIX_OS}"
+        fi
+        echo "OS_NAME=${IMAGE%:*}" >> $GITHUB_ENV
+        echo "OS_REL=${IMAGE#*:}" >> $GITHUB_ENV
 
     - name: Checkout repository
       uses: actions/checkout@v2
@@ -309,7 +336,7 @@ jobs:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
-        key: ${{ matrix.image }}-${{ matrix.target}}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ matrix.image }}-${{ matrix.pkg }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
     # Speed up tooling installation by only re-downloading and re-building dependent crates if we change the version of
     # the tool that we are using.
@@ -318,14 +345,14 @@ jobs:
       uses: actions/cache@v2
       with:
         path: ~/.cargo/bin/cargo-deb
-        key: ${{ matrix.image }}-cargo-deb-${{ env.CARGO_DEB_VER }}
+        key: ${{ matrix.image }}-${{ matrix.pkg }}-${{ matrix.target }}-cargo-deb-${{ env.CARGO_DEB_VER }}-${{ endsWith(matrix.image, 'xenial')}}
 
     - name: Cache Cargo Generate RPM if available
       id: cache-cargo-generate-rpm
       uses: actions/cache@v2
       with:
         path: ~/.cargo/bin/cargo-generate-rpm
-        key: ${{ matrix.image }}-cargo-generate-rpm-${{ env.CARGO_GENERATE_RPM_VER }}
+        key: ${{ matrix.image }}-${{ matrix.pkg }}-${{ matrix.target }}-cargo-generate-rpm-${{ env.CARGO_GENERATE_RPM_VER }}
 
     # Only install cargo-deb or cargo-generate-rpm if not already fetched from the cache.
     - name: Install Cargo Deb if needed
@@ -379,9 +406,10 @@ jobs:
     # arguments.
     - name: Create the package
       env:
+        MATRIX_PKG: ${{ matrix.pkg }}
         MATRIX_IMAGE: ${{ matrix.image }}
-        CROSS_TARGET: ${{ matrix.target }}
         EXTRA_BUILD_ARGS: ${{ matrix.extra_build_args }}
+        CROSS_TARGET: ${{ matrix.target }}
       run: |
         # Debian
         # ==============================================================================================================
@@ -434,9 +462,10 @@ jobs:
             if [ ! -d target/debian ]; then
               mkdir -p target/debian
             fi
-            echo "krill (${PKG_KRILL_VER}) unstable; urgency=medium" >target/debian/changelog
+            echo "${MATRIX_PKG} (${PKG_KRILL_VER}) unstable; urgency=medium" >target/debian/changelog
             echo "  * See: https://github.com/NLnetLabs/krill/releases/tag/v${KRILL_NEW_VER}" >>target/debian/changelog
             echo " -- maintainer ${MAINTAINER}  ${RFC5322_TS}" >>target/debian/changelog
+
             if [[ "${CROSS_TARGET}" == "x86_64" ]]; then
               EXTRA_CARGO_DEB_ARGS=
               VARIANT="${OS_NAME}-${OS_REL}"
@@ -444,19 +473,28 @@ jobs:
               EXTRA_CARGO_DEB_ARGS="--no-build --no-strip --target ${CROSS_TARGET} --output target/debian"
               VARIANT="${OS_NAME}-${OS_REL}-${CROSS_TARGET}"
             fi
+
+            if [ "${MATRIX_PKG}" == "krillup" ]; then
+              # Ugly hack to use an alternate Cargo Deb configuration for krillup.
+              sed -i -e 's/^\[package\.metadata\.deb\]/[package.metadata.moved-deb]/' \
+                     -e 's/^\[package\.metadata\.krillup-deb/[package.metadata.deb/' Cargo.toml
+            fi
+
             DEB_VER="${PKG_KRILL_VER}-1${OS_REL}"
             cargo deb --variant ${VARIANT} --deb-version ${DEB_VER} -v ${EXTRA_CARGO_DEB_ARGS} -- --locked ${EXTRA_BUILD_ARGS}
             ;;
           centos)
-            # Build and strip Krill as cargo generate-rpm doesn't do this for us
+            # Build Krill as cargo generate-rpm can't do this yet
             cargo build --release --locked -v ${EXTRA_BUILD_ARGS}
-            strip -s target/release/krill
+
+            # Strip Krill binaries as cargo generate-rpm can't do this yet
+            find target/release -maxdepth 1 -type f -executable | xargs strip -s -v
 
             # Fix the version string to be used for the RPM package
             sed -i -e "s/$KRILL_VER/$PKG_KRILL_VER/" Cargo.toml
 
             # Select the correct systemd service unit file for the target operating system
-            case ${MATRIX_IMAGE} in
+            case "${OS_NAME}:${OS_REL}" in
               centos:7)
                 SYSTEMD_SERVICE_UNIT_FILE="krill-ubuntu-xenial.krill.service"
                 # yum install fails on older CentOS with the default LZMA compression used by cargo generate-rpm since v0.5.0
@@ -468,13 +506,23 @@ jobs:
                 EXTRA_CARGO_GENERATE_RPM_ARGS=""
                 ;;
               *)
-                echo >&2 "ERROR: Unsupported matrix image value: '${MATRIX_IMAGE}'"
+                echo >&2 "ERROR: Unsupported matrix image value: '${OS_NAME}:${OS_REL}'"
                 ;;
             esac
 
-            # Copy the chosen systemd service unit file to where Cargo.toml expects it to be
-            mkdir -p target/rpm
-            cp pkg/common/${SYSTEMD_SERVICE_UNIT_FILE} target/rpm/krill.service
+            case ${MATRIX_PKG} in
+              krill)
+                # Copy the chosen systemd service unit file to where Cargo.toml expects it to be
+                mkdir -p target/rpm
+                cp pkg/common/${SYSTEMD_SERVICE_UNIT_FILE} target/rpm/krill.service
+                ;;
+              krillup)
+                # Ugly hack to use an alternate configuration as `cargo generate-rpm` doesn't support
+                # the `cargo deb` concept of variants.
+                sed -i -e 's/^\[package\.metadata\.generate-rpm/[package.metadata.moved-generate-rpm/' \
+                       -e 's/^\[package\.metadata\.krillup-generate-rpm/[package.metadata.generate-rpm/' Cargo.toml
+                ;;
+            esac
 
             cargo generate-rpm ${EXTRA_CARGO_GENERATE_RPM_ARGS}
             ;;
@@ -510,10 +558,22 @@ jobs:
     - name: Upload package
       uses: actions/upload-artifact@v2
       with:
-        name: ${{ env.OS_NAME }}_${{ env.OS_REL }}_${{ matrix.target }}
+        name: ${{ matrix.pkg }}_${{ env.OS_NAME }}_${{ env.OS_REL }}_${{ matrix.target }}
         path: |
           target/debian/*.deb
           target/generate-rpm/*.rpm
+
+    # Delete the temporary artifact that contains binaries produced by the `cross` job that ran before us. All artifacts
+    # existing once the workflow completes are expected by the packages.nlnetlabs.nl scripting to contain DEB or RPM or
+    # other supported package archives, not intermediate artifacts such as binaries to be packaged. Failure to delete
+    # this temporary artifact will cause later publication to packages.nlnetlabs.nl using artifacts from this workflow
+    # run to fail.
+    - name: Delete temporary cross compiled binaries artifact
+      if: ${{ matrix.target != 'x86_64' }}
+      id: delete
+      uses: geekyeggo/delete-artifact@v1
+      with:
+        name: ${{ matrix.target }}
 
   # -------------------------------------------------------------------------------------------------------------------
   # Job: 'pkg-test'
@@ -524,15 +584,20 @@ jobs:
   # containers as they do not support systemd.
   pkg-test:
     needs: pkg
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     strategy:
       fail-fast: false
       matrix:
+        pkg:
+          - 'krill'
+          - 'krillup'
         image:
           - 'ubuntu:xenial'   # ubuntu/16.04
           - 'ubuntu:bionic'   # ubuntu/18.04
           - 'ubuntu:focal'    # ubuntu/20.04
-          - 'debian:stretch'  # debian/9
+          - 'ubuntu:jammy'    # ubuntu/22.04
+          # - 'debian:stretch'  # debian/9 - LXC image is no longer available on images.linuxcontainers.org
+
           - 'debian:buster'   # debian/10
           - 'debian:bullseye' # debian/11
           - 'centos:7'
@@ -548,9 +613,17 @@ jobs:
         # test for that O/S (remember to change debian:bullseye to the correct
         # O/S name!):
         #
+        #
+        # exclude:
+        #   - image: 'debian:bullseye'
+        #     mode: 'upgrade-from-published'
         exclude:
-          - image: 'debian:bullseye'
+          - pkg: 'krill'
             mode: 'upgrade-from-published'
+            image: 'ubuntu:jammy'
+          - pkg: 'krillup'
+            mode: 'upgrade-from-published'
+            image: 'ubuntu:jammy'    # ubuntu/22.04
     steps:
     # Set some environment variables that will be available to "run" steps below in this job, and some output variables
     # that will be available in GH Action step definitions below.
@@ -582,7 +655,7 @@ jobs:
     - name: Download package
       uses: actions/download-artifact@v2
       with:
-        name: ${{ env.OS_NAME }}_${{ env.OS_REL }}_${{ matrix.target }}
+        name: ${{ matrix.pkg }}_${{ env.OS_NAME }}_${{ env.OS_REL }}_${{ matrix.target }}
 
     - name: Add current user to LXD group
       run: |
@@ -638,7 +711,31 @@ jobs:
             ;;
         esac
 
-    - name: Copy package into the LXC container
+    - name: Install previously published ${{ matrix.pkg }} package
+      if: ${{ matrix.mode == 'upgrade-from-published' }}
+      run: |
+        case ${OS_NAME} in
+          debian|ubuntu)
+            echo "deb [arch=amd64] https://packages.nlnetlabs.nl/linux/${OS_NAME}/ ${OS_REL} main" >$HOME/nlnetlabs.list
+            sg lxd -c "lxc file push $HOME/nlnetlabs.list testcon/etc/apt/sources.list.d/"
+            sg lxd -c "lxc exec testcon -- wget -q https://packages.nlnetlabs.nl/aptkey.asc"
+            sg lxd -c "lxc exec testcon -- apt-key add ./aptkey.asc"
+            sg lxd -c "lxc exec testcon -- apt update"
+            sg lxd -c "lxc exec testcon -- apt install -y ${{ matrix.pkg }}"
+            ;;
+          centos)
+            echo '[nlnetlabs]' >$HOME/nlnetlabs.repo
+            echo 'name=NLnet Labs' >>$HOME/nlnetlabs.repo
+            echo 'baseurl=https://packages.nlnetlabs.nl/linux/centos/$releasever/main/$basearch' >>$HOME/nlnetlabs.repo
+            echo 'enabled=1' >>$HOME/nlnetlabs.repo
+            sg lxd -c "lxc file push $HOME/nlnetlabs.repo testcon/etc/yum.repos.d/"
+            sg lxd -c "lxc exec testcon -- rpm --import https://packages.nlnetlabs.nl/aptkey.asc"
+            sg lxd -c "lxc exec testcon -- yum install -y ${{ matrix.pkg }}"
+            ;;
+        esac
+
+    - name: Copy newly built ${{ matrix.pkg }} package into the LXC container
+      if: ${{ matrix.mode == 'fresh-install' }}
       run: |
         case ${OS_NAME} in
           debian|ubuntu)
@@ -653,30 +750,7 @@ jobs:
             ;;
         esac
 
-    - name: Install previously published package
-      if: ${{ matrix.mode == 'upgrade-from-published' }}
-      run: |
-        case ${OS_NAME} in
-          debian|ubuntu)
-            echo "deb [arch=amd64] https://packages.nlnetlabs.nl/linux/${OS_NAME}/ ${OS_REL} main" >$HOME/nlnetlabs.list
-            sg lxd -c "lxc file push $HOME/nlnetlabs.list testcon/etc/apt/sources.list.d/"
-            sg lxd -c "lxc exec testcon -- wget -q https://packages.nlnetlabs.nl/aptkey.asc"
-            sg lxd -c "lxc exec testcon -- apt-key add ./aptkey.asc"
-            sg lxd -c "lxc exec testcon -- apt update"
-            sg lxd -c "lxc exec testcon -- apt install -y krill"
-            ;;
-          centos)
-            echo '[nlnetlabs]' >$HOME/nlnetlabs.repo
-            echo 'name=NLnet Labs' >>$HOME/nlnetlabs.repo
-            echo 'baseurl=https://packages.nlnetlabs.nl/linux/centos/$releasever/main/$basearch' >>$HOME/nlnetlabs.repo
-            echo 'enabled=1' >>$HOME/nlnetlabs.repo
-            sg lxd -c "lxc file push $HOME/nlnetlabs.repo testcon/etc/yum.repos.d/"
-            sg lxd -c "lxc exec testcon -- rpm --import https://packages.nlnetlabs.nl/aptkey.asc"
-            sg lxd -c "lxc exec testcon -- yum install -y krill"
-            ;;
-        esac
-
-    - name: Install new package
+    - name: Install the newly built ${{ matrix.pkg }} package
       if: ${{ matrix.mode == 'fresh-install' }}
       run: |
         case ${OS_NAME} in
@@ -688,7 +762,8 @@ jobs:
             ;;
         esac
 
-    - name: Test installed packages
+    - name: Test the installed krill package
+      if: ${{ matrix.pkg == 'krill' }}
       run: |
         echo -e "\nKRILLC VERSION:"
         sg lxd -c "lxc exec testcon -- krillc --version"
@@ -721,7 +796,16 @@ jobs:
         echo -e "\nKRILL MAN PAGE:"
         sg lxd -c "lxc exec testcon -- man -P cat krill"
 
-    - name: Install new package
+    - name: Test the installed krillup package
+      if: ${{ matrix.pkg == 'krillup' }}
+      run: |
+        echo -e "\nKRILLUP VERSION:"
+        sg lxd -c "lxc exec testcon -- krillup --version"
+
+        echo -e "\nKRILLUP MAN PAGE:"
+        sg lxd -c "lxc exec testcon -- man -P cat krillup"
+
+    - name: Upgrade from the published ${{ matrix.pkg }} package to the newly built package
       if: ${{ matrix.mode == 'upgrade-from-published' }}
       run: |
         case ${OS_NAME} in
@@ -733,8 +817,8 @@ jobs:
             ;;
         esac
 
-    - name: Test installed packages
-      if: ${{ matrix.mode == 'upgrade-from-published' }}
+    - name: Test the upgraded krill package
+      if: ${{ matrix.mode == 'upgrade-from-published' && matrix.pkg == 'krill' }}
       run: |
         echo -e "\nKRILLC VERSION:"
         sg lxd -c "lxc exec testcon -- krillc --version"
@@ -762,7 +846,7 @@ jobs:
   # in to Docker Hub using secrets configured in this GitHub repository.
   docker:
     needs: cross
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     strategy:
       fail-fast: false
       matrix:
@@ -884,7 +968,7 @@ jobs:
   docker-multi-arch:
     needs: docker
     if: contains(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     steps:
       - name: Log into Docker Hub
         uses: docker/login-action@v1
@@ -930,7 +1014,7 @@ jobs:
   cleanup:
     needs: [pkg-test, docker]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     steps:
       # Delete temporary artifacts that contain binaries produced by the `cross` job. All artifacts existing when the
       # workflow completes are expected by the packages.nlnetlabs.nl scripting to contain DEB or RPM or other supported

@@ -5,13 +5,15 @@ use oso::{Oso, PolarClass, PolarValue, ToPolar};
 use crate::{
     commons::{
         actor::Actor,
-        api::Handle,
         error::{Error, KrillIoError},
         KrillResult,
     },
     constants::{ACTOR_DEF_ADMIN_TOKEN, ACTOR_DEF_ANON, ACTOR_DEF_KRILL, ACTOR_DEF_TESTBED},
     daemon::{
-        auth::common::{permissions::Permission, NoResourceType},
+        auth::{
+            common::{permissions::Permission, NoResourceType},
+            Handle,
+        },
         config::Config,
     },
 };
@@ -36,7 +38,7 @@ impl AuthPolicy {
         oso.register_class(Handle::get_polar_class()).unwrap();
 
         // Register both the Permission enum as a Polar class and its variants as Polar constants. The former is useful
-        // for writing Polar rules that only match on actual Krill Permissions, not on artibrary strings, e.g.
+        // for writing Polar rules that only match on actual Krill Permissions, not on arbitrary strings, e.g.
         // `allow(actor, action: Permission, resource)`. The latter is useful when writing rules that depend on a
         // specific permission, e.g. `if action = CA_READ`. Without the variants as constants we would have to create a
         // new Permission each time, converting from a string to the Permission type, e.g.
@@ -139,7 +141,7 @@ impl AuthPolicy {
     }
 }
 
-// Allow our "no resource" type to match the "nil" in Oso policy rules by making it convertable to the Rust type Oso
+// Allow our "no resource" type to match the "nil" in Oso policy rules by making it convertible to the Rust type Oso
 // uses when registering the nil constant. We can't use Option::<PolarValue>::None directly as it doesn't implement
 // the Display trait which we depend on in non-trace level logging in `fn Actor::is_allowed()`.
 //
@@ -192,20 +194,6 @@ impl PolarClass for Actor {
     }
 }
 
-impl PolarClass for Handle {
-    fn get_polar_class() -> oso::Class {
-        Self::get_polar_class_builder()
-            .set_constructor(|name: String| Handle::from_str(&name).unwrap())
-            .set_equality_check(|left: &Handle, right: &Handle| left == right)
-            .add_attribute_getter("name", |instance| instance.as_str().to_string())
-            .build()
-    }
-
-    fn get_polar_class_builder() -> oso::ClassBuilder<Self> {
-        oso::Class::builder()
-    }
-}
-
 impl PolarClass for Permission {
     fn get_polar_class() -> oso::Class {
         Self::get_polar_class_builder()
@@ -218,3 +206,4 @@ impl PolarClass for Permission {
         oso::Class::builder()
     }
 }
+

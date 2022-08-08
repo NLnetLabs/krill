@@ -49,7 +49,7 @@ ARG MODE=build
 # use a base image with a prepopulated Cargo build cache to accelerate the
 # build process. This does NOT affect the base image of the final Docker
 # image.
-ARG BASE_IMG=alpine:3.13
+ARG BASE_IMG=alpine:3.15
 
 
 # CARGO_ARGS
@@ -137,7 +137,7 @@ FROM ${MODE} AS source
 #
 # The previous build stage from which binaries are copied is controlled by the
 # MODE ARG (see above).
-FROM alpine:3.12 AS final
+FROM alpine:3.15 AS final
 
 # Copy binaries from the 'source' build stage into the image we are building
 COPY --from=source /tmp/out/bin/* /usr/local/bin/

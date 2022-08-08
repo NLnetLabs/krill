@@ -1,0 +1,25 @@
+{
+  "actor": "krill",
+  "time": "2022-06-02T09:50:05.265337513Z",
+  "handle": "testbed",
+  "version": 46,
+  "sequence": 36,
+  "details": {
+    "type": "child_certify",
+    "child": "local-testbed-child",
+    "resource_class_name": "0",
+    "limit": {
+      "asn": "none",
+      "v4": "none",
+      "v6": "none"
+    },
+    "ki": "4F07E0CCBFC023419467B3B4A5D828225BECBD83"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      46,
+      47
+    ]
+  }
+}

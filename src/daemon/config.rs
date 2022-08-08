@@ -8,27 +8,31 @@ use std::{
 };
 
 use chrono::Duration;
-use clap::{App, Arg};
 use log::{error, LevelFilter};
 use serde::{de, Deserialize, Deserializer};
 
 #[cfg(unix)]
 use syslog::Facility;
 
-use rpki::{repository::x509::Time, uri};
+use rpki::{ca::idexchange::PublisherHandle, repository::x509::Time, uri};
 
 use crate::{
     commons::{
-        api::{PublicationServerUris, PublisherHandle, Token},
+        api::{PublicationServerUris, Token},
+        crypto::OpenSslSignerConfig,
         error::KrillIoError,
         util::ext_serde,
     },
     constants::*,
     daemon::http::tls_keys,
+    daemon::mq::{in_seconds, Priority},
 };
 
 #[cfg(feature = "multi-user")]
 use crate::daemon::auth::providers::{config_file::config::ConfigAuthUsers, openid_connect::ConfigAuthOpenIDConnect};
+
+#[cfg(feature = "hsm")]
+use crate::commons::crypto::{KmipSignerConfig, Pkcs11SignerConfig};
 
 //------------ ConfigDefaults ------------------------------------------------
 
@@ -105,8 +109,12 @@ impl ConfigDefaults {
         vec![]
     }
 
-    fn ca_refresh_seconds() -> u32 {
-        600
+    fn ca_refresh_seconds() -> i64 {
+        24 * 3600 // 24 hours
+    }
+
+    fn ca_refresh_jitter_seconds() -> i64 {
+        12 * 3600 // 12 hours
     }
 
     fn ca_refresh_parents_batch_size() -> usize {
@@ -202,9 +210,148 @@ impl ConfigDefaults {
     fn timing_aspa_reissue_weeks_before() -> i64 {
         4
     }
+
+    fn timing_bgpsec_valid_weeks() -> i64 {
+        52
+    }
+
+    fn timing_bgpsec_reissue_weeks_before() -> i64 {
+        4
+    }
+
+    pub fn signers() -> Vec<SignerConfig> {
+        #[cfg(not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11")))]
+        {
+            let signer_config = OpenSslSignerConfig { keys_path: None };
+            vec![SignerConfig::new(
+                DEFAULT_SIGNER_NAME.to_string(),
+                SignerType::OpenSsl(signer_config),
+            )]
+        }
+
+        #[cfg(all(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11"))]
+        {
+            let signer_config = OpenSslSignerConfig { keys_path: None };
+            vec![SignerConfig::new(
+                DEFAULT_SIGNER_NAME.to_string(),
+                SignerType::OpenSsl(signer_config),
+            )]
+        }
+
+        #[cfg(all(feature = "hsm-tests-kmip", not(feature = "hsm-tests-pkcs11")))]
+        {
+            let signer_config = KmipSignerConfig {
+                host: "127.0.0.1".to_string(),
+                port: 5696,
+                username: None,
+                password: None,
+                insecure: true,
+                force: true,
+                client_cert_path: Some(PathBuf::from_str("test-resources/pykmip/server.crt").unwrap()),
+                client_cert_private_key_path: Some(PathBuf::from_str("test-resources/pykmip/server.key").unwrap()),
+                server_cert_path: Some(PathBuf::from_str("test-resources/pykmip/server.crt").unwrap()),
+                server_ca_cert_path: Some(PathBuf::from_str("test-resources/pykmip/ca.crt").unwrap()),
+                retry_seconds: KmipSignerConfig::default_retry_seconds(),
+                backoff_multiplier: KmipSignerConfig::default_backoff_multiplier(),
+                max_retry_seconds: KmipSignerConfig::default_max_retry_seconds(),
+                connect_timeout_seconds: KmipSignerConfig::default_connect_timeout_seconds(),
+                read_timeout_seconds: KmipSignerConfig::default_read_timeout_seconds(),
+                write_timeout_seconds: KmipSignerConfig::default_write_timeout_seconds(),
+                max_lifetime_seconds: KmipSignerConfig::default_max_lifetime_seconds(),
+                max_idle_seconds: KmipSignerConfig::default_max_idle_seconds(),
+                max_connections: KmipSignerConfig::default_max_connections(),
+                max_response_bytes: KmipSignerConfig::default_max_response_bytes(),
+            };
+            return vec![SignerConfig::new(
+                DEFAULT_KMIP_SIGNER_NAME.to_string(),
+                SignerType::Kmip(signer_config),
+            )];
+        }
+
+        #[cfg(all(feature = "hsm-tests-pkcs11", not(feature = "hsm-tests-kmip")))]
+        {
+            use crate::commons::crypto::SlotIdOrLabel;
+            let signer_config = Pkcs11SignerConfig {
+                lib_path: "/usr/lib/softhsm/libsofthsm2.so".to_string(),
+                user_pin: Some("1234".to_string()),
+                slot: SlotIdOrLabel::Label("My token 1".to_string()),
+                login: true,
+                retry_seconds: Pkcs11SignerConfig::default_retry_seconds(),
+                backoff_multiplier: Pkcs11SignerConfig::default_backoff_multiplier(),
+                max_retry_seconds: Pkcs11SignerConfig::default_max_retry_seconds(),
+            };
+            vec![SignerConfig::new(
+                DEFAULT_PKCS11_SIGNER_NAME.to_string(),
+                SignerType::Pkcs11(signer_config),
+            )]
+        }
+    }
+
+    pub fn signer_probe_retry_seconds() -> u64 {
+        30
+    }
 }
 
 //------------ Config --------------------------------------------------------
+
+#[derive(Clone, Debug)]
+
+pub enum SignerReference {
+    /// The name of the [[signers]] block being referred to. If supplied it
+    /// must match the name field of one of the [[signers]] blocks defined in
+    /// the configuration.
+    Name(Option<String>),
+
+    /// The index into Config.signers vector that the name was resolved to.
+    /// Populated based on the value of 'name' and the contents of
+    /// Config.signers after the config file has been parsed.
+    Index(usize),
+}
+
+fn deserialize_signer_ref<'de, D>(deserializer: D) -> Result<SignerReference, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    Ok(SignerReference::new(&String::deserialize(deserializer)?))
+}
+
+impl Default for SignerReference {
+    fn default() -> Self {
+        Self::Name(None)
+    }
+}
+
+impl SignerReference {
+    pub fn new(name: &str) -> SignerReference {
+        SignerReference::Name(Some(name.to_string()))
+    }
+
+    pub fn name(&self) -> &String {
+        match self {
+            SignerReference::Name(Some(name)) => name,
+            _ => panic!("Signer reference is not named"),
+        }
+    }
+
+    pub fn idx(&self) -> usize {
+        match self {
+            SignerReference::Index(idx) => *idx,
+            _ => panic!("Signer reference is not resolved"),
+        }
+    }
+
+    pub fn is_named(&self) -> bool {
+        matches!(self, SignerReference::Name(Some(_)))
+    }
+
+    pub fn is_set(&self) -> bool {
+        match self {
+            SignerReference::Name(None) => false,
+            SignerReference::Name(Some(_)) => true,
+            SignerReference::Index(_) => true,
+        }
+    }
+}
 
 /// Global configuration for the Krill Server.
 ///
@@ -225,6 +372,9 @@ pub struct Config {
     #[serde(default = "ConfigDefaults::data_dir")]
     pub data_dir: PathBuf,
 
+    #[serde(default)] // default is false
+    pub data_dir_use_lock: bool,
+
     #[serde(default = "ConfigDefaults::always_recover_data")]
     pub always_recover_data: bool,
 
@@ -236,7 +386,7 @@ pub struct Config {
         default = "ConfigDefaults::log_level",
         deserialize_with = "ext_serde::de_level_filter"
     )]
-    log_level: LevelFilter,
+    pub log_level: LevelFilter,
 
     #[serde(default = "ConfigDefaults::log_type")]
     log_type: LogType,
@@ -267,8 +417,23 @@ pub struct Config {
     #[cfg(feature = "multi-user")]
     pub auth_openidconnect: Option<ConfigAuthOpenIDConnect>,
 
+    #[serde(default, deserialize_with = "deserialize_signer_ref")]
+    pub default_signer: SignerReference,
+
+    #[serde(default, deserialize_with = "deserialize_signer_ref")]
+    pub one_off_signer: SignerReference,
+
+    #[serde(default = "ConfigDefaults::signer_probe_retry_seconds")]
+    pub signer_probe_retry_seconds: u64,
+
+    #[serde(default = "ConfigDefaults::signers")]
+    pub signers: Vec<SignerConfig>,
+
     #[serde(default = "ConfigDefaults::ca_refresh_seconds", alias = "ca_refresh")]
-    pub ca_refresh_seconds: u32,
+    ca_refresh_seconds: i64,
+
+    #[serde(default = "ConfigDefaults::ca_refresh_jitter_seconds")]
+    ca_refresh_jitter_seconds: i64,
 
     #[serde(default = "ConfigDefaults::ca_refresh_parents_batch_size")]
     pub ca_refresh_parents_batch_size: usize,
@@ -320,6 +485,8 @@ pub struct Config {
     pub metrics: MetricsConfig,
 
     pub testbed: Option<TestBed>,
+
+    pub benchmark: Option<Benchmark>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -342,6 +509,10 @@ pub struct IssuanceTimingConfig {
     pub timing_aspa_valid_weeks: i64,
     #[serde(default = "ConfigDefaults::timing_aspa_reissue_weeks_before")]
     pub timing_aspa_reissue_weeks_before: i64,
+    #[serde(default = "ConfigDefaults::timing_bgpsec_valid_weeks")]
+    pub timing_bgpsec_valid_weeks: i64,
+    #[serde(default = "ConfigDefaults::timing_bgpsec_reissue_weeks_before")]
+    pub timing_bgpsec_reissue_weeks_before: i64,
 }
 
 impl IssuanceTimingConfig {
@@ -351,7 +522,9 @@ impl IssuanceTimingConfig {
     /// defaults: now + 24 hours + 0 to 4 hours
     pub fn publish_next(&self) -> Time {
         let regular_mins = self.timing_publish_next_hours * 60;
-        let random_mins = {
+        let random_mins = if self.timing_publish_next_jitter_hours == 0 {
+            0
+        } else {
             use rand::Rng;
             let mut rng = rand::thread_rng();
             rng.gen_range(0..(60 * self.timing_publish_next_jitter_hours))
@@ -466,6 +639,12 @@ impl TestBed {
     }
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Benchmark {
+    pub cas: usize,
+    pub ca_roas: usize,
+}
+
 /// # Accessors
 impl Config {
     pub fn set_data_dir(&mut self, data_dir: PathBuf) {
@@ -537,14 +716,70 @@ impl Config {
         }
     }
 
+    pub fn requeue_remote_failed(&self) -> Priority {
+        if test_mode_enabled() {
+            in_seconds(5)
+        } else {
+            in_seconds(SCHEDULER_REQUEUE_DELAY_SECONDS)
+        }
+    }
+
+    /// Get the priority for the next CA refresh based on the configured
+    /// ca_refresh_seconds (1 day), and jitter (12 hours)
+    pub fn ca_refresh_next(&self) -> Priority {
+        Self::ca_refresh_next_from(self.ca_refresh_seconds, self.ca_refresh_jitter_seconds)
+    }
+
+    pub fn ca_refresh_start_up(&self, use_jitter: bool) -> Priority {
+        let jitter_seconds = if use_jitter { self.ca_refresh_jitter_seconds } else { 0 };
+
+        Self::ca_refresh_next_from(0, jitter_seconds)
+    }
+
+    fn ca_refresh_next_from(regular_seconds: i64, jitter_seconds: i64) -> Priority {
+        let random_seconds = if jitter_seconds == 0 {
+            0
+        } else {
+            use rand::Rng;
+            let mut rng = rand::thread_rng();
+            rng.gen_range(0..jitter_seconds)
+        };
+
+        in_seconds(regular_seconds + random_seconds)
+    }
+
     pub fn testbed(&self) -> Option<&TestBed> {
         self.testbed.as_ref()
+    }
+
+    /// Returns a reference to the default signer configuration.
+    ///
+    /// Assumes that the configuration is valid. Will panic otherwise.
+    pub fn default_signer(&self) -> &SignerConfig {
+        &self.signers[self.default_signer.idx()]
+    }
+
+    /// Returns a reference to the one off signer configuration.
+    ///
+    /// Assumes that the configuration is valid. Will panic otherwise.
+    pub fn one_off_signer(&self) -> &SignerConfig {
+        &self.signers[self.one_off_signer.idx()]
+    }
+
+    pub fn upgrade_data_dir(&self) -> PathBuf {
+        self.data_dir.join("upgrade-data")
     }
 }
 
 /// # Create
 impl Config {
-    fn test_config(data_dir: &Path, enable_testbed: bool, enable_ca_refresh: bool, enable_suspend: bool) -> Self {
+    fn test_config(
+        data_dir: &Path,
+        enable_testbed: bool,
+        enable_ca_refresh: bool,
+        enable_suspend: bool,
+        #[allow(unused_variables)] second_signer: bool,
+    ) -> Self {
         use crate::test;
 
         let ip = ConfigDefaults::ip();
@@ -553,6 +788,7 @@ impl Config {
 
         let https_mode = HttpsMode::Generate;
         let data_dir = data_dir.to_path_buf();
+        let data_dir_use_lock = true; // ensure we touch this in tests
         let always_recover_data = false;
 
         let log_level = LevelFilter::Debug;
@@ -570,7 +806,25 @@ impl Config {
         let auth_users = None;
         #[cfg(feature = "multi-user")]
         let auth_openidconnect = None;
+
+        let default_signer = SignerReference::default();
+        let one_off_signer = SignerReference::default();
+        let signer_probe_retry_seconds = ConfigDefaults::signer_probe_retry_seconds();
+
+        // Multiple signers are only needed and can only be configured when the "hsm" feature is enabled.
+        #[cfg(not(feature = "hsm"))]
+        let second_signer = false;
+
+        let signers = match second_signer {
+            false => ConfigDefaults::signers(),
+            true => vec![SignerConfig::new(
+                "Second Test Signer".to_string(),
+                SignerType::OpenSsl(OpenSslSignerConfig::default()),
+            )],
+        };
+
         let ca_refresh_seconds = if enable_ca_refresh { 1 } else { 86400 };
+        let ca_refresh_jitter_seconds = if enable_ca_refresh { 0 } else { 86400 }; // no jitter in testing
         let ca_refresh_parents_batch_size = 10;
         let post_limit_api = ConfigDefaults::post_limit_api();
         let post_limit_rfc8181 = ConfigDefaults::post_limit_rfc8181();
@@ -604,6 +858,8 @@ impl Config {
         let timing_roa_reissue_weeks_before = ConfigDefaults::timing_roa_reissue_weeks_before();
         let timing_aspa_valid_weeks = ConfigDefaults::timing_aspa_valid_weeks();
         let timing_aspa_reissue_weeks_before = ConfigDefaults::timing_aspa_reissue_weeks_before();
+        let timing_bgpsec_valid_weeks = ConfigDefaults::timing_bgpsec_valid_weeks();
+        let timing_bgpsec_reissue_weeks_before = ConfigDefaults::timing_bgpsec_reissue_weeks_before();
 
         let issuance_timing = IssuanceTimingConfig {
             timing_publish_next_hours,
@@ -615,6 +871,8 @@ impl Config {
             timing_roa_reissue_weeks_before,
             timing_aspa_valid_weeks,
             timing_aspa_reissue_weeks_before,
+            timing_bgpsec_valid_weeks,
+            timing_bgpsec_reissue_weeks_before,
         };
 
         let repository_retention = RepositoryRetentionConfig {
@@ -651,6 +909,7 @@ impl Config {
             port,
             https_mode,
             data_dir,
+            data_dir_use_lock,
             always_recover_data,
             pid_file,
             service_uri: None,
@@ -668,7 +927,12 @@ impl Config {
             auth_users,
             #[cfg(feature = "multi-user")]
             auth_openidconnect,
+            default_signer,
+            one_off_signer,
+            signers,
+            signer_probe_retry_seconds,
             ca_refresh_seconds,
+            ca_refresh_jitter_seconds,
             ca_refresh_parents_batch_size,
             suspend_child_after_inactive_seconds,
             suspend_child_after_inactive_hours: None,
@@ -687,84 +951,138 @@ impl Config {
             repository_retention,
             metrics,
             testbed,
+            benchmark: None,
         }
     }
 
-    pub fn test(data_dir: &Path, enable_testbed: bool, enable_ca_refresh: bool, enable_suspend: bool) -> Self {
-        Self::test_config(data_dir, enable_testbed, enable_ca_refresh, enable_suspend)
+    pub fn test(
+        data_dir: &Path,
+        enable_testbed: bool,
+        enable_ca_refresh: bool,
+        enable_suspend: bool,
+        second_signer: bool,
+    ) -> Self {
+        let mut cfg = Self::test_config(
+            data_dir,
+            enable_testbed,
+            enable_ca_refresh,
+            enable_suspend,
+            second_signer,
+        );
+        cfg.process().unwrap();
+        cfg
     }
 
     pub fn pubd_test(data_dir: &Path) -> Self {
-        let mut config = Self::test_config(data_dir, false, false, false);
+        let mut config = Self::test_config(data_dir, false, false, false, false);
         config.port = 3001;
         config
     }
 
-    pub fn get_config_filename() -> String {
-        let matches = App::new(KRILL_SERVER_APP)
-            .version(KRILL_VERSION)
-            .arg(
-                Arg::with_name("config")
-                    .short("c")
-                    .long("config")
-                    .value_name("FILE")
-                    .help("Override the path to the config file (default: './defaults/krill.conf')")
-                    .required(false),
-            )
-            .get_matches();
+    /// Creates the config (at startup).
+    pub fn create(config_file: &str, upgrade_only: bool) -> Result<Self, ConfigError> {
+        let mut config = Self::read_config(config_file)?;
 
-        let config_file = matches.value_of("config").unwrap_or(KRILL_DEFAULT_CONFIG_FILE);
+        if upgrade_only {
+            config.log_type = LogType::Stderr;
+        }
 
-        config_file.to_string()
+        config.init_logging()?;
+
+        if upgrade_only {
+            info!("Prepare upgrade using configuration file: {}", config_file);
+            info!("Processing data from: {}", config.data_dir.to_string_lossy());
+            info!(
+                "Saving prepared data to: {}",
+                config.upgrade_data_dir().to_string_lossy()
+            );
+        } else {
+            info!("{} uses configuration file: {}", KRILL_SERVER_APP, config_file);
+        }
+
+        config
+            .process()
+            .map_err(|e| ConfigError::Other(format!("Error parsing config file: {}, error: {}", config_file, e)))?;
+
+        Ok(config)
     }
 
-    /// Creates the config (at startup). Panics in case of issues.
-    pub fn create() -> Result<Self, ConfigError> {
-        let config_file = Self::get_config_filename();
+    pub fn process(&mut self) -> Result<(), ConfigError> {
+        self.fix();
+        self.verify()?;
+        self.resolve();
+        Ok(())
+    }
 
-        let mut config = match Self::read_config(&config_file) {
-            Err(e) => {
-                if config_file == KRILL_DEFAULT_CONFIG_FILE {
-                    Err(ConfigError::other(
-                        "Cannot find config file. Please use --config to specify its location.",
-                    ))
-                } else {
-                    Err(ConfigError::Other(format!(
-                        "Error parsing config file: {}, error: {}",
-                        config_file, e
-                    )))
-                }
-            }
-            Ok(config) => {
-                config.init_logging()?;
-                info!("{} uses configuration file: {}", KRILL_SERVER_APP, config_file);
-                Ok(config)
-            }
-        }?;
-
-        if config.ca_refresh_seconds < CA_REFRESH_SECONDS_MIN {
+    fn fix(&mut self) {
+        if self.ca_refresh_seconds < CA_REFRESH_SECONDS_MIN {
             warn!(
                 "The value for 'ca_refresh_seconds' was below the minimum value, changing it to {} seconds",
                 CA_REFRESH_SECONDS_MIN
             );
-            config.ca_refresh_seconds = CA_REFRESH_SECONDS_MIN;
+            self.ca_refresh_seconds = CA_REFRESH_SECONDS_MIN;
         }
 
-        if config.ca_refresh_seconds > CA_REFRESH_SECONDS_MAX {
+        if self.ca_refresh_seconds > CA_REFRESH_SECONDS_MAX {
             warn!(
                 "The value for 'ca_refresh_seconds' was above the maximum value, changing it to {} seconds",
                 CA_REFRESH_SECONDS_MAX
             );
-            config.ca_refresh_seconds = CA_REFRESH_SECONDS_MAX;
+            self.ca_refresh_seconds = CA_REFRESH_SECONDS_MAX;
         }
 
-        config
-            .verify()
-            .map_err(|e| ConfigError::Other(format!("Error parsing config file: {}, error: {}", config_file, e)))?;
-        Ok(config)
+        let half_refresh = self.ca_refresh_seconds / 2;
+
+        if self.ca_refresh_jitter_seconds > half_refresh {
+            warn!("The value for 'ca_refresh_jitter_seconds' exceeded 50% of 'ca_refresh_seconds'. Changing it to {} seconds", half_refresh);
+            self.ca_refresh_jitter_seconds = half_refresh;
+        }
     }
 
-    pub fn verify(&self) -> Result<(), ConfigError> {
+    fn resolve(&mut self) {
+        if self.signers.len() == 1 && !self.default_signer.is_named() {
+            self.default_signer = SignerReference::new(&self.signers[0].name);
+        }
+
+        let default_signer_idx = self.find_signer_reference(&self.default_signer).unwrap();
+        self.default_signer = SignerReference::Index(default_signer_idx);
+
+        let openssl_signer_idx = self.find_openssl_signer();
+        let one_off_signer_idx = self.find_signer_reference(&self.one_off_signer);
+
+        // Use the specified one-off signer, if set, else:
+        //   - Use an existing OpenSSL signer config,
+        //   - Or create a new OpenSSL signer config.
+        let one_off_signer_idx = match (one_off_signer_idx, openssl_signer_idx) {
+            (Some(one_off_signer_idx), _) => one_off_signer_idx,
+            (None, Some(openssl_signer_idx)) => openssl_signer_idx,
+            (None, None) => self.add_openssl_signer(OPENSSL_ONE_OFF_SIGNER_NAME),
+        };
+
+        self.one_off_signer = SignerReference::Index(one_off_signer_idx);
+    }
+
+    fn add_openssl_signer(&mut self, name: &str) -> usize {
+        let signer_config = SignerConfig::new(name.to_string(), SignerType::OpenSsl(OpenSslSignerConfig::default()));
+        self.signers.push(signer_config);
+        self.signers.len() - 1
+    }
+
+    fn find_signer_reference(&self, signer_ref: &SignerReference) -> Option<usize> {
+        match signer_ref {
+            SignerReference::Name(None) => None,
+            SignerReference::Name(Some(name)) => self.signers.iter().position(|s| &s.name == name),
+            SignerReference::Index(idx) => Some(*idx),
+        }
+    }
+
+    fn find_openssl_signer(&self) -> Option<usize> {
+        self.signers
+            .iter()
+            .position(|s| matches!(s.signer_type, SignerType::OpenSsl(_)))
+    }
+
+    fn verify(&self) -> Result<(), ConfigError> {
         if env::var(KRILL_ENV_ADMIN_TOKEN_DEPRECATED).is_ok() {
             warn!("The environment variable for setting the admin token has been updated from '{}' to '{}', please update as the old value may not be supported in future releases", KRILL_ENV_ADMIN_TOKEN_DEPRECATED, KRILL_ENV_ADMIN_TOKEN)
         }
@@ -853,18 +1171,90 @@ impl Config {
             }
         }
 
+        if let Some(benchmark) = &self.benchmark {
+            if self.testbed.is_none() {
+                return Err(ConfigError::other("[benchmark] section requires [testbed] config"));
+            }
+            if benchmark.cas > 65535 {
+                return Err(ConfigError::other("[benchmark] allows only up to 65536 CAs"));
+            }
+            if benchmark.ca_roas > 100 {
+                return Err(ConfigError::other("[benchmark] allows only up to 100 ROAs per CA"));
+            }
+        }
+
+        if self.signers.is_empty() {
+            // Since Config.signers defaults via Serde to ConfigDefaults::signers() which creates a vector with a
+            // single signer, this can only happen if we were invoked on a config object created or modified by test
+            // code.
+            return Err(ConfigError::Other("No signers configured".to_string()));
+        }
+
+        #[cfg(not(feature = "hsm"))]
+        {
+            fn mk_err_msg(setting_name: &str) -> String {
+                format!("This build of Krill lacks support for the '{}' config file setting. Please use a version of Krill that has the 'hsm' feature enabled.", setting_name)
+            }
+
+            if self.default_signer.is_named() {
+                return Err(ConfigError::other(&mk_err_msg("default_signer")));
+            }
+            if self.one_off_signer.is_named() {
+                return Err(ConfigError::other(&mk_err_msg("one_off_signer")));
+            }
+            if self.signers != ConfigDefaults::signers() {
+                return Err(ConfigError::other(&mk_err_msg("[[signers]]")));
+            }
+        }
+
+        for n in &self.signers {
+            if self.signers.iter().filter(|m| m.name == n.name).count() > 1 {
+                return Err(ConfigError::other(&format!("Signer name '{}' is not unique", n.name)));
+            }
+        }
+
+        if self.signers.len() > 1 && !self.default_signer.is_set() {
+            return Err(ConfigError::other(
+                "'default_signer' must be set when more than one [[signers]] configuration is defined",
+            ));
+        }
+
+        if self.default_signer.is_named() {
+            if self.find_signer_reference(&self.default_signer).is_none() {
+                return Err(ConfigError::other(&format!(
+                    "'{}' cannot be used as the 'default_signer' as no signer with that name is defined",
+                    self.default_signer.name()
+                )));
+            }
+        } else {
+        }
+
+        if self.one_off_signer.is_named() && self.find_signer_reference(&self.one_off_signer).is_none() {
+            return Err(ConfigError::other(&format!(
+                "'{}' cannot be used as the 'one_off_signer' as no signer with that name is defined",
+                self.one_off_signer.name()
+            )));
+        }
+
         Ok(())
     }
 
     pub fn read_config(file: &str) -> Result<Self, ConfigError> {
         let mut v = Vec::new();
-        let mut f =
-            File::open(file).map_err(|e| KrillIoError::new(format!("Could not read open file '{}'", file), e))?;
+        let mut f = File::open(file).map_err(|e| {
+            KrillIoError::new(
+                format!(
+                    "Could not read config file '{}'. Note: you may want to override the default location using --config <path>",
+                    file
+                ),
+                e,
+            )
+        })?;
         f.read_to_end(&mut v)
             .map_err(|e| KrillIoError::new(format!("Could not read config file '{}'", file), e))?;
 
-        let c: Config = toml::from_slice(v.as_slice())?;
-        Ok(c)
+        toml::from_slice(v.as_slice())
+            .map_err(|e| ConfigError::Other(format!("Error parsing config file: {}, error: {}", file, e)))
     }
 
     pub fn init_logging(&self) -> Result<(), ConfigError> {
@@ -1122,15 +1512,97 @@ impl<'de> Deserialize<'de> for AuthType {
     }
 }
 
+//------------ Signers -----------------------------------------------------
+
+// Supports TOML such as:
+//
+//   default_signer = "<signer name>"   # optional
+//   one_off_signer = "<signer name>"   # optional
+//
+//   [[signers]]
+//   name = "My PKCS#11 signer"
+//   type = "PKCS#11"
+//   lib_path = "/path/to/pkcs11.so"
+//   ...
+//
+//   [[signers]]
+//   name = "My OpenSSL Signer"
+//   type = "OpenSSL"
+//
+//   [[signers]]
+//   name = "My KMIP Signer"
+//   type = "KMIP"
+//   host = "example.com"
+//   ...
+//
+//   # Multiple signers of the same type are supported
+//   [[signers]]
+//   name = "My Other KMIP Signer"
+//   type = "KMIP"
+//   ...
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+pub struct SignerConfig {
+    /// A friendly name for the signer. Used to identify the signer with the `default_signer` and `one_off_signer`
+    /// settings.
+    pub name: String,
+
+    /// Signer specific configuration settings.
+    #[serde(flatten)]
+    pub signer_type: SignerType,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type")]
+pub enum SignerType {
+    #[serde(alias = "OpenSSL")]
+    OpenSsl(OpenSslSignerConfig),
+
+    #[cfg(feature = "hsm")]
+    #[serde(alias = "PKCS#11")]
+    Pkcs11(Pkcs11SignerConfig),
+
+    #[cfg(feature = "hsm")]
+    #[serde(alias = "KMIP")]
+    Kmip(KmipSignerConfig),
+}
+
+impl std::fmt::Display for SignerType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SignerType::OpenSsl(_) => f.write_str("OpenSSL"),
+
+            #[cfg(feature = "hsm")]
+            SignerType::Pkcs11(_) => f.write_str("PKCS#11"),
+
+            #[cfg(feature = "hsm")]
+            SignerType::Kmip(_) => f.write_str("KMIP"),
+        }
+    }
+}
+
+impl SignerConfig {
+    pub fn new(name: String, signer_type: SignerType) -> SignerConfig {
+        Self { name, signer_type }
+    }
+}
+
 //------------ Tests ---------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
-
     use crate::test;
     use std::env;
 
     use super::*;
+
+    fn assert_err_msg(res: Result<Config, ConfigError>, expected_err_msg: &str) {
+        if let Err(ConfigError::Other(msg)) = res {
+            assert_eq!(msg, expected_err_msg);
+        } else {
+            panic!("Expected error '{}' but got: {:?}", expected_err_msg, res);
+        }
+    }
 
     #[test]
     fn should_parse_default_config_file() {
@@ -1309,11 +1781,168 @@ mod tests {
         }
     }
 
+    fn parse_and_process_config_str(config_str: &str) -> Result<Config, ConfigError> {
+        let mut c: Config = toml::from_str(config_str).unwrap();
+        c.process()?;
+        Ok(c)
+    }
+
     #[test]
     fn config_should_accept_and_warn_about_auth_token() {
-        let old_config = b"auth_token = \"secret\"";
-
-        let c: Config = toml::from_slice(old_config).unwrap();
+        let old_config = r#"auth_token = "secret""#;
+        let c = parse_and_process_config_str(old_config).unwrap();
         assert_eq!(c.admin_token.as_ref(), "secret");
+    }
+
+    #[cfg(not(feature = "hsm"))]
+    #[test]
+    fn should_fail_when_config_defines_signers_but_hsm_support_is_not_enabled() {
+        fn assert_unexpected_setting_err(res: Result<Config, ConfigError>, setting_name: &str) {
+            let expected_err_msg = format!("This build of Krill lacks support for the '{}' config file setting. Please use a version of Krill that has the 'hsm' feature enabled.", setting_name);
+            assert_err_msg(res, &expected_err_msg);
+        }
+
+        let config_str = r#"
+            auth_token = "secret"
+
+            [[signers]]
+            type = "OpenSSL"
+            name = "Signer 1"
+        "#;
+
+        let res = parse_and_process_config_str(config_str);
+        assert_unexpected_setting_err(res, "[[signers]]");
+
+        // ---
+
+        let config_str = r#"
+            auth_token = "secret"
+            default_signer = "Signer 1"
+
+            [[signers]]
+            type = "OpenSSL"
+            name = "Signer 1"
+        "#;
+
+        let res = parse_and_process_config_str(config_str);
+        assert_unexpected_setting_err(res, "default_signer");
+
+        // ---
+
+        let config_str = r#"
+            auth_token = "secret"
+            one_off_signer = "Signer 1"
+
+            [[signers]]
+            type = "OpenSSL"
+            name = "Signer 1"
+        "#;
+
+        let res = parse_and_process_config_str(config_str);
+        assert_unexpected_setting_err(res, "one_off_signer");
+    }
+
+    #[cfg(feature = "hsm")]
+    #[test]
+    fn should_fail_with_multiple_signers_and_no_default_signer() {
+        let config_str = r#"
+            auth_token = "secret"
+
+            [[signers]]
+            type = "OpenSSL"
+            name = "Signer 1"
+
+            [[signers]]
+            type = "OpenSSL"
+            name = "Signer 2"
+        "#;
+
+        let res = parse_and_process_config_str(config_str);
+        assert_err_msg(
+            res,
+            "'default_signer' must be set when more than one [[signers]] configuration is defined",
+        );
+    }
+
+    #[cfg(feature = "hsm")]
+    #[test]
+    fn should_fail_if_referenced_signer_is_not_defined() {
+        let config_str = r#"
+            auth_token = "secret"
+            default_signer = "Unknown Signer"
+        "#;
+
+        let res = parse_and_process_config_str(config_str);
+        assert_err_msg(
+            res,
+            "'Unknown Signer' cannot be used as the 'default_signer' as no signer with that name is defined",
+        );
+
+        // ---
+
+        let config_str = r#"
+            auth_token = "secret"
+            one_off_signer = "Unknown Signer"
+        "#;
+
+        let res = parse_and_process_config_str(config_str);
+        assert_err_msg(
+            res,
+            "'Unknown Signer' cannot be used as the 'one_off_signer' as no signer with that name is defined",
+        );
+    }
+
+    #[test]
+    #[ignore = "see issue #821"]
+    fn should_use_the_expected_default_signer() {
+        let config_str = r#"
+            auth_token = "secret"
+        "#;
+
+        let c = parse_and_process_config_str(config_str).unwrap();
+
+        #[cfg(not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11")))]
+        {
+            assert_eq!(c.signers.len(), 1);
+            assert_eq!(c.signers[0].name, "Default OpenSSL signer");
+            assert!(matches!(c.signers[0].signer_type, SignerType::OpenSsl(_)));
+        }
+
+        #[cfg(feature = "hsm-tests-kmip")]
+        {
+            assert_eq!(c.signers.len(), 2);
+            assert_eq!(c.signers[0].name, "(test mode) Default KMIP signer");
+            assert!(matches!(c.signers[0].signer_type, SignerType::Kmip(_)));
+            assert_eq!(c.signers[1].name, "OpenSSL one-off signer");
+            assert!(matches!(c.signers[1].signer_type, SignerType::OpenSsl(_)));
+        }
+
+        #[cfg(feature = "hsm-tests-pkcs11")]
+        {
+            assert_eq!(c.signers.len(), 2);
+            assert_eq!(c.signers[0].name, "(test mode) Default PKCS#11 signer");
+            assert!(matches!(c.signers[0].signer_type, SignerType::Pkcs11(_)));
+            assert_eq!(c.signers[1].name, "OpenSSL one-off signer");
+            assert!(matches!(c.signers[1].signer_type, SignerType::OpenSsl(_)));
+        }
+    }
+
+    #[cfg(feature = "hsm")]
+    #[test]
+    fn should_fail_if_signer_name_is_not_unique() {
+        let config_str = r#"
+            auth_token = "secret"
+            
+            [[signers]]
+            type = "OpenSSL"
+            name = "Blah"
+
+            [[signers]]
+            type = "OpenSSL"
+            name = "Blah"
+        "#;
+
+        let res = parse_and_process_config_str(config_str);
+        assert_err_msg(res, "Signer name 'Blah' is not unique");
     }
 }

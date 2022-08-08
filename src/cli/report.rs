@@ -3,15 +3,17 @@ use std::str::FromStr;
 
 use serde::Serialize;
 
+use rpki::ca::idexchange;
+
 use crate::{
     commons::{
         api::{
-            AllCertAuthIssues, AspaDefinitionList, CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthIssues,
-            CertAuthList, ChildCaInfo, ChildrenConnectionStats, CommandHistory, ParentCaContact, ParentStatuses,
-            PublisherDetails, PublisherList, RepoStatus, RoaDefinitions, RtaList, RtaPrepResponse, ServerInfo,
+            AllCertAuthIssues, AspaDefinitionList, BgpSecCsrInfoList, CaCommandDetails, CaRepoDetails, CertAuthInfo,
+            CertAuthIssues, CertAuthList, ChildCaInfo, ChildrenConnectionStats, CommandHistory, ParentCaContact,
+            ParentStatuses, PublisherDetails, PublisherList, RepoStatus, RoaDefinitions, RtaList, RtaPrepResponse,
+            ServerInfo,
         },
         bgp::{BgpAnalysisAdvice, BgpAnalysisReport, BgpAnalysisSuggestion},
-        remote::{api::ClientInfos, rfc8183},
     },
     daemon::ca::ResourceTaggedAttestation,
     pubd::RepoStats,
@@ -40,6 +42,9 @@ pub enum ApiResponse {
     // ASPA related
     AspaDefinitions(AspaDefinitionList),
 
+    // BGPSec related
+    BgpSecDefinitions(BgpSecCsrInfoList),
+
     ParentCaContact(ParentCaContact),
     ParentStatuses(ParentStatuses),
 
@@ -50,10 +55,9 @@ pub enum ApiResponse {
     PublisherList(PublisherList),
     RepoStats(RepoStats),
 
-    Rfc8181ClientList(ClientInfos),
-    Rfc8183RepositoryResponse(rfc8183::RepositoryResponse),
-    Rfc8183ChildRequest(rfc8183::ChildRequest),
-    Rfc8183PublisherRequest(rfc8183::PublisherRequest),
+    Rfc8183RepositoryResponse(idexchange::RepositoryResponse),
+    Rfc8183ChildRequest(idexchange::ChildRequest),
+    Rfc8183PublisherRequest(idexchange::PublisherRequest),
 
     RepoDetails(CaRepoDetails),
     RepoStatus(RepoStatus),
@@ -88,6 +92,7 @@ impl ApiResponse {
                 ApiResponse::BgpAnalysisFull(table) => Ok(Some(table.report(fmt)?)),
                 ApiResponse::BgpAnalysisSuggestions(suggestions) => Ok(Some(suggestions.report(fmt)?)),
                 ApiResponse::AspaDefinitions(definitions) => Ok(Some(definitions.report(fmt)?)),
+                ApiResponse::BgpSecDefinitions(definitions) => Ok(Some(definitions.report(fmt)?)),
                 ApiResponse::ParentCaContact(contact) => Ok(Some(contact.report(fmt)?)),
                 ApiResponse::ParentStatuses(statuses) => Ok(Some(statuses.report(fmt)?)),
                 ApiResponse::ChildInfo(info) => Ok(Some(info.report(fmt)?)),
@@ -95,7 +100,6 @@ impl ApiResponse {
                 ApiResponse::PublisherList(list) => Ok(Some(list.report(fmt)?)),
                 ApiResponse::PublisherDetails(details) => Ok(Some(details.report(fmt)?)),
                 ApiResponse::RepoStats(stats) => Ok(Some(stats.report(fmt)?)),
-                ApiResponse::Rfc8181ClientList(list) => Ok(Some(list.report(fmt)?)),
                 ApiResponse::Rfc8183ChildRequest(req) => Ok(Some(req.report(fmt)?)),
                 ApiResponse::Rfc8183PublisherRequest(req) => Ok(Some(req.report(fmt)?)),
                 ApiResponse::Rfc8183RepositoryResponse(res) => Ok(Some(res.report(fmt)?)),
@@ -192,11 +196,9 @@ impl Report for ChildrenConnectionStats {}
 
 impl Report for PublisherDetails {}
 
-impl Report for ClientInfos {}
-
-impl Report for rfc8183::RepositoryResponse {}
-impl Report for rfc8183::ChildRequest {}
-impl Report for rfc8183::PublisherRequest {}
+impl Report for idexchange::RepositoryResponse {}
+impl Report for idexchange::ChildRequest {}
+impl Report for idexchange::PublisherRequest {}
 
 impl Report for RoaDefinitions {}
 
@@ -205,6 +207,8 @@ impl Report for BgpAnalysisReport {}
 impl Report for BgpAnalysisSuggestion {}
 
 impl Report for AspaDefinitionList {}
+
+impl Report for BgpSecCsrInfoList {}
 
 impl Report for CaRepoDetails {}
 impl Report for RepoStatus {}

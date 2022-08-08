@@ -1,0 +1,25 @@
+{
+  "actor": "anonymous",
+  "time": "2022-03-05T09:59:06.339505128Z",
+  "handle": "testbed",
+  "version": 10,
+  "sequence": 8,
+  "details": {
+    "type": "child_certify",
+    "child": "IDNIC-TEST",
+    "resource_class_name": "0",
+    "limit": {
+      "asn": "none",
+      "v4": "none",
+      "v6": "none"
+    },
+    "ki": "A1099682DA18AB97153662C104B342CD17D713A7"
+  },
+  "effect": {
+    "result": "success",
+    "events": [
+      10,
+      11
+    ]
+  }
+}

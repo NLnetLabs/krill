@@ -26,8 +26,8 @@ use std::{
 
 use crate::commons::{
     error::{Error, KrillIoError},
-    KrillResult,
     util::ext_serde,
+    KrillResult,
 };
 
 const CHACHA20_KEY_BIT_LEN: usize = 256;

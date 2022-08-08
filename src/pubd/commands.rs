@@ -2,12 +2,14 @@ use std::fmt;
 
 use rpki::uri;
 
+use rpki::ca::idexchange::{MyHandle, PublisherHandle};
+
+use crate::commons::api::IdCertInfo;
 use crate::{
     commons::{
         actor::Actor,
-        api::{PublisherHandle, RepositoryHandle, StorableRepositoryCommand},
+        api::StorableRepositoryCommand,
         eventsourcing::{CommandDetails, SentCommand},
-        remote::rfc8183,
     },
     pubd::RepositoryAccessEvent,
 };
@@ -21,7 +23,8 @@ pub type RepoAccessCmd = SentCommand<RepoAccessCmdDet>;
 #[serde(rename_all = "snake_case", tag = "type")]
 pub enum RepoAccessCmdDet {
     AddPublisher {
-        request: rfc8183::PublisherRequest,
+        id_cert: IdCertInfo,
+        name: PublisherHandle,
         base_uri: uri::Rsync,
     },
     RemovePublisher {
@@ -40,20 +43,25 @@ impl CommandDetails for RepoAccessCmdDet {
 
 impl RepoAccessCmdDet {
     pub fn add_publisher(
-        handle: &RepositoryHandle,
-        request: rfc8183::PublisherRequest,
+        handle: &MyHandle,
+        id_cert: IdCertInfo,
+        name: PublisherHandle,
         base_uri: uri::Rsync,
         actor: &Actor,
     ) -> RepoAccessCmd {
         SentCommand::new(
             handle,
             None,
-            RepoAccessCmdDet::AddPublisher { request, base_uri },
+            RepoAccessCmdDet::AddPublisher {
+                id_cert,
+                name,
+                base_uri,
+            },
             actor,
         )
     }
 
-    pub fn remove_publisher(handle: &RepositoryHandle, name: PublisherHandle, actor: &Actor) -> RepoAccessCmd {
+    pub fn remove_publisher(handle: &MyHandle, name: PublisherHandle, actor: &Actor) -> RepoAccessCmd {
         SentCommand::new(handle, None, RepoAccessCmdDet::RemovePublisher { name }, actor)
     }
 }
@@ -67,10 +75,7 @@ impl fmt::Display for RepoAccessCmdDet {
 impl From<RepoAccessCmdDet> for StorableRepositoryCommand {
     fn from(d: RepoAccessCmdDet) -> Self {
         match d {
-            RepoAccessCmdDet::AddPublisher { request, .. } => {
-                let (_, name, _) = request.unpack();
-                StorableRepositoryCommand::AddPublisher { name }
-            }
+            RepoAccessCmdDet::AddPublisher { name, .. } => StorableRepositoryCommand::AddPublisher { name },
             RepoAccessCmdDet::RemovePublisher { name } => StorableRepositoryCommand::RemovePublisher { name },
         }
     }

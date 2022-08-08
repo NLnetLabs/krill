@@ -3,15 +3,21 @@ use std::{cmp::Ordering, collections::HashMap, fmt, ops::Deref, str::FromStr};
 use chrono::Duration;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
-use rpki::repository::{
-    roa::{Roa, RoaBuilder},
-    sigobj::SignedObjectBuilder,
-    x509::Time,
+use rpki::{
+    ca::publication::Base64,
+    repository::{
+        resources::ResourceSet,
+        roa::{Roa, RoaBuilder},
+        sigobj::SignedObjectBuilder,
+        x509::{Serial, Time, Validity},
+    },
+    rrdp::Hash,
+    uri,
 };
 
 use crate::{
     commons::{
-        api::{ObjectName, ResourceSet, RoaAggregateKey, RoaDefinition, RoaDefinitionUpdates},
+        api::{ObjectName, Revocation, RoaAggregateKey, RoaDefinition, RoaDefinitionUpdates},
         crypto::{KrillSigner, SignSupport},
         error::Error,
         KrillResult,
@@ -112,19 +118,10 @@ impl From<RouteAuthorization> for RoaDefinition {
 //------------ RouteAuthorizationUpdates -----------------------------------
 
 ///
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RouteAuthorizationUpdates {
     added: Vec<RouteAuthorization>,
     removed: Vec<RouteAuthorization>,
-}
-
-impl Default for RouteAuthorizationUpdates {
-    fn default() -> Self {
-        RouteAuthorizationUpdates {
-            added: vec![],
-            removed: vec![],
-        }
-    }
 }
 
 impl RouteAuthorizationUpdates {
@@ -219,15 +216,9 @@ impl fmt::Display for RouteAuthorizationUpdates {
 //------------ Routes ------------------------------------------------------
 
 /// The current authorizations and corresponding meta-information for a CA.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Routes {
     map: HashMap<RouteAuthorization, RouteInfo>,
-}
-
-impl Default for Routes {
-    fn default() -> Self {
-        Routes { map: HashMap::new() }
-    }
 }
 
 impl Routes {
@@ -320,80 +311,71 @@ impl Default for RouteInfo {
     }
 }
 
-//------------ AggregateRoaInfo --------------------------------------------
+//------------ RoaInfo -----------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct AggregateRoaInfo {
+pub struct RoaInfo {
+    // The route or routes authorized by this ROA
     authorizations: Vec<RouteAuthorization>,
 
-    #[serde(flatten)]
-    roa: RoaInfo,
+    // The validity time for this ROA.
+    validity: Validity,
+
+    // The serial number (needed for revocation)
+    serial: Serial,
+
+    // The URI where this object is expected to be published
+    uri: uri::Rsync,
+
+    // The actual ROA in base64 format.
+    base64: Base64,
+
+    // The ROA's hash
+    hash: Hash,
 }
 
-impl AggregateRoaInfo {
-    pub fn new(authorizations: Vec<RouteAuthorization>, roa: RoaInfo) -> Self {
-        AggregateRoaInfo { authorizations, roa }
+impl RoaInfo {
+    pub fn new(authorizations: Vec<RouteAuthorization>, roa: Roa) -> Self {
+        let validity = roa.cert().validity();
+        let serial = roa.cert().serial_number();
+        let uri = roa.cert().signed_object().unwrap().clone(); // safe for our own ROAs
+        let base64 = Base64::from(&roa);
+        let hash = base64.to_hash();
+
+        RoaInfo {
+            authorizations,
+            validity,
+            serial,
+            uri,
+            base64,
+            hash,
+        }
     }
 
     pub fn authorizations(&self) -> &Vec<RouteAuthorization> {
         &self.authorizations
     }
 
-    pub fn roa_info(&self) -> &RoaInfo {
-        &self.roa
-    }
-}
-
-impl AsRef<RoaInfo> for AggregateRoaInfo {
-    fn as_ref(&self) -> &RoaInfo {
-        &self.roa
-    }
-}
-
-//------------ RoaInfo -----------------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct RoaInfo {
-    roa: Roa,
-    since: Time, // first ROA in RC created
-}
-
-impl RoaInfo {
-    pub fn new(roa: Roa, since: Time) -> Self {
-        RoaInfo { roa, since }
-    }
-
-    pub fn new_roa(roa: Roa) -> Self {
-        RoaInfo {
-            roa,
-            since: Time::now(),
-        }
-    }
-
-    pub fn updated_roa(old: &RoaInfo, roa: Roa) -> Self {
-        RoaInfo { roa, since: old.since }
-    }
-
-    pub fn roa(&self) -> &Roa {
-        &self.roa
-    }
-
-    pub fn since(&self) -> Time {
-        self.since
+    pub fn serial(&self) -> Serial {
+        self.serial
     }
 
     pub fn expires(&self) -> Time {
-        self.roa.cert().validity().not_after()
+        self.validity.not_after()
+    }
+
+    pub fn revoke(&self) -> Revocation {
+        Revocation::new(self.serial, self.validity.not_after())
+    }
+
+    pub fn base64(&self) -> &Base64 {
+        &self.base64
+    }
+
+    pub fn hash(&self) -> Hash {
+        self.hash
     }
 }
-
-impl PartialEq for RoaInfo {
-    fn eq(&self, other: &Self) -> bool {
-        self.roa.to_captured().as_slice() == other.roa.to_captured().as_slice()
-    }
-}
-
-impl Eq for RoaInfo {}
 
 //------------ RoaMode -----------------------------------------------------
 
@@ -408,25 +390,20 @@ enum RoaMode {
 //------------ Roas --------------------------------------------------------
 
 /// ROAs held by a resource class in a CA.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Roas {
-    #[serde(alias = "inner", skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
+    #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
     simple: HashMap<RouteAuthorization, RoaInfo>,
 
     #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
-    aggregate: HashMap<RoaAggregateKey, AggregateRoaInfo>,
-}
-
-impl Default for Roas {
-    fn default() -> Self {
-        Roas {
-            simple: HashMap::new(),
-            aggregate: HashMap::new(),
-        }
-    }
+    aggregate: HashMap<RoaAggregateKey, RoaInfo>,
 }
 
 impl Roas {
+    pub fn is_empty(&self) -> bool {
+        self.simple.is_empty() && self.aggregate.is_empty()
+    }
+
     pub fn get(&self, auth: &RouteAuthorization) -> Option<&RoaInfo> {
         self.simple.get(auth)
     }
@@ -438,16 +415,16 @@ impl Roas {
             self.simple.insert(auth, info);
         }
 
-        for auth in removed.keys() {
-            self.simple.remove(auth);
+        for auth in removed {
+            self.simple.remove(&auth);
         }
 
         for (key, aggregate) in aggregate_updated.into_iter() {
             self.aggregate.insert(key, aggregate);
         }
 
-        for key in aggregate_removed.keys() {
-            self.aggregate.remove(key);
+        for key in aggregate_removed {
+            self.aggregate.remove(&key);
         }
     }
 
@@ -501,22 +478,23 @@ impl Roas {
         for auth in relevant_routes.authorizations() {
             if !self.simple.contains_key(auth) {
                 let name = ObjectName::from(auth);
+                let authorizations = vec![*auth];
                 let roa = Self::make_roa(
-                    &[*auth],
+                    &authorizations,
                     &name,
                     certified_key,
                     issuance_timing.timing_roa_valid_weeks,
                     signer,
                 )?;
-                let info = RoaInfo::new_roa(roa);
+                let info = RoaInfo::new(authorizations, roa);
                 roa_updates.update(*auth, info);
             }
         }
 
         // Remove surplus ROAs
-        for (auth, info) in self.simple.iter() {
+        for auth in self.simple.keys() {
             if !relevant_routes.has(auth) {
-                roa_updates.remove(*auth, info.roa().into());
+                roa_updates.remove(*auth);
             }
         }
 
@@ -536,8 +514,8 @@ impl Roas {
         let mut roa_updates = self.update_simple(relevant_routes, certified_key, issuance_timing, signer)?;
 
         // Then remove all aggregate ROAs
-        for (roa_key, aggregate) in self.aggregate.iter() {
-            roa_updates.remove_aggregate(*roa_key, aggregate.roa_info().roa().into());
+        for roa_key in self.aggregate.keys() {
+            roa_updates.remove_aggregate(*roa_key);
         }
 
         Ok(roa_updates)
@@ -556,9 +534,9 @@ impl Roas {
         let mut roa_updates = self.update_aggregate(relevant_routes, certified_key, issuance_timing, signer)?;
 
         // Then remove all simple ROAs
-        for (roa_key, roa_info) in self.simple.iter() {
+        for roa_key in self.simple.keys() {
             debug!("Will remove simple authorization for: {}", roa_key);
-            roa_updates.remove(*roa_key, roa_info.roa().into());
+            roa_updates.remove(*roa_key);
         }
 
         Ok(roa_updates)
@@ -587,34 +565,22 @@ impl Roas {
 
                 if authorizations != &existing_authorizations {
                     // replace ROA
-                    let aggregate = Self::make_aggregate_roa(
-                        key,
-                        authorizations.clone(),
-                        Some(existing.roa_info()),
-                        certified_key,
-                        issuance_timing,
-                        signer,
-                    )?;
+                    let aggregate =
+                        Self::make_aggregate_roa(key, authorizations.clone(), certified_key, issuance_timing, signer)?;
                     roa_updates.update_aggregate(*key, aggregate);
                 }
             } else {
                 // new ROA
-                let aggregate = Self::make_aggregate_roa(
-                    key,
-                    authorizations.clone(),
-                    None,
-                    certified_key,
-                    issuance_timing,
-                    signer,
-                )?;
+                let aggregate =
+                    Self::make_aggregate_roa(key, authorizations.clone(), certified_key, issuance_timing, signer)?;
                 roa_updates.update_aggregate(*key, aggregate);
             }
         }
 
         // Remove surplus ROAs
-        for (key, aggregate) in self.aggregate.iter() {
+        for key in self.aggregate.keys() {
             if !desired_aggregates.contains_key(key) {
-                roa_updates.remove_aggregate(*key, aggregate.roa_info().roa().into());
+                roa_updates.remove_aggregate(*key);
             }
         }
 
@@ -667,23 +633,22 @@ impl Roas {
         for (auth, roa_info) in self.simple.iter() {
             let name = ObjectName::from(auth);
             if force || roa_info.expires() < renew_threshold {
+                let authorizations = vec![*auth];
                 let roa = Self::make_roa(
-                    &[*auth],
+                    &authorizations,
                     &name,
                     certified_key,
                     issuance_timing.timing_roa_valid_weeks,
                     signer,
                 )?;
-                let roa_info = RoaInfo::updated_roa(roa_info, roa);
-                updates.update(*auth, roa_info);
+                let new_roa_info = RoaInfo::new(authorizations, roa);
+                updates.update(*auth, new_roa_info);
             }
         }
 
-        for (roa_key, aggregate) in self.aggregate.iter() {
-            let roa_info = aggregate.roa_info();
-
+        for (roa_key, roa_info) in self.aggregate.iter() {
             if force || roa_info.expires() < renew_threshold {
-                let authorizations = aggregate.authorizations().clone();
+                let authorizations = roa_info.authorizations().clone();
                 let name = ObjectName::from(roa_key);
                 let new_roa = Self::make_roa(
                     authorizations.as_slice(),
@@ -692,10 +657,9 @@ impl Roas {
                     issuance_timing.timing_roa_valid_weeks,
                     signer,
                 )?;
-                let new_roa_info = RoaInfo::updated_roa(roa_info, new_roa);
-                let aggregate = AggregateRoaInfo::new(authorizations, new_roa_info);
 
-                updates.update_aggregate(*roa_key, aggregate);
+                let new_roa_info = RoaInfo::new(authorizations, new_roa);
+                updates.update_aggregate(*roa_key, new_roa_info);
             }
         }
 
@@ -742,7 +706,7 @@ impl Roas {
             aia.clone(),
             roa_uri,
         );
-        object_builder.set_issuer(Some(incoming_cert.cert().subject().clone()));
+        object_builder.set_issuer(Some(incoming_cert.subject().clone()));
         object_builder.set_signing_time(Some(Time::now()));
 
         Ok(signer.sign_roa(roa_builder, object_builder, signing_key)?)
@@ -751,24 +715,19 @@ impl Roas {
     pub fn make_aggregate_roa(
         key: &RoaAggregateKey,
         authorizations: Vec<RouteAuthorization>,
-        old_roa: Option<&RoaInfo>,
         certified_key: &CertifiedKey,
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
-    ) -> KrillResult<AggregateRoaInfo> {
+    ) -> KrillResult<RoaInfo> {
         let name = ObjectName::from(key);
         let roa = Self::make_roa(
-            authorizations.as_slice(),
+            &authorizations,
             &name,
             certified_key,
             issuance_timing.timing_roa_valid_weeks,
             signer,
         )?;
-        let info = match old_roa {
-            Some(old_roa) => RoaInfo::updated_roa(old_roa, roa),
-            None => RoaInfo::new_roa(roa),
-        };
-        Ok(AggregateRoaInfo::new(authorizations, info))
+        Ok(RoaInfo::new(authorizations, roa))
     }
 }
 

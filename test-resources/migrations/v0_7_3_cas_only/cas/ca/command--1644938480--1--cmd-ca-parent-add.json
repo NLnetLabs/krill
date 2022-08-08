@@ -1,0 +1,18 @@
+{
+  "actor": "krill",
+  "time": "2022-02-15T15:21:20.353995416Z",
+  "handle": "ca",
+  "version": 1,
+  "sequence": 1,
+  "details": {
+    "add_parent": [
+      "testbed",
+      "rfc6492"
+    ]
+  },
+  "effect": {
+    "events": [
+      1
+    ]
+  }
+}

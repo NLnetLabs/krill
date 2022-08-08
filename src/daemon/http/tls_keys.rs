@@ -10,18 +10,13 @@ use openssl::{
     rsa::Rsa,
 };
 
-use bcder::{
-    decode,
-    encode::{self, Constructed, PrimitiveContent, Values},
-    BitString, Mode, Tag,
+use rpki::{
+    ca::idcert::IdCert,
+    crypto::{signer::SigningAlgorithm, KeyIdentifier, PublicKey, Signature, SignatureAlgorithm},
+    repository::x509::{Time, Validity},
 };
 
-use rpki::repository::{
-    crypto::{PublicKey, Signature, SignatureAlgorithm},
-    x509::{Name, Validity},
-};
-
-use crate::commons::{crypto::IdExtensions, error::KrillIoError, util::file};
+use crate::commons::{api::IdCertInfo, error::KrillIoError, util::file};
 
 const KEY_SIZE: u32 = 2048;
 pub const HTTPS_SUB_DIR: &str = "ssl";
@@ -72,6 +67,44 @@ struct HttpsSigner {
     private: PKey<Private>,
 }
 
+impl rpki::crypto::Signer for HttpsSigner {
+    type KeyId = KeyIdentifier;
+    type Error = Error;
+
+    fn create_key(&self, _algorithm: rpki::crypto::PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
+        unimplemented!("not needed in this context")
+    }
+
+    fn get_key_info(&self, _key: &Self::KeyId) -> Result<PublicKey, rpki::crypto::signer::KeyError<Self::Error>> {
+        self.public_key_info().map_err(rpki::crypto::signer::KeyError::Signer)
+    }
+
+    fn destroy_key(&self, _key: &Self::KeyId) -> Result<(), rpki::crypto::signer::KeyError<Self::Error>> {
+        unimplemented!("not needed in this context")
+    }
+
+    fn sign<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
+        &self,
+        _key: &Self::KeyId,
+        algorithm: Alg,
+        data: &D,
+    ) -> Result<Signature<Alg>, rpki::crypto::SigningError<Self::Error>> {
+        self.sign(algorithm, data).map_err(rpki::crypto::SigningError::Signer)
+    }
+
+    fn sign_one_off<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
+        &self,
+        _algorithm: Alg,
+        _data: &D,
+    ) -> Result<(Signature<Alg>, PublicKey), Self::Error> {
+        unimplemented!("not needed in this context")
+    }
+
+    fn rand(&self, _target: &mut [u8]) -> Result<(), Self::Error> {
+        unimplemented!("not needed in this context")
+    }
+}
+
 impl HttpsSigner {
     fn build() -> Result<Self, Error> {
         let rsa = Rsa::generate(KEY_SIZE)?;
@@ -88,128 +121,48 @@ impl HttpsSigner {
     }
 
     fn public_key_info(&self) -> Result<PublicKey, Error> {
-        let mut b = Bytes::from(
+        let bytes = Bytes::from(
             self.private
                 .rsa()
                 .unwrap()
                 .public_key_to_der()
                 .map_err(Error::OpenSslError)?,
         );
-        let pk = PublicKey::decode(&mut b).map_err(Error::DecodeError)?;
-        Ok(pk)
+
+        PublicKey::decode(bytes).map_err(Error::decode)
     }
 
-    fn sign(&self, data: &Bytes) -> Result<Signature, Error> {
-        let mut signer = ::openssl::sign::Signer::new(MessageDigest::sha256(), &self.private)?;
+    // See OpenSslSigner::sign_with_key for reference.
+    fn sign<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
+        &self,
+        algorithm: Alg,
+        data: &D,
+    ) -> Result<Signature<Alg>, Error> {
+        let signing_algorithm = algorithm.signing_algorithm();
+        if !matches!(signing_algorithm, SigningAlgorithm::RsaSha256) {
+            return Err(Error::SignerError("Only RSA SHA256 signing is supported.".to_string()));
+        }
 
+        let mut signer = ::openssl::sign::Signer::new(MessageDigest::sha256(), &self.private)?;
         signer.update(data.as_ref())?;
 
-        let signature_bytes = signer.sign_to_vec()?;
-
-        let signature = Signature::new(SignatureAlgorithm::default(), Bytes::from(signature_bytes));
+        let signature = Signature::new(algorithm, Bytes::from(signer.sign_to_vec()?));
         Ok(signature)
     }
 
     /// Saves a self-signed certificate so that hyper can use it.
     fn save_certificate(&mut self, data_dir: &Path) -> Result<(), Error> {
+        let validity = Validity::new(Time::five_minutes_ago(), Time::years_from_now(100));
         let pub_key = self.public_key_info()?;
-        let tbs_cert = TbsHttpsCertificate::from(&pub_key);
 
-        let encoded_tbs = tbs_cert.encode().to_captured(Mode::Der);
-        let (_, signature) = self.sign(encoded_tbs.as_ref())?.unwrap();
-
-        let signature = BitString::new(0, signature);
-
-        let encoded_cert = encode::sequence((
-            encoded_tbs,
-            SignatureAlgorithm::default().x509_encode(),
-            signature.encode(),
-        ))
-        .to_captured(Mode::Der);
-
-        let cert_pem = base64::encode(&encoded_cert);
+        let id_cert = IdCert::new_ta(validity, &pub_key.key_identifier(), self).map_err(Error::signer)?;
+        let id_cert_pem = IdCertInfo::from(&id_cert);
 
         let path = cert_file_path(data_dir);
-        let pem_file = format!("-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n", cert_pem);
-        let bytes: Bytes = Bytes::from(pem_file);
-        file::save(&bytes, &path)?;
+
+        file::save(id_cert_pem.pem().as_bytes(), &path)?;
 
         Ok(())
-    }
-}
-
-struct TbsHttpsCertificate {
-    // The General structure is documented in section 4.1 or RFC5280
-    //
-    //    TBSCertificate  ::=  SEQUENCE  {
-    //        version         [0]  EXPLICIT Version DEFAULT v1,
-    //        serialNumber         CertificateSerialNumber,
-    //        signature            AlgorithmIdentifier,
-    //        issuer               Name,
-    //        validity             Validity,
-    //        subject              Name,
-    //        subjectPublicKeyInfo SubjectPublicKeyInfo,
-    //        issuerUniqueID  [1]  IMPLICIT UniqueIdentifier OPTIONAL,
-    //                             -- If present, version MUST be v2 or v3
-    //        subjectUniqueID [2]  IMPLICIT UniqueIdentifier OPTIONAL,
-    //                             -- If present, version MUST be v2 or v3
-    //        extensions      [3]  EXPLICIT Extensions OPTIONAL
-    //                             -- If present, version MUST be v3
-    //        }
-
-    // version is always 3
-    // serial_number is always 1
-    // signature is always Sha256WithRsaEncryption
-    issuer: Name,
-    validity: Validity,
-    subject: Name,
-    subject_public_key_info: PublicKey,
-    // issuerUniqueID is not used
-    // subjectUniqueID is not used
-    extensions: IdExtensions,
-}
-
-impl From<&PublicKey> for TbsHttpsCertificate {
-    fn from(pk: &PublicKey) -> Self {
-        let issuer = Name::from_pub_key(pk);
-        let validity = {
-            let dur = ::chrono::Duration::weeks(52000);
-            Validity::from_duration(dur)
-        };
-        let subject = issuer.clone();
-        let subject_public_key_info = pk.clone();
-        let extensions = IdExtensions::from(pk);
-
-        TbsHttpsCertificate {
-            issuer,
-            validity,
-            subject,
-            subject_public_key_info,
-            extensions,
-        }
-    }
-}
-
-impl TbsHttpsCertificate {
-    #[allow(clippy::needless_lifetimes)]
-    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
-        encode::sequence((
-            (
-                Constructed::new(
-                    Tag::CTX_0,
-                    2_i32.encode(), // Version 3 is encoded as 2
-                ),
-                1_i32.encode(),
-                SignatureAlgorithm::default().x509_encode(),
-                self.issuer.encode_ref(),
-            ),
-            (
-                self.validity.encode(),
-                self.subject.encode_ref(),
-                self.subject_public_key_info.clone().encode(),
-                self.extensions.encode(),
-            ),
-        ))
     }
 }
 
@@ -219,11 +172,22 @@ impl TbsHttpsCertificate {
 pub enum Error {
     IoError(KrillIoError),
     OpenSslError(openssl::error::ErrorStack),
-    DecodeError(decode::Error),
+    DecodeError(String),
     BuildError,
     EmptyCertStack,
     Pkcs12(String),
     Connection(String),
+    SignerError(String),
+}
+
+impl Error {
+    pub fn signer(e: impl fmt::Display) -> Self {
+        Error::SignerError(e.to_string())
+    }
+
+    pub fn decode(e: impl fmt::Display) -> Self {
+        Error::DecodeError(e.to_string())
+    }
 }
 
 impl fmt::Display for Error {
@@ -236,6 +200,7 @@ impl fmt::Display for Error {
             Error::EmptyCertStack => write!(f, "Certificate PEM file contains no certificates"),
             Error::Pkcs12(e) => write!(f, "Cannot create PKCS12 Identity: {}", e),
             Error::Connection(e) => write!(f, "Connection error: {}", e),
+            Error::SignerError(e) => write!(f, "Error signing self-signed HTTPS certificate: {}", e),
         }
     }
 }

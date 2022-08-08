@@ -2,14 +2,22 @@ use std::ops::{Deref, DerefMut};
 
 use serde::{Deserialize, Serialize};
 
-use rpki::repository::{crypto::KeyIdentifier, x509::Time};
+use rpki::{
+    ca::{
+        idexchange::{CaHandle, RepoInfo},
+        provisioning::{
+            IssuanceRequest, RequestResourceLimit, ResourceClassEntitlements, ResourceClassName, RevocationRequest,
+        },
+    },
+    crypto::KeyIdentifier,
+    repository::{resources::ResourceSet, x509::Time},
+};
 
 use crate::{
     commons::{
         api::{
-            ActiveInfo, CertifiedKeyInfo, EntitlementClass, Handle, IssuanceRequest, PendingInfo, PendingKeyInfo,
-            RcvdCert, RepoInfo, RequestResourceLimit, ResourceClassKeysInfo, ResourceClassName, ResourceSet,
-            RevocationRequest, RollNewInfo, RollOldInfo, RollPendingInfo,
+            ActiveInfo, CertifiedKeyInfo, PendingInfo, PendingKeyInfo, ReceivedCert, ResourceClassKeysInfo,
+            RollNewInfo, RollOldInfo, RollPendingInfo,
         },
         crypto::KrillSigner,
         error::Error,
@@ -25,24 +33,29 @@ use crate::{
 /// and has at least a MFT and CRL.
 pub struct CertifiedKey {
     key_id: KeyIdentifier,
-    incoming_cert: RcvdCert,
+    incoming_cert: ReceivedCert,
     request: Option<IssuanceRequest>,
     #[serde(skip_serializing_if = "Option::is_none")]
     old_repo: Option<RepoInfo>,
 }
 
 impl CertifiedKey {
-    pub fn new(key_id: KeyIdentifier, incoming_cert: RcvdCert, request: Option<IssuanceRequest>) -> Self {
+    pub fn new(
+        key_id: KeyIdentifier,
+        incoming_cert: ReceivedCert,
+        request: Option<IssuanceRequest>,
+        old_repo: Option<RepoInfo>,
+    ) -> Self {
         CertifiedKey {
             key_id,
             incoming_cert,
             request,
-            old_repo: None,
+            old_repo,
         }
     }
 
-    pub fn create(incoming_cert: RcvdCert) -> Self {
-        let key_id = incoming_cert.subject_key_identifier();
+    pub fn create(incoming_cert: ReceivedCert) -> Self {
+        let key_id = incoming_cert.key_identifier();
         CertifiedKey {
             key_id,
             incoming_cert,
@@ -58,10 +71,10 @@ impl CertifiedKey {
     pub fn key_id(&self) -> &KeyIdentifier {
         &self.key_id
     }
-    pub fn incoming_cert(&self) -> &RcvdCert {
+    pub fn incoming_cert(&self) -> &ReceivedCert {
         &self.incoming_cert
     }
-    pub fn set_incoming_cert(&mut self, incoming_cert: RcvdCert) {
+    pub fn set_incoming_cert(&mut self, incoming_cert: ReceivedCert) {
         self.request = None;
         self.incoming_cert = incoming_cert;
     }
@@ -73,13 +86,13 @@ impl CertifiedKey {
         self.request = Some(req)
     }
 
-    pub fn set_old_repo(&mut self, repo: &RepoInfo) {
-        self.old_repo = Some(repo.clone())
+    pub fn set_old_repo(&mut self, repo: RepoInfo) {
+        self.old_repo = Some(repo)
     }
 
     pub fn wants_update(
         &self,
-        handle: &Handle,
+        handle: &CaHandle,
         rcn: &ResourceClassName,
         new_resources: &ResourceSet,
         new_not_after: Time,
@@ -95,24 +108,26 @@ impl CertifiedKey {
             return true;
         }
 
-        // If the validity time eligibility has changed, then we *may* want to ask for a new
-        // certificate, but only if:
-        // a) our current certificate expires *after* the eligible time, because we probably should
-        //    know..
-        // b) the new not after time is significantly better than our current time, because we
-        //    do not want to ask for new certificates every hour if the parent uses a simple
-        //    strategy like: not-after = now + 1 year..
+        // If the remaining validity time eligibility has changed by more than 10% then we will
+        // want to request a new certificate.
         //
-        // See issue #95
+        // We use this 10% margin to avoid ending up in endless request loops - in particular
+        // in cases where the parent uses a simple strategy like: not-after = now + 1 year for
+        // every list request we send. See issue #95.
+        //
+        // As it turns out there can also be timing issues with remaining time *reduction*. This
+        // is rather odd - as the parent is not really expected to reduce the time compared to
+        // what they issued to us before. But if it does happen (on every request like above)
+        // then we still want to avoid ending up in request loops. See issue #775
 
-        let not_after = self.incoming_cert().cert().validity().not_after();
+        let not_after = self.incoming_cert().validity().not_after();
 
-        let now = Time::now().timestamp_millis();
-        let until_not_after_millis = not_after.timestamp_millis() - now;
-        let until_new_not_after_millis = new_not_after.timestamp_millis() - now;
+        let now = Time::now().timestamp();
+        let remaining_seconds_on_current = not_after.timestamp() - now;
+        let remaining_seconds_on_eligible = new_not_after.timestamp() - now;
 
-        if until_new_not_after_millis < 0 {
-            // New not after time is in the past!
+        if remaining_seconds_on_eligible <= 0 {
+            // eligible remaining time is in the past!
             //
             // This is rather odd. The parent should just exclude the resource class in the
             // eligible entitlements instead. So, we will essentially just ignore this until
@@ -124,21 +139,23 @@ impl CertifiedKey {
                 new_not_after.to_rfc3339()
             );
             false
-        } else if until_not_after_millis == until_new_not_after_millis {
+        } else if remaining_seconds_on_current == remaining_seconds_on_eligible {
             debug!(
                 "Will not request new certificate for CA '{}' under RC '{}'. Resources and not after time are unchanged.",
                 handle,
                 rcn,
             );
             false
-        } else if until_new_not_after_millis < until_not_after_millis {
+        } else if remaining_seconds_on_current > 0
+            && (remaining_seconds_on_eligible as f64 / remaining_seconds_on_current as f64) < 0.9_f64
+        {
             warn!(
-                "Parent of CA '{}' reduced not after time for certificate under RC '{}'",
+                "Parent of CA '{}' *reduced* not after time for certificate under RC '{}'. This is odd, but.. requesting new certificate.",
                 handle, rcn,
             );
             true
-        } else if until_not_after_millis <= 0
-            || (until_new_not_after_millis as f64 / until_not_after_millis as f64) > 1.1_f64
+        } else if remaining_seconds_on_current <= 0
+            || (remaining_seconds_on_eligible as f64 / remaining_seconds_on_current as f64) > 1.1_f64
         {
             info!(
                 "Will request new certificate for CA '{}' under RC '{}'. Not after time increased to: {}",
@@ -149,9 +166,10 @@ impl CertifiedKey {
             true
         } else {
             debug!(
-                "Will not request new certificate for CA '{}' under RC '{}'. Not after time increased by less than 10%: {}",
+                "Will not request new certificate for CA '{}' under RC '{}'. Remaining not after time changed by less than 10%. From: {} To: {}",
                 handle,
                 rcn,
+                not_after.to_rfc3339(),
                 new_not_after.to_rfc3339()
             );
             false
@@ -316,9 +334,9 @@ impl KeyState {
 
     pub fn make_entitlement_events(
         &self,
-        handle: &Handle,
+        handle: &CaHandle,
         rcn: ResourceClassName,
-        entitlement: &EntitlementClass,
+        entitlement: &ResourceClassEntitlements,
         base_repo: &RepoInfo,
         name_space: &str,
         signer: &KrillSigner,
@@ -377,7 +395,11 @@ impl KeyState {
             });
         }
 
-        for key in entitlement.issued().iter().map(|c| c.subject_key_identifier()) {
+        for key in entitlement
+            .issued_certs()
+            .iter()
+            .map(|c| c.cert().subject_key_identifier())
+        {
             if !self.knows_key(key) {
                 let revoke_req = RevocationRequest::new(entitlement.class_name().clone(), key);
                 res.push(CaEvtDet::UnexpectedKeyFound {
@@ -586,7 +608,7 @@ impl KeyState {
 impl KeyState {
     /// Mark an old_repo for the current key, so that a new repo can be introduced in a pending
     /// key and a keyroll can be done.
-    pub fn set_old_repo_if_in_active_state(&mut self, repo: &RepoInfo) {
+    pub fn set_old_repo_if_in_active_state(&mut self, repo: RepoInfo) {
         if let KeyState::Active(current) = self {
             current.set_old_repo(repo);
         }

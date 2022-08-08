@@ -5,11 +5,12 @@ use serde::{de::DeserializeOwned, Serialize};
 
 use hyper::{body::HttpBody, header::USER_AGENT, http::uri::PathAndQuery, Body, HeaderMap, Method, StatusCode};
 
+use rpki::ca::{provisioning, publication};
+
 use crate::{
     commons::{
         actor::{Actor, ActorDef},
         error::Error,
-        remote::{rfc6492, rfc8181},
         KrillResult,
     },
     constants::HTTP_USER_AGENT_TRUNCATE,
@@ -51,8 +52,8 @@ impl AsRef<str> for ContentType {
         match self {
             ContentType::Cert => "application/x-x509-ca-cert",
             ContentType::Json => "application/json",
-            ContentType::Rfc8181 => rfc8181::CONTENT_TYPE,
-            ContentType::Rfc6492 => rfc6492::CONTENT_TYPE,
+            ContentType::Rfc8181 => publication::CONTENT_TYPE,
+            ContentType::Rfc6492 => provisioning::CONTENT_TYPE,
             ContentType::Text => "text/plain",
             ContentType::Xml => "application/xml",
 
@@ -578,6 +579,6 @@ impl RequestPath {
     where
         T: FromStr,
     {
-        self.next().map(|s| T::from_str(s).ok()).flatten()
+        self.next().and_then(|s| T::from_str(s).ok())
     }
 }

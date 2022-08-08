@@ -5,18 +5,16 @@ use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 use bytes::Bytes;
 use rpki::{
-    repository::crypto::DigestAlgorithm,
+    crypto::DigestAlgorithm,
     uri::{Https, Rsync},
 };
 
 use crate::constants::KRILL_VERSION;
 
-#[cfg(feature = "hsm")]
-pub mod dummysigner;
+pub mod cmslogger;
 pub mod ext_serde;
 pub mod file;
 pub mod httpclient;
-pub mod softsigner;
 pub mod xml;
 
 //------------ KrillVersion --------------------------------------------------
@@ -32,7 +30,7 @@ pub struct KrillVersion {
 }
 
 impl KrillVersion {
-    pub fn current() -> Self {
+    pub fn code_version() -> Self {
         // Note: we have a unit test to ensure that the KRILL_VERSION constant
         // which is derived from the Cargo.toml version can be parsed.
         Self::from_str(KRILL_VERSION).unwrap()
@@ -300,7 +298,7 @@ mod tests {
 
     #[test]
     fn krill_version_from_current_cargo_version() {
-        KrillVersion::current();
+        KrillVersion::code_version();
     }
 
     #[test]

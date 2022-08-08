@@ -5,48 +5,40 @@ use std::{fmt, fmt::Display, io};
 use hyper::StatusCode;
 
 use rpki::{
-    repository::{crypto::KeyIdentifier, x509::ValidationError},
+    ca::{
+        idexchange::{CaHandle, ChildHandle, ParentHandle, PublisherHandle},
+        provisioning,
+        provisioning::ResourceClassName,
+        publication,
+    },
+    crypto::KeyIdentifier,
+    repository::error::ValidationError,
     uri,
 };
 
 use crate::{
     commons::{
-        api::{
-            rrdp::PublicationDeltaError, AspaCustomer, AspaProvidersUpdateConflict, ChildHandle, ErrorResponse, Handle,
-            ParentHandle, PublisherHandle, ResourceClassName, ResourceSetError, RoaDefinition,
-        },
+        api::{rrdp::PublicationDeltaError, AspaCustomer, AspaProvidersUpdateConflict, ErrorResponse, RoaDefinition},
+        crypto::SignerError,
         eventsourcing::{AggregateStoreError, KeyValueError},
-        remote::{
-            rfc6492::{self, NotPerformedResponse},
-            rfc8181::{self, ReportErrorCode},
-        },
-        util::{httpclient, softsigner::SignerError},
+        util::httpclient,
     },
     daemon::{ca::RouteAuthorization, http::tls_keys},
-    upgrades::UpgradeError,
+    upgrades::PrepareUpgradeError,
 };
+
+use super::api::{BgpSecAsnKey, BgpSecDefinition};
 
 //------------ RoaDeltaError -----------------------------------------------
 
 /// This type contains a detailed error report for a ROA delta
 /// that could not be applied.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RoaDeltaError {
     duplicates: Vec<RoaDefinition>,
     notheld: Vec<RoaDefinition>,
     unknowns: Vec<RoaDefinition>,
     invalid_length: Vec<RoaDefinition>,
-}
-
-impl Default for RoaDeltaError {
-    fn default() -> Self {
-        RoaDeltaError {
-            duplicates: vec![],
-            notheld: vec![],
-            unknowns: vec![],
-            invalid_length: vec![],
-        }
-    }
 }
 
 impl RoaDeltaError {
@@ -177,7 +169,7 @@ pub enum Error {
     HttpsSetup(String),
     HttpClientError(httpclient::Error),
     ConfigError(String),
-    UpgradeError(UpgradeError),
+    UpgradeError(PrepareUpgradeError),
 
     //-----------------------------------------------------------------
     // General API Client Issues
@@ -223,66 +215,77 @@ pub enum Error {
     //-----------------------------------------------------------------
     Rfc8181Validation(ValidationError),
     Rfc8181Decode(String),
-    Rfc8181MessageError(rfc8181::MessageError),
+    Rfc8181(publication::Error),
     Rfc8181Delta(PublicationDeltaError),
     PublishingObjects(String),
 
     //-----------------------------------------------------------------
     // CA Issues
     //-----------------------------------------------------------------
-    CaDuplicate(Handle),
-    CaUnknown(Handle),
+    CaDuplicate(CaHandle),
+    CaUnknown(CaHandle),
 
     // CA Repo Issues
-    CaRepoInUse(Handle),
-    CaRepoIssue(Handle, String),
-    CaRepoResponseInvalidXml(Handle, String),
-    CaRepoResponseWrongXml(Handle),
+    CaRepoInUse(CaHandle),
+    CaRepoIssue(CaHandle, String),
+    CaRepoResponseInvalidXml(CaHandle, String),
+    CaRepoResponseWrongXml(CaHandle),
 
     // CA Parent Issues
-    CaParentDuplicateName(Handle, ParentHandle),
-    CaParentDuplicateInfo(Handle, ParentHandle),
-    CaParentUnknown(Handle, ParentHandle),
-    CaParentIssue(Handle, ParentHandle, String),
-    CaParentResponseInvalidXml(Handle, String),
-    CaParentResponseWrongXml(Handle),
-    CaParentAddNotResponsive(Handle, ParentHandle),
-    CaParentSyncError(Handle, ParentHandle, ResourceClassName, String),
+    CaParentDuplicateName(CaHandle, ParentHandle),
+    CaParentDuplicateInfo(CaHandle, ParentHandle),
+    CaParentUnknown(CaHandle, ParentHandle),
+    CaParentIssue(CaHandle, ParentHandle, String),
+    CaParentResponseInvalidXml(CaHandle, String),
+    CaParentResponseWrongXml(CaHandle),
+    CaParentAddNotResponsive(CaHandle, ParentHandle),
+    CaParentSyncError(CaHandle, ParentHandle, ResourceClassName, String),
+
+    //-----------------------------------------------------------------
+    // RFC8183 (exchanging id XML)
+    //-----------------------------------------------------------------
+    Rfc8183(String),
 
     //-----------------------------------------------------------------
     // RFC6492 (requesting resources)
     //-----------------------------------------------------------------
-    Rfc6492(rfc6492::Error),
-    Rfc6492NotPerformed(NotPerformedResponse),
+    Rfc6492(provisioning::Error),
+    Rfc6492NotPerformed(provisioning::NotPerformedResponse),
     Rfc6492InvalidCsrSent(String),
-    Rfc6492SignatureInvalid,
 
     //-----------------------------------------------------------------
     // CA Child Issues
     //-----------------------------------------------------------------
-    CaChildDuplicate(Handle, ChildHandle),
-    CaChildUnknown(Handle, ChildHandle),
-    CaChildMustHaveResources(Handle, ChildHandle),
-    CaChildExtraResources(Handle, ChildHandle),
-    CaChildUnauthorized(Handle, ChildHandle),
+    CaChildDuplicate(CaHandle, ChildHandle),
+    CaChildUnknown(CaHandle, ChildHandle),
+    CaChildMustHaveResources(CaHandle, ChildHandle),
+    CaChildExtraResources(CaHandle, ChildHandle),
+    CaChildUnauthorized(CaHandle, ChildHandle),
 
     //-----------------------------------------------------------------
     // RouteAuthorizations - ROAs
     //-----------------------------------------------------------------
-    CaAuthorizationUnknown(Handle, RouteAuthorization),
-    CaAuthorizationDuplicate(Handle, RouteAuthorization),
-    CaAuthorizationInvalidMaxLength(Handle, RouteAuthorization),
-    CaAuthorizationNotEntitled(Handle, RouteAuthorization),
-    RoaDeltaError(Handle, RoaDeltaError),
+    CaAuthorizationUnknown(CaHandle, RouteAuthorization),
+    CaAuthorizationDuplicate(CaHandle, RouteAuthorization),
+    CaAuthorizationInvalidMaxLength(CaHandle, RouteAuthorization),
+    CaAuthorizationNotEntitled(CaHandle, RouteAuthorization),
+    RoaDeltaError(CaHandle, RoaDeltaError),
 
     //-----------------------------------------------------------------
     // Autonomous System Provider Authorization - ASPA
     //-----------------------------------------------------------------
-    AspaCustomerAsNotEntitled(Handle, AspaCustomer),
-    AspaCustomerAlreadyPresent(Handle, AspaCustomer),
-    AspaCustomerUnknown(Handle, AspaCustomer),
-    AspaProvidersUpdateEmpty(Handle, AspaCustomer),
-    AspaProvidersUpdateConflict(Handle, AspaProvidersUpdateConflict),
+    AspaCustomerAsNotEntitled(CaHandle, AspaCustomer),
+    AspaCustomerAlreadyPresent(CaHandle, AspaCustomer),
+    AspaCustomerUnknown(CaHandle, AspaCustomer),
+    AspaProvidersUpdateEmpty(CaHandle, AspaCustomer),
+    AspaProvidersUpdateConflict(CaHandle, AspaProvidersUpdateConflict),
+
+    //-----------------------------------------------------------------
+    // BGP Sec
+    //-----------------------------------------------------------------
+    BgpSecDefinitionUnknown(CaHandle, BgpSecAsnKey),
+    BgpSecDefinitionInvalidlySigned(CaHandle, BgpSecDefinition, String),
+    BgpSecDefinitionNotEntitled(CaHandle, BgpSecAsnKey),
 
     //-----------------------------------------------------------------
     // Key Usage Issues
@@ -299,7 +302,7 @@ pub enum Error {
     // Resource Issues
     //-----------------------------------------------------------------
     ResourceClassUnknown(ResourceClassName),
-    ResourceSetError(ResourceSetError),
+    ResourceSetError(String),
     MissingResources,
 
     //-----------------------------------------------------------------
@@ -381,7 +384,7 @@ impl fmt::Display for Error {
             //-----------------------------------------------------------------
             Error::Rfc8181Validation(req) => write!(f, "Issue with RFC8181 request: {}", req),
             Error::Rfc8181Decode(req) => write!(f, "Issue with decoding RFC8181 request: {}", req),
-            Error::Rfc8181MessageError(e) => e.fmt(f),
+            Error::Rfc8181(e) => e.fmt(f),
             Error::Rfc8181Delta(e) => e.fmt(f),
             Error::PublishingObjects(msg) => write!(f, "Issue generating repository objects: '{}'", msg),
 
@@ -418,6 +421,10 @@ impl fmt::Display for Error {
                 )
             }
 
+            //-----------------------------------------------------------------
+            // RFC8183 (exchanging id XML)
+            //-----------------------------------------------------------------
+            Error::Rfc8183(e) => write!(f, "RFC 8183 XML issue: {}", e),
 
             //-----------------------------------------------------------------
             // RFC6492 (requesting resources)
@@ -425,7 +432,6 @@ impl fmt::Display for Error {
             Error::Rfc6492(e) => write!(f, "RFC 6492 Issue: {}", e),
             Error::Rfc6492NotPerformed(not) => write!(f, "RFC 6492 Not Performed: {}", not),
             Error::Rfc6492InvalidCsrSent(e) => write!(f, "Invalid CSR received: {}", e),
-            Error::Rfc6492SignatureInvalid => write!(f, "Invalidly signed RFC 6492 CMS"),
 
             //-----------------------------------------------------------------
             // CA Child Issues
@@ -453,6 +459,14 @@ impl fmt::Display for Error {
             Error::AspaCustomerUnknown(_ca, asn) => write!(f, "No current ASPA exists for customer AS '{}'", asn),
             Error::AspaProvidersUpdateEmpty(_ca, asn) => write!(f, "Received empty update for ASPA for customer AS '{}'", asn),
             Error::AspaProvidersUpdateConflict(_ca, e) => write!(f, "ASPA delta rejected:\n\n'{}'", e),
+            
+            //-----------------------------------------------------------------
+            // BGPSec
+            //-----------------------------------------------------------------
+            Error::BgpSecDefinitionUnknown(_ca, key) => write!(f, "Cannot remove BGPSec CSR for unknown combination of ASN '{}' and key '{}'", key.asn(), key.key_identifier()),
+            Error::BgpSecDefinitionInvalidlySigned(_ca, def, msg) => write!(f, "Invalidly signed BGPSec CSR remove BGPSec CSR for ASN '{}' and key '{}', error: {}", def.asn(), def.csr().public_key().key_identifier(), msg),
+            Error::BgpSecDefinitionNotEntitled(_ca, key) => write!(f, "AS '{}' is not held by you", key.asn()),
+
 
             //-----------------------------------------------------------------
             // Key Usage Issues
@@ -522,21 +536,15 @@ impl From<SignerError> for Error {
     }
 }
 
-impl From<rfc6492::Error> for Error {
-    fn from(e: rfc6492::Error) -> Self {
+impl From<provisioning::Error> for Error {
+    fn from(e: provisioning::Error) -> Self {
         Error::Rfc6492(e)
     }
 }
 
-impl From<rfc8181::MessageError> for Error {
-    fn from(e: rfc8181::MessageError) -> Self {
-        Error::Rfc8181MessageError(e)
-    }
-}
-
-impl From<ResourceSetError> for Error {
-    fn from(e: ResourceSetError) -> Self {
-        Error::ResourceSetError(e)
+impl From<publication::Error> for Error {
+    fn from(e: publication::Error) -> Self {
+        Error::Rfc8181(e)
     }
 }
 
@@ -571,8 +579,8 @@ impl From<PublicationDeltaError> for Error {
     }
 }
 
-impl From<UpgradeError> for Error {
-    fn from(e: UpgradeError) -> Self {
+impl From<PrepareUpgradeError> for Error {
+    fn from(e: PrepareUpgradeError) -> Self {
         Error::UpgradeError(e)
     }
 }
@@ -582,7 +590,7 @@ impl Error {
         Error::SignerError(e.to_string())
     }
 
-    pub fn invalid_csr(msg: &str) -> Self {
+    pub fn invalid_csr(msg: impl fmt::Display) -> Self {
         Error::Rfc6492InvalidCsrSent(msg.to_string())
     }
 
@@ -592,6 +600,10 @@ impl Error {
 
     pub fn publishing(msg: impl fmt::Display) -> Self {
         Error::PublishingObjects(msg.to_string())
+    }
+
+    pub fn rfc8183(e: impl Display) -> Self {
+        Error::Rfc8183(e.to_string())
     }
 
     pub fn custom(msg: impl fmt::Display) -> Self {
@@ -726,7 +738,7 @@ impl Error {
             //-----------------------------------------------------------------
             Error::Rfc8181Validation(e) => ErrorResponse::new("rfc8181-validation", &self).with_cause(e),
             Error::Rfc8181Decode(e) => ErrorResponse::new("rfc8181-decode", &self).with_cause(e),
-            Error::Rfc8181MessageError(e) => ErrorResponse::new("rfc8181-protocol-message", &self).with_cause(e),
+            Error::Rfc8181(e) => ErrorResponse::new("rfc8181-protocol-message", &self).with_cause(e),
             Error::Rfc8181Delta(e) => ErrorResponse::new("rfc8181-delta", &self).with_cause(e),
             Error::PublishingObjects(msg) => {
                 ErrorResponse::new("publishing-generate-repository-objects", &self).with_cause(msg)
@@ -784,12 +796,16 @@ impl Error {
                 .with_resource_class(rcn),
 
             //-----------------------------------------------------------------
+            // RFC8183 (exchanging id XML)
+            //-----------------------------------------------------------------
+            Error::Rfc8183(e) => ErrorResponse::new("rfc-8183-xml", &self).with_cause(e),
+
+            //-----------------------------------------------------------------
             // RFC6492 (requesting resources, not on JSON api)
             //-----------------------------------------------------------------
             Error::Rfc6492(e) => ErrorResponse::new("rfc6492-protocol", &self).with_cause(e),
             Error::Rfc6492NotPerformed(e) => ErrorResponse::new("rfc6492-not-performed-response", &self).with_cause(e),
             Error::Rfc6492InvalidCsrSent(e) => ErrorResponse::new("rfc6492-invalid-csr", &self).with_cause(e),
-            Error::Rfc6492SignatureInvalid => ErrorResponse::new("rfc6492-invalid-signature", &self),
 
             // CA Child Issues
             Error::CaChildDuplicate(ca, child) => ErrorResponse::new("ca-child-duplicate", &self)
@@ -848,6 +864,23 @@ impl Error {
                 .with_aspa_providers_conflict(conflict),
 
             //-----------------------------------------------------------------
+            // BGP Sec
+            //-----------------------------------------------------------------
+            Error::BgpSecDefinitionUnknown(ca, key) => ErrorResponse::new("ca-bgpsec-unknown", &self)
+                .with_ca(ca)
+                .with_asn(key.asn())
+                .with_key_identifier(&key.key_identifier()),
+            Error::BgpSecDefinitionInvalidlySigned(ca, def, msg) => ErrorResponse::new("ca-bgpsec-invalidly-signed", &self)
+                .with_ca(ca)
+                .with_asn(def.asn())
+                .with_key_identifier(&def.csr().public_key().key_identifier())
+                .with_bgpsec_csr(def.csr())
+                .with_cause(msg),
+            Error::BgpSecDefinitionNotEntitled(ca, key) => ErrorResponse::new("ca-bgpsec-not-entitled", &self)
+                .with_ca(ca)
+                .with_asn(key.asn()),
+
+            //-----------------------------------------------------------------
             // Key Usage Issues (key-*)
             //-----------------------------------------------------------------
             Error::KeyUseAttemptReuse => ErrorResponse::new("key-re-use", &self),
@@ -885,16 +918,16 @@ impl Error {
         }
     }
 
-    pub fn to_rfc8181_error_code(&self) -> ReportErrorCode {
+    pub fn to_rfc8181_error_code(&self) -> publication::ReportErrorCode {
         match self {
-            Error::Rfc8181Validation(_) | Error::PublisherUnknown(_) => ReportErrorCode::PermissionFailure,
-            Error::Rfc8181MessageError(_) => ReportErrorCode::XmlError,
+            Error::Rfc8181Validation(_) | Error::PublisherUnknown(_) => publication::ReportErrorCode::PermissionFailure,
+            Error::Rfc8181(_) => publication::ReportErrorCode::XmlError,
             Error::Rfc8181Delta(e) => match e {
-                PublicationDeltaError::UriOutsideJail(_, _) => ReportErrorCode::PermissionFailure,
-                PublicationDeltaError::NoObjectForHashAndOrUri(_) => ReportErrorCode::NoObjectPresent,
-                PublicationDeltaError::ObjectAlreadyPresent(_) => ReportErrorCode::ObjectAlreadyPresent,
+                PublicationDeltaError::UriOutsideJail(_, _) => publication::ReportErrorCode::PermissionFailure,
+                PublicationDeltaError::NoObjectForHashAndOrUri(_) => publication::ReportErrorCode::NoObjectPresent,
+                PublicationDeltaError::ObjectAlreadyPresent(_) => publication::ReportErrorCode::ObjectAlreadyPresent,
             },
-            _ => ReportErrorCode::OtherError,
+            _ => publication::ReportErrorCode::OtherError,
         }
     }
 }
@@ -943,7 +976,7 @@ mod tests {
 
     #[test]
     fn error_response_json_regression() {
-        let ca = Handle::from_str("ca").unwrap();
+        let ca = CaHandle::from_str("ca").unwrap();
         let parent = ParentHandle::from_str("parent").unwrap();
         let child = ChildHandle::from_str("child").unwrap();
         let publisher = PublisherHandle::from_str("publisher").unwrap();
@@ -978,7 +1011,7 @@ mod tests {
         );
         verify(
             include_str!("../../test-resources/errors/sys-http-client.json"),
-            Error::HttpClientError(httpclient::Error::Forbidden),
+            Error::HttpClientError(httpclient::Error::forbidden("https://example.com/")),
         );
 
         //-----------------------------------------------------------------
@@ -1034,16 +1067,12 @@ mod tests {
         // RFC 8181
         //-----------------------------------------------------------------
         verify(
-            include_str!("../../test-resources/errors/rfc8181-validation.json"),
-            Error::Rfc8181Validation(ValidationError),
-        );
-        verify(
             include_str!("../../test-resources/errors/rfc8181-decode.json"),
             Error::Rfc8181Decode("could not parse CMS".to_string()),
         );
         verify(
             include_str!("../../test-resources/errors/rfc8181-protocol-message.json"),
-            Error::Rfc8181MessageError(rfc8181::MessageError::InvalidVersion),
+            Error::Rfc8181(publication::Error::InvalidVersion),
         );
         verify(
             include_str!("../../test-resources/errors/rfc8181-delta.json"),
@@ -1104,15 +1133,11 @@ mod tests {
 
         verify(
             include_str!("../../test-resources/errors/rfc6492-protocol.json"),
-            Error::Rfc6492(rfc6492::Error::InvalidVersion),
+            Error::Rfc6492(provisioning::Error::InvalidVersion),
         );
         verify(
             include_str!("../../test-resources/errors/rfc6492-invalid-csr.json"),
             Error::Rfc6492InvalidCsrSent("invalid signature".to_string()),
-        );
-        verify(
-            include_str!("../../test-resources/errors/rfc6492-invalid-signature.json"),
-            Error::Rfc6492SignatureInvalid,
         );
 
         verify(
@@ -1185,10 +1210,6 @@ mod tests {
             Error::ResourceClassUnknown(ResourceClassName::from("RC0")),
         );
         verify(
-            include_str!("../../test-resources/errors/rc-resources.json"),
-            Error::ResourceSetError(ResourceSetError::Mix),
-        );
-        verify(
             include_str!("../../test-resources/errors/rc-missing-resources.json"),
             Error::MissingResources,
         );
@@ -1226,7 +1247,7 @@ mod tests {
         error.add_invalid_length(invalid_length);
         error.add_unknown(unknown);
 
-        let ca = Handle::from_str("ca").unwrap();
+        let ca = CaHandle::from_str("ca").unwrap();
 
         let error = Error::RoaDeltaError(ca, error);
 

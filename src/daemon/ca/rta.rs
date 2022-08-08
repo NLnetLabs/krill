@@ -2,15 +2,14 @@ use std::{collections::HashMap, fmt};
 
 use bytes::Bytes;
 
-use rpki::repository::{
+use rpki::{
+    ca::{provisioning::ResourceClassName, publication::Base64},
     crypto::{DigestAlgorithm, KeyIdentifier},
-    rta,
-    sigobj::MessageDigest,
-    x509::Validity,
+    repository::{resources::ResourceSet, rta, sigobj::MessageDigest, x509::Validity},
 };
 
 use crate::commons::{
-    api::{Base64, ResourceClassName, ResourceSet, Revocation, RtaList, RtaName},
+    api::{Revocation, RtaList, RtaName},
     error::Error,
     util::ext_serde,
     KrillResult,
@@ -18,7 +17,7 @@ use crate::commons::{
 
 //------------ Rtas ---------------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct Rtas {
     map: HashMap<RtaName, RtaState>,
 }
@@ -58,12 +57,6 @@ impl Rtas {
 
     pub fn add_signed(&mut self, name: RtaName, signed: SignedRta) {
         self.map.insert(name, RtaState::Signed(signed));
-    }
-}
-
-impl Default for Rtas {
-    fn default() -> Self {
-        Rtas { map: HashMap::new() }
     }
 }
 

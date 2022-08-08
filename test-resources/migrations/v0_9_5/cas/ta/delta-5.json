@@ -1,0 +1,10 @@
+{
+  "id": "ta",
+  "version": 5,
+  "details": {
+    "type": "child_certificate_issued",
+    "child": "testbed",
+    "resource_class_name": "0",
+    "ki": "62BC88453E78424F7F886712A4B904A07B98BEE7"
+  }
+}

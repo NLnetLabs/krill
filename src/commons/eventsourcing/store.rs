@@ -8,7 +8,7 @@ use std::{
 
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-use rpki::repository::x509::Time;
+use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
 
 use crate::commons::eventsourcing::{
     cmd::{Command, StoredCommandBuilder},
@@ -16,7 +16,7 @@ use crate::commons::eventsourcing::{
     WithStorableDetails,
 };
 use crate::commons::{
-    api::{CommandHistory, CommandHistoryCriteria, CommandHistoryRecord, Handle, Label},
+    api::{CommandHistory, CommandHistoryCriteria, CommandHistoryRecord, Label},
     error::KrillIoError,
     util::KrillVersion,
 };
@@ -130,7 +130,7 @@ impl fmt::Display for CommandKeyError {
 /// This type is responsible for managing aggregates.
 pub struct AggregateStore<A: Aggregate> {
     kv: KeyValueStore,
-    cache: RwLock<HashMap<Handle, Arc<A>>>,
+    cache: RwLock<HashMap<MyHandle, Arc<A>>>,
     pre_save_listeners: Vec<Arc<dyn PreSaveEventListener<A>>>,
     post_save_listeners: Vec<Arc<dyn PostSaveEventListener<A>>>,
     outer_lock: RwLock<()>,
@@ -163,7 +163,7 @@ where
         };
 
         if !existed {
-            store.set_version(&KrillVersion::current())?;
+            store.set_version(&KrillVersion::code_version())?;
         }
 
         Ok(store)
@@ -175,6 +175,7 @@ where
         for handle in self.list()? {
             self.warm_aggregate(&handle)?;
         }
+        info!("Cache for CAs has been warmed.");
         Ok(())
     }
 
@@ -185,7 +186,9 @@ where
     /// recorded in the 'info.json' which is always saved last on state changes - then it is
     /// assumed that an incomplete transaction took place. The surplus entries will be archived
     /// and warnings will be reported.
-    pub fn warm_aggregate(&self, handle: &Handle) -> StoreResult<()> {
+    pub fn warm_aggregate(&self, handle: &MyHandle) -> StoreResult<()> {
+        info!("Warming the cache for: '{}'", handle);
+
         let agg = self
             .get_latest(handle)
             .map_err(|e| AggregateStoreError::WarmupFailed(handle.clone(), e.to_string()))?;
@@ -222,8 +225,11 @@ where
 
         // Save the snapshot if it does not yet match the latest state
         if info.snapshot_version != agg.version() {
-            info!("Updating snapshot for '{}', to decrease future load times.", handle);
             self.store_snapshot(handle, agg.as_ref())?;
+            debug!(
+                "Saved updated snapshot for '{}', to decrease future load times.",
+                handle
+            );
         }
 
         Ok(())
@@ -354,7 +360,7 @@ where
     /// Gets the latest version for the given aggregate. Returns
     /// an AggregateStoreError::UnknownAggregate in case the aggregate
     /// does not exist.
-    pub fn get_latest(&self, handle: &Handle) -> StoreResult<Arc<A>> {
+    pub fn get_latest(&self, handle: &MyHandle) -> StoreResult<Arc<A>> {
         let _lock = self.outer_lock.read().unwrap();
         self.get_latest_no_lock(handle)
     }
@@ -422,15 +428,16 @@ where
 
         let stored_command_builder = StoredCommandBuilder::new(&cmd, latest.version(), info.last_command);
 
-        let res = match latest.process_command(cmd) {
+        match latest.process_command(cmd) {
             Err(e) => {
                 let stored_command = stored_command_builder.finish_with_error(&e);
                 self.store_command(stored_command)?;
+                self.save_info(&handle, &info)?; // last_command was updated
                 Err(e)
             }
             Ok(events) => {
                 if events.is_empty() {
-                    return Ok(latest); // otherwise the version info will be updated
+                    Ok(latest) // note: no-op no version info will be updated
                 } else {
                     let agg = Arc::make_mut(&mut latest);
 
@@ -506,6 +513,9 @@ where
 
                     cache.insert(handle.clone(), Arc::new(agg.clone()));
 
+                    // Save the info so that the aggregate can be loaded properly by the listeners.
+                    self.save_info(&handle, &info)?;
+
                     // Now send the events to the 'post-save' listeners.
                     for listener in &self.post_save_listeners {
                         listener.as_ref().listen(agg, events.as_slice());
@@ -514,15 +524,11 @@ where
                     Ok(latest)
                 }
             }
-        };
-
-        self.save_info(&handle, &info)?;
-
-        res
+        }
     }
 
     /// Returns true if an instance exists for the id
-    pub fn has(&self, id: &Handle) -> Result<bool, AggregateStoreError> {
+    pub fn has(&self, id: &MyHandle) -> Result<bool, AggregateStoreError> {
         let _lock = self.outer_lock.read().unwrap();
         self.kv
             .has_scope(id.to_string())
@@ -530,7 +536,7 @@ where
     }
 
     /// Lists all known ids.
-    pub fn list(&self) -> Result<Vec<Handle>, AggregateStoreError> {
+    pub fn list(&self) -> Result<Vec<MyHandle>, AggregateStoreError> {
         let _lock = self.outer_lock.read().unwrap();
         self.aggregates()
     }
@@ -545,7 +551,7 @@ where
     /// Find all commands that fit the criteria and return history
     pub fn command_history(
         &self,
-        id: &Handle,
+        id: &MyHandle,
         crit: CommandHistoryCriteria,
     ) -> Result<CommandHistory, AggregateStoreError> {
         let offset = crit.offset();
@@ -582,7 +588,7 @@ where
     /// Get the command for this key, if it exists
     pub fn get_command<D: WithStorableDetails>(
         &self,
-        id: &Handle,
+        id: &MyHandle,
         command_key: &CommandKey,
     ) -> Result<StoredCommand<D>, AggregateStoreError> {
         let key = Self::key_for_command(id, command_key);
@@ -601,7 +607,7 @@ where
     }
 
     /// Get the value for this key, if any exists.
-    pub fn get_event<V: Event>(&self, id: &Handle, version: u64) -> Result<Option<V>, AggregateStoreError> {
+    pub fn get_event<V: Event>(&self, id: &MyHandle, version: u64) -> Result<Option<V>, AggregateStoreError> {
         let key = Self::key_for_event(id, version);
         match self.kv.get(&key) {
             Ok(res_opt) => Ok(res_opt),
@@ -621,34 +627,27 @@ impl<A: Aggregate> AggregateStore<A>
 where
     A::Error: From<AggregateStoreError>,
 {
-    fn has_updates(&self, id: &Handle, aggregate: &A) -> StoreResult<bool> {
+    fn has_updates(&self, id: &MyHandle, aggregate: &A) -> StoreResult<bool> {
         Ok(self.get_event::<A::Event>(id, aggregate.version())?.is_some())
     }
 
-    fn cache_get(&self, id: &Handle) -> Option<Arc<A>> {
+    fn cache_get(&self, id: &MyHandle) -> Option<Arc<A>> {
         self.cache.read().unwrap().get(id).cloned()
     }
 
-    fn cache_remove(&self, id: &Handle) {
+    fn cache_remove(&self, id: &MyHandle) {
         self.cache.write().unwrap().remove(id);
     }
 
-    fn cache_update(&self, id: &Handle, arc: Arc<A>) {
+    fn cache_update(&self, id: &MyHandle, arc: Arc<A>) {
         self.cache.write().unwrap().insert(id.clone(), arc);
     }
 
-    fn get_latest_no_lock(&self, handle: &Handle) -> StoreResult<Arc<A>> {
+    fn get_latest_no_lock(&self, handle: &MyHandle) -> StoreResult<Arc<A>> {
         trace!("Trying to load aggregate id: {}", handle);
 
-        let info_key = Self::key_for_info(handle);
-        let limit = self
-            .kv
-            .get::<StoredValueInfo>(&info_key)
-            .map_err(|_| AggregateStoreError::InfoCorrupt(handle.clone()))?
-            .map(|info| info.last_event);
-
         match self.cache_get(handle) {
-            None => match self.get_aggregate(handle, limit)? {
+            None => match self.get_aggregate(handle, None)? {
                 None => {
                     error!("Could not load aggregate with id: {} from disk", handle);
                     Err(AggregateStoreError::UnknownAggregate(handle.clone()))
@@ -663,7 +662,7 @@ where
             Some(mut arc) => {
                 if self.has_updates(handle, &arc)? {
                     let agg = Arc::make_mut(&mut arc);
-                    self.update_aggregate(handle, agg, limit)?;
+                    self.update_aggregate(handle, agg, None)?;
                 }
                 trace!("Loaded aggregate id: {} from memory", handle);
                 Ok(arc)
@@ -682,27 +681,27 @@ where
         KeyStoreKey::simple("version".to_string())
     }
 
-    fn key_for_info(agg: &Handle) -> KeyStoreKey {
+    fn key_for_info(agg: &MyHandle) -> KeyStoreKey {
         KeyStoreKey::scoped(agg.to_string(), "info.json".to_string())
     }
 
-    fn key_for_snapshot(agg: &Handle) -> KeyStoreKey {
+    fn key_for_snapshot(agg: &MyHandle) -> KeyStoreKey {
         KeyStoreKey::scoped(agg.to_string(), "snapshot.json".to_string())
     }
 
-    fn key_for_backup_snapshot(agg: &Handle) -> KeyStoreKey {
+    fn key_for_backup_snapshot(agg: &MyHandle) -> KeyStoreKey {
         KeyStoreKey::scoped(agg.to_string(), "snapshot-bk.json".to_string())
     }
 
-    fn key_for_new_snapshot(agg: &Handle) -> KeyStoreKey {
+    fn key_for_new_snapshot(agg: &MyHandle) -> KeyStoreKey {
         KeyStoreKey::scoped(agg.to_string(), "snapshot-new.json".to_string())
     }
 
-    fn key_for_event(agg: &Handle, version: u64) -> KeyStoreKey {
+    fn key_for_event(agg: &MyHandle, version: u64) -> KeyStoreKey {
         KeyStoreKey::scoped(agg.to_string(), format!("delta-{}.json", version))
     }
 
-    fn key_for_command(agg: &Handle, command: &CommandKey) -> KeyStoreKey {
+    fn key_for_command(agg: &MyHandle, command: &CommandKey) -> KeyStoreKey {
         KeyStoreKey::scoped(agg.to_string(), format!("{}.json", command))
     }
 
@@ -720,7 +719,7 @@ where
 
     fn command_keys_ascending(
         &self,
-        id: &Handle,
+        id: &MyHandle,
         crit: &CommandHistoryCriteria,
     ) -> Result<Vec<CommandKey>, AggregateStoreError> {
         let mut command_keys = vec![];
@@ -744,11 +743,11 @@ where
     }
 
     /// Private, should be called through `list` which takes care of locking.
-    fn aggregates(&self) -> Result<Vec<Handle>, AggregateStoreError> {
+    fn aggregates(&self) -> Result<Vec<MyHandle>, AggregateStoreError> {
         let mut res = vec![];
 
         for scope in self.kv.scopes()? {
-            if let Ok(handle) = Handle::from_str(&scope) {
+            if let Ok(handle) = MyHandle::from_str(&scope) {
                 res.push(handle)
             }
         }
@@ -757,7 +756,7 @@ where
     }
 
     /// Clean surplus events
-    fn archive_surplus_events(&self, id: &Handle, from: u64) -> Result<(), AggregateStoreError> {
+    fn archive_surplus_events(&self, id: &MyHandle, from: u64) -> Result<(), AggregateStoreError> {
         for key in self.kv.keys(Some(id.to_string()), "delta-")? {
             let name = key.name();
             if name.starts_with("delta-") && name.ends_with(".json") {
@@ -780,7 +779,7 @@ where
     }
 
     /// Archive a surplus value for a key
-    fn archive_surplus_command(&self, id: &Handle, key: &CommandKey) -> Result<(), AggregateStoreError> {
+    fn archive_surplus_command(&self, id: &MyHandle, key: &CommandKey) -> Result<(), AggregateStoreError> {
         let key = Self::key_for_command(id, key);
         warn!("Archiving surplus command for '{}': {}", id, key);
         self.kv
@@ -809,7 +808,7 @@ where
 
     /// Get the latest aggregate
     /// limit to the event nr, i.e. the resulting aggregate version will be limit + 1
-    fn get_aggregate(&self, id: &Handle, limit: Option<u64>) -> Result<Option<A>, AggregateStoreError> {
+    fn get_aggregate(&self, id: &MyHandle, limit: Option<u64>) -> Result<Option<A>, AggregateStoreError> {
         // 1) Try to get a snapshot.
         // 2) If that fails, or if it exceeds the limit, try the backup
         // 3) If that fails, try to get the init event.
@@ -837,7 +836,7 @@ where
                     if limit >= agg.version() - 1 {
                         aggregate_opt = Some(agg)
                     } else {
-                        trace!("Discarding snapshot after limit '{}'", id);
+                        warn!("Snapshot for '{}' is after version '{}', archiving it", id, limit);
                         self.kv.archive_surplus(&snapshot_key)?;
                     }
                 } else {
@@ -849,7 +848,7 @@ where
         }
 
         if aggregate_opt.is_none() {
-            warn!("No snapshot found for '{}' will try backup snapshot", id);
+            warn!("No suitable snapshot found for '{}' will try backup snapshot", id);
             let backup_snapshot_key = Self::key_for_backup_snapshot(id);
             match self.kv.get::<A>(&backup_snapshot_key) {
                 Err(e) => {
@@ -866,7 +865,10 @@ where
                         if limit >= agg.version() - 1 {
                             aggregate_opt = Some(agg)
                         } else {
-                            trace!("Discarding backup snapshot after limit '{}'", id);
+                            warn!(
+                                "Backup snapshot for '{}' is after version '{}', archiving it",
+                                id, limit
+                            );
                             self.kv.archive_surplus(&backup_snapshot_key)?;
                         }
                     } else {
@@ -879,7 +881,10 @@ where
         }
 
         if aggregate_opt.is_none() {
-            warn!("No snapshots found for '{}' will try from initialization event.", id);
+            warn!(
+                "No suitable snapshot for '{}' will rebuild state from events. This can take some time.",
+                id
+            );
             let init_key = Self::key_for_event(id, 0);
             aggregate_opt = match self.kv.get::<A::InitEvent>(&init_key)? {
                 Some(e) => {
@@ -899,61 +904,53 @@ where
         }
     }
 
-    fn update_aggregate(&self, id: &Handle, aggregate: &mut A, limit: Option<u64>) -> Result<(), AggregateStoreError> {
+    fn update_aggregate(
+        &self,
+        id: &MyHandle,
+        aggregate: &mut A,
+        limit: Option<u64>,
+    ) -> Result<(), AggregateStoreError> {
         let start = aggregate.version();
-        let limit = if let Some(limit) = limit {
-            debug!("Will attempt to update '{}' using explicit limit", id);
-            limit
-        } else if let Ok(info) = self.get_info(id) {
-            debug!("Will attempt to update '{}' using limit from info", id);
-            info.last_event
+
+        if let Some(limit) = limit {
+            debug!("Will update '{}' from version: {} to: {}", id, start, limit + 1);
         } else {
-            let nr_events = self.kv.keys(Some(id.to_string()), "delta-")?.len();
-            if nr_events < 1 {
-                return Err(AggregateStoreError::InfoMissing(id.clone()));
-            } else {
-                let limit = (nr_events - 1) as u64;
-                debug!("Will attempt to update '{}' from limit based on nr of events", id,);
-                limit
+            debug!("Will update '{}' to latest version", id);
+        }
+
+        // check and apply any applicable events until:
+        // - the limit is reached (if supplied)
+        // - there are no more events
+        // - any event cannot be applied (return an error)
+        loop {
+            let version = aggregate.version();
+            if let Some(limit) = limit {
+                if limit == version - 1 {
+                    debug!("Updated '{}' to: {}", id, version);
+                    break;
+                }
             }
-        };
 
-        if limit == aggregate.version() - 1 {
-            // already at version, done
-            // note that an event has the version of the aggregate it *affects*. So delta 10 results in version 11.
-            debug!("Snapshot for '{}' is up to date", id);
-            return Ok(());
-        }
-
-        debug!(
-            "Will attempt to update '{}' from version: {} to: {}",
-            id,
-            start,
-            limit + 1
-        );
-
-        if start > limit {
-            return Err(AggregateStoreError::ReplayError(id.clone(), limit, start));
-        }
-
-        for version in start..limit + 1 {
-            if let Some(e) = self.get_event(id, version)? {
-                if aggregate.version() != version {
+            if let Some(e) = self.get_event::<A::Event>(id, version)? {
+                if version != e.version() {
                     error!("Trying to apply event to wrong version of aggregate in replay");
-                    return Err(AggregateStoreError::ReplayError(id.clone(), limit, version));
+                    return Err(AggregateStoreError::ReplayError(id.clone(), version, e.version()));
                 }
                 aggregate.apply(e);
                 debug!("Applied event nr {} to aggregate {}", version, id);
             } else {
-                return Err(AggregateStoreError::ReplayError(id.clone(), limit, version));
+                debug!("No more events found. updated '{}' to: {}", id, version);
+                break;
             }
         }
 
         Ok(())
     }
 
-    /// Saves the latest snapshot - overwrites any previous snapshot.
-    fn store_snapshot<V: Aggregate>(&self, id: &Handle, aggregate: &V) -> Result<(), AggregateStoreError> {
+    /// Saves the latest snapshot - backs up previous snapshot, and drops previous backup.
+    /// Uses moves to ensure that files are written entirely before they are made available
+    /// for reading.
+    pub fn store_snapshot<V: Aggregate>(&self, id: &MyHandle, aggregate: &V) -> Result<(), AggregateStoreError> {
         let snapshot_new = Self::key_for_new_snapshot(id);
         let snapshot_current = Self::key_for_snapshot(id);
         let snapshot_backup = Self::key_for_backup_snapshot(id);
@@ -972,13 +969,13 @@ where
     }
 
     /// Drop an aggregate, completely. Handle with care!
-    pub fn drop_aggregate(&self, id: &Handle) -> Result<(), AggregateStoreError> {
+    pub fn drop_aggregate(&self, id: &MyHandle) -> Result<(), AggregateStoreError> {
         self.cache_remove(id);
         self.kv.drop_scope(id.as_str())?;
         Ok(())
     }
 
-    fn get_info(&self, id: &Handle) -> Result<StoredValueInfo, AggregateStoreError> {
+    fn get_info(&self, id: &MyHandle) -> Result<StoredValueInfo, AggregateStoreError> {
         let key = Self::key_for_info(id);
         let info = self
             .kv
@@ -987,7 +984,7 @@ where
         info.ok_or_else(|| AggregateStoreError::InfoMissing(id.clone()))
     }
 
-    fn save_info(&self, id: &Handle, info: &StoredValueInfo) -> Result<(), AggregateStoreError> {
+    fn save_info(&self, id: &MyHandle, info: &StoredValueInfo) -> Result<(), AggregateStoreError> {
         let key = Self::key_for_info(id);
         self.kv.store(&key, info).map_err(AggregateStoreError::KeyStoreError)
     }
@@ -1001,21 +998,21 @@ pub enum AggregateStoreError {
     IoError(KrillIoError),
     KeyStoreError(KeyValueError),
     NotInitialized,
-    UnknownAggregate(Handle),
-    InitError(Handle),
-    ReplayError(Handle, u64, u64),
-    InfoMissing(Handle),
-    InfoCorrupt(Handle),
-    WrongEventForAggregate(Handle, Handle, u64, u64),
-    ConcurrentModification(Handle),
-    UnknownCommand(Handle, u64),
+    UnknownAggregate(MyHandle),
+    InitError(MyHandle),
+    ReplayError(MyHandle, u64, u64),
+    InfoMissing(MyHandle),
+    InfoCorrupt(MyHandle),
+    WrongEventForAggregate(MyHandle, MyHandle, u64, u64),
+    ConcurrentModification(MyHandle),
+    UnknownCommand(MyHandle, u64),
     CommandOffsetTooLarge(u64, u64),
-    WarmupFailed(Handle, String),
-    CouldNotRecover(Handle),
-    CouldNotArchive(Handle, String),
-    CommandCorrupt(Handle, CommandKey),
-    CommandNotFound(Handle, CommandKey),
-    EventCorrupt(Handle, u64),
+    WarmupFailed(MyHandle, String),
+    CouldNotRecover(MyHandle),
+    CouldNotArchive(MyHandle, String),
+    CommandCorrupt(MyHandle, CommandKey),
+    CommandNotFound(MyHandle, CommandKey),
+    EventCorrupt(MyHandle, u64),
 }
 
 impl fmt::Display for AggregateStoreError {
@@ -1028,10 +1025,10 @@ impl fmt::Display for AggregateStoreError {
             AggregateStoreError::InitError(handle) => {
                 write!(f, "Init event exists for '{}', but cannot be applied", handle)
             }
-            AggregateStoreError::ReplayError(handle, target_version, fail_version) => write!(
+            AggregateStoreError::ReplayError(handle, version, fail_version) => write!(
                 f,
-                "Cannot reconstruct '{}' to version '{}', failed at version {}",
-                handle, target_version, fail_version
+                "Event for '{}' version '{}' had version '{}'",
+                handle, version, fail_version
             ),
             AggregateStoreError::InfoMissing(handle) => write!(f, "Missing stored value info for '{}'", handle),
             AggregateStoreError::InfoCorrupt(handle) => write!(f, "Corrupt stored value info for '{}'", handle),

@@ -11,29 +11,42 @@ use std::{
 use bytes::Bytes;
 use serde::{de::DeserializeOwned, Serialize};
 
-use rpki::uri;
-
-use crate::commons::{
-    api::{Base64, HexEncodedHash, ListElement, Publish, Update, Withdraw},
-    error::KrillIoError,
+use rpki::{
+    ca::publication::{Base64, ListElement, Publish, Update, Withdraw},
+    rrdp::Hash,
+    uri,
 };
+
+use crate::commons::error::KrillIoError;
 
 /// Creates a sub dir if needed, return full path to it
 pub fn sub_dir(base: &Path, name: &str) -> Result<PathBuf, KrillIoError> {
     let mut full_path = base.to_path_buf();
     full_path.push(name);
-    create_dir(&full_path)?;
+    create_dir_all(&full_path)?;
     Ok(full_path)
 }
 
-pub fn create_dir(dir: &Path) -> Result<(), KrillIoError> {
+/// Creates a dir and any parent dirs which were missing.
+pub fn create_dir_all(dir: &Path) -> Result<(), KrillIoError> {
     if !dir.is_dir() {
-        fs::create_dir(dir)
+        fs::create_dir_all(dir)
             .map_err(|e| KrillIoError::new(format!("could not create dir: {}", dir.to_string_lossy()), e))?;
     }
     Ok(())
 }
 
+/// Removes a dir and all its content.
+pub fn remove_dir_all(dir: &Path) -> Result<(), KrillIoError> {
+    if dir.exists() {
+        fs::remove_dir_all(dir)
+            .map_err(|e| KrillIoError::new(format!("could not remove dir: {}", dir.to_string_lossy()), e))?;
+    }
+    Ok(())
+}
+
+/// Creates a new File or opens an exiting one. If the file did not exist, the path
+/// will be created if it did not exist yet.
 pub fn create_file_with_path(path: &Path) -> Result<File, KrillIoError> {
     if !path.exists() {
         if let Some(parent) = path.parent() {
@@ -207,7 +220,7 @@ fn derive_uri(base_path: &Path, path: &Path, rsync_base: Option<&uri::Rsync>) ->
     let rel_string = rel.to_string_lossy().to_string();
 
     let uri_string = match rsync_base {
-        Some(rsync_base) => format!("{}{}", rsync_base.to_string(), rel_string),
+        Some(rsync_base) => format!("{}{}", rsync_base, rel_string),
         None => format!("rsync://{}", rel_string),
     };
 
@@ -308,13 +321,14 @@ pub struct CurrentFile {
     /// in the publication protocol for list, update and withdraw). Saving
     /// this rather than calculating on demand seems a small price for some
     /// performance gain.
-    hash: HexEncodedHash,
+    hash: Hash,
 }
 
 impl CurrentFile {
     pub fn new(uri: uri::Rsync, content: &Bytes) -> Self {
         let content = Base64::from_content(content);
-        let hash = content.to_encoded_hash();
+        let hash = content.to_hash();
+
         CurrentFile { uri, content, hash }
     }
 
@@ -336,7 +350,7 @@ impl CurrentFile {
         self.content.to_bytes()
     }
 
-    pub fn hash(&self) -> &HexEncodedHash {
+    pub fn hash(&self) -> &Hash {
         &self.hash
     }
 
@@ -347,18 +361,18 @@ impl CurrentFile {
         Publish::new(tag, uri, content)
     }
 
-    pub fn as_update(&self, old_hash: &HexEncodedHash) -> Update {
+    pub fn as_update(&self, old_hash: &Hash) -> Update {
         let tag = None;
         let uri = self.uri.clone();
         let content = self.content.clone();
-        let hash = old_hash.clone();
+        let hash = *old_hash;
         Update::new(tag, uri, content, hash)
     }
 
     pub fn as_withdraw(&self) -> Withdraw {
         let tag = None;
         let uri = self.uri.clone();
-        let hash = self.hash.clone();
+        let hash = self.hash;
         Withdraw::new(tag, uri, hash)
     }
 
