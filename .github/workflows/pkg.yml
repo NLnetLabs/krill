@@ -571,18 +571,6 @@ jobs:
           target/debian/*.deb
           target/generate-rpm/*.rpm
 
-    # Delete the temporary artifact that contains binaries produced by the `cross` job that ran before us. All artifacts
-    # existing once the workflow completes are expected by the packages.nlnetlabs.nl scripting to contain DEB or RPM or
-    # other supported package archives, not intermediate artifacts such as binaries to be packaged. Failure to delete
-    # this temporary artifact will cause later publication to packages.nlnetlabs.nl using artifacts from this workflow
-    # run to fail.
-    - name: Delete temporary cross compiled binaries artifact
-      if: ${{ matrix.target != 'x86_64' }}
-      id: delete
-      uses: geekyeggo/delete-artifact@v1
-      with:
-        name: ${{ matrix.target }}
-
   # -------------------------------------------------------------------------------------------------------------------
   # Job: 'pkg-test'
   # -------------------------------------------------------------------------------------------------------------------
