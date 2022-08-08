@@ -252,12 +252,20 @@ jobs:
 
           # package for the Raspberry Pi 4b as an ARMv7 cross compiled variant of the Debian Bullseye upon which
           # Raspbian 11 is based.
-          - image: 'debian:bullseye'
+          - pkg: ['krill','krillup']
+            image: 'debian:bullseye'
+            target: 'armv7-unknown-linux-gnueabihf'
+          - pkg: 'krillup'
+            image: 'debian:bullseye'
             target: 'armv7-unknown-linux-gnueabihf'
 
           # package for the ROCK64 as an AARCH64 cross compiled variant of Debian Buster upon which Armbian 21 is
           # based.
-          - image: 'debian:buster'
+          - pkg: 'krill'
+            image: 'debian:buster'
+            target: 'aarch64-unknown-linux-gnu'
+          - pkg: 'krillup'
+            image: 'debian:buster'
             target: 'aarch64-unknown-linux-gnu'
     env:
       CARGO_DEB_VER: 1.34.2
