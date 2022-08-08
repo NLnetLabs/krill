@@ -1096,9 +1096,9 @@ fn is_transient_error(err: &Pkcs11Error) -> bool {
                 cryptoki::error::RvError::UserAlreadyLoggedIn => true, // maybe another client was is busy logging out so try again?
                 cryptoki::error::RvError::UserAnotherAlreadyLoggedIn => true,
                 cryptoki::error::RvError::UserNotLoggedIn => false,
-                cryptoki::error::RvError::UserPinNotInitialized => false, // maybe the operator will initialize the PIN 
+                cryptoki::error::RvError::UserPinNotInitialized => true, // maybe the operator will initialize the PIN 
                 cryptoki::error::RvError::UserTooManyTypes => true, // maybe some sessions are terminated while retrying permitting us to succeed?
-                cryptoki::error::RvError::UserTypeInvalid => false, // maybe the operator will fix the users type
+                cryptoki::error::RvError::UserTypeInvalid => true, // maybe the operator will fix the users type
                 cryptoki::error::RvError::VendorDefined => true, // we have no way of knowing what this kind of failure is, maybe it is transient
                 cryptoki::error::RvError::WrappedKeyInvalid => false,
                 cryptoki::error::RvError::WrappedKeyLenRange => false,
