@@ -894,9 +894,6 @@ jobs:
             mode:        'copy'
     outputs:
       dockerbasetag: ${{ steps.meta.outputs.tags }}
-    env:
-      PUSH: ${{ contains(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' }}
-      TEST: ${{ !contains(github.ref, 'refs/tags/v') && github.ref != 'refs/heads/main' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
@@ -921,7 +918,7 @@ jobs:
             type=semver,pattern={{version}},prefix=v
             type=raw,value=unstable,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=latest,enable=${{ github.ref != 'refs/heads/main' && !contains(github.ref, '-') }}
-            type=raw,value=test,enable=${{ env.TEST }}
+            type=raw,value=test,enable=${{ !contains(github.ref, 'refs/tags/v') && github.ref != 'refs/heads/main' }}
 
       # NOTE: Unfortunately the wait action appears to be unreliable. The project GH issues include examples of it not
       # working properly and I've had it finish without saying the waited on job completed but instead it just stopped
@@ -955,7 +952,7 @@ jobs:
       # test here) it will have been pushed to Docker Hub but is NOT the image we expect people to use, that is the
       # combined multi-arch image that lacks the architecture specific tag value extension and that will ONLY be
       # pushed if all architecture specific images build and (where supported) passt he sanity check below.
-      - name: Build & save Docker image
+      - name: Build Docker image
         uses: docker/build-push-action@v2
         with:
           context: .
@@ -965,24 +962,27 @@ jobs:
             MODE=${{ matrix.mode }}
             CARGO_ARGS=${{ matrix.cargo_args }}
           load: true
-          outputs: type=docker,dest=/tmp/docker-${{ matrix.shortname }}-img.tar
+
+      - name: Save Docker image locally
+        run: |
+          docker save -o /tmp/docker-${{ matrix.shortname }}-img.tar ${{ env.DOCKER_REPO }}/${{ steps.meta.outputs.tags }}-${{ matrix.shortname }}
 
       # Do a basic sanity check of the created image using the test tag to select the image to run, but only if the
       # image is for the x86-64 architecture as we don't yet have a way to run non-x86-64 architecture images.
-      - name: Sanity check
+      - name: Test run (linux/amd64 images only)
         if: ${{ matrix.platform == 'linux/amd64' }}
         run: |
           docker run --rm ${{ env.DOCKER_REPO }}/${{ steps.meta.outputs.tags }}-${{ matrix.shortname }} krillc --version
 
       # Upload the Docker image as a GitHub Actions artifact, handy when not publishing or investigating a problem
-      - name: Upload built image
+      - name: Upload built image to GitHub Actions
         uses: actions/upload-artifact@v3
         with:
           name: tmp-docker-image-${{ matrix.shortname }}
           path: /tmp/docker-${{ matrix.shortname }}-img.tar
 
-      - name: Publish Docker image
-        if: ${{ env.PUSH }}
+      - name: Publish image to Docker Hub
+        if: contains(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
         uses: docker/build-push-action@v2
         with:
           context: .
@@ -1037,6 +1037,6 @@ jobs:
             --amend ${{ env.DOCKER_REPO }}/${{ needs.docker.outputs.dockerbasetag }}-armv7 \
             --amend ${{ env.DOCKER_REPO }}/${{ needs.docker.outputs.dockerbasetag }}-arm64
 
-      - name: Push multi-arch image to Docker Hub
+      - name: Publish multi-arch image to Docker Hub
         run: |
           docker manifest push ${{ env.DOCKER_REPO }}/${{ needs.docker.outputs.dockerbasetag }}
