@@ -964,13 +964,13 @@ jobs:
           docker run --rm ${{ env.DOCKER_REPO }}/${{ steps.meta.outputs.tags }}-${{ matrix.shortname }} krillc --version
 
       # Upload the Docker image as a GitHub Actions artifact, handy when not publishing or investigating a problem
-      - name: Upload built image
+      - name: Upload built image to GitHub Actions
         uses: actions/upload-artifact@v3
         with:
           name: tmp-docker-image-${{ matrix.shortname }}
           path: /tmp/docker-${{ matrix.shortname }}-img.tar
 
-      - name: Publish Docker image
+      - name: Publish image to Docker Hub
         if: contains(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
         uses: docker/build-push-action@v2
         with:
@@ -1026,6 +1026,6 @@ jobs:
             --amend ${{ env.DOCKER_REPO }}/${{ needs.docker.outputs.dockerbasetag }}-armv7 \
             --amend ${{ env.DOCKER_REPO }}/${{ needs.docker.outputs.dockerbasetag }}-arm64
 
-      - name: Push multi-arch image to Docker Hub
+      - name: Publish multi-arch image to Docker Hub
         run: |
           docker manifest push ${{ env.DOCKER_REPO }}/${{ needs.docker.outputs.dockerbasetag }}
