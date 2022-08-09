@@ -198,7 +198,7 @@ jobs:
     # packages.nlnetlabs.nl we prefix the artifact name with `tmp-` which will
     # be ignored by packages.nlnetlabs.nl scripts.
     - name: Upload built binaries
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3
       with:
         name: tmp-cross-binaries-${{ matrix.target }}
         path: |
@@ -412,7 +412,7 @@ jobs:
 
     - name: Download cross compiled binaries
       if: ${{ matrix.target != 'x86_64' }}
-      uses: actions/download-artifact@v2
+      uses: actions/download-artifact@v3
       with:
         name: tmp-cross-binaries-${{ matrix.target }}
         path: target/${{ matrix.target }}/release
@@ -571,7 +571,7 @@ jobs:
     # but only to users logged in to GH with sufficient rights in this project. The uploaded artifact is also downloaded
     # by the next job (see below) to sanity check that it can be installed and results in a working Krill installation.
     - name: Upload package
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3
       with:
         name: ${{ matrix.pkg }}_${{ env.OS_NAME }}_${{ env.OS_REL }}_${{ matrix.target }}
         path: |
@@ -656,7 +656,7 @@ jobs:
         esac
 
     - name: Download package
-      uses: actions/download-artifact@v2
+      uses: actions/download-artifact@v3
       with:
         name: ${{ matrix.pkg }}_${{ env.OS_NAME }}_${{ env.OS_REL }}_${{ matrix.target }}
 
@@ -925,7 +925,7 @@ jobs:
 
       - name: Download cross compiled binaries
         if: ${{ matrix.mode == 'copy' }}
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: tmp-cross-binaries-${{ matrix.crosstarget }}
           # The file downloaded to dockerbin/xxx will be used by the Dockerfile
