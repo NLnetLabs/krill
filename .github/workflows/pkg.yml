@@ -120,6 +120,10 @@
 
 
 name: Packaging
+
+env:
+  DOCKER_REPO: nlnetlabs
+
 on:
   push:
     branches:
@@ -841,7 +845,7 @@ jobs:
         sg lxd -c "lxc exec testcon -- man -P cat krill"
 
   # -------------------------------------------------------------------------------------------------------------------
-  # Job: 'docker-one-arch'
+  # Job: 'docker'
   # -------------------------------------------------------------------------------------------------------------------
   # Build and push architecture specific images (but NOT the main image that is used by end users). Sanity check the
   # image if possible (i.e. if it is x86-64, non-x86-64 architecture images cannot be run by this workflow yet). Logs
@@ -849,7 +853,7 @@ jobs:
   #
   # NOTE: If you extend the set of matrix includes in this job you must also extend the call to docker manifest create
   # in the docker-manifest job below.
-  docker-one-arch:
+  docker:
     needs: cross
     runs-on: ubuntu-20.04
     strategy:
@@ -899,12 +903,6 @@ jobs:
         id: meta
         uses: docker/metadata-action@v3
         with:
-          # We don't include the Docker Hub account name prefix in the `images:` value even though the images will be
-          # pushed to that Docker Hub "account" because otherwise GitHub Actions sees that it contains the value that
-          # is stored in ${{ secrets.DOCKER_HUB_ID }} and refuses to allow the `tags` output value of metadata-action
-          # to be used as a job output, showing in the log in the "Complete job" step:
-          #   Warning: Skip output 'dockerbasetag' since it may contain secret.
-          # Instead we prepend the account name further down when invoking Docker.
           images: krill
           flavor: |
             latest=false
@@ -946,17 +944,16 @@ jobs:
       # test here) it will have been pushed to Docker Hub but is NOT the image we expect people to use, that is the
       # combined multi-arch image that lacks the architecture specific tag value extension and that will ONLY be
       # pushed if all architecture specific images build and (where supported) passt he sanity check below.
-      - name: Build Docker image
+      - name: Build & save Docker image
         uses: docker/build-push-action@v2
         with:
           context: .
           platforms: ${{ matrix.platform }}
-          push: ${{ env.PUSH }}
-          load: ${{ env.TEST }}
-          tags: ${{ secrets.DOCKER_HUB_ID }}/${{ steps.meta.outputs.tags }}-${{ matrix.shortname }}
+          tags: ${{ env.DOCKER_REPO }}/${{ steps.meta.outputs.tags }}-${{ matrix.shortname }}
           build-args: |
             MODE=${{ matrix.mode }}
             CARGO_ARGS=${{ matrix.cargo_args }}
+          load: true
           outputs: type=docker,dest=/tmp/docker-${{ matrix.shortname }}-img.tar
 
       # Do a basic sanity check of the created image using the test tag to select the image to run, but only if the
@@ -964,15 +961,26 @@ jobs:
       - name: Sanity check
         if: ${{ matrix.platform == 'linux/amd64' }}
         run: |
-          docker run --rm ${{ secrets.DOCKER_HUB_ID }}/${{ steps.meta.outputs.tags }}-${{ matrix.shortname }} krillc --version
+          docker run --rm ${{ env.DOCKER_REPO }}/${{ steps.meta.outputs.tags }}-${{ matrix.shortname }} krillc --version
 
-      # Save the Docker image as a GitHub Actions artifact, handy when not
-      # publishing or investigating a problem
+      # Upload the Docker image as a GitHub Actions artifact, handy when not publishing or investigating a problem
       - name: Upload built image
         uses: actions/upload-artifact@v3
         with:
           name: tmp-docker-image-${{ matrix.shortname }}
           path: /tmp/docker-${{ matrix.shortname }}-img.tar
+
+      - name: Publish Docker image
+        if: ${{ env.PUSH }}
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          tags: ${{ env.DOCKER_REPO }}/${{ steps.meta.outputs.tags }}-${{ matrix.shortname }}
+          build-args: |
+            MODE=${{ matrix.mode }}
+            CARGO_ARGS=${{ matrix.cargo_args }}
+          push: true
 
 
   # -------------------------------------------------------------------------------------------------------------------
@@ -982,7 +990,7 @@ jobs:
   # Docker Hub and push the manifest to Docker Hub as our "main" application image Docker Hub that end users will use.
   # Logs in to Docker Hub using secrets configured in this GitHub repository.
   docker-manifest:
-    needs: docker-one-arch
+    needs: docker
     if: contains(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
     runs-on: ubuntu-20.04
     steps:
@@ -1013,11 +1021,11 @@ jobs:
       - name: Create multi-arch manifest
         run: |
           docker manifest create \
-            ${{ secrets.DOCKER_HUB_ID }}/${{ needs.docker.outputs.dockerbasetag }} \
-            --amend ${{ secrets.DOCKER_HUB_ID }}/${{ needs.docker.outputs.dockerbasetag }}-amd64 \
-            --amend ${{ secrets.DOCKER_HUB_ID }}/${{ needs.docker.outputs.dockerbasetag }}-armv7 \
-            --amend ${{ secrets.DOCKER_HUB_ID }}/${{ needs.docker.outputs.dockerbasetag }}-arm64
+            ${{ env.DOCKER_REPO}}/${{ needs.docker.outputs.dockerbasetag }} \
+            --amend ${{ env.DOCKER_REPO }}/${{ needs.docker.outputs.dockerbasetag }}-amd64 \
+            --amend ${{ env.DOCKER_REPO }}/${{ needs.docker.outputs.dockerbasetag }}-armv7 \
+            --amend ${{ env.DOCKER_REPO }}/${{ needs.docker.outputs.dockerbasetag }}-arm64
 
       - name: Push multi-arch image to Docker Hub
         run: |
-          docker manifest push ${{ secrets.DOCKER_HUB_ID }}/${{ needs.docker.outputs.dockerbasetag }}
+          docker manifest push ${{ env.DOCKER_REPO }}/${{ needs.docker.outputs.dockerbasetag }}
