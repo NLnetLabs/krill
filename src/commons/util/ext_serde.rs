@@ -1,8 +1,5 @@
 //! Defines helper methods for Serializing and Deserializing external types.
-use std::{
-    str::FromStr,
-    sync::atomic::{AtomicU64, Ordering},
-};
+use std::{str::FromStr, sync::atomic::{AtomicU64, Ordering}};
 
 use bytes::Bytes;
 use log::LevelFilter;
