@@ -17,7 +17,7 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::{ObjectName, Revocation, RoaAggregateKey, RoaDefinition, RoaDefinitionUpdates},
+        api::{ObjectName, Revocation, RoaAggregateKey, RoaDefinitionUpdates, RoaPayload},
         crypto::{KrillSigner, SignSupport},
         error::Error,
         KrillResult,
@@ -29,17 +29,17 @@ use crate::{
     },
 };
 
-//------------ RoaDefinitionKey --------------------------------------------
+//------------ RoaPayloadKey -----------------------------------------------
 
 /// This type wraps a [`RoaDefinition`] but implements its own serialization
 /// based on the string representation of the definition so that it can be
 /// used as a single key in json map representations.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialOrd, PartialEq)]
-pub struct RoaDefinitionKey(RoaDefinition);
+pub struct RoaPayloadKey(RoaPayload);
 
 // Display
 
-impl fmt::Display for RoaDefinitionKey {
+impl fmt::Display for RoaPayloadKey {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.0.fmt(f)
     }
@@ -47,35 +47,35 @@ impl fmt::Display for RoaDefinitionKey {
 
 // Conversions
 
-impl AsRef<RoaDefinition> for RoaDefinitionKey {
-    fn as_ref(&self) -> &RoaDefinition {
+impl AsRef<RoaPayload> for RoaPayloadKey {
+    fn as_ref(&self) -> &RoaPayload {
         &self.0
     }
 }
 
-impl Deref for RoaDefinitionKey {
-    type Target = RoaDefinition;
+impl Deref for RoaPayloadKey {
+    type Target = RoaPayload;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl From<RoaDefinition> for RoaDefinitionKey {
-    fn from(def: RoaDefinition) -> Self {
-        RoaDefinitionKey(def)
+impl From<RoaPayload> for RoaPayloadKey {
+    fn from(def: RoaPayload) -> Self {
+        RoaPayloadKey(def)
     }
 }
 
-impl From<RoaDefinitionKey> for RoaDefinition {
-    fn from(auth: RoaDefinitionKey) -> Self {
+impl From<RoaPayloadKey> for RoaPayload {
+    fn from(auth: RoaPayloadKey) -> Self {
         auth.0
     }
 }
 
 // Serde
 
-impl Serialize for RoaDefinitionKey {
+impl Serialize for RoaPayloadKey {
     fn serialize<S>(&self, s: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -84,27 +84,27 @@ impl Serialize for RoaDefinitionKey {
     }
 }
 
-impl<'de> Deserialize<'de> for RoaDefinitionKey {
-    fn deserialize<D>(d: D) -> Result<RoaDefinitionKey, D::Error>
+impl<'de> Deserialize<'de> for RoaPayloadKey {
+    fn deserialize<D>(d: D) -> Result<RoaPayloadKey, D::Error>
     where
         D: Deserializer<'de>,
     {
         let string = String::deserialize(d)?;
-        let def = RoaDefinition::from_str(string.as_str()).map_err(de::Error::custom)?;
-        Ok(RoaDefinitionKey(def))
+        let def = RoaPayload::from_str(string.as_str()).map_err(de::Error::custom)?;
+        Ok(RoaPayloadKey(def))
     }
 }
 
-//------------ RoaDefinitionKeyUpdates -------------------------------------
+//------------ RoaPayloadKeyUpdates ----------------------------------------
 
 ///
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RoaDefinitionKeyUpdates {
-    added: Vec<RoaDefinitionKey>,
-    removed: Vec<RoaDefinitionKey>,
+pub struct RoaPayloadKeyUpdates {
+    added: Vec<RoaPayloadKey>,
+    removed: Vec<RoaPayloadKey>,
 }
 
-impl RoaDefinitionKeyUpdates {
+impl RoaPayloadKeyUpdates {
     /// Use this when receiving updates through the API, until the v0.7 ROA clean up can be deprecated,
     /// which would imply that pre-0.7 versions can not longer be directly updated.
     pub fn into_explicit(self) -> Self {
@@ -114,22 +114,22 @@ impl RoaDefinitionKeyUpdates {
             .into_iter()
             .map(|r| r.explicit_max_length().into())
             .collect();
-        RoaDefinitionKeyUpdates { added, removed }
+        RoaPayloadKeyUpdates { added, removed }
     }
 
-    pub fn new(added: Vec<RoaDefinitionKey>, removed: Vec<RoaDefinitionKey>) -> Self {
-        RoaDefinitionKeyUpdates { added, removed }
+    pub fn new(added: Vec<RoaPayloadKey>, removed: Vec<RoaPayloadKey>) -> Self {
+        RoaPayloadKeyUpdates { added, removed }
     }
 
-    pub fn added(&self) -> &Vec<RoaDefinitionKey> {
+    pub fn added(&self) -> &Vec<RoaPayloadKey> {
         &self.added
     }
 
-    pub fn removed(&self) -> &Vec<RoaDefinitionKey> {
+    pub fn removed(&self) -> &Vec<RoaPayloadKey> {
         &self.removed
     }
 
-    pub fn unpack(self) -> (Vec<RoaDefinitionKey>, Vec<RoaDefinitionKey>) {
+    pub fn unpack(self) -> (Vec<RoaPayloadKey>, Vec<RoaPayloadKey>) {
         (self.added, self.removed)
     }
 
@@ -148,7 +148,7 @@ impl RoaDefinitionKeyUpdates {
             .cloned()
             .collect();
 
-        RoaDefinitionKeyUpdates { added, removed }
+        RoaPayloadKeyUpdates { added, removed }
     }
 
     pub fn affected_prefixes(&self) -> ResourceSet {
@@ -163,22 +163,22 @@ impl RoaDefinitionKeyUpdates {
     }
 }
 
-impl From<RoaDefinitionUpdates> for RoaDefinitionKeyUpdates {
+impl From<RoaDefinitionUpdates> for RoaPayloadKeyUpdates {
     fn from(definitions: RoaDefinitionUpdates) -> Self {
         let (added, removed) = definitions.unpack();
-        let mut added: Vec<RoaDefinitionKey> = added.into_iter().map(RoaDefinition::into).collect();
+        let mut added: Vec<RoaPayloadKey> = added.into_iter().map(RoaPayload::into).collect();
         added.sort();
         added.dedup();
 
-        let mut removed: Vec<RoaDefinitionKey> = removed.into_iter().map(RoaDefinition::into).collect();
+        let mut removed: Vec<RoaPayloadKey> = removed.into_iter().map(RoaPayload::into).collect();
         removed.sort();
         removed.dedup();
 
-        RoaDefinitionKeyUpdates { added, removed }
+        RoaPayloadKeyUpdates { added, removed }
     }
 }
 
-impl fmt::Display for RoaDefinitionKeyUpdates {
+impl fmt::Display for RoaPayloadKeyUpdates {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if !self.added.is_empty() {
             write!(f, "added:")?;
@@ -202,7 +202,7 @@ impl fmt::Display for RoaDefinitionKeyUpdates {
 /// The current authorizations and corresponding meta-information for a CA.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Routes {
-    map: HashMap<RoaDefinitionKey, RouteInfo>,
+    map: HashMap<RoaPayloadKey, RouteInfo>,
 }
 
 impl Routes {
@@ -221,20 +221,20 @@ impl Routes {
         Routes { map: filtered }
     }
 
-    pub fn all(&self) -> impl Iterator<Item = (&RoaDefinitionKey, &RouteInfo)> {
+    pub fn all(&self) -> impl Iterator<Item = (&RoaPayloadKey, &RouteInfo)> {
         self.map.iter()
     }
 
-    pub fn authorizations(&self) -> impl Iterator<Item = &RoaDefinitionKey> {
+    pub fn authorizations(&self) -> impl Iterator<Item = &RoaPayloadKey> {
         self.map.keys()
     }
 
-    pub fn into_authorizations(self) -> Vec<RoaDefinitionKey> {
+    pub fn into_authorizations(self) -> Vec<RoaPayloadKey> {
         self.map.into_iter().map(|(auth, _)| auth).collect()
     }
 
-    pub fn as_aggregates(&self) -> HashMap<RoaAggregateKey, Vec<RoaDefinitionKey>> {
-        let mut map: HashMap<RoaAggregateKey, Vec<RoaDefinitionKey>> = HashMap::new();
+    pub fn as_aggregates(&self) -> HashMap<RoaAggregateKey, Vec<RoaPayloadKey>> {
+        let mut map: HashMap<RoaAggregateKey, Vec<RoaPayloadKey>> = HashMap::new();
 
         for auth in self.map.keys() {
             let key = RoaAggregateKey::new(auth.asn(), None);
@@ -256,21 +256,21 @@ impl Routes {
         self.map.is_empty()
     }
 
-    pub fn info(&self, auth: &RoaDefinitionKey) -> Option<&RouteInfo> {
+    pub fn info(&self, auth: &RoaPayloadKey) -> Option<&RouteInfo> {
         self.map.get(auth)
     }
 
-    pub fn has(&self, auth: &RoaDefinitionKey) -> bool {
+    pub fn has(&self, auth: &RoaPayloadKey) -> bool {
         self.map.contains_key(auth)
     }
 
     /// Adds a new authorization, or updates an existing one.
-    pub fn add(&mut self, auth: RoaDefinitionKey) {
+    pub fn add(&mut self, auth: RoaPayloadKey) {
         self.map.insert(auth, RouteInfo::default());
     }
 
     /// Removes an authorization
-    pub fn remove(&mut self, auth: &RoaDefinitionKey) -> bool {
+    pub fn remove(&mut self, auth: &RoaPayloadKey) -> bool {
         self.map.remove(auth).is_some()
     }
 }
@@ -300,7 +300,7 @@ impl Default for RouteInfo {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RoaInfo {
     // The route or routes authorized by this ROA
-    authorizations: Vec<RoaDefinitionKey>,
+    authorizations: Vec<RoaPayloadKey>,
 
     // The validity time for this ROA.
     validity: Validity,
@@ -319,7 +319,7 @@ pub struct RoaInfo {
 }
 
 impl RoaInfo {
-    pub fn new(authorizations: Vec<RoaDefinitionKey>, roa: Roa) -> Self {
+    pub fn new(authorizations: Vec<RoaPayloadKey>, roa: Roa) -> Self {
         let validity = roa.cert().validity();
         let serial = roa.cert().serial_number();
         let uri = roa.cert().signed_object().unwrap().clone(); // safe for our own ROAs
@@ -336,7 +336,7 @@ impl RoaInfo {
         }
     }
 
-    pub fn authorizations(&self) -> &Vec<RoaDefinitionKey> {
+    pub fn authorizations(&self) -> &Vec<RoaPayloadKey> {
         &self.authorizations
     }
 
@@ -377,7 +377,7 @@ enum RoaMode {
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Roas {
     #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
-    simple: HashMap<RoaDefinitionKey, RoaInfo>,
+    simple: HashMap<RoaPayloadKey, RoaInfo>,
 
     #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
     aggregate: HashMap<RoaAggregateKey, RoaInfo>,
@@ -388,7 +388,7 @@ impl Roas {
         self.simple.is_empty() && self.aggregate.is_empty()
     }
 
-    pub fn get(&self, auth: &RoaDefinitionKey) -> Option<&RoaInfo> {
+    pub fn get(&self, auth: &RoaPayloadKey) -> Option<&RoaInfo> {
         self.simple.get(auth)
     }
 
@@ -651,7 +651,7 @@ impl Roas {
     }
 
     pub fn make_roa(
-        authorizations: &[RoaDefinitionKey],
+        authorizations: &[RoaPayloadKey],
         name: &ObjectName,
         certified_key: &CertifiedKey,
         weeks: i64,
@@ -698,7 +698,7 @@ impl Roas {
 
     pub fn make_aggregate_roa(
         key: &RoaAggregateKey,
-        authorizations: Vec<RoaDefinitionKey>,
+        authorizations: Vec<RoaPayloadKey>,
         certified_key: &CertifiedKey,
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
@@ -723,9 +723,9 @@ mod tests {
     use super::*;
     use crate::commons::api::AsNumber;
 
-    fn authorization(s: &str) -> RoaDefinitionKey {
-        let def = RoaDefinition::from_str(s).unwrap();
-        RoaDefinitionKey(def)
+    fn authorization(s: &str) -> RoaPayloadKey {
+        let def = RoaPayload::from_str(s).unwrap();
+        RoaPayloadKey(def)
     }
 
     #[test]
@@ -735,7 +735,7 @@ mod tests {
             let json = serde_json::to_string(&auth).unwrap();
             assert_eq!(format!("\"{}\"", s), json);
 
-            let des: RoaDefinitionKey = serde_json::from_str(&json).unwrap();
+            let des: RoaPayloadKey = serde_json::from_str(&json).unwrap();
             assert_eq!(des, auth);
         }
 

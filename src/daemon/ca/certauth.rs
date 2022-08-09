@@ -28,7 +28,7 @@ use crate::{
         api::{
             AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate, BgpSecAsnKey,
             BgpSecCsrInfoList, BgpSecDefinitionUpdates, CertAuthInfo, IdCertInfo, IssuedCertificate, ObjectName,
-            ParentCaContact, ReceivedCert, RepositoryContact, Revocation, RoaDefinition, RtaList, RtaName,
+            ParentCaContact, ReceivedCert, RepositoryContact, Revocation, RoaPayload, RtaList, RtaName,
             RtaPrepResponse, StorableCaCommand, TaCertDetails, TrustAnchorLocator,
         },
         crypto::{CsrInfo, KrillSigner},
@@ -41,7 +41,7 @@ use crate::{
         ca::{
             events::ChildCertificateUpdates, ta_handle, AspaDefinitions, BgpSecDefinitions, CaEvt, CaEvtDet,
             ChildDetails, Cmd, CmdDet, DropReason, Ini, PreparedRta, ResourceClass, ResourceTaggedAttestation,
-            Rfc8183Id, RoaDefinitionKey, RoaDefinitionKeyUpdates, Routes, RtaContentRequest, RtaPrepareRequest, Rtas,
+            Rfc8183Id, RoaPayloadKey, RoaPayloadKeyUpdates, Routes, RtaContentRequest, RtaPrepareRequest, Rtas,
             SignedRta, StoredBgpSecCsr,
         },
         config::{Config, IssuanceTimingConfig},
@@ -536,7 +536,7 @@ impl CertAuth {
     /// Returns the current RoaDefinitions for this, i.e. the intended authorized
     /// prefixes. Provided that the resources are held by this `CertAuth` one can
     /// expect that corresponding ROA **objects** are created by the system.
-    pub fn roa_definitions(&self) -> Vec<RoaDefinition> {
+    pub fn roa_definitions(&self) -> Vec<RoaPayload> {
         self.routes.authorizations().map(|a| a.as_ref()).cloned().collect()
     }
 
@@ -1646,7 +1646,7 @@ impl CertAuth {
     /// the prefix.
     fn route_authorizations_update(
         &self,
-        route_auth_updates: RoaDefinitionKeyUpdates,
+        route_auth_updates: RoaPayloadKeyUpdates,
         config: &Config,
         signer: Arc<KrillSigner>,
     ) -> KrillResult<Vec<CaEvt>> {
@@ -1713,7 +1713,7 @@ impl CertAuth {
     ///
     /// Note: this does not re-issue the actual ROAs, this
     ///       can be used for the 'dry-run' option.
-    pub fn update_authorizations(&self, updates: &RoaDefinitionKeyUpdates) -> KrillResult<(Routes, Vec<CaEvtDet>)> {
+    pub fn update_authorizations(&self, updates: &RoaPayloadKeyUpdates) -> KrillResult<(Routes, Vec<CaEvtDet>)> {
         let mut delta_errors = RoaDeltaError::default();
         let mut res = vec![];
 
@@ -1732,8 +1732,8 @@ impl CertAuth {
 
         // make sure that all new additions are allowed
         for addition in updates.added() {
-            let roa_def: RoaDefinition = (*addition).into();
-            let authorizations: Vec<&RoaDefinitionKey> = desired_routes.authorizations().collect();
+            let roa_def: RoaPayload = (*addition).into();
+            let authorizations: Vec<&RoaPayloadKey> = desired_routes.authorizations().collect();
 
             if !addition.max_length_valid() {
                 // The (max) length is invalid for this prefix

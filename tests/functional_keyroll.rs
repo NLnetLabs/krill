@@ -14,7 +14,7 @@ use rpki::{
 };
 
 use krill::{
-    commons::api::{AspaDefinition, BgpSecDefinition, ObjectName, ReceivedCert, RoaDefinition, RoaDefinitionUpdates},
+    commons::api::{AspaDefinition, BgpSecDefinition, ObjectName, ReceivedCert, RoaDefinitionUpdates, RoaPayload},
     daemon::ca::ta_handle,
     test::*,
 };
@@ -50,7 +50,7 @@ async fn functional_keyroll() {
 
     // ROA, ASPA, and BGPSec definitions and filenames for objects which will
     // be re-issued during the roll.
-    let roa_def = RoaDefinition::from_str("10.0.0.0/16-16 => 64496").unwrap();
+    let roa_def = RoaPayload::from_str("10.0.0.0/16-16 => 64496").unwrap();
     let aspa_def = AspaDefinition::from_str("AS65000 => AS65002, AS65003(v4), AS65005(v6)").unwrap();
     let bgpsec_def = {
         let csr_bytes = include_bytes!("../test-resources/bgpsec/router-csr.der");

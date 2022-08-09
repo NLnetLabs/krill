@@ -42,11 +42,11 @@ use crate::{
     commons::{
         api::{
             rrdp::PublishElement, AspaDefinition, ErrorResponse, ParentCaContact, RepositoryContact, RoaAggregateKey,
-            RoaDefinition,
+            RoaPayload,
         },
         util::KrillVersion,
     },
-    daemon::ca::RoaDefinitionKey,
+    daemon::ca::RoaPayloadKey,
 };
 
 use super::BgpSecAsnKey;
@@ -629,14 +629,14 @@ impl From<&Crl> for ObjectName {
     }
 }
 
-impl From<&RoaDefinitionKey> for ObjectName {
-    fn from(auth: &RoaDefinitionKey) -> Self {
+impl From<&RoaPayloadKey> for ObjectName {
+    fn from(auth: &RoaPayloadKey) -> Self {
         ObjectName(format!("{}.roa", hex::encode(auth.to_string())).into())
     }
 }
 
-impl From<&RoaDefinition> for ObjectName {
-    fn from(def: &RoaDefinition) -> Self {
+impl From<&RoaPayload> for ObjectName {
+    fn from(def: &RoaPayload) -> Self {
         ObjectName(format!("{}.roa", hex::encode(def.to_string())).into())
     }
 }

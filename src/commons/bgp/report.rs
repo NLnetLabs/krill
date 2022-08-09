@@ -1,7 +1,7 @@
 use std::{cmp::Ordering, collections::HashMap, fmt};
 
 use crate::commons::{
-    api::{BgpStats, RoaDefinition, RoaDefinitionUpdates},
+    api::{BgpStats, RoaDefinitionUpdates, RoaPayload},
     bgp::Announcement,
 };
 
@@ -64,7 +64,7 @@ impl fmt::Display for BgpAnalysisAdvice {
 #[derive(Clone, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct BgpAnalysisSuggestion {
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
-    stale: Vec<RoaDefinition>,
+    stale: Vec<RoaPayload>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
     not_found: Vec<Announcement>,
@@ -79,19 +79,19 @@ pub struct BgpAnalysisSuggestion {
     too_permissive: Vec<ReplacementRoaSuggestion>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
-    disallowing: Vec<RoaDefinition>,
+    disallowing: Vec<RoaPayload>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
-    redundant: Vec<RoaDefinition>,
+    redundant: Vec<RoaPayload>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
-    not_held: Vec<RoaDefinition>,
+    not_held: Vec<RoaPayload>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
-    as0_redundant: Vec<RoaDefinition>,
+    as0_redundant: Vec<RoaPayload>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
-    keep: Vec<RoaDefinition>,
+    keep: Vec<RoaPayload>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
     keep_disallowing: Vec<Announcement>,
@@ -99,8 +99,8 @@ pub struct BgpAnalysisSuggestion {
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct ReplacementRoaSuggestion {
-    current: RoaDefinition,
-    new: Vec<RoaDefinition>,
+    current: RoaPayload,
+    new: Vec<RoaPayload>,
 }
 
 impl From<BgpAnalysisSuggestion> for RoaDefinitionUpdates {
@@ -115,8 +115,8 @@ impl From<BgpAnalysisSuggestion> for RoaDefinitionUpdates {
             suggestion.redundant,
         );
 
-        let mut added: Vec<RoaDefinition> = vec![];
-        let mut removed: Vec<RoaDefinition> = vec![];
+        let mut added: Vec<RoaPayload> = vec![];
+        let mut removed: Vec<RoaPayload> = vec![];
 
         for auth in not_found
             .into_iter()
@@ -150,11 +150,11 @@ impl From<BgpAnalysisSuggestion> for RoaDefinitionUpdates {
 }
 
 impl BgpAnalysisSuggestion {
-    pub fn add_stale(&mut self, authorization: RoaDefinition) {
+    pub fn add_stale(&mut self, authorization: RoaPayload) {
         self.stale.push(authorization);
     }
 
-    pub fn add_too_permissive(&mut self, current: RoaDefinition, new: Vec<RoaDefinition>) {
+    pub fn add_too_permissive(&mut self, current: RoaPayload, new: Vec<RoaPayload>) {
         let replacement = ReplacementRoaSuggestion { current, new };
         self.too_permissive.push(replacement);
     }
@@ -171,23 +171,23 @@ impl BgpAnalysisSuggestion {
         self.invalid_length.push(announcement);
     }
 
-    pub fn add_disallowing(&mut self, authorization: RoaDefinition) {
+    pub fn add_disallowing(&mut self, authorization: RoaPayload) {
         self.disallowing.push(authorization);
     }
 
-    pub fn add_redundant(&mut self, authorization: RoaDefinition) {
+    pub fn add_redundant(&mut self, authorization: RoaPayload) {
         self.redundant.push(authorization);
     }
 
-    pub fn add_not_held(&mut self, authorization: RoaDefinition) {
+    pub fn add_not_held(&mut self, authorization: RoaPayload) {
         self.not_held.push(authorization);
     }
 
-    pub fn add_as0_redundant(&mut self, authorization: RoaDefinition) {
+    pub fn add_as0_redundant(&mut self, authorization: RoaPayload) {
         self.as0_redundant.push(authorization);
     }
 
-    pub fn add_keep(&mut self, authorization: RoaDefinition) {
+    pub fn add_keep(&mut self, authorization: RoaPayload) {
         self.keep.push(authorization);
     }
 
@@ -312,7 +312,7 @@ impl BgpAnalysisReport {
         self.0
     }
 
-    pub fn matching_defs(&self, state: BgpAnalysisState) -> Vec<&RoaDefinition> {
+    pub fn matching_defs(&self, state: BgpAnalysisState) -> Vec<&RoaPayload> {
         self.matching_entries(state)
             .into_iter()
             .map(|e| &e.definition)
@@ -597,14 +597,14 @@ impl fmt::Display for BgpAnalysisReport {
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct BgpAnalysisEntry {
     #[serde(flatten)]
-    definition: RoaDefinition,
+    definition: RoaPayload,
     state: BgpAnalysisState,
     #[serde(skip_serializing_if = "Option::is_none")]
-    allowed_by: Option<RoaDefinition>,
+    allowed_by: Option<RoaPayload>,
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
-    disallowed_by: Vec<RoaDefinition>,
+    disallowed_by: Vec<RoaPayload>,
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
-    made_redundant_by: Vec<RoaDefinition>,
+    made_redundant_by: Vec<RoaPayload>,
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
     authorizes: Vec<Announcement>,
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
@@ -612,7 +612,7 @@ pub struct BgpAnalysisEntry {
 }
 
 impl BgpAnalysisEntry {
-    pub fn definition(&self) -> &RoaDefinition {
+    pub fn definition(&self) -> &RoaPayload {
         &self.definition
     }
 
@@ -624,15 +624,15 @@ impl BgpAnalysisEntry {
         self.state
     }
 
-    pub fn allowed_by(&self) -> Option<&RoaDefinition> {
+    pub fn allowed_by(&self) -> Option<&RoaPayload> {
         self.allowed_by.as_ref()
     }
 
-    pub fn disallowed_by(&self) -> &Vec<RoaDefinition> {
+    pub fn disallowed_by(&self) -> &Vec<RoaPayload> {
         &self.disallowed_by
     }
 
-    pub fn made_redundant_by(&self) -> &Vec<RoaDefinition> {
+    pub fn made_redundant_by(&self) -> &Vec<RoaPayload> {
         &self.made_redundant_by
     }
 
@@ -645,7 +645,7 @@ impl BgpAnalysisEntry {
     }
 
     pub fn roa_seen(
-        definition: RoaDefinition,
+        definition: RoaPayload,
         mut authorizes: Vec<Announcement>,
         mut disallows: Vec<Announcement>,
     ) -> Self {
@@ -662,7 +662,7 @@ impl BgpAnalysisEntry {
         }
     }
 
-    pub fn roa_disallowing(definition: RoaDefinition, mut disallows: Vec<Announcement>) -> Self {
+    pub fn roa_disallowing(definition: RoaPayload, mut disallows: Vec<Announcement>) -> Self {
         disallows.sort();
         BgpAnalysisEntry {
             definition,
@@ -675,7 +675,7 @@ impl BgpAnalysisEntry {
         }
     }
 
-    pub fn roa_as0(definition: RoaDefinition, mut disallows: Vec<Announcement>) -> Self {
+    pub fn roa_as0(definition: RoaPayload, mut disallows: Vec<Announcement>) -> Self {
         disallows.sort();
         BgpAnalysisEntry {
             definition,
@@ -688,7 +688,7 @@ impl BgpAnalysisEntry {
         }
     }
 
-    pub fn roa_as0_redundant(definition: RoaDefinition, mut made_redundant_by: Vec<RoaDefinition>) -> Self {
+    pub fn roa_as0_redundant(definition: RoaPayload, mut made_redundant_by: Vec<RoaPayload>) -> Self {
         made_redundant_by.sort();
         BgpAnalysisEntry {
             definition,
@@ -702,10 +702,10 @@ impl BgpAnalysisEntry {
     }
 
     pub fn roa_redundant(
-        definition: RoaDefinition,
+        definition: RoaPayload,
         mut authorizes: Vec<Announcement>,
         mut disallows: Vec<Announcement>,
-        mut made_redundant_by: Vec<RoaDefinition>,
+        mut made_redundant_by: Vec<RoaPayload>,
     ) -> Self {
         authorizes.sort();
         disallows.sort();
@@ -722,7 +722,7 @@ impl BgpAnalysisEntry {
     }
 
     pub fn roa_too_permissive(
-        definition: RoaDefinition,
+        definition: RoaPayload,
         mut authorizes: Vec<Announcement>,
         mut disallows: Vec<Announcement>,
     ) -> Self {
@@ -739,7 +739,7 @@ impl BgpAnalysisEntry {
         }
     }
 
-    pub fn roa_unseen(definition: RoaDefinition) -> Self {
+    pub fn roa_unseen(definition: RoaPayload) -> Self {
         BgpAnalysisEntry {
             definition,
             state: BgpAnalysisState::RoaUnseen,
@@ -751,7 +751,7 @@ impl BgpAnalysisEntry {
         }
     }
 
-    pub fn roa_not_held(definition: RoaDefinition) -> Self {
+    pub fn roa_not_held(definition: RoaPayload) -> Self {
         BgpAnalysisEntry {
             definition,
             state: BgpAnalysisState::RoaNotHeld,
@@ -763,7 +763,7 @@ impl BgpAnalysisEntry {
         }
     }
 
-    pub fn roa_no_announcement_info(definition: RoaDefinition) -> Self {
+    pub fn roa_no_announcement_info(definition: RoaPayload) -> Self {
         BgpAnalysisEntry {
             definition,
             state: BgpAnalysisState::RoaNoAnnouncementInfo,
@@ -775,9 +775,9 @@ impl BgpAnalysisEntry {
         }
     }
 
-    pub fn announcement_valid(announcement: Announcement, allowed_by: RoaDefinition) -> Self {
+    pub fn announcement_valid(announcement: Announcement, allowed_by: RoaPayload) -> Self {
         BgpAnalysisEntry {
-            definition: RoaDefinition::from(announcement),
+            definition: RoaPayload::from(announcement),
             state: BgpAnalysisState::AnnouncementValid,
             allowed_by: Some(allowed_by),
             disallowed_by: vec![],
@@ -787,26 +787,26 @@ impl BgpAnalysisEntry {
         }
     }
 
-    pub fn announcement_invalid_asn(announcement: Announcement, disallowed_by: Vec<RoaDefinition>) -> Self {
+    pub fn announcement_invalid_asn(announcement: Announcement, disallowed_by: Vec<RoaPayload>) -> Self {
         Self::announcement_invalid(announcement, BgpAnalysisState::AnnouncementInvalidAsn, disallowed_by)
     }
 
-    pub fn announcement_invalid_length(announcement: Announcement, disallowed_by: Vec<RoaDefinition>) -> Self {
+    pub fn announcement_invalid_length(announcement: Announcement, disallowed_by: Vec<RoaPayload>) -> Self {
         Self::announcement_invalid(announcement, BgpAnalysisState::AnnouncementInvalidLength, disallowed_by)
     }
 
-    pub fn announcement_disallowed(announcement: Announcement, disallowed_by: Vec<RoaDefinition>) -> Self {
+    pub fn announcement_disallowed(announcement: Announcement, disallowed_by: Vec<RoaPayload>) -> Self {
         Self::announcement_invalid(announcement, BgpAnalysisState::AnnouncementDisallowed, disallowed_by)
     }
 
     fn announcement_invalid(
         announcement: Announcement,
         state: BgpAnalysisState,
-        mut disallowed_by: Vec<RoaDefinition>,
+        mut disallowed_by: Vec<RoaPayload>,
     ) -> Self {
         disallowed_by.sort();
         BgpAnalysisEntry {
-            definition: RoaDefinition::from(announcement),
+            definition: RoaPayload::from(announcement),
             state,
             allowed_by: None,
             disallowed_by,
@@ -818,7 +818,7 @@ impl BgpAnalysisEntry {
 
     pub fn announcement_not_found(announcement: Announcement) -> Self {
         BgpAnalysisEntry {
-            definition: RoaDefinition::from(announcement),
+            definition: RoaPayload::from(announcement),
             state: BgpAnalysisState::AnnouncementNotFound,
             allowed_by: None,
             disallowed_by: vec![],

@@ -7,7 +7,7 @@ use rpki::repository::{
     roa::RoaIpAddress,
 };
 
-use crate::daemon::ca::RoaDefinitionKeyUpdates;
+use crate::daemon::ca::RoaPayloadKeyUpdates;
 
 //------------ RoaAggregateKey ---------------------------------------------
 
@@ -129,21 +129,26 @@ impl RoaAggregateKeyFmtError {
     }
 }
 
-//------------ RoaDefinition -----------------------------------------------
+//------------ RoaPayload --------------------------------------------------
 
-/// This type defines the definition of a Route Origin Authorization (ROA), i.e.
-/// the originating asn, IPv4 or IPv6 prefix, and optionally a max length.
+/// This type defines the definition of a Route Origin Authorization (ROA)
+/// payload: ASN, Prefix and optional Max Length
+///
+/// Note that a ROA object may contain multiple payloads (RoaDefinitions)
+/// aggregated by (the same) ASN. This is discouraged and Krill prefers
+/// to generate a dedicated ROA object for each payload, but aggregation
+/// will be done when a (configurable) threshold is exceeded.
 #[derive(Clone, Copy, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub struct RoaDefinition {
+pub struct RoaPayload {
     asn: AsNumber,
     prefix: TypedPrefix,
     #[serde(skip_serializing_if = "Option::is_none")]
     max_length: Option<u8>,
 }
 
-impl RoaDefinition {
+impl RoaPayload {
     pub fn new(asn: AsNumber, prefix: TypedPrefix, max_length: Option<u8>) -> Self {
-        RoaDefinition {
+        RoaPayload {
             asn,
             prefix,
             max_length,
@@ -151,7 +156,7 @@ impl RoaDefinition {
     }
 
     pub fn explicit_max_length(self) -> Self {
-        RoaDefinition {
+        RoaPayload {
             asn: self.asn,
             prefix: self.prefix,
             max_length: Some(self.effective_max_length()),
@@ -205,19 +210,19 @@ impl RoaDefinition {
     }
 
     /// Returns `true` if the this definition includes the other definition.
-    pub fn includes(&self, other: &RoaDefinition) -> bool {
+    pub fn includes(&self, other: &RoaPayload) -> bool {
         self.asn == other.asn
             && self.prefix.matching_or_less_specific(&other.prefix)
             && self.effective_max_length() >= other.effective_max_length()
     }
 
     /// Returns `true` if this is an AS0 definition which overlaps the other.
-    pub fn overlaps(&self, other: &RoaDefinition) -> bool {
+    pub fn overlaps(&self, other: &RoaPayload) -> bool {
         self.prefix.matching_or_less_specific(&other.prefix) || other.prefix.matching_or_less_specific(&self.prefix)
     }
 }
 
-impl FromStr for RoaDefinition {
+impl FromStr for RoaPayload {
     type Err = AuthorizationFmtError;
 
     // "192.168.0.0/16 => 64496"
@@ -241,7 +246,7 @@ impl FromStr for RoaDefinition {
         }
         let origin = AsNumber::from_str(asn_str.trim())?;
 
-        Ok(RoaDefinition {
+        Ok(RoaPayload {
             asn: origin,
             prefix,
             max_length,
@@ -249,13 +254,13 @@ impl FromStr for RoaDefinition {
     }
 }
 
-impl fmt::Debug for RoaDefinition {
+impl fmt::Debug for RoaPayload {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", &self)
     }
 }
 
-impl fmt::Display for RoaDefinition {
+impl fmt::Display for RoaPayload {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.max_length {
             None => write!(f, "{} => {}", self.prefix, self.asn),
@@ -264,7 +269,7 @@ impl fmt::Display for RoaDefinition {
     }
 }
 
-impl Ord for RoaDefinition {
+impl Ord for RoaPayload {
     fn cmp(&self, other: &Self) -> Ordering {
         let mut ordering = self.prefix.cmp(&other.prefix);
 
@@ -280,20 +285,20 @@ impl Ord for RoaDefinition {
     }
 }
 
-impl PartialOrd for RoaDefinition {
+impl PartialOrd for RoaPayload {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl AsRef<TypedPrefix> for RoaDefinition {
+impl AsRef<TypedPrefix> for RoaPayload {
     fn as_ref(&self) -> &TypedPrefix {
         &self.prefix
     }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub struct RoaDefinitions(Vec<RoaDefinition>);
+pub struct RoaDefinitions(Vec<RoaPayload>);
 
 impl fmt::Display for RoaDefinitions {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -304,20 +309,17 @@ impl fmt::Display for RoaDefinitions {
     }
 }
 
-//------------ RouteAuthorizationUpdates -----------------------------------
+//------------ RoaDefinitionUpdates ----------------------------------------
 
-/// This type defines a delta of Route Authorizations, i.e. additions or removals
-/// of authorizations of tuples of (Prefix, Max Length, ASN) that ultimately
-/// are put into ROAs by a CA, in as far as the CA has the required prefixes
-/// on its resource certificates.
+/// This type defines a delta of RoaDefinitions submitted through the API.
 ///
 /// Multiple updates are sent as a single delta, because it's important that
 /// all authorizations for a given prefix are published together in order to
 /// avoid invalidating announcements.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RoaDefinitionUpdates {
-    added: Vec<RoaDefinition>,
-    removed: Vec<RoaDefinition>,
+    added: Vec<RoaPayload>,
+    removed: Vec<RoaPayload>,
 }
 
 impl RoaDefinitionUpdates {
@@ -325,13 +327,13 @@ impl RoaDefinitionUpdates {
         self.added.is_empty() && self.removed.is_empty()
     }
 
-    pub fn new(added: Vec<RoaDefinition>, removed: Vec<RoaDefinition>) -> Self {
+    pub fn new(added: Vec<RoaPayload>, removed: Vec<RoaPayload>) -> Self {
         RoaDefinitionUpdates { added, removed }
     }
 
     /// Unpack this and return all added (left), and all removed (right) route
     /// authorizations.
-    pub fn unpack(self) -> (Vec<RoaDefinition>, Vec<RoaDefinition>) {
+    pub fn unpack(self) -> (Vec<RoaPayload>, Vec<RoaPayload>) {
         (self.added, self.removed)
     }
 
@@ -339,19 +341,19 @@ impl RoaDefinitionUpdates {
         Self::default()
     }
 
-    pub fn add(&mut self, add: RoaDefinition) {
+    pub fn add(&mut self, add: RoaPayload) {
         self.added.push(add);
     }
 
-    pub fn added(&self) -> &Vec<RoaDefinition> {
+    pub fn added(&self) -> &Vec<RoaPayload> {
         &self.added
     }
 
-    pub fn removed(&self) -> &Vec<RoaDefinition> {
+    pub fn removed(&self) -> &Vec<RoaPayload> {
         &self.removed
     }
 
-    pub fn remove(&mut self, rem: RoaDefinition) {
+    pub fn remove(&mut self, rem: RoaPayload) {
         self.removed.push(rem);
     }
 }
@@ -385,10 +387,10 @@ impl FromStr for RoaDefinitionUpdates {
             if line.is_empty() {
                 continue;
             } else if let Some(stripped) = line.strip_prefix("A:") {
-                let auth = RoaDefinition::from_str(stripped.trim())?;
+                let auth = RoaPayload::from_str(stripped.trim())?;
                 added.push(auth);
             } else if let Some(stripped) = line.strip_prefix("R:") {
-                let auth = RoaDefinition::from_str(stripped.trim())?;
+                let auth = RoaPayload::from_str(stripped.trim())?;
                 removed.push(auth);
             } else {
                 return Err(AuthorizationFmtError::delta(line));
@@ -399,8 +401,8 @@ impl FromStr for RoaDefinitionUpdates {
     }
 }
 
-impl From<RoaDefinitionKeyUpdates> for RoaDefinitionUpdates {
-    fn from(auth_updates: RoaDefinitionKeyUpdates) -> Self {
+impl From<RoaPayloadKeyUpdates> for RoaDefinitionUpdates {
+    fn from(auth_updates: RoaPayloadKeyUpdates) -> Self {
         let (auth_added, auth_removed) = auth_updates.unpack();
         let added = auth_added.into_iter().map(|a| a.into()).collect();
         let removed = auth_removed.into_iter().map(|a| a.into()).collect();
@@ -763,12 +765,12 @@ mod tests {
     #[test]
     fn roa_max_length() {
         fn valid_max_length(s: &str) {
-            let def = RoaDefinition::from_str(s).unwrap();
+            let def = RoaPayload::from_str(s).unwrap();
             assert!(def.max_length_valid())
         }
 
         fn invalid_max_length(s: &str) {
-            let def = RoaDefinition::from_str(s).unwrap();
+            let def = RoaPayload::from_str(s).unwrap();
             assert!(!def.max_length_valid())
         }
 

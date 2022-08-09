@@ -7,7 +7,7 @@ use rpki::{repository::resources::ResourceSet, repository::x509::Time};
 
 use crate::{
     commons::{
-        api::{AsNumber, RoaDefinition},
+        api::{AsNumber, RoaPayload},
         bgp::{
             make_roa_tree, make_validated_announcement_tree, Announcement, AnnouncementValidity, Announcements,
             BgpAnalysisEntry, BgpAnalysisReport, BgpAnalysisState, BgpAnalysisSuggestion, IpRange, RisDumpError,
@@ -68,14 +68,14 @@ impl BgpAnalyser {
 
     pub async fn analyse(
         &self,
-        roas: &[RoaDefinition],
+        roas: &[RoaPayload],
         resources_held: &ResourceSet,
         limited_scope: Option<ResourceSet>,
     ) -> BgpAnalysisReport {
         let seen = self.seen.read().await;
         let mut entries = vec![];
 
-        let roas: Vec<RoaDefinition> = match &limited_scope {
+        let roas: Vec<RoaPayload> = match &limited_scope {
             None => roas.to_vec(),
             Some(limit) => roas
                 .iter()
@@ -84,7 +84,7 @@ impl BgpAnalyser {
                 .collect(),
         };
 
-        let (roas, roas_not_held): (Vec<RoaDefinition>, _) = roas
+        let (roas, roas_not_held): (Vec<RoaPayload>, _) = roas
             .iter()
             .partition(|roa| resources_held.contains_roa_address(&roa.as_roa_ip_address()));
 
@@ -245,7 +245,7 @@ impl BgpAnalyser {
 
     pub async fn suggest(
         &self,
-        roas: &[RoaDefinition],
+        roas: &[RoaPayload],
         resources_held: &ResourceSet,
         limited_scope: Option<ResourceSet>,
     ) -> BgpAnalysisSuggestion {
@@ -265,7 +265,7 @@ impl BgpAnalyser {
                                 .iter()
                                 .any(|other| other != entry && other.authorizes().contains(*ann))
                         })
-                        .map(|auth| RoaDefinition::from(*auth))
+                        .map(|auth| RoaPayload::from(*auth))
                         .collect();
 
                     suggestion.add_too_permissive(*entry.definition(), replace_with);
@@ -443,7 +443,7 @@ mod tests {
         let table_entries = table.entries();
         assert_eq!(3, table_entries.len());
 
-        let roas_no_info: Vec<&RoaDefinition> = table_entries
+        let roas_no_info: Vec<&RoaPayload> = table_entries
             .iter()
             .filter(|e| e.state() == BgpAnalysisState::RoaNoAnnouncementInfo)
             .map(|e| e.definition())

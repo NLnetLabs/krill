@@ -33,7 +33,7 @@ use crate::{
         },
         eventsourcing::StoredEvent,
     },
-    daemon::ca::{self, CaEvt, CaEvtDet, PreparedRta, RoaDefinitionKey, SignedRta},
+    daemon::ca::{self, CaEvt, CaEvtDet, PreparedRta, RoaPayloadKey, SignedRta},
     pubd::{
         Publisher, RepositoryAccessEvent, RepositoryAccessEventDetails, RepositoryAccessInitDetails, RepositoryManager,
         RrdpSessionReset, RrdpUpdate,
@@ -208,8 +208,8 @@ pub enum OldCaEvtDet {
     UnexpectedKeyFound(ResourceClassName, RevocationRequest),
 
     // Route Authorizations
-    RouteAuthorizationAdded(RoaDefinitionKey),
-    RouteAuthorizationRemoved(RoaDefinitionKey),
+    RouteAuthorizationAdded(RoaPayloadKey),
+    RouteAuthorizationRemoved(RoaPayloadKey),
     RoasUpdated(ResourceClassName, OldRoaUpdates),
 
     // Publishing
@@ -405,10 +405,10 @@ pub struct CurrentObjectSetDelta {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldRoaUpdates {
     #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
-    updated: HashMap<RoaDefinitionKey, OldRoaInfo>,
+    updated: HashMap<RoaPayloadKey, OldRoaInfo>,
 
     #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
-    removed: HashMap<RoaDefinitionKey, OldRevokedObject>,
+    removed: HashMap<RoaPayloadKey, OldRevokedObject>,
 
     #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
     aggregate_updated: HashMap<RoaAggregateKey, OldAggregateRoaInfo>,
@@ -458,8 +458,8 @@ impl OldRoaUpdates {
     pub fn unpack(
         self,
     ) -> (
-        HashMap<RoaDefinitionKey, OldRoaInfo>,
-        HashMap<RoaDefinitionKey, OldRevokedObject>,
+        HashMap<RoaPayloadKey, OldRoaInfo>,
+        HashMap<RoaPayloadKey, OldRevokedObject>,
         HashMap<RoaAggregateKey, OldAggregateRoaInfo>,
         HashMap<RoaAggregateKey, OldRevokedObject>,
     ) {
@@ -489,7 +489,7 @@ impl OldRoaInfo {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldAggregateRoaInfo {
-    pub authorizations: Vec<RoaDefinitionKey>,
+    pub authorizations: Vec<RoaPayloadKey>,
 
     #[serde(flatten)]
     pub roa: OldRoaInfo,

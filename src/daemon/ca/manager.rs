@@ -45,7 +45,7 @@ use crate::{
         auth::Handle,
         ca::{
             self, ta_handle, CaObjectsStore, CaStatus, CertAuth, Cmd, CmdDet, DeprecatedRepository, IniDet,
-            ResourceTaggedAttestation, RoaDefinitionKeyUpdates, RtaContentRequest, RtaPrepareRequest, StatusStore,
+            ResourceTaggedAttestation, RoaPayloadKeyUpdates, RtaContentRequest, RtaPrepareRequest, StatusStore,
         },
         config::Config,
         mq::{now, TaskQueue},
@@ -1894,7 +1894,7 @@ impl CaManager {
     pub async fn ca_routes_update(
         &self,
         ca: CaHandle,
-        updates: RoaDefinitionKeyUpdates,
+        updates: RoaPayloadKeyUpdates,
         actor: &Actor,
     ) -> KrillResult<()> {
         self.send_command(CmdDet::route_authorizations_update(

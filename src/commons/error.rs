@@ -18,12 +18,12 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::{rrdp::PublicationDeltaError, AspaCustomer, AspaProvidersUpdateConflict, ErrorResponse, RoaDefinition},
+        api::{rrdp::PublicationDeltaError, AspaCustomer, AspaProvidersUpdateConflict, ErrorResponse, RoaPayload},
         crypto::SignerError,
         eventsourcing::{AggregateStoreError, KeyValueError},
         util::httpclient,
     },
-    daemon::{ca::RoaDefinitionKey, http::tls_keys},
+    daemon::{ca::RoaPayloadKey, http::tls_keys},
     upgrades::PrepareUpgradeError,
 };
 
@@ -35,26 +35,26 @@ use super::api::{BgpSecAsnKey, BgpSecDefinition};
 /// that could not be applied.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RoaDeltaError {
-    duplicates: Vec<RoaDefinition>,
-    notheld: Vec<RoaDefinition>,
-    unknowns: Vec<RoaDefinition>,
-    invalid_length: Vec<RoaDefinition>,
+    duplicates: Vec<RoaPayload>,
+    notheld: Vec<RoaPayload>,
+    unknowns: Vec<RoaPayload>,
+    invalid_length: Vec<RoaPayload>,
 }
 
 impl RoaDeltaError {
-    pub fn add_duplicate(&mut self, addition: RoaDefinition) {
+    pub fn add_duplicate(&mut self, addition: RoaPayload) {
         self.duplicates.push(addition);
     }
 
-    pub fn add_notheld(&mut self, addition: RoaDefinition) {
+    pub fn add_notheld(&mut self, addition: RoaPayload) {
         self.notheld.push(addition);
     }
 
-    pub fn add_unknown(&mut self, removal: RoaDefinition) {
+    pub fn add_unknown(&mut self, removal: RoaPayload) {
         self.unknowns.push(removal);
     }
 
-    pub fn add_invalid_length(&mut self, invalid: RoaDefinition) {
+    pub fn add_invalid_length(&mut self, invalid: RoaPayload) {
         self.invalid_length.push(invalid);
     }
 
@@ -265,10 +265,10 @@ pub enum Error {
     //-----------------------------------------------------------------
     // RouteAuthorizations - ROAs
     //-----------------------------------------------------------------
-    CaAuthorizationUnknown(CaHandle, RoaDefinitionKey),
-    CaAuthorizationDuplicate(CaHandle, RoaDefinitionKey),
-    CaAuthorizationInvalidMaxLength(CaHandle, RoaDefinitionKey),
-    CaAuthorizationNotEntitled(CaHandle, RoaDefinitionKey),
+    CaAuthorizationUnknown(CaHandle, RoaPayloadKey),
+    CaAuthorizationDuplicate(CaHandle, RoaPayloadKey),
+    CaAuthorizationInvalidMaxLength(CaHandle, RoaPayloadKey),
+    CaAuthorizationNotEntitled(CaHandle, RoaPayloadKey),
     RoaDeltaError(CaHandle, RoaDeltaError),
 
     //-----------------------------------------------------------------
@@ -957,7 +957,7 @@ mod tests {
 
     use std::str::FromStr;
 
-    use crate::commons::api::RoaDefinition;
+    use crate::commons::api::RoaPayload;
 
     use super::*;
     use crate::test::definition;
@@ -981,7 +981,7 @@ mod tests {
         let child = ChildHandle::from_str("child").unwrap();
         let publisher = PublisherHandle::from_str("publisher").unwrap();
 
-        let auth = RoaDefinitionKey::from(RoaDefinition::from_str("192.168.0.0/16-24 => 64496").unwrap());
+        let auth = RoaPayloadKey::from(RoaPayload::from_str("192.168.0.0/16-24 => 64496").unwrap());
 
         //-----------------------------------------------------------------
         // System Issues

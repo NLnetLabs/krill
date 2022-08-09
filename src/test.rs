@@ -37,7 +37,7 @@ use crate::{
             AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, BgpSecAsnKey,
             BgpSecCsrInfoList, BgpSecDefinition, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ObjectName,
             ParentCaContact, ParentCaReq, ParentStatuses, PublicationServerUris, PublisherDetails, PublisherList,
-            RepositoryContact, ResourceClassKeysInfo, RoaDefinition, RoaDefinitionUpdates, RtaList, RtaName,
+            RepositoryContact, ResourceClassKeysInfo, RoaDefinitionUpdates, RoaPayload, RtaList, RtaName,
             RtaPrepResponse, TypedPrefix, UpdateChildRequest,
         },
         bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion},
@@ -711,8 +711,8 @@ pub fn announcement(s: &str) -> Announcement {
     Announcement::from(def)
 }
 
-pub fn definition(s: &str) -> RoaDefinition {
-    RoaDefinition::from_str(s).unwrap()
+pub fn definition(s: &str) -> RoaPayload {
+    RoaPayload::from_str(s).unwrap()
 }
 
 pub fn typed_prefix(s: &str) -> TypedPrefix {

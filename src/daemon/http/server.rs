@@ -50,7 +50,7 @@ use crate::{
     daemon::{
         auth::common::permissions::Permission,
         auth::{Auth, Handle},
-        ca::{CaStatus, RoaDefinitionKeyUpdates, TA_NAME},
+        ca::{CaStatus, RoaPayloadKeyUpdates, TA_NAME},
         config::Config,
         http::{
             auth::auth, statics::statics, testbed::testbed, tls, tls_keys, HttpResponse, Request, RequestPath,
@@ -1951,7 +1951,7 @@ async fn api_ca_routes_try_update(req: Request, ca: CaHandle) -> RoutingResult {
                             render_empty_res(server.ca_routes_update(ca, updates, &actor).await)
                         } else {
                             // remaining invalids exist, advise user
-                            let updates: RoaDefinitionKeyUpdates = updates.into();
+                            let updates: RoaPayloadKeyUpdates = updates.into();
                             let updates = updates.into_explicit();
                             let resources = updates.affected_prefixes();
 
