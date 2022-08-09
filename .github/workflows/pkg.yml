@@ -188,10 +188,19 @@ jobs:
         command: build
         args: --locked --release --features static-openssl --target ${{ matrix.target }}
 
+    # Upload cross compiled binaries as GitHub Actions artifacts for use by
+    # the `pkg` job below. We can't use job outputs as those are limited to
+    # 50 MB which we could easily exceed. We can't use actions/cache as cached
+    # items are not necessarily available on different operating systems as
+    # the cache mechanism uses different namespaces for different compression
+    # types and different compression types by operating system. As we don't
+    # want these artifacts to be packaged by the scripts that upload to
+    # packages.nlnetlabs.nl we prefix the artifact name with `tmp-` which will
+    # be ignored by packages.nlnetlabs.nl scripts.
     - name: Upload built binaries
       uses: actions/upload-artifact@v2
       with:
-        name: cross-binaries-${{ matrix.target }}
+        name: tmp-cross-binaries-${{ matrix.target }}
         path: |
           target/${{ matrix.target }}/release/krill
           target/${{ matrix.target }}/release/krillc
@@ -405,7 +414,7 @@ jobs:
       if: ${{ matrix.target != 'x86_64' }}
       uses: actions/download-artifact@v2
       with:
-        name: cross-binaries-${{ matrix.target }}
+        name: tmp-cross-binaries-${{ matrix.target }}
         path: target/${{ matrix.target }}/release
 
     # Instruct cargo-deb or cargo-generate-rpm to build the package based on Cargo.toml settings and command line
@@ -918,7 +927,7 @@ jobs:
         if: ${{ matrix.mode == 'copy' }}
         uses: actions/download-artifact@v2
         with:
-          name: cross-binaries-${{ matrix.crosstarget }}
+          name: tmp-cross-binaries-${{ matrix.crosstarget }}
           # The file downloaded to dockerbin/xxx will be used by the Dockerfile
           path: dockerbin/${{ matrix.platform }}
 
