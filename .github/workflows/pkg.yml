@@ -844,7 +844,7 @@ jobs:
         sg lxd -c "lxc exec testcon -- man -P cat krill"
 
   # -------------------------------------------------------------------------------------------------------------------
-  # Job: 'docker'
+  # Job: 'docker-one-arch'
   # -------------------------------------------------------------------------------------------------------------------
   # Build and push architecture specific images (but NOT the main image that is used by end users). Sanity check the
   # image if possible (i.e. if it is x86-64, non-x86-64 architecture images cannot be run by this workflow yet). Logs
@@ -966,13 +966,13 @@ jobs:
           docker run --rm ${{ secrets.DOCKER_HUB_ID }}/${{ steps.meta.outputs.tags }}-${{ matrix.shortname }} krillc --version
 
   # -------------------------------------------------------------------------------------------------------------------
-  # Job: 'docker-multi-arch'
+  # Job: 'docker-manifest'
   # -------------------------------------------------------------------------------------------------------------------
   # Create a Docker multi-arch "manifest" referencing the individual already pushed architecture specific images on
   # Docker Hub and push the manifest to Docker Hub as our "main" application image Docker Hub that end users will use.
   # Logs in to Docker Hub using secrets configured in this GitHub repository.
   docker-manifest:
-    needs: docker
+    needs: docker-one-arch
     if: contains(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
     runs-on: ubuntu-20.04
     steps:
