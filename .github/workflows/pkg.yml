@@ -883,6 +883,11 @@ jobs:
             shortname:   'amd64'
             mode:        'build'
 
+          - platform:    'linux/arm/v6'
+            shortname:   'armv6'
+            crosstarget: 'arm-unknown-linux-musleabihf'
+            mode:        'copy'
+
           - platform:    'linux/arm/v7'
             shortname:   'armv7'
             crosstarget: 'armv7-unknown-linux-musleabihf'
@@ -1034,6 +1039,7 @@ jobs:
           docker manifest create \
             ${{ env.DOCKER_REPO}}/${{ needs.docker.outputs.dockerbasetag }} \
             --amend ${{ env.DOCKER_REPO }}/${{ needs.docker.outputs.dockerbasetag }}-amd64 \
+            --amend ${{ env.DOCKER_REPO }}/${{ needs.docker.outputs.dockerbasetag }}-armv6 \
             --amend ${{ env.DOCKER_REPO }}/${{ needs.docker.outputs.dockerbasetag }}-armv7 \
             --amend ${{ env.DOCKER_REPO }}/${{ needs.docker.outputs.dockerbasetag }}-arm64
 
