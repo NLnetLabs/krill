@@ -846,6 +846,9 @@ jobs:
   # Build and push architecture specific images (but NOT the main image that is used by end users). Sanity check the
   # image if possible (i.e. if it is x86-64, non-x86-64 architecture images cannot be run by this workflow yet). Logs
   # in to Docker Hub using secrets configured in this GitHub repository.
+  #
+  # NOTE: If you extend the set of matrix includes in this job you must also extend the call to docker manifest create
+  # in the docker-manifest job below.
   docker-one-arch:
     needs: cross
     runs-on: ubuntu-20.04
@@ -954,6 +957,7 @@ jobs:
           build-args: |
             MODE=${{ matrix.mode }}
             CARGO_ARGS=${{ matrix.cargo_args }}
+          outputs: type=docker,dest=/tmp/docker-${{ matrix.shortname }}-img.tar
 
       # Do a basic sanity check of the created image using the test tag to select the image to run, but only if the
       # image is for the x86-64 architecture as we don't yet have a way to run non-x86-64 architecture images.
@@ -961,6 +965,15 @@ jobs:
         if: ${{ matrix.platform == 'linux/amd64' }}
         run: |
           docker run --rm ${{ secrets.DOCKER_HUB_ID }}/${{ steps.meta.outputs.tags }}-${{ matrix.shortname }} krillc --version
+
+      # Save the Docker image as a GitHub Actions artifact, handy when not
+      # publishing or investigating a problem
+      - name: Upload built image
+        uses: actions/upload-artifact@v3
+        with:
+          name: tmp-docker-image-${{ matrix.shortname }}
+          path: /tmp/docker-${{ matrix.shortname }}-img.tar
+
 
   # -------------------------------------------------------------------------------------------------------------------
   # Job: 'docker-manifest'
