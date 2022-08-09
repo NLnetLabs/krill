@@ -46,7 +46,7 @@ use crate::{
         },
         util::KrillVersion,
     },
-    daemon::ca::RouteAuthorization,
+    daemon::ca::RoaDefinitionKey,
 };
 
 use super::BgpSecAsnKey;
@@ -629,8 +629,8 @@ impl From<&Crl> for ObjectName {
     }
 }
 
-impl From<&RouteAuthorization> for ObjectName {
-    fn from(auth: &RouteAuthorization) -> Self {
+impl From<&RoaDefinitionKey> for ObjectName {
+    fn from(auth: &RoaDefinitionKey) -> Self {
         ObjectName(format!("{}.roa", hex::encode(auth.to_string())).into())
     }
 }

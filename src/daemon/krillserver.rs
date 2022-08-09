@@ -38,8 +38,8 @@ use crate::{
     daemon::{
         auth::{providers::AdminTokenAuthProvider, Authorizer, LoggedInUser},
         ca::{
-            self, ta_handle, testbed_ca_handle, CaStatus, ResourceTaggedAttestation, RouteAuthorization,
-            RouteAuthorizationUpdates, RtaContentRequest, RtaPrepareRequest,
+            self, ta_handle, testbed_ca_handle, CaStatus, ResourceTaggedAttestation, RoaDefinitionKey,
+            RoaDefinitionKeyUpdates, RtaContentRequest, RtaPrepareRequest,
         },
         config::{AuthType, Config},
         http::HttpResponse,
@@ -361,13 +361,13 @@ impl KrillServer {
 
         // Now we can create ROAs
 
-        let mut added: Vec<RouteAuthorization> = vec![];
+        let mut added: Vec<RoaDefinitionKey> = vec![];
         let asn_range_start = 64512;
         for asn in asn_range_start..asn_range_start + nr_roas {
             let def = RoaDefinition::from_str(&format!("{} => {}", prefix_str, asn)).unwrap();
             added.push(def.into());
         }
-        let updates = RouteAuthorizationUpdates::new(added, vec![]);
+        let updates = RoaDefinitionKeyUpdates::new(added, vec![]);
 
         ca_manager
             .ca_routes_update(child_ca_handle, updates, &system_actor)
@@ -908,7 +908,7 @@ impl KrillServer {
     ) -> KrillResult<BgpAnalysisReport> {
         let ca = self.ca_manager.get_ca(handle).await?;
 
-        let updates: RouteAuthorizationUpdates = updates.into();
+        let updates: RoaDefinitionKeyUpdates = updates.into();
         let updates = updates.into_explicit();
         let resources_held = ca.all_resources();
         let limit = Some(updates.affected_prefixes());

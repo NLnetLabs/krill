@@ -25,7 +25,7 @@ use crate::{
         eventsourcing::{self, StoredCommand},
     },
     daemon::{
-        ca::{CaEvt, ResourceTaggedAttestation, RouteAuthorizationUpdates, RtaContentRequest, RtaPrepareRequest},
+        ca::{CaEvt, ResourceTaggedAttestation, RoaDefinitionKeyUpdates, RtaContentRequest, RtaPrepareRequest},
         config::Config,
     },
 };
@@ -146,7 +146,7 @@ pub enum CmdDet {
     // Update the authorizations for a CA.
     // Note: ROA *objects* will be created by the CA itself. The command just
     // contains the intent for which announcements should be authorized.
-    RouteAuthorizationsUpdate(RouteAuthorizationUpdates, Arc<Config>, Arc<KrillSigner>),
+    RouteAuthorizationsUpdate(RoaDefinitionKeyUpdates, Arc<Config>, Arc<KrillSigner>),
 
     // Re-issue any and all ROA objects which would otherwise expire in
     // some time (default 4 weeks, configurable). Note that this command
@@ -519,7 +519,7 @@ impl CmdDet {
     //-------------------------------------------------------------------------------
     pub fn route_authorizations_update(
         handle: &CaHandle,
-        updates: RouteAuthorizationUpdates,
+        updates: RoaDefinitionKeyUpdates,
         config: Arc<Config>,
         signer: Arc<KrillSigner>,
         actor: &Actor,

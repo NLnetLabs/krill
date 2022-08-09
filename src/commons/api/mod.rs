@@ -33,7 +33,7 @@ use rpki::{
     repository::resources::Asn,
 };
 
-use crate::{commons::error::RoaDeltaError, daemon::ca::RouteAuthorization};
+use crate::{commons::error::RoaDeltaError, daemon::ca::RoaDefinitionKey};
 
 // Some syntactic sugar to help this old coder's brain deal with the mess of Strings
 pub type Message = String;
@@ -104,7 +104,7 @@ impl ErrorResponse {
         self.with_arg("child", child)
     }
 
-    pub fn with_auth(self, auth: &RouteAuthorization) -> Self {
+    pub fn with_auth(self, auth: &RoaDefinitionKey) -> Self {
         let mut res = self.with_arg("prefix", auth.prefix()).with_arg("asn", auth.asn());
 
         if let Some(max) = auth.max_length() {

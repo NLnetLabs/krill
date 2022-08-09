@@ -41,8 +41,8 @@ use crate::{
         ca::{
             events::ChildCertificateUpdates, ta_handle, AspaDefinitions, BgpSecDefinitions, CaEvt, CaEvtDet,
             ChildDetails, Cmd, CmdDet, DropReason, Ini, PreparedRta, ResourceClass, ResourceTaggedAttestation,
-            Rfc8183Id, RouteAuthorization, RouteAuthorizationUpdates, Routes, RtaContentRequest, RtaPrepareRequest,
-            Rtas, SignedRta, StoredBgpSecCsr,
+            Rfc8183Id, RoaDefinitionKey, RoaDefinitionKeyUpdates, Routes, RtaContentRequest, RtaPrepareRequest, Rtas,
+            SignedRta, StoredBgpSecCsr,
         },
         config::{Config, IssuanceTimingConfig},
     },
@@ -1646,7 +1646,7 @@ impl CertAuth {
     /// the prefix.
     fn route_authorizations_update(
         &self,
-        route_auth_updates: RouteAuthorizationUpdates,
+        route_auth_updates: RoaDefinitionKeyUpdates,
         config: &Config,
         signer: Arc<KrillSigner>,
     ) -> KrillResult<Vec<CaEvt>> {
@@ -1713,7 +1713,7 @@ impl CertAuth {
     ///
     /// Note: this does not re-issue the actual ROAs, this
     ///       can be used for the 'dry-run' option.
-    pub fn update_authorizations(&self, updates: &RouteAuthorizationUpdates) -> KrillResult<(Routes, Vec<CaEvtDet>)> {
+    pub fn update_authorizations(&self, updates: &RoaDefinitionKeyUpdates) -> KrillResult<(Routes, Vec<CaEvtDet>)> {
         let mut delta_errors = RoaDeltaError::default();
         let mut res = vec![];
 
@@ -1733,7 +1733,7 @@ impl CertAuth {
         // make sure that all new additions are allowed
         for addition in updates.added() {
             let roa_def: RoaDefinition = (*addition).into();
-            let authorizations: Vec<&RouteAuthorization> = desired_routes.authorizations().collect();
+            let authorizations: Vec<&RoaDefinitionKey> = desired_routes.authorizations().collect();
 
             if !addition.max_length_valid() {
                 // The (max) length is invalid for this prefix

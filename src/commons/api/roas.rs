@@ -7,7 +7,7 @@ use rpki::repository::{
     roa::RoaIpAddress,
 };
 
-use crate::daemon::ca::RouteAuthorizationUpdates;
+use crate::daemon::ca::RoaDefinitionKeyUpdates;
 
 //------------ RoaAggregateKey ---------------------------------------------
 
@@ -399,8 +399,8 @@ impl FromStr for RoaDefinitionUpdates {
     }
 }
 
-impl From<RouteAuthorizationUpdates> for RoaDefinitionUpdates {
-    fn from(auth_updates: RouteAuthorizationUpdates) -> Self {
+impl From<RoaDefinitionKeyUpdates> for RoaDefinitionUpdates {
+    fn from(auth_updates: RoaDefinitionKeyUpdates) -> Self {
         let (auth_added, auth_removed) = auth_updates.unpack();
         let added = auth_added.into_iter().map(|a| a.into()).collect();
         let removed = auth_removed.into_iter().map(|a| a.into()).collect();

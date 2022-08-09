@@ -31,7 +31,7 @@ use crate::{
     },
     daemon::ca::{
         self, AspaInfo, AspaObjectsUpdates, CaEvt, CaEvtDet, CaObjects, CertifiedKey, ChildCertificateUpdates,
-        ObjectSetRevision, PreparedRta, PublishedObject, RoaInfo, RoaUpdates, RouteAuthorization, SignedRta,
+        ObjectSetRevision, PreparedRta, PublishedObject, RoaDefinitionKey, RoaInfo, RoaUpdates, SignedRta,
     },
     pubd::{Publisher, RepositoryAccessEvent, RepositoryAccessEventDetails, RepositoryAccessInitDetails},
     upgrades::PrepareUpgradeError,
@@ -345,7 +345,7 @@ impl Eq for OldRoaInfo {}
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldAggregateRoaInfo {
-    authorizations: Vec<RouteAuthorization>,
+    authorizations: Vec<RoaDefinitionKey>,
 
     #[serde(flatten)]
     roa: OldRoaInfo,
@@ -367,14 +367,14 @@ pub struct OldRoaUpdates {
         default = "HashMap::new",
         with = "updated_sorted_map"
     )]
-    updated: HashMap<RouteAuthorization, OldRoaInfo>,
+    updated: HashMap<RoaDefinitionKey, OldRoaInfo>,
 
     #[serde(
         skip_serializing_if = "HashMap::is_empty",
         default = "HashMap::new",
         with = "removed_sorted_map"
     )]
-    removed: HashMap<RouteAuthorization, OldRevokedObject>,
+    removed: HashMap<RoaDefinitionKey, OldRevokedObject>,
 
     #[serde(
         skip_serializing_if = "HashMap::is_empty",
@@ -393,7 +393,7 @@ pub struct OldRoaUpdates {
 
 impl From<OldRoaUpdates> for RoaUpdates {
     fn from(old: OldRoaUpdates) -> Self {
-        let updated: HashMap<RouteAuthorization, RoaInfo> = old
+        let updated: HashMap<RoaDefinitionKey, RoaInfo> = old
             .updated
             .into_iter()
             .map(|(auth, old_info)| (auth, RoaInfo::new(vec![auth], old_info.roa)))
@@ -426,17 +426,17 @@ mod updated_sorted_map {
 
     #[derive(Debug, Deserialize)]
     struct Item {
-        auth: RouteAuthorization,
+        auth: RoaDefinitionKey,
         roa: OldRoaInfo,
     }
 
     #[derive(Debug, Serialize)]
     struct ItemRef<'a> {
-        auth: &'a RouteAuthorization,
+        auth: &'a RoaDefinitionKey,
         roa: &'a OldRoaInfo,
     }
 
-    pub fn serialize<S>(map: &HashMap<RouteAuthorization, OldRoaInfo>, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(map: &HashMap<RoaDefinitionKey, OldRoaInfo>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -446,7 +446,7 @@ mod updated_sorted_map {
         serializer.collect_seq(sorted_vec)
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<RouteAuthorization, OldRoaInfo>, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<RoaDefinitionKey, OldRoaInfo>, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -506,17 +506,17 @@ mod removed_sorted_map {
 
     #[derive(Debug, Deserialize)]
     struct Item {
-        auth: RouteAuthorization,
+        auth: RoaDefinitionKey,
         removed: OldRevokedObject,
     }
 
     #[derive(Debug, Serialize)]
     struct ItemRef<'a> {
-        auth: &'a RouteAuthorization,
+        auth: &'a RoaDefinitionKey,
         removed: &'a OldRevokedObject,
     }
 
-    pub fn serialize<S>(map: &HashMap<RouteAuthorization, OldRevokedObject>, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(map: &HashMap<RoaDefinitionKey, OldRevokedObject>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -526,7 +526,7 @@ mod removed_sorted_map {
         serializer.collect_seq(sorted_vec)
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<RouteAuthorization, OldRevokedObject>, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<RoaDefinitionKey, OldRevokedObject>, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -833,11 +833,11 @@ pub enum OldCaEvtDet {
         // update ROAs can contain multiple changes in which case multiple events will
         // result, and (2) we do not have a 'modify' event. Modifications of e.g. the
         // max length are expressed as a 'removed' and 'added' event in a single transaction.
-        auth: ca::RouteAuthorization,
+        auth: ca::RoaDefinitionKey,
     },
     RouteAuthorizationRemoved {
         // Tracks a single authorization (VRP) which is removed. See remark for RouteAuthorizationAdded.
-        auth: ca::RouteAuthorization,
+        auth: ca::RoaDefinitionKey,
     },
     RoasUpdated {
         // Tracks ROA *objects* which are (re-)issued in a resource class.
