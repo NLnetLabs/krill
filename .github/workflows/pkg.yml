@@ -883,9 +883,6 @@ jobs:
             mode:        'copy'
     outputs:
       dockerbasetag: ${{ steps.meta.outputs.tags }}
-    env:
-      PUSH: ${{ contains(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' }}
-      TEST: ${{ !contains(github.ref, 'refs/tags/v') && github.ref != 'refs/heads/main' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v2
@@ -910,7 +907,7 @@ jobs:
             type=semver,pattern={{version}},prefix=v
             type=raw,value=unstable,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=latest,enable=${{ github.ref != 'refs/heads/main' && !contains(github.ref, '-') }}
-            type=raw,value=test,enable=${{ env.TEST }}
+            type=raw,value=test,enable=${{ !contains(github.ref, 'refs/tags/v') && github.ref != 'refs/heads/main' }}
 
       # NOTE: Unfortunately the wait action appears to be unreliable. The project GH issues include examples of it not
       # working properly and I've had it finish without saying the waited on job completed but instead it just stopped
@@ -971,7 +968,7 @@ jobs:
           path: /tmp/docker-${{ matrix.shortname }}-img.tar
 
       - name: Publish Docker image
-        if: ${{ env.PUSH }}
+        if: contains(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
         uses: docker/build-push-action@v2
         with:
           context: .
