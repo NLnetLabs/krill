@@ -315,6 +315,13 @@ impl Pkcs11Signer {
         name: String,
         status: &ProbeStatus<ConnectionSettings, SignerError, UsableServerState>,
     ) -> Result<UsableServerState, ProbeError<SignerError>> {
+        // fn force_cache_flush(context: ThreadSafePkcs11Context) {
+        //     // Finalize the PKCS#11 library so that we re-initialize it on next use, otherwise it just caches (at
+        //     // least with SoftHSMv2 and YubiHSM) the token info and doesn't ever report the presence of the token
+        //     // even when it becomes available.
+        //     let _ = Arc::try_unwrap(context).unwrap().into_inner().unwrap().finalize();
+        // }
+
         fn slot_label_eq(ctx: &RwLockReadGuard<Pkcs11Context>, slot: Slot, slot_label: &str) -> bool {
             match ctx.get_token_info(slot) {
                 Ok(info) => String::from_utf8_lossy(&info.label).trim_end() == slot_label,
@@ -389,7 +396,7 @@ impl Pkcs11Signer {
                             );
 
                             error!("{}", err_msg);
-                            return Err(ProbeError::CallbackFailed(SignerError::TemporarilyUnavailable));
+                            return Err(ProbeError::CallbackFailed(SignerError::Pkcs11Error(err_msg)));
                         }
                     }
                 }
@@ -404,7 +411,7 @@ impl Pkcs11Signer {
                             );
 
                             error!("{}", err_msg);
-                            return Err(ProbeError::CallbackFailed(SignerError::TemporarilyUnavailable));
+                            return Err(ProbeError::CallbackFailed(SignerError::Pkcs11Error(err_msg)));
                         }
                         Err(err) => {
                             error!(
@@ -424,12 +431,7 @@ impl Pkcs11Signer {
                 );
 
                 error!("{}", err_msg);
-
-                if is_transient_error(&err) {
-                    ProbeError::CallbackFailed(SignerError::TemporarilyUnavailable)
-                } else {
-                    ProbeError::CallbackFailed(SignerError::Pkcs11Error(err_msg))
-                }
+                ProbeError::CallbackFailed(SignerError::Pkcs11Error(err_msg))
             })?;
             trace!("[{}] C_GetSlotInfo(): {:?}", name, slot_info);
 
@@ -440,12 +442,7 @@ impl Pkcs11Signer {
                 );
 
                 error!("{}", err_msg);
-
-                if is_transient_error(&err) {
-                    ProbeError::CallbackFailed(SignerError::TemporarilyUnavailable)
-                } else {
-                    ProbeError::CallbackFailed(SignerError::Pkcs11Error(err_msg))
-                }
+                ProbeError::CallbackFailed(SignerError::Pkcs11Error(err_msg))
             })?;
             trace!("[{}] C_GetTokenInfo(): {:?}", name, token_info);
 
@@ -472,7 +469,7 @@ impl Pkcs11Signer {
                             "[{}] Unable to login to PKCS#11 session for library '{}' slot {}: {}",
                             name, lib_name, slot, err
                         );
-                        ProbeError::CallbackFailed(SignerError::TemporarilyUnavailable)
+                        ProbeError::CompletedUnusable
                     })?;
 
                     trace!(
@@ -500,83 +497,73 @@ impl Pkcs11Signer {
             ProbeError::CompletedUnusable
         })?;
 
-        match interrogate_token(&conn_settings, context.clone(), &name, lib_name) {
-            Ok((cryptoki_info, slot, _slot_info, token_info, user_pin)) => {
-                let session = Pkcs11Session::new(context.clone(), slot).map_err(|err| {
-                    error!(
-                        "[{}] Unable to open PKCS#11 session for library '{}' slot {}: {}",
-                        name, lib_name, slot, err
-                    );
-                    ProbeError::CompletedUnusable
-                })?;
-
-                // TODO: unlike the `pkcs11` crate, the `cryptoki` crate doesn't require lots of PKCS#11 functions to be
-                // implemented by the loaded library. Do we need to verify therefore for ourselves that the required
-                // functions exist/work? See: https://github.com/parallaxsecond/rust-cryptoki/issues/78
-
-                // TODO: check for RSA key pair support?
-
-                // Login if needed
-                let login_session = login(session, conn_settings.login_mode, user_pin, &name, lib_name, slot)?;
-
-                // Switch from probing the server to using it.
-                // -------------------------------------------
-
-                // Note: When Display'd via '{}' with format!() as is done below, the Rust `cryptoki` crate automatically trims
-                // trailing whitespace from Cryptoki padded strings such as the token info label, model and manufacturerID.
-
-                let server_identification = format!(
-                    "{} (Cryptoki v{})",
-                    cryptoki_info.manufacturer_id(),
-                    cryptoki_info.library_version()
-                );
-
-                let token_identification = format!(
-                    "{} (model: {}, vendor: {})",
-                    token_info.label(),
-                    token_info.model(),
-                    token_info.manufacturer_id()
-                );
-
-                info!(
-                    "Using PKCS#11 token '{}' in slot {} of server '{}' via library '{}'",
-                    token_identification, slot, server_identification, lib_name
-                );
-
-                let server_info = format!(
-                    "PKCS#11 Signer [token: {}, slot: {}, server: {}, library: {}]",
-                    token_identification, slot, server_identification, lib_name
-                );
-
-                let state = UsableServerState::new(
-                    context,
-                    server_info,
-                    slot,
-                    login_session,
-                    conn_settings.retry_interval,
-                    conn_settings.backoff_multiplier,
-                    conn_settings.retry_timeout,
-                );
-
-                Ok(state)
-            }
-            Err(err) => {
-                if matches!(err, ProbeError::CallbackFailed(SignerError::TemporarilyUnavailable)) {
-                    // This error can occur if the PKCS#11 library has cached
-                    // the available token state on startup and doesn't see
-                    // the token even though it is now available. For example
-                    // we've seen this happen with SoftHSMv2 (when the slot is
-                    // not yet initialized) and YubiHSM 2 (when the connector
-                    // daemon is not running). Re-initialising the library
-                    // helped in these specific cases and might therefore help
-                    // with whichever token is being used now. Uninitialize
-                    // the library so that it will be re-initialized when
-                    // probed again.
-                    context.write().unwrap().uninitialize_if_not_already();
+        let (cryptoki_info, slot, _slot_info, token_info, user_pin) =
+            interrogate_token(&conn_settings, context.clone(), &name, lib_name).map_err(|err| {
+                if matches!(err, ProbeError::CallbackFailed(SignerError::Pkcs11Error(_))) {
+                    // While the token is not available now, it might be later.
+                    // force_cache_flush(context.clone());
                 }
-                Err(err)
-            }
-        }
+                err
+            })?;
+
+        let session = Pkcs11Session::new(context.clone(), slot).map_err(|err| {
+            error!(
+                "[{}] Unable to open PKCS#11 session for library '{}' slot {}: {}",
+                name, lib_name, slot, err
+            );
+            ProbeError::CompletedUnusable
+        })?;
+
+        // Note: We don't need to check for supported functions because the `pkcs11` Rust crate `fn new()` already
+        // requires that all of the functions that we need are supported. In fact it checks for so many functions I
+        // wonder if it might not fail on some customer deployments, but perhaps it checks only for functions required
+        // by the PKCS#11 specification...?
+
+        // TODO: check for RSA key pair support?
+
+        // Login if needed
+        let login_session = login(session, conn_settings.login_mode, user_pin, &name, lib_name, slot)?;
+
+        // Switch from probing the server to using it.
+        // -------------------------------------------
+
+        // Note: When Display'd via '{}' with format!() as is done below, the Rust `pkcs11` crate automatically trims
+        // trailing whitespace from Cryptoki padded strings such as the token info label, model and manufacturerID.
+
+        let server_identification = format!(
+            "{} (Cryptoki v{})",
+            cryptoki_info.manufacturer_id(),
+            cryptoki_info.library_version()
+        );
+
+        let token_identification = format!(
+            "{} (model: {}, vendor: {})",
+            token_info.label(),
+            token_info.model(),
+            token_info.manufacturer_id()
+        );
+
+        info!(
+            "Using PKCS#11 token '{}' in slot {} of server '{}' via library '{}'",
+            token_identification, slot, server_identification, lib_name
+        );
+
+        let server_info = format!(
+            "PKCS#11 Signer [token: {}, slot: {}, server: {}, library: {}]",
+            token_identification, slot, server_identification, lib_name
+        );
+
+        let state = UsableServerState::new(
+            context,
+            server_info,
+            slot,
+            login_session,
+            conn_settings.retry_interval,
+            conn_settings.backoff_multiplier,
+            conn_settings.retry_timeout,
+        );
+
+        Ok(state)
     }
 }
 
@@ -1064,7 +1051,7 @@ fn is_transient_error(err: &Pkcs11Error) -> bool {
                 cryptoki::error::RvError::OperationActive => true, // the active operation might finish thereby permitting a retry to succeed
                 cryptoki::error::RvError::OperationNotInitialized => false,
                 cryptoki::error::RvError::PinExpired => false,
-                cryptoki::error::RvError::PinIncorrect => true, // maybe the operator misconfigured the token and will fix it
+                cryptoki::error::RvError::PinIncorrect => false,
                 cryptoki::error::RvError::PinInvalid => false,
                 cryptoki::error::RvError::PinLenRange => false,
                 cryptoki::error::RvError::PinLocked => false,
@@ -1089,17 +1076,17 @@ fn is_transient_error(err: &Pkcs11Error) -> bool {
                 cryptoki::error::RvError::TemplateInconsistent => false,
                 cryptoki::error::RvError::TokenNotPresent => true, // not present at the time the function was executed but might be later
                 cryptoki::error::RvError::TokenNotRecognized => false,
-                cryptoki::error::RvError::TokenWriteProtected => true, // maybe the write protection is a transient condition?
+                cryptoki::error::RvError::TokenWriteProtected => true, // maybe the right protection is a transient condition?
                 cryptoki::error::RvError::UnwrappingKeyHandleInvalid => false,
                 cryptoki::error::RvError::UnwrappingKeySizeRange => false,
                 cryptoki::error::RvError::UnwrappingKeyTypeInconsistent => false,
                 cryptoki::error::RvError::UserAlreadyLoggedIn => true, // maybe another client was is busy logging out so try again?
                 cryptoki::error::RvError::UserAnotherAlreadyLoggedIn => true,
                 cryptoki::error::RvError::UserNotLoggedIn => false,
-                cryptoki::error::RvError::UserPinNotInitialized => true, // maybe the operator will initialize the PIN 
+                cryptoki::error::RvError::UserPinNotInitialized => false,
                 cryptoki::error::RvError::UserTooManyTypes => true, // maybe some sessions are terminated while retrying permitting us to succeed?
-                cryptoki::error::RvError::UserTypeInvalid => true, // maybe the operator will fix the users type
-                cryptoki::error::RvError::VendorDefined => true, // we have no way of knowing what this kind of failure is, maybe it is transient
+                cryptoki::error::RvError::UserTypeInvalid => false,
+                cryptoki::error::RvError::VendorDefined => false,
                 cryptoki::error::RvError::WrappedKeyInvalid => false,
                 cryptoki::error::RvError::WrappedKeyLenRange => false,
                 cryptoki::error::RvError::WrappingKeyHandleInvalid => false,

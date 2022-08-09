@@ -1,7 +1,7 @@
 [package]
 # Note: some of these values are also used when building Debian packages below.
 name    = "krill"
-version = "0.10.0-rc3-dev"
+version = "0.10.0-rc2"
 edition = "2018"
 authors = [ "The NLnet Labs RPKI team <rpki-team@nlnetlabs.nl>" ]
 description = "Resource Public Key Infrastructure (RPKI) daemon"
@@ -35,7 +35,7 @@ hex                   = "^0.4"
 hyper                 = { version = "^0.14", features = ["server"] }
 intervaltree          = "0.2.6"
 jmespatch             = { version = "^0.3", features = ["sync"], optional = true }
-kmip                  = { version = "0.4.2", package = "kmip-protocol", features = ["tls-with-openssl"], optional = true }
+kmip                  = { version = "0.4.1", package = "kmip-protocol", features = ["tls-with-openssl"], optional = true }
 libflate              = "^1"
 log                   = "^0.4"
 once_cell             = { version = "^1.7.2", optional = true }
