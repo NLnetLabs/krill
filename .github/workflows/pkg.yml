@@ -175,10 +175,12 @@ jobs:
           # must be one of: https://github.com/cross-rs/cross#supported-targets
           # use MUSL targets for binaries intended to be included in Docker images
           # as the Alpine base image we use has MUSL, not GNU LIBC.
+          - 'arm-unknown-linux-musleabihf'    # for Docker
           - 'armv7-unknown-linux-musleabihf'  # for Docker
           - 'aarch64-unknown-linux-musl'      # for Docker
 
           # use GNU LIBC targets otherwise as Debian et al use GNU LIBC, not MUSL.
+          - 'arm-unknown-linux-gnueabihf'     # for DEB
           - 'armv7-unknown-linux-gnueabihf'   # for DEB
           - 'aarch64-unknown-linux-gnu'       # for DEB
     steps:
@@ -271,6 +273,15 @@ jobs:
           - pkg: 'krillup'
             image: 'debian:bullseye'
             target: 'armv7-unknown-linux-gnueabihf'
+
+          # package for the Raspberry Pi 1b as an ARMv6 cross compiled variant of the Debian Buster upon which
+          # Raspbian 10 is based.
+          - pkg: 'krill'
+            image: 'debian:buster'
+            target: 'arm-unknown-linux-gnueabihf'
+          - pkg: 'krillup'
+            image: 'debian:buster'
+            target: 'arm-unknown-linux-gnueabihf'
 
           # package for the ROCK64 as an AARCH64 cross compiled variant of Debian Buster upon which Armbian 21 is
           # based.
@@ -872,6 +883,11 @@ jobs:
             shortname:   'amd64'
             mode:        'build'
 
+          - platform:    'linux/arm/v6'
+            shortname:   'armv6'
+            crosstarget: 'arm-unknown-linux-musleabihf'
+            mode:        'copy'
+
           - platform:    'linux/arm/v7'
             shortname:   'armv7'
             crosstarget: 'armv7-unknown-linux-musleabihf'
@@ -1023,6 +1039,7 @@ jobs:
           docker manifest create \
             ${{ env.DOCKER_REPO}}/${{ needs.docker.outputs.dockerbasetag }} \
             --amend ${{ env.DOCKER_REPO }}/${{ needs.docker.outputs.dockerbasetag }}-amd64 \
+            --amend ${{ env.DOCKER_REPO }}/${{ needs.docker.outputs.dockerbasetag }}-armv6 \
             --amend ${{ env.DOCKER_REPO }}/${{ needs.docker.outputs.dockerbasetag }}-armv7 \
             --amend ${{ env.DOCKER_REPO }}/${{ needs.docker.outputs.dockerbasetag }}-arm64
 
