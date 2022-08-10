@@ -191,8 +191,8 @@ impl KrillClient {
 
             CaCommand::ParentResponse(handle, child) => {
                 let uri = format!("api/v1/cas/{}/children/{}/contact", handle, child);
-                let info: ParentCaContact = get_json(&self.server, &self.token, &uri).await?;
-                Ok(ApiResponse::ParentCaContact(info))
+                let response: idexchange::ParentResponse = get_json(&self.server, &self.token, &uri).await?;
+                Ok(ApiResponse::Rfc8183ParentResponse(response))
             }
 
             CaCommand::ChildRequest(handle) => {
@@ -263,8 +263,8 @@ impl KrillClient {
 
             CaCommand::ChildAdd(handle, req) => {
                 let uri = format!("api/v1/cas/{}/children", handle);
-                let info: ParentCaContact = post_json_with_response(&self.server, &self.token, &uri, req).await?;
-                Ok(ApiResponse::ParentCaContact(info))
+                let response = post_json_with_response(&self.server, &self.token, &uri, req).await?;
+                Ok(ApiResponse::Rfc8183ParentResponse(response))
             }
             CaCommand::ChildUpdate(handle, child, req) => {
                 let uri = format!("api/v1/cas/{}/children/{}", handle, child);
