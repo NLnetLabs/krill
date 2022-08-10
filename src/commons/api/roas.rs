@@ -297,10 +297,57 @@ impl AsRef<TypedPrefix> for RoaPayload {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub struct RoaDefinitions(Vec<RoaPayload>);
+//------------ RoaConfiguration --------------------------------------------
 
-impl fmt::Display for RoaDefinitions {
+/// This type defines a saved RoaConfiguration. It includes the actual ROA
+/// payload that needs be authorized in a ROA object as well as other
+/// information that is only visible to users - i.e. an optional comment
+/// field, and in future perhaps other things such as tags used for
+/// classification/monitoring/bpp analysis.
+///
+/// Note that this type is backward compatible with the RoaDefinition type
+/// used until Krill 0.10.0.
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct RoaConfiguration {
+    #[serde(flatten)]
+    payload: RoaPayload,
+    #[serde(default)] // missing is same as no comment
+    comment: Option<String>,
+}
+
+impl fmt::Display for RoaConfiguration {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.payload)?;
+        if let Some(comment) = &self.comment {
+            write!(f, " # {}", comment)?;
+        }
+        Ok(())
+    }
+}
+
+impl FromStr for RoaConfiguration {
+    type Err = AuthorizationFmtError;
+
+    // "192.168.0.0/16 => 64496"
+    // "192.168.0.0/16 => 64496 # my nice ROA"
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut parts = s.split('#');
+        let payload_part = parts.next().ok_or_else(|| AuthorizationFmtError::auth(s))?;
+
+        let payload = RoaPayload::from_str(payload_part)?;
+        let comment = parts.next().map(|s| s.trim().to_string());
+
+        Ok(RoaConfiguration { payload, comment })
+    }
+}
+
+//------------ RoaConfigurations -------------------------------------------
+
+/// This type defines a list of RoaConfiguration
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct RoaConfigurations(Vec<RoaConfiguration>);
+
+impl fmt::Display for RoaConfigurations {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for def in self.0.iter() {
             writeln!(f, "{}", def)?;
@@ -318,7 +365,7 @@ impl fmt::Display for RoaDefinitions {
 /// avoid invalidating announcements.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RoaDefinitionUpdates {
-    added: Vec<RoaPayload>,
+    added: Vec<RoaConfiguration>,
     removed: Vec<RoaPayload>,
 }
 
@@ -327,13 +374,13 @@ impl RoaDefinitionUpdates {
         self.added.is_empty() && self.removed.is_empty()
     }
 
-    pub fn new(added: Vec<RoaPayload>, removed: Vec<RoaPayload>) -> Self {
+    pub fn new(added: Vec<RoaConfiguration>, removed: Vec<RoaPayload>) -> Self {
         RoaDefinitionUpdates { added, removed }
     }
 
     /// Unpack this and return all added (left), and all removed (right) route
     /// authorizations.
-    pub fn unpack(self) -> (Vec<RoaPayload>, Vec<RoaPayload>) {
+    pub fn unpack(self) -> (Vec<RoaConfiguration>, Vec<RoaPayload>) {
         (self.added, self.removed)
     }
 
@@ -341,11 +388,11 @@ impl RoaDefinitionUpdates {
         Self::default()
     }
 
-    pub fn add(&mut self, add: RoaPayload) {
+    pub fn add(&mut self, add: RoaConfiguration) {
         self.added.push(add);
     }
 
-    pub fn added(&self) -> &Vec<RoaPayload> {
+    pub fn added(&self) -> &Vec<RoaConfiguration> {
         &self.added
     }
 
@@ -387,7 +434,7 @@ impl FromStr for RoaDefinitionUpdates {
             if line.is_empty() {
                 continue;
             } else if let Some(stripped) = line.strip_prefix("A:") {
-                let auth = RoaPayload::from_str(stripped.trim())?;
+                let auth = RoaConfiguration::from_str(stripped.trim())?;
                 added.push(auth);
             } else if let Some(stripped) = line.strip_prefix("R:") {
                 let auth = RoaPayload::from_str(stripped.trim())?;
