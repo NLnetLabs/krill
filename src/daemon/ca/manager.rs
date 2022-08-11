@@ -485,12 +485,7 @@ impl CaManager {
         let service_uri = Self::service_uri_for_ca(service_uri, ca_handle);
         let ca = self.get_ca(ca_handle).await?;
 
-        let server_info = ParentServerInfo::new(
-            service_uri,
-            ca.id_cert().public_key().clone(),
-            ca_handle.convert(),
-            child_handle,
-        );
+        let server_info = ParentServerInfo::new(service_uri, ca_handle.convert(), child_handle, ca.id_cert().clone());
         Ok(ParentCaContact::for_parent_server_info(server_info))
     }
 
@@ -1445,7 +1440,7 @@ impl CaManager {
                     cms_logger.err(format!("Could not decode CMS: {}", e))?;
                     Err(Error::Rfc6492(e))
                 }
-                Ok(cms) => match cms.validate(server_info.public_key()) {
+                Ok(cms) => match cms.validate(server_info.id_cert().public_key()) {
                     Err(e) => {
                         cms_logger.err(format!("Response invalid: {}", e))?;
                         Err(Error::Rfc6492(e))

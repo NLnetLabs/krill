@@ -86,10 +86,21 @@ impl CasMigration {
 
 impl UpgradeStore for CasMigration {
     fn needs_migrate(&self) -> Result<bool, PrepareUpgradeError> {
-        Ok(self.current_kv_store.version_is_after(KrillVersion::release(0, 9, 0))?
-            && self
-                .current_kv_store
-                .version_is_before(KrillVersion::candidate(0, 10, 0, 1))?)
+        let current_version = self.current_kv_store.version()?;
+
+        let v0_9_0 = KrillVersion::release(0, 9, 0);
+        let v0_10_0_rc1 = KrillVersion::candidate(0, 10, 0, 1);
+        let v0_10_0_rc2 = KrillVersion::candidate(0, 10, 0, 2);
+
+        if current_version > v0_9_0 && current_version < v0_10_0_rc1 {
+            Ok(true)
+        } else if current_version == v0_10_0_rc1 || current_version == v0_10_0_rc2 {
+            Err(PrepareUpgradeError::custom(
+                "Cannot upgrade from 0.10.0 RC1 or RC2. Please contact rpki-team@nlnetlabs.nl",
+            ))
+        } else {
+            Ok(false)
+        }
     }
 
     fn prepare_new_data(&self, mode: UpgradeMode) -> Result<(), PrepareUpgradeError> {
