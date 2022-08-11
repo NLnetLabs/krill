@@ -3,6 +3,7 @@
 name    = "krill"
 version = "0.10.0-rc3-dev"
 edition = "2018"
+rust-version = "1.56"
 authors = [ "The NLnet Labs RPKI team <rpki-team@nlnetlabs.nl>" ]
 description = "Resource Public Key Infrastructure (RPKI) daemon"
 homepage = "https://www.nlnetlabs.nl/projects/rpki/krill/"
@@ -18,7 +19,6 @@ exclude = [
   "pkg/*",
   "Dockerfile",
 ]
-build = "build.rs"
 
 [dependencies]
 backoff               = { version = "0.3.0", optional = true }
@@ -72,9 +72,6 @@ xml-rs                = "^0.8"
 [target.'cfg(unix)'.dependencies]
 libc            = "^0.2"
 syslog          = "^4.0"
-
-[build-dependencies]
-rustc_version   = "0.2.3"
 
 [features]
 default = [ "multi-user", "hsm" ]
