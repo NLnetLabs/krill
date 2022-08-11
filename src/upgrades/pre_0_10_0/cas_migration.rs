@@ -9,7 +9,6 @@ use crate::{
     commons::{
         api::StorableCaCommand,
         eventsourcing::{AggregateStore, KeyStoreKey, KeyValueStore, StoredCommand, StoredValueInfo},
-        util::KrillVersion,
     },
     constants::{CASERVER_DIR, CA_OBJECTS_DIR, KRILL_VERSION},
     daemon::{
@@ -86,21 +85,7 @@ impl CasMigration {
 
 impl UpgradeStore for CasMigration {
     fn needs_migrate(&self) -> Result<bool, PrepareUpgradeError> {
-        let current_version = self.current_kv_store.version()?;
-
-        let v0_9_0 = KrillVersion::release(0, 9, 0);
-        let v0_10_0_rc1 = KrillVersion::candidate(0, 10, 0, 1);
-        let v0_10_0_rc2 = KrillVersion::candidate(0, 10, 0, 2);
-
-        if current_version > v0_9_0 && current_version < v0_10_0_rc1 {
-            Ok(true)
-        } else if current_version == v0_10_0_rc1 || current_version == v0_10_0_rc2 {
-            Err(PrepareUpgradeError::custom(
-                "Cannot upgrade from 0.10.0 RC1 or RC2. Please contact rpki-team@nlnetlabs.nl",
-            ))
-        } else {
-            Ok(false)
-        }
+        unimplemented!("This is checked in upgrades/mod.rs")
     }
 
     fn prepare_new_data(&self, mode: UpgradeMode) -> Result<(), PrepareUpgradeError> {
