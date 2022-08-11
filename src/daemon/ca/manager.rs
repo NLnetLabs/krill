@@ -450,24 +450,22 @@ impl CaManager {
 /// # CAs as parents
 ///
 impl CaManager {
-    /// Adds a child under a CA. The 'service_uri' is used here so that
-    /// the appropriate `ParentCaContact` can be returned. If the `AddChildRequest`
-    /// contains resources not held by this CA, then an `Error::CaChildExtraResources`
-    /// is returned.
+    /// Adds a child under a CA. If the `AddChildRequest` contains resources not held
+    /// by this CA, then an `Error::CaChildExtraResources` is returned.
     pub async fn ca_add_child(
         &self,
         ca: &CaHandle,
         req: AddChildRequest,
         service_uri: &uri::Https,
         actor: &Actor,
-    ) -> KrillResult<ParentCaContact> {
+    ) -> KrillResult<idexchange::ParentResponse> {
         info!("CA '{}' process add child request: {}", &ca, &req);
         let (child_handle, child_res, id_cert) = req.unpack();
 
         let add_child = CmdDet::child_add(ca, child_handle.clone(), id_cert.into(), child_res, actor);
         self.send_command(add_child).await?;
 
-        self.ca_parent_contact(ca, child_handle, service_uri).await
+        self.ca_parent_response(ca, child_handle, service_uri).await
     }
 
     /// Show details for a child under the CA.
