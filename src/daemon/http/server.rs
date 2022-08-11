@@ -1744,7 +1744,9 @@ async fn api_ca_repo_status(req: Request, ca: CaHandle) -> RoutingResult {
 fn extract_repository_contact(ca: &CaHandle, bytes: Bytes) -> Result<RepositoryContact, Error> {
     let string = String::from_utf8(bytes.to_vec()).map_err(Error::custom)?;
 
-    // TODO: Switch based on Content-Type header
+    // Get rid of whitespace first so we can check if it smells like XML.
+    // We could change this to check for Content-Type headers instead.
+    let string = string.trim();
     if string.starts_with('<') {
         if string.contains("<parent_response") {
             Err(Error::CaRepoResponseWrongXml(ca.clone()))
@@ -1756,7 +1758,7 @@ fn extract_repository_contact(ca: &CaHandle, bytes: Bytes) -> Result<RepositoryC
                 .map_err(|e| Error::CaRepoResponseInvalidXml(ca.clone(), e.to_string()))
         }
     } else {
-        serde_json::from_str(&string).map_err(Error::JsonError)
+        serde_json::from_str(string).map_err(Error::JsonError)
     }
 }
 
@@ -1803,8 +1805,10 @@ fn extract_parent_ca_req(
     parent_override: Option<ParentHandle>,
 ) -> Result<ParentCaReq, Error> {
     let string = String::from_utf8(bytes.to_vec()).map_err(Error::custom)?;
+    let string = string.trim();
 
-    // TODO: Switch based on Content-Type header
+    // Get rid of whitespace first so we can check if it smells like XML.
+    // We could change this to check for Content-Type headers instead.
     let req = if string.starts_with('<') {
         if string.starts_with("<repository") {
             return Err(Error::CaParentResponseWrongXml(ca.clone()));
