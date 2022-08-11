@@ -216,10 +216,14 @@ impl KrillServer {
                     let child_req =
                         AddChildRequest::new(testbed_ca_handle.convert(), testbed_ca_resources, child_id_cert);
 
-                    let parent_ca_contact = ca_manager
+                    let parent_response = ca_manager
                         .ca_add_child(&ta_handle, child_req, &service_uri, &system_actor)
                         .await?;
+                    let parent_ca_contact =
+                        ParentCaContact::for_rfc8183_parent_response(parent_response).map_err(Error::rfc8183)?;
+
                     let parent_req = ParentCaReq::new(ta_handle.convert(), parent_ca_contact);
+
                     ca_manager
                         .ca_parent_add_or_update(testbed_ca_handle.clone(), parent_req, &system_actor)
                         .await?;
@@ -408,9 +412,13 @@ impl KrillServer {
             let child_id_cert = ca.child_request().validate().map_err(Error::rfc8183)?;
             let child_req = AddChildRequest::new(ca_handle.convert(), resources, child_id_cert);
 
-            let parent_ca_contact = ca_manager
+            let parent_response = ca_manager
                 .ca_add_child(&parent_handle.convert(), child_req, &service_uri, &system_actor)
                 .await?;
+
+            let parent_ca_contact =
+                ParentCaContact::for_rfc8183_parent_response(parent_response).map_err(Error::rfc8183)?;
+
             let parent_req = ParentCaReq::new(parent_handle.clone(), parent_ca_contact);
             ca_manager
                 .ca_parent_add_or_update(ca_handle.clone(), parent_req, &system_actor)
@@ -549,15 +557,13 @@ impl KrillServer {
         ca: &CaHandle,
         req: AddChildRequest,
         actor: &Actor,
-    ) -> KrillResult<ParentCaContact> {
-        let contact = self.ca_manager.ca_add_child(ca, req, &self.service_uri, actor).await?;
-        Ok(contact)
+    ) -> KrillResult<idexchange::ParentResponse> {
+        self.ca_manager.ca_add_child(ca, req, &self.service_uri, actor).await
     }
 
     /// Shows the parent contact for a child.
     pub async fn ca_parent_contact(&self, ca: &CaHandle, child: ChildHandle) -> KrillResult<ParentCaContact> {
-        let contact = self.ca_manager.ca_parent_contact(ca, child, &self.service_uri).await?;
-        Ok(contact)
+        self.ca_manager.ca_parent_contact(ca, child, &self.service_uri).await
     }
 
     /// Shows the parent contact for a child.
@@ -566,8 +572,7 @@ impl KrillServer {
         ca: &CaHandle,
         child: ChildHandle,
     ) -> KrillResult<idexchange::ParentResponse> {
-        let contact = self.ca_manager.ca_parent_response(ca, child, &self.service_uri).await?;
-        Ok(contact)
+        self.ca_manager.ca_parent_response(ca, child, &self.service_uri).await
     }
 
     /// Update IdCert or resources of a child.
@@ -578,8 +583,7 @@ impl KrillServer {
         req: UpdateChildRequest,
         actor: &Actor,
     ) -> KrillEmptyResult {
-        self.ca_manager.ca_child_update(ca, child, req, actor).await?;
-        Ok(())
+        self.ca_manager.ca_child_update(ca, child, req, actor).await
     }
 
     /// Update IdCert or resources of a child.

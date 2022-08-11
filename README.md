@@ -37,6 +37,7 @@ in RC1 and RC2:
 - Manifest of 0.10.0-rc1 includes CRL, but nothing else #853
 - Security fixes in KMIP dependencies (HSM support).
 - Handle more PKCS#11 transient failure scenarios (HSM support).
+- Show RFC8183 XML in the CLI output #868
 
 In this release we introduce the following major features:
 - BGPSec Router Certificate Signing

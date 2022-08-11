@@ -1,11 +1,12 @@
 #![type_length_limit = "5000000"]
 
+use rpki::ca::idexchange;
+
 extern crate krill;
 
 #[tokio::test]
 async fn add_and_remove_certificate_authority() {
     use std::fs;
-    use std::matches;
     use std::str::FromStr;
 
     use rpki::{
@@ -63,7 +64,7 @@ async fn add_and_remove_certificate_authority() {
     // <child_request/>   --> testbed
     // <parent_response/> <-- testbed
     let child_id_cert = rfc8183_child_request.validate().unwrap();
-    let add_child_response: ParentCaContact = post_json_with_response(
+    let parent_response: idexchange::ParentResponse = post_json_with_response(
         &format!("{}testbed/children", KRILL_SERVER_URI),
         &AddChildRequest::new(
             dummy_ca_handle.convert(),
@@ -75,7 +76,7 @@ async fn add_and_remove_certificate_authority() {
     .await
     .unwrap();
 
-    assert!(matches!(add_child_response, ParentCaContact::Rfc6492(_)));
+    let parent_contact_for_child = ParentCaContact::for_rfc8183_parent_response(parent_response).unwrap();
 
     // verify that the testbed shows that it now has the expected child CA
     let testbed_ca = ca_details(&testbed_ca_handle).await;
@@ -102,13 +103,13 @@ async fn add_and_remove_certificate_authority() {
     assert!(xml::reader::EventReader::from_str(&parent_response_xml).next().is_ok());
 
     // complete the RFC 8183 child registration process on the "client" side
-    let parent_ca_req = ParentCaReq::new(testbed_ca_handle.convert(), add_child_response.clone());
+    let parent_ca_req = ParentCaReq::new(testbed_ca_handle.convert(), parent_contact_for_child.clone());
     add_parent_to_ca(&dummy_ca_handle, parent_ca_req).await;
 
     // verify that the child CA now has the correct parent
     let dummy_ca = ca_details(&dummy_ca_handle).await;
     let dummy_ca_parents = dummy_ca.parents();
-    let expected_parent_info = ParentInfo::new(testbed_ca_handle.convert(), add_child_response);
+    let expected_parent_info = ParentInfo::new(testbed_ca_handle.convert(), parent_contact_for_child);
     let actual_parent_info = &dummy_ca_parents[0];
     assert_eq!(1, dummy_ca_parents.len());
     assert_eq!(&expected_parent_info, actual_parent_info);
