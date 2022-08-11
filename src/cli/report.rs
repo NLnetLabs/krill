@@ -55,6 +55,7 @@ pub enum ApiResponse {
     PublisherList(PublisherList),
     RepoStats(RepoStats),
 
+    Rfc8183ParentResponse(idexchange::ParentResponse),
     Rfc8183RepositoryResponse(idexchange::RepositoryResponse),
     Rfc8183ChildRequest(idexchange::ChildRequest),
     Rfc8183PublisherRequest(idexchange::PublisherRequest),
@@ -100,6 +101,7 @@ impl ApiResponse {
                 ApiResponse::PublisherList(list) => Ok(Some(list.report(fmt)?)),
                 ApiResponse::PublisherDetails(details) => Ok(Some(details.report(fmt)?)),
                 ApiResponse::RepoStats(stats) => Ok(Some(stats.report(fmt)?)),
+                ApiResponse::Rfc8183ParentResponse(res) => Ok(Some(res.report(fmt)?)),
                 ApiResponse::Rfc8183ChildRequest(req) => Ok(Some(req.report(fmt)?)),
                 ApiResponse::Rfc8183PublisherRequest(req) => Ok(Some(req.report(fmt)?)),
                 ApiResponse::Rfc8183RepositoryResponse(res) => Ok(Some(res.report(fmt)?)),
@@ -196,9 +198,29 @@ impl Report for ChildrenConnectionStats {}
 
 impl Report for PublisherDetails {}
 
-impl Report for idexchange::RepositoryResponse {}
-impl Report for idexchange::ChildRequest {}
-impl Report for idexchange::PublisherRequest {}
+impl Report for idexchange::RepositoryResponse {
+    fn text(&self) -> Result<String, ReportError> {
+        Ok(self.to_xml_string())
+    }
+}
+
+impl Report for idexchange::ParentResponse {
+    fn text(&self) -> Result<String, ReportError> {
+        Ok(self.to_xml_string())
+    }
+}
+
+impl Report for idexchange::ChildRequest {
+    fn text(&self) -> Result<String, ReportError> {
+        Ok(self.to_xml_string())
+    }
+}
+
+impl Report for idexchange::PublisherRequest {
+    fn text(&self) -> Result<String, ReportError> {
+        Ok(self.to_xml_string())
+    }
+}
 
 impl Report for RoaDefinitions {}
 
