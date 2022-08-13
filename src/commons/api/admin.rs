@@ -340,37 +340,33 @@ pub struct ParentServerInfo {
     /// The URI where the CA needs to send its RFC6492 messages
     service_uri: ServiceUri,
 
-    /// The parent CA's public key
-    public_key: PublicKey,
-
     /// The handle the parent CA likes to be called by.
     parent_handle: ParentHandle,
 
     /// The handle the parent CA chose for the child CA.
     child_handle: ChildHandle,
+
+    /// The parent's ID cert.
+    id_cert: IdCertInfo,
 }
 
 impl ParentServerInfo {
     pub fn new(
         service_uri: ServiceUri,
-        public_key: PublicKey,
         parent_handle: ParentHandle,
         child_handle: ChildHandle,
+        id_cert: IdCertInfo,
     ) -> Self {
         ParentServerInfo {
             service_uri,
-            public_key,
             parent_handle,
             child_handle,
+            id_cert,
         }
     }
 
     pub fn service_uri(&self) -> &ServiceUri {
         &self.service_uri
-    }
-
-    pub fn public_key(&self) -> &PublicKey {
-        &self.public_key
     }
 
     pub fn parent_handle(&self) -> &ParentHandle {
@@ -380,14 +376,21 @@ impl ParentServerInfo {
     pub fn child_handle(&self) -> &ChildHandle {
         &self.child_handle
     }
+
+    pub fn id_cert(&self) -> &IdCertInfo {
+        &self.id_cert
+    }
 }
 
 impl fmt::Display for ParentServerInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "service uri:    {}", self.service_uri)?;
-        writeln!(f, "key identifier: {}", self.public_key.key_identifier())?;
         writeln!(f, "parent handle:  {}", self.parent_handle)?;
-        writeln!(f, "child handle:   {}", self.child_handle)
+        writeln!(f, "child handle:   {}", self.child_handle)?;
+        writeln!(f, "parent certificate:")?;
+        writeln!(f, "   key identifier: {}", self.id_cert().public_key().key_identifier())?;
+        writeln!(f, "   hash (of cert): {}", self.id_cert().hash())?;
+        writeln!(f, "   PEM:\n\n{}", self.id_cert().pem())
     }
 }
 
@@ -411,18 +414,17 @@ impl ParentCaContact {
 
     pub fn for_rfc8183_parent_response(response: idexchange::ParentResponse) -> Result<Self, idexchange::Error> {
         let id_cert = response.validate()?;
+        let id_cert = IdCertInfo::from(&id_cert);
 
         let service_uri = response.service_uri().clone();
-        let pub_key = id_cert.public_key().clone();
-
         let parent_handle = response.parent_handle().clone();
         let child_handle = response.child_handle().clone();
 
         Ok(ParentCaContact::Rfc6492(ParentServerInfo {
             service_uri,
-            public_key: pub_key,
             parent_handle,
             child_handle,
+            id_cert,
         }))
     }
 
