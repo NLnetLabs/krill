@@ -395,6 +395,10 @@ pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -
                 }
 
                 Ok(Some(UpgradeReport::new(true, versions)))
+            } else if versions.from < KrillVersion::candidate(0, 10, 0, 3) {
+                Err(PrepareUpgradeError::custom(
+                    "Cannot upgrade from 0.10.0 RC1 or RC2. Please contact rpki-team@nlnetlabs.nl",
+                ))
             } else {
                 Ok(Some(UpgradeReport::new(false, versions)))
             }
