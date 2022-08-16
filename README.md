@@ -31,14 +31,17 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 This third release candidate fixes the following issues identified
 in RC1 and RC2:
-- Using a jitter of 0 results in a panic #859
-- Make krill.lock file optional and opt-in #856
-- BGPSec Router Certificate should NOT contain SIA extension #854
+- Handle more PKCS#11 transient failure scenarios #761 (HSM support)
 - Manifest of 0.10.0-rc1 includes CRL, but nothing else #853
-- v0.10.0-rc2 doesn't compile on FreeBSD 13.1 #861 (HSM support).
-- Security fixes in KMIP dependencies (HSM support).
-- Handle more PKCS#11 transient failure scenarios (HSM support).
+- BGPSec Router Certificate should NOT contain SIA extension #854
+- Make krill.lock file optional and opt-in #856
+- Using a jitter of 0 results in a panic #859
+- Security fixes in KMIP dependencies #860 (HSM support)
+- v0.10.0-rc2 doesn't compile on FreeBSD 13.1 #861 (HSM support)
 - Show RFC8183 XML in the CLI output #868
+- Keep parent ID cert PEM in history #870
+- Error in the JS console after creating a CA via the web UI #872
+- Trim uploaded parent and repo responses #873
 
 In this release we introduce the following major features:
 - BGPSec Router Certificate Signing
