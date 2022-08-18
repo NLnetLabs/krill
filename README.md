@@ -42,6 +42,7 @@ in RC1 and RC2:
 - Keep parent ID cert PEM in history #870
 - Error in the JS console after creating a CA via the web UI #872
 - Trim uploaded parent and repo responses #873
+- XML generated for RFC 8183 communication starts with a line break #874
 - RFC 8183 XML responses submitted via the UI are incorrectly escaped #875
 
 In this release we introduce the following major features:
