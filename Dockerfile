@@ -171,4 +171,3 @@ EXPOSE 3000/tcp
 # activating Tini, but cannot be enabled from inside the Docker image).
 ENTRYPOINT ["/sbin/tini", "--", "/opt/entrypoint.sh"]
 CMD ["krill", "-c", "/var/krill/data/krill.conf"]
-
