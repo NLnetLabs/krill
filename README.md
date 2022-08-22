@@ -45,6 +45,9 @@ in RC1 and RC2:
 - XML generated for RFC 8183 communication starts with a line break #874
 - RFC 8183 XML responses submitted via the UI are incorrectly escaped #875
 
+NOTE: 0.10.0-rc1 and -rc2 instances cannot be upgraded because of issue #870.
+      Please contact us if this is an issue for you.
+
 In this release we introduce the following major features:
 - BGPSec Router Certificate Signing
 - Support the use of Hardware Security Modules (HSMs) for key operations
