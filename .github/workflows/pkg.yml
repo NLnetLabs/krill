@@ -39,8 +39,8 @@
 #
 # Docker packaging:
 # =================
-# Docker packaging was originally done using Docker Hub but long delays and repeatd spurious failures caused us to
-# migrate Docker packaging to GitHub Actions and which is now part of this workflow.
+# Docker packaging was originally done using Docker Hub but long delays and repeated spurious failures caused us to
+# migrate Docker packaging to GitHub Actions which is now part of this workflow.
 #
 # Images use an Alpine base image for reduced image size and thus download time, and also for faster and simpler
 # installation of dependencies (apk add is way faster and simpler than apt install for example). However Alpine is
@@ -114,9 +114,8 @@
 #   - Cross-compiled binary artifacts are uploaded to GitHub by the 'cross' job.
 #   - Both the 'pkg' and 'docker' jobs download these cross-compiled binary artifacts for inclusion in the
 #     packages they create.
-# These cross-compiled binary artifacts are deleted at the end of the workflow as they are no longer needed and their
-# presence attached to the workflow run will cause the separate manual external process for publishing to
-# packages.nlnetlabs.nl to fail.
+# Such 'internal' artifacts are named with a 'tmp-' prefix and are ignored by the separate manual external process
+# for publishing to packages.nlnetlabs.nl.
 
 
 name: Packaging
