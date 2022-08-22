@@ -116,9 +116,7 @@ RUN CARGO_HTTP_MULTIPLEXING=false cargo install \
 # 'build' stage and so that the magic $TARGETPLATFORM ARG will be set for us.
 FROM ${BASE_IMG} AS copy
 ARG TARGETPLATFORM
-WORKDIR /tmp/out/bin/
-COPY dockerbin/$TARGETPLATFORM .
-RUN chmod +x ./*
+ONBUILD COPY dockerbin/$TARGETPLATFORM /tmp/out/bin/
 
 
 # -----------------------------------------------------------------------------
