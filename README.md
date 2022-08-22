@@ -48,7 +48,7 @@ in RC1 and RC2:
 
   WARNING: You will need to ensure that any Krill data files stored outside
   the container are writable by UID/GID 1012 (or whichever UID and GID
-  values you used if you ran the container with --build-arg RUN_USER_UID
+  values you used if you built your own image using --build-arg RUN_USER_UID
   and/or RUN_USER_GID) so that Krill is still able to write to the files.
 
 NOTE: 0.10.0-rc1 and -rc2 instances cannot be upgraded because of issue #870.
