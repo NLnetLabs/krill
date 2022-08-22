@@ -44,6 +44,12 @@ in RC1 and RC2:
 - Trim uploaded parent and repo responses #873
 - XML generated for RFC 8183 communication starts with a line break #874
 - RFC 8183 XML responses submitted via the UI are incorrectly escaped #875
+- Run as user 'krill' inside Docker containers, not 'root' #882
+
+  WARNING: You will need to ensure that any Krill data files stored outside
+  the container are writable by UID/GID 1012 (or whichever UID and GID
+  values you used if you built your own image using --build-arg RUN_USER_UID
+  and/or RUN_USER_GID) so that Krill is still able to write to the files.
 
 NOTE: 0.10.0-rc1 and -rc2 instances cannot be upgraded because of issue #870.
       Please contact us if this is an issue for you.
