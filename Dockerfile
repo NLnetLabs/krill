@@ -162,6 +162,9 @@ RUN chown -R ${RUN_USER}: .
 COPY docker/entrypoint.sh /opt/
 RUN chown ${RUN_USER}: /opt/entrypoint.sh
 
+# Run Krill as the defined user
+USER $RUN_USER_UID
+
 # Hint to operators the TCP port that the Krill daemon in this image listens on
 # (by default).
 EXPOSE 3000/tcp
