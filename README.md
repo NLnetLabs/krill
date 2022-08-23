@@ -46,6 +46,7 @@ in RC1 and RC2:
 - RFC 8183 XML responses submitted via the UI are incorrectly escaped #875
 - Run as user 'krill' inside Docker containers, not 'root' #882
 - API to upload repository response should not change #895
+- API to add parent should not change #898
 
   WARNING: You will need to ensure that any Krill data files stored outside
   the container are writable by UID/GID 1012 (or whichever UID and GID
