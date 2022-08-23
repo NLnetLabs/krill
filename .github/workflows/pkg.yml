@@ -1012,12 +1012,12 @@ jobs:
       - name: Create multi-arch manifest
         run: |
           docker manifest create \
-            ${{ github.repository }}/${{ needs.docker.outputs.dockerbasetag }} \
-            --amend ${{ github.repository }}/${{ needs.docker.outputs.dockerbasetag }}-amd64 \
-            --amend ${{ github.repository }}/${{ needs.docker.outputs.dockerbasetag }}-armv6 \
-            --amend ${{ github.repository }}/${{ needs.docker.outputs.dockerbasetag }}-armv7 \
-            --amend ${{ github.repository }}/${{ needs.docker.outputs.dockerbasetag }}-arm64
+            ${{ needs.docker.outputs.dockerbasetag }} \
+            --amend ${{ needs.docker.outputs.dockerbasetag }}-amd64 \
+            --amend ${{ needs.docker.outputs.dockerbasetag }}-armv6 \
+            --amend ${{ needs.docker.outputs.dockerbasetag }}-armv7 \
+            --amend ${{ needs.docker.outputs.dockerbasetag }}-arm64
 
       - name: Publish multi-arch image to Docker Hub
         run: |
-          docker manifest push ${{ github.repository }}/${{ needs.docker.outputs.dockerbasetag }}
+          docker manifest push ${{ needs.docker.outputs.dockerbasetag }}
