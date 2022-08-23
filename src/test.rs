@@ -37,15 +37,15 @@ use crate::{
             AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, BgpSecAsnKey,
             BgpSecCsrInfoList, BgpSecDefinition, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ObjectName,
             ParentCaContact, ParentCaReq, ParentStatuses, PublicationServerUris, PublisherDetails, PublisherList,
-            RepositoryContact, ResourceClassKeysInfo, RoaDefinition, RoaDefinitionUpdates, RtaList, RtaName,
-            RtaPrepResponse, TypedPrefix, UpdateChildRequest,
+            ResourceClassKeysInfo, RoaDefinition, RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, TypedPrefix,
+            UpdateChildRequest,
         },
         bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion},
         crypto::SignSupport,
         util::httpclient,
     },
     daemon::{
-        ca::{ta_handle, ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest},
+        ca::{ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest},
         config::Config,
         http::server,
     },
@@ -264,11 +264,7 @@ pub async fn delete_ca(ca: &CaHandle) {
 }
 
 pub async fn ca_repo_update_rfc8181(ca: &CaHandle, response: idexchange::RepositoryResponse) {
-    krill_admin(Command::CertAuth(CaCommand::RepoUpdate(
-        ca.clone(),
-        RepositoryContact::for_response(response).unwrap(),
-    )))
-    .await;
+    krill_admin(Command::CertAuth(CaCommand::RepoUpdate(ca.clone(), response))).await;
 }
 
 pub async fn generate_new_id(ca: &CaHandle) {
@@ -704,8 +700,8 @@ pub fn typed_prefix(s: &str) -> TypedPrefix {
     TypedPrefix::from_str(s).unwrap()
 }
 
-pub async fn repo_update(ca: &CaHandle, contact: RepositoryContact) {
-    let command = Command::CertAuth(CaCommand::RepoUpdate(ca.clone(), contact));
+pub async fn repo_update(ca: &CaHandle, response: idexchange::RepositoryResponse) {
+    let command = Command::CertAuth(CaCommand::RepoUpdate(ca.clone(), response));
     krill_admin(command).await;
 }
 
@@ -747,8 +743,7 @@ pub async fn set_up_ca_with_repo(ca: &CaHandle) {
     let response = embedded_repository_response(ca.convert()).await;
 
     // Update the repo for the child
-    let contact = RepositoryContact::for_response(response).unwrap();
-    repo_update(ca, contact).await;
+    repo_update(ca, response).await;
 }
 
 pub async fn expected_mft_and_crl(ca: &CaHandle, rcn: &ResourceClassName) -> Vec<String> {

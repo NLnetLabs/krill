@@ -1747,19 +1747,19 @@ fn extract_repository_contact(ca: &CaHandle, bytes: Bytes) -> Result<RepositoryC
     // Get rid of whitespace first so we can check if it smells like XML.
     // We could change this to check for Content-Type headers instead.
     let string = string.trim();
-    if string.starts_with('<') {
+
+    let response = if string.starts_with('<') {
         if string.contains("<parent_response") {
             Err(Error::CaRepoResponseWrongXml(ca.clone()))
         } else {
-            let response = idexchange::RepositoryResponse::parse(string.as_bytes())
-                .map_err(|e| Error::CaRepoResponseInvalidXml(ca.clone(), e.to_string()))?;
-
-            RepositoryContact::for_response(response)
-                .map_err(|e| Error::CaRepoResponseInvalidXml(ca.clone(), e.to_string()))
+            idexchange::RepositoryResponse::parse(string.as_bytes())
+                .map_err(|e| Error::CaRepoResponseInvalid(ca.clone(), e.to_string()))
         }
     } else {
         serde_json::from_str(string).map_err(Error::JsonError)
-    }
+    }?;
+
+    RepositoryContact::for_response(response).map_err(|e| Error::CaRepoResponseInvalid(ca.clone(), e.to_string()))
 }
 
 async fn api_ca_repo_update(req: Request, ca: CaHandle) -> RoutingResult {
