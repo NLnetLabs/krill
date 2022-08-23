@@ -1,1 +1,1 @@
-{"label":"ca-parent-response-invalid-xml","msg":"CA 'ca' got invalid parent response xml: expected something","args":{"cause":"expected something","ca":"ca"}}
+{"label":"ca-parent-response-invalid-xml","msg":"CA 'ca' got invalid parent response: expected something","args":{"cause":"expected something","ca":"ca"}}

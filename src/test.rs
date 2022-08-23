@@ -290,13 +290,13 @@ pub async fn add_child_rfc6492(
     child: ChildHandle,
     child_request: idexchange::ChildRequest,
     resources: ResourceSet,
-) -> ParentCaContact {
+) -> idexchange::ParentResponse {
     let id_cert = child_request.validate().unwrap();
 
     let add_child_request = AddChildRequest::new(child, resources, id_cert);
 
     match krill_admin(Command::CertAuth(CaCommand::ChildAdd(ca, add_child_request))).await {
-        ApiResponse::Rfc8183ParentResponse(response) => ParentCaContact::for_rfc8183_parent_response(response).unwrap(),
+        ApiResponse::Rfc8183ParentResponse(response) => response,
         _ => panic!("Expected ParentCaInfo response"),
     }
 }
@@ -366,8 +366,8 @@ pub async fn parent_statuses(ca: &CaHandle) -> ParentStatuses {
     }
 }
 
-pub async fn update_parent_contact(ca: &CaHandle, parent: &ParentHandle, contact: ParentCaContact) {
-    let parent_req = ParentCaReq::new(parent.clone(), contact);
+pub async fn update_parent_contact(ca: &CaHandle, parent: &ParentHandle, response: idexchange::ParentResponse) {
+    let parent_req = ParentCaReq::new(parent.clone(), response);
     krill_admin(Command::CertAuth(CaCommand::AddParent(ca.clone(), parent_req))).await;
 }
 
@@ -825,8 +825,8 @@ async fn will_publish(test_msg: &str, ca: &CaHandle, files: &[String], server: P
 pub async fn set_up_ca_under_parent_with_resources(ca: &CaHandle, parent: &CaHandle, resources: &ResourceSet) {
     let child_request = request(ca).await;
     let parent = {
-        let contact = add_child_rfc6492(parent.convert(), ca.convert(), child_request, resources.clone()).await;
-        ParentCaReq::new(parent.convert(), contact)
+        let response = add_child_rfc6492(parent.convert(), ca.convert(), child_request, resources.clone()).await;
+        ParentCaReq::new(parent.convert(), response)
     };
     add_parent_to_ca(ca, parent).await;
     assert!(ca_contains_resources(ca, resources).await);
