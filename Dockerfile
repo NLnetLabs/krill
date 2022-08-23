@@ -52,8 +52,8 @@ ARG BASE_IMG=alpine:3.15
 #
 # Only used when MODE=build.
 #
-# This ARG is intended for use by the Krill E2E test so that if needed it can
-# control the features enabled when compiling Krill.
+# This ARG can be used to control the features enabled when compiling the app
+# or other compilation settings as necessary.
 ARG CARGO_ARGS
 
 
