@@ -70,7 +70,7 @@ ARG CARGO_ARGS
 FROM ${BASE_IMG} AS build
 ARG CARGO_ARGS
 
-RUN apk --no-cache add rust cargo openssl-dev
+RUN apk add --no-cache rust cargo openssl-dev
 
 WORKDIR /tmp/build
 COPY . .
@@ -142,7 +142,7 @@ ARG RUN_USER_UID=1012
 ARG RUN_USER_GID=1012
 
 # Install required runtime dependencies
-RUN apk --no-cache add bash libgcc openssl tini tzdata util-linux
+RUN apk add --no-cache bash libgcc openssl tini tzdata util-linux
 
 # Create the user and group to run the application as
 RUN addgroup -g ${RUN_USER_GID} ${RUN_USER} && \
