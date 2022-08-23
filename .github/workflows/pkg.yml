@@ -930,7 +930,7 @@ jobs:
         with:
           context: .
           platforms: ${{ matrix.platform }}
-          tags: ${{ env.GITHUB_REPOSITORY_OWNER }}/${{ steps.meta.outputs.tags }}-${{ matrix.shortname }}
+          tags: ${{ github.repository }}/${{ steps.meta.outputs.tags }}-${{ matrix.shortname }}
           build-args: |
             MODE=${{ matrix.mode }}
             CARGO_ARGS=${{ matrix.cargo_args }}
@@ -938,14 +938,14 @@ jobs:
 
       - name: Save Docker image locally
         run: |
-          docker save -o /tmp/docker-${{ matrix.shortname }}-img.tar ${{ env.GITHUB_REPOSITORY_OWNER }}/${{ steps.meta.outputs.tags }}-${{ matrix.shortname }}
+          docker save -o /tmp/docker-${{ matrix.shortname }}-img.tar ${{ github.repository }}/${{ steps.meta.outputs.tags }}-${{ matrix.shortname }}
 
       # Do a basic sanity check of the created image using the test tag to select the image to run, but only if the
       # image is for the x86-64 architecture as we don't yet have a way to run non-x86-64 architecture images.
       - name: Test run (linux/amd64 images only)
         if: ${{ matrix.platform == 'linux/amd64' }}
         run: |
-          docker run --rm ${{ env.GITHUB_REPOSITORY_OWNER }}/${{ steps.meta.outputs.tags }}-${{ matrix.shortname }} krillc --version
+          docker run --rm ${{ github.repository }}/${{ steps.meta.outputs.tags }}-${{ matrix.shortname }} krillc --version
 
       # Upload the Docker image as a GitHub Actions artifact, handy when not publishing or investigating a problem
       - name: Upload built image to GitHub Actions
@@ -960,7 +960,7 @@ jobs:
         with:
           context: .
           platforms: ${{ matrix.platform }}
-          tags: ${{ env.GITHUB_REPOSITORY_OWNER }}/${{ steps.meta.outputs.tags }}-${{ matrix.shortname }}
+          tags: ${{ github.repository }}/${{ steps.meta.outputs.tags }}-${{ matrix.shortname }}
           build-args: |
             MODE=${{ matrix.mode }}
             CARGO_ARGS=${{ matrix.cargo_args }}
@@ -1005,12 +1005,12 @@ jobs:
       - name: Create multi-arch manifest
         run: |
           docker manifest create \
-            ${{ env.GITHUB_REPOSITORY_OWNER }}/${{ needs.docker.outputs.dockerbasetag }} \
-            --amend ${{ env.GITHUB_REPOSITORY_OWNER }}/${{ needs.docker.outputs.dockerbasetag }}-amd64 \
-            --amend ${{ env.GITHUB_REPOSITORY_OWNER }}/${{ needs.docker.outputs.dockerbasetag }}-armv6 \
-            --amend ${{ env.GITHUB_REPOSITORY_OWNER }}/${{ needs.docker.outputs.dockerbasetag }}-armv7 \
-            --amend ${{ env.GITHUB_REPOSITORY_OWNER }}/${{ needs.docker.outputs.dockerbasetag }}-arm64
+            ${{ github.repository }}/${{ needs.docker.outputs.dockerbasetag }} \
+            --amend ${{ github.repository }}/${{ needs.docker.outputs.dockerbasetag }}-amd64 \
+            --amend ${{ github.repository }}/${{ needs.docker.outputs.dockerbasetag }}-armv6 \
+            --amend ${{ github.repository }}/${{ needs.docker.outputs.dockerbasetag }}-armv7 \
+            --amend ${{ github.repository }}/${{ needs.docker.outputs.dockerbasetag }}-arm64
 
       - name: Publish multi-arch image to Docker Hub
         run: |
-          docker manifest push ${{ env.GITHUB_REPOSITORY_OWNER }}/${{ needs.docker.outputs.dockerbasetag }}
+          docker manifest push ${{ github.repository }}/${{ needs.docker.outputs.dockerbasetag }}
