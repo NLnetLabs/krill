@@ -116,7 +116,6 @@
 # Such 'internal' artifacts are named with a 'tmp-' prefix and are ignored by the separate manual external process
 # for publishing to packages.nlnetlabs.nl.
 
-
 name: Packaging
 
 on:
