@@ -160,7 +160,7 @@ jobs:
   #
   # See: https://github.com/rust-embedded/cross#docker-in-docker
   cross:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     strategy:
       matrix:
         target:
