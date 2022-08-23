@@ -279,31 +279,32 @@ impl Eq for RepositoryContact {}
 /// This type defines all parent ca details needed to add a parent to a CA
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParentCaReq {
-    handle: ParentHandle,     // the local name the child gave to the parent
-    contact: ParentCaContact, // where the parent can be contacted
+    handle: ParentHandle, // the child local name for the parent
+    #[serde(alias = "contact")] // stay backward compatible to pre 0.10.0
+    response: idexchange::ParentResponse,
 }
 
 impl fmt::Display for ParentCaReq {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "parent '{}' contact '{}'", self.handle, self.contact)
+        write!(f, "parent '{}' contact '{}'", self.handle, self.response)
     }
 }
 
 impl ParentCaReq {
-    pub fn new(handle: ParentHandle, contact: ParentCaContact) -> Self {
-        ParentCaReq { handle, contact }
+    pub fn new(handle: ParentHandle, response: idexchange::ParentResponse) -> Self {
+        ParentCaReq { handle, response }
     }
 
     pub fn handle(&self) -> &ParentHandle {
         &self.handle
     }
 
-    pub fn contact(&self) -> &ParentCaContact {
-        &self.contact
+    pub fn response(&self) -> &idexchange::ParentResponse {
+        &self.response
     }
 
-    pub fn unpack(self) -> (ParentHandle, ParentCaContact) {
-        (self.handle, self.contact)
+    pub fn unpack(self) -> (ParentHandle, idexchange::ParentResponse) {
+        (self.handle, self.response)
     }
 }
 
