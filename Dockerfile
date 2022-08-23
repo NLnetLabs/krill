@@ -98,7 +98,7 @@ RUN CARGO_HTTP_MULTIPLEXING=false cargo install \
 
 
 # -----------------------------------------------------------------------------
-# Build stage: copy
+# Docker stage: copy
 # -----------------------------------------------------------------------------
 # Only used when MODE=copy.
 #
