@@ -33,8 +33,7 @@ use crate::{
         api::{
             AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionFormatError, AspaProvidersUpdate,
             AuthorizationFmtError, BgpSecAsnKey, BgpSecDefinition, CertAuthInit, ParentCaContact, ParentCaReq,
-            PublicationServerUris, RepositoryContact, RoaDefinition, RoaDefinitionUpdates, RtaName, Token,
-            UpdateChildRequest,
+            PublicationServerUris, RoaDefinition, RoaDefinitionUpdates, RtaName, Token, UpdateChildRequest,
         },
         crypto::SignSupport,
         error::KrillIoError,
@@ -2083,14 +2082,8 @@ impl Options {
         let bytes = Self::read_file_arg(path)?;
         let response = idexchange::RepositoryResponse::parse(bytes.as_ref())?;
 
-        let repo_contact = RepositoryContact::for_response(response).map_err(|e| {
-            Error::GeneralArgumentError(format!(
-                "Could not validate certificate in RFC 8183 Repository Response XML: {}",
-                e
-            ))
-        })?;
+        let command = Command::CertAuth(CaCommand::RepoUpdate(my_ca, response));
 
-        let command = Command::CertAuth(CaCommand::RepoUpdate(my_ca, repo_contact));
         Ok(Options::make(general_args, command))
     }
 
@@ -2497,7 +2490,7 @@ pub enum CaCommand {
     // Publishing
     RepoPublisherRequest(CaHandle), // Get the RFC 8183 Publisher Request
     RepoDetails(CaHandle),
-    RepoUpdate(CaHandle, RepositoryContact),
+    RepoUpdate(CaHandle, idexchange::RepositoryResponse),
     RepoStatus(CaHandle),
 
     // Parents (to this CA)
