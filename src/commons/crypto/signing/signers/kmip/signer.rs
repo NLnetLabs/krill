@@ -452,7 +452,7 @@ impl KmipSigner {
             // PyKMIP with Krill!
             if conn_settings.force {
                 warn!(
-                    "[{}] Ignoring KMIP server lacking support for one or more required operations: {}",
+                    "[{}] KMIP server lacks support for one or more required operations: {}",
                     name,
                     unsupported_operations.join(",")
                 );
