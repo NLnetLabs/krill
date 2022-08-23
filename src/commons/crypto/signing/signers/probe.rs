@@ -237,9 +237,9 @@ pub mod tests {
 
     #[derive(Debug, Default)]
     struct Config {
-        hostname: String,
+        _hostname: String,
 
-        port: u64,
+        _port: u64,
     }
 
     #[derive(Copy, Clone, Debug, Default)]
