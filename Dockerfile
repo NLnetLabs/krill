@@ -91,6 +91,7 @@ COPY . .
 # will create the output directory for us.
 RUN CARGO_HTTP_MULTIPLEXING=false cargo install \
   --target x86_64-alpine-linux-musl \
+  --release \
   --locked \
   --path . \
   --root /tmp/out/ \
