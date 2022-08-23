@@ -741,7 +741,9 @@ impl CaManager {
     ) -> KrillResult<()> {
         let ca = self.get_ca(&handle).await?;
 
-        let (parent, contact) = parent_req.unpack();
+        let (parent, response) = parent_req.unpack();
+        let contact = ParentCaContact::for_rfc8183_parent_response(response)
+            .map_err(|e| Error::CaParentResponseInvalid(handle.clone(), e.to_string()))?;
 
         let cmd = if !ca.parent_known(&parent) {
             CmdDet::add_parent(&handle, parent, contact, actor)

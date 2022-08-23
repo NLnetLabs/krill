@@ -32,8 +32,8 @@ use crate::{
     commons::{
         api::{
             AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionFormatError, AspaProvidersUpdate,
-            AuthorizationFmtError, BgpSecAsnKey, BgpSecDefinition, CertAuthInit, ParentCaContact, ParentCaReq,
-            PublicationServerUris, RoaDefinition, RoaDefinitionUpdates, RtaName, Token, UpdateChildRequest,
+            AuthorizationFmtError, BgpSecAsnKey, BgpSecDefinition, CertAuthInit, ParentCaReq, PublicationServerUris,
+            RoaDefinition, RoaDefinitionUpdates, RtaName, Token, UpdateChildRequest,
         },
         crypto::SignSupport,
         error::KrillIoError,
@@ -1706,8 +1706,7 @@ impl Options {
 
         let parent = matches.value_of("parent").unwrap();
         let parent = ParentHandle::from_str(parent).map_err(|_| Error::InvalidHandle)?;
-        let contact = ParentCaContact::for_rfc8183_parent_response(response)?;
-        let parent_req = ParentCaReq::new(parent, contact);
+        let parent_req = ParentCaReq::new(parent, response);
 
         let command = Command::CertAuth(CaCommand::AddParent(my_ca, parent_req));
         Ok(Options::make(general_args, command))

@@ -34,8 +34,8 @@ use rpki::ca::{
 use crate::{
     commons::{
         api::{
-            AspaDefinitionUpdates, BgpStats, CommandHistoryCriteria, ParentCaContact, ParentCaReq, PublisherList,
-            RepositoryContact, RoaDefinitionUpdates, RtaName, Token,
+            AspaDefinitionUpdates, BgpStats, CommandHistoryCriteria, ParentCaReq, PublisherList, RepositoryContact,
+            RoaDefinitionUpdates, RtaName, Token,
         },
         bgp::BgpAnalysisAdvice,
         error::Error,
@@ -1805,22 +1805,20 @@ fn extract_parent_ca_req(
     parent_override: Option<ParentHandle>,
 ) -> Result<ParentCaReq, Error> {
     let string = String::from_utf8(bytes.to_vec()).map_err(Error::custom)?;
-    let string = string.trim();
 
     // Get rid of whitespace first so we can check if it smells like XML.
     // We could change this to check for Content-Type headers instead.
+    let string = string.trim();
     let req = if string.starts_with('<') {
         if string.starts_with("<repository") {
             return Err(Error::CaParentResponseWrongXml(ca.clone()));
         } else {
-            let res = idexchange::ParentResponse::parse(string.as_bytes())
-                .map_err(|e| Error::CaParentResponseInvalidXml(ca.clone(), e.to_string()))?;
+            let response = idexchange::ParentResponse::parse(string.as_bytes())
+                .map_err(|e| Error::CaParentResponseInvalid(ca.clone(), e.to_string()))?;
 
-            let parent_name = parent_override.unwrap_or_else(|| res.parent_handle().clone());
-            let contact = ParentCaContact::for_rfc8183_parent_response(res)
-                .map_err(|e| Error::CaParentResponseInvalidXml(ca.clone(), e.to_string()))?;
+            let parent_name = parent_override.unwrap_or_else(|| response.parent_handle().clone());
 
-            ParentCaReq::new(parent_name, contact)
+            ParentCaReq::new(parent_name, response)
         }
     } else {
         let req: ParentCaReq = serde_json::from_str(&string).map_err(Error::JsonError)?;
