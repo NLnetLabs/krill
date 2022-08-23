@@ -108,6 +108,7 @@ pub struct SignerRouter {
     /// The set of [SignerProvider] instances that are configured but not yet confirmed to be usable. All signers start
     /// off in this set and are moved to the `active_signers` set as soon as we are able to confirm them. See
     /// `active_signers` above.
+    #[cfg(feature = "hsm")]
     pending_signers: RwLock<Vec<Arc<SignerProvider>>>,
 }
 
@@ -137,12 +138,15 @@ impl SignerRouter {
         }
 
         let default_signer = default_signer.unwrap();
+
+        #[cfg(feature = "hsm")]
         let pending_signers = RwLock::new(all_signers);
 
         Ok(SignerRouter {
             default_signer: default_signer.clone(),
             one_off_signer: one_off_signer.unwrap_or_else(|| default_signer.clone()),
             active_signers,
+            #[cfg(feature = "hsm")]
             pending_signers,
             signer_mapper,
         })
