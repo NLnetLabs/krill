@@ -750,7 +750,7 @@ jobs:
             ;;
         esac
 
-    - name: Test the installed ${{ matrix.pkg}} package
+    - name: Test the installed ${{ matrix.pkg }} package
       if: ${{ matrix.pkg == 'krill' }}
       run: |
         echo -e "\nKRILLC VERSION:"
@@ -784,7 +784,7 @@ jobs:
         echo -e "\nKRILL MAN PAGE:"
         sg lxd -c "lxc exec testcon -- man -P cat krill"
 
-    - name: Test the installed ${{ matrix.pkg}} package
+    - name: Test the installed ${{ matrix.pkg }} package
       if: ${{ matrix.pkg == 'krillup' }}
       run: |
         echo -e "\nKRILLUP VERSION:"
@@ -805,7 +805,7 @@ jobs:
             ;;
         esac
 
-    - name: Test the upgraded ${{ matrix.pkg}} package
+    - name: Test the upgraded ${{ matrix.pkg }} package
       if: ${{ matrix.mode == 'upgrade-from-published' && matrix.pkg == 'krill' }}
       run: |
         echo -e "\nKRILLC VERSION:"
