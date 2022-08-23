@@ -280,10 +280,10 @@ jobs:
             image: 'debian:buster'
             target: 'aarch64-unknown-linux-gnu'
     env:
-      CARGO_DEB_VER: 1.34.2
-      CARGO_GENERATE_RPM_VER: 0.6.0
-      # A Krill version of the form 'x.y.z-dev' denotes a dev build that is newer than the released x.y.z version but is
-      # not yet a new release.
+      CARGO_DEB_VER: 1.38.4
+      CARGO_GENERATE_RPM_VER: 0.8.0
+      # A version of the form 'x.y.z-dev' denotes a dev build that is newer than the released x.y.z version but is not
+      # yet a new release.
       NEXT_VER_LABEL: dev
     steps:
     - name: Set vars
@@ -534,7 +534,7 @@ jobs:
                 ;;
             esac
 
-            cargo generate-rpm ${EXTRA_CARGO_GENERATE_RPM_ARGS}
+            cargo generate-rpm --set-metadata "version=\"${PKG_APP_VER}\"" ${EXTRA_CARGO_GENERATE_RPM_ARGS}
             ;;
         esac
 
