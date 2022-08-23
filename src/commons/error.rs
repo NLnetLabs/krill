@@ -228,7 +228,7 @@ pub enum Error {
     // CA Repo Issues
     CaRepoInUse(CaHandle),
     CaRepoIssue(CaHandle, String),
-    CaRepoResponseInvalidXml(CaHandle, String),
+    CaRepoResponseInvalid(CaHandle, String),
     CaRepoResponseWrongXml(CaHandle),
 
     // CA Parent Issues
@@ -399,7 +399,7 @@ impl fmt::Display for Error {
             Error::CaRepoInUse(ca) => write!(f, "CA '{}' already uses this repository", ca),
             Error::CaRepoIssue(ca, e) => write!(f, "CA '{}' cannot get response from repository '{}'. Is the 'service_uri' in the XML reachable? Note that when upgrading Krill you should re-use existing configuration and data. For a fresh \
             re-install of Krill you will need to send XML to all other parties again: parent(s), children, and repository", ca,        e),
-            Error::CaRepoResponseInvalidXml(ca, e) => write!(f, "CA '{}' got invalid repository response xml: {}", ca, e),
+            Error::CaRepoResponseInvalid(ca, e) => write!(f, "CA '{}' got invalid repository response: {}", ca, e),
             Error::CaRepoResponseWrongXml(ca) => write!(f, "CA '{}' got parent instead of repository response", ca),
 
             // CA Parent Issues
@@ -755,7 +755,7 @@ impl Error {
 
             Error::CaRepoIssue(ca, err) => ErrorResponse::new("ca-repo-issue", &self).with_ca(ca).with_cause(err),
 
-            Error::CaRepoResponseInvalidXml(ca, err) => ErrorResponse::new("ca-repo-response-invalid-xml", &self)
+            Error::CaRepoResponseInvalid(ca, err) => ErrorResponse::new("ca-repo-response-invalid-xml", &self)
                 .with_ca(ca)
                 .with_cause(err),
 
@@ -1103,7 +1103,7 @@ mod tests {
         );
         verify(
             include_str!("../../test-resources/errors/ca-repo-response-invalid-xml.json"),
-            Error::CaRepoResponseInvalidXml(ca.clone(), "expected some tag".to_string()),
+            Error::CaRepoResponseInvalid(ca.clone(), "expected some tag".to_string()),
         );
         verify(
             include_str!("../../test-resources/errors/ca-repo-response-wrong-xml.json"),
