@@ -366,7 +366,10 @@ fn signer_builder(
     flags: SignerFlags,
     work_dir: &Path,
     name: &str,
+    #[cfg(feature = "hsm")]
     probe_interval: Duration,
+    #[cfg(not(feature = "hsm"))]
+    _probe_interval: Duration,
     mapper: &Option<Arc<SignerMapper>>,
 ) -> KrillResult<SignerProvider> {
     match r#type {
