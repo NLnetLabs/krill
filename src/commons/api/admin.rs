@@ -224,12 +224,12 @@ impl PublicationServerInfo {
 /// This type is provided so that we do not need to change the the API for
 ///  uploading repository responses as it was in <0.10.0
 pub struct ApiRepositoryContact {
-    repository_contact: idexchange::RepositoryResponse,
+    repository_response: idexchange::RepositoryResponse,
 }
 
 impl ApiRepositoryContact {
-    pub fn new(repository_contact: idexchange::RepositoryResponse) -> Self {
-        ApiRepositoryContact { repository_contact }
+    pub fn new(repository_response: idexchange::RepositoryResponse) -> Self {
+        ApiRepositoryContact { repository_response }
     }
 }
 
@@ -237,7 +237,7 @@ impl TryFrom<ApiRepositoryContact> for RepositoryContact {
     type Error = Error;
 
     fn try_from(api_contact: ApiRepositoryContact) -> KrillResult<Self> {
-        RepositoryContact::for_response(api_contact.repository_contact)
+        RepositoryContact::for_response(api_contact.repository_response)
     }
 }
 
