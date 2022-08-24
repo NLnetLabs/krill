@@ -351,7 +351,7 @@ jobs:
     # Speed up Rust builds by caching unchanged built dependencies.
     # See: https://github.com/actions/cache/blob/master/examples.md#rust---cargo
     - name: Cache Dot Cargo
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       with:
         path: |
           ~/.cargo/registry
@@ -362,14 +362,14 @@ jobs:
     # the tool that we are using.
     - name: Cache Cargo Deb if available
       id: cache-cargo-deb
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       with:
         path: ~/.cargo/bin/cargo-deb
         key: ${{ matrix.image }}-${{ matrix.pkg }}-${{ matrix.target }}-cargo-deb-${{ env.CARGO_DEB_VER }}-${{ endsWith(matrix.image, 'xenial')}}
 
     - name: Cache Cargo Generate RPM if available
       id: cache-cargo-generate-rpm
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       with:
         path: ~/.cargo/bin/cargo-generate-rpm
         key: ${{ matrix.image }}-${{ matrix.pkg }}-${{ matrix.target }}-cargo-generate-rpm-${{ env.CARGO_GENERATE_RPM_VER }}
