@@ -39,7 +39,7 @@
 #
 # Docker packaging:
 # =================
-# Docker packaging was originally done using Docker Hub but long delays and repeatd spurious failures caused us to
+# Docker packaging was originally done using Docker Hub but long delays and repeated spurious failures caused us to
 # migrate Docker packaging to GitHub Actions and which is now part of this workflow.
 #
 # Images use an Alpine base image for reduced image size and thus download time, and also for faster and simpler
