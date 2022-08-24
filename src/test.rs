@@ -37,8 +37,8 @@ use crate::{
             AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, BgpSecAsnKey,
             BgpSecCsrInfoList, BgpSecDefinition, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ObjectName,
             ParentCaContact, ParentCaReq, ParentStatuses, PublicationServerUris, PublisherDetails, PublisherList,
-            RepositoryContact, ResourceClassKeysInfo, RoaDefinitionUpdates, RoaPayload, RtaList, RtaName,
-            RtaPrepResponse, TypedPrefix, UpdateChildRequest,
+            RepositoryContact, ResourceClassKeysInfo, RoaConfiguration, RoaDefinitionUpdates, RoaPayload, RtaList,
+            RtaName, RtaPrepResponse, TypedPrefix, UpdateChildRequest,
         },
         bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion},
         crypto::SignSupport,
@@ -707,11 +707,15 @@ pub fn save_file(base_dir: &Path, file_name: &str, content: &[u8]) {
 // Support testing announcements and ROAs etc
 
 pub fn announcement(s: &str) -> Announcement {
-    let def = definition(s);
+    let def = roa_payload(s);
     Announcement::from(def)
 }
 
-pub fn definition(s: &str) -> RoaPayload {
+pub fn roa_configuration(s: &str) -> RoaConfiguration {
+    RoaConfiguration::from_str(s).unwrap()
+}
+
+pub fn roa_payload(s: &str) -> RoaPayload {
     RoaPayload::from_str(s).unwrap()
 }
 

@@ -960,7 +960,7 @@ mod tests {
     use crate::commons::api::RoaPayload;
 
     use super::*;
-    use crate::test::definition;
+    use crate::test::roa_payload;
     use crate::test::test_id_certificate;
 
     fn verify(expected_json: &str, e: Error) {
@@ -1237,10 +1237,10 @@ mod tests {
     fn roa_delta_json() {
         let mut error = RoaDeltaError::default();
 
-        let duplicate = definition("10.0.0.0/20-24 => 1");
-        let not_held = definition("10.128.0.0/9 => 1");
-        let invalid_length = definition("10.0.1.0/25 => 1");
-        let unknown = definition("192.168.0.0/16 => 1");
+        let duplicate = roa_payload("10.0.0.0/20-24 => 1");
+        let not_held = roa_payload("10.128.0.0/9 => 1");
+        let invalid_length = roa_payload("10.0.1.0/25 => 1");
+        let unknown = roa_payload("192.168.0.0/16 => 1");
 
         error.add_duplicate(duplicate);
         error.add_notheld(not_held);

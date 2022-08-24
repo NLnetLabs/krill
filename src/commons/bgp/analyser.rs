@@ -362,15 +362,15 @@ mod tests {
 
     #[tokio::test]
     async fn analyse_bgp() {
-        let roa_too_permissive = definition("10.0.0.0/22-23 => 64496");
-        let roa_as0 = definition("10.0.4.0/24 => 0");
-        let roa_unseen_completely = definition("10.0.3.0/24 => 64497");
+        let roa_too_permissive = roa_payload("10.0.0.0/22-23 => 64496");
+        let roa_as0 = roa_payload("10.0.4.0/24 => 0");
+        let roa_unseen_completely = roa_payload("10.0.3.0/24 => 64497");
 
-        let roa_not_held = definition("10.1.0.0/24 => 64497");
+        let roa_not_held = roa_payload("10.1.0.0/24 => 64497");
 
-        let roa_authorizing_single = definition("192.168.1.0/24 => 64497");
-        let roa_unseen_redundant = definition("192.168.1.0/24 => 64498");
-        let roa_as0_redundant = definition("192.168.1.0/24 => 0");
+        let roa_authorizing_single = roa_payload("192.168.1.0/24 => 64497");
+        let roa_unseen_redundant = roa_payload("192.168.1.0/24 => 64498");
+        let roa_as0_redundant = roa_payload("192.168.1.0/24 => 0");
 
         let resources_held = ResourceSet::from_strs("", "10.0.0.0/16, 192.168.0.0/16", "").unwrap();
         let limit = None;
@@ -401,7 +401,7 @@ mod tests {
 
     #[tokio::test]
     async fn analyse_bgp_disallowed_announcements() {
-        let roa = definition("10.0.0.0/22 => 0");
+        let roa = roa_payload("10.0.0.0/22 => 0");
         let analyser = BgpAnalyser::with_test_announcements();
 
         let resources_held = ResourceSet::from_strs("", "10.0.0.0/8, 192.168.0.0/16", "").unwrap();
@@ -412,10 +412,10 @@ mod tests {
         let mut disallowed = report.matching_defs(BgpAnalysisState::AnnouncementDisallowed);
         disallowed.sort();
 
-        let disallowed_1 = definition("10.0.0.0/22 => 64496");
-        let disallowed_2 = definition("10.0.0.0/22 => 64497");
-        let disallowed_3 = definition("10.0.0.0/24 => 64496");
-        let disallowed_4 = definition("10.0.2.0/23 => 64496");
+        let disallowed_1 = roa_payload("10.0.0.0/22 => 64496");
+        let disallowed_2 = roa_payload("10.0.0.0/22 => 64497");
+        let disallowed_3 = roa_payload("10.0.0.0/24 => 64496");
+        let disallowed_4 = roa_payload("10.0.2.0/23 => 64496");
         let mut expected = vec![&disallowed_1, &disallowed_2, &disallowed_3, &disallowed_4];
         expected.sort();
 
@@ -432,9 +432,9 @@ mod tests {
 
     #[tokio::test]
     async fn analyse_bgp_no_announcements() {
-        let roa1 = definition("10.0.0.0/23-24 => 64496");
-        let roa2 = definition("10.0.3.0/24 => 64497");
-        let roa3 = definition("10.0.4.0/24 => 0");
+        let roa1 = roa_payload("10.0.0.0/23-24 => 64496");
+        let roa2 = roa_payload("10.0.3.0/24 => 64497");
+        let roa3 = roa_payload("10.0.4.0/24 => 0");
 
         let resources_held = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
 
@@ -454,13 +454,13 @@ mod tests {
 
     #[tokio::test]
     async fn make_bgp_analysis_suggestion() {
-        let roa_too_permissive = definition("10.0.0.0/22-23 => 64496");
-        let roa_redundant = definition("10.0.0.0/23 => 64496");
-        let roa_as0 = definition("10.0.4.0/24 => 0");
-        let roa_unseen_completely = definition("10.0.3.0/24 => 64497");
-        let roa_authorizing_single = definition("192.168.1.0/24 => 64497");
-        let roa_unseen_redundant = definition("192.168.1.0/24 => 64498");
-        let roa_as0_redundant = definition("192.168.1.0/24 => 0");
+        let roa_too_permissive = roa_payload("10.0.0.0/22-23 => 64496");
+        let roa_redundant = roa_payload("10.0.0.0/23 => 64496");
+        let roa_as0 = roa_payload("10.0.4.0/24 => 0");
+        let roa_unseen_completely = roa_payload("10.0.3.0/24 => 64497");
+        let roa_authorizing_single = roa_payload("192.168.1.0/24 => 64497");
+        let roa_unseen_redundant = roa_payload("192.168.1.0/24 => 64498");
+        let roa_as0_redundant = roa_payload("192.168.1.0/24 => 0");
 
         let analyser = BgpAnalyser::with_test_announcements();
 

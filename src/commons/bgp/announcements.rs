@@ -300,9 +300,9 @@ mod tests {
 
     #[test]
     fn validate_announcement() {
-        let roa_authorizing_1 = definition("10.0.0.0/23-24 => 64496");
-        let roa_authorizing_2 = definition("10.0.0.0/23 => 64498");
-        let roa_irrelevant = definition("10.1.0.0/23-24 => 64496");
+        let roa_authorizing_1 = roa_payload("10.0.0.0/23-24 => 64496");
+        let roa_authorizing_2 = roa_payload("10.0.0.0/23 => 64498");
+        let roa_irrelevant = roa_payload("10.1.0.0/23-24 => 64496");
 
         let ann_v1 = announcement("10.0.0.0/24 => 64496");
         let ann_v2 = announcement("10.0.1.0/24 => 64496");

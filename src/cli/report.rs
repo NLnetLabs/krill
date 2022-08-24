@@ -10,7 +10,7 @@ use crate::{
         api::{
             AllCertAuthIssues, AspaDefinitionList, BgpSecCsrInfoList, CaCommandDetails, CaRepoDetails, CertAuthInfo,
             CertAuthIssues, CertAuthList, ChildCaInfo, ChildrenConnectionStats, CommandHistory, ParentCaContact,
-            ParentStatuses, PublisherDetails, PublisherList, RepoStatus, RoaDefinitions, RtaList, RtaPrepResponse,
+            ParentStatuses, PublisherDetails, PublisherList, RepoStatus, RoaConfiguration, RtaList, RtaPrepResponse,
             ServerInfo,
         },
         bgp::{BgpAnalysisAdvice, BgpAnalysisReport, BgpAnalysisSuggestion},

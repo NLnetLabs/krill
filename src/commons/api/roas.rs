@@ -331,7 +331,7 @@ impl FromStr for RoaConfiguration {
     // "192.168.0.0/16 => 64496"
     // "192.168.0.0/16 => 64496 # my nice ROA"
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut parts = s.split('#');
+        let mut parts = s.splitn(2, '#');
         let payload_part = parts.next().ok_or_else(|| AuthorizationFmtError::auth(s))?;
 
         let payload = RoaPayload::from_str(payload_part)?;
@@ -744,7 +744,7 @@ impl AuthorizationFmtError {
 mod tests {
     use super::*;
 
-    use crate::test::definition;
+    use crate::test::{roa_configuration, roa_payload};
 
     #[test]
     fn parse_delta() {
@@ -759,11 +759,11 @@ mod tests {
 
         let expected = {
             let added = vec![
-                definition("192.168.0.0/16 => 64496"),
-                definition("192.168.1.0/24 => 64496"),
+                roa_configuration("192.168.0.0/16 => 64496 # inline comment"),
+                roa_configuration("192.168.1.0/24 => 64496"),
             ];
 
-            let removed = vec![definition("192.168.3.0/24 => 64496")];
+            let removed = vec![roa_payload("192.168.3.0/24 => 64496")];
             RoaDefinitionUpdates::new(added, removed)
         };
 
@@ -782,31 +782,47 @@ mod tests {
 
     #[test]
     fn normalize_roa_definition_json() {
-        let def = definition("192.168.0.0/16 => 64496");
+        let def = roa_payload("192.168.0.0/16 => 64496");
         let json = serde_json::to_string(&def).unwrap();
         let expected = "{\"asn\":64496,\"prefix\":\"192.168.0.0/16\"}";
         assert_eq!(json, expected);
 
-        let def = definition("192.168.0.0/16-24 => 64496");
+        let def = roa_payload("192.168.0.0/16-24 => 64496");
         let json = serde_json::to_string(&def).unwrap();
         let expected = "{\"asn\":64496,\"prefix\":\"192.168.0.0/16\",\"max_length\":24}";
         assert_eq!(json, expected);
     }
 
     #[test]
-    fn serde_roa_definition() {
-        fn parse_ser_de_print_definition(s: &str) {
-            let def = definition(s);
+    fn serde_roa_configuration() {
+        fn parse_ser_de_print_configuration(s: &str) {
+            let def = roa_configuration(s);
             let ser = serde_json::to_string(&def).unwrap();
             let de = serde_json::from_str(&ser).unwrap();
             assert_eq!(def, de);
             assert_eq!(s, de.to_string().as_str())
         }
 
-        parse_ser_de_print_definition("192.168.0.0/16 => 64496");
-        parse_ser_de_print_definition("192.168.0.0/16-24 => 64496");
-        parse_ser_de_print_definition("2001:db8::/32 => 64496");
-        parse_ser_de_print_definition("2001:db8::/32-48 => 64496");
+        parse_ser_de_print_configuration("192.168.0.0/16 => 64496");
+        parse_ser_de_print_configuration("192.168.0.0/16-24 => 64496");
+        parse_ser_de_print_configuration("2001:db8::/32 => 64496");
+        parse_ser_de_print_configuration("2001:db8::/32-48 => 64496");
+    }
+
+    #[test]
+    fn serde_roa_payload() {
+        fn parse_ser_de_print_payload(s: &str) {
+            let def = roa_payload(s);
+            let ser = serde_json::to_string(&def).unwrap();
+            let de = serde_json::from_str(&ser).unwrap();
+            assert_eq!(def, de);
+            assert_eq!(s, de.to_string().as_str())
+        }
+
+        parse_ser_de_print_payload("192.168.0.0/16 => 64496 # comment");
+        parse_ser_de_print_payload("192.168.0.0/16-24 => 64496 # comment with extra #");
+        parse_ser_de_print_payload("2001:db8::/32 => 64496");
+        parse_ser_de_print_payload("2001:db8::/32-48 => 64496");
     }
 
     #[test]
@@ -838,14 +854,14 @@ mod tests {
 
     #[test]
     fn roa_includes() {
-        let covering = definition("192.168.0.0/16-20 => 64496");
+        let covering = roa_payload("192.168.0.0/16-20 => 64496");
 
-        let included_no_ml = definition("192.168.0.0/16 => 64496");
-        let included_more_specific = definition("192.168.0.0/20 => 64496");
+        let included_no_ml = roa_payload("192.168.0.0/16 => 64496");
+        let included_more_specific = roa_payload("192.168.0.0/20 => 64496");
 
-        let allowing_more_specific = definition("192.168.0.0/16-24 => 64496");
-        let more_specific = definition("192.168.3.0/24 => 64496");
-        let other_asn = definition("192.168.3.0/24 => 64497");
+        let allowing_more_specific = roa_payload("192.168.0.0/16-24 => 64496");
+        let more_specific = roa_payload("192.168.3.0/24 => 64496");
+        let other_asn = roa_payload("192.168.3.0/24 => 64497");
 
         assert!(covering.includes(&included_no_ml));
         assert!(covering.includes(&included_more_specific));
@@ -872,7 +888,7 @@ mod tests {
     #[test]
     fn roa_nr_specific_pfx() {
         fn check(def: &str, expected: u128) {
-            let def = definition(def);
+            let def = roa_payload(def);
             let calculated = def.nr_of_specific_prefixes();
             assert_eq!(calculated, expected);
         }

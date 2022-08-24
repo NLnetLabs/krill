@@ -33,8 +33,8 @@ use crate::{
         api::{
             AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionFormatError, AspaProvidersUpdate,
             AuthorizationFmtError, BgpSecAsnKey, BgpSecDefinition, CertAuthInit, ParentCaContact, ParentCaReq,
-            PublicationServerUris, RepositoryContact, RoaDefinitionUpdates, RoaPayload, RtaName, Token,
-            UpdateChildRequest,
+            PublicationServerUris, RepositoryContact, RoaConfiguration, RoaDefinitionUpdates, RoaPayload, RtaName,
+            Token, UpdateChildRequest,
         },
         crypto::SignSupport,
         error::KrillIoError,
@@ -1813,14 +1813,14 @@ impl Options {
 
             if let Some(add) = matches.values_of("add") {
                 for roa_str in add {
-                    let roa: RoaPayload = RoaPayload::from_str(roa_str)?;
+                    let roa = RoaConfiguration::from_str(roa_str)?;
                     added.push(roa);
                 }
             }
 
             if let Some(remove) = matches.values_of("remove") {
                 for roa_str in remove {
-                    let roa: RoaPayload = RoaPayload::from_str(roa_str)?;
+                    let roa = RoaPayload::from_str(roa_str)?;
                     removed.push(roa);
                 }
             }
