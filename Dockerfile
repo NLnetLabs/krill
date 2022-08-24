@@ -163,7 +163,9 @@ COPY docker/entrypoint.sh /opt/
 RUN chown ${RUN_USER}: /opt/entrypoint.sh
 
 # Switch to our applications user
-USER $RUN_USER_UID
+# This is commented out because it may cause issues for users upgrading from
+# an earlier version of Krill, because those versions run Krill as root.
+# USER $RUN_USER_UID
 
 # Hint to operators the TCP port that the application in this image listens on
 # (by default).
