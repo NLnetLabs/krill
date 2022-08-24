@@ -11,9 +11,9 @@ use crate::{
     },
     commons::{
         api::{
-            AllCertAuthIssues, AspaDefinitionUpdates, BgpSecDefinitionUpdates, CaRepoDetails, CertAuthIssues,
-            ChildCaInfo, ChildrenConnectionStats, ParentCaContact, ParentStatuses, PublisherDetails, PublisherList,
-            RepoStatus, Token,
+            AllCertAuthIssues, ApiRepositoryContact, AspaDefinitionUpdates, BgpSecDefinitionUpdates, CaRepoDetails,
+            CertAuthIssues, ChildCaInfo, ChildrenConnectionStats, ParentCaContact, ParentStatuses, PublisherDetails,
+            PublisherList, RepoStatus, Token,
         },
         bgp::BgpAnalysisAdvice,
         error::KrillIoError,
@@ -221,7 +221,8 @@ impl KrillClient {
 
             CaCommand::RepoUpdate(handle, update) => {
                 let uri = format!("api/v1/cas/{}/repo", handle);
-                post_json(&self.server, &self.token, &uri, update).await?;
+                let api_contact = ApiRepositoryContact::new(update);
+                post_json(&self.server, &self.token, &uri, api_contact).await?;
                 Ok(ApiResponse::Empty)
             }
 

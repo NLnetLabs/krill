@@ -1,6 +1,6 @@
 //! Support for admin tasks, such as managing publishers and RFC8181 clients
 
-use std::fmt;
+use std::{convert::TryFrom, fmt};
 
 use serde::{Deserialize, Serialize};
 
@@ -215,6 +215,29 @@ impl PublicationServerInfo {
 
     pub fn service_uri(&self) -> &ServiceUri {
         &self.service_uri
+    }
+}
+
+//------------ ApiRepositoryContact ------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+/// This type is provided so that we do not need to change the the API for
+///  uploading repository responses as it was in <0.10.0
+pub struct ApiRepositoryContact {
+    repository_contact: idexchange::RepositoryResponse,
+}
+
+impl ApiRepositoryContact {
+    pub fn new(repository_contact: idexchange::RepositoryResponse) -> Self {
+        ApiRepositoryContact { repository_contact }
+    }
+}
+
+impl TryFrom<ApiRepositoryContact> for RepositoryContact {
+    type Error = Error;
+
+    fn try_from(api_contact: ApiRepositoryContact) -> KrillResult<Self> {
+        RepositoryContact::for_response(api_contact.repository_contact)
     }
 }
 
