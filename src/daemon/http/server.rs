@@ -2,7 +2,7 @@
 //!
 use std::{
     collections::HashMap,
-    convert::Infallible,
+    convert::{Infallible, TryInto},
     env,
     fs::File,
     io::Read,
@@ -34,8 +34,8 @@ use rpki::ca::{
 use crate::{
     commons::{
         api::{
-            AspaDefinitionUpdates, BgpStats, CommandHistoryCriteria, ParentCaReq, PublisherList, RepositoryContact,
-            RoaDefinitionUpdates, RtaName, Token,
+            ApiRepositoryContact, AspaDefinitionUpdates, BgpStats, CommandHistoryCriteria, ParentCaReq, PublisherList,
+            RepositoryContact, RoaDefinitionUpdates, RtaName, Token,
         },
         bgp::BgpAnalysisAdvice,
         error::Error,
@@ -1748,18 +1748,20 @@ fn extract_repository_contact(ca: &CaHandle, bytes: Bytes) -> Result<RepositoryC
     // We could change this to check for Content-Type headers instead.
     let string = string.trim();
 
-    let response = if string.starts_with('<') {
+    if string.starts_with('<') {
         if string.contains("<parent_response") {
             Err(Error::CaRepoResponseWrongXml(ca.clone()))
         } else {
-            idexchange::RepositoryResponse::parse(string.as_bytes())
+            let response = idexchange::RepositoryResponse::parse(string.as_bytes())
+                .map_err(|e| Error::CaRepoResponseInvalid(ca.clone(), e.to_string()))?;
+
+            RepositoryContact::for_response(response)
                 .map_err(|e| Error::CaRepoResponseInvalid(ca.clone(), e.to_string()))
         }
     } else {
-        serde_json::from_str(string).map_err(Error::JsonError)
-    }?;
-
-    RepositoryContact::for_response(response).map_err(|e| Error::CaRepoResponseInvalid(ca.clone(), e.to_string()))
+        let api_contact: ApiRepositoryContact = serde_json::from_str(string).map_err(Error::JsonError)?;
+        api_contact.try_into()
+    }
 }
 
 async fn api_ca_repo_update(req: Request, ca: CaHandle) -> RoutingResult {
