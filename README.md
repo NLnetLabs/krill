@@ -44,7 +44,6 @@ in RC1 and RC2:
 - Trim uploaded parent and repo responses #873
 - XML generated for RFC 8183 communication starts with a line break #874
 - RFC 8183 XML responses submitted via the UI are incorrectly escaped #875
-- Run as user 'krill' inside Docker containers, not 'root' #882
 - API to upload repository response should not change #895
 
   WARNING: You will need to ensure that any Krill data files stored outside
