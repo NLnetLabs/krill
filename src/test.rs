@@ -37,7 +37,7 @@ use crate::{
             AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, BgpSecAsnKey,
             BgpSecCsrInfoList, BgpSecDefinition, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ObjectName,
             ParentCaContact, ParentCaReq, ParentStatuses, PublicationServerUris, PublisherDetails, PublisherList,
-            RepositoryContact, ResourceClassKeysInfo, RoaConfiguration, RoaDefinitionUpdates, RoaPayload, RtaList,
+            RepositoryContact, ResourceClassKeysInfo, RoaConfiguration, RoaConfigurationUpdates, RoaPayload, RtaList,
             RtaName, RtaPrepResponse, TypedPrefix, UpdateChildRequest,
         },
         bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion},
@@ -394,7 +394,7 @@ pub async fn delete_parent(ca: &CaHandle, parent: &CaHandle) {
     krill_admin(Command::CertAuth(CaCommand::RemoveParent(ca.clone(), parent.convert()))).await;
 }
 
-pub async fn ca_route_authorizations_update(ca: &CaHandle, updates: RoaDefinitionUpdates) {
+pub async fn ca_route_authorizations_update(ca: &CaHandle, updates: RoaConfigurationUpdates) {
     krill_admin(Command::CertAuth(CaCommand::RouteAuthorizationsUpdate(
         ca.clone(),
         updates,
@@ -402,7 +402,7 @@ pub async fn ca_route_authorizations_update(ca: &CaHandle, updates: RoaDefinitio
     .await;
 }
 
-pub async fn ca_route_authorizations_update_expect_error(ca: &CaHandle, updates: RoaDefinitionUpdates) {
+pub async fn ca_route_authorizations_update_expect_error(ca: &CaHandle, updates: RoaConfigurationUpdates) {
     krill_admin_expect_error(Command::CertAuth(CaCommand::RouteAuthorizationsUpdate(
         ca.clone(),
         updates,
@@ -417,7 +417,7 @@ pub async fn ca_route_authorizations_suggestions(ca: &CaHandle) -> BgpAnalysisSu
     }
 }
 
-pub async fn ca_route_authorization_dryrun(ca: &CaHandle, updates: RoaDefinitionUpdates) -> BgpAnalysisReport {
+pub async fn ca_route_authorization_dryrun(ca: &CaHandle, updates: RoaConfigurationUpdates) -> BgpAnalysisReport {
     match krill_admin(Command::CertAuth(CaCommand::RouteAuthorizationsDryRunUpdate(
         ca.clone(),
         updates,

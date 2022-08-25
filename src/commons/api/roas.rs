@@ -7,8 +7,6 @@ use rpki::repository::{
     roa::RoaIpAddress,
 };
 
-use crate::daemon::ca::RoaPayloadKeyUpdates;
-
 //------------ RoaAggregateKey ---------------------------------------------
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -155,7 +153,8 @@ impl RoaPayload {
         }
     }
 
-    pub fn explicit_max_length(self) -> Self {
+    /// Ensures that the payload uses an explicit max length
+    pub fn into_explicit_max_length(self) -> Self {
         RoaPayload {
             asn: self.asn,
             prefix: self.prefix,
@@ -315,6 +314,32 @@ pub struct RoaConfiguration {
     comment: Option<String>,
 }
 
+impl RoaConfiguration {
+    pub fn new(payload: RoaPayload, comment: Option<String>) -> Self {
+        RoaConfiguration { payload, comment }
+    }
+
+    pub fn unpack(self) -> (RoaPayload, Option<String>) {
+        (self.payload, self.comment)
+    }
+
+    pub fn payload(&self) -> RoaPayload {
+        self.payload
+    }
+
+    pub fn comment(&self) -> Option<&String> {
+        self.comment.as_ref()
+    }
+
+    /// Ensures that the payload uses an explicit max length
+    pub fn into_explicit_max_length(self) -> Self {
+        RoaConfiguration {
+            payload: self.payload.into_explicit_max_length(),
+            comment: self.comment,
+        }
+    }
+}
+
 impl fmt::Display for RoaConfiguration {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.payload)?;
@@ -341,6 +366,12 @@ impl FromStr for RoaConfiguration {
     }
 }
 
+impl From<RoaPayload> for RoaConfiguration {
+    fn from(payload: RoaPayload) -> Self {
+        RoaConfiguration { payload, comment: None }
+    }
+}
+
 //------------ RoaConfigurations -------------------------------------------
 
 /// This type defines a list of RoaConfiguration
@@ -356,7 +387,7 @@ impl fmt::Display for RoaConfigurations {
     }
 }
 
-//------------ RoaDefinitionUpdates ----------------------------------------
+//------------ RoaConfigurationUpdates -------------------------------------
 
 /// This type defines a delta of RoaDefinitions submitted through the API.
 ///
@@ -364,18 +395,38 @@ impl fmt::Display for RoaConfigurations {
 /// all authorizations for a given prefix are published together in order to
 /// avoid invalidating announcements.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RoaDefinitionUpdates {
+pub struct RoaConfigurationUpdates {
     added: Vec<RoaConfiguration>,
     removed: Vec<RoaPayload>,
 }
 
-impl RoaDefinitionUpdates {
+impl RoaConfigurationUpdates {
     pub fn is_empty(&self) -> bool {
         self.added.is_empty() && self.removed.is_empty()
     }
 
     pub fn new(added: Vec<RoaConfiguration>, removed: Vec<RoaPayload>) -> Self {
-        RoaDefinitionUpdates { added, removed }
+        RoaConfigurationUpdates { added, removed }
+    }
+
+    /// Ensures that an explicit (canonical) max length is used.
+    pub fn into_explicit(self) -> Self {
+        let added = self.added.into_iter().map(|a| a.into_explicit_max_length()).collect();
+        let removed = self.removed.into_iter().map(|r| r.into_explicit_max_length()).collect();
+
+        RoaConfigurationUpdates { added, removed }
+    }
+
+    /// Reports the resources included in these updates.
+    pub fn affected_prefixes(&self) -> ResourceSet {
+        let mut resources = ResourceSet::default();
+        for roa_config in &self.added {
+            resources = resources.union(&roa_config.payload().prefix().into());
+        }
+        for roa_payload in &self.removed {
+            resources = resources.union(&roa_payload.prefix().into());
+        }
+        resources
     }
 
     /// Unpack this and return all added (left), and all removed (right) route
@@ -405,7 +456,7 @@ impl RoaDefinitionUpdates {
     }
 }
 
-impl fmt::Display for RoaDefinitionUpdates {
+impl fmt::Display for RoaConfigurationUpdates {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for a in &self.added {
             writeln!(f, "A: {}", a)?;
@@ -417,7 +468,7 @@ impl fmt::Display for RoaDefinitionUpdates {
     }
 }
 
-impl FromStr for RoaDefinitionUpdates {
+impl FromStr for RoaConfigurationUpdates {
     type Err = AuthorizationFmtError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -425,35 +476,27 @@ impl FromStr for RoaDefinitionUpdates {
         let mut removed = vec![];
 
         for line in s.lines() {
-            let line = match line.find('#') {
-                None => line,
-                Some(pos) => &line[..pos],
-            };
             let line = line.trim();
 
-            if line.is_empty() {
+            if line.is_empty() || line.starts_with('#') {
                 continue;
             } else if let Some(stripped) = line.strip_prefix("A:") {
                 let auth = RoaConfiguration::from_str(stripped.trim())?;
                 added.push(auth);
             } else if let Some(stripped) = line.strip_prefix("R:") {
-                let auth = RoaPayload::from_str(stripped.trim())?;
-                removed.push(auth);
+                // ignore comments on remove lines
+                if let Some(payload_str) = stripped.split('#').next() {
+                    let auth = RoaPayload::from_str(payload_str.trim())?;
+                    removed.push(auth);
+                } else {
+                    return Err(AuthorizationFmtError::delta(line));
+                }
             } else {
                 return Err(AuthorizationFmtError::delta(line));
             }
         }
 
-        Ok(RoaDefinitionUpdates { added, removed })
-    }
-}
-
-impl From<RoaPayloadKeyUpdates> for RoaDefinitionUpdates {
-    fn from(auth_updates: RoaPayloadKeyUpdates) -> Self {
-        let (auth_added, auth_removed) = auth_updates.unpack();
-        let added = auth_added.into_iter().map(|a| a.into()).collect();
-        let removed = auth_removed.into_iter().map(|a| a.into()).collect();
-        RoaDefinitionUpdates { added, removed }
+        Ok(RoaConfigurationUpdates { added, removed })
     }
 }
 
@@ -752,25 +795,25 @@ mod tests {
             "# Some comment\n",
             "  # Indented comment\n",
             "\n", // empty line
-            "A: 192.168.0.0/16 => 64496 # inline comment\n",
+            "A: 192.168.0.0/16 => 64496 # ROA comment\n",
             "A: 192.168.1.0/24 => 64496\n",
-            "R: 192.168.3.0/24 => 64496\n",
+            "R: 192.168.3.0/24 => 64496 # ignored comment for removed ROA\n",
         );
 
         let expected = {
             let added = vec![
-                roa_configuration("192.168.0.0/16 => 64496 # inline comment"),
+                roa_configuration("192.168.0.0/16 => 64496 # ROA comment"),
                 roa_configuration("192.168.1.0/24 => 64496"),
             ];
 
             let removed = vec![roa_payload("192.168.3.0/24 => 64496")];
-            RoaDefinitionUpdates::new(added, removed)
+            RoaConfigurationUpdates::new(added, removed)
         };
 
-        let parsed = RoaDefinitionUpdates::from_str(delta).unwrap();
+        let parsed = RoaConfigurationUpdates::from_str(delta).unwrap();
         assert_eq!(expected, parsed);
 
-        let re_parsed = RoaDefinitionUpdates::from_str(&parsed.to_string()).unwrap();
+        let re_parsed = RoaConfigurationUpdates::from_str(&parsed.to_string()).unwrap();
         assert_eq!(parsed, re_parsed);
     }
 
@@ -803,9 +846,9 @@ mod tests {
             assert_eq!(s, de.to_string().as_str())
         }
 
-        parse_ser_de_print_configuration("192.168.0.0/16 => 64496");
+        parse_ser_de_print_configuration("192.168.0.0/16 => 64496 # comment");
         parse_ser_de_print_configuration("192.168.0.0/16-24 => 64496");
-        parse_ser_de_print_configuration("2001:db8::/32 => 64496");
+        parse_ser_de_print_configuration("2001:db8::/32 => 64496 # comment with extra #");
         parse_ser_de_print_configuration("2001:db8::/32-48 => 64496");
     }
 
@@ -819,8 +862,8 @@ mod tests {
             assert_eq!(s, de.to_string().as_str())
         }
 
-        parse_ser_de_print_payload("192.168.0.0/16 => 64496 # comment");
-        parse_ser_de_print_payload("192.168.0.0/16-24 => 64496 # comment with extra #");
+        parse_ser_de_print_payload("192.168.0.0/16 => 64496");
+        parse_ser_de_print_payload("192.168.0.0/16-24 => 64496");
         parse_ser_de_print_payload("2001:db8::/32 => 64496");
         parse_ser_de_print_payload("2001:db8::/32-48 => 64496");
     }

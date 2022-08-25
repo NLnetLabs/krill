@@ -1,7 +1,7 @@
 use std::{cmp::Ordering, collections::HashMap, fmt};
 
 use crate::commons::{
-    api::{BgpStats, RoaDefinitionUpdates, RoaPayload},
+    api::{BgpStats, RoaConfiguration, RoaConfigurationUpdates, RoaPayload},
     bgp::Announcement,
 };
 
@@ -103,7 +103,7 @@ pub struct ReplacementRoaSuggestion {
     new: Vec<RoaPayload>,
 }
 
-impl From<BgpAnalysisSuggestion> for RoaDefinitionUpdates {
+impl From<BgpAnalysisSuggestion> for RoaConfigurationUpdates {
     fn from(suggestion: BgpAnalysisSuggestion) -> Self {
         let (stale, not_found, invalid_asn, invalid_length, too_permissive, as0_redundant, redundant) = (
             suggestion.stale,
@@ -115,37 +115,37 @@ impl From<BgpAnalysisSuggestion> for RoaDefinitionUpdates {
             suggestion.redundant,
         );
 
-        let mut added: Vec<RoaPayload> = vec![];
+        let mut added: Vec<RoaConfiguration> = vec![];
         let mut removed: Vec<RoaPayload> = vec![];
 
-        for auth in not_found
+        for announcement in not_found
             .into_iter()
             .chain(invalid_asn.into_iter())
             .chain(invalid_length.into_iter())
         {
-            added.push(auth.into());
+            added.push(RoaConfiguration::new(announcement.into(), None));
         }
 
-        for auth in stale.into_iter() {
-            removed.push(auth);
+        for roa_payload in stale.into_iter() {
+            removed.push(roa_payload);
         }
 
         for suggestion in too_permissive.into_iter() {
             removed.push(suggestion.current);
-            for auth in suggestion.new.into_iter() {
-                added.push(auth);
+            for roa_payload in suggestion.new.into_iter() {
+                added.push(RoaConfiguration::new(roa_payload, None));
             }
         }
 
-        for auth in as0_redundant.into_iter() {
-            removed.push(auth);
+        for roa_payload in as0_redundant.into_iter() {
+            removed.push(roa_payload);
         }
 
-        for auth in redundant.into_iter() {
-            removed.push(auth);
+        for roa_payload in redundant.into_iter() {
+            removed.push(roa_payload);
         }
 
-        RoaDefinitionUpdates::new(added, removed)
+        RoaConfigurationUpdates::new(added, removed)
     }
 }
 

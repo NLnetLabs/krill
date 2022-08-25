@@ -33,7 +33,7 @@ use crate::{
         api::{
             AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionFormatError, AspaProvidersUpdate,
             AuthorizationFmtError, BgpSecAsnKey, BgpSecDefinition, CertAuthInit, ParentCaContact, ParentCaReq,
-            PublicationServerUris, RepositoryContact, RoaConfiguration, RoaDefinitionUpdates, RoaPayload, RtaName,
+            PublicationServerUris, RepositoryContact, RoaConfiguration, RoaConfigurationUpdates, RoaPayload, RtaName,
             Token, UpdateChildRequest,
         },
         crypto::SignSupport,
@@ -1806,7 +1806,7 @@ impl Options {
 
             let bytes = Self::read_file_arg(path)?;
             let updates_str = unsafe { from_utf8_unchecked(&bytes) };
-            RoaDefinitionUpdates::from_str(updates_str)?
+            RoaConfigurationUpdates::from_str(updates_str)?
         } else {
             let mut added = vec![];
             let mut removed = vec![];
@@ -1831,7 +1831,7 @@ impl Options {
                 ));
             }
 
-            RoaDefinitionUpdates::new(added, removed)
+            RoaConfigurationUpdates::new(added, removed)
         };
 
         if matches.is_present("dryrun") && matches.is_present("try") {
@@ -2522,9 +2522,9 @@ pub enum CaCommand {
 
     // Authorizations
     RouteAuthorizationsList(CaHandle),
-    RouteAuthorizationsUpdate(CaHandle, RoaDefinitionUpdates),
-    RouteAuthorizationsTryUpdate(CaHandle, RoaDefinitionUpdates),
-    RouteAuthorizationsDryRunUpdate(CaHandle, RoaDefinitionUpdates),
+    RouteAuthorizationsUpdate(CaHandle, RoaConfigurationUpdates),
+    RouteAuthorizationsTryUpdate(CaHandle, RoaConfigurationUpdates),
+    RouteAuthorizationsDryRunUpdate(CaHandle, RoaConfigurationUpdates),
     BgpAnalysisFull(CaHandle),
     BgpAnalysisSuggest(CaHandle, Option<ResourceSet>),
 

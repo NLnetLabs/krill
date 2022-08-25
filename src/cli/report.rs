@@ -10,7 +10,7 @@ use crate::{
         api::{
             AllCertAuthIssues, AspaDefinitionList, BgpSecCsrInfoList, CaCommandDetails, CaRepoDetails, CertAuthInfo,
             CertAuthIssues, CertAuthList, ChildCaInfo, ChildrenConnectionStats, CommandHistory, ParentCaContact,
-            ParentStatuses, PublisherDetails, PublisherList, RepoStatus, RoaConfiguration, RtaList, RtaPrepResponse,
+            ParentStatuses, PublisherDetails, PublisherList, RepoStatus, RoaConfigurations, RtaList, RtaPrepResponse,
             ServerInfo,
         },
         bgp::{BgpAnalysisAdvice, BgpAnalysisReport, BgpAnalysisSuggestion},
@@ -34,7 +34,7 @@ pub enum ApiResponse {
     CertAuths(CertAuthList),
 
     // ROA related
-    RouteAuthorizations(RoaDefinitions),
+    RouteAuthorizations(RoaConfigurations),
     BgpAnalysisAdvice(BgpAnalysisAdvice),
     BgpAnalysisFull(BgpAnalysisReport),
     BgpAnalysisSuggestions(BgpAnalysisSuggestion),
@@ -200,7 +200,7 @@ impl Report for idexchange::RepositoryResponse {}
 impl Report for idexchange::ChildRequest {}
 impl Report for idexchange::PublisherRequest {}
 
-impl Report for RoaDefinitions {}
+impl Report for RoaConfigurations {}
 
 impl Report for BgpAnalysisAdvice {}
 impl Report for BgpAnalysisReport {}

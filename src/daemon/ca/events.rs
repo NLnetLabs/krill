@@ -570,6 +570,10 @@ pub enum CaEvtDet {
         // max length are expressed as a 'removed' and 'added' event in a single transaction.
         auth: RoaPayloadKey,
     },
+    RouteAuthorizationComment {
+        auth: RoaPayloadKey,
+        comment: Option<String>,
+    },
     RouteAuthorizationRemoved {
         // Tracks a single authorization (VRP) which is removed. See remark for RouteAuthorizationAdded.
         auth: RoaPayloadKey,
@@ -970,6 +974,13 @@ impl fmt::Display for CaEvtDet {
 
             // Route Authorizations
             CaEvtDet::RouteAuthorizationAdded { auth } => write!(f, "added ROA: '{}'", auth),
+            CaEvtDet::RouteAuthorizationComment { auth, comment } => {
+                if let Some(comment) = comment {
+                    write!(f, "added comment to ROA: '{}' => {}", auth, comment)
+                } else {
+                    write!(f, "removed comment from ROA: '{}'", auth)
+                }
+            }
             CaEvtDet::RouteAuthorizationRemoved { auth } => write!(f, "removed ROA: '{}'", auth),
             CaEvtDet::RoasUpdated {
                 resource_class_name,

@@ -24,8 +24,9 @@ use crate::{
             AspaProvidersUpdate, BgpSecCsrInfoList, BgpSecDefinitionUpdates, CaCommandDetails, CaRepoDetails,
             CertAuthInfo, CertAuthInit, CertAuthIssues, CertAuthList, CertAuthStats, ChildCaInfo,
             ChildrenConnectionStats, CommandHistory, CommandHistoryCriteria, ParentCaContact, ParentCaReq,
-            PublicationServerUris, PublisherDetails, ReceivedCert, RepositoryContact, RoaDefinitionUpdates, RoaPayload,
-            RtaList, RtaName, RtaPrepResponse, ServerInfo, TaCertDetails, Timestamp, UpdateChildRequest,
+            PublicationServerUris, PublisherDetails, ReceivedCert, RepositoryContact, RoaConfiguration,
+            RoaConfigurationUpdates, RoaPayload, RtaList, RtaName, RtaPrepResponse, ServerInfo, TaCertDetails,
+            Timestamp, UpdateChildRequest,
         },
         bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion},
         crypto::KrillSignerBuilder,
@@ -37,8 +38,8 @@ use crate::{
     daemon::{
         auth::{providers::AdminTokenAuthProvider, Authorizer, LoggedInUser},
         ca::{
-            self, ta_handle, testbed_ca_handle, CaStatus, ResourceTaggedAttestation, RoaPayloadKey,
-            RoaPayloadKeyUpdates, RtaContentRequest, RtaPrepareRequest,
+            self, ta_handle, testbed_ca_handle, CaStatus, ResourceTaggedAttestation, RtaContentRequest,
+            RtaPrepareRequest,
         },
         config::{AuthType, Config},
         http::HttpResponse,
@@ -360,13 +361,13 @@ impl KrillServer {
 
         // Now we can create ROAs
 
-        let mut added: Vec<RoaPayloadKey> = vec![];
+        let mut added: Vec<RoaConfiguration> = vec![];
         let asn_range_start = 64512;
         for asn in asn_range_start..asn_range_start + nr_roas {
-            let def = RoaPayload::from_str(&format!("{} => {}", prefix_str, asn)).unwrap();
-            added.push(def.into());
+            let payload = RoaPayload::from_str(&format!("{} => {}", prefix_str, asn)).unwrap();
+            added.push(payload.into());
         }
-        let updates = RoaPayloadKeyUpdates::new(added, vec![]);
+        let updates = RoaConfigurationUpdates::new(added, vec![]);
 
         ca_manager
             .ca_routes_update(child_ca_handle, updates, &system_actor)
@@ -879,7 +880,7 @@ impl KrillServer {
     pub async fn ca_routes_update(
         &self,
         ca: CaHandle,
-        updates: RoaDefinitionUpdates,
+        updates: RoaConfigurationUpdates,
         actor: &Actor,
     ) -> KrillEmptyResult {
         self.ca_manager.ca_routes_update(ca, updates.into(), actor).await
@@ -903,11 +904,10 @@ impl KrillServer {
     pub async fn ca_routes_bgp_dry_run(
         &self,
         handle: &CaHandle,
-        updates: RoaDefinitionUpdates,
+        updates: RoaConfigurationUpdates,
     ) -> KrillResult<BgpAnalysisReport> {
         let ca = self.ca_manager.get_ca(handle).await?;
 
-        let updates: RoaPayloadKeyUpdates = updates.into();
         let updates = updates.into_explicit();
         let resources_held = ca.all_resources();
         let limit = Some(updates.affected_prefixes());

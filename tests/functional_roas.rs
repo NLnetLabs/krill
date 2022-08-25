@@ -9,7 +9,7 @@ use rpki::{
 };
 
 use krill::{
-    commons::api::{ObjectName, RoaDefinitionUpdates, RoaPayload},
+    commons::api::{ObjectName, RoaConfigurationUpdates, RoaPayload},
     daemon::ca::ta_handle,
     test::*,
 };
@@ -105,10 +105,10 @@ async fn functional_roas() {
         info("#                                                                #");
         info("##################################################################");
         info("");
-        let mut updates = RoaDefinitionUpdates::empty();
-        updates.add(route_resource_set_10_0_0_0_def_1);
-        updates.add(route_resource_set_10_0_0_0_def_2);
-        updates.add(route_resource_set_10_1_0_0_def_1);
+        let mut updates = RoaConfigurationUpdates::empty();
+        updates.add(route_resource_set_10_0_0_0_def_1.into());
+        updates.add(route_resource_set_10_0_0_0_def_2.into());
+        updates.add(route_resource_set_10_1_0_0_def_1.into());
         ca_route_authorizations_update(&ca, updates).await;
 
         expect_roa_objects(
@@ -174,9 +174,9 @@ async fn functional_roas() {
         info("#                                                                #");
         info("##################################################################");
         info("");
-        let mut updates = RoaDefinitionUpdates::empty();
-        updates.add(route_resource_set_10_0_0_0_def_3);
-        updates.add(route_resource_set_10_0_0_0_def_4);
+        let mut updates = RoaConfigurationUpdates::empty();
+        updates.add(route_resource_set_10_0_0_0_def_3.into());
+        updates.add(route_resource_set_10_0_0_0_def_4.into());
         ca_route_authorizations_update(&ca, updates).await;
 
         // expect MFT and CRL and aggregated ROA files
@@ -195,7 +195,7 @@ async fn functional_roas() {
         info("#                                                                #");
         info("##################################################################");
         info("");
-        let mut updates = RoaDefinitionUpdates::empty();
+        let mut updates = RoaConfigurationUpdates::empty();
         updates.remove(route_resource_set_10_0_0_0_def_2);
         updates.remove(route_resource_set_10_0_0_0_def_3);
         updates.remove(route_resource_set_10_0_0_0_def_4);

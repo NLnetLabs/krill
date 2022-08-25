@@ -14,7 +14,10 @@ use rpki::{
 };
 
 use krill::{
-    commons::api::{AspaDefinition, BgpSecDefinition, ObjectName, ReceivedCert, RoaDefinitionUpdates, RoaPayload},
+    commons::api::{
+        AspaDefinition, BgpSecDefinition, ObjectName, ReceivedCert, RoaConfiguration, RoaConfigurationUpdates,
+        RoaPayload,
+    },
     daemon::ca::ta_handle,
     test::*,
 };
@@ -50,7 +53,8 @@ async fn functional_keyroll() {
 
     // ROA, ASPA, and BGPSec definitions and filenames for objects which will
     // be re-issued during the roll.
-    let roa_def = RoaPayload::from_str("10.0.0.0/16-16 => 64496").unwrap();
+    let roa_payload = RoaPayload::from_str("10.0.0.0/16-16 => 64496").unwrap();
+    let roa_configuration = RoaConfiguration::from(roa_payload);
     let aspa_def = AspaDefinition::from_str("AS65000 => AS65002, AS65003(v4), AS65005(v6)").unwrap();
     let bgpsec_def = {
         let csr_bytes = include_bytes!("../test-resources/bgpsec/router-csr.der");
@@ -59,7 +63,7 @@ async fn functional_keyroll() {
         BgpSecDefinition::new(Asn::from_u32(65000), csr.clone())
     };
 
-    let roa_file = ObjectName::from(&roa_def).to_string();
+    let roa_file = ObjectName::from(&roa_payload).to_string();
     let aspa_file = ObjectName::aspa(aspa_def.customer()).to_string();
     let bgpsec_file = ObjectName::bgpsec(bgpsec_def.asn(), bgpsec_def.csr().public_key().key_identifier()).to_string();
 
@@ -138,8 +142,8 @@ async fn functional_keyroll() {
         info("##################################################################");
         info("");
 
-        let mut updates = RoaDefinitionUpdates::empty();
-        updates.add(roa_def);
+        let mut updates = RoaConfigurationUpdates::empty();
+        updates.add(roa_configuration);
         ca_route_authorizations_update(&testbed, updates).await;
         assert_manifest_number_current_key("Testbed should update manifest when publishing ROA", &testbed, 3).await;
 

@@ -28,8 +28,8 @@ use crate::{
         api::{
             AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate, BgpSecAsnKey,
             BgpSecCsrInfoList, BgpSecDefinitionUpdates, CertAuthInfo, IdCertInfo, IssuedCertificate, ObjectName,
-            ParentCaContact, ReceivedCert, RepositoryContact, Revocation, RoaPayload, RtaList, RtaName,
-            RtaPrepResponse, StorableCaCommand, TaCertDetails, TrustAnchorLocator,
+            ParentCaContact, ReceivedCert, RepositoryContact, Revocation, RoaConfigurationUpdates, RoaPayload, RtaList,
+            RtaName, RtaPrepResponse, StorableCaCommand, TaCertDetails, TrustAnchorLocator,
         },
         crypto::{CsrInfo, KrillSigner},
         error::{Error, RoaDeltaError},
@@ -41,8 +41,7 @@ use crate::{
         ca::{
             events::ChildCertificateUpdates, ta_handle, AspaDefinitions, BgpSecDefinitions, CaEvt, CaEvtDet,
             ChildDetails, Cmd, CmdDet, DropReason, Ini, PreparedRta, ResourceClass, ResourceTaggedAttestation,
-            Rfc8183Id, RoaPayloadKey, RoaPayloadKeyUpdates, Routes, RtaContentRequest, RtaPrepareRequest, Rtas,
-            SignedRta, StoredBgpSecCsr,
+            Rfc8183Id, RoaPayloadKey, Routes, RtaContentRequest, RtaPrepareRequest, Rtas, SignedRta, StoredBgpSecCsr,
         },
         config::{Config, IssuanceTimingConfig},
     },
@@ -333,9 +332,11 @@ impl Aggregate for CertAuth {
             // Route Authorizations
             //-----------------------------------------------------------------------
             CaEvtDet::RouteAuthorizationAdded { auth } => self.routes.add(auth),
+            CaEvtDet::RouteAuthorizationComment { auth, comment } => self.routes.comment(&auth, comment),
             CaEvtDet::RouteAuthorizationRemoved { auth } => {
                 self.routes.remove(&auth);
             }
+
             CaEvtDet::RoasUpdated {
                 resource_class_name,
                 updates,
@@ -1646,7 +1647,7 @@ impl CertAuth {
     /// the prefix.
     fn route_authorizations_update(
         &self,
-        route_auth_updates: RoaPayloadKeyUpdates,
+        route_auth_updates: RoaConfigurationUpdates,
         config: &Config,
         signer: Arc<KrillSigner>,
     ) -> KrillResult<Vec<CaEvt>> {
@@ -1713,41 +1714,65 @@ impl CertAuth {
     ///
     /// Note: this does not re-issue the actual ROAs, this
     ///       can be used for the 'dry-run' option.
-    pub fn update_authorizations(&self, updates: &RoaPayloadKeyUpdates) -> KrillResult<(Routes, Vec<CaEvtDet>)> {
+    pub fn update_authorizations(&self, updates: &RoaConfigurationUpdates) -> KrillResult<(Routes, Vec<CaEvtDet>)> {
         let mut delta_errors = RoaDeltaError::default();
         let mut res = vec![];
 
         let all_resources = self.all_resources();
 
+        // Keep track of routes as they will be after applying the updates
         let mut desired_routes = self.routes.clone();
 
         // make sure that all removals are held
-        for auth in updates.removed() {
-            if desired_routes.remove(auth) {
-                res.push(CaEvtDet::RouteAuthorizationRemoved { auth: *auth });
+        for roa_payload in updates.removed() {
+            let auth = RoaPayloadKey::from(*roa_payload);
+            if desired_routes.remove(&auth) {
+                res.push(CaEvtDet::RouteAuthorizationRemoved { auth });
             } else {
-                delta_errors.add_unknown((*auth).into())
+                delta_errors.add_unknown(*roa_payload)
             }
         }
 
         // make sure that all new additions are allowed
-        for addition in updates.added() {
-            let roa_def: RoaPayload = (*addition).into();
-            let authorizations: Vec<&RoaPayloadKey> = desired_routes.authorizations().collect();
+        for roa_configuration in updates.added() {
+            let roa_payload = roa_configuration.payload();
+            let comment = roa_configuration.comment();
 
-            if !addition.max_length_valid() {
+            let auth = RoaPayloadKey::from(roa_payload);
+
+            // let authorizations: Vec<&RoaPayloadKey> = desired_routes.authorizations().collect();
+
+            if !roa_payload.max_length_valid() {
                 // The (max) length is invalid for this prefix
-                delta_errors.add_invalid_length(roa_def);
-            } else if !all_resources.contains_roa_address(&addition.as_roa_ip_address()) {
+                delta_errors.add_invalid_length(roa_payload);
+            } else if !all_resources.contains_roa_address(&roa_payload.as_roa_ip_address()) {
                 // We do not hold the prefix
-                delta_errors.add_notheld(roa_def);
-            } else if authorizations.iter().any(|existing| *existing == addition) {
-                // A duplicate ROA already exists
-                delta_errors.add_duplicate(roa_def);
+                delta_errors.add_notheld(roa_payload);
+            } else if let Some(info) = desired_routes.info(&auth) {
+                // We have an existing info for this payload, this may be an attempt to update the comment.
+                if info.comment() != comment {
+                    // Update comment
+                    res.push(CaEvtDet::RouteAuthorizationComment {
+                        auth,
+                        comment: comment.cloned(),
+                    });
+                } else {
+                    // Duplicate entry. We could be idempotent, but perhaps it's best to return an error
+                    // instead because it seems that the user is out of sync with the current state.
+                    delta_errors.add_duplicate(roa_payload);
+                }
             } else {
                 // Ok, this seems okay now
-                desired_routes.add(*addition);
-                res.push(CaEvtDet::RouteAuthorizationAdded { auth: *addition });
+                res.push(CaEvtDet::RouteAuthorizationAdded { auth });
+                desired_routes.add(auth); // track to check if update has duplicates
+
+                if comment.is_some() {
+                    desired_routes.comment(&auth, comment.cloned()); // track to check if update has duplicates
+                    res.push(CaEvtDet::RouteAuthorizationComment {
+                        auth,
+                        comment: comment.cloned(),
+                    });
+                }
             }
         }
 

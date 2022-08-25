@@ -8,7 +8,7 @@ use rpki::ca::provisioning::ResourceClassName;
 use rpki::repository::resources::ResourceSet;
 
 use krill::{
-    commons::api::{ObjectName, RepositoryContact, RoaDefinitionUpdates, RoaPayload},
+    commons::api::{ObjectName, RepositoryContact, RoaConfigurationUpdates, RoaPayload},
     daemon::ca::ta_handle,
     test::*,
 };
@@ -90,8 +90,8 @@ async fn migrate_repository() {
         info("#                                                                #");
         info("##################################################################");
         info("");
-        let mut updates = RoaDefinitionUpdates::empty();
-        updates.add(ca1_route_definition);
+        let mut updates = RoaConfigurationUpdates::empty();
+        updates.add(ca1_route_definition.into());
         ca_route_authorizations_update(&ca1, updates).await;
     }
 

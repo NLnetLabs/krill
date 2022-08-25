@@ -339,7 +339,7 @@ impl From<RisDumpError> for BgpAnalyserError {
 #[cfg(test)]
 mod tests {
 
-    use crate::commons::api::RoaDefinitionUpdates;
+    use crate::commons::api::{RoaConfiguration, RoaConfigurationUpdates};
     use crate::commons::bgp::BgpAnalysisState;
     use crate::test::*;
 
@@ -422,11 +422,12 @@ mod tests {
         assert_eq!(disallowed, expected);
 
         let suggestion = analyser.suggest(&[roa], &resources_held, None).await;
-        let updates = RoaDefinitionUpdates::from(suggestion);
+        let updates = RoaConfigurationUpdates::from(suggestion);
 
         let added = updates.added();
-        for def in disallowed {
-            assert!(!added.contains(def))
+        for roa_payload in disallowed {
+            let roa_config = RoaConfiguration::from(*roa_payload);
+            assert!(!added.contains(&roa_config))
         }
     }
 

@@ -17,7 +17,7 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::{ObjectName, Revocation, RoaAggregateKey, RoaDefinitionUpdates, RoaPayload},
+        api::{ObjectName, Revocation, RoaAggregateKey, RoaPayload},
         crypto::{KrillSigner, SignSupport},
         error::Error,
         KrillResult,
@@ -31,7 +31,7 @@ use crate::{
 
 //------------ RoaPayloadKey -----------------------------------------------
 
-/// This type wraps a [`RoaDefinition`] but implements its own serialization
+/// This type wraps a [`RoaPayload`] but implements its own serialization
 /// based on the string representation of the definition so that it can be
 /// used as a single key in json map representations.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialOrd, PartialEq)]
@@ -92,108 +92,6 @@ impl<'de> Deserialize<'de> for RoaPayloadKey {
         let string = String::deserialize(d)?;
         let def = RoaPayload::from_str(string.as_str()).map_err(de::Error::custom)?;
         Ok(RoaPayloadKey(def))
-    }
-}
-
-//------------ RoaPayloadKeyUpdates ----------------------------------------
-
-///
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RoaPayloadKeyUpdates {
-    added: Vec<RoaPayloadKey>,
-    removed: Vec<RoaPayloadKey>,
-}
-
-impl RoaPayloadKeyUpdates {
-    /// Use this when receiving updates through the API, until the v0.7 ROA clean up can be deprecated,
-    /// which would imply that pre-0.7 versions can not longer be directly updated.
-    pub fn into_explicit(self) -> Self {
-        let added = self.added.into_iter().map(|a| a.explicit_max_length().into()).collect();
-        let removed = self
-            .removed
-            .into_iter()
-            .map(|r| r.explicit_max_length().into())
-            .collect();
-        RoaPayloadKeyUpdates { added, removed }
-    }
-
-    pub fn new(added: Vec<RoaPayloadKey>, removed: Vec<RoaPayloadKey>) -> Self {
-        RoaPayloadKeyUpdates { added, removed }
-    }
-
-    pub fn added(&self) -> &Vec<RoaPayloadKey> {
-        &self.added
-    }
-
-    pub fn removed(&self) -> &Vec<RoaPayloadKey> {
-        &self.removed
-    }
-
-    pub fn unpack(self) -> (Vec<RoaPayloadKey>, Vec<RoaPayloadKey>) {
-        (self.added, self.removed)
-    }
-
-    pub fn filter(&self, resources: &ResourceSet) -> Self {
-        let added = self
-            .added()
-            .iter()
-            .filter(|auth| resources.contains_roa_address(&auth.as_roa_ip_address()))
-            .cloned()
-            .collect();
-
-        let removed = self
-            .removed()
-            .iter()
-            .filter(|auth| resources.contains_roa_address(&auth.as_roa_ip_address()))
-            .cloned()
-            .collect();
-
-        RoaPayloadKeyUpdates { added, removed }
-    }
-
-    pub fn affected_prefixes(&self) -> ResourceSet {
-        let mut resources = ResourceSet::default();
-        for roa in &self.added {
-            resources = resources.union(&roa.prefix().into());
-        }
-        for roa in &self.removed {
-            resources = resources.union(&roa.prefix().into());
-        }
-        resources
-    }
-}
-
-impl From<RoaDefinitionUpdates> for RoaPayloadKeyUpdates {
-    fn from(definitions: RoaDefinitionUpdates) -> Self {
-        let (added, removed) = definitions.unpack();
-        let mut added: Vec<RoaPayloadKey> = added.into_iter().map(RoaPayload::into).collect();
-        added.sort();
-        added.dedup();
-
-        let mut removed: Vec<RoaPayloadKey> = removed.into_iter().map(RoaPayload::into).collect();
-        removed.sort();
-        removed.dedup();
-
-        RoaPayloadKeyUpdates { added, removed }
-    }
-}
-
-impl fmt::Display for RoaPayloadKeyUpdates {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if !self.added.is_empty() {
-            write!(f, "added:")?;
-            for a in &self.added {
-                write!(f, " {}", a)?;
-            }
-            write!(f, " ")?;
-        }
-        if !self.removed.is_empty() {
-            write!(f, "removed:")?;
-            for r in &self.removed {
-                write!(f, " {}", r)?;
-            }
-        }
-        Ok(())
     }
 }
 
@@ -264,9 +162,14 @@ impl Routes {
         self.map.contains_key(auth)
     }
 
-    /// Adds a new authorization, or updates an existing one.
+    /// Adds a new authorization
     pub fn add(&mut self, auth: RoaPayloadKey) {
         self.map.insert(auth, RouteInfo::default());
+    }
+
+    /// Updates the comment for an authorization
+    pub fn comment(&mut self, auth: &RoaPayloadKey, comment: Option<String>) {
+        self.map.get_mut(auth).map(|info| info.set_comment(comment));
     }
 
     /// Removes an authorization
@@ -283,13 +186,37 @@ pub struct RouteInfo {
     since: Time, // authorization first added by user
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    comment: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     group: Option<u32>,
+}
+
+impl RouteInfo {
+    pub fn since(&self) -> Time {
+        self.since
+    }
+
+    pub fn comment(&self) -> Option<&String> {
+        self.comment.as_ref()
+    }
+
+    pub fn set_comment(&mut self, comment: Option<String>) {
+        self.comment = comment;
+    }
+
+    /// The idea was to allow grouping of specific payloads.
+    /// But perhaps we should deprecate this as it's not used.
+    pub fn group(&self) -> Option<u32> {
+        self.group
+    }
 }
 
 impl Default for RouteInfo {
     fn default() -> Self {
         RouteInfo {
             since: Time::now(),
+            comment: None,
             group: None,
         }
     }
