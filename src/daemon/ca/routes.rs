@@ -17,7 +17,7 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::{ObjectName, Revocation, RoaAggregateKey, RoaPayload},
+        api::{ObjectName, Revocation, RoaAggregateKey, RoaConfiguration, RoaPayload},
         crypto::{KrillSigner, SignSupport},
         error::Error,
         KrillResult,
@@ -123,11 +123,18 @@ impl Routes {
         self.map.iter()
     }
 
-    pub fn authorizations(&self) -> impl Iterator<Item = &RoaPayloadKey> {
+    pub fn roa_configurations(&self) -> Vec<RoaConfiguration> {
+        self.map
+            .iter()
+            .map(|(payload_key, route_info)| RoaConfiguration::new(payload_key.0, route_info.comment().cloned()))
+            .collect()
+    }
+
+    pub fn roa_payload_keys(&self) -> impl Iterator<Item = &RoaPayloadKey> {
         self.map.keys()
     }
 
-    pub fn into_authorizations(self) -> Vec<RoaPayloadKey> {
+    pub fn into_roa_payload_keys(self) -> Vec<RoaPayloadKey> {
         self.map.into_iter().map(|(auth, _)| auth).collect()
     }
 
@@ -224,6 +231,7 @@ impl Default for RouteInfo {
 
 //------------ RoaInfo -----------------------------------------------------
 
+/// This type defines information about a ROA *object*
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RoaInfo {
     // The route or routes authorized by this ROA
@@ -386,7 +394,7 @@ impl Roas {
         let mut roa_updates = RoaUpdates::default();
 
         // Add new ROAs
-        for auth in relevant_routes.authorizations() {
+        for auth in relevant_routes.roa_payload_keys() {
             if !self.simple.contains_key(auth) {
                 let name = ObjectName::from(auth);
                 let authorizations = vec![*auth];

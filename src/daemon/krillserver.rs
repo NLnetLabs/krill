@@ -23,8 +23,8 @@ use crate::{
             AddChildRequest, AllCertAuthIssues, AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates,
             AspaProvidersUpdate, BgpSecCsrInfoList, BgpSecDefinitionUpdates, CaCommandDetails, CaRepoDetails,
             CertAuthInfo, CertAuthInit, CertAuthIssues, CertAuthList, CertAuthStats, ChildCaInfo,
-            ChildrenConnectionStats, CommandHistory, CommandHistoryCriteria, ParentCaContact, ParentCaReq,
-            PublicationServerUris, PublisherDetails, ReceivedCert, RepositoryContact, RoaConfiguration,
+            ChildrenConnectionStats, CommandHistory, CommandHistoryCriteria, ConfiguredRoa, ParentCaContact,
+            ParentCaReq, PublicationServerUris, PublisherDetails, ReceivedCert, RepositoryContact, RoaConfiguration,
             RoaConfigurationUpdates, RoaPayload, RtaList, RtaName, RtaPrepResponse, ServerInfo, TaCertDetails,
             Timestamp, UpdateChildRequest,
         },
@@ -645,7 +645,7 @@ impl KrillServer {
         for ca in self.ca_list(&self.system_actor)?.cas() {
             // can't fail really, but to be sure
             if let Ok(ca) = self.ca_manager.get_ca(ca.handle()).await {
-                let roas = ca.roa_definitions();
+                let roas = ca.roas_configured();
                 let roa_count = roas.len();
                 let child_count = ca.children().count();
 
@@ -886,14 +886,15 @@ impl KrillServer {
         self.ca_manager.ca_routes_update(ca, updates.into(), actor).await
     }
 
-    pub async fn ca_routes_show(&self, handle: &CaHandle) -> KrillResult<Vec<RoaPayload>> {
+    pub async fn ca_routes_show(&self, handle: &CaHandle) -> KrillResult<Vec<ConfiguredRoa>> {
         let ca = self.ca_manager.get_ca(handle).await?;
-        Ok(ca.roa_definitions())
+
+        Ok(ca.roas_configured())
     }
 
     pub async fn ca_routes_bgp_analysis(&self, handle: &CaHandle) -> KrillResult<BgpAnalysisReport> {
         let ca = self.ca_manager.get_ca(handle).await?;
-        let definitions = ca.roa_definitions();
+        let definitions = ca.roas_configured();
         let resources_held = ca.all_resources();
         Ok(self
             .bgp_analyser
@@ -913,13 +914,16 @@ impl KrillServer {
         let limit = Some(updates.affected_prefixes());
 
         let (would_be_routes, _) = ca.update_authorizations(&updates)?;
-        let roas: Vec<RoaPayload> = would_be_routes
-            .into_authorizations()
+        let roa_configurations = would_be_routes.roa_configurations();
+        let configured_roas: Vec<_> = roa_configurations
             .into_iter()
-            .map(|a| a.into())
+            .map(|roa_configuration| ConfiguredRoa::new(roa_configuration))
             .collect();
 
-        Ok(self.bgp_analyser.analyse(roas.as_slice(), &resources_held, limit).await)
+        Ok(self
+            .bgp_analyser
+            .analyse(&configured_roas, &resources_held, limit)
+            .await)
     }
 
     pub async fn ca_routes_bgp_suggest(
@@ -928,12 +932,12 @@ impl KrillServer {
         limit: Option<ResourceSet>,
     ) -> KrillResult<BgpAnalysisSuggestion> {
         let ca = self.ca_manager.get_ca(handle).await?;
-        let definitions = ca.roa_definitions();
+        let configured_roas = ca.roas_configured();
         let resources_held = ca.all_resources();
 
         Ok(self
             .bgp_analyser
-            .suggest(definitions.as_slice(), &resources_held, limit)
+            .suggest(configured_roas.as_slice(), &resources_held, limit)
             .await)
     }
 

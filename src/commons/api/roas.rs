@@ -7,6 +7,8 @@ use rpki::repository::{
     roa::RoaIpAddress,
 };
 
+use crate::commons::bgp::Announcement;
+
 //------------ RoaAggregateKey ---------------------------------------------
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -366,19 +368,104 @@ impl FromStr for RoaConfiguration {
     }
 }
 
+impl Ord for RoaConfiguration {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.payload.cmp(&other.payload)
+    }
+}
+
+impl PartialOrd for RoaConfiguration {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 impl From<RoaPayload> for RoaConfiguration {
     fn from(payload: RoaPayload) -> Self {
         RoaConfiguration { payload, comment: None }
     }
 }
 
+//------------ ConfiguredRoa -----------------------------------------------
+
+/// Defines an existing ROA configuration and related information.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ConfiguredRoa {
+    #[serde(flatten)]
+    roa_configuration: RoaConfiguration,
+    // roa_objects: Vec<RoaInfo>, // will be added when #864 is implemented
+}
+
+impl ConfiguredRoa {
+    pub fn new(roa_configuration: RoaConfiguration) -> Self {
+        ConfiguredRoa { roa_configuration }
+    }
+
+    pub fn payload(&self) -> RoaPayload {
+        self.roa_configuration.payload
+    }
+
+    pub fn asn(&self) -> AsNumber {
+        self.roa_configuration.payload.asn()
+    }
+
+    pub fn prefix(&self) -> TypedPrefix {
+        self.roa_configuration.payload.prefix()
+    }
+
+    pub fn effective_max_length(&self) -> u8 {
+        self.roa_configuration.payload.effective_max_length()
+    }
+
+    pub fn nr_of_specific_prefixes(&self) -> u128 {
+        self.roa_configuration.payload.nr_of_specific_prefixes()
+    }
+
+    pub fn as_roa_ip_address(&self) -> RoaIpAddress {
+        self.roa_configuration.payload().as_roa_ip_address()
+    }
+}
+
+impl From<Announcement> for ConfiguredRoa {
+    fn from(announcement: Announcement) -> Self {
+        let payload = RoaPayload::from(announcement);
+        let roa_configuration = RoaConfiguration::from(payload);
+        ConfiguredRoa { roa_configuration }
+    }
+}
+
+impl AsRef<RoaConfiguration> for ConfiguredRoa {
+    fn as_ref(&self) -> &RoaConfiguration {
+        &self.roa_configuration
+    }
+}
+
+impl fmt::Display for ConfiguredRoa {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.roa_configuration)
+    }
+}
+
+impl Ord for ConfiguredRoa {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.roa_configuration.cmp(&other.roa_configuration)
+    }
+}
+
+impl PartialOrd for ConfiguredRoa {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 //------------ RoaConfigurations -------------------------------------------
 
-/// This type defines a list of RoaConfiguration
-#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub struct RoaConfigurations(Vec<RoaConfiguration>);
+/// This type defines a list of ConfiguredRoa so that we can have
+/// an easy fmt::Display implementation to use in the CLI report.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ConfiguredRoas(Vec<ConfiguredRoa>);
 
-impl fmt::Display for RoaConfigurations {
+impl fmt::Display for ConfiguredRoas {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for def in self.0.iter() {
             writeln!(f, "{}", def)?;

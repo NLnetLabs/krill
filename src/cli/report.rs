@@ -9,8 +9,8 @@ use crate::{
     commons::{
         api::{
             AllCertAuthIssues, AspaDefinitionList, BgpSecCsrInfoList, CaCommandDetails, CaRepoDetails, CertAuthInfo,
-            CertAuthIssues, CertAuthList, ChildCaInfo, ChildrenConnectionStats, CommandHistory, ParentCaContact,
-            ParentStatuses, PublisherDetails, PublisherList, RepoStatus, RoaConfigurations, RtaList, RtaPrepResponse,
+            CertAuthIssues, CertAuthList, ChildCaInfo, ChildrenConnectionStats, CommandHistory, ConfiguredRoas,
+            ParentCaContact, ParentStatuses, PublisherDetails, PublisherList, RepoStatus, RtaList, RtaPrepResponse,
             ServerInfo,
         },
         bgp::{BgpAnalysisAdvice, BgpAnalysisReport, BgpAnalysisSuggestion},
@@ -34,7 +34,7 @@ pub enum ApiResponse {
     CertAuths(CertAuthList),
 
     // ROA related
-    RouteAuthorizations(RoaConfigurations),
+    RouteAuthorizations(ConfiguredRoas),
     BgpAnalysisAdvice(BgpAnalysisAdvice),
     BgpAnalysisFull(BgpAnalysisReport),
     BgpAnalysisSuggestions(BgpAnalysisSuggestion),
@@ -200,7 +200,7 @@ impl Report for idexchange::RepositoryResponse {}
 impl Report for idexchange::ChildRequest {}
 impl Report for idexchange::PublisherRequest {}
 
-impl Report for RoaConfigurations {}
+impl Report for ConfiguredRoas {}
 
 impl Report for BgpAnalysisAdvice {}
 impl Report for BgpAnalysisReport {}

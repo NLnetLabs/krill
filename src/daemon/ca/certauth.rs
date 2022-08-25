@@ -27,8 +27,8 @@ use crate::{
     commons::{
         api::{
             AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate, BgpSecAsnKey,
-            BgpSecCsrInfoList, BgpSecDefinitionUpdates, CertAuthInfo, IdCertInfo, IssuedCertificate, ObjectName,
-            ParentCaContact, ReceivedCert, RepositoryContact, Revocation, RoaConfigurationUpdates, RoaPayload, RtaList,
+            BgpSecCsrInfoList, BgpSecDefinitionUpdates, CertAuthInfo, ConfiguredRoa, IdCertInfo, IssuedCertificate,
+            ObjectName, ParentCaContact, ReceivedCert, RepositoryContact, Revocation, RoaConfigurationUpdates, RtaList,
             RtaName, RtaPrepResponse, StorableCaCommand, TaCertDetails, TrustAnchorLocator,
         },
         crypto::{CsrInfo, KrillSigner},
@@ -534,11 +534,13 @@ impl CertAuth {
         )
     }
 
-    /// Returns the current RoaDefinitions for this, i.e. the intended authorized
-    /// prefixes. Provided that the resources are held by this `CertAuth` one can
-    /// expect that corresponding ROA **objects** are created by the system.
-    pub fn roa_definitions(&self) -> Vec<RoaPayload> {
-        self.routes.authorizations().map(|a| a.as_ref()).cloned().collect()
+    /// Returns the current ConfiguredRoas.
+    pub fn roas_configured(&self) -> Vec<ConfiguredRoa> {
+        self.routes
+            .roa_configurations()
+            .into_iter()
+            .map(ConfiguredRoa::new)
+            .collect()
     }
 
     /// Returns an RFC 8183 Child Request - which can be represented as XML to a

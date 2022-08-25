@@ -35,10 +35,10 @@ use crate::{
     commons::{
         api::{
             AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, BgpSecAsnKey,
-            BgpSecCsrInfoList, BgpSecDefinition, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ObjectName,
-            ParentCaContact, ParentCaReq, ParentStatuses, PublicationServerUris, PublisherDetails, PublisherList,
-            RepositoryContact, ResourceClassKeysInfo, RoaConfiguration, RoaConfigurationUpdates, RoaPayload, RtaList,
-            RtaName, RtaPrepResponse, TypedPrefix, UpdateChildRequest,
+            BgpSecCsrInfoList, BgpSecDefinition, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ConfiguredRoa,
+            ObjectName, ParentCaContact, ParentCaReq, ParentStatuses, PublicationServerUris, PublisherDetails,
+            PublisherList, RepositoryContact, ResourceClassKeysInfo, RoaConfiguration, RoaConfigurationUpdates,
+            RoaPayload, RtaList, RtaName, RtaPrepResponse, TypedPrefix, UpdateChildRequest,
         },
         bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion},
         crypto::SignSupport,
@@ -709,6 +709,10 @@ pub fn save_file(base_dir: &Path, file_name: &str, content: &[u8]) {
 pub fn announcement(s: &str) -> Announcement {
     let def = roa_payload(s);
     Announcement::from(def)
+}
+
+pub fn configured_roa(s: &str) -> ConfiguredRoa {
+    ConfiguredRoa::new(roa_configuration(s))
 }
 
 pub fn roa_configuration(s: &str) -> RoaConfiguration {
