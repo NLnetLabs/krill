@@ -48,11 +48,6 @@ in RC1 and RC2:
 - API to add parent should not change #898
 - Fix: Encode ranges as prefixes where possible #903
 
-  WARNING: You will need to ensure that any Krill data files stored outside
-  the container are writable by UID/GID 1012 (or whichever UID and GID
-  values you used if you built your own image using --build-arg RUN_USER_UID
-  and/or RUN_USER_GID) so that Krill is still able to write to the files.
-
 NOTE: 0.10.0-rc1 and -rc2 instances cannot be upgraded because of issue #870.
       Please contact us if this is an issue for you.
 
