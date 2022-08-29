@@ -156,8 +156,8 @@ impl Pkcs11Context {
             // prevent subsequent attempts to finalize an already finalized library
             self.initialized = false;
 
-            // ignore the result because we want to continue even if the call fails.
-            let _ = self.finalize();
+            // will continue even if the call fails.
+            self.finalize();
 
             // remove the library we represent from the initialized set (as it
             // is no longer initialized), subsequent attempts to use the library

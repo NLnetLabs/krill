@@ -637,7 +637,7 @@ pub mod tests {
         SignerRouter {
             default_signer: all_signers[0].clone(),
             one_off_signer: all_signers[0].clone(),
-            signer_mapper: Some(signer_mapper.clone()),
+            signer_mapper: Some(signer_mapper),
             active_signers: RwLock::new(HashMap::new()),
             pending_signers: RwLock::new(all_signers.to_vec()),
         }
@@ -751,7 +751,7 @@ pub mod tests {
             // increase twice because the SignerRouter will first challenge it to prove that it is the already
             // known signer. Without the identity key however the mock signer fails this identity check and is
             // registered again (and then sign challenged again, hence the double increment).
-            let router = create_signer_router(&[mock_signer.clone()], signer_mapper.clone());
+            let router = create_signer_router(&[mock_signer], signer_mapper.clone());
 
             let err = router.sign(&key_identifier, DEF_SIG_ALG, &out_buf);
             assert!(matches!(err, Err(SigningError::Signer(SignerError::KeyNotFound))));
@@ -804,14 +804,14 @@ pub mod tests {
         }
 
         fn create_broken_signers(sm: Arc<SignerMapper>, cc: Arc<MockSignerCallCounts>) -> Vec<Arc<SignerProvider>> {
-            let mut broken_signers = Vec::new();
-            broken_signers.push(create_broken_signer(sm.clone(), cc.clone(), Some(perm_unusable), None));
-            broken_signers.push(create_broken_signer(sm.clone(), cc.clone(), Some(internal_error), None));
-            broken_signers.push(create_broken_signer(sm.clone(), cc.clone(), Some(temp_unavail), None));
-            broken_signers.push(create_broken_signer(sm.clone(), cc.clone(), None, Some(perm_unusable)));
-            broken_signers.push(create_broken_signer(sm.clone(), cc.clone(), None, Some(internal_error)));
-            broken_signers.push(create_broken_signer(sm.clone(), cc.clone(), None, Some(temp_unavail)));
-            broken_signers
+            vec![
+                create_broken_signer(sm.clone(), cc.clone(), Some(perm_unusable), None),
+                create_broken_signer(sm.clone(), cc.clone(), Some(internal_error), None),
+                create_broken_signer(sm.clone(), cc.clone(), Some(temp_unavail), None),
+                create_broken_signer(sm.clone(), cc.clone(), None, Some(perm_unusable)),
+                create_broken_signer(sm.clone(), cc.clone(), None, Some(internal_error)),
+                create_broken_signer(sm, cc, None, Some(temp_unavail)),
+            ]
         }
 
         test::test_under_tmp(|d| {

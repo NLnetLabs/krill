@@ -20,7 +20,7 @@ pub struct ClientSession {
     pub secrets: HashMap<String, String>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum SessionStatus {
     Active,
     NeedsRefresh,

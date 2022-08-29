@@ -1823,7 +1823,7 @@ fn extract_parent_ca_req(
             ParentCaReq::new(parent_name, response)
         }
     } else {
-        let req: ParentCaReq = serde_json::from_str(&string).map_err(Error::JsonError)?;
+        let req: ParentCaReq = serde_json::from_str(string).map_err(Error::JsonError)?;
         if let Some(parent_override) = parent_override {
             if req.handle() != &parent_override {
                 return Err(Error::Custom(format!(

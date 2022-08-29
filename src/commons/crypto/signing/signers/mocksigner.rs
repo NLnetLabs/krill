@@ -41,8 +41,7 @@ pub struct MockSignerCallCounts {
 
 impl MockSignerCallCounts {
     pub fn new() -> Self {
-        let mut call_counts = Vec::with_capacity(FnIdx::Count as usize);
-        call_counts.resize(FnIdx::Count as usize, 0);
+        let call_counts = vec![0; FnIdx::Count as usize];
 
         Self {
             call_counts: RwLock::new(call_counts),
@@ -55,6 +54,12 @@ impl MockSignerCallCounts {
 
     pub fn inc(&self, fn_idx: FnIdx) {
         self.call_counts.write().unwrap()[fn_idx as usize] += 1;
+    }
+}
+
+impl Default for MockSignerCallCounts {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -128,14 +133,15 @@ impl MockSigner {
         challenge: &D,
     ) -> Result<Signature<Alg>, SignerError> {
         let signing_algorithm = alg.signing_algorithm();
-        if !matches!(signing_algorithm, SigningAlgorithm::RsaSha256) {
-            return Err(SignerError::UnsupportedSigningAlg(signing_algorithm).into());
-        }
 
-        let mut signer = ::openssl::sign::Signer::new(MessageDigest::sha256(), &pkey)?;
-        signer.update(challenge.as_ref())?;
-        let signature = Signature::new(alg, Bytes::from(signer.sign_to_vec()?));
-        Ok(signature)
+        if !matches!(signing_algorithm, SigningAlgorithm::RsaSha256) {
+            Err(SignerError::UnsupportedSigningAlg(signing_algorithm))
+        } else {
+            let mut signer = ::openssl::sign::Signer::new(MessageDigest::sha256(), pkey)?;
+            signer.update(challenge.as_ref())?;
+            let signature = Signature::new(alg, Bytes::from(signer.sign_to_vec()?));
+            Ok(signature)
+        }
     }
 
     fn public_key_from_pkey(pkey: &PKey<Private>) -> Result<PublicKey, SignerError> {
@@ -163,7 +169,7 @@ impl MockSigner {
     pub fn create_registration_key(&self) -> Result<(PublicKey, String), SignerError> {
         self.inc_fn_call_count(FnIdx::CreateRegistrationKey);
         if let Some(err_cb) = &self.create_registration_key_error_cb {
-            let _ = (err_cb)(&self.fn_call_counts)?;
+            (err_cb)(&self.fn_call_counts)?;
         }
         let (public_key, _, _, internal_id) = self.build_key().unwrap();
         Ok((public_key, internal_id))
@@ -176,7 +182,7 @@ impl MockSigner {
     ) -> Result<RpkiSignature, SignerError> {
         self.inc_fn_call_count(FnIdx::SignRegistrationChallenge);
         if let Some(err_cb) = &self.sign_registration_challenge_error_cb {
-            let _ = (err_cb)(&self.fn_call_counts)?;
+            (err_cb)(&self.fn_call_counts)?;
         }
         let pkey = self.load_key(signer_private_key_id).ok_or(SignerError::KeyNotFound)?;
 
@@ -254,7 +260,7 @@ impl MockSigner {
         self.inc_fn_call_count(FnIdx::Sign);
         let internal_id = self.internal_id_from_key_identifier(key_identifier)?;
         let pkey = self.load_key(&internal_id).ok_or(SignerError::KeyNotFound)?;
-        Self::sign_with_key(algorithm, &pkey, data).map_err(|err| SigningError::Signer(err))
+        Self::sign_with_key(algorithm, &pkey, data).map_err(SigningError::Signer)
     }
 
     pub fn sign_one_off<Alg: SignatureAlgorithm, D: AsRef<[u8]> + ?Sized>(
