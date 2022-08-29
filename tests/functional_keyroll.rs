@@ -56,7 +56,7 @@ async fn functional_keyroll() {
         let csr_bytes = include_bytes!("../test-resources/bgpsec/router-csr.der");
         let csr_bytes = Bytes::copy_from_slice(csr_bytes);
         let csr = BgpsecCsr::decode(csr_bytes.as_ref()).unwrap();
-        BgpSecDefinition::new(Asn::from_u32(65000), csr.clone())
+        BgpSecDefinition::new(Asn::from_u32(65000), csr)
     };
 
     let roa_file = ObjectName::from(&roa_def).to_string();

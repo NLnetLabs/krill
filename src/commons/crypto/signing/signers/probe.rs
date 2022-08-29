@@ -87,7 +87,7 @@ impl<C, E, S> ProbeStatus<C, E, S> {
     #[cfg(test)]
     pub fn last_probe_time(&self) -> Result<Option<Instant>, ProbeError<E>> {
         match self {
-            ProbeStatus::Probing { last_probe_time, .. } => Ok(last_probe_time.clone()),
+            ProbeStatus::Probing { last_probe_time, .. } => Ok(*last_probe_time),
             _ => Err(ProbeError::WrongState),
         }
     }

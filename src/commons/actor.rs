@@ -43,7 +43,7 @@ impl ActorName {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Attributes {
     None,
     RoleOnly(&'static str),

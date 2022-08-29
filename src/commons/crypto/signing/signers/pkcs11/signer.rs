@@ -1096,9 +1096,9 @@ fn is_transient_error(err: &Pkcs11Error) -> bool {
                 cryptoki::error::RvError::UserAlreadyLoggedIn => true, // maybe another client was is busy logging out so try again?
                 cryptoki::error::RvError::UserAnotherAlreadyLoggedIn => true,
                 cryptoki::error::RvError::UserNotLoggedIn => false,
-                cryptoki::error::RvError::UserPinNotInitialized => true, // maybe the operator will initialize the PIN 
+                cryptoki::error::RvError::UserPinNotInitialized => true, // maybe the operator will initialize the PIN
                 cryptoki::error::RvError::UserTooManyTypes => true, // maybe some sessions are terminated while retrying permitting us to succeed?
-                cryptoki::error::RvError::UserTypeInvalid => true, // maybe the operator will fix the users type
+                cryptoki::error::RvError::UserTypeInvalid => true,  // maybe the operator will fix the users type
                 cryptoki::error::RvError::VendorDefined => true, // we have no way of knowing what this kind of failure is, maybe it is transient
                 cryptoki::error::RvError::WrappedKeyInvalid => false,
                 cryptoki::error::RvError::WrappedKeyLenRange => false,
@@ -1197,7 +1197,7 @@ mod tes {
             lib_path = "dummy path"
             slot = 1234
         "#;
-        let config: Pkcs11SignerConfig = toml::from_str(&config_str).unwrap();
+        let config: Pkcs11SignerConfig = toml::from_str(config_str).unwrap();
         assert!(matches!(config.slot, SlotIdOrLabel::Id(1234)));
     }
 
@@ -1207,7 +1207,7 @@ mod tes {
             lib_path = "dummy path"
             slot = "well well well"
         "#;
-        let config: Pkcs11SignerConfig = toml::from_str(&config_str).unwrap();
+        let config: Pkcs11SignerConfig = toml::from_str(config_str).unwrap();
         let expected_label = "well well well".to_string();
         assert!(matches!(config.slot, SlotIdOrLabel::Label(label) if label == expected_label));
     }
@@ -1218,7 +1218,7 @@ mod tes {
             lib_path = "dummy path"
             slot = -1234
         "#;
-        let err = toml::from_str::<Pkcs11SignerConfig>(&config_str).unwrap_err();
+        let err = toml::from_str::<Pkcs11SignerConfig>(config_str).unwrap_err();
         assert_eq!(
             err.to_string(),
             "not a valid PKCS#11 slot ID for key `slot` at line 3 column 20"

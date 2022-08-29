@@ -623,7 +623,7 @@ impl KrillServer {
         let contact = ParentCaContact::for_rfc8183_parent_response(parent_req.response().clone())
             .map_err(|e| Error::CaParentResponseInvalid(ca.clone(), e.to_string()))?;
         self.ca_manager
-            .get_entitlements_from_contact(&ca, &parent, &contact, false)
+            .get_entitlements_from_contact(&ca, parent, &contact, false)
             .await?;
 
         // Seems good. Add/update the parent.

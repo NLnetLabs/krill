@@ -38,14 +38,14 @@ use crate::ui::{
     OpenIDConnectMockMode::{self, *},
 };
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CustomAdditionalMetadata {
     end_session_endpoint: Option<String>,
     revocation_endpoint: Option<String>,
 }
 impl AdditionalProviderMetadata for CustomAdditionalMetadata {}
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CustomAdditionalClaims {
     role: Option<String>,
     inc_cas: Option<String>,
@@ -1090,7 +1090,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
             )));
         }
 
-        let access_token = authz_hdr.splitn(2, ' ').nth(1).ok_or_else(|| {
+        let access_token = authz_hdr.split_once(' ').map(|x| x.1).ok_or_else(|| {
             Error::custom(format!(
                 "Failed to extract access token after the first space in '{}'",
                 authz_hdr
@@ -1214,7 +1214,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
             _ => {}
         };
 
-        return Err(Error::custom(format!("Unknown request: {:?}", request)));
+        Err(Error::custom(format!("Unknown request: {:?}", request)))
     }
 
     let address = "127.0.0.1:1818";

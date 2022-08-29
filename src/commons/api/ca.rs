@@ -2473,6 +2473,7 @@ mod test {
 
         let candidates = parent_statuses.sync_candidates(ca_parents.clone(), 10);
 
+        #[allow(clippy::redundant_clone)] // false positive in rust 1.63
         let expected = vec![
             p1_new_parent.clone(),
             p2_new_parent.clone(),
