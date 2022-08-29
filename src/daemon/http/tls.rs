@@ -27,12 +27,14 @@ use std::{
 
 use futures::ready;
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio_rustls::rustls::{NoClientAuth, ServerConfig, TLSError};
+use tokio_rustls::rustls::{NoClientAuth, ServerConfig, TLSError, KeyLogFile};
 
 use hyper::server::{
     accept::Accept,
     conn::{AddrIncoming, AddrStream},
 };
+
+const SSLKEYLOGFILE_ENV_VAR_NAME: &'static str = "SSLKEYLOGFILE";
 
 pub trait Transport: AsyncRead + AsyncWrite {
     fn remote_addr(&self) -> Option<SocketAddr>;
@@ -176,6 +178,12 @@ impl TlsConfigBuilder {
         let mut config = ServerConfig::new(NoClientAuth::new());
         config.set_single_cert(cert, key).map_err(TlsConfigError::InvalidKey)?;
         config.set_protocols(&["h2".into(), "http/1.1".into()]);
+
+        // See: https://wiki.wireshark.org/TLS#tls-decryption
+        if std::env::var(SSLKEYLOGFILE_ENV_VAR_NAME).is_ok() {
+            config.key_log = Arc::new(KeyLogFile::new());
+        }
+
         Ok(config)
     }
 }
