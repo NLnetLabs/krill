@@ -85,7 +85,7 @@ impl CasMigration {
 
 impl UpgradeStore for CasMigration {
     fn needs_migrate(&self) -> Result<bool, PrepareUpgradeError> {
-        unimplemented!("This is checked in upgrades/mod.rs")
+        unreachable!("This is checked in upgrades/mod.rs")
     }
 
     fn prepare_new_data(&self, mode: UpgradeMode) -> Result<(), PrepareUpgradeError> {
