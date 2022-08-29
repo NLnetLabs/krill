@@ -229,8 +229,9 @@ assets = [
     { source = "pkg/rpm/postinst", dest = "/usr/share/krill/rpm/postinst", mode = "755" },
     { source = "pkg/rpm/postrm", dest = "/usr/share/krill/rpm/postrm", mode = "755" },
 ]
-post_install_script = "/usr/share/krill/rpm/postinst $*"
-post_uninstall_script = "/usr/share/krill/rpm/postrm $*"
+# These get set using cargo-generate-rpm --set-metadata at package build time.
+#post_install_script = ...
+#post_uninstall_script = ...
 
 # Ensure that the useradd tool is present by depending on its package
 [package.metadata.generate-rpm.requires]
