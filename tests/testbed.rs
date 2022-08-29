@@ -76,8 +76,6 @@ async fn add_and_remove_certificate_authority() {
     .await
     .unwrap();
 
-    let parent_contact_for_child = ParentCaContact::for_rfc8183_parent_response(parent_response).unwrap();
-
     // verify that the testbed shows that it now has the expected child CA
     let testbed_ca = ca_details(&testbed_ca_handle).await;
     let testbed_children = testbed_ca.children();
@@ -103,10 +101,11 @@ async fn add_and_remove_certificate_authority() {
     assert!(xml::reader::EventReader::from_str(&parent_response_xml).next().is_ok());
 
     // complete the RFC 8183 child registration process on the "client" side
-    let parent_ca_req = ParentCaReq::new(testbed_ca_handle.convert(), parent_contact_for_child.clone());
+    let parent_ca_req = ParentCaReq::new(testbed_ca_handle.convert(), parent_response.clone());
     add_parent_to_ca(&dummy_ca_handle, parent_ca_req).await;
 
     // verify that the child CA now has the correct parent
+    let parent_contact_for_child = ParentCaContact::for_rfc8183_parent_response(parent_response).unwrap();
     let dummy_ca = ca_details(&dummy_ca_handle).await;
     let dummy_ca_parents = dummy_ca.parents();
     let expected_parent_info = ParentInfo::new(testbed_ca_handle.convert(), parent_contact_for_child);

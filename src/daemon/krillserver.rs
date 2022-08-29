@@ -219,10 +219,8 @@ impl KrillServer {
                     let parent_response = ca_manager
                         .ca_add_child(&ta_handle, child_req, &service_uri, &system_actor)
                         .await?;
-                    let parent_ca_contact =
-                        ParentCaContact::for_rfc8183_parent_response(parent_response).map_err(Error::rfc8183)?;
 
-                    let parent_req = ParentCaReq::new(ta_handle.convert(), parent_ca_contact);
+                    let parent_req = ParentCaReq::new(ta_handle.convert(), parent_response);
 
                     ca_manager
                         .ca_parent_add_or_update(testbed_ca_handle.clone(), parent_req, &system_actor)
@@ -416,10 +414,7 @@ impl KrillServer {
                 .ca_add_child(&parent_handle.convert(), child_req, &service_uri, &system_actor)
                 .await?;
 
-            let parent_ca_contact =
-                ParentCaContact::for_rfc8183_parent_response(parent_response).map_err(Error::rfc8183)?;
-
-            let parent_req = ParentCaReq::new(parent_handle.clone(), parent_ca_contact);
+            let parent_req = ParentCaReq::new(parent_handle.clone(), parent_response);
             ca_manager
                 .ca_parent_add_or_update(ca_handle.clone(), parent_req, &system_actor)
                 .await?;
@@ -623,11 +618,15 @@ impl KrillServer {
         actor: &Actor,
     ) -> KrillEmptyResult {
         let parent = parent_req.handle();
-        let contact = parent_req.contact();
+
+        // Verify that we can get entitlements from the new parent before adding/updating it.
+        let contact = ParentCaContact::for_rfc8183_parent_response(parent_req.response().clone())
+            .map_err(|e| Error::CaParentResponseInvalid(ca.clone(), e.to_string()))?;
         self.ca_manager
-            .get_entitlements_from_contact(&ca, parent, contact, false)
+            .get_entitlements_from_contact(&ca, &parent, &contact, false)
             .await?;
 
+        // Seems good. Add/update the parent.
         self.ca_manager.ca_parent_add_or_update(ca, parent_req, actor).await
     }
 

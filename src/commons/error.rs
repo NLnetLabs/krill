@@ -236,7 +236,7 @@ pub enum Error {
     CaParentDuplicateInfo(CaHandle, ParentHandle),
     CaParentUnknown(CaHandle, ParentHandle),
     CaParentIssue(CaHandle, ParentHandle, String),
-    CaParentResponseInvalidXml(CaHandle, String),
+    CaParentResponseInvalid(CaHandle, String),
     CaParentResponseWrongXml(CaHandle),
     CaParentAddNotResponsive(CaHandle, ParentHandle),
     CaParentSyncError(CaHandle, ParentHandle, ResourceClassName, String),
@@ -407,7 +407,7 @@ impl fmt::Display for Error {
             Error::CaParentDuplicateInfo(ca, parent) => write!(f, "CA '{}' already has a parent named '{}' for this XML", ca, parent),
             Error::CaParentUnknown(ca, parent) => write!(f, "CA '{}' does not have a parent named '{}'", ca, parent),
             Error::CaParentIssue(ca, parent, e) => write!(f, "CA '{}' got error from parent '{}': {}", ca, parent, e),
-            Error::CaParentResponseInvalidXml(ca, e) => write!(f, "CA '{}' got invalid parent response xml: {}", ca, e),
+            Error::CaParentResponseInvalid(ca, e) => write!(f, "CA '{}' got invalid parent response: {}", ca, e),
             Error::CaParentResponseWrongXml(ca) => write!(f, "CA '{}' got repository response when adding parent", ca),
             Error::CaParentAddNotResponsive(ca, parent) => write!(f, "CA '{}' cannot get response from parent '{}'. Is the 'service_uri' in the XML reachable? Note that when upgrading Krill you should re-use existing configuration and data. For a fresh re-install of Krill you will need to send XML to all other parties again: parent(s), children, and repository",        ca, parent),
             Error::CaParentSyncError(ca, parent, rcn, error_msg) => {
@@ -778,7 +778,7 @@ impl Error {
                 .with_parent(parent)
                 .with_cause(err),
 
-            Error::CaParentResponseInvalidXml(ca, err) => ErrorResponse::new("ca-parent-response-invalid-xml", &self)
+            Error::CaParentResponseInvalid(ca, err) => ErrorResponse::new("ca-parent-response-invalid-xml", &self)
                 .with_ca(ca)
                 .with_cause(err),
 
@@ -1124,7 +1124,7 @@ mod tests {
         );
         verify(
             include_str!("../../test-resources/errors/ca-parent-response-invalid-xml.json"),
-            Error::CaParentResponseInvalidXml(ca.clone(), "expected something".to_string()),
+            Error::CaParentResponseInvalid(ca.clone(), "expected something".to_string()),
         );
         verify(
             include_str!("../../test-resources/errors/ca-parent-response-wrong-xml.json"),
