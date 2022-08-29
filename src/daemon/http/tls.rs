@@ -179,7 +179,7 @@ impl TlsConfigBuilder {
         config.set_single_cert(cert, key).map_err(TlsConfigError::InvalidKey)?;
         config.set_protocols(&["h2".into(), "http/1.1".into()]);
 
-        # See: https://wiki.wireshark.org/TLS#tls-decryption
+        // See: https://wiki.wireshark.org/TLS#tls-decryption
         if std::env::var(SSLKEYLOGFILE_ENV_VAR_NAME).is_ok() {
             config.key_log = Arc::new(KeyLogFile::new());
         }
