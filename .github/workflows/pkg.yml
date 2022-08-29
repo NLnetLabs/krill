@@ -541,8 +541,8 @@ jobs:
             # can be executed (hence post-uninstall rather than pre-uninstall...). So instead embed the entire
             # uninstall script in the TOML settings using the cargo-generate-rpm --set-metadata (aka -s)
             # command line argument.
-            POSTINST="post_install_script = \"\"\"$(cat pkg/rpm/postinst)\"\"\""
-            POSTUNINST="post_uninstall_script = \"\"\"$(cat pkg/rpm/postuninst)\"\"\""
+            POSTINST="post_install_script = '''$(cat pkg/rpm/postinst)'''"
+            POSTUNINST="post_uninstall_script = '''$(cat pkg/rpm/postuninst)'''"
 
             cargo generate-rpm \
                 -s "version=\"${PKG_APP_VER}\"" \
