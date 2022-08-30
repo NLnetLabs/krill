@@ -8,10 +8,7 @@ pub const KRILL_SERVER_APP: &str = "Krill";
 pub const KRILL_UP_APP: &str = "Krill Upgrade Helper";
 pub const KRILL_CLIENT_APP: &str = "Krill Client";
 
-#[cfg(not(feature = "multi-user"))]
 pub const KRILL_DEFAULT_CONFIG_FILE: &str = "./defaults/krill.conf";
-#[cfg(feature = "multi-user")]
-pub const KRILL_DEFAULT_CONFIG_FILE: &str = "./defaults/krill-multi-user.conf";
 
 const KRILL_ENV_TEST: &str = "KRILL_TEST";
 const KRILL_ENV_TEST_ANN: &str = "KRILL_TEST_ANN";
