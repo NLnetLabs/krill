@@ -1,6 +1,6 @@
 //! Support for admin tasks, such as managing publishers and RFC8181 clients
 
-use std::fmt;
+use std::{convert::TryFrom, fmt};
 
 use serde::{Deserialize, Serialize};
 
@@ -218,6 +218,29 @@ impl PublicationServerInfo {
     }
 }
 
+//------------ ApiRepositoryContact ------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+/// This type is provided so that we do not need to change the the API for
+///  uploading repository responses as it was in <0.10.0
+pub struct ApiRepositoryContact {
+    repository_response: idexchange::RepositoryResponse,
+}
+
+impl ApiRepositoryContact {
+    pub fn new(repository_response: idexchange::RepositoryResponse) -> Self {
+        ApiRepositoryContact { repository_response }
+    }
+}
+
+impl TryFrom<ApiRepositoryContact> for RepositoryContact {
+    type Error = Error;
+
+    fn try_from(api_contact: ApiRepositoryContact) -> KrillResult<Self> {
+        RepositoryContact::for_response(api_contact.repository_response)
+    }
+}
+
 //------------ RepositoryContact ---------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -279,31 +302,32 @@ impl Eq for RepositoryContact {}
 /// This type defines all parent ca details needed to add a parent to a CA
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParentCaReq {
-    handle: ParentHandle,     // the local name the child gave to the parent
-    contact: ParentCaContact, // where the parent can be contacted
+    handle: ParentHandle, // the child local name for the parent
+    #[serde(alias = "contact")] // stay backward compatible to pre 0.10.0
+    response: idexchange::ParentResponse,
 }
 
 impl fmt::Display for ParentCaReq {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "parent '{}' contact '{}'", self.handle, self.contact)
+        write!(f, "parent '{}' contact '{}'", self.handle, self.response)
     }
 }
 
 impl ParentCaReq {
-    pub fn new(handle: ParentHandle, contact: ParentCaContact) -> Self {
-        ParentCaReq { handle, contact }
+    pub fn new(handle: ParentHandle, response: idexchange::ParentResponse) -> Self {
+        ParentCaReq { handle, response }
     }
 
     pub fn handle(&self) -> &ParentHandle {
         &self.handle
     }
 
-    pub fn contact(&self) -> &ParentCaContact {
-        &self.contact
+    pub fn response(&self) -> &idexchange::ParentResponse {
+        &self.response
     }
 
-    pub fn unpack(self) -> (ParentHandle, ParentCaContact) {
-        (self.handle, self.contact)
+    pub fn unpack(self) -> (ParentHandle, idexchange::ParentResponse) {
+        (self.handle, self.response)
     }
 }
 
@@ -340,37 +364,33 @@ pub struct ParentServerInfo {
     /// The URI where the CA needs to send its RFC6492 messages
     service_uri: ServiceUri,
 
-    /// The parent CA's public key
-    public_key: PublicKey,
-
     /// The handle the parent CA likes to be called by.
     parent_handle: ParentHandle,
 
     /// The handle the parent CA chose for the child CA.
     child_handle: ChildHandle,
+
+    /// The parent's ID cert.
+    id_cert: IdCertInfo,
 }
 
 impl ParentServerInfo {
     pub fn new(
         service_uri: ServiceUri,
-        public_key: PublicKey,
         parent_handle: ParentHandle,
         child_handle: ChildHandle,
+        id_cert: IdCertInfo,
     ) -> Self {
         ParentServerInfo {
             service_uri,
-            public_key,
             parent_handle,
             child_handle,
+            id_cert,
         }
     }
 
     pub fn service_uri(&self) -> &ServiceUri {
         &self.service_uri
-    }
-
-    pub fn public_key(&self) -> &PublicKey {
-        &self.public_key
     }
 
     pub fn parent_handle(&self) -> &ParentHandle {
@@ -380,14 +400,21 @@ impl ParentServerInfo {
     pub fn child_handle(&self) -> &ChildHandle {
         &self.child_handle
     }
+
+    pub fn id_cert(&self) -> &IdCertInfo {
+        &self.id_cert
+    }
 }
 
 impl fmt::Display for ParentServerInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "service uri:    {}", self.service_uri)?;
-        writeln!(f, "key identifier: {}", self.public_key.key_identifier())?;
         writeln!(f, "parent handle:  {}", self.parent_handle)?;
-        writeln!(f, "child handle:   {}", self.child_handle)
+        writeln!(f, "child handle:   {}", self.child_handle)?;
+        writeln!(f, "parent certificate:")?;
+        writeln!(f, "   key identifier: {}", self.id_cert().public_key().key_identifier())?;
+        writeln!(f, "   hash (of cert): {}", self.id_cert().hash())?;
+        writeln!(f, "   PEM:\n\n{}", self.id_cert().pem())
     }
 }
 
@@ -411,18 +438,17 @@ impl ParentCaContact {
 
     pub fn for_rfc8183_parent_response(response: idexchange::ParentResponse) -> Result<Self, idexchange::Error> {
         let id_cert = response.validate()?;
+        let id_cert = IdCertInfo::from(&id_cert);
 
         let service_uri = response.service_uri().clone();
-        let pub_key = id_cert.public_key().clone();
-
         let parent_handle = response.parent_handle().clone();
         let child_handle = response.child_handle().clone();
 
         Ok(ParentCaContact::Rfc6492(ParentServerInfo {
             service_uri,
-            public_key: pub_key,
             parent_handle,
             child_handle,
+            id_cert,
         }))
     }
 

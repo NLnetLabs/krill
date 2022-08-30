@@ -158,8 +158,7 @@ async fn migrate_repository() {
         sleep(Duration::from_secs(1)).await;
 
         // Update CA1 to use dedicated repo
-        let contact = RepositoryContact::for_response(response).unwrap();
-        repo_update(&ca1, contact).await;
+        repo_update(&ca1, response).await;
 
         // This should result in a key roll and content published in both repos
         assert!(state_becomes_new_key(&ca1).await);

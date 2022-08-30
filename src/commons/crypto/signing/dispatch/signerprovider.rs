@@ -161,9 +161,8 @@ impl SignerProvider {
 
     #[cfg(all(test, feature = "hsm"))]
     pub fn wipe_all_keys(&self) {
-        match self {
-            SignerProvider::Mock(_, signer) => signer.wipe_all_keys(),
-            _ => { /* NOOP */ }
+        if let SignerProvider::Mock(_, signer) = self {
+            signer.wipe_all_keys()
         }
     }
 }

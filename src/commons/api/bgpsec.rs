@@ -91,7 +91,7 @@ impl FromStr for BgpSecAsnKey {
             return Err(BgpSecAsnKeyFmtError);
         }
 
-        let asn_hex = parts.get(0).ok_or(BgpSecAsnKeyFmtError)?;
+        let asn_hex = parts.first().ok_or(BgpSecAsnKeyFmtError)?;
         let key_id_str = parts.get(1).ok_or(BgpSecAsnKeyFmtError)?;
 
         let asn_nr = u32::from_str_radix(asn_hex, 16).map_err(|_| BgpSecAsnKeyFmtError)?;

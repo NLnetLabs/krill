@@ -418,7 +418,7 @@ impl OpenIDConnectAuthProvider {
         // Log the redirect URI to help the operator in the event that the
         // OpenID Connect: provider complains that the redirect URI doesn't match
         // that configured at the provider.
-        debug!("OpenID Connect: Redirect URI set to {}", redirect_uri.to_string());
+        debug!("OpenID Connect: Redirect URI set to {}", redirect_uri.as_str());
 
         let mut client = client.set_redirect_uri(redirect_uri);
 

@@ -450,24 +450,22 @@ impl CaManager {
 /// # CAs as parents
 ///
 impl CaManager {
-    /// Adds a child under a CA. The 'service_uri' is used here so that
-    /// the appropriate `ParentCaContact` can be returned. If the `AddChildRequest`
-    /// contains resources not held by this CA, then an `Error::CaChildExtraResources`
-    /// is returned.
+    /// Adds a child under a CA. If the `AddChildRequest` contains resources not held
+    /// by this CA, then an `Error::CaChildExtraResources` is returned.
     pub async fn ca_add_child(
         &self,
         ca: &CaHandle,
         req: AddChildRequest,
         service_uri: &uri::Https,
         actor: &Actor,
-    ) -> KrillResult<ParentCaContact> {
+    ) -> KrillResult<idexchange::ParentResponse> {
         info!("CA '{}' process add child request: {}", &ca, &req);
         let (child_handle, child_res, id_cert) = req.unpack();
 
         let add_child = CmdDet::child_add(ca, child_handle.clone(), id_cert.into(), child_res, actor);
         self.send_command(add_child).await?;
 
-        self.ca_parent_contact(ca, child_handle, service_uri).await
+        self.ca_parent_response(ca, child_handle, service_uri).await
     }
 
     /// Show details for a child under the CA.
@@ -487,12 +485,7 @@ impl CaManager {
         let service_uri = Self::service_uri_for_ca(service_uri, ca_handle);
         let ca = self.get_ca(ca_handle).await?;
 
-        let server_info = ParentServerInfo::new(
-            service_uri,
-            ca.id_cert().public_key().clone(),
-            ca_handle.convert(),
-            child_handle,
-        );
+        let server_info = ParentServerInfo::new(service_uri, ca_handle.convert(), child_handle, ca.id_cert().clone());
         Ok(ParentCaContact::for_parent_server_info(server_info))
     }
 
@@ -748,7 +741,9 @@ impl CaManager {
     ) -> KrillResult<()> {
         let ca = self.get_ca(&handle).await?;
 
-        let (parent, contact) = parent_req.unpack();
+        let (parent, response) = parent_req.unpack();
+        let contact = ParentCaContact::for_rfc8183_parent_response(response)
+            .map_err(|e| Error::CaParentResponseInvalid(handle.clone(), e.to_string()))?;
 
         let cmd = if !ca.parent_known(&parent) {
             CmdDet::add_parent(&handle, parent, contact, actor)
@@ -1447,7 +1442,7 @@ impl CaManager {
                     cms_logger.err(format!("Could not decode CMS: {}", e))?;
                     Err(Error::Rfc6492(e))
                 }
-                Ok(cms) => match cms.validate(server_info.public_key()) {
+                Ok(cms) => match cms.validate(server_info.id_cert().public_key()) {
                     Err(e) => {
                         cms_logger.err(format!("Response invalid: {}", e))?;
                         Err(Error::Rfc6492(e))

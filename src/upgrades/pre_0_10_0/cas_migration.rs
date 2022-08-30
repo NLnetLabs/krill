@@ -9,7 +9,6 @@ use crate::{
     commons::{
         api::StorableCaCommand,
         eventsourcing::{AggregateStore, KeyStoreKey, KeyValueStore, StoredCommand, StoredValueInfo},
-        util::KrillVersion,
     },
     constants::{CASERVER_DIR, CA_OBJECTS_DIR, KRILL_VERSION},
     daemon::{
@@ -86,10 +85,7 @@ impl CasMigration {
 
 impl UpgradeStore for CasMigration {
     fn needs_migrate(&self) -> Result<bool, PrepareUpgradeError> {
-        Ok(self.current_kv_store.version_is_after(KrillVersion::release(0, 9, 0))?
-            && self
-                .current_kv_store
-                .version_is_before(KrillVersion::candidate(0, 10, 0, 1))?)
+        unreachable!("This is checked in upgrades/mod.rs")
     }
 
     fn prepare_new_data(&self, mode: UpgradeMode) -> Result<(), PrepareUpgradeError> {

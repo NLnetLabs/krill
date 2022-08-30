@@ -6,7 +6,7 @@
 macro_rules! iterable_enum {
     ($name:ident { $($variant:ident),* })   => (
         #[allow(non_camel_case_types)]
-        #[derive(Clone, Debug, PartialEq)]
+        #[derive(Clone, Debug, Eq, PartialEq)]
         pub enum $name { $($variant),* }
 
         impl std::fmt::Display for $name {

@@ -22,7 +22,7 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            AspaCustomer, AspaDefinition, AspaProvidersUpdate, CertInfo, IssuedCertificate, ObjectName,
+            AspaCustomer, AspaDefinition, AspaProvidersUpdate, CertInfo, IdCertInfo, IssuedCertificate, ObjectName,
             ParentCaContact, ParentServerInfo, PublicationServerInfo, ReceivedCert, RepositoryContact, Revocation,
             Revocations, RoaAggregateKey, RtaName, SuspendedCert, TaCertDetails, TrustAnchorLocator, UnsuspendedCert,
         },
@@ -298,12 +298,8 @@ pub struct OldParentResponse {
 
 impl From<OldParentResponse> for ParentServerInfo {
     fn from(old: OldParentResponse) -> Self {
-        ParentServerInfo::new(
-            old.service_uri,
-            old.id_cert.public_key().clone(),
-            old.parent_handle,
-            old.child_handle,
-        )
+        let id_cert_info = IdCertInfo::from(&old.id_cert);
+        ParentServerInfo::new(old.service_uri, old.parent_handle, old.child_handle, id_cert_info)
     }
 }
 

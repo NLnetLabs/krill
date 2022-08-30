@@ -2,7 +2,7 @@
 //!
 use std::{
     collections::HashMap,
-    convert::Infallible,
+    convert::{Infallible, TryInto},
     env,
     fs::File,
     io::Read,
@@ -34,7 +34,7 @@ use rpki::ca::{
 use crate::{
     commons::{
         api::{
-            AspaDefinitionUpdates, BgpStats, CommandHistoryCriteria, ParentCaContact, ParentCaReq, PublisherList,
+            ApiRepositoryContact, AspaDefinitionUpdates, BgpStats, CommandHistoryCriteria, ParentCaReq, PublisherList,
             RepositoryContact, RoaConfigurationUpdates, RtaName, Token,
         },
         bgp::BgpAnalysisAdvice,
@@ -1403,15 +1403,6 @@ async fn api_ca_stats_child_connections(req: Request, ca: CaHandle) -> RoutingRe
     )
 }
 
-async fn api_ca_parent_contact(req: Request, ca: CaHandle, child: ChildHandle) -> RoutingResult {
-    aa!(
-        req,
-        Permission::CA_READ,
-        Handle::from(&ca),
-        render_json_res(req.state().ca_parent_contact(&ca, child.clone()).await)
-    )
-}
-
 async fn api_ca_parent_res_json(req: Request, ca: CaHandle, child: ChildHandle) -> RoutingResult {
     aa!(
         req,
@@ -1596,8 +1587,7 @@ async fn api_ca_children(req: Request, path: &mut RequestPath, ca: CaHandle) -> 
                 Method::DELETE => api_ca_child_remove(req, ca, child).await,
                 _ => render_unknown_method(),
             },
-            Some("contact") => api_ca_parent_contact(req, ca, child).await,
-            Some("parent_response.json") => api_ca_parent_res_json(req, ca, child).await,
+            Some("contact") | Some("parent_response.json") => api_ca_parent_res_json(req, ca, child).await,
             Some("parent_response.xml") => api_ca_parent_res_xml(req, ca, child).await,
             _ => render_unknown_method(),
         },
@@ -1753,19 +1743,23 @@ async fn api_ca_repo_status(req: Request, ca: CaHandle) -> RoutingResult {
 fn extract_repository_contact(ca: &CaHandle, bytes: Bytes) -> Result<RepositoryContact, Error> {
     let string = String::from_utf8(bytes.to_vec()).map_err(Error::custom)?;
 
-    // TODO: Switch based on Content-Type header
+    // Get rid of whitespace first so we can check if it smells like XML.
+    // We could change this to check for Content-Type headers instead.
+    let string = string.trim();
+
     if string.starts_with('<') {
         if string.contains("<parent_response") {
             Err(Error::CaRepoResponseWrongXml(ca.clone()))
         } else {
             let response = idexchange::RepositoryResponse::parse(string.as_bytes())
-                .map_err(|e| Error::CaRepoResponseInvalidXml(ca.clone(), e.to_string()))?;
+                .map_err(|e| Error::CaRepoResponseInvalid(ca.clone(), e.to_string()))?;
 
             RepositoryContact::for_response(response)
-                .map_err(|e| Error::CaRepoResponseInvalidXml(ca.clone(), e.to_string()))
+                .map_err(|e| Error::CaRepoResponseInvalid(ca.clone(), e.to_string()))
         }
     } else {
-        serde_json::from_str(&string).map_err(Error::JsonError)
+        let api_contact: ApiRepositoryContact = serde_json::from_str(string).map_err(Error::JsonError)?;
+        api_contact.try_into()
     }
 }
 
@@ -1813,22 +1807,22 @@ fn extract_parent_ca_req(
 ) -> Result<ParentCaReq, Error> {
     let string = String::from_utf8(bytes.to_vec()).map_err(Error::custom)?;
 
-    // TODO: Switch based on Content-Type header
+    // Get rid of whitespace first so we can check if it smells like XML.
+    // We could change this to check for Content-Type headers instead.
+    let string = string.trim();
     let req = if string.starts_with('<') {
         if string.starts_with("<repository") {
             return Err(Error::CaParentResponseWrongXml(ca.clone()));
         } else {
-            let res = idexchange::ParentResponse::parse(string.as_bytes())
-                .map_err(|e| Error::CaParentResponseInvalidXml(ca.clone(), e.to_string()))?;
+            let response = idexchange::ParentResponse::parse(string.as_bytes())
+                .map_err(|e| Error::CaParentResponseInvalid(ca.clone(), e.to_string()))?;
 
-            let parent_name = parent_override.unwrap_or_else(|| res.parent_handle().clone());
-            let contact = ParentCaContact::for_rfc8183_parent_response(res)
-                .map_err(|e| Error::CaParentResponseInvalidXml(ca.clone(), e.to_string()))?;
+            let parent_name = parent_override.unwrap_or_else(|| response.parent_handle().clone());
 
-            ParentCaReq::new(parent_name, contact)
+            ParentCaReq::new(parent_name, response)
         }
     } else {
-        let req: ParentCaReq = serde_json::from_str(&string).map_err(Error::JsonError)?;
+        let req: ParentCaReq = serde_json::from_str(string).map_err(Error::JsonError)?;
         if let Some(parent_override) = parent_override {
             if req.handle() != &parent_override {
                 return Err(Error::Custom(format!(

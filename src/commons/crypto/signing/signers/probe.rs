@@ -87,7 +87,7 @@ impl<C, E, S> ProbeStatus<C, E, S> {
     #[cfg(test)]
     pub fn last_probe_time(&self) -> Result<Option<Instant>, ProbeError<E>> {
         match self {
-            ProbeStatus::Probing { last_probe_time, .. } => Ok(last_probe_time.clone()),
+            ProbeStatus::Probing { last_probe_time, .. } => Ok(*last_probe_time),
             _ => Err(ProbeError::WrongState),
         }
     }
@@ -237,9 +237,9 @@ pub mod tests {
 
     #[derive(Debug, Default)]
     struct Config {
-        hostname: String,
+        _hostname: String,
 
-        port: u64,
+        _port: u64,
     }
 
     #[derive(Copy, Clone, Debug, Default)]

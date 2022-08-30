@@ -27,16 +27,33 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 # Changelog
 
-## 0.10.0 RC2 'Hush'
+## 0.10.0 RC3 'Hush'
 
-This second release candidate fixes the following issues identified
-in RC1:
-- Using a jitter of 0 results in a panic #859
-- Make krill.lock file optional and opt-in #856
-- BGPSec Router Certificate should NOT contain SIA extension #854
+This third release candidate fixes the following issues identified
+in RC1 and RC2:
+- Handle more PKCS#11 transient failure scenarios #761 (HSM support)
 - Manifest of 0.10.0-rc1 includes CRL, but nothing else #853
+- BGPSec Router Certificate should NOT contain SIA extension #854
+- Make krill.lock file optional and opt-in #856
+- Using a jitter of 0 results in a panic #859
+- Security fixes in KMIP dependencies #860 (HSM support)
+- v0.10.0-rc2 doesn't compile on FreeBSD 13.1 #861 (HSM support)
+- Show RFC8183 XML in the CLI output #868
+- Keep parent ID cert PEM in history #870
+- Error in the JS console after creating a CA via the web UI #872
+- Trim uploaded parent and repo responses #873
+- XML generated for RFC 8183 communication starts with a line break #874
+- RFC 8183 XML responses submitted via the UI are incorrectly escaped #875
+- API to upload repository response should not change #895
+- API to add parent should not change #898
+- Fix: Encode ranges as prefixes where possible #903
+- Improve KMIP lacking support log messages #889
+- Add SSLKEYLOGFILE support #615
 
-In this release candidate we introduce the following major features:
+NOTE: 0.10.0-rc1 and -rc2 instances cannot be upgraded because of issue #870.
+      Please contact us if this is an issue for you.
+
+In this release we introduce the following major features:
 - BGPSec Router Certificate Signing
 - Support the use of Hardware Security Modules (HSMs) for key operations
 

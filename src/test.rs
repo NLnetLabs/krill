@@ -45,7 +45,7 @@ use crate::{
         util::httpclient,
     },
     daemon::{
-        ca::{ta_handle, ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest},
+        ca::{ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest},
         config::Config,
         http::server,
     },
@@ -264,11 +264,7 @@ pub async fn delete_ca(ca: &CaHandle) {
 }
 
 pub async fn ca_repo_update_rfc8181(ca: &CaHandle, response: idexchange::RepositoryResponse) {
-    krill_admin(Command::CertAuth(CaCommand::RepoUpdate(
-        ca.clone(),
-        RepositoryContact::for_response(response).unwrap(),
-    )))
-    .await;
+    krill_admin(Command::CertAuth(CaCommand::RepoUpdate(ca.clone(), response))).await;
 }
 
 pub async fn generate_new_id(ca: &CaHandle) {
@@ -289,33 +285,18 @@ pub async fn request(ca: &CaHandle) -> idexchange::ChildRequest {
     }
 }
 
-pub async fn add_child_to_ta_rfc6492(
-    child: &ChildHandle,
-    child_request: idexchange::ChildRequest,
-    resources: ResourceSet,
-) -> ParentCaContact {
-    let id_cert = child_request.validate().unwrap();
-    let req = AddChildRequest::new(child.clone(), resources, id_cert);
-    let res = krill_admin(Command::CertAuth(CaCommand::ChildAdd(ta_handle(), req))).await;
-
-    match res {
-        ApiResponse::ParentCaContact(info) => info,
-        _ => panic!("Expected ParentCaInfo response"),
-    }
-}
-
 pub async fn add_child_rfc6492(
     ca: CaHandle,
     child: ChildHandle,
     child_request: idexchange::ChildRequest,
     resources: ResourceSet,
-) -> ParentCaContact {
+) -> idexchange::ParentResponse {
     let id_cert = child_request.validate().unwrap();
 
     let add_child_request = AddChildRequest::new(child, resources, id_cert);
 
     match krill_admin(Command::CertAuth(CaCommand::ChildAdd(ca, add_child_request))).await {
-        ApiResponse::ParentCaContact(info) => info,
+        ApiResponse::Rfc8183ParentResponse(response) => response,
         _ => panic!("Expected ParentCaInfo response"),
     }
 }
@@ -385,8 +366,8 @@ pub async fn parent_statuses(ca: &CaHandle) -> ParentStatuses {
     }
 }
 
-pub async fn update_parent_contact(ca: &CaHandle, parent: &ParentHandle, contact: ParentCaContact) {
-    let parent_req = ParentCaReq::new(parent.clone(), contact);
+pub async fn update_parent_contact(ca: &CaHandle, parent: &ParentHandle, response: idexchange::ParentResponse) {
+    let parent_req = ParentCaReq::new(parent.clone(), response);
     krill_admin(Command::CertAuth(CaCommand::AddParent(ca.clone(), parent_req))).await;
 }
 
@@ -727,8 +708,8 @@ pub fn typed_prefix(s: &str) -> TypedPrefix {
     TypedPrefix::from_str(s).unwrap()
 }
 
-pub async fn repo_update(ca: &CaHandle, contact: RepositoryContact) {
-    let command = Command::CertAuth(CaCommand::RepoUpdate(ca.clone(), contact));
+pub async fn repo_update(ca: &CaHandle, response: idexchange::RepositoryResponse) {
+    let command = Command::CertAuth(CaCommand::RepoUpdate(ca.clone(), response));
     krill_admin(command).await;
 }
 
@@ -770,8 +751,7 @@ pub async fn set_up_ca_with_repo(ca: &CaHandle) {
     let response = embedded_repository_response(ca.convert()).await;
 
     // Update the repo for the child
-    let contact = RepositoryContact::for_response(response).unwrap();
-    repo_update(ca, contact).await;
+    repo_update(ca, response).await;
 }
 
 pub async fn expected_mft_and_crl(ca: &CaHandle, rcn: &ResourceClassName) -> Vec<String> {
@@ -853,8 +833,8 @@ async fn will_publish(test_msg: &str, ca: &CaHandle, files: &[String], server: P
 pub async fn set_up_ca_under_parent_with_resources(ca: &CaHandle, parent: &CaHandle, resources: &ResourceSet) {
     let child_request = request(ca).await;
     let parent = {
-        let contact = add_child_rfc6492(parent.convert(), ca.convert(), child_request, resources.clone()).await;
-        ParentCaReq::new(parent.convert(), contact)
+        let response = add_child_rfc6492(parent.convert(), ca.convert(), child_request, resources.clone()).await;
+        ParentCaReq::new(parent.convert(), response)
     };
     add_parent_to_ca(ca, parent).await;
     assert!(ca_contains_resources(ca, resources).await);

@@ -32,9 +32,8 @@ use crate::{
     commons::{
         api::{
             AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionFormatError, AspaProvidersUpdate,
-            AuthorizationFmtError, BgpSecAsnKey, BgpSecDefinition, CertAuthInit, ParentCaContact, ParentCaReq,
-            PublicationServerUris, RepositoryContact, RoaConfiguration, RoaConfigurationUpdates, RoaPayload, RtaName,
-            Token, UpdateChildRequest,
+            AuthorizationFmtError, BgpSecAsnKey, BgpSecDefinition, CertAuthInit, ParentCaReq, PublicationServerUris,
+            RoaConfiguration, RoaConfigurationUpdates, RoaPayload, RtaName, Token, UpdateChildRequest,
         },
         crypto::SignSupport,
         error::KrillIoError,
@@ -1707,8 +1706,7 @@ impl Options {
 
         let parent = matches.value_of("parent").unwrap();
         let parent = ParentHandle::from_str(parent).map_err(|_| Error::InvalidHandle)?;
-        let contact = ParentCaContact::for_rfc8183_parent_response(response)?;
-        let parent_req = ParentCaReq::new(parent, contact);
+        let parent_req = ParentCaReq::new(parent, response);
 
         let command = Command::CertAuth(CaCommand::AddParent(my_ca, parent_req));
         Ok(Options::make(general_args, command))
@@ -2083,14 +2081,8 @@ impl Options {
         let bytes = Self::read_file_arg(path)?;
         let response = idexchange::RepositoryResponse::parse(bytes.as_ref())?;
 
-        let repo_contact = RepositoryContact::for_response(response).map_err(|e| {
-            Error::GeneralArgumentError(format!(
-                "Could not validate certificate in RFC 8183 Repository Response XML: {}",
-                e
-            ))
-        })?;
+        let command = Command::CertAuth(CaCommand::RepoUpdate(my_ca, response));
 
-        let command = Command::CertAuth(CaCommand::RepoUpdate(my_ca, repo_contact));
         Ok(Options::make(general_args, command))
     }
 
@@ -2497,7 +2489,7 @@ pub enum CaCommand {
     // Publishing
     RepoPublisherRequest(CaHandle), // Get the RFC 8183 Publisher Request
     RepoDetails(CaHandle),
-    RepoUpdate(CaHandle, RepositoryContact),
+    RepoUpdate(CaHandle, idexchange::RepositoryResponse),
     RepoStatus(CaHandle),
 
     // Parents (to this CA)

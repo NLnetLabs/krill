@@ -1,21 +1,133 @@
-# GitHub Actions workflow for building and testing Krill O/S packages. Uses GitHub Actions caching to avoid rebuilding
-# Rust cargo-deb , cargo generate-rpm and Krill compiled dependencies on every run.
+# GitHub Actions workflow for building and testing our O/S packages.
 #
-# Note: at the time of writing the GH cache contents expire after a week if not used so the next build may be much
-# slower as it will have to re-download/build/install lots of Rust crates.
+# Workflow speed:
+# ===============
+# This workflow uses GitHub Actions caching to avoid rebuilding Rust cargo-deb, cargo generate-rpm and our compiled
+# dependencies on every run. At the time of writing the GH cache contents expire after a week if not used so the next
+# build may be much slower as it will have to re-download/build/install lots of Rust crates.
 #
-# Packages are built inside Docker containers as GH Runners have extra libraries and packages installed which can cause
-# package building to succeed but package installation on a real target O/S to fail, due to being built against too
-# recent version of a package such as libssl or glibc.
+# This workflow does NOT use the lewagon/wait-on-check-action GitHub Action to enable individual sub-jobs of a matrix
+# job to wait only for their corresponding "upstream" matrix sub-job (e.g. DEB packaging for x86-64 doesn't need to
+# wait on cross-compilation while DEB packaging for ARMv7 does need to wait but only for the ARMv7 cross-compile but
+# not for the AARCH64 cross-compile). It was tried, it was great, it speeds up the workflow, but it was unreliable.
+# There are known issues with the GitHub Action and having a fragile workflow fail sporadically because the wait
+# wrongly proceeds to the next step before the dependent step completed successfully is not acceptable. Perhaps this
+# will be better later, or an alternative approach exists that has not yet been found.
 #
-# Packages are tested inside LXC/LXD containers because Docker containers don't by default support init managers such as
-# systemd but we want to test systemd service unit installation and activation.
+# DEB/RPM packaging:
+# ==================
+# DEB and RPM packages are built inside Docker containers as GH Runners have extra libraries and packages installed
+# which can cause package building to succeed but package installation on a real target O/S to fail, due to being built
+# against too recent version of a package such as libssl or glibc.
+#
+# Packages are built using the cargo deb and cargo generate-rpm projects, not using official Debian and RedHat tools.
+# This allows us to keep the configuration in `Cargo.toml` but can mean that we sometimes hit limitations of those
+# tools (e.g. we contributed systemd unit activation support to cargo deb to overcome that lacking capability).
+#
+# DEB/RPM testing:
+# ================
+# DEB and RPM packages are tested inside LXC/LXD containers because Docker containers don't by default support init
+# managers such as systemd but we want to test systemd service unit installation and activation.
+#
+# RHEL 8/CentOS 8 support:
+# ========================
+# We were building with the now discontinued CentOS 8. We continue to build them in a CentOS 8 Docker image but install
+# packages from the CentOS 8 vault to work around the forced breakage introduced by RedHat. For testing we were forced
+# to switch to using a Rocky Linux (CentOS 8 compatible) LXC/LXD image because the CentOS 8 LXC/LXD image was pulled
+# from the LXC/LXD image repositories. In future we may want to explicitly build for Rocky Linux instead or as well as
+# CentOS 8.
+#
+# Docker packaging:
+# =================
+# Docker packaging was originally done using Docker Hub but long delays and repeated spurious failures caused us to
+# migrate Docker packaging to GitHub Actions and which is now part of this workflow.
+#
+# Images use an Alpine base image for reduced image size and thus download time, and also for faster and simpler
+# installation of dependencies (apk add is way faster and simpler than apt install for example). However Alpine is
+# MUSL based rather than GLIBC based, so cross-compiled binaries (see below) must target MUSL when intending to be
+# used within a Docker container.
+#
+# Images are built using Docker Buildkit (officially supported by Docker and used by default by the Docker Build Push
+# GitHub Action) which speeds up especially the non-x86-64 architecture case.
+#
+# Per architecture images are built and pushed to Docker Hub with xxx-<arch> tags, and then a Docker Manifest is
+# created which groups these images into a single multi-arch image without the -<arch> extension on the tag. The
+# manifest is then also pushed to Docker Hub.
+#
+# Building of both x86-64 and non-x86-64 architecture images are handled by a single Dockerfile which supports two
+# modes of operation. In the default 'build' mode our app is compiled within the Docker container and only the final
+# artifacts are kept in the final Docker image. In the alternate 'copy' mode our binaries are copied into the
+# build container and compilation within the container is skipped.
+#
+# Multi-arch image creation is NOT done using Docker Buildkit multi-arch support because (a) that does not support
+# configuring the different invocations of the Dockerfile differently (e.g. with MODE=copy for the non-x86-64 cases
+# and providing different the binaries to copy in to the image in each case) and (b) because it compiles our app in
+# parallel for each architecture at once on a single GitHub Actions runner host which is VERY SLOW even for just a
+# couple of architectures. Instead we leverage the GitHub Actions matrix building support to build each image in
+# parallel. This means however that we have to manually invoke the `docker manifest` command as it is not handled
+# automagically for us.
+#
+# Docker authentication:
+# ======================
+# Publication to Docker Hub depends on a Docker Hub username and access token being available in the GitHub secrets
+# available to this workflow.
+#
+# Package publication:
+# ====================
+# Docker packages are published immediately to Docker Hub. DEB and RPM packages are only available to NLnet Labs team
+# members with access to the workflow artifacts. Publication of DEB and RPM packages to packages.nlnetlabs.nl requires
+# that the separate packaging process outside of GitHub be invoked manually.
+#
+# Non-x86-64 packaging:
+# ====================
+# This workflow uses the Rust Tools team Cargo Cross project to cross-compile for architectures other than x86 64, e.g.
+# ARMv7/armhf and ARM64/aarch64.
+#
+# Note: Different tools (rustc, QEmu, Docker, etc) use slightly different names for these targets which can be
+# confusing.
+#
+# Cross-compilation is NOT done using the support built-in to Cargo because this requires for each target architecture
+# that you manually install the appropriate toolchain, set the appropriate environment variables, install the
+# appropriate strip tool, and store with the source code a .cargo/config.toml file telling Cargo which tool paths to
+# use for which architecture. However this comes with a couple of limitations: (a) Cargo Cross itself uses Docker and
+# has known issues running Docker-in-Docker from within a Docker container (which is how what was the main job of this
+# workflow runs), (b) we are "limited" to base images/architectures supported by Cargo Cross (but there are quite
+# a few of these) and (c) if the base Cargo Cross image doesn't include packages or tooling needed by `cargo build`
+# then building will fail. For these reasons cross compilation is done as a pre-job in this workflow (so that it can
+# run on the GitHub runner Host rather than inside a Docker container).
+#
+# Non-x86-64 testing:
+# ===================
+# Only x86-64 architecture packages are sanity checked. Non-x86-64 architecture packages are built but not tested as
+# the binaries won't run on the x86-64 GitHub runner host, Docker or LXC/LXD containers. It might be possible to use
+# QEmu for this but that is not done at this time.
+#
+# Artifacts:
+# ==========
+# The output of this workflow is two-fold:
+#   - Images pushed directly to Docker Hub.
+#   - Artifacts are uploaded to GitHub on workflow completion and appear as-if attached to the workflow run.
+# The latter are consumed by the separate manual external process for publishing to packages.nlnetlabs.nl.
+#
+# This workflow also uses artifacts internally to pass cross-compiled binares from one workflow job to another.
+#   - Cross-compiled binary artifacts are uploaded to GitHub by the 'cross' job.
+#   - Both the 'pkg' and 'docker' jobs download these cross-compiled binary artifacts for inclusion in the
+#     packages they create.
+# Such 'internal' artifacts are named with a 'tmp-' prefix and are ignored by the separate manual external process
+# for publishing to packages.nlnetlabs.nl.
 
 name: Packaging
+
+env:
+  DOCKER_REPO: ${{ github.repository_owner }}
+
 on:
   push:
     branches:
-    - main
+      - main
+    tags:
+      - v*
+
     paths-ignore:
       - '.dockerignore'
       - '.github/workflow/pkg.yml'
@@ -27,6 +139,9 @@ on:
       - 'README.md'
       - 'tests/e2e/**'
 
+  # Triggering on PRs and arbitrary branch pushes is not enabled because most of the time only the CI build should be
+  # triggered, not the packaging build. In cases where you want to test changes to this workflow this trigger enables
+  # you to manually invoke this workflow on an arbitrary branch as needed.
   workflow_dispatch:
 
 defaults:
@@ -35,52 +150,73 @@ defaults:
     shell: bash --noprofile --norc -eo pipefail -x {0}
 
 jobs:
-  # Cross-compile packages in a separate job so that we can run it on the GitHub Actions runner host directly rather
-  # than inside a Docker container (as is done by the `pkg` workflow). We do this because we use `cargo cross` to handle
-  # the complexity of using the right compile-time tooling and dependencies for cross compilation to work, and 
+  # -------------------------------------------------------------------------------------------------------------------
+  # Job: 'cross'
+  # -------------------------------------------------------------------------------------------------------------------
+  # Cross-compiles packages in a separate job so that we can run it on the GitHub Actions runner host directly rather
+  # than inside a Docker container (as is done by the `pkg` job below). We do this because we use `cargo cross` to
+  # handle the complexity of using the right compile-time tooling and dependencies for cross compilation to work, and 
   # `cargo cross` works by launching its own Docker container. Trying to launch a Docker container from within a Docker
   # container, the so-called Docker-in-Docker scenario, is more difficult for `cargo cross` to handle correctly and
   # didn't work when I tried it, even with `CROSS_DOCKER_IN_DOCKER=true` set in the environment, hence this approach.
   #
   # See: https://github.com/rust-embedded/cross#docker-in-docker
   cross:
+    runs-on: ubuntu-20.04
     strategy:
       matrix:
         target:
-          - 'armv7-unknown-linux-gnueabihf'
-          - 'aarch64-unknown-linux-gnu'
-    name: cross
-    runs-on: ubuntu-latest
+          # must be one of: https://github.com/cross-rs/cross#supported-targets
+          # use MUSL targets for binaries intended to be included in Docker images
+          # as the Alpine base image we use has MUSL, not GNU LIBC.
+          - 'arm-unknown-linux-musleabihf'    # for Docker
+          - 'armv7-unknown-linux-musleabihf'  # for Docker
+          - 'aarch64-unknown-linux-musl'      # for Docker
+
+          # use GNU LIBC targets otherwise as Debian et al use GNU LIBC, not MUSL.
+          - 'arm-unknown-linux-gnueabihf'     # for DEB
+          - 'armv7-unknown-linux-gnueabihf'   # for DEB
+          - 'aarch64-unknown-linux-gnu'       # for DEB
     steps:
-    # Git clone the Krill code in the branch we were invoked on.
     - name: Checkout repository
       uses: actions/checkout@v1
 
-    - name: Install cargo cross      
-      run: |
-        cargo install cross
-
     - name: Cross compile
-      env:
-        CROSS_TARGET: ${{ matrix.target }}
-      run: |
-        cross build --locked --release --features static-openssl --target ${CROSS_TARGET}
-
-    - name: Upload built binaries
-      uses: actions/upload-artifact@v2
+      uses: actions-rs/cargo@v1
       with:
-        name: ${{ matrix.target }}
+        use-cross: true
+        command: build
+        args: --locked --release --features static-openssl --target ${{ matrix.target }}
+
+    # Upload cross compiled binaries as GitHub Actions artifacts for use by the `pkg` job below. We can't use job
+    # outputs as those are limited to 50 MB which we could easily exceed. We can't use actions/cache as cached items
+    # are not necessarily available on different operating systems as the cache mechanism uses different namespaces
+    # for different compression types and different compression types by operating system. As we don't want these
+    # artifacts to be packaged by the scripts that upload to packages.nlnetlabs.nl we prefix the artifact name with
+    # `tmp-` which will be ignored by packages.nlnetlabs.nl scripts.
+    - name: Upload built binaries
+      uses: actions/upload-artifact@v3
+      with:
+        name: tmp-cross-binaries-${{ matrix.target }}
         path: |
           target/${{ matrix.target }}/release/krill
           target/${{ matrix.target }}/release/krillc
+          target/${{ matrix.target }}/release/krillup
 
+  # -------------------------------------------------------------------------------------------------------------------
+  # Job: 'pkg'
+  # -------------------------------------------------------------------------------------------------------------------
   # Use the cargo-deb and cargo-generate-rpm Rust crates to build Debian and RPM packages respectively for installing
-  # Krill.
-  # See:
+  # our app. See:
   #   - https://github.com/mmstick/cargo-deb
   #   - https://github.com/cat-in-136/cargo-generate-rpm
   pkg:
     needs: cross
+    runs-on: ubuntu-latest
+    # Build on the platform we are targeting in order to avoid https://github.com/rust-lang/rust/issues/57497.
+    # Specifying container causes all of the steps in this job to run inside a Docker container (which is why the
+    # cross-compilation needs to happen above in its own non-containerized job).
+    container: ${{ matrix.image }}
     strategy:
       matrix:
         pkg:
@@ -99,6 +235,8 @@ jobs:
         target:
           - 'x86_64'
         include:
+          # cargo-generate-rpm doesn't support specifying feature variations in Cargo.toml so we have to do it via
+          # custom build arguments instead.
           # For CentOS 7 we want to statically link with OpenSSL, but `cargo generate-rpm` doesn't build the code for
           # us unlike `cargo deb`, so we have to control the feature set used for building ourselves rather than in
           # `Cargo.toml`.
@@ -116,18 +254,39 @@ jobs:
           # image we are building it in.
           - image: 'rockylinux:8'
             os: 'centos:8'
-    env:
-      CARGO_DEB_VER: 1.34.2
-      CARGO_GENERATE_RPM_VER: 0.6.0
-      # A Krill version of the form 'x.y.z-dev' denotes a dev build that is newer than the released x.y.z version but is
-      # not yet a new release.
-      NEXT_VER_LABEL: dev
-    name: pkg
-    runs-on: ubuntu-latest
-    # Build on the platform we are targeting in order to avoid https://github.com/rust-lang/rust/issues/57497.
-    # Specifying container causes all of the steps in this job to run inside a Docker container.
-    container: ${{ matrix.image }}
 
+          # package for the Raspberry Pi 4b as an ARMv7 cross compiled variant of the Debian Bullseye upon which
+          # Raspbian 11 is based.
+          - pkg: 'krill'
+            image: 'debian:bullseye'
+            target: 'armv7-unknown-linux-gnueabihf'
+          - pkg: 'krillup'
+            image: 'debian:bullseye'
+            target: 'armv7-unknown-linux-gnueabihf'
+
+          # package for the Raspberry Pi 1b as an ARMv6 cross compiled variant of the Debian Buster upon which
+          # Raspbian 10 is based.
+          - pkg: 'krill'
+            image: 'debian:buster'
+            target: 'arm-unknown-linux-gnueabihf'
+          - pkg: 'krillup'
+            image: 'debian:buster'
+            target: 'arm-unknown-linux-gnueabihf'
+
+          # package for the ROCK64 as an AARCH64 cross compiled variant of Debian Buster upon which Armbian 21 is
+          # based.
+          - pkg: 'krill'
+            image: 'debian:buster'
+            target: 'aarch64-unknown-linux-gnu'
+          - pkg: 'krillup'
+            image: 'debian:buster'
+            target: 'aarch64-unknown-linux-gnu'
+    env:
+      CARGO_DEB_VER: 1.38.4
+      CARGO_GENERATE_RPM_VER: 0.8.0
+      # A version of the form 'x.y.z-dev' denotes a dev build that is newer than the released x.y.z version but is not
+      # yet a new release.
+      NEXT_VER_LABEL: dev
     steps:
     - name: Set vars
       id: setvars
@@ -145,9 +304,15 @@ jobs:
         echo "OS_NAME=${IMAGE%:*}" >> $GITHUB_ENV
         echo "OS_REL=${IMAGE#*:}" >> $GITHUB_ENV
 
-    # Git clone the Krill code in the branch we were invoked on.
     - name: Checkout repository
       uses: actions/checkout@v2
+
+    # Allow CentOS 8 to continue working now that it is EOL
+    # See: https://stackoverflow.com/a/70930049
+    - name: CentOS 8 EOL workaround
+      if: matrix.image == 'centos:8'
+      run: |
+        sed -i -e 's|mirrorlist=|#mirrorlist=|g' -e 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-Linux-*
 
     # Install Rust the hard way rather than using a GH Action because the action doesn't work inside a Docker container.
     - name: Install Rust
@@ -173,41 +338,41 @@ jobs:
       run: |
         case ${OS_NAME} in
           debian|ubuntu)
-            apt-get install -y build-essential jq libssl-dev lintian pkg-config
+            apt-get install -y build-essential jq lintian pkg-config libssl-dev
             ;;
           centos)
             yum install epel-release -y
             yum update -y
-            yum install -y jq openssl-devel rpmlint
+            yum install -y jq rpmlint openssl-devel
             yum groupinstall -y "Development Tools"
             ;;
         esac
 
-    # Speed up Krill Rust builds by caching unchanged built dependencies.
+    # Speed up Rust builds by caching unchanged built dependencies.
     # See: https://github.com/actions/cache/blob/master/examples.md#rust---cargo
     - name: Cache Dot Cargo
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       with:
         path: |
           ~/.cargo/registry
           ~/.cargo/git
-        key: ${{ matrix.image }}-${{ matrix.pkg }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ matrix.image }}-${{ matrix.pkg }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
     # Speed up tooling installation by only re-downloading and re-building dependent crates if we change the version of
     # the tool that we are using.
     - name: Cache Cargo Deb if available
       id: cache-cargo-deb
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       with:
         path: ~/.cargo/bin/cargo-deb
-        key: ${{ matrix.image }}-${{ matrix.pkg }}-cargo-deb-${{ env.CARGO_DEB_VER }}
+        key: ${{ matrix.image }}-${{ matrix.pkg }}-${{ matrix.target }}-cargo-deb-${{ env.CARGO_DEB_VER }}-${{ endsWith(matrix.image, 'xenial')}}
 
     - name: Cache Cargo Generate RPM if available
       id: cache-cargo-generate-rpm
-      uses: actions/cache@v2
+      uses: actions/cache@v3
       with:
         path: ~/.cargo/bin/cargo-generate-rpm
-        key: ${{ matrix.image }}-${{ matrix.pkg }}-cargo-generate-rpm-${{ env.CARGO_GENERATE_RPM_VER }}
+        key: ${{ matrix.image }}-${{ matrix.pkg }}-${{ matrix.target }}-cargo-generate-rpm-${{ env.CARGO_GENERATE_RPM_VER }}
 
     # Only install cargo-deb or cargo-generate-rpm if not already fetched from the cache.
     - name: Install Cargo Deb if needed
@@ -216,8 +381,8 @@ jobs:
         case ${OS_NAME} in
           debian|ubuntu)
             if [[ "${OS_REL}" == "xenial" ]]; then
-              # Disable use of the default lzma feature which causes XZ compression to be used
-              # which then causes Lintian to fail with error:
+              # Disable use of the default lzma feature which causes XZ compression to be used which then causes Lintian
+              # to fail with error:
               #   E: krill: malformed-deb-archive newer compressed control.tar.xz
               # Passing --fast to cargo-deb to disable use of XZ compression didn't help.
               # See: https://github.com/kornelski/cargo-deb/issues/12
@@ -240,10 +405,9 @@ jobs:
 
     - name: Download cross compiled binaries
       if: ${{ matrix.target != 'x86_64' }}
-      id: download
-      uses: actions/download-artifact@v2
+      uses: actions/download-artifact@v3
       with:
-        name: ${{ matrix.target }}
+        name: tmp-cross-binaries-${{ matrix.target }}
         path: target/${{ matrix.target }}/release
 
     # Instruct cargo-deb or cargo-generate-rpm to build the package based on Cargo.toml settings and command line
@@ -251,6 +415,7 @@ jobs:
     - name: Create the package
       env:
         MATRIX_PKG: ${{ matrix.pkg }}
+        MATRIX_IMAGE: ${{ matrix.image }}
         EXTRA_BUILD_ARGS: ${{ matrix.extra_build_args }}
         CROSS_TARGET: ${{ matrix.target }}
       run: |
@@ -288,16 +453,16 @@ jobs:
         # Finally, sometimes we want a version to be NEWER than the latest release but without having to decide what
         # higher semver number to bump to. In this case we do NOT want dash '-' to become '~' because `-` is treated as
         # higher and tilda is treated as lower.
-        KRILL_VER=$(cargo read-manifest | jq -r '.version')
-        KRILL_NEW_VER=$(echo $KRILL_VER | tr '-' '~')
-        PKG_KRILL_VER=$(echo $KRILL_NEW_VER | sed -e "s/~$NEXT_VER_LABEL/-$NEXT_VER_LABEL/")
+        APP_VER=$(cargo read-manifest | jq -r '.version')
+        APP_NEW_VER=$(echo $APP_VER | tr '-' '~')
+        PKG_APP_VER=$(echo $APP_NEW_VER | sed -e "s/~$NEXT_VER_LABEL/-$NEXT_VER_LABEL/")
 
         case ${OS_NAME} in
           debian|ubuntu)
             MAINTAINER="The NLnet Labs RPKI Team <rpki@nlnetlabs.nl>"
 
-            # Generate the RFC 5322 format date by hand instead of using date --rfc-email because that option doesn't exist
-            # on Ubuntu 16.04 and Debian 9
+            # Generate the RFC 5322 format date by hand instead of using date --rfc-email because that option doesn't
+            # exist on Ubuntu 16.04 and Debian 9
             RFC5322_TS=$(LC_TIME=en_US.UTF-8 date +'%a, %d %b %Y %H:%M:%S %z')
 
             # Generate the changelog file that Debian packages are required to have.
@@ -305,8 +470,8 @@ jobs:
             if [ ! -d target/debian ]; then
               mkdir -p target/debian
             fi
-            echo "${MATRIX_PKG} (${PKG_KRILL_VER}) unstable; urgency=medium" >target/debian/changelog
-            echo "  * See: https://github.com/NLnetLabs/krill/releases/tag/v${KRILL_NEW_VER}" >>target/debian/changelog
+            echo "${MATRIX_PKG} (${PKG_APP_VER}) unstable; urgency=medium" >target/debian/changelog
+            echo "  * See: https://github.com/${{ env.GITHUB_REPOSITORY }}/releases/tag/v${APP_NEW_VER}" >>target/debian/changelog
             echo " -- maintainer ${MAINTAINER}  ${RFC5322_TS}" >>target/debian/changelog
 
             if [[ "${CROSS_TARGET}" == "x86_64" ]]; then
@@ -323,18 +488,21 @@ jobs:
                      -e 's/^\[package\.metadata\.krillup-deb/[package.metadata.deb/' Cargo.toml
             fi
 
-            DEB_VER="${PKG_KRILL_VER}-1${OS_REL}"
-            cargo deb --variant ${VARIANT} --deb-version ${DEB_VER} -v ${EXTRA_CARGO_DEB_ARGS} -- --locked ${EXTRA_BUILD_ARGS}
+            DEB_VER="${PKG_APP_VER}-1${OS_REL}"
+            cargo deb --deb-version ${DEB_VER} --variant ${VARIANT} -v ${EXTRA_CARGO_DEB_ARGS} -- --locked ${EXTRA_BUILD_ARGS}
             ;;
           centos)
-            # Build Krill as cargo generate-rpm can't do this yet
+            # Build and strip our app binaries as cargo generate-rpm doesn't do this for us
             cargo build --release --locked -v ${EXTRA_BUILD_ARGS}
-
-            # Strip Krill binaries as cargo generate-rpm can't do this yet
             find target/release -maxdepth 1 -type f -executable | xargs strip -s -v
 
+            # TODO: It might be possible to replace the hacky copying of the service file below with some clever use of
+            # `--set-metadata` when invoking cargo generate-rpm. Of particular interest is the new `--variant` command
+            # line argument which might enable us to work the same way as we do for cargo deb above.
+            # See: https://github.com/cat-in-136/cargo-generate-rpm/issues/18
+
             # Fix the version string to be used for the RPM package
-            sed -i -e "s/$KRILL_VER/$PKG_KRILL_VER/" Cargo.toml
+            sed -i -e "s/$APP_VER/$PKG_APP_VER/" Cargo.toml
 
             # Select the correct systemd service unit file for the target operating system
             case "${OS_NAME}:${OS_REL}" in
@@ -367,7 +535,7 @@ jobs:
                 ;;
             esac
 
-            cargo generate-rpm ${EXTRA_CARGO_GENERATE_RPM_ARGS}
+            cargo generate-rpm --set-metadata "version=\"${PKG_APP_VER}\"" ${EXTRA_CARGO_GENERATE_RPM_ARGS}
             ;;
         esac
 
@@ -382,15 +550,14 @@ jobs:
             if [[ "${CROSS_TARGET}" == "x86_64" ]]; then
               EXTRA_LINTIAN_ARGS=
             else
-              EXTRA_LINTIAN_ARGS="--suppress-tags unstripped-binary-or-object"
+              EXTRA_LINTIAN_ARGS="--suppress-tags unstripped-binary-or-object,statically-linked-binary"
             fi
             lintian --version
             lintian -v ${EXTRA_LINTIAN_ARGS} target/debian/*.deb
             ;;
           centos)
-            # cargo generate-rpm creates RPMs that rpmlint considers to have
-            # errors so don't use the rpmlint exit code otherwise we will always
-            # abort the workflow.
+            # cargo generate-rpm creates RPMs that rpmlint considers to have errors so don't use the rpmlint exit code
+            # otherwise we will always abort the workflow.
             rpmlint target/generate-rpm/*.rpm || true
             ;;
         esac
@@ -399,33 +566,23 @@ jobs:
     # but only to users logged in to GH with sufficient rights in this project. The uploaded artifact is also downloaded
     # by the next job (see below) to sanity check that it can be installed and results in a working Krill installation.
     - name: Upload package
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3
       with:
         name: ${{ matrix.pkg }}_${{ env.OS_NAME }}_${{ env.OS_REL }}_${{ matrix.target }}
         path: |
           target/debian/*.deb
           target/generate-rpm/*.rpm
 
-    # Delete the temporary artifact that contains binaries produced by the `cross` job that ran before us. All artifacts
-    # existing once the workflow completes are expected by the packages.nlnetlabs.nl scripting to contain DEB or RPM or
-    # other supported package archives, not intermediate artifacts such as binaries to be packaged. Failure to delete
-    # this temporary artifact will cause later publication to packages.nlnetlabs.nl using artifacts from this workflow
-    # run to fail.
-    - name: Delete temporary cross compiled binaries artifact
-      if: ${{ matrix.target != 'x86_64' }}
-      id: delete
-      uses: geekyeggo/delete-artifact@v1
-      with:
-        name: ${{ matrix.target }}
-
+  # -------------------------------------------------------------------------------------------------------------------
+  # Job: 'pkg-test'
+  # -------------------------------------------------------------------------------------------------------------------
   # Download and sanity check on target operating systems the packages created by previous jobs (see above). Don't test
   # on GH runners as they come with lots of software and libraries pre-installed and thus are not representative of the
   # actual deployment targets, nor do GH runners support all targets that we want to test. Don't test in Docker
   # containers as they do not support systemd.
   pkg-test:
-    name: pkg-test
     needs: pkg
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     strategy:
       fail-fast: false
       matrix:
@@ -438,7 +595,6 @@ jobs:
           - 'ubuntu:focal'    # ubuntu/20.04
           - 'ubuntu:jammy'    # ubuntu/22.04
           # - 'debian:stretch'  # debian/9 - LXC image is no longer available on images.linuxcontainers.org
-
           - 'debian:buster'   # debian/10
           - 'debian:bullseye' # debian/11
           - 'centos:7'
@@ -448,12 +604,9 @@ jobs:
           - 'upgrade-from-published'
         target:
           - 'x86_64'
-        # if we later add a new O/S or variant we won't have yet ever published
-        # the package so can't do a test upgrade over last published version. In
-        # that case add lines here like so to disable the upgrade from published
-        # test for that O/S (remember to change debian:bullseye to the correct
-        # O/S name!):
-        #
+        # if we later add a new O/S or variant we won't have yet ever published the package so can't do a test upgrade
+        # over last published version. In that case add lines here like so to disable the upgrade from published test
+        # for that O/S (remember to change debian:bullseye to the correct O/S name!):
         #
         # exclude:
         #   - image: 'debian:bullseye'
@@ -494,7 +647,7 @@ jobs:
         esac
 
     - name: Download package
-      uses: actions/download-artifact@v2
+      uses: actions/download-artifact@v3
       with:
         name: ${{ matrix.pkg }}_${{ env.OS_NAME }}_${{ env.OS_REL }}_${{ matrix.target }}
 
@@ -510,8 +663,7 @@ jobs:
       run: |
         sg lxd -c "lxc info"
 
-    # Use of IPv6 sometimes prevents yum update being able to resolve
-    # mirrorlist.centos.org.
+    # Use of IPv6 sometimes prevents yum update being able to resolve mirrorlist.centos.org.
     - name: Disable LXD assignment of IPv6 addresses
       run: |
         sg lxd -c "lxc network set lxdbr0 ipv6.address none"
@@ -522,12 +674,10 @@ jobs:
         # Debian 10 container.
         sg lxd -c "lxc launch ${LXC_IMAGE} -c security.nesting=true testcon"
 
-    # Run package update and install man and sudo support (missing in some
-    # LXC/LXD O/S images) but first wait for cloud-init to finish otherwise the
-    # network isn't yet ready. Don't use cloud-init status --wait as that isn't
-    # supported on older O/S's like Ubuntu 16.04 and Debian 9. Use the sudo
-    # package provided configuration files otherwise when using sudo we get an
-    # error that the root user isn't allowed to use sudo.
+    # Run package update and install man and sudo support (missing in some LXC/LXD O/S images) but first wait for
+    # cloud-init to finish otherwise the network isn't yet ready. Don't use cloud-init status --wait as that isn't
+    # supported on older O/S's like Ubuntu 16.04 and Debian 9. Use the sudo package provided configuration files
+    # otherwise when using sudo we get an error that the root user isn't allowed to use sudo.
     - name: Prepare container
       shell: bash
       run: |
@@ -549,6 +699,21 @@ jobs:
             fi
             sg lxd -c "lxc exec testcon -- yum update -y"
             sg lxd -c "lxc exec testcon -- yum install -y man"
+            ;;
+        esac
+
+    - name: Copy the newly built ${{ matrix.pkg }} package into the LXC container
+      run: |
+        case ${OS_NAME} in
+          debian|ubuntu)
+            DEB_FILE=$(ls -1 debian/*.deb)
+            sg lxd -c "lxc file push ${DEB_FILE} testcon/tmp/"
+            echo "PKG_FILE=$(basename $DEB_FILE)" >> $GITHUB_ENV
+            ;;
+          centos)
+            RPM_FILE=$(ls -1 generate-rpm/*.rpm)
+            sg lxd -c "lxc file push ${RPM_FILE} testcon/tmp/"
+            echo "PKG_FILE=$(basename $RPM_FILE)" >> $GITHUB_ENV
             ;;
         esac
 
@@ -575,21 +740,6 @@ jobs:
             ;;
         esac
 
-    - name: Copy newly built ${{ matrix.pkg }} package into the LXC container
-      run: |
-        case ${OS_NAME} in
-          debian|ubuntu)
-            DEB_FILE=$(ls -1 debian/*.deb)
-            sg lxd -c "lxc file push ${DEB_FILE} testcon/tmp/"
-            echo "PKG_FILE=$(basename $DEB_FILE)" >> $GITHUB_ENV
-            ;;
-          centos)
-            RPM_FILE=$(ls -1 generate-rpm/*.rpm)
-            sg lxd -c "lxc file push ${RPM_FILE} testcon/tmp/"
-            echo "PKG_FILE=$(basename $RPM_FILE)" >> $GITHUB_ENV
-            ;;
-        esac
-
     - name: Install the newly built ${{ matrix.pkg }} package
       if: ${{ matrix.mode == 'fresh-install' }}
       run: |
@@ -602,7 +752,7 @@ jobs:
             ;;
         esac
 
-    - name: Test the installed krill package
+    - name: Test the installed ${{ matrix.pkg }} package
       if: ${{ matrix.pkg == 'krill' }}
       run: |
         echo -e "\nKRILLC VERSION:"
@@ -636,7 +786,7 @@ jobs:
         echo -e "\nKRILL MAN PAGE:"
         sg lxd -c "lxc exec testcon -- man -P cat krill"
 
-    - name: Test the installed krillup package
+    - name: Test the installed ${{ matrix.pkg }} package
       if: ${{ matrix.pkg == 'krillup' }}
       run: |
         echo -e "\nKRILLUP VERSION:"
@@ -657,7 +807,7 @@ jobs:
             ;;
         esac
 
-    - name: Test the upgraded krill package
+    - name: Test the upgraded ${{ matrix.pkg }} package
       if: ${{ matrix.mode == 'upgrade-from-published' && matrix.pkg == 'krill' }}
       run: |
         echo -e "\nKRILLC VERSION:"
@@ -677,3 +827,213 @@ jobs:
 
         echo -e "\nKRILL MAN PAGE:"
         sg lxd -c "lxc exec testcon -- man -P cat krill"
+
+  # -------------------------------------------------------------------------------------------------------------------
+  # Job: 'docker'
+  # -------------------------------------------------------------------------------------------------------------------
+  # Build and push architecture specific images (but NOT the main image that is used by end users). Sanity check the
+  # image if possible (i.e. if it is x86-64, non-x86-64 architecture images cannot be run by this workflow yet). Logs
+  # in to Docker Hub using secrets configured in this GitHub repository.
+  #
+  # NOTE: If you extend the set of matrix includes in this job you must also extend the call to docker manifest create
+  # in the docker-manifest job below.
+  docker:
+    needs: cross
+    runs-on: ubuntu-20.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # matrix field notes:
+        #   platform:    used by Docker to use the right architecture base image.
+        #                the set of supported values can be seen at:
+        #                  https://go.dev/doc/install/source#environment
+        #                  from: https://github.com/docker-library/official-images#architectures-other-than-amd64
+        #                  from: https://docs.docker.com/desktop/multi-arch/
+        #                one must also take any "normalization" into account, e.g. arm64v8 -> arm64, see:
+        #                  https://github.com/containerd/containerd/blob/v1.4.3/platforms/database.go#L83
+        #                see also:
+        #                  https://stackoverflow.com/a/70889505
+        #   shortname:   used by us to tag the architecture specific "manifest" image.
+        #   crosstarget: (optional) used to download the correct cross-compiled binary that was produced earlier by the
+        #                'cross' job above.
+        #   mode:        (optional) set to 'copy' for cross-compiled targets.
+        #   cargo_args:  (optional) can be used when testing, e.g. set to '--no-default-features' to speed up the Krill
+        #                build.
+        include:
+          - platform:    'linux/amd64'
+            shortname:   'amd64'
+            mode:        'build'
+
+          - platform:    'linux/arm/v6'
+            shortname:   'armv6'
+            crosstarget: 'arm-unknown-linux-musleabihf'
+            mode:        'copy'
+
+          - platform:    'linux/arm/v7'
+            shortname:   'armv7'
+            crosstarget: 'armv7-unknown-linux-musleabihf'
+            mode:        'copy'
+
+          - platform:    'linux/arm64'
+            shortname:   'arm64'
+            crosstarget: 'aarch64-unknown-linux-musl'
+            mode:        'copy'
+    outputs:
+      dockerbasetag: ${{ steps.gen_tag.outputs.encoded_tag }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - uses: docker/setup-qemu-action@v1
+        # Don't use QEmu for compiling, it's way too slow on GitHub Actions.
+        # Only use it for making images that will contain prebuilt binaries.
+        if: ${{ matrix.mode == 'copy' }}
+        with:
+          platforms: ${{ matrix.platform }}
+
+      - uses: docker/setup-buildx-action@v1
+
+      - name: Extract metadata for tagging the Docker image
+        id: meta
+        uses: docker/metadata-action@v3
+        with:
+          images: krill
+          flavor: |
+            latest=false
+          tags: |
+            type=semver,pattern={{version}},prefix=v
+            type=raw,value=unstable,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=latest,enable=${{ github.ref != 'refs/heads/main' && !contains(github.ref, '-') }}
+            type=raw,value=test,enable=${{ !contains(github.ref, 'refs/tags/v') && github.ref != 'refs/heads/main' }}
+
+      - name: Download cross compiled binaries
+        if: ${{ matrix.mode == 'copy' }}
+        uses: actions/download-artifact@v3
+        with:
+          name: tmp-cross-binaries-${{ matrix.crosstarget }}
+          # The file downloaded to dockerbin/xxx will be used by the Dockerfile
+          path: dockerbin/${{ matrix.platform }}
+
+      - name: Log into Docker Hub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKER_HUB_ID }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+      - name: Generate architecture specific Docker tag
+        id: gen_tag
+        run: |
+          LOWER_REPO_NAME=$(echo "${DOCKER_REPO}" | tr '[:upper:]' '[:lower:]')
+          TAG="${LOWER_REPO_NAME}/${{ steps.meta.outputs.tags }}"
+          echo "::set-output name=tag::$TAG"
+          echo "::set-output name=tag_with_arch::$TAG-${{ matrix.shortname }}"
+
+          # Encode the tag value as base64 to avoid GitHub Actions refusing to pass the output on to the job that needs
+          # it with warning "Skip output 'dockerbasetag' since it may contain secret.". This can happen if the
+          # DOCKER_REPO value contains the DOCKER_HUB_ID value. E.g. if DOCKER_REPO were 'nlnetlabs' and the user to
+          # login to Docker Hub as is also 'nlnetlabs' then Docker thinks the latter, a secret, is being leaked via the
+          # workflow output 'dockerbasetag' defined above.
+          ENCODED_TAG=$(echo $TAG | base64)
+          echo "::set-output name=encoded_tag::$ENCODED_TAG"
+
+      # Build a single architecture specific Docker image with an explicit architecture extension in the Docker
+      # tag value. We have to push it to Docker Hub otherwise we can't make the multi-arch manifest below. If the
+      # image fails testing (or doesn't work but wasn't caught because it is non-x86-64 which we can't at the moment
+      # test here) it will have been pushed to Docker Hub but is NOT the image we expect people to use, that is the
+      # combined multi-arch image that lacks the architecture specific tag value extension and that will ONLY be
+      # pushed if all architecture specific images build and (where supported) passt he sanity check below.
+      - name: Build Docker image
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          tags: ${{ steps.gen_tag.outputs.tag_with_arch }}
+          build-args: |
+            MODE=${{ matrix.mode }}
+            CARGO_ARGS=${{ matrix.cargo_args }}
+          load: true
+
+      - name: Save Docker image locally
+        run: |
+          docker save -o /tmp/docker-${{ matrix.shortname }}-img.tar ${{ steps.gen_tag.outputs.tag_with_arch }}
+
+      # Do a basic sanity check of the created image using the test tag to select the image to run, but only if the
+      # image is for the x86-64 architecture as we don't yet have a way to run non-x86-64 architecture images.
+      - name: Test run (linux/amd64 images only)
+        if: ${{ matrix.platform == 'linux/amd64' }}
+        run: |
+          docker run --rm ${{ steps.gen_tag.outputs.tag_with_arch }} krillc --version
+
+      # Upload the Docker image as a GitHub Actions artifact, handy when not publishing or investigating a problem
+      - name: Upload built image to GitHub Actions
+        uses: actions/upload-artifact@v3
+        with:
+          name: tmp-docker-image-${{ matrix.shortname }}
+          path: /tmp/docker-${{ matrix.shortname }}-img.tar
+
+      - name: Publish image to Docker Hub
+        if: contains(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          tags: ${{ steps.gen_tag.outputs.tag_with_arch }}
+          build-args: |
+            MODE=${{ matrix.mode }}
+            CARGO_ARGS=${{ matrix.cargo_args }}
+          push: true
+
+
+  # -------------------------------------------------------------------------------------------------------------------
+  # Job: 'docker-manifest'
+  # -------------------------------------------------------------------------------------------------------------------
+  # Create a Docker multi-arch "manifest" referencing the individual already pushed architecture specific images on
+  # Docker Hub and push the manifest to Docker Hub as our "main" application image Docker Hub that end users will use.
+  # Logs in to Docker Hub using secrets configured in this GitHub repository.
+  docker-manifest:
+    needs: docker
+    if: contains(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Log into Docker Hub
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.DOCKER_HUB_ID }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+      # Push the image and tags to Docker Hub.
+      # The build uses the cached build outputs from the step above so we don't have to wait for the build again.
+      #
+      # On push of a tag to refs/tags/v1.2.3 the Docker tags will be 'v1.2.3' and 'latest' because of:
+      #   type=semver,pattern={{version}},prefix=v
+      #   type=raw,value=latest,enable=${{ github.ref != 'refs/heads/main' && !contains(github.ref, '-') }}
+      #                                    ^^^^^^^^^^^^^ true, not main       ^^^^^^^^^ true, no dash found
+      #
+      #   Note: we don't use semver,pattern={{raw}} because while that preserves the leading v in v1.2.3 it
+      #   discards the leading v in v1.2.3-rc4.
+      #
+      # On push of a tag to refs/tags/v1.2.3-rc1 the Docker tags will be 'v1.2.3' but NOT 'latest' because of:
+      #   type=semver,pattern={{raw}}
+      #   type=raw,value=latest,enable=${{ github.ref != 'refs/heads/main' && !contains(github.ref, '-') }}
+      #                                    ^^^^^^^^^^^^^ true, not main       ^^^^^^^^^ false, dash found
+      #
+      # On push to refs/heads/main the Docker tag will be 'unstable' because of:
+      #   type=raw,value=unstable,enable=${{ github.ref == 'refs/heads/main' }}
+      - name: Decode encoded tag
+        id: decode_tag
+        run: |
+          DECODED_TAG=$(echo ${{ needs.docker.outputs.dockerbasetag }} | base64 -d)
+          echo "::set-output name=tag::$DECODED_TAG"
+
+      - name: Create multi-arch manifest
+        run: |
+          docker manifest create \
+            ${{ steps.decode_tag.outputs.tag }} \
+            --amend ${{ steps.decode_tag.outputs.tag }}-amd64 \
+            --amend ${{ steps.decode_tag.outputs.tag }}-armv6 \
+            --amend ${{ steps.decode_tag.outputs.tag }}-armv7 \
+            --amend ${{ steps.decode_tag.outputs.tag }}-arm64
+
+      - name: Publish multi-arch image to Docker Hub
+        run: |
+          docker manifest push ${{ steps.decode_tag.outputs.tag }}
