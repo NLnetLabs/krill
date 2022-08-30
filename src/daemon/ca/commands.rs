@@ -307,9 +307,7 @@ impl From<CmdDet> for StorableCaCommand {
             // ------------------------------------------------------------
             // ROA Support
             // ------------------------------------------------------------
-            CmdDet::RouteAuthorizationsUpdate(updates, _, _) => StorableCaCommand::RoaDefinitionUpdates {
-                updates: updates.into(),
-            },
+            CmdDet::RouteAuthorizationsUpdate(updates, _, _) => StorableCaCommand::RoaDefinitionUpdates { updates },
             CmdDet::RouteAuthorizationsRenew(_, _) => StorableCaCommand::ReissueBeforeExpiring,
             CmdDet::RouteAuthorizationsForceRenew(_, _) => StorableCaCommand::ForceReissue,
 

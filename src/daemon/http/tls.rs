@@ -27,14 +27,14 @@ use std::{
 
 use futures::ready;
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio_rustls::rustls::{NoClientAuth, ServerConfig, TLSError, KeyLogFile};
+use tokio_rustls::rustls::{KeyLogFile, NoClientAuth, ServerConfig, TLSError};
 
 use hyper::server::{
     accept::Accept,
     conn::{AddrIncoming, AddrStream},
 };
 
-const SSLKEYLOGFILE_ENV_VAR_NAME: &'static str = "SSLKEYLOGFILE";
+const SSLKEYLOGFILE_ENV_VAR_NAME: &str = "SSLKEYLOGFILE";
 
 pub trait Transport: AsyncRead + AsyncWrite {
     fn remote_addr(&self) -> Option<SocketAddr>;

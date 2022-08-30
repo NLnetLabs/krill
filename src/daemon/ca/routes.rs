@@ -176,7 +176,9 @@ impl Routes {
 
     /// Updates the comment for an authorization
     pub fn comment(&mut self, auth: &RoaPayloadKey, comment: Option<String>) {
-        self.map.get_mut(auth).map(|info| info.set_comment(comment));
+        if let Some(info) = self.map.get_mut(auth) {
+            info.set_comment(comment)
+        }
     }
 
     /// Removes an authorization

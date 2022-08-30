@@ -390,6 +390,7 @@ pub async fn health(req: Request) -> RoutingResult {
 }
 
 /// Produce prometheus style metrics
+#[allow(clippy::format_push_string)]
 pub async fn metrics(req: Request) -> RoutingResult {
     if req.is_get() && req.path().segment().starts_with("metrics") {
         let server = req.state();

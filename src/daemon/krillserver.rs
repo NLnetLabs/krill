@@ -886,7 +886,7 @@ impl KrillServer {
         updates: RoaConfigurationUpdates,
         actor: &Actor,
     ) -> KrillEmptyResult {
-        self.ca_manager.ca_routes_update(ca, updates.into(), actor).await
+        self.ca_manager.ca_routes_update(ca, updates, actor).await
     }
 
     pub async fn ca_routes_show(&self, handle: &CaHandle) -> KrillResult<Vec<ConfiguredRoa>> {
@@ -918,10 +918,7 @@ impl KrillServer {
 
         let (would_be_routes, _) = ca.update_authorizations(&updates)?;
         let roa_configurations = would_be_routes.roa_configurations();
-        let configured_roas: Vec<_> = roa_configurations
-            .into_iter()
-            .map(|roa_configuration| ConfiguredRoa::new(roa_configuration))
-            .collect();
+        let configured_roas: Vec<_> = roa_configurations.into_iter().map(ConfiguredRoa::new).collect();
 
         Ok(self
             .bgp_analyser

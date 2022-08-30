@@ -8,7 +8,7 @@ use rpki::ca::provisioning::ResourceClassName;
 use rpki::repository::resources::ResourceSet;
 
 use krill::{
-    commons::api::{ObjectName, RepositoryContact, RoaConfigurationUpdates, RoaPayload},
+    commons::api::{ObjectName, RoaConfigurationUpdates, RoaPayload},
     daemon::ca::ta_handle,
     test::*,
 };
