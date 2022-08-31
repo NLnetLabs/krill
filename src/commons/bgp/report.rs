@@ -491,14 +491,14 @@ impl fmt::Display for BgpAnalysisReport {
                     writeln!(f)?;
                     writeln!(f, "\tConfiguration: {}", roa.configured_roa)?;
                     writeln!(f)?;
-                    writeln!(f, "\t\tAuthorizes visible announcements:")?;
+                    writeln!(f, "\t\tAuthorizes announcement(s):")?;
                     for ann in roa.authorizes.iter() {
                         writeln!(f, "\t\t{}", ann)?;
                     }
 
                     if !roa.disallows.is_empty() {
                         writeln!(f)?;
-                        writeln!(f, "\t\tDisallows:")?;
+                        writeln!(f, "\t\tDisallows announcement(s):")?;
                         for ann in roa.disallows.iter() {
                             writeln!(f, "\t\t{}", ann)?;
                         }
@@ -519,13 +519,13 @@ impl fmt::Display for BgpAnalysisReport {
             if let Some(as0_redundant) = entry_map.get(&BgpAnalysisState::RoaAs0Redundant) {
                 writeln!(
                     f,
-                    "AS0 Authorization which are made redundant by configuration(s) for the prefix from real ASNs"
+                    "AS0 ROA configurations which are made redundant by configuration(s) for the prefix from real ASNs"
                 )?;
                 writeln!(f)?;
                 for roa in as0_redundant {
                     writeln!(f, "\tConfiguration: {}", roa.configured_roa)?;
                     writeln!(f)?;
-                    writeln!(f, "\t\tMade redundant by:")?;
+                    writeln!(f, "\t\tMade redundant by ROA configuration(s):")?;
                     for redundant_by in &roa.made_redundant_by {
                         writeln!(f, "\t\t{}", redundant_by)?;
                     }
@@ -551,7 +551,7 @@ impl fmt::Display for BgpAnalysisReport {
                     writeln!(f)?;
                     writeln!(f, "\tAnnouncement: {}", ann.configured_roa)?;
                     writeln!(f)?;
-                    writeln!(f, "\t\tDisallowed by configuration(s):")?;
+                    writeln!(f, "\t\tDisallowed by ROA configuration(s):")?;
                     for roa in ann.disallowed_by.iter() {
                         writeln!(f, "\t\t{}", roa)?;
                     }
@@ -565,7 +565,7 @@ impl fmt::Display for BgpAnalysisReport {
                     writeln!(f)?;
                     writeln!(f, "\tAnnouncement: {}", ann.configured_roa)?;
                     writeln!(f)?;
-                    writeln!(f, "\t\tDisallowed by configuration(s):")?;
+                    writeln!(f, "\t\tDisallowed by ROA configuration(s):")?;
                     for roa in ann.disallowed_by.iter() {
                         writeln!(f, "\t\t{}", roa)?;
                     }
