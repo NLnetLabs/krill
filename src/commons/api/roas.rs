@@ -134,10 +134,23 @@ impl RoaAggregateKeyFmtError {
 /// This type defines the definition of a Route Origin Authorization (ROA)
 /// payload: ASN, Prefix and optional Max Length
 ///
-/// Note that a ROA object may contain multiple payloads (RoaDefinitions)
-/// aggregated by (the same) ASN. This is discouraged and Krill prefers
-/// to generate a dedicated ROA object for each payload, but aggregation
-/// will be done when a (configurable) threshold is exceeded.
+/// Note that an RFC 6482 ROA object may contain multiple prefixes and
+/// optional max length values, aggregated by (a single) ASN. The term
+/// "Validated ROA Payload" is used in RFC 6811 (BGP Prefix Origin
+/// Validation) to describe validated tuples of ASN, Prefix and optional
+/// Max Length.
+///
+/// Note that Krill does not allow users to specify RFC 6482 ROA objects
+/// as such. Instead it allows users to configure the intent of which
+/// "ROA Payloads" should be authorized. We could call this type
+/// IntendRoaPayload, but we stuck with RoaPayload for brevity.
+///
+/// In any case, Krill will create RFC 6482 for RoaPayloads appearing
+/// on saved configurations - in as far as the CA holds the prefixes
+/// on its certificate(s). It will prefer to issue a single object
+/// per payload in accordance with best practices (avoid fate sharing
+/// in case a prefix is suddenly no longer held), but aggregation will
+/// be done if a (configurable) threshold is exceeded.
 #[derive(Clone, Copy, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct RoaPayload {
     asn: AsNumber,
@@ -300,16 +313,32 @@ impl AsRef<TypedPrefix> for RoaPayload {
 
 //------------ RoaConfiguration --------------------------------------------
 
-/// This type defines a saved RoaConfiguration. It includes the actual ROA
-/// payload that needs be authorized in a ROA object as well as other
-/// information that is only visible to users - i.e. an optional comment
-/// field, and in future perhaps other things such as tags used for
-/// classification/monitoring/bpp analysis.
+/// This type defines an *intended* configuration for a ROA.
 ///
-/// Note that this type is backward compatible with the RoaDefinition type
-/// used until Krill 0.10.0.
+/// This type is intended to be used for updates through the API.
+///
+/// It includes the actual ROA payload that needs be authorized on an RFC 6482
+/// ROA object, as well as other information that is only visible to the Krill
+/// users - like the optional comment field, which can be used to store useful
+/// reminders of the purpose of this configuration. And in future perhaps other
+/// things such as tags used for classification/monitoring/bpp analysis could
+/// be added.
+///
+/// Note that the [`ConfiguredRoa`] type defines an *existing* configured ROA.
+/// Existing ROAs may contain other information that the Krill system is
+/// responsible for, rather than the API (update) user. For example: which ROA
+/// object(s) the intended configuration appears on.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct RoaConfiguration {
+    // We flatten the payload and have defaults for other fields, so
+    // that the JSON serialized representation can be backward compatible
+    // with the RoaDefinition type that was used until Krill 0.10.0.
+    //
+    // I.e:
+    // - The API can still accept the 'old' style JSON without comments
+    // - We do not need to do data migrations on upgrade
+    // - The query API will include an extra field ("comment"), but
+    //   most API users will ignore additional fields.
     #[serde(flatten)]
     payload: RoaPayload,
     #[serde(default)] // missing is same as no comment
@@ -388,7 +417,13 @@ impl From<RoaPayload> for RoaConfiguration {
 
 //------------ ConfiguredRoa -----------------------------------------------
 
-/// Defines an existing ROA configuration and related information.
+/// Defines an existing ROA configuration.
+///
+/// This type is used in the API for listing/reporting.
+///
+/// It contains the user determined intended RoaConfiguration as well as
+/// system determined things, like the roa objects - at least it will
+/// as soon as #864 is implemented.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ConfiguredRoa {
     #[serde(flatten)]
