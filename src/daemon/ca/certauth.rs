@@ -1653,7 +1653,7 @@ impl CertAuth {
         config: &Config,
         signer: Arc<KrillSigner>,
     ) -> KrillResult<Vec<CaEvt>> {
-        let route_auth_updates = route_auth_updates.into_explicit();
+        let route_auth_updates = route_auth_updates.into_explicit_max_length();
 
         let (routes, mut evt_dets) = self.update_authorizations(&route_auth_updates)?;
 

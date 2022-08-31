@@ -912,7 +912,7 @@ impl KrillServer {
     ) -> KrillResult<BgpAnalysisReport> {
         let ca = self.ca_manager.get_ca(handle).await?;
 
-        let updates = updates.into_explicit();
+        let updates = updates.into_explicit_max_length();
         let resources_held = ca.all_resources();
         let limit = Some(updates.affected_prefixes());
 

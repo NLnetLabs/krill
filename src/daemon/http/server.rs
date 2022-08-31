@@ -1945,7 +1945,7 @@ async fn api_ca_routes_try_update(req: Request, ca: CaHandle) -> RoutingResult {
                             render_empty_res(server.ca_routes_update(ca, updates, &actor).await)
                         } else {
                             // remaining invalids exist, advise user
-                            let updates = updates.into_explicit();
+                            let updates = updates.into_explicit_max_length();
                             let resources = updates.affected_prefixes();
 
                             match server.ca_routes_bgp_suggest(&ca, Some(resources)).await {

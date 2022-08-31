@@ -532,7 +532,7 @@ impl RoaConfigurationUpdates {
     }
 
     /// Ensures that an explicit (canonical) max length is used.
-    pub fn into_explicit(self) -> Self {
+    pub fn into_explicit_max_length(self) -> Self {
         let added = self.added.into_iter().map(|a| a.into_explicit_max_length()).collect();
         let removed = self.removed.into_iter().map(|r| r.into_explicit_max_length()).collect();
 
