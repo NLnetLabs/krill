@@ -1685,7 +1685,7 @@ impl CaManager {
             .ca_objects_store
             .ca_objects(ca_handle)?
             .closest_next_update()
-            .unwrap_or_else(|| Timestamp::now_plus_hours(self.config.republish_hours()));
+            .unwrap_or_else(|| self.config.issuance_timing.republish_worst_case().into());
 
         match reply {
             publication::Reply::List(list_reply) => {
@@ -1741,7 +1741,7 @@ impl CaManager {
                 let published = ca_objects.all_publish_elements();
                 let next_update = ca_objects
                     .closest_next_update()
-                    .unwrap_or_else(|| Timestamp::now_plus_hours(self.config.republish_hours()));
+                    .unwrap_or_else(|| self.config.issuance_timing.republish_worst_case().into());
 
                 self.status_store
                     .set_status_repo_published(ca_handle, uri.clone(), published, next_update)?;

@@ -664,11 +664,11 @@ impl RrdpServer {
             if size > snapshot_size {
                 // never keep more than the size of the snapshot
                 break;
-            } else if keep < min_nr || delta.younger_than_seconds(min_secs) {
+            } else if keep < min_nr || delta.younger_than_seconds(min_secs.into()) {
                 // always keep 'retention_delta_files_min_nr' files
                 // always keep 'retention_delta_files_min_seconds' file
                 keep += 1
-            } else if keep == max_nr || delta.older_than_seconds(max_secs) {
+            } else if keep == max_nr || delta.older_than_seconds(max_secs.into()) {
                 // never keep more than 'retention_delta_files_max_nr'
                 // never keep older than 'retention_delta_files_max_seconds'
                 break;
@@ -715,7 +715,7 @@ impl RrdpServer {
         self.old_notifications.push_front(notification);
 
         self.old_notifications
-            .retain(|n| !n.older_than_seconds(config.retention_old_notification_files_seconds));
+            .retain(|n| !n.older_than_seconds(config.retention_old_notification_files_seconds.into()));
     }
 
     /// Write the (missing) RRDP files to disk, and remove the ones

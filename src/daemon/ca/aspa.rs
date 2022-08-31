@@ -22,7 +22,7 @@ use rpki::{
 use crate::{
     commons::{
         api::{AspaCustomer, AspaDefinition, AspaProvidersUpdate, ObjectName},
-        crypto::{KrillSigner, SignSupport},
+        crypto::KrillSigner,
         error::Error,
         KrillResult,
     },
@@ -35,7 +35,7 @@ use crate::{
 pub fn make_aspa_object(
     aspa_def: AspaDefinition,
     certified_key: &CertifiedKey,
-    weeks: i64,
+    validity: Validity,
     signer: &KrillSigner,
 ) -> KrillResult<Aspa> {
     let name = ObjectName::from(&aspa_def);
@@ -52,13 +52,8 @@ pub fn make_aspa_object(
         let aspa_uri = incoming_cert.uri_for_name(&name);
         let ca_issuer = incoming_cert.uri().clone();
 
-        let mut object_builder = SignedObjectBuilder::new(
-            signer.random_serial()?,
-            SignSupport::sign_validity_weeks(weeks),
-            crl_uri,
-            ca_issuer,
-            aspa_uri,
-        );
+        let mut object_builder =
+            SignedObjectBuilder::new(signer.random_serial()?, validity, crl_uri, ca_issuer, aspa_uri);
         object_builder.set_issuer(Some(incoming_cert.subject().clone()));
         object_builder.set_signing_time(Some(Time::now()));
 
@@ -136,8 +131,12 @@ impl AspaObjects {
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<AspaInfo> {
-        let weeks = issuance_timing.timing_aspa_valid_weeks;
-        let aspa = make_aspa_object(aspa_def.clone(), certified_key, weeks, signer)?;
+        let aspa = make_aspa_object(
+            aspa_def.clone(),
+            certified_key,
+            issuance_timing.new_aspa_validity(),
+            signer,
+        )?;
         Ok(AspaInfo::new_aspa(aspa_def, aspa))
     }
 

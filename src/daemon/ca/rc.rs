@@ -685,7 +685,7 @@ impl ResourceClass {
             &resources,
             limit,
             signing_key,
-            issuance_timing.timing_child_certificate_valid_weeks,
+            issuance_timing.new_child_cert_validity(),
             signer,
         )?;
 
@@ -779,7 +779,7 @@ impl ResourceClass {
         signer: &KrillSigner,
     ) -> KrillResult<AspaObjectsUpdates> {
         if let Ok(key) = self.get_current_key() {
-            let renew_threshold = Some(Time::now() + Duration::weeks(issuance_timing.timing_aspa_reissue_weeks_before));
+            let renew_threshold = Some(issuance_timing.new_aspa_issuance_threshold());
             self.aspas.renew(key, renew_threshold, issuance_timing, signer)
         } else {
             debug!("no ASPAs to renew - resource class has no current key");
@@ -834,8 +834,7 @@ impl ResourceClass {
         signer: &KrillSigner,
     ) -> KrillResult<BgpSecCertificateUpdates> {
         if let Ok(key) = self.get_current_key() {
-            let renew_threshold =
-                Some(Time::now() + Duration::weeks(issuance_timing.timing_bgpsec_reissue_weeks_before));
+            let renew_threshold = Some(issuance_timing.new_bgpsec_issuance_threshold());
 
             self.bgpsec_certificates
                 .renew(key, renew_threshold, issuance_timing, signer)

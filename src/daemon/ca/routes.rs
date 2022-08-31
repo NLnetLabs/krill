@@ -1,6 +1,5 @@
 use std::{cmp::Ordering, collections::HashMap, fmt, ops::Deref, str::FromStr};
 
-use chrono::Duration;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 use rpki::{
@@ -18,7 +17,7 @@ use rpki::{
 use crate::{
     commons::{
         api::{ObjectName, Revocation, RoaAggregateKey, RoaDefinition, RoaDefinitionUpdates},
-        crypto::{KrillSigner, SignSupport},
+        crypto::KrillSigner,
         error::Error,
         KrillResult,
     },
@@ -483,7 +482,7 @@ impl Roas {
                     &authorizations,
                     &name,
                     certified_key,
-                    issuance_timing.timing_roa_valid_weeks,
+                    issuance_timing.new_roa_validity(),
                     signer,
                 )?;
                 let info = RoaInfo::new(authorizations, roa);
@@ -628,7 +627,7 @@ impl Roas {
     ) -> KrillResult<RoaUpdates> {
         let mut updates = RoaUpdates::default();
 
-        let renew_threshold = Time::now() + Duration::weeks(issuance_timing.timing_roa_reissue_weeks_before);
+        let renew_threshold = issuance_timing.new_roa_issuance_threshold();
 
         for (auth, roa_info) in self.simple.iter() {
             let name = ObjectName::from(auth);
@@ -638,7 +637,7 @@ impl Roas {
                     &authorizations,
                     &name,
                     certified_key,
-                    issuance_timing.timing_roa_valid_weeks,
+                    issuance_timing.new_roa_validity(),
                     signer,
                 )?;
                 let new_roa_info = RoaInfo::new(authorizations, roa);
@@ -654,7 +653,7 @@ impl Roas {
                     authorizations.as_slice(),
                     &name,
                     certified_key,
-                    issuance_timing.timing_roa_valid_weeks,
+                    issuance_timing.new_roa_validity(),
                     signer,
                 )?;
 
@@ -670,7 +669,7 @@ impl Roas {
         authorizations: &[RouteAuthorization],
         name: &ObjectName,
         certified_key: &CertifiedKey,
-        weeks: i64,
+        validity: Validity,
         signer: &KrillSigner,
     ) -> KrillResult<Roa> {
         let incoming_cert = certified_key.incoming_cert();
@@ -699,13 +698,8 @@ impl Roas {
             }
         }
 
-        let mut object_builder = SignedObjectBuilder::new(
-            signer.random_serial()?,
-            SignSupport::sign_validity_weeks(weeks),
-            crl_uri,
-            aia.clone(),
-            roa_uri,
-        );
+        let mut object_builder =
+            SignedObjectBuilder::new(signer.random_serial()?, validity, crl_uri, aia.clone(), roa_uri);
         object_builder.set_issuer(Some(incoming_cert.subject().clone()));
         object_builder.set_signing_time(Some(Time::now()));
 
@@ -724,7 +718,7 @@ impl Roas {
             &authorizations,
             &name,
             certified_key,
-            issuance_timing.timing_roa_valid_weeks,
+            issuance_timing.new_roa_validity(),
             signer,
         )?;
         Ok(RoaInfo::new(authorizations, roa))
