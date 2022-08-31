@@ -23,7 +23,7 @@ use crate::{
         eventsourcing::{AggregateStoreError, KeyValueError},
         util::httpclient,
     },
-    daemon::{ca::RoaPayloadKey, http::tls_keys},
+    daemon::{ca::RoaPayloadJsonMapKey, http::tls_keys},
     upgrades::PrepareUpgradeError,
 };
 
@@ -265,10 +265,10 @@ pub enum Error {
     //-----------------------------------------------------------------
     // RouteAuthorizations - ROAs
     //-----------------------------------------------------------------
-    CaAuthorizationUnknown(CaHandle, RoaPayloadKey),
-    CaAuthorizationDuplicate(CaHandle, RoaPayloadKey),
-    CaAuthorizationInvalidMaxLength(CaHandle, RoaPayloadKey),
-    CaAuthorizationNotEntitled(CaHandle, RoaPayloadKey),
+    CaAuthorizationUnknown(CaHandle, RoaPayloadJsonMapKey),
+    CaAuthorizationDuplicate(CaHandle, RoaPayloadJsonMapKey),
+    CaAuthorizationInvalidMaxLength(CaHandle, RoaPayloadJsonMapKey),
+    CaAuthorizationNotEntitled(CaHandle, RoaPayloadJsonMapKey),
     RoaDeltaError(CaHandle, RoaDeltaError),
 
     //-----------------------------------------------------------------
@@ -981,7 +981,7 @@ mod tests {
         let child = ChildHandle::from_str("child").unwrap();
         let publisher = PublisherHandle::from_str("publisher").unwrap();
 
-        let auth = RoaPayloadKey::from(RoaPayload::from_str("192.168.0.0/16-24 => 64496").unwrap());
+        let auth = RoaPayloadJsonMapKey::from(RoaPayload::from_str("192.168.0.0/16-24 => 64496").unwrap());
 
         //-----------------------------------------------------------------
         // System Issues

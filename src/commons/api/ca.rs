@@ -46,7 +46,7 @@ use crate::{
         },
         util::KrillVersion,
     },
-    daemon::ca::RoaPayloadKey,
+    daemon::ca::RoaPayloadJsonMapKey,
 };
 
 use super::BgpSecAsnKey;
@@ -629,8 +629,8 @@ impl From<&Crl> for ObjectName {
     }
 }
 
-impl From<&RoaPayloadKey> for ObjectName {
-    fn from(auth: &RoaPayloadKey) -> Self {
+impl From<&RoaPayloadJsonMapKey> for ObjectName {
+    fn from(auth: &RoaPayloadJsonMapKey) -> Self {
         ObjectName(format!("{}.roa", hex::encode(auth.to_string())).into())
     }
 }

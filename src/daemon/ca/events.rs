@@ -20,7 +20,7 @@ use crate::{
         eventsourcing::StoredEvent,
         KrillResult,
     },
-    daemon::ca::{AspaInfo, CertifiedKey, PreparedRta, RoaInfo, RoaPayloadKey, SignedRta},
+    daemon::ca::{AspaInfo, CertifiedKey, PreparedRta, RoaInfo, RoaPayloadJsonMapKey, SignedRta},
 };
 
 use super::{BgpSecCertInfo, StoredBgpSecCsr};
@@ -93,10 +93,10 @@ impl fmt::Display for IniDet {
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RoaUpdates {
     #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
-    updated: HashMap<RoaPayloadKey, RoaInfo>,
+    updated: HashMap<RoaPayloadJsonMapKey, RoaInfo>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
-    removed: Vec<RoaPayloadKey>,
+    removed: Vec<RoaPayloadJsonMapKey>,
 
     #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
     aggregate_updated: HashMap<RoaAggregateKey, RoaInfo>,
@@ -107,8 +107,8 @@ pub struct RoaUpdates {
 
 impl RoaUpdates {
     pub fn new(
-        updated: HashMap<RoaPayloadKey, RoaInfo>,
-        removed: Vec<RoaPayloadKey>,
+        updated: HashMap<RoaPayloadJsonMapKey, RoaInfo>,
+        removed: Vec<RoaPayloadJsonMapKey>,
         aggregate_updated: HashMap<RoaAggregateKey, RoaInfo>,
         aggregate_removed: Vec<RoaAggregateKey>,
     ) -> Self {
@@ -131,11 +131,11 @@ impl RoaUpdates {
         !self.is_empty()
     }
 
-    pub fn update(&mut self, auth: RoaPayloadKey, roa: RoaInfo) {
+    pub fn update(&mut self, auth: RoaPayloadJsonMapKey, roa: RoaInfo) {
         self.updated.insert(auth, roa);
     }
 
-    pub fn remove(&mut self, auth: RoaPayloadKey) {
+    pub fn remove(&mut self, auth: RoaPayloadJsonMapKey) {
         self.removed.push(auth);
     }
 
@@ -181,8 +181,8 @@ impl RoaUpdates {
     pub fn unpack(
         self,
     ) -> (
-        HashMap<RoaPayloadKey, RoaInfo>,
-        Vec<RoaPayloadKey>,
+        HashMap<RoaPayloadJsonMapKey, RoaInfo>,
+        Vec<RoaPayloadJsonMapKey>,
         HashMap<RoaAggregateKey, RoaInfo>,
         Vec<RoaAggregateKey>,
     ) {
@@ -568,15 +568,15 @@ pub enum CaEvtDet {
         // update ROAs can contain multiple changes in which case multiple events will
         // result, and (2) we do not have a 'modify' event. Modifications of e.g. the
         // max length are expressed as a 'removed' and 'added' event in a single transaction.
-        auth: RoaPayloadKey,
+        auth: RoaPayloadJsonMapKey,
     },
     RouteAuthorizationComment {
-        auth: RoaPayloadKey,
+        auth: RoaPayloadJsonMapKey,
         comment: Option<String>,
     },
     RouteAuthorizationRemoved {
         // Tracks a single authorization (VRP) which is removed. See remark for RouteAuthorizationAdded.
-        auth: RoaPayloadKey,
+        auth: RoaPayloadJsonMapKey,
     },
     RoasUpdated {
         // Tracks ROA *objects* which are (re-)issued in a resource class.

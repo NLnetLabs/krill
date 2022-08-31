@@ -36,7 +36,7 @@ use crate::{
     daemon::{
         ca::{
             self, ta_handle, CaEvt, CaEvtDet, CaObjects, CaObjectsStore, IniDet, KeyObjectSet, ObjectSetRevision,
-            PublishedCert, PublishedObject, ResourceClassKeyState, ResourceClassObjects, RoaInfo, RoaPayloadKey,
+            PublishedCert, PublishedObject, ResourceClassKeyState, ResourceClassObjects, RoaInfo, RoaPayloadJsonMapKey,
             StoredCaCommand,
         },
         config::Config,
@@ -947,7 +947,7 @@ impl OldResourceClass {
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldRoas {
     #[serde(alias = "inner", skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
-    simple: HashMap<RoaPayloadKey, OldRoaInfo>,
+    simple: HashMap<RoaPayloadJsonMapKey, OldRoaInfo>,
 
     #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
     aggregate: HashMap<RoaAggregateKey, OldAggregateRoaInfo>,
@@ -1057,17 +1057,17 @@ pub enum OldLastResponse {
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldRoutes {
-    map: HashMap<RoaPayloadKey, RouteInfo>,
+    map: HashMap<RoaPayloadJsonMapKey, RouteInfo>,
 }
 
 impl OldRoutes {
     /// Adds a new authorization, or updates an existing one.
-    pub fn add(&mut self, auth: RoaPayloadKey) {
+    pub fn add(&mut self, auth: RoaPayloadJsonMapKey) {
         self.map.insert(auth, RouteInfo::default());
     }
 
     /// Removes an authorization
-    pub fn remove(&mut self, auth: &RoaPayloadKey) -> bool {
+    pub fn remove(&mut self, auth: &RoaPayloadJsonMapKey) -> bool {
         self.map.remove(auth).is_some()
     }
 }

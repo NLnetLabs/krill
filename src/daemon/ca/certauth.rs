@@ -41,7 +41,8 @@ use crate::{
         ca::{
             events::ChildCertificateUpdates, ta_handle, AspaDefinitions, BgpSecDefinitions, CaEvt, CaEvtDet,
             ChildDetails, Cmd, CmdDet, DropReason, Ini, PreparedRta, ResourceClass, ResourceTaggedAttestation,
-            Rfc8183Id, RoaPayloadKey, Routes, RtaContentRequest, RtaPrepareRequest, Rtas, SignedRta, StoredBgpSecCsr,
+            Rfc8183Id, RoaPayloadJsonMapKey, Routes, RtaContentRequest, RtaPrepareRequest, Rtas, SignedRta,
+            StoredBgpSecCsr,
         },
         config::{Config, IssuanceTimingConfig},
     },
@@ -1727,7 +1728,7 @@ impl CertAuth {
 
         // make sure that all removals are held
         for roa_payload in updates.removed() {
-            let auth = RoaPayloadKey::from(*roa_payload);
+            let auth = RoaPayloadJsonMapKey::from(*roa_payload);
             if desired_routes.remove(&auth) {
                 res.push(CaEvtDet::RouteAuthorizationRemoved { auth });
             } else {
@@ -1740,7 +1741,7 @@ impl CertAuth {
             let roa_payload = roa_configuration.payload();
             let comment = roa_configuration.comment();
 
-            let auth = RoaPayloadKey::from(roa_payload);
+            let auth = RoaPayloadJsonMapKey::from(roa_payload);
 
             // let authorizations: Vec<&RoaPayloadKey> = desired_routes.authorizations().collect();
 
