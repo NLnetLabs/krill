@@ -2,7 +2,7 @@ use std::{env, fmt};
 
 use serde::{de::DeserializeOwned, Serialize};
 
-use rpki::{ca::idexchange, uri};
+use rpki::ca::idexchange;
 
 use crate::{
     cli::{
@@ -29,25 +29,30 @@ use crate::{
     constants::{PW_HASH_LOG_N, PW_HASH_P, PW_HASH_R},
 };
 
-fn resolve_uri(server: &uri::Https, path: &str) -> String {
+fn resolve_uri(server: &idexchange::ServiceUri, path: &str) -> String {
     format!("{}{}", server, path)
 }
 
-async fn get_json<T: DeserializeOwned>(server: &uri::Https, token: &Token, path: &str) -> Result<T, Error> {
+async fn get_json<T: DeserializeOwned>(server: &idexchange::ServiceUri, token: &Token, path: &str) -> Result<T, Error> {
     let uri = resolve_uri(server, path);
     httpclient::get_json(&uri, Some(token))
         .await
         .map_err(Error::HttpClientError)
 }
 
-async fn post_empty(server: &uri::Https, token: &Token, path: &str) -> Result<(), Error> {
+async fn post_empty(server: &idexchange::ServiceUri, token: &Token, path: &str) -> Result<(), Error> {
     let uri = resolve_uri(server, path);
     httpclient::post_empty(&uri, Some(token))
         .await
         .map_err(Error::HttpClientError)
 }
 
-async fn post_json(server: &uri::Https, token: &Token, path: &str, data: impl Serialize) -> Result<(), Error> {
+async fn post_json(
+    server: &idexchange::ServiceUri,
+    token: &Token,
+    path: &str,
+    data: impl Serialize,
+) -> Result<(), Error> {
     let uri = resolve_uri(server, path);
     httpclient::post_json(&uri, data, Some(token))
         .await
@@ -55,7 +60,7 @@ async fn post_json(server: &uri::Https, token: &Token, path: &str, data: impl Se
 }
 
 async fn post_json_with_response<T: DeserializeOwned>(
-    server: &uri::Https,
+    server: &idexchange::ServiceUri,
     token: &Token,
     path: &str,
     data: impl Serialize,
@@ -67,7 +72,7 @@ async fn post_json_with_response<T: DeserializeOwned>(
 }
 
 async fn post_json_with_opt_response<T: DeserializeOwned>(
-    server: &uri::Https,
+    server: &idexchange::ServiceUri,
     token: &Token,
     uri: &str,
     data: impl Serialize,
@@ -78,7 +83,7 @@ async fn post_json_with_opt_response<T: DeserializeOwned>(
         .map_err(Error::HttpClientError)
 }
 
-async fn delete(server: &uri::Https, token: &Token, uri: &str) -> Result<(), Error> {
+async fn delete(server: &idexchange::ServiceUri, token: &Token, uri: &str) -> Result<(), Error> {
     let uri = resolve_uri(server, uri);
     httpclient::delete(&uri, Some(token))
         .await
@@ -87,7 +92,7 @@ async fn delete(server: &uri::Https, token: &Token, uri: &str) -> Result<(), Err
 
 /// Command line tool for Krill admin tasks
 pub struct KrillClient {
-    server: uri::Https,
+    server: idexchange::ServiceUri,
     token: Token,
 }
 
@@ -714,7 +719,7 @@ mod tests {
         details.with_log_file("/var/log/krill/krill.log");
 
         let client = KrillClient {
-            server: test::https("https://localhost:3001/"),
+            server: test::service_uri("https://localhost:3001/"),
             token: Token::from("secret"),
         };
 
@@ -738,7 +743,7 @@ mod tests {
         details.with_log_file("/var/log/krill/krill.log");
 
         let client = KrillClient {
-            server: test::https("https://localhost:3001/"),
+            server: test::service_uri("https://localhost:3001/"),
             token: Token::from("secret"),
         };
 

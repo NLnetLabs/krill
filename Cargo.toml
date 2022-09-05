@@ -1,7 +1,7 @@
 [package]
 # Note: some of these values are also used when building Debian packages below.
 name    = "krill"
-version = "0.10.0-rc3"
+version = "0.10.0"
 edition = "2018"
 rust-version = "1.56"
 authors = [ "The NLnet Labs RPKI team <rpki-team@nlnetlabs.nl>" ]
@@ -227,10 +227,11 @@ assets = [
     { source = "doc/krillc.1", dest = "/usr/share/man/man1/krillc.1", mode = "644", doc = true },
     { source = "pkg/common/krill.service.preset", dest = "/lib/systemd/system-preset/50-krill.preset", mode = "644" },
     { source = "pkg/rpm/postinst", dest = "/usr/share/krill/rpm/postinst", mode = "755" },
-    { source = "pkg/rpm/postrm", dest = "/usr/share/krill/rpm/postrm", mode = "755" },
+    { source = "pkg/rpm/postuninst", dest = "/usr/share/krill/rpm/postuninst", mode = "755" },
 ]
-post_install_script = "/usr/share/krill/rpm/postinst $*"
-post_uninstall_script = "/usr/share/krill/rpm/postrm $*"
+# These get set using cargo-generate-rpm --set-metadata at package build time.
+#post_install_script = ...
+#post_uninstall_script = ...
 
 # Ensure that the useradd tool is present by depending on its package
 [package.metadata.generate-rpm.requires]

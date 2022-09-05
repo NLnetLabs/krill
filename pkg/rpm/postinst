@@ -17,10 +17,13 @@ if [ $EUID -ne 0 ]; then
 fi
 
 create_user() {
-    # According to the CentOS 7 useradd man page:
-    # --user-group causes a group by the same name as the user to be created
-    # --create-home should force creation of a home dir even for a system account.
-    useradd --home-dir ${KRILL_HOME_DIR} --system --create-home --user-group ${KRILL_USER}
+    # https://github.com/NLnetLabs/krill/issues/908
+    if ! id ${KRILL_USER} > /dev/null 2>&1; then
+        # According to the CentOS 7 useradd man page:
+        # --user-group causes a group by the same name as the user to be created
+        # --create-home should force creation of a home dir even for a system account.
+        useradd --home-dir ${KRILL_HOME_DIR} --system --create-home --user-group ${KRILL_USER}
+    fi
 
     # Ensure that the home directory has the correct ownership
     chown -R ${KRILL_USER}:${KRILL_GROUP} ${KRILL_HOME_DIR}

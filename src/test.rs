@@ -187,7 +187,7 @@ pub async fn start_krill_pubd() -> PathBuf {
 }
 
 pub async fn krill_admin(command: Command) -> ApiResponse {
-    let krillc_opts = Options::new(https(KRILL_SERVER_URI), "secret", ReportFormat::Json, command);
+    let krillc_opts = Options::new(service_uri(KRILL_SERVER_URI), "secret", ReportFormat::Json, command);
     match KrillClient::process(krillc_opts).await {
         Ok(res) => res, // ok
         Err(e) => panic!("{}", e),
@@ -200,7 +200,7 @@ pub async fn krill_embedded_pubd_admin(command: PubServerCommand) -> ApiResponse
 
 pub async fn krill_dedicated_pubd_admin(command: PubServerCommand) -> ApiResponse {
     let options = Options::new(
-        https(KRILL_PUBD_SERVER_URI),
+        service_uri(KRILL_PUBD_SERVER_URI),
         "secret",
         ReportFormat::Json,
         Command::PubServer(command),
@@ -212,7 +212,7 @@ pub async fn krill_dedicated_pubd_admin(command: PubServerCommand) -> ApiRespons
 }
 
 pub async fn krill_admin_expect_error(command: Command) -> Error {
-    let krillc_opts = Options::new(https(KRILL_SERVER_URI), "secret", ReportFormat::Json, command);
+    let krillc_opts = Options::new(service_uri(KRILL_SERVER_URI), "secret", ReportFormat::Json, command);
     match KrillClient::process(krillc_opts).await {
         Ok(_res) => panic!("Expected error"),
         Err(e) => e,
@@ -656,6 +656,10 @@ pub fn rsync(s: &str) -> uri::Rsync {
 
 pub fn https(s: &str) -> uri::Https {
     uri::Https::from_str(s).unwrap()
+}
+
+pub fn service_uri(s: &str) -> idexchange::ServiceUri {
+    idexchange::ServiceUri::from_str(s).unwrap()
 }
 
 pub fn ca_handle(s: &str) -> CaHandle {

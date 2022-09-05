@@ -655,8 +655,8 @@ impl Config {
         SocketAddr::new(self.ip, self.port)
     }
 
-    pub fn test_ssl(&self) -> bool {
-        self.https_mode == HttpsMode::Generate
+    pub fn https_mode(&self) -> HttpsMode {
+        self.https_mode
     }
 
     pub fn https_cert_file(&self) -> PathBuf {
@@ -1450,10 +1450,21 @@ impl<'de> Deserialize<'de> for LogType {
 
 //------------ HttpsMode -----------------------------------------------------
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum HttpsMode {
     Existing,
     Generate,
+    Disable,
+}
+
+impl HttpsMode {
+    pub fn generate_https_cert(&self) -> bool {
+        *self == HttpsMode::Generate
+    }
+
+    pub fn disable_https(&self) -> bool {
+        *self == HttpsMode::Disable
+    }
 }
 
 impl<'de> Deserialize<'de> for HttpsMode {
@@ -1465,9 +1476,9 @@ impl<'de> Deserialize<'de> for HttpsMode {
         match string.as_str() {
             "existing" => Ok(HttpsMode::Existing),
             "generate" => Ok(HttpsMode::Generate),
+            "disable" => Ok(HttpsMode::Disable),
             _ => Err(de::Error::custom(format!(
-                "expected \"existing\", or \"generate\", \
-                 found: \"{}\"",
+                "expected \"existing\", \"generate\", or \"disable\" found: \"{}\"",
                 string
             ))),
         }
