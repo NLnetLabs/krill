@@ -535,7 +535,20 @@ jobs:
                 ;;
             esac
 
-            cargo generate-rpm --set-metadata "version=\"${PKG_APP_VER}\"" ${EXTRA_CARGO_GENERATE_RPM_ARGS}
+            # https://github.com/NLnetLabs/krill/issues/907
+            # cargo-generate-rpm doesn't support setting scripts to files, and we can't refer to a file that 
+            # installed such as /usr/share/krill/rpm/postuninst because 'yum remove' removes the file before it
+            # can be executed (hence post-uninstall rather than pre-uninstall...). So instead embed the entire
+            # uninstall script in the TOML settings using the cargo-generate-rpm --set-metadata (aka -s)
+            # command line argument.
+            POSTINST="post_install_script = '''$(cat pkg/rpm/postinst)'''"
+            POSTUNINST="post_uninstall_script = '''$(cat pkg/rpm/postuninst)'''"
+
+            cargo generate-rpm \
+                -s "version=\"${PKG_APP_VER}\"" \
+                -s "$POSTINST" \
+                -s "$POSTUNINST" \
+                ${EXTRA_CARGO_GENERATE_RPM_ARGS}
             ;;
         esac
 
@@ -827,6 +840,33 @@ jobs:
 
         echo -e "\nKRILL MAN PAGE:"
         sg lxd -c "lxc exec testcon -- man -P cat krill"
+
+    - name: Test uninstall (without purge)
+      run: |
+        case ${OS_NAME} in
+          debian|ubuntu)
+            sg lxd -c "lxc exec testcon -- apt-get -y remove ${{ matrix.pkg }}"
+            ;;
+          centos)
+            sg lxd -c "lxc exec testcon -- yum remove -y ${{ matrix.pkg }}" 2>&1 | tee remove.log
+            # yum remove exits with code 0 even if scriptlets fail, so look for some sign of failure
+            ! grep -qiE '(err|warn|fail)' remove.log
+            ;;
+        esac
+
+    - name: Test re-install
+      run: |
+        case ${OS_NAME} in
+          debian|ubuntu)
+            sg lxd -c "lxc exec testcon -- apt-get -y install /tmp/${PKG_FILE}"
+            ;;
+          centos)
+            sg lxd -c "lxc exec testcon -- yum install -y /tmp/${PKG_FILE}" 2>&1 | tee reinstall.log
+            # yum remove exits with code 0 even if scriptlets fail, so look for some sign of failure
+            ! grep -qiE '(err|warn|fail)' reinstall.log
+            ;;
+        esac
+
 
   # -------------------------------------------------------------------------------------------------------------------
   # Job: 'docker'
