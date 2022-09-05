@@ -850,7 +850,7 @@ jobs:
           centos)
             sg lxd -c "lxc exec testcon -- yum remove -y ${{ matrix.pkg }}" 2>&1 | tee remove.log
             # yum remove exits with code 0 even if scriptlets fail, so look for some sign of failure
-            ! grep -qE '(err|warn|fail)' remove.log
+            ! grep -qiE '(err|warn|fail)' remove.log
             ;;
         esac
 
@@ -863,7 +863,7 @@ jobs:
           centos)
             sg lxd -c "lxc exec testcon -- yum install -y /tmp/${PKG_FILE}" 2>&1 | tee reinstall.log
             # yum remove exits with code 0 even if scriptlets fail, so look for some sign of failure
-            ! grep -qE '(err|warn|fail)' reinstall.log
+            ! grep -qiE '(err|warn|fail)' reinstall.log
             ;;
         esac
 
