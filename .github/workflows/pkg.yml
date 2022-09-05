@@ -535,6 +535,15 @@ jobs:
                 ;;
             esac
 
+            # https://github.com/NLnetLabs/krill/issues/907
+            # cargo-generate-rpm doesn't support setting scripts to files, and we can't refer to a file that 
+            # installed such as /usr/share/krill/rpm/postuninst because 'yum remove' removes the file before it
+            # can be executed (hence post-uninstall rather than pre-uninstall...). So instead embed the entire
+            # uninstall script in the TOML settings using the cargo-generate-rpm --set-metadata (aka -s)
+            # command line argument.
+            POSTINST="post_install_script = '''$(cat pkg/rpm/postinst)'''"
+            POSTUNINST="post_uninstall_script = '''$(cat pkg/rpm/postuninst)'''"
+
             cargo generate-rpm \
                 -s "version=\"${PKG_APP_VER}\"" \
                 -s "$POSTINST" \
