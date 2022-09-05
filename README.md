@@ -34,9 +34,12 @@ In this release we introduce the following major features:
 - Support the use of Hardware Security Modules (HSMs) for key operations
 
 The documentation has more information:
-API changes: https://krill.docs.nlnetlabs.nl/en/stable/upgrade.html#v0-10-0
-BGPSec:      https://krill.docs.nlnetlabs.nl/en/stable/cli.html#krillc-bgpsec
-HSM support: https://krill.docs.nlnetlabs.nl/en/stable/hsm.html
+
+| Subject   | Section                                                        |
+|-----------|----------------------------------------------------------------|
+|API changes|https://krill.docs.nlnetlabs.nl/en/stable/upgrade.html#v0-10-0  |
+|BGPSec     |https://krill.docs.nlnetlabs.nl/en/stable/cli.html#krillc-bgpsec|
+|HSM support|https://krill.docs.nlnetlabs.nl/en/stable/hsm.html              |
 
 Besides these major features we added a number of small improvements
 and bugfixes:
