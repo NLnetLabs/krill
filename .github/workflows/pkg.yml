@@ -845,10 +845,10 @@ jobs:
       run: |
         case ${OS_NAME} in
           debian|ubuntu)
-            sg lxd -c "lxc exec testcon -- apt-get -y remove krill"
+            sg lxd -c "lxc exec testcon -- apt-get -y remove ${{ matrix.pkg }}"
             ;;
           centos)
-            sg lxd -c "lxc exec testcon -- yum remove -y krill" 2>&1 | tee remove.log
+            sg lxd -c "lxc exec testcon -- yum remove -y ${{ matrix.pkg }}" 2>&1 | tee remove.log
             # yum remove exits with code 0 even if scriptlets fail, so look for some sign of failure
             ! grep -qE '(err|warn|fail)' remove.log
             ;;
