@@ -160,10 +160,10 @@ impl TaskQueue {
         let mut q = self.q.write().unwrap();
 
         // If the [`PriorityQueue`] would have a `retain` function
-        // then we would use that, but since it doesn't and we need
+        // then we would use that, but since it doesn't we need
         // to do this the slightly hard way..
         //
-        // We get and copy all tasks for the removed ca first, and then
+        // We get and copy all tasks for the removed CA first, and then
         // remove them in a follow-up loop. This is not the most efficient,
         // but.. it's easy to follow and we are very unlikely to have many pending
         // tasks for a removed CA. So, this is unlikely to be an issue.
