@@ -227,7 +227,7 @@ assets = [
     { source = "doc/krillc.1", dest = "/usr/share/man/man1/krillc.1", mode = "644", doc = true },
     { source = "pkg/common/krill.service.preset", dest = "/lib/systemd/system-preset/50-krill.preset", mode = "644" },
     { source = "pkg/rpm/postinst", dest = "/usr/share/krill/rpm/postinst", mode = "755" },
-    { source = "pkg/rpm/postrm", dest = "/usr/share/krill/rpm/postrm", mode = "755" },
+    { source = "pkg/rpm/postuninst", dest = "/usr/share/krill/rpm/postuninst", mode = "755" },
 ]
 # These get set using cargo-generate-rpm --set-metadata at package build time.
 #post_install_script = ...
