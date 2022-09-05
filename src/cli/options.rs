@@ -2,7 +2,6 @@
 use std::collections::HashMap;
 
 use std::{
-    convert::TryFrom,
     path::PathBuf,
     str::{from_utf8_unchecked, FromStr},
     {env, fmt},
@@ -54,7 +53,7 @@ impl GeneralArgs {
     fn from_matches(matches: &ArgMatches) -> Result<Self, Error> {
         let server = {
             let mut server = match env::var(KRILL_CLI_SERVER_ENV) {
-                Ok(server_str) => Some(idexchange::ServiceUri::try_from(server_str)?),
+                Ok(server_str) => Some(idexchange::ServiceUri::from_str(&server_str)?),
                 Err(_) => None,
             };
 
