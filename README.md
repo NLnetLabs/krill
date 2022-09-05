@@ -48,6 +48,7 @@ in RC1 and RC2:
 - API to add parent should not change #898
 - Fix: Encode ranges as prefixes where possible #903
 - Improve KMIP lacking support log messages #889
+- Add SSLKEYLOGFILE support #615
 
 NOTE: 0.10.0-rc1 and -rc2 instances cannot be upgraded because of issue #870.
       Please contact us if this is an issue for you.
