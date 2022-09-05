@@ -120,6 +120,7 @@ name: Packaging
 
 env:
   DOCKER_REPO: ${{ github.repository_owner }}
+  DEBIAN_FRONTEND: noninteractive
 
 on:
   push:
@@ -316,8 +317,6 @@ jobs:
 
     # Install Rust the hard way rather than using a GH Action because the action doesn't work inside a Docker container.
     - name: Install Rust
-      env:
-        DEBIAN_FRONTEND: noninteractive
       run: |
         case ${OS_NAME} in
           debian|ubuntu)
@@ -333,8 +332,6 @@ jobs:
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
     - name: Install compilation and other dependencies
-      env:
-        DEBIAN_FRONTEND: noninteractive
       run: |
         case ${OS_NAME} in
           debian|ubuntu)
