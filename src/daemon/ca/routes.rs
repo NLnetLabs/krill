@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, collections::HashMap, fmt, ops::Deref, str::FromStr};
+use std::{collections::HashMap, fmt, ops::Deref, str::FromStr};
 
 use chrono::Duration;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
@@ -17,7 +17,7 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::{ObjectName, Revocation, RoaAggregateKey, RoaDefinition, RoaDefinitionUpdates},
+        api::{ObjectName, Revocation, RoaAggregateKey, RoaConfiguration, RoaPayload},
         crypto::{KrillSigner, SignSupport},
         error::Error,
         KrillResult,
@@ -29,59 +29,53 @@ use crate::{
     },
 };
 
-//------------ RouteAuthorization ------------------------------------------
+//------------ RoaPayloadKey -----------------------------------------------
 
-/// This type defines a prefix and optional maximum length (other than the
-/// prefix length) which is to be authorized for the given origin ASN.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct RouteAuthorization(RoaDefinition);
+/// This type wraps a [`RoaPayload`] but implements its own serialization
+/// based on the string representation of the definition so that it can be
+/// used as a single key in json map representations.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialOrd, PartialEq)]
+pub struct RoaPayloadJsonMapKey(RoaPayload);
 
-impl fmt::Display for RouteAuthorization {
+// Display
+
+impl fmt::Display for RoaPayloadJsonMapKey {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.0.fmt(f)
     }
 }
 
-impl RouteAuthorization {
-    pub fn new(definition: RoaDefinition) -> Self {
-        RouteAuthorization(definition)
-    }
+// Conversions
 
-    pub fn explicit_length(self) -> Self {
-        RouteAuthorization(self.0.explicit_max_length())
-    }
-}
-
-impl AsRef<RoaDefinition> for RouteAuthorization {
-    fn as_ref(&self) -> &RoaDefinition {
+impl AsRef<RoaPayload> for RoaPayloadJsonMapKey {
+    fn as_ref(&self) -> &RoaPayload {
         &self.0
     }
 }
 
-impl Deref for RouteAuthorization {
-    type Target = RoaDefinition;
+impl Deref for RoaPayloadJsonMapKey {
+    type Target = RoaPayload;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-/// Ordering is based on the ordering implemented by RoaDefinition
-impl Ord for RouteAuthorization {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.0.cmp(&other.0)
+impl From<RoaPayload> for RoaPayloadJsonMapKey {
+    fn from(def: RoaPayload) -> Self {
+        RoaPayloadJsonMapKey(def)
     }
 }
 
-impl PartialOrd for RouteAuthorization {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
+impl From<RoaPayloadJsonMapKey> for RoaPayload {
+    fn from(auth: RoaPayloadJsonMapKey) -> Self {
+        auth.0
     }
 }
 
-/// We use RouteAuthorization as (json) map keys and therefore we need it
-/// to be serializable to a single simple string.
-impl Serialize for RouteAuthorization {
+// Serde
+
+impl Serialize for RoaPayloadJsonMapKey {
     fn serialize<S>(&self, s: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -90,126 +84,14 @@ impl Serialize for RouteAuthorization {
     }
 }
 
-/// We use RouteAuthorization as (json) map keys and therefore we need it
-/// to be deserializable from a single simple string.
-impl<'de> Deserialize<'de> for RouteAuthorization {
-    fn deserialize<D>(d: D) -> Result<RouteAuthorization, D::Error>
+impl<'de> Deserialize<'de> for RoaPayloadJsonMapKey {
+    fn deserialize<D>(d: D) -> Result<RoaPayloadJsonMapKey, D::Error>
     where
         D: Deserializer<'de>,
     {
         let string = String::deserialize(d)?;
-        let def = RoaDefinition::from_str(string.as_str()).map_err(de::Error::custom)?;
-        Ok(RouteAuthorization(def))
-    }
-}
-
-impl From<RoaDefinition> for RouteAuthorization {
-    fn from(def: RoaDefinition) -> Self {
-        RouteAuthorization(def)
-    }
-}
-
-impl From<RouteAuthorization> for RoaDefinition {
-    fn from(auth: RouteAuthorization) -> Self {
-        auth.0
-    }
-}
-
-//------------ RouteAuthorizationUpdates -----------------------------------
-
-///
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RouteAuthorizationUpdates {
-    added: Vec<RouteAuthorization>,
-    removed: Vec<RouteAuthorization>,
-}
-
-impl RouteAuthorizationUpdates {
-    /// Use this when receiving updates through the API, until the v0.7 ROA clean up can be deprecated,
-    /// which would imply that pre-0.7 versions can not longer be directly updated.
-    pub fn into_explicit(self) -> Self {
-        let added = self.added.into_iter().map(|a| a.explicit_length()).collect();
-        let removed = self.removed.into_iter().map(|r| r.explicit_length()).collect();
-        RouteAuthorizationUpdates { added, removed }
-    }
-
-    pub fn new(added: Vec<RouteAuthorization>, removed: Vec<RouteAuthorization>) -> Self {
-        RouteAuthorizationUpdates { added, removed }
-    }
-
-    pub fn added(&self) -> &Vec<RouteAuthorization> {
-        &self.added
-    }
-
-    pub fn removed(&self) -> &Vec<RouteAuthorization> {
-        &self.removed
-    }
-
-    pub fn unpack(self) -> (Vec<RouteAuthorization>, Vec<RouteAuthorization>) {
-        (self.added, self.removed)
-    }
-
-    pub fn filter(&self, resources: &ResourceSet) -> Self {
-        let added = self
-            .added()
-            .iter()
-            .filter(|auth| resources.contains_roa_address(&auth.as_roa_ip_address()))
-            .cloned()
-            .collect();
-
-        let removed = self
-            .removed()
-            .iter()
-            .filter(|auth| resources.contains_roa_address(&auth.as_roa_ip_address()))
-            .cloned()
-            .collect();
-
-        RouteAuthorizationUpdates { added, removed }
-    }
-
-    pub fn affected_prefixes(&self) -> ResourceSet {
-        let mut resources = ResourceSet::default();
-        for roa in &self.added {
-            resources = resources.union(&roa.prefix().into());
-        }
-        for roa in &self.removed {
-            resources = resources.union(&roa.prefix().into());
-        }
-        resources
-    }
-}
-
-impl From<RoaDefinitionUpdates> for RouteAuthorizationUpdates {
-    fn from(definitions: RoaDefinitionUpdates) -> Self {
-        let (added, removed) = definitions.unpack();
-        let mut added: Vec<RouteAuthorization> = added.into_iter().map(RoaDefinition::into).collect();
-        added.sort();
-        added.dedup();
-
-        let mut removed: Vec<RouteAuthorization> = removed.into_iter().map(RoaDefinition::into).collect();
-        removed.sort();
-        removed.dedup();
-
-        RouteAuthorizationUpdates { added, removed }
-    }
-}
-
-impl fmt::Display for RouteAuthorizationUpdates {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if !self.added.is_empty() {
-            write!(f, "added:")?;
-            for a in &self.added {
-                write!(f, " {}", a)?;
-            }
-            write!(f, " ")?;
-        }
-        if !self.removed.is_empty() {
-            write!(f, "removed:")?;
-            for r in &self.removed {
-                write!(f, " {}", r)?;
-            }
-        }
-        Ok(())
+        let def = RoaPayload::from_str(string.as_str()).map_err(de::Error::custom)?;
+        Ok(RoaPayloadJsonMapKey(def))
     }
 }
 
@@ -218,7 +100,7 @@ impl fmt::Display for RouteAuthorizationUpdates {
 /// The current authorizations and corresponding meta-information for a CA.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Routes {
-    map: HashMap<RouteAuthorization, RouteInfo>,
+    map: HashMap<RoaPayloadJsonMapKey, RouteInfo>,
 }
 
 impl Routes {
@@ -237,20 +119,27 @@ impl Routes {
         Routes { map: filtered }
     }
 
-    pub fn all(&self) -> impl Iterator<Item = (&RouteAuthorization, &RouteInfo)> {
+    pub fn all(&self) -> impl Iterator<Item = (&RoaPayloadJsonMapKey, &RouteInfo)> {
         self.map.iter()
     }
 
-    pub fn authorizations(&self) -> impl Iterator<Item = &RouteAuthorization> {
+    pub fn roa_configurations(&self) -> Vec<RoaConfiguration> {
+        self.map
+            .iter()
+            .map(|(payload_key, route_info)| RoaConfiguration::new(payload_key.0, route_info.comment().cloned()))
+            .collect()
+    }
+
+    pub fn roa_payload_keys(&self) -> impl Iterator<Item = &RoaPayloadJsonMapKey> {
         self.map.keys()
     }
 
-    pub fn into_authorizations(self) -> Vec<RouteAuthorization> {
+    pub fn into_roa_payload_keys(self) -> Vec<RoaPayloadJsonMapKey> {
         self.map.into_iter().map(|(auth, _)| auth).collect()
     }
 
-    pub fn as_aggregates(&self) -> HashMap<RoaAggregateKey, Vec<RouteAuthorization>> {
-        let mut map: HashMap<RoaAggregateKey, Vec<RouteAuthorization>> = HashMap::new();
+    pub fn as_aggregates(&self) -> HashMap<RoaAggregateKey, Vec<RoaPayloadJsonMapKey>> {
+        let mut map: HashMap<RoaAggregateKey, Vec<RoaPayloadJsonMapKey>> = HashMap::new();
 
         for auth in self.map.keys() {
             let key = RoaAggregateKey::new(auth.asn(), None);
@@ -272,21 +161,28 @@ impl Routes {
         self.map.is_empty()
     }
 
-    pub fn info(&self, auth: &RouteAuthorization) -> Option<&RouteInfo> {
+    pub fn info(&self, auth: &RoaPayloadJsonMapKey) -> Option<&RouteInfo> {
         self.map.get(auth)
     }
 
-    pub fn has(&self, auth: &RouteAuthorization) -> bool {
+    pub fn has(&self, auth: &RoaPayloadJsonMapKey) -> bool {
         self.map.contains_key(auth)
     }
 
-    /// Adds a new authorization, or updates an existing one.
-    pub fn add(&mut self, auth: RouteAuthorization) {
+    /// Adds a new authorization
+    pub fn add(&mut self, auth: RoaPayloadJsonMapKey) {
         self.map.insert(auth, RouteInfo::default());
     }
 
+    /// Updates the comment for an authorization
+    pub fn comment(&mut self, auth: &RoaPayloadJsonMapKey, comment: Option<String>) {
+        if let Some(info) = self.map.get_mut(auth) {
+            info.set_comment(comment)
+        }
+    }
+
     /// Removes an authorization
-    pub fn remove(&mut self, auth: &RouteAuthorization) -> bool {
+    pub fn remove(&mut self, auth: &RoaPayloadJsonMapKey) -> bool {
         self.map.remove(auth).is_some()
     }
 }
@@ -299,13 +195,37 @@ pub struct RouteInfo {
     since: Time, // authorization first added by user
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    comment: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     group: Option<u32>,
+}
+
+impl RouteInfo {
+    pub fn since(&self) -> Time {
+        self.since
+    }
+
+    pub fn comment(&self) -> Option<&String> {
+        self.comment.as_ref()
+    }
+
+    pub fn set_comment(&mut self, comment: Option<String>) {
+        self.comment = comment;
+    }
+
+    /// The idea was to allow grouping of specific payloads.
+    /// But perhaps we should deprecate this as it's not used.
+    pub fn group(&self) -> Option<u32> {
+        self.group
+    }
 }
 
 impl Default for RouteInfo {
     fn default() -> Self {
         RouteInfo {
             since: Time::now(),
+            comment: None,
             group: None,
         }
     }
@@ -313,10 +233,11 @@ impl Default for RouteInfo {
 
 //------------ RoaInfo -----------------------------------------------------
 
+/// This type defines information about a ROA *object*
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RoaInfo {
     // The route or routes authorized by this ROA
-    authorizations: Vec<RouteAuthorization>,
+    authorizations: Vec<RoaPayloadJsonMapKey>,
 
     // The validity time for this ROA.
     validity: Validity,
@@ -335,7 +256,7 @@ pub struct RoaInfo {
 }
 
 impl RoaInfo {
-    pub fn new(authorizations: Vec<RouteAuthorization>, roa: Roa) -> Self {
+    pub fn new(authorizations: Vec<RoaPayloadJsonMapKey>, roa: Roa) -> Self {
         let validity = roa.cert().validity();
         let serial = roa.cert().serial_number();
         let uri = roa.cert().signed_object().unwrap().clone(); // safe for our own ROAs
@@ -352,7 +273,7 @@ impl RoaInfo {
         }
     }
 
-    pub fn authorizations(&self) -> &Vec<RouteAuthorization> {
+    pub fn authorizations(&self) -> &Vec<RoaPayloadJsonMapKey> {
         &self.authorizations
     }
 
@@ -393,7 +314,7 @@ enum RoaMode {
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Roas {
     #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
-    simple: HashMap<RouteAuthorization, RoaInfo>,
+    simple: HashMap<RoaPayloadJsonMapKey, RoaInfo>,
 
     #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
     aggregate: HashMap<RoaAggregateKey, RoaInfo>,
@@ -404,7 +325,7 @@ impl Roas {
         self.simple.is_empty() && self.aggregate.is_empty()
     }
 
-    pub fn get(&self, auth: &RouteAuthorization) -> Option<&RoaInfo> {
+    pub fn get(&self, auth: &RoaPayloadJsonMapKey) -> Option<&RoaInfo> {
         self.simple.get(auth)
     }
 
@@ -475,7 +396,7 @@ impl Roas {
         let mut roa_updates = RoaUpdates::default();
 
         // Add new ROAs
-        for auth in relevant_routes.authorizations() {
+        for auth in relevant_routes.roa_payload_keys() {
             if !self.simple.contains_key(auth) {
                 let name = ObjectName::from(auth);
                 let authorizations = vec![*auth];
@@ -667,7 +588,7 @@ impl Roas {
     }
 
     pub fn make_roa(
-        authorizations: &[RouteAuthorization],
+        authorizations: &[RoaPayloadJsonMapKey],
         name: &ObjectName,
         certified_key: &CertifiedKey,
         weeks: i64,
@@ -714,7 +635,7 @@ impl Roas {
 
     pub fn make_aggregate_roa(
         key: &RoaAggregateKey,
-        authorizations: Vec<RouteAuthorization>,
+        authorizations: Vec<RoaPayloadJsonMapKey>,
         certified_key: &CertifiedKey,
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
@@ -739,9 +660,9 @@ mod tests {
     use super::*;
     use crate::commons::api::AsNumber;
 
-    fn authorization(s: &str) -> RouteAuthorization {
-        let def = RoaDefinition::from_str(s).unwrap();
-        RouteAuthorization(def)
+    fn authorization(s: &str) -> RoaPayloadJsonMapKey {
+        let def = RoaPayload::from_str(s).unwrap();
+        RoaPayloadJsonMapKey(def)
     }
 
     #[test]
@@ -751,7 +672,7 @@ mod tests {
             let json = serde_json::to_string(&auth).unwrap();
             assert_eq!(format!("\"{}\"", s), json);
 
-            let des: RouteAuthorization = serde_json::from_str(&json).unwrap();
+            let des: RoaPayloadJsonMapKey = serde_json::from_str(&json).unwrap();
             assert_eq!(des, auth);
         }
 

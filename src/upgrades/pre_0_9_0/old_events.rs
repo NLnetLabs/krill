@@ -33,7 +33,7 @@ use crate::{
         },
         eventsourcing::StoredEvent,
     },
-    daemon::ca::{self, CaEvt, CaEvtDet, PreparedRta, RouteAuthorization, SignedRta},
+    daemon::ca::{self, CaEvt, CaEvtDet, PreparedRta, RoaPayloadJsonMapKey, SignedRta},
     pubd::{
         Publisher, RepositoryAccessEvent, RepositoryAccessEventDetails, RepositoryAccessInitDetails, RepositoryManager,
         RrdpSessionReset, RrdpUpdate,
@@ -208,8 +208,8 @@ pub enum OldCaEvtDet {
     UnexpectedKeyFound(ResourceClassName, RevocationRequest),
 
     // Route Authorizations
-    RouteAuthorizationAdded(RouteAuthorization),
-    RouteAuthorizationRemoved(RouteAuthorization),
+    RouteAuthorizationAdded(RoaPayloadJsonMapKey),
+    RouteAuthorizationRemoved(RoaPayloadJsonMapKey),
     RoasUpdated(ResourceClassName, OldRoaUpdates),
 
     // Publishing
@@ -405,10 +405,10 @@ pub struct CurrentObjectSetDelta {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldRoaUpdates {
     #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
-    updated: HashMap<RouteAuthorization, OldRoaInfo>,
+    updated: HashMap<RoaPayloadJsonMapKey, OldRoaInfo>,
 
     #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
-    removed: HashMap<RouteAuthorization, OldRevokedObject>,
+    removed: HashMap<RoaPayloadJsonMapKey, OldRevokedObject>,
 
     #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
     aggregate_updated: HashMap<RoaAggregateKey, OldAggregateRoaInfo>,
@@ -458,8 +458,8 @@ impl OldRoaUpdates {
     pub fn unpack(
         self,
     ) -> (
-        HashMap<RouteAuthorization, OldRoaInfo>,
-        HashMap<RouteAuthorization, OldRevokedObject>,
+        HashMap<RoaPayloadJsonMapKey, OldRoaInfo>,
+        HashMap<RoaPayloadJsonMapKey, OldRevokedObject>,
         HashMap<RoaAggregateKey, OldAggregateRoaInfo>,
         HashMap<RoaAggregateKey, OldRevokedObject>,
     ) {
@@ -489,7 +489,7 @@ impl OldRoaInfo {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldAggregateRoaInfo {
-    pub authorizations: Vec<RouteAuthorization>,
+    pub authorizations: Vec<RoaPayloadJsonMapKey>,
 
     #[serde(flatten)]
     pub roa: OldRoaInfo,

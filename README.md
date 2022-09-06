@@ -29,7 +29,8 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 ## 0.11.0-RC1
 
-In this release we introduce some improvements to the ROA management API.
+In this release we introduce some improvements to the ROA management API:
+- Include (optional) comment with configured (ROA) authorisations (#863)
 
 The full list of changes can be found here:
 https://github.com/NLnetLabs/krill/projects/21
