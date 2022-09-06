@@ -1125,7 +1125,7 @@ jobs:
           REPO_AND_TAG_PAIRS=$(echo ${{ needs.docker_pre.outputs.all_repo_and_tag_pairs }} | base64 -d)
           echo "::set-output name=repo_and_tag_pairs::${REPO_AND_TAG_PAIRS}"
 
-          LOWER_DOCKER_ORG="${{ needs.docker_pre.outputs.lower_docker_org }}" | base64 -d)
+          LOWER_DOCKER_ORG=$(echo ${{ needs.docker_pre.outputs.lower_docker_org }} | base64 -d)
           echo "::set-output name=lower_docker_org::${LOWER_DOCKER_ORG}"
 
       - name: Create multi-arch manifest(s)
