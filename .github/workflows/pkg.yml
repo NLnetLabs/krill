@@ -1043,7 +1043,7 @@ jobs:
           # Don't use the [1]th tag (if present) which would be '<repo>:latest', as we won't build or publish an
           # image for 'latest' but instead push a multi-arch manifest for 'latest' which refers to the same
           # set of architecture specific images as the version specific multi-arch manifest we will publish.
-          DOCKER_REPO_AND_TAG=$(echo ${{ needs.docker_pre.outputs.first_repo_and_tag_pair }}" | base64 -d)
+          DOCKER_REPO_AND_TAG=$(echo "${{ needs.docker_pre.outputs.first_repo_and_tag_pair }}" | base64 -d)
           echo "::set-output name=image_name::${DOCKER_ORG}/${DOCKER_REPO_AND_TAG}-${{ matrix.shortname }}"
 
       # Build a single architecture specific Docker image with an explicit architecture extension in the Docker
