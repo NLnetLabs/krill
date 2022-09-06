@@ -218,6 +218,7 @@ jobs:
   #   - https://github.com/mmstick/cargo-deb
   #   - https://github.com/cat-in-136/cargo-generate-rpm
   pkg:
+    if: false # disabled temporarily while testing
     needs: cross
     runs-on: ubuntu-latest
     # Build on the platform we are targeting in order to avoid https://github.com/rust-lang/rust/issues/57497.
@@ -977,9 +978,10 @@ jobs:
         #   cargo_args:  (optional) can be used when testing, e.g. set to '--no-default-features' to speed up the Krill
         #                build.
         include:
-          - platform:    'linux/amd64'
-            shortname:   'amd64'
-            mode:        'build'
+          # disabled temporarily while testing
+          # - platform:    'linux/amd64'
+          #   shortname:   'amd64'
+          #   mode:        'build'
 
           - platform:    'linux/arm/v6'
             shortname:   'armv6'
@@ -1068,7 +1070,8 @@ jobs:
           path: /tmp/docker-${{ matrix.shortname }}-img.tar
 
       - name: Publish image to Docker Hub
-        if: contains(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
+        if: false # disabled temporarily while testing
+        #if: contains(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' # disabled temporarily while testing
         uses: docker/build-push-action@v2
         with:
           context: .
@@ -1108,8 +1111,13 @@ jobs:
       - name: Create multi-arch manifest(s)
         run: |
           for REPO_AND_TAG in ${{ steps.decode.outputs.repo_and_tag_pairs }}; do
+            # disabled temporarily while testing
+            # docker manifest create --amend ${DOCKER_ORG}/${REPO_AND_TAG} \
+            #   ${DOCKER_ORG}/${REPO_AND_TAG}-amd64 \
+            #   ${DOCKER_ORG}/${REPO_AND_TAG}-armv6 \
+            #   ${DOCKER_ORG}/${REPO_AND_TAG}-armv7 \
+            #   ${DOCKER_ORG}/${REPO_AND_TAG}-arm64
             docker manifest create --amend ${DOCKER_ORG}/${REPO_AND_TAG} \
-              ${DOCKER_ORG}/${REPO_AND_TAG}-amd64 \
               ${DOCKER_ORG}/${REPO_AND_TAG}-armv6 \
               ${DOCKER_ORG}/${REPO_AND_TAG}-armv7 \
               ${DOCKER_ORG}/${REPO_AND_TAG}-arm64
@@ -1118,5 +1126,6 @@ jobs:
       - name: Publish multi-arch image manifest(s) to Docker Hub
         run: |
           for REPO_AND_TAG in ${{ steps.decode.outputs.repo_and_tag_pairs }}; do
-            docker manifest push ${DOCKER_ORG}/${REPO_AND_TAG}
+            # disabled temporarily while testing
+            echo docker manifest push ${DOCKER_ORG}/${REPO_AND_TAG}
           done
