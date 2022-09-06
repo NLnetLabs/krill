@@ -180,28 +180,20 @@ jobs:
           - 'armv7-unknown-linux-musleabihf'  # for Docker
           - 'aarch64-unknown-linux-musl'      # for Docker
 
-          # disabled temporarily while testing
           # use GNU LIBC targets otherwise as Debian et al use GNU LIBC, not MUSL.
-          # - 'arm-unknown-linux-gnueabihf'     # for DEB
-          # - 'armv7-unknown-linux-gnueabihf'   # for DEB
-          # - 'aarch64-unknown-linux-gnu'       # for DEB
+          - 'arm-unknown-linux-gnueabihf'     # for DEB
+          - 'armv7-unknown-linux-gnueabihf'   # for DEB
+          - 'aarch64-unknown-linux-gnu'       # for DEB
     steps:
-    # - name: Checkout repository
-    #   uses: actions/checkout@v1
+    - name: Checkout repository
+      uses: actions/checkout@v1
 
-    # - name: Cross compile
-    #   uses: actions-rs/cargo@v1
-    #   with:
-    #     use-cross: true
-    #     command: build
-    #     args: --locked --no-default-features --features static-openssl --target ${{ matrix.target }}
-
-    - name: Temporary fake compile step
-      run: |
-        mkdir -p target/${{ matrix.target }}/debug/
-        echo blah > target/${{ matrix.target }}/debug/krill
-        echo blah > target/${{ matrix.target }}/debug/krillc
-        echo blah > target/${{ matrix.target }}/debug/krillup
+    - name: Cross compile
+      uses: actions-rs/cargo@v1
+      with:
+        use-cross: true
+        command: build
+        args: --locked --release --features static-openssl --target ${{ matrix.target }}
 
     # Upload cross compiled binaries as GitHub Actions artifacts for use by the `pkg` job below. We can't use job
     # outputs as those are limited to 50 MB which we could easily exceed. We can't use actions/cache as cached items
@@ -214,9 +206,9 @@ jobs:
       with:
         name: tmp-cross-binaries-${{ matrix.target }}
         path: |
-          target/${{ matrix.target }}/debug/krill
-          target/${{ matrix.target }}/debug/krillc
-          target/${{ matrix.target }}/debug/krillup
+          target/${{ matrix.target }}/release/krill
+          target/${{ matrix.target }}/release/krillc
+          target/${{ matrix.target }}/release/krillup
 
   # -------------------------------------------------------------------------------------------------------------------
   # Job: 'pkg'
@@ -226,7 +218,6 @@ jobs:
   #   - https://github.com/mmstick/cargo-deb
   #   - https://github.com/cat-in-136/cargo-generate-rpm
   pkg:
-    if: false # disabled temporarily while testing
     needs: cross
     runs-on: ubuntu-latest
     # Build on the platform we are targeting in order to avoid https://github.com/rust-lang/rust/issues/57497.
@@ -994,10 +985,9 @@ jobs:
         #   cargo_args:  (optional) can be used when testing, e.g. set to '--no-default-features' to speed up the Krill
         #                build.
         include:
-          # disabled temporarily while testing
-          # - platform:    'linux/amd64'
-          #   shortname:   'amd64'
-          #   mode:        'build'
+          - platform:    'linux/amd64'
+            shortname:   'amd64'
+            mode:        'build'
 
           - platform:    'linux/arm/v6'
             shortname:   'armv6'
@@ -1087,8 +1077,7 @@ jobs:
           path: /tmp/docker-${{ matrix.shortname }}-img.tar
 
       - name: Publish image to Docker Hub
-        if: false # disabled temporarily while testing
-        #if: contains(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' # disabled temporarily while testing
+        if: contains(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
         uses: docker/build-push-action@v2
         with:
           context: .
@@ -1108,7 +1097,7 @@ jobs:
   # Logs in to Docker Hub using secrets configured in this GitHub repository.
   docker-manifest:
     needs: [docker_pre, docker]
-    # if: contains(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
+    if: contains(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
     runs-on: ubuntu-20.04
     steps:
       - name: Log into Docker Hub
@@ -1132,13 +1121,8 @@ jobs:
         run: |
           LOWER_DOCKER_ORG="${{ steps.decode.outputs.lower_docker_org }}"
           for REPO_AND_TAG in ${{ steps.decode.outputs.repo_and_tag_pairs }}; do
-            # disabled temporarily while testing
-            # docker manifest create --amend ${LOWER_DOCKER_ORG}/${REPO_AND_TAG} \
-            #   ${LOWER_DOCKER_ORG}/${REPO_AND_TAG}-amd64 \
-            #   ${LOWER_DOCKER_ORG}/${REPO_AND_TAG}-armv6 \
-            #   ${LOWER_DOCKER_ORG}/${REPO_AND_TAG}-armv7 \
-            #   ${LOWER_DOCKER_ORG}/${REPO_AND_TAG}-arm64
             docker manifest create --amend ${LOWER_DOCKER_ORG}/${REPO_AND_TAG} \
+              ${LOWER_DOCKER_ORG}/${REPO_AND_TAG}-amd64 \
               ${LOWER_DOCKER_ORG}/${REPO_AND_TAG}-armv6 \
               ${LOWER_DOCKER_ORG}/${REPO_AND_TAG}-armv7 \
               ${LOWER_DOCKER_ORG}/${REPO_AND_TAG}-arm64
@@ -1148,6 +1132,5 @@ jobs:
         run: |
           LOWER_DOCKER_ORG="${{ steps.decode.outputs.lower_docker_org }}"
           for REPO_AND_TAG in ${{ steps.decode.outputs.repo_and_tag_pairs }}; do
-            # disabled temporarily while testing
-            echo docker manifest push ${LOWER_DOCKER_ORG}/${REPO_AND_TAG}
+            docker manifest push ${LOWER_DOCKER_ORG}/${REPO_AND_TAG}
           done
