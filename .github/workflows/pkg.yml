@@ -892,6 +892,7 @@ jobs:
     outputs:
       all_repo_and_tag_pairs: ${{ steps.encode.outputs.all_repo_and_tag_pairs }}
       first_repo_and_tag_pair: ${{ steps.encode.outputs.first_repo_and_tag_pair }}
+      lower_docker_org: ${{ steps.encode.outputs.lower_docker_org }}
     steps:
       # Based on the Git ref, e.g. a tag or branch, determine the appropriate tag(s) for the Docker image we will
       # create, e.g. <app>:unstable for a main branch commit, or <app>:v1.2.3 _and_ <app>:latest for a release tag, or
@@ -956,6 +957,9 @@ jobs:
 
           ENCODED_FIRST_REPO_AND_TAG_PAIR=$(echo "${{ fromJSON(steps.meta.outputs.json).tags[0] }}" | base64)
           echo "::set-output name=first_repo_and_tag_pair::${ENCODED_FIRST_REPO_AND_TAG_PAIR}"
+
+          ENCODED_LOWER_DOCKER_ORG=$(echo "${DOCKER_ORG}" | tr '[:upper:]' '[:lower:]')
+          echo "::set-output name=lower_docker_org::${ENCODED_LOWER_DOCKER_ORG}"
 
 
   # -------------------------------------------------------------------------------------------------------------------
@@ -1044,7 +1048,8 @@ jobs:
           # image for 'latest' but instead push a multi-arch manifest for 'latest' which refers to the same
           # set of architecture specific images as the version specific multi-arch manifest we will publish.
           DOCKER_REPO_AND_TAG=$(echo "${{ needs.docker_pre.outputs.first_repo_and_tag_pair }}" | base64 -d)
-          echo "::set-output name=image_name::${DOCKER_ORG}/${DOCKER_REPO_AND_TAG}-${{ matrix.shortname }}"
+          LOWER_DOCKER_ORG=$(echo "${{ needs.docker_pre.outputs.lower_docker_org }}" | base64 -d)
+          echo "::set-output name=image_name::${LOWER_DOCKER_ORG}/${DOCKER_REPO_AND_TAG}-${{ matrix.shortname }}"
 
       # Build a single architecture specific Docker image with an explicit architecture extension in the Docker
       # tag value. We have to push it to Docker Hub otherwise we can't make the multi-arch manifest below. If the
@@ -1120,24 +1125,29 @@ jobs:
           REPO_AND_TAG_PAIRS=$(echo ${{ needs.docker_pre.outputs.all_repo_and_tag_pairs }} | base64 -d)
           echo "::set-output name=repo_and_tag_pairs::${REPO_AND_TAG_PAIRS}"
 
+          LOWER_DOCKER_ORG="${{ needs.docker_pre.outputs.lower_docker_org }}" | base64 -d)
+          echo "::set-output name=lower_docker_org::${LOWER_DOCKER_ORG}"
+
       - name: Create multi-arch manifest(s)
         run: |
+          LOWER_DOCKER_ORG="${{ steps.decode.outputs.lower_docker_org }}"
           for REPO_AND_TAG in ${{ steps.decode.outputs.repo_and_tag_pairs }}; do
             # disabled temporarily while testing
-            # docker manifest create --amend ${DOCKER_ORG}/${REPO_AND_TAG} \
-            #   ${DOCKER_ORG}/${REPO_AND_TAG}-amd64 \
-            #   ${DOCKER_ORG}/${REPO_AND_TAG}-armv6 \
-            #   ${DOCKER_ORG}/${REPO_AND_TAG}-armv7 \
-            #   ${DOCKER_ORG}/${REPO_AND_TAG}-arm64
-            docker manifest create --amend ${DOCKER_ORG}/${REPO_AND_TAG} \
-              ${DOCKER_ORG}/${REPO_AND_TAG}-armv6 \
-              ${DOCKER_ORG}/${REPO_AND_TAG}-armv7 \
-              ${DOCKER_ORG}/${REPO_AND_TAG}-arm64
+            # docker manifest create --amend ${LOWER_DOCKER_ORG}/${REPO_AND_TAG} \
+            #   ${LOWER_DOCKER_ORG}/${REPO_AND_TAG}-amd64 \
+            #   ${LOWER_DOCKER_ORG}/${REPO_AND_TAG}-armv6 \
+            #   ${LOWER_DOCKER_ORG}/${REPO_AND_TAG}-armv7 \
+            #   ${LOWER_DOCKER_ORG}/${REPO_AND_TAG}-arm64
+            docker manifest create --amend ${LOWER_DOCKER_ORG}/${REPO_AND_TAG} \
+              ${LOWER_DOCKER_ORG}/${REPO_AND_TAG}-armv6 \
+              ${LOWER_DOCKER_ORG}/${REPO_AND_TAG}-armv7 \
+              ${LOWER_DOCKER_ORG}/${REPO_AND_TAG}-arm64
           done
 
       - name: Publish multi-arch image manifest(s) to Docker Hub
         run: |
+          LOWER_DOCKER_ORG="${{ steps.decode.outputs.lower_docker_org }}"
           for REPO_AND_TAG in ${{ steps.decode.outputs.repo_and_tag_pairs }}; do
             # disabled temporarily while testing
-            echo docker manifest push ${DOCKER_ORG}/${REPO_AND_TAG}
+            echo docker manifest push ${LOWER_DOCKER_ORG}/${REPO_AND_TAG}
           done
