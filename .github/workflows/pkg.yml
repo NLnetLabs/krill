@@ -948,7 +948,7 @@ jobs:
           echo "::set-output name=repo_and_tag_pairs::${ENCODED_REPO_AND_TAG_PAIRS}"
 
           ENCODED_JSON_TAGS=$(echo "${{ steps.meta.outputs.json }}" | base64)
-          echo "::set-output name=json::${ENCODED_JSON}"
+          echo "::set-output name=json::${ENCODED_JSON_TAGS}"
 
 
   # -------------------------------------------------------------------------------------------------------------------
