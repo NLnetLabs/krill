@@ -958,7 +958,7 @@ jobs:
           ENCODED_FIRST_REPO_AND_TAG_PAIR=$(echo "${{ fromJSON(steps.meta.outputs.json).tags[0] }}" | base64)
           echo "::set-output name=first_repo_and_tag_pair::${ENCODED_FIRST_REPO_AND_TAG_PAIR}"
 
-          ENCODED_LOWER_DOCKER_ORG=$(echo "${DOCKER_ORG}" | tr '[:upper:]' '[:lower:]')
+          ENCODED_LOWER_DOCKER_ORG=$(echo "${DOCKER_ORG}" | tr '[:upper:]' '[:lower:]' | base64)
           echo "::set-output name=lower_docker_org::${ENCODED_LOWER_DOCKER_ORG}"
 
 
