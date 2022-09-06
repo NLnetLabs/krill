@@ -207,9 +207,9 @@ jobs:
       with:
         name: tmp-cross-binaries-${{ matrix.target }}
         path: |
-          target/${{ matrix.target }}/release/krill
-          target/${{ matrix.target }}/release/krillc
-          target/${{ matrix.target }}/release/krillup
+          target/${{ matrix.target }}/debug/krill
+          target/${{ matrix.target }}/debug/krillc
+          target/${{ matrix.target }}/debug/krillup
 
   # -------------------------------------------------------------------------------------------------------------------
   # Job: 'pkg'
