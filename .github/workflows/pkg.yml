@@ -194,7 +194,7 @@ jobs:
       with:
         use-cross: true
         command: build
-        args: --locked --release --features static-openssl --target ${{ matrix.target }}
+        args: --locked --no-default-features --features static-openssl --target ${{ matrix.target }}
 
     # Upload cross compiled binaries as GitHub Actions artifacts for use by the `pkg` job below. We can't use job
     # outputs as those are limited to 50 MB which we could easily exceed. We can't use actions/cache as cached items
