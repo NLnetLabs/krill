@@ -883,8 +883,8 @@ jobs:
   docker_pre:
     runs-on: ubuntu-20.04
     outputs:
-      repo_and_tag_pairs: ${{ steps.encode.outputs.repo_and_tag_pairs }}
-      json: ${{ steps.encode.outputs.json }}
+      all_repo_and_tag_pairs: ${{ steps.encode.outputs.all_repo_and_tag_pairs }}
+      first_repo_and_tag_pair: ${{ steps.encode.outputs.first_repo_and_tag_pair }}
     steps:
       # Based on the Git ref, e.g. a tag or branch, determine the appropriate tag(s) for the Docker image we will
       # create, e.g. <app>:unstable for a main branch commit, or <app>:v1.2.3 _and_ <app>:latest for a release tag, or
@@ -944,11 +944,11 @@ jobs:
       - name: Encode outputs for passing safely to downstream jobs
         id: encode
         run: |
-          ENCODED_REPO_AND_TAG_PAIRS=$(echo "${{ steps.meta.outputs.tags }}" | base64)
-          echo "::set-output name=repo_and_tag_pairs::${ENCODED_REPO_AND_TAG_PAIRS}"
+          ENCODED_ALL_REPO_AND_TAG_PAIRS=$(echo "${{ steps.meta.outputs.tags }}" | base64)
+          echo "::set-output name=all_repo_and_tag_pairs::${ENCODED_ALL_REPO_AND_TAG_PAIRS}"
 
-          ENCODED_JSON_TAGS=$(echo "${{ steps.meta.outputs.json }}" | base64)
-          echo "::set-output name=json::${ENCODED_JSON_TAGS}"
+          ENCODED_FIRST_REPO_AND_TAG_PAIR=$(echo "${{ fromJSON(steps.meta.outputs.json).tags[0] }}" | base64)
+          echo "::set-output name=json::${ENCODED_FIRST_REPO_AND_TAG_PAIR}"
 
 
   # -------------------------------------------------------------------------------------------------------------------
@@ -1036,7 +1036,7 @@ jobs:
           # Don't use the [1]th tag (if present) which would be '<repo>:latest', as we won't build or publish an
           # image for 'latest' but instead push a multi-arch manifest for 'latest' which refers to the same
           # set of architecture specific images as the version specific multi-arch manifest we will publish.
-          DOCKER_REPO_AND_TAG=$(echo "${{ fromJSON(needs.docker_pre.outputs.json).tags[0] }}" | base64 -d)
+          DOCKER_REPO_AND_TAG=$(echo ${{ needs.docker_pre.outputs.first_repo_and_tag_pair }}" | base64 -d)
           echo "::set-output name=image_name::${DOCKER_ORG}/${DOCKER_REPO_AND_TAG}-${{ matrix.shortname }}"
 
       # Build a single architecture specific Docker image with an explicit architecture extension in the Docker
@@ -1110,7 +1110,7 @@ jobs:
       - name: Decode encoded Docker repo name and tag
         id: decode
         run: |
-          REPO_AND_TAG_PAIRS=$(echo ${{ needs.docker_pre.outputs.repo_and_tag_pairs }} | base64 -d)
+          REPO_AND_TAG_PAIRS=$(echo ${{ needs.docker_pre.outputs.all_repo_and_tag_pairs }} | base64 -d)
           echo "::set-output name=repo_and_tag_pairs::${REPO_AND_TAG_PAIRS}"
 
       - name: Create multi-arch manifest(s)
