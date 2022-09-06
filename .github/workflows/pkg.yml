@@ -186,15 +186,22 @@ jobs:
           # - 'armv7-unknown-linux-gnueabihf'   # for DEB
           # - 'aarch64-unknown-linux-gnu'       # for DEB
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v1
+    # - name: Checkout repository
+    #   uses: actions/checkout@v1
 
-    - name: Cross compile
-      uses: actions-rs/cargo@v1
-      with:
-        use-cross: true
-        command: build
-        args: --locked --no-default-features --features static-openssl --target ${{ matrix.target }}
+    # - name: Cross compile
+    #   uses: actions-rs/cargo@v1
+    #   with:
+    #     use-cross: true
+    #     command: build
+    #     args: --locked --no-default-features --features static-openssl --target ${{ matrix.target }}
+
+    - name: Temporary fake compile step
+      run: |
+        mkdir -p target/${{ matrix.target }}/debug/
+        echo blah > target/${{ matrix.target }}/debug/krill
+        echo blah > target/${{ matrix.target }}/debug/krillc
+        echo blah > target/${{ matrix.target }}/debug/krillup
 
     # Upload cross compiled binaries as GitHub Actions artifacts for use by the `pkg` job below. We can't use job
     # outputs as those are limited to 50 MB which we could easily exceed. We can't use actions/cache as cached items
