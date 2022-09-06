@@ -955,7 +955,7 @@ jobs:
           echo "::set-output name=all_repo_and_tag_pairs::${ENCODED_ALL_REPO_AND_TAG_PAIRS}"
 
           ENCODED_FIRST_REPO_AND_TAG_PAIR=$(echo "${{ fromJSON(steps.meta.outputs.json).tags[0] }}" | base64)
-          echo "::set-output name=json::${ENCODED_FIRST_REPO_AND_TAG_PAIR}"
+          echo "::set-output name=first_repo_and_tag_pair::${ENCODED_FIRST_REPO_AND_TAG_PAIR}"
 
 
   # -------------------------------------------------------------------------------------------------------------------
