@@ -1032,7 +1032,7 @@ jobs:
           # image for 'latest' but instead push a multi-arch manifest for 'latest' which refers to the same
           # set of architecture specific images as the version specific multi-arch manifest we will publish.
           DOCKER_REPO_AND_TAG=$(echo "${{ needs.docker_pre.outputs.repo_and_tag_pairs[0]" }} | base64 -d)
-          echo "::set-output name=image_name::"${DOCKER_ORG}/${DOCKER_REPO_AND_TAG}"-${{ matrix.shortname }}"
+          echo "::set-output name=image_name::${DOCKER_ORG}/${DOCKER_REPO_AND_TAG}-${{ matrix.shortname }}"
 
       # Build a single architecture specific Docker image with an explicit architecture extension in the Docker
       # tag value. We have to push it to Docker Hub otherwise we can't make the multi-arch manifest below. If the
