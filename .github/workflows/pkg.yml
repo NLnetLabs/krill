@@ -926,7 +926,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v4
         with:
-          images: ${DOCKER_REPO}
+          images: ${{ env.DOCKER_REPO }}
           flavor: |
             latest=false
           tags: |
