@@ -884,6 +884,7 @@ jobs:
     runs-on: ubuntu-20.04
     outputs:
       repo_and_tag_pairs: ${{ steps.encode.outputs.repo_and_tag_pairs }}
+      json: ${{ steps.encode.outputs.json }}
     steps:
       # Based on the Git ref, e.g. a tag or branch, determine the appropriate tag(s) for the Docker image we will
       # create, e.g. <app>:unstable for a main branch commit, or <app>:v1.2.3 _and_ <app>:latest for a release tag, or
@@ -943,8 +944,11 @@ jobs:
       - name: Encode outputs for passing safely to downstream jobs
         id: encode
         run: |
-          ENCODED_REPO_AND_TAG_PAIRS=$(echo ${{ steps.meta.outputs.tags }} | base64)
+          ENCODED_REPO_AND_TAG_PAIRS=$(echo ${{ steps.meta.outputs.tags) }} | base64)
           echo "::set-output name=repo_and_tag_pairs::${ENCODED_REPO_AND_TAG_PAIRS}"
+
+          ENCODED_JSON_TAGS=$(echo ${{ steps.meta.outputs.json }} | base64)
+          echo "::set-output name=json::${ENCODED_JSON}"
 
 
   # -------------------------------------------------------------------------------------------------------------------
@@ -1032,7 +1036,7 @@ jobs:
           # Don't use the [1]th tag (if present) which would be '<repo>:latest', as we won't build or publish an
           # image for 'latest' but instead push a multi-arch manifest for 'latest' which refers to the same
           # set of architecture specific images as the version specific multi-arch manifest we will publish.
-          DOCKER_REPO_AND_TAG=$(echo "${{ needs.docker_pre.outputs.repo_and_tag_pairs[0] }}" | base64 -d)
+          DOCKER_REPO_AND_TAG=$(echo "${{ fromJSON(needs.docker_pre.outputs.json).tags[0] }}" | base64 -d)
           echo "::set-output name=image_name::${DOCKER_ORG}/${DOCKER_REPO_AND_TAG}-${{ matrix.shortname }}"
 
       # Build a single architecture specific Docker image with an explicit architecture extension in the Docker
