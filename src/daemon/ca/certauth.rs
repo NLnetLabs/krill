@@ -763,8 +763,8 @@ impl CertAuth {
         // and one of them is about to expire, while the other is still valid for a while.. then telling
         // the child that they are eligible to the not after time of the other is still fine - it would
         // still trigger them to request a replacement for the first which was about to expire.
-        let mut not_after = Time::now() + Duration::weeks(issuance_timing.timing_child_certificate_valid_weeks);
-        let threshold = Time::now() + Duration::weeks(issuance_timing.timing_child_certificate_reissue_weeks_before);
+        let mut not_after = issuance_timing.new_child_cert_not_after();
+        let threshold = issuance_timing.new_child_cert_issuance_threshold();
 
         for ki in child_keys {
             if let Some(issued) = my_rc.issued(&ki) {
