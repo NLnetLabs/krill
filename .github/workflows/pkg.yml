@@ -1114,8 +1114,6 @@ jobs:
           username: ${{ secrets.DOCKER_HUB_ID }}
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
-      # Push the image and tags to Docker Hub.
-      # The build uses the cached build outputs from the step above so we don't have to wait for the build again.
       - name: Decode encoded Docker repo name and tag
         id: decode
         run: |
