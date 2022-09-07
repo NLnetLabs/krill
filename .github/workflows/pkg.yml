@@ -1117,10 +1117,14 @@ jobs:
       - name: Decode encoded Docker repo name and tag
         id: decode
         run: |
-          REPO_AND_TAG_PAIRS=$(echo ${{ needs.docker_pre.outputs.all_repo_and_tag_pairs }} | base64 -d)
-          echo "::set-output name=repo_and_tag_pairs::${REPO_AND_TAG_PAIRS}"
-
           LOWER_DOCKER_ORG=$(echo ${{ needs.docker_pre.outputs.lower_docker_org }} | base64 -d)
+          REPO_AND_TAG_PAIRS=$(echo ${{ needs.docker_pre.outputs.all_repo_and_tag_pairs }} | base64 -d)
+
+          # Convert the line-break separated tag pairs into space separated tag pairs without a trailing line break.
+          # This can then easily be used with a shell for loop in the steps below.
+          REPO_AND_TAG_PAIRS=$(echo ${REPO_AND_TAG_PAIRS} | tr "\n" " " | tr -d "\n")
+
+          echo "::set-output name=repo_and_tag_pairs::${REPO_AND_TAG_PAIRS}"
           echo "::set-output name=lower_docker_org::${LOWER_DOCKER_ORG}"
 
       - name: Create multi-arch manifest(s)
