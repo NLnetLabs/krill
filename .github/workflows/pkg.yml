@@ -885,6 +885,9 @@ jobs:
       first_repo_and_tag_pair: ${{ steps.encode.outputs.first_repo_and_tag_pair }}
       lower_docker_org: ${{ steps.encode.outputs.lower_docker_org }}
     steps:
+      # NOTE: This step does NOT actually tag anything in Docker, either locally or on Docker Hub, it only generates a
+      # potential set of string tag values that can be used later in the workflow.
+      #
       # Based on the Git ref, e.g. a tag or branch, determine the appropriate tag(s) for the Docker image we will
       # create, e.g. <app>:unstable for a main branch commit, or <app>:v1.2.3 _and_ <app>:latest for a release tag, or
       # <app>:test for anything else. The action also determines a set of potential Docker labels that we might wish to
@@ -923,6 +926,11 @@ jobs:
       #
       # On push to Git refs/heads/main the Docker tag will be '<app>:unstable' because of:
       #   type=raw,value=unstable,enable=${{ github.ref == 'refs/heads/main' }}
+      #
+      # We set flavor latest=false to disable the default automatic output of a "latest" tag as there are cases
+      # where a Git tag was pushed but we do NOT want to generate a "latest" tag, e.g. for release candidates,
+      # instead we configure the docker/metadata-action with our own rule determining when to output a "latest"
+      # tag.
       - name: Extract metadata for tagging Docker images
         id: meta
         uses: docker/metadata-action@v4
@@ -933,7 +941,7 @@ jobs:
           tags: |
             type=semver,pattern={{version}},prefix=v
             type=raw,value=unstable,enable=${{ github.ref == 'refs/heads/main' }}
-            type=raw,value=latest,enable=${{ github.ref != 'refs/heads/main' && !contains(github.ref, '-') }}
+            type=raw,value=latest,enable=true
             type=raw,value=test,enable=${{ !contains(github.ref, 'refs/tags/v') && github.ref != 'refs/heads/main' }}
 
       # Encode values as base64 to avoid GitHub Actions refusing to pass the output on to the job that needs it with
