@@ -3,7 +3,7 @@ use std::{cmp::Ordering, collections::HashSet, fmt, str::FromStr};
 use rpki::repository::x509::Time;
 
 use crate::commons::{
-    api::{AsNumber, RoaDefinition, TypedPrefix},
+    api::{AsNumber, RoaPayload, TypedPrefix},
     bgp::{IpRange, TypedPrefixTree, TypedPrefixTreeBuilder},
 };
 
@@ -13,9 +13,9 @@ pub type AnnouncementTree = TypedPrefixTree<Announcement>;
 
 //------------ RoaTree -------------------------------------------------------
 
-pub type RoaTree = TypedPrefixTree<RoaDefinition>;
+pub type RoaTree = TypedPrefixTree<RoaPayload>;
 
-pub fn make_roa_tree(roas: &[RoaDefinition]) -> RoaTree {
+pub fn make_roa_tree(roas: &[RoaPayload]) -> RoaTree {
     make_tree(roas)
 }
 
@@ -115,7 +115,7 @@ impl FromStr for Announcement {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let as_roa = RoaDefinition::from_str(s).map_err(|e| format!("Can't parse: {}, Error: {}", s, e))?;
+        let as_roa = RoaPayload::from_str(s).map_err(|e| format!("Can't parse: {}, Error: {}", s, e))?;
         if as_roa.max_length().is_some() {
             Err(format!("Cannot parse announcement (max length not allowed): {}", s))
         } else {
@@ -146,14 +146,14 @@ impl PartialOrd for Announcement {
     }
 }
 
-impl From<Announcement> for RoaDefinition {
+impl From<Announcement> for RoaPayload {
     fn from(a: Announcement) -> Self {
-        RoaDefinition::new(a.asn, a.prefix, None)
+        RoaPayload::new(a.asn, a.prefix, None)
     }
 }
 
-impl From<RoaDefinition> for Announcement {
-    fn from(d: RoaDefinition) -> Self {
+impl From<RoaPayload> for Announcement {
+    fn from(d: RoaPayload) -> Self {
         Announcement {
             asn: d.asn(),
             prefix: d.prefix(),
@@ -239,8 +239,8 @@ impl Default for Announcements {
 pub struct ValidatedAnnouncement {
     announcement: Announcement,
     validity: AnnouncementValidity,
-    authorizing: Option<RoaDefinition>,
-    disallowing: Vec<RoaDefinition>,
+    authorizing: Option<RoaPayload>,
+    disallowing: Vec<RoaPayload>,
 }
 
 impl ValidatedAnnouncement {
@@ -252,14 +252,7 @@ impl ValidatedAnnouncement {
         self.announcement
     }
 
-    pub fn unpack(
-        self,
-    ) -> (
-        Announcement,
-        AnnouncementValidity,
-        Option<RoaDefinition>,
-        Vec<RoaDefinition>,
-    ) {
+    pub fn unpack(self) -> (Announcement, AnnouncementValidity, Option<RoaPayload>, Vec<RoaPayload>) {
         (self.announcement, self.validity, self.authorizing, self.disallowing)
     }
 }
@@ -307,9 +300,9 @@ mod tests {
 
     #[test]
     fn validate_announcement() {
-        let roa_authorizing_1 = definition("10.0.0.0/23-24 => 64496");
-        let roa_authorizing_2 = definition("10.0.0.0/23 => 64498");
-        let roa_irrelevant = definition("10.1.0.0/23-24 => 64496");
+        let roa_authorizing_1 = roa_payload("10.0.0.0/23-24 => 64496");
+        let roa_authorizing_2 = roa_payload("10.0.0.0/23 => 64498");
+        let roa_irrelevant = roa_payload("10.1.0.0/23-24 => 64496");
 
         let ann_v1 = announcement("10.0.0.0/24 => 64496");
         let ann_v2 = announcement("10.0.1.0/24 => 64496");

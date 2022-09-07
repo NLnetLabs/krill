@@ -9,7 +9,7 @@ use rpki::{
 };
 
 use krill::{
-    commons::api::{ObjectName, RoaDefinition, RoaDefinitionUpdates},
+    commons::api::{ObjectName, RoaConfigurationUpdates, RoaPayload},
     daemon::ca::ta_handle,
     test::*,
 };
@@ -40,13 +40,13 @@ async fn functional_roas() {
     let ca_res = resources("AS65000", "10.0.0.0/8", "");
     let ca_res_shrunk = resources("AS65000", "10.0.0.0/16", "");
 
-    let route_resource_set_10_0_0_0_def_1 = RoaDefinition::from_str("10.0.0.0/16-16 => 64496").unwrap();
-    let route_resource_set_10_0_0_0_def_2 = RoaDefinition::from_str("10.0.0.0/16-16 => 64497").unwrap();
-    let route_resource_set_10_0_0_0_def_3 = RoaDefinition::from_str("10.0.0.0/24-24 => 64496").unwrap();
-    let route_resource_set_10_0_0_0_def_4 = RoaDefinition::from_str("10.0.0.0/24-24 => 64497").unwrap();
+    let route_resource_set_10_0_0_0_def_1 = RoaPayload::from_str("10.0.0.0/16-16 => 64496").unwrap();
+    let route_resource_set_10_0_0_0_def_2 = RoaPayload::from_str("10.0.0.0/16-16 => 64497").unwrap();
+    let route_resource_set_10_0_0_0_def_3 = RoaPayload::from_str("10.0.0.0/24-24 => 64496").unwrap();
+    let route_resource_set_10_0_0_0_def_4 = RoaPayload::from_str("10.0.0.0/24-24 => 64497").unwrap();
 
     // The following definition will be removed in the shrunk set
-    let route_resource_set_10_1_0_0_def_1 = RoaDefinition::from_str("10.1.0.0/24-24 => 64496").unwrap();
+    let route_resource_set_10_1_0_0_def_1 = RoaPayload::from_str("10.1.0.0/24-24 => 64496").unwrap();
 
     let rcn_0 = rcn(0);
 
@@ -86,7 +86,7 @@ async fn functional_roas() {
     }
 
     // short hand to expect ROAs under CA
-    async fn expect_roa_objects(ca: &CaHandle, roas: &[RoaDefinition]) {
+    async fn expect_roa_objects(ca: &CaHandle, roas: &[RoaPayload]) {
         let rcn_0 = ResourceClassName::from(0);
 
         let mut expected_files = expected_mft_and_crl(ca, &rcn_0).await;
@@ -105,10 +105,10 @@ async fn functional_roas() {
         info("#                                                                #");
         info("##################################################################");
         info("");
-        let mut updates = RoaDefinitionUpdates::empty();
-        updates.add(route_resource_set_10_0_0_0_def_1);
-        updates.add(route_resource_set_10_0_0_0_def_2);
-        updates.add(route_resource_set_10_1_0_0_def_1);
+        let mut updates = RoaConfigurationUpdates::empty();
+        updates.add(route_resource_set_10_0_0_0_def_1.into());
+        updates.add(route_resource_set_10_0_0_0_def_2.into());
+        updates.add(route_resource_set_10_1_0_0_def_1.into());
         ca_route_authorizations_update(&ca, updates).await;
 
         expect_roa_objects(
@@ -174,9 +174,9 @@ async fn functional_roas() {
         info("#                                                                #");
         info("##################################################################");
         info("");
-        let mut updates = RoaDefinitionUpdates::empty();
-        updates.add(route_resource_set_10_0_0_0_def_3);
-        updates.add(route_resource_set_10_0_0_0_def_4);
+        let mut updates = RoaConfigurationUpdates::empty();
+        updates.add(route_resource_set_10_0_0_0_def_3.into());
+        updates.add(route_resource_set_10_0_0_0_def_4.into());
         ca_route_authorizations_update(&ca, updates).await;
 
         // expect MFT and CRL and aggregated ROA files
@@ -195,7 +195,7 @@ async fn functional_roas() {
         info("#                                                                #");
         info("##################################################################");
         info("");
-        let mut updates = RoaDefinitionUpdates::empty();
+        let mut updates = RoaConfigurationUpdates::empty();
         updates.remove(route_resource_set_10_0_0_0_def_2);
         updates.remove(route_resource_set_10_0_0_0_def_3);
         updates.remove(route_resource_set_10_0_0_0_def_4);

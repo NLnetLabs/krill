@@ -35,10 +35,10 @@ use crate::{
     commons::{
         api::{
             AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, BgpSecAsnKey,
-            BgpSecCsrInfoList, BgpSecDefinition, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ObjectName,
-            ParentCaContact, ParentCaReq, ParentStatuses, PublicationServerUris, PublisherDetails, PublisherList,
-            ResourceClassKeysInfo, RoaDefinition, RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, TypedPrefix,
-            UpdateChildRequest,
+            BgpSecCsrInfoList, BgpSecDefinition, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ConfiguredRoa,
+            ObjectName, ParentCaContact, ParentCaReq, ParentStatuses, PublicationServerUris, PublisherDetails,
+            PublisherList, ResourceClassKeysInfo, RoaConfiguration, RoaConfigurationUpdates, RoaPayload, RtaList,
+            RtaName, RtaPrepResponse, TypedPrefix, UpdateChildRequest,
         },
         bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion},
         crypto::SignSupport,
@@ -187,7 +187,7 @@ pub async fn start_krill_pubd() -> PathBuf {
 }
 
 pub async fn krill_admin(command: Command) -> ApiResponse {
-    let krillc_opts = Options::new(https(KRILL_SERVER_URI), "secret", ReportFormat::Json, command);
+    let krillc_opts = Options::new(service_uri(KRILL_SERVER_URI), "secret", ReportFormat::Json, command);
     match KrillClient::process(krillc_opts).await {
         Ok(res) => res, // ok
         Err(e) => panic!("{}", e),
@@ -200,7 +200,7 @@ pub async fn krill_embedded_pubd_admin(command: PubServerCommand) -> ApiResponse
 
 pub async fn krill_dedicated_pubd_admin(command: PubServerCommand) -> ApiResponse {
     let options = Options::new(
-        https(KRILL_PUBD_SERVER_URI),
+        service_uri(KRILL_PUBD_SERVER_URI),
         "secret",
         ReportFormat::Json,
         Command::PubServer(command),
@@ -212,7 +212,7 @@ pub async fn krill_dedicated_pubd_admin(command: PubServerCommand) -> ApiRespons
 }
 
 pub async fn krill_admin_expect_error(command: Command) -> Error {
-    let krillc_opts = Options::new(https(KRILL_SERVER_URI), "secret", ReportFormat::Json, command);
+    let krillc_opts = Options::new(service_uri(KRILL_SERVER_URI), "secret", ReportFormat::Json, command);
     match KrillClient::process(krillc_opts).await {
         Ok(_res) => panic!("Expected error"),
         Err(e) => e,
@@ -375,7 +375,7 @@ pub async fn delete_parent(ca: &CaHandle, parent: &CaHandle) {
     krill_admin(Command::CertAuth(CaCommand::RemoveParent(ca.clone(), parent.convert()))).await;
 }
 
-pub async fn ca_route_authorizations_update(ca: &CaHandle, updates: RoaDefinitionUpdates) {
+pub async fn ca_route_authorizations_update(ca: &CaHandle, updates: RoaConfigurationUpdates) {
     krill_admin(Command::CertAuth(CaCommand::RouteAuthorizationsUpdate(
         ca.clone(),
         updates,
@@ -383,7 +383,7 @@ pub async fn ca_route_authorizations_update(ca: &CaHandle, updates: RoaDefinitio
     .await;
 }
 
-pub async fn ca_route_authorizations_update_expect_error(ca: &CaHandle, updates: RoaDefinitionUpdates) {
+pub async fn ca_route_authorizations_update_expect_error(ca: &CaHandle, updates: RoaConfigurationUpdates) {
     krill_admin_expect_error(Command::CertAuth(CaCommand::RouteAuthorizationsUpdate(
         ca.clone(),
         updates,
@@ -398,7 +398,7 @@ pub async fn ca_route_authorizations_suggestions(ca: &CaHandle) -> BgpAnalysisSu
     }
 }
 
-pub async fn ca_route_authorization_dryrun(ca: &CaHandle, updates: RoaDefinitionUpdates) -> BgpAnalysisReport {
+pub async fn ca_route_authorization_dryrun(ca: &CaHandle, updates: RoaConfigurationUpdates) -> BgpAnalysisReport {
     match krill_admin(Command::CertAuth(CaCommand::RouteAuthorizationsDryRunUpdate(
         ca.clone(),
         updates,
@@ -658,6 +658,10 @@ pub fn https(s: &str) -> uri::Https {
     uri::Https::from_str(s).unwrap()
 }
 
+pub fn service_uri(s: &str) -> idexchange::ServiceUri {
+    idexchange::ServiceUri::from_str(s).unwrap()
+}
+
 pub fn ca_handle(s: &str) -> CaHandle {
     CaHandle::from_str(s).unwrap()
 }
@@ -688,12 +692,20 @@ pub fn save_file(base_dir: &Path, file_name: &str, content: &[u8]) {
 // Support testing announcements and ROAs etc
 
 pub fn announcement(s: &str) -> Announcement {
-    let def = definition(s);
+    let def = roa_payload(s);
     Announcement::from(def)
 }
 
-pub fn definition(s: &str) -> RoaDefinition {
-    RoaDefinition::from_str(s).unwrap()
+pub fn configured_roa(s: &str) -> ConfiguredRoa {
+    ConfiguredRoa::new(roa_configuration(s))
+}
+
+pub fn roa_configuration(s: &str) -> RoaConfiguration {
+    RoaConfiguration::from_str(s).unwrap()
+}
+
+pub fn roa_payload(s: &str) -> RoaPayload {
+    RoaPayload::from_str(s).unwrap()
 }
 
 pub fn typed_prefix(s: &str) -> TypedPrefix {

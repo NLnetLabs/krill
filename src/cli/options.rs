@@ -2,7 +2,6 @@
 use std::collections::HashMap;
 
 use std::{
-    convert::TryFrom,
     path::PathBuf,
     str::{from_utf8_unchecked, FromStr},
     {env, fmt},
@@ -33,7 +32,7 @@ use crate::{
         api::{
             AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionFormatError, AspaProvidersUpdate,
             AuthorizationFmtError, BgpSecAsnKey, BgpSecDefinition, CertAuthInit, ParentCaReq, PublicationServerUris,
-            RoaDefinition, RoaDefinitionUpdates, RtaName, Token, UpdateChildRequest,
+            RoaConfiguration, RoaConfigurationUpdates, RoaPayload, RtaName, Token, UpdateChildRequest,
         },
         crypto::SignSupport,
         error::KrillIoError,
@@ -44,7 +43,7 @@ use crate::{
 };
 
 struct GeneralArgs {
-    server: uri::Https,
+    server: idexchange::ServiceUri,
     token: Token,
     format: ReportFormat,
     api: bool,
@@ -54,15 +53,15 @@ impl GeneralArgs {
     fn from_matches(matches: &ArgMatches) -> Result<Self, Error> {
         let server = {
             let mut server = match env::var(KRILL_CLI_SERVER_ENV) {
-                Ok(server_str) => Some(uri::Https::try_from(server_str)?),
+                Ok(server_str) => Some(idexchange::ServiceUri::from_str(&server_str)?),
                 Err(_) => None,
             };
 
             if let Some(server_str) = matches.value_of(KRILL_CLI_SERVER_ARG) {
-                server = Some(uri::Https::from_str(server_str)?);
+                server = Some(idexchange::ServiceUri::from_str(server_str)?);
             }
 
-            server.unwrap_or_else(|| uri::Https::from_str(KRILL_CLI_SERVER_DFLT).unwrap())
+            server.unwrap_or_else(|| idexchange::ServiceUri::from_str(KRILL_CLI_SERVER_DFLT).unwrap())
         };
 
         let token = {
@@ -102,7 +101,7 @@ impl GeneralArgs {
 impl Default for GeneralArgs {
     fn default() -> Self {
         GeneralArgs {
-            server: uri::Https::from_str(KRILL_CLI_SERVER_DFLT).unwrap(),
+            server: idexchange::ServiceUri::from_str(KRILL_CLI_SERVER_DFLT).unwrap(),
             token: Token::from(""),
             format: ReportFormat::Text,
             api: false,
@@ -113,7 +112,7 @@ impl Default for GeneralArgs {
 /// This type holds all the necessary data to connect to a Krill daemon, and
 /// authenticate, and perform a specific action.
 pub struct Options {
-    pub server: uri::Https,
+    pub server: idexchange::ServiceUri,
     pub token: Token,
     pub format: ReportFormat,
     pub api: bool,
@@ -136,7 +135,7 @@ impl Options {
     }
 
     /// Creates a new Options explicitly (useful for testing)
-    pub fn new(server: uri::Https, token: &str, format: ReportFormat, command: Command) -> Self {
+    pub fn new(server: idexchange::ServiceUri, token: &str, format: ReportFormat, command: Command) -> Self {
         Options {
             server,
             token: Token::from(token),
@@ -1804,21 +1803,21 @@ impl Options {
 
             let bytes = Self::read_file_arg(path)?;
             let updates_str = unsafe { from_utf8_unchecked(&bytes) };
-            RoaDefinitionUpdates::from_str(updates_str)?
+            RoaConfigurationUpdates::from_str(updates_str)?
         } else {
             let mut added = vec![];
             let mut removed = vec![];
 
             if let Some(add) = matches.values_of("add") {
                 for roa_str in add {
-                    let roa: RoaDefinition = RoaDefinition::from_str(roa_str)?;
+                    let roa = RoaConfiguration::from_str(roa_str)?;
                     added.push(roa);
                 }
             }
 
             if let Some(remove) = matches.values_of("remove") {
                 for roa_str in remove {
-                    let roa: RoaDefinition = RoaDefinition::from_str(roa_str)?;
+                    let roa = RoaPayload::from_str(roa_str)?;
                     removed.push(roa);
                 }
             }
@@ -1829,7 +1828,7 @@ impl Options {
                 ));
             }
 
-            RoaDefinitionUpdates::new(added, removed)
+            RoaConfigurationUpdates::new(added, removed)
         };
 
         if matches.is_present("dryrun") && matches.is_present("try") {
@@ -2514,9 +2513,9 @@ pub enum CaCommand {
 
     // Authorizations
     RouteAuthorizationsList(CaHandle),
-    RouteAuthorizationsUpdate(CaHandle, RoaDefinitionUpdates),
-    RouteAuthorizationsTryUpdate(CaHandle, RoaDefinitionUpdates),
-    RouteAuthorizationsDryRunUpdate(CaHandle, RoaDefinitionUpdates),
+    RouteAuthorizationsUpdate(CaHandle, RoaConfigurationUpdates),
+    RouteAuthorizationsTryUpdate(CaHandle, RoaConfigurationUpdates),
+    RouteAuthorizationsDryRunUpdate(CaHandle, RoaConfigurationUpdates),
     BgpAnalysisFull(CaHandle),
     BgpAnalysisSuggest(CaHandle, Option<ResourceSet>),
 

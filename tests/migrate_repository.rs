@@ -8,7 +8,7 @@ use rpki::ca::provisioning::ResourceClassName;
 use rpki::repository::resources::ResourceSet;
 
 use krill::{
-    commons::api::{ObjectName, RoaDefinition, RoaDefinitionUpdates},
+    commons::api::{ObjectName, RoaConfigurationUpdates, RoaPayload},
     daemon::ca::ta_handle,
     test::*,
 };
@@ -44,7 +44,7 @@ async fn migrate_repository() {
 
     let ca1 = ca_handle("CA1");
     let ca1_res = ipv4_resources("10.0.0.0/16");
-    let ca1_route_definition = RoaDefinition::from_str("10.0.0.0/16-16 => 65000").unwrap();
+    let ca1_route_definition = RoaPayload::from_str("10.0.0.0/16-16 => 65000").unwrap();
 
     let rcn_0 = ResourceClassName::from(0);
 
@@ -90,8 +90,8 @@ async fn migrate_repository() {
         info("#                                                                #");
         info("##################################################################");
         info("");
-        let mut updates = RoaDefinitionUpdates::empty();
-        updates.add(ca1_route_definition);
+        let mut updates = RoaConfigurationUpdates::empty();
+        updates.add(ca1_route_definition.into());
         ca_route_authorizations_update(&ca1, updates).await;
     }
 
