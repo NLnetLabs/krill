@@ -945,7 +945,7 @@ jobs:
           tags: |
             type=semver,pattern={{version}},prefix=v
             type=raw,value=unstable,enable=${{ github.ref == 'refs/heads/main' }}
-            type=raw,value=latest,enable=true
+            type=raw,value=latest,enable=${{ github.ref != 'refs/heads/main' && !contains(github.ref, '-') }}
             type=raw,value=test,enable=${{ !contains(github.ref, 'refs/tags/v') && github.ref != 'refs/heads/main' }}
 
       # Encode values as base64 to avoid GitHub Actions refusing to pass the output on to the job that needs it with
@@ -1135,7 +1135,7 @@ jobs:
         run: |
           LOWER_DOCKER_ORG="${{ steps.decode.outputs.lower_docker_org }}"
           for REPO_AND_TAG in ${{ steps.decode.outputs.repo_and_tag_pairs }}; do
-            echo docker manifest create --amend ${LOWER_DOCKER_ORG}/${REPO_AND_TAG} \
+            docker manifest create --amend ${LOWER_DOCKER_ORG}/${REPO_AND_TAG} \
               ${LOWER_DOCKER_ORG}/${REPO_AND_TAG}-amd64 \
               ${LOWER_DOCKER_ORG}/${REPO_AND_TAG}-armv6 \
               ${LOWER_DOCKER_ORG}/${REPO_AND_TAG}-armv7 \
@@ -1146,5 +1146,5 @@ jobs:
         run: |
           LOWER_DOCKER_ORG="${{ steps.decode.outputs.lower_docker_org }}"
           for REPO_AND_TAG in ${{ steps.decode.outputs.repo_and_tag_pairs }}; do
-            echo docker manifest push ${LOWER_DOCKER_ORG}/${REPO_AND_TAG}
+            docker manifest push ${LOWER_DOCKER_ORG}/${REPO_AND_TAG}
           done
