@@ -1097,7 +1097,7 @@ jobs:
   # Logs in to Docker Hub using secrets configured in this GitHub repository.
   docker-manifest:
     needs: [docker_pre, docker]
-    if: contains(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
+    # if: contains(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
     runs-on: ubuntu-20.04
     steps:
       - name: Log into Docker Hub
@@ -1121,7 +1121,7 @@ jobs:
         run: |
           LOWER_DOCKER_ORG="${{ steps.decode.outputs.lower_docker_org }}"
           for REPO_AND_TAG in ${{ steps.decode.outputs.repo_and_tag_pairs }}; do
-            docker manifest create --amend ${LOWER_DOCKER_ORG}/${REPO_AND_TAG} \
+            echo docker manifest create --amend ${LOWER_DOCKER_ORG}/${REPO_AND_TAG} \
               ${LOWER_DOCKER_ORG}/${REPO_AND_TAG}-amd64 \
               ${LOWER_DOCKER_ORG}/${REPO_AND_TAG}-armv6 \
               ${LOWER_DOCKER_ORG}/${REPO_AND_TAG}-armv7 \
@@ -1132,5 +1132,5 @@ jobs:
         run: |
           LOWER_DOCKER_ORG="${{ steps.decode.outputs.lower_docker_org }}"
           for REPO_AND_TAG in ${{ steps.decode.outputs.repo_and_tag_pairs }}; do
-            docker manifest push ${LOWER_DOCKER_ORG}/${REPO_AND_TAG}
+            echo docker manifest push ${LOWER_DOCKER_ORG}/${REPO_AND_TAG}
           done
