@@ -52,7 +52,11 @@
 #
 # Per architecture images are built and pushed to Docker Hub with xxx-<arch> tags, and then a Docker Manifest is
 # created which groups these images into a single multi-arch image without the -<arch> extension on the tag. The
-# manifest is then also pushed to Docker Hub.
+# manifest is then also pushed to Docker Hub. In the case of a release tag (a "v*" Git tag that does not contain a
+# dash "-" character, i.e. is not a release candidate e.g. v0.1.2-rc3) two manifests are pushed: one for the release
+# tag, e.g. nlnetlabs/<app>:v0.1.2; and one for the "latest" tag, e.g. "nlnetlabs/<app>:latest" (to enable Docker users
+# to just run `docker run nlnetlabs/<app>` and get the latest stable release without having to know/specify the actual
+# version).
 #
 # Building of both x86-64 and non-x86-64 architecture images are handled by a single Dockerfile which supports two
 # modes of operation. In the default 'build' mode our app is compiled within the Docker container and only the final
