@@ -155,6 +155,43 @@ impl TaskQueue {
         }
     }
 
+    /// Drop all tasks for the removed CA
+    pub fn remove_tasks_for_ca(&self, removed_ca: &CaHandle) {
+        let mut q = self.q.write().unwrap();
+
+        // If the [`PriorityQueue`] would have a `retain` function
+        // then we would use that, but since it doesn't we need
+        // to do this the slightly hard way..
+        //
+        // We get and copy all tasks for the removed CA first, and then
+        // remove them in a follow-up loop. This is not the most efficient,
+        // but.. it's easy to follow and we are very unlikely to have many pending
+        // tasks for a removed CA. So, this is unlikely to be an issue.
+        let mut tasks_to_remove = vec![];
+
+        // Find matching tasks and clone them
+        for (task, _) in q.iter() {
+            match task {
+                Task::SyncRepo { ca }
+                | Task::SyncParent { ca, .. }
+                | Task::SuspendChildrenIfNeeded { ca }
+                | Task::ResourceClassRemoved { ca, .. }
+                | Task::UnexpectedKey { ca, .. } => {
+                    if ca == removed_ca {
+                        tasks_to_remove.push(task.clone())
+                    }
+                }
+
+                _ => {} // Not a CA specific task, ignore it and keep it
+            }
+        }
+
+        // Remove the matched tasks from the queue.
+        for task in tasks_to_remove {
+            q.remove(&task);
+        }
+    }
+
     pub fn server_started(&self) {
         self.schedule(Task::QueueStartTasks, now());
     }

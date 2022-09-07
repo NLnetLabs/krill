@@ -25,7 +25,7 @@ use crate::{
         actor::Actor,
         api::{
             rrdp::PublishElement, BgpSecCsrInfoList, BgpSecDefinitionUpdates, ParentServerInfo, PublicationServerInfo,
-            Timestamp,
+            RoaConfigurationUpdates, Timestamp,
         },
         api::{
             AddChildRequest, AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate,
@@ -45,7 +45,7 @@ use crate::{
         auth::Handle,
         ca::{
             self, ta_handle, CaObjectsStore, CaStatus, CertAuth, Cmd, CmdDet, DeprecatedRepository, IniDet,
-            ResourceTaggedAttestation, RouteAuthorizationUpdates, RtaContentRequest, RtaPrepareRequest, StatusStore,
+            ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest, StatusStore,
         },
         config::Config,
         mq::{now, TaskQueue},
@@ -408,7 +408,7 @@ impl CaManager {
 
         self.ca_store.drop_aggregate(ca_handle)?;
         self.status_store.remove_ca(ca_handle)?;
-
+        self.tasks.remove_tasks_for_ca(ca_handle);
         self.locks.drop_ca(ca_handle).await;
 
         Ok(())
@@ -1685,7 +1685,7 @@ impl CaManager {
             .ca_objects_store
             .ca_objects(ca_handle)?
             .closest_next_update()
-            .unwrap_or_else(|| Timestamp::now_plus_hours(self.config.republish_hours()));
+            .unwrap_or_else(|| self.config.issuance_timing.republish_worst_case().into());
 
         match reply {
             publication::Reply::List(list_reply) => {
@@ -1741,7 +1741,7 @@ impl CaManager {
                 let published = ca_objects.all_publish_elements();
                 let next_update = ca_objects
                     .closest_next_update()
-                    .unwrap_or_else(|| Timestamp::now_plus_hours(self.config.republish_hours()));
+                    .unwrap_or_else(|| self.config.issuance_timing.republish_worst_case().into());
 
                 self.status_store
                     .set_status_repo_published(ca_handle, uri.clone(), published, next_update)?;
@@ -1889,7 +1889,7 @@ impl CaManager {
     pub async fn ca_routes_update(
         &self,
         ca: CaHandle,
-        updates: RouteAuthorizationUpdates,
+        updates: RoaConfigurationUpdates,
         actor: &Actor,
     ) -> KrillResult<()> {
         self.send_command(CmdDet::route_authorizations_update(

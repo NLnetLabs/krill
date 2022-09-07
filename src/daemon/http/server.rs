@@ -35,7 +35,7 @@ use crate::{
     commons::{
         api::{
             ApiRepositoryContact, AspaDefinitionUpdates, BgpStats, CommandHistoryCriteria, ParentCaReq, PublisherList,
-            RepositoryContact, RoaDefinitionUpdates, RtaName, Token,
+            RepositoryContact, RoaConfigurationUpdates, RtaName, Token,
         },
         bgp::BgpAnalysisAdvice,
         error::Error,
@@ -50,7 +50,7 @@ use crate::{
     daemon::{
         auth::common::permissions::Permission,
         auth::{Auth, Handle},
-        ca::{CaStatus, RouteAuthorizationUpdates, TA_NAME},
+        ca::{CaStatus, TA_NAME},
         config::Config,
         http::{
             auth::auth, statics::statics, testbed::testbed, tls, tls_keys, HttpResponse, Request, RequestPath,
@@ -1972,7 +1972,7 @@ async fn api_ca_routes_try_update(req: Request, ca: CaHandle) -> RoutingResult {
         let actor = req.actor();
         let state = req.state().clone();
 
-        match req.json::<RoaDefinitionUpdates>().await {
+        match req.json::<RoaConfigurationUpdates>().await {
             Err(e) => render_error(e),
             Ok(updates) => {
                 let server = state;
@@ -1987,8 +1987,7 @@ async fn api_ca_routes_try_update(req: Request, ca: CaHandle) -> RoutingResult {
                             render_empty_res(server.ca_routes_update(ca, updates, &actor).await)
                         } else {
                             // remaining invalids exist, advise user
-                            let updates: RouteAuthorizationUpdates = updates.into();
-                            let updates = updates.into_explicit();
+                            let updates = updates.into_explicit_max_length();
                             let resources = updates.affected_prefixes();
 
                             match server.ca_routes_bgp_suggest(&ca, Some(resources)).await {

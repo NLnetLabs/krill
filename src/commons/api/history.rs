@@ -14,7 +14,7 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            ArgKey, ArgVal, AspaCustomer, AspaProvidersUpdate, Label, Message, RoaDefinitionUpdates, RtaName,
+            ArgKey, ArgVal, AspaCustomer, AspaProvidersUpdate, Label, Message, RoaConfigurationUpdates, RtaName,
             StorableParentContact,
         },
         eventsourcing::{CommandKey, CommandKeyError, StoredCommand, WithStorableDetails},
@@ -474,7 +474,7 @@ pub enum StorableCaCommand {
         resource_class_name: ResourceClassName,
     },
     RoaDefinitionUpdates {
-        updates: RoaDefinitionUpdates,
+        updates: RoaConfigurationUpdates,
     },
     ReissueBeforeExpiring,
     ForceReissue,
