@@ -114,7 +114,7 @@ impl SignSupport {
         resources: &ResourceSet,
         limit: RequestResourceLimit,
         signing_key: &CertifiedKey,
-        weeks: i64,
+        validity: Validity,
         signer: &KrillSigner,
     ) -> KrillResult<IssuedCertificate> {
         let signing_cert = signing_key.incoming_cert();
@@ -123,7 +123,6 @@ impl SignSupport {
             return Err(Error::MissingResources);
         }
 
-        let validity = Self::sign_validity_weeks(weeks);
         let request = CertRequest::Ca(csr, validity);
 
         let tbs = Self::make_tbs_cert(&resources, signing_cert, request, signer)?;

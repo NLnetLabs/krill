@@ -366,10 +366,8 @@ fn signer_builder(
     flags: SignerFlags,
     work_dir: &Path,
     name: &str,
-    #[cfg(feature = "hsm")]
-    probe_interval: Duration,
-    #[cfg(not(feature = "hsm"))]
-    _probe_interval: Duration,
+    #[cfg(feature = "hsm")] probe_interval: Duration,
+    #[cfg(not(feature = "hsm"))] _probe_interval: Duration,
     mapper: &Option<Arc<SignerMapper>>,
 ) -> KrillResult<SignerProvider> {
     match r#type {
@@ -405,7 +403,7 @@ fn signer_builder(
     not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11"))
 ))]
 pub mod tests {
-    use std::{path::PathBuf, time::Duration};
+    use std::{path::Path, time::Duration};
 
     use crate::{
         commons::crypto::signers::mocksigner::{MockSigner, MockSignerCallCounts},
@@ -426,7 +424,7 @@ pub mod tests {
         mapper: &Option<Arc<SignerMapper>>,
     ) -> KrillResult<SignerProvider> {
         let call_counts = Arc::new(MockSignerCallCounts::new());
-        let mut mock_signer = MockSigner::new(name, mapper.as_ref().unwrap().clone(), call_counts.clone(), None, None);
+        let mut mock_signer = MockSigner::new(name, mapper.as_ref().unwrap().clone(), call_counts, None, None);
         mock_signer.set_info(&format!("mock {} signer", r#type));
         Ok(SignerProvider::Mock(flags, mock_signer))
     }
@@ -440,7 +438,7 @@ pub mod tests {
 
     fn build_krill_signer_from_config(
         signers_config_fragment: &str,
-        work_dir: &PathBuf,
+        work_dir: &Path,
         mapper: Arc<SignerMapper>,
     ) -> KrillResult<Vec<SignerProvider>> {
         let mut config = config_fragment_to_config_object(signers_config_fragment).unwrap();
@@ -631,7 +629,7 @@ pub mod tests {
                 name = "Signer 2"
                 host = "dummy host"
             "#;
-            let signers = build_krill_signer_from_config(signer_config_fragment, &d, mapper.clone()).unwrap();
+            let signers = build_krill_signer_from_config(signer_config_fragment, &d, mapper).unwrap();
             assert_eq!(signers.len(), 2);
 
             let signer = &signers[0];
@@ -664,7 +662,7 @@ pub mod tests {
                 name = "Signer 2" # default and one off signer
                 host = "dummy host"
             "#;
-            let signers = build_krill_signer_from_config(signer_config_fragment, &d, mapper.clone()).unwrap();
+            let signers = build_krill_signer_from_config(signer_config_fragment, &d, mapper).unwrap();
             assert_eq!(signers.len(), 2);
 
             let signer = &signers[0];
@@ -703,7 +701,7 @@ pub mod tests {
                 lib_path = "dummy"
                 slot = "dummy slot"
             "#;
-            let signers = build_krill_signer_from_config(signer_config_fragment, &d, mapper.clone()).unwrap();
+            let signers = build_krill_signer_from_config(signer_config_fragment, &d, mapper).unwrap();
             assert_eq!(signers.len(), 3);
 
             let signer = &signers[0];

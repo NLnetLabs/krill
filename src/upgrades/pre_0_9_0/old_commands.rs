@@ -15,7 +15,7 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            RoaDefinitionUpdates, RtaName, StorableCaCommand, StorableParentContact, StorableRcEntitlement,
+            RoaConfigurationUpdates, RtaName, StorableCaCommand, StorableParentContact, StorableRcEntitlement,
             StorableRepositoryCommand, StoredEffect,
         },
         eventsourcing::{Command, StoredCommand, WithStorableDetails},
@@ -170,7 +170,7 @@ pub enum OldStorableCaCommand {
     KeyRollInitiate(i64),
     KeyRollActivate(i64),
     KeyRollFinish(ResourceClassName),
-    RoaDefinitionUpdates(RoaDefinitionUpdates),
+    RoaDefinitionUpdates(RoaConfigurationUpdates),
     Republish,
     RepoUpdate(Option<ServiceUri>),
     RepoRemoveOld,

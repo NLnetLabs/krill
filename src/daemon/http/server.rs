@@ -35,7 +35,7 @@ use crate::{
     commons::{
         api::{
             ApiRepositoryContact, AspaDefinitionUpdates, BgpStats, CommandHistoryCriteria, ParentCaReq, PublisherList,
-            RepositoryContact, RoaDefinitionUpdates, RtaName, Token,
+            RepositoryContact, RoaConfigurationUpdates, RtaName, Token,
         },
         bgp::BgpAnalysisAdvice,
         error::Error,
@@ -50,7 +50,7 @@ use crate::{
     daemon::{
         auth::common::permissions::Permission,
         auth::{Auth, Handle},
-        ca::{CaStatus, RouteAuthorizationUpdates, TA_NAME},
+        ca::{CaStatus, TA_NAME},
         config::Config,
         http::{
             auth::auth, statics::statics, testbed::testbed, tls, tls_keys, HttpResponse, Request, RequestPath,
@@ -142,9 +142,6 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
     // Create the server, this will create the necessary data sub-directories if needed
     let krill = KrillServer::build(config.clone()).await?;
 
-    // Get the scheduler
-    let scheduler = krill.build_scheduler();
-
     // Call post-start upgrades to trigger any upgrade related runtime actions, such as
     // re-issuing ROAs because subject name strategy has changed.
     if let Some(report) = upgrade_report {
@@ -156,25 +153,14 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
         println!("Krill upgrade successful");
     }
 
+    // Build the scheduler which will be responsible for executing planned/triggered tasks
+    let scheduler = krill.build_scheduler();
+    let scheduler_task = scheduler.run();
+
+    // Start creating the server.
     let state = Arc::new(krill);
 
-    let service = make_service_fn(move |_| {
-        let state = state.clone();
-        async move {
-            Ok::<_, Infallible>(service_fn(move |req: hyper::Request<hyper::Body>| {
-                let state = state.clone();
-                map_requests(req, state)
-            }))
-        }
-    });
-
-    tls_keys::create_key_cert_if_needed(&config.data_dir).map_err(|e| Error::HttpsSetup(format!("{}", e)))?;
-
-    let server_config_builder = tls::TlsConfigBuilder::new()
-        .cert_path(tls_keys::cert_file_path(&config.data_dir))
-        .key_path(tls_keys::key_file_path(&config.data_dir));
-    let server_config = server_config_builder.build().unwrap();
-
+    // See if we can bind to the configured address and port first.
     let incoming = AddrIncoming::bind(&config.socket_addr()).map_err(|e| {
         Error::Custom(format!(
             "Could not bind to address and port: {}, Error: {}",
@@ -183,25 +169,81 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
         ))
     })?;
 
-    let acceptor = tls::TlsAcceptor::new(server_config, incoming);
+    // Start a hyper server and join it with the scheduler.
+    //
+    // Okay.. we will need to start either in HTTPS or in HTTP mode. Because this mode
+    // is part of the complex type used by the hyper server, we can't just create the
+    // appropriate server and return it, to then run it later and join it with the
+    // scheduler..
+    //
+    // So, unfortunately, we will need a fair amount of code duplication to make this
+    // work. Fortunately the code involved is not overly complex though.
 
-    let server = hyper::Server::builder(acceptor)
-        .serve(service)
-        .map_err(|e| Error::Custom(format!("Server error: {}", e)));
+    let server_mode = config.https_mode();
+    if server_mode.disable_https() {
+        let service = make_service_fn(move |_| {
+            let state = state.clone();
+            async move {
+                Ok::<_, Infallible>(service_fn(move |req: hyper::Request<hyper::Body>| {
+                    let state = state.clone();
+                    map_requests(req, state)
+                }))
+            }
+        });
 
-    let scheduler_task = scheduler.run();
+        let server = hyper::Server::builder(incoming)
+            .serve(service)
+            .map_err(|e| Error::Custom(format!("Server error: {}", e)));
 
-    if let Some(lock) = optional_lock {
-        try_join!(
-            server,
-            scheduler_task,
-            lock.handle_ctrl_c(),
-            #[cfg(unix)]
-            lock.handle_sig_term()
-        )
-        .map(|_| ())
+        if let Some(lock) = optional_lock {
+            try_join!(
+                server,
+                scheduler_task,
+                lock.handle_ctrl_c(),
+                #[cfg(unix)]
+                lock.handle_sig_term()
+            )
+            .map(|_| ())
+        } else {
+            try_join!(server, scheduler_task,).map(|_| ())
+        }
     } else {
-        try_join!(server, scheduler_task,).map(|_| ())
+        if server_mode.generate_https_cert() {
+            tls_keys::create_key_cert_if_needed(&config.data_dir).map_err(|e| Error::HttpsSetup(format!("{}", e)))?;
+        }
+
+        let service = make_service_fn(move |_| {
+            let state = state.clone();
+            async move {
+                Ok::<_, Infallible>(service_fn(move |req: hyper::Request<hyper::Body>| {
+                    let state = state.clone();
+                    map_requests(req, state)
+                }))
+            }
+        });
+        let server_config_builder = tls::TlsConfigBuilder::new()
+            .cert_path(tls_keys::cert_file_path(&config.data_dir))
+            .key_path(tls_keys::key_file_path(&config.data_dir));
+
+        let server_config = server_config_builder.build().unwrap();
+        let acceptor = tls::TlsAcceptor::new(server_config, incoming);
+
+        let server = hyper::Server::builder(acceptor)
+            .serve(service)
+            .map_err(|e| Error::Custom(format!("Server error: {}", e)));
+
+        if let Some(lock) = optional_lock {
+            try_join!(
+                server,
+                scheduler_task,
+                lock.handle_ctrl_c(),
+                #[cfg(unix)]
+                lock.handle_sig_term()
+            )
+            .map(|_| ())
+        } else {
+            try_join!(server, scheduler_task,).map(|_| ())
+        }
     }
 }
 
@@ -1930,7 +1972,7 @@ async fn api_ca_routes_try_update(req: Request, ca: CaHandle) -> RoutingResult {
         let actor = req.actor();
         let state = req.state().clone();
 
-        match req.json::<RoaDefinitionUpdates>().await {
+        match req.json::<RoaConfigurationUpdates>().await {
             Err(e) => render_error(e),
             Ok(updates) => {
                 let server = state;
@@ -1945,8 +1987,7 @@ async fn api_ca_routes_try_update(req: Request, ca: CaHandle) -> RoutingResult {
                             render_empty_res(server.ca_routes_update(ca, updates, &actor).await)
                         } else {
                             // remaining invalids exist, advise user
-                            let updates: RouteAuthorizationUpdates = updates.into();
-                            let updates = updates.into_explicit();
+                            let updates = updates.into_explicit_max_length();
                             let resources = updates.affected_prefixes();
 
                             match server.ca_routes_bgp_suggest(&ca, Some(resources)).await {

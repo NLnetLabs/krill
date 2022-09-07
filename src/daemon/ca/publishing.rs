@@ -474,7 +474,7 @@ impl CaObjects {
     /// close to the next update time, or the AIA has changed.. the latter may happen if
     /// the parent migrated repositories.
     fn re_issue(&mut self, force: bool, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<bool> {
-        let hours = timing.timing_publish_hours_before_next;
+        let hours = timing.publish_hours_before_next();
         let mut required = false;
 
         for (_, resource_class_objects) in self.classes.iter_mut() {
@@ -933,7 +933,7 @@ impl KeyObjectSet {
     }
 
     pub fn requires_reissuance(&self, hours: i64) -> bool {
-        Time::now() + Duration::hours(hours) > self.next_update()
+        Time::now() > self.next_update() - Duration::hours(hours)
     }
 
     pub fn next_update(&self) -> Time {

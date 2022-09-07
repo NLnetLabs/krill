@@ -1,11 +1,9 @@
 use std::collections::HashMap;
 
-use chrono::Duration;
-
 use rpki::{
     ca::{idexchange::ChildHandle, provisioning::ResourceClassName},
     crypto::KeyIdentifier,
-    repository::{resources::ResourceSet, x509::Time},
+    repository::resources::ResourceSet,
 };
 
 use crate::{
@@ -288,7 +286,7 @@ impl ChildCertificates {
             &resource_set,
             limit,
             signing_key,
-            issuance_timing.timing_child_certificate_valid_weeks,
+            issuance_timing.new_child_cert_validity(),
             signer,
         )?;
 
@@ -298,10 +296,7 @@ impl ChildCertificates {
     pub fn expiring(&self, issuance_timing: &IssuanceTimingConfig) -> Vec<&IssuedCertificate> {
         self.issued
             .values()
-            .filter(|issued| {
-                issued.validity().not_after()
-                    < Time::now() + Duration::weeks(issuance_timing.timing_child_certificate_reissue_weeks_before)
-            })
+            .filter(|issued| issued.validity().not_after() < issuance_timing.new_child_cert_issuance_threshold())
             .collect()
     }
 

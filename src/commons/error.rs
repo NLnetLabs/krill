@@ -18,12 +18,12 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::{rrdp::PublicationDeltaError, AspaCustomer, AspaProvidersUpdateConflict, ErrorResponse, RoaDefinition},
+        api::{rrdp::PublicationDeltaError, AspaCustomer, AspaProvidersUpdateConflict, ErrorResponse, RoaPayload},
         crypto::SignerError,
         eventsourcing::{AggregateStoreError, KeyValueError},
         util::httpclient,
     },
-    daemon::{ca::RouteAuthorization, http::tls_keys},
+    daemon::{ca::RoaPayloadJsonMapKey, http::tls_keys},
     upgrades::PrepareUpgradeError,
 };
 
@@ -35,26 +35,26 @@ use super::api::{BgpSecAsnKey, BgpSecDefinition};
 /// that could not be applied.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RoaDeltaError {
-    duplicates: Vec<RoaDefinition>,
-    notheld: Vec<RoaDefinition>,
-    unknowns: Vec<RoaDefinition>,
-    invalid_length: Vec<RoaDefinition>,
+    duplicates: Vec<RoaPayload>,
+    notheld: Vec<RoaPayload>,
+    unknowns: Vec<RoaPayload>,
+    invalid_length: Vec<RoaPayload>,
 }
 
 impl RoaDeltaError {
-    pub fn add_duplicate(&mut self, addition: RoaDefinition) {
+    pub fn add_duplicate(&mut self, addition: RoaPayload) {
         self.duplicates.push(addition);
     }
 
-    pub fn add_notheld(&mut self, addition: RoaDefinition) {
+    pub fn add_notheld(&mut self, addition: RoaPayload) {
         self.notheld.push(addition);
     }
 
-    pub fn add_unknown(&mut self, removal: RoaDefinition) {
+    pub fn add_unknown(&mut self, removal: RoaPayload) {
         self.unknowns.push(removal);
     }
 
-    pub fn add_invalid_length(&mut self, invalid: RoaDefinition) {
+    pub fn add_invalid_length(&mut self, invalid: RoaPayload) {
         self.invalid_length.push(invalid);
     }
 
@@ -265,10 +265,10 @@ pub enum Error {
     //-----------------------------------------------------------------
     // RouteAuthorizations - ROAs
     //-----------------------------------------------------------------
-    CaAuthorizationUnknown(CaHandle, RouteAuthorization),
-    CaAuthorizationDuplicate(CaHandle, RouteAuthorization),
-    CaAuthorizationInvalidMaxLength(CaHandle, RouteAuthorization),
-    CaAuthorizationNotEntitled(CaHandle, RouteAuthorization),
+    CaAuthorizationUnknown(CaHandle, RoaPayloadJsonMapKey),
+    CaAuthorizationDuplicate(CaHandle, RoaPayloadJsonMapKey),
+    CaAuthorizationInvalidMaxLength(CaHandle, RoaPayloadJsonMapKey),
+    CaAuthorizationNotEntitled(CaHandle, RoaPayloadJsonMapKey),
     RoaDeltaError(CaHandle, RoaDeltaError),
 
     //-----------------------------------------------------------------
@@ -957,10 +957,10 @@ mod tests {
 
     use std::str::FromStr;
 
-    use crate::commons::api::RoaDefinition;
+    use crate::commons::api::RoaPayload;
 
     use super::*;
-    use crate::test::definition;
+    use crate::test::roa_payload;
     use crate::test::test_id_certificate;
 
     fn verify(expected_json: &str, e: Error) {
@@ -981,7 +981,7 @@ mod tests {
         let child = ChildHandle::from_str("child").unwrap();
         let publisher = PublisherHandle::from_str("publisher").unwrap();
 
-        let auth = RouteAuthorization::new(RoaDefinition::from_str("192.168.0.0/16-24 => 64496").unwrap());
+        let auth = RoaPayloadJsonMapKey::from(RoaPayload::from_str("192.168.0.0/16-24 => 64496").unwrap());
 
         //-----------------------------------------------------------------
         // System Issues
@@ -1237,10 +1237,10 @@ mod tests {
     fn roa_delta_json() {
         let mut error = RoaDeltaError::default();
 
-        let duplicate = definition("10.0.0.0/20-24 => 1");
-        let not_held = definition("10.128.0.0/9 => 1");
-        let invalid_length = definition("10.0.1.0/25 => 1");
-        let unknown = definition("192.168.0.0/16 => 1");
+        let duplicate = roa_payload("10.0.0.0/20-24 => 1");
+        let not_held = roa_payload("10.128.0.0/9 => 1");
+        let invalid_length = roa_payload("10.0.1.0/25 => 1");
+        let unknown = roa_payload("192.168.0.0/16 => 1");
 
         error.add_duplicate(duplicate);
         error.add_notheld(not_held);
