@@ -33,4 +33,5 @@ jobs:
       cross_build_args: --features static-openssl
       deb_extra_build_packages: libssl-dev
       deb_maintainer: The NLnet Labs RPKI Team <rpki@nlnetlabs.nl>
+      docker_sanity_check_command: krillc --version
       rpm_extra_build_packages: openssl-devel
