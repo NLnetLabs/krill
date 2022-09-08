@@ -877,7 +877,7 @@ dependencies = [
 
 [[package]]
 name = "krill"
-version = "0.10.1-dev"
+version = "0.10.1"
 dependencies = [
  "backoff",
  "base64",
@@ -1622,9 +1622,9 @@ dependencies = [
 
 [[package]]
 name = "rpki"
-version = "0.15.4"
+version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "447c873dac2fec7617c6677cb70a296c75b4db32e05c8444aa8e5446e786092d"
+checksum = "ab7c96a0e78a28b3d954c46f26559ff226f4708557b22394bd58bdcd5628d10f"
 dependencies = [
  "base64",
  "bcder",
