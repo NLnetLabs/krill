@@ -17,7 +17,7 @@ jobs:
     uses: ximon18/.github/.github/workflows/pkg.yml@main
     secrets:
       DOCKER_HUB_ID: ximoneighteen
-      DOCKER_HUB_TOKEN: ${{ secrets.}}
+      DOCKER_HUB_TOKEN: ${{ secrets.TEST_DOCKER_HUB_TOKEN }}
     with:
       #docker_org: ${{ github.repository_owner }}
       #docker_repo: krill
