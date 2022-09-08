@@ -15,7 +15,9 @@ on:
 jobs:
   package:
     uses: ximon18/.github/.github/workflows/pkg.yml@main
-    secrets: inherit
+    secrets:
+      DOCKER_HUB_ID: ximoneighteen
+      DOCKER_HUB_TOKEN: ${{ secrets.}}
     with:
       #docker_org: ${{ github.repository_owner }}
       #docker_repo: krill
