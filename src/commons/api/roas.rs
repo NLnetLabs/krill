@@ -7,7 +7,7 @@ use rpki::repository::{
     roa::RoaIpAddress,
 };
 
-use crate::commons::bgp::Announcement;
+use crate::daemon::ca::RoaInfo;
 
 //------------ RoaAggregateKey ---------------------------------------------
 
@@ -422,18 +422,20 @@ impl From<RoaPayload> for RoaConfiguration {
 /// This type is used in the API for listing/reporting.
 ///
 /// It contains the user determined intended RoaConfiguration as well as
-/// system determined things, like the roa objects - at least it will
-/// as soon as #864 is implemented.
+/// system determined things, like the roa objects.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ConfiguredRoa {
     #[serde(flatten)]
     roa_configuration: RoaConfiguration,
-    // roa_objects: Vec<RoaInfo>, // will be added when #864 is implemented
+    roa_objects: Vec<RoaInfo>,
 }
 
 impl ConfiguredRoa {
-    pub fn new(roa_configuration: RoaConfiguration) -> Self {
-        ConfiguredRoa { roa_configuration }
+    pub fn new(roa_configuration: RoaConfiguration, roa_objects: Vec<RoaInfo>) -> Self {
+        ConfiguredRoa {
+            roa_configuration,
+            roa_objects,
+        }
     }
 
     pub fn payload(&self) -> RoaPayload {
@@ -459,13 +461,9 @@ impl ConfiguredRoa {
     pub fn as_roa_ip_address(&self) -> RoaIpAddress {
         self.roa_configuration.payload().as_roa_ip_address()
     }
-}
 
-impl From<Announcement> for ConfiguredRoa {
-    fn from(announcement: Announcement) -> Self {
-        let payload = RoaPayload::from(announcement);
-        let roa_configuration = RoaConfiguration::from(payload);
-        ConfiguredRoa { roa_configuration }
+    pub fn roa_objects(&self) -> &Vec<RoaInfo> {
+        &self.roa_objects
     }
 }
 

@@ -35,7 +35,7 @@ impl fmt::Display for BgpAnalysisAdvice {
 
         let invalid_asns = self
             .effect()
-            .matching_configurations(BgpAnalysisState::AnnouncementInvalidAsn);
+            .matching_announcements(BgpAnalysisState::AnnouncementInvalidAsn);
         if !invalid_asns.is_empty() {
             writeln!(f)?;
             writeln!(f, "  Announcements from invalid ASNs:")?;
@@ -46,7 +46,7 @@ impl fmt::Display for BgpAnalysisAdvice {
 
         let invalid_length = self
             .effect()
-            .matching_configurations(BgpAnalysisState::AnnouncementInvalidLength);
+            .matching_announcements(BgpAnalysisState::AnnouncementInvalidLength);
         if !invalid_length.is_empty() {
             writeln!(f)?;
             writeln!(f, "  Announcements too specific for their ASNs:\n")?;
@@ -319,10 +319,11 @@ impl BgpAnalysisReport {
         self.0
     }
 
-    pub fn matching_configurations(&self, state: BgpAnalysisState) -> Vec<&ConfiguredRoa> {
+    /// Panics if the given state is not an announcement state
+    pub fn matching_announcements(&self, state: BgpAnalysisState) -> Vec<Announcement> {
         self.matching_entries(state)
             .into_iter()
-            .map(|e| &e.configured_roa)
+            .map(|e| e.announcement())
             .collect()
     }
 
@@ -393,7 +394,7 @@ impl fmt::Display for BgpAnalysisReport {
                 writeln!(f, "ROA configurations covering seen announcements:")?;
                 for roa in authorizing {
                     writeln!(f)?;
-                    writeln!(f, "\tConfiguration: {}", roa.configured_roa)?;
+                    writeln!(f, "\tConfiguration: {}", roa.configured_roa())?;
                     writeln!(f)?;
                     writeln!(f, "\t\tAuthorizes announcement(s):")?;
                     for ann in roa.authorizes.iter() {
@@ -418,7 +419,7 @@ impl fmt::Display for BgpAnalysisReport {
                 )?;
                 for roa in redundant {
                     writeln!(f)?;
-                    writeln!(f, "\tConfiguration: {}", roa.configured_roa)?;
+                    writeln!(f, "\tConfiguration: {}", roa.configured_roa())?;
                     writeln!(f)?;
                     writeln!(f, "\t\tAuthorizes announcement(s):")?;
                     for ann in roa.authorizes.iter() {
@@ -449,7 +450,7 @@ impl fmt::Display for BgpAnalysisReport {
                 )?;
                 writeln!(f)?;
                 for roa in not_seen {
-                    writeln!(f, "\tConfiguration: {}", roa.configured_roa)?;
+                    writeln!(f, "\tConfiguration: {}", roa.configured_roa())?;
                 }
                 writeln!(f)?;
             }
@@ -461,7 +462,7 @@ impl fmt::Display for BgpAnalysisReport {
                 )?;
                 writeln!(f)?;
                 for roa in not_held {
-                    writeln!(f, "\tConfiguration: {}", roa.configured_roa)?;
+                    writeln!(f, "\tConfiguration: {}", roa.configured_roa())?;
                 }
                 writeln!(f)?;
             }
@@ -473,7 +474,7 @@ impl fmt::Display for BgpAnalysisReport {
                 )?;
                 for roa in disallowing {
                     writeln!(f)?;
-                    writeln!(f, "\ttConfiguration: {}", roa.configured_roa)?;
+                    writeln!(f, "\ttConfiguration: {}", roa.configured_roa())?;
                     writeln!(f)?;
                     writeln!(f)?;
                     writeln!(f, "\t\tDisallows:")?;
@@ -489,7 +490,7 @@ impl fmt::Display for BgpAnalysisReport {
 
                 for roa in too_permissive {
                     writeln!(f)?;
-                    writeln!(f, "\tConfiguration: {}", roa.configured_roa)?;
+                    writeln!(f, "\tConfiguration: {}", roa.configured_roa())?;
                     writeln!(f)?;
                     writeln!(f, "\t\tAuthorizes announcement(s):")?;
                     for ann in roa.authorizes.iter() {
@@ -511,7 +512,7 @@ impl fmt::Display for BgpAnalysisReport {
                 writeln!(f, "AS0 ROA configurations disallowing announcements for prefixes")?;
                 writeln!(f)?;
                 for roa in as0 {
-                    writeln!(f, "\tConfiguration: {}", roa.configured_roa)?;
+                    writeln!(f, "\tConfiguration: {}", roa.configured_roa())?;
                 }
                 writeln!(f)?;
             }
@@ -523,7 +524,7 @@ impl fmt::Display for BgpAnalysisReport {
                 )?;
                 writeln!(f)?;
                 for roa in as0_redundant {
-                    writeln!(f, "\tConfiguration: {}", roa.configured_roa)?;
+                    writeln!(f, "\tConfiguration: {}", roa.configured_roa())?;
                     writeln!(f)?;
                     writeln!(f, "\t\tMade redundant by ROA configuration(s):")?;
                     for redundant_by in &roa.made_redundant_by {
@@ -537,7 +538,7 @@ impl fmt::Display for BgpAnalysisReport {
                 writeln!(f, "Announcements which are valid:")?;
                 writeln!(f)?;
                 for ann in valid {
-                    writeln!(f, "\tAnnouncement: {}", ann.configured_roa)?;
+                    writeln!(f, "\tAnnouncement: {}", ann.announcement())?;
                 }
                 writeln!(f)?;
             }
@@ -549,7 +550,7 @@ impl fmt::Display for BgpAnalysisReport {
                 )?;
                 for ann in invalid_length {
                     writeln!(f)?;
-                    writeln!(f, "\tAnnouncement: {}", ann.configured_roa)?;
+                    writeln!(f, "\tAnnouncement: {}", ann.announcement())?;
                     writeln!(f)?;
                     writeln!(f, "\t\tDisallowed by ROA configuration(s):")?;
                     for roa in ann.disallowed_by.iter() {
@@ -563,7 +564,7 @@ impl fmt::Display for BgpAnalysisReport {
                 writeln!(f, "Announcements from an unauthorized ASN:")?;
                 for ann in invalid_asn {
                     writeln!(f)?;
-                    writeln!(f, "\tAnnouncement: {}", ann.configured_roa)?;
+                    writeln!(f, "\tAnnouncement: {}", ann.announcement())?;
                     writeln!(f)?;
                     writeln!(f, "\t\tDisallowed by ROA configuration(s):")?;
                     for roa in ann.disallowed_by.iter() {
@@ -577,7 +578,7 @@ impl fmt::Display for BgpAnalysisReport {
                 writeln!(f, "Announcements disallowed by 'AS0' ROAs:")?;
                 writeln!(f)?;
                 for ann in disallowed {
-                    writeln!(f, "\tAnnouncement: {}", ann.configured_roa)?;
+                    writeln!(f, "\tAnnouncement: {}", ann.announcement())?;
                 }
                 writeln!(f)?;
             }
@@ -589,7 +590,7 @@ impl fmt::Display for BgpAnalysisReport {
                 )?;
                 writeln!(f)?;
                 for ann in not_found {
-                    writeln!(f, "\tAnnouncement: {}", ann.configured_roa)?;
+                    writeln!(f, "\tAnnouncement: {}", ann.announcement())?;
                 }
                 writeln!(f)?;
             }
@@ -604,7 +605,7 @@ impl fmt::Display for BgpAnalysisReport {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BgpAnalysisEntry {
     #[serde(flatten)]
-    configured_roa: ConfiguredRoa,
+    roa_or_announcement: ConfiguredRoaOrAnnouncement,
     state: BgpAnalysisState,
     #[serde(skip_serializing_if = "Option::is_none")]
     allowed_by: Option<RoaPayload>,
@@ -618,13 +619,53 @@ pub struct BgpAnalysisEntry {
     disallows: Vec<Announcement>,
 }
 
+/// This type is used to allow us to mix both configured ROAs
+/// and announcements in a single vector for display in the UI
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum ConfiguredRoaOrAnnouncement {
+    Roa(ConfiguredRoa),
+    Announcement(Announcement),
+}
+
+impl ConfiguredRoaOrAnnouncement {
+    // Not using impl From because this is for sorting use
+    // only.
+    fn as_payload(&self) -> RoaPayload {
+        match self {
+            ConfiguredRoaOrAnnouncement::Announcement(ann) => RoaPayload::new(*ann.asn(), *ann.prefix(), None),
+            ConfiguredRoaOrAnnouncement::Roa(roa) => roa.payload(),
+        }
+    }
+}
+
+impl Ord for ConfiguredRoaOrAnnouncement {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.as_payload().cmp(&other.as_payload())
+    }
+}
+
+impl PartialOrd for ConfiguredRoaOrAnnouncement {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 impl BgpAnalysisEntry {
+    /// Returns a reference to the ConfiguredRoa for this entry. Panics if it was an announcement.
+    /// Only safe to call after checking the state.
     pub fn configured_roa(&self) -> &ConfiguredRoa {
-        &self.configured_roa
+        match &self.roa_or_announcement {
+            ConfiguredRoaOrAnnouncement::Roa(roa) => roa,
+            _ => panic!("Trying to get a ROA for an entry of state: {:?}", self.state),
+        }
     }
 
     pub fn announcement(&self) -> Announcement {
-        self.configured_roa.payload().into()
+        match &self.roa_or_announcement {
+            ConfiguredRoaOrAnnouncement::Announcement(announcement) => *announcement,
+            _ => panic!("Trying to get an announcement for an entry of state: {:?}", self.state),
+        }
     }
 
     pub fn state(&self) -> BgpAnalysisState {
@@ -659,7 +700,7 @@ impl BgpAnalysisEntry {
         authorizes.sort();
         disallows.sort();
         BgpAnalysisEntry {
-            configured_roa,
+            roa_or_announcement: ConfiguredRoaOrAnnouncement::Roa(configured_roa),
             state: BgpAnalysisState::RoaSeen,
             allowed_by: None,
             disallowed_by: vec![],
@@ -672,7 +713,7 @@ impl BgpAnalysisEntry {
     pub fn roa_disallowing(configured_roa: ConfiguredRoa, mut disallows: Vec<Announcement>) -> Self {
         disallows.sort();
         BgpAnalysisEntry {
-            configured_roa,
+            roa_or_announcement: ConfiguredRoaOrAnnouncement::Roa(configured_roa),
             state: BgpAnalysisState::RoaDisallowing,
             allowed_by: None,
             disallowed_by: vec![],
@@ -685,7 +726,7 @@ impl BgpAnalysisEntry {
     pub fn roa_as0(configured_roa: ConfiguredRoa, mut disallows: Vec<Announcement>) -> Self {
         disallows.sort();
         BgpAnalysisEntry {
-            configured_roa,
+            roa_or_announcement: ConfiguredRoaOrAnnouncement::Roa(configured_roa),
             state: BgpAnalysisState::RoaAs0,
             allowed_by: None,
             disallowed_by: vec![],
@@ -698,7 +739,7 @@ impl BgpAnalysisEntry {
     pub fn roa_as0_redundant(configured_roa: ConfiguredRoa, mut made_redundant_by: Vec<RoaPayload>) -> Self {
         made_redundant_by.sort();
         BgpAnalysisEntry {
-            configured_roa,
+            roa_or_announcement: ConfiguredRoaOrAnnouncement::Roa(configured_roa),
             state: BgpAnalysisState::RoaAs0Redundant,
             allowed_by: None,
             disallowed_by: vec![],
@@ -718,7 +759,7 @@ impl BgpAnalysisEntry {
         disallows.sort();
         made_redundant_by.sort();
         BgpAnalysisEntry {
-            configured_roa,
+            roa_or_announcement: ConfiguredRoaOrAnnouncement::Roa(configured_roa),
             state: BgpAnalysisState::RoaRedundant,
             allowed_by: None,
             disallowed_by: vec![],
@@ -736,7 +777,7 @@ impl BgpAnalysisEntry {
         authorizes.sort();
         disallows.sort();
         BgpAnalysisEntry {
-            configured_roa,
+            roa_or_announcement: ConfiguredRoaOrAnnouncement::Roa(configured_roa),
             state: BgpAnalysisState::RoaTooPermissive,
             allowed_by: None,
             disallowed_by: vec![],
@@ -748,7 +789,7 @@ impl BgpAnalysisEntry {
 
     pub fn roa_unseen(configured_roa: ConfiguredRoa) -> Self {
         BgpAnalysisEntry {
-            configured_roa,
+            roa_or_announcement: ConfiguredRoaOrAnnouncement::Roa(configured_roa),
             state: BgpAnalysisState::RoaUnseen,
             allowed_by: None,
             disallowed_by: vec![],
@@ -760,7 +801,7 @@ impl BgpAnalysisEntry {
 
     pub fn roa_not_held(configured_roa: ConfiguredRoa) -> Self {
         BgpAnalysisEntry {
-            configured_roa,
+            roa_or_announcement: ConfiguredRoaOrAnnouncement::Roa(configured_roa),
             state: BgpAnalysisState::RoaNotHeld,
             allowed_by: None,
             disallowed_by: vec![],
@@ -772,7 +813,7 @@ impl BgpAnalysisEntry {
 
     pub fn roa_no_announcement_info(configured_roa: ConfiguredRoa) -> Self {
         BgpAnalysisEntry {
-            configured_roa,
+            roa_or_announcement: ConfiguredRoaOrAnnouncement::Roa(configured_roa),
             state: BgpAnalysisState::RoaNoAnnouncementInfo,
             allowed_by: None,
             disallowed_by: vec![],
@@ -784,7 +825,7 @@ impl BgpAnalysisEntry {
 
     pub fn announcement_valid(announcement: Announcement, allowed_by: RoaPayload) -> Self {
         BgpAnalysisEntry {
-            configured_roa: announcement.into(), // the would-be configuration in this case
+            roa_or_announcement: ConfiguredRoaOrAnnouncement::Announcement(announcement),
             state: BgpAnalysisState::AnnouncementValid,
             allowed_by: Some(allowed_by),
             disallowed_by: vec![],
@@ -813,7 +854,7 @@ impl BgpAnalysisEntry {
     ) -> Self {
         disallowed_by.sort();
         BgpAnalysisEntry {
-            configured_roa: announcement.into(), // the would-be config
+            roa_or_announcement: ConfiguredRoaOrAnnouncement::Announcement(announcement),
             state,
             allowed_by: None,
             disallowed_by,
@@ -825,7 +866,7 @@ impl BgpAnalysisEntry {
 
     pub fn announcement_not_found(announcement: Announcement) -> Self {
         BgpAnalysisEntry {
-            configured_roa: announcement.into(), // the would-be config
+            roa_or_announcement: ConfiguredRoaOrAnnouncement::Announcement(announcement),
             state: BgpAnalysisState::AnnouncementNotFound,
             allowed_by: None,
             disallowed_by: vec![],
@@ -840,7 +881,7 @@ impl Ord for BgpAnalysisEntry {
     fn cmp(&self, other: &Self) -> Ordering {
         let mut ordering = self.state.cmp(&other.state);
         if ordering == Ordering::Equal {
-            ordering = self.configured_roa.cmp(&other.configured_roa);
+            ordering = self.roa_or_announcement.cmp(&other.roa_or_announcement);
         }
         ordering
     }

@@ -697,7 +697,7 @@ pub fn announcement(s: &str) -> Announcement {
 }
 
 pub fn configured_roa(s: &str) -> ConfiguredRoa {
-    ConfiguredRoa::new(roa_configuration(s))
+    ConfiguredRoa::new(roa_configuration(s), vec![])
 }
 
 pub fn roa_configuration(s: &str) -> RoaConfiguration {
