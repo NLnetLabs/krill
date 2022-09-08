@@ -151,7 +151,7 @@ systemd-units = { unit-name = "krill", unit-scripts = "pkg/common", enable = fal
 # `pkg` GitHub Actions workflow renames the `package.metadata.deb` section out
 # of the way and renames this section to `package.metadata.deb` to use it as the
 # base configuration instead.
-[package.metadata.krillup-deb]
+[package.metadata.deb_alt_base_krillup]
 name = "krillup"
 priority = "optional"
 section = "net"
@@ -242,7 +242,7 @@ shadow-utils = "*"
 # how to use this alternate configuration, instead the `pkg` GitHub Actions
 # workflow renames the `package.metadata.generate-rpm` section out of the way
 # and renames this section to `package.metadata.generate-rpm` to use it instead.
-[package.metadata.krillup-generate-rpm]
+[package.metadata.generate-rpm-alt-base-krillup]
 name = "krillup"
 # See: https://fedoraproject.org/wiki/Licensing:Main?rd=Licensing
 license = "MPLv2.0"
