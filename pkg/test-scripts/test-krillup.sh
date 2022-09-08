@@ -1,4 +1,8 @@
-#!/usr/bin/env -S bash -eo pipefail -x
+#!/usr/bin/env bash
+
+set -eo pipefail
+set -x
+
 case $1 in
   post-install)
     echo -e "\nKRILLUP VERSION:"
