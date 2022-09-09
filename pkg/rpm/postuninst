@@ -1,4 +1,5 @@
-post_uninstall_script = '''#!/bin/bash -e
+post_uninstall_script = '''
+#!/bin/bash -e
 # Script based on the RPM %systemd_postun scriptlet. See:
 #   - https://docs.fedoraproject.org/en-US/packaging-guidelines/Scriptlets/#_systemd
 #   - https://cgit.freedesktop.org/systemd/systemd/tree/src/core/macros.systemd.in
