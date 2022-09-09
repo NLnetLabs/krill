@@ -1757,14 +1757,12 @@ impl CertAuth {
 
             let auth = RoaPayloadJsonMapKey::from(roa_payload);
 
-            // let authorizations: Vec<&RoaPayloadKey> = desired_routes.authorizations().collect();
-
             if !roa_payload.max_length_valid() {
                 // The (max) length is invalid for this prefix
-                delta_errors.add_invalid_length(roa_payload);
+                delta_errors.add_invalid_length(roa_configuration.clone());
             } else if !all_resources.contains_roa_address(&roa_payload.as_roa_ip_address()) {
                 // We do not hold the prefix
-                delta_errors.add_notheld(roa_payload);
+                delta_errors.add_notheld(roa_configuration.clone());
             } else if let Some(info) = desired_routes.info(&auth) {
                 // We have an existing info for this payload, this may be an attempt to update the comment.
                 if info.comment() != comment {
@@ -1776,7 +1774,7 @@ impl CertAuth {
                 } else {
                     // Duplicate entry. We could be idempotent, but perhaps it's best to return an error
                     // instead because it seems that the user is out of sync with the current state.
-                    delta_errors.add_duplicate(roa_payload);
+                    delta_errors.add_duplicate(roa_configuration.clone());
                 }
             } else {
                 // Ok, this seems okay now

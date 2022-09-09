@@ -27,7 +27,7 @@ use crate::{
     upgrades::PrepareUpgradeError,
 };
 
-use super::api::{BgpSecAsnKey, BgpSecDefinition};
+use super::api::{BgpSecAsnKey, BgpSecDefinition, RoaConfiguration};
 
 //------------ RoaDeltaError -----------------------------------------------
 
@@ -35,18 +35,18 @@ use super::api::{BgpSecAsnKey, BgpSecDefinition};
 /// that could not be applied.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RoaDeltaError {
-    duplicates: Vec<RoaPayload>,
-    notheld: Vec<RoaPayload>,
+    duplicates: Vec<RoaConfiguration>,
+    notheld: Vec<RoaConfiguration>,
     unknowns: Vec<RoaPayload>,
-    invalid_length: Vec<RoaPayload>,
+    invalid_length: Vec<RoaConfiguration>,
 }
 
 impl RoaDeltaError {
-    pub fn add_duplicate(&mut self, addition: RoaPayload) {
+    pub fn add_duplicate(&mut self, addition: RoaConfiguration) {
         self.duplicates.push(addition);
     }
 
-    pub fn add_notheld(&mut self, addition: RoaPayload) {
+    pub fn add_notheld(&mut self, addition: RoaConfiguration) {
         self.notheld.push(addition);
     }
 
@@ -54,15 +54,8 @@ impl RoaDeltaError {
         self.unknowns.push(removal);
     }
 
-    pub fn add_invalid_length(&mut self, invalid: RoaPayload) {
+    pub fn add_invalid_length(&mut self, invalid: RoaConfiguration) {
         self.invalid_length.push(invalid);
-    }
-
-    pub fn combine(&mut self, mut other: Self) {
-        self.duplicates.append(&mut other.duplicates);
-        self.notheld.append(&mut other.notheld);
-        self.unknowns.append(&mut other.unknowns);
-        self.invalid_length.append(&mut other.invalid_length);
     }
 
     pub fn is_empty(&self) -> bool {
@@ -958,6 +951,7 @@ mod tests {
     use std::str::FromStr;
 
     use crate::commons::api::RoaPayload;
+    use crate::test::roa_configuration;
 
     use super::*;
     use crate::test::roa_payload;
@@ -1237,9 +1231,9 @@ mod tests {
     fn roa_delta_json() {
         let mut error = RoaDeltaError::default();
 
-        let duplicate = roa_payload("10.0.0.0/20-24 => 1");
-        let not_held = roa_payload("10.128.0.0/9 => 1");
-        let invalid_length = roa_payload("10.0.1.0/25 => 1");
+        let duplicate = roa_configuration("10.0.0.0/20-24 => 1");
+        let not_held = roa_configuration("10.128.0.0/9 => 1");
+        let invalid_length = roa_configuration("10.0.1.0/25 => 1");
         let unknown = roa_payload("192.168.0.0/16 => 1");
 
         error.add_duplicate(duplicate);
