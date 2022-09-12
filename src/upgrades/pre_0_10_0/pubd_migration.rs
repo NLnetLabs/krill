@@ -52,7 +52,7 @@ impl UpgradeStore for PublicationServerMigration {
         if !self.current_kv_store.has_scope("0".to_string())? {
             Ok(false)
         } else {
-            Ok(self.current_kv_store.version_is_after(KrillVersion::release(0, 9, 0))?
+            Ok(self.current_kv_store.version()? >= KrillVersion::release(0, 9, 0)
                 && self
                     .current_kv_store
                     .version_is_before(KrillVersion::candidate(0, 10, 0, 1))?)

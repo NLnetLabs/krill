@@ -27,6 +27,22 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 # Changelog
 
+## 0.10.2 'All Types'
+
+This release fixes an issue where Krill 0.10.0 and 0.10.1 parent CAs would issue
+an RFC 6492 Resource Class List Response with a missing, rather than empty,
+attribute for resource types that a child CA had no entitlements for. See
+issue #925.
+
+Note this issue did not impact CAs that have no delegated child CAs. Futhermore,
+it would result in the child CA rejecting the parent response, log an error, and
+try synchronising again, but it would not result in any changes to the CA certificate
+issued by the parent to the child.
+
+Furthermore, this release fixes an issue where the data for a Publication Server
+(if configured) would not be migrated if the previous Krill version was 0.9.0.
+See issue #928.
+
 ## 0.10.1 'Slash'
 
 Krill 0.10.0, or rather rpki-rs 0.15.4 became quite strict in its validation of
