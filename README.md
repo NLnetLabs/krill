@@ -39,6 +39,10 @@ it would result in the child CA rejecting the parent response, log an error, and
 try synchronising again, but it would not result in any changes to the CA certificate
 issued by the parent to the child.
 
+Furthermore, this release fixes an issue where the data for a Publication Server
+(if configured) would not be migrated if the previous Krill version was 0.9.0.
+See issue #928.
+
 ## 0.10.1 'Slash'
 
 Krill 0.10.0, or rather rpki-rs 0.15.4 became quite strict in its validation of
