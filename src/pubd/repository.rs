@@ -363,7 +363,17 @@ impl RepositoryContent {
         let serial = self.rrdp.serial;
         let last_update = Some(self.rrdp.notification().time());
 
-        RepoStats::new(publishers, session, serial, last_update)
+        let rrdp_notification_uri = self.rrdp.notification_uri();
+        let sia_base = self.rsync.base_uri.clone();
+
+        RepoStats::new(
+            publishers,
+            session,
+            serial,
+            last_update,
+            sia_base,
+            rrdp_notification_uri,
+        )
     }
 
     /// Returns the stats for all current publishers
@@ -1229,12 +1239,14 @@ impl RepositoryAccess {
 
 //------------ RepoStats -----------------------------------------------------
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RepoStats {
     publishers: HashMap<PublisherHandle, PublisherStats>,
     session: RrdpSession,
     serial: u64,
     last_update: Option<Time>,
+    sia_base: uri::Rsync,
+    rrdp_notification_uri: uri::Https,
 }
 
 impl RepoStats {
@@ -1243,21 +1255,16 @@ impl RepoStats {
         session: RrdpSession,
         serial: u64,
         last_update: Option<Time>,
+        sia_base: uri::Rsync,
+        rrdp_notification_uri: uri::Https,
     ) -> Self {
         RepoStats {
             publishers,
             session,
             serial,
             last_update,
-        }
-    }
-
-    pub fn empty(session: RrdpSession) -> Self {
-        RepoStats {
-            publishers: HashMap::new(),
-            session,
-            serial: 0,
-            last_update: None,
+            sia_base,
+            rrdp_notification_uri,
         }
     }
 

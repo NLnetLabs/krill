@@ -31,8 +31,8 @@ use crate::{
     },
     daemon::config::Config,
     pubd::{
-        PublisherStats, RepoStats, RepositoryAccess, RepositoryAccessInitDetails, RepositoryContent, RrdpServer,
-        RrdpSessionReset, RrdpUpdate, RsyncdStore,
+        RepositoryAccess, RepositoryAccessInitDetails, RepositoryContent, RrdpServer, RrdpSessionReset, RrdpUpdate,
+        RsyncdStore,
     },
     upgrades::pre_0_9_0::{
         old_commands::{OldStorableRepositoryCommand, OldStoredEffect, OldStoredRepositoryCommand},
@@ -326,9 +326,6 @@ struct OldRepository {
 
     rrdp: OldRrdpServer,
     rsync: RsyncdStore,
-
-    #[serde(default = "RepoStats::default")]
-    stats: RepoStats,
 }
 
 impl Aggregate for OldRepository {
@@ -344,8 +341,6 @@ impl Aggregate for OldRepository {
 
         let key_id = id_cert.subject_public_key_info().key_identifier();
 
-        let stats = RepoStats::default();
-
         let rrdp = OldRrdpServer::create(rrdp_base_uri, &repo_base_dir, session);
         let rsync = RsyncdStore::new(rsync_jail, &repo_base_dir);
 
@@ -357,7 +352,6 @@ impl Aggregate for OldRepository {
             publishers: HashMap::new(),
             rrdp,
             rsync,
-            stats,
         })
     }
 
@@ -369,13 +363,11 @@ impl Aggregate for OldRepository {
         self.version += 1;
         match event.into_details() {
             OldPubdEvtDet::PublisherAdded(publisher_handle, publisher) => {
-                self.stats.new_publisher(&publisher_handle);
                 self.publishers.insert(publisher_handle, publisher);
             }
             OldPubdEvtDet::PublisherRemoved(publisher_handle, update) => {
                 self.publishers.remove(&publisher_handle);
                 self.rrdp.apply_update(update);
-                self.stats.remove_publisher(&publisher_handle, &self.rrdp.notification);
             }
             OldPubdEvtDet::Published(publisher_handle, update) => {
                 // update content for publisher
@@ -383,18 +375,8 @@ impl Aggregate for OldRepository {
 
                 // update RRDP server
                 self.rrdp.apply_update(update);
-
-                // Can only have events for existing publishers, so unwrap is okay
-                let publisher = self.get_publisher(&publisher_handle).unwrap();
-                let current_objects = publisher.current_objects.clone().into();
-                let publisher_stats = PublisherStats::new(&current_objects);
-
-                let notification = &self.rrdp.notification;
-
-                self.stats.publish(&publisher_handle, publisher_stats, notification)
             }
             OldPubdEvtDet::RrdpSessionReset(reset) => {
-                self.stats.session_reset(reset.notification());
                 self.rrdp.apply_reset(reset);
             }
         }
@@ -411,12 +393,6 @@ impl OldRepository {
             .get_mut(publisher)
             .unwrap()
             .apply_delta(update.elements().clone())
-    }
-
-    pub fn get_publisher(&self, publisher_handle: &PublisherHandle) -> Result<&OldPublisher, PrepareUpgradeError> {
-        self.publishers.get(publisher_handle).ok_or_else(|| {
-            PrepareUpgradeError::Custom(format!("Cannot find publisher {} for old event", publisher_handle))
-        })
     }
 }
 
