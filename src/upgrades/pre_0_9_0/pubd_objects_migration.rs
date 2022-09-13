@@ -88,12 +88,7 @@ impl PubdObjectsMigration {
             .map(|(handle, old)| (handle.clone(), old.current_objects.clone().into()))
             .collect();
 
-        let repo_content = RepositoryContent::new(
-            publishers,
-            old_repo.rrdp.clone().into(),
-            old_repo.rsync.clone(),
-            old_repo.stats.clone(),
-        );
+        let repo_content = RepositoryContent::new(publishers, old_repo.rrdp.clone().into(), old_repo.rsync.clone());
 
         let upgrade_repo_content_store = KeyValueStore::disk(&config.upgrade_data_dir(), PUBSERVER_CONTENT_DIR)?;
         let dflt_key = KeyStoreKey::simple(format!("{}.json", PUBSERVER_DFLT));
@@ -349,7 +344,7 @@ impl Aggregate for OldRepository {
 
         let key_id = id_cert.subject_public_key_info().key_identifier();
 
-        let stats = RepoStats::new(session);
+        let stats = RepoStats::default();
 
         let rrdp = OldRrdpServer::create(rrdp_base_uri, &repo_base_dir, session);
         let rsync = RsyncdStore::new(rsync_jail, &repo_base_dir);
@@ -386,15 +381,13 @@ impl Aggregate for OldRepository {
                 // update content for publisher
                 self.update_publisher(&publisher_handle, &update);
 
-                let time = update.time();
-
                 // update RRDP server
                 self.rrdp.apply_update(update);
 
                 // Can only have events for existing publishers, so unwrap is okay
                 let publisher = self.get_publisher(&publisher_handle).unwrap();
                 let current_objects = publisher.current_objects.clone().into();
-                let publisher_stats = PublisherStats::new(&current_objects, time);
+                let publisher_stats = PublisherStats::new(&current_objects);
 
                 let notification = &self.rrdp.notification;
 
