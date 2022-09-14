@@ -1328,11 +1328,14 @@ impl RepoStats {
 
 impl fmt::Display for RepoStats {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "RSYNC BASE:        {}", self.sia_base)?;
+        writeln!(f, "RRDP NOTIFICATION: {}", self.rrdp_notification_uri)?;
+        writeln!(f)?;
         if let Some(update) = self.last_update() {
-            writeln!(f, "RRDP updated: {}", update.to_rfc3339())?;
+            writeln!(f, "RRDP updated:      {}", update.to_rfc3339())?;
         }
-        writeln!(f, "RRDP session: {}", self.session())?;
-        writeln!(f, "RRDP serial:  {}", self.serial())?;
+        writeln!(f, "RRDP session:      {}", self.session())?;
+        writeln!(f, "RRDP serial:       {}", self.serial())?;
         writeln!(f)?;
         writeln!(f, "Publisher, Objects, Size, Last Updated")?;
         for (publisher, stats) in self.get_publishers() {
