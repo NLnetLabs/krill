@@ -109,20 +109,6 @@ impl RepositoryManager {
             }
         };
 
-        // let (response, should_log_cms) = match query {
-        //     publication::Query::List => {
-        //         let list_reply = self.list(&publisher_handle)?;
-        //         (publication::Message::list_reply(list_reply), false)
-        //     }
-        //     publication::Query::Delta(delta) => match self.publish(&publisher_handle, delta) {
-        //         Ok(()) => (publication::Message::success(), true),
-        //         Err(e) => {
-        //             warn!("Rejecting delta sent by: {}. Error was: {}", publisher_handle, e);
-
-        //         }
-        //     },
-        // };
-
         let response_bytes = self.access.respond(response, &self.signer)?.to_bytes();
 
         if should_log_cms {
