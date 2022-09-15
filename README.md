@@ -27,6 +27,11 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 # Changelog
 
+## 0.10.3 'Down Under'
+
+This release fixes an interoperability issue with the APNIC CA system which
+didn't occur in the public test environment. See issue #933.
+
 ## 0.10.2 'All Types'
 
 This release fixes an issue where Krill 0.10.0 and 0.10.1 parent CAs would issue
