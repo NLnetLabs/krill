@@ -92,24 +92,36 @@ impl RepositoryManager {
         let message = cms.into_message();
         let query = message.as_query()?;
 
-        let (response, should_log_cms) = match query {
-            publication::Query::List => {
-                let list_reply = self.list(&publisher_handle)?;
-                (publication::Message::list_reply(list_reply), false)
+        let is_list_query = query == publication::Query::List;
+
+        let response_result = self.rfc8181_message(&publisher_handle, query);
+
+        let should_log_cms = response_result.is_err() || !is_list_query;
+
+        let response = match response_result {
+            Ok(response) => response,
+            Err(e) => {
+                let error_code = e.to_rfc8181_error_code();
+                let report_error = publication::ReportError::with_code(error_code);
+                let error_reply = publication::ErrorReply::for_error(report_error);
+
+                publication::Message::error(error_reply)
             }
-            publication::Query::Delta(delta) => match self.publish(publisher_handle.clone(), delta) {
-                Ok(()) => (publication::Message::success(), true),
-                Err(e) => {
-                    warn!("Rejecting delta sent by: {}. Error was: {}", publisher_handle, e);
-
-                    let error_code = e.to_rfc8181_error_code();
-                    let report_error = publication::ReportError::with_code(error_code);
-                    let error_reply = publication::ErrorReply::for_error(report_error);
-
-                    (publication::Message::error(error_reply), true)
-                }
-            },
         };
+
+        // let (response, should_log_cms) = match query {
+        //     publication::Query::List => {
+        //         let list_reply = self.list(&publisher_handle)?;
+        //         (publication::Message::list_reply(list_reply), false)
+        //     }
+        //     publication::Query::Delta(delta) => match self.publish(&publisher_handle, delta) {
+        //         Ok(()) => (publication::Message::success(), true),
+        //         Err(e) => {
+        //             warn!("Rejecting delta sent by: {}. Error was: {}", publisher_handle, e);
+
+        //         }
+        //     },
+        // };
 
         let response_bytes = self.access.respond(response, &self.signer)?.to_bytes();
 
@@ -121,17 +133,38 @@ impl RepositoryManager {
         Ok(response_bytes)
     }
 
+    pub fn rfc8181_message(
+        &self,
+        publisher_handle: &PublisherHandle,
+        query: publication::Query,
+    ) -> KrillResult<publication::Message> {
+        match query {
+            publication::Query::List => {
+                let list_reply = self.list(publisher_handle)?;
+                Ok(publication::Message::list_reply(list_reply))
+            }
+            publication::Query::Delta(delta) => {
+                self.publish(publisher_handle, delta)?;
+                Ok(publication::Message::success())
+            }
+        }
+    }
+
     /// Do an RRDP session reset.
     pub fn rrdp_session_reset(&self) -> KrillResult<()> {
         self.content.session_reset(&self.config.repository_retention)
     }
 
     /// Let a known publisher publish in a repository.
-    pub fn publish(&self, name: PublisherHandle, delta: PublishDelta) -> KrillResult<()> {
-        let publisher = self.access.get_publisher(&name)?;
+    pub fn publish(&self, publisher_handle: &PublisherHandle, delta: PublishDelta) -> KrillResult<()> {
+        let publisher = self.access.get_publisher(publisher_handle)?;
 
-        self.content
-            .publish(&name, delta, publisher.base_uri(), &self.config.repository_retention)
+        self.content.publish(
+            &publisher_handle,
+            delta,
+            publisher.base_uri(),
+            &self.config.repository_retention,
+        )
     }
 
     pub fn repo_stats(&self) -> KrillResult<RepoStats> {
@@ -389,7 +422,7 @@ mod tests {
         delta.add_publish(file1.as_publish());
         delta.add_publish(file2.as_publish());
 
-        server.publish(alice_handle.clone(), delta).unwrap();
+        server.publish(&alice_handle, delta).unwrap();
 
         // Two files should now appear in the list
         let list_reply = server.list(&alice_handle).unwrap();
@@ -420,7 +453,7 @@ mod tests {
         delta.add_withdraw(file2.as_withdraw());
         delta.add_publish(file3.as_publish());
 
-        server.publish(alice_handle.clone(), delta).unwrap();
+        server.publish(&alice_handle, delta).unwrap();
 
         // Two files should now appear in the list
         let list_reply = server.list(&alice_handle).unwrap();
@@ -443,7 +476,7 @@ mod tests {
         let mut delta = PublishDelta::empty();
         delta.add_publish(file_outside.as_publish());
 
-        match server.publish(alice_handle.clone(), delta) {
+        match server.publish(&alice_handle, delta) {
             Err(Error::Rfc8181Delta(PublicationDeltaError::UriOutsideJail(_, _))) => {} // ok
             _ => panic!("Expected error publishing outside of base uri jail"),
         }
@@ -456,7 +489,7 @@ mod tests {
         let mut delta = PublishDelta::empty();
         delta.add_update(file2_update.as_update(file2.hash()));
 
-        match server.publish(alice_handle.clone(), delta) {
+        match server.publish(&alice_handle, delta) {
             Err(Error::Rfc8181Delta(PublicationDeltaError::NoObjectForHashAndOrUri(_))) => {}
             _ => panic!("Expected error when file for update can't be found"),
         }
@@ -465,7 +498,7 @@ mod tests {
         let mut delta = PublishDelta::empty();
         delta.add_withdraw(file2.as_withdraw());
 
-        match server.publish(alice_handle.clone(), delta) {
+        match server.publish(&alice_handle, delta) {
             Err(Error::Rfc8181Delta(PublicationDeltaError::NoObjectForHashAndOrUri(_))) => {} // ok
             _ => panic!("Expected error withdrawing file that does not exist"),
         }
@@ -474,7 +507,7 @@ mod tests {
         let mut delta = PublishDelta::empty();
         delta.add_publish(file3.as_publish());
 
-        match server.publish(alice_handle.clone(), delta) {
+        match server.publish(&alice_handle, delta) {
             Err(Error::Rfc8181Delta(PublicationDeltaError::ObjectAlreadyPresent(uri))) => {
                 assert_eq!(uri, test::rsync("rsync://localhost/repo/alice/file3.txt"))
             }
@@ -505,7 +538,7 @@ mod tests {
         let mut delta = PublishDelta::empty();
         delta.add_publish(file4.as_publish());
 
-        server.publish(alice_handle.clone(), delta).unwrap();
+        server.publish(&alice_handle, delta).unwrap();
 
         // Should include new snapshot and delta
         assert!(session_dir_contains_serial(&session, RRDP_FIRST_SERIAL + 3));
@@ -583,7 +616,7 @@ mod tests {
         delta.add_publish(file1.as_publish());
         delta.add_publish(file2.as_publish());
 
-        server.publish(alice_handle.clone(), delta).unwrap();
+        server.publish(&alice_handle, delta).unwrap();
 
         // Two files should now appear in the list
         let list_reply = server.list(&alice_handle).unwrap();
