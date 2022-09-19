@@ -438,6 +438,10 @@ impl ConfiguredRoa {
         }
     }
 
+    pub fn roa_configuration(&self) -> &RoaConfiguration {
+        &self.roa_configuration
+    }
+
     pub fn payload(&self) -> RoaPayload {
         self.roa_configuration.payload
     }
@@ -497,6 +501,12 @@ impl PartialOrd for ConfiguredRoa {
 /// an easy fmt::Display implementation to use in the CLI report.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ConfiguredRoas(Vec<ConfiguredRoa>);
+
+impl ConfiguredRoas {
+    pub fn unpack(self) -> Vec<ConfiguredRoa> {
+        self.0
+    }
+}
 
 impl fmt::Display for ConfiguredRoas {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
