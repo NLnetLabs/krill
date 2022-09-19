@@ -101,13 +101,9 @@ async fn functional_roas() {
     async fn expect_configured_roas(ca: &CaHandle, expected: &[RoaConfiguration]) {
         let configured_roas = ca_configured_roas(ca).await.unpack();
         assert_eq!(configured_roas.len(), expected.len());
-        let roa_configurations: Vec<&RoaConfiguration> = configured_roas
-            .iter()
-            .map(|configured| configured.roa_configuration())
-            .collect();
 
-        for expected in expected {
-            assert!(roa_configurations.contains(&expected));
+        for configuration in configured_roas.iter().map(|configured| configured.roa_configuration()) {
+            assert!(expected.contains(configuration));
         }
     }
 
