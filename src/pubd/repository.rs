@@ -351,7 +351,7 @@ impl RepositoryContent {
             self.rrdp.publish(delta, jail, config)?;
             self.write_repository(config)?;
         }
-        // remove publisher is present
+        // remove publisher if present
         self.publishers.remove(name);
         Ok(())
     }
