@@ -358,22 +358,14 @@ impl RepositoryContent {
 
     /// Returns the content stats for the repo
     pub fn stats(&self) -> RepoStats {
-        let publishers = self.publisher_stats();
-        let session = self.rrdp.session;
-        let serial = self.rrdp.serial;
-        let last_update = Some(self.rrdp.notification().time());
-
-        let rrdp_notification_uri = self.rrdp.notification_uri();
-        let sia_base = self.rsync.base_uri.clone();
-
-        RepoStats::new(
-            publishers,
-            session,
-            serial,
-            last_update,
-            sia_base,
-            rrdp_notification_uri,
-        )
+        RepoStats {
+            publishers: self.publisher_stats(),
+            session: self.rrdp.session,
+            serial: self.rrdp.serial,
+            last_update: Some(self.rrdp.notification().time()),
+            rsync_base: self.rsync.base_uri.clone(),
+            rrdp_base: self.rrdp.rrdp_base_uri.clone(),
+        }
     }
 
     /// Returns the stats for all current publishers
@@ -1245,29 +1237,11 @@ pub struct RepoStats {
     session: RrdpSession,
     serial: u64,
     last_update: Option<Time>,
-    sia_base: uri::Rsync,
-    rrdp_notification_uri: uri::Https,
+    rsync_base: uri::Rsync,
+    rrdp_base: uri::Https,
 }
 
 impl RepoStats {
-    pub fn new(
-        publishers: HashMap<PublisherHandle, PublisherStats>,
-        session: RrdpSession,
-        serial: u64,
-        last_update: Option<Time>,
-        sia_base: uri::Rsync,
-        rrdp_notification_uri: uri::Https,
-    ) -> Self {
-        RepoStats {
-            publishers,
-            session,
-            serial,
-            last_update,
-            sia_base,
-            rrdp_notification_uri,
-        }
-    }
-
     pub fn publish(
         &mut self,
         publisher: &PublisherHandle,
@@ -1328,8 +1302,9 @@ impl RepoStats {
 
 impl fmt::Display for RepoStats {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "RSYNC BASE:        {}", self.sia_base)?;
-        writeln!(f, "RRDP NOTIFICATION: {}", self.rrdp_notification_uri)?;
+        writeln!(f, "Server URIs:")?;
+        writeln!(f, "    rrdp:    {}", self.rrdp_base)?;
+        writeln!(f, "    rsync:   {}", self.rsync_base)?;
         writeln!(f)?;
         if let Some(update) = self.last_update() {
             writeln!(f, "RRDP updated:      {}", update.to_rfc3339())?;
