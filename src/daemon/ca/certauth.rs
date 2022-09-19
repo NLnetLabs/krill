@@ -858,7 +858,7 @@ impl CertAuth {
         let issued =
             self.issue_child_certificate(&child, rcn.clone(), csr_info, limit, &config.issuance_timing, &signer)?;
 
-        let cert_name = ObjectName::new(&issued.key_identifier(), ".cer");
+        let cert_name = ObjectName::new(&issued.key_identifier(), "cer");
 
         info!(
             "CA '{}' issued certificate '{}' to child '{}'",
