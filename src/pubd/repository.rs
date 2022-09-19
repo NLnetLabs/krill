@@ -1383,10 +1383,10 @@ impl PublisherStats {
     pub fn last_update(&self) -> Option<Time> {
         let mut last_update = None;
         for mft in self.manifests() {
-            if let Some(seen_update) = last_update {
-                let this_update = mft.this_update();
-                if this_update > seen_update {
-                    last_update = Some(this_update)
+            if let Some(last_update_until_now) = last_update {
+                let this_manifest_this_update = mft.this_update();
+                if this_manifest_this_update > last_update_until_now {
+                    last_update = Some(this_manifest_this_update)
                 }
             } else {
                 last_update = Some(mft.this_update());
@@ -1405,6 +1405,8 @@ impl From<&CurrentObjects> for PublisherStats {
     fn from(objects: &CurrentObjects) -> Self {
         let mut manifests = vec![];
         for el in objects.elements() {
+            // Add all manifests - as long as they are syntactically correct - do not
+            // crash on incorrect objects.
             if el.uri().ends_with("mft") {
                 if let Ok(mft) = Manifest::decode(el.base64().to_bytes().as_ref(), false) {
                     if let Ok(stats) = PublisherManifestStats::try_from(&mft) {
@@ -1446,6 +1448,8 @@ impl PublisherManifestStats {
 impl TryFrom<&Manifest> for PublisherManifestStats {
     type Error = ();
 
+    // This will fail for syntactically incorrect manifests, which do
+    // not include the signed object URI in their SIA.
     fn try_from(mft: &Manifest) -> Result<Self, Self::Error> {
         let uri = mft.cert().signed_object().cloned().ok_or(())?;
         Ok(PublisherManifestStats {
