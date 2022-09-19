@@ -18,7 +18,7 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::{IssuedCertificate, ReceivedCert, ResourceClassInfo, SuspendedCert, UnsuspendedCert},
+        api::{IssuedCertificate, ReceivedCert, ResourceClassInfo, RoaConfiguration, SuspendedCert, UnsuspendedCert},
         crypto::{CsrInfo, KrillSigner, SignSupport},
         error::Error,
         KrillResult,
@@ -33,7 +33,7 @@ use crate::{
     },
 };
 
-use super::{AspaDefinitions, BgpSecCertificateUpdates, BgpSecCertificates, BgpSecDefinitions};
+use super::{AspaDefinitions, BgpSecCertificateUpdates, BgpSecCertificates, BgpSecDefinitions, RoaInfo};
 
 //------------ ResourceClass -----------------------------------------------
 
@@ -765,6 +765,11 @@ impl ResourceClass {
     /// Marks the ROAs as updated from a RoaUpdated event.
     pub fn roas_updated(&mut self, updates: RoaUpdates) {
         self.roas.updated(updates);
+    }
+
+    /// find all matching ROA infos for the given configuration
+    pub fn matching_roa_infos(&self, config: &RoaConfiguration) -> Vec<RoaInfo> {
+        self.roas.matching_roa_infos(config)
     }
 }
 

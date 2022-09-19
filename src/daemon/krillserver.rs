@@ -648,7 +648,7 @@ impl KrillServer {
         for ca in self.ca_list(&self.system_actor)?.cas() {
             // can't fail really, but to be sure
             if let Ok(ca) = self.ca_manager.get_ca(ca.handle()).await {
-                let roas = ca.roas_configured();
+                let roas = ca.configured_roas();
                 let roa_count = roas.len();
                 let child_count = ca.children().count();
 
@@ -892,12 +892,12 @@ impl KrillServer {
     pub async fn ca_routes_show(&self, handle: &CaHandle) -> KrillResult<Vec<ConfiguredRoa>> {
         let ca = self.ca_manager.get_ca(handle).await?;
 
-        Ok(ca.roas_configured())
+        Ok(ca.configured_roas())
     }
 
     pub async fn ca_routes_bgp_analysis(&self, handle: &CaHandle) -> KrillResult<BgpAnalysisReport> {
         let ca = self.ca_manager.get_ca(handle).await?;
-        let definitions = ca.roas_configured();
+        let definitions = ca.configured_roas();
         let resources_held = ca.all_resources();
         Ok(self
             .bgp_analyser
@@ -917,8 +917,8 @@ impl KrillServer {
         let limit = Some(updates.affected_prefixes());
 
         let (would_be_routes, _) = ca.update_authorizations(&updates)?;
-        let roa_configurations = would_be_routes.roa_configurations();
-        let configured_roas: Vec<_> = roa_configurations.into_iter().map(ConfiguredRoa::new).collect();
+        let would_be_configurations = would_be_routes.roa_configurations();
+        let configured_roas = ca.configured_roas_for_configs(would_be_configurations);
 
         Ok(self
             .bgp_analyser
@@ -932,7 +932,7 @@ impl KrillServer {
         limit: Option<ResourceSet>,
     ) -> KrillResult<BgpAnalysisSuggestion> {
         let ca = self.ca_manager.get_ca(handle).await?;
-        let configured_roas = ca.roas_configured();
+        let configured_roas = ca.configured_roas();
         let resources_held = ca.all_resources();
 
         Ok(self

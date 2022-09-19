@@ -36,9 +36,9 @@ use crate::{
         api::{
             AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, BgpSecAsnKey,
             BgpSecCsrInfoList, BgpSecDefinition, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ConfiguredRoa,
-            ObjectName, ParentCaContact, ParentCaReq, ParentStatuses, PublicationServerUris, PublisherDetails,
-            PublisherList, ResourceClassKeysInfo, RoaConfiguration, RoaConfigurationUpdates, RoaPayload, RtaList,
-            RtaName, RtaPrepResponse, TypedPrefix, UpdateChildRequest,
+            ConfiguredRoas, ObjectName, ParentCaContact, ParentCaReq, ParentStatuses, PublicationServerUris,
+            PublisherDetails, PublisherList, ResourceClassKeysInfo, RoaConfiguration, RoaConfigurationUpdates,
+            RoaPayload, RtaList, RtaName, RtaPrepResponse, TypedPrefix, UpdateChildRequest,
         },
         bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion},
         crypto::SignSupport,
@@ -391,6 +391,13 @@ pub async fn ca_route_authorizations_update_expect_error(ca: &CaHandle, updates:
     .await;
 }
 
+pub async fn ca_configured_roas(ca: &CaHandle) -> ConfiguredRoas {
+    match krill_admin(Command::CertAuth(CaCommand::RouteAuthorizationsList(ca.clone()))).await {
+        ApiResponse::RouteAuthorizations(roas) => roas,
+        _ => panic!("Expected configured ROAs"),
+    }
+}
+
 pub async fn ca_route_authorizations_suggestions(ca: &CaHandle) -> BgpAnalysisSuggestion {
     match krill_admin(Command::CertAuth(CaCommand::BgpAnalysisSuggest(ca.clone(), None))).await {
         ApiResponse::BgpAnalysisSuggestions(suggestion) => suggestion,
@@ -697,7 +704,7 @@ pub fn announcement(s: &str) -> Announcement {
 }
 
 pub fn configured_roa(s: &str) -> ConfiguredRoa {
-    ConfiguredRoa::new(roa_configuration(s))
+    ConfiguredRoa::new(roa_configuration(s), vec![])
 }
 
 pub fn roa_configuration(s: &str) -> RoaConfiguration {

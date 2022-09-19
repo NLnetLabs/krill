@@ -28,8 +28,9 @@ use crate::{
         api::{
             AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate, BgpSecAsnKey,
             BgpSecCsrInfoList, BgpSecDefinitionUpdates, CertAuthInfo, ConfiguredRoa, IdCertInfo, IssuedCertificate,
-            ObjectName, ParentCaContact, ReceivedCert, RepositoryContact, Revocation, RoaConfigurationUpdates, RtaList,
-            RtaName, RtaPrepResponse, StorableCaCommand, TaCertDetails, TrustAnchorLocator,
+            ObjectName, ParentCaContact, ReceivedCert, RepositoryContact, Revocation, RoaConfiguration,
+            RoaConfigurationUpdates, RtaList, RtaName, RtaPrepResponse, StorableCaCommand, TaCertDetails,
+            TrustAnchorLocator,
         },
         crypto::{CsrInfo, KrillSigner},
         error::{Error, RoaDeltaError},
@@ -47,6 +48,8 @@ use crate::{
         config::{Config, IssuanceTimingConfig},
     },
 };
+
+use super::RoaInfo;
 
 //------------ CertAuth ----------------------------------------------------
 
@@ -536,12 +539,23 @@ impl CertAuth {
     }
 
     /// Returns the current ConfiguredRoas.
-    pub fn roas_configured(&self) -> Vec<ConfiguredRoa> {
-        self.routes
-            .roa_configurations()
-            .into_iter()
-            .map(ConfiguredRoa::new)
-            .collect()
+    pub fn configured_roas(&self) -> Vec<ConfiguredRoa> {
+        let roa_configurations = self.routes.roa_configurations();
+        self.configured_roas_for_configs(roa_configurations)
+    }
+
+    pub fn configured_roas_for_configs(&self, roa_configurations: Vec<RoaConfiguration>) -> Vec<ConfiguredRoa> {
+        let mut configured_roas = vec![];
+
+        for roa_configuration in roa_configurations {
+            let mut roa_infos: Vec<RoaInfo> = vec![];
+            for rc in self.resources.values() {
+                roa_infos.append(&mut rc.matching_roa_infos(&roa_configuration));
+            }
+            configured_roas.push(ConfiguredRoa::new(roa_configuration, roa_infos))
+        }
+
+        configured_roas
     }
 
     /// Returns an RFC 8183 Child Request - which can be represented as XML to a
@@ -1743,14 +1757,12 @@ impl CertAuth {
 
             let auth = RoaPayloadJsonMapKey::from(roa_payload);
 
-            // let authorizations: Vec<&RoaPayloadKey> = desired_routes.authorizations().collect();
-
             if !roa_payload.max_length_valid() {
                 // The (max) length is invalid for this prefix
-                delta_errors.add_invalid_length(roa_payload);
+                delta_errors.add_invalid_length(roa_configuration.clone());
             } else if !all_resources.contains_roa_address(&roa_payload.as_roa_ip_address()) {
                 // We do not hold the prefix
-                delta_errors.add_notheld(roa_payload);
+                delta_errors.add_notheld(roa_configuration.clone());
             } else if let Some(info) = desired_routes.info(&auth) {
                 // We have an existing info for this payload, this may be an attempt to update the comment.
                 if info.comment() != comment {
@@ -1762,7 +1774,7 @@ impl CertAuth {
                 } else {
                     // Duplicate entry. We could be idempotent, but perhaps it's best to return an error
                     // instead because it seems that the user is out of sync with the current state.
-                    delta_errors.add_duplicate(roa_payload);
+                    delta_errors.add_duplicate(roa_configuration.clone());
                 }
             } else {
                 // Ok, this seems okay now
