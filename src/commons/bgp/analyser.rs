@@ -412,24 +412,30 @@ mod tests {
 
         assert!(!report.contains_invalids());
 
-        let mut disallowed = report.matching_configurations(BgpAnalysisState::AnnouncementDisallowed);
+        let mut disallowed = report.matching_announcements(BgpAnalysisState::AnnouncementDisallowed);
         disallowed.sort();
 
-        let disallowed_1 = configured_roa("10.0.0.0/22 => 64496");
-        let disallowed_2 = configured_roa("10.0.0.0/22 => 64497");
-        let disallowed_3 = configured_roa("10.0.0.0/24 => 64496");
-        let disallowed_4 = configured_roa("10.0.2.0/23 => 64496");
-        let mut expected = vec![&disallowed_1, &disallowed_2, &disallowed_3, &disallowed_4];
+        let disallowed_1 = announcement("10.0.0.0/22 => 64496");
+        let disallowed_2 = announcement("10.0.0.0/22 => 64497");
+        let disallowed_3 = announcement("10.0.0.0/24 => 64496");
+        let disallowed_4 = announcement("10.0.2.0/23 => 64496");
+        let mut expected = vec![disallowed_1, disallowed_2, disallowed_3, disallowed_4];
         expected.sort();
 
         assert_eq!(disallowed, expected);
 
+        // The suggestion should not try to add the disallowed announcements
+        // because they were disallowed by an AS0 roa.
         let suggestion = analyser.suggest(roas, &resources_held, None).await;
         let updates = RoaConfigurationUpdates::from(suggestion);
 
         let added = updates.added();
-        for configured_roa in disallowed {
-            assert!(!added.contains(configured_roa.as_ref()))
+        for announcement in disallowed {
+            assert!(!added.iter().any(|added_roa| {
+                let added_payload = added_roa.payload();
+                let announcement_payload = RoaPayload::from(announcement);
+                added_payload.includes(&announcement_payload)
+            }));
         }
     }
 

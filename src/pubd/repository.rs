@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, VecDeque},
+    convert::TryFrom,
     fmt, fs, mem,
     path::{Path, PathBuf},
     str::FromStr,
@@ -14,7 +15,7 @@ use rpki::{
         publication::{ListReply, PublicationCms, PublishDelta},
     },
     crypto::KeyIdentifier,
-    repository::x509::Time,
+    repository::{x509::Time, Manifest},
     rrdp::Hash,
     uri,
 };
@@ -98,7 +99,6 @@ impl RepositoryContentProxy {
                 let publishers = HashMap::new();
 
                 let session = RrdpSession::default();
-                let stats = RepoStats::new(session);
 
                 let mut repo_dir = work_dir.to_path_buf();
                 repo_dir.push(REPOSITORY_DIR);
@@ -106,7 +106,7 @@ impl RepositoryContentProxy {
                 let rrdp = RrdpServer::create(rrdp_base_uri, &repo_dir, session);
                 let rsync = RsyncdStore::new(rsync_jail, &repo_dir);
 
-                RepositoryContent::new(publishers, rrdp, rsync, stats)
+                RepositoryContent::new(publishers, rrdp, rsync)
             };
 
             // Store newly initialized repo content on disk
@@ -139,7 +139,7 @@ impl RepositoryContentProxy {
 
     /// Return the repository content stats
     pub fn stats(&self) -> KrillResult<RepoStats> {
-        self.read(|content| Ok(content.stats().clone()))
+        self.read(|content| Ok(content.stats()))
     }
 
     /// Add a publisher with an empty set of published objects.
@@ -240,25 +240,16 @@ impl RepositoryContentProxy {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RepositoryContent {
     publishers: HashMap<PublisherHandle, CurrentObjects>,
-
     rrdp: RrdpServer,
     rsync: RsyncdStore,
-
-    stats: RepoStats,
 }
 
 impl RepositoryContent {
-    pub fn new(
-        publishers: HashMap<PublisherHandle, CurrentObjects>,
-        rrdp: RrdpServer,
-        rsync: RsyncdStore,
-        stats: RepoStats,
-    ) -> Self {
+    pub fn new(publishers: HashMap<PublisherHandle, CurrentObjects>, rrdp: RrdpServer, rsync: RsyncdStore) -> Self {
         RepositoryContent {
             publishers,
             rrdp,
             rsync,
-            stats,
         }
     }
 
@@ -266,13 +257,11 @@ impl RepositoryContent {
         let publishers = HashMap::new();
         let rrdp = RrdpServer::create(rrdp_base_uri, repo_base_dir, session);
         let rsync = RsyncdStore::new(rsync_jail, repo_base_dir);
-        let stats = RepoStats::new(session);
 
         RepositoryContent {
             publishers,
             rrdp,
             rsync,
-            stats,
         }
     }
 
@@ -280,10 +269,6 @@ impl RepositoryContent {
     pub fn clear(&self) {
         self.rrdp.clear();
         self.rsync.clear();
-    }
-
-    pub fn stats(&self) -> &RepoStats {
-        &self.stats
     }
 }
 
@@ -317,16 +302,12 @@ impl RepositoryContent {
         // to update outside of its jail.
         let objects = self.objects_for_publisher_mut(name)?;
         objects.apply_delta(delta.clone(), jail)?;
-        let publisher_stats = PublisherStats::new(objects, Time::now());
 
         // update the RRDP server
         self.rrdp.publish(delta, jail, config)?;
 
         // write repo (note rsync is based on updated rrdp snapshot)
         self.write_repository(config)?;
-
-        // Update publisher stats
-        self.stats.publish(name, publisher_stats, self.rrdp.notification());
 
         Ok(())
     }
@@ -337,7 +318,6 @@ impl RepositoryContent {
         );
 
         self.rrdp.session_reset();
-        self.stats.session_reset(self.rrdp.notification());
         self.write_repository(config)?;
 
         Ok(())
@@ -349,7 +329,6 @@ impl RepositoryContent {
     }
 
     pub fn add_publisher(&mut self, name: PublisherHandle) -> KrillResult<()> {
-        self.stats.new_publisher(&name);
         self.publishers.insert(name, CurrentObjects::default());
         Ok(())
     }
@@ -364,18 +343,37 @@ impl RepositoryContent {
         jail: &uri::Rsync,
         config: &RepositoryRetentionConfig,
     ) -> KrillResult<()> {
+        // withdraw objects if any
         if let Ok(objects) = self.objects_for_publisher(name) {
             let withdraws = objects.elements().iter().map(|e| e.as_withdraw()).collect();
             let delta = DeltaElements::new(vec![], vec![], withdraws);
 
             self.rrdp.publish(delta, jail, config)?;
-            self.stats.remove_publisher(name, self.rrdp.notification());
-
-            self.write_repository(config)
-        } else {
-            // nothing to remove
-            Ok(())
+            self.write_repository(config)?;
         }
+        // remove publisher if present
+        self.publishers.remove(name);
+        Ok(())
+    }
+
+    /// Returns the content stats for the repo
+    pub fn stats(&self) -> RepoStats {
+        RepoStats {
+            publishers: self.publisher_stats(),
+            session: self.rrdp.session,
+            serial: self.rrdp.serial,
+            last_update: Some(self.rrdp.notification().time()),
+            rsync_base: self.rsync.base_uri.clone(),
+            rrdp_base: self.rrdp.rrdp_base_uri.clone(),
+        }
+    }
+
+    /// Returns the stats for all current publishers
+    pub fn publisher_stats(&self) -> HashMap<PublisherHandle, PublisherStats> {
+        self.publishers
+            .iter()
+            .map(|(pbl, objects)| (pbl.clone(), PublisherStats::from(objects)))
+            .collect()
     }
 }
 
@@ -1233,24 +1231,17 @@ impl RepositoryAccess {
 
 //------------ RepoStats -----------------------------------------------------
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RepoStats {
     publishers: HashMap<PublisherHandle, PublisherStats>,
     session: RrdpSession,
     serial: u64,
     last_update: Option<Time>,
+    rsync_base: uri::Rsync,
+    rrdp_base: uri::Https,
 }
 
 impl RepoStats {
-    pub fn new(session: RrdpSession) -> Self {
-        RepoStats {
-            publishers: HashMap::new(),
-            session,
-            serial: 0,
-            last_update: None,
-        }
-    }
-
     pub fn publish(
         &mut self,
         publisher: &PublisherHandle,
@@ -1285,7 +1276,7 @@ impl RepoStats {
     pub fn stale_publishers(&self, seconds: i64) -> Vec<PublisherHandle> {
         let mut res = vec![];
         for (publisher, stats) in self.publishers.iter() {
-            if let Some(update_time) = stats.last_update {
+            if let Some(update_time) = stats.last_update() {
                 if Time::now().timestamp() - update_time.timestamp() >= seconds {
                     res.push(publisher.clone())
                 }
@@ -1311,11 +1302,15 @@ impl RepoStats {
 
 impl fmt::Display for RepoStats {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "Server URIs:")?;
+        writeln!(f, "    rrdp:    {}", self.rrdp_base)?;
+        writeln!(f, "    rsync:   {}", self.rsync_base)?;
+        writeln!(f)?;
         if let Some(update) = self.last_update() {
-            writeln!(f, "RRDP updated: {}", update.to_rfc3339())?;
+            writeln!(f, "RRDP updated:      {}", update.to_rfc3339())?;
         }
-        writeln!(f, "RRDP session: {}", self.session())?;
-        writeln!(f, "RRDP serial:  {}", self.serial())?;
+        writeln!(f, "RRDP session:      {}", self.session())?;
+        writeln!(f, "RRDP serial:       {}", self.serial())?;
         writeln!(f)?;
         writeln!(f, "Publisher, Objects, Size, Last Updated")?;
         for (publisher, stats) in self.get_publishers() {
@@ -1341,18 +1336,12 @@ impl fmt::Display for RepoStats {
 pub struct PublisherStats {
     objects: usize,
     size: usize,
-    last_update: Option<Time>,
+    manifests: Vec<PublisherManifestStats>,
 }
 
 impl PublisherStats {
-    pub fn new(current_objects: &CurrentObjects, last_update: Time) -> Self {
-        let objects = current_objects.len();
-        let size = current_objects.size();
-        PublisherStats {
-            objects,
-            size,
-            last_update: Some(last_update),
-        }
+    pub fn new(current_objects: &CurrentObjects) -> Self {
+        Self::from(current_objects)
     }
 
     pub fn objects(&self) -> usize {
@@ -1363,17 +1352,85 @@ impl PublisherStats {
         self.size
     }
 
+    /// Returns the most recent "this_update" time
+    /// from all manifest(s) published by this publisher,
+    /// if any.. i.e. there may be 0, 1 or many manifests
     pub fn last_update(&self) -> Option<Time> {
-        self.last_update
+        let mut last_update = None;
+        for mft in self.manifests() {
+            if let Some(last_update_until_now) = last_update {
+                let this_manifest_this_update = mft.this_update();
+                if this_manifest_this_update > last_update_until_now {
+                    last_update = Some(this_manifest_this_update)
+                }
+            } else {
+                last_update = Some(mft.this_update());
+            }
+        }
+
+        last_update
+    }
+
+    pub fn manifests(&self) -> &Vec<PublisherManifestStats> {
+        &self.manifests
     }
 }
 
 impl From<&CurrentObjects> for PublisherStats {
     fn from(objects: &CurrentObjects) -> Self {
+        let mut manifests = vec![];
+        for el in objects.elements() {
+            // Add all manifests - as long as they are syntactically correct - do not
+            // crash on incorrect objects.
+            if el.uri().ends_with("mft") {
+                if let Ok(mft) = Manifest::decode(el.base64().to_bytes().as_ref(), false) {
+                    if let Ok(stats) = PublisherManifestStats::try_from(&mft) {
+                        manifests.push(stats)
+                    }
+                }
+            }
+        }
+
         PublisherStats {
             objects: objects.len(),
             size: objects.size(),
-            last_update: None,
+            manifests,
         }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PublisherManifestStats {
+    uri: uri::Rsync,
+    this_update: Time,
+    next_update: Time,
+}
+
+impl PublisherManifestStats {
+    pub fn uri(&self) -> &uri::Rsync {
+        &self.uri
+    }
+
+    pub fn this_update(&self) -> Time {
+        self.this_update
+    }
+
+    pub fn next_update(&self) -> Time {
+        self.next_update
+    }
+}
+
+impl TryFrom<&Manifest> for PublisherManifestStats {
+    type Error = ();
+
+    // This will fail for syntactically incorrect manifests, which do
+    // not include the signed object URI in their SIA.
+    fn try_from(mft: &Manifest) -> Result<Self, Self::Error> {
+        let uri = mft.cert().signed_object().cloned().ok_or(())?;
+        Ok(PublisherManifestStats {
+            uri,
+            this_update: mft.this_update(),
+            next_update: mft.next_update(),
+        })
     }
 }

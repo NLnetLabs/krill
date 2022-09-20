@@ -2,11 +2,15 @@
   "stale": [
     {
       "asn": 64497,
-      "prefix": "10.0.3.0/24"
+      "prefix": "10.0.3.0/24",
+      "comment": null,
+      "roa_objects": []
     },
     {
       "asn": 64498,
-      "prefix": "192.168.1.0/24"
+      "prefix": "192.168.1.0/24",
+      "comment": null,
+      "roa_objects": []
     }
   ],
   "not_found": [
@@ -40,7 +44,9 @@
       "current": {
         "asn": 64496,
         "prefix": "10.0.0.0/22",
-        "max_length": 23
+        "max_length": 23,
+        "comment": null,
+        "roa_objects": []
       },
       "new": [
         {
@@ -54,26 +60,34 @@
       ]
     }
   ],
-  "as0_redundant": [
-    {
-      "asn": 0,
-      "prefix": "192.168.1.0/24"
-    }
-  ],
   "redundant": [
     {
       "asn": 64496,
-      "prefix": "10.0.0.0/23"
+      "prefix": "10.0.0.0/23",
+      "comment": null,
+      "roa_objects": []
+    }
+  ],
+  "as0_redundant": [
+    {
+      "asn": 0,
+      "prefix": "192.168.1.0/24",
+      "comment": null,
+      "roa_objects": []
     }
   ],
   "keep": [
     {
       "asn": 64497,
-      "prefix": "192.168.1.0/24"
+      "prefix": "192.168.1.0/24",
+      "comment": null,
+      "roa_objects": []
     },
     {
       "asn": 0,
-      "prefix": "10.0.4.0/24"
+      "prefix": "10.0.4.0/24",
+      "comment": null,
+      "roa_objects": []
     }
   ]
 }

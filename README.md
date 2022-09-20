@@ -27,6 +27,26 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 # Changelog
 
+## 0.11.0 RC1 'What about that ROA?'
+
+In this release we introduce two features in the Krill API and CLI:
+- Support optional comment for each ROA configuration #863
+- Show ROA object(s) for each ROA configuration #864
+
+This is not yet supported in the UI, but will be in the near future as the
+current UI will get a make-over soon.
+
+Other than this we included a few minor issues and fixes:
+- Query initialisation parameters for Krill pubserver (rrdp/rsync URI) #835
+- Tasks for removed CAs should not result in errors #906
+- Disallow negative numbers in config #808
+
+Documentation can be found here:
+https://krill.docs.nlnetlabs.nl/en/latest/
+
+And here:
+https://krill.docs.nlnetlabs.nl/en/latest/upgrade.html#v0-11-0
+
 ## 0.10.3 'Down Under'
 
 This release fixes an interoperability issue with the APNIC CA system which

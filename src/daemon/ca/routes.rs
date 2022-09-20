@@ -348,6 +348,28 @@ impl Roas {
         }
     }
 
+    /// Returns all the current RoaInfos matching the given config
+    pub fn matching_roa_infos(&self, config: &RoaConfiguration) -> Vec<RoaInfo> {
+        let payload = RoaPayloadJsonMapKey::from(config.payload().into_explicit_max_length());
+        let mut roa_infos: Vec<RoaInfo> = self
+            .simple
+            .values()
+            .filter(|info| info.authorizations().contains(&payload))
+            .cloned()
+            .collect();
+
+        roa_infos.append(
+            &mut self
+                .aggregate
+                .values()
+                .filter(|info| info.authorizations().contains(&payload))
+                .cloned()
+                .collect(),
+        );
+
+        roa_infos
+    }
+
     /// Returns whether ROAs are currently being aggregated. I.e. whether
     /// there are any aggregated ROAs for which no explicit group number
     /// was set.
