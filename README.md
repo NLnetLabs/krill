@@ -41,6 +41,12 @@ Other than this we included a few minor issues and fixes:
 - Tasks for removed CAs should not result in errors #906
 - Disallow negative numbers in config #808
 
+Documentation can be found here:
+https://krill.docs.nlnetlabs.nl/en/latest/
+
+And here:
+https://krill.docs.nlnetlabs.nl/en/latest/upgrade.html#v0-11-0
+
 ## 0.10.3 'Down Under'
 
 This release fixes an interoperability issue with the APNIC CA system which
