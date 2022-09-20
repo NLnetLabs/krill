@@ -29,7 +29,7 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 ## 0.11.0 RC1 'What about that ROA?'
 
-In this release we introduce to features in the Krill API and CLI:
+In this release we introduce two features in the Krill API and CLI:
 - Support optional comment for each ROA configuration #863
 - Show ROA object(s) for each ROA configuration #864
 
