@@ -343,8 +343,8 @@ impl KeyValueStoreDiskImpl {
         if path.exists() {
             // We read the json file into memory first. Deserializing from a slice is
             // about 50-100 times faster than if we use serde_json::from_reader on the file.
-            // We could use a BufReader, but this is still a whole lot slower for large files.
             //
+            // We could use a BufReader, but this is still a whole lot slower for large files.
             // Based on our testing about 20 times slower for a 450 MB json file. The test
             // and large file are not checked in to avoid that checkouts of this code base
             // take up more space than needed, but it was tested using the pubd::RepositoryContent
