@@ -18,7 +18,7 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::{IssuedCertificate, ReceivedCert, ResourceClassInfo, SuspendedCert, UnsuspendedCert},
+        api::{IssuedCertificate, ReceivedCert, ResourceClassInfo, RoaConfiguration, SuspendedCert, UnsuspendedCert},
         crypto::{CsrInfo, KrillSigner, SignSupport},
         error::Error,
         KrillResult,
@@ -33,7 +33,7 @@ use crate::{
     },
 };
 
-use super::{AspaDefinitions, BgpSecCertificateUpdates, BgpSecCertificates, BgpSecDefinitions};
+use super::{AspaDefinitions, BgpSecCertificateUpdates, BgpSecCertificates, BgpSecDefinitions, RoaInfo};
 
 //------------ ResourceClass -----------------------------------------------
 
@@ -685,7 +685,7 @@ impl ResourceClass {
             &resources,
             limit,
             signing_key,
-            issuance_timing.timing_child_certificate_valid_weeks,
+            issuance_timing.new_child_cert_validity(),
             signer,
         )?;
 
@@ -766,6 +766,11 @@ impl ResourceClass {
     pub fn roas_updated(&mut self, updates: RoaUpdates) {
         self.roas.updated(updates);
     }
+
+    /// find all matching ROA infos for the given configuration
+    pub fn matching_roa_infos(&self, config: &RoaConfiguration) -> Vec<RoaInfo> {
+        self.roas.matching_roa_infos(config)
+    }
 }
 
 /// # Autonomous System Provider Authorization
@@ -779,7 +784,7 @@ impl ResourceClass {
         signer: &KrillSigner,
     ) -> KrillResult<AspaObjectsUpdates> {
         if let Ok(key) = self.get_current_key() {
-            let renew_threshold = Some(Time::now() + Duration::weeks(issuance_timing.timing_aspa_reissue_weeks_before));
+            let renew_threshold = Some(issuance_timing.new_aspa_issuance_threshold());
             self.aspas.renew(key, renew_threshold, issuance_timing, signer)
         } else {
             debug!("no ASPAs to renew - resource class has no current key");
@@ -834,8 +839,7 @@ impl ResourceClass {
         signer: &KrillSigner,
     ) -> KrillResult<BgpSecCertificateUpdates> {
         if let Ok(key) = self.get_current_key() {
-            let renew_threshold =
-                Some(Time::now() + Duration::weeks(issuance_timing.timing_bgpsec_reissue_weeks_before));
+            let renew_threshold = Some(issuance_timing.new_bgpsec_issuance_threshold());
 
             self.bgpsec_certificates
                 .renew(key, renew_threshold, issuance_timing, signer)

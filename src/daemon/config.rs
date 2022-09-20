@@ -14,12 +14,16 @@ use serde::{de, Deserialize, Deserializer};
 #[cfg(unix)]
 use syslog::Facility;
 
-use rpki::{ca::idexchange::PublisherHandle, repository::x509::Time, uri};
+use rpki::{
+    ca::idexchange::PublisherHandle,
+    repository::x509::{Time, Validity},
+    uri,
+};
 
 use crate::{
     commons::{
         api::{PublicationServerUris, Token},
-        crypto::OpenSslSignerConfig,
+        crypto::{OpenSslSignerConfig, SignSupport},
         error::KrillIoError,
         util::ext_serde,
     },
@@ -109,11 +113,11 @@ impl ConfigDefaults {
         vec![]
     }
 
-    fn ca_refresh_seconds() -> i64 {
+    fn ca_refresh_seconds() -> u32 {
         24 * 3600 // 24 hours
     }
 
-    fn ca_refresh_jitter_seconds() -> i64 {
+    fn ca_refresh_jitter_seconds() -> u32 {
         12 * 3600 // 12 hours
     }
 
@@ -175,47 +179,47 @@ impl ConfigDefaults {
         90
     }
 
-    fn timing_publish_next_hours() -> i64 {
+    fn timing_publish_next_hours() -> u32 {
         24
     }
 
-    fn timing_publish_next_jitter_hours() -> i64 {
+    fn timing_publish_next_jitter_hours() -> u32 {
         4
     }
 
-    fn timing_publish_hours_before_next() -> i64 {
+    fn timing_publish_hours_before_next() -> u32 {
         8
     }
 
-    fn timing_child_certificate_valid_weeks() -> i64 {
+    fn timing_child_certificate_valid_weeks() -> u32 {
         52
     }
 
-    fn timing_child_certificate_reissue_weeks_before() -> i64 {
+    fn timing_child_certificate_reissue_weeks_before() -> u32 {
         4
     }
 
-    fn timing_roa_valid_weeks() -> i64 {
+    fn timing_roa_valid_weeks() -> u32 {
         52
     }
 
-    fn timing_roa_reissue_weeks_before() -> i64 {
+    fn timing_roa_reissue_weeks_before() -> u32 {
         4
     }
 
-    fn timing_aspa_valid_weeks() -> i64 {
+    fn timing_aspa_valid_weeks() -> u32 {
         52
     }
 
-    fn timing_aspa_reissue_weeks_before() -> i64 {
+    fn timing_aspa_reissue_weeks_before() -> u32 {
         4
     }
 
-    fn timing_bgpsec_valid_weeks() -> i64 {
+    fn timing_bgpsec_valid_weeks() -> u32 {
         52
     }
 
-    fn timing_bgpsec_reissue_weeks_before() -> i64 {
+    fn timing_bgpsec_reissue_weeks_before() -> u32 {
         4
     }
 
@@ -430,17 +434,17 @@ pub struct Config {
     pub signers: Vec<SignerConfig>,
 
     #[serde(default = "ConfigDefaults::ca_refresh_seconds", alias = "ca_refresh")]
-    ca_refresh_seconds: i64,
+    ca_refresh_seconds: u32,
 
     #[serde(default = "ConfigDefaults::ca_refresh_jitter_seconds")]
-    ca_refresh_jitter_seconds: i64,
+    ca_refresh_jitter_seconds: u32,
 
     #[serde(default = "ConfigDefaults::ca_refresh_parents_batch_size")]
     pub ca_refresh_parents_batch_size: usize,
 
     #[serde(skip)]
-    suspend_child_after_inactive_seconds: Option<i64>,
-    suspend_child_after_inactive_hours: Option<i64>,
+    suspend_child_after_inactive_seconds: Option<u32>,
+    suspend_child_after_inactive_hours: Option<u32>,
 
     #[serde(default = "ConfigDefaults::post_limit_api")]
     pub post_limit_api: u64,
@@ -492,59 +496,136 @@ pub struct Config {
 #[derive(Clone, Debug, Deserialize)]
 pub struct IssuanceTimingConfig {
     #[serde(default = "ConfigDefaults::timing_publish_next_hours")]
-    timing_publish_next_hours: i64,
+    timing_publish_next_hours: u32,
     #[serde(default = "ConfigDefaults::timing_publish_next_jitter_hours")]
-    timing_publish_next_jitter_hours: i64,
+    timing_publish_next_jitter_hours: u32,
     #[serde(default = "ConfigDefaults::timing_publish_hours_before_next")]
-    pub timing_publish_hours_before_next: i64,
+    timing_publish_hours_before_next: u32,
     #[serde(default = "ConfigDefaults::timing_child_certificate_valid_weeks")]
-    pub timing_child_certificate_valid_weeks: i64,
+    timing_child_certificate_valid_weeks: u32,
     #[serde(default = "ConfigDefaults::timing_child_certificate_reissue_weeks_before")]
-    pub timing_child_certificate_reissue_weeks_before: i64,
+    timing_child_certificate_reissue_weeks_before: u32,
     #[serde(default = "ConfigDefaults::timing_roa_valid_weeks")]
-    pub timing_roa_valid_weeks: i64,
+    timing_roa_valid_weeks: u32,
     #[serde(default = "ConfigDefaults::timing_roa_reissue_weeks_before")]
-    pub timing_roa_reissue_weeks_before: i64,
+    timing_roa_reissue_weeks_before: u32,
     #[serde(default = "ConfigDefaults::timing_aspa_valid_weeks")]
-    pub timing_aspa_valid_weeks: i64,
+    timing_aspa_valid_weeks: u32,
     #[serde(default = "ConfigDefaults::timing_aspa_reissue_weeks_before")]
-    pub timing_aspa_reissue_weeks_before: i64,
+    timing_aspa_reissue_weeks_before: u32,
     #[serde(default = "ConfigDefaults::timing_bgpsec_valid_weeks")]
-    pub timing_bgpsec_valid_weeks: i64,
+    timing_bgpsec_valid_weeks: u32,
     #[serde(default = "ConfigDefaults::timing_bgpsec_reissue_weeks_before")]
-    pub timing_bgpsec_reissue_weeks_before: i64,
+    timing_bgpsec_reissue_weeks_before: u32,
 }
 
 impl IssuanceTimingConfig {
+    //-- Publishing Manifests and CRLs
+
     /// Returns the next update time based on configuration:
     ///
     /// now + timing_publish_next_hours + random(0..timing_publish_next_jitter_hours)
     /// defaults: now + 24 hours + 0 to 4 hours
     pub fn publish_next(&self) -> Time {
-        let regular_mins = self.timing_publish_next_hours * 60;
+        let regular_mins = self.timing_publish_next_hours as i64 * 60;
         let random_mins = if self.timing_publish_next_jitter_hours == 0 {
             0
         } else {
             use rand::Rng;
             let mut rng = rand::thread_rng();
             rng.gen_range(0..(60 * self.timing_publish_next_jitter_hours))
-        };
+        } as i64;
         Time::now() + Duration::minutes(regular_mins + random_mins)
+    }
+
+    /// Returns the number of hours before expiry that should trigger that
+    /// Manifests and CRLs are re-issued.
+    pub fn publish_hours_before_next(&self) -> i64 {
+        self.timing_publish_hours_before_next.into()
+    }
+
+    /// Worst case guess for re-issuance
+    pub fn republish_worst_case(&self) -> Time {
+        Time::now()
+            + Duration::hours(self.timing_publish_next_hours.into())
+            + Duration::hours(self.timing_publish_next_jitter_hours.into())
+            - Duration::hours(self.publish_hours_before_next())
+    }
+
+    //-- Child Cert
+
+    /// Validity period for newly issued child certificates
+    pub fn new_child_cert_validity(&self) -> Validity {
+        SignSupport::sign_validity_weeks(self.timing_child_certificate_valid_weeks.into())
+    }
+
+    /// Not after time for newly issued child certificates
+    pub fn new_child_cert_not_after(&self) -> Time {
+        Time::now() + Duration::weeks(self.timing_child_certificate_valid_weeks.into())
+    }
+
+    /// Threshold time for issuing new child certificates
+    ///
+    /// i.e. certificates with a not after time *before* this moment should be re-issued.
+    pub fn new_child_cert_issuance_threshold(&self) -> Time {
+        Time::now() + Duration::weeks(self.timing_child_certificate_reissue_weeks_before.into())
+    }
+
+    //-- ROAs
+
+    /// Validity period for new ROA objects
+    pub fn new_roa_validity(&self) -> Validity {
+        SignSupport::sign_validity_weeks(self.timing_roa_valid_weeks.into())
+    }
+
+    /// Threshold time for issuing new ROA objects
+    ///
+    /// i.e. ROA objects with a not after time *before* this moment should be re-issued.
+    pub fn new_roa_issuance_threshold(&self) -> Time {
+        Time::now() + Duration::weeks(self.timing_roa_reissue_weeks_before.into())
+    }
+
+    //-- ASPA
+
+    /// Validity period for new ASPA objects
+    pub fn new_aspa_validity(&self) -> Validity {
+        SignSupport::sign_validity_weeks(self.timing_aspa_valid_weeks.into())
+    }
+
+    /// Threshold time for issuing new ASPA objects
+    ///
+    /// i.e. ASPA objects with a not after time *before* this moment should be re-issued.
+    pub fn new_aspa_issuance_threshold(&self) -> Time {
+        Time::now() + Duration::weeks(self.timing_aspa_reissue_weeks_before.into())
+    }
+
+    //-- BGPSec
+
+    /// Validity period for new BGPSec router certificates
+    pub fn new_bgpsec_validity(&self) -> Validity {
+        SignSupport::sign_validity_weeks(self.timing_bgpsec_valid_weeks.into())
+    }
+
+    /// Threshold time for issuing new BGPSec router certificates
+    ///
+    /// i.e. certs with a not after time *before* this moment should be re-issued.
+    pub fn new_bgpsec_issuance_threshold(&self) -> Time {
+        Time::now() + Duration::weeks(self.timing_bgpsec_reissue_weeks_before.into())
     }
 }
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct RepositoryRetentionConfig {
     #[serde(default = "RepositoryRetentionConfig::dflt_retention_old_notification_files_seconds")]
-    pub retention_old_notification_files_seconds: i64,
+    pub retention_old_notification_files_seconds: u32,
     #[serde(default = "RepositoryRetentionConfig::dflt_retention_delta_files_min_nr")]
     pub retention_delta_files_min_nr: usize,
     #[serde(default = "RepositoryRetentionConfig::dflt_retention_delta_files_min_seconds")]
-    pub retention_delta_files_min_seconds: i64,
+    pub retention_delta_files_min_seconds: u32,
     #[serde(default = "RepositoryRetentionConfig::dflt_retention_delta_files_max_nr")]
     pub retention_delta_files_max_nr: usize,
     #[serde(default = "RepositoryRetentionConfig::dflt_retention_delta_files_max_seconds")]
-    pub retention_delta_files_max_seconds: i64,
+    pub retention_delta_files_max_seconds: u32,
     #[serde(default = "RepositoryRetentionConfig::dflt_retention_archive")]
     pub retention_archive: bool,
 }
@@ -556,7 +637,7 @@ impl RepositoryRetentionConfig {
     // notification file try to retrieve them, without success.
     //
     // Default: 10 min (just to be safe, 1 min is prob. fine)
-    fn dflt_retention_old_notification_files_seconds() -> i64 {
+    fn dflt_retention_old_notification_files_seconds() -> u32 {
         600
     }
 
@@ -570,14 +651,14 @@ impl RepositoryRetentionConfig {
     // Minimum time to keep deltas. Defaults to 20 minutes, which
     // is double a commonly used update interval, allowing the vast
     // majority of RPs to update using deltas.
-    fn dflt_retention_delta_files_min_seconds() -> i64 {
+    fn dflt_retention_delta_files_min_seconds() -> u32 {
         1200 // 20 minutes
     }
 
     // Maximum time to keep deltas. Defaults to two hours meaning,
     // which is double to slowest normal update interval seen used
     // by a minority of RPs.
-    fn dflt_retention_delta_files_max_seconds() -> i64 {
+    fn dflt_retention_delta_files_max_seconds() -> u32 {
         7200 // 2 hours
     }
 
@@ -701,18 +782,10 @@ impl Config {
         }
     }
 
-    pub fn republish_hours(&self) -> i64 {
-        if self.issuance_timing.timing_publish_hours_before_next < self.issuance_timing.timing_publish_next_hours {
-            self.issuance_timing.timing_publish_next_hours - self.issuance_timing.timing_publish_hours_before_next
-        } else {
-            0
-        }
-    }
-
     pub fn suspend_child_after_inactive_seconds(&self) -> Option<i64> {
         match self.suspend_child_after_inactive_seconds {
-            Some(seconds) => Some(seconds),
-            None => self.suspend_child_after_inactive_hours.map(|hours| hours * 3600),
+            Some(seconds) => Some(seconds.into()),
+            None => self.suspend_child_after_inactive_hours.map(|hours| hours as i64 * 3600),
         }
     }
 
@@ -736,7 +809,7 @@ impl Config {
         Self::ca_refresh_next_from(0, jitter_seconds)
     }
 
-    fn ca_refresh_next_from(regular_seconds: i64, jitter_seconds: i64) -> Priority {
+    fn ca_refresh_next_from(regular_seconds: u32, jitter_seconds: u32) -> Priority {
         let random_seconds = if jitter_seconds == 0 {
             0
         } else {
@@ -745,7 +818,7 @@ impl Config {
             rng.gen_range(0..jitter_seconds)
         };
 
-        in_seconds(regular_seconds + random_seconds)
+        in_seconds((regular_seconds + random_seconds).into())
     }
 
     pub fn testbed(&self) -> Option<&TestBed> {
@@ -1103,12 +1176,6 @@ impl Config {
 
         if self.issuance_timing.timing_publish_next_hours < 2 {
             return Err(ConfigError::other("timing_publish_next_hours must be at least 2"));
-        }
-
-        if self.issuance_timing.timing_publish_next_jitter_hours < 0 {
-            return Err(ConfigError::other(
-                "timing_publish_next_jitter_hours must be at least 0",
-            ));
         }
 
         if self.issuance_timing.timing_publish_next_jitter_hours > (self.issuance_timing.timing_publish_next_hours / 2)

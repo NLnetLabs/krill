@@ -1,40 +1,40 @@
-Authorizations covering announcements seen:
+ROA configurations covering seen announcements:
 
-	Definition: 192.168.1.0/24 => 64497
+	Configuration: 192.168.1.0/24 => 64497
 
-		Authorizes:
+		Authorizes announcement(s):
 		192.168.1.0/24 => 64497
 
-Authorizations for which no announcements are seen (you may wish to remove these):
+ROA configurations for which no announcements are seen (you may wish to remove these):
 
-	Definition: 10.0.3.0/24 => 64497
-	Definition: 192.168.1.0/24 => 64498
+	Configuration: 10.0.3.0/24 => 64497
+	Configuration: 192.168.1.0/24 => 64498
 
-Authorizations for which no ROAs can be made - you do not have the prefix on your certificate(s):
+ROA configurations for which no ROAs can be made - you do not have the prefix on your certificate(s):
 
-	Definition: 10.1.0.0/24 => 64497
+	Configuration: 10.1.0.0/24 => 64497
 
-Authorizations which may be too permissive:
+ROA configurations which may be too permissive:
 
-	Definition: 10.0.0.0/22-23 => 64496
+	Configuration: 10.0.0.0/22-23 => 64496
 
-		Authorizes visible announcements:
+		Authorizes announcement(s):
 		10.0.0.0/22 => 64496
 		10.0.2.0/23 => 64496
 
-		Disallows:
+		Disallows announcement(s):
 		10.0.0.0/22 => 64497
 		10.0.0.0/24 => 64496
 
-AS0 Authorizations disallowing announcements for prefixes
+AS0 ROA configurations disallowing announcements for prefixes
 
-	Definition: 10.0.4.0/24 => 0
+	Configuration: 10.0.4.0/24 => 0
 
-AS0 Authorization which are made redundant by authorizations for the prefix from real ASNs
+AS0 ROA configurations which are made redundant by configuration(s) for the prefix from real ASNs
 
-	Definition: 192.168.1.0/24 => 0
+	Configuration: 192.168.1.0/24 => 0
 
-		Made redundant by:
+		Made redundant by ROA configuration(s):
 		192.168.1.0/24 => 64497
 		192.168.1.0/24 => 64498
 
@@ -48,17 +48,17 @@ Announcements from an authorized ASN, which are too specific (not allowed by max
 
 	Announcement: 10.0.0.0/24 => 64496
 
-		Disallowed by authorization(s):
+		Disallowed by ROA configuration(s):
 		10.0.0.0/22-23 => 64496
 
 Announcements from an unauthorized ASN:
 
 	Announcement: 10.0.0.0/22 => 64497
 
-		Disallowed by authorization(s):
+		Disallowed by ROA configuration(s):
 		10.0.0.0/22-23 => 64496
 
-Announcements which are 'not found' (not covered by any of your authorizations):
+Announcements which are 'not found' (not covered by any of your ROA configurations):
 
 	Announcement: 10.0.0.0/21 => 64497
 	Announcement: 192.168.0.0/24 => 64496

@@ -35,10 +35,10 @@ use crate::{
     commons::{
         api::{
             AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, BgpSecAsnKey,
-            BgpSecCsrInfoList, BgpSecDefinition, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ObjectName,
-            ParentCaContact, ParentCaReq, ParentStatuses, PublicationServerUris, PublisherDetails, PublisherList,
-            ResourceClassKeysInfo, RoaDefinition, RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, TypedPrefix,
-            UpdateChildRequest,
+            BgpSecCsrInfoList, BgpSecDefinition, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ConfiguredRoa,
+            ConfiguredRoas, ObjectName, ParentCaContact, ParentCaReq, ParentStatuses, PublicationServerUris,
+            PublisherDetails, PublisherList, ResourceClassKeysInfo, RoaConfiguration, RoaConfigurationUpdates,
+            RoaPayload, RtaList, RtaName, RtaPrepResponse, TypedPrefix, UpdateChildRequest,
         },
         bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion},
         crypto::SignSupport,
@@ -375,7 +375,7 @@ pub async fn delete_parent(ca: &CaHandle, parent: &CaHandle) {
     krill_admin(Command::CertAuth(CaCommand::RemoveParent(ca.clone(), parent.convert()))).await;
 }
 
-pub async fn ca_route_authorizations_update(ca: &CaHandle, updates: RoaDefinitionUpdates) {
+pub async fn ca_route_authorizations_update(ca: &CaHandle, updates: RoaConfigurationUpdates) {
     krill_admin(Command::CertAuth(CaCommand::RouteAuthorizationsUpdate(
         ca.clone(),
         updates,
@@ -383,12 +383,19 @@ pub async fn ca_route_authorizations_update(ca: &CaHandle, updates: RoaDefinitio
     .await;
 }
 
-pub async fn ca_route_authorizations_update_expect_error(ca: &CaHandle, updates: RoaDefinitionUpdates) {
+pub async fn ca_route_authorizations_update_expect_error(ca: &CaHandle, updates: RoaConfigurationUpdates) {
     krill_admin_expect_error(Command::CertAuth(CaCommand::RouteAuthorizationsUpdate(
         ca.clone(),
         updates,
     )))
     .await;
+}
+
+pub async fn ca_configured_roas(ca: &CaHandle) -> ConfiguredRoas {
+    match krill_admin(Command::CertAuth(CaCommand::RouteAuthorizationsList(ca.clone()))).await {
+        ApiResponse::RouteAuthorizations(roas) => roas,
+        _ => panic!("Expected configured ROAs"),
+    }
 }
 
 pub async fn ca_route_authorizations_suggestions(ca: &CaHandle) -> BgpAnalysisSuggestion {
@@ -398,7 +405,7 @@ pub async fn ca_route_authorizations_suggestions(ca: &CaHandle) -> BgpAnalysisSu
     }
 }
 
-pub async fn ca_route_authorization_dryrun(ca: &CaHandle, updates: RoaDefinitionUpdates) -> BgpAnalysisReport {
+pub async fn ca_route_authorization_dryrun(ca: &CaHandle, updates: RoaConfigurationUpdates) -> BgpAnalysisReport {
     match krill_admin(Command::CertAuth(CaCommand::RouteAuthorizationsDryRunUpdate(
         ca.clone(),
         updates,
@@ -692,12 +699,20 @@ pub fn save_file(base_dir: &Path, file_name: &str, content: &[u8]) {
 // Support testing announcements and ROAs etc
 
 pub fn announcement(s: &str) -> Announcement {
-    let def = definition(s);
+    let def = roa_payload(s);
     Announcement::from(def)
 }
 
-pub fn definition(s: &str) -> RoaDefinition {
-    RoaDefinition::from_str(s).unwrap()
+pub fn configured_roa(s: &str) -> ConfiguredRoa {
+    ConfiguredRoa::new(roa_configuration(s), vec![])
+}
+
+pub fn roa_configuration(s: &str) -> RoaConfiguration {
+    RoaConfiguration::from_str(s).unwrap()
+}
+
+pub fn roa_payload(s: &str) -> RoaPayload {
+    RoaPayload::from_str(s).unwrap()
 }
 
 pub fn typed_prefix(s: &str) -> TypedPrefix {

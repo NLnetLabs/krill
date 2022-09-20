@@ -2,7 +2,9 @@
   "stale": [
     {
       "asn": 64497,
-      "prefix": "10.0.3.0/24"
+      "prefix": "10.0.3.0/24",
+      "comment": null,
+      "roa_objects": []
     }
   ],
   "invalid_asn": [
@@ -22,7 +24,9 @@
       "current": {
         "asn": 64496,
         "prefix": "10.0.0.0/22",
-        "max_length": 23
+        "max_length": 23,
+        "comment": null,
+        "roa_objects": []
       },
       "new": [
         {
@@ -39,7 +43,9 @@
   "redundant": [
     {
       "asn": 64496,
-      "prefix": "10.0.0.0/23"
+      "prefix": "10.0.0.0/23",
+      "comment": null,
+      "roa_objects": []
     }
   ]
 }

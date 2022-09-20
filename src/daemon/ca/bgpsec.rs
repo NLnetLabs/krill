@@ -14,7 +14,7 @@ use rpki::{
 use crate::{
     commons::{
         api::{BgpSecAsnKey, BgpSecCsrInfo, BgpSecCsrInfoList, ObjectName},
-        crypto::{KrillSigner, SignSupport},
+        crypto::KrillSigner,
         KrillResult,
     },
     daemon::config::{Config, IssuanceTimingConfig},
@@ -131,8 +131,6 @@ impl BgpSecCertificates {
         let aki = incoming_cert.key_identifier();
         let aia = incoming_cert.uri().clone();
 
-        let validity = SignSupport::sign_validity_weeks(issuance_timing.timing_bgpsec_valid_weeks);
-
         // Perhaps implement recommendation of 3.1.1 RFC 8209 somehow. However, it is
         // not at all clear how/why this is relevant. RPs will typically discard this
         // information and the subject is not communicated to routers. If this is for
@@ -143,7 +141,7 @@ impl BgpSecCertificates {
         let mut router_cert = TbsCert::new(
             serial_number,
             issuer,
-            validity,
+            issuance_timing.new_bgpsec_validity(),
             subject,
             public_key,
             KeyUsage::Ee,

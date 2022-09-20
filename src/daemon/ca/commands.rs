@@ -19,13 +19,14 @@ use crate::{
         actor::Actor,
         api::{
             AspaCustomer, AspaDefinitionUpdates, AspaProvidersUpdate, BgpSecDefinitionUpdates, IdCertInfo,
-            ParentCaContact, ReceivedCert, RepositoryContact, RtaName, StorableCaCommand, StorableRcEntitlement,
+            ParentCaContact, ReceivedCert, RepositoryContact, RoaConfigurationUpdates, RtaName, StorableCaCommand,
+            StorableRcEntitlement,
         },
         crypto::KrillSigner,
         eventsourcing::{self, StoredCommand},
     },
     daemon::{
-        ca::{CaEvt, ResourceTaggedAttestation, RouteAuthorizationUpdates, RtaContentRequest, RtaPrepareRequest},
+        ca::{CaEvt, ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest},
         config::Config,
     },
 };
@@ -146,7 +147,7 @@ pub enum CmdDet {
     // Update the authorizations for a CA.
     // Note: ROA *objects* will be created by the CA itself. The command just
     // contains the intent for which announcements should be authorized.
-    RouteAuthorizationsUpdate(RouteAuthorizationUpdates, Arc<Config>, Arc<KrillSigner>),
+    RouteAuthorizationsUpdate(RoaConfigurationUpdates, Arc<Config>, Arc<KrillSigner>),
 
     // Re-issue any and all ROA objects which would otherwise expire in
     // some time (default 4 weeks, configurable). Note that this command
@@ -306,9 +307,7 @@ impl From<CmdDet> for StorableCaCommand {
             // ------------------------------------------------------------
             // ROA Support
             // ------------------------------------------------------------
-            CmdDet::RouteAuthorizationsUpdate(updates, _, _) => StorableCaCommand::RoaDefinitionUpdates {
-                updates: updates.into(),
-            },
+            CmdDet::RouteAuthorizationsUpdate(updates, _, _) => StorableCaCommand::RoaDefinitionUpdates { updates },
             CmdDet::RouteAuthorizationsRenew(_, _) => StorableCaCommand::ReissueBeforeExpiring,
             CmdDet::RouteAuthorizationsForceRenew(_, _) => StorableCaCommand::ForceReissue,
 
@@ -519,7 +518,7 @@ impl CmdDet {
     //-------------------------------------------------------------------------------
     pub fn route_authorizations_update(
         handle: &CaHandle,
-        updates: RouteAuthorizationUpdates,
+        updates: RoaConfigurationUpdates,
         config: Arc<Config>,
         signer: Arc<KrillSigner>,
         actor: &Actor,
