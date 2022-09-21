@@ -18,6 +18,7 @@ use crate::{
         config::Config,
         mq::{in_hours, in_minutes, now, Task, TaskQueue},
     },
+    pubd::RepositoryManager,
 };
 
 #[cfg(feature = "multi-user")]
@@ -26,6 +27,7 @@ use crate::daemon::auth::common::session::LoginSessionCache;
 pub struct Scheduler {
     tasks: Arc<TaskQueue>,
     ca_manager: Arc<CaManager>,
+    repo_manager: Arc<RepositoryManager>,
     bgp_analyser: Arc<BgpAnalyser>,
     #[cfg(feature = "multi-user")]
     // Responsible for purging expired cached login tokens
@@ -39,6 +41,7 @@ impl Scheduler {
     pub fn build(
         tasks: Arc<TaskQueue>,
         ca_manager: Arc<CaManager>,
+        repo_manager: Arc<RepositoryManager>,
         bgp_analyser: Arc<BgpAnalyser>,
         #[cfg(feature = "multi-user")] login_session_cache: Arc<LoginSessionCache>,
         config: Arc<Config>,
@@ -47,6 +50,7 @@ impl Scheduler {
         Scheduler {
             tasks,
             ca_manager,
+            repo_manager,
             bgp_analyser,
             #[cfg(feature = "multi-user")]
             login_session_cache,
@@ -217,7 +221,11 @@ impl Scheduler {
     async fn sync_repo(&self, ca: CaHandle) {
         debug!("Synchronize CA {} with repository", ca);
 
-        if let Err(e) = self.ca_manager.cas_repo_sync_single(&ca).await {
+        if let Err(e) = self
+            .ca_manager
+            .cas_repo_sync_single(self.repo_manager.as_ref(), &ca)
+            .await
+        {
             let next = self.config.requeue_remote_failed();
 
             error!(

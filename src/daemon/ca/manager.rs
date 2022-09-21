@@ -363,7 +363,12 @@ impl CaManager {
     /// all its objects first. Note that any children of this CA will be left
     /// orphaned, and they will only learn of this sad fact when they choose
     /// to call home.
-    pub async fn delete_ca(&self, ca_handle: &CaHandle, actor: &Actor) -> KrillResult<()> {
+    pub async fn delete_ca(
+        &self,
+        repo_manager: &RepositoryManager,
+        ca_handle: &CaHandle,
+        actor: &Actor,
+    ) -> KrillResult<()> {
         warn!("Deleting CA '{}' as requested by: {}", ca_handle, actor);
 
         let ca = self.get_ca(ca_handle).await?;
@@ -399,7 +404,11 @@ impl CaManager {
         }
 
         for repo_contact in repos {
-            if self.ca_repo_sync(ca_handle, &repo_contact, vec![]).await.is_err() {
+            if self
+                .ca_repo_sync(repo_manager, ca_handle, &repo_contact, vec![])
+                .await
+                .is_err()
+            {
                 info!(
                     "Could not clean up deprecated repository. This is fine - objects there are no longer referenced."
                 );
@@ -1531,10 +1540,15 @@ impl CaManager {
     /// fail. When there have been 5 failed attempts, then the old repository
     /// is assumed to be unreachable and it will be dropped - i.e. the CA will
     /// no longer try to clean up objects.
-    pub async fn cas_repo_sync_single(&self, ca_handle: &CaHandle) -> KrillResult<()> {
+    pub async fn cas_repo_sync_single(
+        &self,
+        repo_manager: &RepositoryManager,
+        ca_handle: &CaHandle,
+    ) -> KrillResult<()> {
         // Note that this is a no-op for new CAs which do not yet have any repository configured.
         for (repo_contact, ca_elements) in self.ca_repo_elements(ca_handle).await? {
-            self.ca_repo_sync(ca_handle, &repo_contact, ca_elements).await?;
+            self.ca_repo_sync(repo_manager, ca_handle, &repo_contact, ca_elements)
+                .await?;
         }
 
         // Clean-up of old repos
@@ -1545,7 +1559,10 @@ impl CaManager {
                 ca_handle
             );
 
-            if let Err(e) = self.ca_repo_sync(ca_handle, deprecated.contact(), vec![]).await {
+            if let Err(e) = self
+                .ca_repo_sync(repo_manager, ca_handle, deprecated.contact(), vec![])
+                .await
+            {
                 warn!("Could not clean up deprecated repository: {}", e);
 
                 if deprecated.clean_attempts() < 5 {
@@ -1563,12 +1580,15 @@ impl CaManager {
     #[allow(clippy::mutable_key_type)]
     async fn ca_repo_sync(
         &self,
+        repo_manager: &RepositoryManager,
         ca_handle: &CaHandle,
         repo_contact: &RepositoryContact,
         publish_elements: Vec<PublishElement>,
     ) -> KrillResult<()> {
         debug!("CA '{}' sends list query to repo", ca_handle);
-        let list_reply = self.send_rfc8181_list(ca_handle, repo_contact.server_info()).await?;
+        let list_reply = self
+            .send_rfc8181_list(repo_manager, ca_handle, repo_contact.server_info())
+            .await?;
 
         let elements: HashMap<_, _> = list_reply.into_elements().into_iter().map(|el| el.unpack()).collect();
 
@@ -1593,7 +1613,7 @@ impl CaManager {
 
         if !delta.is_empty() {
             debug!("CA '{}' sends delta", ca_handle);
-            self.send_rfc8181_delta(ca_handle, repo_contact.server_info(), delta)
+            self.send_rfc8181_delta(repo_manager, ca_handle, repo_contact.server_info(), delta)
                 .await?;
             debug!("CA '{}' sent delta", ca_handle);
         } else {
@@ -1643,6 +1663,7 @@ impl CaManager {
     /// Update repository where a CA publishes.
     pub async fn update_repo(
         &self,
+        repo_manager: &RepositoryManager,
         ca: CaHandle,
         new_contact: RepositoryContact,
         check_repo: bool,
@@ -1650,7 +1671,7 @@ impl CaManager {
     ) -> KrillResult<()> {
         if check_repo {
             // First verify that this repository can be reached and responds to a list request.
-            self.send_rfc8181_list(&ca, new_contact.server_info())
+            self.send_rfc8181_list(repo_manager, &ca, new_contact.server_info())
                 .await
                 .map_err(|e| Error::CaRepoIssue(ca.clone(), e.to_string()))?;
         }
@@ -1661,6 +1682,7 @@ impl CaManager {
 
     async fn send_rfc8181_list(
         &self,
+        repo_manager: &RepositoryManager,
         ca_handle: &CaHandle,
         server_info: &PublicationServerInfo,
     ) -> KrillResult<ListReply> {
@@ -1671,7 +1693,7 @@ impl CaManager {
         let message = publication::Message::list_query();
 
         let reply = match self
-            .send_rfc8181_and_validate_response(message, server_info, ca_handle, &signing_key)
+            .send_rfc8181_and_validate_response(repo_manager, message, server_info, ca_handle, &signing_key)
             .await
         {
             Ok(reply) => reply,
@@ -1710,6 +1732,7 @@ impl CaManager {
 
     pub async fn send_rfc8181_delta(
         &self,
+        repo_manager: &RepositoryManager,
         ca_handle: &CaHandle,
         server_info: &PublicationServerInfo,
         delta: PublishDelta,
@@ -1721,7 +1744,7 @@ impl CaManager {
         let message = publication::Message::delta(delta);
 
         let reply = match self
-            .send_rfc8181_and_validate_response(message, server_info, ca_handle, &signing_key)
+            .send_rfc8181_and_validate_response(repo_manager, message, server_info, ca_handle, &signing_key)
             .await
         {
             Ok(reply) => reply,
@@ -1764,39 +1787,48 @@ impl CaManager {
 
     async fn send_rfc8181_and_validate_response(
         &self,
+        repo_manager: &RepositoryManager,
         message: publication::Message,
         server_info: &PublicationServerInfo,
         ca_handle: &CaHandle,
         signing_key: &KeyIdentifier,
     ) -> KrillResult<publication::Reply> {
-        // TODO: support local repository without http calls, but this CaManager does not
-        //       have access to the repository, so this is a bit more complicated than the
-        //       rfc6492 case..
-        let service_uri = server_info.service_uri();
+        let repo_service_uri = server_info.service_uri();
 
-        // Set up a logger for CMS exchanges. Note that this logger is always set
-        // up and used, but.. it will only actually save files in case the given
-        // rfc8181_log_dir is Some.
-        let cms_logger = CmsLogger::for_rfc8181_sent(self.config.rfc8181_log_dir.as_ref(), ca_handle);
+        if repo_service_uri
+            .as_str()
+            .starts_with(self.config.service_uri().as_str())
+        {
+            // this maps back to *this* Krill instance
+            let query = message.as_query()?;
+            let publisher_handle = ca_handle.convert();
+            let response = repo_manager.rfc8181_message(&publisher_handle, query)?;
+            response.as_reply().map_err(Error::Rfc8181)
+        } else {
+            // Set up a logger for CMS exchanges. Note that this logger is always set
+            // up and used, but.. it will only actually save files in case the given
+            // rfc8181_log_dir is Some.
+            let cms_logger = CmsLogger::for_rfc8181_sent(self.config.rfc8181_log_dir.as_ref(), ca_handle);
 
-        let cms = self.signer.create_rfc8181_cms(message, signing_key)?.to_bytes();
+            let cms = self.signer.create_rfc8181_cms(message, signing_key)?.to_bytes();
 
-        let res_bytes = self
-            .post_protocol_cms_binary(&cms, service_uri, publication::CONTENT_TYPE, &cms_logger)
-            .await?;
+            let res_bytes = self
+                .post_protocol_cms_binary(&cms, repo_service_uri, publication::CONTENT_TYPE, &cms_logger)
+                .await?;
 
-        match publication::PublicationCms::decode(&res_bytes) {
-            Err(e) => {
-                cms_logger.err(format!("Could not decode CMS: {}", e))?;
-                Err(Error::Rfc8181(e))
-            }
-            Ok(cms) => match cms.validate(server_info.public_key()) {
+            match publication::PublicationCms::decode(&res_bytes) {
                 Err(e) => {
-                    cms_logger.err(format!("Response invalid: {}", e))?;
+                    cms_logger.err(format!("Could not decode CMS: {}", e))?;
                     Err(Error::Rfc8181(e))
                 }
-                Ok(()) => cms.into_message().as_reply().map_err(Error::Rfc8181),
-            },
+                Ok(cms) => match cms.validate(server_info.public_key()) {
+                    Err(e) => {
+                        cms_logger.err(format!("Response invalid: {}", e))?;
+                        Err(Error::Rfc8181(e))
+                    }
+                    Ok(()) => cms.into_message().as_reply().map_err(Error::Rfc8181),
+                },
+            }
         }
     }
 }
