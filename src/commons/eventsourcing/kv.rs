@@ -1,7 +1,7 @@
 use std::{
     any::Any,
     fs::File,
-    io::Write,
+    io::{Read, Write},
     path::{Path, PathBuf},
     {fmt, fs},
 };
@@ -341,14 +341,39 @@ impl KeyValueStoreDiskImpl {
         let path_str = path.to_string_lossy().into_owned();
 
         if path.exists() {
-            let f = File::open(path).map_err(|e| {
-                KrillIoError::new(
-                    format!("Could not read value for key '{}' from file '{}'", key, path_str),
-                    e,
-                )
-            })?;
-            let v = serde_json::from_reader(f)?;
-            Ok(Some(v))
+            // We read the json file into memory first. Deserializing from a slice is
+            // about 50-100 times faster than if we use serde_json::from_reader on the file.
+            //
+            // We could use a BufReader, but this is still a whole lot slower for large files.
+            // Based on our testing about 20 times slower for a 450 MB json file. The test
+            // and large file are not checked in to avoid that checkouts of this code base
+            // take up more space than needed, but it was tested using the pubd::RepositoryContent
+            // from a benchmark server with 5000 CAs and 10 ROAs per CA.
+            //
+            // So, we do this in memory. This should not be an issue for our application because
+            // we only read large files (snapshots) during startup. After this data is kept in
+            // memory. I.e. we do not expect that large files are read concurrently resulting
+            // in high memory consumption.
+            //
+            // Furthermore, this has a negligible impact on installations with a single small
+            // CA instance. And large operations - i.e. a bug Publication Server or Parent CA
+            // to lots of children, can afford a server with a decent amount of memory.
+
+            let mut bytes = Vec::new();
+
+            File::open(path)
+                .map_err(|e| {
+                    KrillIoError::new(
+                        format!("Could not read value for key '{}' from file '{}'", key, path_str),
+                        e,
+                    )
+                })?
+                .read_to_end(&mut bytes)
+                .unwrap();
+
+            serde_json::from_slice(&bytes)
+                .map_err(KeyValueError::JsonError)
+                .map(Some)
         } else {
             trace!("Could not find file at: {}", path_str);
             Ok(None)
