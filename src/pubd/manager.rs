@@ -146,7 +146,7 @@ impl RepositoryManager {
         let publisher = self.access.get_publisher(publisher_handle)?;
 
         self.content.publish(
-            &publisher_handle,
+            publisher_handle,
             delta,
             publisher.base_uri(),
             &self.config.repository_retention,
