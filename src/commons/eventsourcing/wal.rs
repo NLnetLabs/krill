@@ -1,12 +1,14 @@
 use std::{
     collections::HashMap,
+    fmt::{self},
     path::Path,
+    str::FromStr,
     sync::{Arc, RwLock},
 };
 
 use rpki::ca::idexchange::MyHandle;
 
-use super::{Command, Event, KeyValueError, KeyValueStore, Storable, WithStorableDetails};
+use super::{KeyStoreKey, KeyValueError, KeyValueStore, Storable};
 
 //------------ WalSupport ----------------------------------------------------
 
@@ -48,14 +50,13 @@ use super::{Command, Event, KeyValueError, KeyValueStore, Storable, WithStorable
 /// somewhat different.. we use this type to achieve atomicity and durability
 /// by way of the [`WalStore`] defined below, but we can keep things a bit
 /// simpler here compared to the fully event-sourced [`Aggregate`] types.
-pub trait WalSupport: Storable + Send + Sync + 'static {
-    type Command: Command<StorableDetails = Self::StorableCommandDetails>;
-    type StorableCommandDetails: WithStorableDetails;
-    type Event: Event;
-    type Error: std::error::Error + Send + Sync;
+pub trait WalSupport: Storable {
+    type Command: WalCommand;
+    type Change: WalChange;
+    type Error: std::error::Error + From<WalStoreError>;
 
     /// Returns the current version.
-    fn version(&self) -> u64;
+    fn revision(&self) -> u64;
 
     /// Applies the event to this. This MUST not result in any errors, and
     /// this MUST be side-effect free. Applying the event just updates the
@@ -63,17 +64,7 @@ pub trait WalSupport: Storable + Send + Sync + 'static {
     ///
     /// Note the event is moved. This is done because we want to avoid
     /// doing additional allocations where we can.
-    fn apply(&mut self, event: Self::Event);
-
-    /// Applies all events. Assumes that:
-    /// - the list is contiguous (nothing missing) and ordered from old to new
-    /// - the events are all applicable to this
-    /// - the version matches that of the first (oldest) event
-    fn apply_all(&mut self, events: Vec<Self::Event>) {
-        for event in events {
-            self.apply(event);
-        }
-    }
+    fn apply(&mut self, set: WalSet<Self>);
 
     /// Processes a command. I.e. validate the command, and return a list of
     /// events that will result in the desired new state, but do not apply
@@ -81,7 +72,29 @@ pub trait WalSupport: Storable + Send + Sync + 'static {
     ///
     /// The command is moved, because we want to enable moving its data
     /// without reallocating.
-    fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error>;
+    fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Change>, Self::Error>;
+}
+
+//------------ WalCommand ----------------------------------------------------
+
+pub trait WalCommand: fmt::Display {
+    fn handle(&self) -> &MyHandle;
+}
+
+//------------ WalEvent ------------------------------------------------------
+
+pub trait WalChange: fmt::Display + Eq + PartialEq + Send + Sync + Storable {}
+
+//------------ WalSet --------------------------------------------------------
+
+/// Describes a set of "write-ahead" changes affecting the specified revision.
+/// Meaning that it can only be applied if the type is of the given revision, and
+/// it will get this revision + 1 after it has been applied.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct WalSet<T: WalSupport> {
+    revision: u64,
+    summary: String,
+    changes: Vec<T::Change>,
 }
 
 //------------ WalStore ------------------------------------------------------
@@ -103,14 +116,175 @@ pub struct WalStore<T: WalSupport> {
 }
 
 impl<T: WalSupport> WalStore<T> {
-    pub fn disk(work_dir: &Path, name_space: &str) -> WalStoreResult<Self> {
-        let mut path = work_dir.to_path_buf();
+    /// Creates a new store using a disk based keystore for the given data
+    /// directory and namespace (directory).
+    pub fn disk(krill_data_dir: &Path, name_space: &str) -> WalStoreResult<Self> {
+        let mut path = krill_data_dir.to_path_buf();
         path.push(name_space);
 
-        let kv = KeyValueStore::disk(work_dir, name_space)?;
+        let kv = KeyValueStore::disk(krill_data_dir, name_space)?;
         let cache = RwLock::new(HashMap::new());
 
         Ok(WalStore { kv, cache })
+    }
+
+    /// Warms up the store: caches all instances.
+    pub fn warm(&mut self) -> WalStoreResult<()> {
+        for handle in self.list()? {
+            let latest = self
+                .get_latest(&handle)
+                .map_err(|e| WalStoreError::WarmupFailed(handle.clone(), e.to_string()))?;
+
+            self.cache.write().unwrap().insert(handle, latest);
+        }
+        Ok(())
+    }
+
+    /// Get the latest revision for the given handle.
+    ///
+    /// This will use the cache if it's available and otherwise get a snapshot
+    /// from the keystore. Then it will check whether there are any further
+    /// changes.
+    pub fn get_latest(&self, handle: &MyHandle) -> WalStoreResult<Arc<T>> {
+        let mut instance = match self.cache.read().unwrap().get(handle).cloned() {
+            None => Arc::new(self.get_snapshot(handle)?),
+            Some(instance) => instance,
+        };
+
+        if !self.kv.has(&Self::key_for_wal_set(handle, instance.revision()))? {
+            // No further changes for this revision exist.
+            //
+            // Note: this is expected to be the case if our cached instances
+            //       are kept up-to-date, and we run on a single node. Double
+            //       checking this should not be too expensive though, and it
+            //       allows us to use same code path for warming the cache and
+            //       for getting the latest instance in other cases.
+            Ok(instance)
+        } else {
+            // Changes exist:
+            // - apply all of them
+            // - update the cache instance
+            // - return updated
+            let instance = Arc::make_mut(&mut instance);
+
+            loop {
+                let wal_set_key = Self::key_for_wal_set(handle, instance.revision());
+                if let Some(set) = self.kv.get(&wal_set_key)? {
+                    instance.apply(set)
+                } else {
+                    break;
+                }
+            }
+
+            let instance = Arc::new(instance.clone());
+            self.cache.write().unwrap().insert(handle.clone(), instance.clone());
+            Ok(instance)
+        }
+    }
+
+    fn get_snapshot(&self, handle: &MyHandle) -> WalStoreResult<T> {
+        self.kv
+            .get(&Self::key_for_snapshot(handle))?
+            .ok_or_else(|| WalStoreError::Unknown(handle.clone()))
+    }
+
+    /// Returns a list of all instances managed in this store.
+    pub fn list(&self) -> WalStoreResult<Vec<MyHandle>> {
+        let mut res = vec![];
+
+        for scope in self.kv.scopes()? {
+            if let Ok(handle) = MyHandle::from_str(&scope) {
+                res.push(handle)
+            }
+        }
+
+        Ok(res)
+    }
+
+    /// Process a command:
+    /// - gets the instance for the command
+    /// - sends the command
+    /// - in case the command is successful
+    ///     - apply the wal set locally
+    ///     - save the wal set
+    ///     - if saved properly update the cache
+    ///     
+    ///
+    ///
+    pub fn send_command(&self, command: T::Command) -> Result<Arc<T>, T::Error> {
+        let handle = command.handle().clone();
+        let mut latest = self.get_latest(&handle)?;
+
+        let summary = command.to_string();
+        let revision = latest.revision();
+        let changes = latest.process_command(command)?;
+
+        if changes.is_empty() {
+            debug!("No changes need for '{}' when processing command: {}", handle, summary);
+            Ok(latest)
+        } else {
+            // lock the cache first, before writing any updates
+            let mut cache = self.cache.write().unwrap();
+
+            let set: WalSet<T> = WalSet {
+                revision,
+                summary,
+                changes,
+            };
+
+            let key_for_wal_set = Self::key_for_wal_set(&handle, revision);
+            self.kv
+                .store_new(&key_for_wal_set, &set)
+                .map_err(WalStoreError::KeyStoreError)?;
+
+            let latest = Arc::make_mut(&mut latest);
+            latest.apply(set);
+
+            let latest = Arc::new(latest.clone());
+            cache.insert(handle, latest.clone());
+
+            Ok(latest)
+        }
+    }
+
+    /// Update snapshot and archive or delete old wal sets
+    ///
+    /// This is a separate function because serializing a large instance can
+    /// be expensive.
+    pub fn update_snapshot(&self, handle: &MyHandle, archive: bool) -> WalStoreResult<()> {
+        let latest = self.get_latest(handle)?;
+        let key = Self::key_for_snapshot(handle);
+        self.kv.store(&key, &latest)?;
+
+        // Archive or delete old wal sets
+        for key in self.kv.keys(Some(handle.to_string()), "wal-")? {
+            // Carefully inspect the key, just ignore keys
+            // following a format that is not expected.
+            // Who knows what people write in this dir?
+            if let Some(remaining) = key.name().strip_prefix("wal-") {
+                if let Some(number) = remaining.strip_suffix(".json") {
+                    if let Ok(revision) = u64::from_str(number) {
+                        if revision < latest.revision() {
+                            if archive {
+                                self.kv.archive(&key)?;
+                            } else {
+                                self.kv.drop_key(&key)?;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn key_for_snapshot(handle: &MyHandle) -> KeyStoreKey {
+        KeyStoreKey::scoped(handle.to_string(), "snapshot.json".to_string())
+    }
+
+    fn key_for_wal_set(handle: &MyHandle, revision: u64) -> KeyStoreKey {
+        KeyStoreKey::scoped(handle.to_string(), format!("wal-{}.json", revision))
     }
 }
 
@@ -124,10 +298,22 @@ pub type WalStoreResult<T> = Result<T, WalStoreError>;
 #[derive(Debug)]
 pub enum WalStoreError {
     KeyStoreError(KeyValueError),
+    Unknown(MyHandle),
+    WarmupFailed(MyHandle, String),
 }
 
 impl From<KeyValueError> for WalStoreError {
     fn from(e: KeyValueError) -> Self {
         WalStoreError::KeyStoreError(e)
+    }
+}
+
+impl fmt::Display for WalStoreError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            WalStoreError::KeyStoreError(e) => write!(f, "KeyStore Error: {}", e),
+            WalStoreError::Unknown(handle) => write!(f, "Unknown entity: {}", handle),
+            WalStoreError::WarmupFailed(handle, e) => write!(f, "Warmup failed with entity '{}' error: {}", handle, e),
+        }
     }
 }

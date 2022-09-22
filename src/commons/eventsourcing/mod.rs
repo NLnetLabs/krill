@@ -4,7 +4,7 @@ mod agg;
 pub use self::agg::Aggregate;
 
 mod wal;
-pub use self::wal::WalSupport;
+pub use self::wal::{WalStore, WalStoreError, WalSupport};
 
 mod evt;
 pub use self::evt::{Event, StoredEvent};
