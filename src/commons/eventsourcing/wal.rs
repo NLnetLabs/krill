@@ -110,6 +110,7 @@ pub struct WalSet<T: WalSupport> {
 /// - We do not have any listeners in this case.
 /// - We cannot replay [`WriteAheadSupport`] types from just events, we
 ///   *always* need to start with an existing snapshot.
+#[derive(Clone, Debug)]
 pub struct WalStore<T: WalSupport> {
     kv: KeyValueStore,
     cache: RwLock<HashMap<MyHandle, Arc<T>>>,
@@ -138,6 +139,21 @@ impl<T: WalSupport> WalStore<T> {
             self.cache.write().unwrap().insert(handle, latest);
         }
         Ok(())
+    }
+
+    /// Add a new entity for the given handle. Fails if the handle is in use.
+    pub fn add(&self, handle: &MyHandle, instance: T) -> WalStoreResult<()> {
+        let instance = Arc::new(instance);
+        let key = Self::key_for_snapshot(handle);
+        self.kv.store_new(&key, &instance)?; // Fails if this key exists
+        self.cache.write().unwrap().insert(handle.clone(), instance);
+        Ok(())
+    }
+
+    /// Checks whether there is an instance for the given key
+    pub fn has(&self, handle: &MyHandle) -> WalStoreResult<bool> {
+        let key = Self::key_for_snapshot(handle);
+        self.kv.has(&key).map_err(WalStoreError::KeyStoreError)
     }
 
     /// Get the latest revision for the given handle.
@@ -179,6 +195,17 @@ impl<T: WalSupport> WalStore<T> {
             let instance = Arc::new(instance.clone());
             self.cache.write().unwrap().insert(handle.clone(), instance.clone());
             Ok(instance)
+        }
+    }
+
+    /// Remove an instance from this store. Irrevocable.
+    pub fn remove(&self, handle: &MyHandle) -> WalStoreResult<()> {
+        if !self.has(handle)? {
+            Err(WalStoreError::Unknown(handle.clone()))
+        } else {
+            self.cache.write().unwrap().remove(handle);
+            self.kv.drop_scope(handle.as_str())?;
+            Ok(())
         }
     }
 

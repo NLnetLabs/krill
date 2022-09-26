@@ -146,7 +146,7 @@ impl RepositoryManager {
         let publisher = self.access.get_publisher(publisher_handle)?;
 
         self.content.publish(
-            publisher_handle,
+            publisher_handle.clone(),
             delta,
             publisher.base_uri(),
             &self.config.repository_retention,
@@ -201,7 +201,7 @@ impl RepositoryManager {
         let base_uri = publisher.base_uri();
 
         self.content
-            .remove_publisher(&name, base_uri, &self.config.repository_retention)?;
+            .remove_publisher(name.clone(), base_uri.clone(), &self.config.repository_retention)?;
 
         self.access.remove_publisher(name, actor)
     }

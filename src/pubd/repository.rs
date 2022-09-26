@@ -33,7 +33,7 @@ use crate::{
         api::{PublicationServerUris, StorableRepositoryCommand},
         crypto::KrillSigner,
         error::{Error, KrillIoError},
-        eventsourcing::{Aggregate, AggregateStore, KeyStoreKey, KeyValueStore},
+        eventsourcing::{Aggregate, AggregateStore, WalChange, WalCommand, WalSet, WalStore, WalSupport},
         util::file,
         KrillResult,
     },
@@ -55,41 +55,24 @@ use crate::{
 /// so that callers don't need to worry about storage details.
 #[derive(Debug)]
 pub struct RepositoryContentProxy {
-    cache: RwLock<Option<RepositoryContent>>,
-    store: RwLock<KeyValueStore>,
-    key: KeyStoreKey,
+    store: Arc<WalStore<RepositoryContent>>,
+    default_handle: MyHandle,
 }
 
 impl RepositoryContentProxy {
     pub fn disk(config: &Config) -> KrillResult<Self> {
         let work_dir = &config.data_dir;
-        let store = KeyValueStore::disk(work_dir, PUBSERVER_CONTENT_DIR)?;
-        let store = RwLock::new(store);
-        let key = KeyStoreKey::simple(format!("{}.json", PUBSERVER_DFLT));
-        let cache = RwLock::new(None);
+        let store = Arc::new(WalStore::disk(work_dir, PUBSERVER_CONTENT_DIR)?);
+        store.warm()?;
 
-        let proxy = RepositoryContentProxy { cache, store, key };
-        proxy.warm_cache()?;
+        let default_handle = MyHandle::new("0".into());
 
-        Ok(proxy)
-    }
-
-    fn warm_cache(&self) -> KrillResult<()> {
-        let key_store_read = self.store.read().unwrap();
-
-        if key_store_read.has(&self.key)? {
-            info!("Warming the repository content cache, this can take a minute for large repositories.");
-            let content = key_store_read.get(&self.key)?.unwrap();
-            self.cache.write().unwrap().replace(content);
-            info!("Repository content cache has been warmed.");
-        }
-
-        Ok(())
+        Ok(RepositoryContentProxy { store, default_handle })
     }
 
     /// Initialize
     pub fn init(&self, work_dir: &Path, uris: PublicationServerUris) -> KrillResult<()> {
-        if self.store.read().unwrap().has(&self.key)? {
+        if self.store.has(&self.default_handle)? {
             Err(Error::RepositoryServerAlreadyInitialized)
         } else {
             // initialize new repo content
@@ -110,36 +93,31 @@ impl RepositoryContentProxy {
             };
 
             // Store newly initialized repo content on disk
-            let store = self.store.write().unwrap();
-            store.store(&self.key, &repository_content)?;
-
-            // Store newly initialized repo content in cache
-            let mut cache = self.cache.write().unwrap();
-            cache.replace(repository_content);
+            self.store.add(&self.default_handle, repository_content)?;
 
             Ok(())
         }
     }
 
+    fn get_default_content(&self) -> KrillResult<Arc<RepositoryContent>> {
+        self.store
+            .get_latest(&self.default_handle)
+            .map_err(Error::WalStoreError)
+    }
+
     // Clear all content, so it can be re-initialized.
     // Only to be called after all publishers have been removed from the RepoAccess as well.
     pub fn clear(&self) -> KrillResult<()> {
-        let store = self.store.write().unwrap();
-
-        if let Ok(Some(content)) = store.get::<RepositoryContent>(&self.key) {
-            content.clear();
-            store.drop_key(&self.key)?;
-        }
-
-        let mut cache = self.cache.write().unwrap();
-        cache.take();
+        let content = self.get_default_content()?;
+        content.clear();
+        self.store.remove(&self.default_handle)?;
 
         Ok(())
     }
 
     /// Return the repository content stats
     pub fn stats(&self) -> KrillResult<RepoStats> {
-        self.read(|content| Ok(content.stats()))
+        self.get_default_content().map(|content| content.stats())
     }
 
     /// Add a publisher with an empty set of published objects.
@@ -149,18 +127,23 @@ impl RepositoryContentProxy {
     /// to the RepositoryAccess was successful (and *that* will fail if
     /// the publisher is a duplicate). This method can only fail if
     /// there is an issue with the underlying key value store.
-    pub fn add_publisher(&self, name: PublisherHandle) -> KrillResult<()> {
-        self.write(|content| content.add_publisher(name))
+    pub fn add_publisher(&self, publisher: PublisherHandle) -> KrillResult<()> {
+        let command = RepositoryContentCommand::add_publisher(self.default_handle.clone(), publisher);
+        self.store.send_command(command)?;
+        Ok(())
     }
 
     /// Removes a publisher and its content.
     pub fn remove_publisher(
         &self,
-        name: &PublisherHandle,
-        jail: &uri::Rsync,
+        publisher: PublisherHandle,
+        jail: uri::Rsync,
         config: &RepositoryRetentionConfig,
     ) -> KrillResult<()> {
-        self.write(|content| content.remove_publisher(name, jail, config))
+        let command = RepositoryContentCommand::remove_publisher(self.default_handle.clone(), publisher, jail);
+        let content = self.store.send_command(command)?;
+
+        content.write_repository(config)
     }
 
     /// Publish an update for a publisher.
@@ -169,17 +152,21 @@ impl RepositoryContentProxy {
     /// are within the publisher's uri space (jail).
     pub fn publish(
         &self,
-        name: &PublisherHandle,
+        publisher: PublisherHandle,
         delta: PublishDelta,
         jail: &uri::Rsync,
         config: &RepositoryRetentionConfig,
     ) -> KrillResult<()> {
-        self.write(|content| content.publish(name, delta.into(), jail, config))
+        let command = RepositoryContentCommand::publish(self.default_handle.clone(), publisher, delta, jail);
+        let content = self.store.send_command(command)?;
+
+        content.write_repository(config)
     }
 
     /// Write all current files to disk
     pub fn write_repository(&self, config: &RepositoryRetentionConfig) -> KrillResult<()> {
-        self.read(|content| content.write_repository(config))
+        let content = self.get_default_content()?;
+        content.write_repository(config)
     }
 
     /// Reset the RRDP session if it is initialized. Otherwise do nothing.
@@ -231,6 +218,124 @@ impl RepositoryContentProxy {
     }
 }
 
+//------------ RepositoryContentCommand ------------------------------------
+
+#[derive(Clone, Debug)]
+pub enum RepositoryContentCommand {
+    SessionReset {
+        handle: MyHandle,
+    },
+    AddPublisher {
+        handle: MyHandle,
+        publisher: PublisherHandle,
+    },
+    RemovePublisher {
+        handle: MyHandle,
+        publisher: PublisherHandle,
+        jail: uri::Rsync,
+    },
+    Publish {
+        handle: MyHandle,
+        publisher: PublisherHandle,
+        delta: PublishDelta,
+        jail: uri::Rsync,
+    },
+}
+
+impl RepositoryContentCommand {
+    pub fn session_reset(handle: MyHandle) -> Self {
+        RepositoryContentCommand::SessionReset { handle }
+    }
+
+    pub fn add_publisher(handle: MyHandle, publisher: PublisherHandle) -> Self {
+        RepositoryContentCommand::AddPublisher { handle, publisher }
+    }
+
+    pub fn remove_publisher(handle: MyHandle, publisher: PublisherHandle, jail: uri::Rsync) -> Self {
+        RepositoryContentCommand::RemovePublisher {
+            handle,
+            publisher,
+            jail,
+        }
+    }
+    pub fn publish(handle: MyHandle, publisher: PublisherHandle, delta: PublishDelta, jail: uri::Rsync) -> Self {
+        RepositoryContentCommand::Publish {
+            handle,
+            publisher,
+            delta,
+            jail,
+        }
+    }
+}
+
+impl WalCommand for RepositoryContentCommand {
+    fn handle(&self) -> &MyHandle {
+        match self {
+            RepositoryContentCommand::SessionReset { handle }
+            | RepositoryContentCommand::AddPublisher { handle, .. }
+            | RepositoryContentCommand::RemovePublisher { handle, .. }
+            | RepositoryContentCommand::Publish { handle, .. } => handle,
+        }
+    }
+}
+
+impl fmt::Display for RepositoryContentCommand {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            RepositoryContentCommand::SessionReset { handle } => {
+                write!(f, "reset session for repository content {}", handle)
+            }
+            RepositoryContentCommand::AddPublisher { handle, publisher } => {
+                write!(f, "add publisher '{}' to repository content {}", publisher, handle)
+            }
+            RepositoryContentCommand::RemovePublisher {
+                handle,
+                publisher,
+                jail,
+            } => {
+                write!(
+                    f,
+                    "remove publisher '{}' and content under {} from repository content {}",
+                    publisher, jail, handle
+                )
+            }
+            RepositoryContentCommand::Publish { handle, publisher, .. } => {
+                write!(
+                    f,
+                    "publish content for publisher '{}' under repository content {}",
+                    publisher, handle
+                )
+            }
+        }
+    }
+}
+
+//------------ RepositoryContentChange -------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case", tag = "type")]
+pub enum RepositoryContentChange {
+    SessionReset { session: RrdpSession },
+    PublisherAdded { publisher: PublisherHandle },
+    PublisherRemoved { publisher: PublisherHandle },
+    PublishedObjects { publisher: PublisherHandle },
+}
+
+impl fmt::Display for RepositoryContentChange {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            RepositoryContentChange::SessionReset { session } => write!(f, "session reset to: {}", session),
+            RepositoryContentChange::PublisherAdded { publisher } => write!(f, "added publisher: {}", publisher),
+            RepositoryContentChange::PublisherRemoved { publisher } => write!(f, "removed publisher: {}", publisher),
+            RepositoryContentChange::PublishedObjects { publisher } => {
+                write!(f, "published for publisher: {}", publisher)
+            }
+        }
+    }
+}
+
+impl WalChange for RepositoryContentChange {}
+
 //------------ RepositoryContent -------------------------------------------
 
 /// This type manages the content of the repository. Note that access
@@ -239,14 +344,18 @@ impl RepositoryContentProxy {
 /// such as the base uri for publishers.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RepositoryContent {
+    #[serde(default)] // Make this backward compatible
+    revision: u64,
     publishers: HashMap<PublisherHandle, CurrentObjects>,
     rrdp: RrdpServer,
     rsync: RsyncdStore,
 }
 
+/// # Construct
 impl RepositoryContent {
     pub fn new(publishers: HashMap<PublisherHandle, CurrentObjects>, rrdp: RrdpServer, rsync: RsyncdStore) -> Self {
         RepositoryContent {
+            revision: 0,
             publishers,
             rrdp,
             rsync,
@@ -259,21 +368,41 @@ impl RepositoryContent {
         let rsync = RsyncdStore::new(rsync_jail, repo_base_dir);
 
         RepositoryContent {
+            revision: 0,
             publishers,
             rrdp,
             rsync,
         }
     }
+}
 
-    // Clears all content on disk so the repository can be re-initialized
-    pub fn clear(&self) {
-        self.rrdp.clear();
-        self.rsync.clear();
+/// # Write-ahead logging support
+impl WalSupport for RepositoryContent {
+    type Command = RepositoryContentCommand;
+    type Change = RepositoryContentChange;
+    type Error = Error;
+
+    fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    fn apply(&mut self, set: WalSet<Self>) {
+        todo!()
+    }
+
+    fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Change>, Self::Error> {
+        todo!()
     }
 }
 
 /// # Publisher Content
 impl RepositoryContent {
+    // Clears all content on disk so the repository can be re-initialized
+    pub fn clear(&self) {
+        self.rrdp.clear();
+        self.rsync.clear();
+    }
+
     fn objects_for_publisher(&self, publisher: &PublisherHandle) -> KrillResult<&CurrentObjects> {
         self.publishers
             .get(publisher)
