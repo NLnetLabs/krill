@@ -49,6 +49,8 @@ pub enum Task {
 
     RefreshAnnouncementsInfo,
 
+    UpdateSnapshots,
+
     #[cfg(feature = "multi-user")]
     SweepLoginCache,
 
@@ -75,6 +77,7 @@ impl fmt::Display for Task {
             Task::RepublishIfNeeded => write!(f, "let CAs republish their mft/crls if needed"),
             Task::RenewObjectsIfNeeded => write!(f, "let CAs renew their signed objects if needed"),
             Task::RefreshAnnouncementsInfo => write!(f, "check for new announcement info"),
+            Task::UpdateSnapshots => write!(f, "update snapshots on disk"),
 
             #[cfg(feature = "multi-user")]
             Task::SweepLoginCache => write!(f, "sweep up expired logins"),
@@ -220,6 +223,10 @@ impl TaskQueue {
         self.schedule(Task::RefreshAnnouncementsInfo, priority);
     }
 
+    pub fn update_snapshots(&self, priority: Priority) {
+        self.schedule(Task::UpdateSnapshots, priority)
+    }
+
     #[cfg(feature = "multi-user")]
     pub fn sweep_login_cache(&self, priority: Priority) {
         self.schedule(Task::SweepLoginCache, priority);
@@ -253,7 +260,7 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for TaskQueue {
                 CaEvtDet::KeyRollActivated {
                     resource_class_name, ..
                 } => {
-                    if let Ok(parent) = ca.parent_for_rc(resource_class_name) {
+                    if let Ok(parent) = ca.parent_for_rc(&resource_class_name) {
                         self.sync_parent(handle.clone(), parent.clone(), now());
                     }
                     self.sync_repo(handle.clone(), now());

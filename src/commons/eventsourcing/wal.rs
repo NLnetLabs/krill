@@ -97,6 +97,12 @@ pub struct WalSet<T: WalSupport> {
     changes: Vec<T::Change>,
 }
 
+impl<T: WalSupport> WalSet<T> {
+    pub fn into_changes(self) -> Vec<T::Change> {
+        self.changes
+    }
+}
+
 //------------ WalStore ------------------------------------------------------
 
 /// This type is responsible for loading / saving and updating [`WalSupport`]
@@ -110,7 +116,7 @@ pub struct WalSet<T: WalSupport> {
 /// - We do not have any listeners in this case.
 /// - We cannot replay [`WriteAheadSupport`] types from just events, we
 ///   *always* need to start with an existing snapshot.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct WalStore<T: WalSupport> {
     kv: KeyValueStore,
     cache: RwLock<HashMap<MyHandle, Arc<T>>>,
@@ -130,7 +136,7 @@ impl<T: WalSupport> WalStore<T> {
     }
 
     /// Warms up the store: caches all instances.
-    pub fn warm(&mut self) -> WalStoreResult<()> {
+    pub fn warm(&self) -> WalStoreResult<()> {
         for handle in self.list()? {
             let latest = self
                 .get_latest(&handle)

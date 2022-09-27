@@ -63,7 +63,7 @@ impl RepositoryManager {
         info!("Initializing repository");
         self.access.init(uris.clone(), &self.signer)?;
         self.content.init(&self.config.data_dir, uris)?;
-        self.content.write_repository(&self.config.repository_retention)?;
+        self.content.write_repository(self.config.repository_retention)?;
 
         Ok(())
     }
@@ -73,6 +73,15 @@ impl RepositoryManager {
     pub fn repository_clear(&self) -> KrillResult<()> {
         self.access.clear()?;
         self.content.clear()
+    }
+
+    /// Update snapshots on disk for faster re-starts
+    pub fn update_snapshots(&self) -> KrillResult<()> {
+        if self.initialized()? {
+            self.content.update_snapshots()
+        } else {
+            Ok(())
+        }
     }
 
     /// List all current publishers
@@ -138,7 +147,7 @@ impl RepositoryManager {
 
     /// Do an RRDP session reset.
     pub fn rrdp_session_reset(&self) -> KrillResult<()> {
-        self.content.session_reset(&self.config.repository_retention)
+        self.content.session_reset(self.config.repository_retention)
     }
 
     /// Let a known publisher publish in a repository.
@@ -149,7 +158,7 @@ impl RepositoryManager {
             publisher_handle.clone(),
             delta,
             publisher.base_uri(),
-            &self.config.repository_retention,
+            self.config.repository_retention,
         )
     }
 
@@ -197,12 +206,8 @@ impl RepositoryManager {
 
     /// Removes a publisher and all of its content.
     pub fn remove_publisher(&self, name: PublisherHandle, actor: &Actor) -> KrillResult<()> {
-        let publisher = self.access.get_publisher(&name)?;
-        let base_uri = publisher.base_uri();
-
         self.content
-            .remove_publisher(name.clone(), base_uri.clone(), &self.config.repository_retention)?;
-
+            .remove_publisher(name.clone(), self.config.repository_retention)?;
         self.access.remove_publisher(name, actor)
     }
 }
@@ -212,7 +217,7 @@ impl RepositoryManager {
 impl RepositoryManager {
     /// Update the RRDP files and rsync content on disk.
     pub fn write_repository(&self) -> KrillResult<()> {
-        self.content.write_repository(&self.config.repository_retention)
+        self.content.write_repository(self.config.repository_retention)
     }
 }
 
