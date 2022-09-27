@@ -260,7 +260,7 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for TaskQueue {
                 CaEvtDet::KeyRollActivated {
                     resource_class_name, ..
                 } => {
-                    if let Ok(parent) = ca.parent_for_rc(&resource_class_name) {
+                    if let Ok(parent) = ca.parent_for_rc(resource_class_name) {
                         self.sync_parent(handle.clone(), parent.clone(), now());
                     }
                     self.sync_repo(handle.clone(), now());
