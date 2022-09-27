@@ -400,7 +400,7 @@ pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -
                 Err(PrepareUpgradeError::custom(
                     "Cannot upgrade from 0.10.0 RC1 or RC2. Please contact rpki-team@nlnetlabs.nl",
                 ))
-            } else if versions.from < KrillVersion::candidate(0, 12, 0, 1) {
+            } else if versions.from < KrillVersion::dev(0, 12, 0, "rc1-dev".to_string()) {
                 let pubd_objects_migrated = migrate_pre_0_12_pubd_objects(&config)?;
                 Ok(Some(UpgradeReport::new(pubd_objects_migrated, versions)))
             } else {

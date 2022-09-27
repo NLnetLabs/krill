@@ -58,7 +58,7 @@ impl KrillVersion {
         }
     }
 
-    fn dev(major: u64, minor: u64, patch: u64, addition: String) -> Self {
+    pub fn dev(major: u64, minor: u64, patch: u64, addition: String) -> Self {
         KrillVersion {
             major,
             minor,
