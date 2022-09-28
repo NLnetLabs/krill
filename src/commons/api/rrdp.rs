@@ -691,8 +691,9 @@ impl Snapshot {
     }
 
     pub fn write_xml(&self, path: &Path) -> Result<(), KrillIoError> {
-        trace!("Writing snapshot file: {}", path.to_string_lossy());
+        debug!("Writing snapshot file: {}", path.to_string_lossy());
         let vec = self.xml();
+        debug!("Finished snapshot xml");
         let bytes = Bytes::from(vec);
 
         file::save(&bytes, path)
