@@ -135,10 +135,12 @@ impl RepositoryManager {
     ) -> KrillResult<publication::Message> {
         match query {
             publication::Query::List => {
+                debug!("Received RFC 8181 list query for {}", publisher_handle);
                 let list_reply = self.list(publisher_handle)?;
                 Ok(publication::Message::list_reply(list_reply))
             }
             publication::Query::Delta(delta) => {
+                debug!("Received RFC 8181 delta query for {}", publisher_handle);
                 self.publish(publisher_handle, delta)?;
                 Ok(publication::Message::success())
             }

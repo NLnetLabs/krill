@@ -880,8 +880,9 @@ impl Delta {
     }
 
     pub fn write_xml(&self, path: &Path) -> Result<(), KrillIoError> {
-        trace!("Writing delta file: {}", path.to_string_lossy());
+        debug!("Writing delta file: {}", path.to_string_lossy());
         let vec = self.xml();
+        debug!("Done creating XML");
         let bytes = Bytes::from(vec);
         file::save(&bytes, path)?;
 

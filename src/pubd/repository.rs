@@ -159,16 +159,25 @@ impl RepositoryContentProxy {
         jail: &uri::Rsync,
         retention: RepositoryRetentionConfig,
     ) -> KrillResult<()> {
+        debug!("Publish delta for {}", publisher);
+
+        debug!("   get content");
         let content = self.get_default_content()?;
+        debug!("   get objects for {}", publisher);
         let current_objects = content.objects_for_publisher(&publisher)?;
         let delta = DeltaElements::from(delta);
 
+        debug!("   verify delta");
         current_objects.verify_delta(&delta, jail)?;
 
         let command = RepositoryContentCommand::publish(self.default_handle.clone(), publisher, delta, retention);
         let content = self.store.send_command(command)?;
 
-        content.write_repository(retention)
+        debug!("   update repository on disk");
+        content.write_repository(retention)?;
+        debug!("Done publishing");
+
+        Ok(())
     }
 
     /// Write all current files to disk
@@ -517,6 +526,7 @@ impl RepositoryContent {
             .cloned()
             .ok_or_else(|| Error::PublisherUnknown(publisher.clone()))?;
 
+        debug!("  apply delta to current objects of {}", publisher);
         current_objects.apply_delta(delta.clone());
 
         res.push(RepositoryContentChange::PublishedObjects {
@@ -525,7 +535,9 @@ impl RepositoryContent {
         });
 
         // TODO: Stage changes for publishers, and *then* update RRDP (see #693)
+        debug!("   update RRDP state with changes");
         let update = self.rrdp.update_rrdp(delta, retention)?;
+        debug!("   done updating RRDP state with changes");
         res.push(RepositoryContentChange::RrdpUpdated { update });
 
         Ok(res)
