@@ -418,8 +418,8 @@ impl WalSupport for RepositoryContent {
                     self.publishers.insert(publisher, current_objects);
                 }
             }
-            self.revision += 1;
         }
+        self.revision += 1;
     }
 
     fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Change>, Self::Error> {
