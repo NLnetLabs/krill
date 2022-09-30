@@ -25,8 +25,8 @@ use crate::{
         actor::Actor,
         api::{
             rrdp::{
-                CurrentObjects, Delta, DeltaElements, DeltaRef, FileRef, Notification, RrdpSession, Snapshot,
-                SnapshotRef,
+                CurrentObjects, Delta, DeltaElements, DeltaRef, FileRef, Notification, RrdpFileRandom, RrdpSession,
+                Snapshot, SnapshotRef,
             },
             IdCertInfo,
         },
@@ -332,9 +332,9 @@ pub struct RrdpSessionReset {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RrdpUpdated {
-    notification: Notification,
-    snapshot: Snapshot,
-    delta: Delta,
+    time: Time,
+    random: RrdpFileRandom,
+    delta_elements: DeltaElements,
     old_notifications_truncate: usize,
     deltas_truncate: usize,
 }
@@ -345,8 +345,8 @@ impl fmt::Display for RepositoryContentChange {
             RepositoryContentChange::SessionReset { reset } => {
                 write!(f, "RRDP session reset to: {}", reset.notification.session())
             }
-            RepositoryContentChange::RrdpUpdated { update } => {
-                write!(f, "RRDP updated to serial: {}", update.notification.serial())
+            RepositoryContentChange::RrdpUpdated { .. } => {
+                write!(f, "RRDP updated")
             }
             RepositoryContentChange::PublisherAdded { publisher } => write!(f, "added publisher: {}", publisher),
             RepositoryContentChange::PublisherRemoved { publisher } => write!(f, "removed publisher: {}", publisher),
@@ -808,39 +808,52 @@ impl RrdpServer {
 
     /// Applies the data from an RrdpUpdated change.
     fn apply_rrdp_updated(&mut self, update: RrdpUpdated) {
+        self.serial += 1;
         self.old_notifications.truncate(update.old_notifications_truncate);
 
         let mut replaced_notification = self.notification.clone();
-        replaced_notification.replace(Time::now());
-
+        replaced_notification.replace(update.time);
         self.old_notifications.push_front(replaced_notification);
 
-        self.notification = update.notification;
-        self.snapshot = update.snapshot;
+        let delta = Delta::new(
+            self.session,
+            self.serial,
+            update.time,
+            update.random.clone(),
+            update.delta_elements,
+        );
+        self.snapshot = self.snapshot.with_delta(update.random, delta.elements().clone());
+        self.notification = self.make_updated_notification(&self.snapshot, &delta, update.deltas_truncate);
 
         self.deltas.truncate(update.deltas_truncate);
-        self.deltas.push_front(update.delta);
-
-        self.serial = self.notification.serial();
-        self.session = self.notification.session();
+        self.deltas.push_front(delta);
     }
 
     /// Updates the RRDP server with the elements. Note that this assumes that
     /// the delta has already been checked against the jail and current
     /// objects of the publisher.
-    fn update_rrdp(&self, elements: DeltaElements, retention: RepositoryRetentionConfig) -> KrillResult<RrdpUpdated> {
-        let snapshot = self.snapshot.with_delta(elements.clone());
-        let delta = Delta::new(snapshot.session(), snapshot.serial(), elements);
+    fn update_rrdp(
+        &self,
+        delta_elements: DeltaElements,
+        retention: RepositoryRetentionConfig,
+    ) -> KrillResult<RrdpUpdated> {
+        let time = Time::now();
+        let random = RrdpFileRandom::default();
 
-        let deltas_truncate = self.find_deltas_truncate(delta.elements().size(), snapshot.size(), retention);
+        let deltas_truncate = {
+            // It's a bit inefficient to "pre-create" a new snapshot just to get its size, but
+            // if we look at the current snapshot then we could be off.
+            let snapshot_size = self.snapshot.with_delta(random.clone(), delta_elements.clone()).size();
+            let delta_size = delta_elements.size();
+            self.find_deltas_truncate(delta_size, snapshot_size, retention)
+        };
+
         let old_notifications_truncate = self.find_old_notifications_truncate(retention);
 
-        let notification = self.make_updated_notification(&snapshot, &delta, deltas_truncate);
-
         Ok(RrdpUpdated {
-            notification,
-            snapshot,
-            delta,
+            time,
+            random,
+            delta_elements,
             old_notifications_truncate,
             deltas_truncate,
         })

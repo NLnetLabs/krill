@@ -661,10 +661,9 @@ impl Snapshot {
     /// Creates a new snapshot with the delta applied. This assumes
     /// that the delta had been checked before. This should not be
     /// any issue as deltas are verified when they are submitted.
-    pub fn with_delta(&self, elements: DeltaElements) -> Snapshot {
+    pub fn with_delta(&self, random: RrdpFileRandom, elements: DeltaElements) -> Snapshot {
         let session = self.session;
         let serial = self.serial + 1;
-        let random = RrdpFileRandom::default();
         let mut current_objects = self.current_objects.clone();
         current_objects.apply_delta(elements);
 
@@ -816,11 +815,11 @@ pub struct Delta {
 }
 
 impl Delta {
-    pub fn new(session: RrdpSession, serial: u64, elements: DeltaElements) -> Self {
+    pub fn new(session: RrdpSession, serial: u64, time: Time, random: RrdpFileRandom, elements: DeltaElements) -> Self {
         Delta {
             session,
-            time: Time::now(),
-            random: RrdpFileRandom::default(),
+            time,
+            random,
             serial,
             elements,
         }
