@@ -13,9 +13,7 @@ Certificate Authority (CA) and publication server, written in Rust.  If you have
 any feedback, we would love to hear from you. Don’t hesitate to [create an issue
 on Github](https://github.com/NLnetLabs/krill/issues/new) or post a message on
 our [RPKI mailing list](https://lists.nlnetlabs.nl/mailman/listinfo/rpki) or
-[Discord server](https://discord.gg/8dvKB5Ykhy). You can lean more about Krill
-and RPKI technology by reading our documentation on [Read the
-Docs](https://rpki.readthedocs.io/en/latest/krill/index.html).
+[Discord server](https://discord.gg/8dvKB5Ykhy). 
 
 For more information please refer to the [documentation](https://krill.docs.nlnetlabs.nl/en/stable/).
 
