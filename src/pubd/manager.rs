@@ -511,18 +511,10 @@ mod tests {
         // Check that old serials are cleaned
         //------------------------------------------------------
 
-        // Should not include
+        // This delta was so big, that we are no longer including the
+        // deltas for serial 1 and 2
         assert!(!session_dir_contains_serial(&session, RRDP_FIRST_SERIAL));
-
-        // Should include
-        assert!(session_dir_contains_serial(&session, RRDP_FIRST_SERIAL + 1));
-        assert!(session_dir_contains_delta(&session, RRDP_FIRST_SERIAL + 1));
-        assert!(session_dir_contains_snapshot(&session, RRDP_FIRST_SERIAL + 1));
-        assert!(session_dir_contains_serial(&session, RRDP_FIRST_SERIAL + 2));
-        assert!(session_dir_contains_delta(&session, RRDP_FIRST_SERIAL + 2));
-        assert!(session_dir_contains_snapshot(&session, RRDP_FIRST_SERIAL + 2));
-
-        sleep(Duration::from_secs(2)).await;
+        assert!(!session_dir_contains_serial(&session, RRDP_FIRST_SERIAL + 1));
 
         // Add file 4,5,6
         //
@@ -538,19 +530,6 @@ mod tests {
         assert!(session_dir_contains_delta(&session, RRDP_FIRST_SERIAL + 3));
         assert!(session_dir_contains_snapshot(&session, RRDP_FIRST_SERIAL + 3));
 
-        // Should no longer include serial RRDP_FIRST_SERIAL or RRDP_FIRST_SERIAL + 1
-        // the total size exceeds the snapshot, and they have been retained long enough
-        assert!(!session_dir_contains_serial(&session, RRDP_FIRST_SERIAL));
-        assert!(!session_dir_contains_serial(&session, RRDP_FIRST_SERIAL + 1));
-
-        // Should still include
-        assert!(session_dir_contains_serial(&session, RRDP_FIRST_SERIAL + 2));
-        assert!(session_dir_contains_delta(&session, RRDP_FIRST_SERIAL + 2));
-        assert!(session_dir_contains_snapshot(&session, RRDP_FIRST_SERIAL + 2));
-
-        // Wait a bit to ensure that the notification file for serial RRDP_FIRST_SERIAL + 2 will be out of scope
-        sleep(Duration::from_secs(2)).await;
-
         // Removing the publisher should remove its contents
         server.remove_publisher(alice_handle, &actor).unwrap();
 
@@ -565,18 +544,10 @@ mod tests {
         let snapshot_xml = from_utf8(&snapshot_bytes).unwrap();
         assert!(!snapshot_xml.contains("/alice/"));
 
-        // We expect that the delta for serial RRDP_FIRST_SERIAL + 2 is still there because it is still referenced,
-        // but the snapshot is gone because it is no longer referenced and the notification for
-        // serial +2 is now more than 1 second old (1s is the retention time configured for the test)
-        assert!(session_dir_contains_serial(&session, RRDP_FIRST_SERIAL + 2));
-
-        // Old out-of-scope files are no longer kept properly because of changes made. But..
-        // this is okay. See issue #945. We should simplify Krill and only keep current files
-        // because in practice krill-sync is used for this, and it does a better job.
-        //
-        // Removing the following assertions for now, until #945 is done.
-        // assert!(session_dir_contains_delta(&session, RRDP_FIRST_SERIAL + 2));
-        // assert!(!session_dir_contains_snapshot(&session, RRDP_FIRST_SERIAL + 2));
+        // We expect that the deltas for serial 3 and 4 are now also out of scope and
+        // removed.
+        assert!(!session_dir_contains_serial(&session, RRDP_FIRST_SERIAL + 2));
+        assert!(!session_dir_contains_serial(&session, RRDP_FIRST_SERIAL + 3));
 
         let _ = fs::remove_dir_all(d);
     }
