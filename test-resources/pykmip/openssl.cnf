@@ -1,0 +1,18 @@
+[ ca ]
+default_ca = CA_default
+
+[ CA_default ]
+dir = demoCA
+database = $dir/index.txt
+default_md = sha256
+policy = policy_match
+serial = $dir/serial
+
+[ policy_match ]
+countryName		= match
+stateOrProvinceName	= match
+organizationName	= match
+organizationalUnitName	= optional
+commonName		= supplied
+emailAddress		= optional
+
