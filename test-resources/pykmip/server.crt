@@ -5,37 +5,43 @@ Certificate:
         Signature Algorithm: ecdsa-with-SHA256
         Issuer: C=NL, ST=Noord Holland, L=Amsterdam, O=NLnet Labs, CN=localhost
         Validity
-            Not Before: Sep 28 19:59:26 2021 GMT
-            Not After : Sep 28 19:59:26 2022 GMT
+            Not Before: Oct  3 08:11:42 2022 GMT
+            Not After : Sep 30 08:11:42 2032 GMT
         Subject: C=NL, ST=Noord Holland, O=NLnet Labs, CN=localhost
         Subject Public Key Info:
             Public Key Algorithm: id-ecPublicKey
                 Public-Key: (256 bit)
                 pub:
-                    04:74:94:a6:97:4b:18:33:71:bb:29:40:75:b0:8a:
-                    66:ee:75:09:a8:fb:b0:83:71:a7:82:b5:4b:15:76:
-                    d8:bd:2e:16:5c:b3:26:d8:bc:73:9b:fe:10:8b:95:
-                    4f:41:06:4a:ee:ac:f6:d7:bc:96:a7:ff:ef:39:52:
-                    0b:ea:25:c7:1d
+                    04:a4:77:18:0e:c1:65:6a:61:f5:f2:05:79:3e:73:
+                    b8:b1:8b:00:7f:ee:e6:04:4c:fd:1e:8f:80:55:04:
+                    64:58:90:e8:b5:d3:90:e7:c1:16:3d:ca:79:99:33:
+                    ed:13:75:97:55:cc:c5:6e:cf:28:d3:6c:cb:64:1c:
+                    46:c4:ec:91:40
                 ASN1 OID: prime256v1
                 NIST CURVE: P-256
         X509v3 extensions:
             X509v3 Subject Alternative Name: 
                 DNS:localhost
+            X509v3 Subject Key Identifier: 
+                B4:8E:E3:9E:39:52:BC:43:53:F9:FD:44:8F:0B:8D:FC:4F:1F:86:9E
+            X509v3 Authority Key Identifier: 
+                2E:19:C0:4E:6F:3A:66:1F:E5:8E:CB:00:A7:DF:C5:B9:83:4A:33:4B
     Signature Algorithm: ecdsa-with-SHA256
-         30:45:02:21:00:d8:e6:2e:5b:40:77:dd:3f:1f:9f:5f:79:69:
-         63:6c:93:db:c7:84:04:83:21:ed:68:b2:9d:eb:96:00:3e:d9:
-         db:02:20:50:3d:9a:e1:e3:37:db:94:d5:8d:e6:9f:ba:1f:15:
-         18:f3:04:84:96:8e:c4:79:f4:15:90:3e:e5:e5:f0:b6:f9
+    Signature Value:
+        30:44:02:20:36:0d:44:57:9d:69:03:3f:06:4c:6f:f2:2f:06:
+        71:61:9a:51:ea:e5:4d:9d:34:3a:2b:c3:38:bc:d6:c7:02:58:
+        02:20:37:36:3a:2a:f3:f2:9c:c8:7d:cd:61:47:64:24:dd:38:
+        ab:29:62:f1:59:cf:4d:d3:59:f7:ca:91:e8:dc:29:f4
 -----BEGIN CERTIFICATE-----
-MIIBtzCCAV2gAwIBAgIBATAKBggqhkjOPQQDAjBiMQswCQYDVQQGEwJOTDEWMBQG
+MIIB9jCCAZ2gAwIBAgIBATAKBggqhkjOPQQDAjBiMQswCQYDVQQGEwJOTDEWMBQG
 A1UECAwNTm9vcmQgSG9sbGFuZDESMBAGA1UEBwwJQW1zdGVyZGFtMRMwEQYDVQQK
-DApOTG5ldCBMYWJzMRIwEAYDVQQDDAlsb2NhbGhvc3QwHhcNMjEwOTI4MTk1OTI2
-WhcNMjIwOTI4MTk1OTI2WjBOMQswCQYDVQQGEwJOTDEWMBQGA1UECAwNTm9vcmQg
+DApOTG5ldCBMYWJzMRIwEAYDVQQDDAlsb2NhbGhvc3QwHhcNMjIxMDAzMDgxMTQy
+WhcNMzIwOTMwMDgxMTQyWjBOMQswCQYDVQQGEwJOTDEWMBQGA1UECAwNTm9vcmQg
 SG9sbGFuZDETMBEGA1UECgwKTkxuZXQgTGFiczESMBAGA1UEAwwJbG9jYWxob3N0
-MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEdJSml0sYM3G7KUB1sIpm7nUJqPuw
-g3GngrVLFXbYvS4WXLMm2Lxzm/4Qi5VPQQZK7qz217yWp//vOVIL6iXHHaMYMBYw
-FAYDVR0RBA0wC4IJbG9jYWxob3N0MAoGCCqGSM49BAMCA0gAMEUCIQDY5i5bQHfd
-Px+fX3lpY2yT28eEBIMh7WiyneuWAD7Z2wIgUD2a4eM325TVjeafuh8VGPMEhJaO
-xHn0FZA+5eXwtvk=
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEpHcYDsFlamH18gV5PnO4sYsAf+7m
+BEz9Ho+AVQRkWJDotdOQ58EWPcp5mTPtE3WXVczFbs8o02zLZBxGxOyRQKNYMFYw
+FAYDVR0RBA0wC4IJbG9jYWxob3N0MB0GA1UdDgQWBBS0juOeOVK8Q1P5/USPC438
+Tx+GnjAfBgNVHSMEGDAWgBQuGcBObzpmH+WOywCn38W5g0ozSzAKBggqhkjOPQQD
+AgNHADBEAiA2DURXnWkDPwZMb/IvBnFhmlHq5U2dNDorwzi81scCWAIgNzY6KvPy
+nMh9zWFHZCTdOKspYvFZz03TWffKkejcKfQ=
 -----END CERTIFICATE-----
