@@ -2,18 +2,11 @@ use std::fmt;
 
 use rpki::{
     ca::idexchange::{MyHandle, PublisherHandle},
-    repository::x509::Time,
     uri,
 };
 
 use crate::{
-    commons::{
-        api::rrdp::{Delta, DeltaElements, Notification, Snapshot},
-        api::IdCertInfo,
-        crypto::KrillSigner,
-        eventsourcing::StoredEvent,
-        KrillResult,
-    },
+    commons::{api::IdCertInfo, crypto::KrillSigner, eventsourcing::StoredEvent, KrillResult},
     pubd::Publisher,
 };
 
@@ -70,58 +63,6 @@ impl fmt::Display for RepositoryAccessInitDetails {
             "Initialized publication server. RRDP base uri: {}, Rsync Jail: {}",
             self.rrdp_base_uri, self.rsync_jail
         )
-    }
-}
-
-//------------ RrdpUpdate ----------------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RrdpUpdate {
-    delta: Delta,
-    notification: Notification,
-}
-
-impl RrdpUpdate {
-    pub fn new(delta: Delta, notification: Notification) -> Self {
-        RrdpUpdate { delta, notification }
-    }
-
-    pub fn time(&self) -> Time {
-        self.notification.time()
-    }
-
-    pub fn unpack(self) -> (Delta, Notification) {
-        (self.delta, self.notification)
-    }
-
-    pub fn elements(&self) -> &DeltaElements {
-        self.delta.elements()
-    }
-}
-
-//------------ RrdpSessionReset ----------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RrdpSessionReset {
-    snapshot: Snapshot,
-    notification: Notification,
-}
-
-impl RrdpSessionReset {
-    pub fn new(snapshot: Snapshot, notification: Notification) -> Self {
-        RrdpSessionReset { snapshot, notification }
-    }
-
-    pub fn time(&self) -> Time {
-        self.notification.time()
-    }
-
-    pub fn notification(&self) -> &Notification {
-        &self.notification
-    }
-
-    pub fn unpack(self) -> (Snapshot, Notification) {
-        (self.snapshot, self.notification)
     }
 }
 

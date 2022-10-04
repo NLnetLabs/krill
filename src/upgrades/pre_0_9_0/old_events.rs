@@ -28,6 +28,7 @@ use crate::{
     commons::{
         api::rrdp::{CurrentObjects, DeltaElements, PublishElement, RrdpSession},
         api::{
+            rrdp::{Delta, Notification, Snapshot},
             CertInfo, IdCertInfo, ObjectName, ParentCaContact, ReceivedCert, RepositoryContact, Revocation,
             RevocationsDelta, RoaAggregateKey, RtaName,
         },
@@ -36,7 +37,6 @@ use crate::{
     daemon::ca::{self, CaEvt, CaEvtDet, PreparedRta, RoaPayloadJsonMapKey, SignedRta},
     pubd::{
         Publisher, RepositoryAccessEvent, RepositoryAccessEventDetails, RepositoryAccessInitDetails, RepositoryManager,
-        RrdpSessionReset, RrdpUpdate,
     },
     upgrades::PrepareUpgradeError,
 };
@@ -545,9 +545,9 @@ impl CurrentObject {
 #[serde(rename_all = "snake_case")]
 pub enum OldPubdEvtDet {
     PublisherAdded(PublisherHandle, OldPublisher),
-    PublisherRemoved(PublisherHandle, RrdpUpdate),
-    Published(PublisherHandle, RrdpUpdate),
-    RrdpSessionReset(RrdpSessionReset),
+    PublisherRemoved(PublisherHandle, OldRrdpUpdate),
+    Published(PublisherHandle, OldRrdpUpdate),
+    RrdpSessionReset(OldRrdpSessionReset),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -694,6 +694,58 @@ impl TryFrom<OldRcvdCert> for ReceivedCert {
     fn try_from(old: OldRcvdCert) -> Result<Self, Self::Error> {
         ReceivedCert::create(old.cert, old.uri, old.resources, RequestResourceLimit::default())
             .map_err(|e| PrepareUpgradeError::Custom(format!("cannot convert certificate: {}", e)))
+    }
+}
+
+//------------ OldRrdpSessionReset -------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OldRrdpSessionReset {
+    snapshot: Snapshot,
+    notification: Notification,
+}
+
+impl OldRrdpSessionReset {
+    pub fn new(snapshot: Snapshot, notification: Notification) -> Self {
+        OldRrdpSessionReset { snapshot, notification }
+    }
+
+    pub fn time(&self) -> Time {
+        self.notification.time()
+    }
+
+    pub fn notification(&self) -> &Notification {
+        &self.notification
+    }
+
+    pub fn unpack(self) -> (Snapshot, Notification) {
+        (self.snapshot, self.notification)
+    }
+}
+
+//------------ OldRrdpUpdate -------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OldRrdpUpdate {
+    delta: Delta,
+    notification: Notification,
+}
+
+impl OldRrdpUpdate {
+    pub fn new(delta: Delta, notification: Notification) -> Self {
+        OldRrdpUpdate { delta, notification }
+    }
+
+    pub fn time(&self) -> Time {
+        self.notification.time()
+    }
+
+    pub fn unpack(self) -> (Delta, Notification) {
+        (self.delta, self.notification)
+    }
+
+    pub fn elements(&self) -> &DeltaElements {
+        self.delta.elements()
     }
 }
 

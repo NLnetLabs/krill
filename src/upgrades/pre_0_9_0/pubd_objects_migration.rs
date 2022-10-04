@@ -30,16 +30,15 @@ use crate::{
         KRILL_VERSION, PUBSERVER_CONTENT_DIR, PUBSERVER_DFLT, PUBSERVER_DIR, REPOSITORY_RRDP_DIR, RRDP_FIRST_SERIAL,
     },
     daemon::config::Config,
-    pubd::{
-        RepositoryAccess, RepositoryAccessInitDetails, RepositoryContent, RrdpServer, RrdpSessionReset, RrdpUpdate,
-        RsyncdStore,
-    },
+    pubd::{RepositoryAccess, RepositoryAccessInitDetails, RepositoryContent, RrdpServer, RsyncdStore},
     upgrades::pre_0_9_0::{
         old_commands::{OldStorableRepositoryCommand, OldStoredEffect, OldStoredRepositoryCommand},
-        old_events::{OldCurrentObjects, OldPubdEvt, OldPubdEvtDet, OldPubdInit, OldPublisher},
+        old_events::{OldCurrentObjects, OldPubdEvt, OldPubdEvtDet, OldPubdInit, OldPublisher, OldRrdpSessionReset},
     },
     upgrades::{PrepareUpgradeError, UpgradeMode, UpgradeResult, UpgradeStore},
 };
+
+use super::old_events::OldRrdpUpdate;
 
 pub struct PubdObjectsMigration;
 
@@ -388,7 +387,7 @@ impl Aggregate for OldRepository {
 }
 
 impl OldRepository {
-    fn update_publisher(&mut self, publisher: &PublisherHandle, update: &RrdpUpdate) {
+    fn update_publisher(&mut self, publisher: &PublisherHandle, update: &OldRrdpUpdate) {
         self.publishers
             .get_mut(publisher)
             .unwrap()
@@ -446,7 +445,7 @@ impl OldRrdpServer {
 }
 
 impl OldRrdpServer {
-    fn apply_update(&mut self, update: RrdpUpdate) {
+    fn apply_update(&mut self, update: OldRrdpUpdate) {
         let (delta, mut notification) = update.unpack();
 
         self.serial = notification.serial();
@@ -466,7 +465,7 @@ impl OldRrdpServer {
         self.deltas.retain(|d| d.serial() >= last_delta);
     }
 
-    fn apply_reset(&mut self, reset: RrdpSessionReset) {
+    fn apply_reset(&mut self, reset: OldRrdpSessionReset) {
         let (snapshot, notification) = reset.unpack();
 
         self.serial = notification.serial();
