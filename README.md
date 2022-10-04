@@ -1,7 +1,7 @@
 [![GitHub Actions Build Status](https://github.com/NLnetLabs/krill/workflows/CI/badge.svg)](https://github.com/NLnetLabs/krill/actions/workflows/ci.yml)
 [![Rust Crate Status](https://img.shields.io/crates/v/krill.svg?color=brightgreen)](https://crates.io/crates/krill)
-[![Docker Build Status](https://github.com/NLnetLabs/krill/actions/workflows/pkg-docker.yml/badge.svg)](https://github.com/NLnetLabs/krill/actions/workflows/pkg-docker.yml)
-[![Documentation Status](https://readthedocs.org/projects/rpki/badge/?version=latest)](https://rpki.readthedocs.io/en/latest/krill/?badge=latest)
+[![Docker Pulls](https://img.shields.io/docker/pulls/nlnetlabs/krill?color=brightgreen)](https://hub.docker.com/r/nlnetlabs/krill)
+[![Documentation Status](https://readthedocs.org/projects/rpki/badge/?version=latest)](https://krill.docs.nlnetlabs.nl/)
 [![E2E Test Status](https://github.com/nlnetlabs/krill/workflows/E2E%20Test/badge.svg)](https://github.com/NLnetLabs/krill/actions?query=workflow%3A%22E2E+Test%22)
 [![](https://img.shields.io/discord/818584154278199396?label=rpki%20on%20discord&logo=discord)](https://discord.gg/8dvKB5Ykhy)
 [![](https://img.shields.io/twitter/follow/krillrpki.svg?label=Follow&style=social)](https://twitter.com/krillrpki)
@@ -13,9 +13,7 @@ Certificate Authority (CA) and publication server, written in Rust.  If you have
 any feedback, we would love to hear from you. Don’t hesitate to [create an issue
 on Github](https://github.com/NLnetLabs/krill/issues/new) or post a message on
 our [RPKI mailing list](https://lists.nlnetlabs.nl/mailman/listinfo/rpki) or
-[Discord server](https://discord.gg/8dvKB5Ykhy). You can lean more about Krill
-and RPKI technology by reading our documentation on [Read the
-Docs](https://rpki.readthedocs.io/en/latest/krill/index.html).
+[Discord server](https://discord.gg/8dvKB5Ykhy). 
 
 For more information please refer to the [documentation](https://krill.docs.nlnetlabs.nl/en/stable/).
 
