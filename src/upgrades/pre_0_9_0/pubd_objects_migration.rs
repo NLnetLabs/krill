@@ -20,7 +20,7 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::rrdp::{Delta, Notification, PublishElement, RrdpFileRandom, RrdpSession, Snapshot, SnapshotRef},
+        api::rrdp::{Delta, Notification, RrdpFileRandom, RrdpSession, Snapshot, SnapshotRef},
         eventsourcing::{
             Aggregate, AggregateStore, CommandKey, KeyStoreKey, KeyValueStore, StoredEvent, StoredValueInfo,
         },
@@ -472,7 +472,7 @@ impl OldRrdpServer {
         self.session = notification.session();
         self.notification = notification;
         self.old_notifications.clear();
-        self.snapshot = snapshot.into();
+        self.snapshot = snapshot;
         self.deltas = vec![];
     }
 }
@@ -559,25 +559,5 @@ impl From<OldSnapshot> for Snapshot {
             RrdpFileRandom::default(),
             old.current_objects.into(),
         )
-    }
-}
-
-impl From<Snapshot> for OldSnapshot {
-    fn from(snap: Snapshot) -> Self {
-        let (session, serial, current_objects) = snap.unpack();
-
-        let map: HashMap<Hash, PublishElement> = current_objects
-            .elements()
-            .into_iter()
-            .map(|p| (p.base64().to_hash(), p.clone()))
-            .collect();
-
-        let current_objects = OldCurrentObjects::new(map);
-
-        OldSnapshot {
-            session,
-            serial,
-            current_objects,
-        }
     }
 }

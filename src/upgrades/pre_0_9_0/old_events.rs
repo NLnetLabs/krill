@@ -701,12 +701,12 @@ impl TryFrom<OldRcvdCert> for ReceivedCert {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldRrdpSessionReset {
-    snapshot: Snapshot,
+    snapshot: OldSnapshot,
     notification: Notification,
 }
 
 impl OldRrdpSessionReset {
-    pub fn new(snapshot: Snapshot, notification: Notification) -> Self {
+    pub fn new(snapshot: OldSnapshot, notification: Notification) -> Self {
         OldRrdpSessionReset { snapshot, notification }
     }
 
@@ -718,7 +718,7 @@ impl OldRrdpSessionReset {
         &self.notification
     }
 
-    pub fn unpack(self) -> (Snapshot, Notification) {
+    pub fn unpack(self) -> (OldSnapshot, Notification) {
         (self.snapshot, self.notification)
     }
 }
