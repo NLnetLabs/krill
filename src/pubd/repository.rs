@@ -26,7 +26,7 @@ use crate::{
         api::{
             rrdp::{
                 CurrentObjects, Delta, DeltaElements, DeltaRef, FileRef, Notification, RrdpFileRandom, RrdpSession,
-                Snapshot, SnapshotRef,
+                SnapshotData, SnapshotRef,
             },
             IdCertInfo,
         },
@@ -327,7 +327,7 @@ pub enum RepositoryContentChange {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RrdpSessionReset {
     notification: Notification,
-    snapshot: Snapshot,
+    snapshot: SnapshotData,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -475,7 +475,7 @@ impl RepositoryContent {
 
     pub fn write_repository(&self, config: RepositoryRetentionConfig) -> KrillResult<()> {
         self.rrdp.write(config)?;
-        self.rsync.write(self.rrdp.snapshot())
+        self.rsync.write(self.rrdp.serial, self.rrdp.snapshot())
     }
 
     pub fn add_publisher(&self, publisher: PublisherHandle) -> KrillResult<Vec<RepositoryContentChange>> {
@@ -603,14 +603,14 @@ impl RsyncdStore {
     /// Write all the files to disk for rsync to a tmp-dir, then switch
     /// things over in an effort to minimize the chance of people getting
     /// inconsistent syncs..
-    pub fn write(&self, snapshot: &Snapshot) -> KrillResult<()> {
+    pub fn write(&self, serial: u64, snapshot: &SnapshotData) -> KrillResult<()> {
         let _lock = self
             .lock
             .write()
             .map_err(|_| Error::custom("Could not get write lock for rsync repo"))?;
 
         let mut new_dir = self.rsync_dir.clone();
-        new_dir.push(&format!("tmp-{}", snapshot.serial()));
+        new_dir.push(&format!("tmp-{}", serial));
         fs::create_dir_all(&new_dir).map_err(|e| {
             KrillIoError::new(
                 format!(
@@ -700,7 +700,7 @@ pub struct RrdpServer {
     serial: u64,
     notification: Notification,
 
-    snapshot: Snapshot,
+    snapshot: SnapshotData,
     deltas: VecDeque<Delta>,
 }
 
@@ -713,7 +713,7 @@ impl RrdpServer {
         session: RrdpSession,
         serial: u64,
         notification: Notification,
-        snapshot: Snapshot,
+        snapshot: SnapshotData,
         deltas: VecDeque<Delta>,
     ) -> Self {
         RrdpServer {
@@ -735,12 +735,12 @@ impl RrdpServer {
         let mut rrdp_archive_dir = repo_dir.to_path_buf();
         rrdp_archive_dir.push(REPOSITORY_RRDP_ARCHIVE_DIR);
 
-        let snapshot = Snapshot::create(session);
+        let snapshot = SnapshotData::create();
 
         let serial = RRDP_FIRST_SERIAL;
-        let snapshot_uri = snapshot.uri(&rrdp_base_uri);
-        let snapshot_path = snapshot.path(&rrdp_base_dir);
-        let snapshot_hash = Hash::from_data(snapshot.xml().as_slice());
+        let snapshot_uri = snapshot.uri(session, serial, &rrdp_base_uri);
+        let snapshot_path = snapshot.path(session, serial, &rrdp_base_dir);
+        let snapshot_hash = Hash::from_data(snapshot.xml(session, serial).as_slice());
 
         let snapshot_ref = SnapshotRef::new(snapshot_uri, snapshot_path, snapshot_hash);
 
@@ -763,7 +763,7 @@ impl RrdpServer {
         let _ = fs::remove_dir_all(&self.rrdp_archive_dir);
     }
 
-    fn snapshot(&self) -> &Snapshot {
+    fn snapshot(&self) -> &SnapshotData {
         &self.snapshot
     }
 
@@ -773,10 +773,10 @@ impl RrdpServer {
 
     pub fn reset_session(&self) -> RrdpSessionReset {
         let session = RrdpSession::random();
-        let snapshot = self.snapshot.with_session_reset(session);
-        let snapshot_uri = snapshot.uri(&self.rrdp_base_uri);
-        let snapshot_path = snapshot.path(&self.rrdp_base_dir);
-        let snapshot_hash = Hash::from_data(snapshot.xml().as_slice());
+        let snapshot = self.snapshot.with_new_random();
+        let snapshot_uri = snapshot.uri(session, RRDP_FIRST_SERIAL, &self.rrdp_base_uri);
+        let snapshot_path = snapshot.path(session, RRDP_FIRST_SERIAL, &self.rrdp_base_dir);
+        let snapshot_hash = Hash::from_data(snapshot.xml(session, RRDP_FIRST_SERIAL).as_slice());
 
         let snapshot_ref = SnapshotRef::new(snapshot_uri, snapshot_path, snapshot_hash);
 
@@ -893,11 +893,16 @@ impl RrdpServer {
     // deltas. Remove old notifications exceeding the retention time,
     // so that we can delete old snapshots and deltas which are no longer
     // relevant.
-    fn make_updated_notification(&self, snapshot: &Snapshot, delta: &Delta, deltas_truncate: usize) -> Notification {
+    fn make_updated_notification(
+        &self,
+        snapshot: &SnapshotData,
+        delta: &Delta,
+        deltas_truncate: usize,
+    ) -> Notification {
         let snapshot_ref = {
-            let snapshot_uri = snapshot.uri(&self.rrdp_base_uri);
-            let snapshot_path = snapshot.path(&self.rrdp_base_dir);
-            let snapshot_xml = snapshot.xml();
+            let snapshot_uri = snapshot.uri(self.session, self.serial, &self.rrdp_base_uri);
+            let snapshot_path = snapshot.path(self.session, self.serial, &self.rrdp_base_dir);
+            let snapshot_xml = snapshot.xml(self.session, self.serial);
             let snapshot_hash = Hash::from_data(snapshot_xml.as_slice());
             SnapshotRef::new(snapshot_uri, snapshot_path, snapshot_hash)
         };
@@ -920,9 +925,9 @@ impl RrdpServer {
     /// no longer referenced in the notification file.
     fn write(&self, retention: RepositoryRetentionConfig) -> Result<(), Error> {
         // write snapshot if it's not there
-        let snapshot_path = self.snapshot.path(&self.rrdp_base_dir);
+        let snapshot_path = self.snapshot.path(self.session, self.serial, &self.rrdp_base_dir);
         if !snapshot_path.exists() {
-            self.snapshot.write_xml(&snapshot_path)?;
+            self.snapshot.write_xml(self.session, self.serial, &snapshot_path)?;
         }
 
         // write deltas if they are not there

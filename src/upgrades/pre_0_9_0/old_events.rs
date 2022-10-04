@@ -28,7 +28,7 @@ use crate::{
     commons::{
         api::rrdp::{CurrentObjects, DeltaElements, PublishElement, RrdpSession},
         api::{
-            rrdp::{Delta, Notification, Snapshot},
+            rrdp::{Delta, Notification},
             CertInfo, IdCertInfo, ObjectName, ParentCaContact, ReceivedCert, RepositoryContact, Revocation,
             RevocationsDelta, RoaAggregateKey, RtaName,
         },

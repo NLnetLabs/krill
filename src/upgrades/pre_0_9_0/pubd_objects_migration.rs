@@ -20,7 +20,7 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::rrdp::{Delta, Notification, RrdpFileRandom, RrdpSession, Snapshot, SnapshotRef},
+        api::rrdp::{Delta, Notification, RrdpFileRandom, RrdpSession, SnapshotData, SnapshotRef},
         eventsourcing::{
             Aggregate, AggregateStore, CommandKey, KeyStoreKey, KeyValueStore, StoredEvent, StoredValueInfo,
         },
@@ -543,21 +543,16 @@ impl OldSnapshot {
     }
 
     fn xml(&self) -> Vec<u8> {
-        self.to_snapshot().xml()
+        self.to_snapshot().xml(self.session, self.serial)
     }
 
-    fn to_snapshot(&self) -> Snapshot {
+    fn to_snapshot(&self) -> SnapshotData {
         self.clone().into()
     }
 }
 
-impl From<OldSnapshot> for Snapshot {
+impl From<OldSnapshot> for SnapshotData {
     fn from(old: OldSnapshot) -> Self {
-        Snapshot::new(
-            old.session,
-            old.serial,
-            RrdpFileRandom::default(),
-            old.current_objects.into(),
-        )
+        SnapshotData::new(RrdpFileRandom::default(), old.current_objects.into())
     }
 }
