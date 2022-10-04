@@ -25,7 +25,7 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 # Changelog
 
-## 0.11.0 RC1 'What about that ROA?'
+## 0.11.0 'What about that ROA?'
 
 In this release we introduce two features in the Krill API and CLI:
 - Support optional comment for each ROA configuration #863
@@ -40,10 +40,10 @@ Other than this we included a few minor issues and fixes:
 - Disallow negative numbers in config #808
 
 Documentation can be found here:
-https://krill.docs.nlnetlabs.nl/en/latest/
+https://krill.docs.nlnetlabs.nl/en/stable/
 
 And here:
-https://krill.docs.nlnetlabs.nl/en/latest/upgrade.html#v0-11-0
+https://krill.docs.nlnetlabs.nl/en/stable/upgrade.html#v0-11-0
 
 ## 0.10.3 'Down Under'
 
