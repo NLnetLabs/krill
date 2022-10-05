@@ -26,7 +26,9 @@ const VERSION: &str = "1";
 const NS: &str = "http://www.ripe.net/rpki/rrdp";
 
 const SNAPSHOT: Name = Name::unqualified(b"snapshot");
+const DELTA: Name = Name::unqualified(b"delta");
 const PUBLISH: Name = Name::unqualified(b"publish");
+const WITHDRAW: Name = Name::unqualified(b"withdraw");
 
 //------------ RrdpSession ---------------------------------------------------
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -614,7 +616,7 @@ impl Default for RrdpFileRandom {
     }
 }
 
-//------------ Snapshot ------------------------------------------------------
+//------------ SnapshotData --------------------------------------------------
 
 /// A structure to contain the data needed to create an RRDP Snapshot.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -807,46 +809,42 @@ impl From<publication::PublishDelta> for DeltaElements {
     }
 }
 
-//------------ Delta ---------------------------------------------------------
+//------------ DeltaData -----------------------------------------------------
 
-/// Defines an RRDP delta.
+/// Contains the data needed to make an RRDP delta XML file.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct Delta {
-    session: RrdpSession,
-    serial: u64,
-
-    // By using the default (i.e. random) for deserializing where this is absent, we do not
-    // need to migrate data when upgrading to this version where we introduce this new field.
-    // Note that this will result in new random values for existing Snapshot files, but
-    // because we now also perform a session reset on start up (see issue #533) it will
-    // not matter that this value does not map to the previous path of where this snapshot
-    // was stored, as it will be promptly replaced and forgotten.
+pub struct DeltaData {
+    // The random value will be used to make the snapshot URI unguessable and
+    // prevent cache poisoning (through CDN cached 404 not founds).
+    //
+    // Old versions of Krill did not have this. We can just use a default (new)
+    // random value in these cases.
     #[serde(default)]
     random: RrdpFileRandom,
 
+    // Session is implied by owning RrdpServer, but deltas have a serial
+    serial: u64,
+
+    // Tells us when this delta was created, this is used to determine how long
+    // we need to keep it around for.
     time: Time,
+
+    // The actual changes in this delta: publishes/updates/withdrawals
     elements: DeltaElements,
 }
 
-impl Delta {
-    pub fn new(session: RrdpSession, serial: u64, time: Time, random: RrdpFileRandom, elements: DeltaElements) -> Self {
-        Delta {
-            session,
-            time,
-            random,
+impl DeltaData {
+    pub fn new(serial: u64, time: Time, random: RrdpFileRandom, elements: DeltaElements) -> Self {
+        DeltaData {
             serial,
+            random,
+            time,
             elements,
         }
     }
 
-    pub fn session(&self) -> RrdpSession {
-        self.session
-    }
     pub fn serial(&self) -> u64 {
         self.serial
-    }
-    pub fn time(&self) -> &Time {
-        &self.time
     }
 
     pub fn older_than_seconds(&self, seconds: i64) -> bool {
@@ -876,66 +874,79 @@ impl Delta {
         self.elements.is_empty()
     }
 
-    pub fn unwrap(self) -> (RrdpSession, u64, DeltaElements) {
-        (self.session, self.serial, self.elements)
+    pub fn into_elements(self) -> DeltaElements {
+        self.elements
     }
 
-    fn rel_path(&self) -> String {
-        format!("{}/{}/{}/delta.xml", self.session, self.serial, self.random.0)
+    fn rel_path(&self, session: RrdpSession, serial: u64) -> String {
+        format!("{}/{}/{}/delta.xml", session, serial, self.random.0)
     }
 
-    pub fn uri(&self, rrdp_base_uri: &uri::Https) -> uri::Https {
-        rrdp_base_uri.join(self.rel_path().as_ref()).unwrap()
+    pub fn uri(&self, session: RrdpSession, serial: u64, rrdp_base_uri: &uri::Https) -> uri::Https {
+        rrdp_base_uri.join(self.rel_path(session, serial).as_ref()).unwrap()
     }
 
-    pub fn path(&self, base_path: &Path) -> PathBuf {
-        base_path.join(self.rel_path())
+    pub fn path(&self, session: RrdpSession, serial: u64, base_path: &Path) -> PathBuf {
+        base_path.join(self.rel_path(session, serial))
     }
 
-    pub fn write_xml(&self, path: &Path) -> Result<(), KrillIoError> {
+    pub fn write_xml(&self, session: RrdpSession, serial: u64, path: &Path) -> Result<(), KrillIoError> {
         debug!("Writing delta file: {}", path.to_string_lossy());
-        let vec = self.xml();
-        debug!("Done creating XML");
-        let bytes = Bytes::from(vec);
-        file::save(&bytes, path)?;
 
+        let mut f = file::create_file_with_path(path)?;
+        self.write_xml_to_writer(session, serial, &mut f)
+            .map_err(|e| KrillIoError::new(format!("cannot write delta xml to: {}", path.to_string_lossy()), e))?;
+
+        debug!("Done creating XML");
         Ok(())
     }
 
-    pub fn xml(&self) -> Vec<u8> {
-        XmlWriter::encode_vec(|w| {
-            let a = [
-                ("xmlns", NS),
-                ("version", VERSION),
-                ("session_id", &format!("{}", self.session)),
-                ("serial", &format!("{}", self.serial)),
-            ];
+    pub fn xml(&self, session: RrdpSession, serial: u64) -> Vec<u8> {
+        let mut res = vec![];
+        self.write_xml_to_writer(session, serial, &mut res).unwrap();
+        res
+    }
 
-            w.put_element("delta", Some(&a), |w| {
-                for el in &self.elements.publishes {
-                    let uri = el.uri.to_string();
-                    let atr = [("uri", uri.as_ref())];
-                    w.put_element("publish", Some(&atr), |w| w.put_text(el.base64.as_str()))?;
+    /// Write the delta XML.
+    ///
+    /// Note: we do not use the rpki-rs Delta implementation because we potentially would
+    /// need to transform and copy quite a lot of data.
+    fn write_xml_to_writer(
+        &self,
+        session: RrdpSession,
+        serial: u64,
+        writer: &mut impl io::Write,
+    ) -> Result<(), io::Error> {
+        let mut writer = rpki::xml::encode::Writer::new(writer);
+        writer
+            .element(DELTA)?
+            .attr("xmlns", NS)?
+            .attr("version", "1")?
+            .attr("session_id", &session)?
+            .attr("serial", &serial)?
+            .content(|content| {
+                for el in self.elements().publishes() {
+                    content
+                        .element(PUBLISH.into_unqualified())?
+                        .attr("uri", el.uri())?
+                        .content(|content| content.raw(el.base64().as_str()))?;
                 }
-
-                for el in &self.elements.updates {
-                    let uri = el.uri.to_string();
-                    let hash = el.hash.to_string();
-
-                    let atr = [("uri", uri.as_str()), ("hash", hash.as_str())];
-                    w.put_element("publish", Some(&atr), |w| w.put_text(el.base64.as_str()))?;
+                for el in self.elements().updates() {
+                    content
+                        .element(PUBLISH.into_unqualified())?
+                        .attr("uri", el.uri())?
+                        .attr("hash", el.hash())?
+                        .content(|content| content.raw(el.base64().as_str()))?;
                 }
-
-                for el in &self.elements.withdraws {
-                    let uri = el.uri.to_string();
-                    let hash = el.hash.to_string();
-
-                    let atr = [("uri", uri.as_str()), ("hash", hash.as_str())];
-                    w.put_element("withdraw", Some(&atr), |w| w.empty())?;
+                for el in self.elements().withdraws() {
+                    content
+                        .element(WITHDRAW.into_unqualified())?
+                        .attr("uri", el.uri())?
+                        .attr("hash", el.hash())?;
                 }
-
                 Ok(())
-            })
-        })
+            })?;
+
+        writer.done()
     }
 }

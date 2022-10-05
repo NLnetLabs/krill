@@ -25,7 +25,7 @@ use crate::{
         actor::Actor,
         api::{
             rrdp::{
-                CurrentObjects, Delta, DeltaElements, DeltaRef, FileRef, Notification, RrdpFileRandom, RrdpSession,
+                CurrentObjects, DeltaData, DeltaElements, DeltaRef, FileRef, Notification, RrdpFileRandom, RrdpSession,
                 SnapshotData, SnapshotRef,
             },
             IdCertInfo,
@@ -701,7 +701,7 @@ pub struct RrdpServer {
     notification: Notification,
 
     snapshot: SnapshotData,
-    deltas: VecDeque<Delta>,
+    deltas: VecDeque<DeltaData>,
 }
 
 impl RrdpServer {
@@ -714,7 +714,7 @@ impl RrdpServer {
         serial: u64,
         notification: Notification,
         snapshot: SnapshotData,
-        deltas: VecDeque<Delta>,
+        deltas: VecDeque<DeltaData>,
     ) -> Self {
         RrdpServer {
             rrdp_base_uri,
@@ -801,13 +801,7 @@ impl RrdpServer {
     fn apply_rrdp_updated(&mut self, update: RrdpUpdated) {
         self.serial += 1;
 
-        let delta = Delta::new(
-            self.session,
-            self.serial,
-            update.time,
-            update.random.clone(),
-            update.delta_elements,
-        );
+        let delta = DeltaData::new(self.serial, update.time, update.random.clone(), update.delta_elements);
         self.snapshot = self.snapshot.with_delta(update.random, delta.elements().clone());
         self.notification = self.make_updated_notification(&self.snapshot, &delta, update.deltas_truncate);
 
@@ -896,7 +890,7 @@ impl RrdpServer {
     fn make_updated_notification(
         &self,
         snapshot: &SnapshotData,
-        delta: &Delta,
+        delta: &DeltaData,
         deltas_truncate: usize,
     ) -> Notification {
         let snapshot_ref = {
@@ -909,11 +903,11 @@ impl RrdpServer {
 
         let delta_ref = {
             let serial = delta.serial();
-            let xml = delta.xml();
+            let xml = delta.xml(self.session, serial);
             let hash = Hash::from_data(xml.as_slice());
 
-            let delta_uri = delta.uri(&self.rrdp_base_uri);
-            let delta_path = delta.path(&self.rrdp_base_dir);
+            let delta_uri = delta.uri(self.session, serial, &self.rrdp_base_uri);
+            let delta_path = delta.path(self.session, serial, &self.rrdp_base_dir);
             let file_ref = FileRef::new(delta_uri, delta_path, hash);
             DeltaRef::new(serial, file_ref)
         };
@@ -932,10 +926,10 @@ impl RrdpServer {
 
         // write deltas if they are not there
         for delta in &self.deltas {
-            let path = delta.path(&self.rrdp_base_dir);
+            let path = delta.path(self.session, delta.serial(), &self.rrdp_base_dir);
             if !path.exists() {
                 // assume that if the delta exists, it is correct
-                delta.write_xml(&path)?;
+                delta.write_xml(self.session, delta.serial(), &path)?;
             }
         }
 

@@ -28,7 +28,7 @@ use crate::{
     commons::{
         api::rrdp::{CurrentObjects, DeltaElements, PublishElement, RrdpSession},
         api::{
-            rrdp::{Delta, Notification},
+            rrdp::{DeltaData, Notification},
             CertInfo, IdCertInfo, ObjectName, ParentCaContact, ReceivedCert, RepositoryContact, Revocation,
             RevocationsDelta, RoaAggregateKey, RtaName,
         },
@@ -727,12 +727,12 @@ impl OldRrdpSessionReset {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldRrdpUpdate {
-    delta: Delta,
+    delta: DeltaData,
     notification: Notification,
 }
 
 impl OldRrdpUpdate {
-    pub fn new(delta: Delta, notification: Notification) -> Self {
+    pub fn new(delta: DeltaData, notification: Notification) -> Self {
         OldRrdpUpdate { delta, notification }
     }
 
@@ -740,7 +740,7 @@ impl OldRrdpUpdate {
         self.notification.time()
     }
 
-    pub fn unpack(self) -> (Delta, Notification) {
+    pub fn unpack(self) -> (DeltaData, Notification) {
         (self.delta, self.notification)
     }
 

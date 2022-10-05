@@ -20,7 +20,7 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::rrdp::{Delta, Notification, RrdpFileRandom, RrdpSession, SnapshotData, SnapshotRef},
+        api::rrdp::{DeltaData, Notification, RrdpFileRandom, RrdpSession, SnapshotData, SnapshotRef},
         eventsourcing::{
             Aggregate, AggregateStore, CommandKey, KeyStoreKey, KeyValueStore, StoredEvent, StoredValueInfo,
         },
@@ -412,7 +412,7 @@ pub struct OldRrdpServer {
     old_notifications: VecDeque<Notification>,
 
     snapshot: OldSnapshot,
-    deltas: Vec<Delta>,
+    deltas: Vec<DeltaData>,
 }
 
 impl OldRrdpServer {
@@ -535,10 +535,8 @@ impl OldSnapshot {
         }
     }
 
-    pub fn apply_delta(&mut self, delta: Delta) {
-        let (session, serial, elements) = delta.unwrap();
-        self.session = session;
-        self.serial = serial;
+    pub fn apply_delta(&mut self, delta: DeltaData) {
+        let elements = delta.into_elements();
         self.current_objects.apply_delta(elements)
     }
 
