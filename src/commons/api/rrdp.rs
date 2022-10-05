@@ -7,20 +7,13 @@ use std::{
     {collections::HashMap, path::Path},
 };
 
-use bytes::Bytes;
 use chrono::Duration;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
 
 use rpki::{ca::publication, ca::publication::Base64, repository::x509::Time, rrdp::Hash, uri, xml::decode::Name};
 
-use crate::{
-    commons::{
-        error::KrillIoError,
-        util::{file, xml::XmlWriter},
-    },
-    constants::RRDP_FIRST_SERIAL,
-};
+use crate::commons::{error::KrillIoError, util::file};
 
 const VERSION: &str = "1";
 const NS: &str = "http://www.ripe.net/rpki/rrdp";
@@ -81,7 +74,7 @@ impl<'de> Deserialize<'de> for RrdpSession {
 
 impl fmt::Display for RrdpSession {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0.to_hyphenated())
+        write!(f, "{}", self.0.hyphenated())
     }
 }
 
@@ -211,238 +204,6 @@ impl From<publication::Withdraw> for WithdrawElement {
     fn from(w: publication::Withdraw) -> Self {
         let (_tag, uri, hash) = w.unpack();
         WithdrawElement { uri, hash }
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct Notification {
-    session: RrdpSession,
-    serial: u64,
-    time: Time,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    replaced: Option<Time>,
-    snapshot: SnapshotRef,
-    deltas: Vec<DeltaRef>,
-    last_delta: Option<u64>,
-}
-
-impl Notification {
-    pub fn new(session: RrdpSession, serial: u64, snapshot: SnapshotRef, deltas: Vec<DeltaRef>) -> Self {
-        let last_delta = Self::find_last_delta(&deltas);
-        Notification {
-            session,
-            serial,
-            time: Time::now(),
-            replaced: None,
-            snapshot,
-            deltas,
-            last_delta,
-        }
-    }
-
-    /// Returns a new Notification file with the given updates.
-    pub fn with_updates(&self, snapshot: SnapshotRef, delta: DeltaRef, deltas_truncate: usize) -> Self {
-        let session = self.session;
-        let serial = self.serial + 1;
-
-        let mut deltas = vec![delta];
-        deltas.append(&mut self.deltas.clone());
-        // The given truncate is the index *before* the new delta was added.
-        // Note: truncating beyond the len is safe, it is then just a no-op.
-        deltas.truncate(deltas_truncate + 1);
-
-        Notification::new(session, serial, snapshot, deltas)
-    }
-
-    pub fn time(&self) -> Time {
-        self.time
-    }
-
-    pub fn older_than_seconds(&self, seconds: i64) -> bool {
-        match self.replaced {
-            Some(time) => {
-                let then = Time::now() - Duration::seconds(seconds);
-                time < then
-            }
-            None => false,
-        }
-    }
-
-    pub fn replace(&mut self, time: Time) {
-        self.replaced = Some(time);
-    }
-
-    pub fn serial(&self) -> u64 {
-        self.serial
-    }
-
-    pub fn session(&self) -> RrdpSession {
-        self.session
-    }
-
-    pub fn last_delta(&self) -> Option<u64> {
-        self.last_delta
-    }
-
-    pub fn includes_delta(&self, delta: u64) -> bool {
-        if let Some(last) = self.last_delta {
-            last <= delta
-        } else {
-            false
-        }
-    }
-
-    pub fn includes_snapshot(&self, version: u64) -> bool {
-        self.serial == version
-    }
-
-    fn find_last_delta(deltas: &[DeltaRef]) -> Option<u64> {
-        if deltas.is_empty() {
-            None
-        } else {
-            let mut serial = deltas[0].serial;
-            for d in deltas {
-                if d.serial < serial {
-                    serial = d.serial
-                }
-            }
-
-            Some(serial)
-        }
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct NotificationUpdate {
-    time: Time,
-    session: Option<RrdpSession>,
-    snapshot: SnapshotRef,
-    delta: DeltaRef,
-    last_delta: u64,
-}
-
-impl NotificationUpdate {
-    pub fn new(
-        time: Time,
-        session: Option<RrdpSession>,
-        snapshot: SnapshotRef,
-        delta: DeltaRef,
-        last_delta: u64,
-    ) -> Self {
-        NotificationUpdate {
-            time,
-            session,
-            snapshot,
-            delta,
-            last_delta,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct NotificationCreate {
-    session: RrdpSession,
-    snapshot: SnapshotRef,
-}
-
-impl NotificationUpdate {
-    pub fn unwrap(self) -> (Time, Option<RrdpSession>, SnapshotRef, DeltaRef, u64) {
-        (self.time, self.session, self.snapshot, self.delta, self.last_delta)
-    }
-}
-
-impl Notification {
-    pub fn create(session: RrdpSession, snapshot: SnapshotRef) -> Self {
-        Notification::new(session, RRDP_FIRST_SERIAL, snapshot, vec![])
-    }
-
-    pub fn write_xml(&self, path: &Path) -> Result<(), KrillIoError> {
-        trace!("Writing notification file: {}", path.to_string_lossy());
-        let mut file = file::create_file_with_path(path)?;
-
-        XmlWriter::encode_to_file(&mut file, |w| {
-            let a = [
-                ("xmlns", NS),
-                ("version", VERSION),
-                ("session_id", &format!("{}", self.session)),
-                ("serial", &format!("{}", self.serial)),
-            ];
-
-            w.put_element("notification", Some(&a), |w| {
-                {
-                    // snapshot ref
-                    let uri = self.snapshot.uri.to_string();
-                    let hash = self.snapshot.hash.to_string();
-                    let a = [("uri", uri.as_str()), ("hash", hash.as_str())];
-                    w.put_element("snapshot", Some(&a), |w| w.empty())?;
-                }
-
-                {
-                    // delta refs
-                    for delta in &self.deltas {
-                        let serial = format!("{}", delta.serial);
-                        let uri = delta.file_ref.uri.to_string();
-                        let hash = delta.file_ref.hash.to_string();
-
-                        let a = [
-                            ("serial", serial.as_str()),
-                            ("uri", uri.as_str()),
-                            ("hash", hash.as_str()),
-                        ];
-                        w.put_element("delta", Some(&a), |w| w.empty())?;
-                    }
-                }
-
-                Ok(())
-            })
-        })
-        .map_err(|e| KrillIoError::new(format!("Could not write XML to: {}", path.to_string_lossy()), e))
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct FileRef {
-    uri: uri::Https,
-    path: PathBuf,
-    hash: Hash,
-}
-
-impl FileRef {
-    pub fn new(uri: uri::Https, path: PathBuf, hash: Hash) -> Self {
-        FileRef { uri, path, hash }
-    }
-    pub fn uri(&self) -> &uri::Https {
-        &self.uri
-    }
-    pub fn path(&self) -> &PathBuf {
-        &self.path
-    }
-    pub fn hash(&self) -> &Hash {
-        &self.hash
-    }
-}
-
-pub type SnapshotRef = FileRef;
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct DeltaRef {
-    serial: u64,
-    file_ref: FileRef,
-}
-
-impl DeltaRef {
-    pub fn new(serial: u64, file_ref: FileRef) -> Self {
-        DeltaRef { serial, file_ref }
-    }
-
-    pub fn serial(&self) -> u64 {
-        self.serial
-    }
-}
-
-impl AsRef<FileRef> for DeltaRef {
-    fn as_ref(&self) -> &FileRef {
-        &self.file_ref
     }
 }
 
@@ -723,7 +484,7 @@ impl SnapshotData {
         writer
             .element(SNAPSHOT)?
             .attr("xmlns", NS)?
-            .attr("version", "1")?
+            .attr("version", VERSION)?
             .attr("session_id", &session)?
             .attr("serial", &serial)?
             .content(|content| {
@@ -921,7 +682,7 @@ impl DeltaData {
         writer
             .element(DELTA)?
             .attr("xmlns", NS)?
-            .attr("version", "1")?
+            .attr("version", VERSION)?
             .attr("session_id", &session)?
             .attr("serial", &serial)?
             .content(|content| {

@@ -20,7 +20,7 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::rrdp::{DeltaData, Notification, RrdpFileRandom, RrdpSession, SnapshotData, SnapshotRef},
+        api::rrdp::{DeltaData, RrdpFileRandom, RrdpSession, SnapshotData},
         eventsourcing::{
             Aggregate, AggregateStore, CommandKey, KeyStoreKey, KeyValueStore, StoredEvent, StoredValueInfo,
         },
@@ -38,7 +38,7 @@ use crate::{
     upgrades::{PrepareUpgradeError, UpgradeMode, UpgradeResult, UpgradeStore},
 };
 
-use super::old_events::OldRrdpUpdate;
+use super::old_events::{OldNotification, OldRrdpUpdate, SnapshotRef};
 
 pub struct PubdObjectsMigration;
 
@@ -406,10 +406,10 @@ pub struct OldRrdpServer {
 
     session: RrdpSession,
     serial: u64,
-    notification: Notification,
+    notification: OldNotification,
 
     #[serde(skip_serializing_if = "VecDeque::is_empty", default = "VecDeque::new")]
-    old_notifications: VecDeque<Notification>,
+    old_notifications: VecDeque<OldNotification>,
 
     snapshot: OldSnapshot,
     deltas: Vec<DeltaData>,
@@ -429,7 +429,7 @@ impl OldRrdpServer {
 
         let snapshot_ref = SnapshotRef::new(snapshot_uri, snapshot_path, snapshot_hash);
 
-        let notification = Notification::create(session, snapshot_ref);
+        let notification = OldNotification::create(session, snapshot_ref);
 
         OldRrdpServer {
             rrdp_base_uri,
@@ -511,7 +511,7 @@ impl From<OldRrdpServer> for RrdpServer {
             rrdp_archive_dir,
             old.session,
             old.serial,
-            old.notification,
+            old.notification.time(),
             old.snapshot.into(),
             VecDeque::from(old.deltas),
         )

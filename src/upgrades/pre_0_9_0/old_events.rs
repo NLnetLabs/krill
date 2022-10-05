@@ -5,6 +5,7 @@ use std::{
     path::PathBuf,
 };
 
+use chrono::Duration;
 use rpki::{
     ca::{
         idcert::IdCert,
@@ -28,12 +29,12 @@ use crate::{
     commons::{
         api::rrdp::{CurrentObjects, DeltaElements, PublishElement, RrdpSession},
         api::{
-            rrdp::{DeltaData, Notification},
-            CertInfo, IdCertInfo, ObjectName, ParentCaContact, ReceivedCert, RepositoryContact, Revocation,
-            RevocationsDelta, RoaAggregateKey, RtaName,
+            rrdp::DeltaData, CertInfo, IdCertInfo, ObjectName, ParentCaContact, ReceivedCert, RepositoryContact,
+            Revocation, RevocationsDelta, RoaAggregateKey, RtaName,
         },
         eventsourcing::StoredEvent,
     },
+    constants::RRDP_FIRST_SERIAL,
     daemon::ca::{self, CaEvt, CaEvtDet, PreparedRta, RoaPayloadJsonMapKey, SignedRta},
     pubd::{
         Publisher, RepositoryAccessEvent, RepositoryAccessEventDetails, RepositoryAccessInitDetails, RepositoryManager,
@@ -702,11 +703,11 @@ impl TryFrom<OldRcvdCert> for ReceivedCert {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldRrdpSessionReset {
     snapshot: OldSnapshot,
-    notification: Notification,
+    notification: OldNotification,
 }
 
 impl OldRrdpSessionReset {
-    pub fn new(snapshot: OldSnapshot, notification: Notification) -> Self {
+    pub fn new(snapshot: OldSnapshot, notification: OldNotification) -> Self {
         OldRrdpSessionReset { snapshot, notification }
     }
 
@@ -714,11 +715,11 @@ impl OldRrdpSessionReset {
         self.notification.time()
     }
 
-    pub fn notification(&self) -> &Notification {
+    pub fn notification(&self) -> &OldNotification {
         &self.notification
     }
 
-    pub fn unpack(self) -> (OldSnapshot, Notification) {
+    pub fn unpack(self) -> (OldSnapshot, OldNotification) {
         (self.snapshot, self.notification)
     }
 }
@@ -728,11 +729,11 @@ impl OldRrdpSessionReset {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct OldRrdpUpdate {
     delta: DeltaData,
-    notification: Notification,
+    notification: OldNotification,
 }
 
 impl OldRrdpUpdate {
-    pub fn new(delta: DeltaData, notification: Notification) -> Self {
+    pub fn new(delta: DeltaData, notification: OldNotification) -> Self {
         OldRrdpUpdate { delta, notification }
     }
 
@@ -740,12 +741,163 @@ impl OldRrdpUpdate {
         self.notification.time()
     }
 
-    pub fn unpack(self) -> (DeltaData, Notification) {
+    pub fn unpack(self) -> (DeltaData, OldNotification) {
         (self.delta, self.notification)
     }
 
     pub fn elements(&self) -> &DeltaElements {
         self.delta.elements()
+    }
+}
+
+/// Deprecated in Krill 0.12 and up. Will generate notification
+/// file on demand, using the definition in rpki-rs.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OldNotification {
+    session: RrdpSession,
+    serial: u64,
+    time: Time,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    replaced: Option<Time>,
+    snapshot: SnapshotRef,
+    deltas: Vec<DeltaRef>,
+    last_delta: Option<u64>,
+}
+
+impl OldNotification {
+    pub fn new(session: RrdpSession, serial: u64, snapshot: SnapshotRef, deltas: Vec<DeltaRef>) -> Self {
+        let last_delta = Self::find_last_delta(&deltas);
+        OldNotification {
+            session,
+            serial,
+            time: Time::now(),
+            replaced: None,
+            snapshot,
+            deltas,
+            last_delta,
+        }
+    }
+
+    /// Returns a new Notification file with the given updates.
+    pub fn with_updates(&self, snapshot: SnapshotRef, delta: DeltaRef, deltas_truncate: usize) -> Self {
+        let session = self.session;
+        let serial = self.serial + 1;
+
+        let mut deltas = vec![delta];
+        deltas.append(&mut self.deltas.clone());
+        // The given truncate is the index *before* the new delta was added.
+        // Note: truncating beyond the len is safe, it is then just a no-op.
+        deltas.truncate(deltas_truncate + 1);
+
+        OldNotification::new(session, serial, snapshot, deltas)
+    }
+
+    pub fn time(&self) -> Time {
+        self.time
+    }
+
+    pub fn older_than_seconds(&self, seconds: i64) -> bool {
+        match self.replaced {
+            Some(time) => {
+                let then = Time::now() - Duration::seconds(seconds);
+                time < then
+            }
+            None => false,
+        }
+    }
+
+    pub fn replace(&mut self, time: Time) {
+        self.replaced = Some(time);
+    }
+
+    pub fn serial(&self) -> u64 {
+        self.serial
+    }
+
+    pub fn session(&self) -> RrdpSession {
+        self.session
+    }
+
+    pub fn last_delta(&self) -> Option<u64> {
+        self.last_delta
+    }
+
+    pub fn includes_delta(&self, delta: u64) -> bool {
+        if let Some(last) = self.last_delta {
+            last <= delta
+        } else {
+            false
+        }
+    }
+
+    pub fn includes_snapshot(&self, version: u64) -> bool {
+        self.serial == version
+    }
+
+    fn find_last_delta(deltas: &[DeltaRef]) -> Option<u64> {
+        if deltas.is_empty() {
+            None
+        } else {
+            let mut serial = deltas[0].serial;
+            for d in deltas {
+                if d.serial < serial {
+                    serial = d.serial
+                }
+            }
+
+            Some(serial)
+        }
+    }
+}
+
+impl OldNotification {
+    pub fn create(session: RrdpSession, snapshot: SnapshotRef) -> Self {
+        OldNotification::new(session, RRDP_FIRST_SERIAL, snapshot, vec![])
+    }
+}
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct FileRef {
+    uri: uri::Https,
+    path: PathBuf,
+    hash: Hash,
+}
+
+impl FileRef {
+    pub fn new(uri: uri::Https, path: PathBuf, hash: Hash) -> Self {
+        FileRef { uri, path, hash }
+    }
+    pub fn uri(&self) -> &uri::Https {
+        &self.uri
+    }
+    pub fn path(&self) -> &PathBuf {
+        &self.path
+    }
+    pub fn hash(&self) -> &Hash {
+        &self.hash
+    }
+}
+
+pub type SnapshotRef = FileRef;
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct DeltaRef {
+    serial: u64,
+    file_ref: FileRef,
+}
+
+impl DeltaRef {
+    pub fn new(serial: u64, file_ref: FileRef) -> Self {
+        DeltaRef { serial, file_ref }
+    }
+
+    pub fn serial(&self) -> u64 {
+        self.serial
+    }
+}
+
+impl AsRef<FileRef> for DeltaRef {
+    fn as_ref(&self) -> &FileRef {
+        &self.file_ref
     }
 }
 
