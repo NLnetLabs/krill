@@ -16,10 +16,9 @@ use rpki::{
     },
     crypto::KeyIdentifier,
     repository::{x509::Time, Manifest},
-    rrdp::{DeltaInfo, Hash},
+    rrdp::{DeltaInfo, Hash, NotificationFile, SnapshotInfo},
     uri,
 };
-use uuid::Uuid;
 
 use crate::{
     commons::{
@@ -867,14 +866,36 @@ impl RrdpServer {
 
     /// Write the (missing) RRDP files to disk, and remove the ones
     /// no longer referenced in the notification file.
-    fn write(&self, _retention: RepositoryRetentionConfig) -> Result<(), Error> {
+    fn write(&self, retention: RepositoryRetentionConfig) -> Result<(), Error> {
         // Get the current notification file from disk, if it exists, so
         // we can determine which (new) snapshot and delta files to write,
         // and which old snapshot and delta files may be removed.
         debug!("Write updated RRDP state to disk - if there are any updates that is.");
 
-        let notification_file_path = self.notification_path();
+        // Get the current notification file - as long as it's present and can
+        // be parsed. If it cannot be parsed we just ignore it. I.e. we will generate
+        // all current files in that case.
+        let old_notification_opt: Option<NotificationFile> = file::read(&self.notification_path())
+            .ok()
+            .and_then(|bytes| rpki::rrdp::NotificationFile::parse(bytes.as_ref()).ok());
 
+        if let Some(old_notification) = old_notification_opt.as_ref() {
+            if old_notification.serial() == self.serial && old_notification.session_id() == self.session.into() {
+                debug!("Existing notification file matches current session and serial. Nothing to write.");
+                return Ok(());
+            }
+        }
+
+        let deltas = self.write_delta_files(old_notification_opt)?;
+        let snapshot = self.write_snapshot_file()?;
+
+        self.write_notification_file(snapshot, deltas)?;
+
+        // clean up under the base dir:
+        self.cleanup_old_rrdp_files(retention)
+    }
+
+    fn write_delta_files(&self, old_notification_opt: Option<NotificationFile>) -> KrillResult<Vec<DeltaInfo>> {
         // Find existing deltas in current file, if present and still applicable:
         // - there is a notification that can be parsed
         // - session did not change
@@ -883,55 +904,43 @@ impl RrdpServer {
         // We will assume that files for deltas still exist on disk and were not changed, so we will not regenerate them.
         //
         // NOTE: if both session and serial remain unchanged we just return with Ok(()). There is no work.
-        let mut deltas: Vec<rpki::rrdp::DeltaInfo> = if let Ok(bytes) = file::read(&notification_file_path) {
-            match rpki::rrdp::NotificationFile::parse(bytes.as_ref()) {
-                Ok(mut notification) => {
-                    if notification.serial() == self.serial && notification.session_id() == self.session.into() {
-                        debug!("Existing notification file matches current session and serial. Nothing to write.");
-                        return Ok(());
-                    } else if notification.session_id() == self.session.into() {
-                        // Sort the deltas from lowest serial up, and make sure that there are no gaps.
-                        if notification.sort_and_verify_deltas(None) {
-                            debug!("Found existing notification file for current session with deltas.");
-                            notification.deltas().to_vec()
-                        } else {
-                            debug!("Found existing notification file with incomplete deltas, will regenerate files.");
-                            vec![]
-                        }
+        let mut deltas_from_old_notification: Vec<rpki::rrdp::DeltaInfo> = match old_notification_opt {
+            None => {
+                debug!("No old notification file found");
+                vec![]
+            }
+            Some(mut old_notification) => {
+                if old_notification.session_id() == self.session.into() {
+                    // Sort the deltas from lowest serial up, and make sure that there are no gaps.
+                    if old_notification.sort_and_verify_deltas(None) {
+                        debug!("Found existing notification file for current session with deltas.");
+                        old_notification.deltas().to_vec()
                     } else {
-                        debug!("Existing notification file was for different session, will regenerate all files.");
+                        debug!("Found existing notification file with incomplete deltas, will regenerate files.");
                         vec![]
                     }
-                }
-                Err(e) => {
-                    warn!(
-                        "Could not parse old notification file '{}'. Will generate fresh file. Error was: '{}'",
-                        notification_file_path.to_string_lossy(),
-                        e
-                    );
+                } else {
+                    debug!("Existing notification file was for different session, will regenerate all files.");
                     vec![]
                 }
             }
-        } else {
-            debug!("No old notification file found. Will generate fresh file.");
-            vec![]
         };
 
         // Go over the deltas we found and discard any delta with a serial that we no longer kept.
         // The deltas in the RrdpServer are sorted from highest to lowest serial (to make it easier to truncate).
         if let Some(last) = self.deltas.back() {
             // Only keep deltas are still kept.
-            deltas.retain(|delta| delta.serial() >= last.serial());
-        } else if !deltas.is_empty() {
+            deltas_from_old_notification.retain(|delta| delta.serial() >= last.serial());
+        } else if !deltas_from_old_notification.is_empty() {
             // We would expect the existing deltas to be empty as well in this case. But in any case,
             // wiping them will ensure we generate a new sane NotificationFile
-            deltas = vec![];
+            deltas_from_old_notification = vec![];
         }
 
         // Write new delta files and add their DeltaInfo to the list to include in the new notification file.
         // I.e. skip deltas that are still included in the curated list we got from the old notification.
-        let last_written_serial = deltas.last();
-        let mut deltas_for_notification_file = vec![];
+        let last_written_serial = deltas_from_old_notification.last();
+        let mut deltas = vec![];
         for delta in &self.deltas {
             if let Some(last) = last_written_serial {
                 if delta.serial() <= last.serial() {
@@ -951,161 +960,178 @@ impl RrdpServer {
             debug!("Write delta file to: {}", path.to_string_lossy());
             file::save(&xml_bytes, &path)?;
 
-            deltas_for_notification_file.push(DeltaInfo::new(delta.serial(), uri, hash));
+            deltas.push(DeltaInfo::new(delta.serial(), uri, hash));
         }
 
         // Reverse the order of the (old) deltas so that it also goes high to low, and
         // we can get the new complete list to include in the notification file.
-        deltas.reverse();
-        deltas_for_notification_file.append(&mut deltas);
+        deltas_from_old_notification.reverse();
+        deltas.append(&mut deltas_from_old_notification);
 
-        // write snapshot if it's not there
-        let snapshot_path = self.snapshot.path(self.session, self.serial, &self.rrdp_base_dir);
-        if !snapshot_path.exists() {
-            self.snapshot.write_xml(self.session, self.serial, &snapshot_path)?;
-        }
+        Ok(deltas)
+    }
 
-        // write deltas if they are not there
-        for delta in &self.deltas {
-            let path = delta.path(self.session, delta.serial(), &self.rrdp_base_dir);
-            if !path.exists() {
-                // assume that if the delta exists, it is correct
-                delta.write_xml(self.session, delta.serial(), &path)?;
+    fn write_snapshot_file(&self) -> KrillResult<SnapshotInfo> {
+        let path = self.snapshot().path(self.session, self.serial, &self.rrdp_base_dir);
+        let uri = self.snapshot().uri(self.session, self.serial, &self.rrdp_base_uri);
+        let xml_bytes = self.snapshot().xml(self.session, self.serial);
+        let hash = Hash::from_data(&xml_bytes);
+
+        debug!("Write snapshot file to: {}", path.to_string_lossy());
+        file::save(&xml_bytes, &path)?;
+
+        Ok(SnapshotInfo::new(uri, hash))
+    }
+
+    fn write_notification_file(&self, snapshot: SnapshotInfo, deltas: Vec<DeltaInfo>) -> KrillResult<()> {
+        // Write new notification file to new file first.
+        // Prevent that half-overwritten files are served.
+        let notification = NotificationFile::new(self.session.into(), self.serial, snapshot, deltas);
+        let notification_path_new = self.notification_path_new();
+        let mut notification_file_new = file::create_file_with_path(&notification_path_new)?;
+        notification.write_xml(&mut notification_file_new).map_err(|e| {
+            KrillIoError::new(
+                format!(
+                    "could not write new notification file to {}",
+                    notification_path_new.to_string_lossy()
+                ),
+                e,
+            )
+        })?;
+
+        // Rename the new file so it becomes current.
+        let notification_path = self.notification_path();
+        fs::rename(&notification_path_new, &notification_path).map_err(|e| {
+            KrillIoError::new(
+                format!(
+                    "Could not rename notification file from '{}' to '{}'",
+                    notification_path_new.to_string_lossy(),
+                    notification_path.to_string_lossy()
+                ),
+                e,
+            )
+        })?;
+
+        Ok(())
+    }
+
+    fn cleanup_old_rrdp_files(&self, retention: RepositoryRetentionConfig) -> KrillResult<()> {
+        // - old session dirs
+        for entry in fs::read_dir(&self.rrdp_base_dir).map_err(|e| {
+            KrillIoError::new(
+                format!(
+                    "Could not read RRDP base directory '{}'",
+                    self.rrdp_base_dir.to_string_lossy()
+                ),
+                e,
+            )
+        })? {
+            let entry = entry.map_err(|e| {
+                KrillIoError::new(
+                    format!(
+                        "Could not read entry in RRDP base directory '{}'",
+                        self.rrdp_base_dir.to_string_lossy()
+                    ),
+                    e,
+                )
+            })?;
+            if self.session.to_string() == entry.file_name().to_string_lossy() {
+                continue;
+            } else {
+                let path = entry.path();
+                if path.is_dir() {
+                    let _best_effort_rm = fs::remove_dir_all(path);
+                }
             }
         }
 
-        // write notification file
-        todo!("write notification file");
+        // clean up under the current session
+        let session_dir = self.rrdp_base_dir.join(self.session.to_string());
 
-        // let notification_path_new = self.notification_path_new();
-        // let notification_path = self.notification_path();
-        // self.notification.write_xml(&notification_path_new)?;
-        // fs::rename(&notification_path_new, &notification_path).map_err(|e| {
-        //     KrillIoError::new(
-        //         format!(
-        //             "Could not rename notification file from '{}' to '{}'",
-        //             notification_path_new.to_string_lossy(),
-        //             notification_path.to_string_lossy()
-        //         ),
-        //         e,
-        //     )
-        // })?;
+        // Get the delta range to keep. We use 0 as a special value, because it
+        // is never used for deltas: i.e. no delta dirs will match if our delta
+        // list is empty.
+        let lowest_delta = self.deltas.back().map(|delta| delta.serial()).unwrap_or(0);
+        let highest_delta = self.deltas.front().map(|delta| delta.serial()).unwrap_or(0);
 
-        // clean up under the base dir:
+        for entry in fs::read_dir(&session_dir).map_err(|e| {
+            KrillIoError::new(
+                format!(
+                    "Could not read RRDP session directory '{}'",
+                    session_dir.to_string_lossy()
+                ),
+                e,
+            )
+        })? {
+            let entry = entry.map_err(|e| {
+                KrillIoError::new(
+                    format!(
+                        "Could not read entry in RRDP session directory '{}'",
+                        session_dir.to_string_lossy()
+                    ),
+                    e,
+                )
+            })?;
+            let path = entry.path();
 
-        // {
-        //     // - old session dirs
-        //     for entry in fs::read_dir(&self.rrdp_base_dir).map_err(|e| {
-        //         KrillIoError::new(
-        //             format!(
-        //                 "Could not read RRDP base directory '{}'",
-        //                 self.rrdp_base_dir.to_string_lossy()
-        //             ),
-        //             e,
-        //         )
-        //     })? {
-        //         let entry = entry.map_err(|e| {
-        //             KrillIoError::new(
-        //                 format!(
-        //                     "Could not read entry in RRDP base directory '{}'",
-        //                     self.rrdp_base_dir.to_string_lossy()
-        //                 ),
-        //                 e,
-        //             )
-        //         })?;
-        //         if self.session.to_string() == entry.file_name().to_string_lossy() {
-        //             continue;
-        //         } else {
-        //             let path = entry.path();
-        //             if path.is_dir() {
-        //                 let _best_effort_rm = fs::remove_dir_all(path);
-        //             }
-        //         }
-        //     }
+            // remove any dir or file that is:
+            // - not a number
+            // - a number that is higher than the current serial
+            // - a number that is lower than the last delta (if set)
+            if let Ok(serial) = u64::from_str(entry.file_name().to_string_lossy().as_ref()) {
+                // Skip the current serial
+                if serial == self.serial {
+                    continue;
+                // Clean up old serial dirs once deltas are out of scope
+                } else if serial < lowest_delta || serial > highest_delta {
+                    if retention.retention_archive {
+                        // If archiving is enabled, then move these directories under the archive base
 
-        //     // clean up under the current session
-        //     let mut session_dir = self.rrdp_base_dir.clone();
-        //     session_dir.push(self.session.to_string());
+                        let mut dest = self.rrdp_archive_dir.clone();
+                        dest.push(self.session.to_string());
+                        dest.push(format!("{}", serial));
 
-        //     for entry in fs::read_dir(&session_dir).map_err(|e| {
-        //         KrillIoError::new(
-        //             format!(
-        //                 "Could not read RRDP session directory '{}'",
-        //                 session_dir.to_string_lossy()
-        //             ),
-        //             e,
-        //         )
-        //     })? {
-        //         let entry = entry.map_err(|e| {
-        //             KrillIoError::new(
-        //                 format!(
-        //                     "Could not read entry in RRDP session directory '{}'",
-        //                     session_dir.to_string_lossy()
-        //                 ),
-        //                 e,
-        //             )
-        //         })?;
-        //         let path = entry.path();
+                        info!("Archiving RRDP serial '{}' to '{}", serial, dest.to_string_lossy());
+                        let _ = fs::create_dir_all(&dest);
+                        let _ = fs::rename(path, dest);
+                    } else if path.is_dir() {
+                        let _best_effort_rm = fs::remove_dir_all(path);
+                    } else {
+                        let _best_effort_rm = fs::remove_file(path);
+                    }
+                // We still need this old serial dir for the delta, but may not need the snapshot
+                // in it unless archiving is enabled.. in that case leave them and move them when
+                // the complete serial dir goes out of scope above.
+                } else if !retention.retention_archive {
+                    // see if the there is a snapshot file in this serial dir and if so do a best
+                    // effort removal.
+                    if let Ok(Some(snapshot_file_to_remove)) = Self::session_dir_snapshot(&session_dir, serial) {
+                        // snapshot files are stored under their own unique random dir, e.g:
+                        // <session_dir>/<serial>/<random>/snapshot.xml
+                        //
+                        // So also remove the otherwise empty parent directory.
+                        if let Some(snapshot_parent_dir) = snapshot_file_to_remove.parent() {
+                            let _ = fs::remove_dir_all(snapshot_parent_dir);
+                        }
+                    }
+                } else {
+                    // we still need this
+                }
+            } else {
+                // clean up dirs or files under the base dir which are not sessions
+                warn!(
+                    "Found unexpected file or dir in RRDP repository - will try to remove: {}",
+                    path.to_string_lossy()
+                );
+                if path.is_dir() {
+                    let _best_effort_rm = fs::remove_dir_all(path);
+                } else {
+                    let _best_effort_rm = fs::remove_file(path);
+                }
+            }
+        }
 
-        //         // remove any dir or file that is:
-        //         // - not a number
-        //         // - a number that is higher than the current serial
-        //         // - a number that is lower than the last delta (if set)
-        //         if let Ok(serial) = u64::from_str(entry.file_name().to_string_lossy().as_ref()) {
-        //             // Skip the current serial
-        //             if serial == self.serial {
-        //                 continue;
-        //             // Clean up old serial dirs once deltas are out of scope
-        //             } else if !self.notification.includes_delta(serial) {
-        //                 if retention.retention_archive {
-        //                     // If archiving is enabled, then move these directories under the archive base
-
-        //                     let mut dest = self.rrdp_archive_dir.clone();
-        //                     dest.push(self.session.to_string());
-        //                     dest.push(format!("{}", serial));
-
-        //                     info!("Archiving RRDP serial '{}' to '{}", serial, dest.to_string_lossy());
-        //                     let _ = fs::create_dir_all(&dest);
-        //                     let _ = fs::rename(path, dest);
-        //                 } else if path.is_dir() {
-        //                     let _best_effort_rm = fs::remove_dir_all(path);
-        //                 } else {
-        //                     let _best_effort_rm = fs::remove_file(path);
-        //                 }
-        //             // We still need this old serial dir for the delta, but may not need the snapshot
-        //             // in it unless archiving is enabled.. in that case leave them and move them when
-        //             // the complete serial dir goes out of scope above.
-        //             } else if !retention.retention_archive {
-        //                 // see if the there is a snapshot file in this serial dir and if so do a best
-        //                 // effort removal.
-        //                 if let Ok(Some(snapshot_file_to_remove)) = Self::session_dir_snapshot(&session_dir, serial) {
-        //                     // snapshot files are stored under their own unique random dir, e.g:
-        //                     // <session_dir>/<serial>/<random>/snapshot.xml
-        //                     //
-        //                     // So also remove the otherwise empty parent directory.
-        //                     if let Some(snapshot_parent_dir) = snapshot_file_to_remove.parent() {
-        //                         let _ = fs::remove_dir_all(snapshot_parent_dir);
-        //                     }
-        //                 }
-        //             } else {
-        //                 // we still need this
-        //             }
-        //         } else {
-        //             // clean up dirs or files under the base dir which are not sessions
-        //             warn!(
-        //                 "Found unexpected file or dir in RRDP repository - will try to remove: {}",
-        //                 path.to_string_lossy()
-        //             );
-        //             if path.is_dir() {
-        //                 let _best_effort_rm = fs::remove_dir_all(path);
-        //             } else {
-        //                 let _best_effort_rm = fs::remove_file(path);
-        //             }
-        //         }
-        //     }
-
-        //     Ok(())
-        // }
+        Ok(())
     }
 }
 
