@@ -60,7 +60,6 @@ toml                  = "^0.5"
 unicode-normalization = { version = "^0.1", optional = true }
 urlparse              = { version = "^0.7", optional = true }
 uuid                  = { version = "1.1", features = [ "v4" ] } # keep this in sync with rpki-rs
-xml-rs                = "^0.8"
 
 # Disable compiler optimizations for the pkcs11 crate because otherwise with a release build the
 # `pReserved = ptr::null_mut()` assignment done by `CK_C_INITIALIZE_ARGS::default()` appears to be optimized out. This

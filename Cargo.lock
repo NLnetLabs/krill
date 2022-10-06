@@ -921,7 +921,6 @@ dependencies = [
  "unicode-normalization",
  "urlparse",
  "uuid",
- "xml-rs",
 ]
 
 [[package]]
@@ -2539,9 +2538,3 @@ checksum = "80d0f4e272c85def139476380b12f9ac60926689dd2e01d4923222f40580869d"
 dependencies = [
  "winapi",
 ]
-
-[[package]]
-name = "xml-rs"
-version = "0.8.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2d7d3948613f75c98fd9328cfdcc45acc4d360655289d0a7d4ec931392200a3"
