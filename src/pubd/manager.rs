@@ -2,11 +2,14 @@ use std::sync::{Arc, RwLock};
 
 use bytes::Bytes;
 
-use rpki::ca::{
-    idexchange,
-    idexchange::{PublisherHandle, RepoInfo},
-    publication,
-    publication::{ListReply, PublishDelta},
+use rpki::{
+    ca::{
+        idexchange,
+        idexchange::{PublisherHandle, RepoInfo},
+        publication,
+        publication::{ListReply, PublishDelta},
+    },
+    repository::x509::Time,
 };
 
 use crate::{
@@ -18,9 +21,11 @@ use crate::{
         util::cmslogger::CmsLogger,
         KrillResult,
     },
-    daemon::config::Config,
+    daemon::{config::Config, mq::TaskQueue},
     pubd::{RepoStats, RepositoryAccessProxy, RepositoryContentProxy},
 };
+
+use super::RrdpUpdateNeeded;
 
 //------------ RepositoryManager -----------------------------------------------------
 
@@ -28,12 +33,16 @@ use crate::{
 /// * verifying that a publisher is allowed to publish
 /// * publish content to RRDP and rsync
 pub struct RepositoryManager {
-    config: Arc<Config>,
     access: Arc<RepositoryAccessProxy>,
     content: Arc<RepositoryContentProxy>,
-    signer: Arc<KrillSigner>,
     // We can use a single lock for updates because there is at most one repo.
     default_repo_lock: RwLock<()>,
+
+    // shared task queue, use to schedule RRDP updates when content is updated.
+    tasks: Arc<TaskQueue>,
+
+    config: Arc<Config>,
+    signer: Arc<KrillSigner>,
 }
 
 /// # Constructing
@@ -41,17 +50,18 @@ pub struct RepositoryManager {
 impl RepositoryManager {
     /// Builds a RepositoryManager. This will use a disk based KeyValueStore using the
     /// the data directory specified in the supplied `Config`.
-    pub fn build(config: Arc<Config>, signer: Arc<KrillSigner>) -> Result<Self, Error> {
-        let content_proxy = Arc::new(RepositoryContentProxy::disk(&config)?);
+    pub fn build(config: Arc<Config>, tasks: Arc<TaskQueue>, signer: Arc<KrillSigner>) -> Result<Self, Error> {
         let access_proxy = Arc::new(RepositoryAccessProxy::disk(&config)?);
+        let content_proxy = Arc::new(RepositoryContentProxy::disk(&config)?);
         let default_repo_lock = RwLock::new(());
 
         Ok(RepositoryManager {
-            config,
             access: access_proxy,
             content: content_proxy,
-            signer,
             default_repo_lock,
+            tasks,
+            config,
+            signer,
         })
     }
 }
@@ -162,12 +172,36 @@ impl RepositoryManager {
 
         let publisher = self.access.get_publisher(publisher_handle)?;
 
-        self.content.publish(
-            publisher_handle.clone(),
-            delta,
-            publisher.base_uri(),
-            self.config.rrdp_updates_config,
-        )
+        self.content
+            .publish(publisher_handle.clone(), delta, publisher.base_uri())?;
+
+        self.tasks.update_rrdp_if_needed(Time::now().into());
+        Ok(())
+    }
+
+    /// Update RRDP (make new delta) if needed. If there are staged changes, but
+    /// the rrdp update interval since last_update has not passed, then no update
+    /// is done, but the eligible time for the next update is returned.
+    pub fn update_rrdp_if_needed(&self) -> KrillResult<Option<Time>> {
+        // See if an update is needed
+        {
+            let _lock = self.default_repo_lock.read().unwrap();
+            match self.content.rrdp_update_needed(self.config.rrdp_updates_config)? {
+                RrdpUpdateNeeded::No => return Ok(None),
+                RrdpUpdateNeeded::Later(time) => return Ok(Some(time)),
+                RrdpUpdateNeeded::Yes => {} // proceed
+            }
+        }
+
+        let content = {
+            let _lock = self.default_repo_lock.write().unwrap();
+
+            self.content.update_rrdp(self.config.rrdp_updates_config)?
+        };
+
+        content.write_repository(self.config.rrdp_updates_config)?;
+
+        Ok(None)
     }
 
     pub fn repo_stats(&self) -> KrillResult<RepoStats> {
@@ -216,9 +250,12 @@ impl RepositoryManager {
 
     /// Removes a publisher and all of its content.
     pub fn remove_publisher(&self, name: PublisherHandle, actor: &Actor) -> KrillResult<()> {
-        self.content
-            .remove_publisher(name.clone(), self.config.rrdp_updates_config)?;
-        self.access.remove_publisher(name, actor)
+        self.content.remove_publisher(name.clone())?;
+        self.access.remove_publisher(name, actor)?;
+
+        self.tasks.update_rrdp_if_needed(Time::now().into());
+
+        Ok(())
     }
 }
 
@@ -310,7 +347,8 @@ mod tests {
 
         let signer = Arc::new(signer);
         let config = Arc::new(config);
-        let repository_manager = RepositoryManager::build(config, signer).unwrap();
+        let mq = Arc::new(TaskQueue::default());
+        let repository_manager = RepositoryManager::build(config, mq, signer).unwrap();
 
         let rsync_base = rsync("rsync://localhost/repo/");
         let rrdp_base = https("https://localhost/repo/rrdp/");

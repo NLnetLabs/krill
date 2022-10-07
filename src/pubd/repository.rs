@@ -142,24 +142,9 @@ impl RepositoryContentProxy {
     }
 
     /// Removes a publisher and its content.
-    pub fn remove_publisher(
-        &self,
-        publisher: PublisherHandle,
-        rrdp_updates_config: RrdpUpdatesConfig,
-    ) -> KrillResult<()> {
+    pub fn remove_publisher(&self, publisher: PublisherHandle) -> KrillResult<()> {
         let command = RepositoryContentCommand::remove_publisher(self.default_handle.clone(), publisher);
-        let content = self.store.send_command(command)?;
-
-        // TODO: move this to MQ / Scheduler
-        if content.rrdp.update_rrdp_needed(rrdp_updates_config) {
-            debug!("   create new RRDP delta");
-            let command = RepositoryContentCommand::create_rrdp_delta(self.default_handle.clone(), rrdp_updates_config);
-            let content = self.store.send_command(command)?;
-
-            debug!("   update repository on disk");
-            content.write_repository(rrdp_updates_config)?;
-            debug!("Done publishing");
-        }
+        self.store.send_command(command)?;
 
         Ok(())
     }
@@ -168,13 +153,7 @@ impl RepositoryContentProxy {
     ///
     /// Assumes that the RFC 8181 CMS has been verified, but will check that all objects
     /// are within the publisher's uri space (jail).
-    pub fn publish(
-        &self,
-        publisher: PublisherHandle,
-        delta: PublishDelta,
-        jail: &uri::Rsync,
-        rrdp_updates_config: RrdpUpdatesConfig,
-    ) -> KrillResult<()> {
+    pub fn publish(&self, publisher: PublisherHandle, delta: PublishDelta, jail: &uri::Rsync) -> KrillResult<()> {
         debug!("Publish delta for {}", publisher);
 
         debug!("   get content");
@@ -187,20 +166,21 @@ impl RepositoryContentProxy {
         current_objects.verify_delta(&delta, jail)?;
 
         let command = RepositoryContentCommand::publish(self.default_handle.clone(), publisher, delta);
-        let content = self.store.send_command(command)?;
-
-        // TODO: move this to MQ / Scheduler
-        if content.rrdp.update_rrdp_needed(rrdp_updates_config) {
-            debug!("   create new RRDP delta");
-            let command = RepositoryContentCommand::create_rrdp_delta(self.default_handle.clone(), rrdp_updates_config);
-            let content = self.store.send_command(command)?;
-
-            debug!("   update repository on disk");
-            content.write_repository(rrdp_updates_config)?;
-            debug!("Done publishing");
-        }
+        self.store.send_command(command)?;
 
         Ok(())
+    }
+
+    /// Checks whether an RRDP update is needed
+    pub fn rrdp_update_needed(&self, rrdp_updates_config: RrdpUpdatesConfig) -> KrillResult<RrdpUpdateNeeded> {
+        self.get_default_content()
+            .map(|content| content.rrdp.update_rrdp_needed(rrdp_updates_config))
+    }
+
+    /// Update RRDP and return the RepositoryContent so it can be used for writing.
+    pub fn update_rrdp(&self, rrdp_updates_config: RrdpUpdatesConfig) -> KrillResult<Arc<RepositoryContent>> {
+        let command = RepositoryContentCommand::create_rrdp_delta(self.default_handle.clone(), rrdp_updates_config);
+        self.store.send_command(command)
     }
 
     /// Write all current files to disk
@@ -547,7 +527,7 @@ impl RepositoryContent {
 
     /// Update the RRDP state
     fn create_rrdp_delta(&self, rrdp_config: RrdpUpdatesConfig) -> KrillResult<Vec<RepositoryContentChange>> {
-        if self.rrdp.update_rrdp_needed(rrdp_config) {
+        if self.rrdp.update_rrdp_needed(rrdp_config) == RrdpUpdateNeeded::Yes {
             let update = self.rrdp.update_rrdp(rrdp_config)?;
             Ok(vec![RepositoryContentChange::RrdpUpdated { update }])
         } else {
@@ -697,6 +677,17 @@ impl RsyncdStore {
         let _ = fs::remove_dir_all(&self.rsync_dir);
     }
 }
+
+//------------ RrdpUpdateNeeded ----------------------------------------------
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RrdpUpdateNeeded {
+    Yes,
+    No,
+    Later(Time),
+}
+
+//------------ RrdpServer ----------------------------------------------------
 
 /// The RRDP server used by a Repository instance
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -890,28 +881,23 @@ impl RrdpServer {
     }
 
     /// Checks whether an RRDP update is needed
-    fn update_rrdp_needed(&self, rrdp_updates_config: RrdpUpdatesConfig) -> bool {
+    fn update_rrdp_needed(&self, rrdp_updates_config: RrdpUpdatesConfig) -> RrdpUpdateNeeded {
         if self.staged_elements.0.is_empty() {
             debug!("No RRDP update is needed, there are no staged changes");
-            false
+            RrdpUpdateNeeded::No
         } else if let Some(minutes) = rrdp_updates_config.rrdp_delta_rrdp_delta_interval_mins {
-            let needed = self.last_update < Time::now() + Duration::minutes(minutes.into());
-            if needed {
-                debug!(
-                    "RRDP update is needed, last update was longer than {} minutes ago.",
-                    minutes
-                );
+            let next_update_time = self.last_update + Duration::minutes(minutes.into());
+            if next_update_time < Time::now() {
+                debug!("RRDP update is delayed to: {}", next_update_time.to_rfc3339());
+                RrdpUpdateNeeded::Later(next_update_time)
             } else {
-                debug!(
-                    "No RRDP update is needed, last update was at: {}",
-                    self.last_update.to_rfc3339()
-                );
+                debug!("RRDP update is needed");
+                RrdpUpdateNeeded::Yes
             }
-            needed
         } else {
             // No interval limit was set, always publish.
             debug!("RRDP update is needed, no staging interval was configured");
-            true
+            RrdpUpdateNeeded::Yes
         }
     }
 

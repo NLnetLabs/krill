@@ -17,7 +17,7 @@ use crate::{
         KrillResult,
     },
     constants::{CASERVER_DIR, CA_OBJECTS_DIR, PUBSERVER_CONTENT_DIR, PUBSERVER_DIR, UPGRADE_REISSUE_ROAS_CAS_LIMIT},
-    daemon::{config::Config, krillserver::KrillServer},
+    daemon::{config::Config, krillserver::KrillServer, mq::TaskQueue},
     pubd::{RepositoryContent, RepositoryManager},
 };
 
@@ -385,8 +385,9 @@ pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -
                     let mut repo_manager_migration_config = (*config).clone();
                     repo_manager_migration_config.data_dir = upgrade_data_dir;
 
+                    let mq = Arc::new(TaskQueue::default());
                     let repo_manager =
-                        RepositoryManager::build(Arc::new(repo_manager_migration_config), signer.clone())?;
+                        RepositoryManager::build(Arc::new(repo_manager_migration_config), mq, signer.clone())?;
 
                     pre_0_9_0::CaObjectsMigration::prepare(mode, config, repo_manager, signer)?;
                 } else {
