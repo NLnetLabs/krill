@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use bytes::Bytes;
 
@@ -32,6 +32,8 @@ pub struct RepositoryManager {
     access: Arc<RepositoryAccessProxy>,
     content: Arc<RepositoryContentProxy>,
     signer: Arc<KrillSigner>,
+    // We can use a single lock for updates because there is at most one repo.
+    default_repo_lock: RwLock<()>,
 }
 
 /// # Constructing
@@ -42,12 +44,14 @@ impl RepositoryManager {
     pub fn build(config: Arc<Config>, signer: Arc<KrillSigner>) -> Result<Self, Error> {
         let content_proxy = Arc::new(RepositoryContentProxy::disk(&config)?);
         let access_proxy = Arc::new(RepositoryAccessProxy::disk(&config)?);
+        let default_repo_lock = RwLock::new(());
 
         Ok(RepositoryManager {
             config,
             access: access_proxy,
             content: content_proxy,
             signer,
+            default_repo_lock,
         })
     }
 }
@@ -154,6 +158,8 @@ impl RepositoryManager {
 
     /// Let a known publisher publish in a repository.
     pub fn publish(&self, publisher_handle: &PublisherHandle, delta: PublishDelta) -> KrillResult<()> {
+        let _lock = self.default_repo_lock.write().unwrap();
+
         let publisher = self.access.get_publisher(publisher_handle)?;
 
         self.content.publish(
@@ -170,6 +176,8 @@ impl RepositoryManager {
 
     /// Returns a list reply for a known publisher in a repository.
     pub fn list(&self, publisher: &PublisherHandle) -> KrillResult<ListReply> {
+        let _lock = self.default_repo_lock.read().unwrap();
+
         self.content.list_reply(publisher)
     }
 }
