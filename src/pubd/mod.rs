@@ -2,6 +2,7 @@ mod commands;
 mod events;
 mod manager;
 mod publishers;
+#[allow(clippy::mutable_key_type)]
 mod repository;
 
 pub use self::commands::{RepoAccessCmd, RepoAccessCmdDet};

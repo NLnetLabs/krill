@@ -30,7 +30,7 @@ use crate::{
         KRILL_VERSION, PUBSERVER_CONTENT_DIR, PUBSERVER_DFLT, PUBSERVER_DIR, REPOSITORY_RRDP_DIR, RRDP_FIRST_SERIAL,
     },
     daemon::config::Config,
-    pubd::{RepositoryAccess, RepositoryAccessInitDetails, RepositoryContent, RrdpServer, RsyncdStore},
+    pubd::{RepositoryAccess, RepositoryAccessInitDetails, RepositoryContent, RrdpServer, RsyncdStore, StagedElements},
     upgrades::pre_0_9_0::{
         old_commands::{OldStorableRepositoryCommand, OldStoredEffect, OldStoredRepositoryCommand},
         old_events::{OldCurrentObjects, OldPubdEvt, OldPubdEvtDet, OldPubdInit, OldPublisher, OldRrdpSessionReset},
@@ -514,6 +514,7 @@ impl From<OldRrdpServer> for RrdpServer {
             old.notification.time(),
             old.snapshot.into(),
             VecDeque::from(old.deltas),
+            StagedElements::default(),
         )
     }
 }

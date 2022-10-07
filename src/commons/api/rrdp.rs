@@ -149,6 +149,9 @@ pub struct UpdateElement {
 }
 
 impl UpdateElement {
+    pub fn new(uri: uri::Rsync, hash: Hash, base64: Base64) -> Self {
+        UpdateElement { uri, hash, base64 }
+    }
     pub fn uri(&self) -> &uri::Rsync {
         &self.uri
     }
@@ -160,6 +163,19 @@ impl UpdateElement {
     }
     pub fn size(&self) -> usize {
         self.base64.size_approx()
+    }
+
+    /// Changes this UpdateElement hash to that of the previous
+    /// staged update.
+    pub fn updates_staged(&mut self, staged: &UpdateElement) {
+        self.hash = staged.hash;
+    }
+
+    pub fn into_publish(self) -> PublishElement {
+        PublishElement {
+            base64: self.base64,
+            uri: self.uri,
+        }
     }
 }
 
@@ -606,6 +622,10 @@ impl DeltaData {
 
     pub fn serial(&self) -> u64 {
         self.serial
+    }
+
+    pub fn random(&self) -> &RrdpFileRandom {
+        &self.random
     }
 
     pub fn older_than_seconds(&self, seconds: i64) -> bool {

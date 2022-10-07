@@ -63,7 +63,7 @@ impl RepositoryManager {
         info!("Initializing repository");
         self.access.init(uris.clone(), &self.signer)?;
         self.content.init(&self.config.data_dir, uris)?;
-        self.content.write_repository(self.config.repository_retention)?;
+        self.content.write_repository(self.config.rrdp_updates_config)?;
 
         Ok(())
     }
@@ -149,7 +149,7 @@ impl RepositoryManager {
 
     /// Do an RRDP session reset.
     pub fn rrdp_session_reset(&self) -> KrillResult<()> {
-        self.content.session_reset(self.config.repository_retention)
+        self.content.session_reset(self.config.rrdp_updates_config)
     }
 
     /// Let a known publisher publish in a repository.
@@ -160,7 +160,7 @@ impl RepositoryManager {
             publisher_handle.clone(),
             delta,
             publisher.base_uri(),
-            self.config.repository_retention,
+            self.config.rrdp_updates_config,
         )
     }
 
@@ -209,7 +209,7 @@ impl RepositoryManager {
     /// Removes a publisher and all of its content.
     pub fn remove_publisher(&self, name: PublisherHandle, actor: &Actor) -> KrillResult<()> {
         self.content
-            .remove_publisher(name.clone(), self.config.repository_retention)?;
+            .remove_publisher(name.clone(), self.config.rrdp_updates_config)?;
         self.access.remove_publisher(name, actor)
     }
 }
@@ -219,7 +219,7 @@ impl RepositoryManager {
 impl RepositoryManager {
     /// Update the RRDP files and rsync content on disk.
     pub fn write_repository(&self) -> KrillResult<()> {
-        self.content.write_repository(self.config.repository_retention)
+        self.content.write_repository(self.config.rrdp_updates_config)
     }
 }
 
@@ -516,8 +516,7 @@ mod tests {
         assert!(!session_dir_contains_serial(&session, RRDP_FIRST_SERIAL));
         assert!(!session_dir_contains_serial(&session, RRDP_FIRST_SERIAL + 1));
 
-        // Add file 4,5,6
-        //
+        // Add file 4
         let file4 = CurrentFile::new(test::rsync("rsync://localhost/repo/alice/file4.txt"), &Bytes::from("4"));
 
         let mut delta = PublishDelta::empty();

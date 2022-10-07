@@ -98,7 +98,6 @@ async fn add_and_remove_certificate_authority() {
     .unwrap();
 
     assert!(parent_response_xml.starts_with("<parent_response "));
-    assert!(xml::reader::EventReader::from_str(&parent_response_xml).next().is_ok());
 
     // complete the RFC 8183 child registration process on the "client" side
     let parent_ca_req = ParentCaReq::new(testbed_ca_handle.convert(), parent_response.clone());
