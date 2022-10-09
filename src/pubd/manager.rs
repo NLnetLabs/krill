@@ -462,6 +462,8 @@ mod tests {
         delta.add_publish(file2.as_publish());
 
         server.publish(&alice_handle, delta).unwrap();
+        server.update_rrdp_if_needed().unwrap();
+        server.write_repository().unwrap();
 
         // Two files should now appear in the list
         let list_reply = server.list(&alice_handle).unwrap();
@@ -493,6 +495,8 @@ mod tests {
         delta.add_publish(file3.as_publish());
 
         server.publish(&alice_handle, delta).unwrap();
+        server.update_rrdp_if_needed().unwrap();
+        server.write_repository().unwrap();
 
         // Two files should now appear in the list
         let list_reply = server.list(&alice_handle).unwrap();
@@ -569,6 +573,8 @@ mod tests {
         delta.add_publish(file4.as_publish());
 
         server.publish(&alice_handle, delta).unwrap();
+        server.update_rrdp_if_needed().unwrap();
+        server.write_repository().unwrap();
 
         // Should include new snapshot and delta
         assert!(session_dir_contains_serial(&session, RRDP_FIRST_SERIAL + 3));
@@ -577,6 +583,8 @@ mod tests {
 
         // Removing the publisher should remove its contents
         server.remove_publisher(alice_handle, &actor).unwrap();
+        server.update_rrdp_if_needed().unwrap();
+        server.write_repository().unwrap();
 
         // new snapshot should be published, and should be empty now
         assert!(session_dir_contains_snapshot(&session, RRDP_FIRST_SERIAL + 4));
@@ -632,6 +640,8 @@ mod tests {
         delta.add_publish(file2.as_publish());
 
         server.publish(&alice_handle, delta).unwrap();
+        server.update_rrdp_if_needed().unwrap();
+        server.write_repository().unwrap();
 
         // Two files should now appear in the list
         let list_reply = server.list(&alice_handle).unwrap();
