@@ -35,7 +35,7 @@ use crate::{
         },
         crypto::KrillSigner,
         error::Error,
-        eventsourcing::{Aggregate, AggregateStore, Command, CommandKey},
+        eventsourcing::{Aggregate, AggregateStore, CommandKey},
         util::{cmslogger::CmsLogger, httpclient},
         KrillResult,
     },
@@ -53,76 +53,6 @@ use crate::{
     pubd::RepositoryManager,
 };
 
-//------------ CaLocks ------------------------------------------------------
-
-#[derive(Debug, Default)]
-pub struct CaLockMap(HashMap<CaHandle, tokio::sync::RwLock<()>>);
-
-impl CaLockMap {
-    fn create_ca_lock(&mut self, ca: CaHandle) {
-        self.0.insert(ca, tokio::sync::RwLock::new(()));
-    }
-
-    fn has_ca(&self, ca: &CaHandle) -> bool {
-        self.0.contains_key(ca)
-    }
-
-    fn drop_ca_lock(&mut self, ca: &CaHandle) {
-        self.0.remove(ca);
-    }
-}
-
-pub struct CaLock<'a> {
-    map: tokio::sync::RwLockReadGuard<'a, CaLockMap>,
-    ca: CaHandle,
-}
-
-impl CaLock<'_> {
-    pub async fn read(&self) -> tokio::sync::RwLockReadGuard<'_, ()> {
-        self.map.0.get(&self.ca).unwrap().read().await
-    }
-
-    pub async fn write(&self) -> tokio::sync::RwLockWriteGuard<'_, ()> {
-        self.map.0.get(&self.ca).unwrap().write().await
-    }
-}
-
-pub struct CaLocks {
-    locks: tokio::sync::RwLock<CaLockMap>,
-}
-
-impl Default for CaLocks {
-    fn default() -> Self {
-        CaLocks {
-            locks: tokio::sync::RwLock::new(CaLockMap::default()),
-        }
-    }
-}
-
-impl CaLocks {
-    pub async fn ca(&self, ca: CaHandle) -> CaLock<'_> {
-        {
-            let map = self.locks.read().await;
-            if map.has_ca(&ca) {
-                return CaLock { map, ca };
-            }
-        }
-
-        {
-            let mut lock = self.locks.write().await;
-            lock.create_ca_lock(ca.clone());
-        }
-
-        let map = self.locks.read().await;
-        CaLock { map, ca }
-    }
-
-    async fn drop_ca(&self, ca: &CaHandle) {
-        let mut map = self.locks.write().await;
-        map.drop_ca_lock(ca);
-    }
-}
-
 //------------ CaManager -----------------------------------------------------
 
 #[derive(Clone)]
@@ -130,7 +60,6 @@ pub struct CaManager {
     ca_store: Arc<AggregateStore<CertAuth>>,
     ca_objects_store: Arc<CaObjectsStore>,
     status_store: Arc<StatusStore>,
-    locks: Arc<CaLocks>,
 
     // shared task queue:
     // - listens for events in the ca_store
@@ -199,16 +128,10 @@ impl CaManager {
         // and their parent(s) and repository.
         let status_store = StatusStore::new(&config.data_dir, STATUS_DIR)?;
 
-        // Create the per-CA lock structure so that we can guarantee safe access to each CA, while allowing
-        // multiple CAs in a single Krill instance to interact: e.g. a child can talk to its parent and they
-        // are locked individually.
-        let locks = Arc::new(CaLocks::default());
-
         Ok(CaManager {
             ca_store: Arc::new(ca_store),
             ca_objects_store,
             status_store: Arc::new(status_store),
-            locks,
             tasks,
             config,
             signer,
@@ -223,8 +146,6 @@ impl CaManager {
     /// Gets the TrustAnchor, if present. Returns an error if the TA is uninitialized.
     pub async fn get_trust_anchor(&self) -> KrillResult<Arc<CertAuth>> {
         let ta_handle = ca::ta_handle();
-        let lock = self.locks.ca(ta_handle.clone()).await;
-        let _ = lock.read().await;
         self.ca_store.get_latest(&ta_handle).map_err(Error::AggregateStoreError)
     }
 
@@ -237,8 +158,7 @@ impl CaManager {
         actor: &Actor,
     ) -> KrillResult<()> {
         let ta_handle = ca::ta_handle();
-        let lock = self.locks.ca(ta_handle.clone()).await;
-        let _ = lock.write().await;
+
         if self.ca_store.has(&ta_handle)? {
             Err(Error::TaAlreadyInitialized)
         } else {
@@ -280,8 +200,6 @@ impl CaManager {
 
     /// Send a command to a CA
     async fn send_command(&self, cmd: Cmd) -> KrillResult<Arc<CertAuth>> {
-        let lock = self.locks.ca(cmd.handle().clone()).await;
-        let _ = lock.write().await;
         self.ca_store.command(cmd)
     }
 
@@ -338,8 +256,6 @@ impl CaManager {
     /// Gets a CA by the given handle, returns an `Err(ServerError::UnknownCA)` if it
     /// does not exist.
     pub async fn get_ca(&self, handle: &CaHandle) -> KrillResult<Arc<CertAuth>> {
-        let lock = self.locks.ca(handle.clone()).await;
-        let _ = lock.read().await;
         self.ca_store
             .get_latest(handle)
             .map_err(|_| Error::CaUnknown(handle.clone()))
@@ -418,7 +334,6 @@ impl CaManager {
         self.ca_store.drop_aggregate(ca_handle)?;
         self.status_store.remove_ca(ca_handle)?;
         self.tasks.remove_tasks_for_ca(ca_handle);
-        self.locks.drop_ca(ca_handle).await;
 
         Ok(())
     }
@@ -429,8 +344,6 @@ impl CaManager {
 impl CaManager {
     /// Gets the history for a CA.
     pub async fn ca_history(&self, handle: &CaHandle, crit: CommandHistoryCriteria) -> KrillResult<CommandHistory> {
-        let ca_lock = self.locks.ca(handle.clone()).await;
-        let _lock = ca_lock.read().await;
         Ok(self.ca_store.command_history(handle, crit)?)
     }
 
