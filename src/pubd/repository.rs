@@ -878,6 +878,8 @@ impl RrdpServer {
         self.deltas.truncate(update.deltas_truncate);
         self.deltas.push_front(delta);
         self.deltas_truncate_size();
+
+        self.last_update = update.time;
     }
 
     /// Checks whether an RRDP update is needed
@@ -885,19 +887,16 @@ impl RrdpServer {
         if self.staged_elements.0.is_empty() {
             debug!("No RRDP update is needed, there are no staged changes");
             RrdpUpdateNeeded::No
-        } else if let Some(minutes) = rrdp_updates_config.rrdp_delta_rrdp_delta_interval_mins {
-            let next_update_time = self.last_update + Duration::minutes(minutes.into());
-            if next_update_time < Time::now() {
+        } else {
+            let interval = Duration::seconds(rrdp_updates_config.rrdp_delta_rrdp_delta_interval_min_seconds.into());
+            let next_update_time = self.last_update + interval;
+            if next_update_time > Time::now() {
                 debug!("RRDP update is delayed to: {}", next_update_time.to_rfc3339());
                 RrdpUpdateNeeded::Later(next_update_time)
             } else {
                 debug!("RRDP update is needed");
                 RrdpUpdateNeeded::Yes
             }
-        } else {
-            // No interval limit was set, always publish.
-            debug!("RRDP update is needed, no staging interval was configured");
-            RrdpUpdateNeeded::Yes
         }
     }
 
