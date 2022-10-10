@@ -43,14 +43,10 @@ impl CaObjectsMigration {
 
     fn prepare_new_data_for(&self, ca: &CaHandle) -> Result<(), PrepareUpgradeError> {
         let key = KeyStoreKey::simple(format!("{}.json", ca));
-        let old_objects: OldCaObjects = self
-            .current_store
-            .get(&key)?
-            .ok_or_else(|| PrepareUpgradeError::Custom(format!("Cannot find current objects for CA {}", ca)))?;
-
-        let converted: CaObjects = old_objects.try_into()?;
-
-        self.new_store.store(&key, &converted)?;
+        if let Some(old_objects) = self.current_store.get::<OldCaObjects>(&key)? {
+            let converted: CaObjects = old_objects.try_into()?;
+            self.new_store.store(&key, &converted)?;
+        }
 
         Ok(())
     }
