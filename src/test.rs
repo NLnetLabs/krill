@@ -156,7 +156,7 @@ pub async fn start_krill_with_default_test_config(
 pub async fn start_krill_testbed_with_rrdp_interval(interval: u32) -> PathBuf {
     let dir = tmp_dir();
     let mut config = test_config(&dir, true, false, false, false);
-    config.rrdp_updates_config.rrdp_delta_rrdp_delta_interval_min_seconds = interval;
+    config.rrdp_updates_config.rrdp_delta_interval_min_seconds = interval;
     start_krill(config).await;
     dir
 }
@@ -178,7 +178,7 @@ async fn start_krill_with_error_trap(config: Arc<Config>) {
 pub async fn start_krill_pubd(rrdp_delta_rrdp_delta_min_interval_seconds: u32) -> PathBuf {
     let dir = tmp_dir();
     let mut config = test_config(&dir, false, false, false, true);
-    config.rrdp_updates_config.rrdp_delta_rrdp_delta_interval_min_seconds = rrdp_delta_rrdp_delta_min_interval_seconds;
+    config.rrdp_updates_config.rrdp_delta_interval_min_seconds = rrdp_delta_rrdp_delta_min_interval_seconds;
     init_config(&mut config);
     config.port = 3001;
 

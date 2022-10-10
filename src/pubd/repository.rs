@@ -888,7 +888,7 @@ impl RrdpServer {
             debug!("No RRDP update is needed, there are no staged changes");
             RrdpUpdateNeeded::No
         } else {
-            let interval = Duration::seconds(rrdp_updates_config.rrdp_delta_rrdp_delta_interval_min_seconds.into());
+            let interval = Duration::seconds(rrdp_updates_config.rrdp_delta_interval_min_seconds.into());
             let next_update_time = self.last_update + interval;
             if next_update_time > Time::now() {
                 debug!("RRDP update is delayed to: {}", next_update_time.to_rfc3339());

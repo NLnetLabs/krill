@@ -624,8 +624,8 @@ pub struct RrdpUpdatesConfig {
     pub rrdp_delta_files_max_nr: usize,
     #[serde(default = "RrdpUpdatesConfig::dflt_rrdp_delta_files_max_seconds")]
     pub rrdp_delta_files_max_seconds: u32,
-    #[serde(default = "RrdpUpdatesConfig::dflt_rrdp_delta_rrdp_delta_min_interval_seconds")]
-    pub rrdp_delta_rrdp_delta_interval_min_seconds: u32,
+    #[serde(default = "RrdpUpdatesConfig::dflt_rrdp_delta_min_interval_seconds")]
+    pub rrdp_delta_interval_min_seconds: u32,
     #[serde(default = "RrdpUpdatesConfig::dflt_rrdp_files_archive")]
     pub rrdp_files_archive: bool,
 }
@@ -662,7 +662,7 @@ impl RrdpUpdatesConfig {
     // The minimum interval between RRDP deltas. A value of 0 (default)
     // means that there will be no delays, and every change gets its
     // own delta.
-    fn dflt_rrdp_delta_rrdp_delta_min_interval_seconds() -> u32 {
+    fn dflt_rrdp_delta_min_interval_seconds() -> u32 {
         0
     }
 
@@ -950,7 +950,7 @@ impl Config {
             rrdp_delta_files_min_nr: 5,
             rrdp_delta_files_max_seconds: 1,
             rrdp_delta_files_max_nr: 50,
-            rrdp_delta_rrdp_delta_interval_min_seconds: 0,
+            rrdp_delta_interval_min_seconds: 0,
             rrdp_files_archive: false,
         };
 
