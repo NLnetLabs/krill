@@ -1213,19 +1213,20 @@ impl RrdpServer {
                 // in it unless archiving is enabled.. in that case leave them and move them when
                 // the complete serial dir goes out of scope above.
                 } else if !rrdp_updates_config.rrdp_files_archive {
-                    // see if the there is a snapshot file in this serial dir and if so do a best
-                    // effort removal.
+                    // If the there is a snapshot file do a best effort removal. It shares the same
+                    // random dir as the delta that we still need to keep for this serial, so we just
+                    // remove the file and leave its parent directory in place.
                     if let Ok(Some(snapshot_file_to_remove)) = Self::session_dir_snapshot(&session_dir, serial) {
-                        // snapshot files are stored under their own unique random dir, e.g:
-                        // <session_dir>/<serial>/<random>/snapshot.xml
-                        //
-                        // So also remove the otherwise empty parent directory.
-                        if let Some(snapshot_parent_dir) = snapshot_file_to_remove.parent() {
-                            let _ = fs::remove_dir_all(snapshot_parent_dir);
+                        if let Err(e) = fs::remove_file(&snapshot_file_to_remove) {
+                            warn!(
+                                "Could not delete snapshot file '{}'. Error was: {}",
+                                snapshot_file_to_remove.to_string_lossy(),
+                                e
+                            );
                         }
                     }
                 } else {
-                    // we still need this
+                    // archiving was enabled, keep the old snapshot file until the directory is archived
                 }
             } else {
                 // clean up dirs or files under the base dir which are not sessions

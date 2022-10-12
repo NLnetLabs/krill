@@ -581,6 +581,9 @@ mod tests {
         assert!(session_dir_contains_delta(&session, RRDP_FIRST_SERIAL + 3));
         assert!(session_dir_contains_snapshot(&session, RRDP_FIRST_SERIAL + 3));
 
+        // Should still include the delta for serial 3, as delta 4 was small.
+        assert!(session_dir_contains_delta(&session, RRDP_FIRST_SERIAL + 2));
+
         // Removing the publisher should remove its contents
         server.remove_publisher(alice_handle, &actor).unwrap();
         server.update_rrdp_if_needed().unwrap();
