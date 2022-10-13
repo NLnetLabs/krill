@@ -616,8 +616,6 @@ impl IssuanceTimingConfig {
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 pub struct RepositoryRetentionConfig {
-    #[serde(default = "RepositoryRetentionConfig::dflt_retention_old_notification_files_seconds")]
-    pub retention_old_notification_files_seconds: u32,
     #[serde(default = "RepositoryRetentionConfig::dflt_retention_delta_files_min_nr")]
     pub retention_delta_files_min_nr: usize,
     #[serde(default = "RepositoryRetentionConfig::dflt_retention_delta_files_min_seconds")]
@@ -631,16 +629,6 @@ pub struct RepositoryRetentionConfig {
 }
 
 impl RepositoryRetentionConfig {
-    // Time to keep any files still referenced by notification
-    // files updated up to X seconds ago. We should not delete these
-    // files too eagerly or we would risk that RPs with an old
-    // notification file try to retrieve them, without success.
-    //
-    // Default: 10 min (just to be safe, 1 min is prob. fine)
-    fn dflt_retention_old_notification_files_seconds() -> u32 {
-        600
-    }
-
     // Keep at least X (default 5) delta files in the notification
     // file, even if they would be too old. Their impact on the notification
     // file size is not too bad.
@@ -949,7 +937,6 @@ impl Config {
         };
 
         let repository_retention = RepositoryRetentionConfig {
-            retention_old_notification_files_seconds: 1,
             retention_delta_files_min_seconds: 0,
             retention_delta_files_min_nr: 5,
             retention_delta_files_max_seconds: 1,
