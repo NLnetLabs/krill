@@ -330,7 +330,6 @@ pub struct RrdpUpdated {
     time: Time,
     random: RrdpFileRandom,
     delta_elements: DeltaElements,
-    old_notifications_truncate: usize,
     deltas_truncate: usize,
 }
 
@@ -696,10 +695,6 @@ pub struct RrdpServer {
     serial: u64,
     notification: Notification,
 
-    #[serde(skip_serializing_if = "VecDeque::is_empty", default = "VecDeque::new")]
-    /// This is used to determine when it is safe to clean up published files
-    old_notifications: VecDeque<Notification>,
-
     snapshot: Snapshot,
     deltas: VecDeque<Delta>,
 }
@@ -713,7 +708,6 @@ impl RrdpServer {
         session: RrdpSession,
         serial: u64,
         notification: Notification,
-        old_notifications: VecDeque<Notification>,
         snapshot: Snapshot,
         deltas: VecDeque<Delta>,
     ) -> Self {
@@ -724,7 +718,6 @@ impl RrdpServer {
             session,
             serial,
             notification,
-            old_notifications,
             snapshot,
             deltas,
         }
@@ -756,7 +749,6 @@ impl RrdpServer {
             serial,
             notification,
             snapshot,
-            old_notifications: VecDeque::new(),
             deltas: VecDeque::new(),
         }
     }
@@ -796,7 +788,6 @@ impl RrdpServer {
         self.serial = notification.serial();
         self.session = notification.session();
         self.notification = notification;
-        self.old_notifications.clear();
         self.snapshot = snapshot;
         self.deltas = VecDeque::new();
     }
@@ -804,11 +795,6 @@ impl RrdpServer {
     /// Applies the data from an RrdpUpdated change.
     fn apply_rrdp_updated(&mut self, update: RrdpUpdated) {
         self.serial += 1;
-        self.old_notifications.truncate(update.old_notifications_truncate);
-
-        let mut replaced_notification = self.notification.clone();
-        replaced_notification.replace(update.time);
-        self.old_notifications.push_front(replaced_notification);
 
         let delta = Delta::new(
             self.session,
@@ -843,13 +829,10 @@ impl RrdpServer {
             self.find_deltas_truncate(delta_size, snapshot_size, retention)
         };
 
-        let old_notifications_truncate = self.find_old_notifications_truncate(retention);
-
         Ok(RrdpUpdated {
             time,
             random,
             delta_elements,
-            old_notifications_truncate,
             deltas_truncate,
         })
     }
@@ -899,14 +882,6 @@ impl RrdpServer {
         }
 
         keep
-    }
-
-    // Find where to truncate old notification files
-    fn find_old_notifications_truncate(&self, retention: RepositoryRetentionConfig) -> usize {
-        self.old_notifications
-            .iter()
-            .position(|old| old.older_than_seconds(retention.retention_old_notification_files_seconds.into()))
-            .unwrap_or(self.old_notifications.len()) // truncating at len() will leave all elements
     }
 
     // Update the notification to include the current snapshot and
@@ -1032,9 +1007,7 @@ impl RrdpServer {
                 if serial == self.serial {
                     continue;
                 // Clean up old serial dirs once deltas are out of scope
-                } else if !self.notification.includes_delta(serial)
-                    && !self.old_notifications.iter().any(|n| n.includes_delta(serial))
-                {
+                } else if !self.notification.includes_delta(serial) {
                     if retention.retention_archive {
                         // If archiving is enabled, then move these directories under the archive base
 
@@ -1053,12 +1026,7 @@ impl RrdpServer {
                 // We still need this old serial dir for the delta, but may not need the snapshot
                 // in it unless archiving is enabled.. in that case leave them and move them when
                 // the complete serial dir goes out of scope above.
-                } else if !retention.retention_archive
-                    && !self
-                        .old_notifications
-                        .iter()
-                        .any(|old_notification| old_notification.includes_snapshot(serial))
-                {
+                } else if !retention.retention_archive {
                     // see if the there is a snapshot file in this serial dir and if so do a best
                     // effort removal.
                     if let Ok(Some(snapshot_file_to_remove)) = Self::session_dir_snapshot(&session_dir, serial) {

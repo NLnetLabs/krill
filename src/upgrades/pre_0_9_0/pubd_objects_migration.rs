@@ -513,7 +513,6 @@ impl From<OldRrdpServer> for RrdpServer {
             old.session,
             old.serial,
             old.notification,
-            old.old_notifications,
             old.snapshot.into(),
             VecDeque::from(old.deltas),
         )
