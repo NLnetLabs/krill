@@ -156,7 +156,7 @@ impl<T: WalSupport> WalStore<T> {
         Ok(())
     }
 
-    /// Checks whether there is an instance for the given key
+    /// Checks whether there is an instance for the given handle.
     pub fn has(&self, handle: &MyHandle) -> WalStoreResult<bool> {
         let key = Self::key_for_snapshot(handle);
         self.kv.has(&key).map_err(WalStoreError::KeyStoreError)

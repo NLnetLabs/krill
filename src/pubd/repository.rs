@@ -161,21 +161,16 @@ impl RepositoryContentProxy {
     ) -> KrillResult<()> {
         debug!("Publish delta for {}", publisher);
 
-        debug!("   get content");
         let content = self.get_default_content()?;
-        debug!("   get objects for {}", publisher);
         let current_objects = content.objects_for_publisher(&publisher)?;
         let delta = DeltaElements::from(delta);
 
-        debug!("   verify delta");
         current_objects.verify_delta(&delta, jail)?;
 
         let command = RepositoryContentCommand::publish(self.default_handle.clone(), publisher, delta, retention);
         let content = self.store.send_command(command)?;
 
-        debug!("   update repository on disk");
         content.write_repository(retention)?;
-        debug!("Done publishing");
 
         Ok(())
     }
