@@ -2262,7 +2262,7 @@ mod tests {
 
     #[tokio::test]
     async fn start_krill_pubd_daemon() {
-        let dir = test::start_krill_pubd().await;
+        let dir = test::start_krill_pubd(0).await;
         let _ = fs::remove_dir_all(dir);
     }
 }

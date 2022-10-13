@@ -85,6 +85,8 @@ impl Scheduler {
 
                     Task::UpdateSnapshots => self.update_snapshots(),
 
+                    Task::RrdpUpdateIfNeeded => self.update_rrdp_if_needed(),
+
                     Task::ResourceClassRemoved {
                         ca,
                         parent,
@@ -321,5 +323,24 @@ impl Scheduler {
         }
 
         self.tasks.update_snapshots(in_hours(24));
+    }
+
+    fn update_rrdp_if_needed(&self) {
+        match self.repo_manager.update_rrdp_if_needed() {
+            Err(e) => {
+                error!("Could not update RRDP deltas! Error: {}", e);
+                // Should we panic in this case? For now, just keep trying, this may
+                // be an issue that gets resolved (permission? disk space?)
+                self.tasks.update_rrdp_if_needed(in_hours(1));
+            }
+            Ok(None) => {
+                // update was done, or there were no staged changes
+            }
+            Ok(Some(later_time)) => {
+                // Update was NOT done. There are staged changes, but the rrdp update
+                // interval has not yet passed. It can be done at later_time.
+                self.tasks.update_rrdp_if_needed(later_time.into());
+            }
+        }
     }
 }

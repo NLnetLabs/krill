@@ -151,6 +151,16 @@ pub async fn start_krill_with_default_test_config(
     dir
 }
 
+/// Starts a Krill server with a testbed and an RRDP interval, so that we can test that
+/// RRDP delta delays work properly.
+pub async fn start_krill_testbed_with_rrdp_interval(interval: u32) -> PathBuf {
+    let dir = tmp_dir();
+    let mut config = test_config(&dir, true, false, false, false);
+    config.rrdp_updates_config.rrdp_delta_interval_min_seconds = interval;
+    start_krill(config).await;
+    dir
+}
+
 pub async fn start_krill(mut config: Config) {
     init_config(&mut config);
     tokio::spawn(start_krill_with_error_trap(Arc::new(config)));
@@ -165,9 +175,10 @@ async fn start_krill_with_error_trap(config: Arc<Config>) {
 
 /// Starts a krill pubd for testing on its own port, and its
 /// own temp dir for storage.
-pub async fn start_krill_pubd() -> PathBuf {
+pub async fn start_krill_pubd(rrdp_delta_rrdp_delta_min_interval_seconds: u32) -> PathBuf {
     let dir = tmp_dir();
     let mut config = test_config(&dir, false, false, false, true);
+    config.rrdp_updates_config.rrdp_delta_interval_min_seconds = rrdp_delta_rrdp_delta_min_interval_seconds;
     init_config(&mut config);
     config.port = 3001;
 

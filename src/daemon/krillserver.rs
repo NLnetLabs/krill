@@ -156,12 +156,12 @@ impl KrillServer {
         };
         let system_actor = authorizer.actor_from_def(ACTOR_DEF_KRILL);
 
+        // Used to have a shared queue for the ca_manager, repo_manager and the background job scheduler.
+        let mq = Arc::new(TaskQueue::default());
+
         // for now, support that existing embedded repositories are still supported.
         // this should be removed in future after people have had a chance to separate.
-        let repo_manager = Arc::new(RepositoryManager::build(config.clone(), signer.clone())?);
-
-        // Used to have a shared queue for the caserver and the background job scheduler.
-        let mq = Arc::new(TaskQueue::default());
+        let repo_manager = Arc::new(RepositoryManager::build(config.clone(), mq.clone(), signer.clone())?);
 
         let ca_manager =
             Arc::new(ca::CaManager::build(config.clone(), mq.clone(), signer, system_actor.clone()).await?);

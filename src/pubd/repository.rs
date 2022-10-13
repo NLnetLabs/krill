@@ -7,6 +7,7 @@ use std::{
     sync::{Arc, RwLock},
 };
 
+use chrono::Duration;
 use rpki::{
     ca::{
         idexchange,
@@ -16,7 +17,7 @@ use rpki::{
     },
     crypto::KeyIdentifier,
     repository::{x509::Time, Manifest},
-    rrdp::Hash,
+    rrdp::{DeltaInfo, Hash, NotificationFile, SnapshotInfo},
     uri,
 };
 
@@ -25,8 +26,8 @@ use crate::{
         actor::Actor,
         api::{
             rrdp::{
-                CurrentObjects, Delta, DeltaElements, DeltaRef, FileRef, Notification, RrdpFileRandom, RrdpSession,
-                Snapshot, SnapshotRef,
+                CurrentObjects, DeltaData, DeltaElements, PublishElement, RrdpFileRandom, RrdpSession, SnapshotData,
+                UpdateElement, WithdrawElement,
             },
             IdCertInfo,
         },
@@ -41,7 +42,7 @@ use crate::{
         PUBSERVER_CONTENT_DIR, PUBSERVER_DFLT, PUBSERVER_DIR, REPOSITORY_DIR, REPOSITORY_RRDP_ARCHIVE_DIR,
         REPOSITORY_RRDP_DIR, REPOSITORY_RSYNC_DIR, RRDP_FIRST_SERIAL,
     },
-    daemon::config::{Config, RepositoryRetentionConfig},
+    daemon::config::{Config, RrdpUpdatesConfig},
     pubd::{
         publishers::Publisher, RepoAccessCmd, RepoAccessCmdDet, RepositoryAccessEvent, RepositoryAccessEventDetails,
         RepositoryAccessIni, RepositoryAccessInitDetails,
@@ -141,53 +142,56 @@ impl RepositoryContentProxy {
     }
 
     /// Removes a publisher and its content.
-    pub fn remove_publisher(&self, publisher: PublisherHandle, config: RepositoryRetentionConfig) -> KrillResult<()> {
-        let command = RepositoryContentCommand::remove_publisher(self.default_handle.clone(), publisher, config);
-        let content = self.store.send_command(command)?;
+    pub fn remove_publisher(&self, publisher: PublisherHandle) -> KrillResult<()> {
+        let command = RepositoryContentCommand::remove_publisher(self.default_handle.clone(), publisher);
+        self.store.send_command(command)?;
 
-        content.write_repository(config)
+        Ok(())
     }
 
     /// Publish an update for a publisher.
     ///
     /// Assumes that the RFC 8181 CMS has been verified, but will check that all objects
     /// are within the publisher's uri space (jail).
-    pub fn publish(
-        &self,
-        publisher: PublisherHandle,
-        delta: PublishDelta,
-        jail: &uri::Rsync,
-        retention: RepositoryRetentionConfig,
-    ) -> KrillResult<()> {
+    pub fn publish(&self, publisher: PublisherHandle, delta: PublishDelta, jail: &uri::Rsync) -> KrillResult<()> {
         debug!("Publish delta for {}", publisher);
-
         let content = self.get_default_content()?;
         let current_objects = content.objects_for_publisher(&publisher)?;
         let delta = DeltaElements::from(delta);
 
         current_objects.verify_delta(&delta, jail)?;
 
-        let command = RepositoryContentCommand::publish(self.default_handle.clone(), publisher, delta, retention);
-        let content = self.store.send_command(command)?;
-
-        content.write_repository(retention)?;
+        let command = RepositoryContentCommand::publish(self.default_handle.clone(), publisher, delta);
+        self.store.send_command(command)?;
 
         Ok(())
     }
 
+    /// Checks whether an RRDP update is needed
+    pub fn rrdp_update_needed(&self, rrdp_updates_config: RrdpUpdatesConfig) -> KrillResult<RrdpUpdateNeeded> {
+        self.get_default_content()
+            .map(|content| content.rrdp.update_rrdp_needed(rrdp_updates_config))
+    }
+
+    /// Update RRDP and return the RepositoryContent so it can be used for writing.
+    pub fn update_rrdp(&self, rrdp_updates_config: RrdpUpdatesConfig) -> KrillResult<Arc<RepositoryContent>> {
+        let command = RepositoryContentCommand::create_rrdp_delta(self.default_handle.clone(), rrdp_updates_config);
+        self.store.send_command(command)
+    }
+
     /// Write all current files to disk
-    pub fn write_repository(&self, retention: RepositoryRetentionConfig) -> KrillResult<()> {
+    pub fn write_repository(&self, rrdp_updates_config: RrdpUpdatesConfig) -> KrillResult<()> {
         let content = self.get_default_content()?;
-        content.write_repository(retention)
+        content.write_repository(rrdp_updates_config)
     }
 
     /// Reset the RRDP session if it is initialized. Otherwise do nothing.
-    pub fn session_reset(&self, retention: RepositoryRetentionConfig) -> KrillResult<()> {
+    pub fn session_reset(&self, rrdp_updates_config: RrdpUpdatesConfig) -> KrillResult<()> {
         if self.store.has(&self.default_handle)? {
             let command = RepositoryContentCommand::session_reset(self.default_handle.clone());
             let content = self.store.send_command(command)?;
 
-            content.write_repository(retention)
+            content.write_repository(rrdp_updates_config)
         } else {
             // repository server was not initialized on this Krill instance. Nothing to reset.
             Ok(())
@@ -221,13 +225,15 @@ pub enum RepositoryContentCommand {
     RemovePublisher {
         handle: MyHandle,
         publisher: PublisherHandle,
-        retention: RepositoryRetentionConfig,
     },
     Publish {
         handle: MyHandle,
         publisher: PublisherHandle,
         delta: DeltaElements,
-        retention: RepositoryRetentionConfig,
+    },
+    CreateRrdpDelta {
+        handle: MyHandle,
+        rrdp_updates_config: RrdpUpdatesConfig,
     },
 }
 
@@ -240,28 +246,20 @@ impl RepositoryContentCommand {
         RepositoryContentCommand::AddPublisher { handle, publisher }
     }
 
-    pub fn remove_publisher(
-        handle: MyHandle,
-        publisher: PublisherHandle,
-        retention: RepositoryRetentionConfig,
-    ) -> Self {
-        RepositoryContentCommand::RemovePublisher {
-            handle,
-            publisher,
-            retention,
-        }
+    pub fn remove_publisher(handle: MyHandle, publisher: PublisherHandle) -> Self {
+        RepositoryContentCommand::RemovePublisher { handle, publisher }
     }
-    pub fn publish(
-        handle: MyHandle,
-        publisher: PublisherHandle,
-        delta: DeltaElements,
-        retention: RepositoryRetentionConfig,
-    ) -> Self {
+    pub fn publish(handle: MyHandle, publisher: PublisherHandle, delta: DeltaElements) -> Self {
         RepositoryContentCommand::Publish {
             handle,
             publisher,
             delta,
-            retention,
+        }
+    }
+    pub fn create_rrdp_delta(handle: MyHandle, rrdp_updates_config: RrdpUpdatesConfig) -> Self {
+        RepositoryContentCommand::CreateRrdpDelta {
+            handle,
+            rrdp_updates_config,
         }
     }
 }
@@ -272,7 +270,8 @@ impl WalCommand for RepositoryContentCommand {
             RepositoryContentCommand::ResetSession { handle }
             | RepositoryContentCommand::AddPublisher { handle, .. }
             | RepositoryContentCommand::RemovePublisher { handle, .. }
-            | RepositoryContentCommand::Publish { handle, .. } => handle,
+            | RepositoryContentCommand::Publish { handle, .. }
+            | RepositoryContentCommand::CreateRrdpDelta { handle, .. } => handle,
         }
     }
 }
@@ -282,6 +281,9 @@ impl fmt::Display for RepositoryContentCommand {
         match self {
             RepositoryContentCommand::ResetSession { handle } => {
                 write!(f, "reset session for repository {}", handle)
+            }
+            RepositoryContentCommand::CreateRrdpDelta { handle, .. } => {
+                write!(f, "create next RRDP delta for repository {}", handle)
             }
             RepositoryContentCommand::AddPublisher { handle, publisher } => {
                 write!(f, "add publisher '{}' to repository {}", publisher, handle)
@@ -314,6 +316,9 @@ pub enum RepositoryContentChange {
         publisher: PublisherHandle,
         current_objects: CurrentObjects,
     },
+    RrdpDeltaStaged {
+        delta: DeltaElements,
+    },
     RrdpUpdated {
         update: RrdpUpdated,
     },
@@ -321,32 +326,27 @@ pub enum RepositoryContentChange {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RrdpSessionReset {
-    notification: Notification,
-    snapshot: Snapshot,
+    last_update: Time,
+    session: RrdpSession,
+    snapshot: SnapshotData,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RrdpUpdated {
     time: Time,
     random: RrdpFileRandom,
-    delta_elements: DeltaElements,
     deltas_truncate: usize,
 }
 
 impl fmt::Display for RepositoryContentChange {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            RepositoryContentChange::SessionReset { reset } => {
-                write!(f, "RRDP session reset to: {}", reset.notification.session())
-            }
-            RepositoryContentChange::RrdpUpdated { .. } => {
-                write!(f, "RRDP updated")
-            }
+            RepositoryContentChange::SessionReset { reset } => write!(f, "RRDP session reset to: {}", reset.session),
+            RepositoryContentChange::RrdpDeltaStaged { .. } => write!(f, "RRDP changes staged"),
+            RepositoryContentChange::RrdpUpdated { .. } => write!(f, "RRDP updated"),
             RepositoryContentChange::PublisherAdded { publisher } => write!(f, "added publisher: {}", publisher),
             RepositoryContentChange::PublisherRemoved { publisher } => write!(f, "removed publisher: {}", publisher),
-            RepositoryContentChange::PublishedObjects { publisher, .. } => {
-                write!(f, "published for publisher: {}", publisher)
-            }
+            RepositoryContentChange::PublishedObjects { publisher, .. } => write!(f, "published for: {}", publisher),
         }
     }
 }
@@ -408,6 +408,7 @@ impl WalSupport for RepositoryContent {
             match change {
                 RepositoryContentChange::SessionReset { reset } => self.rrdp.apply_session_reset(reset),
                 RepositoryContentChange::RrdpUpdated { update } => self.rrdp.apply_rrdp_updated(update),
+                RepositoryContentChange::RrdpDeltaStaged { delta } => self.rrdp.apply_rrdp_staged(delta),
                 RepositoryContentChange::PublisherAdded { publisher } => {
                     self.publishers.insert(publisher, CurrentObjects::default());
                 }
@@ -428,16 +429,12 @@ impl WalSupport for RepositoryContent {
     fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Change>, Self::Error> {
         match command {
             RepositoryContentCommand::ResetSession { .. } => self.reset_session(),
+            RepositoryContentCommand::CreateRrdpDelta {
+                rrdp_updates_config, ..
+            } => self.create_rrdp_delta(rrdp_updates_config),
             RepositoryContentCommand::AddPublisher { publisher, .. } => self.add_publisher(publisher),
-            RepositoryContentCommand::RemovePublisher {
-                publisher, retention, ..
-            } => self.remove_publisher(publisher, retention),
-            RepositoryContentCommand::Publish {
-                publisher,
-                delta,
-                retention,
-                ..
-            } => self.publish(publisher, delta, retention),
+            RepositoryContentCommand::RemovePublisher { publisher, .. } => self.remove_publisher(publisher),
+            RepositoryContentCommand::Publish { publisher, delta, .. } => self.publish(publisher, delta),
         }
     }
 }
@@ -468,12 +465,12 @@ impl RepositoryContent {
         Ok(vec![RepositoryContentChange::SessionReset { reset }])
     }
 
-    pub fn write_repository(&self, config: RepositoryRetentionConfig) -> KrillResult<()> {
+    pub fn write_repository(&self, config: RrdpUpdatesConfig) -> KrillResult<()> {
         self.rrdp.write(config)?;
-        self.rsync.write(self.rrdp.snapshot())
+        self.rsync.write(self.rrdp.serial, self.rrdp.snapshot())
     }
 
-    pub fn add_publisher(&self, publisher: PublisherHandle) -> KrillResult<Vec<RepositoryContentChange>> {
+    fn add_publisher(&self, publisher: PublisherHandle) -> KrillResult<Vec<RepositoryContentChange>> {
         Ok(vec![RepositoryContentChange::PublisherAdded { publisher }])
     }
 
@@ -481,19 +478,13 @@ impl RepositoryContent {
     /// ok if there is no content to remove - it is idempotent in that
     /// sense. However, if there are I/O errors removing the content then
     /// this function will fail.
-    pub fn remove_publisher(
-        &self,
-        publisher: PublisherHandle,
-        retention: RepositoryRetentionConfig,
-    ) -> KrillResult<Vec<RepositoryContentChange>> {
+    fn remove_publisher(&self, publisher: PublisherHandle) -> KrillResult<Vec<RepositoryContentChange>> {
         let mut res = vec![];
         // withdraw objects if any
         if let Ok(objects) = self.objects_for_publisher(&publisher) {
             let withdraws = objects.elements().iter().map(|e| e.as_withdraw()).collect();
             let delta = DeltaElements::new(vec![], vec![], withdraws);
-
-            let update = self.rrdp.update_rrdp(delta, retention)?;
-            res.push(RepositoryContentChange::RrdpUpdated { update })
+            res.push(RepositoryContentChange::RrdpDeltaStaged { delta });
         }
 
         // remove publisher if present
@@ -506,12 +497,7 @@ impl RepositoryContent {
 
     /// Publish content for a publisher. Assumes that the delta was
     /// already checked (this is done in RepositoryContentProxy::publish).
-    pub fn publish(
-        &self,
-        publisher: PublisherHandle,
-        delta: DeltaElements,
-        retention: RepositoryRetentionConfig,
-    ) -> KrillResult<Vec<RepositoryContentChange>> {
+    fn publish(&self, publisher: PublisherHandle, delta: DeltaElements) -> KrillResult<Vec<RepositoryContentChange>> {
         let mut res = vec![];
 
         let mut current_objects = self
@@ -528,13 +514,19 @@ impl RepositoryContent {
             current_objects,
         });
 
-        // TODO: Stage changes for publishers, and *then* update RRDP (see #693)
-        debug!("   update RRDP state with changes");
-        let update = self.rrdp.update_rrdp(delta, retention)?;
-        debug!("   done updating RRDP state with changes");
-        res.push(RepositoryContentChange::RrdpUpdated { update });
+        res.push(RepositoryContentChange::RrdpDeltaStaged { delta });
 
         Ok(res)
+    }
+
+    /// Update the RRDP state
+    fn create_rrdp_delta(&self, rrdp_config: RrdpUpdatesConfig) -> KrillResult<Vec<RepositoryContentChange>> {
+        if self.rrdp.update_rrdp_needed(rrdp_config) == RrdpUpdateNeeded::Yes {
+            let update = self.rrdp.update_rrdp(rrdp_config)?;
+            Ok(vec![RepositoryContentChange::RrdpUpdated { update }])
+        } else {
+            Ok(vec![])
+        }
     }
 
     /// Returns the content stats for the repo
@@ -543,7 +535,7 @@ impl RepositoryContent {
             publishers: self.publisher_stats(),
             session: self.rrdp.session,
             serial: self.rrdp.serial,
-            last_update: Some(self.rrdp.notification().time()),
+            last_update: Some(self.rrdp.last_update),
             rsync_base: self.rsync.base_uri.clone(),
             rrdp_base: self.rrdp.rrdp_base_uri.clone(),
         }
@@ -598,14 +590,14 @@ impl RsyncdStore {
     /// Write all the files to disk for rsync to a tmp-dir, then switch
     /// things over in an effort to minimize the chance of people getting
     /// inconsistent syncs..
-    pub fn write(&self, snapshot: &Snapshot) -> KrillResult<()> {
+    pub fn write(&self, serial: u64, snapshot: &SnapshotData) -> KrillResult<()> {
         let _lock = self
             .lock
             .write()
             .map_err(|_| Error::custom("Could not get write lock for rsync repo"))?;
 
         let mut new_dir = self.rsync_dir.clone();
-        new_dir.push(&format!("tmp-{}", snapshot.serial()));
+        new_dir.push(&format!("tmp-{}", serial));
         fs::create_dir_all(&new_dir).map_err(|e| {
             KrillIoError::new(
                 format!(
@@ -680,6 +672,17 @@ impl RsyncdStore {
     }
 }
 
+//------------ RrdpUpdateNeeded ----------------------------------------------
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RrdpUpdateNeeded {
+    Yes,
+    No,
+    Later(Time),
+}
+
+//------------ RrdpServer ----------------------------------------------------
+
 /// The RRDP server used by a Repository instance
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RrdpServer {
@@ -693,10 +696,24 @@ pub struct RrdpServer {
 
     session: RrdpSession,
     serial: u64,
-    notification: Notification,
+    last_update: Time,
 
-    snapshot: Snapshot,
-    deltas: VecDeque<Delta>,
+    snapshot: SnapshotData,
+    deltas: VecDeque<DeltaData>,
+
+    #[serde(default)]
+    staged_elements: StagedElements,
+}
+
+/// This type is used to combine staged delta elements for publishers.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct StagedElements(HashMap<uri::Rsync, DeltaElement>);
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum DeltaElement {
+    Publish(PublishElement),
+    Update(UpdateElement),
+    Withdraw(WithdrawElement),
 }
 
 impl RrdpServer {
@@ -707,9 +724,10 @@ impl RrdpServer {
         rrdp_archive_dir: PathBuf,
         session: RrdpSession,
         serial: u64,
-        notification: Notification,
-        snapshot: Snapshot,
-        deltas: VecDeque<Delta>,
+        last_update: Time,
+        snapshot: SnapshotData,
+        deltas: VecDeque<DeltaData>,
+        staged_elements: StagedElements,
     ) -> Self {
         RrdpServer {
             rrdp_base_uri,
@@ -717,9 +735,10 @@ impl RrdpServer {
             rrdp_archive_dir,
             session,
             serial,
-            notification,
+            last_update,
             snapshot,
             deltas,
+            staged_elements,
         }
     }
 
@@ -730,16 +749,9 @@ impl RrdpServer {
         let mut rrdp_archive_dir = repo_dir.to_path_buf();
         rrdp_archive_dir.push(REPOSITORY_RRDP_ARCHIVE_DIR);
 
-        let snapshot = Snapshot::create(session);
-
         let serial = RRDP_FIRST_SERIAL;
-        let snapshot_uri = snapshot.uri(&rrdp_base_uri);
-        let snapshot_path = snapshot.path(&rrdp_base_dir);
-        let snapshot_hash = Hash::from_data(snapshot.xml().as_slice());
-
-        let snapshot_ref = SnapshotRef::new(snapshot_uri, snapshot_path, snapshot_hash);
-
-        let notification = Notification::create(session, snapshot_ref);
+        let last_update = Time::now();
+        let snapshot = SnapshotData::create();
 
         RrdpServer {
             rrdp_base_uri,
@@ -747,9 +759,10 @@ impl RrdpServer {
             rrdp_archive_dir,
             session,
             serial,
-            notification,
+            last_update,
             snapshot,
             deltas: VecDeque::new(),
+            staged_elements: StagedElements::default(),
         }
     }
 
@@ -758,122 +771,193 @@ impl RrdpServer {
         let _ = fs::remove_dir_all(&self.rrdp_archive_dir);
     }
 
-    fn snapshot(&self) -> &Snapshot {
+    fn snapshot(&self) -> &SnapshotData {
         &self.snapshot
     }
 
-    pub fn notification(&self) -> &Notification {
-        &self.notification
-    }
-
     pub fn reset_session(&self) -> RrdpSessionReset {
+        let last_update = Time::now();
         let session = RrdpSession::random();
-        let snapshot = self.snapshot.with_session_reset(session);
-        let snapshot_uri = snapshot.uri(&self.rrdp_base_uri);
-        let snapshot_path = snapshot.path(&self.rrdp_base_dir);
-        let snapshot_hash = Hash::from_data(snapshot.xml().as_slice());
+        let snapshot = self.snapshot.with_new_random();
 
-        let snapshot_ref = SnapshotRef::new(snapshot_uri, snapshot_path, snapshot_hash);
-
-        let notification = Notification::create(session, snapshot_ref);
-
-        RrdpSessionReset { snapshot, notification }
+        RrdpSessionReset {
+            last_update,
+            snapshot,
+            session,
+        }
     }
 
     /// Applies the data from an RrdpSessionReset change.
     fn apply_session_reset(&mut self, reset: RrdpSessionReset) {
-        let snapshot = reset.snapshot;
-        let notification = reset.notification;
-
-        self.serial = notification.serial();
-        self.session = notification.session();
-        self.notification = notification;
-        self.snapshot = snapshot;
+        self.snapshot = reset.snapshot;
+        self.session = reset.session;
+        self.last_update = reset.last_update;
+        self.serial = RRDP_FIRST_SERIAL;
         self.deltas = VecDeque::new();
+    }
+
+    /// Applies staged DeltaElements
+    fn apply_rrdp_staged(&mut self, elements: DeltaElements) {
+        let (publishes, updates, withdraws) = elements.unpack();
+        for pbl in publishes {
+            let uri = pbl.uri().clone();
+            // A publish that follows a withdraw for the same URI should be Update.
+            if let Some(DeltaElement::Withdraw(staged_withdraw)) = self.staged_elements.0.get(&uri) {
+                let hash = *staged_withdraw.hash();
+                let update = UpdateElement::new(uri.clone(), hash, pbl.base64().clone());
+                self.staged_elements.0.insert(uri, DeltaElement::Update(update));
+            } else {
+                // In any other case we just keep the new publish.
+                // Because deltas are checked before they are applied we know that publish
+                // elements cannot occur after another publish or update. They would have
+                // had to be an update in that case.
+                // Because this is checked when the publication delta is submitted, we can
+                // ignore this case here.
+                self.staged_elements.0.insert(uri, DeltaElement::Publish(pbl));
+            };
+        }
+
+        for mut upd in updates {
+            let uri = upd.uri().clone();
+            // An update that follows a staged publish, should be fresh publish.
+            // An update that follows a staged update, should use the hash from the previous update.
+            // An update cannot follow a staged withdraw. It would have been a publish in that case.
+            if let Some(DeltaElement::Publish(_)) = self.staged_elements.0.get(&uri) {
+                self.staged_elements
+                    .0
+                    .insert(uri, DeltaElement::Publish(upd.into_publish()));
+            } else if let Some(DeltaElement::Update(staged_update)) = self.staged_elements.0.get(&uri) {
+                upd.updates_staged(staged_update); // set hash to previous update hash
+                self.staged_elements.0.insert(uri, DeltaElement::Update(upd));
+            } else {
+                self.staged_elements.0.insert(uri, DeltaElement::Update(upd));
+            }
+        }
+
+        for wdr in withdraws {
+            // withdraws should always remove any staged publishes or updates.
+            // they cannot follow staged withdraws (checked when delta is submitted)
+            // so just add them all to the staged elements
+            self.staged_elements
+                .0
+                .insert(wdr.uri().clone(), DeltaElement::Withdraw(wdr));
+        }
     }
 
     /// Applies the data from an RrdpUpdated change.
     fn apply_rrdp_updated(&mut self, update: RrdpUpdated) {
         self.serial += 1;
 
-        let delta = Delta::new(
-            self.session,
-            self.serial,
-            update.time,
-            update.random.clone(),
-            update.delta_elements,
-        );
-        self.snapshot = self.snapshot.with_delta(update.random, delta.elements().clone());
-        self.notification = self.make_updated_notification(&self.snapshot, &delta, update.deltas_truncate);
+        let mut staged_elements = StagedElements::default();
+        std::mem::swap(&mut self.staged_elements, &mut staged_elements);
+
+        let mut publishes = vec![];
+        let mut updates = vec![];
+        let mut withdraws = vec![];
+        for el in staged_elements.0.into_values() {
+            match el {
+                DeltaElement::Publish(pbl) => publishes.push(pbl),
+                DeltaElement::Update(upd) => updates.push(upd),
+                DeltaElement::Withdraw(wdr) => withdraws.push(wdr),
+            }
+        }
+        let delta_elements = DeltaElements::new(publishes, updates, withdraws);
+
+        let delta = DeltaData::new(self.serial, update.time, update.random, delta_elements);
+
+        self.snapshot = self
+            .snapshot
+            .with_delta(delta.random().clone(), delta.elements().clone());
 
         self.deltas.truncate(update.deltas_truncate);
         self.deltas.push_front(delta);
+        self.deltas_truncate_size();
+
+        self.last_update = update.time;
     }
 
-    /// Updates the RRDP server with the elements. Note that this assumes that
-    /// the delta has already been checked against the jail and current
-    /// objects of the publisher.
-    fn update_rrdp(
-        &self,
-        delta_elements: DeltaElements,
-        retention: RepositoryRetentionConfig,
-    ) -> KrillResult<RrdpUpdated> {
+    /// Checks whether an RRDP update is needed
+    fn update_rrdp_needed(&self, rrdp_updates_config: RrdpUpdatesConfig) -> RrdpUpdateNeeded {
+        if self.staged_elements.0.is_empty() {
+            debug!("No RRDP update is needed, there are no staged changes");
+            RrdpUpdateNeeded::No
+        } else {
+            let interval = Duration::seconds(rrdp_updates_config.rrdp_delta_interval_min_seconds.into());
+            let next_update_time = self.last_update + interval;
+            if next_update_time > Time::now() {
+                debug!("RRDP update is delayed to: {}", next_update_time.to_rfc3339());
+                RrdpUpdateNeeded::Later(next_update_time)
+            } else {
+                debug!("RRDP update is needed");
+                RrdpUpdateNeeded::Yes
+            }
+        }
+    }
+
+    /// Updates the RRDP server with the staged delta elements.
+    fn update_rrdp(&self, rrdp_updates_config: RrdpUpdatesConfig) -> KrillResult<RrdpUpdated> {
         let time = Time::now();
         let random = RrdpFileRandom::default();
 
-        let deltas_truncate = {
-            // It's a bit inefficient to "pre-create" a new snapshot just to get its size, but
-            // if we look at the current snapshot then we could be off.
-            let snapshot_size = self.snapshot.with_delta(random.clone(), delta_elements.clone()).size();
-            let delta_size = delta_elements.size();
-            self.find_deltas_truncate(delta_size, snapshot_size, retention)
-        };
+        let deltas_truncate = self.find_deltas_truncate_age(rrdp_updates_config);
 
         Ok(RrdpUpdated {
             time,
             random,
-            delta_elements,
             deltas_truncate,
         })
     }
 
-    // Get the position to truncate excessive deltas:
-    //  - never keep more than the size of the snapshot
-    //  - always keep 'retention_delta_files_min_nr' files
-    //  - always keep 'retention_delta_files_min_seconds' files
-    //  - beyond this:
-    //     - never keep more than 'retention_delta_files_max_nr'
-    //     - never keep older than 'retention_delta_files_max_seconds'
-    //     - keep the others
-    fn find_deltas_truncate(
-        &self,
-        delta_size: usize,
-        snapshot_size: usize,
-        config: RepositoryRetentionConfig,
-    ) -> usize {
-        // We will keep the new delta - not yet added to this.
-        // So, we use its size as the starting point for the total delta size.
+    /// Truncate excessive deltas based on size. This is done
+    /// after applying an RrdpUpdate because the outcome is
+    /// deterministic. Compared to truncating the deltas based
+    /// on age and number, because *that* depends on when the
+    /// update was generated, and what the RrdpUpdatesConfig
+    /// was set to at the time.
+    fn deltas_truncate_size(&mut self) {
+        let snapshot_size = self.snapshot().size();
+        let mut total_deltas_size = 0;
         let mut keep = 0;
-        let mut size = delta_size;
-
-        let min_nr = config.retention_delta_files_min_nr;
-        let min_secs = config.retention_delta_files_min_seconds;
-        let max_nr = config.retention_delta_files_max_nr;
-        let max_secs = config.retention_delta_files_max_seconds;
 
         for delta in &self.deltas {
-            size += delta.elements().size();
-
-            if size > snapshot_size {
+            total_deltas_size += delta.elements().size();
+            if total_deltas_size > snapshot_size {
                 // never keep more than the size of the snapshot
                 break;
-            } else if keep < min_nr || delta.younger_than_seconds(min_secs.into()) {
-                // always keep 'retention_delta_files_min_nr' files
-                // always keep 'retention_delta_files_min_seconds' file
+            } else {
+                keep += 1;
+            }
+        }
+
+        self.deltas.truncate(keep);
+    }
+
+    /// Get the position to truncate excessive deltas, before applying the next delta:
+    ///  - always keep 'rrdp_delta_files_min_nr' files
+    ///  - always keep 'rrdp_delta_files_min_seconds' files
+    ///  - beyond this:
+    ///     - never keep more than 'rrdp_delta_files_max_nr'
+    ///     - never keep older than 'rrdp_delta_files_max_seconds'
+    ///     - keep the others
+    fn find_deltas_truncate_age(&self, rrdp_updates_config: RrdpUpdatesConfig) -> usize {
+        // We will keep the new delta - not yet added to this.
+        let mut keep = 0;
+
+        let min_nr = rrdp_updates_config.rrdp_delta_files_min_nr;
+        let min_secs = rrdp_updates_config.rrdp_delta_files_min_seconds;
+        let max_nr = rrdp_updates_config.rrdp_delta_files_max_nr;
+        let max_secs = rrdp_updates_config.rrdp_delta_files_max_seconds;
+
+        for delta in &self.deltas {
+            if keep < min_nr || delta.younger_than_seconds(min_secs.into()) {
+                // always keep 'rrdp_delta_files_min_nr' files
+                //    we need < min_nr because we will add the new delta later
+                // always keep 'rrdp_delta_files_min_seconds' file
                 keep += 1
-            } else if keep == max_nr || delta.older_than_seconds(max_secs.into()) {
-                // never keep more than 'retention_delta_files_max_nr'
-                // never keep older than 'retention_delta_files_max_seconds'
+            } else if keep == max_nr - 1 || delta.older_than_seconds(max_secs.into()) {
+                // never keep more than 'rrdp_delta_files_max_nr'
+                //    we need max_nr -1 because we will add the new new delta later
+                // never keep older than 'rrdp_delta_files_max_seconds'
                 break;
             } else {
                 // keep the remainder
@@ -884,55 +968,143 @@ impl RrdpServer {
         keep
     }
 
-    // Update the notification to include the current snapshot and
-    // deltas. Remove old notifications exceeding the retention time,
-    // so that we can delete old snapshots and deltas which are no longer
-    // relevant.
-    fn make_updated_notification(&self, snapshot: &Snapshot, delta: &Delta, deltas_truncate: usize) -> Notification {
-        let snapshot_ref = {
-            let snapshot_uri = snapshot.uri(&self.rrdp_base_uri);
-            let snapshot_path = snapshot.path(&self.rrdp_base_dir);
-            let snapshot_xml = snapshot.xml();
-            let snapshot_hash = Hash::from_data(snapshot_xml.as_slice());
-            SnapshotRef::new(snapshot_uri, snapshot_path, snapshot_hash)
-        };
-
-        let delta_ref = {
-            let serial = delta.serial();
-            let xml = delta.xml();
-            let hash = Hash::from_data(xml.as_slice());
-
-            let delta_uri = delta.uri(&self.rrdp_base_uri);
-            let delta_path = delta.path(&self.rrdp_base_dir);
-            let file_ref = FileRef::new(delta_uri, delta_path, hash);
-            DeltaRef::new(serial, file_ref)
-        };
-
-        self.notification.with_updates(snapshot_ref, delta_ref, deltas_truncate)
-    }
-
     /// Write the (missing) RRDP files to disk, and remove the ones
     /// no longer referenced in the notification file.
-    fn write(&self, retention: RepositoryRetentionConfig) -> Result<(), Error> {
-        // write snapshot if it's not there
-        let snapshot_path = self.snapshot.path(&self.rrdp_base_dir);
-        if !snapshot_path.exists() {
-            self.snapshot.write_xml(&snapshot_path)?;
-        }
+    fn write(&self, rrdp_updates_config: RrdpUpdatesConfig) -> Result<(), Error> {
+        // Get the current notification file from disk, if it exists, so
+        // we can determine which (new) snapshot and delta files to write,
+        // and which old snapshot and delta files may be removed.
+        debug!("Write updated RRDP state to disk - if there are any updates that is.");
 
-        // write deltas if they are not there
-        for delta in &self.deltas {
-            let path = delta.path(&self.rrdp_base_dir);
-            if !path.exists() {
-                // assume that if the delta exists, it is correct
-                delta.write_xml(&path)?;
+        // Get the current notification file - as long as it's present and can
+        // be parsed. If it cannot be parsed we just ignore it. I.e. we will generate
+        // all current files in that case.
+        let old_notification_opt: Option<NotificationFile> = file::read(&self.notification_path())
+            .ok()
+            .and_then(|bytes| rpki::rrdp::NotificationFile::parse(bytes.as_ref()).ok());
+
+        if let Some(old_notification) = old_notification_opt.as_ref() {
+            if old_notification.serial() == self.serial && old_notification.session_id() == self.session.into() {
+                debug!("Existing notification file matches current session and serial. Nothing to write.");
+                return Ok(());
             }
         }
 
-        // write notification file
+        let deltas = self.write_delta_files(old_notification_opt)?;
+        let snapshot = self.write_snapshot_file()?;
+
+        self.write_notification_file(snapshot, deltas)?;
+
+        // clean up under the base dir:
+        self.cleanup_old_rrdp_files(rrdp_updates_config)
+    }
+
+    fn write_delta_files(&self, old_notification_opt: Option<NotificationFile>) -> KrillResult<Vec<DeltaInfo>> {
+        // Find existing deltas in current file, if present and still applicable:
+        // - there is a notification that can be parsed
+        // - session did not change
+        // - deltas have an overlap with current deltas (otherwise just regenerate new deltas)
+        //
+        // We will assume that files for deltas still exist on disk and were not changed, so we will not regenerate them.
+        //
+        // NOTE: if both session and serial remain unchanged we just return with Ok(()). There is no work.
+        let mut deltas_from_old_notification: Vec<rpki::rrdp::DeltaInfo> = match old_notification_opt {
+            None => {
+                debug!("No old notification file found");
+                vec![]
+            }
+            Some(mut old_notification) => {
+                if old_notification.session_id() == self.session.into() {
+                    // Sort the deltas from lowest serial up, and make sure that there are no gaps.
+                    if old_notification.sort_and_verify_deltas(None) {
+                        debug!("Found existing notification file for current session with deltas.");
+                        old_notification.deltas().to_vec()
+                    } else {
+                        debug!("Found existing notification file with incomplete deltas, will regenerate files.");
+                        vec![]
+                    }
+                } else {
+                    debug!("Existing notification file was for different session, will regenerate all files.");
+                    vec![]
+                }
+            }
+        };
+
+        // Go over the deltas we found and discard any delta with a serial that we no longer kept.
+        // The deltas in the RrdpServer are sorted from highest to lowest serial (to make it easier to truncate).
+        if let Some(last) = self.deltas.back() {
+            // Only keep deltas are still kept.
+            deltas_from_old_notification.retain(|delta| delta.serial() >= last.serial());
+        } else if !deltas_from_old_notification.is_empty() {
+            // We would expect the existing deltas to be empty as well in this case. But in any case,
+            // wiping them will ensure we generate a new sane NotificationFile
+            deltas_from_old_notification = vec![];
+        }
+
+        // Write new delta files and add their DeltaInfo to the list to include in the new notification file.
+        // I.e. skip deltas that are still included in the curated list we got from the old notification.
+        let last_written_serial = deltas_from_old_notification.last();
+        let mut deltas = vec![];
+        for delta in &self.deltas {
+            if let Some(last) = last_written_serial {
+                if delta.serial() <= last.serial() {
+                    // Already included. We can skip this and assume that it was written to disk before.
+                    // And no one went in and messed with it..
+                    debug!("Skip writing delta for serial {}. File should exist.", delta.serial());
+                    continue;
+                }
+            }
+            // New delta, write it and add its distinctiveness to deltas (DeltaInfo vec) to include
+            // in the notification file that we will write.
+            let path = delta.path(self.session, delta.serial(), &self.rrdp_base_dir);
+            let uri = delta.uri(self.session, delta.serial(), &self.rrdp_base_uri);
+            let xml_bytes = delta.xml(self.session, delta.serial());
+            let hash = Hash::from_data(xml_bytes.as_slice());
+
+            debug!("Write delta file to: {}", path.to_string_lossy());
+            file::save(&xml_bytes, &path)?;
+
+            deltas.push(DeltaInfo::new(delta.serial(), uri, hash));
+        }
+
+        // Reverse the order of the (old) deltas so that it also goes high to low, and
+        // we can get the new complete list to include in the notification file.
+        deltas_from_old_notification.reverse();
+        deltas.append(&mut deltas_from_old_notification);
+
+        Ok(deltas)
+    }
+
+    fn write_snapshot_file(&self) -> KrillResult<SnapshotInfo> {
+        let path = self.snapshot().path(self.session, self.serial, &self.rrdp_base_dir);
+        let uri = self.snapshot().uri(self.session, self.serial, &self.rrdp_base_uri);
+        let xml_bytes = self.snapshot().xml(self.session, self.serial);
+        let hash = Hash::from_data(&xml_bytes);
+
+        debug!("Write snapshot file to: {}", path.to_string_lossy());
+        file::save(&xml_bytes, &path)?;
+
+        Ok(SnapshotInfo::new(uri, hash))
+    }
+
+    fn write_notification_file(&self, snapshot: SnapshotInfo, deltas: Vec<DeltaInfo>) -> KrillResult<()> {
+        // Write new notification file to new file first.
+        // Prevent that half-overwritten files are served.
+        let notification = NotificationFile::new(self.session.into(), self.serial, snapshot, deltas);
         let notification_path_new = self.notification_path_new();
+        let mut notification_file_new = file::create_file_with_path(&notification_path_new)?;
+        notification.write_xml(&mut notification_file_new).map_err(|e| {
+            KrillIoError::new(
+                format!(
+                    "could not write new notification file to {}",
+                    notification_path_new.to_string_lossy()
+                ),
+                e,
+            )
+        })?;
+
+        // Rename the new file so it becomes current.
         let notification_path = self.notification_path();
-        self.notification.write_xml(&notification_path_new)?;
         fs::rename(&notification_path_new, &notification_path).map_err(|e| {
             KrillIoError::new(
                 format!(
@@ -944,7 +1116,10 @@ impl RrdpServer {
             )
         })?;
 
-        // clean up under the base dir:
+        Ok(())
+    }
+
+    fn cleanup_old_rrdp_files(&self, rrdp_updates_config: RrdpUpdatesConfig) -> KrillResult<()> {
         // - old session dirs
         for entry in fs::read_dir(&self.rrdp_base_dir).map_err(|e| {
             KrillIoError::new(
@@ -975,8 +1150,13 @@ impl RrdpServer {
         }
 
         // clean up under the current session
-        let mut session_dir = self.rrdp_base_dir.clone();
-        session_dir.push(self.session.to_string());
+        let session_dir = self.rrdp_base_dir.join(self.session.to_string());
+
+        // Get the delta range to keep. We use 0 as a special value, because it
+        // is never used for deltas: i.e. no delta dirs will match if our delta
+        // list is empty.
+        let lowest_delta = self.deltas.back().map(|delta| delta.serial()).unwrap_or(0);
+        let highest_delta = self.deltas.front().map(|delta| delta.serial()).unwrap_or(0);
 
         for entry in fs::read_dir(&session_dir).map_err(|e| {
             KrillIoError::new(
@@ -1007,8 +1187,8 @@ impl RrdpServer {
                 if serial == self.serial {
                     continue;
                 // Clean up old serial dirs once deltas are out of scope
-                } else if !self.notification.includes_delta(serial) {
-                    if retention.retention_archive {
+                } else if serial < lowest_delta || serial > highest_delta {
+                    if rrdp_updates_config.rrdp_files_archive {
                         // If archiving is enabled, then move these directories under the archive base
 
                         let mut dest = self.rrdp_archive_dir.clone();
@@ -1026,20 +1206,21 @@ impl RrdpServer {
                 // We still need this old serial dir for the delta, but may not need the snapshot
                 // in it unless archiving is enabled.. in that case leave them and move them when
                 // the complete serial dir goes out of scope above.
-                } else if !retention.retention_archive {
-                    // see if the there is a snapshot file in this serial dir and if so do a best
-                    // effort removal.
+                } else if !rrdp_updates_config.rrdp_files_archive {
+                    // If the there is a snapshot file do a best effort removal. It shares the same
+                    // random dir as the delta that we still need to keep for this serial, so we just
+                    // remove the file and leave its parent directory in place.
                     if let Ok(Some(snapshot_file_to_remove)) = Self::session_dir_snapshot(&session_dir, serial) {
-                        // snapshot files are stored under their own unique random dir, e.g:
-                        // <session_dir>/<serial>/<random>/snapshot.xml
-                        //
-                        // So also remove the otherwise empty parent directory.
-                        if let Some(snapshot_parent_dir) = snapshot_file_to_remove.parent() {
-                            let _ = fs::remove_dir_all(snapshot_parent_dir);
+                        if let Err(e) = fs::remove_file(&snapshot_file_to_remove) {
+                            warn!(
+                                "Could not delete snapshot file '{}'. Error was: {}",
+                                snapshot_file_to_remove.to_string_lossy(),
+                                e
+                            );
                         }
                     }
                 } else {
-                    // we still need this
+                    // archiving was enabled, keep the old snapshot file until the directory is archived
                 }
             } else {
                 // clean up dirs or files under the base dir which are not sessions
@@ -1434,27 +1615,28 @@ impl RepoStats {
         &mut self,
         publisher: &PublisherHandle,
         publisher_stats: PublisherStats,
-        notification: &Notification,
+        serial: u64,
+        last_update: Time,
     ) {
         self.publishers.insert(publisher.clone(), publisher_stats);
-        self.serial = notification.serial();
-        self.last_update = Some(notification.time());
+        self.serial = serial;
+        self.last_update = Some(last_update);
     }
 
-    pub fn session_reset(&mut self, notification: &Notification) {
-        self.session = notification.session();
-        self.serial = notification.serial();
-        self.last_update = Some(notification.time())
+    pub fn session_reset(&mut self, session: RrdpSession, serial: u64, last_update: Time) {
+        self.session = session;
+        self.serial = serial;
+        self.last_update = Some(last_update)
     }
 
     pub fn new_publisher(&mut self, publisher: &PublisherHandle) {
         self.publishers.insert(publisher.clone(), PublisherStats::default());
     }
 
-    pub fn remove_publisher(&mut self, publisher: &PublisherHandle, notification: &Notification) {
+    pub fn remove_publisher(&mut self, publisher: &PublisherHandle, serial: u64, last_update: Time) {
         self.publishers.remove(publisher);
-        self.serial = notification.serial();
-        self.last_update = Some(notification.time())
+        self.serial = serial;
+        self.last_update = Some(last_update);
     }
 
     pub fn get_publishers(&self) -> &HashMap<PublisherHandle, PublisherStats> {

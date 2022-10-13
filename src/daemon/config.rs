@@ -483,7 +483,7 @@ pub struct Config {
     pub issuance_timing: IssuanceTimingConfig,
 
     #[serde(flatten)]
-    pub repository_retention: RepositoryRetentionConfig,
+    pub rrdp_updates_config: RrdpUpdatesConfig,
 
     #[serde(flatten)]
     pub metrics: MetricsConfig,
@@ -615,52 +615,61 @@ impl IssuanceTimingConfig {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
-pub struct RepositoryRetentionConfig {
-    #[serde(default = "RepositoryRetentionConfig::dflt_retention_delta_files_min_nr")]
-    pub retention_delta_files_min_nr: usize,
-    #[serde(default = "RepositoryRetentionConfig::dflt_retention_delta_files_min_seconds")]
-    pub retention_delta_files_min_seconds: u32,
-    #[serde(default = "RepositoryRetentionConfig::dflt_retention_delta_files_max_nr")]
-    pub retention_delta_files_max_nr: usize,
-    #[serde(default = "RepositoryRetentionConfig::dflt_retention_delta_files_max_seconds")]
-    pub retention_delta_files_max_seconds: u32,
-    #[serde(default = "RepositoryRetentionConfig::dflt_retention_archive")]
-    pub retention_archive: bool,
+pub struct RrdpUpdatesConfig {
+    #[serde(default = "RrdpUpdatesConfig::dflt_rrdp_delta_files_min_nr")]
+    pub rrdp_delta_files_min_nr: usize,
+    #[serde(default = "RrdpUpdatesConfig::dflt_rrdp_delta_files_min_seconds")]
+    pub rrdp_delta_files_min_seconds: u32,
+    #[serde(default = "RrdpUpdatesConfig::dflt_rrdp_delta_files_max_nr")]
+    pub rrdp_delta_files_max_nr: usize,
+    #[serde(default = "RrdpUpdatesConfig::dflt_rrdp_delta_files_max_seconds")]
+    pub rrdp_delta_files_max_seconds: u32,
+    #[serde(default = "RrdpUpdatesConfig::dflt_rrdp_delta_min_interval_seconds")]
+    pub rrdp_delta_interval_min_seconds: u32,
+    #[serde(default = "RrdpUpdatesConfig::dflt_rrdp_files_archive")]
+    pub rrdp_files_archive: bool,
 }
 
-impl RepositoryRetentionConfig {
+impl RrdpUpdatesConfig {
     // Keep at least X (default 5) delta files in the notification
     // file, even if they would be too old. Their impact on the notification
     // file size is not too bad.
-    fn dflt_retention_delta_files_min_nr() -> usize {
+    fn dflt_rrdp_delta_files_min_nr() -> usize {
         5
     }
 
     // Minimum time to keep deltas. Defaults to 20 minutes, which
     // is double a commonly used update interval, allowing the vast
     // majority of RPs to update using deltas.
-    fn dflt_retention_delta_files_min_seconds() -> u32 {
+    fn dflt_rrdp_delta_files_min_seconds() -> u32 {
         1200 // 20 minutes
     }
 
     // Maximum time to keep deltas. Defaults to two hours meaning,
     // which is double to slowest normal update interval seen used
     // by a minority of RPs.
-    fn dflt_retention_delta_files_max_seconds() -> u32 {
+    fn dflt_rrdp_delta_files_max_seconds() -> u32 {
         7200 // 2 hours
     }
 
     // For files older than the min seconds specified (default 20 mins),
     // and younger than max seconds (2 hours), keep at most up to a total
     // nr of files X (default 50).
-    fn dflt_retention_delta_files_max_nr() -> usize {
+    fn dflt_rrdp_delta_files_max_nr() -> usize {
         50
+    }
+
+    // The minimum interval between RRDP deltas. A value of 0 (default)
+    // means that there will be no delays, and every change gets its
+    // own delta.
+    fn dflt_rrdp_delta_min_interval_seconds() -> u32 {
+        0
     }
 
     // If set to true, we will archive - rather than delete - old
     // snapshot and delta files. The can then be backed up and/deleted
     // at the repository operator's discretion.
-    fn dflt_retention_archive() -> bool {
+    fn dflt_rrdp_files_archive() -> bool {
         false
     }
 }
@@ -936,12 +945,13 @@ impl Config {
             timing_bgpsec_reissue_weeks_before,
         };
 
-        let repository_retention = RepositoryRetentionConfig {
-            retention_delta_files_min_seconds: 0,
-            retention_delta_files_min_nr: 5,
-            retention_delta_files_max_seconds: 1,
-            retention_delta_files_max_nr: 50,
-            retention_archive: false,
+        let rrdp_updates_config = RrdpUpdatesConfig {
+            rrdp_delta_files_min_seconds: 0,
+            rrdp_delta_files_min_nr: 5,
+            rrdp_delta_files_max_seconds: 1,
+            rrdp_delta_files_max_nr: 50,
+            rrdp_delta_interval_min_seconds: 0,
+            rrdp_files_archive: false,
         };
 
         let metrics = MetricsConfig {
@@ -1008,7 +1018,7 @@ impl Config {
             roa_aggregate_threshold,
             roa_deaggregate_threshold,
             issuance_timing,
-            repository_retention,
+            rrdp_updates_config,
             metrics,
             testbed,
             benchmark: None,
