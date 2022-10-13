@@ -94,11 +94,11 @@ impl PublishElement {
     pub fn base64(&self) -> &Base64 {
         &self.base64
     }
-    
+
     pub fn uri(&self) -> &uri::Rsync {
         &self.uri
     }
-    
+
     pub fn size_approx(&self) -> usize {
         self.base64.size_approx()
     }
@@ -220,17 +220,22 @@ impl Notification {
         }
     }
 
-    pub fn time(&self) -> Time {
-        self.time
+    /// Returns a new Notification file with the given updates.
+    pub fn with_updates(&self, snapshot: SnapshotRef, delta: DeltaRef, deltas_truncate: usize) -> Self {
+        let session = self.session;
+        let serial = self.serial + 1;
+
+        let mut deltas = vec![delta];
+        deltas.append(&mut self.deltas.clone());
+        // The given truncate is the index *before* the new delta was added.
+        // Note: truncating beyond the len is safe, it is then just a no-op.
+        deltas.truncate(deltas_truncate + 1);
+
+        Notification::new(session, serial, snapshot, deltas)
     }
 
-    #[deprecated] // use 'older_than_seconds'
-    pub fn replaced_after(&self, timestamp: i64) -> bool {
-        if let Some(replaced) = self.replaced {
-            replaced.timestamp() > timestamp
-        } else {
-            false
-        }
+    pub fn time(&self) -> Time {
+        self.time
     }
 
     pub fn older_than_seconds(&self, seconds: i64) -> bool {
@@ -458,7 +463,7 @@ impl CurrentObjects {
         }
     }
 
-    fn verify_delta(&self, delta: &DeltaElements, jail: &uri::Rsync) -> Result<(), PublicationDeltaError> {
+    pub fn verify_delta(&self, delta: &DeltaElements, jail: &uri::Rsync) -> Result<(), PublicationDeltaError> {
         for p in delta.publishes() {
             if !jail.is_parent_of(p.uri()) {
                 return Err(PublicationDeltaError::outside(jail, p.uri()));
@@ -490,12 +495,8 @@ impl CurrentObjects {
         Ok(())
     }
 
-    /// Applies a delta to CurrentObjects. This will verify that the
-    /// delta is legal with regards to existing objects, and the jail
-    /// specified for the publisher.
-    pub fn apply_delta(&mut self, delta: DeltaElements, jail: &uri::Rsync) -> Result<(), PublicationDeltaError> {
-        self.verify_delta(&delta, jail)?;
-
+    /// Applies a delta to CurrentObjects.
+    pub fn apply_delta(&mut self, delta: DeltaElements) {
         let (publishes, updates, withdraws) = delta.unpack();
 
         for p in publishes {
@@ -513,8 +514,6 @@ impl CurrentObjects {
         for w in withdraws {
             self.0.remove(w.hash());
         }
-
-        Ok(())
     }
 
     pub fn len(&self) -> usize {
@@ -618,54 +617,64 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
-    pub fn new(session: RrdpSession, serial: u64, current_objects: CurrentObjects) -> Self {
+    pub fn new(session: RrdpSession, serial: u64, random: RrdpFileRandom, current_objects: CurrentObjects) -> Self {
         Snapshot {
             session,
             serial,
-            random: RrdpFileRandom::default(),
+            random,
             current_objects,
         }
+    }
+
+    pub fn create(session: RrdpSession) -> Self {
+        let serial = RRDP_FIRST_SERIAL;
+        let random = RrdpFileRandom::default();
+        let current_objects = CurrentObjects::default();
+        Snapshot::new(session, serial, random, current_objects)
+    }
+
+    /// Creates a new snapshot based on this snapshot's objects
+    /// but using a new session and resetting the serial.
+    pub fn with_session_reset(&self, session: RrdpSession) -> Self {
+        let serial = RRDP_FIRST_SERIAL;
+        let random = RrdpFileRandom::default();
+        let current_objects = self.current_objects.clone();
+        Snapshot::new(session, serial, random, current_objects)
     }
 
     pub fn unpack(self) -> (RrdpSession, u64, CurrentObjects) {
         (self.session, self.serial, self.current_objects)
     }
 
-    pub fn create(session: RrdpSession) -> Self {
-        let current_objects = CurrentObjects::default();
-        Snapshot {
-            session,
-            serial: RRDP_FIRST_SERIAL,
-            random: RrdpFileRandom::default(),
-            current_objects,
-        }
-    }
-
-    pub fn session_reset(&self, session: RrdpSession) -> Self {
-        Snapshot {
-            session,
-            serial: RRDP_FIRST_SERIAL,
-            random: RrdpFileRandom::default(),
-            current_objects: self.current_objects.clone(),
-        }
-    }
-
     pub fn elements(&self) -> Vec<&PublishElement> {
         self.current_objects.elements()
+    }
+
+    pub fn session(&self) -> RrdpSession {
+        self.session
     }
 
     pub fn serial(&self) -> u64 {
         self.serial
     }
 
-    pub fn apply_delta(&mut self, elements: DeltaElements, jail: &uri::Rsync) -> Result<(), PublicationDeltaError> {
-        self.serial += 1;
-        self.random = RrdpFileRandom::default();
-        self.current_objects.apply_delta(elements, jail)
+    /// Creates a new snapshot with the delta applied. This assumes
+    /// that the delta had been checked before. This should not be
+    /// any issue as deltas are verified when they are submitted.
+    pub fn with_delta(&self, random: RrdpFileRandom, elements: DeltaElements) -> Snapshot {
+        let session = self.session;
+        let serial = self.serial + 1;
+        let mut current_objects = self.current_objects.clone();
+        current_objects.apply_delta(elements);
+
+        Snapshot::new(session, serial, random, current_objects)
     }
 
     pub fn size(&self) -> usize {
-        self.current_objects.elements().iter().fold(0, |sum, p| sum + p.size_approx())
+        self.current_objects
+            .elements()
+            .iter()
+            .fold(0, |sum, p| sum + p.size_approx())
     }
 
     fn rel_path(&self) -> String {
@@ -681,8 +690,9 @@ impl Snapshot {
     }
 
     pub fn write_xml(&self, path: &Path) -> Result<(), KrillIoError> {
-        trace!("Writing snapshot file: {}", path.to_string_lossy());
+        debug!("Writing snapshot file: {}", path.to_string_lossy());
         let vec = self.xml();
+        debug!("Finished snapshot xml");
         let bytes = Bytes::from(vec);
 
         file::save(&bytes, path)
@@ -805,11 +815,11 @@ pub struct Delta {
 }
 
 impl Delta {
-    pub fn new(session: RrdpSession, serial: u64, elements: DeltaElements) -> Self {
+    pub fn new(session: RrdpSession, serial: u64, time: Time, random: RrdpFileRandom, elements: DeltaElements) -> Self {
         Delta {
             session,
-            time: Time::now(),
-            random: RrdpFileRandom::default(),
+            time,
+            random,
             serial,
             elements,
         }
@@ -869,8 +879,9 @@ impl Delta {
     }
 
     pub fn write_xml(&self, path: &Path) -> Result<(), KrillIoError> {
-        trace!("Writing delta file: {}", path.to_string_lossy());
+        debug!("Writing delta file: {}", path.to_string_lossy());
         let vec = self.xml();
+        debug!("Done creating XML");
         let bytes = Bytes::from(vec);
         file::save(&bytes, path)?;
 

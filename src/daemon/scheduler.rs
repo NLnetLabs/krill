@@ -83,6 +83,8 @@ impl Scheduler {
                     #[cfg(feature = "multi-user")]
                     Task::SweepLoginCache => self.sweep_login_cache(),
 
+                    Task::UpdateSnapshots => self.update_snapshots(),
+
                     Task::ResourceClassRemoved {
                         ca,
                         parent,
@@ -215,6 +217,8 @@ impl Scheduler {
         #[cfg(feature = "multi-user")]
         self.tasks.sweep_login_cache(in_minutes(1));
 
+        self.tasks.update_snapshots(in_hours(24));
+
         Ok(())
     }
 
@@ -309,5 +313,13 @@ impl Scheduler {
         }
 
         self.tasks.sweep_login_cache(in_minutes(1));
+    }
+
+    fn update_snapshots(&self) {
+        if let Err(e) = self.repo_manager.update_snapshots() {
+            error!("Could not update snapshots on disk! Error: {}", e);
+        }
+
+        self.tasks.update_snapshots(in_hours(24));
     }
 }

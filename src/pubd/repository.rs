@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, VecDeque},
     convert::TryFrom,
-    fmt, fs, mem,
+    fmt, fs,
     path::{Path, PathBuf},
     str::FromStr,
     sync::{Arc, RwLock},
@@ -25,15 +25,15 @@ use crate::{
         actor::Actor,
         api::{
             rrdp::{
-                CurrentObjects, Delta, DeltaElements, DeltaRef, FileRef, Notification, RrdpSession, Snapshot,
-                SnapshotRef,
+                CurrentObjects, Delta, DeltaElements, DeltaRef, FileRef, Notification, RrdpFileRandom, RrdpSession,
+                Snapshot, SnapshotRef,
             },
             IdCertInfo,
         },
         api::{PublicationServerUris, StorableRepositoryCommand},
         crypto::KrillSigner,
         error::{Error, KrillIoError},
-        eventsourcing::{Aggregate, AggregateStore, KeyStoreKey, KeyValueStore},
+        eventsourcing::{Aggregate, AggregateStore, WalChange, WalCommand, WalSet, WalStore, WalSupport},
         util::file,
         KrillResult,
     },
@@ -55,41 +55,24 @@ use crate::{
 /// so that callers don't need to worry about storage details.
 #[derive(Debug)]
 pub struct RepositoryContentProxy {
-    cache: RwLock<Option<RepositoryContent>>,
-    store: RwLock<KeyValueStore>,
-    key: KeyStoreKey,
+    store: Arc<WalStore<RepositoryContent>>,
+    default_handle: MyHandle,
 }
 
 impl RepositoryContentProxy {
     pub fn disk(config: &Config) -> KrillResult<Self> {
         let work_dir = &config.data_dir;
-        let store = KeyValueStore::disk(work_dir, PUBSERVER_CONTENT_DIR)?;
-        let store = RwLock::new(store);
-        let key = KeyStoreKey::simple(format!("{}.json", PUBSERVER_DFLT));
-        let cache = RwLock::new(None);
+        let store = Arc::new(WalStore::disk(work_dir, PUBSERVER_CONTENT_DIR)?);
+        store.warm()?;
 
-        let proxy = RepositoryContentProxy { cache, store, key };
-        proxy.warm_cache()?;
+        let default_handle = MyHandle::new("0".into());
 
-        Ok(proxy)
-    }
-
-    fn warm_cache(&self) -> KrillResult<()> {
-        let key_store_read = self.store.read().unwrap();
-
-        if key_store_read.has(&self.key)? {
-            info!("Warming the repository content cache, this can take a minute for large repositories.");
-            let content = key_store_read.get(&self.key)?.unwrap();
-            self.cache.write().unwrap().replace(content);
-            info!("Repository content cache has been warmed.");
-        }
-
-        Ok(())
+        Ok(RepositoryContentProxy { store, default_handle })
     }
 
     /// Initialize
     pub fn init(&self, work_dir: &Path, uris: PublicationServerUris) -> KrillResult<()> {
-        if self.store.read().unwrap().has(&self.key)? {
+        if self.store.has(&self.default_handle)? {
             Err(Error::RepositoryServerAlreadyInitialized)
         } else {
             // initialize new repo content
@@ -110,36 +93,38 @@ impl RepositoryContentProxy {
             };
 
             // Store newly initialized repo content on disk
-            let store = self.store.write().unwrap();
-            store.store(&self.key, &repository_content)?;
-
-            // Store newly initialized repo content in cache
-            let mut cache = self.cache.write().unwrap();
-            cache.replace(repository_content);
+            self.store.add(&self.default_handle, repository_content)?;
 
             Ok(())
         }
     }
 
+    fn get_default_content(&self) -> KrillResult<Arc<RepositoryContent>> {
+        self.store
+            .get_latest(&self.default_handle)
+            .map_err(Error::WalStoreError)
+    }
+
     // Clear all content, so it can be re-initialized.
     // Only to be called after all publishers have been removed from the RepoAccess as well.
     pub fn clear(&self) -> KrillResult<()> {
-        let store = self.store.write().unwrap();
-
-        if let Ok(Some(content)) = store.get::<RepositoryContent>(&self.key) {
-            content.clear();
-            store.drop_key(&self.key)?;
-        }
-
-        let mut cache = self.cache.write().unwrap();
-        cache.take();
+        let content = self.get_default_content()?;
+        content.clear();
+        self.store.remove(&self.default_handle)?;
 
         Ok(())
     }
 
+    // Update snapshot on disk for faster load times after restart.
+    pub fn update_snapshots(&self) -> KrillResult<()> {
+        self.store
+            .update_snapshot(&self.default_handle, false)
+            .map_err(Error::WalStoreError)
+    }
+
     /// Return the repository content stats
     pub fn stats(&self) -> KrillResult<RepoStats> {
-        self.read(|content| Ok(content.stats()))
+        self.get_default_content().map(|content| content.stats())
     }
 
     /// Add a publisher with an empty set of published objects.
@@ -149,18 +134,18 @@ impl RepositoryContentProxy {
     /// to the RepositoryAccess was successful (and *that* will fail if
     /// the publisher is a duplicate). This method can only fail if
     /// there is an issue with the underlying key value store.
-    pub fn add_publisher(&self, name: PublisherHandle) -> KrillResult<()> {
-        self.write(|content| content.add_publisher(name))
+    pub fn add_publisher(&self, publisher: PublisherHandle) -> KrillResult<()> {
+        let command = RepositoryContentCommand::add_publisher(self.default_handle.clone(), publisher);
+        self.store.send_command(command)?;
+        Ok(())
     }
 
     /// Removes a publisher and its content.
-    pub fn remove_publisher(
-        &self,
-        name: &PublisherHandle,
-        jail: &uri::Rsync,
-        config: &RepositoryRetentionConfig,
-    ) -> KrillResult<()> {
-        self.write(|content| content.remove_publisher(name, jail, config))
+    pub fn remove_publisher(&self, publisher: PublisherHandle, config: RepositoryRetentionConfig) -> KrillResult<()> {
+        let command = RepositoryContentCommand::remove_publisher(self.default_handle.clone(), publisher, config);
+        let content = self.store.send_command(command)?;
+
+        content.write_repository(config)
     }
 
     /// Publish an update for a publisher.
@@ -169,23 +154,40 @@ impl RepositoryContentProxy {
     /// are within the publisher's uri space (jail).
     pub fn publish(
         &self,
-        name: &PublisherHandle,
+        publisher: PublisherHandle,
         delta: PublishDelta,
         jail: &uri::Rsync,
-        config: &RepositoryRetentionConfig,
+        retention: RepositoryRetentionConfig,
     ) -> KrillResult<()> {
-        self.write(|content| content.publish(name, delta.into(), jail, config))
+        debug!("Publish delta for {}", publisher);
+
+        let content = self.get_default_content()?;
+        let current_objects = content.objects_for_publisher(&publisher)?;
+        let delta = DeltaElements::from(delta);
+
+        current_objects.verify_delta(&delta, jail)?;
+
+        let command = RepositoryContentCommand::publish(self.default_handle.clone(), publisher, delta, retention);
+        let content = self.store.send_command(command)?;
+
+        content.write_repository(retention)?;
+
+        Ok(())
     }
 
     /// Write all current files to disk
-    pub fn write_repository(&self, config: &RepositoryRetentionConfig) -> KrillResult<()> {
-        self.read(|content| content.write_repository(config))
+    pub fn write_repository(&self, retention: RepositoryRetentionConfig) -> KrillResult<()> {
+        let content = self.get_default_content()?;
+        content.write_repository(retention)
     }
 
     /// Reset the RRDP session if it is initialized. Otherwise do nothing.
-    pub fn session_reset(&self, config: &RepositoryRetentionConfig) -> KrillResult<()> {
-        if self.cache.read().unwrap().is_some() {
-            self.write(|content| content.session_reset(config))
+    pub fn session_reset(&self, retention: RepositoryRetentionConfig) -> KrillResult<()> {
+        if self.store.has(&self.default_handle)? {
+            let command = RepositoryContentCommand::session_reset(self.default_handle.clone());
+            let content = self.store.send_command(command)?;
+
+            content.write_repository(retention)
         } else {
             // repository server was not initialized on this Krill instance. Nothing to reset.
             Ok(())
@@ -193,43 +195,164 @@ impl RepositoryContentProxy {
     }
 
     /// Create a list reply containing all current objects for a publisher
-    pub fn list_reply(&self, name: &PublisherHandle) -> KrillResult<ListReply> {
-        self.read(|content| content.list_reply(name))
+    pub fn list_reply(&self, publisher: &PublisherHandle) -> KrillResult<ListReply> {
+        let content = self.get_default_content()?;
+        content.list_reply(publisher)
     }
 
     // Get all current objects for a publisher
     pub fn current_objects(&self, name: &PublisherHandle) -> KrillResult<CurrentObjects> {
-        self.read(|content| content.objects_for_publisher(name).map(|o| o.clone()))
-    }
-
-    // Execute a closure on a mutable repository content in a single write 'transaction'
-    fn write<F: FnOnce(&mut RepositoryContent) -> KrillResult<()>>(&self, op: F) -> KrillResult<()> {
-        // If there is any existing content, then we can assume that the cache
-        // has it - because it's initialized when we read the content during
-        // initialization.
-        let store = self.store.write().unwrap();
-        let mut cache = self.cache.write().unwrap();
-
-        let content: &mut RepositoryContent = cache.as_mut().ok_or(Error::RepositoryServerNotInitialized)?;
-
-        op(content)?;
-
-        store.store(&self.key, content)?;
-        Ok(())
-    }
-
-    // Execute a closure on a mutable repository content in a single read 'transaction'
-    //
-    // This function fails if the repository content is not initialized.
-    fn read<A, F: FnOnce(&RepositoryContent) -> KrillResult<A>>(&self, op: F) -> KrillResult<A> {
-        // Note that because the content is initialized it is implied that the cache MUST always be
-        // set. I.e. it is set on initialization and updated whenever the repository content is updated.
-        // So, we can safely read from the cache only.
-        let cache = self.cache.read().unwrap();
-        let content = cache.as_ref().ok_or(Error::RepositoryServerNotInitialized)?;
-        op(content)
+        let content = self.get_default_content()?;
+        content.objects_for_publisher(name).map(|o| o.clone())
     }
 }
+
+//------------ RepositoryContentCommand ------------------------------------
+
+#[derive(Clone, Debug)]
+pub enum RepositoryContentCommand {
+    ResetSession {
+        handle: MyHandle,
+    },
+    AddPublisher {
+        handle: MyHandle,
+        publisher: PublisherHandle,
+    },
+    RemovePublisher {
+        handle: MyHandle,
+        publisher: PublisherHandle,
+        retention: RepositoryRetentionConfig,
+    },
+    Publish {
+        handle: MyHandle,
+        publisher: PublisherHandle,
+        delta: DeltaElements,
+        retention: RepositoryRetentionConfig,
+    },
+}
+
+impl RepositoryContentCommand {
+    pub fn session_reset(handle: MyHandle) -> Self {
+        RepositoryContentCommand::ResetSession { handle }
+    }
+
+    pub fn add_publisher(handle: MyHandle, publisher: PublisherHandle) -> Self {
+        RepositoryContentCommand::AddPublisher { handle, publisher }
+    }
+
+    pub fn remove_publisher(
+        handle: MyHandle,
+        publisher: PublisherHandle,
+        retention: RepositoryRetentionConfig,
+    ) -> Self {
+        RepositoryContentCommand::RemovePublisher {
+            handle,
+            publisher,
+            retention,
+        }
+    }
+    pub fn publish(
+        handle: MyHandle,
+        publisher: PublisherHandle,
+        delta: DeltaElements,
+        retention: RepositoryRetentionConfig,
+    ) -> Self {
+        RepositoryContentCommand::Publish {
+            handle,
+            publisher,
+            delta,
+            retention,
+        }
+    }
+}
+
+impl WalCommand for RepositoryContentCommand {
+    fn handle(&self) -> &MyHandle {
+        match self {
+            RepositoryContentCommand::ResetSession { handle }
+            | RepositoryContentCommand::AddPublisher { handle, .. }
+            | RepositoryContentCommand::RemovePublisher { handle, .. }
+            | RepositoryContentCommand::Publish { handle, .. } => handle,
+        }
+    }
+}
+
+impl fmt::Display for RepositoryContentCommand {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            RepositoryContentCommand::ResetSession { handle } => {
+                write!(f, "reset session for repository {}", handle)
+            }
+            RepositoryContentCommand::AddPublisher { handle, publisher } => {
+                write!(f, "add publisher '{}' to repository {}", publisher, handle)
+            }
+            RepositoryContentCommand::RemovePublisher { handle, publisher, .. } => {
+                write!(f, "remove publisher '{}' from repository {}", publisher, handle)
+            }
+            RepositoryContentCommand::Publish { handle, publisher, .. } => {
+                write!(f, "publish for publisher '{}' under repository {}", publisher, handle)
+            }
+        }
+    }
+}
+
+//------------ RepositoryContentChange -------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case", tag = "type")]
+pub enum RepositoryContentChange {
+    SessionReset {
+        reset: RrdpSessionReset,
+    },
+    PublisherAdded {
+        publisher: PublisherHandle,
+    },
+    PublisherRemoved {
+        publisher: PublisherHandle,
+    },
+    PublishedObjects {
+        publisher: PublisherHandle,
+        current_objects: CurrentObjects,
+    },
+    RrdpUpdated {
+        update: RrdpUpdated,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RrdpSessionReset {
+    notification: Notification,
+    snapshot: Snapshot,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RrdpUpdated {
+    time: Time,
+    random: RrdpFileRandom,
+    delta_elements: DeltaElements,
+    old_notifications_truncate: usize,
+    deltas_truncate: usize,
+}
+
+impl fmt::Display for RepositoryContentChange {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            RepositoryContentChange::SessionReset { reset } => {
+                write!(f, "RRDP session reset to: {}", reset.notification.session())
+            }
+            RepositoryContentChange::RrdpUpdated { .. } => {
+                write!(f, "RRDP updated")
+            }
+            RepositoryContentChange::PublisherAdded { publisher } => write!(f, "added publisher: {}", publisher),
+            RepositoryContentChange::PublisherRemoved { publisher } => write!(f, "removed publisher: {}", publisher),
+            RepositoryContentChange::PublishedObjects { publisher, .. } => {
+                write!(f, "published for publisher: {}", publisher)
+            }
+        }
+    }
+}
+
+impl WalChange for RepositoryContentChange {}
 
 //------------ RepositoryContent -------------------------------------------
 
@@ -239,14 +362,18 @@ impl RepositoryContentProxy {
 /// such as the base uri for publishers.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RepositoryContent {
+    #[serde(default)] // Make this backward compatible
+    revision: u64,
     publishers: HashMap<PublisherHandle, CurrentObjects>,
     rrdp: RrdpServer,
     rsync: RsyncdStore,
 }
 
+/// # Construct
 impl RepositoryContent {
     pub fn new(publishers: HashMap<PublisherHandle, CurrentObjects>, rrdp: RrdpServer, rsync: RsyncdStore) -> Self {
         RepositoryContent {
+            revision: 0,
             publishers,
             rrdp,
             rsync,
@@ -259,30 +386,74 @@ impl RepositoryContent {
         let rsync = RsyncdStore::new(rsync_jail, repo_base_dir);
 
         RepositoryContent {
+            revision: 0,
             publishers,
             rrdp,
             rsync,
         }
     }
+}
 
-    // Clears all content on disk so the repository can be re-initialized
-    pub fn clear(&self) {
-        self.rrdp.clear();
-        self.rsync.clear();
+/// # Write-ahead logging support
+impl WalSupport for RepositoryContent {
+    type Command = RepositoryContentCommand;
+    type Change = RepositoryContentChange;
+    type Error = Error;
+
+    fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    fn apply(&mut self, set: WalSet<Self>) {
+        for change in set.into_changes() {
+            match change {
+                RepositoryContentChange::SessionReset { reset } => self.rrdp.apply_session_reset(reset),
+                RepositoryContentChange::RrdpUpdated { update } => self.rrdp.apply_rrdp_updated(update),
+                RepositoryContentChange::PublisherAdded { publisher } => {
+                    self.publishers.insert(publisher, CurrentObjects::default());
+                }
+                RepositoryContentChange::PublisherRemoved { publisher } => {
+                    self.publishers.remove(&publisher);
+                }
+                RepositoryContentChange::PublishedObjects {
+                    publisher,
+                    current_objects,
+                } => {
+                    self.publishers.insert(publisher, current_objects);
+                }
+            }
+        }
+        self.revision += 1;
+    }
+
+    fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Change>, Self::Error> {
+        match command {
+            RepositoryContentCommand::ResetSession { .. } => self.reset_session(),
+            RepositoryContentCommand::AddPublisher { publisher, .. } => self.add_publisher(publisher),
+            RepositoryContentCommand::RemovePublisher {
+                publisher, retention, ..
+            } => self.remove_publisher(publisher, retention),
+            RepositoryContentCommand::Publish {
+                publisher,
+                delta,
+                retention,
+                ..
+            } => self.publish(publisher, delta, retention),
+        }
     }
 }
 
 /// # Publisher Content
 impl RepositoryContent {
+    // Clears all content on disk so the repository can be re-initialized
+    pub fn clear(&self) {
+        self.rrdp.clear();
+        self.rsync.clear();
+    }
+
     fn objects_for_publisher(&self, publisher: &PublisherHandle) -> KrillResult<&CurrentObjects> {
         self.publishers
             .get(publisher)
-            .ok_or_else(|| Error::PublisherUnknown(publisher.clone()))
-    }
-
-    fn objects_for_publisher_mut(&mut self, publisher: &PublisherHandle) -> KrillResult<&mut CurrentObjects> {
-        self.publishers
-            .get_mut(publisher)
             .ok_or_else(|| Error::PublisherUnknown(publisher.clone()))
     }
 
@@ -291,46 +462,20 @@ impl RepositoryContent {
         self.objects_for_publisher(publisher).map(|o| o.to_list_reply())
     }
 
-    pub fn publish(
-        &mut self,
-        name: &PublisherHandle,
-        delta: DeltaElements,
-        jail: &uri::Rsync,
-        config: &RepositoryRetentionConfig,
-    ) -> KrillResult<()> {
-        // update publisher, this will fail if the publisher tries
-        // to update outside of its jail.
-        let objects = self.objects_for_publisher_mut(name)?;
-        objects.apply_delta(delta.clone(), jail)?;
+    pub fn reset_session(&self) -> KrillResult<Vec<RepositoryContentChange>> {
+        info!("Performing RRDP session reset.");
+        let reset = self.rrdp.reset_session();
 
-        // update the RRDP server
-        self.rrdp.publish(delta, jail, config)?;
-
-        // write repo (note rsync is based on updated rrdp snapshot)
-        self.write_repository(config)?;
-
-        Ok(())
+        Ok(vec![RepositoryContentChange::SessionReset { reset }])
     }
 
-    pub fn session_reset(&mut self, config: &RepositoryRetentionConfig) -> KrillResult<()> {
-        info!(
-            "Performing RRDP session reset. This ensures a consistent view for RPs in case we restarted from a backup."
-        );
-
-        self.rrdp.session_reset();
-        self.write_repository(config)?;
-
-        Ok(())
-    }
-
-    pub fn write_repository(&self, config: &RepositoryRetentionConfig) -> KrillResult<()> {
+    pub fn write_repository(&self, config: RepositoryRetentionConfig) -> KrillResult<()> {
         self.rrdp.write(config)?;
         self.rsync.write(self.rrdp.snapshot())
     }
 
-    pub fn add_publisher(&mut self, name: PublisherHandle) -> KrillResult<()> {
-        self.publishers.insert(name, CurrentObjects::default());
-        Ok(())
+    pub fn add_publisher(&self, publisher: PublisherHandle) -> KrillResult<Vec<RepositoryContentChange>> {
+        Ok(vec![RepositoryContentChange::PublisherAdded { publisher }])
     }
 
     /// Removes the content for a publisher. This function will return
@@ -338,22 +483,59 @@ impl RepositoryContent {
     /// sense. However, if there are I/O errors removing the content then
     /// this function will fail.
     pub fn remove_publisher(
-        &mut self,
-        name: &PublisherHandle,
-        jail: &uri::Rsync,
-        config: &RepositoryRetentionConfig,
-    ) -> KrillResult<()> {
+        &self,
+        publisher: PublisherHandle,
+        retention: RepositoryRetentionConfig,
+    ) -> KrillResult<Vec<RepositoryContentChange>> {
+        let mut res = vec![];
         // withdraw objects if any
-        if let Ok(objects) = self.objects_for_publisher(name) {
+        if let Ok(objects) = self.objects_for_publisher(&publisher) {
             let withdraws = objects.elements().iter().map(|e| e.as_withdraw()).collect();
             let delta = DeltaElements::new(vec![], vec![], withdraws);
 
-            self.rrdp.publish(delta, jail, config)?;
-            self.write_repository(config)?;
+            let update = self.rrdp.update_rrdp(delta, retention)?;
+            res.push(RepositoryContentChange::RrdpUpdated { update })
         }
+
         // remove publisher if present
-        self.publishers.remove(name);
-        Ok(())
+        if self.publishers.contains_key(&publisher) {
+            res.push(RepositoryContentChange::PublisherRemoved { publisher });
+        }
+
+        Ok(res)
+    }
+
+    /// Publish content for a publisher. Assumes that the delta was
+    /// already checked (this is done in RepositoryContentProxy::publish).
+    pub fn publish(
+        &self,
+        publisher: PublisherHandle,
+        delta: DeltaElements,
+        retention: RepositoryRetentionConfig,
+    ) -> KrillResult<Vec<RepositoryContentChange>> {
+        let mut res = vec![];
+
+        let mut current_objects = self
+            .publishers
+            .get(&publisher)
+            .cloned()
+            .ok_or_else(|| Error::PublisherUnknown(publisher.clone()))?;
+
+        debug!("  apply delta to current objects of {}", publisher);
+        current_objects.apply_delta(delta.clone());
+
+        res.push(RepositoryContentChange::PublishedObjects {
+            publisher,
+            current_objects,
+        });
+
+        // TODO: Stage changes for publishers, and *then* update RRDP (see #693)
+        debug!("   update RRDP state with changes");
+        let update = self.rrdp.update_rrdp(delta, retention)?;
+        debug!("   done updating RRDP state with changes");
+        res.push(RepositoryContentChange::RrdpUpdated { update });
+
+        Ok(res)
     }
 
     /// Returns the content stats for the repo
@@ -515,6 +697,7 @@ pub struct RrdpServer {
     notification: Notification,
 
     #[serde(skip_serializing_if = "VecDeque::is_empty", default = "VecDeque::new")]
+    /// This is used to determine when it is safe to clean up published files
     old_notifications: VecDeque<Notification>,
 
     snapshot: Snapshot,
@@ -591,13 +774,9 @@ impl RrdpServer {
         &self.notification
     }
 
-    /// Performs a session reset of the RRDP server. Useful if the serial needs
-    /// to be rolled, or in case the RRDP server needed to recover to a previous
-    /// state.
-    fn session_reset(&mut self) {
+    pub fn reset_session(&self) -> RrdpSessionReset {
         let session = RrdpSession::random();
-        let snapshot = self.snapshot.session_reset(session);
-
+        let snapshot = self.snapshot.with_session_reset(session);
         let snapshot_uri = snapshot.uri(&self.rrdp_base_uri);
         let snapshot_path = snapshot.path(&self.rrdp_base_dir);
         let snapshot_hash = Hash::from_data(snapshot.xml().as_slice());
@@ -605,6 +784,14 @@ impl RrdpServer {
         let snapshot_ref = SnapshotRef::new(snapshot_uri, snapshot_path, snapshot_hash);
 
         let notification = Notification::create(session, snapshot_ref);
+
+        RrdpSessionReset { snapshot, notification }
+    }
+
+    /// Applies the data from an RrdpSessionReset change.
+    fn apply_session_reset(&mut self, reset: RrdpSessionReset) {
+        let snapshot = reset.snapshot;
+        let notification = reset.notification;
 
         self.serial = notification.serial();
         self.session = notification.session();
@@ -614,30 +801,60 @@ impl RrdpServer {
         self.deltas = VecDeque::new();
     }
 
+    /// Applies the data from an RrdpUpdated change.
+    fn apply_rrdp_updated(&mut self, update: RrdpUpdated) {
+        self.serial += 1;
+        self.old_notifications.truncate(update.old_notifications_truncate);
+
+        let mut replaced_notification = self.notification.clone();
+        replaced_notification.replace(update.time);
+        self.old_notifications.push_front(replaced_notification);
+
+        let delta = Delta::new(
+            self.session,
+            self.serial,
+            update.time,
+            update.random.clone(),
+            update.delta_elements,
+        );
+        self.snapshot = self.snapshot.with_delta(update.random, delta.elements().clone());
+        self.notification = self.make_updated_notification(&self.snapshot, &delta, update.deltas_truncate);
+
+        self.deltas.truncate(update.deltas_truncate);
+        self.deltas.push_front(delta);
+    }
+
     /// Updates the RRDP server with the elements. Note that this assumes that
     /// the delta has already been checked against the jail and current
     /// objects of the publisher.
-    fn publish(
-        &mut self,
-        elements: DeltaElements,
-        jail: &uri::Rsync,
-        config: &RepositoryRetentionConfig,
-    ) -> KrillResult<()> {
-        if elements.is_empty() {
-            Ok(())
-        } else {
-            // Update the snapshot, this can fail if the delta is illegal.
-            self.snapshot.apply_delta(elements.clone(), jail)?;
-            self.serial += 1;
+    fn update_rrdp(
+        &self,
+        delta_elements: DeltaElements,
+        retention: RepositoryRetentionConfig,
+    ) -> KrillResult<RrdpUpdated> {
+        let time = Time::now();
+        let random = RrdpFileRandom::default();
 
-            self.update_deltas(elements, config);
-            self.update_notification(config);
+        let deltas_truncate = {
+            // It's a bit inefficient to "pre-create" a new snapshot just to get its size, but
+            // if we look at the current snapshot then we could be off.
+            let snapshot_size = self.snapshot.with_delta(random.clone(), delta_elements.clone()).size();
+            let delta_size = delta_elements.size();
+            self.find_deltas_truncate(delta_size, snapshot_size, retention)
+        };
 
-            Ok(())
-        }
+        let old_notifications_truncate = self.find_old_notifications_truncate(retention);
+
+        Ok(RrdpUpdated {
+            time,
+            random,
+            delta_elements,
+            old_notifications_truncate,
+            deltas_truncate,
+        })
     }
 
-    // Push the delta and truncate excessive deltas:
+    // Get the position to truncate excessive deltas:
     //  - never keep more than the size of the snapshot
     //  - always keep 'retention_delta_files_min_nr' files
     //  - always keep 'retention_delta_files_min_seconds' files
@@ -645,11 +862,16 @@ impl RrdpServer {
     //     - never keep more than 'retention_delta_files_max_nr'
     //     - never keep older than 'retention_delta_files_max_seconds'
     //     - keep the others
-    fn update_deltas(&mut self, elements: DeltaElements, config: &RepositoryRetentionConfig) {
-        self.deltas.push_front(Delta::new(self.session, self.serial, elements));
+    fn find_deltas_truncate(
+        &self,
+        delta_size: usize,
+        snapshot_size: usize,
+        config: RepositoryRetentionConfig,
+    ) -> usize {
+        // We will keep the new delta - not yet added to this.
+        // So, we use its size as the starting point for the total delta size.
         let mut keep = 0;
-        let mut size = 0;
-        let snapshot_size = self.snapshot.size();
+        let mut size = delta_size;
 
         let min_nr = config.retention_delta_files_min_nr;
         let min_secs = config.retention_delta_files_min_seconds;
@@ -675,50 +897,48 @@ impl RrdpServer {
                 keep += 1;
             }
         }
-        self.deltas.truncate(keep);
+
+        keep
+    }
+
+    // Find where to truncate old notification files
+    fn find_old_notifications_truncate(&self, retention: RepositoryRetentionConfig) -> usize {
+        self.old_notifications
+            .iter()
+            .position(|old| old.older_than_seconds(retention.retention_old_notification_files_seconds.into()))
+            .unwrap_or(self.old_notifications.len()) // truncating at len() will leave all elements
     }
 
     // Update the notification to include the current snapshot and
     // deltas. Remove old notifications exceeding the retention time,
     // so that we can delete old snapshots and deltas which are no longer
     // relevant.
-    fn update_notification(&mut self, config: &RepositoryRetentionConfig) {
+    fn make_updated_notification(&self, snapshot: &Snapshot, delta: &Delta, deltas_truncate: usize) -> Notification {
         let snapshot_ref = {
-            let snapshot_uri = self.snapshot.uri(&self.rrdp_base_uri);
-            let snapshot_path = self.snapshot.path(&self.rrdp_base_dir);
-            let snapshot_xml = self.snapshot.xml();
+            let snapshot_uri = snapshot.uri(&self.rrdp_base_uri);
+            let snapshot_path = snapshot.path(&self.rrdp_base_dir);
+            let snapshot_xml = snapshot.xml();
             let snapshot_hash = Hash::from_data(snapshot_xml.as_slice());
             SnapshotRef::new(snapshot_uri, snapshot_path, snapshot_hash)
         };
 
-        let delta_refs = self
-            .deltas
-            .iter()
-            .map(|delta| {
-                let serial = delta.serial();
-                let xml = delta.xml();
-                let hash = Hash::from_data(xml.as_slice());
+        let delta_ref = {
+            let serial = delta.serial();
+            let xml = delta.xml();
+            let hash = Hash::from_data(xml.as_slice());
 
-                let delta_uri = delta.uri(&self.rrdp_base_uri);
-                let delta_path = delta.path(&self.rrdp_base_dir);
-                let file_ref = FileRef::new(delta_uri, delta_path, hash);
-                DeltaRef::new(serial, file_ref)
-            })
-            .collect();
+            let delta_uri = delta.uri(&self.rrdp_base_uri);
+            let delta_path = delta.path(&self.rrdp_base_dir);
+            let file_ref = FileRef::new(delta_uri, delta_path, hash);
+            DeltaRef::new(serial, file_ref)
+        };
 
-        let mut notification = Notification::new(self.session, self.serial, snapshot_ref, delta_refs);
-
-        mem::swap(&mut self.notification, &mut notification);
-        notification.replace(self.notification.time());
-        self.old_notifications.push_front(notification);
-
-        self.old_notifications
-            .retain(|n| !n.older_than_seconds(config.retention_old_notification_files_seconds.into()));
+        self.notification.with_updates(snapshot_ref, delta_ref, deltas_truncate)
     }
 
     /// Write the (missing) RRDP files to disk, and remove the ones
     /// no longer referenced in the notification file.
-    fn write(&self, config: &RepositoryRetentionConfig) -> Result<(), Error> {
+    fn write(&self, retention: RepositoryRetentionConfig) -> Result<(), Error> {
         // write snapshot if it's not there
         let snapshot_path = self.snapshot.path(&self.rrdp_base_dir);
         if !snapshot_path.exists() {
@@ -815,7 +1035,7 @@ impl RrdpServer {
                 } else if !self.notification.includes_delta(serial)
                     && !self.old_notifications.iter().any(|n| n.includes_delta(serial))
                 {
-                    if config.retention_archive {
+                    if retention.retention_archive {
                         // If archiving is enabled, then move these directories under the archive base
 
                         let mut dest = self.rrdp_archive_dir.clone();
@@ -833,7 +1053,7 @@ impl RrdpServer {
                 // We still need this old serial dir for the delta, but may not need the snapshot
                 // in it unless archiving is enabled.. in that case leave them and move them when
                 // the complete serial dir goes out of scope above.
-                } else if !config.retention_archive
+                } else if !retention.retention_archive
                     && !self
                         .old_notifications
                         .iter()

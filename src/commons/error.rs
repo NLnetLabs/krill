@@ -27,7 +27,7 @@ use crate::{
     upgrades::PrepareUpgradeError,
 };
 
-use super::api::{BgpSecAsnKey, BgpSecDefinition, RoaConfiguration};
+use super::{api::{BgpSecAsnKey, BgpSecDefinition, RoaConfiguration}, eventsourcing::WalStoreError};
 
 //------------ RoaDeltaError -----------------------------------------------
 
@@ -158,6 +158,7 @@ pub enum Error {
     IoError(KrillIoError),
     KeyValueError(KeyValueError),
     AggregateStoreError(AggregateStoreError),
+    WalStoreError(WalStoreError),
     SignerError(String),
     HttpsSetup(String),
     HttpClientError(httpclient::Error),
@@ -325,7 +326,8 @@ impl fmt::Display for Error {
             //-----------------------------------------------------------------
             Error::IoError(e) => write!(f, "I/O error: {}", e),
             Error::KeyValueError(e) => write!(f, "Key/Value error: {}", e),
-            Error::AggregateStoreError(e) => write!(f, "Persistence error: {}", e),
+            Error::AggregateStoreError(e) => write!(f, "Persistence (aggregate store) error: {}", e),
+            Error::WalStoreError(e) => write!(f, "Persistence (wal store) error: {}", e),
             Error::SignerError(e) => write!(f, "Signing issue: {}", e),
             Error::HttpsSetup(e) => write!(f, "Cannot set up HTTPS: {}", e),
             Error::HttpClientError(e) => write!(f, "HTTP client error: {}", e),
@@ -523,6 +525,12 @@ impl From<AggregateStoreError> for Error {
     }
 }
 
+impl From<WalStoreError> for Error {
+    fn from(e: WalStoreError) -> Self {
+        Error::WalStoreError(e)
+    }
+}
+
 impl From<SignerError> for Error {
     fn from(e: SignerError) -> Self {
         Error::SignerError(e.to_string())
@@ -615,7 +623,7 @@ impl Error {
     pub fn status(&self) -> StatusCode {
         match self {
             // Most is bad requests by users, so just mapping the things that are not
-            Error::IoError(_) | Error::SignerError(_) | Error::AggregateStoreError(_) | Error::PublishingObjects(_) => {
+            Error::IoError(_) | Error::SignerError(_) | Error::AggregateStoreError(_) | Error::WalStoreError(_) |Error::PublishingObjects(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
             Error::PublisherUnknown(_)
@@ -649,6 +657,9 @@ impl Error {
 
             // internal server error
             Error::AggregateStoreError(e) => ErrorResponse::new("sys-store", &self).with_cause(e),
+            
+            // internal server error
+            Error::WalStoreError(e) => ErrorResponse::new("sys-wal-store", &self).with_cause(e),
 
             // internal server error
             Error::SignerError(e) => ErrorResponse::new("sys-signer", &self).with_cause(e),

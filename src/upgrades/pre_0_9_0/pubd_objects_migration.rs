@@ -20,7 +20,7 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::rrdp::{Delta, Notification, PublishElement, RrdpSession, Snapshot, SnapshotRef},
+        api::rrdp::{Delta, Notification, PublishElement, RrdpFileRandom, RrdpSession, Snapshot, SnapshotRef},
         eventsourcing::{
             Aggregate, AggregateStore, CommandKey, KeyStoreKey, KeyValueStore, StoredEvent, StoredValueInfo,
         },
@@ -91,7 +91,7 @@ impl PubdObjectsMigration {
         let repo_content = RepositoryContent::new(publishers, old_repo.rrdp.clone().into(), old_repo.rsync.clone());
 
         let upgrade_repo_content_store = KeyValueStore::disk(&config.upgrade_data_dir(), PUBSERVER_CONTENT_DIR)?;
-        let dflt_key = KeyStoreKey::simple(format!("{}.json", PUBSERVER_DFLT));
+        let dflt_key = KeyStoreKey::scoped("0".to_string(), "snapshot.json".to_string());
 
         upgrade_repo_content_store.store(&dflt_key, &repo_content).unwrap();
 
@@ -555,7 +555,12 @@ impl OldSnapshot {
 
 impl From<OldSnapshot> for Snapshot {
     fn from(old: OldSnapshot) -> Self {
-        Snapshot::new(old.session, old.serial, old.current_objects.into())
+        Snapshot::new(
+            old.session,
+            old.serial,
+            RrdpFileRandom::default(),
+            old.current_objects.into(),
+        )
     }
 }
 

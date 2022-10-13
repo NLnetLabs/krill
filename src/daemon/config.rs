@@ -614,7 +614,7 @@ impl IssuanceTimingConfig {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 pub struct RepositoryRetentionConfig {
     #[serde(default = "RepositoryRetentionConfig::dflt_retention_old_notification_files_seconds")]
     pub retention_old_notification_files_seconds: u32,
