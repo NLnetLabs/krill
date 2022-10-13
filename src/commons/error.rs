@@ -326,8 +326,8 @@ impl fmt::Display for Error {
             //-----------------------------------------------------------------
             Error::IoError(e) => write!(f, "I/O error: {}", e),
             Error::KeyValueError(e) => write!(f, "Key/Value error: {}", e),
-            Error::AggregateStoreError(e) => write!(f, "Persistence error: {}", e),
-            Error::WalStoreError(e) => write!(f, "Persistence error: {}", e),
+            Error::AggregateStoreError(e) => write!(f, "Persistence (aggregate store) error: {}", e),
+            Error::WalStoreError(e) => write!(f, "Persistence (wal store) error: {}", e),
             Error::SignerError(e) => write!(f, "Signing issue: {}", e),
             Error::HttpsSetup(e) => write!(f, "Cannot set up HTTPS: {}", e),
             Error::HttpClientError(e) => write!(f, "HTTP client error: {}", e),

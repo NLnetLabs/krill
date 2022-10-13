@@ -199,6 +199,7 @@ impl RepositoryManager {
             self.content.update_rrdp(self.config.rrdp_updates_config)?
         };
 
+        // Write the updated repository - NOTE: we no longer lock it.
         content.write_repository(self.config.rrdp_updates_config)?;
 
         Ok(None)

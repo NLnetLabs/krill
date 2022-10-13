@@ -155,14 +155,10 @@ impl RepositoryContentProxy {
     /// are within the publisher's uri space (jail).
     pub fn publish(&self, publisher: PublisherHandle, delta: PublishDelta, jail: &uri::Rsync) -> KrillResult<()> {
         debug!("Publish delta for {}", publisher);
-
-        debug!("   get content");
         let content = self.get_default_content()?;
-        debug!("   get objects for {}", publisher);
         let current_objects = content.objects_for_publisher(&publisher)?;
         let delta = DeltaElements::from(delta);
 
-        debug!("   verify delta");
         current_objects.verify_delta(&delta, jail)?;
 
         let command = RepositoryContentCommand::publish(self.default_handle.clone(), publisher, delta);
@@ -462,7 +458,7 @@ impl RepositoryContent {
         self.objects_for_publisher(publisher).map(|o| o.to_list_reply())
     }
 
-    fn reset_session(&self) -> KrillResult<Vec<RepositoryContentChange>> {
+    pub fn reset_session(&self) -> KrillResult<Vec<RepositoryContentChange>> {
         info!("Performing RRDP session reset.");
         let reset = self.rrdp.reset_session();
 
@@ -518,8 +514,6 @@ impl RepositoryContent {
             current_objects,
         });
 
-        // TODO: Stage changes for publishers, and *then* update RRDP (see #693)
-        debug!("   stage elements in RRDP state");
         res.push(RepositoryContentChange::RrdpDeltaStaged { delta });
 
         Ok(res)
