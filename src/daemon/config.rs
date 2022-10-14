@@ -358,14 +358,11 @@ impl SignerReference {
 }
 
 /// Global configuration for the Krill Server.
-///
-/// This will parse a default config file ('./defaults/krill.conf') unless
-/// another file is explicitly specified. Command line arguments may be used
-/// to override any of the settings in the config file.
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
     #[serde(default = "ConfigDefaults::ip")]
     ip: IpAddr,
+    ips: Option<Vec<IpAddr>>,
 
     #[serde(default = "ConfigDefaults::port")]
     pub port: u16,
@@ -729,8 +726,12 @@ impl Config {
         self.data_dir = data_dir;
     }
 
-    pub fn socket_addr(&self) -> SocketAddr {
-        SocketAddr::new(self.ip, self.port)
+    fn ips(&self) -> Vec<IpAddr> {
+        self.ips.as_ref().cloned().unwrap_or_else(|| vec![self.ip])
+    }
+
+    pub fn socket_addresses(&self) -> Vec<SocketAddr> {
+        self.ips().iter().map(|ip| SocketAddr::new(*ip, self.port)).collect()
     }
 
     pub fn https_mode(&self) -> HttpsMode {
@@ -757,7 +758,7 @@ impl Config {
                 if self.ip == ConfigDefaults::ip() {
                     uri::Https::from_string(format!("https://localhost:{}/", self.port)).unwrap()
                 } else {
-                    uri::Https::from_string(format!("https://{}:{}/", self.ip, self.port)).unwrap()
+                    uri::Https::from_string(format!("https://{}:{}/", self.ips()[0], self.port)).unwrap()
                 }
             }
             Some(uri) => uri.clone(),
@@ -976,6 +977,7 @@ impl Config {
 
         Config {
             ip,
+            ips: None,
             port,
             https_mode,
             data_dir,
@@ -1522,11 +1524,11 @@ pub enum HttpsMode {
 }
 
 impl HttpsMode {
-    pub fn generate_https_cert(&self) -> bool {
+    pub fn is_generate_https_cert(&self) -> bool {
         *self == HttpsMode::Generate
     }
 
-    pub fn disable_https(&self) -> bool {
+    pub fn is_disable_https(&self) -> bool {
         *self == HttpsMode::Disable
     }
 }
@@ -1686,8 +1688,8 @@ mod tests {
         env::set_var(KRILL_ENV_ADMIN_TOKEN, "secret");
 
         let c = Config::read_config("./defaults/krill.conf").unwrap();
-        let expected_socket_addr: SocketAddr = ([127, 0, 0, 1], 3000).into();
-        assert_eq!(c.socket_addr(), expected_socket_addr);
+        let expected_socket_addresses: Vec<SocketAddr> = vec![([127, 0, 0, 1], 3000).into()];
+        assert_eq!(c.socket_addresses(), expected_socket_addresses);
         assert!(c.testbed().is_none());
     }
 
