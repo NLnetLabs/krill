@@ -11,9 +11,7 @@ use chrono::Duration;
 use log::{error, LevelFilter};
 use serde::{de, Deserialize, Deserializer};
 
-use serde_with::formats::PreferOne;
-use serde_with::serde_as;
-use serde_with::OneOrMany;
+use serde_with::{formats::PreferOne, serde_as, OneOrMany};
 
 #[cfg(unix)]
 use syslog::Facility;
