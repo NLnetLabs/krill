@@ -237,11 +237,11 @@ async fn single_http_listener(krill_server: Arc<KrillServer>, socket_addr: Socke
         // It won't like a service made for a Server that is not of the type of the
         // TlsAcceptor we are about to set up.
         let service = make_service_fn(|_| {
-            let state = krill_server.clone();
+            let krill_server = krill_server.clone();
             async move {
                 Ok::<_, Infallible>(service_fn(move |req: hyper::Request<hyper::Body>| {
-                    let state = state.clone();
-                    map_requests(req, state)
+                    let krill_server = krill_server.clone();
+                    map_requests(req, krill_server)
                 }))
             }
         });
