@@ -11,6 +11,10 @@ use chrono::Duration;
 use log::{error, LevelFilter};
 use serde::{de, Deserialize, Deserializer};
 
+use serde_with::formats::PreferOne;
+use serde_with::serde_as;
+use serde_with::OneOrMany;
+
 #[cfg(unix)]
 use syslog::Facility;
 
@@ -43,8 +47,8 @@ use crate::commons::crypto::{KmipSignerConfig, Pkcs11SignerConfig};
 pub struct ConfigDefaults;
 
 impl ConfigDefaults {
-    fn ip() -> IpAddr {
-        IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))
+    fn ip() -> Vec<IpAddr> {
+        vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))]
     }
     fn port() -> u16 {
         3000
@@ -358,11 +362,12 @@ impl SignerReference {
 }
 
 /// Global configuration for the Krill Server.
+#[serde_as]
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
     #[serde(default = "ConfigDefaults::ip")]
-    ip: IpAddr,
-    ips: Option<Vec<IpAddr>>,
+    #[serde_as(deserialize_as = "OneOrMany<_, PreferOne>")]
+    ip: Vec<IpAddr>,
 
     #[serde(default = "ConfigDefaults::port")]
     pub port: u16,
@@ -726,8 +731,8 @@ impl Config {
         self.data_dir = data_dir;
     }
 
-    fn ips(&self) -> Vec<IpAddr> {
-        self.ips.as_ref().cloned().unwrap_or_else(|| vec![self.ip])
+    fn ips(&self) -> &Vec<IpAddr> {
+        &self.ip
     }
 
     pub fn socket_addresses(&self) -> Vec<SocketAddr> {
@@ -977,7 +982,6 @@ impl Config {
 
         Config {
             ip,
-            ips: None,
             port,
             https_mode,
             data_dir,
