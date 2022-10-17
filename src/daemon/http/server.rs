@@ -14,7 +14,6 @@ use std::{
 };
 
 use bytes::Bytes;
-use rpki::repository::resources::Asn;
 use serde::Serialize;
 
 use hyper::{
@@ -24,11 +23,16 @@ use hyper::{
     service::{make_service_fn, service_fn},
     Method,
 };
-use tokio::{join, signal::unix::SignalKind};
 
-use rpki::ca::{
-    idexchange,
-    idexchange::{CaHandle, ChildHandle, ParentHandle, PublisherHandle},
+use tokio::select;
+use tokio::signal::unix::SignalKind;
+
+use rpki::{
+    ca::{
+        idexchange,
+        idexchange::{CaHandle, ChildHandle, ParentHandle, PublisherHandle},
+    },
+    repository::resources::Asn,
 };
 
 use crate::{
@@ -173,18 +177,27 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
     );
 
     if let Some(lock) = optional_lock {
-        let _ = join!(
-            server_futures,
-            scheduler_future,
-            lock.handle_ctrl_c(),
-            #[cfg(unix)]
-            lock.handle_sig_term()
+        #[cfg(not(unix))]
+        select!(
+            _ = server_futures => error!("http server stopped unexpectedly"),
+            _ = scheduler_future => error!("scheduler stopped unexpectedly"),
+            _ = lock.handle_ctrl_c() => info!("ctrl-c received"),
+        );
+        #[cfg(unix)]
+        select!(
+            _ = server_futures => error!("http server stopped unexpectedly"),
+            _ = scheduler_future => error!("scheduler stopped unexpectedly"),
+            _ = lock.handle_ctrl_c() => info!("ctrl-c received"),
+            _ = lock.handle_sig_term() => info!("sig TERM received"),
         );
     } else {
-        let _ = join!(server_futures, scheduler_future);
+        select!(
+            _ = server_futures => error!("http server stopped unexpectedly"),
+            _ = scheduler_future => error!("scheduler stopped unexpectedly"),
+        );
     }
 
-    Err(Error::custom("server stopped due to fatal errors"))
+    Err(Error::custom("stopping krill process"))
 }
 
 async fn single_http_listener(krill_server: Arc<KrillServer>, socket_addr: SocketAddr, config: Arc<Config>) {
@@ -2217,7 +2230,6 @@ impl KrillLock {
     async fn handle_ctrl_c(&self) {
         tokio::signal::ctrl_c().await.unwrap();
         self.clean();
-        std::process::exit(0)
     }
 
     #[cfg(unix)]
@@ -2227,7 +2239,6 @@ impl KrillLock {
             .recv()
             .await;
         self.clean();
-        std::process::exit(0)
     }
 }
 
