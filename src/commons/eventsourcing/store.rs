@@ -183,10 +183,15 @@ impl AggregateLocks {
         }
 
         {
-            // There was no entry.. so create an entry on the fly
-            // and then return a lock.
-            let mut locks = self.locks.write().unwrap();
-            locks.create_handle_lock(handle.clone());
+            // There was no entry.. try to create an entry for the
+            // handle.
+            let mut map = self.locks.write().unwrap();
+
+            // But.. first check again, because we could have had a
+            // race condition if two threads call this function.
+            if !map.has_handle(&handle) {
+                map.create_handle_lock(handle.clone());
+            }
         }
 
         // Entry exists now, so return the lock
