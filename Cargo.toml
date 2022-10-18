@@ -54,7 +54,6 @@ rpki                  = { version = "0.15.8", features = [ "ca", "compat", "rrdp
 scrypt                = { version = "^0.6", optional = true, default-features = false }
 serde                 = { version = "^1.0", features = ["derive", "rc"] }
 serde_json            = "^1.0"
-serde_with            = "2.0.1"
 tokio                 = { version = "1", features = ["macros", "rt", "rt-multi-thread", "signal", "time"] }
 tokio-rustls          = "^0.22"
 toml                  = "^0.5"

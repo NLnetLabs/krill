@@ -11,8 +11,6 @@ use chrono::Duration;
 use log::{error, LevelFilter};
 use serde::{de, Deserialize, Deserializer};
 
-use serde_with::{formats::PreferOne, serde_as, OneOrMany};
-
 #[cfg(unix)]
 use syslog::Facility;
 
@@ -359,12 +357,38 @@ impl SignerReference {
     }
 }
 
+/// Inspired by the serde_with crate. But, given that we don't need all
+/// its features - just implementing the one thing we need here.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum OneOrMany<'a, T> {
+    One(T),
+    Many(Vec<T>),
+    #[serde(skip)]
+    _LifeTimeMarker(std::marker::PhantomData<&'a u32>),
+}
+
+impl<'a, T> From<OneOrMany<'a, T>> for Vec<T> {
+    fn from(one_or_many: OneOrMany<T>) -> Self {
+        match one_or_many {
+            OneOrMany::One(t) => vec![t],
+            OneOrMany::Many(vec_of_t) => vec_of_t,
+            OneOrMany::_LifeTimeMarker(_) => unreachable!("variant is never created"),
+        }
+    }
+}
+
+fn deserialize_config_ips<'de, D>(deserializer: D) -> Result<Vec<IpAddr>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    OneOrMany::<IpAddr>::deserialize(deserializer).map(|oom| oom.into())
+}
+
 /// Global configuration for the Krill Server.
-#[serde_as]
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
-    #[serde(default = "ConfigDefaults::ip")]
-    #[serde_as(deserialize_as = "OneOrMany<_, PreferOne>")]
+    #[serde(default = "ConfigDefaults::ip", deserialize_with = "deserialize_config_ips")]
     ip: Vec<IpAddr>,
 
     #[serde(default = "ConfigDefaults::port")]
@@ -1871,6 +1895,26 @@ mod tests {
         let old_config = r#"auth_token = "secret""#;
         let c = parse_and_process_config_str(old_config).unwrap();
         assert_eq!(c.admin_token.as_ref(), "secret");
+    }
+
+    #[test]
+    fn parse_single_ip() {
+        let config_str = r#"
+            auth_token = "secret"
+            ip         = "127.0.0.1"
+        "#;
+
+        parse_and_process_config_str(config_str).unwrap();
+    }
+
+    #[test]
+    fn parse_multiple_ips() {
+        let config_str = r#"
+            auth_token = "secret"
+            ip         =  [ "127.0.0.1", "::1" ]
+        "#;
+
+        parse_and_process_config_str(config_str).unwrap();
     }
 
     #[cfg(not(feature = "hsm"))]
