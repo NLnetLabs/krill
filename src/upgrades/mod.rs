@@ -404,7 +404,7 @@ pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -
                 ))
             } else if versions.from < KrillVersion::candidate(0, 12, 0, 2) {
                 info!(
-                    "Krill upgrade from {} to {}. Check publication server objects need migration",
+                    "Krill upgrade from {} to {}. Check if publication server objects need migration.",
                     versions.from(),
                     versions.to()
                 );
@@ -733,6 +733,12 @@ mod tests {
         finalise_data_migration(report.versions(), &config).unwrap();
 
         let _ = fs::remove_dir_all(work_dir);
+    }
+
+    #[test]
+    fn parse_0_10_0_rc3_repository_content() {
+        let json = include_str!("../../test-resources/migrations/v0_10_0/0.json");
+        let _repo: RepositoryContent = serde_json::from_str(json).unwrap();
     }
 
     #[cfg(all(feature = "hsm", not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11"))))]
