@@ -154,6 +154,7 @@ pub async fn start_krill_daemon(config: Arc<Config>) -> Result<(), Error> {
     // If the operator wanted to do the upgrade only, now is a good time to report success and stop
     if env::var(KRILL_ENV_UPGRADE_ONLY).is_ok() {
         println!("Krill upgrade successful");
+        std::process::exit(0);
     }
 
     // Build the scheduler which will be responsible for executing planned/triggered tasks
