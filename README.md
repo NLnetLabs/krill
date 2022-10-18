@@ -25,7 +25,10 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 # Changelog
 
-## 0.12.0 RC1 'Crickets'
+## 0.12.0 RC2 'Crickets'
+
+RC2 fixes an issue in RC1 where the repository content would not be upgraded
+properly.
 
 This release vastly reduces the CPU usage by Publication Servers for big RPKI
 repositories.
