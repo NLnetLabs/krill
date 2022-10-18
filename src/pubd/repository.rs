@@ -696,6 +696,7 @@ pub struct RrdpServer {
 
     session: RrdpSession,
     serial: u64,
+    #[serde(default = "Time::now")] // be backward compatible
     last_update: Time,
 
     snapshot: SnapshotData,

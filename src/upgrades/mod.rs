@@ -328,6 +328,7 @@ pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -
     match upgrade_versions(config.as_ref()) {
         None => Ok(None),
         Some(versions) => {
+            info!("Preparing upgrade from {} to {}", versions.from(), versions.to());
             if versions.from < KrillVersion::release(0, 6, 0) {
                 let msg = "Cannot upgrade Krill installations from before version 0.6.0. Please upgrade to any version ranging from 0.6.0 to 0.8.1 first, and then upgrade to this version.";
                 error!("{}", msg);
@@ -401,7 +402,12 @@ pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -
                 Err(PrepareUpgradeError::custom(
                     "Cannot upgrade from 0.10.0 RC1 or RC2. Please contact rpki-team@nlnetlabs.nl",
                 ))
-            } else if versions.from < KrillVersion::dev(0, 12, 0, "rc1-dev".to_string()) {
+            } else if versions.from < KrillVersion::candidate(0, 12, 0, 2) {
+                info!(
+                    "Krill upgrade from {} to {}. Check if publication server objects need migration.",
+                    versions.from(),
+                    versions.to()
+                );
                 let pubd_objects_migrated = migrate_pre_0_12_pubd_objects(&config)?;
                 Ok(Some(UpgradeReport::new(pubd_objects_migrated, versions)))
             } else {
@@ -419,6 +425,7 @@ fn migrate_pre_0_12_pubd_objects(config: &Config) -> KrillResult<bool> {
         let old_store = KeyValueStore::disk(&config.data_dir, "pubd_objects")?;
         let old_key = KeyStoreKey::simple("0.json".to_string());
         if let Ok(Some(repo_content)) = old_store.get::<RepositoryContent>(&old_key) {
+            info!("Found pre 0.12.0 RC2 publication server data. Migrating..");
             let new_key = KeyStoreKey::scoped("0".to_string(), "snapshot.json".to_string());
             let upgrade_store = KeyValueStore::disk(&config.upgrade_data_dir(), "pubd_objects")?;
             upgrade_store.store(&new_key, &repo_content)?;
@@ -436,6 +443,11 @@ fn migrate_pre_0_12_pubd_objects(config: &Config) -> KrillResult<bool> {
 /// the current versions for the "cas" and "pubd" store where applicable.
 pub fn finalise_data_migration(upgrade: &UpgradeVersions, config: &Config) -> KrillResult<()> {
     // Move directories - if applicable (servers can have cas, repo server or both)
+    info!(
+        "finish data migrations for upgrade from {} to {}",
+        upgrade.from(),
+        upgrade.to()
+    );
 
     let from = upgrade.from();
     let data_dir = &config.data_dir;
@@ -721,6 +733,12 @@ mod tests {
         finalise_data_migration(report.versions(), &config).unwrap();
 
         let _ = fs::remove_dir_all(work_dir);
+    }
+
+    #[test]
+    fn parse_0_10_0_rc3_repository_content() {
+        let json = include_str!("../../test-resources/migrations/v0_10_0/0.json");
+        let _repo: RepositoryContent = serde_json::from_str(json).unwrap();
     }
 
     #[cfg(all(feature = "hsm", not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11"))))]
