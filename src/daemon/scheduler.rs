@@ -5,7 +5,10 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use tokio::time::sleep;
 
-use rpki::ca::idexchange::{CaHandle, ParentHandle};
+use rpki::ca::{
+    idexchange::{CaHandle, ParentHandle},
+    provisioning::{ResourceClassName, RevocationRequest},
+};
 
 use crate::{
     commons::{actor::Actor, api::Timestamp, bgp::BgpAnalyser, KrillResult},
@@ -18,6 +21,7 @@ use crate::{
         config::Config,
         mq::{in_hours, in_minutes, now, Task, TaskQueue},
     },
+    pubd::RepositoryManager,
 };
 
 #[cfg(feature = "multi-user")]
@@ -26,6 +30,7 @@ use crate::daemon::auth::common::session::LoginSessionCache;
 pub struct Scheduler {
     tasks: Arc<TaskQueue>,
     ca_manager: Arc<CaManager>,
+    repo_manager: Arc<RepositoryManager>,
     bgp_analyser: Arc<BgpAnalyser>,
     #[cfg(feature = "multi-user")]
     // Responsible for purging expired cached login tokens
@@ -39,6 +44,7 @@ impl Scheduler {
     pub fn build(
         tasks: Arc<TaskQueue>,
         ca_manager: Arc<CaManager>,
+        repo_manager: Arc<RepositoryManager>,
         bgp_analyser: Arc<BgpAnalyser>,
         #[cfg(feature = "multi-user")] login_session_cache: Arc<LoginSessionCache>,
         config: Arc<Config>,
@@ -47,6 +53,7 @@ impl Scheduler {
         Scheduler {
             tasks,
             ca_manager,
+            repo_manager,
             bgp_analyser,
             #[cfg(feature = "multi-user")]
             login_session_cache,
@@ -58,11 +65,11 @@ impl Scheduler {
 
     /// Run the scheduler in the background. It will sweep the message queue for tasks
     /// and re-schedule new tasks as needed.
-    pub async fn run(&self) -> KrillResult<()> {
+    pub async fn run(&self) {
         loop {
             while let Some(evt) = self.tasks.pop(now()) {
-                match evt {
-                    Task::QueueStartTasks => self.queue_start_tasks().await?, // return error and stop server on failure
+                if let Err(e) = match evt {
+                    Task::QueueStartTasks => self.queue_start_tasks().await, // return error and stop server on failure
 
                     Task::SyncRepo { ca } => self.sync_repo(ca).await,
 
@@ -70,60 +77,34 @@ impl Scheduler {
 
                     Task::SuspendChildrenIfNeeded { ca } => self.suspend_children_if_needed(ca).await,
 
-                    Task::RepublishIfNeeded => self.republish_if_needed().await?,
+                    Task::RepublishIfNeeded => self.republish_if_needed().await,
 
-                    Task::RenewObjectsIfNeeded => self.renew_objects_if_needed().await?,
+                    Task::RenewObjectsIfNeeded => self.renew_objects_if_needed().await,
 
                     Task::RefreshAnnouncementsInfo => self.announcements_refresh().await,
 
                     #[cfg(feature = "multi-user")]
                     Task::SweepLoginCache => self.sweep_login_cache(),
 
+                    Task::UpdateSnapshots => self.update_snapshots(),
+
+                    Task::RrdpUpdateIfNeeded => self.update_rrdp_if_needed(),
+
                     Task::ResourceClassRemoved {
                         ca,
                         parent,
                         rcn,
                         revocation_requests,
-                    } => {
-                        info!(
-                            "Trigger send revoke requests for removed RC for '{}' under '{}'",
-                            ca, parent
-                        );
-
-                        let requests = HashMap::from([(rcn, revocation_requests)]);
-
-                        if self
-                            .ca_manager
-                            .send_revoke_requests(&ca, &parent, requests)
-                            .await
-                            .is_err()
-                        {
-                            warn!(
-                                "Could not revoke key for removed resource class. This is not \
-                            an issue, because typically the parent will revoke our keys pro-actively, \
-                            just before removing the resource class entitlements."
-                            );
-                        }
-                    }
+                    } => self.resource_class_removed(ca, parent, rcn, revocation_requests).await,
 
                     Task::UnexpectedKey {
                         ca,
                         rcn,
                         revocation_request,
-                    } => {
-                        info!(
-                            "Trigger sending revocation requests for unexpected key with id '{}' in RC '{}'",
-                            revocation_request.key(),
-                            rcn
-                        );
-                        if let Err(e) = self
-                            .ca_manager
-                            .send_revoke_unexpected_key(&ca, rcn, revocation_request)
-                            .await
-                        {
-                            error!("Could not revoke unexpected surplus key at parent: {}", e);
-                        }
-                    }
+                    } => self.unexpected_key(ca, rcn, revocation_request).await,
+                } {
+                    error!("Fatal error in scheduler: {}", e);
+                    return;
                 }
             }
 
@@ -211,13 +192,19 @@ impl Scheduler {
         #[cfg(feature = "multi-user")]
         self.tasks.sweep_login_cache(in_minutes(1));
 
+        self.tasks.update_snapshots(in_hours(24));
+
         Ok(())
     }
 
-    async fn sync_repo(&self, ca: CaHandle) {
+    async fn sync_repo(&self, ca: CaHandle) -> KrillResult<()> {
         debug!("Synchronize CA {} with repository", ca);
 
-        if let Err(e) = self.ca_manager.cas_repo_sync_single(&ca).await {
+        if let Err(e) = self
+            .ca_manager
+            .cas_repo_sync_single(self.repo_manager.as_ref(), &ca)
+            .await
+        {
             let next = self.config.requeue_remote_failed();
 
             error!(
@@ -227,10 +214,12 @@ impl Scheduler {
 
             self.tasks.sync_repo(ca, next);
         }
+
+        Ok(())
     }
 
     /// Try to synchronize a CA with a specific parent, reschedule if this fails
-    async fn sync_parent(&self, ca: CaHandle, parent: ParentHandle) {
+    async fn sync_parent(&self, ca: CaHandle, parent: ParentHandle) -> KrillResult<()> {
         info!("Synchronize CA '{}' with its parent '{}'", ca, parent);
         if let Err(e) = self.ca_manager.ca_sync_parent(&ca, &parent, &self.system_actor).await {
             let next = self.config.requeue_remote_failed();
@@ -244,16 +233,20 @@ impl Scheduler {
             let next = self.config.ca_refresh_next();
             self.tasks.sync_parent(ca, parent, next);
         }
+
+        Ok(())
     }
 
     /// Try to suspend children for a CA
-    async fn suspend_children_if_needed(&self, ca_handle: CaHandle) {
+    async fn suspend_children_if_needed(&self, ca_handle: CaHandle) -> KrillResult<()> {
         debug!("Verify if CA '{}' has children that need to be suspended", ca_handle);
         self.ca_manager
             .ca_suspend_inactive_children(&ca_handle, self.started, &self.system_actor)
             .await;
 
         self.tasks.suspend_children(ca_handle, in_hours(1));
+
+        Ok(())
     }
 
     /// Let CAs that need it republish their CRL/MFT
@@ -274,14 +267,16 @@ impl Scheduler {
     }
 
     /// Update announcement info
-    async fn announcements_refresh(&self) {
+    async fn announcements_refresh(&self) -> KrillResult<()> {
         if let Err(e) = self.bgp_analyser.update().await {
             error!("Failed to update BGP announcements: {}", e)
         }
 
         // check again in 10 minutes, note.. this is a no-op in case the actual update was less
         // then 1 hour ago. See BGP_RIS_REFRESH_MINUTES constant.
-        self.tasks.refresh_announcements_info(in_minutes(10))
+        self.tasks.refresh_announcements_info(in_minutes(10));
+
+        Ok(())
     }
 
     /// Let CAs that need it re-issue signed objects
@@ -295,11 +290,96 @@ impl Scheduler {
     }
 
     #[cfg(feature = "multi-user")]
-    fn sweep_login_cache(&self) {
+    fn sweep_login_cache(&self) -> KrillResult<()> {
         if let Err(e) = self.login_session_cache.sweep() {
             error!("Background sweep of session decryption cache failed: {}", e);
         }
 
         self.tasks.sweep_login_cache(in_minutes(1));
+
+        Ok(())
+    }
+
+    fn update_snapshots(&self) -> KrillResult<()> {
+        if let Err(e) = self.repo_manager.update_snapshots() {
+            error!("Could not update snapshots on disk! Error: {}", e);
+        }
+
+        self.tasks.update_snapshots(in_hours(24));
+
+        Ok(())
+    }
+
+    fn update_rrdp_if_needed(&self) -> KrillResult<()> {
+        match self.repo_manager.update_rrdp_if_needed() {
+            Err(e) => {
+                error!("Could not update RRDP deltas! Error: {}", e);
+                // Should we panic in this case? For now, just keep trying, this may
+                // be an issue that gets resolved (permission? disk space?)
+                self.tasks.update_rrdp_if_needed(in_hours(1));
+            }
+            Ok(None) => {
+                // update was done, or there were no staged changes
+            }
+            Ok(Some(later_time)) => {
+                // Update was NOT done. There are staged changes, but the rrdp update
+                // interval has not yet passed. It can be done at later_time.
+                self.tasks.update_rrdp_if_needed(later_time.into());
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn resource_class_removed(
+        &self,
+        ca: CaHandle,
+        parent: ParentHandle,
+        rcn: ResourceClassName,
+        revocation_requests: Vec<RevocationRequest>,
+    ) -> KrillResult<()> {
+        info!(
+            "Trigger send revoke requests for removed RC for '{}' under '{}'",
+            ca, parent
+        );
+
+        let requests = HashMap::from([(rcn, revocation_requests)]);
+
+        if self
+            .ca_manager
+            .send_revoke_requests(&ca, &parent, requests)
+            .await
+            .is_err()
+        {
+            warn!(
+                "Could not revoke key for removed resource class. This is not \
+                            an issue, because typically the parent will revoke our keys pro-actively, \
+                            just before removing the resource class entitlements."
+            );
+        }
+
+        Ok(())
+    }
+
+    async fn unexpected_key(
+        &self,
+        ca: CaHandle,
+        rcn: ResourceClassName,
+        revocation_request: RevocationRequest,
+    ) -> KrillResult<()> {
+        info!(
+            "Trigger sending revocation requests for unexpected key with id '{}' in RC '{}'",
+            revocation_request.key(),
+            rcn
+        );
+        if let Err(e) = self
+            .ca_manager
+            .send_revoke_unexpected_key(&ca, rcn, revocation_request)
+            .await
+        {
+            error!("Could not revoke unexpected surplus key at parent: {}", e);
+        }
+
+        Ok(())
     }
 }

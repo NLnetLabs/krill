@@ -10,7 +10,6 @@ use rpki::{
     ca::{
         idexchange,
         idexchange::{CaHandle, ChildHandle, ParentHandle, PublisherHandle},
-        publication::{ListReply, PublishDelta},
     },
     repository::resources::ResourceSet,
     uri,
@@ -157,12 +156,12 @@ impl KrillServer {
         };
         let system_actor = authorizer.actor_from_def(ACTOR_DEF_KRILL);
 
+        // Used to have a shared queue for the ca_manager, repo_manager and the background job scheduler.
+        let mq = Arc::new(TaskQueue::default());
+
         // for now, support that existing embedded repositories are still supported.
         // this should be removed in future after people have had a chance to separate.
-        let repo_manager = Arc::new(RepositoryManager::build(config.clone(), signer.clone())?);
-
-        // Used to have a shared queue for the caserver and the background job scheduler.
-        let mq = Arc::new(TaskQueue::default());
+        let repo_manager = Arc::new(RepositoryManager::build(config.clone(), mq.clone(), signer.clone())?);
 
         let ca_manager =
             Arc::new(ca::CaManager::build(config.clone(), mq.clone(), signer, system_actor.clone()).await?);
@@ -205,7 +204,13 @@ impl KrillServer {
                     let repo_response = repo_manager.repository_response(&testbed_ca_handle.convert())?;
                     let repo_contact = RepositoryContact::for_response(repo_response).map_err(Error::rfc8183)?;
                     ca_manager
-                        .update_repo(testbed_ca_handle.clone(), repo_contact, false, &system_actor)
+                        .update_repo(
+                            repo_manager.as_ref(),
+                            testbed_ca_handle.clone(),
+                            repo_contact,
+                            false,
+                            &system_actor,
+                        )
                         .await?;
 
                     // Establish the TA (parent) <-> testbed CA (child) relationship
@@ -297,6 +302,7 @@ impl KrillServer {
         Scheduler::build(
             self.mq.clone(),
             self.ca_manager.clone(),
+            self.repo_manager.clone(),
             self.bgp_analyser.clone(),
             #[cfg(feature = "multi-user")]
             self.login_session_cache.clone(),
@@ -403,7 +409,13 @@ impl KrillServer {
             let repo_contact = RepositoryContact::for_response(repo_response).map_err(Error::rfc8183)?;
 
             ca_manager
-                .update_repo(ca_handle.clone(), repo_contact, false, &system_actor)
+                .update_repo(
+                    repo_manager.as_ref(),
+                    ca_handle.clone(),
+                    repo_contact,
+                    false,
+                    &system_actor,
+                )
                 .await?;
 
             // Establish the Parent <-> CA relationship
@@ -767,7 +779,7 @@ impl KrillServer {
     /// orphaned, and they will only learn of this sad fact when they choose
     /// to call home.
     pub async fn ca_delete(&self, ca: &CaHandle, actor: &Actor) -> KrillResult<()> {
-        self.ca_manager.delete_ca(ca, actor).await
+        self.ca_manager.delete_ca(self.repo_manager.as_ref(), ca, actor).await
     }
 
     /// Returns the parent contact for a CA and parent, or NONE if either the CA or the parent cannot be found.
@@ -805,7 +817,9 @@ impl KrillServer {
 
     /// Update the repository for a CA, or return an error. (see `CertAuth::repo_update`)
     pub async fn ca_repo_update(&self, ca: CaHandle, contact: RepositoryContact, actor: &Actor) -> KrillEmptyResult {
-        self.ca_manager.update_repo(ca, contact, true, actor).await
+        self.ca_manager
+            .update_repo(self.repo_manager.as_ref(), ca, contact, true, actor)
+            .await
     }
 
     pub async fn ca_update_id(&self, ca: CaHandle, actor: &Actor) -> KrillEmptyResult {
@@ -944,21 +958,6 @@ impl KrillServer {
     /// Re-issue ROA objects so that they will use short subjects (see issue #700)
     pub async fn force_renew_roas(&self) -> KrillResult<()> {
         self.ca_manager.force_renew_roas_all(self.system_actor()).await
-    }
-}
-
-/// # Handle publication requests
-///
-impl KrillServer {
-    /// Handles a publish delta request sent to the API, or.. through
-    /// the CmsProxy.
-    pub fn handle_delta(&self, publisher: PublisherHandle, delta: PublishDelta) -> KrillEmptyResult {
-        self.repo_manager.publish(publisher, delta)
-    }
-
-    /// Handles a list request sent to the API, or.. through the CmsProxy.
-    pub fn handle_list(&self, publisher: &PublisherHandle) -> KrillResult<ListReply> {
-        self.repo_manager.list(publisher)
     }
 }
 

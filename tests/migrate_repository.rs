@@ -29,7 +29,9 @@ async fn migrate_repository() {
     info("#                                                                #");
     info("##################################################################");
     info("");
-    let krill_dir = start_krill_with_default_test_config(true, false, false, false).await;
+    // Use a 5 second RRDP update interval for the Krill server, so that we can also
+    // test here that the re-scheduling of delayed RRDP deltas works.
+    let krill_dir = start_krill_testbed_with_rrdp_interval(5).await;
 
     info("##################################################################");
     info("#                                                                #");
@@ -37,7 +39,7 @@ async fn migrate_repository() {
     info("#                                                                #");
     info("##################################################################");
     info("");
-    let pubd_dir = start_krill_pubd().await;
+    let pubd_dir = start_krill_pubd(5).await;
 
     let ta = ta_handle();
     let testbed = ca_handle("testbed");

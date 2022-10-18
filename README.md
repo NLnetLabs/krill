@@ -25,6 +25,24 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 # Changelog
 
+## 0.12.0 RC1 'Crickets'
+
+This release vastly reduces the CPU usage by Publication Servers for big RPKI
+repositories.
+
+In addition to this we added a small feature, and fixed an interop issue:
+- Listen on IPv4+IPv6 #955
+- Fix rfc6492 interop (AKI format) #948
+
+Upgrade instructions for the RC release are here:
+https://krill.docs.nlnetlabs.nl/en/latest/upgrade.html#v0-12-0
+
+The overview of all issues for this release can be found here:
+https://github.com/NLnetLabs/krill/projects/23
+
+Full documentation for the RC version can be found here:
+https://krill.docs.nlnetlabs.nl/en/latest/
+
 ## 0.11.0 'What about that ROA?'
 
 In this release we introduce two features in the Krill API and CLI:
@@ -75,14 +93,6 @@ was missing.
 
 Because the namespace is not critical in this context, this new Krill release will
 no longer reject the XML files because of this missing trailing slash.
-
-## 0.11.0-RC1
-
-In this release we introduce some improvements to the ROA management API:
-- Include (optional) comment with configured (ROA) authorisations (#863)
-
-The full list of changes can be found here:
-https://github.com/NLnetLabs/krill/projects/21
 
 ## 0.10.0 'Hush'
 

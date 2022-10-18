@@ -15,7 +15,6 @@ pub mod cmslogger;
 pub mod ext_serde;
 pub mod file;
 pub mod httpclient;
-pub mod xml;
 
 //------------ KrillVersion --------------------------------------------------
 
@@ -58,7 +57,7 @@ impl KrillVersion {
         }
     }
 
-    fn dev(major: u64, minor: u64, patch: u64, addition: String) -> Self {
+    pub fn dev(major: u64, minor: u64, patch: u64, addition: String) -> Self {
         KrillVersion {
             major,
             minor,

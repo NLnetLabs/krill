@@ -20,7 +20,7 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::rrdp::{Delta, Notification, PublishElement, RrdpSession, Snapshot, SnapshotRef},
+        api::rrdp::{DeltaData, RrdpFileRandom, RrdpSession, SnapshotData},
         eventsourcing::{
             Aggregate, AggregateStore, CommandKey, KeyStoreKey, KeyValueStore, StoredEvent, StoredValueInfo,
         },
@@ -30,16 +30,15 @@ use crate::{
         KRILL_VERSION, PUBSERVER_CONTENT_DIR, PUBSERVER_DFLT, PUBSERVER_DIR, REPOSITORY_RRDP_DIR, RRDP_FIRST_SERIAL,
     },
     daemon::config::Config,
-    pubd::{
-        RepositoryAccess, RepositoryAccessInitDetails, RepositoryContent, RrdpServer, RrdpSessionReset, RrdpUpdate,
-        RsyncdStore,
-    },
+    pubd::{RepositoryAccess, RepositoryAccessInitDetails, RepositoryContent, RrdpServer, RsyncdStore, StagedElements},
     upgrades::pre_0_9_0::{
         old_commands::{OldStorableRepositoryCommand, OldStoredEffect, OldStoredRepositoryCommand},
-        old_events::{OldCurrentObjects, OldPubdEvt, OldPubdEvtDet, OldPubdInit, OldPublisher},
+        old_events::{OldCurrentObjects, OldPubdEvt, OldPubdEvtDet, OldPubdInit, OldPublisher, OldRrdpSessionReset},
     },
     upgrades::{PrepareUpgradeError, UpgradeMode, UpgradeResult, UpgradeStore},
 };
+
+use super::old_events::{OldNotification, OldRrdpUpdate, SnapshotRef};
 
 pub struct PubdObjectsMigration;
 
@@ -91,7 +90,7 @@ impl PubdObjectsMigration {
         let repo_content = RepositoryContent::new(publishers, old_repo.rrdp.clone().into(), old_repo.rsync.clone());
 
         let upgrade_repo_content_store = KeyValueStore::disk(&config.upgrade_data_dir(), PUBSERVER_CONTENT_DIR)?;
-        let dflt_key = KeyStoreKey::simple(format!("{}.json", PUBSERVER_DFLT));
+        let dflt_key = KeyStoreKey::scoped("0".to_string(), "snapshot.json".to_string());
 
         upgrade_repo_content_store.store(&dflt_key, &repo_content).unwrap();
 
@@ -388,7 +387,7 @@ impl Aggregate for OldRepository {
 }
 
 impl OldRepository {
-    fn update_publisher(&mut self, publisher: &PublisherHandle, update: &RrdpUpdate) {
+    fn update_publisher(&mut self, publisher: &PublisherHandle, update: &OldRrdpUpdate) {
         self.publishers
             .get_mut(publisher)
             .unwrap()
@@ -407,13 +406,13 @@ pub struct OldRrdpServer {
 
     session: RrdpSession,
     serial: u64,
-    notification: Notification,
+    notification: OldNotification,
 
     #[serde(skip_serializing_if = "VecDeque::is_empty", default = "VecDeque::new")]
-    old_notifications: VecDeque<Notification>,
+    old_notifications: VecDeque<OldNotification>,
 
     snapshot: OldSnapshot,
-    deltas: Vec<Delta>,
+    deltas: Vec<DeltaData>,
 }
 
 impl OldRrdpServer {
@@ -430,7 +429,7 @@ impl OldRrdpServer {
 
         let snapshot_ref = SnapshotRef::new(snapshot_uri, snapshot_path, snapshot_hash);
 
-        let notification = Notification::create(session, snapshot_ref);
+        let notification = OldNotification::create(session, snapshot_ref);
 
         OldRrdpServer {
             rrdp_base_uri,
@@ -446,7 +445,7 @@ impl OldRrdpServer {
 }
 
 impl OldRrdpServer {
-    fn apply_update(&mut self, update: RrdpUpdate) {
+    fn apply_update(&mut self, update: OldRrdpUpdate) {
         let (delta, mut notification) = update.unpack();
 
         self.serial = notification.serial();
@@ -466,14 +465,14 @@ impl OldRrdpServer {
         self.deltas.retain(|d| d.serial() >= last_delta);
     }
 
-    fn apply_reset(&mut self, reset: RrdpSessionReset) {
+    fn apply_reset(&mut self, reset: OldRrdpSessionReset) {
         let (snapshot, notification) = reset.unpack();
 
         self.serial = notification.serial();
         self.session = notification.session();
         self.notification = notification;
         self.old_notifications.clear();
-        self.snapshot = snapshot.into();
+        self.snapshot = snapshot;
         self.deltas = vec![];
     }
 }
@@ -512,10 +511,10 @@ impl From<OldRrdpServer> for RrdpServer {
             rrdp_archive_dir,
             old.session,
             old.serial,
-            old.notification,
-            old.old_notifications,
+            old.notification.time(),
             old.snapshot.into(),
             VecDeque::from(old.deltas),
+            StagedElements::default(),
         )
     }
 }
@@ -537,44 +536,22 @@ impl OldSnapshot {
         }
     }
 
-    pub fn apply_delta(&mut self, delta: Delta) {
-        let (session, serial, elements) = delta.unwrap();
-        self.session = session;
-        self.serial = serial;
+    pub fn apply_delta(&mut self, delta: DeltaData) {
+        let elements = delta.into_elements();
         self.current_objects.apply_delta(elements)
     }
 
     fn xml(&self) -> Vec<u8> {
-        self.to_snapshot().xml()
+        self.to_snapshot().xml(self.session, self.serial)
     }
 
-    fn to_snapshot(&self) -> Snapshot {
+    fn to_snapshot(&self) -> SnapshotData {
         self.clone().into()
     }
 }
 
-impl From<OldSnapshot> for Snapshot {
+impl From<OldSnapshot> for SnapshotData {
     fn from(old: OldSnapshot) -> Self {
-        Snapshot::new(old.session, old.serial, old.current_objects.into())
-    }
-}
-
-impl From<Snapshot> for OldSnapshot {
-    fn from(snap: Snapshot) -> Self {
-        let (session, serial, current_objects) = snap.unpack();
-
-        let map: HashMap<Hash, PublishElement> = current_objects
-            .elements()
-            .into_iter()
-            .map(|p| (p.base64().to_hash(), p.clone()))
-            .collect();
-
-        let current_objects = OldCurrentObjects::new(map);
-
-        OldSnapshot {
-            session,
-            serial,
-            current_objects,
-        }
+        SnapshotData::new(RrdpFileRandom::default(), old.current_objects.into())
     }
 }

@@ -17,8 +17,8 @@ use crate::{
         KrillResult,
     },
     constants::{CASERVER_DIR, CA_OBJECTS_DIR, PUBSERVER_CONTENT_DIR, PUBSERVER_DIR, UPGRADE_REISSUE_ROAS_CAS_LIMIT},
-    daemon::{config::Config, krillserver::KrillServer},
-    pubd::RepositoryManager,
+    daemon::{config::Config, krillserver::KrillServer, mq::TaskQueue},
+    pubd::{RepositoryContent, RepositoryManager},
 };
 
 #[cfg(feature = "hsm")]
@@ -385,13 +385,15 @@ pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -
                     let mut repo_manager_migration_config = (*config).clone();
                     repo_manager_migration_config.data_dir = upgrade_data_dir;
 
+                    let mq = Arc::new(TaskQueue::default());
                     let repo_manager =
-                        RepositoryManager::build(Arc::new(repo_manager_migration_config), signer.clone())?;
+                        RepositoryManager::build(Arc::new(repo_manager_migration_config), mq, signer.clone())?;
 
                     pre_0_9_0::CaObjectsMigration::prepare(mode, config, repo_manager, signer)?;
                 } else {
                     pre_0_10_0::PublicationServerMigration::prepare(mode, &config)?;
                     pre_0_10_0::CasMigration::prepare(mode, &config)?;
+                    migrate_pre_0_12_pubd_objects(&config)?;
                 }
 
                 Ok(Some(UpgradeReport::new(true, versions)))
@@ -399,10 +401,33 @@ pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -
                 Err(PrepareUpgradeError::custom(
                     "Cannot upgrade from 0.10.0 RC1 or RC2. Please contact rpki-team@nlnetlabs.nl",
                 ))
+            } else if versions.from < KrillVersion::dev(0, 12, 0, "rc1-dev".to_string()) {
+                let pubd_objects_migrated = migrate_pre_0_12_pubd_objects(&config)?;
+                Ok(Some(UpgradeReport::new(pubd_objects_migrated, versions)))
             } else {
                 Ok(Some(UpgradeReport::new(false, versions)))
             }
         }
+    }
+}
+
+/// The format of the RepositoryContent did not change in 0.12, but
+/// the location and way of storing it did. So, migrate if present.
+fn migrate_pre_0_12_pubd_objects(config: &Config) -> KrillResult<bool> {
+    let old_repo_content_dir = config.data_dir.join("pubd_objects");
+    if old_repo_content_dir.exists() {
+        let old_store = KeyValueStore::disk(&config.data_dir, "pubd_objects")?;
+        let old_key = KeyStoreKey::simple("0.json".to_string());
+        if let Ok(Some(repo_content)) = old_store.get::<RepositoryContent>(&old_key) {
+            let new_key = KeyStoreKey::scoped("0".to_string(), "snapshot.json".to_string());
+            let upgrade_store = KeyValueStore::disk(&config.upgrade_data_dir(), "pubd_objects")?;
+            upgrade_store.store(&new_key, &repo_content)?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    } else {
+        Ok(false)
     }
 }
 

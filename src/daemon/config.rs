@@ -43,8 +43,8 @@ use crate::commons::crypto::{KmipSignerConfig, Pkcs11SignerConfig};
 pub struct ConfigDefaults;
 
 impl ConfigDefaults {
-    fn ip() -> IpAddr {
-        IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))
+    fn ip() -> Vec<IpAddr> {
+        vec![IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))]
     }
     fn port() -> u16 {
         3000
@@ -357,15 +357,39 @@ impl SignerReference {
     }
 }
 
+/// Inspired by the serde_with crate. But, given that we don't need all
+/// its features - just implementing the one thing we need here.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum OneOrMany<'a, T> {
+    One(T),
+    Many(Vec<T>),
+    #[serde(skip)]
+    _LifeTimeMarker(std::marker::PhantomData<&'a u32>),
+}
+
+impl<'a, T> From<OneOrMany<'a, T>> for Vec<T> {
+    fn from(one_or_many: OneOrMany<T>) -> Self {
+        match one_or_many {
+            OneOrMany::One(t) => vec![t],
+            OneOrMany::Many(vec_of_t) => vec_of_t,
+            OneOrMany::_LifeTimeMarker(_) => unreachable!("variant is never created"),
+        }
+    }
+}
+
+fn deserialize_config_ips<'de, D>(deserializer: D) -> Result<Vec<IpAddr>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    OneOrMany::<IpAddr>::deserialize(deserializer).map(|oom| oom.into())
+}
+
 /// Global configuration for the Krill Server.
-///
-/// This will parse a default config file ('./defaults/krill.conf') unless
-/// another file is explicitly specified. Command line arguments may be used
-/// to override any of the settings in the config file.
 #[derive(Clone, Debug, Deserialize)]
 pub struct Config {
-    #[serde(default = "ConfigDefaults::ip")]
-    ip: IpAddr,
+    #[serde(default = "ConfigDefaults::ip", deserialize_with = "deserialize_config_ips")]
+    ip: Vec<IpAddr>,
 
     #[serde(default = "ConfigDefaults::port")]
     pub port: u16,
@@ -483,7 +507,7 @@ pub struct Config {
     pub issuance_timing: IssuanceTimingConfig,
 
     #[serde(flatten)]
-    pub repository_retention: RepositoryRetentionConfig,
+    pub rrdp_updates_config: RrdpUpdatesConfig,
 
     #[serde(flatten)]
     pub metrics: MetricsConfig,
@@ -614,65 +638,62 @@ impl IssuanceTimingConfig {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
-pub struct RepositoryRetentionConfig {
-    #[serde(default = "RepositoryRetentionConfig::dflt_retention_old_notification_files_seconds")]
-    pub retention_old_notification_files_seconds: u32,
-    #[serde(default = "RepositoryRetentionConfig::dflt_retention_delta_files_min_nr")]
-    pub retention_delta_files_min_nr: usize,
-    #[serde(default = "RepositoryRetentionConfig::dflt_retention_delta_files_min_seconds")]
-    pub retention_delta_files_min_seconds: u32,
-    #[serde(default = "RepositoryRetentionConfig::dflt_retention_delta_files_max_nr")]
-    pub retention_delta_files_max_nr: usize,
-    #[serde(default = "RepositoryRetentionConfig::dflt_retention_delta_files_max_seconds")]
-    pub retention_delta_files_max_seconds: u32,
-    #[serde(default = "RepositoryRetentionConfig::dflt_retention_archive")]
-    pub retention_archive: bool,
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+pub struct RrdpUpdatesConfig {
+    #[serde(default = "RrdpUpdatesConfig::dflt_rrdp_delta_files_min_nr")]
+    pub rrdp_delta_files_min_nr: usize,
+    #[serde(default = "RrdpUpdatesConfig::dflt_rrdp_delta_files_min_seconds")]
+    pub rrdp_delta_files_min_seconds: u32,
+    #[serde(default = "RrdpUpdatesConfig::dflt_rrdp_delta_files_max_nr")]
+    pub rrdp_delta_files_max_nr: usize,
+    #[serde(default = "RrdpUpdatesConfig::dflt_rrdp_delta_files_max_seconds")]
+    pub rrdp_delta_files_max_seconds: u32,
+    #[serde(default = "RrdpUpdatesConfig::dflt_rrdp_delta_min_interval_seconds")]
+    pub rrdp_delta_interval_min_seconds: u32,
+    #[serde(default = "RrdpUpdatesConfig::dflt_rrdp_files_archive")]
+    pub rrdp_files_archive: bool,
 }
 
-impl RepositoryRetentionConfig {
-    // Time to keep any files still referenced by notification
-    // files updated up to X seconds ago. We should not delete these
-    // files too eagerly or we would risk that RPs with an old
-    // notification file try to retrieve them, without success.
-    //
-    // Default: 10 min (just to be safe, 1 min is prob. fine)
-    fn dflt_retention_old_notification_files_seconds() -> u32 {
-        600
-    }
-
+impl RrdpUpdatesConfig {
     // Keep at least X (default 5) delta files in the notification
     // file, even if they would be too old. Their impact on the notification
     // file size is not too bad.
-    fn dflt_retention_delta_files_min_nr() -> usize {
+    fn dflt_rrdp_delta_files_min_nr() -> usize {
         5
     }
 
     // Minimum time to keep deltas. Defaults to 20 minutes, which
     // is double a commonly used update interval, allowing the vast
     // majority of RPs to update using deltas.
-    fn dflt_retention_delta_files_min_seconds() -> u32 {
+    fn dflt_rrdp_delta_files_min_seconds() -> u32 {
         1200 // 20 minutes
     }
 
     // Maximum time to keep deltas. Defaults to two hours meaning,
     // which is double to slowest normal update interval seen used
     // by a minority of RPs.
-    fn dflt_retention_delta_files_max_seconds() -> u32 {
+    fn dflt_rrdp_delta_files_max_seconds() -> u32 {
         7200 // 2 hours
     }
 
     // For files older than the min seconds specified (default 20 mins),
     // and younger than max seconds (2 hours), keep at most up to a total
     // nr of files X (default 50).
-    fn dflt_retention_delta_files_max_nr() -> usize {
+    fn dflt_rrdp_delta_files_max_nr() -> usize {
         50
+    }
+
+    // The minimum interval between RRDP deltas. A value of 0 (default)
+    // means that there will be no delays, and every change gets its
+    // own delta.
+    fn dflt_rrdp_delta_min_interval_seconds() -> u32 {
+        0
     }
 
     // If set to true, we will archive - rather than delete - old
     // snapshot and delta files. The can then be backed up and/deleted
     // at the repository operator's discretion.
-    fn dflt_retention_archive() -> bool {
+    fn dflt_rrdp_files_archive() -> bool {
         false
     }
 }
@@ -732,8 +753,12 @@ impl Config {
         self.data_dir = data_dir;
     }
 
-    pub fn socket_addr(&self) -> SocketAddr {
-        SocketAddr::new(self.ip, self.port)
+    fn ips(&self) -> &Vec<IpAddr> {
+        &self.ip
+    }
+
+    pub fn socket_addresses(&self) -> Vec<SocketAddr> {
+        self.ips().iter().map(|ip| SocketAddr::new(*ip, self.port)).collect()
     }
 
     pub fn https_mode(&self) -> HttpsMode {
@@ -760,7 +785,7 @@ impl Config {
                 if self.ip == ConfigDefaults::ip() {
                     uri::Https::from_string(format!("https://localhost:{}/", self.port)).unwrap()
                 } else {
-                    uri::Https::from_string(format!("https://{}:{}/", self.ip, self.port)).unwrap()
+                    uri::Https::from_string(format!("https://{}:{}/", self.ips()[0], self.port)).unwrap()
                 }
             }
             Some(uri) => uri.clone(),
@@ -948,13 +973,13 @@ impl Config {
             timing_bgpsec_reissue_weeks_before,
         };
 
-        let repository_retention = RepositoryRetentionConfig {
-            retention_old_notification_files_seconds: 1,
-            retention_delta_files_min_seconds: 0,
-            retention_delta_files_min_nr: 5,
-            retention_delta_files_max_seconds: 1,
-            retention_delta_files_max_nr: 50,
-            retention_archive: false,
+        let rrdp_updates_config = RrdpUpdatesConfig {
+            rrdp_delta_files_min_seconds: 0,
+            rrdp_delta_files_min_nr: 5,
+            rrdp_delta_files_max_seconds: 1,
+            rrdp_delta_files_max_nr: 50,
+            rrdp_delta_interval_min_seconds: 0,
+            rrdp_files_archive: false,
         };
 
         let metrics = MetricsConfig {
@@ -1021,7 +1046,7 @@ impl Config {
             roa_aggregate_threshold,
             roa_deaggregate_threshold,
             issuance_timing,
-            repository_retention,
+            rrdp_updates_config,
             metrics,
             testbed,
             benchmark: None,
@@ -1525,11 +1550,11 @@ pub enum HttpsMode {
 }
 
 impl HttpsMode {
-    pub fn generate_https_cert(&self) -> bool {
+    pub fn is_generate_https_cert(&self) -> bool {
         *self == HttpsMode::Generate
     }
 
-    pub fn disable_https(&self) -> bool {
+    pub fn is_disable_https(&self) -> bool {
         *self == HttpsMode::Disable
     }
 }
@@ -1689,8 +1714,8 @@ mod tests {
         env::set_var(KRILL_ENV_ADMIN_TOKEN, "secret");
 
         let c = Config::read_config("./defaults/krill.conf").unwrap();
-        let expected_socket_addr: SocketAddr = ([127, 0, 0, 1], 3000).into();
-        assert_eq!(c.socket_addr(), expected_socket_addr);
+        let expected_socket_addresses: Vec<SocketAddr> = vec![([127, 0, 0, 1], 3000).into()];
+        assert_eq!(c.socket_addresses(), expected_socket_addresses);
         assert!(c.testbed().is_none());
     }
 
@@ -1870,6 +1895,26 @@ mod tests {
         let old_config = r#"auth_token = "secret""#;
         let c = parse_and_process_config_str(old_config).unwrap();
         assert_eq!(c.admin_token.as_ref(), "secret");
+    }
+
+    #[test]
+    fn parse_single_ip() {
+        let config_str = r#"
+            auth_token = "secret"
+            ip         = "127.0.0.1"
+        "#;
+
+        parse_and_process_config_str(config_str).unwrap();
+    }
+
+    #[test]
+    fn parse_multiple_ips() {
+        let config_str = r#"
+            auth_token = "secret"
+            ip         =  [ "127.0.0.1", "::1" ]
+        "#;
+
+        parse_and_process_config_str(config_str).unwrap();
     }
 
     #[cfg(not(feature = "hsm"))]

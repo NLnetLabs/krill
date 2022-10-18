@@ -49,6 +49,10 @@ pub enum Task {
 
     RefreshAnnouncementsInfo,
 
+    UpdateSnapshots,
+
+    RrdpUpdateIfNeeded,
+
     #[cfg(feature = "multi-user")]
     SweepLoginCache,
 
@@ -75,6 +79,8 @@ impl fmt::Display for Task {
             Task::RepublishIfNeeded => write!(f, "let CAs republish their mft/crls if needed"),
             Task::RenewObjectsIfNeeded => write!(f, "let CAs renew their signed objects if needed"),
             Task::RefreshAnnouncementsInfo => write!(f, "check for new announcement info"),
+            Task::UpdateSnapshots => write!(f, "update repository content snapshot on disk"),
+            Task::RrdpUpdateIfNeeded => write!(f, "create new RRDP delta, if needed"),
 
             #[cfg(feature = "multi-user")]
             Task::SweepLoginCache => write!(f, "sweep up expired logins"),
@@ -218,6 +224,14 @@ impl TaskQueue {
 
     pub fn refresh_announcements_info(&self, priority: Priority) {
         self.schedule(Task::RefreshAnnouncementsInfo, priority);
+    }
+
+    pub fn update_snapshots(&self, priority: Priority) {
+        self.schedule(Task::UpdateSnapshots, priority)
+    }
+
+    pub fn update_rrdp_if_needed(&self, priority: Priority) {
+        self.schedule(Task::RrdpUpdateIfNeeded, priority)
     }
 
     #[cfg(feature = "multi-user")]

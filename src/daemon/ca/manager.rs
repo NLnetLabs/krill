@@ -35,7 +35,7 @@ use crate::{
         },
         crypto::KrillSigner,
         error::Error,
-        eventsourcing::{Aggregate, AggregateStore, Command, CommandKey},
+        eventsourcing::{Aggregate, AggregateStore, CommandKey},
         util::{cmslogger::CmsLogger, httpclient},
         KrillResult,
     },
@@ -53,76 +53,6 @@ use crate::{
     pubd::RepositoryManager,
 };
 
-//------------ CaLocks ------------------------------------------------------
-
-#[derive(Debug, Default)]
-pub struct CaLockMap(HashMap<CaHandle, tokio::sync::RwLock<()>>);
-
-impl CaLockMap {
-    fn create_ca_lock(&mut self, ca: CaHandle) {
-        self.0.insert(ca, tokio::sync::RwLock::new(()));
-    }
-
-    fn has_ca(&self, ca: &CaHandle) -> bool {
-        self.0.contains_key(ca)
-    }
-
-    fn drop_ca_lock(&mut self, ca: &CaHandle) {
-        self.0.remove(ca);
-    }
-}
-
-pub struct CaLock<'a> {
-    map: tokio::sync::RwLockReadGuard<'a, CaLockMap>,
-    ca: CaHandle,
-}
-
-impl CaLock<'_> {
-    pub async fn read(&self) -> tokio::sync::RwLockReadGuard<'_, ()> {
-        self.map.0.get(&self.ca).unwrap().read().await
-    }
-
-    pub async fn write(&self) -> tokio::sync::RwLockWriteGuard<'_, ()> {
-        self.map.0.get(&self.ca).unwrap().write().await
-    }
-}
-
-pub struct CaLocks {
-    locks: tokio::sync::RwLock<CaLockMap>,
-}
-
-impl Default for CaLocks {
-    fn default() -> Self {
-        CaLocks {
-            locks: tokio::sync::RwLock::new(CaLockMap::default()),
-        }
-    }
-}
-
-impl CaLocks {
-    pub async fn ca(&self, ca: CaHandle) -> CaLock<'_> {
-        {
-            let map = self.locks.read().await;
-            if map.has_ca(&ca) {
-                return CaLock { map, ca };
-            }
-        }
-
-        {
-            let mut lock = self.locks.write().await;
-            lock.create_ca_lock(ca.clone());
-        }
-
-        let map = self.locks.read().await;
-        CaLock { map, ca }
-    }
-
-    async fn drop_ca(&self, ca: &CaHandle) {
-        let mut map = self.locks.write().await;
-        map.drop_ca_lock(ca);
-    }
-}
-
 //------------ CaManager -----------------------------------------------------
 
 #[derive(Clone)]
@@ -130,7 +60,6 @@ pub struct CaManager {
     ca_store: Arc<AggregateStore<CertAuth>>,
     ca_objects_store: Arc<CaObjectsStore>,
     status_store: Arc<StatusStore>,
-    locks: Arc<CaLocks>,
 
     // shared task queue:
     // - listens for events in the ca_store
@@ -199,16 +128,10 @@ impl CaManager {
         // and their parent(s) and repository.
         let status_store = StatusStore::new(&config.data_dir, STATUS_DIR)?;
 
-        // Create the per-CA lock structure so that we can guarantee safe access to each CA, while allowing
-        // multiple CAs in a single Krill instance to interact: e.g. a child can talk to its parent and they
-        // are locked individually.
-        let locks = Arc::new(CaLocks::default());
-
         Ok(CaManager {
             ca_store: Arc::new(ca_store),
             ca_objects_store,
             status_store: Arc::new(status_store),
-            locks,
             tasks,
             config,
             signer,
@@ -223,8 +146,6 @@ impl CaManager {
     /// Gets the TrustAnchor, if present. Returns an error if the TA is uninitialized.
     pub async fn get_trust_anchor(&self) -> KrillResult<Arc<CertAuth>> {
         let ta_handle = ca::ta_handle();
-        let lock = self.locks.ca(ta_handle.clone()).await;
-        let _ = lock.read().await;
         self.ca_store.get_latest(&ta_handle).map_err(Error::AggregateStoreError)
     }
 
@@ -237,8 +158,7 @@ impl CaManager {
         actor: &Actor,
     ) -> KrillResult<()> {
         let ta_handle = ca::ta_handle();
-        let lock = self.locks.ca(ta_handle.clone()).await;
-        let _ = lock.write().await;
+
         if self.ca_store.has(&ta_handle)? {
             Err(Error::TaAlreadyInitialized)
         } else {
@@ -280,8 +200,6 @@ impl CaManager {
 
     /// Send a command to a CA
     async fn send_command(&self, cmd: Cmd) -> KrillResult<Arc<CertAuth>> {
-        let lock = self.locks.ca(cmd.handle().clone()).await;
-        let _ = lock.write().await;
         self.ca_store.command(cmd)
     }
 
@@ -338,8 +256,6 @@ impl CaManager {
     /// Gets a CA by the given handle, returns an `Err(ServerError::UnknownCA)` if it
     /// does not exist.
     pub async fn get_ca(&self, handle: &CaHandle) -> KrillResult<Arc<CertAuth>> {
-        let lock = self.locks.ca(handle.clone()).await;
-        let _ = lock.read().await;
         self.ca_store
             .get_latest(handle)
             .map_err(|_| Error::CaUnknown(handle.clone()))
@@ -363,7 +279,12 @@ impl CaManager {
     /// all its objects first. Note that any children of this CA will be left
     /// orphaned, and they will only learn of this sad fact when they choose
     /// to call home.
-    pub async fn delete_ca(&self, ca_handle: &CaHandle, actor: &Actor) -> KrillResult<()> {
+    pub async fn delete_ca(
+        &self,
+        repo_manager: &RepositoryManager,
+        ca_handle: &CaHandle,
+        actor: &Actor,
+    ) -> KrillResult<()> {
         warn!("Deleting CA '{}' as requested by: {}", ca_handle, actor);
 
         let ca = self.get_ca(ca_handle).await?;
@@ -399,7 +320,11 @@ impl CaManager {
         }
 
         for repo_contact in repos {
-            if self.ca_repo_sync(ca_handle, &repo_contact, vec![]).await.is_err() {
+            if self
+                .ca_repo_sync(repo_manager, ca_handle, &repo_contact, vec![])
+                .await
+                .is_err()
+            {
                 info!(
                     "Could not clean up deprecated repository. This is fine - objects there are no longer referenced."
                 );
@@ -409,7 +334,6 @@ impl CaManager {
         self.ca_store.drop_aggregate(ca_handle)?;
         self.status_store.remove_ca(ca_handle)?;
         self.tasks.remove_tasks_for_ca(ca_handle);
-        self.locks.drop_ca(ca_handle).await;
 
         Ok(())
     }
@@ -420,8 +344,6 @@ impl CaManager {
 impl CaManager {
     /// Gets the history for a CA.
     pub async fn ca_history(&self, handle: &CaHandle, crit: CommandHistoryCriteria) -> KrillResult<CommandHistory> {
-        let ca_lock = self.locks.ca(handle.clone()).await;
-        let _lock = ca_lock.read().await;
         Ok(self.ca_store.command_history(handle, crit)?)
     }
 
@@ -1531,10 +1453,15 @@ impl CaManager {
     /// fail. When there have been 5 failed attempts, then the old repository
     /// is assumed to be unreachable and it will be dropped - i.e. the CA will
     /// no longer try to clean up objects.
-    pub async fn cas_repo_sync_single(&self, ca_handle: &CaHandle) -> KrillResult<()> {
+    pub async fn cas_repo_sync_single(
+        &self,
+        repo_manager: &RepositoryManager,
+        ca_handle: &CaHandle,
+    ) -> KrillResult<()> {
         // Note that this is a no-op for new CAs which do not yet have any repository configured.
         for (repo_contact, ca_elements) in self.ca_repo_elements(ca_handle).await? {
-            self.ca_repo_sync(ca_handle, &repo_contact, ca_elements).await?;
+            self.ca_repo_sync(repo_manager, ca_handle, &repo_contact, ca_elements)
+                .await?;
         }
 
         // Clean-up of old repos
@@ -1545,7 +1472,10 @@ impl CaManager {
                 ca_handle
             );
 
-            if let Err(e) = self.ca_repo_sync(ca_handle, deprecated.contact(), vec![]).await {
+            if let Err(e) = self
+                .ca_repo_sync(repo_manager, ca_handle, deprecated.contact(), vec![])
+                .await
+            {
                 warn!("Could not clean up deprecated repository: {}", e);
 
                 if deprecated.clean_attempts() < 5 {
@@ -1563,12 +1493,15 @@ impl CaManager {
     #[allow(clippy::mutable_key_type)]
     async fn ca_repo_sync(
         &self,
+        repo_manager: &RepositoryManager,
         ca_handle: &CaHandle,
         repo_contact: &RepositoryContact,
         publish_elements: Vec<PublishElement>,
     ) -> KrillResult<()> {
         debug!("CA '{}' sends list query to repo", ca_handle);
-        let list_reply = self.send_rfc8181_list(ca_handle, repo_contact.server_info()).await?;
+        let list_reply = self
+            .send_rfc8181_list(repo_manager, ca_handle, repo_contact.server_info())
+            .await?;
 
         let elements: HashMap<_, _> = list_reply.into_elements().into_iter().map(|el| el.unpack()).collect();
 
@@ -1593,7 +1526,7 @@ impl CaManager {
 
         if !delta.is_empty() {
             debug!("CA '{}' sends delta", ca_handle);
-            self.send_rfc8181_delta(ca_handle, repo_contact.server_info(), delta)
+            self.send_rfc8181_delta(repo_manager, ca_handle, repo_contact.server_info(), delta)
                 .await?;
             debug!("CA '{}' sent delta", ca_handle);
         } else {
@@ -1643,6 +1576,7 @@ impl CaManager {
     /// Update repository where a CA publishes.
     pub async fn update_repo(
         &self,
+        repo_manager: &RepositoryManager,
         ca: CaHandle,
         new_contact: RepositoryContact,
         check_repo: bool,
@@ -1650,7 +1584,7 @@ impl CaManager {
     ) -> KrillResult<()> {
         if check_repo {
             // First verify that this repository can be reached and responds to a list request.
-            self.send_rfc8181_list(&ca, new_contact.server_info())
+            self.send_rfc8181_list(repo_manager, &ca, new_contact.server_info())
                 .await
                 .map_err(|e| Error::CaRepoIssue(ca.clone(), e.to_string()))?;
         }
@@ -1661,6 +1595,7 @@ impl CaManager {
 
     async fn send_rfc8181_list(
         &self,
+        repo_manager: &RepositoryManager,
         ca_handle: &CaHandle,
         server_info: &PublicationServerInfo,
     ) -> KrillResult<ListReply> {
@@ -1671,7 +1606,7 @@ impl CaManager {
         let message = publication::Message::list_query();
 
         let reply = match self
-            .send_rfc8181_and_validate_response(message, server_info, ca_handle, &signing_key)
+            .send_rfc8181_and_validate_response(repo_manager, message, server_info, ca_handle, &signing_key)
             .await
         {
             Ok(reply) => reply,
@@ -1710,6 +1645,7 @@ impl CaManager {
 
     pub async fn send_rfc8181_delta(
         &self,
+        repo_manager: &RepositoryManager,
         ca_handle: &CaHandle,
         server_info: &PublicationServerInfo,
         delta: PublishDelta,
@@ -1721,7 +1657,7 @@ impl CaManager {
         let message = publication::Message::delta(delta);
 
         let reply = match self
-            .send_rfc8181_and_validate_response(message, server_info, ca_handle, &signing_key)
+            .send_rfc8181_and_validate_response(repo_manager, message, server_info, ca_handle, &signing_key)
             .await
         {
             Ok(reply) => reply,
@@ -1764,39 +1700,48 @@ impl CaManager {
 
     async fn send_rfc8181_and_validate_response(
         &self,
+        repo_manager: &RepositoryManager,
         message: publication::Message,
         server_info: &PublicationServerInfo,
         ca_handle: &CaHandle,
         signing_key: &KeyIdentifier,
     ) -> KrillResult<publication::Reply> {
-        // TODO: support local repository without http calls, but this CaManager does not
-        //       have access to the repository, so this is a bit more complicated than the
-        //       rfc6492 case..
-        let service_uri = server_info.service_uri();
+        let repo_service_uri = server_info.service_uri();
 
-        // Set up a logger for CMS exchanges. Note that this logger is always set
-        // up and used, but.. it will only actually save files in case the given
-        // rfc8181_log_dir is Some.
-        let cms_logger = CmsLogger::for_rfc8181_sent(self.config.rfc8181_log_dir.as_ref(), ca_handle);
+        if repo_service_uri
+            .as_str()
+            .starts_with(self.config.service_uri().as_str())
+        {
+            // this maps back to *this* Krill instance
+            let query = message.as_query()?;
+            let publisher_handle = ca_handle.convert();
+            let response = repo_manager.rfc8181_message(&publisher_handle, query)?;
+            response.as_reply().map_err(Error::Rfc8181)
+        } else {
+            // Set up a logger for CMS exchanges. Note that this logger is always set
+            // up and used, but.. it will only actually save files in case the given
+            // rfc8181_log_dir is Some.
+            let cms_logger = CmsLogger::for_rfc8181_sent(self.config.rfc8181_log_dir.as_ref(), ca_handle);
 
-        let cms = self.signer.create_rfc8181_cms(message, signing_key)?.to_bytes();
+            let cms = self.signer.create_rfc8181_cms(message, signing_key)?.to_bytes();
 
-        let res_bytes = self
-            .post_protocol_cms_binary(&cms, service_uri, publication::CONTENT_TYPE, &cms_logger)
-            .await?;
+            let res_bytes = self
+                .post_protocol_cms_binary(&cms, repo_service_uri, publication::CONTENT_TYPE, &cms_logger)
+                .await?;
 
-        match publication::PublicationCms::decode(&res_bytes) {
-            Err(e) => {
-                cms_logger.err(format!("Could not decode CMS: {}", e))?;
-                Err(Error::Rfc8181(e))
-            }
-            Ok(cms) => match cms.validate(server_info.public_key()) {
+            match publication::PublicationCms::decode(&res_bytes) {
                 Err(e) => {
-                    cms_logger.err(format!("Response invalid: {}", e))?;
+                    cms_logger.err(format!("Could not decode CMS: {}", e))?;
                     Err(Error::Rfc8181(e))
                 }
-                Ok(()) => cms.into_message().as_reply().map_err(Error::Rfc8181),
-            },
+                Ok(cms) => match cms.validate(server_info.public_key()) {
+                    Err(e) => {
+                        cms_logger.err(format!("Response invalid: {}", e))?;
+                        Err(Error::Rfc8181(e))
+                    }
+                    Ok(()) => cms.into_message().as_reply().map_err(Error::Rfc8181),
+                },
+            }
         }
     }
 }

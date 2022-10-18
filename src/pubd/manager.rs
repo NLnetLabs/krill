@@ -1,12 +1,15 @@
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use bytes::Bytes;
 
-use rpki::ca::{
-    idexchange,
-    idexchange::{PublisherHandle, RepoInfo},
-    publication,
-    publication::{ListReply, PublishDelta},
+use rpki::{
+    ca::{
+        idexchange,
+        idexchange::{PublisherHandle, RepoInfo},
+        publication,
+        publication::{ListReply, PublishDelta},
+    },
+    repository::x509::Time,
 };
 
 use crate::{
@@ -18,9 +21,11 @@ use crate::{
         util::cmslogger::CmsLogger,
         KrillResult,
     },
-    daemon::config::Config,
+    daemon::{config::Config, mq::TaskQueue},
     pubd::{RepoStats, RepositoryAccessProxy, RepositoryContentProxy},
 };
+
+use super::RrdpUpdateNeeded;
 
 //------------ RepositoryManager -----------------------------------------------------
 
@@ -28,9 +33,15 @@ use crate::{
 /// * verifying that a publisher is allowed to publish
 /// * publish content to RRDP and rsync
 pub struct RepositoryManager {
-    config: Arc<Config>,
     access: Arc<RepositoryAccessProxy>,
     content: Arc<RepositoryContentProxy>,
+    // We can use a single lock for updates because there is at most one repo.
+    default_repo_lock: RwLock<()>,
+
+    // shared task queue, use to schedule RRDP updates when content is updated.
+    tasks: Arc<TaskQueue>,
+
+    config: Arc<Config>,
     signer: Arc<KrillSigner>,
 }
 
@@ -39,14 +50,17 @@ pub struct RepositoryManager {
 impl RepositoryManager {
     /// Builds a RepositoryManager. This will use a disk based KeyValueStore using the
     /// the data directory specified in the supplied `Config`.
-    pub fn build(config: Arc<Config>, signer: Arc<KrillSigner>) -> Result<Self, Error> {
-        let content_proxy = Arc::new(RepositoryContentProxy::disk(&config)?);
+    pub fn build(config: Arc<Config>, tasks: Arc<TaskQueue>, signer: Arc<KrillSigner>) -> Result<Self, Error> {
         let access_proxy = Arc::new(RepositoryAccessProxy::disk(&config)?);
+        let content_proxy = Arc::new(RepositoryContentProxy::disk(&config)?);
+        let default_repo_lock = RwLock::new(());
 
         Ok(RepositoryManager {
-            config,
             access: access_proxy,
             content: content_proxy,
+            default_repo_lock,
+            tasks,
+            config,
             signer,
         })
     }
@@ -63,7 +77,7 @@ impl RepositoryManager {
         info!("Initializing repository");
         self.access.init(uris.clone(), &self.signer)?;
         self.content.init(&self.config.data_dir, uris)?;
-        self.content.write_repository(&self.config.repository_retention)?;
+        self.content.write_repository(self.config.rrdp_updates_config)?;
 
         Ok(())
     }
@@ -73,6 +87,15 @@ impl RepositoryManager {
     pub fn repository_clear(&self) -> KrillResult<()> {
         self.access.clear()?;
         self.content.clear()
+    }
+
+    /// Update snapshots on disk for faster re-starts
+    pub fn update_snapshots(&self) -> KrillResult<()> {
+        if self.initialized()? {
+            self.content.update_snapshots()
+        } else {
+            Ok(())
+        }
     }
 
     /// List all current publishers
@@ -92,23 +115,21 @@ impl RepositoryManager {
         let message = cms.into_message();
         let query = message.as_query()?;
 
-        let (response, should_log_cms) = match query {
-            publication::Query::List => {
-                let list_reply = self.list(&publisher_handle)?;
-                (publication::Message::list_reply(list_reply), false)
+        let is_list_query = query == publication::Query::List;
+
+        let response_result = self.rfc8181_message(&publisher_handle, query);
+
+        let should_log_cms = response_result.is_err() || !is_list_query;
+
+        let response = match response_result {
+            Ok(response) => response,
+            Err(e) => {
+                let error_code = e.to_rfc8181_error_code();
+                let report_error = publication::ReportError::with_code(error_code);
+                let error_reply = publication::ErrorReply::for_error(report_error);
+
+                publication::Message::error(error_reply)
             }
-            publication::Query::Delta(delta) => match self.publish(publisher_handle.clone(), delta) {
-                Ok(()) => (publication::Message::success(), true),
-                Err(e) => {
-                    warn!("Rejecting delta sent by: {}. Error was: {}", publisher_handle, e);
-
-                    let error_code = e.to_rfc8181_error_code();
-                    let report_error = publication::ReportError::with_code(error_code);
-                    let error_reply = publication::ErrorReply::for_error(report_error);
-
-                    (publication::Message::error(error_reply), true)
-                }
-            },
         };
 
         let response_bytes = self.access.respond(response, &self.signer)?.to_bytes();
@@ -121,17 +142,67 @@ impl RepositoryManager {
         Ok(response_bytes)
     }
 
+    pub fn rfc8181_message(
+        &self,
+        publisher_handle: &PublisherHandle,
+        query: publication::Query,
+    ) -> KrillResult<publication::Message> {
+        match query {
+            publication::Query::List => {
+                debug!("Received RFC 8181 list query for {}", publisher_handle);
+                let list_reply = self.list(publisher_handle)?;
+                Ok(publication::Message::list_reply(list_reply))
+            }
+            publication::Query::Delta(delta) => {
+                debug!("Received RFC 8181 delta query for {}", publisher_handle);
+                self.publish(publisher_handle, delta)?;
+                Ok(publication::Message::success())
+            }
+        }
+    }
+
     /// Do an RRDP session reset.
     pub fn rrdp_session_reset(&self) -> KrillResult<()> {
-        self.content.session_reset(&self.config.repository_retention)
+        self.content.session_reset(self.config.rrdp_updates_config)
     }
 
     /// Let a known publisher publish in a repository.
-    pub fn publish(&self, name: PublisherHandle, delta: PublishDelta) -> KrillResult<()> {
-        let publisher = self.access.get_publisher(&name)?;
+    pub fn publish(&self, publisher_handle: &PublisherHandle, delta: PublishDelta) -> KrillResult<()> {
+        let _lock = self.default_repo_lock.write().unwrap();
+
+        let publisher = self.access.get_publisher(publisher_handle)?;
 
         self.content
-            .publish(&name, delta, publisher.base_uri(), &self.config.repository_retention)
+            .publish(publisher_handle.clone(), delta, publisher.base_uri())?;
+
+        self.tasks.update_rrdp_if_needed(Time::now().into());
+        Ok(())
+    }
+
+    /// Update RRDP (make new delta) if needed. If there are staged changes, but
+    /// the rrdp update interval since last_update has not passed, then no update
+    /// is done, but the eligible time for the next update is returned.
+    pub fn update_rrdp_if_needed(&self) -> KrillResult<Option<Time>> {
+        // See if an update is needed
+        {
+            let _lock = self.default_repo_lock.read().unwrap();
+            match self.content.rrdp_update_needed(self.config.rrdp_updates_config)? {
+                RrdpUpdateNeeded::No => return Ok(None),
+                RrdpUpdateNeeded::Later(time) => return Ok(Some(time)),
+                RrdpUpdateNeeded::Yes => {} // proceed
+            }
+        }
+
+        let content = {
+            let _lock = self.default_repo_lock.write().unwrap();
+
+            self.content.update_rrdp(self.config.rrdp_updates_config)?
+        };
+
+        // Write the updated repository - NOTE: we no longer lock it.
+        content.write_repository(self.config.rrdp_updates_config)?;
+
+        Ok(None)
     }
 
     pub fn repo_stats(&self) -> KrillResult<RepoStats> {
@@ -140,6 +211,8 @@ impl RepositoryManager {
 
     /// Returns a list reply for a known publisher in a repository.
     pub fn list(&self, publisher: &PublisherHandle) -> KrillResult<ListReply> {
+        let _lock = self.default_repo_lock.read().unwrap();
+
         self.content.list_reply(publisher)
     }
 }
@@ -178,13 +251,12 @@ impl RepositoryManager {
 
     /// Removes a publisher and all of its content.
     pub fn remove_publisher(&self, name: PublisherHandle, actor: &Actor) -> KrillResult<()> {
-        let publisher = self.access.get_publisher(&name)?;
-        let base_uri = publisher.base_uri();
+        self.content.remove_publisher(name.clone())?;
+        self.access.remove_publisher(name, actor)?;
 
-        self.content
-            .remove_publisher(&name, base_uri, &self.config.repository_retention)?;
+        self.tasks.update_rrdp_if_needed(Time::now().into());
 
-        self.access.remove_publisher(name, actor)
+        Ok(())
     }
 }
 
@@ -193,7 +265,7 @@ impl RepositoryManager {
 impl RepositoryManager {
     /// Update the RRDP files and rsync content on disk.
     pub fn write_repository(&self) -> KrillResult<()> {
-        self.content.write_repository(&self.config.repository_retention)
+        self.content.write_repository(self.config.rrdp_updates_config)
     }
 }
 
@@ -276,7 +348,8 @@ mod tests {
 
         let signer = Arc::new(signer);
         let config = Arc::new(config);
-        let repository_manager = RepositoryManager::build(config, signer).unwrap();
+        let mq = Arc::new(TaskQueue::default());
+        let repository_manager = RepositoryManager::build(config, mq, signer).unwrap();
 
         let rsync_base = rsync("rsync://localhost/repo/");
         let rrdp_base = https("https://localhost/repo/rrdp/");
@@ -389,7 +462,9 @@ mod tests {
         delta.add_publish(file1.as_publish());
         delta.add_publish(file2.as_publish());
 
-        server.publish(alice_handle.clone(), delta).unwrap();
+        server.publish(&alice_handle, delta).unwrap();
+        server.update_rrdp_if_needed().unwrap();
+        server.write_repository().unwrap();
 
         // Two files should now appear in the list
         let list_reply = server.list(&alice_handle).unwrap();
@@ -420,7 +495,9 @@ mod tests {
         delta.add_withdraw(file2.as_withdraw());
         delta.add_publish(file3.as_publish());
 
-        server.publish(alice_handle.clone(), delta).unwrap();
+        server.publish(&alice_handle, delta).unwrap();
+        server.update_rrdp_if_needed().unwrap();
+        server.write_repository().unwrap();
 
         // Two files should now appear in the list
         let list_reply = server.list(&alice_handle).unwrap();
@@ -443,7 +520,7 @@ mod tests {
         let mut delta = PublishDelta::empty();
         delta.add_publish(file_outside.as_publish());
 
-        match server.publish(alice_handle.clone(), delta) {
+        match server.publish(&alice_handle, delta) {
             Err(Error::Rfc8181Delta(PublicationDeltaError::UriOutsideJail(_, _))) => {} // ok
             _ => panic!("Expected error publishing outside of base uri jail"),
         }
@@ -456,7 +533,7 @@ mod tests {
         let mut delta = PublishDelta::empty();
         delta.add_update(file2_update.as_update(file2.hash()));
 
-        match server.publish(alice_handle.clone(), delta) {
+        match server.publish(&alice_handle, delta) {
             Err(Error::Rfc8181Delta(PublicationDeltaError::NoObjectForHashAndOrUri(_))) => {}
             _ => panic!("Expected error when file for update can't be found"),
         }
@@ -465,7 +542,7 @@ mod tests {
         let mut delta = PublishDelta::empty();
         delta.add_withdraw(file2.as_withdraw());
 
-        match server.publish(alice_handle.clone(), delta) {
+        match server.publish(&alice_handle, delta) {
             Err(Error::Rfc8181Delta(PublicationDeltaError::NoObjectForHashAndOrUri(_))) => {} // ok
             _ => panic!("Expected error withdrawing file that does not exist"),
         }
@@ -474,7 +551,7 @@ mod tests {
         let mut delta = PublishDelta::empty();
         delta.add_publish(file3.as_publish());
 
-        match server.publish(alice_handle.clone(), delta) {
+        match server.publish(&alice_handle, delta) {
             Err(Error::Rfc8181Delta(PublicationDeltaError::ObjectAlreadyPresent(uri))) => {
                 assert_eq!(uri, test::rsync("rsync://localhost/repo/alice/file3.txt"))
             }
@@ -485,48 +562,33 @@ mod tests {
         // Check that old serials are cleaned
         //------------------------------------------------------
 
-        // Should not include
+        // This delta was so big, that we are no longer including the
+        // deltas for serial 1 and 2
         assert!(!session_dir_contains_serial(&session, RRDP_FIRST_SERIAL));
+        assert!(!session_dir_contains_serial(&session, RRDP_FIRST_SERIAL + 1));
 
-        // Should include
-        assert!(session_dir_contains_serial(&session, RRDP_FIRST_SERIAL + 1));
-        assert!(session_dir_contains_delta(&session, RRDP_FIRST_SERIAL + 1));
-        assert!(session_dir_contains_snapshot(&session, RRDP_FIRST_SERIAL + 1));
-        assert!(session_dir_contains_serial(&session, RRDP_FIRST_SERIAL + 2));
-        assert!(session_dir_contains_delta(&session, RRDP_FIRST_SERIAL + 2));
-        assert!(session_dir_contains_snapshot(&session, RRDP_FIRST_SERIAL + 2));
-
-        sleep(Duration::from_secs(2)).await;
-
-        // Add file 4,5,6
-        //
+        // Add file 4
         let file4 = CurrentFile::new(test::rsync("rsync://localhost/repo/alice/file4.txt"), &Bytes::from("4"));
 
         let mut delta = PublishDelta::empty();
         delta.add_publish(file4.as_publish());
 
-        server.publish(alice_handle.clone(), delta).unwrap();
+        server.publish(&alice_handle, delta).unwrap();
+        server.update_rrdp_if_needed().unwrap();
+        server.write_repository().unwrap();
 
         // Should include new snapshot and delta
         assert!(session_dir_contains_serial(&session, RRDP_FIRST_SERIAL + 3));
         assert!(session_dir_contains_delta(&session, RRDP_FIRST_SERIAL + 3));
         assert!(session_dir_contains_snapshot(&session, RRDP_FIRST_SERIAL + 3));
 
-        // Should no longer include serial RRDP_FIRST_SERIAL or RRDP_FIRST_SERIAL + 1
-        // the total size exceeds the snapshot, and they have been retained long enough
-        assert!(!session_dir_contains_serial(&session, RRDP_FIRST_SERIAL));
-        assert!(!session_dir_contains_serial(&session, RRDP_FIRST_SERIAL + 1));
-
-        // Should still include
-        assert!(session_dir_contains_serial(&session, RRDP_FIRST_SERIAL + 2));
+        // Should still include the delta for serial 3, as delta 4 was small.
         assert!(session_dir_contains_delta(&session, RRDP_FIRST_SERIAL + 2));
-        assert!(session_dir_contains_snapshot(&session, RRDP_FIRST_SERIAL + 2));
-
-        // Wait a bit to ensure that the notification file for serial RRDP_FIRST_SERIAL + 2 will be out of scope
-        sleep(Duration::from_secs(2)).await;
 
         // Removing the publisher should remove its contents
         server.remove_publisher(alice_handle, &actor).unwrap();
+        server.update_rrdp_if_needed().unwrap();
+        server.write_repository().unwrap();
 
         // new snapshot should be published, and should be empty now
         assert!(session_dir_contains_snapshot(&session, RRDP_FIRST_SERIAL + 4));
@@ -539,12 +601,10 @@ mod tests {
         let snapshot_xml = from_utf8(&snapshot_bytes).unwrap();
         assert!(!snapshot_xml.contains("/alice/"));
 
-        // We expect that the delta for serial RRDP_FIRST_SERIAL + 2 is still there because it is still referenced,
-        // but the snapshot is gone because it is no longer referenced and the notification for
-        // serial +2 is now more than 1 second old (1s is the retention time configured for the test)
-        assert!(session_dir_contains_serial(&session, RRDP_FIRST_SERIAL + 2));
-        assert!(session_dir_contains_delta(&session, RRDP_FIRST_SERIAL + 2));
-        assert!(!session_dir_contains_snapshot(&session, RRDP_FIRST_SERIAL + 2));
+        // We expect that the deltas for serial 3 and 4 are now also out of scope and
+        // removed.
+        assert!(!session_dir_contains_serial(&session, RRDP_FIRST_SERIAL + 2));
+        assert!(!session_dir_contains_serial(&session, RRDP_FIRST_SERIAL + 3));
 
         let _ = fs::remove_dir_all(d);
     }
@@ -583,7 +643,9 @@ mod tests {
         delta.add_publish(file1.as_publish());
         delta.add_publish(file2.as_publish());
 
-        server.publish(alice_handle.clone(), delta).unwrap();
+        server.publish(&alice_handle, delta).unwrap();
+        server.update_rrdp_if_needed().unwrap();
+        server.write_repository().unwrap();
 
         // Two files should now appear in the list
         let list_reply = server.list(&alice_handle).unwrap();
