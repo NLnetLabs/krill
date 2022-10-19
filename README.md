@@ -2,7 +2,6 @@
 [![Rust Crate Status](https://img.shields.io/crates/v/krill.svg?color=brightgreen)](https://crates.io/crates/krill)
 [![Docker Pulls](https://img.shields.io/docker/pulls/nlnetlabs/krill?color=brightgreen)](https://hub.docker.com/r/nlnetlabs/krill)
 [![Documentation Status](https://readthedocs.org/projects/rpki/badge/?version=latest)](https://krill.docs.nlnetlabs.nl/)
-[![E2E Test Status](https://github.com/nlnetlabs/krill/workflows/E2E%20Test/badge.svg)](https://github.com/NLnetLabs/krill/actions?query=workflow%3A%22E2E+Test%22)
 [![](https://img.shields.io/discord/818584154278199396?label=rpki%20on%20discord&logo=discord)](https://discord.gg/8dvKB5Ykhy)
 [![](https://img.shields.io/twitter/follow/krillrpki.svg?label=Follow&style=social)](https://twitter.com/krillrpki)
 
