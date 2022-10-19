@@ -18,7 +18,7 @@ use tokio::time::{sleep, timeout};
 use rpki::{
     ca::{
         idexchange,
-        idexchange::{CaHandle, ChildHandle, ParentHandle, PublisherHandle},
+        idexchange::{CaHandle, ChildHandle, ParentHandle, PublisherHandle, ServiceUri},
         provisioning::ResourceClassName,
     },
     crypto::KeyIdentifier,
@@ -56,6 +56,7 @@ use rpki::ca::idcert::IdCert;
 
 pub const KRILL_SERVER_URI: &str = "https://localhost:3000/";
 pub const KRILL_PUBD_SERVER_URI: &str = "https://localhost:3001/";
+pub const KRILL_SECOND_SERVER_URI: &str = "https://localhost:3002/";
 
 pub fn init_logging() {
     // Just creates a test config so we can initialize logging, then forgets about it
@@ -77,6 +78,10 @@ pub async fn sleep_millis(millis: u64) {
 
 pub async fn krill_server_ready() -> bool {
     server_ready(KRILL_SERVER_URI).await
+}
+
+pub async fn krill_second_server_ready() -> bool {
+    server_ready(KRILL_SECOND_SERVER_URI).await
 }
 
 pub async fn krill_pubd_ready() -> bool {
@@ -197,12 +202,26 @@ pub async fn start_krill_pubd(rrdp_delta_rrdp_delta_min_interval_seconds: u32) -
     dir
 }
 
+/// Starts a krill pubd for testing on its own port, and its
+/// own temp dir for storage.
+pub async fn start_second_krill() -> PathBuf {
+    let dir = tmp_dir();
+    let mut config = test_config(&dir, false, false, false, true);
+    init_config(&mut config);
+    config.port = 3002;
+
+    tokio::spawn(start_krill_with_error_trap(Arc::new(config)));
+    assert!(krill_second_server_ready().await);
+
+    dir
+}
+
 pub async fn krill_admin(command: Command) -> ApiResponse {
-    let krillc_opts = Options::new(service_uri(KRILL_SERVER_URI), "secret", ReportFormat::Json, command);
-    match KrillClient::process(krillc_opts).await {
-        Ok(res) => res, // ok
-        Err(e) => panic!("{}", e),
-    }
+    admin(service_uri(KRILL_SERVER_URI), command).await
+}
+
+pub async fn krill2_admin(command: Command) -> ApiResponse {
+    admin(service_uri(KRILL_SECOND_SERVER_URI), command).await
 }
 
 pub async fn krill_embedded_pubd_admin(command: PubServerCommand) -> ApiResponse {
@@ -210,12 +229,11 @@ pub async fn krill_embedded_pubd_admin(command: PubServerCommand) -> ApiResponse
 }
 
 pub async fn krill_dedicated_pubd_admin(command: PubServerCommand) -> ApiResponse {
-    let options = Options::new(
-        service_uri(KRILL_PUBD_SERVER_URI),
-        "secret",
-        ReportFormat::Json,
-        Command::PubServer(command),
-    );
+    admin(service_uri(KRILL_PUBD_SERVER_URI), Command::PubServer(command)).await
+}
+
+async fn admin(service_uri: ServiceUri, command: Command) -> ApiResponse {
+    let options = Options::new(service_uri, "secret", ReportFormat::Json, command);
     match KrillClient::process(options).await {
         Ok(res) => res, // ok
         Err(e) => panic!("{}", e),
@@ -270,6 +288,10 @@ pub async fn init_ca(ca: &CaHandle) {
     krill_admin(Command::CertAuth(CaCommand::Init(CertAuthInit::new(ca.clone())))).await;
 }
 
+pub async fn init_ca_krill2(ca: &CaHandle) {
+    krill2_admin(Command::CertAuth(CaCommand::Init(CertAuthInit::new(ca.clone())))).await;
+}
+
 pub async fn delete_ca(ca: &CaHandle) {
     krill_admin(Command::CertAuth(CaCommand::Delete(ca.clone()))).await;
 }
@@ -291,6 +313,13 @@ pub async fn parent_contact(ca: &CaHandle, child: &ChildHandle) -> ParentCaConta
 
 pub async fn request(ca: &CaHandle) -> idexchange::ChildRequest {
     match krill_admin(Command::CertAuth(CaCommand::ChildRequest(ca.clone()))).await {
+        ApiResponse::Rfc8183ChildRequest(req) => req,
+        _ => panic!("Expected RFC 8183 Child Request"),
+    }
+}
+
+pub async fn request_krill2(ca: &CaHandle) -> idexchange::ChildRequest {
+    match krill2_admin(Command::CertAuth(CaCommand::ChildRequest(ca.clone()))).await {
         ApiResponse::Rfc8183ChildRequest(req) => req,
         _ => panic!("Expected RFC 8183 Child Request"),
     }
@@ -370,6 +399,10 @@ pub async fn add_parent_to_ca(ca: &CaHandle, parent: ParentCaReq) {
     krill_admin(Command::CertAuth(CaCommand::AddParent(ca.clone(), parent))).await;
 }
 
+pub async fn add_parent_to_ca_krill2(ca: &CaHandle, parent: ParentCaReq) {
+    krill2_admin(Command::CertAuth(CaCommand::AddParent(ca.clone(), parent))).await;
+}
+
 pub async fn parent_statuses(ca: &CaHandle) -> ParentStatuses {
     match krill_admin(Command::CertAuth(CaCommand::ParentStatuses(ca.clone()))).await {
         ApiResponse::ParentStatuses(status) => status,
@@ -388,6 +421,14 @@ pub async fn delete_parent(ca: &CaHandle, parent: &CaHandle) {
 
 pub async fn ca_route_authorizations_update(ca: &CaHandle, updates: RoaConfigurationUpdates) {
     krill_admin(Command::CertAuth(CaCommand::RouteAuthorizationsUpdate(
+        ca.clone(),
+        updates,
+    )))
+    .await;
+}
+
+pub async fn ca_route_authorizations_update_krill2(ca: &CaHandle, updates: RoaConfigurationUpdates) {
+    krill2_admin(Command::CertAuth(CaCommand::RouteAuthorizationsUpdate(
         ca.clone(),
         updates,
     )))
@@ -479,6 +520,13 @@ pub async fn ca_details(ca: &CaHandle) -> CertAuthInfo {
     }
 }
 
+pub async fn ca_details_krill2(ca: &CaHandle) -> CertAuthInfo {
+    match krill2_admin(Command::CertAuth(CaCommand::Show(ca.clone()))).await {
+        ApiResponse::CertAuthInfo(inf) => inf,
+        _ => panic!("Expected cert auth info"),
+    }
+}
+
 pub async fn rta_sign_sign(
     ca: CaHandle,
     name: RtaName,
@@ -532,6 +580,17 @@ pub async fn ca_key_for_rcn(ca: &CaHandle, rcn: &ResourceClassName) -> Certified
         .clone()
 }
 
+pub async fn ca_key_for_rcn_krill2(ca: &CaHandle, rcn: &ResourceClassName) -> CertifiedKeyInfo {
+    ca_details_krill2(ca)
+        .await
+        .resource_classes()
+        .get(rcn)
+        .unwrap()
+        .current_key()
+        .unwrap()
+        .clone()
+}
+
 pub async fn ca_new_key_for_rcn(ca: &CaHandle, rcn: &ResourceClassName) -> CertifiedKeyInfo {
     ca_details(ca)
         .await
@@ -549,6 +608,16 @@ pub async fn ca_contains_resources(ca: &CaHandle, resources: &ResourceSet) -> bo
             return true;
         }
         cas_refresh_all().await;
+        sleep_seconds(1).await
+    }
+    false
+}
+
+pub async fn ca_contains_resources_krill2(ca: &CaHandle, resources: &ResourceSet) -> bool {
+    for _ in 0..30_u8 {
+        if ca_current_resources_krill2(ca).await.contains(resources) {
+            return true;
+        }
         sleep_seconds(1).await
     }
     false
@@ -579,6 +648,20 @@ pub async fn rc_is_removed(ca: &CaHandle) -> bool {
 
 pub async fn ca_current_resources(ca: &CaHandle) -> ResourceSet {
     let ca = ca_details(ca).await;
+
+    let mut res = ResourceSet::default();
+
+    for rc in ca.resource_classes().values() {
+        if let Some(resources) = rc.current_resources() {
+            res = res.union(resources)
+        }
+    }
+
+    res
+}
+
+pub async fn ca_current_resources_krill2(ca: &CaHandle) -> ResourceSet {
+    let ca = ca_details_krill2(ca).await;
 
     let mut res = ResourceSet::default();
 
@@ -626,6 +709,13 @@ pub async fn dedicated_repo_publisher_details(publisher: PublisherHandle) -> Pub
 
 pub async fn publisher_request(ca: &CaHandle) -> idexchange::PublisherRequest {
     match krill_admin(Command::CertAuth(CaCommand::RepoPublisherRequest(ca.clone()))).await {
+        ApiResponse::Rfc8183PublisherRequest(req) => req,
+        _ => panic!("Expected publisher request"),
+    }
+}
+
+pub async fn publisher_request_krill2(ca: &CaHandle) -> idexchange::PublisherRequest {
+    match krill2_admin(Command::CertAuth(CaCommand::RepoPublisherRequest(ca.clone()))).await {
         ApiResponse::Rfc8183PublisherRequest(req) => req,
         _ => panic!("Expected publisher request"),
     }
@@ -735,6 +825,11 @@ pub async fn repo_update(ca: &CaHandle, response: idexchange::RepositoryResponse
     krill_admin(command).await;
 }
 
+pub async fn repo_update_krill2(ca: &CaHandle, response: idexchange::RepositoryResponse) {
+    let command = Command::CertAuth(CaCommand::RepoUpdate(ca.clone(), response));
+    krill2_admin(command).await;
+}
+
 pub async fn embedded_repository_response(publisher: PublisherHandle) -> idexchange::RepositoryResponse {
     let command = PubServerCommand::RepositoryResponse(publisher);
     match krill_embedded_pubd_admin(command).await {
@@ -778,6 +873,13 @@ pub async fn set_up_ca_with_repo(ca: &CaHandle) {
 
 pub async fn expected_mft_and_crl(ca: &CaHandle, rcn: &ResourceClassName) -> Vec<String> {
     let rc_key = ca_key_for_rcn(ca, rcn).await;
+    let mft_file = rc_key.incoming_cert().mft_name().to_string();
+    let crl_file = rc_key.incoming_cert().crl_name().to_string();
+    vec![mft_file, crl_file]
+}
+
+pub async fn expected_mft_and_crl_krill2(ca: &CaHandle, rcn: &ResourceClassName) -> Vec<String> {
+    let rc_key = ca_key_for_rcn_krill2(ca, rcn).await;
     let mft_file = rc_key.incoming_cert().mft_name().to_string();
     let crl_file = rc_key.incoming_cert().crl_name().to_string();
     vec![mft_file, crl_file]
