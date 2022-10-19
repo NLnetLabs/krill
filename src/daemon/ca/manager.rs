@@ -829,16 +829,17 @@ impl CaManager {
         if handle != &ta_handle() {
             let ca = self.get_ca(handle).await?;
 
-            if ca.repository_contact().is_ok() {
-                let ca = self.get_ca(handle).await?;
-                let parent_contact = ca.parent(parent)?;
-                let entitlements = self
-                    .get_entitlements_from_contact(handle, parent, parent_contact, true)
-                    .await?;
+            // Return an error if the repository was not configured yet.
+            ca.repository_contact()?;
 
-                self.update_entitlements(handle, parent.clone(), entitlements, actor)
-                    .await?;
-            }
+            let ca = self.get_ca(handle).await?;
+            let parent_contact = ca.parent(parent)?;
+            let entitlements = self
+                .get_entitlements_from_contact(handle, parent, parent_contact, true)
+                .await?;
+
+            self.update_entitlements(handle, parent.clone(), entitlements, actor)
+                .await?;
         }
         Ok(())
     }

@@ -113,9 +113,16 @@ impl TaskQueue {
     pub fn pop(&self, due_before: Priority) -> Option<Task> {
         let mut q = self.q.write().unwrap();
 
-        let has_item = if let Some((_, priority)) = q.peek() {
-            priority > &due_before
+        let has_item = if let Some((task, priority)) = q.peek() {
+            let is_due = priority > &due_before;
+            if is_due {
+                debug!("Getting task with priority '{}': {}", priority, task);
+            } else {
+                debug!("Leaving task not due until '{}': {}", priority, task);
+            }
+            is_due
         } else {
+            trace!("No pending tasks to pop from queue");
             false
         };
 
@@ -309,8 +316,17 @@ impl eventsourcing::PostSaveEventListener<CertAuth> for TaskQueue {
                 ),
 
                 CaEvtDet::ParentAdded { parent, .. } => {
-                    debug!("Parent {} added to CA {}, scheduling sync", parent, handle);
-                    self.sync_parent(handle.clone(), parent.clone(), now());
+                    if ca.repository_contact().is_ok() {
+                        debug!("Parent {} added to CA {}, scheduling sync", parent, handle);
+                        self.sync_parent(handle.clone(), parent.clone(), now());
+                    } else {
+                        // Postpone parent sync. I.e. it will be triggered below when the event
+                        // for updating the repository is seen.
+                        warn!(
+                            "Synchronisation of CA '{}' with parent '{}' postponed until repository is configured.",
+                            handle, parent
+                        );
+                    }
                 }
                 CaEvtDet::RepoUpdated { .. } => {
                     for parent in ca.parents() {
