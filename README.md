@@ -26,6 +26,8 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 ## 0.12.0 RC3 'Crickets'
 
+RC4 fixes another RFC 6492 interop issue (allow path len constraints).
+
 RC3 improves parent synchronisation scheduling and logging.
 
 RC2 fixes an issue in RC1 where the repository content would not be upgraded
