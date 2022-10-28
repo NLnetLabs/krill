@@ -1720,7 +1720,7 @@ dependencies = [
 [[package]]
 name = "rpki"
 version = "0.15.9-dev"
-source = "git+https://github.com/nLnetLabs/rpki-rs?branch=id-cert-basic-ca-path-len#bcf9d4eb3a577fbf69be76bb5d9d927ce48388c8"
+source = "git+https://github.com/nLnetLabs/rpki-rs?branch=id-cert-basic-ca-path-len#20165ba819dcc1329bed8b112d4c02195177e12e"
 dependencies = [
  "base64",
  "bcder",
