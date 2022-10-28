@@ -57,7 +57,7 @@ pub async fn statics(req: Request) -> RoutingResult {
     })
 }
 
-static INDEX: &[u8] = include_bytes!("../../../ui/index.html");
+pub static INDEX: &[u8] = include_bytes!("../../../ui/index.html");
 
 static FAVICON: &[u8] = include_bytes!("../../../ui/assets/favicon.f84116cb.ico");
 
