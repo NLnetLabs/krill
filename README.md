@@ -24,12 +24,7 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 # Changelog
 
-## 0.12.0 RC3 'Crickets'
-
-RC3 improves parent synchronisation scheduling and logging.
-
-RC2 fixes an issue in RC1 where the repository content would not be upgraded
-properly.
+## 0.12.0 'Crickets'
 
 This release vastly reduces the CPU usage by Publication Servers for big RPKI
 repositories.
