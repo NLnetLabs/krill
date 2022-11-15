@@ -24,6 +24,12 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 # Changelog
 
+## 0.13.0 RC1
+
+In this release we introduce an API to set up CAs, and signed objects such as
+ROAs in bulk. 
+
+
 ## 0.12.0 'Crickets'
 
 This release vastly reduces the CPU usage by Publication Servers for big RPKI
