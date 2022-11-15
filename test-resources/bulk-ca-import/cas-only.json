@@ -1,0 +1,32 @@
+{
+    "online_ta_children": [
+        {
+            "handle": "lacnic",
+            "resources": {
+                "asn": "AS0-AS4294967295",
+                "ipv4": "0.0.0.0/0",
+                "ipv6": "::/0"
+            },
+            "children": [
+                {
+                    "handle": "child1",
+                    "resources": {
+                        "asn": "AS65000",
+                        "ipv4": "192.168.0.0/16",
+                        "ipv6": ""
+                    },
+                    "children": []
+                },
+                {
+                    "handle": "child2",
+                    "resources": {
+                        "asn": "AS65001",
+                        "ipv4": "10.0.0.0/16",
+                        "ipv6": ""
+                    },
+                    "children": []
+                }
+            ]
+        }
+    ]
+}
