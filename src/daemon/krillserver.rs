@@ -4,7 +4,7 @@ use std::{collections::HashMap, path::PathBuf, str::FromStr, sync::Arc};
 use bytes::Bytes;
 use chrono::Duration;
 
-use futures::future::join_all;
+use futures::future::{join_all, try_join_all};
 
 use rpki::{
     ca::{
@@ -19,7 +19,7 @@ use crate::{
     commons::{
         actor::{Actor, ActorDef},
         api::{
-            AddChildRequest, AllCertAuthIssues, AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates,
+            self, AddChildRequest, AllCertAuthIssues, AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates,
             AspaProvidersUpdate, BgpSecCsrInfoList, BgpSecDefinitionUpdates, CaCommandDetails, CaRepoDetails,
             CertAuthInfo, CertAuthInit, CertAuthIssues, CertAuthList, CertAuthStats, ChildCaInfo,
             ChildrenConnectionStats, CommandHistory, CommandHistoryCriteria, ConfiguredRoa, ParentCaContact,
@@ -680,6 +680,142 @@ impl KrillServer {
         }
 
         Ok(res)
+    }
+
+    //
+    pub async fn cas_import(&self, structure: api::import::Structure) -> KrillResult<()> {
+        let actor = Arc::new(self.system_actor().clone());
+        if !self.ca_list(&actor)?.cas().is_empty() || self.repo_manager.initialized()? {
+            Err(Error::custom("Import CAs is only permitted when Krill is empty."))
+        } else if !structure.valid_ca_sequence() {
+            Err(Error::custom(
+                "CA in import structure refers to non-existent parent. Check order",
+            ))
+        } else {
+            info!("Bulk import CAs");
+
+            info!("Initialising publication server");
+            self.repo_manager.init(structure.publication_server_uris.clone())?;
+
+            info!("Creating embedded Trust Anchor");
+            self.ca_manager
+                .init_ta(
+                    structure.ta_aia.clone(),
+                    vec![structure.ta_uri.clone()],
+                    &self.repo_manager,
+                    &actor,
+                )
+                .await?;
+
+            // Set up each online TA child with local repo, do this in parallel.
+            let mut import_fns = vec![];
+            let service_uri = Arc::new(self.config.service_uri());
+            for ca in structure.into_cas() {
+                import_fns.push(tokio::spawn(Self::import_ca(
+                    ca,
+                    self.ca_manager.clone(),
+                    self.repo_manager.clone(),
+                    service_uri.clone(),
+                    actor.clone(),
+                )));
+            }
+            try_join_all(import_fns)
+                .await
+                .map_err(|e| Error::Custom(format!("Could not import CAs: {}", e)))?;
+
+            Ok(())
+        }
+    }
+
+    async fn import_ca(
+        ca: api::import::ImportCa,
+        ca_manager: Arc<CaManager>,
+        repo_manager: Arc<RepositoryManager>,
+        service_uri: Arc<uri::Https>,
+        actor: Arc<Actor>,
+    ) -> KrillEmptyResult {
+        // outline:
+        // - init ca
+        // - set up under repo
+        // - set up under parent
+        // - wait for resources
+        // - recurse for children
+        let (ca_handle, parents, resources) = ca.unpack();
+
+        // init CA
+        ca_manager.init_ca(&ca_handle)?;
+
+        // Get Publisher Request
+        let pub_req = {
+            let ca = ca_manager.get_ca(&ca_handle).await?;
+            idexchange::PublisherRequest::new(ca.id_cert().base64().clone(), ca_handle.convert(), None)
+        };
+
+        // Add Publisher
+        repo_manager.create_publisher(pub_req, &actor)?;
+
+        // Get Repository Contact for CA
+        let repo_contact = {
+            let repo_response = repo_manager.repository_response(&ca_handle.convert())?;
+            RepositoryContact::for_response(repo_response).map_err(Error::rfc8183)?
+        };
+
+        // Add Repository to CA
+        ca_manager
+            .update_repo(&repo_manager, ca_handle.clone(), repo_contact, false, &actor)
+            .await?;
+
+        for parent in parents {
+            // The parent should have been created. If it wasn't created yet, then we will
+            // need to wait for it. Note that we can be sure that it will be created because
+            // we verified that all parents are either "ta" (which is always created) or
+            // another CA that appeared on the list before this CA.
+            //
+            // But.. you know.. just to be safe, let's not hang in here forever..
+            let wait_ms = 1000;
+            let max_tries = 60;
+            let mut tried = 0;
+            let parent_as_ca: CaHandle = parent.convert();
+            while !ca_manager.has_ca(&parent_as_ca)? {
+                tried += 1;
+                if tried > max_tries {
+                    return Err(Error::Custom(format!(
+                        "Could not import CA {}. Parent: {} is not created",
+                        ca_handle, parent_as_ca
+                    )));
+                } else {
+                    tokio::time::sleep(std::time::Duration::from_millis(wait_ms)).await;
+                }
+            }
+
+            // Add the CA as the child of parent and get the parent response
+            let parent_response = {
+                let ca = ca_manager.get_ca(&ca_handle).await?;
+                let id_cert = ca.child_request().validate().map_err(Error::rfc8183)?;
+                let child_req = AddChildRequest::new(ca_handle.convert(), resources.clone(), id_cert);
+
+                ca_manager
+                    .ca_add_child(&parent.convert(), child_req, &service_uri, &actor)
+                    .await?
+            };
+
+            // Add the parent to the child and force sync
+            {
+                let parent_req = ParentCaReq::new(parent.clone(), parent_response);
+                ca_manager
+                    .ca_parent_add_or_update(ca_handle.clone(), parent_req, &actor)
+                    .await?;
+
+                // First sync will inform child of its entitlements and trigger that
+                // CSR is created.
+                ca_manager.ca_sync_parent(&ca_handle, &parent, &actor).await?;
+
+                // Second sync will send that CSR to the parent
+                ca_manager.ca_sync_parent(&ca_handle, &parent, &actor).await?;
+            }
+        }
+
+        Ok(())
     }
 
     pub async fn all_ca_issues(&self, actor: &Actor) -> KrillResult<AllCertAuthIssues> {

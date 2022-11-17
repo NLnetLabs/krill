@@ -1,32 +1,37 @@
 {
-    "online_ta_children": [
+    "ta_aia": "rsync://example.krill.cloud/ta/ta.cer",
+    "ta_uri": "https://example.krill.cloud/ta/ta.cer",
+    "publication_server_uris": {
+        "rrdp_base_uri": "https://example.krill.cloud/repo/",
+        "rsync_jail": "rsync://example.krill.cloud/repo/"
+    },
+    "cas": [
         {
-            "handle": "lacnic",
+            "handle": "parent",
+            "parent": "ta",
             "resources": {
-                "asn": "AS0-AS4294967295",
-                "ipv4": "0.0.0.0/0",
-                "ipv6": "::/0"
-            },
-            "children": [
-                {
-                    "handle": "child1",
-                    "resources": {
-                        "asn": "AS65000",
-                        "ipv4": "192.168.0.0/16",
-                        "ipv6": ""
-                    },
-                    "children": []
-                },
-                {
-                    "handle": "child2",
-                    "resources": {
-                        "asn": "AS65001",
-                        "ipv4": "10.0.0.0/16",
-                        "ipv6": ""
-                    },
-                    "children": []
-                }
-            ]
+                "asn": "AS65000-AS65535",
+                "ipv4": "10.0.0.0/8, 192.168.0.0/16",
+                "ipv6": "fc00::/7"
+            }
+        },
+        {
+            "handle": "child1",
+            "parent": "parent",
+            "resources": {
+                "asn": "AS65000",
+                "ipv4": "192.168.0.0/16",
+                "ipv6": ""
+            }
+        },
+        {
+            "handle": "child2",
+            "parent": "parent",
+            "resources": {
+                "asn": "AS65001",
+                "ipv4": "10.0.0.0/16",
+                "ipv6": ""
+            }
         }
     ]
 }

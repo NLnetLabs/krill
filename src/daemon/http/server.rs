@@ -1142,6 +1142,7 @@ async fn api_authorized(req: Request) -> RoutingResult {
 
 async fn api_bulk(req: Request, path: &mut RequestPath) -> RoutingResult {
     match path.full() {
+        "/api/v1/bulk/cas/import" => api_cas_import(req).await,
         "/api/v1/bulk/cas/issues" => api_all_ca_issues(req).await,
         "/api/v1/bulk/cas/sync/parent" => api_refresh_all(req).await,
         "/api/v1/bulk/cas/sync/repo" => api_resync_all(req).await,
@@ -1471,6 +1472,19 @@ pub async fn api_ca_parent_res_xml(req: Request, ca: CaHandle, child: ChildHandl
 }
 
 //------------ Admin: CertAuth -----------------------------------------------
+
+async fn api_cas_import(req: Request) -> RoutingResult {
+    match *req.method() {
+        Method::POST => aa!(req, Permission::CA_ADMIN, {
+            let server = req.state().clone();
+            match req.json().await {
+                Ok(structure) => render_empty_res(server.cas_import(structure).await),
+                Err(e) => render_error(e),
+            }
+        }),
+        _ => render_unknown_method(),
+    }
+}
 
 async fn api_all_ca_issues(req: Request) -> RoutingResult {
     match *req.method() {

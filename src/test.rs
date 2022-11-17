@@ -34,7 +34,7 @@ use crate::{
     },
     commons::{
         api::{
-            AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, BgpSecAsnKey,
+            self, AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, BgpSecAsnKey,
             BgpSecCsrInfoList, BgpSecDefinition, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ConfiguredRoa,
             ConfiguredRoas, ObjectName, ParentCaContact, ParentCaReq, ParentStatuses, PublicationServerUris,
             PublisherDetails, PublisherList, ResourceClassKeysInfo, RoaConfiguration, RoaConfigurationUpdates,
@@ -869,6 +869,14 @@ pub async fn set_up_ca_with_repo(ca: &CaHandle) {
 
     // Update the repo for the child
     repo_update(ca, response).await;
+}
+
+pub async fn import_cas(structure: api::import::Structure) {
+    let command = Command::Bulk(BulkCaCommand::Import(structure));
+    match krill_admin(command).await {
+        ApiResponse::Empty => {}
+        _ => panic!("Expected empty ok response to ca imports"),
+    }
 }
 
 pub async fn expected_mft_and_crl(ca: &CaHandle, rcn: &ResourceClassName) -> Vec<String> {

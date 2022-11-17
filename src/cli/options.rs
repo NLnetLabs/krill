@@ -30,7 +30,7 @@ use crate::{
     cli::report::{ReportError, ReportFormat},
     commons::{
         api::{
-            AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionFormatError, AspaProvidersUpdate,
+            self, AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionFormatError, AspaProvidersUpdate,
             AuthorizationFmtError, BgpSecAsnKey, BgpSecDefinition, CertAuthInit, ParentCaReq, PublicationServerUris,
             RoaConfiguration, RoaConfigurationUpdates, RoaPayload, RtaName, Token, UpdateChildRequest,
         },
@@ -2590,6 +2590,7 @@ pub enum BulkCaCommand {
     ForcePublish, // force republish all mft/crls
     Sync,
     Suspend,
+    Import(api::import::Structure),
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
