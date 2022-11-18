@@ -19,7 +19,7 @@ async fn functional_ca_import() {
     //      /    \
     //   child1  child2
     //
-    let ca_imports_json = include_str!("../test-resources/bulk-ca-import/cas-only.json");
+    let ca_imports_json = include_str!("../test-resources/bulk-ca-import/structure.json");
     let ca_imports: api::import::Structure = serde_json::from_str(ca_imports_json).unwrap();
     import_cas(ca_imports).await;
 
@@ -28,8 +28,15 @@ async fn functional_ca_import() {
     assert!(ca_contains_resources(&parent, &parent_resources).await);
 
     let child1 = ca_handle("child1");
-    let child1_resources = resources("AS65000", "192.168.0.0/16", "");
+    let child1_resources = resources("AS65000", "192.168.0.0/16", "fc00::/56");
+    let roas = vec![
+        roa_configuration("192.168.0.0/23-24 => 65000 # my precious route"),
+        roa_configuration("192.168.2.0/23 => 65001"),
+        roa_configuration("fc00::/56 => 65000"),
+    ];
     assert!(ca_contains_resources(&child1, &child1_resources).await);
+    expect_configured_roas(&child1, &roas).await;
+    expect_roa_objects(&child1, &[roas[0].payload(), roas[1].payload(), roas[2].payload()]).await;
 
     let child2 = ca_handle("child2");
     let child2_resources = resources("AS65001", "10.0.0.0/16", "");

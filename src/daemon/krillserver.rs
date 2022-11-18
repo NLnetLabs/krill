@@ -740,7 +740,7 @@ impl KrillServer {
         // - set up under parent
         // - wait for resources
         // - recurse for children
-        let (ca_handle, parents, resources) = ca.unpack();
+        let (ca_handle, parents, resources, roas) = ca.unpack();
 
         // init CA
         ca_manager.init_ca(&ca_handle)?;
@@ -814,6 +814,10 @@ impl KrillServer {
                 ca_manager.ca_sync_parent(&ca_handle, &parent, &actor).await?;
             }
         }
+
+        // Add ROA definitions
+        let roa_updates = RoaConfigurationUpdates::new(roas, vec![]);
+        ca_manager.ca_routes_update(ca_handle, roa_updates, &actor).await?;
 
         Ok(())
     }

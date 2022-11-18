@@ -450,6 +450,55 @@ pub async fn ca_configured_roas(ca: &CaHandle) -> ConfiguredRoas {
     }
 }
 
+// short hand to expect ROA configurations in a CA
+pub async fn expect_configured_roas(ca: &CaHandle, expected: &[RoaConfiguration]) {
+    let configured_roas = ca_configured_roas(ca).await.unpack();
+    assert_eq!(configured_roas.len(), expected.len());
+
+    // Copy the expected configs, but convert them to an explicit max length because
+    // Krill always stores configs that way to avoid duplicate equivalent entries.
+    let expected: Vec<_> = expected
+        .iter()
+        .map(|entry| entry.clone().into_explicit_max_length())
+        .collect();
+
+    for configuration in configured_roas.iter().map(|configured| configured.roa_configuration()) {
+        if !expected.contains(configuration) {
+            use std::fmt::Write;
+
+            let mut expected_str = String::new();
+            let mut first = true;
+            for exp in expected {
+                if first {
+                    first = false;
+                } else {
+                    write!(&mut expected_str, ", ").unwrap();
+                }
+                write!(&mut expected_str, "{}", exp).unwrap();
+            }
+            panic!(
+                "Actual configuration: '{}' not in expected: {}",
+                configuration, expected_str
+            );
+        }
+    }
+}
+
+// short hand to expect ROAs under CA under its first resource class
+pub async fn expect_roa_objects(ca: &CaHandle, roas: &[RoaPayload]) {
+    let rcn_0 = ResourceClassName::from(0);
+
+    let roas: Vec<_> = roas.iter().map(|entry| entry.into_explicit_max_length()).collect();
+
+    let mut expected_files = expected_mft_and_crl(ca, &rcn_0).await;
+
+    for roa in roas {
+        expected_files.push(ObjectName::from(&roa).to_string());
+    }
+
+    assert!(will_publish_embedded("published ROAs do not match expectations", ca, &expected_files).await);
+}
+
 pub async fn ca_route_authorizations_suggestions(ca: &CaHandle) -> BgpAnalysisSuggestion {
     match krill_admin(Command::CertAuth(CaCommand::BgpAnalysisSuggest(ca.clone(), None))).await {
         ApiResponse::BgpAnalysisSuggestions(suggestion) => suggestion,

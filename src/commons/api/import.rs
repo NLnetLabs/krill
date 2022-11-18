@@ -15,6 +15,8 @@ use crate::{
     daemon::{ca::ta_handle, config},
 };
 
+use super::RoaConfiguration;
+
 /// This type contains the full structure of CAs and signed objects etc that is
 /// set up when the import API is used.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -67,11 +69,14 @@ pub struct ImportCa {
     #[serde(rename = "parent", deserialize_with = "deserialize_parent")]
     parents: Vec<ParentHandle>,
     resources: ResourceSet,
+
+    #[serde(default = "Vec::new")]
+    roas: Vec<RoaConfiguration>,
 }
 
 impl ImportCa {
-    pub fn unpack(self) -> (CaHandle, Vec<ParentHandle>, ResourceSet) {
-        (self.handle, self.parents, self.resources)
+    pub fn unpack(self) -> (CaHandle, Vec<ParentHandle>, ResourceSet, Vec<RoaConfiguration>) {
+        (self.handle, self.parents, self.resources, self.roas)
     }
 }
 
@@ -82,7 +87,7 @@ mod tests {
 
     #[test]
     fn parse_cas_only() {
-        let json = include_str!("../../../test-resources/bulk-ca-import/cas-only.json");
+        let json = include_str!("../../../test-resources/bulk-ca-import/structure.json");
 
         let structure: Structure = serde_json::from_str(json).unwrap();
         assert!(structure.valid_ca_sequence());
