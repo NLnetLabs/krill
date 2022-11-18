@@ -36,7 +36,7 @@ impl Structure {
         seen.insert(ta_handle().into_converted());
         for ca in &self.cas {
             for parent in &ca.parents {
-                if !seen.contains(parent) {
+                if !seen.contains(parent.handle()) {
                     return false;
                 }
             }
@@ -50,11 +50,11 @@ impl Structure {
     }
 }
 
-fn deserialize_parent<'de, D>(deserializer: D) -> Result<Vec<ParentHandle>, D::Error>
+fn deserialize_parent<'de, D>(deserializer: D) -> Result<Vec<ImportParent>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    config::OneOrMany::<ParentHandle>::deserialize(deserializer).map(|oom| oom.into())
+    config::OneOrMany::<ImportParent>::deserialize(deserializer).map(|oom| oom.into())
 }
 
 /// This type describes a CaStructure that needs to be imported. I.e. it describes
@@ -67,16 +67,31 @@ pub struct ImportCa {
     // In the majority of cases there will only be one parent, so use that for json
     // but allow one or more parents to be configured.
     #[serde(rename = "parent", deserialize_with = "deserialize_parent")]
-    parents: Vec<ParentHandle>,
-    resources: ResourceSet,
+    parents: Vec<ImportParent>,
 
     #[serde(default = "Vec::new")]
     roas: Vec<RoaConfiguration>,
 }
 
 impl ImportCa {
-    pub fn unpack(self) -> (CaHandle, Vec<ParentHandle>, ResourceSet, Vec<RoaConfiguration>) {
-        (self.handle, self.parents, self.resources, self.roas)
+    pub fn unpack(self) -> (CaHandle, Vec<ImportParent>, Vec<RoaConfiguration>) {
+        (self.handle, self.parents, self.roas)
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ImportParent {
+    handle: ParentHandle,
+    resources: ResourceSet,
+}
+
+impl ImportParent {
+    pub fn handle(&self) -> &ParentHandle {
+        &self.handle
+    }
+
+    pub fn unpack(self) -> (ParentHandle, ResourceSet) {
+        (self.handle, self.resources)
     }
 }
 

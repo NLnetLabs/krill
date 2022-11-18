@@ -740,7 +740,7 @@ impl KrillServer {
         // - set up under parent
         // - wait for resources
         // - recurse for children
-        let (ca_handle, parents, resources, roas) = ca.unpack();
+        let (ca_handle, parents, roas) = ca.unpack();
 
         // init CA
         ca_manager.init_ca(&ca_handle)?;
@@ -765,7 +765,9 @@ impl KrillServer {
             .update_repo(&repo_manager, ca_handle.clone(), repo_contact, false, &actor)
             .await?;
 
-        for parent in parents {
+        for import_parent in parents {
+            let (parent, resources) = import_parent.unpack();
+
             // The parent should have been created. If it wasn't created yet, then we will
             // need to wait for it. Note that we can be sure that it will be created because
             // we verified that all parents are either "ta" (which is always created) or
@@ -792,7 +794,7 @@ impl KrillServer {
             let parent_response = {
                 let ca = ca_manager.get_ca(&ca_handle).await?;
                 let id_cert = ca.child_request().validate().map_err(Error::rfc8183)?;
-                let child_req = AddChildRequest::new(ca_handle.convert(), resources.clone(), id_cert);
+                let child_req = AddChildRequest::new(ca_handle.convert(), resources, id_cert);
 
                 ca_manager
                     .ca_add_child(&parent.convert(), child_req, &service_uri, &actor)
