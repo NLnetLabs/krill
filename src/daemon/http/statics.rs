@@ -36,7 +36,7 @@ pub async fn statics(req: Request) -> RoutingResult {
             "/assets/error.fd1fc7e1.svg" => Ok(HttpResponse::svg(SVG_ERROR)),
             "/assets/krill_logo_white.05224433.svg" => Ok(HttpResponse::svg(SVG_KRILL_LOGO)),
             "/assets/logout.c725fd2c.svg" => Ok(HttpResponse::svg(SVG_LOGOUT)),
-            "/assets/plus.e8f1d18.svg" => Ok(HttpResponse::svg(SVG_PLUS)),
+            "/assets/plus.e8f1d182.svg" => Ok(HttpResponse::svg(SVG_PLUS)),
             "/assets/route-left.c88b44cb.svg" => Ok(HttpResponse::svg(SVG_ROUTE_LEFT)),
             "/assets/route-right.17b0c46a.svg" => Ok(HttpResponse::svg(SVG_ROUTE_RIGHT)),
             "/assets/search.4a30d812.svg" => Ok(HttpResponse::svg(SVG_SEARCH)),
