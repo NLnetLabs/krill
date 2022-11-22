@@ -505,10 +505,8 @@ impl KrillServer {
         let actor = Arc::new(self.system_actor().clone());
         if !self.ca_list(&actor)?.cas().is_empty() || self.repo_manager.initialized()? {
             Err(Error::custom("Import CAs is only permitted when Krill is empty."))
-        } else if !structure.valid_ca_sequence() {
-            Err(Error::custom(
-                "CA in import structure refers to non-existent parent. Check order",
-            ))
+        } else if let Err(e) = structure.validate_ca_hierarchy() {
+            Err(Error::Custom(e))
         } else {
             info!("Bulk import {} CAs", structure.cas.len());
 

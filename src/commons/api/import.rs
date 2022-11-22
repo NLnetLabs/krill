@@ -1,6 +1,6 @@
 //! Data types used to support importing a CA structure for testing or automated set ups.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 use serde::{Deserialize, Deserializer};
 
@@ -42,20 +42,36 @@ impl Structure {
         }
     }
     // Check that all parents are valid for the CAs in this structure
-    // in the order in which they appear.
-    pub fn valid_ca_sequence(&self) -> bool {
-        let mut seen: HashSet<ParentHandle> = HashSet::new();
+    // in the order in which they appear, and that the parent CAs have
+    // the resources for each child CA.
+    pub fn validate_ca_hierarchy(&self) -> Result<(), String> {
+        let mut seen: HashMap<ParentHandle, ResourceSet> = HashMap::new();
         // ta is implied
-        seen.insert(ta_handle().into_converted());
+        seen.insert(ta_handle().into_converted(), ResourceSet::all());
         for ca in &self.cas {
+            let mut ca_resources = ResourceSet::empty();
             for parent in &ca.parents {
-                if !seen.contains(parent.handle()) {
-                    return false;
+                if let Some(seen_parent_resources) = seen.get(parent.handle()) {
+                    if seen_parent_resources.contains(&parent.resources) {
+                        ca_resources = ca_resources.union(&parent.resources);
+                    } else {
+                        return Err(format!(
+                            "CA '{}' under parent '{}' claims resources not held by parent.",
+                            ca.handle,
+                            parent.handle()
+                        ));
+                    }
+                } else {
+                    return Err(format!(
+                        "CA '{}' wants parent '{}', but this parent CA does not appear before this CA.",
+                        ca.handle,
+                        parent.handle()
+                    ));
                 }
             }
-            seen.insert(ca.handle.convert());
+            seen.insert(ca.handle.convert(), ca_resources);
         }
-        true
+        Ok(())
     }
 
     pub fn into_cas(self) -> Vec<ImportCa> {
@@ -126,6 +142,6 @@ mod tests {
         let json = include_str!("../../../test-resources/bulk-ca-import/structure.json");
 
         let structure: Structure = serde_json::from_str(json).unwrap();
-        assert!(structure.valid_ca_sequence());
+        assert!(structure.validate_ca_hierarchy().is_ok());
     }
 }
