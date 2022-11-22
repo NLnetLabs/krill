@@ -28,6 +28,19 @@ pub struct Structure {
 }
 
 impl Structure {
+    pub fn new(
+        ta_aia: uri::Rsync,
+        ta_uri: uri::Https,
+        publication_server_uris: PublicationServerUris,
+        cas: Vec<ImportCa>,
+    ) -> Self {
+        Structure {
+            ta_aia,
+            ta_uri,
+            publication_server_uris,
+            cas,
+        }
+    }
     // Check that all parents are valid for the CAs in this structure
     // in the order in which they appear.
     pub fn valid_ca_sequence(&self) -> bool {
@@ -74,6 +87,10 @@ pub struct ImportCa {
 }
 
 impl ImportCa {
+    pub fn new(handle: CaHandle, parents: Vec<ImportParent>, roas: Vec<RoaConfiguration>) -> Self {
+        ImportCa { handle, parents, roas }
+    }
+
     pub fn unpack(self) -> (CaHandle, Vec<ImportParent>, Vec<RoaConfiguration>) {
         (self.handle, self.parents, self.roas)
     }
@@ -86,6 +103,10 @@ pub struct ImportParent {
 }
 
 impl ImportParent {
+    pub fn new(handle: ParentHandle, resources: ResourceSet) -> Self {
+        ImportParent { handle, resources }
+    }
+
     pub fn handle(&self) -> &ParentHandle {
         &self.handle
     }
