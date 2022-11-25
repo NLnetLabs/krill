@@ -17,17 +17,17 @@ pub async fn statics(req: Request) -> RoutingResult {
 
             "/assets/favicon.f84116cb.ico" => Ok(HttpResponse::fav(FAVICON)),
 
-            "/assets/index.0d0b917f.js" => Ok(HttpResponse::js(JS_INDEX)),
+            "/assets/index.f274b5d0.js" => Ok(HttpResponse::js(JS_INDEX)),
 
-            "/assets/en.37fed57b.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_ENGLISH)),
-            "/assets/de.332016d4.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_GERMAN)),
-            "/assets/es.1e4191b5.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_SPANISH)),
-            "/assets/fr.be817428.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_FRENCH)),
-            "/assets/gr.deec5245.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_GREEK)),
-            "/assets/nl.fa061582.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_DUTCH)),
-            "/assets/pt.bda189b8.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_PORTUGUESE)),
+            "/assets/en.117465da.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_ENGLISH)),
+            "/assets/de.c1683021.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_GERMAN)),
+            "/assets/es.2cdd9ddc.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_SPANISH)),
+            "/assets/fr.b2a64488.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_FRENCH)),
+            "/assets/gr.229ff4cb.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_GREEK)),
+            "/assets/nl.4075338e.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_DUTCH)),
+            "/assets/pt.a5d31a96.js" => Ok(HttpResponse::js(JS_TRANSLATIONS_PORTUGUESE)),
 
-            "/assets/index.82a39138.css" => Ok(HttpResponse::css(CSS)),
+            "/assets/index.ff3b627e.css" => Ok(HttpResponse::css(CSS)),
 
             "/assets/check.3e734f78.svg" => Ok(HttpResponse::svg(SVG_CHECK)),
             "/assets/check-green.4525c79c.svg" => Ok(HttpResponse::svg(SVG_CHECK_GREEN)),
@@ -67,17 +67,17 @@ pub static INDEX: &[u8] = include_bytes!("../../../ui/index.html");
 
 static FAVICON: &[u8] = include_bytes!("../../../ui/assets/favicon.f84116cb.ico");
 
-static JS_INDEX: &[u8] = include_bytes!("../../../ui/assets/index.0d0b917f.js");
+static JS_INDEX: &[u8] = include_bytes!("../../../ui/assets/index.f274b5d0.js");
 
-static JS_TRANSLATIONS_GERMAN: &[u8] = include_bytes!("../../../ui/assets/de.332016d4.js");
-static JS_TRANSLATIONS_ENGLISH: &[u8] = include_bytes!("../../../ui/assets/en.37fed57b.js");
-static JS_TRANSLATIONS_SPANISH: &[u8] = include_bytes!("../../../ui/assets/es.1e4191b5.js");
-static JS_TRANSLATIONS_FRENCH: &[u8] = include_bytes!("../../../ui/assets/fr.be817428.js");
-static JS_TRANSLATIONS_GREEK: &[u8] = include_bytes!("../../../ui/assets/gr.deec5245.js");
-static JS_TRANSLATIONS_DUTCH: &[u8] = include_bytes!("../../../ui/assets/nl.fa061582.js");
-static JS_TRANSLATIONS_PORTUGUESE: &[u8] = include_bytes!("../../../ui/assets/pt.bda189b8.js");
+static JS_TRANSLATIONS_GERMAN: &[u8] = include_bytes!("../../../ui/assets/de.c1683021.js");
+static JS_TRANSLATIONS_ENGLISH: &[u8] = include_bytes!("../../../ui/assets/en.117465da.js");
+static JS_TRANSLATIONS_SPANISH: &[u8] = include_bytes!("../../../ui/assets/es.2cdd9ddc.js");
+static JS_TRANSLATIONS_FRENCH: &[u8] = include_bytes!("../../../ui/assets/fr.b2a64488.js");
+static JS_TRANSLATIONS_GREEK: &[u8] = include_bytes!("../../../ui/assets/gr.229ff4cb.js");
+static JS_TRANSLATIONS_DUTCH: &[u8] = include_bytes!("../../../ui/assets/nl.4075338e.js");
+static JS_TRANSLATIONS_PORTUGUESE: &[u8] = include_bytes!("../../../ui/assets/pt.a5d31a96.js");
 
-static CSS: &[u8] = include_bytes!("../../../ui/assets/index.82a39138.css");
+static CSS: &[u8] = include_bytes!("../../../ui/assets/index.ff3b627e.css");
 
 static SVG_CHECK: &[u8] = include_bytes!("../../../ui/assets/check.3e734f78.svg");
 static SVG_CHECK_GREEN: &[u8] = include_bytes!("../../../ui/assets/check-green.4525c79c.svg");
