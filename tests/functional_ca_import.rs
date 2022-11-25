@@ -104,7 +104,7 @@ async fn functional_ca_import() {
 
         assert!(
             will_publish_embedded(
-                "child1 should publish certificate for grandchild and 3 roas",
+                "grandchild should publish certificate for grandchild and 2 roas",
                 &grandchild,
                 &expected_files_grandchild
             )
