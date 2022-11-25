@@ -82,8 +82,24 @@ async fn functional_ca_import() {
     }
 
     {
-        //check child2 exists and has resources
+        // check child2
+        // - resources
+        // - no roas
+        // - published cert for grandchild
         assert!(ca_contains_resources(&child2, &child2_resources).await);
+
+        let mut expected_files_child2_rc0 = expected_mft_and_crl(&child2, &rcn_0).await;
+        // the certificate is issued under rc0 of child2, but from the grandchild's perspective this is in its rc1
+        expected_files_child2_rc0.push(expected_issued_cer(&grandchild, &rcn_1).await);
+
+        assert!(
+            will_publish_embedded(
+                "child2 should publish certificate for grandchild and no roas",
+                &child2,
+                &expected_files_child2_rc0
+            )
+            .await
+        );
     }
 
     {
