@@ -34,7 +34,7 @@ use crate::{
     },
     commons::{
         api::{
-            AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, BgpSecAsnKey,
+            self, AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, BgpSecAsnKey,
             BgpSecCsrInfoList, BgpSecDefinition, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ConfiguredRoa,
             ConfiguredRoas, ObjectName, ParentCaContact, ParentCaReq, ParentStatuses, PublicationServerUris,
             PublisherDetails, PublisherList, ResourceClassKeysInfo, RoaConfiguration, RoaConfigurationUpdates,
@@ -448,6 +448,45 @@ pub async fn ca_configured_roas(ca: &CaHandle) -> ConfiguredRoas {
         ApiResponse::RouteAuthorizations(roas) => roas,
         _ => panic!("Expected configured ROAs"),
     }
+}
+
+// short hand to expect ROA configurations in a CA
+pub async fn expect_configured_roas(ca: &CaHandle, expected: &[RoaConfiguration]) {
+    let configured_roas = ca_configured_roas(ca).await.unpack();
+    assert_eq!(configured_roas.len(), expected.len());
+
+    // Copy the expected configs, but convert them to an explicit max length because
+    // Krill always stores configs that way to avoid duplicate equivalent entries.
+    let expected: Vec<_> = expected
+        .iter()
+        .map(|entry| entry.clone().into_explicit_max_length())
+        .collect();
+
+    for configuration in configured_roas.iter().map(|configured| configured.roa_configuration()) {
+        if !expected.contains(configuration) {
+            let expected_strs: Vec<_> = expected.into_iter().map(|e| e.to_string()).collect();
+            panic!(
+                "Actual configuration: '{}' not in expected: {}",
+                configuration,
+                expected_strs.join(", ")
+            );
+        }
+    }
+}
+
+// short hand to expect ROAs under CA under its first resource class
+pub async fn expect_roa_objects(ca: &CaHandle, roas: &[RoaPayload]) {
+    let rcn_0 = ResourceClassName::from(0);
+
+    let roas: Vec<_> = roas.iter().map(|entry| entry.into_explicit_max_length()).collect();
+
+    let mut expected_files = expected_mft_and_crl(ca, &rcn_0).await;
+
+    for roa in roas {
+        expected_files.push(ObjectName::from(&roa).to_string());
+    }
+
+    assert!(will_publish_embedded("published ROAs do not match expectations", ca, &expected_files).await);
 }
 
 pub async fn ca_route_authorizations_suggestions(ca: &CaHandle) -> BgpAnalysisSuggestion {
@@ -869,6 +908,14 @@ pub async fn set_up_ca_with_repo(ca: &CaHandle) {
 
     // Update the repo for the child
     repo_update(ca, response).await;
+}
+
+pub async fn import_cas(structure: api::import::Structure) {
+    let command = Command::Bulk(BulkCaCommand::Import(structure));
+    match krill_admin(command).await {
+        ApiResponse::Empty => {}
+        _ => panic!("Expected empty ok response to ca imports"),
+    }
 }
 
 pub async fn expected_mft_and_crl(ca: &CaHandle, rcn: &ResourceClassName) -> Vec<String> {

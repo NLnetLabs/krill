@@ -2,16 +2,9 @@
 //!
 use std::fs;
 
-use rpki::{
-    ca::{idexchange::CaHandle, provisioning::ResourceClassName},
-    repository::resources::ResourceSet,
-};
+use rpki::repository::resources::ResourceSet;
 
-use krill::{
-    commons::api::{ObjectName, RoaConfiguration, RoaConfigurationUpdates, RoaPayload},
-    daemon::ca::ta_handle,
-    test::*,
-};
+use krill::{commons::api::RoaConfigurationUpdates, daemon::ca::ta_handle, test::*};
 
 #[tokio::test]
 async fn functional_roas() {
@@ -82,29 +75,6 @@ async fn functional_roas() {
         info("");
         set_up_ca_with_repo(&ca).await;
         set_up_ca_under_parent_with_resources(&ca, &testbed, &ca_res).await;
-    }
-
-    // short hand to expect ROAs under CA
-    async fn expect_roa_objects(ca: &CaHandle, roas: &[RoaPayload]) {
-        let rcn_0 = ResourceClassName::from(0);
-
-        let mut expected_files = expected_mft_and_crl(ca, &rcn_0).await;
-
-        for roa in roas {
-            expected_files.push(ObjectName::from(roa).to_string());
-        }
-
-        assert!(will_publish_embedded("published ROAs do not match expectations", ca, &expected_files).await);
-    }
-
-    // short hand to expect ROA configurations in a CA
-    async fn expect_configured_roas(ca: &CaHandle, expected: &[RoaConfiguration]) {
-        let configured_roas = ca_configured_roas(ca).await.unpack();
-        assert_eq!(configured_roas.len(), expected.len());
-
-        for configuration in configured_roas.iter().map(|configured| configured.roa_configuration()) {
-            assert!(expected.contains(configuration));
-        }
     }
 
     {
