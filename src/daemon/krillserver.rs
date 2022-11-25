@@ -178,7 +178,16 @@ impl KrillServer {
         let testbed_handle = testbed_ca_handle();
 
         if let Some(testbed) = config.testbed() {
-            if !server.ca_manager.has_ca(&testbed_handle)? {
+            if server.ca_manager.has_ca(&testbed_handle)? {
+                if config.benchmark.is_some() {
+                    info!("Resuming BENCHMARK mode - will NOT recreate CAs. If you wanted this, then wipe the data dir and restart.");
+                } else {
+                    info!("Resuming TESTBED mode - ONLY USE THIS FOR TESTING AND TRAINING!");
+                }
+            } else {
+                // Will do some set up. Both TESTBED and BENCHMARK (which implies TESTBED and adds to it)
+                // will need a testbed ca to be set up first. We will re-use the import functionality to
+                // do all this.
                 let testbed_ca = api::import::ImportCa::new(
                     testbed_handle,
                     vec![api::import::ImportParent::new(
@@ -190,42 +199,43 @@ impl KrillServer {
 
                 let mut import_cas = vec![testbed_ca];
 
-                if let Some(benchmark) = &config.benchmark {
-                    info!("Enabling BENCHMARK mode - ONLY USE THIS FOR TESTING!");
-                    info!(
-                        "Will use import function to create testbed CA and {} CAs with {} ROAs each.",
-                        benchmark.cas, benchmark.ca_roas
-                    );
-
-                    let testbed_parent: ParentHandle = testbed_ca_handle().into_converted();
-                    for nr in 0..benchmark.cas {
-                        let handle = CaHandle::new(format!("benchmark-{}", nr).into());
-
-                        // derive resources for benchmark ca
-                        let byte_2_ipv4 = nr / 256;
-                        let byte_3_ipv4 = nr % 256;
-
-                        let prefix_str = format!("10.{}.{}.0/24", byte_2_ipv4, byte_3_ipv4);
-                        let resources = ResourceSet::from_strs("", &prefix_str, "")
-                            .map_err(|e| Error::ResourceSetError(format!("cannot parse resources: {}", e)))?;
-
-                        // Create ROA configs
-                        let mut roas: Vec<RoaConfiguration> = vec![];
-                        let asn_range_start = 64512;
-                        for asn in asn_range_start..asn_range_start + benchmark.ca_roas {
-                            let payload = RoaPayload::from_str(&format!("{} => {}", prefix_str, asn)).unwrap();
-                            roas.push(payload.into());
-                        }
-
-                        import_cas.push(api::import::ImportCa::new(
-                            handle,
-                            vec![api::import::ImportParent::new(testbed_parent.clone(), resources)],
-                            roas,
-                        ))
+                match config.benchmark.as_ref() {
+                    None => {
+                        info!("Enabling TESTBED mode - ONLY USE THIS FOR TESTING AND TRAINING!");
                     }
-                } else {
-                    info!("Enabling TESTBED mode - ONLY USE THIS FOR TESTING AND TRAINING!");
-                    info!("Will use import function to create testbed CA.");
+                    Some(benchmark) => {
+                        info!(
+                            "Enabling BENCHMARK mode with {} CAs with {} ROas each - ONLY USE THIS FOR TESTING!",
+                            benchmark.cas, benchmark.ca_roas
+                        );
+
+                        let testbed_parent: ParentHandle = testbed_ca_handle().into_converted();
+                        for nr in 0..benchmark.cas {
+                            let handle = CaHandle::new(format!("benchmark-{}", nr).into());
+
+                            // derive resources for benchmark ca
+                            let byte_2_ipv4 = nr / 256;
+                            let byte_3_ipv4 = nr % 256;
+
+                            let prefix_str = format!("10.{}.{}.0/24", byte_2_ipv4, byte_3_ipv4);
+                            let resources = ResourceSet::from_strs("", &prefix_str, "")
+                                .map_err(|e| Error::ResourceSetError(format!("cannot parse resources: {}", e)))?;
+
+                            // Create ROA configs
+                            let mut roas: Vec<RoaConfiguration> = vec![];
+                            let asn_range_start = 64512;
+                            for asn in asn_range_start..asn_range_start + benchmark.ca_roas {
+                                let payload = RoaPayload::from_str(&format!("{} => {}", prefix_str, asn)).unwrap();
+                                roas.push(payload.into());
+                            }
+
+                            import_cas.push(api::import::ImportCa::new(
+                                handle,
+                                vec![api::import::ImportParent::new(testbed_parent.clone(), resources)],
+                                roas,
+                            ))
+                        }
+                    }
                 }
 
                 let startup_structure = api::import::Structure::new(
@@ -235,10 +245,6 @@ impl KrillServer {
                     import_cas,
                 );
                 server.cas_import(startup_structure).await?;
-            } else if config.benchmark.is_some() {
-                info!("Resuming BENCHMARK mode - will NOT recreate CAs. If you wanted this, then wipe the data dir and restart.");
-            } else {
-                info!("Resuming TESTBED mode - ONLY USE THIS FOR TESTING AND TRAINING!");
             }
         }
 
