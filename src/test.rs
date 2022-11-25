@@ -464,21 +464,11 @@ pub async fn expect_configured_roas(ca: &CaHandle, expected: &[RoaConfiguration]
 
     for configuration in configured_roas.iter().map(|configured| configured.roa_configuration()) {
         if !expected.contains(configuration) {
-            use std::fmt::Write;
-
-            let mut expected_str = String::new();
-            let mut first = true;
-            for exp in expected {
-                if first {
-                    first = false;
-                } else {
-                    write!(&mut expected_str, ", ").unwrap();
-                }
-                write!(&mut expected_str, "{}", exp).unwrap();
-            }
+            let expected_strs: Vec<_> = expected.into_iter().map(|e| e.to_string()).collect();
             panic!(
                 "Actual configuration: '{}' not in expected: {}",
-                configuration, expected_str
+                configuration,
+                expected_strs.join(", ")
             );
         }
     }
