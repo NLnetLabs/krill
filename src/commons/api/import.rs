@@ -41,31 +41,42 @@ impl Structure {
             cas,
         }
     }
-    // Check that all parents are valid for the CAs in this structure
-    // in the order in which they appear, and that the parent CAs have
-    // the resources for each child CA.
+
+    /// Check that all parents are valid for the CAs in this structure
+    /// in the order in which they appear, and that the parent CAs have
+    /// the resources for each child CA.
     pub fn validate_ca_hierarchy(&self) -> Result<(), String> {
+        // Note we define the parent child relationship in the child only.
+        // So, the child refers to one or more parents that should have already
+        // been seen in the import structure.
+        //
+        // Furthermore, the child defines which resources it will get from
+        // the named parent. So we *also* expect that the parent claimed
+        // all those resources itself.
+        //
+        // We will always have a TA, with ALL resources in this setup. This
+        // TA is not mentioned in the CAs part of this structure. So, we
+        // will mark it as implicitly seen.
         let mut seen: HashMap<ParentHandle, ResourceSet> = HashMap::new();
-        // ta is implied
         seen.insert(ta_handle().into_converted(), ResourceSet::all());
         for ca in &self.cas {
             let mut ca_resources = ResourceSet::empty();
-            for parent in &ca.parents {
-                if let Some(seen_parent_resources) = seen.get(parent.handle()) {
-                    if seen_parent_resources.contains(&parent.resources) {
-                        ca_resources = ca_resources.union(&parent.resources);
+            for ca_parent in &ca.parents {
+                if let Some(seen_parent_resources) = seen.get(ca_parent.handle()) {
+                    if seen_parent_resources.contains(&ca_parent.resources) {
+                        ca_resources = ca_resources.union(&ca_parent.resources);
                     } else {
                         return Err(format!(
                             "CA '{}' under parent '{}' claims resources not held by parent.",
                             ca.handle,
-                            parent.handle()
+                            ca_parent.handle()
                         ));
                     }
                 } else {
                     return Err(format!(
                         "CA '{}' wants parent '{}', but this parent CA does not appear before this CA.",
                         ca.handle,
-                        parent.handle()
+                        ca_parent.handle()
                     ));
                 }
             }
