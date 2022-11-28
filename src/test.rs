@@ -725,6 +725,22 @@ pub async fn wait_for_nr_cas_under_testbed(nr: usize) -> bool {
     false
 }
 
+pub async fn wait_for_nr_cas_under_publication_server(publishers_expected: usize) {
+    let mut publishers_found = list_publishers().await.publishers().len();
+    for _ in 0..300 {
+        if publishers_expected == publishers_found {
+            return;
+        }
+        sleep_seconds(1).await;
+        publishers_found = list_publishers().await.publishers().len();
+    }
+
+    panic!(
+        "Expected {} publishers, but found {}",
+        publishers_expected, publishers_found
+    );
+}
+
 pub async fn list_publishers() -> PublisherList {
     match krill_embedded_pubd_admin(PubServerCommand::PublisherList).await {
         ApiResponse::PublisherList(pub_list) => pub_list,
