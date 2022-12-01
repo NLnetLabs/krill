@@ -234,7 +234,13 @@ impl<T: WalSupport> WalStore<T> {
             }
 
             // Then drop the lock for it as well. We could not do this
-            // while holding the write lock. Note that
+            // while holding the write lock.
+            //
+            // Note that the corresponding entity was removed from the key
+            // value store while we had a write lock for its handle.
+            // So, even if another concurrent thread would now try to update
+            // this same entity, that update would fail because the entity
+            // no longer exists.
             self.locks.drop_handle(handle);
             Ok(())
         }
