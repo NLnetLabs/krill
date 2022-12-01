@@ -3,25 +3,24 @@ use std::{
     fmt,
     path::Path,
     str::FromStr,
-    sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard},
+    sync::{Arc, RwLock},
 };
 
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use rpki::{ca::idexchange::MyHandle, repository::x509::Time};
 
-use crate::commons::eventsourcing::{
-    cmd::{Command, StoredCommandBuilder},
-    Aggregate, Event, KeyStoreKey, KeyValueError, KeyValueStore, PostSaveEventListener, StoredCommand,
-    WithStorableDetails,
-};
 use crate::commons::{
     api::{CommandHistory, CommandHistoryCriteria, CommandHistoryRecord, Label},
     error::KrillIoError,
+    eventsourcing::{
+        cmd::{Command, StoredCommandBuilder},
+        locks::HandleLocks,
+        Aggregate, Event, KeyStoreKey, KeyValueError, KeyValueStore, PostSaveEventListener, PreSaveEventListener,
+        StoredCommand, WithStorableDetails,
+    },
     util::KrillVersion,
 };
-
-use super::PreSaveEventListener;
 
 pub type StoreResult<T> = Result<T, AggregateStoreError>;
 
@@ -125,86 +124,6 @@ impl fmt::Display for CommandKeyError {
     }
 }
 
-//------------ AggregateLocks ------------------------------------------------
-
-#[derive(Debug, Default)]
-struct AggregateLockMap(HashMap<MyHandle, RwLock<()>>);
-
-impl AggregateLockMap {
-    fn create_handle_lock(&mut self, handle: MyHandle) {
-        self.0.insert(handle, RwLock::new(()));
-    }
-
-    fn has_handle(&self, handle: &MyHandle) -> bool {
-        self.0.contains_key(handle)
-    }
-
-    fn drop_handle_lock(&mut self, handle: &MyHandle) {
-        self.0.remove(handle);
-    }
-}
-
-struct AggregateLock<'a> {
-    // Needs a read reference to the map that holds the RwLock
-    // for the handle for this aggregate.
-    map: RwLockReadGuard<'a, AggregateLockMap>,
-    handle: MyHandle,
-}
-
-impl AggregateLock<'_> {
-    // panics if there is no entry for the handle.
-    fn read(&self) -> RwLockReadGuard<'_, ()> {
-        self.map.0.get(&self.handle).unwrap().read().unwrap()
-    }
-
-    // panics if there is no entry for the handle.
-    fn write(&self) -> RwLockWriteGuard<'_, ()> {
-        self.map.0.get(&self.handle).unwrap().write().unwrap()
-    }
-}
-
-/// This structure is used to ensure that we have unique access to aggregates
-/// managed in an [`AggregateStore`]. Currently uses a `std::sync::RwLock`, but
-/// this should be improved to use an async lock instead (e.g. `tokio::sync::RwLock`).
-/// This has not been done yet, because that change is quite pervasive.
-#[derive(Debug, Default)]
-struct AggregateLocks {
-    locks: RwLock<AggregateLockMap>,
-}
-
-impl AggregateLocks {
-    fn for_aggregate(&self, handle: MyHandle) -> AggregateLock<'_> {
-        {
-            // Return the lock *if* there is an entry for the handle
-            let map = self.locks.read().unwrap();
-            if map.has_handle(&handle) {
-                return AggregateLock { map, handle };
-            }
-        }
-
-        {
-            // There was no entry.. try to create an entry for the
-            // handle.
-            let mut map = self.locks.write().unwrap();
-
-            // But.. first check again, because we could have had a
-            // race condition if two threads call this function.
-            if !map.has_handle(&handle) {
-                map.create_handle_lock(handle.clone());
-            }
-        }
-
-        // Entry exists now, so return the lock
-        let map = self.locks.read().unwrap();
-        AggregateLock { map, handle }
-    }
-
-    fn drop_aggregate(&self, handle: &MyHandle) {
-        let mut map = self.locks.write().unwrap();
-        map.drop_handle_lock(handle);
-    }
-}
-
 //------------ AggregateStore ------------------------------------------------
 
 /// This type is responsible for managing aggregates.
@@ -213,7 +132,7 @@ pub struct AggregateStore<A: Aggregate> {
     cache: RwLock<HashMap<MyHandle, Arc<A>>>,
     pre_save_listeners: Vec<Arc<dyn PreSaveEventListener<A>>>,
     post_save_listeners: Vec<Arc<dyn PostSaveEventListener<A>>>,
-    locks: AggregateLocks,
+    locks: HandleLocks,
 }
 
 /// # Starting up
@@ -232,7 +151,7 @@ where
         let cache = RwLock::new(HashMap::new());
         let pre_save_listeners = vec![];
         let post_save_listeners = vec![];
-        let locks = AggregateLocks::default();
+        let locks = HandleLocks::default();
 
         let store = AggregateStore {
             kv,
@@ -441,7 +360,7 @@ where
     /// an AggregateStoreError::UnknownAggregate in case the aggregate
     /// does not exist.
     pub fn get_latest(&self, handle: &MyHandle) -> StoreResult<Arc<A>> {
-        let agg_lock = self.locks.for_aggregate(handle.clone());
+        let agg_lock = self.locks.for_handle(handle.clone());
         let _read_lock = agg_lock.read();
         self.get_latest_no_lock(handle)
     }
@@ -450,7 +369,7 @@ where
     pub fn add(&self, init: A::InitEvent) -> StoreResult<Arc<A>> {
         let handle = init.handle().clone();
 
-        let agg_lock = self.locks.for_aggregate(handle.clone());
+        let agg_lock = self.locks.for_handle(handle.clone());
         let _write_lock = agg_lock.write();
 
         self.store_event(&init)?;
@@ -485,7 +404,7 @@ where
         debug!("Processing command {}", cmd);
         let handle = cmd.handle().clone();
 
-        let agg_lock = self.locks.for_aggregate(handle.clone());
+        let agg_lock = self.locks.for_handle(handle.clone());
         let _write_lock = agg_lock.write();
 
         let mut info = self.get_info(&handle)?;
@@ -1056,7 +975,7 @@ where
     pub fn drop_aggregate(&self, id: &MyHandle) -> Result<(), AggregateStoreError> {
         {
             // First get write access - ensure that no one is using this
-            let agg_lock = self.locks.for_aggregate(id.clone());
+            let agg_lock = self.locks.for_handle(id.clone());
             let _write_lock = agg_lock.write();
 
             self.cache_remove(id);
@@ -1065,7 +984,7 @@ where
 
         // Then drop the lock for this aggregate immediately. The write lock is
         // out of scope now, to ensure we do not get into a deadlock.
-        self.locks.drop_aggregate(id);
+        self.locks.drop_handle(id);
         Ok(())
     }
 

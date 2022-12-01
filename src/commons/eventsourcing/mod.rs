@@ -18,6 +18,8 @@ pub use self::store::*;
 mod listener;
 pub use self::listener::{EventCounter, PostSaveEventListener, PreSaveEventListener};
 
+pub mod locks;
+
 mod kv;
 pub use self::kv::*;
 
