@@ -320,11 +320,17 @@ impl<T: WalSupport> WalStore<T> {
     /// This is a separate function because serializing a large instance can
     /// be expensive.
     pub fn update_snapshot(&self, handle: &MyHandle, archive: bool) -> WalStoreResult<()> {
-        // Note: We do not need to keep a read lock for the instance when we update the snapshot.
-        //       It is just fine to update a snapshot to a version that will be outdated before we
-        //       are done. The changes for that version will be stored, and we can create a new
-        //       snapshot whenever this is called again. If we did keep a read lock here, then
-        //       things that require write access could become unnecessarily slow.
+        // Note that we do not need to keep a lock for the instance when we update the snapshot.
+        // This function just updates the latest snapshot in the key value store, and it removes
+        // or archives all write-ahead log ("wal-") changes predating the new snapshot.
+        //
+        // It is fine if another thread gets the entity for this handle and updates it while we
+        // do do this. As it turns out, writing snapshots can be expensive for large objects, so
+        // we do not want block updates while we do this.
+        //
+        // This function is intended to be called in the back-ground at regular (slow) intervals
+        // so any updates that were just missed will simply be folded in to the new snapshot when
+        // this function is called again.
         let latest = self.get_latest(handle)?;
         let key = Self::key_for_snapshot(handle);
         self.kv.store(&key, &latest)?;
