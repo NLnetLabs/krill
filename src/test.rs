@@ -728,7 +728,7 @@ pub async fn wait_for_nr_cas_under_testbed(nr: usize) -> bool {
 pub async fn wait_for_nr_cas_under_publication_server(publishers_expected: usize) {
     let mut publishers_found = list_publishers().await.publishers().len();
     for _ in 0..300 {
-        if publishers_expected == publishers_found {
+        if publishers_found == publishers_expected {
             return;
         }
         sleep_seconds(1).await;
