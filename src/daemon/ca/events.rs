@@ -48,6 +48,12 @@ impl Rfc8183Id {
     }
 }
 
+impl From<Rfc8183Id> for IdCertInfo {
+    fn from(id: Rfc8183Id) -> Self {
+        id.cert
+    }
+}
+
 //------------ Ini -----------------------------------------------------------
 
 pub type Ini = StoredEvent<IniDet>;

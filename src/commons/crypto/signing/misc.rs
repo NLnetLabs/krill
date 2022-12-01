@@ -73,6 +73,10 @@ impl CsrInfo {
         (self.ca_repository, self.rpki_manifest, self.rpki_notify, self.key)
     }
 
+    pub fn key(&self) -> &PublicKey {
+        &self.key
+    }
+
     pub fn key_id(&self) -> KeyIdentifier {
         self.key.key_identifier()
     }

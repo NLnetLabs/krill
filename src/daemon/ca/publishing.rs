@@ -1281,7 +1281,7 @@ impl ManifestBuilder {
         self
     }
 
-    fn build_new_mft(self, signing_cert: &ReceivedCert, signer: &KrillSigner) -> KrillResult<Manifest> {
+    pub fn build_new_mft(self, signing_cert: &ReceivedCert, signer: &KrillSigner) -> KrillResult<Manifest> {
         let mft_uri = signing_cert.mft_uri();
         let crl_uri = signing_cert.crl_uri();
 

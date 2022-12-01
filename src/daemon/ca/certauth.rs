@@ -602,6 +602,7 @@ impl CertAuth {
 /// # Being a Trust Anchor
 ///
 impl CertAuth {
+    #[deprecated] // Functionality will move to Offline/OnlineTrustAnchor types
     fn trust_anchor_make(
         &self,
         uris: Vec<uri::Https>,

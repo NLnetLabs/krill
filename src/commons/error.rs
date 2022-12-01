@@ -299,11 +299,13 @@ pub enum Error {
     MissingResources,
 
     //-----------------------------------------------------------------
-    // Embedded (test) TA issues
+    // TA issues
     //-----------------------------------------------------------------
     TaNotAllowed,
     TaNameReserved,
     TaAlreadyInitialized,
+    TaProxyAlreadyHasRepository,
+    TaProxyAlreadyHasSigner,
 
     //-----------------------------------------------------------------
     // Resource Tagged Attestation issues
@@ -486,6 +488,8 @@ impl fmt::Display for Error {
             Error::TaNotAllowed => write!(f, "Functionality not supported for Trust Anchor"),
             Error::TaNameReserved => write!(f, "Name reserved for embedded Trust Anchor"),
             Error::TaAlreadyInitialized => write!(f, "TrustAnchor was already initialized"),
+            Error::TaProxyAlreadyHasRepository => write!(f, "Trust Anchor Proxy already has repository"),
+            Error::TaProxyAlreadyHasSigner => write!(f, "Trust Anchor Proxy already has associated signer"),
 
             //-----------------------------------------------------------------
             // Resource Tagged Attestation issues
@@ -904,6 +908,8 @@ impl Error {
             Error::TaNotAllowed => ErrorResponse::new("ta-not-allowed", &self),
             Error::TaNameReserved => ErrorResponse::new("ta-name-reserved", &self),
             Error::TaAlreadyInitialized => ErrorResponse::new("ta-initialized", &self),
+            Error::TaProxyAlreadyHasRepository => ErrorResponse::new("ta-has-repository", &self),
+            Error::TaProxyAlreadyHasSigner => ErrorResponse::new("ta-has-signer", &self),
 
             //-----------------------------------------------------------------
             // Resource Tagged Attestation issues

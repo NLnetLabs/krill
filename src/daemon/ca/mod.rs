@@ -44,6 +44,9 @@ pub use self::rta::*;
 mod status;
 pub use self::status::*;
 
+mod ta;
+pub use self::ta::*;
+
 pub const TA_NAME: &str = "ta"; // reserved for TA
 pub const TESTBED_CA_NAME: &str = "testbed"; // reserved for testbed mode
 

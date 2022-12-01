@@ -9,6 +9,7 @@ use rpki::{
     },
     crypto::KeyIdentifier,
     repository::{resources::ResourceSet, x509::Time},
+    rrdp::Hash,
 };
 
 use crate::{
@@ -259,6 +260,10 @@ impl CommandSummary {
 
     pub fn with_key(self, ki: KeyIdentifier) -> Self {
         self.with_arg("key", ki)
+    }
+
+    pub fn with_id_cert_hash(self, hash: &Hash) -> Self {
+        self.with_arg("id_cert_hash", hash)
     }
 
     pub fn with_parent_contact(self, contact: &StorableParentContact) -> Self {
