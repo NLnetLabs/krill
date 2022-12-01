@@ -79,9 +79,9 @@ impl HandleLocks {
             }
         }
 
-        // Entry exists now, so return the lock
-        let map = self.locks.read().unwrap();
-        HandleLock { map, handle }
+        // Entry probably exists now, but recurse in case the entry
+        // was dropped immediately after creation.
+        self.for_handle(handle)
     }
 
     pub fn drop_handle(&self, handle: &MyHandle) {
