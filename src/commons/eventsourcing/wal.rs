@@ -325,10 +325,10 @@ impl<T: WalSupport> WalStore<T> {
         // or archives all write-ahead log ("wal-") changes predating the new snapshot.
         //
         // It is fine if another thread gets the entity for this handle and updates it while we
-        // do do this. As it turns out, writing snapshots can be expensive for large objects, so
+        // do this. As it turns out, writing snapshots can be expensive for large objects, so
         // we do not want block updates while we do this.
         //
-        // This function is intended to be called in the back-ground at regular (slow) intervals
+        // This function is intended to be called in the background at regular (slow) intervals
         // so any updates that were just missed will simply be folded in to the new snapshot when
         // this function is called again.
         let latest = self.get_latest(handle)?;
