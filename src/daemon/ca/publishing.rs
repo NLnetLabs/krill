@@ -1095,18 +1095,31 @@ impl ObjectSetRevision {
             next_update,
         }
     }
-    fn create(timing: &IssuanceTimingConfig) -> Self {
+
+    pub fn number(&self) -> u64 {
+        self.number
+    }
+
+    pub fn this_update(&self) -> Time {
+        self.this_update
+    }
+
+    pub fn next_update(&self) -> Time {
+        self.next_update
+    }
+
+    fn create(next_update: Time) -> Self {
         ObjectSetRevision {
             number: 1,
             this_update: Time::five_minutes_ago(),
-            next_update: timing.publish_next(),
+            next_update,
         }
     }
 
-    fn next(&mut self, timing: &IssuanceTimingConfig) {
+    pub fn next(&mut self, next_update: Time) {
         self.number += 1;
         self.this_update = Time::five_minutes_ago();
-        self.next_update = timing.publish_next();
+        self.next_update;
     }
 }
 

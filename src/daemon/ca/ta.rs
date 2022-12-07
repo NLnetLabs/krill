@@ -1,6 +1,6 @@
 //! Support for operating a Trust Anchor in Krill.
 //!
-use std::{collections::HashMap, fmt, sync::Arc};
+use std::{collections::HashMap, convert::TryInto, fmt, sync::Arc};
 
 use rpki::{
     ca::{
@@ -15,6 +15,7 @@ use rpki::{
     },
     uri,
 };
+use uuid::Uuid;
 
 use crate::{
     commons::{
@@ -23,7 +24,7 @@ use crate::{
             IdCertInfo, IssuedCertificate, ObjectName, ReceivedCert, RepositoryContact, Revocations, TaCertDetails,
             TrustAnchorLocator,
         },
-        crypto::KrillSigner,
+        crypto::{KrillSigner, SignSupport},
         error::Error,
         eventsourcing, KrillResult,
     },
@@ -128,6 +129,7 @@ pub struct TrustAnchorObjects {
 }
 
 impl TrustAnchorObjects {
+    /// Creates a new TrustAnchorObjects for the signing certificate.
     fn create(ta_cert_details: &TaCertDetails, signer: &KrillSigner) -> KrillResult<Self> {
         let revision = ObjectSetRevision::new(1, Self::this_update(), Self::next_update());
         let revocations = Revocations::default();
@@ -152,6 +154,10 @@ impl TrustAnchorObjects {
         })
     }
 
+    fn increment_revision(&mut self) {
+        self.revision.next(Self::next_update());
+    }
+
     fn this_update() -> Time {
         Time::five_minutes_ago()
     }
@@ -159,31 +165,6 @@ impl TrustAnchorObjects {
     fn next_update() -> Time {
         Time::now() + chrono::Duration::weeks(12)
     }
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct TrustAnchorChild {
-    handle: ChildHandle,
-    id: IdCertInfo,
-    resources: ResourceSet,
-    used_keys: HashMap<KeyIdentifier, UsedKeyState>,
-    open_request: Option<ChildRequest>,
-    open_response: Option<TaResponse>,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[allow(clippy::large_enum_variant)]
-enum ChildRequest {
-    Issuance(provisioning::IssuanceRequest),
-    Revocation(provisioning::RevocationRequest),
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[allow(clippy::large_enum_variant)]
-enum TaResponse {
-    Issuance(provisioning::IssuanceResponse),
-    Revocation(provisioning::RevocationResponse),
-    Error(String),
 }
 
 //------------ TrustAnchorProxy: Commands and Events -----------------------
@@ -254,6 +235,8 @@ pub enum TrustAnchorProxyCommandDetails {
     AddRepository(RepositoryContact),
     AddSigner(TrustAnchorProxySignerInfo),
     AddChild(TrustAnchorProxyAddChild),
+    MakeRepublishRequest,
+    ProcessRepublishResponse(TrustAnchorObjects),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -280,6 +263,17 @@ impl fmt::Display for TrustAnchorProxyCommandDetails {
                     add_child.handle, add_child.resources
                 )
             }
+            TrustAnchorProxyCommandDetails::MakeRepublishRequest => {
+                write!(f, "Create new publish request for signer")
+            }
+            TrustAnchorProxyCommandDetails::ProcessRepublishResponse(objects) => {
+                write!(
+                    f,
+                    "Process publish response from signer. Number: {}. Next Update (before): {}",
+                    objects.revision.number(),
+                    objects.revision.next_update().to_rfc3339()
+                )
+            }
         }
     }
 }
@@ -298,6 +292,15 @@ impl eventsourcing::WithStorableDetails for TrustAnchorProxyCommandDetails {
             TrustAnchorProxyCommandDetails::AddChild(add_child) => {
                 crate::commons::api::CommandSummary::new("cmd-ta-proxy-child-add", &self).with_child(&add_child.handle)
             }
+            TrustAnchorProxyCommandDetails::MakeRepublishRequest => {
+                crate::commons::api::CommandSummary::new("cmd-ta-proxy-pub-req", &self)
+            }
+            TrustAnchorProxyCommandDetails::ProcessRepublishResponse(objects) => {
+                crate::commons::api::CommandSummary::new("cmd-ta-proxy-pub-res", &self)
+                    .with_arg("number", objects.revision.number())
+                    .with_arg("this update", objects.revision.this_update().to_rfc3339())
+                    .with_arg("next update", objects.revision.next_update().to_rfc3339())
+            }
         }
     }
 }
@@ -314,6 +317,10 @@ impl TrustAnchorProxyCommand {
 
     pub fn add_signer(id: &TrustAnchorHandle, signer: TrustAnchorProxySignerInfo, actor: &Actor) -> Self {
         TrustAnchorProxyCommand::new(id, None, TrustAnchorProxyCommandDetails::AddSigner(signer), actor)
+    }
+
+    pub fn make_publish_request(id: &TrustAnchorHandle, actor: &Actor) -> Self {
+        TrustAnchorProxyCommand::new(id, None, TrustAnchorProxyCommandDetails::MakeRepublishRequest, actor)
     }
 }
 
@@ -401,7 +408,9 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
                     Err(Error::TaProxyAlreadyHasSigner)
                 }
             }
-            TrustAnchorProxyCommandDetails::AddChild(_add_child) => todo!(),
+            TrustAnchorProxyCommandDetails::AddChild(_add_child) => todo!("add child"),
+            TrustAnchorProxyCommandDetails::MakeRepublishRequest => todo!("make publish request"),
+            TrustAnchorProxyCommandDetails::ProcessRepublishResponse(_objects) => todo!("process published objects"),
         }
     }
 }
@@ -596,6 +605,60 @@ pub struct TrustAnchorSignerInitCommand {
     signer: Arc<KrillSigner>,
 }
 
+// Date types used to requests and responses between the proxy and signer
+
+/// Request for the Trust Anchor Signer to update the signed
+/// objects (new mft, crl). Can contain requests for one or
+/// more children to either issue a new certificate, or revoke
+/// a key. If there are no requests for a child, then it is
+/// assumed that the current issued certificate(s) to the child
+/// should not change.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct TrustAnchorRequest {
+    nonce: String, // should be matched in response (replay protection)
+    child_requests: HashMap<ChildHandle, TrustAnchorChildRequests>,
+}
+
+/// Requests for Trust Anchor Child.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct TrustAnchorChildRequests {
+    child: ChildHandle,
+    resources: ResourceSet,
+    requests: Vec<ProvisioningRequest>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct TrustAnchorResponse {
+    nonce: String, // should match the request (replay protection)
+    objects: TrustAnchorObjects,
+    child_responses: HashMap<ChildHandle, Vec<ProvisioningResponse>>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct TrustAnchorChild {
+    handle: ChildHandle,
+    id: IdCertInfo,
+    resources: ResourceSet,
+    used_keys: HashMap<KeyIdentifier, UsedKeyState>,
+    open_request: Option<ProvisioningRequest>,
+    open_response: Option<ProvisioningResponse>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[allow(clippy::large_enum_variant)]
+enum ProvisioningRequest {
+    Issuance(provisioning::IssuanceRequest),
+    Revocation(provisioning::RevocationRequest),
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[allow(clippy::large_enum_variant)]
+enum ProvisioningResponse {
+    Issuance(provisioning::IssuanceResponse),
+    Revocation(provisioning::RevocationResponse),
+    Error(String),
+}
+
 impl TrustAnchorSigner {
     /// Creates an initialisation event that can be used to create a new Trust Anchor Signer.
     pub fn create_init(cmd: TrustAnchorSignerInitCommand) -> KrillResult<TrustAnchorSignerInitEvent> {
@@ -675,6 +738,44 @@ impl TrustAnchorSigner {
 
         Ok(TaCertDetails::new(rcvd_cert, tal))
     }
+
+    /// Process a request.
+    fn process_signer_request(
+        &self,
+        request: TrustAnchorRequest,
+        signer: &KrillSigner,
+    ) -> KrillResult<TrustAnchorResponse> {
+        let mut objects = self.objects.clone();
+
+        let mut child_responses: HashMap<ChildHandle, Vec<ProvisioningResponse>> = HashMap::new();
+
+        objects.increment_revision();
+        for (child, child_requests) in request.child_requests {
+            child_responses.insert(child, vec![]);
+            let resources = child_requests.resources;
+            for provisioning_request in child_requests.requests {
+                match provisioning_request {
+                    ProvisioningRequest::Issuance(issuance_req) => {
+                        let (_rcn, limit, csr) = issuance_req.unpack();
+
+                        let issued = SignSupport::make_issued_cert(
+                            csr.try_into()?,
+                            &resources,
+                            limit,
+                            signing_key,
+                            validity,
+                            signer,
+                        )?;
+
+                        todo!()
+                    }
+                    ProvisioningRequest::Revocation(revocation_req) => todo!(),
+                }
+            }
+        }
+
+        todo!()
+    }
 }
 
 //----------------- TESTS --------------------------------------------------------------
@@ -748,6 +849,9 @@ mod tests {
             let add_signer_cmd = TrustAnchorProxyCommand::add_signer(&proxy_handle, signer_info, &actor);
 
             ta_proxy_store.command(add_signer_cmd).unwrap();
+
+            let make_publish_request_cmd = TrustAnchorProxyCommand::make_publish_request(&proxy_handle, &actor);
+            ta_proxy_store.command(make_publish_request_cmd).unwrap();
 
             // // First we need to set up the online TA
             // // The offline TA can only be set up when its online counterpart
