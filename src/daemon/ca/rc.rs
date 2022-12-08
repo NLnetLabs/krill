@@ -367,9 +367,9 @@ impl ResourceClass {
             let updated_key = CertifiedKey::create(rcvd_cert);
 
             // Shrink any overclaiming child certificates
-            let updates = self
-                .certificates
-                .shrink_overclaiming(&updated_key, &config.issuance_timing, signer)?;
+            let updates =
+                self.certificates
+                    .shrink_overclaiming(updated_key.incoming_cert(), &config.issuance_timing, signer)?;
             if !updates.is_empty() {
                 res.push(CaEvtDet::ChildCertificatesUpdated {
                     resource_class_name: self.name.clone(),
@@ -621,7 +621,9 @@ impl ResourceClass {
                     events.push(aspas_updated);
                 }
 
-                let cert_updates = self.certificates.activate_key(new_key, issuance_timing, signer)?;
+                let cert_updates = self
+                    .certificates
+                    .activate_key(new_key.incoming_cert(), issuance_timing, signer)?;
                 if !cert_updates.is_empty() {
                     let certs_updated = CaEvtDet::ChildCertificatesUpdated {
                         resource_class_name: self.name.clone(),
@@ -676,15 +678,15 @@ impl ResourceClass {
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<IssuedCertificate> {
-        let signing_key = self.get_current_key()?;
-        let parent_resources = signing_key.incoming_cert().resources();
+        let signing_cert = self.get_current_key()?.incoming_cert();
+        let parent_resources = signing_cert.resources();
         let resources = parent_resources.intersection(child_resources);
 
         let issued = SignSupport::make_issued_cert(
             csr,
             &resources,
             limit,
-            signing_key,
+            signing_cert,
             issuance_timing.new_child_cert_validity(),
             signer,
         )?;

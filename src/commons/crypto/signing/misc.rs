@@ -117,11 +117,10 @@ impl SignSupport {
         csr: CsrInfo,
         resources: &ResourceSet,
         limit: RequestResourceLimit,
-        signing_key: &CertifiedKey,
+        signing_cert: &ReceivedCert,
         validity: Validity,
         signer: &KrillSigner,
     ) -> KrillResult<IssuedCertificate> {
-        let signing_cert = signing_key.incoming_cert();
         let resources = limit.apply_to(resources)?;
         if !signing_cert.resources().contains(&resources) {
             return Err(Error::MissingResources);
@@ -130,7 +129,7 @@ impl SignSupport {
         let request = CertRequest::Ca(csr, validity);
 
         let tbs = Self::make_tbs_cert(&resources, signing_cert, request, signer)?;
-        let cert = signer.sign_cert(tbs, signing_key.key_id())?;
+        let cert = signer.sign_cert(tbs, &signing_cert.key_identifier())?;
 
         let uri = signing_cert.uri_for_object(&cert);
 

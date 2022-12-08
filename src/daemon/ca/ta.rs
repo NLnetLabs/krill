@@ -1,6 +1,6 @@
 //! Support for operating a Trust Anchor in Krill.
 //!
-use std::{collections::HashMap, convert::TryInto, fmt, sync::Arc};
+use std::{collections::HashMap, convert::TryFrom, fmt, sync::Arc};
 
 use rpki::{
     ca::{
@@ -15,7 +15,6 @@ use rpki::{
     },
     uri,
 };
-use uuid::Uuid;
 
 use crate::{
     commons::{
@@ -24,7 +23,7 @@ use crate::{
             IdCertInfo, IssuedCertificate, ObjectName, ReceivedCert, RepositoryContact, Revocations, TaCertDetails,
             TrustAnchorLocator,
         },
-        crypto::{KrillSigner, SignSupport},
+        crypto::{CsrInfo, KrillSigner, SignSupport},
         error::Error,
         eventsourcing, KrillResult,
     },
@@ -750,6 +749,9 @@ impl TrustAnchorSigner {
         let mut child_responses: HashMap<ChildHandle, Vec<ProvisioningResponse>> = HashMap::new();
 
         objects.increment_revision();
+
+        let signing_cert = self.ta_cert_details.cert();
+
         for (child, child_requests) in request.child_requests {
             child_responses.insert(child, vec![]);
             let resources = child_requests.resources;
@@ -758,11 +760,13 @@ impl TrustAnchorSigner {
                     ProvisioningRequest::Issuance(issuance_req) => {
                         let (_rcn, limit, csr) = issuance_req.unpack();
 
+                        let validity = SignSupport::sign_validity_weeks(52);
+
                         let issued = SignSupport::make_issued_cert(
-                            csr.try_into()?,
+                            CsrInfo::try_from(&csr)?,
                             &resources,
                             limit,
-                            signing_key,
+                            signing_cert,
                             validity,
                             signer,
                         )?;

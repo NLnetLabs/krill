@@ -888,7 +888,7 @@ impl KeyObjectSet {
         let signing_key = signing_cert.key_identifier();
         let issuer = signing_cert.subject().clone();
         let revocations = Revocations::default();
-        let revision = ObjectSetRevision::create(timing);
+        let revision = ObjectSetRevision::create(timing.publish_next());
 
         let crl = CrlBuilder::build(signing_key, issuer, &revocations, revision, signer)?;
         let published_objects = HashMap::new();
@@ -1031,7 +1031,7 @@ impl KeyObjectSet {
     }
 
     fn reissue(&mut self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<()> {
-        self.revision.next(timing);
+        self.revision.next(timing.publish_next());
 
         self.revocations.purge();
         let signing_key = self.signing_cert.key_identifier();
@@ -1119,7 +1119,7 @@ impl ObjectSetRevision {
     pub fn next(&mut self, next_update: Time) {
         self.number += 1;
         self.this_update = Time::five_minutes_ago();
-        self.next_update;
+        self.next_update = next_update;
     }
 }
 
