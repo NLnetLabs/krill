@@ -10,7 +10,7 @@ use rpki::{
 
 use krill::{
     commons::api::{AspaCustomer, AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, ObjectName},
-    daemon::ca::ta_handle,
+    daemon::ta::ta_handle,
     test::*,
 };
 use rpki::repository::aspa::ProviderAs;

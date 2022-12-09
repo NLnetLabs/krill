@@ -486,54 +486,6 @@ impl fmt::Display for InvalidCert {
 
 impl std::error::Error for InvalidCert {}
 
-//------------ TrustAnchorLocator --------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct TrustAnchorLocator {
-    uris: Vec<uri::Https>,
-    rsync_uri: uri::Rsync,
-    encoded_ski: Base64,
-}
-
-impl TrustAnchorLocator {
-    /// Creates a new TAL, panics when the provided Cert is not a TA cert.
-    pub fn new(uris: Vec<uri::Https>, rsync_uri: uri::Rsync, public_key: &PublicKey) -> Self {
-        let encoded_ski = Base64::from_content(&public_key.to_info_bytes());
-
-        TrustAnchorLocator {
-            uris,
-            rsync_uri,
-            encoded_ski,
-        }
-    }
-}
-
-impl fmt::Display for TrustAnchorLocator {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let base64_string = self.encoded_ski.to_string();
-
-        for uri in self.uris.iter() {
-            writeln!(f, "{}", uri)?;
-        }
-        writeln!(f, "{}", self.rsync_uri)?;
-
-        writeln!(f)?;
-
-        let len = base64_string.len();
-        let wrap = 64;
-
-        for i in 0..=(len / wrap) {
-            if (i * wrap + wrap) < len {
-                writeln!(f, "{}", &base64_string[i * wrap..i * wrap + wrap])?;
-            } else {
-                write!(f, "{}", &base64_string[i * wrap..])?;
-            }
-        }
-
-        Ok(())
-    }
-}
-
 //------------ PendingKeyInfo ------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -2214,7 +2166,7 @@ mod test {
 
     use rpki::crypto::PublicKeyFormat;
 
-    use crate::{commons::crypto::OpenSslSigner, test};
+    use crate::{commons::crypto::OpenSslSigner, daemon::ta::TrustAnchorLocator, test};
 
     use super::*;
 

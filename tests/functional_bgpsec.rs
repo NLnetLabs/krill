@@ -10,7 +10,7 @@ use rpki::{
 
 use krill::{
     commons::api::{BgpSecAsnKey, BgpSecCsrInfo, BgpSecDefinition},
-    daemon::ca::ta_handle,
+    daemon::ta::ta_handle,
     test::*,
 };
 

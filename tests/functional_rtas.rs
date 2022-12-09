@@ -3,7 +3,7 @@
 use std::fs;
 
 use bytes::Bytes;
-use krill::{commons::api::RtaList, daemon::ca::ta_handle, test::*};
+use krill::{commons::api::RtaList, daemon::ta::ta_handle, test::*};
 use rpki::repository::resources::ResourceSet;
 
 #[tokio::test]

@@ -13,14 +13,14 @@ use crate::{
     commons::{
         api::{
             AspaCustomer, AspaDefinition, AspaProvidersUpdate, BgpSecAsnKey, IdCertInfo, IssuedCertificate, ObjectName,
-            ParentCaContact, ReceivedCert, RepositoryContact, RoaAggregateKey, RtaName, SuspendedCert, TaCertDetails,
-            UnsuspendedCert,
+            ParentCaContact, ReceivedCert, RepositoryContact, RoaAggregateKey, RtaName, SuspendedCert, UnsuspendedCert,
         },
         crypto::KrillSigner,
         eventsourcing::StoredEvent,
         KrillResult,
     },
     daemon::ca::{AspaInfo, CertifiedKey, PreparedRta, RoaInfo, RoaPayloadJsonMapKey, SignedRta},
+    daemon::ta::TaCertDetails,
 };
 
 use super::{BgpSecCertInfo, StoredBgpSecCsr};

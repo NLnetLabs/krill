@@ -29,8 +29,7 @@ use crate::{
             AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate, BgpSecAsnKey,
             BgpSecCsrInfoList, BgpSecDefinitionUpdates, CertAuthInfo, ConfiguredRoa, IdCertInfo, IssuedCertificate,
             ObjectName, ParentCaContact, ReceivedCert, RepositoryContact, Revocation, RoaConfiguration,
-            RoaConfigurationUpdates, RtaList, RtaName, RtaPrepResponse, StorableCaCommand, TaCertDetails,
-            TrustAnchorLocator,
+            RoaConfigurationUpdates, RtaList, RtaName, RtaPrepResponse, StorableCaCommand,
         },
         crypto::{CsrInfo, KrillSigner},
         error::{Error, RoaDeltaError},
@@ -40,12 +39,12 @@ use crate::{
     constants::test_mode_enabled,
     daemon::{
         ca::{
-            events::ChildCertificateUpdates, ta_handle, AspaDefinitions, BgpSecDefinitions, CaEvt, CaEvtDet,
-            ChildDetails, Cmd, CmdDet, DropReason, Ini, PreparedRta, ResourceClass, ResourceTaggedAttestation,
-            Rfc8183Id, RoaPayloadJsonMapKey, Routes, RtaContentRequest, RtaPrepareRequest, Rtas, SignedRta,
-            StoredBgpSecCsr,
+            events::ChildCertificateUpdates, AspaDefinitions, BgpSecDefinitions, CaEvt, CaEvtDet, ChildDetails, Cmd,
+            CmdDet, DropReason, Ini, PreparedRta, ResourceClass, ResourceTaggedAttestation, Rfc8183Id,
+            RoaPayloadJsonMapKey, Routes, RtaContentRequest, RtaPrepareRequest, Rtas, SignedRta, StoredBgpSecCsr,
         },
         config::{Config, IssuanceTimingConfig},
+        ta::{ta_handle, TaCertDetails, TrustAnchorLocator},
     },
 };
 

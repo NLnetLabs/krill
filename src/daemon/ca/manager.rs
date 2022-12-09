@@ -44,11 +44,12 @@ use crate::{
         auth::common::permissions::Permission,
         auth::Handle,
         ca::{
-            self, ta_handle, CaObjectsStore, CaStatus, CertAuth, Cmd, CmdDet, DeprecatedRepository, IniDet,
-            ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest, StatusStore,
+            CaObjectsStore, CaStatus, CertAuth, Cmd, CmdDet, DeprecatedRepository, IniDet, ResourceTaggedAttestation,
+            RtaContentRequest, RtaPrepareRequest, StatusStore,
         },
         config::Config,
         mq::{now, TaskQueue},
+        ta::{self, ta_handle},
     },
     pubd::RepositoryManager,
 };
@@ -145,7 +146,7 @@ impl CaManager {
 
     /// Gets the TrustAnchor, if present. Returns an error if the TA is uninitialized.
     pub async fn get_trust_anchor(&self) -> KrillResult<Arc<CertAuth>> {
-        let ta_handle = ca::ta_handle();
+        let ta_handle = ta::ta_handle();
         self.ca_store.get_latest(&ta_handle).map_err(Error::AggregateStoreError)
     }
 
@@ -157,7 +158,7 @@ impl CaManager {
         repo_manager: &Arc<RepositoryManager>,
         actor: &Actor,
     ) -> KrillResult<()> {
-        let ta_handle = ca::ta_handle();
+        let ta_handle = ta::ta_handle();
 
         if self.ca_store.has(&ta_handle)? {
             Err(Error::TaAlreadyInitialized)

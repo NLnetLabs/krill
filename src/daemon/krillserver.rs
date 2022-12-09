@@ -24,8 +24,8 @@ use crate::{
             CertAuthInfo, CertAuthInit, CertAuthIssues, CertAuthList, CertAuthStats, ChildCaInfo,
             ChildrenConnectionStats, CommandHistory, CommandHistoryCriteria, ConfiguredRoa, ParentCaContact,
             ParentCaReq, PublicationServerUris, PublisherDetails, ReceivedCert, RepositoryContact, RoaConfiguration,
-            RoaConfigurationUpdates, RoaPayload, RtaList, RtaName, RtaPrepResponse, ServerInfo, TaCertDetails,
-            Timestamp, UpdateChildRequest,
+            RoaConfigurationUpdates, RoaPayload, RtaList, RtaName, RtaPrepResponse, ServerInfo, Timestamp,
+            UpdateChildRequest,
         },
         bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion},
         crypto::KrillSignerBuilder,
@@ -36,14 +36,12 @@ use crate::{
     constants::*,
     daemon::{
         auth::{providers::AdminTokenAuthProvider, Authorizer, LoggedInUser},
-        ca::{
-            self, ta_handle, testbed_ca_handle, CaStatus, ResourceTaggedAttestation, RtaContentRequest,
-            RtaPrepareRequest,
-        },
+        ca::{self, testbed_ca_handle, CaStatus, ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest},
         config::{AuthType, Config},
         http::HttpResponse,
         mq::TaskQueue,
         scheduler::Scheduler,
+        ta::{ta_handle, TaCertDetails},
     },
     pubd::{RepoStats, RepositoryManager},
 };

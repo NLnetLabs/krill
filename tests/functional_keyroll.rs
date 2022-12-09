@@ -18,7 +18,7 @@ use krill::{
         AspaDefinition, BgpSecDefinition, ObjectName, ReceivedCert, RoaConfiguration, RoaConfigurationUpdates,
         RoaPayload,
     },
-    daemon::ca::ta_handle,
+    daemon::ta::ta_handle,
     test::*,
 };
 

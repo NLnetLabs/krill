@@ -44,16 +44,7 @@ pub use self::rta::*;
 mod status;
 pub use self::status::*;
 
-mod ta;
-pub use self::ta::*;
-
-pub const TA_NAME: &str = "ta"; // reserved for TA
 pub const TESTBED_CA_NAME: &str = "testbed"; // reserved for testbed mode
-
-pub fn ta_handle() -> CaHandle {
-    use std::str::FromStr;
-    CaHandle::from_str(TA_NAME).unwrap()
-}
 
 pub fn testbed_ca_handle() -> CaHandle {
     use std::str::FromStr;

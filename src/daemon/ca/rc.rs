@@ -26,10 +26,11 @@ use crate::{
     daemon::{
         ca::events::RoaUpdates,
         ca::{
-            self, ta_handle, AspaObjects, AspaObjectsUpdates, CaEvtDet, CertifiedKey, ChildCertificates, CurrentKey,
-            KeyState, NewKey, OldKey, PendingKey, Roas, Routes,
+            self, AspaObjects, AspaObjectsUpdates, CaEvtDet, CertifiedKey, ChildCertificates, CurrentKey, KeyState,
+            NewKey, OldKey, PendingKey, Roas, Routes,
         },
         config::{Config, IssuanceTimingConfig},
+        ta::ta_handle,
     },
 };
 

@@ -24,7 +24,7 @@ use crate::{
         api::{
             AspaCustomer, AspaDefinition, AspaProvidersUpdate, CertInfo, IdCertInfo, IssuedCertificate, ObjectName,
             ParentCaContact, ParentServerInfo, PublicationServerInfo, ReceivedCert, RepositoryContact, Revocation,
-            Revocations, RoaAggregateKey, RtaName, SuspendedCert, TaCertDetails, TrustAnchorLocator, UnsuspendedCert,
+            Revocations, RoaAggregateKey, RtaName, SuspendedCert, UnsuspendedCert,
         },
         eventsourcing::StoredEvent,
         util::ext_serde,
@@ -33,6 +33,7 @@ use crate::{
         self, AspaInfo, AspaObjectsUpdates, CaEvt, CaEvtDet, CaObjects, CertifiedKey, ChildCertificateUpdates,
         ObjectSetRevision, PreparedRta, PublishedObject, RoaInfo, RoaPayloadJsonMapKey, RoaUpdates, SignedRta,
     },
+    daemon::ta::{TaCertDetails, TrustAnchorLocator},
     pubd::{Publisher, RepositoryAccessEvent, RepositoryAccessEventDetails, RepositoryAccessInitDetails},
     upgrades::PrepareUpgradeError,
 };

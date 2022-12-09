@@ -6,7 +6,7 @@ use rpki::ca::provisioning::ResourceClassName;
 
 use krill::{
     commons::api::{ObjectName, ParentCaReq, RoaConfigurationUpdates, RoaPayload},
-    daemon::ca::ta_handle,
+    daemon::ta::ta_handle,
     test::*,
 };
 

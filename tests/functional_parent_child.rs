@@ -4,7 +4,7 @@ use std::fs;
 
 use rpki::repository::resources::ResourceSet;
 
-use krill::{daemon::ca::ta_handle, test::*};
+use krill::{daemon::ta::ta_handle, test::*};
 
 #[tokio::test]
 async fn functional_parent_child() {

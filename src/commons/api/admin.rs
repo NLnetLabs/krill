@@ -15,10 +15,13 @@ use rpki::{
     uri,
 };
 
-use crate::commons::{
-    api::{rrdp::PublishElement, IdCertInfo, Timestamp, TrustAnchorLocator},
-    error::Error,
-    KrillResult,
+use crate::{
+    commons::{
+        api::{rrdp::PublishElement, IdCertInfo, Timestamp},
+        error::Error,
+        KrillResult,
+    },
+    daemon::ta::TaCertDetails,
 };
 
 use super::ReceivedCert;
@@ -328,32 +331,6 @@ impl ParentCaReq {
 
     pub fn unpack(self) -> (ParentHandle, idexchange::ParentResponse) {
         (self.handle, self.response)
-    }
-}
-
-//------------ TaCertDetails -------------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct TaCertDetails {
-    cert: ReceivedCert,
-    tal: TrustAnchorLocator,
-}
-
-impl TaCertDetails {
-    pub fn new(cert: ReceivedCert, tal: TrustAnchorLocator) -> Self {
-        TaCertDetails { cert, tal }
-    }
-
-    pub fn cert(&self) -> &ReceivedCert {
-        &self.cert
-    }
-
-    pub fn resources(&self) -> &ResourceSet {
-        self.cert.resources()
-    }
-
-    pub fn tal(&self) -> &TrustAnchorLocator {
-        &self.tal
     }
 }
 

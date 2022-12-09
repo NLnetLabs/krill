@@ -12,7 +12,7 @@ use rpki::{
 
 use crate::{
     commons::api::PublicationServerUris,
-    daemon::{ca::ta_handle, config},
+    daemon::{config, ta::ta_handle},
 };
 
 use super::RoaConfiguration;

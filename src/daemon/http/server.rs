@@ -53,13 +53,14 @@ use crate::{
     daemon::{
         auth::common::permissions::Permission,
         auth::{Auth, Handle},
-        ca::{CaStatus, TA_NAME},
+        ca::CaStatus,
         config::Config,
         http::{
             auth::auth, statics::statics, testbed::testbed, tls, tls_keys, HttpResponse, Request, RequestPath,
             RoutingResult,
         },
         krillserver::KrillServer,
+        ta::TA_NAME,
     },
     upgrades::{finalise_data_migration, post_start_upgrade, prepare_upgrade_data_migrations, UpgradeMode},
 };

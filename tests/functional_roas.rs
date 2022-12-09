@@ -4,7 +4,7 @@ use std::fs;
 
 use rpki::repository::resources::ResourceSet;
 
-use krill::{commons::api::RoaConfigurationUpdates, daemon::ca::ta_handle, test::*};
+use krill::{commons::api::RoaConfigurationUpdates, daemon::ta::ta_handle, test::*};
 
 #[tokio::test]
 async fn functional_roas() {
