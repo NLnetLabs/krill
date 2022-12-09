@@ -514,6 +514,11 @@ impl KrillClient {
                 delete(&self.server, &self.token, &uri).await?;
                 Ok(ApiResponse::Empty)
             }
+            PubServerCommand::PurgeFiles(criteria) => {
+                let uri = "api/v1/pubd/purge";
+                post_json(&self.server, &self.token, uri, criteria).await?;
+                Ok(ApiResponse::Empty)
+            }
             PubServerCommand::ShowPublisher(handle) => {
                 let uri = format!("api/v1/pubd/publishers/{}", handle);
                 let details: PublisherDetails = get_json(&self.server, &self.token, &uri).await?;

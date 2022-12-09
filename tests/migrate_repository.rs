@@ -8,7 +8,7 @@ use rpki::ca::provisioning::ResourceClassName;
 use rpki::repository::resources::ResourceSet;
 
 use krill::{
-    commons::api::{ObjectName, RoaConfigurationUpdates, RoaPayload},
+    commons::api::{ObjectName, RepoFilePurgeCriteria, RoaConfigurationUpdates, RoaPayload},
     daemon::ca::ta_handle,
     test::*,
 };
@@ -72,6 +72,64 @@ async fn migrate_repository() {
             )
             .await
         );
+    }
+
+    // Test the repository purging and re-syncing (healing from the CA's perspective) works as well.
+    {
+        info("##################################################################");
+        info("#                                                                #");
+        info("# Test that purging files and re-syncing works:                  #");
+        info("#   - remove a single file under the TA                          #");
+        info("#   - remove the complete TA dir                                 #");
+        info("#   - re-sync, now it should all be published again              #");
+        info("#                                                                #");
+        info("##################################################################");
+        info("");
+
+        {
+            // Remove single file - let's remove the issued certificate
+            let issued = expected_issued_cer(&testbed, &rcn_0).await;
+            let issued_uri = rsync(&format!("rsync://localhost/repo/ta/0/{}", issued));
+            let criteria = RepoFilePurgeCriteria::new(issued_uri);
+            krill_admin(krill::cli::options::Command::PubServer(
+                krill::cli::options::PubServerCommand::PurgeFiles(criteria),
+            ))
+            .await;
+            let expected_files = expected_mft_and_crl(&ta, &rcn_0).await;
+            assert!(
+                will_publish_embedded(
+                    "TA should have manifest, crl but NO more cert for testbed",
+                    &ta,
+                    &expected_files
+                )
+                .await
+            );
+        }
+
+        {
+            // removing a directory should also work
+            let criteria = RepoFilePurgeCriteria::new(rsync("rsync://localhost/repo/ta/"));
+            krill_admin(krill::cli::options::Command::PubServer(
+                krill::cli::options::PubServerCommand::PurgeFiles(criteria),
+            ))
+            .await;
+            assert!(will_publish_embedded("TA should have NO content now", &ta, &[]).await);
+        }
+
+        {
+            // re-sync - all should be back
+            cas_sync_all().await;
+            let mut expected_files = expected_mft_and_crl(&ta, &rcn_0).await;
+            expected_files.push(expected_issued_cer(&testbed, &rcn_0).await);
+            assert!(
+                will_publish_embedded(
+                    "TA should have manifest, crl and cert for testbed",
+                    &ta,
+                    &expected_files
+                )
+                .await
+            );
+        }
     }
 
     {
