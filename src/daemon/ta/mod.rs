@@ -102,6 +102,8 @@ mod tests {
 
             let signer_request = proxy.get_signer_request().unwrap();
 
+            let request_nonce = signer_request.nonce.clone();
+
             let ta_signer_process_request_command = TrustAnchorSignerCommand::make_process_request_command(
                 &signer_handle,
                 signer_request,
@@ -109,6 +111,14 @@ mod tests {
                 &actor,
             );
             ta_signer = ta_signer_store.command(ta_signer_process_request_command).unwrap();
+
+            let exchange = ta_signer.get_exchange(&request_nonce).unwrap();
+            let ta_proxy_process_signer_response_command =
+                TrustAnchorProxyCommand::process_signer_response(&proxy_handle, exchange.response.clone(), &actor);
+
+            proxy = ta_proxy_store
+                .command(ta_proxy_process_signer_response_command)
+                .unwrap();
 
             // // First we need to set up the online TA
             // // The offline TA can only be set up when its online counterpart

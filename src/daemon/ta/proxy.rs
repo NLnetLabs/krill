@@ -105,6 +105,7 @@ pub enum TrustAnchorProxyEventDetails {
     RepositoryAdded(RepositoryContact),
     SignerAdded(TrustAnchorProxySignerInfo),
     SignerRequestMade(Nonce),
+    SignerResponseReceived(TrustAnchorSignerResponse),
     ChildAdded(TrustAnchorProxyChildAdded),
 }
 
@@ -131,6 +132,9 @@ impl fmt::Display for TrustAnchorProxyEventDetails {
             }
             TrustAnchorProxyEventDetails::SignerRequestMade(nonce) => {
                 write!(f, "Created signer request with nonce '{}'", nonce)
+            }
+            TrustAnchorProxyEventDetails::SignerResponseReceived(response) => {
+                write!(f, "Received signer response with nonce '{}'", response.nonce)
             }
             TrustAnchorProxyEventDetails::ChildAdded(child_added) => {
                 write!(
@@ -239,6 +243,15 @@ impl TrustAnchorProxyCommand {
     pub fn make_signer_request(id: &TrustAnchorHandle, actor: &Actor) -> Self {
         TrustAnchorProxyCommand::new(id, None, TrustAnchorProxyCommandDetails::MakeSignerRequest, actor)
     }
+
+    pub fn process_signer_response(id: &TrustAnchorHandle, response: TrustAnchorSignerResponse, actor: &Actor) -> Self {
+        TrustAnchorProxyCommand::new(
+            id,
+            None,
+            TrustAnchorProxyCommandDetails::ProcessSignerResponse(response),
+            actor,
+        )
+    }
 }
 
 impl eventsourcing::CommandDetails for TrustAnchorProxyCommandDetails {
@@ -292,6 +305,19 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
             TrustAnchorProxyEventDetails::RepositoryAdded(repository) => self.repository = Some(repository),
             TrustAnchorProxyEventDetails::SignerAdded(signer) => self.signer = Some(signer),
             TrustAnchorProxyEventDetails::SignerRequestMade(nonce) => self.open_signer_request = Some(nonce),
+            TrustAnchorProxyEventDetails::SignerResponseReceived(response) => {
+                for (child_handle, child_responses) in response.child_responses {
+                    if let Some(child_details) = self.child_details.get_mut(&child_handle) {
+                        for (key_id, response) in child_responses {
+                            child_details.open_requests.remove(&key_id);
+                            child_details.open_responses.insert(key_id, response);
+                        }
+                    }
+                }
+                // We cannot have an accepted response if we did not have a signer
+                self.signer.as_mut().unwrap().objects = response.objects;
+                self.open_signer_request = None;
+            }
             TrustAnchorProxyEventDetails::ChildAdded(_child_added) => todo!(),
         }
     }
@@ -340,7 +366,34 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
                     )])
                 }
             }
-            TrustAnchorProxyCommandDetails::ProcessSignerResponse(_objects) => todo!("process published objects"),
+            TrustAnchorProxyCommandDetails::ProcessSignerResponse(response) => {
+                if let Some(nonce) = &self.open_signer_request {
+                    if &response.nonce != nonce {
+                        // It seems that the user uploaded the wrong the response.
+                        Err(Error::TaProxyRequestNonceMismatch(response.nonce, nonce.clone()))
+                    } else {
+                        // We accept the response as is. Since children cannot be modified, and requests
+                        // cannot change as long as there is an open signer request we cannot have any
+                        // mismatches between the children and child requests in the proxy vs the
+                        // children and responses received from the signer.
+                        //
+                        // In other words.. we trust that the associated signer functions correctly and
+                        // we have no further defensive coding on this side.
+                        //
+                        // Note that if we would reject the response, then there would be no way of
+                        // telling the signer why. So, this is also a matter of the 'the signer is
+                        // always right'.
+                        Ok(vec![TrustAnchorProxyEvent::new(
+                            &self.handle,
+                            self.version,
+                            TrustAnchorProxyEventDetails::SignerResponseReceived(response),
+                        )])
+                    }
+                } else {
+                    // It seems that the user uploaded a response even though we have no request.
+                    Err(Error::TaProxyHasNoRequest)
+                }
+            }
         }
     }
 }

@@ -13,6 +13,7 @@ use rpki::{
         idexchange::{ChildHandle, RepoInfo},
         provisioning::{self, IssuanceResponse, RequestResourceLimit, ResourceClassName, RevocationResponse},
     },
+    crypto::KeyIdentifier,
     repository::{
         cert::{KeyUsage, Overclaim, TbsCert},
         resources::ResourceSet,
@@ -54,6 +55,7 @@ pub struct TrustAnchorSigner {
 
     // Objects to be published under the TA certificate
     objects: TrustAnchorObjects,
+
     // Signer Responses
     //
     // NOTE: We may want to trim this list in future in case this becomes
@@ -353,7 +355,7 @@ impl TrustAnchorSigner {
     ) -> KrillResult<Vec<TrustAnchorSignerEvent>> {
         let mut objects = self.objects.clone();
 
-        let mut child_responses: HashMap<ChildHandle, Vec<ProvisioningResponse>> = HashMap::new();
+        let mut child_responses: HashMap<ChildHandle, HashMap<KeyIdentifier, ProvisioningResponse>> = HashMap::new();
 
         objects.increment_revision();
 
@@ -361,9 +363,9 @@ impl TrustAnchorSigner {
         let ta_rcn = Self::resource_class_name();
 
         for child_request in &request.child_requests {
-            let mut responses = vec![];
+            let mut responses = HashMap::new();
 
-            for provisioning_request in child_request.requests.clone() {
+            for (key_id, provisioning_request) in child_request.requests.clone() {
                 match provisioning_request {
                     ProvisioningRequest::Issuance(issuance_req) => {
                         let (rcn, limit, csr) = issuance_req.unpack();
@@ -405,7 +407,7 @@ impl TrustAnchorSigner {
                         objects.add_issued(issued_cert);
 
                         // add the response so it can be returned to the child
-                        responses.push(ProvisioningResponse::Issuance(response));
+                        responses.insert(key_id, ProvisioningResponse::Issuance(response));
                     }
                     ProvisioningRequest::Revocation(revocation_req) => {
                         let response = RevocationResponse::from(&revocation_req);
@@ -433,7 +435,7 @@ impl TrustAnchorSigner {
                             )));
                         }
 
-                        responses.push(ProvisioningResponse::Revocation(response));
+                        responses.insert(key_id, ProvisioningResponse::Revocation(response));
                     }
                 }
             }
@@ -458,6 +460,11 @@ impl TrustAnchorSigner {
             self.version,
             TrustAnchorSignerEventDetails::ProxySignerExchangeDone(exchange),
         )])
+    }
+
+    /// Get exchange for nonce
+    pub fn get_exchange(&self, nonce: &Nonce) -> Option<&TrustAnchorProxySignerExchange> {
+        self.exchanges.iter().find(|ex| &ex.request.nonce == nonce)
     }
 
     fn resource_class_name() -> ResourceClassName {

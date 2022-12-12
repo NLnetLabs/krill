@@ -23,7 +23,7 @@ use crate::{
         eventsourcing::{AggregateStoreError, KeyValueError},
         util::httpclient,
     },
-    daemon::{ca::RoaPayloadJsonMapKey, http::tls_keys},
+    daemon::{ca::RoaPayloadJsonMapKey, http::tls_keys, ta},
     upgrades::PrepareUpgradeError,
 };
 
@@ -308,6 +308,7 @@ pub enum Error {
     TaProxyAlreadyHasSigner,
     TaProxyHasNoRequest,
     TaProxyHasRequest,
+    TaProxyRequestNonceMismatch(ta::Nonce, ta::Nonce),
 
     //-----------------------------------------------------------------
     // Resource Tagged Attestation issues
@@ -494,6 +495,7 @@ impl fmt::Display for Error {
             Error::TaProxyAlreadyHasSigner => write!(f, "Trust Anchor Proxy already has associated signer"),
             Error::TaProxyHasNoRequest => write!(f, "Trust Anchor Proxy has no signer request"),
             Error::TaProxyHasRequest => write!(f, "Trust Anchor Proxy already has signer request"),
+            Error::TaProxyRequestNonceMismatch(rcvd, expected) => write!(f, "Trust Anchor Response nonce '{}' does not match open Request nonce '{}'", rcvd, expected),
 
             //-----------------------------------------------------------------
             // Resource Tagged Attestation issues
@@ -916,6 +918,7 @@ impl Error {
             Error::TaProxyAlreadyHasSigner => ErrorResponse::new("ta-has-signer", &self),
             Error::TaProxyHasNoRequest => ErrorResponse::new("ta-has-no-signer-req", &self),
             Error::TaProxyHasRequest => ErrorResponse::new("ta-has-signer-req", &self),
+            Error::TaProxyRequestNonceMismatch(_rcvd, _expected) => ErrorResponse::new("ta-proxy-response-nonce", &self),
 
             //-----------------------------------------------------------------
             // Resource Tagged Attestation issues

@@ -250,7 +250,7 @@ pub struct TrustAnchorSignerRequest {
 pub struct TrustAnchorChildRequests {
     pub child: ChildHandle,
     pub resources: ResourceSet,
-    pub requests: Vec<ProvisioningRequest>,
+    pub requests: HashMap<KeyIdentifier, ProvisioningRequest>,
 }
 
 //------------ TrustAnchorSignerResponse -----------------------------------
@@ -259,7 +259,7 @@ pub struct TrustAnchorChildRequests {
 pub struct TrustAnchorSignerResponse {
     pub nonce: Nonce, // should match the request (replay protection)
     pub objects: TrustAnchorObjects,
-    pub child_responses: HashMap<ChildHandle, Vec<ProvisioningResponse>>,
+    pub child_responses: HashMap<ChildHandle, HashMap<KeyIdentifier, ProvisioningResponse>>,
 }
 
 //------------ TrustAnchorChild --------------------------------------------
@@ -270,8 +270,8 @@ pub struct TrustAnchorChild {
     pub id: IdCertInfo,
     pub resources: ResourceSet,
     pub used_keys: HashMap<KeyIdentifier, UsedKeyState>,
-    pub open_requests: Vec<ProvisioningRequest>,
-    pub open_responses: Vec<ProvisioningResponse>,
+    pub open_requests: HashMap<KeyIdentifier, ProvisioningRequest>,
+    pub open_responses: HashMap<KeyIdentifier, ProvisioningResponse>,
 }
 
 //------------ ProvisioningRequest -----------------------------------------
