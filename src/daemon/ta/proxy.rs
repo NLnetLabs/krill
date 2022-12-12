@@ -71,6 +71,12 @@ pub struct TrustAnchorProxy {
     // For this reason we support any number of child CAs to exist under
     // the TA.
     child_details: HashMap<ChildHandle, TrustAnchorChild>,
+
+    // Track if there is any open signer request. Responses MUST match the
+    // the nonce. Furthermore, child interactions are suspended when there
+    // is an open request. We first need to process the response, before we
+    // can accept new requests from any child.
+    open_signer_request: Option<Nonce>,
 }
 
 //------------ TrustAnchorProxy: Commands and Events -----------------------
@@ -98,6 +104,7 @@ impl fmt::Display for TrustAnchorProxyInitDetails {
 pub enum TrustAnchorProxyEventDetails {
     RepositoryAdded(RepositoryContact),
     SignerAdded(TrustAnchorProxySignerInfo),
+    SignerRequestMade(Nonce),
     ChildAdded(TrustAnchorProxyChildAdded),
 }
 
@@ -122,6 +129,9 @@ impl fmt::Display for TrustAnchorProxyEventDetails {
             TrustAnchorProxyEventDetails::SignerAdded(signer) => {
                 write!(f, "Added signer with ID certificate hash: {}", signer.id.hash())
             }
+            TrustAnchorProxyEventDetails::SignerRequestMade(nonce) => {
+                write!(f, "Created signer request with nonce '{}'", nonce)
+            }
             TrustAnchorProxyEventDetails::ChildAdded(child_added) => {
                 write!(
                     f,
@@ -141,8 +151,8 @@ pub enum TrustAnchorProxyCommandDetails {
     AddRepository(RepositoryContact),
     AddSigner(TrustAnchorProxySignerInfo),
     AddChild(TrustAnchorProxyAddChild),
-    MakeRepublishRequest,
-    ProcessRepublishResponse(TrustAnchorObjects),
+    MakeSignerRequest,
+    ProcessSignerResponse(TrustAnchorSignerResponse),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -169,15 +179,15 @@ impl fmt::Display for TrustAnchorProxyCommandDetails {
                     add_child.handle, add_child.resources
                 )
             }
-            TrustAnchorProxyCommandDetails::MakeRepublishRequest => {
+            TrustAnchorProxyCommandDetails::MakeSignerRequest => {
                 write!(f, "Create new publish request for signer")
             }
-            TrustAnchorProxyCommandDetails::ProcessRepublishResponse(objects) => {
+            TrustAnchorProxyCommandDetails::ProcessSignerResponse(response) => {
                 write!(
                     f,
-                    "Process publish response from signer. Number: {}. Next Update (before): {}",
-                    objects.revision().number(),
-                    objects.revision().next_update().to_rfc3339()
+                    "Process signer response. Nonce: {}. Next Update (before): {}",
+                    response.nonce,
+                    response.objects.revision().next_update().to_rfc3339()
                 )
             }
         }
@@ -198,14 +208,15 @@ impl eventsourcing::WithStorableDetails for TrustAnchorProxyCommandDetails {
             TrustAnchorProxyCommandDetails::AddChild(add_child) => {
                 crate::commons::api::CommandSummary::new("cmd-ta-proxy-child-add", &self).with_child(&add_child.handle)
             }
-            TrustAnchorProxyCommandDetails::MakeRepublishRequest => {
+            TrustAnchorProxyCommandDetails::MakeSignerRequest => {
                 crate::commons::api::CommandSummary::new("cmd-ta-proxy-pub-req", &self)
             }
-            TrustAnchorProxyCommandDetails::ProcessRepublishResponse(objects) => {
+            TrustAnchorProxyCommandDetails::ProcessSignerResponse(objects) => {
                 crate::commons::api::CommandSummary::new("cmd-ta-proxy-pub-res", &self)
-                    .with_arg("number", objects.revision().number())
-                    .with_arg("this update", objects.revision().this_update().to_rfc3339())
-                    .with_arg("next update", objects.revision().next_update().to_rfc3339())
+                    .with_arg("nonce", &objects.nonce)
+                    .with_arg("manifest number", objects.objects.revision().number())
+                    .with_arg("this update", objects.objects.revision().this_update().to_rfc3339())
+                    .with_arg("next update", objects.objects.revision().next_update().to_rfc3339())
             }
         }
     }
@@ -225,8 +236,8 @@ impl TrustAnchorProxyCommand {
         TrustAnchorProxyCommand::new(id, None, TrustAnchorProxyCommandDetails::AddSigner(signer), actor)
     }
 
-    pub fn make_publish_request(id: &TrustAnchorHandle, actor: &Actor) -> Self {
-        TrustAnchorProxyCommand::new(id, None, TrustAnchorProxyCommandDetails::MakeRepublishRequest, actor)
+    pub fn make_signer_request(id: &TrustAnchorHandle, actor: &Actor) -> Self {
+        TrustAnchorProxyCommand::new(id, None, TrustAnchorProxyCommandDetails::MakeSignerRequest, actor)
     }
 }
 
@@ -256,6 +267,7 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
             repository: None,
             signer: None,
             child_details: HashMap::new(),
+            open_signer_request: None,
         })
     }
 
@@ -265,7 +277,6 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
 
     fn apply(&mut self, event: Self::Event) {
         let (handle, _version, details) = event.unpack();
-        self.version += 1;
 
         if log_enabled!(log::Level::Trace) {
             trace!(
@@ -275,9 +286,12 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
                 details
             );
         }
+
+        self.version += 1;
         match details {
             TrustAnchorProxyEventDetails::RepositoryAdded(repository) => self.repository = Some(repository),
             TrustAnchorProxyEventDetails::SignerAdded(signer) => self.signer = Some(signer),
+            TrustAnchorProxyEventDetails::SignerRequestMade(nonce) => self.open_signer_request = Some(nonce),
             TrustAnchorProxyEventDetails::ChildAdded(_child_added) => todo!(),
         }
     }
@@ -315,8 +329,18 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
                 }
             }
             TrustAnchorProxyCommandDetails::AddChild(_add_child) => todo!("add child"),
-            TrustAnchorProxyCommandDetails::MakeRepublishRequest => todo!("make publish request"),
-            TrustAnchorProxyCommandDetails::ProcessRepublishResponse(_objects) => todo!("process published objects"),
+            TrustAnchorProxyCommandDetails::MakeSignerRequest => {
+                if self.open_signer_request.is_some() {
+                    Err(Error::TaProxyHasRequest)
+                } else {
+                    Ok(vec![TrustAnchorProxyEvent::new(
+                        &self.handle,
+                        self.version,
+                        TrustAnchorProxyEventDetails::SignerRequestMade(Nonce::new()),
+                    )])
+                }
+            }
+            TrustAnchorProxyCommandDetails::ProcessSignerResponse(_objects) => todo!("process published objects"),
         }
     }
 }
@@ -367,6 +391,24 @@ impl TrustAnchorProxy {
             tal_rsync,
             signer,
         })
+    }
+
+    pub fn get_signer_request(&self) -> KrillResult<TrustAnchorSignerRequest> {
+        if let Some(nonce) = self.open_signer_request.as_ref().cloned() {
+            let mut child_requests = vec![];
+            for (child, details) in &self.child_details {
+                if !details.open_requests.is_empty() {
+                    child_requests.push(TrustAnchorChildRequests {
+                        child: child.clone(),
+                        resources: details.resources.clone(),
+                        requests: details.open_requests.clone(),
+                    });
+                }
+            }
+            Ok(TrustAnchorSignerRequest { nonce, child_requests })
+        } else {
+            Err(Error::TaProxyHasNoRequest)
+        }
     }
 
     fn get_repo(&self) -> KrillResult<&RepositoryContact> {

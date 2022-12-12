@@ -306,6 +306,8 @@ pub enum Error {
     TaAlreadyInitialized,
     TaProxyAlreadyHasRepository,
     TaProxyAlreadyHasSigner,
+    TaProxyHasNoRequest,
+    TaProxyHasRequest,
 
     //-----------------------------------------------------------------
     // Resource Tagged Attestation issues
@@ -490,6 +492,8 @@ impl fmt::Display for Error {
             Error::TaAlreadyInitialized => write!(f, "TrustAnchor was already initialized"),
             Error::TaProxyAlreadyHasRepository => write!(f, "Trust Anchor Proxy already has repository"),
             Error::TaProxyAlreadyHasSigner => write!(f, "Trust Anchor Proxy already has associated signer"),
+            Error::TaProxyHasNoRequest => write!(f, "Trust Anchor Proxy has no signer request"),
+            Error::TaProxyHasRequest => write!(f, "Trust Anchor Proxy already has signer request"),
 
             //-----------------------------------------------------------------
             // Resource Tagged Attestation issues
@@ -910,6 +914,8 @@ impl Error {
             Error::TaAlreadyInitialized => ErrorResponse::new("ta-initialized", &self),
             Error::TaProxyAlreadyHasRepository => ErrorResponse::new("ta-has-repository", &self),
             Error::TaProxyAlreadyHasSigner => ErrorResponse::new("ta-has-signer", &self),
+            Error::TaProxyHasNoRequest => ErrorResponse::new("ta-has-no-signer-req", &self),
+            Error::TaProxyHasRequest => ErrorResponse::new("ta-has-signer-req", &self),
 
             //-----------------------------------------------------------------
             // Resource Tagged Attestation issues

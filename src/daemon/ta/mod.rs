@@ -86,20 +86,29 @@ mod tests {
             let tal_rsync = rsync("rsync://example.krill.cloud/ta/ta.cer");
 
             let signer_init_cmd = proxy
-                .create_signer_init_cmd(signer_handle, tal_https, tal_rsync, signer)
+                .create_signer_init_cmd(signer_handle.clone(), tal_https, tal_rsync, signer.clone())
                 .unwrap();
 
             let signer_init = TrustAnchorSigner::create_init(signer_init_cmd).unwrap();
 
-            let signer = ta_signer_store.add(signer_init).unwrap();
-
-            let signer_info = signer.get_signer_info();
+            let mut ta_signer = ta_signer_store.add(signer_init).unwrap();
+            let signer_info = ta_signer.get_signer_info();
             let add_signer_cmd = TrustAnchorProxyCommand::add_signer(&proxy_handle, signer_info, &actor);
 
             ta_proxy_store.command(add_signer_cmd).unwrap();
 
-            let make_publish_request_cmd = TrustAnchorProxyCommand::make_publish_request(&proxy_handle, &actor);
-            ta_proxy_store.command(make_publish_request_cmd).unwrap();
+            let make_publish_request_cmd = TrustAnchorProxyCommand::make_signer_request(&proxy_handle, &actor);
+            proxy = ta_proxy_store.command(make_publish_request_cmd).unwrap();
+
+            let signer_request = proxy.get_signer_request().unwrap();
+
+            let ta_signer_process_request_command = TrustAnchorSignerCommand::make_process_request_command(
+                &signer_handle,
+                signer_request,
+                signer.clone(),
+                &actor,
+            );
+            ta_signer = ta_signer_store.command(ta_signer_process_request_command).unwrap();
 
             // // First we need to set up the online TA
             // // The offline TA can only be set up when its online counterpart

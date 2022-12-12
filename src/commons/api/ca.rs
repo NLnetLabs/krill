@@ -720,7 +720,7 @@ impl Revocations {
     }
 
     /// Purges all expired revocations, and returns them.
-    pub fn purge(&mut self) -> Vec<Revocation> {
+    pub fn purge_expired(&mut self) -> Vec<Revocation> {
         let (relevant, expired) = self.0.iter().partition(|r| r.expires > Time::now());
         self.0 = relevant;
         expired

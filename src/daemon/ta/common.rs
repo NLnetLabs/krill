@@ -1,6 +1,6 @@
 //! Common types used in the communication (API) between the Proxy and Signer
 
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Debug};
 
 use rpki::{
     ca::{idexchange::ChildHandle, provisioning, publication::Base64},
@@ -89,6 +89,26 @@ impl TrustAnchorObjects {
     pub fn next_update() -> Time {
         Time::now() + chrono::Duration::weeks(12)
     }
+
+    // Adds a new issued certificate, replaces and revokes the previous if present.
+    pub fn add_issued(&mut self, issued: IssuedCertificate) {
+        if let Some(previous) = self.issued.insert(issued.key_identifier(), issued) {
+            self.revocations.add(previous.revocation());
+            self.revocations.purge_expired();
+        }
+    }
+
+    // Revoke any issued certificate for the given key, and remove it. Returns false
+    // if there was no such certificate.
+    pub fn revoke_issued(&mut self, key: &KeyIdentifier) -> bool {
+        if let Some(issued) = self.issued.remove(key) {
+            self.revocations.add(issued.revocation());
+            self.revocations.purge_expired();
+            true
+        } else {
+            false
+        }
+    }
 }
 
 //------------ TaCertDetails -------------------------------------------------
@@ -165,6 +185,8 @@ impl std::fmt::Display for TrustAnchorLocator {
     }
 }
 
+//------------ TrustAnchorProxySignerInfo ----------------------------------
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TrustAnchorProxySignerInfo {
     // The ID of the associated signer.
@@ -175,6 +197,40 @@ pub struct TrustAnchorProxySignerInfo {
     pub ta_cert_details: TaCertDetails,
 }
 
+//------------ Nonce -------------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct Nonce(String);
+
+impl Nonce {
+    pub fn new() -> Self {
+        Nonce(uuid::Uuid::new_v4().to_string())
+    }
+}
+
+impl Default for Nonce {
+    fn default() -> Self {
+        Nonce::new()
+    }
+}
+
+impl std::fmt::Display for Nonce {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.0, f)
+    }
+}
+
+//------------ TrustAnchorProxySignerExchange ------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct TrustAnchorProxySignerExchange {
+    pub time: Time,
+    pub request: TrustAnchorSignerRequest,
+    pub response: TrustAnchorSignerResponse,
+}
+
+//------------ TrustAnchorSignerRequest ------------------------------------
+
 /// Request for the Trust Anchor Signer to update the signed
 /// objects (new mft, crl). Can contain requests for one or
 /// more children to either issue a new certificate, or revoke
@@ -182,10 +238,12 @@ pub struct TrustAnchorProxySignerInfo {
 /// assumed that the current issued certificate(s) to the child
 /// should not change.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct TrustAnchorRequest {
-    pub nonce: String, // should be matched in response (replay protection)
-    pub child_requests: HashMap<ChildHandle, TrustAnchorChildRequests>,
+pub struct TrustAnchorSignerRequest {
+    pub nonce: Nonce, // should be matched in response (replay protection)
+    pub child_requests: Vec<TrustAnchorChildRequests>,
 }
+
+//------------ TrustAnchorChildRequests ------------------------------------
 
 /// Requests for Trust Anchor Child.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -195,12 +253,16 @@ pub struct TrustAnchorChildRequests {
     pub requests: Vec<ProvisioningRequest>,
 }
 
+//------------ TrustAnchorSignerResponse -----------------------------------
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct TrustAnchorResponse {
-    pub nonce: String, // should match the request (replay protection)
+pub struct TrustAnchorSignerResponse {
+    pub nonce: Nonce, // should match the request (replay protection)
     pub objects: TrustAnchorObjects,
     pub child_responses: HashMap<ChildHandle, Vec<ProvisioningResponse>>,
 }
+
+//------------ TrustAnchorChild --------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TrustAnchorChild {
@@ -208,9 +270,11 @@ pub struct TrustAnchorChild {
     pub id: IdCertInfo,
     pub resources: ResourceSet,
     pub used_keys: HashMap<KeyIdentifier, UsedKeyState>,
-    pub open_request: Option<ProvisioningRequest>,
-    pub open_response: Option<ProvisioningResponse>,
+    pub open_requests: Vec<ProvisioningRequest>,
+    pub open_responses: Vec<ProvisioningResponse>,
 }
+
+//------------ ProvisioningRequest -----------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
@@ -218,6 +282,8 @@ pub enum ProvisioningRequest {
     Issuance(provisioning::IssuanceRequest),
     Revocation(provisioning::RevocationRequest),
 }
+
+//------------ ProvisioningResponse ----------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]

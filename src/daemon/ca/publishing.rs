@@ -1033,7 +1033,7 @@ impl KeyObjectSet {
     fn reissue(&mut self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<()> {
         self.revision.next(timing.publish_next());
 
-        self.revocations.purge();
+        self.revocations.purge_expired();
         let signing_key = self.signing_cert.key_identifier();
         let issuer = self.signing_cert.subject().clone();
 
@@ -1053,7 +1053,7 @@ impl KeyObjectSet {
         for object in self.published_objects.values() {
             revocations.add(object.revoke());
         }
-        revocations.purge();
+        revocations.purge_expired();
 
         let retired_set = KeyObjectSet {
             signing_cert: self.signing_cert.clone(),

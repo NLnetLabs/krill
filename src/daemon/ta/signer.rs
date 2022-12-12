@@ -11,7 +11,7 @@ use std::{collections::HashMap, convert::TryFrom, fmt, sync::Arc};
 use rpki::{
     ca::{
         idexchange::{ChildHandle, RepoInfo},
-        provisioning::RequestResourceLimit,
+        provisioning::{self, IssuanceResponse, RequestResourceLimit, ResourceClassName, RevocationResponse},
     },
     repository::{
         cert::{KeyUsage, Overclaim, TbsCert},
@@ -23,6 +23,7 @@ use rpki::{
 
 use crate::{
     commons::{
+        actor::Actor,
         api::{IdCertInfo, ObjectName, ReceivedCert},
         crypto::{CsrInfo, KrillSigner, SignSupport},
         error::Error,
@@ -53,6 +54,14 @@ pub struct TrustAnchorSigner {
 
     // Objects to be published under the TA certificate
     objects: TrustAnchorObjects,
+    // Signer Responses
+    //
+    // NOTE: We may want to trim this list in future in case this becomes
+    //       too large. In that case could only keep the responses for requests
+    //       that have not yet expired (when we wrap them in signed CMS) or
+    //       which are younger than 'X' days (we should keep the responses at
+    //       least long enough so we can show them).
+    exchanges: Vec<TrustAnchorProxySignerExchange>,
 }
 
 //------------ TrustAnchorSigner: Commands and Events ----------------------
@@ -78,44 +87,103 @@ impl fmt::Display for TrustAnchorSignerInitDetails {
 
 // Events
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum TrustAnchorSignerEventDetails {}
+pub enum TrustAnchorSignerEventDetails {
+    ProxySignerExchangeDone(TrustAnchorProxySignerExchange),
+}
 
 impl fmt::Display for TrustAnchorSignerEventDetails {
-    fn fmt(&self, _f: &mut fmt::Formatter) -> fmt::Result {
-        // note that this is a summary, full details are stored in the json.
-        todo!()
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            TrustAnchorSignerEventDetails::ProxySignerExchangeDone(exchange) => {
+                write!(
+                    f,
+                    "Proxy signer exchange done on {} for nonce: {}",
+                    exchange.time.to_rfc3339(),
+                    exchange.request.nonce
+                )
+            }
+        }
     }
 }
 
 // Commands
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub enum TrustAnchorSignerCommandDetails {}
-
-impl fmt::Display for TrustAnchorSignerCommandDetails {
-    fn fmt(&self, _f: &mut fmt::Formatter) -> fmt::Result {
-        // note that this is a summary, full details are stored in the json.
-        todo!()
-    }
-}
-
-impl eventsourcing::WithStorableDetails for TrustAnchorSignerCommandDetails {
-    fn summary(&self) -> crate::commons::api::CommandSummary {
-        todo!()
-    }
+#[derive(Clone, Debug)]
+pub enum TrustAnchorSignerCommandDetails {
+    TrustAnchorSignerRequest(TrustAnchorSignerRequest, Arc<KrillSigner>),
 }
 
 impl eventsourcing::CommandDetails for TrustAnchorSignerCommandDetails {
     type Event = TrustAnchorSignerEvent;
-    type StorableDetails = Self;
+    type StorableDetails = TrustAnchorSignerStorableCommand;
 
     fn store(&self) -> Self::StorableDetails {
-        self.clone()
+        self.into()
+    }
+}
+
+impl fmt::Display for TrustAnchorSignerCommandDetails {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        TrustAnchorSignerStorableCommand::from(self).fmt(f)
+    }
+}
+
+impl TrustAnchorSignerCommand {
+    pub fn make_process_request_command(
+        id: &TrustAnchorHandle,
+        request: TrustAnchorSignerRequest,
+        signer: Arc<KrillSigner>,
+        actor: &Actor,
+    ) -> TrustAnchorSignerCommand {
+        TrustAnchorSignerCommand::new(
+            id,
+            None,
+            TrustAnchorSignerCommandDetails::TrustAnchorSignerRequest(request, signer),
+            actor,
+        )
+    }
+}
+
+// Storable Commands (KrillSigner cannot be de-/serialized)
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum TrustAnchorSignerStorableCommand {
+    TrustAnchorSignerRequest(TrustAnchorSignerRequest),
+}
+
+impl From<&TrustAnchorSignerCommandDetails> for TrustAnchorSignerStorableCommand {
+    fn from(details: &TrustAnchorSignerCommandDetails) -> Self {
+        match details {
+            TrustAnchorSignerCommandDetails::TrustAnchorSignerRequest(request, _) => {
+                TrustAnchorSignerStorableCommand::TrustAnchorSignerRequest(request.clone())
+            }
+        }
+    }
+}
+
+impl eventsourcing::WithStorableDetails for TrustAnchorSignerStorableCommand {
+    fn summary(&self) -> crate::commons::api::CommandSummary {
+        match self {
+            TrustAnchorSignerStorableCommand::TrustAnchorSignerRequest(request) => {
+                crate::commons::api::CommandSummary::new("cmd-ta-signer-process-request", &self)
+                    .with_arg("nonce", &request.nonce)
+            }
+        }
+    }
+}
+
+impl fmt::Display for TrustAnchorSignerStorableCommand {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // note that this is a summary, full details are stored in the json.
+        match self {
+            TrustAnchorSignerStorableCommand::TrustAnchorSignerRequest(req) => {
+                write!(f, "Process signer request with nonce: {}", req.nonce)
+            }
+        }
     }
 }
 
 impl eventsourcing::Aggregate for TrustAnchorSigner {
     type Command = TrustAnchorSignerCommand;
-    type StorableCommandDetails = TrustAnchorSignerCommandDetails;
+    type StorableCommandDetails = TrustAnchorSignerStorableCommand;
     type Event = TrustAnchorSignerEvent;
     type InitEvent = TrustAnchorSignerInitEvent;
     type Error = Error;
@@ -130,6 +198,7 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
             proxy_id: details.proxy_id,
             ta_cert_details: details.ta_cert_details,
             objects: details.objects,
+            exchanges: vec![],
         })
     }
 
@@ -137,12 +206,42 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
         self.version
     }
 
-    fn apply(&mut self, _event: Self::Event) {
-        todo!()
+    fn apply(&mut self, event: Self::Event) {
+        let (handle, _version, details) = event.unpack();
+
+        if log_enabled!(log::Level::Trace) {
+            trace!(
+                "Applying event to Trust Anchor Signer '{}', version: {}: {}",
+                handle,
+                self.version,
+                details
+            );
+        }
+        self.version += 1;
+
+        match details {
+            TrustAnchorSignerEventDetails::ProxySignerExchangeDone(exchange) => {
+                self.objects = exchange.response.objects.clone();
+                self.exchanges.push(exchange);
+            }
+        }
     }
 
-    fn process_command(&self, _command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
-        todo!()
+    fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
+        if log_enabled!(log::Level::Trace) {
+            trace!(
+                "Sending command to Trust Anchor Signer '{}', version: {}: {}",
+                self.handle,
+                self.version,
+                command
+            );
+        }
+
+        match command.into_details() {
+            TrustAnchorSignerCommandDetails::TrustAnchorSignerRequest(request, signer) => {
+                self.process_signer_request(request, &signer)
+            }
+        }
     }
 }
 
@@ -249,9 +348,9 @@ impl TrustAnchorSigner {
     /// Process a request.
     fn process_signer_request(
         &self,
-        request: super::TrustAnchorRequest,
+        request: TrustAnchorSignerRequest,
         signer: &KrillSigner,
-    ) -> KrillResult<TrustAnchorResponse> {
+    ) -> KrillResult<Vec<TrustAnchorSignerEvent>> {
         let mut objects = self.objects.clone();
 
         let mut child_responses: HashMap<ChildHandle, Vec<ProvisioningResponse>> = HashMap::new();
@@ -259,33 +358,109 @@ impl TrustAnchorSigner {
         objects.increment_revision();
 
         let signing_cert = self.ta_cert_details.cert();
+        let ta_rcn = Self::resource_class_name();
 
-        for (child, child_requests) in request.child_requests {
-            child_responses.insert(child, vec![]);
-            let resources = child_requests.resources;
-            for provisioning_request in child_requests.requests {
+        for child_request in &request.child_requests {
+            let mut responses = vec![];
+
+            for provisioning_request in child_request.requests.clone() {
                 match provisioning_request {
                     ProvisioningRequest::Issuance(issuance_req) => {
-                        let (_rcn, limit, csr) = issuance_req.unpack();
+                        let (rcn, limit, csr) = issuance_req.unpack();
+
+                        if rcn != ta_rcn {
+                            return Err(Error::Custom(format!(
+                                "TA child request uses unknown resource class name '{}'",
+                                rcn
+                            )));
+                        }
 
                         let validity = SignSupport::sign_validity_weeks(52);
+                        let issue_resources = limit.apply_to(&child_request.resources)?;
 
-                        let issued = SignSupport::make_issued_cert(
+                        // Create issued certificate
+                        let issued_cert = SignSupport::make_issued_cert(
                             CsrInfo::try_from(&csr)?,
-                            &resources,
-                            limit,
+                            &issue_resources,
+                            limit.clone(),
                             signing_cert,
                             validity,
                             signer,
                         )?;
 
-                        todo!()
+                        // Create response for certificate
+                        let response = IssuanceResponse::new(
+                            ta_rcn.clone(),
+                            issue_resources,
+                            validity.not_after(),
+                            provisioning::IssuedCert::new(
+                                issued_cert.uri().clone(),
+                                limit,
+                                issued_cert.to_cert().unwrap(), // cannot fail
+                            ),
+                            provisioning::SigningCert::new(signing_cert.uri().clone(), signing_cert.to_cert().unwrap()),
+                        );
+
+                        // extend the objects with the issued certs
+                        objects.add_issued(issued_cert);
+
+                        // add the response so it can be returned to the child
+                        responses.push(ProvisioningResponse::Issuance(response));
                     }
-                    ProvisioningRequest::Revocation(revocation_req) => todo!(),
+                    ProvisioningRequest::Revocation(revocation_req) => {
+                        let response = RevocationResponse::from(&revocation_req);
+
+                        let (rcn, key) = revocation_req.unpack();
+
+                        if rcn != ta_rcn {
+                            return Err(Error::Custom(format!(
+                                "TA child request uses unknown resource class name '{}'",
+                                rcn
+                            )));
+                        }
+
+                        // Try to revoke for this key. Return an error in case of issues.
+                        // Note.. we could make this idempotent instead. I.e. if there is no
+                        // such key, then perhaps we can just consider it revoked and call
+                        // it a day. Then again, we really do not expect that this should
+                        // happen between a krill CA and its local TA (proxy). So.. it's
+                        // most likely best to have an explicit error in this case so the
+                        // issue can be investigated.
+                        if !objects.revoke_issued(&key) {
+                            return Err(Error::Custom(format!(
+                                "TA child requests revocation for unknown key '{}'",
+                                key
+                            )));
+                        }
+
+                        responses.push(ProvisioningResponse::Revocation(response));
+                    }
                 }
             }
+
+            child_responses.insert(child_request.child.clone(), responses);
         }
 
-        todo!()
+        let response = TrustAnchorSignerResponse {
+            nonce: request.nonce.clone(),
+            objects,
+            child_responses,
+        };
+
+        let exchange = TrustAnchorProxySignerExchange {
+            time: Time::now(),
+            request,
+            response,
+        };
+
+        Ok(vec![TrustAnchorSignerEvent::new(
+            &self.handle,
+            self.version,
+            TrustAnchorSignerEventDetails::ProxySignerExchangeDone(exchange),
+        )])
+    }
+
+    fn resource_class_name() -> ResourceClassName {
+        "default".into()
     }
 }
