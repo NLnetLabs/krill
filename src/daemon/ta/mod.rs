@@ -62,7 +62,7 @@ mod tests {
 
             let init = TrustAnchorProxy::create_init(proxy_handle.clone(), &signer).unwrap();
 
-            let mut proxy = ta_proxy_store.add(init).unwrap();
+            ta_proxy_store.add(init).unwrap();
 
             let repository = {
                 let repo_info = RepoInfo::new(
@@ -79,14 +79,19 @@ mod tests {
             };
 
             let add_repo_cmd = TrustAnchorProxyCommand::add_repo(&proxy_handle, repository, &actor);
-            proxy = ta_proxy_store.command(add_repo_cmd).unwrap();
+            let mut proxy = ta_proxy_store.command(add_repo_cmd).unwrap();
 
             let signer_handle = TrustAnchorHandle::new("signer".into());
             let tal_https = vec![https("https://example.krill.cloud/ta/ta.cer")];
             let tal_rsync = rsync("rsync://example.krill.cloud/ta/ta.cer");
 
             let signer_init_cmd = proxy
-                .create_signer_init_cmd(signer_handle.clone(), tal_https, tal_rsync, signer.clone())
+                .create_signer_init_cmd(
+                    signer_handle.clone(),
+                    tal_https.clone(),
+                    tal_rsync.clone(),
+                    signer.clone(),
+                )
                 .unwrap();
 
             let signer_init = TrustAnchorSigner::create_init(signer_init_cmd).unwrap();
@@ -95,8 +100,19 @@ mod tests {
             let signer_info = ta_signer.get_signer_info();
             let add_signer_cmd = TrustAnchorProxyCommand::add_signer(&proxy_handle, signer_info, &actor);
 
-            ta_proxy_store.command(add_signer_cmd).unwrap();
+            proxy = ta_proxy_store.command(add_signer_cmd).unwrap();
 
+            // The initial signer starts off with a TA certificate
+            // and a CRL and manifest with revision number 1.
+            let ta_objects = proxy.get_trust_anchor_objects().unwrap();
+            assert_eq!(ta_objects.revision().number(), 1);
+
+            let ta_cert_details = proxy.get_ta_details().unwrap();
+            assert_eq!(ta_cert_details.tal().uris(), &tal_https);
+            assert_eq!(ta_cert_details.tal().rsync_uri(), &tal_rsync);
+
+            // We can make a new signer request to make a new manifest and CRL
+            // even if we do not yet have any issued certificates to publish.
             let make_publish_request_cmd = TrustAnchorProxyCommand::make_signer_request(&proxy_handle, &actor);
             proxy = ta_proxy_store.command(make_publish_request_cmd).unwrap();
 
@@ -104,12 +120,8 @@ mod tests {
 
             let request_nonce = signer_request.nonce.clone();
 
-            let ta_signer_process_request_command = TrustAnchorSignerCommand::make_process_request_command(
-                &signer_handle,
-                signer_request,
-                signer.clone(),
-                &actor,
-            );
+            let ta_signer_process_request_command =
+                TrustAnchorSignerCommand::make_process_request_command(&signer_handle, signer_request, signer, &actor);
             ta_signer = ta_signer_store.command(ta_signer_process_request_command).unwrap();
 
             let exchange = ta_signer.get_exchange(&request_nonce).unwrap();
@@ -120,40 +132,20 @@ mod tests {
                 .command(ta_proxy_process_signer_response_command)
                 .unwrap();
 
-            // // First we need to set up the online TA
-            // // The offline TA can only be set up when its online counterpart
-            // // is initialised.
-            // let online_cmd_init = OnlineTrustAnchorInitCommand {
-            //     handle: OnlineTrustAnchorHandle::new("sub-ta".into()),
-            //     signer: signer.clone(),
-            // };
-            // let online_ta = online_store
-            //     .add(OnlineTrustAnchor::init(online_cmd_init).unwrap())
-            //     .unwrap();
+            // The TA should have published again, the revision used for manifest and crl will
+            // have been updated.
+            let ta_objects = proxy.get_trust_anchor_objects().unwrap();
+            assert_eq!(ta_objects.revision().number(), 2);
 
-            // let repo_info = RepoInfo::new(
-            //     rsync("rsync://example.krill.cloud/repo/"),
-            //     Some(https("https://example.krill.cloud/repo/notification.xml")),
-            // );
-
-            // let tal_https = vec![https("https://example.krill.cloud/ta/ta.cer")];
-            // let tal_rsync = rsync("rsync://example.krill.cloud/ta/ta.cer");
-
-            // // todo: create online ta first
-            // let counterpart = online_ta.as_counterpart();
-
-            // let init_cmd = OfflineTrustAnchorInitCommand {
-            //     handle: OfflineTrustAnchorHandle::new("ta".into()),
-            //     repo_info,
-            //     tal_https,
-            //     tal_rsync,
-            //     counterpart,
-            //     signer,
-            // };
-
-            // let init_event = OfflineTrustAnchor::init(init_cmd).unwrap();
-
-            // offline_store.add(init_event).unwrap();
+            // We still need to test some higher order functions:
+            // - add child
+            // - let the child request a certificate
+            // - let the child perform a key rollover
+            // - let the TA publish
+            //
+            // This is hard to test at this level. So, will test this as part of the higher
+            // order functional tests found under /tests. I.e. we will start a full krill
+            // server with testbed support, which will use the TrustAnchorProxy and Signer.
         })
     }
 }

@@ -303,6 +303,7 @@ pub enum Error {
     //-----------------------------------------------------------------
     TaNotAllowed,
     TaNameReserved,
+    TaNotInitialized,
     TaAlreadyInitialized,
     TaProxyAlreadyHasRepository,
     TaProxyAlreadyHasSigner,
@@ -490,6 +491,7 @@ impl fmt::Display for Error {
             //-----------------------------------------------------------------
             Error::TaNotAllowed => write!(f, "Functionality not supported for Trust Anchor"),
             Error::TaNameReserved => write!(f, "Name reserved for embedded Trust Anchor"),
+            Error::TaNotInitialized => write!(f, "TrustAnchor was not initialized"),
             Error::TaAlreadyInitialized => write!(f, "TrustAnchor was already initialized"),
             Error::TaProxyAlreadyHasRepository => write!(f, "Trust Anchor Proxy already has repository"),
             Error::TaProxyAlreadyHasSigner => write!(f, "Trust Anchor Proxy already has associated signer"),
@@ -913,6 +915,7 @@ impl Error {
             //-----------------------------------------------------------------
             Error::TaNotAllowed => ErrorResponse::new("ta-not-allowed", &self),
             Error::TaNameReserved => ErrorResponse::new("ta-name-reserved", &self),
+            Error::TaNotInitialized => ErrorResponse::new("ta-not-initialized", &self),
             Error::TaAlreadyInitialized => ErrorResponse::new("ta-initialized", &self),
             Error::TaProxyAlreadyHasRepository => ErrorResponse::new("ta-has-repository", &self),
             Error::TaProxyAlreadyHasSigner => ErrorResponse::new("ta-has-signer", &self),

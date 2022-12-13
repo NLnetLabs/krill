@@ -74,6 +74,10 @@ impl TrustAnchorObjects {
         })
     }
 
+    pub fn manifest(&self) -> &PublishedManifest {
+        &self.manifest
+    }
+
     pub fn revision(&self) -> &ObjectSetRevision {
         &self.revision
     }
@@ -156,6 +160,14 @@ impl TrustAnchorLocator {
             rsync_uri,
             encoded_ski,
         }
+    }
+
+    pub fn uris(&self) -> &Vec<uri::Https> {
+        &self.uris
+    }
+
+    pub fn rsync_uri(&self) -> &uri::Rsync {
+        &self.rsync_uri
     }
 }
 

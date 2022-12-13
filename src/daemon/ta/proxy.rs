@@ -464,6 +464,20 @@ impl TrustAnchorProxy {
         }
     }
 
+    pub fn get_ta_details(&self) -> KrillResult<&TaCertDetails> {
+        self.signer
+            .as_ref()
+            .ok_or(Error::TaNotInitialized)
+            .map(|signer| &signer.ta_cert_details)
+    }
+
+    pub fn get_trust_anchor_objects(&self) -> KrillResult<&TrustAnchorObjects> {
+        self.signer
+            .as_ref()
+            .ok_or(Error::TaNotInitialized)
+            .map(|signer| &signer.objects)
+    }
+
     fn get_repo(&self) -> KrillResult<&RepositoryContact> {
         self.repository
             .as_ref()
