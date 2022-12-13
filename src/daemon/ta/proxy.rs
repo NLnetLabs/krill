@@ -7,7 +7,14 @@ use super::*;
 
 use std::{collections::HashMap, fmt, sync::Arc};
 
-use rpki::{ca::idexchange::ChildHandle, repository::resources::ResourceSet, uri};
+use rpki::{
+    ca::{
+        idexchange::ChildHandle,
+        provisioning::{ResourceClassEntitlements, SigningCert},
+    },
+    repository::resources::ResourceSet,
+    uri,
+};
 
 use crate::{
     commons::{
@@ -17,7 +24,7 @@ use crate::{
         error::Error,
         eventsourcing, KrillResult,
     },
-    daemon::ca::Rfc8183Id,
+    daemon::{ca::Rfc8183Id, config::IssuanceTimingConfig},
 };
 
 //------------ TrustAnchorProxy --------------------------------------------
@@ -106,14 +113,7 @@ pub enum TrustAnchorProxyEventDetails {
     SignerAdded(TrustAnchorProxySignerInfo),
     SignerRequestMade(Nonce),
     SignerResponseReceived(TrustAnchorSignerResponse),
-    ChildAdded(TrustAnchorProxyChildAdded),
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct TrustAnchorProxyChildAdded {
-    handle: ChildHandle,
-    resources: ResourceSet,
-    id: IdCertInfo,
+    ChildAdded(TrustAnchorChild),
 }
 
 impl fmt::Display for TrustAnchorProxyEventDetails {
@@ -136,12 +136,8 @@ impl fmt::Display for TrustAnchorProxyEventDetails {
             TrustAnchorProxyEventDetails::SignerResponseReceived(response) => {
                 write!(f, "Received signer response with nonce '{}'", response.nonce)
             }
-            TrustAnchorProxyEventDetails::ChildAdded(child_added) => {
-                write!(
-                    f,
-                    "Added child: {}, with resources: {}",
-                    child_added.handle, child_added.resources
-                )
+            TrustAnchorProxyEventDetails::ChildAdded(child) => {
+                write!(f, "Added child: {}, with resources: {}", child.handle, child.resources)
             }
         }
     }
@@ -318,7 +314,9 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
                 self.signer.as_mut().unwrap().objects = response.objects;
                 self.open_signer_request = None;
             }
-            TrustAnchorProxyEventDetails::ChildAdded(_child_added) => todo!(),
+            TrustAnchorProxyEventDetails::ChildAdded(child) => {
+                self.child_details.insert(child.handle.clone(), child);
+            }
         }
     }
 
@@ -354,7 +352,21 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
                     Err(Error::TaProxyAlreadyHasSigner)
                 }
             }
-            TrustAnchorProxyCommandDetails::AddChild(_add_child) => todo!("add child"),
+            TrustAnchorProxyCommandDetails::AddChild(child) => {
+                if self.child_details.contains_key(&child.handle) {
+                    Err(Error::CaChildDuplicate(self.handle.clone(), child.handle))
+                } else {
+                    Ok(vec![TrustAnchorProxyEvent::new(
+                        &self.handle,
+                        self.version,
+                        TrustAnchorProxyEventDetails::ChildAdded(TrustAnchorChild::new(
+                            child.handle,
+                            child.id,
+                            child.resources,
+                        )),
+                    )])
+                }
+            }
             TrustAnchorProxyCommandDetails::MakeSignerRequest => {
                 if self.open_signer_request.is_some() {
                     Err(Error::TaProxyHasRequest)
@@ -482,5 +494,61 @@ impl TrustAnchorProxy {
         self.repository
             .as_ref()
             .ok_or_else(|| Error::CaRepoIssue(self.handle.clone(), "No repository configured".to_string()))
+    }
+}
+
+/// # As a parent
+impl TrustAnchorProxy {
+    /// Get the entitlements for a child.
+    ///
+    /// This is a simplified version of similar code in [`CertAuth`]. There is no apparent
+    /// easy abstraction over these two types (a normal CA and a TA proxy). Things are similar,
+    /// but then.. the details are quite different. So, we accept some re-implementation of
+    /// similar logic here.
+    pub fn entitlements(
+        &self,
+        child_handle: &ChildHandle,
+        issuance_timing: &IssuanceTimingConfig,
+    ) -> KrillResult<ResourceClassEntitlements> {
+        let signer = self.signer.as_ref().ok_or(Error::TaNotInitialized)?;
+        let child = self
+            .child_details
+            .get(child_handle)
+            .ok_or_else(|| Error::CaChildUnknown(self.handle.clone(), child_handle.clone()))?;
+
+        let signing_cert = {
+            let received_cert = signer.ta_cert_details.cert();
+            let my_cert = received_cert
+                .to_cert()
+                .map_err(|e| Error::Custom(format!("Issue with certificate held by TA: {} ", e)))?;
+            SigningCert::new(received_cert.uri().clone(), my_cert)
+        };
+
+        let mut issued_certs = vec![];
+
+        let mut not_after = issuance_timing.new_child_cert_not_after();
+        let threshold = issuance_timing.new_child_cert_issuance_threshold();
+        for ki in child.used_keys.keys() {
+            if let Some(issued) = signer.objects.get_issued(ki) {
+                issued_certs.push(issued.to_rfc6492_issued_cert().map_err(|e| {
+                    // This should never happen, unless our current issued certificate can no longer be parsed
+                    Error::Custom(format!("Issue with issued certificate held by TA: {} ", e))
+                })?);
+
+                let expires = issued.validity().not_after();
+
+                if expires > threshold {
+                    not_after = expires;
+                }
+            }
+        }
+
+        Ok(ResourceClassEntitlements::new(
+            "default".into(),
+            child.resources.clone(),
+            not_after,
+            issued_certs,
+            signing_cert,
+        ))
     }
 }

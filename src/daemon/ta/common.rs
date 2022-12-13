@@ -102,6 +102,11 @@ impl TrustAnchorObjects {
         }
     }
 
+    // Gets an issued certificate if it is known.
+    pub fn get_issued(&self, ki: &KeyIdentifier) -> Option<&IssuedCertificate> {
+        self.issued.get(ki)
+    }
+
     // Revoke any issued certificate for the given key, and remove it. Returns false
     // if there was no such certificate.
     pub fn revoke_issued(&mut self, key: &KeyIdentifier) -> bool {
@@ -284,6 +289,19 @@ pub struct TrustAnchorChild {
     pub used_keys: HashMap<KeyIdentifier, UsedKeyState>,
     pub open_requests: HashMap<KeyIdentifier, ProvisioningRequest>,
     pub open_responses: HashMap<KeyIdentifier, ProvisioningResponse>,
+}
+
+impl TrustAnchorChild {
+    pub fn new(handle: ChildHandle, id: IdCertInfo, resources: ResourceSet) -> Self {
+        TrustAnchorChild {
+            handle,
+            id,
+            resources,
+            used_keys: HashMap::new(),
+            open_requests: HashMap::new(),
+            open_responses: HashMap::new(),
+        }
+    }
 }
 
 //------------ ProvisioningRequest -----------------------------------------
