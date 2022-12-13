@@ -745,13 +745,10 @@ mod tests {
     fn current_objects_delta() {
         let jail = rsync("rsync://example.krill.cloud/repo/publisher");
         let file1_uri = rsync("rsync://example.krill.cloud/repo/publisher/file1.txt");
-        let file2_uri = rsync("rsync://example.krill.cloud/repo/publisher/file2.txt");
-        let file3_uri = rsync("rsync://example.krill.cloud/repo/publisher/file3.txt");
 
         let file1_content = Base64::from_content(&[1]);
         let file1_content_2 = Base64::from_content(&[1, 2]);
         let file2_content = Base64::from_content(&[2]);
-        let file3_content = Base64::from_content(&[3]);
 
         let mut objects = CurrentObjects::default();
 
@@ -769,8 +766,17 @@ mod tests {
         // in events.
         objects.apply_delta(publish_file1.clone());
 
-        // Now adding the same file again will fail.
+        // Now adding the same file for the same URI and same hash, as a publish will fail.
         assert!(objects.verify_delta(&publish_file1, &jail).is_err());
+
+        // Adding a different file as a publish element, rather than update,
+        // for the same URI will also fail. Checks fix for issue #981.
+        let publish_file2 = DeltaElements {
+            publishes: vec![PublishElement::new(file2_content.clone(), file1_uri.clone())],
+            updates: vec![],
+            withdraws: vec![],
+        };
+        assert!(objects.verify_delta(&publish_file2, &jail).is_err());
 
         // Updates
 
