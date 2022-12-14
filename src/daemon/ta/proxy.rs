@@ -551,4 +551,36 @@ impl TrustAnchorProxy {
             signing_cert,
         ))
     }
+
+    /// Get a response for a child request if there is one.
+    ///
+    /// Returns an error in case the request does not correspond to the open response.
+    /// In that case the manager should probably just clear the open response so that
+    /// the child can sync again. This should not happen with local Krill CA children
+    /// as they do not create new requests when there is an open request. We should
+    /// not support any non-local - i.e. possibly out-of-sync and possibly non-krill
+    /// child under a krill trust anchor. They can be a child of the trust anchor
+    /// child though.
+    pub fn response_for_child(
+        &self,
+        child_handle: &ChildHandle,
+        request: &ProvisioningRequest,
+    ) -> KrillResult<Option<&ProvisioningResponse>> {
+        if let Some(child) = self.child_details.get(child_handle) {
+            if let Some(response) = child.open_responses.get(&request.key_identifier()) {
+                if request.matches_response(response) {
+                    Ok(Some(response))
+                } else {
+                    Err(Error::Custom(format!(
+                        "Response for {} does not match request type.",
+                        child_handle
+                    )))
+                }
+            } else {
+                Ok(None)
+            }
+        } else {
+            Err(Error::CaChildUnknown(self.handle.clone(), child_handle.clone()))
+        }
+    }
 }

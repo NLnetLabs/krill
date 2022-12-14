@@ -313,6 +313,22 @@ pub enum ProvisioningRequest {
     Revocation(provisioning::RevocationRequest),
 }
 
+impl ProvisioningRequest {
+    pub fn key_identifier(&self) -> KeyIdentifier {
+        match self {
+            ProvisioningRequest::Issuance(req) => req.csr().public_key().key_identifier(),
+            ProvisioningRequest::Revocation(req) => req.key(),
+        }
+    }
+
+    pub fn matches_response(&self, response: &ProvisioningResponse) -> bool {
+        match self {
+            ProvisioningRequest::Issuance(_) => !matches!(response, ProvisioningResponse::Revocation(_)),
+            ProvisioningRequest::Revocation(_) => !matches!(response, ProvisioningResponse::Issuance(_)),
+        }
+    }
+}
+
 //------------ ProvisioningResponse ----------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
