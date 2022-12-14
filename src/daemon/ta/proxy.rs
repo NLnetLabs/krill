@@ -616,10 +616,7 @@ impl TrustAnchorProxy {
         issuance_timing: &IssuanceTimingConfig,
     ) -> KrillResult<ResourceClassEntitlements> {
         let signer = self.signer.as_ref().ok_or(Error::TaNotInitialized)?;
-        let child = self
-            .child_details
-            .get(child_handle)
-            .ok_or_else(|| Error::CaChildUnknown(self.handle.clone(), child_handle.clone()))?;
+        let child = self.get_child_details(child_handle)?;
 
         let signing_cert = {
             let received_cert = signer.ta_cert_details.cert();
@@ -671,21 +668,58 @@ impl TrustAnchorProxy {
         child_handle: &ChildHandle,
         request: &ProvisioningRequest,
     ) -> KrillResult<Option<&ProvisioningResponse>> {
-        if let Some(child) = self.child_details.get(child_handle) {
-            if let Some(response) = child.open_responses.get(&request.key_identifier()) {
-                if request.matches_response(response) {
-                    Ok(Some(response))
-                } else {
-                    Err(Error::Custom(format!(
-                        "Response for {} does not match request type.",
-                        child_handle
-                    )))
-                }
+        let child = self.get_child_details(child_handle)?;
+
+        if let Some(response) = child.open_responses.get(&request.key_identifier()) {
+            if request.matches_response(response) {
+                Ok(Some(response))
             } else {
-                Ok(None)
+                Err(Error::Custom(format!(
+                    "Response for {} does not match request type.",
+                    child_handle
+                )))
             }
         } else {
-            Err(Error::CaChildUnknown(self.handle.clone(), child_handle.clone()))
+            Ok(None)
         }
+    }
+
+    /// Informs whether there is a matching open request for the child.
+    ///
+    /// If there is a matching request then we do not need to add it. If there is no matching
+    /// request then we may want to add a new request or replace an existing request - which
+    /// we just consider 'not matching and now irrelevant' - as long as there is no open request
+    /// to the signer.
+    ///
+    /// Returns an error if the child is not known.
+    pub fn matching_open_request(
+        &self,
+        child_handle: &ChildHandle,
+        request: &ProvisioningRequest,
+    ) -> KrillResult<bool> {
+        let child = self.get_child_details(child_handle)?;
+        if let Some(existing) = child.open_requests.get(&request.key_identifier()) {
+            match (existing, request) {
+                (ProvisioningRequest::Issuance(existing), ProvisioningRequest::Issuance(request)) => {
+                    Ok(
+                        existing.class_name() == request.class_name() // must be "default" but could differ
+                        && existing.limit() == request.limit()
+                        && CsrInfo::try_from(existing.csr())? == CsrInfo::try_from(request.csr())?,
+                    )
+                }
+                (ProvisioningRequest::Revocation(existing), ProvisioningRequest::Revocation(request)) => {
+                    Ok(existing.class_name() == request.class_name()) // must be "default" but could differ
+                }
+                _ => Ok(false),
+            }
+        } else {
+            Ok(false)
+        }
+    }
+
+    fn get_child_details(&self, child_handle: &ChildHandle) -> KrillResult<&TrustAnchorChild> {
+        self.child_details
+            .get(child_handle)
+            .ok_or_else(|| Error::CaChildUnknown(self.handle.clone(), child_handle.clone()))
     }
 }
