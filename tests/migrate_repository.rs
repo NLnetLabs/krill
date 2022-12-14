@@ -144,7 +144,8 @@ async fn migrate_repository() {
         info("##################################################################");
         info("");
 
-        // Verify that requesting rrdp/ on a CA-only instance of Krill results in a 404 Not Found error rather than a panic.
+        // Verify that requesting rrdp/ on a publishing instance of Krill results in a 404 Not Found error rather than
+        // a panic.
         assert_http_status(krill_anon_http_get("rrdp/").await, StatusCode::NOT_FOUND);
 
         // Verify that requesting garbage file and directory URLs results in an error rather than a panic.
