@@ -2092,6 +2092,10 @@ async fn api_suspend_all(req: Request) -> RoutingResult {
 
 //------------ Serve RRDP Files ----------------------------------------------
 
+fn is_file(file: &File) -> bool {
+    file.metadata().map(|meta| meta.is_file()).unwrap_or(false)
+}
+
 async fn rrdp(req: Request) -> RoutingResult {
     if !req.path().full().starts_with("/rrdp/") {
         Err(req) // Not for us
@@ -2102,7 +2106,7 @@ async fn rrdp(req: Request) -> RoutingResult {
         full_path.push(path);
 
         match File::open(full_path) {
-            Ok(mut file) if file.metadata().map(|meta| meta.is_file()).unwrap_or(false) => {
+            Ok(mut file) if is_file(&file) => {
                 let mut buffer = Vec::new();
                 match file.read_to_end(&mut buffer) {
                     Ok(_) => Ok(HttpResponse::xml_with_cache(buffer, cache_seconds)),
