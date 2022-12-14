@@ -166,6 +166,7 @@ async fn migrate_repository() {
         url.path = Path::new(&url.path).parent().unwrap().display().to_string();
         let url = urlparse::urlunparse(url);
         assert_http_status(httpclient::get_text(&url, None).await, StatusCode::NOT_FOUND);
+        assert_http_status(httpclient::get_text(&format!("{}/", url), None).await, StatusCode::NOT_FOUND);
     }
 
     {
