@@ -2102,11 +2102,12 @@ async fn rrdp(req: Request) -> RoutingResult {
         full_path.push(path);
 
         match File::open(full_path) {
-            Ok(mut file) => {
+            Ok(mut file) if file.metadata().map(|meta| meta.is_file()).unwrap_or(false) => {
                 let mut buffer = Vec::new();
-                file.read_to_end(&mut buffer).unwrap();
-
-                Ok(HttpResponse::xml_with_cache(buffer, cache_seconds))
+                match file.read_to_end(&mut buffer) {
+                    Ok(_) => Ok(HttpResponse::xml_with_cache(buffer, cache_seconds)),
+                    Err(_) => Ok(HttpResponse::not_found()),
+                }
             }
             _ => Ok(HttpResponse::not_found()),
         }
