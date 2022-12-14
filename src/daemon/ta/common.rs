@@ -333,7 +333,7 @@ impl std::fmt::Display for ProvisioningRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             ProvisioningRequest::Issuance(_) => write!(f, "issue certificate for key: {}", self.key_identifier()),
-            ProvisioningRequest::Revocation(_) => write!(f, "revoked certificates for key: {}", self.key_identifier()),
+            ProvisioningRequest::Revocation(_) => write!(f, "revoke certificates for key: {}", self.key_identifier()),
         }
     }
 }

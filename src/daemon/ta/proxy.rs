@@ -12,6 +12,7 @@ use rpki::{
         idexchange::ChildHandle,
         provisioning::{ResourceClassEntitlements, SigningCert},
     },
+    crypto::KeyIdentifier,
     repository::resources::ResourceSet,
     uri,
 };
@@ -120,6 +121,7 @@ pub enum TrustAnchorProxyEventDetails {
     // Children
     ChildAdded(TrustAnchorChild),
     ChildRequestAdded(ChildHandle, ProvisioningRequest),
+    ChildResponseGiven(ChildHandle, KeyIdentifier),
 }
 
 impl fmt::Display for TrustAnchorProxyEventDetails {
@@ -153,6 +155,9 @@ impl fmt::Display for TrustAnchorProxyEventDetails {
             TrustAnchorProxyEventDetails::ChildRequestAdded(child_handle, request) => {
                 write!(f, "Added request for child {}: {}", child_handle, request)
             }
+            TrustAnchorProxyEventDetails::ChildResponseGiven(child_handle, key) => {
+                write!(f, "Given response to child {} for key: {}", child_handle, key)
+            }
         }
     }
 }
@@ -173,6 +178,7 @@ pub enum TrustAnchorProxyCommandDetails {
     // Children
     AddChild(TrustAnchorProxyAddChild),
     AddChildRequest(ChildHandle, ProvisioningRequest),
+    GiveChildResponse(ChildHandle, KeyIdentifier),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -214,6 +220,13 @@ impl fmt::Display for TrustAnchorProxyCommandDetails {
             TrustAnchorProxyCommandDetails::AddChildRequest(child_handle, request) => {
                 write!(f, "Add request for child {}: {}", child_handle, request)
             }
+            TrustAnchorProxyCommandDetails::GiveChildResponse(child_handle, key) => {
+                write!(
+                    f,
+                    "Give (and remove) response to child {} for key {}",
+                    child_handle, key
+                )
+            }
         }
     }
 }
@@ -249,6 +262,9 @@ impl eventsourcing::WithStorableDetails for TrustAnchorProxyCommandDetails {
             }
             TrustAnchorProxyCommandDetails::AddChildRequest(child_handle, _request) => {
                 crate::commons::api::CommandSummary::new("cmd-ta-proxy-child-req", &self).with_child(child_handle)
+            }
+            TrustAnchorProxyCommandDetails::GiveChildResponse(child_handle, _response) => {
+                crate::commons::api::CommandSummary::new("cmd-ta-proxy-child-res", &self).with_child(child_handle)
             }
         }
     }
@@ -361,6 +377,13 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
                     .open_requests
                     .insert(request.key_identifier(), request);
             }
+            TrustAnchorProxyEventDetails::ChildResponseGiven(child_handle, key) => {
+                self.child_details
+                    .get_mut(&child_handle)
+                    .unwrap() // safe - we can only have an event for this child if it exists
+                    .open_responses
+                    .remove(&key);
+            }
         }
     }
 
@@ -471,11 +494,7 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
                 // signer to be responsible for the final say (also.. things may have
                 // changed by the time the signer looks at it, like resource entitlements
                 // perhaps in future?)
-                let child = self
-                    .child_details
-                    .get(&child_handle)
-                    .ok_or_else(|| Error::CaChildUnknown(self.handle.clone(), child_handle.clone()))?;
-
+                let child = self.get_child_details(&child_handle)?;
                 let ta_resource_class_name = ta_resource_class_name();
 
                 match &request {
@@ -510,6 +529,24 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
                     self.version,
                     TrustAnchorProxyEventDetails::ChildRequestAdded(child_handle, request),
                 )])
+            }
+            TrustAnchorProxyCommandDetails::GiveChildResponse(child_handle, key) => {
+                let child = self.get_child_details(&child_handle)?;
+
+                if child.open_responses.contains_key(&key) {
+                    Ok(vec![TrustAnchorProxyEvent::new(
+                        &self.handle,
+                        self.version,
+                        TrustAnchorProxyEventDetails::ChildResponseGiven(child_handle, key),
+                    )])
+                } else {
+                    // This should not never happen. The command would not be sent, but let's
+                    // return some useful error anyway.
+                    Err(Error::Custom(format!(
+                        "No response found for child {} and key {}",
+                        child_handle, key
+                    )))
+                }
             }
         }
     }
