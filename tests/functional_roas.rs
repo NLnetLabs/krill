@@ -9,10 +9,7 @@ use rpki::{
 };
 
 use krill::{
-    commons::{
-        api::{ObjectName, RoaConfiguration, RoaConfigurationUpdates, RoaPayload},
-        util::httpclient,
-    },
+    commons::api::{ObjectName, RoaConfiguration, RoaConfigurationUpdates, RoaPayload},
     daemon::ca::ta_handle,
     test::*,
 };
