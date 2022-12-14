@@ -5,7 +5,7 @@
 /// is handled by the Trust Anchor Signer instead.
 use super::*;
 
-use std::{collections::HashMap, fmt, sync::Arc};
+use std::{collections::HashMap, convert::TryFrom, fmt, sync::Arc};
 
 use rpki::{
     ca::{
@@ -20,7 +20,7 @@ use crate::{
     commons::{
         actor::Actor,
         api::{IdCertInfo, RepositoryContact},
-        crypto::KrillSigner,
+        crypto::{CsrInfo, KrillSigner},
         error::Error,
         eventsourcing, KrillResult,
     },
@@ -109,17 +109,24 @@ impl fmt::Display for TrustAnchorProxyInitDetails {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum TrustAnchorProxyEventDetails {
+    // Publication Support
     RepositoryAdded(RepositoryContact),
+
+    // Proxy -> Signer interactions
     SignerAdded(TrustAnchorProxySignerInfo),
     SignerRequestMade(Nonce),
     SignerResponseReceived(TrustAnchorSignerResponse),
+
+    // Children
     ChildAdded(TrustAnchorChild),
+    ChildRequestAdded(ChildHandle, ProvisioningRequest),
 }
 
 impl fmt::Display for TrustAnchorProxyEventDetails {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // note that this is a summary, full details are stored in the json.
         match self {
+            // Publication Support
             TrustAnchorProxyEventDetails::RepositoryAdded(repository) => {
                 write!(
                     f,
@@ -127,6 +134,8 @@ impl fmt::Display for TrustAnchorProxyEventDetails {
                     repository.server_info().service_uri()
                 )
             }
+
+            // Proxy -> Signer interactions
             TrustAnchorProxyEventDetails::SignerAdded(signer) => {
                 write!(f, "Added signer with ID certificate hash: {}", signer.id.hash())
             }
@@ -136,8 +145,13 @@ impl fmt::Display for TrustAnchorProxyEventDetails {
             TrustAnchorProxyEventDetails::SignerResponseReceived(response) => {
                 write!(f, "Received signer response with nonce '{}'", response.nonce)
             }
+
+            // Children
             TrustAnchorProxyEventDetails::ChildAdded(child) => {
                 write!(f, "Added child: {}, with resources: {}", child.handle, child.resources)
+            }
+            TrustAnchorProxyEventDetails::ChildRequestAdded(child_handle, request) => {
+                write!(f, "Added request for child {}: {}", child_handle, request)
             }
         }
     }
@@ -148,11 +162,17 @@ impl fmt::Display for TrustAnchorProxyEventDetails {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum TrustAnchorProxyCommandDetails {
+    // Publication Support
     AddRepository(RepositoryContact),
+
+    // Proxy -> Signer interactions
     AddSigner(TrustAnchorProxySignerInfo),
-    AddChild(TrustAnchorProxyAddChild),
     MakeSignerRequest,
     ProcessSignerResponse(TrustAnchorSignerResponse),
+
+    // Children
+    AddChild(TrustAnchorProxyAddChild),
+    AddChildRequest(ChildHandle, ProvisioningRequest),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -166,18 +186,14 @@ impl fmt::Display for TrustAnchorProxyCommandDetails {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // note that this is a summary, full details are stored in the json.
         match self {
+            // Publication Support
             TrustAnchorProxyCommandDetails::AddRepository(repository) => {
                 write!(f, "Add repository at: {}", repository.server_info().service_uri())
             }
+
+            // Proxy -> Signer interactions
             TrustAnchorProxyCommandDetails::AddSigner(signer) => {
                 write!(f, "Add signer with id certificate hash: {}", signer.id.hash())
-            }
-            TrustAnchorProxyCommandDetails::AddChild(add_child) => {
-                write!(
-                    f,
-                    "Add child: {}, with resources: {}",
-                    add_child.handle, add_child.resources
-                )
             }
             TrustAnchorProxyCommandDetails::MakeSignerRequest => {
                 write!(f, "Create new publish request for signer")
@@ -190,6 +206,14 @@ impl fmt::Display for TrustAnchorProxyCommandDetails {
                     response.objects.revision().next_update().to_rfc3339()
                 )
             }
+
+            // Children
+            TrustAnchorProxyCommandDetails::AddChild(child) => {
+                write!(f, "Add child: {}, with resources: {}", child.handle, child.resources)
+            }
+            TrustAnchorProxyCommandDetails::AddChildRequest(child_handle, request) => {
+                write!(f, "Add request for child {}: {}", child_handle, request)
+            }
         }
     }
 }
@@ -197,16 +221,16 @@ impl fmt::Display for TrustAnchorProxyCommandDetails {
 impl eventsourcing::WithStorableDetails for TrustAnchorProxyCommandDetails {
     fn summary(&self) -> crate::commons::api::CommandSummary {
         match self {
+            // Publication Support
             TrustAnchorProxyCommandDetails::AddRepository(repository) => {
                 crate::commons::api::CommandSummary::new("cmd-ta-proxy-repo-add", &self)
                     .with_service_uri(repository.server_info().service_uri())
             }
+
+            // Proxy -> Signer interactions
             TrustAnchorProxyCommandDetails::AddSigner(signer) => {
                 crate::commons::api::CommandSummary::new("cmd-ta-proxy-signer-add", &self)
                     .with_id_cert_hash(signer.id.hash())
-            }
-            TrustAnchorProxyCommandDetails::AddChild(add_child) => {
-                crate::commons::api::CommandSummary::new("cmd-ta-proxy-child-add", &self).with_child(&add_child.handle)
             }
             TrustAnchorProxyCommandDetails::MakeSignerRequest => {
                 crate::commons::api::CommandSummary::new("cmd-ta-proxy-pub-req", &self)
@@ -217,6 +241,14 @@ impl eventsourcing::WithStorableDetails for TrustAnchorProxyCommandDetails {
                     .with_arg("manifest number", objects.objects.revision().number())
                     .with_arg("this update", objects.objects.revision().this_update().to_rfc3339())
                     .with_arg("next update", objects.objects.revision().next_update().to_rfc3339())
+            }
+
+            // Children
+            TrustAnchorProxyCommandDetails::AddChild(child) => {
+                crate::commons::api::CommandSummary::new("cmd-ta-proxy-child-add", &self).with_child(&child.handle)
+            }
+            TrustAnchorProxyCommandDetails::AddChildRequest(child_handle, _request) => {
+                crate::commons::api::CommandSummary::new("cmd-ta-proxy-child-req", &self).with_child(child_handle)
             }
         }
     }
@@ -298,7 +330,10 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
 
         self.version += 1;
         match details {
+            // Publication Support
             TrustAnchorProxyEventDetails::RepositoryAdded(repository) => self.repository = Some(repository),
+
+            // Proxy -> Signer interactions
             TrustAnchorProxyEventDetails::SignerAdded(signer) => self.signer = Some(signer),
             TrustAnchorProxyEventDetails::SignerRequestMade(nonce) => self.open_signer_request = Some(nonce),
             TrustAnchorProxyEventDetails::SignerResponseReceived(response) => {
@@ -314,8 +349,17 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
                 self.signer.as_mut().unwrap().objects = response.objects;
                 self.open_signer_request = None;
             }
+
+            // Children
             TrustAnchorProxyEventDetails::ChildAdded(child) => {
                 self.child_details.insert(child.handle.clone(), child);
+            }
+            TrustAnchorProxyEventDetails::ChildRequestAdded(child_handle, request) => {
+                self.child_details
+                    .get_mut(&child_handle)
+                    .unwrap() // safe - we can only have an event for this child if it exists
+                    .open_requests
+                    .insert(request.key_identifier(), request);
             }
         }
     }
@@ -330,6 +374,7 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
             );
         }
         match command.into_details() {
+            // Publication Support
             TrustAnchorProxyCommandDetails::AddRepository(repository) => {
                 if self.repository.is_none() {
                     Ok(vec![TrustAnchorProxyEvent::new(
@@ -341,6 +386,8 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
                     Err(Error::TaProxyAlreadyHasRepository)
                 }
             }
+
+            // Proxy -> Signer interactions
             TrustAnchorProxyCommandDetails::AddSigner(signer) => {
                 if self.signer.is_none() {
                     Ok(vec![TrustAnchorProxyEvent::new(
@@ -350,21 +397,6 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
                     )])
                 } else {
                     Err(Error::TaProxyAlreadyHasSigner)
-                }
-            }
-            TrustAnchorProxyCommandDetails::AddChild(child) => {
-                if self.child_details.contains_key(&child.handle) {
-                    Err(Error::CaChildDuplicate(self.handle.clone(), child.handle))
-                } else {
-                    Ok(vec![TrustAnchorProxyEvent::new(
-                        &self.handle,
-                        self.version,
-                        TrustAnchorProxyEventDetails::ChildAdded(TrustAnchorChild::new(
-                            child.handle,
-                            child.id,
-                            child.resources,
-                        )),
-                    )])
                 }
             }
             TrustAnchorProxyCommandDetails::MakeSignerRequest => {
@@ -378,6 +410,7 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
                     )])
                 }
             }
+
             TrustAnchorProxyCommandDetails::ProcessSignerResponse(response) => {
                 if let Some(nonce) = &self.open_signer_request {
                     if &response.nonce != nonce {
@@ -405,6 +438,78 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
                     // It seems that the user uploaded a response even though we have no request.
                     Err(Error::TaProxyHasNoRequest)
                 }
+            }
+
+            // Children
+            TrustAnchorProxyCommandDetails::AddChild(child) => {
+                if self.child_details.contains_key(&child.handle) {
+                    Err(Error::CaChildDuplicate(self.handle.clone(), child.handle))
+                } else {
+                    Ok(vec![TrustAnchorProxyEvent::new(
+                        &self.handle,
+                        self.version,
+                        TrustAnchorProxyEventDetails::ChildAdded(TrustAnchorChild::new(
+                            child.handle,
+                            child.id,
+                            child.resources,
+                        )),
+                    )])
+                }
+            }
+            TrustAnchorProxyCommandDetails::AddChildRequest(child_handle, request) => {
+                // We can do some basic checks on the request, like..
+                // - CSR is valid
+                // - CSR does not exceed entitled resources
+                // - CSR is for correct resource class
+                // - Revocation is for known key
+                // - Revocation is for correct resource class
+                //
+                // The signer will eventually handle the actual request. So we just
+                // schedule it as a manner of speaking. The signer will also do these
+                // checks - although that means that we have some duplication this helps
+                // to ensure that we can "fail fast" - and on the other hand leave the
+                // signer to be responsible for the final say (also.. things may have
+                // changed by the time the signer looks at it, like resource entitlements
+                // perhaps in future?)
+                let child = self
+                    .child_details
+                    .get(&child_handle)
+                    .ok_or_else(|| Error::CaChildUnknown(self.handle.clone(), child_handle.clone()))?;
+
+                let ta_resource_class_name = ta_resource_class_name();
+
+                match &request {
+                    ProvisioningRequest::Issuance(issuance) => {
+                        if issuance.class_name() != &ta_resource_class_name {
+                            return Err(Error::Custom(format!(
+                                "TA child certificate sign request uses unknown resource class name '{}'",
+                                issuance.class_name()
+                            )));
+                        }
+                        issuance.limit().apply_to(&child.resources)?; // Errors if request exceeds
+                        CsrInfo::try_from(issuance.csr())?; // Errors if the CSR is invalid
+                    }
+                    ProvisioningRequest::Revocation(revocation) => {
+                        if revocation.class_name() != &ta_resource_class_name {
+                            return Err(Error::Custom(format!(
+                                "TA child revocation request uses unknown resource class name '{}'",
+                                revocation.class_name()
+                            )));
+                        }
+                        if !child.used_keys.contains_key(&revocation.key()) {
+                            return Err(Error::Custom(format!(
+                                "TA child revocation requested for unknown key: {}",
+                                revocation.key()
+                            )));
+                        }
+                    }
+                }
+
+                Ok(vec![TrustAnchorProxyEvent::new(
+                    &self.handle,
+                    self.version,
+                    TrustAnchorProxyEventDetails::ChildRequestAdded(child_handle, request),
+                )])
             }
         }
     }
@@ -544,7 +649,7 @@ impl TrustAnchorProxy {
         }
 
         Ok(ResourceClassEntitlements::new(
-            "default".into(),
+            ta_resource_class_name(),
             child.resources.clone(),
             not_after,
             issued_certs,

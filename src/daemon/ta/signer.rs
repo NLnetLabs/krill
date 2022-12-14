@@ -11,7 +11,7 @@ use std::{collections::HashMap, convert::TryFrom, fmt, sync::Arc};
 use rpki::{
     ca::{
         idexchange::{ChildHandle, RepoInfo},
-        provisioning::{self, IssuanceResponse, RequestResourceLimit, ResourceClassName, RevocationResponse},
+        provisioning::{self, IssuanceResponse, RequestResourceLimit, RevocationResponse},
     },
     crypto::KeyIdentifier,
     repository::{
@@ -360,7 +360,7 @@ impl TrustAnchorSigner {
         objects.increment_revision();
 
         let signing_cert = self.ta_cert_details.cert();
-        let ta_rcn = Self::resource_class_name();
+        let ta_rcn = ta_resource_class_name();
 
         for child_request in &request.child_requests {
             let mut responses = HashMap::new();
@@ -465,9 +465,5 @@ impl TrustAnchorSigner {
     /// Get exchange for nonce
     pub fn get_exchange(&self, nonce: &Nonce) -> Option<&TrustAnchorProxySignerExchange> {
         self.exchanges.iter().find(|ex| &ex.request.nonce == nonce)
-    }
-
-    fn resource_class_name() -> ResourceClassName {
-        "default".into()
     }
 }

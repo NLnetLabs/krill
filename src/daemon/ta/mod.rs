@@ -22,6 +22,10 @@ pub fn ta_handle() -> CaHandle {
     CaHandle::from_str(TA_NAME).unwrap()
 }
 
+fn ta_resource_class_name() -> rpki::ca::provisioning::ResourceClassName {
+    "default".into()
+}
+
 //----------------- TESTS --------------------------------------------------------------
 #[cfg(test)]
 mod tests {
