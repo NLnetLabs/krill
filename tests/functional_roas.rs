@@ -2,6 +2,7 @@
 //!
 use std::fs;
 
+use hyper::StatusCode;
 use rpki::{
     ca::{idexchange::CaHandle, provisioning::ResourceClassName},
     repository::resources::ResourceSet,
