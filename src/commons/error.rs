@@ -289,7 +289,8 @@ pub enum Error {
     KeyUseNoOldKey,
     KeyUseNoIssuedCert,
     KeyUseNoMatch(KeyIdentifier),
-    KeyRollNotAllowed,
+    KeyRollInProgress,
+    KeyRollActivatePendingRequests,
 
     //-----------------------------------------------------------------
     // Resource Issues
@@ -476,7 +477,8 @@ impl fmt::Display for Error {
             Error::KeyUseNoOldKey => write!(f, "No old key in resource class"),
             Error::KeyUseNoIssuedCert => write!(f, "No issued cert matching pub key"),
             Error::KeyUseNoMatch(ki) => write!(f, "No key found matching key identifier: '{}'", ki),
-            Error::KeyRollNotAllowed => write!(f, "Key roll in progress"),
+            Error::KeyRollInProgress => write!(f, "Key roll in progress"),
+            Error::KeyRollActivatePendingRequests => write!(f, "Cannot activate key while there are still pending requests."),
 
             //-----------------------------------------------------------------
             // Resource Issues
@@ -901,7 +903,8 @@ impl Error {
             Error::KeyUseNoOldKey => ErrorResponse::new("key-no-old", &self),
             Error::KeyUseNoIssuedCert => ErrorResponse::new("key-no-cert", &self),
             Error::KeyUseNoMatch(ki) => ErrorResponse::new("key-no-match", &self).with_key_identifier(ki),
-            Error::KeyRollNotAllowed => ErrorResponse::new("key-roll-disallowed", &self),
+            Error::KeyRollInProgress => ErrorResponse::new("key-roll-disallowed", &self),
+            Error::KeyRollActivatePendingRequests => ErrorResponse::new("key-roll-pending-requests", &self),
 
             //-----------------------------------------------------------------
             // Resource Issues (label: rc-*)

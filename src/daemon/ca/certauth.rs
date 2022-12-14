@@ -1637,7 +1637,7 @@ impl CertAuth {
                 if !rc.key_roll_possible() {
                     // If we can't roll... well then we have to bail out.
                     // Note: none of these events are committed in that case.
-                    return Err(Error::KeyRollNotAllowed);
+                    return Err(Error::KeyRollInProgress);
                 }
 
                 evt_dets.append(&mut rc.keyroll_initiate(&info, Duration::seconds(0), signer)?);

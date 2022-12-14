@@ -573,12 +573,16 @@ impl KeyState {
         signer: &KrillSigner,
     ) -> KrillResult<CaEvtDet> {
         match self {
-            KeyState::RollNew(_new, current) => {
-                let revoke_req = Self::revoke_key(parent_class_name, current.key_id(), signer)?;
-                Ok(CaEvtDet::KeyRollActivated {
-                    resource_class_name,
-                    revoke_req,
-                })
+            KeyState::RollNew(new, current) => {
+                if new.request().is_some() || current.request().is_some() {
+                    Err(Error::KeyRollActivatePendingRequests)
+                } else {
+                    let revoke_req = Self::revoke_key(parent_class_name, current.key_id(), signer)?;
+                    Ok(CaEvtDet::KeyRollActivated {
+                        resource_class_name,
+                        revoke_req,
+                    })
+                }
             }
             _ => Err(Error::KeyUseNoNewKey),
         }
