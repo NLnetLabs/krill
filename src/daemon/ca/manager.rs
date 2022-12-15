@@ -57,9 +57,16 @@ use crate::{
 //------------ CaManager -----------------------------------------------------
 
 pub struct CaManager {
-    ca_store: Arc<AggregateStore<CertAuth>>,
+    // Used to manage CAs
+    ca_store: AggregateStore<CertAuth>,
+
+    // Used to manage objects for CAs. Also shared with the ca_store as well
+    // as a listener so that it can create manifests and CRLs as needed. Accessed
+    // here for publishing.
     ca_objects_store: Arc<CaObjectsStore>,
-    status_store: Arc<StatusStore>,
+
+    // Keep track of CA parent and CA repository interaction status.
+    status_store: StatusStore,
 
     // shared task queue:
     // - listens for events in the ca_store
@@ -70,7 +77,8 @@ pub struct CaManager {
     config: Arc<Config>,
     signer: Arc<KrillSigner>,
 
-    // System actor
+    // System actor is used for (scheduled or triggered) system actions where
+    // we have no operator actor context.
     system_actor: Actor,
 }
 
@@ -129,9 +137,9 @@ impl CaManager {
         let status_store = StatusStore::new(&config.data_dir, STATUS_DIR)?;
 
         Ok(CaManager {
-            ca_store: Arc::new(ca_store),
+            ca_store,
             ca_objects_store,
-            status_store: Arc::new(status_store),
+            status_store,
             tasks,
             config,
             signer,
