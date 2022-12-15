@@ -56,7 +56,6 @@ use crate::{
 
 //------------ CaManager -----------------------------------------------------
 
-#[derive(Clone)]
 pub struct CaManager {
     ca_store: Arc<AggregateStore<CertAuth>>,
     ca_objects_store: Arc<CaObjectsStore>,
