@@ -15,11 +15,14 @@ use rpki::{
 
 use crate::{
     commons::{
-        api::{IdCertInfo, IssuedCertificate, ReceivedCert, Revocations},
+        api::{IdCertInfo, IssuedCertificate, ObjectName, ReceivedCert, Revocations},
         crypto::KrillSigner,
+        error::Error,
         KrillResult,
     },
-    daemon::ca::{CrlBuilder, ManifestBuilder, ObjectSetRevision, PublishedCrl, PublishedManifest, UsedKeyState},
+    daemon::ca::{
+        CrlBuilder, ManifestBuilder, ObjectSetRevision, PublishedCrl, PublishedManifest, PublishedObject, UsedKeyState,
+    },
 };
 
 //------------ TrustAnchorObjects ------------------------------------------
@@ -40,6 +43,12 @@ pub struct TrustAnchorObjects {
     // manifest and CRL.
     revision: ObjectSetRevision,
 
+    // TA Key Identifier (may not change)
+    key_identifier: KeyIdentifier,
+
+    // Base URI for objects published by this TA (may not change)
+    base_uri: uri::Rsync,
+
     // Track revocations and the last issued CRL.
     revocations: Revocations,
     crl: PublishedCrl,
@@ -54,11 +63,12 @@ pub struct TrustAnchorObjects {
 
 impl TrustAnchorObjects {
     /// Creates a new TrustAnchorObjects for the signing certificate.
-    pub fn create(ta_cert_details: &TaCertDetails, signer: &KrillSigner) -> KrillResult<Self> {
+    pub fn create(signing_cert: &ReceivedCert, signer: &KrillSigner) -> KrillResult<Self> {
         let revision = ObjectSetRevision::new(1, Self::this_update(), Self::next_update());
+        let key_identifier = signing_cert.key_identifier();
+        let base_uri = signing_cert.ca_repository().clone();
         let revocations = Revocations::default();
 
-        let signing_cert = ta_cert_details.cert();
         let signing_key = signing_cert.key_identifier();
         let issuer = signing_cert.subject().clone();
 
@@ -71,11 +81,75 @@ impl TrustAnchorObjects {
 
         Ok(TrustAnchorObjects {
             revision,
+            key_identifier,
+            base_uri,
             revocations,
             crl,
             manifest,
             issued: HashMap::new(),
         })
+    }
+
+    /// Publish next revision of the published objects.
+    /// - Update CRL (times and revocations)
+    /// - Update Manifest (times and listed objects)
+    pub fn republish(&mut self, signing_cert: &ReceivedCert, signer: &KrillSigner) -> KrillResult<()> {
+        self.revision.next(Self::next_update());
+
+        let signing_key = signing_cert.key_identifier();
+
+        if signing_key != self.key_identifier {
+            // This would be a bug.. we will need to re-think this when implementing
+            // signed TALs and TA key rollovers.
+            Err(Error::custom("TA key changed when republishing"))
+        } else {
+            let issuer = signing_cert.subject().clone();
+
+            self.crl = CrlBuilder::build(signing_key, issuer, &self.revocations, self.revision, signer)?;
+
+            self.manifest = ManifestBuilder::new(self.revision)
+                .with_objects(&self.crl, &self.issued_certs_objects())
+                .build_new_mft(signing_cert, signer)
+                .map(|m| m.into())?;
+
+            Ok(())
+        }
+    }
+
+    pub fn publish_elements(&self) -> KrillResult<Vec<crate::commons::api::rrdp::PublishElement>> {
+        let mut res = vec![];
+
+        let mft_uri = self
+            .base_uri
+            .join(ObjectName::mft_for_key(&self.key_identifier).as_ref())
+            .map_err(|e| Error::Custom(format!("Cannot make uri: {}", e)))?;
+        res.push(self.manifest.publish_element(mft_uri));
+
+        let crl_uri = self
+            .base_uri
+            .join(ObjectName::crl_for_key(&self.key_identifier).as_ref())
+            .map_err(|e| Error::Custom(format!("Cannot make uri: {}", e)))?;
+        res.push(self.crl.publish_element(crl_uri));
+
+        for (name, object) in self.issued_certs_objects() {
+            let cert_uri = self
+                .base_uri
+                .join(name.as_ref())
+                .map_err(|e| Error::Custom(format!("Cannot make uri: {}", e)))?;
+            res.push(object.publish_element(cert_uri));
+        }
+        Ok(res)
+    }
+
+    fn issued_certs_objects(&self) -> HashMap<ObjectName, PublishedObject> {
+        self.issued
+            .iter()
+            .map(|(ki, cert)| {
+                let object = PublishedObject::for_cert_info(cert);
+                let name = ObjectName::cer_for_key(ki);
+                (name, object)
+            })
+            .collect()
     }
 
     pub fn manifest(&self) -> &PublishedManifest {
@@ -84,10 +158,6 @@ impl TrustAnchorObjects {
 
     pub fn revision(&self) -> &ObjectSetRevision {
         &self.revision
-    }
-
-    pub fn increment_revision(&mut self) {
-        self.revision.next(Self::next_update());
     }
 
     pub fn this_update() -> Time {

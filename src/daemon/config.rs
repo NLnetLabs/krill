@@ -584,14 +584,6 @@ impl IssuanceTimingConfig {
         self.timing_publish_hours_before_next.into()
     }
 
-    /// Worst case guess for re-issuance
-    pub fn republish_worst_case(&self) -> Time {
-        Time::now()
-            + Duration::hours(self.timing_publish_next_hours.into())
-            + Duration::hours(self.timing_publish_next_jitter_hours.into())
-            - Duration::hours(self.publish_hours_before_next())
-    }
-
     //-- Child Cert
 
     /// Validity period for newly issued child certificates

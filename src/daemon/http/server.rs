@@ -605,19 +605,6 @@ pub async fn metrics(req: Request) -> RoutingResult {
                             ));
                         }
                     }
-
-                    res.push('\n');
-                    res.push_str("# HELP krill_ca_ps_next_planned_time unix timestamp in seconds of next planned CA to Publication Server connection (unless e.g. ROAs are changed)\n");
-                    res.push_str("# TYPE krill_ca_ps_next_planned_time gauge\n");
-                    for (ca, status) in ca_status_map.iter() {
-                        // skip the ones for which we have no status yet, i.e it was really only just added
-                        // and no attempt to connect has yet been made.
-                        let timestamp = status.repo().next_exchange_before();
-                        res.push_str(&format!(
-                            "krill_ca_ps_next_planned_time{{ca=\"{}\"}} {}\n",
-                            ca, timestamp
-                        ));
-                    }
                 }
 
                 // Do not show child metrics if none of the CAs has any children..

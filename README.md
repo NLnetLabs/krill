@@ -29,6 +29,12 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 In this release we introduce an API to set up CAs, and signed objects such as
 ROAs in bulk. 
 
+API Changes:
+
+We removed the repository next update time from the stats and metrics output.
+It was inaccurate (usually 8 hours off), and not very informative. More useful
+metrics are still provided: last exchange and last successful exchange. If these
+times differ, then there is an issue that may need attention.
 
 ## 0.12.0 'Crickets'
 

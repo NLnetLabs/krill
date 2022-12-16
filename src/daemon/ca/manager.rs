@@ -24,8 +24,8 @@ use crate::{
     commons::{
         actor::Actor,
         api::{
-            rrdp::PublishElement, BgpSecCsrInfoList, BgpSecDefinitionUpdates, ParentServerInfo, PublicationServerInfo,
-            RoaConfigurationUpdates, Timestamp,
+            rrdp::PublishElement, BgpSecCsrInfoList, BgpSecDefinitionUpdates, IdCertInfo, ParentServerInfo,
+            PublicationServerInfo, RoaConfigurationUpdates, Timestamp,
         },
         api::{
             AddChildRequest, AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates, AspaProvidersUpdate,
@@ -398,7 +398,7 @@ impl CaManager {
 
         for repo_contact in repos {
             if self
-                .ca_repo_sync(repo_manager, ca_handle, &repo_contact, vec![])
+                .ca_repo_sync(repo_manager, ca_handle, ca.id_cert(), &repo_contact, vec![])
                 .await
                 .is_err()
             {
@@ -1649,35 +1649,45 @@ impl CaManager {
         ca_handle: &CaHandle,
     ) -> KrillResult<()> {
         // Note that this is a no-op for new CAs which do not yet have any repository configured.
-        for (repo_contact, ca_elements) in self.ca_repo_elements(ca_handle).await? {
-            self.ca_repo_sync(repo_manager, ca_handle, &repo_contact, ca_elements)
-                .await?;
-        }
+        if ca_handle.as_str() == TA_NAME {
+            let proxy = self.get_trust_anchor_proxy().await?;
+            let id = proxy.id();
+            let repo = proxy.repository().ok_or(Error::TaProxyHasNoRepository)?;
+            let objects = proxy.get_trust_anchor_objects()?.publish_elements()?;
 
-        // Clean-up of old repos
-        for deprecated in self.ca_deprecated_repos(ca_handle)? {
-            info!(
-                "Will try to clean up deprecated repository '{}' for CA '{}'",
-                deprecated.contact(),
-                ca_handle
-            );
-
-            if let Err(e) = self
-                .ca_repo_sync(repo_manager, ca_handle, deprecated.contact(), vec![])
-                .await
-            {
-                warn!("Could not clean up deprecated repository: {}", e);
-
-                if deprecated.clean_attempts() < 5 {
-                    self.ca_deprecated_repo_increment_clean_attempts(ca_handle, deprecated.contact())?;
-                    return Err(e);
-                }
+            self.ca_repo_sync(repo_manager, ca_handle, id, repo, objects).await
+        } else {
+            let ca = self.get_ca(ca_handle).await?;
+            for (repo_contact, objects) in self.ca_repo_elements(ca_handle).await? {
+                self.ca_repo_sync(repo_manager, ca_handle, ca.id_cert(), &repo_contact, objects)
+                    .await?;
             }
 
-            self.ca_deprecated_repo_remove(ca_handle, deprecated.contact())?;
-        }
+            // Clean-up of old repos
+            for deprecated in self.ca_deprecated_repos(ca_handle)? {
+                info!(
+                    "Will try to clean up deprecated repository '{}' for CA '{}'",
+                    deprecated.contact(),
+                    ca_handle
+                );
 
-        Ok(())
+                if let Err(e) = self
+                    .ca_repo_sync(repo_manager, ca_handle, ca.id_cert(), deprecated.contact(), vec![])
+                    .await
+                {
+                    warn!("Could not clean up deprecated repository: {}", e);
+
+                    if deprecated.clean_attempts() < 5 {
+                        self.ca_deprecated_repo_increment_clean_attempts(ca_handle, deprecated.contact())?;
+                        return Err(e);
+                    }
+                }
+
+                self.ca_deprecated_repo_remove(ca_handle, deprecated.contact())?;
+            }
+
+            Ok(())
+        }
     }
 
     #[allow(clippy::mutable_key_type)]
@@ -1685,12 +1695,13 @@ impl CaManager {
         &self,
         repo_manager: &RepositoryManager,
         ca_handle: &CaHandle,
+        id_cert: &IdCertInfo,
         repo_contact: &RepositoryContact,
         publish_elements: Vec<PublishElement>,
     ) -> KrillResult<()> {
         debug!("CA '{}' sends list query to repo", ca_handle);
         let list_reply = self
-            .send_rfc8181_list(repo_manager, ca_handle, repo_contact.server_info())
+            .send_rfc8181_list(repo_manager, ca_handle, id_cert, repo_contact.server_info())
             .await?;
 
         let elements: HashMap<_, _> = list_reply.into_elements().into_iter().map(|el| el.unpack()).collect();
@@ -1716,7 +1727,7 @@ impl CaManager {
 
         if !delta.is_empty() {
             debug!("CA '{}' sends delta", ca_handle);
-            self.send_rfc8181_delta(repo_manager, ca_handle, repo_contact.server_info(), delta)
+            self.send_rfc8181_delta(repo_manager, ca_handle, id_cert, repo_contact.server_info(), delta)
                 .await?;
             debug!("CA '{}' sent delta", ca_handle);
         } else {
@@ -1767,18 +1778,19 @@ impl CaManager {
     pub async fn update_repo(
         &self,
         repo_manager: &RepositoryManager,
-        ca: CaHandle,
+        ca_handle: CaHandle,
         new_contact: RepositoryContact,
         check_repo: bool,
         actor: &Actor,
     ) -> KrillResult<()> {
+        let ca = self.get_ca(&ca_handle).await?;
         if check_repo {
             // First verify that this repository can be reached and responds to a list request.
-            self.send_rfc8181_list(repo_manager, &ca, new_contact.server_info())
+            self.send_rfc8181_list(repo_manager, &ca_handle, ca.id_cert(), new_contact.server_info())
                 .await
-                .map_err(|e| Error::CaRepoIssue(ca.clone(), e.to_string()))?;
+                .map_err(|e| Error::CaRepoIssue(ca_handle.clone(), e.to_string()))?;
         }
-        let cmd = CmdDet::update_repo(&ca, new_contact, self.signer.clone(), actor);
+        let cmd = CmdDet::update_repo(&ca_handle, new_contact, self.signer.clone(), actor);
         self.send_ca_command(cmd).await?;
         Ok(())
     }
@@ -1787,11 +1799,11 @@ impl CaManager {
         &self,
         repo_manager: &RepositoryManager,
         ca_handle: &CaHandle,
+        id_cert: &IdCertInfo,
         server_info: &PublicationServerInfo,
     ) -> KrillResult<ListReply> {
         let uri = server_info.service_uri();
-        let ca = self.get_ca(ca_handle).await?;
-        let signing_key = ca.id_cert().public_key().key_identifier();
+        let signing_key = id_cert.public_key().key_identifier();
 
         let message = publication::Message::list_query();
 
@@ -1806,16 +1818,9 @@ impl CaManager {
             }
         };
 
-        let next_update = self
-            .ca_objects_store
-            .ca_objects(ca_handle)?
-            .closest_next_update()
-            .unwrap_or_else(|| self.config.issuance_timing.republish_worst_case().into());
-
         match reply {
             publication::Reply::List(list_reply) => {
-                self.status_store
-                    .set_status_repo_success(ca_handle, uri.clone(), next_update)?;
+                self.status_store.set_status_repo_success(ca_handle, uri.clone())?;
                 Ok(list_reply)
             }
             publication::Reply::Success => {
@@ -1837,14 +1842,14 @@ impl CaManager {
         &self,
         repo_manager: &RepositoryManager,
         ca_handle: &CaHandle,
+        id_cert: &IdCertInfo,
         server_info: &PublicationServerInfo,
         delta: PublishDelta,
     ) -> KrillResult<()> {
         let uri = server_info.service_uri();
-        let ca = self.get_ca(ca_handle).await?;
-        let signing_key = ca.id_cert().public_key().key_identifier();
+        let signing_key = id_cert.public_key().key_identifier();
 
-        let message = publication::Message::delta(delta);
+        let message = publication::Message::delta(delta.clone());
 
         let reply = match self
             .send_rfc8181_and_validate_response(repo_manager, message, server_info, ca_handle, &signing_key)
@@ -1859,18 +1864,8 @@ impl CaManager {
 
         match reply {
             publication::Reply::Success => {
-                // Get all the currently published elements in ALL REPOS.
-                // TODO: reflect the status for each REPO in the API / UI?
-                // We probably should.. though it should be extremely rare and short-lived to
-                // have more than one repository.
-                let ca_objects = self.ca_objects_store.ca_objects(ca_handle)?;
-                let published = ca_objects.all_publish_elements();
-                let next_update = ca_objects
-                    .closest_next_update()
-                    .unwrap_or_else(|| self.config.issuance_timing.republish_worst_case().into());
-
                 self.status_store
-                    .set_status_repo_published(ca_handle, uri.clone(), published, next_update)?;
+                    .set_status_repo_published(ca_handle, uri.clone(), delta)?;
                 Ok(())
             }
             publication::Reply::ErrorReply(e) => {

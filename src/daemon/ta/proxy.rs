@@ -655,6 +655,10 @@ impl TrustAnchorProxy {
     pub fn id(&self) -> &IdCertInfo {
         &self.id
     }
+
+    pub fn repository(&self) -> Option<&RepositoryContact> {
+        self.repository.as_ref()
+    }
 }
 
 /// # Publication support

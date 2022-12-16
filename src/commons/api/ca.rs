@@ -9,6 +9,7 @@ use std::{fmt, str};
 
 use bytes::Bytes;
 use chrono::{Duration, TimeZone, Utc};
+use rpki::ca::publication::{PublishDelta, PublishDeltaElement};
 use rpki::repository::x509::{Name, Validity};
 use serde::{Deserialize, Serialize};
 
@@ -49,7 +50,7 @@ use crate::{
     daemon::ca::RoaPayloadJsonMapKey,
 };
 
-use super::BgpSecAsnKey;
+use super::{rrdp, BgpSecAsnKey};
 
 //------------ IdCertInfo ----------------------------------------------------
 
@@ -1144,30 +1145,14 @@ impl ParentStatus {
 
 //------------ RepoStatus ----------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RepoStatus {
     last_exchange: Option<ParentExchange>,
     last_success: Option<Timestamp>,
-    next_exchange_before: Timestamp,
     published: Vec<PublishElement>,
 }
 
-impl Default for RepoStatus {
-    fn default() -> Self {
-        RepoStatus {
-            last_exchange: None,
-            last_success: None,
-            next_exchange_before: Timestamp::now_plus_hours(1),
-            published: vec![],
-        }
-    }
-}
-
 impl RepoStatus {
-    pub fn next_exchange_before(&self) -> Timestamp {
-        self.next_exchange_before
-    }
-
     pub fn last_exchange(&self) -> Option<&ParentExchange> {
         self.last_exchange.as_ref()
     }
@@ -1189,22 +1174,37 @@ impl RepoStatus {
             uri,
             result: ExchangeResult::Failure(error),
         });
-        self.next_exchange_before = timestamp.plus_minutes(5);
     }
 
-    pub fn set_published(&mut self, uri: ServiceUri, published: Vec<PublishElement>, next_update: Timestamp) {
+    pub fn update_published(&mut self, uri: ServiceUri, delta: PublishDelta) {
         let timestamp = Timestamp::now();
         self.last_exchange = Some(ParentExchange {
             timestamp,
             uri,
             result: ExchangeResult::Success,
         });
-        self.published = published;
+
+        for element in delta.into_elements() {
+            match element {
+                PublishDeltaElement::Publish(publish) => {
+                    self.published.push(publish.into());
+                }
+                PublishDeltaElement::Update(update) => {
+                    let update = rrdp::UpdateElement::from(update);
+                    self.published.retain(|el| el.uri() != update.uri());
+                    self.published.push(update.into_publish());
+                }
+                PublishDeltaElement::Withdraw(withdraw) => {
+                    let (_tag, uri, _hash) = withdraw.unpack();
+                    self.published.retain(|el| el.uri() != &uri);
+                }
+            }
+        }
+
         self.last_success = Some(timestamp);
-        self.next_exchange_before = next_update;
     }
 
-    pub fn set_last_updated(&mut self, uri: ServiceUri, next_update: Timestamp) {
+    pub fn set_last_updated(&mut self, uri: ServiceUri) {
         let timestamp = Timestamp::now();
         self.last_exchange = Some(ParentExchange {
             timestamp,
@@ -1212,7 +1212,6 @@ impl RepoStatus {
             result: ExchangeResult::Success,
         });
         self.last_success = Some(timestamp);
-        self.next_exchange_before = next_update;
     }
 }
 
@@ -1229,11 +1228,6 @@ impl fmt::Display for RepoStatus {
                 if let Some(success) = self.last_success() {
                     writeln!(f, "Last successful contact: {}", success.to_rfc3339())?;
                 }
-                writeln!(
-                    f,
-                    "Next contact on or before: {}",
-                    self.next_exchange_before().to_rfc3339()
-                )?;
             }
         }
         Ok(())

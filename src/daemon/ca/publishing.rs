@@ -27,7 +27,7 @@ use crate::{
     commons::{
         api::{
             rrdp::PublishElement, CertInfo, IssuedCertificate, ObjectName, ReceivedCert, RepositoryContact, Revocation,
-            Revocations, Timestamp,
+            Revocations,
         },
         crypto::KrillSigner,
         error::Error,
@@ -344,24 +344,6 @@ impl CaObjects {
         all_elements
     }
 
-    /// Returns the closest next update time from among manifests held by this CA
-    pub fn closest_next_update(&self) -> Option<Timestamp> {
-        let mut closest = None;
-
-        for resource_class_objects in self.classes.values() {
-            let rco_time = Timestamp::from(resource_class_objects.next_update_time());
-            if let Some(current_closest) = closest {
-                if current_closest > rco_time {
-                    closest = Some(rco_time);
-                }
-            } else {
-                closest = Some(rco_time);
-            }
-        }
-
-        closest
-    }
-
     pub fn deprecated_repos(&self) -> &Vec<DeprecatedRepository> {
         &self.deprecated_repos
     }
@@ -640,14 +622,6 @@ impl ResourceClassObjects {
             ResourceClassKeyState::Staging(state) => {
                 state.staging_set.requires_reissuance(hours) || state.current_set.requires_reissuance(hours)
             }
-        }
-    }
-
-    fn next_update_time(&self) -> Time {
-        match &self.keys {
-            ResourceClassKeyState::Current(state) => state.current_set.next_update(),
-            ResourceClassKeyState::Old(state) => state.current_set.next_update(),
-            ResourceClassKeyState::Staging(state) => state.current_set.next_update(),
         }
     }
 

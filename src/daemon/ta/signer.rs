@@ -275,7 +275,7 @@ impl TrustAnchorSigner {
         let id = Rfc8183Id::generate(&signer)?.into();
         let proxy_id = cmd.proxy_id;
         let ta_cert_details = Self::create_ta_cert_details(cmd.repo_info, cmd.tal_https, cmd.tal_rsync, &signer)?;
-        let objects = TrustAnchorObjects::create(&ta_cert_details, &signer)?;
+        let objects = TrustAnchorObjects::create(ta_cert_details.cert(), &signer)?;
 
         Ok(TrustAnchorSignerInitEvent::new(
             &cmd.handle,
@@ -356,8 +356,6 @@ impl TrustAnchorSigner {
         let mut objects = self.objects.clone();
 
         let mut child_responses: HashMap<ChildHandle, HashMap<KeyIdentifier, ProvisioningResponse>> = HashMap::new();
-
-        objects.increment_revision();
 
         let signing_cert = self.ta_cert_details.cert();
         let ta_rcn = ta_resource_class_name();
@@ -442,6 +440,8 @@ impl TrustAnchorSigner {
 
             child_responses.insert(child_request.child.clone(), responses);
         }
+
+        objects.republish(signing_cert, signer)?;
 
         let response = TrustAnchorSignerResponse {
             nonce: request.nonce.clone(),
