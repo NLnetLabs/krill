@@ -407,7 +407,7 @@ pub struct Config {
     // implicitly enabled in case of testbed
     // for that reason.. not pub, but fn provided
     #[serde(default)]
-    ta_support_enabled: bool,
+    pub ta_support_enabled: bool,
 
     // default is false
     // implicitly enabled in case of testbed
@@ -417,7 +417,7 @@ pub struct Config {
     //
     // for that reason.. not pub, but fn provided
     #[serde(default)]
-    ta_signer_enabled: bool,
+    pub ta_signer_enabled: bool,
 
     #[serde(default = "ConfigDefaults::always_recover_data")]
     pub always_recover_data: bool,

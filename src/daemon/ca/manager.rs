@@ -217,19 +217,19 @@ impl CaManager {
     ) -> KrillResult<()> {
         let ta_handle = ta::ta_handle();
 
-        if self.get_trust_anchor_proxy().await.is_ok() || self.get_trust_anchor_signer().await.is_ok() {
+        let ta_proxy_store = self
+            .ta_proxy_store
+            .as_ref()
+            .ok_or_else(|| Error::custom("ta_support_enabled must be true in config"))?;
+
+        let ta_signer_store = self
+            .ta_signer_store
+            .as_ref()
+            .ok_or_else(|| Error::custom("ta_signer_enabled must be true in config"))?;
+
+        if ta_proxy_store.has(&ta_handle)? || ta_signer_store.has(&ta_handle)? {
             Err(Error::TaAlreadyInitialized)
         } else {
-            let ta_proxy_store = self
-                .ta_proxy_store
-                .as_ref()
-                .ok_or_else(|| Error::custom("ta_support_enabled must be true in config"))?;
-
-            let ta_signer_store = self
-                .ta_signer_store
-                .as_ref()
-                .ok_or_else(|| Error::custom("ta_signer_enabled must be true in config"))?;
-
             // Initialise proxy
             let proxy_init = TrustAnchorProxy::create_init(ta_handle.clone(), &self.signer)?;
             ta_proxy_store.add(proxy_init)?;
@@ -254,6 +254,9 @@ impl CaManager {
             let signer_info = ta_signer.get_signer_info();
             let add_signer_cmd = TrustAnchorProxyCommand::add_signer(&ta_handle, signer_info, &self.system_actor);
             ta_proxy_store.command(add_signer_cmd)?;
+
+            self.sync_ta_proxy_signer_if_possible().await?;
+            self.cas_repo_sync_single(repo_manager, &ta_handle).await?;
 
             Ok(())
         }
@@ -578,6 +581,10 @@ impl CaManager {
         user_agent: Option<String>,
         actor: &Actor,
     ) -> KrillResult<Bytes> {
+        if ca_handle.as_str() == TA_NAME {
+            return Err(Error::custom("Remote RFC 6492 to TA is not supported"));
+        }
+
         let ca = self.get_ca(ca_handle).await?;
 
         let req_msg = self.rfc6492_unwrap_request(&ca, &msg_bytes)?;
@@ -589,7 +596,9 @@ impl CaManager {
             req_msg.sender(),
         );
 
-        let res_msg = self.rfc6492_process_request(&ca, req_msg, user_agent, actor).await;
+        let res_msg = self
+            .rfc6492_process_request(ca_handle, req_msg, user_agent, actor)
+            .await;
 
         match res_msg {
             Ok(msg) => {
@@ -615,7 +624,7 @@ impl CaManager {
     /// Process an rfc6492 message and create an unsigned response
     pub async fn rfc6492_process_request(
         &self,
-        ca: &CertAuth,
+        ca_handle: &CaHandle,
         req_msg: provisioning::Message,
         user_agent: Option<String>,
         actor: &Actor,
@@ -627,22 +636,28 @@ impl CaManager {
         // If the child was suspended, because it was inactive, then we can now conclude
         // that it's become active again. So unsuspend it first, before processing the request
         // further.
-        let child_ca = ca.get_child(&child_handle)?;
-        if child_ca.is_suspended() {
-            info!(
-                "Child '{}' under CA '{}' became active again, will unsuspend it.",
-                child_handle,
-                ca.handle()
-            );
-            let req = UpdateChildRequest::unsuspend();
-            self.ca_child_update(ca.handle(), child_handle.clone(), req, actor)
-                .await?;
+        //
+        // The TA will never suspend children, and does not support it.
+        if ca_handle.as_str() != TA_NAME {
+            let ca = self.get_ca(ca_handle).await?;
+
+            let child_ca = ca.get_child(&child_handle)?;
+            if child_ca.is_suspended() {
+                info!(
+                    "Child '{}' under CA '{}' became active again, will unsuspend it.",
+                    child_handle,
+                    ca.handle()
+                );
+                let req = UpdateChildRequest::unsuspend();
+                self.ca_child_update(ca.handle(), child_handle.clone(), req, actor)
+                    .await?;
+            }
         }
 
         let res_msg = match payload {
-            provisioning::Payload::Revoke(req) => self.revoke(ca.handle(), child_handle.clone(), req, actor).await,
-            provisioning::Payload::List => self.list(ca.handle(), &child_handle).await,
-            provisioning::Payload::Issue(req) => self.issue(ca.handle(), child_handle.clone(), req, actor).await,
+            provisioning::Payload::Revoke(req) => self.revoke(ca_handle, child_handle.clone(), req, actor).await,
+            provisioning::Payload::List => self.list(ca_handle, &child_handle).await,
+            provisioning::Payload::Issue(req) => self.issue(ca_handle, child_handle.clone(), req, actor).await,
             _ => Err(Error::custom("Unsupported RFC6492 message")),
         };
 
@@ -650,11 +665,11 @@ impl CaManager {
         match &res_msg {
             Ok(_) => {
                 self.status_store
-                    .set_child_success(ca.handle(), &child_handle, user_agent)?;
+                    .set_child_success(ca_handle, &child_handle, user_agent)?;
             }
             Err(e) => {
                 self.status_store
-                    .set_child_failure(ca.handle(), &child_handle, user_agent, e)?;
+                    .set_child_failure(ca_handle, &child_handle, user_agent, e)?;
             }
         }
 
@@ -1135,18 +1150,36 @@ impl CaManager {
                 match payload {
                     provisioning::Payload::RevokeResponse(revoke_response) => revocations.push(revoke_response),
                     provisioning::Payload::ErrorResponse(e) => {
-                        // If we get one of the following responses:
-                        //    1301         revoke - no such resource class
-                        //    1302         revoke - no such key
-                        //
-                        // Then we can consider this revocation redundant from the parent side, so just add it
-                        // as revoked to this CA and move on. While this may be unexpected this is unlikely to
-                        // be a problem. If we would keep insisting that the parent revokes a key they already
-                        // revoked, then we can end up in a stuck loop.
-                        //
-                        // More importantly we should re-sync things if we get 12** errors to certificate sign
-                        // requests, but that is done in another function.
-                        if e.status() == 1301 || e.status() == 1302 {
+                        if e.status() == 1101 || e.status() == 1104 {
+                            // If we get one of the following responses:
+                            //    1101         already processing request
+                            //    1104         request scheduled for processing
+                            //
+                            // Then we asked the parent, but don't have a revocation response yet.
+                            //
+                            // This is okay.. there is nothing to do but ask again later. This should really
+                            // only happen for a CA that operates under the *local* Trust Anchor. The Krill
+                            // TA uses a 'proxy' part for online functions, such as talking to children,
+                            // and a 'signer' part for signing, which may happen offline - and much later.
+                            //
+                            // By not adding any response to the returned hash we ensure that the old key
+                            // remains in use (for a manifest and CRL only) until we get the revocation response
+                            // when we ask later.
+                            //
+                            // When the local TA 'proxy' receives new signed responses from the 'signer' then it
+                            // will trigger all local children to sync again. That time, they should see a response.
+                        } else if e.status() == 1301 || e.status() == 1302 {
+                            // If we get one of the following responses:
+                            //    1301         revoke - no such resource class
+                            //    1302         revoke - no such key
+                            //
+                            // Then we can consider this revocation redundant from the parent side, so just add it
+                            // as revoked to this CA and move on. While this may be unexpected this is unlikely to
+                            // be a problem. If we would keep insisting that the parent revokes a key they already
+                            // revoked, then we can end up in a stuck loop.
+                            //
+                            // More importantly we should re-sync things if we get 12** errors to certificate sign
+                            // requests, but that is done in another function.
                             let revoke_response = (&req).into();
                             revocations.push(revoke_response)
                         } else {
@@ -1311,6 +1344,21 @@ impl CaManager {
                             }
                             provisioning::Payload::ErrorResponse(not_performed) => {
                                 match not_performed.status() {
+                                    1101 | 1104 => {
+                                        // If we get one of the following responses:
+                                        //    1101         already processing request
+                                        //    1104         request scheduled for processing
+                                        //
+                                        // Then we asked the parent, but don't have a signed certificate yet.
+                                        //
+                                        // This is okay.. there is nothing to do but ask again later. This should really
+                                        // only happen for a CA that operates under the *local* Trust Anchor. The Krill
+                                        // TA uses a 'proxy' part for online functions, such as talking to children,
+                                        // and a 'signer' part for signing, which may happen offline - and much later.
+                                        //
+                                        // If the local TA 'proxy' receives new signed responses from the 'signer' then it
+                                        // will trigger all local children to sync again. That time, they should see a response.
+                                    }
                                     1201 | 1202 => {
                                         // Okay, so it looks like the parent *just* told the CA that it was entitled
                                         // to certain resources in a resource class and now in response to certificate
@@ -1527,11 +1575,10 @@ impl CaManager {
     ) -> KrillResult<provisioning::Message> {
         let service_uri = server_info.service_uri();
         if let Some(parent) = Self::local_parent(service_uri, &self.config.service_uri()) {
-            let parent_handle = CaHandle::new(parent.into_name());
-            let parent = self.get_ca(&parent_handle).await?;
+            let ca_handle = parent.into_converted();
             let user_agent = Some("local-child".to_string());
 
-            self.rfc6492_process_request(&parent, message, user_agent, &self.system_actor)
+            self.rfc6492_process_request(&ca_handle, message, user_agent, &self.system_actor)
                 .await
         } else {
             // Set up a logger for CMS exchanges. Note that this logger is always set
@@ -1699,7 +1746,7 @@ impl CaManager {
         repo_contact: &RepositoryContact,
         publish_elements: Vec<PublishElement>,
     ) -> KrillResult<()> {
-        debug!("CA '{}' sends list query to repo", ca_handle);
+        info!("CA '{}' sends list query to repo", ca_handle);
         let list_reply = self
             .send_rfc8181_list(repo_manager, ca_handle, id_cert, repo_contact.server_info())
             .await?;
@@ -1726,12 +1773,12 @@ impl CaManager {
         }
 
         if !delta.is_empty() {
-            debug!("CA '{}' sends delta", ca_handle);
+            info!("CA '{}' sends delta", ca_handle);
             self.send_rfc8181_delta(repo_manager, ca_handle, id_cert, repo_contact.server_info(), delta)
                 .await?;
             debug!("CA '{}' sent delta", ca_handle);
         } else {
-            debug!("CA '{}' empty delta - nothing to publish", ca_handle);
+            info!("CA '{}' has nothing to publish", ca_handle);
         }
 
         Ok(())

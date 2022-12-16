@@ -18,7 +18,6 @@ use krill::{
         AspaDefinition, BgpSecDefinition, ObjectName, ReceivedCert, RoaConfiguration, RoaConfigurationUpdates,
         RoaPayload,
     },
-    daemon::ta::ta_handle,
     test::*,
 };
 
@@ -44,7 +43,6 @@ async fn functional_keyroll() {
     info("##################################################################");
     info("");
 
-    let ta = ta_handle();
     let testbed = ca_handle("testbed");
     let ca = ca_handle("CA");
     let ca_resources = resources("AS65000", "10.0.0.0/16", "");
@@ -76,21 +74,6 @@ async fn functional_keyroll() {
     info("##################################################################");
     info("");
     assert!(ca_contains_resources(&testbed, &ResourceSet::all()).await);
-
-    // Verify that the TA published expected objects
-    {
-        let mut expected_files = expected_mft_and_crl(&ta, &dflt_rc_name).await;
-        expected_files.push(expected_issued_cer(&testbed, &dflt_rc_name).await);
-        assert!(
-            will_publish_embedded(
-                "TA should have manifest, crl and cert for testbed",
-                &ta,
-                &expected_files
-            )
-            .await
-        );
-        assert_manifest_files_current_key("List CRL and issued cert on mft", &ta, &expected_files).await;
-    }
 
     // Verify that the Testbed publishes a new empty key set
     {

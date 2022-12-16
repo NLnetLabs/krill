@@ -24,7 +24,10 @@ use crate::{
         error::Error,
         eventsourcing, KrillResult,
     },
-    daemon::{ca::Rfc8183Id, config::IssuanceTimingConfig},
+    daemon::{
+        ca::{Rfc8183Id, UsedKeyState},
+        config::IssuanceTimingConfig,
+    },
 };
 
 //------------ TrustAnchorProxy --------------------------------------------
@@ -375,6 +378,17 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
                 for (child_handle, child_responses) in response.child_responses {
                     if let Some(child_details) = self.child_details.get_mut(&child_handle) {
                         for (key_id, response) in child_responses {
+                            match &response {
+                                ProvisioningResponse::Issuance(_) => {
+                                    child_details
+                                        .used_keys
+                                        .insert(key_id, UsedKeyState::Current("default".into()));
+                                }
+                                ProvisioningResponse::Revocation(_) => {
+                                    child_details.used_keys.insert(key_id, UsedKeyState::Revoked);
+                                }
+                                _ => {}
+                            }
                             child_details.open_requests.remove(&key_id);
                             child_details.open_responses.insert(key_id, response);
                         }

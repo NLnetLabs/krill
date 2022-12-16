@@ -2,11 +2,10 @@
 //!
 use std::{fs, str::FromStr};
 
-use rpki::ca::provisioning::ResourceClassName;
+use rpki::{ca::provisioning::ResourceClassName, repository::resources::ResourceSet};
 
 use krill::{
     commons::api::{ObjectName, ParentCaReq, RoaConfigurationUpdates, RoaPayload},
-    daemon::ta::ta_handle,
     test::*,
 };
 
@@ -19,7 +18,6 @@ async fn remote_parent_and_repo() {
     let krill_dir = start_krill_testbed_with_rrdp_interval(5).await;
     let second_krill_dir = start_second_krill().await;
 
-    let ta = ta_handle();
     let testbed = ca_handle("testbed");
     let ca1 = ca_handle("CA1");
     let ca1_res = ipv4_resources("10.0.0.0/16");
@@ -27,18 +25,7 @@ async fn remote_parent_and_repo() {
     let rcn_0 = ResourceClassName::from(0);
 
     // Verify that the TA and testbed are ready
-    {
-        let mut expected_files = expected_mft_and_crl(&ta, &rcn_0).await;
-        expected_files.push(expected_issued_cer(&testbed, &rcn_0).await);
-        assert!(
-            will_publish_embedded(
-                "TA should have manifest, crl and cert for testbed",
-                &ta,
-                &expected_files
-            )
-            .await
-        );
-    }
+    assert!(ca_contains_resources(&testbed, &ResourceSet::all()).await);
 
     // Create up CA1 in second server
     {

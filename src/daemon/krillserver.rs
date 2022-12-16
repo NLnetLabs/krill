@@ -662,6 +662,14 @@ impl KrillServer {
 
                 // Second sync will send that CSR to the parent
                 ca_manager.ca_sync_parent(&ca_handle, &parent, &actor).await?;
+
+                // If the parent is a TA, then we will need to push a bit more..
+                // Normally this should be handled by triggered tasks, but the
+                // task scheduler is not running when we do this at startup.
+                if parent.as_str() == TA_NAME {
+                    ca_manager.sync_ta_proxy_signer_if_possible().await?;
+                    ca_manager.ca_sync_parent(&ca_handle, &parent, &actor).await?;
+                }
             }
         }
 

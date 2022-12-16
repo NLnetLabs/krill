@@ -225,6 +225,10 @@ impl TaskQueue {
         self.schedule(Task::SyncParent { ca, parent }, priority);
     }
 
+    pub fn sync_ta_proxy_signer_if_possible(&self) {
+        self.schedule(Task::SyncTrustAnchorProxySignerIfPossible, now())
+    }
+
     pub fn suspend_children(&self, ca: CaHandle, priority: Priority) {
         self.schedule(Task::SuspendChildrenIfNeeded { ca }, priority);
     }
@@ -365,6 +369,7 @@ impl eventsourcing::PostSaveEventListener<TrustAnchorProxy> for TaskQueue {
             match event.details() {
                 TrustAnchorProxyEventDetails::ChildRequestAdded(_child, _request) => {
                     // schedule proxy -> signer sync
+                    self.sync_ta_proxy_signer_if_possible();
                 }
                 TrustAnchorProxyEventDetails::SignerResponseReceived(response) => {
                     // schedule publication for the TA

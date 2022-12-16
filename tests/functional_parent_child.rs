@@ -4,7 +4,7 @@ use std::fs;
 
 use rpki::repository::resources::ResourceSet;
 
-use krill::{daemon::ta::ta_handle, test::*};
+use krill::test::*;
 
 #[tokio::test]
 async fn functional_parent_child() {
@@ -36,7 +36,6 @@ async fn functional_parent_child() {
     info("##################################################################");
     info("");
 
-    let ta = ta_handle();
     let testbed = ca_handle("testbed");
 
     let ca1 = ca_handle("CA1");
@@ -64,20 +63,6 @@ async fn functional_parent_child() {
     info("##################################################################");
     info("");
     assert!(ca_contains_resources(&testbed, &ResourceSet::all()).await);
-
-    // Verify that the TA published expected objects
-    {
-        let mut expected_files = expected_mft_and_crl(&ta, &rcn_0).await;
-        expected_files.push(expected_issued_cer(&testbed, &rcn_0).await);
-        assert!(
-            will_publish_embedded(
-                "TA should have manifest, crl and cert for testbed",
-                &ta,
-                &expected_files
-            )
-            .await
-        );
-    }
 
     {
         info("##################################################################");

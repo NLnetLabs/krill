@@ -3,7 +3,7 @@
 use std::fs;
 
 use bytes::Bytes;
-use krill::{commons::api::RtaList, daemon::ta::ta_handle, test::*};
+use krill::{commons::api::RtaList, test::*};
 use rpki::repository::resources::ResourceSet;
 
 #[tokio::test]
@@ -28,7 +28,6 @@ async fn functional_rtas() {
     info("##################################################################");
     info("");
 
-    let ta = ta_handle();
     let testbed = ca_handle("testbed");
 
     let ca1 = ca_handle("CA1");
@@ -36,8 +35,6 @@ async fn functional_rtas() {
 
     let ca2 = ca_handle("CA2");
     let ca2_res = resources("", "10.1.0.0/16", "");
-
-    let rcn_0 = rcn(0);
 
     info("##################################################################");
     info("#                                                                #");
@@ -48,20 +45,6 @@ async fn functional_rtas() {
     info("##################################################################");
     info("");
     assert!(ca_contains_resources(&testbed, &ResourceSet::all()).await);
-
-    // Verify that the TA published expected objects
-    {
-        let mut expected_files = expected_mft_and_crl(&ta, &rcn_0).await;
-        expected_files.push(expected_issued_cer(&testbed, &rcn_0).await);
-        assert!(
-            will_publish_embedded(
-                "TA should have manifest, crl and cert for testbed",
-                &ta,
-                &expected_files
-            )
-            .await
-        );
-    }
 
     {
         info("##################################################################");
