@@ -403,6 +403,22 @@ pub struct Config {
     #[serde(default)] // default is false
     pub data_dir_use_lock: bool,
 
+    // default is false
+    // implicitly enabled in case of testbed
+    // for that reason.. not pub, but fn provided
+    #[serde(default)]
+    ta_support_enabled: bool,
+
+    // default is false
+    // implicitly enabled in case of testbed
+    // MUST be enabled for ca imports to work,
+    // but can be disabled later and signer can
+    // be migrated.
+    //
+    // for that reason.. not pub, but fn provided
+    #[serde(default)]
+    ta_signer_enabled: bool,
+
     #[serde(default = "ConfigDefaults::always_recover_data")]
     pub always_recover_data: bool,
 
@@ -807,6 +823,17 @@ impl Config {
         }
     }
 
+    /// Returns whether TA support is explicitly enabled in the config, or
+    /// implicitly enabled in case testbed (or benchmark) mode is used.
+    pub fn ta_proxy_enabled(&self) -> bool {
+        self.ta_support_enabled || self.testbed.is_some()
+    }
+
+    /// Returns whether TA signer is enabled.
+    pub fn ta_signer_enabled(&self) -> bool {
+        self.ta_signer_enabled || self.testbed.is_some()
+    }
+
     pub fn suspend_child_after_inactive_seconds(&self) -> Option<i64> {
         match self.suspend_child_after_inactive_seconds {
             Some(seconds) => Some(seconds.into()),
@@ -1008,6 +1035,8 @@ impl Config {
             https_mode,
             data_dir,
             data_dir_use_lock,
+            ta_support_enabled: false, // but, enabled by testbed where applicable
+            ta_signer_enabled: false,  // same as above
             always_recover_data,
             pid_file,
             service_uri: None,

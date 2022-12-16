@@ -58,8 +58,12 @@ impl Structure {
         // TA is not mentioned in the CAs part of this structure. So, we
         // will mark it as implicitly seen.
         let mut seen: HashMap<ParentHandle, ResourceSet> = HashMap::new();
-        seen.insert(ta_handle().into_converted(), ResourceSet::all());
+        let ta_handle = ta_handle();
+        seen.insert(ta_handle.convert(), ResourceSet::all());
         for ca in &self.cas {
+            if ca.handle == ta_handle {
+                return Err(format!("CA name {} is reserved.", ta_handle));
+            }
             let mut ca_resources = ResourceSet::empty();
             for ca_parent in &ca.parents {
                 if let Some(seen_parent_resources) = seen.get(ca_parent.handle()) {

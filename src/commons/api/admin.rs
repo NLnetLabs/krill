@@ -541,6 +541,10 @@ impl AddChildRequest {
         }
     }
 
+    pub fn handle(&self) -> &ChildHandle {
+        &self.handle
+    }
+
     pub fn unpack(self) -> (ChildHandle, ResourceSet, IdCert) {
         (self.handle, self.resources, self.id_cert)
     }

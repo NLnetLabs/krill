@@ -41,7 +41,7 @@ use crate::{
         http::HttpResponse,
         mq::TaskQueue,
         scheduler::Scheduler,
-        ta::{ta_handle, TaCertDetails},
+        ta::{ta_handle, TaCertDetails, TA_NAME},
     },
     pubd::{RepoStats, RepositoryManager},
 };
@@ -511,6 +511,14 @@ impl KrillServer {
             Err(Error::custom("Import CAs is only permitted when Krill is empty."))
         } else if let Err(e) = structure.validate_ca_hierarchy() {
             Err(Error::Custom(e))
+        } else if !self.config.ta_proxy_enabled() {
+            Err(Error::custom(
+                "Import CAs is only possible when ta_support_enabled = true",
+            ))
+        } else if !self.config.ta_signer_enabled() {
+            Err(Error::custom(
+                "Import CAs is only possible when ta_signer_enabled = true",
+            ))
         } else {
             info!("Bulk import {} CAs", structure.cas.len());
 
@@ -600,30 +608,33 @@ impl KrillServer {
             let mut tried = 0;
             let parent_as_ca: CaHandle = parent.convert();
 
-            loop {
-                tried += 1;
-                if let Ok(parent) = ca_manager.get_ca(&parent_as_ca).await {
-                    if parent.all_resources().contains(&resources) {
-                        break;
+            // If the parent is the TA, then there is no need to wait.
+            if parent.as_str() != TA_NAME {
+                loop {
+                    tried += 1;
+                    if let Ok(parent) = ca_manager.get_ca(&parent_as_ca).await {
+                        if parent.all_resources().contains(&resources) {
+                            break;
+                        } else {
+                            info!(
+                                "Parent {} does not (yet) have resources for {}. Will wait a bit and try again",
+                                parent.handle(),
+                                ca_handle
+                            );
+                        }
                     } else {
                         info!(
-                            "Parent {} does not (yet) have resources for {}. Will wait a bit and try again",
-                            parent.handle(),
-                            ca_handle
+                            "Parent {} for CA {} is not yet created. Will wait a bit and try again",
+                            parent_as_ca, ca_handle
                         );
                     }
-                } else {
-                    info!(
-                        "Parent {} for CA {} is not yet created. Will wait a bit and try again",
-                        parent_as_ca, ca_handle
-                    );
-                }
-                tokio::time::sleep(std::time::Duration::from_millis(wait_ms)).await;
-                if tried >= max_tries {
-                    return Err(Error::Custom(format!(
-                        "Could not import CA {}. Parent: {} is not created",
-                        ca_handle, parent_as_ca
-                    )));
+                    tokio::time::sleep(std::time::Duration::from_millis(wait_ms)).await;
+                    if tried >= max_tries {
+                        return Err(Error::Custom(format!(
+                            "Could not import CA {}. Parent: {} is not created",
+                            ca_handle, parent_as_ca
+                        )));
+                    }
                 }
             }
 

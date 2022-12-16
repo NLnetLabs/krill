@@ -9,18 +9,17 @@ use std::{collections::HashMap, convert::TryFrom, fmt, sync::Arc};
 
 use rpki::{
     ca::{
-        idexchange::ChildHandle,
+        idexchange::{self, ChildHandle},
         provisioning::{ResourceClassEntitlements, SigningCert},
     },
     crypto::KeyIdentifier,
-    repository::resources::ResourceSet,
     uri,
 };
 
 use crate::{
     commons::{
         actor::Actor,
-        api::{IdCertInfo, RepositoryContact},
+        api::{AddChildRequest, IdCertInfo, RepositoryContact},
         crypto::{CsrInfo, KrillSigner},
         error::Error,
         eventsourcing, KrillResult,
@@ -176,16 +175,9 @@ pub enum TrustAnchorProxyCommandDetails {
     ProcessSignerResponse(TrustAnchorSignerResponse),
 
     // Children
-    AddChild(TrustAnchorProxyAddChild),
+    AddChild(AddChildRequest),
     AddChildRequest(ChildHandle, ProvisioningRequest),
     GiveChildResponse(ChildHandle, KeyIdentifier),
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct TrustAnchorProxyAddChild {
-    handle: ChildHandle,
-    resources: ResourceSet,
-    id: IdCertInfo,
 }
 
 impl fmt::Display for TrustAnchorProxyCommandDetails {
@@ -215,7 +207,7 @@ impl fmt::Display for TrustAnchorProxyCommandDetails {
 
             // Children
             TrustAnchorProxyCommandDetails::AddChild(child) => {
-                write!(f, "Add child: {}, with resources: {}", child.handle, child.resources)
+                write!(f, "Add child: {}", child)
             }
             TrustAnchorProxyCommandDetails::AddChildRequest(child_handle, request) => {
                 write!(f, "Add request for child {}: {}", child_handle, request)
@@ -258,7 +250,7 @@ impl eventsourcing::WithStorableDetails for TrustAnchorProxyCommandDetails {
 
             // Children
             TrustAnchorProxyCommandDetails::AddChild(child) => {
-                crate::commons::api::CommandSummary::new("cmd-ta-proxy-child-add", &self).with_child(&child.handle)
+                crate::commons::api::CommandSummary::new("cmd-ta-proxy-child-add", &self).with_child(child.handle())
             }
             TrustAnchorProxyCommandDetails::AddChildRequest(child_handle, _request) => {
                 crate::commons::api::CommandSummary::new("cmd-ta-proxy-child-req", &self).with_child(child_handle)
@@ -293,6 +285,33 @@ impl TrustAnchorProxyCommand {
             id,
             None,
             TrustAnchorProxyCommandDetails::ProcessSignerResponse(response),
+            actor,
+        )
+    }
+
+    pub fn add_child(id: &TrustAnchorHandle, child: AddChildRequest, actor: &Actor) -> Self {
+        TrustAnchorProxyCommand::new(id, None, TrustAnchorProxyCommandDetails::AddChild(child), actor)
+    }
+
+    pub fn add_child_request(
+        id: &TrustAnchorHandle,
+        child: ChildHandle,
+        request: ProvisioningRequest,
+        actor: &Actor,
+    ) -> Self {
+        TrustAnchorProxyCommand::new(
+            id,
+            None,
+            TrustAnchorProxyCommandDetails::AddChildRequest(child, request),
+            actor,
+        )
+    }
+
+    pub fn give_child_response(id: &TrustAnchorHandle, child: ChildHandle, key: KeyIdentifier, actor: &Actor) -> Self {
+        TrustAnchorProxyCommand::new(
+            id,
+            None,
+            TrustAnchorProxyCommandDetails::GiveChildResponse(child, key),
             actor,
         )
     }
@@ -465,16 +484,17 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
 
             // Children
             TrustAnchorProxyCommandDetails::AddChild(child) => {
-                if self.child_details.contains_key(&child.handle) {
-                    Err(Error::CaChildDuplicate(self.handle.clone(), child.handle))
+                if self.child_details.contains_key(child.handle()) {
+                    Err(Error::CaChildDuplicate(self.handle.clone(), child.handle().clone()))
                 } else {
+                    let (handle, resources, id_cert) = child.unpack();
                     Ok(vec![TrustAnchorProxyEvent::new(
                         &self.handle,
                         self.version,
                         TrustAnchorProxyEventDetails::ChildAdded(TrustAnchorChild::new(
-                            child.handle,
-                            child.id,
-                            child.resources,
+                            handle,
+                            id_cert.into(),
+                            resources,
                         )),
                     )])
                 }
@@ -630,6 +650,19 @@ impl TrustAnchorProxy {
             .as_ref()
             .ok_or(Error::TaNotInitialized)
             .map(|signer| &signer.objects)
+    }
+
+    pub fn id(&self) -> &IdCertInfo {
+        &self.id
+    }
+}
+
+/// # Publication support
+impl TrustAnchorProxy {
+    /// Returns an RFC 8183 Publisher Request - which can be represented as XML to a
+    /// repository for this `CertAuth`
+    pub fn publisher_request(&self) -> idexchange::PublisherRequest {
+        idexchange::PublisherRequest::new(self.id.base64().clone(), self.handle.convert(), None)
     }
 
     fn get_repo(&self) -> KrillResult<&RepositoryContact> {

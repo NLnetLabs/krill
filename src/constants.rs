@@ -40,6 +40,8 @@ pub const KEYS_DIR: &str = "keys";
 pub const SIGNERS_DIR: &str = "signers";
 
 pub const CASERVER_DIR: &str = "cas";
+pub const TA_PROXY_SERVER_DIR: &str = "ta_proxy";
+pub const TA_SIGNER_SERVER_DIR: &str = "ta_signer";
 pub const CA_OBJECTS_DIR: &str = "ca_objects";
 
 pub const PUBSERVER_DFLT: &str = "0";

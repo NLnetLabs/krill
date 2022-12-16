@@ -3,7 +3,11 @@
 use std::{collections::HashMap, fmt::Debug};
 
 use rpki::{
-    ca::{idexchange::ChildHandle, provisioning, publication::Base64},
+    ca::{
+        idexchange::{ChildHandle, RecipientHandle, SenderHandle},
+        provisioning,
+        publication::Base64,
+    },
     crypto::{KeyIdentifier, PublicKey},
     repository::{resources::ResourceSet, x509::Time},
     uri,
@@ -345,5 +349,26 @@ impl std::fmt::Display for ProvisioningRequest {
 pub enum ProvisioningResponse {
     Issuance(provisioning::IssuanceResponse),
     Revocation(provisioning::RevocationResponse),
-    Error(String),
+    Error,
+}
+
+impl ProvisioningResponse {
+    pub fn to_provisioning_message(self, sender: SenderHandle, recipient: RecipientHandle) -> provisioning::Message {
+        match self {
+            ProvisioningResponse::Issuance(issuance_response) => {
+                provisioning::Message::issue_response(sender, recipient, issuance_response)
+            }
+            ProvisioningResponse::Revocation(revocation_response) => {
+                provisioning::Message::revoke_response(sender, recipient, revocation_response)
+            }
+            ProvisioningResponse::Error => {
+                provisioning::Message::not_performed_response(
+                    sender,
+                    recipient,
+                    provisioning::NotPerformedResponse::err_2001(),
+                )
+                .unwrap() // safe unwrap, this function always returns Ok.
+            }
+        }
+    }
 }
