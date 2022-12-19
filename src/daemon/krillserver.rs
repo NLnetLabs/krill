@@ -363,20 +363,15 @@ impl KrillServer {
 ///
 impl KrillServer {
     pub async fn ta(&self) -> KrillResult<TaCertDetails> {
-        let ta_handle = ta_handle();
-        let ta = self.ca_manager.get_ca(&ta_handle).await?;
-
-        let parent_handle = ParentHandle::new(ta_handle.into_name());
-
-        if let ParentCaContact::Ta(ta) = ta.parent(&parent_handle).unwrap() {
-            Ok(ta.clone())
-        } else {
-            panic!("Found TA which was not initialized as TA.")
-        }
+        self.ca_manager
+            .get_trust_anchor_proxy()
+            .await?
+            .get_ta_details()
+            .cloned()
     }
 
     pub async fn trust_anchor_cert(&self) -> Option<ReceivedCert> {
-        self.ta().await.ok().map(|details| details.cert().clone())
+        self.ta().await.ok().map(|details| details.into())
     }
 
     /// Adds a child to a CA and returns the ParentCaInfo that the child

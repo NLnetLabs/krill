@@ -220,6 +220,18 @@ impl TaCertDetails {
     }
 }
 
+impl From<TaCertDetails> for ReceivedCert {
+    fn from(details: TaCertDetails) -> Self {
+        details.cert
+    }
+}
+
+impl From<TaCertDetails> for TrustAnchorLocator {
+    fn from(details: TaCertDetails) -> Self {
+        details.tal
+    }
+}
+
 //------------ TrustAnchorLocator --------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
