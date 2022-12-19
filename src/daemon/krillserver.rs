@@ -22,10 +22,10 @@ use crate::{
             self, AddChildRequest, AllCertAuthIssues, AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates,
             AspaProvidersUpdate, BgpSecCsrInfoList, BgpSecDefinitionUpdates, CaCommandDetails, CaRepoDetails,
             CertAuthInfo, CertAuthInit, CertAuthIssues, CertAuthList, CertAuthStats, ChildCaInfo,
-            ChildrenConnectionStats, CommandHistory, CommandHistoryCriteria, ConfiguredRoa, ParentCaContact,
-            ParentCaReq, PublicationServerUris, PublisherDetails, ReceivedCert, RepositoryContact, RoaConfiguration,
-            RoaConfigurationUpdates, RoaPayload, RtaList, RtaName, RtaPrepResponse, ServerInfo, Timestamp,
-            UpdateChildRequest,
+            ChildrenConnectionStats, CommandHistory, CommandHistoryCriteria, ConfiguredRoa, IdCertInfo,
+            ParentCaContact, ParentCaReq, PublicationServerUris, PublisherDetails, ReceivedCert, RepositoryContact,
+            RoaConfiguration, RoaConfigurationUpdates, RoaPayload, RtaList, RtaName, RtaPrepResponse, ServerInfo,
+            Timestamp, UpdateChildRequest,
         },
         bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion},
         crypto::KrillSignerBuilder,
@@ -52,7 +52,10 @@ use crate::daemon::auth::{
     providers::{ConfigFileAuthProvider, OpenIDConnectAuthProvider},
 };
 
-use super::ca::CaManager;
+use super::{
+    ca::CaManager,
+    ta::{TrustAnchorProxySignerInfo, TrustAnchorSignerRequest, TrustAnchorSignerResponse},
+};
 
 //------------ KrillServer ---------------------------------------------------
 
@@ -359,10 +362,65 @@ impl KrillServer {
     }
 }
 
-/// # Being a parent
+/// # TA Support
 ///
 impl KrillServer {
-    pub async fn ta(&self) -> KrillResult<TaCertDetails> {
+    pub fn ta_proxy_enabled(&self) -> bool {
+        self.config.ta_proxy_enabled()
+    }
+
+    pub async fn ta_proxy_init(&self) -> KrillResult<()> {
+        self.ca_manager.ta_proxy_init().await
+    }
+
+    pub async fn ta_proxy_id(&self) -> KrillResult<IdCertInfo> {
+        self.ca_manager.ta_proxy_id().await
+    }
+
+    pub async fn ta_proxy_publisher_request(&self) -> KrillResult<idexchange::PublisherRequest> {
+        self.ca_manager.ta_proxy_publisher_request().await
+    }
+
+    pub async fn ta_proxy_repository_update(&self, contact: RepositoryContact, actor: &Actor) -> KrillResult<()> {
+        self.ca_manager.ta_proxy_repository_update(contact, actor).await
+    }
+
+    pub async fn ta_proxy_repository_contact(&self) -> KrillResult<RepositoryContact> {
+        self.ca_manager.ta_proxy_repository_contact().await
+    }
+
+    pub async fn ta_proxy_signer_add(&self, info: TrustAnchorProxySignerInfo, actor: &Actor) -> KrillResult<()> {
+        self.ca_manager.ta_proxy_signer_add(info, actor).await
+    }
+
+    pub async fn ta_proxy_signer_make_request(&self, actor: &Actor) -> KrillResult<TrustAnchorSignerRequest> {
+        self.ca_manager.ta_proxy_signer_make_request(actor).await
+    }
+
+    pub async fn ta_proxy_signer_get_request(&self) -> KrillResult<TrustAnchorSignerRequest> {
+        self.ca_manager.ta_proxy_signer_get_request().await
+    }
+
+    pub async fn ta_proxy_signer_process_response(
+        &self,
+        response: TrustAnchorSignerResponse,
+        actor: &Actor,
+    ) -> KrillResult<()> {
+        self.ca_manager.ta_proxy_signer_process_response(response, actor).await
+    }
+
+    pub async fn ta_proxy_children_add(
+        &self,
+        child_request: AddChildRequest,
+        actor: &Actor,
+    ) -> KrillResult<idexchange::ParentResponse> {
+        // TA as parent is handled a special case in the following
+        self.ca_manager
+            .ca_add_child(&ta_handle().convert(), child_request, &self.config.service_uri(), actor)
+            .await
+    }
+
+    pub async fn ta_cert_details(&self) -> KrillResult<TaCertDetails> {
         self.ca_manager
             .get_trust_anchor_proxy()
             .await?
@@ -371,9 +429,13 @@ impl KrillServer {
     }
 
     pub async fn trust_anchor_cert(&self) -> Option<ReceivedCert> {
-        self.ta().await.ok().map(|details| details.into())
+        self.ta_cert_details().await.ok().map(|details| details.into())
     }
+}
 
+/// # Being a parent
+///
+impl KrillServer {
     /// Adds a child to a CA and returns the ParentCaInfo that the child
     /// will need to contact this CA for resource requests.
     pub async fn ca_add_child(
@@ -522,7 +584,7 @@ impl KrillServer {
 
             info!("Creating embedded Trust Anchor");
             self.ca_manager
-                .init_ta(
+                .ta_init_fully_embedded(
                     structure.ta_aia.clone(),
                     vec![structure.ta_uri.clone()],
                     &self.repo_manager,

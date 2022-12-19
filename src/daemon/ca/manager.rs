@@ -50,8 +50,9 @@ use crate::{
         config::Config,
         mq::{now, TaskQueue},
         ta::{
-            self, ta_handle, TrustAnchorProxy, TrustAnchorProxyCommand, TrustAnchorSigner, TrustAnchorSignerCommand,
-            TA_NAME,
+            self, ta_handle, TrustAnchorProxy, TrustAnchorProxyCommand, TrustAnchorProxySignerInfo, TrustAnchorSigner,
+            TrustAnchorSignerCommand, TrustAnchorSignerInitCommand, TrustAnchorSignerRequest,
+            TrustAnchorSignerResponse, TA_NAME,
         },
     },
     pubd::RepositoryManager,
@@ -187,6 +188,37 @@ impl CaManager {
         self.config.testbed().is_some()
     }
 
+    /// Send a command to a CA
+    async fn send_ca_command(&self, cmd: Cmd) -> KrillResult<Arc<CertAuth>> {
+        self.ca_store.command(cmd)
+    }
+
+    /// Republish the embedded TA and CAs if needed, i.e. if they are close
+    /// to their next update time.
+    pub async fn republish_all(&self, force: bool) -> KrillResult<Vec<CaHandle>> {
+        self.ca_objects_store.reissue_all(force)
+    }
+}
+
+/// # Trust Anchor Support
+///
+impl CaManager {
+    /// Send a command to the TA Proxy. Errors if ta support is not enabled
+    async fn send_ta_proxy_command(&self, cmd: TrustAnchorProxyCommand) -> KrillResult<Arc<TrustAnchorProxy>> {
+        self.ta_proxy_store
+            .as_ref()
+            .ok_or_else(|| Error::custom("ta_support_enabled is false"))?
+            .command(cmd)
+    }
+
+    /// Send a command to the TA Proxy. Errors if ta support is not enabled
+    async fn send_ta_signer_command(&self, cmd: TrustAnchorSignerCommand) -> KrillResult<Arc<TrustAnchorSigner>> {
+        self.ta_signer_store
+            .as_ref()
+            .ok_or_else(|| Error::custom("ta_signer_enabled is false"))?
+            .command(cmd)
+    }
+
     /// Gets the Trust Anchor Proxy, if present. Returns an error if the TA is uninitialized.
     pub async fn get_trust_anchor_proxy(&self) -> KrillResult<Arc<TrustAnchorProxy>> {
         let ta_handle = ta::ta_handle();
@@ -207,8 +239,140 @@ impl CaManager {
             .map_err(Error::AggregateStoreError)
     }
 
+    /// Initialises the (one) Trust Anchor proxy.
+    ///
+    /// Returns an error if:
+    /// - ta_support_enabled is false
+    /// - the proxy was already initialised
+    pub async fn ta_proxy_init(&self) -> KrillResult<()> {
+        let ta_handle = ta::ta_handle();
+
+        let ta_proxy_store = self
+            .ta_proxy_store
+            .as_ref()
+            .ok_or_else(|| Error::custom("ta_support_enabled must be true in config"))?;
+
+        if ta_proxy_store.has(&ta_handle)? {
+            Err(Error::TaAlreadyInitialized)
+        } else {
+            // Initialise proxy
+            let proxy_init = TrustAnchorProxy::create_init(ta_handle, &self.signer)?;
+            ta_proxy_store.add(proxy_init)?;
+            Ok(())
+        }
+    }
+
+    /// Initialises the embedded Trust Anchor Signer (for testbed)
+    pub async fn ta_signer_init(&self, tal_https: Vec<uri::Https>, tal_rsync: uri::Rsync) -> KrillResult<()> {
+        let ta_signer_store = self
+            .ta_signer_store
+            .as_ref()
+            .ok_or_else(|| Error::custom("ta_signer_enabled must be true in config"))?;
+
+        let handle = ta_handle();
+
+        if ta_signer_store.has(&handle)? {
+            Err(Error::TaAlreadyInitialized)
+        } else {
+            // Create Signer
+            let repo_contact = self.ta_proxy_repository_contact().await?;
+            let proxy_id = self.ta_proxy_id().await?;
+
+            let signer_init_cmd = TrustAnchorSignerInitCommand {
+                handle,
+                proxy_id,
+                repo_info: repo_contact.repo_info().clone(),
+                tal_https,
+                tal_rsync,
+                signer: self.signer.clone(),
+            };
+
+            let signer_init = TrustAnchorSigner::create_init(signer_init_cmd)?;
+            ta_signer_store.add(signer_init)?;
+
+            Ok(())
+        }
+    }
+
+    pub async fn ta_proxy_id(&self) -> KrillResult<IdCertInfo> {
+        self.get_trust_anchor_proxy().await.map(|proxy| proxy.id().clone())
+    }
+
+    /// Gets the publisher request for the Trust Anchor proxy.
+    /// Returns an error if the proxy is not initialised.
+    pub async fn ta_proxy_publisher_request(&self) -> KrillResult<idexchange::PublisherRequest> {
+        self.get_trust_anchor_proxy()
+            .await
+            .map(|proxy| proxy.publisher_request())
+    }
+
+    /// Add the repository to Trust Anchor proxy.
+    /// Returns an error if the proxy is not enabled or already has a repository.
+    pub async fn ta_proxy_repository_update(&self, contact: RepositoryContact, actor: &Actor) -> KrillResult<()> {
+        let add_repo_cmd = TrustAnchorProxyCommand::add_repo(&ta::ta_handle(), contact, actor);
+        self.send_ta_proxy_command(add_repo_cmd).await?;
+        Ok(())
+    }
+
+    /// Returns the repository contact for the proxy, or an error if there is
+    /// no proxy, or no repository configured for it.
+    pub async fn ta_proxy_repository_contact(&self) -> KrillResult<RepositoryContact> {
+        self.get_trust_anchor_proxy()
+            .await?
+            .repository()
+            .cloned()
+            .ok_or(Error::TaProxyHasNoRepository)
+    }
+
+    /// Adds the associated signer to the proxy.
+    ///
+    /// Errors if:
+    /// - there is no proxy
+    /// - the proxy has a signer
+    pub async fn ta_proxy_signer_add(&self, info: TrustAnchorProxySignerInfo, actor: &Actor) -> KrillResult<()> {
+        let add_signer_cmd = TrustAnchorProxyCommand::add_signer(&ta_handle(), info, actor);
+        self.send_ta_proxy_command(add_signer_cmd).await?;
+        Ok(())
+    }
+
+    /// Create a new request for the signer.
+    ///
+    /// Errors if:
+    /// - there is no proxy
+    /// - the proxy already has a request
+    pub async fn ta_proxy_signer_make_request(&self, actor: &Actor) -> KrillResult<TrustAnchorSignerRequest> {
+        let cmd = TrustAnchorProxyCommand::make_signer_request(&ta_handle(), actor);
+        let proxy = self.send_ta_proxy_command(cmd).await?;
+
+        proxy.get_signer_request()
+    }
+
+    /// Create a new request for the signer.
+    ///
+    /// Errors if:
+    /// - there is no proxy
+    /// - the proxy already has a request
+    pub async fn ta_proxy_signer_get_request(&self) -> KrillResult<TrustAnchorSignerRequest> {
+        self.get_trust_anchor_proxy().await?.get_signer_request()
+    }
+
+    /// Process a sign response from the signer.
+    ///
+    /// Errors if:
+    /// - there is no proxy
+    /// - there is no matching request
+    pub async fn ta_proxy_signer_process_response(
+        &self,
+        response: TrustAnchorSignerResponse,
+        actor: &Actor,
+    ) -> KrillResult<()> {
+        let cmd = TrustAnchorProxyCommand::process_signer_response(&ta_handle(), response, actor);
+        self.send_ta_proxy_command(cmd).await?;
+        Ok(())
+    }
+
     /// Initializes an embedded trust anchor with all resources.
-    pub async fn init_ta(
+    pub async fn ta_init_fully_embedded(
         &self,
         ta_aia: uri::Rsync,
         ta_uris: Vec<uri::Https>,
@@ -217,76 +381,31 @@ impl CaManager {
     ) -> KrillResult<()> {
         let ta_handle = ta::ta_handle();
 
-        let ta_proxy_store = self
-            .ta_proxy_store
-            .as_ref()
-            .ok_or_else(|| Error::custom("ta_support_enabled must be true in config"))?;
+        // Initialise proxy
+        self.ta_proxy_init().await?;
 
-        let ta_signer_store = self
-            .ta_signer_store
-            .as_ref()
-            .ok_or_else(|| Error::custom("ta_signer_enabled must be true in config"))?;
+        // Add repository
+        let pub_req = self.ta_proxy_publisher_request().await?;
 
-        if ta_proxy_store.has(&ta_handle)? || ta_signer_store.has(&ta_handle)? {
-            Err(Error::TaAlreadyInitialized)
-        } else {
-            // Initialise proxy
-            let proxy_init = TrustAnchorProxy::create_init(ta_handle.clone(), &self.signer)?;
-            ta_proxy_store.add(proxy_init)?;
+        // Create publisher
+        repo_manager.create_publisher(pub_req, actor)?;
+        let repository_response = repo_manager.repository_response(&ta_handle.convert())?;
 
-            // Add repository
-            let mut ta_proxy = self.get_trust_anchor_proxy().await?;
-            let pub_req = ta_proxy.publisher_request();
-            repo_manager.create_publisher(pub_req, actor)?;
-            let repository_response = repo_manager.repository_response(&ta_handle.convert())?;
-            let contact = RepositoryContact::for_response(repository_response).map_err(Error::rfc8183)?;
+        // Add repository to proxy
+        let contact = RepositoryContact::for_response(repository_response).map_err(Error::rfc8183)?;
+        self.ta_proxy_repository_update(contact, &self.system_actor).await?;
 
-            let add_repo_cmd = TrustAnchorProxyCommand::add_repo(&ta_handle, contact, &self.system_actor);
-            ta_proxy = ta_proxy_store.command(add_repo_cmd)?;
+        // Initialise signer
+        self.ta_signer_init(ta_uris, ta_aia).await?;
 
-            // Create Signer
-            let signer_init_cmd =
-                ta_proxy.create_signer_init_cmd(ta_handle.clone(), ta_uris, ta_aia, self.signer.clone())?;
-            let signer_init = TrustAnchorSigner::create_init(signer_init_cmd)?;
-            let ta_signer = ta_signer_store.add(signer_init)?;
+        // Add signer to proxy
+        let signer_info = self.get_trust_anchor_signer().await?.get_signer_info();
+        self.ta_proxy_signer_add(signer_info, &self.system_actor).await?;
 
-            // Add signer to proxy
-            let signer_info = ta_signer.get_signer_info();
-            let add_signer_cmd = TrustAnchorProxyCommand::add_signer(&ta_handle, signer_info, &self.system_actor);
-            ta_proxy_store.command(add_signer_cmd)?;
+        self.sync_ta_proxy_signer_if_possible().await?;
+        self.cas_repo_sync_single(repo_manager, &ta_handle).await?;
 
-            self.sync_ta_proxy_signer_if_possible().await?;
-            self.cas_repo_sync_single(repo_manager, &ta_handle).await?;
-
-            Ok(())
-        }
-    }
-
-    /// Send a command to a CA
-    async fn send_ca_command(&self, cmd: Cmd) -> KrillResult<Arc<CertAuth>> {
-        self.ca_store.command(cmd)
-    }
-
-    /// Send a command to the TA Proxy. Errors if ta support is not enabled
-    async fn send_ta_proxy_command(&self, cmd: TrustAnchorProxyCommand) -> KrillResult<Arc<TrustAnchorProxy>> {
-        self.ta_proxy_store
-            .as_ref()
-            .ok_or_else(|| Error::custom("ta_support_enabled is false"))?
-            .command(cmd)
-    }
-
-    /// Send a command to the TA Proxy. Errors if ta support is not enabled
-    async fn send_ta_signer_command(&self, cmd: TrustAnchorSignerCommand) -> KrillResult<Arc<TrustAnchorSigner>> {
-        self.ta_signer_store
-            .as_ref()
-            .ok_or_else(|| Error::custom("ta_signer_enabled is false"))?
-            .command(cmd)
-    }
-
-    /// Republish the embedded TA and CAs if needed, i.e. if they are close
-    /// to their next update time.
-    pub async fn republish_all(&self, force: bool) -> KrillResult<Vec<CaHandle>> {
-        self.ca_objects_store.reissue_all(force)
+        Ok(())
     }
 }
 

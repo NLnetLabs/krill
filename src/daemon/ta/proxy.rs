@@ -5,7 +5,7 @@
 /// is handled by the Trust Anchor Signer instead.
 use super::*;
 
-use std::{collections::HashMap, convert::TryFrom, fmt, sync::Arc};
+use std::{collections::HashMap, convert::TryFrom, fmt};
 
 use rpki::{
     ca::{
@@ -13,7 +13,6 @@ use rpki::{
         provisioning::{ResourceClassEntitlements, SigningCert},
     },
     crypto::KeyIdentifier,
-    uri,
 };
 
 use crate::{
@@ -602,38 +601,6 @@ impl TrustAnchorProxy {
         ))
     }
 
-    /// Create an init command for the associated signer. This uses
-    /// information from this proxy: its id certificate and the
-    /// configured repository. This function will fail if the repository
-    /// had not yet been configured.
-    ///
-    /// Furthermore, it takes some additional information that the signer
-    /// will need for initialisation and passes it into the command. This
-    /// is just a convenience so that the caller does not have to put all
-    /// the information together.
-    ///
-    /// Note that the proxy is not modified by this function. The idea is
-    /// that the command can be used to initialise the signer, and then
-    /// the initialised signer details can be added to this proxy.
-    pub fn create_signer_init_cmd(
-        &self,
-        signer_handle: TrustAnchorHandle,
-        tal_https: Vec<uri::Https>,
-        tal_rsync: uri::Rsync,
-        signer: Arc<KrillSigner>,
-    ) -> KrillResult<TrustAnchorSignerInitCommand> {
-        let repo = self.get_repo()?;
-
-        Ok(TrustAnchorSignerInitCommand {
-            handle: signer_handle,
-            proxy_id: self.id.clone(),
-            repo_info: repo.repo_info().clone(),
-            tal_https,
-            tal_rsync,
-            signer,
-        })
-    }
-
     pub fn get_signer_request(&self) -> KrillResult<TrustAnchorSignerRequest> {
         if let Some(nonce) = self.open_signer_request.as_ref().cloned() {
             let mut child_requests = vec![];
@@ -681,12 +648,6 @@ impl TrustAnchorProxy {
     /// repository for this `CertAuth`
     pub fn publisher_request(&self) -> idexchange::PublisherRequest {
         idexchange::PublisherRequest::new(self.id.base64().clone(), self.handle.convert(), None)
-    }
-
-    fn get_repo(&self) -> KrillResult<&RepositoryContact> {
-        self.repository
-            .as_ref()
-            .ok_or_else(|| Error::CaRepoIssue(self.handle.clone(), "No repository configured".to_string()))
     }
 }
 

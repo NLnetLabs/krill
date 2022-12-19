@@ -89,14 +89,14 @@ mod tests {
             let tal_https = vec![https("https://example.krill.cloud/ta/ta.cer")];
             let tal_rsync = rsync("rsync://example.krill.cloud/ta/ta.cer");
 
-            let signer_init_cmd = proxy
-                .create_signer_init_cmd(
-                    signer_handle.clone(),
-                    tal_https.clone(),
-                    tal_rsync.clone(),
-                    signer.clone(),
-                )
-                .unwrap();
+            let signer_init_cmd = TrustAnchorSignerInitCommand {
+                handle: signer_handle.clone(),
+                proxy_id: proxy.id().clone(),
+                repo_info: proxy.repository().unwrap().repo_info().clone(),
+                tal_https: tal_https.clone(),
+                tal_rsync: tal_rsync.clone(),
+                signer: signer.clone(),
+            };
 
             let signer_init = TrustAnchorSigner::create_init(signer_init_cmd).unwrap();
 
