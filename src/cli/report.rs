@@ -10,8 +10,8 @@ use crate::{
         api::{
             AllCertAuthIssues, AspaDefinitionList, BgpSecCsrInfoList, CaCommandDetails, CaRepoDetails, CertAuthInfo,
             CertAuthIssues, CertAuthList, ChildCaInfo, ChildrenConnectionStats, CommandHistory, ConfiguredRoas,
-            IdCertInfo, ParentCaContact, ParentStatuses, PublisherDetails, PublisherList, RepoStatus, RtaList,
-            RtaPrepResponse, ServerInfo,
+            IdCertInfo, ParentCaContact, ParentStatuses, PublisherDetails, PublisherList, RepoStatus,
+            RepositoryContact, RtaList, RtaPrepResponse, ServerInfo,
         },
         bgp::{BgpAnalysisAdvice, BgpAnalysisReport, BgpAnalysisSuggestion},
     },
@@ -183,6 +183,7 @@ pub trait Report: Serialize + ToString {
 impl Report for CertAuthList {}
 impl Report for CertAuthInfo {}
 impl Report for IdCertInfo {}
+impl Report for RepositoryContact {}
 
 impl Report for ChildCaInfo {}
 

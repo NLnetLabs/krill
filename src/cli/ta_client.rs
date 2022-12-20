@@ -15,7 +15,7 @@ use serde::de::DeserializeOwned;
 use crate::{
     cli::report::Report,
     commons::{
-        api::{IdCertInfo, Token},
+        api::{IdCertInfo, RepositoryContact, Token},
         error::Error as KrillError,
         eventsourcing::AggregateStore,
         util::httpclient::{self},
@@ -102,6 +102,7 @@ pub enum ProxyCommandDetails {
     Init,
     Id,
     RepoRequest,
+    RepoContact,
 }
 
 #[derive(Debug)]
@@ -161,11 +162,18 @@ impl TrustAnchorClientCommand {
     fn make_proxy_repo_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("repo").about("Manage the repository for proxy");
         sub = Self::make_proxy_repo_request_sc(sub);
+        sub = Self::make_proxy_repo_contact_sc(sub);
         app.subcommand(sub)
     }
 
     fn make_proxy_repo_request_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("request").about("Get RFC 8183 publisher request");
+        sub = GeneralArgs::add_args(sub);
+        app.subcommand(sub)
+    }
+
+    fn make_proxy_repo_contact_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("contact").about("Show the configured repository for the proxy");
         sub = GeneralArgs::add_args(sub);
         app.subcommand(sub)
     }
@@ -245,6 +253,8 @@ impl TrustAnchorClientCommand {
     fn parse_matches_proxy_repo(matches: &ArgMatches) -> Result<Self, Error> {
         if let Some(m) = matches.subcommand_matches("request") {
             Self::parse_matches_proxy_repo_request(m)
+        } else if let Some(m) = matches.subcommand_matches("contact") {
+            Self::parse_matches_proxy_repo_contact(m)
         } else {
             Err(Error::UnrecognizedMatch)
         }
@@ -253,6 +263,13 @@ impl TrustAnchorClientCommand {
     fn parse_matches_proxy_repo_request(matches: &ArgMatches) -> Result<Self, Error> {
         let general = GeneralArgs::from_matches(matches).map_err(|e| Error::Other(e.to_string()))?;
         let details = ProxyCommandDetails::RepoRequest;
+
+        Ok(TrustAnchorClientCommand::Proxy(ProxyCommand { general, details }))
+    }
+
+    fn parse_matches_proxy_repo_contact(matches: &ArgMatches) -> Result<Self, Error> {
+        let general = GeneralArgs::from_matches(matches).map_err(|e| Error::Other(e.to_string()))?;
+        let details = ProxyCommandDetails::RepoContact;
 
         Ok(TrustAnchorClientCommand::Proxy(ProxyCommand { general, details }))
     }
@@ -299,6 +316,10 @@ impl TrustAnchorClient {
                         let publisher_request = client.get_json("api/v1/ta/proxy/repo/request.json").await?;
                         Ok(TrustAnchorClientApiResponse::PublisherRequest(publisher_request))
                     }
+                    ProxyCommandDetails::RepoContact => {
+                        let contact = client.get_json("api/v1/ta/proxy/repo").await?;
+                        Ok(TrustAnchorClientApiResponse::PublisherRequest(contact))
+                    }
                 }
             }
             TrustAnchorClientCommand::Signer(signer_command) => {
@@ -317,6 +338,7 @@ impl TrustAnchorClient {
 pub enum TrustAnchorClientApiResponse {
     IdCert(IdCertInfo),
     PublisherRequest(idexchange::PublisherRequest),
+    RepositoryContact(RepositoryContact),
     Empty,
 }
 
@@ -328,6 +350,7 @@ impl TrustAnchorClientApiResponse {
             match self {
                 TrustAnchorClientApiResponse::IdCert(id_cert) => id_cert.report(fmt).map(Some),
                 TrustAnchorClientApiResponse::PublisherRequest(pr) => pr.report(fmt).map(Some),
+                TrustAnchorClientApiResponse::RepositoryContact(contact) => contact.report(fmt).map(Some),
                 TrustAnchorClientApiResponse::Empty => Ok(None),
             }
         }
