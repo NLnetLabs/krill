@@ -7,8 +7,9 @@ pub const KRILL_VERSION_PATCH: &str = env!("CARGO_PKG_VERSION_PATCH");
 pub const KRILL_SERVER_APP: &str = "Krill";
 pub const KRILL_UP_APP: &str = "Krill Upgrade Helper";
 pub const KRILL_CLIENT_APP: &str = "Krill Client";
+pub const KRILL_TA_CLIENT_APP: &str = "Krill Trust Anchor Client";
 
-pub const KRILL_DEFAULT_CONFIG_FILE: &str = "./defaults/krill.conf";
+pub const KRILL_DEFAULT_CONFIG_FILE: &str = "/etc/krill.conf";
 
 const KRILL_ENV_TEST: &str = "KRILL_TEST";
 const KRILL_ENV_TEST_ANN: &str = "KRILL_TEST_ANN";

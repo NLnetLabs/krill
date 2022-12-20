@@ -61,7 +61,7 @@ impl ConfigDefaults {
         env::var(KRILL_ENV_FORCE_RECOVER).is_ok()
     }
 
-    fn log_level() -> LevelFilter {
+    pub fn log_level() -> LevelFilter {
         match env::var(KRILL_ENV_LOG_LEVEL) {
             Ok(level) => match LevelFilter::from_str(&level) {
                 Ok(level) => level,
@@ -74,7 +74,7 @@ impl ConfigDefaults {
         }
     }
 
-    fn log_type() -> LogType {
+    pub fn log_type() -> LogType {
         LogType::File
     }
 
@@ -90,7 +90,7 @@ impl ConfigDefaults {
         AuthType::AdminToken
     }
 
-    fn admin_token() -> Token {
+    pub fn admin_token() -> Token {
         match env::var(KRILL_ENV_ADMIN_TOKEN) {
             Ok(token) => Token::from(token),
             Err(_) => match env::var(KRILL_ENV_ADMIN_TOKEN_DEPRECATED) {

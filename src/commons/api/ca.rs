@@ -117,6 +117,12 @@ impl From<IdCert> for IdCertInfo {
     }
 }
 
+impl fmt::Display for IdCertInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "{}", self.pem())
+    }
+}
+
 //------------ ChildState ----------------------------------------------------
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
