@@ -7,18 +7,22 @@ use std::{
     path::PathBuf,
 };
 
+use bytes::Bytes;
 use clap::{App, Arg, ArgMatches, SubCommand};
 use log::LevelFilter;
-use rpki::ca::idexchange::{self, ServiceUri};
+use rpki::ca::idexchange::{self, RepositoryResponse, ServiceUri};
 use serde::de::DeserializeOwned;
 
 use crate::{
     cli::report::Report,
     commons::{
-        api::{IdCertInfo, RepositoryContact, Token},
-        error::Error as KrillError,
+        api::{ApiRepositoryContact, IdCertInfo, RepositoryContact, Token},
+        error::{Error as KrillError, KrillIoError},
         eventsourcing::AggregateStore,
-        util::httpclient::{self},
+        util::{
+            file,
+            httpclient::{self},
+        },
     },
     constants::{KRILL_CLI_API_ENV, KRILL_TA_CLIENT_APP, KRILL_VERSION},
     daemon::{
@@ -103,6 +107,7 @@ pub enum ProxyCommandDetails {
     Id,
     RepoRequest,
     RepoContact,
+    RepoConfigure(ApiRepositoryContact),
 }
 
 #[derive(Debug)]
@@ -163,6 +168,7 @@ impl TrustAnchorClientCommand {
         let mut sub = SubCommand::with_name("repo").about("Manage the repository for proxy");
         sub = Self::make_proxy_repo_request_sc(sub);
         sub = Self::make_proxy_repo_contact_sc(sub);
+        sub = Self::make_proxy_repo_configure_sc(sub);
         app.subcommand(sub)
     }
 
@@ -175,6 +181,22 @@ impl TrustAnchorClientCommand {
     fn make_proxy_repo_contact_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("contact").about("Show the configured repository for the proxy");
         sub = GeneralArgs::add_args(sub);
+        app.subcommand(sub)
+    }
+
+    fn make_proxy_repo_configure_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("configure").about("Configure (add) the repository for the proxy");
+        sub = GeneralArgs::add_args(sub);
+
+        sub = sub.arg(
+            Arg::with_name("response")
+                .value_name("file")
+                .long("response")
+                .short("r")
+                .help("The location of the RFC 8183 Publisher Response XML file")
+                .required(true),
+        );
+
         app.subcommand(sub)
     }
 
@@ -255,6 +277,8 @@ impl TrustAnchorClientCommand {
             Self::parse_matches_proxy_repo_request(m)
         } else if let Some(m) = matches.subcommand_matches("contact") {
             Self::parse_matches_proxy_repo_contact(m)
+        } else if let Some(m) = matches.subcommand_matches("configure") {
+            Self::parse_matches_proxy_repo_configure(m)
         } else {
             Err(Error::UnrecognizedMatch)
         }
@@ -272,6 +296,24 @@ impl TrustAnchorClientCommand {
         let details = ProxyCommandDetails::RepoContact;
 
         Ok(TrustAnchorClientCommand::Proxy(ProxyCommand { general, details }))
+    }
+
+    fn parse_matches_proxy_repo_configure(matches: &ArgMatches) -> Result<Self, Error> {
+        let general = GeneralArgs::from_matches(matches).map_err(|e| Error::Other(e.to_string()))?;
+
+        let path = matches.value_of("response").unwrap();
+        let bytes = Self::read_file_arg(path)?;
+        let response = idexchange::RepositoryResponse::parse(bytes.as_ref())
+            .map_err(|e| Error::Other(format!("Cannot parse repository response: {}", e)))?;
+
+        let details = ProxyCommandDetails::RepoConfigure(ApiRepositoryContact::new(response));
+
+        Ok(TrustAnchorClientCommand::Proxy(ProxyCommand { general, details }))
+    }
+
+    fn read_file_arg(path_str: &str) -> Result<Bytes, Error> {
+        let path = PathBuf::from(path_str);
+        file::read(&path).map_err(|e| Error::Other(format!("Can't read: {}. Error: {}", path_str, e)))
     }
 
     //-- Parse Signer
@@ -319,6 +361,9 @@ impl TrustAnchorClient {
                     ProxyCommandDetails::RepoContact => {
                         let contact = client.get_json("api/v1/ta/proxy/repo").await?;
                         Ok(TrustAnchorClientApiResponse::PublisherRequest(contact))
+                    }
+                    ProxyCommandDetails::RepoConfigure(repo_response) => {
+                        client.post_json("api/v1/ta/proxy/repo", repo_response).await
                     }
                 }
             }
@@ -382,6 +427,14 @@ impl ProxyClient {
     async fn post_empty(&self, path: &str) -> Result<TrustAnchorClientApiResponse, Error> {
         let uri = self.resolve_uri(path);
         httpclient::post_empty(&uri, Some(&self.token))
+            .await
+            .map(|_| TrustAnchorClientApiResponse::Empty)
+            .map_err(Error::HttpClientError)
+    }
+
+    async fn post_json(&self, path: &str, data: impl serde::Serialize) -> Result<TrustAnchorClientApiResponse, Error> {
+        let uri = self.resolve_uri(path);
+        httpclient::post_json(&uri, data, Some(&self.token))
             .await
             .map(|_| TrustAnchorClientApiResponse::Empty)
             .map_err(Error::HttpClientError)
