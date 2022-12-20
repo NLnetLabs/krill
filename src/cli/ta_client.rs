@@ -360,7 +360,7 @@ impl TrustAnchorClient {
                     }
                     ProxyCommandDetails::RepoContact => {
                         let contact = client.get_json("api/v1/ta/proxy/repo").await?;
-                        Ok(TrustAnchorClientApiResponse::PublisherRequest(contact))
+                        Ok(TrustAnchorClientApiResponse::RepositoryContact(contact))
                     }
                     ProxyCommandDetails::RepoConfigure(repo_response) => {
                         client.post_json("api/v1/ta/proxy/repo", repo_response).await
