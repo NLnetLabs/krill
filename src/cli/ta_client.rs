@@ -9,7 +9,7 @@ use std::{
 
 use clap::{App, Arg, ArgMatches, SubCommand};
 use log::LevelFilter;
-use rpki::ca::idexchange::ServiceUri;
+use rpki::ca::idexchange::{self, ServiceUri};
 use serde::de::DeserializeOwned;
 
 use crate::{
@@ -101,6 +101,7 @@ pub struct ProxyCommand {
 pub enum ProxyCommandDetails {
     Init,
     Id,
+    RepoRequest,
 }
 
 #[derive(Debug)]
@@ -140,6 +141,7 @@ impl TrustAnchorClientCommand {
 
         sub = Self::make_proxy_init_sc(sub);
         sub = Self::make_proxy_id_sc(sub);
+        sub = Self::make_proxy_repo_sc(sub);
 
         app.subcommand(sub)
     }
@@ -152,6 +154,18 @@ impl TrustAnchorClientCommand {
 
     fn make_proxy_id_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("id").about("Get the proxy ID certificate details");
+        sub = GeneralArgs::add_args(sub);
+        app.subcommand(sub)
+    }
+
+    fn make_proxy_repo_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("repo").about("Manage the repository for proxy");
+        sub = Self::make_proxy_repo_request_sc(sub);
+        app.subcommand(sub)
+    }
+
+    fn make_proxy_repo_request_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("request").about("Get RFC 8183 publisher request");
         sub = GeneralArgs::add_args(sub);
         app.subcommand(sub)
     }
@@ -207,6 +221,8 @@ impl TrustAnchorClientCommand {
             Self::parse_matches_proxy_id(m)
         } else if let Some(m) = matches.subcommand_matches("init") {
             Self::parse_matches_proxy_init(m)
+        } else if let Some(m) = matches.subcommand_matches("repo") {
+            Self::parse_matches_proxy_repo(m)
         } else {
             Err(Error::UnrecognizedMatch)
         }
@@ -222,6 +238,21 @@ impl TrustAnchorClientCommand {
     fn parse_matches_proxy_id(matches: &ArgMatches) -> Result<Self, Error> {
         let general = GeneralArgs::from_matches(matches).map_err(|e| Error::Other(e.to_string()))?;
         let details = ProxyCommandDetails::Id;
+
+        Ok(TrustAnchorClientCommand::Proxy(ProxyCommand { general, details }))
+    }
+
+    fn parse_matches_proxy_repo(matches: &ArgMatches) -> Result<Self, Error> {
+        if let Some(m) = matches.subcommand_matches("request") {
+            Self::parse_matches_proxy_repo_request(m)
+        } else {
+            Err(Error::UnrecognizedMatch)
+        }
+    }
+
+    fn parse_matches_proxy_repo_request(matches: &ArgMatches) -> Result<Self, Error> {
+        let general = GeneralArgs::from_matches(matches).map_err(|e| Error::Other(e.to_string()))?;
+        let details = ProxyCommandDetails::RepoRequest;
 
         Ok(TrustAnchorClientCommand::Proxy(ProxyCommand { general, details }))
     }
@@ -261,8 +292,12 @@ impl TrustAnchorClient {
                 match proxy_command.details {
                     ProxyCommandDetails::Init => client.post_empty("api/v1/ta/proxy/init").await,
                     ProxyCommandDetails::Id => {
-                        let id: IdCertInfo = client.get_json("api/v1/ta/proxy/id").await?;
-                        Ok(TrustAnchorClientApiResponse::IdCert(id))
+                        let id_cert = client.get_json("api/v1/ta/proxy/id").await?;
+                        Ok(TrustAnchorClientApiResponse::IdCert(id_cert))
+                    }
+                    ProxyCommandDetails::RepoRequest => {
+                        let publisher_request = client.get_json("api/v1/ta/proxy/repo/request.json").await?;
+                        Ok(TrustAnchorClientApiResponse::PublisherRequest(publisher_request))
                     }
                 }
             }
@@ -281,6 +316,7 @@ impl TrustAnchorClient {
 
 pub enum TrustAnchorClientApiResponse {
     IdCert(IdCertInfo),
+    PublisherRequest(idexchange::PublisherRequest),
     Empty,
 }
 
@@ -291,6 +327,7 @@ impl TrustAnchorClientApiResponse {
         } else {
             match self {
                 TrustAnchorClientApiResponse::IdCert(id_cert) => id_cert.report(fmt).map(Some),
+                TrustAnchorClientApiResponse::PublisherRequest(pr) => pr.report(fmt).map(Some),
                 TrustAnchorClientApiResponse::Empty => Ok(None),
             }
         }
