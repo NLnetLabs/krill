@@ -312,7 +312,7 @@ pub enum SignerReference {
     Index(usize),
 }
 
-fn deserialize_signer_ref<'de, D>(deserializer: D) -> Result<SignerReference, D::Error>
+pub fn deserialize_signer_ref<'de, D>(deserializer: D) -> Result<SignerReference, D::Error>
 where
     D: Deserializer<'de>,
 {

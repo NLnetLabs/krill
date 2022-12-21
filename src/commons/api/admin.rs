@@ -300,6 +300,12 @@ impl PartialEq for RepositoryContact {
 
 impl Eq for RepositoryContact {}
 
+impl From<RepositoryContact> for RepoInfo {
+    fn from(contact: RepositoryContact) -> Self {
+        contact.repo_info
+    }
+}
+
 //------------ ParentCaReq ---------------------------------------------------
 
 /// This type defines all parent ca details needed to add a parent to a CA

@@ -262,7 +262,9 @@ impl CaManager {
         }
     }
 
-    /// Initialises the embedded Trust Anchor Signer (for testbed)
+    /// Initialises the embedded Trust Anchor Signer (for testbed).
+    /// This assumes that the one and only local Trust Anchor Proxy exists and
+    /// is to be associated with this signer.
     pub async fn ta_signer_init(&self, tal_https: Vec<uri::Https>, tal_rsync: uri::Rsync) -> KrillResult<()> {
         let ta_signer_store = self
             .ta_signer_store

@@ -5,29 +5,32 @@ use std::{
     fs::File,
     io::{self, Read},
     path::PathBuf,
+    str::FromStr,
+    sync::Arc,
 };
 
 use bytes::Bytes;
 use clap::{App, Arg, ArgMatches, SubCommand};
 use log::LevelFilter;
-use rpki::ca::idexchange::{self, RepositoryResponse, ServiceUri};
+use rpki::{
+    ca::idexchange::{self, RepoInfo, ServiceUri},
+    uri,
+};
 use serde::de::DeserializeOwned;
 
 use crate::{
     cli::report::Report,
     commons::{
         api::{ApiRepositoryContact, IdCertInfo, RepositoryContact, Token},
-        error::{Error as KrillError, KrillIoError},
-        eventsourcing::AggregateStore,
-        util::{
-            file,
-            httpclient::{self},
-        },
+        crypto::{KrillSigner, KrillSignerBuilder, OpenSslSignerConfig},
+        error::Error as KrillError,
+        eventsourcing::{AggregateStore, AggregateStoreError},
+        util::{file, httpclient},
     },
-    constants::{KRILL_CLI_API_ENV, KRILL_TA_CLIENT_APP, KRILL_VERSION},
+    constants::{KRILL_CLI_API_ENV, KRILL_TA_CLIENT_APP, KRILL_VERSION, OPENSSL_ONE_OFF_SIGNER_NAME},
     daemon::{
-        config::LogType,
-        ta::{TrustAnchorSigner, TrustAnchorSignerCommand},
+        config::{LogType, SignerConfig, SignerReference, SignerType},
+        ta::{TrustAnchorHandle, TrustAnchorSigner, TrustAnchorSignerInitCommand},
     },
 };
 
@@ -45,6 +48,7 @@ pub enum Error {
     UnrecognizedMatch,
     HttpClientError(httpclient::Error),
     KrillError(KrillError),
+    StorageError(AggregateStoreError),
     Other(String),
 }
 
@@ -61,6 +65,7 @@ impl std::fmt::Display for Error {
             Error::UnrecognizedMatch => write!(f, "Unrecognised argument. Use 'help'"),
             Error::HttpClientError(e) => write!(f, "HTTP client error: {}", e),
             Error::KrillError(e) => write!(f, "{}", e),
+            Error::StorageError(e) => write!(f, "Issue with persistence layer: {}", e),
             Error::Other(msg) => write!(f, "{}", msg),
         }
     }
@@ -75,6 +80,12 @@ impl From<KrillError> for Error {
 impl From<report::ReportError> for Error {
     fn from(e: report::ReportError) -> Self {
         Error::Other(e.to_string())
+    }
+}
+
+impl From<AggregateStoreError> for Error {
+    fn from(e: AggregateStoreError) -> Self {
+        Self::StorageError(e)
     }
 }
 
@@ -118,7 +129,15 @@ pub struct SignerCommand {
 
 #[derive(Debug)]
 pub enum SignerCommandDetails {
-    Init,
+    Init(SignerInitInfo),
+}
+
+#[derive(Debug)]
+pub struct SignerInitInfo {
+    proxy_id: IdCertInfo,
+    repo_info: RepoInfo,
+    tal_https: Vec<uri::Https>,
+    tal_rsync: uri::Rsync,
 }
 
 impl TrustAnchorClientCommand {
@@ -213,7 +232,38 @@ impl TrustAnchorClientCommand {
     fn make_signer_init_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("init").about("Initialise the signer");
 
-        sub = Self::add_config_arg(sub);
+        sub = Self::add_config_arg(sub)
+            .arg(
+                Arg::with_name("proxy_id")
+                    .long("proxy_id")
+                    .short("i")
+                    .value_name("path")
+                    .help("Path to Proxy ID json")
+                    .required(true),
+            )
+            .arg(
+                Arg::with_name("proxy_repository_contact")
+                    .long("proxy_repository_contact")
+                    .short("r")
+                    .value_name("path")
+                    .help("Path to Proxy ID json")
+                    .required(true),
+            )
+            .arg(
+                Arg::with_name("tal_rsync")
+                    .long("tal_rsync")
+                    .value_name("Rsync URI")
+                    .help("Used for TA certificate on TAL and AIA")
+                    .required(true),
+            )
+            .arg(
+                Arg::with_name("tal_https")
+                    .long("tal_https")
+                    .value_name("HTTPS URI")
+                    .help("Used for TAL. Multiple allowed.")
+                    .multiple(true)
+                    .required(true),
+            );
 
         app.subcommand(sub)
     }
@@ -316,6 +366,13 @@ impl TrustAnchorClientCommand {
         file::read(&path).map_err(|e| Error::Other(format!("Can't read: {}. Error: {}", path_str, e)))
     }
 
+    // Read json from a path argument
+    fn read_json<T: DeserializeOwned>(path: &str) -> Result<T, Error> {
+        let bytes = Self::read_file_arg(path)?;
+
+        serde_json::from_slice(&bytes).map_err(|e| Error::Other(format!("Cannot deserialize file {}: {}", path, e)))
+    }
+
     //-- Parse Signer
     fn parse_matches_signer(matches: &ArgMatches) -> Result<Self, Error> {
         if let Some(m) = matches.subcommand_matches("init") {
@@ -327,7 +384,39 @@ impl TrustAnchorClientCommand {
 
     fn parse_matches_signer_init(matches: &ArgMatches) -> Result<Self, Error> {
         let config = Self::parse_config(matches)?;
-        let details = SignerCommandDetails::Init;
+
+        let proxy_id = Self::read_json(matches.value_of("proxy_id").unwrap())?;
+
+        let repo_info = {
+            let repo_contact: RepositoryContact =
+                Self::read_json(matches.value_of("proxy_repository_contact").unwrap())?;
+            repo_contact.into()
+        };
+
+        let tal_https = {
+            let uri_strs = matches.values_of("tal_https").unwrap();
+            let mut uris = vec![];
+            for uri_str in uri_strs {
+                uris.push(
+                    uri::Https::from_str(uri_str)
+                        .map_err(|_| Error::Other(format!("Invalid https URI: {}", uri_str)))?,
+                );
+            }
+            uris
+        };
+
+        let tal_rsync = {
+            let rsync_str = matches.value_of("tal_rsync").unwrap();
+            uri::Rsync::from_str(rsync_str).map_err(|_| Error::Other(format!("Invalid rsync uri: {}", rsync_str)))?
+        };
+
+        let info = SignerInitInfo {
+            proxy_id,
+            repo_info,
+            tal_https,
+            tal_rsync,
+        };
+        let details = SignerCommandDetails::Init(info);
 
         Ok(TrustAnchorClientCommand::Signer(SignerCommand { config, details }))
     }
@@ -368,10 +457,10 @@ impl TrustAnchorClient {
                 }
             }
             TrustAnchorClientCommand::Signer(signer_command) => {
-                let signer_client = SignerClient::create(signer_command.config)?;
+                let signer_client = TrustAnchorSignerManager::create(signer_command.config)?;
 
                 match signer_command.details {
-                    SignerCommandDetails::Init => signer_client.init()?,
+                    SignerCommandDetails::Init(info) => signer_client.init(info)?,
                 }
 
                 Ok(TrustAnchorClientApiResponse::Empty)
@@ -452,22 +541,46 @@ impl ProxyClient {
     }
 }
 
-//------------------------ SignerClient -----------------------------------------
+//------------------------ TrustAnchorSignerManager -----------------------------
 
-struct SignerClient {
+struct TrustAnchorSignerManager {
     config: Config,
     store: AggregateStore<TrustAnchorSigner>,
+    ta_handle: TrustAnchorHandle,
+    signer: Arc<KrillSigner>,
 }
 
-impl SignerClient {
+impl TrustAnchorSignerManager {
     fn create(config: Config) -> Result<Self, Error> {
         let store = AggregateStore::disk(&config.data_dir, "signer").map_err(KrillError::AggregateStoreError)?;
-        Ok(SignerClient { config, store })
+        let ta_handle = TrustAnchorHandle::new("ta".into());
+        let signer = config.signer()?;
+
+        Ok(TrustAnchorSignerManager {
+            config,
+            store,
+            ta_handle,
+            signer,
+        })
     }
 
-    fn init(&self) -> Result<(), Error> {
-        // let cmd = TrustAnchorSignerCommand::self.store.command(cmd)?;
-        todo!("init signer")
+    fn init(&self, info: SignerInitInfo) -> Result<(), Error> {
+        if self.store.has(&self.ta_handle)? {
+            Err(Error::other("Trust Anchor Signer was already initialised."))
+        } else {
+            let signer_init_command = TrustAnchorSignerInitCommand {
+                handle: self.ta_handle.clone(),
+                proxy_id: info.proxy_id,
+                repo_info: info.repo_info,
+                tal_https: info.tal_https,
+                tal_rsync: info.tal_rsync,
+                signer: self.signer.clone(),
+            };
+
+            let signer_init_event = TrustAnchorSigner::create_init(signer_init_command)?;
+            self.store.add(signer_init_event)?;
+            Ok(())
+        }
     }
 }
 
@@ -485,6 +598,19 @@ pub struct Config {
         deserialize_with = "crate::commons::util::ext_serde::de_level_filter"
     )]
     pub log_level: LevelFilter,
+
+    // Signer support. Ported from main Krill.
+    #[serde(default, deserialize_with = "crate::daemon::config::deserialize_signer_ref")]
+    pub default_signer: SignerReference,
+
+    #[serde(default, deserialize_with = "crate::daemon::config::deserialize_signer_ref")]
+    pub one_off_signer: SignerReference,
+
+    #[serde(default = "crate::daemon::config::ConfigDefaults::signer_probe_retry_seconds")]
+    pub signer_probe_retry_seconds: u64,
+
+    #[serde(default = "crate::daemon::config::ConfigDefaults::signers")]
+    pub signers: Vec<SignerConfig>,
 }
 
 impl Config {
@@ -497,12 +623,93 @@ impl Config {
         file.read_to_end(&mut v)
             .map_err(|e| Error::Other(format!("Could not read config file '{}': {}", file_path, e)))?;
 
-        let config: Config = toml::from_slice(v.as_slice())
-            .map_err(|e| Error::Other(format!("Error parsing config file: '{}': {}", file_path, e)))?;
+        Self::parse_slice(v.as_slice())
+    }
 
+    fn parse_slice(slice: &[u8]) -> Result<Self, Error> {
+        let mut config: Config =
+            toml::from_slice(slice).map_err(|e| Error::Other(format!("Error parsing config file: {}", e)))?;
+
+        if !config.data_dir.exists() {
+            file::create_dir_all(&config.data_dir).map_err(KrillError::IoError)?;
+        }
+
+        config.resolve_signers();
         config.init_logging()?;
 
         Ok(config)
+    }
+
+    fn resolve_signers(&mut self) {
+        if self.signers.len() == 1 && !self.default_signer.is_named() {
+            self.default_signer = SignerReference::new(&self.signers[0].name);
+        }
+
+        let default_signer_idx = self.find_signer_reference(&self.default_signer).unwrap();
+        self.default_signer = SignerReference::Index(default_signer_idx);
+
+        let openssl_signer_idx = self.find_openssl_signer();
+        let one_off_signer_idx = self.find_signer_reference(&self.one_off_signer);
+
+        // Use the specified one-off signer, if set, else:
+        //   - Use an existing OpenSSL signer config,
+        //   - Or create a new OpenSSL signer config.
+        let one_off_signer_idx = match (one_off_signer_idx, openssl_signer_idx) {
+            (Some(one_off_signer_idx), _) => one_off_signer_idx,
+            (None, Some(openssl_signer_idx)) => openssl_signer_idx,
+            (None, None) => self.add_openssl_signer(OPENSSL_ONE_OFF_SIGNER_NAME),
+        };
+
+        self.one_off_signer = SignerReference::Index(one_off_signer_idx);
+    }
+
+    fn add_openssl_signer(&mut self, name: &str) -> usize {
+        let signer_config = SignerConfig::new(name.to_string(), SignerType::OpenSsl(OpenSslSignerConfig::default()));
+        self.signers.push(signer_config);
+        self.signers.len() - 1
+    }
+
+    fn find_signer_reference(&self, signer_ref: &SignerReference) -> Option<usize> {
+        match signer_ref {
+            SignerReference::Name(None) => None,
+            SignerReference::Name(Some(name)) => self.signers.iter().position(|s| &s.name == name),
+            SignerReference::Index(idx) => Some(*idx),
+        }
+    }
+
+    fn find_openssl_signer(&self) -> Option<usize> {
+        self.signers
+            .iter()
+            .position(|s| matches!(s.signer_type, SignerType::OpenSsl(_)))
+    }
+
+    // Signer support
+    fn signer(&self) -> Result<Arc<KrillSigner>, Error> {
+        // Assumes that Config::verify() has already ensured that the signer configuration is valid and that
+        // Config::resolve() has been used to update signer name references to resolve to the corresponding signer
+        // configurations.
+        let probe_interval = std::time::Duration::from_secs(self.signer_probe_retry_seconds);
+        let signer = KrillSignerBuilder::new(&self.data_dir, probe_interval, &self.signers)
+            .with_default_signer(self.default_signer())
+            .with_one_off_signer(self.one_off_signer())
+            .build()
+            .map_err(|e| Error::Other(format!("Could not create KrillSigner: {}", e)))?;
+
+        Ok(Arc::new(signer))
+    }
+
+    /// Returns a reference to the default signer configuration.
+    ///
+    /// Assumes that the configuration is valid. Will panic otherwise.
+    fn default_signer(&self) -> &SignerConfig {
+        &self.signers[self.default_signer.idx()]
+    }
+
+    /// Returns a reference to the one off signer configuration.
+    ///
+    /// Assumes that the configuration is valid. Will panic otherwise.
+    fn one_off_signer(&self) -> &SignerConfig {
+        &self.signers[self.one_off_signer.idx()]
     }
 
     fn init_logging(&self) -> Result<(), Error> {
@@ -570,5 +777,21 @@ impl Config {
             .level_for("tracing::span", framework_level)
             .level_for("krill::commons::eventsourcing", krill_framework_level)
             .level_for("krill::commons::util::file", krill_framework_level)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::test::*;
+
+    #[test]
+    fn initialise_default_signers() {
+        test_under_tmp(|d| {
+            let config_string = format!("data_dir = \"{}\"", d.to_string_lossy());
+            let config = Config::parse_slice(config_string.as_bytes()).unwrap();
+            config.signer().unwrap();
+        })
     }
 }
