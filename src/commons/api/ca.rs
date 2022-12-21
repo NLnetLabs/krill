@@ -2,6 +2,7 @@
 //! can have access without needing to depend on the full krill_ca module.
 
 use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::ops::{self};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -38,6 +39,7 @@ use rpki::{
 };
 
 use crate::commons::crypto::CsrInfo;
+use crate::commons::error;
 use crate::daemon::ca::BgpSecCertInfo;
 use crate::{
     commons::{
@@ -114,6 +116,15 @@ impl From<&IdCert> for IdCertInfo {
 impl From<IdCert> for IdCertInfo {
     fn from(cer: IdCert) -> Self {
         Self::from(&cer) // we need to encode anyhow, we can't move any data
+    }
+}
+
+impl TryFrom<&IdCertInfo> for IdCert {
+    type Error = error::Error;
+
+    fn try_from(info: &IdCertInfo) -> Result<Self, Self::Error> {
+        IdCert::decode(info.base64.to_bytes().as_ref())
+            .map_err(|e| error::Error::Custom(format!("Could not decode IdCertInfo into IdCert: {}", e)))
     }
 }
 

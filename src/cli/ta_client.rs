@@ -1,6 +1,7 @@
 //! Trust Anchor Client for managing the TA Proxy *and* Signer
 
 use std::{
+    convert::TryInto,
     env,
     fs::File,
     io::{self, Read},
@@ -14,6 +15,7 @@ use clap::{App, Arg, ArgMatches, SubCommand};
 use log::LevelFilter;
 use rpki::{
     ca::idexchange::{self, RepoInfo, ServiceUri},
+    repository::resources::ResourceSet,
     uri,
 };
 use serde::de::DeserializeOwned;
@@ -21,7 +23,7 @@ use serde::de::DeserializeOwned;
 use crate::{
     cli::report::Report,
     commons::{
-        api::{ApiRepositoryContact, IdCertInfo, RepositoryContact, Token},
+        api::{AddChildRequest, ApiRepositoryContact, CertAuthInfo, IdCertInfo, RepositoryContact, Token},
         crypto::{KrillSigner, KrillSignerBuilder, OpenSslSignerConfig},
         error::Error as KrillError,
         eventsourcing::{AggregateStore, AggregateStoreError},
@@ -127,6 +129,7 @@ pub enum ProxyCommandDetails {
     RepoContact,
     RepoConfigure(ApiRepositoryContact),
     SignerAdd(TrustAnchorSignerInfo),
+    ChildAdd(AddChildRequest),
 }
 
 #[derive(Debug)]
@@ -179,6 +182,7 @@ impl TrustAnchorClientCommand {
         sub = Self::make_proxy_id_sc(sub);
         sub = Self::make_proxy_repo_sc(sub);
         sub = Self::make_proxy_signer_sc(sub);
+        sub = Self::make_proxy_children_sc(sub);
 
         app.subcommand(sub)
     }
@@ -249,6 +253,50 @@ impl TrustAnchorClientCommand {
                 .help("The Trust Anchor Signer info json (as 'signer show')")
                 .required(true),
         );
+
+        app.subcommand(sub)
+    }
+
+    fn make_proxy_children_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("children").about("Manage children under the TA proxy");
+        sub = Self::make_proxy_children_add_sc(sub);
+        app.subcommand(sub)
+    }
+
+    fn make_proxy_children_add_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("add").about("Add a child. Recommended: add 1 child with all resources and use that as a parent to other CAs. This way the resources for those children can be updated without the need to have the offline signer sign a new certificate to them.");
+
+        sub = GeneralArgs::add_args(sub);
+        sub = sub
+            .arg(
+                Arg::with_name("info")
+                    .value_name("info")
+                    .long("info")
+                    .short("i")
+                    .help("The Child info json (as 'krillc show --ca <ca_name>')")
+                    .required(true),
+            )
+            .arg(
+                Arg::with_name("asn")
+                    .value_name("asn resources")
+                    .long("asn")
+                    .help("The ASN resources for the child. Default: all")
+                    .required(false),
+            )
+            .arg(
+                Arg::with_name("ipv4")
+                    .value_name("IPv4 resources")
+                    .long("ipv4")
+                    .help("The IPv4 resources for the child. Default: all")
+                    .required(false),
+            )
+            .arg(
+                Arg::with_name("ipv6")
+                    .value_name("IPv6 resources")
+                    .long("ipv6")
+                    .help("The IPv6 resources for the child. Default: all")
+                    .required(false),
+            );
 
         app.subcommand(sub)
     }
@@ -358,6 +406,8 @@ impl TrustAnchorClientCommand {
             Self::parse_matches_proxy_repo(m)
         } else if let Some(m) = matches.subcommand_matches("signer") {
             Self::parse_matches_proxy_signer(m)
+        } else if let Some(m) = matches.subcommand_matches("children") {
+            Self::parse_matches_proxy_children(m)
         } else {
             Err(Error::UnrecognizedMatch)
         }
@@ -432,6 +482,36 @@ impl TrustAnchorClientCommand {
         Ok(TrustAnchorClientCommand::Proxy(ProxyCommand {
             general,
             details: ProxyCommandDetails::SignerAdd(info),
+        }))
+    }
+
+    fn parse_matches_proxy_children(matches: &ArgMatches) -> Result<Self, Error> {
+        if let Some(m) = matches.subcommand_matches("add") {
+            Self::parse_matches_proxy_children_add(m)
+        } else {
+            Err(Error::UnrecognizedMatch)
+        }
+    }
+
+    fn parse_matches_proxy_children_add(matches: &ArgMatches) -> Result<Self, Error> {
+        let general = GeneralArgs::from_matches(matches).map_err(|e| Error::Other(e.to_string()))?;
+
+        let info: CertAuthInfo = Self::read_json(matches.value_of("info").unwrap())?;
+        let resources: ResourceSet = {
+            let asn = matches.value_of("asn").unwrap_or("AS0-AS4294967295");
+            let ipv4 = matches.value_of("ipv4").unwrap_or("0.0.0.0/0");
+            let ipv6 = matches.value_of("ipv6").unwrap_or("::/0");
+            ResourceSet::from_strs(asn, ipv4, ipv6)
+                .map_err(|e| Error::Other(format!("Cannot parse resources: {}", e)))?
+        };
+
+        Ok(TrustAnchorClientCommand::Proxy(ProxyCommand {
+            general,
+            details: ProxyCommandDetails::ChildAdd(AddChildRequest::new(
+                info.handle().convert(),
+                resources,
+                info.id_cert().try_into()?,
+            )),
         }))
     }
 
@@ -560,6 +640,12 @@ impl TrustAnchorClient {
                         client.post_json("api/v1/ta/proxy/repo", repo_response).await
                     }
                     ProxyCommandDetails::SignerAdd(info) => client.post_json("api/v1/ta/proxy/signer/add", info).await,
+                    ProxyCommandDetails::ChildAdd(child) => {
+                        let response = client
+                            .post_json_with_response("api/v1/ta/proxy/children", child)
+                            .await?;
+                        Ok(TrustAnchorClientApiResponse::ParentResponse(response))
+                    }
                 }
             }
             TrustAnchorClientCommand::Signer(signer_command) => {
@@ -580,6 +666,7 @@ pub enum TrustAnchorClientApiResponse {
     PublisherRequest(idexchange::PublisherRequest),
     RepositoryContact(RepositoryContact),
     TrustAnchorProxySignerInfo(TrustAnchorSignerInfo),
+    ParentResponse(idexchange::ParentResponse),
     Empty,
 }
 
@@ -593,6 +680,7 @@ impl TrustAnchorClientApiResponse {
                 TrustAnchorClientApiResponse::PublisherRequest(pr) => pr.report(fmt).map(Some),
                 TrustAnchorClientApiResponse::RepositoryContact(contact) => contact.report(fmt).map(Some),
                 TrustAnchorClientApiResponse::TrustAnchorProxySignerInfo(info) => info.report(fmt).map(Some),
+                TrustAnchorClientApiResponse::ParentResponse(response) => response.report(fmt).map(Some),
                 TrustAnchorClientApiResponse::Empty => Ok(None),
             }
         }
@@ -634,6 +722,17 @@ impl ProxyClient {
         httpclient::post_json(&uri, data, Some(&self.token))
             .await
             .map(|_| TrustAnchorClientApiResponse::Empty)
+            .map_err(Error::HttpClientError)
+    }
+
+    async fn post_json_with_response<T: DeserializeOwned>(
+        &self,
+        path: &str,
+        data: impl serde::Serialize,
+    ) -> Result<T, Error> {
+        let uri = self.resolve_uri(path);
+        httpclient::post_json_with_response(&uri, data, Some(&self.token))
+            .await
             .map_err(Error::HttpClientError)
     }
 
