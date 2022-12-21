@@ -627,9 +627,13 @@ impl CaManager {
     ) -> KrillResult<idexchange::ParentResponse> {
         let service_uri = Self::service_uri_for_ca(service_uri, ca_handle);
         let id_cert: publication::Base64 = if ca_handle.as_str() != TA_NAME {
-            self.get_ca(ca_handle).await?.id_cert().base64().clone()
+            let ca = self.get_ca(ca_handle).await?;
+            ca.get_child(&child_handle)?; // ensure the child is known
+            ca.id_cert().base64().clone()
         } else {
-            self.get_trust_anchor_proxy().await?.id().base64().clone()
+            let proxy = self.get_trust_anchor_proxy().await?;
+            proxy.get_child(&child_handle)?;
+            proxy.id().base64().clone()
         };
 
         Ok(idexchange::ParentResponse::new(

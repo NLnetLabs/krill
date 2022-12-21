@@ -640,6 +640,13 @@ impl TrustAnchorProxy {
     pub fn repository(&self) -> Option<&RepositoryContact> {
         self.repository.as_ref()
     }
+
+    pub fn get_child(&self, child: &ChildHandle) -> KrillResult<&TrustAnchorChild> {
+        match self.child_details.get(child) {
+            None => Err(Error::CaChildUnknown(self.handle.clone(), child.clone())),
+            Some(child) => Ok(child),
+        }
+    }
 }
 
 /// # Publication support

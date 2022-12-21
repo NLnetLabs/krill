@@ -14,7 +14,7 @@ use bytes::Bytes;
 use clap::{App, Arg, ArgMatches, SubCommand};
 use log::LevelFilter;
 use rpki::{
-    ca::idexchange::{self, RepoInfo, ServiceUri},
+    ca::idexchange::{self, ChildHandle, RepoInfo, ServiceUri},
     repository::resources::ResourceSet,
     uri,
 };
@@ -130,6 +130,7 @@ pub enum ProxyCommandDetails {
     RepoConfigure(ApiRepositoryContact),
     SignerAdd(TrustAnchorSignerInfo),
     ChildAdd(AddChildRequest),
+    ChildResponse(ChildHandle),
 }
 
 #[derive(Debug)]
@@ -260,6 +261,7 @@ impl TrustAnchorClientCommand {
     fn make_proxy_children_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("children").about("Manage children under the TA proxy");
         sub = Self::make_proxy_children_add_sc(sub);
+        sub = Self::make_proxy_children_response_sc(sub);
         app.subcommand(sub)
     }
 
@@ -298,6 +300,13 @@ impl TrustAnchorClientCommand {
                     .required(false),
             );
 
+        app.subcommand(sub)
+    }
+
+    fn make_proxy_children_response_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("response").about("Get parent response for child.");
+        sub = GeneralArgs::add_args(sub);
+        sub = Self::add_child_arg(sub);
         app.subcommand(sub)
     }
 
@@ -379,6 +388,16 @@ impl TrustAnchorClientCommand {
                 .short("f")
                 .help("Report format: none|json (default)|text. Or set env: KRILL_CLI_FORMAT")
                 .required(false),
+        )
+    }
+
+    fn add_child_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        app.arg(
+            Arg::with_name("child")
+                .long("child")
+                .value_name("name")
+                .help("Name of the child CA")
+                .required(true),
         )
     }
 }
@@ -488,6 +507,8 @@ impl TrustAnchorClientCommand {
     fn parse_matches_proxy_children(matches: &ArgMatches) -> Result<Self, Error> {
         if let Some(m) = matches.subcommand_matches("add") {
             Self::parse_matches_proxy_children_add(m)
+        } else if let Some(m) = matches.subcommand_matches("response") {
+            Self::parse_matches_proxy_children_response(m)
         } else {
             Err(Error::UnrecognizedMatch)
         }
@@ -513,6 +534,21 @@ impl TrustAnchorClientCommand {
                 info.id_cert().try_into()?,
             )),
         }))
+    }
+
+    fn parse_matches_proxy_children_response(matches: &ArgMatches) -> Result<Self, Error> {
+        let general = GeneralArgs::from_matches(matches).map_err(|e| Error::Other(e.to_string()))?;
+        let child = Self::parse_child_arg(matches)?;
+
+        Ok(TrustAnchorClientCommand::Proxy(ProxyCommand {
+            general,
+            details: ProxyCommandDetails::ChildResponse(child),
+        }))
+    }
+
+    fn parse_child_arg(matches: &ArgMatches) -> Result<ChildHandle, Error> {
+        let child_str = matches.value_of("child").unwrap();
+        ChildHandle::from_str(child_str).map_err(|e| Error::Other(format!("Invalid child name: {}", e)))
     }
 
     fn read_file_arg(path_str: &str) -> Result<Bytes, Error> {
@@ -644,6 +680,11 @@ impl TrustAnchorClient {
                         let response = client
                             .post_json_with_response("api/v1/ta/proxy/children", child)
                             .await?;
+                        Ok(TrustAnchorClientApiResponse::ParentResponse(response))
+                    }
+                    ProxyCommandDetails::ChildResponse(child) => {
+                        let uri_path = format!("api/v1/ta/proxy/children/{}/parent_response.json", child);
+                        let response = client.get_json(&uri_path).await?;
                         Ok(TrustAnchorClientApiResponse::ParentResponse(response))
                     }
                 }
