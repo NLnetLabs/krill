@@ -135,6 +135,7 @@ pub enum ProxyCommandDetails {
     SignerAdd(TrustAnchorSignerInfo),
     SignerMakeRequest,
     SignerShowRequest,
+    SignerProcessResponse(TrustAnchorSignerResponse),
     ChildAdd(AddChildRequest),
     ChildResponse(ChildHandle),
 }
@@ -248,6 +249,7 @@ impl TrustAnchorClientCommand {
         sub = Self::make_proxy_signer_init_sc(sub);
         sub = Self::make_proxy_signer_make_request_sc(sub);
         sub = Self::make_proxy_signer_show_request_sc(sub);
+        sub = Self::make_proxy_signer_process_response_sc(sub);
         app.subcommand(sub)
     }
 
@@ -278,6 +280,22 @@ impl TrustAnchorClientCommand {
         let mut sub = SubCommand::with_name("show-request")
             .about("Show the existing request for the signer (fails if there is no request).");
         sub = GeneralArgs::add_args(sub);
+        app.subcommand(sub)
+    }
+
+    fn make_proxy_signer_process_response_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("process-response")
+            .about("Process a response from the signer. Fails it did not match the open request.");
+
+        sub = GeneralArgs::add_args(sub);
+        sub = sub.arg(
+            Arg::with_name("response")
+                .long("response")
+                .short("r")
+                .value_name("file")
+                .help("Path to signer response (JSON)")
+                .required(true),
+        );
         app.subcommand(sub)
     }
 
@@ -533,6 +551,8 @@ impl TrustAnchorClientCommand {
             Self::parse_matches_proxy_signer_make_request(m)
         } else if let Some(m) = matches.subcommand_matches("show-request") {
             Self::parse_matches_proxy_signer_show_request(m)
+        } else if let Some(m) = matches.subcommand_matches("process-response") {
+            Self::parse_matches_proxy_signer_process_response(m)
         } else {
             Err(Error::UnrecognizedMatch)
         }
@@ -564,6 +584,16 @@ impl TrustAnchorClientCommand {
         Ok(TrustAnchorClientCommand::Proxy(ProxyCommand {
             general,
             details: ProxyCommandDetails::SignerShowRequest,
+        }))
+    }
+
+    fn parse_matches_proxy_signer_process_response(matches: &ArgMatches) -> Result<Self, Error> {
+        let general = GeneralArgs::from_matches(matches).map_err(|e| Error::Other(e.to_string()))?;
+        let response = Self::read_json(matches.value_of("response").unwrap())?;
+
+        Ok(TrustAnchorClientCommand::Proxy(ProxyCommand {
+            general,
+            details: ProxyCommandDetails::SignerProcessResponse(response),
         }))
     }
 
@@ -762,6 +792,9 @@ impl TrustAnchorClient {
                     ProxyCommandDetails::SignerShowRequest => {
                         let request = client.get_json("api/v1/ta/proxy/signer/request").await?;
                         Ok(TrustAnchorClientApiResponse::SignerRequest(request))
+                    }
+                    ProxyCommandDetails::SignerProcessResponse(response) => {
+                        client.post_json("api/v1/ta/proxy/signer/response", response).await
                     }
                     ProxyCommandDetails::ChildAdd(child) => {
                         let response = client
