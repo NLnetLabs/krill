@@ -34,7 +34,10 @@ use crate::{
     },
     daemon::{
         config::{LogType, SignerConfig, SignerReference, SignerType},
-        ta::{TrustAnchorHandle, TrustAnchorSigner, TrustAnchorSignerInfo, TrustAnchorSignerInitCommand},
+        ta::{
+            TrustAnchorHandle, TrustAnchorSigner, TrustAnchorSignerInfo, TrustAnchorSignerInitCommand,
+            TrustAnchorSignerRequest,
+        },
     },
 };
 
@@ -129,6 +132,7 @@ pub enum ProxyCommandDetails {
     RepoContact,
     RepoConfigure(ApiRepositoryContact),
     SignerAdd(TrustAnchorSignerInfo),
+    SignerMakeRequest,
     ChildAdd(AddChildRequest),
     ChildResponse(ChildHandle),
 }
@@ -239,6 +243,7 @@ impl TrustAnchorClientCommand {
     fn make_proxy_signer_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("signer").about("Manage interactions with the associated signer");
         sub = Self::make_proxy_signer_init_sc(sub);
+        sub = Self::make_proxy_signer_make_request_sc(sub);
         app.subcommand(sub)
     }
 
@@ -255,6 +260,13 @@ impl TrustAnchorClientCommand {
                 .required(true),
         );
 
+        app.subcommand(sub)
+    }
+
+    fn make_proxy_signer_make_request_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("make-request")
+            .about("Make a NEW request for the signer (fails if a request exists).");
+        sub = GeneralArgs::add_args(sub);
         app.subcommand(sub)
     }
 
@@ -488,6 +500,8 @@ impl TrustAnchorClientCommand {
     fn parse_matches_proxy_signer(matches: &ArgMatches) -> Result<Self, Error> {
         if let Some(m) = matches.subcommand_matches("init") {
             Self::parse_matches_proxy_signer_init(m)
+        } else if let Some(m) = matches.subcommand_matches("make-request") {
+            Self::parse_matches_proxy_signer_make_request(m)
         } else {
             Err(Error::UnrecognizedMatch)
         }
@@ -501,6 +515,15 @@ impl TrustAnchorClientCommand {
         Ok(TrustAnchorClientCommand::Proxy(ProxyCommand {
             general,
             details: ProxyCommandDetails::SignerAdd(info),
+        }))
+    }
+
+    fn parse_matches_proxy_signer_make_request(matches: &ArgMatches) -> Result<Self, Error> {
+        let general = GeneralArgs::from_matches(matches).map_err(|e| Error::Other(e.to_string()))?;
+
+        Ok(TrustAnchorClientCommand::Proxy(ProxyCommand {
+            general,
+            details: ProxyCommandDetails::SignerMakeRequest,
         }))
     }
 
@@ -676,6 +699,12 @@ impl TrustAnchorClient {
                         client.post_json("api/v1/ta/proxy/repo", repo_response).await
                     }
                     ProxyCommandDetails::SignerAdd(info) => client.post_json("api/v1/ta/proxy/signer/add", info).await,
+                    ProxyCommandDetails::SignerMakeRequest => {
+                        let request = client
+                            .post_empty_with_response("api/v1/ta/proxy/signer/request")
+                            .await?;
+                        Ok(TrustAnchorClientApiResponse::SignerRequest(request))
+                    }
                     ProxyCommandDetails::ChildAdd(child) => {
                         let response = client
                             .post_json_with_response("api/v1/ta/proxy/children", child)
@@ -708,6 +737,7 @@ pub enum TrustAnchorClientApiResponse {
     RepositoryContact(RepositoryContact),
     TrustAnchorProxySignerInfo(TrustAnchorSignerInfo),
     ParentResponse(idexchange::ParentResponse),
+    SignerRequest(TrustAnchorSignerRequest),
     Empty,
 }
 
@@ -722,6 +752,7 @@ impl TrustAnchorClientApiResponse {
                 TrustAnchorClientApiResponse::RepositoryContact(contact) => contact.report(fmt).map(Some),
                 TrustAnchorClientApiResponse::TrustAnchorProxySignerInfo(info) => info.report(fmt).map(Some),
                 TrustAnchorClientApiResponse::ParentResponse(response) => response.report(fmt).map(Some),
+                TrustAnchorClientApiResponse::SignerRequest(request) => request.report(fmt).map(Some),
                 TrustAnchorClientApiResponse::Empty => Ok(None),
             }
         }
@@ -750,11 +781,19 @@ impl ProxyClient {
 
         client
     }
+
     async fn post_empty(&self, path: &str) -> Result<TrustAnchorClientApiResponse, Error> {
         let uri = self.resolve_uri(path);
         httpclient::post_empty(&uri, Some(&self.token))
             .await
             .map(|_| TrustAnchorClientApiResponse::Empty)
+            .map_err(Error::HttpClientError)
+    }
+
+    async fn post_empty_with_response<T: DeserializeOwned>(&self, path: &str) -> Result<T, Error> {
+        let uri = self.resolve_uri(path);
+        httpclient::post_empty_with_response(&uri, Some(&self.token))
+            .await
             .map_err(Error::HttpClientError)
     }
 

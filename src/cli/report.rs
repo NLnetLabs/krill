@@ -15,7 +15,10 @@ use crate::{
         },
         bgp::{BgpAnalysisAdvice, BgpAnalysisReport, BgpAnalysisSuggestion},
     },
-    daemon::{ca::ResourceTaggedAttestation, ta::TrustAnchorSignerInfo},
+    daemon::{
+        ca::ResourceTaggedAttestation,
+        ta::{TrustAnchorSignerInfo, TrustAnchorSignerRequest},
+    },
     pubd::RepoStats,
 };
 
@@ -248,3 +251,4 @@ impl Report for RtaList {}
 impl Report for RtaPrepResponse {}
 
 impl Report for TrustAnchorSignerInfo {}
+impl Report for TrustAnchorSignerRequest {}

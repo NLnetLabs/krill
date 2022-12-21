@@ -390,6 +390,33 @@ pub struct TrustAnchorSignerRequest {
     pub child_requests: Vec<TrustAnchorChildRequests>,
 }
 
+impl fmt::Display for TrustAnchorSignerRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "-------------------------------")?;
+        writeln!(f, "nonce: {}", self.nonce)?;
+        writeln!(f, "-------------------------------")?;
+        writeln!(f)?;
+
+        for request in &self.child_requests {
+            writeln!(f, "-------------------------------")?;
+            writeln!(f, "          child request")?;
+            writeln!(f, "-------------------------------")?;
+            writeln!(f, "child:         {}", request.child)?;
+            writeln!(f, "entitlements:  {}", request.resources)?;
+            for (key, child_req) in &request.requests {
+                match child_req {
+                    ProvisioningRequest::Issuance(_) => writeln!(f, "key:           {}    (re-)issue", key)?,
+                    ProvisioningRequest::Revocation(_) => writeln!(f, "key:           {}    revoke", key)?,
+                }
+            }
+            writeln!(f)?;
+        }
+        writeln!(f, "NOTE: Use the JSON output for the signer.")?;
+
+        Ok(())
+    }
+}
+
 //------------ TrustAnchorChildRequests ------------------------------------
 
 /// Requests for Trust Anchor Child.
