@@ -32,7 +32,7 @@ use crate::{
     },
     daemon::{
         config::{LogType, SignerConfig, SignerReference, SignerType},
-        ta::{TrustAnchorHandle, TrustAnchorProxySignerInfo, TrustAnchorSigner, TrustAnchorSignerInitCommand},
+        ta::{TrustAnchorHandle, TrustAnchorSigner, TrustAnchorSignerInfo, TrustAnchorSignerInitCommand},
     },
 };
 
@@ -97,6 +97,7 @@ impl From<AggregateStoreError> for Error {
 //------------------------ Client Commands --------------------------------------
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum TrustAnchorClientCommand {
     Proxy(ProxyCommand),
     Signer(SignerCommand),
@@ -118,12 +119,14 @@ pub struct ProxyCommand {
 }
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum ProxyCommandDetails {
     Init,
     Id,
     RepoRequest,
     RepoContact,
     RepoConfigure(ApiRepositoryContact),
+    SignerAdd(TrustAnchorSignerInfo),
 }
 
 #[derive(Debug)]
@@ -134,6 +137,7 @@ pub struct SignerCommand {
 }
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum SignerCommandDetails {
     Init(SignerInitInfo),
     ShowInfo,
@@ -174,6 +178,7 @@ impl TrustAnchorClientCommand {
         sub = Self::make_proxy_init_sc(sub);
         sub = Self::make_proxy_id_sc(sub);
         sub = Self::make_proxy_repo_sc(sub);
+        sub = Self::make_proxy_signer_sc(sub);
 
         app.subcommand(sub)
     }
@@ -220,6 +225,28 @@ impl TrustAnchorClientCommand {
                 .long("response")
                 .short("r")
                 .help("The location of the RFC 8183 Publisher Response XML file")
+                .required(true),
+        );
+
+        app.subcommand(sub)
+    }
+
+    fn make_proxy_signer_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("signer").about("Manage interactions with the associated signer");
+        sub = Self::make_proxy_signer_init_sc(sub);
+        app.subcommand(sub)
+    }
+
+    fn make_proxy_signer_init_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("init").about("Initialise signer association");
+
+        sub = GeneralArgs::add_args(sub);
+        sub = sub.arg(
+            Arg::with_name("info")
+                .value_name("info")
+                .long("info")
+                .short("i")
+                .help("The Trust Anchor Signer info json (as 'signer show')")
                 .required(true),
         );
 
@@ -329,6 +356,8 @@ impl TrustAnchorClientCommand {
             Self::parse_matches_proxy_init(m)
         } else if let Some(m) = matches.subcommand_matches("repo") {
             Self::parse_matches_proxy_repo(m)
+        } else if let Some(m) = matches.subcommand_matches("signer") {
+            Self::parse_matches_proxy_signer(m)
         } else {
             Err(Error::UnrecognizedMatch)
         }
@@ -385,6 +414,25 @@ impl TrustAnchorClientCommand {
         let details = ProxyCommandDetails::RepoConfigure(ApiRepositoryContact::new(response));
 
         Ok(TrustAnchorClientCommand::Proxy(ProxyCommand { general, details }))
+    }
+
+    fn parse_matches_proxy_signer(matches: &ArgMatches) -> Result<Self, Error> {
+        if let Some(m) = matches.subcommand_matches("init") {
+            Self::parse_matches_proxy_signer_init(m)
+        } else {
+            Err(Error::UnrecognizedMatch)
+        }
+    }
+
+    fn parse_matches_proxy_signer_init(matches: &ArgMatches) -> Result<Self, Error> {
+        let general = GeneralArgs::from_matches(matches).map_err(|e| Error::Other(e.to_string()))?;
+
+        let info = Self::read_json(matches.value_of("info").unwrap())?;
+
+        Ok(TrustAnchorClientCommand::Proxy(ProxyCommand {
+            general,
+            details: ProxyCommandDetails::SignerAdd(info),
+        }))
     }
 
     fn read_file_arg(path_str: &str) -> Result<Bytes, Error> {
@@ -511,6 +559,7 @@ impl TrustAnchorClient {
                     ProxyCommandDetails::RepoConfigure(repo_response) => {
                         client.post_json("api/v1/ta/proxy/repo", repo_response).await
                     }
+                    ProxyCommandDetails::SignerAdd(info) => client.post_json("api/v1/ta/proxy/signer/add", info).await,
                 }
             }
             TrustAnchorClientCommand::Signer(signer_command) => {
@@ -530,7 +579,7 @@ pub enum TrustAnchorClientApiResponse {
     IdCert(IdCertInfo),
     PublisherRequest(idexchange::PublisherRequest),
     RepositoryContact(RepositoryContact),
-    TrustAnchorProxySignerInfo(TrustAnchorProxySignerInfo),
+    TrustAnchorProxySignerInfo(TrustAnchorSignerInfo),
     Empty,
 }
 

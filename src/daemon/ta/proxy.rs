@@ -61,7 +61,7 @@ pub struct TrustAnchorProxy {
     id: IdCertInfo,
 
     // The associated signer. Needs to be added after initialisation.
-    signer: Option<TrustAnchorProxySignerInfo>,
+    signer: Option<TrustAnchorSignerInfo>,
 
     // The proxy is responsible for publishing all objects.
     repository: Option<RepositoryContact>,
@@ -115,7 +115,7 @@ pub enum TrustAnchorProxyEventDetails {
     RepositoryAdded(RepositoryContact),
 
     // Proxy -> Signer interactions
-    SignerAdded(TrustAnchorProxySignerInfo),
+    SignerAdded(TrustAnchorSignerInfo),
     SignerRequestMade(Nonce),
     SignerResponseReceived(TrustAnchorSignerResponse),
 
@@ -172,7 +172,7 @@ pub enum TrustAnchorProxyCommandDetails {
     AddRepository(RepositoryContact),
 
     // Proxy -> Signer interactions
-    AddSigner(TrustAnchorProxySignerInfo),
+    AddSigner(TrustAnchorSignerInfo),
     MakeSignerRequest,
     ProcessSignerResponse(TrustAnchorSignerResponse),
 
@@ -274,7 +274,7 @@ impl TrustAnchorProxyCommand {
         )
     }
 
-    pub fn add_signer(id: &TrustAnchorHandle, signer: TrustAnchorProxySignerInfo, actor: &Actor) -> Self {
+    pub fn add_signer(id: &TrustAnchorHandle, signer: TrustAnchorSignerInfo, actor: &Actor) -> Self {
         TrustAnchorProxyCommand::new(id, None, TrustAnchorProxyCommandDetails::AddSigner(signer), actor)
     }
 

@@ -248,8 +248,8 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
 }
 
 impl TrustAnchorSigner {
-    pub fn get_signer_info(&self) -> TrustAnchorProxySignerInfo {
-        TrustAnchorProxySignerInfo {
+    pub fn get_signer_info(&self) -> TrustAnchorSignerInfo {
+        TrustAnchorSignerInfo {
             id: self.id.clone(),
             objects: self.objects.clone(),
             ta_cert_details: self.ta_cert_details.clone(),

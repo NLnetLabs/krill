@@ -291,10 +291,10 @@ impl std::fmt::Display for TrustAnchorLocator {
     }
 }
 
-//------------ TrustAnchorProxySignerInfo ----------------------------------
+//------------ TrustAnchorSignerInfo ---------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct TrustAnchorProxySignerInfo {
+pub struct TrustAnchorSignerInfo {
     // The ID of the associated signer.
     pub id: IdCertInfo,
     // Trust Anchor objects to be published
@@ -303,7 +303,7 @@ pub struct TrustAnchorProxySignerInfo {
     pub ta_cert_details: TaCertDetails,
 }
 
-impl fmt::Display for TrustAnchorProxySignerInfo {
+impl fmt::Display for TrustAnchorSignerInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "-------------------------------------------------------")?;
         writeln!(f, "                 ID Certificate")?;

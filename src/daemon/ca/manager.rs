@@ -50,9 +50,9 @@ use crate::{
         config::Config,
         mq::{now, TaskQueue},
         ta::{
-            self, ta_handle, TrustAnchorProxy, TrustAnchorProxyCommand, TrustAnchorProxySignerInfo, TrustAnchorSigner,
-            TrustAnchorSignerCommand, TrustAnchorSignerInitCommand, TrustAnchorSignerRequest,
-            TrustAnchorSignerResponse, TA_NAME,
+            self, ta_handle, TrustAnchorProxy, TrustAnchorProxyCommand, TrustAnchorSigner, TrustAnchorSignerCommand,
+            TrustAnchorSignerInfo, TrustAnchorSignerInitCommand, TrustAnchorSignerRequest, TrustAnchorSignerResponse,
+            TA_NAME,
         },
     },
     pubd::RepositoryManager,
@@ -331,7 +331,7 @@ impl CaManager {
     /// Errors if:
     /// - there is no proxy
     /// - the proxy has a signer
-    pub async fn ta_proxy_signer_add(&self, info: TrustAnchorProxySignerInfo, actor: &Actor) -> KrillResult<()> {
+    pub async fn ta_proxy_signer_add(&self, info: TrustAnchorSignerInfo, actor: &Actor) -> KrillResult<()> {
         let add_signer_cmd = TrustAnchorProxyCommand::add_signer(&ta_handle(), info, actor);
         self.send_ta_proxy_command(add_signer_cmd).await?;
         Ok(())
