@@ -197,6 +197,25 @@ impl TrustAnchorObjects {
     }
 }
 
+impl fmt::Display for TrustAnchorObjects {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "-------------------------------------------------------")?;
+        writeln!(f, "                 Trust Anchor Objects")?;
+        writeln!(f, "-------------------------------------------------------")?;
+        writeln!(f)?;
+        writeln!(f, "Revision:    {}", self.revision.number())?;
+        writeln!(f, "Next Update: {}", self.revision.next_update().to_rfc3339())?;
+        writeln!(f)?;
+        writeln!(f, "Objects:",)?;
+        for publish in self.publish_elements().map_err(|_| fmt::Error)? {
+            writeln!(f, "{}", publish.uri())?;
+            writeln!(f, " ({})", publish.base64().to_hash())?;
+        }
+        writeln!(f)?;
+        writeln!(f, "-------------------------------------------------------")
+    }
+}
+
 //------------ TaCertDetails -------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -313,25 +332,8 @@ impl fmt::Display for TrustAnchorSignerInfo {
         writeln!(f)?;
         writeln!(f, "-------------------------------------------------------")?;
         writeln!(f)?;
+        writeln!(f, "{}", self.objects)?;
         writeln!(f)?;
-
-        writeln!(f, "-------------------------------------------------------")?;
-        writeln!(f, "                 Objects")?;
-        writeln!(f, "-------------------------------------------------------")?;
-        writeln!(f)?;
-        writeln!(f, "Revision:    {}", self.objects.revision().number())?;
-        writeln!(f, "Next Update: {}", self.objects.revision().next_update().to_rfc3339())?;
-        writeln!(f)?;
-        writeln!(f, "Objects:",)?;
-        for publish in self.objects.publish_elements().map_err(|_| fmt::Error)? {
-            writeln!(f, "{}", publish.uri())?;
-            writeln!(f, " ({})", publish.base64().to_hash())?;
-        }
-        writeln!(f)?;
-        writeln!(f, "-------------------------------------------------------")?;
-        writeln!(f)?;
-        writeln!(f)?;
-
         writeln!(f, "-------------------------------------------------------")?;
         writeln!(f, "                          TAL")?;
         writeln!(f, "-------------------------------------------------------")?;
@@ -434,6 +436,34 @@ pub struct TrustAnchorSignerResponse {
     pub nonce: Nonce, // should match the request (replay protection)
     pub objects: TrustAnchorObjects,
     pub child_responses: HashMap<ChildHandle, HashMap<KeyIdentifier, ProvisioningResponse>>,
+}
+
+impl fmt::Display for TrustAnchorSignerResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "-------------------------------")?;
+        writeln!(f, "nonce: {}", self.nonce)?;
+        writeln!(f, "-------------------------------")?;
+        writeln!(f)?;
+        writeln!(f, "{}", self.objects)?;
+        writeln!(f)?;
+        for (child, responses) in &self.child_responses {
+            writeln!(f, "-------------------------------")?;
+            writeln!(f, "          child response")?;
+            writeln!(f, "-------------------------------")?;
+            writeln!(f, "child:         {}", child)?;
+            for (key, response) in responses.iter() {
+                match response {
+                    ProvisioningResponse::Error => writeln!(f, "key:           {}    ERROR", key)?,
+                    ProvisioningResponse::Issuance(_) => writeln!(f, "key:           {}    issued", key)?,
+                    ProvisioningResponse::Revocation(_) => writeln!(f, "key:           {}    revoked", key)?,
+                }
+            }
+        }
+        writeln!(f)?;
+        writeln!(f, "NOTE: use the json format for the proxy.")?;
+
+        Ok(())
+    }
 }
 
 //------------ TrustAnchorChild --------------------------------------------

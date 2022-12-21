@@ -466,4 +466,8 @@ impl TrustAnchorSigner {
     pub fn get_exchange(&self, nonce: &Nonce) -> Option<&TrustAnchorProxySignerExchange> {
         self.exchanges.iter().find(|ex| &ex.request.nonce == nonce)
     }
+
+    pub fn get_latest_exchange(&self) -> Option<&TrustAnchorProxySignerExchange> {
+        self.exchanges.last()
+    }
 }

@@ -23,6 +23,7 @@ use serde::de::DeserializeOwned;
 use crate::{
     cli::report::Report,
     commons::{
+        actor::Actor,
         api::{AddChildRequest, ApiRepositoryContact, CertAuthInfo, IdCertInfo, RepositoryContact, Token},
         crypto::{KrillSigner, KrillSignerBuilder, OpenSslSignerConfig},
         error::Error as KrillError,
@@ -35,8 +36,8 @@ use crate::{
     daemon::{
         config::{LogType, SignerConfig, SignerReference, SignerType},
         ta::{
-            TrustAnchorHandle, TrustAnchorSigner, TrustAnchorSignerInfo, TrustAnchorSignerInitCommand,
-            TrustAnchorSignerRequest,
+            TrustAnchorHandle, TrustAnchorSigner, TrustAnchorSignerCommand, TrustAnchorSignerInfo,
+            TrustAnchorSignerInitCommand, TrustAnchorSignerRequest, TrustAnchorSignerResponse,
         },
     },
 };
@@ -150,6 +151,7 @@ pub struct SignerCommand {
 pub enum SignerCommandDetails {
     Init(SignerInitInfo),
     ShowInfo,
+    ProcessRequest(TrustAnchorSignerRequest),
 }
 
 #[derive(Debug)]
@@ -338,6 +340,7 @@ impl TrustAnchorClientCommand {
 
         sub = Self::make_signer_init_sc(sub);
         sub = Self::make_signer_show_sc(sub);
+        sub = Self::make_signer_process_sc(sub);
 
         app.subcommand(sub)
     }
@@ -385,6 +388,23 @@ impl TrustAnchorClientCommand {
         let mut sub = SubCommand::with_name("show").about("Show the signer info");
         sub = Self::add_config_arg(sub);
         sub = Self::add_format_arg(sub);
+        app.subcommand(sub)
+    }
+
+    fn make_signer_process_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("process").about("Process a proxy request");
+        sub = Self::add_config_arg(sub);
+        sub = Self::add_format_arg(sub);
+
+        sub = sub.arg(
+            Arg::with_name("request")
+                .long("request")
+                .short("r")
+                .value_name("file")
+                .help("Path to TA Proxy request file (JSON)")
+                .required(true),
+        );
+
         app.subcommand(sub)
     }
 
@@ -612,6 +632,8 @@ impl TrustAnchorClientCommand {
             Self::parse_matches_signer_init(m)
         } else if let Some(m) = matches.subcommand_matches("show") {
             Self::parse_matches_signer_show(m)
+        } else if let Some(m) = matches.subcommand_matches("process") {
+            Self::parse_matches_signer_process(m)
         } else {
             Err(Error::UnrecognizedMatch)
         }
@@ -669,6 +691,18 @@ impl TrustAnchorClientCommand {
             config,
             format,
             details: SignerCommandDetails::ShowInfo,
+        }))
+    }
+
+    fn parse_matches_signer_process(matches: &ArgMatches) -> Result<Self, Error> {
+        let config = Self::parse_config(matches)?;
+        let format = Self::parse_format(matches)?;
+        let request = Self::read_json(matches.value_of("request").unwrap())?;
+
+        Ok(TrustAnchorClientCommand::Signer(SignerCommand {
+            config,
+            format,
+            details: SignerCommandDetails::ProcessRequest(request),
         }))
     }
 
@@ -748,6 +782,7 @@ impl TrustAnchorClient {
                 match signer_command.details {
                     SignerCommandDetails::Init(info) => signer_manager.init(info),
                     SignerCommandDetails::ShowInfo => signer_manager.show(),
+                    SignerCommandDetails::ProcessRequest(request) => signer_manager.process(request),
                 }
             }
         }
@@ -762,6 +797,7 @@ pub enum TrustAnchorClientApiResponse {
     TrustAnchorProxySignerInfo(TrustAnchorSignerInfo),
     ParentResponse(idexchange::ParentResponse),
     SignerRequest(TrustAnchorSignerRequest),
+    SignerResponse(TrustAnchorSignerResponse),
     Empty,
 }
 
@@ -777,6 +813,7 @@ impl TrustAnchorClientApiResponse {
                 TrustAnchorClientApiResponse::TrustAnchorProxySignerInfo(info) => info.report(fmt).map(Some),
                 TrustAnchorClientApiResponse::ParentResponse(response) => response.report(fmt).map(Some),
                 TrustAnchorClientApiResponse::SignerRequest(request) => request.report(fmt).map(Some),
+                TrustAnchorClientApiResponse::SignerResponse(response) => response.report(fmt).map(Some),
                 TrustAnchorClientApiResponse::Empty => Ok(None),
             }
         }
@@ -858,6 +895,7 @@ struct TrustAnchorSignerManager {
     store: AggregateStore<TrustAnchorSigner>,
     ta_handle: TrustAnchorHandle,
     signer: Arc<KrillSigner>,
+    actor: Actor,
 }
 
 impl TrustAnchorSignerManager {
@@ -865,11 +903,13 @@ impl TrustAnchorSignerManager {
         let store = AggregateStore::disk(&config.data_dir, "signer").map_err(KrillError::AggregateStoreError)?;
         let ta_handle = TrustAnchorHandle::new("ta".into());
         let signer = config.signer()?;
+        let actor = Actor::krillta();
 
         Ok(TrustAnchorSignerManager {
             store,
             ta_handle,
             signer,
+            actor,
         })
     }
 
@@ -897,6 +937,22 @@ impl TrustAnchorSignerManager {
         let ta_signer = self.get_signer()?;
         let info = ta_signer.get_signer_info();
         Ok(TrustAnchorClientApiResponse::TrustAnchorProxySignerInfo(info))
+    }
+
+    fn process(&self, request: TrustAnchorSignerRequest) -> Result<TrustAnchorClientApiResponse, Error> {
+        let cmd = TrustAnchorSignerCommand::make_process_request_command(
+            &self.ta_handle,
+            request,
+            self.signer.clone(),
+            &self.actor,
+        );
+        let ta_signer = self.store.command(cmd)?;
+
+        let exchange = ta_signer
+            .get_latest_exchange()
+            .ok_or_else(|| Error::other("Request successful, but no response found!?"))?;
+
+        Ok(TrustAnchorClientApiResponse::SignerResponse(exchange.response.clone()))
     }
 
     fn get_signer(&self) -> Result<Arc<TrustAnchorSigner>, Error> {

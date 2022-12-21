@@ -94,6 +94,7 @@ pub const OPENID_CONNECT_HTTP_CLIENT_TIMEOUT_SECS: u64 = 30;
 pub const NO_RESOURCE: NoResourceType = NoResourceType;
 
 pub const ACTOR_DEF_KRILL: ActorDef = ActorDef::system("krill", "admin");
+pub const ACTOR_DEF_KRILLTA: ActorDef = ActorDef::system("krillta", "admin");
 pub const ACTOR_DEF_ANON: ActorDef = ActorDef::anonymous();
 pub const ACTOR_DEF_ADMIN_TOKEN: ActorDef = ActorDef::system("admin-token", "admin");
 pub const ACTOR_DEF_TESTBED: ActorDef = ActorDef::system("testbed", "testbed");
