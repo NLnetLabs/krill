@@ -1,6 +1,9 @@
 //! Common types used in the communication (API) between the Proxy and Signer
 
-use std::{collections::HashMap, fmt::Debug};
+use std::{
+    collections::HashMap,
+    fmt::{self, Debug},
+};
 
 use rpki::{
     ca::{
@@ -298,6 +301,47 @@ pub struct TrustAnchorProxySignerInfo {
     pub objects: TrustAnchorObjects,
     // The TA certificate and TAL
     pub ta_cert_details: TaCertDetails,
+}
+
+impl fmt::Display for TrustAnchorProxySignerInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "-------------------------------------------------------")?;
+        writeln!(f, "                 ID Certificate")?;
+        writeln!(f, "-------------------------------------------------------")?;
+        writeln!(f)?;
+        writeln!(f, "{}", self.id)?;
+        writeln!(f)?;
+        writeln!(f, "-------------------------------------------------------")?;
+        writeln!(f)?;
+        writeln!(f)?;
+
+        writeln!(f, "-------------------------------------------------------")?;
+        writeln!(f, "                 Objects")?;
+        writeln!(f, "-------------------------------------------------------")?;
+        writeln!(f)?;
+        writeln!(f, "Revision:    {}", self.objects.revision().number())?;
+        writeln!(f, "Next Update: {}", self.objects.revision().next_update().to_rfc3339())?;
+        writeln!(f)?;
+        writeln!(f, "Objects:",)?;
+        for publish in self.objects.publish_elements().map_err(|_| fmt::Error)? {
+            writeln!(f, "{}", publish.uri())?;
+            writeln!(f, " ({})", publish.base64().to_hash())?;
+        }
+        writeln!(f)?;
+        writeln!(f, "-------------------------------------------------------")?;
+        writeln!(f)?;
+        writeln!(f)?;
+
+        writeln!(f, "-------------------------------------------------------")?;
+        writeln!(f, "                          TAL")?;
+        writeln!(f, "-------------------------------------------------------")?;
+        writeln!(f)?;
+        writeln!(f, "{}", self.ta_cert_details.tal())?;
+        writeln!(f)?;
+        writeln!(f, "-------------------------------------------------------")?;
+
+        Ok(())
+    }
 }
 
 //------------ Nonce -------------------------------------------------------

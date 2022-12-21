@@ -27,14 +27,19 @@ use crate::{
         eventsourcing::{AggregateStore, AggregateStoreError},
         util::{file, httpclient},
     },
-    constants::{KRILL_CLI_API_ENV, KRILL_TA_CLIENT_APP, KRILL_VERSION, OPENSSL_ONE_OFF_SIGNER_NAME},
+    constants::{
+        KRILL_CLI_API_ENV, KRILL_CLI_FORMAT_ENV, KRILL_TA_CLIENT_APP, KRILL_VERSION, OPENSSL_ONE_OFF_SIGNER_NAME,
+    },
     daemon::{
         config::{LogType, SignerConfig, SignerReference, SignerType},
-        ta::{TrustAnchorHandle, TrustAnchorSigner, TrustAnchorSignerInitCommand},
+        ta::{TrustAnchorHandle, TrustAnchorProxySignerInfo, TrustAnchorSigner, TrustAnchorSignerInitCommand},
     },
 };
 
-use super::{options::GeneralArgs, report};
+use super::{
+    options::GeneralArgs,
+    report::{self, ReportFormat},
+};
 
 //------------------------ Client Constants -------------------------------------
 const CONFIG_PATH: &str = "/etc/krillta.conf";
@@ -100,7 +105,7 @@ pub enum TrustAnchorClientCommand {
 impl TrustAnchorClientCommand {
     pub fn report_format(&self) -> report::ReportFormat {
         match self {
-            TrustAnchorClientCommand::Signer(_) => report::ReportFormat::None,
+            TrustAnchorClientCommand::Signer(command) => command.format,
             TrustAnchorClientCommand::Proxy(command) => command.general.format,
         }
     }
@@ -124,12 +129,14 @@ pub enum ProxyCommandDetails {
 #[derive(Debug)]
 pub struct SignerCommand {
     config: Config,
+    format: ReportFormat,
     details: SignerCommandDetails,
 }
 
 #[derive(Debug)]
 pub enum SignerCommandDetails {
     Init(SignerInitInfo),
+    ShowInfo,
 }
 
 #[derive(Debug)]
@@ -225,6 +232,7 @@ impl TrustAnchorClientCommand {
         let mut sub = SubCommand::with_name("signer").about("Manage the Trust Anchor Signer");
 
         sub = Self::make_signer_init_sc(sub);
+        sub = Self::make_signer_show_sc(sub);
 
         app.subcommand(sub)
     }
@@ -268,6 +276,13 @@ impl TrustAnchorClientCommand {
         app.subcommand(sub)
     }
 
+    fn make_signer_show_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("show").about("Show the signer info");
+        sub = Self::add_config_arg(sub);
+        sub = Self::add_format_arg(sub);
+        app.subcommand(sub)
+    }
+
     //-- Arguments
 
     fn add_config_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
@@ -277,6 +292,17 @@ impl TrustAnchorClientCommand {
                 .value_name("path")
                 .short("c")
                 .help("Path to config file. Defaults to: /etc/krillta.conf")
+                .required(false),
+        )
+    }
+
+    fn add_format_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        app.arg(
+            Arg::with_name("format")
+                .long("format")
+                .value_name("type")
+                .short("f")
+                .help("Report format: none|json (default)|text. Or set env: KRILL_CLI_FORMAT")
                 .required(false),
         )
     }
@@ -377,6 +403,8 @@ impl TrustAnchorClientCommand {
     fn parse_matches_signer(matches: &ArgMatches) -> Result<Self, Error> {
         if let Some(m) = matches.subcommand_matches("init") {
             Self::parse_matches_signer_init(m)
+        } else if let Some(m) = matches.subcommand_matches("show") {
+            Self::parse_matches_signer_show(m)
         } else {
             Err(Error::UnrecognizedMatch)
         }
@@ -384,6 +412,7 @@ impl TrustAnchorClientCommand {
 
     fn parse_matches_signer_init(matches: &ArgMatches) -> Result<Self, Error> {
         let config = Self::parse_config(matches)?;
+        let format = ReportFormat::None;
 
         let proxy_id = Self::read_json(matches.value_of("proxy_id").unwrap())?;
 
@@ -418,12 +447,40 @@ impl TrustAnchorClientCommand {
         };
         let details = SignerCommandDetails::Init(info);
 
-        Ok(TrustAnchorClientCommand::Signer(SignerCommand { config, details }))
+        Ok(TrustAnchorClientCommand::Signer(SignerCommand {
+            config,
+            format,
+            details,
+        }))
+    }
+
+    fn parse_matches_signer_show(matches: &ArgMatches) -> Result<Self, Error> {
+        let config = Self::parse_config(matches)?;
+        let format = Self::parse_format(matches)?;
+
+        Ok(TrustAnchorClientCommand::Signer(SignerCommand {
+            config,
+            format,
+            details: SignerCommandDetails::ShowInfo,
+        }))
     }
 
     fn parse_config(matches: &ArgMatches) -> Result<Config, Error> {
         let config_path = matches.value_of("config").unwrap_or(CONFIG_PATH);
         Config::parse(config_path)
+    }
+
+    fn parse_format(matches: &ArgMatches) -> Result<ReportFormat, Error> {
+        let mut format = match env::var(KRILL_CLI_FORMAT_ENV) {
+            Ok(fmt_str) => Some(ReportFormat::from_str(&fmt_str)?),
+            Err(_) => None,
+        };
+
+        if let Some(fmt_str) = matches.value_of("format") {
+            format = Some(ReportFormat::from_str(fmt_str)?);
+        }
+
+        Ok(format.unwrap_or(ReportFormat::Json))
     }
 }
 
@@ -457,22 +514,23 @@ impl TrustAnchorClient {
                 }
             }
             TrustAnchorClientCommand::Signer(signer_command) => {
-                let signer_client = TrustAnchorSignerManager::create(signer_command.config)?;
+                let signer_manager = TrustAnchorSignerManager::create(signer_command.config)?;
 
                 match signer_command.details {
-                    SignerCommandDetails::Init(info) => signer_client.init(info)?,
+                    SignerCommandDetails::Init(info) => signer_manager.init(info),
+                    SignerCommandDetails::ShowInfo => signer_manager.show(),
                 }
-
-                Ok(TrustAnchorClientApiResponse::Empty)
             }
         }
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 pub enum TrustAnchorClientApiResponse {
     IdCert(IdCertInfo),
     PublisherRequest(idexchange::PublisherRequest),
     RepositoryContact(RepositoryContact),
+    TrustAnchorProxySignerInfo(TrustAnchorProxySignerInfo),
     Empty,
 }
 
@@ -485,6 +543,7 @@ impl TrustAnchorClientApiResponse {
                 TrustAnchorClientApiResponse::IdCert(id_cert) => id_cert.report(fmt).map(Some),
                 TrustAnchorClientApiResponse::PublisherRequest(pr) => pr.report(fmt).map(Some),
                 TrustAnchorClientApiResponse::RepositoryContact(contact) => contact.report(fmt).map(Some),
+                TrustAnchorClientApiResponse::TrustAnchorProxySignerInfo(info) => info.report(fmt).map(Some),
                 TrustAnchorClientApiResponse::Empty => Ok(None),
             }
         }
@@ -544,7 +603,6 @@ impl ProxyClient {
 //------------------------ TrustAnchorSignerManager -----------------------------
 
 struct TrustAnchorSignerManager {
-    config: Config,
     store: AggregateStore<TrustAnchorSigner>,
     ta_handle: TrustAnchorHandle,
     signer: Arc<KrillSigner>,
@@ -557,14 +615,13 @@ impl TrustAnchorSignerManager {
         let signer = config.signer()?;
 
         Ok(TrustAnchorSignerManager {
-            config,
             store,
             ta_handle,
             signer,
         })
     }
 
-    fn init(&self, info: SignerInitInfo) -> Result<(), Error> {
+    fn init(&self, info: SignerInitInfo) -> Result<TrustAnchorClientApiResponse, Error> {
         if self.store.has(&self.ta_handle)? {
             Err(Error::other("Trust Anchor Signer was already initialised."))
         } else {
@@ -579,7 +636,22 @@ impl TrustAnchorSignerManager {
 
             let signer_init_event = TrustAnchorSigner::create_init(signer_init_command)?;
             self.store.add(signer_init_event)?;
-            Ok(())
+
+            Ok(TrustAnchorClientApiResponse::Empty)
+        }
+    }
+
+    fn show(&self) -> Result<TrustAnchorClientApiResponse, Error> {
+        let ta_signer = self.get_signer()?;
+        let info = ta_signer.get_signer_info();
+        Ok(TrustAnchorClientApiResponse::TrustAnchorProxySignerInfo(info))
+    }
+
+    fn get_signer(&self) -> Result<Arc<TrustAnchorSigner>, Error> {
+        if self.store.has(&self.ta_handle)? {
+            self.store.get_latest(&self.ta_handle).map_err(Error::StorageError)
+        } else {
+            Err(Error::other("Trust Anchor Signer is not initialised."))
         }
     }
 }
