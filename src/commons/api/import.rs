@@ -11,7 +11,7 @@ use rpki::{
 };
 
 use crate::{
-    commons::api::PublicationServerUris,
+    commons::{api::PublicationServerUris, error::Error, KrillResult},
     daemon::{config, ta::ta_handle},
 };
 
@@ -21,10 +21,24 @@ use super::RoaConfiguration;
 /// set up when the import API is used.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Structure {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ta: Option<ImportTa>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub publication_server: Option<PublicationServerUris>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
+    pub cas: Vec<ImportCa>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ImportTa {
     pub ta_aia: uri::Rsync,
     pub ta_uri: uri::Https,
-    pub publication_server_uris: PublicationServerUris,
-    pub cas: Vec<ImportCa>,
+}
+
+impl ImportTa {
+    pub fn into_uris(self) -> (uri::Rsync, Vec<uri::Https>) {
+        (self.ta_aia, vec![self.ta_uri])
+    }
 }
 
 impl Structure {
@@ -35,9 +49,8 @@ impl Structure {
         cas: Vec<ImportCa>,
     ) -> Self {
         Structure {
-            ta_aia,
-            ta_uri,
-            publication_server_uris,
+            ta: Some(ImportTa { ta_aia, ta_uri }),
+            publication_server: Some(publication_server_uris),
             cas,
         }
     }
@@ -45,7 +58,7 @@ impl Structure {
     /// Check that all parents are valid for the CAs in this structure
     /// in the order in which they appear, and that the parent CAs have
     /// the resources for each child CA.
-    pub fn validate_ca_hierarchy(&self) -> Result<(), String> {
+    pub fn validate_ca_hierarchy(&self, mut existing_cas: HashMap<ParentHandle, ResourceSet>) -> KrillResult<()> {
         // Note we define the parent child relationship in the child only.
         // So, the child refers to one or more parents that should have already
         // been seen in the import structure.
@@ -57,34 +70,42 @@ impl Structure {
         // We will always have a TA, with ALL resources in this setup. This
         // TA is not mentioned in the CAs part of this structure. So, we
         // will mark it as implicitly seen.
-        let mut seen: HashMap<ParentHandle, ResourceSet> = HashMap::new();
         let ta_handle = ta_handle();
-        seen.insert(ta_handle.convert(), ResourceSet::all());
+        existing_cas.insert(ta_handle.convert(), ResourceSet::all());
+
         for ca in &self.cas {
             if ca.handle == ta_handle {
-                return Err(format!("CA name {} is reserved.", ta_handle));
+                return Err(Error::Custom(format!("CA name {} is reserved.", ta_handle)));
             }
+
+            if existing_cas.contains_key(&ca.handle.convert()) {
+                return Err(Error::Custom(format!(
+                    "CA with name {} already exists. Check import and server state!",
+                    ca.handle
+                )));
+            }
+
             let mut ca_resources = ResourceSet::empty();
             for ca_parent in &ca.parents {
-                if let Some(seen_parent_resources) = seen.get(ca_parent.handle()) {
+                if let Some(seen_parent_resources) = existing_cas.get(ca_parent.handle()) {
                     if seen_parent_resources.contains(&ca_parent.resources) {
                         ca_resources = ca_resources.union(&ca_parent.resources);
                     } else {
-                        return Err(format!(
+                        return Err(Error::Custom(format!(
                             "CA '{}' under parent '{}' claims resources not held by parent.",
                             ca.handle,
                             ca_parent.handle()
-                        ));
+                        )));
                     }
                 } else {
-                    return Err(format!(
+                    return Err(Error::Custom(format!(
                         "CA '{}' wants parent '{}', but this parent CA does not appear before this CA.",
                         ca.handle,
                         ca_parent.handle()
-                    ));
+                    )));
                 }
             }
-            seen.insert(ca.handle.convert(), ca_resources);
+            existing_cas.insert(ca.handle.convert(), ca_resources);
         }
         Ok(())
     }
@@ -157,6 +178,6 @@ mod tests {
         let json = include_str!("../../../test-resources/bulk-ca-import/structure.json");
 
         let structure: Structure = serde_json::from_str(json).unwrap();
-        assert!(structure.validate_ca_hierarchy().is_ok());
+        assert!(structure.validate_ca_hierarchy(HashMap::new()).is_ok());
     }
 }

@@ -561,14 +561,20 @@ impl KrillServer {
         Ok(res)
     }
 
-    //
     pub async fn cas_import(&self, structure: api::import::Structure) -> KrillResult<()> {
         let actor = Arc::new(self.system_actor().clone());
-        if !self.ca_list(&actor)?.cas().is_empty() || self.repo_manager.initialized()? {
-            Err(Error::custom("Import CAs is only permitted when Krill is empty."))
-        } else if let Err(e) = structure.validate_ca_hierarchy() {
-            Err(Error::Custom(e))
-        } else if !self.config.ta_proxy_enabled() {
+
+        // We need to know which CAs already exist. They should not be imported again,
+        // but can serve as parents.
+        let mut existing_cas = HashMap::new();
+        for ca in self.ca_list(&actor)?.cas() {
+            let parent_handle = ca.handle().convert();
+            let resources = self.ca_manager.get_ca(ca.handle()).await?.all_resources();
+            existing_cas.insert(parent_handle, resources);
+        }
+        structure.validate_ca_hierarchy(existing_cas)?;
+
+        if !self.config.ta_proxy_enabled() {
             Err(Error::custom(
                 "Import CAs is only possible when ta_support_enabled = true",
             ))
@@ -577,21 +583,20 @@ impl KrillServer {
                 "Import CAs is only possible when ta_signer_enabled = true",
             ))
         } else {
+            if let Some(publication_server_uris) = structure.publication_server.clone() {
+                info!("Initialising publication server");
+                self.repo_manager.init(publication_server_uris)?;
+            }
+
+            if let Some(import_ta) = structure.ta.clone() {
+                info!("Creating embedded Trust Anchor");
+                let (ta_aia, ta_uris) = import_ta.into_uris();
+                self.ca_manager
+                    .ta_init_fully_embedded(ta_aia, ta_uris, &self.repo_manager, &actor)
+                    .await?;
+            }
+
             info!("Bulk import {} CAs", structure.cas.len());
-
-            info!("Initialising publication server");
-            self.repo_manager.init(structure.publication_server_uris.clone())?;
-
-            info!("Creating embedded Trust Anchor");
-            self.ca_manager
-                .ta_init_fully_embedded(
-                    structure.ta_aia.clone(),
-                    vec![structure.ta_uri.clone()],
-                    &self.repo_manager,
-                    &actor,
-                )
-                .await?;
-
             // Set up each online TA child with local repo, do this in parallel.
             let mut import_fns = vec![];
             let service_uri = Arc::new(self.config.service_uri());
