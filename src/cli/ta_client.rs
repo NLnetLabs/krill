@@ -153,6 +153,7 @@ pub enum SignerCommandDetails {
     Init(SignerInitInfo),
     ShowInfo,
     ProcessRequest(TrustAnchorSignerRequest),
+    ShowLastResponse,
 }
 
 #[derive(Debug)]
@@ -359,6 +360,7 @@ impl TrustAnchorClientCommand {
         sub = Self::make_signer_init_sc(sub);
         sub = Self::make_signer_show_sc(sub);
         sub = Self::make_signer_process_sc(sub);
+        sub = Self::make_signer_last_sc(sub);
 
         app.subcommand(sub)
     }
@@ -423,6 +425,13 @@ impl TrustAnchorClientCommand {
                 .required(true),
         );
 
+        app.subcommand(sub)
+    }
+
+    fn make_signer_last_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("last").about("Show last response");
+        sub = Self::add_config_arg(sub);
+        sub = Self::add_format_arg(sub);
         app.subcommand(sub)
     }
 
@@ -664,6 +673,8 @@ impl TrustAnchorClientCommand {
             Self::parse_matches_signer_show(m)
         } else if let Some(m) = matches.subcommand_matches("process") {
             Self::parse_matches_signer_process(m)
+        } else if let Some(m) = matches.subcommand_matches("last") {
+            Self::parse_matches_signer_last_response(m)
         } else {
             Err(Error::UnrecognizedMatch)
         }
@@ -733,6 +744,17 @@ impl TrustAnchorClientCommand {
             config,
             format,
             details: SignerCommandDetails::ProcessRequest(request),
+        }))
+    }
+
+    fn parse_matches_signer_last_response(matches: &ArgMatches) -> Result<Self, Error> {
+        let config = Self::parse_config(matches)?;
+        let format = Self::parse_format(matches)?;
+
+        Ok(TrustAnchorClientCommand::Signer(SignerCommand {
+            config,
+            format,
+            details: SignerCommandDetails::ShowLastResponse,
         }))
     }
 
@@ -816,6 +838,7 @@ impl TrustAnchorClient {
                     SignerCommandDetails::Init(info) => signer_manager.init(info),
                     SignerCommandDetails::ShowInfo => signer_manager.show(),
                     SignerCommandDetails::ProcessRequest(request) => signer_manager.process(request),
+                    SignerCommandDetails::ShowLastResponse => signer_manager.show_last_response(),
                 }
             }
         }
@@ -979,13 +1002,16 @@ impl TrustAnchorSignerManager {
             self.signer.clone(),
             &self.actor,
         );
-        let ta_signer = self.store.command(cmd)?;
+        self.store.command(cmd)?;
 
-        let exchange = ta_signer
+        self.show_last_response()
+    }
+
+    fn show_last_response(&self) -> Result<TrustAnchorClientApiResponse, Error> {
+        self.get_signer()?
             .get_latest_exchange()
-            .ok_or_else(|| Error::other("Request successful, but no response found!?"))?;
-
-        Ok(TrustAnchorClientApiResponse::SignerResponse(exchange.response.clone()))
+            .map(|exchange| TrustAnchorClientApiResponse::SignerResponse(exchange.response.clone()))
+            .ok_or_else(|| Error::other("No response found."))
     }
 
     fn get_signer(&self) -> Result<Arc<TrustAnchorSigner>, Error> {
