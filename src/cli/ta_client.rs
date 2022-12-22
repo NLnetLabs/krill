@@ -36,8 +36,8 @@ use crate::{
     daemon::{
         config::{LogType, SignerConfig, SignerReference, SignerType},
         ta::{
-            TrustAnchorHandle, TrustAnchorSigner, TrustAnchorSignerCommand, TrustAnchorSignerInfo,
-            TrustAnchorSignerInitCommand, TrustAnchorSignerRequest, TrustAnchorSignerResponse,
+            TrustAnchorHandle, TrustAnchorProxySignerExchanges, TrustAnchorSigner, TrustAnchorSignerCommand,
+            TrustAnchorSignerInfo, TrustAnchorSignerInitCommand, TrustAnchorSignerRequest, TrustAnchorSignerResponse,
         },
     },
 };
@@ -154,6 +154,7 @@ pub enum SignerCommandDetails {
     ShowInfo,
     ProcessRequest(TrustAnchorSignerRequest),
     ShowLastResponse,
+    ShowExchanges,
 }
 
 #[derive(Debug)]
@@ -361,6 +362,7 @@ impl TrustAnchorClientCommand {
         sub = Self::make_signer_show_sc(sub);
         sub = Self::make_signer_process_sc(sub);
         sub = Self::make_signer_last_sc(sub);
+        sub = Self::make_signer_exchanges_sc(sub);
 
         app.subcommand(sub)
     }
@@ -430,6 +432,14 @@ impl TrustAnchorClientCommand {
 
     fn make_signer_last_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("last").about("Show last response");
+        sub = Self::add_config_arg(sub);
+        sub = Self::add_format_arg(sub);
+        app.subcommand(sub)
+    }
+
+    fn make_signer_exchanges_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("exchanges")
+            .about("Show full history of proxy signer exchanges. Text output shows summary.");
         sub = Self::add_config_arg(sub);
         sub = Self::add_format_arg(sub);
         app.subcommand(sub)
@@ -675,6 +685,8 @@ impl TrustAnchorClientCommand {
             Self::parse_matches_signer_process(m)
         } else if let Some(m) = matches.subcommand_matches("last") {
             Self::parse_matches_signer_last_response(m)
+        } else if let Some(m) = matches.subcommand_matches("exchanges") {
+            Self::parse_matches_signer_exchanges(m)
         } else {
             Err(Error::UnrecognizedMatch)
         }
@@ -755,6 +767,18 @@ impl TrustAnchorClientCommand {
             config,
             format,
             details: SignerCommandDetails::ShowLastResponse,
+        }))
+    }
+
+    fn parse_matches_signer_exchanges(matches: &ArgMatches) -> Result<Self, Error> {
+        let config = Self::parse_config(matches)?;
+        let format = Self::parse_format(matches)?;
+        let details = SignerCommandDetails::ShowExchanges;
+
+        Ok(TrustAnchorClientCommand::Signer(SignerCommand {
+            config,
+            format,
+            details,
         }))
     }
 
@@ -839,6 +863,7 @@ impl TrustAnchorClient {
                     SignerCommandDetails::ShowInfo => signer_manager.show(),
                     SignerCommandDetails::ProcessRequest(request) => signer_manager.process(request),
                     SignerCommandDetails::ShowLastResponse => signer_manager.show_last_response(),
+                    SignerCommandDetails::ShowExchanges => signer_manager.show_exchanges(),
                 }
             }
         }
@@ -854,6 +879,7 @@ pub enum TrustAnchorClientApiResponse {
     ParentResponse(idexchange::ParentResponse),
     SignerRequest(TrustAnchorSignerRequest),
     SignerResponse(TrustAnchorSignerResponse),
+    ProxySignerExchanges(TrustAnchorProxySignerExchanges),
     Empty,
 }
 
@@ -870,6 +896,7 @@ impl TrustAnchorClientApiResponse {
                 TrustAnchorClientApiResponse::ParentResponse(response) => response.report(fmt).map(Some),
                 TrustAnchorClientApiResponse::SignerRequest(request) => request.report(fmt).map(Some),
                 TrustAnchorClientApiResponse::SignerResponse(response) => response.report(fmt).map(Some),
+                TrustAnchorClientApiResponse::ProxySignerExchanges(exchanges) => exchanges.report(fmt).map(Some),
                 TrustAnchorClientApiResponse::Empty => Ok(None),
             }
         }
@@ -1012,6 +1039,20 @@ impl TrustAnchorSignerManager {
             .get_latest_exchange()
             .map(|exchange| TrustAnchorClientApiResponse::SignerResponse(exchange.response.clone()))
             .ok_or_else(|| Error::other("No response found."))
+    }
+
+    fn show_exchanges(&self) -> Result<TrustAnchorClientApiResponse, Error> {
+        let signer = self.get_signer()?;
+        // In this context it's okay to clone the exchanges.
+        // If we are afraid that this would become too expensive, then we will
+        // need to rethink the model where we return data in the enum that we
+        // use. We can't have references and lifetimes because the signer will
+        // be gone..
+        //
+        // But, again, in this context this should never be huge with exchanges
+        // happening every couple of months. So, it should all be fine.
+        let exchanges = signer.get_exchanges().clone();
+        Ok(TrustAnchorClientApiResponse::ProxySignerExchanges(exchanges))
     }
 
     fn get_signer(&self) -> Result<Arc<TrustAnchorSigner>, Error> {

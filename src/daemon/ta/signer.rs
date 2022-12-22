@@ -8,6 +8,7 @@ use super::*;
 
 use std::{collections::HashMap, convert::TryFrom, fmt, sync::Arc};
 
+use chrono::SecondsFormat;
 use rpki::{
     ca::{
         idexchange::{ChildHandle, RepoInfo},
@@ -56,14 +57,8 @@ pub struct TrustAnchorSigner {
     // Objects to be published under the TA certificate
     objects: TrustAnchorObjects,
 
-    // Signer Responses
-    //
-    // NOTE: We may want to trim this list in future in case this becomes
-    //       too large. In that case could only keep the responses for requests
-    //       that have not yet expired (when we wrap them in signed CMS) or
-    //       which are younger than 'X' days (we should keep the responses at
-    //       least long enough so we can show them).
-    exchanges: Vec<TrustAnchorProxySignerExchange>,
+    // Proxy Signer Exchanges
+    exchanges: TrustAnchorProxySignerExchanges,
 }
 
 //------------ TrustAnchorSigner: Commands and Events ----------------------
@@ -200,7 +195,7 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
             proxy_id: details.proxy_id,
             ta_cert_details: details.ta_cert_details,
             objects: details.objects,
-            exchanges: vec![],
+            exchanges: TrustAnchorProxySignerExchanges::default(),
         })
     }
 
@@ -224,7 +219,7 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
         match details {
             TrustAnchorSignerEventDetails::ProxySignerExchangeDone(exchange) => {
                 self.objects = exchange.response.objects.clone();
-                self.exchanges.push(exchange);
+                self.exchanges.0.push(exchange);
             }
         }
     }
@@ -462,12 +457,72 @@ impl TrustAnchorSigner {
         )])
     }
 
+    /// Get all exchanges
+    pub fn get_exchanges(&self) -> &TrustAnchorProxySignerExchanges {
+        &self.exchanges
+    }
+
     /// Get exchange for nonce
     pub fn get_exchange(&self, nonce: &Nonce) -> Option<&TrustAnchorProxySignerExchange> {
-        self.exchanges.iter().find(|ex| &ex.request.nonce == nonce)
+        self.exchanges.0.iter().find(|ex| &ex.request.nonce == nonce)
     }
 
     pub fn get_latest_exchange(&self) -> Option<&TrustAnchorProxySignerExchange> {
-        self.exchanges.last()
+        self.exchanges.0.last()
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+pub struct TrustAnchorProxySignerExchanges(Vec<TrustAnchorProxySignerExchange>);
+
+impl fmt::Display for TrustAnchorProxySignerExchanges {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for exchange in &self.0 {
+            let revision = exchange.response.objects.revision();
+
+            writeln!(
+                f,
+                "==================================================================================="
+            )?;
+            writeln!(f, "                  Session number:    {}", revision.number() - 1)?; // We don't count init mft
+            writeln!(
+                f,
+                "                  Session date:      {}",
+                exchange.time.to_rfc3339_opts(SecondsFormat::Secs, false)
+            )?;
+            writeln!(
+                f,
+                "                  Plan next before:  {}",
+                revision.next_update().to_rfc3339_opts(SecondsFormat::Secs, false)
+            )?;
+            writeln!(
+                f,
+                "==================================================================================="
+            )?;
+            writeln!(f)?;
+            if !exchange.response.child_responses.is_empty() {
+                writeln!(f, "   response |               key identifier             |  child ")?;
+                writeln!(f, "   --------------------------------------------------------------")?;
+
+                for (child, response) in &exchange.response.child_responses {
+                    for (key, res) in response.iter() {
+                        let res_type = match res {
+                            ProvisioningResponse::Issuance(_) => "issued  ",
+                            ProvisioningResponse::Revocation(_) => "revoked ",
+                            ProvisioningResponse::Error => "error   ",
+                        };
+                        writeln!(f, "   {} | {} | {}", res_type, key, child)?;
+                    }
+                }
+                writeln!(f)?;
+            }
+
+            for published in exchange.response.objects.publish_elements().unwrap() {
+                writeln!(f, "   {}", published.uri())?;
+            }
+
+            writeln!(f)?;
+        }
+        Ok(())
     }
 }
