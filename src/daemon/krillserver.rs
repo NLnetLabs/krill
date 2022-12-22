@@ -421,11 +421,8 @@ impl KrillServer {
     }
 
     pub async fn ta_cert_details(&self) -> KrillResult<TaCertDetails> {
-        self.ca_manager
-            .get_trust_anchor_proxy()
-            .await?
-            .get_ta_details()
-            .cloned()
+        let proxy = self.ca_manager.get_trust_anchor_proxy().await?;
+        Ok(proxy.get_ta_details()?.clone())
     }
 
     pub async fn trust_anchor_cert(&self) -> Option<ReceivedCert> {
