@@ -15,12 +15,11 @@ use rpki::{
     },
     crypto::{KeyIdentifier, PublicKey},
     repository::{
-        cert::{Cert, KeyUsage, Overclaim, TbsCert},
+        cert::Cert,
         resources::ResourceSet,
         rta::RtaBuilder,
-        x509::{Serial, Time, Validity},
+        x509::{Time, Validity},
     },
-    uri,
 };
 
 use crate::{
@@ -44,7 +43,7 @@ use crate::{
             RoaPayloadJsonMapKey, Routes, RtaContentRequest, RtaPrepareRequest, Rtas, SignedRta, StoredBgpSecCsr,
         },
         config::{Config, IssuanceTimingConfig},
-        ta::{ta_handle, TaCertDetails, TrustAnchorLocator},
+        ta::ta_handle,
     },
 };
 
@@ -416,7 +415,9 @@ impl Aggregate for CertAuth {
 
         match command.into_details() {
             // trust anchor
-            CmdDet::MakeTrustAnchor(uris, rsync_uri, signer) => self.trust_anchor_make(uris, rsync_uri, signer),
+            CmdDet::MakeTrustAnchor(_uris, _rsync_uri, _signer) => {
+                Err(Error::custom("Converting a CA into a TA is no longer supported"))
+            }
 
             // being a parent
             CmdDet::ChildAdd(child, id_cert, resources) => self.child_add(child, id_cert, resources),
@@ -595,76 +596,6 @@ impl CertAuth {
 impl CertAuth {
     pub fn repository_contact(&self) -> KrillResult<&RepositoryContact> {
         self.repository.as_ref().ok_or(Error::RepoNotSet)
-    }
-}
-
-/// # Being a Trust Anchor
-///
-impl CertAuth {
-    #[deprecated] // Functionality will move to Offline/OnlineTrustAnchor types
-    fn trust_anchor_make(
-        &self,
-        uris: Vec<uri::Https>,
-        rsync_uri: uri::Rsync,
-        signer: Arc<KrillSigner>,
-    ) -> KrillResult<Vec<CaEvt>> {
-        if !self.resources.is_empty() {
-            return Err(Error::custom("Cannot turn CA with resources into TA"));
-        }
-
-        let repo_info = self.repository_contact()?.repo_info();
-
-        let key = signer.create_key()?;
-
-        let resources = ResourceSet::all();
-
-        let cert = {
-            let serial: Serial = signer.random_serial()?;
-
-            let pub_key = signer.get_key_info(&key).map_err(Error::signer)?;
-            let name = pub_key.to_subject_name();
-
-            let mut cert = TbsCert::new(
-                serial,
-                name.clone(),
-                Validity::new(Time::five_minutes_ago(), Time::years_from_now(100)),
-                Some(name),
-                pub_key.clone(),
-                KeyUsage::Ca,
-                Overclaim::Refuse,
-            );
-
-            cert.set_basic_ca(Some(true));
-
-            let ns = ResourceClassName::default().to_string();
-
-            cert.set_ca_repository(Some(repo_info.ca_repository(&ns)));
-            cert.set_rpki_manifest(Some(
-                repo_info.resolve(&ns, ObjectName::mft_for_key(&pub_key.key_identifier()).as_ref()),
-            ));
-            cert.set_rpki_notify(repo_info.rpki_notify().cloned());
-
-            cert.set_as_resources(resources.to_as_resources());
-            cert.set_v4_resources(resources.to_ip_resources_v4());
-            cert.set_v6_resources(resources.to_ip_resources_v6());
-
-            signer.sign_cert(cert, &key)?
-        };
-
-        let tal = TrustAnchorLocator::new(uris, rsync_uri.clone(), cert.subject_public_key_info());
-
-        let rcvd_cert =
-            ReceivedCert::create(cert, rsync_uri, resources, RequestResourceLimit::default()).map_err(Error::custom)?;
-
-        let ta_cert_details = TaCertDetails::new(rcvd_cert, tal);
-
-        info!("Created Trust Anchor");
-
-        Ok(vec![StoredEvent::new(
-            &self.handle,
-            self.version,
-            CaEvtDet::TrustAnchorMade { ta_cert_details },
-        )])
     }
 }
 
