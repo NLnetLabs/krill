@@ -75,7 +75,19 @@ impl ConfigDefaults {
     }
 
     pub fn log_type() -> LogType {
-        LogType::File
+        match env::var(KRILL_ENV_LOG_TYPE) {
+            Ok(log_type) => match LogType::from_str(&log_type) {
+                Ok(log_type) => log_type,
+                Err(e) => {
+                    eprintln!(
+                        "Unrecognized value for log type in env var {}, {}",
+                        KRILL_ENV_LOG_TYPE, e
+                    );
+                    ::std::process::exit(1);
+                }
+            },
+            _ => LogType::File,
+        }
     }
 
     fn log_file() -> PathBuf {
@@ -1547,21 +1559,29 @@ pub enum LogType {
     Syslog,
 }
 
+impl FromStr for LogType {
+    type Err = String;
+
+    fn from_str(log_type: &str) -> Result<LogType, Self::Err> {
+        match log_type {
+            "stderr" => Ok(LogType::Stderr),
+            "file" => Ok(LogType::File),
+            "syslog" => Ok(LogType::Syslog),
+            _ => Err(format!(
+                "expected \"stderr\", \"file\" or \"syslog\", found : \"{}\"",
+                log_type
+            )),
+        }
+    }
+}
+
 impl<'de> Deserialize<'de> for LogType {
     fn deserialize<D>(d: D) -> Result<LogType, D::Error>
     where
         D: Deserializer<'de>,
     {
         let string = String::deserialize(d)?;
-        match string.as_str() {
-            "stderr" => Ok(LogType::Stderr),
-            "file" => Ok(LogType::File),
-            "syslog" => Ok(LogType::Syslog),
-            _ => Err(de::Error::custom(format!(
-                "expected \"stderr\" or \"file\", found : \"{}\"",
-                string
-            ))),
-        }
+        LogType::from_str(string.as_str()).map_err(|e| de::Error::custom(e))
     }
 }
 
