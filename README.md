@@ -4,7 +4,7 @@
 [![Documentation Status](https://readthedocs.org/projects/rpki/badge/?version=latest)](https://krill.docs.nlnetlabs.nl/)
 
 [![](https://img.shields.io/discord/818584154278199396?label=rpki%20on%20discord&logo=discord)](https://discord.gg/8dvKB5Ykhy)
-![Mastodon Follow](https://img.shields.io/mastodon/follow/109262826617293067?domain=https%3A%2F%2Ffosstodon.org&style=social)
+[![Mastodon Follow](https://img.shields.io/mastodon/follow/109262826617293067?domain=https%3A%2F%2Ffosstodon.org&style=social)](https://fosstodon.org/@nlnetlabs)
 [![](https://img.shields.io/twitter/follow/krillrpki.svg?label=Follow&style=social)](https://twitter.com/krillrpki)
 
 # Krill
