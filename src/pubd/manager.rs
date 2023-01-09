@@ -15,7 +15,7 @@ use rpki::{
 use crate::{
     commons::{
         actor::Actor,
-        api::{PublicationServerUris, PublisherDetails, RepoFilePurgeCriteria},
+        api::{PublicationServerUris, PublisherDetails, RepoFileDeleteCriteria},
         crypto::KrillSigner,
         error::Error,
         util::cmslogger::CmsLogger,
@@ -206,15 +206,15 @@ impl RepositoryManager {
     }
 
     /// Purge URI(s) from the server.
-    pub fn purge_matching_files(&self, criteria: RepoFilePurgeCriteria) -> KrillResult<()> {
+    pub fn delete_matching_files(&self, criteria: RepoFileDeleteCriteria) -> KrillResult<()> {
         let content = {
             let _lock = self.default_repo_lock.write().unwrap();
 
             // update RRDP first so we apply any staged deltas.
             self.content.update_rrdp(self.config.rrdp_updates_config)?;
 
-            // purge matching files using the updated snapshot and stage a delta if needed.
-            self.content.purge_matching_files(criteria.into())?;
+            // delete matching files using the updated snapshot and stage a delta if needed.
+            self.content.delete_matching_files(criteria.into())?;
 
             // update RRDP again to make the delta effective immediately.
             self.content.update_rrdp(self.config.rrdp_updates_config)?

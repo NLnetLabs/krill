@@ -23,7 +23,7 @@ use crate::{
             AspaProvidersUpdate, BgpSecCsrInfoList, BgpSecDefinitionUpdates, CaCommandDetails, CaRepoDetails,
             CertAuthInfo, CertAuthInit, CertAuthIssues, CertAuthList, CertAuthStats, ChildCaInfo,
             ChildrenConnectionStats, CommandHistory, CommandHistoryCriteria, ConfiguredRoa, ParentCaContact,
-            ParentCaReq, PublicationServerUris, PublisherDetails, ReceivedCert, RepoFilePurgeCriteria,
+            ParentCaReq, PublicationServerUris, PublisherDetails, ReceivedCert, RepoFileDeleteCriteria,
             RepositoryContact, RoaConfiguration, RoaConfigurationUpdates, RoaPayload, RtaList, RtaName,
             RtaPrepResponse, ServerInfo, TaCertDetails, Timestamp, UpdateChildRequest,
         },
@@ -338,8 +338,8 @@ impl KrillServer {
     }
 
     /// Removes a publisher, blows up if it didn't exist.
-    pub fn purge_matching_files(&self, purge_criteria: RepoFilePurgeCriteria) -> KrillEmptyResult {
-        self.repo_manager.purge_matching_files(purge_criteria)
+    pub fn delete_matching_files(&self, criteria: RepoFileDeleteCriteria) -> KrillEmptyResult {
+        self.repo_manager.delete_matching_files(criteria)
     }
 
     /// Returns a publisher.

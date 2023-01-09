@@ -318,7 +318,7 @@ impl CurrentObjects {
 
     /// Returns a copy of self where elements matching the given URI
     /// are removed if there are any matches. Otherwise, returns None.
-    pub fn purge(&self, uri: &uri::Rsync) -> Option<Self> {
+    pub fn with_matching_uri_deleted(&self, uri: &uri::Rsync) -> Option<Self> {
         let mut withdraws = vec![];
 
         // We first loop through the elements to avoid having to clone in case there is no work

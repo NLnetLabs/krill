@@ -701,7 +701,7 @@ impl fmt::Display for ObjectName {
 ///
 /// The "revocation_date" will be used for the "revocationDate" as described in
 /// section 5.1 of RFC 5280. The "expires" time is used to determine when a CRL
-/// entry can be purged (i.e. removed) because the entry is no longer relevant.
+/// entry can be deleted because it is no longer relevant.
 ///
 /// The "revocation_date" is set to the time that this object is first created,
 /// but it will be persisted for future use. In other words: there is no support
@@ -767,8 +767,8 @@ impl Revocations {
             .collect()
     }
 
-    /// Purges all expired revocations, and returns them.
-    pub fn purge(&mut self) -> Vec<Revocation> {
+    /// Removes all expired revocations, and returns them.
+    pub fn remove_expired(&mut self) -> Vec<Revocation> {
         let (relevant, expired) = self.0.iter().partition(|r| r.expires > Time::now());
         self.0 = relevant;
         expired

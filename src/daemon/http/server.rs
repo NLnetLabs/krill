@@ -1272,12 +1272,12 @@ async fn api_ca_sync(req: Request, path: &mut RequestPath, ca: CaHandle) -> Rout
 async fn api_publication_server(req: Request, path: &mut RequestPath) -> RoutingResult {
     match path.next() {
         Some("publishers") => api_publishers(req, path).await,
-        Some("purge") => match *req.method() {
+        Some("delete") => match *req.method() {
             Method::POST => {
                 let state = req.state.clone();
 
                 match req.json().await {
-                    Ok(criteria) => render_empty_res(state.purge_matching_files(criteria)),
+                    Ok(criteria) => render_empty_res(state.delete_matching_files(criteria)),
                     Err(e) => render_error(e),
                 }
             }

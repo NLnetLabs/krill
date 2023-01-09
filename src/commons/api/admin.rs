@@ -674,24 +674,24 @@ impl fmt::Display for ServerInfo {
     }
 }
 
-//------------ RepoFilePurgeCriteria -----------------------------------------
+//------------ RepoFileDeleteCriteria ----------------------------------------
 
 /// This is used to send criteria for purging matching files from the publication
 /// server. Currently only needs to support `base_uri` but it could be extended in
 /// future and therefore we introduce a type for it now.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub struct RepoFilePurgeCriteria {
+pub struct RepoFileDeleteCriteria {
     base_uri: uri::Rsync,
 }
 
-impl RepoFilePurgeCriteria {
+impl RepoFileDeleteCriteria {
     pub fn new(base_uri: uri::Rsync) -> Self {
-        RepoFilePurgeCriteria { base_uri }
+        RepoFileDeleteCriteria { base_uri }
     }
 }
 
-impl From<RepoFilePurgeCriteria> for uri::Rsync {
-    fn from(criteria: RepoFilePurgeCriteria) -> Self {
+impl From<RepoFileDeleteCriteria> for uri::Rsync {
+    fn from(criteria: RepoFileDeleteCriteria) -> Self {
         criteria.base_uri
     }
 }

@@ -514,8 +514,8 @@ impl KrillClient {
                 delete(&self.server, &self.token, &uri).await?;
                 Ok(ApiResponse::Empty)
             }
-            PubServerCommand::PurgeFiles(criteria) => {
-                let uri = "api/v1/pubd/purge";
+            PubServerCommand::DeleteFiles(criteria) => {
+                let uri = "api/v1/pubd/delete";
                 post_json(&self.server, &self.token, uri, criteria).await?;
                 Ok(ApiResponse::Empty)
             }

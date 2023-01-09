@@ -32,7 +32,7 @@ use crate::{
         api::{
             self, AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionFormatError, AspaProvidersUpdate,
             AuthorizationFmtError, BgpSecAsnKey, BgpSecDefinition, CertAuthInit, ParentCaReq, PublicationServerUris,
-            RepoFilePurgeCriteria, RoaConfiguration, RoaConfigurationUpdates, RoaPayload, RtaName, Token,
+            RepoFileDeleteCriteria, RoaConfiguration, RoaConfigurationUpdates, RoaPayload, RtaName, Token,
             UpdateChildRequest,
         },
         crypto::SignSupport,
@@ -1318,8 +1318,8 @@ impl Options {
         app.subcommand(sub)
     }
 
-    fn make_pubserver_purge_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("purge").about("Delete specific files from the Publication Server");
+    fn make_pubserver_delete_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("delete").about("Delete specific files from the Publication Server");
         sub = Options::add_general_args(sub);
 
         sub = sub.arg(
@@ -1339,7 +1339,7 @@ impl Options {
             .about("Manage your Publication Server (only needed if you run your own)");
 
         sub = Self::make_publishers_sc(sub);
-        sub = Self::make_pubserver_purge_sc(sub);
+        sub = Self::make_pubserver_delete_sc(sub);
         sub = Self::make_publication_server_sc(sub);
 
         app.subcommand(sub)
@@ -2422,23 +2422,23 @@ impl Options {
         }
     }
 
-    fn parse_matches_purge(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_delete(matches: &ArgMatches) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
 
         let base_uri_str = matches.value_of("base_uri").unwrap();
         let base_uri = uri::Rsync::from_str(base_uri_str).map_err(Error::UriError)?;
 
-        let criteria = RepoFilePurgeCriteria::new(base_uri);
+        let criteria = RepoFileDeleteCriteria::new(base_uri);
 
-        let command = Command::PubServer(PubServerCommand::PurgeFiles(criteria));
+        let command = Command::PubServer(PubServerCommand::DeleteFiles(criteria));
         Ok(Options::make(general_args, command))
     }
 
     fn parse_matches_pubserver(matches: &ArgMatches) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("publishers") {
             Self::parse_matches_publishers(m)
-        } else if let Some(m) = matches.subcommand_matches("purge") {
-            Self::parse_matches_purge(m)
+        } else if let Some(m) = matches.subcommand_matches("delete") {
+            Self::parse_matches_delete(m)
         } else if let Some(m) = matches.subcommand_matches("server") {
             Self::parse_matches_publication_server(m)
         } else {
@@ -2698,7 +2698,7 @@ pub enum PubServerCommand {
     AddPublisher(idexchange::PublisherRequest),
     ShowPublisher(PublisherHandle),
     RemovePublisher(PublisherHandle),
-    PurgeFiles(RepoFilePurgeCriteria),
+    DeleteFiles(RepoFileDeleteCriteria),
     RepositoryResponse(PublisherHandle),
     StalePublishers(i64),
     PublisherList,

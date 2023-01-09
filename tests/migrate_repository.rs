@@ -8,7 +8,7 @@ use rpki::ca::provisioning::ResourceClassName;
 use rpki::repository::resources::ResourceSet;
 
 use krill::{
-    commons::api::{ObjectName, RepoFilePurgeCriteria, RoaConfigurationUpdates, RoaPayload},
+    commons::api::{ObjectName, RepoFileDeleteCriteria, RoaConfigurationUpdates, RoaPayload},
     daemon::ca::ta_handle,
     test::*,
 };
@@ -90,9 +90,9 @@ async fn migrate_repository() {
             // Remove single file - let's remove the issued certificate
             let issued = expected_issued_cer(&testbed, &rcn_0).await;
             let issued_uri = rsync(&format!("rsync://localhost/repo/ta/0/{}", issued));
-            let criteria = RepoFilePurgeCriteria::new(issued_uri);
+            let criteria = RepoFileDeleteCriteria::new(issued_uri);
             krill_admin(krill::cli::options::Command::PubServer(
-                krill::cli::options::PubServerCommand::PurgeFiles(criteria),
+                krill::cli::options::PubServerCommand::DeleteFiles(criteria),
             ))
             .await;
             let expected_files = expected_mft_and_crl(&ta, &rcn_0).await;
@@ -108,9 +108,9 @@ async fn migrate_repository() {
 
         {
             // removing a directory should also work
-            let criteria = RepoFilePurgeCriteria::new(rsync("rsync://localhost/repo/ta/"));
+            let criteria = RepoFileDeleteCriteria::new(rsync("rsync://localhost/repo/ta/"));
             krill_admin(krill::cli::options::Command::PubServer(
-                krill::cli::options::PubServerCommand::PurgeFiles(criteria),
+                krill::cli::options::PubServerCommand::DeleteFiles(criteria),
             ))
             .await;
             assert!(will_publish_embedded("TA should have NO content now", &ta, &[]).await);

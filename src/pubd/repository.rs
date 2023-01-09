@@ -176,9 +176,9 @@ impl RepositoryContentProxy {
             .map(|content| content.rrdp.update_rrdp_needed(rrdp_updates_config))
     }
 
-    /// Purge matching files from the repository and publishers
-    pub fn purge_matching_files(&self, uri: uri::Rsync) -> KrillResult<Arc<RepositoryContent>> {
-        let command = RepositoryContentCommand::purge_matching_files(self.default_handle.clone(), uri);
+    /// Delete matching files from the repository and publishers
+    pub fn delete_matching_files(&self, uri: uri::Rsync) -> KrillResult<Arc<RepositoryContent>> {
+        let command = RepositoryContentCommand::delete_matching_files(self.default_handle.clone(), uri);
         self.store.send_command(command)
     }
 
@@ -235,7 +235,7 @@ pub enum RepositoryContentCommand {
         handle: MyHandle,
         publisher: PublisherHandle,
     },
-    PurgeMatchingFiles {
+    DeleteMatchingFiles {
         handle: MyHandle,
         uri: uri::Rsync,
     },
@@ -263,8 +263,8 @@ impl RepositoryContentCommand {
         RepositoryContentCommand::RemovePublisher { handle, publisher }
     }
 
-    pub fn purge_matching_files(handle: MyHandle, uri: uri::Rsync) -> Self {
-        RepositoryContentCommand::PurgeMatchingFiles { handle, uri }
+    pub fn delete_matching_files(handle: MyHandle, uri: uri::Rsync) -> Self {
+        RepositoryContentCommand::DeleteMatchingFiles { handle, uri }
     }
 
     pub fn publish(handle: MyHandle, publisher: PublisherHandle, delta: DeltaElements) -> Self {
@@ -290,7 +290,7 @@ impl WalCommand for RepositoryContentCommand {
             | RepositoryContentCommand::AddPublisher { handle, .. }
             | RepositoryContentCommand::RemovePublisher { handle, .. }
             | RepositoryContentCommand::Publish { handle, .. }
-            | RepositoryContentCommand::PurgeMatchingFiles { handle, .. }
+            | RepositoryContentCommand::DeleteMatchingFiles { handle, .. }
             | RepositoryContentCommand::CreateRrdpDelta { handle, .. } => handle,
         }
     }
@@ -311,7 +311,7 @@ impl fmt::Display for RepositoryContentCommand {
             RepositoryContentCommand::RemovePublisher { handle, publisher, .. } => {
                 write!(f, "remove publisher '{}' from repository {}", publisher, handle)
             }
-            RepositoryContentCommand::PurgeMatchingFiles { handle, uri, .. } => {
+            RepositoryContentCommand::DeleteMatchingFiles { handle, uri, .. } => {
                 write!(f, "remove content matching '{}' from repository {}", uri, handle)
             }
             RepositoryContentCommand::Publish { handle, publisher, .. } => {
@@ -457,7 +457,7 @@ impl WalSupport for RepositoryContent {
             } => self.create_rrdp_delta(rrdp_updates_config),
             RepositoryContentCommand::AddPublisher { publisher, .. } => self.add_publisher(publisher),
             RepositoryContentCommand::RemovePublisher { publisher, .. } => self.remove_publisher(publisher),
-            RepositoryContentCommand::PurgeMatchingFiles { uri, .. } => self.purge_files(uri),
+            RepositoryContentCommand::DeleteMatchingFiles { uri, .. } => self.delete_files(uri),
             RepositoryContentCommand::Publish { publisher, delta, .. } => self.publish(publisher, delta),
         }
     }
@@ -525,17 +525,18 @@ impl RepositoryContent {
     /// resulting from issue #981. Can also be used to remove specific content,
     /// although there is nothing stopping the publisher from publishing that
     /// content again.
-    fn purge_files(&self, uri: uri::Rsync) -> KrillResult<Vec<RepositoryContentChange>> {
+    fn delete_files(&self, del_uri: uri::Rsync) -> KrillResult<Vec<RepositoryContentChange>> {
         let mut res = vec![];
 
-        info!("Purging files matching '{}'", uri);
+        info!("Deleting files matching '{}'", del_uri);
 
         // withdraw objects if any
-        let uri_str = uri.as_str();
         let mut withdraws = vec![];
         for el in self.rrdp.snapshot.elements() {
-            // URI of el is exact match, or purge uri ends with / and el uri is more specific.
-            if el.uri() == &uri || (uri_str.ends_with('/') && el.uri().as_str().starts_with(uri_str)) {
+            // URI of el is exact match, or uri for delete ends with / and el uri is more specific.
+            if el.uri() == &del_uri
+                || (del_uri.as_str().ends_with('/') && el.uri().as_str().starts_with(del_uri.as_str()))
+            {
                 withdraws.push(el.as_withdraw())
             }
         }
@@ -547,11 +548,11 @@ impl RepositoryContent {
 
         // check all publishers and remove any matching objects
         for (publisher, current_objects) in &self.publishers {
-            if let Some(purged_objects) = current_objects.purge(&uri) {
+            if let Some(deleted_objects) = current_objects.with_matching_uri_deleted(&del_uri) {
                 info!("  removing matching files from publisher {}", publisher);
                 res.push(RepositoryContentChange::PublishedObjects {
                     publisher: publisher.clone(),
-                    current_objects: purged_objects,
+                    current_objects: deleted_objects,
                 });
             }
         }
