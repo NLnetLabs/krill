@@ -23,9 +23,9 @@ use crate::{
             AspaProvidersUpdate, BgpSecCsrInfoList, BgpSecDefinitionUpdates, CaCommandDetails, CaRepoDetails,
             CertAuthInfo, CertAuthInit, CertAuthIssues, CertAuthList, CertAuthStats, ChildCaInfo,
             ChildrenConnectionStats, CommandHistory, CommandHistoryCriteria, ConfiguredRoa, ParentCaContact,
-            ParentCaReq, PublicationServerUris, PublisherDetails, ReceivedCert, RepositoryContact, RoaConfiguration,
-            RoaConfigurationUpdates, RoaPayload, RtaList, RtaName, RtaPrepResponse, ServerInfo, TaCertDetails,
-            Timestamp, UpdateChildRequest,
+            ParentCaReq, PublicationServerUris, PublisherDetails, ReceivedCert, RepoFileDeleteCriteria,
+            RepositoryContact, RoaConfiguration, RoaConfigurationUpdates, RoaPayload, RtaList, RtaName,
+            RtaPrepResponse, ServerInfo, TaCertDetails, Timestamp, UpdateChildRequest,
         },
         bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion},
         crypto::KrillSignerBuilder,
@@ -511,6 +511,11 @@ impl KrillServer {
     /// Removes a publisher, blows up if it didn't exist.
     pub fn remove_publisher(&self, publisher: PublisherHandle, actor: &Actor) -> KrillEmptyResult {
         self.repo_manager.remove_publisher(publisher, actor)
+    }
+
+    /// Removes a publisher, blows up if it didn't exist.
+    pub fn delete_matching_files(&self, criteria: RepoFileDeleteCriteria) -> KrillEmptyResult {
+        self.repo_manager.delete_matching_files(criteria)
     }
 
     /// Returns a publisher.

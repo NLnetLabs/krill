@@ -270,6 +270,10 @@ pub async fn cas_refresh_all() {
     krill_admin(Command::Bulk(BulkCaCommand::Refresh)).await;
 }
 
+pub async fn cas_sync_all() {
+    krill_admin(Command::Bulk(BulkCaCommand::Sync)).await;
+}
+
 pub async fn cas_refresh_single(ca: &CaHandle) {
     krill_admin(Command::CertAuth(CaCommand::Refresh(ca.clone()))).await;
 }
