@@ -18,6 +18,8 @@ async fn benchmark() {
     start_krill(config).await;
 
     assert!(wait_for_nr_cas_under_testbed(cas).await);
+    // We expect all CAs, plus the testbed and the ta as publishers
+    wait_for_nr_cas_under_publication_server(cas + 2).await;
 
     let _ = fs::remove_dir_all(dir);
 }

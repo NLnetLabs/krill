@@ -153,25 +153,24 @@ impl KrillClient {
         match command {
             BulkCaCommand::Refresh => {
                 post_empty(&self.server, &self.token, "api/v1/bulk/cas/sync/parent").await?;
-                Ok(ApiResponse::Empty)
             }
             BulkCaCommand::Publish => {
                 post_empty(&self.server, &self.token, "api/v1/bulk/cas/publish").await?;
-                Ok(ApiResponse::Empty)
             }
             BulkCaCommand::ForcePublish => {
                 post_empty(&self.server, &self.token, "api/v1/bulk/cas/force_publish").await?;
-                Ok(ApiResponse::Empty)
             }
             BulkCaCommand::Sync => {
                 post_empty(&self.server, &self.token, "api/v1/bulk/cas/sync/repo").await?;
-                Ok(ApiResponse::Empty)
             }
             BulkCaCommand::Suspend => {
                 post_empty(&self.server, &self.token, "api/v1/bulk/cas/suspend").await?;
-                Ok(ApiResponse::Empty)
+            }
+            BulkCaCommand::Import(structure) => {
+                post_json(&self.server, &self.token, "api/v1/bulk/cas/import", structure).await?;
             }
         }
+        Ok(ApiResponse::Empty)
     }
 
     #[allow(clippy::cognitive_complexity)]
@@ -513,6 +512,11 @@ impl KrillClient {
             PubServerCommand::RemovePublisher(handle) => {
                 let uri = format!("api/v1/pubd/publishers/{}", handle);
                 delete(&self.server, &self.token, &uri).await?;
+                Ok(ApiResponse::Empty)
+            }
+            PubServerCommand::DeleteFiles(criteria) => {
+                let uri = "api/v1/pubd/delete";
+                post_json(&self.server, &self.token, uri, criteria).await?;
                 Ok(ApiResponse::Empty)
             }
             PubServerCommand::ShowPublisher(handle) => {

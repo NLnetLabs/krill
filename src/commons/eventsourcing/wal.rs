@@ -8,7 +8,7 @@ use std::{
 
 use rpki::ca::idexchange::MyHandle;
 
-use super::{KeyStoreKey, KeyValueError, KeyValueStore, Storable};
+use crate::commons::eventsourcing::{locks::HandleLocks, KeyStoreKey, KeyValueError, KeyValueStore, Storable};
 
 //------------ WalSupport ----------------------------------------------------
 
@@ -120,6 +120,7 @@ impl<T: WalSupport> WalSet<T> {
 pub struct WalStore<T: WalSupport> {
     kv: KeyValueStore,
     cache: RwLock<HashMap<MyHandle, Arc<T>>>,
+    locks: HandleLocks,
 }
 
 impl<T: WalSupport> WalStore<T> {
@@ -131,8 +132,9 @@ impl<T: WalSupport> WalStore<T> {
 
         let kv = KeyValueStore::disk(krill_data_dir, name_space)?;
         let cache = RwLock::new(HashMap::new());
+        let locks = HandleLocks::default();
 
-        Ok(WalStore { kv, cache })
+        Ok(WalStore { kv, cache, locks })
     }
 
     /// Warms up the store: caches all instances.
@@ -149,6 +151,9 @@ impl<T: WalSupport> WalStore<T> {
 
     /// Add a new entity for the given handle. Fails if the handle is in use.
     pub fn add(&self, handle: &MyHandle, instance: T) -> WalStoreResult<()> {
+        let handle_lock = self.locks.for_handle(handle.clone());
+        let _write = handle_lock.write();
+
         let instance = Arc::new(instance);
         let key = Self::key_for_snapshot(handle);
         self.kv.store_new(&key, &instance)?; // Fails if this key exists
@@ -168,6 +173,17 @@ impl<T: WalSupport> WalStore<T> {
     /// from the keystore. Then it will check whether there are any further
     /// changes.
     pub fn get_latest(&self, handle: &MyHandle) -> WalStoreResult<Arc<T>> {
+        let handle_lock = self.locks.for_handle(handle.clone());
+        let _read = handle_lock.read();
+
+        self.get_latest_no_lock(handle)
+    }
+
+    /// Get the latest revision without using a lock.
+    ///
+    /// Intended to be used by public functions which manage the locked read/write access
+    /// to this instance for this handle.
+    fn get_latest_no_lock(&self, handle: &MyHandle) -> WalStoreResult<Arc<T>> {
         let mut instance = match self.cache.read().unwrap().get(handle).cloned() {
             None => Arc::new(self.get_snapshot(handle)?),
             Some(instance) => instance,
@@ -209,8 +225,23 @@ impl<T: WalSupport> WalStore<T> {
         if !self.has(handle)? {
             Err(WalStoreError::Unknown(handle.clone()))
         } else {
-            self.cache.write().unwrap().remove(handle);
-            self.kv.drop_scope(handle.as_str())?;
+            {
+                // First get a lock and remove the object
+                let handle_lock = self.locks.for_handle(handle.clone());
+                let _write = handle_lock.write();
+                self.cache.write().unwrap().remove(handle);
+                self.kv.drop_scope(handle.as_str())?;
+            }
+
+            // Then drop the lock for it as well. We could not do this
+            // while holding the write lock.
+            //
+            // Note that the corresponding entity was removed from the key
+            // value store while we had a write lock for its handle.
+            // So, even if another concurrent thread would now try to update
+            // this same entity, that update would fail because the entity
+            // no longer exists.
+            self.locks.drop_handle(handle);
             Ok(())
         }
     }
@@ -246,7 +277,11 @@ impl<T: WalSupport> WalStore<T> {
     ///
     pub fn send_command(&self, command: T::Command) -> Result<Arc<T>, T::Error> {
         let handle = command.handle().clone();
-        let mut latest = self.get_latest(&handle)?;
+
+        let handle_lock = self.locks.for_handle(handle.clone());
+        let _write = handle_lock.write();
+
+        let mut latest = self.get_latest_no_lock(&handle)?;
 
         let summary = command.to_string();
         let revision = latest.revision();
@@ -285,6 +320,17 @@ impl<T: WalSupport> WalStore<T> {
     /// This is a separate function because serializing a large instance can
     /// be expensive.
     pub fn update_snapshot(&self, handle: &MyHandle, archive: bool) -> WalStoreResult<()> {
+        // Note that we do not need to keep a lock for the instance when we update the snapshot.
+        // This function just updates the latest snapshot in the key value store, and it removes
+        // or archives all write-ahead log ("wal-") changes predating the new snapshot.
+        //
+        // It is fine if another thread gets the entity for this handle and updates it while we
+        // do this. As it turns out, writing snapshots can be expensive for large objects, so
+        // we do not want block updates while we do this.
+        //
+        // This function is intended to be called in the background at regular (slow) intervals
+        // so any updates that were just missed will simply be folded in to the new snapshot when
+        // this function is called again.
         let latest = self.get_latest(handle)?;
         let key = Self::key_for_snapshot(handle);
         self.kv.store(&key, &latest)?;

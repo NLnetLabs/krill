@@ -24,14 +24,13 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 # Changelog
 
-## 0.12.0 RC3 'Crickets'
+## 0.13.0 RC1
 
-RC4 fixes another RFC 6492 interop issue (allow path len constraints).
+In this release we introduce an API to set up CAs, and signed objects such as
+ROAs in bulk. 
 
-RC3 improves parent synchronisation scheduling and logging.
 
-RC2 fixes an issue in RC1 where the repository content would not be upgraded
-properly.
+## 0.12.0 'Crickets'
 
 This release vastly reduces the CPU usage by Publication Servers for big RPKI
 repositories.
@@ -40,14 +39,14 @@ In addition to this we added a small feature, and fixed an interop issue:
 - Listen on IPv4+IPv6 #955
 - Fix rfc6492 interop (AKI format) #948
 
-Upgrade instructions for the RC release are here:
-https://krill.docs.nlnetlabs.nl/en/latest/upgrade.html#v0-12-0
+Upgrade instructions this release are here:
+https://krill.docs.nlnetlabs.nl/en/stable/upgrade.html#v0-12-0
 
 The overview of all issues for this release can be found here:
 https://github.com/NLnetLabs/krill/projects/23
 
-Full documentation for the RC version can be found here:
-https://krill.docs.nlnetlabs.nl/en/latest/
+Full documentation can be found here:
+https://krill.docs.nlnetlabs.nl/
 
 ## 0.11.0 'What about that ROA?'
 

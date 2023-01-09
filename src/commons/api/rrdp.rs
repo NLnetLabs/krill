@@ -208,6 +208,10 @@ pub struct WithdrawElement {
 }
 
 impl WithdrawElement {
+    pub fn new(uri: uri::Rsync, hash: Hash) -> Self {
+        WithdrawElement { uri, hash }
+    }
+
     pub fn uri(&self) -> &uri::Rsync {
         &self.uri
     }
@@ -265,8 +269,7 @@ impl CurrentObjects {
             if !jail.is_parent_of(p.uri()) {
                 return Err(PublicationDeltaError::outside(jail, p.uri()));
             }
-            let hash = p.base64().to_hash();
-            if self.0.contains_key(&hash) {
+            if self.0.values().any(|existing| existing.uri() == p.uri()) {
                 return Err(PublicationDeltaError::present(p.uri()));
             }
         }
@@ -310,6 +313,29 @@ impl CurrentObjects {
 
         for w in withdraws {
             self.0.remove(w.hash());
+        }
+    }
+
+    /// Returns a copy of self where elements matching the given URI
+    /// are removed if there are any matches. Otherwise, returns None.
+    pub fn with_matching_uri_deleted(&self, uri: &uri::Rsync) -> Option<Self> {
+        let mut withdraws = vec![];
+
+        // We first loop through the elements to avoid having to clone in case there is no work
+        for (hash, el) in &self.0 {
+            if el.uri() == uri || (uri.as_str().ends_with('/') && el.uri().as_str().starts_with(uri.as_str())) {
+                withdraws.push(hash)
+            }
+        }
+
+        if withdraws.is_empty() {
+            None
+        } else {
+            let mut copy_of_self = self.clone();
+            for hash in withdraws {
+                copy_of_self.0.remove(hash);
+            }
+            Some(copy_of_self)
         }
     }
 
@@ -729,5 +755,87 @@ impl DeltaData {
             })?;
 
         writer.done()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    use crate::test::*;
+
+    #[test]
+    fn current_objects_delta() {
+        let jail = rsync("rsync://example.krill.cloud/repo/publisher");
+        let file1_uri = rsync("rsync://example.krill.cloud/repo/publisher/file1.txt");
+
+        let file1_content = Base64::from_content(&[1]);
+        let file1_content_2 = Base64::from_content(&[1, 2]);
+        let file2_content = Base64::from_content(&[2]);
+
+        let mut objects = CurrentObjects::default();
+
+        let publish_file1 = DeltaElements {
+            publishes: vec![PublishElement::new(file1_content.clone(), file1_uri.clone())],
+            updates: vec![],
+            withdraws: vec![],
+        };
+
+        // adding a file to an empty current objects is okay
+        assert!(objects.verify_delta(&publish_file1, &jail).is_ok());
+
+        // The actual application of the delta is infallible, because event replays
+        // may not fail. It is assumed deltas were verified before they were persisted
+        // in events.
+        objects.apply_delta(publish_file1.clone());
+
+        // Now adding the same file for the same URI and same hash, as a publish will fail.
+        assert!(objects.verify_delta(&publish_file1, &jail).is_err());
+
+        // Adding a different file as a publish element, rather than update,
+        // for the same URI will also fail. Checks fix for issue #981.
+        let publish_file2 = DeltaElements {
+            publishes: vec![PublishElement::new(file2_content.clone(), file1_uri.clone())],
+            updates: vec![],
+            withdraws: vec![],
+        };
+        assert!(objects.verify_delta(&publish_file2, &jail).is_err());
+
+        // Updates
+
+        // Updating a file should work
+        let update_file1 = DeltaElements {
+            publishes: vec![],
+            updates: vec![UpdateElement::new(
+                file1_uri.clone(),
+                file1_content.to_hash(),
+                file1_content_2.clone(),
+            )],
+            withdraws: vec![],
+        };
+        assert!(objects.verify_delta(&update_file1, &jail).is_ok());
+        objects.apply_delta(update_file1.clone());
+
+        // Updating again with the same delta will now fail - there is no longer and object
+        // with that uri and hash it was updated to the new content.
+        assert!(objects.verify_delta(&update_file1, &jail).is_err());
+
+        // Withdraws
+
+        // Withdrawing file with wrong hash should fail
+        let withdraw_file1 = DeltaElements {
+            publishes: vec![],
+            updates: vec![],
+            withdraws: vec![WithdrawElement::new(file1_uri.clone(), file1_content.to_hash())],
+        };
+        assert!(objects.verify_delta(&withdraw_file1, &jail).is_err());
+
+        // Withdrawing file with the right hash should work
+        let withdraw_file1_updated = DeltaElements {
+            publishes: vec![],
+            updates: vec![],
+            withdraws: vec![WithdrawElement::new(file1_uri.clone(), file1_content_2.to_hash())],
+        };
+        assert!(objects.verify_delta(&withdraw_file1_updated, &jail).is_ok());
     }
 }

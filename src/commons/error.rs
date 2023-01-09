@@ -169,7 +169,6 @@ pub enum Error {
     // General API Client Issues
     //-----------------------------------------------------------------
     JsonError(serde_json::Error),
-    NonAsciiCharsInput,
     InvalidUtf8Input,
     ApiUnknownMethod,
     ApiUnknownResource,
@@ -338,7 +337,6 @@ impl fmt::Display for Error {
             // General API Client Issues
             //-----------------------------------------------------------------
             Error::JsonError(e) => write!(f,"Invalid JSON: {}", e),
-            Error::NonAsciiCharsInput => write!(f, "Input contains non-ASCII chars (maybe whitespace?)"),
             Error::InvalidUtf8Input => write!(f, "Submitted bytes are invalid UTF8"),
             Error::ApiUnknownMethod => write!(f,"Unknown API method"),
             Error::ApiUnknownResource => write!(f, "Unknown resource"),
@@ -680,8 +678,6 @@ impl Error {
             // General API Client Issues (label: api-*)
             //-----------------------------------------------------------------
             Error::JsonError(e) => ErrorResponse::new("api-json", &self).with_cause(e),
-
-            Error::NonAsciiCharsInput => ErrorResponse::new("api-non-ascii", &self),
 
             Error::InvalidUtf8Input => ErrorResponse::new("api-invalid-utf8", &self),
 

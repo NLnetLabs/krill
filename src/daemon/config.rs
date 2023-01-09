@@ -361,7 +361,7 @@ impl SignerReference {
 /// its features - just implementing the one thing we need here.
 #[derive(Deserialize)]
 #[serde(untagged)]
-enum OneOrMany<'a, T> {
+pub enum OneOrMany<'a, T> {
     One(T),
     Many(Vec<T>),
     #[serde(skip)]

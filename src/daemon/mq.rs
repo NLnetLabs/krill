@@ -118,7 +118,7 @@ impl TaskQueue {
             if is_due {
                 debug!("Getting task with priority '{}': {}", priority, task);
             } else {
-                debug!("Leaving task not due until '{}': {}", priority, task);
+                trace!("Leaving task not due until '{}': {}", priority, task);
             }
             is_due
         } else {
