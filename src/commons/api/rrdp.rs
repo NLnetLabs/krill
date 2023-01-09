@@ -316,6 +316,29 @@ impl CurrentObjects {
         }
     }
 
+    /// Returns a copy of self where elements matching the given URI
+    /// are removed if there are any matches. Otherwise, returns None.
+    pub fn with_matching_uri_deleted(&self, uri: &uri::Rsync) -> Option<Self> {
+        let mut withdraws = vec![];
+
+        // We first loop through the elements to avoid having to clone in case there is no work
+        for (hash, el) in &self.0 {
+            if el.uri() == uri || (uri.as_str().ends_with('/') && el.uri().as_str().starts_with(uri.as_str())) {
+                withdraws.push(hash)
+            }
+        }
+
+        if withdraws.is_empty() {
+            None
+        } else {
+            let mut copy_of_self = self.clone();
+            for hash in withdraws {
+                copy_of_self.0.remove(hash);
+            }
+            Some(copy_of_self)
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.0.len()
     }
