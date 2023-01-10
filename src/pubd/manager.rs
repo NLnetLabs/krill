@@ -15,7 +15,7 @@ use rpki::{
 use crate::{
     commons::{
         actor::Actor,
-        api::{PublicationServerUris, PublisherDetails},
+        api::{PublicationServerUris, PublisherDetails, RepoFileDeleteCriteria},
         crypto::KrillSigner,
         error::Error,
         util::cmslogger::CmsLogger,
@@ -203,6 +203,27 @@ impl RepositoryManager {
         content.write_repository(self.config.rrdp_updates_config)?;
 
         Ok(None)
+    }
+
+    /// Purge URI(s) from the server.
+    pub fn delete_matching_files(&self, criteria: RepoFileDeleteCriteria) -> KrillResult<()> {
+        let content = {
+            let _lock = self.default_repo_lock.write().unwrap();
+
+            // update RRDP first so we apply any staged deltas.
+            self.content.update_rrdp(self.config.rrdp_updates_config)?;
+
+            // delete matching files using the updated snapshot and stage a delta if needed.
+            self.content.delete_matching_files(criteria.into())?;
+
+            // update RRDP again to make the delta effective immediately.
+            self.content.update_rrdp(self.config.rrdp_updates_config)?
+        };
+
+        // Write the updated repository - NOTE: we no longer lock it.
+        content.write_repository(self.config.rrdp_updates_config)?;
+
+        Ok(())
     }
 
     pub fn repo_stats(&self) -> KrillResult<RepoStats> {

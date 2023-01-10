@@ -785,7 +785,7 @@ pub struct KeyObjectSet {
     //
     // When objects are replaced or removed we add a revocation.
     // When publishing revocations for expired certificates are
-    // purged.
+    // removed.
     revocations: Revocations,
 
     // The last manifest generated for this set.
@@ -1007,7 +1007,7 @@ impl KeyObjectSet {
     fn reissue(&mut self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<()> {
         self.revision.next(timing.publish_next());
 
-        self.revocations.purge_expired();
+        self.revocations.remove_expired();
         let signing_key = self.signing_cert.key_identifier();
         let issuer = self.signing_cert.subject().clone();
 
@@ -1027,7 +1027,7 @@ impl KeyObjectSet {
         for object in self.published_objects.values() {
             revocations.add(object.revoke());
         }
-        revocations.purge_expired();
+        revocations.remove_expired();
 
         let retired_set = KeyObjectSet {
             signing_cert: self.signing_cert.clone(),

@@ -175,7 +175,7 @@ impl TrustAnchorObjects {
     pub fn add_issued(&mut self, issued: IssuedCertificate) {
         if let Some(previous) = self.issued.insert(issued.key_identifier(), issued) {
             self.revocations.add(previous.revocation());
-            self.revocations.purge_expired();
+            self.revocations.remove_expired();
         }
     }
 
@@ -189,7 +189,7 @@ impl TrustAnchorObjects {
     pub fn revoke_issued(&mut self, key: &KeyIdentifier) -> bool {
         if let Some(issued) = self.issued.remove(key) {
             self.revocations.add(issued.revocation());
-            self.revocations.purge_expired();
+            self.revocations.remove_expired();
             true
         } else {
             false

@@ -1261,6 +1261,17 @@ async fn api_ca_sync(req: Request, path: &mut RequestPath, ca: CaHandle) -> Rout
 async fn api_publication_server(req: Request, path: &mut RequestPath) -> RoutingResult {
     match path.next() {
         Some("publishers") => api_publishers(req, path).await,
+        Some("delete") => match *req.method() {
+            Method::POST => {
+                let state = req.state.clone();
+
+                match req.json().await {
+                    Ok(criteria) => render_empty_res(state.delete_matching_files(criteria)),
+                    Err(e) => render_error(e),
+                }
+            }
+            _ => render_unknown_method(),
+        },
         Some("stale") => api_stale_publishers(req, path.next()).await,
         Some("init") => match *req.method() {
             Method::POST => {

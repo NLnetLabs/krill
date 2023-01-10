@@ -159,7 +159,7 @@ impl ConfigFileAuthProvider {
             )
             .unwrap();
 
-            if hex::encode(hashed_hash) == user_password_hash.as_ref() {
+            if hex::encode(hashed_hash) == user_password_hash {
                 // And now finally check the user, so that both known and unknown user code paths do the same work
                 // and don't result in an obvious timing difference between the two scenarios which could potentially
                 // be used to discover user names.
