@@ -89,12 +89,15 @@ mod tests {
             let tal_https = vec![https("https://example.krill.cloud/ta/ta.cer")];
             let tal_rsync = rsync("rsync://example.krill.cloud/ta/ta.cer");
 
+            let import_key_pem = include_str!("../../../test-resources/ta/example-private-key.pem");
+
             let signer_init_cmd = TrustAnchorSignerInitCommand {
                 handle: signer_handle.clone(),
                 proxy_id: proxy.id().clone(),
                 repo_info: proxy.repository().unwrap().repo_info().clone(),
                 tal_https: tal_https.clone(),
                 tal_rsync: tal_rsync.clone(),
+                private_key_pem: Some(import_key_pem.to_string()),
                 signer: signer.clone(),
             };
 

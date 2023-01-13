@@ -182,6 +182,20 @@ impl SignerProvider {
         }
     }
 
+    /// Import an existing private key. Only supported for OpenSslSigner. Other
+    /// signers will return an error.
+    pub fn import_key(&self, pem: &str) -> Result<KeyIdentifier, SignerError> {
+        match self {
+            SignerProvider::OpenSsl(_, signer) => signer.import_key(pem),
+            #[cfg(feature = "hsm")]
+            SignerProvider::Kmip(_, _) => Err(SignerError::other("import key not supported for kmip")),
+            #[cfg(feature = "hsm")]
+            SignerProvider::Pkcs11(_, _) => Err(SignerError::other("import key not supported for Pkcs11")),
+            #[cfg(all(test, feature = "hsm"))]
+            SignerProvider::Mock(_, _) => Err(SignerError::other("import key not supported for mock signer")),
+        }
+    }
+
     pub fn get_key_info(&self, key: &KeyIdentifier) -> Result<PublicKey, KeyError<SignerError>> {
         match self {
             SignerProvider::OpenSsl(_, signer) => signer.get_key_info(key),

@@ -258,7 +258,7 @@ pub struct TrustAnchorSignerInitCommand {
     pub repo_info: RepoInfo,
     pub tal_https: Vec<uri::Https>,
     pub tal_rsync: uri::Rsync,
-    // todo: support importing existing key
+    pub private_key_pem: Option<String>,
     pub signer: Arc<KrillSigner>,
 }
 
@@ -269,7 +269,13 @@ impl TrustAnchorSigner {
 
         let id = Rfc8183Id::generate(&signer)?.into();
         let proxy_id = cmd.proxy_id;
-        let ta_cert_details = Self::create_ta_cert_details(cmd.repo_info, cmd.tal_https, cmd.tal_rsync, &signer)?;
+        let ta_cert_details = Self::create_ta_cert_details(
+            cmd.repo_info,
+            cmd.tal_https,
+            cmd.tal_rsync,
+            cmd.private_key_pem,
+            &signer,
+        )?;
         let objects = TrustAnchorObjects::create(ta_cert_details.cert(), &signer)?;
 
         Ok(TrustAnchorSignerInitEvent::new(
@@ -288,11 +294,13 @@ impl TrustAnchorSigner {
         repo_info: RepoInfo,
         tal_https: Vec<uri::Https>,
         tal_rsync: uri::Rsync,
-        // todo: support importing existing key
+        private_key_pem: Option<String>,
         signer: &KrillSigner,
     ) -> KrillResult<TaCertDetails> {
-        // todo: support importing existing key
-        let key = signer.create_key()?;
+        let key = match private_key_pem {
+            None => signer.create_key(),
+            Some(pem) => signer.import_key(&pem),
+        }?;
 
         let resources = ResourceSet::all();
 

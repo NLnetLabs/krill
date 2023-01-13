@@ -286,6 +286,7 @@ impl CaManager {
                 repo_info: repo_contact.repo_info().clone(),
                 tal_https,
                 tal_rsync,
+                private_key_pem: None,
                 signer: self.signer.clone(),
             };
 
