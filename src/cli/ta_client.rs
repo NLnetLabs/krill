@@ -163,6 +163,7 @@ pub struct SignerInitInfo {
     repo_info: RepoInfo,
     tal_https: Vec<uri::Https>,
     tal_rsync: uri::Rsync,
+    private_key_pem: Option<String>,
 }
 
 impl TrustAnchorClientCommand {
@@ -401,6 +402,13 @@ impl TrustAnchorClientCommand {
                     .help("Used for TAL. Multiple allowed.")
                     .multiple(true)
                     .required(true),
+            )
+            .arg(
+                Arg::with_name("private_key_pem")
+                    .long("private_key_pem")
+                    .value_name("path")
+                    .help("[OPTIONAL] Import an existing private key in PEM format")
+                    .required(false),
             );
 
         app.subcommand(sub)
@@ -721,11 +729,20 @@ impl TrustAnchorClientCommand {
             uri::Rsync::from_str(rsync_str).map_err(|_| Error::Other(format!("Invalid rsync uri: {}", rsync_str)))?
         };
 
+        let private_key_pem = if let Some(path) = matches.value_of("private_key_pem") {
+            let bytes = Self::read_file_arg(path)?;
+            let pem = std::str::from_utf8(&bytes).map_err(|_| Error::other("invalid UTF8 in private_key_pem file"))?;
+            Some(pem.to_string())
+        } else {
+            None
+        };
+
         let info = SignerInitInfo {
             proxy_id,
             repo_info,
             tal_https,
             tal_rsync,
+            private_key_pem,
         };
         let details = SignerCommandDetails::Init(info);
 
@@ -1006,6 +1023,7 @@ impl TrustAnchorSignerManager {
                 repo_info: info.repo_info,
                 tal_https: info.tal_https,
                 tal_rsync: info.tal_rsync,
+                private_key_pem: info.private_key_pem,
                 signer: self.signer.clone(),
             };
 

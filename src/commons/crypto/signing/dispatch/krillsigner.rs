@@ -199,6 +199,10 @@ impl KrillSigner {
             .map_err(crypto::Error::signer)
     }
 
+    pub fn import_key(&self, pem: &str) -> CryptoResult<KeyIdentifier> {
+        self.router.import_key(pem).map_err(crypto::Error::signer)
+    }
+
     /// Creates a new self-signed (TA) IdCert
     pub fn create_self_signed_id_cert(&self) -> CryptoResult<IdCert> {
         let key = self.create_key()?;
