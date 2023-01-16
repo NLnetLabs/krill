@@ -53,7 +53,8 @@ mod tests {
             let ta_signer_store: AggregateStore<TrustAnchorSigner> = AggregateStore::disk(&d, "ta_signer").unwrap();
             let ta_proxy_store: AggregateStore<TrustAnchorProxy> = AggregateStore::disk(&d, "ta_proxy").unwrap();
 
-            let signers = ConfigDefaults::signers();
+            // We will import a TA key - this is only (supposed to be) supported for the openssl signer
+            let signers = ConfigDefaults::openssl_signer_only();
             let signer = Arc::new(
                 KrillSignerBuilder::new(&d, Duration::from_secs(1), &signers)
                     .build()
