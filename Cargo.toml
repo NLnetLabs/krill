@@ -94,9 +94,11 @@ hsm-tests-pkcs11 = [ "hsm" ]
 panic = "abort"
 
 [dev-dependencies]
+regex     = "1.5.5"
+urlparse  = "^0.7"
 # For user management
+ctrlc     = "^3.1"
 tiny_http = { version = "^0.8", features = ["ssl"] }
-ctrlc = "^3.1"
 
 # ------------------------------------------------------------------------------
 # START DEBIAN PACKAGING
