@@ -223,23 +223,27 @@ impl ConfigDefaults {
         4
     }
 
+    pub fn openssl_signer_only() -> Vec<SignerConfig> {
+        let signer_config = OpenSslSignerConfig { keys_path: None };
+        vec![SignerConfig::new(
+            DEFAULT_SIGNER_NAME.to_string(),
+            SignerType::OpenSsl(signer_config),
+        )]
+    }
+
     pub fn signers() -> Vec<SignerConfig> {
         #[cfg(not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11")))]
         {
-            let signer_config = OpenSslSignerConfig { keys_path: None };
-            vec![SignerConfig::new(
-                DEFAULT_SIGNER_NAME.to_string(),
-                SignerType::OpenSsl(signer_config),
-            )]
+            Self::openssl_signer_only()
         }
 
         #[cfg(all(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11"))]
         {
-            let signer_config = OpenSslSignerConfig { keys_path: None };
-            vec![SignerConfig::new(
-                DEFAULT_SIGNER_NAME.to_string(),
-                SignerType::OpenSsl(signer_config),
-            )]
+            // If we have both enables then just go with openssl.
+            // This is because we are using rust features here to drive testing
+            // which is not ideal.. should be changes when we remove the feature
+            // flags for this.
+            Self::openssl_signer_only()
         }
 
         #[cfg(all(feature = "hsm-tests-kmip", not(feature = "hsm-tests-pkcs11")))]
