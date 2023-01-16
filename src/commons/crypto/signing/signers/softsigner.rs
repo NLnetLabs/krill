@@ -386,10 +386,23 @@ pub mod tests {
     }
 
     #[test]
-    fn import_existing_openssl_key() {
+    fn import_existing_pkcs1_openssl_key() {
         test::test_under_tmp(|d| {
             // The following key was generated using openssl on the command
-            let pem = include_str!("../../../../../test-resources/ta/example-private-key.pem");
+            let pem = include_str!("../../../../../test-resources/ta/example-pkcs1.pem");
+            let signer = OpenSslSigner::build(&d, "dummy", None).unwrap();
+
+            let ki = signer.import_key(pem).unwrap();
+            signer.get_key_info(&ki).unwrap();
+            signer.destroy_key(&ki).unwrap();
+        })
+    }
+
+    #[test]
+    fn import_existing_pkcs8_openssl_key() {
+        test::test_under_tmp(|d| {
+            // The following key was generated using openssl on the command
+            let pem = include_str!("../../../../../test-resources/ta/example-pkcs8.pem");
             let signer = OpenSslSigner::build(&d, "dummy", None).unwrap();
 
             let ki = signer.import_key(pem).unwrap();

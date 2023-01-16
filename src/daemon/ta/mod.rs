@@ -89,7 +89,7 @@ mod tests {
             let tal_https = vec![https("https://example.krill.cloud/ta/ta.cer")];
             let tal_rsync = rsync("rsync://example.krill.cloud/ta/ta.cer");
 
-            let import_key_pem = include_str!("../../../test-resources/ta/example-private-key.pem");
+            let import_key_pem = include_str!("../../../test-resources/ta/example-pkcs1.pem");
 
             let signer_init_cmd = TrustAnchorSignerInitCommand {
                 handle: signer_handle.clone(),
