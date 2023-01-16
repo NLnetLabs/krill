@@ -118,8 +118,8 @@ pub const DEFAULT_SIGNER_NAME: &str = "Default OpenSSL signer";
 #[cfg(all(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11"))]
 pub const DEFAULT_SIGNER_NAME: &str = "Default OpenSSL signer";
 #[cfg(all(feature = "hsm-tests-kmip", not(feature = "hsm-tests-pkcs11")))]
-pub const DEFAULT_KMIP_SIGNER_NAME: &str = "(test mode) Default KMIP signer";
+pub const DEFAULT_SIGNER_NAME: &str = "(test mode) Default KMIP signer";
 #[cfg(all(feature = "hsm-tests-pkcs11", not(feature = "hsm-tests-kmip")))]
-pub const DEFAULT_PKCS11_SIGNER_NAME: &str = "(test mode) Default PKCS#11 signer";
+pub const DEFAULT_SIGNER_NAME: &str = "(test mode) Default PKCS#11 signer";
 
 pub const OPENSSL_ONE_OFF_SIGNER_NAME: &str = "OpenSSL one-off signer";
