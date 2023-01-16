@@ -271,7 +271,7 @@ impl ConfigDefaults {
                 max_response_bytes: KmipSignerConfig::default_max_response_bytes(),
             };
             return vec![SignerConfig::new(
-                DEFAULT_KMIP_SIGNER_NAME.to_string(),
+                DEFAULT_SIGNER_NAME.to_string(),
                 SignerType::Kmip(signer_config),
             )];
         }
@@ -289,7 +289,7 @@ impl ConfigDefaults {
                 max_retry_seconds: Pkcs11SignerConfig::default_max_retry_seconds(),
             };
             vec![SignerConfig::new(
-                DEFAULT_PKCS11_SIGNER_NAME.to_string(),
+                DEFAULT_SIGNER_NAME.to_string(),
                 SignerType::Pkcs11(signer_config),
             )]
         }
