@@ -34,7 +34,7 @@ in an RPKI Publication Server provided by your RIR or NIR, then there is no
 need to update to this release.
 
 Firstly, this release fixes CVE-2023-0158:
-https://nlnetlabs.nl/downloads/routinator/CVE-2023-0158.txt
+https://nlnetlabs.nl/downloads/krill/CVE-2023-0158.txt
 
 This CVE describes an exposure where remote attackers could cause Krill to
 crash if it is used as an RPKI Publication Server and if its "/rrdp" endpoint
