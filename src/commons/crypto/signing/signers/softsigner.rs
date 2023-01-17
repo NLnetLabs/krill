@@ -334,24 +334,17 @@ impl OpenSslKeyPair {
     /// Can be used to import an existing RSA key pair from
     /// the pem encoded private key.
     pub fn from_pem(pem: &str) -> Result<OpenSslKeyPair, SignerError> {
-        let mut base64 = String::new();
-        for line in pem.split('\n') {
-            if line.starts_with("----") {
-                continue;
-            } else {
-                base64.push_str(line);
-            }
-        }
-        Self::from_base64(&base64)
+        PKey::private_key_from_pem(pem.as_bytes())
+            .map(|pkey| OpenSslKeyPair { pkey })
+            .map_err(|e| SignerError::Other(format!("Invalid private key: {}", e)))
     }
 
     fn from_base64(base64: &str) -> Result<OpenSslKeyPair, SignerError> {
         let bytes = base64::decode(base64).map_err(|_| SignerError::other("Cannot parse private key base64"))?;
 
-        let pkey = PKey::private_key_from_der(&bytes)
-            .map_err(|e| SignerError::Other(format!("Invalid private key: {}", e)))?;
-
-        Ok(OpenSslKeyPair { pkey })
+        PKey::private_key_from_der(&bytes)
+            .map(|pkey| OpenSslKeyPair { pkey })
+            .map_err(|e| SignerError::Other(format!("Invalid private key: {}", e)))
     }
 }
 
