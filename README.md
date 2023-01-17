@@ -28,17 +28,32 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 ## 0.12.1 'Safety Belts'
 
-This release introduces some fixes for the Krill Publication Server. If you
+This release introduces two fixes for the Krill Publication Server. If you
 only use Krill as an RPKI Certificate Authority and publish elsewhere, e.g.
-in a Publication Server provided by your RIR or NIR, then there is no need
-to update to this release.
+in an RPKI Publication Server provided by your RIR or NIR, then there is no
+need to update to this release.
 
-The following fixes were introduced:
+Firstly, this release fixes CVE-2023-0158:
+https://nlnetlabs.nl/downloads/routinator/CVE-2023-0158.txt
 
-- Add locking to ensure that updates to the repository content are always
-  applied sequentially. This fixes (temporary) issues that could occur in
-  case there are concurrent publishers.
-- TBD
+This CVE describes an exposure where remote attackers could cause Krill to
+crash if it is used as an RPKI Publication Server and if its "/rrdp" endpoint
+is accessible over the public internet.
+
+Note that servers are not affected if the advice in our documentation was followed
+and a separate web server is used to serve the RRDP data:
+
+https://krill.docs.nlnetlabs.nl/en/stable/publication-server.html#synchronise-repository-data
+
+Secondly, locking was added in this release to ensure that updates to the
+repository content are always applied sequentially. This fixes a concurrency
+issue introduced in Krill 0.12.0 that could result in rejecting an update
+from a publishing CA. In such cases the affected update would not be visible
+for RPKI validators, until a later publication attempt would be successful.
+
+We advise that users upgrade to this version of Krill if they use it as their
+RPKI Publication Server. We also continue to recommend that a separate web
+server is used for serving the RRDP data.
 
 ## 0.12.0 'Crickets'
 
