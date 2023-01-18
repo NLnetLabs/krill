@@ -2,7 +2,8 @@
 //!
 use std::fs;
 
-use rpki::repository::resources::ResourceSet;
+use hyper::StatusCode;
+use rpki::{ repository::resources::ResourceSet};
 
 use krill::{commons::api::RoaConfigurationUpdates, daemon::ca::ta_handle, test::*};
 
@@ -192,6 +193,18 @@ async fn functional_roas() {
         ca_route_authorizations_update(&ca, updates).await;
 
         expect_roa_objects(&ca, &[route_resource_set_10_0_0_0_def_1.payload()]).await;
+    }
+
+    {
+        info("##################################################################");
+        info("#                                                                #");
+        info("#        Sanity check the operation of the RRDP endpoint         #");
+        info("#                                                                #");
+        info("##################################################################");
+        info("");
+
+        // Verify that requesting rrdp/ on a CA-only instance of Krill results in an error rather than a panic.
+        assert_http_status(krill_anon_http_get("rrdp/").await, StatusCode::NOT_FOUND);
     }
 
     let _ = fs::remove_dir_all(krill_dir);

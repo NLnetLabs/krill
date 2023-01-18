@@ -442,8 +442,12 @@ impl Error {
         Error::Forbidden(uri.to_string())
     }
 
+    pub fn unexpected_status(status: StatusCode) -> String {
+        format!("unexpected status code {}", status)
+    }
+
     pub fn response_unexpected_status(uri: &str, status: StatusCode) -> Self {
-        Error::Response(uri.to_string(), format!("unexpected status code {}", status))
+        Error::Response(uri.to_string(), Self::unexpected_status(status))
     }
 
     async fn from_res(uri: &str, res: Response) -> Error {
