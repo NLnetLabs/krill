@@ -216,6 +216,20 @@ pub async fn start_second_krill() -> PathBuf {
     dir
 }
 
+pub fn assert_http_status<T>(res: Result<T, httpclient::Error>, status: StatusCode) {
+    if status.is_success() {
+        assert!(res.is_ok())
+    } else {
+        assert!(
+            matches!(res, Err(httpclient::Error::Response(_, msg)) if msg == httpclient::Error::unexpected_status(status))
+        )
+    }
+}
+
+pub async fn krill_anon_http_get(rel_url: &str) -> Result<String, httpclient::Error> {
+    httpclient::get_text(&format!("{}{}", KRILL_SERVER_URI, rel_url), None).await
+}
+
 pub async fn krill_admin(command: Command) -> ApiResponse {
     admin(service_uri(KRILL_SERVER_URI), command).await
 }

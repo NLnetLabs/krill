@@ -1015,8 +1015,8 @@ impl Config {
         let testbed = if enable_testbed {
             Some(TestBed::new(
                 test::rsync("rsync://localhost/ta/ta.cer"),
-                test::https("https://localhost/ta/ta.cer"),
-                test::https("https://localhost/rrdp/"),
+                test::https(&format!("https://localhost:{}/ta/ta.cer", port)),
+                test::https(&format!("https://localhost:{}/rrdp/", port)),
                 test::rsync("rsync://localhost/repo/"),
             ))
         } else {
