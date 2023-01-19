@@ -102,6 +102,7 @@ pub enum PrepareUpgradeError {
     Unrecognised(String),
     CannotLoadAggregate(MyHandle),
     IdExchange(String),
+    OldTaMigration,
     Custom(String),
 }
 
@@ -114,6 +115,7 @@ impl fmt::Display for PrepareUpgradeError {
             PrepareUpgradeError::Unrecognised(s) => format!("Unrecognised: {}", s),
             PrepareUpgradeError::CannotLoadAggregate(h) => format!("Cannot load: {}", h),
             PrepareUpgradeError::IdExchange(s) => format!("Could not use exchanged id info: {}", s),
+            PrepareUpgradeError::OldTaMigration => "Your installation cannot be upgraded to Krill 0.13.0 or later because it includes a CA called \"ta\". These CAs were used for the preliminary Trust Anchor support needed by testbed and benchmark setups. They cannot be migrated to the production grade Trust Anchor support that was introduced in Krill 0.13.0. If you want to continue to use your existing installation we recommend that you downgrade to Krill 0.12.1 or earlier. If you want to operate a testbed using Krill 0.13.0 or later, then you can create a fresh testbed instead of migrating your existing testbed. If you believe that you should not have a CA called \"ta\" - i.e. it may have been left over from an abandoned testbed set up - then you can delete the \"ta\" directory under your krill data \"cas\" directory and restart Krill.".to_string(),
             PrepareUpgradeError::Custom(s) => s.clone(),
         };
 
@@ -324,6 +326,18 @@ pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -
     // migration.
     #[cfg(feature = "hsm")]
     record_preexisting_openssl_keys_in_signer_mapper(config.clone())?;
+
+    // Check if there is any CA named "ta". If so, then we are trying to upgrade a Krill testbed
+    // or benchmark set up that uses the old deprecated trust anchor set up. These TAs cannot easily
+    // be migrated to the new setup in 0.13.0. Well.. it could be done, if there would be a strong use
+    // case to put in the effort, but there really isn't.
+    let ca_store_path = config.data_dir.join(CASERVER_DIR);
+    if ca_store_path.exists() {
+        let ca_kv_store = KeyValueStore::disk(&config.data_dir, CASERVER_DIR)?;
+        if ca_kv_store.has_scope("ta".to_string())? {
+            return Err(PrepareUpgradeError::OldTaMigration);
+        }
+    }
 
     match upgrade_versions(config.as_ref()) {
         None => Ok(None),

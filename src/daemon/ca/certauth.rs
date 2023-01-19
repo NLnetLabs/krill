@@ -43,7 +43,6 @@ use crate::{
             RoaPayloadJsonMapKey, Routes, RtaContentRequest, RtaPrepareRequest, Rtas, SignedRta, StoredBgpSecCsr,
         },
         config::{Config, IssuanceTimingConfig},
-        ta::ta_handle,
     },
 };
 
@@ -131,18 +130,6 @@ impl Aggregate for CertAuth {
     fn apply(&mut self, event: CaEvt) {
         self.version += 1;
         match event.into_details() {
-            //-----------------------------------------------------------------------
-            // Being a trust anchor
-            //-----------------------------------------------------------------------
-            CaEvtDet::TrustAnchorMade { ta_cert_details } => {
-                let key_id = ta_cert_details.cert().key_identifier();
-                self.parents
-                    .insert(ta_handle().into_converted(), ParentCaContact::Ta(ta_cert_details));
-                let rcn = ResourceClassName::from(self.next_class_name);
-                self.next_class_name += 1;
-                self.resources.insert(rcn.clone(), ResourceClass::for_ta(rcn, key_id));
-            }
-
             //-----------------------------------------------------------------------
             // Being a parent
             //-----------------------------------------------------------------------
@@ -414,11 +401,6 @@ impl Aggregate for CertAuth {
         }
 
         match command.into_details() {
-            // trust anchor
-            CmdDet::MakeTrustAnchor(_uris, _rsync_uri, _signer) => {
-                Err(Error::custom("Converting a CA into a TA is no longer supported"))
-            }
-
             // being a parent
             CmdDet::ChildAdd(child, id_cert, resources) => self.child_add(child, id_cert, resources),
             CmdDet::ChildUpdateResources(child, res) => self.child_update_resources(&child, res),
@@ -1146,17 +1128,6 @@ impl CertAuth {
         None
     }
 
-    /// Returns true if this CertAuth is set up as a TA.
-    pub fn is_ta(&self) -> bool {
-        for info in self.parents.values() {
-            if let ParentCaContact::Ta(_) = info {
-                return true;
-            }
-        }
-
-        false
-    }
-
     /// Gets the ParentCaContact for this ParentHandle. Returns an Err when the
     /// parent does not exist.
     pub fn parent(&self, parent: &ParentHandle) -> KrillResult<&ParentCaContact> {
@@ -1182,8 +1153,6 @@ impl CertAuth {
             Err(Error::CaParentDuplicateName(self.handle.clone(), parent))
         } else if let Some(other) = self.parent_for_info(&info) {
             Err(Error::CaParentDuplicateInfo(self.handle.clone(), other.clone()))
-        } else if self.is_ta() {
-            Err(Error::TaNotAllowed)
         } else {
             info!("CA '{}' added parent '{}'", self.handle, parent);
             Ok(vec![CaEvtDet::parent_added(&self.handle, self.version, parent, info)])
@@ -1220,8 +1189,6 @@ impl CertAuth {
     fn update_parent(&self, parent: ParentHandle, info: ParentCaContact) -> KrillResult<Vec<CaEvt>> {
         if !self.parent_known(&parent) {
             Err(Error::CaParentUnknown(self.handle.clone(), parent))
-        } else if self.is_ta() {
-            Err(Error::TaNotAllowed)
         } else {
             info!("CA '{}' updated contact info for parent '{}'", self.handle, parent);
             Ok(vec![CaEvtDet::parent_updated(&self.handle, self.version, parent, info)])
@@ -1457,10 +1424,6 @@ impl CertAuth {
 ///
 impl CertAuth {
     fn keyroll_initiate(&self, duration: Duration, signer: Arc<KrillSigner>) -> KrillResult<Vec<CaEvt>> {
-        if self.is_ta() {
-            return Ok(vec![]);
-        }
-
         let mut version = self.version;
         let mut res = vec![];
 
@@ -1492,10 +1455,6 @@ impl CertAuth {
         config: Arc<Config>,
         signer: Arc<KrillSigner>,
     ) -> KrillResult<Vec<CaEvt>> {
-        if self.is_ta() {
-            return Ok(vec![]);
-        }
-
         let mut version = self.version;
         let mut res = vec![];
 
@@ -1525,9 +1484,6 @@ impl CertAuth {
     }
 
     fn keyroll_finish(&self, rcn: ResourceClassName, _response: RevocationResponse) -> KrillResult<Vec<CaEvt>> {
-        if self.is_ta() {
-            return Ok(vec![]);
-        }
         let my_rc = self
             .resources
             .get(&rcn)
