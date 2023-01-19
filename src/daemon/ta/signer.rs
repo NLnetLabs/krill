@@ -18,7 +18,7 @@ use rpki::{
     repository::{
         cert::{KeyUsage, Overclaim, TbsCert},
         resources::ResourceSet,
-        x509::{Serial, Time, Validity},
+        x509::{Serial, Time},
     },
     uri,
 };
@@ -250,6 +250,10 @@ impl TrustAnchorSigner {
             ta_cert_details: self.ta_cert_details.clone(),
         }
     }
+
+    pub fn get_associated_proxy_id(&self) -> &IdCertInfo {
+        &self.proxy_id
+    }
 }
 
 pub struct TrustAnchorSignerInitCommand {
@@ -313,7 +317,7 @@ impl TrustAnchorSigner {
             let mut cert = TbsCert::new(
                 serial,
                 name.clone(),
-                Validity::new(Time::five_minutes_ago(), Time::years_from_now(100)),
+                SignSupport::sign_validity_years(TA_CERTIFICATE_VALIDITY_YEARS),
                 Some(name),
                 pub_key.clone(),
                 KeyUsage::Ca,
@@ -378,7 +382,7 @@ impl TrustAnchorSigner {
                             )));
                         }
 
-                        let validity = SignSupport::sign_validity_weeks(52);
+                        let validity = SignSupport::sign_validity_weeks(TA_ISSUED_CERTIFICATE_VALIDITY_WEEKS);
                         let issue_resources = limit.apply_to(&child_request.resources)?;
 
                         // Create issued certificate

@@ -5,16 +5,19 @@ use std::{
     fmt::{self, Debug},
 };
 
+use bytes::Bytes;
 use rpki::{
     ca::{
         idexchange::{ChildHandle, RecipientHandle, SenderHandle},
         provisioning,
         publication::Base64,
+        sigmsg::SignedMessage,
     },
     crypto::{KeyIdentifier, PublicKey},
     repository::{resources::ResourceSet, x509::Time},
     uri,
 };
+use serde::Serialize;
 
 use crate::{
     commons::{
@@ -27,6 +30,13 @@ use crate::{
         CrlBuilder, ManifestBuilder, ObjectSetRevision, PublishedCrl, PublishedManifest, PublishedObject, UsedKeyState,
     },
 };
+
+// Some timing constants used by the Trust Anchor code. We may need to support
+// configuring these things instead..
+pub const TA_CERTIFICATE_VALIDITY_YEARS: i32 = 100;
+pub const TA_ISSUED_CERTIFICATE_VALIDITY_WEEKS: i64 = 52;
+pub const TA_MFT_NEXT_UPDATE_WEEKS: i64 = 12;
+pub const TA_SIGNED_MESSAGE_DAYS: i64 = 14;
 
 //------------ TrustAnchorObjects ------------------------------------------
 
@@ -168,7 +178,7 @@ impl TrustAnchorObjects {
     }
 
     pub fn next_update() -> Time {
-        Time::now() + chrono::Duration::weeks(12)
+        Time::now() + chrono::Duration::weeks(TA_MFT_NEXT_UPDATE_WEEKS)
     }
 
     // Adds a new issued certificate, replaces and revokes the previous if present.
@@ -378,6 +388,64 @@ pub struct TrustAnchorProxySignerExchange {
     pub response: TrustAnchorSignerResponse,
 }
 
+//------------ TrustAnchorSignedRequest ------------------------------------
+
+/// A [`TrustAnchorSignerRequest`] wrapped as JSON in an RFC 6492 / 8181
+/// SignedMessage CMS.
+///
+/// Note: we may want to request a separate OID for this kind of signed
+/// CMS because our content differs from the existing RFCs, and uses JSON
+/// rather than XML. That said, it can't hurt to re-use the existing CMS
+/// and the normal OID in this context.
+#[derive(Clone, Debug)]
+pub struct TrustAnchorSignedRequest(SignedMessage);
+
+impl TrustAnchorSignedRequest {
+    pub fn validate(&self, issuer: &IdCertInfo) -> Result<TrustAnchorSignerRequest, Error> {
+        self.0
+            .validate(issuer.public_key())
+            .map_err(|e| Error::Custom(format!("Invalid Trust Anchor signer request: {}", e)))?;
+
+        self.content()
+    }
+
+    /// Get content without validation, handle with care
+    pub fn content(&self) -> Result<TrustAnchorSignerRequest, Error> {
+        let bytes = self.0.content().to_bytes();
+
+        serde_json::from_slice(&bytes)
+            .map_err(|e| Error::Custom(format!("Could not deserialize Trust Anchor signer request {}", e)))
+    }
+}
+
+impl fmt::Display for TrustAnchorSignedRequest {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", serde_json::to_string(&self).unwrap())
+    }
+}
+
+impl serde::Serialize for TrustAnchorSignedRequest {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let bytes = self.0.to_captured().into_bytes();
+        let str = base64::encode(&bytes);
+        str.serialize(serializer)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for TrustAnchorSignedRequest {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de;
+
+        let b64 = String::deserialize(deserializer)?;
+        let bytes = base64::decode(b64).map_err(de::Error::custom)?;
+        let bytes = Bytes::from(bytes);
+
+        SignedMessage::decode(bytes, true)
+            .map(TrustAnchorSignedRequest)
+            .map_err(de::Error::custom)
+    }
+}
+
 //------------ TrustAnchorSignerRequest ------------------------------------
 
 /// Request for the Trust Anchor Signer to update the signed
@@ -390,6 +458,18 @@ pub struct TrustAnchorProxySignerExchange {
 pub struct TrustAnchorSignerRequest {
     pub nonce: Nonce, // should be matched in response (replay protection)
     pub child_requests: Vec<TrustAnchorChildRequests>,
+}
+
+impl TrustAnchorSignerRequest {
+    pub fn sign(&self, signing_key: KeyIdentifier, signer: &KrillSigner) -> Result<TrustAnchorSignedRequest, Error> {
+        let data = serde_json::to_string_pretty(&self).unwrap();
+        let data = Bytes::from(data);
+
+        signer
+            .create_ta_signed_message(data, &signing_key)
+            .map(TrustAnchorSignedRequest)
+            .map_err(Error::signer)
+    }
 }
 
 impl fmt::Display for TrustAnchorSignerRequest {
