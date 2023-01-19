@@ -900,11 +900,8 @@ pub struct ParentInfo {
 }
 
 impl ParentInfo {
-    pub fn new(handle: ParentHandle, contact: ParentCaContact) -> Self {
-        let kind = match contact {
-            ParentCaContact::Ta(_) => ParentKindInfo::Ta,
-            ParentCaContact::Rfc6492(_) => ParentKindInfo::Rfc6492,
-        };
+    pub fn new(handle: ParentHandle) -> Self {
+        let kind = ParentKindInfo::Rfc6492;
         ParentInfo { handle, kind }
     }
 }
@@ -1643,10 +1640,7 @@ impl CertAuthInfo {
         children: Vec<ChildHandle>,
         suspended_children: Vec<ChildHandle>,
     ) -> Self {
-        let parents = parents
-            .into_iter()
-            .map(|(handle, contact)| ParentInfo::new(handle, contact))
-            .collect();
+        let parents = parents.into_iter().map(|(handle, _)| ParentInfo::new(handle)).collect();
 
         let empty = ResourceSet::default();
         let resources = resource_classes.values().fold(ResourceSet::default(), |res, rci| {

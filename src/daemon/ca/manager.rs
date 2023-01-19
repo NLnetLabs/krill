@@ -1209,29 +1209,25 @@ impl CaManager {
         revoke_requests: HashMap<ResourceClassName, Vec<RevocationRequest>>,
     ) -> KrillResult<HashMap<ResourceClassName, Vec<RevocationResponse>>> {
         let child = self.get_ca(handle).await?;
-        match child.parent(parent)? {
-            ParentCaContact::Ta(_) => Err(Error::TaNotAllowed),
 
-            ParentCaContact::Rfc6492(server_info) => {
-                let parent_uri = server_info.service_uri();
+        let server_info = child.parent(parent)?.parent_server_info();
+        let parent_uri = server_info.service_uri();
 
-                match self
-                    .send_revoke_requests_rfc6492(
-                        revoke_requests,
-                        &child.id_cert().public_key().key_identifier(),
-                        server_info,
-                    )
-                    .await
-                {
-                    Err(e) => {
-                        self.status_store.set_parent_failure(handle, parent, parent_uri, &e)?;
-                        Err(e)
-                    }
-                    Ok(res) => {
-                        self.status_store.set_parent_last_updated(handle, parent, parent_uri)?;
-                        Ok(res)
-                    }
-                }
+        match self
+            .send_revoke_requests_rfc6492(
+                revoke_requests,
+                &child.id_cert().public_key().key_identifier(),
+                server_info,
+            )
+            .await
+        {
+            Err(e) => {
+                self.status_store.set_parent_failure(handle, parent, parent_uri, &e)?;
+                Err(e)
+            }
+            Ok(res) => {
+                self.status_store.set_parent_last_updated(handle, parent, parent_uri)?;
+                Ok(res)
             }
         }
     }
@@ -1336,7 +1332,7 @@ impl CaManager {
         let ca = self.get_ca(ca_handle).await?;
         let requests = ca.cert_requests(parent);
         let signing_key = ca.id_cert().public_key().key_identifier();
-        let server_info = ca.parent(parent)?.parent_server_info().ok_or(Error::TaNotAllowed)?;
+        let server_info = ca.parent(parent)?.parent_server_info();
 
         // We may need to do work for multiple resource class and there may therefore be
         // multiple errors. We want to keep track of those, rather than bailing out on the
@@ -1632,29 +1628,26 @@ impl CaManager {
         contact: &ParentCaContact,
         existing_parent: bool,
     ) -> KrillResult<ResourceClassListResponse> {
-        match contact {
-            ParentCaContact::Ta(_) => Err(Error::TaNotAllowed),
-            ParentCaContact::Rfc6492(server_info) => {
-                let result = self.get_entitlements_rfc6492(ca, server_info).await;
-                let uri = server_info.service_uri();
+        let server_info = contact.parent_server_info();
+        let uri = server_info.service_uri();
 
-                match &result {
-                    Err(error) => {
-                        if existing_parent {
-                            // only update the status store with errors for existing parents
-                            // otherwise we end up with entries if a new parent is rejected because
-                            // of the error.
-                            self.status_store.set_parent_failure(ca, parent, uri, error)?;
-                        }
-                    }
-                    Ok(entitlements) => {
-                        self.status_store
-                            .set_parent_entitlements(ca, parent, uri, entitlements)?;
-                    }
+        let result = self.get_entitlements_rfc6492(ca, server_info).await;
+
+        match &result {
+            Err(error) => {
+                if existing_parent {
+                    // only update the status store with errors for existing parents
+                    // otherwise we end up with entries if a new parent is rejected because
+                    // of the error.
+                    self.status_store.set_parent_failure(ca, parent, uri, error)?;
                 }
-                result
+            }
+            Ok(entitlements) => {
+                self.status_store
+                    .set_parent_entitlements(ca, parent, uri, entitlements)?;
             }
         }
+        result
     }
 
     async fn get_entitlements_rfc6492(
