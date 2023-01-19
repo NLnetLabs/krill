@@ -124,7 +124,8 @@ mod tests {
             let make_publish_request_cmd = TrustAnchorProxyCommand::make_signer_request(&proxy_handle, &actor);
             proxy = ta_proxy_store.command(make_publish_request_cmd).unwrap();
 
-            let signer_request = proxy.get_signer_request().unwrap();
+            let signed_request = proxy.get_signer_request(&signer).unwrap();
+            let signer_request = signed_request.validate(proxy.id()).unwrap();
 
             let request_nonce = signer_request.nonce.clone();
 

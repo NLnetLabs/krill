@@ -50,8 +50,8 @@ use crate::{
         config::Config,
         mq::{now, TaskQueue},
         ta::{
-            self, ta_handle, TrustAnchorProxy, TrustAnchorProxyCommand, TrustAnchorSigner, TrustAnchorSignerCommand,
-            TrustAnchorSignerInfo, TrustAnchorSignerInitCommand, TrustAnchorSignerRequest, TrustAnchorSignerResponse,
+            self, ta_handle, TrustAnchorProxy, TrustAnchorProxyCommand, TrustAnchorSignedRequest, TrustAnchorSigner,
+            TrustAnchorSignerCommand, TrustAnchorSignerInfo, TrustAnchorSignerInitCommand, TrustAnchorSignerResponse,
             TA_NAME,
         },
     },
@@ -343,11 +343,11 @@ impl CaManager {
     /// Errors if:
     /// - there is no proxy
     /// - the proxy already has a request
-    pub async fn ta_proxy_signer_make_request(&self, actor: &Actor) -> KrillResult<TrustAnchorSignerRequest> {
+    pub async fn ta_proxy_signer_make_request(&self, actor: &Actor) -> KrillResult<TrustAnchorSignedRequest> {
         let cmd = TrustAnchorProxyCommand::make_signer_request(&ta_handle(), actor);
         let proxy = self.send_ta_proxy_command(cmd).await?;
 
-        proxy.get_signer_request()
+        proxy.get_signer_request(&self.signer)
     }
 
     /// Create a new request for the signer.
@@ -355,8 +355,8 @@ impl CaManager {
     /// Errors if:
     /// - there is no proxy
     /// - the proxy already has a request
-    pub async fn ta_proxy_signer_get_request(&self) -> KrillResult<TrustAnchorSignerRequest> {
-        self.get_trust_anchor_proxy().await?.get_signer_request()
+    pub async fn ta_proxy_signer_get_request(&self) -> KrillResult<TrustAnchorSignedRequest> {
+        self.get_trust_anchor_proxy().await?.get_signer_request(&self.signer)
     }
 
     /// Process a sign response from the signer.
@@ -1120,7 +1120,9 @@ impl CaManager {
                 proxy = self.send_ta_proxy_command(sign_request_cmd).await?;
 
                 // get sign request for signer
-                let signer_request = proxy.get_signer_request()?;
+                let signed_request = proxy.get_signer_request(&self.signer)?;
+                let signer_request = signed_request.validate(proxy.id())?;
+
                 let request_nonce = signer_request.nonce.clone(); // remember so we can retrieve it
 
                 // let signer process request

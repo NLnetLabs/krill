@@ -54,7 +54,7 @@ use crate::daemon::auth::{
 
 use super::{
     ca::CaManager,
-    ta::{TrustAnchorSignerInfo, TrustAnchorSignerRequest, TrustAnchorSignerResponse},
+    ta::{TrustAnchorSignedRequest, TrustAnchorSignerInfo, TrustAnchorSignerResponse},
 };
 
 //------------ KrillServer ---------------------------------------------------
@@ -398,11 +398,11 @@ impl KrillServer {
         self.ca_manager.ta_proxy_signer_add(info, actor).await
     }
 
-    pub async fn ta_proxy_signer_make_request(&self, actor: &Actor) -> KrillResult<TrustAnchorSignerRequest> {
+    pub async fn ta_proxy_signer_make_request(&self, actor: &Actor) -> KrillResult<TrustAnchorSignedRequest> {
         self.ca_manager.ta_proxy_signer_make_request(actor).await
     }
 
-    pub async fn ta_proxy_signer_get_request(&self) -> KrillResult<TrustAnchorSignerRequest> {
+    pub async fn ta_proxy_signer_get_request(&self) -> KrillResult<TrustAnchorSignedRequest> {
         self.ca_manager.ta_proxy_signer_get_request().await
     }
 

@@ -36,8 +36,8 @@ use crate::{
     daemon::{
         config::{LogType, SignerConfig, SignerReference, SignerType},
         ta::{
-            TrustAnchorHandle, TrustAnchorProxySignerExchanges, TrustAnchorSigner, TrustAnchorSignerCommand,
-            TrustAnchorSignerInfo, TrustAnchorSignerInitCommand, TrustAnchorSignerRequest, TrustAnchorSignerResponse,
+            TrustAnchorHandle, TrustAnchorProxySignerExchanges, TrustAnchorSignedRequest, TrustAnchorSigner,
+            TrustAnchorSignerCommand, TrustAnchorSignerInfo, TrustAnchorSignerInitCommand, TrustAnchorSignerResponse,
         },
     },
 };
@@ -152,7 +152,7 @@ pub struct SignerCommand {
 pub enum SignerCommandDetails {
     Init(SignerInitInfo),
     ShowInfo,
-    ProcessRequest(TrustAnchorSignerRequest),
+    ProcessRequest(TrustAnchorSignedRequest),
     ShowLastResponse,
     ShowExchanges,
 }
@@ -894,7 +894,7 @@ pub enum TrustAnchorClientApiResponse {
     RepositoryContact(RepositoryContact),
     TrustAnchorProxySignerInfo(TrustAnchorSignerInfo),
     ParentResponse(idexchange::ParentResponse),
-    SignerRequest(TrustAnchorSignerRequest),
+    SignerRequest(TrustAnchorSignedRequest),
     SignerResponse(TrustAnchorSignerResponse),
     ProxySignerExchanges(TrustAnchorProxySignerExchanges),
     Empty,
@@ -1040,7 +1040,10 @@ impl TrustAnchorSignerManager {
         Ok(TrustAnchorClientApiResponse::TrustAnchorProxySignerInfo(info))
     }
 
-    fn process(&self, request: TrustAnchorSignerRequest) -> Result<TrustAnchorClientApiResponse, Error> {
+    fn process(&self, request: TrustAnchorSignedRequest) -> Result<TrustAnchorClientApiResponse, Error> {
+        let signer = self.get_signer()?;
+        let request = request.validate(signer.get_associated_proxy_id())?;
+
         let cmd = TrustAnchorSignerCommand::make_process_request_command(
             &self.ta_handle,
             request,

@@ -18,7 +18,7 @@ use crate::{
     daemon::{
         ca::ResourceTaggedAttestation,
         ta::{
-            TrustAnchorProxySignerExchanges, TrustAnchorSignerInfo, TrustAnchorSignerRequest, TrustAnchorSignerResponse,
+            TrustAnchorProxySignerExchanges, TrustAnchorSignedRequest, TrustAnchorSignerInfo, TrustAnchorSignerResponse,
         },
     },
     pubd::RepoStats,
@@ -253,6 +253,12 @@ impl Report for RtaList {}
 impl Report for RtaPrepResponse {}
 
 impl Report for TrustAnchorSignerInfo {}
-impl Report for TrustAnchorSignerRequest {}
+impl Report for TrustAnchorSignedRequest {
+    fn text(&self) -> Result<String, ReportError> {
+        self.content()
+            .map(|request| request.to_string())
+            .map_err(|e| ReportError::UnrecognizedFormat(format!("Could not read request content: {}", e)))
+    }
+}
 impl Report for TrustAnchorSignerResponse {}
 impl Report for TrustAnchorProxySignerExchanges {}

@@ -601,7 +601,7 @@ impl TrustAnchorProxy {
         ))
     }
 
-    pub fn get_signer_request(&self) -> KrillResult<TrustAnchorSignerRequest> {
+    pub fn get_signer_request(&self, signer: &KrillSigner) -> KrillResult<TrustAnchorSignedRequest> {
         if let Some(nonce) = self.open_signer_request.as_ref().cloned() {
             let mut child_requests = vec![];
             for (child, details) in &self.child_details {
@@ -613,7 +613,8 @@ impl TrustAnchorProxy {
                     });
                 }
             }
-            Ok(TrustAnchorSignerRequest { nonce, child_requests })
+
+            TrustAnchorSignerRequest { nonce, child_requests }.sign(self.id.public_key().key_identifier(), signer)
         } else {
             Err(Error::TaProxyHasNoRequest)
         }
