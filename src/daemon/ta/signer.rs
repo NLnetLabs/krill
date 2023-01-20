@@ -360,6 +360,10 @@ impl TrustAnchorSigner {
         request: TrustAnchorSignedRequest,
         signer: &KrillSigner,
     ) -> KrillResult<Vec<TrustAnchorSignerEvent>> {
+        // Let's first make sure this request is valid
+        // and the 'content' is not tampered with.
+        request.validate(&self.proxy_id)?;
+
         let mut objects = self.objects.clone();
 
         let mut child_responses: HashMap<ChildHandle, HashMap<KeyIdentifier, ProvisioningResponse>> = HashMap::new();

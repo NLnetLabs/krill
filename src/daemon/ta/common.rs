@@ -433,8 +433,25 @@ pub struct TrustAnchorSignedRequest {
 
 impl TrustAnchorSignedRequest {
     pub fn validate(&self, issuer: &IdCertInfo) -> Result<(), Error> {
-        self.signed.validate(issuer.public_key())?;
-        Ok(())
+        let signed_message = self.signed.validate(issuer.public_key())?;
+
+        // Verify that the content of the signed message matches the
+        // clear text request as well.
+        let signed_bytes = signed_message.content().to_bytes();
+        let signed_request: TrustAnchorSignerRequest = serde_json::from_slice(&signed_bytes).map_err(|e| {
+            Error::Custom(format!(
+                "Cannot deserialize content of signed Trust Anchor request: {}",
+                e
+            ))
+        })?;
+
+        if self.request != signed_request {
+            Err(Error::custom(
+                "Clear text request content does not match the contained signed message in Trust Anchor request",
+            ))
+        } else {
+            Ok(())
+        }
     }
 
     /// Get content without validation, handle with care
@@ -527,8 +544,25 @@ pub struct TrustAnchorSignedResponse {
 
 impl TrustAnchorSignedResponse {
     pub fn validate(&self, issuer: &IdCertInfo) -> Result<(), Error> {
-        self.signed.validate(issuer.public_key())?;
-        Ok(())
+        let signed_message = self.signed.validate(issuer.public_key())?;
+
+        // Verify that the content of the signed message matches the
+        // clear text request as well.
+        let signed_bytes = signed_message.content().to_bytes();
+        let signed_response: TrustAnchorSignerResponse = serde_json::from_slice(&signed_bytes).map_err(|e| {
+            Error::Custom(format!(
+                "Cannot deserialize content of signed Trust Anchor response: {}",
+                e
+            ))
+        })?;
+
+        if self.response != signed_response {
+            Err(Error::custom(
+                "Clear text request content does not match the contained signed message in Trust Anchor response",
+            ))
+        } else {
+            Ok(())
+        }
     }
 
     /// Get content without validation, handle with care
