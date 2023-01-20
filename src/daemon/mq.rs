@@ -375,7 +375,7 @@ impl eventsourcing::PostSaveEventListener<TrustAnchorProxy> for TaskQueue {
                     // schedule publication for the TA
                     self.sync_repo(ta_handle(), now());
                     // Schedule child->ta sync(s) now that there is a response.
-                    for ca in response.child_responses.keys() {
+                    for ca in response.content().child_responses.keys() {
                         debug!("Received signed response for TA child {}", ca);
                         self.sync_parent(ca.convert(), ta_handle().into_converted(), now());
                     }

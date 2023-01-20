@@ -18,7 +18,7 @@ use crate::{
     daemon::{
         ca::ResourceTaggedAttestation,
         ta::{
-            TrustAnchorProxySignerExchanges, TrustAnchorSignedRequest, TrustAnchorSignerInfo, TrustAnchorSignerResponse,
+            TrustAnchorProxySignerExchanges, TrustAnchorSignedRequest, TrustAnchorSignedResponse, TrustAnchorSignerInfo,
         },
     },
     pubd::RepoStats,
@@ -254,5 +254,5 @@ impl Report for RtaPrepResponse {}
 
 impl Report for TrustAnchorSignerInfo {}
 impl Report for TrustAnchorSignedRequest {}
-impl Report for TrustAnchorSignerResponse {}
+impl Report for TrustAnchorSignedResponse {}
 impl Report for TrustAnchorProxySignerExchanges {}

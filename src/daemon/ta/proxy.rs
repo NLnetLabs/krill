@@ -117,7 +117,7 @@ pub enum TrustAnchorProxyEventDetails {
     // Proxy -> Signer interactions
     SignerAdded(TrustAnchorSignerInfo),
     SignerRequestMade(Nonce),
-    SignerResponseReceived(TrustAnchorSignerResponse),
+    SignerResponseReceived(TrustAnchorSignedResponse),
 
     // Children
     ChildAdded(TrustAnchorChild),
@@ -146,7 +146,7 @@ impl fmt::Display for TrustAnchorProxyEventDetails {
                 write!(f, "Created signer request with nonce '{}'", nonce)
             }
             TrustAnchorProxyEventDetails::SignerResponseReceived(response) => {
-                write!(f, "Received signer response with nonce '{}'", response.nonce)
+                write!(f, "Received signer response with nonce '{}'", response.content().nonce)
             }
 
             // Children
@@ -174,7 +174,7 @@ pub enum TrustAnchorProxyCommandDetails {
     // Proxy -> Signer interactions
     AddSigner(TrustAnchorSignerInfo),
     MakeSignerRequest,
-    ProcessSignerResponse(TrustAnchorSignerResponse),
+    ProcessSignerResponse(TrustAnchorSignedResponse),
 
     // Children
     AddChild(AddChildRequest),
@@ -202,8 +202,8 @@ impl fmt::Display for TrustAnchorProxyCommandDetails {
                 write!(
                     f,
                     "Process signer response. Nonce: {}. Next Update (before): {}",
-                    response.nonce,
-                    response.objects.revision().next_update().to_rfc3339()
+                    response.content().nonce,
+                    response.content().objects.revision().next_update().to_rfc3339()
                 )
             }
 
@@ -242,12 +242,18 @@ impl eventsourcing::WithStorableDetails for TrustAnchorProxyCommandDetails {
             TrustAnchorProxyCommandDetails::MakeSignerRequest => {
                 crate::commons::api::CommandSummary::new("cmd-ta-proxy-pub-req", &self)
             }
-            TrustAnchorProxyCommandDetails::ProcessSignerResponse(objects) => {
+            TrustAnchorProxyCommandDetails::ProcessSignerResponse(response) => {
                 crate::commons::api::CommandSummary::new("cmd-ta-proxy-pub-res", &self)
-                    .with_arg("nonce", &objects.nonce)
-                    .with_arg("manifest number", objects.objects.revision().number())
-                    .with_arg("this update", objects.objects.revision().this_update().to_rfc3339())
-                    .with_arg("next update", objects.objects.revision().next_update().to_rfc3339())
+                    .with_arg("nonce", &response.content().nonce)
+                    .with_arg("manifest number", response.content().objects.revision().number())
+                    .with_arg(
+                        "this update",
+                        response.content().objects.revision().this_update().to_rfc3339(),
+                    )
+                    .with_arg(
+                        "next update",
+                        response.content().objects.revision().next_update().to_rfc3339(),
+                    )
             }
 
             // Children
@@ -282,7 +288,7 @@ impl TrustAnchorProxyCommand {
         TrustAnchorProxyCommand::new(id, None, TrustAnchorProxyCommandDetails::MakeSignerRequest, actor)
     }
 
-    pub fn process_signer_response(id: &TrustAnchorHandle, response: TrustAnchorSignerResponse, actor: &Actor) -> Self {
+    pub fn process_signer_response(id: &TrustAnchorHandle, response: TrustAnchorSignedResponse, actor: &Actor) -> Self {
         TrustAnchorProxyCommand::new(
             id,
             None,
@@ -374,7 +380,8 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
             TrustAnchorProxyEventDetails::SignerAdded(signer) => self.signer = Some(signer),
             TrustAnchorProxyEventDetails::SignerRequestMade(nonce) => self.open_signer_request = Some(nonce),
             TrustAnchorProxyEventDetails::SignerResponseReceived(response) => {
-                for (child_handle, child_responses) in response.child_responses {
+                let content = response.into_content();
+                for (child_handle, child_responses) in content.child_responses {
                     if let Some(child_details) = self.child_details.get_mut(&child_handle) {
                         for (key_id, response) in child_responses {
                             match &response {
@@ -394,7 +401,7 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
                     }
                 }
                 // We cannot have an accepted response if we did not have a signer
-                self.signer.as_mut().unwrap().objects = response.objects;
+                self.signer.as_mut().unwrap().objects = content.objects;
                 self.open_signer_request = None;
             }
 
@@ -468,9 +475,12 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
 
             TrustAnchorProxyCommandDetails::ProcessSignerResponse(response) => {
                 if let Some(nonce) = &self.open_signer_request {
-                    if &response.nonce != nonce {
+                    if &response.content().nonce != nonce {
                         // It seems that the user uploaded the wrong the response.
-                        Err(Error::TaProxyRequestNonceMismatch(response.nonce, nonce.clone()))
+                        Err(Error::TaProxyRequestNonceMismatch(
+                            response.into_content().nonce,
+                            nonce.clone(),
+                        ))
                     } else {
                         // We accept the response as is. Since children cannot be modified, and requests
                         // cannot change as long as there is an open signer request we cannot have any
