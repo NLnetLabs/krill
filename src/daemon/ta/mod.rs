@@ -125,12 +125,10 @@ mod tests {
             proxy = ta_proxy_store.command(make_publish_request_cmd).unwrap();
 
             let signed_request = proxy.get_signer_request(&signer).unwrap();
-            let signer_request = signed_request.validate(proxy.id()).unwrap();
-
-            let request_nonce = signer_request.nonce.clone();
+            let request_nonce = signed_request.content().nonce.clone();
 
             let ta_signer_process_request_command =
-                TrustAnchorSignerCommand::make_process_request_command(&signer_handle, signer_request, signer, &actor);
+                TrustAnchorSignerCommand::make_process_request_command(&signer_handle, signed_request, signer, &actor);
             ta_signer = ta_signer_store.command(ta_signer_process_request_command).unwrap();
 
             let exchange = ta_signer.get_exchange(&request_nonce).unwrap();

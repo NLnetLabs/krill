@@ -384,8 +384,40 @@ impl std::fmt::Display for Nonce {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TrustAnchorProxySignerExchange {
     pub time: Time,
-    pub request: TrustAnchorSignerRequest,
+    pub request: TrustAnchorSignedRequest,
     pub response: TrustAnchorSignerResponse,
+}
+
+//------------ TrustAnchorSignedMessage ------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct TrustAnchorSignedMessage {
+    message: Base64,
+}
+
+impl TrustAnchorSignedMessage {
+    pub fn validate(&self, issuer_key: &PublicKey) -> KrillResult<SignedMessage> {
+        self.validate_at(issuer_key, Time::now())
+    }
+
+    pub fn validate_at(&self, issuer_key: &PublicKey, time: Time) -> KrillResult<SignedMessage> {
+        let bytes = self.message.to_bytes();
+        let signed_message = SignedMessage::decode(bytes, true)
+            .map_err(|e| Error::Custom(format!("Cannot decode signed message: {}", e)))?;
+
+        signed_message
+            .validate_at(issuer_key, time)
+            .map_err(|e| Error::Custom(format!("Invalid signed message: {}", e)))?;
+
+        Ok(signed_message)
+    }
+}
+
+impl From<SignedMessage> for TrustAnchorSignedMessage {
+    fn from(signed_msg: SignedMessage) -> Self {
+        let message = Base64::from_content(&signed_msg.to_captured().into_bytes());
+        TrustAnchorSignedMessage { message }
+    }
 }
 
 //------------ TrustAnchorSignedRequest ------------------------------------
@@ -397,52 +429,27 @@ pub struct TrustAnchorProxySignerExchange {
 /// CMS because our content differs from the existing RFCs, and uses JSON
 /// rather than XML. That said, it can't hurt to re-use the existing CMS
 /// and the normal OID in this context.
-#[derive(Clone, Debug)]
-pub struct TrustAnchorSignedRequest(SignedMessage);
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct TrustAnchorSignedRequest {
+    signed: TrustAnchorSignedMessage,
+    request: TrustAnchorSignerRequest,
+}
 
 impl TrustAnchorSignedRequest {
-    pub fn validate(&self, issuer: &IdCertInfo) -> Result<TrustAnchorSignerRequest, Error> {
-        self.0
-            .validate(issuer.public_key())
-            .map_err(|e| Error::Custom(format!("Invalid Trust Anchor signer request: {}", e)))?;
-
-        self.content()
+    pub fn validate(&self, issuer: &IdCertInfo) -> Result<(), Error> {
+        self.signed.validate(issuer.public_key())?;
+        Ok(())
     }
 
     /// Get content without validation, handle with care
-    pub fn content(&self) -> Result<TrustAnchorSignerRequest, Error> {
-        let bytes = self.0.content().to_bytes();
-
-        serde_json::from_slice(&bytes)
-            .map_err(|e| Error::Custom(format!("Could not deserialize Trust Anchor signer request {}", e)))
+    pub fn content(&self) -> &TrustAnchorSignerRequest {
+        &self.request
     }
 }
 
 impl fmt::Display for TrustAnchorSignedRequest {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", serde_json::to_string(&self).unwrap())
-    }
-}
-
-impl serde::Serialize for TrustAnchorSignedRequest {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let bytes = self.0.to_captured().into_bytes();
-        let str = base64::encode(&bytes);
-        str.serialize(serializer)
-    }
-}
-
-impl<'de> serde::Deserialize<'de> for TrustAnchorSignedRequest {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        use serde::de;
-
-        let b64 = String::deserialize(deserializer)?;
-        let bytes = base64::decode(b64).map_err(de::Error::custom)?;
-        let bytes = Bytes::from(bytes);
-
-        SignedMessage::decode(bytes, true)
-            .map(TrustAnchorSignedRequest)
-            .map_err(de::Error::custom)
+        write!(f, "{}", self.request)
     }
 }
 
@@ -467,7 +474,10 @@ impl TrustAnchorSignerRequest {
 
         signer
             .create_ta_signed_message(data, &signing_key)
-            .map(TrustAnchorSignedRequest)
+            .map(|msg| TrustAnchorSignedRequest {
+                request: self.clone(),
+                signed: msg.into(),
+            })
             .map_err(Error::signer)
     }
 }
@@ -507,6 +517,64 @@ pub struct TrustAnchorChildRequests {
     pub child: ChildHandle,
     pub resources: ResourceSet,
     pub requests: HashMap<KeyIdentifier, ProvisioningRequest>,
+}
+
+//------------ TrustAnchorSignedResponse -----------------------------------
+
+/// A [`TrustAnchorSignerResponse`] wrapped as JSON in an RFC 6492 / 8181
+/// SignedMessage CMS.
+///
+/// Note: we may want to request a separate OID for this kind of signed
+/// CMS because our content differs from the existing RFCs, and uses JSON
+/// rather than XML. That said, it can't hurt to re-use the existing CMS
+/// and the normal OID in this context.
+#[derive(Clone, Debug)]
+pub struct TrustAnchorSignedResponse(SignedMessage);
+
+impl TrustAnchorSignedResponse {
+    pub fn validate(&self, issuer: &IdCertInfo) -> Result<Self, Error> {
+        self.0
+            .validate(issuer.public_key())
+            .map_err(|e| Error::Custom(format!("Invalid Trust Anchor signer response: {}", e)))?;
+
+        self.content()
+    }
+
+    /// Get content without validation, handle with care
+    pub fn content(&self) -> Result<Self, Error> {
+        let bytes = self.0.content().to_bytes();
+
+        serde_json::from_slice(&bytes)
+            .map_err(|e| Error::Custom(format!("Could not deserialize Trust Anchor signer response {}", e)))
+    }
+}
+
+impl fmt::Display for TrustAnchorSignedResponse {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", serde_json::to_string(&self).unwrap())
+    }
+}
+
+impl serde::Serialize for TrustAnchorSignedResponse {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let bytes = self.0.to_captured().into_bytes();
+        let str = base64::encode(&bytes);
+        str.serialize(serializer)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for TrustAnchorSignedResponse {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de;
+
+        let b64 = String::deserialize(deserializer)?;
+        let bytes = base64::decode(b64).map_err(de::Error::custom)?;
+        let bytes = Bytes::from(bytes);
+
+        SignedMessage::decode(bytes, true)
+            .map(TrustAnchorSignedResponse)
+            .map_err(de::Error::custom)
+    }
 }
 
 //------------ TrustAnchorSignerResponse -----------------------------------
