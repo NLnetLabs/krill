@@ -218,7 +218,7 @@ impl eventsourcing::Aggregate for TrustAnchorSigner {
 
         match details {
             TrustAnchorSignerEventDetails::ProxySignerExchangeDone(exchange) => {
-                self.objects = exchange.response.objects.clone();
+                self.objects = exchange.response.content().objects.clone();
                 self.exchanges.0.push(exchange);
             }
         }
@@ -454,7 +454,8 @@ impl TrustAnchorSigner {
             nonce: request.content().nonce.clone(),
             objects,
             child_responses,
-        };
+        }
+        .sign(self.id.public_key().key_identifier(), signer)?;
 
         let exchange = TrustAnchorProxySignerExchange {
             time: Time::now(),
@@ -490,7 +491,7 @@ pub struct TrustAnchorProxySignerExchanges(Vec<TrustAnchorProxySignerExchange>);
 impl fmt::Display for TrustAnchorProxySignerExchanges {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for exchange in &self.0 {
-            let revision = exchange.response.objects.revision();
+            let revision = exchange.response.content().objects.revision();
 
             writeln!(
                 f,
@@ -512,11 +513,11 @@ impl fmt::Display for TrustAnchorProxySignerExchanges {
                 "==================================================================================="
             )?;
             writeln!(f)?;
-            if !exchange.response.child_responses.is_empty() {
+            if !exchange.response.content().child_responses.is_empty() {
                 writeln!(f, "   response |               key identifier             |  child ")?;
                 writeln!(f, "   --------------------------------------------------------------")?;
 
-                for (child, response) in &exchange.response.child_responses {
+                for (child, response) in &exchange.response.content().child_responses {
                     for (key, res) in response.iter() {
                         let res_type = match res {
                             ProvisioningResponse::Issuance(_) => "issued  ",
@@ -529,7 +530,7 @@ impl fmt::Display for TrustAnchorProxySignerExchanges {
                 writeln!(f)?;
             }
 
-            for published in exchange.response.objects.publish_elements().unwrap() {
+            for published in exchange.response.content().objects.publish_elements().unwrap() {
                 writeln!(f, "   {}", published.uri())?;
             }
 

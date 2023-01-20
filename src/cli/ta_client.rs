@@ -36,8 +36,9 @@ use crate::{
     daemon::{
         config::{LogType, SignerConfig, SignerReference, SignerType},
         ta::{
-            TrustAnchorHandle, TrustAnchorProxySignerExchanges, TrustAnchorSignedRequest, TrustAnchorSigner,
-            TrustAnchorSignerCommand, TrustAnchorSignerInfo, TrustAnchorSignerInitCommand, TrustAnchorSignerResponse,
+            TrustAnchorHandle, TrustAnchorProxySignerExchanges, TrustAnchorSignedRequest, TrustAnchorSignedResponse,
+            TrustAnchorSigner, TrustAnchorSignerCommand, TrustAnchorSignerInfo, TrustAnchorSignerInitCommand,
+            TrustAnchorSignerResponse,
         },
     },
 };
@@ -895,7 +896,7 @@ pub enum TrustAnchorClientApiResponse {
     TrustAnchorProxySignerInfo(TrustAnchorSignerInfo),
     ParentResponse(idexchange::ParentResponse),
     SignerRequest(TrustAnchorSignedRequest),
-    SignerResponse(TrustAnchorSignerResponse),
+    SignerResponse(TrustAnchorSignedResponse),
     ProxySignerExchanges(TrustAnchorProxySignerExchanges),
     Empty,
 }

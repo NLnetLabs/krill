@@ -50,9 +50,9 @@ use crate::{
         config::Config,
         mq::{now, TaskQueue},
         ta::{
-            self, ta_handle, TrustAnchorProxy, TrustAnchorProxyCommand, TrustAnchorSignedRequest, TrustAnchorSigner,
-            TrustAnchorSignerCommand, TrustAnchorSignerInfo, TrustAnchorSignerInitCommand, TrustAnchorSignerResponse,
-            TA_NAME,
+            self, ta_handle, TrustAnchorProxy, TrustAnchorProxyCommand, TrustAnchorSignedRequest,
+            TrustAnchorSignedResponse, TrustAnchorSigner, TrustAnchorSignerCommand, TrustAnchorSignerInfo,
+            TrustAnchorSignerInitCommand, TA_NAME,
         },
     },
     pubd::RepositoryManager,
@@ -366,7 +366,7 @@ impl CaManager {
     /// - there is no matching request
     pub async fn ta_proxy_signer_process_response(
         &self,
-        response: TrustAnchorSignerResponse,
+        response: TrustAnchorSignedResponse,
         actor: &Actor,
     ) -> KrillResult<()> {
         let cmd = TrustAnchorProxyCommand::process_signer_response(&ta_handle(), response, actor);
