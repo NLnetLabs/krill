@@ -96,7 +96,7 @@ impl fmt::Display for TrustAnchorSignerEventDetails {
                     f,
                     "Proxy signer exchange done on {} for nonce: {}",
                     exchange.time.to_rfc3339(),
-                    exchange.request.nonce
+                    exchange.request.content().nonce
                 )
             }
         }
@@ -106,7 +106,7 @@ impl fmt::Display for TrustAnchorSignerEventDetails {
 // Commands
 #[derive(Clone, Debug)]
 pub enum TrustAnchorSignerCommandDetails {
-    TrustAnchorSignerRequest(TrustAnchorSignerRequest, Arc<KrillSigner>),
+    TrustAnchorSignerRequest(TrustAnchorSignedRequest, Arc<KrillSigner>),
 }
 
 impl eventsourcing::CommandDetails for TrustAnchorSignerCommandDetails {
@@ -127,7 +127,7 @@ impl fmt::Display for TrustAnchorSignerCommandDetails {
 impl TrustAnchorSignerCommand {
     pub fn make_process_request_command(
         id: &TrustAnchorHandle,
-        request: TrustAnchorSignerRequest,
+        request: TrustAnchorSignedRequest,
         signer: Arc<KrillSigner>,
         actor: &Actor,
     ) -> TrustAnchorSignerCommand {
@@ -143,7 +143,7 @@ impl TrustAnchorSignerCommand {
 // Storable Commands (KrillSigner cannot be de-/serialized)
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum TrustAnchorSignerStorableCommand {
-    TrustAnchorSignerRequest(TrustAnchorSignerRequest),
+    TrustAnchorSignerRequest(TrustAnchorSignedRequest),
 }
 
 impl From<&TrustAnchorSignerCommandDetails> for TrustAnchorSignerStorableCommand {
@@ -161,7 +161,7 @@ impl eventsourcing::WithStorableDetails for TrustAnchorSignerStorableCommand {
         match self {
             TrustAnchorSignerStorableCommand::TrustAnchorSignerRequest(request) => {
                 crate::commons::api::CommandSummary::new("cmd-ta-signer-process-request", &self)
-                    .with_arg("nonce", &request.nonce)
+                    .with_arg("nonce", &request.content().nonce)
             }
         }
     }
@@ -172,7 +172,7 @@ impl fmt::Display for TrustAnchorSignerStorableCommand {
         // note that this is a summary, full details are stored in the json.
         match self {
             TrustAnchorSignerStorableCommand::TrustAnchorSignerRequest(req) => {
-                write!(f, "Process signer request with nonce: {}", req.nonce)
+                write!(f, "Process signer request with nonce: {}", req.content().nonce)
             }
         }
     }
@@ -357,7 +357,7 @@ impl TrustAnchorSigner {
     /// Process a request.
     fn process_signer_request(
         &self,
-        request: TrustAnchorSignerRequest,
+        request: TrustAnchorSignedRequest,
         signer: &KrillSigner,
     ) -> KrillResult<Vec<TrustAnchorSignerEvent>> {
         let mut objects = self.objects.clone();
@@ -367,7 +367,7 @@ impl TrustAnchorSigner {
         let signing_cert = self.ta_cert_details.cert();
         let ta_rcn = ta_resource_class_name();
 
-        for child_request in &request.child_requests {
+        for child_request in &request.content().child_requests {
             let mut responses = HashMap::new();
 
             for (key_id, provisioning_request) in child_request.requests.clone() {
@@ -451,7 +451,7 @@ impl TrustAnchorSigner {
         objects.republish(signing_cert, signer)?;
 
         let response = TrustAnchorSignerResponse {
-            nonce: request.nonce.clone(),
+            nonce: request.content().nonce.clone(),
             objects,
             child_responses,
         };
@@ -476,7 +476,7 @@ impl TrustAnchorSigner {
 
     /// Get exchange for nonce
     pub fn get_exchange(&self, nonce: &Nonce) -> Option<&TrustAnchorProxySignerExchange> {
-        self.exchanges.0.iter().find(|ex| &ex.request.nonce == nonce)
+        self.exchanges.0.iter().find(|ex| &ex.request.content().nonce == nonce)
     }
 
     pub fn get_latest_exchange(&self) -> Option<&TrustAnchorProxySignerExchange> {

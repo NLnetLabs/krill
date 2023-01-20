@@ -1041,9 +1041,6 @@ impl TrustAnchorSignerManager {
     }
 
     fn process(&self, request: TrustAnchorSignedRequest) -> Result<TrustAnchorClientApiResponse, Error> {
-        let signer = self.get_signer()?;
-        let request = request.validate(signer.get_associated_proxy_id())?;
-
         let cmd = TrustAnchorSignerCommand::make_process_request_command(
             &self.ta_handle,
             request,

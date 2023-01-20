@@ -253,12 +253,6 @@ impl Report for RtaList {}
 impl Report for RtaPrepResponse {}
 
 impl Report for TrustAnchorSignerInfo {}
-impl Report for TrustAnchorSignedRequest {
-    fn text(&self) -> Result<String, ReportError> {
-        self.content()
-            .map(|request| request.to_string())
-            .map_err(|e| ReportError::UnrecognizedFormat(format!("Could not read request content: {}", e)))
-    }
-}
+impl Report for TrustAnchorSignedRequest {}
 impl Report for TrustAnchorSignerResponse {}
 impl Report for TrustAnchorProxySignerExchanges {}

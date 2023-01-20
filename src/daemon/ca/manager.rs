@@ -1121,14 +1121,12 @@ impl CaManager {
 
                 // get sign request for signer
                 let signed_request = proxy.get_signer_request(&self.signer)?;
-                let signer_request = signed_request.validate(proxy.id())?;
-
-                let request_nonce = signer_request.nonce.clone(); // remember so we can retrieve it
+                let request_nonce = signed_request.content().nonce.clone(); // remember so we can retrieve it
 
                 // let signer process request
                 let signer_process_request_cmd = TrustAnchorSignerCommand::make_process_request_command(
                     &ta_handle,
-                    signer_request,
+                    signed_request,
                     self.signer.clone(),
                     &self.system_actor,
                 );
