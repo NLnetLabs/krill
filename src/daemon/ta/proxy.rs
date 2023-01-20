@@ -474,34 +474,39 @@ impl eventsourcing::Aggregate for TrustAnchorProxy {
             }
 
             TrustAnchorProxyCommandDetails::ProcessSignerResponse(response) => {
-                if let Some(nonce) = &self.open_signer_request {
-                    if &response.content().nonce != nonce {
-                        // It seems that the user uploaded the wrong the response.
-                        Err(Error::TaProxyRequestNonceMismatch(
-                            response.into_content().nonce,
-                            nonce.clone(),
-                        ))
-                    } else {
-                        // We accept the response as is. Since children cannot be modified, and requests
-                        // cannot change as long as there is an open signer request we cannot have any
-                        // mismatches between the children and child requests in the proxy vs the
-                        // children and responses received from the signer.
-                        //
-                        // In other words.. we trust that the associated signer functions correctly and
-                        // we have no further defensive coding on this side.
-                        //
-                        // Note that if we would reject the response, then there would be no way of
-                        // telling the signer why. So, this is also a matter of the 'the signer is
-                        // always right'.
-                        Ok(vec![TrustAnchorProxyEvent::new(
-                            &self.handle,
-                            self.version,
-                            TrustAnchorProxyEventDetails::SignerResponseReceived(response),
-                        )])
-                    }
+                let open_request_nonce = self.open_signer_request.as_ref().ok_or(Error::TaProxyHasNoRequest)?;
+
+                if &response.content().nonce != open_request_nonce {
+                    // It seems that the user uploaded the wrong the response.
+                    Err(Error::TaProxyRequestNonceMismatch(
+                        response.into_content().nonce,
+                        open_request_nonce.clone(),
+                    ))
+                } else if let Some(signer) = &self.signer {
+                    // Ensure that the response was validly signed.
+                    response.validate(&signer.id)?;
+
+                    // We accept the response as is. Since children cannot be modified, and requests
+                    // cannot change as long as there is an open signer request we cannot have any
+                    // mismatches between the children and child requests in the proxy vs the
+                    // children and responses received from the signer.
+                    //
+                    // In other words.. we trust that the associated signer functions correctly and
+                    // we have no further defensive coding on this side.
+                    //
+                    // Note that if we would reject the response, then there would be no way of
+                    // telling the signer why. So, this is also a matter of the 'the signer is
+                    // always right'.
+                    Ok(vec![TrustAnchorProxyEvent::new(
+                        &self.handle,
+                        self.version,
+                        TrustAnchorProxyEventDetails::SignerResponseReceived(response),
+                    )])
                 } else {
-                    // It seems that the user uploaded a response even though we have no request.
-                    Err(Error::TaProxyHasNoRequest)
+                    // This is rather unexpected.. it implies that we had a request, but no
+                    // signer. Still - return a clean error for this, so unlikely as this may
+                    // be, it can be investigated.
+                    Err(Error::TaProxyHasNoSigner)
                 }
             }
 
