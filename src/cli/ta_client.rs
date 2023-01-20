@@ -38,7 +38,6 @@ use crate::{
         ta::{
             TrustAnchorHandle, TrustAnchorProxySignerExchanges, TrustAnchorSignedRequest, TrustAnchorSignedResponse,
             TrustAnchorSigner, TrustAnchorSignerCommand, TrustAnchorSignerInfo, TrustAnchorSignerInitCommand,
-            TrustAnchorSignerResponse,
         },
     },
 };
@@ -136,7 +135,7 @@ pub enum ProxyCommandDetails {
     SignerAdd(TrustAnchorSignerInfo),
     SignerMakeRequest,
     SignerShowRequest,
-    SignerProcessResponse(TrustAnchorSignerResponse),
+    SignerProcessResponse(TrustAnchorSignedResponse),
     ChildAdd(AddChildRequest),
     ChildResponse(ChildHandle),
 }
