@@ -21,6 +21,7 @@ jobs:
       DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
     with:
       cross_build_args: --features static-openssl
+      cross_max_wait_mins: 20
   
       docker_org: nlnetlabs
       docker_repo: krill
