@@ -1,3 +1,4 @@
+# See: https://github.com/NLnetLabs/ploutos/blob/main/docs/os_packaging.md#package-build-rules
 ---
 pkg:
   - "krill"
@@ -22,7 +23,7 @@ include:
   # `Cargo.toml`.
   - image: "centos:7"
     extra_build_args: "--features static-openssl"
-    systemd_service_unit_file: pkg/common/krill-ubuntu-xenial.krill.service
+    rpm_systemd_service_unit_file: pkg/common/krill-ubuntu-xenial.krill.service
 
   # CentOS 8 became EOL and is in theory still usable as a build container as there is still a Docker image
   # available, and package installation can be done by switching the yum config in the container to use packages
@@ -35,7 +36,7 @@ include:
   # image we are building it in.
   - image: "rockylinux:8"
     os: "centos:8"
-    systemd_service_unit_file: "pkg/common/krill-ubuntu-focal.krill.service"
+    rpm_systemd_service_unit_file: "pkg/common/krill-ubuntu-focal.krill.service"
 
   # package for the Raspberry Pi 4b as an ARMv7 cross compiled variant of the Debian Bullseye upon which
   # Raspbian 11 is based.
