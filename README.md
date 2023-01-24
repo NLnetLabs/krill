@@ -5,7 +5,7 @@
 
 [![](https://img.shields.io/discord/818584154278199396?label=rpki%20on%20discord&logo=discord)](https://discord.gg/8dvKB5Ykhy)
 [![Mastodon Follow](https://img.shields.io/mastodon/follow/109262826617293067?domain=https%3A%2F%2Ffosstodon.org&style=social)](https://fosstodon.org/@nlnetlabs)
-[![](https://img.shields.io/twitter/follow/krillrpki.svg?label=Follow&style=social)](https://twitter.com/krillrpki)
+[![Twitter Follow](https://img.shields.io/badge/follow-%40krillrpki-1DA1F2?logo=twitter&style=social)](https://twitter.com/krillrpki)
 
 # Krill
 
