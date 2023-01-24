@@ -3,7 +3,7 @@
 use std::fs;
 
 use hyper::StatusCode;
-use rpki::{ repository::resources::ResourceSet};
+use rpki::repository::resources::ResourceSet;
 
 use krill::{commons::api::RoaConfigurationUpdates, test::*};
 

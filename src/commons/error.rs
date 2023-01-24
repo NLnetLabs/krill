@@ -27,7 +27,10 @@ use crate::{
     upgrades::PrepareUpgradeError,
 };
 
-use super::{api::{BgpSecAsnKey, BgpSecDefinition, RoaConfiguration}, eventsourcing::WalStoreError};
+use super::{
+    api::{BgpSecAsnKey, BgpSecDefinition, RoaConfiguration},
+    eventsourcing::WalStoreError,
+};
 
 //------------ RoaDeltaError -----------------------------------------------
 
@@ -461,7 +464,7 @@ impl fmt::Display for Error {
             Error::AspaCustomerUnknown(_ca, asn) => write!(f, "No current ASPA exists for customer AS '{}'", asn),
             Error::AspaProvidersUpdateEmpty(_ca, asn) => write!(f, "Received empty update for ASPA for customer AS '{}'", asn),
             Error::AspaProvidersUpdateConflict(_ca, e) => write!(f, "ASPA delta rejected:\n\n'{}'", e),
-            
+
             //-----------------------------------------------------------------
             // BGPSec
             //-----------------------------------------------------------------
@@ -639,9 +642,11 @@ impl Error {
     pub fn status(&self) -> StatusCode {
         match self {
             // Most is bad requests by users, so just mapping the things that are not
-            Error::IoError(_) | Error::SignerError(_) | Error::AggregateStoreError(_) | Error::WalStoreError(_) |Error::PublishingObjects(_) => {
-                StatusCode::INTERNAL_SERVER_ERROR
-            }
+            Error::IoError(_)
+            | Error::SignerError(_)
+            | Error::AggregateStoreError(_)
+            | Error::WalStoreError(_)
+            | Error::PublishingObjects(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Error::PublisherUnknown(_)
             | Error::CaUnknown(_)
             | Error::CaChildUnknown(_, _)
@@ -673,7 +678,7 @@ impl Error {
 
             // internal server error
             Error::AggregateStoreError(e) => ErrorResponse::new("sys-store", self).with_cause(e),
-            
+
             // internal server error
             Error::WalStoreError(e) => ErrorResponse::new("sys-wal-store", self).with_cause(e),
 
@@ -800,9 +805,7 @@ impl Error {
                 .with_ca(ca)
                 .with_cause(err),
 
-            Error::CaParentResponseWrongXml(ca) => {
-                ErrorResponse::new("ca-parent-response-wrong-xml", self).with_ca(ca)
-            }
+            Error::CaParentResponseWrongXml(ca) => ErrorResponse::new("ca-parent-response-wrong-xml", self).with_ca(ca),
 
             Error::CaParentAddNotResponsive(ca, parent) => ErrorResponse::new("ca-parent-add-unresponsive", self)
                 .with_ca(ca)
@@ -846,9 +849,9 @@ impl Error {
             Error::CaAuthorizationUnknown(ca, auth) => {
                 ErrorResponse::new("ca-roa-unknown", self).with_ca(ca).with_auth(auth)
             }
-            Error::CaAuthorizationDuplicate(ca, auth) => ErrorResponse::new("ca-roa-duplicate", self)
-                .with_ca(ca)
-                .with_auth(auth),
+            Error::CaAuthorizationDuplicate(ca, auth) => {
+                ErrorResponse::new("ca-roa-duplicate", self).with_ca(ca).with_auth(auth)
+            }
 
             Error::CaAuthorizationInvalidMaxLength(ca, auth) => ErrorResponse::new("ca-roa-invalid-max-length", self)
                 .with_ca(ca)
@@ -888,12 +891,14 @@ impl Error {
                 .with_ca(ca)
                 .with_asn(key.asn())
                 .with_key_identifier(&key.key_identifier()),
-            Error::BgpSecDefinitionInvalidlySigned(ca, def, msg) => ErrorResponse::new("ca-bgpsec-invalidly-signed", self)
-                .with_ca(ca)
-                .with_asn(def.asn())
-                .with_key_identifier(&def.csr().public_key().key_identifier())
-                .with_bgpsec_csr(def.csr())
-                .with_cause(msg),
+            Error::BgpSecDefinitionInvalidlySigned(ca, def, msg) => {
+                ErrorResponse::new("ca-bgpsec-invalidly-signed", self)
+                    .with_ca(ca)
+                    .with_asn(def.asn())
+                    .with_key_identifier(&def.csr().public_key().key_identifier())
+                    .with_bgpsec_csr(def.csr())
+                    .with_cause(msg)
+            }
             Error::BgpSecDefinitionNotEntitled(ca, key) => ErrorResponse::new("ca-bgpsec-not-entitled", self)
                 .with_ca(ca)
                 .with_asn(key.asn()),
