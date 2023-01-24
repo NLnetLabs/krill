@@ -75,6 +75,8 @@ impl Scheduler {
 
                     Task::SyncParent { ca, parent } => self.sync_parent(ca, parent).await,
 
+                    Task::SyncTrustAnchorProxySignerIfPossible => self.sync_ta_proxy_signer_if_possible().await,
+
                     Task::SuspendChildrenIfNeeded { ca } => self.suspend_children_if_needed(ca).await,
 
                     Task::RepublishIfNeeded => self.republish_if_needed().await,
@@ -234,6 +236,16 @@ impl Scheduler {
             self.tasks.sync_parent(ca, parent, next);
         }
 
+        Ok(())
+    }
+
+    /// Try to synchronise the Trust Anchor Proxy with the *local* Signer - if it exists
+    /// in this server.
+    async fn sync_ta_proxy_signer_if_possible(&self) -> KrillResult<()> {
+        debug!("Synchronise Trust Anchor Proxy with Signer - if Signer is local.");
+        if let Err(e) = self.ca_manager.sync_ta_proxy_signer_if_possible().await {
+            error!("There was an issue synchronising the TA Proxy and Signer: {}", e);
+        }
         Ok(())
     }
 

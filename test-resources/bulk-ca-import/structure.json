@@ -1,7 +1,9 @@
 {
-    "ta_aia": "rsync://example.krill.cloud/ta/ta.cer",
-    "ta_uri": "https://example.krill.cloud/ta/ta.cer",
-    "publication_server_uris": {
+    "ta": {
+        "ta_aia": "rsync://example.krill.cloud/ta/ta.cer",
+        "ta_uri": "https://example.krill.cloud/ta/ta.cer"
+    },
+    "publication_server": {
         "rrdp_base_uri": "https://example.krill.cloud/repo/",
         "rsync_jail": "rsync://example.krill.cloud/repo/"
     },

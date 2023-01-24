@@ -7,8 +7,9 @@ pub const KRILL_VERSION_PATCH: &str = env!("CARGO_PKG_VERSION_PATCH");
 pub const KRILL_SERVER_APP: &str = "Krill";
 pub const KRILL_UP_APP: &str = "Krill Upgrade Helper";
 pub const KRILL_CLIENT_APP: &str = "Krill Client";
+pub const KRILL_TA_CLIENT_APP: &str = "Krill Trust Anchor Client";
 
-pub const KRILL_DEFAULT_CONFIG_FILE: &str = "./defaults/krill.conf";
+pub const KRILL_DEFAULT_CONFIG_FILE: &str = "/etc/krill.conf";
 
 const KRILL_ENV_TEST: &str = "KRILL_TEST";
 const KRILL_ENV_TEST_ANN: &str = "KRILL_TEST_ANN";
@@ -40,6 +41,8 @@ pub const KEYS_DIR: &str = "keys";
 pub const SIGNERS_DIR: &str = "signers";
 
 pub const CASERVER_DIR: &str = "cas";
+pub const TA_PROXY_SERVER_DIR: &str = "ta_proxy";
+pub const TA_SIGNER_SERVER_DIR: &str = "ta_signer";
 pub const CA_OBJECTS_DIR: &str = "ca_objects";
 
 pub const PUBSERVER_DFLT: &str = "0";
@@ -91,6 +94,7 @@ pub const OPENID_CONNECT_HTTP_CLIENT_TIMEOUT_SECS: u64 = 30;
 pub const NO_RESOURCE: NoResourceType = NoResourceType;
 
 pub const ACTOR_DEF_KRILL: ActorDef = ActorDef::system("krill", "admin");
+pub const ACTOR_DEF_KRILLTA: ActorDef = ActorDef::system("krillta", "admin");
 pub const ACTOR_DEF_ANON: ActorDef = ActorDef::anonymous();
 pub const ACTOR_DEF_ADMIN_TOKEN: ActorDef = ActorDef::system("admin-token", "admin");
 pub const ACTOR_DEF_TESTBED: ActorDef = ActorDef::system("testbed", "testbed");
@@ -114,8 +118,8 @@ pub const DEFAULT_SIGNER_NAME: &str = "Default OpenSSL signer";
 #[cfg(all(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11"))]
 pub const DEFAULT_SIGNER_NAME: &str = "Default OpenSSL signer";
 #[cfg(all(feature = "hsm-tests-kmip", not(feature = "hsm-tests-pkcs11")))]
-pub const DEFAULT_KMIP_SIGNER_NAME: &str = "(test mode) Default KMIP signer";
+pub const DEFAULT_SIGNER_NAME: &str = "(test mode) Default KMIP signer";
 #[cfg(all(feature = "hsm-tests-pkcs11", not(feature = "hsm-tests-kmip")))]
-pub const DEFAULT_PKCS11_SIGNER_NAME: &str = "(test mode) Default PKCS#11 signer";
+pub const DEFAULT_SIGNER_NAME: &str = "(test mode) Default PKCS#11 signer";
 
 pub const OPENSSL_ONE_OFF_SIGNER_NAME: &str = "OpenSSL one-off signer";

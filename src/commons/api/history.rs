@@ -9,6 +9,7 @@ use rpki::{
     },
     crypto::KeyIdentifier,
     repository::{resources::ResourceSet, x509::Time},
+    rrdp::Hash,
 };
 
 use crate::{
@@ -261,6 +262,10 @@ impl CommandSummary {
         self.with_arg("key", ki)
     }
 
+    pub fn with_id_cert_hash(self, hash: &Hash) -> Self {
+        self.with_arg("id_cert_hash", hash)
+    }
+
     pub fn with_parent_contact(self, contact: &StorableParentContact) -> Self {
         self.with_arg("parent_contact", contact)
     }
@@ -407,7 +412,6 @@ impl Default for CommandHistoryCriteria {
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
 pub enum StorableCaCommand {
-    MakeTrustAnchor,
     ChildAdd {
         child: ChildHandle,
         ski: String,
@@ -513,7 +517,6 @@ pub struct StorableRcEntitlement {
 impl WithStorableDetails for StorableCaCommand {
     fn summary(&self) -> CommandSummary {
         match self {
-            StorableCaCommand::MakeTrustAnchor => CommandSummary::new("cmd-ca-make-ta", &self),
             StorableCaCommand::ChildAdd { child, ski, resources } => CommandSummary::new("cmd-ca-child-add", &self)
                 .with_child(child)
                 .with_id_ski(ski.as_ref())
@@ -628,11 +631,6 @@ impl WithStorableDetails for StorableCaCommand {
 impl fmt::Display for StorableCaCommand {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            // ------------------------------------------------------------
-            // Becoming a trust anchor
-            // ------------------------------------------------------------
-            StorableCaCommand::MakeTrustAnchor => write!(f, "Turn into Trust Anchor"),
-
             // ------------------------------------------------------------
             // Being a parent
             // ------------------------------------------------------------

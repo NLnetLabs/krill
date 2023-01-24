@@ -1108,3 +1108,8 @@ pub fn test_id_certificate() -> IdCert {
     let data = include_bytes!("../test-resources/oob/id_publisher_ta.cer");
     IdCert::decode(Bytes::from_static(data)).unwrap()
 }
+
+#[cfg(test)]
+pub fn test_actor() -> crate::commons::actor::Actor {
+    crate::commons::actor::Actor::test_from_def(crate::constants::ACTOR_DEF_KRILL)
+}

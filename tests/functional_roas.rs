@@ -5,7 +5,7 @@ use std::fs;
 use hyper::StatusCode;
 use rpki::{ repository::resources::ResourceSet};
 
-use krill::{commons::api::RoaConfigurationUpdates, daemon::ca::ta_handle, test::*};
+use krill::{commons::api::RoaConfigurationUpdates, test::*};
 
 #[tokio::test]
 async fn functional_roas() {
@@ -27,7 +27,6 @@ async fn functional_roas() {
     info("##################################################################");
     info("");
 
-    let ta = ta_handle();
     let testbed = ca_handle("testbed");
     let ca = ca_handle("CA");
     let ca_res = resources("AS65000", "10.0.0.0/8", "");
@@ -52,20 +51,6 @@ async fn functional_roas() {
     info("##################################################################");
     info("");
     assert!(ca_contains_resources(&testbed, &ResourceSet::all()).await);
-
-    // Verify that the TA published expected objects
-    {
-        let mut expected_files = expected_mft_and_crl(&ta, &rcn_0).await;
-        expected_files.push(expected_issued_cer(&testbed, &rcn_0).await);
-        assert!(
-            will_publish_embedded(
-                "TA should have manifest, crl and cert for testbed",
-                &ta,
-                &expected_files
-            )
-            .await
-        );
-    }
 
     {
         info("##################################################################");

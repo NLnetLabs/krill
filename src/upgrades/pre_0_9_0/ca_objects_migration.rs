@@ -26,7 +26,7 @@ use crate::{
     commons::{
         api::{
             IdCertInfo, ObjectName, ReceivedCert, RepositoryContact, Revocation, Revocations, RoaAggregateKey,
-            StorableCaCommand, StoredEffect, TaCertDetails, TrustAnchorLocator,
+            StorableCaCommand, StoredEffect,
         },
         crypto::KrillSigner,
         eventsourcing::{Aggregate, AggregateStore, CommandKey, KeyStoreKey, KeyValueStore, StoredValueInfo},
@@ -35,11 +35,12 @@ use crate::{
     constants::{CASERVER_DIR, KRILL_VERSION},
     daemon::{
         ca::{
-            self, ta_handle, CaEvt, CaEvtDet, CaObjects, CaObjectsStore, IniDet, KeyObjectSet, ObjectSetRevision,
-            PublishedCert, PublishedObject, ResourceClassKeyState, ResourceClassObjects, RoaInfo, RoaPayloadJsonMapKey,
+            self, CaEvt, CaEvtDet, CaObjects, CaObjectsStore, IniDet, KeyObjectSet, ObjectSetRevision, PublishedCert,
+            PublishedObject, ResourceClassKeyState, ResourceClassObjects, RoaInfo, RoaPayloadJsonMapKey,
             StoredCaCommand,
         },
         config::Config,
+        ta::{ta_handle, TaCertDetails, TrustAnchorLocator},
     },
     pubd::RepositoryManager,
     upgrades::pre_0_9_0::{old_commands::*, old_events::*},

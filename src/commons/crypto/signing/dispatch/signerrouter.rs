@@ -190,6 +190,13 @@ impl SignerRouter {
             Ok(())
         }
     }
+
+    /// Import an existing private RSA key. Will only work for the OpenSslSigner.
+    /// Returns an error if another signer is used.
+    pub fn import_key(&self, pem: &str) -> Result<KeyIdentifier, SignerError> {
+        self.bind_ready_signers();
+        self.default_signer.import_key(pem)
+    }
 }
 
 /// When the "hsm" feature is enabled we can no longer assume that signers are immediately and always available as was

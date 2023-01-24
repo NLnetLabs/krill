@@ -152,7 +152,10 @@ impl OpenSslSigner {
 
     fn build_key(&self) -> Result<KeyIdentifier, SignerError> {
         let kp = OpenSslKeyPair::build()?;
+        self.store_key(kp)
+    }
 
+    fn store_key(&self, kp: OpenSslKeyPair) -> Result<KeyIdentifier, SignerError> {
         let pk = &kp.subject_public_key_info()?;
         let key_id = pk.key_identifier();
 
@@ -228,6 +231,16 @@ impl OpenSslSigner {
     pub fn create_key(&self, _algorithm: PublicKeyFormat) -> Result<KeyIdentifier, SignerError> {
         let key_id = self.build_key()?;
         self.remember_key_id(&key_id)?;
+
+        Ok(key_id)
+    }
+
+    /// Import an existing RSA key pair from the PEM encoded private key
+    pub fn import_key(&self, pem: &str) -> Result<KeyIdentifier, SignerError> {
+        let kp = OpenSslKeyPair::from_pem(pem)?;
+        let key_id = self.store_key(kp)?;
+        self.remember_key_id(&key_id)?;
+
         Ok(key_id)
     }
 
@@ -296,13 +309,7 @@ impl<'de> Deserialize<'de> for OpenSslKeyPair {
         D: Deserializer<'de>,
     {
         match String::deserialize(d) {
-            Ok(base64) => {
-                let bytes = base64::decode(&base64).map_err(de::Error::custom)?;
-
-                let pkey = PKey::private_key_from_der(&bytes).map_err(de::Error::custom)?;
-
-                Ok(OpenSslKeyPair { pkey })
-            }
+            Ok(base64) => Self::from_base64(&base64).map_err(de::Error::custom),
             Err(err) => Err(err),
         }
     }
@@ -322,6 +329,22 @@ impl OpenSslKeyPair {
         let bytes = Bytes::from(rsa.public_key_to_der().map_err(SignerError::other)?);
 
         PublicKey::decode(bytes).map_err(SignerError::other)
+    }
+
+    /// Can be used to import an existing RSA key pair from
+    /// the pem encoded private key.
+    pub fn from_pem(pem: &str) -> Result<OpenSslKeyPair, SignerError> {
+        PKey::private_key_from_pem(pem.as_bytes())
+            .map(|pkey| OpenSslKeyPair { pkey })
+            .map_err(|e| SignerError::Other(format!("Invalid private key: {}", e)))
+    }
+
+    fn from_base64(base64: &str) -> Result<OpenSslKeyPair, SignerError> {
+        let bytes = base64::decode(base64).map_err(|_| SignerError::other("Cannot parse private key base64"))?;
+
+        PKey::private_key_from_der(&bytes)
+            .map(|pkey| OpenSslKeyPair { pkey })
+            .map_err(|e| SignerError::Other(format!("Invalid private key: {}", e)))
     }
 }
 
@@ -353,5 +376,31 @@ pub mod tests {
         // comparing json, because OpenSslKeyPair and its internal friends do
         // not implement Eq and PartialEq.
         assert_eq!(json, json_from_des);
+    }
+
+    #[test]
+    fn import_existing_pkcs1_openssl_key() {
+        test::test_under_tmp(|d| {
+            // The following key was generated using openssl on the command
+            let pem = include_str!("../../../../../test-resources/ta/example-pkcs1.pem");
+            let signer = OpenSslSigner::build(&d, "dummy", None).unwrap();
+
+            let ki = signer.import_key(pem).unwrap();
+            signer.get_key_info(&ki).unwrap();
+            signer.destroy_key(&ki).unwrap();
+        })
+    }
+
+    #[test]
+    fn import_existing_pkcs8_openssl_key() {
+        test::test_under_tmp(|d| {
+            // The following key was generated using openssl on the command
+            let pem = include_str!("../../../../../test-resources/ta/example-pkcs8.pem");
+            let signer = OpenSslSigner::build(&d, "dummy", None).unwrap();
+
+            let ki = signer.import_key(pem).unwrap();
+            signer.get_key_info(&ki).unwrap();
+            signer.destroy_key(&ki).unwrap();
+        })
     }
 }

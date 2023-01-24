@@ -23,7 +23,7 @@ use crate::{
         eventsourcing::{AggregateStoreError, KeyValueError},
         util::httpclient,
     },
-    daemon::{ca::RoaPayloadJsonMapKey, http::tls_keys},
+    daemon::{ca::RoaPayloadJsonMapKey, http::tls_keys, ta},
     upgrades::PrepareUpgradeError,
 };
 
@@ -289,7 +289,8 @@ pub enum Error {
     KeyUseNoOldKey,
     KeyUseNoIssuedCert,
     KeyUseNoMatch(KeyIdentifier),
-    KeyRollNotAllowed,
+    KeyRollInProgress,
+    KeyRollActivatePendingRequests,
 
     //-----------------------------------------------------------------
     // Resource Issues
@@ -299,11 +300,19 @@ pub enum Error {
     MissingResources,
 
     //-----------------------------------------------------------------
-    // Embedded (test) TA issues
+    // TA issues
     //-----------------------------------------------------------------
     TaNotAllowed,
     TaNameReserved,
+    TaNotInitialized,
     TaAlreadyInitialized,
+    TaProxyAlreadyHasRepository,
+    TaProxyHasNoRepository,
+    TaProxyHasNoSigner,
+    TaProxyAlreadyHasSigner,
+    TaProxyHasNoRequest,
+    TaProxyHasRequest,
+    TaProxyRequestNonceMismatch(ta::Nonce, ta::Nonce),
 
     //-----------------------------------------------------------------
     // Resource Tagged Attestation issues
@@ -470,7 +479,8 @@ impl fmt::Display for Error {
             Error::KeyUseNoOldKey => write!(f, "No old key in resource class"),
             Error::KeyUseNoIssuedCert => write!(f, "No issued cert matching pub key"),
             Error::KeyUseNoMatch(ki) => write!(f, "No key found matching key identifier: '{}'", ki),
-            Error::KeyRollNotAllowed => write!(f, "Key roll in progress"),
+            Error::KeyRollInProgress => write!(f, "Key roll in progress"),
+            Error::KeyRollActivatePendingRequests => write!(f, "Cannot activate key while there are still pending requests."),
 
             //-----------------------------------------------------------------
             // Resource Issues
@@ -485,7 +495,15 @@ impl fmt::Display for Error {
             //-----------------------------------------------------------------
             Error::TaNotAllowed => write!(f, "Functionality not supported for Trust Anchor"),
             Error::TaNameReserved => write!(f, "Name reserved for embedded Trust Anchor"),
+            Error::TaNotInitialized => write!(f, "TrustAnchor was not initialized"),
             Error::TaAlreadyInitialized => write!(f, "TrustAnchor was already initialized"),
+            Error::TaProxyAlreadyHasRepository => write!(f, "Trust Anchor Proxy already has repository"),
+            Error::TaProxyHasNoRepository => write!(f, "Trust Anchor Proxy has no repository"),
+            Error::TaProxyHasNoSigner => write!(f, "Trust Anchor Proxy has no associated signer"),
+            Error::TaProxyAlreadyHasSigner => write!(f, "Trust Anchor Proxy already has associated signer"),
+            Error::TaProxyHasNoRequest => write!(f, "Trust Anchor Proxy has no signer request"),
+            Error::TaProxyHasRequest => write!(f, "Trust Anchor Proxy already has signer request"),
+            Error::TaProxyRequestNonceMismatch(rcvd, expected) => write!(f, "Trust Anchor Response nonce '{}' does not match open Request nonce '{}'", rcvd, expected),
 
             //-----------------------------------------------------------------
             // Resource Tagged Attestation issues
@@ -889,7 +907,8 @@ impl Error {
             Error::KeyUseNoOldKey => ErrorResponse::new("key-no-old", &self),
             Error::KeyUseNoIssuedCert => ErrorResponse::new("key-no-cert", &self),
             Error::KeyUseNoMatch(ki) => ErrorResponse::new("key-no-match", &self).with_key_identifier(ki),
-            Error::KeyRollNotAllowed => ErrorResponse::new("key-roll-disallowed", &self),
+            Error::KeyRollInProgress => ErrorResponse::new("key-roll-disallowed", &self),
+            Error::KeyRollActivatePendingRequests => ErrorResponse::new("key-roll-pending-requests", &self),
 
             //-----------------------------------------------------------------
             // Resource Issues (label: rc-*)
@@ -903,7 +922,15 @@ impl Error {
             //-----------------------------------------------------------------
             Error::TaNotAllowed => ErrorResponse::new("ta-not-allowed", &self),
             Error::TaNameReserved => ErrorResponse::new("ta-name-reserved", &self),
+            Error::TaNotInitialized => ErrorResponse::new("ta-not-initialized", &self),
             Error::TaAlreadyInitialized => ErrorResponse::new("ta-initialized", &self),
+            Error::TaProxyAlreadyHasRepository => ErrorResponse::new("ta-has-repository", &self),
+            Error::TaProxyHasNoRepository => ErrorResponse::new("ta-has-no-repository", &self),
+            Error::TaProxyHasNoSigner => ErrorResponse::new("ta-has-no-signer", &self),
+            Error::TaProxyAlreadyHasSigner => ErrorResponse::new("ta-has-signer", &self),
+            Error::TaProxyHasNoRequest => ErrorResponse::new("ta-has-no-signer-req", &self),
+            Error::TaProxyHasRequest => ErrorResponse::new("ta-has-signer-req", &self),
+            Error::TaProxyRequestNonceMismatch(_rcvd, _expected) => ErrorResponse::new("ta-proxy-response-nonce", &self),
 
             //-----------------------------------------------------------------
             // Resource Tagged Attestation issues

@@ -61,7 +61,7 @@ impl ConfigDefaults {
         env::var(KRILL_ENV_FORCE_RECOVER).is_ok()
     }
 
-    fn log_level() -> LevelFilter {
+    pub fn log_level() -> LevelFilter {
         match env::var(KRILL_ENV_LOG_LEVEL) {
             Ok(level) => match LevelFilter::from_str(&level) {
                 Ok(level) => level,
@@ -74,7 +74,7 @@ impl ConfigDefaults {
         }
     }
 
-    fn log_type() -> LogType {
+    pub fn log_type() -> LogType {
         LogType::File
     }
 
@@ -90,7 +90,7 @@ impl ConfigDefaults {
         AuthType::AdminToken
     }
 
-    fn admin_token() -> Token {
+    pub fn admin_token() -> Token {
         match env::var(KRILL_ENV_ADMIN_TOKEN) {
             Ok(token) => Token::from(token),
             Err(_) => match env::var(KRILL_ENV_ADMIN_TOKEN_DEPRECATED) {
@@ -223,23 +223,27 @@ impl ConfigDefaults {
         4
     }
 
+    pub fn openssl_signer_only() -> Vec<SignerConfig> {
+        let signer_config = OpenSslSignerConfig { keys_path: None };
+        vec![SignerConfig::new(
+            DEFAULT_SIGNER_NAME.to_string(),
+            SignerType::OpenSsl(signer_config),
+        )]
+    }
+
     pub fn signers() -> Vec<SignerConfig> {
         #[cfg(not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11")))]
         {
-            let signer_config = OpenSslSignerConfig { keys_path: None };
-            vec![SignerConfig::new(
-                DEFAULT_SIGNER_NAME.to_string(),
-                SignerType::OpenSsl(signer_config),
-            )]
+            Self::openssl_signer_only()
         }
 
         #[cfg(all(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11"))]
         {
-            let signer_config = OpenSslSignerConfig { keys_path: None };
-            vec![SignerConfig::new(
-                DEFAULT_SIGNER_NAME.to_string(),
-                SignerType::OpenSsl(signer_config),
-            )]
+            // If we have both enables then just go with openssl.
+            // This is because we are using rust features here to drive testing
+            // which is not ideal.. should be changes when we remove the feature
+            // flags for this.
+            Self::openssl_signer_only()
         }
 
         #[cfg(all(feature = "hsm-tests-kmip", not(feature = "hsm-tests-pkcs11")))]
@@ -267,7 +271,7 @@ impl ConfigDefaults {
                 max_response_bytes: KmipSignerConfig::default_max_response_bytes(),
             };
             return vec![SignerConfig::new(
-                DEFAULT_KMIP_SIGNER_NAME.to_string(),
+                DEFAULT_SIGNER_NAME.to_string(),
                 SignerType::Kmip(signer_config),
             )];
         }
@@ -285,7 +289,7 @@ impl ConfigDefaults {
                 max_retry_seconds: Pkcs11SignerConfig::default_max_retry_seconds(),
             };
             vec![SignerConfig::new(
-                DEFAULT_PKCS11_SIGNER_NAME.to_string(),
+                DEFAULT_SIGNER_NAME.to_string(),
                 SignerType::Pkcs11(signer_config),
             )]
         }
@@ -312,7 +316,7 @@ pub enum SignerReference {
     Index(usize),
 }
 
-fn deserialize_signer_ref<'de, D>(deserializer: D) -> Result<SignerReference, D::Error>
+pub fn deserialize_signer_ref<'de, D>(deserializer: D) -> Result<SignerReference, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -402,6 +406,22 @@ pub struct Config {
 
     #[serde(default)] // default is false
     pub data_dir_use_lock: bool,
+
+    // default is false
+    // implicitly enabled in case of testbed
+    // for that reason.. not pub, but fn provided
+    #[serde(default)]
+    pub ta_support_enabled: bool,
+
+    // default is false
+    // implicitly enabled in case of testbed
+    // MUST be enabled for ca imports to work,
+    // but can be disabled later and signer can
+    // be migrated.
+    //
+    // for that reason.. not pub, but fn provided
+    #[serde(default)]
+    pub ta_signer_enabled: bool,
 
     #[serde(default = "ConfigDefaults::always_recover_data")]
     pub always_recover_data: bool,
@@ -566,14 +586,6 @@ impl IssuanceTimingConfig {
     /// Manifests and CRLs are re-issued.
     pub fn publish_hours_before_next(&self) -> i64 {
         self.timing_publish_hours_before_next.into()
-    }
-
-    /// Worst case guess for re-issuance
-    pub fn republish_worst_case(&self) -> Time {
-        Time::now()
-            + Duration::hours(self.timing_publish_next_hours.into())
-            + Duration::hours(self.timing_publish_next_jitter_hours.into())
-            - Duration::hours(self.publish_hours_before_next())
     }
 
     //-- Child Cert
@@ -807,6 +819,17 @@ impl Config {
         }
     }
 
+    /// Returns whether TA support is explicitly enabled in the config, or
+    /// implicitly enabled in case testbed (or benchmark) mode is used.
+    pub fn ta_proxy_enabled(&self) -> bool {
+        self.ta_support_enabled || self.testbed.is_some()
+    }
+
+    /// Returns whether TA signer is enabled.
+    pub fn ta_signer_enabled(&self) -> bool {
+        self.ta_signer_enabled || self.testbed.is_some()
+    }
+
     pub fn suspend_child_after_inactive_seconds(&self) -> Option<i64> {
         match self.suspend_child_after_inactive_seconds {
             Some(seconds) => Some(seconds.into()),
@@ -1008,6 +1031,8 @@ impl Config {
             https_mode,
             data_dir,
             data_dir_use_lock,
+            ta_support_enabled: false, // but, enabled by testbed where applicable
+            ta_signer_enabled: false,  // same as above
             always_recover_data,
             pid_file,
             service_uri: None,

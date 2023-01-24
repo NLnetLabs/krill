@@ -2,6 +2,7 @@
 //! can have access without needing to depend on the full krill_ca module.
 
 use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::ops::{self};
 use std::str::FromStr;
 use std::sync::Arc;
@@ -9,6 +10,7 @@ use std::{fmt, str};
 
 use bytes::Bytes;
 use chrono::{Duration, TimeZone, Utc};
+use rpki::ca::publication::{PublishDelta, PublishDeltaElement};
 use rpki::repository::x509::{Name, Validity};
 use serde::{Deserialize, Serialize};
 
@@ -37,6 +39,7 @@ use rpki::{
 };
 
 use crate::commons::crypto::CsrInfo;
+use crate::commons::error;
 use crate::daemon::ca::BgpSecCertInfo;
 use crate::{
     commons::{
@@ -49,7 +52,7 @@ use crate::{
     daemon::ca::RoaPayloadJsonMapKey,
 };
 
-use super::BgpSecAsnKey;
+use super::{rrdp, BgpSecAsnKey};
 
 //------------ IdCertInfo ----------------------------------------------------
 
@@ -113,6 +116,21 @@ impl From<&IdCert> for IdCertInfo {
 impl From<IdCert> for IdCertInfo {
     fn from(cer: IdCert) -> Self {
         Self::from(&cer) // we need to encode anyhow, we can't move any data
+    }
+}
+
+impl TryFrom<&IdCertInfo> for IdCert {
+    type Error = error::Error;
+
+    fn try_from(info: &IdCertInfo) -> Result<Self, Self::Error> {
+        IdCert::decode(info.base64.to_bytes().as_ref())
+            .map_err(|e| error::Error::Custom(format!("Could not decode IdCertInfo into IdCert: {}", e)))
+    }
+}
+
+impl fmt::Display for IdCertInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        writeln!(f, "{}", self.pem())
     }
 }
 
@@ -485,54 +503,6 @@ impl fmt::Display for InvalidCert {
 }
 
 impl std::error::Error for InvalidCert {}
-
-//------------ TrustAnchorLocator --------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct TrustAnchorLocator {
-    uris: Vec<uri::Https>,
-    rsync_uri: uri::Rsync,
-    encoded_ski: Base64,
-}
-
-impl TrustAnchorLocator {
-    /// Creates a new TAL, panics when the provided Cert is not a TA cert.
-    pub fn new(uris: Vec<uri::Https>, rsync_uri: uri::Rsync, public_key: &PublicKey) -> Self {
-        let encoded_ski = Base64::from_content(&public_key.to_info_bytes());
-
-        TrustAnchorLocator {
-            uris,
-            rsync_uri,
-            encoded_ski,
-        }
-    }
-}
-
-impl fmt::Display for TrustAnchorLocator {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let base64_string = self.encoded_ski.to_string();
-
-        for uri in self.uris.iter() {
-            writeln!(f, "{}", uri)?;
-        }
-        writeln!(f, "{}", self.rsync_uri)?;
-
-        writeln!(f)?;
-
-        let len = base64_string.len();
-        let wrap = 64;
-
-        for i in 0..=(len / wrap) {
-            if (i * wrap + wrap) < len {
-                writeln!(f, "{}", &base64_string[i * wrap..i * wrap + wrap])?;
-            } else {
-                write!(f, "{}", &base64_string[i * wrap..])?;
-            }
-        }
-
-        Ok(())
-    }
-}
 
 //------------ PendingKeyInfo ------------------------------------------------
 
@@ -930,11 +900,8 @@ pub struct ParentInfo {
 }
 
 impl ParentInfo {
-    pub fn new(handle: ParentHandle, contact: ParentCaContact) -> Self {
-        let kind = match contact {
-            ParentCaContact::Ta(_) => ParentKindInfo::Ta,
-            ParentCaContact::Rfc6492(_) => ParentKindInfo::Rfc6492,
-        };
+    pub fn new(handle: ParentHandle) -> Self {
+        let kind = ParentKindInfo::Rfc6492;
         ParentInfo { handle, kind }
     }
 }
@@ -1192,30 +1159,14 @@ impl ParentStatus {
 
 //------------ RepoStatus ----------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RepoStatus {
     last_exchange: Option<ParentExchange>,
     last_success: Option<Timestamp>,
-    next_exchange_before: Timestamp,
     published: Vec<PublishElement>,
 }
 
-impl Default for RepoStatus {
-    fn default() -> Self {
-        RepoStatus {
-            last_exchange: None,
-            last_success: None,
-            next_exchange_before: Timestamp::now_plus_hours(1),
-            published: vec![],
-        }
-    }
-}
-
 impl RepoStatus {
-    pub fn next_exchange_before(&self) -> Timestamp {
-        self.next_exchange_before
-    }
-
     pub fn last_exchange(&self) -> Option<&ParentExchange> {
         self.last_exchange.as_ref()
     }
@@ -1237,22 +1188,37 @@ impl RepoStatus {
             uri,
             result: ExchangeResult::Failure(error),
         });
-        self.next_exchange_before = timestamp.plus_minutes(5);
     }
 
-    pub fn set_published(&mut self, uri: ServiceUri, published: Vec<PublishElement>, next_update: Timestamp) {
+    pub fn update_published(&mut self, uri: ServiceUri, delta: PublishDelta) {
         let timestamp = Timestamp::now();
         self.last_exchange = Some(ParentExchange {
             timestamp,
             uri,
             result: ExchangeResult::Success,
         });
-        self.published = published;
+
+        for element in delta.into_elements() {
+            match element {
+                PublishDeltaElement::Publish(publish) => {
+                    self.published.push(publish.into());
+                }
+                PublishDeltaElement::Update(update) => {
+                    let update = rrdp::UpdateElement::from(update);
+                    self.published.retain(|el| el.uri() != update.uri());
+                    self.published.push(update.into_publish());
+                }
+                PublishDeltaElement::Withdraw(withdraw) => {
+                    let (_tag, uri, _hash) = withdraw.unpack();
+                    self.published.retain(|el| el.uri() != &uri);
+                }
+            }
+        }
+
         self.last_success = Some(timestamp);
-        self.next_exchange_before = next_update;
     }
 
-    pub fn set_last_updated(&mut self, uri: ServiceUri, next_update: Timestamp) {
+    pub fn set_last_updated(&mut self, uri: ServiceUri) {
         let timestamp = Timestamp::now();
         self.last_exchange = Some(ParentExchange {
             timestamp,
@@ -1260,7 +1226,6 @@ impl RepoStatus {
             result: ExchangeResult::Success,
         });
         self.last_success = Some(timestamp);
-        self.next_exchange_before = next_update;
     }
 }
 
@@ -1277,11 +1242,6 @@ impl fmt::Display for RepoStatus {
                 if let Some(success) = self.last_success() {
                     writeln!(f, "Last successful contact: {}", success.to_rfc3339())?;
                 }
-                writeln!(
-                    f,
-                    "Next contact on or before: {}",
-                    self.next_exchange_before().to_rfc3339()
-                )?;
             }
         }
         Ok(())
@@ -1680,10 +1640,7 @@ impl CertAuthInfo {
         children: Vec<ChildHandle>,
         suspended_children: Vec<ChildHandle>,
     ) -> Self {
-        let parents = parents
-            .into_iter()
-            .map(|(handle, contact)| ParentInfo::new(handle, contact))
-            .collect();
+        let parents = parents.into_iter().map(|(handle, _)| ParentInfo::new(handle)).collect();
 
         let empty = ResourceSet::default();
         let resources = resource_classes.values().fold(ResourceSet::default(), |res, rci| {
@@ -2214,7 +2171,7 @@ mod test {
 
     use rpki::crypto::PublicKeyFormat;
 
-    use crate::{commons::crypto::OpenSslSigner, test};
+    use crate::{commons::crypto::OpenSslSigner, daemon::ta::TrustAnchorLocator, test};
 
     use super::*;
 

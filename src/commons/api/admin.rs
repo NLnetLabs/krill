@@ -16,12 +16,10 @@ use rpki::{
 };
 
 use crate::commons::{
-    api::{rrdp::PublishElement, IdCertInfo, Timestamp, TrustAnchorLocator},
+    api::{rrdp::PublishElement, IdCertInfo, Timestamp},
     error::Error,
     KrillResult,
 };
-
-use super::ReceivedCert;
 
 //------------ Token ------------------------------------------------------
 
@@ -297,6 +295,12 @@ impl PartialEq for RepositoryContact {
 
 impl Eq for RepositoryContact {}
 
+impl From<RepositoryContact> for RepoInfo {
+    fn from(contact: RepositoryContact) -> Self {
+        contact.repo_info
+    }
+}
+
 //------------ ParentCaReq ---------------------------------------------------
 
 /// This type defines all parent ca details needed to add a parent to a CA
@@ -328,32 +332,6 @@ impl ParentCaReq {
 
     pub fn unpack(self) -> (ParentHandle, idexchange::ParentResponse) {
         (self.handle, self.response)
-    }
-}
-
-//------------ TaCertDetails -------------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct TaCertDetails {
-    cert: ReceivedCert,
-    tal: TrustAnchorLocator,
-}
-
-impl TaCertDetails {
-    pub fn new(cert: ReceivedCert, tal: TrustAnchorLocator) -> Self {
-        TaCertDetails { cert, tal }
-    }
-
-    pub fn cert(&self) -> &ReceivedCert {
-        &self.cert
-    }
-
-    pub fn resources(&self) -> &ResourceSet {
-        self.cert.resources()
-    }
-
-    pub fn tal(&self) -> &TrustAnchorLocator {
-        &self.tal
     }
 }
 
@@ -427,7 +405,11 @@ impl fmt::Display for ParentServerInfo {
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
 pub enum ParentCaContact {
-    Ta(TaCertDetails),
+    // Note this used to include other, now deprecated, options.
+    // This is still an enum for backward compatibility without the need for
+    // a data migration of past events, and.. because theoretically we may
+    // need other options in future if there is an alternative to RFC 6492
+    // one day. Oh.. and having the "type" tag doesn't really hurt that much..
     Rfc6492(ParentServerInfo),
 }
 
@@ -452,32 +434,15 @@ impl ParentCaContact {
         }))
     }
 
-    pub fn for_ta(ta_cert_details: TaCertDetails) -> Self {
-        ParentCaContact::Ta(ta_cert_details)
-    }
-
-    pub fn parent_server_info(&self) -> Option<&ParentServerInfo> {
+    pub fn parent_server_info(&self) -> &ParentServerInfo {
         match &self {
-            ParentCaContact::Ta(_) => None,
-            ParentCaContact::Rfc6492(info) => Some(info),
+            ParentCaContact::Rfc6492(info) => info,
         }
     }
 
-    pub fn to_ta_cert(&self) -> &ReceivedCert {
+    pub fn parent_uri(&self) -> &idexchange::ServiceUri {
         match &self {
-            ParentCaContact::Ta(details) => details.cert(),
-            _ => panic!("Not a TA parent"),
-        }
-    }
-
-    pub fn is_ta(&self) -> bool {
-        matches!(*self, ParentCaContact::Ta(_))
-    }
-
-    pub fn parent_uri(&self) -> Option<&idexchange::ServiceUri> {
-        match &self {
-            ParentCaContact::Ta(_) => None,
-            ParentCaContact::Rfc6492(parent) => Some(parent.service_uri()),
+            ParentCaContact::Rfc6492(parent) => parent.service_uri(),
         }
     }
 }
@@ -485,7 +450,6 @@ impl ParentCaContact {
 impl fmt::Display for ParentCaContact {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            ParentCaContact::Ta(details) => details.tal().fmt(f),
             ParentCaContact::Rfc6492(response) => response.fmt(f),
         }
     }
@@ -495,14 +459,12 @@ impl fmt::Display for ParentCaContact {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StorableParentContact {
-    Ta,
     Rfc6492,
 }
 
 impl fmt::Display for StorableParentContact {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            StorableParentContact::Ta => write!(f, "This CA is a TA"),
             StorableParentContact::Rfc6492 => write!(f, "RFC 6492 Parent"),
         }
     }
@@ -511,7 +473,6 @@ impl fmt::Display for StorableParentContact {
 impl From<ParentCaContact> for StorableParentContact {
     fn from(parent: ParentCaContact) -> Self {
         match parent {
-            ParentCaContact::Ta(_) => StorableParentContact::Ta,
             ParentCaContact::Rfc6492(_) => StorableParentContact::Rfc6492,
         }
     }
@@ -562,6 +523,10 @@ impl AddChildRequest {
             resources,
             id_cert,
         }
+    }
+
+    pub fn handle(&self) -> &ChildHandle {
+        &self.handle
     }
 
     pub fn unpack(self) -> (ChildHandle, ResourceSet, IdCert) {

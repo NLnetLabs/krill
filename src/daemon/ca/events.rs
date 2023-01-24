@@ -13,8 +13,7 @@ use crate::{
     commons::{
         api::{
             AspaCustomer, AspaDefinition, AspaProvidersUpdate, BgpSecAsnKey, IdCertInfo, IssuedCertificate, ObjectName,
-            ParentCaContact, ReceivedCert, RepositoryContact, RoaAggregateKey, RtaName, SuspendedCert, TaCertDetails,
-            UnsuspendedCert,
+            ParentCaContact, ReceivedCert, RepositoryContact, RoaAggregateKey, RtaName, SuspendedCert, UnsuspendedCert,
         },
         crypto::KrillSigner,
         eventsourcing::StoredEvent,
@@ -45,6 +44,12 @@ impl Rfc8183Id {
 
     pub fn cert(&self) -> &IdCertInfo {
         &self.cert
+    }
+}
+
+impl From<Rfc8183Id> for IdCertInfo {
+    fn from(id: Rfc8183Id) -> Self {
+        id.cert
     }
 }
 
@@ -425,11 +430,6 @@ pub type CaEvt = StoredEvent<CaEvtDet>;
 #[serde(rename_all = "snake_case")]
 #[serde(tag = "type")]
 pub enum CaEvtDet {
-    // Being a Trust Anchor
-    TrustAnchorMade {
-        ta_cert_details: TaCertDetails,
-    },
-
     // Being a parent Events
     /// A child was added to this (parent) CA
     ChildAdded {
@@ -774,13 +774,6 @@ impl CaEvtDet {
 impl fmt::Display for CaEvtDet {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            // Being a Trust Anchor
-            CaEvtDet::TrustAnchorMade { ta_cert_details } => write!(
-                f,
-                "turn into TA with key (hash) {}",
-                ta_cert_details.cert().key_identifier()
-            ),
-
             // Being a parent Events
             CaEvtDet::ChildAdded {
                 child,
@@ -874,19 +867,11 @@ impl fmt::Display for CaEvtDet {
                 "updated RFC8183 id to key '{}'",
                 id.cert().public_key().key_identifier()
             ),
-            CaEvtDet::ParentAdded { parent, contact } => {
-                let contact_str = match contact {
-                    ParentCaContact::Ta(_) => "TA proxy",
-                    ParentCaContact::Rfc6492(_) => "RFC6492",
-                };
-                write!(f, "added {} parent '{}' ", contact_str, parent)
+            CaEvtDet::ParentAdded { parent, .. } => {
+                write!(f, "added parent '{}' ", parent)
             }
-            CaEvtDet::ParentUpdated { parent, contact } => {
-                let contact_str = match contact {
-                    ParentCaContact::Ta(_) => "TA proxy",
-                    ParentCaContact::Rfc6492(_) => "RFC6492",
-                };
-                write!(f, "updated parent '{}' contact to '{}' ", parent, contact_str)
+            CaEvtDet::ParentUpdated { parent, .. } => {
+                write!(f, "updated parent '{}'", parent)
             }
             CaEvtDet::ParentRemoved { parent } => write!(f, "removed parent '{}'", parent),
 

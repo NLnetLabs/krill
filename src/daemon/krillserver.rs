@@ -22,10 +22,10 @@ use crate::{
             self, AddChildRequest, AllCertAuthIssues, AspaCustomer, AspaDefinitionList, AspaDefinitionUpdates,
             AspaProvidersUpdate, BgpSecCsrInfoList, BgpSecDefinitionUpdates, CaCommandDetails, CaRepoDetails,
             CertAuthInfo, CertAuthInit, CertAuthIssues, CertAuthList, CertAuthStats, ChildCaInfo,
-            ChildrenConnectionStats, CommandHistory, CommandHistoryCriteria, ConfiguredRoa, ParentCaContact,
-            ParentCaReq, PublicationServerUris, PublisherDetails, ReceivedCert, RepoFileDeleteCriteria,
-            RepositoryContact, RoaConfiguration, RoaConfigurationUpdates, RoaPayload, RtaList, RtaName,
-            RtaPrepResponse, ServerInfo, TaCertDetails, Timestamp, UpdateChildRequest,
+            ChildrenConnectionStats, CommandHistory, CommandHistoryCriteria, ConfiguredRoa, IdCertInfo,
+            ParentCaContact, ParentCaReq, PublicationServerUris, PublisherDetails, ReceivedCert,
+            RepoFileDeleteCriteria, RepositoryContact, RoaConfiguration, RoaConfigurationUpdates, RoaPayload, RtaList,
+            RtaName, RtaPrepResponse, ServerInfo, Timestamp, UpdateChildRequest,
         },
         bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion},
         crypto::KrillSignerBuilder,
@@ -36,14 +36,12 @@ use crate::{
     constants::*,
     daemon::{
         auth::{providers::AdminTokenAuthProvider, Authorizer, LoggedInUser},
-        ca::{
-            self, ta_handle, testbed_ca_handle, CaStatus, ResourceTaggedAttestation, RtaContentRequest,
-            RtaPrepareRequest,
-        },
+        ca::{self, testbed_ca_handle, CaStatus, ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest},
         config::{AuthType, Config},
         http::HttpResponse,
         mq::TaskQueue,
         scheduler::Scheduler,
+        ta::{ta_handle, TaCertDetails, TA_NAME},
     },
     pubd::{RepoStats, RepositoryManager},
 };
@@ -54,7 +52,10 @@ use crate::daemon::auth::{
     providers::{ConfigFileAuthProvider, OpenIDConnectAuthProvider},
 };
 
-use super::ca::CaManager;
+use super::{
+    ca::CaManager,
+    ta::{TrustAnchorSignedRequest, TrustAnchorSignedResponse, TrustAnchorSignerInfo},
+};
 
 //------------ KrillServer ---------------------------------------------------
 
@@ -366,26 +367,77 @@ impl KrillServer {
     }
 }
 
-/// # Being a parent
+/// # TA Support
 ///
 impl KrillServer {
-    pub async fn ta(&self) -> KrillResult<TaCertDetails> {
-        let ta_handle = ta_handle();
-        let ta = self.ca_manager.get_ca(&ta_handle).await?;
+    pub fn ta_proxy_enabled(&self) -> bool {
+        self.config.ta_proxy_enabled()
+    }
 
-        let parent_handle = ParentHandle::new(ta_handle.into_name());
+    pub async fn ta_proxy_init(&self) -> KrillResult<()> {
+        self.ca_manager.ta_proxy_init().await
+    }
 
-        if let ParentCaContact::Ta(ta) = ta.parent(&parent_handle).unwrap() {
-            Ok(ta.clone())
-        } else {
-            panic!("Found TA which was not initialized as TA.")
-        }
+    pub async fn ta_proxy_id(&self) -> KrillResult<IdCertInfo> {
+        self.ca_manager.ta_proxy_id().await
+    }
+
+    pub async fn ta_proxy_publisher_request(&self) -> KrillResult<idexchange::PublisherRequest> {
+        self.ca_manager.ta_proxy_publisher_request().await
+    }
+
+    pub async fn ta_proxy_repository_update(&self, contact: RepositoryContact, actor: &Actor) -> KrillResult<()> {
+        self.ca_manager.ta_proxy_repository_update(contact, actor).await
+    }
+
+    pub async fn ta_proxy_repository_contact(&self) -> KrillResult<RepositoryContact> {
+        self.ca_manager.ta_proxy_repository_contact().await
+    }
+
+    pub async fn ta_proxy_signer_add(&self, info: TrustAnchorSignerInfo, actor: &Actor) -> KrillResult<()> {
+        self.ca_manager.ta_proxy_signer_add(info, actor).await
+    }
+
+    pub async fn ta_proxy_signer_make_request(&self, actor: &Actor) -> KrillResult<TrustAnchorSignedRequest> {
+        self.ca_manager.ta_proxy_signer_make_request(actor).await
+    }
+
+    pub async fn ta_proxy_signer_get_request(&self) -> KrillResult<TrustAnchorSignedRequest> {
+        self.ca_manager.ta_proxy_signer_get_request().await
+    }
+
+    pub async fn ta_proxy_signer_process_response(
+        &self,
+        response: TrustAnchorSignedResponse,
+        actor: &Actor,
+    ) -> KrillResult<()> {
+        self.ca_manager.ta_proxy_signer_process_response(response, actor).await
+    }
+
+    pub async fn ta_proxy_children_add(
+        &self,
+        child_request: AddChildRequest,
+        actor: &Actor,
+    ) -> KrillResult<idexchange::ParentResponse> {
+        // TA as parent is handled a special case in the following
+        self.ca_manager
+            .ca_add_child(&ta_handle().convert(), child_request, &self.config.service_uri(), actor)
+            .await
+    }
+
+    pub async fn ta_cert_details(&self) -> KrillResult<TaCertDetails> {
+        let proxy = self.ca_manager.get_trust_anchor_proxy().await?;
+        Ok(proxy.get_ta_details()?.clone())
     }
 
     pub async fn trust_anchor_cert(&self) -> Option<ReceivedCert> {
-        self.ta().await.ok().map(|details| details.cert().clone())
+        self.ta_cert_details().await.ok().map(|details| details.into())
     }
+}
 
+/// # Being a parent
+///
+impl KrillServer {
     /// Adds a child to a CA and returns the ParentCaInfo that the child
     /// will need to contact this CA for resource requests.
     pub async fn ca_add_child(
@@ -511,29 +563,42 @@ impl KrillServer {
         Ok(res)
     }
 
-    //
     pub async fn cas_import(&self, structure: api::import::Structure) -> KrillResult<()> {
         let actor = Arc::new(self.system_actor().clone());
-        if !self.ca_list(&actor)?.cas().is_empty() || self.repo_manager.initialized()? {
-            Err(Error::custom("Import CAs is only permitted when Krill is empty."))
-        } else if let Err(e) = structure.validate_ca_hierarchy() {
-            Err(Error::Custom(e))
+
+        // We need to know which CAs already exist. They should not be imported again,
+        // but can serve as parents.
+        let mut existing_cas = HashMap::new();
+        for ca in self.ca_list(&actor)?.cas() {
+            let parent_handle = ca.handle().convert();
+            let resources = self.ca_manager.get_ca(ca.handle()).await?.all_resources();
+            existing_cas.insert(parent_handle, resources);
+        }
+        structure.validate_ca_hierarchy(existing_cas)?;
+
+        if !self.config.ta_proxy_enabled() {
+            Err(Error::custom(
+                "Import CAs is only possible when ta_support_enabled = true",
+            ))
+        } else if !self.config.ta_signer_enabled() {
+            Err(Error::custom(
+                "Import CAs is only possible when ta_signer_enabled = true",
+            ))
         } else {
+            if let Some(publication_server_uris) = structure.publication_server.clone() {
+                info!("Initialising publication server");
+                self.repo_manager.init(publication_server_uris)?;
+            }
+
+            if let Some(import_ta) = structure.ta.clone() {
+                info!("Creating embedded Trust Anchor");
+                let (ta_aia, ta_uris) = import_ta.into_uris();
+                self.ca_manager
+                    .ta_init_fully_embedded(ta_aia, ta_uris, &self.repo_manager, &actor)
+                    .await?;
+            }
+
             info!("Bulk import {} CAs", structure.cas.len());
-
-            info!("Initialising publication server");
-            self.repo_manager.init(structure.publication_server_uris.clone())?;
-
-            info!("Creating embedded Trust Anchor");
-            self.ca_manager
-                .init_ta(
-                    structure.ta_aia.clone(),
-                    vec![structure.ta_uri.clone()],
-                    &self.repo_manager,
-                    &actor,
-                )
-                .await?;
-
             // Set up each online TA child with local repo, do this in parallel.
             let mut import_fns = vec![];
             let service_uri = Arc::new(self.config.service_uri());
@@ -607,30 +672,33 @@ impl KrillServer {
             let mut tried = 0;
             let parent_as_ca: CaHandle = parent.convert();
 
-            loop {
-                tried += 1;
-                if let Ok(parent) = ca_manager.get_ca(&parent_as_ca).await {
-                    if parent.all_resources().contains(&resources) {
-                        break;
+            // If the parent is the TA, then there is no need to wait.
+            if parent.as_str() != TA_NAME {
+                loop {
+                    tried += 1;
+                    if let Ok(parent) = ca_manager.get_ca(&parent_as_ca).await {
+                        if parent.all_resources().contains(&resources) {
+                            break;
+                        } else {
+                            info!(
+                                "Parent {} does not (yet) have resources for {}. Will wait a bit and try again",
+                                parent.handle(),
+                                ca_handle
+                            );
+                        }
                     } else {
                         info!(
-                            "Parent {} does not (yet) have resources for {}. Will wait a bit and try again",
-                            parent.handle(),
-                            ca_handle
+                            "Parent {} for CA {} is not yet created. Will wait a bit and try again",
+                            parent_as_ca, ca_handle
                         );
                     }
-                } else {
-                    info!(
-                        "Parent {} for CA {} is not yet created. Will wait a bit and try again",
-                        parent_as_ca, ca_handle
-                    );
-                }
-                tokio::time::sleep(std::time::Duration::from_millis(wait_ms)).await;
-                if tried >= max_tries {
-                    return Err(Error::Custom(format!(
-                        "Could not import CA {}. Parent: {} is not created",
-                        ca_handle, parent_as_ca
-                    )));
+                    tokio::time::sleep(std::time::Duration::from_millis(wait_ms)).await;
+                    if tried >= max_tries {
+                        return Err(Error::Custom(format!(
+                            "Could not import CA {}. Parent: {} is not created",
+                            ca_handle, parent_as_ca
+                        )));
+                    }
                 }
             }
 
@@ -658,6 +726,14 @@ impl KrillServer {
 
                 // Second sync will send that CSR to the parent
                 ca_manager.ca_sync_parent(&ca_handle, &parent, &actor).await?;
+
+                // If the parent is a TA, then we will need to push a bit more..
+                // Normally this should be handled by triggered tasks, but the
+                // task scheduler is not running when we do this at startup.
+                if parent.as_str() == TA_NAME {
+                    ca_manager.sync_ta_proxy_signer_if_possible().await?;
+                    ca_manager.ca_sync_parent(&ca_handle, &parent, &actor).await?;
+                }
             }
         }
 

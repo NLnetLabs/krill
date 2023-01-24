@@ -42,7 +42,10 @@ use crate::{
         PUBSERVER_CONTENT_DIR, PUBSERVER_DFLT, PUBSERVER_DIR, REPOSITORY_DIR, REPOSITORY_RRDP_ARCHIVE_DIR,
         REPOSITORY_RRDP_DIR, REPOSITORY_RSYNC_DIR, RRDP_FIRST_SERIAL,
     },
-    daemon::config::{Config, RrdpUpdatesConfig},
+    daemon::{
+        config::{Config, RrdpUpdatesConfig},
+        ta::TA_NAME,
+    },
     pubd::{
         publishers::Publisher, RepoAccessCmd, RepoAccessCmdDet, RepositoryAccessEvent, RepositoryAccessEventDetails,
         RepositoryAccessIni, RepositoryAccessInitDetails,
@@ -1620,8 +1623,14 @@ impl RepositoryAccess {
     }
 
     fn base_uri_for(&self, name: &PublisherHandle) -> KrillResult<uri::Rsync> {
-        uri::Rsync::from_str(&format!("{}{}/", self.rsync_base, name))
-            .map_err(|_| Error::Custom(format!("Cannot derive base uri for {}", name)))
+        if name.as_str() == TA_NAME {
+            // Let the TA publish directly under the rsync base dir. This
+            // will be helpful for RPs that still insist on rsync.
+            Ok(self.rsync_base.clone())
+        } else {
+            uri::Rsync::from_str(&format!("{}{}/", self.rsync_base, name))
+                .map_err(|_| Error::Custom(format!("Cannot derive base uri for {}", name)))
+        }
     }
 
     /// Returns the repository URI information for a publisher.

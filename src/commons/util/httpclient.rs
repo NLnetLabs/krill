@@ -189,19 +189,28 @@ pub async fn post_json_with_opt_response<T: DeserializeOwned>(
 
 /// Performs a POST with no data to the given URI and expects and empty 200 OK response.
 pub async fn post_empty(uri: &str, token: Option<&Token>) -> Result<(), Error> {
+    let res = do_empty_post(uri, token).await?;
+    empty_response(uri, res).await
+}
+
+/// Performs a POST with no data to the given URI and expects a response.
+pub async fn post_empty_with_response<T: DeserializeOwned>(uri: &str, token: Option<&Token>) -> Result<T, Error> {
+    let res = do_empty_post(uri, token).await?;
+    process_json_response(uri, res).await
+}
+
+async fn do_empty_post(uri: &str, token: Option<&Token>) -> Result<Response, Error> {
     if env::var(KRILL_CLI_API_ENV).is_ok() {
         report_post_and_exit(uri, None, token, "<empty>");
     }
 
     let headers = headers(uri, Some(JSON_CONTENT), token)?;
-    let res = client(uri)?
+    client(uri)?
         .post(uri)
         .headers(headers)
         .send()
         .await
-        .map_err(|e| Error::execute(uri, e))?;
-
-    empty_response(uri, res).await
+        .map_err(|e| Error::execute(uri, e))
 }
 
 /// Posts binary data, and expects a binary response. Includes the full krill version

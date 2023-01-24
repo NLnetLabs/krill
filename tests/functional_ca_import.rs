@@ -11,7 +11,10 @@ use krill::{
 async fn functional_ca_import() {
     // Start an empty Krill instance.
     let krill_dir = tmp_dir();
-    let config = test_config(&krill_dir, false, false, false, false);
+    let mut config = test_config(&krill_dir, false, false, false, false);
+    config.ta_support_enabled = true;
+    config.ta_signer_enabled = true;
+
     start_krill(config).await;
 
     // Import CA structure. We expect:
