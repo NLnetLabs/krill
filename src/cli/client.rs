@@ -532,6 +532,7 @@ impl KrillClient {
         }
     }
 
+    #[allow(clippy::result_large_err)]
     fn init_config(&self, details: KrillInitDetails) -> Result<ApiResponse, Error> {
         let defaults = include_str!("../../defaults/krill.conf");
         let multi_add_on = include_str!("../../defaults/krill-multi-user.conf");
@@ -573,7 +574,7 @@ impl KrillClient {
     }
 
     #[cfg(feature = "multi-user")]
-    #[allow(clippy::unnecessary_wraps)]
+    #[allow(clippy::unnecessary_wraps, clippy::result_large_err)]
     fn user(&self, details: KrillUserDetails) -> Result<ApiResponse, Error> {
         let (password_hash, salt) = {
             use scrypt::scrypt;

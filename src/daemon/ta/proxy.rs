@@ -230,20 +230,20 @@ impl eventsourcing::WithStorableDetails for TrustAnchorProxyCommandDetails {
         match self {
             // Publication Support
             TrustAnchorProxyCommandDetails::AddRepository(repository) => {
-                crate::commons::api::CommandSummary::new("cmd-ta-proxy-repo-add", &self)
+                crate::commons::api::CommandSummary::new("cmd-ta-proxy-repo-add", self)
                     .with_service_uri(repository.server_info().service_uri())
             }
 
             // Proxy -> Signer interactions
             TrustAnchorProxyCommandDetails::AddSigner(signer) => {
-                crate::commons::api::CommandSummary::new("cmd-ta-proxy-signer-add", &self)
+                crate::commons::api::CommandSummary::new("cmd-ta-proxy-signer-add", self)
                     .with_id_cert_hash(signer.id.hash())
             }
             TrustAnchorProxyCommandDetails::MakeSignerRequest => {
-                crate::commons::api::CommandSummary::new("cmd-ta-proxy-pub-req", &self)
+                crate::commons::api::CommandSummary::new("cmd-ta-proxy-pub-req", self)
             }
             TrustAnchorProxyCommandDetails::ProcessSignerResponse(response) => {
-                crate::commons::api::CommandSummary::new("cmd-ta-proxy-pub-res", &self)
+                crate::commons::api::CommandSummary::new("cmd-ta-proxy-pub-res", self)
                     .with_arg("nonce", &response.content().nonce)
                     .with_arg("manifest number", response.content().objects.revision().number())
                     .with_arg(
@@ -258,13 +258,13 @@ impl eventsourcing::WithStorableDetails for TrustAnchorProxyCommandDetails {
 
             // Children
             TrustAnchorProxyCommandDetails::AddChild(child) => {
-                crate::commons::api::CommandSummary::new("cmd-ta-proxy-child-add", &self).with_child(child.handle())
+                crate::commons::api::CommandSummary::new("cmd-ta-proxy-child-add", self).with_child(child.handle())
             }
             TrustAnchorProxyCommandDetails::AddChildRequest(child_handle, _request) => {
-                crate::commons::api::CommandSummary::new("cmd-ta-proxy-child-req", &self).with_child(child_handle)
+                crate::commons::api::CommandSummary::new("cmd-ta-proxy-child-req", self).with_child(child_handle)
             }
             TrustAnchorProxyCommandDetails::GiveChildResponse(child_handle, _response) => {
-                crate::commons::api::CommandSummary::new("cmd-ta-proxy-child-res", &self).with_child(child_handle)
+                crate::commons::api::CommandSummary::new("cmd-ta-proxy-child-res", self).with_child(child_handle)
             }
         }
     }

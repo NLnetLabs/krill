@@ -160,7 +160,7 @@ impl eventsourcing::WithStorableDetails for TrustAnchorSignerStorableCommand {
     fn summary(&self) -> crate::commons::api::CommandSummary {
         match self {
             TrustAnchorSignerStorableCommand::TrustAnchorSignerRequest(request) => {
-                crate::commons::api::CommandSummary::new("cmd-ta-signer-process-request", &self)
+                crate::commons::api::CommandSummary::new("cmd-ta-signer-process-request", self)
                     .with_arg("nonce", &request.content().nonce)
             }
         }

@@ -666,149 +666,149 @@ impl Error {
             //-----------------------------------------------------------------
 
             // internal server error
-            Error::IoError(e) => ErrorResponse::new("sys-io", &self).with_cause(e),
+            Error::IoError(e) => ErrorResponse::new("sys-io", self).with_cause(e),
 
             // internal server error
-            Error::KeyValueError(e) => ErrorResponse::new("sys-kv", &self).with_cause(e),
+            Error::KeyValueError(e) => ErrorResponse::new("sys-kv", self).with_cause(e),
 
             // internal server error
-            Error::AggregateStoreError(e) => ErrorResponse::new("sys-store", &self).with_cause(e),
+            Error::AggregateStoreError(e) => ErrorResponse::new("sys-store", self).with_cause(e),
             
             // internal server error
-            Error::WalStoreError(e) => ErrorResponse::new("sys-wal-store", &self).with_cause(e),
+            Error::WalStoreError(e) => ErrorResponse::new("sys-wal-store", self).with_cause(e),
 
             // internal server error
-            Error::SignerError(e) => ErrorResponse::new("sys-signer", &self).with_cause(e),
+            Error::SignerError(e) => ErrorResponse::new("sys-signer", self).with_cause(e),
 
             // internal server error
-            Error::HttpsSetup(e) => ErrorResponse::new("sys-https", &self).with_cause(e),
+            Error::HttpsSetup(e) => ErrorResponse::new("sys-https", self).with_cause(e),
 
             // internal server error
-            Error::HttpClientError(e) => ErrorResponse::new("sys-http-client", &self).with_cause(e),
+            Error::HttpClientError(e) => ErrorResponse::new("sys-http-client", self).with_cause(e),
 
             // internal configuration error
-            Error::ConfigError(e) => ErrorResponse::new("sys-config", &self).with_cause(e),
+            Error::ConfigError(e) => ErrorResponse::new("sys-config", self).with_cause(e),
 
             // upgrade error
-            Error::UpgradeError(e) => ErrorResponse::new("sys-upgrade", &self).with_cause(e),
+            Error::UpgradeError(e) => ErrorResponse::new("sys-upgrade", self).with_cause(e),
 
             //-----------------------------------------------------------------
             // General API Client Issues (label: api-*)
             //-----------------------------------------------------------------
-            Error::JsonError(e) => ErrorResponse::new("api-json", &self).with_cause(e),
+            Error::JsonError(e) => ErrorResponse::new("api-json", self).with_cause(e),
 
-            Error::InvalidUtf8Input => ErrorResponse::new("api-invalid-utf8", &self),
+            Error::InvalidUtf8Input => ErrorResponse::new("api-invalid-utf8", self),
 
-            Error::ApiUnknownMethod => ErrorResponse::new("api-unknown-method", &self),
+            Error::ApiUnknownMethod => ErrorResponse::new("api-unknown-method", self),
 
             // NOT FOUND (generic API not found)
-            Error::ApiUnknownResource => ErrorResponse::new("api-unknown-resource", &self),
+            Error::ApiUnknownResource => ErrorResponse::new("api-unknown-resource", self),
 
-            Error::ApiInvalidHandle => ErrorResponse::new("api-invalid-path-handle", &self),
+            Error::ApiInvalidHandle => ErrorResponse::new("api-invalid-path-handle", self),
 
-            Error::ApiInvalidSeconds => ErrorResponse::new("api-invalid-path-seconds", &self),
+            Error::ApiInvalidSeconds => ErrorResponse::new("api-invalid-path-seconds", self),
 
-            Error::PostTooBig => ErrorResponse::new("api-post-body-exceeds-limit", &self),
+            Error::PostTooBig => ErrorResponse::new("api-post-body-exceeds-limit", self),
 
-            Error::PostCannotRead => ErrorResponse::new("api-post-body-cannot-read", &self),
+            Error::PostCannotRead => ErrorResponse::new("api-post-body-cannot-read", self),
 
-            Error::ApiInvalidCredentials(e) => ErrorResponse::new("api-invalid-credentials", &self).with_cause(e),
+            Error::ApiInvalidCredentials(e) => ErrorResponse::new("api-invalid-credentials", self).with_cause(e),
 
-            Error::ApiLoginError(e) => ErrorResponse::new("api-login-error", &self).with_cause(e),
+            Error::ApiLoginError(e) => ErrorResponse::new("api-login-error", self).with_cause(e),
 
-            Error::ApiAuthPermanentError(e) => ErrorResponse::new("api-auth-permanent-error", &self).with_cause(e),
+            Error::ApiAuthPermanentError(e) => ErrorResponse::new("api-auth-permanent-error", self).with_cause(e),
 
-            Error::ApiAuthTransientError(e) => ErrorResponse::new("api-auth-transient-error", &self).with_cause(e),
+            Error::ApiAuthTransientError(e) => ErrorResponse::new("api-auth-transient-error", self).with_cause(e),
 
-            Error::ApiAuthSessionExpired(e) => ErrorResponse::new("api-auth-session-expired", &self).with_cause(e),
+            Error::ApiAuthSessionExpired(e) => ErrorResponse::new("api-auth-session-expired", self).with_cause(e),
 
-            Error::ApiInsufficientRights(e) => ErrorResponse::new("api-insufficient-rights", &self).with_cause(e),
+            Error::ApiInsufficientRights(e) => ErrorResponse::new("api-insufficient-rights", self).with_cause(e),
 
             //-----------------------------------------------------------------
             // Repository Issues (label: repo-*)
             //-----------------------------------------------------------------
 
             // 2100
-            Error::RepoNotSet => ErrorResponse::new("repo-not-set", &self),
+            Error::RepoNotSet => ErrorResponse::new("repo-not-set", self),
 
             //-----------------------------------------------------------------
             // Publisher Issues (label: pub-*)
             //-----------------------------------------------------------------
-            Error::PublisherUnknown(p) => ErrorResponse::new("pub-unknown", &self).with_publisher(p),
+            Error::PublisherUnknown(p) => ErrorResponse::new("pub-unknown", self).with_publisher(p),
 
-            Error::PublisherDuplicate(p) => ErrorResponse::new("pub-duplicate", &self).with_publisher(p),
+            Error::PublisherDuplicate(p) => ErrorResponse::new("pub-duplicate", self).with_publisher(p),
 
-            Error::PublisherUriOutsideBase(uri, base) => ErrorResponse::new("pub-outside-jail", &self)
+            Error::PublisherUriOutsideBase(uri, base) => ErrorResponse::new("pub-outside-jail", self)
                 .with_uri(uri)
                 .with_base_uri(base),
 
-            Error::PublisherBaseUriNoSlash(uri) => ErrorResponse::new("pub-uri-no-slash", &self).with_uri(uri),
+            Error::PublisherBaseUriNoSlash(uri) => ErrorResponse::new("pub-uri-no-slash", self).with_uri(uri),
 
             //-----------------------------------------------------------------
             // Repository Server Issues
             //-----------------------------------------------------------------
-            Error::RepositoryServerNotInitialized => ErrorResponse::new("pub-repo-not-initialized", &self),
-            Error::RepositoryServerHasPublishers => ErrorResponse::new("pub-repo-has-publishers", &self),
-            Error::RepositoryServerAlreadyInitialized => ErrorResponse::new("pub-repo-initialized", &self),
+            Error::RepositoryServerNotInitialized => ErrorResponse::new("pub-repo-not-initialized", self),
+            Error::RepositoryServerHasPublishers => ErrorResponse::new("pub-repo-has-publishers", self),
+            Error::RepositoryServerAlreadyInitialized => ErrorResponse::new("pub-repo-initialized", self),
 
             //-----------------------------------------------------------------
             // Publishing
             //-----------------------------------------------------------------
-            Error::Rfc8181Validation(e) => ErrorResponse::new("rfc8181-validation", &self).with_cause(e),
-            Error::Rfc8181Decode(e) => ErrorResponse::new("rfc8181-decode", &self).with_cause(e),
-            Error::Rfc8181(e) => ErrorResponse::new("rfc8181-protocol-message", &self).with_cause(e),
-            Error::Rfc8181Delta(e) => ErrorResponse::new("rfc8181-delta", &self).with_cause(e),
+            Error::Rfc8181Validation(e) => ErrorResponse::new("rfc8181-validation", self).with_cause(e),
+            Error::Rfc8181Decode(e) => ErrorResponse::new("rfc8181-decode", self).with_cause(e),
+            Error::Rfc8181(e) => ErrorResponse::new("rfc8181-protocol-message", self).with_cause(e),
+            Error::Rfc8181Delta(e) => ErrorResponse::new("rfc8181-delta", self).with_cause(e),
             Error::PublishingObjects(msg) => {
-                ErrorResponse::new("publishing-generate-repository-objects", &self).with_cause(msg)
+                ErrorResponse::new("publishing-generate-repository-objects", self).with_cause(msg)
             }
 
             //-----------------------------------------------------------------
             // CA Issues (label: ca-*)
             //-----------------------------------------------------------------
-            Error::CaDuplicate(ca) => ErrorResponse::new("ca-duplicate", &self).with_ca(ca),
+            Error::CaDuplicate(ca) => ErrorResponse::new("ca-duplicate", self).with_ca(ca),
 
-            Error::CaUnknown(ca) => ErrorResponse::new("ca-unknown", &self).with_ca(ca),
+            Error::CaUnknown(ca) => ErrorResponse::new("ca-unknown", self).with_ca(ca),
 
-            Error::CaRepoInUse(ca) => ErrorResponse::new("ca-repo-same", &self).with_ca(ca),
+            Error::CaRepoInUse(ca) => ErrorResponse::new("ca-repo-same", self).with_ca(ca),
 
-            Error::CaRepoIssue(ca, err) => ErrorResponse::new("ca-repo-issue", &self).with_ca(ca).with_cause(err),
+            Error::CaRepoIssue(ca, err) => ErrorResponse::new("ca-repo-issue", self).with_ca(ca).with_cause(err),
 
-            Error::CaRepoResponseInvalid(ca, err) => ErrorResponse::new("ca-repo-response-invalid-xml", &self)
+            Error::CaRepoResponseInvalid(ca, err) => ErrorResponse::new("ca-repo-response-invalid-xml", self)
                 .with_ca(ca)
                 .with_cause(err),
 
-            Error::CaRepoResponseWrongXml(ca) => ErrorResponse::new("ca-repo-response-wrong-xml", &self).with_ca(ca),
+            Error::CaRepoResponseWrongXml(ca) => ErrorResponse::new("ca-repo-response-wrong-xml", self).with_ca(ca),
 
-            Error::CaParentDuplicateName(ca, parent) => ErrorResponse::new("ca-parent-duplicate", &self)
+            Error::CaParentDuplicateName(ca, parent) => ErrorResponse::new("ca-parent-duplicate", self)
                 .with_ca(ca)
                 .with_parent(parent),
 
-            Error::CaParentDuplicateInfo(ca, parent) => ErrorResponse::new("ca-parent-xml-duplicate", &self)
+            Error::CaParentDuplicateInfo(ca, parent) => ErrorResponse::new("ca-parent-xml-duplicate", self)
                 .with_ca(ca)
                 .with_parent(parent),
 
-            Error::CaParentUnknown(ca, parent) => ErrorResponse::new("ca-parent-unknown", &self)
+            Error::CaParentUnknown(ca, parent) => ErrorResponse::new("ca-parent-unknown", self)
                 .with_ca(ca)
                 .with_parent(parent),
 
-            Error::CaParentIssue(ca, parent, err) => ErrorResponse::new("ca-parent-issue", &self)
+            Error::CaParentIssue(ca, parent, err) => ErrorResponse::new("ca-parent-issue", self)
                 .with_ca(ca)
                 .with_parent(parent)
                 .with_cause(err),
 
-            Error::CaParentResponseInvalid(ca, err) => ErrorResponse::new("ca-parent-response-invalid-xml", &self)
+            Error::CaParentResponseInvalid(ca, err) => ErrorResponse::new("ca-parent-response-invalid-xml", self)
                 .with_ca(ca)
                 .with_cause(err),
 
             Error::CaParentResponseWrongXml(ca) => {
-                ErrorResponse::new("ca-parent-response-wrong-xml", &self).with_ca(ca)
+                ErrorResponse::new("ca-parent-response-wrong-xml", self).with_ca(ca)
             }
 
-            Error::CaParentAddNotResponsive(ca, parent) => ErrorResponse::new("ca-parent-add-unresponsive", &self)
+            Error::CaParentAddNotResponsive(ca, parent) => ErrorResponse::new("ca-parent-add-unresponsive", self)
                 .with_ca(ca)
                 .with_parent(parent),
 
-            Error::CaParentSyncError(ca, parent, rcn, _errors) => ErrorResponse::new("ca-parent-sync", &self)
+            Error::CaParentSyncError(ca, parent, rcn, _errors) => ErrorResponse::new("ca-parent-sync", self)
                 .with_ca(ca)
                 .with_parent(parent)
                 .with_resource_class(rcn),
@@ -816,132 +816,132 @@ impl Error {
             //-----------------------------------------------------------------
             // RFC8183 (exchanging id XML)
             //-----------------------------------------------------------------
-            Error::Rfc8183(e) => ErrorResponse::new("rfc-8183-xml", &self).with_cause(e),
+            Error::Rfc8183(e) => ErrorResponse::new("rfc-8183-xml", self).with_cause(e),
 
             //-----------------------------------------------------------------
             // RFC6492 (requesting resources, not on JSON api)
             //-----------------------------------------------------------------
-            Error::Rfc6492(e) => ErrorResponse::new("rfc6492-protocol", &self).with_cause(e),
-            Error::Rfc6492NotPerformed(e) => ErrorResponse::new("rfc6492-not-performed-response", &self).with_cause(e),
-            Error::Rfc6492InvalidCsrSent(e) => ErrorResponse::new("rfc6492-invalid-csr", &self).with_cause(e),
+            Error::Rfc6492(e) => ErrorResponse::new("rfc6492-protocol", self).with_cause(e),
+            Error::Rfc6492NotPerformed(e) => ErrorResponse::new("rfc6492-not-performed-response", self).with_cause(e),
+            Error::Rfc6492InvalidCsrSent(e) => ErrorResponse::new("rfc6492-invalid-csr", self).with_cause(e),
 
             // CA Child Issues
-            Error::CaChildDuplicate(ca, child) => ErrorResponse::new("ca-child-duplicate", &self)
+            Error::CaChildDuplicate(ca, child) => ErrorResponse::new("ca-child-duplicate", self)
                 .with_ca(ca)
                 .with_child(child),
-            Error::CaChildUnknown(ca, child) => ErrorResponse::new("ca-child-unknown", &self)
+            Error::CaChildUnknown(ca, child) => ErrorResponse::new("ca-child-unknown", self)
                 .with_ca(ca)
                 .with_child(child),
-            Error::CaChildMustHaveResources(ca, child) => ErrorResponse::new("ca-child-resources-required", &self)
+            Error::CaChildMustHaveResources(ca, child) => ErrorResponse::new("ca-child-resources-required", self)
                 .with_ca(ca)
                 .with_child(child),
-            Error::CaChildExtraResources(ca, child) => ErrorResponse::new("ca-child-resources-extra", &self)
+            Error::CaChildExtraResources(ca, child) => ErrorResponse::new("ca-child-resources-extra", self)
                 .with_ca(ca)
                 .with_child(child),
-            Error::CaChildUnauthorized(ca, child) => ErrorResponse::new("ca-child-unauthorized", &self)
+            Error::CaChildUnauthorized(ca, child) => ErrorResponse::new("ca-child-unauthorized", self)
                 .with_ca(ca)
                 .with_child(child),
 
             // RouteAuthorizations
             Error::CaAuthorizationUnknown(ca, auth) => {
-                ErrorResponse::new("ca-roa-unknown", &self).with_ca(ca).with_auth(auth)
+                ErrorResponse::new("ca-roa-unknown", self).with_ca(ca).with_auth(auth)
             }
-            Error::CaAuthorizationDuplicate(ca, auth) => ErrorResponse::new("ca-roa-duplicate", &self)
+            Error::CaAuthorizationDuplicate(ca, auth) => ErrorResponse::new("ca-roa-duplicate", self)
                 .with_ca(ca)
                 .with_auth(auth),
 
-            Error::CaAuthorizationInvalidMaxLength(ca, auth) => ErrorResponse::new("ca-roa-invalid-max-length", &self)
+            Error::CaAuthorizationInvalidMaxLength(ca, auth) => ErrorResponse::new("ca-roa-invalid-max-length", self)
                 .with_ca(ca)
                 .with_auth(auth),
 
-            Error::CaAuthorizationNotEntitled(ca, auth) => ErrorResponse::new("ca-roa-not-entitled", &self)
+            Error::CaAuthorizationNotEntitled(ca, auth) => ErrorResponse::new("ca-roa-not-entitled", self)
                 .with_ca(ca)
                 .with_auth(auth),
 
-            Error::RoaDeltaError(ca, roa_delta_error) => ErrorResponse::new("ca-roa-delta-error", &self)
+            Error::RoaDeltaError(ca, roa_delta_error) => ErrorResponse::new("ca-roa-delta-error", self)
                 .with_ca(ca)
                 .with_roa_delta_error(roa_delta_error),
 
             //-----------------------------------------------------------------
             // Autonomous System Provider Authorization - ASPA
             //-----------------------------------------------------------------
-            Error::AspaCustomerAsNotEntitled(ca, asn) => ErrorResponse::new("ca-aspa-not-entitled", &self)
+            Error::AspaCustomerAsNotEntitled(ca, asn) => ErrorResponse::new("ca-aspa-not-entitled", self)
                 .with_ca(ca)
                 .with_asn(*asn),
-            Error::AspaCustomerAlreadyPresent(ca, asn) => ErrorResponse::new("ca-aspa-customer-as-duplicate", &self)
+            Error::AspaCustomerAlreadyPresent(ca, asn) => ErrorResponse::new("ca-aspa-customer-as-duplicate", self)
                 .with_ca(ca)
                 .with_asn(*asn),
-            Error::AspaCustomerUnknown(ca, asn) => ErrorResponse::new("ca-aspa-unknown-customer-as", &self)
+            Error::AspaCustomerUnknown(ca, asn) => ErrorResponse::new("ca-aspa-unknown-customer-as", self)
                 .with_ca(ca)
                 .with_asn(*asn),
-            Error::AspaProvidersUpdateEmpty(ca, asn) => ErrorResponse::new("ca-aspa-delta-empty", &self)
+            Error::AspaProvidersUpdateEmpty(ca, asn) => ErrorResponse::new("ca-aspa-delta-empty", self)
                 .with_ca(ca)
                 .with_asn(*asn),
-            Error::AspaProvidersUpdateConflict(ca, conflict) => ErrorResponse::new("ca-aspa-delta-error", &self)
+            Error::AspaProvidersUpdateConflict(ca, conflict) => ErrorResponse::new("ca-aspa-delta-error", self)
                 .with_ca(ca)
                 .with_aspa_providers_conflict(conflict),
 
             //-----------------------------------------------------------------
             // BGP Sec
             //-----------------------------------------------------------------
-            Error::BgpSecDefinitionUnknown(ca, key) => ErrorResponse::new("ca-bgpsec-unknown", &self)
+            Error::BgpSecDefinitionUnknown(ca, key) => ErrorResponse::new("ca-bgpsec-unknown", self)
                 .with_ca(ca)
                 .with_asn(key.asn())
                 .with_key_identifier(&key.key_identifier()),
-            Error::BgpSecDefinitionInvalidlySigned(ca, def, msg) => ErrorResponse::new("ca-bgpsec-invalidly-signed", &self)
+            Error::BgpSecDefinitionInvalidlySigned(ca, def, msg) => ErrorResponse::new("ca-bgpsec-invalidly-signed", self)
                 .with_ca(ca)
                 .with_asn(def.asn())
                 .with_key_identifier(&def.csr().public_key().key_identifier())
                 .with_bgpsec_csr(def.csr())
                 .with_cause(msg),
-            Error::BgpSecDefinitionNotEntitled(ca, key) => ErrorResponse::new("ca-bgpsec-not-entitled", &self)
+            Error::BgpSecDefinitionNotEntitled(ca, key) => ErrorResponse::new("ca-bgpsec-not-entitled", self)
                 .with_ca(ca)
                 .with_asn(key.asn()),
 
             //-----------------------------------------------------------------
             // Key Usage Issues (key-*)
             //-----------------------------------------------------------------
-            Error::KeyUseAttemptReuse => ErrorResponse::new("key-re-use", &self),
-            Error::KeyUseNoNewKey => ErrorResponse::new("key-no-new", &self),
-            Error::KeyUseNoCurrentKey => ErrorResponse::new("key-no-current", &self),
-            Error::KeyUseNoOldKey => ErrorResponse::new("key-no-old", &self),
-            Error::KeyUseNoIssuedCert => ErrorResponse::new("key-no-cert", &self),
-            Error::KeyUseNoMatch(ki) => ErrorResponse::new("key-no-match", &self).with_key_identifier(ki),
-            Error::KeyRollInProgress => ErrorResponse::new("key-roll-disallowed", &self),
-            Error::KeyRollActivatePendingRequests => ErrorResponse::new("key-roll-pending-requests", &self),
+            Error::KeyUseAttemptReuse => ErrorResponse::new("key-re-use", self),
+            Error::KeyUseNoNewKey => ErrorResponse::new("key-no-new", self),
+            Error::KeyUseNoCurrentKey => ErrorResponse::new("key-no-current", self),
+            Error::KeyUseNoOldKey => ErrorResponse::new("key-no-old", self),
+            Error::KeyUseNoIssuedCert => ErrorResponse::new("key-no-cert", self),
+            Error::KeyUseNoMatch(ki) => ErrorResponse::new("key-no-match", self).with_key_identifier(ki),
+            Error::KeyRollInProgress => ErrorResponse::new("key-roll-disallowed", self),
+            Error::KeyRollActivatePendingRequests => ErrorResponse::new("key-roll-pending-requests", self),
 
             //-----------------------------------------------------------------
             // Resource Issues (label: rc-*)
             //-----------------------------------------------------------------
-            Error::ResourceClassUnknown(name) => ErrorResponse::new("rc-unknown", &self).with_resource_class(name),
-            Error::ResourceSetError(e) => ErrorResponse::new("rc-resources", &self).with_cause(e),
-            Error::MissingResources => ErrorResponse::new("rc-missing-resources", &self),
+            Error::ResourceClassUnknown(name) => ErrorResponse::new("rc-unknown", self).with_resource_class(name),
+            Error::ResourceSetError(e) => ErrorResponse::new("rc-resources", self).with_cause(e),
+            Error::MissingResources => ErrorResponse::new("rc-missing-resources", self),
 
             //-----------------------------------------------------------------
             // Embedded (test) TA issues (label: ta-*)
             //-----------------------------------------------------------------
-            Error::TaNotAllowed => ErrorResponse::new("ta-not-allowed", &self),
-            Error::TaNameReserved => ErrorResponse::new("ta-name-reserved", &self),
-            Error::TaNotInitialized => ErrorResponse::new("ta-not-initialized", &self),
-            Error::TaAlreadyInitialized => ErrorResponse::new("ta-initialized", &self),
-            Error::TaProxyAlreadyHasRepository => ErrorResponse::new("ta-has-repository", &self),
-            Error::TaProxyHasNoRepository => ErrorResponse::new("ta-has-no-repository", &self),
-            Error::TaProxyHasNoSigner => ErrorResponse::new("ta-has-no-signer", &self),
-            Error::TaProxyAlreadyHasSigner => ErrorResponse::new("ta-has-signer", &self),
-            Error::TaProxyHasNoRequest => ErrorResponse::new("ta-has-no-signer-req", &self),
-            Error::TaProxyHasRequest => ErrorResponse::new("ta-has-signer-req", &self),
-            Error::TaProxyRequestNonceMismatch(_rcvd, _expected) => ErrorResponse::new("ta-proxy-response-nonce", &self),
+            Error::TaNotAllowed => ErrorResponse::new("ta-not-allowed", self),
+            Error::TaNameReserved => ErrorResponse::new("ta-name-reserved", self),
+            Error::TaNotInitialized => ErrorResponse::new("ta-not-initialized", self),
+            Error::TaAlreadyInitialized => ErrorResponse::new("ta-initialized", self),
+            Error::TaProxyAlreadyHasRepository => ErrorResponse::new("ta-has-repository", self),
+            Error::TaProxyHasNoRepository => ErrorResponse::new("ta-has-no-repository", self),
+            Error::TaProxyHasNoSigner => ErrorResponse::new("ta-has-no-signer", self),
+            Error::TaProxyAlreadyHasSigner => ErrorResponse::new("ta-has-signer", self),
+            Error::TaProxyHasNoRequest => ErrorResponse::new("ta-has-no-signer-req", self),
+            Error::TaProxyHasRequest => ErrorResponse::new("ta-has-signer-req", self),
+            Error::TaProxyRequestNonceMismatch(_rcvd, _expected) => ErrorResponse::new("ta-proxy-response-nonce", self),
 
             //-----------------------------------------------------------------
             // Resource Tagged Attestation issues
             //-----------------------------------------------------------------
-            Error::RtaResourcesNotHeld => ErrorResponse::new("rta-resources-not-held", &self),
+            Error::RtaResourcesNotHeld => ErrorResponse::new("rta-resources-not-held", self),
 
             //-----------------------------------------------------------------
             // If we really don't know any more..
             //-----------------------------------------------------------------
-            Error::Custom(_msg) => ErrorResponse::new("general-error", &self),
-            Error::Multiple(_errors) => ErrorResponse::new("multiple-errors", &self),
+            Error::Custom(_msg) => ErrorResponse::new("general-error", self),
+            Error::Multiple(_errors) => ErrorResponse::new("multiple-errors", self),
         }
     }
 

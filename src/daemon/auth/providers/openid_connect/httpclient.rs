@@ -74,6 +74,7 @@ async fn dispatch_openid_request(
     convert_to_openid_response(&request_uri, response).await
 }
 
+#[allow(clippy::result_large_err)]
 fn convert_openid_request(
     request: openidconnect::HttpRequest,
     client: &reqwest::Client,

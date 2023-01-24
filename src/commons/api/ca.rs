@@ -1640,7 +1640,7 @@ impl CertAuthInfo {
         children: Vec<ChildHandle>,
         suspended_children: Vec<ChildHandle>,
     ) -> Self {
-        let parents = parents.into_iter().map(|(handle, _)| ParentInfo::new(handle)).collect();
+        let parents = parents.into_keys().map(ParentInfo::new).collect();
 
         let empty = ResourceSet::default();
         let resources = resource_classes.values().fold(ResourceSet::default(), |res, rci| {

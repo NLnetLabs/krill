@@ -510,12 +510,7 @@ impl CaManager {
             "Will try to clean up all repositories for CA '{}' before removing it.",
             ca_handle
         );
-        let mut repos: Vec<RepositoryContact> = self
-            .ca_repo_elements(ca_handle)
-            .await?
-            .into_iter()
-            .map(|(contact, _)| contact)
-            .collect();
+        let mut repos: Vec<RepositoryContact> = self.ca_repo_elements(ca_handle).await?.into_keys().collect();
 
         for deprecated in self.ca_deprecated_repos(ca_handle)? {
             repos.push(deprecated.into());

@@ -254,7 +254,7 @@ impl CurrentObjects {
     }
 
     pub fn into_elements(self) -> Vec<PublishElement> {
-        self.0.into_iter().map(|(_, e)| e).collect()
+        self.0.into_values().collect()
     }
 
     fn has_match(&self, hash: &Hash, uri: &uri::Rsync) -> bool {
@@ -795,7 +795,7 @@ mod tests {
         // Adding a different file as a publish element, rather than update,
         // for the same URI will also fail. Checks fix for issue #981.
         let publish_file2 = DeltaElements {
-            publishes: vec![PublishElement::new(file2_content.clone(), file1_uri.clone())],
+            publishes: vec![PublishElement::new(file2_content, file1_uri.clone())],
             updates: vec![],
             withdraws: vec![],
         };
@@ -834,7 +834,7 @@ mod tests {
         let withdraw_file1_updated = DeltaElements {
             publishes: vec![],
             updates: vec![],
-            withdraws: vec![WithdrawElement::new(file1_uri.clone(), file1_content_2.to_hash())],
+            withdraws: vec![WithdrawElement::new(file1_uri, file1_content_2.to_hash())],
         };
         assert!(objects.verify_delta(&withdraw_file1_updated, &jail).is_ok());
     }

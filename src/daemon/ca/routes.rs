@@ -134,7 +134,7 @@ impl Routes {
     }
 
     pub fn into_roa_payload_keys(self) -> Vec<RoaPayloadJsonMapKey> {
-        self.map.into_iter().map(|(auth, _)| auth).collect()
+        self.map.into_keys().collect()
     }
 
     pub fn as_aggregates(&self) -> HashMap<RoaAggregateKey, Vec<RoaPayloadJsonMapKey>> {

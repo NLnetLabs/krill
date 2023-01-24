@@ -149,7 +149,7 @@ impl ConfigFileAuthProvider {
             let params = scrypt::Params::new(PW_HASH_LOG_N, PW_HASH_R, PW_HASH_P).unwrap();
 
             let password_hash_bytes = hex::decode(password_hash.as_ref()).unwrap();
-            let strong_salt = hex::decode(&user_salt).unwrap();
+            let strong_salt = hex::decode(user_salt).unwrap();
             let mut hashed_hash: [u8; 32] = [0; 32];
             scrypt(
                 password_hash_bytes.as_slice(),

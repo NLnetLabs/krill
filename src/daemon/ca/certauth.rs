@@ -1198,12 +1198,9 @@ impl CertAuth {
     /// Maps a parent and parent's resource class name to a ResourceClassName and
     /// ResourceClass of our own.
     fn find_parent_rc(&self, parent: &ParentHandle, parent_rcn: &ResourceClassName) -> Option<&ResourceClass> {
-        for rc in self.resources.values() {
-            if rc.parent_handle() == parent && rc.parent_rc_name() == parent_rcn {
-                return Some(rc);
-            }
-        }
-        None
+        self.resources
+            .values()
+            .find(|&rc| rc.parent_handle() == parent && rc.parent_rc_name() == parent_rcn)
     }
 
     /// Get all the current open certificate requests for a parent.

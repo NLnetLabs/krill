@@ -124,7 +124,7 @@ impl OpenSslSigner {
 
 impl OpenSslSigner {
     fn init_keys_dir(work_dir: &Path) -> Result<PathBuf, SignerError> {
-        let meta_data = fs::metadata(&work_dir).map_err(|e| {
+        let meta_data = fs::metadata(work_dir).map_err(|e| {
             KrillIoError::new(
                 format!("Could not get metadata from '{}'", work_dir.to_string_lossy()),
                 e,
@@ -299,7 +299,7 @@ impl Serialize for OpenSslKeyPair {
     {
         let bytes: Vec<u8> = self.pkey.as_ref().private_key_to_der().map_err(ser::Error::custom)?;
 
-        base64::encode(&bytes).serialize(s)
+        base64::encode(bytes).serialize(s)
     }
 }
 

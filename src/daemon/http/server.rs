@@ -540,10 +540,11 @@ pub async fn metrics(req: Request) -> RoutingResult {
                                 // skip the ones for which we have no status yet, i.e it was really only just added
                                 // and no attempt to connect has yet been made.
                                 if let Some(exchange) = status.last_exchange() {
-                                    let value = if exchange.was_success() { 1 } else { 0 };
                                     res.push_str(&format!(
                                         "krill_ca_parent_success{{ca=\"{}\", parent=\"{}\"}} {}\n",
-                                        ca, parent, value
+                                        ca,
+                                        parent,
+                                        i32::from(exchange.was_success())
                                     ));
                                 }
                             }
@@ -587,8 +588,11 @@ pub async fn metrics(req: Request) -> RoutingResult {
                         // skip the ones for which we have no status yet, i.e it was really only just added
                         // and no attempt to connect has yet been made.
                         if let Some(exchange) = status.repo().last_exchange() {
-                            let value = if exchange.was_success() { 1 } else { 0 };
-                            res.push_str(&format!("krill_ca_ps_success{{ca=\"{}\"}} {}\n", ca, value));
+                            res.push_str(&format!(
+                                "krill_ca_ps_success{{ca=\"{}\"}} {}\n",
+                                ca,
+                                i32::from(exchange.was_success())
+                            ));
                         }
                     }
 
@@ -642,10 +646,11 @@ pub async fn metrics(req: Request) -> RoutingResult {
                         // and no attempt to connect has yet been made.
                         for (child, status) in status.children().iter() {
                             if let Some(exchange) = status.last_exchange() {
-                                let value = if exchange.was_success() { 1 } else { 0 };
                                 res.push_str(&format!(
                                     "krill_ca_child_success{{ca=\"{}\", child=\"{}\"}} {}\n",
-                                    ca, child, value
+                                    ca,
+                                    child,
+                                    i32::from(exchange.was_success())
                                 ));
                             }
                         }
@@ -658,11 +663,11 @@ pub async fn metrics(req: Request) -> RoutingResult {
                     res.push_str("# TYPE krill_ca_child_state gauge\n");
                     for (ca, status) in ca_status_map.iter() {
                         for (child, status) in status.children().iter() {
-                            let value = if status.suspended().is_none() { 1 } else { 0 };
-
                             res.push_str(&format!(
                                 "krill_ca_child_state{{ca=\"{}\", child=\"{}\"}} {}\n",
-                                ca, child, value
+                                ca,
+                                child,
+                                i32::from(status.suspended().is_none())
                             ));
                         }
                     }

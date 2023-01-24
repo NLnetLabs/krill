@@ -280,6 +280,7 @@ pub async fn delete(uri: &str, token: Option<&Token>) -> Result<(), Error> {
     }
 }
 
+#[allow(clippy::result_large_err)]
 fn load_root_cert(path_str: &str) -> Result<reqwest::Certificate, Error> {
     let path = PathBuf::from_str(path_str).map_err(|e| Error::request_build_https_cert(path_str, e))?;
     let file = file::read(&path).map_err(|e| Error::request_build_https_cert(path_str, e))?;
@@ -287,11 +288,13 @@ fn load_root_cert(path_str: &str) -> Result<reqwest::Certificate, Error> {
 }
 
 /// Default client for Krill use cases.
+#[allow(clippy::result_large_err)]
 pub fn client(uri: &str) -> Result<reqwest::Client, Error> {
     client_with_tweaks(uri, Duration::from_secs(HTTP_CLIENT_TIMEOUT_SECS), true)
 }
 
 /// Client with tweaks - in particular needed by the openid connect client
+#[allow(clippy::result_large_err)]
 pub fn client_with_tweaks(uri: &str, timeout: Duration, allow_redirects: bool) -> Result<reqwest::Client, Error> {
     let mut builder = reqwest::ClientBuilder::new().timeout(timeout);
 
@@ -314,6 +317,7 @@ pub fn client_with_tweaks(uri: &str, timeout: Duration, allow_redirects: bool) -
     .map_err(|e| Error::request_build(uri, e))
 }
 
+#[allow(clippy::result_large_err)]
 fn headers(uri: &str, content_type: Option<&str>, token: Option<&Token>) -> Result<HeaderMap, Error> {
     let mut headers = HeaderMap::new();
     headers.insert(USER_AGENT, HeaderValue::from_static("krill"));
@@ -390,6 +394,7 @@ type ErrorMessage = String;
 
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
+#[allow(clippy::result_large_err)]
 pub enum Error {
     RequestBuild(ErrorUri, ErrorMessage),
     RequestBuildHttpsCert(RootCertPath, ErrorMessage),
