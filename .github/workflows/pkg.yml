@@ -14,24 +14,24 @@ on:
 
 jobs:
   package:
-    uses: NLnetLabs/ploutos/.github/workflows/pkg-rust.yml@v1
+    # See: https://github.com/NLnetLabs/ploutos
+    uses: NLnetLabs/ploutos/.github/workflows/pkg-rust.yml@v5
     secrets:
       DOCKER_HUB_ID: ${{ secrets.DOCKER_HUB_ID }}
       DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
     with:
+      cross_build_args: --features static-openssl
+      cross_max_wait_mins: 20
+  
       docker_org: nlnetlabs
       docker_repo: krill
+      docker_build_rules: pkg/rules/docker-images-to-build.yml
+      docker_sanity_check_command: krillc --version
 
-      cross_build_rules_path: pkg/rules/cross-targets.yml
-      docker_build_rules_path: pkg/rules/docker-images-to-build.yml
-      package_build_rules_path: pkg/rules/packages-to-build.yml
-      package_test_rules_path: pkg/rules/packages-to-test.yml
+      package_build_rules: pkg/rules/packages-to-build.yml
       package_test_scripts_path: pkg/test-scripts/test-<package>.sh
 
-      cross_build_args: --features static-openssl
       deb_extra_build_packages: libssl-dev
-      deb_maintainer: The NLnet Labs RPKI Team <rpki@nlnetlabs.nl>
-      docker_sanity_check_command: krillc --version
-      rpm_extra_build_packages: openssl-devel
+      rpm_extra_build_packages: make openssl-devel
       rpm_scriptlets_path: pkg/rpm/scriptlets.toml
 
