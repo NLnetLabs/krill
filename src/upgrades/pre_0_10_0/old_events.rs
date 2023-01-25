@@ -24,7 +24,7 @@ use crate::{
         api::{
             AspaCustomer, AspaDefinition, AspaProvidersUpdate, CertInfo, IdCertInfo, IssuedCertificate, ObjectName,
             ParentCaContact, ParentServerInfo, PublicationServerInfo, ReceivedCert, RepositoryContact, Revocation,
-            Revocations, RoaAggregateKey, RtaName, SuspendedCert, TaCertDetails, TrustAnchorLocator, UnsuspendedCert,
+            Revocations, RoaAggregateKey, RtaName, SuspendedCert, UnsuspendedCert,
         },
         eventsourcing::StoredEvent,
         util::ext_serde,
@@ -33,6 +33,7 @@ use crate::{
         self, AspaInfo, AspaObjectsUpdates, CaEvt, CaEvtDet, CaObjects, CertifiedKey, ChildCertificateUpdates,
         ObjectSetRevision, PreparedRta, PublishedObject, RoaInfo, RoaPayloadJsonMapKey, RoaUpdates, SignedRta,
     },
+    daemon::ta::{TaCertDetails, TrustAnchorLocator},
     pubd::{Publisher, RepositoryAccessEvent, RepositoryAccessEventDetails, RepositoryAccessInitDetails},
     upgrades::PrepareUpgradeError,
 };
@@ -268,10 +269,10 @@ impl TryFrom<OldParentCaContact> for ParentCaContact {
     type Error = PrepareUpgradeError;
 
     fn try_from(old: OldParentCaContact) -> Result<Self, Self::Error> {
-        Ok(match old {
-            OldParentCaContact::Ta(old) => ParentCaContact::Ta(old.try_into()?),
-            OldParentCaContact::Rfc6492(old) => ParentCaContact::Rfc6492(old.into()),
-        })
+        match old {
+            OldParentCaContact::Ta(_old) => Err(PrepareUpgradeError::OldTaMigration),
+            OldParentCaContact::Rfc6492(old) => Ok(ParentCaContact::Rfc6492(old.into())),
+        }
     }
 }
 
@@ -890,9 +891,7 @@ impl TryFrom<OldCaEvtDet> for CaEvtDet {
 
     fn try_from(old: OldCaEvtDet) -> Result<Self, Self::Error> {
         Ok(match old {
-            OldCaEvtDet::TrustAnchorMade { ta_cert_details } => CaEvtDet::TrustAnchorMade {
-                ta_cert_details: ta_cert_details.try_into()?,
-            },
+            OldCaEvtDet::TrustAnchorMade { .. } => return Err(PrepareUpgradeError::OldTaMigration),
             OldCaEvtDet::ChildAdded {
                 child,
                 id_cert,

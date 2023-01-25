@@ -206,4 +206,3 @@ impl PolarClass for Permission {
         oso::Class::builder()
     }
 }
-

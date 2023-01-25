@@ -153,25 +153,24 @@ impl KrillClient {
         match command {
             BulkCaCommand::Refresh => {
                 post_empty(&self.server, &self.token, "api/v1/bulk/cas/sync/parent").await?;
-                Ok(ApiResponse::Empty)
             }
             BulkCaCommand::Publish => {
                 post_empty(&self.server, &self.token, "api/v1/bulk/cas/publish").await?;
-                Ok(ApiResponse::Empty)
             }
             BulkCaCommand::ForcePublish => {
                 post_empty(&self.server, &self.token, "api/v1/bulk/cas/force_publish").await?;
-                Ok(ApiResponse::Empty)
             }
             BulkCaCommand::Sync => {
                 post_empty(&self.server, &self.token, "api/v1/bulk/cas/sync/repo").await?;
-                Ok(ApiResponse::Empty)
             }
             BulkCaCommand::Suspend => {
                 post_empty(&self.server, &self.token, "api/v1/bulk/cas/suspend").await?;
-                Ok(ApiResponse::Empty)
+            }
+            BulkCaCommand::Import(structure) => {
+                post_json(&self.server, &self.token, "api/v1/bulk/cas/import", structure).await?;
             }
         }
+        Ok(ApiResponse::Empty)
     }
 
     #[allow(clippy::cognitive_complexity)]
@@ -515,6 +514,11 @@ impl KrillClient {
                 delete(&self.server, &self.token, &uri).await?;
                 Ok(ApiResponse::Empty)
             }
+            PubServerCommand::DeleteFiles(criteria) => {
+                let uri = "api/v1/pubd/delete";
+                post_json(&self.server, &self.token, uri, criteria).await?;
+                Ok(ApiResponse::Empty)
+            }
             PubServerCommand::ShowPublisher(handle) => {
                 let uri = format!("api/v1/pubd/publishers/{}", handle);
                 let details: PublisherDetails = get_json(&self.server, &self.token, &uri).await?;
@@ -528,6 +532,7 @@ impl KrillClient {
         }
     }
 
+    #[allow(clippy::result_large_err)]
     fn init_config(&self, details: KrillInitDetails) -> Result<ApiResponse, Error> {
         let defaults = include_str!("../../defaults/krill.conf");
         let multi_add_on = include_str!("../../defaults/krill-multi-user.conf");
@@ -569,7 +574,7 @@ impl KrillClient {
     }
 
     #[cfg(feature = "multi-user")]
-    #[allow(clippy::unnecessary_wraps)]
+    #[allow(clippy::unnecessary_wraps, clippy::result_large_err)]
     fn user(&self, details: KrillUserDetails) -> Result<ApiResponse, Error> {
         let (password_hash, salt) = {
             use scrypt::scrypt;

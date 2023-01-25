@@ -42,7 +42,10 @@ use crate::{
         PUBSERVER_CONTENT_DIR, PUBSERVER_DFLT, PUBSERVER_DIR, REPOSITORY_DIR, REPOSITORY_RRDP_ARCHIVE_DIR,
         REPOSITORY_RRDP_DIR, REPOSITORY_RSYNC_DIR, RRDP_FIRST_SERIAL,
     },
-    daemon::config::{Config, RrdpUpdatesConfig},
+    daemon::{
+        config::{Config, RrdpUpdatesConfig},
+        ta::TA_NAME,
+    },
     pubd::{
         publishers::Publisher, RepoAccessCmd, RepoAccessCmdDet, RepositoryAccessEvent, RepositoryAccessEventDetails,
         RepositoryAccessIni, RepositoryAccessInitDetails,
@@ -159,6 +162,9 @@ impl RepositoryContentProxy {
         let current_objects = content.objects_for_publisher(&publisher)?;
         let delta = DeltaElements::from(delta);
 
+        // Verifying the delta here before sending the command (and doing it there and then) means
+        // that we do not need to obtain a write-lock for the repository content for nothing in
+        // case there would be an issue.
         current_objects.verify_delta(&delta, jail)?;
 
         let command = RepositoryContentCommand::publish(self.default_handle.clone(), publisher, delta);
@@ -171,6 +177,12 @@ impl RepositoryContentProxy {
     pub fn rrdp_update_needed(&self, rrdp_updates_config: RrdpUpdatesConfig) -> KrillResult<RrdpUpdateNeeded> {
         self.get_default_content()
             .map(|content| content.rrdp.update_rrdp_needed(rrdp_updates_config))
+    }
+
+    /// Delete matching files from the repository and publishers
+    pub fn delete_matching_files(&self, uri: uri::Rsync) -> KrillResult<Arc<RepositoryContent>> {
+        let command = RepositoryContentCommand::delete_matching_files(self.default_handle.clone(), uri);
+        self.store.send_command(command)
     }
 
     /// Update RRDP and return the RepositoryContent so it can be used for writing.
@@ -226,6 +238,10 @@ pub enum RepositoryContentCommand {
         handle: MyHandle,
         publisher: PublisherHandle,
     },
+    DeleteMatchingFiles {
+        handle: MyHandle,
+        uri: uri::Rsync,
+    },
     Publish {
         handle: MyHandle,
         publisher: PublisherHandle,
@@ -249,6 +265,11 @@ impl RepositoryContentCommand {
     pub fn remove_publisher(handle: MyHandle, publisher: PublisherHandle) -> Self {
         RepositoryContentCommand::RemovePublisher { handle, publisher }
     }
+
+    pub fn delete_matching_files(handle: MyHandle, uri: uri::Rsync) -> Self {
+        RepositoryContentCommand::DeleteMatchingFiles { handle, uri }
+    }
+
     pub fn publish(handle: MyHandle, publisher: PublisherHandle, delta: DeltaElements) -> Self {
         RepositoryContentCommand::Publish {
             handle,
@@ -256,6 +277,7 @@ impl RepositoryContentCommand {
             delta,
         }
     }
+
     pub fn create_rrdp_delta(handle: MyHandle, rrdp_updates_config: RrdpUpdatesConfig) -> Self {
         RepositoryContentCommand::CreateRrdpDelta {
             handle,
@@ -271,6 +293,7 @@ impl WalCommand for RepositoryContentCommand {
             | RepositoryContentCommand::AddPublisher { handle, .. }
             | RepositoryContentCommand::RemovePublisher { handle, .. }
             | RepositoryContentCommand::Publish { handle, .. }
+            | RepositoryContentCommand::DeleteMatchingFiles { handle, .. }
             | RepositoryContentCommand::CreateRrdpDelta { handle, .. } => handle,
         }
     }
@@ -290,6 +313,9 @@ impl fmt::Display for RepositoryContentCommand {
             }
             RepositoryContentCommand::RemovePublisher { handle, publisher, .. } => {
                 write!(f, "remove publisher '{}' from repository {}", publisher, handle)
+            }
+            RepositoryContentCommand::DeleteMatchingFiles { handle, uri, .. } => {
+                write!(f, "remove content matching '{}' from repository {}", uri, handle)
             }
             RepositoryContentCommand::Publish { handle, publisher, .. } => {
                 write!(f, "publish for publisher '{}' under repository {}", publisher, handle)
@@ -434,6 +460,7 @@ impl WalSupport for RepositoryContent {
             } => self.create_rrdp_delta(rrdp_updates_config),
             RepositoryContentCommand::AddPublisher { publisher, .. } => self.add_publisher(publisher),
             RepositoryContentCommand::RemovePublisher { publisher, .. } => self.remove_publisher(publisher),
+            RepositoryContentCommand::DeleteMatchingFiles { uri, .. } => self.delete_files(uri),
             RepositoryContentCommand::Publish { publisher, delta, .. } => self.publish(publisher, delta),
         }
     }
@@ -490,6 +517,47 @@ impl RepositoryContent {
         // remove publisher if present
         if self.publishers.contains_key(&publisher) {
             res.push(RepositoryContentChange::PublisherRemoved { publisher });
+        }
+
+        Ok(res)
+    }
+
+    /// Purges content matching the given URI. Recursive if it ends with a '/'.
+    /// Removes the content from existing publishers if found, and removes it
+    /// from the (global) repository content. Can be used to fix broken state
+    /// resulting from issue #981. Can also be used to remove specific content,
+    /// although there is nothing stopping the publisher from publishing that
+    /// content again.
+    fn delete_files(&self, del_uri: uri::Rsync) -> KrillResult<Vec<RepositoryContentChange>> {
+        let mut res = vec![];
+
+        info!("Deleting files matching '{}'", del_uri);
+
+        // withdraw objects if any
+        let mut withdraws = vec![];
+        for el in self.rrdp.snapshot.elements() {
+            // URI of el is exact match, or uri for delete ends with / and el uri is more specific.
+            if el.uri() == &del_uri
+                || (del_uri.as_str().ends_with('/') && el.uri().as_str().starts_with(del_uri.as_str()))
+            {
+                withdraws.push(el.as_withdraw())
+            }
+        }
+        if !withdraws.is_empty() {
+            info!("  removing {} matching files from repository.", withdraws.len());
+            let delta = DeltaElements::new(vec![], vec![], withdraws);
+            res.push(RepositoryContentChange::RrdpDeltaStaged { delta });
+        }
+
+        // check all publishers and remove any matching objects
+        for (publisher, current_objects) in &self.publishers {
+            if let Some(deleted_objects) = current_objects.with_matching_uri_deleted(&del_uri) {
+                info!("  removing matching files from publisher {}", publisher);
+                res.push(RepositoryContentChange::PublishedObjects {
+                    publisher: publisher.clone(),
+                    current_objects: deleted_objects,
+                });
+            }
         }
 
         Ok(res)
@@ -1555,8 +1623,14 @@ impl RepositoryAccess {
     }
 
     fn base_uri_for(&self, name: &PublisherHandle) -> KrillResult<uri::Rsync> {
-        uri::Rsync::from_str(&format!("{}{}/", self.rsync_base, name))
-            .map_err(|_| Error::Custom(format!("Cannot derive base uri for {}", name)))
+        if name.as_str() == TA_NAME {
+            // Let the TA publish directly under the rsync base dir. This
+            // will be helpful for RPs that still insist on rsync.
+            Ok(self.rsync_base.clone())
+        } else {
+            uri::Rsync::from_str(&format!("{}{}/", self.rsync_base, name))
+                .map_err(|_| Error::Custom(format!("Cannot derive base uri for {}", name)))
+        }
     }
 
     /// Returns the repository URI information for a publisher.

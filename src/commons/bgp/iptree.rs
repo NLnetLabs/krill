@@ -183,26 +183,26 @@ mod tests {
     fn typed_prefix_tree_more_specific() {
         let tree = make_test_tree();
         let search = TypedPrefix::from_str("10.0.0.0/23").unwrap();
-        assert_eq!(3, tree.matching_or_more_specific(&search).len());
+        assert_eq!(3, tree.matching_or_more_specific(search).len());
 
         let search = TypedPrefix::from_str("10.0.2.0/24").unwrap();
-        assert_eq!(0, tree.matching_or_more_specific(&search).len());
+        assert_eq!(0, tree.matching_or_more_specific(search).len());
     }
 
     #[test]
     fn typed_prefix_tree_less_specific() {
         let tree = make_test_tree();
         let search = TypedPrefix::from_str("10.0.0.0/23").unwrap();
-        assert_eq!(3, tree.matching_or_less_specific(&search).len());
+        assert_eq!(3, tree.matching_or_less_specific(search).len());
 
         let search = TypedPrefix::from_str("10.0.0.0/24").unwrap();
-        assert_eq!(4, tree.matching_or_less_specific(&search).len());
+        assert_eq!(4, tree.matching_or_less_specific(search).len());
 
         let search = TypedPrefix::from_str("10.0.0.0/16").unwrap();
-        assert_eq!(1, tree.matching_or_less_specific(&search).len());
+        assert_eq!(1, tree.matching_or_less_specific(search).len());
 
         let search = TypedPrefix::from_str("10.0.0.0/15").unwrap();
-        assert_eq!(0, tree.matching_or_less_specific(&search).len());
+        assert_eq!(0, tree.matching_or_less_specific(search).len());
     }
 
     #[test]

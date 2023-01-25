@@ -34,7 +34,7 @@ use crate::{
     },
     commons::{
         api::{
-            AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, BgpSecAsnKey,
+            self, AddChildRequest, AspaCustomer, AspaDefinition, AspaDefinitionList, AspaProvidersUpdate, BgpSecAsnKey,
             BgpSecCsrInfoList, BgpSecDefinition, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ConfiguredRoa,
             ConfiguredRoas, ObjectName, ParentCaContact, ParentCaReq, ParentStatuses, PublicationServerUris,
             PublisherDetails, PublisherList, ResourceClassKeysInfo, RoaConfiguration, RoaConfigurationUpdates,
@@ -216,6 +216,20 @@ pub async fn start_second_krill() -> PathBuf {
     dir
 }
 
+pub fn assert_http_status<T>(res: Result<T, httpclient::Error>, status: StatusCode) {
+    if status.is_success() {
+        assert!(res.is_ok())
+    } else {
+        assert!(
+            matches!(res, Err(httpclient::Error::Response(_, msg)) if msg == httpclient::Error::unexpected_status(status))
+        )
+    }
+}
+
+pub async fn krill_anon_http_get(rel_url: &str) -> Result<String, httpclient::Error> {
+    httpclient::get_text(&format!("{}{}", KRILL_SERVER_URI, rel_url), None).await
+}
+
 pub async fn krill_admin(command: Command) -> ApiResponse {
     admin(service_uri(KRILL_SERVER_URI), command).await
 }
@@ -254,6 +268,10 @@ pub async fn cas_force_publish_all() {
 
 pub async fn cas_refresh_all() {
     krill_admin(Command::Bulk(BulkCaCommand::Refresh)).await;
+}
+
+pub async fn cas_sync_all() {
+    krill_admin(Command::Bulk(BulkCaCommand::Sync)).await;
 }
 
 pub async fn cas_refresh_single(ca: &CaHandle) {
@@ -448,6 +466,45 @@ pub async fn ca_configured_roas(ca: &CaHandle) -> ConfiguredRoas {
         ApiResponse::RouteAuthorizations(roas) => roas,
         _ => panic!("Expected configured ROAs"),
     }
+}
+
+// short hand to expect ROA configurations in a CA
+pub async fn expect_configured_roas(ca: &CaHandle, expected: &[RoaConfiguration]) {
+    let configured_roas = ca_configured_roas(ca).await.unpack();
+    assert_eq!(configured_roas.len(), expected.len());
+
+    // Copy the expected configs, but convert them to an explicit max length because
+    // Krill always stores configs that way to avoid duplicate equivalent entries.
+    let expected: Vec<_> = expected
+        .iter()
+        .map(|entry| entry.clone().into_explicit_max_length())
+        .collect();
+
+    for configuration in configured_roas.iter().map(|configured| configured.roa_configuration()) {
+        if !expected.contains(configuration) {
+            let expected_strs: Vec<_> = expected.into_iter().map(|e| e.to_string()).collect();
+            panic!(
+                "Actual configuration: '{}' not in expected: {}",
+                configuration,
+                expected_strs.join(", ")
+            );
+        }
+    }
+}
+
+// short hand to expect ROAs under CA under its first resource class
+pub async fn expect_roa_objects(ca: &CaHandle, roas: &[RoaPayload]) {
+    let rcn_0 = ResourceClassName::from(0);
+
+    let roas: Vec<_> = roas.iter().map(|entry| entry.into_explicit_max_length()).collect();
+
+    let mut expected_files = expected_mft_and_crl(ca, &rcn_0).await;
+
+    for roa in roas {
+        expected_files.push(ObjectName::from(&roa).to_string());
+    }
+
+    assert!(will_publish_embedded("published ROAs do not match expectations", ca, &expected_files).await);
 }
 
 pub async fn ca_route_authorizations_suggestions(ca: &CaHandle) -> BgpAnalysisSuggestion {
@@ -686,6 +743,22 @@ pub async fn wait_for_nr_cas_under_testbed(nr: usize) -> bool {
     false
 }
 
+pub async fn wait_for_nr_cas_under_publication_server(publishers_expected: usize) {
+    let mut publishers_found = list_publishers().await.publishers().len();
+    for _ in 0..300 {
+        if publishers_found == publishers_expected {
+            return;
+        }
+        sleep_seconds(1).await;
+        publishers_found = list_publishers().await.publishers().len();
+    }
+
+    panic!(
+        "Expected {} publishers, but found {}",
+        publishers_expected, publishers_found
+    );
+}
+
 pub async fn list_publishers() -> PublisherList {
     match krill_embedded_pubd_admin(PubServerCommand::PublisherList).await {
         ApiResponse::PublisherList(pub_list) => pub_list,
@@ -871,6 +944,14 @@ pub async fn set_up_ca_with_repo(ca: &CaHandle) {
     repo_update(ca, response).await;
 }
 
+pub async fn import_cas(structure: api::import::Structure) {
+    let command = Command::Bulk(BulkCaCommand::Import(structure));
+    match krill_admin(command).await {
+        ApiResponse::Empty => {}
+        _ => panic!("Expected empty ok response to ca imports"),
+    }
+}
+
 pub async fn expected_mft_and_crl(ca: &CaHandle, rcn: &ResourceClassName) -> Vec<String> {
     let rc_key = ca_key_for_rcn(ca, rcn).await;
     let mft_file = rc_key.incoming_cert().mft_name().to_string();
@@ -1026,4 +1107,9 @@ pub async fn state_becomes_active(ca: &CaHandle) -> bool {
 pub fn test_id_certificate() -> IdCert {
     let data = include_bytes!("../test-resources/oob/id_publisher_ta.cer");
     IdCert::decode(Bytes::from_static(data)).unwrap()
+}
+
+#[cfg(test)]
+pub fn test_actor() -> crate::commons::actor::Actor {
+    crate::commons::actor::Actor::test_from_def(crate::constants::ACTOR_DEF_KRILL)
 }

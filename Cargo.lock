@@ -176,9 +176,9 @@ dependencies = [
 
 [[package]]
 name = "bumpalo"
-version = "3.10.0"
+version = "3.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "37ccbd214614c6783386c1af30caf03192f17891059cecc394b4fb119e363de3"
+checksum = "0d261e256854913907f67ed06efbc3338dfe6179796deefc1ff763fc1aee5535"
 
 [[package]]
 name = "bytes"
@@ -1719,9 +1719,9 @@ dependencies = [
 
 [[package]]
 name = "rpki"
-version = "0.15.8"
+version = "0.15.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "46970b82ec6bfec47c88addaaef3d345cec2a5cf9cb89039ef904123e65ba41a"
+checksum = "10465240cf74fe20765558e76b9c51fa36dfe2b89d5c4e653dfbae7563f23c2f"
 dependencies = [
  "base64",
  "bcder",

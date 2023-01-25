@@ -53,13 +53,14 @@ use crate::{
     daemon::{
         auth::common::permissions::Permission,
         auth::{Auth, Handle},
-        ca::{CaStatus, TA_NAME},
+        ca::CaStatus,
         config::Config,
         http::{
             auth::auth, statics::statics, testbed::testbed, tls, tls_keys, HttpResponse, Request, RequestPath,
             RoutingResult,
         },
         krillserver::KrillServer,
+        ta::{self, TA_NAME},
     },
     upgrades::{finalise_data_migration, post_start_upgrade, prepare_upgrade_data_migrations, UpgradeMode},
 };
@@ -541,10 +542,11 @@ pub async fn metrics(req: Request) -> RoutingResult {
                                 // skip the ones for which we have no status yet, i.e it was really only just added
                                 // and no attempt to connect has yet been made.
                                 if let Some(exchange) = status.last_exchange() {
-                                    let value = if exchange.was_success() { 1 } else { 0 };
                                     res.push_str(&format!(
                                         "krill_ca_parent_success{{ca=\"{}\", parent=\"{}\"}} {}\n",
-                                        ca, parent, value
+                                        ca,
+                                        parent,
+                                        i32::from(exchange.was_success())
                                     ));
                                 }
                             }
@@ -588,8 +590,11 @@ pub async fn metrics(req: Request) -> RoutingResult {
                         // skip the ones for which we have no status yet, i.e it was really only just added
                         // and no attempt to connect has yet been made.
                         if let Some(exchange) = status.repo().last_exchange() {
-                            let value = if exchange.was_success() { 1 } else { 0 };
-                            res.push_str(&format!("krill_ca_ps_success{{ca=\"{}\"}} {}\n", ca, value));
+                            res.push_str(&format!(
+                                "krill_ca_ps_success{{ca=\"{}\"}} {}\n",
+                                ca,
+                                i32::from(exchange.was_success())
+                            ));
                         }
                     }
 
@@ -605,19 +610,6 @@ pub async fn metrics(req: Request) -> RoutingResult {
                                 ca, last_success
                             ));
                         }
-                    }
-
-                    res.push('\n');
-                    res.push_str("# HELP krill_ca_ps_next_planned_time unix timestamp in seconds of next planned CA to Publication Server connection (unless e.g. ROAs are changed)\n");
-                    res.push_str("# TYPE krill_ca_ps_next_planned_time gauge\n");
-                    for (ca, status) in ca_status_map.iter() {
-                        // skip the ones for which we have no status yet, i.e it was really only just added
-                        // and no attempt to connect has yet been made.
-                        let timestamp = status.repo().next_exchange_before();
-                        res.push_str(&format!(
-                            "krill_ca_ps_next_planned_time{{ca=\"{}\"}} {}\n",
-                            ca, timestamp
-                        ));
                     }
                 }
 
@@ -656,10 +648,11 @@ pub async fn metrics(req: Request) -> RoutingResult {
                         // and no attempt to connect has yet been made.
                         for (child, status) in status.children().iter() {
                             if let Some(exchange) = status.last_exchange() {
-                                let value = if exchange.was_success() { 1 } else { 0 };
                                 res.push_str(&format!(
                                     "krill_ca_child_success{{ca=\"{}\", child=\"{}\"}} {}\n",
-                                    ca, child, value
+                                    ca,
+                                    child,
+                                    i32::from(exchange.was_success())
                                 ));
                             }
                         }
@@ -672,11 +665,11 @@ pub async fn metrics(req: Request) -> RoutingResult {
                     res.push_str("# TYPE krill_ca_child_state gauge\n");
                     for (ca, status) in ca_status_map.iter() {
                         for (child, status) in status.children().iter() {
-                            let value = if status.suspended().is_none() { 1 } else { 0 };
-
                             res.push_str(&format!(
                                 "krill_ca_child_state{{ca=\"{}\", child=\"{}\"}} {}\n",
-                                ca, child, value
+                                ca,
+                                child,
+                                i32::from(status.suspended().is_none())
                             ));
                         }
                     }
@@ -936,7 +929,7 @@ async fn ta(req: Request) -> RoutingResult {
 }
 
 pub async fn tal(req: Request) -> RoutingResult {
-    match req.state().ta().await {
+    match req.state().ta_cert_details().await {
         Ok(ta) => Ok(HttpResponse::text(format!("{}", ta.tal()).into_bytes())),
         Err(_) => render_unknown_resource(),
     }
@@ -1119,6 +1112,7 @@ async fn api(req: Request) -> RoutingResult {
                         Some("bulk") => api_bulk(req, &mut path).await,
                         Some("cas") => api_cas(req, &mut path).await,
                         Some("pubd") => aa!(req, Permission::PUB_ADMIN, api_publication_server(req, &mut path).await),
+                        Some("ta") => aa!(req, Permission::CA_ADMIN, api_ta(req, &mut path).await),
                         _ => render_unknown_method(),
                     }
                 })
@@ -1144,6 +1138,7 @@ async fn api_authorized(req: Request) -> RoutingResult {
 
 async fn api_bulk(req: Request, path: &mut RequestPath) -> RoutingResult {
     match path.full() {
+        "/api/v1/bulk/cas/import" => api_cas_import(req).await,
         "/api/v1/bulk/cas/issues" => api_all_ca_issues(req).await,
         "/api/v1/bulk/cas/sync/parent" => api_refresh_all(req).await,
         "/api/v1/bulk/cas/sync/repo" => api_resync_all(req).await,
@@ -1273,6 +1268,17 @@ async fn api_ca_sync(req: Request, path: &mut RequestPath, ca: CaHandle) -> Rout
 async fn api_publication_server(req: Request, path: &mut RequestPath) -> RoutingResult {
     match path.next() {
         Some("publishers") => api_publishers(req, path).await,
+        Some("delete") => match *req.method() {
+            Method::POST => {
+                let state = req.state.clone();
+
+                match req.json().await {
+                    Ok(criteria) => render_empty_res(state.delete_matching_files(criteria)),
+                    Err(e) => render_error(e),
+                }
+            }
+            _ => render_unknown_method(),
+        },
         Some("stale") => api_stale_publishers(req, path.next()).await,
         Some("init") => match *req.method() {
             Method::POST => {
@@ -1473,6 +1479,19 @@ pub async fn api_ca_parent_res_xml(req: Request, ca: CaHandle, child: ChildHandl
 }
 
 //------------ Admin: CertAuth -----------------------------------------------
+
+async fn api_cas_import(req: Request) -> RoutingResult {
+    match *req.method() {
+        Method::POST => aa!(req, Permission::CA_ADMIN, {
+            let server = req.state().clone();
+            match req.json().await {
+                Ok(structure) => render_empty_res(server.cas_import(structure).await),
+                Err(e) => render_error(e),
+            }
+        }),
+        _ => render_unknown_method(),
+    }
+}
 
 async fn api_all_ca_issues(req: Request) -> RoutingResult {
     match *req.method() {
@@ -2103,12 +2122,13 @@ async fn rrdp(req: Request) -> RoutingResult {
         let cache_seconds = if path.ends_with("notification.xml") { 60 } else { 86400 };
         full_path.push(path);
 
-        match File::open(full_path) {
-            Ok(mut file) => {
+        match File::open(&full_path) {
+            Ok(mut file) if full_path.is_file() => {
                 let mut buffer = Vec::new();
-                file.read_to_end(&mut buffer).unwrap();
-
-                Ok(HttpResponse::xml_with_cache(buffer, cache_seconds))
+                match file.read_to_end(&mut buffer) {
+                    Ok(_) => Ok(HttpResponse::xml_with_cache(buffer, cache_seconds)),
+                    Err(_) => Ok(HttpResponse::not_found()),
+                }
             }
             _ => Ok(HttpResponse::not_found()),
         }
@@ -2195,6 +2215,143 @@ async fn api_ca_rta_multi_sign(req: Request, ca: CaHandle, name: RtaName) -> Rou
             Err(_) => render_error(Error::custom("Cannot decode RTA for co-signing")),
         }
     })
+}
+
+//-------------------------------- API TA --------------------------------------------------
+async fn api_ta(req: Request, path: &mut RequestPath) -> RoutingResult {
+    //
+    // krillta proxy --server .. --token ..
+    //
+    // Uses API krill API:
+    //
+    // /api/v1/ta/
+    //
+    //    - proxy and signer set up
+    //    POST /proxy/init                     initialise proxy
+    //    POST /proxy/id                       proxy id cert info
+    //    GET  /proxy/repo/request.xml         get RFC8181 publisher request
+    //    GET  /proxy/repo/request.json        get RFC8181 publisher request
+    //    GET  /proxy/repo                     get repository contact
+    //    POST /proxy/repo                     add pub server
+    //    POST /proxy/signer/add               add initialised signer to proxy
+    //    POST /proxy/signer/request           create sign request for signer (returns request)
+    //    GET  /proxy/signer/request           show open sign request if any
+    //    POST /proxy/signer/response          process sign response from signer
+    //
+    //    - children
+    //    GET  /proxy/children/                 future: list children
+    //    POST /proxy/children/                 add child
+    //    GET  /proxy/children/{child}/parent_response.json    show parent response for child
+    //    GET  /proxy/children/{child}/parent_response.xml    show parent response for child
+    //    POST /proxy/children/{child}          future: update child
+    //    DEL  /proxy/children/{child}          future: remove child
+    //
+    // krillta signer --dir
+    //            init
+    //            process
+    //            history (future)
+    //            response <nonce>
+
+    match path.next() {
+        Some("proxy") => match path.next() {
+            Some("init") => render_empty_res(req.state().ta_proxy_init().await),
+            Some("id") => render_json_res(req.state().ta_proxy_id().await),
+            Some("repo") => match path.next() {
+                Some("request.xml") => match req.state().ta_proxy_publisher_request().await {
+                    Ok(req) => Ok(HttpResponse::xml(req.to_xml_vec())),
+                    Err(e) => render_error(e),
+                },
+                Some("request.json") => render_json_res(req.state().ta_proxy_publisher_request().await),
+                None => match *req.method() {
+                    Method::POST => {
+                        let ta_handle = ta::ta_handle();
+                        let server = req.state().clone();
+                        let actor = req.actor.clone();
+
+                        match req
+                            .api_bytes()
+                            .await
+                            .map(|bytes| extract_repository_contact(&ta_handle, bytes))
+                        {
+                            Ok(Ok(contact)) => {
+                                render_empty_res(server.ta_proxy_repository_update(contact, &actor).await)
+                            }
+                            Ok(Err(e)) | Err(e) => render_error(e),
+                        }
+                    }
+                    Method::GET => render_json_res(req.state().ta_proxy_repository_contact().await),
+                    _ => render_unknown_method(),
+                },
+
+                _ => render_unknown_method(),
+            },
+            Some("signer") => match path.next() {
+                Some("add") => {
+                    let server = req.state().clone();
+                    let actor = req.actor.clone();
+                    match req.json().await {
+                        Ok(ta_signer_info) => {
+                            render_empty_res(server.ta_proxy_signer_add(ta_signer_info, &actor).await)
+                        }
+                        Err(e) => render_error(e),
+                    }
+                }
+                Some("request") => match *req.method() {
+                    Method::POST => render_json_res(req.state().ta_proxy_signer_make_request(&req.actor()).await),
+                    Method::GET => render_json_res(req.state().ta_proxy_signer_get_request().await),
+                    _ => render_unknown_method(),
+                },
+                Some("response") => match *req.method() {
+                    Method::POST => {
+                        let server = req.state().clone();
+                        let actor = req.actor.clone();
+
+                        match req.json().await {
+                            Ok(response) => {
+                                render_empty_res(server.ta_proxy_signer_process_response(response, &actor).await)
+                            }
+                            Err(e) => render_error(e),
+                        }
+                    }
+                    _ => render_unknown_method(),
+                },
+                _ => render_unknown_method(),
+            },
+            Some("children") => match path.path_arg::<ChildHandle>() {
+                Some(child) => match path.next() {
+                    Some("parent_response.json") => {
+                        render_json_res(req.state().ca_parent_response(&ta::ta_handle(), child).await)
+                    }
+                    Some("parent_response.xml") => {
+                        match req.state().ca_parent_response(&ta::ta_handle(), child).await {
+                            Ok(parent_response) => Ok(HttpResponse::xml(parent_response.to_xml_vec())),
+                            Err(e) => render_error(e),
+                        }
+                    }
+                    None => match *req.method() {
+                        Method::POST => render_error(Error::custom("update TA child not yet supported")),
+                        Method::DELETE => render_error(Error::custom("remove TA child not yet supported")),
+                        _ => render_unknown_method(),
+                    },
+                    _ => render_unknown_method(),
+                },
+                None => match *req.method() {
+                    Method::POST => {
+                        let actor = req.actor();
+                        let server = req.state().clone();
+                        match req.json().await {
+                            Ok(child_req) => render_json_res(server.ta_proxy_children_add(child_req, &actor).await),
+                            Err(e) => render_error(e),
+                        }
+                    }
+                    Method::GET => render_error(Error::custom("show TA child not yet supported")),
+                    _ => render_unknown_method(),
+                },
+            },
+            _ => render_unknown_method(),
+        },
+        _ => render_unknown_method(),
+    }
 }
 
 /// A naive lock implementation used to prevent that two Krill instances

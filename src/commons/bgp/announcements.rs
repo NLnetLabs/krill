@@ -58,7 +58,7 @@ impl Announcement {
     }
 
     pub fn validate(&self, roas: &RoaTree) -> ValidatedAnnouncement {
-        let covering = roas.matching_or_less_specific(&self.prefix);
+        let covering = roas.matching_or_less_specific(self.prefix);
         if covering.is_empty() {
             ValidatedAnnouncement {
                 announcement: *self,

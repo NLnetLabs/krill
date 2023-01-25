@@ -1,15 +1,19 @@
 //! Perform functional tests on a Krill instance, using the API
 //!
-use std::{fs, str::FromStr, time::Duration};
+use std::{fs, path::Path, str::FromStr, time::Duration};
 
+use hyper::StatusCode;
+use regex::Regex;
 use tokio::time::sleep;
 
 use rpki::ca::provisioning::ResourceClassName;
 use rpki::repository::resources::ResourceSet;
 
 use krill::{
-    commons::api::{ObjectName, RoaConfigurationUpdates, RoaPayload},
-    daemon::ca::ta_handle,
+    commons::{
+        api::{ObjectName, RoaConfigurationUpdates, RoaPayload},
+        util::httpclient,
+    },
     test::*,
 };
 
@@ -41,7 +45,6 @@ async fn migrate_repository() {
     info("");
     let pubd_dir = start_krill_pubd(5).await;
 
-    let ta = ta_handle();
     let testbed = ca_handle("testbed");
 
     let ca1 = ca_handle("CA1");
@@ -59,20 +62,6 @@ async fn migrate_repository() {
     info("##################################################################");
     info("");
     assert!(ca_contains_resources(&testbed, &ResourceSet::all()).await);
-
-    // Verify that the TA published expected objects
-    {
-        let mut expected_files = expected_mft_and_crl(&ta, &rcn_0).await;
-        expected_files.push(expected_issued_cer(&testbed, &rcn_0).await);
-        assert!(
-            will_publish_embedded(
-                "TA should have manifest, crl and cert for testbed",
-                &ta,
-                &expected_files
-            )
-            .await
-        );
-    }
 
     {
         info("##################################################################");
@@ -127,6 +116,45 @@ async fn migrate_repository() {
         expected_files.push(ObjectName::from(&ca1_route_definition).to_string());
 
         assert!(will_publish_embedded("CA1 should publish the certificate for CA3", &ca1, &expected_files).await);
+    }
+
+    // Verify that actual RRDP operation is roughly working as expected (without writing an entire RPKI
+    // client into our test suite, integration tests are better suited for testing with a full RPKI client).
+    {
+        info("##################################################################");
+        info("#                                                                #");
+        info("#        Sanity check the operation of the RRDP endpoint         #");
+        info("#                                                                #");
+        info("##################################################################");
+        info("");
+
+        // Verify that requesting rrdp/ on a publishing instance of Krill results in a 404 Not Found error rather than
+        // a panic.
+        assert_http_status(krill_anon_http_get("rrdp/").await, StatusCode::NOT_FOUND);
+
+        // Verify that requesting garbage file and directory URLs results in an error rather than a panic.
+        assert_http_status(krill_anon_http_get("rrdp/i/dont/exist").await, StatusCode::NOT_FOUND);
+        assert_http_status(krill_anon_http_get("rrdp/i/dont/exist/").await, StatusCode::NOT_FOUND);
+
+        // Verify that we can fetch the notification XML.
+        let notification_xml = krill_anon_http_get("rrdp/notification.xml").await.unwrap();
+        assert!(notification_xml.starts_with("<notification"));
+
+        // Verify that we can fetch the snapshot XML.
+        let re = Regex::new(r#"<snapshot uri="(?P<uri>[^"]+)".+/>"#).unwrap();
+        let snapshot_uri = re.captures(&notification_xml).unwrap().name("uri").unwrap().as_str();
+        let snapshot_xml = httpclient::get_text(snapshot_uri, None).await.unwrap();
+        assert!(snapshot_xml.starts_with("<snapshot"));
+
+        // Verify that attempting to fetch a valid subdirectory results in an error rather than a panic.
+        let mut url = urlparse::urlparse(snapshot_uri);
+        url.path = Path::new(&url.path).parent().unwrap().display().to_string();
+        let url = urlparse::urlunparse(url);
+        assert_http_status(httpclient::get_text(&url, None).await, StatusCode::NOT_FOUND);
+        assert_http_status(
+            httpclient::get_text(&format!("{}/", url), None).await,
+            StatusCode::NOT_FOUND,
+        );
     }
 
     {

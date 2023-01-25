@@ -11,7 +11,6 @@ use rpki::{
         },
     },
     repository::resources::ResourceSet,
-    uri,
 };
 
 use crate::{
@@ -46,11 +45,6 @@ pub type DropReason = String;
 #[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum CmdDet {
-    // ------------------------------------------------------------
-    // Being a TA
-    // ------------------------------------------------------------
-    MakeTrustAnchor(Vec<uri::Https>, uri::Rsync, Arc<KrillSigner>),
-
     // ------------------------------------------------------------
     // Being a parent
     // ------------------------------------------------------------
@@ -226,11 +220,6 @@ impl From<CmdDet> for StorableCaCommand {
     fn from(d: CmdDet) -> Self {
         match d {
             // ------------------------------------------------------------
-            // Being a TA
-            // ------------------------------------------------------------
-            CmdDet::MakeTrustAnchor(_, _, _) => StorableCaCommand::MakeTrustAnchor,
-
-            // ------------------------------------------------------------
             // Being a parent
             // ------------------------------------------------------------
             CmdDet::ChildAdd(child, id_cert, resources) => StorableCaCommand::ChildAdd {
@@ -344,17 +333,6 @@ impl From<CmdDet> for StorableCaCommand {
 }
 
 impl CmdDet {
-    /// Turns this CA into a TrustAnchor
-    pub fn make_trust_anchor(
-        handle: &CaHandle,
-        uris: Vec<uri::Https>,
-        rsync_uri: uri::Rsync,
-        signer: Arc<KrillSigner>,
-        actor: &Actor,
-    ) -> Cmd {
-        eventsourcing::SentCommand::new(handle, None, CmdDet::MakeTrustAnchor(uris, rsync_uri, signer), actor)
-    }
-
     /// Adds a child to this CA. Will return an error in case you try
     /// to give the child resources not held by the CA.
     pub fn child_add(

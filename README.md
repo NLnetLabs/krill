@@ -1,8 +1,10 @@
-[![GitHub Actions Build Status](https://github.com/NLnetLabs/krill/workflows/CI/badge.svg)](https://github.com/NLnetLabs/krill/actions/workflows/ci.yml)
 [![Rust Crate Status](https://img.shields.io/crates/v/krill.svg?color=brightgreen)](https://crates.io/crates/krill)
+[![GitHub Actions Build Status](https://github.com/NLnetLabs/krill/workflows/CI/badge.svg)](https://github.com/NLnetLabs/krill/actions/workflows/ci.yml)
 [![Docker Pulls](https://img.shields.io/docker/pulls/nlnetlabs/krill?color=brightgreen)](https://hub.docker.com/r/nlnetlabs/krill)
 [![Documentation Status](https://readthedocs.org/projects/rpki/badge/?version=latest)](https://krill.docs.nlnetlabs.nl/)
+
 [![](https://img.shields.io/discord/818584154278199396?label=rpki%20on%20discord&logo=discord)](https://discord.gg/8dvKB5Ykhy)
+[![Mastodon Follow](https://img.shields.io/mastodon/follow/109262826617293067?domain=https%3A%2F%2Ffosstodon.org&style=social)](https://fosstodon.org/@nlnetlabs)
 [![](https://img.shields.io/twitter/follow/krillrpki.svg?label=Follow&style=social)](https://twitter.com/krillrpki)
 
 # Krill
@@ -23,6 +25,47 @@ to use our public Krill testbed service. You can read more about this service
 in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 # Changelog
+
+## 0.13.0 RC1
+
+In this release we introduce an API to set up CAs, and signed objects such as
+ROAs in bulk. 
+
+API Changes:
+
+We removed the repository next update time from the stats and metrics output.
+It was inaccurate (usually 8 hours off), and not very informative. More useful
+metrics are still provided: last exchange and last successful exchange. If these
+times differ, then there is an issue that may need attention.
+
+## 0.12.1 'Safety Belts'
+
+This release introduces two fixes for the Krill Publication Server. If you
+only use Krill as an RPKI Certificate Authority and publish elsewhere, e.g.
+in an RPKI Publication Server provided by your RIR or NIR, then there is no
+need to update to this release.
+
+Firstly, this release fixes CVE-2023-0158:
+https://nlnetlabs.nl/downloads/krill/CVE-2023-0158.txt
+
+This CVE describes an exposure where remote attackers could cause Krill to
+crash if it is used as an RPKI Publication Server and if its "/rrdp" endpoint
+is accessible over the public internet.
+
+Note that servers are not affected if the advice in our documentation was followed
+and a separate web server is used to serve the RRDP data:
+
+https://krill.docs.nlnetlabs.nl/en/stable/publication-server.html#synchronise-repository-data
+
+Secondly, locking was added in this release to ensure that updates to the
+repository content are always applied sequentially. This fixes a concurrency
+issue introduced in Krill 0.12.0 that could result in rejecting an update
+from a publishing CA. In such cases the affected update would not be visible
+for RPKI validators, until a later publication attempt would be successful.
+
+We advise that users upgrade to this version of Krill if they use it as their
+RPKI Publication Server. We also continue to recommend that a separate web
+server is used for serving the RRDP data.
 
 ## 0.12.0 'Crickets'
 

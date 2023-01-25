@@ -18,6 +18,8 @@ pub use self::store::*;
 mod listener;
 pub use self::listener::{EventCounter, PostSaveEventListener, PreSaveEventListener};
 
+pub mod locks;
+
 mod kv;
 pub use self::kv::*;
 
@@ -150,9 +152,9 @@ mod tests {
         fn summary(&self) -> CommandSummary {
             match self {
                 PersonCommandDetails::ChangeName(name) => {
-                    CommandSummary::new("person-change-name", &self).with_arg("name", name)
+                    CommandSummary::new("person-change-name", self).with_arg("name", name)
                 }
-                PersonCommandDetails::GoAroundTheSun => CommandSummary::new("person-around-sun", &self),
+                PersonCommandDetails::GoAroundTheSun => CommandSummary::new("person-around-sun", self),
             }
         }
     }

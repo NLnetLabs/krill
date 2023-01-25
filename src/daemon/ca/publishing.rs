@@ -27,7 +27,7 @@ use crate::{
     commons::{
         api::{
             rrdp::PublishElement, CertInfo, IssuedCertificate, ObjectName, ReceivedCert, RepositoryContact, Revocation,
-            Revocations, Timestamp,
+            Revocations,
         },
         crypto::KrillSigner,
         error::Error,
@@ -344,24 +344,6 @@ impl CaObjects {
         all_elements
     }
 
-    /// Returns the closest next update time from among manifests held by this CA
-    pub fn closest_next_update(&self) -> Option<Timestamp> {
-        let mut closest = None;
-
-        for resource_class_objects in self.classes.values() {
-            let rco_time = Timestamp::from(resource_class_objects.next_update_time());
-            if let Some(current_closest) = closest {
-                if current_closest > rco_time {
-                    closest = Some(rco_time);
-                }
-            } else {
-                closest = Some(rco_time);
-            }
-        }
-
-        closest
-    }
-
     pub fn deprecated_repos(&self) -> &Vec<DeprecatedRepository> {
         &self.deprecated_repos
     }
@@ -643,14 +625,6 @@ impl ResourceClassObjects {
         }
     }
 
-    fn next_update_time(&self) -> Time {
-        match &self.keys {
-            ResourceClassKeyState::Current(state) => state.current_set.next_update(),
-            ResourceClassKeyState::Old(state) => state.current_set.next_update(),
-            ResourceClassKeyState::Staging(state) => state.current_set.next_update(),
-        }
-    }
-
     fn reissue(&mut self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<()> {
         match self.keys.borrow_mut() {
             ResourceClassKeyState::Current(state) => state.current_set.reissue(timing, signer),
@@ -811,7 +785,7 @@ pub struct KeyObjectSet {
     //
     // When objects are replaced or removed we add a revocation.
     // When publishing revocations for expired certificates are
-    // purged.
+    // removed.
     revocations: Revocations,
 
     // The last manifest generated for this set.
@@ -888,7 +862,7 @@ impl KeyObjectSet {
         let signing_key = signing_cert.key_identifier();
         let issuer = signing_cert.subject().clone();
         let revocations = Revocations::default();
-        let revision = ObjectSetRevision::create(timing);
+        let revision = ObjectSetRevision::create(timing.publish_next());
 
         let crl = CrlBuilder::build(signing_key, issuer, &revocations, revision, signer)?;
         let published_objects = HashMap::new();
@@ -1031,9 +1005,9 @@ impl KeyObjectSet {
     }
 
     fn reissue(&mut self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<()> {
-        self.revision.next(timing);
+        self.revision.next(timing.publish_next());
 
-        self.revocations.purge();
+        self.revocations.remove_expired();
         let signing_key = self.signing_cert.key_identifier();
         let issuer = self.signing_cert.subject().clone();
 
@@ -1053,7 +1027,7 @@ impl KeyObjectSet {
         for object in self.published_objects.values() {
             revocations.add(object.revoke());
         }
-        revocations.purge();
+        revocations.remove_expired();
 
         let retired_set = KeyObjectSet {
             signing_cert: self.signing_cert.clone(),
@@ -1095,18 +1069,31 @@ impl ObjectSetRevision {
             next_update,
         }
     }
-    fn create(timing: &IssuanceTimingConfig) -> Self {
+
+    pub fn number(&self) -> u64 {
+        self.number
+    }
+
+    pub fn this_update(&self) -> Time {
+        self.this_update
+    }
+
+    pub fn next_update(&self) -> Time {
+        self.next_update
+    }
+
+    fn create(next_update: Time) -> Self {
         ObjectSetRevision {
             number: 1,
             this_update: Time::five_minutes_ago(),
-            next_update: timing.publish_next(),
+            next_update,
         }
     }
 
-    fn next(&mut self, timing: &IssuanceTimingConfig) {
+    pub fn next(&mut self, next_update: Time) {
         self.number += 1;
         self.this_update = Time::five_minutes_ago();
-        self.next_update = timing.publish_next();
+        self.next_update = next_update;
     }
 }
 
@@ -1281,7 +1268,7 @@ impl ManifestBuilder {
         self
     }
 
-    fn build_new_mft(self, signing_cert: &ReceivedCert, signer: &KrillSigner) -> KrillResult<Manifest> {
+    pub fn build_new_mft(self, signing_cert: &ReceivedCert, signer: &KrillSigner) -> KrillResult<Manifest> {
         let mft_uri = signing_cert.mft_uri();
         let crl_uri = signing_cert.crl_uri();
 

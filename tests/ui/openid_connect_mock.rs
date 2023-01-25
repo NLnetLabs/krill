@@ -404,7 +404,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
 
     fn base64_decode(encoded: String) -> Result<String, Error> {
         String::from_utf8(
-            base64::decode(&encoded)
+            base64::decode(encoded)
                 .map_err(|err: base64::DecodeError| Error::custom(format!("Base64 decode error: {}", err)))?,
         )
         .map_err(|err: std::string::FromUtf8Error| Error::custom(format!("UTF8 decode error: {}", err)))
@@ -458,10 +458,10 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockConfig) {
                     .with_header(Header::from_str("Content-Type: text/html").unwrap())
                     .with_data(
                         login_doc
-                            .replace("<NONCE>", &base64::encode(&nonce))
-                            .replace("<STATE>", &base64::encode(&state))
-                            .replace("<REDIRECT_URI>", &base64::encode(&redirect_uri))
-                            .replace("<CLIENT_ID>", &base64::encode(&client_id))
+                            .replace("<NONCE>", &base64::encode(nonce))
+                            .replace("<STATE>", &base64::encode(state))
+                            .replace("<REDIRECT_URI>", &base64::encode(redirect_uri))
+                            .replace("<CLIENT_ID>", &base64::encode(client_id))
                             .as_bytes(),
                         None,
                     ),

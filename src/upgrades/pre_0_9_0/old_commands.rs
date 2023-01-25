@@ -189,7 +189,7 @@ impl WithStorableDetails for OldStorableCaCommand {
 impl From<OldStorableCaCommand> for StorableCaCommand {
     fn from(old: OldStorableCaCommand) -> Self {
         match old {
-            OldStorableCaCommand::MakeTrustAnchor => StorableCaCommand::MakeTrustAnchor,
+            OldStorableCaCommand::MakeTrustAnchor => unreachable!("TA migration is not supported and not attempted"),
             OldStorableCaCommand::ChildAdd(_child, _ski, _resources) => {
                 unreachable!("migrated differently")
             }
@@ -347,7 +347,7 @@ pub enum OldStorableParentContact {
 impl From<OldStorableParentContact> for StorableParentContact {
     fn from(old: OldStorableParentContact) -> Self {
         match old {
-            OldStorableParentContact::Ta => StorableParentContact::Ta,
+            OldStorableParentContact::Ta => unreachable!("TA migration is not supported and not attempted"),
             _ => StorableParentContact::Rfc6492,
         }
     }

@@ -2,16 +2,10 @@
 //!
 use std::fs;
 
-use rpki::{
-    ca::{idexchange::CaHandle, provisioning::ResourceClassName},
-    repository::resources::ResourceSet,
-};
+use hyper::StatusCode;
+use rpki::repository::resources::ResourceSet;
 
-use krill::{
-    commons::api::{ObjectName, RoaConfiguration, RoaConfigurationUpdates, RoaPayload},
-    daemon::ca::ta_handle,
-    test::*,
-};
+use krill::{commons::api::RoaConfigurationUpdates, test::*};
 
 #[tokio::test]
 async fn functional_roas() {
@@ -33,7 +27,6 @@ async fn functional_roas() {
     info("##################################################################");
     info("");
 
-    let ta = ta_handle();
     let testbed = ca_handle("testbed");
     let ca = ca_handle("CA");
     let ca_res = resources("AS65000", "10.0.0.0/8", "");
@@ -59,20 +52,6 @@ async fn functional_roas() {
     info("");
     assert!(ca_contains_resources(&testbed, &ResourceSet::all()).await);
 
-    // Verify that the TA published expected objects
-    {
-        let mut expected_files = expected_mft_and_crl(&ta, &rcn_0).await;
-        expected_files.push(expected_issued_cer(&testbed, &rcn_0).await);
-        assert!(
-            will_publish_embedded(
-                "TA should have manifest, crl and cert for testbed",
-                &ta,
-                &expected_files
-            )
-            .await
-        );
-    }
-
     {
         info("##################################################################");
         info("#                                                                #");
@@ -82,29 +61,6 @@ async fn functional_roas() {
         info("");
         set_up_ca_with_repo(&ca).await;
         set_up_ca_under_parent_with_resources(&ca, &testbed, &ca_res).await;
-    }
-
-    // short hand to expect ROAs under CA
-    async fn expect_roa_objects(ca: &CaHandle, roas: &[RoaPayload]) {
-        let rcn_0 = ResourceClassName::from(0);
-
-        let mut expected_files = expected_mft_and_crl(ca, &rcn_0).await;
-
-        for roa in roas {
-            expected_files.push(ObjectName::from(roa).to_string());
-        }
-
-        assert!(will_publish_embedded("published ROAs do not match expectations", ca, &expected_files).await);
-    }
-
-    // short hand to expect ROA configurations in a CA
-    async fn expect_configured_roas(ca: &CaHandle, expected: &[RoaConfiguration]) {
-        let configured_roas = ca_configured_roas(ca).await.unpack();
-        assert_eq!(configured_roas.len(), expected.len());
-
-        for configuration in configured_roas.iter().map(|configured| configured.roa_configuration()) {
-            assert!(expected.contains(configuration));
-        }
     }
 
     {
@@ -222,6 +178,18 @@ async fn functional_roas() {
         ca_route_authorizations_update(&ca, updates).await;
 
         expect_roa_objects(&ca, &[route_resource_set_10_0_0_0_def_1.payload()]).await;
+    }
+
+    {
+        info("##################################################################");
+        info("#                                                                #");
+        info("#        Sanity check the operation of the RRDP endpoint         #");
+        info("#                                                                #");
+        info("##################################################################");
+        info("");
+
+        // Verify that requesting rrdp/ on a CA-only instance of Krill results in an error rather than a panic.
+        assert_http_status(krill_anon_http_get("rrdp/").await, StatusCode::NOT_FOUND);
     }
 
     let _ = fs::remove_dir_all(krill_dir);
