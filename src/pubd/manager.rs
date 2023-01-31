@@ -185,7 +185,6 @@ impl RepositoryManager {
     pub fn update_rrdp_if_needed(&self) -> KrillResult<Option<Time>> {
         // See if an update is needed
         {
-            let _lock = self.default_repo_lock.read().unwrap();
             match self.content.rrdp_update_needed(self.config.rrdp_updates_config)? {
                 RrdpUpdateNeeded::No => return Ok(None),
                 RrdpUpdateNeeded::Later(time) => return Ok(Some(time)),
