@@ -211,8 +211,6 @@ impl RepositoryManager {
 
     /// Returns a list reply for a known publisher in a repository.
     pub fn list(&self, publisher: &PublisherHandle) -> KrillResult<ListReply> {
-        let _lock = self.default_repo_lock.read().unwrap();
-
         self.content.list_reply(publisher)
     }
 }
