@@ -1,4 +1,4 @@
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 use bytes::Bytes;
 
@@ -35,8 +35,6 @@ use super::RrdpUpdateNeeded;
 pub struct RepositoryManager {
     access: Arc<RepositoryAccessProxy>,
     content: Arc<RepositoryContentProxy>,
-    // We can use a single lock for updates because there is at most one repo.
-    default_repo_lock: RwLock<()>,
 
     // shared task queue, use to schedule RRDP updates when content is updated.
     tasks: Arc<TaskQueue>,
@@ -53,12 +51,10 @@ impl RepositoryManager {
     pub fn build(config: Arc<Config>, tasks: Arc<TaskQueue>, signer: Arc<KrillSigner>) -> Result<Self, Error> {
         let access_proxy = Arc::new(RepositoryAccessProxy::disk(&config)?);
         let content_proxy = Arc::new(RepositoryContentProxy::disk(&config)?);
-        let default_repo_lock = RwLock::new(());
 
         Ok(RepositoryManager {
             access: access_proxy,
             content: content_proxy,
-            default_repo_lock,
             tasks,
             config,
             signer,
@@ -168,8 +164,6 @@ impl RepositoryManager {
 
     /// Let a known publisher publish in a repository.
     pub fn publish(&self, publisher_handle: &PublisherHandle, delta: PublishDelta) -> KrillResult<()> {
-        let _lock = self.default_repo_lock.write().unwrap();
-
         let publisher = self.access.get_publisher(publisher_handle)?;
 
         self.content
@@ -192,13 +186,7 @@ impl RepositoryManager {
             }
         }
 
-        let content = {
-            let _lock = self.default_repo_lock.write().unwrap();
-
-            self.content.update_rrdp(self.config.rrdp_updates_config)?
-        };
-
-        // Write the updated repository - NOTE: we no longer lock it.
+        let content = self.content.update_rrdp(self.config.rrdp_updates_config)?;
         content.write_repository(self.config.rrdp_updates_config)?;
 
         Ok(None)
