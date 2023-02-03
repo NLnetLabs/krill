@@ -581,10 +581,6 @@ impl KrillServer {
             Err(Error::custom(
                 "Import CAs is only possible when ta_support_enabled = true",
             ))
-        } else if !self.config.ta_signer_enabled() {
-            Err(Error::custom(
-                "Import CAs is only possible when ta_signer_enabled = true",
-            ))
         } else {
             if let Some(publication_server_uris) = structure.publication_server.clone() {
                 info!("Initialising publication server");
