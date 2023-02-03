@@ -265,7 +265,12 @@ impl CaManager {
     /// Initialises the embedded Trust Anchor Signer (for testbed).
     /// This assumes that the one and only local Trust Anchor Proxy exists and
     /// is to be associated with this signer.
-    pub async fn ta_signer_init(&self, tal_https: Vec<uri::Https>, tal_rsync: uri::Rsync) -> KrillResult<()> {
+    pub async fn ta_signer_init(
+        &self,
+        tal_https: Vec<uri::Https>,
+        tal_rsync: uri::Rsync,
+        private_key_pem: Option<String>,
+    ) -> KrillResult<()> {
         let ta_signer_store = self
             .ta_signer_store
             .as_ref()
@@ -286,7 +291,7 @@ impl CaManager {
                 repo_info: repo_contact.repo_info().clone(),
                 tal_https,
                 tal_rsync,
-                private_key_pem: None,
+                private_key_pem,
                 signer: self.signer.clone(),
             };
 
@@ -379,6 +384,7 @@ impl CaManager {
         &self,
         ta_aia: uri::Rsync,
         ta_uris: Vec<uri::Https>,
+        ta_key_pem: Option<String>,
         repo_manager: &Arc<RepositoryManager>,
         actor: &Actor,
     ) -> KrillResult<()> {
@@ -399,7 +405,7 @@ impl CaManager {
         self.ta_proxy_repository_update(contact, &self.system_actor).await?;
 
         // Initialise signer
-        self.ta_signer_init(ta_uris, ta_aia).await?;
+        self.ta_signer_init(ta_uris, ta_aia, ta_key_pem).await?;
 
         // Add signer to proxy
         let signer_info = self.get_trust_anchor_signer().await?.get_signer_info();

@@ -242,6 +242,7 @@ impl KrillServer {
                 let startup_structure = api::import::Structure::new(
                     testbed.ta_aia().clone(),
                     testbed.ta_uri().clone(),
+                    None,
                     testbed.publication_server_uris(),
                     import_cas,
                 );
@@ -592,9 +593,9 @@ impl KrillServer {
 
             if let Some(import_ta) = structure.ta.clone() {
                 info!("Creating embedded Trust Anchor");
-                let (ta_aia, ta_uris) = import_ta.into_uris();
+                let (ta_aia, ta_uris, ta_key_pem) = import_ta.unpack();
                 self.ca_manager
-                    .ta_init_fully_embedded(ta_aia, ta_uris, &self.repo_manager, &actor)
+                    .ta_init_fully_embedded(ta_aia, ta_uris, ta_key_pem, &self.repo_manager, &actor)
                     .await?;
             }
 

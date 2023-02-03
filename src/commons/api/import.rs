@@ -33,11 +33,12 @@ pub struct Structure {
 pub struct ImportTa {
     pub ta_aia: uri::Rsync,
     pub ta_uri: uri::Https,
+    pub ta_key_pem: Option<String>,
 }
 
 impl ImportTa {
-    pub fn into_uris(self) -> (uri::Rsync, Vec<uri::Https>) {
-        (self.ta_aia, vec![self.ta_uri])
+    pub fn unpack(self) -> (uri::Rsync, Vec<uri::Https>, Option<String>) {
+        (self.ta_aia, vec![self.ta_uri], self.ta_key_pem)
     }
 }
 
@@ -45,11 +46,16 @@ impl Structure {
     pub fn new(
         ta_aia: uri::Rsync,
         ta_uri: uri::Https,
+        ta_key_pem: Option<String>,
         publication_server_uris: PublicationServerUris,
         cas: Vec<ImportCa>,
     ) -> Self {
         Structure {
-            ta: Some(ImportTa { ta_aia, ta_uri }),
+            ta: Some(ImportTa {
+                ta_aia,
+                ta_uri,
+                ta_key_pem,
+            }),
             publication_server: Some(publication_server_uris),
             cas,
         }
