@@ -1581,7 +1581,7 @@ impl<'de> Deserialize<'de> for LogType {
         D: Deserializer<'de>,
     {
         let string = String::deserialize(d)?;
-        LogType::from_str(string.as_str()).map_err(|e| de::Error::custom(e))
+        LogType::from_str(string.as_str()).map_err(de::Error::custom)
     }
 }
 
