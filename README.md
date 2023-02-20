@@ -26,6 +26,15 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 # Changelog
 
+## 0.12.2 'Dijkstra'
+
+This release fixes a locking issue that can affect a Krill Publication Server
+with a large number of concurrent publishers. See PR #1007.
+
+If you only use Krill as an RPKI Certificate Authority and publish elsewhere,
+e.g. in an RPKI Publication Server provided by your RIR or NIR, then there is
+no need to update to this release.
+
 ## 0.12.1 'Safety Belts'
 
 This release introduces two fixes for the Krill Publication Server. If you
