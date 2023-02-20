@@ -365,7 +365,7 @@ impl StatusStore {
 
     fn error_to_error_res(error: &Error) -> ErrorResponse {
         match error {
-            Error::HttpClientError(httpclient::Error::ErrorResponseWithJson(_, _, res)) => res.clone(),
+            Error::HttpClientError(httpclient::Error::ErrorResponseWithJson(_, _, res)) => *res.clone(),
             _ => error.to_error_response(),
         }
     }
