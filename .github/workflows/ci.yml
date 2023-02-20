@@ -92,6 +92,7 @@ jobs:
       uses: BSFishy/pip-action@v1
       with:
         packages: pykmip
+        constraints: test-resources/pykmip/constraints.txt
 
     - name: Compile the tests
       run: |
