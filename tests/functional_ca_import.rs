@@ -7,6 +7,7 @@ use krill::{
     test::*,
 };
 
+#[cfg(not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11")))]
 #[tokio::test]
 async fn functional_ca_import() {
     // Start an empty Krill instance.
