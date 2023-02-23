@@ -718,7 +718,7 @@ impl TrustAnchorClientCommand {
             for uri_str in uri_strs {
                 uris.push(
                     uri::Https::from_str(uri_str)
-                        .map_err(|_| Error::Other(format!("Invalid https URI: {}", uri_str)))?,
+                        .map_err(|_| Error::Other(format!("Invalid HTTPS URI: {}", uri_str)))?,
                 );
             }
             uris
@@ -1214,7 +1214,7 @@ impl Config {
         match self.log_type {
             LogType::File => self.file_logger(),
             LogType::Stderr => self.stderr_logger(),
-            LogType::Syslog => Err(Error::other("syslog is not support for the TA client")),
+            LogType::Syslog => Err(Error::other("syslog is not supported for the TA client")),
         }
     }
 
