@@ -265,7 +265,7 @@ impl TrustAnchorClientCommand {
                 .value_name("info")
                 .long("info")
                 .short("i")
-                .help("The Trust Anchor Signer info json (as 'signer show')")
+                .help("The Trust Anchor Signer info JSON (as 'signer show')")
                 .required(true),
         );
 
@@ -319,7 +319,7 @@ impl TrustAnchorClientCommand {
                     .value_name("info")
                     .long("info")
                     .short("i")
-                    .help("The Child info json (as 'krillc show --ca <ca_name>')")
+                    .help("The Child info JSON (as 'krillc show --ca <ca_name>')")
                     .required(true),
             )
             .arg(
@@ -377,7 +377,7 @@ impl TrustAnchorClientCommand {
                     .long("proxy_id")
                     .short("i")
                     .value_name("path")
-                    .help("Path to Proxy ID json")
+                    .help("Path to Proxy ID JSON")
                     .required(true),
             )
             .arg(
@@ -385,7 +385,7 @@ impl TrustAnchorClientCommand {
                     .long("proxy_repository_contact")
                     .short("r")
                     .value_name("path")
-                    .help("Path to Proxy ID json")
+                    .help("Path to Proxy ID JSON")
                     .required(true),
             )
             .arg(
