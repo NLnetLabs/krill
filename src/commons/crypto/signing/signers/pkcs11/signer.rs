@@ -1188,7 +1188,7 @@ where
 }
 
 #[cfg(test)]
-mod tes {
+mod tests {
     use super::*;
 
     #[test]
