@@ -705,6 +705,15 @@ impl Pkcs11Signer {
             Attribute::Label("Krill".to_string().into_bytes()),
         ];
 
+        // Per http://secgroup.dais.unive.it/wp-content/uploads/2010/10/Reponse-by-SafeNet.pdf:
+        //
+        //   "Follow best practices when setting sensitive key attributes: If you have secret or private keys
+        //    that are particularly sensitive and you want to prevent them from being wrapped off, they can be
+        //    generated with their template attributes: CKA_SENSITIVE and CKA_PRIVATE set to True and
+        //    CKA_EXTRACTABLE and CKA_MODIFIABLE both set to False. This way, the keys are only
+        //    accessible by a user who is logged in, and key values cannot be read by anyone. Also, the keys
+        //    cannot be wrapped off and the attribute values cannot be changed at some later time to invalidate
+        //    the original settings."
         let priv_template = vec![
             Attribute::Id(cka_id.to_vec()),
             Attribute::Sign(true),
