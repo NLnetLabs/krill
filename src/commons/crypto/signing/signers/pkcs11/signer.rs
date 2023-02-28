@@ -42,6 +42,23 @@ use crate::commons::crypto::{
 
 use serde::{de::Visitor, Deserialize};
 
+/// How should public key access be controlled?
+/// See: http://docs.oasis-open.org/pkcs11/pkcs11-base/v2.40/os/pkcs11-base-v2.40-os.html#_Toc416959705
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq)]
+pub enum PubKeyAccess {
+    /// User may not access the object until the user has been authenticated to the token.
+    #[serde(alias = "authenticated")]
+    Authenticated,
+
+    /// User may access the object without having been authenticated to the token.
+    #[serde(alias = "unauthenticated")]
+    Unauthenticated,
+
+    /// Default value is token-specific, and may depend on the values of other attributes of the object.
+    #[serde(alias = "token-default")]
+    TokenDefault,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct Pkcs11SignerConfig {
     pub lib_path: String,
@@ -54,8 +71,8 @@ pub struct Pkcs11SignerConfig {
     #[serde(default = "Pkcs11SignerConfig::default_login")]
     pub login: bool,
 
-    #[serde(default = "Pkcs11SignerConfig::default_anon_pubkey_access")]
-    pub anon_pubkey_access: bool,
+    #[serde(default = "Pkcs11SignerConfig::default_pubkey_access")]
+    pub pubkey_access: PubKeyAccess,
 
     #[serde(default = "Pkcs11SignerConfig::default_retry_seconds")]
     pub retry_seconds: u64,
@@ -72,12 +89,8 @@ impl Pkcs11SignerConfig {
         true
     }
 
-    pub fn default_anon_pubkey_access() -> bool {
-        // Initial versions of Krill HSM support hard-coded this to true. Some HSMs
-        // require it to be true, others require it to be false. We default to true
-        // for backward compatibility and for increased default security (though it
-        // is arguable whether restricting access to public keys makes sense).
-        false
+    pub fn default_pubkey_access() -> PubKeyAccess {
+        PubKeyAccess::Authenticated
     }
 
     pub fn default_retry_seconds() -> u64 {
@@ -183,7 +196,7 @@ pub struct Pkcs11Signer {
     /// A probe dependent interface to the PKCS#11 server.
     server: Arc<StatefulProbe<ConnectionSettings, SignerError, UsableServerState>>,
 
-    anon_pubkey_access: bool,
+    pubkey_access: PubKeyAccess,
 }
 
 impl Pkcs11Signer {
@@ -222,7 +235,7 @@ impl Pkcs11Signer {
             handle: RwLock::new(None),
             mapper,
             server,
-            anon_pubkey_access: conf.anon_pubkey_access,
+            pubkey_access: conf.pubkey_access,
         };
 
         Ok(s)
@@ -739,8 +752,16 @@ impl Pkcs11Signer {
         ];
 
         // https://github.com/NLnetLabs/krill/issues/1019
-        if !self.anon_pubkey_access {
-            pub_template.push(Attribute::Private(true));
+        match self.pubkey_access {
+            PubKeyAccess::Authenticated => {
+                pub_template.push(Attribute::Private(true));
+            }
+            PubKeyAccess::Unauthenticated => {
+                pub_template.push(Attribute::Private(false));
+            }
+            PubKeyAccess::TokenDefault => {
+                // Do not supply a value for the CKA_PRIVATE attribute.
+            }
         }
 
         let priv_template = vec![
@@ -1253,21 +1274,24 @@ mod tests {
     }
 
     #[test]
-    fn test_anon_pubkey_access() {
-        // Default behaviour for backward compatibility should be that the lack of the new config
-        // setting is equivalent to specifying that the public key generation template should have
-        // Attribute::Private(true).
-        with_anon_pubkey_access(None, Some(true));
+    fn test_pubkey_access() {
+        // Default behaviour for backward compatibility should be that the lack of the new config setting is equivalent
+        // to specifying that the public key generation template should have Attribute::Private(true).
+        with_pubkey_access(None, Some(true));
 
         // Which should be the same as using the new config setting with value false.
-        with_anon_pubkey_access(Some(false), Some(true));
+        with_pubkey_access(Some(PubKeyAccess::Authenticated), Some(true));
 
-        // But if the new config setting is set to true then there should NOT be any occurences
-        // of Attribute::Private(_) in the public key generation template.
-        with_anon_pubkey_access(Some(true), None);
+        // Or we can explicity request unauthenticated access which should cause the public key generation template to
+        // contain a single occurence of Attribute::Private(false).
+        with_pubkey_access(Some(PubKeyAccess::Unauthenticated), Some(false));
+
+        // Or we can request the token default access control behaviour which should result in there NOT being any
+        // occurences of Attribute::Private(_) in the public key generation template.
+        with_pubkey_access(Some(PubKeyAccess::TokenDefault), None);
     }
 
-    fn with_anon_pubkey_access(flag: Option<bool>, expected_attr: Option<bool>) {
+    fn with_pubkey_access(flag: Option<PubKeyAccess>, expected_attr: Option<bool>) {
         test::test_under_tmp(|d| {
             let mut config_str = r#"
                 lib_path = "dummy path"
@@ -1275,8 +1299,19 @@ mod tests {
             "#
             .to_string();
 
-            if let Some(flag) = flag {
-                config_str.push_str(&format!("anon_pubkey_access = {}", flag));
+            match flag {
+                Some(PubKeyAccess::Authenticated) => {
+                    config_str.push_str("pubkey_access = \"authenticated\"");
+                }
+                Some(PubKeyAccess::Unauthenticated) => {
+                    config_str.push_str("pubkey_access = \"unauthenticated\"");
+                }
+                Some(PubKeyAccess::TokenDefault) => {
+                    config_str.push_str("pubkey_access = \"token-default\"");
+                }
+                None => {
+                    // don't add any configuration setting to the config file
+                }
             }
 
             let config: Pkcs11SignerConfig = toml::from_str(&config_str).unwrap();
