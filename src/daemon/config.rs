@@ -296,6 +296,7 @@ impl ConfigDefaults {
                 user_pin: Some("1234".to_string()),
                 slot: SlotIdOrLabel::Label("My token 1".to_string()),
                 login: true,
+                anon_pubkey_access: false,
                 retry_seconds: Pkcs11SignerConfig::default_retry_seconds(),
                 backoff_multiplier: Pkcs11SignerConfig::default_backoff_multiplier(),
                 max_retry_seconds: Pkcs11SignerConfig::default_max_retry_seconds(),
