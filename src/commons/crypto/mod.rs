@@ -9,3 +9,5 @@ pub use self::signing::*;
 pub type SignerHandle = MyHandle;
 
 pub type CryptoResult<T> = std::result::Result<T, self::error::Error>;
+
+pub use self::signers::pkcs11::signer::PubKeyAccess;

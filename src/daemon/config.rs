@@ -290,7 +290,7 @@ impl ConfigDefaults {
 
         #[cfg(all(feature = "hsm-tests-pkcs11", not(feature = "hsm-tests-kmip")))]
         {
-            use crate::commons::crypto::signers::pkcs11::signer::PubKeyAccess;
+            use crate::commons::crypto::PubKeyAccess;
             use crate::commons::crypto::SlotIdOrLabel;
             let signer_config = Pkcs11SignerConfig {
                 lib_path: "/usr/lib/softhsm/libsofthsm2.so".to_string(),
