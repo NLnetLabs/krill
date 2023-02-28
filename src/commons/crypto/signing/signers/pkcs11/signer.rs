@@ -714,6 +714,7 @@ impl Pkcs11Signer {
             Attribute::Token(true),
             Attribute::Private(true),
             Attribute::Extractable(false),
+            Attribute::Modifiable(false),
             Attribute::Label("Krill".to_string().into_bytes()),
         ];
 
