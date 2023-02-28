@@ -54,6 +54,9 @@ pub struct Pkcs11SignerConfig {
     #[serde(default = "Pkcs11SignerConfig::default_login")]
     pub login: bool,
 
+    #[serde(default = "Pkcs11SignerConfig::default_anon_pubkey_access")]
+    pub anon_pubkey_access: bool,
+
     #[serde(default = "Pkcs11SignerConfig::default_retry_seconds")]
     pub retry_seconds: u64,
 
@@ -67,6 +70,14 @@ pub struct Pkcs11SignerConfig {
 impl Pkcs11SignerConfig {
     pub fn default_login() -> bool {
         true
+    }
+
+    pub fn default_anon_pubkey_access() -> bool {
+        // Initial versions of Krill HSM support hard-coded this to true. Some HSMs
+        // require it to be true, others require it to be false. We default to true
+        // for backward compatibility and for increased default security (though it
+        // is arguable whether restricting access to public keys makes sense).
+        false
     }
 
     pub fn default_retry_seconds() -> u64 {
@@ -171,6 +182,8 @@ pub struct Pkcs11Signer {
 
     /// A probe dependent interface to the PKCS#11 server.
     server: Arc<StatefulProbe<ConnectionSettings, SignerError, UsableServerState>>,
+
+    anon_pubkey_access: bool,
 }
 
 impl Pkcs11Signer {
@@ -209,6 +222,7 @@ impl Pkcs11Signer {
             handle: RwLock::new(None),
             mapper,
             server,
+            anon_pubkey_access: conf.anon_pubkey_access,
         };
 
         Ok(s)
@@ -693,29 +707,7 @@ impl Pkcs11Signer {
         openssl::rand::rand_bytes(&mut cka_id)
             .map_err(|_| SignerError::Pkcs11Error("Internal error while generating a random number".to_string()))?;
 
-        let pub_template = vec![
-            Attribute::Id(cka_id.to_vec()),
-            Attribute::Verify(true),
-            Attribute::Encrypt(false),
-            Attribute::Wrap(false),
-            Attribute::Token(true),
-            Attribute::Private(true),
-            Attribute::ModulusBits(2048.into()),
-            Attribute::PublicExponent(vec![0x01, 0x00, 0x01]),
-            Attribute::Label("Krill".to_string().into_bytes()),
-        ];
-
-        let priv_template = vec![
-            Attribute::Id(cka_id.to_vec()),
-            Attribute::Sign(true),
-            Attribute::Decrypt(false),
-            Attribute::Unwrap(false),
-            Attribute::Sensitive(true),
-            Attribute::Token(true),
-            Attribute::Private(true),
-            Attribute::Extractable(false),
-            Attribute::Label("Krill".to_string().into_bytes()),
-        ];
+        let (pub_template, priv_template) = self.mk_keygen_templates(&cka_id);
 
         let (pub_handle, priv_handle) = self.with_conn("generate key pair", |conn| {
             // The Krill functional test once failed under GitHub Actions with error:
@@ -732,6 +724,39 @@ impl Pkcs11Signer {
         let public_key = self.get_public_key_from_handle(pub_handle)?;
 
         Ok((public_key, pub_handle, priv_handle, hex::encode(cka_id)))
+    }
+
+    fn mk_keygen_templates(&self, cka_id: &[u8]) -> (Vec<Attribute>, Vec<Attribute>) {
+        let mut pub_template = vec![
+            Attribute::Id(cka_id.to_vec()),
+            Attribute::Verify(true),
+            Attribute::Encrypt(false),
+            Attribute::Wrap(false),
+            Attribute::Token(true),
+            Attribute::ModulusBits(2048.into()),
+            Attribute::PublicExponent(vec![0x01, 0x00, 0x01]),
+            Attribute::Label("Krill".to_string().into_bytes()),
+        ];
+
+        // https://github.com/NLnetLabs/krill/issues/1019
+        if !self.anon_pubkey_access {
+            pub_template.push(Attribute::Private(true));
+        }
+
+        let priv_template = vec![
+            Attribute::Id(cka_id.to_vec()),
+            Attribute::Sign(true),
+            Attribute::Decrypt(false),
+            Attribute::Unwrap(false),
+            Attribute::Sensitive(true),
+            Attribute::Token(true),
+            Attribute::Private(true),
+            Attribute::Extractable(false),
+            Attribute::Modifiable(false),
+            Attribute::Label("Krill".to_string().into_bytes()),
+        ];
+
+        (pub_template, priv_template)
     }
 
     pub(super) fn get_public_key_from_handle(&self, pub_handle: ObjectHandle) -> Result<PublicKey, SignerError> {
@@ -1189,6 +1214,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::test;
+
     use super::*;
 
     #[test]
@@ -1223,5 +1250,64 @@ mod tests {
             err.to_string(),
             "not a valid PKCS#11 slot ID for key `slot` at line 3 column 20"
         )
+    }
+
+    #[test]
+    fn test_anon_pubkey_access() {
+        // Default behaviour for backward compatibility should be that the lack of the new config
+        // setting is equivalent to specifying that the public key generation template should have
+        // Attribute::Private(true).
+        with_anon_pubkey_access(None, Some(true));
+
+        // Which should be the same as using the new config setting with value false.
+        with_anon_pubkey_access(Some(false), Some(true));
+
+        // But if the new config setting is set to true then there should NOT be any occurences
+        // of Attribute::Private(_) in the public key generation template.
+        with_anon_pubkey_access(Some(true), None);
+    }
+
+    fn with_anon_pubkey_access(flag: Option<bool>, expected_attr: Option<bool>) {
+        test::test_under_tmp(|d| {
+            let mut config_str = r#"
+                lib_path = "dummy path"
+                slot = 1234
+            "#
+            .to_string();
+
+            if let Some(flag) = flag {
+                config_str.push_str(&format!("anon_pubkey_access = {}", flag));
+            }
+
+            let config: Pkcs11SignerConfig = toml::from_str(&config_str).unwrap();
+            let mapper = Arc::new(SignerMapper::build(&d).unwrap());
+            let signer = Pkcs11Signer::build("dummy", &config, Duration::from_secs(600), mapper).unwrap();
+            let (pub_template, priv_template) = signer.mk_keygen_templates(&[0, 0, 0]);
+
+            assert_eq!(
+                1,
+                priv_template
+                    .iter()
+                    .filter(|attr| matches!(attr, Attribute::Private(true)))
+                    .count()
+            );
+
+            match expected_attr {
+                Some(expected_v) => {
+                    // The the set of public key template attributes should contain a single
+                    // occurence of Attribute::Private with inner value expected_v.
+                    let count = pub_template
+                        .iter()
+                        .filter(|attr| matches!(attr, Attribute::Private(v) if *v == expected_v))
+                        .count();
+                    assert_eq!(count, 1);
+                }
+                None => {
+                    // The public key template attributes should NOT contain any occurences of
+                    // Attribute::Private(_).
+                    assert!(!pub_template.iter().any(|attr| matches!(attr, Attribute::Private(_))));
+                }
+            }
+        });
     }
 }
