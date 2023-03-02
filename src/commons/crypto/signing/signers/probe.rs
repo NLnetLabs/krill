@@ -4,6 +4,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use super::error::SignerError;
+
 #[derive(Debug)]
 pub enum ProbeError<E> {
     WrongState,
@@ -226,6 +228,19 @@ impl<C, E, S> StatefulProbe<C, E, S> {
                     _ => ProbeError::AwaitingNextProbe,
                 })
         })
+    }
+}
+
+impl From<ProbeError<SignerError>> for SignerError {
+    fn from(err: ProbeError<SignerError>) -> Self {
+        match err {
+            ProbeError::WrongState => {
+                SignerError::Other("Internal error: probe is not in the expected state".to_string())
+            }
+            ProbeError::AwaitingNextProbe => SignerError::TemporarilyUnavailable,
+            ProbeError::CompletedUnusable => SignerError::PermanentlyUnusable,
+            ProbeError::CallbackFailed(err) => err,
+        }
     }
 }
 
