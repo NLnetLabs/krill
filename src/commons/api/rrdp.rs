@@ -816,7 +816,7 @@ mod tests {
         assert!(objects.verify_delta(&update_file1, &jail).is_ok());
         objects.apply_delta(update_file1.clone());
 
-        // Updating again with the same delta will now fail - there is no longer and object
+        // Updating again with the same delta will now fail - there is no longer an object
         // with that uri and hash it was updated to the new content.
         assert!(objects.verify_delta(&update_file1, &jail).is_err());
 
