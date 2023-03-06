@@ -27,9 +27,13 @@ in this [blog post](https://blog.nlnetlabs.nl/testing-the-waters-with-krill/).
 
 ## 0.12.3 'Sakura'
 
-This release contains some features which were cherry picked from the upcoming
-release (0.13.0) that will enable Publication Server operators to remove
-unwanted, surplus, files from their repository.
+This release contains a feature that enables Publication Server operators to
+remove unwanted, surplus, files from their repository. This feature was cherry
+picked from the upcoming major release branch so that Publication Server
+operators can use this without delay.
+
+Note that if you do not use Krill to operate a Publication Server, then there
+is no need to upgrade to this version now.
 
 For more details see: https://github.com/NLnetLabs/krill/pull/1022
 
