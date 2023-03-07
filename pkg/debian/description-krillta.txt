@@ -1,0 +1,3 @@
+The krillta tool is used for managing a Krill based RPKI Trust Anchor.
+
+For more information visit https://krill.docs.nlnetlabs.nl/en/latest/trust-anchor.html
