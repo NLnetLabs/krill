@@ -49,4 +49,6 @@ keys in use for communication e.g. with the client browser and/or an OpenID Conn
 
 9. Start Krill.
 
-10. Browse to https://localhost:3000/ to login to Krill. Follow the HTTP flow in Wireshark.
+10. Open your browser and clear cookies and browser local storage relating to Krill and KeyCloak.
+
+12. Browse to https://localhost:3000/ to login to Krill. Follow the HTTP flow in Wireshark.
