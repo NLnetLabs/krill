@@ -583,11 +583,17 @@ impl KrillServer {
         }
 
         if let Some(import_ta) = structure.ta.clone() {
-            info!("Creating embedded Trust Anchor");
-            let (ta_aia, ta_uris, ta_key_pem) = import_ta.unpack();
-            self.ca_manager
-                .ta_init_fully_embedded(ta_aia, ta_uris, ta_key_pem, &self.repo_manager, &actor)
-                .await?;
+            if self.config.ta_proxy_enabled() && self.config.ta_signer_enabled() {
+                info!("Creating embedded Trust Anchor");
+                let (ta_aia, ta_uris, ta_key_pem) = import_ta.unpack();
+                self.ca_manager
+                    .ta_init_fully_embedded(ta_aia, ta_uris, ta_key_pem, &self.repo_manager, &actor)
+                    .await?;
+            } else {
+                return Err(Error::custom(
+                    "Import TA requires ta_support_enabled = true and ta_signer_enabled = true",
+                ));
+            }
         }
 
         info!("Bulk import {} CAs", structure.cas.len());
