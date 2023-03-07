@@ -40,7 +40,10 @@ keys in use for communication e.g. with the client browser and/or an OpenID Conn
 
 6. In Wireshark Preferences -> HTTP add (if not already present) port number 8080 (KeyCloak HTTP) in "TCP port(s)".
 
-7. Capture traffic on all interfaces in Wireshark and set the display filter to "http && (tcp.port == 8080 || tcp.port == 3000)".
+7. Capture traffic on all interfaces in Wireshark and set the display filter to one of:
+
+- `http && (tcp.port == 8080 || tcp.port == 3000) && not http.request.full_uri contains assets && http.request` _(for a quick overview)_
+- `http && (tcp.port == 8080 || tcp.port == 3000) && not http.request.full_uri contains assets` _(for the full request/response flow)_
 
 8. Start your OpenID Connect provider.
 
