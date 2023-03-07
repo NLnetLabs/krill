@@ -37,6 +37,18 @@ It was inaccurate (usually 8 hours off), and not very informative. More useful
 metrics are still provided: last exchange and last successful exchange. If these
 times differ, then there is an issue that may need attention.
 
+## 0.12.3 'Sakura'
+
+This release contains a feature that enables Publication Server operators to
+remove unwanted, surplus, files from their repository. This feature was cherry
+picked from the upcoming major release branch so that Publication Server
+operators can use this without delay.
+
+Note that if you do not use Krill to operate a Publication Server, then there
+is no need to upgrade to this version now.
+
+For more details see: https://github.com/NLnetLabs/krill/pull/1022
+
 ## 0.12.2 'Dijkstra'
 
 This release fixes a locking issue that can affect a Krill Publication Server
