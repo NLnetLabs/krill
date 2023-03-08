@@ -17,8 +17,8 @@ use crate::{
         KrillResult,
     },
     constants::{CASERVER_DIR, CA_OBJECTS_DIR, PUBSERVER_CONTENT_DIR, PUBSERVER_DIR, UPGRADE_REISSUE_ROAS_CAS_LIMIT},
-    daemon::{config::Config, krillserver::KrillServer, mq::TaskQueue},
-    pubd::{RepositoryContent, RepositoryManager},
+    daemon::{config::Config, krillserver::KrillServer},
+    pubd::RepositoryContent,
 };
 
 #[cfg(feature = "hsm")]
@@ -31,7 +31,6 @@ use crate::{
 };
 
 pub mod pre_0_10_0;
-pub mod pre_0_9_0;
 
 pub type UpgradeResult<T> = Result<T, PrepareUpgradeError>;
 
@@ -344,7 +343,11 @@ pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -
         Some(versions) => {
             info!("Preparing upgrade from {} to {}", versions.from(), versions.to());
             if versions.from < KrillVersion::release(0, 6, 0) {
-                let msg = "Cannot upgrade Krill installations from before version 0.6.0. Please upgrade to any version ranging from 0.6.0 to 0.8.1 first, and then upgrade to this version.";
+                let msg = "Cannot upgrade Krill installations from before version 0.6.0. Please upgrade to 0.8.1 first, then upgrade to 0.12.3, and then upgrade to this version.";
+                error!("{}", msg);
+                Err(PrepareUpgradeError::custom(msg))
+            } else if versions.from < KrillVersion::release(0, 9, 0) {
+                let msg = "Cannot upgrade Krill installations from before version 0.9.0. Please upgrade to 0.12.3 first, and then upgrade to this version.";
                 error!("{}", msg);
                 Err(PrepareUpgradeError::custom(msg))
             } else if versions.from < KrillVersion::candidate(0, 10, 0, 1) {
@@ -365,52 +368,9 @@ pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -
                     })?
                 };
 
-                if versions.from < KrillVersion::release(0, 9, 0) {
-                    // We will need an extensive migration because we found that the
-                    // number of events related to (1) republishing manifests/CRLs in CAs,
-                    // and (2) publishing objects for publishers in the repository resulted
-                    // in excessive disk space usage.
-                    //
-                    // So, now we use a hybrid event sourcing model where all *other* changes
-                    // are still tracked through events, but these high-churn publication
-                    // changes are kept in dedicated stateful objects:
-                    // - pubd_objects for objects published in a repository server
-                    // - ca_objects for published objects for a CA.
-
-                    // We need to prepare pubd first, because if there were any CAs using
-                    // an embedded repository then they will need to be updated to use the
-                    // RFC 8181 protocol (using localhost) instead, and this can only be
-                    // *after* the publication server data is migrated.
-                    pre_0_9_0::PubdObjectsMigration::prepare(mode, config.clone())?;
-
-                    // We need a signer because it's required by the repo manager, although
-                    // we will not actually use it during the migration.
-                    let probe_interval = Duration::from_secs(config.signer_probe_retry_seconds);
-                    let signer = KrillSignerBuilder::new(&upgrade_data_dir, probe_interval, &config.signers)
-                        .with_default_signer(config.default_signer())
-                        .with_one_off_signer(config.one_off_signer())
-                        .build()
-                        .unwrap();
-                    let signer = Arc::new(signer);
-
-                    // We fool a repository manager for the CA migration to use the upgrade
-                    // data directory as its base dir. This repository manager will be used
-                    // to get the repository response XML for any (if any) CAs that were
-                    // using an embedded repository.
-                    let mut repo_manager_migration_config = (*config).clone();
-                    repo_manager_migration_config.data_dir = upgrade_data_dir;
-
-                    let mq = Arc::new(TaskQueue::default());
-                    let repo_manager =
-                        RepositoryManager::build(Arc::new(repo_manager_migration_config), mq, signer.clone())?;
-
-                    pre_0_9_0::CaObjectsMigration::prepare(mode, config, repo_manager, signer)?;
-                } else {
-                    pre_0_10_0::PublicationServerMigration::prepare(mode, &config)?;
-                    pre_0_10_0::CasMigration::prepare(mode, &config)?;
-                    migrate_pre_0_12_pubd_objects(&config)?;
-                }
-
+                pre_0_10_0::PublicationServerMigration::prepare(mode, &config)?;
+                pre_0_10_0::CasMigration::prepare(mode, &config)?;
+                migrate_pre_0_12_pubd_objects(&config)?;
                 Ok(Some(UpgradeReport::new(true, versions)))
             } else if versions.from < KrillVersion::candidate(0, 10, 0, 3) {
                 Err(PrepareUpgradeError::custom(
@@ -711,42 +671,6 @@ mod tests {
     async fn prepare_then_upgrade_0_9_5() {
         let source = PathBuf::from("test-resources/migrations/v0_9_5/");
         test_upgrade(source).await;
-    }
-
-    #[tokio::test]
-    async fn prepare_then_upgrade_0_8_1() {
-        let source = PathBuf::from("test-resources/migrations/v0_8_1/");
-        test_upgrade(source).await;
-    }
-
-    #[tokio::test]
-    async fn prepare_then_upgrade_0_7_3_cas_only() {
-        let source = PathBuf::from("test-resources/migrations/v0_7_3_cas_only/");
-        test_upgrade(source).await;
-    }
-
-    #[tokio::test]
-    async fn prepare_then_upgrade_0_8_1_pubd_only() {
-        let source = PathBuf::from("test-resources/migrations/v0_8_1_pubd_only/");
-        test_upgrade(source).await;
-    }
-
-    #[tokio::test]
-    async fn test_upgrade_0_6_0() {
-        let work_dir = tmp_dir();
-        let source = PathBuf::from("test-resources/migrations/v0_6_0/");
-        file::backup_dir(&source, &work_dir).unwrap();
-
-        let config = Arc::new(Config::test(&work_dir, false, false, false, false));
-        let _ = config.init_logging();
-
-        let report = prepare_upgrade_data_migrations(UpgradeMode::PrepareToFinalise, config.clone())
-            .unwrap()
-            .unwrap();
-
-        finalise_data_migration(report.versions(), &config).unwrap();
-
-        let _ = fs::remove_dir_all(work_dir);
     }
 
     #[test]
