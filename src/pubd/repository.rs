@@ -821,20 +821,38 @@ impl StagedElements {
 
         for pbl in publishes {
             let uri = pbl.uri().clone();
-            // A publish that follows a withdraw for the same URI should be Update.
-            if let Some(DeltaElement::Withdraw(staged_withdraw)) = self.0.get(&uri) {
-                let hash = *staged_withdraw.hash();
-                let update = UpdateElement::new(uri.clone(), hash, pbl.base64().clone());
-                self.0.insert(uri, DeltaElement::Update(update));
-            } else {
-                // In any other case we just keep the new publish.
-                // Because deltas are checked before they are applied we know that publish
-                // elements cannot occur after another publish or update. They would have
-                // had to be an update in that case.
-                // Because this is checked when the publication delta is submitted, we can
-                // ignore this case here.
-                self.0.insert(uri, DeltaElement::Publish(pbl));
-            };
+            match self.0.get_mut(&uri) {
+                Some(DeltaElement::Publish(_)) => {
+                    // This should never happen as the new publish would have
+                    // been an update instead. This will have been checked
+                    // at this point. Still, rather than failing which is
+                    // not allowed in this code path, we can use the publish
+                    // instead of the staged publish.
+                    self.0.insert(uri, DeltaElement::Publish(pbl));
+                }
+
+                Some(DeltaElement::Update(staged_update)) => {
+                    // This should never happen as the new publish would have
+                    // been an update instead. This will have been checked
+                    // at this point. Still, rather than failing which is
+                    // not allowed in this code path, we can update the
+                    // existing update with the content of the new publish
+                    // element.
+                    staged_update.with_updated_content(staged_update.base64().clone());
+                }
+                Some(DeltaElement::Withdraw(staged_withdraw)) => {
+                    // A new publish that follows a withdraw for the same URI should be
+                    // an Update of the original file.
+                    let hash = *staged_withdraw.hash();
+                    let update = UpdateElement::new(uri.clone(), hash, pbl.base64().clone());
+                    self.0.insert(uri, DeltaElement::Update(update));
+                }
+                None => {
+                    // This is just a fresh publish element, nothing to merge,
+                    // we can just insert it.
+                    self.0.insert(uri, DeltaElement::Publish(pbl));
+                }
+            }
         }
 
         for mut upd in updates {

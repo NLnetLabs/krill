@@ -180,6 +180,12 @@ impl UpdateElement {
         self.hash = staged.hash;
     }
 
+    /// Changes the content for this update, but leaves the uri
+    /// and hash of object to update unchanged.
+    pub fn with_updated_content(&mut self, base64: Base64) {
+        self.base64 = base64;
+    }
+
     pub fn into_publish(self) -> PublishElement {
         PublishElement {
             base64: self.base64,
