@@ -3,6 +3,7 @@
 //! definitions.
 use std::{
     fmt, io,
+    ops::{Add, AddAssign},
     path::PathBuf,
     {collections::HashMap, path::Path},
 };
@@ -11,7 +12,14 @@ use chrono::Duration;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use uuid::Uuid;
 
-use rpki::{ca::publication, ca::publication::Base64, repository::x509::Time, rrdp::Hash, uri, xml::decode::Name};
+use rpki::{
+    ca::publication,
+    ca::{idexchange::PublisherHandle, publication::Base64},
+    repository::x509::Time,
+    rrdp::Hash,
+    uri,
+    xml::decode::Name,
+};
 
 use crate::commons::{error::KrillIoError, util::file};
 
@@ -161,12 +169,13 @@ impl UpdateElement {
     pub fn base64(&self) -> &Base64 {
         &self.base64
     }
-    pub fn size(&self) -> usize {
+    pub fn size_approx(&self) -> usize {
         self.base64.size_approx()
     }
 
     /// Changes this UpdateElement hash to that of the previous
-    /// staged update.
+    /// staged update so that it matches the currently published
+    /// file in public (i.e. not staged) RRDP.
     pub fn updates_staged(&mut self, staged: &UpdateElement) {
         self.hash = staged.hash;
     }
@@ -218,6 +227,13 @@ impl WithdrawElement {
     pub fn hash(&self) -> &Hash {
         &self.hash
     }
+
+    /// Changes this WithdrawElement hash to that of the previous
+    /// staged update so that it matches the currently published
+    /// file in public (i.e. not staged) RRDP.
+    pub fn updates_staged(&mut self, staged: &UpdateElement) {
+        self.hash = staged.hash;
+    }
 }
 
 impl From<publication::Withdraw> for WithdrawElement {
@@ -231,12 +247,18 @@ impl From<publication::Withdraw> for WithdrawElement {
 
 /// Defines a current set of published elements.
 ///
-// Note this is mapped internally for speedy access, by hash, rather than uri
-// for two reasons:
-// a) URIs in RPKI may change in future
-// b) The publish element as it appears in an RFC8182 snapshot.xml includes
-// the uri and the base64, but not the hash. So keeping the actual elements
-// around means we can be more efficient in producing that output.
+// Note this is mapped internally by hash, rather than uri, because:
+//
+// PublishedElement maps to the RFC 8182 publish element, and that does
+// not contain the hash for the object, just the uri and content. Yet,
+// we need to compare hashes for update and delete, so keeping it around
+// means that do not need to recalculate it for objects.
+//
+// Secondly, we could map things by uri, but then we would not only have
+// to recalculate that hash.. things would also slow down because the
+// hashing for rpki::uri::Rsync is slow due to the fact that it needs
+// to accommodate for the fact that the URI scheme and hostname are
+// case insensitive.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CurrentObjects(HashMap<Hash, PublishElement>);
 
@@ -343,7 +365,7 @@ impl CurrentObjects {
         self.0.len()
     }
 
-    pub fn size(&self) -> usize {
+    pub fn size_approx(&self) -> usize {
         self.0.values().fold(0, |tot, el| tot + el.size_approx())
     }
 
@@ -426,17 +448,15 @@ impl Default for RrdpFileRandom {
 pub struct SnapshotData {
     // The random value will be used to make the snapshot URI unguessable and
     // prevent cache poisoning (through CDN cached 404 not founds).
-    //
-    // Old versions of Krill did not have this. We can just use a default (new)
-    // random value in these cases.
-    #[serde(default)]
     random: RrdpFileRandom,
 
-    current_objects: CurrentObjects,
+    // We keep objects per publisher so that we can respond to
+    // list and publication queries more efficiently.
+    current_objects: HashMap<PublisherHandle, CurrentObjects>,
 }
 
 impl SnapshotData {
-    pub fn new(random: RrdpFileRandom, current_objects: CurrentObjects) -> Self {
+    pub fn new(random: RrdpFileRandom, current_objects: HashMap<PublisherHandle, CurrentObjects>) -> Self {
         SnapshotData {
             random,
             current_objects,
@@ -445,7 +465,7 @@ impl SnapshotData {
 
     pub fn create() -> Self {
         let random = RrdpFileRandom::default();
-        let current_objects = CurrentObjects::default();
+        let current_objects = HashMap::default();
         SnapshotData::new(random, current_objects)
     }
 
@@ -457,29 +477,60 @@ impl SnapshotData {
         SnapshotData::new(random, current_objects)
     }
 
-    pub fn unpack(self) -> CurrentObjects {
+    pub fn unpack(self) -> HashMap<PublisherHandle, CurrentObjects> {
         self.current_objects
     }
 
-    pub fn elements(&self) -> Vec<&PublishElement> {
-        self.current_objects.elements()
+    // Get the approximate size for all current objects held by all publishers.
+    pub fn size_approx(&self) -> usize {
+        self.current_objects
+            .values()
+            .fold(0, |tot, objects| tot + objects.size_approx())
     }
 
-    /// Creates a new snapshot with the delta applied. This assumes
-    /// that the delta had been checked before. This should not be
+    pub fn current_objects_for(&self, publisher: &PublisherHandle) -> Option<&CurrentObjects> {
+        self.current_objects.get(publisher)
+    }
+
+    pub fn publishers_current_objects(&self) -> &HashMap<PublisherHandle, CurrentObjects> {
+        &self.current_objects
+    }
+
+    pub fn set_random(&mut self, random: RrdpFileRandom) {
+        self.random = random;
+    }
+
+    /// Applies the delta for a publisher to this snapshot.
+    ///
+    /// This assumes that the delta had been checked before. This should not be
     /// any issue as deltas are verified when they are submitted.
-    pub fn with_delta(&self, random: RrdpFileRandom, elements: DeltaElements) -> SnapshotData {
-        let mut current_objects = self.current_objects.clone();
-        current_objects.apply_delta(elements);
-
-        SnapshotData::new(random, current_objects)
+    pub fn apply_delta(&mut self, publisher: &PublisherHandle, delta: DeltaElements) {
+        if let Some(objects) = self.current_objects.get_mut(publisher) {
+            objects.apply_delta(delta);
+            if objects.is_empty() {
+                self.current_objects.remove(publisher);
+            }
+        } else {
+            let mut objects = CurrentObjects::default();
+            objects.apply_delta(delta); // Can only happen for new publishers
+            self.current_objects.insert(publisher.clone(), objects);
+        }
     }
 
-    pub fn size(&self) -> usize {
+    /// Applies the addition of new publisher with an empty object set.
+    ///
+    /// This is a no-op in case the publisher already exists.
+    pub fn apply_publisher_added(&mut self, publisher: PublisherHandle) {
         self.current_objects
-            .elements()
-            .iter()
-            .fold(0, |sum, p| sum + p.size_approx())
+            .entry(publisher)
+            .or_insert(CurrentObjects::default());
+    }
+
+    /// Applies the removal of a publisher.
+    ///
+    /// This is a no-op in case the publisher does not exists.
+    pub fn apply_publisher_removed(&mut self, publisher: &PublisherHandle) {
+        self.current_objects.remove(publisher);
     }
 
     fn rel_path(&self, session: RrdpSession, serial: u64) -> String {
@@ -530,8 +581,10 @@ impl SnapshotData {
             .attr("session_id", &session)?
             .attr("serial", &serial)?
             .content(|content| {
-                for el in self.current_objects.elements() {
-                    el.write_xml(content)?;
+                for publisher_objects in self.current_objects.values() {
+                    for el in publisher_objects.elements() {
+                        el.write_xml(content)?;
+                    }
                 }
                 Ok(())
             })?;
@@ -542,7 +595,7 @@ impl SnapshotData {
 //------------ DeltaElements -------------------------------------------------
 
 /// Defines the elements for an RRDP delta.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct DeltaElements {
     publishes: Vec<PublishElement>,
     updates: Vec<UpdateElement>,
@@ -566,9 +619,9 @@ impl DeltaElements {
         self.publishes.len() + self.updates.len() + self.withdraws.len()
     }
 
-    pub fn size(&self) -> usize {
+    pub fn size_approx(&self) -> usize {
         let sum_publishes = self.publishes.iter().fold(0, |sum, p| sum + p.size_approx());
-        let sum_updates = self.updates.iter().fold(0, |sum, u| sum + u.size());
+        let sum_updates = self.updates.iter().fold(0, |sum, u| sum + u.size_approx());
 
         sum_publishes + sum_updates
     }
@@ -612,6 +665,23 @@ impl From<publication::PublishDelta> for DeltaElements {
     }
 }
 
+impl Add for DeltaElements {
+    type Output = DeltaElements;
+
+    fn add(mut self, other: Self) -> Self::Output {
+        self += other;
+        self
+    }
+}
+
+impl AddAssign for DeltaElements {
+    fn add_assign(&mut self, mut other: Self) {
+        self.publishes.append(&mut other.publishes);
+        self.updates.append(&mut other.updates);
+        self.withdraws.append(&mut other.withdraws);
+    }
+}
+
 //------------ DeltaData -----------------------------------------------------
 
 /// Contains the data needed to make an RRDP delta XML file.
@@ -619,10 +689,6 @@ impl From<publication::PublishDelta> for DeltaElements {
 pub struct DeltaData {
     // The random value will be used to make the snapshot URI unguessable and
     // prevent cache poisoning (through CDN cached 404 not founds).
-    //
-    // Old versions of Krill did not have this. We can just use a default (new)
-    // random value in these cases.
-    #[serde(default)]
     random: RrdpFileRandom,
 
     // Session is implied by owning RrdpServer, but deltas have a serial
@@ -633,6 +699,9 @@ pub struct DeltaData {
     time: Time,
 
     // The actual changes in this delta: publishes/updates/withdrawals
+    //
+    // Note that we do not need to keep track of the owning publisher in this
+    // context. This DeltaData represents a change that has already been applied.
     elements: DeltaElements,
 }
 

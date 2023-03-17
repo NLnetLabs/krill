@@ -31,6 +31,7 @@ use crate::{
 };
 
 pub mod pre_0_10_0;
+pub mod pre_0_13_0;
 
 pub type UpgradeResult<T> = Result<T, PrepareUpgradeError>;
 
@@ -676,7 +677,7 @@ mod tests {
     #[test]
     fn parse_0_10_0_rc3_repository_content() {
         let json = include_str!("../../test-resources/migrations/v0_10_0/0.json");
-        let _repo: RepositoryContent = serde_json::from_str(json).unwrap();
+        let _repo: pre_0_13_0::OldRepositoryContent = serde_json::from_str(json).unwrap();
     }
 
     #[cfg(all(feature = "hsm", not(any(feature = "hsm-tests-kmip", feature = "hsm-tests-pkcs11"))))]
