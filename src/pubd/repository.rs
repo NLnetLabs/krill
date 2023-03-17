@@ -857,16 +857,32 @@ impl StagedElements {
 
         for mut upd in updates {
             let uri = upd.uri().clone();
-            // An update that follows a staged publish, should be fresh publish.
-            // An update that follows a staged update, should use the hash from the previous update.
-            // An update cannot follow a staged withdraw. It would have been a publish in that case.
-            if let Some(DeltaElement::Publish(_)) = self.0.get(&uri) {
-                self.0.insert(uri, DeltaElement::Publish(upd.into_publish()));
-            } else if let Some(DeltaElement::Update(staged_update)) = self.0.get(&uri) {
-                upd.updates_staged(staged_update); // set hash to previous update hash
-                self.0.insert(uri, DeltaElement::Update(upd));
-            } else {
-                self.0.insert(uri, DeltaElement::Update(upd));
+            match self.0.get_mut(&uri) {
+                Some(DeltaElement::Publish(staged_publish)) => {
+                    // An update that follows a staged publish, should be fresh publish.
+                    // So we can just update hte content of the existing publish
+                    // to match this update.
+                    staged_publish.with_updated_content(upd.into_base64());
+                }
+                Some(DeltaElement::Update(staged_update)) => {
+                    // An update that follows a staged update, should use the hash from
+                    // the previous update, but have the new content. So we can just
+                    // update the content of the staged update.
+                    staged_update.with_updated_content(upd.into_base64());
+                }
+                Some(DeltaElement::Withdraw(staged_withdraw)) => {
+                    // This should not happen. We would have a expected a fresh publish
+                    // if a withdraw was staged. Still, if we are going to merge this
+                    // rather than fail - which is not allowed at this point - then
+                    // the intent of the last message should count. So, we should have
+                    // an update then with the hash that was used in the withdraw.
+                    upd.with_updated_hash(*staged_withdraw.hash());
+                    self.0.insert(uri, DeltaElement::Update(upd));
+                }
+                None => {
+                    // A new update, nothing to merge. Just include it.
+                    self.0.insert(uri, DeltaElement::Update(upd));
+                }
             }
         }
 

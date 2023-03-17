@@ -111,6 +111,12 @@ impl PublishElement {
         &self.uri
     }
 
+    /// Changes the content for this publish, but leaves the uri
+    /// unchanged.
+    pub fn with_updated_content(&mut self, base64: Base64) {
+        self.base64 = base64;
+    }
+
     pub fn size_approx(&self) -> usize {
         self.base64.size_approx()
     }
@@ -166,9 +172,15 @@ impl UpdateElement {
     pub fn hash(&self) -> &Hash {
         &self.hash
     }
+
     pub fn base64(&self) -> &Base64 {
         &self.base64
     }
+
+    pub fn into_base64(self) -> Base64 {
+        self.base64
+    }
+
     pub fn size_approx(&self) -> usize {
         self.base64.size_approx()
     }
@@ -176,8 +188,8 @@ impl UpdateElement {
     /// Changes this UpdateElement hash to that of the previous
     /// staged update so that it matches the currently published
     /// file in public (i.e. not staged) RRDP.
-    pub fn updates_staged(&mut self, staged: &UpdateElement) {
-        self.hash = staged.hash;
+    pub fn with_updated_hash(&mut self, hash: Hash) {
+        self.hash = hash;
     }
 
     /// Changes the content for this update, but leaves the uri
