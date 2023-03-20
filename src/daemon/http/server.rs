@@ -379,7 +379,7 @@ pub fn render_error_redirect(err: Error) -> RoutingResult {
         ))
     })?;
     let b64 = base64::encode(json);
-    let location = format!("/index.html#/login?error={}", b64);
+    let location = format!("/ui/login?error={}", b64);
     Ok(HttpResponse::found(&location))
 }
 
