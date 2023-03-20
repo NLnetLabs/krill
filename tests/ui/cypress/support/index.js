@@ -44,7 +44,7 @@ Cypress.on('uncaught:exception', (err, runnable, promise) => {
             return false
         }
         if (err.message.includes('Redirected when going from')) {
-            // This happens when going from "/" to "/interstitial" via a navigation guard and is triggered
+            // This happens when going from "/onboarding" to "/interstitial" via a navigation guard and is triggered
             // when logging out of Krill.
             // TODO: Is it safe to ignore this or is this pointing to a real bug in Lagosta?
             console.log("Krill UI Test: Ignoring 'Redirected when going from' exception")
