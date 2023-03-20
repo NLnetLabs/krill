@@ -18,7 +18,7 @@ use crate::{
     },
     constants::{CASERVER_DIR, CA_OBJECTS_DIR, PUBSERVER_CONTENT_DIR, PUBSERVER_DIR, UPGRADE_REISSUE_ROAS_CAS_LIMIT},
     daemon::{config::Config, krillserver::KrillServer},
-    pubd::RepositoryContent,
+    pubd,
 };
 
 #[cfg(feature = "hsm")]
@@ -369,7 +369,7 @@ pub fn prepare_upgrade_data_migrations(mode: UpgradeMode, config: Arc<Config>) -
                     })?
                 };
 
-                pre_0_10_0::PublicationServerMigration::prepare(mode, &config)?;
+                pre_0_10_0::PublicationServerRepositoryAccessMigration::prepare(mode, &config)?;
                 pre_0_10_0::CasMigration::prepare(mode, &config)?;
                 migrate_pre_0_12_pubd_objects(&config)?;
                 Ok(Some(UpgradeReport::new(true, versions)))
@@ -399,8 +399,10 @@ fn migrate_pre_0_12_pubd_objects(config: &Config) -> KrillResult<bool> {
     if old_repo_content_dir.exists() {
         let old_store = KeyValueStore::disk(&config.data_dir, "pubd_objects")?;
         let old_key = KeyStoreKey::simple("0.json".to_string());
-        if let Ok(Some(repo_content)) = old_store.get::<RepositoryContent>(&old_key) {
+        if let Ok(Some(old_repo_content)) = old_store.get::<pre_0_13_0::OldRepositoryContent>(&old_key) {
             info!("Found pre 0.12.0 RC2 publication server data. Migrating..");
+            let repo_content: pubd::RepositoryContent = old_repo_content.into();
+
             let new_key = KeyStoreKey::scoped("0".to_string(), "snapshot.json".to_string());
             let upgrade_store = KeyValueStore::disk(&config.upgrade_data_dir(), "pubd_objects")?;
             upgrade_store.store(&new_key, &repo_content)?;
