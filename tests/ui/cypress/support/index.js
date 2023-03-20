@@ -55,3 +55,4 @@ Cypress.on('uncaught:exception', (err, runnable, promise) => {
     // on any other error message the test fails
     console.log("Krill UI Test: Failing the test")
 })
+
